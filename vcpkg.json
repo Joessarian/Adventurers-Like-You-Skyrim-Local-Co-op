@@ -1,0 +1,10 @@
+{
+  "name": "alyslc",
+  "version": "1",
+  "dependencies": [
+	  "glm",
+    "rsm-binary-io",
+	  "simpleini",
+    "spdlog"
+  ]
+}
