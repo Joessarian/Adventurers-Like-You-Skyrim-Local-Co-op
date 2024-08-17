@@ -128,7 +128,7 @@ Degrees of incompatibility:
    - Interferes with ALYSLC's system for player movement ONLY on AE. Until I find the issue on my end, please uninstall TDM temporarily before playing co-op.
 
 ## Credits
-See [Acknowledgements]() for more details.
+See the mod's source for more detailed credits.
 - `Moopus1`
    - [Couch Co-Op Skyrim](https://www.nexusmods.com/skyrim/mods/72743)
    - Served as the original local co-op mod idea and laid out foundational work on adding a controllable npc to the game. 
@@ -153,14 +153,23 @@ See [Acknowledgements]() for more details.
    - Provided an extremely easy-to-use framework for setting up this mod's MCM.
    - And also for their open-sourced SKSE plugins.
    - [Check out Parapet's Skyrim mods](https://next.nexusmods.com/profile/Parapets/mods?gameId=1704)
+- `FlyingParticle`
+  - For groundbreaking Havok reverse engineering in their [HIGGS - Enhanced VR Interaction](https://www.nexusmods.com/skyrimspecialedition/mods/43930) and [PLANCK - Physical Animation and Character Kinetics](https://www.nexusmods.com/skyrimspecialedition/mods/66025) VR mods, from which a couple of functions were ID'd for use in moving around NPCs in SE/AE.
+  - [Check out FlyingParticle's Skyrim VR mods](https://next.nexusmods.com/profile/FlyingParticle/mods?gameId=1704)
+- `dTry`
+  - For their revolutionary combat mod [Valhalla Combat](), from which a melee hit hook was obtained.
+  - [Check out dTry's Skyrim mods](https://next.nexusmods.com/profile/dTry/mods?gameId=1704)
 - `doodlum`
    -  For the po3 CommonLibSSE project template linked on the Skyrim RE discord, which helped me set up a build environment for coding the early versions of this mod.
    -  [Check out doodlum's Skyrim mods](https://next.nexusmods.com/profile/doodlum/mods?gameId=1704)
+- `Loki`
+  -  For the outstanding mod [Skyrim's Paraglider](https://www.nexusmods.com/skyrimspecialedition/mods/53256), which was so much fun to use that I had to directly provide partial compatibility for companion players (must install Skyrim's Paraglider to unlock 'magical paragliding' for players 2-4).
+  -  [Check out Loki's Skyrim mods](https://next.nexusmods.com/profile/LokiCXXVIII/mods?gameId=1704)
 - `mwilsnd`
-   - For [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252) as a reference for adjusting the camera’s orientation and for the raycasting code, which was used for camera collisions, crosshair overlay selectionm, and more.
+   - For [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252), which was used as a reference for adjusting the camera’s orientation and for raycasting code.
    - [Check out mwilsnd's Skyrim mods](https://next.nexusmods.com/profile/mwilsnd/mods?gameId=1704)
 - `Shrimperator`
-   - For the Scaleform drawing code that was copied and adapted from their mod [Better Third Person Selection](https://www.nexusmods.com/skyrimspecialedition/mods/64339).
+   - For the Scaleform drawing code that was adapted from their mod [Better Third Person Selection](https://www.nexusmods.com/skyrimspecialedition/mods/64339).
    - [Check out Shrimperator's Skyrim mods](https://next.nexusmods.com/profile/Shrimperator/mods?gameId=1704)
 - `maxsu2017`
    - For their [Detection Meter](https://www.nexusmods.com/skyrimspecialedition/mods/63057) mod, from which some detection level code and stealth points calculations were copied.
@@ -170,10 +179,19 @@ See [Acknowledgements]() for more details.
    - [Check out exiledviper's Skyrim mods](https://next.nexusmods.com/profile/exiledviper/mods?gameId=1704)
    - [Check out meh321's Skyrim mods](https://next.nexusmods.com/profile/meh321/mods?gameId=1704)
 - `Expired6978`
-   - For [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561), which provides the backbone for co-op player customization a number of co-op menus.
+   - For [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561), which provides the backbone for co-op player customization and a number of co-op menus.
    - [Check out Expired6978's Skyrim mods](https://next.nexusmods.com/profile/expired6978/mods?gameId=110)
+- `bosn889`
+  - For the actor unequip hook from their grip switch mod [Dynamic Grip](https://www.nexusmods.com/skyrimspecialedition/mods/110031), which is used to prevent companion players from auto-equipping gear.
+  - [Check out bosn889's Skyrim mods](https://next.nexusmods.com/profile/bosn889/mods?gameId=1704)
 - `covey-j`
-   -  For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to the co-op players.
+  - For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to companion players.
+- `Sylennus`
+  - For a function used by their mod [Personalized Mannequins](https://www.nexusmods.com/skyrimspecialedition/mods/76386), which is used to set base actor flags.
+  - [Check out Sylennus's Skyrim mods](https://next.nexusmods.com/profile/Sylennus/mods?gameId=1704)
+- `VersuchDrei`
+  - For a reversed actor movement function used to stop players from moving, found here: [OStim GitHub Source](https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h).
+  - [Check out VersuchDrei's Skyrim mods](https://next.nexusmods.com/profile/VersuchDrei/mods?gameId=1704)
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
    - Thank you for helping a programming and C++ greenhorn get their bearings and for answering a ton of questions that I had during the development process.
 
