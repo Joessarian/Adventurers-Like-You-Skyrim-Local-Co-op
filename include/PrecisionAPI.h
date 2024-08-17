@@ -376,7 +376,7 @@ namespace PRECISION_API
 	/// <returns>The pointer to the API singleton, or nullptr if request failed</returns>
 	[[nodiscard]] inline void* RequestPluginAPI(const InterfaceVersion a_interfaceVersion = InterfaceVersion::V4)
 	{
-		auto pluginHandle = REX::W32::GetModuleHandle("Precision.dll");
+		auto pluginHandle = REX::W32::GetModuleHandleA("Precision.dll");
 		_RequestPluginAPI requestAPIFunction = (_RequestPluginAPI)REX::W32::GetProcAddress(pluginHandle, "RequestPluginAPI");
 		if (requestAPIFunction)
 		{

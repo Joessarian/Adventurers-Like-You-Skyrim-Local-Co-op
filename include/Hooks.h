@@ -22,7 +22,7 @@ namespace ALYSLC
 			{
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(35551, 36544) };
-				_Update = trampoline.write_call<5>(hook.address() + 0x11F, Update);	 // AE: 0x160
+				_Update = trampoline.write_call<5>(hook.address() + OFFSET(0x11F, 0x160), Update);	 // AE: 0x160
 				logger::info("[MainHook] Installed Update() hook");
 			}
 
@@ -44,9 +44,9 @@ namespace ALYSLC
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(37938, 38894) };
 				REL::Relocation<uintptr_t> hook2{ RELOCATION_ID(37945, 38901) };
-				_EquipObject = trampoline.write_call<5>(hook.address() + 0xE5, EquipObject);  // AE: 0x170
+				_EquipObject = trampoline.write_call<5>(hook.address() + OFFSET(0xE5, 0x170), EquipObject);			// AE: 0x170
 				logger::info("[ActorEquipManagerHooks] Installed EquipObject() hook.");
-				_UnequipObject = trampoline.write_call<5>(hook2.address() + 0x138, UnequipObject);	// AE: 0x1B9
+				_UnequipObject = trampoline.write_call<5>(hook2.address() + OFFSET(0x138, 0x1B9), UnequipObject);	// AE: 0x1B9
 				logger::info("[ActorEquipManagerHooks] Installed UnequipObject() hook.");
 			}
 
@@ -166,7 +166,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(37673, 38627) };	 //628C20, 64E760
 				auto& trampoline = SKSE::GetTrampoline();
-				_ProcessHit = trampoline.write_call<5>(hook.address() + 0x3C0, ProcessHit); // AE: 0x4A8
+				_ProcessHit = trampoline.write_call<5>(hook.address() + OFFSET(0x3C0, 0x4A8), ProcessHit); // AE: 0x4A8
 				logger::info("[MeleeHit Hook] Installed ProcessHit() hook.");
 			}
 
@@ -351,7 +351,7 @@ namespace ALYSLC
 				REL::Relocation<std::uintptr_t> hook1{ RELOCATION_ID(49852, 50784) };  // 84AB90, 876700
 
 				auto& trampoline = SKSE::GetTrampoline();
-				_Update = trampoline.write_call<5>(hook1.address() + 0x1A6, Update);  // AE: 0x1A6
+				_Update = trampoline.write_call<5>(hook1.address() + OFFSET(0x1A6, 0x1A6), Update);  // AE: 0x1A6
 				logger::info("[TESCamera Hooks] Installed Update() hook.");
 			}
 

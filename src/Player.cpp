@@ -1057,6 +1057,8 @@ namespace ALYSLC
 		{
 			// Set as teammate to prevent friendly fire and pickpocketing.
 			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
+			// Ensure co-op companion players do not start combat with P1.
+			coopActor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
 		}
 
 		// Add to special co-op player faction.

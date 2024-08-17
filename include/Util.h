@@ -748,7 +748,7 @@ namespace ALYSLC
 			// https://github.com/adamhynek/activeragdoll/blob/master/src/RE/offsets.cpp#L304
 			// and to alandtse for Skyrim VR Address Library:
 			// https://github.com/alandtse/skyrim_vr_address_library
-			// NOTE: AE ID not yet verified as of yet. 
+			// NOTE: AE ID not yet verified as of yet.
 			// It's on the todo list when I finally get around to updating to AE.
 
 			// Clear movement offset for the given actor.

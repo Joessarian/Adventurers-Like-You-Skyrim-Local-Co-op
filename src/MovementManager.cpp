@@ -1911,6 +1911,10 @@ namespace ALYSLC
 			}
 			else
 			{
+				if (p->isPlayer1) 
+				{
+					Util::NativeFunctions::ClearKeepOffsetFromActor(movementActor.get());
+				}
 				KeepOffsetFromActor
 				(
 					movementActor->GetHandle(), 

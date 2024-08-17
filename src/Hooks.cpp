@@ -2898,7 +2898,7 @@ namespace ALYSLC
 								}
 
 								// REMOVE when done debugging.
-								/*if (p->mm->isDashDodging || p->mm->isParagliding) 
+								//if (p->mm->isDashDodging || p->mm->isParagliding) 
 								{
 									RE::NiPoint3 linVelXY = RE::NiPoint3(charController->outVelocity.quad.m128_f32[0], charController->outVelocity.quad.m128_f32[1], 0.0f);
 									RE::NiPoint3 facingDir = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(p->coopActor->data.angle.z));
@@ -2910,7 +2910,7 @@ namespace ALYSLC
 									DebugAPI::QueueArrow3D(start, start + offsetFacing * 50.0f, 0xFF0000FF, 5.0f, 3.0f);
 									DebugAPI::QueueArrow3D(start, start + offsetLSDir * 50.0f, 0x00FF00FF, 5.0f, 3.0f);
 									DebugAPI::QueueArrow3D(start, start + offsetVel * 50.0f, 0x0000FFFF, 5.0f, 3.0f);
-								}*/
+								}
 
 								//================
 								// Rotation speed.
@@ -3043,7 +3043,7 @@ namespace ALYSLC
 								else if (bool isAIDriven = p->coopActor->movementController && !p->coopActor->movementController->unk1C5; isAIDriven)
 								{
 									// REMOVE when done debugging.
-									/*logger::debug("[PlayerCharacter Hooks] Update: {}: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}.",
+									/*logger::debug("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}.",
 										p->coopActor->GetName(),
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
@@ -3053,10 +3053,14 @@ namespace ALYSLC
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
-										high->unk118,
-										high->unk11C,
-										high->unk120);*/
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.rotateWhileMovingRun);*/
 
+									RE::NiPoint3 linVelXY = RE::NiPoint3();
+									float movementToHeadingAngDiff = -1.0f;
+									float range = -1.0f;
+									float diffFactor = -1.0f;
 									// Player must not be sprinting, mounted, downed, animation driven, or running their interaction package.
 									if (!p->pam->IsPerforming(InputAction::kSprint) && !p->coopActor->IsOnMount() && 
 										!p->mm->isAnimDriven && !p->mm->interactionPackageRunning && !p->isDowned)
@@ -3074,7 +3078,7 @@ namespace ALYSLC
 
 										// Out velocity seems to be the intended velocity before collisions are accounted for.
 										// Do not need velocity Z component.
-										RE::NiPoint3 linVelXY = RE::NiPoint3
+										linVelXY = RE::NiPoint3
 										(
 											charController->outVelocity.quad.m128_f32[0], 
 											charController->outVelocity.quad.m128_f32[1], 
@@ -3087,16 +3091,16 @@ namespace ALYSLC
 											Util::DirectionToGameAngYaw(linVelXY)
 										);
 										// Yaw difference between the XY velocity direction and the direction in which the player wishes to head.
-										float movementToHeadingAngDiff = 
+										movementToHeadingAngDiff = 
 										(
 											p->mm->lsMoved ? 
 											Util::NormalizeAngToPi(p->mm->movementOffsetParams[!MoveParams::kLSGameAng] - linVelYaw) : 
 											0.0f
 										);
 										// Sets the bounds for the diff factor applied to movement speed below. Dependent on rotation speeds -- rotate faster, pivot faster.
-										float range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 4.0f);
+										range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 4.0f);
 										// Max speed factor. Maxes out at 90 degrees.
-										float diffFactor = 
+										diffFactor = 
 										(
 											1.0f + 
 											(
@@ -3123,6 +3127,25 @@ namespace ALYSLC
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk]		*= diffFactor;
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun]		*= diffFactor;
 									}
+
+									/*logger::debug("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. DIFF FACTOR: {}, lin vel XY: {}, {}, movement ang diff: {}, range: {}.",
+										p->coopActor->GetName(),
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
+										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
+										high->currentMovementType.defaultData.rotateWhileMovingRun,
+										diffFactor,
+										linVelXY.x,
+										linVelXY.y,
+										movementToHeadingAngDiff,
+										range);*/
 								}
 							}
 

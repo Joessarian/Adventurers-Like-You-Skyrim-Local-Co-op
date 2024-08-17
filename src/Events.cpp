@@ -76,13 +76,14 @@ namespace ALYSLC
 			if (glob.livingPlayers == 0 && a_bleedoutEvent->actor->IsPlayerRef()) 
 			{
 				auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
-				logger::debug("[Events] Bleedout Event: P1 is bleeding out while co-op session is over and all players are dead. P1 health is <= 0 ({}). Killing P1.",
-					p1->GetActorValue(RE::ActorValue::kHealth));
+				logger::debug("[Events] Bleedout Event: P1 is bleeding out while co-op session is over and all players are dead. P1 health is ({}). Is dead: {}. Killing P1.",
+					p1->GetActorValue(RE::ActorValue::kHealth), p1->IsDead());
 				Util::NativeFunctions::SetActorBaseDataFlag(p1->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false);
+				p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -p1->GetActorValue(RE::ActorValue::kHealth));
 				// Kill calls fail on P1 at times, especially when the player dies in water, and the game will not reload.
 				// The kill console command appears to work when this happens, so as an extra layer of insurance,
 				// run that command here.
-				const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+				/*const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
 				const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 				if (script)
 				{
@@ -93,7 +94,7 @@ namespace ALYSLC
 
 				p1->KillImpl(p1, FLT_MAX, false, false);
 				p1->KillImmediate();
-				p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+				p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);*/
 			}
 			else if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_bleedoutEvent->actor); foundIndex != -1) 
 			{

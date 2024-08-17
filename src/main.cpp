@@ -8,7 +8,7 @@
 #include <Proxy.h>
 #include <Serialization.h>
 #include <Util.h>
-#include "../external/CommonLibSSE/src/SKSE/API.cpp"
+#include "../extern/CommonLibSSE/src/SKSE/API.cpp"
 
 const SKSE::LoadInterface* g_loadInterface = nullptr;
 
@@ -91,7 +91,7 @@ void InitializeLog()
 		util::report_and_fail("[MAIN] Failed to find standard logging directory"sv);
 	}
 
-	*path /= fmt::format("{}.log"sv, Plugin::NAME);
+	*path /= fmt::format("{}.log"sv, Version::PROJECT);
 	auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
 #endif
 
@@ -106,8 +106,11 @@ void InitializeLog()
 	log->flush_on(level);
 
 	spdlog::set_default_logger(std::move(log));
-	//spdlog::set_pattern("[%l] %v"s);
+	// spdlog::set_pattern("[%l] %v"s);
+	// spdlog::set_pattern("[%H:%M:%S:%e] %v"s);
 	spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
+
+	logger::info("[MAIN] Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
 }
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
@@ -116,16 +119,13 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	while (!IsDebuggerPresent()) {};
 #endif
 
-#ifdef SKYRIMAE
-	InitializeLog();
-#endif
-
 	logger::info("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	// Create global data singleton before doing anything else.
 	ALYSLC::GlobalCoopData::GetSingleton();
 
 	g_loadInterface = a_skse;
 	SKSE::Init(a_skse);
+	InitializeLog();
 	SKSE::AllocTrampoline(1 << 8);
 
 	if (auto messaging = SKSE::GetMessagingInterface(); !messaging->RegisterListener("SKSE", SKSEMessageHandler))
@@ -158,35 +158,44 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	return true;
 }
 
+#ifdef SKYRIM_AE
+extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
+	SKSE::PluginVersionData v;
+	v.PluginVersion(Version::MAJOR);
+	v.PluginName("ALYSLC");
+	v.AuthorName("Jossarian");
+	v.UsesAddressLibrary();
+	v.UsesUpdatedStructs();
+	v.CompatibleVersions({ SKSE::RUNTIME_LATEST });
+
+	return v;
+}();
+#else
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info)
 {
-	InitializeLog();
-
 	a_info->infoVersion = SKSE::PluginInfo::kVersion;
-	a_info->name = Plugin::NAME.data();
-	a_info->version = Plugin::VERSION.pack();
+	a_info->name = "ALYSLC";
+	a_info->version = Version::MAJOR;
 
-	if (a_skse->IsEditor()) {
+	if (a_skse->IsEditor())
+	{
 		logger::critical("[MAIN] Loaded in editor, marking as incompatible."sv);
 		return false;
 	}
 
 	const auto ver = a_skse->RuntimeVersion();
-	if (ver != RUNTIME) {
+	if (ver
+#ifndef SKYRIMVR
+		< SKSE::RUNTIME_1_5_39
+#else
+		> SKSE::RUNTIME_VR_1_4_15_1
+#endif
+	)
+	{
 		logger::critical(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
 		return false;
 	}
 
 	return true;
 }
-
-#ifdef SKYRIMAE
-extern "C" DLLEXPORT constinit SKSE::PluginVersionData SKSEPlugin_Version = []() {
-	SKSE::PluginVersionData v;
-	v.PluginVersion(Plugin::VERSION);
-	v.PluginName(Plugin::NAME);
-	v.UsesAddressLibrary(true);
-
-	return v;
-}();
 #endif
