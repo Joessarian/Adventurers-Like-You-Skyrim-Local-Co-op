@@ -1,4 +1,10 @@
-# Adventurers-Like-You-Skyrim-Local-Co-op
+# Adventurers Like You: Skyrim Local Co-op ALPHA
+
+## Developer's Note
+I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. Over the intervening time period, I've probably clocked in close to 8k hours and have decided to take a break from active development, primarily due to health reasons, but also due to having less time to work on the project. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a re-write from the ground up, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can.  
+And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
+Experiencing it with friends and family!
+
 ## [Build Steps and Tips]
 ### Setting Up the Build Environment and Dependencies.
 - Set up Visual Studio 2022 and install desktop development with C++.
