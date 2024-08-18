@@ -453,7 +453,6 @@ namespace ALYSLC
 
 		// Done initializing.
 		glob.globalDataInit = true;
-		logger::debug("[GLOB] InitializeGlobalCoopData: Data initialized. Size of: {}", sizeof(GlobalCoopData));
 	}
 
 	//===============================================================================================================================================

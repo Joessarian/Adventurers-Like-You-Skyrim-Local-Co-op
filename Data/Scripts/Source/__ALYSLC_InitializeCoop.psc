@@ -19,7 +19,7 @@ Function Init()
 	; Prevent summoning until initialization finishes.
 	CanStartCoopGlobVar.SetValue(0.00)
 	; Initialize global co-op data in the plugin.
-	ALYSLC.InitializeGlobalData(Player1ReferenceAlias)
+	Bool FirstTimeInit = ALYSLC.InitializeGlobalData(Player1ReferenceAlias)
 	; Reset summoning request state each time a save is loaded.
     CoopIsSummoningPlayers.SetValue(0)
 	StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", -1)
@@ -165,6 +165,11 @@ Function Init()
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")
 	CanStartCoopGlobVar.SetValue(1.00)
 	ALYSLC.Log("[INIT SCRIPT] Initialization complete.")
+		
+	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
+	If (FirstTimeInit)
+		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press the 'Pause' bind on Player 1's controller.")
+	EndIf
 EndFunction
 
 ; Run Init().

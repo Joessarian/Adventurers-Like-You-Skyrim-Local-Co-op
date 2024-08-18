@@ -23,11 +23,6 @@ Function SendCoopPlayerHome()
     Self.ClearKeepOffsetFromActor()
     Self.ClearLookAt()
 
-    ; Stop sneaking and highlight shader.
-    ConsoleUtil.SetSelectedReference(Self)
-    ConsoleUtil.ExecuteCommand("SetForceSneak 0")
-    Debug.SendAnimationEvent(Self, "SneakStop")
-
     ; Spawn portal and set shaders.
     AbsorbCompanionShader.Play(PlayerRef, 1.0)
     UsePortalShader.Play(Self, 1.0)
@@ -306,12 +301,6 @@ Event OnCoopStart(Form akCoopPlayer)
         Self.SetDontMove(False)
         PO3_SKSEFunctions.AddKeywordToRef(Self, CoopPlayerKeyword)
         ALYSLC.Log(Self.GetDisplayName() + "'s player keyword is: " + CoopPlayerKeyword)
-        
-        ; Prevent combat from starting with player 1.
-        ConsoleUtil.SetSelectedReference(Self as ObjectReference)
-        ConsoleUtil.ExecuteCommand("sifh 1")
-        ConsoleUtil.ExecuteCommand("setrelationshiprank player 3")
-        ConsoleUtil.ExecuteCommand("player.setrelationshiprank player 3")
 
         ; Add to current follower faction.
         Self.SetRelationshipRank(PlayerRef as Actor, 3)

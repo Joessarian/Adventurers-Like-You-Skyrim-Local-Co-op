@@ -24,7 +24,8 @@ namespace ALYSLC
 		//========================================================================================================================================================================
 
 		// Set global co-op data after the player loads a save.
-		void InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
+		// Return true if global data was initialized for the first time.
+		bool InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
 
 		// Setup controller data for all connected controllers and return a list of controller IDs
 		// for all active controllers. Player 1's CID is always first.

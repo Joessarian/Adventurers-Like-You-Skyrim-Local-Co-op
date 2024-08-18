@@ -20,6 +20,10 @@ namespace ALYSLC
 			{
 				logger::error("[Settings] ERR ({}): ImportAllSettings: Could not load default Enderal settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
 			}
+			else
+			{
+				logger::info("[Settings] ImportAllSettings: Successfully opened default Enderal settings configuration file '{}'.", defaultFilePathEnderal.string());
+			}
 			
 		}
 		else
@@ -27,6 +31,10 @@ namespace ALYSLC
 			if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
 			{
 				logger::error("[Settings] ERR ({}): ImportAllSettings: Could not load default Skyrim SE settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
+			}
+			else
+			{
+				logger::info("[Settings] ImportAllSettings: Successfully opened default Skyrim settings configuration file '{}'.", defaultFilePathSSE.string());
 			}
 		}
 
@@ -51,12 +59,20 @@ namespace ALYSLC
 			{
 				logger::error("[Settings] ERR: ({}): ImportAllSettings: Could not load Enderal player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathEnderal.string());
 			}
+			else
+			{
+				logger::info("[Settings] ImportAllSettings: Successfully opened user-modified Enderal settings configuration file '{}'.", userSettingsFilePathEnderal.string());
+			}
 		}
 		else
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
 			{
 				logger::error("[Settings] ERR: ({}): ImportAllSettings: could not load Skyrim SE player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathSSE.string());
+			}
+			else
+			{
+				logger::info("[Settings] ImportAllSettings: Successfully opened user-modified Skyrim settings configuration file '{}'.", userSettingsFilePathSSE.string());
 			}
 		}
 
@@ -156,7 +172,7 @@ namespace ALYSLC
 			// Have the default composing actions list for all actions to import from if the player has not changed a particular bind.
 			const auto& defPACompActionsList = paInfo->DEF_PA_COMP_INPUT_ACTIONS_LIST;
 			// Get the INI section name based on the player index.
-			sectionName = fmt::format("Player{}", pIndex + 1).c_str();
+			sectionName = fmt::format("Player{}", pIndex + 1);
 			// Go though all player actions.
 			for (auto actionIndex = !InputAction::kFirstAction; actionIndex <= !InputAction::kLastAction; ++actionIndex) 
 			{
@@ -174,7 +190,7 @@ namespace ALYSLC
 				minHoldTime = playerPAParams[bindIndex].triggerFlags.all(TriggerFlag::kMinHoldTime);
 
 				// Read in the two-three modifiable bind flags.
-				ReadBoolSetting(a_ini, sectionName.data(), fmt::format("bAction{}AnyButtonOrder", actionName).c_str(), anyInputOrder);
+				ReadBoolSetting(a_ini, sectionName.data(), fmt::format("bAction{}AnyInputOrder", actionName).c_str(), anyInputOrder);
 				// The bind's default perform type to compare the player's changes to.
 				const auto& defPerfType = paInfo->defPAParamsList[bindIndex].perfType;
 				// Only these default perf types support a switch to consec tap. 
@@ -578,7 +594,7 @@ namespace ALYSLC
 		// Import settings that vary from player to player.
 		
 		// Section name changes based on player index.
-		std::string_view sectionName{ ""sv };
+		std::string sectionName{ ""sv };
 		for (auto pIndex = 0; pIndex < ALYSLC_MAX_PLAYER_COUNT; ++pIndex) 
 		{
 			sectionName = fmt::format("Player{}", pIndex + 1);
@@ -665,6 +681,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadBoolSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -684,6 +701,7 @@ namespace ALYSLC
 			}
 			else
 			{
+				logger::error("[Settings] ERR: ReadBoolSettingToIndex: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 				return false;
 			}
 		}
@@ -712,6 +730,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadFloatSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -729,6 +748,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -757,6 +777,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadRGBStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -773,6 +794,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -790,6 +812,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			logger::error("[Settings] ERR: ReadUInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}

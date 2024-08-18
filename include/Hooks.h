@@ -143,7 +143,7 @@ namespace ALYSLC
 			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);								// A6
 			static void HandleHealthDamage(RE::Character* a_this, RE::Actor* a_attacker, float a_damage);		// 104
 			static void ModifyAnimationUpdateData(RE::Character* a_this, RE::BSAnimationUpdateData& a_data);	// 79
-			static bool NotifyAnimationGraph(RE::Character* a_this, const RE::BSFixedString& a_eventName);		// 01
+			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);	// 01
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);								// 8A
 			static void Update(RE::Character* a_this, float a_delta);											// AD
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> _CheckClampDamageModifier;

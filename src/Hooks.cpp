@@ -824,6 +824,8 @@ namespace ALYSLC
 				if (playerVictim)
 				{
 					const auto& p = glob.coopPlayers[playerVictimIndex];
+					logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage received mult is {}.",
+						p->coopActor->GetName(), Settings::vfDamageDealtMult[p->playerID]);
 					damageMult *= Settings::vfDamageReceivedMult[p->playerID];
 				}
 
@@ -833,8 +835,16 @@ namespace ALYSLC
 					// Check for friendly fire (not from self) and negate damage.
 					if (!Settings::vbFriendlyFire[p->playerID] && Util::IsPartyFriendlyActor(a_this) && a_this != p->coopActor.get())
 					{
+						logger::debug("[Character Hook] HandleHealthDamage: {} damaged {}. Friendly fire, ignoring.",
+							a_attacker ? a_attacker->GetName() : "NONE",
+							a_this->GetName());
 						a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -a_damage);
 						return;
+					}
+					else
+					{
+						logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage dealt mult is {}.",
+							a_attacker ? a_attacker->GetName() : "NONE", Settings::vfDamageDealtMult[p->playerID]);
 					}
 
 					// Apply damage dealt mult.
@@ -1071,32 +1081,32 @@ namespace ALYSLC
 			_ModifyAnimationUpdateData(a_this, a_data);
 		}
 
-		bool CharacterHooks::NotifyAnimationGraph(RE::Character* a_this, const RE::BSFixedString& a_eventName)
+		bool CharacterHooks::NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName)
 		{
 			if (glob.globalDataInit && glob.allPlayersInit && glob.coopSessionActive)
 			{
-				int8_t playerIndex = -1;
-				for (const auto& p : glob.coopPlayers)
-				{
-					if (p->isActive)
-					{
-						// This character is really a IAnimationGraphManagerHolder ptr, so accessing its FID returns garbage.
-						// Perform a pointer comp instead.
-						if (fmt::ptr(a_this) == fmt::ptr(p->coopActor->As<RE::IAnimationGraphManagerHolder>()))
-						{
-							playerIndex = p->controllerID;
-							break;
-						}
-					}
-				}
+				//int8_t playerIndex = -1;
+				//for (const auto& p : glob.coopPlayers)
+				//{
+				//	if (p->isActive)
+				//	{
+				//		// This character is really a IAnimationGraphManagerHolder ptr, so accessing its FID returns garbage.
+				//		// Perform a pointer comp instead.
+				//		if (fmt::ptr(a_this) == fmt::ptr(p->coopActor->As<RE::IAnimationGraphManagerHolder>()))
+				//		{
+				//			playerIndex = p->controllerID;
+				//			break;
+				//		}
+				//	}
+				//}
 
-				if (playerIndex != -1)
+				if (auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(skyrim_cast<RE::Character*>(a_this)); playerIndex != -1)
 				{
 					const auto& p = glob.coopPlayers[playerIndex];
 					auto hash = Hash(a_eventName);
 					
 					// REMOVE when done debugging.
-					//logger::debug("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					logger::debug("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 
 					if (p->isTransformed) 
 					{
@@ -2581,8 +2591,15 @@ namespace ALYSLC
 					// Check for friendly fire (not from self) and negate damage.
 					if (!Settings::vbFriendlyFire[p->playerID] && a_this != p->coopActor.get())
 					{
+						logger::debug("[PlayerCharacter Hook] HandleHealthDamage: {} damaged P1. Friendly fire, ignoring.",
+							p->coopActor->GetName());
 						a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -a_damage);
 						return;
+					}
+					else
+					{
+						logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage mult is {}.",
+							a_attacker ? a_attacker->GetName() : "NONE", Settings::vfDamageDealtMult[p->playerID]);
 					}
 
 					// Modify damage mult.
@@ -2763,6 +2780,7 @@ namespace ALYSLC
 				auto hash = Hash(a_eventName);
 				if (glob.coopSessionActive)
 				{
+					logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 					if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
 					{
 						// Skip bleedout animations when using the co-op revive system.
@@ -2899,7 +2917,7 @@ namespace ALYSLC
 
 								// REMOVE when done debugging.
 								//if (p->mm->isDashDodging || p->mm->isParagliding) 
-								{
+								/*{
 									RE::NiPoint3 linVelXY = RE::NiPoint3(charController->outVelocity.quad.m128_f32[0], charController->outVelocity.quad.m128_f32[1], 0.0f);
 									RE::NiPoint3 facingDir = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(p->coopActor->data.angle.z));
 									RE::NiPoint3 lsDir = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(p->mm->movementOffsetParams[!MoveParams::kLSGameAng]));
@@ -2910,7 +2928,7 @@ namespace ALYSLC
 									DebugAPI::QueueArrow3D(start, start + offsetFacing * 50.0f, 0xFF0000FF, 5.0f, 3.0f);
 									DebugAPI::QueueArrow3D(start, start + offsetLSDir * 50.0f, 0x00FF00FF, 5.0f, 3.0f);
 									DebugAPI::QueueArrow3D(start, start + offsetVel * 50.0f, 0x0000FFFF, 5.0f, 3.0f);
-								}
+								}*/
 
 								//================
 								// Rotation speed.

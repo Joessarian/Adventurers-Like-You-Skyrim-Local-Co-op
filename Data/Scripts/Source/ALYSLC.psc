@@ -4,7 +4,7 @@ Scriptname ALYSLC Hidden
 ;=====================================
 
 ;========================================================================================================================================================================================================================
-Function InitializeGlobalData(ReferenceAlias a_player1Ref) Global Native
+Bool Function InitializeGlobalData(ReferenceAlias a_player1Ref) Global Native
 Int[] Function GetConnectedCoopControllerIDs() Global Native
 Bool Function InitializeCoop(Int a_numCompanions, Int[] a_controllerIDs, Actor[] a_coopActors, Int[] a_packageFormListIndicesList) Global Native
 ;========================================================================================================================================================================================================================

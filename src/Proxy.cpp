@@ -17,7 +17,7 @@ namespace ALYSLC
 	// Initialization functions defined in proper order of execution.
 	//========================================================================================================================================================================
  
-	void CoopLib::InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref)
+	bool CoopLib::InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref)
 	{
 		// Initialize or re-assign global co-op data.
 		// Called each time a save is loaded.
@@ -25,10 +25,13 @@ namespace ALYSLC
 		// REMOVE when done debugging.
 		logger::debug("[Proxy] InitializeGlobalData.");
 
+		bool firstTimeInit = false;
 		if (!glob.globalDataInit) 
 		{
 			// Only set all global data once per play session (on save load).
 			GlobalCoopData::InitializeGlobalCoopData(a_player1Ref);
+			// First time initialization.
+			firstTimeInit = true;
 		}
 		else 
 		{
@@ -77,6 +80,7 @@ namespace ALYSLC
 		}
 
 		logger::debug("[Proxy] InitializeGlobalData: Done initializing global co-op data");
+		return firstTimeInit;
 	}
 
 	std::vector<std::uint32_t> CoopLib::GetConnectedCoopControllerIDs(RE::StaticFunctionTag*)
