@@ -1,9 +1,35 @@
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ## Developer's Note
-I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. Over the intervening time period, I've probably clocked in close to 8k hours and have decided to take a break from active development, primarily due to health reasons, but also due to having less time to work on the project. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a re-write from the ground up, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can.  
+I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what players 2-4 are).    
+
+Over the intervening time period, I've probably clocked in close to 8k hours and have decided to take a break from active development, primarily due to health concerns. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a re-write from the ground up, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can.    
+
 And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
-Experiencing it with friends and family!
+Experiencing it with friends and family — with adventurers like you!
+
+## [For Users]
+### Getting Started and Important Notes
+- This mod requires that ***at least two XInput-compatible controllers*** are plugged into your computer before starting a co-op session.
+- Almost all of the mod's testing was done on ***Skyrim version 1.5.97***, so for the most stable experience, your best bet is to downgrade your Skyrim installation to this version.
+- After installing the mod for the first time, always ***start a new playthrough and dedicate the playthrough to co-op***. Minimize progressing player 1's character outside of co-op.
+- As of this time, ***removing the mod mid-playthrough is not recommended*** and will lead to freezes when loading saves.
+- To summon other players, after loading a save, first ***ensure player 1 is not in combat***. Then press and hold the `Back` then `Start` buttons on ***player 1's*** controller. This will establish which player is recognized as player 1 by the mod and open the Summoning Menu.
+- Have a peek at the mod's ***MCM*** once it fully loads to ***learn about and customize the mod's extensive settings***.  Settings include:
+  - Camera options
+  - Cheats/debug options
+  - Character options for all players
+  - Emote idle assignment
+  - Menu control options
+  - Movement speed/rotation options for all players
+  - Player action options for all players
+  - Progression options
+  - Unique controls customization for each player
+  - User interface options
+- ***Save frequently*** while playing.
+- ***Stick together*** when possible to ensure all players are on-screen and easy to see. There are also some options to improve player visibility, such as player indicators, camera object fade options, and player-focal camera positioning when players are far apart. And finally, if seeing "the void" outside of the traversable map does not bother you, disabling camera collisions altogether provides the smoothest experience.
+- If a certain interaction is not triggering for any player, ***switch back to the default third person camera and attempt the interaction again with player 1***.
+- ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please include what debug options you've used and/or a crash log if you've also installed a crash logger.
 
 ## [Build Steps and Tips]
 ### Setting Up the Build Environment and Dependencies.
@@ -70,20 +96,6 @@ Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `buil
    - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
 
-## [For Users]
-### Getting Started
-- After installing the mod for the first time, always ***start a new playthrough and dedicate the playthrough to co-op***. Minimize progressing player 1's character outside of co-op.
-- As of this time, ***removing the mod mid-playthrough is not recommended*** and will lead to freezes when loading saves.
-- This mod requires that ***at least two XInput-compatible controllers*** are plugged in to your computer before starting a co-op session.
-- To summon other players, after loading a save, first ensure player 1 is not in combat. Then press and hold the `Back` button + press the `Start` button on ***player 1's*** controller. This will establish which player is recognized as player 1 by the mod and open the Summoning Menu.
-
-### Important Notes
-- Almost all of the mod's testing was done on ***Skyrim version 1.5.97***, so for the most stable experience, your best bet is to downgrade your Skyrim installation to this version.
-- Have a peek at the mod's MCM once it fully loads and customize the mod's settings. In particular, ***reference and modify each players' MCM 'Binds' page*** to get a feel for the controls.
-- ***Save frequently*** while playing.
-- ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please include what debug options you've used and/or a crash log if you've also installed a crash logger.
-- See [Mod Incompatibility](#mod-incompatibility) for details on SE/AE-specific mod concerns.
-
 ### Prerequisite Mods
 Install the following mods + all their prerequisites:
 - [SKSE64](https://skse.silverlock.org/)
@@ -119,7 +131,16 @@ Additional mods which are highly recommended, but not required for this mod to f
 - [TrueHUD](https://www.nexusmods.com/skyrimspecialedition/mods/62775) 
    - Displays floating health bars, boss health bars, and dynamic UI updates, all while being fully customizable.
 
-### Mod Incompatibility
+### Mod Compatiblity Notes
+#### Important General Compatibility Note
+Mods which ***exclusively apply their changes to player 1 will NOT be fully compatible*** with this mod, since their changes will not apply to other summoned companion players.
+Examples of such mods include:
+- Mods that add new spells with attached scripts that check if the effect target is player 1 before applying the effect.
+- Mods that provide player exclusive animations.
+- Mods that introduce new, player-centric mechanics.
+A compatibility patch would be required in the future if I have the time to deploy both a Papyrus scripting framework and an SKSE plugin interface.  
+
+#### Shortlist of Tested Incompatible Mods
 Flagged as present in AE and/or SE.  
 Degrees of incompatibility:
 1. `LIGHT`: Game will still run and only occasional issues will arise.
