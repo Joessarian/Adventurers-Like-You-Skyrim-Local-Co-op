@@ -153,6 +153,8 @@ Degrees of incompatibility:
    - Having the mod active while using the co-op camera can lead to sporadic raycasting crashes. For now, until a solution is bound, uninstall/disable SmoothCam with a hotkey if using the co-op camera while playing co-op.
 - `[AE] HEAVY` [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
    - Interferes with ALYSLC's system for player movement ONLY on AE. Until I find the issue on my end, please uninstall TDM temporarily before playing co-op.
+- `[SE/AE] HEAVY`: [UltimateCombat]()
+   - Essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
 
 ## Credits
 See the mod's source for more detailed credits.
