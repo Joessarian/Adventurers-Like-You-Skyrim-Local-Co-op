@@ -1795,7 +1795,7 @@ namespace ALYSLC
 				{
 					// Save container handle for menu CID resolution later.
 					glob.reqQuickLootContainerHandle = crosshairRefrHandle;
-					glob.moarm->InsertRequest(controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), "LootMenu", crosshairRefrPtr->GetHandle());
+					glob.moarm->InsertRequest(controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), GlobalCoopData::LOOT_MENU, crosshairRefrPtr->GetHandle());
 					// Send SKSE crosshair event to allow QuickLoot menu to trigger.
 					// Clear out first if sending a new crosshair event.
 					if (shouldSendNewSetCrosshairEvent)
@@ -3622,6 +3622,18 @@ namespace ALYSLC
 					crosshairOnRefrPixelXYDeltas = glm::vec2(0.0f, 0.0f);
 				}
 			}
+		}
+
+		if (crosshairRefrPtr && crosshairRefrPtr.get()) 
+		{
+			logger::debug("[TM] UpdateCrosshairPosAndSelection: {}: selected refr {} (0x{:X}): type: ({}, flags: 0b{:B}, 0x{:B}), ignored by sandbox: {}",
+				coopActor->GetName(),
+				crosshairRefrPtr->GetName(),
+				crosshairRefrPtr->formID,
+				crosshairRefrPtr->GetBaseObject() ? *crosshairRefrPtr->GetBaseObject()->formType : RE::FormType::None,
+				crosshairRefrPtr->formFlags,
+				crosshairRefrPtr->As<RE::TESObjectACTI>() ? *crosshairRefrPtr->As<RE::TESObjectACTI>()->flags : RE::TESObjectACTI::ActiFlags::kNone,
+				crosshairRefrPtr->GetIgnoredBySandbox());
 		}
 
 		// Set last update time point.

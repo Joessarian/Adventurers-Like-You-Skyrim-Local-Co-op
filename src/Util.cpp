@@ -653,6 +653,7 @@ namespace ALYSLC
 			{
 				return skillsArr;
 			}
+
 			auto& glob = GlobalCoopData::GetSingleton();
 			constexpr auto totalSkills = Skill::kTotal;
 			Skill currentSkill = totalSkills;
@@ -670,16 +671,7 @@ namespace ALYSLC
 					// just like P1's skills when starting the game.
 					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 					{
-						if (auto actorBase = a_actor->GetActorBase(); actorBase) 
-						{
-							// Scale off the actor base's skill values
-							// which auto scale and start at 5.
-							skillsArr[i] = (float)(actorBase->playerSkills.values[!currentSkill]) + 10.0f;
-						}
-						else
-						{
-							skillsArr[i] = a_actor->GetBaseActorValue(currentAV);
-						}
+						skillsArr[i] = 15.0f;  
 					}
 					else
 					{
@@ -2322,12 +2314,33 @@ namespace ALYSLC
 
 				// Actors are always selectable, regardless of their activate text.
 				hasValidActivationText = !truncActivateText.empty() || a_refr->As<RE::Actor>();
+				logger::debug("[Util] IsSelectableRefr: {} has activate text {}.", a_refr->GetName(), truncActivateText);
 			}
 
 			// Invalid activate text, cannot select.
 			if (!hasValidActivationText)
 			{
 				return false;
+			}
+
+			// Ignore DynDOLOD LOD activators, which shouldn't be selectable.
+			// TODO: Have to figure out a more efficient method to check if the refr is a DynDOLOD refr. 
+			// Filename comparison is haphazard, especially if the DynDOLOD plugin was renamed.
+			// Needs testing.
+			bool isActivator = baseObj->Is(RE::FormType::Activator, RE::FormType::TalkingActivator); 
+			if (isActivator) 
+			{
+				auto modIndex = (a_refr->formID & 0xFF000000) >> 24; 
+				if (modIndex > 0) 
+				{
+					if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler) 
+					{
+						if (auto mod = dataHandler->LookupLoadedModByIndex(modIndex); mod && mod->GetFilename().contains("DynDOLOD"))
+						{
+							return false;
+						}
+					}
+				}
 			}
 
 			// Activation text checks passed.
@@ -2359,6 +2372,19 @@ namespace ALYSLC
 			mat.entry[2][2] = (CosT + Az * Az * OMCosT);
 
 			return mat;
+		}
+
+		bool MenusOnlyAlwaysUnpaused()
+		{
+			// Returns true if only 'always open' menus or the LootMenu is open.
+
+			if (auto ui = RE::UI::GetSingleton(); ui)
+			{
+				bool onlyAlwaysOpen = MenusOnlyAlwaysOpenInMap();
+				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv);
+			}
+
+			return false;
 		}
 
 		bool Player1AddPerk(RE::BGSPerk* a_perk)

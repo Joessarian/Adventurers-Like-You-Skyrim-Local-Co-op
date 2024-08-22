@@ -1747,19 +1747,6 @@ namespace ALYSLC
 			return false;
 		}
 
-		// Return true if only menus with the 'AlwaysOpen' flag 
-		// and QuickLoot's LootMenu are open in the UI's menu map.
-		inline bool MenusOnlyAlwaysUnpaused() 
-		{
-			if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				bool onlyAlwaysOpen = MenusOnlyAlwaysOpenInMap();
-				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv);
-			}
-
-			return false;
-		}
-
 		// Return true if a menu is open that stops the player from moving.
 		inline bool OpenMenuStopsMovement()
 		{
@@ -2200,6 +2187,10 @@ namespace ALYSLC
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);
+
+		// Return true if only menus with the 'AlwaysOpen' flag
+		// and QuickLoot's LootMenu are open in the UI's menu map.
+		bool MenusOnlyAlwaysUnpaused();
 
 		// Add the given perk to P1.
 		// Return true if successful.

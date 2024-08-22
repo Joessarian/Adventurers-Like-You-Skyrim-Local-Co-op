@@ -1106,7 +1106,7 @@ namespace ALYSLC
 					auto hash = Hash(a_eventName);
 					
 					// REMOVE when done debugging.
-					logger::debug("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//logger::debug("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 
 					if (p->isTransformed) 
 					{
@@ -2002,7 +2002,7 @@ namespace ALYSLC
 			if (ui && ue && p1 && inputEvent && inputEvent->GetDevice() == RE::INPUT_DEVICE::kGamepad)
 			{
 				bool dialogueMenuOpen = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
-				bool lootMenuOpen = ui->IsMenuOpen("LootMenu");
+				bool lootMenuOpen = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
 				// Open the container targeted while in the LootMenu.
 				bool lootMenuOpenContainer = false;
 				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInMap();
@@ -2236,7 +2236,10 @@ namespace ALYSLC
 						bool blockedAnalogStickInput = 
 						{
 							(thumbstickEvent || isLeftStickInput || isRotateInput) &&
-							(ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) || ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME))
+							(
+								ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+								ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
+							)
 						};
 						// Menus which overlay the entire screen or block players.
 						bool fullscreenMenuOpen = 
@@ -2352,7 +2355,7 @@ namespace ALYSLC
 					inputEvent = inputEvent->next;
 				}
 
-				if (auto pickData = RE::CrosshairPickData::GetSingleton(); ui && ui->IsMenuOpen("LootMenu") && pickData)
+				if (auto pickData = RE::CrosshairPickData::GetSingleton(); ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU) && pickData)
 				{
 					if (glob.coopSessionActive)
 					{
@@ -2369,7 +2372,7 @@ namespace ALYSLC
 									crosshairRefrPtr->GetName(), p->coopActor->GetName());
 								// NOTE: Keeping for now if needed.
 								// LootMenu closes and reopens before the container menu does, so a LootMenu request is also needed to maintain menu control for this player.
-								/*glob.moarm->InsertRequest(p->controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), "LootMenu", crosshairRefrPtr->GetHandle());
+								/*glob.moarm->InsertRequest(p->controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), GlobalCoopData::LOOT_MENU, crosshairRefrPtr->GetHandle());
 								glob.moarm->InsertRequest(p->controllerID, InputAction::kActivate, SteadyClock::now(), RE::ContainerMenu::MENU_NAME, crosshairRefrPtr->GetHandle());*/
 							}
 						}
@@ -2772,7 +2775,7 @@ namespace ALYSLC
 			_ModifyAnimationUpdateData(a_this, a_data);
 		}
 
-		bool PlayerCharacterHooks::NotifyAnimationGraph(RE::Character* a_this, const RE::BSFixedString& a_eventName)
+		bool PlayerCharacterHooks::NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName)
 		{
 			if (glob.globalDataInit && glob.allPlayersInit)
 			{
@@ -2780,7 +2783,7 @@ namespace ALYSLC
 				auto hash = Hash(a_eventName);
 				if (glob.coopSessionActive)
 				{
-					logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 					if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
 					{
 						// Skip bleedout animations when using the co-op revive system.

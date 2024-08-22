@@ -246,8 +246,8 @@ namespace ALYSLC
 								{
 									if (menuEntry.menu == stackMenu && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(name))
 									{
-										lootMenuOpen = name == "LootMenu"sv;
-										customMenuOpen = name == "CustomMenu"sv;
+										lootMenuOpen = name == GlobalCoopData::LOOT_MENU;
+										customMenuOpen = name == GlobalCoopData::CUSTOM_MENU;
 										dialogueMenuOpen = name == RE::DialogueMenu::MENU_NAME;
 										// Exit outer loop too.
 										iter = ui->menuStack.begin() + 1;

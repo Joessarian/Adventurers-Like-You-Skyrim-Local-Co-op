@@ -1681,13 +1681,13 @@ namespace ALYSLC
 				// Base + inc is higher than the previous highest level.
 				if (float value = data->skillBaseLevelsList[skill] + data->skillLevelIncreasesList[skill]; value > highestAVAmount)
 				{
-					logger::debug("[GLOB] GetHighestSharedAVLevel for {}: {} has the new highest AV amount: {}.", a_av, playerActor->GetName(), value);
+					logger::debug("[GLOB] GetHighestSharedAVLevel for {}: {} has the new highest AV amount: {}.", Util::GetActorValueName(a_av), playerActor->GetName(), value);
 					highestAVAmount = value;
 				}
 			}
 		}
 
-		logger::debug("[GLOB] GetHighestSharedAVLevel for {}: {}.", a_av, highestAVAmount);
+		logger::debug("[GLOB] GetHighestSharedAVLevel for {}: {}.", Util::GetActorValueName(a_av), highestAVAmount);
 		return highestAVAmount;
 	}
 
@@ -2496,44 +2496,46 @@ namespace ALYSLC
 				if (p->isActive && !p->isPlayer1 && glob.serializablePlayerData.contains(p->coopActor->formID))
 				{
 					auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
-					if (data->firstSavedLevel == 0)
+					if (data->firstSavedLevel != 0)
 					{
-						data->firstSavedLevel = p1->GetLevel();
-						logger::debug("[GLOB] PerformInitialAVAutoScaling: First co-op level-up for {}. First saved level set to {}. Auto-scale AVs.",
-							data->firstSavedLevel, p->coopActor->GetName());
+						continue;
+					}
 
-						// Check for differences between auto-scaled skills and current skills lists.
-						// If the current skill AV is greater than the auto-scaled one,
-						// indicating some progression before the first co-op session,
-						// save the difference to the skill increments list.
-						auto currentSkills = data->skillBaseLevelsList;
-						auto autoScaledSkills = Util::GetActorSkillAVs(p->coopActor.get());
-						for (auto j = 0; j < currentSkills.size(); ++j)
+					data->firstSavedLevel = p1->GetLevel();
+					logger::debug("[GLOB] PerformInitialAVAutoScaling: First co-op level-up for {}. First saved level set to {}. Auto-scale AVs.",
+						data->firstSavedLevel, p->coopActor->GetName());
+
+					// Check for differences between auto-scaled skills and current skills lists.
+					// If the current skill AV is greater than the auto-scaled one,
+					// indicating some progression before the first co-op session,
+					// save the difference to the skill increments list.
+					auto currentSkills = data->skillBaseLevelsList;
+					auto autoScaledSkills = Util::GetActorSkillAVs(p->coopActor.get());
+					for (auto j = 0; j < currentSkills.size(); ++j)
+					{
+						if (currentSkills[j] > autoScaledSkills[j])
 						{
-							if (currentSkills[j] > autoScaledSkills[j])
-							{
-								data->skillBaseLevelsList[j] = autoScaledSkills[j];
-								data->skillLevelIncreasesList[j] = currentSkills[j] - autoScaledSkills[j];
-							}
-							else
-							{
-								data->skillBaseLevelsList[j] = autoScaledSkills[j];
-								data->skillLevelIncreasesList[j] = 0.0f;
-							}
+							data->skillBaseLevelsList[j] = autoScaledSkills[j];
+							data->skillLevelIncreasesList[j] = currentSkills[j] - autoScaledSkills[j];
+						}
+						else
+						{
+							data->skillBaseLevelsList[j] = autoScaledSkills[j];
+							data->skillLevelIncreasesList[j] = 0.0f;
+						}
 
-							// REMOVE after debugging.
-							auto currentSkill = static_cast<Skill>(j);
-							if (SKILL_TO_AV_MAP.contains(currentSkill))
-							{
-								auto currentAV = SKILL_TO_AV_MAP.at(currentSkill);
-								logger::debug("[GLOB] PerformInitialAVAutoScaling: {}'s {} skill levels are now: ({} + {}) (current: {}, rescaled: {}).",
-									p->coopActor->GetName(),
-									std::format("{}", currentAV),
-									data->skillBaseLevelsList[j],
-									data->skillLevelIncreasesList[j],
-									currentSkills[j],
-									autoScaledSkills[j]);
-							}
+						// REMOVE after debugging.
+						auto currentSkill = static_cast<Skill>(j);
+						if (SKILL_TO_AV_MAP.contains(currentSkill))
+						{
+							auto currentAV = SKILL_TO_AV_MAP.at(currentSkill);
+							logger::debug("[GLOB] PerformInitialAVAutoScaling: {}'s {} skill levels are now: ({} + {}) (current: {}, rescaled: {}).",
+								p->coopActor->GetName(),
+								std::format("{}", currentAV),
+								data->skillBaseLevelsList[j],
+								data->skillLevelIncreasesList[j],
+								currentSkills[j],
+								autoScaledSkills[j]);
 						}
 					}
 				}
@@ -3675,7 +3677,7 @@ namespace ALYSLC
 
 			// Must have Maxsu2017's awesome 'Hero Menu Enhanced' mod installed:
 			// https://www.nexusmods.com/enderalspecialedition/mods/563
-			if (menuNameHash == "00E_heromenu"_h)
+			if (menuNameHash == Hash(ENHANCED_HERO_MENU))
 			{
 				if (a_info->shouldImport)
 				{
@@ -6602,8 +6604,8 @@ namespace ALYSLC
 			logger::error("[GLOB] ERR: TriggerAVAutoScaling: P1 is invalid: {}.", (bool)!p1);
 		}
 
-		logger::debug("[GLOB] TriggerAVAutoScaling: {} {}. Update base AVs: {}.", 
-			a_playerActor ? "Player Changed Class/Race:" : "All Active Players",
+		logger::debug("[GLOB] TriggerAVAutoScaling: {}{}. Update base AVs: {}.", 
+			a_playerActor ? "Player Changed Class/Race: " : "All Active Players",
 			a_playerActor ? a_playerActor->GetName() : "",
 			a_updateBaseAVs);
 
@@ -6638,9 +6640,11 @@ namespace ALYSLC
 				logger::debug("[GLOB] TriggerAVAutoScaling: After inc/dec: current XP, threshold: {}, {}, current level: {}.",
 					p1->skills->data->xp, p1->skills->data->levelThreshold, p1Level);
 
-				if (a_updateBaseAVs) 
+				// Update base AVs when playing Enderal, since companion players' base AVs start at 5, instead of 15.
+				if (a_updateBaseAVs || ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 				{
-					logger::debug("[GLOB] TriggerAVAutoScaling: Update base AVs for all players after triggering STACKED AV auto scaling.");
+					logger::debug("[GLOB] TriggerAVAutoScaling: Update base AVs for all players. Enderal: {}, STACKED scaling: {}.",
+						ALYSLC::EnderalCompat::g_enderalSSEInstalled, Settings::bStackCoopPlayerSkillAVAutoScaling);
 					// Set base Skill AV levels to newly-scaled ones.
 					for (const auto& p : glob.coopPlayers)
 					{

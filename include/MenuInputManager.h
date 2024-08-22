@@ -218,124 +218,6 @@ namespace ALYSLC
 			return a_itemList->GetSelectedItem();
 		}
 
-		// Set handled menu type based on the current menu name atop the stack.
-		inline bool UpdateMenuType()
-		{
-			logger::debug("[MIM] UpdateMenuType: menu name: {}", menuName);
-			auto oldMenuType = openedMenuType;
-			auto menuNameHash = Hash(menuName);
-
-			// Clear all menus.
-			barterMenu = nullptr;
-			bookMenu = nullptr;
-			containerMenu = nullptr;
-			dialogueMenu = nullptr;
-			favoritesMenu = nullptr;
-			inventoryMenu = nullptr;
-			journalMenu = nullptr;
-			lockpickingMenu = nullptr;
-			magicMenu = nullptr;
-			mapMenu = nullptr;
-
-			auto ui = RE::UI::GetSingleton(); 
-			if (ui) 
-			{
-				if (menuNameHash == Hash(RE::BarterMenu::MENU_NAME))
-				{
-					barterMenu = ui->GetMenu<RE::BarterMenu>();
-				}
-				if (menuNameHash == Hash(RE::BookMenu::MENU_NAME)) 
-				{
-					bookMenu = ui->GetMenu<RE::BookMenu>();
-				}
-				if (menuNameHash == Hash(RE::ContainerMenu::MENU_NAME)) 
-				{
-					containerMenu = ui->GetMenu<RE::ContainerMenu>();
-				}
-				if (menuNameHash == Hash(RE::DialogueMenu::MENU_NAME))
-				{
-					dialogueMenu = ui->GetMenu<RE::DialogueMenu>();
-				}
-				if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
-				{
-					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
-				}
-				if (menuNameHash == Hash(RE::InventoryMenu::MENU_NAME))
-				{
-					inventoryMenu = ui->GetMenu<RE::InventoryMenu>();
-				}
-				if (menuNameHash == Hash(RE::JournalMenu::MENU_NAME))
-				{
-					journalMenu = ui->GetMenu<RE::JournalMenu>();
-				}
-				if (menuNameHash == Hash(RE::LockpickingMenu::MENU_NAME))
-				{
-					lockpickingMenu = ui->GetMenu<RE::LockpickingMenu>();
-				}
-				if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
-				{
-					magicMenu = ui->GetMenu<RE::MagicMenu>();
-				}
-				if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
-				{
-					mapMenu = ui->GetMenu<RE::MapMenu>();
-				}
-			}
-			
-			// Will only be one of the following.
-			if (barterMenu) 
-			{
-				openedMenuType = SupportedMenu::kBarter;
-			}
-			else if (bookMenu) 
-			{
-				openedMenuType = SupportedMenu::kBook;
-			}
-			else if (containerMenu)
-			{
-				openedMenuType = SupportedMenu::kContainer;
-			}
-			else if (dialogueMenu)
-			{
-				openedMenuType = SupportedMenu::kDialogue;
-			}
-			else if (favoritesMenu)
-			{
-				openedMenuType = SupportedMenu::kFavorites;
-			}
-			else if (inventoryMenu)
-			{
-				openedMenuType = SupportedMenu::kInventory;
-			}
-			else if (journalMenu)
-			{
-				openedMenuType = SupportedMenu::kJournal;
-			}
-			else if (lockpickingMenu)
-			{
-				openedMenuType = SupportedMenu::kLockpicking;
-			}
-			else if (magicMenu)
-			{
-				openedMenuType = SupportedMenu::kMagic;
-			}
-			else if (mapMenu)
-			{
-				openedMenuType = SupportedMenu::kMap;
-			}
-			else if (ui && ui->GetMenu("LootMenu"))
-			{
-				openedMenuType = SupportedMenu::kLoot;
-			}
-			else
-			{
-				// Use default menu control binds in all other cases.
-				openedMenuType = SupportedMenu::kDefault;
-			}
-
-			return oldMenuType != openedMenuType;
-		}
-
 		// Update menu control map based on the menu-controlling player's input.
 		// Resolve a menu input event type to handle and then handle that event type.
 		void CheckControllerInput();
@@ -438,6 +320,9 @@ namespace ALYSLC
 		// which does not update the count automatically since the Favorites Menu shows P1's item
 		// count for that consumable.
 		void UpdateFavoritedConsumableCount(RE::TESForm* a_selectedForm, uint32_t a_selectedIndex);
+
+		// Set handled menu type based on the current menu name atop the stack.
+		bool UpdateMenuType();
 
 		//
 		// Members

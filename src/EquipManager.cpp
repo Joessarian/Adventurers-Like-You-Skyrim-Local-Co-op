@@ -122,8 +122,8 @@ namespace ALYSLC
 			coopActor->DoReset3D(false);
 		}
 
-		// Don't re-equip items when transformed or when un-pausing without refreshing data.
-		if (!p->isTransformed && currentState == ManagerState::kAwaitingRefresh) 
+		// Don't re-equip items when transformed or when un-pausing after initialized and not refreshing data.
+		if (!p->isTransformed && currentState != ManagerState::kPaused) 
 		{
 			// Unequip all if the player is not a humanoid.
 			if (!coopActor->HasKeyword(glob.npcKeyword))
@@ -156,6 +156,7 @@ namespace ALYSLC
 			}
 		}
 
+		coopActor->SetActorValue(RE::ActorValue::kWeaponSpeedMult, 0.0f);
 		// Ensure player is visible.
 		coopActor->SetAlpha(1.0f);
 	}

@@ -5265,8 +5265,15 @@ namespace ALYSLC
 					auto keyCode = controlMap->GetMappedKey(glob.paInfoHolder->ACTIONS_TO_P1_UE_STRINGS.at(!InputAction::kStatsMenu), RE::INPUT_DEVICE::kKeyboard);
 					if (keyCode != 255)
 					{
-						// Is bound, open Hero Menu.
-						HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kStatsMenu);
+						// Is bound, open enhanced Hero Menu.
+						//HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kStatsMenu);
+						bool succ = glob.moarm->InsertRequest(a_p->controllerID, InputAction::kStatsMenu, SteadyClock::now(), GlobalCoopData::ENHANCED_HERO_MENU);
+						// If request was successfully inserted, open the requested menu.
+						if (succ)
+						{
+							a_p->pam->SendButtonEvent(InputAction::kStatsMenu, RE::INPUT_DEVICE::kKeyboard, ButtonEventPressType::kInstantTrigger, 0.0f, true);
+						}
+
 						return;
 					}
 					else

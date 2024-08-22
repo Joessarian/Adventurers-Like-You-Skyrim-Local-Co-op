@@ -1857,7 +1857,7 @@ namespace ALYSLC
 			// Freezes co-op companion players in midair temporarily, 
 			// so only set don't move flag when not paragliding, on the ground, 
 			// and not trying to jump.
-			if (shouldStopMoving && !isAirborneWhileJumping && !startJump)
+			if (shouldStopMoving && !p->pam->isAttacking && !isAirborneWhileJumping && !startJump)
 			{
 				ClearKeepOffsetFromActor();
 				SetDontMove(true);

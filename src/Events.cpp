@@ -253,7 +253,7 @@ namespace ALYSLC
 					if (!fromCoopEntity && toCoopPlayer)
 					{
 						bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
-						bool transferFromContainer = fromContainerMenu || ui->IsMenuOpen("LootMenu"sv);
+						bool transferFromContainer = fromContainerMenu || ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
 						if (transferFromContainer)
 						{
 							if (fromContainerMenu)
@@ -1172,7 +1172,7 @@ namespace ALYSLC
 						// NOTE: Don't know of a way to hook ProcessMessage() for custom menus, so we'll copy player data here instead.
 						// Must have Maxsu2017's awesome 'Hero Menu Enhanced' mod installed:
 						// https://www.nexusmods.com/enderalspecialedition/mods/563
-						if (menuNameHash == "00E_heromenu"_h)
+						if (menuNameHash == Hash(GlobalCoopData::ENHANCED_HERO_MENU))
 						{
 							if (a_menuEvent->opening)
 							{

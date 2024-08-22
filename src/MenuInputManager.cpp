@@ -3758,6 +3758,123 @@ namespace ALYSLC
 			});
 	}
 
+	bool MenuInputManager::UpdateMenuType()
+	{
+		logger::debug("[MIM] UpdateMenuType: menu name: {}", menuName);
+		auto oldMenuType = openedMenuType;
+		auto menuNameHash = Hash(menuName);
+
+		// Clear all menus.
+		barterMenu = nullptr;
+		bookMenu = nullptr;
+		containerMenu = nullptr;
+		dialogueMenu = nullptr;
+		favoritesMenu = nullptr;
+		inventoryMenu = nullptr;
+		journalMenu = nullptr;
+		lockpickingMenu = nullptr;
+		magicMenu = nullptr;
+		mapMenu = nullptr;
+
+		auto ui = RE::UI::GetSingleton();
+		if (ui)
+		{
+			if (menuNameHash == Hash(RE::BarterMenu::MENU_NAME))
+			{
+				barterMenu = ui->GetMenu<RE::BarterMenu>();
+			}
+			if (menuNameHash == Hash(RE::BookMenu::MENU_NAME))
+			{
+				bookMenu = ui->GetMenu<RE::BookMenu>();
+			}
+			if (menuNameHash == Hash(RE::ContainerMenu::MENU_NAME))
+			{
+				containerMenu = ui->GetMenu<RE::ContainerMenu>();
+			}
+			if (menuNameHash == Hash(RE::DialogueMenu::MENU_NAME))
+			{
+				dialogueMenu = ui->GetMenu<RE::DialogueMenu>();
+			}
+			if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
+			{
+				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
+			}
+			if (menuNameHash == Hash(RE::InventoryMenu::MENU_NAME))
+			{
+				inventoryMenu = ui->GetMenu<RE::InventoryMenu>();
+			}
+			if (menuNameHash == Hash(RE::JournalMenu::MENU_NAME))
+			{
+				journalMenu = ui->GetMenu<RE::JournalMenu>();
+			}
+			if (menuNameHash == Hash(RE::LockpickingMenu::MENU_NAME))
+			{
+				lockpickingMenu = ui->GetMenu<RE::LockpickingMenu>();
+			}
+			if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
+			{
+				magicMenu = ui->GetMenu<RE::MagicMenu>();
+			}
+			if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
+			{
+				mapMenu = ui->GetMenu<RE::MapMenu>();
+			}
+		}
+
+		// Will only be one of the following.
+		if (barterMenu)
+		{
+			openedMenuType = SupportedMenu::kBarter;
+		}
+		else if (bookMenu)
+		{
+			openedMenuType = SupportedMenu::kBook;
+		}
+		else if (containerMenu)
+		{
+			openedMenuType = SupportedMenu::kContainer;
+		}
+		else if (dialogueMenu)
+		{
+			openedMenuType = SupportedMenu::kDialogue;
+		}
+		else if (favoritesMenu)
+		{
+			openedMenuType = SupportedMenu::kFavorites;
+		}
+		else if (inventoryMenu)
+		{
+			openedMenuType = SupportedMenu::kInventory;
+		}
+		else if (journalMenu)
+		{
+			openedMenuType = SupportedMenu::kJournal;
+		}
+		else if (lockpickingMenu)
+		{
+			openedMenuType = SupportedMenu::kLockpicking;
+		}
+		else if (magicMenu)
+		{
+			openedMenuType = SupportedMenu::kMagic;
+		}
+		else if (mapMenu)
+		{
+			openedMenuType = SupportedMenu::kMap;
+		}
+		else if (ui && ui->GetMenu(GlobalCoopData::LOOT_MENU))
+		{
+			openedMenuType = SupportedMenu::kLoot;
+		}
+		else
+		{
+			// Use default menu control binds in all other cases.
+			openedMenuType = SupportedMenu::kDefault;
+		}
+
+		return oldMenuType != openedMenuType;
+	}
+
 	MenuBindInfo::MenuBindInfo() :
 		idCode(0), device(RE::INPUT_DEVICE::kGamepad), eventName(""sv),
 		context(RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode), eventType(MenuInputEventType::kReleasedNoEvent),
@@ -3917,7 +4034,7 @@ namespace ALYSLC
 						// Ignore requests that are older than 3 seconds.
 						bool isMessageBoxMenu = Hash(a_menuName) == Hash(RE::MessageBoxMenu::MENU_NAME);
 						// Ignore max 3 second request lifetime for the LootMenu.
-						bool ignoreReqExpiration = Hash(a_menuName) == "LootMenu"_h;
+						bool ignoreReqExpiration = Hash(a_menuName) == Hash(GlobalCoopData::LOOT_MENU);
 						bool checkForOldestReq = { 
 							!isMessageBoxMenu &&
 							(ignoreReqExpiration || secsSinceReq < 3.0f) && 
@@ -4320,13 +4437,13 @@ namespace ALYSLC
 
 								break;
 							}
-							case ("CustomMenu"_h):
+							case Hash(GlobalCoopData::CUSTOM_MENU.data(), GlobalCoopData::CUSTOM_MENU.size()):
 							{
 								// Could be any menu triggered by script using SKSE's CustomMenu.
 								// Support all actions that trigger UIExtensions menus here.
 								// For the most part, however, the mod's scripts directly set the requesting menu control CID,
 								// which bypasses queued request checks done here. Serves more as a failsafe.
-								if (Hash(currentReq.reqMenuName) == "CustomMenu"_h ||
+								if (Hash(currentReq.reqMenuName) == Hash(GlobalCoopData::CUSTOM_MENU)||
 									(currentReq.fromAction == InputAction::kCoopDebugMenu ||
 									currentReq.fromAction == InputAction::kCoopIdlesMenu ||
 									currentReq.fromAction == InputAction::kCoopMiniGamesMenu ||
@@ -4337,16 +4454,16 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: CustomMenu (UIExtensions): {} is in control of menu.", p->coopActor->GetName());
+									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {} (UIExtensions): {} is in control of menu.", GlobalCoopData::CUSTOM_MENU, p->coopActor->GetName());
 								}
 
 								break;
 							}
-							case ("LootMenu"_h):
+							case Hash(GlobalCoopData::LOOT_MENU.data(), GlobalCoopData::LOOT_MENU.size()):
 							{
 								// Crosshair pick data valid and request queued by crosshair movement.
 								auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
-								if (!crosshairPickData || currentReq.fromAction != InputAction::kMoveCrosshair || Hash(currentReq.reqMenuName) != "LootMenu"_h)
+								if (!crosshairPickData || currentReq.fromAction != InputAction::kMoveCrosshair || Hash(currentReq.reqMenuName) != Hash(GlobalCoopData::LOOT_MENU))
 								{
 									break;
 								}
@@ -4369,13 +4486,25 @@ namespace ALYSLC
 										{
 											secsSinceChosenReq = secsSinceReq;
 											resolvedCID = p->controllerID;
-											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: LootMenu: {} is in control of {}'s quick loot menu.",
-												p->coopActor->GetName(), assocRefrPtr->GetName());
+											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of {}'s quick loot menu.",
+												GlobalCoopData::LOOT_MENU, p->coopActor->GetName(), assocRefrPtr->GetName());
 
 											// Store info about which player sent the last crosshair event.
 											glob.quickLootReqCID = p->controllerID;
 										}
 									}
+								}
+
+								break;
+							}
+							case Hash(GlobalCoopData::ENHANCED_HERO_MENU.data(), GlobalCoopData::ENHANCED_HERO_MENU.size()):
+							{
+								// Request to open the enhanced Hero Menu.
+								if (Hash(currentReq.reqMenuName) == Hash(GlobalCoopData::ENHANCED_HERO_MENU) || currentReq.fromAction == InputAction::kStatsMenu)
+								{
+									secsSinceChosenReq = secsSinceReq;
+									resolvedCID = p->controllerID;
+									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of menu.", GlobalCoopData::ENHANCED_HERO_MENU, p->coopActor->GetName());
 								}
 
 								break;

@@ -693,6 +693,34 @@ namespace ALYSLC
 		// Const Members
 		//
 
+
+		// Max number of composing input actions assignable to a bind.
+		static constexpr uint8_t MAX_ACTIONS_PER_BIND = 4;
+
+		// Max number of controllers/players supported during co-op, including P1.
+		static constexpr uint8_t MAX_PLAYER_COUNT = 4;
+
+		// ALYSLC plugin name to load data from (Skyrim SE or Enderal SE).
+		// Defaults to skyrim plugin name.
+		static inline std::string_view PLUGIN_NAME = "ALYSLC.esp"sv;
+
+		// Set of selectable perks through the Stats Menu.
+		// Populated with all perk tree node perks on global data initialization.
+		static inline std::set<RE::BGSPerk*> SELECTABLE_PERKS;
+
+		// Custom Menu name.
+		static constexpr inline std::string_view CUSTOM_MENU = "CustomMenu"sv;
+
+		// Enhanced Hero Menu name.
+		static constexpr inline std::string_view ENHANCED_HERO_MENU = "00E_heromenu"sv;
+
+		// Loot Menu name.
+		static constexpr inline std::string_view LOOT_MENU = "LootMenu"sv;
+
+
+		// Summoning menu name.
+		static constexpr inline std::string_view SETUP_MENU_NAME = "ALYSLC Setup Menu"sv;
+
 		// Maps actor values to their corresponding player skills.
 		static inline const std::unordered_map<RE::ActorValue, Skill> AV_TO_SKILL_MAP = {
 			{ RE::ActorValue::kOneHanded, Skill::kOneHanded },
@@ -832,7 +860,7 @@ namespace ALYSLC
 			RE::CraftingMenu::MENU_NAME,
 			RE::StatsMenu::MENU_NAME,
 			RE::TrainingMenu::MENU_NAME,
-			"00E_heromenu"
+			ENHANCED_HERO_MENU
 		};
 
 		// Default cyclable emote idle animation event names.
@@ -1146,7 +1174,7 @@ namespace ALYSLC
 			RE::MessageBoxMenu::MENU_NAME, RE::RaceSexMenu::MENU_NAME,
 			RE::SleepWaitMenu::MENU_NAME, RE::StatsMenu::MENU_NAME, 
 			RE::TrainingMenu::MENU_NAME, RE::TweenMenu::MENU_NAME, 
-			"00E_heromenu", "CustomMenu"sv, "LootMenu"sv
+			ENHANCED_HERO_MENU, CUSTOM_MENU, LOOT_MENU
 		};
 
 		// Player nodes to raycast to from the camera node position when performing camera LOS checks.
@@ -1270,23 +1298,6 @@ namespace ALYSLC
 			{ RE::WEAPON_TYPE::kTwoHandAxe, RE::WEAPON_TYPE::kOneHandAxe },
 			{ RE::WEAPON_TYPE::kTwoHandSword, RE::WEAPON_TYPE::kOneHandSword }
 		};
-
-		// Max number of composing input actions assignable to a bind.
-		static constexpr uint8_t MAX_ACTIONS_PER_BIND = 4;
-
-		// Max number of controllers/players supported during co-op, including P1.
-		static constexpr uint8_t MAX_PLAYER_COUNT = 4;
-
-		// ALYSLC plugin name to load data from (Skyrim SE or Enderal SE).
-		// Defaults to skyrim plugin name.
-		static inline std::string_view PLUGIN_NAME = "ALYSLC.esp"sv;
-
-		// Set of selectable perks through the Stats Menu.
-		// Populated with all perk tree node perks on global data initialization.
-		static inline std::set<RE::BGSPerk*> SELECTABLE_PERKS;
-
-		// Summoning menu name.
-		static inline const std::string_view SETUP_MENU_NAME = "ALYSLC Setup Menu"sv;
 
 		//
 		// Members
