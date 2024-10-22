@@ -23,7 +23,6 @@ namespace ALYSLC
 
 	std::vector<uint32_t> ControllerDataHolder::SetupConnectedCoopControllers()
 	{
-		logger::debug("[CDH] SetupConnectedCoopControllers");
 		// Called in papyrus script before summoning players.
 		std::vector<uint32_t> controllerIDs;
 		// If P1's CID is not set yet, return empty list to end co-op.
@@ -46,12 +45,12 @@ namespace ALYSLC
 				auto errorNum = XInputGetState(controllerIndex, &inputState);
 				if (errorNum == ERROR_SUCCESS)
 				{
-					logger::debug("[CDH] SetupConnectedCoopControllers: Co-op player controller {} has been registered.", controllerIndex);
+					logger::info("[CDH] SetupConnectedCoopControllers: Co-op player controller {} has been registered.", controllerIndex);
 					controllerIDs.push_back(controllerIndex);
 				}
 				else
 				{
-					logger::debug("[CDH] SetupConnectedCoopControllers: No controller connected at index {}. Error #{}.", controllerIndex, errorNum);
+					ALYSLC::Log("[CDH] SetupConnectedCoopControllers: No controller connected at index {}. Error #{}.", controllerIndex, errorNum);
 				}
 			}
 
@@ -71,7 +70,7 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				logger::error("[CDH] ERR: UpdateAnalogStickState: Could not get input state for active controller {}", a_controllerID);
+				ALYSLC::Log("[CDH] ERR: UpdateAnalogStickState: Could not get input state for active controller {}", a_controllerID);
 			}
 
 			return;
@@ -79,7 +78,6 @@ namespace ALYSLC
 
 		if (a_playerID <= -1) 
 		{
-			logger::error("[CDH] ERR: UpdateAnalogStickState: Invalid player ID ({}) for CID {}.", a_playerID, a_controllerID);
 			return;
 		}
 
@@ -189,7 +187,7 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				logger::error("[CDH] ERR: UpdateInputStatesAndMask: Could not get input state for active controller {}", a_controllerID);
+				ALYSLC::Log("[CDH] ERR: UpdateInputStatesAndMask: Could not get input state for active controller {}", a_controllerID);
 			}
 
 			return;
@@ -197,7 +195,6 @@ namespace ALYSLC
 
 		if (a_playerID <= -1) 
 		{
-			logger::error("[CDH] ERR: UpdateInputStatesAndMask: Invalid player ID ({}) for CID {}.", a_playerID, a_controllerID);
 			return;
 		}
 

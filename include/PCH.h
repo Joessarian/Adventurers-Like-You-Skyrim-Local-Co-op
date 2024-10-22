@@ -60,4 +60,48 @@ namespace util
 #define OFFSET_3(se, ae, vr) se
 #endif
 
+// Define to enable debug prints, otherwise no spdlog logger function will run.
+// Temporary solution until fixing the 'Debug' build configuration,
+// which builds successfully but freezes the SKSE loader while it checks the plugin.
+// IMPORTANT DEV NOTE: Ensure this flag is NOT defined before pushing changes.
+// #define ALYSLC_DEBUG
+namespace ALYSLC
+{
+#ifdef ALYSLC_DEBUG
+	template <class... Args>
+	struct Log
+	{
+		Log(spdlog::format_string_t<Args...>&& a_fmt, Args&&... a_args, std::source_location a_sourceLocation = std::source_location::current())
+		{
+			spdlog::log<Args...>
+			(
+				spdlog::source_loc
+				{
+					a_sourceLocation.file_name(),
+					static_cast<int>(a_sourceLocation.line()),
+					a_sourceLocation.function_name() 
+				},
+				spdlog::level::debug,
+				std::forward<spdlog::format_string_t<Args...>>(a_fmt),
+				std::forward<Args>(a_args)...
+			);
+		}
+	};
+
+	template <class... Args>
+	Log(spdlog::format_string_t<Args...>&&, Args&&...) -> Log<Args...>;
+
+#else
+	template <class... Args>
+	struct Log
+	{
+		Log(spdlog::format_string_t<Args...>&& a_fmt, Args&&... a_args, std::source_location a_sourceLocation = std::source_location::current())
+		{ }
+	};
+
+	template <class... Args>
+	Log(spdlog::format_string_t<Args...>&&, Args&&...) -> Log<Args...>;
+#endif
+}
+
 #include "Version.h"

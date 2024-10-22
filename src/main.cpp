@@ -17,24 +17,22 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	switch (msg->type) {
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
-		logger::info("[Main] Data loaded.");
+		logger::info("[MAIN] Data loaded.");
 		// Install all hooks.
 		ALYSLC::Hooks::Install();
 		// Add event sinks for all necessary events.
 		ALYSLC::Events::RegisterEvents();
 		// Register debug overlay menu.
 		ALYSLC::DebugOverlayMenu::Register();
-		// Set logger level for the mod.
-		ALYSLC::Settings::SetLoggerLevel();
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:
 	{
-		logger::info("[Main] New game.");
+		logger::info("[MAIN] New game.");
 		// Set default serialization data through the Load() function.
 		if (SKSE::SerializationInterface* intfc = SKSE::detail::APIStorage::get().serializationInterface; intfc)
 		{
-			logger::info("[Main] New game. Setting default serialization data on load.");
+			logger::info("[MAIN] New game. Setting default serialization data on load.");
 			ALYSLC::SerializationCallbacks::Load(intfc);
 		}
 
@@ -44,32 +42,35 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostLoad:
 	{
-		logger::info("[Main] Post load.");
-		// Run compatibility checks and initialization.
-		ALYSLC::EnderalCompat::CheckForEnderalSSE();
-		ALYSLC::MiniMapCompat::CheckForMiniMap();
-		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
-		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
-		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
-		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
-		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
+		logger::info("[MAIN] Post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoadGame:
 	{
-		logger::info("[Main] Post load game.");
+		logger::info("[MAIN] Post load game.");
+		// Run compatibility checks and initialization.
+		ALYSLC::EnderalCompat::CheckForEnderalSSE();
+		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
+		ALYSLC::MiniMapCompat::CheckForMiniMap();
+		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
+		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
+		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
+		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
+		ALYSLC::TKDodgeCompat::CheckForTKDodge();
+		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
+		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
 		break;
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
 	{
-		logger::info("[Main] Post-post load.");
+		logger::info("[MAIN] Post-post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPreLoadGame:
 	{
-		logger::info("[Main] Pre load game.");
+		logger::info("[MAIN] Pre load game.");
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
 		break;
@@ -98,7 +99,7 @@ void InitializeLog()
 #ifndef NDEBUG
 	const auto level = spdlog::level::trace;
 #else
-	const auto level = spdlog::level::info;
+	const auto level = spdlog::level::debug;
 #endif
 
 	auto log = std::make_shared<spdlog::logger>("global log"s, std::move(sink));
@@ -130,19 +131,19 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
 	if (auto messaging = SKSE::GetMessagingInterface(); !messaging->RegisterListener("SKSE", SKSEMessageHandler))
 	{
-		logger::critical("[MAIN] ERR: Could not register messaging interface listener.");
+		logger::error("[MAIN] ERR: Could not register messaging interface listener.");
 		return false;
 	}
 
 	if (auto papyrus = SKSE::GetPapyrusInterface(); !papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
 	{
-		logger::critical("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
+		logger::error("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
 		return false;
 	}
 
 	if (auto serialization = SKSE::GetSerializationInterface(); !serialization) 
 	{
-		logger::critical("[MAIN] ERR: Could not get serialization interface.");
+		logger::error("[MAIN] ERR: Could not get serialization interface.");
 		return false;
 	}
 	else
@@ -179,7 +180,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a
 
 	if (a_skse->IsEditor())
 	{
-		logger::critical("[MAIN] Loaded in editor, marking as incompatible."sv);
+		logger::error("[MAIN] Loaded in editor, marking as incompatible."sv);
 		return false;
 	}
 
@@ -192,7 +193,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a
 #endif
 	)
 	{
-		logger::critical(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
+		logger::error(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
 		return false;
 	}
 

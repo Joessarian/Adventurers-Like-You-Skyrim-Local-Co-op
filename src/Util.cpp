@@ -261,8 +261,6 @@ namespace ALYSLC
 			// Change the form in the actor's inventory to favorited/unfavorited.
 			if (!a_actor || !a_form)
 			{
-				logger::error("[Util] ERR: ChangeFormFavoritesStatus: Actor invalid: {}, form invalid: {}.", 
-					(bool)!a_actor, (bool)!a_form);
 				return;
 			}
 
@@ -270,7 +268,6 @@ namespace ALYSLC
 			auto inventoryChanges = a_actor->GetInventoryChanges();
 			if (!inventoryChanges)
 			{
-				logger::error("[Util] ERR: ChangeFormFavoritesStatus: {}'s inventory changes are invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -334,19 +331,18 @@ namespace ALYSLC
 			{
 				return;
 			}
+
 			const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
 			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 			if (script)
 			{
 				if (a_add)
 				{
-					script->SetCommand("player.addperk " + fmt::format("{:x}", a_perk->formID));
-					script->CompileAndRun(nullptr);
+					p1->AddPerk(a_perk);
 				}
 				else
 				{
-					script->SetCommand("player.removeperk " + fmt::format("{:x}", a_perk->formID));
-					script->CompileAndRun(nullptr);
+					p1->RemovePerk(a_perk);
 				}
 
 				delete script;
@@ -367,6 +363,11 @@ namespace ALYSLC
 			{
 				// Call actor add/remove perk function for P1.
 				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (!p1)
+				{
+					return false;
+				}
+
 				if (a_add) 
 				{
 					p1->AddPerk(a_perk, 1);
@@ -375,6 +376,8 @@ namespace ALYSLC
 				{
 					p1->RemovePerk(a_perk);
 				}
+
+				return true;
 			}
 			else if (auto actorBase = a_actor->GetActorBase(); actorBase)
 			{
@@ -677,10 +680,6 @@ namespace ALYSLC
 					{
 						skillsArr[i] = a_actor->GetBaseActorValue(currentAV);
 					}
-
-					// REMOVE when done debugging.
-					/*logger::debug("[Util] GetActorSkillAVs: {}'s skill AV {} is {}.",
-						a_actor->GetName(), std::format("{}", currentAV), skillsArr[i]);*/
 				}
 			}
 
@@ -1848,7 +1847,7 @@ namespace ALYSLC
 				// REMOVE
 				if (a_showDebugDraws)
 				{
-					logger::debug
+					ALYSLC::Log
 					(
 						"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to crosshair pos: ({}, 0x{:X}, type: {})",
 						a_targetRefr->GetName(),
@@ -1859,7 +1858,7 @@ namespace ALYSLC
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 						hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 					);
-					logger::debug
+					ALYSLC::Log
 					(
 						"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 						hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -1897,7 +1896,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to data location pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -1908,7 +1907,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -1941,7 +1940,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to world translate pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -1952,7 +1951,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -1986,7 +1985,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to 3D center pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -1997,7 +1996,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				logger::debug
+				ALYSLC::Log
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -2089,6 +2088,18 @@ namespace ALYSLC
 			);
 			float newTRatio = (a_ratio < 0.5f) ? easeInT : easeOutT;
 			return std::lerp(a_prev, a_next, newTRatio);
+		}
+
+		RE::NiMatrix3 InterpolateRotMatrix(const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio)
+		{
+			RE::NiQuaternion qA;
+			RE::NiQuaternion qB;
+			typedef void (*tNiMatrixToNiQuaternion)(RE::NiQuaternion& a_quatOut, const RE::NiMatrix3& a_matIn);
+			static REL::Relocation<tNiMatrixToNiQuaternion> NiMatrixToNiQuaternion{ RELOCATION_ID(69467, 70844) };	// C6E2D0, C967D0
+			NiMatrixToNiQuaternion(qA, a_matA);
+			NiMatrixToNiQuaternion(qB, a_matB);
+
+			return QuaternionToRotationMatrix(QuaternionSlerp(qA, qB, a_ratio));
 		}
 
 		bool IsFavorited(RE::Actor* a_actor, RE::TESForm* a_form)
@@ -2314,7 +2325,6 @@ namespace ALYSLC
 
 				// Actors are always selectable, regardless of their activate text.
 				hasValidActivationText = !truncActivateText.empty() || a_refr->As<RE::Actor>();
-				logger::debug("[Util] IsSelectableRefr: {} has activate text {}.", a_refr->GetName(), truncActivateText);
 			}
 
 			// Invalid activate text, cannot select.
@@ -2374,6 +2384,86 @@ namespace ALYSLC
 			return mat;
 		}
 
+		bool MenusOnlyAlwaysOpen() 
+		{
+			if (ALYSLC::QuickLootCompat::g_quickLootInstalled)
+			{
+				if (auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
+				{
+					return false;
+				}
+			}
+
+			if (const auto controlMap = RE::ControlMap::GetSingleton(); controlMap)
+			{
+				for (const auto& context : controlMap->contextPriorityStack)
+				{
+					if (context != RE::ControlMap::InputContextID::kGameplay)
+					{
+						return false;
+					}
+				}
+
+				return true;
+			}
+
+			return false;
+		}
+
+		bool MenusOnlyAlwaysOpenInMap()
+		{
+			// TODO: Potentially remove this function or the stack one,
+			// since there no longer appears to be a reason to need to differentiate 
+			// between what is open on the menu stack and in the menu map.
+			// The menu context check method below needs further testing first.
+
+			// Return true if no temporary menus are open, false otherwise.
+
+			/*if (auto ui = RE::UI::GetSingleton(); ui)
+			{
+				return 
+				(
+					std::find_if
+					(
+						ui->menuMap.begin(), ui->menuMap.end(), 
+						[](const RE::BSTTuple<RE::BSFixedString, RE::UI::UIMenuEntry>& a_menuEntry) 
+						{
+							return a_menuEntry.second.menu && !a_menuEntry.second.menu->AlwaysOpen();
+						}
+					) == ui->menuMap.end()
+				);
+			}*/
+
+			return MenusOnlyAlwaysOpen();
+		}
+
+		bool MenusOnlyAlwaysOpenInStack()
+		{
+			// TODO: Potentially remove this function or the map one,
+			// since there no longer appears to be a reason to need to differentiate
+			// between what is open on the menu stack and in the menu map.
+			// The menu context check method below needs further testing first.
+
+			// Return true if no temporary menus are open, false otherwise.
+
+			/*if (auto ui = RE::UI::GetSingleton(); ui)
+			{
+				return
+				(
+					std::find_if
+					(
+						ui->menuStack.begin(), ui->menuStack.end(), 
+						[](RE::GPtr<RE::IMenu>& a_menu) 
+						{
+							return !a_menu->AlwaysOpen();
+						}
+					) == ui->menuStack.end()
+				);
+			}*/
+
+			return MenusOnlyAlwaysOpen();
+		}
+
 		bool MenusOnlyAlwaysUnpaused()
 		{
 			// Returns true if only 'always open' menus or the LootMenu is open.
@@ -2381,7 +2471,7 @@ namespace ALYSLC
 			if (auto ui = RE::UI::GetSingleton(); ui)
 			{
 				bool onlyAlwaysOpen = MenusOnlyAlwaysOpenInMap();
-				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv);
+				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv) || ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
 			}
 
 			return false;
@@ -2398,16 +2488,16 @@ namespace ALYSLC
 				return false;
 			}
 
-			succ = ChangePerk(p1, a_perk, true);
 			// Add perk to actor base and actor.
-			// NOTE: Have to use both funcs since neither consistently 
+			// NOTE: Have to use both funcs since neither consistently
 			// removes/adds perks in time on their own before the LevelUp menu opens.
 			// Re-add to singleton perk list too.
-			if (!Player1PerkListHasPerk(a_perk)) 
+			if (!Player1PerkListHasPerk(a_perk))
 			{
 				p1->perks.emplace_back(a_perk);
 			}
 
+			succ = ChangePerk(p1, a_perk, true);
 			ChangeP1Perk(a_perk, true);
 			return succ;
 		}
@@ -2446,41 +2536,34 @@ namespace ALYSLC
 			}
 
 			bool succ = false;
+
+			// Remove the perk from the P1 singleton perk list.
+			if (Player1PerkListHasPerk(a_perk))
+			{
+				// Construct a list of perks without the removed perk.
+				RE::BSTArray<RE::BGSPerk*> newPerksList;
+				std::for_each(
+					p1->perks.begin(), p1->perks.end(),
+					[&newPerksList, a_perk](RE::BGSPerk* perk) {
+						if (perk != a_perk)
+						{
+							newPerksList.emplace_back(perk);
+						}
+					});
+
+				// Clear and re-add all other perks.
+				p1->perks.clear();
+				std::for_each(
+					newPerksList.begin(), newPerksList.end(),
+					[p1](RE::BGSPerk* perk) {
+						p1->perks.emplace_back(perk);
+					});
+			}
+
 			// Remove perk from actor base and actor.
 			// NOTE: Have to use both funcs since neither consistently 
 			// removes/adds perks in time on their own before the LevelUp menu opens.
 			succ = ChangePerk(p1, a_perk, false);
-			// Then remove the perk from the P1 singleton perk list.
-			if (Player1PerkListHasPerk(a_perk)) 
-			{
-				// Construct a list of perks without the removed perk.
-				RE::BSTArray<RE::BGSPerk*> newPerksList;
-				std::for_each
-				(
-					p1->perks.begin(), p1->perks.end(), 
-					[&newPerksList, a_perk](RE::BGSPerk* perk) 
-					{ 
-						if (perk != a_perk) 
-						{ 
-							newPerksList.emplace_back(perk); 
-						} 
-					}
-				);
-
-				// Clear and re-add all other perks.
-				p1->perks.clear();
-				std::for_each
-				(
-					newPerksList.begin(), newPerksList.end(), 
-					[p1](RE::BGSPerk* perk) 
-					{ 
-						p1->perks.emplace_back(perk); 
-					}
-				);
-
-				succ &= !Player1PerkListHasPerk(a_perk);
-			}
-
 			ChangeP1Perk(a_perk, false);
 			return succ;
 		}
@@ -2619,6 +2702,104 @@ namespace ALYSLC
 
 			// BOOM!
 			a_actorToPush->currentProcess->KnockExplosion(a_actorToPush, a_contactPos, a_force);
+		}
+
+		RE::NiMatrix3 QuaternionToRotationMatrix(const RE::NiQuaternion& a_quat)
+		{
+			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
+			// Convert quaternion to rotation matrix.
+
+			float sqw = a_quat.w * a_quat.w;
+			float sqx = a_quat.x * a_quat.x;
+			float sqy = a_quat.y * a_quat.y;
+			float sqz = a_quat.z * a_quat.z;
+
+			RE::NiMatrix3 ret;
+
+			// invs (inverse square length) is only required if quaternion is not already normalised
+			float invs = 1.f / (sqx + sqy + sqz + sqw);
+			ret.entry[0][0] = (sqx - sqy - sqz + sqw) * invs;  // since sqw + sqx + sqy + sqz =1/invs*invs
+			ret.entry[1][1] = (-sqx + sqy - sqz + sqw) * invs;
+			ret.entry[2][2] = (-sqx - sqy + sqz + sqw) * invs;
+
+			float tmp1 = a_quat.x * a_quat.y;
+			float tmp2 = a_quat.z * a_quat.w;
+			ret.entry[1][0] = 2.f * (tmp1 + tmp2) * invs;
+			ret.entry[0][1] = 2.f * (tmp1 - tmp2) * invs;
+
+			tmp1 = a_quat.x * a_quat.z;
+			tmp2 = a_quat.y * a_quat.w;
+			ret.entry[2][0] = 2.f * (tmp1 - tmp2) * invs;
+			ret.entry[0][2] = 2.f * (tmp1 + tmp2) * invs;
+			tmp1 = a_quat.y * a_quat.z;
+			tmp2 = a_quat.x * a_quat.w;
+			ret.entry[2][1] = 2.f * (tmp1 + tmp2) * invs;
+			ret.entry[1][2] = 2.f * (tmp1 - tmp2) * invs;
+
+			return ret;
+		}
+
+		RE::NiQuaternion QuaternionSlerp(const RE::NiQuaternion& a_quatA, const RE::NiQuaternion& a_quatB, double a_t)
+		{
+			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L139
+			// Slerp from quaternion a to quaternion b with the given ratio t.
+
+			// quaternion to return
+			RE::NiQuaternion result;
+			// Calculate angle between them.
+			float cosHalfTheta = 
+			(
+				a_quatA.w * a_quatB.w + 
+				a_quatA.x * a_quatA.x + 
+				a_quatA.y * a_quatB.y + 
+				a_quatA.z * a_quatB.z
+			);
+			// if qa=qb or qa=-qb then theta = 0 and we can return qb
+			if (fabs(cosHalfTheta) >= 0.99999)
+			{
+				result.w = a_quatB.w;
+				result.x = a_quatB.x;
+				result.y = a_quatB.y;
+				result.z = a_quatB.z;
+				return result;
+			}
+
+			// If the dot product is negative, slerp won't take
+			// the shorter path. Note that qb and -qb are equivalent when
+			// the negation is applied to all four components. Fix by
+			// reversing one quaternion.
+			RE::NiQuaternion q2 = a_quatB;
+			if (cosHalfTheta < 0)
+			{
+				q2.w *= -1;
+				q2.x *= -1;
+				q2.y *= -1;
+				q2.z *= -1;
+				cosHalfTheta *= -1;
+			}
+
+			// Calculate temporary values.
+			float halfTheta = acosf(cosHalfTheta);
+			float sinHalfTheta = sqrtf(1.0 - cosHalfTheta * cosHalfTheta);
+			// if theta = 180 degrees then result is not fully defined
+			// we could rotate around any axis normal to qa or qb
+			if (fabs(sinHalfTheta) < 0.001)
+			{  // fabs is floating point absolute
+				result.w = (a_quatA.w * 0.5 + q2.w * 0.5);
+				result.x = (a_quatA.x * 0.5 + q2.x * 0.5);
+				result.y = (a_quatA.y * 0.5 + q2.y * 0.5);
+				result.z = (a_quatA.z * 0.5 + q2.z * 0.5);
+				return result;
+			}
+			float ratioA = sinf((1 - a_t) * halfTheta) / sinHalfTheta;
+			float ratioB = sinf(a_t * halfTheta) / sinHalfTheta;
+			// calculate Quaternion
+			result.w = (a_quatA.w * ratioA + q2.w * ratioB);
+			result.x = (a_quatA.x * ratioA + q2.x * ratioB);
+			result.y = (a_quatA.y * ratioA + q2.y * ratioB);
+			result.z = (a_quatA.z * ratioA + q2.z * ratioB);
+
+			return result;
 		}
 
 		RE::TESObjectREFR* RecurseForRefr(RE::NiNode* a_parentNode) 
@@ -3189,6 +3370,24 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
+		void SetRotationMatrixFromDirection(RE::NiMatrix3& a_rotMatrix, const float& a_x, const float& a_y, const float& a_z)
+		{
+			// Set given rotation matrix based on the given direction vector components.
+
+			float cb = std::sqrtf(1 - a_z * a_z);
+			float ca = a_y / cb;
+			float sa = -a_x / cb;
+			a_rotMatrix.entry[0][0] = ca;
+			a_rotMatrix.entry[0][1] = a_x;
+			a_rotMatrix.entry[0][2] = sa * a_z;
+			a_rotMatrix.entry[1][0] = sa;
+			a_rotMatrix.entry[1][1] = a_y;
+			a_rotMatrix.entry[1][2] = -ca * a_z;
+			a_rotMatrix.entry[2][0] = 0.0;
+			a_rotMatrix.entry[2][1] = a_z;
+			a_rotMatrix.entry[2][2] = cb;
+		}
+
 		bool ShouldCastWithP1(RE::SpellItem* a_spell)
 		{
 			// Return true if the spell should be cast by one of P1's magic casters.
@@ -3723,14 +3922,12 @@ namespace ALYSLC
 				return false;
 			}
 
-			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[Util] TriggerFalseSkillLevelUp: Lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					logger::debug("[Util] TriggerFalseSkillLevelUp: Lock obtained: 0x{:X}.", hash);
+					ALYSLC::Log("[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})", hash);
 					// Save old level, XP, level threshold, and skill data.
 					// Will be restored after skill level up triggers.
 					const auto oldLevel = p1->GetBaseActorValue(a_avSkill);
@@ -3762,7 +3959,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					logger::debug("[Util] TriggerFalseSkillLevelUp: Failed to obtain lock: 0x{:X}.", hash);
+					ALYSLC::Log("[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", hash);
 				}
 			}
 

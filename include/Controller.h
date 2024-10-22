@@ -133,11 +133,6 @@ namespace ALYSLC
 		// Get cached analog stick state data for the given controller's LS/RS.
 		inline const AnalogStickState& GetAnalogStickState(const int32_t& a_controllerID, const bool& a_isLS) const
 		{
-			if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
-			{
-				logger::error("[CDH] ERR: GetAnalogStickState: CID invalid: {}, analog stick: {}", a_controllerID, a_isLS ? "LS" : "RS");
-			}
-
 			return (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
 		}
 
@@ -151,11 +146,6 @@ namespace ALYSLC
 		// Get input state data for the given controller and input action index (must NOT be a player action).
 		inline const InputState& GetInputState(const int32_t& a_controllerID, const InputAction& a_index) const
 		{
-			if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
-			{
-				logger::error("[CDH] ERR: GetInputState: CID invalid: {}, input action: {}", a_controllerID, a_index);
-			}
-
 			return inputStatesList[a_controllerID][!a_index];
 		}
 

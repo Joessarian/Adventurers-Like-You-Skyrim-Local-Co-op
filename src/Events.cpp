@@ -65,7 +65,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::critical("[Events] ERR: Could not register for bleedout events.");
+			logger::error("[Events] ERR: Could not register for bleedout events.");
 		}
 	}
 
@@ -76,33 +76,15 @@ namespace ALYSLC
 			if (glob.livingPlayers == 0 && a_bleedoutEvent->actor->IsPlayerRef()) 
 			{
 				auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
-				logger::debug("[Events] Bleedout Event: P1 is bleeding out while co-op session is over and all players are dead. P1 health is ({}). Is dead: {}. Killing P1.",
-					p1->GetActorValue(RE::ActorValue::kHealth), p1->IsDead());
 				Util::NativeFunctions::SetActorBaseDataFlag(p1->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false);
+				// Set to zero health, which usually triggers a death event.
 				p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -p1->GetActorValue(RE::ActorValue::kHealth));
-				// Kill calls fail on P1 at times, especially when the player dies in water, and the game will not reload.
-				// The kill console command appears to work when this happens, so as an extra layer of insurance,
-				// run that command here.
-				/*const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-				const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-				if (script)
-				{
-					script->SetCommand("kill");
-					script->CompileAndRun(p1);
-					delete script;
-				}
-
-				p1->KillImpl(p1, FLT_MAX, false, false);
-				p1->KillImmediate();
-				p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);*/
 			}
 			else if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_bleedoutEvent->actor); foundIndex != -1) 
 			{
 				if (const auto& p = glob.coopPlayers[foundIndex]; p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh) 
 				{
 					auto midHighProc = p->coopActor->currentProcess->middleHigh;
-					logger::debug("[Events] Bleedout Event: player {}. Deferred kill timer: {}.", 
-						p->coopActor->GetName(), midHighProc->deferredKillTimer);
 					midHighProc->deferredKillTimer = FLT_MAX;
 				}
 
@@ -129,7 +111,7 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			logger::critical("[Events] ERR: Could not register for cell change events."); 
+			logger::error("[Events] ERR: Could not register for cell change events."); 
 		}
 	}
 
@@ -160,10 +142,6 @@ namespace ALYSLC
 							attachedRef->GetCurrent3D()->UpdateDownwardPass(updateData, 0);
 						}
 					}
-
-					logger::debug("[Events] Cell Change Event: {} {} P1's cell.",
-						glob.coopPlayers[foundIndex]->coopActor->GetName(),
-						a_cellChangeEvent->isCellAttached ? "attached to" : "detached from");
 
 					// Prevent equip state bug mentioned in the equip manager where two handed weapons' animations break.
 					for (const auto& p : glob.coopPlayers)
@@ -197,7 +175,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::critical("[Events] ERR: Could not register for container changed events.");
+			logger::error("[Events] ERR: Could not register for container changed events.");
 		}
 	}
 
@@ -212,13 +190,6 @@ namespace ALYSLC
 				bool fromCoopEntity = glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer);
 				bool toCoopPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->newContainer);
 
-				// REMOVE when done debugging.
-				/*logger::debug("[Events] Container Changed Event: 0x{:X} -> 0x{:X}: 0x{:X}. From/to P1: {}, {}, from co-op entity: {}, to co-op player: {}.",
-					a_containerChangedEvent->oldContainer,
-					a_containerChangedEvent->newContainer,
-					a_containerChangedEvent->baseObj,
-					fromP1, toP1, fromCoopEntity, toCoopPlayer);*/
-
 				// Update P1's has-paraglider state before doing anything else.
 				if ((ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled) && (toP1 || fromP1))
 				{
@@ -230,8 +201,6 @@ namespace ALYSLC
 							{
 								auto invCounts = p1->GetInventoryCounts();
 								ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = invCounts.contains(paraglider) && invCounts.at(paraglider) > 0;
-								logger::debug("[Events] Container Changed Event: {} now {} a paraglider!",
-									p1->GetName(), ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider ? "has" : "does not have");
 
 								// Add gale spell if not known already (Enderal only).
 								if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
@@ -284,7 +253,7 @@ namespace ALYSLC
 								{
 									if (auto boundObj = baseObj->As<RE::TESBoundObject>(); boundObj)
 									{
-										logger::debug("[Events] Container Changed Event: Removing base item {} (x{}) and giving to {}.", 
+										ALYSLC::Log("[Events] Container Changed Event: Removing base item {} (x{}) and giving to {}.", 
 											boundObj->GetName(), a_containerChangedEvent->itemCount, p->coopActor->GetName());
 										p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 										// IMPORTANT:
@@ -299,7 +268,7 @@ namespace ALYSLC
 								{
 									if (auto boundObj = refr->GetBaseObject(); boundObj)
 									{
-										logger::debug("[Events] Container Changed Event: Removing reference item {} (x{}) and giving to {}.", 
+										ALYSLC::Log("[Events] Container Changed Event: Removing reference item {} (x{}) and giving to {}.", 
 											boundObj->GetName(), a_containerChangedEvent->itemCount, p->coopActor->GetName());
 										p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 										// IMPORTANT:
@@ -332,7 +301,7 @@ namespace ALYSLC
 
 										if (boundObj)
 										{
-											logger::debug("[Events] Container Changed Event: Removing item from {} (x{}) to P1 (from 0x{:X}).",
+											ALYSLC::Log("[Events] Container Changed Event: Removing item from {} (x{}) to P1 (from 0x{:X}).",
 												p->coopActor->GetName(), a_containerChangedEvent->itemCount, a_containerChangedEvent->oldContainer);
 											p->coopActor->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kStoreInTeammate, nullptr, p1);
 										}
@@ -353,9 +322,8 @@ namespace ALYSLC
 				{
 					const auto& giftingP = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer)];
 					auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
-					if (!gifteePtr) 
+					if (!gifteePtr || !gifteePtr.get()) 
 					{
-						logger::critical("[Events] Container Changed Event: Giftee player actor ptr is invalid.");
 						return EventResult::kContinue;
 					}
 
@@ -374,7 +342,7 @@ namespace ALYSLC
 
 					if (boundObj) 
 					{
-						logger::debug("[Events] Container Changed Event: Removing {} (x{}) from P1 to {} (from gifting player {}).",
+						ALYSLC::Log("[Events] Container Changed Event: Removing {} (x{}) from P1 to {} (from gifting player {}).",
 							boundObj->GetName(), a_containerChangedEvent->itemCount,
 							gifteePtr->GetName(), giftingP->coopActor->GetName());
 						p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
@@ -412,18 +380,6 @@ namespace ALYSLC
 								RE::DebugNotification(fmt::format("Received an additional gold from party size scaling (x{}).", glob.activePlayers * Settings::fAdditionalGoldPerPlayerMult).c_str());
 							}
 
-							// REMOVE
-							RE::TESForm* oldContainer = Util::GetFormFromFID(a_containerChangedEvent->oldContainer);
-							auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-							auto refr2 = oldContainer ? oldContainer->AsReference() : nullptr;
-							logger::debug("[Events] Container Changed Event: Looted {} gold and got an additional {} gold from container {} (refr: {}), owned by {}/{}.",
-								a_containerChangedEvent->itemCount,
-								a_containerChangedEvent->itemCount * (glob.activePlayers - 1),
-								oldContainer ? oldContainer->GetName() : "NONE",
-								refr ? refr->GetName() : "NONE",
-								refr && refr->GetOwner() ? refr->GetOwner()->GetName() : "NONE",
-								refr2 && refr2->GetOwner() ? refr2->GetOwner()->GetName() : "NONE");
-
 							return EventResult::kContinue;
 						}
 					}
@@ -450,8 +406,6 @@ namespace ALYSLC
 										float rand = static_cast<uint8_t>(GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size() * (generator() / (float)((std::mt19937::max)())));
 										const auto newSkillbookFID = GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand];
 										auto newSkillbook = RE::TESForm::LookupByID(newSkillbookFID);
-										logger::debug("[Events] Container Changed Event: {} looted a skillbook of tier {} for skill {}. Active player {} is getting skillbook {}.",
-											toP->coopActor->GetName(), tier, skill, p->coopActor->GetName(), newSkillbook ? newSkillbook->GetName() : "NONE");
 										p->coopActor->AddObjectToContainer(newSkillbook->As<RE::AlchemyItem>(), nullptr, 1, p->coopActor.get());
 
 										// Show in TrueHUD recent loot widget by adding and removing the skillbook from P1.
@@ -494,20 +448,20 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			logger::critical("[Events] ERR: Could not register for death events."); 
+			logger::error("[Events] ERR: Could not register for death events."); 
 		}
 	}
 
 	EventResult CoopDeathEventHandler::ProcessEvent(const RE::TESDeathEvent* a_deathEvent, RE::BSTEventSource<RE::TESDeathEvent>*)
 	{
 		// REMOVE after debugging.
-		logger::debug("[Events] Death Event: {}, killed by death, I mean, erm... {}. Is dead: {}, essential flag set: {}, {}",
+		ALYSLC::Log("[Events] Death Event: {}, killed by death, I mean, erm... by {}. Is dead: {}, essential flag set: {}, {}",
 			a_deathEvent->actorDying ? a_deathEvent->actorDying->GetName() : "N/A",
 			a_deathEvent->actorKiller ? a_deathEvent->actorKiller->GetName() : "N/A",
 			a_deathEvent->actorDying->IsDead(),
 			a_deathEvent->actorDying->As<RE::Actor>()->GetActorBase() ?
-				a_deathEvent->actorDying->As<RE::Actor>()->GetActorBase()->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kEssential) :
-				  false,
+			a_deathEvent->actorDying->As<RE::Actor>()->GetActorBase()->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kEssential) :
+			false,
 			a_deathEvent->actorDying->As<RE::Actor>()->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential));
 
 		return EventResult::kContinue;
@@ -529,7 +483,7 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			logger::critical("[Events] ERR: Could not register for equip events."); 
+			logger::error("[Events] ERR: Could not register for equip events."); 
 		}
 	}
 
@@ -539,7 +493,7 @@ namespace ALYSLC
 		{
 			if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_equipEvent->actor); foundIndex != -1) 
 			{
-				logger::debug("[Events] Equip Event: {} -> {} (0x{:X}): equipped: {}, original refr: 0x{:X}, unique id: 0x{:X}",
+				ALYSLC::Log("[Events] Equip Event: {} -> {} (0x{:X}): equipped: {}, original refr: 0x{:X}, unique id: 0x{:X}",
 					(a_equipEvent && a_equipEvent->actor.get()) ? (a_equipEvent->actor->GetName()) : "N/A",
 					(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->GetName() : "N/A",
 					(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->formID : 0xDEAD,
@@ -554,14 +508,16 @@ namespace ALYSLC
 					auto equipForm = RE::TESForm::LookupByID(a_equipEvent->baseObject);
 					// Equipped while bartering (with a co-op companion player's inventory copied over to P1).
 					// Ignore these equip events and do not refresh equip state.
-					bool affectedByInventoryTransfer = {
+					bool affectedByInventoryTransfer = 
+					{
 						RE::UI::GetSingleton()->IsMenuOpen(RE::BarterMenu::MENU_NAME) &&
 						((glob.mim->managerMenuCID != -1 && p->coopActor == glob.player1Actor) ||
 						 (glob.mim->managerMenuCID == p->controllerID))
 					};
 
 					// Game will sometimes unequip P1's weapons/magic during killmoves. Don't refresh equip state.
-					if ((equipForm && !affectedByInventoryTransfer) && (!p->isPlayer1 || (!p->coopActor->IsInKillMove() && !p->pam->isBeingKillmovedByAnotherPlayer)))
+					if ((equipForm && !affectedByInventoryTransfer) && 
+						(!p->isPlayer1 || (!p->coopActor->IsInKillMove() && !p->pam->isBeingKillmovedByAnotherPlayer)))
 					{
 						p->em->RefreshEquipState(RefreshSlots::kAll, equipForm, a_equipEvent->equipped);
 					}
@@ -588,7 +544,7 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			logger::critical("[Events] ERR: Could not register for onhit events.");
+			logger::error("[Events] ERR: Could not register for onhit events.");
 		}
 	}
 
@@ -608,11 +564,6 @@ namespace ALYSLC
 					if (auto foundVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr.get()); foundVictimIndex != -1)
 					{
 						const auto& p = glob.coopPlayers[foundVictimIndex];
-						logger::debug("[Events] Hit Event: {} hit {}. Player is essential: {}, {}",
-							aggressorRefr->GetName(), hitRefr->GetName(),
-							p->coopActor->GetActorBase()->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kEssential),
-							p->coopActor->IsEssential());
-
 						if (!p->coopActor->IsEssential())
 						{
 							p->pam->SetEssentialForReviveSystem();
@@ -634,12 +585,10 @@ namespace ALYSLC
 						if (attackingObj->IsWeapon()) 
 						{
 							damage = attackingObj->As<RE::TESObjectWEAP>()->GetAttackDamage();
-							logger::debug("[Events] Damage from weapon: {}", damage);
 						}
 						else if (attackingObj->IsMagicItem() && attackingObj->As<RE::SpellItem>())
 						{
 							damage = attackingObj->As<RE::SpellItem>()->GetCostliestEffectItem()->GetMagnitude();
-							logger::debug("[Events] Damage from spell: {}", damage);
 						}
 
 						// No spell attack damage event hook.
@@ -652,7 +601,7 @@ namespace ALYSLC
 
 							if (lightArmorBaseXP > 0.0f)
 							{
-								logger::debug("[Events] Hit Event: {} was hit by {}'s {}, adding Light Armor Skill XP, base XP: {}.",
+								ALYSLC::Log("[Events] Hit Event: {} was hit by {}'s {}, adding Light Armor Skill XP, base XP: {}.",
 									p->coopActor->GetName(),
 									aggressorRefr ? aggressorRefr->GetName() : "NONE",
 									attackingObj->GetName(),
@@ -662,7 +611,7 @@ namespace ALYSLC
 
 							if (heavyArmorBaseXP > 0.0f)
 							{
-								logger::debug("[Events] Hit Event: {} was hit by {}'s {}, adding Heavy Armor Skill XP, base XP: {}.",
+								ALYSLC::Log("[Events] Hit Event: {} was hit by {}'s {}, adding Heavy Armor Skill XP, base XP: {}.",
 									p->coopActor->GetName(),
 									aggressorRefr ? aggressorRefr->GetName() : "NONE",
 									attackingObj->GetName(),
@@ -671,18 +620,6 @@ namespace ALYSLC
 							}
 						}
 					}
-
-					logger::debug("[Events] Hit Event: Player {} hit by {}. Player is hostile to {} and vice versa: {}, {}. Attacking object: {} (type {}), projectile: {} (type {}). Base damage: {}.",
-						p->coopActor->GetName(),
-						aggressorRefr->GetName(),
-						aggressorRefr->GetName(),
-						aggressorRefr->As<RE::Actor>() ? p->coopActor->IsHostileToActor(aggressorRefr->As<RE::Actor>()) : false,
-						aggressorRefr->As<RE::Actor>() ? aggressorRefr->As<RE::Actor>()->IsHostileToActor(p->coopActor.get()) : false,
-						attackingObj ? attackingObj->GetName() : "NONE",
-						attackingObj ? *attackingObj->formType : RE::FormType::None,
-						attackingProj ? attackingProj->GetName() : "NONE",
-						attackingProj ? *attackingProj->formType : RE::FormType::None,
-						damage);
 				}
 				*/
 
@@ -729,9 +666,6 @@ namespace ALYSLC
 							// Start assault alarm on P1 to trigger bounty if the hit actor
 							// is not angry with the player or is not in combat currently.
 							float detectionPct = (std::clamp(static_cast<float>(hitActor->RequestDetectionLevel(p->coopActor.get())), -20.0f, 0.0f) + 20.0f) * 5.0f;
-							logger::debug("[Events] Hit Event: {} detects {} {}%, hostile: {}, in combat: {}.",
-								hitActor->GetName(), p->coopActor->GetName(), detectionPct,
-								hitActor->IsHostileToActor(p->coopActor.get()), hitActor->IsInCombat());
 							if (detectionPct > 0.0f && (!hitActor->IsHostileToActor(p->coopActor.get()) || !hitActor->IsInCombat()))
 							{
 								// Caused by player + projectile is the hit actor (splat) or hit event projectile's form type is not projectile (bonk).
@@ -740,8 +674,6 @@ namespace ALYSLC
 															  (projectileRefr && !projectileRefr->As<RE::BGSProjectile>()));
 								if (!isBonkOrSplatHitEvent || !p->isInGodMode) 
 								{
-									logger::debug("[Events] Hit Event: {} is starting combat with aggressor player {}.",
-										hitActor->GetName(), p->coopActor->GetName());
 									Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
 									Util::Papyrus::SendAssaultAlarm(hitActor);
 								}
@@ -752,12 +684,6 @@ namespace ALYSLC
 						{
 							auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
 							const float damageMult = p->pam->reqDamageMult;
-							logger::debug("[Events] Hit Event: {} is the aggressor: is power attacking: {}, source form: {}, damage mult: {}, set weap mults: {}",
-								p->coopActor->GetName(),
-								p->pam->isPowerAttacking,
-								attackingObj ? attackingObj->GetName() : "NONE",
-								damageMult,
-								p->pam->attackDamageMultSet);
 
 							// Grant co-op companion XP.
 							// Do not give attacking player XP if hitting another player while they are in god mode.
@@ -773,19 +699,19 @@ namespace ALYSLC
 								{
 									if (weap->IsRanged() && !weap->IsStaff())
 									{
-										logger::debug("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+										ALYSLC::Log("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
 											RE::ActorValue::kArchery, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
 										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kArchery, weap->GetAttackDamage());
 									}
 									else if (weap->IsOneHandedAxe() || weap->IsOneHandedDagger() || weap->IsOneHandedMace() || weap->IsOneHandedSword())
 									{
-										logger::debug("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+										ALYSLC::Log("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
 											RE::ActorValue::kOneHanded, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
 										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kOneHanded, weap->GetAttackDamage());
 									}
 									else if (weap->IsTwoHandedAxe() || weap->IsTwoHandedSword())
 									{
-										logger::debug("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+										ALYSLC::Log("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
 											RE::ActorValue::kTwoHanded, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
 										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kTwoHanded, weap->GetAttackDamage());
 									}
@@ -794,7 +720,7 @@ namespace ALYSLC
 								// Block XP.
 								if (p->pam->isBashing && p->em->HasShieldEquipped())
 								{
-									logger::debug("[Events] Hit Event: Adding 5 XP to {}'s Block Skill for a successful shield bash", p->coopActor->GetName());
+									ALYSLC::Log("[Events] Hit Event: Adding 5 XP to {}'s Block Skill for a successful shield bash", p->coopActor->GetName());
 									GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kBlock, 5.0f);
 								}
 
@@ -805,11 +731,10 @@ namespace ALYSLC
 								if (isSneakAttack)
 								{
 									const auto sneakMsg = fmt::format("{} performed a sneak attack for {:.1f}x damage!", p->coopActor->GetName(), damageMult);
-									logger::debug("[Events] Hit Event: {}", sneakMsg);
 									RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
 									if ((weap && weap->IsRanged()) || magicItem)
 									{
-										logger::debug("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful ranged sneak attack with {} (0x{:X}, {})",
+										ALYSLC::Log("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful ranged sneak attack with {} (0x{:X}, {})",
 											p->coopActor->GetName(),
 											weap ? weap->GetName() : magicItem ? magicItem->GetName() :   "NONE",
 											weap ? weap->formID : magicItem ? magicItem->formID : 0xDEAD,
@@ -818,7 +743,7 @@ namespace ALYSLC
 									}
 									else
 									{
-										logger::debug("[Events] Hit Event: Adding 30 XP to {}'s Sneak Skill for a successful melee sneak attack with {} (0x{:X}, {})",
+										ALYSLC::Log("[Events] Hit Event: Adding 30 XP to {}'s Sneak Skill for a successful melee sneak attack with {} (0x{:X}, {})",
 											p->coopActor->GetName(),
 											weap ? weap->GetName() : "fists",
 											weap ? weap->formID : 0xDEAD,
@@ -833,11 +758,10 @@ namespace ALYSLC
 							// Thrown object sneak attacks (for all players).
 							if (canGrantXP && a_hitEvent->flags.any(RE::TESHitEvent::Flag::kSneakAttack) && projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
 							{
-								logger::debug("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful thrown object sneak attack with {} (0x{:X}, {})",
+								ALYSLC::Log("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful thrown object sneak attack with {} (0x{:X}, {})",
 									p->coopActor->GetName(), projectileRefr->GetName(), projectileRefr->formID, *projectileRefr->formType);
 								GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kSneak, 2.5f);
 								const auto sneakMsg = fmt::format("{} performed a sneak attack for 2.0x damage!", p->coopActor->GetName());
-								logger::debug("[Events] Hit Event: {}", sneakMsg);
 								RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
 								Util::SendCriticalHitEvent(p->coopActor.get(), nullptr, true);
 							}
@@ -866,15 +790,15 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::critical("[Events] ERR: Could not register for load game events.");
+			logger::error("[Events] ERR: Could not register for load game events.");
 		}
 	}
 
 	EventResult CoopLoadGameEventHandler::ProcessEvent(const RE::TESLoadGameEvent* a_loadGameEvent, RE::BSTEventSource<RE::TESLoadGameEvent>*)
 	{
+		// Teardown any active co-op session when P1 loads a save.
 		if (glob.coopSessionActive && a_loadGameEvent)
 		{
-			logger::debug("[Events] Player 1 is loading a save. Stopping all listener threads.");
 			GlobalCoopData::TeardownCoopSession(false);
 		}
 
@@ -897,7 +821,7 @@ namespace ALYSLC
 		}
 		else
 		{ 
-			logger::debug("[Events] ERR: Could not register for menu open/close events."); 
+			logger::error("[Events] ERR: Could not register for menu open/close events."); 
 		}
 	}
 
@@ -905,18 +829,17 @@ namespace ALYSLC
 	{
 		if (glob.globalDataInit) 
 		{
-			bool onlyAlwaysOpenInStack = Util::MenusOnlyAlwaysOpenInStack();
-			bool onlyAlwaysOpenInMap = Util::MenusOnlyAlwaysOpenInMap();
+			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+
 			// REMOVE
-			logger::debug("[Events] Menu Open/Close Event: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}, {}.",
+			ALYSLC::Log("[Events] Menu Open/Close Event: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}.",
 				a_menuEvent->menuName, 
 				a_menuEvent->opening ? "OPENING" : "CLOSING",
 				glob.menuCID,
 				glob.prevMenuCID,
 				glob.mim->managerMenuCID,
 				glob.serializablePlayerData.empty(),
-				onlyAlwaysOpenInMap, 
-				onlyAlwaysOpenInStack);
+				onlyAlwaysOpen);
 			
 			// Have to modify P1's level threshold each time the Stats menu opens and the LevelUp menu closes if changes were made to the XP threshold mult.
 			// Modifying the threshold right as the LevelUp menu opens will not always see changes reflected in P1's XP total 
@@ -944,7 +867,7 @@ namespace ALYSLC
 					}
 
 					// REMOVE
-					logger::debug("[Events] Menu Open/Close Event: BEFORE: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
+					ALYSLC::Log("[Events] Menu Open/Close Event: BEFORE: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
 						levelupMenuEvent ? "LevelUp" : "Stats",
 						a_menuEvent->opening ? "opening" : "closing", 
 						playerXP, playerXPThreshold,
@@ -967,7 +890,7 @@ namespace ALYSLC
 					}
 
 					// REMOVE
-					logger::debug("[Events] Menu Open/Close Event: AFTER: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
+					ALYSLC::Log("[Events] Menu Open/Close Event: AFTER: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
 						levelupMenuEvent ? "LevelUp" : "Stats",
 						a_menuEvent->opening ? "opening" : "closing", 
 						playerXP, playerXPThreshold,
@@ -983,18 +906,12 @@ namespace ALYSLC
 			auto msgQ = RE::UIMessageQueue::GetSingleton();
 			if (ui && glob.allPlayersInit && a_menuEvent->opening && Hash(a_menuEvent->menuName) == Hash(RE::LoadingMenu::MENU_NAME))
 			{
-				logger::debug("[Events] Loading screen opened. Co-op session active: {}.", glob.coopSessionActive);
 				// Close message box menu ('You died' message).
 				if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME)) 
 				{
 					if (msgQ)
 					{
 						msgQ->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr);
-						logger::debug("[Events] Successfully messaged MessageBoxMenu to hide.");
-					}
-					else
-					{
-						logger::warn("[Events] Failed to message MessageBoxMenu to hide.");
 					}
 				}
 
@@ -1015,18 +932,22 @@ namespace ALYSLC
 			if (ui && glob.coopSessionActive && a_menuEvent)
 			{
 				// REMOVE when done debugging.
-				logger::debug("[Events] ===========[Menu Map BEGIN]===========");
+				ALYSLC::Log("[Events] ===========[Menu Map BEGIN]===========");
 				for (auto& menu : ui->menuMap)
 				{
 					if (ui->IsMenuOpen(menu.first))
 					{
-						logger::debug("[Events] Menu {} is open.", menu.first);
+						ALYSLC::Log("[Events] Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.", 
+							menu.first,
+							menu.second.menu->PausesGame(),
+							menu.second.menu->AlwaysOpen(),
+							*menu.second.menu->menuFlags);
 					}
 				}
 
-				logger::debug("[Events] ===========[Menu Map END]===========");
+				ALYSLC::Log("[Events] ===========[Menu Map END]===========");
 
-				logger::debug("[Events] ===========[Menu Stack BEGIN]===========");
+				ALYSLC::Log("[Events] ===========[Menu Stack BEGIN]===========");
 
 				for (auto iter = ui->menuStack.begin(); iter != ui->menuStack.end(); ++iter)
 				{
@@ -1035,18 +956,22 @@ namespace ALYSLC
 					{
 						if (menuEntry.menu == menu)
 						{
-							logger::debug("[Events] Index {}: Menu {} is open.",
-								iter - ui->menuStack.begin(), name);
+							ALYSLC::Log("[Events] Index {}: Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.",
+								iter - ui->menuStack.begin(),
+								name,
+								menu->PausesGame(),
+								menu->AlwaysOpen(),
+								*menu->menuFlags);
 						}
 					}
 				}
 
-				logger::debug("[Events] ===========[Menu Stack END]===========");
+				ALYSLC::Log("[Events] ===========[Menu Stack END]===========");
 
 				// Open the ALYSLC overlay if it isn't open already.
 				if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 				{
-					logger::debug("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
+					ALYSLC::Log("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
 					DebugOverlayMenu::Load();
 				}
 
@@ -1058,11 +983,6 @@ namespace ALYSLC
 					if (msgQ)
 					{
 						msgQ->AddMessage(RE::HUDMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-						logger::debug("[Events] Menu Open/Close Event: Successfully messaged HUDMenu to show.");
-					}
-					else
-					{
-						logger::warn("[Events] Menu Open/Close Event: Failed to message HUDMenu to show.");
 					}
 
 					if (hudMenu) 
@@ -1074,7 +994,6 @@ namespace ALYSLC
 				// [Enderal]: Keep perks synced among all players whenever a MessageBox menu opens/closes.
 				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && Hash(a_menuEvent->menuName) == Hash(RE::MessageBoxMenu::MENU_NAME))
 				{
-					logger::warn("[Events] Menu Open/Close Event: ENDERAL: MessageBoxMenu opened/closed. Sync all perks.");
 					GlobalCoopData::SyncSharedPerks();
 				}
 
@@ -1082,19 +1001,16 @@ namespace ALYSLC
 				if (Hash(a_menuEvent->menuName) == Hash(RE::DialogueMenu::MENU_NAME))
 				{
 					const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-					// REMOVE
-					logger::debug("[Events] Menu Open/Close Event: Dialogue menu {}. Try to lock: 0x{:X}.", a_menuEvent->opening ? "opening" : "closing", hash);
 					{
 						std::unique_lock<std::mutex> lock(glob.moarm->reqDialogueControlMutex, std::try_to_lock);
 						if (lock)
 						{
-							logger::debug("[Events] Menu Open/Close Event: Dialogue menu CID. Lock obtained: 0x{:X}.", hash);
+							ALYSLC::Log("[Events] Menu Open/Close Event: Dialogue menu CID. Lock obtained. (0x{:X})", hash);
 							glob.moarm->reqDialoguePlayerCID = -1;
 						}
 						else
 						{
-							// REMOVE
-							logger::error("[Events] Menu Open/Close Event: Dialogue menu CID. Failed to obtain lock for dialogue control CID.");
+							ALYSLC::Log("[Events] Menu Open/Close Event: Dialogue menu CID. Failed to obtain lock. (0x{:X})", hash);
 						}
 					}
 				}
@@ -1120,7 +1036,7 @@ namespace ALYSLC
 					if (glob.mim->IsRunning() && glob.mim->managerMenuCID != -1)
 					{
 						GlobalCoopData::SetMenuCIDs(glob.mim->managerMenuCID);
-						logger::debug("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu input manager running. CIDs are now: {}, {}, {}.", 
+						ALYSLC::Log("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu input manager running. CIDs are now: {}, {}, {}.", 
 							glob.menuCID,
 							glob.prevMenuCID,
 							glob.mim->managerMenuCID);
@@ -1128,14 +1044,14 @@ namespace ALYSLC
 					else if (glob.menuCID == -1)
 					{
 						GlobalCoopData::SetMenuCIDs(resolvedCID);
-						logger::debug("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
+						ALYSLC::Log("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
 							glob.menuCID,
 							glob.prevMenuCID,
 							glob.mim->managerMenuCID);
 					}
 					else
 					{
-						logger::debug("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
+						ALYSLC::Log("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
 							glob.menuCID,
 							glob.prevMenuCID,
 							glob.mim->managerMenuCID);
@@ -1153,17 +1069,15 @@ namespace ALYSLC
 						// Close Tween Menu since it will not auto-close after the Container Menu closes.
 						if (!a_menuEvent->opening && menuNameHash == Hash(RE::ContainerMenu::MENU_NAME) && ui->IsMenuOpen(RE::TweenMenu::MENU_NAME))
 						{
-							logger::debug("[Events] Menu Open/Close Event: {}'s inventory is closing. Close TweenMenu.", p->coopActor->GetName());
 							if (msgQ)
 							{
 								msgQ->AddMessage(RE::TweenMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr);
-								logger::debug("[Events] Menu Open/Close Event: Successfully messaged Tween Menu to hide.");
 							}
 						}
 
 						// Set newly opened menu in the menu input manager.
 						glob.mim->SetOpenedMenu(a_menuEvent->menuName, a_menuEvent->opening);
-						logger::debug("[Events] Menu Open/Close Event: Menu {} {} by CID {}, menus open: {}", 
+						ALYSLC::Log("[Events] Menu Open/Close Event: Menu {} {} by CID {}, menus open: {}", 
 							a_menuEvent->menuName, 
 							a_menuEvent->opening ? "opened" : "closed", 
 							glob.menuCID, 
@@ -1176,34 +1090,30 @@ namespace ALYSLC
 						{
 							if (a_menuEvent->opening)
 							{
-								logger::debug("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy AVs and name.");
+								ALYSLC::Log("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy AVs and name.");
 								if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 								{
-									logger::debug("[Events] Menu Open/Close Event: CopyPlayerData: Import Name.");
 									GlobalCoopData::CopyOverActorBaseData(p->coopActor.get(), true, true, false, false);
 									glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
 								}
 
 								if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 								{
-									logger::debug("[Events] Menu Open/Close Event: CopyPlayerData: Import AVs.");
 									GlobalCoopData::CopyOverAVs(p->coopActor.get(), true);
 									glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 								}
 							}
 							else
 							{
-								logger::debug("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy back AVs and name.");
+								ALYSLC::Log("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy back AVs and name.");
 								if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 								{
-									logger::debug("[Events] Menu Open/Close Event: CopyPlayerData: Export Name.");
 									GlobalCoopData::CopyOverActorBaseData(p->coopActor.get(), false, true, false, false);
 									glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 								}
 
 								if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 								{
-									logger::debug("[Events] Menu Open/Close Event: CopyPlayerData: Export AVs.");
 									GlobalCoopData::CopyOverAVs(p->coopActor.get(), false);
 									glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 								}
@@ -1212,7 +1122,6 @@ namespace ALYSLC
 						else if (menuNameHash == Hash(RE::CraftingMenu::MENU_NAME))
 						{
 							// Stop co-op companion from interacting with crafting station once the menu opens.
-							logger::debug("[Events] Menu Open/Close Event: Crafting Menu is opening. Run default package (stop interaction) for {}.", p->coopActor->GetName());
 							auto defPackage = p->pam->GetDefaultPackage();
 							p->pam->SetCurrentPackage(defPackage);
 							p->pam->EvaluatePackage();
@@ -1221,13 +1130,11 @@ namespace ALYSLC
 						// Give co-op companion player menu control.
 						if (a_menuEvent->opening)
 						{
-							logger::debug("[Events] Menu Open/Close Event: Co-op companion has opened a menu. Starting/resuming menu input manager for CID {}.", glob.menuCID);
 							glob.mim->ToggleCoopPlayerMenuMode(glob.menuCID);
 						}
 						//else if (glob.mim->managedCoopMenusCount == 0 && !menuPausesListeners && glob.mim->IsRunning())
 						else if (glob.mim->managedCoopMenusCount == 0 && glob.mim->IsRunning())
 						{
-							logger::debug("[Events] Menu Open/Close Event: Co-op companion has closed all menus. Pausing menu input manager.");
 							glob.mim->ToggleCoopPlayerMenuMode(-1);
 						}
 					}
@@ -1235,32 +1142,30 @@ namespace ALYSLC
 					{
 						// Notify player to perform lockpicking task to give them LockpickingMenu control.
 						p->taskRunner->AddTask([&p]() { p->LockpickingTask(); });
-						logger::debug("[Events] Menu Open/Close Event: Lockpick task queued for {}.", p->coopActor->GetName());
 					}
 				}
 				else if (a_menuEvent->opening && Hash(a_menuEvent->menuName) == Hash(RE::FavoritesMenu::MENU_NAME))
 				{
 					// Update quick slot item/spell entry texts for player 1 if they are accessing the favorites menu.
-					logger::debug("[Events] Menu Open/Close Event: Player 1 is opening the Favorites Menu. Initialize menu entries.");
 					glob.mim->InitP1QSFormEntries();
 				}
 
 				if (!a_menuEvent->opening)
 				{
 					// Reset menu controller ID once all menus are closed.
-					if (onlyAlwaysOpenInStack && glob.menuCID != -1)
+					if (onlyAlwaysOpen && glob.menuCID != -1)
 					{
 						GlobalCoopData::ResetMenuCIDs();
-						logger::debug("[Events] Menu Open/Close Event: CLOSING: Set menu CIDs. MIM signalled to close. Reset menu CIDs. CIDs are now: {}, {}, {}.",
+						ALYSLC::Log("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close. Reset menu CIDs. CIDs are now: {}, {}, {}.",
 							glob.menuCID,
 							glob.prevMenuCID,
 							glob.mim->managerMenuCID);
 					}
-					else if (!onlyAlwaysOpenInStack && glob.mim->managedCoopMenusCount == 0 && glob.menuCID != glob.player1CID)
+					else if (!onlyAlwaysOpen && glob.mim->managedCoopMenusCount == 0 && glob.menuCID != glob.player1CID)
 					{
 						// Co-op companion player relinquishes control of menus but at least one is still open, so give control to P1.
 						GlobalCoopData::ResetMenuCIDs();
-						logger::debug("[Events] Menu Open/Close Event: CLOSING: Set menu CIDs. MIM signalled to close with controllable menus open. Give control to P1. CIDs are now: {}, {}, {}.",
+						ALYSLC::Log("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close with controllable menus open. Give control to P1. CIDs are now: {}, {}, {}.",
 							glob.menuCID,
 							glob.prevMenuCID,
 							glob.mim->managerMenuCID);
@@ -1268,9 +1173,8 @@ namespace ALYSLC
 					else
 					{
 						// Catch-all case (may not need handling).
-						logger::debug("[Events] Menu Open/Close Event: CLOSING: Set menu CIDs. Fallthrough: only always open: {}, {}, MIM managed menus count: {}. CIDs are now: {}, {}, {}.",
-							onlyAlwaysOpenInMap,
-							onlyAlwaysOpenInStack,
+						ALYSLC::Log("[Events] Menu Open/Close Event: CLOSING: Fallthrough: only always open: {}, MIM managed menus count: {}. CIDs are now: {}, {}, {}.",
+							onlyAlwaysOpen,
 							glob.mim->managedCoopMenusCount,
 							glob.menuCID,
 							glob.prevMenuCID,
@@ -1278,9 +1182,9 @@ namespace ALYSLC
 
 						// If no menus are open, the managed menus count should be 0.
 						// Stop menu input manager and reset menu controller IDs if not.
-						if (onlyAlwaysOpenInStack && glob.mim->managedCoopMenusCount > 0) 
+						if (onlyAlwaysOpen && glob.mim->managedCoopMenusCount > 0) 
 						{
-							logger::error("[Events] ERR: Menu Open/Close Event: CLOSING: Set menu CIDs. MIM managed menus count should be 0 here. Pausing menu input manager and resetting menu CIDs.");
+							ALYSLC::Log("[Events] ERR: Menu Open/Close Event: CLOSING: MIM managed menus count should be 0 here. Pausing menu input manager and resetting menu CIDs.");
 							glob.mim->ToggleCoopPlayerMenuMode(-1);
 							GlobalCoopData::ResetMenuCIDs();
 						}
@@ -1319,7 +1223,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::critical("[Events] ERR: Could not register for cell fully loaded events.");
+			logger::error("[Events] ERR: Could not register for cell fully loaded events.");
 		}
 	}
 
@@ -1341,8 +1245,6 @@ namespace ALYSLC
 						// If this cell has a room marker, signal culling proc to apply freeze workaround if using the MiniMap mod.
 						if (obj->GetBaseObject() && obj->GetBaseObject()->formID == 0x1F)
 						{
-							logger::debug("[Events] Cell Fully Loaded Event: found room marker 0x{:X} (base fid 0x{:X}). Apply MiniMap workaround.",
-								obj->formID, obj->GetBaseObject()->formID);
 							ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = true;
 							break;
 						}
@@ -1371,7 +1273,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::critical("[Events] ERR: Could not register for position player events.");
+			logger::error("[Events] ERR: Could not register for position player events.");
 		}
 	}
 
@@ -1384,10 +1286,6 @@ namespace ALYSLC
 		/*
 		if (auto tes = RE::TES::GetSingleton(); tes && a_positionPlayerEvent)
 		{
-			logger::debug("[Events] Position Player Event: type {}, interior cell: {} (0x{:X}).", 
-				 fmt::underlying(*a_positionPlayerEvent->type),
-				tes->interiorCell ? tes->interiorCell->GetName() : "NONE", 
-				tes->interiorCell ? tes->interiorCell->formID : 0xDEAD);
 			// Finished moving.
 			if (glob.coopSessionActive && a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kPost, RE::PositionPlayerEvent::EVENT_TYPE::kFinish)) 
 			{
@@ -1395,7 +1293,6 @@ namespace ALYSLC
 				{
 					if (p->isActive && !p->isPlayer1) 
 					{
-						logger::debug("[Events] Position Player Event: moving {} to p1.", p->coopActor->GetName());
 						// Have to sheathe weapon before teleporting, otherwise the equip state gets bugged.
 						p->pam->ReadyWeapon(false);
 						p->em->EquipFists();

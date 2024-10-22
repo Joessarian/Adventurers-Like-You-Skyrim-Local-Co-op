@@ -185,7 +185,7 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MenuControls[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
 				logger::info("[MenuControls Hook] Installed ProcessEvent() hook.");
-				debugMenuTriggered = ignoringJournalWaitEvent = journalBindPressedFirst = summoningMenuTriggered = false;
+				debugMenuTriggered = ignoringPauseWaitEvent = pauseBindPressedFirst = summoningMenuTriggered = false;
 			}
 
 		private:
@@ -208,10 +208,10 @@ namespace ALYSLC
 
 			// Was an attempt made to open the co-op debug menu?
 			static inline bool debugMenuTriggered;
-			// Should the Journal/Wait menu-triggering input event be ignored while another menu is opened?
-			static inline bool ignoringJournalWaitEvent;
-			// 'Journal' bind was pressed before 'Wait' bind when attempting to open the co-op summoning menu.
-			static inline bool journalBindPressedFirst;
+			// Should the Pause/Wait menu-triggering input event be ignored while another menu is opened?
+			static inline bool ignoringPauseWaitEvent;
+			// 'Pause' bind was pressed before 'Wait' bind when attempting to open the co-op summoning menu.
+			static inline bool pauseBindPressedFirst;
 			// Was an attempt made to open the co-op summoning menu?
 			static inline bool summoningMenuTriggered;
 		};
@@ -225,15 +225,20 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_NiNode[0] };
 				_UpdateDownwardPass = vtbl.write_vfunc(0x2C, UpdateDownwardPass);
 				logger::info("[NiNode Hook] Installed UpdateDownwardPass() hook.");
+				/*_UpdateWorldData = vtbl.write_vfunc(0x30, UpdateWorldData);
+				logger::info("[NiNode Hook] Installed UpdateWorldData() hook.");*/
 			}
 
 		private:
-			static void UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2);	 // 2C
+			static void UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2);		// 2C
+			static void UpdateWorldData(RE::NiNode* a_this, RE::NiUpdateData* a_data);								// 30
 			static inline REL::Relocation<decltype(UpdateDownwardPass)> _UpdateDownwardPass;
+			static inline REL::Relocation<decltype(UpdateWorldData)> _UpdateWorldData;
+
 
 			// Restore cached node orientation data computed in the havok physics pre-step callback.
 			// For torso and arm node rotation.
-			static void RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData& a_data);
+			static void RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData* a_data);
 		};
 
 		// [PlayerCameraTransitionState Hooks]
@@ -333,10 +338,10 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;
 
 			
-			static void DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased);
-			static void GetFiredAtOrByPlayer(RE::Projectile* a_projectile, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut);
-			static void SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity);
-			static void SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity);
+			static void DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased);
+			static void GetFiredAtOrByPlayer( const RE::ObjectRefHandle& a_projectileHandle, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut);
+			static void SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
+			static void SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
 		};
 
 		// [TESCamera Hooks]

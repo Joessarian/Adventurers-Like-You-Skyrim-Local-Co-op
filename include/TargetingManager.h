@@ -764,9 +764,9 @@ namespace ALYSLC
 			{ }
 
 			// Set trajectory on construction.
-			ManagedProjTrajectoryInfo(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
+			ManagedProjTrajectoryInfo(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
 			{
-				SetTrajectory(a_p, a_projectile, a_initialVelocityOut, a_trajType);
+				SetTrajectory(a_p, a_projectileHandle, a_initialVelocityOut, a_trajType);
 			}
 
 			// Refresh all data.
@@ -811,15 +811,15 @@ namespace ALYSLC
 			// Set the physical projectile (non-magical) flag, initial release speed, max release speed, release position, 
 			// and physical constants for the trajectory.
 			// The given release speed is set as a fallback default.
-			void SetInitialBaseProjectileData(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, const float& a_releaseSpeed);
+			void SetInitialBaseProjectileData(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, const float& a_releaseSpeed);
 
 			// Sets up the initial trajectory data for the given projectile
 			// based on the given starting velocity (which is modified) and the trajectory type.			
-			void SetTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType);
+			void SetTrajectory(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType);
 
 			// Get a rough approximation of the minimum launch pitch ('+' when aiming up, '-' when aiming down)
 			// to hit the target position.
-			float GetRoughMinLaunchPitch(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile);
+			float GetRoughMinLaunchPitch(const std::shared_ptr<CoopPlayer>& a_p);
 
 			// The trajectory type to use for this projectile.
 			ProjectileTrajType trajType;
@@ -869,41 +869,41 @@ namespace ALYSLC
 			// Clear out managed projectile FIDs and trajectory data.
 			inline void Clear()
 			{
-				managedProjFormIDs.clear();
-				managedProjFIDToTrajInfoMap.clear();
+				managedProjHandles.clear();
+				managedProjHandleToTrajInfoMap.clear();
 			}
 
 			// Precondition: the projectile must be managed already.
 			// Check if managed first before calling.
-			inline std::unique_ptr<ManagedProjTrajectoryInfo>& GetInfo(RE::Projectile* a_projectile)
+			inline std::unique_ptr<ManagedProjTrajectoryInfo>& GetInfo(const RE::ObjectRefHandle& a_projectileHandle)
 			{
-				return managedProjFIDToTrajInfoMap.at(a_projectile->formID);
+				return managedProjHandleToTrajInfoMap.at(a_projectileHandle);
 			};
 
 			// Returns true if the given projectile is managed by this handler.
-			inline const bool IsManaged(RE::Projectile* a_projectile) 
+			inline const bool IsManaged(const RE::ObjectRefHandle& a_projectileHandle) 
 			{
-				if (!a_projectile)
+				if (!Util::HandleIsValid(a_projectileHandle))
 				{
 					return false;
 				}
 
-				return managedProjFIDToTrajInfoMap.contains(a_projectile->formID); 
+				return managedProjHandleToTrajInfoMap.contains(a_projectileHandle); 
 			}
 
 			// Remove the given projectile from the handled projectiles list
 			// and clear out its data.
-			inline void Remove(RE::Projectile* a_projectile) 
+			inline void Remove(const RE::ObjectRefHandle& a_projectileHandle) 
 			{
-				if (!a_projectile)
+				if (!Util::HandleIsValid(a_projectileHandle))
 				{
 					return;
 				}
 
-				if (managedProjFIDToTrajInfoMap.contains(a_projectile->formID)) 
+				if (managedProjHandleToTrajInfoMap.contains(a_projectileHandle)) 
 				{
-					managedProjFormIDs.remove(a_projectile->formID);
-					managedProjFIDToTrajInfoMap.erase(a_projectile->formID);
+					managedProjHandles.remove(a_projectileHandle);
+					managedProjHandleToTrajInfoMap.erase(a_projectileHandle);
 				}
 			}
 
@@ -911,12 +911,12 @@ namespace ALYSLC
 			// Clear out inactive/invalid projectiles to make room as necessary.
 			// Set the projectile's trajectory info using the given initial velocity (which is modified),
 			// and the given trajectory type.
-			void Insert(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType);
+			void Insert(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType);
 
-			// Newly managed projectiles' FIDs are added to the back and popped from the front.
-			std::list<RE::FormID> managedProjFormIDs;
-			// Holds trajectory info for managed projectiles, indexed by their FIDs.
-			std::unordered_map<RE::FormID, std::unique_ptr<ManagedProjTrajectoryInfo>> managedProjFIDToTrajInfoMap;
+			// Newly managed projectiles' handles are added to the back and popped from the front.
+			std::list<RE::ObjectRefHandle> managedProjHandles;
+			// Holds trajectory info for managed projectiles, indexed by their handles.
+			std::unordered_map<RE::ObjectRefHandle, std::unique_ptr<ManagedProjTrajectoryInfo>> managedProjHandleToTrajInfoMap;
 		};
 
 		TargetingManager();

@@ -376,10 +376,6 @@ namespace ALYSLC
 			{
 				prev = current = next = 0.0f;
 			}
-			else
-			{
-				logger::critical("[Util] ERR: Invalid type for linear interpolation: {}.", typeid(T).name());
-			}
 
 			secsSinceUpdate = 0.0f;
 			secsUpdateInterval = 1.0f;
@@ -416,10 +412,6 @@ namespace ALYSLC
 				else if constexpr (std::is_same_v<T, float>)
 				{
 					current = std::lerp(prev, next, a_ratio);
-				}
-				else
-				{
-					logger::critical("[Util] ERR: Invalid type for linear interpolation: {}", typeid(T).name());
 				}
 			}
 		}
@@ -501,10 +493,6 @@ namespace ALYSLC
 			else if constexpr (std::is_same_v<T, float>)
 			{
 				prev = current = next = 0.0f;
-			}
-			else
-			{
-				logger::critical("[Util] ERR: Invalid type for linear interpolation: {}", typeid(T).name());
 			}
 
 			secsSinceUpdate = 0.0f;
@@ -1216,15 +1204,26 @@ namespace ALYSLC
 		// Get the form with the given FID.
 		inline RE::TESForm* GetFormFromFID(const RE::FormID& a_fid) 
 		{
+			/*
 			RE::TESForm* form = nullptr;
 			if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler) 
 			{
 				// Get mod index from the upper byte of the full FID.
-				uint8_t baseObjModIndex = a_fid & 0xFF000000;
+				uint8_t baseObjModIndex = a_fid >> 24;
 				if (baseObjModIndex != 0)
 				{
 					// Get mod file and name from index.
-					if (auto modFile = dataHandler->LookupLoadedModByIndex(baseObjModIndex); modFile)
+					if (baseObjModIndex == 0xFE) 
+					{
+						// Use light plugin index.
+						uint16_t baseObjLightModIndex = (a_fid >> 12) & 0xFFF;
+						if (auto modFile = dataHandler->LookupLoadedLightModByIndex(baseObjLightModIndex); modFile)
+						{
+							// Lookup raw FID within the mod.
+							form = dataHandler->LookupForm(a_fid & 0xFFF, modFile->GetFilename());
+						}
+					}
+					else if (auto modFile = dataHandler->LookupLoadedModByIndex(baseObjModIndex); modFile)
 					{
 						// Lookup raw FID within the mod.
 						form = dataHandler->LookupForm(a_fid & 0x00FFFFFF, modFile->GetFilename());
@@ -1238,6 +1237,9 @@ namespace ALYSLC
 			}
 
 			return form;
+			*/
+
+			return RE::TESForm::LookupByID(a_fid);
 		}
 
 		// Get boolean game setting from the given setting name.
@@ -1703,50 +1705,6 @@ namespace ALYSLC
 			}
 		}
 
-		// Return true if only menus with the 'AlwaysOpen' flag 
-		// are open in the UI's menu map.
-		inline bool MenusOnlyAlwaysOpenInMap()
-		{
-			if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				return 
-				(
-					std::find_if
-					(
-						ui->menuMap.begin(), ui->menuMap.end(), 
-						[](const RE::BSTTuple<RE::BSFixedString, RE::UI::UIMenuEntry>& a_menuEntry) 
-						{
-							return a_menuEntry.second.menu && !a_menuEntry.second.menu->AlwaysOpen();
-						}
-					) == ui->menuMap.end()
-				);
-			}
-
-			return false;
-		}
-
-		// Return true if only menus with the 'AlwaysOpen' flag
-		// are open in the UI's menu stack.
-		inline bool MenusOnlyAlwaysOpenInStack()
-		{
-			if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				return
-				(
-					std::find_if
-					(
-						ui->menuStack.begin(), ui->menuStack.end(), 
-						[](RE::GPtr<RE::IMenu>& a_menu) 
-						{
-							return !a_menu->AlwaysOpen();
-						}
-					) == ui->menuStack.end()
-				);
-			}
-
-			return false;
-		}
-
 		// Return true if a menu is open that stops the player from moving.
 		inline bool OpenMenuStopsMovement()
 		{
@@ -2171,6 +2129,9 @@ namespace ALYSLC
 
 		float InterpolateEaseInEaseOut(const float& a_prev, const float& a_next, float a_ratio, const float& a_pow);
 
+		// Interpolate one rotation matrix to another.
+		RE::NiMatrix3 InterpolateRotMatrix(const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio);
+
 		// Is the given form favorited by the given actor?
 		bool IsFavorited(RE::Actor* a_actor, RE::TESForm* a_form);
 
@@ -2187,6 +2148,19 @@ namespace ALYSLC
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);
+
+		// Return true if the no temporary menus are open.
+		// Temporary menus are considered as menus that add a non-gameplay context 
+		// onto the menu context stack, plus the 'LootMenu' from the QuickLoot mod.
+		bool MenusOnlyAlwaysOpen();
+
+		// Return true if only menus with the 'AlwaysOpen' flag
+		// are open in the UI's menu map.
+		bool MenusOnlyAlwaysOpenInMap();
+		
+		// Return true if only menus with the 'AlwaysOpen' flag
+		// are open in the UI's menu stack.
+		bool MenusOnlyAlwaysOpenInStack();
 
 		// Return true if only menus with the 'AlwaysOpen' flag
 		// and QuickLoot's LootMenu are open in the UI's menu map.
@@ -2223,6 +2197,16 @@ namespace ALYSLC
 		// to prevent them from getting up if they are essential.
 		// Used for setting players as 'downed' if the revive system is enabled.
 		void PushActorAway(RE::Actor* a_actorToPush, const RE::NiPoint3& a_contactPos, const float& a_force, bool&& a_downedRagdoll = false);
+
+		// Full credits to ersh1:
+		// https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
+		// Convert a quaternion to a rotation matrix.
+		RE::NiMatrix3 QuaternionToRotationMatrix(const RE::NiQuaternion& a_quat);
+
+		// Full credits to ersh1:
+		// https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L139
+		// Slerp quaternion a to b.
+		RE::NiQuaternion QuaternionSlerp(const RE::NiQuaternion& a_quatA, const RE::NiQuaternion& a_quatB, double a_t);
 
 		// Helper function which searches for an associated refr
 		// by first checking the current node,
@@ -2306,6 +2290,12 @@ namespace ALYSLC
 		// constructed from the given axis unit vectors
 		// rotated about the given pitch, roll, and yaw angles.
 		void SetRotationMatrix3(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll);
+
+		// Set the rotation matrix outparam to a rotation matrix
+		// constructed from the given direction vector components.
+		// Full credits once more go to ersh1: 
+		// https://github.com/ersh1/Precision/blob/main/src/Utils.h#L194
+		void SetRotationMatrixFromDirection(RE::NiMatrix3& a_rotMatrix, const float& a_x, const float& a_y, const float& a_z);
 
 		// If the spell has an image space modifier 
 		// and is a self-targeted concentration spell,

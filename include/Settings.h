@@ -79,11 +79,6 @@ namespace ALYSLC
 		static inline bool bCanGrabActors = false;
 		// Can players grab other players?
 		static inline bool bCanGrabOtherPlayers = true;
-		// Enable debug prints in plugin.
-		// WARNING: only enable if you need to troubleshoot and have > 2 GB of disk space to spare,
-		// as the mod's log file ("<drive letter>:\Users\<user>\Documents\My Games\Skyrim Special Edition\SKSE\ALYSLC.log")
-		// can get quite large if there are errors when printing in realtime.
-		static inline bool bEnableLoggerDebugPrints = false;
 		// Can grab actors indefinitely.
 		static inline bool bRemoveGrabbedActorAutoGetUp = true;
 		// Only one collision raycast per ragdolling actor per frame if true.
@@ -545,7 +540,7 @@ namespace ALYSLC
 		// Base max thrown object speed (in-game units / second).
 		static inline const float fBaseMaxThrownRefrReleaseSpeed = 1500.0f;
 		// Speed up the player's animations with this factor while dash dodging.
-		static inline const float fDashDodgeAnimSpeedFactor = 2.0;
+		static inline const float fDashDodgeAnimSpeedFactor = 2.0f;
 		// Max grabbed player speed multiplier.
 		static inline const float fGrabbedPlayerMaxSpeedMult = 0.5f;
 		// Max speed at which a grabbed reference can rotate (radians / second).
@@ -566,8 +561,8 @@ namespace ALYSLC
 		static inline const float fSecsToBlockAllInputActions = 1.0f;
 		// Max recursion depth when getting composing inputs by breaking down player actions into their own composing inputs.
 		static inline const uint8_t uMaxComposingInputsCheckRecursionDepth = 10;
-		// Dash dodge animation frame count (at 60 FPS).
-		static inline const uint32_t uDashDodgeAnimFrameCount = 24;
+		// Dash dodge animation frame count with 0 equipped weight (at 60 FPS).
+		static inline const uint32_t uDashDodgeBaseAnimFrameCount = 24;
 		// Dash dodge setup frame count (before leaning in movement direction at 60 FPS).
 		static inline const uint32_t uDashDodgeSetupFrameCount = 6;
 
@@ -613,6 +608,8 @@ namespace ALYSLC
 		static inline const float fSecsBetweenStealthStateChecks = 0.25f;
 		// Seconds between crosshair target visibility checks.
 		static inline const float fSecsBetweenTargetVisibilityChecks = 1.0f;
+		// Seconds to fully blend in/out arm and torso node rotations to the default or custom values.
+		static inline const float fSecsBlendPlayerNodeRotations = 0.4f;
 		// Seconds without LOS on a crosshair target after which to clear the target.
 		static inline const float fSecsWithoutLOSToInvalidateTarget = 7.0f;
 
@@ -638,26 +635,6 @@ namespace ALYSLC
 		static inline bool SettingExists(CSimpleIniA& a_ini, const char* a_section, const char* a_settingKey)
 		{
 			return a_ini.GetValue(a_section, a_settingKey);
-		}
-
-		// Update logger level based on whether or not debug printing is enabled ('bEnableLoggerDebugPrints' setting).
-		static inline void UpdateLoggerLevel() 
-		{
-			if (const auto& log = spdlog::default_logger(); log && log.get())
-			{
-				auto level = bEnableLoggerDebugPrints ? spdlog::level::debug : spdlog::level::info;
-				if (bEnableLoggerDebugPrints)
-				{
-					logger::debug("[Settings] ImportAllSettings. Debug prints ENABLED.");
-				}
-				else
-				{
-					logger::debug("[Settings] ImportAllSettings. Debug prints DISABLED.");
-				}
-
-				log->set_level(level);
-				log->flush_on(level);
-			}
 		}
 
 		// Import all MCM settings.
@@ -703,8 +680,5 @@ namespace ALYSLC
 		// Also clamp the result to the given lower and upper bounds.
 		// Returns true if successful.
 		static bool ReadUInt32Setting(CSimpleIniA& a_ini, const char* a_section, const char* a_settingKey, uint32_t& a_settingOut, uint32_t&& a_lowerLimit, uint32_t&& a_upperLimit);
-
-		// Set logger level based on the 'bEnableLoggerDebugPrints' setting after data is loaded.
-		static void SetLoggerLevel();
 	};
 }

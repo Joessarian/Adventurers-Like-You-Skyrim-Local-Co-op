@@ -8,181 +8,240 @@ namespace ALYSLC
 	using SteadyClock = std::chrono::steady_clock;
 	class CoopPlayer;
 
+	struct NodeRotationData
+	{
+		NodeRotationData()
+		{
+			InstantlyResetData();
+		}
+
+		NodeRotationData(const NodeRotationData& a_nrd)
+		{
+			blendInTP = a_nrd.blendInTP;
+			blendOutTP = a_nrd.blendOutTP;
+			localVelocity = a_nrd.localVelocity;
+			localPosition = a_nrd.localPosition;
+			rotationInput = a_nrd.rotationInput;
+			currentRotation = a_nrd.currentRotation;
+			defaultRotation = a_nrd.defaultRotation;
+			startingRotation = a_nrd.startingRotation;
+			targetRotation = a_nrd.targetRotation;
+			rotationModified = a_nrd.rotationModified;
+			blendStatus = a_nrd.blendStatus;
+		}
+
+		NodeRotationData(NodeRotationData&& a_nrd)
+		{
+			blendInTP = std::move(a_nrd.blendInTP);
+			blendOutTP = std::move(a_nrd.blendOutTP);
+			localVelocity = std::move(a_nrd.localVelocity);
+			localPosition = std::move(a_nrd.localPosition);
+			rotationInput = std::move(a_nrd.rotationInput);
+			currentRotation = std::move(a_nrd.currentRotation);
+			defaultRotation = std::move(a_nrd.defaultRotation);
+			startingRotation = std::move(a_nrd.startingRotation);
+			targetRotation = std::move(a_nrd.targetRotation);
+			rotationModified = std::move(a_nrd.rotationModified);
+			blendStatus = std::move(a_nrd.blendStatus);
+		}
+
+		NodeRotationData& operator=(const NodeRotationData& a_nrd)
+		{
+			blendInTP = a_nrd.blendInTP;
+			blendOutTP = a_nrd.blendOutTP;
+			localVelocity = a_nrd.localVelocity;
+			localPosition = a_nrd.localPosition;
+			rotationInput = a_nrd.rotationInput;
+			currentRotation = a_nrd.currentRotation;
+			defaultRotation = a_nrd.defaultRotation;
+			startingRotation = a_nrd.startingRotation;
+			targetRotation = a_nrd.targetRotation;
+			rotationModified = a_nrd.rotationModified;
+			blendStatus = a_nrd.blendStatus;
+
+			return *this;
+		}
+
+		NodeRotationData& operator=(NodeRotationData&& a_nrd)
+		{
+			blendInTP = std::move(a_nrd.blendInTP);
+			blendOutTP = std::move(a_nrd.blendOutTP);
+			localVelocity = std::move(a_nrd.localVelocity);
+			localPosition = std::move(a_nrd.localPosition);
+			rotationInput = std::move(a_nrd.rotationInput);
+			currentRotation = std::move(a_nrd.currentRotation);
+			defaultRotation = std::move(a_nrd.defaultRotation);
+			startingRotation = std::move(a_nrd.startingRotation);
+			targetRotation = std::move(a_nrd.targetRotation);
+			rotationModified = std::move(a_nrd.rotationModified);
+			blendStatus = std::move(a_nrd.blendStatus);
+
+			return *this;
+		}
+
+		// Reset all node data.
+		inline void InstantlyResetData()
+		{
+			blendOutTP = blendInTP = SteadyClock::now();
+
+			localVelocity =
+				localPosition = RE::NiPoint3();
+			currentRotation =
+				startingRotation =
+					targetRotation = RE::NiMatrix3();
+			rotationModified = false;
+			blendStatus = NodeRotationBlendStatus::kDefaultReached;
+		}
+
+		// Last blend request time points.
+		SteadyClock::time_point blendInTP;
+		SteadyClock::time_point blendOutTP;
+
+		// List of three angles (yaw, pitch, roll)
+		// Derived from right stick X, Y displacement (yaw, pitch), and const (roll).
+		std::array<float, 3> rotationInput;
+		// Blended node rotation matrix to restore in an NiNode hook.
+		RE::NiMatrix3 currentRotation;
+		// Last saved node rotation set by the game before modification.
+		RE::NiMatrix3 defaultRotation;
+		// Last set node rotation matrix to interp from while blending.
+		RE::NiMatrix3 startingRotation;
+		// Last set node rotation matrix to interp to while blending.
+		RE::NiMatrix3 targetRotation;
+		// Last recorded node velocity relative to the player's root position.
+		RE::NiPoint3 localVelocity;
+		// Last set position relative to the player's root position.
+		RE::NiPoint3 localPosition;
+
+		// TODO: Blend rotations in/out.
+		// Player has modified the target rotation of this node.
+		bool rotationModified;
+		NodeRotationBlendStatus blendStatus;
+	};
+
+	// Stores player body node rotation info to restore in the NiNode::UpdateDownwardPass() hook.
+	struct NodeRotationManager
+	{
+		NodeRotationManager()
+		{
+			InstantlyResetAllNodeData();
+		}
+
+		NodeRotationManager& operator=(const NodeRotationManager& a_nrm)
+		{
+			nodeRotationDataMap.clear();
+			for (const auto& [nameHash, data] : a_nrm.nodeRotationDataMap)
+			{
+				if (data && data.get()) 
+				{
+					nodeRotationDataMap.insert_or_assign(nameHash, std::make_unique<NodeRotationData>());
+					nodeRotationDataMap[nameHash]->blendInTP = data->blendInTP;
+					nodeRotationDataMap[nameHash]->blendOutTP = data->blendOutTP;
+					nodeRotationDataMap[nameHash]->blendStatus = data->blendStatus;
+					nodeRotationDataMap[nameHash]->currentRotation = data->currentRotation;
+					nodeRotationDataMap[nameHash]->localPosition = data->localPosition;
+					nodeRotationDataMap[nameHash]->localVelocity = data->localVelocity;
+					nodeRotationDataMap[nameHash]->rotationInput = data->rotationInput;
+					nodeRotationDataMap[nameHash]->startingRotation = data->startingRotation;
+					nodeRotationDataMap[nameHash]->targetRotation = data->targetRotation;
+					nodeRotationDataMap[nameHash]->rotationModified = data->rotationModified;
+				}
+			}
+
+			return *this;
+		}
+
+		NodeRotationManager& operator=(NodeRotationManager&& a_nrm)
+		{
+			nodeRotationDataMap.swap(a_nrm.nodeRotationDataMap);
+			return *this;
+		}
+
+		inline void ClearCustomRotation(const uint32_t& a_nodeNameHash)
+		{
+			if (nodeRotationDataMap.contains(a_nodeNameHash))
+			{
+				if (auto& data = nodeRotationDataMap.at(a_nodeNameHash); data && data.get())
+				{
+					data->rotationModified = false;
+					data->rotationInput.fill(0.0f);
+				}
+			}
+		}
+
+		inline void ClearCustomRotations()
+		{
+			for (auto& [_, data] : nodeRotationDataMap)
+			{
+				data->rotationModified = false;
+				data->rotationInput.fill(0.0f);
+			}
+		}
+
+		// Reset all node data.
+		void InstantlyResetAllNodeData();
+
+		// Only reset arm node data.
+		void InstantlyResetArmNodeData();
+
+		// Only reset torso node data.
+		void InstantlyResetTorsoNodeData();
+
+		// Returns true if a custom cached rotation was set for the given node (indexed with hashed name).
+		// Can check for the node name hash in either the set of adjustable arm nodes or torso nodes.
+		bool NodeWasAdjusted(const uint32_t& a_nodeNameHash);
+
+		// TODO: Blend node rotations in/out to match player-altered/default rotations.
+		void SetBlendStatus(const uint32_t& a_nodeNameHash, NodeRotationBlendStatus&& a_newStatus);
+
+		// Not sure of the game's Euler convention and how to account for the changes made
+		// to nodes' world rotation matrices by changing the corresponding local rotation matrices.
+		// So after a dozen hours of getting nowhere mathematically,
+		// here are manually tested boundary rotation angles for blending.
+		// (RS X * 2PI, RS Y * 2PI, fixed Z), both radians and (degrees).
+		// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER)
+		//
+		// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)] // +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
+		// DOWNWARD [2.4250095 (138.9428), -3.1119285 (-178.30035), 0 (0)]
+		// INWARD [3.8038778 (217.94614), -1.8690848 (-107.09067), 0 (0)]
+		// OUTWARD [0.34484762 (19.758312), -1.7245883 (-98.81162), 0 (0)]
+		// FORWARD [2.9678023 (170.04254), -1.7808087 (-102.032814), 0 (0)]
+		// BACKWARD FROM BOTTOM [3.5985053 (206.17915), -4.5647597 (-261.54144), 0 (0)]
+		// BACKWARD FROM TOP [0.3231819 (18.516958), -1.531915 (-87.772255), 0 (0)]
+		const std::unordered_map<ArmOrientation, std::array<float, 3>> leftShoulderMatAngleInputs = {
+			{ ArmOrientation::kUpward, { 1.8315454f, -0.23093452f, 0.0f } },
+			{ ArmOrientation::kDownward, { 2.4250095f, -3.1119285f, 0.0f } },
+			{ ArmOrientation::kInward, { 3.8038778f, -1.8690848f, 0.0f } },
+			{ ArmOrientation::kOutward, { 0.34484762, -1.7245883, 0.0f } },
+			{ ArmOrientation::kForward, { 2.9678023f, -1.7808087f, 0.0f } },
+			{ ArmOrientation::kBackward, { 3.5985053f, -4.5647597f, 0.0f } }
+		};
+
+		const std::unordered_map<ArmOrientation, std::array<float, 3>> rightShoulderMatAngleInputs = {
+			{ ArmOrientation::kUpward, { -1.8315454f, -0.23093452f, 0.0f } },
+			{ ArmOrientation::kDownward, { -2.4250095f, -3.1119285f, 0.0f } },
+			{ ArmOrientation::kInward, { -3.8038778f, -1.8690848f, 0.0f } },
+			{ ArmOrientation::kOutward, { -0.34484762f, -1.7245883f, 0.0f } },
+			{ ArmOrientation::kForward, { -2.9678023f, -1.7808087f, 0.0f } },
+			{ ArmOrientation::kBackward, { -3.5985053f, -4.5647597f, 0.0f } }
+		};
+
+		// Node rotation interpolation factor.
+		// Higher values inch closer to directly setting the current rotation to the target rotation.
+		// Lower values create more sluggish, but smooother, movement.
+		const float interpFactor = 20.0f;
+
+		// Mutex for setting rotation data.
+		// IMPORTANT: Lock before reading/adjusting any nodes' rotations
+		// managed by this manager.
+		std::mutex rotationDataMutex;
+		// Maps adjustable nodes by node name hash to their corresponding custom rotation data.
+		std::unordered_map<uint32_t, std::unique_ptr<NodeRotationData>> nodeRotationDataMap;
+	};
+
 	// Handles player movement, actions related to movement, and node orientation.
 	struct MovementManager : public Manager
 	{
-		// Stores player body node rotation info to restore in the NiNode::UpdateDownwardPass() hook.
-		struct NodeRotationManager
-		{
-			NodeRotationManager() 
-			{
-				Reset();
-			}
-
-			NodeRotationManager& operator=(const NodeRotationManager& a_nrm)
-			{
-				lastRecordedArmLocalVelocities = a_nrm.lastRecordedArmLocalVelocities;
-				lastSetArmLocalPositions = a_nrm.lastSetArmLocalPositions;
-				lastSetArmLocalRotations = a_nrm.lastSetArmLocalRotations;
-				lastSetArmRotationInputs = a_nrm.lastSetArmRotationInputs;
-				lastSetTorsoLocalRotations = a_nrm.lastSetTorsoLocalRotations;
-				lastSetTorsoRotationInputs = a_nrm.lastSetTorsoRotationInputs;
-				restoreArmNodeRotations = a_nrm.restoreArmNodeRotations;
-				restoreTorsoNodeRotations = a_nrm.restoreTorsoNodeRotations;
-				shouldBlendIn = a_nrm.shouldBlendIn;
-				shouldBlendOut = a_nrm.shouldBlendOut;
-				blendInTP = a_nrm.blendInTP;
-				blendOutTP = a_nrm.blendOutTP;
-
-				return *this;
-			}
-
-			NodeRotationManager& operator=(NodeRotationManager&& a_nrm)
-			{
-				lastRecordedArmLocalVelocities = std::move(a_nrm.lastRecordedArmLocalVelocities);
-				lastSetArmLocalPositions = std::move(a_nrm.lastSetArmLocalPositions);
-				lastSetArmLocalRotations = std::move(a_nrm.lastSetArmLocalRotations);
-				lastSetArmRotationInputs = std::move(a_nrm.lastSetArmRotationInputs);
-				lastSetTorsoLocalRotations = std::move(a_nrm.lastSetTorsoLocalRotations);
-				lastSetTorsoRotationInputs = std::move(a_nrm.lastSetTorsoRotationInputs);
-				restoreArmNodeRotations = std::move(a_nrm.restoreArmNodeRotations);
-				restoreTorsoNodeRotations = std::move(a_nrm.restoreTorsoNodeRotations);
-				shouldBlendIn = std::move(a_nrm.shouldBlendIn);
-				shouldBlendOut = std::move(a_nrm.shouldBlendOut);
-				blendInTP = std::move(a_nrm.blendInTP);
-				blendOutTP = std::move(a_nrm.blendOutTP);
-
-				return *this;
-			}
-
-			// Reset all node data.
-			inline void Reset() 
-			{
-				std::unique_lock<std::mutex> lock(rotationDataMutex, std::try_to_lock);
-				if (lock)
-				{
-					lastRecordedArmLocalVelocities.clear();
-					lastSetArmLocalPositions.clear();
-					lastSetArmLocalRotations.clear();
-					lastSetArmRotationInputs.clear();
-					lastSetTorsoRotationInputs.clear();
-					lastSetTorsoLocalRotations.clear();
-					blendOutTP = blendInTP = SteadyClock::now();
-					shouldBlendIn = shouldBlendOut = false;
-				}
-			}
-
-			// Only reset limb node data.
-			inline void ResetLimbNodeOrientationData() 
-			{
-				std::unique_lock<std::mutex> lock(rotationDataMutex, std::try_to_lock);
-				if (lock)
-				{
-					lastRecordedArmLocalVelocities.clear();
-					lastSetArmLocalPositions.clear();
-					lastSetArmLocalRotations.clear();
-					lastSetArmRotationInputs.clear();
-				}
-			}
-
-			// Only reset torso node data.
-			inline void ResetTorsoNodeRotationData()
-			{
-				std::unique_lock<std::mutex> lock(rotationDataMutex, std::try_to_lock);
-				if (lock)
-				{
-					lastSetTorsoRotationInputs.clear();
-					lastSetTorsoLocalRotations.clear();
-				}
-			}
-
-			// TODO: Blend node rotations in/out to match player-altered/default rotations.
-			inline void SetShouldBlend(const bool& a_blendIn) 
-			{
-				std::unique_lock<std::mutex> lock(rotationDataMutex, std::try_to_lock);
-				if (lock)
-				{
-					shouldBlendIn = a_blendIn;
-					shouldBlendOut = !a_blendIn;
-					if (a_blendIn)
-					{
-						blendInTP = SteadyClock::now();
-					}
-					else
-					{
-						blendOutTP = SteadyClock::now();
-					}
-				}
-			}
-
-			// Not sure of the game's Euler convention and how to account for the changes made
-			// to nodes' world rotation matrices by changing the corresponding local rotation matrices.
-			// So after a dozen hours of getting nowhere mathematically, 
-			// here are manually tested boundary rotation angles for blending.
-			// (RS X * 2PI, RS Y * 2PI, fixed Z), both radians and (degrees).
-			// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER)
-			// 
-			// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)] // +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
-			// DOWNWARD [2.4250095 (138.9428), -3.1119285 (-178.30035), 0 (0)]
-			// INWARD [3.8038778 (217.94614), -1.8690848 (-107.09067), 0 (0)]
-			// OUTWARD [0.34484762 (19.758312), -1.7245883 (-98.81162), 0 (0)]
-			// FORWARD [2.9678023 (170.04254), -1.7808087 (-102.032814), 0 (0)]
-			// BACKWARD FROM BOTTOM [3.5985053 (206.17915), -4.5647597 (-261.54144), 0 (0)]
-			// BACKWARD FROM TOP [0.3231819 (18.516958), -1.531915 (-87.772255), 0 (0)]
-			const std::unordered_map<ArmOrientation, std::array<float, 3>> leftShoulderMatAngleInputs = {
-				{ ArmOrientation::kUpward, { 1.8315454f, -0.23093452f, 0.0f } },
-				{ ArmOrientation::kDownward, { 2.4250095f, -3.1119285f, 0.0f } },
-				{ ArmOrientation::kInward, { 3.8038778f, -1.8690848f, 0.0f } },
-				{ ArmOrientation::kOutward, { 0.34484762, -1.7245883, 0.0f } },
-				{ ArmOrientation::kForward, { 2.9678023f, -1.7808087f, 0.0f } },
-				{ ArmOrientation::kBackward, { 3.5985053f, -4.5647597f, 0.0f } }
-			};
-
-			const std::unordered_map<ArmOrientation, std::array<float, 3>> rightShoulderMatAngleInputs = {
-				{ ArmOrientation::kUpward, { -1.8315454f, -0.23093452f, 0.0f } },
-				{ ArmOrientation::kDownward, { -2.4250095f, -3.1119285f, 0.0f } },
-				{ ArmOrientation::kInward, { -3.8038778f, -1.8690848f, 0.0f } },
-				{ ArmOrientation::kOutward, { -0.34484762, -1.7245883, 0.0f } },
-				{ ArmOrientation::kForward, { -2.9678023f, -1.7808087f, 0.0f } },
-				{ ArmOrientation::kBackward, { -3.5985053f, -4.5647597f, 0.0f } }
-			};
-
-			// Node rotation interpolation factor.
-			// Higher values inch closer to directly setting the current rotation to the target rotation.
-			// Lower values create more sluggish, but smooother, movement.
-			const float interpFactor = 20.0f;
-
-			// Last blend request time points.
-			SteadyClock::time_point blendInTP;
-			SteadyClock::time_point blendOutTP;
-
-			// Mutex for setting rotation data.
-			std::mutex rotationDataMutex;
-			// Last recorded shoulder/forearm/hand node velocities relative to the player's root position. Indexed by node name hash.
-			std::unordered_map<uint32_t, RE::NiPoint3> lastRecordedArmLocalVelocities;
-			// Last set shoulder/forearm/hand node local positions relative to the player's root position. Indexed by node name hash.
-			std::unordered_map<uint32_t, RE::NiPoint3> lastSetArmLocalPositions;
-			// Last set shoulder/forearm/hand node local rotation matrix. Indexed by node name hash.
-			std::unordered_map<uint32_t, RE::NiMatrix3> lastSetArmLocalRotations;
-			// Indexed by node name hash. List of three angles (yaw, pitch, roll)
-			// Derived from right stick X, Y displacement (yaw, pitch), and const (roll).
-			std::unordered_map<uint32_t, std::array<float, 3>> lastSetArmRotationInputs;
-			// Last set torso local rotation matrix. Indexed by node name hash.
-			std::unordered_map<uint32_t, RE::NiMatrix3> lastSetTorsoLocalRotations;
-			// Indexed by node name hash. List of three angles (pitch, yaw, roll).
-			std::unordered_map<uint32_t, std::array<float, 3>> lastSetTorsoRotationInputs;
-
-			// Should cached arm/torso node rotations be restored on downward pass?
-			// Updated in havok physics pre-step callback.
-			bool restoreArmNodeRotations;
-			bool restoreTorsoNodeRotations;
-			// TODO: Blend rotations in/out.
-			// Should blend in/out.
-			bool shouldBlendIn;
-			bool shouldBlendOut;
-
-		};
-
 		MovementManager();
 		// Delayed construction after the player is default-constructed 
 		// and the player shared pointer is added to the list of co-op players in the global data holder.
@@ -247,7 +306,19 @@ namespace ALYSLC
 		
 		// Update aim pitch (torso) angle and position.
 		void UpdateAimPitch();
+
+		// Update cached rotation data for arm nodes.
+		void UpdateCachedArmNodeRotationData(RE::NiAVObject* a_forearmNode, RE::NiAVObject* a_handNode, bool a_rightArm);
+
+		// Update rotation blend-related data.
+		void UpdateCachedNodeRotationBlendData(const std::unique_ptr<NodeRotationData>& a_data, const uint32_t& a_nodeNameHash, RE::NiAVObject* a_node, bool a_isArmNode);
+
+		// Update cached rotation data for shoulder nodes.
+		void UpdateCachedShoulderNodeRotationData(RE::NiAVObject* a_shoulderNode, bool a_rightShoulder);
 		
+		// Update cached rotation data for torso nodes.
+		void UpdateCachedTorsoNodeRotationData();
+
 		// Update movement parameters based on controller input.
 		void UpdateMovementParameters();
 		
@@ -269,6 +340,8 @@ namespace ALYSLC
 		RE::ActorPtr movementActor;
 		// Last aim pitch position.
 		RE::NiPoint3 aimPitchPos;
+		// Dash dodge direction set on the first frame of the dodge.
+		RE::NiPoint3 dashDodgeDir;
 		// World position at which to start running the player's interaction package.
 		RE::NiPoint3 interactionPackageEntryPos;
 		// Player attack source's direction.
@@ -296,9 +369,6 @@ namespace ALYSLC
 		bool aimPitchManuallyAdjusted;
 		// P1 should be set to motion driven in order to trigger a location discovery event.
 		bool attemptDiscovery;
-		// How close the player is to completing their last requested dash dodge.
-		// [0.0, 1.0]
-		float dashDodgeCompletionRatio;
 		// Was DontMove() successfully called on this player?
 		bool dontMoveSet;
 		// Has a movement offset been set for this player's actor/mount?
@@ -365,6 +435,15 @@ namespace ALYSLC
 		float baseHeightMult;
 		// Base speed multiplier.
 		float baseSpeedMult;
+		// How close the player is to completing their last requested dash dodge.
+		// [0.0, 1.0]
+		float dashDodgeCompletionRatio;
+		// Equipped objects' total weight at the start of the dash dodge.
+		float dashDodgeEquippedWeight;
+		// Initial speed for dash dodge.
+		float dashDodgeInitialSpeed;
+		// Dash dodge LS displacement at the start of the dodge.
+		float dashDodgeLSDisplacement;
 		// Current left stick angle at max displacement from center.
 		float lsAngAtMaxDisp;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]

@@ -89,7 +89,6 @@ namespace ALYSLC
 		lockpickingMenu = nullptr;
 		magicMenu = nullptr;
 		mapMenu = nullptr;
-		logger::debug("[MIM] MIM created.");
 	}
 	
 #pragma region MANAGER_FUNCS_IMPL
@@ -101,21 +100,17 @@ namespace ALYSLC
 			SetMenuControlMap();
 			RefreshData();
 
-			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[MIM] MainTask: Try to lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> lock(openedMenuMutex, std::try_to_lock);
 				if (lock)
 				{
-					// REMOVE
-					logger::debug("[MIM] MainTask: Lock acquired and data updated. Setting new menu opened flag to false.");
+					ALYSLC::Log("[MIM] MainTask: Lock acquired and data updated (0x{:X}). Setting new menu opened flag to false.", hash);
 					newMenuAtopStack = false;
 				}
 				else
 				{
-					// REMOVE
-					logger::debug("[MIM] MainTask: Could not acquire lock after updating data. Better luck next time.");
+					ALYSLC::Log("[MIM] MainTask: Could not acquire lock after updating data (0x{:X}). Better luck next time.", hash);
 				}
 			}
 		}
@@ -137,22 +132,20 @@ namespace ALYSLC
 			{
 				RefreshMagicMenuEquipState(true);
 			}
-			else if(openedMenuType == SupportedMenu::kFavorites)
+			else if (openedMenuType == SupportedMenu::kFavorites)
 			{
 				RefreshFavoritesMenuEquipState(true);
 			}
 
 			if (equipEventRefreshReq) 
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[MIM] MainTask: Refresh equip state lock. Try to lock: 0x{:X}.", hash);
 				{
 					std::unique_lock<std::mutex> lock(equipEventMutex, std::try_to_lock);
 					if (lock)
 					{
-						// REMOVE
-						logger::debug("[MIM] MainTask: Lock acquired and data updated. Resetting refresh equip state flags from {}, {} to false.", equipEventRefreshReq, delayedEquipStateRefresh);
+						ALYSLC::Log("[MIM] MainTask: Lock acquired and data updated (0x{:X}). Resetting refresh equip state flags from {}, {} to false.",
+							hash, equipEventRefreshReq, delayedEquipStateRefresh);
 
 						// Equip state refresh request fired before delayed equip refresh request, so we can clear the delayed one.
 						equipEventRefreshReq = false;
@@ -160,8 +153,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						// REMOVE
-						logger::debug("[MIM] MainTask: Could not acquire lock after updating data. Better luck next time.");
+						ALYSLC::Log("[MIM] MainTask: Could not acquire lock after updating data. Better luck next time.");
 					}
 				}
 
@@ -188,7 +180,7 @@ namespace ALYSLC
 	void MenuInputManager::PrePauseTask()
 	{
 		// Release all inputs if menu closed when input(s) were being held.
-		logger::debug("[MIM] PrePauseTask.");
+		ALYSLC::Log("[MIM] PrePauseTask.");
 		for (auto& [xMask, info] : menuControlMap)
 		{
 			if (info.eventType == MenuInputEventType::kEmulateInput)
@@ -235,111 +227,92 @@ namespace ALYSLC
 	{
 		// Refresh all menu-related data.
 
-		if (managerMenuCID != -1)
+		if (managerMenuCID == -1) 
 		{
-			logger::debug("[MIM] RefreshData: Menu controller ID: {}", managerMenuCID);
-			if (glob.coopSessionActive)
-			{
-				menuCoopActorHandle = glob.coopPlayers[managerMenuCID]->coopActor->GetHandle();
-			}
-
-			// Reset general menu data.
-			currentMenuInputType = MenuInputEventType::kReleasedNoEvent;
-			reqEquipIndex = EquipIndex::kRightHand;
-			delayedEquipStateRefresh = false;
-			equipEventRefreshReq = false;
-			isCoopInventory = false;
-			placeholderMagicChanged = false;
-			shouldFavorite = false;
-			shouldRefreshMenu = false;
-			spellFavoriteStatusChanged = false;
-			takeAll = false;
-			fromContainerHandle = RE::ObjectRefHandle();
-			menuContainerHandle = RE::ObjectRefHandle();
-			selectedForm = nullptr;
-			lastEquipStateRefreshReqTP = SteadyClock::now();
-
-			// Clear any lingering queued input events.
-			for (auto& ptr : queuedInputEvents)
-			{
-				ptr.release();
-			}
-			queuedInputEvents.clear();
-
-
-			// Initialize menu-specific data.
-			if (containerMenu)
-			{
-				// Get the container reference and check if it is the co-op player.
-				// If so, the co-op player is accessing their inventory, and the handling of
-				// certain button presses changes:
-				// e.g. the "X" button does not take all but instead drops the selected item.
-				// Binds remain the same either way.
-				RE::NiPointer<RE::TESObjectREFR> containerRefr;
-				bool succ = RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-				if (!succ)
-				{
-					// NOTE: Keeping this commented out for now.
-					// A bug used to arise where the target ref handle returned
-					// would be invalid once a co-op companion player looted the container,
-					// and attempted to access the container a second time.
-					// Increment the GPtr ref to
-					// update the container's target ref handle.
-					/*containerMenu->AddRef();
-					succ = RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-					logger::debug("[MIM] RefreshData: Could not get container ref. Incrementing GRef. Succ after: {}. New handle and container: {}, {}.",
-						succ, RE::ContainerMenu::GetTargetRefHandle(), containerRefr && containerRefr.get() ? containerRefr.get()->GetName() : "NONE");*/
-				}
-
-				menuContainerHandle = containerRefr && containerRefr.get() ? containerRefr->GetHandle() : RE::ObjectRefHandle();
-				// If the container is the co-op companion player themselves, they are accessing their inventory.
-				isCoopInventory = { 
-					containerMenu->GetContainerMode() == RE::ContainerMenu::ContainerMode::kNPCMode && 
-					Util::HandleIsValid(menuContainerHandle) && menuContainerHandle == menuCoopActorHandle
-				};
-
-				logger::debug("[MIM] RefreshData: Container {} mode: {}", 
-					(menuContainerHandle && menuContainerHandle.get()) ? menuContainerHandle.get()->GetName() : "NONE",
-					static_cast<uint32_t>(containerMenu->GetContainerMode()));
-			}
-			else if (magicMenu)
-			{
-				// Set the initial magic item equip states.
-				InitMagicMenuEquippedStates();
-				// Refresh menu after intializing equip states/favorited indices.
-				RefreshMenu();
-			}
-			else if (favoritesMenu)
-			{
-				// Don't allow saving when the co-op player opens the favorites menu, as this will
-				// overwrite player 1's favorites.
-				favoritesMenu->menuFlags.reset(RE::UI_MENU_FLAGS::kAllowSaving);
-				InitFavoritesEntries();
-				// Refresh menu after intializing equip states/favorited indices.
-				RefreshMenu();
-			}
-
-			// Set controlmap initial input states so that
-			// inputs already held as the menu opens do not trigger
-			// any input events until they are released and pressed again.
-			XINPUT_STATE buttonState;
-			ZeroMemory(&buttonState, sizeof(buttonState));
-			// First, check for input presses as given by the menu control map above
-			if (XInputGetState(managerMenuCID, &buttonState) == ERROR_SUCCESS)
-			{
-				for (auto iter = menuControlMap.begin(); iter != menuControlMap.end(); ++iter)
-				{
-					if (buttonState.Gamepad.wButtons & iter->first)
-					{
-						// Set to emulated input initially to prevent previous event type from triggering.
-						menuControlMap[iter->first].eventType = MenuInputEventType::kEmulateInput;
-					}
-				}
-			}
+			ALYSLC::Log("[MIM] ERR: RefreshData: Got invalid controller ID (-1).");
+			return;
 		}
-		else
+
+		if (glob.coopSessionActive)
 		{
-			logger::critical("[MIM] ERR: RefreshData: Got invalid controller ID (-1).");
+			menuCoopActorHandle = glob.coopPlayers[managerMenuCID]->coopActor->GetHandle();
+		}
+
+		// Reset general menu data.
+		currentMenuInputType = MenuInputEventType::kReleasedNoEvent;
+		reqEquipIndex = EquipIndex::kRightHand;
+		delayedEquipStateRefresh = false;
+		equipEventRefreshReq = false;
+		isCoopInventory = false;
+		placeholderMagicChanged = false;
+		shouldFavorite = false;
+		shouldRefreshMenu = false;
+		spellFavoriteStatusChanged = false;
+		takeAll = false;
+		fromContainerHandle = RE::ObjectRefHandle();
+		menuContainerHandle = RE::ObjectRefHandle();
+		selectedForm = nullptr;
+		lastEquipStateRefreshReqTP = SteadyClock::now();
+
+		// Clear any lingering queued input events.
+		for (auto& ptr : queuedInputEvents)
+		{
+			ptr.release();
+		}
+		queuedInputEvents.clear();
+
+
+		// Initialize menu-specific data.
+		if (containerMenu)
+		{
+			// Get the container reference and check if it is the co-op player.
+			// If so, the co-op player is accessing their inventory, and the handling of
+			// certain button presses changes:
+			// e.g. the "X" button does not take all but instead drops the selected item.
+			// Binds remain the same either way.
+			RE::NiPointer<RE::TESObjectREFR> containerRefr;
+			bool succ = RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
+			menuContainerHandle = containerRefr && containerRefr.get() ? containerRefr->GetHandle() : RE::ObjectRefHandle();
+			// If the container is the co-op companion player themselves, they are accessing their inventory.
+			isCoopInventory =
+			{ 
+				containerMenu->GetContainerMode() == RE::ContainerMenu::ContainerMode::kNPCMode && 
+				Util::HandleIsValid(menuContainerHandle) && menuContainerHandle == menuCoopActorHandle
+			};
+		}
+		else if (magicMenu)
+		{
+			// Set the initial magic item equip states.
+			InitMagicMenuEquippedStates();
+			// Refresh menu after initializing equip states/favorited indices.
+			RefreshMenu();
+		}
+		else if (favoritesMenu)
+		{
+			// Don't allow saving when the co-op player opens the favorites menu, as this will
+			// overwrite player 1's favorites.
+			favoritesMenu->menuFlags.reset(RE::UI_MENU_FLAGS::kAllowSaving);
+			InitFavoritesEntries();
+			// Refresh menu after initializing equip states/favorited indices.
+			RefreshMenu();
+		}
+
+		// Set controlmap initial input states so that
+		// inputs already held as the menu opens do not trigger
+		// any input events until they are released and pressed again.
+		XINPUT_STATE buttonState;
+		ZeroMemory(&buttonState, sizeof(buttonState));
+		// First, check for input presses as given by the menu control map above
+		if (XInputGetState(managerMenuCID, &buttonState) == ERROR_SUCCESS)
+		{
+			for (auto iter = menuControlMap.begin(); iter != menuControlMap.end(); ++iter)
+			{
+				if (buttonState.Gamepad.wButtons & iter->first)
+				{
+					// Set to emulated input initially to prevent previous event type from triggering.
+					menuControlMap[iter->first].eventType = MenuInputEventType::kEmulateInput;
+				}
+			}
 		}
 	}
 
@@ -351,11 +324,7 @@ namespace ALYSLC
 		if (managerMenuCID == -1 || XInputGetState(managerMenuCID, &buttonState) != ERROR_SUCCESS)
 		{
 			// Leave error message before returning.
-			if (managerMenuCID != -1) 
-			{
-				logger::error("[MIM] ERR: ShouldSelfPause: Could not get XINPUT state for controller ID {}. Pausing menu input manager.", managerMenuCID);
-			}
-
+			ALYSLC::Log("[MIM] ERR: ShouldSelfPause: Could not get XINPUT state for controller ID {}. Pausing menu input manager.", managerMenuCID);
 			return ManagerState::kPaused;
 		}
 
@@ -378,7 +347,6 @@ namespace ALYSLC
 							// The container is a co-op companion's inventory.
 							if (GlobalCoopData::IsCoopPlayer(containerRefr)) 
 							{
-								logger::debug("[MIM] ShouldSelfPause: Set menu CID to P1's: {}.", glob.player1CID);
 								GlobalCoopData::SetMenuCIDs(glob.player1CID);
 								return ManagerState::kPaused;
 							}
@@ -414,7 +382,6 @@ namespace ALYSLC
 							{
 								managerMenuCID = pIndex;
 								managerMenuPlayerID = glob.coopPlayers[managerMenuCID]->playerID;
-								logger::debug("[MIM] ShouldSelfResume: Set menu CID to saved co-op player's: {}.", managerMenuCID);
 								GlobalCoopData::SetMenuCIDs(managerMenuCID);
 
 								return ManagerState::kRunning;
@@ -439,7 +406,6 @@ namespace ALYSLC
 		ZeroMemory(&buttonState, sizeof(buttonState));
 		if (managerMenuCID < 0 || managerMenuCID >= ALYSLC_MAX_PLAYER_COUNT) 
 		{
-			logger::error("[MIM] ERR: CheckControllerInput: manager menu controller ID is invalid: ({}).", managerMenuCID);
 			return;
 		}
 
@@ -482,7 +448,6 @@ namespace ALYSLC
 						currentMenuInputType = MenuInputEventType::kReleasedNoEvent;
 						if (handleButtonPress)
 						{
-							logger::debug("[MIM] CheckControllerInput: Handle button (0x{:X}) press with opened menu type {}. Processing.", xMask, openedMenuType);
 							switch (openedMenuType)
 							{
 							case SupportedMenu::kBarter:
@@ -654,238 +619,238 @@ namespace ALYSLC
 	{
 		// Print out all binds (event name -> input ID code) per context and for each device.
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("++++++++++++++++++++++++++++++++BOOK++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad--------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("++++++++++++++++++++++++++++++++BOOK++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad--------------------------------");
 		for (auto& binds : controlMap->controlMap[bookContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard-------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard-------------------------------");
 		for (auto& binds : controlMap->controlMap[bookContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse----------------------------------");
+		ALYSLC::Log("-------------------------------Mouse----------------------------------");
 		for (auto& binds : controlMap->controlMap[bookContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++CONSOLE++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++CONSOLE++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad----------------------------------");
 		for (auto& binds : controlMap->controlMap[consoleContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard---------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard---------------------------------");
 		for (auto& binds : controlMap->controlMap[consoleContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse------------------------------------");
+		ALYSLC::Log("-------------------------------Mouse------------------------------------");
 		for (auto& binds : controlMap->controlMap[consoleContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("++++++++++++++++++++++++++++++++CURSOR++++++++++++++++++++++++++++++++++");
-		logger::debug("--------------------------------Gamepad---------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("++++++++++++++++++++++++++++++++CURSOR++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("--------------------------------Gamepad---------------------------------");
 		for (auto& binds : controlMap->controlMap[cursorContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Keyboard--------------------------------");
+		ALYSLC::Log("--------------------------------Keyboard--------------------------------");
 		for (auto& binds : controlMap->controlMap[cursorContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Mouse-----------------------------------");
+		ALYSLC::Log("--------------------------------Mouse-----------------------------------");
 		for (auto& binds : controlMap->controlMap[cursorContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++DEBUGOVERLAY++++++++++++++++++++++++++++++++++");
-		logger::debug("---------------------------------Gamepad-------------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++DEBUGOVERLAY++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("---------------------------------Gamepad-------------------------------------");
 		for (auto& binds : controlMap->controlMap[debugOverlayContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("---------------------------------Keyboard------------------------------------");
+		ALYSLC::Log("---------------------------------Keyboard------------------------------------");
 		for (auto& binds : controlMap->controlMap[debugOverlayContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("---------------------------------Mouse---------------------------------------");
+		ALYSLC::Log("---------------------------------Mouse---------------------------------------");
 		for (auto& binds : controlMap->controlMap[debugOverlayContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++FAVORITES++++++++++++++++++++++++++++++++++");
-		logger::debug("--------------------------------Gamepad-----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++FAVORITES++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : controlMap->controlMap[favoritesContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Keyboard----------------------------------");
+		ALYSLC::Log("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : controlMap->controlMap[favoritesContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[favoritesContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++GAMEPLAY++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad-----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++GAMEPLAY++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad-----------------------------------");
 		for (auto& binds : controlMap->controlMap[gameplayContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard----------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard----------------------------------");
 		for (auto& binds : controlMap->controlMap[gameplayContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("-------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[gameplayContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++INVENTORY++++++++++++++++++++++++++++++++++");
-		logger::debug("--------------------------------Gamepad-----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++INVENTORY++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : controlMap->controlMap[inventoryContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Keyboard----------------------------------");
+		ALYSLC::Log("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : controlMap->controlMap[inventoryContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("--------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[inventoryContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++ITEMMENU++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad-----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++ITEMMENU++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad-----------------------------------");
 		for (auto& binds : controlMap->controlMap[itemMenuContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard----------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard----------------------------------");
 		for (auto& binds : controlMap->controlMap[itemMenuContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("-------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[itemMenuContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++JOURNAL++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad----------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++JOURNAL++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad----------------------------------");
 		for (auto& binds : controlMap->controlMap[journalContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard---------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard---------------------------------");
 		for (auto& binds : controlMap->controlMap[journalContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse----------------------------------");
+		ALYSLC::Log("-------------------------------Mouse----------------------------------");
 		for (auto& binds : controlMap->controlMap[journalContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++LOCKPICKING++++++++++++++++++++++++++++++++++");
-		logger::debug("---------------------------------Gamepad------------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++LOCKPICKING++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("---------------------------------Gamepad------------------------------------");
 		for (auto& binds : controlMap->controlMap[lockpickingContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("---------------------------------Keyboard-----------------------------------");
+		ALYSLC::Log("---------------------------------Keyboard-----------------------------------");
 		for (auto& binds : controlMap->controlMap[lockpickingContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("---------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("---------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[lockpickingContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++MAP++++++++++++++++++++++++++++++++++");
-		logger::debug("-----------------------------Gamepad--------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++MAP++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-----------------------------Gamepad--------------------------------");
 		for (auto& binds : controlMap->controlMap[mapContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-----------------------------Keyboard-------------------------------");
+		ALYSLC::Log("-----------------------------Keyboard-------------------------------");
 		for (auto& binds : controlMap->controlMap[mapContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-----------------------------Mouse----------------------------------");
+		ALYSLC::Log("-----------------------------Mouse----------------------------------");
 		for (auto& binds : controlMap->controlMap[mapContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++MENUMODE++++++++++++++++++++++++++++++++++");
-		logger::debug("-------------------------------Gamepad------------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++MENUMODE++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("-------------------------------Gamepad------------------------------------");
 		for (auto& binds : controlMap->controlMap[menuContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Keyboard----------------------------------");
+		ALYSLC::Log("-------------------------------Keyboard----------------------------------");
 		for (auto& binds : controlMap->controlMap[menuContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("-------------------------------Mouse-------------------------------------");
+		ALYSLC::Log("-------------------------------Mouse-------------------------------------");
 		for (auto& binds : controlMap->controlMap[menuContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
-		logger::debug("===============================================================================================================================");
-		logger::debug("+++++++++++++++++++++++++++++++STATS++++++++++++++++++++++++++++++++++");
-		logger::debug("------------------------------Gamepad---------------------------------");
+		ALYSLC::Log("===============================================================================================================================");
+		ALYSLC::Log("+++++++++++++++++++++++++++++++STATS++++++++++++++++++++++++++++++++++");
+		ALYSLC::Log("------------------------------Gamepad---------------------------------");
 		for (auto& binds : controlMap->controlMap[statsContext]->deviceMappings[gamepadDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("------------------------------Keyboard--------------------------------");
+		ALYSLC::Log("------------------------------Keyboard--------------------------------");
 		for (auto& binds : controlMap->controlMap[statsContext]->deviceMappings[keyboardDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		logger::debug("------------------------------Mouse-----------------------------------");
+		ALYSLC::Log("------------------------------Mouse-----------------------------------");
 		for (auto& binds : controlMap->controlMap[statsContext]->deviceMappings[mouseDevice])
 		{
-			logger::debug("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			ALYSLC::Log("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 	}
 
@@ -901,13 +866,6 @@ namespace ALYSLC
 		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpen);
 		if ((glob.globalDataInit) && ((glob.coopSessionActive) || ((!menuNamesHashSet.empty() && menuNamesHashSet.contains(Hash(GlobalCoopData::SETUP_MENU_NAME))) || pmcFadeInterpData->interpToMin)))
 		{
-			/*logger::info("[MIM] DrawPlayerMenuControlOverlay: temp menu open: {}, interp to max, min: {}, {}, current value: {}, direction change: {}, value at direction change: {}. Menu CIDs: current {}, prev: {}. Last set PMC PID: {}.",
-				tempMenuOpen, 
-				pmcFadeInterpData->interpToMax, pmcFadeInterpData->interpToMin, 
-				pmcFadeInterpData->value, pmcFadeInterpData->directionChangeFlag,
-				pmcFadeInterpData->valueAtDirectionChange,
-				glob.menuCID, glob.prevMenuCID, pmcPlayerID);*/
-
 			// Draw when a temporary menu is open or while still fading in/out.
 			if (tempMenuOpen || pmcFadeInterpData->interpToMax || pmcFadeInterpData->interpToMin) 
 			{
@@ -958,14 +916,11 @@ namespace ALYSLC
 		// and update the Favorites Menu quick slot tag(s) as needed.
 		// NOTE: Run from MenuControls hook.
 
-		logger::debug("[MIM] EquipP1QSForm.");
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!ui || !p1 || !taskInterface)
 		{
-			logger::error("[MIM] ERR: EquipP1QSForm: UI invalid: {}, player 1 invalid: {}, task interface invalid: {}.", 
-				(bool)!ui, (bool)!p1, (bool)!taskInterface);
 			return;
 		}
 
@@ -978,13 +933,13 @@ namespace ALYSLC
 		// Failsafe: Initialize index-to-entry map if it is empty. 
 		if (favMenuIndexToEntryMap.empty()) 
 		{
-			logger::debug("[MIM] EquipP1QSForm: Favorites Menu index-to-entry map was empty. Initializing now.");
 			InitP1QSFormEntries();
 		}
 
 		// P1 is controlling the menu.
 		menuCoopActorHandle = p1->GetHandle();
-		taskInterface->AddUITask(
+		taskInterface->AddUITask
+		(
 			[this]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
@@ -1066,6 +1021,7 @@ namespace ALYSLC
 											}
 										}
 
+										ALYSLC::Log("[MIM] EquipP1QSForm: {} {}.", equipped ? "Equipped" : "Unequipped", entryStr);
 										entryText.SetString(entryStr);
 										entry.SetMember("text", entryText);
 										view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", selectedEntryNum, std::addressof(entry), 1);
@@ -1087,15 +1043,11 @@ namespace ALYSLC
 									}
 								}
 							}
-							else
-							{
-								logger::debug("[MIM] EquipP1QSForm: Player 1's favorites menu indices to entries map is empty: {}, does not contain the selected index: {}",
-									favMenuIndexToEntryMap.empty(), !favMenuIndexToEntryMap.contains(index));
-							}
 						}
 					}
 				}
-			});
+			}
+		);
 	}
 
 	RE::TESForm* MenuInputManager::GetSelectedMagicMenuSpell()
@@ -1105,7 +1057,6 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
-			logger::error("[MIM] ERR: GetSelectedMagicMenuSpell: Menu player's ptr is invalid.");
 			return nullptr;
 		}
 
@@ -1269,9 +1220,6 @@ namespace ALYSLC
 			}
 		}
 
-		// REMOVE when done debugging.
-		logger::debug("[MIM] GetSelectedMagicMenuSpell: Matched selected item with p1 magic form: {}.",
-			(formToEquip) ? formToEquip->GetName() : "NONE");
 		return formToEquip;
 	}
 
@@ -1284,7 +1232,7 @@ namespace ALYSLC
 		case MenuInputEventType::kEquipReq:
 		{
 			// REMOVE when done debugging.
-			logger::debug("[MIM] HandleMenuEvent: Equip Request Event: from container: {}, form: {}, equip index: {}, placeholder spell changed: {}.",
+			ALYSLC::Log("[MIM] HandleMenuEvent: Equip Request Event: from container: {}, form: {}, equip index: {}, placeholder spell changed: {}.",
 				(Util::HandleIsValid(fromContainerHandle)) ? fromContainerHandle.get()->GetName() : "NONE",
 				(selectedForm) ? selectedForm->GetName() : "NONE",
 				reqEquipIndex, placeholderMagicChanged);
@@ -1315,7 +1263,7 @@ namespace ALYSLC
 		case MenuInputEventType::kTakeItemReq:
 		{
 			// REMOVE when done debugging.
-			logger::debug("[MIM] HandleMenuEvent: Take Item(s) Request Event: from container: {}, form: {}, take all: {}",
+			ALYSLC::Log("[MIM] HandleMenuEvent: Take Item(s) Request Event: from container: {}, form: {}, take all: {}",
 				(Util::HandleIsValid(fromContainerHandle)) ? fromContainerHandle.get()->GetName() : "NONE",
 				(selectedForm) ? selectedForm->GetName() : "NONE",
 				takeAll);
@@ -1343,7 +1291,6 @@ namespace ALYSLC
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!p1) 
 		{
-			logger::error("[MIM] ERR: HandleLootRequest: P1 is invalid.");
 			return;
 		}
 
@@ -1393,7 +1340,6 @@ namespace ALYSLC
 	{
 		// Update equip states in the Favorites Menu for forms equipped by the co-op companion player.
 
-		logger::debug("[MIM] InitFavoritesEntries.");
 		// Ensure cached favorited items are up to date.
 		const auto& em = glob.coopPlayers[managerMenuCID]->em;
 		em->RefreshEquipState(RefreshSlots::kAll);
@@ -1406,7 +1352,6 @@ namespace ALYSLC
 	{
 		// Update equip states in the Magic Menu for spells/shouts equipped by the co-op companion player.
 
-		logger::debug("[MIM] InitMagicMenuEquippedStates: Menu just opened. Setting initial equip states.");
 		// Ensure placeholder spell/shouts are NOT learned by P1.
 		if (managerMenuCID != -1) 
 		{
@@ -1441,14 +1386,11 @@ namespace ALYSLC
 	{
 		// Set quick slot tags for any equipped quick slot items/spells and update index-to-entry map.
 
-		logger::debug("[MIM] InitP1QSFormEntries.");
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!ui || !p1 || !taskInterface)
 		{
-			logger::error("[MIM] ERR: InitP1QSFormEntries: UI invalid: {}, player 1 invalid: {}, task interface invalid: {}.",
-				(bool)!ui, (bool)!p1, (bool)!taskInterface);
 			return;
 		}
 
@@ -1515,8 +1457,10 @@ namespace ALYSLC
 
 				// Update the Favorites Menu UI entries to reflect the initial equip state of quick slot items/spells
 				// and update index-to-entry map.
-				taskInterface->AddUITask(
-					[this, &em, favoritesList]() {
+				taskInterface->AddUITask
+				(
+					[this, &em, favoritesList]() 
+					{
 						if (auto ui = RE::UI::GetSingleton(); ui)
 						{
 							if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
@@ -1555,6 +1499,8 @@ namespace ALYSLC
 												entryText.SetString(entryStr);
 												entry.SetMember("text", entryText);
 												view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
+												// Update list to reflect changes.
+												view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
 												logger::debug("[MIM] InitP1QSFormEntries: Entry text is now: {}", entryStr);
 											}
 										}
@@ -1562,15 +1508,13 @@ namespace ALYSLC
 										// Insert (key = favorites list index, value = UI entry number) pairs into map.
 										favMenuIndexToEntryMap.insert_or_assign(index, i);
 									}
-
-									// Update list to reflect changes.
-									view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
 								}
 							}
 						}
-					});
+					}
+				);
 			}
-		}
+		};
 	}
 
 	void MenuInputManager::PerformEnderalSkillLevelUp(RE::AlchemyItem* a_skillbook)
@@ -1580,12 +1524,9 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr || !a_skillbook)
 		{
-			logger::critical("[MIM] PerformEnderalSkillLevelUp: Menu player's ptr is invalid: {}, skillbook invalid: {}.",
-				(bool)!menuCoopActorPtr, (bool)!a_skillbook);
 			return;
 		}
 
-		logger::debug("[MIM] PerformEnderalSkillLevelUp: {} -> {}.", menuCoopActorPtr->GetName(), a_skillbook->GetName());
 		auto skillAV = RE::ActorValue::kNone;
 		auto skillbookTier = EnderalSkillbookTier::kTotal;
 		const RE::FormID& fid = a_skillbook->formID;
@@ -1595,8 +1536,6 @@ namespace ALYSLC
 			const auto& tierSkillPair = GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at(fid);
 			skillbookTier = tierSkillPair.first;
 			skillAV = tierSkillPair.second;
-			logger::debug("[MIM] PerformEnderalSkillLevelUp: Learning/crafting book {} teaches skill {}, tier {}.",
-				a_skillbook->GetName(), skillAV, skillbookTier);
 		}
 
 		std::string skillName = "";
@@ -1612,9 +1551,6 @@ namespace ALYSLC
 			{
 				if (avLvl <= 24.0f)
 				{
-					// REMOVE when done debugging.
-					logger::debug("[MIM] PerformEnderalSkillLevelUp: {}'s skill {} is at {}, which matches the {} tier. Can use book {} to level up skill.",
-						menuCoopActorPtr->GetName(), skillName, avLvl, skillbookTier, a_skillbook->GetName());
 					canUseToLevelUp = true;
 				}
 
@@ -1624,9 +1560,6 @@ namespace ALYSLC
 			{
 				if (avLvl <= 49.0f)
 				{
-					// REMOVE when done debugging.
-					logger::debug("[MIM] PerformEnderalSkillLevelUp: {}'s skill {} is at {}, which matches the {} tier. Can use book {} to level up skill.",
-						menuCoopActorPtr->GetName(), skillName, avLvl, skillbookTier, a_skillbook->GetName());
 					canUseToLevelUp = true;
 				}
 
@@ -1636,9 +1569,6 @@ namespace ALYSLC
 			{
 				if (avLvl <= 74.0f)
 				{
-					// REMOVE when done debugging.
-					logger::debug("[MIM] PerformEnderalSkillLevelUp: {}'s skill {} is at {}, which matches the {} tier. Can use book {} to level up skill.",
-						menuCoopActorPtr->GetName(), skillName, avLvl, skillbookTier, a_skillbook->GetName());
 					canUseToLevelUp = true;
 				}
 
@@ -1648,9 +1578,6 @@ namespace ALYSLC
 			{
 				if (avLvl <= 99.0f)
 				{
-					// REMOVE when done debugging.
-					logger::debug("[MIM] PerformEnderalSkillLevelUp: {}'s skill {} is at {}, which matches the {} tier. Can use book {} to level up skill.",
-						menuCoopActorPtr->GetName(), skillName, avLvl, skillbookTier, a_skillbook->GetName());
 					canUseToLevelUp = true;
 				}
 
@@ -1658,8 +1585,6 @@ namespace ALYSLC
 			}
 			default:
 			{
-				logger::error("[MIM] ERR: PerformEnderalSkillLevelUp: Could not get tier for learning/crafting book {}.",
-					a_skillbook->GetName(), skillAV);
 				break;
 			}
 			}
@@ -1677,10 +1602,6 @@ namespace ALYSLC
 
 		if (canUseToLevelUp && pointsAvailable)
 		{
-			// REMOVE when done debugging.
-			logger::debug("[MIM] PerformEnderalSkillLevelUp: Learning/crafting book {} levels up skill {}. Level up skill for {}.",
-				a_skillbook->GetName(), skillAV, menuCoopActorPtr->GetName());
-
 			auto& skillIncList = glob.serializablePlayerData.at(menuCoopActorPtr->formID)->skillLevelIncreasesList;
 			int32_t skillAVIndex = -1;
 			// Get skill index for the skill actor value.
@@ -1698,7 +1619,7 @@ namespace ALYSLC
 				const float avLvl = menuCoopActorPtr->GetBaseActorValue(skillAV);
 
 				// REMOVE when done debugging.
-				logger::debug("[MIM] PerformEnderalSkillLevelUp: {} leveled up Skill {} from level {} to {} by reading {}. Skill inc list entry goes from {} to {}.",
+				ALYSLC::Log("[MIM] PerformEnderalSkillLevelUp: {} leveled up Skill {} from level {} to {} by reading {}. Skill inc list entry goes from {} to {}.",
 					menuCoopActorPtr->GetName(),
 					skillAV,
 					avLvl,
@@ -1722,12 +1643,16 @@ namespace ALYSLC
 				}
 
 				// Notify player of how many points remain after leveling.
-				RE::DebugMessageBox(fmt::format(
-					"[ALYSLC] {} increased to {}! {} Points left: {}",
-					skillName,
-					avLvl + 1,
-					isShared ? "Crafting" : "Learning",
-					isShared ? glob.craftingPointsGlob->value : glob.learningPointsGlob->value).c_str()
+				RE::DebugMessageBox
+				(
+					fmt::format
+					(
+						"[ALYSLC] {} increased to {}! {} Points left: {}",
+						skillName,
+						avLvl + 1,
+						isShared ? "Crafting" : "Learning",
+						isShared ? glob.craftingPointsGlob->value : glob.learningPointsGlob->value
+					).c_str()
 				);
 
 				// Remove consumed book.
@@ -1741,19 +1666,37 @@ namespace ALYSLC
 			if (!pointsAvailable)
 			{
 				// No points to use.
-				RE::DebugMessageBox(fmt::format("[ALYSLC] You do not have enough {} Points!", isShared ? "Crafting" : "Learning").c_str());
+				RE::DebugMessageBox
+				(
+					fmt::format
+					(
+						"[ALYSLC] You do not have enough {} Points!", isShared ? "Crafting" : "Learning"
+					).c_str()
+				);
 			}
 			else
 			{
 				if (skillAV != RE::ActorValue::kNone)
 				{
 					// Not the correct tier.
-					RE::DebugMessageBox(fmt::format("[ALYSLC] You already have developed this skill too well to benefit from this learning/crafting book!", a_skillbook->GetName()).c_str());
+					RE::DebugMessageBox
+					(
+						fmt::format
+						(
+							"[ALYSLC] You already have developed this skill too well to benefit from this learning/crafting book!", a_skillbook->GetName()
+						).c_str()
+					);
 				}
 				else
 				{
 					// Not valid for leveling.
-					RE::DebugMessageBox(fmt::format("[ALYSLC] Cannot use {} to level up skill.", a_skillbook->GetName()).c_str());
+					RE::DebugMessageBox
+					(
+						fmt::format
+						(
+							"[ALYSLC] Cannot use {} to level up skill.", a_skillbook->GetName()
+						).c_str()
+					);
 				}
 			}
 		}
@@ -1766,8 +1709,6 @@ namespace ALYSLC
 		auto ue = RE::UserEvents::GetSingleton(); 
 		if (!barterMenu || !ue) 
 		{
-			logger::error("[MIM] ERR: ProcessBaterMenuButtonInput: Menu invalid: {}, user events invalid: {}.",
-				(bool)!barterMenu, (bool)!ue);
 			return;
 		}
 
@@ -1801,8 +1742,6 @@ namespace ALYSLC
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!bookMenu || !ue)
 		{
-			logger::error("[MIM] ERR: ProcessBookMenuButtonInput: Menu invalid: {}, user events invalid: {}.",
-				(bool)!bookMenu, (bool)!ue);
 			return;
 		}
 
@@ -1840,15 +1779,12 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
-			logger::error("[MIM] ERR: ProcessContainerMenuButtonInput: menu player's ptr is invalid.");
 			return;
 		}
 
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!containerMenu || !ue)
 		{
-			logger::error("[MIM] ERR: ProcessContainerMenuButtonInput: Menu invalid: {}, user events invalid: {}.",
-				(bool)!containerMenu, (bool)!ue);
 			return;
 		}
 
@@ -1872,6 +1808,9 @@ namespace ALYSLC
 		if (a_xMask == XINPUT_GAMEPAD_X)
 		{
 			// Drop one of the item when in the player's inventory.
+			// Otherwise, take all when looting from a container.
+			// No need to have a selected item.
+			// Everything is looted by P1 and then transfered to the menu-controlling player.
 			if (isCoopInventory)
 			{
 				// Handled here; no event to send.
@@ -1896,31 +1835,24 @@ namespace ALYSLC
 						// Remove dropped object from desired equipped objects list if no more remain in the player's inventory.
 						if (p->isActive)
 						{
+							// Unequip before dropping to avoid crash.
 							auto foundIter = std::find_if(p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), [boundObj](RE::TESForm* a_form) { return a_form == boundObj; });
 							if (foundIter != p->em->desiredEquippedForms.end())
 							{
 								auto index = foundIter - p->em->desiredEquippedForms.begin();
 								p->em->desiredEquippedForms[index] = nullptr;
+								p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
+							}
+							else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+							{
+								aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
 							}
 						}
-					}
-
-					// Unequip before dropping to avoid crash.
-					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem) 
-					{
-						aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
 					}
 
 					auto droppedRefrHandle = menuCoopActorPtr->RemoveItem(boundObj, 1, RE::ITEM_REMOVE_REASON::kDropping, nullptr, nullptr, &dropPos);
 					shouldRefreshMenu = true;
 				}
-			}
-			// Take all when looting from a container.
-			// No need to have a selected item.
-			// Everything is looted by P1 and then transfered to the menu-controlling player.
-			else if (mode == RE::ContainerMenu::ContainerMode::kLoot || mode == RE::ContainerMenu::ContainerMode::kNPCMode)
-			{
-				logger::debug("[MIM] ProcessContainerMenuButtonInput: Non-co-op entity container. Not stealing/pickpocketing. Take all.");
 			}
 		}
 
@@ -1936,7 +1868,7 @@ namespace ALYSLC
 					//bool isGiftMenuBlacklistedItem = selectedForm->IsGold() || selectedForm->IsKey();
 					//if (isGiftMenuBlacklistedItem || (!isCoopInventory && (mode == RE::ContainerMenu::ContainerMode::kLoot || mode == RE::ContainerMenu::ContainerMode::kNPCMode)))
 					//{
-					//	logger::debug("[MIM] ProcessContainerMenuButtonInput: Adding (x1) {} to {}.", selectedForm->GetName(), menuCoopActorPtr->GetName());
+					//	ALYSLC::Log("[MIM] ProcessContainerMenuButtonInput: Adding (x1) {} to {}.", selectedForm->GetName(), menuCoopActorPtr->GetName());
 					//}
 					//else if (isCoopInventory)
 					//{ 
@@ -1990,7 +1922,6 @@ namespace ALYSLC
 											exDataList = entryData->extraLists->front();
 											if (inventoryChanges)
 											{
-												logger::debug("[MIM] ProcessContainerMenuButtonInput: Favoriting {}", selectedForm->GetName());
 												Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), exDataList);
 											}
 										}
@@ -1998,7 +1929,6 @@ namespace ALYSLC
 										{
 											if (inventoryChanges)
 											{
-												logger::debug("[MIM] ProcessContainerMenuButtonInput: Unfavoriting {}", selectedForm->GetName());
 												Util::NativeFunctions::Unfavorite(inventoryChanges, entryData.get(), exDataList);
 											}
 										}
@@ -2050,7 +1980,6 @@ namespace ALYSLC
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!ue)
 		{
-			logger::error("[MIM] ERR: ProcessDialogueMenuButtonInput: User events invalid.", (bool)!ue);
 			return;
 		}
 
@@ -2077,7 +2006,6 @@ namespace ALYSLC
 			// Can't update QS tag if task interface is invalid.
 			if (!taskInterface)
 			{
-				logger::error("[MIM] ERR: ProcessFavoritesMenuButtonInput: Task interface invalid.");
 				return;
 			}
 
@@ -2149,12 +2077,6 @@ namespace ALYSLC
 													view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", oldEntryNum, std::addressof(oldEntry), 1);
 												}
 											}
-											else
-											{
-												// Should not happen if everything is working.
-												logger::critical("[MIM] ProcessFavoritesMenuButtonInput: Same item in quick slot after (un)equip request: {}, equippedIndex is -1: {}, old and new indices are the same: {} ({}).",
-													index == equippedQSIndex, equippedQSIndex == -1, equippedQSIndex == index, equippedQSIndex);
-											}
 										}
 										else
 										{
@@ -2166,7 +2088,6 @@ namespace ALYSLC
 											}
 										}
 
-										logger::debug("[MIM] ProcessFavoritesMenuButtonInput: {}'s entry text is now: {}", form->GetName(), entryStr);
 										// Update text and entry list.
 										entryText.SetString(entryStr);
 										entry.SetMember("text", entryText);
@@ -2177,14 +2098,10 @@ namespace ALYSLC
 										if (isConsumable)
 										{
 											em->equippedQSItemIndex = shouldEquip ? index : -1;
-											logger::debug("[MIM] ProcessFavoritesMenuButtonInput: {}, index {}, is now {} in the item quick slot.",
-												form->GetName(), em->equippedQSItemIndex, shouldEquip ? "equipped" : "unequipped");
 										}
 										else
 										{
 											em->equippedQSSpellIndex = shouldEquip ? index : -1;
-											logger::debug("[MIM] ProcessFavoritesMenuButtonInput: {}, index {}, is now {} in the spell quick slot.",
-												form->GetName(), em->equippedQSSpellIndex, shouldEquip ? "equipped" : "unequipped");
 										}
 
 										// Refresh equip state after (un)equipping quick slot item/spell.
@@ -2220,7 +2137,6 @@ namespace ALYSLC
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!ue)
 		{
-			logger::error("[MIM] ERR: ProcessInventoryMenuButtonInput: User events invalid.");
 			return;
 		}
 
@@ -2240,7 +2156,6 @@ namespace ALYSLC
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!ue)
 		{
-			logger::error("[MIM] ERR: ProcessLootMenuButtonInput: User events invalid.");
 			return;
 		}
 
@@ -2306,11 +2221,9 @@ namespace ALYSLC
 	{
 		// Perform menu-dependent actions based on trigger press.
 
-		logger::error("[MIM] ProcessTriggerInput: {}.", menuName);
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
-			logger::error("[MIM] ERR: ProcessTriggerInput: Menu-controlling player is invalid.");
 			return;
 		}
 
@@ -2320,7 +2233,11 @@ namespace ALYSLC
 		{
 			if (!containerMenu) 
 			{
-				logger::error("[MIM] ERR: ProcessTriggerInput: ContainerMenu invalid.");
+				if (auto ui = RE::UI::GetSingleton(); ui) 
+				{
+					containerMenu = ui->GetMenu<RE::ContainerMenu>();
+				}
+
 				return;
 			}
 
@@ -2367,7 +2284,6 @@ namespace ALYSLC
 						// If container reference is not the player, add the item-to-equip to the co-op player.
 						if (!isCoopInventory && obj)
 						{
-							logger::debug("[MIM] ProcessTriggerInput: Container Menu: moving {} to player inventory before equipping.", obj->GetName());
 							if (auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); containerRefrPtr) 
 							{
 								containerRefrPtr->RemoveItem(obj, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, menuCoopActorPtr.get());
@@ -2375,14 +2291,6 @@ namespace ALYSLC
 						}
 					}
 				}
-				else
-				{
-					logger::debug("[MIM] ProcessTriggerInput: Container Menu: no selected object.");
-				}
-			}
-			else
-			{
-				logger::debug("[MIM] ProcessTriggerInput: Container Menu: no selected item.");
 			}
 
 			break;
@@ -2391,7 +2299,11 @@ namespace ALYSLC
 		{
 			if (!favoritesMenu)
 			{
-				logger::error("[MIM] ERR: ProcessTriggerInput: FavoritesMenu invalid.");
+				if (auto ui = RE::UI::GetSingleton(); ui)
+				{
+					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
+				}
+
 				return;
 			}
 
@@ -2500,16 +2412,11 @@ namespace ALYSLC
 						{
 							placeholderMagicChanged = selectedForm->formID != em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H];
 						}
-
-						logger::debug("[MIM] ProcessTriggerInput: FavoritesMenu: About to (un)equip hand spell {} (0x{:X}) from equip index {}, event: {}, placeholder magic changed: {}",
-							spellToEquip->GetName(), spellToEquip->formID, reqEquipIndex, currentMenuInputType, placeholderMagicChanged);
 					}
 					else if (spellToEquip)
 					{
 						// Is voice spell, no copying to placeholder.
 						placeholderMagicChanged = false;
-						logger::debug("[MIM] ProcessTriggerInput: FavoritesMenu: About to (un)equip voice spell {} (0x{:X}) from equip index {}, event: {}, placeholder magic changed: {}",
-							spellToEquip->GetName(), spellToEquip->formID, reqEquipIndex, currentMenuInputType, placeholderMagicChanged);
 					}
 				}
 				else
@@ -2532,7 +2439,11 @@ namespace ALYSLC
 		{
 			if (!magicMenu)
 			{
-				logger::error("[MIM] ERR: ProcessTriggerInput: MagicMenu invalid.");
+				if (auto ui = RE::UI::GetSingleton(); ui)
+				{
+					magicMenu = ui->GetMenu<RE::MagicMenu>();
+				}
+
 				return;
 			}
 
@@ -2575,20 +2486,9 @@ namespace ALYSLC
 						{
 							placeholderMagicChanged = selectedForm->formID != em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H];
 						}
-
-						// REMOVE when done debugging.
-						logger::debug("[MIM] ProcessTriggerInput: MagicMenu: Trying to equip hand magic form [{}] {}. Placeholder magic changed: {}.",
-							selectedForm->Is(RE::FormType::Spell) ? "spell" : selectedForm->Is(RE::FormType::Shout) ? "shout" : "NOT EQUIPABLE",
-							selectedForm->GetName(),
-							placeholderMagicChanged);
 					}
 					else
 					{
-						// REMOVE when done debugging.
-						logger::debug("[MIM] ProcessTriggerInput: MagicMenu: Trying to equip magic form [{}] {}.",
-							selectedForm->Is(RE::FormType::Spell) ? "spell" : selectedForm->Is(RE::FormType::Shout) ? "shout" : "NOT EQUIPABLE",
-							selectedForm->GetName());
-
 						newEquipState = EntryEquipState::kDefault;
 						// Voice slot for power/shout/any other magic.
 						reqEquipIndex = EquipIndex::kVoice;
@@ -2601,7 +2501,6 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::debug("[MIM] ProcessTriggerInput MagicMenu: Could not get selected magic menu spell.");
 				RE::DebugNotification(fmt::format("[ALYSLC] Cannot equip this spell for {}", menuCoopActorPtr->GetName()).c_str());
 				currentMenuInputType = MenuInputEventType::kPressedNoEvent;
 			}
@@ -2628,19 +2527,6 @@ namespace ALYSLC
 
 		auto newHash = Hash(a_menuName);
 		auto oldHash = Hash(menuName);
-
-		// REMOVE when done debugging.
-		logger::debug("[MIM] SetOpenedMenu: {}, hash {} ({}), old hash: {} ({}). Menu is opened: {}", a_menuName, newHash, a_menuName, oldHash, menuName, a_isOpened);
-
-		auto stackCopy = menuNamesStack;
-		uint32_t menuIndex = 0;
-		while (!stackCopy.empty()) 
-		{
-			auto name = stackCopy.front();
-			logger::debug("[MIM] SetOpenedMenu: Index {}: {}", menuIndex, name);
-			menuIndex++;
-			stackCopy.pop_front();
-		}
 
 		if (a_isOpened)
 		{
@@ -2685,12 +2571,12 @@ namespace ALYSLC
 		if (menuNamesStack.size() > 0)
 		{
 			menuName = menuNamesStack.front();
-			logger::debug("[MIM] SetOpenedMenu: New menu on top of the stack: {}", menuName);
+			ALYSLC::Log("[MIM] SetOpenedMenu: New menu on top of the stack: {}", menuName);
 		}
 		else
 		{
 			menuName = "";
-			logger::debug("[MIM] SetOpenedMenu: Menu stack is now empty.");
+			ALYSLC::Log("[MIM] SetOpenedMenu: Menu stack is now empty.");
 		}
 
 		newHash = Hash(menuName);
@@ -2699,10 +2585,10 @@ namespace ALYSLC
 		{
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[MIM] SetOpenedMenu: Lock: 0x{:X}.", hash);
+			ALYSLC::Log("[MIM] SetOpenedMenu: Getting lock. (0x{:X})", hash);
 			{
 				std::unique_lock<std::mutex> lock(openedMenuMutex);
-				logger::debug("[MIM] SetOpenedMenu: Lock obtained: 0x{:X}.", hash);
+				ALYSLC::Log("[MIM] SetOpenedMenu: Lock obtained. (0x{:X})", hash);
 				newMenuAtopStack = true;
 			}
 
@@ -2749,14 +2635,17 @@ namespace ALYSLC
 
 		if (!favoritesMenu) 
 		{
-			logger::error("[MIM] ERR: RefreshFavoritesMenuEquipState: FavoritesMenu invalid");
+			if (auto ui = RE::UI::GetSingleton(); ui)
+			{
+				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
+			}
+
 			return;
 		}
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
-			logger::critical("[MIM] RefreshFavoritesMenuEquipState: Menu player is invalid.");
 			return;
 		}
 
@@ -2808,13 +2697,13 @@ namespace ALYSLC
 							// Is two-handed weapon.
 							if (asWeap && asWeap->equipSlot->flags.any(RE::BGSEquipSlot::Flag::kUseAllParents))
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
 							}
 							// One-handed.
 							else
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in left hand.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in left hand.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kLH;
 							}
 
@@ -2826,13 +2715,13 @@ namespace ALYSLC
 							// Is two-handed weapon.
 							if (asWeap && asWeap->equipSlot->flags.any(RE::BGSEquipSlot::Flag::kUseAllParents))
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
 							}
 							// One-handed.
 							else
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in right hand.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in right hand.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kRH;
 							}
 
@@ -2871,31 +2760,31 @@ namespace ALYSLC
 
 							bool favEquippedLH = favForm == lhObj;
 							bool favEquippedRH = favForm == rhObj;
-							bool favEquippedBothH = (favEquippedLH && favEquippedRH) ||
-													(favEquippedLH && lhObj && lhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot) ||
-													(favEquippedRH && rhObj && rhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot);
-
-							logger::debug("[MIM] RefreshFavoritesMenuEquipState: Spell {}, fav LH, fav RH, fav Both: {}, {}, {}",
-								favForm->GetName(), favEquippedLH, favEquippedRH, favEquippedBothH);
+							bool favEquippedBothH = 
+							{
+								(favEquippedLH && favEquippedRH) ||
+								(favEquippedLH && lhObj && lhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot) ||
+								(favEquippedRH && rhObj && rhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot)
+							};
 
 							// Both hands spell.
 							if (favEquippedBothH)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in both hands.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
 								favItemsEquippedIndices.insert(i);
 							}
 							// LH spell only
 							else if (favEquippedLH)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in left hand.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in left hand.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kLH;
 								favItemsEquippedIndices.insert(i);
 							}
 							// RH spell only
 							else if (favEquippedRH)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in right hand.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in right hand.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kRH;
 								favItemsEquippedIndices.insert(i);
 							}
@@ -2908,7 +2797,7 @@ namespace ALYSLC
 						{
 							if (auto voiceForm = em->equippedForms[!EquipIndex::kVoice]; favForm == voiceForm)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in voice slot.", favForm->GetName());
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in voice slot.", favForm->GetName());
 								favEntryEquipStates[i] = EntryEquipState::kDefault;
 								favItemsEquippedIndices.insert(i);
 							}
@@ -2917,7 +2806,7 @@ namespace ALYSLC
 						// Check if quick slot spell is equipped.
 						if (auto quickSlotSpell = em->quickSlotSpell; quickSlotSpell && quickSlotSpell == favForm)
 						{
-							logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.",
+							ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.",
 								favForm->GetName());
 							em->equippedQSSpellIndex = i;
 							spellStillEquipped = true;
@@ -2932,7 +2821,7 @@ namespace ALYSLC
 							auto shoutVariation = asShout->variations[em->highestShoutVarIndex];
 							if (shoutVariation.spell && shoutVariation.spell == em->voiceSpell)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} with highest var index {} equipped in voice slot",
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} with highest var index {} equipped in voice slot",
 									asShout->GetName(), em->highestShoutVarIndex);
 								favEntryEquipStates[i] = EntryEquipState::kDefault;
 								favItemsEquippedIndices.insert(i);
@@ -2946,7 +2835,7 @@ namespace ALYSLC
 						{
 							if (form && form->Is(RE::FormType::Armature, RE::FormType::Armor) && form == favForm)
 							{
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} (0x{:X}) armor equipped.",
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} (0x{:X}) armor equipped.",
 									form->GetName(), form->formID);
 								favEntryEquipStates[i] = EntryEquipState::kDefault;
 								favItemsEquippedIndices.insert(i);
@@ -2959,7 +2848,7 @@ namespace ALYSLC
 					{
 						if (auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; currentAmmo && currentAmmo == favForm)
 						{
-							logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} (0x{:X}) ammo equipped.",
+							ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} (0x{:X}) ammo equipped.",
 								currentAmmo->GetName(), currentAmmo->formID);
 							favEntryEquipStates[i] = EntryEquipState::kDefault;
 							favItemsEquippedIndices.insert(i);
@@ -2972,7 +2861,7 @@ namespace ALYSLC
 						auto quickSlotItem = em->quickSlotItem;
 						if (quickSlotItem && quickSlotItem == favForm)
 						{
-							logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.", favForm->GetName());
+							ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.", favForm->GetName());
 							em->equippedQSItemIndex = i;
 							itemStillEquipped = true;
 						}
@@ -3011,12 +2900,12 @@ namespace ALYSLC
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!taskInterface)
 		{
-			logger::error("[MIM] ERR: RefreshFavoritesMenuEquipState: Task interface invalid.");
 			return;
 		}
 
 		// Update the Favorites Menu UI entries to reflect the updated equip state of all favorited items.
-		taskInterface->AddUITask(
+		taskInterface->AddUITask
+		(
 			[this, &em, favoritesList, favoritedFormIDsSet, isVampireLord]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
@@ -3027,13 +2916,10 @@ namespace ALYSLC
 							RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 							if (!menuCoopActorPtr)
 							{
-								logger::critical("[MIM] RefreshFavoritesMenuEquipState: UITask: menu player's ptr is invalid.");
 								return;
 							}
 
 							double numEntries = view->GetVariableDouble("_root.MenuHolder.Menu_mc.itemList.entryList.length");
-							logger::debug("[MIM] RefreshFavoritesMenuEquipState: Number of favorites entries before: {}, number of favorited forms for this player: {}.",
-								numEntries, em->numFavoritedItems);
 							RE::GFxValue entryList;
 							view->CreateArray(std::addressof(entryList));
 							view->GetVariable(std::addressof(entryList), "_root.MenuHolder.Menu_mc.itemList.entryList");
@@ -3046,11 +2932,10 @@ namespace ALYSLC
 								int32_t index = static_cast<int32_t>(entryIndex.GetNumber());
 
 								// REMOVE when done debugging.
-								logger::debug("[MIM] RefreshFavoritesMenuEquipState: Favorites list UI entry {} corresponds to favorites list index: {}", i, index);
+								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: Favorites list UI entry {} corresponds to favorites list index: {}", i, index);
 								RE::TESForm* favoritedItem = index != -1 ? favoritesList[index].item : nullptr;
 								if (!favoritedItem) 
 								{
-									logger::critical("[MIM] ERR: RefreshFavoritesMenuEquipState: No favorited item with index {}", index);
 									continue;
 								}
 
@@ -3072,10 +2957,6 @@ namespace ALYSLC
 								// If transformed into a Vampire Lord, this player shares P1's favorites.
 								if (isVampireLord || favoritedFormIDsSet.contains(formID))
 								{
-									// REMOVE when done debugging.
-									logger::debug("[MIM] RefreshFavoritesMenuEquipState: {} was favorited by {}",
-										favoritedItem->GetName(), menuCoopActorPtr->GetName());
-
 									RE::GFxValue entryText;
 									entry.GetMember("text", std::addressof(entryText));
 									std::string entryStr = entryText.GetString();
@@ -3097,11 +2978,9 @@ namespace ALYSLC
 											}
 											else
 											{
-												logger::debug("[MIM] RefreshFavoritesMenuEquipState: No parens around count: {}", entryStr);
 												entryStr += " (" + std::to_string(count) + ")";
 											}
 
-											logger::debug("[MIM] RefreshFavoritesMenuEquipState: Entry text is now '{}' after count update.", entryStr);
 											entryText.SetString(entryStr);
 											entry.SetMember("text", entryText);
 										}
@@ -3111,7 +2990,7 @@ namespace ALYSLC
 									// Normal items receive an update to the "caret" equipped icon,
 									// while quick slot items have their entry text modified.
 									const auto& equipStateNum = favEntryEquipStates[index];
-									logger::debug("[MIM] RefreshFavoritesMenuEquipState: Favorites index {} item {} is getting its equip state set to {}",
+									ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: Favorites index {} item {} is getting its equip state set to {}",
 										index, favoritedItem->GetName(), equipStateNum);
 									RE::GFxValue equipState;
 									equipState.SetNumber(static_cast<double>(equipStateNum));
@@ -3124,7 +3003,6 @@ namespace ALYSLC
 										if (entryStr.find("[*QS", 0) == std::string::npos)
 										{
 											entryStr = fmt::format("[*QS{}*] {}", isConsumable ? "I" : "S", entryStr);
-											logger::debug("[MIM] RefreshFavoritesMenuEquipState: QS: Entry text is now: {}", entryStr);
 											entryText.SetString(entryStr);
 											entry.SetMember("text", entryText);
 										}
@@ -3137,9 +3015,6 @@ namespace ALYSLC
 								}
 								else
 								{
-									logger::debug("[MIM] RefreshFavoritesMenuEquipState: Removing non-coop favorited entry: {}, {}.",
-										favoritesList[index].item->GetName(), i);
-
 									// Item was not favorited by the menu-controlling player, so remove it from the list.
 									entryList.RemoveElement(i);
 									--i;
@@ -3149,10 +3024,6 @@ namespace ALYSLC
 
 							// Update the favorites entry list.
 							view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
-						}
-						else
-						{
-							logger::critical("[MIM] RefreshFavoritesMenuEquipState: ERR: Could not get view for Favorites Menu.");
 						}
 					}
 				}
@@ -3166,7 +3037,11 @@ namespace ALYSLC
 
 		if (!magicMenu) 
 		{
-			logger::error("[MIM] RefreshMagicMenuEquipState: MagicMenu invalid.");
+			if (auto ui = RE::UI::GetSingleton(); ui)
+			{
+				magicMenu = ui->GetMenu<RE::MagicMenu>();
+			}
+
 			return;
 		}
 
@@ -3183,7 +3058,6 @@ namespace ALYSLC
 			// If still empty, return early.
 			if (numMagItems == 0)
 			{
-				logger::error("[MIM] RefreshMagicMenuEquipState: No magic items in magic menu.");
 				return;
 			}
 
@@ -3241,28 +3115,28 @@ namespace ALYSLC
 					// Both hands.
 					if (magEquippedBothH)
 					{
-						logger::debug("[MIM] RefreshMagicMenuEquipState: {} equipped in both hands.", magForm->GetName());
+						ALYSLC::Log("[MIM] RefreshMagicMenuEquipState: {} equipped in both hands.", magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kBothHands;
 						magFormEquippedIndices.insert(i);
 					}
 					// LH
 					else if (magEquippedLH)
 					{
-						logger::debug("[MIM] RefreshMagicMenuEquipState: {} equipped in left hand.", magForm->GetName());
+						ALYSLC::Log("[MIM] RefreshMagicMenuEquipState: {} equipped in left hand.", magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kLH;
 						magFormEquippedIndices.insert(i);
 					}
 					// RH
 					else if (magEquippedRH)
 					{
-						logger::debug("[MIM] RefreshMagicMenuEquipState: {} equipped in right hand.", magForm->GetName());
+						ALYSLC::Log("[MIM] RefreshMagicMenuEquipState: {} equipped in right hand.", magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kRH;
 						magFormEquippedIndices.insert(i);
 					}
 					// Voice
 					else if (magEquippedVoice)
 					{
-						logger::debug("[MIM] RefreshMagicMenuEquipState: {} equipped in voice slot.", magForm->GetName());
+						ALYSLC::Log("[MIM] RefreshMagicMenuEquipState: {} equipped in voice slot.", magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kDefault;
 						magFormEquippedIndices.insert(i);
 					}
@@ -3280,7 +3154,6 @@ namespace ALYSLC
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!taskInterface)
 		{
-			logger::error("[MIM] ERR: RefreshMagicMenuEquipState: Task interface invalid.");
 			return;
 		}
 
@@ -3359,7 +3232,7 @@ namespace ALYSLC
 		// NOTE: Might not be necessary. Send update request.
 		if (const auto ui = RE::UI::GetSingleton(); ui && !menuNamesStack.empty())
 		{
-			if (auto currentMenu = RE::UI::GetSingleton()->GetMenu(menuNamesStack.front()); currentMenu)
+			if (auto currentMenu = ui->GetMenu(menuNamesStack.front()); currentMenu)
 			{
 				auto messageQueue = RE::UIMessageQueue::GetSingleton();
 				if (messageQueue)
@@ -3372,7 +3245,6 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
-			logger::critical("[MIM] ERR: RefreshMenu: Menu player is invalid.");
 			return;
 		}
 
@@ -3417,7 +3289,6 @@ namespace ALYSLC
 		auto ui = RE::UI::GetSingleton();
 		if (!ui)
 		{
-			logger::error("[MIM] ERR: SetEmulatedInputEventInfo: Could not get UI.");
 			return false;
 		}
 
@@ -3431,7 +3302,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[MIM] SetEmulatedInputEventInfo: ERR: no game input mask corresponds to an XInput mask of 0x{:X}.", a_xMask);
+			// Invalid XInput mask.
 			return false;
 		}
 
@@ -3442,7 +3313,6 @@ namespace ALYSLC
 		if (const auto& currentMenu = ui->GetMenu(menuName); currentMenu && *currentMenu->inputContext != RE::UserEvents::INPUT_CONTEXT_ID::kNone) 
 		{
 			context = *currentMenu->inputContext;
-			logger::debug("[MIM] SetEmulatedInputEventInfo: Checking current menu {}'s context first ({}).", menuName, context);
 			a_bindInfoOut.eventName = controlMap->GetUserEventName(a_bindInfoOut.idCode, gamepadDevice, context);
 			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
 		}
@@ -3451,7 +3321,6 @@ namespace ALYSLC
 		if (!validEventNameFound) 
 		{
 			context = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
-			logger::debug("[MIM] SetEmulatedInputEventInfo: Checking menu mode context next ({}).", context);
 			a_bindInfoOut.eventName = controlMap->GetUserEventName(a_bindInfoOut.idCode, gamepadDevice, context);
 			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
 		}
@@ -3468,7 +3337,6 @@ namespace ALYSLC
 				context = static_cast<RE::UserEvents::INPUT_CONTEXT_ID>(min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*menu->inputContext)));
 				if (context != RE::UserEvents::INPUT_CONTEXT_ID::kNone)
 				{
-					logger::debug("[MIM] SetEmulatedInputEventInfo: Checking context from menu stack menu ({})", a_bindInfoOut.idCode, context);
 					a_bindInfoOut.eventName = controlMap->GetUserEventName(a_bindInfoOut.idCode, gamepadDevice, context);
 					if (Hash(a_bindInfoOut.eventName) != Hash(""sv))
 					{
@@ -3490,12 +3358,12 @@ namespace ALYSLC
 		// Should not happen, but bail here if there is still no valid event name.
 		if (!validEventNameFound) 
 		{
-			logger::critical("[MIM] ERR: SetEmulatedInputEventInfo: Could not get event name for XInput button mask 0x{:X} and current menu '{}'.", a_xMask, menuName);
+			ALYSLC::Log("[MIM] ERR: SetEmulatedInputEventInfo: Could not get event name for XInput button mask 0x{:X} and current menu '{}'.", a_xMask, menuName);
 			return false;
 		}
 
 		// Set valid context here.
-		logger::debug("[MIM] SetEmulatedInputEventInfo: Chose context {}, event name {} for xMask 0x{:X}. Value, held time: {}, {}. Current event type: {}.",
+		ALYSLC::Log("[MIM] SetEmulatedInputEventInfo: Chose context {}, event name {} for xMask 0x{:X}. Value, held time: {}, {}. Current event type: {}.",
 			context, a_bindInfoOut.eventName, a_xMask,
 			a_bindInfoOut.value,
 			a_bindInfoOut.heldTimeSecs,
@@ -3609,8 +3477,6 @@ namespace ALYSLC
 	{
 		// Initialize the co-op player's base control map for the most recently opened menu.
 
-		logger::debug("[MIM] SetMenuControlMap");
-
 		// Used for ID code and event name lookups with P1's default binds.
 		controlMap = RE::ControlMap::GetSingleton();
 		// Save previous control map to copy the tap/hold/release states of all buttons over to the new control map.
@@ -3656,11 +3522,6 @@ namespace ALYSLC
 		// Toggle menu mode for the given player CID and PID.
 
 		bool shouldEnter = a_controllerIDToSet != -1;
-
-		// REMOVE when done debugging.
-		logger::debug("[MIM] ToggleCoopPlayerMenuMode: Request to toggle menu control for {} to {} for CID {} (player ID {}), thread state before: {}",
-			menuName, shouldEnter, a_controllerIDToSet, a_playerIDToSet, currentState);
-
 		if (shouldEnter) 
 		{
 			// Ensure that menu controller is available before starting/resuming the manager.
@@ -3668,7 +3529,7 @@ namespace ALYSLC
 			ZeroMemory(&buttonState, sizeof(buttonState));
 			if (XInputGetState(a_controllerIDToSet, &buttonState) != ERROR_SUCCESS)
 			{
-				logger::critical("[MIM] ERR: ToggleCoopPlayerMenuMode: Got invalid menu controller ID ({}). Exiting.", a_controllerIDToSet);
+				ALYSLC::Log("[MIM] ERR: ToggleCoopPlayerMenuMode: Got invalid menu controller ID ({}). Exiting.", a_controllerIDToSet);
 				return;
 			}
 
@@ -3696,7 +3557,7 @@ namespace ALYSLC
 			managerMenuPlayerID = 0;
 		}
 
-		logger::debug("[MIM] ToggleCoopPlayerMenuMode: Performed state change request. MIM is now set to {}.", shouldEnter ? "running" : "paused");
+		ALYSLC::Log("[MIM] ToggleCoopPlayerMenuMode: Performed state change request. MIM is now set to {}.", shouldEnter ? "running" : "paused");
 	}
 
 	void MenuInputManager::UpdateFavoritedConsumableCount(RE::TESForm* a_selectedForm, uint32_t a_selectedIndex)
@@ -3707,11 +3568,11 @@ namespace ALYSLC
 		auto taskInterface = SKSE::GetTaskInterface();
 		if (!taskInterface)
 		{
-			logger::error("[MIM] ERR: UpdateFavoritedConsumableCount: Task interface invalid.");
 			return;
 		}
 
-		taskInterface->AddUITask(
+		taskInterface->AddUITask
+		(
 			[this, a_selectedForm, a_selectedIndex]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
@@ -3722,8 +3583,6 @@ namespace ALYSLC
 							RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 							if (!menuCoopActorPtr || !a_selectedForm)
 							{
-								logger::critical("[MIM] UpdateFavoritedConsumableCount: UITask: Menu player is invalid: {}, selected item is invalid: {}.",
-									(bool)!menuCoopActorPtr, (bool)!a_selectedForm);
 								return;
 							}
 
@@ -3760,7 +3619,7 @@ namespace ALYSLC
 
 	bool MenuInputManager::UpdateMenuType()
 	{
-		logger::debug("[MIM] UpdateMenuType: menu name: {}", menuName);
+		ALYSLC::Log("[MIM] UpdateMenuType: Menu name: {}", menuName);
 		auto oldMenuType = openedMenuType;
 		auto menuNameHash = Hash(menuName);
 
@@ -3905,8 +3764,6 @@ namespace ALYSLC
 
 		if (a_controllerID > -1 && a_controllerID < menuOpeningActionRequests.size())
 		{
-			logger::debug("[MIM] MenuOpeningActionRequestsManager: ClearRequests: P{}: clearing menu request queue. Had size {}.",
-				a_controllerID + 1, menuOpeningActionRequests[a_controllerID].size());
 			menuOpeningActionRequests[a_controllerID].clear();
 		}
 	}
@@ -3918,16 +3775,11 @@ namespace ALYSLC
 
 		if (a_controllerID > -1 && a_controllerID < menuOpeningActionRequests.size())
 		{
-			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Try to lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> lock(reqQueueMutexList[a_controllerID], std::try_to_lock);
 				if (lock) 
 				{
-					// REMOVE
-					logger::debug("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Lock obtained: 0x{:X}.", hash);
-
 					auto& reqQueue = menuOpeningActionRequests[a_controllerID];
 					// Remove oldest request if currently full.
 					if (reqQueue.size() == maxCachedRequests)
@@ -3935,7 +3787,7 @@ namespace ALYSLC
 						reqQueue.pop_back();
 					}
 
-					logger::debug("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Adding menu opening action request for CID {}: input action: {}, menu name: {}, associated form: {}",
+					ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Adding menu opening action request for CID {}: input action: {}, menu name: {}, associated form: {}",
 						a_controllerID,
 						a_fromAction,
 						Hash(a_reqMenuName) == Hash("") ? "NONE" : a_reqMenuName,
@@ -3945,8 +3797,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					// REMOVE
-					logger::debug("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Failed to obtain lock: 0x{:X}.", hash);
+					ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: InsertRequest: Failed to obtain lock. (0x{:X})", hash);
 					return false;
 				}
 			}
@@ -3960,14 +3811,13 @@ namespace ALYSLC
 		// Get controller ID for player that should control the given menu when it opens/closes.
 		// Optionally, modify the menu requests queue for this player to re-order or clear out requests during the resolution process.
 
-		logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
+		ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
 
 		// Default to none.
 		int32_t resolvedCID = -1;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) 
 		{
-			logger::error("[MIM] ERR: MenuOpeningActionRequestsManager: ResolveMenuControllerID: Could not get UI.");
 			return resolvedCID;
 		}
 
@@ -4023,9 +3873,7 @@ namespace ALYSLC
 						// Oldest to newest.
 						auto currentReq = reqQueue.back();
 						float secsSinceReq = Util::GetElapsedSeconds(currentReq.timestamp);
-
-						// REMOVE when done debugging.
-						logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Got request for {}. Menu: {}. Seconds since request inserted: {}. Seconds since chosen request inserted: {}. Queue size: {}.", 
+						ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Got request for {}. Menu: {}. Seconds since request inserted: {}. Seconds since chosen request inserted: {}. Queue size: {}.", 
 							p->coopActor->GetName(), currentReq.reqMenuName, secsSinceReq, secsSinceChosenReq, reqQueue.size());
 
 						// Want to choose the oldest valid request because, for example, if two players
@@ -4063,7 +3911,7 @@ namespace ALYSLC
 							{
 								secsSinceChosenReq = secsSinceReq;
 								resolvedCID = p->controllerID;
-								logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: External request: {} is in control of {}.",
+								ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: External request: {} is in control of {}.",
 									p->coopActor->GetName(), a_menuName);
 								// Remove the current fulfilled request.
 								if (a_modifyReqQueue)
@@ -4102,7 +3950,7 @@ namespace ALYSLC
 										{
 											secsSinceChosenReq = secsSinceReq;
 											resolvedCID = p->controllerID;
-											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: BarterMenu: {} is in control of bartering with {}.",
+											ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: BarterMenu: {} is in control of bartering with {}.",
 												p->coopActor->GetName(), assocRefrPtr->GetName());
 										}
 									}
@@ -4133,7 +3981,7 @@ namespace ALYSLC
 										{
 											secsSinceChosenReq = secsSinceReq;
 											resolvedCID = p->controllerID;
-											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: BookMenu: {} is in control of reading {}.",
+											ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: BookMenu: {} is in control of reading {}.",
 												p->coopActor->GetName(), assocRefrPtr->GetName());
 										}
 									}
@@ -4161,7 +4009,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: ContainerMenu: {} is in control of their inventory.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: ContainerMenu: {} is in control of their inventory.", p->coopActor->GetName());
 								}
 								else if (currentReq.fromAction == InputAction::kActivate)
 								{
@@ -4182,7 +4030,7 @@ namespace ALYSLC
 											{
 												secsSinceChosenReq = secsSinceReq;
 												resolvedCID = p->controllerID;
-												logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: ContainerMenu: {} is in control of {}'s container menu.",
+												ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: ContainerMenu: {} is in control of {}'s container menu.",
 													p->coopActor->GetName(), assocRefrPtr->GetName());
 											}
 										}
@@ -4216,7 +4064,7 @@ namespace ALYSLC
 									{
 										secsSinceChosenReq = secsSinceReq;
 										resolvedCID = p->controllerID;
-										logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: CraftingMenu: {} is in control of crafting menu by activating {} with workbench data type {}.",
+										ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: CraftingMenu: {} is in control of crafting menu by activating {} with workbench data type {}.",
 											p->coopActor->GetName(), assocRefrPtr->GetName(), *asFurniture->workBenchData.benchType);
 									}
 								}
@@ -4249,7 +4097,7 @@ namespace ALYSLC
 									{
 										secsSinceChosenReq = secsSinceReq;
 										resolvedCID = p->controllerID;
-										logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: DialogueMenu: {} is in control of dialogue with {}.",
+										ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: DialogueMenu: {} is in control of dialogue with {}.",
 											p->coopActor->GetName(), speakerPtr ? speakerPtr->GetName() : lastSpeakerPtr ? lastSpeakerPtr->GetName() :
 																															 "NONE");
 									}
@@ -4264,7 +4112,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: FavoritesMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: FavoritesMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4276,7 +4124,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: GiftMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: GiftMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4288,7 +4136,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: JournalMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: JournalMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4300,7 +4148,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: InventoryMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: InventoryMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4312,7 +4160,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: LevelUpMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: LevelUpMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4340,7 +4188,7 @@ namespace ALYSLC
 										{
 											secsSinceChosenReq = secsSinceReq;
 											resolvedCID = p->controllerID;
-											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: LockpickingMenu: {} is in control of unlocking {}.",
+											ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: LockpickingMenu: {} is in control of unlocking {}.",
 												p->coopActor->GetName(), assocRefrPtr->GetName());
 										}
 									}
@@ -4355,7 +4203,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MagicMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MagicMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4367,7 +4215,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MapMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MapMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4379,7 +4227,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: WaitMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: WaitMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4391,7 +4239,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: StatsMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: StatsMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4418,7 +4266,7 @@ namespace ALYSLC
 									{
 										secsSinceChosenReq = secsSinceReq;
 										resolvedCID = p->controllerID;
-										logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: TrainingMenu: {} is receiving training from {}.",
+										ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: TrainingMenu: {} is receiving training from {}.",
 											p->coopActor->GetName(), assocRefrPtr->GetName());
 									}
 								}
@@ -4432,7 +4280,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: TweenMenu: {} is in control of menu.", p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: TweenMenu: {} is in control of menu.", p->coopActor->GetName());
 								}
 
 								break;
@@ -4454,7 +4302,7 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {} (UIExtensions): {} is in control of menu.", GlobalCoopData::CUSTOM_MENU, p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {} (UIExtensions): {} is in control of menu.", GlobalCoopData::CUSTOM_MENU, p->coopActor->GetName());
 								}
 
 								break;
@@ -4486,7 +4334,7 @@ namespace ALYSLC
 										{
 											secsSinceChosenReq = secsSinceReq;
 											resolvedCID = p->controllerID;
-											logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of {}'s quick loot menu.",
+											ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of {}'s quick loot menu.",
 												GlobalCoopData::LOOT_MENU, p->coopActor->GetName(), assocRefrPtr->GetName());
 
 											// Store info about which player sent the last crosshair event.
@@ -4504,14 +4352,14 @@ namespace ALYSLC
 								{
 									secsSinceChosenReq = secsSinceReq;
 									resolvedCID = p->controllerID;
-									logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of menu.", GlobalCoopData::ENHANCED_HERO_MENU, p->coopActor->GetName());
+									ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: {}: {} is in control of menu.", GlobalCoopData::ENHANCED_HERO_MENU, p->coopActor->GetName());
 								}
 
 								break;
 							}
 							default:
 							{
-								logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Defaulting to P1 control of {}.", a_menuName);
+								ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Defaulting to P1 control of {}.", a_menuName);
 								break;
 							}
 							}
@@ -4541,7 +4389,7 @@ namespace ALYSLC
 								// Update seconds since most recent request.
 								secsSinceChosenReq = secsSinceReq;
 								resolvedCID = p->controllerID;
-								logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MessageBoxMenu: {} is in control of menu by {}.", 
+								ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: MessageBoxMenu: {} is in control of menu by {}.", 
 									p->coopActor->GetName(), directlyRequested ? "direct request" : "activation");
 
 								// No need to check other requests once a direct request is found.
@@ -4556,21 +4404,21 @@ namespace ALYSLC
 						reqQueue.pop_back();
 					}
 
-					logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Active request queue size is now {} for {} after processing.", menuOpeningActionRequests[cid].size(), p->coopActor->GetName());
+					ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Active request queue size is now {} for {} after processing.", menuOpeningActionRequests[cid].size(), p->coopActor->GetName());
 				}
 			}
 		}
 
-		logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Resolved CID from requests: {}", resolvedCID);
+		ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Resolved CID from requests: {}", resolvedCID);
 		// If there are no valid requests to open/close the current supported menu,
 		// give control to the last player who controlled open menus.
 		if (resolvedCID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
 		{
-			logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: No valid requests to open supported menu {}, set to last menu CID: {}", a_menuName, glob.prevMenuCID);
+			ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: No valid requests to open supported menu {}, set to last menu CID: {}", a_menuName, glob.prevMenuCID);
 			resolvedCID = glob.prevMenuCID;
 		}
 
-		logger::debug("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Final resolved CID: {}, for menu {}.",
+		ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Final resolved CID: {}, for menu {}.",
 			resolvedCID, a_menuName);
 		return resolvedCID;
 	}

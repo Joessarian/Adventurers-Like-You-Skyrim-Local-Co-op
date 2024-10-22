@@ -48,7 +48,7 @@ namespace ALYSLC
 
 		// Set to defaults initially and then import custom binds later with the other settings.
 		playerPAParamsLists.fill(defPAParamsList);
-		logger::debug("[PAIH] Finished initializing.");
+		ALYSLC::Log("[PAIH] Finished initializing.");
 	}
 
 	const uint32_t PlayerActionInfoHolder::GetInputMask(const std::vector<InputAction>& a_composingInputs) const noexcept
@@ -62,7 +62,7 @@ namespace ALYSLC
 			// Input action is a player action, not an input. Return a mask of 0.
 			if (!a_composingInputs[i] >= !InputAction::kInputTotal || a_composingInputs[i] == InputAction::kInvalid) 
 			{
-				logger::error("[PAIH] ERR: GetInputMask: Composing input action {} is an player action and was not broken down. Mask set to 0.", a_composingInputs[i]);
+				ALYSLC::Log("[PAIH] ERR: GetInputMask: Composing input action {} is a player action and was not broken down. Mask set to 0.", a_composingInputs[i]);
 				return 0;
 			}
 

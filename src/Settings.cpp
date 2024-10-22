@@ -117,8 +117,7 @@ namespace ALYSLC
 			}
 		}
 
-		UpdateLoggerLevel();
-		logger::debug("[Settings] ImportAllSettings: Done importing all settings.");
+		ALYSLC::Log("[Settings] ImportAllSettings: Done importing all settings.");
 	}
 
 	bool Settings::ImportBinds(CSimpleIniA& a_ini)
@@ -129,7 +128,6 @@ namespace ALYSLC
 		auto& glob = GlobalCoopData::GetSingleton();
 		if (!glob.paInfoHolder || !glob.paInfoHolder.get()) 
 		{
-			logger::debug("[Settings] ImportBinds: Cannot import binds before global co-op data is set.");
 			// Binds are not invalid, but are not importable before global co-op data is set.
 			return true;
 		}
@@ -210,7 +208,7 @@ namespace ALYSLC
 				{
 					playerPAParams[bindIndex].perfType = PerfType::kDisabled;
 					actionsWithBindErrors.insert(action);
-					logger::error("[BINDS] P{}: {} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. Since these flags are mutually exclusive, the bind will be disabled.",
+					logger::error("[BINDS] ERR: P{}: [INVALID]: {} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. Since these flags are mutually exclusive. Disabling the bind.",
 						pIndex + 1, action);
 				}
 				else
@@ -315,7 +313,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::error("[BINDS] P{}: {} -> composing action #{} is enabled but was not assigned a valid input action ({}).",
+								logger::error("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
 									pIndex + 1, actionName, compActionSlot, assignedInputActionIndex);
 								// Invalid action, disable and add bind to invalid list.
 								playerPAParams[bindIndex].perfType = PerfType::kDisabled;
@@ -378,7 +376,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::error("[BINDS] P{}: {} -> composing action #{} is enabled but was not assigned a valid input action ({}).",
+								logger::error("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
 									pIndex + 1, actionName, compActionSlot, assignedInputActionIndex);
 								// Invalid action, disable and add bind to invalid list.
 								playerPAParams[bindIndex].perfType = PerfType::kDisabled;
@@ -424,7 +422,7 @@ namespace ALYSLC
 				// Notify the player of their invalid binds.
 				if (actionsWithBindErrors.contains(action))
 				{
-					logger::error("[BINDS] P{}: [INVALID] action {}'s bind will be disabled. Please ensure the composing actions for this bind were assigned valid values.", pIndex + 1, actionName);
+					logger::error("[BINDS] ERR: P{}: [INVALID]: Action {}'s bind will be disabled. Please ensure the composing actions for this bind were assigned valid values.", pIndex + 1, actionName);
 				}
 			}
 
@@ -448,7 +446,7 @@ namespace ALYSLC
 				// Recursion depth exceeded, so disable the bind.
 				if (recursionDepth >= uMaxComposingInputsCheckRecursionDepth)
 				{
-					logger::error("[BINDS] P{}: [INVALID] action {}'s bind may be circular (max of {} assigned inputs exceeded) and will be disabled. Please ensure the composing actions for this bind are not themselves composed of this bind's actions.",
+					logger::error("[BINDS] P{}: [INVALID] action {}'s bind may be circular (max of {} assigned inputs exceeded). Please ensure the composing actions for this bind are not themselves composed of this bind's actions. Disabling the bind.",
 						pIndex + 1, action, Settings::uMaxComposingInputsCheckRecursionDepth);
 					playerPAParams[bindIndex].perfType = PerfType::kDisabled;
 					actionsWithBindErrors.insert(action);
@@ -464,7 +462,7 @@ namespace ALYSLC
 			actionsWithBindErrors.clear();
 		}
 
-		logger::debug("[Settings] ImportBinds: All binds valid: {}.", allBindsValid);
+		ALYSLC::Log("[Settings] ImportBinds: All binds valid: {}.", allBindsValid);
 		return allBindsValid;
 	}
 
@@ -486,17 +484,16 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bTargetPosSmoothing", bTargetPosSmoothing);
 		ReadUInt32Setting(a_ini, "Camera", "uLockOnAssistance", uLockOnAssistance, 0, 1);
 		// Cheats and Debug
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bInfiniteCarryweight", bInfiniteCarryweight);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bAutoGrabClutterOnHold", bAutoGrabClutterOnHold);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bCanGrabActors", bCanGrabActors);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bCanGrabOtherPlayers", bCanGrabOtherPlayers);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bRemoveGrabbedActorAutoGetUp", bRemoveGrabbedActorAutoGetUp);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bSimpleActorCollisionRaycast", bSimpleActorCollisionRaycast);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
-		ReadBoolSetting(a_ini, "Cheats/Debug", "bEnableLoggerDebugPrints", bEnableLoggerDebugPrints);
-		ReadUInt32Setting(a_ini, "Cheats/Debug", "uMaxGrabbedReferences", uMaxGrabbedReferences, 0, 101);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bInfiniteCarryweight", bInfiniteCarryweight);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bAutoGrabClutterOnHold", bAutoGrabClutterOnHold);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bCanGrabActors", bCanGrabActors);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bCanGrabOtherPlayers", bCanGrabOtherPlayers);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bRemoveGrabbedActorAutoGetUp", bRemoveGrabbedActorAutoGetUp);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bSimpleActorCollisionRaycast", bSimpleActorCollisionRaycast);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
+		ReadBoolSetting(a_ini, "Cheats/Fun", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
+		ReadUInt32Setting(a_ini, "Cheats/Fun", "uMaxGrabbedReferences", uMaxGrabbedReferences, 0, 101);
 		// Emote Idles
 		ReadStringSetting(a_ini, "EmoteIdles", "sEmoteIdle1", sEmoteIdlesList[0]);
 		ReadStringSetting(a_ini, "EmoteIdles", "sEmoteIdle2", sEmoteIdlesList[1]);
@@ -586,7 +583,7 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "UI", "fCrosshairMaxTraversablePixelsPerSec", fCrosshairMaxTraversablePixelsPerSec, 160.0f, 7680.0f);
 		ReadFloatSetting(a_ini, "UI", "fPlayerMenuControlOverlayOutlineThickness", fPlayerMenuControlOverlayOutlineThickness, 1.0f, 50.0f);
 
-		logger::debug("[Settings] ImportGeneralSettings: Done importing.");
+		ALYSLC::Log("[Settings] ImportGeneralSettings: Done importing.");
 	}
 
 	void Settings::ImportPlayerSpecificSettings(CSimpleIniA& a_ini)
@@ -666,7 +663,7 @@ namespace ALYSLC
 			ReadFloatSetting(a_ini, sectionName.data(), "fSecsToRotateCrosshair", (float&)vfSecsToRotateCrosshair[pIndex], 0.1f, 5.0f);
 		}
 
-		logger::debug("[Settings] ImportPlayerSpecificSettings: Done importing.");
+		ALYSLC::Log("[Settings] ImportPlayerSpecificSettings: Done importing.");
 	}
 
 	bool Settings::ReadBoolSetting(CSimpleIniA& a_ini, const char* a_section, const char* a_settingKey, bool& a_settingOut)
@@ -815,64 +812,5 @@ namespace ALYSLC
 			logger::error("[Settings] ERR: ReadUInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
-	}
-
-	void Settings::SetLoggerLevel()
-	{
-		// Set logger level based on the 'bEnableLoggerDebugPrints' setting after data is loaded.
-
-		CSimpleIniA ini;
-		ini.SetUnicode();
-
-		// Attempt to import default setting.
-		SI_Error err = SI_OK;
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
-		{
-			if (err = ini.LoadFile(defaultFilePathEnderal.c_str()); err != SI_OK)
-			{
-				logger::error("[Settings] ERR ({}): SetLoggerLevel: Could not load default Enderal settings file '{}'. Ensure the file exists at that location. About to import from the user's modifiable settings. Now using the plugin's hardcoded default settings.", err, defaultFilePathEnderal.string());
-			}
-		}
-		else
-		{
-			if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
-			{
-				logger::error("[Settings] ERR ({}): SetLoggerLevel: could not load default Skyrim SE settings file '{}'. Ensure the file exists at that location. About to import from the user's modifiable settings. Now using the plugin's hardcoded default settings.", err, defaultFilePathEnderal.string());
-			}
-		}
-
-		if (err == SI_OK)
-		{
-			ReadBoolSetting(ini, "Cheats/Debug", "bEnableLoggerDebugPrints", bEnableLoggerDebugPrints);
-		}
-
-		ini.Reset();
-
-		// Import player-modified setting.
-		CSimpleIniA ini2;
-		ini2.SetUnicode();
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
-		{
-			if (err = ini2.LoadFile(userSettingsFilePathEnderal.c_str()); err != SI_OK)
-			{
-				logger::error("[Settings] ERR ({}): SetLoggerLevel: Could not load Enderal player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location.", err, userSettingsFilePathEnderal.string());
-			}
-		}
-		else
-		{
-			if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
-			{
-				logger::error("[Settings] ERR ({}): SetLoggerLevel: Could not load Skyrim SE player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location.", err, userSettingsFilePathSSE.string());
-			}
-		}
-
-		if (err == SI_OK)
-		{
-			ReadBoolSetting(ini2, "Cheats/Debug", "bEnableLoggerDebugPrints", bEnableLoggerDebugPrints);
-		}
-
-		ini2.Reset();
-		UpdateLoggerLevel();
-		logger::info("[Settings] SetLoggerLevel: Debug prints enabled: {}.", bEnableLoggerDebugPrints);
 	}
 }

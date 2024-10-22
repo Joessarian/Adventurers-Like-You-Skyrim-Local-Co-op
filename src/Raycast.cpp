@@ -371,46 +371,6 @@ namespace Raycast
 		std::vector<RayResult> results;
 		results.clear();
 
-		/*
-		std::vector<RayResult> hkpCastResults = GetAllHavokCastHitResults(a_start, a_end);
-		RayResult result{ };
-		// Full ray.
-		glm::vec4 ray{ a_end - a_start };
-		// Normalized ray.
-		glm::vec4 unitRay = glm::normalize(ray);
-		glm::vec4 startPos{ };
-		glm::vec4 endPos{ };
-		for (uint32_t hitIndex = 0; hitIndex < hkpCastResults.size(); ++hitIndex) 
-		{
-			if (hitIndex == 0) 
-			{
-				startPos = a_start;
-				endPos = hkpCastResults[hitIndex].hitPos;
-			}
-			else if (hitIndex == hkpCastResults.size() - 1) 
-			{
-				startPos = hkpCastResults[hitIndex].hitPos + unitRay * (a_hullSize + 0.1f);
-				endPos = a_end;
-			}
-			else
-			{
-				const auto& currentResult = hkpCastResults[hitIndex];
-				const auto& prevResult = hkpCastResults[hitIndex - 1];
-				float dist = glm::distance(prevResult.hitPos, currentResult.hitPos);
-				startPos = prevResult.hitPos + unitRay * min((a_hullSize + 0.1f), dist);
-				endPos = prevResult.hitPos + unitRay * max((a_hullSize + 0.1f), dist);
-			}
-
-			logger::debug("[Raycast] GetAllCamCastHitResults: result {}: dist between current and prev: {}.",
-				hitIndex, glm::distance(startPos, endPos));
-
-			if (result = CastRay(startPos, endPos, a_hullSize); result.hit) 
-			{
-				results.emplace_back(result);
-			}
-		}
-		*/
-
 		constexpr auto pi = 3.14159265358979323846f;
 		constexpr auto hkpScale = 0.0142875f;
 		// Result to add, if there's a hit.
@@ -491,16 +451,6 @@ namespace Raycast
 			++casts;
 		}
 
-		// Sort by distance from the start position in ascending order.
-		/*std::sort
-		(
-			results.begin(), results.end(),
-			[&a_start](const RayResult& a_result1, const RayResult& a_result2) 
-			{
-				return glm::distance(a_result1.hitPos, a_start) < glm::distance(a_result2.hitPos, a_start);
-			}
-		);*/
-		logger::debug("[Raycast] GetAllCamCastHitResults: Casts: {}. FPS: {}.", casts, 1.0f / *g_deltaTimeRealTime);
 		return results;
 	}
 

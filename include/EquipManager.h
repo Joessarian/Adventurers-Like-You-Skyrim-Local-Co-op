@@ -346,12 +346,6 @@ namespace ALYSLC
 					   !rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedSword());
 		}
 
-		// Check if the player is unarmed.
-		inline bool IsUnarmed() const 
-		{
-			return (!equippedForms[!EquipIndex::kLeftHand] && !equippedForms[!EquipIndex::kRightHand]);
-		}
-
 		// Check if the player's left hand is empty.
 		inline bool LHEmpty() const 
 		{
@@ -465,7 +459,10 @@ namespace ALYSLC
 		// Add favorited items from this player to P1 as needed, favorite them, and unfavorite all P1's favorited items.
 		// NOTE: Should not be called on P1 since there's no need to re-import P1's favorites onto themselves.
 		void ImportCoopFavorites();
-		
+
+		// Check if the player is unarmed.
+		bool IsUnarmed() const;
+
 		// Re-equip all forms for this player, optionally refreshing the cached equipped state beforehand.
 		void ReEquipAll(bool a_refreshBeforeEquipping);
 		

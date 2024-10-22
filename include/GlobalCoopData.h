@@ -433,7 +433,6 @@ namespace ALYSLC
 		// Clean up global and player worker threads by signalling them to stop.
 		~GlobalCoopData() 
 		{
-			logger::debug("[GLOB] ~GlobalCoopData()");
 			// Request that detached threads stop.
 			taskRunner->runnerThread.request_stop();
 			for (const auto& p : coopPlayers) 
@@ -509,8 +508,7 @@ namespace ALYSLC
 
 		// Havok pre-physics callback queued and run by Precision.
 		// Cache player arm and torso node rotations to restore later 
-		// in the NiNode UpdateDownwardPass() hook,
-		// which will overwrite the game's changes to all handled player arm/torso nodes.
+		// in an NiNode hook, which will overwrite the game's changes to all handled player arm/torso nodes.
 		static void HavokPrePhysicsStep(RE::bhkWorld* a_world);
 
 		// Remove all perks for this player and then add back all serialized unlocked perks.
@@ -682,9 +680,6 @@ namespace ALYSLC
 		// Check if the player's arm nodes come into contact with another object
 		// and trigger an impact impulse/knockdown and apply damage if so.
 		static void CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p);
-		// Rotate arms about shoulder joints.
-		// Precondition: player's weapons are sheathed and the player is pressing at least one attack bind.
-		static void RotateArmsAboutShoulders(const std::shared_ptr<CoopPlayer>& a_p);
 		// Flex or straighten arms about elbow joints, or supinate or pronate forearms.
 		// Rotate forearms and hands when not only rotating the player's shoulders.
 		static void TwistAndBendArms(const std::shared_ptr<CoopPlayer>& a_p);
@@ -722,7 +717,8 @@ namespace ALYSLC
 		static constexpr inline std::string_view SETUP_MENU_NAME = "ALYSLC Setup Menu"sv;
 
 		// Maps actor values to their corresponding player skills.
-		static inline const std::unordered_map<RE::ActorValue, Skill> AV_TO_SKILL_MAP = {
+		static inline const std::unordered_map<RE::ActorValue, Skill> AV_TO_SKILL_MAP = 
+		{
 			{ RE::ActorValue::kOneHanded, Skill::kOneHanded },
 			{ RE::ActorValue::kTwoHanded, Skill::kTwoHanded },
 			{ RE::ActorValue::kArchery, Skill::kArchery },
@@ -744,7 +740,8 @@ namespace ALYSLC
 		};
 
 		// Maps player skills to their corresponding actor values.
-		static inline const std::unordered_map<Skill, RE::ActorValue> SKILL_TO_AV_MAP = {
+		static inline const std::unordered_map<Skill, RE::ActorValue> SKILL_TO_AV_MAP =
+		{
 			{ Skill::kOneHanded, RE::ActorValue::kOneHanded },
 			{ Skill::kTwoHanded, RE::ActorValue::kTwoHanded },
 			{ Skill::kArchery, RE::ActorValue::kArchery },
@@ -766,7 +763,8 @@ namespace ALYSLC
 		};
 
 		// Maps actor values to their corresponding text name.
-		static inline const std::unordered_map<RE::ActorValue, std::string> AV_TO_SKILL_NAME_MAP = {
+		static inline const std::unordered_map<RE::ActorValue, std::string> AV_TO_SKILL_NAME_MAP =
+		{
 			{ RE::ActorValue::kOneHanded, "Onehanded" },
 			{ RE::ActorValue::kTwoHanded, "Twohanded" },
 			{ RE::ActorValue::kArchery, "Marksman" },
@@ -787,7 +785,8 @@ namespace ALYSLC
 			{ RE::ActorValue::kEnchanting, "Enchanting" }
 		};
 
-		static inline const std::unordered_map<std::string, RE::ActorValue> SKILL_NAME_TO_AV_MAP = {
+		static inline const std::unordered_map<std::string, RE::ActorValue> SKILL_NAME_TO_AV_MAP = 
+		{
 			{ "Onehanded", RE::ActorValue::kOneHanded },
 			{ "Twohanded", RE::ActorValue::kTwoHanded },
 			{ "Marksman", RE::ActorValue::kArchery },
@@ -809,7 +808,8 @@ namespace ALYSLC
 		};
 
 		// Enderal skill names mapped to their corresponding Skyrim actor values.
-		static inline const std::unordered_map<std::string, RE::ActorValue> ENDERAL_SKILL_NAMES_TO_SKYRIM_AVS_MAP = {
+		static inline const std::unordered_map<std::string, RE::ActorValue> ENDERAL_SKILL_NAMES_TO_SKYRIM_AVS_MAP = 
+		{
 			{ "One-handed", RE::ActorValue::kOneHanded },
 			{ "Two-handed", RE::ActorValue::kTwoHanded },
 			{ "Marksman", RE::ActorValue::kArchery },
@@ -831,7 +831,8 @@ namespace ALYSLC
 		};
 
 		// Skyrim actor values mapped to their corresponding Enderal skill names.
-		static inline const std::unordered_map<RE::ActorValue, std::string> SKYRIM_AVS_TO_ENDERAL_SKILL_NAMES_MAP = {
+		static inline const std::unordered_map<RE::ActorValue, std::string> SKYRIM_AVS_TO_ENDERAL_SKILL_NAMES_MAP = 
+		{
 			{ RE::ActorValue::kOneHanded, "One-handed" },
 			{ RE::ActorValue::kTwoHanded, "Two-handed" },
 			{ RE::ActorValue::kArchery, "Marksman" },
@@ -853,7 +854,8 @@ namespace ALYSLC
 		};
 
 		// Set of menus requiring import/export of co-op player data when entering/exiting.
-		static inline const std::set<std::string_view> COPY_PLAYER_DATA_MENU_NAMES = {
+		static inline const std::set<std::string_view> COPY_PLAYER_DATA_MENU_NAMES = 
+		{
 			RE::BarterMenu::MENU_NAME, 
 			RE::BookMenu::MENU_NAME,
 			RE::ContainerMenu::MENU_NAME,
@@ -864,7 +866,8 @@ namespace ALYSLC
 		};
 
 		// Default cyclable emote idle animation event names.
-		static inline const std::array<RE::BSFixedString, 8> DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS = {
+		static inline const std::array<RE::BSFixedString, 8> DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS = 
+		{
 			"IdleApplaud2",
 			"IdleSilentBow",
 			"IdleCiceroDance1",
@@ -877,7 +880,7 @@ namespace ALYSLC
 
 		// Skills that are shared among the party.
 		// All active players' levels in these skills are synced to create shared progression.
-		static inline const std::set<RE::ActorValue> SHARED_SKILL_AVS_SET
+		static inline const std::set<RE::ActorValue> SHARED_SKILL_AVS_SET =
 		{
 			RE::ActorValue::kSmithing,
 			RE::ActorValue::kPickpocket,
@@ -899,7 +902,8 @@ namespace ALYSLC
 		};
 
 		// List of progressable skill actor values.
-		static inline const std::vector<RE::ActorValue> SKILL_ACTOR_VALUES_LIST = {
+		static inline const std::vector<RE::ActorValue> SKILL_ACTOR_VALUES_LIST = 
+		{
 			RE::ActorValue::kOneHanded,
 			RE::ActorValue::kTwoHanded,
 			RE::ActorValue::kArchery,
@@ -922,7 +926,8 @@ namespace ALYSLC
 
 		// Killmove type categories assigned to each possible weapon type.
 		// Killmove type is ordered from most generic to specific, left to right.
-		static inline const std::unordered_map<RE::WEAPON_TYPE, std::vector<KillmoveType>> KILLMOVE_TYPES_FOR_WEAP_TYPE = {
+		static inline const std::unordered_map<RE::WEAPON_TYPE, std::vector<KillmoveType>> KILLMOVE_TYPES_FOR_WEAP_TYPE = 
+		{
 			{ RE::WEAPON_TYPE::kBow, { KillmoveType::kShield } },
 			{ RE::WEAPON_TYPE::kCrossbow, { KillmoveType::kShield } },
 			{ RE::WEAPON_TYPE::kHandToHandMelee, { KillmoveType::kGeneral, KillmoveType::kH2H } },
@@ -936,7 +941,8 @@ namespace ALYSLC
 		};
 
 		// Event names for killmoves best triggered when the player is behind the target.
-		static inline const std::set<uint32_t> BACKSTAB_KILLMOVES_HASHES_SET = {
+		static inline const std::set<uint32_t> BACKSTAB_KILLMOVES_HASHES_SET =
+		{
 			Hash("KillMove2HMStabFromBehind"),
 			Hash("KillMove2HWHackFromBehind"),
 			Hash("KillMoveBackStab"),
@@ -948,7 +954,8 @@ namespace ALYSLC
 		};
 
 		// Event names for decapitation killmoves.
-		static inline const std::set<uint32_t> DECAP_KILLMOVES_HASHES_SET = {
+		static inline const std::set<uint32_t> DECAP_KILLMOVES_HASHES_SET = 
+		{
 			Hash("KillMove2HMDecapBleedOut"),
 			Hash("KillMove2HMDecapSlash"),
 			Hash("KillMove2HWDecap"),
@@ -1064,7 +1071,8 @@ namespace ALYSLC
 		};
 
 		// Enderal skillbook form IDs mapped to their tier and associated skill AV.
-		static inline const std::unordered_map<RE::FormID, std::pair<EnderalSkillbookTier, RE::ActorValue>> ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP = {
+		static inline const std::unordered_map<RE::FormID, std::pair<EnderalSkillbookTier, RE::ActorValue>> ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP = 
+		{
 			{ 0x31ACC, { EnderalSkillbookTier::kApprentice, RE::ActorValue::kOneHanded } },
 			{ 0x39936, { EnderalSkillbookTier::kApprentice, RE::ActorValue::kTwoHanded } },
 			{ 0x39941, { EnderalSkillbookTier::kApprentice, RE::ActorValue::kBlock } },
@@ -1140,7 +1148,8 @@ namespace ALYSLC
 		};
 
 		// Enderal skill mapped to index which is then used to pick a random skillbook to give to other active players when one is looted..
-		static inline const std::unordered_map<RE::ActorValue, uint8_t> ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP = {
+		static inline const std::unordered_map<RE::ActorValue, uint8_t> ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP = 
+		{
 			{ RE::ActorValue::kOneHanded, 0 },
 			{ RE::ActorValue::kTwoHanded, 1 },
 			{ RE::ActorValue::kBlock, 2 },
@@ -1163,7 +1172,8 @@ namespace ALYSLC
 
 		// Set of menus that a co-op companion player can interact with when opened.
 		// Most of these menus will have custom control maps, and if not, a default control map is used.
-		static inline const std::set<std::string_view> SUPPORTED_MENU_NAMES = {
+		static inline const std::set<std::string_view> SUPPORTED_MENU_NAMES = 
+		{
 			RE::BarterMenu::MENU_NAME, RE::BookMenu::MENU_NAME,
 			RE::ContainerMenu::MENU_NAME, RE::CraftingMenu::MENU_NAME,
 			RE::DialogueMenu::MENU_NAME, RE::FavoritesMenu::MENU_NAME,
@@ -1178,7 +1188,8 @@ namespace ALYSLC
 		};
 
 		// Player nodes to raycast to from the camera node position when performing camera LOS checks.
-		static inline const std::vector<RE::BSFixedString> CAM_VISIBILITY_NPC_NODES = {
+		static inline const std::vector<RE::BSFixedString> CAM_VISIBILITY_NPC_NODES = 
+		{
 			RE::FixedStrings::GetSingleton()->npcSpine,
 			RE::FixedStrings::GetSingleton()->npcSpine1,
 			RE::FixedStrings::GetSingleton()->npcSpine2,
@@ -1186,7 +1197,8 @@ namespace ALYSLC
 		};
 
 		// Player nodes to raycast from when performing ragdoll collision checks.
-		static inline const std::vector<RE::BSFixedString> RAGDOLL_COLLISION_NPC_NODES = {
+		static inline const std::vector<RE::BSFixedString> RAGDOLL_COLLISION_NPC_NODES = 
+		{
 			RE::FixedStrings::GetSingleton()->npcSpine,
 			RE::FixedStrings::GetSingleton()->npcSpine1,
 			RE::FixedStrings::GetSingleton()->npcSpine2,
@@ -1208,11 +1220,11 @@ namespace ALYSLC
 		// Player spinal nodes that have their pitch/roll/yaw angles modified 
 		// when the player adjusts their aim pitch.
 		// Headtracking gets a bit wonky if the head node is locked in place while facing a target.
-		static inline const std::vector<RE::BSFixedString> TORSO_ADJUSTMENT_NPC_NODES = {
+		static inline const std::vector<RE::BSFixedString> TORSO_ADJUSTMENT_NPC_NODES = 
+		{
 			RE::FixedStrings::GetSingleton()->npcSpine,
 			RE::FixedStrings::GetSingleton()->npcSpine1,
-			RE::FixedStrings::GetSingleton()->npcSpine2,
-			RE::FixedStrings::GetSingleton()->npcNeck
+			RE::FixedStrings::GetSingleton()->npcSpine2
 		};
 
 		// Prong of default crosshair facing right.
@@ -1235,7 +1247,8 @@ namespace ALYSLC
 		// Drawn first.
 		// Origin: top of diamond.
 		// Default length: 20
-		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS = {
+		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS = 
+		{
 			{ 0.0f, 0.0f },
 			{ -5.0f, 11.0f },
 			{ -5.0f, 12.0f },
@@ -1250,7 +1263,8 @@ namespace ALYSLC
 		// Drawn second.
 		// Origin: shared origin with top.
 		// Default length: 34
-		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS = {
+		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS = 
+		{
 			{ -14.0f, 14.0f },
 			{ -3.0f, 13.0f },
 			{ 0.0f, 21.0f },
@@ -1262,31 +1276,53 @@ namespace ALYSLC
 		// Default length of the player indicator in pixels.
 		static inline const float PLAYER_INDICATOR_DEF_LENGTH = 47.0f;
 
-		// Adjustable player left arm nodes when rotating that arm.
-		static inline const std::unordered_set<std::string_view> ADJUSTABLE_PLAYER_LEFT_ARM_NODES = {
-			RE::FixedStrings::GetSingleton()->npcLUpperArm,
-			RE::FixedStrings::GetSingleton()->npcLForearm,
-			"NPC L Hand [LHnd]"sv
-		};
-
-		// Adjustable player right arm nodes when rotating that arm.
-		static inline const std::unordered_set<std::string_view> ADJUSTABLE_PLAYER_RIGHT_ARM_NODES = {
-			RE::FixedStrings::GetSingleton()->npcRUpperArm,
-			"NPC R Forearm [RLar]"sv,
-			"NPC R Hand [RHnd]"sv
-		};
-
-		// Adjustable player torso nodes when adjusting aim pitch.
-		static inline const std::unordered_set<std::string_view> ADJUSTABLE_PLAYER_TORSO_NODES = {
+		static inline const std::vector<std::string_view> ADJUSTABLE_BODY_NODE_NAMES_LIST = 
+		{
 			RE::FixedStrings::GetSingleton()->npcSpine,
 			RE::FixedStrings::GetSingleton()->npcSpine1,
 			RE::FixedStrings::GetSingleton()->npcSpine2,
-			RE::FixedStrings::GetSingleton()->npcNeck,
-			RE::FixedStrings::GetSingleton()->npcHead
+			RE::FixedStrings::GetSingleton()->npcLUpperArm,
+			RE::FixedStrings::GetSingleton()->npcLForearm,
+			"NPC L Hand [LHnd]",
+			RE::FixedStrings::GetSingleton()->npcRUpperArm,
+			"NPC R Forearm [RLar]",
+			"NPC R Hand [RHnd]"
+		};
+
+		// Adjustable player left arm nodes when rotating that arm.
+		static inline const std::unordered_set<uint32_t> ADJUSTABLE_LEFT_ARM_NODE_HASHES = 
+		{
+			Hash(RE::FixedStrings::GetSingleton()->npcLUpperArm),
+			Hash(RE::FixedStrings::GetSingleton()->npcLForearm),
+			"NPC L Hand [LHnd]"_h
+		};
+
+		// Adjustable player right arm nodes when rotating that arm.
+		static inline const std::unordered_set<uint32_t> ADJUSTABLE_RIGHT_ARM_NODE_HASHES = 
+		{
+			Hash(RE::FixedStrings::GetSingleton()->npcRUpperArm),
+			"NPC R Forearm [RLar]"_h,
+			"NPC R Hand [RHnd]"_h
+		};
+
+		// Adjustable player torso nodes when adjusting aim pitch.
+		static inline const std::unordered_set<uint32_t> ADJUSTABLE_TORSO_NODE_HASHES =
+		{
+			Hash(RE::FixedStrings::GetSingleton()->npcSpine),
+			Hash(RE::FixedStrings::GetSingleton()->npcSpine1),
+			Hash(RE::FixedStrings::GetSingleton()->npcSpine2)
+		};
+
+		static inline const std::unordered_map<uint32_t, std::vector<std::string_view>> ADJUSTABLE_NODES_HASHES_TO_CHILD_NAMES = 
+		{
+			{ Hash(RE::FixedStrings::GetSingleton()->npcSpine), { RE::FixedStrings::GetSingleton()->npcSpine1, RE::FixedStrings::GetSingleton()->npcSpine2 } },
+			{ Hash(RE::FixedStrings::GetSingleton()->npcLUpperArm), { RE::FixedStrings::GetSingleton()->npcLForearm, "NPC L Hand [LHnd]" } },
+			{ Hash(RE::FixedStrings::GetSingleton()->npcRUpperArm), { "NPC R Forearm [RLar]", "NPC R Hand [RHnd]" } }
 		};
 
 		// Maps weapon animation types to their 1H or 2H weapon animation type equivalents.
-		static inline const std::unordered_map<RE::WEAPON_TYPE, RE::WEAPON_TYPE> WEAP_ANIM_SWITCH_MAP = {
+		static inline const std::unordered_map<RE::WEAPON_TYPE, RE::WEAPON_TYPE> WEAP_ANIM_SWITCH_MAP =
+		{
 			{ RE::WEAPON_TYPE::kBow, RE::WEAPON_TYPE::kBow },
 			{ RE::WEAPON_TYPE::kCrossbow, RE::WEAPON_TYPE::kCrossbow },
 			{ RE::WEAPON_TYPE::kHandToHandMelee, RE::WEAPON_TYPE::kHandToHandMelee },
@@ -1504,8 +1540,6 @@ namespace ALYSLC
 		// Controller ID for the player currently controlling menus.
 		// -1 if only "always open menus" are open.
 		int32_t menuCID;
-		// Saved perk count from the player 1 singleton.
-		int32_t p1SavedPerkCount;
 		// Controller ID for player 1 (typically, but not always, 0)
 		int32_t player1CID;
 		// Last set menu controller ID for the player that was in control of menus.
@@ -1523,6 +1557,15 @@ namespace ALYSLC
 		uint32_t activePlayers;
 		// Number of living co-op players.
 		uint32_t livingPlayers;
+
+		// TODO: Use as max number of usable perk points,
+		// allowing for a variable number of perk points
+		// given per level up to each player,
+		// instead of just 1 as in the default game.
+		// Saved perk count from the player 1 singleton.
+		int32_t p1SavedPerkCount;
+		int32_t perkPointsAvailable;
+		int32_t totalPerkPointsGiven;
 
 	private:
 		GlobalCoopData() = default;

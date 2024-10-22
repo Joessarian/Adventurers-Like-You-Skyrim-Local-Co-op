@@ -55,7 +55,7 @@ namespace ALYSLC
 			ValueModifierEffectHooks::InstallHooks();
 			VampireLordEffectHooks::InstallHooks();
 			WerewolfEffectHooks::InstallHooks();
-			logger::debug("[Hooks] Installed all hooks");
+			logger::info("[Hooks] Installed all hooks");
 		}
 
 //=============
@@ -126,25 +126,28 @@ namespace ALYSLC
 					if (!p->isPlayer1 && p->coopActor->race && p->coopActor->race->GetPlayable() && 
 						!p->isTransforming && !p->isTransformed)
 					{
-						logger::debug("[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+						ALYSLC::Log("[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
 						if (auto reqEquipSlot = a_objectEquipParams.equipSlot; reqEquipSlot)
 						{
 							// Ensure 1H weapon gets equipped in the correct hand.
 							// Certain races, like the Manakin race, do not equip weapons in the LH unless the weapon's equip slot is set to the LH slot.
 							// NOTE: Has not been tested thoroughly for long-term side-effects, but nothing to report so far.
-							if (auto itemEquipType = a_object->As<RE::BGSEquipType>(); itemEquipType && itemEquipType->equipSlot)
+							if (!p->coopActor->race || !p->coopActor->race->GetPlayable()) 
 							{
-								if (a_object->As<RE::TESObjectWEAP>())
+								if (auto itemEquipType = a_object->As<RE::BGSEquipType>(); itemEquipType && itemEquipType->equipSlot)
 								{
-									// Right equip slot to left. Set to either.
-									if (reqEquipSlot == glob.leftHandEquipSlot && itemEquipType->equipSlot == glob.rightHandEquipSlot)
+									if (a_object->As<RE::TESObjectWEAP>())
 									{
-										itemEquipType->SetEquipSlot(glob.eitherHandEquipSlot);
-									}
-									// Left equip slot to right. Set to right.
-									else if (reqEquipSlot == glob.rightHandEquipSlot && itemEquipType->equipSlot == glob.leftHandEquipSlot)
-									{
-										itemEquipType->SetEquipSlot(glob.rightHandEquipSlot);
+										// Right equip slot to left. Set to either.
+										if (reqEquipSlot == glob.leftHandEquipSlot && itemEquipType->equipSlot == glob.rightHandEquipSlot)
+										{
+											itemEquipType->SetEquipSlot(glob.eitherHandEquipSlot);
+										}
+										// Left equip slot to right. Set to right.
+										else if (reqEquipSlot == glob.rightHandEquipSlot && itemEquipType->equipSlot == glob.leftHandEquipSlot)
+										{
+											itemEquipType->SetEquipSlot(glob.rightHandEquipSlot);
+										}
 									}
 								}
 							}
@@ -166,7 +169,7 @@ namespace ALYSLC
 							// Game tries to equip another ammo that was not requested.
 							if ((a_object->IsAmmo()) && a_object != p->em->desiredEquippedForms[!EquipIndex::kAmmo])
 							{
-								logger::debug("[ActorEquipManager Hooks] {}: trying to equip ammo {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+								ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip ammo {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 								return;
 							}
 							else if (a_object->IsArmor())
@@ -198,7 +201,7 @@ namespace ALYSLC
 										// Game is trying to equip armor that the player did not request to have equipped.
 										if (armor != p->em->desiredEquippedForms[equipIndex])
 										{
-											logger::debug("[ActorEquipManager Hooks] {}: trying to equip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+											ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 											return;
 										}
 									}
@@ -219,7 +222,7 @@ namespace ALYSLC
 								// Game is trying to equip a weapon that the player did not request to have equipped.
 								if (a_object != p->em->desiredEquippedForms[indexToCheck])
 								{
-									logger::debug("[ActorEquipManager Hooks] {}: trying to equip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -227,7 +230,7 @@ namespace ALYSLC
 							{
 								if (a_object != p->em->desiredEquippedForms[!EquipIndex::kVoice]) 
 								{
-									logger::debug("[ActorEquipManager Hooks] {}: trying to equip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -252,7 +255,7 @@ namespace ALYSLC
 									// Player did not request to equip a bound weapon, so ignore.
 									if (!reqToEquip)
 									{
-										logger::debug("[ActorEquipManager Hooks] {}: trying to equip bound weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip bound weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -281,7 +284,7 @@ namespace ALYSLC
 					if (!p->isPlayer1 && p->coopActor->race && p->coopActor->race->GetPlayable() &&
 						!p->isTransforming && !p->isTransformed)
 					{
-						logger::debug("[ActorEquipManager Hooks] UnequipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+						ALYSLC::Log("[ActorEquipManager Hooks] UnequipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
 						bool isBound = {
 							(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 							(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
@@ -304,7 +307,7 @@ namespace ALYSLC
 									// if we currently have a bound weapon equipped in the LH, do not ignore the unequip call.
 									if (auto lhWeap = p->em->GetLHWeapon(); !lhWeap || !lhWeap->IsBound())
 									{
-										logger::debug("[ActorEquipManager Hooks] {}: trying to unequip shield/torch {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip shield/torch {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -328,7 +331,7 @@ namespace ALYSLC
 									// Ignore if the game is trying to unequip desired armor.
 									if (armor == p->em->desiredEquippedForms[equipIndex])
 									{
-										logger::debug("[ActorEquipManager Hooks] {}: trying to unequip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -349,7 +352,7 @@ namespace ALYSLC
 								// Ignore if the game is trying to equip the desired weapon.
 								if (a_object == p->em->desiredEquippedForms[indexToCheck])
 								{
-									logger::debug("[ActorEquipManager Hooks] {}: trying to unequip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -357,7 +360,7 @@ namespace ALYSLC
 							{
 								if (a_object == p->em->desiredEquippedForms[!EquipIndex::kVoice])
 								{
-									logger::debug("[ActorEquipManager Hooks] {}: trying to unequip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -540,12 +543,6 @@ namespace ALYSLC
 							// Increment with wrap-around.
 							pam->lastAnimEventID = pam->lastAnimEventID == UINT16_MAX ? 1 : pam->lastAnimEventID + 1;
 
-							// REMOVE when done debugging.
-							logger::debug("[AnimationGraphManager Hook] ProcessEvent: player: {}, payload: {}, tag: {}, sessionAnimsCount: {}",
-								a_event->holder ? a_event->holder->GetName() : "NONE",
-								a_event->payload.data(), a_event->tag,
-								pam->lastAnimEventID);
-
 							// Improves recovery speed from transition from dodge end to movement start.
 							if (Hash(a_event->tag) == "TKDodgeStop"_h || Hash(a_event->tag) == "TKDR_DodgeEnd"_h)
 							{
@@ -561,12 +558,11 @@ namespace ALYSLC
 
 							p->lastAnimEventTag = a_event->tag;
 
-							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							logger::debug("[AnimationGraphManager Hook] ProcessEvent: {}: Lock: 0x{:X}.", p->coopActor->GetName(), hash);
+							ALYSLC::Log("[AnimationGraphManager Hook] ProcessEvent: {}: Getting Lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								logger::debug("[AnimationGraphManager Hook] ProcessEvent: {}: Lock obtained: 0x{:X}.", p->coopActor->GetName(), hash);
+								ALYSLC::Log("[AnimationGraphManager Hook] ProcessEvent: {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 								if (perfAVAnimEvent.first != PerfAnimEventTag::kNone)
 								{
 									p->pam->avcam->perfAnimEventsQueue.emplace(std::move(perfAVAnimEvent));
@@ -700,11 +696,6 @@ namespace ALYSLC
 								float realDelta = currentMaxHealth - currentHealth;
 								// REMOVE
 								float maxHealthRegenDeltaPerFrame = currentMaxHealth * (p->coopActor->GetActorValue(RE::ActorValue::kHealRate) / 100.0f) * (p->coopActor->GetActorValue(RE::ActorValue::kHealRateMult) / 100.0f);
-								logger::debug("[Character Hook] CheckClampDamageModifier: {} was healed to full: {} -> {}, delta: {}, real delta: {}, diff: {}. Max health regen delta per frame: {}, healing delta total: {}. Is healing: {}, in combat: {}",
-									a_this->GetName(), currentHealth, currentMaxHealth, a_delta, realDelta, a_delta - realDelta,
-									maxHealthRegenDeltaPerFrame, healingDeltaTotal, isHealing,
-									a_this->IsInCombat());
-
 								// Seems as if the delta that heals the player to full is always very close to (current max health - current health) + 1.
 								// Good enough for filtering out this health change.
 								if (abs(1.0f - (a_delta - realDelta)) < 0.0001f && a_delta > healingDeltaTotal)
@@ -824,8 +815,6 @@ namespace ALYSLC
 				if (playerVictim)
 				{
 					const auto& p = glob.coopPlayers[playerVictimIndex];
-					logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage received mult is {}.",
-						p->coopActor->GetName(), Settings::vfDamageDealtMult[p->playerID]);
 					damageMult *= Settings::vfDamageReceivedMult[p->playerID];
 				}
 
@@ -835,16 +824,8 @@ namespace ALYSLC
 					// Check for friendly fire (not from self) and negate damage.
 					if (!Settings::vbFriendlyFire[p->playerID] && Util::IsPartyFriendlyActor(a_this) && a_this != p->coopActor.get())
 					{
-						logger::debug("[Character Hook] HandleHealthDamage: {} damaged {}. Friendly fire, ignoring.",
-							a_attacker ? a_attacker->GetName() : "NONE",
-							a_this->GetName());
 						a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -a_damage);
 						return;
-					}
-					else
-					{
-						logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage dealt mult is {}.",
-							a_attacker ? a_attacker->GetName() : "NONE", Settings::vfDamageDealtMult[p->playerID]);
 					}
 
 					// Apply damage dealt mult.
@@ -869,17 +850,6 @@ namespace ALYSLC
 				if (float deltaHealth = a_damage * (damageMult - 1.0f); deltaHealth != 0.0f && a_attacker)
 				{
 					a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, deltaHealth);
-
-					// REMOVE
-					logger::debug("[Character Hook] HandleHealthDamage: {}: Damage received goes from {} to {} (x{}). Health delta: {}. Attacker: {}, new health: {}.",
-						a_this->GetName(),
-						a_damage,
-						a_damage * damageMult,
-						damageMult,
-						deltaHealth,
-						a_attacker ? a_attacker->GetName() : "NONE",
-						a_this->GetActorValue(RE::ActorValue::kHealth));
-
 					a_damage *= damageMult;
 				}
 
@@ -892,8 +862,6 @@ namespace ALYSLC
 					{
 						if (Settings::bUseReviveSystem)
 						{
-							logger::debug("[Character Hook] HandleHealthDamage: Using revive system: {} is downed and needs to be revived! {} inflicted {} damage.",
-								p->coopActor->GetName(), a_attacker ? a_attacker->GetName() : "NONE", a_damage);
 							p->isDowned = true;
 							p->isRevived = false;
 							p->lastDownedTP = SteadyClock::now();
@@ -906,12 +874,10 @@ namespace ALYSLC
 								});
 							if (!playerStillStanding)
 							{
-								logger::debug("[Character Hook] HandleHealthDamage: All players are downed. Ending co-op session.");
 								GlobalCoopData::YouDied();
 							}
 							else
 							{
-								logger::debug("[Character Hook] HandleHealthDamage: {} is downed and starting downed state countdown.", p->coopActor->GetName());
 								// Set health/health regen to 0 to prevent player from getting up prematurely when being revived.
 								p->coopActor->SetBaseActorValue(RE::ActorValue::kHealRateMult, 0.0f);
 								p->coopActor->RestoreActorValue
@@ -935,7 +901,6 @@ namespace ALYSLC
 						}
 						else
 						{
-							logger::debug("[Character Hook] HandleHealthDamage: Not using revive system: {} is dead. Handling player dismissal and ending co-op session.", p->coopActor->GetName());
 							// If not using the revive system, once one player dies, all other players die and the co-op session ends.
 							GlobalCoopData::YouDied(p->coopActor.get());
 						}
@@ -1014,8 +979,6 @@ namespace ALYSLC
 							// once the player has opened the QuickLoot menu for the corpse.
 							if (!a_this->extraList.HasType<RE::ExtraForcedTarget>())
 							{
-								logger::debug("[Character Hook] HandleHealthDamage: {} was killed by {}. Saving this player as the real killer through exData's pad14.",
-									a_this->GetName(), p->coopActor->GetName());
 								// I guess Add() manages the lifetime of the newly allocated extra data pointer?
 								// No explicit free call after calling Add() in two other places within the CommonLibSSE source.
 								RE::ExtraForcedTarget* exData{ RE::BSExtraData::Create<RE::ExtraForcedTarget>() };
@@ -1025,10 +988,6 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::debug("[Character Hook] HandleHealthDamage: {} was killed by {}. Setting real killer. Already has exData with target {}, pad14: 0x{:X}.",
-									a_this->GetName(), p->coopActor->GetName(),
-									Util::HandleIsValid(a_this->extraList.GetByType<RE::ExtraForcedTarget>()->target) ? a_this->extraList.GetByType<RE::ExtraForcedTarget>()->target.get()->GetName() : "NONE",
-									a_this->extraList.GetByType<RE::ExtraForcedTarget>()->pad14);
 								auto exData = a_this->extraList.GetByType<RE::ExtraForcedTarget>();
 								exData->pad14 = p->coopActor->formID;
 							}
@@ -1073,7 +1032,20 @@ namespace ALYSLC
 
 					if (p->mm->isDashDodging)
 					{
-						a_data.deltaTime *= Settings::fDashDodgeAnimSpeedFactor;
+						const float weightAdjAnimSpeedFactor =
+						Util::InterpolateEaseIn
+						(
+							1.0f, 
+							0.5f, 
+							std::clamp
+							(
+								p->mm->dashDodgeEquippedWeight / 75.0f, 
+								0.0f, 
+								1.0f
+							), 
+							2.0f
+						) * Settings::fDashDodgeAnimSpeedFactor * p->mm->dashDodgeLSDisplacement;
+						a_data.deltaTime *= weightAdjAnimSpeedFactor;
 					}
 				}
 			}
@@ -1106,7 +1078,7 @@ namespace ALYSLC
 					auto hash = Hash(a_eventName);
 					
 					// REMOVE when done debugging.
-					//logger::debug("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 
 					if (p->isTransformed) 
 					{
@@ -1158,10 +1130,10 @@ namespace ALYSLC
 						{
 							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							logger::debug("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock: 0x{:X}.", p->coopActor->GetName(), hash);
+							ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								logger::debug("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained: 0x{:X}.", p->coopActor->GetName(), hash);
+								ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 
 								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
 								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
@@ -1177,7 +1149,6 @@ namespace ALYSLC
 						// because the game still considers them to be in a killmove,
 						// so unset the flag here to signal the player's PAM to stop handling the
 						// previously triggered killmove and reset the player's data.
-						logger::debug("[Character Hooks] NotifyAnimationGraph: {}: Stopping killmove: {}.", p->coopActor->GetName(), a_eventName);
 						p->coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kIsInKillMove);
 					}
 				}
@@ -1196,7 +1167,6 @@ namespace ALYSLC
 				{
 					if (GlobalCoopData::IsCoopPlayer(a_this))
 					{
-						logger::debug("[Character Hooks] ResetInventory: {}, leveled only: {}.", a_this->GetName(), a_leveledOnly);
 						return;
 					}
 				}
@@ -1345,9 +1315,9 @@ namespace ALYSLC
 									p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+									// Ensure speedmult is positive, so set to base if the currently cached one is negative.
 									if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
 									{
-										logger::critical("[Character Hooks] Update: {}'s speedmult ({}) is < 0. Resetting to base.", p->coopActor->GetName(), p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
 										p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
 										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
@@ -1676,24 +1646,27 @@ namespace ALYSLC
 			{
 				if (a_event && *a_event)
 				{
-					bool p1ManagerThreadsInactive =
+					auto ui = RE::UI::GetSingleton();
+					// P1's managers are inactive when there is no co-op session, when the co-op camera is disabled,
+					// or when the manager is paused while the game is unpaused.
+					bool p1ManagersInactive =
 					{
-						!glob.coopSessionActive || !glob.cam->IsRunning() ||
-						(glob.coopSessionActive && (!glob.coopPlayers[glob.player1CID]->IsRunning()))
+						(!glob.coopSessionActive || !glob.cam->IsRunning()) ||
+						(!glob.coopPlayers[glob.player1CID]->IsRunning() && ui && !ui->GameIsPaused())
 					};
 
-					bool p1InMenu = !p1ManagerThreadsInactive && glob.menuCID == glob.player1CID;
+					bool p1InMenu = !p1ManagersInactive && glob.menuCID == glob.player1CID;
 					if (p1InMenu)
 					{
 						// Check to see if P1 is in the Favorites Menu and is trying to equip a quickslot item or spell.
 						CheckForP1QSEquipReq(a_event);
 					}
-					else if (p1ManagerThreadsInactive && Util::MenusOnlyAlwaysOpenInMap())
+					else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpenInMap())
 					{
-						// Delay Journal and Wait binds to trigger their actions on release, rather than on press.
+						// Delay Pause and Wait binds to trigger their actions on release, rather than on press.
 						// In addition, check for pressing of the default binds:
-						// Journal + Wait -> Co-op Debug Menu
-						// Wait + Journal -> Co-op Summoning Menu binds.
+						// Pause + Wait -> Co-op Debug Menu
+						// Wait + Pause -> Co-op Summoning Menu binds.
 						CheckForMenuTriggeringInput(a_event);
 					}
 
@@ -1725,41 +1698,66 @@ namespace ALYSLC
 				{
 					auto userEvents = RE::UserEvents::GetSingleton();
 					auto controlMap = RE::ControlMap::GetSingleton();
-					// Debug: always Journal + Wait when not in co-op.
-					// Summon: always Wait + Journal when not in co-op.
-					auto journalMask = GAMEPAD_MASK_START;
+					// Debug: always Pause + Wait when not in co-op.
+					// Summon: always Wait + Pause when not in co-op.
+					auto pauseMask = GAMEPAD_MASK_START;
 					auto waitMask = GAMEPAD_MASK_BACK;
 					if (userEvents && controlMap)
 					{
-						journalMask = controlMap->GetMappedKey(userEvents->journal, RE::INPUT_DEVICE::kGamepad);
+						pauseMask = controlMap->GetMappedKey(userEvents->pause, RE::INPUT_DEVICE::kGamepad);
 						waitMask = controlMap->GetMappedKey(userEvents->wait, RE::INPUT_DEVICE::kGamepad);
 					}
 
-					// Button events seem to be chained in a manner that does not depend on when their buttons were pressed.
-					// Check for both Journal and Wait binds being pressed/held to trigger co-op debug/summoning menus.
-					bool journalBindEvent = buttonEvent->idCode == journalMask;
-					bool waitBindEvent = buttonEvent->idCode == waitMask;
-					if (journalBindEvent || waitBindEvent)
+
+					// Sometimes the associated user event is 'Journal' instead of 'Pause'.
+					if (pauseMask == 0xFF) 
 					{
-						// Journal/Wait bind pressed by itself.
+						pauseMask = controlMap->GetMappedKey(userEvents->journal, RE::INPUT_DEVICE::kGamepad);
+					}
+
+					// Ensure both masks are valid, despite failing to get mapped button ID code.
+					if (pauseMask == 0xFF) 
+					{
+						pauseMask = GAMEPAD_MASK_START;
+					}
+
+					if (waitMask == 0xFF) 
+					{
+						waitMask = GAMEPAD_MASK_BACK;
+					}
+
+					// Both binds are sometimes the same here, so ensure they aren't by using the default binds.
+					if (pauseMask == waitMask) 
+					{
+						pauseMask = GAMEPAD_MASK_START;
+						waitMask = GAMEPAD_MASK_BACK;
+					}
+
+					// Button events seem to be chained in a manner that does not depend on when their buttons were pressed.
+					// Check for both Pause and Wait binds being pressed/held to trigger co-op debug/summoning menus.
+					bool pauseBindEvent = buttonEvent->idCode == pauseMask;
+					bool waitBindEvent = buttonEvent->idCode == waitMask;
+					if (pauseBindEvent || waitBindEvent)
+					{
+						// Pause/Wait bind pressed by itself.
 						if (!eventHead->next)
 						{
-							journalBindPressedFirst = journalBindEvent;
+							pauseBindPressedFirst = pauseBindEvent;
 						}
 						else
 						{
 							if (auto buttonEvent2 = eventHead->next->AsButtonEvent(); buttonEvent2)
 							{
-								bool journalBindEvent2 = buttonEvent2->idCode == journalMask;
+								bool pauseBindEvent2 = buttonEvent2->idCode == pauseMask;
 								bool waitBindEvent2 = buttonEvent2->idCode == waitMask;
-								bool debugMenuBindPressed = journalBindPressedFirst && ((journalBindEvent && waitBindEvent2) || (journalBindEvent2 && waitBindEvent));
-								bool summoningMenuBindPressed = !journalBindPressedFirst && ((waitBindEvent && journalBindEvent2) || (waitBindEvent2 && journalBindEvent));
+								bool debugMenuBindPressed = pauseBindPressedFirst && ((pauseBindEvent && waitBindEvent2) || (pauseBindEvent2 && waitBindEvent));
+								bool summoningMenuBindPressed = !pauseBindPressedFirst && ((waitBindEvent && pauseBindEvent2) || (waitBindEvent2 && pauseBindEvent));
 								// Can trigger the debug menu at any time, even if the camera/p1 manager threads are inactive.
 								if (debugMenuBindPressed && !debugMenuTriggered)
 								{
 									if (glob.player1Actor)
 									{
-										logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
+										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
 										glob.onDebugMenuRequest.SendEvent(glob.player1Actor.get(), glob.coopSessionActive ? glob.player1CID : -1);
 									}
 
@@ -1773,7 +1771,7 @@ namespace ALYSLC
 									// and set to 0 if summoning failed or is complete.
 									if (glob.summoningMenuOpenGlob->value == 0.0f && glob.player1Actor && !glob.player1Actor->IsInCombat())
 									{
-										logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
+										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
 										glob.onSummoningMenuRequest.SendEvent();
 									}
 
@@ -1798,7 +1796,7 @@ namespace ALYSLC
 										ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 										if (XInputGetState(i, std::addressof(inputState)) == ERROR_SUCCESS)
 										{
-											float eventReportedJournalHoldTime = journalBindEvent ? buttonEvent->heldDownSecs : buttonEvent2->heldDownSecs;
+											float eventReportedPauseHoldTime = pauseBindEvent ? buttonEvent->heldDownSecs : buttonEvent2->heldDownSecs;
 											float eventReportedWaitHoldTime = waitBindEvent ? buttonEvent->heldDownSecs : buttonEvent2->heldDownSecs;
 											const auto& inputState1 = glob.cdh->GetInputState(i, debugMenuTriggered ? InputAction::kStart : InputAction::kBack);
 											const auto& inputState2 = glob.cdh->GetInputState(i, debugMenuTriggered ? InputAction::kBack : InputAction::kStart);
@@ -1806,10 +1804,10 @@ namespace ALYSLC
 											// One of the two requisite binds was not pressed on this controller, or the controller state held time(s) are longer than the event-reported held time(s)
 											// Note: Event-reported held times are always >= 1 frame delta longer than the controller state held time for P1's controller.
 											if (!inputState1.isPressed || !inputState2.isPressed ||
-												(debugMenuTriggered && inputState1.heldTimeSecs > eventReportedJournalHoldTime) ||
+												(debugMenuTriggered && inputState1.heldTimeSecs > eventReportedPauseHoldTime) ||
 												(debugMenuTriggered && inputState2.heldTimeSecs > eventReportedWaitHoldTime) ||
 												(summoningMenuTriggered && inputState1.heldTimeSecs > eventReportedWaitHoldTime) ||
-												(summoningMenuTriggered && inputState2.heldTimeSecs > eventReportedJournalHoldTime))
+												(summoningMenuTriggered && inputState2.heldTimeSecs > eventReportedPauseHoldTime))
 											{
 												continue;
 											}
@@ -1817,11 +1815,11 @@ namespace ALYSLC
 											float heldTimeDiffTotal = FLT_MAX;
 											if (debugMenuTriggered)
 											{
-												heldTimeDiffTotal = abs(eventReportedJournalHoldTime - inputState1.heldTimeSecs) + abs(eventReportedWaitHoldTime - inputState2.heldTimeSecs);
+												heldTimeDiffTotal = abs(eventReportedPauseHoldTime - inputState1.heldTimeSecs) + abs(eventReportedWaitHoldTime - inputState2.heldTimeSecs);
 											}
 											else
 											{
-												heldTimeDiffTotal = abs(eventReportedWaitHoldTime - inputState1.heldTimeSecs) + abs(eventReportedJournalHoldTime - inputState2.heldTimeSecs);
+												heldTimeDiffTotal = abs(eventReportedWaitHoldTime - inputState1.heldTimeSecs) + abs(eventReportedPauseHoldTime - inputState2.heldTimeSecs);
 											}
 
 
@@ -1835,15 +1833,13 @@ namespace ALYSLC
 
 									if (newCID != -1)
 									{
-										// REMOVE
-										logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: Assigning CID {} as P1 CID.", newCID);
 										glob.player1CID = newCID;
 									}
 								}
 
 								// After processing, ignore the second button event entirely, 
-								// since we do not want either the journal or wait menus to trigger once
-								// both the journal and wait binds are pressed at the same time.
+								// since we do not want either the pause or wait menus to trigger once
+								// both the pause and wait binds are pressed at the same time.
 								if (buttonEvent2->IsDown() || buttonEvent2->IsHeld() || buttonEvent2->IsUp())
 								{
 									buttonEvent2->heldDownSecs = 0.0f;
@@ -1857,13 +1853,13 @@ namespace ALYSLC
 						{
 							if (buttonEvent->IsDown())
 							{
-								ignoringJournalWaitEvent = !Util::MenusOnlyAlwaysOpenInMap();
-								logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: {} menu bind is now pressed. Ignore ({}) and trigger on release if no co-op menus are triggered by then.",
-									journalBindEvent ? "Journal" : "Wait",
-									ignoringJournalWaitEvent);
+								ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpenInMap();
+								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} menu bind is now pressed. Ignore ({}) and trigger on release if no co-op menus are triggered by then.",
+									pauseBindEvent ? "Pause" : "Wait",
+									ignoringPauseWaitEvent);
 							}
 
-							// Clear out first button event to prevent it from triggering the Journal or Wait menus
+							// Clear out first button event to prevent it from triggering the Pause or Wait menus
 							// while the button is still pressed.
 							buttonEvent->heldDownSecs = 0.0f;
 							buttonEvent->value = 0.0f;
@@ -1871,20 +1867,20 @@ namespace ALYSLC
 						}
 						else if (buttonEvent->IsUp())
 						{
-							if (!summoningMenuTriggered && !debugMenuTriggered && !ignoringJournalWaitEvent && Util::MenusOnlyAlwaysOpenInMap())
+							if (!summoningMenuTriggered && !debugMenuTriggered && !ignoringPauseWaitEvent && Util::MenusOnlyAlwaysOpenInMap())
 							{
 								// No co-op menus triggered, so allow the button event to pass through on release
-								// and trigger either the Journal or Wait menu as usual.
-								logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own. Simulating press to trigger {} menu.",
-									journalBindEvent ? "Journal" : "Wait", journalBindEvent ? "Pause" : "Wait");
+								// and trigger either the Pause or Wait menu as usual.
+								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own. Simulating press to trigger {} menu.",
+									pauseBindEvent ? "Pause" : "Wait", pauseBindEvent ? "Pause" : "Wait");
 								buttonEvent->heldDownSecs = 0.0f;
 								buttonEvent->value = 1.0f;
 							}
 							else if (summoningMenuTriggered || debugMenuTriggered)
 							{
 								// A co-op menu was triggered, so ignore the button event on release.
-								logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own after {} menu triggered. Ignoring.",
-									journalBindEvent ? "Journal" : "Wait", summoningMenuTriggered ? "Summoning" : "Debug");
+								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own after {} menu triggered. Ignoring.",
+									pauseBindEvent ? "Pause" : "Wait", summoningMenuTriggered ? "Summoning" : "Debug");
 								buttonEvent->value = 0.0f;
 								buttonEvent->idCode = 0xFF;
 							}
@@ -1909,12 +1905,12 @@ namespace ALYSLC
 					)
 				)
 			};
-			bool needToResetState = summoningMenuTriggered || debugMenuTriggered || ignoringJournalWaitEvent;
+			bool needToResetState = summoningMenuTriggered || debugMenuTriggered || ignoringPauseWaitEvent;
 			if (buttonInputsReleased && needToResetState)
 			{
-				logger::debug("[MenuControls Hook] CheckForMenuTriggeringInput: Buttons released. Reset flags to false. Journal bind pressed first: {}, summoning menu triggered: {}, debug menu triggered: {}, ignoring Journal/Wait event: {}",
-					journalBindPressedFirst, summoningMenuTriggered, debugMenuTriggered, ignoringJournalWaitEvent);
-				journalBindPressedFirst = summoningMenuTriggered = debugMenuTriggered = ignoringJournalWaitEvent = false;
+				ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Buttons released. Reset flags to false. Pause bind pressed first: {}, summoning menu triggered: {}, debug menu triggered: {}, ignoring Pause/Wait event: {}",
+					pauseBindPressedFirst, summoningMenuTriggered, debugMenuTriggered, ignoringPauseWaitEvent);
+				pauseBindPressedFirst = summoningMenuTriggered = debugMenuTriggered = ignoringPauseWaitEvent = false;
 			}
 		}
 
@@ -1922,15 +1918,34 @@ namespace ALYSLC
 		{
 			// Check if P1 is trying to (un)tag a FavoritesMenu entry 
 			// as a quick slot item/spell.
-
 			auto inputEvent = *a_constEvent;
+			auto ue = RE::UserEvents::GetSingleton();
+			auto ui = RE::UI::GetSingleton();
+			auto controlMap = RE::ControlMap::GetSingleton();
+			// Must have a valid input event, access to the UI and user events singletons,
+			// and be displaying the Favorites Menu.
+			if (!inputEvent || !ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
+			{
+				return;
+			}
+
 			auto idEvent = inputEvent->AsIDEvent();
 			auto buttonEvent = inputEvent->AsButtonEvent();
-			auto userEvents = RE::UserEvents::GetSingleton();
-			if (idEvent && idEvent->userEvent == userEvents->journal &&
-				RE::UI::GetSingleton()->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) &&
-				buttonEvent->value == 1.0f &&
-				buttonEvent->heldDownSecs == 0.0f)
+			// Only handle button events with an ID.
+			if (!idEvent || !buttonEvent)
+			{
+				return;
+			}
+
+			// Only handle pause/journal bind presses.
+			bool isPauseBind = 
+			{
+				buttonEvent->idCode == controlMap->GetMappedKey(ue->pause, RE::INPUT_DEVICE::kGamepad) ||
+				buttonEvent->idCode == controlMap->GetMappedKey(ue->journal, RE::INPUT_DEVICE::kGamepad)
+			};
+
+			// Only handle on initial press.
+			if (isPauseBind && buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f)
 			{
 				glob.mim->EquipP1QSForm();
 			}
@@ -1975,7 +1990,7 @@ namespace ALYSLC
 			// of copied data onto P1, such as another player's name or race name, persisting across save games.
 			if ((glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) &&
 				(Hash(inputEvent->QUserEvent()) == Hash(ue->quicksave) ||
-					(Hash(inputEvent->QUserEvent()) == Hash(ue->console))))
+				(Hash(inputEvent->QUserEvent()) == Hash(ue->console))))
 			{
 				if (idEvent && buttonEvent)
 				{
@@ -2073,14 +2088,33 @@ namespace ALYSLC
 								}
 							}
 						}
-						else if (buttonEvent && coopPlayerControllingMenus && !coopPlayerMenuInput)
+						else if (buttonEvent && !coopPlayerMenuInput)
 						{
-							// Change event name to the corresponding gameplay context event name for P1 input events when P1 is not controlling menus.
-							// Ensures that menu processing will not occur for these inputs.
-							auto p1GameplayContextEvent = controlMap->GetUserEventName(buttonEvent->idCode, RE::INPUT_DEVICE::kGamepad);
-							if (Hash(p1GameplayContextEvent) != ""_h)
+							if (coopPlayerControllingMenus) 
 							{
-								idEvent->userEvent = p1GameplayContextEvent;
+								// Change event name to the corresponding gameplay context event name for P1 input events when P1 is not controlling menus.
+								// Ensures that menu processing will not occur for these inputs.
+								auto p1GameplayContextEvent = controlMap->GetUserEventName(buttonEvent->idCode, RE::INPUT_DEVICE::kGamepad);
+								if (Hash(p1GameplayContextEvent) != ""_h)
+								{
+									idEvent->userEvent = p1GameplayContextEvent;
+								}
+							}
+							else
+							{
+								// Change DPad event name to the corresponding menu context event name for P1 input events when P1 is controlling menus.
+								// Ensures that menu -- and not gameplay -- processing will occur for these inputs.
+								// eg. Instead of 'Hotkey1'/'Hotkey2' triggering while P1 is in the Favorites Menu and pressing left/right on the DPad,
+								// the proper 'Left'/'Right' DPad user events will be sent instead.
+								// DPad gamepad masks are all < 0xF.
+								if (buttonEvent->idCode < 0x0000000F) 
+								{
+									auto p1MenuContextEvent = controlMap->GetUserEventName(buttonEvent->idCode, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode);
+									if (Hash(p1MenuContextEvent) != ""_h)
+									{
+										idEvent->userEvent = p1MenuContextEvent;
+									}
+								}
 							}
 						}
 
@@ -2165,6 +2199,7 @@ namespace ALYSLC
 										idEvent->userEvent == ue->hotkey1 ||
 										idEvent->userEvent == ue->hotkey2 ||
 										idEvent->userEvent == ue->journal ||
+										idEvent->userEvent == ue->pause ||
 										idEvent->userEvent == ue->readyWeapon ||
 										idEvent->userEvent == ue->shout ||
 										idEvent->userEvent == ue->sneak ||
@@ -2186,6 +2221,7 @@ namespace ALYSLC
 									idEvent->userEvent == ue->activate ||
 									idEvent->userEvent == ue->favorites ||
 									idEvent->userEvent == ue->journal ||
+									idEvent->userEvent == ue->pause ||
 									idEvent->userEvent == ue->leftEquip ||
 									idEvent->userEvent == ue->rightEquip ||
 									idEvent->userEvent == ue->togglePOV ||
@@ -2312,7 +2348,7 @@ namespace ALYSLC
 						bool propagateUnmodifiedEvent = !wasBlocked && !ignoreInput && (validP1Input || validCoopCompanionInput);
 
 						// REMOVE when done debugging.
-						/*logger::debug("[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, proxied P1 input: {}, coop player menu input: {}, dialogue menu open: {}, is blocked event: {}, valid co-op companion input: {}, valid p1 input: {}, two-player P1 lockpicking input: {}",
+						/*ALYSLC::Log("[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, proxied P1 input: {}, coop player menu input: {}, dialogue menu open: {}, is blocked event: {}, valid co-op companion input: {}, valid p1 input: {}, two-player P1 lockpicking input: {}",
 							glob.menuCID,
 							glob.mim->managerMenuCID,
 							idEvent->userEvent,
@@ -2366,15 +2402,6 @@ namespace ALYSLC
 							bool baselineValidity = crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get());
 							// Set the pick data target to the controlling player's crosshair target before opening the container.
 							pickData->target = pickData->targetActor = baselineValidity ? p->tm->crosshairRefrHandle : RE::ObjectRefHandle();
-							if (lootMenuOpenContainer && baselineValidity && glob.reqQuickLootContainerHandle == crosshairRefrPtr->GetHandle())
-							{
-								logger::debug("[MenuControls Hooks] FilterInputEvents: About to open {}'s container from the LootMenu for {}.",
-									crosshairRefrPtr->GetName(), p->coopActor->GetName());
-								// NOTE: Keeping for now if needed.
-								// LootMenu closes and reopens before the container menu does, so a LootMenu request is also needed to maintain menu control for this player.
-								/*glob.moarm->InsertRequest(p->controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), GlobalCoopData::LOOT_MENU, crosshairRefrPtr->GetHandle());
-								glob.moarm->InsertRequest(p->controllerID, InputAction::kActivate, SteadyClock::now(), RE::ContainerMenu::MENU_NAME, crosshairRefrPtr->GetHandle());*/
-							}
 						}
 					}
 				}
@@ -2396,13 +2423,107 @@ namespace ALYSLC
 				// Set stored arm/torso rotations for active players before running downward pass.
 				// If not done here, and performed in the main loop instead, an intervening function
 				// call will undo our changes.
-				RestoreSavedNodeOrientation(a_this, a_data);
+				RestoreSavedNodeOrientation(a_this, std::addressof(a_data));
 			}
 
 			_UpdateDownwardPass(a_this, a_data, a_arg2);
 		}
 
-		void NiNodeHooks::RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData& a_data)
+		void NiNodeHooks::UpdateWorldData(RE::NiNode* a_this, RE::NiUpdateData* a_data)
+		{
+			if (!glob.coopSessionActive)
+			{
+				return _UpdateWorldData(a_this, a_data);
+			}
+			// Return early and minimize calculation time in this func.
+			const auto strings = RE::FixedStrings::GetSingleton();
+			if (!strings)
+			{
+				return _UpdateWorldData(a_this, a_data);
+			}
+
+			// Ignore updates to NPCs.
+			if (auto index = GlobalCoopData::GetCoopPlayerIndex(Util::GetRefrFrom3D(a_this)); index == -1)
+			{
+				return _UpdateWorldData(a_this, a_data);
+			}
+			else
+			{
+				const auto& p = glob.coopPlayers[index];
+				// The co-op camera is not enabled, so do not restore P1's node rotations.
+				if (p->isPlayer1 && !glob.cam->IsRunning())
+				{
+					return _UpdateWorldData(a_this, a_data);
+				}
+
+				// Set all default rotations for supported nodes when one of the last nodes are being updated.
+				// Chose the character bumper node here, since it seems to have its world data updated second-to-last.
+				const auto nodeNameHash = Hash(a_this->name);
+				{
+					// Check if a supported node first.
+					bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES.contains(nodeNameHash);
+					bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES.contains(nodeNameHash);
+					bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES.contains(nodeNameHash);
+					if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
+					{
+						return _UpdateWorldData(a_this, a_data);
+					}
+
+					std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
+					if (lock)
+					{
+						// Torso node orientation restoration first, as the check is the least intensive.
+						if (p->mm->nrm->nodeRotationDataMap.contains(nodeNameHash))
+						{
+							auto& data = p->mm->nrm->nodeRotationDataMap[nodeNameHash];
+							if (GlobalCoopData::ADJUSTABLE_NODES_HASHES_TO_CHILD_NAMES.contains(nodeNameHash))
+							{
+								// Exit early if the player's 3D is invalid.
+								auto loadedData = p->coopActor->loadedData;
+								if (!loadedData)
+								{
+									return _UpdateWorldData(a_this, a_data);
+								}
+
+								auto data3D = loadedData->data3D;
+								if (!data3D || !data3D->parent)
+								{
+									return _UpdateWorldData(a_this, a_data);
+								}
+							}
+
+							if (isTorsoNode)
+							{
+								a_this->local.rotate = data->currentRotation;
+								if (a_this->parent)
+								{
+									a_this->world.rotate = (a_this->parent->world * a_this->local).rotate;
+								}
+							}
+							else
+							{
+								// Arm node orientation restoration.
+								// Only updated when weapon is not drawn.
+								if (!Settings::bRotateArmsWhenSheathed || p->coopActor->IsWeaponDrawn())
+								{
+									return _UpdateWorldData(a_this, a_data);
+								}
+
+								a_this->local.rotate = data->currentRotation;
+								if (a_this->parent)
+								{
+									a_this->world.rotate = (a_this->parent->world * a_this->local).rotate;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			return _UpdateWorldData(a_this, a_data);
+		}
+
+		void NiNodeHooks::RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData* a_data)
 		{
 			if (glob.coopSessionActive)
 			{
@@ -2412,16 +2533,17 @@ namespace ALYSLC
 				{
 					return;
 				}
-
 				// Check if a supported node first.
-				bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_PLAYER_LEFT_ARM_NODES.contains(a_node->name);
-				bool isRightArmNode = GlobalCoopData::ADJUSTABLE_PLAYER_RIGHT_ARM_NODES.contains(a_node->name);
-				bool isTorsoNode = GlobalCoopData::ADJUSTABLE_PLAYER_TORSO_NODES.contains(a_node->name);
+				const auto nodeNameHash = Hash(a_node->name);
+				bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES.contains(nodeNameHash);
+				bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES.contains(nodeNameHash);
+				bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES.contains(nodeNameHash);
 				if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
 				{
 					return;
 				}
 
+				// Ignore updates to NPCs.
 				if (auto index = GlobalCoopData::GetCoopPlayerIndex(Util::GetRefrFrom3D(a_node)); index == -1)
 				{
 					return;
@@ -2429,25 +2551,74 @@ namespace ALYSLC
 				else
 				{
 					const auto& p = glob.coopPlayers[index];
-					auto nodeNameHash = Hash(a_node->name);
-					// Torso node orientation restoration first, as the check is the least intensive.
-					if (p->mm->nrm->lastSetTorsoLocalRotations.contains(nodeNameHash) && p->mm->nrm->restoreTorsoNodeRotations)
-					{
-						a_node->local.rotate = p->mm->nrm->lastSetTorsoLocalRotations.at(nodeNameHash);
-						return;
-					}
-
-					// Arm node orientation restoration.
-					// Only updated when weapon is not drawn.
-					if (!Settings::bRotateArmsWhenSheathed || p->coopActor->IsWeaponDrawn())
+					// The co-op camera is not enabled, so do not restore P1's node rotations.
+					if (p->isPlayer1 && !glob.cam->IsRunning())
 					{
 						return;
 					}
 
-					if (p->mm->nrm->lastSetArmLocalRotations.contains(nodeNameHash) && p->mm->nrm->restoreArmNodeRotations)
+					std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
+					if (lock)
 					{
-						a_node->local.rotate = p->mm->nrm->lastSetArmLocalRotations.at(nodeNameHash);
-						a_data.flags.set(RE::NiUpdateData::Flag::kDirty, RE::NiUpdateData::Flag::kDisableCollision);
+						// Torso node orientation restoration first, as the check is the least intensive.
+						if (p->mm->nrm->nodeRotationDataMap.contains(nodeNameHash))
+						{
+							auto& data = p->mm->nrm->nodeRotationDataMap[nodeNameHash];
+							data->defaultRotation = a_node->local.rotate;
+
+							// Arm node orientation restoration is only performed when weapon is not drawn.
+							if (isTorsoNode)
+							{
+								a_node->local.rotate = data->currentRotation;
+							}
+							else if (Settings::bRotateArmsWhenSheathed)
+							{
+								if (!p->coopActor->IsWeaponDrawn()) 
+								{
+									a_node->local.rotate = data->targetRotation;
+								}
+								else
+								{
+									a_node->local.rotate = data->defaultRotation;
+								}
+
+							}
+
+							if (a_node->parent)
+							{
+								a_node->world.rotate = (a_node->parent->world * a_node->local).rotate;
+							}
+
+
+							/*float xL = 0.0f;
+							float yL = 0.0f;
+							float zL = 0.0f;
+							float xW = 0.0f;
+							float yW = 0.0f;
+							float zW = 0.0f;
+							a_node->local.rotate.ToEulerAnglesXYZ(xL, yL, zL);
+							a_node->world.rotate.ToEulerAnglesXYZ(xW, yW, zW);
+
+							ALYSLC::Log("[MM] RestoreSavedNodeOrientation: {}: {}: ({}, {}, {}), ({}, {}, {}).",
+								p->coopActor->GetName(), a_node->name,
+								xL * TO_DEGREES, yL * TO_DEGREES, zL * TO_DEGREES,
+								xW * TO_DEGREES, yW * TO_DEGREES, zW * TO_DEGREES);*/
+
+							/*const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+							const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+							const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+							auto& worldRot = a_node->world.rotate;
+							auto worldXAxis = RE::NiPoint3(worldRot * right);
+							auto worldYAxis = RE::NiPoint3(worldRot * forward);
+							auto worldZAxis = RE::NiPoint3(worldRot * up);
+							glm::vec3 start{ a_node->world.translate.x, a_node->world.translate.y, a_node->world.translate.z };
+							glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 15.0f };
+							glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 15.0f };
+							glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 15.0f };
+							DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
+							DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
+							DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);*/
+						}
 					}
 				}
 			}
@@ -2539,8 +2710,6 @@ namespace ALYSLC
 						const auto currentSpeedMult = a_this->GetActorValue(RE::ActorValue::kSpeedMult);
 						if (currentSpeedMult != p->mm->movementOffsetParams[!MoveParams::kSpeedMult])
 						{
-							logger::error("[PlayerCharacter Hook] CheckClampDamageModifier: current speed mult ({}, delta {}) does not match movement manager speed mult {}. New delta: {}.",
-								currentSpeedMult, a_delta, p->mm->movementOffsetParams[!MoveParams::kSpeedMult], p->mm->movementOffsetParams[!MoveParams::kSpeedMult] - currentSpeedMult);
 							return p->mm->movementOffsetParams[!MoveParams::kSpeedMult] - currentSpeedMult;
 						}
 					}
@@ -2583,8 +2752,6 @@ namespace ALYSLC
 		{
 			if (glob.globalDataInit && glob.coopSessionActive)
 			{
-				logger::debug("[PlayerCharacter Hook] HandleHealthDamage: {} damaged P1 for {} damage, pre-processed!",
-					a_attacker ? a_attacker->GetName() : "NONE", a_damage);
 				auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(a_attacker);
 				float damageMult = Settings::vfDamageReceivedMult[0];
 				// Co-op player inflicted health damage on player 1.
@@ -2594,15 +2761,8 @@ namespace ALYSLC
 					// Check for friendly fire (not from self) and negate damage.
 					if (!Settings::vbFriendlyFire[p->playerID] && a_this != p->coopActor.get())
 					{
-						logger::debug("[PlayerCharacter Hook] HandleHealthDamage: {} damaged P1. Friendly fire, ignoring.",
-							p->coopActor->GetName());
 						a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -a_damage);
 						return;
-					}
-					else
-					{
-						logger::debug("[Character Hook] HandleHealthDamage: {}'s base damage mult is {}.",
-							a_attacker ? a_attacker->GetName() : "NONE", Settings::vfDamageDealtMult[p->playerID]);
 					}
 
 					// Modify damage mult.
@@ -2667,17 +2827,6 @@ namespace ALYSLC
 				if (float deltaHealth = a_damage * (damageMult - 1.0f); deltaHealth != 0.0f && a_attacker)
 				{
 					a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, deltaHealth);
-
-					// REMOVE
-					logger::debug("[PlayerCharacter Hook] HandleHealthDamage: {}: Damage received goes from {} to {} (x{}). Health delta: {}. Attacker: {}, new health: {}.",
-						a_this->GetName(),
-						a_damage,
-						a_damage * damageMult,
-						damageMult,
-						deltaHealth,
-						a_attacker ? a_attacker->GetName() : "NONE",
-						a_this->GetActorValue(RE::ActorValue::kHealth));
-
 					a_damage *= damageMult;
 				}
 
@@ -2689,8 +2838,6 @@ namespace ALYSLC
 					// Set downed state for P1.
 					if (Settings::bUseReviveSystem && Settings::bCanRevivePlayer1)
 					{
-						logger::debug("[PlayerCharacter Hook] HandleHealthDamage: Using revive system: {} is downed and needs to be revived!",
-							p->coopActor->GetName());
 						p->isDowned = true;
 						p->isRevived = false;
 						p->lastDownedTP = SteadyClock::now();
@@ -2703,12 +2850,10 @@ namespace ALYSLC
 							});
 						if (!playerStillStanding)
 						{
-							logger::debug("[PlayerCharacter Hook] HandleHealthDamage: All players are downed. Ending co-op session.");
 							GlobalCoopData::YouDied();
 						}
 						else
 						{
-							logger::debug("[PlayerCharacter Hook] HandleHealthDamage: {} is downed and starting downed state countdown.", p->coopActor->GetName());
 							// Set health/health regen to 0 to prevent player from getting up prematurely when being revived.
 							p->coopActor->SetBaseActorValue(RE::ActorValue::kHealRateMult, 0.0f);
 							p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage,
@@ -2728,7 +2873,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						logger::debug("[PlayerCharacter Hook] HandleHealthDamage: Not using revive system: P1 is dead. Ending co-op session.");
 						// If not using the revive system, once one player dies, all other players die and the co-op session ends.
 						GlobalCoopData::YouDied(a_this);
 					}
@@ -2768,7 +2912,20 @@ namespace ALYSLC
 				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
 				if (coopP1->mm->isDashDodging)
 				{
-					a_data.deltaTime *= Settings::fDashDodgeAnimSpeedFactor;
+					// Dash dodge animation speedup depends on LS displacement and equipped weight.
+					const float weightAdjAnimSpeedFactor = Util::InterpolateEaseIn
+					(
+						1.0f, 
+						0.5f, 
+						std::clamp
+						(
+							coopP1->mm->dashDodgeEquippedWeight / 75.0f, 
+							0.0f, 
+							1.0f
+						), 
+						2.0f
+					) * Settings::fDashDodgeAnimSpeedFactor * coopP1->mm->dashDodgeLSDisplacement;
+					a_data.deltaTime *= weightAdjAnimSpeedFactor;
 				}
 			}
 
@@ -2783,7 +2940,7 @@ namespace ALYSLC
 				auto hash = Hash(a_eventName);
 				if (glob.coopSessionActive)
 				{
-					//logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 					if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
 					{
 						// Skip bleedout animations when using the co-op revive system.
@@ -2803,10 +2960,10 @@ namespace ALYSLC
 						{
 							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock: 0x{:X}.", p->coopActor->GetName(), hash);
+							ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained: 0x{:X}.", p->coopActor->GetName(), hash);
+								ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 
 								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
 								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
@@ -2822,12 +2979,10 @@ namespace ALYSLC
 						// because the game still considers them to be in a killmove,
 						// so unset the flag here to signal the player's PAM to stop handling the
 						// previously triggered killmove and reset the player's data.
-						logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: Stopping killmove: {}.", p->coopActor->GetName(), a_eventName);
 						p->coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kIsInKillMove);
 					}
 					else if (!p->isTransformed && hash == "BiteStart"_h)
 					{
-						logger::debug("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: Vampire bite killmove triggered by another player: {}. Let animation event through.", p->coopActor->GetName(), a_eventName);
 						return true;
 					}
 				}
@@ -2909,9 +3064,9 @@ namespace ALYSLC
 									p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+									// Ensure speedmult is positive, so set to base if the currently cached one is negative.
 									if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
 									{
-										logger::critical("[PlayerCharacter Hooks] Update: {}'s speedmult ({}) is < 0. Resetting to base.", p->coopActor->GetName(), p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
 										p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
 										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
@@ -3064,7 +3219,7 @@ namespace ALYSLC
 								else if (bool isAIDriven = p->coopActor->movementController && !p->coopActor->movementController->unk1C5; isAIDriven)
 								{
 									// REMOVE when done debugging.
-									/*logger::debug("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}.",
+									/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}.",
 										p->coopActor->GetName(),
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
@@ -3149,7 +3304,7 @@ namespace ALYSLC
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun]		*= diffFactor;
 									}
 
-									/*logger::debug("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. DIFF FACTOR: {}, lin vel XY: {}, {}, movement ang diff: {}, range: {}.",
+									/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. DIFF FACTOR: {}, lin vel XY: {}, {}, movement ang diff: {}, range: {}.",
 										p->coopActor->GetName(),
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
@@ -3192,7 +3347,6 @@ namespace ALYSLC
 						};
 						if ((!p->isDowned) && inDownedLifeState)
 						{
-							logger::debug("[PlayerCharacter Hooks] Update: life state is {}. Setting to alive ({}).", a_this->GetLifeState(), RE::ACTOR_LIFE_STATE::kAlive);
 							a_this->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kAlive;
 						}
 					}
@@ -3218,13 +3372,12 @@ namespace ALYSLC
 				const auto& p = glob.coopPlayers[glob.player1CID];
 				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[PlayerCharacter Hooks] UseSkill: Lock: 0x{:X}.", hash);
 				{
 					std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 					if (lock)
 					{
 						// REMOVE
-						logger::debug("[PlayerCharacter Hooks] UseSkill: Lock obtained: 0x{:X}.", hash);
+						ALYSLC::Log("[PlayerCharacter Hooks] UseSkill: Lock obtained. (0x{:X})", hash);
 						// For melee skills, cache and delay if cached data does not match call args.
 						if (a_av == RE::ActorValue::kOneHanded || a_av == RE::ActorValue::kTwoHanded ||
 							a_av == RE::ActorValue::kArchery || a_av == RE::ActorValue::kBlock ||
@@ -3235,18 +3388,12 @@ namespace ALYSLC
 								glob.lastP1MeleeUseSkillCallArgs->points != a_points || 
 								glob.lastP1MeleeUseSkillCallArgs->assocForm != a_arg3)
 							{
-								logger::debug("[PlayerCharacter Hooks] UseSkill: first call points negated: ({}, {}, {}).", Util::GetActorValueName(a_av), a_points, a_arg3 ? a_arg3->GetName() : "NONE");
 								glob.lastP1MeleeUseSkillCallArgs = std::make_unique<GlobalCoopData::LastP1MeleeUseSkillCallArgs>(a_av, a_points, a_arg3);
 								a_points = 0.0f;
 								return _UseSkill(a_this, a_av, a_points, a_arg3);
 							}
-							else
-							{
-								logger::debug("[PlayerCharacter Hooks] UseSkill: second call allowed through: ({}, {}, {}).", Util::GetActorValueName(a_av), a_points, a_arg3 ? a_arg3->GetName() : "NONE");
-							}
 						}
 
-						logger::debug("[PlayerCharacter Hooks] UseSkill: {}, points before: {}.", a_av, a_points);
 						if (GlobalCoopData::SHARED_SKILL_AVS_SET.contains(a_av))
 						{
 							float mult = 1.0f;
@@ -3284,8 +3431,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						// REMOVE
-						logger::debug("[PlayerCharacter Hooks] UseSkill: Failed to obtain lock: 0x{:X}. Will not use skill.", hash);
+						ALYSLC::Log("[PlayerCharacter Hooks] UseSkill: Failed to obtain lock (0x{:X}). Will not use skill.", hash);
 						return;
 					}
 				}
@@ -3298,8 +3444,13 @@ namespace ALYSLC
 // [PROJECTILE HOOKS]:
 		void ProjectileHooks::GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity)
 		{
+			if (!a_this || !a_this->GetHandle())
+			{
+				return;
+			}
+
 			// Not handled outside of co-op.
-			if (!a_this || !glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				// Output the game's set velocity.
 				if (a_this->As<RE::ArrowProjectile>())
@@ -3318,19 +3469,27 @@ namespace ALYSLC
 				return;
 			}
 
+			// Ensure the projectile's handle is valid first.
+			const auto projectileHandle = a_this->GetHandle();
+			auto projectilePtr = Util::GetRefrPtrFromHandle(projectileHandle);
+			if (!projectilePtr)
+			{
+				return;
+			}
+
 			bool justReleased = a_this->livingTime == 0.0f;
 			int32_t firingPlayerIndex = -1;
 			bool firedAtPlayer = false;
-			GetFiredAtOrByPlayer(a_this, firingPlayerIndex, firedAtPlayer);
+			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayer);
 			// Restore our linear velocity if fired by the player.
 			if (firingPlayerIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[firingPlayerIndex];
 				// Have to insert as managed on release if this hook was run before the UpdateImpl() hook.
-				if (justReleased && !p->tm->managedProjHandler->IsManaged(a_this))
+				if (justReleased && !p->tm->managedProjHandler->IsManaged(a_this->GetHandle()))
 				{
 					// Overwrite the projectile's velocity and angular orientation.
-					DirectProjectileAtTarget(glob.coopPlayers[firingPlayerIndex], a_this, a_this->linearVelocity, justReleased);
+					DirectProjectileAtTarget(glob.coopPlayers[firingPlayerIndex], projectileHandle, a_this->linearVelocity, justReleased);
 				}
 
 				// Output the velocity as our saved velocity from the UpdateImpl() hook.
@@ -3352,13 +3511,17 @@ namespace ALYSLC
 					_Projectile_GetLinearVelocity(a_this, a_velocity);
 				}
 			}
-
 		}
 
 		void ProjectileHooks::UpdateImpl(RE::Projectile* a_this, float a_delta)
 		{
 			// Not handled outside of co-op.
-			if (!a_this || !glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			if (!a_this || !a_this->GetHandle())
+			{
+				return;
+			}
+
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				// Run the game's update function.
 				if (a_this->As<RE::ArrowProjectile>())
@@ -3377,10 +3540,40 @@ namespace ALYSLC
 				return;
 			}
 
+			// Maintain constant XY velocity when no longer handled.
+			auto savedVel = a_this->linearVelocity;
+			// Run the game's update function.
+			if (a_this->As<RE::ArrowProjectile>())
+			{
+				_ArrowProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::MissileProjectile>())
+			{
+				_MissileProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else
+			{
+				_Projectile_UpdateImpl(a_this, a_delta);
+			}
+
+			// Ensure projectile and its handle are still valid after running the game's update before continuing.
+			if (!a_this->GetHandle() || !Util::HandleIsValid(a_this->GetHandle()))
+			{
+				return;
+			}
+
+			// Extend the projectile's lifetime via smart ptr while we modify its trajectory.
+			const auto projectileHandle = a_this->GetHandle();
+			auto projectilePtr = Util::GetRefrPtrFromHandle(projectileHandle);
+			if (!projectilePtr)
+			{
+				return;
+			}
+
 			bool justReleased = a_this->livingTime == 0.0f;
 			int32_t firingPlayerIndex = -1;
 			bool firedAtPlayer = false;
-			GetFiredAtOrByPlayer(a_this, firingPlayerIndex, firedAtPlayer);
+			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayer);
 			// Temporarily highlight arrows/bolts shot by players or fired at players.
 			if ((justReleased) && (firingPlayerIndex != -1 || firedAtPlayer))
 			{
@@ -3392,68 +3585,51 @@ namespace ALYSLC
 			bool shouldAdjustTrajectory = 
 			{
 				(firingPlayerIndex != -1) &&
-				(justReleased || glob.coopPlayers[firingPlayerIndex]->tm->managedProjHandler->IsManaged(a_this))
+				(justReleased || glob.coopPlayers[firingPlayerIndex]->tm->managedProjHandler->IsManaged(projectileHandle))
 			};
 			if (shouldAdjustTrajectory)
 			{
-				// Run the game's update function first.
-				if (a_this->As<RE::ArrowProjectile>())
-				{
-					_ArrowProjectile_UpdateImpl(a_this, a_delta);
-				}
-				else if (a_this->As<RE::MissileProjectile>())
-				{
-					_MissileProjectile_UpdateImpl(a_this, a_delta);
-				}
-				else
-				{
-					_Projectile_UpdateImpl(a_this, a_delta);
-				}
-
 				// Overwrite the projectile's velocity and angular orientation.
-				DirectProjectileAtTarget(glob.coopPlayers[firingPlayerIndex], a_this, a_this->linearVelocity, justReleased);
+				DirectProjectileAtTarget(glob.coopPlayers[firingPlayerIndex], projectileHandle, a_this->linearVelocity, justReleased);
 			}
 			else
 			{
-				// Maintain constant XY velocity when no longer handled.
-				auto savedVel = a_this->linearVelocity;
-				// Run the game's update function.
-				if (a_this->As<RE::ArrowProjectile>())
-				{
-					_ArrowProjectile_UpdateImpl(a_this, a_delta);
-				}
-				else if (a_this->As<RE::MissileProjectile>())
-				{
-					_MissileProjectile_UpdateImpl(a_this, a_delta);
-				}
-				else
-				{
-					_Projectile_UpdateImpl(a_this, a_delta);
-				}
-
 				// Restore saved XY velocity.
 				a_this->linearVelocity.x = savedVel.x;
 				a_this->linearVelocity.y = savedVel.y;
 			}
 		}
 
-		void ProjectileHooks::DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased)
+		void ProjectileHooks::DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased)
 		{
-			if (!a_projectile || !glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				return;
+			}
+
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			// Smart ptr was invalid, so its managed projectile is as well.
+			if (!projectile)
 			{
 				return;
 			}
 	
-			bool isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectile);
+			bool isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectileHandle);
 			// Remove inactive/invalid managed projectiles first.
 			// Remove if invalid, not loaded, deleted, marked for deletion, has collided, limited, or just released.
 			bool shouldRemove = 
 			{
 				(isManaged) &&
 				(
-					!a_projectile->Is3DLoaded() || 
-					a_projectile->IsDeleted() || a_projectile->IsMarkedForDeletion() ||
-					!a_projectile->impacts.empty() || a_projectile->ShouldBeLimited()
+					!projectile->Is3DLoaded() || 
+					projectile->IsDeleted() || projectile->IsMarkedForDeletion() ||
+					!projectile->impacts.empty() || projectile->ShouldBeLimited()
 				)
 			};
 
@@ -3462,7 +3638,7 @@ namespace ALYSLC
 			// so we remove it here before re-inserting below.
 			if (shouldRemove)
 			{
-				a_p->tm->managedProjHandler->Remove(a_projectile);
+				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				// No longer managed, ready for insertion again if just released.
 				isManaged = false;
 			}
@@ -3479,20 +3655,20 @@ namespace ALYSLC
 				// Set desired target if needed.
 				if (targetActorValidity)
 				{
-					a_projectile->desiredTarget = targetActorHandle;
+					projectile->desiredTarget = targetActorHandle;
 				}
 
 				// Set launch pitch/yaw for arrows/bolts.
 				// Maintain visual consistency by angling the just-released projectile in the player's attack source direction.
-				if (a_projectile->ammoSource)
+				if (projectile->ammoSource)
 				{
 					float drawnPitch = Util::DirectionToGameAngPitch(a_p->mm->playerAttackSourceDir);
 					float drawnYaw = Util::DirectionToGameAngYaw(a_p->mm->playerAttackSourceDir);
-					a_projectile->data.angle.x = drawnPitch;
-					a_projectile->data.angle.z = drawnYaw;
-					if (auto current3D = Util::GetRefr3D(a_projectile); current3D)
+					projectile->data.angle.x = drawnPitch;
+					projectile->data.angle.z = drawnYaw;
+					if (auto current3D = Util::GetRefr3D(projectile); current3D)
 					{
-						Util::SetRotationMatrix(current3D->local.rotate, a_projectile->data.angle.x, a_projectile->data.angle.z);
+						Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 					}
 				}
 
@@ -3508,43 +3684,40 @@ namespace ALYSLC
 				bool useAimPrediction = adjustTowardsTarget && Settings::vuProjectileTrajectoryType[a_p->playerID] == !ProjectileTrajType::kPrediction;
 				if (useHoming)
 				{
-					logger::debug("[Projectile Hook] DirectProjectileAtTarget: {}: Insert homing projectile.", a_p->coopActor->GetName());
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectile, a_resultingVelocity, ProjectileTrajType::kHoming);
+					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kHoming);
 				}
 				else if (useAimPrediction)
 				{
-					logger::debug("[Projectile Hook] DirectProjectileAtTarget: {}: Insert aim prediction projectile.", a_p->coopActor->GetName());
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectile, a_resultingVelocity, ProjectileTrajType::kPrediction);
+					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kPrediction);
 				}
 				else
 				{
-					logger::debug("[Projectile Hook] DirectProjectileAtTarget: {}: Insert aim direction projectile.", a_p->coopActor->GetName());
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectile, a_resultingVelocity, ProjectileTrajType::kAimDirection);
+					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kAimDirection);
 				}
 
 				// Set linear velocity field to the launch velocity.
-				a_projectile->linearVelocity = a_resultingVelocity;
+				projectile->linearVelocity = a_resultingVelocity;
 			}
 
 			// If the projectile is managed, direct it at the target.
-			isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectile);
+			isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectileHandle);
 			if (isManaged)
 			{
-				if (const auto& projTrajType = a_p->tm->managedProjHandler->GetInfo(a_projectile)->trajType; projTrajType == ProjectileTrajType::kHoming)
+				if (const auto& projTrajType = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle)->trajType; projTrajType == ProjectileTrajType::kHoming)
 				{
 					// Start homing in on the target once the trajectory apex is reached.
-					SetHomingTrajectory(a_p, a_projectile, a_resultingVelocity);
+					SetHomingTrajectory(a_p, a_projectileHandle, a_resultingVelocity);
 				}
 				else
 				{
 					// Release the projectile along a pre-computed trajectory that terminates at a calculated
 					// target intercept position (aim prediction) or at a position far away in the player's aiming direction (aim direction).
-					SetFixedTrajectory(a_p, a_projectile, a_resultingVelocity);
+					SetFixedTrajectory(a_p, a_projectileHandle, a_resultingVelocity);
 				}
 			}
 		}
 
-		void ProjectileHooks::GetFiredAtOrByPlayer(RE::Projectile* a_projectile, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut)
+		void ProjectileHooks::GetFiredAtOrByPlayer( const RE::ObjectRefHandle& a_projectileHandle, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut)
 		{
 			// Store player index (CID) of the player that released this projectile in one out param.
 			// -1 if not released by a player.
@@ -3553,15 +3726,23 @@ namespace ALYSLC
 			// Default to not fired by a player or at a player.
 			a_firingPlayerCIDOut = -1;
 			a_firedAtPlayerOut = false;
+
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
 			// Return early if the projectile is not valid.
-			if (!a_projectile || !a_projectile->actorCause || !a_projectile->actorCause.get())
+			if (!projectile || !projectile->actorCause || !projectile->actorCause.get())
 			{
 				return;
 			}
 
-			auto firingActorHandle = a_projectile->actorCause && a_projectile->actorCause.get() ? a_projectile->actorCause->actor : RE::ActorHandle();
+			auto firingActorHandle = projectile->actorCause && projectile->actorCause.get() ? projectile->actorCause->actor : RE::ActorHandle();
 			auto firingActorPtr = Util::GetActorPtrFromHandle(firingActorHandle);
-			auto firingRefrHandle = a_projectile->shooter;
+			auto firingRefrHandle = projectile->shooter;
 			for (const auto& p : glob.coopPlayers) 
 			{
 				if (p->isActive && p->IsRunning()) 
@@ -3576,7 +3757,7 @@ namespace ALYSLC
 					// Fired at a player if the projectile's desired target
 					// or the firing actor's combat target is a player.
 					bool firedAtPlayer = {
-						(GlobalCoopData::IsCoopPlayer(a_projectile->desiredTarget)) ||
+						(GlobalCoopData::IsCoopPlayer(projectile->desiredTarget)) ||
 						(firingActorPtr && Util::HandleIsValid(firingActorPtr->currentCombatTarget) &&
 						 GlobalCoopData::IsCoopPlayer(firingActorPtr->currentCombatTarget))
 					};
@@ -3588,16 +3769,29 @@ namespace ALYSLC
 			}
 		}
 
-		void ProjectileHooks::SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity)
+		void ProjectileHooks::SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity)
 		{
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			// Smart ptr was invalid, so its managed projectile is as well.
+			if (!projectile)
+			{
+				return;
+			}
+
 			// Not a managed projectile, so nothing to do here.
-			if (!a_p->tm->managedProjHandler->IsManaged(a_projectile))
+			if (!a_p->tm->managedProjHandler->IsManaged(a_projectileHandle))
 			{
 				return;
 			}
 
 			// Guaranteed to be managed here.
-			auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectile);
+			auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle);
 			RE::NiPoint3 velToSet = a_resultingVelocity;
 			RE::NiPoint3 aimTargetPos = a_p->tm->crosshairWorldPos;
 			auto targetActorPtr = Util::GetActorPtrFromHandle(managedProjInfo->targetActorHandle);
@@ -3636,8 +3830,8 @@ namespace ALYSLC
 			}
 
 			// Pitch and yaw to the target.
-			float pitchToTarget = Util::GetPitchBetweenPositions(a_projectile->data.location, aimTargetPos);
-			float yawToTarget = Util::GetYawBetweenPositions(a_projectile->data.location, aimTargetPos);
+			float pitchToTarget = Util::GetPitchBetweenPositions(projectile->data.location, aimTargetPos);
+			float yawToTarget = Util::GetYawBetweenPositions(projectile->data.location, aimTargetPos);
 			// Predicted time to target along the initial fixed trajectory.
 			const float& initialTimeToTargetSecs = managedProjInfo->initialTrajTimeToTarget;
 
@@ -3648,32 +3842,32 @@ namespace ALYSLC
 			if (initialTimeToTargetSecs <= *g_deltaTimeRealTime) 
 			{
 				// Set refr data angles.
-				a_projectile->data.angle.x = pitchToTarget;
-				a_projectile->data.angle.z = yawToTarget;
+				projectile->data.angle.x = pitchToTarget;
+				projectile->data.angle.z = yawToTarget;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(a_projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, a_projectile->data.angle.x, a_projectile->data.angle.z);
+					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
 				auto velToSet = Util::RotationToDirectionVect(-pitchToTarget, Util::ConvertAngle(yawToTarget)) * a_resultingVelocity.Length();
 				a_resultingVelocity = velToSet;
-				a_projectile->linearVelocity = a_resultingVelocity;
+				projectile->linearVelocity = a_resultingVelocity;
 
 				// No longer handled after directing at the target position.
-				a_p->tm->managedProjHandler->Remove(a_projectile);
+				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				return;
 			}
 
-			float distToTarget = a_projectile->data.location.GetDistance(aimTargetPos);
+			float distToTarget = projectile->data.location.GetDistance(aimTargetPos);
 			// Continue setting the trajectory while the projectile is > 1 length away from the target.
-			bool continueSettingTrajectory = distToTarget > max(1.0f, a_projectile->GetHeight());
+			bool continueSettingTrajectory = distToTarget > max(1.0f, projectile->GetHeight());
 			// Exit early if too close to the target.
 			if (!continueSettingTrajectory)
 			{
 				// Set as no longer managed to prevent further trajectory adjustment.
-				a_p->tm->managedProjHandler->Remove(a_projectile);
+				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				return;
 			}
 
@@ -3696,7 +3890,7 @@ namespace ALYSLC
 			float pitchToSet = currentPitch;
 			float yawToSet = currentYaw;
 			// Just launched, so set pitch and yaw to saved launch values.
-			if (a_projectile->livingTime == 0.0f)
+			if (projectile->livingTime == 0.0f)
 			{
 				currentPitch = pitchToSet = -launchPitch;
 				currentYaw = yawToSet = Util::ConvertAngle(launchYaw);
@@ -3709,7 +3903,7 @@ namespace ALYSLC
 			// Trajectory data.
 			const float& g = managedProjInfo->g;
 			const double& mu = managedProjInfo->mu;
-			const float& t = a_projectile->livingTime;
+			const float& t = projectile->livingTime;
 
 			// Release speed for fixed trajectory determined by projectile launch data.
 			const float& releaseSpeed = managedProjInfo->releaseSpeed;
@@ -3751,7 +3945,7 @@ namespace ALYSLC
 						(
 							0.0f, 
 							0.75f, 
-							min(1.0f, a_projectile->livingTime / (0.5f * initialTimeToTargetSecs))
+							min(1.0f, projectile->livingTime / (0.5f * initialTimeToTargetSecs))
 						) * yawDiff
 					);
 				}
@@ -3770,7 +3964,7 @@ namespace ALYSLC
 				// Target has moved below the projectile at a steeper pitch than the projectile's current pitch.
 				bool moveDownwardOffTraj = (pitchOnTraj > 0.0f && pitchToTarget > pitchOnTraj);
 				// Last point at which the projectile can stay on its fixed trajectory before homing in.
-				bool passedHalfTimeOfFlight = a_projectile->livingTime > 0.5f * managedProjInfo->initialTrajTimeToTarget;
+				bool passedHalfTimeOfFlight = projectile->livingTime > 0.5f * managedProjInfo->initialTrajTimeToTarget;
 				// If the gravitational constant was modified and is arbitrarily close to 0, also start homing in..
 				bool noGrav = g < 1e-5f;
 
@@ -3811,12 +4005,12 @@ namespace ALYSLC
 			float speed = fixedTrajVel.Length();
 
 			// Max distance the projectile will travel in 1 frame at its current velocity.
-			float maxDistPerFrame = max(a_projectile->GetSpeed(), a_resultingVelocity.Length()) * *g_deltaTimeRealTime;
+			float maxDistPerFrame = max(projectile->GetSpeed(), a_resultingVelocity.Length()) * *g_deltaTimeRealTime;
 			// Velocity mult which slows down the projectile when close to the target to minimize overshooting and
 			// jarring course correction.
 			float distSlowdownFactor = std::clamp(powf(distToTarget / (maxDistPerFrame + 0.01f), 5.0f), 0.1f, 1.0f);
 			// Direction from the current positino to the target.
-			auto dirToTarget = aimTargetPos - a_projectile->data.location;
+			auto dirToTarget = aimTargetPos - projectile->data.location;
 			dirToTarget.Unitize();
 			// Last frame's velocity direction.
 			auto velDirLastFrame = a_resultingVelocity;
@@ -3883,7 +4077,7 @@ namespace ALYSLC
 				}
 
 				// Projectile base speed when launched.
-				if (auto baseSpeed = a_projectile->GetSpeed(); baseSpeed > 0.0f)
+				if (auto baseSpeed = projectile->GetSpeed(); baseSpeed > 0.0f)
 				{
 					// Modify the current speed by the distance-slowdown factor, 
 					// but set a lower bound to avoid instances where the projectile
@@ -3904,12 +4098,12 @@ namespace ALYSLC
 			if (continueSettingTrajectory)
 			{
 				// Set refr data angles.
-				a_projectile->data.angle.x = pitchToSet;
-				a_projectile->data.angle.z = yawToSet;
+				projectile->data.angle.x = pitchToSet;
+				projectile->data.angle.z = yawToSet;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(a_projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, a_projectile->data.angle.x, a_projectile->data.angle.z);
+					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
@@ -3934,10 +4128,10 @@ namespace ALYSLC
 				}
 
 				a_resultingVelocity = velToSet;
-				a_projectile->linearVelocity = a_resultingVelocity;
+				projectile->linearVelocity = a_resultingVelocity;
 
 				// REMOVE when done debugging.
-				/*logger::debug("[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, speed to set: {}, distance to target: {}, initial time to target: {}, remaining rotation smoothing lifetime ratio: {}, moved: {}, pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
+				/*ALYSLC::Log("[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, speed to set: {}, distance to target: {}, initial time to target: {}, remaining rotation smoothing lifetime ratio: {}, moved: {}, pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
 					a_projectile->GetName(), a_projectile->formID,
 					managedProjInfo->startedHomingIn,
 					speed,
@@ -3957,20 +4151,33 @@ namespace ALYSLC
 			else
 			{
 				// Set as no longer managed to prevent further trajectory adjustment after this frame.
-				a_p->tm->managedProjHandler->Remove(a_projectile);
+				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 			}
 		}
 
-		void ProjectileHooks::SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_resultingVelocity)
+		void ProjectileHooks::SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity)
 		{
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			// Smart ptr was invalid, so its managed projectile is as well.
+			if (!projectile)
+			{
+				return;
+			}
+
 			// Not a managed projectile, so nothing to do here.
-			if (!a_p->tm->managedProjHandler->IsManaged(a_projectile))
+			if (!a_p->tm->managedProjHandler->IsManaged(a_projectileHandle))
 			{
 				return;
 			}
 
 			// Guaranteed to be managed here.
-			const auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectile);
+			const auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle);
 			// Pre-computed fixed trajectory data.
 			const RE::NiPoint3& releasePos = managedProjInfo->releasePos;
 			const RE::NiPoint3& targetPos = managedProjInfo->trajectoryEndPos;
@@ -3979,7 +4186,7 @@ namespace ALYSLC
 			const float& releaseSpeed = managedProjInfo->releaseSpeed;
 			const float& g = managedProjInfo->g;
 			const double& mu = managedProjInfo->mu;
-			const float& t = a_projectile->livingTime;
+			const float& t = projectile->livingTime;
 
 			// Immediately direct at the target position
 			// if the initial time to hit the target is less than one frame.
@@ -3988,24 +4195,24 @@ namespace ALYSLC
 			if (managedProjInfo->initialTrajTimeToTarget <= *g_deltaTimeRealTime)
 			{
 				// Pitch and yaw to the target.
-				float pitchToTarget = Util::GetPitchBetweenPositions(a_projectile->data.location, targetPos);
-				float yawToTarget = Util::GetYawBetweenPositions(a_projectile->data.location, targetPos);
+				float pitchToTarget = Util::GetPitchBetweenPositions(projectile->data.location, targetPos);
+				float yawToTarget = Util::GetYawBetweenPositions(projectile->data.location, targetPos);
 				// Set refr data angles.
-				a_projectile->data.angle.x = pitchToTarget;
-				a_projectile->data.angle.z = yawToTarget;
+				projectile->data.angle.x = pitchToTarget;
+				projectile->data.angle.z = yawToTarget;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(a_projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, a_projectile->data.angle.x, a_projectile->data.angle.z);
+					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
 				auto velToSet = Util::RotationToDirectionVect(-pitchToTarget, Util::ConvertAngle(yawToTarget)) * a_resultingVelocity.Length();
 				a_resultingVelocity = velToSet;
-				a_projectile->linearVelocity = a_resultingVelocity;
+				projectile->linearVelocity = a_resultingVelocity;
 
 				// No longer handled after directing at the target position.
-				a_p->tm->managedProjHandler->Remove(a_projectile);
+				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				return;
 			}
 
@@ -4044,17 +4251,17 @@ namespace ALYSLC
 
 			// Set our computed velocity and pitch/yaw.
 			a_resultingVelocity = vel;
-			a_projectile->linearVelocity = a_resultingVelocity;
+			projectile->linearVelocity = a_resultingVelocity;
 			// Yaw will not change throughout.
-			a_projectile->data.angle.z = Util::ConvertAngle(launchYaw);
+			projectile->data.angle.z = Util::ConvertAngle(launchYaw);
 			// Pitch is equal to the pitch along the trajectory.
 			// NOTE: Sign flipped, since Skyrim's sign convention for pitch is < 0 when facing up and > 0 when facing down.
-			a_projectile->data.angle.x = -pitchOnTraj;
+			projectile->data.angle.x = -pitchOnTraj;
 
 			// Set rotation matrix to maintain consistency with the previously set refr data angles.
-			if (auto current3D = Util::GetRefr3D(a_projectile))
+			if (auto current3D = Util::GetRefr3D(projectile))
 			{
-				Util::SetRotationMatrix(current3D->local.rotate, a_projectile->data.angle.x, a_projectile->data.angle.z);
+				Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 			}
 		}
 
@@ -4306,7 +4513,6 @@ namespace ALYSLC
 			{
 				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetTargetActor()); pIndex != -1)
 				{
-					logger::debug("[VampireLordEffect Hooks] Start: {}", a_this->GetTargetActor()->GetName());
 					const auto& p = glob.coopPlayers[pIndex];
 
 					// Save pre-transformation race to revert to later if the player is not already transforming/transformed.
@@ -4344,10 +4550,6 @@ namespace ALYSLC
 					{
 						p->isTransforming = false;
 					}
-					logger::debug("[VampireLordEffectHooks Hooks] Finish: {}. Race: {}, is transformed: {}",
-						a_this->GetTargetActor()->GetName(),
-						p->coopActor->race ? p->coopActor->race->GetName() : "NONE",
-						p->isTransformed);
 				}
 			}
 
@@ -4361,7 +4563,6 @@ namespace ALYSLC
 			{
 				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetTargetActor()); pIndex != -1)
 				{
-					logger::debug("[WerewolfEffectHooks Hooks] Start: {}", a_this->GetTargetActor()->GetName());
 					const auto& p = glob.coopPlayers[pIndex];
 					
 					// Save pre-transformation race to revert to later if the player is not already transforming/transformed.
@@ -4401,10 +4602,6 @@ namespace ALYSLC
 					{
 						p->isTransforming = false;
 					}
-					logger::debug("[WerewolfEffectHooks Hooks] Finish: {}. Race: {}, is transformed: {}", 
-						a_this->GetTargetActor()->GetName(),
-						p->coopActor->race ? p->coopActor->race->GetName() : "NONE",
-						p->isTransformed);
 				}
 			}
 
@@ -4438,7 +4635,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4462,7 +4659,7 @@ namespace ALYSLC
 						// Have to restore P1's inventory here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							logger::error("[BarterMenu Hooks] ERR: ProcessMessage. Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
+							ALYSLC::Log("[BarterMenu Hooks] ERR: ProcessMessage. Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
 						}
 					}
@@ -4499,7 +4696,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4546,7 +4743,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4591,7 +4788,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4621,7 +4818,7 @@ namespace ALYSLC
 						// Have to restore P1's inventory here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							logger::error("[CraftingMenu Hooks] ERR: ProcessMessage: Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
+							ALYSLC::Log("[CraftingMenu Hooks] ERR: ProcessMessage: Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), assocForm);
 						}
 					}
@@ -4658,7 +4855,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4695,8 +4892,6 @@ namespace ALYSLC
 
 		RE::UI_MESSAGE_RESULTS FavoritesMenuHooks::ProcessMessage(RE::FavoritesMenu* a_this, RE::UIMessage& a_message)
 		{
-			logger::debug("[FavoritesMenu Hooks] ProcessMessage: {}.",
-				*a_message.type);
 			// NOTE: Favorited items are stored in the Favorite Menu's favorites list sometime between the ProcessMessage() call and the menu opening.
 			// Don't call the original ProcessMessage() func until the requesting player's favorited items have been imported by P1.
 
@@ -4721,7 +4916,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4773,7 +4968,7 @@ namespace ALYSLC
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							logger::error("[FavoritesMenu Hooks] ERR: ProcessMessage. Restoring player 1's favorites, since the message to open the FavoritesMenu was not handled. RESULT: {}.", result);
+							ALYSLC::Log("[FavoritesMenu Hooks] ERR: ProcessMessage. Restoring player 1's favorites, since the message to open the FavoritesMenu was not handled. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
 						}
 					}
@@ -4804,7 +4999,7 @@ namespace ALYSLC
 						bool succ = glob.moarm->InsertRequest(reqP->controllerID, InputAction::kInventory, SteadyClock::now(), RE::ContainerMenu::MENU_NAME, reqP->coopActor->GetHandle());
 						if (succ)
 						{
-							logger::debug("[InventoryMenu Hooks] ProcessMessage: Opening {}'s inventory instead of P1's.", reqP->coopActor->GetName());
+							ALYSLC::Log("[InventoryMenu Hooks] ProcessMessage: Opening {}'s inventory instead of P1's.", reqP->coopActor->GetName());
 							Util::Papyrus::OpenInventory(reqP->coopActor.get());
 						}
 
@@ -4839,8 +5034,8 @@ namespace ALYSLC
 			// Restore P1 data if data was copied over before this LoadingMenu opened.
 			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
 			{
-				logger::debug("[LoadingMenu Hooks] ProcessMessage. Loading menu opened with data copied (types: 0x{:X}) over to P1. Restoring P1 data. Co-op session active: {}.",
-					*glob.copiedPlayerDataTypes, glob.coopSessionActive);
+				ALYSLC::Log("[LoadingMenu Hooks] ProcessMessage. Loading menu opened with data copied (types: 0x{:X}) over to P1. Restoring P1 data. Co-op session active: {}. RESULT: {}.",
+					*glob.copiedPlayerDataTypes, glob.coopSessionActive, result);
 				GlobalCoopData::CopyOverCoopPlayerData(false, a_this->MENU_NAME, glob.player1Actor->GetHandle(), nullptr);
 			}
 
@@ -4883,7 +5078,7 @@ namespace ALYSLC
 				int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
 
 				// REMOVE when done debugging.
-				logger::debug("[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+				ALYSLC::Log("[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 					glob.menuCID, resolvedCID, opening, closing);
 
 				// Control is/was requested by co-op companion player.
@@ -4940,7 +5135,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			logger::debug("[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			ALYSLC::Log("[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4970,7 +5165,7 @@ namespace ALYSLC
 						// Have to restore P1's AVs here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							logger::error("[TrainingMenu Hooks] ERR: ProcessMessage. Restoring AVs for {} and P1, since the message to open the menu was ignored. RESULT: {}.", 
+							ALYSLC::Log("[TrainingMenu Hooks] ERR: ProcessMessage. Restoring AVs for {} and P1, since the message to open the menu was ignored. RESULT: {}.", 
 								p->coopActor->GetName(), result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), assocForm);
 						}

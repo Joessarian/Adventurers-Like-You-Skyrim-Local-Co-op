@@ -133,7 +133,7 @@ namespace ALYSLC
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
 		{
-			logger::debug("[P] ShouldSelfPause: {}: controller input error for CID {}. About to pause all managers.",
+			ALYSLC::Log("[P] ShouldSelfPause: {}: controller input error for CID {}. About to pause all managers.",
 				coopActor->GetName(), controllerID);
 			handledControllerInputError = false;
 			return ManagerState::kAwaitingRefresh;
@@ -162,9 +162,7 @@ namespace ALYSLC
 		if (!selfValid)
 		{
 			// REMOVE when done debugging.
-			logger::debug("[P] ShouldSelfPause: {}: Waiting until the player is valid. Currently valid: {}.",
-				coopActor->GetName(), selfValid);
-			logger::debug("[P] ShouldSelfPause: Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, NO loaded data: {}, NO current proc: {}, NO char controller: {}, parent cell NOT attached: {}",
+			ALYSLC::Log("[P] ShouldSelfPause: Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, NO loaded data: {}, NO current proc: {}, NO char controller: {}, parent cell NOT attached: {}",
 				coopActor->IsDisabled(),
 				!coopActor->Is3DLoaded(),
 				!coopActor->IsHandleValid(),
@@ -203,14 +201,12 @@ namespace ALYSLC
 				ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 				if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
 				{
-					logger::error("[P] ERR: ShouldSelfResume: Controller input error for controller ID {}, player {}. Try plugging in all controllers again.",
-						controllerID, coopActor->GetName());
 					handledControllerInputError = false;
 					return ManagerState::kAwaitingRefresh;
 				}
 				else
 				{
-					logger::debug("[P] ShouldSelfResume: {}'s controller input error has been resolved. CID is now {}.",
+					ALYSLC::Log("[P] ShouldSelfResume: {}'s controller input error has been resolved. CID is now {}.",
 						coopActor->GetName(), controllerID);
 					handledControllerInputError = true;
 				}
@@ -241,7 +237,7 @@ namespace ALYSLC
 						{
 							if (coopActor->IsHandleValid() && Util::HandleIsValid(coopActor->GetHandle())) 
 							{
-								logger::debug("[P] ShouldSelfResume: Moving {} to p1.", coopActor->GetName());
+								ALYSLC::Log("[P] ShouldSelfResume: Moving {} to p1.", coopActor->GetName());
 								taskInterface->AddTask
 								(
 									[this, p1]() 
@@ -269,12 +265,12 @@ namespace ALYSLC
 				}
 
 				// Menu and P1 camera checks.
-				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInStack();
+				bool onlyAlwaysUnpaused= Util::MenusOnlyAlwaysUnpaused();
 				bool player1WaitForCam = isPlayer1 && glob.cam->IsPaused();
 				bool faderMenuOpen = ui->IsMenuOpen(RE::FaderMenu::MENU_NAME);
-				// Remain paused if temp menus are open, if P1 and cam is disabled, a fader menu is open,
+				// Remain paused if paused temp menus are open, if P1 and cam is disabled, a fader menu is open,
 				// or if the game is paused or saving is disabled.
-				if (!onlyAlwaysOpen || player1WaitForCam || faderMenuOpen || ui->GameIsPaused() || !ui->IsSavingAllowed())
+				if (!onlyAlwaysUnpaused || player1WaitForCam || faderMenuOpen || ui->GameIsPaused() || !ui->IsSavingAllowed())
 				{
 					return ManagerState::kPaused;
 				}
@@ -287,7 +283,7 @@ namespace ALYSLC
 				selfWasInvalid = false;
 			}
 
-			logger::debug("[P] ShouldSelfResume: {}: Resuming all co-op player manager threads.", coopActor->GetName());
+			ALYSLC::Log("[P] ShouldSelfResume: {}: Resuming all co-op player manager threads.", coopActor->GetName());
 			return ManagerState::kRunning;
 		}
 		
@@ -303,7 +299,7 @@ namespace ALYSLC
 		// NOTE: Controller ID, player actor, and package form start index 
 		// already set through constructor or update function at this point.
 
-		logger::debug("[P] InitializeCoopPlayer: Init player with controller ID: {}, editor id: {}", controllerID, coopActor ? coopActor->GetFormEditorID() : "NONE");
+		ALYSLC::Log("[P] InitializeCoopPlayer: Init player with controller ID: {}, editor id: {}", controllerID, coopActor ? coopActor->GetFormEditorID() : "NONE");
 		// Active if the player has a valid controller ID.
 		isActive = controllerID != -1;
 		if (isActive)
@@ -376,9 +372,6 @@ namespace ALYSLC
 					{
 						auto invCounts = coopActor->GetInventoryCounts();
 						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = invCounts.contains(paraglider) && invCounts.at(paraglider) > 0;
-						logger::debug("[P] InitializePlayer: {} {} a paraglider!",
-							coopActor->GetName(), ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider ? "has" : "does not have");
-
 						// Add gale spell if not known already (Enderal only).
 						if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
 							ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
@@ -402,16 +395,11 @@ namespace ALYSLC
 			{
 				// Otherwise, this player has not been fully constructed before,
 				// and must create new equip, targeting, movement, and player actions managers.
-				logger::debug("[P] InitializeCoopPlayer: About to construct managers for {}", coopActor->GetName());
 				em = std::make_unique<EquipManager>();
 				mm = std::make_unique<MovementManager>();
 				pam = std::make_unique<PlayerActionManager>();
 				tm = std::make_unique<TargetingManager>();
 				taskRunner = std::make_unique<TaskRunner>();
-				logger::debug("[P] InitializeCoopPlayer: Package formlist indices: {}, {}. ids: 0x{:X}, 0x{:X}",
-					packageFormListStartIndex, packageFormListStartIndex + 1,
-					glob.coopPackageFormlists[packageFormListStartIndex]->GetFormID(),
-					glob.coopPackageFormlists[packageFormListStartIndex + 1]->GetFormID());
 				// Set as unitialized.
 				RequestStateChange(ManagerState::kUninitialized);
 			}
@@ -420,7 +408,7 @@ namespace ALYSLC
 
 	void CoopPlayer::UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex)
 	{
-		logger::debug("[P] UpdateCoopPlayer: Updating co-op player: {}, CID: {}", a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID);
+		ALYSLC::Log("[P] UpdateCoopPlayer: Updating co-op player: {}, CID: {}", a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID);
 		if ((a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT) && a_packageFormListStartIndex != -1)
 		{
 			controllerID = a_controllerID;
@@ -434,7 +422,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, package start index not found: {}.",
+			ALYSLC::Log("[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, package start index not found: {}.",
 				coopActor ? coopActor->GetName() : "NONE",
 				a_controllerID <= -1 || a_controllerID >= 4,
 				a_packageFormListStartIndex == -1);
@@ -452,14 +440,10 @@ namespace ALYSLC
 			!coopActor || !coopActor->race || !coopActor->race->faceRelatedData ||
 			!coopActor->GetActorBase() || !coopActor->GetActorBase()->race)
 		{
-			logger::error("[P] ERR: CopyNPCAppearanceToPlayer: New base invalid: {}, new base race invalid: {}, new base face data invalid: {}, player invalid: {}, race invalid: {}, face data invalid: {}, actor base invalid: {}, actor base race invalid: {}.",
-				(bool)!a_baseToCopy, (bool)!a_baseToCopy->race, (bool)!a_baseToCopy->race->faceRelatedData,  
-				(bool)!coopActor || (bool)!coopActor.get(), (bool)!coopActor->race,
-				(bool)!coopActor->race->faceRelatedData, (bool)!coopActor->GetActorBase(), (bool)!coopActor->GetActorBase()->race);
 			return;
 		}
 
-		logger::debug("[P] CopyNPCAppearanceToPlayer: copying {}'s appearance to {}, set opposite gender animations: {}, current race, race to set: {}, {}",
+		ALYSLC::Log("[P] CopyNPCAppearanceToPlayer: copying {}'s appearance to {}, set opposite gender animations: {}, current race, race to set: {}, {}",
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
 			coopActor->GetName(), a_setOppositeGenderAnims,
 			coopActor->race ? coopActor->race->GetName() : "NONE",
@@ -474,7 +458,6 @@ namespace ALYSLC
 			Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale);
 		}
 
-		logger::debug("[P] CopyNPCAppearanceToPlayer: {}'s sex is {}.", coopActor->GetName(), actorBase->GetSex());
 		// Set opposite gender animations flag if necessary.
 		bool usesOppositeGenderAnims = actorBase->UsesOppositeGenderAnims();
 		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || (!usesOppositeGenderAnims && a_setOppositeGenderAnims))
@@ -482,7 +465,6 @@ namespace ALYSLC
 			Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, a_setOppositeGenderAnims);
 		}
 
-		logger::debug("[P] CopyNPCAppearanceToPlayer: Player opposite gender animations flag is: {}", actorBase->UsesOppositeGenderAnims());
 		if (auto faceRelatedData = coopActor->race->faceRelatedData[actorBase->GetSex()]; faceRelatedData)
 		{
 			if (actorBase->race != a_baseToCopy->race)
@@ -491,8 +473,6 @@ namespace ALYSLC
 				actorBase->race = a_baseToCopy->race;
 				actorBase->originalRace = a_baseToCopy->race;
 			}
-
-			logger::debug("[P] CopyNPCAppearanceToPlayer: Player race name: {}", coopActor->race->GetName());
 
 			// Remove all headparts from actor.
 			if (actorBase->headParts)
@@ -508,7 +488,7 @@ namespace ALYSLC
 					{
 						// Something went wrong if the head part is invalid, since the head parts count does not match the
 						// actual head parts array's size.
-						logger::error("[P] ERR: CopyNPCAppearanceToPlayer: Num head parts not in sync with actual head parts array. No head part at index {}. Number of current head parts reported: {}. Copying preset head parts over directly: {} parts. Address of invalid head parts list: 0x{:p}.",
+						ALYSLC::Log("[P] ERR: CopyNPCAppearanceToPlayer: Num head parts not in sync with actual head parts array. No head part at index {}. Number of current head parts reported: {}. Copying preset head parts over directly: {} parts. Address of invalid head parts list: 0x{:p}.",
 							headPartIndex, actorBase->numHeadParts, a_baseToCopy->numHeadParts, fmt::ptr(actorBase->headParts));
 						actorBase->numHeadParts = 0;
 						// Freeing the invalid array pointer causes the game to hang on save load.
@@ -553,11 +533,7 @@ namespace ALYSLC
 			coopActor->Update3DModel();
 			coopActor->DoReset3D(true);
 
-			logger::debug("[P] CopyNPCAppearanceToPlayer: Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName());
-		}
-		else
-		{
-			logger::error("[P] ERR: CopyNPCAppearanceToPlayer: Cannot get face related data for {}", coopActor->GetName());
+			ALYSLC::Log("[P] CopyNPCAppearanceToPlayer: Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName());
 		}
 	}
 
@@ -584,7 +560,7 @@ namespace ALYSLC
 
 		// Have script run its cleanup.
 		onCoopEndReg.SendEvent(coopActor.get(), controllerID);
-		logger::debug("[P] DismissPlayer: Handled dismissal of {}. Script is now completing cleanup.", coopActor->GetName());
+		ALYSLC::Log("[P] DismissPlayer: Handled dismissal of {}. Script is now completing cleanup.", coopActor->GetName());
 	}
 
 	void CoopPlayer::HandleControllerInputError()
@@ -593,7 +569,7 @@ namespace ALYSLC
 
 		if (currentState == ManagerState::kPaused || currentState == ManagerState::kAwaitingRefresh)
 		{
-			logger::error("[P] ERR: HandleControllerInputError: Failed to get XInput state for CID {}, player {}.",
+			ALYSLC::Log("[P] ERR: HandleControllerInputError: Failed to get XInput state for CID {}, player {}.",
 				controllerID, coopActor->GetName());
 			// Get controller "rank" or index in list of active controllers ordered by controller ID.
 			uint8_t controllerRank = 0;
@@ -613,15 +589,13 @@ namespace ALYSLC
 			{
 				const auto oldCID = controllerID;
 				controllerID = newControllerIDsList[controllerRank];
-				logger::debug("[P] HandleControllerInputError: Got new controller ID {} (old: {}) from previous controller rank of {}.",
-					controllerID, oldCID, controllerRank);
 
 				// Shift player into new controller ID slot.
 				const auto& swappedPlayer = glob.coopPlayers[controllerID];
 				// Only want to swap active player's CID (inactive players have a CID of -1).
 				if (swappedPlayer->isActive) 
 				{
-					logger::debug("[P] HandleControllerInputError: Swapping {} with {}. Swapped player {}'s new CID is now {}.",
+					ALYSLC::Log("[P] HandleControllerInputError: Swapping {} with {}. Swapped player {}'s new CID is now {}.",
 						coopActor->GetName(), swappedPlayer->coopActor->GetName(),
 						swappedPlayer->coopActor->GetName(), oldCID);
 					swappedPlayer->controllerID = oldCID;
@@ -634,7 +608,7 @@ namespace ALYSLC
 					const auto& p = glob.coopPlayers[i];
 					if (p->isActive)
 					{
-						logger::debug("[P] HandleControllerInputError: Recalculating player IDs. {}'s ID was {} and is now {}.",
+						ALYSLC::Log("[P] HandleControllerInputError: Recalculating player IDs. {}'s ID was {} and is now {}.",
 							p->coopActor->GetName(), p->playerID, p->isPlayer1 ? 0 : currentID);
 						if (!p->isPlayer1)
 						{
@@ -654,9 +628,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[P] ERR: HandleControllerInputError: Could not get valid controller ID for {}. Ending co-op session. Please ensure at least two controllers are plugged in.",
-					controllerID, coopActor->GetName());
-				RE::DebugMessageBox(fmt::format("[ALYSLC] ERROR: Could not get input from controller {}.\nEnding co-op session.\nPlease ensure at least two controllers are plugged in.", controllerID).data());
+				RE::DebugMessageBox
+				(
+					fmt::format
+					(
+						"[ALYSLC] ERROR: Could not get input from controller {}.\nEnding co-op session.\nPlease ensure at least two controllers are plugged in.", controllerID
+					).data()
+				);
 				GlobalCoopData::TeardownCoopSession(true);
 			}
 		}
@@ -668,41 +646,26 @@ namespace ALYSLC
 
 		if (!glob.player1RefAlias || !coopActor) 
 		{
-			logger::error("[P] ERR: RegisterEvents: Co-op player invalid: {}, P1 reference alias invalid: {}. Please re-summon all co-op players.",
-				(bool)!coopActor, (bool)!glob.player1RefAlias);
 			return;
 		}
 
 		if (!isPlayer1)
 		{
-			logger::debug("[P] RegisterEvents: Registering {} for co-op end event.", coopActor->GetName());
 			if (!onCoopEndReg.Register(coopActor.get()))
 			{
-				logger::critical("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
+				logger::error("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
 			}
 		}
 
-		logger::debug("[P] RegisterEvents: Registering {} for coop end event.", coopActor->GetName());
 		if (!onCoopEndReg.Register(glob.player1RefAlias))
 		{
-			logger::critical("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
+			logger::error("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
 		}
 	}
 
 	void CoopPlayer::RequestSubManagerStateChange(ManagerState&& a_newState)
 	{
 		// Change sub managers' running states.
-		// REMOVE when done debugging.
-
-		logger::debug("[P] RequestSubManagerStateChange: {}'s sub managers' states will all go to {}, current states (EM, MM, PAM, TM): ({}, {}, {}, {}), requesting thread ID: (0x{:X}), refresh data on restart: {}",
-			coopActor->GetName(), a_newState,
-			em->currentState,
-			mm->currentState,
-			pam->currentState,
-			tm->currentState,
-			std::hash<std::thread::id>()(std::this_thread::get_id()),
-			a_newState == ManagerState::kAwaitingRefresh);
-
 		em->RequestStateChange(a_newState);
 		mm->RequestStateChange(a_newState);
 		pam->RequestStateChange(a_newState);
@@ -769,8 +732,6 @@ namespace ALYSLC
 
 		if (!coopActor || !coopActor.get() || !coopActor->race || !coopActor->GetActorBase())
 		{
-			logger::error("[P] ERR: RevertTransformation: Player invalid: {}, race invalid: {}, actor base invalid: {}.", 
-				!coopActor || !coopActor.get(), (bool)!coopActor->race, (bool)!coopActor->GetActorBase());
 			return false;
 		}
 		
@@ -780,8 +741,6 @@ namespace ALYSLC
 		bool changingToRaceWithTransformation = !Util::IsRaceWithTransformation(coopActor->race) && Util::IsRaceWithTransformation(originalRace);
 		if (originalRace && originalRace != coopActor->race && !changingToRaceWithTransformation) 
 		{
-			logger::info("[P] RevertTransformation: {}: Reverting race from {} to {}.",
-				coopActor->GetName(), coopActor->race->formEditorID, originalRace->formEditorID);
 			// Revert race to saved one.
 			const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
 			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
@@ -938,7 +897,6 @@ namespace ALYSLC
 						{
 							if (auto instantCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant); instantCaster)
 							{
-								logger::debug("[P] RevertTransformation: Reverting werewolf form for P1.");
 								instantCaster->CastSpellImmediate(revertSpell, false, coopActor.get(), 1.0f, false, 1.0f, coopActor.get());
 
 								/*script->SetCommand(fmt::format("cast {:X} {} instant", revertSpell->formID, coopActor->formID));
@@ -995,7 +953,6 @@ namespace ALYSLC
 			{
 				if (Settings::bUseReviveSystem && Settings::bCanRevivePlayer1)
 				{
-					logger::debug("[P] SetCoopPlayerFlags: {} (P1) is using the revive system.", coopActor->GetName());
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, true);
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, true);
 					coopActor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
@@ -1003,16 +960,11 @@ namespace ALYSLC
 				}
 				else
 				{
-					logger::debug("[P] SetCoopPlayerFlags: {} (P1) is NOT using the revive system.", coopActor->GetName());
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false);
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, false);
 					coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
 					actorBase->actorData.bleedoutOverride = 0.0f;
 				}
-			}
-			else
-			{
-				logger::error("[P] ERR: SetCoopPlayerFlags: Could not get actor base for {}. Will not set/reset revive system flags.", coopActor->GetName());
 			}
 
 			// Make sure the player is not paralyzed.
@@ -1024,7 +976,6 @@ namespace ALYSLC
 			{
 				if (Settings::bUseReviveSystem)
 				{
-					logger::debug("[P] SetCoopPlayerFlags: {} is using the revive system.", coopActor->GetName());
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, true);
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, true);
 					coopActor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
@@ -1032,16 +983,11 @@ namespace ALYSLC
 				}
 				else
 				{
-					logger::debug("[P] SetCoopPlayerFlags: {} is NOT using the revive system.", coopActor->GetName());
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false);
 					Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, false);
 					coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
 					actorBase->actorData.bleedoutOverride = 0.0f;
 				}
-			}
-			else
-			{
-				logger::error("[P] ERR: SetCoopPlayerFlags: could not get actor base for {}. Will not set/reset revive system flags.", coopActor->GetName());
 			}
 
 			// Make sure the player is not paralyzed.
@@ -1111,17 +1057,6 @@ namespace ALYSLC
 							// Get teleport endpoint location.
 							if (auto teleportData = exTeleport->teleportData; teleportData)
 							{
-								// REMOVE when done debugging.
-								logger::debug("[P] ShouldTeleportToP1: SELF RESUME CHECK: {} activated {} with extra teleport data and triggered a fader menu {} seconds ago. Teleport door position: ({}, {}, {}), player 1 position: ({}, {}, {}), dist between: {}",
-									reqP->coopActor->GetName(),
-									objRefr->GetName(), secsSinceReq,
-									teleportData->position.x,
-									teleportData->position.y,
-									teleportData->position.z,
-									glob.player1Actor->data.location.x,
-									glob.player1Actor->data.location.y,
-									glob.player1Actor->data.location.z,
-									glob.player1Actor->data.location.GetDistance(teleportData->position));
 								// NOTE: Might change the close-enough radius. Needs testing.
 								return glob.player1Actor->data.location.GetDistance(teleportData->position) <= 100.0f;
 							}
@@ -1150,41 +1085,20 @@ namespace ALYSLC
 			return;
 		}
 
-		// REMOVE when done debugging.
-		coopActor->VisitFactions([this](RE::TESFaction* a_faction, int8_t a_rank) {
-			logger::debug("[P] SyncPlayerFactions: BEFORE: {} is in faction {} (0x{:X}, rank {}).",
-				coopActor->GetName(),
-				a_faction->GetName(),
-				a_faction->formID,
-				a_rank);
-			return false;
-		});
-
 		actorBase->factions.clear();
 		coopActor->AddToFaction(glob.coopCompanionFaction, 0);
-		p1->VisitFactions([this](RE::TESFaction* a_faction, int8_t a_rank) {
-				logger::debug("[P] SyncPlayerFactions: P1 is in faction (0x{:X}, rank {}).",
-					a_faction->formID, 
-					a_rank);
+		p1->VisitFactions
+		(
+			[this](RE::TESFaction* a_faction, int8_t a_rank) 
+			{
 				if (!coopActor->IsInFaction(a_faction))
 				{
-					logger::debug("[P] SyncPlayerFactions: {} is not in P1 faction {} (0x{:X}, rank {}). Adding to faction.",
-						coopActor->GetName(), a_faction->GetName(), a_faction->formID, a_rank);
 					coopActor->AddToFaction(a_faction, a_rank);
 				}
 
 				return false;
-			});
-
-		// REMOVE when done debugging.
-		coopActor->VisitFactions([this](RE::TESFaction* a_faction, int8_t a_rank) {
-			logger::debug("[P] SyncPlayerFactions: AFTER: {} is in faction {} (0x{:X}, rank {}).",
-				coopActor->GetName(),
-				a_faction->GetName(),
-				a_faction->formID,
-				a_rank);
-			return false;
-		});
+			}
+		);
 	}
 
 	void CoopPlayer::UnregisterEvents() 
@@ -1193,24 +1107,20 @@ namespace ALYSLC
 
 		if (!glob.player1RefAlias || !coopActor)
 		{
-			logger::error("[P] ERR: UnregisterEvents: Co-op player invalid: {}, P1 reference alias invalid: {}.",
-				(bool)!coopActor, (bool)!glob.player1RefAlias);
 			return;
 		}
 
 		if (!isPlayer1)
 		{
-			logger::debug("[P] UnregisterEvents: Unregistering {} for dismissal event.", coopActor->GetName());
 			if (!onCoopEndReg.Unregister(coopActor.get()))
 			{
-				logger::critical("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
+				logger::error("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
 			}
 		}
 
-		logger::debug("[P] UnregisterEvents: Unregistering {} for coop end event.", coopActor->GetName());
 		if (!onCoopEndReg.Unregister(glob.player1RefAlias))
 		{
-			logger::critical("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
+			logger::error("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
 		}
 	}
 
@@ -1222,13 +1132,10 @@ namespace ALYSLC
 		if (!coopActor || !coopActor.get() || !coopActor->race || !coopActor->race->faceRelatedData ||
 			!coopActor->GetActorBase() || !coopActor->GetActorBase()->race)
 		{
-			logger::error("[P] ERR: UpdateGenderAndBody: Player invalid: {}, race invalid: {}, face data invalid: {}, actor base invalid: {}, actor base race invalid: {}.",
-				(bool)!coopActor || (bool)!coopActor.get(), (bool)!coopActor->race,
-				(bool)!coopActor->race->faceRelatedData, (bool)!coopActor->GetActorBase(), (bool)!coopActor->GetActorBase()->race);
 			return;
 		}
 
-		logger::debug("[P] UpdateGenderAndBody: {}: set female: {}, set opposite gender animations: {}, current race: {}",
+		ALYSLC::Log("[P] UpdateGenderAndBody: {}: set female: {}, set opposite gender animations: {}, current race: {}",
 			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName());
 
 		auto actorBase = coopActor->GetActorBase();
@@ -1248,7 +1155,7 @@ namespace ALYSLC
 				{
 					// Something went wrong if the head part is invalid, since the head parts count does not match the
 					// actual head parts array's size.
-					logger::error("[P] ERR: UpdateGenderAndBody: Num head parts not in sync with actual head parts array. No head part at index 0. Number of current head parts reported: {}. Address of invalid head parts list: 0x{:p}.",
+					ALYSLC::Log("[P] ERR: UpdateGenderAndBody: Num head parts not in sync with actual head parts array. No head part at index 0. Number of current head parts reported: {}. Address of invalid head parts list: 0x{:p}.",
 						actorBase->numHeadParts, fmt::ptr(actorBase->headParts));
 					actorBase->numHeadParts = 0;
 					// Freeing the invalid array pointer causes the game to hang on save load.
@@ -1267,14 +1174,11 @@ namespace ALYSLC
 			Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale);
 		}
 
-		logger::debug("[P] UpdateGenderAndBody: {}'s sex is {}.", coopActor->GetName(), actorBase->GetSex());
-
 		// Set opposite gender animations flag if necessary.
 		bool usesOppositeGenderAnims = actorBase->UsesOppositeGenderAnims();
 		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || (!usesOppositeGenderAnims && a_setOppositeGenderAnims))
 		{
 			Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, a_setOppositeGenderAnims);
-			logger::debug("[P] UpdateGenderAndBody: Player opposite gender animations set to: {}", actorBase->UsesOppositeGenderAnims());
 		}
 
 		// Add default headparts for the sex choice.
@@ -1288,10 +1192,6 @@ namespace ALYSLC
 					actorBase->ChangeHeadPart(headPart);
 				}
 			}
-		}
-		else
-		{
-			logger::error("[P] ERR: UpdateGenderAndBody: Cannot get face related data for {}", coopActor->GetName());
 		}
 
 		// Update skin color and player model.
@@ -1316,7 +1216,7 @@ namespace ALYSLC
 		//		- Player 1 is killed.
 		//		- Another save is loaded.
 
-		logger::debug("[P] DownedStateCountdownTask: {}", coopActor->GetName());
+		ALYSLC::Log("[P] DownedStateCountdownTask: {}", coopActor->GetName());
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto resAV = coopActor->GetActorValue(RE::ActorValue::kRestoration);
 		// Health post-revive scales with the player's restoration skill level.
@@ -1399,7 +1299,7 @@ namespace ALYSLC
 			stopCountingDown = !glob.coopSessionActive || isRevived || reviveIntervalOver || loadingMenuOpened || coopActor->IsDead();
 		}
 
-		logger::debug("[P] DownedStateCountdownTask: Stopped downed countdown for {}. Reason: session ended: {}, is dead: {}, is revived: {}, revive window over: {} ({} : {})",
+		ALYSLC::Log("[P] DownedStateCountdownTask: Stopped downed countdown for {}. Reason: session ended: {}, is dead: {}, is revived: {}, revive window over: {} ({} : {})",
 			coopActor->GetName(), !glob.coopSessionActive, coopActor->IsDead(), isRevived, reviveIntervalOver,
 			secsDowned, Settings::fSecsUntilDownedDeath);
 
@@ -1425,7 +1325,7 @@ namespace ALYSLC
 				tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
 				tm->UpdateCrosshairMessage();
 
-				logger::debug("[P] DownedStateCountdownTask: {} was NOT revived. About to teardown co-op session.", coopActor->GetName());
+				ALYSLC::Log("[P] DownedStateCountdownTask: {} was NOT revived. About to teardown co-op session.", coopActor->GetName());
 
 				// Uh-oh!
 				Util::AddSyncedTask([this]() { GlobalCoopData::YouDied(coopActor.get()); });
@@ -1440,7 +1340,7 @@ namespace ALYSLC
 				tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
 				tm->UpdateCrosshairMessage();
 
-				logger::debug("[P] DownedStateCountdownTask: {} was revived. Toggle god mode until fully up.", coopActor->GetName());
+				ALYSLC::Log("[P] DownedStateCountdownTask: {} was revived. Toggle god mode until fully up.", coopActor->GetName());
 
 				Util::AddSyncedTask([this]() {
 					// Invulnerable while getting up after revive and until weapons are equipped again.
@@ -1488,11 +1388,11 @@ namespace ALYSLC
 						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
 					});
 
-					logger::debug("[P] DownedStateCountdownTask: {} was revived and is no longer downed. Success!", coopActor->GetName());
+					ALYSLC::Log("[P] DownedStateCountdownTask: {} was revived and is no longer downed. Success!", coopActor->GetName());
 				}
 				else
 				{
-					logger::debug("[P] DownedStateCountdownTask: Co-op session ended while {} was getting up!", coopActor->GetName());
+					ALYSLC::Log("[P] DownedStateCountdownTask: Co-op session ended while {} was getting up!", coopActor->GetName());
 				}
 
 				return;
@@ -1500,7 +1400,7 @@ namespace ALYSLC
 		}
 
 		// If reaching this point, the player was not revived one way or another, so make sure the co-op session ends.
-		logger::debug("[P] DownedStateCountdownTask: {} was not revived: {}. Revive interval not over: {}, co-op session ended: {}, loading menu opened: {}, dead: {}. Dismissing all players.",
+		ALYSLC::Log("[P] DownedStateCountdownTask: {} was not revived: {}. Revive interval not over: {}, co-op session ended: {}, loading menu opened: {}, dead: {}. Dismissing all players.",
 			coopActor->GetName(), !isRevived, !reviveIntervalOver, !glob.coopSessionActive, loadingMenuOpened, coopActor->IsDead());
 
 		// Always reset the paralysis flag.
@@ -1523,8 +1423,6 @@ namespace ALYSLC
 		auto controlMap = RE::ControlMap::GetSingleton();
 		if (!ui || !controlMap)
 		{
-			logger::debug("[P] ERR: LockpickingTask: UI invalid: {}, control map invalid: {}.",
-				(bool)!ui, (bool)!controlMap);
 			return;
 		}
 
@@ -1918,8 +1816,6 @@ namespace ALYSLC
 			if (isShout)
 			{
 				auto shout = voiceForm->As<RE::TESShout>();
-				logger::debug("[P] ShoutTask: Got voice spell {} with highest variation {} for shout {}.", 
-					voiceSpell->GetName(), highestVar, shout->GetName());
 				// Set cooldown.
 				pam->secsCurrentShoutCooldown = shout->variations[highestVar].recoveryTime * coopActor->GetActorValue(RE::ActorValue::kShoutRecoveryMult);
 				// Release and stop animation events to play, and delay time between release and stop animations.
@@ -2005,8 +1901,6 @@ namespace ALYSLC
 									auto releaseSound = baseEffect->effectSounds[!RE::MagicSystem::SoundID::kRelease].sound;
 									if (const auto audioMgr = RE::BSAudioManager::GetSingleton(); audioMgr && releaseSound)
 									{
-										logger::debug("[P] ShoutTask: {}: got sound form 0x{:X} for shout {}.",
-											coopActor->GetName(), releaseSound->formID, shout->GetName());
 										audioMgr->Play(releaseSound);
 									}
 								}

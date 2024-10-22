@@ -458,6 +458,15 @@ namespace ALYSLC
 		kTotal
 	};
 
+	// Custom node rotation blend status.
+	enum class NodeRotationBlendStatus : std::uint8_t
+	{
+		kDefaultReached,		// Reached the rotation set by the game before modification.
+		kBlendIn,				// Blending in towards the target rotation.
+		kBlendOut,				// Blending out towards the default rotation.
+		kTargetReached			// Reached the player-set target rotation.
+	};
+
 	//========
 	//[Player]
 	//========
@@ -571,7 +580,7 @@ namespace ALYSLC
 		kFailedConditions,		// Interrupted by failed conditions after starting.
 		kInputsPressed,			// All composing inputs pressed.
 		kInputsReleased,		// Fully-stopped action: all required composing inputs released.
-		kSomeInputsPressed,	// Some composing inputs are pressed and the action has not already started.
+		kSomeInputsPressed,		// Some composing inputs are pressed and the action has not already started.
 		kSomeInputsReleased,	// Some composing inputs released after the action has started.
 		kStarted				// Started action: inputs pressed, conditions passed, and is being performed.
 	};

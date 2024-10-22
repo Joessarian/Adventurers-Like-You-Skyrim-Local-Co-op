@@ -8,12 +8,15 @@ namespace ALYSLC
 	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4;
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3;
 	bool EnderalCompat::g_enderalSSEInstalled;
+	bool MCOCompat::g_mcoInstalled;
 	bool MiniMapCompat::g_miniMapInstalled;
 	bool MiniMapCompat::g_shouldApplyCullingWorkaround;
 	bool PrecisionCompat::g_precisionInstalled;
 	bool QuickLootCompat::g_quickLootInstalled;
+	bool RequiemCompat::g_requiemInstalled;
 	bool SkyrimsParagliderCompat::g_paragliderInstalled;
 	bool SkyrimsParagliderCompat::g_p1HasParaglider;
+	bool TKDodgeCompat::g_tkDodgeInstalled;
 	bool TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled;
 	bool TrueHUDCompat::g_trueHUDInstalled;
 
@@ -31,14 +34,32 @@ namespace ALYSLC
 			logger::info("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 	}
-
 	
+	void MCOCompat::CheckForMCO(const SKSE::LoadInterface* a_loadInterface)
+	{
+		g_mcoInstalled = a_loadInterface->GetPluginInfo("Attack_DXP") || static_cast<bool>(GetModuleHandleA("MCO.dll"));
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_mcoInstalled && dataHandler) 
+		{
+			g_mcoInstalled = dataHandler->LookupModByName("Attack_DXP.esp") != nullptr;
+			if (!g_mcoInstalled) 
+			{
+				g_mcoInstalled = dataHandler->LookupModByName("Attack_MCO.esp") != nullptr;
+			}
+		}
+
+		if (g_mcoInstalled)
+		{
+			logger::info("[Compatibility] MCO installed!");
+		}
+	}
+
 	void MiniMapCompat::CheckForMiniMap()
 	{
 		g_miniMapInstalled = static_cast<bool>(GetModuleHandleA("MiniMap.dll"));
 		if (g_miniMapInstalled)
 		{
-			logger::info("[Compatibility] Felisky384's MiniMap installed! Will setup culling hooks to avoid freeze in interior cells.");
+			logger::info("[Compatibility] Felisky384's MiniMap installed! Will setup culling hooks to minimize freezes in interior cells.");
 		}
 
 		g_shouldApplyCullingWorkaround = false;
@@ -97,10 +118,40 @@ namespace ALYSLC
 
 	void QuickLootCompat::CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_quickLootInstalled = a_loadInterface->GetPluginInfo("QuickLootRE") || a_loadInterface->GetPluginInfo("QuickLootEE");
+		g_quickLootInstalled = 
+		{
+			a_loadInterface->GetPluginInfo("QuickLootRE") ||
+			a_loadInterface->GetPluginInfo("QuickLootEE")
+		};
+
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_quickLootInstalled && dataHandler)
+		{
+			g_quickLootInstalled = 
+			{
+				dataHandler->LookupModByName("QuickLootRE.esp") != nullptr ||
+				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr
+			};
+		}
+
 		if (g_quickLootInstalled) 
 		{
 			logger::info("[Compatibility] QuickLootRE/EE installed!");
+		}
+	}
+
+	void RequiemCompat::CheckForRequiem(const SKSE::LoadInterface* a_loadInterface)
+	{
+		g_requiemInstalled = a_loadInterface->GetPluginInfo("Requiem");
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_requiemInstalled && dataHandler)
+		{
+			g_requiemInstalled = dataHandler->LookupModByName("Requiem.esp") != nullptr;
+		}
+
+		if (g_requiemInstalled)
+		{
+			logger::info("[Compatibility] Requiem - The Roleplaying Overhaul installed!");
 		}
 	}
 
@@ -115,6 +166,19 @@ namespace ALYSLC
 		}
 	}
 
+	void TKDodgeCompat::CheckForTKDodge()
+	{
+		g_tkDodgeInstalled = 
+		{
+			static_cast<bool>(GetModuleHandleA("TKPlugin.dll")) ||
+			static_cast<bool>(GetModuleHandleA("TK_Dodge_RE.dll"))
+		};
+		if (g_tkDodgeInstalled)
+		{
+			logger::info("[Compatibility] TKDodge installed!");
+		}
+	}
+
 	void TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(const SKSE::LoadInterface* a_loadInterface)
 	{
 		g_trueDirectionalMovementInstalled = 
@@ -122,6 +186,13 @@ namespace ALYSLC
 			a_loadInterface->GetPluginInfo("TrueDirectionalMovement") || 
 			static_cast<bool>(GetModuleHandleA("TrueDirectionalMovement.dll"))
 		};
+
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_trueDirectionalMovementInstalled && dataHandler)
+		{
+			g_trueDirectionalMovementInstalled = dataHandler->LookupModByName("TrueDirectionalMovement.esp") != nullptr;
+		}
+
 		if (g_trueDirectionalMovementInstalled)
 		{
 			logger::info("[Compatibility] True Directional Movement installed!");

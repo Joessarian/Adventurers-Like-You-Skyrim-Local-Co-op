@@ -48,13 +48,12 @@ namespace ALYSLC
 
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[PAM] AVCostManager: Clear: Try to lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> perfAnimQueueLock(perfAnimQueueMutex, std::try_to_lock);
 				if (perfAnimQueueLock)
 				{
 					// REMOVE
-					logger::debug("[PAM] AVCostManager: Clear: Lock obtained: 0x{:X}.", hash);
+					ALYSLC::Log("[PAM] AVCostManager: Clear: Lock obtained. (0x{:X})", hash);
 
 					while (!perfAnimEventsQueue.empty())
 					{
@@ -64,7 +63,7 @@ namespace ALYSLC
 				else
 				{
 					// REMOVE
-					logger::debug("[PAM] AVCostManager: Clear: Failed to obtain lock and clear perf anim events queue.");
+					ALYSLC::Log("[PAM] AVCostManager: Clear: Failed to obtain lock. (0x{:X})", hash);
 				}
 			}
 		}
@@ -219,15 +218,6 @@ namespace ALYSLC
 		//
 		// PA state-related funcs
 		//
-		
-		// Are all of this action's buttons pressed (ignores analog stick movement)?
-		inline const bool AllButtonsPressedForAction(const InputAction& a_action) noexcept
-		{
-			auto buttonsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
-			buttonsMask &= (1 << !InputAction::kButtonTotal) - 1;
-
-			return (inputBitMask & buttonsMask) == buttonsMask;
-		}
 
 		// All buttons pressed for all of the given actions.
 		template <class... Args>
@@ -243,13 +233,6 @@ namespace ALYSLC
 			requires(std::same_as<Args, InputAction>&&...)
 		{
 			return (AllButtonsPressedForAction(a_actions) || ...);
-		}
-
-		// Are all of this action's buttons pressed and analog sticks moved?
-		inline const bool AllInputsPressedForAction(const InputAction& a_action) noexcept
-		{
-			auto inputsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
-			return (inputBitMask & inputsMask) == inputsMask;
 		}
 
 		// All inputs pressed for all of the given actions.
@@ -417,6 +400,12 @@ namespace ALYSLC
 		// Check for an associated AV cost action for the give player action,
 		// and if one hasn't been queued already, add a request for the resolved AV cost action.
 		void AddAVCostActionRequest(const InputAction& a_action);
+
+		// Are all of this action's buttons pressed (ignores analog stick movement)?
+		bool AllButtonsPressedForAction(const InputAction& a_action) noexcept;
+
+		// Are all of this action's buttons pressed and analog sticks moved?
+		bool AllInputsPressedForAction(const InputAction& a_action) noexcept;
 
 		// Block currently pressed player actions from being performed by setting their perform stage to 'Blocked',
 		// and optionally update the block TP, if requested, to allow for blocking over an interval.

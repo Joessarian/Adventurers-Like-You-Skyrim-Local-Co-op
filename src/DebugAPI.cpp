@@ -85,7 +85,7 @@ namespace ALYSLC
 		if (!hud || !hud->uiMovie)
 		{
 			DebugOverlayMenu::Load();
-			logger::error("[ALYSLC] ERR: could not get HUD.");
+			ALYSLC::Log("[DebugAPI] ERR: could not get HUD.");
 			return;
 		}
 
@@ -98,7 +98,6 @@ namespace ALYSLC
 			auto& point = pointsToDraw[i];
 			if (!point || !point.get())
 			{
-				logger::error("[ALYSLC] ERR: Could not get point to draw.");
 				return;
 			}
 
@@ -118,7 +117,6 @@ namespace ALYSLC
 			auto& line = linesToDraw[i];
 			if (!line || !line.get())
 			{
-				logger::error("[ALYSLC] ERR: Could not get line to draw.");
 				return;
 			}
 
@@ -138,7 +136,6 @@ namespace ALYSLC
 			auto& shape = shapesToDraw[i];
 			if (!shape || !shape.get())
 			{
-				logger::error("[ALYSLC] ERR: Could not get shape to draw.");
 				return;
 			}
 
@@ -450,7 +447,7 @@ namespace ALYSLC
 		auto scaleformManager = RE::BSScaleformManager::GetSingleton();
 		if (!scaleformManager)
 		{
-			logger::error("[ALYSLC] ERR: Failed to initialize DebugOverlayMenu. ScaleformManager not found.");
+			logger::error("[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. ScaleformManager not found.");
 			return;
 		}
 
@@ -476,16 +473,12 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::Register()
 	{
-		logger::info("[ALYSLC] Registering DebugOverlayMenu.");
+		logger::info("[DebugAPI] Registering DebugOverlayMenu.");
 		if (auto ui = RE::UI::GetSingleton(); ui)
 		{
 			ui->Register(MENU_NAME, Creator);
 			DebugOverlayMenu::Load();
-			logger::info("[ALYSLC] Successfully registered DebugOverlayMenu.");
-		}
-		else
-		{
-			logger::error("[ALYSLC] Failed to register DebugOverlayMenu.");
+			logger::info("[DebugAPI] Successfully registered DebugOverlayMenu.");
 		}
 	}
 
@@ -494,11 +487,6 @@ namespace ALYSLC
 		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 		{
 			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-			logger::info("[ALYSLC] Successfully messaged DebugOverlayMenu to show.");
-		}
-		else
-		{
-			logger::warn("[ALYSLC] Failed to show DebugOverlayMenu.");
 		}
 	}
 
@@ -507,11 +495,6 @@ namespace ALYSLC
 		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 		{
 			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
-			logger::info("[ALYSLC] Successfully messaged DebugOverlayMenu to unload.");
-		}
-		else
-		{
-			logger::warn("[ALYSLC] Failed to hide DebugOverlayMenu.");
 		}
 	}
 
@@ -545,7 +528,6 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::ToggleVisibility(bool a_mode)
 	{
-		logger::info("[ALYSLC] Toggling visibility of DebugOverlayMenu to {}.", a_mode);
 		auto ui = RE::UI::GetSingleton();
 		if (!ui)
 		{

@@ -20,7 +20,7 @@ namespace ALYSLC
 		if (a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			logger::debug("[TM] Constructor for {}, CID: {}, shared ptr count: {}.",
+			ALYSLC::Log("[TM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count());
@@ -28,7 +28,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[TM] ERR: Cannot construct Targeting Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
+			logger::error("[TM] ERR: Initialize: Cannot construct Targeting Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
 		}
 	}
 
@@ -55,30 +55,38 @@ namespace ALYSLC
 
 	void TargetingManager::PrePauseTask()
 	{
-		logger::debug("[TM] PrePauseTask: P{}: Refresh data: {}", playerID + 1, nextState == ManagerState::kAwaitingRefresh);
+		ALYSLC::Log("[TM] PrePauseTask: P{}", playerID + 1);
 		// Clear all targets.
 		ClearTargetHandles();
 		// No longer selecting a crosshair target.
 		validCrosshairRefrHit = false;
 		// Clear all grabbed and released refrs
 		// to stop grabbing refrs and checking for released refr collisions.
-		rmm->ClearAll();
+		// Maintain management of refrs if the game is paused.
+		auto ui = RE::UI::GetSingleton(); 
+		if ((nextState == ManagerState::kAwaitingRefresh) || (ui && !ui->GameIsPaused())) 
+		{
+			rmm->ClearAll();
+		}
 		// Reset crosshair position.
 		ResetCrosshairPosition();
 	}
 
 	void TargetingManager::PreStartTask()
 	{
-		logger::debug("[TM] PreStartTask: P{}", playerID + 1);
+		ALYSLC::Log("[TM] PreStartTask: P{}", playerID + 1);
 		// Reset TPs before starting.
 		ResetTPs();
 		// Clear all targets.
 		ClearTargetHandles();
 		// No longer selecting a crosshair target.
 		validCrosshairRefrHit = false;
-		// Clear all grabbed and released refrs
+		// Clear all grabbed and released refrs if a data refresh is required
 		// to stop grabbing refrs and checking for released refr collisions.
-		rmm->ClearAll();
+		if (currentState == ManagerState::kAwaitingRefresh)
+		{
+			rmm->ClearAll();
+		}
 		// Reset crosshair position.
 		ResetCrosshairPosition();
 		// Clear out game crosshair pick refr.
@@ -156,7 +164,7 @@ namespace ALYSLC
 		// Reset all target handles, related data, and time points.
 		ResetTargeting();
 		ResetTPs();
-		logger::debug("[TM] Refreshed data for {}.", coopActor ? coopActor->GetName() : "NONE");
+		ALYSLC::Log("[TM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState TargetingManager::ShouldSelfPause()
@@ -177,15 +185,12 @@ namespace ALYSLC
 	{
 		// Clear the actor target handle that corresponds to the given target type.
 		
-		// REMOVE
 		const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-		logger::debug("[TM] ClearTarget: {}: Try to lock: 0x{:X}.", coopActor->GetName(), hash);
 		{
 			std::unique_lock<std::mutex> targetingLock(targetingMutex, std::try_to_lock);
 			if (targetingLock)
 			{
-				// REMOVE
-				logger::debug("[TM] ClearTarget: {}: Lock obtained: 0x{:X}.", coopActor->GetName(), hash);
+				ALYSLC::Log("[TM] ClearTarget: {}: Lock obtained. (0x{:X})", coopActor->GetName(), hash);
 
 				if (a_targetType == TargetActorType::kAimCorrection)
 				{
@@ -217,8 +222,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				// REMOVE
-				logger::debug("[TM] ClearTarget: {}: Failed to obtain lock: 0x{:X}.", coopActor->GetName(), hash);
+				ALYSLC::Log("[TM] ClearTarget: {}: Failed to obtain lock. (0x{:X})", coopActor->GetName(), hash);
 			}
 		}
 	}
@@ -915,8 +919,6 @@ namespace ALYSLC
 		auto processLists = RE::ProcessLists::GetSingleton();
 		if (!processLists || !coopActor)
 		{
-			logger::critical("[TM] ERR: GetClosestTargetableActorInFOV: Could not get process lists: {}, or player actor: {}.", 
-				(bool)!processLists, (bool)!coopActor);
 			return RE::ActorHandle();
 		}
 
@@ -1568,7 +1570,7 @@ namespace ALYSLC
 		float speedWeightFactor = sqrtf(weightFactor * havokImpactSpeed);
 
 		// REMOVE when done debugging.
-		/*logger::debug("[TM] {}: HandleBonk: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, impact speed: {}, speedweight factor: {}. Skill damage factor: {} (player level: {}). Sneak mult: {}. Final Damage: {}.", 
+		/*ALYSLC::Log("[TM] {}: HandleBonk: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, impact speed: {}, speedweight factor: {}. Skill damage factor: {} (player level: {}). Sneak mult: {}. Final Damage: {}.", 
 			coopActor->GetName(), 
 			hitActorPtr->GetName(),
 			releasedRefrPtr->GetName(),
@@ -2176,17 +2178,11 @@ namespace ALYSLC
 			// No managed released refrs, so clear out cached collision refr pairs.
 			if (!rmm->collidedRefrFIDPairs.empty())
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[TM] HandleReferenceManipulation: {}: Try to lock to clear collided refr FID pairs: 0x{:X}.", coopActor->GetName(), hash);
-
 				std::unique_lock<std::mutex> lock(rmm->contactEventsQueueMutex, std::try_to_lock);
 				if (lock)
 				{
 					// Clear out collided pairs set once there are no remaining released refrs to handle.
-					logger::debug("[TM] HandleReferenceManipulation: {}: Clear collided refr pairs set (size {}).",
-						coopActor->GetName(),
-						rmm->collidedRefrFIDPairs.size());
 					rmm->collidedRefrFIDPairs.clear();
 				}
 			}
@@ -2196,15 +2192,10 @@ namespace ALYSLC
 			{
 				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[TM] HandleReferenceManipulation: {}: Try to lock to clear queued contact events: 0x{:X}.", coopActor->GetName(), hash);
-
 				std::unique_lock<std::mutex> lock(rmm->contactEventsQueueMutex, std::try_to_lock);
 				if (lock)
 				{
 					// Clear out collided pairs set once there are no remaining released refrs to handle.
-					logger::debug("[TM] HandleReferenceManipulation: {}: Clear contact events queue (size {}).",
-						coopActor->GetName(),
-						rmm->queuedReleasedRefrContactEvents.size());
 					rmm->queuedReleasedRefrContactEvents.clear();
 				}
 			}
@@ -2212,9 +2203,6 @@ namespace ALYSLC
 			// Finally, clear out released refr map if not empty already.
 			if (!rmm->releasedRefrHandlesToInfoIndices.empty()) 
 			{
-				logger::debug("[TM] HandleReferenceManipulation: {}: Clear released refr handle to indices map (size {}).",
-					coopActor->GetName(),
-					rmm->releasedRefrHandlesToInfoIndices.size());
 				rmm->releasedRefrHandlesToInfoIndices.clear();
 			}
 		}
@@ -2267,7 +2255,7 @@ namespace ALYSLC
 				damage = speedWeightFactor * levelDamageFactor * 1.0f / ((float)(a_hitCount) * (float)(a_hitCount));
 
 				// REMOVE when done debugging.
-				/*logger::debug("[TM] HandleSplat: {}: Thrown actor: {}. Mass: {}, impact speed: {}, speedweight factor: {}, damage: {}. Hit #{}",
+				/*ALYSLC::Log("[TM] HandleSplat: {}: Thrown actor: {}. Mass: {}, impact speed: {}, speedweight factor: {}, damage: {}. Hit #{}",
 				p->coopActor->GetName(),
 				thrownActorPtr->GetName(),
 				releasedRefrRigidBody->motion.GetMass(),
@@ -2473,10 +2461,6 @@ namespace ALYSLC
 			return chosenResult;
 		}
 
-		// REMOVE after debugging.
-		/*logger::debug("[TM] PickRaycastHitResult: {}: For target selection: {}, in combat: {}. {} raycast results.", 
-			coopActor->GetName(), a_crosshairActiveForSelection, a_inCombat, a_raycastResults.size());*/
-
 		// Save hit index to (un)set the closest hit result flag after the loop.
 		uint32_t i = 0;
 		for (; i < a_raycastResults.size(); ++i)
@@ -2486,7 +2470,7 @@ namespace ALYSLC
 			// REMOVE after debugging.
 			/*
 			RE::NiPoint3 hitPoint = ToNiPoint3(result.hitPos);
-			logger::debug("[TM] PickRaycastHitResult: {}: For target selection: {}. Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, type: {}). Distance to camera: {}, distance to player: {}.",
+			ALYSLC::Log("[TM] PickRaycastHitResult: {}: For target selection: {}. Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, type: {}). Distance to camera: {}, distance to player: {}.",
 				coopActor->GetName(),
 				a_crosshairActiveForSelection,
 				i,
@@ -2636,7 +2620,7 @@ namespace ALYSLC
 		// REMOVE after debugging.
 		/*
 		auto activationRefrPtr = Util::GetRefrPtrFromHandle(chosenResult.hitRefrHandle);
-		logger::debug("[TM] PickRaycastHitResult: {}: chose result {}: {}. For target selection: {}, is closest result: {}.",
+		ALYSLC::Log("[TM] PickRaycastHitResult: {}: chose result {}: {}. For target selection: {}, is closest result: {}.",
 			coopActor->GetName(), chosenResult.hit ? i : -1,
 			activationRefrPtr ? activationRefrPtr->GetName() : chosenResult.hitObject ? chosenResult.hitObject->name : "NONE",
 			a_crosshairActiveForSelection, choseClosestResult);
@@ -2853,8 +2837,6 @@ namespace ALYSLC
 							}
 						}
 
-						logger::debug("[TM] SelectProximityRefr: {}: Inserting {} with min selection factor {}.", 
-							coopActor->GetName(), a_refr->GetName(), minSelectionFactor);
 						nearbyReferences.insert(std::pair<float, RE::ObjectRefHandle>(minSelectionFactor, a_refr->GetHandle()));
 					}
 
@@ -2925,21 +2907,6 @@ namespace ALYSLC
 						}
 					}
 				}
-			}
-
-			// REMOVE when done debugging.
-			auto proximityRefrPtr = Util::GetRefrPtrFromHandle(proximityRefrHandle);
-			if (!proximityRefrPtr)
-			{
-				logger::debug("[TM] SelectProximityRefr: {}: Next proximity object to activate is None.", coopActor->GetName());
-			}
-			else
-			{
-				logger::debug("[TM] SelectProximityRefr: {}: Proximity object to activate: {} (0x{:X}, type: {})", 
-					coopActor->GetName(), proximityRefrPtr->GetName(), proximityRefrPtr->formID, 
-					proximityRefrPtr->GetObjectReference() ? 
-					*proximityRefrPtr->GetObjectReference()->formType : 
-					RE::FormType::None);
 			}
 		}
 	}
@@ -3053,7 +3020,7 @@ namespace ALYSLC
 			return;
 		}
 
-		bool rangedAttackRequest = 
+		bool rangedAttackOrBlockRequest = 
 		{
 			(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) && p->em->Has2HRangedWeapEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kCastRH) && p->em->HasRHSpellEquipped()) ||
@@ -3061,11 +3028,13 @@ namespace ALYSLC
 			(p->pam->AllInputsPressedForAction(InputAction::kCastLH) && p->em->HasLHSpellEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kAttackLH) && p->em->HasLHStaffEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kQuickSlotCast) && p->em->quickSlotSpell) ||
-			(p->pam->reqSpecialAction == SpecialActionType::kDualCast || p->pam->reqSpecialAction == SpecialActionType::kQuickCast)
+			(p->pam->reqSpecialAction == SpecialActionType::kDualCast || p->pam->reqSpecialAction == SpecialActionType::kQuickCast) ||
+			(p->pam->isBlocking) ||
+			(p->pam->isBashing)
 		};
 
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
-		if (rangedAttackRequest && !p->mm->shouldFaceTarget && !selectedTargetActorPtr)
+		if (rangedAttackOrBlockRequest && !p->mm->shouldFaceTarget && !selectedTargetActorPtr)
 		{
 			// Trying to perform/performing ranged attack,
 			// no selected actor, and not facing the crosshair position.
@@ -3086,7 +3055,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Clear aim correction target when not attacking or trying to attack, 
+			// Clear aim correction target when not attacking or trying to attack, blocking,
 			// or when a crosshair target actor is selected.
 			const auto& combatGroup = glob.paInfoHolder->DEF_ACTION_GROUPS_TO_INDICES.at(ActionGroup::kCombat);
 			bool combatActionBindsPressed = false;
@@ -3119,7 +3088,6 @@ namespace ALYSLC
 		// Requires the aim target keyword to set the aim target linked refr.
 		if (!p->aimTargetKeyword)
 		{
-			logger::error("[TM] ERR: UpdateAimTargetLinkedRefr: {}: could not get aim target keyword.", coopActor->GetName());
 			return false;
 		}
 
@@ -3624,18 +3592,6 @@ namespace ALYSLC
 			}
 		}
 
-		if (crosshairRefrPtr && crosshairRefrPtr.get()) 
-		{
-			logger::debug("[TM] UpdateCrosshairPosAndSelection: {}: selected refr {} (0x{:X}): type: ({}, flags: 0b{:B}, 0x{:B}), ignored by sandbox: {}",
-				coopActor->GetName(),
-				crosshairRefrPtr->GetName(),
-				crosshairRefrPtr->formID,
-				crosshairRefrPtr->GetBaseObject() ? *crosshairRefrPtr->GetBaseObject()->formType : RE::FormType::None,
-				crosshairRefrPtr->formFlags,
-				crosshairRefrPtr->As<RE::TESObjectACTI>() ? *crosshairRefrPtr->As<RE::TESObjectACTI>()->flags : RE::TESObjectACTI::ActiFlags::kNone,
-				crosshairRefrPtr->GetIgnoredBySandbox());
-		}
-
 		// Set last update time point.
 		p->lastCrosshairUpdateTP = SteadyClock::now();
 	}
@@ -3928,7 +3884,6 @@ namespace ALYSLC
 
 		if (!IsValid())
 		{
-			logger::error("[TM] ERR: UpdateGrabbedReference: {}: Grabbed object is not valid. Clear data.", a_p->coopActor->GetName());
 			Clear();
 			return;
 		}
@@ -4233,16 +4188,6 @@ namespace ALYSLC
 				// Offset the current aimed at position by the delta position calculated
 				// using the average of three velocity measurements over the new time to target.
 				predHitPos = currentAimedAtPos + ((apiPredTargetVel + cPredTargetVel + nPredTargetVel) / 3.0f) * t;
-				
-				// REMOVE when done debugging.
-				/*logger::debug("[TM] CalculatePredInterceptPos: {}: STEP {}: t: {}, tDiff: {}, frames: {}, pred hit pos from (avg, current, next): ({}, {}, {}), ang to rotate: {}, speedDelta: {}, avgSpeedDelta: {}, cSpeedDeltaPerFrame: {}, old speed: {}, new speed: {}",
-					a_p->coopActor->GetName(), 
-					step, t, tDiff, tDiff / *g_deltaTimeRealTime,
-					predHitPos.x, predHitPos.y, predHitPos.z,
-					angToRotate * TO_DEGREES,
-					avgSpeedDelta, a_p->tm->targetMotionState->apiSpeedDelta,
-					a_p->tm->targetMotionState->cSpeedDeltaPerFrame,
-					speed, speed + avgSpeedDelta * tDiff);*/
 
 				/*
 				// Haven't properly implemented the method below yet, so it does not work as well as the above approximation.
@@ -4319,14 +4264,6 @@ namespace ALYSLC
 				predHitPos = pva[kPos];
 				nPredTargetVel = pva[kVel];
 				nPredTargetAccel = pva[kAcc];
-
-				logger::debug("[TM] CalculatePredInterceptPos: {}: STEP {}: t: {}, tDiff: {}, frames: {}, Pred RK4: pos: ({}, {}, {}), vel: ({}, {}, {}), accel: ({}, {}, {}), ang to rotate: {}",
-					a_p->coopActor->GetName(), 
-					step, t, tDiff, tDiff / *g_deltaTimeRealTime,
-					predHitPos.x, predHitPos.y, predHitPos.z,
-					nPredTargetVel.x, nPredTargetVel.y, nPredTargetVel.z,
-					nPredTargetAccel.x, nPredTargetAccel.y, nPredTargetAccel.z,
-					angToRotate * TO_DEGREES);
 				*/
 
 				// Update positional offsets based on the new predicated hit position.
@@ -4350,7 +4287,7 @@ namespace ALYSLC
 				releaseSpeed = firstReleaseSpeed;
 
 				// REMOVE when done debugging.
-				/*logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
+				/*ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
 					a_p->coopActor->GetName(), tDiff, timeBailDeltaMax, step, targetActorPtr->GetName(), releaseSpeed);*/
 
 				// Failed to find intercept position, so set to the initially-aimed-at position.
@@ -4361,12 +4298,12 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				/*if (tDiff <= timeBailDeltaMin)
 				{
-					logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
+					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
 						a_p->coopActor->GetName(), step, tDiff);
 				}
 				else
 				{
-					logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
+					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
 						a_p->coopActor->GetName(), tDiff, step);
 				}*/
 
@@ -4385,7 +4322,6 @@ namespace ALYSLC
 
 		if (!IsValid())
 		{
-			logger::error("[TM] PerformInitialHomingCheck: {}: ERR: released object is not valid. Clear data.", a_p->coopActor->GetName());
 			Clear();
 			return;
 		}
@@ -4393,7 +4329,6 @@ namespace ALYSLC
 		auto objectPtr = refrHandle.get();
 		if (!releaseTP.has_value())
 		{
-			logger::error("[TM] PerformInitialHomingCheck: {}: ERR: no release time point for {}. Clear data.", a_p->coopActor->GetName(), objectPtr->GetName());
 			Clear();
 			return;
 		}
@@ -4463,8 +4398,6 @@ namespace ALYSLC
 		auto objectPtr = refrHandle.get();
 		if (!releaseTP.has_value())
 		{
-			logger::error("[TM] SetHomingTrajectory: {}: ERR: No release time point for refr {}. Clear data.", 
-				a_p->coopActor->GetName(), objectPtr->GetName());
 			Clear();
 			return;
 		}
@@ -4621,7 +4554,6 @@ namespace ALYSLC
 
 		if (!IsValid())
 		{
-			logger::error("[TM] SetReleaseTrajectoryInfo: {}: ERR: released object is not valid. Clear data.", a_p->coopActor->GetName());
 			Clear();
 			return;
 		}
@@ -4888,7 +4820,6 @@ namespace ALYSLC
 		auto objectPtr = Util::GetRefrPtrFromHandle(a_handle); 
 		if (!objectPtr)
 		{
-			logger::error("[TM] AddGrabbedRefr: {}: ERR: object to grab is not valid.", a_p->coopActor->GetName());
 			return;
 		}
 
@@ -4952,7 +4883,6 @@ namespace ALYSLC
 		auto objectPtr = Util::GetRefrPtrFromHandle(a_handle); 
 		if (!objectPtr)
 		{
-			logger::error("[TM] AddReleasedRefr: {}: ERR: object to release is not valid.", a_p->coopActor->GetName());
 			return;
 		}
 
@@ -4992,7 +4922,6 @@ namespace ALYSLC
 		// Index must be less than the size of the grabbed refrs list.
 		if (a_index >= grabbedRefrInfoList.size())
 		{
-			logger::error("[TM] CanManipulate: {}: ERR: grabbed object's index ({}) is not valid.", a_p->coopActor->GetName(), a_index);
 			return false;
 		}
 
@@ -5000,7 +4929,6 @@ namespace ALYSLC
 		const auto& info = grabbedRefrInfoList[a_index];
 		if (!info->IsValid())
 		{
-			logger::error("[TM] CanManipulate: {}: ERR: grabbed object's handle is not valid.", a_p->coopActor->GetName());
 			return false;
 		}
 
@@ -5009,8 +4937,6 @@ namespace ALYSLC
 		auto objectPtr = info->refrHandle.get();
 		if (!info->grabTP.has_value())
 		{
-			logger::error("[TM] CanManipulate: {}: ERR: no grab time point set for {}.",
-				a_p->coopActor->GetName(), objectPtr->GetName());
 			info->Clear();
 			return false;
 		}
@@ -5070,24 +4996,18 @@ namespace ALYSLC
 		// and also clear out all queued contact event-related data.
 		// Player will not longer be grabbing any refrs afterward.
 		
-		// REMOVE
 		const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-		logger::debug("[TM] RefrManipulationManager: ClearAll: Try to lock: 0x{:X}.", hash);
 		{
 			std::unique_lock<std::mutex> lock(contactEventsQueueMutex, std::try_to_lock);
 			if (lock)
 			{
-				// REMOVE
-				logger::debug("[TM] RefrManipulationManager: ClearAll: Lock obtained: 0x{:X}.", hash);
-
-				// 
+				ALYSLC::Log("[TM] RefrManipulationManager: ClearAll: Lock obtained. (0x{:X})", hash);
 				collidedRefrFIDPairs.clear();
 				queuedReleasedRefrContactEvents.clear();
 			}
 			else
 			{
-				// REMOVE
-				logger::debug("[TM] RefrManipulationManager: ClearAll: Failed to obtain lock: 0x{:X}.", hash);
+				ALYSLC::Log("[TM] RefrManipulationManager: ClearAll: Failed to obtain lock. (0x{:X})", hash);
 			}
 		}
 
@@ -5541,16 +5461,6 @@ namespace ALYSLC
 				// using the average of three velocity measurements over the new time to target.
 				predHitPos = currentAimedAtPos + ((apiPredTargetVel + cPredTargetVel + nPredTargetVel) / 3.0f) * t;
 
-				// REMOVE when done debugging.
-				/*logger::debug("[TM] CalculatePredInterceptPos: {}: STEP {}: t: {}, tDiff: {}, frames: {}, pred hit pos from (avg, current, next): ({}, {}, {}), ang to rotate: {}, speedDelta: {}, avgSpeedDelta: {}, cSpeedDeltaPerFrame: {}, old speed: {}, new speed: {}",
-					a_p->coopActor->GetName(), 
-					step, t, tDiff, tDiff / *g_deltaTimeRealTime,
-					predHitPos.x, predHitPos.y, predHitPos.z,
-					angToRotate * TO_DEGREES,
-					avgSpeedDelta, a_p->tm->targetMotionState->apiSpeedDelta, 
-					a_p->tm->targetMotionState->cSpeedDeltaPerFrame, 
-					speed, speed + avgSpeedDelta * tDiff);*/
-
 				/*
 				// Haven't properly implemented the method below yet, so it does not work as well as the above approximation in practice..
 				// Runge-Kutta method.
@@ -5626,14 +5536,6 @@ namespace ALYSLC
 				predHitPos = pva[kPos];
 				nPredTargetVel = pva[kVel];
 				nPredTargetAccel = pva[kAcc];
-
-				logger::debug("[TM] CalculatePredInterceptPos: {}: STEP {}: t: {}, tDiff: {}, frames: {}, Pred RK4: pos: ({}, {}, {}), vel: ({}, {}, {}), accel: ({}, {}, {}), ang to rotate: {}",
-					a_p->coopActor->GetName(), 
-					step, t, tDiff, tDiff / *g_deltaTimeRealTime,
-					predHitPos.x, predHitPos.y, predHitPos.z,
-					nPredTargetVel.x, nPredTargetVel.y, nPredTargetVel.z,
-					nPredTargetAccel.x, nPredTargetAccel.y, nPredTargetAccel.z,
-					angToRotate * TO_DEGREES);
 				*/
 
 				// Update positional offsets based on the new predicated hit position.
@@ -5663,7 +5565,7 @@ namespace ALYSLC
 				releaseSpeed = firstReleaseSpeed;
 
 				// REMOVE when done debugging.
-				/*logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
+				/*ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
 					a_p->coopActor->GetName(), tDiff, timeBailDeltaMax, step, targetActorPtr->GetName(), releaseSpeed);*/
 
 				// Failed to find intercept position, so set to the initially-aimed-at position.
@@ -5674,12 +5576,12 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				/*if (tDiff <= timeBailDeltaMin)
 				{
-					logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
+					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
 						a_p->coopActor->GetName(), step, tDiff);
 				}
 				else
 				{
-					logger::debug("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
+					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
 						a_p->coopActor->GetName(), tDiff, step);
 				}*/
 
@@ -5730,18 +5632,31 @@ namespace ALYSLC
 		return min(maxReleaseSpeed, releaseSpeedNew);
 	}
 
-	void TargetingManager::ManagedProjTrajectoryInfo::SetInitialBaseProjectileData(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, const float& a_releaseSpeed)
+	void TargetingManager::ManagedProjTrajectoryInfo::SetInitialBaseProjectileData(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, const float& a_releaseSpeed)
 	{
 		// Set physical data and projectile data that depends on the base projectile type.
 		
+		RE::Projectile* projectile = nullptr;
+		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle); 
+		if (projectilePtr) 
+		{
+			projectile = projectilePtr->As<RE::Projectile>();
+		}
+
+		// Smart ptr was invalid, so its managed projectile is as well, return early.
+		if (!projectile)
+		{
+			return;
+		}
+
 		// Base projectile-dependent data.
 		projGravFactor = 1.0;
-		if (const auto ammo = a_projectile->ammoSource; ammo && ammo->data.projectile)
+		if (const auto ammo = projectile->ammoSource; ammo && ammo->data.projectile)
 		{
 			// Is a physical projectile.
 			isPhysicalProj = true;
 			maxReleaseSpeed = ammo->data.projectile->data.speed;
-			if (const auto weap = a_projectile->weaponSource; weap && weap->IsBow())
+			if (const auto weap = projectile->weaponSource; weap && weap->IsBow())
 			{
 				// Set release speed based on draw time.
 				float fullDrawTime = 0.4f + (1.66f / (weap->GetSpeed() * (1.0f + (float)a_p->coopActor->HasPerk(glob.quickShotPerk)))) + 0.6f;
@@ -5758,7 +5673,7 @@ namespace ALYSLC
 			// Add gravity factor.
 			projGravFactor += ammo->data.projectile->data.gravity;
 		}
-		else if (const auto avEffect = a_projectile->avEffect; avEffect && avEffect->data.projectileBase)
+		else if (const auto avEffect = projectile->avEffect; avEffect && avEffect->data.projectileBase)
 		{
 			// Is a magic projectile.
 			isPhysicalProj = false;
@@ -5787,10 +5702,10 @@ namespace ALYSLC
 		}
 
 		// And lastly, the release position.
-		releasePos = a_projectile->data.location;
+		releasePos = projectile->data.location;
 	}
 
-	void TargetingManager::ManagedProjTrajectoryInfo::SetTrajectory(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
+	void TargetingManager::ManagedProjTrajectoryInfo::SetTrajectory(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
 	{
 		// Sets up the initial trajectory data for the given projectile
 		// based on the given starting velocity (which is modified) and the trajectory type.
@@ -5858,23 +5773,24 @@ namespace ALYSLC
 		// Save initial release speed.
 		const float initialReleaseSpeed = a_initialVelocityOut.Length();
 		// Set initial base projectile data first.
-		SetInitialBaseProjectileData(a_p, a_projectile, initialReleaseSpeed);
+		SetInitialBaseProjectileData(a_p, a_projectileHandle, initialReleaseSpeed);
 
 		// Aim prediction or aim direction while aiming at crosshair target or facing target.
 		bool predictInterceptPos = 
 		{
 			(a_trajType == ProjectileTrajType::kPrediction) ||
-			((a_trajType == ProjectileTrajType::kAimDirection) &&
-			 (a_p->mm->shouldFaceTarget || a_p->tm->GetRangedTargetActor()))
+			(
+				(a_trajType == ProjectileTrajType::kAimDirection) &&
+				(a_p->mm->shouldFaceTarget || a_p->tm->GetRangedTargetActor())
+			)
 		};
 		if (predictInterceptPos) 
 		{
-			logger::debug("[TM] SetTrajectory: {}: predict intercept pos. Proj type {}.", a_p->coopActor->GetName(), trajType);
 			// XY and Z offsets from the release position to the trajectory end position.
 			double xy = 0.0;
 			double z = 0.0;
 
-			float minLaunchPitch = GetRoughMinLaunchPitch(a_p, a_projectile);
+			float minLaunchPitch = GetRoughMinLaunchPitch(a_p);
 			// Use min launch pitch estimate if aim pitch was not manually adjusted.
 			launchPitch = std::clamp(a_p->mm->aimPitchAdjusted ? max(minLaunchPitch, -a_p->mm->aimPitch) : minLaunchPitch, -89.9f * PI / 180.0f, 89.9f * PI / 180.0f);
 			// Add some arc to fast projectiles by decreasing their release speed
@@ -5922,7 +5838,6 @@ namespace ALYSLC
 		}
 		else if (a_trajType == ProjectileTrajType::kHoming)
 		{
-			logger::debug("[TM] SetTrajectory: {}: homing proj. Proj type {}.", a_p->coopActor->GetName(), trajType);
 			// Set straight-line pitch from release position to end position
 			// after calculating the trajectory end position.
 			// NOTE: Launch pitch/straight line pitch is sign-flipped relative to the game's pitch sign convention.
@@ -6018,7 +5933,6 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::debug("[TM] SetTrajectory: {}: fallthrough. Proj type {}.", a_p->coopActor->GetName(), trajType);
 			// Aim direction projectile and not facing the crosshair world position.
 			// Aim far, far away in the direction that the player is facing.
 
@@ -6054,6 +5968,18 @@ namespace ALYSLC
 		a_initialVelocityOut.Unitize();
 		a_initialVelocityOut *= releaseSpeed;
 
+		RE::Projectile* projectile = nullptr;
+		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+		if (projectilePtr)
+		{
+			projectile = projectilePtr->As<RE::Projectile>();
+		}
+
+		// Smart ptr was invalid, so its managed projectile is as well.
+		if (!projectile)
+		{
+			return;
+		}
 		// Perform ammo projectile damage scaling based on 
 		// the ratio of the computed release speed over the max release speed.
 		// Projectile power always defaults to 1 for companion players,
@@ -6062,24 +5988,24 @@ namespace ALYSLC
 		// by dividing the current weapon damage by the power set on launch. 
 		// Then we also scale the power/weapon damage based on our own release speed factor.
 		// This will directly adjust the output damage of the projectile on hit.
-		if (const auto ammo = a_projectile->ammoSource; ammo && ammo->data.projectile)
+		if (const auto ammo = projectile->ammoSource; ammo && ammo->data.projectile)
 		{
 			// Scale arrow/bolt's damage based on the computed power.
 			double releaseSpeedFactor = std::clamp(releaseSpeed / maxReleaseSpeed, 0.1, 1.0);
-			a_projectile->power = releaseSpeedFactor;
+			projectile->power = releaseSpeedFactor;
 			if (a_p->isPlayer1) 
 			{
-				float originalWeaponDamage = a_projectile->weaponDamage / max(0.1f, a_projectile->power);
-				a_projectile->weaponDamage = originalWeaponDamage * releaseSpeedFactor;
+				float originalWeaponDamage = projectile->weaponDamage / max(0.1f, projectile->power);
+				projectile->weaponDamage = originalWeaponDamage * releaseSpeedFactor;
 			}
 			else
 			{
-				a_projectile->weaponDamage *= releaseSpeedFactor;
+				projectile->weaponDamage *= releaseSpeedFactor;
 			}
 		}
 	}
 
-	float TargetingManager::ManagedProjTrajectoryInfo::GetRoughMinLaunchPitch(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile)
+	float TargetingManager::ManagedProjTrajectoryInfo::GetRoughMinLaunchPitch(const std::shared_ptr<CoopPlayer>& a_p)
 	{
 		// Get rough estimate of the minimum launch pitch required to hit the target, 
 		// based on the given projectile's release speed.
@@ -6126,58 +6052,70 @@ namespace ALYSLC
 		}
 	}
 
-	void TargetingManager::ManagedProjectileHandler::Insert(const std::shared_ptr<CoopPlayer>& a_p, RE::Projectile* a_projectile, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
+	void TargetingManager::ManagedProjectileHandler::Insert(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType)
 	{
 		// Insert the given projectile into the managed list.
 		// Then set its trajectory information 
 		// and update its initial velocity through the outparam.
 
-		if (!a_projectile)
+		RE::Projectile* projectile = nullptr;
+		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+		if (projectilePtr)
+		{
+			projectile = projectilePtr->As<RE::Projectile>();
+		}
+
+		// Smart ptr was invalid, so its managed projectile is as well, return early.
+		if (!projectile)
 		{
 			return;
 		}
 
 		// Keep queue at a modest size by removing expired projectiles
 		// if the queue size is above a certain threshold.
-		if (!managedProjFormIDs.empty() && managedProjFormIDs.size() >= Settings::uManagedPlayerProjectilesBeforeRemoval)
+		if (!managedProjHandles.empty() && managedProjHandles.size() >= Settings::uManagedPlayerProjectilesBeforeRemoval)
 		{
-			for (const auto& [fid, _] : managedProjFIDToTrajInfoMap) 
+			for (const auto& [handle, _] : managedProjHandleToTrajInfoMap) 
 			{
-				auto projForm = RE::TESForm::LookupByID<RE::Projectile>(fid);
-				auto proj = projForm ? projForm->As<RE::Projectile>() : nullptr;
-				// Remove if invalid, not loaded, deleted, marked for deletion, has collided, or limited.
-				if (!proj || !proj->Is3DLoaded() || proj->IsDeleted() || proj->IsMarkedForDeletion() || 
-					!proj->impacts.empty() || proj->ShouldBeLimited()) 
+				projectilePtr = Util::GetRefrPtrFromHandle(handle);
+				if (projectilePtr)
 				{
-					managedProjFIDToTrajInfoMap.erase(fid);
+					projectile = projectilePtr->As<RE::Projectile>();
+				}
+
+				// Remove if invalid, not loaded, deleted, marked for deletion, has collided, or limited.
+				if (!projectile || !projectile->Is3DLoaded() || projectile->IsDeleted() || projectile->IsMarkedForDeletion() || 
+					!projectile->impacts.empty() || projectile->ShouldBeLimited()) 
+				{
+					managedProjHandleToTrajInfoMap.erase(handle);
 				}
 			}
 
 			// Reconstruct list of managed FIDs.
-			managedProjFormIDs.clear();
-			for (const auto& [fid, _] : managedProjFIDToTrajInfoMap) 
+			managedProjHandles.clear();
+			for (const auto& [fid, _] : managedProjHandleToTrajInfoMap) 
 			{
-				managedProjFormIDs.push_back(fid);
+				managedProjHandles.push_back(fid);
 			}
 		}
 
 		// Insert FID to managed list if not already managed.
 		bool alreadyManaged = 
 		{
-			!managedProjFIDToTrajInfoMap.empty() && 
-			managedProjFIDToTrajInfoMap.contains(a_projectile->formID)
+			!managedProjHandleToTrajInfoMap.empty() && 
+			managedProjHandleToTrajInfoMap.contains(a_projectileHandle)
 		};
 		if (!alreadyManaged) 
 		{
-			managedProjFormIDs.push_back(a_projectile->formID);
+			managedProjHandles.push_back(a_projectileHandle);
 		}
 
 		// Insert constructed trajectory info for this projectile.
 		// NOTE: Construction sets all the trajectory data automatically.
-		managedProjFIDToTrajInfoMap.insert_or_assign
+		managedProjHandleToTrajInfoMap.insert_or_assign
 		(
-			a_projectile->formID, 
-			std::make_unique<ManagedProjTrajectoryInfo>(a_p, a_projectile, a_initialVelocityOut, a_trajType)
+			a_projectileHandle, 
+			std::make_unique<ManagedProjTrajectoryInfo>(a_p, a_projectileHandle, a_initialVelocityOut, a_trajType)
 		);
 	}
 }

@@ -289,16 +289,6 @@ namespace ALYSLC
 				}
 
 				object->fadeAmount = 1.0f;
-				// Clear faded tag stored in pad.
-				//object->pad2C = 0x0;
-				logger::debug("[CAM] InstantlyResetFade: Reset fade on {} (refr {}, FID: 0x{:X}).",
-					object->name,
-					object->userData ? object->userData->GetName() : "NONE",
-					object->userData ? object->userData->formID : 0xDEAD);
-			}
-			else
-			{
-				logger::debug("[CAM] InstantlyResetFade: Object is invalid. Cannot reset fade.");
 			}
 		}
 
@@ -359,10 +349,6 @@ namespace ALYSLC
 				}
 
 				interpIntervalProportion = std::clamp(fabsf(targetFadeAmount - fadeAmountAtStateChange) / (1.0f - lowerBoundFadeAmount), 0.0f, 1.0f);
-			}
-			else
-			{
-				logger::debug("[CAM] SignalFadeStateChange: Object is invalid. Cannot signal fade change.");
 			}
 		}
 
@@ -452,7 +438,6 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::debug("[CAM] UpdateFade: Object is invalid. Cannot update fade.");
 				return false;
 			}
 		}
@@ -640,7 +625,6 @@ namespace ALYSLC
 		// Used externally: signal the camera manager to wait for toggle (co-op camera is re-enabled by P1).
 		inline void SetWaitForToggle(bool a_set)
 		{
-			logger::debug("[CAM] SetWaitForToggle: Set toggle to true: {}, {}", a_set, waitForToggle);
 			waitForToggle = a_set;
 		}
 

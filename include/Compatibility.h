@@ -8,6 +8,13 @@ namespace ALYSLC
 	{
 		static void CheckForEnderalSSE();
 		static bool g_enderalSSEInstalled;
+
+	};
+
+	struct MCOCompat
+	{
+		static void CheckForMCO(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_mcoInstalled;
 	};
 
 	struct MiniMapCompat
@@ -32,11 +39,23 @@ namespace ALYSLC
 		static bool g_quickLootInstalled;
 	};
 
+	struct RequiemCompat
+	{
+		static void CheckForRequiem(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_requiemInstalled;
+	};
+
 	struct SkyrimsParagliderCompat
 	{
 		static void CheckForParaglider();
 		static bool g_paragliderInstalled;
 		static bool g_p1HasParaglider;
+	};
+
+	struct TKDodgeCompat
+	{
+		static void CheckForTKDodge();
+		static bool g_tkDodgeInstalled;
 	};
 
 	struct TrueDirectionalMovementCompat

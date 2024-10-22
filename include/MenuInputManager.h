@@ -124,10 +124,10 @@ namespace ALYSLC
 		{
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[MIM] SignalRefreshFavMagMenuEquipState: Lock: 0x{:X}.", hash);
+			ALYSLC::Log("[MIM] SignalRefreshFavMagMenuEquipState: Getting lock. (0x{:X})", hash);
 			{
 				std::unique_lock<std::mutex> lock(equipEventMutex);
-				logger::debug("[MIM] SignalRefreshFavMagMenuEquipState: Lock acquired and data updated. Setting refresh equip state flag to true.");
+				ALYSLC::Log("[MIM] SignalRefreshFavMagMenuEquipState: Setting refresh equip state flag to true.");
 				equipEventRefreshReq = true;
 			}
 		}
@@ -205,13 +205,11 @@ namespace ALYSLC
 		{
 			if (!a_itemList) 
 			{
-				logger::error("[MIM] Itemlist is invalid.");
 				return nullptr;
 			}
 
 			if (a_itemList->items.size() == 0) 
 			{
-				logger::debug("[MIM] Itemlist is empty.");
 				return nullptr;
 			}
 

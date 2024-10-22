@@ -28,7 +28,7 @@ namespace ALYSLC
 							const auto form = a_dataHandler->LookupForm(a_fid, file->fileName);
 							if (form)
 							{
-								logger::debug("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {} in mod file {}.", 
+								ALYSLC::Log("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {} in mod file {}.", 
 									a_fid, form ? form->GetName() : "NONE",  file->fileName);
 								return form;
 							}
@@ -37,7 +37,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					logger::debug("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {}.",
+					ALYSLC::Log("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {}.",
 						a_fid, form ? form->GetName() : "NONE");
 					return form;
 				}
@@ -55,13 +55,12 @@ namespace ALYSLC
 		{
 			// Load all serialized data into our global serialized data structure.
 
-			logger::debug("[SERIAL] Load: Read all serialized data from SKSE co-save.");
+			ALYSLC::Log("[SERIAL] Load: Read all serialized data from SKSE co-save.");
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[SERIAL] Load: Lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
-				logger::debug("[SERIAL] Load: Lock obtained: 0x{:X}.", hash);
+				ALYSLC::Log("[SERIAL] Load: Lock obtained. (0x{:X})", hash);
 
 				// If the serialization interface is not valid, set the default retrieved data.
 				if (!a_intfc)
@@ -123,7 +122,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::debug("[SERIAL] Load: About to retrieve serialized data for player with FID 0x{:X}.", fid);
+								ALYSLC::Log("[SERIAL] Load: About to retrieve serialized data for player with FID 0x{:X}.", fid);
 								// Insert default data at first.
 								if (glob.serializablePlayerData.empty() || !glob.serializablePlayerData.contains(fid))
 								{
@@ -146,7 +145,7 @@ namespace ALYSLC
 									std::vector<RE::TESForm*> equippedForms{ !EquipIndex::kTotal, nullptr };
 									std::vector<RE::BGSPerk*> unlockedPerksList;
 
-									logger::debug("[SERIAL] Load: Added new serialized data set for player with FID 0x{:X}.", fid);
+									ALYSLC::Log("[SERIAL] Load: Added new serialized data set for player with FID 0x{:X}.", fid);
 									glob.serializablePlayerData.insert
 									(
 										{ 
@@ -178,43 +177,43 @@ namespace ALYSLC
 								if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
 								{
 									RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has {} available perk points to use still.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} available perk points to use still.",
 										fid, data->availablePerkPoints);
 								}
 								else if (type == !SerializableDataType::kPlayerUsedPerkPoints)
 								{
 									RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has used {} perk points.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has used {} perk points.",
 										fid, data->usedPerkPoints);
 								}
 								else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
 								{
 									RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has unlocked {} shared perks.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has unlocked {} shared perks.",
 										fid, data->sharedPerksUnlocked);
 								}
 								else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
 								{
 									RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has {} extra perks.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} extra perks.",
 										fid, data->extraPerkPoints);
 								}
 								else if (type == !SerializableDataType::kPlayerFirstSavedLevel)
 								{
 									RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} was level {} when their data was first serialized.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} was level {} when their data was first serialized.",
 										fid, data->firstSavedLevel);
 								}
 								else if (type == !SerializableDataType::kPlayerLevel)
 								{
 									RetrieveUInt32Data(a_intfc, data->level, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has saved level: {}.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has saved level: {}.",
 										fid, data->level);
 								}
 								else if (type == !SerializableDataType::kPlayerLevelXP)
 								{
 									RetrieveFloatData(a_intfc, data->levelXP, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has saved level XP: {}.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has saved level XP: {}.",
 										fid, data->levelXP);
 								}
 								else if (type == !SerializableDataType::kPlayerBaseHMSPointsList)
@@ -222,7 +221,7 @@ namespace ALYSLC
 									for (auto j = 0; j < 3; ++j)
 									{
 										RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has a base {} level of {} at first-saved level {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has a base {} level of {} at first-saved level {}.",
 											fid, j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
 											data->hmsBasePointsList[j],
 											data->firstSavedLevel);
@@ -233,7 +232,7 @@ namespace ALYSLC
 									for (auto j = 0; j < 3; ++j)
 									{
 										RetrieveFloatData(a_intfc, data->hmsPointIncreasesList[j], type);
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has increased {} by {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has increased {} by {}.",
 											fid, j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
 											data->hmsPointIncreasesList[j]);
 									}
@@ -243,7 +242,7 @@ namespace ALYSLC
 									for (auto j = 0; j < Skill::kTotal; ++j)
 									{
 										RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has base skill {} of {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has base skill {} of {}.",
 											fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
 											data->skillBaseLevelsList[j]);
 									}
@@ -253,7 +252,7 @@ namespace ALYSLC
 									for (auto j = 0; j < Skill::kTotal; ++j)
 									{
 										RetrieveFloatData(a_intfc, data->skillLevelIncreasesList[j], type);
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has increased skill {} by {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has increased skill {} by {}.",
 											fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
 											data->skillLevelIncreasesList[j]);
 									}
@@ -263,7 +262,7 @@ namespace ALYSLC
 									for (auto j = 0; j < Skill::kTotal; ++j)
 									{
 										RetrieveFloatData(a_intfc, data->skillXPList[j], type);
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has gained {} XP for skill {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has gained {} XP for skill {}.",
 											fid, data->skillXPList[j], glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j)));
 									}
 								}
@@ -272,7 +271,7 @@ namespace ALYSLC
 									// Read in all saved equipped forms.
 									uint32_t numEquippedForms = 0;
 									RetrieveUInt32Data(a_intfc, numEquippedForms, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.", fid, numEquippedForms);
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.", fid, numEquippedForms);
 
 									data->equippedForms.clear();
 									RE::FormID equippedFID = 0;
@@ -299,7 +298,7 @@ namespace ALYSLC
 											data->copiedMagic[i] = nullptr;
 										}
 
-										logger::debug("[SERIAL] Load: Player with FID 0x{:X} has copied magic form {} (0x{:X}) in slot {}.",
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has copied magic form {} (0x{:X}) in slot {}.",
 											fid, 
 											data->copiedMagic[i] ? data->copiedMagic[i]->GetName() : "NONE",
 											data->copiedMagic[i] ? data->copiedMagic[i]->formID : 0xDEAD,
@@ -318,7 +317,7 @@ namespace ALYSLC
 										{
 											RetrieveStringData(a_intfc, eventName, type, size);
 											data->cyclableEmoteIdleEvents[i] = eventName;
-											logger::debug("[SERIAL] Load: Player with FID 0x{:X}'s saved cyclable emote idle event {} is {}. String length: {}.", 
+											ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X}'s saved cyclable emote idle event {} is {}. String length: {}.", 
 												fid, i, eventName, size);
 										}
 									}
@@ -328,7 +327,7 @@ namespace ALYSLC
 									// Read in all unlocked perks.
 									uint32_t numUnlockedPerks = 0;
 									RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
-									logger::debug("[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
 										fid, numUnlockedPerks);
 
 									data->ClearUnlockedPerks();
@@ -343,10 +342,6 @@ namespace ALYSLC
 										data->InsertUnlockedPerk(perk);
 									}
 								}
-								else
-								{
-									logger::error("[SERIAL] ERR: Load: WHAT?! The mod author must've been careless again. Oh boy. No such serialized data type '{}'.", TypeToString(type));
-								}
 							}
 						}
 					}
@@ -355,12 +350,12 @@ namespace ALYSLC
 				// Set default data if not all data was retrieved successfully.
 				if (glob.serializablePlayerData.size() == 0)
 				{
-					logger::debug("[SERIAL] Load: First time retrieval. Setting default data for all players.");
+					ALYSLC::Log("[SERIAL] Load: First time retrieval. Setting default data for all players.");
 					SetDefaultRetrievedData(a_intfc);
 				}
 				else
 				{
-					logger::debug("[SERIAL] Load: Successfully retrieved serialized data for {} players from SKSE co-save.",
+					ALYSLC::Log("[SERIAL] Load: Successfully retrieved serialized data for {} players from SKSE co-save.",
 						ALYSLC_MAX_PLAYER_COUNT);
 				}
 
@@ -371,7 +366,6 @@ namespace ALYSLC
 				// to ensure that they can access their saved perks, even outside of co-op.
 				// Please note that if the mod is uninstalled, P1 will have to respec all their perks manually,
 				// as the function below will not fire to import all the saved perks.
-				logger::debug("[SERIAL] LOAD: Import saved perks for P1.");
 				GlobalCoopData::ImportUnlockedPerks(RE::PlayerCharacter::GetSingleton());
 			}
 		}
@@ -445,7 +439,7 @@ namespace ALYSLC
 		{
 			// Ensure no co-op session is active as the game reverts.
 
-			logger::debug("[SERIAL] Revert: Stopping active co-op session.");
+			ALYSLC::Log("[SERIAL] Revert: Stopping active co-op session.");
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
 				GlobalCoopData::TeardownCoopSession(true);
@@ -455,7 +449,7 @@ namespace ALYSLC
 		void Save(SKSE::SerializationInterface* a_intfc)
 		{
 			// Save all our co-op serializable data to the SKSE co-save.
-			logger::debug("[SERIAL] Save: Writing all serializable data to SKSE co-save.");
+			ALYSLC::Log("[SERIAL] Save: Writing all serializable data to SKSE co-save.");
 			if (!a_intfc)
 			{
 				logger::error("[SERIAL] ERR: Save: Could not get serialization interface ({}), co-op session active ({}). Cannot serialize co-op data.",
@@ -465,10 +459,9 @@ namespace ALYSLC
 			
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			logger::debug("[SERIAL] Save: Lock: 0x{:X}.", hash);
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
-				logger::debug("[SERIAL] Save: Lock obtained: 0x{:X}.", hash);
+				ALYSLC::Log("[SERIAL] Save: Lock obtained. (0x{:X})", hash);
 
 				//=========================================
 				// Each player's saved data.
@@ -486,7 +479,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize AVAIL PERK POINTS for player with FID 0x{:X}: {}.", fid, data->availablePerkPoints);
+						ALYSLC::Log("[SERIAL] Save: Serialize AVAIL PERK POINTS for player with FID 0x{:X}: {}.", fid, data->availablePerkPoints);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerAvailablePerkPoints);
 						SerializePlayerUInt32Data(a_intfc, data->availablePerkPoints, !SerializableDataType::kPlayerAvailablePerkPoints);
 					}
@@ -502,7 +495,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize USED PERK POINTS for player with FID 0x{:X}: {}.", fid, data->usedPerkPoints);
+						ALYSLC::Log("[SERIAL] Save: Serialize USED PERK POINTS for player with FID 0x{:X}: {}.", fid, data->usedPerkPoints);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerUsedPerkPoints);
 						SerializePlayerUInt32Data(a_intfc, data->usedPerkPoints, !SerializableDataType::kPlayerUsedPerkPoints);
 					}
@@ -518,7 +511,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize SHARED PERKS UNLOCKED for player with FID 0x{:X}: {}.", fid, data->sharedPerksUnlocked);
+						ALYSLC::Log("[SERIAL] Save: Serialize SHARED PERKS UNLOCKED for player with FID 0x{:X}: {}.", fid, data->sharedPerksUnlocked);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerSharedPerksUnlocked);
 						SerializePlayerUInt32Data(a_intfc, data->sharedPerksUnlocked, !SerializableDataType::kPlayerSharedPerksUnlocked);
 					}
@@ -534,7 +527,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize EXTRA PERK POINTS for player with FID 0x{:X}: {}.", fid, data->extraPerkPoints);
+						ALYSLC::Log("[SERIAL] Save: Serialize EXTRA PERK POINTS for player with FID 0x{:X}: {}.", fid, data->extraPerkPoints);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerExtraPerkPoints);
 						SerializePlayerUInt32Data(a_intfc, data->extraPerkPoints, !SerializableDataType::kPlayerExtraPerkPoints);
 					}
@@ -550,7 +543,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X}: {}.", fid, data->firstSavedLevel);
+						ALYSLC::Log("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X}: {}.", fid, data->firstSavedLevel);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerFirstSavedLevel);
 						SerializePlayerUInt32Data(a_intfc, data->firstSavedLevel, !SerializableDataType::kPlayerFirstSavedLevel);
 					}
@@ -566,7 +559,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize LVL for player with FID 0x{:X}: {}.", fid, data->level);
+						ALYSLC::Log("[SERIAL] Save: Serialize LVL for player with FID 0x{:X}: {}.", fid, data->level);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerLevel);
 						SerializePlayerUInt32Data(a_intfc, data->level, !SerializableDataType::kPlayerLevel);
 					}
@@ -582,7 +575,7 @@ namespace ALYSLC
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						logger::debug("[SERIAL] Save: Serialize LVL XP for player with FID 0x{:X}: {}.", fid, data->levelXP);
+						ALYSLC::Log("[SERIAL] Save: Serialize LVL XP for player with FID 0x{:X}: {}.", fid, data->levelXP);
 						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerLevelXP);
 						SerializePlayerFloatData(a_intfc, data->levelXP, !SerializableDataType::kPlayerLevelXP);
 					}
@@ -591,7 +584,7 @@ namespace ALYSLC
 				// HMS BASE POINTS LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerBaseHMSPointsList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerBaseHMSPointsList));
 				}
 				else
@@ -604,14 +597,14 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numEntries; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize HMS BASE POINTS LIST for player with FID 0x{:X}: Base {} is {}.", 
+								ALYSLC::Log("[SERIAL] Save: Serialize HMS BASE POINTS LIST for player with FID 0x{:X}: Base {} is {}.", 
 									fid, j == 0 ? "health" : j == 1 ? "magicka" : "stamina", data->hmsBasePointsList[j]);
 								SerializePlayerFloatData(a_intfc, data->hmsBasePointsList[j], !SerializableDataType::kPlayerBaseHMSPointsList);
 							}
 						}
 						else
 						{
-							logger::error("[SERIAL] ERR: Save: HMS BASE POINTS LIST is empty for player with FID 0x{:X}. Writing 100 as base value for health, magicka, and stamina.", fid);
+							logger::error("[SERIAL] ERR: Save: HMS BASE POINTS LIST is empty for player with FID 0x{:X}. Saving 100 as base value for health, magicka, and stamina.", fid);
 							for (uint8_t j = 0; j < 3; ++j)
 							{
 								SerializePlayerFloatData(a_intfc, 100.0f, !SerializableDataType::kPlayerBaseHMSPointsList);
@@ -623,7 +616,7 @@ namespace ALYSLC
 				// HMS INC LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerHMSPointsIncList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerHMSPointsIncList));
 				}
 				else
@@ -636,14 +629,14 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numEntries; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize HMS INC LIST for player with FID 0x{:X}: {} increment is {}.", 
+								ALYSLC::Log("[SERIAL] Save: Serialize HMS INC LIST for player with FID 0x{:X}: {} increment is {}.", 
 									fid, j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina", data->hmsPointIncreasesList[j]);
 								SerializePlayerFloatData(a_intfc, data->hmsPointIncreasesList[j], !SerializableDataType::kPlayerHMSPointsIncList);
 							}
 						}
 						else
 						{
-							logger::error("[SERIAL] ERR: Save: HMS INC LIST is empty for player with FID 0x{:X}. Writing 0 point increases for health, magicka, and stamina.", fid);
+							logger::error("[SERIAL] ERR: Save: HMS INC LIST is empty for player with FID 0x{:X}. Saving 0 point increases for health, magicka, and stamina.", fid);
 							for (uint8_t j = 0; j < 3; ++j)
 							{
 								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerHMSPointsIncList);
@@ -655,7 +648,7 @@ namespace ALYSLC
 				// BASE SKILL LVL LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerBaseSkillLevelsList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerBaseSkillLevelsList));
 				}
 				else
@@ -670,7 +663,7 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.", 
+								ALYSLC::Log("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.", 
 									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillBaseLevelsList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillBaseLevelsList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
 							}
@@ -684,7 +677,7 @@ namespace ALYSLC
 								uint8_t numSkillLvlEntries = skillBaseList.size();
 								for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 								{
-									logger::debug("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.",
+									ALYSLC::Log("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.",
 										fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), skillBaseList[j]);
 									SerializePlayerFloatData(a_intfc, skillBaseList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
 								}
@@ -705,7 +698,7 @@ namespace ALYSLC
 				// SKILL LVL INC LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerSkillIncreasesList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerSkillIncreasesList));
 				}
 				else
@@ -720,14 +713,14 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numSkillIncEntries; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize SKILL LVL INC LIST for player with FID 0x{:X}: Skill {} has increment {}.",
+								ALYSLC::Log("[SERIAL] Save: Serialize SKILL LVL INC LIST for player with FID 0x{:X}: Skill {} has increment {}.",
 									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillLevelIncreasesList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillLevelIncreasesList[j], !SerializableDataType::kPlayerSkillIncreasesList);
 							}
 						}
 						else
 						{
-							logger::error("[SERIAL] ERR: Save: SKILL LVL INC LIST is empty for player 0x{:X}. Writing 0 level increase for each skill.", fid);
+							logger::error("[SERIAL] ERR: Save: SKILL LVL INC LIST is empty for player 0x{:X}. Saving 0 level increase for each skill.", fid);
 							for (uint8_t j = 0; j < numSkillIncEntries; ++j)
 							{
 								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerSkillIncreasesList);
@@ -747,13 +740,13 @@ namespace ALYSLC
 									{
 										if (fid2 != fid)
 										{
-											logger::debug("[SERIAL] Save: Re-serialize BASE LVL for player with FID 0x{:X}: {}.", fid2, data2->firstSavedLevel);
+											ALYSLC::Log("[SERIAL] Save: Re-serialize BASE LVL for player with FID 0x{:X}: {}.", fid2, data2->firstSavedLevel);
 											SerializePlayerUInt32Data(a_intfc, fid2, !SerializableDataType::kPlayerFirstSavedLevel);
 											SerializePlayerUInt32Data(a_intfc, data2->firstSavedLevel, !SerializableDataType::kPlayerFirstSavedLevel);
 											continue;
 										}
 
-										logger::debug("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X} as 0 to force AV auto-scaling.", fid2);
+										ALYSLC::Log("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X} as 0 to force AV auto-scaling.", fid2);
 										SerializePlayerUInt32Data(a_intfc, fid2, !SerializableDataType::kPlayerFirstSavedLevel);
 										SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerFirstSavedLevel);
 									}
@@ -766,7 +759,7 @@ namespace ALYSLC
 				// SKILL XP LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerSkillXPList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerSkillXPList));
 				}
 				else
@@ -781,14 +774,14 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numSkillXPEntries; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize SKILL XP LIST for player with FID 0x{:X}: Skill {} has {} XP.",
+								ALYSLC::Log("[SERIAL] Save: Serialize SKILL XP LIST for player with FID 0x{:X}: Skill {} has {} XP.",
 									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillXPList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillXPList[j], !SerializableDataType::kPlayerSkillXPList);
 							}
 						}
 						else
 						{
-							logger::error("[SERIAL] ERR: Save: SKILL XP LIST is empty for player with FID 0x{:X}. Writing 0 XP for each skill, which will reset skill XP levels to P1's corresponding skill XPs on load.", fid);
+							logger::error("[SERIAL] ERR: Save: SKILL XP LIST is empty for player with FID 0x{:X}. Saving 0 XP for each skill, which will reset skill XP levels to P1's corresponding skill XPs on load.", fid);
 							for (uint8_t j = 0; j < numSkillXPEntries; ++j)
 							{
 								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerSkillXPList);
@@ -800,7 +793,7 @@ namespace ALYSLC
 				// EQUIPPED OBJECTS
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerEquippedObjectsList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerEquippedObjectsList));
 				}
 				else
@@ -811,7 +804,7 @@ namespace ALYSLC
 						// Write number of equipped objects first, as this varies from save to save.
 						uint32_t numEquippedForms = data->equippedForms.size();
 						SerializePlayerUInt32Data(a_intfc, numEquippedForms, !SerializableDataType::kPlayerEquippedObjectsList);
-						logger::debug("[SERIAL] Save: Serialize EQUIPPED OBJECTS LIST for 0x{:X}. Num equipped forms: {}.", fid, numEquippedForms);
+						ALYSLC::Log("[SERIAL] Save: Serialize EQUIPPED OBJECTS LIST for 0x{:X}. Num equipped forms: {}.", fid, numEquippedForms);
 
 						// Write each equipped form's FID next.
 						if (numEquippedForms > 0)
@@ -821,7 +814,7 @@ namespace ALYSLC
 								const auto form = data->equippedForms[j];
 								if (form)
 								{
-									logger::debug("[SERIAL] Save: Serialize EQUIPPED OBJECT {} (0x{:X}) for player with FID 0x{:X}.",
+									ALYSLC::Log("[SERIAL] Save: Serialize EQUIPPED OBJECT {} (0x{:X}) for player with FID 0x{:X}.",
 										form->GetName(), form->formID, fid);
 									SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerEquippedObjectsList);
 								}
@@ -838,7 +831,7 @@ namespace ALYSLC
 				// COPIED SPELLS PAIR
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerCopiedMagicList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerCopiedMagicList));
 				}
 				else
@@ -852,7 +845,7 @@ namespace ALYSLC
 						{
 							magicFID = copiedMagic[i] && copiedMagic[i]->Is(RE::FormType::Spell, RE::FormType::Shout) ? copiedMagic[i]->formID : 0;
 							SerializePlayerUInt32Data(a_intfc, magicFID, !SerializableDataType::kPlayerCopiedMagicList);
-							logger::debug("[SERIAL] Save: Player with FID 0x{:X} has COPIED SPELL form {} (0x{:X}) in slot {}.",
+							ALYSLC::Log("[SERIAL] Save: Player with FID 0x{:X} has COPIED SPELL form {} (0x{:X}) in slot {}.",
 								fid,
 								copiedMagic[i] ? copiedMagic[i]->GetName() : "NONE",
 								copiedMagic[i] ? copiedMagic[i]->formID : 0xDEAD,
@@ -864,7 +857,7 @@ namespace ALYSLC
 				// CYCLABLE EMOTE IDLE EVENTS LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerEmoteIdleEvents, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerEmoteIdleEvents));
 				}
 				else
@@ -881,7 +874,7 @@ namespace ALYSLC
 							size = cyclableEmoteIdleEvents[i].length() * sizeof(char) + 1;
 							SerializePlayerUInt32Data(a_intfc, size, !SerializableDataType::kPlayerEmoteIdleEvents);
 							SerializePlayerStringData(a_intfc, cyclableEmoteIdleEvents[i], !SerializableDataType::kPlayerEmoteIdleEvents);
-							logger::debug("[SERIAL] Save: Player with FID 0x{:X} has cyclable emote idle event {} (size {}) in slot {}.",
+							ALYSLC::Log("[SERIAL] Save: Player with FID 0x{:X} has cyclable emote idle event {} (size {}) in slot {}.",
 								fid, cyclableEmoteIdleEvents[i], size, i);
 						}
 					}
@@ -890,7 +883,7 @@ namespace ALYSLC
 				// UNLOCKED PERKS LIST
 				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerUnlockedPerksList, !SerializableDataType::kSerializationVersion))
 				{
-					logger::error("[SERIAL] ERR: Save: Could open record of type {}.",
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerUnlockedPerksList));
 				}
 				else
@@ -901,7 +894,7 @@ namespace ALYSLC
 						// Write number of unlocked perks first, as this varies from save to save.
 						const auto& unlockedPerksList = data->GetUnlockedPerksList();
 						uint32_t numUnlockedPerks = unlockedPerksList.size();
-						logger::debug("[SERIAL] Save: Serialize UNLOCKED PERKS LIST for 0x{:X}. Number of unlocked perks: {}.", fid, numUnlockedPerks);
+						ALYSLC::Log("[SERIAL] Save: Serialize UNLOCKED PERKS LIST for 0x{:X}. Number of unlocked perks: {}.", fid, numUnlockedPerks);
 						SerializePlayerUInt32Data(a_intfc, numUnlockedPerks, !SerializableDataType::kPlayerUnlockedPerksList);
 
 						// Serialize the FID of each unlocked perk next.
@@ -909,7 +902,7 @@ namespace ALYSLC
 						{
 							for (uint8_t j = 0; j < numUnlockedPerks; ++j)
 							{
-								logger::debug("[SERIAL] Save: Serialize UNLOCKED PERK {} (0x{:X}) for player with FID 0x{:X}.",
+								ALYSLC::Log("[SERIAL] Save: Serialize UNLOCKED PERK {} (0x{:X}) for player with FID 0x{:X}.",
 									unlockedPerksList[j]->GetName(), unlockedPerksList[j]->formID, fid);
 								SerializePlayerUInt32Data(a_intfc, unlockedPerksList[j]->formID, !SerializableDataType::kPlayerUnlockedPerksList);
 							}
@@ -980,13 +973,11 @@ namespace ALYSLC
 			// Set default data to write to the SKSE co-save. 
 			// Done when no data has been serialized yet or when the serialization interface is unavailable.
 
-			logger::debug("[SERIAL] SetDefaultRetrievedData.");
+			ALYSLC::Log("[SERIAL] SetDefaultRetrievedData.");
 			RE::PlayerCharacter* p1 = RE::PlayerCharacter::GetSingleton();
 			RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 			if (!dataHandler || !p1)
 			{
-				logger::error("[SERIAL] ERR: SetDefaultRetrievedData: Could not get data handler: {}, P1: {} to set default retrieved data.",
-					(bool)!dataHandler, (bool)!p1);
 				return;
 			}
 			
@@ -1008,7 +999,7 @@ namespace ALYSLC
 			uint32_t sharedPerksUnlocked = 0;
 
 			float p1Level = p1->GetLevel();
-			logger::debug("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
+			ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
 
 			// Set skill base AVs.
 			skillBaseLvlList = Util::GetActorSkillAVs(p1);
@@ -1020,7 +1011,7 @@ namespace ALYSLC
 				if (glob.SKILL_TO_AV_MAP.contains(currentSkill))
 				{
 					auto currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
-					logger::debug("[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", std::format("{}", currentAV), skillBaseLvlList[i]);
+					ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", std::format("{}", currentAV), skillBaseLvlList[i]);
 				}
 			}
 
@@ -1032,7 +1023,7 @@ namespace ALYSLC
 				skillXPList[i] = p1->skills->data->skills[i].xp;
 
 				// REMOVE when done debugging.
-				logger::debug("[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.", std::format("{}", currentAV), skillXPList[i]);
+				ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.", std::format("{}", currentAV), skillXPList[i]);
 			}
 
 			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
@@ -1079,7 +1070,7 @@ namespace ALYSLC
 			if (const auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
 			{
 				auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
-				logger::debug("[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1);
+				ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1);
 				coopPlayers[0] = dataHandler->LookupForm(0x22FD, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
 				coopPlayers[1] = dataHandler->LookupForm(0x22FE, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
 				coopPlayers[2] = dataHandler->LookupForm(0x22FF, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
@@ -1140,11 +1131,11 @@ namespace ALYSLC
 				}
 				else
 				{
-					logger::error("[SERIAL] ERR: SetDefaultRetrievedData: Could not get __CoopCharacter{}. Game will likely crash on summon.", i + 1);
+					logger::error("[SERIAL] ERR: SetDefaultRetrievedData: Could not get __CoopCharacter{}. Game will likely crash when summoning other players.", i + 1);
 				}
 			}
 
-			logger::debug("[SERIAL] SetDefaultRetrievedData: Default data set and ready to serialize!");
+			ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: Default data set and ready to serialize!");
 		}
 
 		// Credits to po3 for the decode function from here:

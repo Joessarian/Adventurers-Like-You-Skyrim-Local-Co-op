@@ -302,7 +302,7 @@ namespace ALYSLC
 		{
 			// If arms rotation is disabled, will draw weapons/magic/fists on release instead of attacking.
 			bool drawn = a_p->coopActor->IsWeaponDrawn();
-			if (!Settings::bRotateArmsWhenSheathed && !drawn && !a_p->isTransformed)
+			if (!drawn && !a_p->isTransformed)
 			{
 				return true;
 			}
@@ -349,7 +349,7 @@ namespace ALYSLC
 		{
 			// If arms rotation is disabled, will draw weapons/magic/fists on release instead of attacking.
 			bool drawn = a_p->coopActor->IsWeaponDrawn();
-			if (!Settings::bRotateArmsWhenSheathed && !drawn && !a_p->isTransformed)
+			if (!drawn && !a_p->isTransformed)
 			{
 				return true;
 			}
@@ -546,17 +546,27 @@ namespace ALYSLC
 
 			bool tkDodging = false;
 			a_p->coopActor->GetGraphVariableBool("bIsDodging", tkDodging);
+			auto charController = a_p->coopActor->GetCharController();
 			// Can't dodge if already dodging, airborne, mounted, sneaking while not transformed,
 			// blocking, swimming, flying, or not having enough stamina.
 			return 
 			(
 				(!tkDodging && !a_p->mm->isDashDodging) && 
-				(!a_p->mm->isAirborneWhileJumping || a_p->mm->isParagliding) &&
+				(
+					(a_p->mm->isParagliding) || 
+					(
+						!a_p->mm->isAirborneWhileJumping && 
+						charController && charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
+						charController->surfaceInfo.supportedState.all(RE::hkpSurfaceInfo::SupportedState::kSupported)
+					)
+				) &&
 				(!a_p->coopActor->IsSneaking() || a_p->isTransformed) && 
-				(!a_p->coopActor->IsOnMount() && 
-				!a_p->pam->IsPerforming(InputAction::kBlock) &&
-				!a_p->coopActor->IsSwimming() && 
-				!a_p->coopActor->IsFlying()) &&
+				(
+					!a_p->coopActor->IsOnMount() && 
+					!a_p->pam->IsPerforming(InputAction::kBlock) &&
+					!a_p->coopActor->IsSwimming() && 
+					!a_p->coopActor->IsFlying()
+				) &&
 				(HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kDodge))
 			);
 		}
@@ -650,13 +660,14 @@ namespace ALYSLC
 
 		bool QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
+			return true;
 			// Cast if QS contains a spell, the instant caster is available, and the player has enough magicka.
-			return 
+			/*return 
 			(
 				a_p->em->equippedForms[!EquipIndex::kQuickSlotSpell] &&
 				a_p->coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant) &&
 				HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kQuickSlotCast)
-			); 
+			); */
 		}
 
 		bool QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p)
@@ -947,7 +958,7 @@ namespace ALYSLC
 		{
 			// If arms rotation is disabled, will draw weapons/magic/fists on release instead of attacking.
 			bool drawn = a_p->coopActor->IsWeaponDrawn();
-			if (!Settings::bRotateArmsWhenSheathed && !drawn && !a_p->isTransformed)
+			if (!drawn && !a_p->isTransformed)
 			{
 				return true;
 			}
@@ -1088,19 +1099,6 @@ namespace ALYSLC
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->controllerID);
-
-			// REMOVE when done debugging.
-			logger::debug("[PAFH] PlayerCanOpenMenu: {} can open co-op menu: {} (transformed: {}, equipping: {}, unequipping: {}, supported menu open: {}), menu CID/CID: {}, {}",
-				a_p->coopActor->GetName(),
-				(!glob.supportedMenuOpen.load() || canControlMenus) &&
-				(Util::IsRaceWithTransformation(a_p->coopActor->race) || (!isEquipping && !isUnequipping)),
-				Util::IsRaceWithTransformation(a_p->coopActor->race), 
-				isEquipping, 
-				isUnequipping,
-				glob.supportedMenuOpen.load(),
-				glob.menuCID, 
-				a_p->controllerID);
-
 			// No supported menus open or can obtain menu control,
 			// and either a non-playable race, or not (un)equipping as a playable race.
 			// Non-playable races can still access menus which do not allow them to equip items.
@@ -1992,8 +1990,27 @@ namespace ALYSLC
 				// The player will be able to dodge/roll at most once
 				// with full stamina and worn weight equal to carryweight
 				// and at most 10 times with full stamina and no worn weight.
-				float carryWeightRatio = a_p->em->GetWornWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight);
-				cost = a_p->pam->baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
+				float carryWeightRatioMult = 
+				(
+					0.1f +
+					min
+					(
+						0.9f, 
+						sqrtf
+						(
+							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
+						)
+					)
+				);
+				// Dash dodging costs more when the LS is displaced further from center (longer dodge).
+				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
+				float dashDodgeCommitmentMult = 
+				(
+					lsMag == 0.0f || ALYSLC::TKDodgeCompat::g_tkDodgeInstalled ? 
+					1.0f : 
+					lsMag
+				);
+				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
 				break;
 			}
 			case InputAction::kBash:
@@ -2401,8 +2418,8 @@ namespace ALYSLC
 					bool isQuestItem = 
 					{
 						a_refrPtr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
-						a_refrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias) ||
-						a_refrPtr->extraList.HasType(RE::ExtraDataType::kTextDisplayData)
+						a_refrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias) /*||
+						a_refrPtr->extraList.HasType(RE::ExtraDataType::kTextDisplayData)*/
 					};
 					// Move shared items to P1 for ease of access, especially if they are quest items.
 					shouldLootWithP1 = isQuestItem || Util::IsPartyWideItem(baseObj);
@@ -2800,15 +2817,6 @@ namespace ALYSLC
 						}
 
 						performedKillmove = Util::PlayIdle(killmoveIdle, a_p->coopActor.get(), a_targetActor) && a_p->coopActor->IsInKillMove();
-
-						// REMOVE when done debugging.
-						logger::debug("[PAFH] {}: PlayKillmoveFromList: attempt {}: {}, index: {}, rand: {}, chosen. Played idle. Success: {}, killmove timers: {}, {}",
-							a_p->coopActor->GetName(), killmovesAttempted,
-							killmoveIdle ? killmoveIdle->formEditorID : "NONE",
-							killmoveIndex, rand, performedKillmove,
-							a_p->coopActor->currentProcess->middleHigh->killMoveTimer,
-							a_targetActor->currentProcess->middleHigh->killMoveTimer);
-
 						// Update killmove index and num performed for the next iteration.
 						killmoveIndex = killmoveIndex + 1 == a_killmoveIdlesList.size() ? 0 : killmoveIndex + 1;
 						++killmovesAttempted;
@@ -2820,14 +2828,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						// REMOVE when done debugging.
-						logger::debug("[PAFH] {}: PlayKillmoveFromList: attempt {}: {}, index: {}, rand: {}, chosen. Did not play idle. Is decap: {}, is backstab: {}, correct facing dir: {}",
-							a_p->coopActor->GetName(), killmovesAttempted,
-							killmoveIdle ? killmoveIdle->formEditorID : "NONE",
-							killmoveIndex, rand,
-							isDecap, isBackstab,
-							facingCorrectDir);
-
 						// Move on.
 						killmoveIndex = killmoveIndex + 1 == a_killmoveIdlesList.size() ? 0 : killmoveIndex + 1;
 						++killmovesAttempted;
@@ -2930,8 +2930,24 @@ namespace ALYSLC
 				}
 				else
 				{
-					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get());
-					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get());
+					// Unarmed right power attack fails to trigger via action command at times if using MCO.
+					// Play the corresponding MCO idle instead.
+					if (ALYSLC::MCOCompat::g_mcoInstalled) 
+					{
+						if (a_p->em->IsUnarmed()) 
+						{
+							Util::PlayIdle("ADXP_NPCPowerAttack_H2H", a_p->coopActor.get());
+						}
+						else
+						{
+							Util::PlayIdle("ADXP_NPCPowerAttack", a_p->coopActor.get());
+						}
+					}
+					else
+					{
+						Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get());
+						Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get());
+					}
 				}
 			}
 		}
@@ -3002,7 +3018,6 @@ namespace ALYSLC
 							// Toggle paraglide state for co-op companion players.
 							if (!a_p->isPlayer1)
 							{
-								logger::debug("[PAFH] {} is requesting to {} paragliding!", a_p->coopActor->GetName(), a_p->mm->isParagliding ? "stop" : "start");
 								a_p->mm->shouldParaglide = !a_p->mm->isParagliding;
 							}
 						}
@@ -4072,10 +4087,13 @@ namespace ALYSLC
 
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Cast QS spell if one is equipped.
+			// Cast QS spell if one is equipped, the player's instant caster is available,
+			// and if the player has enough magicka to cast the spell.
 
 			auto quickSlotSpell = a_p->em->quickSlotSpell;
-			if (!quickSlotSpell)
+			if (!quickSlotSpell ||
+				!a_p->coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant) ||
+				!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kQuickSlotCast))
 			{
 				return;
 			}
@@ -4138,7 +4156,6 @@ namespace ALYSLC
 			{
 				if (pam->reqSpecialAction == SpecialActionType::kBlock)
 				{				
-					logger::debug("[PAFH] About to perform special action {} for {}", pam->reqSpecialAction, a_p->coopActor->GetName());
 					// On press and release. Do not clear here.
 					HelperFuncs::BlockInstant(a_p, true);
 				}
@@ -4244,8 +4261,6 @@ namespace ALYSLC
 						const auto& grabbingP = *isGrabbedIter;
 						grabbingP->tm->rmm->ClearRefr(a_p->coopActor->GetHandle());
 					}
-
-					logger::debug("[PAFH] {}: Attempting to get up.", a_p->coopActor->GetName());
 
 					// Reset fall time and height before attempting to get up.
 					if (auto charController = a_p->coopActor->GetCharController(); charController)
@@ -4548,14 +4563,13 @@ namespace ALYSLC
 			{
 				// Check for dialogue control request and relinquish menu control to the requesting player.
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[PAFH] ChangeDialoguePlayer: {}: Try to lock: 0x{:X}.", a_p->coopActor->GetName(), hash);
 				{
 					std::unique_lock<std::mutex> lock(glob.moarm->reqDialogueControlMutex, std::try_to_lock);
 					if (lock)
 					{
 						if (glob.moarm->reqDialoguePlayerCID != -1)
 						{
-							logger::debug("[PAFH] ChangeDialoguePlayer: {}: Dialogue req CID lock obtained: 0x{:X}.",
+							ALYSLC::Log("[PAFH] ChangeDialoguePlayer: {}: Dialogue req CID lock obtained. (0x{:X})",
 								a_p->coopActor->GetName(), hash);
 							const auto& reqP = glob.coopPlayers[glob.moarm->reqDialoguePlayerCID];
 							// Teleport the other player to the speaker/this player before handing over dialogue control
@@ -4598,7 +4612,8 @@ namespace ALYSLC
 							}
 
 							// Notify both players.
-							reqP->tm->SetCrosshairMessageRequest(
+							reqP->tm->SetCrosshairMessageRequest
+							(
 								CrosshairMessageType::kGeneralNotification,
 								fmt::format("P{}: <font color=\"#E66100\">Now controlling dialogue</font>", reqP->playerID + 1),
 								{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
@@ -4609,25 +4624,19 @@ namespace ALYSLC
 							glob.moarm->reqDialoguePlayerCID = -1;
 						}
 					}
-					else
-					{
-						// REMOVE
-						logger::error("[PAFH] ERR: ChangeDialoguePlayer: {}: Failed to obtain lock for dialogue control CID.", a_p->coopActor->GetName());
-					}
 				}
 			}
 			else
 			{
 				// Submit request for menu control if there isn't one already.
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-				logger::debug("[PAFH] ChangeDialoguePlayer: {}: Try to lock: 0x{:X}.", a_p->coopActor->GetName(), hash);
 				{
 					std::unique_lock<std::mutex> lock(glob.moarm->reqDialogueControlMutex, std::try_to_lock);
 					if (lock)
 					{
 						if (glob.moarm->reqDialoguePlayerCID == -1)
 						{
-							logger::debug("[PAFH] ChangeDialoguePlayer: {}: Req CID NOT set and lock obtained: 0x{:X}. Set to {}.",
+							ALYSLC::Log("[PAFH] ChangeDialoguePlayer: {}: Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
 								a_p->coopActor->GetName(), hash, a_p->controllerID);
 
 							// Set requesting player CID.
@@ -4640,11 +4649,6 @@ namespace ALYSLC
 								Settings::fSecsBetweenDiffCrosshairMsgs
 							);
 						}
-					}
-					else
-					{
-						// REMOVE
-						logger::error("[PAFH] ERR: ChangeDialoguePlayer: {}: Failed to obtain lock for dialogue control CID.", a_p->coopActor->GetName());
 					}
 				}
 			}
@@ -4678,7 +4682,6 @@ namespace ALYSLC
 
 			if (glob.summoningMenuOpenGlob->value == 0.0f)
 			{
-				logger::debug("[PAFH] {}: CoopSummoningMenu: Sending open menu request.", a_p->coopActor->GetName());
 				glob.onSummoningMenuRequest.SendEvent();
 			}
 		}
@@ -4814,81 +4817,81 @@ namespace ALYSLC
 		{
 			// Currently, a speedmult-based dash dodge with I-frames has been implemented.
 			// This general-use dodge is almost always triggerable when the player is grounded or paragliding.
-			// TODO: Dodge support for popular dodge mods and an MCM option to choose either 
+			// TODO: Dodge support for other popular dodge mods and an MCM option to choose either 
 			// the mod's speedmult dodge or any installed custom dodge mod.
 			// TKDodge is partially supported (I-frames do not trigger as of now).
-			a_p->mm->isRequestingDashDodge = true;
-			 
-			// NOTE: Keeping commented out for now until more dodge mods are supported.
-			/*
-			// Stop sprinting before dodging.
-			Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSprintStop, a_p->coopActor.get());
-			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
-			// Targeting a world position or refr.
-			bool hasTarget = a_p->mm->shouldFaceTarget || (crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()));
-			const float& lsGameAngle = a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
-			// Facing to moving angle difference.
-			float facingToMovingAngDiff = 0.0f;
-			float angToTarget = Util::GetYawBetweenPositions(a_p->coopActor->data.location, a_p->tm->crosshairWorldPos);
-			if (hasTarget)
+			
+			if (ALYSLC::TKDodgeCompat::g_tkDodgeInstalled) 
 			{
-				// Face the target first.
-				a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(angToTarget);
-				if (a_p->mm->lsMoved)
+				// Stop sprinting before dodging.
+				Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSprintStop, a_p->coopActor.get());
+				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
+				// Targeting a world position or refr.
+				bool hasTarget = a_p->mm->shouldFaceTarget || (crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()));
+				const float& lsGameAngle = a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
+				// Facing to moving angle difference.
+				float facingToMovingAngDiff = 0.0f;
+				float angToTarget = Util::GetYawBetweenPositions(a_p->coopActor->data.location, a_p->tm->crosshairWorldPos);
+				if (hasTarget)
 				{
-					facingToMovingAngDiff = lsGameAngle - angToTarget;
+					// Face the target first.
+					a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(angToTarget);
+					if (a_p->mm->lsMoved)
+					{
+						facingToMovingAngDiff = lsGameAngle - angToTarget;
+					}
+					else
+					{
+						// Dodge backward if LS is not moved.
+						facingToMovingAngDiff = PI;
+					}
 				}
 				else
 				{
-					// Dodge backward if LS is not moved.
-					facingToMovingAngDiff = PI;
+					// Roll forwards when moving, backwards otherwise.
+					facingToMovingAngDiff = a_p->mm->lsMoved ? 0.0f : PI;
+				}
+
+				// Not working at the moment. Will investigate later.
+				a_p->coopActor->SetGraphVariableFloat("TKDR_IframeDuration", 0.3f);
+				if (HelperFuncs::MovingBackward(a_p, facingToMovingAngDiff))
+				{
+					a_p->coopActor->actorState1.movingBack = 1;
+					a_p->coopActor->actorState1.movingForward = 0;
+					a_p->coopActor->actorState1.movingLeft = 0;
+					a_p->coopActor->actorState1.movingRight = 0;
+					a_p->coopActor->NotifyAnimationGraph("TKDodgeBack");
+				}
+				else if (HelperFuncs::MovingForward(a_p, facingToMovingAngDiff))
+				{
+					a_p->coopActor->actorState1.movingBack = 0;
+					a_p->coopActor->actorState1.movingForward = 1;
+					a_p->coopActor->actorState1.movingLeft = 0;
+					a_p->coopActor->actorState1.movingRight = 0;
+					a_p->coopActor->NotifyAnimationGraph("TKDodgeForward");
+				}
+				else if (HelperFuncs::MovingLeft(a_p, facingToMovingAngDiff))
+				{
+					a_p->coopActor->actorState1.movingBack = 0;
+					a_p->coopActor->actorState1.movingForward = 0;
+					a_p->coopActor->actorState1.movingLeft = 1;
+					a_p->coopActor->actorState1.movingRight = 0;
+					a_p->coopActor->NotifyAnimationGraph("TKDodgeLeft");
+				}
+				else if (HelperFuncs::MovingRight(a_p, facingToMovingAngDiff))
+				{
+					a_p->coopActor->actorState1.movingBack = 0;
+					a_p->coopActor->actorState1.movingForward = 0;
+					a_p->coopActor->actorState1.movingLeft = 0;
+					a_p->coopActor->actorState1.movingRight = 1;
+					a_p->coopActor->NotifyAnimationGraph("TKDodgeRight");
 				}
 			}
 			else
 			{
-				// Roll forwards when moving, backwards otherwise.
-				facingToMovingAngDiff = a_p->mm->lsMoved ? 0.0f : PI;
+				// Default to dash dodge.
+				a_p->mm->isRequestingDashDodge = true;
 			}
-
-			// Not working at the moment. Will investigate later.
-			a_p->coopActor->SetGraphVariableFloat("TKDR_IframeDuration", 0.3f);
-			if (HelperFuncs::MovingBackward(a_p, facingToMovingAngDiff))
-			{
-				a_p->coopActor->actorState1.movingBack = 1;
-				a_p->coopActor->actorState1.movingForward = 0;
-				a_p->coopActor->actorState1.movingLeft = 0;
-				a_p->coopActor->actorState1.movingRight = 0;
-				logger::debug("[PAFH] {}: TKDodge backward.", a_p->coopActor->GetName());
-				a_p->coopActor->NotifyAnimationGraph("TKDodgeBack");
-			}
-			else if (HelperFuncs::MovingForward(a_p, facingToMovingAngDiff))
-			{
-				a_p->coopActor->actorState1.movingBack = 0;
-				a_p->coopActor->actorState1.movingForward = 1;
-				a_p->coopActor->actorState1.movingLeft = 0;
-				a_p->coopActor->actorState1.movingRight = 0;
-				logger::debug("[PAFH] {}: TKDodge forward.", a_p->coopActor->GetName());
-				a_p->coopActor->NotifyAnimationGraph("TKDodgeForward");
-			}
-			else if (HelperFuncs::MovingLeft(a_p, facingToMovingAngDiff))
-			{
-				a_p->coopActor->actorState1.movingBack = 0;
-				a_p->coopActor->actorState1.movingForward = 0;
-				a_p->coopActor->actorState1.movingLeft = 1;
-				a_p->coopActor->actorState1.movingRight = 0;
-				logger::debug("[PAFH] {}: TKDodge left.", a_p->coopActor->GetName());
-				a_p->coopActor->NotifyAnimationGraph("TKDodgeLeft");
-			}
-			else if (HelperFuncs::MovingRight(a_p, facingToMovingAngDiff))
-			{
-				a_p->coopActor->actorState1.movingBack = 0;
-				a_p->coopActor->actorState1.movingForward = 0;
-				a_p->coopActor->actorState1.movingLeft = 0;
-				a_p->coopActor->actorState1.movingRight = 1;
-				logger::debug("[PAFH] {}: TKDodge right.", a_p->coopActor->GetName());
-				a_p->coopActor->NotifyAnimationGraph("TKDodgeRight");
-			}
-			*/
 		}
 
 		void FaceTarget(const std::shared_ptr<CoopPlayer>& a_p)
@@ -5020,7 +5023,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else //if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -5043,7 +5046,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else //if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -5066,7 +5069,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else //if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -5279,7 +5282,6 @@ namespace ALYSLC
 					else
 					{
 						// Quick Stats not bound -> open UIExtensions stats menu instead.
-						logger::debug("[PAFH] {}: StatsMenu: Sending open menu request.", a_p->coopActor->GetName());
 						glob.onCoopHelperMenuRequest.SendEvent(a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kStats);
 					}
 				}
@@ -5300,7 +5302,6 @@ namespace ALYSLC
 								auto levelSystemQuest = RE::TESForm::LookupByID(0x10AA2)->As<RE::TESQuest>();
 								if (levelSystemQuest)
 								{
-									logger::debug("[PAFH] StatsMenu: got mcm level system quest.");
 									// Find player alias.
 									RE::BGSBaseAlias* playerAlias = nullptr;
 									for (const auto alias : levelSystemQuest->aliases) 
@@ -5314,28 +5315,21 @@ namespace ALYSLC
 
 									if (playerAlias && vm->GetObjectHandlePolicy()) 
 									{
-										logger::debug("[PAFH] StatsMenu: got player alias.");
 										auto handle = vm->GetObjectHandlePolicy()->GetHandleForObject(playerAlias->GetVMTypeID(), playerAlias);
 										RE::BSTSmartPointer<RE::BSScript::Object> objectPtr;
 										vm->FindBoundObject(handle, "_00E_Game_SkillmenuSC", objectPtr);
 										if (objectPtr && objectPtr.get())
 										{
-											logger::debug("[PAFH] StatsMenu: got skill menu script from player alias.");
 											auto heroMenuDXSCVar = objectPtr->GetVariable("iHeroMenuKeycode");
 											if (heroMenuDXSCVar)
 											{
 												uint32_t heroMenuDXSC = heroMenuDXSCVar->GetUInt();
-												logger::debug("[PAFH] StatsMenu: got dxsc for Hero menu: {}.", heroMenuDXSC);
 												Util::SendButtonEvent(RE::INPUT_DEVICE::kKeyboard, "HeroMenu"sv, heroMenuDXSC, 1.0f, 0.0f, true, false);
 												Util::SendButtonEvent(RE::INPUT_DEVICE::kKeyboard, "HeroMenu"sv, heroMenuDXSC, 0.0f, 1.0f, true, false);
 											}
 										}
 									}
 									
-								}
-								else
-								{
-									logger::warn("[PAFH] StatsMenu: could not find level system quest.");
 								}
 							}
 						}
@@ -5608,8 +5602,7 @@ namespace ALYSLC
 						bool isQuestItem = 
 						{
 							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
-							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias) ||
-							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kTextDisplayData)
+							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
 						};
 
 						// Unread skill/spell books are read right away by player 1 here, 
@@ -5647,7 +5640,8 @@ namespace ALYSLC
 						// Attempt to mount.
 						a_p->SetTargetedMount(asActor->GetHandle());
 						glob.moarm->InsertRequest(a_p->controllerID, InputAction::kActivate, SteadyClock::now(), "", asActor->GetHandle());
-						a_p->taskRunner->AddTask(
+						a_p->taskRunner->AddTask
+						(
 							[a_p]() 
 							{ 
 								a_p->MountTask(); 
@@ -5656,8 +5650,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						// REMOVE when done debugging.
-						logger::debug("[PAFH] {} is activating {} ({}, form type 0x{:X}, base form type: 0x{:X}, count: {})",
+						ALYSLC::Log("[PAFH] {} is activating {} ({}, form type 0x{:X}, base form type: 0x{:X}, count: {})",
 							a_p->coopActor->GetName(), activationRefrPtr->GetName(),
 							p1Activate ? "via P1" : "via self",
 							activationRefrPtr->GetFormType(),
@@ -5765,7 +5758,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				if (!Settings::bRotateArmsWhenSheathed) 
+				//if (!Settings::bRotateArmsWhenSheathed) 
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -5832,7 +5825,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				if (!Settings::bRotateArmsWhenSheathed)
+				//if (!Settings::bRotateArmsWhenSheathed)
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -6522,7 +6515,13 @@ namespace ALYSLC
 
 			auto targetRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 			bool targetRefrValidity = targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get());
-			bool shouldGrab = targetRefrValidity && !a_p->mm->shouldFaceTarget && a_p->tm->rmm->CanGrabAnotherRefr() && a_p->tm->rmm->CanGrabRefr(a_p->tm->crosshairRefrHandle);
+			bool shouldGrab = 
+			{
+				targetRefrValidity &&
+				!a_p->mm->shouldFaceTarget &&
+				a_p->tm->rmm->CanGrabAnotherRefr() &&
+				a_p->tm->rmm->CanGrabRefr(a_p->tm->crosshairRefrHandle)
+			};
 			if (shouldGrab)
 			{
 				shouldGrab = false;
@@ -6650,9 +6649,14 @@ namespace ALYSLC
 
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Stop casting quick slot spell.
+			// Stop casting quick slot spell, if the player has one equipped.
 
 			auto quickSlotSpell = a_p->em->quickSlotSpell;
+			if (!quickSlotSpell) 
+			{
+				return;
+			}
+
 			// If not a bound weapon spell, stop casting.
 			if (auto assocWeap = Util::GetAssociatedBoundWeap(quickSlotSpell); !assocWeap)
 			{
@@ -6949,7 +6953,7 @@ namespace ALYSLC
 				// instantly release the player and listen for collisions afterward.
 				// Then drop on the deck and flop like a fish!
 				a_p->tm->rmm->AddGrabbedRefr(a_p, a_p->coopActor->GetHandle());
-				a_p->tm->SetIsGrabbing(false);
+				a_p->tm->rmm->ClearRefr(a_p->coopActor->GetHandle());
 			}
 			else if (reqAction == SpecialActionType::kDodge)
 			{
