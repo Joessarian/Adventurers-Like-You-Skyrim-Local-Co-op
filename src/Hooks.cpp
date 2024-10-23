@@ -698,7 +698,7 @@ namespace ALYSLC
 								float maxHealthRegenDeltaPerFrame = currentMaxHealth * (p->coopActor->GetActorValue(RE::ActorValue::kHealRate) / 100.0f) * (p->coopActor->GetActorValue(RE::ActorValue::kHealRateMult) / 100.0f);
 								// Seems as if the delta that heals the player to full is always very close to (current max health - current health) + 1.
 								// Good enough for filtering out this health change.
-								if (abs(1.0f - (a_delta - realDelta)) < 0.0001f && a_delta > healingDeltaTotal)
+								if (fabsf(1.0f - (a_delta - realDelta)) < 0.0001f && a_delta > healingDeltaTotal)
 								{
 									return 0.0f;
 								}
@@ -1661,7 +1661,7 @@ namespace ALYSLC
 						// Check to see if P1 is in the Favorites Menu and is trying to equip a quickslot item or spell.
 						CheckForP1QSEquipReq(a_event);
 					}
-					else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpenInMap())
+					else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpen())
 					{
 						// Delay Pause and Wait binds to trigger their actions on release, rather than on press.
 						// In addition, check for pressing of the default binds:
@@ -1815,11 +1815,11 @@ namespace ALYSLC
 											float heldTimeDiffTotal = FLT_MAX;
 											if (debugMenuTriggered)
 											{
-												heldTimeDiffTotal = abs(eventReportedPauseHoldTime - inputState1.heldTimeSecs) + abs(eventReportedWaitHoldTime - inputState2.heldTimeSecs);
+												heldTimeDiffTotal = fabsf(eventReportedPauseHoldTime - inputState1.heldTimeSecs) + fabsf(eventReportedWaitHoldTime - inputState2.heldTimeSecs);
 											}
 											else
 											{
-												heldTimeDiffTotal = abs(eventReportedWaitHoldTime - inputState1.heldTimeSecs) + abs(eventReportedPauseHoldTime - inputState2.heldTimeSecs);
+												heldTimeDiffTotal = fabsf(eventReportedWaitHoldTime - inputState1.heldTimeSecs) + fabsf(eventReportedPauseHoldTime - inputState2.heldTimeSecs);
 											}
 
 
@@ -1853,7 +1853,7 @@ namespace ALYSLC
 						{
 							if (buttonEvent->IsDown())
 							{
-								ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpenInMap();
+								ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpen();
 								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} menu bind is now pressed. Ignore ({}) and trigger on release if no co-op menus are triggered by then.",
 									pauseBindEvent ? "Pause" : "Wait",
 									ignoringPauseWaitEvent);
@@ -1867,7 +1867,7 @@ namespace ALYSLC
 						}
 						else if (buttonEvent->IsUp())
 						{
-							if (!summoningMenuTriggered && !debugMenuTriggered && !ignoringPauseWaitEvent && Util::MenusOnlyAlwaysOpenInMap())
+							if (!summoningMenuTriggered && !debugMenuTriggered && !ignoringPauseWaitEvent && Util::MenusOnlyAlwaysOpen())
 							{
 								// No co-op menus triggered, so allow the button event to pass through on release
 								// and trigger either the Pause or Wait menu as usual.
@@ -2020,7 +2020,7 @@ namespace ALYSLC
 				bool lootMenuOpen = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
 				// Open the container targeted while in the LootMenu.
 				bool lootMenuOpenContainer = false;
-				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInMap();
+				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 				while (inputEvent)
 				{
 					// Get event sub-types.
@@ -3457,6 +3457,26 @@ namespace ALYSLC
 				{
 					_ArrowProjectile_GetLinearVelocity(a_this, a_velocity);
 				}
+				else if (a_this->As<RE::BarrierProjectile>())
+				{
+					_BarrierProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					_BeamProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::ConeProjectile>())
+				{
+					_ConeProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					_FlameProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					_GrenadeProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
 				else if (a_this->As<RE::MissileProjectile>())
 				{
 					_MissileProjectile_GetLinearVelocity(a_this, a_velocity);
@@ -3502,6 +3522,26 @@ namespace ALYSLC
 				{
 					_ArrowProjectile_GetLinearVelocity(a_this, a_velocity);
 				}
+				else if (a_this->As<RE::BarrierProjectile>())
+				{
+					_BarrierProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					_BeamProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::ConeProjectile>())
+				{
+					_ConeProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					_FlameProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					_GrenadeProjectile_GetLinearVelocity(a_this, a_velocity);
+				}
 				else if (a_this->As<RE::MissileProjectile>())
 				{
 					_MissileProjectile_GetLinearVelocity(a_this, a_velocity);
@@ -3528,6 +3568,26 @@ namespace ALYSLC
 				{
 					_ArrowProjectile_UpdateImpl(a_this, a_delta);
 				}
+				else if (a_this->As<RE::BarrierProjectile>())
+				{
+					_BarrierProjectile_UpdateImpl(a_this, a_delta);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					_BeamProjectile_UpdateImpl(a_this, a_delta);
+				}
+				else if (a_this->As<RE::ConeProjectile>())
+				{
+					_ConeProjectile_UpdateImpl(a_this, a_delta);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					_FlameProjectile_UpdateImpl(a_this, a_delta);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					_GrenadeProjectile_UpdateImpl(a_this, a_delta);
+				}
 				else if (a_this->As<RE::MissileProjectile>())
 				{
 					_MissileProjectile_UpdateImpl(a_this, a_delta);
@@ -3546,6 +3606,26 @@ namespace ALYSLC
 			if (a_this->As<RE::ArrowProjectile>())
 			{
 				_ArrowProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::BarrierProjectile>())
+			{
+				_BarrierProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::BeamProjectile>())
+			{
+				_BeamProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::ConeProjectile>())
+			{
+				_ConeProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::FlameProjectile>())
+			{
+				_FlameProjectile_UpdateImpl(a_this, a_delta);
+			}
+			else if (a_this->As<RE::GrenadeProjectile>())
+			{
+				_GrenadeProjectile_UpdateImpl(a_this, a_delta);
 			}
 			else if (a_this->As<RE::MissileProjectile>())
 			{
@@ -3912,7 +3992,7 @@ namespace ALYSLC
 
 			// Fixed trajectory XY position and pitch along the trajectory (tangent line).
 			const float xy = releaseSpeed * t * cosf(launchPitch);
-			const float pitchOnTraj = -atan2(tanf(launchPitch) - (g * xy) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
+			const float pitchOnTraj = -atan2f(tanf(launchPitch) - (g * xy) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
 			if (!managedProjInfo->startedHomingIn)
 			{
 				// With air resistance.
@@ -3923,7 +4003,7 @@ namespace ALYSLC
 				float xyD = (vx0 / mu) * (1 - exp(-mu * t));
 				//float zD = (-g * t / mu) + (1.0f / mu) * (vy0 + g / mu) * (1.0f - exp(-mu * t));
 				// Flip of game's pitch sign.
-				const float pitchOnTraj = atan2((g / (mu * releaseSpeed * cosf(launchPitch))) * (1.0f - (1.0f / (1.0f - ((xyD * mu) / (releaseSpeed * cosf(launchPitch)))))) + tanf(launchPitch), 1.0f);
+				const float pitchOnTraj = atan2f((g / (mu * releaseSpeed * cosf(launchPitch))) * (1.0f - (1.0f / (1.0f - ((xyD * mu) / (releaseSpeed * cosf(launchPitch)))))) + tanf(launchPitch), 1.0f);
 				*/
 
 				// Set projectile pitch to trajectory pitch when not homing.
@@ -3953,7 +4033,7 @@ namespace ALYSLC
 				// Next, check if the homing projectile should fully start homing in on the target instead of following its initial fixed trajectory.
 				// Check if the projectile is projected to reach its apex between now and the next frame.
 				const float nextXY = releaseSpeed * (t + *g_deltaTimeRealTime) * cosf(launchPitch);
-				const float nextPitchOnTraj = -atan2(tanf(launchPitch) - (g * nextXY) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
+				const float nextPitchOnTraj = -atan2f(tanf(launchPitch) - (g * nextXY) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
 				// Pitch is zero at the apex.
 				bool atApex = pitchOnTraj == 0.0f;
 				// Different sign: angled up to angled down next frame.
@@ -4132,13 +4212,13 @@ namespace ALYSLC
 
 				// REMOVE when done debugging.
 				/*ALYSLC::Log("[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, speed to set: {}, distance to target: {}, initial time to target: {}, remaining rotation smoothing lifetime ratio: {}, moved: {}, pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
-					a_projectile->GetName(), a_projectile->formID,
+					projectile->GetName(), projectile->formID,
 					managedProjInfo->startedHomingIn,
 					speed,
-					a_projectile->data.location.GetDistance(aimTargetPos),
+					projectile->data.location.GetDistance(aimTargetPos),
 					initialTimeToTargetSecs,
 					remainingRotSmoothingLifetimeRatio,
-					a_projectile->distanceMoved,
+					projectile->distanceMoved,
 					pitchToTarget * TO_DEGREES,
 					yawToTarget * TO_DEGREES,
 					currentPitch * TO_DEGREES,

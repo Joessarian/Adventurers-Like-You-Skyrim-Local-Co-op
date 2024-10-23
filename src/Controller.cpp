@@ -163,7 +163,7 @@ namespace ALYSLC
 		{
 			data.stickAngularSpeed = 
 			(
-				abs(Util::NormalizeAngToPi(atan2(newNormYPos, newNormXPos) - atan2(oldNormYPos, oldNormXPos)) / *g_deltaTimeRealTime)
+				fabsf(Util::NormalizeAngToPi(atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)) / *g_deltaTimeRealTime)
 			);
 		}
 

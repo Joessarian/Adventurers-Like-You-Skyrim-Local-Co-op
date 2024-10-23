@@ -414,7 +414,7 @@ namespace ALYSLC
 			{
 				auto ui = RE::UI::GetSingleton();
 				auto dataHandler = RE::TESDataHandler::GetSingleton();
-				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInStack();
+				bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 				bool allMenusClosed = !ui->GameIsPaused() && ui->IsSavingAllowed() && onlyAlwaysOpen;
 				bool isAutoSaving = dataHandler->autoSaving || dataHandler->saveLoadGame;
 				bool shouldResume = false;
@@ -807,16 +807,16 @@ namespace ALYSLC
 
 				if (rsMag > 0.0f)
 				{
-					auto rsZAngle = atan2(rsY, rsX);
+					auto rsZAngle = atan2f(rsY, rsX);
 					// To game coords before adding cam yaw.
 					rsZAngle = Util::ConvertAngle(Util::NormalizeAngTo2Pi(rsZAngle));
 					rsZAngle = Util::NormalizeAngTo2Pi(camYaw + rsZAngle);
 					// Convert back before calculating target position components.
 					rsZAngle = Util::ConvertAngle(rsZAngle);
 					RE::NiPoint3 targetPosMovementOffset = RE::NiPoint3();
-					targetPosMovementOffset.x += cos(-camTargetPosPitch) * cos(rsZAngle);
-					targetPosMovementOffset.y += cos(-camTargetPosPitch) * sin(rsZAngle);
-					targetPosMovementOffset.z += sin(-camTargetPosPitch) * std::clamp(rsY, -1.0f, 1.0f);
+					targetPosMovementOffset.x += cosf(-camTargetPosPitch) * cosf(rsZAngle);
+					targetPosMovementOffset.y += cosf(-camTargetPosPitch) * sinf(rsZAngle);
+					targetPosMovementOffset.z += sinf(-camTargetPosPitch) * std::clamp(rsY, -1.0f, 1.0f);
 					targetPosMovementOffset.Unitize();
 					targetPosMovementOffset *= camManualPosMaxMovementSpeed * *g_deltaTimeRealTime * rsMag;
 
@@ -893,9 +893,9 @@ namespace ALYSLC
 				// Base target position is offset from the base focus position,
 				// and is not guaranteed to be in a reachable spot.
 				camBaseTargetPos = camBaseFocusPoint;
-				camBaseTargetPos.z -= r * cos(theta);
-				camBaseTargetPos.x -= r * cos(phi) * sin(theta);
-				camBaseTargetPos.y -= r * sin(phi) * sin(theta);
+				camBaseTargetPos.z -= r * cosf(theta);
+				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
+				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
 			}
 			else
 			{
@@ -905,9 +905,9 @@ namespace ALYSLC
 				camPlayerFocusPoint = GetPlayerFocusPoint(focalP->coopActor.get());
 				r = camBaseRadialDistance;
 				camBaseTargetPos = camPlayerFocusPoint;
-				camBaseTargetPos.z -= r * cos(theta);
-				camBaseTargetPos.x -= r * cos(phi) * sin(theta);
-				camBaseTargetPos.y -= r * sin(phi) * sin(theta);
+				camBaseTargetPos.z -= r * cosf(theta);
+				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
+				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
 			}
 
 			// [(Questionable?) Methods to the Madness Below]:
@@ -1668,7 +1668,7 @@ namespace ALYSLC
 						{
 							auto normalZComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
 							// Angle the camera downward if the player is moving downhill (no change to sign).
-							auto supportSurfaceIncline = abs(asinf(normalZComp) - PI / 2.0f);
+							auto supportSurfaceIncline = fabsf(asinf(normalZComp) - PI / 2.0f);
 
 							// Supporting surface's normal must be pointing up.
 							// Flat or down indicates that the player is walking on a surface 
@@ -1692,7 +1692,7 @@ namespace ALYSLC
 									angNormalToForwardXY = PI / 2.0f;
 								}
 
-								supportSurfaceIncline = abs(angNormalToForwardXY - PI / 2.0f);
+								supportSurfaceIncline = fabsf(angNormalToForwardXY - PI / 2.0f);
 							}
 							else
 							{
@@ -1798,7 +1798,7 @@ namespace ALYSLC
 				{
 					yawDiff = Util::NormalizeAngToPi(Util::NormalizeAng0To2Pi(movementActor->data.angle.z) - camYaw);
 					float sign = yawDiff < 0.0f ? -1.0f : 1.0f;
-					yawDiff = abs(yawDiff) > PI / 2.0f ? sign * PI - yawDiff : yawDiff;
+					yawDiff = fabsf(yawDiff) > PI / 2.0f ? sign * PI - yawDiff : yawDiff;
 					const auto& lsData = glob.cdh->GetAnalogStickState(p->controllerID, true);
 					// Dependent on how committed the player is to moving 
 					// in their heading direction.
@@ -2187,8 +2187,8 @@ namespace ALYSLC
 		if (const auto hud = DebugAPI::GetHUD(); hud)
 		{
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = abs(gRect.right - gRect.left);
-			const float rectHeight = abs(gRect.bottom - gRect.top);
+			const float rectWidth = fabsf(gRect.right - gRect.left);
+			const float rectHeight = fabsf(gRect.bottom - gRect.top);
 			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 			float x = 0.0f, y = 0.0f, z = 0.0f;
 			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_point, x, y, z, 1e-5f);
@@ -2307,11 +2307,11 @@ namespace ALYSLC
 
 		auto camNodePos = tpState->camera->cameraRoot->local.translate;
 		camBaseOriginPoint = camNodePos;
-		if (playerCam)
+		/*if (playerCam)
 		{
 			camBaseOriginPoint = playerCam->cameraRoot->world.translate;
 		}
-		else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+		else */if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
 		{
 			camBaseOriginPoint = p1->GetLookingAtLocation();
 		}
@@ -2428,33 +2428,17 @@ namespace ALYSLC
 			lockInteriorOrientationOnInit = true;
 		}
 
-		// If the cam is automatically resuming, adjust initial yaw to not position the camera behind the closest teleport door.
-		//if (!waitForToggle)
-		//{
-		//	if (auto doorRefr = closestTeleportDoor.has_value() ? closestTeleportDoor.value() : nullptr; doorRefr)
-		//	{
-		//		float r = camTargetRadialDistance;
-		//		float phi = Util::ConvertAngle(p1Heading);
-		//		float theta = PI / 2.0f + camPitch;
-		//		auto behindP1InitialPos = p1LookingAt;
-		//		behindP1InitialPos.z -= r * cos(theta);
-		//		behindP1InitialPos.x -= r * cos(phi) * sin(theta);
-		//		behindP1InitialPos.y -= r * sin(phi) * sin(theta);
-		//		auto refrCenter = Util::Get3DCenterPos(doorRefr);
-		//		auto doorToP1Yaw = Util::GetYawBetweenPositions(refrCenter, p1LookingAt);
-		//		auto doorToInitialCamPosYaw = Util::GetYawBetweenPositions(refrCenter, behindP1InitialPos);
-		//		// If not toggling the camera, ensure the camera is in front of the party 
-		//		// when enabling near a teleport door, so that the party is visible 
-		//		// and not blocked by the door and the structure it is attached to.
-		//		if (abs(Util::NormalizeAngToPi(doorToP1Yaw - doorToInitialCamPosYaw)) > PI / 2.0f)
-		//		{
-		//			camYaw = 
-		//			camCurrentYawToFocus = 
-		//			camBaseTargetPosYaw = 
-		//			camTargetPosYaw = Util::GetYawBetweenPositions(glob.player1Actor->data.location, refrCenter);
-		//		}
-		//	}
-		//}
+		// If the cam is automatically resuming, adjust initial yaw to position the camera between P1 and the closest load door.
+		if (!waitForToggle)
+		{
+			if (auto doorRefr = closestTeleportDoor.has_value() ? closestTeleportDoor.value() : nullptr; doorRefr)
+			{
+				camYaw =
+				camCurrentYawToFocus =
+				camBaseTargetPosYaw =
+				camTargetPosYaw = Util::GetYawBetweenPositions(Util::Get3DCenterPos(doorRefr), p1LookingAt);
+			}
+		}
 	}
 
 	void CameraManager::ResetFadeOnObjects()
@@ -2756,7 +2740,7 @@ namespace ALYSLC
 					// It (maybe) just works. Used Desmos (https://www.desmos.com/calculator)
 					// to create a curve that smooths out the changes in camera pitch relative
 					// to average support surface/vertical velocity pitch.
-					movementPitch = 1.5f * tan(0.4f * movementPitch - 0.1f) * cos(movementPitch) + 0.15f;
+					movementPitch = 1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f;
 					// Pitch increments/decrements are smaller when approaching PI/2 in the direction of the
 					// average movement pitch. Done to prevent over-adjustment when already at a steep pitch.
 					float proportionOfMaxPitch = 
@@ -2821,8 +2805,8 @@ namespace ALYSLC
 					movementYaw = std::clamp
 					(
 						radialDistFactor * (movementYaw / (PI / 2.0f)) * camMaxAngRotRate * *g_deltaTimeRealTime, 
-						-abs(movementYaw), 
-						abs(movementYaw)
+						-fabsf(movementYaw), 
+						fabsf(movementYaw)
 					);
 					movementYawInterpData->ShiftEndpoints(movementYaw);
 					movementYawInterpData->SetTimeSinceUpdate(*g_deltaTimeRealTime);
@@ -3291,7 +3275,7 @@ namespace ALYSLC
 			const auto& rsY = rsData.yComp;
 			const auto& rsMag = rsData.normMag;
 			// Change height of the focus point if the x comp is larger than the y comp.
-			if (abs(rsX) > abs(rsY))
+			if (fabsf(rsX) > fabsf(rsY))
 			{
 				// Right to increase height, down to decrease.
 				camBaseFocusPointZOffset += rsX * rsMag * camMaxMovementSpeed * *g_deltaTimeRealTime;
@@ -3387,7 +3371,7 @@ namespace ALYSLC
 				const auto& rsX = rsData.xComp;
 				const auto& rsY = rsData.yComp;
 				const auto& rsMag = rsData.normMag;
-				if (abs(rsY) > abs(rsX))
+				if (fabsf(rsY) > fabsf(rsX))
 				{
 					camBaseRadialDistance -= *g_deltaTimeRealTime * camMaxMovementSpeed * rsY * rsMag;
 					camBaseRadialDistance = max(camBaseRadialDistance, camMinTrailingDistance);

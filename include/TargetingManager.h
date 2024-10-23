@@ -676,6 +676,9 @@ namespace ALYSLC
 			// Manager is no longer set as grabbing objects or auto-grabbing. 
 			void ClearAll();
 
+			// Clear given grabbed refr, if managed.
+			void ClearGrabbedRefr(const RE::ObjectRefHandle& a_handle);
+
 			// Clear all managed grabbed refrs.
 			void ClearGrabbedRefrs() noexcept;
 
@@ -690,6 +693,9 @@ namespace ALYSLC
 			// Remove the given refr from the grabbed or released refrs list
 			// and refresh handle-to-index mappings upon successful erasure.
 			void ClearRefr(const RE::ObjectRefHandle& a_handle);
+
+			// Clear given released refr, if managed.
+			void ClearReleasedRefr(const RE::ObjectRefHandle& a_handle);
 
 			// Clear all managed released refrs.
 			void ClearReleasedRefrs() noexcept;

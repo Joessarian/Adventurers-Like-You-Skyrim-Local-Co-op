@@ -820,9 +820,10 @@ namespace ALYSLC
 				}
 			}
 
-			ALYSLC::Log("[MM] PerformJump: {}: base/set grav mult: {}, {}. Start jump: {}, airborne: {}, seconds since airborne: {}",
+			// REMOVE when done debugging.
+			/*ALYSLC::Log("[MM] PerformJump: {}: base/set grav mult: {}, {}. Start jump: {}, airborne: {}, seconds since airborne: {}",
 				coopActor->GetName(), gravityMult, charController->gravity,
-				startJump, isAirborneWhileJumping, startJump ? 0.0f : Util::GetElapsedSeconds(p->jumpStartTP));
+				startJump, isAirborneWhileJumping, startJump ? 0.0f : Util::GetElapsedSeconds(p->jumpStartTP));*/
 		}
 	}
 
@@ -1427,7 +1428,7 @@ namespace ALYSLC
 	{
 		// Set the context-dependent position which should be used as the player's headtracking target.
 
-		bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInMap();
+		bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 		if (!onlyAlwaysOpen)
 		{
 			return;
@@ -2575,7 +2576,7 @@ namespace ALYSLC
 			
 			blendIn = 
 			{
-				inDialogueOrNotControllingMenus &&
+				//inDialogueOrNotControllingMenus &&
 				a_data->rotationModified &&
 				coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
 				!p->IsAwaitingRefresh() &&
@@ -2650,7 +2651,7 @@ namespace ALYSLC
 			blendIn = 
 			{
 				(
-					inDialogueOrNotControllingMenus &&
+					//inDialogueOrNotControllingMenus &&
 					!p1AimActive &&
 					a_data->rotationModified &&
 					coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
@@ -3628,7 +3629,7 @@ namespace ALYSLC
 						float headingToTargetDiff = Util::NormalizeAngToPi(playerToTargetYaw - playerFacingAng);
 
 						// Scale down interpolation factor when the weapon node is close to the target or when the yaw change is large.
-						angDiffScalingInterpFactor = (1.1f - abs(newYaw - oldYaw) / (2.0f * PI));
+						angDiffScalingInterpFactor = (1.1f - fabsf(newYaw - oldYaw) / (2.0f * PI));
 						float xyDistToTarget = Util::GetXYDistance(weaponNode->world.translate, p->tm->crosshairWorldPos);
 						// Can't compute yaw offset from player facing angle (unknown) to aim node yaw angle.
 						float distScalingDiffFactor = Util::InterpolateEaseInEaseOut(0.0f, 1.0f, min(xyDistToTarget, Settings::fTargetAttackSourceDistToSlowRotation) / (Settings::fTargetAttackSourceDistToSlowRotation + 0.01f), 5.0f);
@@ -3770,7 +3771,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			float realLSAng = atan2(lsY, lsX);
+			float realLSAng = atan2f(lsY, lsX);
 			lsAbsAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realLSAng));
 		}
 
@@ -3781,7 +3782,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			float realRSAng = atan2(rsY, rsX);
+			float realRSAng = atan2f(rsY, rsX);
 			rsAbsAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realRSAng));
 		}
 
@@ -3797,8 +3798,8 @@ namespace ALYSLC
 		if (rsMag != 0.0f)
 		{
 			rsAng = Util::ConvertAngle(rsAng);
-			rxComp = cos(rsAng);
-			ryComp = sin(rsAng);
+			rxComp = cosf(rsAng);
+			ryComp = sinf(rsAng);
 			rsAng = Util::ConvertAngle(rsAng);
 		}
 		else
@@ -3813,8 +3814,8 @@ namespace ALYSLC
 		if (lsMag != 0.0f)
 		{
 			lsAng = Util::ConvertAngle(lsAng);
-			lxComp = cos(lsAng);
-			lyComp = sin(lsAng);
+			lxComp = cosf(lsAng);
+			lyComp = sinf(lsAng);
 			lsAng = Util::ConvertAngle(lsAng);
 		}
 		else

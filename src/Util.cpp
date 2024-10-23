@@ -145,7 +145,7 @@ namespace ALYSLC
 					}
 
 					// Set diff.
-					stepDiff = abs(wn0 - wPrev);
+					stepDiff = fabsf(wn0 - wPrev);
 					// On to the next step.
 					++step;
 				}
@@ -182,7 +182,7 @@ namespace ALYSLC
 					}
 
 					// Set diff.
-					stepDiff = abs(wnMin1 - wPrev);
+					stepDiff = fabsf(wnMin1 - wPrev);
 					// On to the next step.
 					++step;
 				}
@@ -628,8 +628,8 @@ namespace ALYSLC
 			// the actor's Y axis lines up with the camera's.
 			auto extentsHalfXYLength = RE::NiPoint3
 			(
-				abs(cosf(angDiff)) * a_boundExtents.x, 
-				abs(sinf(angDiff)) * a_boundExtents.y, 
+				fabsf(cosf(angDiff)) * a_boundExtents.x, 
+				fabsf(sinf(angDiff)) * a_boundExtents.y, 
 				0.0f
 			).Length() / 2.0f;
 			// Get local offsets.
@@ -775,7 +775,7 @@ namespace ALYSLC
 				// NOTE: Obviously an approximation here, 
 				// since we're not rotating the vertical axis
 				// based on the actor's bounding box.
-				if (abs(uprightDir.z) >= PI / 4.0f)
+				if (fabsf(uprightDir.z) >= PI / 4.0f)
 				{
 					// Pitched at an absolute angle >= 45 degrees from horizontal.
 					if (a_vertAxis)
@@ -1163,8 +1163,8 @@ namespace ALYSLC
 			// the refr's Y axis lines up with the camera's.
 			auto extentsHalfXYLength = RE::NiPoint3
 			(
-				abs(cosf(angDiff)) * a_boundExtents.x, 
-				abs(sinf(angDiff)) * a_boundExtents.y, 
+				fabsf(cosf(angDiff)) * a_boundExtents.x, 
+				fabsf(sinf(angDiff)) * a_boundExtents.y, 
 				0.0f
 			).Length() / 2.0f;
 			// Local half extents.
@@ -2365,8 +2365,8 @@ namespace ALYSLC
 
 			RE::NiMatrix3 mat;
 			a_axis.Unitize();
-			const float CosT = cos(a_angle);
-			const float SinT = sin(a_angle);
+			const float CosT = cosf(a_angle);
+			const float SinT = sinf(a_angle);
 			const float Ax = a_axis.x;
 			const float Ay = a_axis.y;
 			const float Az = a_axis.z;
@@ -2398,7 +2398,8 @@ namespace ALYSLC
 			{
 				for (const auto& context : controlMap->contextPriorityStack)
 				{
-					if (context != RE::ControlMap::InputContextID::kGameplay)
+					if (context != RE::ControlMap::InputContextID::kGameplay && 
+						context != RE::ControlMap::InputContextID::kTFCMode)
 					{
 						return false;
 					}
@@ -2407,61 +2408,7 @@ namespace ALYSLC
 				return true;
 			}
 
-			return false;
-		}
-
-		bool MenusOnlyAlwaysOpenInMap()
-		{
-			// TODO: Potentially remove this function or the stack one,
-			// since there no longer appears to be a reason to need to differentiate 
-			// between what is open on the menu stack and in the menu map.
-			// The menu context check method below needs further testing first.
-
-			// Return true if no temporary menus are open, false otherwise.
-
-			/*if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				return 
-				(
-					std::find_if
-					(
-						ui->menuMap.begin(), ui->menuMap.end(), 
-						[](const RE::BSTTuple<RE::BSFixedString, RE::UI::UIMenuEntry>& a_menuEntry) 
-						{
-							return a_menuEntry.second.menu && !a_menuEntry.second.menu->AlwaysOpen();
-						}
-					) == ui->menuMap.end()
-				);
-			}*/
-
-			return MenusOnlyAlwaysOpen();
-		}
-
-		bool MenusOnlyAlwaysOpenInStack()
-		{
-			// TODO: Potentially remove this function or the map one,
-			// since there no longer appears to be a reason to need to differentiate
-			// between what is open on the menu stack and in the menu map.
-			// The menu context check method below needs further testing first.
-
-			// Return true if no temporary menus are open, false otherwise.
-
-			/*if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				return
-				(
-					std::find_if
-					(
-						ui->menuStack.begin(), ui->menuStack.end(), 
-						[](RE::GPtr<RE::IMenu>& a_menu) 
-						{
-							return !a_menu->AlwaysOpen();
-						}
-					) == ui->menuStack.end()
-				);
-			}*/
-
-			return MenusOnlyAlwaysOpen();
+			return true;
 		}
 
 		bool MenusOnlyAlwaysUnpaused()
@@ -2470,7 +2417,7 @@ namespace ALYSLC
 
 			if (auto ui = RE::UI::GetSingleton(); ui)
 			{
-				bool onlyAlwaysOpen = MenusOnlyAlwaysOpenInMap();
+				bool onlyAlwaysOpen = MenusOnlyAlwaysOpen();
 				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv) || ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
 			}
 
@@ -2583,8 +2530,8 @@ namespace ALYSLC
 			}
 
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = abs(gRect.right - gRect.left);
-			const float rectHeight = abs(gRect.bottom - gRect.top);
+			const float rectWidth = fabsf(gRect.right - gRect.left);
+			const float rectHeight = fabsf(gRect.bottom - gRect.top);
 			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 			float x = 0.0f;
 			float y = 0.0f;
@@ -2623,8 +2570,8 @@ namespace ALYSLC
 			}
 
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = abs(gRect.right - gRect.left);
-			const float rectHeight = abs(gRect.bottom - gRect.top);
+			const float rectWidth = fabsf(gRect.right - gRect.left);
+			const float rectHeight = fabsf(gRect.bottom - gRect.top);
 			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 			float x = 0.0;
 			float y = 0.0f;
@@ -2912,8 +2859,8 @@ namespace ALYSLC
 			// https://en.wikipedia.org/wiki/Rotation_matrix#cite_note-5
 
 			a_axis.Unitize();
-			const float CosT = cos(a_angle);
-			const float SinT = sin(a_angle);
+			const float CosT = cosf(a_angle);
+			const float SinT = sinf(a_angle);
 			const float Ax = a_axis.x;
 			const float Ay = a_axis.y;
 			const float Az = a_axis.z;
@@ -3987,8 +3934,8 @@ namespace ALYSLC
 			RE::NiPoint3 screenPoint{};
 			// Get the debug overlay's dimensions.
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = abs(gRect.right - gRect.left);
-			const float rectHeight = abs(gRect.bottom - gRect.top);
+			const float rectWidth = fabsf(gRect.right - gRect.left);
+			const float rectHeight = fabsf(gRect.bottom - gRect.top);
 			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 			// Screen position components.
 			float x = 0.0f;

@@ -713,7 +713,7 @@ namespace ALYSLC
 				// a particularly time sensitive task, so check every second.
 				// Also updated when entering the StatsMenu or entering/exiting the LevelUp Menu.
 				float secsSinceXPThresholdCheck = Util::GetElapsedSeconds(glob.lastXPThresholdCheckTP);
-				if (secsSinceXPThresholdCheck > 1.0f && Util::MenusOnlyAlwaysOpenInMap())
+				if (secsSinceXPThresholdCheck > 1.0f && Util::MenusOnlyAlwaysOpen())
 				{
 					GlobalCoopData::ModifyLevelUpXPThreshold(true);
 					glob.lastXPThresholdCheckTP = SteadyClock::now();
@@ -787,7 +787,7 @@ namespace ALYSLC
 
 		queuedP1ButtonEvents.clear();
 
-		// If necessary, elinquish control of the camera befire pausing.
+		// If necessary, relinquish control of the camera befire pausing.
 		if (glob.cam->IsRunning()) 
 		{
 			auto& controllingCID = glob.cam->controlCamCID;

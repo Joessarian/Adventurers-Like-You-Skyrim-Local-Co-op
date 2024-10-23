@@ -860,7 +860,7 @@ namespace ALYSLC
 		// Border is drawn while co-op is active or when in the Summoning Menu,
 		// and has the same color as the menu-controlling player's crosshair.
 
-		bool tempMenuOpen = !Util::MenusOnlyAlwaysOpenInStack();
+		bool tempMenuOpen = !Util::MenusOnlyAlwaysOpen();
 		// Update interpolated value and direction change flag + interpolation direction.
 		// Use to set the overlay alpha value.
 		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpen);

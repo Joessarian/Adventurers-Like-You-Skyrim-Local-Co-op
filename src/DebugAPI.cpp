@@ -418,8 +418,8 @@ namespace ALYSLC
 		if (RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera(); niCam)
 		{
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = abs(gRect.right - gRect.left);
-			const float rectHeight = abs(gRect.bottom - gRect.top);
+			const float rectWidth = fabsf(gRect.right - gRect.left);
+			const float rectHeight = fabsf(gRect.bottom - gRect.top);
 			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 
 			float x = 0.0f, y = 0.0f, z = 0.0f;
@@ -564,8 +564,8 @@ namespace ALYSLC
 		}
 
 		RE::GRectF rect = menu->uiMovie->GetVisibleFrameRect();
-		screenResX = abs(rect.right - rect.left);
-		screenResY = abs(rect.bottom - rect.top);
+		screenResX = fabsf(rect.right - rect.left);
+		screenResY = fabsf(rect.bottom - rect.top);
 		cachedMenuData = true;
 	}
 

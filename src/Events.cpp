@@ -368,7 +368,7 @@ namespace ALYSLC
 						{
 							int32_t additionalGold = a_containerChangedEvent->itemCount * (glob.activePlayers - 1) * Settings::fAdditionalGoldPerPlayerMult;
 							p1->AddObjectToContainer(form->As<RE::TESObjectMISC>(), nullptr, additionalGold, p1);
-							bool inMenu = !Util::MenusOnlyAlwaysOpenInMap();
+							bool inMenu = !Util::MenusOnlyAlwaysOpen();
 							// If not in a menu and activating all gold in activation range, each individual gold piece added 
 							// triggers a container changed event, so the total amount is unspecificed when printing a notification here.
 							if (inMenu) 
@@ -967,6 +967,19 @@ namespace ALYSLC
 				}
 
 				ALYSLC::Log("[Events] ===========[Menu Stack END]===========");
+
+				if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap) 
+				{
+					ALYSLC::Log("[Events] ===========[Menu Priority Stack BEGIN]===========");
+
+					for (auto i = 0; i < controlMap->contextPriorityStack.size(); ++i)
+					{
+						const auto& context = controlMap->contextPriorityStack[i];
+						ALYSLC::Log("[Events] Index {}: context: {}.", i, context);
+					}
+
+					ALYSLC::Log("[Events] ===========[Menu Priority Stack END]===========");
+				}
 
 				// Open the ALYSLC overlay if it isn't open already.
 				if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))

@@ -295,7 +295,7 @@ namespace ALYSLC
 
 			// RS moved and Y component larger than X component.
 			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
-			return rsState.normMag > 0.0f && abs(rsState.yComp) > abs(rsState.xComp);
+			return rsState.normMag > 0.0f && fabsf(rsState.yComp) > fabsf(rsState.xComp);
 		}
 
 		bool AttackLH(const std::shared_ptr<CoopPlayer>& a_p)
@@ -517,7 +517,7 @@ namespace ALYSLC
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Can reset player if no temporary menus are open.
-			return Util::MenusOnlyAlwaysOpenInMap();
+			return Util::MenusOnlyAlwaysOpen();
 		}
 
 		bool Dismount(const std::shared_ptr<CoopPlayer>& a_p)
@@ -622,7 +622,7 @@ namespace ALYSLC
 					// Vector along the surface is at 90 degrees to the normal, so subtract the normal from PI / 2.
 					if (charController->surfaceInfo.surfaceNormal.Length3() != 0.0f) 
 					{
-						supportAng = PI / 2.0f - abs(asinf(charController->surfaceInfo.surfaceNormal.quad.m128_f32[2]));
+						supportAng = PI / 2.0f - fabsf(asinf(charController->surfaceInfo.surfaceNormal.quad.m128_f32[2]));
 					}
 					else
 					{
@@ -632,7 +632,7 @@ namespace ALYSLC
 						auto rayResult = Raycast::hkpCastRay(start, end, true, false);
 						if (rayResult.hit)
 						{
-							supportAng = PI / 2.0f - abs(asinf(rayResult.rayNormal.z));
+							supportAng = PI / 2.0f - fabsf(asinf(rayResult.rayNormal.z));
 						}
 					}	
 
@@ -1635,7 +1635,7 @@ namespace ALYSLC
 								((Settings::bUseUnarmedKillmovesForSpellcasting) && (a_action == InputAction::kCastRH || a_action == InputAction::kCastLH))
 							};
 							// Must be behind the target actor.
-							float facingAngDiff = abs(Util::NormalizeAngToPi(targetActorPtr->GetHeading(true) - a_p->coopActor->GetHeading(true)));
+							float facingAngDiff = fabsf(Util::NormalizeAngToPi(targetActorPtr->GetHeading(true) - a_p->coopActor->GetHeading(true)));
 							// 45 degree window.
 							if (supportedAction && facingAngDiff <= PI / 4.0f)
 							{
@@ -2749,7 +2749,7 @@ namespace ALYSLC
 			if (!a_killmoveIdlesList.empty())
 			{
 				float yawToTarget = Util::GetYawBetweenPositions(a_p->coopActor->data.location, a_targetActor->data.location);
-				float facingAngDiff = abs(Util::NormalizeAngToPi(a_targetActor->GetHeading(false) - yawToTarget));
+				float facingAngDiff = fabsf(Util::NormalizeAngToPi(a_targetActor->GetHeading(false) - yawToTarget));
 
 				// Have player face the target first.
 				a_p->coopActor->SetHeading(yawToTarget);
@@ -3347,7 +3347,7 @@ namespace ALYSLC
 					bool menusOnlyAlwaysOpen = true;
 					if (auto ui = RE::UI::GetSingleton(); ui)
 					{
-						menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInMap();
+						menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 					}
 
 					bool isLocked = activationRefrPtr->IsLocked();
@@ -4706,7 +4706,7 @@ namespace ALYSLC
 			// Useful to reset player state if they are bugged out.
 			
 			// Only stop menu input manager when only "always-open" menus are showing.
-			if (Util::MenusOnlyAlwaysOpenInMap()) 
+			if (Util::MenusOnlyAlwaysOpen()) 
 			{
 				GlobalCoopData::StopMenuInputManager();
 			}
@@ -5364,7 +5364,7 @@ namespace ALYSLC
 			// Teleport to another active player.
 			
 			// Only need to send menu-open request if there are more than two players.
-			bool noPlayerInMenus = Util::MenusOnlyAlwaysOpenInMap();
+			bool noPlayerInMenus = Util::MenusOnlyAlwaysOpen();
 			if (glob.activePlayers > 2 && noPlayerInMenus) 
 			{
 				glob.onCoopHelperMenuRequest.SendEvent(a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kTeleport);
@@ -5379,7 +5379,7 @@ namespace ALYSLC
 				{
 					if (p->isActive && p->coopActor != a_p->coopActor) 
 					{
-						float facingDiff = abs(Util::NormalizeAngToPi(Util::GetYawBetweenRefs(a_p->coopActor.get(), p->coopActor.get()) - a_p->coopActor->GetHeading(false)));
+						float facingDiff = fabsf(Util::NormalizeAngToPi(Util::GetYawBetweenRefs(a_p->coopActor.get(), p->coopActor.get()) - a_p->coopActor->GetHeading(false)));
 						if (facingDiff < minFacingDiff) 
 						{
 							facingPlayer = p->coopActor.get();
@@ -5531,7 +5531,7 @@ namespace ALYSLC
 				// Check if another player is controlling menus.
 				// This influences what objects this player can activate --
 				// nothing that will open a menu if another player is controlling menus.
-				bool menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpenInMap();
+				bool menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 				bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(a_p->controllerID);
 
 				// Get count.
@@ -6949,11 +6949,18 @@ namespace ALYSLC
 					charController->fallTime = 0.0f;
 				}
 
-				// Set as grabbed refr to signal the reference manipulation handler to
-				// instantly release the player and listen for collisions afterward.
-				// Then drop on the deck and flop like a fish!
-				a_p->tm->rmm->AddGrabbedRefr(a_p, a_p->coopActor->GetHandle());
-				a_p->tm->rmm->ClearRefr(a_p->coopActor->GetHandle());
+				// Drop on the deck and flop like a fish!
+				// Set as grabbed refr to ragdoll the player, clear the grabbed refr, 
+				// add as a released refr, and listen for collisions afterward.
+				const auto handle = a_p->coopActor->GetHandle();
+				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+				a_p->tm->rmm->ClearGrabbedRefr(handle);
+				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
+				{
+					a_p->tm->SetIsGrabbing(false);
+				}
+
+				a_p->tm->rmm->AddReleasedRefr(a_p, handle);
 			}
 			else if (reqAction == SpecialActionType::kDodge)
 			{

@@ -2605,7 +2605,7 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		// With no menus open, no player is in control of menus.
 		// Otherwise, give P1 control.
-		int32_t newCID = Util::MenusOnlyAlwaysOpenInMap() ? -1 : glob.player1CID;
+		int32_t newCID = Util::MenusOnlyAlwaysOpen() ? -1 : glob.player1CID;
 		// Previous menu CID is NEVER -1 after it is first set.
 		int32_t newPrevCID = newCID != -1 ? newCID : glob.prevMenuCID;
 
@@ -5206,8 +5206,18 @@ namespace ALYSLC
 							// Damage scales with thrown object damage.
 							if (knockOut)
 							{
-								a_p->tm->rmm->AddGrabbedRefr(a_p, hitRefrPtr->GetHandle());
-								a_p->tm->SetIsGrabbing(false);
+								/*a_p->tm->rmm->AddGrabbedRefr(a_p, hitRefrPtr->GetHandle());
+								a_p->tm->SetIsGrabbing(false);*/
+
+								const auto handle = hitRefrPtr->GetHandle();
+								a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+								a_p->tm->rmm->ClearGrabbedRefr(handle);
+								if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
+								{
+									a_p->tm->SetIsGrabbing(false);
+								}
+
+								a_p->tm->rmm->AddReleasedRefr(a_p, handle);
 							}
 
 							// REMOVE when done debugging.

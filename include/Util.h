@@ -2149,18 +2149,10 @@ namespace ALYSLC
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);
 
-		// Return true if the no temporary menus are open.
+		// Return true if no temporary menus are open.
 		// Temporary menus are considered as menus that add a non-gameplay context 
 		// onto the menu context stack, plus the 'LootMenu' from the QuickLoot mod.
 		bool MenusOnlyAlwaysOpen();
-
-		// Return true if only menus with the 'AlwaysOpen' flag
-		// are open in the UI's menu map.
-		bool MenusOnlyAlwaysOpenInMap();
-		
-		// Return true if only menus with the 'AlwaysOpen' flag
-		// are open in the UI's menu stack.
-		bool MenusOnlyAlwaysOpenInStack();
 
 		// Return true if only menus with the 'AlwaysOpen' flag
 		// and QuickLoot's LootMenu are open in the UI's menu map.

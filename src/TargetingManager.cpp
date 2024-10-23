@@ -56,20 +56,21 @@ namespace ALYSLC
 	void TargetingManager::PrePauseTask()
 	{
 		ALYSLC::Log("[TM] PrePauseTask: P{}", playerID + 1);
-		// Clear all targets.
-		ClearTargetHandles();
-		// No longer selecting a crosshair target.
-		validCrosshairRefrHit = false;
-		// Clear all grabbed and released refrs
-		// to stop grabbing refrs and checking for released refr collisions.
-		// Maintain management of refrs if the game is paused.
 		auto ui = RE::UI::GetSingleton(); 
 		if ((nextState == ManagerState::kAwaitingRefresh) || (ui && !ui->GameIsPaused())) 
 		{
+			// Clear all targets.
+			ClearTargetHandles();
+			// No longer selecting a crosshair target.
+			validCrosshairRefrHit = false;
+			// Clear all grabbed and released refrs
+			// to stop grabbing refrs and checking for released refr collisions.
+			// Maintain management of refrs if the game is paused.
 			rmm->ClearAll();
+
+			// Reset crosshair position.
+			ResetCrosshairPosition();
 		}
-		// Reset crosshair position.
-		ResetCrosshairPosition();
 	}
 
 	void TargetingManager::PreStartTask()
@@ -77,18 +78,46 @@ namespace ALYSLC
 		ALYSLC::Log("[TM] PreStartTask: P{}", playerID + 1);
 		// Reset TPs before starting.
 		ResetTPs();
-		// Clear all targets.
-		ClearTargetHandles();
-		// No longer selecting a crosshair target.
-		validCrosshairRefrHit = false;
-		// Clear all grabbed and released refrs if a data refresh is required
-		// to stop grabbing refrs and checking for released refr collisions.
+
+		// Deselect target and reset manipulated refrs/crosshair if data was refreshed.
+		auto ui = RE::UI::GetSingleton();
 		if (currentState == ManagerState::kAwaitingRefresh)
 		{
-			rmm->ClearAll();
+			// Clear all targets.
+			ClearTargetHandles();
+			// No longer selecting a crosshair target.
+			validCrosshairRefrHit = false;
+			// Clear all grabbed and released refrs if a data refresh is required
+			// to stop grabbing refrs and checking for released refr collisions.
+			if (currentState == ManagerState::kAwaitingRefresh)
+			{
+				rmm->ClearAll();
+			}
+
+			// Reset crosshair position.
+			ResetCrosshairPosition();
 		}
-		// Reset crosshair position.
-		ResetCrosshairPosition();
+		else
+		{
+			// Temporary solution until I figure out what triggers the 'character controller and 3D desync warp glitch',
+			// which occurs ~0.5 seconds after unpausing with a player previously grabbed.
+			// Ragdolling fixes the issue, but I need to find a way to detect if this desync is happening
+			// and correct it in the UpdateGrabbedReferences() call.
+			// Solution: If grabbed by another player, release this player before resuming.
+			const auto handle = coopActor->GetHandle();
+			for (const auto& otherP : glob.coopPlayers)
+			{
+				if (otherP->isActive && otherP != p)
+				{
+					if (otherP->tm->rmm->IsManaged(handle, true))
+					{
+						otherP->tm->rmm->ClearRefr(handle);
+						break;
+					}
+				}
+			}
+		}
+
 		// Clear out game crosshair pick refr.
 		Util::SendCrosshairEvent(nullptr);
 	}
@@ -989,7 +1018,7 @@ namespace ALYSLC
 		[](const RE::NiPoint3& a_coopPlayerPos, const RE::NiPoint3& a_closeRefrPos, float& a_minWeight, const float& a_targetingAngle, const float& a_fovRads, const bool& a_useXYDistance, const float& a_range, const RE::ObjectRefHandle a_sourceRefrHandle) 
 		{
 			// Within FOV.
-			const float turnToFaceActorAngMag = abs(Util::NormalizeAngToPi(Util::GetYawBetweenPositions(a_coopPlayerPos, a_closeRefrPos) - a_targetingAngle));
+			const float turnToFaceActorAngMag = fabsf(Util::NormalizeAngToPi(Util::GetYawBetweenPositions(a_coopPlayerPos, a_closeRefrPos) - a_targetingAngle));
 			const bool inFOV = turnToFaceActorAngMag <= (a_fovRads / 2.0f);
 			// Don't need to check range if not in FOV.
 			if (inFOV)
@@ -2190,7 +2219,6 @@ namespace ALYSLC
 			// Also clear any queued contact events, which do not need handling anymore.
 			if (!rmm->queuedReleasedRefrContactEvents.empty())
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				std::unique_lock<std::mutex> lock(rmm->contactEventsQueueMutex, std::try_to_lock);
 				if (lock)
@@ -3223,8 +3251,8 @@ namespace ALYSLC
 
 		// Get dimensions from the view's visible frame.
 		auto gRect = view->GetVisibleFrameRect();
-		const float rectWidth = abs(gRect.right - gRect.left);
-		const float rectHeight = abs(gRect.bottom - gRect.top);
+		const float rectWidth = fabsf(gRect.right - gRect.left);
+		const float rectHeight = fabsf(gRect.bottom - gRect.top);
 		const bool isMovingCrosshair = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 		// Only actors are selectable when in combat. \
 		// Check if any player in the party is in combat.
@@ -4009,8 +4037,8 @@ namespace ALYSLC
 			);
 			targetPosition = 
 			{
-				basePos.x + xySuspensionDist * suspensionDistMult * cos(Util::ConvertAngle(facingAng)) * cosf(a_p->mm->aimPitch),
-				basePos.y + xySuspensionDist * suspensionDistMult * sin(Util::ConvertAngle(facingAng)) * cosf(a_p->mm->aimPitch),
+				basePos.x + xySuspensionDist * suspensionDistMult * cosf(Util::ConvertAngle(facingAng)) * cosf(a_p->mm->aimPitch),
+				basePos.y + xySuspensionDist * suspensionDistMult * sinf(Util::ConvertAngle(facingAng)) * cosf(a_p->mm->aimPitch),
 				basePos.z
 			};
 
@@ -4073,11 +4101,11 @@ namespace ALYSLC
 				const auto& headingAngle = a_p->coopActor->GetHeading(false);
 				hkpRigidBody->motion.angularVelocity.quad.m128_f32[0] = 
 				(
-					-Settings::fGrabbedRefrBaseRotSpeed * rsData.yComp * cos(headingAngle)
+					-Settings::fGrabbedRefrBaseRotSpeed * rsData.yComp * cosf(headingAngle)
 				);
 				hkpRigidBody->motion.angularVelocity.quad.m128_f32[1] = 
 				(
-					Settings::fGrabbedRefrBaseRotSpeed * rsData.yComp * sin(headingAngle)
+					Settings::fGrabbedRefrBaseRotSpeed * rsData.yComp * sinf(headingAngle)
 				);
 				hkpRigidBody->motion.angularVelocity.quad.m128_f32[2] = 
 				(
@@ -4146,11 +4174,11 @@ namespace ALYSLC
 			// Initial release speed.
 			double firstReleaseSpeed = releaseSpeed;
 			// Time to target.
-			double t = xy / releaseSpeed * cos(aimPitch);
+			double t = xy / releaseSpeed * cosf(aimPitch);
 			// Previously calculated time to target.
 			double tPrev = 0.0;
 			// Difference in the calculated times to target.
-			double tDiff = abs(t - tPrev);
+			double tDiff = fabsf(t - tPrev);
 			// Current delta yaw and yaw rotation speed.
 			const float& currentYawAngDelta = a_p->tm->targetMotionState->cYawAngDeltaPerFrame;
 			const float currentZRotSpeed = 
@@ -4273,9 +4301,9 @@ namespace ALYSLC
 				tPrev = t;
 				// Update current time to target using the new XY positional offset,
 				// since release speed and aim pitch are kept constant.
-				t = xy / releaseSpeed * cos(aimPitch);
+				t = xy / releaseSpeed * cosf(aimPitch);
 				// Calculate the change in time to target.
-				tDiff = abs(t - tPrev);
+				tDiff = fabsf(t - tPrev);
 				// On to the next step.
 				++step;
 			}
@@ -4358,7 +4386,7 @@ namespace ALYSLC
 		float t = Util::GetElapsedSeconds(releaseTP.value());
 		const float xy = Util::GetXYDistance(objectPtr->data.location, releasePos);
 		// Pitch of the object along its trajectory.
-		const float pitchOnTraj = -atan2(tanf(launchPitch) - (g * xy) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
+		const float pitchOnTraj = -atan2f(tanf(launchPitch) - (g * xy) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 1.0f);
 
 		// Check if homing projectile should fully start homing in on the target 
 		// instead of following its initial fixed trajectory.
@@ -4677,7 +4705,7 @@ namespace ALYSLC
 				auto dirToTarget = trajectoryEndPos - releasePos;
 				dirToTarget.Unitize();
 				// Angle straight at target.
-				launchYaw = Util::NormalizeAng0To2Pi(atan2(dirToTarget.y, dirToTarget.x));
+				launchYaw = Util::NormalizeAng0To2Pi(atan2f(dirToTarget.y, dirToTarget.x));
 				// NOTE: Calcs do not account for air drag.
 				// When the actor is aiming at a target, holding the grab bind
 				// modifies the launch angle (flatter trajectory if held longer).
@@ -4702,7 +4730,7 @@ namespace ALYSLC
 				{
 					// Get max range launch angle when launched at max speed.
 					// Pitch from release position to end position.
-					float alpha = atan(z / xy);
+					float alpha = atanf(z / xy);
 					// Halfway between the pitch between release and end positions
 					// and the fully vertical pitch of 90 degrees.
 					launchPitch = (PI / 2.0f) - (0.5f * (PI / 2.0f - alpha));
@@ -4710,8 +4738,8 @@ namespace ALYSLC
 				else
 				{
 					// Two solutions from the discriminant.
-					float plusSoln = atan2(((v * v) + sqrtf(discriminant)), (g * xy));
-					float minusSoln = atan2(((v * v) - sqrtf(discriminant)), (g * xy));
+					float plusSoln = atan2f(((v * v) + sqrtf(discriminant)), (g * xy));
+					float minusSoln = atan2f(((v * v) - sqrtf(discriminant)), (g * xy));
 
 					// NOTE: Pitch convention here is the opposite of the game's:
 					// '+' is up, '-' is down.
@@ -4730,7 +4758,7 @@ namespace ALYSLC
 				}
 
 				// New squared velocity based on the new launch pitch.
-				float root = (g * xy * xy) / (2.0f * cosf(launchPitch) * cosf(launchPitch) * (xy * tan(launchPitch) - z));
+				float root = (g * xy * xy) / (2.0f * cosf(launchPitch) * cosf(launchPitch) * (xy * tanf(launchPitch) - z));
 				releaseSpeed = withinRange ? sqrtf(root) : min(sqrtf(root), v);
 
 				// Components of velocity.
@@ -5019,6 +5047,34 @@ namespace ALYSLC
 		isAutoGrabbing = isGrabbing = false;
 	}
 
+	void TargetingManager::RefrManipulationManager::ClearGrabbedRefr(const RE::ObjectRefHandle& a_handle)
+	{
+		// Clear the given refr from the grabbed list.
+		// Refresh handle-to-index mappings if the refr was cleared.
+
+		size_t numErased = std::erase_if
+		(
+			grabbedRefrInfoList,
+			[&a_handle](const std::unique_ptr<GrabbedReferenceInfo>& a_info) {
+				return a_info->refrHandle == a_handle;
+			}
+		);
+
+		if (numErased != 0)
+		{
+			RefreshHandleToIndexMappings(true);
+		}
+
+		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
+		{
+			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
+			{
+				// Ensure actors are no longer paralyzed.
+				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			}
+		}
+	}
+
 	void TargetingManager::RefrManipulationManager::ClearGrabbedRefrs() noexcept
 	{
 		// Clear all managed grabbed refrs + their cached data.
@@ -5137,6 +5193,34 @@ namespace ALYSLC
 		);
 
 		if (numErased != 0) 
+		{
+			RefreshHandleToIndexMappings(false);
+		}
+
+		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
+		{
+			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
+			{
+				// Ensure actors are no longer paralyzed.
+				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			}
+		}
+	}
+
+	void TargetingManager::RefrManipulationManager::ClearReleasedRefr(const RE::ObjectRefHandle& a_handle)
+	{
+		// Clear the given refr from the released list.
+		// Refresh handle-to-index mappings if the refr was cleared.
+		
+		size_t numErased = std::erase_if
+		(
+			releasedRefrInfoList,
+			[&a_handle](const std::unique_ptr<ReleasedReferenceInfo>& a_info) {
+				return a_info->refrHandle == a_handle;
+			}
+		);
+
+		if (numErased != 0)
 		{
 			RefreshHandleToIndexMappings(false);
 		}
@@ -5418,11 +5502,11 @@ namespace ALYSLC
 				releaseSpeed
 			);
 			// Time to target, accounting for air resistance.
-			double t = -log(1.0 - ((xy * mu) / (releaseSpeed * cos(aimPitch)))) / mu;
+			double t = -log(1.0 - ((xy * mu) / (releaseSpeed * cosf(aimPitch)))) / mu;
 			// Previously calculated time to target.
 			double tPrev = 0.0;
 			// Difference in the calculated times to target.
-			double tDiff = abs(t - tPrev);
+			double tDiff = fabsf(t - tPrev);
 			// Current delta yaw and yaw rotation speed.
 			const float& currentYawAngDelta = a_p->tm->targetMotionState->cYawAngDeltaPerFrame;
 			const float currentZRotSpeed =
@@ -5551,9 +5635,9 @@ namespace ALYSLC
 				tPrev = t;
 				// Update current time to target using the new XY positional offset
 				// and release speed.
-				t = -log(1.0 - ((xy * mu) / (releaseSpeed * cos(aimPitch)))) / mu;
+				t = -log(1.0 - ((xy * mu) / (releaseSpeed * cosf(aimPitch)))) / mu;
 				// Calculate the change in time to target.
-				tDiff = abs(t - tPrev);
+				tDiff = fabsf(t - tPrev);
 				// On to the next step.
 				++step;
 			}
@@ -5604,8 +5688,8 @@ namespace ALYSLC
 		double w = -exp((a_z * mu * mu / g) - (a_xy * tanf(a_launchPitch) * mu * mu / g) - 1.0);
 		const auto solnPair = Util::LambertWFunc::ApproxRealSolutionBothBranches(w, 1E-10);
 		// Two potential solutions.
-		double launchSpeed1 = solnPair.first.has_value() ? (a_xy * mu) / (cos(a_launchPitch) * (solnPair.first.value() + 1.0)) : -1.0;
-		double launchSpeed2 = solnPair.second.has_value() ? (a_xy * mu) / (cos(a_launchPitch) * (solnPair.second.value() + 1.0)) : -1.0;
+		double launchSpeed1 = solnPair.first.has_value() ? (a_xy * mu) / (cosf(a_launchPitch) * (solnPair.first.value() + 1.0)) : -1.0;
+		double launchSpeed2 = solnPair.second.has_value() ? (a_xy * mu) / (cosf(a_launchPitch) * (solnPair.second.value() + 1.0)) : -1.0;
 
 		// Set to whichever one is valid first.
 		if (launchSpeed1 > 0.0)
@@ -5827,8 +5911,8 @@ namespace ALYSLC
 			// Tradeoffs, schmadeoffs.
 			g = 
 			(
-				((mu * mu * releaseSpeed * cos(launchPitch)) * (z - xy * tan(launchPitch))) / 
-				((releaseSpeed * cos(launchPitch) * log(1 - (xy * mu) / (releaseSpeed * cos(launchPitch)))) + xy * mu)
+				((mu * mu * releaseSpeed * cosf(launchPitch)) * (z - xy * tanf(launchPitch))) / 
+				((releaseSpeed * cosf(launchPitch) * log(1 - (xy * mu) / (releaseSpeed * cosf(launchPitch)))) + xy * mu)
 			);
 			g = isnan(g) || isinf(g) ? g = 0.0 : g;
 
@@ -5895,8 +5979,8 @@ namespace ALYSLC
 					xy = projMaxDistSetting->data.f;
 					trajectoryEndPos = RE::NiPoint3
 					(
-						releasePos.x + xy * cos(launchYaw),
-						releasePos.y + xy * sin(launchYaw),
+						releasePos.x + xy * cosf(launchYaw),
+						releasePos.y + xy * sinf(launchYaw),
 						releasePos.z
 					);
 				}
@@ -5942,22 +6026,22 @@ namespace ALYSLC
 			// Choose endpoint that is far from the release point.
 			// Default time of flight is arbitrary, but should be relatively large. Chose 5 seconds here.
 			// Accounting for air resistance.
-			double xy = (releaseSpeed * cos(launchPitch) / mu) * (1.0 - exp(-mu * 5.0));
-			double z = (-g * 5.0 / mu) + ((releaseSpeed * sin(launchPitch) + g / mu) / mu) * (1.0 - exp(-mu * 5.0));
+			double xy = (releaseSpeed * cosf(launchPitch) / mu) * (1.0 - exp(-mu * 5.0));
+			double z = (-g * 5.0 / mu) + ((releaseSpeed * sinf(launchPitch) + g / mu) / mu) * (1.0 - exp(-mu * 5.0));
 
 			auto iniPrefSettings = RE::INIPrefSettingCollection::GetSingleton();
 			auto projMaxDistSetting = iniPrefSettings ? iniPrefSettings->GetSetting("fVisibleNavmeshMoveDist") : nullptr; 
 			if (projMaxDistSetting) 
 			{
 				xy = projMaxDistSetting->data.f;
-				double t = -log(1.0 - ((xy * mu) / (releaseSpeed * cos(launchPitch)))) / mu;
-				z = (-g * t / mu) + ((releaseSpeed * sin(launchPitch) + g / mu) / mu) * (1.0 - exp(-mu * t));
+				double t = -log(1.0 - ((xy * mu) / (releaseSpeed * cosf(launchPitch)))) / mu;
+				z = (-g * t / mu) + ((releaseSpeed * sinf(launchPitch) + g / mu) / mu) * (1.0 - exp(-mu * t));
 			}
 
 			trajectoryEndPos = RE::NiPoint3
 			(
-				releasePos.x + xy * cos(launchYaw), 
-				releasePos.y + xy * sin(launchYaw),
+				releasePos.x + xy * cosf(launchYaw), 
+				releasePos.y + xy * sinf(launchYaw),
 				releasePos.z + z
 			);
 
@@ -6033,8 +6117,8 @@ namespace ALYSLC
 		(
 			(g / (mu * mu)) * 
 			(
-				(log(1 - ((xy * mu) / (releaseSpeed * cos(straightLinePitch))))) + 
-				(xy / (releaseSpeed * cos(straightLinePitch))) * ((releaseSpeed * sin(straightLinePitch)) + (g / mu))
+				(log(1 - ((xy * mu) / (releaseSpeed * cosf(straightLinePitch))))) + 
+				(xy / (releaseSpeed * cosf(straightLinePitch))) * ((releaseSpeed * sinf(straightLinePitch)) + (g / mu))
 			)
 		);
 
