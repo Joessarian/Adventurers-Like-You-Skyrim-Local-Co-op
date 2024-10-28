@@ -120,14 +120,14 @@ namespace ALYSLC
 		//
 		
 		// Signal to refresh equip state.
-		inline void SignalRefreshFavMagMenuEquipState()
+		inline void SignalRefreshEquipState()
 		{
 			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			ALYSLC::Log("[MIM] SignalRefreshFavMagMenuEquipState: Getting lock. (0x{:X})", hash);
+			ALYSLC::Log("[MIM] SignalRefreshEquipState: Getting lock. (0x{:X})", hash);
 			{
 				std::unique_lock<std::mutex> lock(equipEventMutex);
-				ALYSLC::Log("[MIM] SignalRefreshFavMagMenuEquipState: Setting refresh equip state flag to true.");
+				ALYSLC::Log("[MIM] SignalRefreshEquipState: Setting refresh equip state flag to true.");
 				equipEventRefreshReq = true;
 			}
 		}
@@ -145,6 +145,8 @@ namespace ALYSLC
 		// Equip a quick slot item/spell for P1
 		// and update the Favorites Menu entry list to reflect the change.
 		void EquipP1QSForm();
+		// Hotkey the currently selected favorited form, based on the menu-controlling player's RS orientation.
+		void HotkeyFavoritedForm();
 		// Check if P1's quick slot item/spell are still favorited, save their indices in the 
 		// Favorites Menu entry list, and update the list to reflect their equip state.
 		void InitP1QSFormEntries();
@@ -272,6 +274,9 @@ namespace ALYSLC
 		// Set menu input event type and accompanying event data based on the given player button input in the Favorites Menu.
 		void ProcessFavoritesMenuButtonInput(const uint32_t& a_xMask);
 
+		// Set menu input event type and accompanying event data based on the given player button input in the Gift Menu.
+		void ProcessGiftMenuButtonInput(const uint32_t& a_xMask);
+
 		// Set menu input event type and accompanying event data based on the given player button input in the Inventory Menu.
 		void ProcessInventoryMenuButtonInput(const uint32_t& a_xMask);
 
@@ -363,6 +368,8 @@ namespace ALYSLC
 		RE::GPtr<RE::DialogueMenu> dialogueMenu;
 		// Favorites menu.
 		RE::GPtr<RE::FavoritesMenu> favoritesMenu;
+		// Gift menu.
+		RE::GPtr<RE::GiftMenu> giftMenu;
 		// Inventory menu.
 		RE::GPtr<RE::InventoryMenu> inventoryMenu;
 		// Journal menu.
@@ -423,8 +430,6 @@ namespace ALYSLC
 		// Is a new menu now on top of the menu stack?
 		// Update control map and refresh data if so.
 		bool newMenuAtopStack;
-		// Should favorite/unfavorite selected item.
-		bool shouldFavorite;
 		// Should refresh menu.
 		bool shouldRefreshMenu;
 		// Spell was un/favorited.

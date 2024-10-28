@@ -264,7 +264,6 @@ namespace ALYSLC
 				return;
 			}
 
-			
 			auto inventoryChanges = a_actor->GetInventoryChanges();
 			if (!inventoryChanges)
 			{
@@ -275,24 +274,25 @@ namespace ALYSLC
 			auto inventory = a_actor->GetInventory();
 			for (auto& [boundObj, entryDataPair] : inventory)
 			{
+				const auto& [count, ied] = entryDataPair;
 				if (boundObj && boundObj == a_form &&
-					entryDataPair.first > 0 && entryDataPair.second.get())
+					count > 0 && ied && ied.get())
 				{
 					// Exists and has a non-zero count.
-					auto& invEntryData = entryDataPair.second;
-					auto exDataListList = entryDataPair.second->extraLists;
 					bool exHotkeyPresent = false;
-					if (exDataListList)
+					if (ied->extraLists)
 					{
-						for (auto exDataList : *exDataListList)
+						for (auto exDataList : *ied->extraLists)
 						{
-							exHotkeyPresent = exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey);
-							if (exHotkeyPresent)
+							if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
 							{
+								exHotkeyPresent = true;
 								// Unfavorite only if extra hotkey data is present.
 								if (!a_shouldFavorite) 
 								{
-									NativeFunctions::Unfavorite(inventoryChanges, invEntryData.get(), exDataList);
+									NativeFunctions::Unfavorite(inventoryChanges, ied.get(), exDataList);
+									ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.", 
+										a_actor->GetName(), a_form->GetName(), !ied->IsFavorited());
 								}
 
 								// Break once extra hotkey data found, 
@@ -305,14 +305,25 @@ namespace ALYSLC
 						// Favorite only if not previously favorited.
 						if (!exHotkeyPresent && a_shouldFavorite)
 						{
-							NativeFunctions::Favorite(inventoryChanges, invEntryData.get(), std::addressof(a_actor->extraList));
+							NativeFunctions::Favorite
+							(
+								inventoryChanges, 
+								ied.get(),
+								!ied->extraLists->empty() ?
+								ied->extraLists->front() :
+								nullptr
+							);
+							ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
+								a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
 						}
 					}
 					else if (a_shouldFavorite)
 					{
 						// Favorite the form right away because 
 						// there is no extra data at all for this item.
-						NativeFunctions::Favorite(inventoryChanges, invEntryData.get(), std::addressof(a_actor->extraList));
+						NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
+						ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
+							a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
 					}
 
 					// Item found.

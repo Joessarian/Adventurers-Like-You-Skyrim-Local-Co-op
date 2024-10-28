@@ -11,6 +11,7 @@ namespace ALYSLC
 	bool MCOCompat::g_mcoInstalled;
 	bool MiniMapCompat::g_miniMapInstalled;
 	bool MiniMapCompat::g_shouldApplyCullingWorkaround;
+	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled;
 	bool PrecisionCompat::g_precisionInstalled;
 	bool QuickLootCompat::g_quickLootInstalled;
 	bool RequiemCompat::g_requiemInstalled;
@@ -63,6 +64,15 @@ namespace ALYSLC
 		}
 
 		g_shouldApplyCullingWorkaround = false;
+	}
+
+	void PersistentFavoritesCompat::CheckForPersistentFavorites()
+	{
+		g_persistentFavoritesInstalled = static_cast<bool>(GetModuleHandleA("PersistentFavorites.dll"));
+		if (g_persistentFavoritesInstalled)
+		{
+			logger::info("[Compatibility] PersistentFavorites installed!");
+		}
 	}
 
 	void PrecisionCompat::RequestPrecisionAPIs(const SKSE::LoadInterface* a_loadInterface)

@@ -52,6 +52,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
 		ALYSLC::MiniMapCompat::CheckForMiniMap();
+		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
 		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);

@@ -3734,7 +3734,7 @@ namespace ALYSLC
 					{
 						ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
 						p->em->RestoreP1Favorites();
-						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavorites);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 					}
 				}
 			}

@@ -2722,13 +2722,12 @@ namespace ALYSLC
 				// Remove co-op player-favorited items that P1 has not also favorited and does not have equipped.
 				if (!favoritesIndicesInCommon[i] && form && form->IsBoundObject())
 				{
+					Util::ChangeFormFavoritesStatus(p1, form, false);
 					// If the co-op player favorited form was added previously, it should now be removed.
 					if (favoritedItemWasAdded[i])
 					{
 						p1->RemoveItem(form->As<RE::TESBoundObject>(), 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 					}
-					
-					Util::ChangeFormFavoritesStatus(p1, form, false);
 				}
 			}
 
@@ -3063,7 +3062,7 @@ namespace ALYSLC
 					// Signal menu input manager to refresh equip state if it is currently running.
 					if (glob.mim->IsRunning())
 					{
-						glob.mim->SignalRefreshFavMagMenuEquipState();
+						glob.mim->SignalRefreshEquipState();
 					}
 				}
 

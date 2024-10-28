@@ -58,7 +58,6 @@ namespace ALYSLC
 		// Bools
 		isCoopInventory = false;
 		placeholderMagicChanged = false;
-		shouldFavorite = false;
 		shouldRefreshMenu = false;
 		spellFavoriteStatusChanged = false;
 		takeAll = false;
@@ -84,6 +83,7 @@ namespace ALYSLC
 		containerMenu = nullptr;
 		dialogueMenu = nullptr;
 		favoritesMenu = nullptr;
+		giftMenu = nullptr;
 		inventoryMenu = nullptr;
 		journalMenu = nullptr;
 		lockpickingMenu = nullptr;
@@ -245,7 +245,6 @@ namespace ALYSLC
 		equipEventRefreshReq = false;
 		isCoopInventory = false;
 		placeholderMagicChanged = false;
-		shouldFavorite = false;
 		shouldRefreshMenu = false;
 		spellFavoriteStatusChanged = false;
 		takeAll = false;
@@ -329,27 +328,26 @@ namespace ALYSLC
 		}
 
 		// Switch to P1 control if the current active container menu tab is P1's inventory.
-		if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
+		// NOTE: If calling Invoke() here instead of in a UI task causes crashes, switch to running the below code in a UI task.
+		// Right now, we need the result straight away in order to pause the MIM as necessary.
+		if (auto ui = RE::UI::GetSingleton(); ui)
 		{
-			if (auto ui = RE::UI::GetSingleton(); ui)
+			if (containerMenu = ui->GetMenu<RE::ContainerMenu>(); containerMenu && containerMenu.get())
 			{
-				if (auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); containerMenu && containerMenu.get())
+				if (auto view = containerMenu->uiMovie; view)
 				{
-					if (auto view = containerMenu->uiMovie; view)
+					RE::GFxValue result;
+					view->Invoke("_root.Menu_mc.isViewingContainer", std::addressof(result), nullptr, 0);
+					// Viewing P1's inventory from container.
+					if (bool isViewingContainer = result.GetBool(); !isViewingContainer) 
 					{
-						RE::GFxValue result;
-						view->Invoke("_root.Menu_mc.isViewingContainer", std::addressof(result), nullptr, 0);
-						// Viewing P1's inventory from container.
-						if (bool isViewingContainer = result.GetBool(); !isViewingContainer) 
+						RE::NiPointer<RE::TESObjectREFR> containerRefr;
+						RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
+						// The container is a co-op companion's inventory.
+						if (GlobalCoopData::IsCoopPlayer(containerRefr)) 
 						{
-							RE::NiPointer<RE::TESObjectREFR> containerRefr;
-							RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-							// The container is a co-op companion's inventory.
-							if (GlobalCoopData::IsCoopPlayer(containerRefr)) 
-							{
-								GlobalCoopData::SetMenuCIDs(glob.player1CID);
-								return ManagerState::kPaused;
-							}
+							GlobalCoopData::SetMenuCIDs(glob.player1CID);
+							return ManagerState::kPaused;
 						}
 					}
 				}
@@ -366,7 +364,7 @@ namespace ALYSLC
 		{
 			if (auto ui = RE::UI::GetSingleton(); ui)
 			{
-				if (auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); containerMenu && containerMenu.get())
+				if (containerMenu = ui->GetMenu<RE::ContainerMenu>(); containerMenu && containerMenu.get())
 				{
 					if (auto view = containerMenu->uiMovie; view)
 					{
@@ -470,9 +468,24 @@ namespace ALYSLC
 								ProcessDialogueMenuButtonInput(xMask);
 								break;
 							}
+							case SupportedMenu::kFavorites:
+							{
+								ProcessFavoritesMenuButtonInput(xMask);
+								break;
+							}
+							case SupportedMenu::kGift:
+							{
+								ProcessGiftMenuButtonInput(xMask);
+								break;
+							}
 							case SupportedMenu::kInventory:
 							{
 								ProcessInventoryMenuButtonInput(xMask);
+								break;
+							}
+							case SupportedMenu::kLoot:
+							{
+								ProcessLootMenuButtonInput(xMask);
 								break;
 							}
 							case SupportedMenu::kMagic:
@@ -483,16 +496,6 @@ namespace ALYSLC
 							case SupportedMenu::kMap:
 							{
 								ProcessMapMenuButtonInput(xMask);
-								break;
-							}
-							case SupportedMenu::kFavorites:
-							{
-								ProcessFavoritesMenuButtonInput(xMask);
-								break;
-							}
-							case SupportedMenu::kLoot:
-							{
-								ProcessLootMenuButtonInput(xMask);
 								break;
 							}
 							default:
@@ -944,7 +947,7 @@ namespace ALYSLC
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
 					// Favorites menu must be open.
-					if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+					if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
 					{
 						if (auto view = favoritesMenu->uiMovie; view)
 						{
@@ -1042,6 +1045,119 @@ namespace ALYSLC
 										view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
 									}
 								}
+							}
+						}
+					}
+				}
+			}
+		);
+	}
+
+	void MenuInputManager::HotkeyFavoritedForm()
+	{
+		if (!glob.globalDataInit || !glob.coopSessionActive)
+		{
+			return;
+		}
+
+		auto taskInterface = SKSE::GetTaskInterface();
+		// Can't update QS tag if task interface is invalid.
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		auto ue = RE::UserEvents::GetSingleton();
+		if (!ue)
+		{
+			return;
+		}
+
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME))
+		{
+			return;
+		}
+
+		int32_t menuCID = glob.menuCID;
+		if (menuCID == -1) 
+		{
+			menuCID = glob.player1CID;
+		}
+
+		const auto& rsData = glob.cdh->GetAnalogStickState(menuCID, false);
+		if (rsData.normMag == 0.0f)
+		{
+			return;
+		}
+
+		float realRSAng = atan2f(rsData.yComp, rsData.xComp);
+		realRSAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realRSAng));
+		RE::BSFixedString hotkeyEvent = ""sv;
+		if (realRSAng < PI / 8.0f || realRSAng > 15.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey1;
+		}
+		else if (realRSAng < 3.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey2;
+		}
+		else if (realRSAng < 5.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey3;
+		}
+		else if (realRSAng < 7.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey4;
+		}
+		else if (realRSAng < 9.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey5;
+		}
+		else if (realRSAng < 11.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey6;
+		}
+		else if (realRSAng < 13.0f * PI / 8.0f)
+		{
+			hotkeyEvent = ue->hotkey7;
+		}
+		else
+		{
+			hotkeyEvent = ue->hotkey8;
+		}
+
+		if (hotkeyEvent == ""sv)
+		{
+			return;
+		}
+
+		auto hotkeyCode = controlMap->GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
+		if (hotkeyCode == 0xFF)
+		{
+			return;
+		}
+
+		taskInterface->AddUITask
+		(
+			[this, hotkeyEvent, hotkeyCode]() {
+				if (auto ui = RE::UI::GetSingleton(); ui)
+				{
+					if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+					{
+						if (auto view = favoritesMenu->uiMovie; view)
+						{
+							RE::GFxValue selectedIndex;
+							view->GetVariable(std::addressof(selectedIndex), "_root.MenuHolder.Menu_mc.itemList.selectedEntry.index");
+
+							// Index in favorites list.
+							uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+							uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
+							auto form = favoritesMenu->favorites[index].item;
+							if (form)
+							{
+								Util::SendButtonEvent(RE::INPUT_DEVICE::kKeyboard, hotkeyEvent, hotkeyCode, 1.0f, 0.0f, false);
+								Util::SendButtonEvent(RE::INPUT_DEVICE::kKeyboard, hotkeyEvent, hotkeyCode, 0.0f, 1.0f, false);
 							}
 						}
 					}
@@ -1463,7 +1579,7 @@ namespace ALYSLC
 					{
 						if (auto ui = RE::UI::GetSingleton(); ui)
 						{
-							if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+							if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
 							{
 								if (auto view = favoritesMenu->uiMovie; view)
 								{
@@ -1805,77 +1921,64 @@ namespace ALYSLC
 			currentMenuInputType = MenuInputEventType::kPressedNoEvent;
 		}
 
-		if (a_xMask == XINPUT_GAMEPAD_X)
+		if (selectedItem)
 		{
-			// Drop one of the item when in the player's inventory.
-			// Otherwise, take all when looting from a container.
-			// No need to have a selected item.
-			// Everything is looted by P1 and then transfered to the menu-controlling player.
-			if (isCoopInventory)
+			if (a_xMask == XINPUT_GAMEPAD_A || a_xMask == XINPUT_GAMEPAD_X)
 			{
-				// Handled here; no event to send.
-				currentMenuInputType = MenuInputEventType::kPressedNoEvent;
-				if (selectedItem)
+				if (isCoopInventory)
 				{
-					auto boundObj = selectedItem->data.objDesc->object;
-					RE::DebugNotification(fmt::format("{} is dropping 1 {}", menuCoopActorPtr->GetName(), boundObj->GetName()).c_str());
-					// Place in front of player.
-					auto dropPos = Util::Get3DCenterPos(menuCoopActorPtr.get()) + Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(menuCoopActorPtr->GetHeading(false))) * 0.5f * menuCoopActorPtr->GetHeight();
-					int32_t currentCount = 0;
-					auto inventory = menuCoopActorPtr->GetInventory();
-					if (inventory.contains(boundObj))
+					if (selectedItem)
 					{
-						currentCount = inventory.at(boundObj).first;
-					}
+						auto boundObj = selectedItem->data.objDesc->object;
+						if (!boundObj)
+						{
+							return;
+						}
 
-					// If none of this item will remain after dropping one.
-					if (currentCount <= 1)
-					{
 						const auto& p = glob.coopPlayers[managerMenuCID];
-						// Remove dropped object from desired equipped objects list if no more remain in the player's inventory.
+						// Remove object from desired equipped objects list if no more remain in the player's inventory.
+						// Also unfavorite.
 						if (p->isActive)
 						{
-							// Unequip before dropping to avoid crash.
+							// Unequip before dropping/transferring to avoid crash.
 							auto foundIter = std::find_if(p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), [boundObj](RE::TESForm* a_form) { return a_form == boundObj; });
 							if (foundIter != p->em->desiredEquippedForms.end())
 							{
 								auto index = foundIter - p->em->desiredEquippedForms.begin();
-								p->em->desiredEquippedForms[index] = nullptr;
 								p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
 							}
 							else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
 							{
 								aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
 							}
+							
+							int32_t currentCount = 0;
+							auto inventory = menuCoopActorPtr->GetInventory();
+							if (inventory.contains(boundObj))
+							{
+								currentCount = inventory.at(boundObj).first;
+							}
+
+							// Unfavorite the item if none of this item will remain after dropping/transferring one.
+							if (currentCount <= 1)
+							{
+								Util::ChangeFormFavoritesStatus(menuCoopActorPtr.get(), boundObj, false);
+							}
 						}
+
+						// Drop the item.
+						if (a_xMask == XINPUT_GAMEPAD_X)
+						{
+							// Handled here; no event to send.
+							currentMenuInputType = MenuInputEventType::kPressedNoEvent;
+							RE::DebugNotification(fmt::format("{} is dropping 1 {}", menuCoopActorPtr->GetName(), boundObj->GetName()).c_str());
+							// Place in front of player.
+							auto dropPos = Util::Get3DCenterPos(menuCoopActorPtr.get()) + Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(menuCoopActorPtr->GetHeading(false))) * 0.5f * menuCoopActorPtr->GetHeight();
+							auto droppedRefrHandle = menuCoopActorPtr->RemoveItem(boundObj, 1, RE::ITEM_REMOVE_REASON::kDropping, nullptr, nullptr, &dropPos);
+						}
+
+						shouldRefreshMenu = true;
 					}
-
-					auto droppedRefrHandle = menuCoopActorPtr->RemoveItem(boundObj, 1, RE::ITEM_REMOVE_REASON::kDropping, nullptr, nullptr, &dropPos);
-					shouldRefreshMenu = true;
-				}
-			}
-		}
-
-		if (selectedItem)
-		{
-			if (a_xMask == XINPUT_GAMEPAD_A)
-			{
-				if (selectedForm = selectedItem->data.objDesc->object; selectedForm)
-				{
-					// NOTE: Keeping commented out until inventory tab switch is thoroughly tested for bugs.
-					// Can transfer keys/gold through inventory since the gift menu does not allow for transfer of these items to P1.
-				
-					//bool isGiftMenuBlacklistedItem = selectedForm->IsGold() || selectedForm->IsKey();
-					//if (isGiftMenuBlacklistedItem || (!isCoopInventory && (mode == RE::ContainerMenu::ContainerMode::kLoot || mode == RE::ContainerMenu::ContainerMode::kNPCMode)))
-					//{
-					//	ALYSLC::Log("[MIM] ProcessContainerMenuButtonInput: Adding (x1) {} to {}.", selectedForm->GetName(), menuCoopActorPtr->GetName());
-					//}
-					//else if (isCoopInventory)
-					//{ 
-					//	// No transfer to P1 here. Now using the Gift Menu.
-					//	RE::DebugMessageBox("[ALYSLC] Aside from gold and keys, please use the Gift Menu to transfer items between players.");
-					//	currentMenuInputType = MenuInputEventType::kPressedNoEvent;
-					//}
 				}
 			}
 			// Favorite the selected item.
@@ -1883,92 +1986,105 @@ namespace ALYSLC
 			{
 				// Handled here; no event to send.
 				currentMenuInputType = MenuInputEventType::kPressedNoEvent;
+
+				// Need inventory changes to (un)favorite any selected form.
+				auto inventoryChanges = menuCoopActorPtr->GetInventoryChanges();
+				if (!inventoryChanges)
+				{
+					return;
+				}
+
+				// Companion player's inventory must be open.
+				if (!isCoopInventory)
+				{
+					return;
+				}
+				
+				selectedForm = selectedItem->data.objDesc->object;
+				// Must have a selected form to (un)favorite.
+				if (!selectedForm)
+				{
+					return;
+				}
+
 				// Favorite the item when in the player's inventory.
 				// Credit to po3 for the code to check if the item has been favorited.
 				// From an older version of:
 				// https://github.com/powerof3/PapyrusExtenderSSE/
-				if (isCoopInventory)
+				bool shouldFavorite = true;
+				auto inventory = menuCoopActorPtr->GetInventory();
+				RE::InventoryEntryData* entryData = nullptr;
+				for (auto& inventoryEntry : inventory)
 				{
-					selectedForm = selectedItem->data.objDesc->object;
-					if (selectedForm)
+					if (inventoryEntry.first && inventoryEntry.first == selectedForm)
 					{
-						shouldFavorite = true;
-						auto inventory = menuCoopActorPtr->GetInventory();
-						RE::InventoryEntryData* entryData = nullptr;
-						for (auto& inventoryEntry : inventory)
+						auto& entryData = inventoryEntry.second.second;
+						if (entryData)
 						{
-							if (inventoryEntry.first && inventoryEntry.first == selectedForm)
+							if (entryData->extraLists && !entryData->extraLists->empty())
 							{
-								auto& entryData = inventoryEntry.second.second;
-								if (entryData)
+								RE::ExtraDataList* exDataList = nullptr;
+								for (auto& exData : *entryData->extraLists)
 								{
-									auto inventoryChanges = menuCoopActorPtr->GetInventoryChanges();
-									if (entryData->extraLists && !entryData->extraLists->empty())
+									// Already has favorited data, so unfavorite instead.
+									if (exData->HasType(RE::ExtraDataType::kHotkey))
 									{
-										RE::ExtraDataList* exDataList = nullptr;
-										for (auto& exData : *entryData->extraLists)
-										{
-											// Already has favorited data, so unfavorite instead.
-											if (exData->HasType(RE::ExtraDataType::kHotkey))
-											{
-												shouldFavorite = false;
-												exDataList = exData;
-												break;
-											}
-										}
-
-										if (shouldFavorite)
-										{
-											exDataList = entryData->extraLists->front();
-											if (inventoryChanges)
-											{
-												Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), exDataList);
-											}
-										}
-										else
-										{
-											if (inventoryChanges)
-											{
-												Util::NativeFunctions::Unfavorite(inventoryChanges, entryData.get(), exDataList);
-											}
-										}
-
-										const auto& em = glob.coopPlayers[managerMenuCID]->em;
-										// Since the player's favorited physical forms have changed, 
-										// update the co-op player's corresponding list of cyclable forms.
-										switch (*selectedForm->formType)
-										{
-										case RE::FormType::Ammo:
-										{
-											em->SetCyclableFavForms(CyclableForms::kAmmo);
-											break;
-										}
-										case RE::FormType::Weapon:
-										{
-											em->SetCyclableFavForms(CyclableForms::kWeapon);
-											break;
-										}
-										default:
-										{
-											break;
-										}
-										}
-
+										shouldFavorite = false;
+										exDataList = exData;
 										break;
 									}
-									else
+								}
+
+								if (shouldFavorite)
+								{
+									exDataList = entryData->extraLists->front();
+									if (inventoryChanges)
 									{
-										// Entry data may not have a list of extra data, but we can still favorite the item.
-										Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), nullptr);
+										Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), exDataList);
 									}
 								}
+								else
+								{
+									if (inventoryChanges)
+									{
+										Util::NativeFunctions::Unfavorite(inventoryChanges, entryData.get(), exDataList);
+									}
+								}
+
+								const auto& em = glob.coopPlayers[managerMenuCID]->em;
+								// Since the player's favorited physical forms have changed, 
+								// update the co-op player's corresponding list of cyclable forms.
+								switch (*selectedForm->formType)
+								{
+								case RE::FormType::Ammo:
+								{
+									em->SetCyclableFavForms(CyclableForms::kAmmo);
+									break;
+								}
+								case RE::FormType::Weapon:
+								{
+									em->SetCyclableFavForms(CyclableForms::kWeapon);
+									break;
+								}
+								default:
+								{
+									break;
+								}
+								}
+
+								break;
+							}
+							else
+							{
+								// Entry data may not have a list of extra data, but we can still favorite the item.
+								Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), nullptr);
 							}
 						}
-
-						// Refresh menu to display the changed favorites status indicator.
-						shouldRefreshMenu = true;
 					}
 				}
+
+				// Refresh menu to display the changed favorites status indicator.
+				shouldRefreshMenu = true;
 			}
 		}
 	}
@@ -2013,7 +2129,7 @@ namespace ALYSLC
 				[this]() {
 					if (auto ui = RE::UI::GetSingleton(); ui)
 					{
-						if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+						if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
 						{
 							if (auto view = favoritesMenu->uiMovie; view)
 							{
@@ -2127,6 +2243,75 @@ namespace ALYSLC
 		{
 			// Ignore equip attempts with the "A" button, as emulating input here will equip this player's favorited item on P1.
 			currentMenuInputType = MenuInputEventType::kPressedNoEvent;
+		}
+		else if (a_xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
+		{
+			HotkeyFavoritedForm();
+		}
+	}
+
+	void MenuInputManager::ProcessGiftMenuButtonInput(const uint32_t& a_xMask)
+	{
+		// Handle GiftMenu input.
+
+		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
+		if (!menuCoopActorPtr)
+		{
+			return;
+		}
+
+		auto ue = RE::UserEvents::GetSingleton();
+		if (!ue || !giftMenu || !giftMenu.get())
+		{
+			return;
+		}
+
+		if (RE::ItemList::Item* selectedItem = GetSelectedItem(giftMenu->itemList); selectedItem)
+		{
+			if (selectedItem)
+			{
+				auto boundObj = selectedItem->data.objDesc->object;
+				if (!boundObj)
+				{
+					return;
+				}
+
+				const auto& p = glob.coopPlayers[managerMenuCID];
+				// Remove object from desired equipped objects list if no more remain in the player's inventory.
+				// Also unfavorite.
+				if (p->isActive)
+				{
+					// Unequip before gifting to avoid crash.
+					auto foundIter = std::find_if(p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), [boundObj](RE::TESForm* a_form) { return a_form == boundObj; });
+					if (foundIter != p->em->desiredEquippedForms.end())
+					{
+						auto index = foundIter - p->em->desiredEquippedForms.begin();
+						p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
+					}
+					else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+					{
+						aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
+					}
+
+					if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+					{
+						int32_t currentCount = 0;
+						auto inventory = menuCoopActorPtr->GetInventory();
+						if (inventory.contains(boundObj))
+						{
+							currentCount = inventory.at(boundObj).first;
+						}
+
+						// If none of this item will remain after gifting one.
+						if (currentCount <= 1)
+						{
+							Util::ChangeFormFavoritesStatus(menuCoopActorPtr.get(), boundObj, false);
+						}
+					}
+				}
+
+				shouldRefreshMenu = true;
+			}
 		}
 	}
 
@@ -2909,7 +3094,7 @@ namespace ALYSLC
 			[this, &em, favoritesList, favoritedFormIDsSet, isVampireLord]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
-					if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+					if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
 					{
 						if (auto view = favoritesMenu->uiMovie; view)
 						{
@@ -2931,8 +3116,6 @@ namespace ALYSLC
 								entry.GetMember("index", std::addressof(entryIndex));
 								int32_t index = static_cast<int32_t>(entryIndex.GetNumber());
 
-								// REMOVE when done debugging.
-								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: Favorites list UI entry {} corresponds to favorites list index: {}", i, index);
 								RE::TESForm* favoritedItem = index != -1 ? favoritesList[index].item : nullptr;
 								if (!favoritedItem) 
 								{
@@ -3161,7 +3344,7 @@ namespace ALYSLC
 			[this]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
-					if (auto magicMenu = ui->GetMenu<RE::MagicMenu>(); magicMenu && magicMenu.get())
+					if (magicMenu = ui->GetMenu<RE::MagicMenu>(); magicMenu && magicMenu.get())
 					{
 						if (auto view = magicMenu->uiMovie; view && magicMenu->unk30)
 						{
@@ -3576,7 +3759,7 @@ namespace ALYSLC
 			[this, a_selectedForm, a_selectedIndex]() {
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
-					if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+					if (favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
 					{
 						if (auto view = favoritesMenu->uiMovie; view)
 						{
@@ -3629,6 +3812,7 @@ namespace ALYSLC
 		containerMenu = nullptr;
 		dialogueMenu = nullptr;
 		favoritesMenu = nullptr;
+		giftMenu = nullptr;
 		inventoryMenu = nullptr;
 		journalMenu = nullptr;
 		lockpickingMenu = nullptr;
@@ -3642,39 +3826,43 @@ namespace ALYSLC
 			{
 				barterMenu = ui->GetMenu<RE::BarterMenu>();
 			}
-			if (menuNameHash == Hash(RE::BookMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::BookMenu::MENU_NAME))
 			{
 				bookMenu = ui->GetMenu<RE::BookMenu>();
 			}
-			if (menuNameHash == Hash(RE::ContainerMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::ContainerMenu::MENU_NAME))
 			{
 				containerMenu = ui->GetMenu<RE::ContainerMenu>();
 			}
-			if (menuNameHash == Hash(RE::DialogueMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::DialogueMenu::MENU_NAME))
 			{
 				dialogueMenu = ui->GetMenu<RE::DialogueMenu>();
 			}
-			if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
 			{
 				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
 			}
-			if (menuNameHash == Hash(RE::InventoryMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
+			{
+				giftMenu = ui->GetMenu<RE::GiftMenu>();
+			}
+			else if (menuNameHash == Hash(RE::InventoryMenu::MENU_NAME))
 			{
 				inventoryMenu = ui->GetMenu<RE::InventoryMenu>();
 			}
-			if (menuNameHash == Hash(RE::JournalMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::JournalMenu::MENU_NAME))
 			{
 				journalMenu = ui->GetMenu<RE::JournalMenu>();
 			}
-			if (menuNameHash == Hash(RE::LockpickingMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::LockpickingMenu::MENU_NAME))
 			{
 				lockpickingMenu = ui->GetMenu<RE::LockpickingMenu>();
 			}
-			if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
 			{
 				magicMenu = ui->GetMenu<RE::MagicMenu>();
 			}
-			if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
+			else if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
 			{
 				mapMenu = ui->GetMenu<RE::MapMenu>();
 			}
@@ -3700,6 +3888,10 @@ namespace ALYSLC
 		else if (favoritesMenu)
 		{
 			openedMenuType = SupportedMenu::kFavorites;
+		}
+		else if (giftMenu)
+		{
+			openedMenuType = SupportedMenu::kGift;
 		}
 		else if (inventoryMenu)
 		{

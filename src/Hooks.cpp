@@ -5039,8 +5039,32 @@ namespace ALYSLC
 				{
 					const RE::BSFixedString menuName = a_this->MENU_NAME;
 
+					auto p1 = RE::PlayerCharacter::GetSingleton();
+
 					// Copy over player data.
 					GlobalCoopData::CopyOverCoopPlayerData(opening, menuName, p->coopActor->GetHandle(), nullptr);
+
+					// Force PersistentFavorites (https://github.com/QY-MODS/PersistentFavorites) 
+					// to sync its cached favorites list after we import the companion player's favorites or restore P1's favorites.
+					// Syncs on toggle favorites bind press: https://github.com/QY-MODS/PersistentFavorites/blob/main/src/Events.cpp#L4 
+					if (ALYSLC::PersistentFavoritesCompat::g_persistentFavoritesInstalled) 
+					{
+						auto ue = RE::UserEvents::GetSingleton(); 
+						auto controlMap = RE::ControlMap::GetSingleton();
+						if (ue && controlMap) 
+						{
+							auto userEvent = ue->yButton;
+							auto device = RE::INPUT_DEVICE::kGamepad;
+							auto keyCode = controlMap->GetMappedKey(userEvent, device, RE::UserEvents::INPUT_CONTEXT_IDS::kItemMenu);
+							if (keyCode != 0xFF) 
+							{
+								std::unique_ptr<RE::InputEvent* const> buttonEvent = std::make_unique<RE::InputEvent* const>(RE::ButtonEvent::Create(device, userEvent, keyCode, 0.0f, 1.0f));
+								(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
+								Util::SendInputEvent(buttonEvent);
+							}
+						}
+					}
+					
 
 					// Have to restore P1's favorited items here if the game ignores this call to open the menu.
 					auto result = _ProcessMessage(a_this, a_message);

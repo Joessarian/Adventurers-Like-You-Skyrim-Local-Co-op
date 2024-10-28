@@ -751,7 +751,7 @@ namespace ALYSLC
 			// The functions here are called without the restriction of the target form having
 			// to be in P1's inventory, since I needed a way to un/favorite forms 
 			// straight from a companion player's inventory.
-			// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/include/Papyrus/Functions/Form/Functions.h#L214
+			// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/include/Papyrus/Functions/Form/Functions.h
 
 			// Favorite the given inventory entry's bound object with the given extra data list
 			// to the actor's inventory changes.
@@ -824,7 +824,7 @@ namespace ALYSLC
 				return func(a_actor, a_spell, a_slot);
 			}
 
-			// Unavorite the given inventory entry's bound object with the given extra data list
+			// Unfavorite the given inventory entry's bound object with the given extra data list
 			// from the actor's inventory changes.
 			inline void Unfavorite(RE::InventoryChanges* a_changes, RE::InventoryEntryData* a_entryData, RE::ExtraDataList* a_list)
 			{
@@ -2229,7 +2229,7 @@ namespace ALYSLC
 		// the given default object applied to the given actor.
 		void RunPlayerActionCommand(RE::DEFAULT_OBJECT&& a_defObj, RE::Actor* a_actor);
 
-		// Instantly construct and send a button event using the geiven device,
+		// Instantly construct and send a button event using the given device,
 		// user event name, button input mask, pressed value, and held time.
 		// Can also toggle AI driven to false temporarily for P1
 		// while sending and handling the event.

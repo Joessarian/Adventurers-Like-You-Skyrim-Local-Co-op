@@ -397,6 +397,7 @@ namespace ALYSLC
 		kDefault,		// Catch-all.
 		kDialogue,
 		kFavorites,
+		kGift,
 		kInventory,
 		kJournal,
 		kLockpicking,

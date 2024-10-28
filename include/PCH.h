@@ -64,7 +64,8 @@ namespace util
 // Temporary solution until fixing the 'Debug' build configuration,
 // which builds successfully but freezes the SKSE loader while it checks the plugin.
 // IMPORTANT DEV NOTE: Ensure this flag is NOT defined before pushing changes.
-#define ALYSLC_DEBUG
+//#define ALYSLC_DEBUG
+
 namespace ALYSLC
 {
 #ifdef ALYSLC_DEBUG

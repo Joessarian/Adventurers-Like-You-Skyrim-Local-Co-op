@@ -2680,19 +2680,25 @@ namespace ALYSLC
 					// Set starting rotation before blending in.
 					if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from default.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from default.", coopActor->GetName(), a_node->name);
+						
 						// Starting from game's set rotation.
 						a_data->startingRotation = a_data->defaultRotation;
 					}
 					else if (prevStatus == NodeRotationBlendStatus::kTargetReached)
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from target.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from target.", coopActor->GetName(), a_node->name);
+						
 						// Starting from our set target rotation.
 						a_data->startingRotation = a_data->targetRotation;
 					}
 					else
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from current.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from current.", coopActor->GetName(), a_node->name);
+						
 						// Starting from the current blended rotation.
 						a_data->startingRotation = a_data->currentRotation;
 					}
@@ -2703,7 +2709,9 @@ namespace ALYSLC
 				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn &&
 					secsSinceBlendingIn > Settings::fSecsBlendPlayerNodeRotations)
 				{
-					ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending in.", coopActor->GetName(), a_node->name);
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending in.", coopActor->GetName(), a_node->name);
+					
 					// Target rotation reached.
 					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kTargetReached);
 				}
@@ -2736,11 +2744,12 @@ namespace ALYSLC
 					zC = -Util::InterpolateSmootherStep(zS, zT, t);
 					a_data->currentRotation.SetEulerAnglesXYZ(xC, yC, zC);
 
-					ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND IN: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).", 
+					// REMOVE when done debugging.
+					/*ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND IN: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).", 
 						coopActor->GetName(), a_node->name,
 						xS * TO_DEGREES, yS * TO_DEGREES, zS * TO_DEGREES,
 						xC * TO_DEGREES, yC * TO_DEGREES, zC * TO_DEGREES,
-						xT * TO_DEGREES, yT * TO_DEGREES, zT * TO_DEGREES);
+						xT * TO_DEGREES, yT * TO_DEGREES, zT * TO_DEGREES);*/
 				}
 				else
 				{
@@ -2757,19 +2766,25 @@ namespace ALYSLC
 					// Set starting rotation before blending out.
 					if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from default.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from default.", coopActor->GetName(), a_node->name);
+						
 						// Starting from game's set rotation.
 						a_data->startingRotation = a_data->defaultRotation;
 					}
 					else if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from target.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from target.", coopActor->GetName(), a_node->name);
+						
 						// Starting from our set target rotation.
 						a_data->startingRotation = a_data->targetRotation;
 					}
 					else
 					{
-						ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from current.", coopActor->GetName(), a_node->name);
+						// REMOVE when done debugging.
+						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from current.", coopActor->GetName(), a_node->name);
+						
 						// Starting from the current blended rotation.
 						a_data->startingRotation = a_data->currentRotation;
 					}
@@ -2780,7 +2795,9 @@ namespace ALYSLC
 				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut &&
 					Util::GetElapsedSeconds(a_data->blendOutTP) > Settings::fSecsBlendPlayerNodeRotations)
 				{
-					ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending out.", coopActor->GetName(), a_node->name);
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending out.", coopActor->GetName(), a_node->name);
+					
 					// Default rotation reached.
 					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kDefaultReached);
 				}
@@ -2813,11 +2830,12 @@ namespace ALYSLC
 					zC = -Util::InterpolateSmootherStep(zS, zD, t);
 					a_data->currentRotation.SetEulerAnglesXYZ(xC, yC, zC);
 
-					ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND OUT: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).",
+					// REMOVE when done debugging.
+					/*ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND OUT: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).",
 						coopActor->GetName(), a_node->name,
 						xS * TO_DEGREES, yS * TO_DEGREES, zS * TO_DEGREES,
 						xC * TO_DEGREES, yC * TO_DEGREES, zC * TO_DEGREES,
-						xD * TO_DEGREES, yD * TO_DEGREES, zD * TO_DEGREES);
+						xD * TO_DEGREES, yD * TO_DEGREES, zD * TO_DEGREES);*/
 				}
 				else
 				{
@@ -4242,7 +4260,9 @@ namespace ALYSLC
 				return;
 			}
 
-			ALYSLC::Log("[MM] SetBlendStatus: {} -> {}.", data->blendStatus, a_newStatus);
+			// REMOVE when done debugging.
+			//ALYSLC::Log("[MM] SetBlendStatus: {} -> {}.", data->blendStatus, a_newStatus);
+			
 			if (a_newStatus == NodeRotationBlendStatus::kBlendIn)
 			{
 				data->blendInTP = SteadyClock::now();

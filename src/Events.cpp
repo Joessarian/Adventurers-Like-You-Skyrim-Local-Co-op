@@ -189,6 +189,7 @@ namespace ALYSLC
 				bool toP1 = a_containerChangedEvent->newContainer == p1->formID;
 				bool fromCoopEntity = glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer);
 				bool toCoopPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->newContainer);
+				int32_t fromCoopPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer);
 
 				// Update P1's has-paraglider state before doing anything else.
 				if ((ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled) && (toP1 || fromP1))
@@ -285,9 +286,9 @@ namespace ALYSLC
 								if (baseObj && Util::IsPartyWideItem(baseObj))
 								{
 									// Give any looted keys/regular books/notes to player 1, since these items can be tough to find after being (un)intentionally looted by co-op companions.
-									if (auto index = GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer); index != -1)
+									if (fromCoopPlayerIndex != -1)
 									{
-										const auto& p = glob.coopPlayers[index];
+										const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
 										RE::TESBoundObject* boundObj = nullptr;
 										if (refr)
 										{
@@ -314,13 +315,13 @@ namespace ALYSLC
 					}
 				}
 
-				bool giftMenuOpen = ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
-				bool fromCoopCompanionPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->oldContainer) && !fromP1;
+				bool fromCoopCompanionPlayer = fromCoopPlayerIndex != -1 && !fromP1;
 				// A co-op companion player is attempting to gift items to another co-op companion player
 				// by way of the GiftMenu through P1. Transfer all items added to P1 to the giftee companion player.
+				bool giftMenuOpen = ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
 				if (giftMenuOpen && fromCoopCompanionPlayer && toP1 && glob.mim->IsRunning() && glob.mim->managerMenuCID != -1 && Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
 				{
-					const auto& giftingP = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer)];
+					const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
 					auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
 					if (!gifteePtr || !gifteePtr.get()) 
 					{

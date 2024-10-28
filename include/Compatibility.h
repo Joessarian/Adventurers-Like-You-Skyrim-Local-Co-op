@@ -24,6 +24,12 @@ namespace ALYSLC
 		static bool g_shouldApplyCullingWorkaround;
 	};
 
+	struct PersistentFavoritesCompat
+	{
+		static void CheckForPersistentFavorites();
+		static bool g_persistentFavoritesInstalled;
+	};
+
 	struct PrecisionCompat
 	{
 		static void RequestPrecisionAPIs(const SKSE::LoadInterface* a_loadInterface);
