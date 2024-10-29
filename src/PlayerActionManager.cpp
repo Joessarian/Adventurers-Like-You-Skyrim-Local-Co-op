@@ -3473,14 +3473,16 @@ namespace ALYSLC
 		// Sheathe or draw the player's weapons/magic.
 		// This function is yet another flavor of "it just works".
 
-		if (p->isPlayer1) 
+		if (p->isPlayer1)
 		{
 			weapMagReadied = a_shouldDraw;
 			// Redundancy, I know.
 			// But sometimes individual calls fail.
 			//SendButtonEvent(InputAction::kSheathe, RE::INPUT_DEVICE::kGamepad, ButtonEventPressType::kInstantTrigger);
 			// Avoids locking up the player's equip state (weapons out but unusable).
-			if (a_shouldDraw) 
+			// If the animation event is sent while the player is mounted,
+			// surf's up dude!
+			if (a_shouldDraw && !p->mm->isMounting && !coopActor->IsOnMount()) 
 			{
 				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 			}
@@ -3538,7 +3540,13 @@ namespace ALYSLC
 				if (a_shouldDraw)
 				{
 					// Avoids locking up the player's equip state (weapons out but unusable).
-					coopActor->NotifyAnimationGraph("IdleForceDefaultState");
+					// If the animation event is sent while the player is mounted,
+					// surf's up dude!
+					if (!p->mm->isMounting && !coopActor->IsOnMount())
+					{
+						coopActor->NotifyAnimationGraph("IdleForceDefaultState");
+					}
+
 					coopActor->currentProcess->lowProcessFlags.set(RE::AIProcess::LowProcessFlags::kAlert, RE::AIProcess::LowProcessFlags::kCurrentActionComplete);
 				}
 				else

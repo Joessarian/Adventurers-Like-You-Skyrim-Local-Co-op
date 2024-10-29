@@ -1624,7 +1624,8 @@ namespace ALYSLC
 			// 1. Not dodging.
 			// 2. Not mounted.
 			// 3. Reviving another player or using weapons/magic with a valid target while not sprinting.
-			turnToTarget = { 
+			turnToTarget = 
+			{ 
 				(!faceTarget && !isTKDodging && !isTDMDodging && !isDashDodging && !coopActor->IsOnMount()) &&
 				(
 					(p->isRevivingPlayer) || 
@@ -2045,7 +2046,9 @@ namespace ALYSLC
 				// Check if undiscovered map marker is discoverable.
 				if (closestUndiscoveredMapMarkerPos.has_value())
 				{
-					auto setDiscoveryAttempt = [this, p1, cell, &closestUndiscoveredMapMarkerPos, &closestUndiscoveredMapMarkerRadius]() {
+					auto setDiscoveryAttempt = 
+					[this, p1, cell, &closestUndiscoveredMapMarkerPos, &closestUndiscoveredMapMarkerRadius]() 
+					{
 						bool shouldAttemptDiscovery = false;
 						// Must be within range.
 						if (glob.cam->camOriginPoint.GetDistance(closestUndiscoveredMapMarkerPos.value()) <= closestUndiscoveredMapMarkerRadius)
@@ -2095,10 +2098,16 @@ namespace ALYSLC
 				// Check for discovery to remove local map fog of war when P1 is inactive 
 				// (not moving either analog stick and not attacking/dodging).
 				float movementSpeed = coopActor->DoGetMovementSpeed();
+				bool isTKDodging = false;
+				bool isTDMDodging = false;
+				coopActor->GetGraphVariableBool("bIsDodging", isTKDodging);
+				coopActor->GetGraphVariableBool("TDM_Dodge", isTDMDodging);
 				attemptDiscovery = 
 				{ 
-					!p->pam->isAttacking && !p->pam->isInCastingAnim && !shouldFaceTarget && !isDashDodging && !rsMoved &&
-					!lsMoved && movementSpeed == 0.0f && movementOffsetParams[!MoveParams::kDeltaLSAbsoluteAng] == 0.0f 
+					!p->pam->isAttacking && !p->pam->isInCastingAnim && !shouldFaceTarget && 
+					!isDashDodging && !isTKDodging && !isTDMDodging &&
+					!rsMoved && !lsMoved && movementSpeed == 0.0f && 
+					movementOffsetParams[!MoveParams::kDeltaLSAbsoluteAng] == 0.0f 
 				};
 			}
 		}
@@ -2665,6 +2674,8 @@ namespace ALYSLC
 					p->pam->isBashing ||
 					p->pam->isBlocking ||
 					p->pam->isInCastingAnim ||
+					p->pam->usingLHStaff ||
+					p->pam->usingRHStaff ||
 					p->mm->shouldFaceTarget
 				)
 			};
@@ -4173,8 +4184,12 @@ namespace ALYSLC
 					 movementActor->actorState1.swimming
 				) != 0
 			};
+			bool isTKDodging = false;
+			bool isTDMDodging = false;
 			coopActor->GetGraphVariableBool("bAnimationDriven", isAnimDriven);
 			coopActor->GetGraphVariableBool("bIsSynced", isSynced);
+			coopActor->GetGraphVariableBool("bIsDodging", isTKDodging);
+			coopActor->GetGraphVariableBool("TDM_Dodge", isTDMDodging);
 			auto interactionPackage = glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction];
 			interactionPackageRunning = p->pam->GetCurrentPackage() == interactionPackage;
 
@@ -4182,7 +4197,7 @@ namespace ALYSLC
 			// and if the LS is centered, a menu stops movement, the player is reviving a buddy, or if attempting discovery.
 			shouldStopMoving = 
 			{
-				((isMoving && !isDashDodging && !isRequestingDashDodge) && 
+				((isMoving && !isDashDodging && !isRequestingDashDodge && !isTKDodging && !isTDMDodging) && 
 				(!lsMoved || menuStopsMovement || p->isRevivingPlayer || attemptDiscovery))
 			};
 

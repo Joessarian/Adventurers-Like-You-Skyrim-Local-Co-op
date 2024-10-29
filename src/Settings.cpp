@@ -557,6 +557,7 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "PlayerActions", "bCanRevivePlayer1", bCanRevivePlayer1);
 		ReadBoolSetting(a_ini, "PlayerActions", "bHoldToCycle", bHoldToCycle);
 		ReadBoolSetting(a_ini, "PlayerActions", "bRotateArmsWhenSheathed", bRotateArmsWhenSheathed);
+		ReadBoolSetting(a_ini, "PlayerActions", "bUseDashDodgeSystem", bUseDashDodgeSystem);
 		ReadBoolSetting(a_ini, "PlayerActions", "bUseKillmovesSystem", bUseKillmovesSystem);
 		ReadBoolSetting(a_ini, "PlayerActions", "bUseReviveSystem", bUseReviveSystem);
 		ReadBoolSetting(a_ini, "PlayerActions", "bUseUnarmedKillmovesForSpellcasting", bUseUnarmedKillmovesForSpellcasting);

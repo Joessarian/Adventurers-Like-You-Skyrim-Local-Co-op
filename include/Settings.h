@@ -211,6 +211,8 @@ namespace ALYSLC
 		static inline bool bHoldToCycle = false;
 		// Rotate arms when holding the corresponding bind(s) and moving the right stick while weapons are sheathed.
 		static inline bool bRotateArmsWhenSheathed = true;
+		// Use velocity-based dash dodge instead of any installed dodge mods.
+		static inline bool bUseDashDodgeSystem = false;
 		// Perform killmoves using this mod's system.
 		static inline bool bUseKillmovesSystem = true;
 		// Players are downed when reaching 0 health and remain in a pseudo-death state until

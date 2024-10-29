@@ -4821,7 +4821,12 @@ namespace ALYSLC
 			// the mod's speedmult dodge or any installed custom dodge mod.
 			// TKDodge is partially supported (I-frames do not trigger as of now).
 			
-			if (ALYSLC::TKDodgeCompat::g_tkDodgeInstalled) 
+			if (ALYSLC::Settings::bUseDashDodgeSystem) 
+			{
+				// Signal movement manager to dash dodge.
+				a_p->mm->isRequestingDashDodge = true;
+			}
+			else if (ALYSLC::TKDodgeCompat::g_tkDodgeInstalled) 
 			{
 				// Stop sprinting before dodging.
 				Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSprintStop, a_p->coopActor.get());
@@ -4886,11 +4891,6 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.movingRight = 1;
 					a_p->coopActor->NotifyAnimationGraph("TKDodgeRight");
 				}
-			}
-			else
-			{
-				// Default to dash dodge.
-				a_p->mm->isRequestingDashDodge = true;
 			}
 		}
 
