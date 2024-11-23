@@ -482,6 +482,8 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bRemoveExteriorOcclusion", bRemoveExteriorOcclusion);
 		ReadBoolSetting(a_ini, "Camera", "bRemoveInteriorOcclusion", bRemoveInteriorOcclusion);
 		ReadBoolSetting(a_ini, "Camera", "bTargetPosSmoothing", bTargetPosSmoothing);
+		ReadFloatSetting(a_ini, "Camera", "fCamExteriorFOV", fCamExteriorFOV, 0.0f, 180.0f);
+		ReadFloatSetting(a_ini, "Camera", "fCamInteriorFOV", fCamInteriorFOV, 0.0f, 180.0f);
 		ReadUInt32Setting(a_ini, "Camera", "uLockOnAssistance", uLockOnAssistance, 0, 1);
 		// Cheats and Debug
 		ReadBoolSetting(a_ini, "Cheats/Fun", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
@@ -548,7 +550,8 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "Movement", "fRangedAttackRotMult", fRangedAttackRotMult, 0.1f, 1.0f);
 		ReadFloatSetting(a_ini, "Movement", "fRidingRotMult", fRidingRotMult, 0.1f, 1.0f);
 		ReadFloatSetting(a_ini, "Movement", "fSneakRotMult", fSneakRotMult, 0.1f, 1.0f);
-		ReadFloatSetting(a_ini, "Movement", "fSprintSpeedMult", fSprintSpeedMult, 0.0f, 10.0f);
+		ReadFloatSetting(a_ini, "Movement", "fSprintingMovMult", fSprintingMovMult, 0.1f, 10.0f);
+		ReadFloatSetting(a_ini, "Movement", "fSprintingRotMult", fSprintingRotMult, 0.1f, 1.0f);
 		ReadFloatSetting(a_ini, "Movement", "fSecsAfterGatherToFall", fSecsAfterGatherToFall, 0.01f, 2.0f);
 		// Player Actions
 		ReadBoolSetting(a_ini, "PlayerActions", "bAimPitchAffectsFlopTrajectory", bAimPitchAffectsFlopTrajectory);
@@ -563,6 +566,8 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "PlayerActions", "bUseUnarmedKillmovesForSpellcasting", bUseUnarmedKillmovesForSpellcasting);
 		ReadFloatSetting(a_ini, "PlayerActions", "fKillmoveChance", fKillmoveChance, 0.0f, 1.0f);
 		ReadFloatSetting(a_ini, "PlayerActions", "fKillmoveHealthFraction", fKillmoveHealthFraction, 0.0f, 1.0f);
+		ReadFloatSetting(a_ini, "PlayerActions", "fMaxDashDodgeSpeedmult", fMaxDashDodgeSpeedmult, 1.0f, 1200.0f);
+		ReadFloatSetting(a_ini, "PlayerActions", "fMinDashDodgeSpeedmult", fMinDashDodgeSpeedmult, 1.0f, 1200.0f);
 		ReadFloatSetting(a_ini, "PlayerActions", "fSecsBeforeActivationCycling", fSecsBeforeActivationCycling, 0.0f, 3.0f);
 		ReadFloatSetting(a_ini, "PlayerActions", "fSecsBetweenActivationChecks", fSecsBetweenActivationChecks, 0.1f, 3.0f);
 		ReadFloatSetting(a_ini, "PlayerActions", "fSecsDefMinHoldTime", fSecsDefMinHoldTime, 0.1f, 1.0f);
@@ -570,6 +575,7 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "PlayerActions", "fSecsReviveTime", fSecsReviveTime, 1.0f, 60.0f);
 		ReadFloatSetting(a_ini, "PlayerActions", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 300.0f);
 		ReadUInt32Setting(a_ini, "PlayerActions", "uAmmoAutoEquipMode", uAmmoAutoEquipMode, 0, 2);
+		ReadUInt32Setting(a_ini, "PlayerActions", "uDashDodgeBaseAnimFrameCount", uDashDodgeBaseAnimFrameCount, 0, 54);
 		// Progression
 		ReadBoolSetting(a_ini, "Progression", "bStackCoopPlayerSkillAVAutoScaling", bStackCoopPlayerSkillAVAutoScaling);
 		ReadBoolSetting(a_ini, "Progression", "bScaleCraftingPointsWithNumPlayers", bScaleCraftingPointsWithNumPlayers);
@@ -597,18 +603,18 @@ namespace ALYSLC
 		{
 			sectionName = fmt::format("Player{}", pIndex + 1);
 			// Stat Modifiers
-			ReadFloatSetting(a_ini, sectionName.data(), "fHealthRegenMult", (float&)vfHealthRegenMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fMagickaCostMult", (float&)vfMagickaCostMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fMagickaRegenMult", (float&)vfMagickaRegenMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fStaminaCostMult", (float&)vfStaminaCostMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fStaminaRegenMult", (float&)vfStaminaRegenMult[pIndex], 0.0f, 10.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fHealthRegenMult", (float&)vfHealthRegenMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fMagickaCostMult", (float&)vfMagickaCostMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fMagickaRegenMult", (float&)vfMagickaRegenMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fStaminaCostMult", (float&)vfStaminaCostMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fStaminaRegenMult", (float&)vfStaminaRegenMult[pIndex], 0.0f, 100.0f);
 			ReadFloatSetting(a_ini, sectionName.data(), "fHealthRegenCombatRatio", (float&)vfHealthRegenCombatRatio[pIndex], 0.0f, 1.0f);
 			ReadFloatSetting(a_ini, sectionName.data(), "fMagickaRegenCombatRatio", (float&)vfMagickaRegenCombatRatio[pIndex], 0.0f, 1.0f);
 			ReadFloatSetting(a_ini, sectionName.data(), "fStaminaRegenCombatRatio", (float&)vfStaminaRegenCombatRatio[pIndex], 0.0f, 1.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fDamageDealtMult", (float&)vfDamageDealtMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fDamageReceivedMult", (float&)vfDamageReceivedMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fFlopDamageMult", (float&)vfFlopDamageMult[pIndex], 0.0f, 10.0f);
-			ReadFloatSetting(a_ini, sectionName.data(), "fThrownObjectDamageMult", (float&)vfThrownObjectDamageMult[pIndex], 0.0f, 10.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fDamageDealtMult", (float&)vfDamageDealtMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fDamageReceivedMult", (float&)vfDamageReceivedMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fFlopDamageMult", (float&)vfFlopDamageMult[pIndex], 0.0f, 100.0f);
+			ReadFloatSetting(a_ini, sectionName.data(), "fThrownObjectDamageMult", (float&)vfThrownObjectDamageMult[pIndex], 0.0f, 100.0f);
 			// Controller
 			ReadFloatSetting(a_ini, sectionName.data(), "fAnalogDeadzoneRatio", (float&)vfAnalogDeadzoneRatio[pIndex], 0.0f, 1.0f);
 			ReadFloatSetting(a_ini, sectionName.data(), "fTriggerDeadzoneRatio", (float&)vfTriggerDeadzoneRatio[pIndex], 0.0f, 1.0f);

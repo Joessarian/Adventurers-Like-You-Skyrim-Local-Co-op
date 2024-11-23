@@ -24,7 +24,7 @@ namespace ALYSLC
 		const ManagerState ShouldSelfResume() override;
 
 		// Remove form from desired forms list when it is unequipped.
-		inline void ClearDesiredEquippedFormOnUnequip(RE::TESForm* a_toUnequip, const uint32_t& a_listIndex, const RE::BGSEquipSlot* a_slot) 
+		inline void ClearDesiredEquippedFormOnUnequip(RE::TESForm* a_toUnequip, const uint32_t& a_listIndex) 
 		{
 			if (!a_toUnequip)
 			{
@@ -71,8 +71,8 @@ namespace ALYSLC
 		}
 		
 		// Get the max reach for any equipped weapons.
-		// Not sure what the base reach is in in-game units, so the weapon's
-		// reach is multiplied by the actor's height.
+		// Not sure what the base reach is in in-game units, 
+		// so the weapon's reach is multiplied by the actor's height.
 		inline float GetMaxWeapReach() const
 		{
 			const auto lhForm = equippedForms[!EquipIndex::kLeftHand];
@@ -340,10 +340,17 @@ namespace ALYSLC
 		{
 			const auto lhObj = equippedForms[!EquipIndex::kLeftHand];
 			const auto rhObj = equippedForms[!EquipIndex::kRightHand];
-			return lhObj && rhObj && lhObj->IsWeapon() && rhObj->IsWeapon() &&
-				   (!rhObj->As<RE::TESObjectWEAP>()->IsRanged() &&
-					   !rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedAxe() &&
-					   !rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedSword());
+			return 
+			(
+				(
+					lhObj && rhObj && lhObj->IsWeapon() && rhObj->IsWeapon()
+				) &&
+				(
+					!rhObj->As<RE::TESObjectWEAP>()->IsRanged() &&
+					!rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedAxe() &&
+					!rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedSword()
+				)
+			);
 		}
 
 		// Check if the player's left hand is empty.
@@ -364,7 +371,7 @@ namespace ALYSLC
 			return !equippedForms[!EquipIndex::kRightHand];
 		}
 
-		// Unequip all forms and clear the player's desired forms list.
+		// Clear the player's desired forms list and then unequip all forms.
 		inline void UnequipAllAndResetEquipState() 
 		{
 			desiredEquippedForms.fill(nullptr);
@@ -424,7 +431,7 @@ namespace ALYSLC
 		// Get name for the given favorited magic cycling category.
 		std::string_view FavMagCyclingCategoryToString(const FavMagicCyclingCategory& a_category) const;
 		
-		// Get name for the given weapon magic cycling category.
+		// Get name for the given weapon cycling category.
 		std::string_view FavWeaponCyclingCategoryToString(const FavWeaponCyclingCategory& a_category) const;
 		
 		// NOTE: Unused for now, but keeping for reference or if needed again in the future.
@@ -434,10 +441,6 @@ namespace ALYSLC
 		
 		// Get the equip slot for the given form at the given equip index.
 		RE::BGSEquipSlot* GetEquipSlotForForm(RE::TESForm* a_form, const EquipIndex& a_index) const;
-		
-		// Get a list of all physical (non-magic) spells favorited by this player.
-		// Can update the list before returning the result.
-		std::vector<RE::TESForm*> GetFavoritedPhysForms(bool a_shouldUpdate);
 		
 		// Get the total weight of all equipped forms.
 		float GetWornWeight() const;
@@ -450,15 +453,15 @@ namespace ALYSLC
 		// If a placeholder spell has changed, re-copy over the requested spell before equipping.
 		void HandleMenuEquipRequest(RE::ObjectRefHandle a_fromContainerHandle, RE::TESForm* a_form, const EquipIndex& a_index, bool a_placeholderMagicChanged);
 		
-		// Checks if the player has a favorited spell in the given category that matches the given hand.
+		// Checks if the player has a favorited spell in the given category.
 		bool HasCyclableSpellInCategory(const FavMagicCyclingCategory& a_category);
 		
 		// Checks if the player has a favorited weapon in the given category that matches the given hand.
 		bool HasCyclableWeaponInCategory(const FavWeaponCyclingCategory& a_category, const bool& a_rightHand);
 		
-		// Add favorited items from this player to P1 as needed, favorite them, and unfavorite all P1's favorited items.
+		// Add favorited items/spells from this player to P1 as needed, favorite them, and unfavorite all P1's favorited items/spells.
 		// NOTE: Should not be called on P1 since there's no need to re-import P1's favorites onto themselves.
-		void ImportCoopFavorites();
+		void ImportCoopFavorites(bool&& a_onlyMagicFavorites);
 
 		// Check if the player is unarmed.
 		bool IsUnarmed() const;
@@ -472,9 +475,9 @@ namespace ALYSLC
 		// Unequip and re-equip voice form (power/shout).
 		void ReEquipVoiceForm();
 		
-		// Unfavorite this player's favorited items and restore P1's favorited items.
+		// Unfavorite this player's favorited items/spells and restore P1's favorited items/spells.
 		// NOTE: Also should not be called on P1.
-		void RestoreP1Favorites();
+		void RestoreP1Favorites(bool&& a_onlyMagicFavorites);
 		
 		// Update cached equip data in the given slots, auto-equip ammo, update shout spell variation, copy spells to placeholder spells,
 		// update armor ratings, signal menu input manager to update displayed equip state,
@@ -485,7 +488,7 @@ namespace ALYSLC
 		// Set cached copied magic form and form ID with the given copied magic form at the given placeholder spell index.
 		void SetCopiedMagicAndFID(RE::TESForm* a_magicFormToCopy, const PlaceholderMagicIndex& a_index);
 		
-		// Set hand spells if equipped and voice spells corresponding to the current power or current shout's highest known variation.
+		// Set equipped voice spell corresponding to the current power or current shout's highest known variation.
 		void SetCurrentVoiceSpell();
 		
 		// Populate cached lists of cyclable favorited items of the given type.
@@ -494,16 +497,13 @@ namespace ALYSLC
 		// Assign new list of favorited emote idles.
 		void SetFavoritedEmoteIdles(std::vector<RE::BSFixedString> a_emoteIdlesList);
 		
-		// Update favorited forms or favorited forms FIDs list(s) based on 
-		// items in the player's inventory that have the Hotkey extra data member.
-		void SetFavoritedForms(bool a_onlySetFIDs);
-		
 		// Populate desired equipped forms based on serialized equipped forms list,
 		// update copied magic/copy to placeholder spells as needed, set quick slot item/spell,
 		// and either refresh equip state, if this player is P1,
 		// or unequip all if this player is a co-op companion (desired forms will be re-equipped later).
 		void SetInitialEquipState();
-		
+
+		// NOT USED FOR NOW:
 		// For grip switching, set the original weapon type for the weapon in hand slot (0 = LH, 1 = RH, 2 = 2H).
 		void SetOriginalWeaponTypeFromKeyword(HandIndex&& a_handSlot);
 		
@@ -540,8 +540,14 @@ namespace ALYSLC
 		// Unequip spell and update desired forms for co-op companion players.
 		void UnequipSpell(RE::TESForm* a_toUnequip, const EquipIndex& a_equipIndex);
 		
+		// Update favorited forms list and the magic favorites list to serialize.
+		// Also update cyclable and hotkeyed forms.
+		// If requested, use the serialized magic favorites list to copy over to the current magic favorites list.
+		void UpdateFavoritedFormsLists(bool&& a_useCachedMagicFavorites);
+
 		// Attempts to rectify mismatches and equip state issues with the player's equipped forms,
 		// and then re-equip the desired forms.
+		// NOTE: Not called on player 1 as of now.
 		void ValidateEquipState();
 		
 		//
@@ -552,14 +558,16 @@ namespace ALYSLC
 		std::shared_ptr<CoopPlayer> p;
 		// The co-op actor.
 		RE::ActorPtr coopActor;
-		// Spell that corresponds to the highest shout variation,
-		// if equipped, or power, if equipped, that player 1 has learned.
+		// Spell that corresponds to the highest shout variation or power, 
+		// if equipped, that player 1 has learned.
 		RE::SpellItem* voiceSpell;
 		// Quick slot spell.
 		RE::SpellItem* quickSlotSpell;
 		// Current cycled ammo and voice magic forms.
 		RE::TESForm* currentCycledAmmo;
 		RE::TESForm* currentCycledVoiceMagic;
+		// Last selected hotkeyed form.
+		RE::TESForm* lastChosenHotkeyedForm;
 		// Last cycled emote idle event name and index 
 		// recorded while pressing the emote idle cycling bind.
 		std::pair<RE::BSFixedString, int8_t> lastCycledIdleIndexPair;
@@ -572,7 +580,7 @@ namespace ALYSLC
 		// Saved each time player 1 equips a power/shout,
 		// and once at the start of the co-op session.
 		RE::TESForm* voiceForm;
-		// Weapon types (original/grip changed) for LH/RH forms.
+		// Unused for now. Weapon types (original/grip changed) for LH/RH forms.
 		RE::WEAPON_TYPE lhNewGripType;
 		RE::WEAPON_TYPE lhOriginalType;
 		RE::WEAPON_TYPE rhNewGripType;
@@ -585,34 +593,35 @@ namespace ALYSLC
 		FavWeaponCyclingCategory lhWeaponCategory;
 		FavWeaponCyclingCategory rhWeaponCategory;
 		// List of all forms that the player wants to equip.
-		// The list of currently equipped forms is adjusted to match this list.
-		// Slots: hands, quick slots, ammo slot, voice slot, and biped slots.
-		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> desiredEquippedForms;
-		// List of currently equipped forms in: hands, quick slots, ammo slot, voice slot, and biped slots.
-		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> equippedForms;
 		// Form IDs of spells + shout copied over into the player's placeholder magic forms.
 		std::array<RE::FormID, (size_t)PlaceholderMagicIndex::kTotal> copiedMagicFormIDs;
 		// Spells + shout copied over to placeholder spells.
 		std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> copiedMagic;
-		// Placeholder LH, RH, 2H, and Voice spells/shout to copy chosen equipped magic into.
-		std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> placeholderMagic;
 		// Lists of currently cycled favorited items per cycling category.
 		std::array<RE::TESForm*, (size_t)FavMagicCyclingCategory::kTotal> currentCycledLHSpellsList;
 		std::array<RE::TESForm*, (size_t)FavMagicCyclingCategory::kTotal> currentCycledRHSpellsList;
 		std::array<RE::TESForm*, (size_t)FavWeaponCyclingCategory::kTotal> currentCycledLHWeaponsList;
 		std::array<RE::TESForm*, (size_t)FavWeaponCyclingCategory::kTotal> currentCycledRHWeaponsList;
+		// The list of currently equipped forms is adjusted to match this list.
+		// Slots: hands, quick slots, ammo slot, voice slot, and biped slots.
+		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> desiredEquippedForms;
+		// List of currently equipped forms in: hands, quick slots, ammo slot, voice slot, and biped slots.
+		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> equippedForms;
 		// Current list of favorited emote idles.
 		std::array<RE::BSFixedString, 8> favoritedEmoteIdles;
+		// Up to 8 hotkeyed favorited forms.
+		// Nullptr if the slot has no hotkeyed form.
+		std::array<RE::TESForm*, 8> hotkeyedForms;
+		// Placeholder LH, RH, 2H, and Voice spells/shout to copy chosen equipped magic into.
+		std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> placeholderMagic;
 		// Mutex for refreshing the player's equip state.
 		std::mutex equipStateMutex;
 		// (Light, Heavy) armor ratings pair.
 		std::pair<float, float> armorRatings;
-		// Pair of current cycled emote, index which can be triggered by pressing the special action binds
+		// Pair of (current cycled emote, index) which can be triggered by pressing the special action binds
 		// while the player's weapons are sheathed.
 		// Up to 128 emotes.
 		std::pair<RE::BSFixedString, int8_t> currentCycledIdleIndexPair;
-		// Cached lists of hand-equipable spells and voice slot spells/shouts.
-		std::pair<std::vector<RE::SpellItem*>, std::vector<RE::TESForm*>> equipableMagic;
 		// Set of equipped items' form IDs for the co-op player.
 		std::set<RE::FormID> equippedFormFIDs;
 		// Indices of currently equipped favorited items.
@@ -623,15 +632,15 @@ namespace ALYSLC
 		std::set<RE::FormID> favoritedFormIDs;
 		// Favorited items separated into lists based on form type.
 		std::unordered_map<CyclableForms, std::vector<RE::TESForm*>> cyclableFormsMap;
-		// Cached equipable weapons in inventory
-		std::vector<RE::TESForm*> equipableWeapons;
-		// List of bound object forms favorited by the co-op player.
-		std::vector<RE::TESForm*> favoritedPhysForms;
-		// List of flags indicating whether this co-op player's favorited items at each index
-		// are also favorited by player 1.
+		// Maps hotkeyed forms' FIDs to their hotkey indices.
+		std::unordered_map<RE::FormID, int8_t> hotkeyedFormsToSlotsMap;
+		// List of bound object and spell forms favorited by the co-op player.
+		std::vector<RE::TESForm*> favoritedForms;
+		// List of flags indicating whether this co-op player's favorited item at each index
+		// is also favorited by player 1.
 		std::vector<bool> favoritesIndicesInCommon;
-		// List of flags indicating whether this co-op player's favorited items at each index
-		// were added to P1 on import.
+		// List of flags indicating whether this co-op player's favorited item at each index
+		// was added to P1 on import.
 		std::vector<bool> favoritedItemWasAdded;
 		// Controller ID for this player.
 		int32_t controllerID;
@@ -640,7 +649,7 @@ namespace ALYSLC
 		// Favorites list indices for equipped quick slot forms (quick slot item, quick slot spell).
 		int32_t equippedQSItemIndex;
 		int32_t equippedQSSpellIndex;
+		// Number of unlocked words in the currently-equipped shout (-1 if unknown or no shout).
 		int32_t highestShoutVarIndex;
-		uint32_t numFavoritedItems;
 	};
 }

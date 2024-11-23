@@ -55,21 +55,22 @@ namespace ALYSLC
 
 	void TargetingManager::PrePauseTask()
 	{
-		ALYSLC::Log("[TM] PrePauseTask: P{}", playerID + 1);
-		auto ui = RE::UI::GetSingleton(); 
-		if ((nextState == ManagerState::kAwaitingRefresh) || (ui && !ui->GameIsPaused())) 
+		auto ui = RE::UI::GetSingleton();
+
+		ALYSLC::Log("[TM] PrePauseTask: P{}. Self invalid: {}. Grabbed refr info list size: {}.", playerID + 1, !p->selfValid, rmm->grabbedRefrInfoList.size());
+		if (nextState == ManagerState::kAwaitingRefresh)
 		{
 			// Clear all targets.
 			ClearTargetHandles();
 			// No longer selecting a crosshair target.
 			validCrosshairRefrHit = false;
-			// Clear all grabbed and released refrs
-			// to stop grabbing refrs and checking for released refr collisions.
-			// Maintain management of refrs if the game is paused.
 			rmm->ClearAll();
-
 			// Reset crosshair position.
 			ResetCrosshairPosition();
+		}
+		else
+		{
+			rmm->ClearReleasedRefrs();
 		}
 	}
 
@@ -104,18 +105,9 @@ namespace ALYSLC
 			// Ragdolling fixes the issue, but I need to find a way to detect if this desync is happening
 			// and correct it in the UpdateGrabbedReferences() call.
 			// Solution: If grabbed by another player, release this player before resuming.
-			const auto handle = coopActor->GetHandle();
-			for (const auto& otherP : glob.coopPlayers)
-			{
-				if (otherP->isActive && otherP != p)
-				{
-					if (otherP->tm->rmm->IsManaged(handle, true))
-					{
-						otherP->tm->rmm->ClearRefr(handle);
-						break;
-					}
-				}
-			}
+			rmm->ClearPlayerIfGrabbed(p);
+			// Clear out any lingering released refrs.
+			rmm->ClearReleasedRefrs();
 		}
 
 		// Clear out game crosshair pick refr.
@@ -1926,29 +1918,46 @@ namespace ALYSLC
 			{
 				// Update grabbed refrs' positioning via their velocity.
 				// If grabbing multiple objects, all other objects are suspended in a ring around the first one.
-				// Must get the first object's radius for spacing purposes.
-				float firstGrabbedRefrRadius = 0.0f;
+				// Must use the first object's radius for spacing purposes.
+				float firstGrabbedObjectBufferDist = 0.0f;
 				auto firstRefrHandle = rmm->grabbedRefrInfoList[0]->refrHandle;
 				if (auto firstRefrPtr = Util::GetRefrPtrFromHandle(firstRefrHandle); firstRefrPtr)
 				{
 					if (auto firstRefr3D = Util::GetRefr3D(firstRefrPtr.get()); firstRefr3D)
 					{
-						firstGrabbedRefrRadius = firstRefr3D->worldBound.radius;
+						firstGrabbedObjectBufferDist = firstRefr3D->worldBound.radius * 0.5f;
+					}
+					else
+					{
+						firstGrabbedObjectBufferDist = firstRefrPtr->GetHeight() * 0.25f;
 					}
 				}
 
+				bool unloaded = false;
 				for (uint8_t i = 0; i < rmm->grabbedRefrInfoList.size(); ++i)
 				{
-					auto& grabbedRefrInfo = rmm->grabbedRefrInfoList[i];
-					const auto& handle = grabbedRefrInfo->refrHandle;
+					// Move unloaded or far away grabbed objects to the player.
 
-					// Paralyze living actor to prevent the game from automatically 
+					auto& grabbedRefrInfo = rmm->grabbedRefrInfoList[i];
+					if (!grabbedRefrInfo || !grabbedRefrInfo.get())
+					{
+						continue;
+					}
+
+					const auto& handle = grabbedRefrInfo->refrHandle;
+					auto refrPtr = Util::GetRefrPtrFromHandle(handle);
+					if (!refrPtr || !refrPtr.get())
+					{
+						continue;
+					}
+
+					// Paralyze living actor to prevent the game from automatically
 					// signalling the actor to get up once the ragdoll timer hits 0.
 					// Only if actor getup removal setting is enabled.
-					if (auto refrPtr = Util::GetRefrPtrFromHandle(handle); refrPtr && Settings::bRemoveGrabbedActorAutoGetUp)
+					if (Settings::bRemoveGrabbedActorAutoGetUp)
 					{
-						if (auto asActor = refrPtr->As<RE::Actor>(); asActor && 
-							!asActor->IsDead() && 
+						if (auto asActor = refrPtr->As<RE::Actor>(); asActor &&
+							!asActor->IsDead() &&
 							asActor->boolBits.none(RE::Actor::BOOL_BITS::kParalyzed))
 						{
 							asActor->boolBits.set(RE::Actor::BOOL_BITS::kParalyzed);
@@ -1966,7 +1975,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						grabbedRefrInfo->UpdateGrabbedReference(p, i, firstGrabbedRefrRadius);
+						grabbedRefrInfo->UpdateGrabbedReference(p, i, firstGrabbedObjectBufferDist);
 					}
 				}
 			}
@@ -2718,13 +2727,13 @@ namespace ALYSLC
 	{
 		// Reset all player timepoints handled by this manager to the current time.
 
-		p->crosshairLastActiveTP			=
-		p->lastAutoGrabTP					=
-		p->lastCrosshairUpdateTP			=
-		p->lastHiddenInStealthRadiusTP		=
-		p->lastStealthStateCheckTP			=
-		p->crosshairRefrVisibilityLostTP	= 
-		p->crosshairRefrVisibilityCheckTP	= SteadyClock::now();
+		p->crosshairLastActiveTP				=
+		p->lastAutoGrabTP						=
+		p->lastCrosshairUpdateTP				=
+		p->lastHiddenInStealthRadiusTP			=
+		p->lastStealthStateCheckTP				=
+		p->crosshairRefrVisibilityLostTP		= 
+		p->crosshairRefrVisibilityCheckTP		= SteadyClock::now();
 	}
 
 	void TargetingManager::SelectProximityRefr()
@@ -3170,7 +3179,7 @@ namespace ALYSLC
 		if (crosshairRotationData->current != endPointAng)
 		{
 			crosshairRotationData->InterpolateSmootherStep(min(crosshairRotationData->secsSinceUpdate / crosshairRotationData->secsUpdateInterval, 1.0f));
-			crosshairRotationData->IncrementUpdateInterval(*g_deltaTimeRealTime);
+			crosshairRotationData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 			if (crosshairRotationData->current == endPointAng)
 			{
 				// Fully rotated.
@@ -3221,7 +3230,7 @@ namespace ALYSLC
 		if (crosshairOscillationData->current != endPointGapDelta)
 		{
 			crosshairOscillationData->InterpolateSmootherStep(min(crosshairOscillationData->secsSinceUpdate / crosshairOscillationData->secsUpdateInterval, 1.0f));
-			crosshairOscillationData->IncrementUpdateInterval(*g_deltaTimeRealTime);
+			crosshairOscillationData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 
 			// Reached the interpolation endpoint now, so signal completion,
 			// and set previous, current, and next interpolation values to the endpoint value.
@@ -3905,7 +3914,7 @@ namespace ALYSLC
 		}
 	}
 
-	void TargetingManager::GrabbedReferenceInfo::UpdateGrabbedReference(const std::shared_ptr<CoopPlayer>& a_p, const uint8_t& a_index, const float& a_firstGrabbedReferenceRadius)
+	void TargetingManager::GrabbedReferenceInfo::UpdateGrabbedReference(const std::shared_ptr<CoopPlayer>& a_p, const uint8_t& a_index, const float& a_firstGrabbedReferenceBufferDist)
 	{
 		// Update the position of grabbed refrs by setting their velocity.
 		// Arrange multiple grabbed refrs in a (very poorly formed) ring about the first grabbed refr.
@@ -3919,18 +3928,20 @@ namespace ALYSLC
 		auto objectPtr = refrHandle.get();
 		// Update grabbed refr orientation.
 		// Get heaviness factor to better account for different objects when setting linear velocity.
+		// The higher 
 		// Still a work in progress.
-		float heavinessFactor = 1.0f;
+		float baseWeightFactor = 20.0f;
+		float heavinessFactor = baseWeightFactor;
 		if (auto asActor = objectPtr->As<RE::Actor>(); asActor)
 		{
 			if (auto charController = asActor->GetCharController(); charController)
 			{
-				heavinessFactor = max(0.0f, objectPtr->GetWeight() - sqrt(asActor->equippedWeight));
+				heavinessFactor = baseWeightFactor * powf(2.0f - min((objectPtr->GetWeight() + asActor->equippedWeight) / 150.0f, 1.5f), 2.0f);
 			}
 		}
 		else
 		{
-			heavinessFactor = sqrt(HAVOK_TO_GAME * (max(0.0f, objectPtr->GetWeight() - 5.0f) + 10.0f));
+			heavinessFactor = sqrt(HAVOK_TO_GAME * (max(0.0f, objectPtr->GetWeight() - 5.0f) + baseWeightFactor));
 		}
 
 		bool isRagdolled = a_p->coopActor->IsInRagdollState();
@@ -3957,11 +3968,11 @@ namespace ALYSLC
 		auto indexBasedOffset = RE::NiPoint3();
 		// Offset from index 0 (center) grabbed object.
 		// Dependent on the objects' radii/heights.
-		float indexOffsetScalar = a_firstGrabbedReferenceRadius;
+		float indexOffsetScalar = a_firstGrabbedReferenceBufferDist;
 		if (auto object3D = Util::GetRefr3D(objectPtr.get()); object3D)
 		{
 			// Add both the central and current grabbed object's radii.
-			indexOffsetScalar = a_firstGrabbedReferenceRadius + min(objectPtr->GetHeight(), object3D->worldBound.radius);
+			indexOffsetScalar = a_firstGrabbedReferenceBufferDist + min(objectPtr->GetHeight() * 0.25f, object3D->worldBound.radius * 0.25f);
 		}
 
 		auto forward = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(facingAng));
@@ -4067,17 +4078,18 @@ namespace ALYSLC
 			grabbedRefrMaxSpeed = max(grabbedRefrMaxSpeed, a_p->coopActor->DoGetMovementSpeed());
 			// Slow down when nearing the target position.
 			// Reduces jitter.
+			const float slowdownRadius = 3000.0f;
 			float slowdownFactor = Util::InterpolateEaseOut
 			(
 				0.0f, 
 				1.0f, 
 				std::clamp
 				(
-					distToTargetPos / (Settings::fBaseGrabbedRefrMaxSpeed * 0.5f), 
+					distToTargetPos / slowdownRadius, 
 					0.0f, 
 					1.0f
 				), 
-				2.0f
+				5.0f
 			);
 
 			// Don't move at all when too close.
@@ -4452,9 +4464,10 @@ namespace ALYSLC
 		bool targetActorValidity = targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get());
 		if (targetActorValidity) 
 		{
+			// TODO: Snap released refr to the closest position on the targeted actor's character controller collider.
 			// Get targeted node, if available.
 			// Otherwise, aim at the position offset from the actor's refr location.
-			if (Settings::vbUseAimCorrection[a_p->playerID] && targetedActorNode && targetedActorNode.get()) 
+			/*if (Settings::vbUseAimCorrection[a_p->playerID] && targetedActorNode && targetedActorNode.get()) 
 			{
 				aimTargetPos = targetedActorNode->world.translate;
 				if (auto hkpRigidBody = Util::GethkpRigidBody(targetedActorNode.get()); hkpRigidBody)
@@ -4465,7 +4478,9 @@ namespace ALYSLC
 			else
 			{
 				aimTargetPos = targetActorPtr->data.location + targetLocalPosOffset;
-			}
+			}*/
+
+			aimTargetPos = targetActorPtr->data.location + targetLocalPosOffset;
 		}
 
 		// Stop homing when close enough to the target position (within a frame of reaching).
@@ -4590,14 +4605,21 @@ namespace ALYSLC
 		collisionActive = true;
 		startedHomingIn = false;
 		targetActorHandle = a_p->tm->targetMotionState->targetActorHandle;
-		targetLocalPosOffset = Util::HandleIsValid(targetActorHandle) ? a_p->tm->crosshairLastHitLocalPos : RE::NiPoint3();
-		targetedActorNode.reset();
-		trajectoryEndPos = a_p->tm->crosshairWorldPos;
-
-		// Set closest node and trajectory end position to that node's position
-		// if aiming at an actor with aim correction.
 		auto targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
 		bool targetActorValidity = targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get());
+		targetLocalPosOffset = Util::HandleIsValid(targetActorHandle) ? a_p->tm->crosshairLastHitLocalPos : RE::NiPoint3();
+		targetedActorNode.reset();
+		trajectoryEndPos =
+		(
+			targetActorValidity ? 
+			targetActorPtr->data.location + targetLocalPosOffset :
+			a_p->tm->crosshairWorldPos
+		);
+
+		// TODO: Snap released refr to the closest position on the targeted actor's character controller collider.
+		// Set closest node and trajectory end position to that node's position
+		// if aiming at an actor with aim correction.
+		/*
 		if (targetActorValidity && Settings::vbUseAimCorrection[a_p->playerID] && targetActorHandle == a_p->tm->crosshairRefrHandle)
 		{
 			if (auto actor3D = Util::GetRefr3D(targetActorPtr.get()); actor3D)
@@ -4641,6 +4663,7 @@ namespace ALYSLC
 				trajectoryEndPos = nodeCenterOfMassPos;
 			}
 		}
+		*/
 
 		// Released from suspended position.
 		releasePos = objectPtr->data.location;
@@ -4985,13 +5008,12 @@ namespace ALYSLC
 		// or attempt to re-grab the non-player actor.
 		// Haven't found a hook to prevent the ragdoll timer from being set to 0 yet,
 		// so chalk this solution up to more jank.
-		if (asActor && !asActor->IsInRagdollState())
+		if (asActor && !asActor->IsDead() && !asActor->IsInRagdollState())
 		{
 			if (GlobalCoopData::IsCoopPlayer(asActor)) 
 			{
 				// Player is not grabbed anymore.
 				info->Clear();
-				a_p->mm->aimPitch = 0.0f;
 				asActor->PotentiallyFixRagdollState();
 				return false;
 			}
@@ -4999,13 +5021,16 @@ namespace ALYSLC
 			{
 				if (Settings::bRemoveGrabbedActorAutoGetUp && asActor->currentProcess && asActor->currentProcess->middleHigh)
 				{
-					// Prevent NPC from getting up initially,
-					// if the actor getup removal setting is enabled.
-					// Knock 'em down again first.
+					// Paralyze living actors to prevent them from getting up constantly.
+					if (asActor->boolBits.none(RE::Actor::BOOL_BITS::kParalyzed))
+					{
+						asActor->boolBits.set(RE::Actor::BOOL_BITS::kParalyzed);
+					}
+
+					// Knock 'em down again.
 					Util::PushActorAway(asActor, asActor->data.location, 0.0f);
 					asActor->PotentiallyFixRagdollState();
 					asActor->currentProcess->middleHigh->unk2B0 = FLT_MAX;
-
 					return true;
 				}
 				else
@@ -5039,12 +5064,41 @@ namespace ALYSLC
 			}
 		}
 
-		grabbedRefrHandlesToInfoIndices.clear();
 		ClearGrabbedRefrs();
-		releasedRefrHandlesToInfoIndices.clear();
 		ClearReleasedRefrs();
 		// No longer grabbing.
 		isAutoGrabbing = isGrabbing = false;
+	}
+
+	void TargetingManager::RefrManipulationManager::ClearGrabbedActors(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Clear all released refrs and grabbed actors,
+		// since I haven't figured out a consistent, bug-free way
+		// of moving grabbed actors through load doors.
+
+		for (const auto& grabbedRefrInfo : grabbedRefrInfoList)
+		{
+			if (!grabbedRefrInfo)
+			{
+				continue;
+			}
+
+			auto refrPtr = Util::GetRefrPtrFromHandle(grabbedRefrInfo->refrHandle);
+			if (!refrPtr || !refrPtr.get() || !refrPtr->As<RE::Actor>())
+			{
+				continue;
+			}
+
+			auto asActor = refrPtr->As<RE::Actor>();
+			asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			if (!asActor->IsDead()) 
+			{
+				asActor->NotifyAnimationGraph("GetUpBegin");
+			}
+
+			ALYSLC::Log("[TM] ClearGrabbedActors: {}. Releasing actor {}.", a_p->coopActor->GetName(), refrPtr->GetName());
+			ClearGrabbedRefr(grabbedRefrInfo->refrHandle);
+		}
 	}
 
 	void TargetingManager::RefrManipulationManager::ClearGrabbedRefr(const RE::ObjectRefHandle& a_handle)
@@ -5161,6 +5215,26 @@ namespace ALYSLC
 		if (numErased != 0) 
 		{
 			RefreshHandleToIndexMappings(a_grabbed);
+		}
+	}
+
+	void TargetingManager::RefrManipulationManager::ClearPlayerIfGrabbed(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// If the given player is grabbed by another active player, have the grabbing player release this player.
+
+		const auto handle = a_p->coopActor->GetHandle();
+		for (const auto& otherP : glob.coopPlayers)
+		{
+			if (otherP->isActive && otherP != a_p)
+			{
+				if (otherP->tm->rmm->IsManaged(handle, true))
+				{
+					otherP->tm->rmm->ClearRefr(handle);
+					a_p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					a_p->coopActor->NotifyAnimationGraph("GetUpBegin");
+					break;
+				}
+			}
 		}
 	}
 
@@ -5288,87 +5362,83 @@ namespace ALYSLC
 					auto collidableA = contactEvent.bodies[0]->GetCollidable();
 					auto collidableB = contactEvent.bodies[1]->GetCollidable();
 
-					if (contactEvent.contactPoint)
-					{
-						contactPoint = ToNiPoint3(contactEvent.contactPoint->position) * HAVOK_TO_GAME;
-					}
-					else
+					if (!contactEvent.contactPoint)
 					{
 						// No contact point, nothing to handle for this event.
 						continue;
 					}
 
+					contactPoint = ToNiPoint3(contactEvent.contactPoint->position) * HAVOK_TO_GAME;
 					// Two valid colliding objects.
 					if (collidableA && collidableB)
 					{
 						refrA = RE::TESHavokUtilities::FindCollidableRef(*collidableA);
 						refrB = RE::TESHavokUtilities::FindCollidableRef(*collidableB);
-						// Must have two valid associated refrs.
-						if (refrA && refrB)
+						// At least one refr is invalid.
+						if (!refrA || !refrB) 
 						{
-							handleA = refrA->GetHandle();
-							handleB = refrB->GetHandle();
+							continue;
+						}
 
-							if (Util::HandleIsValid(handleA) && Util::HandleIsValid(handleB))
+						// Must have two valid associated refrs with valid handles.
+						handleA = refrA->GetHandle();
+						handleB = refrB->GetHandle();
+						if (!Util::HandleIsValid(handleA) || !Util::HandleIsValid(handleB))
+						{
+							continue;
+						}
+
+						// Check for instances where one of the two colliding refrs is managed and the other is not.
+						// Want to ignore collisions between non-managed refrs and between two managed refrs.
+						int32_t collidingReleasedRefrIndex = -1;
+						if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA) && 
+							!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB))
+						{
+							collidedWithRefr = refrB;
+							collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleA);
+						}
+
+						if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB) && 
+							!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA))
+						{
+							collidedWithRefr = refrA;
+							collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleB);
+						}
+
+						// Why are you hitting yourself? Eh, whatever. Next!
+						if (!collidedWithRefr || collidedWithRefr == a_p->coopActor.get())
+						{
+							continue;
+						}
+
+						// No index for the managed refr.
+						if (collidingReleasedRefrIndex == -1)
+						{
+							continue;
+						}
+
+						auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[collidingReleasedRefrIndex];
+						// Don't want repeated hits.
+						bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(collidedWithRefr);
+						// Add the refr the managed refr collided with.
+						releasedRefrInfo->AddHitRefr(collidedWithRefr);
+						auto releasedRefrPtr = Util::GetRefrPtrFromHandle(releasedRefrInfo->refrHandle);
+
+						// Managed refr hit a new actor that isn't itself. Bonk.
+						if (auto hitActor = collidedWithRefr->As<RE::Actor>(); 
+							hitActor && hitActor->currentProcess && releasedRefrPtr.get() != collidedWithRefr && !hasAlreadyHitRefr)
+						{
+							if (auto hkpRigidBody = Util::GethkpRigidBody(releasedRefrPtr.get()); hkpRigidBody) 
 							{
-								// Check for instances where one of the two colliding refrs is managed and the other is not.
-								// Want to ignore collisions between non-managed refrs and between two managed refrs.
-								int32_t collidingReleasedRefrIndex = -1;
-								if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA) && 
-									!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB))
-								{
-									collidedWithRefr = refrB;
-									collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleA);
-								}
-
-								if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB) && 
-									!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA))
-								{
-									collidedWithRefr = refrA;
-									collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleB);
-								}
-
-								// Why are you hitting yourself? Eh, whatever. Next!
-								if (!collidedWithRefr || collidedWithRefr == a_p->coopActor.get())
-								{
-									continue;
-								}
-
-								// No index for the managed refr.
-								if (collidingReleasedRefrIndex == -1)
-								{
-									continue;
-								}
-
-								auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[collidingReleasedRefrIndex];
-								// Don't want repeated hits.
-								bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(collidedWithRefr);
-								// Add the refr the managed refr collided with.
-								releasedRefrInfo->AddHitRefr(collidedWithRefr);
-								auto releasedRefrPtr = Util::GetRefrPtrFromHandle(releasedRefrInfo->refrHandle);
-
-								// Managed refr hit a new actor that isn't itself. Bonk.
-								if (auto hitActor = collidedWithRefr->As<RE::Actor>(); 
-									hitActor && hitActor->currentProcess && releasedRefrPtr.get() != collidedWithRefr && !hasAlreadyHitRefr)
-								{
-									if (auto hkpRigidBody = Util::GethkpRigidBody(releasedRefrPtr.get()); hkpRigidBody) 
-									{
-										a_p->tm->HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), hkpRigidBody.get(), contactPoint);
-									}
-								}
-
-								// Thrown actor hit a new refr that isn't itself. Splat.
-								if (auto thrownActor = releasedRefrPtr->As<RE::Actor>(); 
-									thrownActor && thrownActor != collidedWithRefr && !hasAlreadyHitRefr && !releasedRefrInfo->hitRefrFIDs.empty())
-								{
-									a_p->tm->HandleSplat(thrownActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size());
-								}
+								a_p->tm->HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), hkpRigidBody.get(), contactPoint);
 							}
 						}
-						else
+
+						// Thrown actor hit a new refr that isn't itself. Splat.
+						if (auto thrownActor = releasedRefrPtr->As<RE::Actor>(); 
+							thrownActor && thrownActor != collidedWithRefr && !hasAlreadyHitRefr && !releasedRefrInfo->hitRefrFIDs.empty())
 						{
-							// At least one refr is invalid.
-							continue;
+							a_p->tm->HandleSplat(thrownActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size());
 						}
 					}
 				}
@@ -5391,6 +5461,59 @@ namespace ALYSLC
 		else
 		{
 			return releasedRefrHandlesToInfoIndices.contains(a_handle);
+		}
+	}
+
+	void TargetingManager::RefrManipulationManager::MoveUnloadedGrabbedObjectsToPlayer(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Move grabbed objects to the player. Should call when P1 has moved to a new location.
+		// NOTE: Unfortunately, I could not get MoveTo() to work consistently with grabbed actors,
+		// so only object teleportation between cells is supported.
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+
+		bool unloaded = false;
+		for (uint8_t i = 0; i < grabbedRefrInfoList.size(); ++i)
+		{
+			// Move unloaded or far away grabbed objects to the player.
+
+			auto& grabbedRefrInfo = grabbedRefrInfoList[i];
+			if (!grabbedRefrInfo || !grabbedRefrInfo.get())
+			{
+				continue;
+			}
+
+			const auto& handle = grabbedRefrInfo->refrHandle;
+			auto refrPtr = Util::GetRefrPtrFromHandle(handle);
+			if (!refrPtr || !refrPtr.get() || refrPtr->As<RE::Actor>())
+			{
+				continue;
+			}
+
+			unloaded = 
+			{
+				(!refrPtr->IsDeleted() && !refrPtr->IsDisabled()) &&
+				(!refrPtr->Is3DLoaded() ||
+				!refrPtr->loadedData ||
+				!refrPtr->parentCell ||
+				!refrPtr->parentCell->IsAttached())
+			};
+
+			if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface) 
+			{
+				taskInterface->AddTask
+				(
+					[refrPtr, p1]() 
+					{
+						ALYSLC::Log("[TM] MoveUnloadedGrabbedRefrsToPlayer: Moving {} to P1 on unload.", refrPtr->GetName());
+						refrPtr->MoveTo(p1);
+					}
+				);
+			}
 		}
 	}
 
@@ -5799,18 +5922,24 @@ namespace ALYSLC
 		startedHomingIn = false;
 		// Set target actor regardless of projectile trajectory type.
 		targetActorHandle = a_p->tm->targetMotionState->targetActorHandle;
+		auto targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
+		bool targetActorValidity = targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get());
 		targetLocalPosOffset = Util::HandleIsValid(targetActorHandle) ? a_p->tm->crosshairLastHitLocalPos : RE::NiPoint3();
 		targetedActorNode.reset();
-
 		// Fall back on crosshair world position if there is no targeted actor.
-		trajectoryEndPos = a_p->tm->crosshairWorldPos;
+		trajectoryEndPos =
+		(
+			targetActorValidity ? 
+			targetActorPtr->data.location + targetLocalPosOffset :
+			a_p->tm->crosshairWorldPos
+		);
 
+		// TODO: Snap released refr to the closest position on the targeted actor's character controller collider.
 		// If just fired and aiming at an actor, direct at the closest node to the crosshair world position.
 		// Seems to improve hit recognition, since the crosshair world position
 		// may not intersect with the target's collision volumes.
 		// Alas, projectiles still pass through actors without colliding at times.
-		auto targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
-		bool targetActorValidity = targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get());
+		/*
 		if (targetActorValidity && Settings::vbUseAimCorrection[a_p->playerID] && targetActorHandle == a_p->tm->crosshairRefrHandle)
 		{
 			if (auto actor3D = Util::GetRefr3D(targetActorPtr.get()); actor3D)
@@ -5853,6 +5982,7 @@ namespace ALYSLC
 				trajectoryEndPos = nodeCenterOfMassPos;
 			}
 		}
+		*/
 
 		// Save initial release speed.
 		const float initialReleaseSpeed = a_initialVelocityOut.Length();
@@ -6155,9 +6285,9 @@ namespace ALYSLC
 			return;
 		}
 
-		// Keep queue at a modest size by removing expired projectiles
+		// Keep msp at a modest size by removing expired projectiles
 		// if the queue size is above a certain threshold.
-		if (!managedProjHandles.empty() && managedProjHandles.size() >= Settings::uManagedPlayerProjectilesBeforeRemoval)
+		if (managedProjHandleToTrajInfoMap.size() >= Settings::uManagedPlayerProjectilesBeforeRemoval)
 		{
 			for (const auto& [handle, _] : managedProjHandleToTrajInfoMap) 
 			{
@@ -6174,24 +6304,6 @@ namespace ALYSLC
 					managedProjHandleToTrajInfoMap.erase(handle);
 				}
 			}
-
-			// Reconstruct list of managed FIDs.
-			managedProjHandles.clear();
-			for (const auto& [fid, _] : managedProjHandleToTrajInfoMap) 
-			{
-				managedProjHandles.push_back(fid);
-			}
-		}
-
-		// Insert FID to managed list if not already managed.
-		bool alreadyManaged = 
-		{
-			!managedProjHandleToTrajInfoMap.empty() && 
-			managedProjHandleToTrajInfoMap.contains(a_projectileHandle)
-		};
-		if (!alreadyManaged) 
-		{
-			managedProjHandles.push_back(a_projectileHandle);
 		}
 
 		// Insert constructed trajectory info for this projectile.

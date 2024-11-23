@@ -100,6 +100,8 @@ namespace ALYSLC
 						type == !SerializableDataType::kPlayerCopiedMagicList ||
 						type == !SerializableDataType::kPlayerEmoteIdleEvents ||
 						type == !SerializableDataType::kPlayerEquippedObjectsList ||
+						type == !SerializableDataType::kPlayerMagFavoritesList ||
+						type == !SerializableDataType::kPlayerHotkeyedFormsList ||
 						type == !SerializableDataType::kPlayerExtraPerkPoints ||
 						type == !SerializableDataType::kPlayerFirstSavedLevel ||
 						type == !SerializableDataType::kPlayerHMSPointsIncList ||
@@ -135,6 +137,8 @@ namespace ALYSLC
 									uint32_t extraPerkPoints = 0;
 									std::array<float, 3> baseHMSPoints{ 100.0f, 100.0f, 100.0f };
 									std::array<float, 3> hmsPointIncreases{ 0.0f, 0.0f, 0.0f };
+									std::array<RE::TESForm*, 8> hotkeyedForms{ };
+									hotkeyedForms.fill(nullptr);
 									SkillList skillList{ 0.0f };
 									auto& baseSkillLevels = skillList;
 									auto& skillXP = skillList;
@@ -143,7 +147,8 @@ namespace ALYSLC
 									copiedMagic.fill(nullptr);
 									std::array<RE::BSFixedString, 8> cyclableEmoteIdleEvents = GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS;
 									std::vector<RE::TESForm*> equippedForms{ !EquipIndex::kTotal, nullptr };
-									std::vector<RE::BGSPerk*> unlockedPerksList;
+									std::vector<RE::TESForm*> favoritedMagForms{ };
+									std::vector<RE::BGSPerk*> unlockedPerksList{ };
 
 									ALYSLC::Log("[SERIAL] Load: Added new serialized data set for player with FID 0x{:X}.", fid);
 									glob.serializablePlayerData.insert
@@ -155,6 +160,7 @@ namespace ALYSLC
 												copiedMagic,
 												cyclableEmoteIdleEvents,
 												equippedForms,
+												favoritedMagForms,
 												lvlXP,
 												availablePerkPoints,
 												firstSavedLvl,
@@ -164,6 +170,7 @@ namespace ALYSLC
 												extraPerkPoints,
 												baseHMSPoints,
 												hmsPointIncreases,
+												hotkeyedForms,
 												baseSkillLevels,
 												skillIncreases,
 												skillXP,
@@ -279,6 +286,43 @@ namespace ALYSLC
 									{
 										RetrieveUInt32Data(a_intfc, equippedFID, type);
 										data->equippedForms.emplace_back(GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler));
+									}
+								}
+								else if (type == !SerializableDataType::kPlayerMagFavoritesList)
+								{
+									// Read in all saved physical forms.
+									uint32_t numMagForms = 0;
+									RetrieveUInt32Data(a_intfc, numMagForms, type);
+									ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} favorited magical forms.", fid, numMagForms);
+
+									data->favoritedMagForms.clear();
+									RE::FormID equippedFID = 0;
+									for (auto j = 0; j < numMagForms; ++j)
+									{
+										RetrieveUInt32Data(a_intfc, equippedFID, type);
+										data->favoritedMagForms.emplace_back(GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler));
+									}
+								}
+								else if (type == !SerializableDataType::kPlayerHotkeyedFormsList)
+								{
+									// Read in all saved hotkeyed forms.
+									RE::FormID hotkeyedFID = 0;
+									RE::TESForm* hotkeyedForm = nullptr;
+									for (auto j = 0; j < data->hotkeyedForms.size(); ++j)
+									{
+										RetrieveUInt32Data(a_intfc, hotkeyedFID, type);
+										if (hotkeyedFID) 
+										{
+											hotkeyedForm = GetFormFromRetrievedFID(a_intfc, hotkeyedFID, dataHandler);
+										}
+										else
+										{
+											hotkeyedForm = nullptr;
+										}
+
+										data->hotkeyedForms[j] = hotkeyedForm;
+										ALYSLC::Log("[SERIAL] Load: Player with FID 0x{:X} has {} hotkeyed in slot {}.", 
+											fid, hotkeyedForm ? hotkeyedForm->GetName() : "NONE", j + 1);
 									}
 								}
 								else if (type == !SerializableDataType::kPlayerCopiedMagicList)
@@ -439,9 +483,9 @@ namespace ALYSLC
 		{
 			// Ensure no co-op session is active as the game reverts.
 
-			ALYSLC::Log("[SERIAL] Revert: Stopping active co-op session.");
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
+				ALYSLC::Log("[SERIAL] Revert: Stopping active co-op session.");
 				GlobalCoopData::TeardownCoopSession(true);
 			}
 		}
@@ -673,7 +717,7 @@ namespace ALYSLC
 							logger::error("[SERIAL] ERR: Save: BASE SKILL LVL LIST list is empty for player 0x{:X}. Getting and setting each skill again for the player.", fid);
 							if (const auto playerActor = RE::TESForm::LookupByID(fid); playerActor && playerActor->As<RE::Actor>())
 							{
-								auto skillBaseList = Util::GetActorSkillAVs(playerActor->As<RE::Actor>());
+								auto skillBaseList = Util::GetActorSkillLevels(playerActor->As<RE::Actor>());
 								uint8_t numSkillLvlEntries = skillBaseList.size();
 								for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 								{
@@ -823,6 +867,74 @@ namespace ALYSLC
 									// Empty slot, write 0 for form ID.
 									SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerEquippedObjectsList);
 								}
+							}
+						}
+					}
+				}
+
+				// FAVORITED MAGICAL OBJECTS
+				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerMagFavoritesList, !SerializableDataType::kSerializationVersion))
+				{
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerMagFavoritesList));
+				}
+				else
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerMagFavoritesList);
+						// Write number of magical forms first, as this varies from save to save.
+						uint32_t numMagForms = data->favoritedMagForms.size();
+						SerializePlayerUInt32Data(a_intfc, numMagForms, !SerializableDataType::kPlayerMagFavoritesList);
+						ALYSLC::Log("[SERIAL] Save: Serialize MAGICAL FAVORITES LIST for 0x{:X}. Num magical forms: {}.", fid, numMagForms);
+
+						// Write each form's FID next.
+						if (numMagForms > 0)
+						{
+							for (uint16_t j = 0; j < numMagForms; ++j)
+							{
+								const auto form = data->favoritedMagForms[j];
+								if (form)
+								{
+									ALYSLC::Log("[SERIAL] Save: Serialize MAGICAL FORM {} (0x{:X}) for player with FID 0x{:X}.",
+										form->GetName(), form->formID, fid);
+									SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerMagFavoritesList);
+								}
+								else
+								{
+									// Empty slot, write 0 for form ID.
+									SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerMagFavoritesList);
+								}
+							}
+						}
+					}
+				}
+
+				// HOTKEYED FORMS
+				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerHotkeyedFormsList, !SerializableDataType::kSerializationVersion))
+				{
+					logger::error("[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerHotkeyedFormsList));
+				}
+				else
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerHotkeyedFormsList);
+						// Write each hotkeyed form's FID .
+						for (uint16_t j = 0; j < data->hotkeyedForms.size(); ++j)
+						{
+							const auto form = data->hotkeyedForms[j];
+							if (form)
+							{
+								ALYSLC::Log("[SERIAL] Save: Serialize HOTKEYED FORM {} (0x{:X}) in slot {} for player with FID 0x{:X}.",
+									form->GetName(), form->formID, j + 1, fid);
+								SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerHotkeyedFormsList);
+							}
+							else
+							{
+								// Empty slot, write 0 for form ID.
+								SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerHotkeyedFormsList);
 							}
 						}
 					}
@@ -984,6 +1096,7 @@ namespace ALYSLC
 			constexpr size_t numSkills = (size_t)Skill::kTotal;
 			std::array<float, 3> hmsBasePointsList{ };
 			std::array<float, 3> hmsIncList{ };
+			std::array<RE::TESForm*, 8> hotkeyedFormsList{ };
 			std::array<float, numSkills> skillBaseLvlList{ };
 			std::array<float, numSkills> skillIncList{ };
 			std::array<float, numSkills> skillXPList{ };
@@ -993,6 +1106,7 @@ namespace ALYSLC
 			// and 0 skill XP and level/HMS point increases across the board.
 			hmsBasePointsList.fill(100.0f);
 			hmsIncList.fill(0.0f);
+			hotkeyedFormsList.fill(nullptr);
 			skillBaseLvlList.fill(15.0f);
 			skillIncList.fill(0.0f);
 			skillXPList.fill(0.0f);
@@ -1002,7 +1116,7 @@ namespace ALYSLC
 			ALYSLC::Log("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
 
 			// Set skill base AVs.
-			skillBaseLvlList = Util::GetActorSkillAVs(p1);
+			skillBaseLvlList = Util::GetActorSkillLevels(p1);
 
 			// REMOVE when done debugging.
 			for (auto i = 0; i < skillBaseLvlList.size(); ++i)
@@ -1048,6 +1162,7 @@ namespace ALYSLC
 						std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal>(), 
 						GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
 						std::vector<RE::TESForm*>{!EquipIndex::kTotal, nullptr},
+						std::vector<RE::TESForm*>(),
 						p1->skills->data->xp, 
 						0,
 						0,
@@ -1057,6 +1172,7 @@ namespace ALYSLC
 						0, 
 						hmsBasePointsList,
 						hmsIncList,
+						hotkeyedFormsList,
 						skillBaseLvlList,
 						skillIncList,
 						skillXPList, 
@@ -1091,13 +1207,14 @@ namespace ALYSLC
 						// Same as P1's.
 						hmsBasePointsList.fill(100.0f);
 						hmsIncList.fill(0.0f);
+						hotkeyedFormsList.fill(nullptr);
 						skillBaseLvlList.fill(15.0f);
 						skillIncList.fill(0.0f);
 						skillXPList.fill(0.0f);
 						uint32_t sharedPerksUnlocked = 0;
 							
 						// Set initial skill base AVs.
-						auto skillBaseLvlList = Util::GetActorSkillAVs(coopPlayers[i]);
+						auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayers[i]);
 						glob.serializablePlayerData.insert
 						(
 							{ 
@@ -1107,6 +1224,7 @@ namespace ALYSLC
 									std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal>(),
 									GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
 									std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
+									std::vector<RE::TESForm*>(),
 									p1->skills->data->xp,
 									0,
 									0,
@@ -1116,6 +1234,7 @@ namespace ALYSLC
 									0,
 									hmsBasePointsList,
 									hmsIncList,
+									hotkeyedFormsList,
 									skillBaseLvlList,
 									skillIncList,
 									skillXPList,

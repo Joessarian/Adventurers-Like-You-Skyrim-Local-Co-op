@@ -13,11 +13,17 @@ namespace ALYSLC
 		DebugAPILine();
 		DebugAPILine(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs);
 
+		// Screen coords to start drawing from.
 		glm::vec2 from;
+		// Screen coords to draw to.
 		glm::vec2 to;
+		// Red, Green, Blue, Alpha.
 		uint32_t rgba;
+		// Thickness of the line in pixels.
 		float lineThickness;
+		// Duration the line should be drawn for.
 		float durationSecs;
+		// Time point indicating when this draw request was made.
 		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
@@ -27,10 +33,15 @@ namespace ALYSLC
 		DebugAPIPoint();
 		DebugAPIPoint(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs);
 
+		// Screen coords for the center of the point.
 		glm::vec2 center;
+		// Red, Green, Blue, Alpha.
 		uint32_t rgba;
+		// Size of the point in pixels.
 		float size;
+		// Duration the point should be drawn for.
 		float durationSecs;
+		// Time point indicating when this draw request was made.
 		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
@@ -40,12 +51,19 @@ namespace ALYSLC
 		DebugAPIShape();
 		DebugAPIShape(glm::vec2 a_origin, std::vector<glm::vec2> a_offsets, uint32_t a_rgba, bool a_fill, float a_lineThickness, float a_durationSecs);
 
+		// Screen coords for the origin point of the shape.
 		glm::vec2 origin;
+		// Boundary points of the shape expressed as points offset from the origin.
 		std::vector<glm::vec2> offsets;
+		// Red, Green, Blue, Alpha.
 		uint32_t rgba;
+		// Should the shape be filled after tracing out its boundary?
 		bool fill;
+		// Thickness of the shape's boundary in pixels.
 		float lineThickness;
+		// Duration the shape should be drawn for.
 		float durationSecs;
+		// Time point indicating when this shape draw request was made.
 		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 

@@ -43,8 +43,6 @@ namespace ALYSLC
 		// Starts with no adjustment mode active and in the autotrail state.
 		prevCamState = camState = CamState::kAutoTrail;
 		camAdjMode = CamAdjustmentMode::kNone;
-		// Initialize camera origin point path.
-		camOriginPointPath = std::make_unique<CamCubicBezier3DData>();
 		// Set InterpData and accompanying update intervals.
 		lockOnIndicatorOscillationInterpData = std::make_unique<InterpolationData<float>>
 		(
@@ -106,7 +104,7 @@ namespace ALYSLC
 		// Cam pitch and yaw calculated in the main task function.
 		camPitch = camYaw = 0.0f;
 		// Reset time points.
-		ResetTPData();
+		ResetTPs();
 		// Clear out objects to fade.
 		ResetFadeOnObjects();
 	}
@@ -150,7 +148,7 @@ namespace ALYSLC
 			// On state change, reset TPs.
 			if (camState != prevCamState)
 			{
-				ResetTPData();
+				ResetTPs();
 				// Set cam target position rotations to current pitch/yaw if switching away from lock on state.
 				if (prevCamState == CamState::kLockOn) 
 				{
@@ -261,7 +259,8 @@ namespace ALYSLC
 
 	void CameraManager::PreStartTask()
 	{
-		ALYSLC::Log("[CAM] PreStartTask");
+		ALYSLC::Log("[CAM] PreStartTask: cam FOV: {}", 
+			playerCam ? playerCam->worldFOV : -1.0f);
 		// Prevent the game from fading all players while the camera is active.
 		SetPlayerFadePrevention(true);
 		// Remove camera-actor collisions before switching to co-op cam.
@@ -282,7 +281,7 @@ namespace ALYSLC
 		// Update parent cell.
 		UpdateParentCell();
 		// Reset all time points and orientation data.
-		ResetTPData();
+		ResetTPs();
 		ResetCamData();
 
 		// Reset toggle state.
@@ -902,7 +901,7 @@ namespace ALYSLC
 				// Base target position is the focal player's focus point,
 				// which is guaranteed to be valid since it's based on the player's position.
 				const auto& focalP = glob.coopPlayers[focalPlayerCID];
-				camPlayerFocusPoint = GetPlayerFocusPoint(focalP->coopActor.get());
+				camPlayerFocusPoint = Util::GetPlayerFocusPoint(focalP->coopActor.get());
 				r = camBaseRadialDistance;
 				camBaseTargetPos = camPlayerFocusPoint;
 				camBaseTargetPos.z -= r * cosf(theta);
@@ -935,14 +934,8 @@ namespace ALYSLC
 			// If there's a hit, this means that the camera will hit a surface 
 			// if it moves directly to the base target position.
 			Raycast::RayResult movementResult = Raycast::CastRay(ToVec4(lastSetCamTargetPos), ToVec4(camBaseTargetPos), camTargetPosHullSize);
-			// Keep track of whether or not there was LOS
-			// to the previous base target position last frame.
-			bool hadLOSOnBaseTargetPos = hasLOSOnBaseTargetPos;
 			// Keep track of whether or not the camera was colliding last frame.
 			bool wasColliding = isColliding;
-			// Reset LOS check flag.
-			// Might set it through multiple checks below.
-			hasLOSOnBaseTargetPos = false;
 			if (movementResult.hit)
 			{
 				// Upon movement hit, the camera is now colliding with geometry.
@@ -967,7 +960,7 @@ namespace ALYSLC
 						if (focalPlayerCID == -1)
 						{
 							const auto& p = glob.coopPlayers[controlCamCID];
-							bool reqPlayerOnScreen = Util::PointIsOnScreen(GetPlayerFocusPoint(p->coopActor.get()));
+							bool reqPlayerOnScreen = Util::PointIsOnScreen(Util::GetPlayerFocusPoint(p->coopActor.get()));
 							bool tooCloseToFocus = lastSetCamTargetPos.GetDistance(camFocusPoint) < camMinTrailingDistance;
 							// The requesting player must be off-screen
 							// or the camera's last target position must be too close to the focus point.
@@ -982,7 +975,7 @@ namespace ALYSLC
 								else
 								{
 									RE::NiPoint3 losStartPoint{ camFocusPoint };
-									RE::NiPoint3 losEndPoint{ GetPlayerFocusPoint(p->coopActor.get()) };
+									RE::NiPoint3 losEndPoint{ Util::GetPlayerFocusPoint(p->coopActor.get()) };
 									// If neither all other players nor the focus point
 									// have LOS on the player rotating the camera,
 									// set the camera-rotating player as the focal player.
@@ -996,7 +989,7 @@ namespace ALYSLC
 										{
 											if (otherP->isActive && otherP != p)
 											{
-												losStartPoint = GetPlayerFocusPoint(otherP->coopActor.get());
+												losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
 												if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
 												{
 													losOnFocalPlayer = true;
@@ -1028,7 +1021,7 @@ namespace ALYSLC
 					if (focalP->coopActor->data.location.GetDistance(camFocusPoint) < 500.0f)
 					{
 						RE::NiPoint3 losStartPoint{};
-						RE::NiPoint3 losEndPoint{ GetPlayerFocusPoint(focalP->coopActor.get()) };
+						RE::NiPoint3 losEndPoint{ Util::GetPlayerFocusPoint(focalP->coopActor.get()) };
 
 						// First, check if the focal player is on-screen
 						// and if any other player or the focus point has LOS on the focal player.
@@ -1036,7 +1029,7 @@ namespace ALYSLC
 						bool focalPlayerOnScreen = 
 						(
 							!Settings::bCamCollisions || 
-							Util::PointIsOnScreen(GetPlayerFocusPoint(glob.coopPlayers[focalPlayerCID]->coopActor.get()))
+							Util::PointIsOnScreen(Util::GetPlayerFocusPoint(glob.coopPlayers[focalPlayerCID]->coopActor.get()))
 						);
 						if (focalPlayerOnScreen)
 						{
@@ -1048,7 +1041,7 @@ namespace ALYSLC
 								{
 									if (otherP->isActive && otherP != focalP)
 									{
-										losStartPoint = GetPlayerFocusPoint(otherP->coopActor.get());
+										losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
 										if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
 										{
 											losOnFocalPlayer = true;
@@ -1127,7 +1120,7 @@ namespace ALYSLC
 				{
 					if (p->isActive)
 					{
-						castStartPos = ToVec4(GetPlayerFocusPoint(p->coopActor.get()));
+						castStartPos = ToVec4(Util::GetPlayerFocusPoint(p->coopActor.get()));
 						hitResultWithHull = Raycast::CastRay(castStartPos, baseTargetPos, camTargetPosHullSize);
 						hitResultNoHull = Raycast::CastRay(castStartPos, baseTargetPos, 0.0f);
 						baseTargetPosVisible = 
@@ -1423,7 +1416,7 @@ namespace ALYSLC
 					1.0f
 				)
 			);
-			lockOnIndicatorOscillationInterpData->IncrementUpdateInterval(*g_deltaTimeRealTime);
+			lockOnIndicatorOscillationInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 			if (lockOnIndicatorOscillationInterpData->current == endPointGapDelta)
 			{
 				lockOnIndicatorOscillationInterpData->SetUpdateDurationAsComplete();
@@ -2213,14 +2206,11 @@ namespace ALYSLC
 		// Reset controller IDs.
 		controlCamCID = -1;
 		focalPlayerCID = -1;
-		softFocalPlayerCID = glob.player1CID;
 
 		// Reset interp data.
 		lockOnIndicatorOscillationInterpData->ResetData();
 		movementPitchInterpData->ResetData();
 		movementYawInterpData->ResetData();
-		// Reset cubic Bezier paths.
-		camOriginPointPath->ResetData();
 		// Reset interp factors and ratio for blending pitch/yaw changes.
 		if (camState == CamState::kManualPositioning)
 		{
@@ -2241,7 +2231,6 @@ namespace ALYSLC
 		// Reset to autotrail state.
 		prevCamState = camState = CamState::kAutoTrail;
 		delayedZoomInUnderExteriorRoof = delayedZoomOutUnderExteriorRoof = false;
-		hasLOSOnBaseTargetPos = false;
 		isAutoTrailing = true;
 		isColliding = false;
 		isManuallyPositioned = false;
@@ -2298,11 +2287,7 @@ namespace ALYSLC
 		camTargetRadialDistance = 
 		camBaseRadialDistance =
 		camCollisionRadialDistance = 
-		camSavedBaseRadialDistance = 
-
-		(
-			exteriorCell ? 700.0f : 200.0f
-		);
+		camSavedBaseRadialDistance = exteriorCell ? 700.0f : 200.0f;
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 
 		auto camNodePos = tpState->camera->cameraRoot->local.translate;
@@ -2719,7 +2704,7 @@ namespace ALYSLC
 		{
 			if (Settings::bAutoRotateCamPitch)
 			{
-				movementPitchInterpData->IncrementUpdateInterval(*g_deltaTimeRealTime);
+				movementPitchInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 				if (movementPitchInterpData->secsSinceUpdate >= movementPitchInterpData->secsUpdateInterval)
 				{
 					// Randomly becomes NAN, and must be reset. Temp solution.
@@ -2765,7 +2750,7 @@ namespace ALYSLC
 
 			if (Settings::bAutoRotateCamYaw)
 			{
-				movementYawInterpData->IncrementUpdateInterval(*g_deltaTimeRealTime);
+				movementYawInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 				if (movementYawInterpData->secsSinceUpdate >= movementYawInterpData->secsUpdateInterval)
 				{
 					movementYawToCamRunningTotal = 

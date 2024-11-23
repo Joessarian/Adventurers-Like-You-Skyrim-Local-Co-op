@@ -25,7 +25,7 @@ namespace RE
 	}
 }
 
-// Still have to call c_str() on passed-in BSString's when
+// Still have to call data() on passed-in BSString's when
 // attempting to format with fmt::format(), even with custom format_as() func defined.
 // Formatted string becomes garbage otherwise.
 // Defining a formatter below seems to work though.
@@ -112,7 +112,7 @@ namespace ALYSLC
 	// Right stick locations:
 	// 1: Top Right: X: (0.0f, 1.0f], Y: (0.0f, 1.0f]
 	// 2: Bottom Right: X: (0.0f, 1.0f], Y: [-1.0f, 0.0f)
-	// 3: Bottom Left: X: [-1.0f, 0.0f], Y: [-1.0f, 0.0f)
+	// 3: Bottom Left: X: [-1.0f, 0.0f), Y: [-1.0f, 0.0f)
 	// 4: Top Left: X: [-1.0f, 0.0f), Y: (0.0f, 1.0f]
 	// 5. Pos X Axis: X: (0.0f, 1.0f], Y: 0.0f
 	// 6. Neg Y Axis: X: 0.0f, Y: [-1.0f, 0.0f)
@@ -133,7 +133,7 @@ namespace ALYSLC
 	};
 
 	// Input actions: include buttons, analog sticks, and performable player actions.
-	// Some indices are used purely for indexing (such as kFirstAction, kLastAction, etc.
+	// Some indices are used purely for indexing (such as kFirstAction, kLastAction, etc.)
 	enum class InputAction : std::uint32_t
 	{
 		kNone = 0xFFFFFFFF,
@@ -199,6 +199,7 @@ namespace ALYSLC
 		kFavorites,
 		kGrabObject,
 		kGrabRotateYZ,
+		kHotkeyEquip,
 		kInventory,
 		kJump,
 		kMagicMenu,
@@ -294,7 +295,7 @@ namespace ALYSLC
 	};
 
 	// Equip indices are used to keep track of equipped gear
-	// and ensure gear is equipped into the correct slots.
+	// and ensure gear stays equipped in the correct slots.
 	enum class EquipIndex : std::uint8_t
 	{
 		kLeftHand = 0,
@@ -442,7 +443,7 @@ namespace ALYSLC
 	// the game's angular coordinate system.
 	// - Game angles (Z rotation) are the sticks' angles in Cartesian converted
 	// to the game's coordinate system and then offset with the
-	// camera's game angle (Z rotation).
+	// camera's yaw (Z rotation).
 	enum class MoveParams : std::uint16_t
 	{
 		kLSXComp,				// X (left/right) component of LS motion [-1.0f, 1.0f] relative to the camera's yaw (cam yaw points along the +Y axis).
@@ -488,7 +489,7 @@ namespace ALYSLC
 	//[Threads/Managers]
 	//==================
 
-	// Running (or not) state of managers.
+	// Execution state of managers.
 	enum class ManagerState : std::int32_t
 	{
 		kNone = -1,			// Invalid.
@@ -574,12 +575,13 @@ namespace ALYSLC
 		kTotal
 	};
 
+	// Player action perform stages.
 	enum class PerfStage : std::uint8_t
 	{
 		kBlocked,				// Blocked from executing start/hold/cleanup funcs.
 		kConflictingAction,		// Interrupted by conflicting action before or after starting.
 		kFailedConditions,		// Interrupted by failed conditions after starting.
-		kInputsPressed,			// All composing inputs pressed.
+		kInputsPressed,			// All composing inputs pressed, but the action hasn't started yet.
 		kInputsReleased,		// Fully-stopped action: all required composing inputs released.
 		kSomeInputsPressed,		// Some composing inputs are pressed and the action has not already started.
 		kSomeInputsReleased,	// Some composing inputs released after the action has started.
@@ -649,7 +651,6 @@ namespace ALYSLC
 
 	// Lists out performable actions that modify an actor's actor values
 	// once an associated animation event triggers.
-	// Actov Value Cost Actions.
 	enum class AVCostAction : std::uint16_t
 	{
 		kNone = 0,
@@ -778,23 +779,25 @@ namespace ALYSLC
 	// Identifiers for serializable co-op data.
 	enum class SerializableDataType : std::uint32_t
 	{
-		kPlayerFirstSavedLevel = 'PFSL', 
-		kPlayerLevel = 'PLVL',
-		kPlayerLevelXP = 'PLXP',
-		kPlayerBaseHMSPointsList = 'PBPL',
-		kPlayerHMSPointsIncList = 'PPIL',
-		kPlayerBaseSkillLevelsList = 'PBSL',
-		kPlayerSkillIncreasesList = 'PSIL',
-		kPlayerSkillXPList = 'PSXL',
-		kPlayerCopiedMagicList = 'PCML',
-		kPlayerEquippedObjectsList = 'PEOL',
-		kPlayerAvailablePerkPoints = 'PAPP',
-		kPlayerUnlockedPerksList = 'PUPL',
-		kPlayerSharedPerksUnlocked = 'PSPU',
-		kPlayerUsedPerkPoints = 'PUPP',
-		kPlayerExtraPerkPoints = 'PEPP',
-		kPlayerEmoteIdleEvents = 'PEIE',
-		kSerializationVersion = 0
+		kPlayerFirstSavedLevel = 'PFSL',		// First saved player level in co-op.
+		kPlayerLevel = 'PLVL',					// Current player level.
+		kPlayerLevelXP = 'PLXP',				// Current player XP at the current level.
+		kPlayerBaseHMSPointsList = 'PBPL',		// List of base health, magicka, and stamina values.
+		kPlayerHMSPointsIncList = 'PPIL',		// List of increases to the base health, magicka, and stamina values.
+		kPlayerBaseSkillLevelsList = 'PBSL',	// List of base skill AV levels.
+		kPlayerSkillIncreasesList = 'PSIL',		// List of increases to the base skill AV levels.
+		kPlayerSkillXPList = 'PSXL',			// List of XP earned towards each progressing skill AV.
+		kPlayerCopiedMagicList = 'PCML',		// List of spells copied into each placeholder spell slot for companion players.
+		kPlayerEquippedObjectsList = 'PEOL',	// List of all equipped objects for the player to restore on loading a save.
+		kPlayerMagFavoritesList = 'PMFL',		// List of all magical (spell) forms favorited by the player.
+		kPlayerHotkeyedFormsList = 'PHFL',		// List of all forms hotkeyed via the Favorites Menu for the player. 
+		kPlayerAvailablePerkPoints = 'PAPP',	// List of perk points availiable for this player when leveling up.
+		kPlayerUnlockedPerksList = 'PUPL',		// List of perks that this player has unlocked.
+		kPlayerSharedPerksUnlocked = 'PSPU',	// List of shared perks that are unlocked for all players.
+		kPlayerUsedPerkPoints = 'PUPP',			// Number of perk points this player has used.
+		kPlayerExtraPerkPoints = 'PEPP',		// Number of additional points gained outside of leveling up.
+		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
+		kSerializationVersion = 0				// Version info.
 	};
 
 	//==================
@@ -832,37 +835,11 @@ namespace ALYSLC
 		kSneakH2H,
 		kSneak1H,
 		kSneak2H,
-		kGeneral,			// No weapon category.
+		kGeneral,			// No specific weapon category.
 		kVampireLord,
 		kWerewolf,
 		kTotal,
 		kLast = kTotal - 1
-	};
-
-	// Indices for each default movement type used by Characters.
-	enum class NPCMovementTypeID : std::uint16_t
-	{
-		k1HM,
-		k2HM,
-		kAttacking2H,
-		kAttacking,
-		kBleedOut,
-		kBlocking,
-		kBlockingShieldCharge,
-		kBow,
-		kBowDrawn,
-		kBowDrawnQuickShot,
-		kDefault,
-		kDrunk,
-		kHorse,
-		kMagic,
-		kMagicCasting,
-		kPowerAttacking,
-		kSneaking,
-		kSprinting,
-		kSwimming,
-
-		kTotal
 	};
 
 	//===========
@@ -921,6 +898,7 @@ namespace ALYSLC
 		kCamera,				// Changes to camera state or adjustment mode.
 		kEquippedItem,			// Info about a newly-equipped item.
 		kGeneralNotification,	// Catch-all.
+		kHotkeySelection,		// Info on selected hotkey slot and item.
 		kReviveAlert,			// Life/Revive percent for downed players.
 		kShoutCooldown,			// Shout cooldown remaining when attempting to shout while on cooldown.
 		kStealthState,			// Detection percent overall and for selected target, if any.
@@ -1073,6 +1051,8 @@ namespace ALYSLC
 			return "GrabObject";
 		case InputAction::kGrabRotateYZ:
 			return "GrabRotateYZ";
+		case InputAction::kHotkeyEquip:
+			return "HotkeyEquip";
 		case InputAction::kInventory:
 			return "Inventory";
 		case InputAction::kJump:
@@ -1140,7 +1120,7 @@ namespace ALYSLC
 		}
 	}
 
-	// REMOVE. FOR DEBUGGING.
+	// For debug print purposes.
 	static inline std::string_view ManagerStateToString(ManagerState a_state)
 	{
 		switch (a_state)
@@ -1166,6 +1146,7 @@ namespace ALYSLC
 		return "'INVALID'"sv;
 	}
 
+	// Also for debug print purposes.
 	static inline std::string_view ManagerTypeToString(ManagerType a_state)
 	{
 		switch (a_state)

@@ -32,8 +32,8 @@ namespace ALYSLC
 		}
 		else if ((value == 0.0f && valueAtDirectionChange != 0.0f) || (value == 1.0f && valueAtDirectionChange != 1.0f))
 		{
-			// Treat reaching interp endpoints as a status change,
-			// but not a direction change.
+			// Reached an interp endpoint, so save the value
+			// for the next direction change.
 			valueAtDirectionChange = value;
 		}
 
@@ -259,14 +259,158 @@ namespace ALYSLC
 		void ChangeFormFavoritesStatus(RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite)
 		{
 			// Change the form in the actor's inventory to favorited/unfavorited.
+
 			if (!a_actor || !a_form)
 			{
 				return;
 			}
 
+			if (a_form->Is(RE::FormType::Spell, RE::FormType::Shout)) 
+			{
+				auto magicFavorites = RE::MagicFavorites::GetSingleton();
+				if (!magicFavorites)
+				{
+					return;
+				}
+
+				if (a_shouldFavorite) 
+				{
+					magicFavorites->SetFavorite(a_form);
+					ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}.",
+						a_actor->GetName(), a_form->GetName());
+				}
+				else
+				{
+					magicFavorites->RemoveFavorite(a_form);
+					ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}.",
+						a_actor->GetName(), a_form->GetName());
+				}
+			}
+			else
+			{
+				auto inventoryChanges = a_actor->GetInventoryChanges();
+				if (!inventoryChanges)
+				{
+					return;
+				}
+
+				// Look for the form in the actor's inventory.
+				auto inventory = a_actor->GetInventory();
+				for (auto& [boundObj, entryDataPair] : inventory)
+				{
+					const auto& [count, ied] = entryDataPair;
+					if (boundObj && boundObj == a_form &&
+						count > 0 && ied && ied.get())
+					{
+						// Exists and has a non-zero count.
+						if (ied->extraLists)
+						{
+							for (auto exDataList : *ied->extraLists)
+							{
+								if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
+								{
+									// Unfavorite only if extra hotkey data is present.
+									if (!a_shouldFavorite)
+									{
+										NativeFunctions::Unfavorite(inventoryChanges, ied.get(), exDataList);
+										ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.",
+											a_actor->GetName(), a_form->GetName(), !ied->IsFavorited());
+									}
+
+									// Return once extra hotkey data found,
+									// since this is the condition indicating
+									// that the item is already favorited or is now unfavorited.
+									return;
+								}
+							}
+
+							// Favorite only if not previously favorited.
+							if (a_shouldFavorite)
+							{
+								NativeFunctions::Favorite
+								(
+									inventoryChanges,
+									ied.get(),
+									!ied->extraLists->empty() ?
+									ied->extraLists->front() :
+									 nullptr
+								);
+								ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
+									a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
+							}
+						}
+						else if (a_shouldFavorite)
+						{
+							// Favorite the form right away because
+							// there is no extra data at all for this item.
+							NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
+							ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
+								a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
+						}
+
+						// Item found.
+						// At this point, there is no reason to continue
+						// checking the actor's inventory.
+						return;
+					}
+				}
+			}
+		}
+
+		void ChangeFormHotkeyStatus(RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet)
+		{
+			// Add/remove hotkey to the given form for the given actor.
+			// Set -1 as the hotkey index to remove the hotkey.
+
+			if (!a_actor || !a_form || a_hotkeySlotToSet < -1 || a_hotkeySlotToSet > 7)
+			{
+				return;
+			}
+
+			bool formIsMagical = a_form->Is(RE::FormType::Spell, RE::FormType::Shout);
+			auto magicFavorites = RE::MagicFavorites::GetSingleton();
+			if (!magicFavorites)
+			{
+				ALYSLC::Log("[EM] ERR: ChangeFormHotkeyStatus: {}: Magic favorites invalid.", a_actor->GetName());
+				return;
+			}
+
+			// Have to check both inventory objects and magic favorites.
+			// We'll do magic favorites first.
+
+			for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+			{
+				// Request to clear and the requested form was found, so clear out.
+				if (a_hotkeySlotToSet == -1 && magicFavorites->hotkeys[i] == a_form)
+				{
+					ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
+						a_actor->GetName(), a_form->GetName(), i + 1);
+					magicFavorites->hotkeys[i] = nullptr;
+				}
+				else if (a_hotkeySlotToSet != -1 && i == a_hotkeySlotToSet)
+				{
+					// Request to set and the requested form is magical, so set this slot to the form.
+					if (formIsMagical)
+					{
+						ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
+							a_actor->GetName(), a_form->GetName(), i + 1);
+						magicFavorites->hotkeys[i] = a_form;
+					}
+					else if (magicFavorites->hotkeys[i])
+					{
+						// Request to set but the requested form is not magical, so clear the slot.
+						// Still have to look for the form among the actor's physical favorites.
+						ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
+							a_actor->GetName(), magicFavorites->hotkeys[i]->GetName(), i + 1, a_form->GetName());
+						magicFavorites->hotkeys[i] = nullptr;
+					}
+				}
+			}
+
 			auto inventoryChanges = a_actor->GetInventoryChanges();
 			if (!inventoryChanges)
 			{
+				ALYSLC::Log("[EM] ERR: ChangeFormHotkeyStatus: {}: Inventory changes invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -275,61 +419,78 @@ namespace ALYSLC
 			for (auto& [boundObj, entryDataPair] : inventory)
 			{
 				const auto& [count, ied] = entryDataPair;
-				if (boundObj && boundObj == a_form &&
-					count > 0 && ied && ied.get())
+				if (boundObj && count > 0 && ied && ied.get())
 				{
 					// Exists and has a non-zero count.
-					bool exHotkeyPresent = false;
-					if (ied->extraLists)
-					{
-						for (auto exDataList : *ied->extraLists)
-						{
-							if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
-							{
-								exHotkeyPresent = true;
-								// Unfavorite only if extra hotkey data is present.
-								if (!a_shouldFavorite) 
-								{
-									NativeFunctions::Unfavorite(inventoryChanges, ied.get(), exDataList);
-									ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.", 
-										a_actor->GetName(), a_form->GetName(), !ied->IsFavorited());
-								}
 
-								// Break once extra hotkey data found, 
-								// since this is the condition indicating 
-								// that the item is already favorited or is now unfavorited.
-								break;
+					// No exralists, so no possibility of being favorited, continue.
+					if (!ied->extraLists)
+					{
+						continue;
+					}
+
+					for (auto exDataList : *ied->extraLists)
+					{
+						// No extra data list, not favorited.
+						if (!exDataList)
+						{
+							continue;
+						}
+
+						auto exHotkeyData = exDataList->GetByType<RE::ExtraHotkey>();
+						// No extrahotkey data, can't be favorited.
+						if (!exHotkeyData)
+						{
+							continue;
+						}
+
+						const auto hotkeySlot = (int32_t)(*exHotkeyData->hotkey);
+						// Request to remove hotkey and the form was found with an assigned hotkey,
+						// so unbind it.
+						if (a_hotkeySlotToSet == -1 && boundObj == a_form && hotkeySlot != -1) 
+						{
+							exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+							ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}.",
+								a_actor->GetName(), a_form->GetName(), hotkeySlot + 1);
+							// Already added/removed the hotkey, so there's nothing more to do.
+							return;
+						}
+						else if (a_hotkeySlotToSet != -1)
+						{
+							// NOTE: We don't return early after setting/removing hotkeys from physical forms
+							// because multiple physical forms can be bound to the same hotkey slot
+							// and we have to ensure that we remove the hotkey slot bindings 
+							// for all other forms that share the same requested slot.
+							// Unfortunately, this means we have to traverse the entire inventory.
+							if (hotkeySlot == a_hotkeySlotToSet) 
+							{
+								// Request to set and the requested form is magical,
+								// so since we've found a physical form with the requested hotkey slot,
+								// we'll clear the slot.
+								if (boundObj != a_form)
+								{
+									if (formIsMagical) 
+									{
+										ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set MAG {} as the new hotkeyed form.",
+											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
+									}
+									else
+									{
+										ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
+											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
+									}
+
+									exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+								}
+							}
+							else if (boundObj == a_form)
+							{
+								ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Added PHYS {} to hotkey slot {}.",
+									a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1);
+								exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>(a_hotkeySlotToSet);
 							}
 						}
-
-						// Favorite only if not previously favorited.
-						if (!exHotkeyPresent && a_shouldFavorite)
-						{
-							NativeFunctions::Favorite
-							(
-								inventoryChanges, 
-								ied.get(),
-								!ied->extraLists->empty() ?
-								ied->extraLists->front() :
-								nullptr
-							);
-							ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
-								a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
-						}
 					}
-					else if (a_shouldFavorite)
-					{
-						// Favorite the form right away because 
-						// there is no extra data at all for this item.
-						NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
-						ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
-							a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
-					}
-
-					// Item found.
-					// At this point, there is no reason to continue 
-					// checking the actor's inventory.
-					return;
 				}
 			}
 		}
@@ -337,6 +498,7 @@ namespace ALYSLC
 		void ChangeP1Perk(RE::BGSPerk* a_perk, bool&& a_add)
 		{
 			// Add or remove the perk from P1 via console command.
+
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (!p1 || !a_perk)
 			{
@@ -656,7 +818,7 @@ namespace ALYSLC
 			return max(1.0f, minScreenExtent.GetDistance(maxScreenExtent));
 		}
 
-		SkillList GetActorSkillAVs(RE::Actor* a_actor)
+		SkillList GetActorSkillLevels(RE::Actor* a_actor)
 		{
 			// Get a list of all this player's skill levels.
 
@@ -701,6 +863,7 @@ namespace ALYSLC
 		{
 			// Rough estimates that do NOT rotate the refr's bounding box before calculating width/height.
 			// Get the vertical/horizontal refr bound pixel distance at the current camera orientation.
+			// TODO: Improve this calculation, especially for flatter objects and activators.
 
 			if (!a_refr)
 			{
@@ -1090,6 +1253,74 @@ namespace ALYSLC
 			}
 
 			return ammoAndCount;
+		}
+
+		int32_t GetHotkeyForForm(RE::Actor* a_actor, RE::TESForm* a_form)
+		{
+			// Check if the given form is hotkeyed for the given player and return its slot index.
+
+			if (!a_actor || !a_form)
+			{
+				return -1;
+			}
+
+			if (a_form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				auto magicFavorites = RE::MagicFavorites::GetSingleton();
+				if (!magicFavorites)
+				{
+					return -1;
+				}
+
+				for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+				{
+					auto magForm = magicFavorites->hotkeys[i];
+					if (magForm == a_form)
+					{
+						return i;
+					}
+				}
+			}
+			else
+			{
+				auto inventory = a_actor->GetInventory();
+				RE::InventoryEntryData* entryData = nullptr;
+				// Iterate through the actor's inventory entries.
+				for (auto& inventoryEntry : inventory)
+				{
+					if (!inventoryEntry.first || inventoryEntry.first != a_form)
+					{
+						continue;
+					}
+
+					// Found the form.
+					auto& entryExtraLists = inventoryEntry.second.second;
+					if (!entryExtraLists)
+					{
+						continue;
+					}
+
+					auto extraLists = entryExtraLists->extraLists;
+					if (!extraLists)
+					{
+						continue;
+					}
+
+					for (auto& exData : *extraLists)
+					{
+						if (!exData->HasType(RE::ExtraDataType::kHotkey))
+						{
+							continue;
+						}
+
+						// Is favorited since the hotkey extra data exists.
+						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
+						return (int8_t)(*exHotkeyData->hotkey);
+					}
+				}
+			}
+
+			return -1;
 		}
 
 		RE::NiPointer<RE::NiCamera> GetNiCamera()
@@ -1511,6 +1742,12 @@ namespace ALYSLC
 				glob.cam->camCollisionTargetPos : 
 				playerCam->cameraRoot->world.translate
 			);
+			RE::NiPoint3 observerLOSStartPos = 
+			(
+				a_observer->As<RE::Actor>() ? 
+				Util::GetPlayerFocusPoint(a_observer->As<RE::Actor>()) : 
+				a_observer->GetLookingAtLocation()
+			);
 			// Ignore the observer in the raycast hit results.
 			auto observer3D = Util::GetRefr3D(a_observer);
 			// Same check for both selection and interaction if cam collisions are on, 
@@ -1546,7 +1783,7 @@ namespace ALYSLC
 					{
 						hasLOS = HasRaycastLOSFromPos
 						(
-							a_observer->GetLookingAtLocation(), 
+							observerLOSStartPos, 
 							a_targetRefr, 
 							std::vector<RE::NiAVObject*>({ observer3D.get() }), 
 							a_checkCrosshairPos, 
@@ -1604,7 +1841,7 @@ namespace ALYSLC
 							{
 								hasLOS = HasRaycastLOSFromPos
 								(
-									a_observer->GetLookingAtLocation(), 
+									observerLOSStartPos, 
 									a_targetRefr, 
 									std::vector<RE::NiAVObject*>({ observer3D.get() }), 
 									a_checkCrosshairPos, 
@@ -1634,7 +1871,7 @@ namespace ALYSLC
 					// P1's default LOS check is also too inconsistent 
 					// when targeting objets with an obstacle sitting between P1 and the camera.
 
-					// Start from the unused cam collision position.
+					// Start from the cam collision position.
 					hasLOS = HasRaycastLOSFromPos
 					(
 						glob.cam->camCollisionTargetPos, 
@@ -1643,12 +1880,12 @@ namespace ALYSLC
 						a_checkCrosshairPos, 
 						a_crosshairWorldPos
 					);
-					// Then check from the observer's eye position.
+					// Then check from the observer's focus point..
 					if (!hasLOS && observer3D && observer3D.get())
 					{
 						hasLOS = HasRaycastLOSFromPos
 						(
-							a_observer->GetLookingAtLocation(), 
+							observerLOSStartPos, 
 							a_targetRefr, 
 							std::vector<RE::NiAVObject*>({ observer3D.get() }),
 							a_checkCrosshairPos, 
@@ -1690,7 +1927,12 @@ namespace ALYSLC
 			const uint8_t numCasts = 6;
 			// Use the looking at position as the observer's eye position 
 			// and the raycasts' divider point.
-			RE::NiPoint3 lookingAtLoc = a_observer->GetLookingAtLocation();
+			RE::NiPoint3 lookingAtLoc = 
+			(
+				a_observer->As<RE::Actor>() ? 
+				Util::GetPlayerFocusPoint(a_observer->As<RE::Actor>()) : 
+				a_observer->GetLookingAtLocation()
+			);
 			// Observer's 3D.
 			auto observer3D = Util::GetRefr3D(a_observer);
 			// Keep slightly offset from the bounds.
@@ -2103,8 +2345,13 @@ namespace ALYSLC
 
 		RE::NiMatrix3 InterpolateRotMatrix(const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio)
 		{
+			// Interpolate between matrices A and B using the given ratio and return the resulting matrix.
+			// Must convert matrices to quaternions before interpolating.
+
 			RE::NiQuaternion qA;
 			RE::NiQuaternion qB;
+			// Credits to ersh1:
+			// https://github.com/ersh1/Precision/blob/main/src/Offsets.h#L98
 			typedef void (*tNiMatrixToNiQuaternion)(RE::NiQuaternion& a_quatOut, const RE::NiMatrix3& a_matIn);
 			static REL::Relocation<tNiMatrixToNiQuaternion> NiMatrixToNiQuaternion{ RELOCATION_ID(69467, 70844) };	// C6E2D0, C967D0
 			NiMatrixToNiQuaternion(qA, a_matA);
@@ -2123,29 +2370,116 @@ namespace ALYSLC
 				return false;
 			}
 
-			auto inventory = a_actor->GetInventory();
-			RE::InventoryEntryData* entryData = nullptr;
-			// Iterate through the actor's inventory entries.
-			for (auto& inventoryEntry : inventory)
+			if (a_form->Is(RE::FormType::Spell, RE::FormType::Shout)) 
 			{
-				// Found the form.
-				if (inventoryEntry.first && inventoryEntry.first == a_form)
+				auto magicFavorites = RE::MagicFavorites::GetSingleton();
+				if (!magicFavorites)
 				{
-					// Look for the hotkey extra data type
-					// in the inventory entry's extra data lists.
-					if (auto& entryExtraLists = inventoryEntry.second.second; entryExtraLists)
+					return false;
+				}
+
+				for (auto magForm : magicFavorites->spells)
+				{
+					if (magForm == a_form)
 					{
-						if (auto extraLists = entryExtraLists->extraLists; extraLists)
+						return true;
+					}
+				}
+			}
+			else
+			{
+				auto inventory = a_actor->GetInventory();
+				RE::InventoryEntryData* entryData = nullptr;
+				// Iterate through the actor's inventory entries.
+				for (auto& inventoryEntry : inventory)
+				{
+					// Found the form.
+					if (inventoryEntry.first && inventoryEntry.first == a_form)
+					{
+						// Look for the hotkey extra data type
+						// in the inventory entry's extra data lists.
+						if (auto& entryExtraLists = inventoryEntry.second.second; entryExtraLists)
 						{
-							for (auto& exData : *extraLists)
+							if (auto extraLists = entryExtraLists->extraLists; extraLists)
 							{
-								// Is favorited since the hotkey extra data exists.
-								if (exData->HasType(RE::ExtraDataType::kHotkey))
+								for (auto& exData : *extraLists)
 								{
-									return true;
+									// Is favorited since the hotkey extra data exists.
+									if (exData->HasType(RE::ExtraDataType::kHotkey))
+									{
+										return true;
+									}
 								}
 							}
 						}
+					}
+				}
+			}
+
+			return false;
+		}
+
+		
+		bool IsHotkeyed(RE::Actor* a_actor, RE::TESForm* a_form)
+		{
+			// Check if the given form is hotkeyed for the given player.
+
+			if (!a_actor || !a_form)
+			{
+				return false;
+			}
+
+			if (a_form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				auto magicFavorites = RE::MagicFavorites::GetSingleton();
+				if (!magicFavorites)
+				{
+					return false;
+				}
+
+				for (auto magForm : magicFavorites->hotkeys)
+				{
+					if (magForm == a_form)
+					{
+						return true;
+					}
+				}
+			}
+			else
+			{
+				auto inventory = a_actor->GetInventory();
+				RE::InventoryEntryData* entryData = nullptr;
+				// Iterate through the actor's inventory entries.
+				for (auto& inventoryEntry : inventory)
+				{
+					if (!inventoryEntry.first || inventoryEntry.first != a_form)
+					{
+						continue;
+					}
+
+					// Found the form.
+					auto& entryExtraLists = inventoryEntry.second.second;
+					if (!entryExtraLists)
+					{
+						continue;
+					}
+
+					auto extraLists = entryExtraLists->extraLists;
+					if (!extraLists)
+					{
+						continue;
+					}
+
+					for (auto& exData : *extraLists)
+					{
+						if (!exData->HasType(RE::ExtraDataType::kHotkey))
+						{
+							continue;
+						}
+
+						// Is favorited since the hotkey extra data exists.
+						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
+						return (int8_t)(*exHotkeyData->hotkey) != (int8_t)(RE::ExtraHotkey::Hotkey::kUnbound);
 					}
 				}
 			}
@@ -2397,6 +2731,10 @@ namespace ALYSLC
 
 		bool MenusOnlyAlwaysOpen() 
 		{
+			// Return true if a currently-open menu
+			// introduces a non-gameplay/TFC context onto the menu context stack
+			// or if the QuickLoot menu is open.
+
 			if (ALYSLC::QuickLootCompat::g_quickLootInstalled)
 			{
 				if (auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
@@ -2424,7 +2762,7 @@ namespace ALYSLC
 
 		bool MenusOnlyAlwaysUnpaused()
 		{
-			// Returns true if only 'always open' menus or the LootMenu is open.
+			// Returns true if only 'always open' menus, the Dialogue Menu, or the LootMenu are open.
 
 			if (auto ui = RE::UI::GetSingleton(); ui)
 			{
@@ -2438,6 +2776,7 @@ namespace ALYSLC
 		bool Player1AddPerk(RE::BGSPerk* a_perk)
 		{
 			// Add the perk to P1.
+			// Return true if successful.
 
 			bool succ = false;
 			auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -2486,6 +2825,7 @@ namespace ALYSLC
 		bool Player1RemovePerk(RE::BGSPerk* a_perk)
 		{
 			// Remove the perk from P1.
+			// Return true if successful.
 
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (!p1)
@@ -2661,46 +3001,11 @@ namespace ALYSLC
 			// BOOM!
 			a_actorToPush->currentProcess->KnockExplosion(a_actorToPush, a_contactPos, a_force);
 		}
-
-		RE::NiMatrix3 QuaternionToRotationMatrix(const RE::NiQuaternion& a_quat)
-		{
-			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
-			// Convert quaternion to rotation matrix.
-
-			float sqw = a_quat.w * a_quat.w;
-			float sqx = a_quat.x * a_quat.x;
-			float sqy = a_quat.y * a_quat.y;
-			float sqz = a_quat.z * a_quat.z;
-
-			RE::NiMatrix3 ret;
-
-			// invs (inverse square length) is only required if quaternion is not already normalised
-			float invs = 1.f / (sqx + sqy + sqz + sqw);
-			ret.entry[0][0] = (sqx - sqy - sqz + sqw) * invs;  // since sqw + sqx + sqy + sqz =1/invs*invs
-			ret.entry[1][1] = (-sqx + sqy - sqz + sqw) * invs;
-			ret.entry[2][2] = (-sqx - sqy + sqz + sqw) * invs;
-
-			float tmp1 = a_quat.x * a_quat.y;
-			float tmp2 = a_quat.z * a_quat.w;
-			ret.entry[1][0] = 2.f * (tmp1 + tmp2) * invs;
-			ret.entry[0][1] = 2.f * (tmp1 - tmp2) * invs;
-
-			tmp1 = a_quat.x * a_quat.z;
-			tmp2 = a_quat.y * a_quat.w;
-			ret.entry[2][0] = 2.f * (tmp1 - tmp2) * invs;
-			ret.entry[0][2] = 2.f * (tmp1 + tmp2) * invs;
-			tmp1 = a_quat.y * a_quat.z;
-			tmp2 = a_quat.x * a_quat.w;
-			ret.entry[2][1] = 2.f * (tmp1 + tmp2) * invs;
-			ret.entry[1][2] = 2.f * (tmp1 - tmp2) * invs;
-
-			return ret;
-		}
-
+		
 		RE::NiQuaternion QuaternionSlerp(const RE::NiQuaternion& a_quatA, const RE::NiQuaternion& a_quatB, double a_t)
 		{
 			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L139
-			// Slerp from quaternion a to quaternion b with the given ratio t.
+			// Slerp from quaternion A to quaternion B with the given ratio t.
 
 			// quaternion to return
 			RE::NiQuaternion result;
@@ -2760,11 +3065,47 @@ namespace ALYSLC
 			return result;
 		}
 
-		RE::TESObjectREFR* RecurseForRefr(RE::NiNode* a_parentNode) 
+		RE::NiMatrix3 QuaternionToRotationMatrix(const RE::NiQuaternion& a_quat)
+		{
+			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
+			// Convert quaternion to rotation matrix.
+
+			float sqw = a_quat.w * a_quat.w;
+			float sqx = a_quat.x * a_quat.x;
+			float sqy = a_quat.y * a_quat.y;
+			float sqz = a_quat.z * a_quat.z;
+
+			RE::NiMatrix3 ret;
+
+			// invs (inverse square length) is only required if quaternion is not already normalised
+			float invs = 1.f / (sqx + sqy + sqz + sqw);
+			ret.entry[0][0] = (sqx - sqy - sqz + sqw) * invs;  // since sqw + sqx + sqy + sqz =1/invs*invs
+			ret.entry[1][1] = (-sqx + sqy - sqz + sqw) * invs;
+			ret.entry[2][2] = (-sqx - sqy + sqz + sqw) * invs;
+
+			float tmp1 = a_quat.x * a_quat.y;
+			float tmp2 = a_quat.z * a_quat.w;
+			ret.entry[1][0] = 2.f * (tmp1 + tmp2) * invs;
+			ret.entry[0][1] = 2.f * (tmp1 - tmp2) * invs;
+
+			tmp1 = a_quat.x * a_quat.z;
+			tmp2 = a_quat.y * a_quat.w;
+			ret.entry[2][0] = 2.f * (tmp1 - tmp2) * invs;
+			ret.entry[0][2] = 2.f * (tmp1 + tmp2) * invs;
+			tmp1 = a_quat.y * a_quat.z;
+			tmp2 = a_quat.x * a_quat.w;
+			ret.entry[2][1] = 2.f * (tmp1 + tmp2) * invs;
+			ret.entry[1][2] = 2.f * (tmp1 - tmp2) * invs;
+
+			return ret;
+		}
+
+		RE::TESObjectREFR* RecurseForRefr(RE::NiNode* a_parentNode, uint8_t a_recursionDepth) 
 		{
 			// Look for a refr associated with the parent node.
 
-			if (!a_parentNode)
+			// No/invalid parent or max recursion depth reached.
+			if (!a_parentNode || a_recursionDepth >= MAX_NODE_RECURSION_DEPTH)
 			{
 				return nullptr;
 			}
@@ -2780,7 +3121,7 @@ namespace ALYSLC
 				// searching the node's parents for a refr.
 				if (a_parentNode->parent)
 				{
-					return RecurseForRefr(a_parentNode->parent);
+					return RecurseForRefr(a_parentNode->parent, ++a_recursionDepth);
 				}
 				else
 				{
@@ -2860,7 +3201,7 @@ namespace ALYSLC
 			playerCam->ForceThirdPerson();
 		}
 
-		void RotateVectorAboutAxis(RE::NiPoint3& a_vector, RE::NiPoint3 a_axis, float a_angle)
+		void RotateVectorAboutAxis(RE::NiPoint3& a_vectorOut, RE::NiPoint3 a_axis, float a_angle)
 		{
 			// Rotate the vector about the axis by an amount given by the angle.
 			// Vector is unitized and set through the outparam.
@@ -2886,10 +3227,10 @@ namespace ALYSLC
 			const float R21 = (Az * Ay * OMCosT + Ax * SinT);
 			const float R22 = (CosT + Az * Az * OMCosT);
 
-			a_vector.x = R00 * a_vector.x + R01 * a_vector.y + R02 * a_vector.z;
-			a_vector.y = R10 * a_vector.x + R11 * a_vector.y + R12 * a_vector.z;
-			a_vector.z = R20 * a_vector.x + R21 * a_vector.y + R22 * a_vector.z;
-			a_vector.Unitize();
+			a_vectorOut.x = R00 * a_vectorOut.x + R01 * a_vectorOut.y + R02 * a_vectorOut.z;
+			a_vectorOut.y = R10 * a_vectorOut.x + R11 * a_vectorOut.y + R12 * a_vectorOut.z;
+			a_vectorOut.z = R20 * a_vectorOut.x + R21 * a_vectorOut.y + R22 * a_vectorOut.z;
+			a_vectorOut.Unitize();
 		}
 
 		RE::NiQuaternion RotationMatrixToQuaternion(const RE::NiMatrix3& a_matrix)
@@ -3328,24 +3669,6 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		void SetRotationMatrixFromDirection(RE::NiMatrix3& a_rotMatrix, const float& a_x, const float& a_y, const float& a_z)
-		{
-			// Set given rotation matrix based on the given direction vector components.
-
-			float cb = std::sqrtf(1 - a_z * a_z);
-			float ca = a_y / cb;
-			float sa = -a_x / cb;
-			a_rotMatrix.entry[0][0] = ca;
-			a_rotMatrix.entry[0][1] = a_x;
-			a_rotMatrix.entry[0][2] = sa * a_z;
-			a_rotMatrix.entry[1][0] = sa;
-			a_rotMatrix.entry[1][1] = a_y;
-			a_rotMatrix.entry[1][2] = -ca * a_z;
-			a_rotMatrix.entry[2][0] = 0.0;
-			a_rotMatrix.entry[2][1] = a_z;
-			a_rotMatrix.entry[2][2] = cb;
-		}
-
 		bool ShouldCastWithP1(RE::SpellItem* a_spell)
 		{
 			// Return true if the spell should be cast by one of P1's magic casters.
@@ -3355,7 +3678,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			// Hard coded list of spells tested to work when cast by P1.
+			// Hard coded list of spells tested to work when cast by P1 and no one else.
 			// Only one so far.
 			bool shouldP1Cast = 
 			{ 
@@ -3380,7 +3703,7 @@ namespace ALYSLC
 
 			// Is a self-targeted concentration spell, 
 			// so check if the spell has an imagespace modifier.
-			// Spells with imagespace modifiers typically 
+			// Most spells with imagespace modifiers 
 			// cannot be cast by NPCs and must be cast via P1.
 			if (a_spell->avEffectSetting && a_spell->avEffectSetting->data.imageSpaceMod)
 			{
@@ -3742,6 +4065,7 @@ namespace ALYSLC
 				return;
 			}
 
+			// All except for kInvalid and kNone.
 			controlMap->lock.Lock();
 			controlMap->ToggleControls(RE::ControlMap::UEFlag::kActivate, a_shouldEnable);
 			controlMap->ToggleControls(RE::ControlMap::UEFlag::kAll, a_shouldEnable);
@@ -3756,7 +4080,6 @@ namespace ALYSLC
 			controlMap->ToggleControls(RE::ControlMap::UEFlag::kSneaking, a_shouldEnable);
 			controlMap->ToggleControls(RE::ControlMap::UEFlag::kVATS, a_shouldEnable);
 			controlMap->ToggleControls(RE::ControlMap::UEFlag::kWheelZoom, a_shouldEnable);
-			// All but kInvalid and kNone.
 			controlMap->ignoreKeyboardMouse = false;
 			controlMap->lock.Unlock();
 
@@ -3806,7 +4129,7 @@ namespace ALYSLC
 		void TraverseChildNodesDFS(RE::NiAVObject* a_current3D, std::function<void(RE::NiAVObject* a_node)> a_visitor) 
 		{
 			// Run the visitor function on each child node of the passed-in node.
-			// Recursive pre-order depth first traversal.
+			// Recursive pre-order, depth-first traversal.
 
 			if (!a_current3D || a_current3D->GetRefCount() == 0) 
 			{

@@ -230,6 +230,7 @@ namespace ALYSLC
 				if (!state.isPressed) 
 				{
 					state.isPressed = true;
+					state.justPressed = true;
 					state.pressedMag = 1.0f;
 					// Only inc consecutive presses to > 1 if pressed again within between-presses threshold.
 					float secsSinceLastRelease = Util::GetElapsedSeconds(lastReleaseTP);
@@ -241,6 +242,10 @@ namespace ALYSLC
 					);
 					currentMask |= 1 << i;
 					firstPressTP = SteadyClock::now();
+				}
+				else if (state.justPressed)
+				{
+					state.justPressed = false;
 				}
 
 				// Update held time.
@@ -265,9 +270,14 @@ namespace ALYSLC
 				if (state.isPressed) 
 				{
 					state.isPressed = false;
+					state.justReleased = true;
 					state.pressedMag = 0.0f;
 					currentMask &= ~(1 << i);
 					lastReleaseTPs[i] = SteadyClock::now();
+				}
+				else if (state.justReleased)
+				{
+					state.justReleased = false;
 				}
 
 				// Reset consecutive presses to 1 if time between presses exceeds limit.

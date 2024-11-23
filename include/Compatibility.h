@@ -4,6 +4,8 @@
 
 namespace ALYSLC
 {
+	// Saved flags and other data which indicate if certain supported mods are installed.
+
 	struct EnderalCompat
 	{
 		static void CheckForEnderalSSE();

@@ -904,28 +904,6 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopLib::Debug::EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
-	{
-		// Enable god mode for all active players.
-
-		ALYSLC::Log("[Proxy] EnableGodModeForAllCoopPlayers.");
-		if (glob.globalDataInit && glob.coopSessionActive)
-		{
-			glob.ToggleGodModeForAllPlayers(true);
-		}
-	}
-
-	void CoopLib::Debug::EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
-	{
-		// Enable god mode for a specific player.
-
-		ALYSLC::Log("[Proxy] EnableGodModeForPlayer: CID: {}.", a_controllerID);
-		if (glob.globalDataInit && glob.coopSessionActive && a_controllerID != -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
-		{
-			glob.ToggleGodModeForPlayer(a_controllerID, true);
-		}
-	}
-
 	void CoopLib::Debug::DisableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
 	{
 		// Disable god mode for all players.
@@ -945,6 +923,28 @@ namespace ALYSLC
 		if (glob.globalDataInit && glob.coopSessionActive && a_controllerID != -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			glob.ToggleGodModeForPlayer(a_controllerID, false);
+		}
+	}
+
+	void CoopLib::Debug::EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
+	{
+		// Enable god mode for all active players.
+
+		ALYSLC::Log("[Proxy] EnableGodModeForAllCoopPlayers.");
+		if (glob.globalDataInit && glob.coopSessionActive)
+		{
+			glob.ToggleGodModeForAllPlayers(true);
+		}
+	}
+
+	void CoopLib::Debug::EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
+	{
+		// Enable god mode for a specific player.
+
+		ALYSLC::Log("[Proxy] EnableGodModeForPlayer: CID: {}.", a_controllerID);
+		if (glob.globalDataInit && glob.coopSessionActive && a_controllerID != -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
+		{
+			glob.ToggleGodModeForPlayer(a_controllerID, true);
 		}
 	}
 

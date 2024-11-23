@@ -7,7 +7,7 @@
 namespace ALYSLC
 {
 	using SteadyClock = std::chrono::steady_clock;
-	// Unused for now.
+	// NOTE: Unused for now.
 	// Can use to trace out camera origin point path for movement pitch calculations if necessary.
 	struct CamCubicBezier3DData
 	{
@@ -160,7 +160,11 @@ namespace ALYSLC
 			}
 
 			frameCountSinceShift = (++frameCountSinceShift % (!a_maxUpdateFrameCount)) + 1;
-			nextUpdateIndex = min(nextPoints.size() - 1, (uint8_t)floorf((float)(frameCountSinceShift - 1) / (!a_maxUpdateFrameCount / (float)nextPoints.size())));
+			nextUpdateIndex = min
+			(
+				nextPoints.size() - 1, 
+				(uint8_t)floorf((float)(frameCountSinceShift - 1) / (!a_maxUpdateFrameCount / (float)nextPoints.size()))
+			);
 			float tRatio = min((float)frameCountSinceShift / (float)(!a_maxUpdateFrameCount), 1.0f);
 
 			SetNextControlPoint(a_nextControlPoint);
@@ -348,7 +352,12 @@ namespace ALYSLC
 					targetFadeAmount = 1.0f;
 				}
 
-				interpIntervalProportion = std::clamp(fabsf(targetFadeAmount - fadeAmountAtStateChange) / (1.0f - lowerBoundFadeAmount), 0.0f, 1.0f);
+				interpIntervalProportion = std::clamp
+				(
+					fabsf(targetFadeAmount - fadeAmountAtStateChange) / (1.0f - lowerBoundFadeAmount), 
+					0.0f, 
+					1.0f
+				);
 			}
 		}
 
@@ -357,14 +366,18 @@ namespace ALYSLC
 		// Fade index indicates the object's distance from the camera;
 		// higher indices mean the object is further from the camera
 		// when the fade raycast(s) were performed.
-		// NOTE: Uses NIAVObject pad2C.
 		inline bool UpdateFade() 
 		{
 			if (object && object.get() && object->GetRefCount() > 0)
 			{
 				float secsSinceStateChange = Util::GetElapsedSeconds(fadeStateChangeTP);
 				float newFadeAmount = targetFadeAmount;
-				float tRatio = std::clamp(secsSinceStateChange / (interpIntervalProportion * Settings::fSecsObjectFadeInterval), 0.0f, 1.0f);
+				float tRatio = std::clamp
+				(
+					secsSinceStateChange / (interpIntervalProportion * Settings::fSecsObjectFadeInterval), 
+					0.0f, 
+					1.0f
+				);
 				if (interpIntervalProportion != 0.0f) 
 				{
 					newFadeAmount = Util::InterpolateSmootherStep(fadeAmountAtStateChange, targetFadeAmount, tRatio);
@@ -389,8 +402,6 @@ namespace ALYSLC
 								// Fade node's current fade controls shadow fade, and the low detail model
 								// fades in/out as the high detail model fades out/in once below half alpha,
 								// which is why we start reversing the fade direction for the low detail model at this point.
-								// Unfortunately, keeping the fade node at 1.0 fade causes shadow flickering, 
-								// even though only the high detail model is visible throughout the process.
 								currentFadeAmount = object->fadeAmount = newFadeAmount;
 								fadeNode->currentFade = newFadeAmount >= 0.5f ? newFadeAmount : 1.0f - newFadeAmount;
 							}
@@ -426,13 +437,11 @@ namespace ALYSLC
 				if (tRatio == 1.0f && !shouldFadeOut) 
 				{
 					// Clear faded flag.
-					//object->pad2C = 0x0;
 					return false;
 				}
 				else
 				{
 					// Set pad to indicate that the object is being faded in/out.
-					//object->pad2C = 0xCFADED;
 					return true;
 				}
 			}
@@ -442,13 +451,22 @@ namespace ALYSLC
 			}
 		}
 
+		// Object which should have its fade level modified.
 		RE::NiPointer<RE::NiAVObject> object;
+		// Time point at which the fade direction last changed.
 		SteadyClock::time_point fadeStateChangeTP;
+		// True if the object should fade out, false if the object should fade in.
 		bool shouldFadeOut;
+		// Fade level when the fade direction last changed.
 		float fadeAmountAtStateChange;
+		// Current fade level.
 		float currentFadeAmount;
+		// Proportion of the fade interval that has elapsed since the last fade direction change.
 		float interpIntervalProportion;
+		// Target fade level.
 		float targetFadeAmount;
+		// Raycast collision result index used to taper off the object's fade amount. 
+		// Larger indices mean that the object is further away from the camera.
 		uint32_t fadeIndex;
 	};
 
@@ -513,32 +531,6 @@ namespace ALYSLC
 			return RE::PlayerCamera::GetSingleton()->yaw;
 		}
 
-		// Get player LOS cast start/end position, a focus point of sorts.
-		// The player focus point is returned as their refr position 
-		// offset by a fraction of their height.
-		// This varies less than their torso node's position,
-		// leading to more consistent raycast hit positions.
-		inline RE::NiPoint3 GetPlayerFocusPoint(RE::Actor* a_playerActor) 
-		{
-			if (!a_playerActor) 
-			{
-				return RE::NiPoint3();
-			}
-
-			return 
-			(
-				a_playerActor->data.location +
-				RE::NiPoint3
-				(
-					0.0f, 
-					0.0f,
-					a_playerActor->IsSneaking() ? 
-					0.5f * a_playerActor->GetHeight() : 
-					0.75f * a_playerActor->GetHeight()
-				)
-			);
-		}
-
 		// Clamp Z coordinate to the given bounds, at the given lower/upper offsets from those bounds.
 		inline void ClampToZCoordAboveLowerBound(float& a_zCoordOut, const float& a_lowerOffset, const float& a_upperOffset, const float& a_zUpperBound, const float& a_zLowerBound) const
 		{
@@ -590,6 +582,8 @@ namespace ALYSLC
 			{
 				Util::NativeFunctions::UpdateWorldToScaleform(niCam.get());
 			}
+
+			playerCam->worldFOV = exteriorCell ? Settings::fCamExteriorFOV : Settings::fCamInteriorFOV;
 		}
 
 		// Update movement pitch running total and number of readings, or reset both.
@@ -622,14 +616,14 @@ namespace ALYSLC
 			}
 		}
 
-		// Used externally: signal the camera manager to wait for toggle (co-op camera is re-enabled by P1).
+		// Used externally: signal the camera manager to wait for toggle (co-op camera is only re-enabled by P1).
 		inline void SetWaitForToggle(bool a_set)
 		{
 			waitForToggle = a_set;
 		}
 
 		// Reset time point data.
-		inline void ResetTPData()
+		inline void ResetTPs()
 		{
 			lockOnLOSCheckTP = SteadyClock::now();
 			lockOnLOSLostTP = SteadyClock::now();
@@ -666,10 +660,13 @@ namespace ALYSLC
 		// Calculate and return the current average movement yaw-to-cam angle.
 		float GetAverageMovementYawToCam();
 		
+		// NOTE: Currently unused.
 		// Check if the base target position (pre-collision) is visible when raycasting along each player's vertical axis.
+		// Return true if there are no raycast hits from at least one player's vertical axis to the base target position.
 		// Set the closest player LOS raycast hit position to the base target position through the outparam.
 		bool GetPlayerHasLOSOnBaseTargetPos(RE::NiPoint3& a_playerClosestLOSPos);
-		
+
+		// NOTE: Currently unused.
 		// Raycast from the current collision origin point to the base target position along the origin point's vertical axis.
 		// Return the base target position if it is hit by a raycast and not out of bounds.
 		// Return the closest raycast hit position to the base target position otherwise.
@@ -745,7 +742,7 @@ namespace ALYSLC
 		RE::NiPoint3 camOriginPointDirection;
 		// Current focal player's focus point.
 		RE::NiPoint3 camPlayerFocusPoint;
-		// Current world position of the camera.
+		// Current world position of the camera to set.
 		RE::NiPoint3 camTargetPos;
 		// Player camera.
 		RE::PlayerCamera* playerCam;
@@ -777,8 +774,6 @@ namespace ALYSLC
 		std::optional<RE::ActorHandle> lockOnActorReq;
 		// Fade data for objects to fade between cam and players.
 		std::set<std::unique_ptr<ObjectFadeData>> obstructionFadeDataSet;
-		// UNUSED for now: camera path of origin point positions defined by a 3D cubic Bezier curve.
-		std::unique_ptr<CamCubicBezier3DData> camOriginPointPath;
 		// Linear interpolation data set for oscillating the lock on indicator.
 		std::unique_ptr<InterpolationData<float>> lockOnIndicatorOscillationInterpData;
 		// Linear interpolation data set for the party's aggregate movement pitch.
@@ -791,13 +786,10 @@ namespace ALYSLC
 		// Should the camera zoom in temporarily if all players are under an exterior roof?
 		bool delayedZoomInUnderExteriorRoof;
 		// Should the camera zoom out after all players were under an exterior roof and
-		// at least one moves out from under the roof?
+		// have now moved out from under the roof?
 		bool delayedZoomOutUnderExteriorRoof;
 		// Current cell is an exterior cell.
 		bool exteriorCell;
-		// Is there an unbroken LOS from the focus point
-		// or from a player to the base target position?
-		bool hasLOSOnBaseTargetPos;
 		// Is the camera automatically trailing the party?
 		bool isAutoTrailing;
 		// Is the camera colliding with a surface or passing through geometry
@@ -820,18 +812,18 @@ namespace ALYSLC
 		bool lockInteriorOrientationOnInit;
 		// Was the toggle bind pressed while the co-op camera was waiting to be toggled on?
 		bool toggleBindPressedWhileWaiting;
-		// Wait for cam toggle.
+		// Should wait to toggle the co-op camera on again.
 		bool waitForToggle;
 		// Max pitch angular magnitude when in the auto trail camera state.
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
 		const float camAnchorPointHullSize = 50.0f;
-		// Radians / second.
+		// Maximum camera rotation rate in radians / second.
 		const float camMaxAngRotRate = PI / 1.5f;
-		// Movement speed in units/second when in manual positioning mode.
+		// Max movement speed in units/second when in manual positioning mode.
 		const float camManualPosMaxMovementSpeed = 2000.0f;
-		// Movement speed in units/second.
+		// Max movement speed in units/second.
 		const float camMaxMovementSpeed = 1000.0f;
 		// Minimum trailing distance (cam node to focus point).
 		const float camMinTrailingDistance = 100.0f;
@@ -842,13 +834,13 @@ namespace ALYSLC
 		float avgPlayerHeight;
 		// Base focus point Z displacement from the origin point.
 		float camBaseFocusPointZOffset;
-		// Base radial distance.
+		// Base radial distance from the focus point.
 		float camBaseRadialDistance;
 		// Base X rotation for the camera node.
 		float camBaseTargetPosPitch;
 		// Base Z rotation for the camera node.
 		float camBaseTargetPosYaw;
-		// Camera's true radial distance from the origin
+		// Camera's true radial distance from the focus point
 		// after collisions are accounted for.
 		float camCollisionRadialDistance;
 		// Current pitch from the camera node to the focus point.
@@ -870,20 +862,20 @@ namespace ALYSLC
 		// Max (approximated) distance the camera can zoom out from the focus point before 
 		// before on-screen checks and raycasts fail.
 		float camMaxZoomOutDist;
-		// Camera's current pitch.
+		// Camera's current pitch to set.
 		float camPitch;
-		// Saved exterior radial distance (before zooming in while under a roof).
+		// Saved exterior radial distance from the focus point (before zooming in while under a roof).
 		float camSavedBaseRadialDistance;
 		// Target X rotation for the camera node relative to the focus point.
-		// Not necessarily the camera's current pitch to the focus (if collisions are enabled).
+		// Not necessarily the camera's current pitch to set (if collisions are enabled).
 		float camTargetPosPitch;
 		// Target Z rotation for the camera node relative to the focus point.
-		// Not necessarily the camera's current yaw to the focus (if collisions are enabled).
+		// Not necessarily the camera's current yaw to set (if collisions are enabled).
 		float camTargetPosYaw;
 		// Camera's target/desired radial distance from the focus point
 		// if there are no collisions from the focus point to the base target position.
 		float camTargetRadialDistance;
-		// Camera's current yaw.
+		// Camera's current yaw to set.
 		float camYaw;
 		// Movement pitch angle total for all players since the last update.
 		float movementPitchRunningTotal;
@@ -895,24 +887,16 @@ namespace ALYSLC
 		float secsSinceLockOnTargetLOSChecked;
 		// Seconds since LOS to lock on target was lost.
 		float secsSinceLockOnTargetLOSLost;
-		// ID of player controller adjusting the camera.
+		// ID of the player controller adjusting the camera.
 		int32_t controlCamCID;
-		// Controller ID for the player that requested direct focus
-		// when the camera is colliding with geometry.
+		// Controller ID for the player that requested direct focus.
 		// -1 if none or if focal player mode is not enabled.
 		int32_t focalPlayerCID;
-		// Controller ID for the player whose focus point is used
-		// as the starting LOS raycast position
-		// for the most recently set target position.
-		// Camera is positioned relative to their LOS hit position
-		// to the base target position, but it does not directly
-		// follow them like for a focal player.
-		int32_t softFocalPlayerCID;
 		// Number of movement pitch angle readings made since the last update.
 		uint32_t numMovementPitchReadings;
 		// Number of movement yaw angle readings made since the last update.
 		uint32_t numMovementYawToCamReadings;
-		// Player 1 cam toggle bitmask.
+		// Player 1 cam toggle bind bitmask.
 		uint16_t camToggleXIMask;
 	};
 }

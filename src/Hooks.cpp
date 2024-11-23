@@ -34,6 +34,7 @@ namespace ALYSLC
 			InventoryMenuHooks::InstallHooks();
 			LoadingMenuHooks::InstallHooks();
 			LookHandlerHooks::InstallHooks();
+			MagicMenuHooks::InstallHooks();
 			MeleeHitHooks::InstallHooks();
 			MenuControlsHooks::InstallHooks();
 			MovementHandlerHooks::InstallHooks();
@@ -86,7 +87,6 @@ namespace ALYSLC
 
 				if (glob.allPlayersInit)
 				{
-					// Sequential updates to each players' managers for now.
 					for (const auto& p : glob.coopPlayers)
 					{
 						if (p->isActive)
@@ -1028,6 +1028,15 @@ namespace ALYSLC
 						{
 							a_data.deltaTime *= Settings::fDodgeAnimSpeedFactor;
 						}
+
+						// Increase sprint animation playback speed relative to the default
+						// base speed of 85 and base sprint movement mult of 1.5.
+						// Feels less floaty at higher sprint speed multipliers, 
+						// since more steps are taken per second with the increased animation speed.
+						if (p->coopActor->IsSprinting()) 
+						{
+							a_data.deltaTime *= (Settings::fBaseSpeed / 85.0f) * (Settings::fSprintingMovMult / 1.5f);
+						}
 					}
 
 					if (p->mm->isDashDodging)
@@ -1259,7 +1268,7 @@ namespace ALYSLC
 						const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(rider.get())];
 						if (p->pam->IsPerforming(InputAction::kSprint))
 						{
-							a_this->SetActorValue(RE::ActorValue::kSpeedMult, 120.0f * Settings::fSprintSpeedMult);
+							a_this->SetActorValue(RE::ActorValue::kSpeedMult, 120.0f * Settings::fSprintingMovMult);
 							a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 							a_this->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
 						}
@@ -1298,14 +1307,14 @@ namespace ALYSLC
 							{
 								// Affects how quickly the player slows down.
 								// The higher, the faster the reported movement speed becomes zero.
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun] = 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
 							}
 							else if (auto charController = p->coopActor->GetCharController(); charController && p->mm->IsRunning())
 							{
@@ -1492,7 +1501,7 @@ namespace ALYSLC
 										0.0f
 									);
 									// Sets the bounds for the diff factor applied to movement speed below. Dependent on rotation speeds -- rotate faster, pivot faster.
-									float range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 4.0f);
+									float range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 3.0f);	// Old range div: 4.0f
 									// Max speed factor. Maxes out at 90 degrees.
 									float diffFactor = 
 									(
@@ -1507,13 +1516,13 @@ namespace ALYSLC
 													0.0f, 
 													1.0f
 												), 
-												9.0f
+												6.0f	// Old pow: 9.0f
 											)
 										)
 									);
 
 									// Player must not be sprinting, mounted, downed, animation driven, or running their interaction package.
-									if (!p->pam->IsPerforming(InputAction::kSprint) && !p->coopActor->IsOnMount() &&
+									if (!p->coopActor->IsSprinting() && !p->coopActor->IsOnMount() &&
 										!p->mm->isAnimDriven && !p->mm->interactionPackageRunning && !p->isDowned)
 									{
 										// The core movement problem when using KeepOffsetFromActor() with the player themselves as the target
@@ -1656,10 +1665,12 @@ namespace ALYSLC
 					};
 
 					bool p1InMenu = !p1ManagersInactive && glob.menuCID == glob.player1CID;
+					bool skipProcessing = false;
 					if (p1InMenu)
 					{
-						// Check to see if P1 is in the Favorites Menu and is trying to equip a quickslot item or spell.
-						CheckForP1QSEquipReq(a_event);
+						// Check to see if P1 is in the Favorites Menu and is trying to hotkey an entry 
+						// or is trying equip a quickslot item or spell.
+						skipProcessing = CheckForP1HotkeyReq(a_event) || CheckForP1QSEquipReq(a_event);
 					}
 					else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpen())
 					{
@@ -1667,11 +1678,61 @@ namespace ALYSLC
 						// In addition, check for pressing of the default binds:
 						// Pause + Wait -> Co-op Debug Menu
 						// Wait + Pause -> Co-op Summoning Menu binds.
-						CheckForMenuTriggeringInput(a_event);
+						skipProcessing = CheckForMenuTriggeringInput(a_event);
+					}
+
+					if (skipProcessing) 
+					{
+						auto inputEvent = *a_event;
+						auto idEvent = inputEvent->AsIDEvent();
+						auto buttonEvent = inputEvent->AsButtonEvent();
+						auto thumbstickEvent = 
+						(
+							inputEvent->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ? 
+							static_cast<RE::ThumbstickEvent*>(inputEvent) : 
+							nullptr
+						);
+						if (inputEvent && inputEvent->GetDevice() == RE::INPUT_DEVICE::kGamepad)
+						{
+							while (inputEvent)
+							{
+								// Get event sub-types.
+								idEvent = inputEvent->AsIDEvent();
+								buttonEvent = inputEvent->AsButtonEvent();
+								thumbstickEvent =
+								(
+									inputEvent->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ?
+									static_cast<RE::ThumbstickEvent*>(inputEvent) :
+									nullptr
+								);
+
+								if (buttonEvent)
+								{
+									// Reset blocked analog stick event flag which seems to carry over once set.
+									inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+									idEvent->userEvent = "BLOCKED";
+									buttonEvent->idCode = 0xFF;
+									buttonEvent->heldDownSecs = 0.0f;
+									buttonEvent->value = 0.0f;
+								}
+								else
+								{
+									idEvent->userEvent = "BLOCKED";
+									// Must also set this event type flag to stop analog stick events being processed by action handlers.
+									inputEvent->eventType.set(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+								}
+
+								inputEvent = inputEvent->next;
+							}
+						}
+					}
+					else
+					{
+						skipProcessing = FilterInputEvents(a_event);
 					}
 
 					// Filter out P1 controller inputs that should be ignored while in co-op.
-					if (bool shouldProcess = FilterInputEvents(a_event); shouldProcess)
+					if (skipProcessing)
 					{
 						return _ProcessEvent(a_this, a_event, a_eventSource);
 					}
@@ -1685,10 +1746,11 @@ namespace ALYSLC
 			return _ProcessEvent(a_this, a_event, a_eventSource);
 		}
 
-		void MenuControlsHooks::CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent)
 		{
 			// Check if P1 is trying to open the Summoning/Debug menus.
 
+			bool skipProcessing = false;
 			auto eventHead = *a_constEvent;
 			auto buttonEvent = eventHead->AsButtonEvent(); 
 			if (buttonEvent)
@@ -1759,6 +1821,7 @@ namespace ALYSLC
 									{
 										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
 										glob.onDebugMenuRequest.SendEvent(glob.player1Actor.get(), glob.coopSessionActive ? glob.player1CID : -1);
+										skipProcessing = true;
 									}
 
 									debugMenuTriggered = true;
@@ -1773,6 +1836,7 @@ namespace ALYSLC
 									{
 										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
 										glob.onSummoningMenuRequest.SendEvent();
+										skipProcessing = true;
 									}
 
 									summoningMenuTriggered = true;
@@ -1912,9 +1976,51 @@ namespace ALYSLC
 					pauseBindPressedFirst, summoningMenuTriggered, debugMenuTriggered, ignoringPauseWaitEvent);
 				pauseBindPressedFirst = summoningMenuTriggered = debugMenuTriggered = ignoringPauseWaitEvent = false;
 			}
+
+			return skipProcessing;
 		}
 
-		void MenuControlsHooks::CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent)
+		{
+			// Check if P1 is trying to hotkey a FavoritesMenu entry.
+
+			auto inputEvent = *a_constEvent;
+			auto ue = RE::UserEvents::GetSingleton();
+			auto ui = RE::UI::GetSingleton();
+			auto controlMap = RE::ControlMap::GetSingleton();
+			// Must have a valid input event, access to the UI and user events singletons,
+			// and be displaying the Favorites Menu.
+			if (!inputEvent || !ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
+			{
+				return false;
+			}
+
+			auto idEvent = inputEvent->AsIDEvent();
+			auto buttonEvent = inputEvent->AsButtonEvent();
+			// Only handle button events with an ID.
+			if (!idEvent || !buttonEvent)
+			{
+				return false;
+			}
+
+			// To hotkey an entry, P1 must be clicking in the RS and it must be displaced from center.
+			bool isRThumbPressedAndRSMoved = 
+			{
+				buttonEvent->idCode == GAMEPAD_MASK_RIGHT_THUMB &&
+				glob.cdh->GetAnalogStickState(glob.player1CID, false).normMag > 0.0f
+			};
+
+			// Only handle on initial press.
+			if (isRThumbPressedAndRSMoved && buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f)
+			{
+				glob.mim->HotkeyFavoritedForm();
+				return true;
+			}
+
+			return false;
+		}
+
+		bool MenuControlsHooks::CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent)
 		{
 			// Check if P1 is trying to (un)tag a FavoritesMenu entry 
 			// as a quick slot item/spell.
@@ -1926,7 +2032,7 @@ namespace ALYSLC
 			// and be displaying the Favorites Menu.
 			if (!inputEvent || !ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
 			{
-				return;
+				return false;
 			}
 
 			auto idEvent = inputEvent->AsIDEvent();
@@ -1934,7 +2040,7 @@ namespace ALYSLC
 			// Only handle button events with an ID.
 			if (!idEvent || !buttonEvent)
 			{
-				return;
+				return false;
 			}
 
 			// Only handle pause/journal bind presses.
@@ -1948,7 +2054,10 @@ namespace ALYSLC
 			if (isPauseBind && buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f)
 			{
 				glob.mim->EquipP1QSForm();
+				return true;
 			}
+
+			return false;
 		}
 
 		bool MenuControlsHooks::FilterInputEvents(RE::InputEvent* const* a_constEvent)
@@ -2429,100 +2538,6 @@ namespace ALYSLC
 			_UpdateDownwardPass(a_this, a_data, a_arg2);
 		}
 
-		void NiNodeHooks::UpdateWorldData(RE::NiNode* a_this, RE::NiUpdateData* a_data)
-		{
-			if (!glob.coopSessionActive)
-			{
-				return _UpdateWorldData(a_this, a_data);
-			}
-			// Return early and minimize calculation time in this func.
-			const auto strings = RE::FixedStrings::GetSingleton();
-			if (!strings)
-			{
-				return _UpdateWorldData(a_this, a_data);
-			}
-
-			// Ignore updates to NPCs.
-			if (auto index = GlobalCoopData::GetCoopPlayerIndex(Util::GetRefrFrom3D(a_this)); index == -1)
-			{
-				return _UpdateWorldData(a_this, a_data);
-			}
-			else
-			{
-				const auto& p = glob.coopPlayers[index];
-				// The co-op camera is not enabled, so do not restore P1's node rotations.
-				if (p->isPlayer1 && !glob.cam->IsRunning())
-				{
-					return _UpdateWorldData(a_this, a_data);
-				}
-
-				// Set all default rotations for supported nodes when one of the last nodes are being updated.
-				// Chose the character bumper node here, since it seems to have its world data updated second-to-last.
-				const auto nodeNameHash = Hash(a_this->name);
-				{
-					// Check if a supported node first.
-					bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES.contains(nodeNameHash);
-					bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES.contains(nodeNameHash);
-					bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES.contains(nodeNameHash);
-					if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
-					{
-						return _UpdateWorldData(a_this, a_data);
-					}
-
-					std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
-					if (lock)
-					{
-						// Torso node orientation restoration first, as the check is the least intensive.
-						if (p->mm->nrm->nodeRotationDataMap.contains(nodeNameHash))
-						{
-							auto& data = p->mm->nrm->nodeRotationDataMap[nodeNameHash];
-							if (GlobalCoopData::ADJUSTABLE_NODES_HASHES_TO_CHILD_NAMES.contains(nodeNameHash))
-							{
-								// Exit early if the player's 3D is invalid.
-								auto loadedData = p->coopActor->loadedData;
-								if (!loadedData)
-								{
-									return _UpdateWorldData(a_this, a_data);
-								}
-
-								auto data3D = loadedData->data3D;
-								if (!data3D || !data3D->parent)
-								{
-									return _UpdateWorldData(a_this, a_data);
-								}
-							}
-
-							if (isTorsoNode)
-							{
-								a_this->local.rotate = data->currentRotation;
-								if (a_this->parent)
-								{
-									a_this->world.rotate = (a_this->parent->world * a_this->local).rotate;
-								}
-							}
-							else
-							{
-								// Arm node orientation restoration.
-								// Only updated when weapon is not drawn.
-								if (!Settings::bRotateArmsWhenSheathed || p->coopActor->IsWeaponDrawn())
-								{
-									return _UpdateWorldData(a_this, a_data);
-								}
-
-								a_this->local.rotate = data->currentRotation;
-								if (a_this->parent)
-								{
-									a_this->world.rotate = (a_this->parent->world * a_this->local).rotate;
-								}
-							}
-						}
-					}
-				}
-			}
-
-			return _UpdateWorldData(a_this, a_data);
-		}
-
 		void NiNodeHooks::RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData* a_data)
 		{
 			if (glob.coopSessionActive)
@@ -2630,7 +2645,9 @@ namespace ALYSLC
 			if (glob.globalDataInit && glob.coopSessionActive && glob.cam->IsRunning())
 			{
 				// Prevent camera transitions to any state that is not the First Person or Third Person states.
-				if ((a_this->transitionTo) && (a_this->transitionTo->id != RE::CameraState::kFirstPerson && a_this->transitionTo->id != RE::CameraState::kThirdPerson))
+				if ((a_this->transitionTo) && 
+					(a_this->transitionTo->id != RE::CameraState::kFirstPerson && 
+					a_this->transitionTo->id != RE::CameraState::kThirdPerson))
 				{
 					return;
 				}
@@ -2732,7 +2749,7 @@ namespace ALYSLC
 		{
 			if (glob.globalDataInit && glob.coopSessionActive)
 			{
-				if (glob.player1CID >= 0 && glob.player1CID < GlobalCoopData::MAX_PLAYER_COUNT)
+				if (glob.player1CID >= 0 && glob.player1CID < ALYSLC_MAX_PLAYER_COUNT)
 				{
 					const auto& p = glob.coopPlayers[glob.player1CID];
 					// Do not allow the game to automatically sheathe/unsheathe the player actor's weapons/magic.
@@ -2907,6 +2924,15 @@ namespace ALYSLC
 					{
 						a_data.deltaTime *= Settings::fDodgeAnimSpeedFactor;
 					}
+
+					// Increase sprint animation playback speed relative to the default
+					// base speed of 85 and base sprint movement mult of 1.5.
+					// Feels less floaty at higher sprint speed multipliers,
+					// since more steps are taken per second with the increased animation speed.
+					if (a_this->IsSprinting())
+					{
+						a_data.deltaTime *= (Settings::fBaseSpeed / 85.0f) * (Settings::fSprintingMovMult / 1.5f);
+					}
 				}
 
 				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
@@ -3042,19 +3068,36 @@ namespace ALYSLC
 							// Do not allow movement until the player's movement speed zeroes out if the player has just fully gotten up.
 							// Obviously a better solution would involve finding a way to set movement speed
 							// directly to 0 when ragdolled or getting up, but for now, this'll have to do.
-							
+
+							/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
+								p->coopActor->GetName(),
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.rotateWhileMovingRun,
+								p->mm->shouldCurtailMomentum,
+								p->mm->dontMoveSet,
+								p->coopActor->DoGetMovementSpeed());*/
+
 							if (p->mm->shouldCurtailMomentum && p->mm->dontMoveSet)
 							{
 								// Affects how quickly the player slows down.
 								// The higher, the faster the reported movement speed becomes zero.
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
-								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk] = 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun]	= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk]		= 100000.0f;
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun]		= 100000.0f;
 							}
 							else if (auto charController = p->coopActor->GetCharController(); charController && p->mm->IsRunning())
 							{
@@ -3199,7 +3242,8 @@ namespace ALYSLC
 								else if (p->mm->isDashDodging)
 								{
 									// Interpolate between the starting and ending speedmult values.
-									float dodgeSpeed = Util::InterpolateEaseInEaseOut(
+									float dodgeSpeed = Util::InterpolateEaseInEaseOut
+									(
 										Settings::fMaxDashDodgeSpeedmult,
 										Settings::fMinDashDodgeSpeedmult,
 										p->mm->dashDodgeCompletionRatio,
@@ -3218,21 +3262,6 @@ namespace ALYSLC
 								}
 								else if (bool isAIDriven = p->coopActor->movementController && !p->coopActor->movementController->unk1C5; isAIDriven)
 								{
-									// REMOVE when done debugging.
-									/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}.",
-										p->coopActor->GetName(),
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.rotateWhileMovingRun);*/
-
 									RE::NiPoint3 linVelXY = RE::NiPoint3();
 									float movementToHeadingAngDiff = -1.0f;
 									float range = -1.0f;
@@ -3274,7 +3303,7 @@ namespace ALYSLC
 											0.0f
 										);
 										// Sets the bounds for the diff factor applied to movement speed below. Dependent on rotation speeds -- rotate faster, pivot faster.
-										range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 4.0f);
+										range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 3.0f);	// Old range div: 4.0f
 										// Max speed factor. Maxes out at 90 degrees.
 										diffFactor = 
 										(
@@ -3289,7 +3318,7 @@ namespace ALYSLC
 														0.0f, 
 														1.0f
 													), 
-													9.0f
+													6.0f	// Old pow: 9.0f
 												)
 											)
 										);
@@ -3303,28 +3332,26 @@ namespace ALYSLC
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk]		*= diffFactor;
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun]		*= diffFactor;
 									}
-
-									/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. DIFF FACTOR: {}, lin vel XY: {}, {}, movement ang diff: {}, range: {}.",
-										p->coopActor->GetName(),
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
-										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
-										high->currentMovementType.defaultData.rotateWhileMovingRun,
-										diffFactor,
-										linVelXY.x,
-										linVelXY.y,
-										movementToHeadingAngDiff,
-										range);*/
 								}
 							}
 
+							// REMOVE when done debugging.
+							/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
+								p->coopActor->GetName(),
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kBack][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kWalk],
+								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRotations][RE::Movement::MaxSpeeds::kRun],
+								high->currentMovementType.defaultData.rotateWhileMovingRun,
+								p->mm->shouldCurtailMomentum,
+								p->mm->dontMoveSet,
+								p->coopActor->DoGetMovementSpeed());*/
 							// Not sure if this affects P1, but max out to prevent armor re-equip.
 							high->reEquipArmorTimer = FLT_MAX;
 						}
@@ -3699,7 +3726,7 @@ namespace ALYSLC
 			{
 				return;
 			}
-	
+
 			bool isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectileHandle);
 			// Remove inactive/invalid managed projectiles first.
 			// Remove if invalid, not loaded, deleted, marked for deletion, has collided, limited, or just released.
@@ -3885,18 +3912,21 @@ namespace ALYSLC
 			};
 			if (targetActorValidity)
 			{
+				// TODO: Snap projectile to closest position on the targeted actor's character controller collider.
+				// Get targeted node, if available.
 				// Using aim correction and a targeted actor node was selected.
-				if (Settings::vbUseAimCorrection[a_p->playerID] && managedProjInfo->targetedActorNode)
-				{
-					aimTargetPos = managedProjInfo->targetedActorNode->world.translate;
-					if (auto hkpRigidBody = Util::GethkpRigidBody(managedProjInfo->targetedActorNode.get()); hkpRigidBody)
-					{
-						// Direct at node's center of mass.
-						// NOTE: Projectile is not guaranteed to collide with this node, unless it is within the actor's character collider.
-						aimTargetPos = ToNiPoint3(hkpRigidBody->motion.motionState.sweptTransform.centerOfMass0) * HAVOK_TO_GAME;
-					}
-				}
-				else if (crosshairRefrIsTarget)
+				//if (Settings::vbUseAimCorrection[a_p->playerID] && managedProjInfo->targetedActorNode)
+				//{
+				//	aimTargetPos = managedProjInfo->targetedActorNode->world.translate;
+				//	if (auto hkpRigidBody = Util::GethkpRigidBody(managedProjInfo->targetedActorNode.get()); hkpRigidBody)
+				//	{
+				//		// Direct at node's center of mass.
+				//		// NOTE: Projectile is not guaranteed to collide with this node, unless it is within the actor's character collider.
+				//		aimTargetPos = ToNiPoint3(hkpRigidBody->motion.motionState.sweptTransform.centerOfMass0) * HAVOK_TO_GAME;
+				//	}
+				//}
+				//else 
+				if (crosshairRefrIsTarget)
 				{
 					// Targeted with crosshair.
 					// Direct at crosshair position offset from the target actor.
@@ -4839,6 +4869,20 @@ namespace ALYSLC
 
 					// Copy over player data.
 					GlobalCoopData::CopyOverCoopPlayerData(opening, menuName, p->coopActor->GetHandle(), nullptr);
+
+					if (closing && a_this->GetContainerMode() == RE::ContainerMenu::ContainerMode::kNPCMode) 
+					{
+						RE::NiPointer<RE::TESObjectREFR> containerRefr;
+						bool succ = RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
+						auto menuContainerHandle = containerRefr && containerRefr.get() ? containerRefr->GetHandle() : RE::ObjectRefHandle();
+						// If the container is the co-op companion player themselves, they are accessing their inventory.
+						if (GlobalCoopData::GetCoopPlayerIndex(menuContainerHandle) == p->controllerID)
+						{
+							// Since the player may have (un)favorited new forms, update favorited form data.
+							// No need to update magic favorites because there's no way of modifying them through the container menu.
+							p->em->UpdateFavoritedFormsLists(true);
+						}
+					}
 				}
 			}
 
@@ -4987,6 +5031,198 @@ namespace ALYSLC
 			bool closing = *a_message.type == RE::UI_MESSAGE_TYPE::kHide || *a_message.type == RE::UI_MESSAGE_TYPE::kForceHide;
 			if (!opening && !closing)
 			{
+				// Not all updates made to menu elements through the MIM apply properly.
+				// Certain entry elements must be updated right before the message is propagated,
+				// so that any overriding changes made by the game can be overwritten by our own changes.
+				if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
+				{
+					// Update quickslot tags for P1, since the game wipes the tag after hotkeying an item.
+					if (glob.menuCID == glob.player1CID) 
+					{
+						taskInterface->AddUITask
+						(
+							[]() 
+							{
+								if (auto ui = RE::UI::GetSingleton(); ui)
+								{
+									if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+									{
+										if (auto view = favoritesMenu->uiMovie; view)
+										{
+											const auto& p = glob.coopPlayers[glob.player1CID];
+											double numEntries = view->GetVariableDouble("_root.MenuHolder.Menu_mc.itemList.entryList.length");
+											RE::GFxValue entryList;
+											view->CreateArray(std::addressof(entryList));
+											view->GetVariable(std::addressof(entryList), "_root.MenuHolder.Menu_mc.itemList.entryList");
+											RE::GFxValue entry;
+											RE::GFxValue entryIndex;
+											RE::GFxValue entryText;
+											std::string entryStr = "";
+											int32_t index = -1;
+											for (uint32_t i = 0; i < numEntries; ++i)
+											{
+												view->GetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
+												entry.GetMember("index", std::addressof(entryIndex));
+												index = static_cast<int32_t>(entryIndex.GetNumber());
+												entry.GetMember("text", std::addressof(entryText));
+												entryStr = entryText.GetString();
+												// Add quick slot item/spell tag.
+												if (index == p->em->equippedQSItemIndex || index == p->em->equippedQSSpellIndex)
+												{
+													bool isConsumable = index == p->em->equippedQSItemIndex;
+													if (entryStr.find("[*QS", 0) == std::string::npos)
+													{
+														entryStr = fmt::format("[*QS{}*] {}", isConsumable ? "I" : "S", entryStr);
+														entryText.SetString(entryStr);
+														entry.SetMember("text", entryText);
+													}
+
+													// Set updated entry in list.
+													view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
+													// Update the favorites entry list.
+													view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
+													ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage: Refreshing quickslot tags for P1.");
+												}
+											}
+										}
+									}
+								}
+							}
+						);
+					}
+					else if (glob.menuCID != -1)
+					{
+						// Update equip state for all favorited entries and refresh the item list.
+						taskInterface->AddUITask
+						(
+							[]() 
+							{
+								if (auto ui = RE::UI::GetSingleton(); ui)
+								{
+									if (auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); favoritesMenu && favoritesMenu.get())
+									{
+										const auto& favoritesList = favoritesMenu->favorites;
+										if (auto view = favoritesMenu->uiMovie; view)
+										{
+											const auto& p = glob.coopPlayers[glob.menuCID];
+											RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(glob.mim->menuCoopActorHandle);
+											if (!menuCoopActorPtr)
+											{
+												return;
+											}
+
+											double numEntries = view->GetVariableDouble("_root.MenuHolder.Menu_mc.itemList.entryList.length");
+											RE::GFxValue entryList;
+											view->CreateArray(std::addressof(entryList));
+											view->GetVariable(std::addressof(entryList), "_root.MenuHolder.Menu_mc.itemList.entryList");
+											for (uint32_t i = 0; i < numEntries; ++i)
+											{
+												RE::GFxValue entryIndex;
+												RE::GFxValue entry;
+												view->GetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
+												entry.GetMember("index", std::addressof(entryIndex));
+												int32_t index = static_cast<int32_t>(entryIndex.GetNumber());
+
+												RE::TESForm* favoritedItem = index != -1 ? favoritesList[index].item : nullptr;
+												if (!favoritedItem)
+												{
+													continue;
+												}
+
+												// Get the form ID of the entry.
+												RE::GFxValue entryFormId;
+												entry.GetMember("formId", std::addressof(entryFormId));
+												uint32_t formID = 0;
+												// For SKYUI users (entries have member "formId").
+												if (entryFormId.GetNumber() != 0)
+												{
+													formID = static_cast<uint32_t>(entryFormId.GetNumber());
+												}
+												else
+												{
+													// Vanilla UI.
+													formID = favoritedItem ? favoritedItem->formID : 0;
+												}
+
+												bool isVampireLord = Util::IsVampireLord(p->coopActor.get());
+												// If transformed into a Vampire Lord, this player shares P1's favorites.
+												if (isVampireLord || p->em->favoritedFormIDs.contains(formID))
+												{
+													RE::GFxValue entryText;
+													entry.GetMember("text", std::addressof(entryText));
+													std::string entryStr = entryText.GetString();
+
+													// Update item count to reflect the number of that item in the co-op player's inventory, not player 1's.
+													// Ignore spells and shouts, which always have count 1.
+													auto invCounts = menuCoopActorPtr->GetInventoryCounts();
+													if (!favoritedItem->Is(RE::FormType::Spell, RE::FormType::Shout))
+													{
+														auto boundObj = favoritedItem->As<RE::TESBoundObject>();
+														uint32_t count = invCounts.contains(boundObj) ? invCounts.at(boundObj) : 0;
+														if (count > 1)
+														{
+															auto parenPos1 = entryStr.find("(");
+															auto parenPos2 = entryStr.find(")");
+															if (parenPos1 != std::string::npos && parenPos2 != std::string::npos)
+															{
+																entryStr = entryStr.substr(0, parenPos1) + "(" + std::to_string(count) + entryStr.substr(parenPos2);
+															}
+															else
+															{
+																entryStr += " (" + std::to_string(count) + ")";
+															}
+
+															entryText.SetString(entryStr);
+															entry.SetMember("text", entryText);
+														}
+													}
+
+													// Update equip state for the entry.
+													// Normal items receive an update to the "caret" equipped icon,
+													// while quick slot items have their entry text modified.
+													const auto& equipStateNum = glob.mim->favEntryEquipStates[index];
+													ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage: Favorites index {} item {} is getting its equip state set to {}",
+														index, favoritedItem->GetName(), equipStateNum);
+													RE::GFxValue equipState;
+													equipState.SetNumber(static_cast<double>(equipStateNum));
+													entry.SetMember("equipState", equipState);
+
+													// Add quick slot item/spell tag.
+													if (index == p->em->equippedQSItemIndex || index == p->em->equippedQSSpellIndex)
+													{
+														bool isConsumable = index == p->em->equippedQSItemIndex;
+														if (entryStr.find("[*QS", 0) == std::string::npos)
+														{
+															entryStr = fmt::format("[*QS{}*] {}", isConsumable ? "I" : "S", entryStr);
+															entryText.SetString(entryStr);
+															entry.SetMember("text", entryText);
+														}
+													}
+
+													// Set updated entry in list.
+													view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
+													// Insert (key = favorites list index, value = UI entry number) pairs into map.
+													glob.mim->favMenuIndexToEntryMap.insert_or_assign(index, i);
+												}
+												else
+												{
+													// Item was not favorited by the menu-controlling player, so remove it from the list.
+													entryList.RemoveElement(i);
+													--i;
+													view->SetVariableArraySize("_root.MenuHolder.Menu_mc.itemList.entryList", --numEntries);
+												}
+											}
+
+											// Update the favorites entry list.
+											view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
+										}
+									}
+								}
+							}
+						);
+					}
+				}
+
 				return _ProcessMessage(a_this, a_message);
 			}
 
@@ -5038,9 +5274,6 @@ namespace ALYSLC
 				if (opening || closing)
 				{
 					const RE::BSFixedString menuName = a_this->MENU_NAME;
-
-					auto p1 = RE::PlayerCharacter::GetSingleton();
-
 					// Copy over player data.
 					GlobalCoopData::CopyOverCoopPlayerData(opening, menuName, p->coopActor->GetHandle(), nullptr);
 
@@ -5064,7 +5297,6 @@ namespace ALYSLC
 							}
 						}
 					}
-					
 
 					// Have to restore P1's favorited items here if the game ignores this call to open the menu.
 					auto result = _ProcessMessage(a_this, a_message);
@@ -5080,6 +5312,12 @@ namespace ALYSLC
 					return result;
 				}
 			}
+			else
+			{
+				// Set favorited forms data for P1.
+				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				coopP1->em->UpdateFavoritedFormsLists(false);
+			}
 
 			return _ProcessMessage(a_this, a_message);
 		}
@@ -5088,14 +5326,26 @@ namespace ALYSLC
 		{
 			// Open co-op companion's inventory (ContainerMenu) instead of P1's inventory (InventoryMenu) 
 			// when attempting to access the InventoryMenu through the TweenMenu or otherwise.
-			if (glob.globalDataInit && glob.coopSessionActive &&
-				glob.menuCID != -1 && glob.menuCID != glob.player1CID && Hash(a_message.menu) == Hash(RE::InventoryMenu::MENU_NAME))
+
+			if (!glob.globalDataInit || !glob.coopSessionActive || a_message.menu != a_this->MENU_NAME)
 			{
-				bool isOpenReq = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			// Only need to handle open/close messages.
+			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+			bool closing = *a_message.type == RE::UI_MESSAGE_TYPE::kHide || *a_message.type == RE::UI_MESSAGE_TYPE::kForceHide;
+			if (!opening && !closing)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+			{
 				const auto& reqP = glob.coopPlayers[glob.menuCID];
 				if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 				{
-					if (isOpenReq)
+					if (opening)
 					{
 						msgQ->AddMessage(RE::InventoryMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr);
 						// Reset player 1 damage multiplier so that the co-op player's inventory reports the correct damage for weapons.
@@ -5111,6 +5361,12 @@ namespace ALYSLC
 						return RE::UI_MESSAGE_RESULTS::kIgnore;
 					}
 				}
+			}
+			else
+			{
+				// Set favorited forms data for P1.
+				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				coopP1->em->UpdateFavoritedFormsLists(false);
 			}
 
 			return _ProcessMessage(a_this, a_message);
@@ -5144,6 +5400,139 @@ namespace ALYSLC
 			}
 
 			return result;
+		}
+		
+		RE::UI_MESSAGE_RESULTS MagicMenuHooks::ProcessMessage(RE::MagicMenu* a_this, RE::UIMessage& a_message)
+		{
+
+			// Nothing to do here, since co-op is not active, serializable data is not available, or this menu is not the target of the message.
+			if (!glob.globalDataInit || !glob.coopSessionActive ||
+				glob.serializablePlayerData.empty() || a_message.menu != a_this->MENU_NAME)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			// Only need to handle open/close messages.
+			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+			bool closing = *a_message.type == RE::UI_MESSAGE_TYPE::kHide || *a_message.type == RE::UI_MESSAGE_TYPE::kForceHide;
+			if (!opening && !closing)
+			{
+				if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
+				{
+					// Not all updates made to menu elements through the MIM apply properly.
+					// Certain entry elements must be updated right before the message is propagated,
+					// so that any overriding changes made by the game can be overwritten by our own changes.
+					if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+					{
+						// Update equip state for all magic entries and refresh the item list.
+						taskInterface->AddUITask
+						(
+							[]()
+							{
+								if (auto ui = RE::UI::GetSingleton(); ui)
+								{
+									if (auto magicMenu = ui->GetMenu<RE::MagicMenu>(); magicMenu && magicMenu.get())
+									{
+										if (auto view = magicMenu->uiMovie; view && magicMenu->unk30)
+										{
+											auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30);
+											if (magicItemList)
+											{
+												auto& magicEntryList = magicItemList->entryList;
+												RE::GFxValue numItemsGFx;
+												magicEntryList.GetMember("length", std::addressof(numItemsGFx));
+												double numItems = numItemsGFx.GetNumber();
+												for (auto i = 0; i < numItems; ++i)
+												{
+													RE::GFxValue entry;
+													magicEntryList.GetElement(i, std::addressof(entry));
+													RE::GFxValue newEquipState;
+													entry.GetMember("equipState", std::addressof(newEquipState));
+
+													// Set cached equip state.
+													newEquipState.SetNumber(static_cast<double>(glob.mim->magEntryEquipStates[i]));
+													entry.SetMember("equipState", newEquipState);
+													magicEntryList.SetElement(i, entry);
+													magicItemList->view->SetVariable("entryList", magicEntryList);
+												}
+
+												// Update the magic entry list.
+												view->InvokeNoReturn("_root.Menu_mc.inventoryLists.itemList.UpdateList", nullptr, 0);
+											}
+										}
+									}
+								}
+							}
+						);
+					}
+				}
+
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			// Do not modify the requests queue, since the menu input manager still needs this info
+			// when setting the request and menu controller IDs when this menu opens/closes.
+			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
+
+			// REMOVE when done debugging.
+			ALYSLC::Log("[MagicMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+				glob.menuCID, resolvedCID, opening, closing);
+
+			// Control is/was requested by co-op companion player.
+			if (resolvedCID != -1 && resolvedCID != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[resolvedCID];
+				closing &= hasCopiedData;
+				if (opening || closing)
+				{
+					const RE::BSFixedString menuName = a_this->MENU_NAME;
+					// Copy over player data.
+					GlobalCoopData::CopyOverCoopPlayerData(opening, menuName, p->coopActor->GetHandle(), nullptr);
+
+					// Force PersistentFavorites (https://github.com/QY-MODS/PersistentFavorites)
+					// to sync its cached favorites list after we import the companion player's favorites or restore P1's favorites.
+					// Syncs on toggle favorites bind press: https://github.com/QY-MODS/PersistentFavorites/blob/main/src/Events.cpp#L4
+					if (ALYSLC::PersistentFavoritesCompat::g_persistentFavoritesInstalled)
+					{
+						auto ue = RE::UserEvents::GetSingleton();
+						auto controlMap = RE::ControlMap::GetSingleton();
+						if (ue && controlMap)
+						{
+							auto userEvent = ue->yButton;
+							auto device = RE::INPUT_DEVICE::kGamepad;
+							auto keyCode = controlMap->GetMappedKey(userEvent, device, RE::UserEvents::INPUT_CONTEXT_IDS::kItemMenu);
+							if (keyCode != 0xFF)
+							{
+								std::unique_ptr<RE::InputEvent* const> buttonEvent = std::make_unique<RE::InputEvent* const>(RE::ButtonEvent::Create(device, userEvent, keyCode, 0.0f, 1.0f));
+								(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
+								Util::SendInputEvent(buttonEvent);
+							}
+						}
+					}
+
+					// Have to restore P1's favorited items here if the game ignores this call to open the menu.
+					auto result = _ProcessMessage(a_this, a_message);
+					if (opening)
+					{
+						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+						{
+							ALYSLC::Log("[MagicMenu Hooks] ERR: ProcessMessage. Restoring player 1's magic favorites, since the message to open the MagicMenu was not handled. RESULT: {}.", result);
+							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
+						}
+					}
+
+					return result;
+				}
+			}
+			else
+			{
+				// Set favorited forms data for P1.
+				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				coopP1->em->UpdateFavoritedFormsLists(false);
+			}
+
+			return _ProcessMessage(a_this, a_message);
 		}
 
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage(RE::StatsMenu* a_this, RE::UIMessage& a_message)

@@ -15,7 +15,7 @@ namespace ALYSLC
 		// External thread requesting a manager state change.
 		// Currently, requests are not enqueued, so whatever request is made last
 		// in a series of quick requests will be handled, and all other requests will be discarded.
-		virtual inline void RequestStateChange(const ManagerState& a_newState)
+		inline void RequestStateChange(const ManagerState& a_newState)
 		{
 			// Can only change to the running state when the manager is uninitialized.
 			if (currentState == ManagerState::kUninitialized && a_newState != ManagerState::kRunning) 
@@ -78,6 +78,7 @@ namespace ALYSLC
 			return currentState == ManagerState::kUninitialized;
 		}
 
+		// Current execution state.
 		ManagerState currentState;
 
 	protected:
@@ -137,7 +138,6 @@ namespace ALYSLC
 			const auto reqState = ShouldSelfPause();
 			if (reqState == ManagerState::kPaused || reqState == ManagerState::kAwaitingRefresh)
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					std::unique_lock<std::mutex> lock(setStateMutex, std::try_to_lock);
@@ -162,7 +162,6 @@ namespace ALYSLC
 			const auto reqState = ShouldSelfResume();
 			if (reqState == ManagerState::kRunning)
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					std::unique_lock<std::mutex> lock(setStateMutex, std::try_to_lock);
@@ -184,8 +183,8 @@ namespace ALYSLC
 	class TaskRunner
 	{
 	public:
-		// NOTE: All member functions are run on detached threads, 
-		// so we can use locks without worrying about deadlocking one of the game's main threads.
+		// NOTE: All member functions are run on detached threads
+		// to avoid deadlocking one of the game's main threads when waiting on a condition.
 		TaskRunner() :
 			queue(),
 			runnerThread([this](std::stop_token a_stoken) { RunTasks(a_stoken); })
@@ -219,8 +218,7 @@ namespace ALYSLC
 				}
 			});
 
-			// Detach the thread.
-			// Prevents the game from locking up if called from one of the game's main threads.
+			// Detach the thread to avoid locking up one of the game's threads.
 			tempEnqueuerThread.detach();
 		}
 
@@ -239,7 +237,6 @@ namespace ALYSLC
 		// None are executed.
 		inline void ClearTasks()
 		{
-			// REMOVE
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				ALYSLC::Log("[Manager] TaskRunner: ClearTasks: Getting lock. (0x{:X})", hash);
@@ -257,7 +254,6 @@ namespace ALYSLC
 			// Continue looping until externally prompted to stop.
 			while (!a_stoken.stop_requested())
 			{
-				// REMOVE
 				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					ALYSLC::Log("[Manager] RunTasks: Getting lock. (0x{:X})", hash);

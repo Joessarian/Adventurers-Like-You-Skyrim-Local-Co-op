@@ -33,6 +33,7 @@ namespace ALYSLC
 			favoritedEmoteIdles.fill(""sv);
 			currentCycledAmmo = currentCycledVoiceMagic = nullptr;
 			currentCycledIdleIndexPair = { "IdleStop"sv, -1 };
+			lastChosenHotkeyedForm = nullptr;
 			lastCycledIdleIndexPair = currentCycledIdleIndexPair;
 			lastCycledForm = nullptr;
 			RefreshData();
@@ -109,7 +110,12 @@ namespace ALYSLC
 		float damageMod = coopActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight);
 		if (Settings::bInfiniteCarryweight)
 		{
-			coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight, (float)INT32_MAX - coopActor->GetActorValue(RE::ActorValue::kCarryWeight) - 1.0f);
+			coopActor->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kCarryWeight, 
+				(float)INT32_MAX - coopActor->GetActorValue(RE::ActorValue::kCarryWeight) - 1.0f
+			);
 		}
 		else
 		{
@@ -168,6 +174,7 @@ namespace ALYSLC
 		coopActor = RE::ActorPtr{ p->coopActor };
 		controllerID = p->controllerID;
 		playerID = p->playerID;
+		const auto& data = glob.serializablePlayerData.at(coopActor->formID);
 		// Spells and quick slot forms.
 		quickSlotItem = nullptr;
 		quickSlotSpell = nullptr;
@@ -182,7 +189,7 @@ namespace ALYSLC
 		armorRatings.first = armorRatings.second = 0.0f;
 		// Spells copied to placeholder spells. Retrieve from serialized data.
 		copiedMagic.fill(nullptr);
-		copiedMagic = glob.serializablePlayerData.at(coopActor->formID)->copiedMagic;
+		copiedMagic = data->copiedMagic;
 		// Copied placeholder spell form ids.
 		copiedMagicFormIDs.fill(0);
 		for (uint8_t i = 0; i < copiedMagic.size(); ++i)
@@ -201,13 +208,17 @@ namespace ALYSLC
 		favoritedFormIDs.clear();
 		favoritesIndicesInCommon.clear();
 		favoritedItemWasAdded.clear();
-		favoritedPhysForms.clear();
-		favoritedEmoteIdles = glob.serializablePlayerData.at(coopActor->formID)->cyclableEmoteIdleEvents;
+		favoritedForms.clear();
+		favoritedEmoteIdles = data->cyclableEmoteIdleEvents;
 		favoritedEmoteIdlesHashes.clear();
 		for (const auto& eventName : favoritedEmoteIdles) 
 		{
 			favoritedEmoteIdlesHashes.insert(Hash(eventName));
 		}
+
+		hotkeyedForms = data->hotkeyedForms;
+		hotkeyedFormsToSlotsMap.clear();
+		lastChosenHotkeyedForm = nullptr;
 
 		// Map of lists of cyclable forms indexed by type.
 		cyclableFormsMap.clear();
@@ -215,21 +226,15 @@ namespace ALYSLC
 		desiredEquippedForms.fill(nullptr);
 		// Current equipped forms list.
 		equippedForms.fill(nullptr);
-		// List of all equipable magic (spells, shouts).
-		equipableMagic = { {}, {} };
-		// Equipable weapons.
-		equipableWeapons.clear();
 
 		// Favorites list indices for equipped quick slot forms (quick slot item, quick slot spell).
 		equippedQSItemIndex = -1;
 		equippedQSSpellIndex = -1;
 		// Highest known shout variation for the current equipped shout.
 		highestShoutVarIndex = -1;
-		// Number of favorited forms.
-		numFavoritedItems = 0;
 
 		SetInitialEquipState();
-		SetFavoritedForms(false);
+		UpdateFavoritedFormsLists(true);
 
 		ALYSLC::Log("[EM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
 	}
@@ -1047,16 +1052,28 @@ namespace ALYSLC
 						// Remove all of this ammo and add back to reset equip state.
 						// Ugly but seems to avoid creating new entries.
 						const auto& invCounts = coopActor->GetInventoryCounts();
-						int32_t currentAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1;
-						if (currentAmmoCount != -1)
+						int32_t newAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1;
+						if (newAmmoCount != -1)
 						{
 							bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toEquip);
-							coopActor->RemoveItem(ammo, currentAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-							coopActor->AddObjectToContainer(ammo, nullptr, currentAmmoCount, coopActor.get());
+							int32_t hotkeyIndex = 
+							(
+								hotkeyedFormsToSlotsMap.contains(ammo->formID) ? 
+								hotkeyedFormsToSlotsMap[ammo->formID] : 
+								-1
+							);
+							coopActor->RemoveItem(ammo, newAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, coopActor.get());
+							//coopActor->AddObjectToContainer(ammo, nullptr, newAmmoCount, coopActor.get());
 							// Have to re-favorite once re-added.
 							if (wasFavorited)
 							{
 								Util::ChangeFormFavoritesStatus(coopActor.get(), a_toEquip, true);
+							}
+
+							// Re-apply hotkey.
+							if (hotkeyIndex != -1) 
+							{
+								Util::ChangeFormHotkeyStatus(coopActor.get(), a_toEquip, hotkeyIndex);
 							}
 						}
 					}
@@ -1073,21 +1090,34 @@ namespace ALYSLC
 					{
 						UnequipAmmo(currentAmmoForm);
 					}
-
-					const auto& invCounts = coopActor->GetInventoryCounts();
-					if (int32_t newAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1; newAmmoCount != -1)
+					else
 					{
-						bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toEquip);
-						// Remove directly back into P1's inventory.
-						coopActor->RemoveItem(ammo, newAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, coopActor.get());
-						// Have to re-favorite once re-added.
-						if (wasFavorited)
+						const auto& invCounts = coopActor->GetInventoryCounts();
+						if (int32_t newAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1; newAmmoCount != -1)
 						{
-							Util::ChangeFormFavoritesStatus(coopActor.get(), a_toEquip, true);
-						}
+							bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toEquip);
+							int32_t hotkeyIndex =
+								(hotkeyedFormsToSlotsMap.contains(ammo->formID) ?
+										hotkeyedFormsToSlotsMap[ammo->formID] :
+										  -1);
+							// Remove directly back into P1's inventory.
+							coopActor->RemoveItem(ammo, newAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, coopActor.get());
+							// Have to re-favorite once re-added.
+							if (wasFavorited)
+							{
+								Util::ChangeFormFavoritesStatus(coopActor.get(), a_toEquip, true);
+							}
 
-						aem->EquipObject(coopActor.get(), a_toEquip->As<RE::TESBoundObject>());
+							// Re-apply hotkey.
+							if (hotkeyIndex != -1)
+							{
+								Util::ChangeFormHotkeyStatus(coopActor.get(), a_toEquip, hotkeyIndex);
+							}
+
+						}
 					}
+
+					aem->EquipObject(coopActor.get(), a_toEquip->As<RE::TESBoundObject>());
 				}
 			}
 		}
@@ -1561,23 +1591,6 @@ namespace ALYSLC
 		}
 
 		return equipSlot;
-	}
-
-	std::vector<RE::TESForm*> EquipManager::GetFavoritedPhysForms(bool a_shouldUpdate)
-	{
-		// Get all favorited 'physical', meaning not magical, forms.
-		// Can also update the cached list.
-
-		ALYSLC::Log("[EM] GetFavoritedPhysForms: {}: should update: {}.", 
-			coopActor->GetName(),
-			a_shouldUpdate);
-
-		if (a_shouldUpdate)
-		{
-			SetFavoritedForms(false);
-		}
-
-		return favoritedPhysForms;
 	}
 
 	float EquipManager::GetWornWeight() const
@@ -2279,7 +2292,7 @@ namespace ALYSLC
 		return false;
 	}
 
-	void EquipManager::ImportCoopFavorites()
+	void EquipManager::ImportCoopFavorites(bool&& a_onlyMagicFavorites)
 	{
 		// Import this companion player's favorited items/magic onto P1.
 		
@@ -2289,25 +2302,113 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[EM] ImportCoopFavorites: {}.", coopActor->GetName());
-
-		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+		ALYSLC::Log("[EM] ImportCoopFavorites: {}. Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites);
+		auto p1 = RE::PlayerCharacter::GetSingleton(); 
+		if (!p1)
 		{
-			auto p1Favorites = glob.coopPlayers[glob.player1CID]->em->GetFavoritedPhysForms(true);
-			const auto& favorites = GetFavoritedPhysForms(true);
-			favoritesIndicesInCommon.clear();
-			favoritedItemWasAdded.clear();
-			favoritesIndicesInCommon = std::vector<bool>(favorites.size(), false);
-			favoritedItemWasAdded = std::vector<bool>(favorites.size(), false);
-			for (auto i = 0; i < favorites.size(); ++i)
+			return;
+		}
+
+		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		coopP1->em->UpdateFavoritedFormsLists(false);
+		// Use cached magic favorites here for the companion player
+		// since the current list of magic favorites is P1's
+		// and we do not want to import P1's magic favorites instead.
+		UpdateFavoritedFormsLists(true);
+
+		auto magicFavorites = RE::MagicFavorites::GetSingleton();
+		if (!magicFavorites)
+		{
+			ALYSLC::Log("[EM] ERR: ImportCoopFavorites: {}: Could not get magic favorites singleton.", coopActor->GetName());
+			return;
+		}
+
+		const auto& p1Favorites = coopP1->em->favoritedForms;
+		const auto& favorites = favoritedForms;
+		favoritesIndicesInCommon.clear();
+		favoritedItemWasAdded.clear();
+		favoritesIndicesInCommon = std::vector<bool>(favorites.size(), false);
+		favoritedItemWasAdded = std::vector<bool>(favorites.size(), false);
+
+		// Clear out hotkeyed forms, since they linger behind even after the form is unfavorited.
+		// If the companion player hotkeys the same form to a different slot,
+		// there can be serialization bugs, since the same form is serialized multiple times.
+		// P1's hotkeys and magic favorites were saved above already and will be restored later on.
+		for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+		{
+			magicFavorites->hotkeys[i] = nullptr;
+		}
+
+		// Unfavorite all of P1's magic favorites before favoriting
+		// this companion player's magic favorites.
+		for (auto magForm : magicFavorites->spells)
+		{
+			if (!magForm)
 			{
-				const auto form = favorites[i];
+				continue;
+			}
+
+			ALYSLC::Log("[EM] ImportCoopFavorites: {}: Remove P1 favorited magic {}.", coopActor->GetName(), magForm->GetName());
+			magicFavorites->RemoveFavorite(magForm);
+		}
+
+		magicFavorites->spells.clear();
+
+		if (!a_onlyMagicFavorites) 
+		{
+			// Remove P1's physical favorites that aren't shared and all hotkeys first.
+			for (auto i = 0; i < p1Favorites.size(); ++i)
+			{
+				const auto form = p1Favorites[i];
+				// Skip invalid and magical forms.
+				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					continue;
+				}
+
+				// Unfavorite physical forms that are P1 has not also favorited.
+				if (!favoritedFormIDs.contains(form->formID))
+				{
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: Removing P1 favorite {}.",
+						coopActor->GetName(), form->GetName());
+					// Favorited by P1 but not by this player, so have P1 unfavorite the item.
+					Util::ChangeFormFavoritesStatus(p1, form, false);
+				}
+
+				// Hotkeyed by P1, so remove the hotkey.
+				if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+				{
+					auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: Removing P1 hotkey {} for {}.",
+						coopActor->GetName(), slot + 1, form->GetName());
+					Util::ChangeFormHotkeyStatus(p1, form, -1);
+				}
+			}
+		}
+
+		for (auto i = 0; i < favorites.size(); ++i)
+		{
+			const auto form = favorites[i];
+			if (!form)
+			{
+				continue;
+			}
+
+			if (a_onlyMagicFavorites || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				ALYSLC::Log("[EM] ImportCoopFavorites: {}: Add favorited magic {}.", coopActor->GetName(), form->GetName());
+				magicFavorites->SetFavorite(form);
+			}
+			else
+			{
 				if (Util::IsFavorited(p1, form))
 				{
 					// P1 has also favorited the item, so no need to add to their inventory or change its favorites status.
 					favoritesIndicesInCommon[i] = true;
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has also favorited {}. Not favoriting.",
+						coopActor->GetName(), form->GetName());
 				}
-				else if (form->IsBoundObject())
+				else
 				{
 					auto boundObj = form->As<RE::TESBoundObject>();
 					auto invCounts = p1->GetInventoryCounts();
@@ -2315,26 +2416,169 @@ namespace ALYSLC
 					// so add the favorited form to player 1 before favoriting it.
 					// Tag this favorited form as added, so it can be removed
 					// when P1's favorites are restored.
-					if (!invCounts.contains(boundObj) || invCounts.at(boundObj) <= 0) 
+					if (!invCounts.contains(boundObj) || invCounts.at(boundObj) <= 0)
 					{
 						p1->AddObjectToContainer(form->As<RE::TESBoundObject>(), nullptr, 1, p1);
 						favoritedItemWasAdded[i] = true;
 					}
 
 					Util::ChangeFormFavoritesStatus(p1, form, true);
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has NOT favorited {}. Favoriting.",
+						coopActor->GetName(), form->GetName());
 				}
 			}
 
-			for (auto i = 0; i < p1Favorites.size(); ++i)
+			// Hotkeyed by the companion player, so set the corresponding hotkey slot.
+			if (hotkeyedFormsToSlotsMap.contains(form->formID))
 			{
-				const auto form = p1Favorites[i];
-				if (!favoritedFormIDs.contains(form->formID))
+				auto slot = hotkeyedFormsToSlotsMap[form->formID];
+				ALYSLC::Log("[EM] ImportCoopFavorites: {}: Adding hotkey {} for {}.",
+					coopActor->GetName(), slot == -1 ? -1 : slot + 1, form->GetName());
+				Util::ChangeFormHotkeyStatus(p1, form, slot);
+			}
+		}
+
+		/*
+		if (a_onlyMagicFavorites) 
+		{
+			// Unfavorite all of P1's magic favorites before favoriting
+			// this companion player's magic favorites.
+			for (auto magForm : magicFavorites->spells)
+			{
+				if (!magForm)
 				{
-					// Favorited by P1 but not by this player, so have P1 unfavorite the item.
-					Util::ChangeFormFavoritesStatus(p1, form, false);
+					continue;
+				}
+
+				ALYSLC::Log("[EM] ImportCoopFavorites: {}: Remove P1 favorited magic {}.", coopActor->GetName(), magForm->GetName());
+				magicFavorites->RemoveFavorite(magForm);
+			}
+
+			for (auto form : favorites) 
+			{
+				if (form->Is(RE::FormType::Spell, RE::FormType::Shout)) 
+				{
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: Add favorited magic {}.", coopActor->GetName(), form->GetName());
+					magicFavorites->SetFavorite(form);
+
+					// Hotkeyed by the companion player, so set the corresponding hotkey slot.
+					if (hotkeyedFormsToSlotsMap.contains(form->formID))
+					{
+						auto slot = hotkeyedFormsToSlotsMap[form->formID];
+						ALYSLC::Log("[EM] ImportCoopFavorites: {}: Adding hotkey {} for {}.",
+							coopActor->GetName(), slot == -1 ? -1 : slot + 1, form->GetName());
+						magicFavorites->hotkeys[slot] = form;
+					}
 				}
 			}
 		}
+		else
+		{
+			favoritesIndicesInCommon.clear();
+			favoritedItemWasAdded.clear();
+			favoritesIndicesInCommon = std::vector<bool>(favorites.size(), false);
+			favoritedItemWasAdded = std::vector<bool>(favorites.size(), false);
+
+			// Remove P1's favorites that aren't shared and all hotkeys first.
+			for (auto i = 0; i < p1Favorites.size(); ++i)
+			{
+				const auto form = p1Favorites[i];
+				if (!form)
+				{
+					continue;
+				}
+
+				// Unfavorite magical/favorite forms that are P1 has not also favorited.
+				ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 favorite {}: FID cached: {}, is bound object: {}, is magic item: {}.",
+					coopActor->GetName(),
+					form->GetName(),
+					favoritedFormIDs.contains(form->formID),
+					(bool)form->As<RE::TESBoundObject>(),
+					form->IsMagicItem());
+
+				if (!favoritedFormIDs.contains(form->formID))
+				{
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: removing P1 favorite {}.",
+						coopActor->GetName(), form->GetName());
+					// Favorited by P1 but not by this player, so have P1 unfavorite the item.
+					Util::ChangeFormFavoritesStatus(p1, form, false);
+				}
+
+				// Hotkeyed by P1, so remove the hotkey.
+				if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+				{
+					auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: Removing P1 hotkey {} for {}.",
+						coopActor->GetName(), slot + 1, form->GetName());
+					Util::ChangeFormHotkeyStatus(p1, form, -1);
+				}
+			}
+
+			for (auto i = 0; i < favorites.size(); ++i)
+			{
+				const auto form = favorites[i];
+				if (!form)
+				{
+					continue;
+				}
+
+				if (form->IsNot(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					if (Util::IsFavorited(p1, form))
+					{
+						// P1 has also favorited the item, so no need to add to their inventory or change its favorites status.
+						favoritesIndicesInCommon[i] = true;
+						ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has also favorited {}. Not favoriting.",
+							coopActor->GetName(), form->GetName());
+					}
+					else
+					{
+						auto boundObj = form->As<RE::TESBoundObject>();
+						auto invCounts = p1->GetInventoryCounts();
+						// Not already favorited by P1 and P1 does not have the form,
+						// so add the favorited form to player 1 before favoriting it.
+						// Tag this favorited form as added, so it can be removed
+						// when P1's favorites are restored.
+						if (!invCounts.contains(boundObj) || invCounts.at(boundObj) <= 0)
+						{
+							p1->AddObjectToContainer(form->As<RE::TESBoundObject>(), nullptr, 1, p1);
+							favoritedItemWasAdded[i] = true;
+						}
+
+						Util::ChangeFormFavoritesStatus(p1, form, true);
+						ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has NOT favorited {}. Favoriting.",
+							coopActor->GetName(), form->GetName());
+					}
+				}
+				else if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					if (Util::IsFavorited(p1, form))
+					{
+						// P1 has also favorited the spell, so no need to change its favorites status.
+						favoritesIndicesInCommon[i] = true;
+						ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has also favorited {}. Not favoriting.",
+							coopActor->GetName(), form->GetName());
+					}
+					else
+					{
+						// Favorite the spell, since it is not also favorited by P1.
+						Util::ChangeFormFavoritesStatus(p1, form, true);
+						ALYSLC::Log("[EM] ImportCoopFavorites: {}: P1 has not favorited {}. Favoriting.",
+							coopActor->GetName(), form->GetName());
+					}
+				}
+
+				// Hotkeyed by the companion player, so set the corresponding hotkey slot.
+				if (hotkeyedFormsToSlotsMap.contains(form->formID))
+				{
+					auto slot = hotkeyedFormsToSlotsMap[form->formID];
+					ALYSLC::Log("[EM] ImportCoopFavorites: {}: Adding hotkey {} for {}.",
+						coopActor->GetName(), slot == -1 ? -1 : slot + 1, form->GetName());
+					Util::ChangeFormHotkeyStatus(p1, form, slot);
+				}
+			}
+		}
+		*/
 	}
 
 	bool EquipManager::IsUnarmed() const
@@ -2708,36 +2952,229 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::RestoreP1Favorites()
+	void EquipManager::RestoreP1Favorites(bool&& a_onlyMagicFavorites)
 	{
-		// Restore P1's previously saved favorited items
+		// Restore P1's previously saved favorited items/spells
 		// after removing any companion player's favorites that are not in common.
 
-		ALYSLC::Log("[EM] RestoreP1Favorites: {}.", coopActor->GetName());
-		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+		if (p->isPlayer1)
 		{
-			for (auto i = 0; i < favoritesIndicesInCommon.size(); ++i)
+			return;
+		}
+
+		ALYSLC::Log("[EM] RestoreP1Favorites: {}. Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites);
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+
+		// Update the companion player's cached magic favorites before restoring P1's favorites below.
+		UpdateFavoritedFormsLists(false);
+
+		auto magicFavorites = RE::MagicFavorites::GetSingleton();
+		if (!magicFavorites)
+		{
+			ALYSLC::Log("[EM] ERR: RestoreP1Favorites: {}: Could not get magic favorites singleton.", coopActor->GetName());
+			return;
+		}
+
+		// Clear out hotkeyed forms, since they linger behind even after the form is unfavorited.
+		// P1's hotkeys and magic favorites were saved on import already and will be restored below.
+		for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+		{
+			magicFavorites->hotkeys[i] = nullptr;
+		}
+
+		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+
+		// Remove all of P1's current magical favorites first.
+		for (auto magForm : magicFavorites->spells)
+		{
+			if (!magForm)
 			{
-				const auto form = favoritedPhysForms[i];
-				// Remove co-op player-favorited items that P1 has not also favorited and does not have equipped.
-				if (!favoritesIndicesInCommon[i] && form && form->IsBoundObject())
+				continue;
+			}
+
+			ALYSLC::Log("[EM] RestoreP1Favorites: {}: Remove P1 favorited magic {}.", coopActor->GetName(), magForm->GetName());
+			magicFavorites->RemoveFavorite(magForm);
+		}
+
+		magicFavorites->spells.clear();
+
+		if (!a_onlyMagicFavorites)
+		{
+			for (auto i = 0; i < favoritedForms.size(); ++i)
+			{
+				const auto form = favoritedForms[i];
+				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					continue;
+				}
+
+				// Remove co-op player-favorited forms that P1 has not also favorited and does not have equipped.
+				if (!favoritesIndicesInCommon[i])
 				{
 					Util::ChangeFormFavoritesStatus(p1, form, false);
+					ALYSLC::Log("[EM] RestoreP1Favorites: {}: Unfavoriting not-in-common favorite {} for P1.",
+						coopActor->GetName(), form->GetName());
 					// If the co-op player favorited form was added previously, it should now be removed.
 					if (favoritedItemWasAdded[i])
 					{
+						ALYSLC::Log("[EM] RestoreP1Favorites: {}: Removing {} (x1) from P1.",
+							coopActor->GetName(), form->GetName());
 						p1->RemoveItem(form->As<RE::TESBoundObject>(), 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+					}
+				}
+				else
+				{
+					bool sharedHotkey = 
+					{
+						coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID) &&
+						hotkeyedFormsToSlotsMap.contains(form->formID) &&
+						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] == hotkeyedFormsToSlotsMap[form->formID]
+					};
+					if (!sharedHotkey)
+					{
+						// Remove hotkey on shared favorited form
+						// if P1 has not applied the same hotkey to the form.
+						// If there is a cached hotkey saved for this form,
+						// it will get re-added below for P1.
+						Util::ChangeFormHotkeyStatus(p1, form, -1);
+					}
+				}
+			}
+		}
+		
+		// Re-favorite all of P1's cached favorited forms amd restore hotkeys.
+		const auto& p1Favorites = coopP1->em->favoritedForms;
+		for (auto form : p1Favorites)
+		{
+			if (!form)
+			{
+				continue;
+			}
+
+			if (a_onlyMagicFavorites || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				ALYSLC::Log("[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.", coopActor->GetName(), form->GetName());
+				magicFavorites->SetFavorite(form);
+			}
+			else
+			{
+				ALYSLC::Log("[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.",
+					coopActor->GetName(), form->GetName());
+				Util::ChangeFormFavoritesStatus(p1, form, true);
+			}
+
+			if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+			{
+				const auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+				ALYSLC::Log("[EM] RestoreP1Favorites: {}: Reapplying P1 hotkey {} for {}.",
+					coopActor->GetName(), slot + 1, form->GetName());
+				Util::ChangeFormHotkeyStatus(p1, form, slot);
+			}
+		}
+
+		/*
+		if (a_onlyMagicFavorites) 
+		{
+			// Remove all of P1's magical favorites first.
+			for (auto magForm : magicFavorites->spells)
+			{
+				if (!magForm)
+				{
+					continue;
+				}
+
+				ALYSLC::Log("[EM] RestoreP1Favorites: {}: Remove P1 favorited magic {}.", coopActor->GetName(), magForm->GetName());
+				magicFavorites->RemoveFavorite(magForm);
+			}
+
+			// Restore cached magical favorites and hotkeys for P1.
+			const auto& p1Favorites = coopP1->em->favoritedForms;
+			for (auto form : p1Favorites)
+			{
+				if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					ALYSLC::Log("[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.", coopActor->GetName(), form->GetName());
+					magicFavorites->SetFavorite(form);
+					if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+					{
+						const auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+						ALYSLC::Log("[EM] RestoreP1Favorites: {}: Reapplying P1 hotkey {} for {}.",
+							coopActor->GetName(), slot + 1, form->GetName());
+						magicFavorites->hotkeys[slot] = form;
+					}
+				}
+			}
+		}
+		else
+		{
+			for (auto i = 0; i < favoritedForms.size(); ++i)
+			{
+				const auto form = favoritedForms[i];
+				if (!form)
+				{
+					continue;
+				}
+
+				// Remove co-op player-favorited forms that P1 has not also favorited and does not have equipped.
+				if (!favoritesIndicesInCommon[i])
+				{
+					Util::ChangeFormFavoritesStatus(p1, form, false);
+					ALYSLC::Log("[EM] RestoreP1Favorites: {}: Unfavoriting not-in-common favorite {} for P1.",
+						coopActor->GetName(), form->GetName());
+					// If the co-op player favorited form was added previously, it should now be removed.
+					if (favoritedItemWasAdded[i])
+					{
+						ALYSLC::Log("[EM] RestoreP1Favorites: {}: Removing {} (x1) from P1.",
+							coopActor->GetName(), form->GetName());
+						p1->RemoveItem(form->As<RE::TESBoundObject>(), 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+					}
+				}
+				else
+				{
+					bool sharedHotkey = 
+					{
+						coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID) &&
+						hotkeyedFormsToSlotsMap.contains(form->formID) &&
+						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] == hotkeyedFormsToSlotsMap[form->formID]
+					};
+					if (!sharedHotkey) 
+					{
+						// Remove hotkey on shared favorited form
+						// if P1 has not applied the same hotkey to the form.
+						// If there is a cached hotkey saved for this form,
+						// it will get re-added below for P1.
+						Util::ChangeFormHotkeyStatus(p1, form, -1);
 					}
 				}
 			}
 
 			// Re-favorite all of P1's cached favorited forms.
-			auto p1Favorites = glob.coopPlayers[glob.player1CID]->em->GetFavoritedPhysForms(false);
+			const auto& p1Favorites = coopP1->em->favoritedForms;
 			for (auto form : p1Favorites)
 			{
+				if (!form)
+				{
+					continue;
+				}
+
+				ALYSLC::Log("[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.",
+					coopActor->GetName(), form->GetName());
 				Util::ChangeFormFavoritesStatus(p1, form, true);
+
+				if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+				{
+					const auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+					ALYSLC::Log("[EM] RestoreP1Favorites: {}: Reapplying P1 hotkey {} for {}.",
+						coopActor->GetName(), slot + 1, form->GetName());
+					Util::ChangeFormHotkeyStatus(p1, form, slot);
+				}
 			}
 		}
+		*/
 	}
 
 	void EquipManager::RefreshEquipState(const RefreshSlots& a_slots, RE::TESForm* a_formEquipped, bool a_isEquipped)
@@ -2762,6 +3199,7 @@ namespace ALYSLC
 
 				// Clear out cached equipped forms first.
 				equippedForms.fill(nullptr);
+				equippedFormFIDs.clear();
 				if (a_slots == RefreshSlots::kWeapMag || a_slots == RefreshSlots::kAll)
 				{
 					// Get L, R hand objects, shout, and ammo
@@ -3080,6 +3518,7 @@ namespace ALYSLC
 				{
 					if (item)
 					{
+						equippedFormFIDs.insert(item->formID);
 						ALYSLC::Log("[EM] RefreshAllEquippedItems: {} has a(n) {} in EQUIPPED forms list.", coopActor->GetName(), item->GetName());
 					}
 				}
@@ -3353,114 +3792,6 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::SetFavoritedForms(bool a_onlySetFIDs)
-	{
-		// Set lists of all favorited physical and magical forms, or just their FIDs.
-
-		ALYSLC::Log("[EM] SetFavoritedForms: {}.", coopActor->GetName());
-
-		favoritedPhysForms.clear();
-		favoritedFormIDs.clear();
-		cyclableFormsMap.clear();
-		cyclableFormsMap[CyclableForms::kAmmo] = std::vector<RE::TESForm*>();
-		cyclableFormsMap[CyclableForms::kSpell] = std::vector<RE::TESForm*>();
-		cyclableFormsMap[CyclableForms::kVoice] = std::vector<RE::TESForm*>();
-		cyclableFormsMap[CyclableForms::kWeapon] = std::vector<RE::TESForm*>();
-		numFavoritedItems = 0;
-
-		// Physical forms first.
-		auto inventory = coopActor->GetInventory();
-		for (auto& [boundObj, entryDataPair] : inventory)
-		{
-			if (boundObj && entryDataPair.first > 0 && entryDataPair.second.get())
-			{
-				auto exDataListList = entryDataPair.second->extraLists;
-				if (exDataListList)
-				{
-					for (auto exDataList : *exDataListList)
-					{
-						if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
-						{
-							favoritedFormIDs.insert(boundObj->formID);
-							if (!a_onlySetFIDs)
-							{
-								favoritedPhysForms.emplace_back(boundObj);
-								// Weapons, shields, torches.
-								if ((*boundObj->formType == RE::FormType::Weapon) ||
-									(boundObj->As<RE::TESObjectARMO>() && boundObj->As<RE::TESObjectARMO>()->IsShield()) ||
-									(boundObj->As<RE::TESObjectLIGH>() && boundObj->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)))
-								{
-									cyclableFormsMap[CyclableForms::kWeapon].push_back(boundObj);
-								}
-								// Ammo.
-								else if (*boundObj->formType == RE::FormType::Ammo)
-								{
-									cyclableFormsMap[CyclableForms::kAmmo].push_back(boundObj);
-								}
-							}
-
-							++numFavoritedItems;
-						}
-					}
-				}
-			}
-		}
-
-		// Magical forms next.
-		auto magicFavorites = RE::MagicFavorites::GetSingleton();
-		if (magicFavorites)
-		{
-			for (auto spellForm : magicFavorites->spells)
-			{
-				if (spellForm)
-				{
-					favoritedFormIDs.insert(spellForm->formID);
-					if (!a_onlySetFIDs)
-					{
-						if (spellForm->As<RE::TESShout>())
-						{
-							cyclableFormsMap[CyclableForms::kVoice].push_back(spellForm);
-						}
-						else if (spellForm->As<RE::SpellItem>())
-						{
-							auto spell = spellForm->As<RE::SpellItem>();
-							auto spellType = spell->GetSpellType();
-							if (spellType == RE::MagicSystem::SpellType::kVoicePower ||
-								spellType == RE::MagicSystem::SpellType::kPower ||
-								spellType == RE::MagicSystem::SpellType::kLesserPower)
-							{
-								cyclableFormsMap[CyclableForms::kVoice].push_back(spellForm);
-							}
-							else
-							{
-								cyclableFormsMap[CyclableForms::kSpell].push_back(spellForm);
-							}
-						}
-					}
-
-					++numFavoritedItems;
-				}
-			}
-		}
-
-		if (numFavoritedItems > 0)
-		{
-			// Remove duplicates.
-			for (auto i = 0; i < !CyclableForms::kTotal; ++i)
-			{
-				if (auto& favFormsList = cyclableFormsMap[static_cast<CyclableForms>(i)]; !favFormsList.empty())
-				{
-					auto newEnd = std::unique(favFormsList.begin(), favFormsList.end());
-					if (newEnd != favFormsList.end())
-					{
-						uint32_t prevSize = favFormsList.size();
-						favFormsList.erase(newEnd, favFormsList.end());
-					}
-				}
-			}
-		}
-	}
-
 	void EquipManager::SetCurrentVoiceSpell()
 	{
 		// Get highest known shout variation and set the voice spell to that variation.
@@ -3683,15 +4014,21 @@ namespace ALYSLC
 				const auto& invCounts = coopActor->GetInventoryCounts();
 				auto currentAmmoCount = invCounts.at(ammo);
 				bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toUnequip);
+				int32_t hotkeyIndex = 
+				(
+					hotkeyedFormsToSlotsMap.contains(ammo->formID) ? 
+					hotkeyedFormsToSlotsMap[ammo->formID] : 
+					-1
+				);
 				if (!p->isPlayer1)
 				{
-					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kAmmo, a_slot);
+					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kAmmo);
 					// NOTE: The game has issues un/equipping ammo when count is large (e.g. 100000), so remove and re-add as a failsafe after unequipping.
 					// Ugly but seems to work.
 					aem->UnequipObject(coopActor.get(), ammo, a_exData, currentAmmoCount, a_slot, a_queueEquip, a_forceEquip, a_playSounds, a_applyNow, a_slotToReplace);
 					
-					coopActor->RemoveItem(ammo, currentAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-					coopActor->AddObjectToContainer(ammo, nullptr, currentAmmoCount, coopActor.get());
+					coopActor->RemoveItem(ammo, currentAmmoCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, coopActor.get());
+					//coopActor->AddObjectToContainer(ammo, nullptr, currentAmmoCount, coopActor.get());
 				}
 				else
 				{
@@ -3705,6 +4042,12 @@ namespace ALYSLC
 				if (wasFavorited)
 				{
 					Util::ChangeFormFavoritesStatus(coopActor.get(), a_toUnequip, true);
+				}
+
+				// Re-apply hotkey.
+				if (hotkeyIndex != -1)
+				{
+					Util::ChangeFormHotkeyStatus(coopActor.get(), a_toUnequip, hotkeyIndex);
 				}
 			}
 		}
@@ -3736,14 +4079,14 @@ namespace ALYSLC
 						{
 							if (slotMask.all(static_cast<RE::BIPED_MODEL::BipedObjectSlot>(1 << (i - !EquipIndex::kFirstBipedSlot))))
 							{
-								ClearDesiredEquippedFormOnUnequip(a_toUnequip, i, slot);
+								ClearDesiredEquippedFormOnUnequip(a_toUnequip, i);
 							}
 						}
 
 						// Special shield case: also clear LH slot in desired equipped forms list.
 						if (isShield)
 						{
-							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand, slot);
+							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand);
 						}
 
 						aem->UnequipObject(coopActor.get(), boundObj, a_exData, a_count, slot, a_queueEquip, a_forceEquip, a_playSounds, a_applyNow, a_slotToReplace);
@@ -3790,17 +4133,17 @@ namespace ALYSLC
 					{
 						if (a_slot != glob.bothHandsEquipSlot)
 						{
-							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex, a_slot);
+							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex);
 						}
 						else
 						{
-							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand, a_slot);
-							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kRightHand, a_slot);
+							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand);
+							ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kRightHand);
 						}
 					}
 					else
 					{
-						ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex, a_slot);
+						ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex);
 					}
 
 					aem->UnequipObject(coopActor.get(), boundObj, a_exData, a_count, a_slot, a_queueEquip, a_forceEquip, a_playSounds, a_applyNow, a_slotToReplace);
@@ -3823,7 +4166,7 @@ namespace ALYSLC
 
 		// Handle special cases first. Make sure torch and shield are unequipped,
 		// since they may have a lingering entry in the biped slots section of the equipped forms list that can cause problems.
-		if (a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kShield) 
+		if ((a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kShield) && HasShieldEquipped())
 		{
 			UnequipShield();
 		}
@@ -3951,8 +4294,6 @@ namespace ALYSLC
 							aem->UnequipObject(coopActor.get(), rhBoundObj);
 						}
 					}
-
-					//EquipFists();
 				}
 				else if (a_slot == glob.leftHandEquipSlot)
 				{
@@ -3968,21 +4309,6 @@ namespace ALYSLC
 							aem->UnequipObject(coopActor.get(), lhBoundObj);
 						}
 					}
-
-					// Re-equip form in the other hand. Save old form here before emptying hands.
-					/*auto rhForm = coopActor->GetEquippedObject(false);
-					EquipFists();
-					if (rhForm) 
-					{
-						if (auto asSpell = rhForm->As<RE::SpellItem>(); asSpell) 
-						{
-							aem->EquipSpell(coopActor.get(), asSpell);
-						}
-						else if (auto boundObj = rhForm->As<RE::TESBoundObject>(); boundObj)
-						{
-							aem->EquipObject(coopActor.get(), boundObj);
-						}
-					}*/
 				}
 				else if (a_slot == glob.rightHandEquipSlot)
 				{
@@ -3998,21 +4324,6 @@ namespace ALYSLC
 							aem->UnequipObject(coopActor.get(), rhBoundObj);
 						}
 					}
-
-					// Re-equip form in the other hand. Save old form here before emptying hands.
-					/*auto lhForm = coopActor->GetEquippedObject(true); 
-					EquipFists();
-					if (lhForm)
-					{
-						if (auto asSpell = lhForm->As<RE::SpellItem>(); asSpell)
-						{
-							aem->EquipSpell(coopActor.get(), asSpell);
-						}
-						else if (auto boundObj = lhForm->As<RE::TESBoundObject>(); boundObj)
-						{
-							aem->EquipObject(coopActor.get(), boundObj);
-						}
-					}*/
 				}
 			}
 		}
@@ -4061,7 +4372,7 @@ namespace ALYSLC
 					{
 						if (slotMask.all(static_cast<RE::BIPED_MODEL::BipedObjectSlot>(1 << (i - !EquipIndex::kFirstBipedSlot))))
 						{
-							ClearDesiredEquippedFormOnUnequip(shield, i, shield->equipSlot);
+							ClearDesiredEquippedFormOnUnequip(shield, i);
 						}
 					}
 
@@ -4084,10 +4395,10 @@ namespace ALYSLC
 		{
 			if (!p->isPlayer1)
 			{
-				ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kVoice, glob.voiceEquipSlot);
+				ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kVoice);
 			}
 
-			Util::Papyrus::UnequipShout(coopActor.get(), shout);
+			Util::NativeFunctions::UnequipShout(coopActor.get(), shout);
 		}
 	}
 
@@ -4126,14 +4437,14 @@ namespace ALYSLC
 				// Remove from desired equipped forms list.
 				if (!is2HSpell)
 				{
-					ClearDesiredEquippedFormOnUnequip(spell, !a_equipIndex, spell->equipSlot);
+					ClearDesiredEquippedFormOnUnequip(spell, !a_equipIndex);
 					Util::NativeFunctions::UnequipSpell(coopActor.get(), spell, slotIndex);
 				}
 				else
 				{
 					// Equip "fists" to clear out spell slots.
-					ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kLeftHand, spell->equipSlot);
-					ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kRightHand, spell->equipSlot);
+					ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kLeftHand);
+					ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kRightHand);
 					EquipFists();
 				}
 			}
@@ -4151,6 +4462,235 @@ namespace ALYSLC
 				}
 			}
 		}
+	}
+
+	void EquipManager::UpdateFavoritedFormsLists(bool&& a_useCachedMagicFavorites)
+	{
+		// Update favorited forms list(s) to serialize (physical or magical or both).
+		// Also update assigned hotkeys for all favorited forms.
+
+		ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}. Use cached magic favorites: {}.", 
+			coopActor->GetName(), a_useCachedMagicFavorites);
+
+		favoritedForms.clear();
+		favoritedFormIDs.clear();
+		cyclableFormsMap.clear();
+		cyclableFormsMap[CyclableForms::kAmmo] = std::vector<RE::TESForm*>();
+		cyclableFormsMap[CyclableForms::kSpell] = std::vector<RE::TESForm*>();
+		cyclableFormsMap[CyclableForms::kVoice] = std::vector<RE::TESForm*>();
+		cyclableFormsMap[CyclableForms::kWeapon] = std::vector<RE::TESForm*>();
+		hotkeyedForms.fill(nullptr);
+		hotkeyedFormsToSlotsMap.clear();
+
+		// Total number of favorited items for this player.
+		uint32_t numFavoritedItems = 0;
+		// Physical forms first.
+		auto inventory = coopActor->GetInventory();
+		for (auto& [boundObj, entryDataPair] : inventory)
+		{
+			if (boundObj && entryDataPair.first > 0 && entryDataPair.second.get())
+			{
+				auto exDataListList = entryDataPair.second->extraLists;
+				if (exDataListList)
+				{
+					for (auto exDataList : *exDataListList)
+					{
+						if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
+						{
+							favoritedFormIDs.insert(boundObj->formID);
+							favoritedForms.emplace_back(boundObj);
+							// Weapons, shields, torches.
+							if ((*boundObj->formType == RE::FormType::Weapon) ||
+								(boundObj->As<RE::TESObjectARMO>() && boundObj->As<RE::TESObjectARMO>()->IsShield()) ||
+								(boundObj->As<RE::TESObjectLIGH>() && boundObj->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)))
+							{
+								cyclableFormsMap[CyclableForms::kWeapon].push_back(boundObj);
+							}
+							// Ammo.
+							else if (*boundObj->formType == RE::FormType::Ammo)
+							{
+								cyclableFormsMap[CyclableForms::kAmmo].push_back(boundObj);
+							}
+
+							auto exDataHotkey = exDataList->GetByType<RE::ExtraHotkey>(); 
+							if (!exDataHotkey)
+							{
+								continue;
+							}
+
+							if ((int8_t)(*exDataHotkey->hotkey) != (int8_t)(RE::ExtraHotkey::Hotkey::kUnbound))
+							{
+								auto slot = (int8_t)(*exDataHotkey->hotkey);
+								auto oldHotkeyedForm = hotkeyedForms[slot];
+								if (oldHotkeyedForm && oldHotkeyedForm != boundObj && hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID)) 
+								{
+									ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: FORM {} was already hotkeyed in slot {}. Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+										coopActor->GetName(), oldHotkeyedForm->GetName(), slot == -1 ? -1 : slot + 1, boundObj->GetName());
+									hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
+									exDataHotkey->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+								}
+								else
+								{
+									hotkeyedForms[slot] = boundObj;
+									hotkeyedFormsToSlotsMap.insert_or_assign(boundObj->formID, slot);
+									ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: PHYS FORM {} is hotkeyed in slot {}.",
+										coopActor->GetName(), boundObj->GetName(), slot == -1 ? -1 : slot + 1);
+								}
+							}
+
+							ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}. ITEM {} is favorited.",
+								coopActor->GetName(), boundObj->GetName());
+							++numFavoritedItems;
+						}
+					}
+				}
+			}
+		}
+
+		if (!glob.serializablePlayerData.contains(coopActor->formID))
+		{
+			ALYSLC::Log("[EM] ERR: UpdateFavoritedFormsLists: {}: No serialized data found. Cannot update or modify cached magic favorites.", 
+				coopActor->GetName());
+			return;
+		}
+
+		auto& data = glob.serializablePlayerData.at(coopActor->formID);
+		auto magicFavorites = RE::MagicFavorites::GetSingleton();
+		if (!magicFavorites)
+		{
+			ALYSLC::Log("[EM] ERR: UpdateFavoritedFormsLists: {}: Could not get magic favorites singleton.", coopActor->GetName());
+			return;
+		}
+
+		std::vector<RE::TESForm*> magFavoritesList{ };
+		// Magical forms next.
+		if (a_useCachedMagicFavorites) 
+		{
+			// Set magic favorites list to the serialized list.
+			magFavoritesList = data->favoritedMagForms;
+			for (auto i = 0; i < data->hotkeyedForms.size(); ++i) 
+			{
+				auto hotkeyedForm = data->hotkeyedForms[i];
+				if (hotkeyedForm && hotkeyedForm->Is(RE::FormType::Spell, RE::FormType::Shout)) 
+				{
+					auto oldHotkeyedForm = hotkeyedForms[i];
+					// NOTE: If another form, which can only be a physical favorited form here,
+					// is in the same hotkey slot, keep the physical form, since it is more up to date
+					// compared to the cached magical favorite form.
+					// For example, if the companion player opens their inventory and hotkeys a weapon
+					// in the same slot as a spell was saved to previously, we now want that weapon to be equipable
+					// from this slot, not the spell.
+					// There will be no issue with conflicting magical forms, since we always update 
+					// the cached magic favorites when exiting the Magic Menu.
+					if (oldHotkeyedForm && oldHotkeyedForm != hotkeyedForm && hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID))
+					{
+						ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
+							coopActor->GetName(), oldHotkeyedForm->GetName(), i + 1, hotkeyedForm->GetName());
+						continue;
+					}
+
+					hotkeyedForms[i] = hotkeyedForm;
+					hotkeyedFormsToSlotsMap.insert_or_assign(hotkeyedForm->formID, i);
+					ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
+						coopActor->GetName(), hotkeyedForm->GetName(), i + 1);
+				}
+			}
+		}
+		else
+		{
+			if (!magicFavorites->spells.empty()) 
+			{
+				for (auto magForm : magicFavorites->spells) 
+				{
+					if (!magForm)
+					{
+						continue;
+					}
+
+					magFavoritesList.emplace_back(magForm);	
+				}
+			}
+
+			// Update list of magic favorites to serialize.
+			data->favoritedMagForms = magFavoritesList;
+
+			for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+			{
+				if (auto magForm = magicFavorites->hotkeys[i]; magForm)
+				{
+					auto oldHotkeyedForm = hotkeyedForms[i];
+					if (oldHotkeyedForm && oldHotkeyedForm != magForm && hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID))
+					{
+						ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: FORM {} was already hotkeyed in slot {}. Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+							coopActor->GetName(), oldHotkeyedForm->GetName(), i == -1 ? -1 : i + 1, magForm->GetName());
+						hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
+						magicFavorites->hotkeys[i] = nullptr;
+					}
+					else
+					{
+						hotkeyedForms[i] = magForm;
+						hotkeyedFormsToSlotsMap.insert_or_assign(magForm->formID, i);
+						ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}: MAGIC FORM {} is hotkeyed in slot {}.",
+							coopActor->GetName(), magForm->GetName(), i + 1);
+					}
+				}
+			}
+		}
+
+		// Save hotkeyed forms to serialized data.
+		data->hotkeyedForms = hotkeyedForms;
+
+		for (auto magForm : magFavoritesList)
+		{
+			if (!magForm)
+			{
+				continue;
+			}
+
+			favoritedFormIDs.insert(magForm->formID);
+			favoritedForms.emplace_back(magForm);
+			if (magForm->As<RE::TESShout>())
+			{
+				cyclableFormsMap[CyclableForms::kVoice].push_back(magForm);
+			}
+			else if (magForm->As<RE::SpellItem>())
+			{
+				auto spell = magForm->As<RE::SpellItem>();
+				auto spellType = spell->GetSpellType();
+				if (spellType == RE::MagicSystem::SpellType::kVoicePower ||
+					spellType == RE::MagicSystem::SpellType::kPower ||
+					spellType == RE::MagicSystem::SpellType::kLesserPower)
+				{
+					cyclableFormsMap[CyclableForms::kVoice].push_back(magForm);
+				}
+				else
+				{
+					cyclableFormsMap[CyclableForms::kSpell].push_back(magForm);
+				}
+			}
+
+			ALYSLC::Log("[EM] UpdateFavoritedFormsLists: {}. SPELL {} is favorited.",
+				coopActor->GetName(), magForm->GetName());
+			++numFavoritedItems;
+		}
+
+		if (numFavoritedItems > 0)
+		{
+			// Remove duplicates.
+			for (auto i = 0; i < !CyclableForms::kTotal; ++i)
+			{
+				if (auto& favFormsList = cyclableFormsMap[static_cast<CyclableForms>(i)]; !favFormsList.empty())
+				{
+					auto newEnd = std::unique(favFormsList.begin(), favFormsList.end());
+					if (newEnd != favFormsList.end())
+					{
+						uint32_t prevSize = favFormsList.size();
+						favFormsList.erase(newEnd, favFormsList.end());
+					}
+				}
+			}
+		}
+
 	}
 
 	void EquipManager::ValidateEquipState()
@@ -4215,14 +4755,16 @@ namespace ALYSLC
 			}
 
 			// Mismatching equip slots. Rectifiable.
-			if (desiredLHEquipType && desiredLHEquipType->equipSlot == glob.rightHandEquipSlot)
+			// NOTE: Most items with the RH equip slot can be equipped in the LH equip slot, 
+			// so I'm commenting this out for now.
+			/*if (desiredLHEquipType && desiredLHEquipType->equipSlot == glob.rightHandEquipSlot)
 			{
 				ALYSLC::Log("[EM] ValidateEquipState: {}: LH form {} has RH equip slot. Moving to RH.",
 					coopActor->GetName(), desiredLHForm->GetName());
 				desiredEquippedForms[!EquipIndex::kRightHand] = desiredLHForm;
 				desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
 				shouldReEquip = true;
-			}
+			}*/
 
 			if (desiredRHEquipType && desiredRHEquipType->equipSlot == glob.leftHandEquipSlot)
 			{

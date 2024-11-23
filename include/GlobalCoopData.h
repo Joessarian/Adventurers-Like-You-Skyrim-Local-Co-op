@@ -12,7 +12,7 @@ namespace ALYSLC
 {
 	using Skill = RE::PlayerCharacter::PlayerSkills::Data::Skill;
 	using SkillList = std::array<float, (size_t)RE::PlayerCharacter::PlayerSkills::Data::Skill::kTotal>;
-	// Singleton holding data pertaining to all co-op players.
+	// Singleton holding data pertaining to and functions that affect all active co-op players.
 	class GlobalCoopData
 	{
 	public:
@@ -98,7 +98,15 @@ namespace ALYSLC
 			{
 				if (a_world)
 				{
-					bool alreadyAdded = std::any_of(world->contactListeners.begin(), world->contactListeners.end(), [this](RE::hkpContactListener* a_listener) { return a_listener == this; });
+					bool alreadyAdded = std::any_of
+					(
+						world->contactListeners.begin(), 
+						world->contactListeners.end(), 
+						[this](RE::hkpContactListener* a_listener) 
+						{ 
+							return a_listener == this; 
+						}
+					);
 					if (!alreadyAdded)
 					{
 						world = a_world;
@@ -132,10 +140,11 @@ namespace ALYSLC
 			// Members
 			//
 
+			// Havok world the listener was placed in.
 			RE::ahkpWorld* world;
 		};
 
-		// Holds info about player data that should be copied to player 1 when a menu opens or closes.
+		// Holds info about player data that should be copied to player 1 before a menu opens or closes.
 		struct CopyPlayerDataRequestInfo
 		{
 			CopyPlayerDataRequestInfo() :
@@ -220,7 +229,7 @@ namespace ALYSLC
 			std::array<float, 3> hmsBaseAVs;
 			// Skill AVs, shared and otherwise.
 			SkillList skillAVs;
-			// Damage AV mod, permanent AV mod, temp AV mod for all Skill AVs.
+			// Damage AV mod, permanent AV mod, temp AV mod for all skill AVs.
 			std::array<SkillList, 3> skillAVMods;
 			// List of unlocked perks for this player.
 			std::vector<RE::BGSPerk*> unlockedPerks;
@@ -273,6 +282,7 @@ namespace ALYSLC
 				prevTotalUnlockedPerks(0)
 			{
 				equippedForms.clear();
+				favoritedMagForms.clear();
 				unlockedPerksList.clear();
 				unlockedPerksSet.clear();
 				copiedMagic.fill(nullptr);
@@ -280,43 +290,48 @@ namespace ALYSLC
 				hmsBaseAVsOnMenuEntry.fill(0.0f);
 				hmsBasePointsList.fill(0.0f);
 				hmsPointIncreasesList.fill(0.0f);
+				hotkeyedForms.fill(nullptr);
 				skillBaseLevelsList.fill(0.0f);
 				skillLevelIncreasesList.fill(0.0f);
 				skillXPList.fill(0.0f);
 			}
 
 			SerializablePlayerData(
-				std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> _copiedMagic,
-				std::array<RE::BSFixedString, 8> _cyclableEmoteIdleEvents,
-				std::vector<RE::TESForm*> _equippedForms,
-				float _levelXP,
-				uint32_t _availablePerkPoints, 
-				uint32_t _firstSavedLevel,
-				uint32_t _level, 
-				uint32_t _sharedPerksUnlocked, 
-				uint32_t _usedPerkPoints, 
-				uint32_t _extraPerkPoints,
-				std::array<float, 3> _hmsBasePointsList,
-				std::array<float, 3> _hmsPointIncreasesList,
-				SkillList _skillBaseLevelsList,
-				SkillList _skillLevelIncreasesList,
-				SkillList _skillXPList,
-				std::vector<RE::BGSPerk*> _unlockedPerksList) :
-				copiedMagic(_copiedMagic),
-				cyclableEmoteIdleEvents(_cyclableEmoteIdleEvents),
-				equippedForms(_equippedForms),
-				levelXP(_levelXP),
-				availablePerkPoints(_availablePerkPoints),
-				firstSavedLevel(_firstSavedLevel),
-				level(_level),
-				sharedPerksUnlocked(_sharedPerksUnlocked),
-				usedPerkPoints(_usedPerkPoints),
-				hmsBasePointsList(_hmsBasePointsList),
-				hmsPointIncreasesList(_hmsPointIncreasesList),
-				skillBaseLevelsList(_skillBaseLevelsList),
-				skillLevelIncreasesList(_skillLevelIncreasesList),
-				skillXPList(_skillXPList),
-				unlockedPerksList(_unlockedPerksList)
+				std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> a_copiedMagic,
+				std::array<RE::BSFixedString, 8> a_cyclableEmoteIdleEvents,
+				std::vector<RE::TESForm*> a_equippedForms,
+				std::vector<RE::TESForm*> a_favoritedMagForms,
+				float a_levelXP,
+				uint32_t a_availablePerkPoints, 
+				uint32_t a_firstSavedLevel,
+				uint32_t a_level, 
+				uint32_t a_sharedPerksUnlocked, 
+				uint32_t a_usedPerkPoints, 
+				uint32_t a_extraPerkPoints,
+				std::array<float, 3> a_hmsBasePointsList,
+				std::array<float, 3> a_hmsPointIncreasesList,
+				std::array<RE::TESForm*, 8> a_hotkeyedForms,
+				SkillList a_skillBaseLevelsList,
+				SkillList a_skillLevelIncreasesList,
+				SkillList a_skillXPList,
+				std::vector<RE::BGSPerk*> a_unlockedPerksList) :
+				copiedMagic(a_copiedMagic),
+				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
+				equippedForms(a_equippedForms),
+				favoritedMagForms(a_favoritedMagForms),
+				levelXP(a_levelXP),
+				availablePerkPoints(a_availablePerkPoints),
+				firstSavedLevel(a_firstSavedLevel),
+				level(a_level),
+				sharedPerksUnlocked(a_sharedPerksUnlocked),
+				usedPerkPoints(a_usedPerkPoints),
+				hmsBasePointsList(a_hmsBasePointsList),
+				hmsPointIncreasesList(a_hmsPointIncreasesList),
+				hotkeyedForms(a_hotkeyedForms),
+				skillBaseLevelsList(a_skillBaseLevelsList),
+				skillLevelIncreasesList(a_skillLevelIncreasesList),
+				skillXPList(a_skillXPList),
+				unlockedPerksList(a_unlockedPerksList)
 			{
 				hmsBaseAVsOnMenuEntry.fill(0.0f);
 				unlockedPerksSet = std::set<RE::BGSPerk*>(unlockedPerksList.begin(), unlockedPerksList.end());
@@ -369,14 +384,23 @@ namespace ALYSLC
 			// [Serialized]:
 			// Spells and shout forms copied into placeholder forms.
 			std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> copiedMagic;
+			// Cyclable emote idle event names.
+			std::array<RE::BSFixedString, 8> cyclableEmoteIdleEvents;
 			// Base health, magicka, and stamina actor values.
 			std::array<float, 3> hmsBasePointsList;
 			// Change in base health, magicka, and stamina actor values.
 			std::array<float, 3> hmsPointIncreasesList;
-			// Cyclable emote idle event names.
-			std::array<RE::BSFixedString, 8> cyclableEmoteIdleEvents;
+			// Up to 8 hotkeyed favorited forms.
+			// Nullptr if the slot has no hotkeyed form.
+			std::array<RE::TESForm*, 8> hotkeyedForms;
 			// All forms that were saved as equipped for this player.
 			std::vector<RE::TESForm*> equippedForms;
+			// Favorited magical (spells/shouts) forms for this player.
+			// NOTE: Having the game store physical and magical favorites separately is a PITA.
+			// Since the physical favorited forms are already saved through serialized extra data 
+			// and can be saved on NPCs, we only serialize the magical favorited forms, 
+			// which are normally saved as a single, P1-only list in MagicFavorites.
+			std::vector<RE::TESForm*> favoritedMagForms;
 			// Base skill levels for this player.
 			SkillList skillBaseLevelsList;
 			// Increases on the base skill levels for this player.
@@ -387,6 +411,8 @@ namespace ALYSLC
 			float levelXP;
 			// Available perk points.
 			uint32_t availablePerkPoints;
+			// Points received from non-levelup sources, ex. console commands.
+			uint32_t extraPerkPoints;
 			// First player level serialized.
 			uint32_t firstSavedLevel;
 			// Player level.
@@ -395,8 +421,6 @@ namespace ALYSLC
 			uint32_t sharedPerksUnlocked;
 			// Used levelup perk points.
 			uint32_t usedPerkPoints;
-			// Points received from non-levelup sources, ex. console commands.
-			uint32_t extraPerkPoints;
 
 			// [NOT Serialized]:
 			// Previous total unlocked perks count.
@@ -414,23 +438,10 @@ namespace ALYSLC
 			std::set<RE::BGSPerk*> unlockedPerksSet;
 		};
 
-		// Data related to sending an animation event to a specific actor.
-		struct AnimEvent
-		{
-			AnimEvent(RE::ObjectRefHandle a_refrHandle, RE::BSFixedString a_animEventName, float a_postWaitSecs);
-
-			// Refr to play the animation on.
-			RE::ObjectRefHandle refrHandle;
-			// Animation event to play.
-			RE::BSFixedString animEventName;
-			// Time to wait after sending the event.
-			float postWaitSecs;
-		};
-
 		// Get the global data singleton.
 		static GlobalCoopData& GetSingleton();
 
-		// Clean up global and player worker threads by signalling them to stop.
+		// Clean up global and player task runner threads by signalling them to stop.
 		~GlobalCoopData() 
 		{
 			// Request that detached threads stop.
@@ -460,8 +471,7 @@ namespace ALYSLC
 		static bool AdjustInitialPlayer1PerkPoints(RE::Actor* a_playerActor);
 
 		// Adjust the number of available perk points for the given actor when they enter/exit
-		// the Stats Menu.
-		// For co-op companion players.
+		// the Stats Menu. For co-op companion players.
 		static void AdjustPerkDataForCompanionPlayer(RE::Actor* a_playerActor, const bool& a_enteringMenu);
 
 		// Same idea as above but specifically for P1.
@@ -478,6 +488,10 @@ namespace ALYSLC
 		// Checks if this controller can control menus.
 		static bool CanControlMenus(const int32_t& a_controllerID);
 
+		// Check if the player's arm nodes come into contact with another object
+		// and trigger an impact impulse/knockdown and apply damage if so.
+		static void CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p);
+
 		// If the given argument is a co-op player, get the player's index in the co-op companions list (controller ID).
 		// Return -1 otherwise.
 		static int8_t GetCoopPlayerIndex(const RE::ActorPtr& a_actorPtr);
@@ -492,7 +506,6 @@ namespace ALYSLC
 		
 		// Returns the total number of unlocked perks in all shared skill trees.
 		static uint32_t GetUnlockedSharedPerksCount();
-
 		
 		// Transfer party-wide items (usable by any player through P1, or trigger quests) from all players to P1.
 		// Items include: gold, lockpicks, keys, non-skill/spell teaching books, and notes.
@@ -614,8 +627,7 @@ namespace ALYSLC
 		static bool UpdateSerializedCompanionPlayerFIDKey(RE::Actor* a_playerActor);
 
 
-		// Try again?
-		// If no dead player is specified, the entire party gets wiped.
+		// Try again? The entire party gets wiped.
 		static void YouDied(RE::Actor* a_deadPlayer = nullptr);
 
 		// Co-op player data copying on menu open/close events.
@@ -630,7 +642,7 @@ namespace ALYSLC
 		static void CopyOverAVs(RE::Actor* a_coopActor, const bool& a_shouldImport, const bool& a_shouldCopyChanges = false);
 
 		// WIP: Needs more testing for long term side effects, and may need a rework if a better 
-		// solution is found that doesn't involve brute force copying all inventory items to P1.
+		// solution is found that doesn't involve brute-force copying all inventory items to P1.
 		// Exchange the given player's inventory with P1's or restore P1's.
 		// Allows companion players to sell their own items, but obviously has limitations
 		// and can cause major issues if the game saves in this state.
@@ -654,8 +666,8 @@ namespace ALYSLC
 		//
 		
 		// Run as a task or in the main hook.
-		// Copy co-op companion player's data over to P1 when the given menu opens, 
-		// or restore P1's data on closing of the given menu.
+		// Copy co-op companion player's data over to P1 before the given menu opens, 
+		// or restore P1's data before closing the given menu.
 		// Associated form is a linked form which provides additional info.
 		// For example, if the Training Menu is open, the associated form is set to the trainer NPC
 		// to link them with the menu.
@@ -672,28 +684,11 @@ namespace ALYSLC
 		static void RestartCoopCameraTask();
 
 		//
-		// Player node adjustment/collision helper functions.
-		//
-
-		// Adjust player torso pitch/yaw depending on their aim pitch and attack source yaw.
-		static void AdjustPlayerTorsoRotation(const std::shared_ptr<CoopPlayer>& a_p);
-		// Check if the player's arm nodes come into contact with another object
-		// and trigger an impact impulse/knockdown and apply damage if so.
-		static void CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p);
-		// Flex or straighten arms about elbow joints, or supinate or pronate forearms.
-		// Rotate forearms and hands when not only rotating the player's shoulders.
-		static void TwistAndBendArms(const std::shared_ptr<CoopPlayer>& a_p);
-
-		//
 		// Const Members
 		//
 
-
 		// Max number of composing input actions assignable to a bind.
 		static constexpr uint8_t MAX_ACTIONS_PER_BIND = 4;
-
-		// Max number of controllers/players supported during co-op, including P1.
-		static constexpr uint8_t MAX_PLAYER_COUNT = 4;
 
 		// ALYSLC plugin name to load data from (Skyrim SE or Enderal SE).
 		// Defaults to skyrim plugin name.
@@ -711,7 +706,6 @@ namespace ALYSLC
 
 		// Loot Menu name.
 		static constexpr inline std::string_view LOOT_MENU = "LootMenu"sv;
-
 
 		// Summoning menu name.
 		static constexpr inline std::string_view SETUP_MENU_NAME = "ALYSLC Setup Menu"sv;
@@ -785,6 +779,7 @@ namespace ALYSLC
 			{ RE::ActorValue::kEnchanting, "Enchanting" }
 		};
 
+		// Skill names to their corresponding actor values.
 		static inline const std::unordered_map<std::string, RE::ActorValue> SKILL_NAME_TO_AV_MAP = 
 		{
 			{ "Onehanded", RE::ActorValue::kOneHanded },
@@ -890,7 +885,7 @@ namespace ALYSLC
 			RE::ActorValue::kEnchanting
 		};
 
-		// Maps shared skill names to their corresponding actor values.
+		// Names of all skill actor values that have shared progression.
 		static inline const std::set<std::string> SHARED_SKILL_NAMES_SET =
 		{
 			{ "Smithing" },
@@ -1147,7 +1142,7 @@ namespace ALYSLC
 			{ 0xE7639, { EnderalSkillbookTier::kExpert, RE::ActorValue::kSpeech } }
 		};
 
-		// Enderal skill mapped to index which is then used to pick a random skillbook to give to other active players when one is looted..
+		// Enderal skill mapped to index which is then used to pick a random skillbook to give to other active players when one is looted.
 		static inline const std::unordered_map<RE::ActorValue, uint8_t> ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP = 
 		{
 			{ RE::ActorValue::kOneHanded, 0 },
@@ -1243,7 +1238,7 @@ namespace ALYSLC
 		// Default prong length for the player crosshair in pixels.
 		static inline const float CROSSHAIR_PRONG_DEF_LENGTH = 22.0f;
 
-		// Upper "diamond" portion of the quest marker.
+		// Upper "diamond" portion of the quest marker indicator.
 		// Drawn first.
 		// Origin: top of diamond.
 		// Default length: 20
@@ -1259,7 +1254,7 @@ namespace ALYSLC
 			{ 5.0f, 11.0f }
 		};
 
-		// Lower "caret" portion of the quest marker.
+		// Lower "caret" portion of the quest marker indicator.
 		// Drawn second.
 		// Origin: shared origin with top.
 		// Default length: 34
@@ -1275,19 +1270,6 @@ namespace ALYSLC
 
 		// Default length of the player indicator in pixels.
 		static inline const float PLAYER_INDICATOR_DEF_LENGTH = 47.0f;
-
-		static inline const std::vector<std::string_view> ADJUSTABLE_BODY_NODE_NAMES_LIST = 
-		{
-			RE::FixedStrings::GetSingleton()->npcSpine,
-			RE::FixedStrings::GetSingleton()->npcSpine1,
-			RE::FixedStrings::GetSingleton()->npcSpine2,
-			RE::FixedStrings::GetSingleton()->npcLUpperArm,
-			RE::FixedStrings::GetSingleton()->npcLForearm,
-			"NPC L Hand [LHnd]",
-			RE::FixedStrings::GetSingleton()->npcRUpperArm,
-			"NPC R Forearm [RLar]",
-			"NPC R Hand [RHnd]"
-		};
 
 		// Adjustable player left arm nodes when rotating that arm.
 		static inline const std::unordered_set<uint32_t> ADJUSTABLE_LEFT_ARM_NODE_HASHES = 
@@ -1313,6 +1295,7 @@ namespace ALYSLC
 			Hash(RE::FixedStrings::GetSingleton()->npcSpine2)
 		};
 
+		// Maps node name hashes of parent nodes to a list of adjustable child nodes' names.
 		static inline const std::unordered_map<uint32_t, std::vector<std::string_view>> ADJUSTABLE_NODES_HASHES_TO_CHILD_NAMES = 
 		{
 			{ Hash(RE::FixedStrings::GetSingleton()->npcSpine), { RE::FixedStrings::GetSingleton()->npcSpine1, RE::FixedStrings::GetSingleton()->npcSpine2 } },
@@ -1339,17 +1322,17 @@ namespace ALYSLC
 		// Members
 		//
 
-		// The Camera Manager.
+		// Camera Manager.
 		// Controls placement of the camera when running.
 		std::unique_ptr<CameraManager> cam;
-		// The Controller Data Holder.
-		// Keeps track of players' controller button' and analog sticks' states.
+		// Controller Data Holder.
+		// Keeps track of players' controller button and analog sticks' states.
 		std::unique_ptr<ControllerDataHolder> cdh;
-		// The Menu Input Manager.
-		// Allows non-P1 players to control menus as if they were player 1, 
+		// Menu Input Manager.
+		// Allows companion players to control menus as if they were player 1, 
 		// with some limitations, of course.
 		std::unique_ptr<MenuInputManager> mim;
-		// The Menu Opening Action Requests Manager.
+		// Menu Opening Action Requests Manager.
 		// Keeps track of requests to open menus, and from that info, determines which controller
 		// should be awarded control of menus when they open.
 		std::unique_ptr<MenuOpeningActionRequestsManager> moarm;
@@ -1364,10 +1347,10 @@ namespace ALYSLC
 		std::unique_ptr<LastP1MeleeUseSkillCallArgs> lastP1MeleeUseSkillCallArgs;
 		// Saved menu data for player 1 before importing another player's data.
 		std::unique_ptr<ExchangeablePlayerData> p1ExchangeableData;
-		// The Player Action Functions Holder.
+		// Player Action Functions Holder.
 		// Handles calling player action condition/press/hold/release functions.
 		std::unique_ptr<PlayerActionFunctionsHolder> paFuncsHolder;
-		// The Player Action Info Holder.
+		// Player Action Info Holder.
 		// Holds player action information.
 		std::unique_ptr<PlayerActionInfoHolder> paInfoHolder;
 		// Detached thread running queued async tasks.
@@ -1439,8 +1422,6 @@ namespace ALYSLC
 		RE::TESGlobal* craftingPointsGlob;
 		RE::TESGlobal* learningPointsGlob;
 		RE::TESGlobal* memoryPointsGlob;
-		// Is P1 transformed into a werewolf?
-		RE::TESGlobal* werewolfTransformationGlob;
 		// [Both]
 		// Player level global.
 		RE::TESGlobal* playerLevelGlob;
@@ -1448,6 +1429,8 @@ namespace ALYSLC
 		// Set by summoning menu script.
 		// Prevents opening of multiple summoning menus at the same time.
 		RE::TESGlobal* summoningMenuOpenGlob;
+		// Is P1 transformed into a werewolf?
+		RE::TESGlobal* werewolfTransformationGlob;
 
 		// Menu opening requests' event registrations.
 		SKSE::Impl::RegistrationSet<void, RE::Actor*, uint32_t, uint32_t> onCoopHelperMenuRequest =
@@ -1461,26 +1444,26 @@ namespace ALYSLC
 		SKSE::Impl::RegistrationSet<void> onSummoningMenuRequest =
 			SKSE::Impl::RegistrationSet<void>("OnSummoningMenuRequest"sv);
 
-		// Time point at which co-op companion player Skill AVs were last checked for changes.
+		// Time point at which co-op companion player Enderal skill AVs were last checked for changes.
 		SteadyClock::time_point lastCoopCompanionSkillLevelsCheckTP;
 		// Time point at which all supported menus were last closed.
 		SteadyClock::time_point lastSupportedMenusClosedTP;
 		// Time point at which the level up XP threshold was last checked.
 		SteadyClock::time_point lastXPThresholdCheckTP;
 
-		// List of current players (P1 and co-op companions, active and inactive).
-		std::array<std::shared_ptr<CoopPlayer>, ALYSLC_MAX_PLAYER_COUNT> coopPlayers;
 		// Mutex for threads attempting to add skill XP for each player.
 		std::array<std::mutex, ALYSLC_MAX_PLAYER_COUNT> skillXPMutexes;
-		// For co-op companion players:
-		// Since the package procedure 'UseMagic' does not allow for a variable spell, 
-		// we can still cast any spell by setting the procedure's spell target to the placeholder 
-		// after the requested spell's data is copied into it.
-		// Holds all placeholder spells for all players.
-		std::set<RE::SpellItem*> placeholderSpellsSet;
+		// List of current players (P1 and co-op companions, active and inactive).
+		std::array<std::shared_ptr<CoopPlayer>, ALYSLC_MAX_PLAYER_COUNT> coopPlayers;
 		// Set of co-op entities that are players or are blocked from selection.
 		// Used to filter out these entities in the targeting manager.
 		std::set<RE::FormID> coopEntityBlacklistFIDSet;
+		// For co-op companion players:
+		// Since the package procedure 'UseMagic' does not allow for a variable spell, 
+		// we can still cast any spell by setting the procedure's spell target to a placeholder 
+		// spell that then has the requested spell's data copied into it.
+		// Holds all placeholder spells for all players.
+		std::set<RE::SpellItem*> placeholderSpellsSet;
 		// Serializable data to write to/read from the SKSE co-save for each player, 
 		// indexed by the players' form IDs.
 		std::unordered_map<RE::FormID, std::unique_ptr<SerializablePlayerData>> serializablePlayerData;
@@ -1513,18 +1496,18 @@ namespace ALYSLC
 		std::vector<RE::TESShout*> placeholderShouts;
 		// For co-op companion players:
 		// Since the package procedure 'UseMagic' does not allow for a variable spell,
-		// we can still cast any spell by setting the procedure's spell target to a placeholder spell
-		// after the requested spell's data is copied into it.
+		// we can still cast any spell by setting the procedure's spell target to a placeholder 
+		// spell that then has the requested spell's data copied into it.
 		// Per player: LH, RH, 2H, and voice casting.
 		std::vector<RE::SpellItem*> placeholderSpells;
 		// Weapon type keywords list. 
 		std::vector<RE::BGSKeyword*> weapTypeKeywordsList;
 		// All players constructed.
-		bool allPlayersInit;
+		bool allPlayersInit = false;
 		// Co-op session started (all players summoned and session cleanup and player dismissal are not finished).
-		bool coopSessionActive;
+		bool coopSessionActive = false;
 		// Finished setting global co-op data.
-		bool globalDataInit;
+		bool globalDataInit = false;
 		// [Enderal only]
 		// Saved Crafting/Learning/Memory points from the last time these globals were checked.
 		// Used to check for increases in these values each frame.
@@ -1549,12 +1532,12 @@ namespace ALYSLC
 		// For QuickLoot compatibility:
 		// CID of the player who last requested to open the menu.
 		int32_t quickLootReqCID;
+		// Number of active, summoned co-op players.
+		uint32_t activePlayers;
 		// Last unlocked shared perks count on perk tree export.
 		uint32_t exportUnlockedSharedPerksCount;
 		// Last unlocked shared perks count on perk tree import.
 		uint32_t importUnlockedSharedPerksCount;
-		// Number of active, summoned co-op players.
-		uint32_t activePlayers;
 		// Number of living co-op players.
 		uint32_t livingPlayers;
 
@@ -1579,9 +1562,12 @@ namespace ALYSLC
 		//
 		
 		// Apply arm hit impulse to raycast-hit objects.
+		// TODO: Do away with raycasts for collision checks 
+		// and use an active collider enclosing the player's arm nodes instead.
 		static bool PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType);
 		
-		// Rescale health, magicka, and stamina AVs for this player.
+		// Rescale health, magicka, and stamina AVs to their serialized values for this player.
+		// Use the passed-in base level to determine if the player has leveled up in co-op before rescaling.
 		static void RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel = 1.0f);
 		
 		// Rescale all skill AVs for this player.

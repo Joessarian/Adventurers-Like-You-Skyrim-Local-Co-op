@@ -8,6 +8,7 @@ namespace ALYSLC
 	using SteadyClock = std::chrono::steady_clock;
 	class CoopPlayer;
 
+	// Keeps track of rotations to set and blending progress for handled torso and arm nodes.
 	struct NodeRotationData
 	{
 		NodeRotationData()
@@ -85,10 +86,10 @@ namespace ALYSLC
 			blendOutTP = blendInTP = SteadyClock::now();
 
 			localVelocity =
-				localPosition = RE::NiPoint3();
+			localPosition = RE::NiPoint3();
 			currentRotation =
-				startingRotation =
-					targetRotation = RE::NiMatrix3();
+			startingRotation =
+			targetRotation = RE::NiMatrix3();
 			rotationModified = false;
 			blendStatus = NodeRotationBlendStatus::kDefaultReached;
 		}
@@ -102,16 +103,16 @@ namespace ALYSLC
 		std::array<float, 3> rotationInput;
 		// Blended node rotation matrix to restore in an NiNode hook.
 		RE::NiMatrix3 currentRotation;
-		// Last saved node rotation set by the game before modification.
+		// Last saved node rotation matrix set by the game before modification.
 		RE::NiMatrix3 defaultRotation;
 		// Last set node rotation matrix to interp from while blending.
 		RE::NiMatrix3 startingRotation;
 		// Last set node rotation matrix to interp to while blending.
 		RE::NiMatrix3 targetRotation;
-		// Last recorded node velocity relative to the player's root position.
-		RE::NiPoint3 localVelocity;
 		// Last set position relative to the player's root position.
 		RE::NiPoint3 localPosition;
+		// Last recorded node velocity relative to the player's root position.
+		RE::NiPoint3 localVelocity;
 
 		// TODO: Blend rotations in/out.
 		// Player has modified the target rotation of this node.
@@ -181,25 +182,23 @@ namespace ALYSLC
 		// Reset all node data.
 		void InstantlyResetAllNodeData();
 
-		// Only reset arm node data.
+		// Only reset only arm node data.
 		void InstantlyResetArmNodeData();
 
-		// Only reset torso node data.
+		// Only reset only torso node data.
 		void InstantlyResetTorsoNodeData();
 
 		// Returns true if a custom cached rotation was set for the given node (indexed with hashed name).
 		// Can check for the node name hash in either the set of adjustable arm nodes or torso nodes.
 		bool NodeWasAdjusted(const uint32_t& a_nodeNameHash);
 
-		// TODO: Blend node rotations in/out to match player-altered/default rotations.
+		// Update the blend status for the node with the given name hash.
 		void SetBlendStatus(const uint32_t& a_nodeNameHash, NodeRotationBlendStatus&& a_newStatus);
 
-		// Not sure of the game's Euler convention and how to account for the changes made
-		// to nodes' world rotation matrices by changing the corresponding local rotation matrices.
 		// So after a dozen hours of getting nowhere mathematically,
 		// here are manually tested boundary rotation angles for blending.
 		// (RS X * 2PI, RS Y * 2PI, fixed Z), both radians and (degrees).
-		// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER)
+		// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER):
 		//
 		// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)] // +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
 		// DOWNWARD [2.4250095 (138.9428), -3.1119285 (-178.30035), 0 (0)]
@@ -415,14 +414,16 @@ namespace ALYSLC
 		// Should the player's aim pitch be adjusted?
 		bool shouldAdjustAimPitch;
 		// Continue forcing the player to remain stationary until their reported movement speed is 0.
+		// Prevents ragdolled players from getting up and shooting forward in their facing/movement direction
+		// due to leftover momentum from prior to regdolling.
 		bool shouldCurtailMomentum;
 		// Should the player turn to directly face the targeted position?
 		bool shouldFaceTarget;
 		// Should the companion player start or stop paragliding?
 		// True: start, False: stop.
 		bool shouldParaglide;
-		// Reset aim pitch?
-		bool shouldResetAimPitch;
+		// Reset aim pitch and body node rotations?
+		bool shouldResetAimAndBody;
 		// Should the stationary player start moving?
 		bool shouldStartMoving;
 		// Should the moving player stop moving and rotating?
@@ -453,11 +454,11 @@ namespace ALYSLC
 		float magicParaglideStartZVel;
 		// Old left stick absolute game Z angle.
 		float oldLSAngle;
-		// TODO: Get from modding framework: pitch set for this player.
+		// Pitch to set for this player.
 		float playerPitch;
 		// Player's height adjusted by ref scale.
 		float playerScaledHeight;
-		// TODO: Get from modding framework: yaw set for this player.
+		// Yaw to set for this player.
 		float playerYaw;
 		// Previous left stick angle at max displacement from center.
 		float prevLSAngAtMaxDisp;
@@ -472,20 +473,6 @@ namespace ALYSLC
 		// and short players from springing around like a frog on nose candy.
 		const float havokInitialJumpZVelocity = 5.0f;
 
-		// NOT FOR P1: 
-		// Hardcoded yaw offsets for aiming with a bow/crossbow (vanilla animations).
-		// NOTE: Very loose approximation done to avoid rotation jitter.
-		const float bowSneakingYawOffset = 4.5f * PI / 180.0f;
-		const float bowStandingYawOffset = 3.0f * PI / 180.0f;
-		const float crossbowSneakingYawOffset = -1.0f * PI / 180.0f;
-		const float crossbowStandingYawOffset = 0.0f * PI / 180.0f;
-
-		// FOR P1:
-		const float p1BowSneakingYawOffset = -4.0f * PI / 180.0f;
-		const float p1BowStandingYawOffset = -3.0f * PI / 180.0f;
-		const float p1CrossbowSneakingYawOffset = -3.0f * PI / 180.0f;
-		const float p1CrossbowStandingYawOffset = -1.0f * PI / 180.0f;
-
 		// Player ID for this player.
 		int32_t playerID;
 		// The player's assigned controller ID determined by XInput.
@@ -495,5 +482,6 @@ namespace ALYSLC
 		// Frames since requesting dash dodge/performing dash dodge animation.
 		uint32_t framesSinceRequestingDashDodge;
 		uint32_t framesSinceStartingDashDodge;
+		uint32_t framesSinceStartingJump;
 	};
 }

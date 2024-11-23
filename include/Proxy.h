@@ -32,7 +32,7 @@ namespace ALYSLC
 		std::vector<std::uint32_t> GetConnectedCoopControllerIDs(RE::StaticFunctionTag*);
 
 		// Initializes/updates all co-op players with the given data.
-		// Returns true if co-op session was initialized successfully.
+		// Returns true if the co-op session was initialized successfully.
 		bool InitializeCoop(RE::StaticFunctionTag*, uint32_t a_numCompanions, std::vector<uint32_t> a_controllerIDs, std::vector<RE::Actor*> a_coopActors, std::vector<uint32_t> a_packageFormListIndicesList);
 
 		//========================================================================================================================================================================
@@ -60,13 +60,13 @@ namespace ALYSLC
 		// Get all voice types narrowed down by sex.
 		std::vector<RE::TESForm*> GetAllVoiceTypes(RE::StaticFunctionTag*, bool a_female);
 		
-		// Get list of cyclable emote idle event names for the given player.
+		// Get the given player's assigned list of cyclable emote idle event names.
 		std::vector<RE::BSFixedString> GetFavoritedEmoteIdles(RE::StaticFunctionTag*, int32_t a_controllerID);
 
 		// Request control of the given menu for the given player.
 		void RequestMenuControl(RE::StaticFunctionTag*, int32_t a_controllerID, RE::BSFixedString a_menuName);
 
-		// Signal all player managers to change state to the given state for the given player.
+		// Signal all player managers for the given player to change state to the given state.
 		void RequestStateChange(RE::StaticFunctionTag*, int32_t a_controllerID, uint32_t a_newState);
 
 		// Rescale the given player's actor values when their base skill actor values change:
@@ -94,7 +94,7 @@ namespace ALYSLC
 		void SetPartyInvincibility(RE::StaticFunctionTag*, bool a_shouldSet);
 
 		// Either dismiss all active players or just request their managers to wait for refresh.
-		// Any active co-op session is tagged as ended.
+		// Any active co-op session is flagged as ended.
 		void SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss);
 
 		// Toggle the co-op camera on or off.
@@ -103,7 +103,7 @@ namespace ALYSLC
 		// Toggle collision on or off for all active players.
 		void ToggleCoopEntityCollision(RE::StaticFunctionTag*, bool a_enable);
 
-		// Toggle menu control on or off for the given player when entering/exiting the Co-op Setup/Summoning Menu.
+		// Toggle menu control on or off for the given player when entering/exiting the Summoning Menu.
 		void ToggleSetupMenuControl(RE::StaticFunctionTag*, int32_t a_controllerID, int32_t a_playerID, bool a_shouldEnter);
 
 		// Update all serialized player FID keys.
@@ -116,11 +116,11 @@ namespace ALYSLC
 
 		//========================================================================================================================
 
+		// Debug function for scripts to write log messages to ALYSLC_(SE/AE).log.
+		void Log(RE::StaticFunctionTag*, RE::BSFixedString a_message);
+
 		// Register all papyrus functions.
 		bool RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm);
-
-		// Debug function for scripts to write log messages to ALYSLC.log.
-		void Log(RE::StaticFunctionTag*, RE::BSFixedString a_message);
 
 		// Debug-related functions called from a UIExtensions menu.
 		namespace Debug
@@ -129,17 +129,17 @@ namespace ALYSLC
 			// to assign their controller as P1's.
 			void AssignPlayer1CID(RE::StaticFunctionTag*);
 
-			// Enable god mode for all active players.
-			void EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*);
-
-			// Enable god mode for a specific player.
-			void EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
-
 			// Disable god mode for all players.
 			void DisableGodModeForAllCoopPlayers(RE::StaticFunctionTag*);
 
 			// Disable god mode for a specific player.
 			void DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
+
+			// Enable god mode for all active players.
+			void EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*);
+
+			// Enable god mode for a specific player.
+			void EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
 
 			// Move all other players to P1.
 			void MoveAllCoopActorsToP1(RE::StaticFunctionTag*);
@@ -156,7 +156,7 @@ namespace ALYSLC
 			// Hard reset a companion player:
 			// Stop movement, clear movement offset, sheathe weapons/magic,
 			// revert transformation, unequip hand forms, resurrect,
-			// disable, re-enable, re-equip hand forms, reset I-frames flag, and re-enable movement.
+			// disable, re-enable, re-equip hand forms, reset dash dodge I-frames flag, and re-enable movement.
 			// Can optionally request to unequip all or re-attach havok.
 			void ResetCoopCompanion(RE::StaticFunctionTag*, int32_t a_controllerID, bool a_unequipAll, bool a_reattachHavok);
 
@@ -165,7 +165,7 @@ namespace ALYSLC
 
 			// Hard reset for P1:
 			// Resurrect P1, re-attach havok, remove paralysis and fix ragdoll, sheathe weapons/magic,
-			// revert any active transformation, re-equip hand forms, and reset I-frames flag.
+			// revert any active transformation, re-equip hand forms, and reset dash dodge I-frames flag.
 			void ResetPlayer1State(RE::StaticFunctionTag*);
 
 			// Toggle the co-op camera off and then on again.

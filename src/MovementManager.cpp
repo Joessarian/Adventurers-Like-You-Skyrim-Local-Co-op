@@ -130,7 +130,7 @@ namespace ALYSLC
 		playerAttackSourcePos = coopActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.75f * coopActor->GetHeight());
 		playerAttackSourceDir = RE::NiPoint3(0.0f, 0.0f, 0.0f);
 		// Atomic flags.
-		shouldFaceTarget = shouldResetAimPitch = startJump = false;
+		shouldFaceTarget = shouldResetAimAndBody = startJump = false;
 		// Movement parameters list.
 		movementOffsetParams = std::vector<float>(!MoveParams::kTotal, 0.0f);
 		// Node rotation data.
@@ -179,7 +179,10 @@ namespace ALYSLC
 		playerYaw = coopActor->GetHeading(false);
 		prevLSAngAtMaxDisp = prevRSAngAtMaxDisp = 0.0f;
 		magicParaglideEndZVel = magicParaglideStartZVel = magicParaglideVelInterpFactor = 0.0f;
-		framesSinceAttemptingDiscovery = framesSinceRequestingDashDodge = framesSinceStartingDashDodge = 0;
+		framesSinceAttemptingDiscovery =
+		framesSinceRequestingDashDodge = 
+		framesSinceStartingDashDodge = 
+		framesSinceStartingJump = 0;
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -254,6 +257,10 @@ namespace ALYSLC
 		if (p->pam->isSneaking)
 		{
 			mult = Settings::fSneakRotMult;
+		}
+		if (p->pam->isSprinting) 
+		{
+			mult = Settings::fSprintingRotMult;
 		}
 
 		return std::clamp(mult, 0.0f, 1.0f);
@@ -370,7 +377,11 @@ namespace ALYSLC
 			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 
 			bool dodgeDurationExpired = dashDodgeCompletionRatio == 1.0f;
-			bool startedAttackDuringDodge = Util::GetElapsedSeconds(p->lastAttackStartTP) < p->pam->GetSecondsSinceLastStop(InputAction::kDodge);
+			// Can dodge with either the regular dodge bind, or the special action bind.
+			// Check the time since the more recently-triggered action.
+			float secsSinceLastSpecialAction = p->pam->GetSecondsSinceLastStop(InputAction::kSpecialAction);
+			float secsSinceLastDodge = p->pam->GetSecondsSinceLastStop(InputAction::kDodge);
+			bool startedAttackDuringDodge = Util::GetElapsedSeconds(p->lastAttackStartTP) < min(secsSinceLastDodge, secsSinceLastSpecialAction);
 			// If an attack was started while dodging or if dodge frame duration is up, stop dodging.
 			if (dodgeDurationExpired || startedAttackDuringDodge)
 			{
@@ -453,11 +464,12 @@ namespace ALYSLC
 				// Get dodge speed mult ratio (max / min)
 				// and multiply the default paraglide MT forward movement value by this value
 				// to get the max target XY speed in game units.
+				// Max may not always be greater than min, so ensure the ratio is never below 1.
 				const float dodgeVelRatio = 
 				(
 					Settings::fMinDashDodgeSpeedmult == 0.0f ? 
 					2.0f : 
-					Settings::fMaxDashDodgeSpeedmult / Settings::fMinDashDodgeSpeedmult
+					max(1.0f, Settings::fMaxDashDodgeSpeedmult / Settings::fMinDashDodgeSpeedmult)
 				);
 				float maxXYSpeed = dodgeVelRatio;
 				if (isParagliding) 
@@ -512,7 +524,8 @@ namespace ALYSLC
 				}
 				else
 				{
-					dodgeXYSpeed = Util::InterpolateEaseIn(
+					dodgeXYSpeed = Util::InterpolateEaseIn
+					(
 						maxXYSpeed,
 						dashDodgeInitialSpeed,
 						(dashDodgeCompletionRatio - 0.5f) * 2.0f,
@@ -669,8 +682,7 @@ namespace ALYSLC
 		if (auto charController = coopActor->GetCharController())
 		{
 			auto& currentHKPState = charController->context.currentState;
-			// At lower framerates, decrease the gravity mult, since the gravity mult will be active for longer.
-			float gravityMult = (1.0f / (*g_deltaTimeRealTime * 60.0f)) * Settings::fJumpingGravityMult;
+			const uint32_t jumpAscentFramecount = max(1, static_cast<uint32_t>(Settings::fSecsAfterGatherToFall * (1.0f / *g_deltaTimeRealTime) + 0.5f));
 			// Start jump: play gather animation(s) and invert gravity for the player.
 			if (startJump)
 			{
@@ -688,84 +700,94 @@ namespace ALYSLC
 
 				// Plain jump
 				charController->lock.Lock();
-				charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
-				charController->flags.set(RE::CHARACTER_FLAGS::kNoGravityOnGround);
-				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
-				velBeforeJump.quad.m128_f32[2] = havokInitialJumpZVelocity;
-
-				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
-				RE::NiPoint2 velBeforeJumpXY{ velBeforeJump.quad.m128_f32[0], velBeforeJump.quad.m128_f32[1] };
-				RE::NiPoint2 lsVelXY
 				{
-					(
-						GAME_TO_HAVOK * 
-						Settings::fJumpBaseLSDirSpeed * 
-						lsData.normMag * 
-						cosf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
-					),
-					(
-						GAME_TO_HAVOK * 
-						Settings::fJumpBaseLSDirSpeed * 
-						lsData.normMag * 
-						sinf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
-					)
-				};
+					charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
+					charController->context.currentState = RE::hkpCharacterStateType::kInAir;
 
-				// Use LS XY velocity or pre-jump XY velocity, whichever is larger.
-				velBeforeJump = 
-				(
-					velBeforeJumpXY.Length() >= lsVelXY.Length() ? 
-					velBeforeJump : 
-					RE::hkVector4(lsVelXY.x, lsVelXY.y, havokInitialJumpZVelocity, 0.0f)
-				);
-				// Invert gravity and set initial velocity.
-				charController->gravity = -gravityMult;
-				charController->SetLinearVelocityImpl(velBeforeJump);
+					const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+					const bool& lsMoved = lsData.normMag != 0.0f;
+					RE::NiPoint2 velBeforeJumpXY{ velBeforeJump.quad.m128_f32[0], velBeforeJump.quad.m128_f32[1] };
+					RE::NiPoint2 lsVelXY
+					{
+						(
+							GAME_TO_HAVOK *
+							Settings::fJumpBaseLSDirSpeed *
+							lsData.normMag *
+							cosf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
+						),
+						(
+							GAME_TO_HAVOK *
+							Settings::fJumpBaseLSDirSpeed *
+							lsData.normMag *
+							sinf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
+						)
+					};
+
+					// Use LS XY velocity or pre-jump XY velocity, whichever is larger.
+					velBeforeJump =
+					(
+						velBeforeJumpXY.Length() >= lsVelXY.Length() ?
+						RE::hkVector4(velBeforeJumpXY.x, velBeforeJumpXY.y, havokInitialJumpZVelocity, 0.0f) :
+						RE::hkVector4(lsVelXY.x, lsVelXY.y, havokInitialJumpZVelocity, 0.0f)
+					);
+
+					// Invert gravity and set initial velocity.
+					charController->gravity = -Settings::fJumpingGravityMult;
+					charController->SetLinearVelocityImpl(velBeforeJump);
+				}
 				charController->lock.Unlock();
-
 				// Jump has started.
-				p->jumpStartTP = SteadyClock::now();
+				framesSinceStartingJump = 0;
 				isAirborneWhileJumping = true;
 				isFallingWhileJumping = false;
 				sentJumpFallEvent = false;
 				startJump = false;
+				p->jumpStartTP = SteadyClock::now();
+				framesSinceStartingJump++;
 			}
 			else if (isAirborneWhileJumping)
 			{
 				// Abort jump if ragdolling.
-				if (coopActor->IsInRagdollState()) 
+				if (coopActor->IsInRagdollState())
 				{
 					// Reset jump state variables.
 					charController->lock.Lock();
-					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-					charController->flags.reset(RE::CHARACTER_FLAGS::kNoGravityOnGround);
-					charController->gravity = 1.0f;
-					charController->fallStartHeight = 0.0f;
-					charController->fallTime = 0.0f;
+					{
+						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+						charController->gravity = 1.0f;
+						RE::hkVector4 havokPos{};
+						charController->GetPositionImpl(havokPos, false);
+						float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
+						charController->fallStartHeight = zPos;
+						charController->fallTime = 0.0f;
+					}
 					charController->lock.Unlock();
-
 					isAirborneWhileJumping = false;
 					isFallingWhileJumping = false;
 					startJump = false;
 					sentJumpFallEvent = false;
 
 					p->jumpStartTP = SteadyClock::now();
+					framesSinceStartingJump = 0;
 					return;
 				}
 
-				float secsSinceGather = Util::GetElapsedSeconds(p->jumpStartTP);
 				// Handle ascent to peak of the jump at which the player begins to fall.
 				if (!isFallingWhileJumping)
 				{
-					isFallingWhileJumping = secsSinceGather >= Settings::fSecsAfterGatherToFall;
+					isFallingWhileJumping = framesSinceStartingJump >= jumpAscentFramecount;
 					charController->lock.Lock();
-					// Zero gravity at apex.
-					charController->gravity = min
-					(
-						Settings::fJumpingGravityMult,
-						Settings::fJumpingGravityMult * (secsSinceGather / max(0.01f, Settings::fSecsAfterGatherToFall) - 1.0f)
-					);
+					{
+						// Zero gravity at apex.
+						charController->gravity = Util::InterpolateEaseIn
+						(
+							-Settings::fJumpingGravityMult, 0.0f,
+							static_cast<float>(framesSinceStartingJump) / jumpAscentFramecount,
+							2.0f
+						);
+					}
 					charController->lock.Unlock();
+					framesSinceStartingJump++;
 				}
 				else
 				{
@@ -774,56 +796,72 @@ namespace ALYSLC
 					if (!sentJumpFallEvent && !p->pam->isAttacking)
 					{
 						charController->lock.Lock();
-						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-						charController->flags.reset(RE::CHARACTER_FLAGS::kNoGravityOnGround);
+						{
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+							RE::hkVector4 havokPos{};
+							charController->GetPositionImpl(havokPos, false);
+							float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
+							charController->fallStartHeight = zPos;
+							charController->fallTime = 0.0f;
+						}
 						charController->lock.Unlock();
 						coopActor->NotifyAnimationGraph("JumpFall");
 						sentJumpFallEvent = true;
 					}
-
-					// Check if the player has landed.
-					if (charController->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kUnsupported)
+					
+					// Check if the player has landed, reset state, and return early.
+					if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround)
 					{
 						// Reset jump state variables.
 						charController->lock.Lock();
-						charController->gravity = 1.0f;
-						charController->fallStartHeight = 0.0f;
-						charController->fallTime = 0.0f;
+						{
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+							charController->gravity = 1.0f;
+							RE::hkVector4 havokPos{};
+							charController->GetPositionImpl(havokPos, false);
+							float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
+							charController->fallStartHeight = zPos;
+							charController->fallTime = 0.0f;
+						}
 						charController->lock.Unlock();
 
 						isAirborneWhileJumping = false;
 						isFallingWhileJumping = false;
 						startJump = false;
 
-						// Update jump start TP on landing.
-						p->jumpStartTP = SteadyClock::now();
-
 						// Have to manually trigger landing animation to minimize occurrences of the hovering bug.
 						coopActor->NotifyAnimationGraph("JumpLand");
-						charController->flags.set(RE::CHARACTER_FLAGS::kCheckSupport, RE::CHARACTER_FLAGS::kFloatLand, RE::CHARACTER_FLAGS::kJumping);
+						//charController->flags.set(RE::CHARACTER_FLAGS::kCheckSupport, RE::CHARACTER_FLAGS::kFloatLand, RE::CHARACTER_FLAGS::kJumping);
 						charController->lock.Lock();
-						charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
-						charController->surfaceInfo.surfaceDistanceExcess = 0.0f;
-						charController->surfaceInfo.supportedState = RE::hkpSurfaceInfo::SupportedState::kSupported;
+						{
+							charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
+							charController->surfaceInfo.surfaceDistanceExcess = 0.0f;
+							charController->surfaceInfo.supportedState = RE::hkpSurfaceInfo::SupportedState::kSupported;
+						}
 						charController->lock.Unlock();
+						// Update jump start TP on landing.
+						p->jumpStartTP = SteadyClock::now();
+						framesSinceStartingJump = 0;
+
+						return;
 					}
-					else
+
+					// Continue falling.
+					charController->lock.Lock();
 					{
-						charController->lock.Lock();
-						charController->gravity = min
+						charController->gravity = Util::InterpolateEaseIn
 						(
-							Settings::fJumpingGravityMult, 
-							Settings::fJumpingGravityMult * (secsSinceGather / max(0.01f, Settings::fSecsAfterGatherToFall) - 1.0f)
+							0.0f, Settings::fJumpingGravityMult,
+							(
+								max(framesSinceStartingJump - jumpAscentFramecount, 0.0f) /
+								jumpAscentFramecount),
+							2.0f
 						);
-						charController->lock.Unlock();
 					}
+					charController->lock.Unlock();
+					framesSinceStartingJump++;
 				}
 			}
-
-			// REMOVE when done debugging.
-			/*ALYSLC::Log("[MM] PerformJump: {}: base/set grav mult: {}, {}. Start jump: {}, airborne: {}, seconds since airborne: {}",
-				coopActor->GetName(), gravityMult, charController->gravity,
-				startJump, isAirborneWhileJumping, startJump ? 0.0f : Util::GetElapsedSeconds(p->jumpStartTP));*/
 		}
 	}
 
@@ -1873,6 +1911,12 @@ namespace ALYSLC
 			// to expedite deceleration.
 			ClearKeepOffsetFromActor();
 			SetDontMove(true);
+			movementActor->data.angle.z += Util::InterpolateSmootherStep
+			(
+				0.0f,
+				Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
+				0.25f
+			);
 		}
 		else if ((!isParagliding) && (shouldStopMoving || lsMag == 0.0f))
 		{
@@ -1892,13 +1936,6 @@ namespace ALYSLC
 				// Looks weird. Do not like.
 				SetDontMove(false);
 				ClearKeepOffsetFromActor();
-				// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
-				movementActor->data.angle.z += Util::InterpolateSmootherStep
-				(
-					0.0f,
-					Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
-					0.25f
-				);
 			}
 			else
 			{
@@ -1906,6 +1943,14 @@ namespace ALYSLC
 				SetDontMove(false);
 				ClearKeepOffsetFromActor();
 			}
+
+			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
+			movementActor->data.angle.z += Util::InterpolateSmootherStep
+			(
+				0.0f,
+				Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
+				0.25f
+			);
 		}
 		else
 		{
@@ -2243,11 +2288,11 @@ namespace ALYSLC
 
 		// Prevent cached spinal node local rotations from being restored when aim pitch is reset
 		// or when no manual corrections were made.
-		bool shouldResetNodeRotations = shouldResetAimPitch || resetAimPitchIfNotAdjusted;
-		if (shouldResetNodeRotations)
+		bool shouldResetAimPitch = shouldResetAimAndBody || resetAimPitchIfNotAdjusted;
+		if (shouldResetAimPitch)
 		{
 			// Clear out all previously set node target rotations, preventing blending in to the cleared values.
-			if (shouldResetAimPitch) 
+			if (shouldResetAimAndBody) 
 			{
 				std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
 				if (lock)
@@ -2256,7 +2301,6 @@ namespace ALYSLC
 				}
 			}
 
-			// Tip upward slightly when swimming.
 			if (adjustAimPitchToFaceTarget)
 			{
 				auto pitchDiff = Util::NormalizeAngToPi(pitchToTarget - aimPitch);
@@ -2271,12 +2315,14 @@ namespace ALYSLC
 			}
 			else
 			{
-				aimPitch = 0.0f; 
+				// Tip upward slightly when swimming to prevent players 
+				// from sinking while swimming with the reset aim pitch.
+				aimPitch = coopActor->IsSwimming() ? -PI / 24.0f : 0.0f; 
 			}
 
 			// Indicate that aim pitch was reset and is no longer manually adjusted.
 			aimPitchManuallyAdjusted = aimPitchAdjusted = false;
-			shouldResetAimPitch = false;
+			shouldResetAimAndBody = false;
 		}
 
 		// Set the aim pitch position after modifying the aim pitch if the player is not transformed.
@@ -2652,21 +2698,19 @@ namespace ALYSLC
 			{
 				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
 				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleased
+				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
 			};
 			// Rotate the torso throughout the attack animation's duration when not attacking with a 2H ranged weapon.
 			bool isAttackingWithoutRangedWeap = !p->em->Has2HRangedWeapEquipped() && p->pam->isAttacking;
 			blendIn = 
 			{
 				(
-					//inDialogueOrNotControllingMenus &&
 					!p1AimActive &&
 					a_data->rotationModified &&
 					coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
 					!p->IsAwaitingRefresh() &&
 					!coopActor->actorState2.staggered
-				) &&
+				) /*&&
 				(
 					!coopActor->IsWeaponDrawn() ||
 					isRangedWeaponPrimed || 
@@ -2676,8 +2720,10 @@ namespace ALYSLC
 					p->pam->isInCastingAnim ||
 					p->pam->usingLHStaff ||
 					p->pam->usingRHStaff ||
+					p->pam->isVoiceCasting ||
+					p->pam->IsPerforming(InputAction::kQuickSlotCast) ||
 					p->mm->shouldFaceTarget
-				)
+				)*/
 			};
 
 			if (blendIn)
@@ -3421,13 +3467,6 @@ namespace ALYSLC
 		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
 		auto weaponNode = coopActor->loadedData->data3D->GetObjectByName(strings->weapon);
 		auto rootNode = coopActor->loadedData->data3D->GetObjectByName(strings->npcRoot);
-		bool isAimingWithRangedWeapon = 
-		{
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn || 
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing ||
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleased
-		};
 		bool isMounted = coopActor->IsOnMount();
 		// Rotation angle inputs to set if adjusted.
 		float pitch = 0.0f;
@@ -3484,12 +3523,28 @@ namespace ALYSLC
 			auto worldYAxis = RE::NiPoint3(worldRot * forward);
 			auto worldZAxis = RE::NiPoint3(worldRot * up);
 
-			if ((p->pam->IsPerforming(InputAction::kAdjustAimPitch)) || 
-				(isMounted && p->pam->isRangedWeaponAttack))
+			bool isRangedWeaponPrimed =
 			{
-				// Set torso target rotation as modified.
-				torsoData->rotationModified = true;
-			}
+				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
+				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
+				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
+			};
+			// Rotate the torso throughout the attack animation's duration when not attacking with a 2H ranged weapon.
+			bool isAttackingWithoutRangedWeap = !p->em->Has2HRangedWeapEquipped() && p->pam->isAttacking;
+			bool isAiming = 
+			{
+				isAttackingWithoutRangedWeap ||
+				isRangedWeaponPrimed ||
+				p->pam->isBlocking ||
+				p->pam->isBashing ||
+				p->pam->isInCastingAnim ||
+				p->pam->usingLHStaff->value == 1.0f ||
+				p->pam->usingRHStaff->value == 1.0f ||
+				p->pam->isVoiceCasting ||
+				p->pam->IsPerforming(InputAction::kQuickSlotCast)
+			};
+
+			torsoData->rotationModified = (aimPitchAdjusted) && (isAiming || !coopActor->IsWeaponDrawn() || isMounted);
 
 			// Aim pitch is modified externally and drawing/sheathing weapons
 			// requires recalculation of node pitch/yaw/roll angles based on the player's adjusted aim pitch,
@@ -3506,55 +3561,6 @@ namespace ALYSLC
 			yaw = Util::NormalizeAngToPi(Util::GetYawBetweenPositions(RE::NiPoint3(), localForwardXY));
 
 			bool isSpinalRoot = nodeNameHash == Hash(GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[0]);
-			if (isSpinalRoot)
-			{
-				/*
-				float yawDiff = 0.0f;
-				float nodeHeading = Util::DirectionToGameAngYaw(worldYAxis);
-				if (bool weaponDrawn = coopActor->IsWeaponDrawn(); weaponDrawn && weaponNode && isAimingWithRangedWeapon)
-				{
-					auto playerFacingDir = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(playerFacingAng));
-					// Difference between facing and attacking angles.
-					yawDiff = Util::NormalizeAngToPi(Util::DirectionToGameAngYaw(playerFacingDir) - nodeHeading);
-					float aimHeading = 0.0f;
-					coopActor->GetGraphVariableFloat("AimHeadingCurrent", aimHeading);
-					yawDiff = Util::NormalizeAngToPi(Util::NormalizeAng0To2Pi(coopActor->data.angle.z + aimHeading) - nodeHeading);
-					// Aim straight up with the arrow node when player heading and arrow node directions are oriented at > 90 degrees.
-					// Prevents stuttering when adjusting pitch near this endpoint.
-					// Stuttering reason: player heading direction flips 180 degrees when the aim pitch goes above PI / 2 in magnitude.
-					// Since we rotate the player so that their heading direction faces their target,
-					// they will turn 180 degrees to face the target.
-					if (playerFacingDir.Dot(weaponNode->world.rotate * forward) < 0.0f)
-					{
-						// Identity matrix.
-						weaponNode->world.rotate = RE::NiMatrix3();
-					}
-
-				}
-				else if (coopActor->IsAttacking())
-				{
-					if (shouldFaceTarget || Util::HandleIsValid(p->tm->crosshairRefrHandle))
-					{
-						yawDiff = Util::NormalizeAngToPi(Util::GetYawBetweenPositions(playerAttackSourcePos, p->tm->crosshairWorldPos) - nodeHeading);
-					}
-					else
-					{
-						yawDiff = Util::NormalizeAngToPi(playerFacingAng - nodeHeading);
-					}
-				}
-				else
-				{
-					yawDiff = 0.0f;
-				}
-
-				// The smaller the yaw difference between attacking angle and player facing angle,
-				// the more we rotate along the pitch axis, as opposed to the roll axis.
-				pitchFactor = 1.0f - (fabsf(std::clamp(yawDiff, -PI / 4.0f, PI / 4.0f)) / (PI / 4.0f));
-				*/
-
-				
-			}
-
 			if (i == 0) 
 			{
 				div = 2.0f;
@@ -3578,24 +3584,44 @@ namespace ALYSLC
 			{
 				if (p->em->HasBowEquipped())
 				{
-					pitch = 
-					(
-						coopActor->IsSneaking() ? 
-						0.55f * (clampedAimPitch / div) :
-						(PI / 8.0f) / div
-					);
-					roll = 
-					(
-						coopActor->IsSneaking() ?
-						-0.45f * (clampedAimPitch / div) :
-						-1.0f * (clampedAimPitch / div) 
-					);
-					yaw = 
-					(
-						coopActor->IsSneaking() ?
-						(PI / 10.0f) / div :
-						0.0f
-					);
+					// Enderal.
+					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+					{
+						pitch = 
+						(
+							coopActor->IsSneaking() ? 
+							0.35f * (clampedAimPitch / div) :
+							(PI / 6.0f) / div
+						);
+						roll = 
+						(
+							coopActor->IsSneaking() ?
+							-0.65f * (clampedAimPitch / div) :
+							-1.0f * (clampedAimPitch / div) 
+						);
+						yaw = 
+						(
+							coopActor->IsSneaking() ?
+							(PI / 8.0f) / div :
+							(PI / 24.0f) / div
+						);
+					}
+					else
+					{
+						pitch = 
+						(
+							coopActor->IsSneaking() ? 
+							0.55f * (clampedAimPitch / div) :
+							0.0f
+						);
+						roll = 
+						(
+							coopActor->IsSneaking() ?
+							-0.45f * (clampedAimPitch / div) :
+							-1.0f * (clampedAimPitch / div) 
+						);
+						yaw = (PI / 10.0f) / div;
+					}
 				}
 				else
 				{
@@ -3860,7 +3886,7 @@ namespace ALYSLC
 		if (coopActor->IsSprinting() || (coopActor->IsSwimming() && p->pam->IsPerforming(InputAction::kSprint))) 
 		{
 			// Co-op companion mounts accelerate more slowly for some reason. Scale up speedmult to better match player 1's mount speedmult.
-			speedMult = attackMovMult * baseSpeedMult * Settings::fSprintSpeedMult;
+			speedMult = attackMovMult * baseSpeedMult * Settings::fSprintingMovMult;
 		}
 		else if (isDashDodging || isRequestingDashDodge)
 		{
@@ -3948,6 +3974,7 @@ namespace ALYSLC
 		// Set movement actor (any mount if player is mounted, player actor otherwise).
 		auto mount = p->GetCurrentMount();
 		movementActor = mount && mount.get() ? mount : coopActor;
+		const float movementSpeed = movementActor->DoGetMovementSpeed();
 
 		// Ensure animation sneak state syncs up with actor sneak state.
 		if (!coopActor->IsOnMount() && !coopActor->IsSwimming() && !coopActor->IsFlying() && !isRequestingDashDodge && !isDashDodging)
@@ -3999,7 +4026,19 @@ namespace ALYSLC
 		}
 		else
 		{
-			if (wasGettingUp && knockState == RE::KNOCK_STATE_ENUM::kNormal)
+			// Prevent the player from shooting forward in their facing direction after ragdolling.
+			bool finishedGettingUp = wasGettingUp && knockState == RE::KNOCK_STATE_ENUM::kNormal;
+			// Stop instantly to prevent the player from slowly coming to a halt 
+			// from residual momentum when turning to face a target while attacking/bashing/blocking/casting.
+			bool turnToFaceTargetWhileStopped = 
+			{
+				(!lsMoved && movementSpeed != 0.0f) &&
+				(
+					p->pam->isAttacking || p->pam->isBlocking ||
+					p->pam->isBashing || p->pam->isInCastingAnim
+				)
+			};
+			if (finishedGettingUp || turnToFaceTargetWhileStopped)
 			{
 				p->lastGetupTP = SteadyClock::now();
 				shouldCurtailMomentum = true;
@@ -4009,7 +4048,7 @@ namespace ALYSLC
 		}
 
 		// Freeze the player in place and wait until their reported movement speed is 0.
-		shouldCurtailMomentum &= coopActor->DoGetMovementSpeed() > 0.0f;
+		shouldCurtailMomentum &= movementSpeed > 0.0f;
 
 		if (auto charController = movementActor->GetCharController(); charController)
 		{
@@ -4031,8 +4070,10 @@ namespace ALYSLC
 					{
 						// Reset fall state.
 						charController->lock.Lock();
-						charController->fallStartHeight = 0.0f;
-						charController->fallTime = 0.0f;
+						{
+							charController->fallStartHeight = 0.0f;
+							charController->fallTime = 0.0f;
+						}
 						charController->lock.Unlock();
 					}
 				}
@@ -4058,7 +4099,7 @@ namespace ALYSLC
 						coopActor->NotifyAnimationGraph("SwimStart");
 					}
 
-					shouldResetAimPitch = true;
+					shouldResetAimAndBody = true;
 					isSwimming = true;
 				}
 				else if (isSwimming && !coopActor->IsSwimming())
@@ -4173,10 +4214,9 @@ namespace ALYSLC
 			}
 
 			// Set start or stop movement flags.
-			const float actorMovementSpeed = movementActor->DoGetMovementSpeed();
 			bool isMoving = 
 			{
-				(actorMovementSpeed > 0.0f) &&
+				(movementSpeed > 0.0f) &&
 				(
 					 movementActor->actorState1.movingBack | movementActor->actorState1.movingForward |
 					 movementActor->actorState1.movingLeft | movementActor->actorState1.movingRight |

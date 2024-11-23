@@ -59,13 +59,14 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kCoopMiniGamesMenu - actionIndexOffset] = ConditionFuncs::PlayerCanOpenMenu;
 		_condFuncs[!InputAction::kCoopSummoningMenu - actionIndexOffset] = ConditionFuncs::CoopSummoningMenu;
 
-		// Cycling gear/magic.
+		// Cycling/equipping hotkeyed gear/magic.
 		_condFuncs[!InputAction::kCycleAmmo - actionIndexOffset] =
 		_condFuncs[!InputAction::kCycleSpellLH - actionIndexOffset] =
 		_condFuncs[!InputAction::kCycleSpellRH - actionIndexOffset] =
 		_condFuncs[!InputAction::kCycleVoiceSlotMagic - actionIndexOffset] =
 		_condFuncs[!InputAction::kCycleWeaponLH - actionIndexOffset] =
-		_condFuncs[!InputAction::kCycleWeaponRH - actionIndexOffset] = ConditionFuncs::CycleEquipment;
+		_condFuncs[!InputAction::kCycleWeaponRH - actionIndexOffset] =
+		_condFuncs[!InputAction::kHotkeyEquip - actionIndexOffset] = ConditionFuncs::CycleEquipment;
 
 		_condFuncs[!InputAction::kFaceTarget - actionIndexOffset] = ConditionFuncs::FaceTarget;
 		_condFuncs[!InputAction::kDismount - actionIndexOffset] = ConditionFuncs::Dismount;
@@ -111,7 +112,10 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kTeleportToPlayer - actionIndexOffset] = ConditionFuncs::TeleportToPlayer;
 		
 		// Without conditions:
-		// CycleSpellCategoryLH, CycleSpellCategoryRH, CycleWeaponCategoryLH, CycleWeaponCategoryRH, GrabObject, MoveCrosshair, RotateCam, ZoomCam
+		// CycleSpellCategoryLH, CycleSpellCategoryRH, 
+		// CycleWeaponCategoryLH, CycleWeaponCategoryRH, 
+		// GrabObject, HotkeyEquip,
+		// MoveCrosshair, RotateCam, ZoomCam
 		// clang-format on
 #pragma endregion
 
@@ -134,6 +138,7 @@ namespace ALYSLC
 		_progFuncs[!InputAction::kCycleWeaponLH - actionIndexOffset] = ProgressFuncs::CycleWeaponLH;
 		_progFuncs[!InputAction::kCycleWeaponRH - actionIndexOffset] = ProgressFuncs::CycleWeaponRH;
 		_progFuncs[!InputAction::kGrabObject - actionIndexOffset] = ProgressFuncs::GrabObject;
+		_progFuncs[!InputAction::kHotkeyEquip - actionIndexOffset] = ProgressFuncs::HotkeyEquip;
 		_progFuncs[!InputAction::kQuickSlotCast - actionIndexOffset] = ProgressFuncs::QuickSlotCast;
 		_progFuncs[!InputAction::kShout - actionIndexOffset] = ProgressFuncs::Shout;
 		_progFuncs[!InputAction::kSpecialAction - actionIndexOffset] = ProgressFuncs::SpecialAction;
@@ -204,6 +209,7 @@ namespace ALYSLC
 		_cleanupFuncs[!InputAction::kCycleWeaponLH - actionIndexOffset] = CleanupFuncs::CycleWeaponLH;
 		_cleanupFuncs[!InputAction::kCycleWeaponRH - actionIndexOffset] = CleanupFuncs::CycleWeaponRH;
 		_cleanupFuncs[!InputAction::kGrabObject - actionIndexOffset] = CleanupFuncs::GrabObject;
+		_cleanupFuncs[!InputAction::kHotkeyEquip - actionIndexOffset] = CleanupFuncs::HotkeyEquip;
 		_cleanupFuncs[!InputAction::kQuickSlotCast - actionIndexOffset] = CleanupFuncs::QuickSlotCast;
 		_cleanupFuncs[!InputAction::kRotateCam - actionIndexOffset] = CleanupFuncs::RotateCam;
 		_cleanupFuncs[!InputAction::kShout - actionIndexOffset] = CleanupFuncs::Shout;
@@ -833,7 +839,7 @@ namespace ALYSLC
 						// Use quick slot item if it is equipped.
 						pam->reqSpecialAction = SpecialActionType::kQuickItem;
 					}
-					else if (em->IsUnarmed() || em->Has2HMeleeWeapEquipped() || em->Has2HRangedWeapEquipped() || (em->HasRHMeleeWeapEquipped() && !em->HasLHSpellEquipped()))
+					else if ((em->IsUnarmed() || em->Has2HMeleeWeapEquipped() || em->Has2HRangedWeapEquipped()) || em->HasRHMeleeWeapEquipped())
 					{
 						// Bash if unarmed or if a 2H weapon is equipped or if the RH contains a weapon while the LH is empty.
 						pam->reqSpecialAction = SpecialActionType::kBash;
@@ -890,10 +896,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Must be moving/paragliding and cannot be dash dodging//ragdolled without M.A.R.F.
+				// Must be moving/paragliding, not attacking/bashing/blocking/casting,
+				// and cannot be dash dodging//ragdolled without M.A.R.F.
 				canPerform =  
 				(
 					(a_p->mm->lsMoved || a_p->mm->isParagliding) &&
+					(!a_p->pam->isJumping) &&
+					(!a_p->pam->isAttacking && !a_p->pam->isBashing && !a_p->pam->isBlocking && !a_p->pam->isInCastingAnim) && 
 					(!a_p->mm->isDashDodging) &&
 					(!a_p->coopActor->IsInRagdollState() || a_p->tm->isMARFing)
 				);
@@ -1165,6 +1174,21 @@ namespace ALYSLC
 			return paState.perfStage == PerfStage::kStarted && paState.secsPerformed == 0.0f;
 		}
 
+		void BashInstant(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			bool wasBlocking = a_p->coopActor->IsBlocking();
+			a_p->coopActor->NotifyAnimationGraph("attackStop");
+			a_p->coopActor->NotifyAnimationGraph("blockStart");
+			// 'BowBash' triggers the normal bash animation,
+			// whereas the 'BashStart' idle does not (fails conditions).
+			Util::PlayIdle("BowBash", a_p->coopActor.get());
+			// Send block start/stop animation events.
+			if (wasBlocking)
+			{
+				a_p->coopActor->NotifyAnimationGraph("blockStart");
+			}
+		}
+
 		void BlockInstant(const std::shared_ptr<CoopPlayer>& a_p, bool&& a_shouldStart)
 		{
 			// Send block start/stop animation events.
@@ -1302,7 +1326,7 @@ namespace ALYSLC
 					a_p->pam->paStatesList[!InputAction::kCastRH - !InputAction::kFirstAction].avCost = costRH;
 					// Must be able to cast both spells at once, so the magicka check is the sum of both spells' costs.
 					cost = costLH + costRH;
-					canPerform = pam->currentMagicka - cost > Settings::fAVZeroTolerance;
+					canPerform = pam->currentMagicka - cost > 0.0f;
 				}
 				else if (a_p->em->HasLHStaffEquipped() && a_p->em->HasRHStaffEquipped())
 				{
@@ -1319,10 +1343,28 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kDodge:
 			{
-				// WIP: Custom dodge cost that factors current equipped weight and the player's carryweight.
-				float carryWeightRatio = a_p->em->GetWornWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight);
-				// Minimum of one-tenth of base stamina and max of all of the player's base stamina.
-				cost = a_p->pam->baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
+				// WIP: Custom dodge cost that factors LS displacement, current equipped weight, and the player's carryweight.
+				float carryWeightRatioMult = 
+				(
+					0.1f +
+					min
+					(
+						0.9f, 
+						sqrtf
+						(
+							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
+						)
+					)
+				);
+				// Dash dodging costs more when the LS is displaced further from center (longer dodge).
+				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
+				float dashDodgeCommitmentMult = 
+				(
+					lsMag == 0.0f || ALYSLC::TKDodgeCompat::g_tkDodgeInstalled ? 
+					1.0f : 
+					lsMag
+				);
+				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
 
 				// Set Dodge action's cost.
 				a_p->pam->paStatesList[!InputAction::kDodge - !InputAction::kFirstAction].avCost = cost;
@@ -1340,7 +1382,7 @@ namespace ALYSLC
 					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
 					// Same spells in both hands, same cost.
 					cost = 2.8f * lhSpell->CalculateMagickaCost(a_p->coopActor.get());
-					canPerform = pam->currentMagicka - cost > Settings::fAVZeroTolerance;
+					canPerform = pam->currentMagicka - cost > 0.0f;
 				}
 
 				break;
@@ -1357,7 +1399,7 @@ namespace ALYSLC
 
 					// Set QuickSlotCast action's cost.
 					a_p->pam->paStatesList[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avCost = cost;
-					canPerform = pam->currentMagicka - cost > Settings::fAVZeroTolerance;
+					canPerform = pam->currentMagicka - cost > 0.0f;
 				}
 
 				break;
@@ -1723,7 +1765,7 @@ namespace ALYSLC
 					costToPerform *= *g_deltaTimeRealTime;
 				}
 
-				canPerform = a_p->isInGodMode || pam->currentMagicka - costToPerform > Settings::fAVZeroTolerance;
+				canPerform = a_p->isInGodMode || pam->currentMagicka - costToPerform > 0.0f;
 			}
 			else
 			{
@@ -1913,6 +1955,515 @@ namespace ALYSLC
 			});
 		}
 
+		void EquipHotkeyedForm(const std::shared_ptr<CoopPlayer>& a_p, RE::TESForm* a_hotkeyedForm, bool&& a_rightHand)
+		{
+			// Equip the previously selected hotkeyed form to the LH/RH equip
+			// slot, if supported; otherwise, equip to the default corresponding slot,
+			// or inform the player that the item is not equipable in the RH or default slots
+			// (eg. shields/torches in the RH).
+
+			// Refresh favorited forms, if necessary.
+			// Refresh for P1 if the hotkey form is not favorited anymore.
+			// Refresh for companion players if the form is physical and not favorited anymore.
+			bool refreshFavorites = 
+			{
+				(a_hotkeyedForm) &&
+				(
+					(
+						a_p->isPlayer1 &&
+						!Util::IsFavorited(a_p->coopActor.get(), a_hotkeyedForm)
+					) ||
+					(
+						!a_p->isPlayer1 &&
+						a_hotkeyedForm->IsNot(RE::FormType::Spell, RE::FormType::Shout) &&
+						!Util::IsFavorited(a_p->coopActor.get(), a_hotkeyedForm)
+					)
+				)
+			};
+			if (refreshFavorites) 
+			{
+				ALYSLC::Log("[PAFH] {} is no longer favorited by {}. Refreshing all favorited forms data.",
+					a_hotkeyedForm->GetName(),
+					a_p->coopActor->GetName());
+
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format("P{}: {} is no longer favorited. Refreshing hotkeys.", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+					{
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kHotkeySelection, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+				);
+
+				// Do not update magical favorites for companion player
+				// because P1's magical favorites are active during regular gameplay.
+				a_p->em->UpdateFavoritedFormsLists(!a_p->isPlayer1);
+				return;
+			}
+
+			if (a_rightHand) 
+			{
+				if (a_hotkeyedForm)
+				{
+					// Equip the form in the appropriate slot.
+					RE::BGSEquipSlot* slot = glob.rightHandEquipSlot;
+					if (auto weap = a_hotkeyedForm->As<RE::TESObjectWEAP>(); weap)
+					{
+						if (weap->equipSlot == glob.bothHandsEquipSlot) 
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in both hands", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.bothHandsEquipSlot;
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in the right hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kRightHand, nullptr, 1, slot);
+					}
+					else if (auto spell = a_hotkeyedForm->As<RE::SpellItem>(); spell)
+					{
+						if (spell->equipSlot == glob.voiceEquipSlot) 
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} to the voice slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.voiceEquipSlot;
+						}
+						else if (spell->equipSlot == glob.bothHandsEquipSlot)
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in both hands", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection,
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.bothHandsEquipSlot;
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in the right hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+
+						a_p->em->EquipSpell(a_hotkeyedForm, EquipIndex::kRightHand, slot);
+					}
+					else if (auto shout = a_hotkeyedForm->As<RE::TESShout>(); shout)
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} to the voice slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipShout(shout);
+					}
+					else if (a_hotkeyedForm->IsArmor())
+					{
+						// Cannot equip shield in the right hand.
+						if (a_hotkeyedForm->As<RE::TESObjectARMO>()->IsShield())
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Cannot equip {} in the right hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							return;
+						}
+
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} to an armor slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipArmor(a_hotkeyedForm);
+					}
+					else if (a_hotkeyedForm->As<RE::TESObjectLIGH>())
+					{
+						// Cannot equip torch in the right hand.
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Cannot equip {} in the right hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						return;
+					}
+					else if (auto magicItem = a_hotkeyedForm->As<RE::MagicItem>(); magicItem && magicItem->IsFood())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Consuming {}", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kRightHand, nullptr, 1);
+					}
+					else if (a_hotkeyedForm->IsAmmo())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} as ammo", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipAmmo(a_hotkeyedForm);
+					}
+					else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem && a_hotkeyedForm->As<RE::TESBoundObject>())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {}", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+
+						aem->EquipObject(a_p->coopActor.get(), a_hotkeyedForm->As<RE::TESBoundObject>());
+					}
+				} 
+				else if (auto rhForm = a_p->em->equippedForms[!EquipIndex::kRightHand]; rhForm)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequipping {} in the right hand", a_p->playerID + 1, rhForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kHotkeySelection,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kRightHand);
+				}
+			}
+			else
+			{
+				if (a_hotkeyedForm)
+				{
+					// Equip the form in the appropriate slot.
+					RE::BGSEquipSlot* slot = glob.leftHandEquipSlot;
+					if (auto weap = a_hotkeyedForm->As<RE::TESObjectWEAP>(); weap)
+					{
+						if (weap->equipSlot == glob.bothHandsEquipSlot) 
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in both hands", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.bothHandsEquipSlot;
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in the left hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, nullptr, 1, slot);
+					}
+					else if (auto spell = a_hotkeyedForm->As<RE::SpellItem>(); spell)
+					{
+						if (spell->equipSlot == glob.voiceEquipSlot) 
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} to the voice slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection,
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.voiceEquipSlot;
+						}
+						else if (spell->equipSlot == glob.bothHandsEquipSlot)
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in both hands", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone,
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+							slot = glob.bothHandsEquipSlot;
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in the left hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+
+						a_p->em->EquipSpell(a_hotkeyedForm, EquipIndex::kLeftHand, slot);
+					}
+					else if (auto shout = a_hotkeyedForm->As<RE::TESShout>(); shout)
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} to the voice slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection,
+								CrosshairMessageType::kStealthState,
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipShout(shout);
+					}
+					else if (a_hotkeyedForm->IsArmor())
+					{
+						if (a_hotkeyedForm->As<RE::TESObjectARMO>()->IsShield())
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} in the left hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kEquippedItem,
+								fmt::format("P{}: Equipping {} to an armor slot", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+								{
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kHotkeySelection,
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+							);
+						}
+
+						a_p->em->EquipArmor(a_hotkeyedForm);
+					}
+					else if (a_hotkeyedForm->As<RE::TESObjectLIGH>())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} in the left hand", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, nullptr, 1);
+					}
+					else if (auto magicItem = a_hotkeyedForm->As<RE::MagicItem>(); magicItem && magicItem->IsFood())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Consuming {}", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, nullptr, 1);
+					}
+					else if (a_hotkeyedForm->IsAmmo())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {} as ammo", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+						a_p->em->EquipAmmo(a_hotkeyedForm);
+					}
+					else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem && a_hotkeyedForm->As<RE::TESBoundObject>())
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format("P{}: Equipping {}", a_p->playerID + 1, a_hotkeyedForm->GetName()),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kHotkeySelection, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+						);
+
+						aem->EquipObject(a_p->coopActor.get(), a_hotkeyedForm->As<RE::TESBoundObject>());
+					}
+				}
+				else if (auto lhForm = a_p->em->equippedForms[!EquipIndex::kLeftHand]; lhForm)
+				{
+					// Unequip the current hand form if no form was hotkeyed.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format("P{}: Unequipping {} in the left hand", a_p->playerID + 1, lhForm->GetName()),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kHotkeySelection, 
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f
+					);
+					a_p->em->UnequipFormAtIndex(EquipIndex::kLeftHand);
+				}
+			}
+		}
+
 		const float GetPAHealthCost(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action)
 		{
 			// Get health cost for reviving another player.
@@ -2051,6 +2602,56 @@ namespace ALYSLC
 			}
 
 			return cost;
+		}
+
+		int32_t GetSelectedHotkeySlot(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Choose hotkey slot based on RS orientation.
+
+			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			// Must be moving RS.
+			if (rsData.normMag == 0.0f)
+			{
+				return -1;
+			}
+
+			float realRSAng = atan2f(rsData.yComp, rsData.xComp);
+			realRSAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(realRSAng));
+			int32_t hotkeySlot = -1;
+			if (realRSAng < PI / 8.0f || realRSAng > 15.0f * PI / 8.0f)
+			{
+				hotkeySlot = 0;
+			}
+			else if (realRSAng < 3.0f * PI / 8.0f)
+			{
+				hotkeySlot = 1;
+			}
+			else if (realRSAng < 5.0f * PI / 8.0f)
+			{
+				hotkeySlot = 2;
+			}
+			else if (realRSAng < 7.0f * PI / 8.0f)
+			{
+				hotkeySlot = 3;
+			}
+			else if (realRSAng < 9.0f * PI / 8.0f)
+			{
+				hotkeySlot = 4;
+			}
+			else if (realRSAng < 11.0f * PI / 8.0f)
+			{
+				hotkeySlot = 5;
+			}
+			else if (realRSAng < 13.0f * PI / 8.0f)
+			{
+				hotkeySlot = 6;
+			}
+			else
+			{
+				hotkeySlot = 7;
+			}
+
+			return hotkeySlot;
 		}
 
 		void HandleBoundWeaponEquip(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action)
@@ -4085,6 +4686,71 @@ namespace ALYSLC
 			}
 		}
 
+		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Choose hotkey slot based on RS orientation,
+			// then check the slot for an valid form to cache before equipping.
+			// Update crosshair text to inform the player of which form 
+			// they are about to equip when releasing the bind.
+
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kHotkeyEquip)) 
+			{
+				a_p->em->lastChosenHotkeyedForm = nullptr;
+			}
+
+			RE::TESForm* selectedHotkeyedForm = nullptr;
+			auto hotkeySlot = HelperFuncs::GetSelectedHotkeySlot(a_p);
+			if (hotkeySlot == -1)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kHotkeySelection,
+					fmt::format("P{}: Invalid Hotkey ({})", a_p->playerID + 1, hotkeySlot + 1),
+					{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
+			if (selectedHotkeyedForm = a_p->em->hotkeyedForms[hotkeySlot]; selectedHotkeyedForm)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kHotkeySelection,
+					fmt::format("P{}: Hotkey ({}): {}", a_p->playerID + 1, hotkeySlot + 1, selectedHotkeyedForm->GetName()),
+					{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			else
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kHotkeySelection,
+					fmt::format("P{}: Hotkey ({}): NONE", a_p->playerID + 1, hotkeySlot + 1),
+					{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+
+			// Update last chosen hotkeyed form.
+			a_p->em->lastChosenHotkeyedForm = selectedHotkeyedForm;
+
+			// First, check if the 'AttackRH'/'AttackLH' bind's composing inputs were just pressed,
+			// which indicates that the player wishes to equip the selected hotkeyed form into a hand slot.
+			//
+			// Then, if the attack bind was just pressed, attempt to equip
+			// the previously selected hotkeyed form to the hand slot.
+			if (a_p->pam->GetPlayerActionInputJustReleased(InputAction::kAttackRH))
+			{
+				HelperFuncs::EquipHotkeyedForm(a_p, a_p->em->lastChosenHotkeyedForm, true);
+			}
+			else if (a_p->pam->GetPlayerActionInputJustReleased(InputAction::kAttackLH))
+			{
+				HelperFuncs::EquipHotkeyedForm(a_p, a_p->em->lastChosenHotkeyedForm, false);
+			}
+		}
+
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cast QS spell if one is equipped, the player's instant caster is available,
@@ -4362,7 +5028,7 @@ namespace ALYSLC
 						HelperFuncs::LootAllItemsFromCorpse(a_p, activationRefrPtr);
 						a_p->tm->SetCrosshairMessageRequest(
 							CrosshairMessageType::kActivationInfo,
-							fmt::format("P{}: Looted all objects from '{}'", a_p->playerID + 1, activationRefrPtr->GetName()),
+							fmt::format("P{}: Looted everything from '{}'", a_p->playerID + 1, activationRefrPtr->GetName()),
 							{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -4373,7 +5039,7 @@ namespace ALYSLC
 						HelperFuncs::LootAllItemsFromContainer(a_p, activationRefrPtr);
 						a_p->tm->SetCrosshairMessageRequest(
 							CrosshairMessageType::kActivationInfo,
-							fmt::format("P{}: Looted all objects from container '{}'", a_p->playerID + 1, activationRefrPtr->GetName()),
+							fmt::format("P{}: Looted everything from container '{}'", a_p->playerID + 1, activationRefrPtr->GetName()),
 							{ CrosshairMessageType::kNone, CrosshairMessageType::kStealthState, CrosshairMessageType::kTargetSelection },
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
@@ -4821,7 +5487,7 @@ namespace ALYSLC
 			// the mod's speedmult dodge or any installed custom dodge mod.
 			// TKDodge is partially supported (I-frames do not trigger as of now).
 			
-			if (ALYSLC::Settings::bUseDashDodgeSystem) 
+			if (Settings::bUseDashDodgeSystem) 
 			{
 				// Signal movement manager to dash dodge.
 				a_p->mm->isRequestingDashDodge = true;
@@ -5107,9 +5773,9 @@ namespace ALYSLC
 
 		void ResetAim(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Signal the movement manager to reset this player's aim pitch.
+			// Signal the movement manager to reset this player's aim pitch and node rotations.
 
-			a_p->mm->shouldResetAimPitch = true;
+			a_p->mm->shouldResetAimAndBody = true;
 		}
 
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p)
@@ -5416,7 +6082,14 @@ namespace ALYSLC
 				{
 					a_p->taskRunner->AddTask(
 						[otherPlayer, a_p]() 
-						{ 
+						{
+							ALYSLC::Log("[PAFH] PreStartTask: {}: Target P pos: ({}, {}, {}) in cell {}, {} pos: ({}, {}, {}) in cell {}.",
+								otherPlayer->GetName(),
+								otherPlayer->data.location.x, otherPlayer->data.location.y, otherPlayer->data.location.z,
+								otherPlayer->GetParentCell() ? otherPlayer->GetParentCell()->GetName() : "NONE",
+								a_p->coopActor->GetName(),
+								a_p->coopActor->data.location.x, a_p->coopActor->data.location.y, a_p->coopActor->data.location.z,
+								a_p->coopActor->GetParentCell() ? a_p->coopActor->GetParentCell()->GetName() : "NONE");
 							a_p->TeleportTask(otherPlayer->GetHandle()); 
 						}
 					);
@@ -6647,6 +7320,12 @@ namespace ALYSLC
 			}
 		}
 
+		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Nothing to do on release.
+			return;
+		}
+
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Stop casting quick slot spell, if the player has one equipped.
@@ -6771,7 +7450,7 @@ namespace ALYSLC
 			else if (reqAction == SpecialActionType::kBash)
 			{
 				// Start bashing on release.
-				CleanupFuncs::Bash(a_p);
+				HelperFuncs::BashInstant(a_p);
 			}
 			else if (reqAction == SpecialActionType::kTransformation)
 			{

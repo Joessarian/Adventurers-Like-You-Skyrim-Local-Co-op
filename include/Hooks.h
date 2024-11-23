@@ -93,7 +93,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Process1(RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2);	 // 16		 // 1C
+			static void Process1(RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2);	 // 16
 			static inline REL::Relocation<decltype(Process1)> _Process1;
 		};
 
@@ -103,8 +103,8 @@ namespace ALYSLC
 		public:
 			static void InstallHooks()
 			{
-				REL::Relocation<uintptr_t> vtbl2{ RE::VTABLE_BSMultiBound[0] };
-				_QWithinPoint = vtbl2.write_vfunc(0x25, QWithinPoint);
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BSMultiBound[0] };
+				_QWithinPoint = vtbl.write_vfunc(0x25, QWithinPoint);
 				logger::info("[BSMultiBound Hook] Installed QWithinPoint() hook.");
 			}
 
@@ -112,7 +112,6 @@ namespace ALYSLC
 			static bool QWithinPoint(RE::BSMultiBound* a_this, const RE::NiPoint3& a_pos);	// 25
 			static inline REL::Relocation<decltype(QWithinPoint)> _QWithinPoint;
 		};
-
 
 		// [Character Hooks]
 		class CharacterHooks
@@ -139,13 +138,13 @@ namespace ALYSLC
 			}
 
 		private:
-			static float CheckClampDamageModifier(RE::Character* a_this, RE::ActorValue a_av, float a_delta);	// 127
-			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);								// A6
-			static void HandleHealthDamage(RE::Character* a_this, RE::Actor* a_attacker, float a_damage);		// 104
-			static void ModifyAnimationUpdateData(RE::Character* a_this, RE::BSAnimationUpdateData& a_data);	// 79
+			static float CheckClampDamageModifier(RE::Character* a_this, RE::ActorValue a_av, float a_delta);					// 127
+			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);												// A6
+			static void HandleHealthDamage(RE::Character* a_this, RE::Actor* a_attacker, float a_damage);						// 104
+			static void ModifyAnimationUpdateData(RE::Character* a_this, RE::BSAnimationUpdateData& a_data);					// 79
 			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);	// 01
-			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);								// 8A
-			static void Update(RE::Character* a_this, float a_delta);											// AD
+			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);												// 8A
+			static void Update(RE::Character* a_this, float a_delta);															// AD
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> _CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
 			static inline REL::Relocation<decltype(HandleHealthDamage)> _HandleHealthDamage;
@@ -154,7 +153,6 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(Update)> _Update;
 		};
-
 
 		// [Melee Hooks]
 		// Credits to dTry:
@@ -175,7 +173,6 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ProcessHit)> _ProcessHit;  //140626400
 		};
 
-
 		// [MenuControls Hooks]
 		class MenuControlsHooks
 		{
@@ -193,9 +190,14 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 
 			// Check if the correct binds were pressed to open the summoning or debug menus.
-			static void CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent);
+			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			static bool CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent);
+			// Check if P1 is in the Favorites Menu and is trying to hotkey an entry.
+			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			static bool CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent);
 			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
-			static void CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent);
+			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			static bool CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent);
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.
@@ -210,7 +212,7 @@ namespace ALYSLC
 			static inline bool debugMenuTriggered;
 			// Should the Pause/Wait menu-triggering input event be ignored while another menu is opened?
 			static inline bool ignoringPauseWaitEvent;
-			// 'Pause' bind was pressed before 'Wait' bind when attempting to open the co-op summoning menu.
+			// 'Pause'/'Jornal' bind was pressed before 'Wait' bind when attempting to open the co-op summoning menu.
 			static inline bool pauseBindPressedFirst;
 			// Was an attempt made to open the co-op summoning menu?
 			static inline bool summoningMenuTriggered;
@@ -225,16 +227,11 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_NiNode[0] };
 				_UpdateDownwardPass = vtbl.write_vfunc(0x2C, UpdateDownwardPass);
 				logger::info("[NiNode Hook] Installed UpdateDownwardPass() hook.");
-				/*_UpdateWorldData = vtbl.write_vfunc(0x30, UpdateWorldData);
-				logger::info("[NiNode Hook] Installed UpdateWorldData() hook.");*/
 			}
 
 		private:
 			static void UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2);		// 2C
-			static void UpdateWorldData(RE::NiNode* a_this, RE::NiUpdateData* a_data);								// 30
 			static inline REL::Relocation<decltype(UpdateDownwardPass)> _UpdateDownwardPass;
-			static inline REL::Relocation<decltype(UpdateWorldData)> _UpdateWorldData;
-
 
 			// Restore cached node orientation data computed in the havok physics pre-step callback.
 			// For torso and arm node rotation.
@@ -282,13 +279,13 @@ namespace ALYSLC
 			}
 
 		private:
-			static float CheckClampDamageModifier(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta);		  // 127
-			static void DrawWeaponMagicHands(RE::PlayerCharacter* a_this, bool a_draw);									  // A6
-			static void HandleHealthDamage(RE::PlayerCharacter* a_this, RE::Actor* a_attacker, float a_damage);			  // 104
-			static void ModifyAnimationUpdateData(RE::PlayerCharacter* a_this, RE::BSAnimationUpdateData& a_data);		  // 79
-			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);  // 01
-			static void Update(RE::PlayerCharacter* a_this, float a_delta);												  // AD
-			static void UseSkill(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_points, RE::TESForm* a_arg3);  // F7
+			static float CheckClampDamageModifier(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta);				// 127
+			static void DrawWeaponMagicHands(RE::PlayerCharacter* a_this, bool a_draw);											// A6
+			static void HandleHealthDamage(RE::PlayerCharacter* a_this, RE::Actor* a_attacker, float a_damage);					// 104
+			static void ModifyAnimationUpdateData(RE::PlayerCharacter* a_this, RE::BSAnimationUpdateData& a_data);				// 79
+			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);	// 01
+			static void Update(RE::PlayerCharacter* a_this, float a_delta);														// AD
+			static void UseSkill(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_points, RE::TESForm* a_arg3);		// F7
 
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> _CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
@@ -370,10 +367,16 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(GetLinearVelocity)> _Projectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;
 
-			
+			// Adjust projectile trajectory towards computed intercept position or the player's current target.
 			static void DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased);
-			static void GetFiredAtOrByPlayer( const RE::ObjectRefHandle& a_projectileHandle, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut);
+			// Store the firing player's CID in one outparam (-1 if not by a player), 
+			// and true in the other outparam if the projectile was fired at a player.
+			static void GetFiredAtOrByPlayer(const RE::ObjectRefHandle& a_projectileHandle, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut);
+			// Adjust the projectile's trajectory to home in at the player's current target.
+			// Update the velocity through the outparam.
 			static void SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
+			// Guide the projectile along a pre-determined trajectory towards the computed target intercept position.
+			// Update the velocity through the outparam.
 			static void SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
 		};
 
@@ -387,7 +390,6 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<std::uintptr_t> hook1{ RELOCATION_ID(49852, 50784) };  // 84AB90, 876700
-
 				auto& trampoline = SKSE::GetTrampoline();
 				_Update = trampoline.write_call<5>(hook1.address() + OFFSET(0x1A6, 0x1A6), Update);  // AE: 0x1A6
 				logger::info("[TESCamera Hooks] Installed Update() hook.");
@@ -437,7 +439,6 @@ namespace ALYSLC
 		public:
 			static void InstallHooks()
 			{
-				// 
 				// TPCS: Third Person Camera State
 				// BCS: Bleedout Camera State
 				// HCS: Horse Camera State
@@ -532,9 +533,9 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Start(RE::VampireLordEffect* a_this);				// 14
+			static void Start(RE::VampireLordEffect* a_this);		// 14
+			static void Finish(RE::VampireLordEffect* a_this);		// 15
 			static inline REL::Relocation<decltype(Start)> _Start;
-			static void Finish(RE::VampireLordEffect* a_this);				// 15
 			static inline REL::Relocation<decltype(Finish)> _Finish;
 		};
 
@@ -552,9 +553,9 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Start(RE::WerewolfEffect* a_this);  // 14
+			static void Start(RE::WerewolfEffect* a_this);			// 14
+			static void Finish(RE::WerewolfEffect* a_this);			// 15
 			static inline REL::Relocation<decltype(Start)> _Start;
-			static void Finish(RE::WerewolfEffect* a_this);	// 15
 			static inline REL::Relocation<decltype(Finish)> _Finish;
 		};
 
@@ -687,6 +688,22 @@ namespace ALYSLC
 
 		private:
 			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::LoadingMenu* a_this, RE::UIMessage& a_message);	// 04
+			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
+		};
+
+		// [Magic Menu Hooks]
+		class MagicMenuHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MagicMenu[0] };
+				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
+				logger::info("[MagicMenu Hooks] Installed ProcessMessage() hook.");
+			}
+
+		private:
+			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::MagicMenu* a_this, RE::UIMessage& a_message);  // 04
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 

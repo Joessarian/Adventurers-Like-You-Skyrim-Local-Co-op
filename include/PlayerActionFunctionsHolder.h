@@ -34,7 +34,8 @@ namespace ALYSLC
 		{
 			// If not calling a condition function, returns true if the function exists and was called successfully.
 			// If calling a condition function, returns true if the func does not exist (no conditions for the action).
-			// or if the func exists and returns true (conditions hold).
+			// or if the func exists and returns true (conditions held).
+
 			if (a_playerAction == InputAction::kNone)
 			{
 				return false;
@@ -117,7 +118,7 @@ namespace ALYSLC
 		// List of cleanup functions for each action.
 		// Cleanup functions run when at least one of the action's inputs are released,
 		// or if the action was interrupted (and the action does not prevent cleanup on interrupt).
-		std::vector<CleanupFunc>	_cleanupFuncs;
+		std::vector<CleanupFunc> _cleanupFuncs;
 	};
 
 	namespace ConditionFuncs
@@ -178,15 +179,15 @@ namespace ALYSLC
 		bool CycleEquipment(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can open (not item and perks related) menu if no other players are controlling menus already, 
-		// and not changing gear or is part of a non-playable race.
+		// and not changing gear or is transformed.
 		bool PlayerCanOpenMenu(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can open item menu (Favorites, Inventory, Magic) if no other players are controlling menus,
-		// and not transformed or is part of a non-playable race.
+		// and not transformed.
 		bool PlayerCanOpenItemMenu(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can open perks menu (Stats, Tween) if no other players are controlling menus already, 
-		// and not changing gear or is part of a non-playable race.
+		// and not changing gear or is transfromed.
 		// In addition, P1 must be transformed or the requesting player must not be transformed.
 		bool PlayerCanOpenPerksMenu(const std::shared_ptr<CoopPlayer>& a_p);
 	};
@@ -196,11 +197,14 @@ namespace ALYSLC
 		// Returns true if the action has just started (condition check passed, input(s) just pressed).
 		const bool ActionJustStarted(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
+		// Play idle to instantly bash, even in cases where the player cannot normally bash.
+		void BashInstant(const std::shared_ptr<CoopPlayer>& a_p);
+
 		// Send animation event to start/stop blocking.
 		void BlockInstant(const std::shared_ptr<CoopPlayer>& a_p, bool&& a_shouldStart);
 
 		// Returns true if the given cycling action can cycle on hold.
-		// Must have cycle-on-hold enabled as a setting, or must be cycling emotes, which is their default behavior.
+		// Must have cycle-on-hold enabled as a setting, or must be cycling emotes, which is the default behavior.
 		const bool CanCycleOnHold(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
 		// Can the player dual cast their selected spells.
@@ -221,10 +225,16 @@ namespace ALYSLC
 		// Equip bound weapon with task.
 		void EquipBoundWeapon(const std::shared_ptr<CoopPlayer>& a_p, RE::SpellItem* a_boundWeapSpell, RE::TESObjectWEAP* a_boundWeap, RE::BGSEquipSlot* a_slot, RE::MagicCaster* a_caster);
 
+		// Equip the cached hotkeyed item in the left or right hand.
+		void EquipHotkeyedForm(const std::shared_ptr<CoopPlayer>& a_p, RE::TESForm* a_hotkeyedForm, bool&& a_rightHand);
+
 		// Get player action HMS costs.
 		const float GetPAHealthCost(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 		const float GetPAMagickaCost(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 		const float GetPAStaminaCost(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
+
+		// Get the currently selected hotkey slot based on the player's RS orientation.
+		int32_t GetSelectedHotkeySlot(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Co-op companions only. Equip bound weapon into the appropriate hand based on the player action performed.
 		void HandleBoundWeaponEquip(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
@@ -242,21 +252,21 @@ namespace ALYSLC
 		// Have the given player activate the given lootable refr (through P1 or otherwise).
 		void LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr);
 
-		// Open menu corresponding to the given player action by emulating keyboard P1 input.
+		// Open menu corresponding to the given player action by emulating keyboard input for P1.
 		void OpenMenuWithKeyboard(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
-		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind..
+		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
 		void PerformActivationCycling(const std::shared_ptr<CoopPlayer>& a_p);
 
-		// Play or stop currently cycled emote idle.
+		// Play or stop the currently cycled emote idle.
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p);
 
-		// Remove LH/RH casting package from the top of the player's package stack to stop
-		// the companion player from casting.
+		// Remove the LH/RH casting package from the top of the player's package stack 
+		// to stop the companion player from casting in the LH/RH.
 		void RemoveCastingPackage(const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast);
 
 		// Choose and play a killmove idle from the killmove list, if orientation and killmove type conditions hold.
-		// Return true if a killmove was successfully played, false otherwise.
+		// Return true if a killmove was successfully played.
 		bool PlayKillmoveFromList(const std::shared_ptr<CoopPlayer>& a_p, RE::Actor* a_targetActor, const bool& a_isOtherPlayer, const bool& a_hasCharacterSkeleton, const std::vector<RE::TESIdleForm*>& a_killmoveIdlesList);
 
 		// Play a melee power attack animation based on the angular offset between player movement and facing directions.
@@ -282,7 +292,7 @@ namespace ALYSLC
 		// Set up casting package to have a companion player cast a spell in the LH/RH.
 		void SetUpCastingPackage(const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast);
 
-		// Draw and use weapon while holding an attack bind.
+		// Draw and use an equipped weapon while holding an attack bind.
 		void UseWeaponOnHold(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
 
 		// Set activation refr as interactable or not, and set the player's crosshair text to reflect the result.
@@ -308,6 +318,7 @@ namespace ALYSLC
 		void CycleWeaponLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
+		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		void SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
@@ -377,6 +388,7 @@ namespace ALYSLC
 		void CycleWeaponLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
+		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
@@ -384,5 +396,4 @@ namespace ALYSLC
 		void Sprint(const std::shared_ptr<CoopPlayer>& a_p);
 		void ZoomCam(const std::shared_ptr<CoopPlayer>& a_p);
 	}
-
 }

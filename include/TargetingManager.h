@@ -79,7 +79,7 @@ namespace ALYSLC
 				lastUpdateTP = SteadyClock::now();
 			}
 
-			// Update computed motion state for the target.
+			// Compute new motion data for the target actor.
 			void UpdateMotionState(RE::ActorHandle a_targetActorHandle);
 
 			// Targeted actor.
@@ -148,8 +148,7 @@ namespace ALYSLC
 				delayedMessageTypes(a_other.delayedMessageTypes),
 				secsMaxDisplayTime(a_other.secsMaxDisplayTime),
 				hash(a_other.hash)
-			{
-			}
+			{ }
 
 			CrosshairMessage(CrosshairMessage&& a_other) :
 				type(std::move(a_other.type)),
@@ -280,9 +279,6 @@ namespace ALYSLC
 				return *this;
 			}
 
-			// Returns true if the grabbed refr handle is still valid.
-			inline bool IsValid() const noexcept { return refrHandle && refrHandle.get() && refrHandle.get().get(); }
-
 			// Clear out handle and grab time point.
 			inline void Clear()
 			{
@@ -290,9 +286,15 @@ namespace ALYSLC
 				grabTP = std::nullopt;
 			}
 
+			// Returns true if the grabbed refr handle is still valid.
+			inline bool IsValid() const noexcept
+			{
+				return refrHandle && refrHandle.get() && refrHandle.get().get(); 
+			}
+
 			// Update velocity/positioning of the grabbed refr at the given index. 
-			// Use the first grabbed refr's radius to position subsequent refrs around it.
-			void UpdateGrabbedReference(const std::shared_ptr<CoopPlayer>& a_p, const uint8_t& a_index, const float& a_firstGrabbedReferenceRadius);
+			// Use the first grabbed refr's buffer distance to position subsequent refrs around it.
+			void UpdateGrabbedReference(const std::shared_ptr<CoopPlayer>& a_p, const uint8_t& a_index, const float& a_firstGrabbedReferenceBufferDist);
 
 			// Handle for this grabbed refr.
 			RE::ObjectRefHandle refrHandle;
@@ -495,7 +497,10 @@ namespace ALYSLC
 			}
 
 			// Returns true if this refr handle is still valid.
-			inline bool IsValid() const noexcept { return refrHandle && refrHandle.get() && refrHandle.get().get(); } 
+			inline bool IsValid() const noexcept 
+			{
+				return refrHandle && refrHandle.get() && refrHandle.get().get(); 
+			} 
 
 			// Calculate the target position to throw this refr at in order to hit the player's currently targeted refr.
 			RE::NiPoint3 CalculatePredInterceptPos(const std::shared_ptr<CoopPlayer>& a_p);
@@ -513,10 +518,10 @@ namespace ALYSLC
 			ProjectileTrajType trajType;
 			// Actor handle for the refr's target.
 			RE::ActorHandle targetActorHandle;
-			// Velocity set at release.
-			RE::NiPoint3 releaseVelocity;
 			// Position the refr is released from.
 			RE::NiPoint3 releasePos;
+			// Velocity set at release.
+			RE::NiPoint3 releaseVelocity;
 			// Local position offset for the crosshair world position relative to the target's world position.
 			RE::NiPoint3 targetLocalPosOffset;
 			// Initial end position for the thrown refr's trajectory.
@@ -568,7 +573,9 @@ namespace ALYSLC
 				grabbedRefrInfoList.clear();
 				releasedRefrInfoList.clear();
 
-				std::for_each(a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
+				std::for_each
+				(
+					a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
 					[this](const std::unique_ptr<GrabbedReferenceInfo>& a_info) {
 						if (a_info && a_info.get()) 
 						{
@@ -577,7 +584,9 @@ namespace ALYSLC
 					}
 				);
 
-				std::for_each(a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
+				std::for_each
+				(
+					a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
 					[this](const std::unique_ptr<ReleasedReferenceInfo>& a_info) {
 						if (a_info && a_info.get())
 						{
@@ -610,7 +619,9 @@ namespace ALYSLC
 				grabbedRefrInfoList.clear();
 				releasedRefrInfoList.clear();
 
-				std::for_each(a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
+				std::for_each
+				(
+					a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
 					[this](const std::unique_ptr<GrabbedReferenceInfo>& a_info) {
 						if (a_info && a_info.get())
 						{
@@ -619,7 +630,9 @@ namespace ALYSLC
 					}
 				);
 
-				std::for_each(a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
+				std::for_each
+				(
+					a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
 					[this](const std::unique_ptr<ReleasedReferenceInfo>& a_info) {
 						if (a_info && a_info.get())
 						{
@@ -676,6 +689,9 @@ namespace ALYSLC
 			// Manager is no longer set as grabbing objects or auto-grabbing. 
 			void ClearAll();
 
+			// Remove grabbed actors.
+			void ClearGrabbedActors(const std::shared_ptr<CoopPlayer>& a_p);
+
 			// Clear given grabbed refr, if managed.
 			void ClearGrabbedRefr(const RE::ObjectRefHandle& a_handle);
 
@@ -689,6 +705,9 @@ namespace ALYSLC
 			// Clear out released refrs with handles that have become invalid
 			// and refresh handle-to-index mappings upon successful erasure.
 			void ClearInvalidRefrs(bool&& a_grabbed);
+
+			// Release/drop the given player.
+			void ClearPlayerIfGrabbed(const std::shared_ptr<CoopPlayer>& a_p);
 
 			// Remove the given refr from the grabbed or released refrs list
 			// and refresh handle-to-index mappings upon successful erasure.
@@ -709,6 +728,9 @@ namespace ALYSLC
 			// Is the given refr handled either as a grabbed refr or a released refr?
 			const bool IsManaged(const RE::ObjectRefHandle& a_handle, bool a_grabbed);
 
+			// Move unloaded or far away grabbed objects (not actors) to the player.
+			void MoveUnloadedGrabbedObjectsToPlayer(const std::shared_ptr<CoopPlayer>& a_p);
+
 			// Refresh the refr handle-to-list index mappings for either all managed grabbed or released refrs.
 			void RefreshHandleToIndexMappings(const bool& a_grabbed);
 
@@ -727,7 +749,8 @@ namespace ALYSLC
 
 			// Set of pairs of FIDs for the two objects that collide during a havok contact event.
 			// One of the FIDs is always a released refr.
-			std::unordered_set<std::pair<RE::FormID, RE::FormID>, std::hash<std::pair<RE::FormID, RE::FormID>>> collidedRefrFIDPairs;
+			//std::unordered_set<std::pair<RE::FormID, RE::FormID>, std::hash<std::pair<RE::FormID, RE::FormID>>> collidedRefrFIDPairs;
+			std::unordered_set<std::pair<RE::FormID, RE::FormID>> collidedRefrFIDPairs;
 
 			// List of grabbed refr info for each managed refr.
 			std::vector<std::unique_ptr<GrabbedReferenceInfo>> grabbedRefrInfoList;
@@ -735,10 +758,10 @@ namespace ALYSLC
 			// List of released refr info for each managed refr.
 			std::vector<std::unique_ptr<ReleasedReferenceInfo>> releasedRefrInfoList;
 
-			// Is the manager handling auto-grabbed nearby clutter?
+			// Is the manager handling auto-grabbed clutter?
 			bool isAutoGrabbing;
 
-			// Should the manager handling grabbed refrs? If false, all grabbed refrs have been released.
+			// Should the manager handle grabbed refrs? If false, all grabbed refrs have been released.
 			bool isGrabbing;
 		};
 
@@ -801,15 +824,14 @@ namespace ALYSLC
 			}
 
 			// Calculate the position at which the projectile should be directed to hit the current target position.
-			// Currently unused: 
+			// NOTE: a_adjustReleaseSpeed is currently unused: 
 			// Can optionally adjust the projectile's release speed to account for air resistance and hit the target position.
 			RE::NiPoint3 CalculatePredInterceptPos(const std::shared_ptr<CoopPlayer>& a_p, const bool& a_adjustReleaseSpeed);
 
 			// Accounts for linear air drag.
-			// Get the release speed to set for this projectile given the target position
-			// expressed as a point in a 2D plane:
+			// Get the release speed to set for this projectile given the target position expressed as a point in a 2D plane:
 			// The plane can be either of the two that lie parallel to the line that connects the release position and the target position,
-			// and have a normal axis that is perpendicular to the game's Z axis.
+			// and has a normal axis that is perpendicular to the game's Z axis.
 			// The XY coordinate can be thought of as the traditional 'x' coordinate in the Cartesian plane,
 			// and the Z coordinate can likewise be thought of as the 'y' coordinate.
 			double GetReleaseSpeedToTarget(const double& a_xy, const double& a_z, const double& a_launchPitch);
@@ -848,20 +870,20 @@ namespace ALYSLC
 			bool startedHomingIn;
 			// Gravitational constant to use when guiding the projectile along the trajectory.
 			double g;
-			// Drag coefficient to use when guiding the projectile along the trajectory.
-			double mu;
+			// Time to reach the target (in seconds) based on the projectile's initial trajectory set on release.
+			double initialTrajTimeToTarget;
 			// Projectile's pitch at launch ('up' is positive, 'down' is negative (opposite of game's convention)).
 			double launchPitch;
 			// Projectile's yaw at launch (Cartesian convention).
 			double launchYaw;
 			// Maximum speed this projectile can be released at.
 			double maxReleaseSpeed;
+			// Drag coefficient to use when guiding the projectile along the trajectory.
+			double mu;
 			// Multiplier from the base projectile's data to multiply the projectile's gravitiation constant by.
 			double projGravFactor;
 			// Speed at which to release the projectile.
 			double releaseSpeed;
-			// Time to reach the target (in seconds) based on the projectile's initial trajectory set on release.
-			double initialTrajTimeToTarget;
 		};
 
 		// Handles managed projectiles fired by the player.
@@ -872,10 +894,9 @@ namespace ALYSLC
 				Clear();
 			}
 
-			// Clear out managed projectile FIDs and trajectory data.
+			// Clear out managed projectile FIDs.
 			inline void Clear()
 			{
-				managedProjHandles.clear();
 				managedProjHandleToTrajInfoMap.clear();
 			}
 
@@ -908,7 +929,6 @@ namespace ALYSLC
 
 				if (managedProjHandleToTrajInfoMap.contains(a_projectileHandle)) 
 				{
-					managedProjHandles.remove(a_projectileHandle);
 					managedProjHandleToTrajInfoMap.erase(a_projectileHandle);
 				}
 			}
@@ -919,8 +939,6 @@ namespace ALYSLC
 			// and the given trajectory type.
 			void Insert(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_initialVelocityOut, const ProjectileTrajType& a_trajType);
 
-			// Newly managed projectiles' handles are added to the back and popped from the front.
-			std::list<RE::ObjectRefHandle> managedProjHandles;
 			// Holds trajectory info for managed projectiles, indexed by their handles.
 			std::unordered_map<RE::ObjectRefHandle, std::unique_ptr<ManagedProjTrajectoryInfo>> managedProjHandleToTrajInfoMap;
 		};
@@ -945,23 +963,40 @@ namespace ALYSLC
 		inline void ClearTargetHandles() 
 		{
 			// Target actors.
-			aimCorrectionTargetHandle = closestHostileActorHandle = selectedTargetActorHandle = RE::ActorHandle();
+			aimCorrectionTargetHandle = 
+			closestHostileActorHandle = 
+			selectedTargetActorHandle = RE::ActorHandle();
 			// Interaction/target refrs.
-			activationRefrHandle = aimTargetLinkedRefrHandle = crosshairPickRefrHandle = crosshairRefrHandle = prevCrosshairRefrHandle = proximityRefrHandle = RE::ObjectRefHandle();
+			activationRefrHandle = 
+			aimTargetLinkedRefrHandle = 
+			crosshairPickRefrHandle = 
+			crosshairRefrHandle = 
+			prevCrosshairRefrHandle =
+			proximityRefrHandle = RE::ObjectRefHandle();
 		}
 
 		// Get the farthest distance an object can be located from the player while activating an object.
 		inline float GetMaxActivationDist()
 		{
 			// Can activate objects that are further away when mounted.
-			return (coopActor->IsOnMount()) ? Settings::fMountedActivationReachMult * maxReachActivationDist : maxReachActivationDist;
+			return 
+			{
+				(coopActor->IsOnMount()) ? 
+				Settings::fMountedActivationReachMult * maxReachActivationDist :
+				maxReachActivationDist
+			};
 		}
 
 		// Reset the player's crosshair scaleform position to its default position straight away.
 		inline void ResetCrosshairPosition()
 		{
 			// Offset left or right about the center of the screen based on player index.
-			crosshairScaleformPos.x = DebugAPI::screenResX / 2.0f + 100.0f * (fmod(playerID, 2) * 2 - 1) * ceil((playerID + 1) / 2.0f);
+			crosshairScaleformPos.x = 
+			(
+				DebugAPI::screenResX / 2.0f + 
+				100.0f * (fmod(playerID, 2) * 2 - 1) * 
+				ceil((playerID + 1) / 2.0f)
+			);
 			crosshairScaleformPos.y = DebugAPI::screenResY / 2.0f;
 			crosshairScaleformPos.z = 0.0f;
 			// No longer selecting a refr, so clear out pixel XY deltas.
@@ -976,13 +1011,6 @@ namespace ALYSLC
 			ClearTarget(TargetActorType::kSelected);
 		}
 
-		// Update external crosshair message request with the given type, message text,
-		// list of other message types to delay, and max display time.
-		inline void SetCrosshairMessageRequest(CrosshairMessageType&& a_type, const RE::BSFixedString a_text, std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, float a_secsMaxDisplayTime = 0.0f)
-		{
-			SetCurrentCrosshairMessage(true, std::move(a_type), a_text, std::move(a_delayedMessageTypes), a_secsMaxDisplayTime);
-		}
-
 		// Update the external/current crosshair message request with the given type, message text,
 		// list of other message types to delay, and max display time.
 		// Only update if another message is not displayed,
@@ -992,7 +1020,6 @@ namespace ALYSLC
 			const bool noDelay = lastCrosshairMessage->delayedMessageTypes.empty();
 			const bool isDelayedType = !noDelay && lastCrosshairMessage->delayedMessageTypes.contains(a_type);
 			const bool delayPassed = Util::GetElapsedSeconds(lastCrosshairMessage->setTP) > lastCrosshairMessage->secsMaxDisplayTime;
-
 			if (noDelay || !isDelayedType || delayPassed)
 			{
 				if (a_extRequest) 
@@ -1004,6 +1031,13 @@ namespace ALYSLC
 					crosshairMessage->Update(std::move(a_type), a_text, std::move(a_delayedMessageTypes), std::move(a_secsMaxDisplayTime));
 				}
 			}
+		}
+
+		// Update external crosshair message request with the given type, message text,
+		// list of other message types to delay, and max display time.
+		inline void SetCrosshairMessageRequest(CrosshairMessageType&& a_type, const RE::BSFixedString a_text, std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, float a_secsMaxDisplayTime = 0.0f)
+		{
+			SetCurrentCrosshairMessage(true, std::move(a_type), a_text, std::move(a_delayedMessageTypes), a_secsMaxDisplayTime);
 		}
 
 		// Signal the reference manipulation manager to handle grabbed objects when set, 
@@ -1059,12 +1093,12 @@ namespace ALYSLC
 		
 		// Get the closest targetable actor to the source refr using the given FOV in radians centered at their heading angle,
 		// and the given maximum range (XY or XYZ distance) to consider targets.
-		// If combat dependent selection is requested, only target hostile actors unless attempting to heal a target.
+		// If combat-dependent selection is requested, only consider hostile actors, unless attempting to heal a target.
 		RE::ActorHandle GetClosestTargetableActorInFOV(RE::ObjectRefHandle a_sourceRefrHandle, const float& a_fovRads, const bool& a_useXYDistance = false, const float& a_range = -1.0f, const bool& a_combatDependentSelection = true);
 		
 		// Get detection-level-modified gradient RGB value.
-		// The raw detection level ranges from -1000 to 1000,
-		// whereas the modified detection level ranges from 0 to 100.
+		// NOTE: The raw detection level ranges from -1000 to 1000,
+		// whereas the modified detection level to pass in here should range from 0 to 100.
 		uint32_t GetDetectionLvlRGB(const float& a_detectionLvl, bool&& a_fromRawLevel);
 
 		// Get actor level-difference-modified RGB value
@@ -1088,7 +1122,7 @@ namespace ALYSLC
 
 		// Get the player's current ranged target actor, 
 		// which is the crosshair refr if an actor is selected, 
-		// the aim correction target if the option is enabled while not facing the crosshair,
+		// the aim correction target if the option is enabled while not selecting an actor with the crosshair,
 		// or the ranged package's aim target linked refr if it is not the player.
 		RE::ActorHandle GetRangedTargetActor();
 
@@ -1108,7 +1142,7 @@ namespace ALYSLC
 		// Is the given refr valid for targeting with the player's crosshair:
 		// - Handle valid, visible, and not disabled/deleted.
 		// - Not self, or part of the selection blacklist, 
-		// or another player unless player selection is enabled.
+		// or another player, unless player selection is enabled.
 		// - Player has LOS or has not lost LOS for too long.
 		bool IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle);
 
@@ -1132,10 +1166,10 @@ namespace ALYSLC
 		// or stealth state while the player is sneaking.
 		void SetPeriodicCrosshairMessage(const CrosshairMessageType& a_type);
 
-		// Returns true if the cached nearby refrs used previously when selecting
-		// a proximity refr should be refreshed when the player's last activation
-		// position is too far away from their current position, or when they
-		// have turned away from their previous activation facing angle.
+		// Returns true if the cached refrs used previously when selecting
+		// a proximity refr should be refreshed:
+		// 1. The player's last activation position is too far away from their current position -OR-
+		// 2. The player has turned away from their previous activation facing angle.
 		bool ShouldRefreshNearbyReferences();
 
 		// NOTE: Only when aim correction is enabled for this player.
@@ -1144,14 +1178,14 @@ namespace ALYSLC
 		void UpdateAimCorrectionTarget();
 
 		// Update the target refr used by the ranged attack package.
-		// The given equip slot should holds the form triggering the attack.
-		// E.g. Left hand slot holding a spell.
+		// The given equip index should hold the form triggering the ranged attack.
+		// E.g. Left hand slot when trying to cast a spell in the left hand.
 		bool UpdateAimTargetLinkedRefr(const EquipIndex& a_attackSlot);
 
 		// Update the interpolation data used to animate the crosshair's contraction/expansion.
 		void UpdateAnimatedCrosshairInterpData();
 
-		// Update the crosshair Scaleform and world positions when the player moves their RS
+		// Update the crosshair's Scaleform and world positions when the player moves their RS
 		// and fade out/re-center the crosshair as needed when inactive.
 		// Also update the refr selected by the crosshair.
 		void UpdateCrosshairPosAndSelection();
@@ -1162,7 +1196,7 @@ namespace ALYSLC
 		// Award Sneak XP for companion players as necessary after updating their detection state.
 		void UpdateSneakState();
 
-		// Update closest hostile actor, their distance to the player, and detection percent.
+		// Update closest hostile actor, their distance to the player, and the player's detection percent.
 		void UpdateStealthDetectionState();
 
 		//
@@ -1176,7 +1210,7 @@ namespace ALYSLC
 		// Scaleform coordinates (x, y, z), [0, max view dimension] for the player crosshair's center.
 		glm::vec3 crosshairScaleformPos;
 
-		// The co-op player.
+		// The co-op player's character.
 		RE::ActorPtr coopActor;
 		// Current actor targeted by aim correction.
 		// NOTE: The aim correction target is only set when performing a ranged attack.
@@ -1189,7 +1223,7 @@ namespace ALYSLC
 		RE::NiPoint3 crosshairLastHitLocalPos;
 		// Crosshair-targeted world position.
 		RE::NiPoint3 crosshairWorldPos;
-		// Last position at which activation was requested.
+		// Last world position at which activation was requested.
 		RE::NiPoint3 lastActivationReqPos;
 		// Last interactable reference either targeted by the crosshair or by proximity selection.
 		RE::ObjectRefHandle activationRefrHandle;
@@ -1204,13 +1238,14 @@ namespace ALYSLC
 		// Closest interactable refr in the player's FOV.
 		RE::ObjectRefHandle proximityRefrHandle;
 		// Cached ordered map of nearby refrs that can be interacted with by the player.
-		// Sorted in ascending order based on the angle the player has to turn to face the refr directly.
+		// Sorted in ascending order based on a normalized factor derived from 
+		// the refr's distance to the player and the angle the player has to turn to face the refr directly.
 		std::multimap<float, RE::ObjectRefHandle> nearbyReferences;
 		// Mutex for modifying selected/aim correction/aim target linked refrs.
 		std::mutex targetingMutex;
-		// Local positional offset from crosshair refr's center to crosshair hit pos.
+		// Local positional offset from the crosshair refr's world position to the crosshair hit pos.
 		// Set when the crosshair refr is first targeted.
-		// If invalid, no crosshair valid refr is selected.
+		// If invalid, no crosshair refr is selected.
 		std::optional<RE::NiPoint3> crosshairInitialHitLocalPos;
 		// This player's crosshair text entry to display when the full crosshair message updates.
 		std::string crosshairTextEntry;
@@ -1233,7 +1268,7 @@ namespace ALYSLC
 		std::unique_ptr<ManagedProjectileHandler> managedProjHandler;
 		// Manages grabbed/released objects.
 		std::unique_ptr<RefrManipulationManager> rmm;
-		// For activation: nearby objects of the same type as the requested refr.
+		// For activation: Nearby objects of the same type as the requested refr.
 		std::vector<RE::ObjectRefHandle> nearbyObjectsOfSameType;
 		// Should this manager draw targeting overlay elements?
 		bool baseCanDrawOverlayElements;
@@ -1249,7 +1284,7 @@ namespace ALYSLC
 		// You grab me, I grab you, into the sky we go.
 		// It's not a bug, it's a feature.
 		bool isMARFing;
-		// Is the player trying to interact with cycled nearby refrs?
+		// Is the player trying to interact with cycled, nearby refrs?
 		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?
 		bool validCrosshairRefrHit;

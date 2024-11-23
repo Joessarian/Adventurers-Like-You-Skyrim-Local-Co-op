@@ -25,7 +25,7 @@ namespace ALYSLC
 		// Use if you can't stand seeing the skybox/void outside the traversable worldspace.
 		static inline bool bCamCollisions = true;
 		// Also fade larger statics, like houses and walls.
-		static inline bool bFadeLargerObstructions = true;
+		static inline bool bFadeLargerObstructions = false;
 		// Fade objects that are blocking the visibility of players.
 		static inline bool bFadeObstructions = true;
 		// When an off-screen player is also not visible to other players
@@ -37,7 +37,7 @@ namespace ALYSLC
 		static inline bool bFocalPlayerMode = false;
 		// Use interpolation to smooth the camera's origin point path (the path the point equidistant to all players takes).
 		static inline bool bOriginPointSmoothing = true;
-		// Only fade objects that are within a certain distance from the camera.
+		// Only fade objects that are a certain distance from the camera.
 		static inline bool bProximityFadeOnly = false;
 		// IMPORTANT: Disabling all occlusion markers in an exterior/interior cell, 
 		// whether through the CK or through a plugin at runtime,
@@ -48,11 +48,15 @@ namespace ALYSLC
 		static inline bool bRemoveInteriorOcclusion = false;
 		// Use interpolation to smooth the camera's target point path.
 		static inline bool bTargetPosSmoothing = true;
+		// Camera FOV to set for exterior and interior cells.
+		static inline float fCamExteriorFOV = 75.0f;
+		static inline float fCamInteriorFOV = 75.0f;
 		
 		// Lock on mode assistance type.
 		// 0: Full (WIP): 
 		// Auto zoom, rotate, and position the camera 
 		// to keep all players and the lock on target on screen.
+		// Zoom, position, and rotation controls are disabled.
 		// 
 		// 1: Rotation: 
 		// Auto rotate the camera to track the lock on target 
@@ -62,7 +66,6 @@ namespace ALYSLC
 		// 2: Zoom: 
 		// Auto zoom out the camera to keep the players and lock on target on screen. 
 		// Can still rotate the camera normally.
-		// In this mode, zoom, position, and rotation controls are disabled while locked on.
 		static inline uint32_t uLockOnAssistance = !ALYSLC::CamLockOnAssistanceLevel::kRotation;
 
 		//-------------------
@@ -73,12 +76,12 @@ namespace ALYSLC
 		static inline bool bAddAnimEventSkillPerks = false;
 		// Attract nearby clutter while holding grab and not targeting any object with the crosshair.
 		static inline bool bAutoGrabClutterOnHold = true;
-		// Infinite carryweight for all players while in co-op.
-		static inline bool bInfiniteCarryweight = false;
 		// Can players grab actors (other players not included)?
 		static inline bool bCanGrabActors = false;
 		// Can players grab other players?
 		static inline bool bCanGrabOtherPlayers = true;
+		// Infinite carryweight for all players while in co-op.
+		static inline bool bInfiniteCarryweight = false;
 		// Can grab actors indefinitely.
 		static inline bool bRemoveGrabbedActorAutoGetUp = true;
 		// Only one collision raycast per ragdolling actor per frame if true.
@@ -136,8 +139,8 @@ namespace ALYSLC
 		//[Menus]:
 		//--------
 		// Lockpicking is a team effort when enabled.
-		// The lock-activating player rotates the pick, and P1 rotates the lock.
-		static inline bool bTwoPlayerLockpicking = true;
+		// The lock-activating companion player rotates the pick, and P1 rotates the lock.
+		static inline bool bTwoPlayerLockpicking = false;
 		// Closest player to the speaker gets control of the dialogue menu if no player triggered the conversation.
 		static inline bool bUninitializedDialogueWithClosestPlayer = true;
 		// Player distance from dialogue target (in-game units) at which to automatically exit dialogue.
@@ -147,6 +150,7 @@ namespace ALYSLC
 		//[Movement]:
 		//-----------
 		// Movement/rotation multipliers.
+		// Multiplier applied to all rotation.
 		static inline float fBaseRotationMult = 1.0f;
 		// Base speedmult value, which is then modified by the player's height (inv. proportional).
 		// Game's default speedmult is 100.
@@ -161,11 +165,11 @@ namespace ALYSLC
 		static inline float fCastingMovMult = 1.0f;
 		// Casting rotation multiplier.
 		static inline float fCastingRotMult = 0.75f;
-		// Jump rotation multiplier.
-		static inline float fJumpingRotMult = 0.3f;
 		// Jump base initial speed in LS direction.
 		// In game units / second.
 		static inline float fJumpBaseLSDirSpeed = 500.0f;
+		// Jump rotation multiplier.
+		static inline float fJumpingRotMult = 0.3f;
 		// Gravity multiplier that affects how fast the player rises to the apex and falls during the descent of a jump.
 		// Lower the value for a floatier jump. Raise the value for a faster ascent and descent.
 		static inline float fJumpingGravityMult = 2.0f;
@@ -186,12 +190,14 @@ namespace ALYSLC
 		// Seconds before reverting gravity and playing fall
 		// animation for a jumping player. Directly influences jump height.
 		// Increase to jump higher.
-		static inline float fSecsAfterGatherToFall = 0.1f;
+		static inline float fSecsAfterGatherToFall = 0.07f;
 		// Sneak rotation multiplier.
 		static inline float fSneakRotMult = 1.0f;
 		// Speedmult actor value multiplier when sprinting.
 		// Setting to 1 means jogging and sprinting are the same speed.
-		static inline float fSprintSpeedMult = 1.5f;
+		static inline float fSprintingMovMult = 1.5f;
+		// Sprint rotation multiplier.
+		static inline float fSprintingRotMult = 0.25f;
 
 		//-----------------
 		//[Player Actions]:
@@ -211,8 +217,8 @@ namespace ALYSLC
 		static inline bool bHoldToCycle = false;
 		// Rotate arms when holding the corresponding bind(s) and moving the right stick while weapons are sheathed.
 		static inline bool bRotateArmsWhenSheathed = true;
-		// Use velocity-based dash dodge instead of any installed dodge mods.
-		static inline bool bUseDashDodgeSystem = false;
+		// Use velocity-based dash dodge instead of animations from any installed dodge mods.
+		static inline bool bUseDashDodgeSystem = true;
 		// Perform killmoves using this mod's system.
 		static inline bool bUseKillmovesSystem = true;
 		// Players are downed when reaching 0 health and remain in a pseudo-death state until
@@ -225,6 +231,10 @@ namespace ALYSLC
 		static inline float fKillmoveChance = 0.333333f;
 		// Max health fraction below which killmoves can trigger.
 		static inline float fKillmoveHealthFraction = 0.1f;
+		// Max dash dodge movement type speed mult to apply.
+		static inline float fMaxDashDodgeSpeedmult = 600.0f;
+		// Min dash dodge movement type speed mult to apply.
+		static inline float fMinDashDodgeSpeedmult = 300.0f;
 		// Cycle through nearby references after holding the activate bind for this many seconds.
 		static inline float fSecsBeforeActivationCycling = 1.0f;
 		// Seconds between activation checks (time between highlighting objects once cycling starts).
@@ -243,7 +253,12 @@ namespace ALYSLC
 		// [1] for highest count.
 		// [2] for highest damage.
 		static inline uint32_t uAmmoAutoEquipMode = !ALYSLC::AmmoAutoEquipMode::kHighestCount;
-
+		// The number of frames the dash dodge lasts at 60 FPS.
+		// NOTE: This is also the number of I-frames for the dodge, since the player is invulnerable throughout the duration of the dodge. 
+		// Decreasing/increasing the frame count also decreases/increases the distance of the dodge 
+		// because the player spends less/more time at their max speedmult if the dodge lasts shorter/longer.
+		// The dodge also always has an additional 6 startup frames.
+		static inline uint32_t uDashDodgeBaseAnimFrameCount = 24;
 
 		//--------------
 		//[Progression]:
@@ -288,11 +303,10 @@ namespace ALYSLC
 		// Camera lock on indicator side thickness (pixels).
 		static inline float fCamLockOnIndicatorThickness = 3.0f;
 		// Maximum amount of pixels the crosshair can move across per second.
-		// Used to scale player crosshair sensitivities.
+		// Used as the base when scaling player crosshair sensitivities.
 		static inline float fCrosshairMaxTraversablePixelsPerSec = 1920.0f;
 		// Player menu control overlay (colored border) outline thickness (pixels).
 		static inline float fPlayerMenuControlOverlayOutlineThickness = 6.0f;
-
 
 		//============================
 		//============================
@@ -358,10 +372,8 @@ namespace ALYSLC
 		static inline std::vector<bool> vbCrosshairMagnetismForObjRefs = { true, true, true, true };
 		// Is friendly fire enabled towards actors friendly to the party (followers, other players, summons, etc.)?
 		static inline std::vector<bool> vbFriendlyFire = { false, false, false, false };
-		// Use aim correction to automatically target a nearby actor in the player's facing direction
+		// Use aim correction to automatically target a nearby hostile actor in the player's facing direction
 		// when no object is selected by the crosshair.
-		// When a target actor is selected by the crosshair, 
-		// also direct projectiles at the selected target's closest node to the crosshair position.
 		static inline std::vector<bool> vbUseAimCorrection = { true, true, true, true };
 		// Angular window (radians) centered at the player's current left stick/heading angle
 		// within which any actors will be considered as targets for attack aim correction.
@@ -370,9 +382,10 @@ namespace ALYSLC
 		// Max angular adjustment speed when adjusting the player's aim pitch.
 		// Radians per second.
 		static inline std::vector<float> vfMaxAimPitchAdjustmentRate = { PI, PI, PI, PI };
+		// Projectile trajectory adjustment types:
 		// kAimDirection: No projectile trajectory adjustment. Projectile is fired in the player's aiming direction.
 		// kHoming: Homing projectiles that follow the crosshair or last selected target actor.
-		// kPrediction: Projectiles move to predicted target intercept position.
+		// kPrediction: Projectiles move to the predicted target intercept position.
 		// Note for aim prediction (WIP): Tends to be pretty inaccurate when targets change direction quickly
 		// or when shooting a lobbed projectile.
 		static inline std::vector<uint32_t> vuProjectileTrajectoryType = 
@@ -421,9 +434,10 @@ namespace ALYSLC
 		// Inner outline is always drawn.
 		// Black by default.
 		static inline std::vector<uint32_t> vuCrosshairInnerOutlineRGBAValues = { 0x000000AA, 0x000000AA, 0x000000AA, 0x000000AA };
-		// Outer outline is only drawn when the crosshair is over a valid target.
+		// Outer outline is only drawn when the crosshair is over a selectable target.
 		// White by default.
 		static inline std::vector<uint32_t> vuCrosshairOuterOutlineRGBAValues = { 0xFFFFFFAA, 0xFFFFFFAA, 0xFFFFFFAA, 0xFFFFFFAA };
+		// Player indicator visibility modes:
 		// kDisabled: Never show the player indicator.
 		// kLowVisibility: Only show when the player is obscured or below a certain pixel height on the screen.
 		// kAlways: Show the player indicator at all times.
@@ -440,7 +454,7 @@ namespace ALYSLC
 		//------------------
 		// Minimum number of seconds to traverse highlighted target at max right stick displacement.
 		static inline std::vector<float> vfMinSecsCrosshairTargetTraversal = { 0.2f, 0.2f, 0.2f, 0.2f };
-		// Seconds before fading/re-centering crosshair when it is not over a target, not moving, and not in 'Face Target' mode.
+		// Seconds before fading/re-centering crosshair when it is not over a target, not moving, and not in 'face target' mode.
 		static inline std::vector<float> vfSecsBeforeRemovingInactiveCrosshair = { 2.0f, 2.0f, 2.0f, 2.0f };
 		// Seconds to oscillate the animated crosshair from fully contracted to fully expanded.
 		static inline std::vector<float> vfSecsToOscillateCrosshair = { 1.5f, 1.5f, 1.5f, 1.5f };
@@ -453,14 +467,6 @@ namespace ALYSLC
 		//==========================================================
 		//==========================================================
 
-		//---------------
-		//[Actor Values]:
-		//---------------
-		// AV level that is effectively 0 for co-op players.
-		// Note: Deprecated potentially, but keeping for now until testing more thoroughly. 
-		// Used to avoid crashes when setting actor values directly to 0 or less.
-		static inline const float fAVZeroTolerance = 0.0f;
-
 		//-------------------
 		//[Camera Constants]:
 		//-------------------
@@ -472,7 +478,8 @@ namespace ALYSLC
 		static inline const float fCamManualPosInterpFactor = 0.5f;
 		static inline const float fCamNoCollisionInterpFactor = 0.266667f;
 		// Max raycast distance for calculating the camera target position.
-		// Also max calculated auto zoom delta at which to bail out of loop when attempting to keep all players in frame.
+		// Also max calculated auto zoom delta at which to bail out of the loop 
+		// when attempting to keep all players in frame.
 		static inline const float fMaxRaycastAndZoomOutDistance = 16384.0f;
 		// Constants used as sentinel values when calculating the auto zoom radial distance
 		// at which all players are within the camera's frustum.
@@ -491,6 +498,7 @@ namespace ALYSLC
 		//[Cheats and Debug]:
 		//-------------------
 		// Speeding up dodge animations also shortens dodge distance.
+		// NOTE: Does not affect dash dodge.
 		static inline const float fDodgeAnimSpeedFactor = 1.5f;
 		// Animation play speed factor for equip/unequip/draw/sheathe and dodge animations.
 		// Have had crashes with Precision when this value is too high.
@@ -502,7 +510,7 @@ namespace ALYSLC
 		//[Controller]:
 		//-------------
 		// Max number of frames between tapping (pressing + releasing) an input that can be considered a consecutive press.
-		// ~0.2 seconds.
+		// ~0.2 seconds at 60 fps.
 		static inline const float fMaxFramesBetweenConsecTaps = 13;
 		// Max number of controllers supported.
 		static inline const std::uint8_t fMaxNumControllers = 4;
@@ -512,13 +520,6 @@ namespace ALYSLC
 		//-----------
 		// Multiplier to apply to rotation speed for each movement type.
 		static inline const float fBaseMTRotationMult = 12.0f;
-		// Default values to set when aim pitch is reset (movement state dependent).
-		// Look slightly downward, since a flat pitch of 0 angles the player's head slightly upward.
-		static inline const float fDefaultAimPitch = PI / 18.0f;
-		// Look straight forward while mounted.
-		static inline const float fDefaultMountedAimPitch = 0.0f;
-		// Tip slightly upward when swimming to avoid diving downwards when at a flat pitch.
-		static inline const float fDefaultSwimmingAimPitch = -PI / 18.0f;
 
 		//----------
 		//[Physics]:
@@ -531,14 +532,15 @@ namespace ALYSLC
 		//-----------------
 		//[Player Actions]:
 		//-----------------
-		// Attempt to perform generic 'character' skeleton killmoves on NPCs with skeletons that have no assigned killmoves.
+		// Attempt to perform generic 'character' skeleton killmoves on NPCs 
+		// with skeletons that have no assigned killmoves.
 		// WARNING: Will likely look odd or completely bug out when performed. 
 		// Disabling will prevent such NPCs from being killmove'd.
 		static inline const bool bUseGenericKillmovesOnUnsupportedNPCs = false;
 		// Absolute max thrown object speed (in-game units / second).
 		static inline const float fAbsoluteMaxThrownRefrReleaseSpeed = 15000.0f;
 		// Base max speed at which a grabbed reference can move (ingame units / second).
-		static inline const float fBaseGrabbedRefrMaxSpeed = 2000.0f;
+		static inline const float fBaseGrabbedRefrMaxSpeed = 131072.0f;
 		// Base max thrown object speed (in-game units / second).
 		static inline const float fBaseMaxThrownRefrReleaseSpeed = 1500.0f;
 		// Speed up the player's animations with this factor while dash dodging.
@@ -549,12 +551,8 @@ namespace ALYSLC
 		static inline const float fGrabbedRefrBaseRotSpeed = PI;
 		// Seconds to hold the grab bind in order to throw the grabbed form at max speed.
 		static inline const float fGrabHoldSecsToMaxReleaseSpeed = 0.5f;
-		// Max dash dodge movement type speed mult to apply at the beginning of the animation.
-		static inline const float fMaxDashDodgeSpeedmult = 600.0f;
 		// Max radial distance from a revive target to start reviving.
 		static inline const float fMaxDistToRevive = 150.0f;
-		// Min dash dodge movement type speed mult to apply at the end of the animation.
-		static inline const float fMinDashDodgeSpeedmult = 300.0f;
 		// Min health reached while reviving another player.
 		static inline const float fMinHealthWhileReviving = 1.0f;
 		// Seconds before attracting another nearby clutter refr while holding grab.
@@ -563,8 +561,6 @@ namespace ALYSLC
 		static inline const float fSecsToBlockAllInputActions = 1.0f;
 		// Max recursion depth when getting composing inputs by breaking down player actions into their own composing inputs.
 		static inline const uint8_t uMaxComposingInputsCheckRecursionDepth = 10;
-		// Dash dodge animation frame count with 0 equipped weight (at 60 FPS).
-		static inline const uint32_t uDashDodgeBaseAnimFrameCount = 24;
 		// Dash dodge setup frame count (before leaning in movement direction at 60 FPS).
 		static inline const uint32_t uDashDodgeSetupFrameCount = 6;
 
@@ -621,7 +617,6 @@ namespace ALYSLC
 		// [Importing MCM Settings]:
 		//==========================
 		//==========================
-		
 		// Much of the settings import code is modified from ersh1's TrueHUD.
 		// Full credits go to him:
 		// https://github.com/ersh1/TrueHUD/blob/master/src/Settings.h
@@ -643,7 +638,7 @@ namespace ALYSLC
 		static void ImportAllSettings();
 
 		// Import each player's binds.
-		// Returns true if no invalid binds were found.
+		// Returns true if all binds are valid.
 		static bool ImportBinds(CSimpleIniA& a_ini);
 
 		// Import settings that pertain to all players.

@@ -555,19 +555,68 @@ namespace ALYSLC
 				{
 					// Just started this action.
 					bool justStarted = perfStage == PerfStage::kInputsPressed;
+					// Update action timepoints and seconds performed first.
 					if (justStarted)
 					{
 						// Set start time point and seconds performed to 0.
 						paState.startTP = SteadyClock::now();
 						paState.secsPerformed = 0.0f;
-
-						// Set as started now.
-						perfStage = PerfStage::kStarted;
 					}
 					else
 					{
 						// Update seconds performed.
 						paState.secsPerformed = Util::GetElapsedSeconds(paState.startTP);
+						if (perfStage == PerfStage::kSomeInputsReleased || 
+							perfStage == PerfStage::kSomeInputsPressed || 
+							perfStage == PerfStage::kInputsReleased)
+						{
+							// Some/all inputs released.
+							// Set release time point.
+							paState.stopTP = SteadyClock::now();
+						}
+					}
+
+					// If this candidate action is not a hotkey equip action,
+					// and if the player is attempting to equip a hotkeyed form,
+					// and the current candidate PA does includes one of the AttackLH/AttackRH binds' composing inputs,
+					// which are used to signal which hand slot to equip the selected hotkeyed form into,
+					// we can't perform this action.
+					bool choseHotkeyedItem = 
+					{
+						p->tm->lastCrosshairMessage->type == CrosshairMessageType::kHotkeySelection &&
+						Util::GetElapsedSeconds(p->tm->lastCrosshairMessage->setTP) < p->tm->lastCrosshairMessage->secsMaxDisplayTime
+					};
+					bool rightHandHotkeyRequest =
+					{
+						(paState.paParams.inputMask & paStatesList[!InputAction::kAttackRH - !InputAction::kFirstAction].paParams.inputMask) != 0
+					};
+					bool conflictsWithHotkeyEquipBind = 
+					(
+						(
+							action != InputAction::kHotkeyEquip
+						) &&
+						(
+							(IsPerforming(InputAction::kHotkeyEquip) || choseHotkeyedItem) &&
+							(
+								((paState.paParams.inputMask & paStatesList[!InputAction::kAttackLH - !InputAction::kFirstAction].paParams.inputMask) != 0) ||
+								((paState.paParams.inputMask & paStatesList[!InputAction::kAttackRH - !InputAction::kFirstAction].paParams.inputMask) != 0)
+							)
+						)
+					);
+					
+					// Do not run any player action functions if this action conflicts with a hotkey equip bind,
+					// since we want the action to start and end normally to keep track of its pressed state,
+					// but do not want the player to perform the action, which will interrupt the hotkey equip action.
+					if (conflictsWithHotkeyEquipBind)
+					{
+						// If the chosen hotkeyed form message is still displayed on release of the attack bind,
+						// equip the chosen hotkeyed form.
+						if (perfStage == PerfStage::kInputsReleased && choseHotkeyedItem) 
+						{
+							HelperFuncs::EquipHotkeyedForm(p, p->em->lastChosenHotkeyedForm, std::move(rightHandHotkeyRequest));
+						}
+
+						continue;
 					}
 
 					if (justStarted)
@@ -576,6 +625,8 @@ namespace ALYSLC
 						ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {} just started with action perf type {}.",
 							coopActor->GetName(), action, perfType);
 
+						// Set as started now.
+						perfStage = PerfStage::kStarted;
 						// Start performing OnPress/OnPressAndRelease/OnHold actions.
 						if (perfType == PerfType::kOnPress || perfType == PerfType::kOnPressAndRelease || perfType == PerfType::kOnHold)
 						{
@@ -601,8 +652,6 @@ namespace ALYSLC
 					else if (perfStage == PerfStage::kSomeInputsReleased || perfStage == PerfStage::kSomeInputsPressed || perfStage == PerfStage::kInputsReleased)
 					{
 						// Some/all inputs released.
-						// Set release time point.
-						paState.stopTP = SteadyClock::now();
 						if (perfType == PerfType::kOnRelease || perfType == PerfType::kOnConsecTap)
 						{
 							// REMOVE when done debugging.
@@ -2760,6 +2809,93 @@ namespace ALYSLC
 		return 0.0f;
 	}
 
+	bool PlayerActionManager::GetPlayerActionInputJustPressed(const InputAction& a_action)
+	{
+		// Return true if all inputs for the given action were just pressed
+		// and the action is now performable (check button ordering).
+
+		// Invalid action.
+		if (a_action == InputAction::kNone)
+		{
+			return false;
+		}
+
+		// Not all inputs are pressed, so return false.
+		if (!AllInputsPressedForAction(a_action))
+		{
+			return false;
+		}
+
+		// All inputs are now guaranteed to be pressed.
+		auto& paState = paStatesList[!a_action - !InputAction::kFirstAction];
+		const auto& composingInputs = paState.paParams.composingInputs;
+		if (!composingInputs.empty())
+		{
+			// If input ordering matters, simply check press state of the last input in the sequence,
+			// which is the most recently pressed input.
+			// Otherwise, check to see if any input was just pressed by iterating through the sequence.
+			if (paState.paParams.triggerFlags.all(TriggerFlag::kDoNotUseCompActionsOrdering))
+			{
+				for (auto input : composingInputs)
+				{
+					const auto& inputState = glob.cdh->GetInputState(controllerID, input);
+					if (inputState.justPressed)
+					{
+						return true;
+					}
+				}
+			}
+			else
+			{
+				// In sequence.
+				auto& lastInputIndex = composingInputs[composingInputs.size() - 1];
+				const auto& inputState = glob.cdh->GetInputState(controllerID, lastInputIndex);
+
+				return inputState.justPressed;
+			}
+		}
+
+		return false;
+	}
+
+	bool PlayerActionManager::GetPlayerActionInputJustReleased(const InputAction& a_action)
+	{
+		// Return true if all inputs for the given action were just released 
+		// (order in which they were released does not matter).
+
+		// Invalid action.
+		if (a_action == InputAction::kNone)
+		{
+			return false;
+		}
+
+		// Some inputs are pressed, so return false.
+		if (!NoInputsPressedForAction(a_action))
+		{
+			return false;
+		}
+
+		// All inputs are guaranteed to be released.
+		auto& paState = paStatesList[!a_action - !InputAction::kFirstAction];
+		const auto& composingInputs = paState.paParams.composingInputs;
+		if (!composingInputs.empty())
+		{
+			// Check to see if any input was just released by iterating through the sequence.
+			bool atLeastOneJustReleased = false;
+			uint8_t numberOfInputsReleaed = 0;
+			for (auto input : composingInputs)
+			{
+				const auto& inputState = glob.cdh->GetInputState(controllerID, input);
+				if (inputState.justReleased)
+				{
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
 	void PlayerActionManager::HandleAVExpenditure()
 	{
 		// Modify health, magicka, stamina actor values based on the player's ongoing AV action requests
@@ -3122,8 +3258,8 @@ namespace ALYSLC
 		// Handled here in a delayed fashion instead of in the player action functions holder because some killmoves
 		// frequently bug out and do not set the targeted actor's health to 0 or kill them after the paired animation ends.
 		// Also, both the targeted and targeting actors are flagged as not in a killmove at different times,
-		// which leads to issues with executing killmoves as well.
-		// Here, we force the target's HP to 0 if the killmove animation finishes playing for the targeting actor.
+		// which leads to issues with executing killmoves.
+		// Here, we force the target's HP to 0 if the killmove animation finishes playing for the killer actor.
 		
 		// Must have a valid target.
 		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
@@ -3297,9 +3433,65 @@ namespace ALYSLC
 		}
 	}
 
+	bool PlayerActionManager::NoButtonsPressedForAction(const InputAction& a_action)
+	{
+		// Returns true if none of the action's inputs are pressed (not including analog sticks).
+
+		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		auto buttonsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
+		buttonsMask &= (1 << !InputAction::kButtonTotal) - 1;
+
+		return (inputBitMask & buttonsMask) == 0;
+	}
+
+	bool PlayerActionManager::NoInputsPressedForAction(const InputAction& a_action)
+	{
+		// Returns true if none of the action's inputs are pressed.
+
+		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		auto inputsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
+		return (inputBitMask & inputsMask) == 0;
+	}
+
+	bool PlayerActionManager::PassesConsecTapsCheck(const InputAction& a_action)
+	{
+		// Check if any/the last input in the action's composing inputs list was double tapped,
+		// depending on if the ordering of the composing inputs matters.
+
+		if (a_action != InputAction::kNone) 
+		{
+			auto& inputComp = paStatesList[!a_action - !InputAction::kFirstAction].paParams.composingInputs;
+			if (!inputComp.empty()) 
+			{
+				// Any input has to be tapped at least twice if ordering does not matter.
+				if (paStatesList[!a_action - !InputAction::kFirstAction].paParams.triggerFlags.all(TriggerFlag::kDoNotUseCompActionsOrdering)) 
+				{
+					return 
+					(
+						std::any_of
+						(
+							inputComp.begin(), inputComp.end(), 
+							[this](const InputAction& a_action) 
+							{ 
+								return glob.cdh->GetInputState(controllerID, a_action).consecPresses > 1; 
+							}
+						)
+					);
+				}
+				else
+				{
+					// Check if the last input in the composing inputs list is tapped at least twice.
+					return glob.cdh->GetInputState(controllerID, inputComp.back()).consecPresses > 1;	
+				}
+			}
+		}
+
+		return false;
+	}
+
 	bool PlayerActionManager::PassesInputPressCheck(const InputAction& a_action)
 	{
-		// Check if all of the inputs for the given action are pressed 
+		// Check if all of the inputs for the given action are pressed
 		// in order, if order matters, and in any order otherwise.
 		// Also ensure that actions that require a minimum hold time
 		// have all their inputs held for at least the minimum hold time.
@@ -3314,10 +3506,10 @@ namespace ALYSLC
 			// Ensure all inputs are pressed. Order does not matter.
 			if (params.triggerFlags.all(TriggerFlag::kDoNotUseCompActionsOrdering))
 			{
-				for (auto inputIndex : inputComp) 
+				for (auto inputIndex : inputComp)
 				{
 					// One input not pressed.
-					if (!glob.cdh->GetInputState(controllerID, inputIndex).isPressed) 
+					if (!glob.cdh->GetInputState(controllerID, inputIndex).isPressed)
 					{
 						passedPressCheck = false;
 						break;
@@ -3338,7 +3530,7 @@ namespace ALYSLC
 						{
 							auto currentInputState = glob.cdh->GetInputState(controllerID, inputComp[actionIndex]);
 							auto prevInputState = glob.cdh->GetInputState(controllerID, inputComp[actionIndex - 1]);
-							if (inputComp[actionIndex - 1] == InputAction::kLS || inputComp[actionIndex - 1] == InputAction::kRS) 
+							if (inputComp[actionIndex - 1] == InputAction::kLS || inputComp[actionIndex - 1] == InputAction::kRS)
 							{
 								// Skip over comparing hold times if the previous input is the LS or RS,
 								// as these do not have to be pressed in order.
@@ -3378,42 +3570,6 @@ namespace ALYSLC
 		}
 
 		return passedPressCheck;
-	}
-
-	bool PlayerActionManager::PassesConsecTapsCheck(const InputAction& a_action)
-	{
-		// Check if any/the last input in the action's composing inputs list was double tapped,
-		// depending on if the ordering of the composing inputs matters.
-
-		if (a_action != InputAction::kNone) 
-		{
-			auto& inputComp = paStatesList[!a_action - !InputAction::kFirstAction].paParams.composingInputs;
-			if (!inputComp.empty()) 
-			{
-				// Any input has to be tapped at least twice if ordering does not matter.
-				if (paStatesList[!a_action - !InputAction::kFirstAction].paParams.triggerFlags.all(TriggerFlag::kDoNotUseCompActionsOrdering)) 
-				{
-					return 
-					(
-						std::any_of
-						(
-							inputComp.begin(), inputComp.end(), 
-							[this](const InputAction& a_action) 
-							{ 
-								return glob.cdh->GetInputState(controllerID, a_action).consecPresses > 1; 
-							}
-						)
-					);
-				}
-				else
-				{
-					// Check if the last input in the composing inputs list is tapped at least twice.
-					return glob.cdh->GetInputState(controllerID, inputComp.back()).consecPresses > 1;	
-				}
-			}
-		}
-
-		return false;
 	}
 
 	void PlayerActionManager::QueueP1ButtonEvent(const InputAction& a_inputAction, RE::INPUT_DEVICE&& a_inputDevice, ButtonEventPressType&& a_buttonStateToTrigger, float&& a_heldDownSecs, bool&& a_toggleAIDriven) noexcept
@@ -4737,6 +4893,7 @@ namespace ALYSLC
 		coopActor->GetGraphVariableBool("bIsRiding", isRiding);
 		coopActor->GetGraphVariableBool("IsSneaking", isSneaking);
 
+		isAttacking |= coopActor->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone;
 		if (p->isPlayer1)
 		{
 			// Paragliding graph variable only updates for P1. 

@@ -35,9 +35,8 @@ namespace ALYSLC
 		CoopLoadGameEventHandler::Register();
 		// Register menu open/close event handler.
 		CoopMenuOpenCloseHandler::Register();
-		// NOTE: Unused for now and needs testing.
 		// Register position player event handler.
-		//CoopPositionPlayerEventHandler::Register();
+		CoopPositionPlayerEventHandler::Register();
 		logger::info("[Events] RegisterEvents: event registration complete.");
 	}
 
@@ -130,6 +129,10 @@ namespace ALYSLC
 
 			if (glob.coopSessionActive) 
 			{
+				ALYSLC::Log("[Events] Cell change event: {} {}.", 
+					a_cellChangeEvent->movedRef && a_cellChangeEvent->movedRef.get() ? a_cellChangeEvent->movedRef->GetName() : nullptr,
+					a_cellChangeEvent->isCellAttached ? "attached" : "detached");
+
 				if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRef); foundIndex != -1)
 				{
 					// Ensure player does not get faded while in co-op.
@@ -143,6 +146,7 @@ namespace ALYSLC
 						}
 					}
 
+					const auto& p = glob.coopPlayers[foundIndex];
 					// Prevent equip state bug mentioned in the equip manager where two handed weapons' animations break.
 					for (const auto& p : glob.coopPlayers)
 					{
@@ -229,7 +233,8 @@ namespace ALYSLC
 							if (fromContainerMenu)
 							{
 								auto mode = ui->GetMenu<RE::ContainerMenu>()->GetContainerMode();
-								transferFromContainer = { 
+								transferFromContainer = 
+								{ 
 									mode == RE::ContainerMenu::ContainerMode::kLoot || 
 									mode == RE::ContainerMenu::ContainerMode::kPickpocket ||
 									mode == RE::ContainerMenu::ContainerMode::kSteal 
@@ -244,7 +249,7 @@ namespace ALYSLC
 						// Move from player 1 to the co-op companion player if looting/stealing/pickpocketing from container or if buying the object from a vendor.
 						if (transferFromContainer)
 						{
-							RE::TESForm* baseObj = Util::GetFormFromFID(a_containerChangedEvent->baseObj);
+							RE::TESForm* baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
 							auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
 							if (toP1)
 							{
@@ -328,7 +333,7 @@ namespace ALYSLC
 						return EventResult::kContinue;
 					}
 
-					RE::TESForm* baseObj = Util::GetFormFromFID(a_containerChangedEvent->baseObj);
+					RE::TESForm* baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
 					auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
 					RE::TESBoundObject* boundObj = nullptr;
 					if (refr)
@@ -665,9 +670,10 @@ namespace ALYSLC
 						{
 							// Start combat between hit NPC and co-op companion player.
 							// Start assault alarm on P1 to trigger bounty if the hit actor
-							// is not angry with the player or is not in combat currently.
+							// is not angry with the player and is not in combat currently.
+
 							float detectionPct = (std::clamp(static_cast<float>(hitActor->RequestDetectionLevel(p->coopActor.get())), -20.0f, 0.0f) + 20.0f) * 5.0f;
-							if (detectionPct > 0.0f && (!hitActor->IsHostileToActor(p->coopActor.get()) || !hitActor->IsInCombat()))
+							if ((detectionPct > 0.0f) && (!hitActor->IsHostileToActor(p->coopActor.get()) && !hitActor->IsInCombat()))
 							{
 								// Caused by player + projectile is the hit actor (splat) or hit event projectile's form type is not projectile (bonk).
 								bool isBonkOrSplatHitEvent = (a_hitEvent->cause == p->coopActor) && 
@@ -1293,29 +1299,84 @@ namespace ALYSLC
 
 	EventResult CoopPositionPlayerEventHandler::ProcessEvent(const RE::PositionPlayerEvent* a_positionPlayerEvent, RE::BSTEventSource<RE::PositionPlayerEvent>* a_eventSource)
 	{
-		// NOTE: Unused for now and needs testing.
+		// NOTE: Needs testing.
 		// Would like to see if this event fires when the player validity checks in the player manager do
 		// not signal to move co-op companion players to P1. 
 		// Examples where this could occur include short teleports with a fader menu opening and closing.
-		/*
-		if (auto tes = RE::TES::GetSingleton(); tes && a_positionPlayerEvent)
+		// Used to clear grabbed actors/released refrs when before P1 moves
+		// and then move companion players to P1 when P1 is finished moving.
+		
+		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
-			// Finished moving.
-			if (glob.coopSessionActive && a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kPost, RE::PositionPlayerEvent::EVENT_TYPE::kFinish)) 
+			return EventResult::kContinue;
+		}
+
+		auto tes = RE::TES::GetSingleton(); 
+		if (!tes || !a_positionPlayerEvent)
+		{
+			return EventResult::kContinue;
+		}
+
+		ALYSLC::Log("[Events] Position Player Event: {}. Should move players to P1: {}.",
+			*a_positionPlayerEvent->type,
+			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish));
+		if (a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kPre, RE::PositionPlayerEvent::EVENT_TYPE::kPreUpdatePackages)) 
+		{
+			for (const auto& p : glob.coopPlayers)
 			{
-				for (const auto& p : glob.coopPlayers) 
+				if (p->isActive) 
 				{
-					if (p->isActive && !p->isPlayer1) 
+					if (p->IsRunning()) 
 					{
-						// Have to sheathe weapon before teleporting, otherwise the equip state gets bugged.
-						p->pam->ReadyWeapon(false);
-						p->em->EquipFists();
-						p->taskInterface->AddTask([&p]() { p->coopActor->MoveTo(glob.player1Actor.get()); });
+						ALYSLC::Log("[Events] Position Player Event: P{}'s managers are running. Pausing now before P1 moves.", p->playerID + 1);
+						p->RequestStateChange(ManagerState::kPaused);
 					}
+
+					// Clear all released refrs and grabbed actors,
+					// since I haven't figured out a consistent, bug-free way
+					// of moving grabbed actors through load doors.
+					p->tm->rmm->ClearReleasedRefrs();
+					p->tm->rmm->ClearGrabbedActors(p);
 				}
 			}
 		}
-		*/
+
+		if (a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)) 
+		{
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			bool player1Valid = 
+			{
+				p1 && !p1->IsDisabled() && p1->Is3DLoaded() && p1->IsHandleValid() &&
+				p1->loadedData && p1->currentProcess && p1->GetCharController() && p1->parentCell
+			};
+			if (!player1Valid) 
+			{
+				ALYSLC::Log("[Events] Position Player Event: ERR: P1 is not valid after event finished.");
+				return EventResult::kContinue;
+			}
+
+			for (const auto& p : glob.coopPlayers) 
+			{
+				if (p->isActive)
+				{
+					if (p->IsRunning())
+					{
+						ALYSLC::Log("[Events] Position Player Event: P{}'s managers are running. Pausing now after P1 moved.", p->playerID + 1);
+						p->RequestStateChange(ManagerState::kPaused);
+					}
+
+					if (!p->isPlayer1) 
+					{
+						ALYSLC::Log("[Events] Position Player Event: Moving player {} to P1.", p->coopActor->GetName());
+						p->pam->ReadyWeapon(false);
+						p->coopActor->MoveTo(p1);
+					}
+
+					// Also move all the player's grabbed objects to P1.
+					p->tm->rmm->MoveUnloadedGrabbedObjectsToPlayer(p);
+				}
+			}
+		}
 
 		return EventResult::kContinue;
 	}

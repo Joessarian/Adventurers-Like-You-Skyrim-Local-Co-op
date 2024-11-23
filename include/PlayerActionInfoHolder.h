@@ -124,7 +124,7 @@ namespace ALYSLC
 					!InputAction::kCycleSpellRH, !InputAction::kCycleVoiceSlotMagic, 
 					!InputAction::kCycleWeaponCategoryLH, !InputAction::kCycleWeaponCategoryRH, 
 					!InputAction::kCycleWeaponLH, !InputAction::kCycleWeaponRH, 
-					!InputAction::kQuickSlotItem, !InputAction::kSheathe
+					!InputAction::kHotkeyEquip, !InputAction::kQuickSlotItem, !InputAction::kSheathe
 				}
 			},
 			{ 
@@ -225,7 +225,7 @@ namespace ALYSLC
 			{ !InputAction::kCycleWeaponCategoryRH, ActionGroup::kEquip },
 			{ !InputAction::kCycleWeaponLH, ActionGroup::kEquip },
 			{ !InputAction::kCycleWeaponRH, ActionGroup::kEquip },
-			{ !InputAction::kDebugRagdollPlayer, ActionGroup::kDebug }, 
+			{ !InputAction::kDebugRagdollPlayer, ActionGroup::kDebug },
 			{ !InputAction::kDebugReEquipHandForms, ActionGroup::kDebug },
 			{ !InputAction::kDebugRefreshPlayerManagers, ActionGroup::kDebug },
 			{ !InputAction::kDebugResetPlayer, ActionGroup::kDebug },
@@ -236,6 +236,7 @@ namespace ALYSLC
 			{ !InputAction::kFavorites, ActionGroup::kMenu },
 			{ !InputAction::kGrabObject, ActionGroup::kTargeting },
 			{ !InputAction::kGrabRotateYZ, ActionGroup::kTargeting },
+			{ !InputAction::kHotkeyEquip, ActionGroup::kEquip },
 			{ !InputAction::kInventory, ActionGroup::kMenu },
 			{ !InputAction::kJump, ActionGroup::kMovement },
 			{ !InputAction::kMagicMenu, ActionGroup::kMenu },
@@ -280,7 +281,7 @@ namespace ALYSLC
 			{ InputGroup::kTrigger, { DXSC_LT, DXSC_RT } }
 		};
 
-		// Default list (indexed by player action index) of composing player actions for each player action.
+		// Default list (indexed by player action index) of composing input actions for each player action.
 		const PACompInputActionLists DEF_PA_COMP_INPUT_ACTIONS_LIST = 
 			PACompInputActionLists(
 			{
@@ -359,6 +360,8 @@ namespace ALYSLC
 				// GrabObject
 				{ InputAction::kFaceTarget, InputAction::kActivate },
 				// GrabRotateYZ
+				{ InputAction::kFaceTarget, InputAction::kRThumb, InputAction::kRS },
+				// HotkeyEquip
 				{ InputAction::kRThumb, InputAction::kRS },
 				// Inventory
 				{ InputAction::kDPadR },
@@ -448,7 +451,6 @@ namespace ALYSLC
 			);
 
 		// Base perform types for actions.
-		// These are not directly customizable by players in-game.
 		const std::vector<PerfType> ACTION_BASE_PERF_TYPES = {
 			// Activate
 			PerfType::kOnHold,
@@ -526,6 +528,8 @@ namespace ALYSLC
 			PerfType::kOnHold,
 			// GrabRotateYZ
 			PerfType::kNoAction,
+			// HotkeyEquip
+			PerfType::kOnHold,
 			// Inventory
 			PerfType::kOnRelease,
 			// Jump
@@ -589,7 +593,6 @@ namespace ALYSLC
 		};
 
 		// Base trigger flags for actions.
-		// These are also not directly customizable by players in-game.
 		const std::vector<TriggerFlags> ACTION_BASE_TRIGGER_FLAGS = {
 			// Activate
 			TriggerFlags(TriggerFlag::kBlockOnConditionFailure),
@@ -667,6 +670,8 @@ namespace ALYSLC
 			TriggerFlags(TriggerFlag::kDefault),
 			// GrabRotateYZ
 			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			// HotkeyEquip
+			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
 			// Inventory
 			TriggerFlags(TriggerFlag::kLoneAction),
 			// Jump
@@ -736,7 +741,7 @@ namespace ALYSLC
 		// The given player action is decomposed into its composing inputs recursively up to a predetermined depth, which prevents infinite recursion.
 		// The list of composing InputAction lists for the action is referenced to make these decompositions.
 		// Returns a list of these composing inputs.
-		// Also sets the number of player actions broken down and the max depth of recursion reached through the out params.
+		// Also sets the number of player actions broken down and the max depth of recursion reached through the outparams.
 		std::vector<InputAction> GetComposingInputs(const InputAction& a_playerAction, const PACompInputActionLists& a_paCompInputActionsLists, uint32_t& a_numComposingPlayerActionsOut, uint8_t& a_recursionDepthOut) const noexcept;
 
 		// Get the input mask from a list of composing inputs, NOT player actions.
@@ -744,5 +749,6 @@ namespace ALYSLC
 		// before passing those lists into this function.
 		const uint32_t GetInputMask(const ComposingInputActionList& a_composingInputs) const noexcept;
 	};
+
 	using PlayerActionParams = PlayerActionInfoHolder::PlayerActionParams;
 };

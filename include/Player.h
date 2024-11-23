@@ -90,6 +90,7 @@ namespace ALYSLC
 		// Set as dismissed, pause all managers, reset revive/downed/transformation state,
 		// and send dismissal event to script to handle cleanup.
 		void DismissPlayer();
+
 		// If the player's CID has changed since starting co-op, get all CIDs
 		// and re-assign them to all players.
 		void HandleControllerInputError();
@@ -106,14 +107,14 @@ namespace ALYSLC
 		// Debug option to reset player 1's state via resurrection and re-equipping hand forms.
 		void ResetPlayer1();
 		
-		// Revert to pre-transformation race.
+		// Revert to saved pre-transformation race.
 		bool RevertTransformation();
 
 		// Queue task to send animation event.
 		// Run from task/detached threads or secondary game threads.
 		void SendAnimEventSynced(RE::BSFixedString a_animEvent);
 
-		// Set up player for co-op by changing actorbase data and form flags.
+		// Set up player for co-op by changing various actorbase data and form flags.
 		void SetCoopPlayerFlags();
 
 		// Checks if a fader menu is opened following player activation of a 
@@ -128,7 +129,7 @@ namespace ALYSLC
 		// Unregister player for co-op script events.
 		void UnregisterEvents();
 		
-		// Refresh all player data post-initialization of this player.
+		// Refresh all player data for this player, post-initialization.
 		void UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex);
 
 		// Update gender, animations, skin tone, headparts, and refresh the player actor's 3D model when done.
@@ -138,21 +139,21 @@ namespace ALYSLC
 		// Tasks
 		//
 		
-		// NOTE: Below delayed funcs are all executed on the player's task runner.
+		// NOTE: The delayed funcs below are all executed on the player's task runner.
 
 		// Run when the player is downed and until revived or dead.
 		// Keep track of downed player revive time and remaining life time, and update
 		// the crosshair text to show how much of each remains.
 		// Once revived, handle resetting the player so that they can continue co-op,
-		// and if not revived, signal that the player died.
+		// and if not revived, signal that the player died and end the co-op session.
 		void DownedStateCountdownTask();
 
-		// Emulate P1 menu controls if a co-op player is controlling the lockpicking menu.
-		// NOTE: Currently run as a task to avoid a bug with repeated attempt to lockpick the same refr.
+		// Emulate P1 menu controls if a co-op player is controlling the Lockpicking Menu.
+		// NOTE: Currently run as a task to avoid a bug with repeated attempts to lockpick the same refr.
 		// May move back to MIM if a solution for this bug is found.
 		void LockpickingTask();
 
-		// Attempt to mount a targeted mount actor.
+		// Attempt to (dis)mount the targeted refr.
 		void MountTask();
 
 		// Debug option to refresh all managers for this player.
@@ -201,7 +202,7 @@ namespace ALYSLC
 		SteadyClock::time_point lastAttackStartTP;
 		// Time point indicating when the last grabbed refr was auto-grabbed.
 		SteadyClock::time_point lastAutoGrabTP;
-		// Time point indicating when the player last successfully cast a bound weapon spell (co-op companions only).
+		// Time point indicating when the player last successfully cast a bound weapon spell (companion players only).
 		SteadyClock::time_point lastBoundWeaponLHReqTP;
 		SteadyClock::time_point lastBoundWeaponRHReqTP;
 		// Time point indicating when the player's crosshair was last updated.
@@ -222,7 +223,7 @@ namespace ALYSLC
 		SteadyClock::time_point lastInputActionBlockTP;
 		// Time point indicating when the last killmove check was made.
 		SteadyClock::time_point lastKillmoveCheckTP;
-		// Time point indicating when the last LH spell cast started (co-op companion only).
+		// Time point indicating when the last LH spell cast started (companion players only).
 		SteadyClock::time_point lastLHCastStartTP;
 		// Time point indicating when the player last attempted to start moving.
 		SteadyClock::time_point lastMovementStartReqTP;
@@ -234,17 +235,17 @@ namespace ALYSLC
 		SteadyClock::time_point lastQSSCastStartTP;
 		// Time point indicating when the last time this player's health was updated while reviving another player.
 		SteadyClock::time_point lastReviveCheckTP;
-		// Time point indicating when the last RH spell cast started (co-op companion only).
+		// Time point indicating when the last RH spell cast started (companion players only).
 		SteadyClock::time_point lastRHCastStartTP;
-		// Time point indicating when the last staff LH cast started (co-op companion only).
+		// Time point indicating when the last staff LH cast started (companion players only).
 		SteadyClock::time_point lastStaffLHCastTP;
-		// Time point indicating when the last staff RH cast started (co-op companion only).
+		// Time point indicating when the last staff RH cast started (companion players only).
 		SteadyClock::time_point lastStaffRHCastTP;
 		// Time point indicating when the player's stamina was last checked while in cooldown.
 		SteadyClock::time_point lastStaminaCooldownCheckTP;
 		// Time point indicating when the player's stealth state was last checked.
 		SteadyClock::time_point lastStealthStateCheckTP;
-		// Time point indicating when the player last ran out of stamina (co-op companion only).
+		// Time point indicating when the player last ran out of stamina (companion players only).
 		SteadyClock::time_point outOfStaminaTP;
 		// Time point indicating when the player last started shouting.
 		SteadyClock::time_point shoutStartTP;
@@ -268,7 +269,7 @@ namespace ALYSLC
 
 		// Player's character.
 		RE::ActorPtr coopActor;
-		// Current ridden mount.
+		// Currently ridden mount.
 		RE::ActorHandle currentMountHandle;
 		// Actor the player wishes to mount.
 		RE::ActorHandle targetedMountHandle;
@@ -281,9 +282,9 @@ namespace ALYSLC
 		// Has this manager handled the present controller input error yet?
 		bool handledControllerInputError;
 		// Has this player been dismissed (DismissPlayer() called) during the current co-op session?
-		// Set to true BEFORE the current co-op session ends (session cleanup is finished for all players).
+		// Set to true BEFORE the current co-op session ends (before session cleanup is finished for all players).
 		bool hasBeenDismissed;
-		// Has this player been initialized and assigned an active controller?
+		// Has this player been initialized and assigned an active controller for the current/next co-op session?
 		bool isActive;
 		// Is another player transferring their health to this downed player?
 		bool isBeingRevived;

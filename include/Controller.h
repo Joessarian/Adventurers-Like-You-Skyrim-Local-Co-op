@@ -75,46 +75,65 @@ namespace ALYSLC
 				setPrevStateTP(SteadyClock::now())
 			{ }
 
+			// Analog stick is displaced fully from center.
 			inline constexpr bool MaxDisplacement() const
 			{
 				return normMag == 1.0f;
 			}
 
+			// Analog stick was moved.
 			inline constexpr bool Moved() const
 			{
 				return normMag != 0.0f;
 			}
-
+			
+			// Analog stick was just moved from rest this frame.
 			inline constexpr bool MovedFromCenter() const
 			{
 				return normMag != 0.0f && prevNormMag == 0.0f;
 			}
 
+			// Analog stick was just moved to center this frame.
 			inline constexpr bool MovedToCenter() const
 			{
 				return normMag == 0.0f && prevNormMag != 0.0f;
 			} 
 
+			// Normalized magnitude of the analog stick's displacement: [0.0, 1.0].
 			float normMag;
+			// Previous normalized magnitude recorded the last frame.
 			float prevNormMag;
+			// Seconds since the previous set of data was updated.
 			float secsSincePrevStateSet;
+			// Angular speed of the analog stick (radians per second).
 			float stickAngularSpeed;
+			// Linear speed of the analog stick (normalized magnitude change per second).
 			float stickLinearSpeed;
+			// X component of the analog stick's displacement.
 			float xComp;
+			// Y component of the analog stick's displacement.
 			float yComp;
+			// Maximum pre-normalized full displacement from center.
 			SHORT maxMag;
+			// Time point at which the previous set of data was recorded.
 			SteadyClock::time_point setPrevStateTP;
 		};
 
 		struct InputState
 		{
 			InputState() :
-				isPressed(false), heldTimeSecs(0.0f), pressedMag(0.0f), consecPresses(0)
+				isPressed(false), justPressed(false), justReleased(false), heldTimeSecs(0.0f), pressedMag(0.0f), consecPresses(0)
 			{ }
 
+			// Is this input pressed?
 			bool isPressed;
+			bool justPressed;
+			bool justReleased;
+			// Time this input has been held for.
 			float heldTimeSecs;
+			// Magnitude of the input's button press ([0.0, 1.0] for triggers, 0.0 or 1.0 for buttons)
 			float pressedMag;
+			// Number of times this input has been pressed consecutively.
 			uint8_t consecPresses;
 		};
 
@@ -209,6 +228,8 @@ namespace ALYSLC
 		//
 		// Members
 		//
+
+		// Various maps between button code conventions.
 
 		const std::unordered_map<std::uint32_t, std::uint16_t> DXSC_TO_XIMASK = {
 			{ DXSC_DPAD_UP, XINPUT_GAMEPAD_DPAD_UP },

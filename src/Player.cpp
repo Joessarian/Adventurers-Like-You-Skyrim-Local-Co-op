@@ -182,6 +182,12 @@ namespace ALYSLC
 		// or if the game is paused or saving is disabled.
 		if (player1WaitForCam || shouldTeleportToP1 || ui->GameIsPaused() || !ui->IsSavingAllowed()) 
 		{
+			ALYSLC::Log("[P] ShouldSelfPause: {}: player 1 wait for cam: {}, should teleport to P1: {}, game is paused: {}, saving not allowed: {}.",
+				coopActor->GetName(),
+				player1WaitForCam,
+				ShouldTeleportToP1(true),
+				ui->GameIsPaused(),
+				!ui->IsSavingAllowed());
 			return ManagerState::kPaused;
 		}
 
@@ -221,8 +227,8 @@ namespace ALYSLC
 					!shouldTeleportToP1 && !coopActor->IsDisabled() &&
 					coopActor->Is3DLoaded() && coopActor->IsHandleValid() && 
 					coopActor->loadedData && coopActor->currentProcess && 
-					coopActor->GetCharController() && coopActor->parentCell && 
-					coopActor->parentCell->IsAttached()
+					coopActor->GetCharController() && 
+					coopActor->parentCell && coopActor->parentCell->IsAttached()
 				);
 				if (!selfValid)
 				{
@@ -232,12 +238,23 @@ namespace ALYSLC
 					{
 						// Player 1 must also be valid as the moveto target.
 						auto p1 = RE::PlayerCharacter::GetSingleton();
-						bool player1Valid = p1 && !p1->IsDisabled() && p1->Is3DLoaded() && p1->IsHandleValid() && p1->loadedData && p1->currentProcess && p1->GetCharController() && p1->parentCell;
+						bool player1Valid = 
+						{
+							p1 && !p1->IsDisabled() && p1->Is3DLoaded() && p1->IsHandleValid() &&
+							p1->loadedData && p1->currentProcess && p1->GetCharController() && p1->parentCell
+						};
 						if (player1Valid)
 						{
 							if (coopActor->IsHandleValid() && Util::HandleIsValid(coopActor->GetHandle())) 
 							{
-								ALYSLC::Log("[P] ShouldSelfResume: Moving {} to p1.", coopActor->GetName());
+								ALYSLC::Log("[P] ShouldSelfResume: Moving player {} to P1.", coopActor->GetName());
+								// Temporary solution until I figure out what triggers the 'character controller and 3D desync warp glitch',
+								// which occurs ~0.5 seconds after unpausing with a player previously grabbed.
+								// Ragdolling fixes the issue, but I need to find a way to detect if this desync is happening
+								// and correct it in the UpdateGrabbedReferences() call.
+								// Solution: If grabbed by another player, release this player before moving them.
+								tm->rmm->ClearPlayerIfGrabbed(tm->p);
+								tm->rmm->ClearGrabbedActors(tm->p);
 								taskInterface->AddTask
 								(
 									[this, p1]() 
@@ -267,7 +284,7 @@ namespace ALYSLC
 				// Menu and P1 camera checks.
 				bool onlyAlwaysUnpaused= Util::MenusOnlyAlwaysUnpaused();
 				bool player1WaitForCam = isPlayer1 && glob.cam->IsPaused();
-				bool faderMenuOpen = ui->IsMenuOpen(RE::FaderMenu::MENU_NAME);
+				bool faderMenuOpen = ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) && ui->GetMenu<RE::FaderMenu>()->PausesGame();
 				// Remain paused if paused temp menus are open, if P1 and cam is disabled, a fader menu is open,
 				// or if the game is paused or saving is disabled.
 				if (!onlyAlwaysUnpaused || player1WaitForCam || faderMenuOpen || ui->GameIsPaused() || !ui->IsSavingAllowed())
@@ -1749,17 +1766,21 @@ namespace ALYSLC
 		// Detach and re-attach havok, then ragdoll.
 		if (a_reattachHavok)
 		{
-			Util::AddSyncedTask([this]() {
-				coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-				if (auto player3D = Util::GetRefr3D(coopActor.get()); player3D)
+			Util::AddSyncedTask
+			(
+				[this]() 
 				{
-					coopActor->DetachHavok(player3D.get());
-					coopActor->InitHavok();
-					coopActor->MoveHavok(true);
-				}
+					coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					if (auto player3D = Util::GetRefr3D(coopActor.get()); player3D)
+					{
+						coopActor->DetachHavok(player3D.get());
+						coopActor->InitHavok();
+						coopActor->MoveHavok(true);
+					}
 
-				Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f);
-			});
+					Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f);
+				}
+			);
 
 			std::this_thread::sleep_for(0.1s);
 		}

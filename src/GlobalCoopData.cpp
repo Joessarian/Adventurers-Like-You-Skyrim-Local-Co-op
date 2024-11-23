@@ -1459,7 +1459,7 @@ namespace ALYSLC
 		// or if no player is currently controlling menus.
 
 		auto& glob = GetSingleton();
-		if (a_controllerID > -1 && a_controllerID < MAX_PLAYER_COUNT) 
+		if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT) 
 		{
 			const auto& p = glob.coopPlayers[a_controllerID];
 			if (!p->isActive) 
@@ -2219,7 +2219,7 @@ namespace ALYSLC
 	bool GlobalCoopData::IsControllingMenus(const int32_t& a_controllerID)
 	{
 		auto& glob = GetSingleton();
-		if (a_controllerID > -1 && a_controllerID < MAX_PLAYER_COUNT)
+		if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			const auto& p = glob.coopPlayers[a_controllerID];
 			if (!p->isActive)
@@ -2283,7 +2283,7 @@ namespace ALYSLC
 	bool GlobalCoopData::IsNotControllingMenus(const int32_t& a_controllerID)
 	{
 		auto& glob = GetSingleton();
-		if (a_controllerID > -1 && a_controllerID < MAX_PLAYER_COUNT)
+		if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			const auto& p = glob.coopPlayers[a_controllerID];
 			if (!p->isActive)
@@ -2441,7 +2441,7 @@ namespace ALYSLC
 					// indicating some progression before the first co-op session,
 					// save the difference to the skill increments list.
 					auto currentSkills = data->skillBaseLevelsList;
-					auto autoScaledSkills = Util::GetActorSkillAVs(p->coopActor.get());
+					auto autoScaledSkills = Util::GetActorSkillLevels(p->coopActor.get());
 					for (auto j = 0; j < currentSkills.size(); ++j)
 					{
 						if (currentSkills[j] > autoScaledSkills[j])
@@ -3507,7 +3507,8 @@ namespace ALYSLC
 				// P1 is set as killed above, but then is sometimes alive when checked later via console command (?).
 				// Last ditch attempt to un-alive P1 if the save manager isn't available.
 
-				std::jthread killTask(
+				std::jthread killTask
+				(
 				[]() 
 				{
 					const auto& glob = GlobalCoopData::GetSingleton();
@@ -3530,7 +3531,8 @@ namespace ALYSLC
 						p1->IsDead(),
 						ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 						RE::Main::GetSingleton()->fullReset, RE::Main::GetSingleton()->resetGame, RE::Main::GetSingleton()->reloadContent);
-				});
+				}
+				);
 
 				killTask.detach();
 			}
@@ -3722,7 +3724,7 @@ namespace ALYSLC
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
 						ALYSLC::Log("[GLOB] CopyPlayerData: Import Favorites to P1.");
-						p->em->ImportCoopFavorites();
+						p->em->ImportCoopFavorites(false);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavorites);
 					}
 				}
@@ -3733,7 +3735,32 @@ namespace ALYSLC
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
 						ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
-						p->em->RestoreP1Favorites();
+						p->em->RestoreP1Favorites(false);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
+					}
+				}
+			}
+			else if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
+			{
+				if (a_info->shouldImport)
+				{
+					// Import this player's favorited magic before the menu opens.
+					ALYSLC::Log("[GLOB] CopyPlayerData: Magic Menu: Should import {}'s favorites to P1.", requestingPlayer.get()->GetName());
+					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
+					{
+						ALYSLC::Log("[GLOB] CopyPlayerData: Import Favorites to P1.");
+						p->em->ImportCoopFavorites(true);
+						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavorites);
+					}
+				}
+				else
+				{
+					// Revert changes to player 1's magic favorites if the magic menu is closing.
+					ALYSLC::Log("[GLOB] CopyPlayerData: Magic Menu: Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", requestingPlayer.get()->GetName());
+					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
+					{
+						ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
+						p->em->RestoreP1Favorites(true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 					}
 				}
@@ -3821,7 +3848,7 @@ namespace ALYSLC
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 						{
 							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
-							p->em->RestoreP1Favorites();
+							p->em->RestoreP1Favorites(menuNameHash == Hash(RE::MagicMenu::MENU_NAME));
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 						}
 
@@ -5632,7 +5659,7 @@ namespace ALYSLC
 						if (p->isActive && p->coopActor && glob.serializablePlayerData.contains(p->coopActor->formID))
 						{
 							auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
-							data->skillBaseLevelsList = Util::GetActorSkillAVs(p->coopActor.get());
+							data->skillBaseLevelsList = Util::GetActorSkillLevels(p->coopActor.get());
 						}
 					}
 				}
@@ -5704,7 +5731,7 @@ namespace ALYSLC
 							ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Dip level ({}) reached. Setting new base skill actor values for {}.",
 								data->firstSavedLevel, a_playerActor->GetName());
 							
-							data->skillBaseLevelsList = Util::GetActorSkillAVs(a_playerActor);
+							data->skillBaseLevelsList = Util::GetActorSkillLevels(a_playerActor);
 						}
 
 						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After dip: current XP, threshold: {}, {}, current player levels: {}, {}, target level: {}.",
@@ -5761,7 +5788,7 @@ namespace ALYSLC
 							
 							// Update base skill AVs at the current level.
 							// Should only differ from pre-dip levels if the given player changed their class.
-							data->skillBaseLevelsList = Util::GetActorSkillAVs(a_playerActor);
+							data->skillBaseLevelsList = Util::GetActorSkillLevels(a_playerActor);
 						}
 					}
 					else
@@ -5857,7 +5884,8 @@ namespace ALYSLC
 							ALYSLC::Log("[GLOB] ContactPointCallback. {}: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
-								ALYSLC::Log("[GLOB] ContactPointCallback. {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
+								ALYSLC::Log("[GLOB] ContactPointCallback. {}: Lock obtained. (0x{:X}).", 
+									p->coopActor->GetName(), hash);
 								if (!p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
 								{
 									p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);
