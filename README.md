@@ -1,5 +1,6 @@
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
+![Banner](https://i.imgur.com/s0tX9uh.jpeg)
 ## Developer's Note
 I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
 
