@@ -32,6 +32,68 @@ static constexpr uint8_t MAX_NODE_RECURSION_DEPTH = 100;
 // https://github.com/ersh1/Precision/blob/main/src/Offsets.h
 static float* g_deltaTimeRealTime = (float*)RELOCATION_ID(523661, 410200).address();	// 2F6B94C, 30064CC
 
+
+//==========
+//[Hashing]:
+//==========
+
+// Full credits to Bingle, ersh1, and dTry.
+// Used to hash strings for insertion into sets/maps and for comparison operations.
+// TODO: Remove unnecessary calls when comparing BSFixedString's.
+inline constexpr uint32_t Hash(const char* a_data, size_t const a_size) noexcept
+{
+	uint32_t hash = 5381;
+
+	for (const char* c = a_data; c < a_data + a_size; ++c)
+	{
+		hash = ((hash << 5) + hash) + (unsigned char)*c;
+	}
+
+	return hash;
+}
+
+inline const uint32_t Hash(const char* a_data) noexcept
+{
+	uint32_t hash = 5381;
+
+	for (const char* c = a_data; c < a_data + strlen(a_data); ++c)
+	{
+		hash = ((hash << 5) + hash) + (unsigned char)*c;
+	}
+
+	return hash;
+}
+
+inline const uint32_t Hash(const RE::BSFixedString& a_string) noexcept
+{
+	uint32_t hash = 5381;
+
+	for (const char* c = a_string.data(); c < a_string.data() + a_string.size(); ++c)
+	{
+		hash = ((hash << 5) + hash) + (unsigned char)*c;
+	}
+
+	return hash;
+}
+
+
+inline const uint32_t Hash(const std::string& a_string) noexcept
+{
+	uint32_t hash = 5381;
+
+	for (const char* c = a_string.data(); c < a_string.data() + a_string.size(); ++c)
+	{
+		hash = ((hash << 5) + hash) + (unsigned char)*c;
+	}
+
+	return hash;
+}
+
+inline constexpr uint32_t operator"" _h(const char* a_str, size_t a_size) noexcept
+{
+	return Hash(a_str, a_size);
+}
+
 //==========================
 //[Hashing and Comparators]:
 //==========================
@@ -43,7 +105,14 @@ struct std::hash<RE::NiPointer<RE::NiAVObject>>
 {
 	std::size_t operator()(const RE::NiPointer<RE::NiAVObject>& a_ptr) const
 	{
-		return std::hash<RE::NiAVObject*>()(a_ptr.get());
+		if (a_ptr) 
+		{
+			return std::hash<RE::NiAVObject*>()(a_ptr.get());
+		}
+		else
+		{
+			return std::hash<RE::NiAVObject*>()(nullptr);
+		}
 	}
 };
 
@@ -51,42 +120,33 @@ struct NiPointerNiAVObjectComp
 {
 	bool operator()(const RE::NiPointer<RE::NiAVObject>& a_lhs, const RE::NiPointer<RE::NiAVObject>& a_rhs) const
 	{
-		return std::hash<RE::NiPointer<RE::NiAVObject>>()(a_lhs) < std::hash<RE::NiPointer<RE::NiAVObject>>()(a_rhs);
+		return 
+		(
+			std::hash<RE::NiPointer<RE::NiAVObject>>()(a_lhs) < 
+			std::hash<RE::NiPointer<RE::NiAVObject>>()(a_rhs)
+		);
 	}
 };
 
 // For hashing ActorHandles/ObjectRefHandles.
-template <>
-struct std::hash<RE::ActorHandle>
+// Full credits again to ersh1:
+// https://github.com/ersh1/Precision/blob/main/src/PCH.h#L39
+template <class T>
+struct std::hash<RE::BSPointerHandle<T>>
 {
-	std::size_t operator()(const RE::ActorHandle& a_handle) const
+	uint32_t operator()(const RE::BSPointerHandle<T>& a_handle) const
 	{
-		return a_handle.native_handle();
+		uint32_t nativeHandle = const_cast<RE::BSPointerHandle<T>*>(&a_handle)->native_handle();  // ugh
+		return nativeHandle;
 	}
 };
 
-struct ActorHandleComp
+template <class T>
+struct HandleComp
 {
-	bool operator()(const RE::ActorHandle& a_lhs, const RE::ActorHandle& a_rhs) const
+	bool operator()(const RE::BSPointerHandle<T>& a_lhs, const RE::BSPointerHandle<T>& a_rhs) const
 	{
-		return std::hash<RE::ActorHandle>()(a_lhs) < std::hash<RE::ActorHandle>()(a_rhs);
-	}
-};
-
-template <>
-struct std::hash<RE::ObjectRefHandle>
-{
-	std::size_t operator()(const RE::ObjectRefHandle& a_handle) const
-	{
-		return a_handle.native_handle();
-	}
-};
-
-struct ObjectRefHandleComp
-{
-	bool operator()(const RE::ObjectRefHandle& a_lhs, const RE::ObjectRefHandle& a_rhs) const
-	{
-		return std::hash<RE::ObjectRefHandle>()(a_lhs) < std::hash<RE::ObjectRefHandle>()(a_rhs);
+		return std::hash<RE::BSPointerHandle<T>>()(a_lhs) < std::hash<RE::BSPointerHandle<T>>()(a_rhs);
 	}
 };
 
@@ -109,6 +169,24 @@ struct FormIDPairComp
 	}
 };
 
+template <>
+struct std::hash<RE::BSFixedString>
+{
+	std::size_t operator()(const RE::BSFixedString& a_string) const
+	{
+		return Hash(a_string);
+	}
+};
+
+struct BSFixedStringComp
+{
+	bool operator()(const RE::BSFixedString& a_lhs, const RE::BSFixedString& a_rhs) const
+	{
+		return std::hash<RE::BSFixedString>()(a_lhs) < std::hash<RE::BSFixedString>()(a_rhs);
+	}
+};
+
+
 namespace ALYSLC
 {
 	using Skill = RE::PlayerCharacter::PlayerSkills::Data::Skill;
@@ -127,67 +205,6 @@ namespace ALYSLC
 	{
 		static_assert(std::is_enum_v<T>, "ERR: Not an enum type. Cannot get underlying type.");
 		return std::to_underlying(a_data);
-	}
-	
-	//==========
-	//[Hashing]:
-	//==========
-	
-	// Full credits to Bingle, ersh1, and dTry.
-	// Used to hash strings for insertion into sets/maps and for comparison operations.
-	// TODO: Remove unnecessary calls when comparing BSFixedString's.
-	inline constexpr uint32_t Hash(const char* a_data, size_t const a_size) noexcept
-	{
-		uint32_t hash = 5381;
-
-		for (const char* c = a_data; c < a_data + a_size; ++c)
-		{
-			hash = ((hash << 5) + hash) + (unsigned char)*c;
-		}
-
-		return hash;
-	}
-
-	inline const uint32_t Hash(const char* a_data) noexcept
-	{
-		uint32_t hash = 5381;
-
-		for (const char* c = a_data; c < a_data + strlen(a_data); ++c)
-		{
-			hash = ((hash << 5) + hash) + (unsigned char)*c;
-		}
-
-		return hash;
-	}
-
-	inline const uint32_t Hash(const RE::BSFixedString& a_string) noexcept
-	{
-		uint32_t hash = 5381;
-
-		for (const char* c = a_string.data(); c < a_string.data() + a_string.size(); ++c)
-		{
-			hash = ((hash << 5) + hash) + (unsigned char)*c;
-		}
-
-		return hash;
-	}
-
-	
-	inline const uint32_t Hash(const std::string& a_string) noexcept
-	{
-		uint32_t hash = 5381;
-
-		for (const char* c = a_string.data(); c < a_string.data() + a_string.size(); ++c)
-		{
-			hash = ((hash << 5) + hash) + (unsigned char)*c;
-		}
-
-		return hash;
-	}
-
-	inline constexpr uint32_t operator"" _h(const char* a_str, size_t a_size) noexcept
-	{
-		return Hash(a_str, a_size);
 	}
 
 	//================================
@@ -722,7 +739,7 @@ namespace ALYSLC
 
 		namespace NativeFunctions
 		{
-			// Credits to ersh1 once again for the havok-related functions below:
+			// Credits to ersh1 once again for the havok and quaternion-related functions below:
 			// https://github.com/ersh1/Precision/blob/main/src/Offsets.h#L77
 			typedef void(_fastcall* thkpEntity_Activate)(RE::hkpEntity* a_this);
 			static REL::Relocation<thkpEntity_Activate> hkpEntity_Activate{ RELOCATION_ID(60096, 60849) };	// A6C730, A90F40
@@ -742,6 +759,10 @@ namespace ALYSLC
 			// https://github.com/ersh1/Precision/blob/main/src/Offsets.h#L113
 			typedef void* (*thkpWorld_removeContactListener)(RE::hkpWorld* a_world, RE::hkpContactListener* a_worldListener);
 			static REL::Relocation<thkpWorld_removeContactListener> hkpWorld_removeContactListener{ RELOCATION_ID(68974, 70327) };  // C59BD0, C814A0
+
+			// https://github.com/ersh1/Precision/blob/main/src/Offsets.h#L98
+			typedef void (*tNiMatrixToNiQuaternion)(RE::NiQuaternion& a_quatOut, const RE::NiMatrix3& a_matIn);
+			static REL::Relocation<tNiMatrixToNiQuaternion> NiMatrixToNiQuaternion{ RELOCATION_ID(69467, 70844) };	// C6E2D0, C967D0
 
 			// The next two are once again courtesy of SmoothCam:
 			// SE: https://github.com/mwilsnd/SkyrimSE-SmoothCam/blob/master/SmoothCam/include/offset_ids.h#L72-L73
@@ -1131,7 +1152,7 @@ namespace ALYSLC
 		// Get the game pitch angle for the given direction.
 		inline float DirectionToGameAngPitch(const RE::NiPoint3& a_dir)
 		{
-			return atan2f(-a_dir.z, a_dir.Length());
+			return atan2f(-a_dir.z, sqrtf(a_dir.x * a_dir.x + a_dir.y * a_dir.y));
 		}
 
 		// Get the game yaw angle for the given direction.
@@ -2298,6 +2319,7 @@ namespace ALYSLC
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);
+		RE::NiMatrix3 MatrixFromAxisAndAngle2(RE::NiPoint3 a_axis, const float& a_angle);
 
 		// Return true if no temporary menus are open.
 		// Temporary menus are considered as menus that add a non-gameplay/TFC context 
@@ -2424,16 +2446,16 @@ namespace ALYSLC
 
 		// Set the rotation matrix outparam to a rotation matrix 
 		// constructed from the given game pitch and yaw angles (game's convention).
-		void SetRotationMatrix(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw);
+		void SetRotationMatrixPY(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw);
 
 		// Set the rotation matrix outparam to a rotation matrix
 		// constructed from the given pitch, roll, and yaw angles (game's convention).
-		void SetRotationMatrix2(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw, const float& a_roll);
+		void SetRotationMatrixPYR(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw, const float& a_roll);
 
 		// Set the rotation matrix outparam to a rotation matrix
 		// constructed from the given axis unit vectors
 		// rotated about the given pitch, roll, and yaw angles (game's convention).
-		void SetRotationMatrix3(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll);
+		void SetRotationMatrixPYRAndAxes(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll);
 
 		// If the spell has an image space modifier 
 		// and is a self-targeted concentration spell, return true.

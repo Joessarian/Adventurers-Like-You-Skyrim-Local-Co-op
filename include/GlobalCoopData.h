@@ -1272,35 +1272,27 @@ namespace ALYSLC
 		static inline const float PLAYER_INDICATOR_DEF_LENGTH = 47.0f;
 
 		// Adjustable player left arm nodes when rotating that arm.
-		static inline const std::unordered_set<uint32_t> ADJUSTABLE_LEFT_ARM_NODE_HASHES = 
+		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_LEFT_ARM_NODE = 
 		{
-			Hash(RE::FixedStrings::GetSingleton()->npcLUpperArm),
-			Hash(RE::FixedStrings::GetSingleton()->npcLForearm),
-			"NPC L Hand [LHnd]"_h
+			RE::FixedStrings::GetSingleton()->npcLUpperArm,
+			RE::FixedStrings::GetSingleton()->npcLForearm,
+			"NPC L Hand [LHnd]"
 		};
 
 		// Adjustable player right arm nodes when rotating that arm.
-		static inline const std::unordered_set<uint32_t> ADJUSTABLE_RIGHT_ARM_NODE_HASHES = 
+		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_RIGHT_ARM_NODE = 
 		{
-			Hash(RE::FixedStrings::GetSingleton()->npcRUpperArm),
-			"NPC R Forearm [RLar]"_h,
-			"NPC R Hand [RHnd]"_h
+			RE::FixedStrings::GetSingleton()->npcRUpperArm,
+			"NPC R Forearm [RLar]",
+			"NPC R Hand [RHnd]"
 		};
 
 		// Adjustable player torso nodes when adjusting aim pitch.
-		static inline const std::unordered_set<uint32_t> ADJUSTABLE_TORSO_NODE_HASHES =
+		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_TORSO_NODE =
 		{
-			Hash(RE::FixedStrings::GetSingleton()->npcSpine),
-			Hash(RE::FixedStrings::GetSingleton()->npcSpine1),
-			Hash(RE::FixedStrings::GetSingleton()->npcSpine2)
-		};
-
-		// Maps node name hashes of parent nodes to a list of adjustable child nodes' names.
-		static inline const std::unordered_map<uint32_t, std::vector<std::string_view>> ADJUSTABLE_NODES_HASHES_TO_CHILD_NAMES = 
-		{
-			{ Hash(RE::FixedStrings::GetSingleton()->npcSpine), { RE::FixedStrings::GetSingleton()->npcSpine1, RE::FixedStrings::GetSingleton()->npcSpine2 } },
-			{ Hash(RE::FixedStrings::GetSingleton()->npcLUpperArm), { RE::FixedStrings::GetSingleton()->npcLForearm, "NPC L Hand [LHnd]" } },
-			{ Hash(RE::FixedStrings::GetSingleton()->npcRUpperArm), { "NPC R Forearm [RLar]", "NPC R Hand [RHnd]" } }
+			RE::FixedStrings::GetSingleton()->npcSpine,
+			RE::FixedStrings::GetSingleton()->npcSpine1,
+			RE::FixedStrings::GetSingleton()->npcSpine2
 		};
 
 		// Maps weapon animation types to their 1H or 2H weapon animation type equivalents.

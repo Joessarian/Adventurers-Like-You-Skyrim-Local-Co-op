@@ -120,7 +120,16 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_Character[0] };
+				REL::Relocation<uintptr_t> vtbl1{ RE::VTABLE_Character[1] };
+				REL::Relocation<uintptr_t> vtbl2{ RE::VTABLE_Character[2] };
 				REL::Relocation<uintptr_t> vtbl3{ RE::VTABLE_Character[3] };
+				REL::Relocation<uintptr_t> vtbl4{ RE::VTABLE_Character[4] };
+				REL::Relocation<uintptr_t> vtbl5{ RE::VTABLE_Character[5] };
+				REL::Relocation<uintptr_t> vtbl6{ RE::VTABLE_Character[6] };
+				REL::Relocation<uintptr_t> vtbl7{ RE::VTABLE_Character[7] };
+				REL::Relocation<uintptr_t> vtbl8{ RE::VTABLE_Character[8] };
+				REL::Relocation<uintptr_t> vtbl9{ RE::VTABLE_Character[9] };
+
 				_CheckClampDamageModifier = vtbl.write_vfunc(0x127, CheckClampDamageModifier);
 				logger::info("[Character Hook] Installed CheckClampDamageModifier() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
@@ -232,10 +241,6 @@ namespace ALYSLC
 		private:
 			static void UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2);		// 2C
 			static inline REL::Relocation<decltype(UpdateDownwardPass)> _UpdateDownwardPass;
-
-			// Restore cached node orientation data computed in the havok physics pre-step callback.
-			// For torso and arm node rotation.
-			static void RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData* a_data);
 		};
 
 		// [PlayerCameraTransitionState Hooks]

@@ -717,7 +717,13 @@ namespace ALYSLC
 				{
 					// From cam to player torso.
 					// If there is LOS, the cast will either hit nothing or the player.
-					auto result = Raycast::hkpCastRay({ camPos.x, camPos.y, camPos.z, 0.0f }, { playerTorsoPos.x, playerTorsoPos.y, playerTorsoPos.z, 0.0f }, std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), RE::COL_LAYER::kLOS);
+					auto result = Raycast::hkpCastRay
+					(
+						{ camPos.x, camPos.y, camPos.z, 0.0f }, 
+						{ playerTorsoPos.x, playerTorsoPos.y, playerTorsoPos.z, 0.0f }, 
+						std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+						RE::COL_LAYER::kLOS
+					);
 					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 					hasLOS = (!result.hitObject || !result.hitObject.get()) || (hitRefrPtr && hitRefrPtr.get() == coopActor.get());
 				}
@@ -731,7 +737,7 @@ namespace ALYSLC
 			if (shouldDraw || playerIndicatorFadeInterpData->interpToMax || playerIndicatorFadeInterpData->interpToMin) 
 			{
 				// Point facing downward above the player's head.
-				posScreenCoords = Util::WorldToScreenPoint3(Util::GetHeadPosition(coopActor.get()) + RE::NiPoint3(0.0f, 0.0f, 0.5f * coopActor->GetHeight()));
+				posScreenCoords = Util::WorldToScreenPoint3(Util::GetHeadPosition(coopActor.get()) + RE::NiPoint3(0.0f, 0.0f, 0.3f * coopActor->GetHeight()));
 				// Origin and lower/upper shape offsets from this origin.
 				glm::vec2 origin
 				{
@@ -2075,9 +2081,9 @@ namespace ALYSLC
 							// Only need a single raycast to hit before breaking.
 							for (const auto& nodeName : GlobalCoopData::RAGDOLL_COLLISION_NPC_NODES)
 							{
-								if (auto node = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); node && node.get())
+								if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
 								{
-									if (auto hkpRigidBody = Util::GethkpRigidBody(node.get()); hkpRigidBody)
+									if (auto hkpRigidBody = Util::GethkpRigidBody(nodePtr.get()); hkpRigidBody)
 									{
 										const RE::hkpShape* hkpShape = hkpRigidBody->collidable.shape;
 										velDir = ToNiPoint3(hkpRigidBody->motion.linearVelocity, true);
@@ -2086,7 +2092,7 @@ namespace ALYSLC
 											// Cast from node's world position outward a length equal to the node's radius
 											// in the direction of the node's velocity.
 											velOffset = ToVec4(velDir * convexShape->radius * HAVOK_TO_GAME);
-											start = ToVec4(node->world.translate);
+											start = ToVec4(nodePtr->world.translate);
 											end = start + velOffset;
 											auto result = Raycast::hkpCastRay(start, end, std::vector<RE::NiAVObject*>({ releasedRefr3D.get() }), RE::COL_LAYER::kActorZone);
 
@@ -3012,7 +3018,7 @@ namespace ALYSLC
 					// Hostile actors have their names reported in red.
 					text = fmt::format
 					(
-						"P{}: Detected by <font color=\"#{:X}\">{}</font> (<font color=\"#{:X}\">{}%</font>), overall: (<font color=\"#{:X}\">{}%</font>)",
+						"P{}: Detected by <font color=\"#{:X}\">{}</font> (<font color=\"#{:X}\">{}%</font>), overall (<font color=\"#{:X}\">{}%</font>)",
 						playerID + 1,
 						!isPlayer && selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 0xFF0000 : 0xFFFFFF,
 						selectedTargetActorPtr->GetDisplayFullName(),
@@ -3983,9 +3989,6 @@ namespace ALYSLC
 			Util::RotateVectorAboutAxis(indexBasedOffset, forward, 2.0f * PI * ((float)(a_index - 1) / (float)(Settings::uMaxGrabbedReferences - 1)));
 		}
 
-		// Apply positional offset scalar to the normalized offset after rotation.
-		indexBasedOffset *= indexOffsetScalar;
-
 		// Full credits to ersh1 once again for the steps to access motion type and apply linear velocity:
 		// https://github.com/ersh1/Precision/blob/702428bc065c75b3964a0324992658b1ab0a0821/src/Havok/ContactListener.cpp#L8
 		if (auto hkpRigidBody = Util::GethkpRigidBody(objectPtr.get()); hkpRigidBody)
@@ -4053,6 +4056,9 @@ namespace ALYSLC
 				basePos.z
 			};
 
+			glm::vec3 end = ToVec3(targetPosition) + ToVec3(indexBasedOffset) * 15.0f;
+			DebugAPI::QueuePoint3D(end, Settings::vuOverlayRGBAValues[a_p->playerID], 3.0f);
+
 			// Can move the grabbed refr vertically in an arc around the player by adjusting aim pitch.
 			if (a_p->tm->isMARFing)
 			{
@@ -4063,6 +4069,9 @@ namespace ALYSLC
 				targetPosition.z += height * suspensionDistMult * -sinf(a_p->mm->aimPitch);
 			}
 
+
+			// Apply positional offset scalar to the normalized offset after rotation.
+			indexBasedOffset *= indexOffsetScalar;
 			// Now add the positional offset based on grab index.
 			targetPosition += indexBasedOffset;
 
@@ -5927,12 +5936,22 @@ namespace ALYSLC
 		targetLocalPosOffset = Util::HandleIsValid(targetActorHandle) ? a_p->tm->crosshairLastHitLocalPos : RE::NiPoint3();
 		targetedActorNode.reset();
 		// Fall back on crosshair world position if there is no targeted actor.
-		trajectoryEndPos =
-		(
-			targetActorValidity ? 
-			targetActorPtr->data.location + targetLocalPosOffset :
-			a_p->tm->crosshairWorldPos
-		);
+		trajectoryEndPos = a_p->tm->crosshairWorldPos;
+		// Choose the exact crosshair position locally offset from the target actor;
+		// otherwise, if not facing the crosshair, target the selected actor's torso.
+		// Done to maximize hit chance, since an actor's torso node is most likely 
+		// to be within their character controller collider.
+		if (targetActorValidity) 
+		{
+			if (a_p->mm->shouldFaceTarget) 
+			{
+				trajectoryEndPos = targetActorPtr->data.location + targetLocalPosOffset;
+			}
+			else
+			{
+				trajectoryEndPos = Util::GetTorsoPosition(targetActorPtr.get());
+			}
+		}
 
 		// TODO: Snap released refr to the closest position on the targeted actor's character controller collider.
 		// If just fired and aiming at an actor, direct at the closest node to the crosshair world position.
@@ -6272,15 +6291,7 @@ namespace ALYSLC
 		// Then set its trajectory information 
 		// and update its initial velocity through the outparam.
 
-		RE::Projectile* projectile = nullptr;
-		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
-		if (projectilePtr)
-		{
-			projectile = projectilePtr->As<RE::Projectile>();
-		}
-
-		// Smart ptr was invalid, so its managed projectile is as well, return early.
-		if (!projectile)
+		if (!Util::HandleIsValid(a_projectileHandle))
 		{
 			return;
 		}
@@ -6289,6 +6300,8 @@ namespace ALYSLC
 		// if the queue size is above a certain threshold.
 		if (managedProjHandleToTrajInfoMap.size() >= Settings::uManagedPlayerProjectilesBeforeRemoval)
 		{
+			RE::Projectile* projectile = nullptr;
+			RE::TESObjectREFRPtr projectilePtr{ };
 			for (const auto& [handle, _] : managedProjHandleToTrajInfoMap) 
 			{
 				projectilePtr = Util::GetRefrPtrFromHandle(handle);
@@ -6306,8 +6319,16 @@ namespace ALYSLC
 			}
 		}
 
+		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+		// Smart ptr was invalid, so its managed projectile is as well, return early.
+		if (!projectilePtr || !projectilePtr.get())
+		{
+			return;
+		}
+
 		// Insert constructed trajectory info for this projectile.
 		// NOTE: Construction sets all the trajectory data automatically.
+
 		managedProjHandleToTrajInfoMap.insert_or_assign
 		(
 			a_projectileHandle, 

@@ -742,10 +742,10 @@ namespace ALYSLC
 			std::mutex contactEventsQueueMutex;
 
 			// Maps grabbed refr handles to their positions in the managed grabbed refrs list.
-			std::unordered_map<RE::ObjectRefHandle, uint8_t, std::hash<RE::ObjectRefHandle>> grabbedRefrHandlesToInfoIndices;
+			std::unordered_map<RE::ObjectRefHandle, uint8_t> grabbedRefrHandlesToInfoIndices;
 
 			// Maps released refr handles to their positions in the managed released refrs list.
-			std::unordered_map<RE::ObjectRefHandle, uint8_t, std::hash<RE::ObjectRefHandle>> releasedRefrHandlesToInfoIndices;
+			std::unordered_map<RE::ObjectRefHandle, uint8_t> releasedRefrHandlesToInfoIndices;
 
 			// Set of pairs of FIDs for the two objects that collide during a havok contact event.
 			// One of the FIDs is always a released refr.

@@ -619,7 +619,8 @@ namespace ALYSLC
 			if (auto charController = a_p->coopActor->GetCharController(); charController)
 			{
 				// Also cannot start jumping if not on the ground.
-				if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround || charController->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kUnsupported) 
+				if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround ||
+					charController->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kUnsupported) 
 				{
 					// Check slope angle for the surface the player would like to jump off.
 					// Must be less than the defined max jump surface slope angle.
@@ -5689,7 +5690,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
 				}
 			}
-			else //if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -5712,7 +5713,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
 				}
 			}
-			else //if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -5735,7 +5736,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 				}
 			}
-			else //if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bRotateArmsWhenSheathed)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -6431,7 +6432,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				//if (!Settings::bRotateArmsWhenSheathed) 
+				if (!Settings::bRotateArmsWhenSheathed) 
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -6498,7 +6499,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				//if (!Settings::bRotateArmsWhenSheathed)
+				if (!Settings::bRotateArmsWhenSheathed)
 				{
 					a_p->pam->ReadyWeapon(true);
 				}

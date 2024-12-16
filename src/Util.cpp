@@ -870,7 +870,7 @@ namespace ALYSLC
 				return 1.0f;
 			}
 
-			auto refr3D = Util::GetRefr3D(a_refr);
+			auto refr3DPtr = Util::GetRefr3D(a_refr);
 			// Handled differently for actors.
 			if (auto asActor = a_refr->As<RE::Actor>(); asActor) 
 			{
@@ -890,11 +890,11 @@ namespace ALYSLC
 				// Fall back on the refr's radius and height when bound extents are 0.
 				if (boundExtents.Length() == 0.0f)
 				{
-					if (refr3D)
+					if (refr3DPtr && refr3DPtr.get())
 					{
 						boundExtents.x = 
 						boundExtents.y =
-						boundExtents.z = 2.0f * refr3D->worldBound.radius;
+						boundExtents.z = 2.0f * refr3DPtr->worldBound.radius;
 					}
 
 					if (a_refr->GetHeight() != 0.0f)
@@ -903,23 +903,33 @@ namespace ALYSLC
 					}
 				}
 
-				if (headBP && refr3D && refr3D->GetObjectByName(headBP->targetName))
+				bool useHeadBP = headBP && refr3DPtr && refr3DPtr.get();
+				if (useHeadBP) 
 				{
-					// Use the head body part's world position
-					// to get the upright angle and head world position.
-					headWorldPos = refr3D->GetObjectByName(headBP->targetName)->world.translate;
-					uprightDir = headWorldPos - asActor->data.location;
-					uprightDir.Unitize();
+					auto headBPPtr = RE::NiPointer<RE::NiAVObject>(refr3DPtr->GetObjectByName(headBP->targetName));
+					useHeadBP = headBPPtr && headBPPtr.get();
+					if (useHeadBP) 
+					{
+						// Use the head body part's world position
+						// to get the upright angle and head world position.
+						headWorldPos = headBPPtr->world.translate;
+						uprightDir = headWorldPos - asActor->data.location;
+						uprightDir.Unitize();
+					}
 				}
-				else if (auto charController = asActor->GetCharController(); charController)
+
+				if (!useHeadBP) 
 				{
-					// Use the character controller's pitch angle 
-					// to get the upright angle and head world position.
-					float pitch = charController->pitchAngle;
-					float yaw = ConvertAngle(asActor->GetHeading(false));
-					// At 90 degrees to the char controller pitch.
-					uprightDir = RotationToDirectionVect(pitch + PI / 2.0f, yaw);
-					headWorldPos = asActor->data.location + uprightDir * asActor->GetHeight();
+					if (auto charController = asActor->GetCharController(); charController)
+					{
+						// Use the character controller's pitch angle
+						// to get the upright angle and head world position.
+						float pitch = charController->pitchAngle;
+						float yaw = ConvertAngle(asActor->GetHeading(false));
+						// At 90 degrees to the char controller pitch.
+						uprightDir = RotationToDirectionVect(pitch + PI / 2.0f, yaw);
+						headWorldPos = asActor->data.location + uprightDir * asActor->GetHeight();
+					}
 				}
 
 				// Get the refr's center world position.
@@ -927,14 +937,14 @@ namespace ALYSLC
 				// or refr data position offset by half the actor's height/Z bound
 				// in the upright direction calculated earlier.
 				auto centerWorldPos = asActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight());
-				if (refr3D)
+				if (refr3DPtr && refr3DPtr.get())
 				{
 					// Make sure the reported world bound center location is close to 
 					// the corresponding center location based off the refr's location 
 					// before using it as the center position.
-					if (refr3D->worldBound.center.GetDistance(asActor->data.location) < refr3D->worldBound.radius * 2.0f)
+					if (refr3DPtr->worldBound.center.GetDistance(asActor->data.location) < refr3DPtr->worldBound.radius * 2.0f)
 					{
-						centerWorldPos = refr3D->worldBound.center;
+						centerWorldPos = refr3DPtr->worldBound.center;
 					}
 					else
 					{
@@ -987,9 +997,9 @@ namespace ALYSLC
 				// 3D radius and height.
 				if (boundExtents.Length() == 0.0f) 
 				{
-					if (refr3D) 
+					if (refr3DPtr && refr3DPtr.get()) 
 					{
-						boundExtents.x = boundExtents.y = boundExtents.z = 2.0f * refr3D->worldBound.radius;
+						boundExtents.x = boundExtents.y = boundExtents.z = 2.0f * refr3DPtr->worldBound.radius;
 					}
 
 					if (a_refr->GetHeight() != 0.0f) 
@@ -1003,7 +1013,7 @@ namespace ALYSLC
 				auto centerWorldPos = a_refr->data.location + uprightDir * boundExtents.z * 0.5f;
 
 				// If 3D is available, base around the 3D's world bound center instead.
-				if (refr3D)
+				if (refr3DPtr && refr3DPtr.get())
 				{
 					// Make sure reported world bound center location is close to 
 					// the corresponding center location based off the refr's location
@@ -1011,9 +1021,9 @@ namespace ALYSLC
 					// Some activators seem to have no reported center position 
 					// or have their 3D world bound center position at the world origin (0, 0, 0)
 					// instead of offset from the actual world origin.
-					if (refr3D->worldBound.center.GetDistance(a_refr->data.location) < refr3D->worldBound.radius * 2.0f)
+					if (refr3DPtr->worldBound.center.GetDistance(a_refr->data.location) < refr3DPtr->worldBound.radius * 2.0f)
 					{
-						centerWorldPos = refr3D->worldBound.center;
+						centerWorldPos = refr3DPtr->worldBound.center;
 					}
 					else
 					{
@@ -1088,10 +1098,13 @@ namespace ALYSLC
 				nullptr
 			);
 			// Get eye world position from the body part first, if available.
-			if (const auto actor3D = Util::GetRefr3D(a_actor); actor3D && targetEyeBP &&
-				actor3D->GetObjectByName(targetEyeBP->targetName))
+			if (const auto actor3DPtr = Util::GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get() && targetEyeBP)
 			{
-				return actor3D->GetObjectByName(targetEyeBP->targetName)->world.translate;
+				if (auto targetEyeBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(targetEyeBP->targetName));
+					targetEyeBPPtr && targetEyeBPPtr.get()) 
+				{
+					return targetEyeBPPtr->world.translate;
+				}
 			}
 
 			// Fallback to the actor's 'looking at' location.
@@ -1188,17 +1201,19 @@ namespace ALYSLC
 				}
 			}
 
-			const auto actor3D = Util::GetRefr3D(a_actor);
-			if (actor3D && headBP && actor3D->GetObjectByName(headBP->targetName))
+			const auto actor3DPtr = Util::GetRefr3D(a_actor);
+			if (actor3DPtr && actor3DPtr.get() && headBP)
 			{
-				// Return head body part position.
-				return actor3D->GetObjectByName(headBP->targetName)->world.translate;
+				if (auto headBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(headBP->targetName));
+					headBPPtr && headBPPtr.get()) 
+				{
+					// Return head body part position.
+					return headBPPtr->world.translate;
+				}
 			}
-			else
-			{
-				// Last fallback is the actor's location offset by their height.
-				return a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight());
-			}
+
+			// Last fallback is the actor's location offset by their height.
+			return a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight());
 		}
 
 		std::pair<RE::TESAmmo*, int32_t> GetHighestCountAmmo(RE::Actor* a_actor, const bool& a_forBows)
@@ -1559,16 +1574,18 @@ namespace ALYSLC
 				);
 
 				auto targetTorsoPos = a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight() * 0.5f);
-				if (const auto actor3D = Util::GetRefr3D(a_actor); actor3D)
+				if (const auto actor3DPtr = Util::GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get())
 				{
-					// Body part world position or 3D bound's center.
-					if (targetTorsoBP && actor3D->GetObjectByName(targetTorsoBP->targetName)) 
+					// 3D bound's center next.
+					targetTorsoPos = actor3DPtr->worldBound.center;
+					// Use body part world position if available.
+					if (targetTorsoBP) 
 					{
-						targetTorsoPos = actor3D->GetObjectByName(targetTorsoBP->targetName)->world.translate;
-					}
-					else
-					{
-						targetTorsoPos = actor3D->worldBound.center;
+						if (auto targetTorsoBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(targetTorsoBP->targetName));
+							targetTorsoBPPtr && targetTorsoBPPtr.get()) 
+						{
+							targetTorsoPos = targetTorsoBPPtr->world.translate;
+						}
 					}
 				}
 
@@ -2725,6 +2742,49 @@ namespace ALYSLC
 			mat.entry[2][0] = (Az * Ax * OMCosT - Ay * SinT);
 			mat.entry[2][1] = (Az * Ay * OMCosT + Ax * SinT);
 			mat.entry[2][2] = (CosT + Az * Az * OMCosT);
+			return mat;
+		}
+
+		RE::NiMatrix3 MatrixFromAxisAndAngle2(RE::NiPoint3 a_axis, const float& a_angle)
+		{
+			// Construct a rotation matrix given an axis 
+			// and an angle to rotate about that axis.
+
+			a_axis.Unitize();
+			RE::NiMatrix3 mat;
+			RE::NiMatrix3 k
+			{
+				RE::NiPoint3(0.0f, -a_axis.z, a_axis.y),
+				RE::NiPoint3(a_axis.z, 0.0f, -a_axis.x),
+				RE::NiPoint3(-a_axis.y, a_axis.x, 0.0f)
+			};
+
+			const float cosT = cosf(a_angle);
+			const float sinT = sinf(a_angle);
+			const float omCosT = 1.0f - cosT;
+			RE::NiMatrix3 mat1 = (k * sinT);
+			RE::NiMatrix3 mat2 = (k * k * omCosT);
+			mat = 
+			(
+				RE::NiPoint3
+				(
+					mat.entry[0][0] + mat1.entry[0][0] + mat2.entry[0][0],
+					mat.entry[0][1] + mat1.entry[0][1] + mat2.entry[0][1],
+					mat.entry[0][2] + mat1.entry[0][2] + mat2.entry[0][2]
+				),
+				RE::NiPoint3
+				(
+					mat.entry[1][0] + mat1.entry[1][0] + mat2.entry[1][0],
+					mat.entry[1][1] + mat1.entry[1][1] + mat2.entry[1][1],
+					mat.entry[1][2] + mat1.entry[1][2] + mat2.entry[1][2]
+				),
+				RE::NiPoint3
+				(
+					mat.entry[2][0] + mat1.entry[2][0] + mat2.entry[2][0],
+					mat.entry[2][1] + mat1.entry[2][1] + mat2.entry[2][1],
+					mat.entry[2][2] + mat1.entry[2][2] + mat2.entry[2][2]
+				)
+			);
 
 			return mat;
 		}
@@ -3017,6 +3077,7 @@ namespace ALYSLC
 				a_quatA.y * a_quatB.y + 
 				a_quatA.z * a_quatB.z
 			);
+
 			// if qa=qb or qa=-qb then theta = 0 and we can return qb
 			if (fabs(cosHalfTheta) >= 0.99999)
 			{
@@ -3208,28 +3269,27 @@ namespace ALYSLC
 			// Precondition: Angle must be in radians.
 			// How to rotate a vector in 3d space around arbitrary axis,
 			// URLs: https://math.stackexchange.com/q/4034978,
-			// https://en.wikipedia.org/wiki/Rotation_matrix#cite_note-5
+			// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 
 			a_axis.Unitize();
-			const float CosT = cosf(a_angle);
-			const float SinT = sinf(a_angle);
-			const float Ax = a_axis.x;
-			const float Ay = a_axis.y;
-			const float Az = a_axis.z;
-			const float OMCosT = 1.0f - CosT;
-			const float R00 = (CosT + Ax * Ax * OMCosT);
-			const float R01 = (Ax * Ay * OMCosT - Az * SinT);
-			const float R02 = (Ax * Az * OMCosT + Ay * SinT);
-			const float R10 = (Ay * Ax * OMCosT + Az * SinT);
-			const float R11 = (CosT + Ay * Ay * OMCosT);
-			const float R12 = (Ay * Az * OMCosT - Ax * SinT);
-			const float R20 = (Az * Ax * OMCosT - Ay * SinT);
-			const float R21 = (Az * Ay * OMCosT + Ax * SinT);
-			const float R22 = (CosT + Az * Az * OMCosT);
 
-			a_vectorOut.x = R00 * a_vectorOut.x + R01 * a_vectorOut.y + R02 * a_vectorOut.z;
-			a_vectorOut.y = R10 * a_vectorOut.x + R11 * a_vectorOut.y + R12 * a_vectorOut.z;
-			a_vectorOut.z = R20 * a_vectorOut.x + R21 * a_vectorOut.y + R22 * a_vectorOut.z;
+			RE::NiMatrix3 k
+			{
+				RE::NiPoint3(0.0f, -a_axis.z, a_axis.y),
+				RE::NiPoint3(a_axis.z, 0.0f, -a_axis.x),
+				RE::NiPoint3(-a_axis.y, a_axis.x, 0.0f)
+			};
+
+			const float cosT = cosf(a_angle);
+			const float sinT = sinf(a_angle);
+			const float omCosT = 1.0f - cosT;
+			a_vectorOut = 
+			(
+				(a_vectorOut * cosT) + 
+				((a_axis.Cross(a_vectorOut)) * sinT) +
+				(a_axis * (a_axis.Dot(a_vectorOut) * omCosT))
+			);
+
 			a_vectorOut.Unitize();
 		}
 
@@ -3479,8 +3539,8 @@ namespace ALYSLC
 			}
 
 			RE::NiMatrix3 nodeMat;
-			SetRotationMatrix(nodeMat, glob.cam->camPitch, glob.cam->camYaw);
-			
+			SetRotationMatrixPY(nodeMat, glob.cam->camPitch, glob.cam->camYaw);
+
 			// Don't modify the local rotation matrix, 
 			// since other mods have features that make changes to it, 
 			// such as Precision's hitstop + camera shake (https://www.nexusmods.com/skyrimspecialedition/mods/72347)
@@ -3598,7 +3658,7 @@ namespace ALYSLC
 			a_actor->Update3DPosition(true);
 		}
 
-		void SetRotationMatrix(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw)
+		void SetRotationMatrixPY(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw)
 		{
 			// Construct a rotation matrix based on the game pitch and yaw angles.
 			// Then set the rotation matrix outparam to this new matrix.
@@ -3621,7 +3681,7 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		void SetRotationMatrix2(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw, const float& a_roll)
+		void SetRotationMatrixPYR(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw, const float& a_roll)
 		{
 			// Construct a rotation matrix based on the game pitch, roll, and yaw angles.
 			// Then set the rotation matrix outparam to this new matrix.
@@ -3646,7 +3706,7 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		void SetRotationMatrix3(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll) 
+		void SetRotationMatrixPYRAndAxes(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll) 
 		{
 			// Construct a rotation matrix by rotating the three axes provided 
 			// by the game pitch, roll, and yaw angles.

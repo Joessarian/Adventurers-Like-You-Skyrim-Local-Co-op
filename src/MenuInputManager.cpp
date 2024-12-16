@@ -4443,8 +4443,16 @@ namespace ALYSLC
 		// give control to the last player who controlled open menus.
 		if (resolvedCID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
 		{
-			ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: No valid requests to open supported menu {}, set to last menu CID: {}", a_menuName, glob.prevMenuCID);
-			resolvedCID = glob.prevMenuCID;
+			if (glob.coopPlayers[glob.player1CID]->IsRunning()) 
+			{
+				ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: No valid requests to open supported menu {}, set to last menu CID: {}", a_menuName, glob.prevMenuCID);
+				resolvedCID = glob.prevMenuCID;
+			}
+			else
+			{
+				ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: No valid requests to open supported menu {} while P1's managers are inactive, set to P1 CID: {}", a_menuName, glob.player1CID);
+				resolvedCID = glob.player1CID;
+			}
 		}
 
 		ALYSLC::Log("[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: Final resolved CID: {}, for menu {}.",

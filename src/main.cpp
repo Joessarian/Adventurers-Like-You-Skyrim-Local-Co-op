@@ -151,7 +151,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	{
 		logger::info("[MAIN] Setting serialization callbacks.");
 		// Set serialization ID and callbacks.
-		serialization->SetUniqueID(ALYSLC::Hash("ALYSLC"));
+		serialization->SetUniqueID(Hash("ALYSLC"));
 		serialization->SetLoadCallback(ALYSLC::SerializationCallbacks::Load);
 		serialization->SetRevertCallback(ALYSLC::SerializationCallbacks::Revert);
 		serialization->SetSaveCallback(ALYSLC::SerializationCallbacks::Save);

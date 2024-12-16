@@ -592,7 +592,7 @@ namespace ALYSLC
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;
 		// Number of unique projectiles managed before checking for expired projectiles to remove from the managed queue.
-		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 50;
+		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 10;
 
 		//------------------
 		//[Timer Intervals]:
@@ -606,10 +606,10 @@ namespace ALYSLC
 		static inline const float fSecsBetweenStealthStateChecks = 0.25f;
 		// Seconds between crosshair target visibility checks.
 		static inline const float fSecsBetweenTargetVisibilityChecks = 1.0f;
-		// Seconds to fully blend in/out arm and torso node rotations to the default or custom values.
-		static inline const float fSecsBlendPlayerNodeRotations = 0.4f;
 		// Seconds without LOS on a crosshair target after which to clear the target.
 		static inline const float fSecsWithoutLOSToInvalidateTarget = 7.0f;
+		// Framecount to fully blend in/out arm and torso node rotations to the default or custom values.
+		static inline const uint32_t uBlendPlayerNodeRotationsFrameCount = 12;
 
 		
 		//==========================

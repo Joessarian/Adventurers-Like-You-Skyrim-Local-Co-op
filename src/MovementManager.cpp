@@ -35,7 +35,7 @@ namespace ALYSLC
 	{
 		UpdateMovementParameters();
 		UpdateMovementState();
-		SetAttackSourceOrientationData();
+		UpdateAttackSourceOrientationData(false);
 		SetAimRotation();
 		UpdateAimPitch();
 		SetHeadTrackTarget();
@@ -75,7 +75,7 @@ namespace ALYSLC
 		// Reset node rotations.
 		if (nextState == ManagerState::kAwaitingRefresh) 
 		{
-			nrm->InstantlyResetAllNodeData();
+			nom->InstantlyResetAllNodeData(p);
 		}
 	}
 
@@ -107,11 +107,12 @@ namespace ALYSLC
 
 		// Initial aim pitch position.
 		aimPitchPos = glob.player1Actor->data.location;
+		coopActor->data.angle.x = 0.0f;
 
 		// Reset node rotations.
 		if (currentState == ManagerState::kAwaitingRefresh)
 		{
-			nrm->InstantlyResetAllNodeData();
+			nom->InstantlyResetAllNodeData(p);
 		}
 	}
 
@@ -127,19 +128,26 @@ namespace ALYSLC
 		// Positions.
 		aimPitchPos = coopActor->data.location;
 		dashDodgeDir = RE::NiPoint3();
-		playerAttackSourcePos = coopActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.75f * coopActor->GetHeight());
-		playerAttackSourceDir = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+		playerAttackSourcePos = 
+		playerDefaultAttackSourcePos = 
+		(
+			coopActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.75f * coopActor->GetHeight())
+		);
+		playerAttackSourceDir = 
+		playerDefaultAttackSourceDir = 
+		RE::NiPoint3(0.0f, 0.0f, 0.0f);
 		// Atomic flags.
 		shouldFaceTarget = shouldResetAimAndBody = startJump = false;
 		// Movement parameters list.
 		movementOffsetParams = std::vector<float>(!MoveParams::kTotal, 0.0f);
 		// Node rotation data.
-		nrm = std::make_unique<NodeRotationManager>();
+		nom = std::make_unique<NodeOrientationManager>();
 		// Booleans.
 		aimPitchAdjusted = false;
 		aimPitchManuallyAdjusted = false;
 		attemptDiscovery = false;
 		dontMoveSet = true;
+		faceTarget = false;
 		hasMovementOffset = false;
 		inRangeOfUndiscoveredMarker = false;
 		interactionPackageRunning = false;
@@ -164,6 +172,7 @@ namespace ALYSLC
 		shouldParaglide = false;
 		shouldStartMoving = false;
 		shouldStopMoving = false;
+		turnToTarget = false;
 		// Floats.
 		aimPitch = PI / 18.0f;
 		baseHeightMult = max(0.001f, static_cast<float>(coopActor->refScale) / 100.0f);
@@ -810,7 +819,8 @@ namespace ALYSLC
 					}
 					
 					// Check if the player has landed, reset state, and return early.
-					if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround)
+					if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround && 
+						charController->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported)
 					{
 						// Reset jump state variables.
 						charController->lock.Lock();
@@ -1085,8 +1095,8 @@ namespace ALYSLC
 		const auto& data3D = coopActor->loadedData->data3D;
 		// Head and LH/RH magic nodes.
 		auto headMagicNode = data3D->GetObjectByName(strings->npcHeadMagicNode);
-		auto lMagNode = data3D->GetObjectByName(strings->npcLMagicNode);
-		auto rMagNode = data3D->GetObjectByName(strings->npcRMagicNode);
+		auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcLMagicNode));
+		auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcRMagicNode));
 
 		bool isCastingDual = false;
 		bool isCastingLH = false;
@@ -1123,8 +1133,8 @@ namespace ALYSLC
 			std::pair<float, float> pitchYawPair{ aimPitch, coopActor->data.angle.z };
 			if (auto magicCaster = coopActor->GetMagicCaster(a_source); magicCaster)
 			{
-				auto magNode = magicCaster->GetMagicNode();
-				if (!magNode) 
+				auto magNodePtr = RE::NiPointer<RE::NiAVObject>(magicCaster->GetMagicNode());
+				if (!magNodePtr) 
 				{
 					return;
 				}
@@ -1133,13 +1143,13 @@ namespace ALYSLC
 				// No target and not facing crosshair position, so return default facing direction pitch/yaw.
 				if (a_targetPtr || shouldFaceTarget)
 				{
-					float pitch = Util::GetPitchBetweenPositions(magNode->world.translate, a_targetPos);
-					float yaw = Util::GetYawBetweenPositions(magNode->world.translate, a_targetPos);
+					float pitch = Util::GetPitchBetweenPositions(magNodePtr->world.translate, a_targetPos);
+					float yaw = Util::GetYawBetweenPositions(magNodePtr->world.translate, a_targetPos);
 					pitchYawPair.first = pitch;
 					pitchYawPair.second = yaw;
 				}
 
-				Util::SetRotationMatrix(magNode->world.rotate, pitchYawPair.first, pitchYawPair.second);
+				Util::SetRotationMatrixPY(magNodePtr->world.rotate, pitchYawPair.first, pitchYawPair.second);
 			}
 		};
 
@@ -1204,27 +1214,27 @@ namespace ALYSLC
 				return;
 			}
 
-			if (auto headMagNode = coopActor->loadedData->data3D->GetObjectByName(strings->npcHeadMagicNode); 
-				headMagNode && p->pam->IsPerforming(InputAction::kQuickSlotCast))
+			if (auto headMagNodePtr = RE::NiPointer<RE::NiAVObject>(coopActor->loadedData->data3D->GetObjectByName(strings->npcHeadMagicNode)); 
+				headMagNodePtr && p->pam->IsPerforming(InputAction::kQuickSlotCast))
 			{
 				if (!useAimPitchPos)
 				{
 					// Just in case if the caster node is not available, even though the instant caster is casting our quick slot spell.
-					avgPitchYawPair.first += Util::GetPitchBetweenPositions(headMagNode->world.translate, targetPos);
-					avgPitchYawPair.second += Util::GetYawBetweenPositions(headMagNode->world.translate, targetPos);
+					avgPitchYawPair.first += Util::GetPitchBetweenPositions(headMagNodePtr->world.translate, targetPos);
+					avgPitchYawPair.second += Util::GetYawBetweenPositions(headMagNodePtr->world.translate, targetPos);
 				}
 
 				++activeNodesCount;
 				return;
 			}
-			else if (auto lookNode = coopActor->loadedData->data3D->GetObjectByName(strings->npcLookNode); 
-				lookNode && p->pam->IsPerforming(InputAction::kQuickSlotCast))
+			else if (auto lookNodePtr = RE::NiPointer<RE::NiAVObject>(coopActor->loadedData->data3D->GetObjectByName(strings->npcLookNode)); 
+				lookNodePtr && p->pam->IsPerforming(InputAction::kQuickSlotCast))
 			{
 				if (!useAimPitchPos)
 				{
 					// Just in case if the head magic node is not available, even though the instant caster is casting our quick slot spell.
-					avgPitchYawPair.first += Util::GetPitchBetweenPositions(lookNode->world.translate, targetPos);
-					avgPitchYawPair.second += Util::GetYawBetweenPositions(lookNode->world.translate, targetPos);
+					avgPitchYawPair.first += Util::GetPitchBetweenPositions(lookNodePtr->world.translate, targetPos);
+					avgPitchYawPair.second += Util::GetYawBetweenPositions(lookNodePtr->world.translate, targetPos);
 				}
 
 				++activeNodesCount;
@@ -1287,117 +1297,6 @@ namespace ALYSLC
 			// No active nodes, so adjust aim pitch to our custom pitch.
 			coopActor->SetGraphVariableFloat("AimPitchCurrent", -aimPitch);
 		}
-	}
-
-	void MovementManager::SetAttackSourceOrientationData()
-	{
-		// Get node from which an attack would originate,
-		// based on the player's equipped gear, 
-		// and save its position and direction.
-		
-		// Need valid 3D and fixed strings.
-		const auto strings = RE::FixedStrings::GetSingleton();
-		if (!strings || !coopActor->loadedData || !coopActor->loadedData->data3D)
-		{
-			return;
-		}
-
-		const auto& data3D = coopActor->loadedData->data3D;
-		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
-		auto arrowNode = data3D->GetObjectByName(strings->arrow0);
-		auto headNode = data3D->GetObjectByName(strings->npcHead);
-		auto leadingFootNode = data3D->GetObjectByName(strings->npcLFoot);
-		auto leftHandNode = data3D->GetObjectByName("NPC L Hand [LHnd]"sv);
-		auto lMagNode = data3D->GetObjectByName(strings->npcLMagicNode);
-		auto rightHandNode = data3D->GetObjectByName("NPC R Hand [RHnd]"sv);
-		auto rMagNode = data3D->GetObjectByName(strings->npcRMagicNode);
-		auto weaponNode = data3D->GetObjectByName(strings->weapon);
-		RE::NiAVObject* sourceNode = nullptr;
-		bool ammoDrawnOrLater = 
-		{
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
-			coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
-		};
-		bool nockingAmmo = coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
-							coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDraw;
-		bool isAimingWithRangedWeapon = ammoDrawnOrLater;
-		if ((p->pam->isCastingLH || p->pam->isCastingRH || p->pam->isInCastingAnim) && lMagNode && rMagNode)
-		{
-			if (p->pam->isCastingLH && p->pam->isCastingRH)
-			{
-				// Best approximation to be made here is to rotate about the point between the two casting nodes
-				// when casting with two hands, as there is no single source point for the released projectiles.
-				playerAttackSourcePos = (lMagNode->world.translate + rMagNode->world.translate) / 2.0f;
-			}
-			else if (p->pam->isCastingLH && lMagNode)
-			{
-				playerAttackSourcePos = lMagNode->world.translate;
-				sourceNode = lMagNode;
-			}
-			else if (p->pam->isCastingRH && rMagNode)
-			{
-				playerAttackSourcePos = rMagNode->world.translate;
-				sourceNode = rMagNode;
-			}
-			else
-			{
-				playerAttackSourcePos = (lMagNode->world.translate + rMagNode->world.translate) / 2.0f;
-			}
-		}
-		else if (weaponNode && isAimingWithRangedWeapon)
-		{
-			playerAttackSourcePos = weaponNode->world.translate;
-			sourceNode = weaponNode;
-		}
-		else
-		{
-			playerAttackSourcePos = headNode ? headNode->world.translate : coopActor->GetLookingAtLocation();
-			sourceNode = headNode;
-		}
-
-		// Since the arrow rotates away from the player 
-		// while it is being removed from the quiver and nocked,
-		// using the direction from the draw hand to the bow hand is more stable 
-		// and less jittery than using the arrow/weapon node's rotation.
-		// The arrow node rotation will not be stable until it is fully drawn.
-		if (nockingAmmo && sourceNode && leftHandNode && rightHandNode && p->em->HasBowEquipped()) 
-		{
-			float playerAttackSourceYaw = Util::DirectionToGameAngYaw(leftHandNode->world.translate - rightHandNode->world.translate);
-			float playerAttackSourcePitch = Util::DirectionToGameAngPitch(sourceNode->world.rotate * forward);
-			playerAttackSourceDir = Util::RotationToDirectionVect(-playerAttackSourcePitch, Util::ConvertAngle(playerAttackSourceYaw));
-		}
-		else
-		{
-			// Don't follow the node once its pitch gets close to 90 degrees, use the player facing direction instead
-			// to prevent the player from jittering and swapping facing directions when turning to
-			// direct this node at the target.
-			if (sourceNode && fabsf(Util::DirectionToGameAngPitch(sourceNode->world.rotate * forward)) < 85.0f * PI / 180.0f)
-			{
-				playerAttackSourceDir = sourceNode->world.rotate * forward;
-			}
-			else
-			{
-				playerAttackSourceDir = Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(coopActor->data.angle.z));
-			}
-		}
-
-		// REMOVE when done debugging node directions.
-		/*glm::vec3 startVec = ToVec3(playerAttackSourcePos);
-		glm::vec3 endVec1 = startVec + ToVec3(playerAttackSourceDir) * 20.0f;
-		RE::NiPoint3 toCrosshairPos = p->tm->crosshairWorldPos - playerAttackSourcePos;
-		toCrosshairPos.Unitize();
-		glm::vec3 endVec2 = startVec + ToVec3(toCrosshairPos.x) * 20.0f;
-		RE::NiPoint3 weaponNodeDir = weaponNode ? weaponNode->world.rotate * forward : toCrosshairPos;
-		glm::vec3 endVec3 = startVec + ToVec3(weaponNodeDir) * 20.0f;
-		auto lookNode = coopActor->loadedData->data3D->GetObjectByName(strings->npcLookNode);
-		RE::NiPoint3 lookingDir = lookNode ? lookNode->world.rotate * forward : toCrosshairPos;
-		glm::vec3 endVec4 = startVec + ToVec3(lookingDir) * 20.0f;
-		DebugAPI::QueuePoint3D(startVec, Settings::vuOverlayRGBAValues[playerID], 5.0f);
-		DebugAPI::QueueArrow3D(startVec, endVec1, Settings::vuOverlayRGBAValues[playerID], 3.0f, 2.0f);
-		DebugAPI::QueueArrow3D(startVec, endVec2, Settings::vuCrosshairOuterOutlineRGBAValues[playerID], 3.0f, 2.0f);
-		DebugAPI::QueueArrow3D(startVec, endVec3, Settings::vuCrosshairInnerOutlineRGBAValues[playerID], 3.0f, 2.0f);
-		DebugAPI::QueueArrow3D(startVec, endVec4, 0x00FFFFFF, 3.0f, 2.0f);*/
 	}
 
 	void MovementManager::SetDontMove(bool&& a_set)
@@ -1571,10 +1470,6 @@ namespace ALYSLC
 		coopActor->data.angle.z = Util::NormalizeAng0To2Pi(coopActor->data.angle.z);
 		float rotMult = GetRotationMult();
 		float playerTargetYaw = coopActor->data.angle.z;
-		// Face the target directly at all times after toggled on by FaceTarget bind.
-		bool faceTarget = false;
-		// Temporarily turn to face the target when certain actions trigger.
-		bool turnToTarget = false;
 		// Do not set rotation if not AI driven, a menu is open that stops movement,
 		// the player is AI driven, in synced animation, mounting, in a killmove, or staggered.
 		if (!menuStopsMovement && !isAnimDriven && !isSynced && !isMounting && 
@@ -1709,9 +1604,29 @@ namespace ALYSLC
 					// Commented out for now until solution is found.
 					// Directly face the target position.
 					yawToTarget = Util::DirectionToGameAngYaw(targetLocation - playerAttackSourcePos);
-					float aimHeading = 0.0f;
-					coopActor->GetGraphVariableFloat("AimHeadingCurrent", aimHeading);
-					playerTargetYaw = coopActor->data.angle.z + (Util::NormalizeAngToPi(yawToTarget - (coopActor->data.angle.z + aimHeading))) * rotMult;  //(aimHeading * rotMult);  //+ Util::NormalizeAngToPi(yawToTarget - playerAttackSourceYaw) * rotMult;
+					playerTargetYaw = 
+					(
+						coopActor->data.angle.z + 
+						(
+							Util::NormalizeAngToPi
+							(
+								yawToTarget - 
+								coopActor->GetAimHeading()
+							)
+						) * rotMult
+					);
+
+					/*playerTargetYaw = 
+					(
+						coopActor->data.angle.z + 
+						(
+							Util::NormalizeAngToPi
+							(
+								yawToTarget - 
+								Util::DirectionToGameAngYaw(playerAttackSourceDir)
+							)
+						) * rotMult
+					);*/
 				}
 				else
 				{
@@ -2200,7 +2115,7 @@ namespace ALYSLC
 			p->tm->crosshairWorldPos
 		);
 
-		float pitchToTarget = Util::GetPitchBetweenPositions(playerAttackSourcePos, targetPos);
+		float defaultPitchToTarget = Util::GetPitchBetweenPositions(playerDefaultAttackSourcePos, targetPos);
 		// Slow down spinal rotation when close to the target to minimize jitter.
 		float distToTarget = playerAttackSourcePos.GetDistance(targetPos);
 		auto rotMult = 1.0f;
@@ -2267,7 +2182,7 @@ namespace ALYSLC
 			// Pitch directly at target if aim pitch was not manually modified.
 			if (!aimPitchManuallyAdjusted) 
 			{
-				auto pitchDiff = Util::NormalizeAngToPi(pitchToTarget - aimPitch);
+				auto pitchDiff = Util::NormalizeAngToPi(defaultPitchToTarget - aimPitch);
 				if (coopActor->IsSwimming())
 				{
 					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 6.0f, PI / 2.0f);
@@ -2294,16 +2209,16 @@ namespace ALYSLC
 			// Clear out all previously set node target rotations, preventing blending in to the cleared values.
 			if (shouldResetAimAndBody) 
 			{
-				std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
+				std::unique_lock<std::mutex> lock(nom->rotationDataMutex, std::try_to_lock);
 				if (lock)
 				{
-					nrm->ClearCustomRotations();
+					nom->ClearCustomRotations();
 				}
 			}
 
 			if (adjustAimPitchToFaceTarget)
 			{
-				auto pitchDiff = Util::NormalizeAngToPi(pitchToTarget - aimPitch);
+				auto pitchDiff = Util::NormalizeAngToPi(defaultPitchToTarget - aimPitch);
 				if (coopActor->IsSwimming())
 				{
 					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 6.0f, PI / 2.0f);
@@ -2335,1427 +2250,210 @@ namespace ALYSLC
 				eyePos.y + radialDist * sinf(Util::ConvertAngle(coopActor->GetHeading(false))) * cosf(aimPitch),
 				eyePos.z - radialDist * sinf(aimPitch));
 			// Modifications to P1's X angle here while aiming with a bow/crossbow
-			// double up the effects of TDM's spinal rotation, so halve the set pitch here.
-			coopActor->data.angle.x = 
-			(
-				(
-					p->isPlayer1 &&
-					ALYSLC::TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled &&
-					p->pam->isRangedWeaponAttack
-				) ? 
-				aimPitch / 2.0f :
-				aimPitch
-			);
+			// double up the effects of our custom torso rotation, so set to zero here.
+			coopActor->data.angle.x = 0.0f;
 		}
 	}
 
-	void MovementManager::UpdateCachedArmNodeRotationData(RE::NiAVObject* a_forearmNode, RE::NiAVObject* a_handNode, bool a_rightArm)
+	void MovementManager::UpdateAttackSourceOrientationData(bool&& a_setDefaultDirAndPos)
 	{
-		const auto forearmNameHash = Hash(a_forearmNode->name);
-		const auto handNameHash = Hash(a_handNode->name);
-		// Invalid nodes or not accounted for in the rotation data map.
-		if (!a_forearmNode || !a_handNode)
-		{
-			return;
-		}
-
-		// Ensure both nodes are accounted for in rotation data map.
-		if (!nrm->nodeRotationDataMap.contains(forearmNameHash))
-		{
-			nrm->nodeRotationDataMap.insert_or_assign(forearmNameHash, std::make_unique<NodeRotationData>());
-		}
-
-		if (!nrm->nodeRotationDataMap.contains(handNameHash))
-		{
-			nrm->nodeRotationDataMap.insert_or_assign(handNameHash, std::make_unique<NodeRotationData>());
-		}
-
-		auto& forearmData = nrm->nodeRotationDataMap[forearmNameHash];
-		auto& handData = nrm->nodeRotationDataMap[handNameHash];
-		// Set initial starting/current/target rotations if not set yet.
-		const auto identityMat = RE::NiMatrix3();
-		if (forearmData->startingRotation == identityMat ||
-			forearmData->currentRotation == identityMat ||
-			forearmData->defaultRotation == identityMat ||
-			forearmData->targetRotation == identityMat)
-		{
-			forearmData->startingRotation =
-			forearmData->currentRotation =
-			forearmData->defaultRotation = 
-			forearmData->targetRotation = a_forearmNode->local.rotate;
-		}
-
-		if (handData->startingRotation == identityMat ||
-			handData->currentRotation == identityMat ||
-			handData->currentRotation == identityMat ||
-			handData->targetRotation == identityMat)
-		{
-			handData->startingRotation =
-			handData->currentRotation =
-			handData->defaultRotation = 
-			handData->targetRotation = a_handNode->local.rotate;
-		}
-
-		// Set node target rotations for forearm and hand.
-		bool forearmRotHasBeenSet = forearmData->rotationModified;
-		bool handRotHasBeenSet = handData->rotationModified;
-		const float oldForearmYaw = forearmRotHasBeenSet ? forearmData->rotationInput[0] : 0.0f;
-		const float oldForearmPitch = forearmRotHasBeenSet ? forearmData->rotationInput[1] : 0.0f;
-		const float oldForearmRoll = forearmRotHasBeenSet ? forearmData->rotationInput[2] : 0.0f;
-		const float oldHandYaw = handRotHasBeenSet ? handData->rotationInput[0] : a_rightArm ? -(0.5f * PI) : (0.5f * PI);
-		const float oldHandPitch = handRotHasBeenSet ? handData->rotationInput[1] : 0.0f;
-		const float oldHandRoll = handRotHasBeenSet ? handData->rotationInput[2] : 0.0f;
-		float targetForearmPitch = oldForearmPitch;
-		float targetForearmRoll = oldForearmRoll;
-		float targetForearmYaw = oldForearmYaw;
-		float targetHandPitch = oldHandPitch;
-		float targetHandRoll = oldHandRoll;
-		float targetHandYaw = oldHandYaw;
-
-		const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
-		float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
-		float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
-
-		// Check which node rotation actions are being performed.
-		bool rotatingForearm = 
-		{
-			a_rightArm ?
-			p->pam->IsPerforming(InputAction::kRotateRightForearm) :
-			p->pam->IsPerforming(InputAction::kRotateLeftForearm)
-		};
-		bool rotatingHand = 
-		{
-			a_rightArm ?
-			p->pam->IsPerforming(InputAction::kRotateRightHand) :
-			p->pam->IsPerforming(InputAction::kRotateLeftHand)
-		};
-		bool rotatingShoulder = 
-		{
-			a_rightArm ?
-			p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
-			p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
-		};
-		bool onlyRotatingShoulder = rotatingShoulder && !rotatingForearm && !rotatingHand;
-
-		if (rotatingHand)
-		{
-			// When clicking in the RS, change forearm yaw and hand yaw together along the +X axis,
-			// and hand roll along the -X axis.
-			// Change hand pitch along the Y axis.
-			// Flip angle sign for the other hand.
-			if (xDisp > 0.0f)
-			{
-				targetForearmYaw = xDisp * (0.25f * PI) - (PI / 60.0f);
-				targetHandYaw = (xDisp - 1.0f) * (0.5f * PI);
-				if (!a_rightArm)
-				{
-					targetForearmYaw = -targetForearmYaw;
-					targetHandYaw = -targetHandYaw;
-				}
-					
-				// Set hand AND forearm target rotation as modified.
-				handData->rotationModified = forearmData->rotationModified = true;
-			}
-			else
-			{
-				// Hand roll.
-				if (xDisp >= -0.333333f)
-				{
-					targetHandRoll = (-xDisp * 4.0f) * (0.25f * PI);
-				}
-				else if (xDisp >= -0.666666f)
-				{
-					targetHandRoll = (2.666664f + xDisp * 4.0f) * (0.25f * PI);
-				}
-				else
-				{
-					targetHandRoll = ((0.666666f + xDisp) * 3.0f) * (0.25f * PI);
-				}
-
-				if (!a_rightArm)
-				{
-					targetHandRoll = -targetHandRoll;
-				}
-
-				// Only hand target rotation modified.
-				handData->rotationModified = true;
-			}
-
-			// Hand pitch.
-			targetHandPitch = yDisp * (0.5f * PI);
-		}
-		else if (rotatingForearm)
-		{
-			// When NOT clicking in the RS, change forearm pitch along the +Y axis and
-			// forearm roll along the -Y axis.
-			// Change forearm yaw along the X axis.
-			// Flip angle sign for the other side.
-			if (yDisp > 0.0f)
-			{
-				// Forearm pitch.
-				targetForearmPitch = yDisp * (0.5f * PI);
-			}
-			else
-			{
-				// Forearm roll.
-				targetForearmRoll = -yDisp * (0.25f * PI) + (PI / 60.0f);
-				if (!a_rightArm)
-				{
-					targetForearmRoll = -targetForearmRoll;
-				}
-			}
-
-			if (xDisp > 0.0f)
-			{
-				// Forearm yaw.
-				targetForearmYaw = xDisp * (0.25f * PI) - (PI / 60.0f);
-			}
-			else
-			{
-				// Forearm yaw.
-				targetForearmYaw = xDisp * (0.25f * PI) + (PI / 60.0f);
-			}
-
-			if (!a_rightArm)
-			{
-				targetForearmYaw = -targetForearmYaw;
-			}
-
-			// Only forearm target rotation modified.
-			forearmData->rotationModified = true;
-		}
-
-		// If modified, set hand and forearm node rotation inputs and target rotations.
-		const RE::NiPoint3 locXAxis{ 1.0f, 0.0f, 0.0f };
-		const RE::NiPoint3 locYAxis{ 0.0f, 1.0f, 0.0f };
-		const RE::NiPoint3 locZAxis{ 0.0f, 0.0f, 1.0f };
-		if (forearmData->rotationModified) 
-		{
-			if (oldForearmPitch != targetForearmPitch)
-			{
-				targetForearmPitch = Util::InterpolateSmootherStep(oldForearmPitch, targetForearmPitch, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			if (oldForearmRoll != targetForearmRoll)
-			{
-				targetForearmRoll = Util::InterpolateSmootherStep(oldForearmRoll, targetForearmRoll, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			if (oldForearmYaw != targetForearmYaw)
-			{
-				targetForearmYaw = Util::InterpolateSmootherStep(oldForearmYaw, targetForearmYaw, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			forearmData->rotationInput = std::array<float, 3>({ targetForearmYaw, targetForearmPitch, targetForearmRoll });
-			Util::SetRotationMatrix3
-			(
-				forearmData->targetRotation, 
-				locXAxis, 
-				locYAxis, 
-				locZAxis, 
-				forearmData->rotationInput[1], 
-				forearmData->rotationInput[0], 
-				forearmData->rotationInput[2]
-			);
-		}
-		else
-		{
-			forearmData->targetRotation = a_forearmNode->local.rotate;
-		}
-		
-		if (handData->rotationModified) 
-		{
-			if (oldHandPitch != targetHandPitch)
-			{
-				targetHandPitch = Util::InterpolateSmootherStep(oldHandPitch, targetHandPitch, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			if (oldHandRoll != targetHandRoll)
-			{
-				targetHandRoll = Util::InterpolateSmootherStep(oldHandRoll, targetHandRoll, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			if (oldHandYaw != targetHandYaw)
-			{
-				targetHandYaw = Util::InterpolateSmootherStep(oldHandYaw, targetHandYaw, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			handData->rotationInput = std::array<float, 3>({ targetHandYaw, targetHandPitch, targetHandRoll });
-			Util::SetRotationMatrix3
-			(
-				handData->targetRotation, 
-				locXAxis,
-				locYAxis, 
-				locZAxis,
-				handData->rotationInput[1], 
-				handData->rotationInput[0], 
-				handData->rotationInput[2] 
-			);
-		}
-		else
-		{
-			handData->targetRotation = a_handNode->local.rotate;
-		}
-
-		// Update forearm and hand node blend status and data after potentially setting target rotations.
-		UpdateCachedNodeRotationBlendData(forearmData, forearmNameHash, a_forearmNode, true);
-		UpdateCachedNodeRotationBlendData(handData, handNameHash, a_handNode, true);
-	}
-
-	void MovementManager::UpdateCachedNodeRotationBlendData(const std::unique_ptr<NodeRotationData>& a_data, const uint32_t& a_nodeNameHash, RE::NiAVObject* a_node, bool a_isArmNode)
-	{
-		if (!a_data || !a_data.get() || !a_node)
-		{
-			return;
-		}
-
-		auto ui = RE::UI::GetSingleton();
-		// Blend in flag for individual nodes.
-		// Continue blending in if target rotation was modified already
-		// or if now rotating the node (which will set a new target rotation).
-		bool blendIn = false;
-		// Not in dialogue or not controlling menus.
-		bool inDialogueOrNotControllingMenus = 
-		{
-			(glob.menuCID != p->controllerID) ||
-			(ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
-		};
-		if (a_isArmNode) 
-		{
-			// General blend in flag:
-			// Can adjust when in dialogue or not controlling menus,
-			// if not staggered or knocked back or swimming,
-			// if weapons are out,
-			// and if the player manager is running.
-			// Blend out if false.
-			
-			blendIn = 
-			{
-				//inDialogueOrNotControllingMenus &&
-				a_data->rotationModified &&
-				coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
-				!p->IsAwaitingRefresh() &&
-				!coopActor->IsWeaponDrawn() &&
-				!coopActor->actorState2.staggered &&
-				!coopActor->IsSwimming()
-			};
-
-			// [TODO]: 
-			// Figure out some way to blend in/out for arm nodes.
-			// Since the rotation angle endpoints are hardcoded 
-			// and there appears to be constraints imposed on the range of possble Euler angles, 
-			// using separate Euler or matrix interp methods do not slowly adjust the nodes' current rotations 
-			// to the target rotations while also taking the shortest/natural path. 
-			// The arm nodes will swing through the body or rotate awkwardly at the moment, so for now, we'll just set the current rotation
-			// directly to the target/default rotation for all arm nodes.
-			if (blendIn) 
-			{
-				if (a_data->blendStatus != NodeRotationBlendStatus::kTargetReached) 
-				{
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kTargetReached);
-				}
-
-				a_data->currentRotation = a_data->targetRotation;
-			}
-			else
-			{
-				// Weird issue that I haven't figured out yet:
-				// Have to clear custom-set rotation since having the rotation modified
-				// flag set leads to arm node flickering if a previous rotation was set,
-				// as the game appears to warp some other arm node(s) between the default
-				// and previously set custom orientations.
-				nrm->ClearCustomRotation(a_nodeNameHash);
-				if (a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
-				{
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kDefaultReached);
-				}
-
-				a_data->currentRotation = a_data->defaultRotation;
-			}
-		}
-		else
-		{
-			// General blend in flag:
-			// Can adjust when in dialogue or not controlling menus,
-			// if not staggered or knocked back,
-			// and if the player manager is running.
-			// Blend out if false.
-
-			// Let game handle torso rotation when aiming with a bow/crossbow/spells.
-			bool p1AimActive = 
-			{
-				p->isPlayer1 &&
-				!p->coopActor->IsOnMount() && 
-				p->pam->isRangedAttack
-			};
-
-			// TODO: Add torso blending while mounted.
-			// Having issues with Euler angle interpolation discontinuities.
-			const bool isMounted = coopActor->IsOnMount();
-
-			// Only rotate the torso when drawing/releasing the bow/crossbow.
-			bool isRangedWeaponPrimed = 
-			{
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
-			};
-			// Rotate the torso throughout the attack animation's duration when not attacking with a 2H ranged weapon.
-			bool isAttackingWithoutRangedWeap = !p->em->Has2HRangedWeapEquipped() && p->pam->isAttacking;
-			blendIn = 
-			{
-				(
-					!p1AimActive &&
-					a_data->rotationModified &&
-					coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
-					!p->IsAwaitingRefresh() &&
-					!coopActor->actorState2.staggered
-				) /*&&
-				(
-					!coopActor->IsWeaponDrawn() ||
-					isRangedWeaponPrimed || 
-					isAttackingWithoutRangedWeap ||
-					p->pam->isBashing ||
-					p->pam->isBlocking ||
-					p->pam->isInCastingAnim ||
-					p->pam->usingLHStaff ||
-					p->pam->usingRHStaff ||
-					p->pam->isVoiceCasting ||
-					p->pam->IsPerforming(InputAction::kQuickSlotCast) ||
-					p->mm->shouldFaceTarget
-				)*/
-			};
-
-			if (blendIn)
-			{
-				if (a_data->blendStatus != NodeRotationBlendStatus::kBlendIn && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
-				{
-					// Just started blending in.
-					NodeRotationBlendStatus prevStatus = a_data->blendStatus;
-					// Start blending in when the player first tries to rotate their arms.
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kBlendIn);
-					// Set starting rotation before blending in.
-					if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from default.", coopActor->GetName(), a_node->name);
-						
-						// Starting from game's set rotation.
-						a_data->startingRotation = a_data->defaultRotation;
-					}
-					else if (prevStatus == NodeRotationBlendStatus::kTargetReached)
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from target.", coopActor->GetName(), a_node->name);
-						
-						// Starting from our set target rotation.
-						a_data->startingRotation = a_data->targetRotation;
-					}
-					else
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend in from current.", coopActor->GetName(), a_node->name);
-						
-						// Starting from the current blended rotation.
-						a_data->startingRotation = a_data->currentRotation;
-					}
-				}
-
-				float secsSinceBlendingIn = Util::GetElapsedSeconds(a_data->blendInTP);
-				// Blend interval elapsed, so we'll now set the requested rotations to the target ones.
-				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn &&
-					secsSinceBlendingIn > Settings::fSecsBlendPlayerNodeRotations)
-				{
-					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending in.", coopActor->GetName(), a_node->name);
-					
-					// Target rotation reached.
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kTargetReached);
-				}
-
-				// Interpolate between starting and target local rotations when blending in.
-				// Set directly to the target local rotation otherwise.
-				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn && !isMounted)
-				{
-					// Blend out to reach the game's assigned rotation from the starting rotation.
-					float t = std::clamp
-					(
-						secsSinceBlendingIn / Settings::fSecsBlendPlayerNodeRotations,
-						0.0f,
-						1.0f
-					);
-
-					float xC = 0.0f;
-					float yC = 0.0f;
-					float zC = 0.0f;
-					float xS = 0.0f;
-					float yS = 0.0f;
-					float zS = 0.0f;
-					float xT = 0.0f;
-					float yT = 0.0f;
-					float zT = 0.0f;
-					a_data->startingRotation.ToEulerAnglesXYZ(xS, yS, zS);
-					a_data->targetRotation.ToEulerAnglesXYZ(xT, yT, zT);
-					xC = -Util::InterpolateSmootherStep(xS, xT, t);
-					yC = Util::InterpolateSmootherStep(yS, yT, t);
-					zC = -Util::InterpolateSmootherStep(zS, zT, t);
-					a_data->currentRotation.SetEulerAnglesXYZ(xC, yC, zC);
-
-					// REMOVE when done debugging.
-					/*ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND IN: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).", 
-						coopActor->GetName(), a_node->name,
-						xS * TO_DEGREES, yS * TO_DEGREES, zS * TO_DEGREES,
-						xC * TO_DEGREES, yC * TO_DEGREES, zC * TO_DEGREES,
-						xT * TO_DEGREES, yT * TO_DEGREES, zT * TO_DEGREES);*/
-				}
-				else
-				{
-					a_data->currentRotation = a_data->targetRotation;
-				}
-			}
-			else
-			{
-				if (a_data->blendStatus != NodeRotationBlendStatus::kBlendOut && a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
-				{
-					NodeRotationBlendStatus prevStatus = a_data->blendStatus;
-					// Start blending out if not already blending out and if the default rotation was not reached.
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kBlendOut);
-					// Set starting rotation before blending out.
-					if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from default.", coopActor->GetName(), a_node->name);
-						
-						// Starting from game's set rotation.
-						a_data->startingRotation = a_data->defaultRotation;
-					}
-					else if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from target.", coopActor->GetName(), a_node->name);
-						
-						// Starting from our set target rotation.
-						a_data->startingRotation = a_data->targetRotation;
-					}
-					else
-					{
-						// REMOVE when done debugging.
-						//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Start blend out from current.", coopActor->GetName(), a_node->name);
-						
-						// Starting from the current blended rotation.
-						a_data->startingRotation = a_data->currentRotation;
-					}
-				}
-
-				float secsSinceBlendingOut = Util::GetElapsedSeconds(a_data->blendOutTP);
-				// Fully blended out.
-				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut &&
-					Util::GetElapsedSeconds(a_data->blendOutTP) > Settings::fSecsBlendPlayerNodeRotations)
-				{
-					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: Done blending out.", coopActor->GetName(), a_node->name);
-					
-					// Default rotation reached.
-					nrm->SetBlendStatus(a_nodeNameHash, NodeRotationBlendStatus::kDefaultReached);
-				}
-
-				// Interpolate between starting and game-given default local rotations when blending out.
-				// Set directly to the default local rotation otherwise.
-				if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut && !isMounted)
-				{
-					// Blend out to reach the game's assigned rotation from the starting rotation.
-					float t = std::clamp
-					(
-						secsSinceBlendingOut / Settings::fSecsBlendPlayerNodeRotations,
-						0.0f,
-						1.0f
-					);
-
-					float xC = 0.0f;
-					float yC = 0.0f;
-					float zC = 0.0f;
-					float xS = 0.0f;
-					float yS = 0.0f;
-					float zS = 0.0f;
-					float xD = 0.0f;
-					float yD = 0.0f;
-					float zD = 0.0f;
-					a_data->startingRotation.ToEulerAnglesXYZ(xS, yS, zS);
-					a_data->defaultRotation.ToEulerAnglesXYZ(xD, yD, zD);
-					xC = -Util::InterpolateSmootherStep(xS, xD, t);
-					yC = Util::InterpolateSmootherStep(yS, yD, t);
-					zC = -Util::InterpolateSmootherStep(zS, zD, t);
-					a_data->currentRotation.SetEulerAnglesXYZ(xC, yC, zC);
-
-					// REMOVE when done debugging.
-					/*ALYSLC::Log("[MM] UpdateCachedNodeRotationBlendData: {}: {}: BLEND OUT: ({}, {}, {}) -> ({}, {}, {}) -> ({}, {}, {}).",
-						coopActor->GetName(), a_node->name,
-						xS * TO_DEGREES, yS * TO_DEGREES, zS * TO_DEGREES,
-						xC * TO_DEGREES, yC * TO_DEGREES, zC * TO_DEGREES,
-						xD * TO_DEGREES, yD * TO_DEGREES, zD * TO_DEGREES);*/
-				}
-				else
-				{
-					a_data->currentRotation = a_data->defaultRotation;
-				}
-			}
-
-		}
-	}
-
-	void MovementManager::UpdateCachedShoulderNodeRotationData(RE::NiAVObject* a_shoulderNode, bool a_rightShoulder)
-	{
-		if (!a_shoulderNode || !a_shoulderNode->collisionObject)
-		{
-			return;
-		}
-
-		/*auto collisionObject = static_cast<RE::bhkCollisionObject*>(a_shoulderNode->collisionObject.get());
-		auto rigidBody = collisionObject->GetRigidBody();
-		if (!rigidBody || !rigidBody->referencedObject)
-		{
-			return;
-		}*/
-
-		const auto shoulderNameHash = Hash(a_shoulderNode->name);
-		// Ensure the shoulder node is accounted for in rotation data map.
-		if (!nrm->nodeRotationDataMap.contains(shoulderNameHash))
-		{
-			nrm->nodeRotationDataMap.insert_or_assign(shoulderNameHash, std::make_unique<NodeRotationData>());
-		}
-
-		// Rotation data we will modify.
-		auto& shoulderData = nrm->nodeRotationDataMap[shoulderNameHash];
-		// Set initial starting/current/target rotations if not set yet.
-		const auto identityMat = RE::NiMatrix3();
-		if (shoulderData->startingRotation == identityMat ||
-			shoulderData->currentRotation == identityMat ||
-			shoulderData->defaultRotation == identityMat || 
-			shoulderData->targetRotation == identityMat)
-		{
-			shoulderData->startingRotation =
-			shoulderData->currentRotation =
-			shoulderData->defaultRotation = 
-			shoulderData->targetRotation = a_shoulderNode->local.rotate;
-		}
-
-		// New rotation inputs to construct target rotation matrix with (if adjusted below).
-		std::array<float, 3> newRotationInput = shoulderData->rotationInput;
-		bool rotatingShoulder = 
-		{
-			a_rightShoulder ?
-			p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
-			p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
-		};
-		if (rotatingShoulder) 
-		{
-			// Set shoulder target rotation as modified.
-			shoulderData->rotationModified = true;
-
-			// Pick RS quadrant/axis based on its displacement.
-			const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
-			auto rsLoc = AnalogStickLocation::kCenter;
-			float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
-			float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
-			if (rsData.normMag > 0.0f)
-			{
-				if (xDisp > 0.0f && yDisp > 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kTopRight;
-				}
-				else if (xDisp > 0.0f && yDisp < 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kBottomRight;
-				}
-				else if (xDisp < 0.0f && yDisp < 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kBottomLeft;
-				}
-				else if (xDisp < 0.0f && yDisp > 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kTopLeft;
-				}
-				else if (xDisp > 0.0f && yDisp == 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kPosXAxis;
-				}
-				else if (xDisp == 0.0f && yDisp < 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kNegYAxis;
-				}
-				else if (xDisp < 0.0f && yDisp == 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kNegXAxis;
-				}
-				else if (xDisp == 0.0f && yDisp > 0.0f)
-				{
-					rsLoc = AnalogStickLocation::kPosYAxis;
-				}
-			}
-
-			const auto& leftShoulderMatAngleInputs = nrm->leftShoulderMatAngleInputs;
-			const auto& rightShoulderMatAngleInputs = nrm->rightShoulderMatAngleInputs;
-			// Yaw (determined by RS X displacement and heading angle), pitch (determined by RS Y displacement), roll (constant).
-			if (rsLoc == AnalogStickLocation::kCenter)
-			{
-				// Forward when centered.
-				if (a_rightShoulder)
-				{
-					newRotationInput = rightShoulderMatAngleInputs.at(ArmOrientation::kForward);
-				}
-				else
-				{
-					newRotationInput = leftShoulderMatAngleInputs.at(ArmOrientation::kForward);
-				}
-			}
-			else
-			{
-				// "Outer point" represents arm orientation points to use when RS is displaced from center,
-				// outer points ratio = 1, forward ratio = 0 at max displacement.
-				// When centered, the forward ratio is 1 and the outer points ratio is 0,
-				// meaning the forward arm orientation point is used.
-				const auto& forwardMatAngleInputs = 
-				(
-					a_rightShoulder ? 
-					rightShoulderMatAngleInputs.at(ArmOrientation::kForward) : 
-					leftShoulderMatAngleInputs.at(ArmOrientation::kForward)
-				);
-				float forwardRatio = 1.0f - std::clamp(rsData.normMag, 0.0f, 1.0f);
-				float outerPointsRatio = 1.0f - forwardRatio;
-				float forwardAngleX = forwardMatAngleInputs[0] * forwardRatio;
-				float forwardAngleY = forwardMatAngleInputs[1] * forwardRatio;
-				float forwardAngleZ = forwardMatAngleInputs[2] * forwardRatio;
-
-				if (rsLoc == AnalogStickLocation::kPosYAxis)
-				{
-					// Right and left shoulder blend:
-					// Forward and Upward.
-					// Outer point: upward.
-					const auto& upwardMatAngleInputs = 
-					(
-						a_rightShoulder ? 
-						rightShoulderMatAngleInputs.at(ArmOrientation::kUpward) : 
-						leftShoulderMatAngleInputs.at(ArmOrientation::kUpward)
-					);
-					float outerPointsAngleX = upwardMatAngleInputs[0] * outerPointsRatio;
-					float outerPointsAngleY = upwardMatAngleInputs[1] * outerPointsRatio;
-					float outerPointsAngleZ = upwardMatAngleInputs[2] * outerPointsRatio;
-
-					newRotationInput = 
-					{
-						forwardAngleX + outerPointsAngleX,
-						forwardAngleY + outerPointsAngleY,
-						forwardAngleZ + outerPointsAngleZ
-					};
-				}
-				else if (rsLoc == AnalogStickLocation::kTopRight)
-				{
-					// Right shoulder blend:
-					// Forward, Outward, and Upward.
-					if (a_rightShoulder)
-					{
-						// Outer points: outward and upward.
-						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						const auto& upwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kUpward);
-						float outwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = outwardWeight + upwardWeight;
-						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
-						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (outwardAngleX + upwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (outwardAngleY + upwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (outwardAngleZ + upwardAngleZ) * outerPointsRatio;
-
-						newRotationInput =
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward, Inward, and Upward.
-					else
-					{
-						// Outer points: inward and upward.
-						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						const auto& upwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kUpward);
-						float inwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = inwardWeight + upwardWeight;
-						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
-						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (inwardAngleX + upwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (inwardAngleY + upwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (inwardAngleZ + upwardAngleZ) * outerPointsRatio;
-
-						newRotationInput =
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-				else if (rsLoc == AnalogStickLocation::kPosXAxis)
-				{
-					// Right shoulder blend:
-					// Forward and Outward
-					if (a_rightShoulder)
-					{
-						// Outer point: outward.
-						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						float outerPointsAngleX = outwardMatAngleInputs[0] * outerPointsRatio;
-						float outerPointsAngleY = outwardMatAngleInputs[1] * outerPointsRatio;
-						float outerPointsAngleZ = outwardMatAngleInputs[2] * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward and Inward.
-					else
-					{
-						// Outer points: inward.
-						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						float outerPointsAngleX = inwardMatAngleInputs[0] * outerPointsRatio;
-						float outerPointsAngleY = inwardMatAngleInputs[1] * outerPointsRatio;
-						float outerPointsAngleZ = inwardMatAngleInputs[2] * outerPointsRatio;
-
-						newRotationInput =
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-				else if (rsLoc == AnalogStickLocation::kBottomRight)
-				{
-					// Right shoulder blend:
-					// Forward, Outward, and Downward.
-					if (a_rightShoulder)
-					{
-						// Outer points: outward and downward.
-						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						const auto& downwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kDownward);
-						float outwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = outwardWeight + downwardWeight;
-						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
-						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (outwardAngleX + downwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (outwardAngleY + downwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (outwardAngleZ + downwardAngleZ) * outerPointsRatio;
-
-						newRotationInput =
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward, Inward, and Downward.
-					else
-					{
-						// Outer points: inward and downward.
-						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						const auto& downwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kDownward);
-						float inwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = inwardWeight + downwardWeight;
-						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
-						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (inwardAngleX + downwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (inwardAngleY + downwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (inwardAngleZ + downwardAngleZ) * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-				else if (rsLoc == AnalogStickLocation::kNegYAxis)
-				{
-					// Right and left shoulder blend:
-					// Forward and Downward.
-
-					// Outer point: downward.
-					const auto& downwardMatAngleInputs = 
-					(
-						a_rightShoulder ? 
-						rightShoulderMatAngleInputs.at(ArmOrientation::kDownward) : 
-						leftShoulderMatAngleInputs.at(ArmOrientation::kDownward)
-					);
-					float outerPointsAngleX = downwardMatAngleInputs[0] * outerPointsRatio;
-					float outerPointsAngleY = downwardMatAngleInputs[1] * outerPointsRatio;
-					float outerPointsAngleZ = downwardMatAngleInputs[2] * outerPointsRatio;
-
-					newRotationInput = 
-					{
-						forwardAngleX + outerPointsAngleX,
-						forwardAngleY + outerPointsAngleY,
-						forwardAngleZ + outerPointsAngleZ
-					};
-				}
-				else if (rsLoc == AnalogStickLocation::kBottomLeft)
-				{
-					// Right shoulder blend:
-					// Forward, Inward, and Downward.
-					if (a_rightShoulder)
-					{
-						// Outer points: inward and downward.
-						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						const auto& downwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kDownward);
-						float inwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = inwardWeight + downwardWeight;
-						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
-						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (inwardAngleX + downwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (inwardAngleY + downwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (inwardAngleZ + downwardAngleZ) * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward, Outward, and Downward.
-					else
-					{
-						// Outer points: outward and downward.
-						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						const auto& downwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kDownward);
-						float outwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = outwardWeight + downwardWeight;
-						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
-						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
-						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (outwardAngleX + downwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (outwardAngleY + downwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (outwardAngleZ + downwardAngleZ) * outerPointsRatio;
-
-						newRotationInput =
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-				else if (rsLoc == AnalogStickLocation::kNegXAxis)
-				{
-					// Right shoulder blend:
-					// Forward and Inward
-					if (a_rightShoulder)
-					{
-						// Outer point: inward.
-						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						float outerPointsAngleX = inwardMatAngleInputs[0] * outerPointsRatio;
-						float outerPointsAngleY = inwardMatAngleInputs[1] * outerPointsRatio;
-						float outerPointsAngleZ = inwardMatAngleInputs[2] * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward and Outward.
-					else
-					{
-						// Outer point: outward.
-						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						float outerPointsAngleX = outwardMatAngleInputs[0] * outerPointsRatio;
-						float outerPointsAngleY = outwardMatAngleInputs[1] * outerPointsRatio;
-						float outerPointsAngleZ = outwardMatAngleInputs[2] * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-				else if (rsLoc == AnalogStickLocation::kTopLeft)
-				{
-					// Right shoulder blend:
-					// Forward, Inward, and Upward.
-					if (a_rightShoulder)
-					{
-						// Outer points: inward and upward.
-						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
-						const auto& upwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kUpward);
-						float inwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = inwardWeight + upwardWeight;
-						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
-						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
-						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (inwardAngleX + upwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (inwardAngleY + upwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (inwardAngleZ + upwardAngleZ) * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-					// Left shoulder blend:
-					// Forward, Outward, and Upward.
-					else
-					{
-						// Outer points: outward and upward.
-						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
-						const auto& upwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kUpward);
-						float outwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
-						float totalOuterPointsWeight = outwardWeight + upwardWeight;
-						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
-						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
-						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
-						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
-
-						float outerPointsAngleX = (outwardAngleX + upwardAngleX) * outerPointsRatio;
-						float outerPointsAngleY = (outwardAngleY + upwardAngleY) * outerPointsRatio;
-						float outerPointsAngleZ = (outwardAngleZ + upwardAngleZ) * outerPointsRatio;
-
-						newRotationInput = 
-						{
-							forwardAngleX + outerPointsAngleX,
-							forwardAngleY + outerPointsAngleY,
-							forwardAngleZ + outerPointsAngleZ
-						};
-					}
-				}
-			}
-		}
-
-		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
-		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
-		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
-		// REMOVE when done debugging.
-		/*
-		const auto& worldRot = a_shoulderNode->world.rotate;
-		auto worldXAxis = RE::NiPoint3(worldRot * right);
-		auto worldYAxis = RE::NiPoint3(worldRot * forward);
-		auto worldZAxis = RE::NiPoint3(worldRot * up);
-		glm::vec3 start{ a_shoulderNode->world.translate.x, a_shoulderNode->world.translate.y, a_shoulderNode->world.translate.z };
-		glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 15.0f };
-		glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 15.0f };
-		glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 15.0f };
-		DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
-		DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
-		DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);
-		*/
-
-		// Init to default rotation if not adjusted.
-		if (shoulderData->rotationModified) 
-		{
-			// Set rotation angle inputs used to construct world rotation matrix below.
-			const float oldYaw = shoulderData->rotationInput[0];
-			const float oldPitch = shoulderData->rotationInput[1];
-			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			shoulderData->rotationInput = std::array<float, 3>({ yaw, pitch, 0.0f });
-			// Set local rotation from new world transform and inverse of parent transform.
-			auto newWorldTransform = a_shoulderNode->world;
-			Util::SetRotationMatrix2
-			(
-				newWorldTransform.rotate, 
-				shoulderData->rotationInput[1], 
-				shoulderData->rotationInput[0] + coopActor->GetHeading(false), 
-				0.0f
-			);
-			if (a_shoulderNode->parent)
-			{
-				RE::NiTransform inverseParent = a_shoulderNode->parent->world.Invert();
-				shoulderData->targetRotation = (inverseParent * newWorldTransform).rotate;
-				a_shoulderNode->world.rotate = newWorldTransform.rotate;
-				// Update rotation inputs after successfully setting new target rotation.
-			}
-		}
-		else
-		{
-			shoulderData->targetRotation = shoulderData->defaultRotation;
-		}
-
-		// Update shoulder node blend status and data after potentially setting target rotations.
-		UpdateCachedNodeRotationBlendData(shoulderData, shoulderNameHash, a_shoulderNode, true);
-	}
-
-	void MovementManager::UpdateCachedTorsoNodeRotationData()
-	{
+		// Get node from which an attack would originate,
+		// based on the player's equipped gear,
+		// and save its position and direction.
+		// Can also set the default attack source position and direction
+		// using our cached default node world rotation data.
+
+		// Need valid 3D and fixed strings.
 		const auto strings = RE::FixedStrings::GetSingleton();
-		if (!strings)
+		if (!strings || !coopActor->loadedData || !coopActor->loadedData->data3D)
 		{
 			return;
 		}
 
-		auto loadedData = coopActor->loadedData;
-		if (!loadedData)
-		{
-			return;
-		}
-
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
-		{
-			return;
-		}
-
-		// KNOWN ISSUES:
-		// As of now, I haven't figure out how to directly set the world rotation matrices for the player's spinal nodes.
-		// Has led to indirectly adjusting rotation via the local rotation matrices instead.
-		// Upper spinal nodes begin to twist when pitch/roll nears 90 degrees.
-		// Probably related to headtracking and the above local rotation workaround.
-		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const auto& data3D = coopActor->loadedData->data3D;
 		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
-		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
-		auto weaponNode = coopActor->loadedData->data3D->GetObjectByName(strings->weapon);
-		auto rootNode = coopActor->loadedData->data3D->GetObjectByName(strings->npcRoot);
-		bool isMounted = coopActor->IsOnMount();
-		// Rotation angle inputs to set if adjusted.
-		float pitch = 0.0f;
-		float roll = 0.0f;
-		float yaw = 0.0f;
-		float playerFacingAng = coopActor->data.angle.z;
-		// Interpolation factor for pitch.
-		// Roll factor is pitchFactor - 1.
-		// Yaw handled separately.
-		float pitchFactor = 1.0f;
-		// Ratio of total aim pitch by which to rotate each node.
-		float div = 3.0f;
-		// Skip head node adjustments for the time being.
-		const uint8_t numAdjustableNodes = 
+		auto& attackSourcePos = a_setDefaultDirAndPos ? playerDefaultAttackSourcePos : playerAttackSourcePos;
+		auto& attackSourceDir = a_setDefaultDirAndPos ? playerDefaultAttackSourceDir : playerAttackSourceDir;
+
+		// Default attack source position is at eye level and in the facing direction of the player.
+		attackSourcePos = coopActor->GetLookingAtLocation();
+		attackSourceDir = Util::RotationToDirectionVect
 		(
-			p->isTransformed ? 
-			GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES.size() - 1 : 
-			GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES.size()
+			-coopActor->data.angle.x, 
+			Util::ConvertAngle(coopActor->data.angle.z)
 		);
-		for (uint8_t i = 0; i < numAdjustableNodes; ++i)
+
+		// Adjust attack source position and rotation based on what attack action the player is performing.
+		// Casting source position and direction.
+		if ((p->pam->isCastingLH || p->pam->isCastingRH || p->pam->isInCastingAnim))
 		{
-			const auto& nodeName = GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[i];
-			auto torsoNode = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
-			// Node is invalid, on to the next one.
-			if (!torsoNode || !torsoNode.get())
+			if (p->pam->isCastingLH && p->pam->isCastingRH)
 			{
-				continue;
-			}
-				
-			const auto nodeNameHash = Hash(nodeName);
-			// Ensure the torso node is accounted for in rotation data map.
-			if (!nrm->nodeRotationDataMap.contains(nodeNameHash))
-			{
-				nrm->nodeRotationDataMap.insert_or_assign(nodeNameHash, std::make_unique<NodeRotationData>());
-			}
-
-			// Rotation data we will modify.
-			auto& torsoData = nrm->nodeRotationDataMap[nodeNameHash];
-			// Set initial starting/current/target rotations if not set yet.
-			const auto identityMat = RE::NiMatrix3();
-			if (torsoData->startingRotation == identityMat ||
-				torsoData->currentRotation == identityMat ||
-				torsoData->defaultRotation == identityMat ||
-				torsoData->targetRotation == identityMat)
-			{
-				torsoData->startingRotation =
-				torsoData->currentRotation =
-				torsoData->defaultRotation = 
-				torsoData->targetRotation = torsoNode->local.rotate;
-			}
-
-			const auto& worldRot = torsoNode->world.rotate;
-			auto worldXAxis = RE::NiPoint3(worldRot * right);
-			auto worldYAxis = RE::NiPoint3(worldRot * forward);
-			auto worldZAxis = RE::NiPoint3(worldRot * up);
-
-			bool isRangedWeaponPrimed =
-			{
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
-				coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
-			};
-			// Rotate the torso throughout the attack animation's duration when not attacking with a 2H ranged weapon.
-			bool isAttackingWithoutRangedWeap = !p->em->Has2HRangedWeapEquipped() && p->pam->isAttacking;
-			bool isAiming = 
-			{
-				isAttackingWithoutRangedWeap ||
-				isRangedWeaponPrimed ||
-				p->pam->isBlocking ||
-				p->pam->isBashing ||
-				p->pam->isInCastingAnim ||
-				p->pam->usingLHStaff->value == 1.0f ||
-				p->pam->usingRHStaff->value == 1.0f ||
-				p->pam->isVoiceCasting ||
-				p->pam->IsPerforming(InputAction::kQuickSlotCast)
-			};
-
-			torsoData->rotationModified = (aimPitchAdjusted) && (isAiming || !coopActor->IsWeaponDrawn() || isMounted);
-
-			// Aim pitch is modified externally and drawing/sheathing weapons
-			// requires recalculation of node pitch/yaw/roll angles based on the player's adjusted aim pitch,
-			// even if none of the torso nodes are being actively adjusted.
-
-			// Pitching nodes up/down when attacking with a ranged weapon also uses the roll angle to varying degrees (no pun intended).
-			// If we only modify the node's pitch angle, the player will pitch forward or backward at up to 90 degrees,
-			// but not necessarily in the direction in which they are attacking,
-			// since facing angle and attacking angle do not match, depending on the attack animation.
-			// Only adjusted when mounted.
-			auto localForwardXY = RE::NiPoint3(torsoNode->local.rotate * forward);
-			localForwardXY.z = 0.0f;
-			localForwardXY.Unitize();
-			yaw = Util::NormalizeAngToPi(Util::GetYawBetweenPositions(RE::NiPoint3(), localForwardXY));
-
-			bool isSpinalRoot = nodeNameHash == Hash(GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[0]);
-			if (i == 0) 
-			{
-				div = 2.0f;
-			}
-			else if (i == 1)
-			{
-				div = 3.0f;
-			}
-			else if (i == 2)
-			{
-				div = 6.0f;
-			}
-
-			// Temporarily clamped to prevent Euler angle jumps when near interpolating +- 90 degrees.
-			float clampedAimPitch = std::clamp(aimPitch, -89.0f * PI / 180.0f, 89.0f * PI / 180.0f);
-			pitchFactor = fabsf(aimPitch / (PI / 2.0f));
-
-			// TODO: Find proper axis of rotation for each unique attack animation.
-			// Hardcoded approximations for the vanilla ranged attack animations will have to do for now.
-			if (p->pam->isRangedWeaponAttack)
-			{
-				if (p->em->HasBowEquipped())
+				// Best approximation to be made here is to rotate about the point between the two casting nodes
+				// when casting with two hands, as there is no single source point for the released projectiles.
+				// Also approximate attack direction as the averaged direction of the two caster nodes.
+				auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcLMagicNode));
+				auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcRMagicNode));
+				if (a_setDefaultDirAndPos)
 				{
-					// Enderal.
-					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+					if (lMagNodePtr && lMagNodePtr.get() &&
+						rMagNodePtr && rMagNodePtr.get() &&
+						nom->defaultNodeWorldTransformsMap.contains(lMagNodePtr) && 
+						nom->defaultNodeWorldTransformsMap.contains(rMagNodePtr))
 					{
-						pitch = 
-						(
-							coopActor->IsSneaking() ? 
-							0.35f * (clampedAimPitch / div) :
-							(PI / 6.0f) / div
-						);
-						roll = 
-						(
-							coopActor->IsSneaking() ?
-							-0.65f * (clampedAimPitch / div) :
-							-1.0f * (clampedAimPitch / div) 
-						);
-						yaw = 
-						(
-							coopActor->IsSneaking() ?
-							(PI / 8.0f) / div :
-							(PI / 24.0f) / div
-						);
-					}
-					else
-					{
-						pitch = 
-						(
-							coopActor->IsSneaking() ? 
-							0.55f * (clampedAimPitch / div) :
-							0.0f
-						);
-						roll = 
-						(
-							coopActor->IsSneaking() ?
-							-0.45f * (clampedAimPitch / div) :
-							-1.0f * (clampedAimPitch / div) 
-						);
-						yaw = (PI / 10.0f) / div;
+						const auto& lhPos = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).translate;
+						const auto& rhPos = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).translate;
+						attackSourcePos = (lhPos + rhPos) / 2.0f;
+
+						const auto& lhRot = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).rotate;
+						const auto& rhRot = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).rotate;
+						attackSourceDir = (lhRot * forward + rhRot * forward) / 2.0f;
 					}
 				}
 				else
 				{
-					pitch = 0.6f * (clampedAimPitch / div);
-					roll = -0.4f * (clampedAimPitch / div);
-					yaw = 
-					(
-						coopActor->IsSneaking() ? 
-						(PI / 15.0f) / div : 
-						(PI / 7.0f) / div
-					);
+					if (lMagNodePtr && lMagNodePtr.get() && rMagNodePtr && rMagNodePtr.get()) 
+					{
+						attackSourcePos = (lMagNodePtr->world.translate + rMagNodePtr->world.translate) / 2.0f;
+						attackSourceDir = (lMagNodePtr->world.rotate * forward + rMagNodePtr->world.rotate * forward) / 2.0f;
+					}
 				}
 			}
-			else if (p->pam->isInCastingAnim)
+			else if (p->pam->isCastingLH)
 			{
-				pitch = (clampedAimPitch / div);
-				roll = 0.0f;
-				yaw = isSpinalRoot ? -PI / 6.0f : 0.0f;
-			}
-			else
-			{
-				pitch = (clampedAimPitch / div);
-				roll = 0.0f;
-				yaw = 0.0f;
-			}
-
-
-			float oldPitch = torsoData->rotationInput[1];
-			float oldYaw = torsoData->rotationInput[0];
-			float oldRoll = torsoData->rotationInput[2];
-			pitch = Util::InterpolateSmootherStep(oldPitch, pitch, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			roll = Util::InterpolateSmootherStep(oldRoll, roll, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-
-			/*pitch = Util::InterpolateSmootherStep(oldPitch, pitchFactor * (aimPitch / div), min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			roll = Util::InterpolateSmootherStep(oldRoll, (pitchFactor - 1.0f) * (aimPitch / div), min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			yaw = Util::InterpolateSmootherStep(oldYaw, yaw, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));*/
-
-			// Sooo, this took way too long.
-			// Definitely not polished and has issues when moving away from a target while aiming or when pitching
-			// too high or low.
-			// Also hourglass torso mode when rotated > 90 degrees in either direction.
-			// Haven't figured out the math yet because there is no proper heading angle to base calculations off of while mounted.
-			// The player's heading angle is the same as the horse's while mounted and ranged weapon aim yaw is at a variable angular
-			// offset from the player's facing direction that I can't seem to pinpoint, so I've estimated this angular offset for bows and crossbows.
-			// Good enough for now.
-			if (isMounted)
-			{
-				float newYaw = oldYaw;
-				float angDiffScalingInterpFactor = 1.0f;
-				if (coopActor->IsWeaponDrawn() && weaponNode && rootNode && p->pam->isRangedWeaponAttack && nodeName == strings->npcSpine)
+				auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcLMagicNode));
+				if (a_setDefaultDirAndPos)
 				{
-					// Face the target.
-					if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(p->tm->crosshairRefrHandle); crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
+					if (lMagNodePtr && lMagNodePtr.get() && nom->defaultNodeWorldTransformsMap.contains(lMagNodePtr))
 					{
-						auto playerHeadingDir = rootNode->world.rotate * forward;
-						// Not the same as the game's returned actor heading angle.
-						playerFacingAng = Util::DirectionToGameAngYaw(playerHeadingDir);
-						// If there were a way to get the fully drawn arrow's heading angle before it's fully drawn, I would.
-						float playerToTargetYaw = Util::DirectionToGameAngYaw(p->tm->crosshairWorldPos - weaponNode->world.translate);
-						float headingToTargetDiff = Util::NormalizeAngToPi(playerToTargetYaw - playerFacingAng);
-
-						// Scale down interpolation factor when the weapon node is close to the target or when the yaw change is large.
-						angDiffScalingInterpFactor = (1.1f - fabsf(newYaw - oldYaw) / (2.0f * PI));
-						float xyDistToTarget = Util::GetXYDistance(weaponNode->world.translate, p->tm->crosshairWorldPos);
-						// Can't compute yaw offset from player facing angle (unknown) to aim node yaw angle.
-						float distScalingDiffFactor = Util::InterpolateEaseInEaseOut(0.0f, 1.0f, min(xyDistToTarget, Settings::fTargetAttackSourceDistToSlowRotation) / (Settings::fTargetAttackSourceDistToSlowRotation + 0.01f), 5.0f);
-						// Scale down yaw diff if close to target to prevent wild swings in yaw.
-						// Ugly as heck, I know.
-						newYaw = Util::NormalizeAngToPi(oldYaw + distScalingDiffFactor * (Util::NormalizeAngToPi(headingToTargetDiff + (p->em->HasBowEquipped() ? PI / 3.0f : PI / 4.0f) - oldYaw)));
-
-						// Frequent sign changes lead to spasmodic oscillation.
-						// To void this, don't interpolate on sign change and instead directly set to the new yaw.
-						// Side effect: torso twists into an hourglass near 180 degrees.
-						// Oh well.
-						float sign = newYaw < 0.0f ? -1.0f : 1.0f;
-						if ((oldYaw * sign) < 0.0f)
+						attackSourcePos = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).translate;
+						attackSourceDir = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).rotate * forward;
+					}
+				}
+				else
+				{
+					if (lMagNodePtr && lMagNodePtr.get())
+					{
+						attackSourcePos = lMagNodePtr->world.translate;
+						attackSourceDir = lMagNodePtr->world.rotate * forward;
+					}
+				}
+			}
+			else if (p->pam->isCastingRH)
+			{
+				auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcRMagicNode));
+				if (a_setDefaultDirAndPos)
+				{
+					if (rMagNodePtr && rMagNodePtr.get() && nom->defaultNodeWorldTransformsMap.contains(rMagNodePtr))
+					{
+						attackSourcePos = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).translate;
+						attackSourceDir = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).rotate * forward;
+					}
+				}
+				else
+				{
+					if (rMagNodePtr && rMagNodePtr.get())
+					{
+						attackSourcePos = rMagNodePtr->world.translate;
+						attackSourceDir = rMagNodePtr->world.rotate * forward;
+					}
+				}
+			}
+		}
+		else
+		{
+			// Handle ranged attack source position and rotation.
+			if (auto weaponNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->weapon)); 
+				weaponNodePtr && weaponNodePtr.get()) 
+			{
+				bool ammoDrawnOrLater = 
+				{
+					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
+					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
+					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing
+				};
+				bool nockingAmmo = 
+				{
+					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
+					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDraw
+				};
+				if (nockingAmmo && p->em->HasBowEquipped())
+				{
+					// Since the arrow rotates away from the player
+					// while it is being removed from the quiver and nocked,
+					// using the direction from the draw hand to the bow hand is more stable
+					// and less jittery than using the arrow/weapon node's rotation.
+					// The arrow node rotation will not be stable until it is fully drawn.
+					auto lhNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName("NPC L Hand [LHnd]"sv));
+					auto rhNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName("NPC R Hand [RHnd]"sv));
+					if (a_setDefaultDirAndPos)
+					{
+						if (weaponNodePtr && weaponNodePtr.get() && nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
 						{
-							oldYaw = newYaw;
+							attackSourcePos = nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).translate;
+						}
+
+						if (lhNodePtr && lhNodePtr.get() &&
+							rhNodePtr && rhNodePtr.get() &&
+							nom->defaultNodeWorldTransformsMap.contains(lhNodePtr) &&
+							nom->defaultNodeWorldTransformsMap.contains(rhNodePtr) && 
+							nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
+						{
+							const auto& lhPos = nom->defaultNodeWorldTransformsMap.at(lhNodePtr).translate;
+							const auto& rhPos = nom->defaultNodeWorldTransformsMap.at(rhNodePtr).translate;
+							const auto& weapRot = nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).rotate;
+							attackSourceDir = Util::RotationToDirectionVect
+							(
+								-Util::DirectionToGameAngPitch(weapRot * forward),
+								Util::ConvertAngle(Util::DirectionToGameAngYaw(lhPos - rhPos))
+							);
 						}
 					}
 					else
 					{
-						// Face forward by adding estimated offset.
-						newYaw = p->em->HasBowEquipped() ? PI / 3.0f : PI / 4.0f;
+						if (lhNodePtr && lhNodePtr.get() && rhNodePtr && rhNodePtr.get())
+						{
+							attackSourceDir = Util::RotationToDirectionVect
+							(
+								-Util::DirectionToGameAngPitch(weaponNodePtr->world.rotate * forward),
+								Util::ConvertAngle(Util::DirectionToGameAngYaw(lhNodePtr->world.translate - rhNodePtr->world.translate))
+							);
+						}
+
+						attackSourcePos = weaponNodePtr->world.translate;
 					}
 				}
-				else
+				else if (nockingAmmo || ammoDrawnOrLater)
 				{
-					newYaw = 0.0f;
+					if (a_setDefaultDirAndPos)
+					{
+						if (nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
+						{
+							attackSourcePos = nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).translate;
+						}
+
+						if (nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
+						{
+							attackSourceDir = nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).rotate * forward;
+						}
+					}
+					else
+					{
+						attackSourcePos = weaponNodePtr->world.translate;
+						attackSourceDir = weaponNodePtr->world.rotate * forward;
+					}
 				}
-
-				yaw = Util::InterpolateSmootherStep(oldYaw, newYaw, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor * angDiffScalingInterpFactor));
 			}
-			else
-			{
-				yaw = Util::InterpolateSmootherStep(oldYaw, yaw, min(1.0f, *g_deltaTimeRealTime * nrm->interpFactor));
-			}
-
-			// Save the 3 rotation angle inputs for use in constructing the target rotation matrix.
-			torsoData->rotationInput = std::array<float, 3>({ yaw, pitch, roll });
-
-			// REMOVE when done debugging.
-			/*glm::vec3 start{ torsoNode->world.translate.x, torsoNode->world.translate.y, torsoNode->world.translate.z };
-			glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 15.0f };
-			glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 15.0f };
-			glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 15.0f };
-			DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
-			DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
-			DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);*/
-
-			if (torsoData->rotationModified) 
-			{
-				RE::NiPoint3 locXAxis{ right };
-				RE::NiPoint3 locYAxis{ forward };
-				RE::NiPoint3 locZAxis{ up };
-				Util::SetRotationMatrix3
-				(
-					torsoData->targetRotation, 
-					locXAxis, 
-					locYAxis, 
-					locZAxis, 
-					torsoData->rotationInput[1],
-					torsoData->rotationInput[0], 
-					torsoData->rotationInput[2]
-				);
-			}
-			else
-			{
-				torsoData->targetRotation = torsoNode->local.rotate;
-			}
-
-			// Update torso node blend status and data after potentially setting target rotations.
-			UpdateCachedNodeRotationBlendData(torsoData, nodeNameHash, torsoNode.get(), false);
 		}
+
+		// Ensure direction is normalized.
+		attackSourceDir.Unitize();
+
+		// REMOVE when done debugging node directions.
+		/*glm::vec3 startVec = ToVec3(attackSourcePos);
+		glm::vec3 endVec1 = startVec + ToVec3(attackSourceDir) * 20.0f;
+		DebugAPI::QueuePoint3D(startVec, a_setDefaultDirAndPos ? 0xFFFFFFFF : Settings::vuOverlayRGBAValues[playerID], 5.0f);
+		DebugAPI::QueueArrow3D(startVec, endVec1, a_setDefaultDirAndPos ? 0xFFFFFFFF : Settings::vuOverlayRGBAValues[playerID], 3.0f, 2.0f);*/
 	}
 
 	void MovementManager::UpdateMovementParameters()
@@ -4252,51 +2950,246 @@ namespace ALYSLC
 		}
 	}
 
-	void NodeRotationManager::InstantlyResetAllNodeData()
+	void NodeOrientationManager::ApplyCustomNodeRotation(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_nodePtr)
 	{
+		// If the node's rotation is handled by our node orientation manager,
+		// apply our custom rotation to the given node.
+
+		// Check if a supported node first.
+		bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE.contains(a_nodePtr->name);
+		bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE.contains(a_nodePtr->name);
+		bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE.contains(a_nodePtr->name);
+		if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
+		{
+			return;
+		}
+
+		if (nodeRotationDataMap.contains(a_nodePtr))
+		{
+			const auto& data = nodeRotationDataMap[a_nodePtr];
+
+			// Set default rotation.
+			data->defaultRotation = a_nodePtr->local.rotate;
+
+			// Set new local rotations before the UpdateDownwardPass() call,
+			// so that it can use our modified local rotations to set the nodes' new world rotations.
+			if (isTorsoNode)
+			{
+				a_nodePtr->local.rotate = data->currentRotation;
+			}
+			else if (Settings::bRotateArmsWhenSheathed)
+			{
+				a_nodePtr->local.rotate = data->currentRotation;
+			}
+		}
+	}
+
+	void NodeOrientationManager::DisplayAllNodeRotations(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Draw X, Y, and Z world axes for all/supported player nodes.
+		
+		// REMOVE when done debugging.
+		const auto strings = RE::FixedStrings::GetSingleton();
+		if (!strings)
+		{
+			return;
+		}
+
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
+		{
+			return;
+		}
+
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		if (auto npc3DPtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npc)); npc3DPtr && npc3DPtr.get())
+		{
+			if (auto nodePtr = RE::NiPointer<RE::NiNode>(npc3DPtr->AsNode()); nodePtr && nodePtr.get())
+			{
+				DisplayAllNodeRotations(nodePtr);
+			}
+		}
+	}
+
+	void NodeOrientationManager::DisplayAllNodeRotations(const RE::NiPointer<RE::NiNode>& a_nodePtr)
+	{
+		// Recursively save adjustable nodes' world rotations by walking the player's node tree from the given node.
+		// The parent world transform is modified to the current node's world transform before traversing its children.
+
+		if (!a_nodePtr || !a_nodePtr.get())
+		{
+			return;
+		}
+
+		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+
+		// Cannot set the saved world rotation directly
+		// to this node's reported world rotation, since it still
+		// contains our possibly-modified world rotation from the previous frame.
+		// However, if called at the right time (during the havok physics pre-step),
+		// the node's local rotation will be updated, and we can then calculate
+		// the game's intended world rotation for this node via the parent node's world transform.
+
+		if (nodeRotationDataMap.contains(a_nodePtr))
+		{
+			const auto& newWorldRot = a_nodePtr->world.rotate;
+			auto worldXAxis = RE::NiPoint3(newWorldRot * right);
+			auto worldYAxis = RE::NiPoint3(newWorldRot * forward);
+			auto worldZAxis = RE::NiPoint3(newWorldRot * up);
+			glm::vec3 start{ a_nodePtr->world.translate.x, a_nodePtr->world.translate.y, a_nodePtr->world.translate.z };
+			glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 10.0f };
+			glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 10.0f };
+			glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 10.0f };
+			DebugAPI::QueueArrow3D(start, endX, 0xFF000088, 3.0f, 2.0f);
+			DebugAPI::QueueArrow3D(start, endY, 0x00FF0088, 3.0f, 2.0f);
+			DebugAPI::QueueArrow3D(start, endZ, 0x0000FF88, 3.0f, 2.0f);
+		}
+
+		for (const auto child : a_nodePtr->children)
+		{
+			if (child && child.get() && child->AsNode())
+			{
+				auto childNode = RE::NiPointer<RE::NiNode>(child->AsNode());
+				DisplayAllNodeRotations(childNode);
+			}
+		}
+	}
+
+	void NodeOrientationManager::InstantlyResetAllNodeData(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Reset all node data.
+
+		defaultNodeLocalTransformsMap.clear();
+		defaultNodeWorldTransformsMap.clear();
 		nodeRotationDataMap.clear();
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES) 
+
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			return;
 		}
 
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES)
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			return;
 		}
 
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES)
+		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE) 
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get()) 
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
+		}
+
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE)
+		{
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get())
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
+		}
+
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODE)
+		{
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get())
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
 		}
 	}
 
-	void NodeRotationManager::InstantlyResetArmNodeData()
+	void NodeOrientationManager::InstantlyResetArmNodeData(const std::shared_ptr<CoopPlayer>& a_p)
 	{
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES)
+		// Only reset arm node data.
+		
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			return;
 		}
 
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES)
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			return;
+		}
+
+		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE)
+		{
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get())
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
+		}
+
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE)
+		{
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get())
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
 		}
 	}
 
-	void NodeRotationManager::InstantlyResetTorsoNodeData()
+	void NodeOrientationManager::InstantlyResetTorsoNodeData(const std::shared_ptr<CoopPlayer>& a_p)
 	{
-		for (const auto& nodeHash : GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES)
+		// Only reset torso node data.
+		
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
 		{
-			nodeRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+			return;
+		}
+
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODE)
+		{
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
+			if (nodePtr && nodePtr.get())
+			{
+				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+			}
 		}
 	}
 
-	bool NodeRotationManager::NodeWasAdjusted(const uint32_t& a_nodeNameHash)
+	bool NodeOrientationManager::NodeWasAdjusted(const RE::NiPointer<RE::NiAVObject>& a_nodePtr)
 	{
-		if (nodeRotationDataMap.contains(a_nodeNameHash)) 
+		// Returns true if a custom cached rotation was set for the given node.
+		// Can check for the node name hash in either the set of adjustable arm nodes or torso nodes.
+
+		if (nodeRotationDataMap.contains(a_nodePtr)) 
 		{
-			if (const auto& data = nodeRotationDataMap.at(a_nodeNameHash); data && data.get()) 
+			if (const auto& data = nodeRotationDataMap.at(a_nodePtr); data && data.get()) 
 			{
 				return data->rotationModified;
 			}
@@ -4305,11 +3198,116 @@ namespace ALYSLC
 		return false;
 	}
 
-	void NodeRotationManager::SetBlendStatus(const uint32_t& a_nodeNameHash, NodeRotationBlendStatus&& a_newStatus)
+	void NodeOrientationManager::RestoreOriginalNodeLocalTransforms(const std::shared_ptr<CoopPlayer>& a_p)
 	{
-		if (nodeRotationDataMap.contains(a_nodeNameHash)) 
+		// Restore saved node local transforms previously set by the game before our modifications.
+		
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
 		{
-			auto& data = nodeRotationDataMap.at(a_nodeNameHash); 
+			return;
+		}
+
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		// Restore saved node local transforms previously set by the game before our modifications.
+		for (const auto& [nodePtr, localTrans] : defaultNodeLocalTransformsMap)
+		{
+			if (!nodePtr || !nodePtr.get())
+			{
+				continue;
+			}
+
+			nodePtr->local = localTrans;
+		}
+	}
+
+	void NodeOrientationManager::SavePlayerNodeWorldTransforms(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// NOTE: At this point, the game SHOULD have updated all nodes' local transforms (unless a havok impulse was applied),
+		// but has not modified the world transforms from the previous frame (which we may have modified),
+		// Since there is a disconnect, recursively traverse the player's nodes,
+		// compute the new world transforms using the updated local transforms,
+		// and save the adjustable nodes' world transforms as the default transforms to use later.
+
+		const auto strings = RE::FixedStrings::GetSingleton();
+		if (!strings)
+		{
+			return;
+		}
+
+		// Return early if the player's loaded 3D data is invalid.
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
+		{
+			return;
+		}
+
+		// Return early if the player's 3D is invalid.
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		if (auto npc3DPtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npc)); npc3DPtr && npc3DPtr.get())
+		{
+			if (auto nodePtr = RE::NiPointer<RE::NiNode>(npc3DPtr->AsNode()); nodePtr && nodePtr.get())
+			{
+				auto parentWorldTransform = nodePtr->parent ? nodePtr->parent->world : RE::NiTransform();
+				SavePlayerNodeWorldTransforms(a_p, nodePtr, parentWorldTransform);
+			}
+		}
+	}
+
+	void NodeOrientationManager::SavePlayerNodeWorldTransforms(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiNode>& a_nodePtr, const RE::NiTransform& a_parentWorldTransform)
+	{
+		// Recursively save adjustable nodes' world rotations by walking the player's node tree from the given node.
+		// The parent world transform is modified to the current node's world transform before traversing its children.
+
+		if (!a_nodePtr || !a_nodePtr.get())
+		{
+			return;
+		}
+
+		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+
+		// Cannot set the saved world rotation directly
+		// to this node's reported world rotation, since it still
+		// contains our possibly-modified world rotation from the previous frame.
+		// However, if called at the right time (during the havok physics pre-step),
+		// the node's local rotation will be updated, and we can then calculate
+		// the game's intended world rotation for this node via the parent node's world transform.
+
+		auto newParentTransform = (a_parentWorldTransform * a_nodePtr->local);
+		// Save default world transform.
+		defaultNodeWorldTransformsMap.insert_or_assign(a_nodePtr, newParentTransform);
+
+		for (const auto child : a_nodePtr->children)
+		{
+			if (child && child.get() && child->AsNode())
+			{
+				auto childNode = RE::NiPointer<RE::NiNode>(child->AsNode());
+				SavePlayerNodeWorldTransforms(a_p, childNode, newParentTransform);
+			}
+		}
+	}
+
+	void NodeOrientationManager::SetBlendStatus(const RE::NiPointer<RE::NiAVObject>& a_nodePtr, NodeRotationBlendStatus&& a_newStatus)
+	{
+		// Update the blend status for the given node.
+
+		if (nodeRotationDataMap.contains(a_nodePtr)) 
+		{
+			auto& data = nodeRotationDataMap.at(a_nodePtr); 
 			if (!data || !data.get())
 			{
 				return;
@@ -4320,14 +3318,1474 @@ namespace ALYSLC
 			
 			if (a_newStatus == NodeRotationBlendStatus::kBlendIn)
 			{
-				data->blendInTP = SteadyClock::now();
+				data->blendInFrameCount = 0;
 			}
 			else if (a_newStatus == NodeRotationBlendStatus::kBlendOut)
 			{
-				data->blendOutTP = SteadyClock::now();
+				data->blendOutFrameCount = 0;
 			}
 
 			data->blendStatus = a_newStatus;
+		}
+	}
+
+	void NodeOrientationManager::UpdateArmNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_forearmNodePtr, const RE::NiPointer<RE::NiAVObject>& a_handNodePtr, bool a_rightArm)
+	{
+		// Update arm nodes' blend states and target rotations.
+		// Modification method: local rotation directly obtained from pitch/roll/yaw
+		// inputs from the player's RS movement.
+
+		// Invalid nodes or not accounted for in the rotation data map.
+		if (!a_forearmNodePtr || !a_forearmNodePtr.get() || !a_handNodePtr || !a_handNodePtr.get())
+		{
+			return;
+		}
+
+		// Ensure both nodes are accounted for in the rotation data map.
+		if (!nodeRotationDataMap.contains(a_forearmNodePtr))
+		{
+			nodeRotationDataMap.insert_or_assign(a_forearmNodePtr, std::make_unique<NodeRotationData>());
+		}
+
+		if (!nodeRotationDataMap.contains(a_handNodePtr))
+		{
+			nodeRotationDataMap.insert_or_assign(a_handNodePtr, std::make_unique<NodeRotationData>());
+		}
+
+		const auto& forearmData = nodeRotationDataMap[a_forearmNodePtr];
+		const auto& handData = nodeRotationDataMap[a_handNodePtr];
+		// Set node target rotations for forearm and hand.
+		bool forearmRotHasBeenSet = forearmData->rotationModified;
+		bool handRotHasBeenSet = handData->rotationModified;
+		const float oldForearmYaw = forearmRotHasBeenSet ? forearmData->rotationInput[0] : 0.0f;
+		const float oldForearmPitch = forearmRotHasBeenSet ? forearmData->rotationInput[1] : 0.0f;
+		const float oldForearmRoll = forearmRotHasBeenSet ? forearmData->rotationInput[2] : 0.0f;
+		const float oldHandYaw = handRotHasBeenSet ? handData->rotationInput[0] : a_rightArm ? -(0.5f * PI) : (0.5f * PI);
+		const float oldHandPitch = handRotHasBeenSet ? handData->rotationInput[1] : 0.0f;
+		const float oldHandRoll = handRotHasBeenSet ? handData->rotationInput[2] : 0.0f;
+		float targetForearmPitch = oldForearmPitch;
+		float targetForearmRoll = oldForearmRoll;
+		float targetForearmYaw = oldForearmYaw;
+		float targetHandPitch = oldHandPitch;
+		float targetHandRoll = oldHandRoll;
+		float targetHandYaw = oldHandYaw;
+
+		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+		float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
+		float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
+
+		// Check which node rotation actions are being performed.
+		bool rotatingForearm = 
+		{
+			a_rightArm ?
+			a_p->pam->IsPerforming(InputAction::kRotateRightForearm) :
+			a_p->pam->IsPerforming(InputAction::kRotateLeftForearm)
+		};
+		bool rotatingHand = 
+		{
+			a_rightArm ?
+			a_p->pam->IsPerforming(InputAction::kRotateRightHand) :
+			a_p->pam->IsPerforming(InputAction::kRotateLeftHand)
+		};
+		bool rotatingShoulder = 
+		{
+			a_rightArm ?
+			a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
+			a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
+		};
+		bool onlyRotatingShoulder = rotatingShoulder && !rotatingForearm && !rotatingHand;
+
+		// Set rotation state flags first.
+		forearmData->prevInterrupted = forearmData->interrupted;
+		forearmData->prevRotationModified = forearmData->rotationModified;
+		handData->prevInterrupted = handData->interrupted;
+		handData->prevRotationModified = handData->rotationModified;
+		forearmData->interrupted = handData->interrupted = 
+		{
+			a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
+			a_p->IsAwaitingRefresh() ||
+			a_p->coopActor->IsWeaponDrawn() ||
+			a_p->coopActor->actorState2.recoil ||
+			a_p->coopActor->actorState2.staggered ||
+			a_p->coopActor->IsSwimming()
+		};
+
+		if (rotatingHand)
+		{
+			// When clicking in the RS, change forearm yaw and hand yaw together along the +X axis,
+			// and hand roll along the -X axis.
+			// Change hand pitch along the Y axis.
+			// Flip angle sign for the other hand.
+			if (xDisp > 0.0f)
+			{
+				targetForearmYaw = xDisp * (0.25f * PI) - (PI / 60.0f);
+				targetHandYaw = (xDisp - 1.0f) * (0.5f * PI);
+				if (!a_rightArm)
+				{
+					targetForearmYaw = -targetForearmYaw;
+					targetHandYaw = -targetHandYaw;
+				}
+					
+				// Set hand AND forearm target rotation as modified.
+				handData->rotationModified = forearmData->rotationModified = true;
+			}
+			else
+			{
+				// Hand roll.
+				if (xDisp >= -0.333333f)
+				{
+					targetHandRoll = (-xDisp * 4.0f) * (0.25f * PI);
+				}
+				else if (xDisp >= -0.666666f)
+				{
+					targetHandRoll = (2.666664f + xDisp * 4.0f) * (0.25f * PI);
+				}
+				else
+				{
+					targetHandRoll = ((0.666666f + xDisp) * 3.0f) * (0.25f * PI);
+				}
+
+				if (!a_rightArm)
+				{
+					targetHandRoll = -targetHandRoll;
+				}
+
+				// Only hand target rotation modified.
+				handData->rotationModified = true;
+			}
+
+			// Hand pitch.
+			targetHandPitch = yDisp * (0.5f * PI);
+		}
+		else if (rotatingForearm)
+		{
+			// When NOT clicking in the RS, change forearm pitch along the +Y axis and
+			// forearm roll along the -Y axis.
+			// Change forearm yaw along the X axis.
+			// Flip angle sign for the other side.
+			if (yDisp > 0.0f)
+			{
+				// Forearm pitch.
+				targetForearmPitch = yDisp * (0.5f * PI);
+			}
+			else
+			{
+				// Forearm roll.
+				targetForearmRoll = -yDisp * (0.25f * PI) + (PI / 60.0f);
+				if (!a_rightArm)
+				{
+					targetForearmRoll = -targetForearmRoll;
+				}
+			}
+
+			if (xDisp > 0.0f)
+			{
+				// Forearm yaw.
+				targetForearmYaw = xDisp * (0.25f * PI) - (PI / 60.0f);
+			}
+			else
+			{
+				// Forearm yaw.
+				targetForearmYaw = xDisp * (0.25f * PI) + (PI / 60.0f);
+			}
+
+			if (!a_rightArm)
+			{
+				targetForearmYaw = -targetForearmYaw;
+			}
+
+			// Only forearm target rotation modified.
+			forearmData->rotationModified = true;
+		}
+		else if (rotatingShoulder)
+		{
+			handData->rotationModified = forearmData->rotationModified = true;
+			// Set defaults if the forearm/hand nodes' rotations were not previously modified.
+			if (!forearmData->prevRotationModified) 
+			{
+				targetForearmPitch =
+				targetForearmRoll =
+				targetForearmYaw = 0.0f;
+			}
+
+			if (!handData->prevRotationModified) 
+			{
+				targetHandPitch =
+				targetHandRoll = 0.0f;
+				targetHandYaw = a_rightArm ? -PI / 2.0f : PI / 2.0f;
+			}
+		}
+
+		// Update blend states after potentially setting the rotation modified flag 
+		// and before setting current and target rotations.
+		UpdateNodeRotationBlendState(a_p, forearmData, a_forearmNodePtr, true);
+		UpdateNodeRotationBlendState(a_p, handData, a_handNodePtr, true);
+
+		// If modified, set hand and forearm node rotation inputs and target rotations.
+		const RE::NiPoint3 locXAxis{ 1.0f, 0.0f, 0.0f };
+		const RE::NiPoint3 locYAxis{ 0.0f, 1.0f, 0.0f };
+		const RE::NiPoint3 locZAxis{ 0.0f, 0.0f, 1.0f };
+		if (forearmData->rotationModified) 
+		{
+			if (oldForearmPitch != targetForearmPitch)
+			{
+				targetForearmPitch = Util::InterpolateSmootherStep(oldForearmPitch, targetForearmPitch, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			if (oldForearmRoll != targetForearmRoll)
+			{
+				targetForearmRoll = Util::InterpolateSmootherStep(oldForearmRoll, targetForearmRoll, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			if (oldForearmYaw != targetForearmYaw)
+			{
+				targetForearmYaw = Util::InterpolateSmootherStep(oldForearmYaw, targetForearmYaw, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			forearmData->rotationInput = std::array<float, 3>({ targetForearmYaw, targetForearmPitch, targetForearmRoll });
+			Util::SetRotationMatrixPYRAndAxes
+			(
+				forearmData->targetRotation, 
+				locXAxis, 
+				locYAxis, 
+				locZAxis, 
+				forearmData->rotationInput[1], 
+				forearmData->rotationInput[0], 
+				forearmData->rotationInput[2]
+			);
+		}
+		else
+		{
+			forearmData->targetRotation = a_forearmNodePtr->local.rotate;
+		}
+		
+		if (handData->rotationModified) 
+		{
+			if (oldHandPitch != targetHandPitch)
+			{
+				targetHandPitch = Util::InterpolateSmootherStep(oldHandPitch, targetHandPitch, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			if (oldHandRoll != targetHandRoll)
+			{
+				targetHandRoll = Util::InterpolateSmootherStep(oldHandRoll, targetHandRoll, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			if (oldHandYaw != targetHandYaw)
+			{
+				targetHandYaw = Util::InterpolateSmootherStep(oldHandYaw, targetHandYaw, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			}
+
+			handData->rotationInput = std::array<float, 3>({ targetHandYaw, targetHandPitch, targetHandRoll });
+			Util::SetRotationMatrixPYRAndAxes
+			(
+				handData->targetRotation, 
+				locXAxis,
+				locYAxis, 
+				locZAxis,
+				handData->rotationInput[1], 
+				handData->rotationInput[0], 
+				handData->rotationInput[2] 
+			);
+		}
+		else
+		{
+			handData->targetRotation = a_handNodePtr->local.rotate;
+		}
+
+		// Update forearm and hand node rotation to set (current) after potentially setting target rotations.
+		UpdateNodeRotationToSet(a_p, forearmData, a_forearmNodePtr, true);
+		UpdateNodeRotationToSet(a_p, handData, a_handNodePtr, true);
+
+	}
+	void NodeOrientationManager::UpdateNodeRotationBlendState(const std::shared_ptr<CoopPlayer>& a_p, const std::unique_ptr<NodeRotationData>& a_data, const RE::NiPointer<RE::NiAVObject>& a_nodePtr, bool a_isArmNode)
+	{
+		// Update the blend status and endpoints to blend to/from for the given node.
+
+		if (!a_data || !a_data.get() || !a_nodePtr || !a_nodePtr.get())
+		{
+			return;
+		}
+
+		auto ui = RE::UI::GetSingleton();
+		bool blendIn = false;
+		bool blendOut = false;
+		// If interpolating, interpolate towards the target rotation.
+		bool towardsTargetRotation = a_data->rotationModified && !a_data->interrupted;
+		// Blend in flag for individual nodes.
+		// Continue blending in if target rotation was modified already
+		// and if previously interrupteed, currently auto-pitched to face a target,
+		// or still blending in.
+		blendIn = 
+		{
+			(towardsTargetRotation) &&
+			(
+				(a_data->prevInterrupted) ||
+				(!a_p->mm->aimPitchManuallyAdjusted && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached) ||
+				(a_data->blendStatus == NodeRotationBlendStatus::kBlendIn)
+			)
+		};
+		// Blend out if rotation was not modified or interrupted,
+		// and if the default rotation has not been reached.
+		blendOut = 
+		{
+			(!towardsTargetRotation) &&
+			(a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
+		};
+
+		if (blendIn)
+		{
+			if (a_data->blendStatus != NodeRotationBlendStatus::kBlendIn && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
+			{
+				// Just started blending in.
+				NodeRotationBlendStatus prevStatus = a_data->blendStatus;
+				// Start blending in when the player first tries to rotate their arms.
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kBlendIn);
+				// Set starting rotation before blending in.
+				if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from default.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from game's set rotation.
+					a_data->startingRotation = a_data->defaultRotation;
+				}
+				else if (prevStatus == NodeRotationBlendStatus::kTargetReached)
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from target.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from our set target rotation.
+					a_data->startingRotation = a_data->targetRotation;
+				}
+				else
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from current.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from the current blended rotation.
+					a_data->startingRotation = a_data->currentRotation;
+				}
+			}
+
+			// Blend interval elapsed, so we'll now set the requested rotations to the target ones.
+			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn &&
+				a_data->blendInFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
+			{
+				// REMOVE when done debugging.
+				/*ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending in. {} frames elapsed.",
+					a_p->coopActor->GetName(),
+					a_nodePtr->name,
+					a_data->blendInFrameCount);*/
+
+				// Target rotation reached.
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kTargetReached);
+			}
+		}
+		else if (blendOut)
+		{
+			if (a_data->blendStatus != NodeRotationBlendStatus::kBlendOut && a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
+			{
+				NodeRotationBlendStatus prevStatus = a_data->blendStatus;
+				// Start blending out if not already blending out and if the default rotation was not reached.
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kBlendOut);
+				// Set starting rotation before blending out.
+				if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from default.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from game's set rotation.
+					a_data->startingRotation = a_data->defaultRotation;
+				}
+				else if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from target.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from our set target rotation.
+					a_data->startingRotation = a_data->targetRotation;
+				}
+				else
+				{
+					// REMOVE when done debugging.
+					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from current.", a_p->coopActor->GetName(), a_nodePtr->name);
+
+					// Starting from the current blended rotation.
+					a_data->startingRotation = a_data->currentRotation;
+				}
+			}
+
+			// Fully blended out.
+			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut &&
+				a_data->blendOutFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
+			{
+				// REMOVE when done debugging.
+				/*ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending out. {} frames elapsed.",
+					a_p->coopActor->GetName(),
+					a_nodePtr->name,
+					a_data->blendOutFrameCount);*/
+
+				// Default rotation reached.
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kDefaultReached);
+			}
+		}
+		else
+		{
+			if (towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
+			{
+				//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Target rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kTargetReached);
+			}
+			else if (!towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
+			{
+				//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Default rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kDefaultReached);
+			}
+		}
+	}
+	void NodeOrientationManager::UpdateNodeRotationToSet(const std::shared_ptr<CoopPlayer>& a_p, const std::unique_ptr<NodeRotationData>& a_data, const RE::NiPointer<RE::NiAVObject>& a_nodePtr, bool a_isArmNode)
+	{
+		// Update the local node rotation to eventually set
+		// by interpolating between the starting and target/default rotation endpoints.
+
+		if (!a_data || !a_data.get() || !a_nodePtr || !a_nodePtr.get())
+		{
+			return;
+		}
+
+		// [TODO]:
+		// Improve arm node interpolation to not rotate the arm through the torso
+		// or in the wrong direction towards the target rotation, taking a longer path.
+		// Also look into issues in interpolating between certain start/endpoint rotations,
+		// where the starting endpoint jumps forward or the target/default rotation
+		// is not reached by the time the blending interval elapses.
+
+		// REMOVE when done debugging.
+		/*glm::vec3 start
+		{
+			a_nodePtr->world.translate.x,
+			a_nodePtr->world.translate.y,
+			a_nodePtr->world.translate.z,
+		};
+
+		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);*/
+
+		if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn || a_data->blendStatus == NodeRotationBlendStatus::kTargetReached)
+		{
+			// Interpolate between starting and target local rotations when blending in.
+			// Set directly to the target local rotation otherwise.
+			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn)
+			{
+				// Blend in to reach the target rotation from the starting rotation.
+				float t = std::clamp
+				(
+					static_cast<float>(a_data->blendInFrameCount) / 
+					static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount - 1),
+					0.0f,
+					1.0f
+				);
+
+				a_data->currentRotation = Util::InterpolateRotMatrix(a_data->startingRotation, a_data->targetRotation, t);
+
+				// REMOVE when done debugging.
+				/*glm::vec3 endSX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * right) * 10.0f;
+				glm::vec3 endSY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * forward) * 10.0f;
+				glm::vec3 endSZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * up) * 10.0f;
+				glm::vec3 endCX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * right) * 10.0f;
+				glm::vec3 endCY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * forward) * 10.0f;
+				glm::vec3 endCZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * up) * 10.0f;
+				glm::vec3 endTX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * right) * 10.0f;
+				glm::vec3 endTY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * forward) * 10.0f;
+				glm::vec3 endTZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * up) * 10.0f;
+
+				DebugAPI::QueueArrow3D(start, endSX, 0xFFFF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endSY, 0x00FFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endSZ, 0xFF00FFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endTX, 0xFF0000FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endTY, 0x00FF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endTZ, 0x0000FFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCX, 0xFFFFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCY, 0xFFFFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCZ, 0xFFFFFFFF, 3.0f, 2.0f);*/
+
+				a_data->blendInFrameCount++;
+			}
+			else
+			{
+				a_data->currentRotation = a_data->targetRotation;
+
+				// REMOVE when done debugging.
+				/*glm::vec3 endTX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * right) * 10.0f;
+				glm::vec3 endTY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * forward) * 10.0f;
+				glm::vec3 endTZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->targetRotation * up) * 10.0f;
+
+				DebugAPI::QueueArrow3D(start, endTX, 0xFF0000FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endTY, 0x00FF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endTZ, 0x0000FFFF, 3.0f, 2.0f);*/
+			}
+		}
+		else
+		{
+				
+			// Interpolate between starting and game-given default local rotations when blending out.
+			// Set directly to the default local rotation otherwise.
+			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut)
+			{
+				// Blend out to reach the game's assigned rotation from the starting rotation.
+				float t = std::clamp
+				(
+					static_cast<float>(a_data->blendOutFrameCount) / 
+					static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount - 1),
+					0.0f,
+					1.0f
+				);
+
+				// NOTE: Unsure why as of now, but switching start and end interpolation endpoints and inverting the time ratio
+				// correctly interpolates between the endpoints more consistently and does not modify the starting endpoint,
+				// which happens if the regular interpolation direction is used instead.
+				a_data->currentRotation = Util::InterpolateRotMatrix(a_data->defaultRotation, a_data->startingRotation, 1.0f - t);
+
+				// REMOVE when done debugging.
+				/*glm::vec3 endSX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * right) * 10.0f;
+				glm::vec3 endSY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * forward) * 10.0f;
+				glm::vec3 endSZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * up) * 10.0f;
+				glm::vec3 endCX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * right) * 10.0f;
+				glm::vec3 endCY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * forward) * 10.0f;
+				glm::vec3 endCZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->currentRotation * up) * 10.0f;
+				glm::vec3 endDX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * right) * 10.0f;
+				glm::vec3 endDY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * forward) * 10.0f;
+				glm::vec3 endDZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * up) * 10.0f;
+
+				DebugAPI::QueueArrow3D(start, endSX, 0xFFFF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endSY, 0x00FFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endSZ, 0xFF00FFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endDX, 0xFF0000FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endDY, 0x00FF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endDZ, 0x0000FFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCX, 0xFFFFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCY, 0xFFFFFFFF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endCZ, 0xFFFFFFFF, 3.0f, 2.0f);*/
+
+				a_data->blendOutFrameCount++;
+			}
+			else
+			{
+				a_data->currentRotation = a_data->defaultRotation;
+
+				// REMOVE when done debugging.
+				/*glm::vec3 endDX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * right) * 10.0f;
+				glm::vec3 endDY = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * forward) * 10.0f;
+				glm::vec3 endDZ = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->defaultRotation * up) * 10.0f;
+
+				DebugAPI::QueueArrow3D(start, endDX, 0xFF0000FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endDY, 0x00FF00FF, 3.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endDZ, 0x0000FFFF, 3.0f, 2.0f);*/
+			}
+		}
+	}
+	void NodeOrientationManager::UpdateShoulderNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_shoulderNodePtr, bool a_rightShoulder)
+	{
+		// Update forearm and hand blend statuses and starting, current, and target rotations.
+		// Modification method: local rotation derived from a world rotation
+		// computed from hardcoded, manually verified interpolation endpoints for pitch/roll/yaw.
+		// The player's RS movement determines the orientation of their arms.
+
+		if (!a_shoulderNodePtr || !a_shoulderNodePtr.get())
+		{
+			return;
+		}
+
+		// Ensure the shoulder node is accounted for in rotation data map.
+		if (!nodeRotationDataMap.contains(a_shoulderNodePtr))
+		{
+			nodeRotationDataMap.insert_or_assign(a_shoulderNodePtr, std::make_unique<NodeRotationData>());
+		}
+
+		// Rotation data we will modify.
+		const auto& shoulderData = nodeRotationDataMap[a_shoulderNodePtr];
+		shoulderData->prevInterrupted = shoulderData->interrupted;
+		shoulderData->prevRotationModified = shoulderData->rotationModified;
+		shoulderData->interrupted =
+		{
+			a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
+			a_p->IsAwaitingRefresh() ||
+			a_p->coopActor->IsWeaponDrawn() ||
+			a_p->coopActor->actorState2.recoil ||
+			a_p->coopActor->actorState2.staggered ||
+			a_p->coopActor->IsSwimming()
+		};
+
+		bool rotatingShoulder = 
+		{
+			a_rightShoulder ?
+			a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
+			a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
+		};
+
+		// New rotation inputs to construct target rotation matrix with (if adjusted below).
+		std::array<float, 3> newRotationInput = shoulderData->rotationInput;
+		if (rotatingShoulder) 
+		{
+			// Set shoulder target rotation as modified.
+			shoulderData->rotationModified = true;
+
+			// Pick RS quadrant/axis based on its displacement.
+			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			auto rsLoc = AnalogStickLocation::kCenter;
+			float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
+			float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
+
+			if (rsData.normMag > 0.0f)
+			{
+				if (xDisp > 0.0f && yDisp > 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kTopRight;
+				}
+				else if (xDisp > 0.0f && yDisp < 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kBottomRight;
+				}
+				else if (xDisp < 0.0f && yDisp < 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kBottomLeft;
+				}
+				else if (xDisp < 0.0f && yDisp > 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kTopLeft;
+				}
+				else if (xDisp > 0.0f && yDisp == 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kPosXAxis;
+				}
+				else if (xDisp == 0.0f && yDisp < 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kNegYAxis;
+				}
+				else if (xDisp < 0.0f && yDisp == 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kNegXAxis;
+				}
+				else if (xDisp == 0.0f && yDisp > 0.0f)
+				{
+					rsLoc = AnalogStickLocation::kPosYAxis;
+				}
+			}
+
+			// Yaw (determined by RS X displacement and heading angle), pitch (determined by RS Y displacement), roll (constant).
+			if (rsLoc == AnalogStickLocation::kCenter)
+			{
+				// Forward when centered.
+				if (a_rightShoulder)
+				{
+					newRotationInput = rightShoulderMatAngleInputs.at(ArmOrientation::kForward);
+				}
+				else
+				{
+					newRotationInput = leftShoulderMatAngleInputs.at(ArmOrientation::kForward);
+				}
+			}
+			else
+			{
+				// "Outer point" represents arm orientation points to use when RS is displaced from center,
+				// outer points ratio = 1, forward ratio = 0 at max displacement.
+				// When centered, the forward ratio is 1 and the outer points ratio is 0,
+				// meaning the forward arm orientation point is used.
+				const auto& forwardMatAngleInputs = 
+				(
+					a_rightShoulder ? 
+					rightShoulderMatAngleInputs.at(ArmOrientation::kForward) : 
+					leftShoulderMatAngleInputs.at(ArmOrientation::kForward)
+				);
+				float forwardRatio = 1.0f - std::clamp(rsData.normMag, 0.0f, 1.0f);
+				float outerPointsRatio = 1.0f - forwardRatio;
+				float forwardAngleX = forwardMatAngleInputs[0] * forwardRatio;
+				float forwardAngleY = forwardMatAngleInputs[1] * forwardRatio;
+				float forwardAngleZ = forwardMatAngleInputs[2] * forwardRatio;
+
+				if (rsLoc == AnalogStickLocation::kPosYAxis)
+				{
+					// Right and left shoulder blend:
+					// Forward and Upward.
+					// Outer point: upward.
+					const auto& upwardMatAngleInputs = 
+					(
+						a_rightShoulder ? 
+						rightShoulderMatAngleInputs.at(ArmOrientation::kUpward) : 
+						leftShoulderMatAngleInputs.at(ArmOrientation::kUpward)
+					);
+					float outerPointsAngleX = upwardMatAngleInputs[0] * outerPointsRatio;
+					float outerPointsAngleY = upwardMatAngleInputs[1] * outerPointsRatio;
+					float outerPointsAngleZ = upwardMatAngleInputs[2] * outerPointsRatio;
+
+					newRotationInput = 
+					{
+						forwardAngleX + outerPointsAngleX,
+						forwardAngleY + outerPointsAngleY,
+						forwardAngleZ + outerPointsAngleZ
+					};
+				}
+				else if (rsLoc == AnalogStickLocation::kTopRight)
+				{
+					// Right shoulder blend:
+					// Forward, Outward, and Upward.
+					if (a_rightShoulder)
+					{
+						// Outer points: outward and upward.
+						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						const auto& upwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kUpward);
+						float outwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = outwardWeight + upwardWeight;
+						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
+						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (outwardAngleX + upwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (outwardAngleY + upwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (outwardAngleZ + upwardAngleZ) * outerPointsRatio;
+
+						newRotationInput =
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward, Inward, and Upward.
+					else
+					{
+						// Outer points: inward and upward.
+						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						const auto& upwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kUpward);
+						float inwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = inwardWeight + upwardWeight;
+						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
+						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (inwardAngleX + upwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (inwardAngleY + upwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (inwardAngleZ + upwardAngleZ) * outerPointsRatio;
+
+						newRotationInput =
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+				else if (rsLoc == AnalogStickLocation::kPosXAxis)
+				{
+					// Right shoulder blend:
+					// Forward and Outward
+					if (a_rightShoulder)
+					{
+						// Outer point: outward.
+						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						float outerPointsAngleX = outwardMatAngleInputs[0] * outerPointsRatio;
+						float outerPointsAngleY = outwardMatAngleInputs[1] * outerPointsRatio;
+						float outerPointsAngleZ = outwardMatAngleInputs[2] * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward and Inward.
+					else
+					{
+						// Outer points: inward.
+						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						float outerPointsAngleX = inwardMatAngleInputs[0] * outerPointsRatio;
+						float outerPointsAngleY = inwardMatAngleInputs[1] * outerPointsRatio;
+						float outerPointsAngleZ = inwardMatAngleInputs[2] * outerPointsRatio;
+
+						newRotationInput =
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+				else if (rsLoc == AnalogStickLocation::kBottomRight)
+				{
+					// Right shoulder blend:
+					// Forward, Outward, and Downward.
+					if (a_rightShoulder)
+					{
+						// Outer points: outward and downward.
+						const auto& outwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						const auto& downwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kDownward);
+						float outwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = outwardWeight + downwardWeight;
+						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
+						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (outwardAngleX + downwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (outwardAngleY + downwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (outwardAngleZ + downwardAngleZ) * outerPointsRatio;
+
+						newRotationInput =
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward, Inward, and Downward.
+					else
+					{
+						// Outer points: inward and downward.
+						const auto& inwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						const auto& downwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kDownward);
+						float inwardWeight = max(RE::NiPoint2(1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = inwardWeight + downwardWeight;
+						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
+						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (inwardAngleX + downwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (inwardAngleY + downwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (inwardAngleZ + downwardAngleZ) * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+				else if (rsLoc == AnalogStickLocation::kNegYAxis)
+				{
+					// Right and left shoulder blend:
+					// Forward and Downward.
+
+					// Outer point: downward.
+					const auto& downwardMatAngleInputs = 
+					(
+						a_rightShoulder ? 
+						rightShoulderMatAngleInputs.at(ArmOrientation::kDownward) : 
+						leftShoulderMatAngleInputs.at(ArmOrientation::kDownward)
+					);
+					float outerPointsAngleX = downwardMatAngleInputs[0] * outerPointsRatio;
+					float outerPointsAngleY = downwardMatAngleInputs[1] * outerPointsRatio;
+					float outerPointsAngleZ = downwardMatAngleInputs[2] * outerPointsRatio;
+
+					newRotationInput = 
+					{
+						forwardAngleX + outerPointsAngleX,
+						forwardAngleY + outerPointsAngleY,
+						forwardAngleZ + outerPointsAngleZ
+					};
+				}
+				else if (rsLoc == AnalogStickLocation::kBottomLeft)
+				{
+					// Right shoulder blend:
+					// Forward, Inward, and Downward.
+					if (a_rightShoulder)
+					{
+						// Outer points: inward and downward.
+						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						const auto& downwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kDownward);
+						float inwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = inwardWeight + downwardWeight;
+						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
+						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (inwardAngleX + downwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (inwardAngleY + downwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (inwardAngleZ + downwardAngleZ) * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward, Outward, and Downward.
+					else
+					{
+						// Outer points: outward and downward.
+						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						const auto& downwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kDownward);
+						float outwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float downwardWeight = max(RE::NiPoint2(0.0f, -1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = outwardWeight + downwardWeight;
+						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
+						float downwardAngleX = downwardMatAngleInputs[0] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleY = downwardMatAngleInputs[1] * (downwardWeight / totalOuterPointsWeight);
+						float downwardAngleZ = downwardMatAngleInputs[2] * (downwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (outwardAngleX + downwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (outwardAngleY + downwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (outwardAngleZ + downwardAngleZ) * outerPointsRatio;
+
+						newRotationInput =
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+				else if (rsLoc == AnalogStickLocation::kNegXAxis)
+				{
+					// Right shoulder blend:
+					// Forward and Inward
+					if (a_rightShoulder)
+					{
+						// Outer point: inward.
+						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						float outerPointsAngleX = inwardMatAngleInputs[0] * outerPointsRatio;
+						float outerPointsAngleY = inwardMatAngleInputs[1] * outerPointsRatio;
+						float outerPointsAngleZ = inwardMatAngleInputs[2] * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward and Outward.
+					else
+					{
+						// Outer point: outward.
+						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						float outerPointsAngleX = outwardMatAngleInputs[0] * outerPointsRatio;
+						float outerPointsAngleY = outwardMatAngleInputs[1] * outerPointsRatio;
+						float outerPointsAngleZ = outwardMatAngleInputs[2] * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+				else if (rsLoc == AnalogStickLocation::kTopLeft)
+				{
+					// Right shoulder blend:
+					// Forward, Inward, and Upward.
+					if (a_rightShoulder)
+					{
+						// Outer points: inward and upward.
+						const auto& inwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kInward);
+						const auto& upwardMatAngleInputs = rightShoulderMatAngleInputs.at(ArmOrientation::kUpward);
+						float inwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = inwardWeight + upwardWeight;
+						float inwardAngleX = inwardMatAngleInputs[0] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleY = inwardMatAngleInputs[1] * (inwardWeight / totalOuterPointsWeight);
+						float inwardAngleZ = inwardMatAngleInputs[2] * (inwardWeight / totalOuterPointsWeight);
+						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (inwardAngleX + upwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (inwardAngleY + upwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (inwardAngleZ + upwardAngleZ) * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+					// Left shoulder blend:
+					// Forward, Outward, and Upward.
+					else
+					{
+						// Outer points: outward and upward.
+						const auto& outwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kOutward);
+						const auto& upwardMatAngleInputs = leftShoulderMatAngleInputs.at(ArmOrientation::kUpward);
+						float outwardWeight = max(RE::NiPoint2(-1.0f, 0.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float upwardWeight = max(RE::NiPoint2(0.0f, 1.0f).Dot(RE::NiPoint2(xDisp, yDisp)), 0.0f);
+						float totalOuterPointsWeight = outwardWeight + upwardWeight;
+						float outwardAngleX = outwardMatAngleInputs[0] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleY = outwardMatAngleInputs[1] * (outwardWeight / totalOuterPointsWeight);
+						float outwardAngleZ = outwardMatAngleInputs[2] * (outwardWeight / totalOuterPointsWeight);
+						float upwardAngleX = upwardMatAngleInputs[0] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleY = upwardMatAngleInputs[1] * (upwardWeight / totalOuterPointsWeight);
+						float upwardAngleZ = upwardMatAngleInputs[2] * (upwardWeight / totalOuterPointsWeight);
+
+						float outerPointsAngleX = (outwardAngleX + upwardAngleX) * outerPointsRatio;
+						float outerPointsAngleY = (outwardAngleY + upwardAngleY) * outerPointsRatio;
+						float outerPointsAngleZ = (outwardAngleZ + upwardAngleZ) * outerPointsRatio;
+
+						newRotationInput = 
+						{
+							forwardAngleX + outerPointsAngleX,
+							forwardAngleY + outerPointsAngleY,
+							forwardAngleZ + outerPointsAngleZ
+						};
+					}
+				}
+			}
+		}
+
+		// Update blend state after potentially setting the rotation modified flag 
+		// and before setting current and target rotations.
+		UpdateNodeRotationBlendState(a_p, shoulderData, a_shoulderNodePtr, true);
+
+		// REMOVE when done debugging.
+		/*
+		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+
+		const auto& worldRot = a_shoulderNode->world.rotate;
+		auto worldXAxis = RE::NiPoint3(worldRot * right);
+		auto worldYAxis = RE::NiPoint3(worldRot * forward);
+		auto worldZAxis = RE::NiPoint3(worldRot * up);
+		glm::vec3 start{ a_shoulderNode->world.translate.x, a_shoulderNode->world.translate.y, a_shoulderNode->world.translate.z };
+		glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 10.0f };
+		glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 10.0f };
+		glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 10.0f };
+		DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
+		DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
+		DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);
+		*/
+
+		// Init to default rotation if not adjusted.
+		if (shoulderData->rotationModified) 
+		{
+			// Set rotation angle inputs used to construct world rotation matrix below.
+			const float oldYaw = shoulderData->rotationInput[0];
+			const float oldPitch = shoulderData->rotationInput[1];
+			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			shoulderData->rotationInput = std::array<float, 3>({ yaw, pitch, 0.0f });
+
+			// Construct world rotation from our angle inputs.
+			auto newWorldTransform = a_shoulderNodePtr->world;
+			Util::SetRotationMatrixPYR
+			(
+				newWorldTransform.rotate, 
+				shoulderData->rotationInput[1], 
+				shoulderData->rotationInput[0] + a_p->coopActor->GetHeading(false), 
+				0.0f
+			);
+
+			// Get and set corresponding local rotation from our desired world rotation.
+			if (a_shoulderNodePtr->parent)
+			{
+				RE::NiTransform inverseParent = a_shoulderNodePtr->parent->world.Invert();
+				shoulderData->targetRotation = (inverseParent * newWorldTransform).rotate;
+			}
+		}
+		else
+		{
+			shoulderData->targetRotation = a_shoulderNodePtr->local.rotate;	 //shoulderData->defaultRotation;
+		}
+
+		// Update shoulder node rotation to set (current) after potentially setting target rotations.
+		UpdateNodeRotationToSet(a_p, shoulderData, a_shoulderNodePtr, true);
+	}
+
+	void NodeOrientationManager::UpdateTorsoNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Update torso node blend status and starting, current, and target rotations.
+		// Modification method: local rotation derived from a world rotation offset 
+		// from the default world rotation for each torso node.
+
+		const auto strings = RE::FixedStrings::GetSingleton();
+		if (!strings)
+		{
+			return;
+		}
+
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
+		{
+			return;
+		}
+
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
+		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
+		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
+		bool isMounted = a_p->coopActor->IsOnMount();
+		bool isRangedWeaponPrimed = false;
+		// Only rotate when an equipped ranged weapon is primed.
+		if (a_p->em->HasBowEquipped())
+		{
+			isRangedWeaponPrimed = 
+			{
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowAttached ||
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing ||
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleased
+			};
+		}
+		else if (a_p->em->HasCrossbowEquipped())
+		{
+			isRangedWeaponPrimed = 
+			{
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn ||
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleasing ||
+				a_p->coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowReleased 
+			};
+		}
+
+		// Rotate the torso throughout the attack animation's duration when not attacking with a 2H ranged weapon.
+		bool isAttackingWithoutRangedWeap = !a_p->em->Has2HRangedWeapEquipped() && a_p->pam->isAttacking;
+		bool isAiming =
+		{
+			isAttackingWithoutRangedWeap ||
+			isRangedWeaponPrimed ||
+			a_p->pam->isBlocking ||
+			a_p->pam->isBashing ||
+			a_p->pam->isInCastingAnim ||
+			a_p->pam->usingLHStaff->value == 1.0f ||
+			a_p->pam->usingRHStaff->value == 1.0f ||
+			a_p->pam->isVoiceCasting ||
+			a_p->pam->IsPerforming(InputAction::kQuickSlotCast)
+		};
+
+		// Skip head node adjustments for the time being.
+		const uint8_t numAdjustableNodes = 
+		(
+			a_p->isTransformed ? 
+			GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES.size() - 1 : 
+			GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES.size()
+		);
+
+		// Base axes/rotation set from the cached default world rotation for each node.
+		RE::NiPoint3 baseXAxis{ };
+		RE::NiPoint3 baseYAxis{ };
+		RE::NiPoint3 baseZAxis{};
+		RE::NiMatrix3 baseWorldRot{};
+		// Torso node's parent world transform.
+		RE::NiTransform parentWorld{ };
+
+		// Set the axis of rotation to use when rotating the torso nodes.
+		bool isAttackingWith2HRangedWeapon = a_p->pam->isAttacking && a_p->em->Has2HRangedWeapEquipped();
+		if (isAttackingWith2HRangedWeapon) 
+		{
+			// Use the player's default attack source direction when aiming with a ranged weapon,
+			// since the axis of rotation typically shifts away from the node's X axis.
+			a_p->mm->playerTorsoAxisOfRotation = a_p->mm->playerDefaultAttackSourceDir.Cross(up);
+		}
+		else
+		{
+			// If not aiming with a ranged weapon, instead use the player's aiming direction
+			// in the XY plane as the forward vector along which to derive the axis.
+			auto aimingXYDir = 
+			(
+				Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_p->coopActor->GetAimHeading()))
+			);
+
+			a_p->mm->playerTorsoAxisOfRotation = aimingXYDir.Cross(up);
+		}
+
+		for (uint8_t i = 0; i < numAdjustableNodes; ++i)
+		{
+			const auto& nodeName = GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[i];
+			auto torsoNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
+
+			// Node is invalid, on to the next one.
+			if (!torsoNodePtr || !torsoNodePtr.get())
+			{
+				continue;
+			}
+				
+			// Ensure the torso node is accounted for in rotation data map.
+			if (!nodeRotationDataMap.contains(torsoNodePtr))
+			{
+				nodeRotationDataMap.insert_or_assign(torsoNodePtr, std::make_unique<NodeRotationData>());
+			}
+
+			// Rotation data we will modify.
+			const auto& torsoData = nodeRotationDataMap[torsoNodePtr];
+			// Set the rotation state flags before updating the blend state.
+			torsoData->prevInterrupted = torsoData->interrupted;
+			torsoData->prevRotationModified = torsoData->rotationModified;
+			// Do not set the custom rotation if not aiming with a drawn weapon,
+			// or if the player is staggered/ragdolled or inactive.
+			torsoData->interrupted = 
+			{
+				(!isAiming && a_p->coopActor->IsWeaponDrawn()) ||
+				a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
+				a_p->IsAwaitingRefresh() ||
+				a_p->coopActor->actorState2.recoil ||
+				a_p->coopActor->actorState2.staggered
+			};
+			// Rotation was modified if the player has adjusted their aim pitch,
+			// which means by which player can adjust their torso pitch.
+			torsoData->rotationModified = 
+			{
+				(a_p->mm->aimPitchAdjusted)
+			};
+
+			// Update blend state after modifying the rotation flags
+			// and before setting current and target rotations.
+			UpdateNodeRotationBlendState(a_p, torsoData, torsoNodePtr, false);
+
+			// Get the game's default world rotation for this node and derive its axes.
+			if (defaultNodeWorldTransformsMap.contains(torsoNodePtr))
+			{
+				const auto& defaultWorldRotation = defaultNodeWorldTransformsMap.at(torsoNodePtr).rotate;
+				baseXAxis = defaultWorldRotation * right;
+				baseYAxis = defaultWorldRotation * forward;
+				baseZAxis = defaultWorldRotation * up;
+				baseWorldRot = defaultWorldRotation;
+
+				// Get parent world transform of the base spinal node.
+				if (i == 0) 
+				{
+					auto parentNodePtr = RE::NiPointer<RE::NiAVObject>(torsoNodePtr->parent);
+					if (parentNodePtr && parentNodePtr.get()) 
+					{
+						if (defaultNodeWorldTransformsMap.contains(parentNodePtr))
+						{
+							parentWorld = defaultNodeWorldTransformsMap.at(parentNodePtr);
+						}
+						else
+						{
+							parentWorld = parentNodePtr->world;
+						}
+					}
+				}
+			}
+
+			// REMOVE when done debugging.
+			/*
+			const auto& worldRot = torsoNodePtr->world.rotate;
+			auto worldXAxis = RE::NiPoint3(worldRot * right);
+			auto worldYAxis = RE::NiPoint3(worldRot * forward);
+			auto worldZAxis = RE::NiPoint3(worldRot * up);
+
+			glm::vec3 start{ torsoNode->world.translate.x, torsoNode->world.translate.y, torsoNode->world.translate.z };
+			glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 10.0f };
+			glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 10.0f };
+			glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 10.0f };
+			DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
+			DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
+			DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);*/
+
+			if (torsoData->rotationModified)
+			{
+				RE::NiPoint3 newXAxis = baseXAxis;
+				RE::NiPoint3 newYAxis = baseYAxis;
+				RE::NiPoint3 newZAxis = baseZAxis;
+
+				float frac = 1.0f;
+				if (i == 0)
+				{
+					frac = 0.5f;
+				}
+				else if (i == 1)
+				{
+					frac = 5.0f / 6.0f;
+				}
+				else if (i == 2)
+				{
+					frac = 1.0f;
+				}
+
+				/*float defaultPitch = Util::DirectionToGameAngPitch(baseYAxis);
+				ALYSLC::Log("[MM] {}: {}.", a_p->coopActor->GetName(), defaultPitch * TO_DEGREES);
+				float aimPitchProportion = (a_p->mm->aimPitch + PI / 2.0f) / PI;
+				float remappedPitch = 0.0f;
+				if (aimPitchProportion >= 0.5f) 
+				{
+					remappedPitch = -std::lerp(0.0f, PI / 2.0f + defaultPitch, 2.0f * (aimPitchProportion - 0.5f));
+				}
+				else
+				{
+					remappedPitch = -std::lerp(-PI / 2.0f + defaultPitch, 0.0f, 2.0f * aimPitchProportion);
+				}
+
+				Util::RotateVectorAboutAxis
+				(
+					newXAxis, 
+					a_p->mm->playerTorsoAxisOfRotation, 
+					remappedPitch * frac
+				);
+				Util::RotateVectorAboutAxis
+				(
+					newYAxis, 
+					a_p->mm->playerTorsoAxisOfRotation, 
+					remappedPitch * frac
+				);
+				Util::RotateVectorAboutAxis
+				(
+					newZAxis,
+					a_p->mm->playerTorsoAxisOfRotation, 
+					remappedPitch * frac
+				);*/
+
+				torsoData->rotationInput[1] = -a_p->mm->aimPitch;
+				// Pitch all the axes first.
+				Util::RotateVectorAboutAxis
+				(
+					newXAxis, 
+					a_p->mm->playerTorsoAxisOfRotation, 
+					torsoData->rotationInput[1] * frac
+				);
+				Util::RotateVectorAboutAxis
+				(
+					newYAxis, 
+					a_p->mm->playerTorsoAxisOfRotation, 
+					torsoData->rotationInput[1] * frac
+				);
+				Util::RotateVectorAboutAxis
+				(
+					newZAxis,
+					a_p->mm->playerTorsoAxisOfRotation, 
+					torsoData->rotationInput[1] * frac
+				);
+
+				// Modify the yaw of the torso nodes if the player is aiming with a ranged weapon while mounted,
+				// since the game does not automatically rotate our players to face the crosshair target.
+				if (isMounted && isAttackingWith2HRangedWeapon)
+				{
+					float prevYawOffset = torsoData->rotationInput[0];
+					float yawOffset = 0.0f;
+					if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
+						crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
+					{
+						auto playerAimYaw = Util::DirectionToGameAngYaw(a_p->mm->playerDefaultAttackSourceDir);
+						float playerToTargetYaw = Util::GetYawBetweenPositions(a_p->mm->playerDefaultAttackSourcePos, a_p->tm->crosshairWorldPos);
+						yawOffset = Util::NormalizeAngToPi(playerAimYaw - playerToTargetYaw);
+						// Prevent interpolation along the 'longer' path between the two endpoints
+						// by shifting the target endpoint to an equivalent angle that is closer
+						// to the starting endpoint.
+						if (fabsf(yawOffset - prevYawOffset) > PI) 
+						{
+							if (yawOffset <= 0.0f) 
+							{
+								yawOffset += 2.0f * PI;
+							}
+							else
+							{
+								yawOffset -= 2.0f * PI;
+							}
+						}
+					}
+
+					torsoData->rotationInput[0] = Util::InterpolateSmootherStep
+					(
+						prevYawOffset, 
+						yawOffset, 
+						min(1.0f, *g_deltaTimeRealTime * interpFactor)
+					);
+
+					// Rotate the axes about the world 'up' axis with our yaw offset.
+					if (torsoData->rotationInput[0] != 0.0f) 
+					{
+						torsoData->rotationInput[0] = Util::NormalizeAngToPi(torsoData->rotationInput[0]);
+						Util::RotateVectorAboutAxis
+						(
+							newXAxis, 
+							up, 
+							torsoData->rotationInput[0] * frac
+						);
+						Util::RotateVectorAboutAxis
+						(
+							newYAxis, 
+							up, 
+							torsoData->rotationInput[0] * frac
+						);
+						Util::RotateVectorAboutAxis
+						(
+							newZAxis,
+							up, 
+							torsoData->rotationInput[0] * frac
+						);
+					}
+				}
+
+				RE::NiMatrix3 newWorldRot{ newXAxis, newYAxis, newZAxis };
+				// NOTE: Must transpose to ensure that our modified axes are set
+				// as the new target local rotation matrix's axes.
+				newWorldRot = newWorldRot.Transpose();
+				RE::NiTransform newTrans{ torsoNodePtr->world };
+				newTrans.rotate = newWorldRot;
+
+				// REMOVE when done debugging.
+				/*
+				const auto& defaultPos = defaultNodeWorldTransformsMap.at(torsoNodePtr).translate;
+				glm::vec3 start
+				{
+					defaultPos.x,
+					defaultPos.y,
+					defaultPos.z
+				};
+				glm::vec3 endX = start + glm::vec3(newXAxis.x, newXAxis.y, newXAxis.z) * 10.0f;
+				glm::vec3 endY = start + glm::vec3(newYAxis.x, newYAxis.y, newYAxis.z) * 10.0f;
+				glm::vec3 endZ = start + glm::vec3(newZAxis.x, newZAxis.y, newZAxis.z) * 10.0f;
+				DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);
+
+				endX = start + glm::vec3(baseXAxis.x, baseXAxis.y, baseXAxis.z) * 10.0f;
+				endY = start + glm::vec3(baseYAxis.x, baseYAxis.y, baseYAxis.z) * 10.0f;
+				endZ = start + glm::vec3(baseZAxis.x, baseZAxis.y, baseZAxis.z) * 10.0f;
+				DebugAPI::QueueArrow3D(start, endX, 0xFFFF00FF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endY, 0x00FFFFFF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endZ, 0xFF00FFFF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, start + ToVec3(a_p->mm->playerTorsoAxisOfRotation) * 10.0f, 0xFFFFF00FF, 5.0f, 2.0f);
+				*/
+
+				// Set local rotation corresponding to our world rotation.
+				torsoData->targetRotation = (parentWorld.Invert() * newTrans).rotate;
+				// Update the parent world transform for the next node by setting it to the current node's new transform
+				// so that we can emulate a 'downward' pass of our own when setting subsequent child torso nodes' rotations.
+				parentWorld = newTrans;
+			}
+			else
+			{
+				torsoData->targetRotation = torsoNodePtr->local.rotate;
+			}
+
+			// Update torso node rotation to set (current) after potentially setting target rotations.
+			UpdateNodeRotationToSet(a_p, torsoData, torsoNodePtr, false);
 		}
 	}
 }

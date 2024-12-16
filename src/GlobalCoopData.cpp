@@ -1957,7 +1957,8 @@ namespace ALYSLC
 			// Update flag signalling downward pass hook to restore cached node rotations to overwrite the game's changes.
 
 			// Obtain lock for node rotation data.
-			std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
+			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
+			std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex, std::try_to_lock);
 			if (lock) 
 			{
 				// Continue early if the fixed strings are not available.
@@ -2007,10 +2008,10 @@ namespace ALYSLC
 						continue;
 					}
 
-					p->mm->UpdateCachedShoulderNodeRotationData(leftShoulderNode.get(), false);
-					p->mm->UpdateCachedShoulderNodeRotationData(rightShoulderNode.get(), true);
-					p->mm->UpdateCachedArmNodeRotationData(leftForearmNode.get(), leftHandNode.get(), false);
-					p->mm->UpdateCachedArmNodeRotationData(rightForearmNode.get(), rightHandNode.get(), true);
+					p->mm->nom->UpdateShoulderNodeRotationData(p, leftShoulderNode, false);
+					p->mm->nom->UpdateShoulderNodeRotationData(p, rightShoulderNode, true);
+					p->mm->nom->UpdateArmNodeRotationData(p, leftForearmNode, leftHandNode, false);
+					p->mm->nom->UpdateArmNodeRotationData(p, rightForearmNode, rightHandNode, true);
 				}
 
 				auto spineNode	=	RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine));
@@ -2034,7 +2035,12 @@ namespace ALYSLC
 				}	
 				
 				// Adjust torso nodes' rotations after updating blending state.
-				p->mm->UpdateCachedTorsoNodeRotationData();
+				p->mm->nom->UpdateTorsoNodeRotationData(p);
+			}
+			else
+			{
+				ALYSLC::Log("[GLOB] HavokPhysicsPreStep: {}: Failed to obtain lock: (0x{:X}).", 
+					p->coopActor->GetName(), hash);
 			}
 		}
 	}
@@ -4994,7 +5000,7 @@ namespace ALYSLC
 			return;
 		}
 
-		std::unique_lock<std::mutex> lock(a_p->mm->nrm->rotationDataMutex, std::try_to_lock);
+		std::unique_lock<std::mutex> lock(a_p->mm->nom->rotationDataMutex, std::try_to_lock);
 		if (lock)
 		{
 			const auto& uiRGBA = Settings::vuOverlayRGBAValues[a_p->playerID];
@@ -5016,27 +5022,26 @@ namespace ALYSLC
 			}
 
 			const uint32_t raycastsPerNode = 10;
+			uint32_t nodeNameHash = 0;
 			for (const auto& name : nodeNamesToCheck)
 			{
-				const auto nodeNameHash = Hash(name);
-				if (auto node3D = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(name)); node3D && node3D.get())
+				nodeNameHash = Hash(name);
+				if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(name)); nodePtr && nodePtr.get())
 				{
 					// Update position and velocity first.
 					const auto& playerPos = a_p->coopActor->data.location;
-					const auto& nodeWorldPos = node3D->world.translate;
+					const auto& nodeWorldPos = nodePtr->world.translate;
 					RE::NiPoint3 localPos = nodeWorldPos - playerPos;
-					if (!a_p->mm->nrm->nodeRotationDataMap.contains(nodeNameHash))
+					if (!a_p->mm->nom->nodeRotationDataMap.contains(nodePtr))
 					{
-						a_p->mm->nrm->nodeRotationDataMap.insert_or_assign(nodeNameHash, std::make_unique<NodeRotationData>());
+						a_p->mm->nom->nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
 					}
-					else
-					{
-						// Each frame.
-						auto& nodeData = a_p->mm->nrm->nodeRotationDataMap[nodeNameHash];
-						RE::NiPoint3 velocity = (localPos - nodeData->localPosition) / (*g_deltaTimeRealTime);
-						nodeData->localPosition = localPos;
-						nodeData->localVelocity = velocity;
-					}
+
+					// Each frame.
+					auto& nodeData = a_p->mm->nom->nodeRotationDataMap[nodePtr];
+					RE::NiPoint3 velocity = (localPos - nodeData->localPosition) / (*g_deltaTimeRealTime);
+					nodeData->localPosition = localPos;
+					nodeData->localVelocity = velocity;
 
 					ArmNodeType armNodeType = ArmNodeType::kShoulder;
 					if (nodeNameHash == "NPC L Hand [LHnd]"_h || nodeNameHash == "NPC R Hand [RHnd]"_h)
@@ -5048,7 +5053,7 @@ namespace ALYSLC
 						armNodeType = ArmNodeType::kForearm;
 					}
 
-					if (auto armHkpRigidBody = Util::GethkpRigidBody(node3D.get()); armHkpRigidBody)
+					if (auto armHkpRigidBody = Util::GethkpRigidBody(nodePtr.get()); armHkpRigidBody && armHkpRigidBody.get())
 					{
 						if (auto hkpShape = armHkpRigidBody->GetShape(); hkpShape->type == RE::hkpShapeType::kCapsule)
 						{
@@ -5061,13 +5066,15 @@ namespace ALYSLC
 							// since rigidbody capsule axes don't line up with the hands' node orientations.
 							if (armNodeType == ArmNodeType::kHand)
 							{
-								zAxisDir = RE::NiPoint3(
-									node3D->world.rotate.entry[0][2],
-									node3D->world.rotate.entry[1][2],
-									node3D->world.rotate.entry[2][2]);
+								zAxisDir = RE::NiPoint3
+								(
+									nodePtr->world.rotate.entry[0][2],
+									nodePtr->world.rotate.entry[1][2],
+									nodePtr->world.rotate.entry[2][2]
+								);
 								zAxisDir.Unitize();
 
-								RE::NiPoint3 handCenterPos = node3D->world.translate + zAxisDir * capsuleRadius * 1.5f;
+								RE::NiPoint3 handCenterPos = nodePtr->world.translate + zAxisDir * capsuleRadius * 1.5f;
 								if (zAxisDir.z > 0.0f)
 								{
 									vertexA = handCenterPos + zAxisDir * capsuleRadius;
@@ -5109,9 +5116,11 @@ namespace ALYSLC
 							const glm::vec4 zAxisDirVec = ToVec4(zAxisDir);
 							float capsuleLength = (vertexB - vertexA).Length() + 2.5f * hkpCapsuleShape->radius * HAVOK_TO_GAME;
 							glm::vec4 originPos =
-								((vertexA.z > vertexB.z) ?
-										ToVec4(vertexB - zAxisDir * hkpCapsuleShape->radius) :
-										  ToVec4(vertexA - zAxisDir * hkpCapsuleShape->radius));
+							(
+								(vertexA.z > vertexB.z) ?
+								ToVec4(vertexB - zAxisDir * hkpCapsuleShape->radius) :
+								ToVec4(vertexA - zAxisDir * hkpCapsuleShape->radius)
+							);
 							RE::hkVector4 velVec{};
 							glm::vec4 velDir{};
 							glm::vec4 startPos{};
@@ -5124,13 +5133,15 @@ namespace ALYSLC
 								velVec = armHkpRigidBody->motion.GetPointVelocity(TohkVector4(startPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME;
 								velDir = ToVec4(velVec, true);
 								endPos = startPos + (velDir * hkpCapsuleShape->radius * 2.0f * HAVOK_TO_GAME);
-								hit = PerformArmCollisionRaycastCheck(
+								hit = PerformArmCollisionRaycastCheck
+								(
 									a_p,
 									startPos,
 									endPos,
-									a_p->mm->nrm->nodeRotationDataMap[nodeNameHash]->localVelocity,
+									nodeData->localVelocity,
 									ToNiPoint3(velVec),
-									armNodeType);
+									armNodeType
+								);
 
 								// REMOVE when done debugging.
 								//DebugAPI::QueueArrow3D(startPos, endPos, Settings::vuOverlayRGBAValues[a_p->playerID], 5.0f, 2.0f, 0.0f);

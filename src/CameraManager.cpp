@@ -510,11 +510,11 @@ namespace ALYSLC
 						{
 							// Minimum of one node must be visible from the camera target position
 							// to consider the player as in view of the camera.
-							if (auto node = data3D->GetObjectByName(nodeName); node)
+							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
 							{
 								onePlayerNodeOnScreen |= PointOnScreenAtCamOrientation
 								(
-									node->world.translate, 
+									nodePtr->world.translate, 
 									a_camPos, 
 									a_rotation, 
 									DebugAPI::screenResX / 10.0f
@@ -537,11 +537,11 @@ namespace ALYSLC
 						{
 							// Minimum of one node must be visible from the camera target position
 							// to consider the player as in view of the camera.
-							if (auto node = data3D->GetObjectByName(nodeName); node)
+							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
 							{
 								onePlayerNodeOnScreen |= PointOnScreenAtCamOrientation
 								(
-									node->world.translate, 
+									nodePtr->world.translate, 
 									a_camPos, 
 									a_rotation, 
 									DebugAPI::screenResX / 10.0f
@@ -2099,7 +2099,7 @@ namespace ALYSLC
 				{
 					// All checked nodes must be visible from the camera target position
 					// to consider the player as in view of the camera.
-					if (auto node = data3D->GetObjectByName(nodeName); node)
+					if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
 					{
 						// Cast from node to point instead of the other way around because 
 						// if there is a "one-way" surface that is facing up between 
@@ -2107,7 +2107,7 @@ namespace ALYSLC
 						// the raycast results will not contain a hit when casting from point to node.
 						auto losCheck = Raycast::hkpCastRay
 						(
-							ToVec4(node->world.translate), 
+							ToVec4(nodePtr->world.translate), 
 							point, 
 							std::vector<RE::NiAVObject*>{ playerCam->cameraRoot.get(), data3D.get() }, 
 							RE::COL_LAYER::kLOS
@@ -2173,7 +2173,7 @@ namespace ALYSLC
 
 		bool onScreen = false;
 		const auto& niCam = Util::GetNiCamera();
-		Util::SetRotationMatrix(playerCam->cameraRoot->local.rotate, a_rotation.x, a_rotation.y);
+		Util::SetRotationMatrixPY(playerCam->cameraRoot->local.rotate, a_rotation.x, a_rotation.y);
 		Util::SetCameraPosition(playerCam, a_camPos);
 		RE::NiUpdateData updateData;
 		playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);

@@ -1210,6 +1210,7 @@ namespace ALYSLC
 						{
 							// Let the game update this character first.
 							_Update(a_this, a_delta);
+							
 							// [Temp workaround]:
 							// Disable Precision on this actor when ragdolled to avoid a ragdoll reset position glitch on knock explosion
 							// where the hit actor is teleported to their last ragdoll position instead of staying at their current position.
@@ -1286,11 +1287,22 @@ namespace ALYSLC
 					_Update(a_this, a_delta);
 
 					const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
-					// Don't know how to prevent combat from triggering for co-op companion players towards other actors, including other players.
-					// Best bandaid solution for now is to remove the combat controller each frame, but
-					// combat will still initiate for a frame at most until the controller is cleared here.
-					p->coopActor->combatController = nullptr;
 
+					//===================
+					// Node Orientations.
+					//===================
+					// NOTE: All downward passes for the player's nodes have been performed at this point,
+					// so restore all saved default local transforms for the next frame.
+					// Reasoning: Sometimes, such as when a havok impulse is applied to the player,
+					// the game won't restore the animation-derived local transforms for all the player's nodes,
+					// since the havok impulse applied its own overriding local transform to the node(s).
+					// Thus, any of our local transform modifications from the last frame will carry over and stack with this frame's,
+					// which leads to setting incorrect local transforms (lots of spinning) unless the defaults are restored first.
+					p->mm->nom->RestoreOriginalNodeLocalTransforms(p);
+
+					//==========
+					// Movement.
+					//==========
 					if (auto currentProc = a_this->currentProcess; currentProc)
 					{
 						if (auto high = currentProc->high; high)
@@ -1575,6 +1587,10 @@ namespace ALYSLC
 						}
 					}
 
+					// Don't know how to prevent combat from triggering for co-op companion players towards other actors, including other players.
+					// Best bandaid solution for now is to remove the combat controller each frame, but
+					// combat will still initiate for a frame at most until the controller is cleared here.
+					p->coopActor->combatController = nullptr;
 					return;
 				}
 			}
@@ -2527,115 +2543,63 @@ namespace ALYSLC
 // NINODE HOOKS
 		void NiNodeHooks::UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2)
 		{
-			if (glob.coopSessionActive)
+			if (!glob.coopSessionActive)
 			{
-				// Set stored arm/torso rotations for active players before running downward pass.
-				// If not done here, and performed in the main loop instead, an intervening function
-				// call will undo our changes.
-				RestoreSavedNodeOrientation(a_this, std::addressof(a_data));
+				_UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
-
-			_UpdateDownwardPass(a_this, a_data, a_arg2);
-		}
-
-		void NiNodeHooks::RestoreSavedNodeOrientation(RE::NiNode* a_node, RE::NiUpdateData* a_data)
-		{
-			if (glob.coopSessionActive)
+			else
 			{
 				// Return early and minimize calculation time in this func.
 				const auto strings = RE::FixedStrings::GetSingleton();
 				if (!strings)
 				{
-					return;
-				}
-				// Check if a supported node first.
-				const auto nodeNameHash = Hash(a_node->name);
-				bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE_HASHES.contains(nodeNameHash);
-				bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE_HASHES.contains(nodeNameHash);
-				bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE_HASHES.contains(nodeNameHash);
-				if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
-				{
+					_UpdateDownwardPass(a_this, a_data, a_arg2);
 					return;
 				}
 
 				// Ignore updates to NPCs.
-				if (auto index = GlobalCoopData::GetCoopPlayerIndex(Util::GetRefrFrom3D(a_node)); index == -1)
+				auto index = GlobalCoopData::GetCoopPlayerIndex(Util::GetRefrFrom3D(a_this));
+				if (index == -1)
 				{
+					_UpdateDownwardPass(a_this, a_data, a_arg2);
 					return;
 				}
-				else
+
+				const auto& p = glob.coopPlayers[index];
+				// The co-op camera is not enabled, so do not restore P1's node rotations.
+				if (p->isPlayer1 && !glob.cam->IsRunning())
 				{
-					const auto& p = glob.coopPlayers[index];
-					// The co-op camera is not enabled, so do not restore P1's node rotations.
-					if (p->isPlayer1 && !glob.cam->IsRunning())
-					{
-						return;
-					}
+					_UpdateDownwardPass(a_this, a_data, a_arg2);
+					return;
+				}
 
-					std::unique_lock<std::mutex> lock(p->mm->nrm->rotationDataMutex, std::try_to_lock);
-					if (lock)
+				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
+				{
+					std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
+
+					auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
+					// First chain of downward pass recursive calls always has no flags set for the given node.
+					if (a_data.flags == RE::NiUpdateData::Flag::kNone)
 					{
-						// Torso node orientation restoration first, as the check is the least intensive.
-						if (p->mm->nrm->nodeRotationDataMap.contains(nodeNameHash))
+						const auto nodeNameHash = Hash(a_this->name);
+						// First call is always the NPC base node,
+						// so save the default rotations before any downward pass calls execute.
+						if (nodeNameHash == Hash(strings->npc))
 						{
-							auto& data = p->mm->nrm->nodeRotationDataMap[nodeNameHash];
-							data->defaultRotation = a_node->local.rotate;
-
-							// Arm node orientation restoration is only performed when weapon is not drawn.
-							if (isTorsoNode)
-							{
-								a_node->local.rotate = data->currentRotation;
-							}
-							else if (Settings::bRotateArmsWhenSheathed)
-							{
-								if (!p->coopActor->IsWeaponDrawn()) 
-								{
-									a_node->local.rotate = data->targetRotation;
-								}
-								else
-								{
-									a_node->local.rotate = data->defaultRotation;
-								}
-
-							}
-
-							if (a_node->parent)
-							{
-								a_node->world.rotate = (a_node->parent->world * a_node->local).rotate;
-							}
-
-
-							/*float xL = 0.0f;
-							float yL = 0.0f;
-							float zL = 0.0f;
-							float xW = 0.0f;
-							float yW = 0.0f;
-							float zW = 0.0f;
-							a_node->local.rotate.ToEulerAnglesXYZ(xL, yL, zL);
-							a_node->world.rotate.ToEulerAnglesXYZ(xW, yW, zW);
-
-							ALYSLC::Log("[MM] RestoreSavedNodeOrientation: {}: {}: ({}, {}, {}), ({}, {}, {}).",
-								p->coopActor->GetName(), a_node->name,
-								xL * TO_DEGREES, yL * TO_DEGREES, zL * TO_DEGREES,
-								xW * TO_DEGREES, yW * TO_DEGREES, zW * TO_DEGREES);*/
-
-							/*const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
-							const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
-							const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
-							auto& worldRot = a_node->world.rotate;
-							auto worldXAxis = RE::NiPoint3(worldRot * right);
-							auto worldYAxis = RE::NiPoint3(worldRot * forward);
-							auto worldZAxis = RE::NiPoint3(worldRot * up);
-							glm::vec3 start{ a_node->world.translate.x, a_node->world.translate.y, a_node->world.translate.z };
-							glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 15.0f };
-							glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 15.0f };
-							glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 15.0f };
-							DebugAPI::QueueArrow3D(start, endX, 0xFF0000FF, 5.0f, 2.0f);
-							DebugAPI::QueueArrow3D(start, endY, 0x00FF00FF, 5.0f, 2.0f);
-							DebugAPI::QueueArrow3D(start, endZ, 0x0000FFFF, 5.0f, 2.0f);*/
+							//p->mm->nom->DisplayAllNodeRotations(p);
+							p->mm->nom->SavePlayerNodeWorldTransforms(p);
+							// Update default attack position and rotation after saving default node orientation data.
+							p->mm->UpdateAttackSourceOrientationData(true);
 						}
 					}
+
+					// Save local rotation and then apply our custom rotation
+					// before executing the downward pass to visually apply our changes.
+					p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign(nodePtr, a_this->local);
+					p->mm->nom->ApplyCustomNodeRotation(p, nodePtr);
 				}
+
+				_UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
 		}
 
@@ -3053,10 +3017,24 @@ namespace ALYSLC
 				{
 					// Run game's update first.
 					_Update(a_this, a_delta);
-					// Prevent game from updating crosshair text while co-op cam is active.
-					a_this->playerFlags.shouldUpdateCrosshair = false;
 
 					const auto& p = glob.coopPlayers[glob.player1CID];
+
+					//===================
+					// Node Orientations.
+					//===================
+					// NOTE: All downward passes for the player's nodes have been performed at this point,
+					// so restore all saved default local transforms for the next frame.
+					// Reasoning: Sometimes, such as when a havok impulse is applied to the player,
+					// the game won't restore the animation-derived local transforms for all the player's nodes,
+					// since the havok impulse applied its own overriding local transform to the node(s).
+					// Thus, any of our local transform modifications from the last frame will carry over and stack with this frame's,
+					// which leads to setting incorrect local transforms (lots of spinning) unless the defaults are restored first.
+					p->mm->nom->RestoreOriginalNodeLocalTransforms(p);
+
+					//==========
+					// Movement.
+					//==========
 					if (auto currentProc = a_this->currentProcess; currentProc)
 					{
 						if (auto high = currentProc->high; high)
@@ -3378,6 +3356,8 @@ namespace ALYSLC
 						}
 					}
 
+					// Prevent game from updating crosshair text while co-op cam is active.
+					a_this->playerFlags.shouldUpdateCrosshair = false;
 					return;
 				}
 				else
@@ -3765,20 +3745,6 @@ namespace ALYSLC
 					projectile->desiredTarget = targetActorHandle;
 				}
 
-				// Set launch pitch/yaw for arrows/bolts.
-				// Maintain visual consistency by angling the just-released projectile in the player's attack source direction.
-				if (projectile->ammoSource)
-				{
-					float drawnPitch = Util::DirectionToGameAngPitch(a_p->mm->playerAttackSourceDir);
-					float drawnYaw = Util::DirectionToGameAngYaw(a_p->mm->playerAttackSourceDir);
-					projectile->data.angle.x = drawnPitch;
-					projectile->data.angle.z = drawnYaw;
-					if (auto current3D = Util::GetRefr3D(projectile); current3D)
-					{
-						Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
-					}
-				}
-
 				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 				bool crosshairRefrValidity = crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get());
 				// Actor targeted (aim correction or otherwise), should face crosshair position (never true while mounted), or mounted and targeting an object.
@@ -3926,7 +3892,12 @@ namespace ALYSLC
 				//	}
 				//}
 				//else 
-				if (crosshairRefrIsTarget)
+				
+				// Choose the exact crosshair position locally offset from the target actor;
+				// otherwise, if not facing the crosshair, target the selected actor's torso.
+				// Done to maximize hit chance, since an actor's torso node is most likely 
+				// to be within their character controller collider.
+				if (crosshairRefrIsTarget && a_p->mm->shouldFaceTarget)
 				{
 					// Targeted with crosshair.
 					// Direct at crosshair position offset from the target actor.
@@ -3939,6 +3910,9 @@ namespace ALYSLC
 				}
 			}
 
+			// Saved pitch/yaw at launch.
+			const float& launchPitch = managedProjInfo->launchPitch;
+			const float& launchYaw = managedProjInfo->launchYaw;
 			// Pitch and yaw to the target.
 			float pitchToTarget = Util::GetPitchBetweenPositions(projectile->data.location, aimTargetPos);
 			float yawToTarget = Util::GetYawBetweenPositions(projectile->data.location, aimTargetPos);
@@ -3957,7 +3931,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
 				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
@@ -3968,6 +3942,18 @@ namespace ALYSLC
 				// No longer handled after directing at the target position.
 				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				return;
+			}
+			else if (projectile->livingTime == 0.0f)
+			{
+				// Set launch angles on release.
+				// Set refr data angles.
+				projectile->data.angle.x = -launchPitch;
+				projectile->data.angle.z = launchYaw;
+				// Set rotation matrix to maintain consistency with the previously set refr data angles.
+				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				{
+					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+				}
 			}
 
 			float distToTarget = projectile->data.location.GetDistance(aimTargetPos);
@@ -3982,8 +3968,6 @@ namespace ALYSLC
 			}
 
 			const RE::NiPoint3& releasePos = managedProjInfo->releasePos;
-			const float& launchPitch = managedProjInfo->launchPitch;
-			const float& launchYaw = managedProjInfo->launchYaw;
 			float currentPitch = Util::NormalizeAngToPi(Util::DirectionToGameAngPitch(a_resultingVelocity));
 			float currentYaw = Util::NormalizeAng0To2Pi(Util::DirectionToGameAngYaw(a_resultingVelocity));
 			// Ensure current pitch and yaw are valid.
@@ -4213,7 +4197,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
 				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
@@ -4313,7 +4297,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
 				if (auto current3D = Util::GetRefr3D(projectile); current3D)
 				{
-					Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
 
 				// Set velocity.
@@ -4324,6 +4308,18 @@ namespace ALYSLC
 				// No longer handled after directing at the target position.
 				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
 				return;
+			}
+			else if (projectile->livingTime == 0.0f)
+			{
+				// Set launch angles on release.
+				// Set refr data angles.
+				projectile->data.angle.x = -launchPitch;
+				projectile->data.angle.z = launchYaw;
+				// Set rotation matrix to maintain consistency with the previously set refr data angles.
+				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				{
+					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+				}
 			}
 
 			// NOTE: 
@@ -4371,7 +4367,7 @@ namespace ALYSLC
 			// Set rotation matrix to maintain consistency with the previously set refr data angles.
 			if (auto current3D = Util::GetRefr3D(projectile))
 			{
-				Util::SetRotationMatrix(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+				Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 			}
 		}
 
@@ -4494,8 +4490,8 @@ namespace ALYSLC
 			if (glob.globalDataInit && glob.coopSessionActive && glob.cam->IsRunning())
 			{
 				RE::NiMatrix3 m;
-				Util::SetRotationMatrix(m, glob.cam->camPitch, glob.cam->camYaw);
-				a_rotation = Util::RotationMatrixToQuaternion(m);
+				Util::SetRotationMatrixPY(m, glob.cam->camPitch, glob.cam->camYaw);
+				Util::NativeFunctions::NiMatrixToNiQuaternion(a_rotation, m);
 				return;
 			}
 

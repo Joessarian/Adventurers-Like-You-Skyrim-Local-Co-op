@@ -1235,7 +1235,7 @@ namespace ALYSLC
 			proj->data.angle.z = yaw;
 			if (auto proj3D = Util::GetRefr3D(proj.get()); proj3D)
 			{
-				Util::SetRotationMatrix(proj3D->local.rotate, proj->data.angle.x, proj->data.angle.z);
+				Util::SetRotationMatrixPY(proj3D->local.rotate, proj->data.angle.x, proj->data.angle.z);
 			}
 		}
 	}
@@ -4321,7 +4321,7 @@ namespace ALYSLC
 			return;
 		}
 
-		std::set<RE::ActorHandle, ActorHandleComp> friendlyActorHandles;
+		std::set<RE::ActorHandle, HandleComp<RE::Actor>> friendlyActorHandles;
 		if (auto followerExData = p1->extraList.GetByType<RE::ExtraFollower>(); followerExData)
 		{
 			// Followers
