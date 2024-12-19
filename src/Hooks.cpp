@@ -1283,10 +1283,10 @@ namespace ALYSLC
 				}
 				else if (GlobalCoopData::IsCoopPlayer(a_this))
 				{
-					// Let the game update the player first.
-					_Update(a_this, a_delta);
-
 					const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
+
+					// Let the game update the player first
+					_Update(a_this, a_delta);
 
 					//===================
 					// Node Orientations.
@@ -1333,16 +1333,33 @@ namespace ALYSLC
 								// Set speed mult to refresh current movement type data next frame.
 								if (!p->coopActor->IsOnMount())
 								{
-									p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
-									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-									// Ensure speedmult is positive, so set to base if the currently cached one is negative.
+									float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
 									if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
 									{
-										p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
-										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+										speedMultToSet = p->mm->baseSpeedMult;
 									}
+
+									p->coopActor->SetBaseActorValue
+									(
+										RE::ActorValue::kSpeedMult, 
+										speedMultToSet
+									);
+									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+
+									/*p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);*/
+
+									//p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
+									//p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+									//p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+									//// Ensure speedmult is positive, so set to base if the currently cached one is negative.
+									//if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
+									//{
+									//	p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
+									//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+									//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+									//}
 								}
 
 								// REMOVE when done debugging.
@@ -1547,6 +1564,7 @@ namespace ALYSLC
 										//
 										// NOTE: Base movement type data values seem to only reset to their defaults each frame if the player's speedmult is modified.
 										// Otherwise, the diff factor multiplications each frame will accumulate, reaching infinity and preventing the player from moving.
+
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk]		*= diffFactor;
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun]		*= diffFactor;
 										high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kRight][RE::Movement::MaxSpeeds::kWalk]	*= diffFactor;
@@ -2573,10 +2591,8 @@ namespace ALYSLC
 					return;
 				}
 
-				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
-					std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
-
+					std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex, std::try_to_lock);
 					auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
 					// First chain of downward pass recursive calls always has no flags set for the given node.
 					if (a_data.flags == RE::NiUpdateData::Flag::kNone)
@@ -2586,7 +2602,6 @@ namespace ALYSLC
 						// so save the default rotations before any downward pass calls execute.
 						if (nodeNameHash == Hash(strings->npc))
 						{
-							//p->mm->nom->DisplayAllNodeRotations(p);
 							p->mm->nom->SavePlayerNodeWorldTransforms(p);
 							// Update default attack position and rotation after saving default node orientation data.
 							p->mm->UpdateAttackSourceOrientationData(true);
@@ -3015,10 +3030,10 @@ namespace ALYSLC
 			{
 				if (glob.cam->IsRunning())
 				{
+					const auto& p = glob.coopPlayers[glob.player1CID];
+
 					// Run game's update first.
 					_Update(a_this, a_delta);
-
-					const auto& p = glob.coopPlayers[glob.player1CID];
 
 					//===================
 					// Node Orientations.
@@ -3080,19 +3095,33 @@ namespace ALYSLC
 							else if (auto charController = p->coopActor->GetCharController(); charController && p->mm->IsRunning())
 							{
 								// Set speed mult to refresh current movement type data next frame.
-								if (!p->coopActor->IsOnMount())
+								//if (!p->coopActor->IsOnMount())
+								//{
+								//	p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
+								//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+								//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+								//	// Ensure speedmult is positive, so set to base if the currently cached one is negative.
+								//	if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
+								//	{
+								//		p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
+								//		p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+								//		p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
+								//	}
+								//}
+
+								float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
+								if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
 								{
-									p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
-									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-									// Ensure speedmult is positive, so set to base if the currently cached one is negative.
-									if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
-									{
-										p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
-										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-										p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-									}
+									speedMultToSet = p->mm->baseSpeedMult;
 								}
+
+								p->coopActor->SetBaseActorValue
+								(
+									RE::ActorValue::kSpeedMult, 
+									speedMultToSet
+								);
+								p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
+								p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
 
 								// REMOVE when done debugging.
 								//if (p->mm->isDashDodging || p->mm->isParagliding) 
@@ -3983,11 +4012,13 @@ namespace ALYSLC
 			// Pitch and yaw to set below.
 			float pitchToSet = currentPitch;
 			float yawToSet = currentYaw;
-			// Just launched, so set pitch and yaw to saved launch values.
+			// Just launched, so set pitch and yaw to saved launch values,
+			// and adjust velocity to point in the direction given by these two launch angles.
 			if (projectile->livingTime == 0.0f)
 			{
 				currentPitch = pitchToSet = -launchPitch;
 				currentYaw = yawToSet = Util::ConvertAngle(launchYaw);
+				a_resultingVelocity = Util::RotationToDirectionVect(launchPitch, launchYaw) * a_resultingVelocity.Length();
 			}
 
 			// Pitch and yaw angle deltas in order to face the target.

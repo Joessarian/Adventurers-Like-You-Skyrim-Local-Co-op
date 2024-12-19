@@ -592,7 +592,7 @@ namespace ALYSLC
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;
 		// Number of unique projectiles managed before checking for expired projectiles to remove from the managed queue.
-		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 10;
+		static inline const uint8_t uManagedPlayerProjectilesBeforeRemoval = 50;
 
 		//------------------
 		//[Timer Intervals]:

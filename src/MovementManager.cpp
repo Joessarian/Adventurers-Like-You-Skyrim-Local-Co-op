@@ -1381,15 +1381,9 @@ namespace ALYSLC
 				{
 					currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 				}
-				else if (Util::PointIsOnScreen(aimPitchPos))
-				{
-					currentProc->SetHeadtrackTarget(coopActor.get(), aimPitchPos);
-				}
 			}
 			else
 			{
-				/*coopActor->SetGraphVariableBool("bHeadTrackSpine", true);
-				coopActor->SetGraphVariableInt("IsNPC", 1);*/
 				if (p->pam->IsPerforming(InputAction::kActivate))
 				{
 					// Look at activation target.
@@ -1422,11 +1416,6 @@ namespace ALYSLC
 							}
 						}
 					}
-					else if (Util::PointIsOnScreen(aimPitchPos))
-					{
-						// Look at aim pitch pos when not interacting with a refr.
-						currentProc->SetHeadtrackTarget(coopActor.get(), aimPitchPos);
-					}
 				}
 				else
 				{
@@ -1449,11 +1438,6 @@ namespace ALYSLC
 						{
 							currentProc->SetHeadtrackTarget(coopActor.get(), targetCenter);
 						}
-					}
-					else if (Util::PointIsOnScreen(aimPitchPos))
-					{
-						// Look at aim pitch pos when there is no targeted actor/refr.
-						currentProc->SetHeadtrackTarget(coopActor.get(), aimPitchPos);
 					}
 				}
 			}
@@ -1661,17 +1645,15 @@ namespace ALYSLC
 		float xPosOffset = 0.0f;
 		float yPosOffset = 0.0f;
 
-		// Scale the angle diff by the rotation multiplier before setting the target yaw.
-		// No rotation when dash dodging.
-		// Otherwise, set rotation offset to the nearest degree.
-		float zRotOffset = 
+		// Interpolated yaw offset from the player's current yaw to the target yaw.
+		// NOTE: Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
+		// when moving the character, so we just interp the player's data angle instead
+		// to set the target rotation, and only use the movement offset for translational motion.
+		float rawYawOffset = Util::InterpolateSmootherStep
 		(
-			isDashDodging ? 
-			0.0f : 
-			static_cast<long long>
-			(
-				rotMult * Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z) * TO_DEGREES
-			) / TO_DEGREES
+			0.0f,
+			Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z),
+			0.25f
 		);
 		// Distance from the offset actor to start running to catch up.
 		float catchUpRadius = 0.0f;
@@ -1723,11 +1705,11 @@ namespace ALYSLC
 			};
 			if (shouldRotateWhileMotionDriven) 
 			{
-				movementActor->data.angle.z += Util::InterpolateSmootherStep
+				movementActor->data.angle.z += std::clamp
 				(
-					0.0f, 
-					Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
-					0.25f
+					rawYawOffset,
+					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
 				);
 			}
 		}
@@ -1763,13 +1745,21 @@ namespace ALYSLC
 			}
 			else
 			{
-				float headingToPos =
+				rawYawOffset = Util::InterpolateSmootherStep
 				(
+					0.0f,
 					Util::NormalizeAngToPi
 					(
-						Util::GetYawBetweenPositions(movementActor->data.location, interactionPackageEntryPos) -
-						movementActor->GetHeading(false)
-					)
+						Util::GetYawBetweenPositions(movementActor->data.location, interactionPackageEntryPos) - 
+						movementActor->data.angle.z
+					),
+					0.25f
+				);
+				movementActor->data.angle.z += std::clamp
+				(
+					rawYawOffset,
+					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
 				);
 				// Move to interaction package entry position which was set during activation.
 				// Slow down when nearing the interaction position.
@@ -1777,14 +1767,10 @@ namespace ALYSLC
 				(
 					coopActor->GetHandle(), 
 					RE::NiPoint3(0.0f, 10.0f, 0.0f), 
-					RE::NiPoint3(0.0f, 0.0f, headingToPos),
+					RE::NiPoint3(),
 					0.0f, 
 					0.0f
 				);
-
-				// Rotate slowly to face the target position using the player's refr data angle
-				// instead of the movement rotation offset.
-				//movementActor->data.angle.z += Util::InterpolateSmootherStep(0.0f, headingToPos, 0.25f);
 			}
 		}
 		else if (isDashDodging)
@@ -1826,19 +1812,31 @@ namespace ALYSLC
 			// to expedite deceleration.
 			ClearKeepOffsetFromActor();
 			SetDontMove(true);
-			movementActor->data.angle.z += Util::InterpolateSmootherStep
+			movementActor->data.angle.z += std::clamp
 			(
-				0.0f,
-				Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
-				0.25f
+				rawYawOffset,
+				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
 			);
 		}
 		else if ((!isParagliding) && (shouldStopMoving || lsMag == 0.0f))
 		{
-			// Freezes co-op companion players in midair temporarily, 
+			// SetDontMove() freezes actors in midair, 
 			// so only set don't move flag when not paragliding, on the ground, 
 			// and not trying to jump.
-			if (shouldStopMoving && !p->pam->isAttacking && !isAirborneWhileJumping && !startJump)
+			RE::bhkCharacterController* charController
+			{
+				movementActor && movementActor.get() ? 
+				movementActor->GetCharController() :
+				nullptr 
+			};
+			bool canFreeze = shouldStopMoving && !p->pam->isAttacking && !isAirborneWhileJumping && !startJump;
+			if (canFreeze && charController && charController->context.currentState == RE::hkpCharacterStateType::kInAir) 
+			{
+				canFreeze = false;
+			}
+
+			if (canFreeze)
 			{
 				ClearKeepOffsetFromActor();
 				SetDontMove(true);
@@ -1860,11 +1858,11 @@ namespace ALYSLC
 			}
 
 			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
-			movementActor->data.angle.z += Util::InterpolateSmootherStep
+			movementActor->data.angle.z += std::clamp
 			(
-				0.0f,
-				Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z), 
-				0.25f
+				rawYawOffset,
+				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
 			);
 		}
 		else
@@ -1877,6 +1875,28 @@ namespace ALYSLC
 			yPosOffset = cosf(facingToHeadingAngDiff) * lsMag;
 			// Ensure the player/mount can move first.
 			SetDontMove(false);
+
+			// NOTE: Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
+			// when moving the character, so we just interp the player's data angle instead
+			// to set the target rotation.
+			movementActor->data.angle.z += std::clamp
+			(
+				rawYawOffset,
+				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+			);
+
+			KeepOffsetFromActor
+			(
+				movementActor->GetHandle(),
+				RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
+				RE::NiPoint3(), 
+				0.0f, 
+				0.0f
+			);
+
+			// REMOVE if the above code is preferable.
+			/*
 			// Position and rotation.
 			// NOTE: KeepOffsetFromActor() called on P1's mount does not work, so while P1 is mounted, they must not be AI driven.
 			if (movementActor->IsAMount())
@@ -1933,6 +1953,7 @@ namespace ALYSLC
 					);
 				}
 			}
+			*/
 		}
 
 		playerPitch = movementActor->data.angle.x;
@@ -2209,11 +2230,8 @@ namespace ALYSLC
 			// Clear out all previously set node target rotations, preventing blending in to the cleared values.
 			if (shouldResetAimAndBody) 
 			{
-				std::unique_lock<std::mutex> lock(nom->rotationDataMutex, std::try_to_lock);
-				if (lock)
-				{
-					nom->ClearCustomRotations();
-				}
+				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
+				nom->ClearCustomRotations();
 			}
 
 			if (adjustAimPitchToFaceTarget)
@@ -2245,10 +2263,13 @@ namespace ALYSLC
 		{
 			float radialDist = playerScaledHeight / 2.0f;
 			auto eyePos = Util::GetEyePosition(coopActor.get());
-			aimPitchPos = RE::NiPoint3(
+			aimPitchPos = RE::NiPoint3
+			(
 				eyePos.x + radialDist * cosf(Util::ConvertAngle(coopActor->GetHeading(false))) * cosf(aimPitch),
 				eyePos.y + radialDist * sinf(Util::ConvertAngle(coopActor->GetHeading(false))) * cosf(aimPitch),
-				eyePos.z - radialDist * sinf(aimPitch));
+				eyePos.z - radialDist * sinf(aimPitch)
+			);
+
 			// Modifications to P1's X angle here while aiming with a bow/crossbow
 			// double up the effects of our custom torso rotation, so set to zero here.
 			coopActor->data.angle.x = 0.0f;
@@ -2973,11 +2994,7 @@ namespace ALYSLC
 
 			// Set new local rotations before the UpdateDownwardPass() call,
 			// so that it can use our modified local rotations to set the nodes' new world rotations.
-			if (isTorsoNode)
-			{
-				a_nodePtr->local.rotate = data->currentRotation;
-			}
-			else if (Settings::bRotateArmsWhenSheathed)
+			if (isTorsoNode || Settings::bRotateArmsWhenSheathed)
 			{
 				a_nodePtr->local.rotate = data->currentRotation;
 			}
@@ -3529,17 +3546,17 @@ namespace ALYSLC
 		{
 			if (oldForearmPitch != targetForearmPitch)
 			{
-				targetForearmPitch = Util::InterpolateSmootherStep(oldForearmPitch, targetForearmPitch, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetForearmPitch = Util::InterpolateSmootherStep(oldForearmPitch, targetForearmPitch, min(1.0f, interpFactor));
 			}
 
 			if (oldForearmRoll != targetForearmRoll)
 			{
-				targetForearmRoll = Util::InterpolateSmootherStep(oldForearmRoll, targetForearmRoll, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetForearmRoll = Util::InterpolateSmootherStep(oldForearmRoll, targetForearmRoll, min(1.0f, interpFactor));
 			}
 
 			if (oldForearmYaw != targetForearmYaw)
 			{
-				targetForearmYaw = Util::InterpolateSmootherStep(oldForearmYaw, targetForearmYaw, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetForearmYaw = Util::InterpolateSmootherStep(oldForearmYaw, targetForearmYaw, min(1.0f, interpFactor));
 			}
 
 			forearmData->rotationInput = std::array<float, 3>({ targetForearmYaw, targetForearmPitch, targetForearmRoll });
@@ -3556,24 +3573,24 @@ namespace ALYSLC
 		}
 		else
 		{
-			forearmData->targetRotation = a_forearmNodePtr->local.rotate;
+			forearmData->targetRotation = forearmData->defaultRotation; //a_forearmNodePtr->local.rotate;
 		}
 		
 		if (handData->rotationModified) 
 		{
 			if (oldHandPitch != targetHandPitch)
 			{
-				targetHandPitch = Util::InterpolateSmootherStep(oldHandPitch, targetHandPitch, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetHandPitch = Util::InterpolateSmootherStep(oldHandPitch, targetHandPitch, min(1.0f, interpFactor));
 			}
 
 			if (oldHandRoll != targetHandRoll)
 			{
-				targetHandRoll = Util::InterpolateSmootherStep(oldHandRoll, targetHandRoll, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetHandRoll = Util::InterpolateSmootherStep(oldHandRoll, targetHandRoll, min(1.0f, interpFactor));
 			}
 
 			if (oldHandYaw != targetHandYaw)
 			{
-				targetHandYaw = Util::InterpolateSmootherStep(oldHandYaw, targetHandYaw, min(1.0f, *g_deltaTimeRealTime * interpFactor));
+				targetHandYaw = Util::InterpolateSmootherStep(oldHandYaw, targetHandYaw, min(1.0f, interpFactor));
 			}
 
 			handData->rotationInput = std::array<float, 3>({ targetHandYaw, targetHandPitch, targetHandRoll });
@@ -3590,7 +3607,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			handData->targetRotation = a_handNodePtr->local.rotate;
+			handData->targetRotation = handData->defaultRotation;  //a_handNodePtr->local.rotate;
 		}
 
 		// Update forearm and hand node rotation to set (current) after potentially setting target rotations.
@@ -4392,8 +4409,8 @@ namespace ALYSLC
 			// Set rotation angle inputs used to construct world rotation matrix below.
 			const float oldYaw = shoulderData->rotationInput[0];
 			const float oldPitch = shoulderData->rotationInput[1];
-			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, *g_deltaTimeRealTime * interpFactor));
-			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, *g_deltaTimeRealTime * interpFactor));
+			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, interpFactor));
+			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, interpFactor));
 			shoulderData->rotationInput = std::array<float, 3>({ yaw, pitch, 0.0f });
 
 			// Construct world rotation from our angle inputs.
@@ -4407,15 +4424,21 @@ namespace ALYSLC
 			);
 
 			// Get and set corresponding local rotation from our desired world rotation.
-			if (a_shoulderNodePtr->parent)
+			if (auto parent = RE::NiPointer<RE::NiAVObject>(a_shoulderNodePtr->parent); parent && parent.get())
 			{
-				RE::NiTransform inverseParent = a_shoulderNodePtr->parent->world.Invert();
+				RE::NiTransform inverseParent
+				{
+					defaultNodeWorldTransformsMap.contains(parent) ?
+					defaultNodeWorldTransformsMap.at(parent).Invert() : 
+					parent->world.Invert()
+				};
+
 				shoulderData->targetRotation = (inverseParent * newWorldTransform).rotate;
 			}
 		}
 		else
 		{
-			shoulderData->targetRotation = a_shoulderNodePtr->local.rotate;	 //shoulderData->defaultRotation;
+			shoulderData->targetRotation = shoulderData->defaultRotation;
 		}
 
 		// Update shoulder node rotation to set (current) after potentially setting target rotations.
@@ -4517,7 +4540,7 @@ namespace ALYSLC
 			// in the XY plane as the forward vector along which to derive the axis.
 			auto aimingXYDir = 
 			(
-				Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_p->coopActor->GetAimHeading()))
+				Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_p->coopActor->data.angle.z))//a_p->coopActor->GetAimHeading()))
 			);
 
 			a_p->mm->playerTorsoAxisOfRotation = aimingXYDir.Cross(up);
@@ -4713,7 +4736,7 @@ namespace ALYSLC
 					(
 						prevYawOffset, 
 						yawOffset, 
-						min(1.0f, *g_deltaTimeRealTime * interpFactor)
+						min(1.0f, interpFactor)
 					);
 
 					// Rotate the axes about the world 'up' axis with our yaw offset.
@@ -4745,12 +4768,16 @@ namespace ALYSLC
 				// NOTE: Must transpose to ensure that our modified axes are set
 				// as the new target local rotation matrix's axes.
 				newWorldRot = newWorldRot.Transpose();
-				RE::NiTransform newTrans{ torsoNodePtr->world };
+				RE::NiTransform newTrans
+				{
+					/*defaultNodeWorldTransformsMap.contains(torsoNodePtr) ?
+					defaultNodeWorldTransformsMap.at(torsoNodePtr) : */
+					torsoNodePtr->world 
+				};
 				newTrans.rotate = newWorldRot;
 
 				// REMOVE when done debugging.
-				/*
-				const auto& defaultPos = defaultNodeWorldTransformsMap.at(torsoNodePtr).translate;
+				/*const auto& defaultPos = defaultNodeWorldTransformsMap.at(torsoNodePtr).translate;
 				glm::vec3 start
 				{
 					defaultPos.x,
@@ -4770,8 +4797,7 @@ namespace ALYSLC
 				DebugAPI::QueueArrow3D(start, endX, 0xFFFF00FF, 5.0f, 2.0f);
 				DebugAPI::QueueArrow3D(start, endY, 0x00FFFFFF, 5.0f, 2.0f);
 				DebugAPI::QueueArrow3D(start, endZ, 0xFF00FFFF, 5.0f, 2.0f);
-				DebugAPI::QueueArrow3D(start, start + ToVec3(a_p->mm->playerTorsoAxisOfRotation) * 10.0f, 0xFFFFF00FF, 5.0f, 2.0f);
-				*/
+				DebugAPI::QueueArrow3D(start, start + ToVec3(a_p->mm->playerTorsoAxisOfRotation) * 10.0f, 0xFFFFF00FF, 5.0f, 2.0f);*/
 
 				// Set local rotation corresponding to our world rotation.
 				torsoData->targetRotation = (parentWorld.Invert() * newTrans).rotate;
@@ -4781,7 +4807,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				torsoData->targetRotation = torsoNodePtr->local.rotate;
+				torsoData->targetRotation = torsoData->defaultRotation;
 			}
 
 			// Update torso node rotation to set (current) after potentially setting target rotations.

@@ -4056,9 +4056,6 @@ namespace ALYSLC
 				basePos.z
 			};
 
-			glm::vec3 end = ToVec3(targetPosition) + ToVec3(indexBasedOffset) * 15.0f;
-			DebugAPI::QueuePoint3D(end, Settings::vuOverlayRGBAValues[a_p->playerID], 3.0f);
-
 			// Can move the grabbed refr vertically in an arc around the player by adjusting aim pitch.
 			if (a_p->tm->isMARFing)
 			{

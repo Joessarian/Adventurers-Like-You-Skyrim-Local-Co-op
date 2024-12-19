@@ -1,16 +1,10 @@
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/s0tX9uh.jpeg)
-## Developer's Note
-I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
-
-Over the intervening time period, I've probably clocked in close to 9k hours and have decided to take a break from active development, primarily due to health concerns. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing local multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
-
-And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
-***Experiencing Skyrim with friends and family — with adventurers like you!***
-
 ## [For Users]
 ### Getting Started and Important Notes
+- First and foremost, ***expect a decent amount of jankiness/clunkiness***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply P1-exclusive features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
 - The mod is meant to be played locally and ***is NOT a fully-fledged multiplayer experience*** like the incredible [Skyrim Together Reborn](https://www.nexusmods.com/skyrimspecialedition/mods/69993) mod. However, online play is still possible via leveraging Steam's [Remote Play Together](https://store.steampowered.com/remoteplay) with [Remote Play Whatever](https://github.com/m4dEngi/RemotePlayWhatever) or via streaming with [Parsec](https://parsec.app/). Your mileage may vary.
 - This mod requires that ***at least two XInput-compatible controllers*** are plugged into your computer before starting a co-op session.
 - Almost all of the mod's testing was done on ***Skyrim version 1.5.97***, so for the most stable experience, your best bet is to downgrade your Skyrim installation to this version.
@@ -33,6 +27,11 @@ And with that being said, I hope you enjoy the mod because what's better than ex
 - ***Stick together*** when possible to ensure all players are on-screen and easy to see. There are also some options to improve player visibility, such as player indicators, camera object fade options, and player-focal camera positioning when players are far apart. And finally, if seeing "the void" outside of the traversable map does not bother you, disabling camera collisions altogether provides the smoothest experience.
 - If a certain interaction is not triggering for any player, ***switch back to the default third person camera and attempt the interaction again with player 1***.
 - ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please include what debug options you've used and/or a crash log if you've also installed a crash logger.
+
+### Performance
+- Expect a ***loss of ~4-5 FPS if the game regularly runs at 60 FPS without the mod***.
+- Highly recommend ***capping your framerate to 60 FPS if possible***, since some of the physics-related code in this mod can act up at higher framerates.
+- As the project, and my programming skills, are still very much in alpha, expect performance optimizations down the line once the mod becomes more stable.
 
 ### Prerequisite Mods
 Install the following mods + all their prerequisites:
@@ -215,6 +214,14 @@ Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `buil
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC Enderal.ini` file.
    - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
+
+## Developer's Note
+I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
+
+Over the intervening time period, I've probably clocked in close to 10k hours and ***have decided to take a break from active development, primarily due to health concerns***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing local multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
+
+And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
+***Experiencing Skyrim with friends and family — with adventurers like you!***
 
 ## Credits
 See the mod's source for more detailed credits.

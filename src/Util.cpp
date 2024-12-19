@@ -2745,50 +2745,6 @@ namespace ALYSLC
 			return mat;
 		}
 
-		RE::NiMatrix3 MatrixFromAxisAndAngle2(RE::NiPoint3 a_axis, const float& a_angle)
-		{
-			// Construct a rotation matrix given an axis 
-			// and an angle to rotate about that axis.
-
-			a_axis.Unitize();
-			RE::NiMatrix3 mat;
-			RE::NiMatrix3 k
-			{
-				RE::NiPoint3(0.0f, -a_axis.z, a_axis.y),
-				RE::NiPoint3(a_axis.z, 0.0f, -a_axis.x),
-				RE::NiPoint3(-a_axis.y, a_axis.x, 0.0f)
-			};
-
-			const float cosT = cosf(a_angle);
-			const float sinT = sinf(a_angle);
-			const float omCosT = 1.0f - cosT;
-			RE::NiMatrix3 mat1 = (k * sinT);
-			RE::NiMatrix3 mat2 = (k * k * omCosT);
-			mat = 
-			(
-				RE::NiPoint3
-				(
-					mat.entry[0][0] + mat1.entry[0][0] + mat2.entry[0][0],
-					mat.entry[0][1] + mat1.entry[0][1] + mat2.entry[0][1],
-					mat.entry[0][2] + mat1.entry[0][2] + mat2.entry[0][2]
-				),
-				RE::NiPoint3
-				(
-					mat.entry[1][0] + mat1.entry[1][0] + mat2.entry[1][0],
-					mat.entry[1][1] + mat1.entry[1][1] + mat2.entry[1][1],
-					mat.entry[1][2] + mat1.entry[1][2] + mat2.entry[1][2]
-				),
-				RE::NiPoint3
-				(
-					mat.entry[2][0] + mat1.entry[2][0] + mat2.entry[2][0],
-					mat.entry[2][1] + mat1.entry[2][1] + mat2.entry[2][1],
-					mat.entry[2][2] + mat1.entry[2][2] + mat2.entry[2][2]
-				)
-			);
-
-			return mat;
-		}
-
 		bool MenusOnlyAlwaysOpen() 
 		{
 			// Return true if a currently-open menu

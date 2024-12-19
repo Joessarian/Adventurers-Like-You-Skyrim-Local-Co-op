@@ -301,7 +301,8 @@ namespace ALYSLC
 		// Node rotation interpolation factor.
 		// Higher values inch closer to directly setting the current rotation to the target rotation.
 		// Lower values create more sluggish, but smooother, movement.
-		const float interpFactor = 20.0f;
+		// Used at 60 FPS, since all node rotation updates are run in a havok callback.
+		const float interpFactor = 1.0f / 3.0f;
 
 		// Mutex for setting rotation data.
 		// IMPORTANT: Lock before reading/adjusting any nodes' rotations

@@ -805,6 +805,15 @@ namespace ALYSLC
 				return func(a_changes, a_entryData, a_list);
 			}
 
+			// Full credit goes to Exit-9B:
+			// https://github.com/Exit-9B/Constellations/blob/main/src/Hooks/Athletics.cpp#L73
+			inline void ForceUpdateCachedMovementType(RE::Actor* a_actor)
+			{
+				using func_t = decltype(&ForceUpdateCachedMovementType);
+				REL::Relocation<func_t> func{ RELOCATION_ID(36916, 37941) };
+				return func(a_actor);
+			}
+
 			// Credits to adamhynek for the VR offset from his awesome VR mods PLANCK and HIGGS:
 			// https://github.com/adamhynek/activeragdoll/blob/master/src/RE/offsets.cpp#L303
 			// and to alandtse for Skyrim VR Address Library:
@@ -2319,7 +2328,6 @@ namespace ALYSLC
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);
-		RE::NiMatrix3 MatrixFromAxisAndAngle2(RE::NiPoint3 a_axis, const float& a_angle);
 
 		// Return true if no temporary menus are open.
 		// Temporary menus are considered as menus that add a non-gameplay/TFC context 

@@ -1938,6 +1938,8 @@ namespace ALYSLC
 		// Setting our custom rotations here will also get overwritten sometime between
 		// when this hook is executed and when the NiNode UpwardDownwardPass() hook executes.
 		// However, we can save the game's default rotations to use when blending in/out.
+		// 
+		// NOTE: Not run every frame if the game's framerate is above 60.
 
 		auto& glob = GetSingleton();
 		if (!glob.coopSessionActive)
@@ -1957,10 +1959,8 @@ namespace ALYSLC
 			// Update flag signalling downward pass hook to restore cached node rotations to overwrite the game's changes.
 
 			// Obtain lock for node rotation data.
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex, std::try_to_lock);
-			if (lock) 
 			{
+				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
 				// Continue early if the fixed strings are not available.
 				const auto strings = RE::FixedStrings::GetSingleton();
 				if (!strings)
@@ -2036,11 +2036,6 @@ namespace ALYSLC
 				
 				// Adjust torso nodes' rotations after updating blending state.
 				p->mm->nom->UpdateTorsoNodeRotationData(p);
-			}
-			else
-			{
-				ALYSLC::Log("[GLOB] HavokPhysicsPreStep: {}: Failed to obtain lock: (0x{:X}).", 
-					p->coopActor->GetName(), hash);
 			}
 		}
 	}
@@ -5000,9 +4995,8 @@ namespace ALYSLC
 			return;
 		}
 
-		std::unique_lock<std::mutex> lock(a_p->mm->nom->rotationDataMutex, std::try_to_lock);
-		if (lock)
 		{
+			std::unique_lock<std::mutex> lock(a_p->mm->nom->rotationDataMutex);
 			const auto& uiRGBA = Settings::vuOverlayRGBAValues[a_p->playerID];
 			std::vector<RE::BSFixedString> nodeNamesToCheck{};
 			bool checkLeftArm = a_p->pam->IsPerformingOneOf(InputAction::kRotateLeftShoulder, InputAction::kRotateLeftForearm, InputAction::kRotateLeftHand);
@@ -5244,9 +5238,6 @@ namespace ALYSLC
 							// Damage scales with thrown object damage.
 							if (knockOut)
 							{
-								/*a_p->tm->rmm->AddGrabbedRefr(a_p, hitRefrPtr->GetHandle());
-								a_p->tm->SetIsGrabbing(false);*/
-
 								const auto handle = hitRefrPtr->GetHandle();
 								a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
 								a_p->tm->rmm->ClearGrabbedRefr(handle);

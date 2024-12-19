@@ -4699,10 +4699,6 @@ namespace ALYSLC
 
 		if (coopActor->race)
 		{
-			// Does something? Maybe.
-			/*coopActor->race->data.angleTolerance = 0.1f;
-			coopActor->race->data.angleAccelerate = 0.1f;*/
-
 			// Only update health regen to 0 here when downed.
 			if (auto avOwner = coopActor->As<RE::ActorValueOwner>(); avOwner)
 			{
