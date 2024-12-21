@@ -2923,13 +2923,19 @@ namespace ALYSLC
 							else
 							{
 								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in left hand.", favForm->GetName());
-								favEntryEquipStates[i] = EntryEquipState::kLH;
+								favEntryEquipStates[i] = 
+								(
+									favEntryEquipStates[i] == EntryEquipState::kRH ? 
+									EntryEquipState::kBothHands : 
+									EntryEquipState::kLH
+								);
 							}
 
 							favItemsEquippedIndices.insert(i);
 						}
+						
 						// RH
-						else if (equippedForms[!EquipIndex::kRightHand] && equippedForms[!EquipIndex::kRightHand] == favForm)
+						if (equippedForms[!EquipIndex::kRightHand] && equippedForms[!EquipIndex::kRightHand] == favForm)
 						{
 							// Is two-handed weapon.
 							if (asWeap && asWeap->equipSlot->flags.any(RE::BGSEquipSlot::Flag::kUseAllParents))
@@ -2941,7 +2947,12 @@ namespace ALYSLC
 							else
 							{
 								ALYSLC::Log("[MIM] RefreshFavoritesMenuEquipState: {} equipped in right hand.", favForm->GetName());
-								favEntryEquipStates[i] = EntryEquipState::kRH;
+								favEntryEquipStates[i]= 
+								(
+									favEntryEquipStates[i] == EntryEquipState::kLH ? 
+									EntryEquipState::kBothHands : 
+									EntryEquipState::kRH
+								);
 							}
 
 							favItemsEquippedIndices.insert(i);

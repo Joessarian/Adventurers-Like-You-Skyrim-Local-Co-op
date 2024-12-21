@@ -168,7 +168,7 @@ Function Init()
 		
 	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
 	If (FirstTimeInit)
-		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press the 'Pause' bind on Player 1's controller.")
+		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press the 'Pause/Journal' bind on Player 1's controller.")
 	EndIf
 EndFunction
 

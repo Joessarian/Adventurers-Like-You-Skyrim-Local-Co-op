@@ -52,7 +52,7 @@ Function SendCoopPlayerHome()
     ; EndIf
 
     Self.Resurrect()
-    ALYSLC.Log("[CCA SCRIPT] GET EM OUTTA HEEUH")
+    ALYSLC.Log("[CCA SCRIPT] Sent " + Self.GetDisplayName() + " home.")
     Self.ResetHealthAndLimbs()
     ;Self.Disable()
 EndFunction

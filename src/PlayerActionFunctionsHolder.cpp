@@ -616,11 +616,31 @@ namespace ALYSLC
 				return false;
 			}
 
-			if (auto charController = a_p->coopActor->GetCharController(); charController)
+			// Can jump if using furniture.
+			if ((!a_p->isPlayer1 && a_p->mm->interactionPackageRunning) || 
+				(a_p->coopActor->GetOccupiedFurniture() && !a_p->coopActor->IsOnMount()))
 			{
-				// Also cannot start jumping if not on the ground.
-				if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround ||
-					charController->surfaceInfo.supportedState.get() != RE::hkpSurfaceInfo::SupportedState::kUnsupported) 
+				return true;
+			}
+
+			if (auto charController = a_p->mm->movementActor->GetCharController(); charController)
+			{
+				// Cannot start jumping if not on the ground.
+				bool stateAllowsJump = 
+				(
+					(
+						charController->flags.all
+						(
+							RE::CHARACTER_FLAGS::kCanJump, 
+							RE::CHARACTER_FLAGS::kSupport
+						)
+					) && 
+					(
+						charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
+						charController->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported
+					) 
+				);
+				if (stateAllowsJump) 
 				{
 					// Check slope angle for the surface the player would like to jump off.
 					// Must be less than the defined max jump surface slope angle.
@@ -1353,7 +1373,7 @@ namespace ALYSLC
 						0.9f, 
 						sqrtf
 						(
-							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
+							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight)
 						)
 					)
 				);
@@ -1361,7 +1381,10 @@ namespace ALYSLC
 				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
 				float dashDodgeCommitmentMult = 
 				(
-					lsMag == 0.0f || ALYSLC::TKDodgeCompat::g_tkDodgeInstalled ? 
+					(
+						(lsMag == 0.0f) || 
+						(!Settings::bUseDashDodgeSystem && ALYSLC::TKDodgeCompat::g_tkDodgeInstalled)
+					) ?
 					1.0f : 
 					lsMag
 				);
@@ -1369,7 +1392,7 @@ namespace ALYSLC
 
 				// Set Dodge action's cost.
 				a_p->pam->paStatesList[!InputAction::kDodge - !InputAction::kFirstAction].avCost = cost;
-				// Must no be on cooldown.
+				// Must not be on cooldown.
 				canPerform = pam->secsTotalStaminaRegenCooldown == 0.0f;
 				break;
 			}
@@ -1754,10 +1777,23 @@ namespace ALYSLC
 			{
 				// Spellcast cost.
 				cost = costToPerform = GetPAMagickaCost(a_p, a_action);
-				bool isConcSpell = {
-					(a_action == InputAction::kCastLH && a_p->em->GetLHSpell() && a_p->em->GetLHSpell()->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) ||
-					(a_action == InputAction::kCastRH && a_p->em->GetRHSpell() && a_p->em->GetRHSpell()->GetCastingType() == RE::MagicSystem::CastingType::kConcentration) ||
-					(a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell && a_p->em->quickSlotSpell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration)
+				bool isConcSpell = 
+				{
+					(
+						a_action == InputAction::kCastLH && 
+						a_p->em->GetLHSpell() && 
+						a_p->em->GetLHSpell()->GetCastingType() == RE::MagicSystem::CastingType::kConcentration
+					) ||
+					(
+						a_action == InputAction::kCastRH &&
+						a_p->em->GetRHSpell() && 
+						a_p->em->GetRHSpell()->GetCastingType() == RE::MagicSystem::CastingType::kConcentration
+					) ||
+					(
+						a_action == InputAction::kQuickSlotCast && 
+						a_p->em->quickSlotSpell && 
+						a_p->em->quickSlotSpell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration
+					)
 				};
 
 				// Per frame if a concentration spell.
@@ -1774,7 +1810,12 @@ namespace ALYSLC
 				// Check if the player has enough stamina if the cost is non-zero.
 				if (cost != 0.0f) 
 				{
-					canPerform = (a_p->isInGodMode) || (a_p->isPlayer1 && pam->currentStamina > 0.0f) || (!a_p->isPlayer1 && pam->secsTotalStaminaRegenCooldown == 0.0f);
+					canPerform = 
+					{
+						(a_p->isInGodMode) ||
+						(a_p->isPlayer1 && pam->currentStamina > 0.0f) ||
+						(!a_p->isPlayer1 && pam->secsTotalStaminaRegenCooldown == 0.0f)
+					};
 				}
 				else
 				{
@@ -2550,7 +2591,7 @@ namespace ALYSLC
 						0.9f, 
 						sqrtf
 						(
-							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight)
+							a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight)
 						)
 					)
 				);
@@ -2558,7 +2599,10 @@ namespace ALYSLC
 				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
 				float dashDodgeCommitmentMult = 
 				(
-					lsMag == 0.0f || ALYSLC::TKDodgeCompat::g_tkDodgeInstalled ? 
+					(
+						(lsMag == 0.0f) || 
+						(!Settings::bUseDashDodgeSystem && ALYSLC::TKDodgeCompat::g_tkDodgeInstalled)
+					) ? 
 					1.0f : 
 					lsMag
 				);
@@ -3513,6 +3557,7 @@ namespace ALYSLC
 				}
 				else
 				{
+					// Have to trigger a normal LH attack first so that the power attack command executes successfully.
 					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get());
 					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get());
 				}
@@ -3547,8 +3592,17 @@ namespace ALYSLC
 					}
 					else
 					{
-						Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get());
-						Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get());
+						if (a_p->em->IsUnarmed())
+						{
+							// Have to trigger a normal RH attack before the H2H power attack idle;
+							// otherwise, the power attack idle will fail to play.
+							Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get());
+							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
+						}
+						else
+						{
+							Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get());
+						}
 					}
 				}
 			}

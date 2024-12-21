@@ -1007,8 +1007,6 @@ Event OnSummoningMenuRequest()
     EndWhile
 
     ; Game settings to change for co-op.
-    ; Lower the amount of fall damage taken (default: 0.1)
-    Game.SetGameSettingFloat("fJumpFallHeightMultNPC", 0.020000)
     ; Set the minimum jump fall height for NPCs (default 450.0)
     ; to be the same as player 1's
     Game.SetGameSettingFloat("fJumpFallHeightMinNPC", 600.000000)

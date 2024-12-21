@@ -1265,7 +1265,7 @@ namespace ALYSLC
 		std::unique_ptr<InterpolationData<float>> crosshairOscillationData;
 		std::unique_ptr<InterpolationData<float>> crosshairRotationData;
 		// Holds information on the player's managed projectiles.
-		std::unique_ptr<ManagedProjectileHandler> managedProjHandler;
+		std::unique_ptr<ManagedProjectileHandler> mph;
 		// Manages grabbed/released objects.
 		std::unique_ptr<RefrManipulationManager> rmm;
 		// For activation: Nearby objects of the same type as the requested refr.

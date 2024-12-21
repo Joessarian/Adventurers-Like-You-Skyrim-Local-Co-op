@@ -122,7 +122,7 @@ namespace ALYSLC
 		coopActor = p->coopActor;
 
 		// Projectile manager.
-		managedProjHandler = std::make_unique<ManagedProjectileHandler>();
+		mph = std::make_unique<ManagedProjectileHandler>();
 		// Grabbed/released object manipulation manager.
 		rmm = std::make_unique<RefrManipulationManager>();
 		// Motion state.
@@ -3065,15 +3065,20 @@ namespace ALYSLC
 
 		bool rangedAttackOrBlockRequest = 
 		{
+			(p->pam->isAttacking) ||
+			(p->pam->isBlocking) ||
+			(p->pam->isBashing) ||
+			(p->pam->isInCastingAnim) ||
+			(p->pam->isCastingLH) ||
+			(p->pam->isCastingRH) ||
+			(p->pam->isCastingDual) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) && p->em->Has2HRangedWeapEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kCastRH) && p->em->HasRHSpellEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) && p->em->HasRHStaffEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kCastLH) && p->em->HasLHSpellEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kAttackLH) && p->em->HasLHStaffEquipped()) ||
 			(p->pam->AllInputsPressedForAction(InputAction::kQuickSlotCast) && p->em->quickSlotSpell) ||
-			(p->pam->reqSpecialAction == SpecialActionType::kDualCast || p->pam->reqSpecialAction == SpecialActionType::kQuickCast) ||
-			(p->pam->isBlocking) ||
-			(p->pam->isBashing)
+			(p->pam->reqSpecialAction == SpecialActionType::kDualCast || p->pam->reqSpecialAction == SpecialActionType::kQuickCast)
 		};
 
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
@@ -4713,7 +4718,11 @@ namespace ALYSLC
 				);
 				if (a_p->coopActor->GetRace() && a_p->coopActor->GetRace()->data.baseCarryWeight != 0.0f) 
 				{
-					carryweightRatio = a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight) / a_p->coopActor->GetRace()->data.baseCarryWeight;
+					carryweightRatio = 
+					(
+						a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight) / 
+						a_p->coopActor->GetRace()->data.baseCarryWeight
+					);
 				}
 
 				float carryWeightFactor = max(0.0f, logf(carryweightRatio) + 1.0f);
@@ -5923,6 +5932,19 @@ namespace ALYSLC
 		// Sets up the initial trajectory data for the given projectile
 		// based on the given starting velocity (which is modified) and the trajectory type.
 
+		RE::Projectile* projectile = nullptr;
+		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+		if (projectilePtr)
+		{
+			projectile = projectilePtr->As<RE::Projectile>();
+		}
+
+		// Smart ptr was invalid, so its managed projectile is as well.
+		if (!projectile)
+		{
+			return;
+		}
+
 		// NOTE: Should be run once when the projectile of interest is released.
 		trajType = a_trajType;
 		startedHomingIn = false;
@@ -6005,12 +6027,15 @@ namespace ALYSLC
 		// Set initial base projectile data first.
 		SetInitialBaseProjectileData(a_p, a_projectileHandle, initialReleaseSpeed);
 
+		// Do not modify the speed or direct along a curved trajectory if handling a beam/flame projectile.
+		bool setStraightTrajectory = projectile->As<RE::BeamProjectile>() || projectile->As<RE::FlameProjectile>();
 		// Aim prediction or aim direction while aiming at crosshair target or facing target.
 		bool predictInterceptPos = 
 		{
 			(a_trajType == ProjectileTrajType::kPrediction) ||
 			(
 				(a_trajType == ProjectileTrajType::kAimDirection) &&
+				(!setStraightTrajectory) &&
 				(a_p->mm->shouldFaceTarget || a_p->tm->GetRangedTargetActor())
 			)
 		};
@@ -6120,7 +6145,7 @@ namespace ALYSLC
 				// or crosshair world position, whichever is closer.
 				auto iniPrefSettings = RE::INIPrefSettingCollection::GetSingleton();
 				auto projMaxDistSetting = iniPrefSettings ? iniPrefSettings->GetSetting("fVisibleNavmeshMoveDist") : nullptr; 
-				if (projMaxDistSetting && releasePos.GetDistance(a_p->tm->crosshairWorldPos) > projMaxDistSetting->data.f)
+				if (projMaxDistSetting && releasePos.GetDistance(a_p->tm->crosshairWorldPos) < projMaxDistSetting->data.f)
 				{
 					xy = projMaxDistSetting->data.f;
 					trajectoryEndPos = RE::NiPoint3
@@ -6161,6 +6186,47 @@ namespace ALYSLC
 			g = (2.0 / xy) * ((powf(releaseSpeed, 2.0f) * cosf(launchPitch) * sinf(launchPitch)) - ((z * powf(releaseSpeed * cosf(launchPitch), 2.0f)) / (xy)));
 			g = isnan(g) || isinf(g) ? g = 0.0 : g;
 		}
+		else if (setStraightTrajectory)
+		{
+			// Aim far away in the projectile's initial facing direction, 
+			// or directly at the current crosshair position without modifying the release speed.
+
+			// Set launch angles, end position, and time to target.
+			if (!targetActorValidity && !a_p->mm->shouldFaceTarget) 
+			{
+				launchPitch = -a_p->mm->aimPitch;
+				launchYaw = Util::ConvertAngle(projectile->data.angle.z);
+				RE::NiPoint3 launchDir = Util::RotationToDirectionVect(launchPitch, launchYaw);
+				// Choose endpoint that is far from the release point.
+				// Default time of flight is arbitrary, but should be relatively large. Chose 5 seconds here.
+				// Accounting for air resistance.
+				double farDist = FLT_MAX;
+				auto iniPrefSettings = RE::INIPrefSettingCollection::GetSingleton();
+				auto projMaxDistSetting = iniPrefSettings ? iniPrefSettings->GetSetting("fVisibleNavmeshMoveDist") : nullptr; 
+				if (projMaxDistSetting && releasePos.GetDistance(a_p->tm->crosshairWorldPos) < projMaxDistSetting->data.f)
+				{
+					farDist = projMaxDistSetting->data.f;
+				}
+				else
+				{
+					farDist = releasePos.GetDistance(a_p->tm->crosshairWorldPos);
+				}
+
+				trajectoryEndPos = releasePos + launchDir * farDist;
+				ALYSLC::Log("[TM] {}: Launch pitch, yaw: {}, {}, far dist: {}.",
+					a_p->coopActor->GetName(),
+					launchPitch * TO_DEGREES,
+					launchYaw * TO_DEGREES,
+					farDist);
+			}
+			else
+			{
+				launchPitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);
+				launchYaw = Util::ConvertAngle(Util::GetYawBetweenPositions(releasePos, trajectoryEndPos));
+			}
+
+			initialTrajTimeToTarget = releasePos.GetDistance(trajectoryEndPos) / releaseSpeed;
+		}
 		else
 		{
 			// Aim direction projectile and not facing the crosshair world position.
@@ -6198,18 +6264,6 @@ namespace ALYSLC
 		a_initialVelocityOut.Unitize();
 		a_initialVelocityOut *= releaseSpeed;
 
-		RE::Projectile* projectile = nullptr;
-		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
-		if (projectilePtr)
-		{
-			projectile = projectilePtr->As<RE::Projectile>();
-		}
-
-		// Smart ptr was invalid, so its managed projectile is as well.
-		if (!projectile)
-		{
-			return;
-		}
 		// Perform ammo projectile damage scaling based on 
 		// the ratio of the computed release speed over the max release speed.
 		// Projectile power always defaults to 1 for companion players,
@@ -6307,9 +6361,17 @@ namespace ALYSLC
 					projectile = projectilePtr->As<RE::Projectile>();
 				}
 
-				// Remove if invalid, not loaded, deleted, marked for deletion, has collided, or limited.
-				if (!projectile || !projectile->Is3DLoaded() || projectile->IsDeleted() || projectile->IsMarkedForDeletion() || 
-					!projectile->impacts.empty() || projectile->ShouldBeLimited()) 
+				// Remove if invalid, not loaded, deleted, marked for deletion, has collided (if not a beam or flames), or limited.
+				bool shouldRemove = 
+				{
+					(!projectile) ||
+					(!projectile->Is3DLoaded()) ||
+					(projectile->IsDeleted()) ||
+					(projectile->IsMarkedForDeletion()) ||
+					(!projectile->As<RE::BeamProjectile>() && !projectile->As<RE::FlameProjectile>() && !projectile->impacts.empty()) ||
+					(projectile->ShouldBeLimited())
+				};
+				if (shouldRemove) 
 				{
 					managedProjHandleToTrajInfoMap.erase(handle);
 				}

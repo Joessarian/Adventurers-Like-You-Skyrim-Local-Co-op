@@ -197,7 +197,7 @@ namespace ALYSLC
 		// Setting to 1 means jogging and sprinting are the same speed.
 		static inline float fSprintingMovMult = 1.5f;
 		// Sprint rotation multiplier.
-		static inline float fSprintingRotMult = 0.25f;
+		static inline float fSprintingRotMult = 0.67f;
 
 		//-----------------
 		//[Player Actions]:

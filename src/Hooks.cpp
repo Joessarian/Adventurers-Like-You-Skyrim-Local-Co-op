@@ -1041,8 +1041,7 @@ namespace ALYSLC
 
 					if (p->mm->isDashDodging)
 					{
-						const float weightAdjAnimSpeedFactor =
-						Util::InterpolateEaseIn
+						const float weightAdjAnimSpeedFactor = Util::InterpolateEaseIn
 						(
 							1.0f, 
 							0.5f, 
@@ -1346,20 +1345,6 @@ namespace ALYSLC
 									);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
 									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-
-									/*p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-									p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);*/
-
-									//p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
-									//p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-									//p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-									//// Ensure speedmult is positive, so set to base if the currently cached one is negative.
-									//if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
-									//{
-									//	p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
-									//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-									//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-									//}
 								}
 
 								// REMOVE when done debugging.
@@ -1532,7 +1517,7 @@ namespace ALYSLC
 									// Sets the bounds for the diff factor applied to movement speed below. Dependent on rotation speeds -- rotate faster, pivot faster.
 									float range = max(1.0f, (Settings::fBaseMTRotationMult * Settings::fBaseRotationMult) / 3.0f);	// Old range div: 4.0f
 									// Max speed factor. Maxes out at 90 degrees.
-									float diffFactor = 
+									float diffFactor =
 									(
 										1.0f + 
 										(
@@ -3095,20 +3080,6 @@ namespace ALYSLC
 							else if (auto charController = p->coopActor->GetCharController(); charController && p->mm->IsRunning())
 							{
 								// Set speed mult to refresh current movement type data next frame.
-								//if (!p->coopActor->IsOnMount())
-								//{
-								//	p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->movementOffsetParams[!MoveParams::kSpeedMult]);
-								//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-								//	p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-								//	// Ensure speedmult is positive, so set to base if the currently cached one is negative.
-								//	if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
-								//	{
-								//		p->coopActor->SetActorValue(RE::ActorValue::kSpeedMult, p->mm->baseSpeedMult);
-								//		p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f);
-								//		p->coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f);
-								//	}
-								//}
-
 								float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
 								if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
 								{
@@ -3542,7 +3513,7 @@ namespace ALYSLC
 			{
 				const auto& p = glob.coopPlayers[firingPlayerIndex];
 				// Have to insert as managed on release if this hook was run before the UpdateImpl() hook.
-				if (justReleased && !p->tm->managedProjHandler->IsManaged(a_this->GetHandle()))
+				if (justReleased && !p->tm->mph->IsManaged(a_this->GetHandle()))
 				{
 					// Overwrite the projectile's velocity and angular orientation.
 					DirectProjectileAtTarget(glob.coopPlayers[firingPlayerIndex], projectileHandle, a_this->linearVelocity, justReleased);
@@ -3701,8 +3672,20 @@ namespace ALYSLC
 			bool shouldAdjustTrajectory = 
 			{
 				(firingPlayerIndex != -1) &&
-				(justReleased || glob.coopPlayers[firingPlayerIndex]->tm->managedProjHandler->IsManaged(projectileHandle))
+				(justReleased || glob.coopPlayers[firingPlayerIndex]->tm->mph->IsManaged(projectileHandle))
 			};
+
+			RE::Projectile* projectile = nullptr;
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			if (!projectile)
+			{
+				return;
+			}
+
 			if (shouldAdjustTrajectory)
 			{
 				// Overwrite the projectile's velocity and angular orientation.
@@ -3736,16 +3719,21 @@ namespace ALYSLC
 				return;
 			}
 
-			bool isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectileHandle);
+			bool isManaged = a_p->tm->mph->IsManaged(a_projectileHandle);
+			// Beam and flame projectiles have special handling and should not be removed on impact.
+			bool isBeamOrFlameProj = projectile->As<RE::BeamProjectile>() || projectile->As<RE::FlameProjectile>();
 			// Remove inactive/invalid managed projectiles first.
-			// Remove if invalid, not loaded, deleted, marked for deletion, has collided, limited, or just released.
+			// Remove if invalid, not loaded, deleted, marked for deletion, 
+			// has collided (if not a beam or flame projectile), limited, or just released.
 			bool shouldRemove = 
 			{
 				(isManaged) &&
 				(
-					!projectile->Is3DLoaded() || 
-					projectile->IsDeleted() || projectile->IsMarkedForDeletion() ||
-					!projectile->impacts.empty() || projectile->ShouldBeLimited()
+					(!projectile->Is3DLoaded()) || 
+					(projectile->IsDeleted()) ||
+					(projectile->IsMarkedForDeletion()) ||
+					(!isBeamOrFlameProj && !projectile->impacts.empty()) || 
+					(projectile->ShouldBeLimited())
 				)
 			};
 
@@ -3754,7 +3742,7 @@ namespace ALYSLC
 			// so we remove it here before re-inserting below.
 			if (shouldRemove)
 			{
-				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
+				a_p->tm->mph->Remove(a_projectileHandle);
 				// No longer managed, ready for insertion again if just released.
 				isManaged = false;
 			}
@@ -3782,19 +3770,29 @@ namespace ALYSLC
 					(targetActorPtr != a_p->coopActor) &&
 					((targetActorValidity || a_p->mm->shouldFaceTarget) || (a_p->coopActor->IsOnMount() && crosshairRefrValidity))
 				};
-				bool useHoming = adjustTowardsTarget && Settings::vuProjectileTrajectoryType[a_p->playerID] == !ProjectileTrajType::kHoming;
-				bool useAimPrediction = adjustTowardsTarget && Settings::vuProjectileTrajectoryType[a_p->playerID] == !ProjectileTrajType::kPrediction;
+				bool useHoming = 
+				{
+					adjustTowardsTarget &&
+					!isBeamOrFlameProj &&
+					Settings::vuProjectileTrajectoryType[a_p->playerID] == !ProjectileTrajType::kHoming
+				};
+				bool useAimPrediction = 
+				{
+					adjustTowardsTarget &&
+					!isBeamOrFlameProj &&
+					Settings::vuProjectileTrajectoryType[a_p->playerID] == !ProjectileTrajType::kPrediction
+				};
 				if (useHoming)
 				{
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kHoming);
+					a_p->tm->mph->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kHoming);
 				}
 				else if (useAimPrediction)
 				{
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kPrediction);
+					a_p->tm->mph->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kPrediction);
 				}
 				else
 				{
-					a_p->tm->managedProjHandler->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kAimDirection);
+					a_p->tm->mph->Insert(a_p, a_projectileHandle, a_resultingVelocity, ProjectileTrajType::kAimDirection);
 				}
 
 				// Set linear velocity field to the launch velocity.
@@ -3802,13 +3800,18 @@ namespace ALYSLC
 			}
 
 			// If the projectile is managed, direct it at the target.
-			isManaged = a_p->tm->managedProjHandler->IsManaged(a_projectileHandle);
+			isManaged = a_p->tm->mph->IsManaged(a_projectileHandle);
 			if (isManaged)
 			{
-				if (const auto& projTrajType = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle)->trajType; projTrajType == ProjectileTrajType::kHoming)
+				if (const auto& projTrajType = a_p->tm->mph->GetInfo(a_projectileHandle)->trajType; projTrajType == ProjectileTrajType::kHoming)
 				{
 					// Start homing in on the target once the trajectory apex is reached.
 					SetHomingTrajectory(a_p, a_projectileHandle, a_resultingVelocity);
+				}
+				else if (isBeamOrFlameProj)
+				{
+					// Direct in a straight line at the target.
+					SetStraightTrajectory(a_p, a_projectileHandle, a_resultingVelocity);
 				}
 				else
 				{
@@ -3816,6 +3819,28 @@ namespace ALYSLC
 					// target intercept position (aim prediction) or at a position far away in the player's aiming direction (aim direction).
 					SetFixedTrajectory(a_p, a_projectileHandle, a_resultingVelocity);
 				}
+
+				// REMOVE when done debugging.
+				/*if (auto current3D = Util::GetRefr3D(projectile); current3D) 
+				{
+					ALYSLC::Log("[Projectile Hooks] {}: DirectProjectileAtTarget: {} (0x{:X}), node {}, type {}. Pitch, yaw: {}, {}.",
+						a_p->coopActor->GetName(),
+						projectile->GetName(),
+						projectile->formID,
+						current3D->name,
+						projectile->GetProjectileBase() ? (int32_t)(*projectile->GetProjectileBase()->data.types) : -1,
+						projectile->data.angle.x * TO_DEGREES,
+						projectile->data.angle.z * TO_DEGREES);
+
+					glm::vec3 start = ToVec3(current3D->world.translate);
+					glm::vec3 offsetX = ToVec3(current3D->world.rotate * RE::NiPoint3(1.0f, 0.0f, 0.f));
+					glm::vec3 offsetY = ToVec3(current3D->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.f));
+					glm::vec3 offsetZ = ToVec3(current3D->world.rotate * RE::NiPoint3(0.0f, 0.0f, 1.f));
+					DebugAPI::QueuePoint3D(start, Settings::vuOverlayRGBAValues[a_p->playerID], 5.0f);
+					DebugAPI::QueueArrow3D(start, start + offsetX * 15.0f, 0xFF0000FF, 3.0f, 2.0f);
+					DebugAPI::QueueArrow3D(start, start + offsetY * 15.0f, 0x00FF00FF, 3.0f, 2.0f);
+					DebugAPI::QueueArrow3D(start, start + offsetZ * 15.0f, 0x0000FFFF, 3.0f, 2.0f);
+				}*/
 			}
 		}
 
@@ -3887,13 +3912,13 @@ namespace ALYSLC
 			}
 
 			// Not a managed projectile, so nothing to do here.
-			if (!a_p->tm->managedProjHandler->IsManaged(a_projectileHandle))
+			if (!a_p->tm->mph->IsManaged(a_projectileHandle))
 			{
 				return;
 			}
 
 			// Guaranteed to be managed here.
-			auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle);
+			auto& managedProjInfo = a_p->tm->mph->GetInfo(a_projectileHandle);
 			RE::NiPoint3 velToSet = a_resultingVelocity;
 			RE::NiPoint3 aimTargetPos = a_p->tm->crosshairWorldPos;
 			auto targetActorPtr = Util::GetActorPtrFromHandle(managedProjInfo->targetActorHandle);
@@ -3958,7 +3983,7 @@ namespace ALYSLC
 				projectile->data.angle.x = pitchToTarget;
 				projectile->data.angle.z = yawToTarget;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
 				{
 					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
@@ -3969,7 +3994,7 @@ namespace ALYSLC
 				projectile->linearVelocity = a_resultingVelocity;
 
 				// No longer handled after directing at the target position.
-				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
+				a_p->tm->mph->Remove(a_projectileHandle);
 				return;
 			}
 			else if (projectile->livingTime == 0.0f)
@@ -3979,7 +4004,7 @@ namespace ALYSLC
 				projectile->data.angle.x = -launchPitch;
 				projectile->data.angle.z = launchYaw;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
 				{
 					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
@@ -3992,7 +4017,7 @@ namespace ALYSLC
 			if (!continueSettingTrajectory)
 			{
 				// Set as no longer managed to prevent further trajectory adjustment.
-				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
+				a_p->tm->mph->Remove(a_projectileHandle);
 				return;
 			}
 
@@ -4226,7 +4251,7 @@ namespace ALYSLC
 				projectile->data.angle.x = pitchToSet;
 				projectile->data.angle.z = yawToSet;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
 				{
 					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
@@ -4276,7 +4301,7 @@ namespace ALYSLC
 			else
 			{
 				// Set as no longer managed to prevent further trajectory adjustment after this frame.
-				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
+				a_p->tm->mph->Remove(a_projectileHandle);
 			}
 		}
 
@@ -4296,13 +4321,13 @@ namespace ALYSLC
 			}
 
 			// Not a managed projectile, so nothing to do here.
-			if (!a_p->tm->managedProjHandler->IsManaged(a_projectileHandle))
+			if (!a_p->tm->mph->IsManaged(a_projectileHandle))
 			{
 				return;
 			}
 
 			// Guaranteed to be managed here.
-			const auto& managedProjInfo = a_p->tm->managedProjHandler->GetInfo(a_projectileHandle);
+			const auto& managedProjInfo = a_p->tm->mph->GetInfo(a_projectileHandle);
 			// Pre-computed fixed trajectory data.
 			const RE::NiPoint3& releasePos = managedProjInfo->releasePos;
 			const RE::NiPoint3& targetPos = managedProjInfo->trajectoryEndPos;
@@ -4326,7 +4351,7 @@ namespace ALYSLC
 				projectile->data.angle.x = pitchToTarget;
 				projectile->data.angle.z = yawToTarget;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
 				{
 					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
@@ -4337,7 +4362,7 @@ namespace ALYSLC
 				projectile->linearVelocity = a_resultingVelocity;
 
 				// No longer handled after directing at the target position.
-				a_p->tm->managedProjHandler->Remove(a_projectileHandle);
+				a_p->tm->mph->Remove(a_projectileHandle);
 				return;
 			}
 			else if (projectile->livingTime == 0.0f)
@@ -4347,7 +4372,7 @@ namespace ALYSLC
 				projectile->data.angle.x = -launchPitch;
 				projectile->data.angle.z = launchYaw;
 				// Set rotation matrix to maintain consistency with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D)
+				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
 				{
 					Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
 				}
@@ -4399,6 +4424,97 @@ namespace ALYSLC
 			if (auto current3D = Util::GetRefr3D(projectile))
 			{
 				Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+			}
+		}
+
+		void ProjectileHooks::SetStraightTrajectory(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity)
+		{
+			// Direct flame and beam projectiles in a straight line to the target position,
+			// which changes to track the target. Velocity does not change.
+
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			// Smart ptr was invalid, so its managed projectile is as well.
+			if (!projectile)
+			{
+				return;
+			}
+
+			// Not a managed projectile, so nothing to do here.
+			if (!a_p->tm->mph->IsManaged(a_projectileHandle))
+			{
+				return;
+			}
+
+			auto& managedProjInfo = a_p->tm->mph->GetInfo(a_projectileHandle);
+			// Aim at the previously computed trajectory end pos by default.
+			RE::NiPoint3 aimTargetPos = managedProjInfo->trajectoryEndPos;
+			const auto targetActorHandle = a_p->tm->GetRangedTargetActor();
+			auto targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
+			bool targetActorValidity = targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get());
+			if (targetActorValidity) 
+			{
+				// Aim at the locally offset crosshair hit position or the target actor's torso.
+				if (a_p->mm->shouldFaceTarget) 
+				{
+					aimTargetPos = targetActorPtr->data.location + a_p->tm->crosshairLastHitLocalPos;
+				}
+				else
+				{
+					aimTargetPos = Util::GetTorsoPosition(targetActorPtr.get());
+				}
+
+				projectile->desiredTarget = targetActorHandle;
+			}
+			else if (a_p->mm->shouldFaceTarget)
+			{
+				// Aim at the crosshair world position that the player is facing.
+				aimTargetPos = a_p->tm->crosshairWorldPos;
+			}
+			else
+			{
+				double farDist = FLT_MAX;
+				auto iniPrefSettings = RE::INIPrefSettingCollection::GetSingleton();
+				auto projMaxDistSetting = iniPrefSettings ? iniPrefSettings->GetSetting("fVisibleNavmeshMoveDist") : nullptr;
+				if (projMaxDistSetting && projectile->data.location.GetDistance(a_p->tm->crosshairWorldPos) < projMaxDistSetting->data.f)
+				{
+					farDist = projMaxDistSetting->data.f;
+				}
+				else
+				{
+					farDist = projectile->data.location.GetDistance(a_p->tm->crosshairWorldPos);
+				}
+
+				aimTargetPos = projectile->data.location + Util::RotationToDirectionVect(-a_p->mm->aimPitch, Util::ConvertAngle(projectile->data.angle.z)) * farDist;
+			}
+
+			float pitchToSet = Util::GetPitchBetweenPositions(projectile->data.location, aimTargetPos);
+			float yawToSet = Util::GetYawBetweenPositions(projectile->data.location, aimTargetPos);
+			projectile->data.angle.x = pitchToSet;
+			projectile->data.angle.z = yawToSet;
+
+			// Set rotation matrix to maintain consistency with the previously set refr data angles.
+			if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+			{
+				Util::SetRotationMatrixPY(current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z);
+				if (auto parent = RE::NiPointer<RE::NiAVObject>(current3D->parent); parent && parent.get()) 
+				{
+					current3D->world = parent->world * current3D->local;
+				}
+				else
+				{
+					current3D->world = current3D->local;
+				}
+			}
+
+			if (projectile->livingTime == 0.0f) 
+			{
+				projectile->RunTargetPick();
 			}
 		}
 

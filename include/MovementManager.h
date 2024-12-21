@@ -302,7 +302,7 @@ namespace ALYSLC
 		// Higher values inch closer to directly setting the current rotation to the target rotation.
 		// Lower values create more sluggish, but smooother, movement.
 		// Used at 60 FPS, since all node rotation updates are run in a havok callback.
-		const float interpFactor = 1.0f / 3.0f;
+		const float interpFactor = 0.333333f;
 
 		// Mutex for setting rotation data.
 		// IMPORTANT: Lock before reading/adjusting any nodes' rotations
@@ -531,6 +531,10 @@ namespace ALYSLC
 		float dashDodgeInitialSpeed;
 		// Dash dodge LS displacement at the start of the dodge.
 		float dashDodgeLSDisplacement;
+		// Total pitch offset to apply to torso nodes while dash dodging.
+		float dashDodgeTorsoPitchOffset;
+		// Total pitch offset to apply to torso nodes while dash dodging.
+		float dashDodgeTorsoRollOffset;
 		// Current left stick angle at max displacement from center.
 		float lsAngAtMaxDisp;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]
@@ -558,6 +562,8 @@ namespace ALYSLC
 		// having the vertical of a two year old reaching for an object on a shelf,
 		// and short players from springing around like a frog on nose candy.
 		const float havokInitialJumpZVelocity = 5.0f;
+		// Interpolation factor for rotating the player.
+		const float playerRotInterpFactor = 0.25f;
 
 		// Player ID for this player.
 		int32_t playerID;

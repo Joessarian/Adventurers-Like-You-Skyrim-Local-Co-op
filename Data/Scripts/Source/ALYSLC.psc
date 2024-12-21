@@ -40,10 +40,10 @@ Function Log(String a_messsage) Global Native
 ;==============================================
 ;==================[Debug]=====================
 ;==============================================
-Function EnableGodModeForAllCoopPlayers() Global Native
-Function EnableGodModeForPlayer(Int a_controllerID) Global Native
 Function DisableGodModeForAllCoopPlayers() Global Native
 Function DisableGodModeForPlayer(Int a_controllerID) Global Native
+Function EnableGodModeForAllCoopPlayers() Global Native
+Function EnableGodModeForPlayer(Int a_controllerID) Global Native
 Function MoveAllCoopActorsToP1() GLobal Native
 Function ReEquipHandForms(Int a_controllerID) Global Native
 Function RefreshAllPlayerManagers() Global Native

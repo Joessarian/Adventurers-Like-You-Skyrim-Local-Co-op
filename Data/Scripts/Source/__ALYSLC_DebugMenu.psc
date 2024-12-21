@@ -67,7 +67,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; Ok...
     ; I'm just bad at the game and tired of typing the same console commands on reload.
     DebugMenu.AddEntryItem("Enable God Mode", 1, -1, False)
-    ; 11. Reset equip state to fix a couple equip state bugs:
+    ; 11. Reset player to fix a couple equip state bugs:
     ; For co-op players, two bugs:
     ; 1. Jerky movement and cancelled attack animations with wonky hitboxes when swinging weapons.
     ; Source: not found.
@@ -78,7 +78,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; Highest damage weapon is auto equipped when equipping a spell or fails to unequip completely.
     ; Useful after players exhibit the above behaviors.
     ; A temporary band-aid solution until the bugs' causes are found.
-    DebugMenu.AddEntryItem("Reset Equip State", 1, -1, False)
+    DebugMenu.AddEntryItem("Reset Player", 1, -1, False)
     ; 12. Re-equip items in this player's hand slots. 
     ; Useful for remedying some odd equip state bugs.
     DebugMenu.AddEntryItem("Re-equip Items in Hands", 1, -1, False)

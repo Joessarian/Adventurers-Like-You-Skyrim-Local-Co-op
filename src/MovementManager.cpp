@@ -36,7 +36,6 @@ namespace ALYSLC
 		UpdateMovementParameters();
 		UpdateMovementState();
 		UpdateAttackSourceOrientationData(false);
-		SetAimRotation();
 		UpdateAimPitch();
 		SetHeadTrackTarget();
 		SetPlayerOrientation();
@@ -181,6 +180,8 @@ namespace ALYSLC
 		dashDodgeEquippedWeight = 0.0f;
 		dashDodgeInitialSpeed = 0.0f;
 		dashDodgeLSDisplacement = 0.0f;
+		dashDodgeTorsoPitchOffset = 0.0f;
+		dashDodgeTorsoRollOffset = 0.0f;
 		lsAngAtMaxDisp = rsAngAtMaxDisp = 0.0f;
 		oldLSAngle = 0.0f;
 		playerScaledHeight = coopActor->GetHeight();
@@ -408,8 +409,9 @@ namespace ALYSLC
 						coopActor->NotifyAnimationGraph("SneakStop");
 					}
 
-					// Reset character controller pitch.
-					charController->pitchAngle = charController->rollAngle = 0.0f;
+					// Reset torso and character controller pitch.
+					charController->pitchAngle = charController->rollAngle = 
+					dashDodgeTorsoPitchOffset = dashDodgeTorsoRollOffset = 0.0f;
 				}
 
 				// Remove AV cost action, if it still hasn't been processed for some reason.
@@ -519,11 +521,11 @@ namespace ALYSLC
 
 				// Get dodge XY speed to set.
 				// Dodge distance (directly influenced by speed) depends on LS displacement.
-				float dodgeXYSpeed = 0.0f;
+				float dashDodgeXYSpeed = 0.0f;
 				// Burst of speed that peaks at the dodge midpoint.
 				if (dashDodgeCompletionRatio <= 0.5f) 
 				{
-					dodgeXYSpeed = Util::InterpolateEaseOut
+					dashDodgeXYSpeed = Util::InterpolateEaseOut
 					(
 						dashDodgeInitialSpeed,
 						maxXYSpeed,
@@ -533,7 +535,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					dodgeXYSpeed = Util::InterpolateEaseIn
+					dashDodgeXYSpeed = Util::InterpolateEaseIn
 					(
 						maxXYSpeed,
 						dashDodgeInitialSpeed,
@@ -543,7 +545,7 @@ namespace ALYSLC
 				}
 
 				// Convert back to havok units and then to hkVector4.
-				havokVel = TohkVector4(dashDodgeDir * dodgeXYSpeed * GAME_TO_HAVOK);
+				havokVel = TohkVector4(dashDodgeDir * dashDodgeXYSpeed * GAME_TO_HAVOK);
 				// Restore original Z component if paragliding.
 				if (isParagliding) 
 				{
@@ -577,20 +579,36 @@ namespace ALYSLC
 					const float maxLeanAngle = 
 					{
 						(isParagliding) ?
-						(p->isPlayer1 ? PI / 4.0f : PI / 2.0f) :
-						(Util::InterpolateSmootherStep(PI / 4.0f, PI / 12.0f, dodgeXYSpeed / Settings::fMaxDashDodgeSpeedmult))
+						(p->isPlayer1 ? PI / 2.0f : PI / 2.0f) :
+						(
+							Util::InterpolateSmootherStep
+							(
+								7.0f * PI / 18.0f, 
+								PI / 6.0f, 
+								dashDodgeXYSpeed / Settings::fMaxDashDodgeSpeedmult
+							)
+						)
 					};
-					float endpointPitch = isParagliding ? charController->pitchAngle : 0.0f;
-					float endpointRoll = isParagliding ? charController->rollAngle : 0.0f;
+
+					// Reference to the pitch/roll angle we want to modify.
+					// We want to tilt the entire character controller when paragliding,
+					// but only the torso nodes when on the ground.
+					float& pitchToSet = isParagliding ? charController->pitchAngle : dashDodgeTorsoPitchOffset;
+					float& rollToSet = isParagliding ? charController->rollAngle : dashDodgeTorsoRollOffset;
+					// Endpoint to interp from in the first half of the interval 
+					// and to interp to in the second half of the interval.
+					// NOTE: Our changes to char controller angles are wiped by the game each frame.
+					const float endpointPitch = charController->pitchAngle ? pitchToSet : 0.0f;
+					const float endpointRoll = charController->rollAngle ? rollToSet : 0.0f;
 					if (isBackStepDodge)
 					{
 						if (animRatio < halfAnimCompletionRatio)
 						{
 							// Lean back.
-							charController->pitchAngle = Util::InterpolateEaseOut
+							pitchToSet = Util::InterpolateEaseOut
 							(
 								endpointPitch, 
-								-maxLeanAngle, 
+								isParagliding ? -maxLeanAngle : maxLeanAngle, 
 								(animRatio / halfAnimCompletionRatio),
 								2.0f
 							);
@@ -598,11 +616,11 @@ namespace ALYSLC
 						else
 						{
 							// Straighten back out by the time the dodge ends.
-							charController->pitchAngle = Util::InterpolateEaseIn
+							pitchToSet = Util::InterpolateEaseIn
 							(
-								-maxLeanAngle, 
-								endpointPitch, 
-								(animRatio / halfAnimCompletionRatio) - 1.0f, 
+								isParagliding ? -maxLeanAngle : maxLeanAngle,
+								endpointPitch,
+								(animRatio / halfAnimCompletionRatio) - 1.0f,
 								2.0f
 							);
 						}
@@ -627,18 +645,25 @@ namespace ALYSLC
 							(absAngDiffMod / (PI / 2.0f) - 1.0f)
 						);
 						float rollRatio = 1.0f - pitchRatio;
-						float pitchSign = fabsf(movementToFacingYawDiff) <= PI / 2.0f ? 1.0f : -1.0f;
-						float rollSign = movementToFacingYawDiff <= 0.0f ? 1.0f : -1.0f;
+						float pitchSign = fabsf(movementToFacingYawDiff) <= PI / 2.0f ? -1.0f : 1.0f;
+						float rollSign = movementToFacingYawDiff <= 0.0f ? -1.0f : 1.0f;
+						// Flip sign convention when paragliding.
+						if (isParagliding) 
+						{
+							pitchSign *= -1.0f;
+							rollSign *= -1.0f;
+						}
+
 						if (animRatio < halfAnimCompletionRatio)
 						{
 							// Lean in movement direction.
-							charController->pitchAngle = Util::InterpolateEaseOut
+							pitchToSet = Util::InterpolateEaseOut
 							(
 								endpointPitch, 
 								maxLeanAngle * pitchRatio * pitchSign, (animRatio / halfAnimCompletionRatio), 
 								2.0f
 							);
-							charController->rollAngle = Util::InterpolateEaseOut
+							rollToSet = Util::InterpolateEaseOut
 							(
 								endpointRoll, 
 								maxLeanAngle * rollRatio * rollSign, (animRatio / halfAnimCompletionRatio), 
@@ -648,13 +673,13 @@ namespace ALYSLC
 						else
 						{
 							// Straighten back out by the time the dodge ends.
-							charController->pitchAngle = Util::InterpolateEaseIn
+							pitchToSet = Util::InterpolateEaseIn
 							(
 								maxLeanAngle * pitchRatio * pitchSign, 
 								endpointPitch, 
 								(animRatio / halfAnimCompletionRatio) - 1.0f, 2.0f
 							);
-							charController->rollAngle = Util::InterpolateEaseIn
+							rollToSet = Util::InterpolateEaseIn
 							(
 								maxLeanAngle * rollRatio * rollSign, 
 								endpointRoll, 
@@ -710,7 +735,7 @@ namespace ALYSLC
 				// Plain jump
 				charController->lock.Lock();
 				{
-					charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
+					charController->flags.set(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
 					charController->context.currentState = RE::hkpCharacterStateType::kInAir;
 
 					const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
@@ -762,7 +787,7 @@ namespace ALYSLC
 					// Reset jump state variables.
 					charController->lock.Lock();
 					{
-						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
 						charController->gravity = 1.0f;
 						RE::hkVector4 havokPos{};
 						charController->GetPositionImpl(havokPos, false);
@@ -780,6 +805,9 @@ namespace ALYSLC
 					framesSinceStartingJump = 0;
 					return;
 				}
+
+				// REMOVE when done debugging.
+				//ALYSLC::Log("[MM] {}: PerformJump: Flags while falling: 0b{:B}.", coopActor->GetName(), *charController->flags);
 
 				// Handle ascent to peak of the jump at which the player begins to fall.
 				if (!isFallingWhileJumping)
@@ -806,7 +834,7 @@ namespace ALYSLC
 					{
 						charController->lock.Lock();
 						{
-							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
 							RE::hkVector4 havokPos{};
 							charController->GetPositionImpl(havokPos, false);
 							float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
@@ -819,13 +847,26 @@ namespace ALYSLC
 					}
 					
 					// Check if the player has landed, reset state, and return early.
-					if (charController->context.currentState == RE::hkpCharacterStateType::kOnGround && 
-						charController->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported)
+					bool stateAllowsLanding = 
+					(
+						(
+							charController->flags.all
+							(
+								RE::CHARACTER_FLAGS::kCanJump, 
+								RE::CHARACTER_FLAGS::kSupport
+							)
+						) && 
+						(
+							charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
+							charController->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported
+						) 
+					);
+					if (stateAllowsLanding)
 					{
 						// Reset jump state variables.
 						charController->lock.Lock();
 						{
-							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
 							charController->gravity = 1.0f;
 							RE::hkVector4 havokPos{};
 							charController->GetPositionImpl(havokPos, false);
@@ -841,7 +882,6 @@ namespace ALYSLC
 
 						// Have to manually trigger landing animation to minimize occurrences of the hovering bug.
 						coopActor->NotifyAnimationGraph("JumpLand");
-						//charController->flags.set(RE::CHARACTER_FLAGS::kCheckSupport, RE::CHARACTER_FLAGS::kFloatLand, RE::CHARACTER_FLAGS::kJumping);
 						charController->lock.Lock();
 						{
 							charController->surfaceInfo.surfaceNormal = RE::hkVector4(0.0f);
@@ -1204,6 +1244,10 @@ namespace ALYSLC
 					avgPitchYawPair.second += Util::GetYawBetweenPositions(actorMagicCaster->magicNode->world.translate, targetPos);
 				}
 
+				glm::vec3 start = ToVec3(actorMagicCaster->magicNode->world.translate);
+				glm::vec3 offset{ ToVec3(actorMagicCaster->magicNode->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)) };
+				DebugAPI::QueueArrow3D(start, start + offset * 15.0f, Settings::vuOverlayRGBAValues[p->playerID], 3.0f, 2.0f);
+
 				++activeNodesCount;
 				return;
 			}
@@ -1291,6 +1335,10 @@ namespace ALYSLC
 				"AimHeadingCurrent",
 				-Util::NormalizeAngToPi(avgPitchYawPair.second - coopActor->data.angle.z)
 			);
+
+			glm::vec3 start = ToVec3(headMagicNode->world.translate);
+			glm::vec3 offset{ ToVec3(Util::RotationToDirectionVect(-avgPitchYawPair.first, Util::ConvertAngle(avgPitchYawPair.second))) };
+			DebugAPI::QueueArrow3D(start, start + offset * 15.0f, 0xFFFFFFFF, 3.0f, 2.0f);
 		}
 		else
 		{
@@ -1349,7 +1397,8 @@ namespace ALYSLC
 				movementActor->NotifyAnimationGraph("IdleStopInstant");
 				movementActor->NotifyAnimationGraph("moveStart");
 			}
-			else if (!lsMoved && !isDashDodging && !isRequestingDashDodge && !isParagliding && dontMoveSet)
+			else if (!lsMoved && !isDashDodging && !isRequestingDashDodge && 
+				!isParagliding && !interactionPackageRunning && dontMoveSet)
 			{
 				// If the LS is centered and the player is not dash dodging and 
 				// has been stopped, send the move stop animation event.
@@ -1451,9 +1500,9 @@ namespace ALYSLC
 		// [Rotation]
 		//===========
 		// Normalize current facing angle first.
-		coopActor->data.angle.z = Util::NormalizeAng0To2Pi(coopActor->data.angle.z);
-		float rotMult = GetRotationMult();
-		float playerTargetYaw = coopActor->data.angle.z;
+		movementActor->data.angle.z = Util::NormalizeAng0To2Pi(movementActor->data.angle.z);
+		float rotMult = Settings::fBaseRotationMult * GetRotationMult();
+		float playerTargetYaw = movementActor->data.angle.z;
 		// Do not set rotation if not AI driven, a menu is open that stops movement,
 		// the player is AI driven, in synced animation, mounting, in a killmove, or staggered.
 		if (!menuStopsMovement && !isAnimDriven && !isSynced && !isMounting && 
@@ -1557,8 +1606,14 @@ namespace ALYSLC
 			{
 				// Slow down rotation quickly if too close to the target since the angle to the target
 				// changes too rapidly and causes jittering when rotating to directly face the target.
-				float xyDistToTarget = Util::GetXYDistance(playerAttackSourcePos, targetLocation);
-				float minDistToSlowRotation = Util::GetXYDistance(coopActor->data.location, playerAttackSourcePos) * 0.1f;
+				float xyDistToTarget = Util::GetXYDistance(movementActor->data.location, targetLocation);
+				float minDistToSlowRotation = Util::GetXYDistance(coopActor->data.location, movementActor->data.location) * 0.1f;
+				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+				if (auto player3D = Util::GetRefr3D(coopActor.get()); player3D && player3D.get()) 
+				{
+					radius = player3D->worldBound.radius;
+				}
+
 				bool isAimingWithRangedWeapon = 
 				{
 					coopActor->actorState1.meleeAttackState == RE::ATTACK_STATE_ENUM::kBowDrawn
@@ -1570,11 +1625,11 @@ namespace ALYSLC
 					(
 						min
 						(
-							xyDistToTarget - minDistToSlowRotation, Settings::fTargetAttackSourceDistToSlowRotation
+							xyDistToTarget - minDistToSlowRotation, radius
 						) / 
 						max
 						(
-							0.01f, Settings::fTargetAttackSourceDistToSlowRotation
+							0.01f, radius
 						)
 					), 
 					3.0f
@@ -1587,22 +1642,22 @@ namespace ALYSLC
 					// leading to spinal curvature and an odd aiming orientation when nearing an aim pitch of += 90 degrees.
 					// Commented out for now until solution is found.
 					// Directly face the target position.
-					yawToTarget = Util::DirectionToGameAngYaw(targetLocation - playerAttackSourcePos);
+					yawToTarget = Util::DirectionToGameAngYaw(targetLocation - movementActor->data.location);
 					playerTargetYaw = 
 					(
-						coopActor->data.angle.z + 
+						movementActor->data.angle.z + 
 						(
 							Util::NormalizeAngToPi
 							(
 								yawToTarget - 
 								coopActor->GetAimHeading()
 							)
-						) * rotMult
+						)
 					);
 
 					/*playerTargetYaw = 
 					(
-						coopActor->data.angle.z + 
+						movementActor->data.angle.z + 
 						(
 							Util::NormalizeAngToPi
 							(
@@ -1640,6 +1695,7 @@ namespace ALYSLC
 		//==================
 		const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
 		const auto& lsMag = lsData.normMag;
+
 		// X axis is to the right of the player's facing direction.
 		// Y axis is in the player's facing direction.
 		float xPosOffset = 0.0f;
@@ -1652,8 +1708,8 @@ namespace ALYSLC
 		float rawYawOffset = Util::InterpolateSmootherStep
 		(
 			0.0f,
-			Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z),
-			0.25f
+			rotMult * Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z),
+			playerRotInterpFactor
 		);
 		// Distance from the offset actor to start running to catch up.
 		float catchUpRadius = 0.0f;
@@ -1753,7 +1809,7 @@ namespace ALYSLC
 						Util::GetYawBetweenPositions(movementActor->data.location, interactionPackageEntryPos) - 
 						movementActor->data.angle.z
 					),
-					0.25f
+					playerRotInterpFactor
 				);
 				movementActor->data.angle.z += std::clamp
 				(
@@ -1879,34 +1935,21 @@ namespace ALYSLC
 			// NOTE: Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
 			// when moving the character, so we just interp the player's data angle instead
 			// to set the target rotation.
-			movementActor->data.angle.z += std::clamp
-			(
-				rawYawOffset,
-				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
-			);
-
-			KeepOffsetFromActor
-			(
-				movementActor->GetHandle(),
-				RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
-				RE::NiPoint3(), 
-				0.0f, 
-				0.0f
-			);
-
-			// REMOVE if the above code is preferable.
-			/*
-			// Position and rotation.
 			// NOTE: KeepOffsetFromActor() called on P1's mount does not work, so while P1 is mounted, they must not be AI driven.
 			if (movementActor->IsAMount())
 			{
 				// Mounts cannot move sideways, so move forward and rotate.
+				movementActor->data.angle.z += std::clamp
+				(
+					rawYawOffset,
+					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+				);
 				KeepOffsetFromActor
 				(
 					movementActor->GetHandle(), 
 					RE::NiPoint3(0.0f, 1.0f, 0.0f), 
-					RE::NiPoint3(0.0f, 0.0f, zRotOffset), 
+					RE::NiPoint3(), 
 					0.0f, 
 					0.0f
 				);
@@ -1927,7 +1970,7 @@ namespace ALYSLC
 					(allowRotation && p->pam->isAttacking) ||
 					(midHighProc && p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock)))
 				{
-					float angMult = Settings::fBaseRotationMult * Settings::fBaseMTRotationMult;
+					float angMult = Settings::fBaseMTRotationMult;
 					float zRot = 0.0f;
 					float angDiff = Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z);
 					if (angDiff < 0.0f)
@@ -1943,17 +1986,22 @@ namespace ALYSLC
 				}
 				else
 				{
+					movementActor->data.angle.z += std::clamp
+					(
+						rawYawOffset,
+						-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
+						Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+					);
 					KeepOffsetFromActor
 					(
 						movementActor->GetHandle(), 
 						RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
-						RE::NiPoint3(0.0f, 0.0f, zRotOffset), 
+						RE::NiPoint3(), 
 						0.0f, 
 						0.0f
 					);
 				}
 			}
-			*/
 		}
 
 		playerPitch = movementActor->data.angle.x;
@@ -3056,20 +3104,17 @@ namespace ALYSLC
 		// the node's local rotation will be updated, and we can then calculate
 		// the game's intended world rotation for this node via the parent node's world transform.
 
-		if (nodeRotationDataMap.contains(a_nodePtr))
-		{
-			const auto& newWorldRot = a_nodePtr->world.rotate;
-			auto worldXAxis = RE::NiPoint3(newWorldRot * right);
-			auto worldYAxis = RE::NiPoint3(newWorldRot * forward);
-			auto worldZAxis = RE::NiPoint3(newWorldRot * up);
-			glm::vec3 start{ a_nodePtr->world.translate.x, a_nodePtr->world.translate.y, a_nodePtr->world.translate.z };
-			glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 10.0f };
-			glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 10.0f };
-			glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 10.0f };
-			DebugAPI::QueueArrow3D(start, endX, 0xFF000088, 3.0f, 2.0f);
-			DebugAPI::QueueArrow3D(start, endY, 0x00FF0088, 3.0f, 2.0f);
-			DebugAPI::QueueArrow3D(start, endZ, 0x0000FF88, 3.0f, 2.0f);
-		}
+		const auto& newWorldRot = a_nodePtr->world.rotate;
+		auto worldXAxis = RE::NiPoint3(newWorldRot * right);
+		auto worldYAxis = RE::NiPoint3(newWorldRot * forward);
+		auto worldZAxis = RE::NiPoint3(newWorldRot * up);
+		glm::vec3 start{ a_nodePtr->world.translate.x, a_nodePtr->world.translate.y, a_nodePtr->world.translate.z };
+		glm::vec3 endX{ start + glm::vec3(worldXAxis.x, worldXAxis.y, worldXAxis.z) * 5.0f };
+		glm::vec3 endY{ start + glm::vec3(worldYAxis.x, worldYAxis.y, worldYAxis.z) * 5.0f };
+		glm::vec3 endZ{ start + glm::vec3(worldZAxis.x, worldZAxis.y, worldZAxis.z) * 5.0f };
+		DebugAPI::QueueArrow3D(start, endX, 0xFF000088, 3.0f, 2.0f);
+		DebugAPI::QueueArrow3D(start, endY, 0x00FF0088, 3.0f, 2.0f);
+		DebugAPI::QueueArrow3D(start, endZ, 0x0000FF88, 3.0f, 2.0f);
 
 		for (const auto child : a_nodePtr->children)
 		{
@@ -4572,17 +4617,18 @@ namespace ALYSLC
 			// or if the player is staggered/ragdolled or inactive.
 			torsoData->interrupted = 
 			{
-				(!isAiming && a_p->coopActor->IsWeaponDrawn()) ||
+				(!a_p->mm->isDashDodging && !isAiming && a_p->coopActor->IsWeaponDrawn()) ||
 				a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 				a_p->IsAwaitingRefresh() ||
 				a_p->coopActor->actorState2.recoil ||
 				a_p->coopActor->actorState2.staggered
 			};
-			// Rotation was modified if the player has adjusted their aim pitch,
-			// which means by which player can adjust their torso pitch.
+			// Rotation was modified if the player has adjusted their aim pitch
+			// or if they are dash dodging on the ground.
 			torsoData->rotationModified = 
 			{
-				(a_p->mm->aimPitchAdjusted)
+				(a_p->mm->aimPitchAdjusted) || 
+				(a_p->mm->isDashDodging && !a_p->mm->isParagliding)
 			};
 
 			// Update blend state after modifying the rotation flags
@@ -4683,95 +4729,143 @@ namespace ALYSLC
 					remappedPitch * frac
 				);*/
 
-				torsoData->rotationInput[1] = -a_p->mm->aimPitch;
-				// Pitch all the axes first.
-				Util::RotateVectorAboutAxis
-				(
-					newXAxis, 
-					a_p->mm->playerTorsoAxisOfRotation, 
-					torsoData->rotationInput[1] * frac
-				);
-				Util::RotateVectorAboutAxis
-				(
-					newYAxis, 
-					a_p->mm->playerTorsoAxisOfRotation, 
-					torsoData->rotationInput[1] * frac
-				);
-				Util::RotateVectorAboutAxis
-				(
-					newZAxis,
-					a_p->mm->playerTorsoAxisOfRotation, 
-					torsoData->rotationInput[1] * frac
-				);
-
-				// Modify the yaw of the torso nodes if the player is aiming with a ranged weapon while mounted,
-				// since the game does not automatically rotate our players to face the crosshair target.
-				if (isMounted && isAttackingWith2HRangedWeapon)
+				if (a_p->mm->aimPitchAdjusted) 
 				{
-					float prevYawOffset = torsoData->rotationInput[0];
-					float yawOffset = 0.0f;
-					if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
-						crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
-					{
-						auto playerAimYaw = Util::DirectionToGameAngYaw(a_p->mm->playerDefaultAttackSourceDir);
-						float playerToTargetYaw = Util::GetYawBetweenPositions(a_p->mm->playerDefaultAttackSourcePos, a_p->tm->crosshairWorldPos);
-						yawOffset = Util::NormalizeAngToPi(playerAimYaw - playerToTargetYaw);
-						// Prevent interpolation along the 'longer' path between the two endpoints
-						// by shifting the target endpoint to an equivalent angle that is closer
-						// to the starting endpoint.
-						if (fabsf(yawOffset - prevYawOffset) > PI) 
-						{
-							if (yawOffset <= 0.0f) 
-							{
-								yawOffset += 2.0f * PI;
-							}
-							else
-							{
-								yawOffset -= 2.0f * PI;
-							}
-						}
-					}
-
-					torsoData->rotationInput[0] = Util::InterpolateSmootherStep
+					torsoData->rotationInput[1] = -a_p->mm->aimPitch;
+					// Pitch all the axes first.
+					Util::RotateVectorAboutAxis
 					(
-						prevYawOffset, 
-						yawOffset, 
-						min(1.0f, interpFactor)
+						newXAxis, 
+						a_p->mm->playerTorsoAxisOfRotation, 
+						torsoData->rotationInput[1] * frac
+					);
+					Util::RotateVectorAboutAxis
+					(
+						newYAxis, 
+						a_p->mm->playerTorsoAxisOfRotation, 
+						torsoData->rotationInput[1] * frac
+					);
+					Util::RotateVectorAboutAxis
+					(
+						newZAxis,
+						a_p->mm->playerTorsoAxisOfRotation, 
+						torsoData->rotationInput[1] * frac
 					);
 
-					// Rotate the axes about the world 'up' axis with our yaw offset.
-					if (torsoData->rotationInput[0] != 0.0f) 
+					// Modify the yaw of the torso nodes if the player is aiming with a ranged weapon while mounted,
+					// since the game does not automatically rotate our players to face the crosshair target.
+					if (isMounted && isAttackingWith2HRangedWeapon)
 					{
-						torsoData->rotationInput[0] = Util::NormalizeAngToPi(torsoData->rotationInput[0]);
+						float prevYawOffset = torsoData->rotationInput[0];
+						float yawOffset = 0.0f;
+						if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
+							crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
+						{
+							auto playerAimYaw = Util::DirectionToGameAngYaw(a_p->mm->playerDefaultAttackSourceDir);
+							float playerToTargetYaw = Util::GetYawBetweenPositions(a_p->mm->playerDefaultAttackSourcePos, a_p->tm->crosshairWorldPos);
+							yawOffset = Util::NormalizeAngToPi(playerAimYaw - playerToTargetYaw);
+							// Prevent interpolation along the 'longer' path between the two endpoints
+							// by shifting the target endpoint to an equivalent angle that is closer
+							// to the starting endpoint.
+							if (fabsf(yawOffset - prevYawOffset) > PI) 
+							{
+								if (yawOffset <= 0.0f) 
+								{
+									yawOffset += 2.0f * PI;
+								}
+								else
+								{
+									yawOffset -= 2.0f * PI;
+								}
+							}
+						}
+
+						torsoData->rotationInput[0] = Util::InterpolateSmootherStep
+						(
+							prevYawOffset, 
+							yawOffset, 
+							min(1.0f, interpFactor)
+						);
+
+						// Rotate the axes about the world 'up' axis with our yaw offset.
+						if (torsoData->rotationInput[0] != 0.0f) 
+						{
+							torsoData->rotationInput[0] = Util::NormalizeAngToPi(torsoData->rotationInput[0]);
+							Util::RotateVectorAboutAxis
+							(
+								newXAxis, 
+								up, 
+								torsoData->rotationInput[0] * frac
+							);
+							Util::RotateVectorAboutAxis
+							(
+								newYAxis, 
+								up, 
+								torsoData->rotationInput[0] * frac
+							);
+							Util::RotateVectorAboutAxis
+							(
+								newZAxis,
+								up, 
+								torsoData->rotationInput[0] * frac
+							);
+						}
+					}
+				}
+
+				if (a_p->mm->isDashDodging && !a_p->mm->isParagliding) 
+				{
+					if (a_p->mm->dashDodgeTorsoPitchOffset != 0.0f)
+					{
 						Util::RotateVectorAboutAxis
 						(
-							newXAxis, 
-							up, 
-							torsoData->rotationInput[0] * frac
+							newXAxis,
+							baseXAxis,
+							a_p->mm->dashDodgeTorsoPitchOffset * frac
 						);
 						Util::RotateVectorAboutAxis
 						(
-							newYAxis, 
-							up, 
-							torsoData->rotationInput[0] * frac
+							newYAxis,
+							baseXAxis,
+							a_p->mm->dashDodgeTorsoPitchOffset * frac
 						);
 						Util::RotateVectorAboutAxis
 						(
 							newZAxis,
-							up, 
-							torsoData->rotationInput[0] * frac
+							baseXAxis,
+							a_p->mm->dashDodgeTorsoPitchOffset * frac
+						);
+					}
+
+					if (a_p->mm->dashDodgeTorsoRollOffset != 0.0f)
+					{
+						Util::RotateVectorAboutAxis
+						(
+							newXAxis,
+							baseYAxis,
+							a_p->mm->dashDodgeTorsoRollOffset * frac
+						);
+						Util::RotateVectorAboutAxis
+						(
+							newYAxis,
+							baseYAxis,
+							a_p->mm->dashDodgeTorsoRollOffset * frac
+						);
+						Util::RotateVectorAboutAxis
+						(
+							newZAxis,
+							baseYAxis,
+							a_p->mm->dashDodgeTorsoRollOffset * frac
 						);
 					}
 				}
-
+				
 				RE::NiMatrix3 newWorldRot{ newXAxis, newYAxis, newZAxis };
 				// NOTE: Must transpose to ensure that our modified axes are set
 				// as the new target local rotation matrix's axes.
 				newWorldRot = newWorldRot.Transpose();
 				RE::NiTransform newTrans
 				{
-					/*defaultNodeWorldTransformsMap.contains(torsoNodePtr) ?
-					defaultNodeWorldTransformsMap.at(torsoNodePtr) : */
 					torsoNodePtr->world 
 				};
 				newTrans.rotate = newWorldRot;

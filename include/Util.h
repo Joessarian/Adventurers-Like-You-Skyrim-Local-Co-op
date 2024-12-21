@@ -1897,7 +1897,7 @@ namespace ALYSLC
 			}
 
 			// Setting a_arg5 to false and a_arg6 to true seems 
-			// to sometimes bypass some idle conditions,
+			// to sometimes bypass certain idle conditions,
 			// such as target HP level and random trigger chance.
 			return 
 			(

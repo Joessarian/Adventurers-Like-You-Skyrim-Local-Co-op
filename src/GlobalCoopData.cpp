@@ -338,17 +338,6 @@ namespace ALYSLC
 		glob.paInfoHolder						= std::make_unique<PlayerActionInfoHolder>();
 		glob.taskRunner							= std::make_unique<TaskRunner>();
 
-		// Register havok callback.
-		if (auto precisionAPI1 = ALYSLC::PrecisionCompat::g_precisionAPI1; precisionAPI1)
-		{
-			precisionAPI1->AddPrePhysicsStepCallback(SKSE::GetPluginHandle(), [](RE::bhkWorld* a_world) { GlobalCoopData::HavokPrePhysicsStep(a_world); });
-			logger::info("[GLOB] InitializeGlobalCoopData: Registered Precision pre-physics step callback.");
-		}
-		else
-		{
-			logger::error("[GLOB] ERR: InitializeGlobalCoopData: Could not get Precision API to register Havok pre-physics step callback.");
-		}
-
 		// Create inactive co-op players.
 		std::generate(glob.coopPlayers.begin(), glob.coopPlayers.end(), []() { return std::make_shared<CoopPlayer>(); });
 

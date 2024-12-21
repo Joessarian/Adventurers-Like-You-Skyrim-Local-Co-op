@@ -375,6 +375,9 @@ namespace ALYSLC
 			// Guide the projectile along a pre-determined trajectory towards the computed target intercept position.
 			// Update the velocity through the outparam.
 			static void SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
+			// Direct flame and beam projectiles in a straight line directly at the target position.
+			static void SetStraightTrajectory(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
+
 		};
 
 		// [TESCamera Hooks]

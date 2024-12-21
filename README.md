@@ -1,7 +1,108 @@
 
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
-![Banner](https://i.imgur.com/s0tX9uh.jpeg)
+![Banner](https://i.imgur.com/1L3zH5y.png)
+## [Features]
+- ***Local co-op with controllers*** for 2-4 players.
+- ***Fully adjustable co-op camera*** that is controllable by any player, with toggleable camera collisions, object fade, and additional lock on and free cam modes (no split screen).
+- ***Character customization options for P2-P4***. Includes options to change the player's name, gender, race, class, NPC preset appearance, weight, and height.
+- ***Crosshairs for each player*** to target and interact with objects and NPCs, complete with adjustable appearance, sensitivity, fade options, and more.
+- ***New expansive control scheme*** built with co-op in mind that features 69 different customizable binds, 4 assignable inputs or player actions per bind, and different trigger options (on press, on release, on press and release, on hold, and on consecutive tap). Enable/disable any bind or even assign recursive binds composed of other binds.
+- ***Any player can control menus***. Players can switch which player is in control of dialogue and have different inventories, favorited items, and hotkeys.
+- ***Independent skill leveling and perk selection***. While all players share the same character level, each player will level their skills separately using the same XP system as the vanilla game. On character level-up, each player can choose to increase their Health, Magicka, or Stamina, and select different perks.
+- ***Balancing/difficulty options*** featuring per-player damage dealt and received multipliers, per-player health/magicka/stamina regeneration and cost multipliers, per-player skill XP gain multipliers, a character level XP threshold multiplier for all players, customizable player movement and rotation speeds, and more.
+- ***New mechanics:***
+	- Assignable emote idle events for player expression.
+	- Arm adjustment (if enabled) with collisions to allow for more interactivity with the world.
+	- Dash dodge with a customizable I-frame count and speed/distance.
+	- Killmoves system with customizable triggering health threshold and chance.
+	- Lob-able projectiles and adjustable attack pitch with new spinal rotation system.
+	- Revive system that allows living players to revive their fallen comrades within a certain time interval.
+	- Tactical ragdolling. Yes.
+	- Telekinetically grab and throw stuff because who doesn't like interactivity?
+	- Two player co-operative lockpicking, with one player rotating the pick and the other rotating the lock.
+... and more secret mechanics just waiting to be discovered!
+- ***Quality of life features:***  
+	- Aim assist and projectile trajectory options per-player.
+	- Basic cheats for players who wish to use them.
+	- Crosshair stickiness options to allow for easier object selection.
+	- Customizable player movement and rotation speeds.
+	- Debug menu and dedicated debug binds to resolve issues on-the-fly.
+	- Equip favorited items/spells via cycling or through radial selection of hotkeyed items with the right stick.
+	- Friendly fire toggleable per-player.
+	- Item exchange between P1 and P2-P4.
+	- Loot all grabbed items or all items in a container.
+	- Menu border overlay color-coded to show which player is in control of open menus.
+	- Special action bind with a varying effect based on what weapons/magic the player has equipped.
+	- Teleport to other players.
+... and more!
+
+## [Build Steps and Tips]
+### Setting Up the Build Environment and Dependencies.
+- Set up Visual Studio 2022 and install desktop development with C++.
+- This project uses [po3’s fork of CommonLib](https://github.com/powerof3/CommonLibSSE). 
+Ensure you have all of CommonLibSSE’s dependencies set up.
+- Clone ALYSLC to the directory of your choice by opening a command prompt in that directory and typing: 
+  ```
+  git clone https://github.com/Joessarian/Adventurers-Like-You-Skyrim-Local-Co-op
+  ```
+- Then move into the new repository folder by typing:
+  ```
+  cd Adventurers-Like-You-Skyrim-Local-Co-op
+  ```
+- Update the CommonLib submodule with: 
+  ```
+  git submodule init
+  git submodule update
+  ```
+- Move all files/folders in the respository's `Data` subfolder to either a new MO2 mod folder:
+  - `<MO2 folder>/<MO2 mods folder>/Adventurers Like You - Skyrim Local Co-op/`
+- Or to your Skyrim installation’s `Data` folder:
+  - `<Skyrim Installation Folder>/Data”`
+
+### Pre-Project Generation
+- Search `environment variables` in the Windows search bar and choose `Edit the system environment variables`.
+- Click on `Environment Variables`.
+- Click on `New` under the `User variables for <your user name>` list.
+- If you’re building for Skyrim SE (versions including 1.5.97 and below):
+  - Create a variable with the name `Skyrim64Path` and have it point to your Skyrim SE installation folder.
+    - For example: `<Drive Letter>:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition`
+  - Create a variable with the name `ALYSLCPluginPathSE` and enter where you’d like to copy the compiled .dll and .pdb built from the project we’re about to generate. Examples: 
+    - `<MO2 folder>/mods/Adventurers Like You - Skyrim Local Co-op/SKSE/Plugins`
+    - `<Skyrim Installation Folder>/Data/SKSE/Plugins`
+- If you’re building for Skyrim AE (versions after 1.5.97):
+  - Create a variable with the name `SkyrimAEPath` and have it point to your Skyrim AE installation folder.
+  - Create a variable with the name `ALYSLCPluginPathAE` to point to where the output .dll and .pdb will be exported to.
+
+### Generating the Project
+- Open a command prompt in the cloned repository folder.
+- To generate a project for SE, type:
+  ```
+  cmake --preset vs2022-windows-vcpkg-se
+  ```
+- To generate a project for AE, type:
+  ```
+  cmake --preset vs2022-windows-vcpkg-ae
+  ```
+- If successful, open the newly-generated solution folder `build` for SE, or `buildae` for AE.
+
+### Post-Project Generation
+Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `build` or `buildae` folder.
+- Once opened in Visual Studio 2022, click on `Project` then `<ALYSLC_SE/ALYSLC_AE> Properties` and in the `Configuration Properties` pane, click on `Build Events`. Then choose `Pre-Build`, click on the `Command Line` entry, and type in:
+  ```
+  del /s /q $(TargetDir)*.pdb
+  ```
+- Click `Apply` and then `Ok`.
+- Switch the active solution configuration from `Debug` to `Release`. - ***Note***: Building in debug currently does not work, so ensure the project's build configuration is set to release.
+- If you wish to enable all debug prints (`ALYSLC::Log()` calls), uncomment ```#define ALYSLC_DEBUG``` in `PCH.h`. ***Always comment out the line before making a PR***.
+- Build the solution with `Ctrl + Shift + B` or by clicking on `Build` and then `Build Solution`.
+- If the build succeeded and you previously specified an output path for the compiled plugin, you’re all set to test out your changes in-game!
+- Special notes on configuring for Skyrim/Enderal before launching the game:
+   - If you are playing Enderal, delete or deactivate the `ALYSLC.esp` in your mod manager.
+      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC Enderal.ini` file.
+   - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
+      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
+
 ## [For Users]
 ### Getting Started and Important Notes
 - First and foremost, ***expect a decent amount of jankiness/clunkiness***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply P1-exclusive features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
@@ -111,6 +212,7 @@ Certain systems were built to work around player 1-exclusivity or around restric
 
 #### Common Troubleshooting Tips
 - The game forcibly equips the gear it views as best-in-slot onto NPCs at certain times (example: when an item is added or equipped). This mod has a workaround in place to validate the equip state for companion players, but sometimes, players may still have their desired items unequipped or their character  may begin stuttering when moving/attacking. If this happens, try using the ***'Debug: Re-equip Items in Hands'***, ***'Debug: Refresh Player Managers'***, or ***'Debug: Reset Player'*** binds and see if it corrects the issue. If the issue persists, try the ***'Reset Player' Debug Menu player option***.
+- If the Summoning or Debug menus fail to open or if a player's inputs aren't being recognized, ***try tabbing out and then tabbing back in***. This will happen when the game doesn't have focus.
 - If the physics system has bugged out and the player is frozen, warped, or otherwise unresponsive, attempt to reset the player with either ***'Debug: Ragdoll Player'*** or ***'Debug: Reset Player'***. Or flop. Flopping solves a lot of problems from my experience.
 - If a companion player is controlling menus when they shouldn't be, opening the ***Debug Menu*** with any player and selecting ***'Stop Menu Input Manager'*** may resolve the issue.
 - If the player crosshairs or the menu control outline is not showing, ***pause and unpause the game***, which should force the mod's overlay menu to open and fix the problem.
@@ -140,82 +242,18 @@ Degrees of incompatibility:
 
 - `[SE/AE] MEDIUM`: [Better Third Person Selection - BTPS](https://www.nexusmods.com/skyrimspecialedition/mods/64339)
    - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently targeted object properly and other issues can arise. 
+- `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
+	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
 - `[SE/AE] HEAVY`: [Persistent Favorites](https://www.nexusmods.com/skyrimspecialedition/mods/118174)
    - Reproducible crash when opening the Favorites Menu a second time with a companion player. Possibly a conflict when ALYSLC adds an item to P1 to favorite it for a companion player that is opening the Favorites Menu. Only solution for now is to remove the mod while playing co-op.
 - `[SE/AE] LIGHT`: [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252)
    - Having the mod active while using the co-op camera can lead to sporadic raycasting crashes. For now, until a solution is bound, uninstall/disable SmoothCam with a hotkey if using the co-op camera while playing co-op.
-- `[AE] (Maybe) HEAVY` [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
+- `[AE] (Maybe) HEAVY`: [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
    - ***Might*** interfere with ALYSLC's system for player movement ONLY on AE. If player 1 is sliding around and not moving in the direction of the left stick, please uninstall TDM temporarily before playing co-op, at least until I find the issue on my end.
 - `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
    - Essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
-## [Build Steps and Tips]
-### Setting Up the Build Environment and Dependencies.
-- Set up Visual Studio 2022 and install desktop development with C++.
-- This project uses [po3’s fork of CommonLib](https://github.com/powerof3/CommonLibSSE). 
-Ensure you have all of CommonLibSSE’s dependencies set up.
-- Clone ALYSLC to the directory of your choice by opening a command prompt in that directory and typing: 
-  ```
-  git clone https://github.com/Joessarian/Adventurers-Like-You-Skyrim-Local-Co-op
-  ```
-- Then move into the new repository folder by typing:
-  ```
-  cd Adventurers-Like-You-Skyrim-Local-Co-op
-  ```
-- Update the CommonLib submodule with: 
-  ```
-  git submodule init
-  git submodule update
-  ```
-- Move all files/folders in the respository's `Data` subfolder to either a new MO2 mod folder:
-  - `<MO2 folder>/<MO2 mods folder>/Adventurers Like You - Skyrim Local Co-op/`
-- Or to your Skyrim installation’s `Data` folder:
-  - `<Skyrim Installation Folder>/Data”`
-
-### Pre-Project Generation
-- Search `environment variables` in the Windows search bar and choose `Edit the system environment variables`.
-- Click on `Environment Variables`.
-- Click on `New` under the `User variables for <your user name>` list.
-- If you’re building for Skyrim SE (versions including 1.5.97 and below):
-  - Create a variable with the name `Skyrim64Path` and have it point to your Skyrim SE installation folder.
-    - For example: `<Drive Letter>:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition`
-  - Create a variable with the name `ALYSLCPluginPathSE` and enter where you’d like to copy the compiled .dll and .pdb built from the project we’re about to generate. Examples: 
-    - `<MO2 folder>/mods/Adventurers Like You - Skyrim Local Co-op/SKSE/Plugins`
-    - `<Skyrim Installation Folder>/Data/SKSE/Plugins`
-- If you’re building for Skyrim AE (versions after 1.5.97):
-  - Create a variable with the name `SkyrimAEPath` and have it point to your Skyrim AE installation folder.
-  - Create a variable with the name `ALYSLCPluginPathAE` to point to where the output .dll and .pdb will be exported to.
-
-### Generating the Project
-- Open a command prompt in the cloned repository folder.
-- To generate a project for SE, type:
-  ```
-  cmake --preset vs2022-windows-vcpkg-se
-  ```
-- To generate a project for AE, type:
-  ```
-  cmake --preset vs2022-windows-vcpkg-ae
-  ```
-- If successful, open the newly-generated solution folder `build` for SE, or `buildae` for AE.
-
-### Post-Project Generation
-Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `build` or `buildae` folder.
-- Once opened in Visual Studio 2022, click on `Project` then `<ALYSLC_SE/ALYSLC_AE> Properties` and in the `Configuration Properties` pane, click on `Build Events`. Then choose `Pre-Build`, click on the `Command Line` entry, and type in:
-  ```
-  del /s /q $(TargetDir)*.pdb
-  ```
-- Click `Apply` and then `Ok`.
-- Switch the active solution configuration from `Debug` to `Release`. - ***Note***: Building in debug currently does not work, so ensure the project's build configuration is set to release.
-- If you wish to enable all debug prints (`ALYSLC::Log()` calls), uncomment ```#define ALYSLC_DEBUG``` in `PCH.h`. ***Always comment out the line before making a PR***.
-- Build the solution with `Ctrl + Shift + B` or by clicking on `Build` and then `Build Solution`.
-- If the build succeeded and you previously specified an output path for the compiled plugin, you’re all set to test out your changes in-game!
-- Special notes on configuring for Skyrim/Enderal before launching the game:
-   - If you are playing Enderal, delete or deactivate the `ALYSLC.esp` in your mod manager.
-      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC Enderal.ini` file.
-   - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
-      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
-
-## Developer's Note
+## [Developer's Note]
 I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
 
 Over the intervening time period, I've probably clocked in close to 10k hours and ***have decided to take a break from active development, primarily due to health concerns***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing local multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
@@ -223,14 +261,14 @@ Over the intervening time period, I've probably clocked in close to 10k hours an
 And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
 ***Experiencing Skyrim with friends and family — with adventurers like you!***
 
-## Credits
+## [Credits]
 See the mod's source for more detailed credits.
 - `Moopus1`
    - [Couch Co-Op Skyrim](https://www.nexusmods.com/skyrim/mods/72743)
    - Served as the original local co-op mod idea and laid out foundational work on adding a controllable npc to the game. 
 - `The SKSE Dev Team`
    - [SKSE](https://skse.silverlock.org/)
-   - Thank you for allowing modders to truly push the boundaries of modding over a decade.
+   - Thank you for allowing modders to truly push the boundaries of modding.
 - `Ryan`
    - [CommonLibSSE](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE)
    - Goes without saying that this mod would not exist, in concept or reality, without CommonLib’s additional library resources on top of SKSE.
@@ -291,7 +329,5 @@ See the mod's source for more detailed credits.
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
    - Thank you for helping a programming and C++ greenhorn get their bearings and for answering a ton of questions that I had during the development process.
 
-## License
+## [License]
 [GPL V3](https://github.com/Joessarian/Adventurers-Like-You-Skyrim-Local-Co-op/blob/main/LICENSE)
-
-

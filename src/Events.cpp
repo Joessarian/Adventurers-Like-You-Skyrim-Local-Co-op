@@ -839,7 +839,7 @@ namespace ALYSLC
 			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 
 			// REMOVE
-			ALYSLC::Log("[Events] Menu Open/Close Event: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}.",
+			ALYSLC::Log("[Events] |Menu Open/Close Event|: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}.",
 				a_menuEvent->menuName, 
 				a_menuEvent->opening ? "OPENING" : "CLOSING",
 				glob.menuCID,
@@ -997,7 +997,7 @@ namespace ALYSLC
 
 				// NOTE: May not be necessary anymore.
 				// Ensure HUD stays open.
-				const auto& hudMenu = ui->GetMenu<RE::HUDMenu>();
+				/*const auto& hudMenu = ui->GetMenu<RE::HUDMenu>();
 				if (!ui->IsMenuOpen(RE::HUDMenu::MENU_NAME) || (hudMenu && hudMenu->uiMovie && !hudMenu->uiMovie->GetVisible()))
 				{
 					if (msgQ)
@@ -1009,7 +1009,7 @@ namespace ALYSLC
 					{
 						hudMenu->uiMovie->SetVisible(true);
 					}
-				}
+				}*/
 
 				// [Enderal]: Keep perks synced among all players whenever a MessageBox menu opens/closes.
 				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && Hash(a_menuEvent->menuName) == Hash(RE::MessageBoxMenu::MENU_NAME))

@@ -91,7 +91,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[Compatibility] Could not get access to Precision API V3.");
+				logger::error("[Compatibility] ERR: Could not get access to Precision API V3.");
 				return;
 			}
 
@@ -99,10 +99,14 @@ namespace ALYSLC
 			if (g_precisionAPI1)
 			{
 				logger::info("[Compatibility] Received access to Precision API V1.");
+
+				// Register havok callback.
+				g_precisionAPI1->AddPrePhysicsStepCallback(SKSE::GetPluginHandle(), [](RE::bhkWorld* a_world) { GlobalCoopData::HavokPrePhysicsStep(a_world); });
+				logger::info("[GLOB] InitializeGlobalCoopData: Registered Precision pre-physics step callback.");
 			}
 			else
 			{
-				logger::error("[Compatibility] Could not get access to Precision API V1.");
+				logger::error("[Compatibility] ERR: Could not get access to Precision API V1 and register Havok pre-physics step callback.");
 				return;
 			}
 
@@ -113,7 +117,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[Compatibility] Could not get access to Precision API V4.");
+				logger::error("[Compatibility] ERR: Could not get access to Precision API V4.");
 				return;
 			}
 
@@ -122,7 +126,7 @@ namespace ALYSLC
 		else
 		{
 			g_precisionInstalled = false;
-			logger::error("[Compatibility] Could not find prerequisite mod 'Precision'. Please ensure it is installed.");
+			logger::error("[Compatibility] ERR: Could not find prerequisite mod 'Precision'. Please ensure it is installed.");
 		}
 	}
 
@@ -223,7 +227,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[Compatibility] Could not get access to TrueHUD API V3.");
+				logger::error("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
 				return;
 			}
 
@@ -232,7 +236,7 @@ namespace ALYSLC
 		else
 		{
 			g_trueHUDInstalled = false;
-			logger::error("[Compatibility] Could not find prerequisite mod 'TrueHUD'. Please ensure it is installed.");
+			logger::error("[Compatibility] ERR: Could not find prerequisite mod 'TrueHUD'. Please ensure it is installed.");
 		}
 	}
 };
