@@ -1,16 +1,17 @@
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/1L3zH5y.png)
 ## [Features]
 - ***Local co-op with controllers*** for 2-4 players.
 - ***Fully adjustable co-op camera*** that is controllable by any player, with toggleable camera collisions, object fade, and additional lock on and free cam modes (no split screen).
-- ***Character customization options for P2-P4***. Includes options to change the player's name, gender, race, class, NPC preset appearance, weight, and height.
+- ***Character customization options for companion players***. Includes options to change the player's name, gender, race, class, NPC preset appearance, weight, and height.
 - ***Crosshairs for each player*** to target and interact with objects and NPCs, complete with adjustable appearance, sensitivity, fade options, and more.
 - ***New expansive control scheme*** built with co-op in mind that features 69 different customizable binds, 4 assignable inputs or player actions per bind, and different trigger options (on press, on release, on press and release, on hold, and on consecutive tap). Enable/disable any bind or even assign recursive binds composed of other binds.
 - ***Any player can control menus***. Players can switch which player is in control of dialogue and have different inventories, favorited items, and hotkeys.
-- ***Independent skill leveling and perk selection***. While all players share the same character level, each player will level their skills separately using the same XP system as the vanilla game. On character level-up, each player can choose to increase their Health, Magicka, or Stamina, and select different perks.
-- ***Balancing/difficulty options*** featuring per-player damage dealt and received multipliers, per-player health/magicka/stamina regeneration and cost multipliers, per-player skill XP gain multipliers, a character level XP threshold multiplier for all players, customizable player movement and rotation speeds, and more.
+- ***Independent skill leveling and perk selection***. While all players share the same character level, each player will level their skills separately using the same XP system as the vanilla game. On character level-up, each player can increase their Health, Magicka, or Stamina, and select different perks.
+- ***Balancing/difficulty options*** featuring per-player damage dealt and received multipliers, per-player health/magicka/stamina regeneration and cost multipliers, per-player skill XP gain multipliers, a character level XP threshold multiplier for all players, and more.
 - ***New mechanics:***
 	- Assignable emote idle events for player expression.
 	- Arm adjustment (if enabled) with collisions to allow for more interactivity with the world.
@@ -21,6 +22,7 @@
 	- Tactical ragdolling. Yes.
 	- Telekinetically grab and throw stuff because who doesn't like interactivity?
 	- Two player co-operative lockpicking, with one player rotating the pick and the other rotating the lock.
+
 ... and more secret mechanics just waiting to be discovered!
 - ***Quality of life features:***  
 	- Aim assist and projectile trajectory options per-player.
@@ -29,12 +31,13 @@
 	- Customizable player movement and rotation speeds.
 	- Debug menu and dedicated debug binds to resolve issues on-the-fly.
 	- Equip favorited items/spells via cycling or through radial selection of hotkeyed items with the right stick.
+	- Exchange items between player 1 and companion players.
 	- Friendly fire toggleable per-player.
-	- Item exchange between P1 and P2-P4.
-	- Loot all grabbed items or all items in a container.
+	- Loot all grabbed items or all items from a targeted container or corpse.
 	- Menu border overlay color-coded to show which player is in control of open menus.
 	- Special action bind with a varying effect based on what weapons/magic the player has equipped.
 	- Teleport to other players.
+
 ... and more!
 
 ## [Build Steps and Tips]
@@ -105,9 +108,9 @@ Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `buil
 
 ## [For Users]
 ### Getting Started and Important Notes
-- First and foremost, ***expect a decent amount of jankiness/clunkiness***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply P1-exclusive features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
-- The mod is meant to be played locally and ***is NOT a fully-fledged multiplayer experience*** like the incredible [Skyrim Together Reborn](https://www.nexusmods.com/skyrimspecialedition/mods/69993) mod. However, online play is still possible via leveraging Steam's [Remote Play Together](https://store.steampowered.com/remoteplay) with [Remote Play Whatever](https://github.com/m4dEngi/RemotePlayWhatever) or via streaming with [Parsec](https://parsec.app/). Your mileage may vary.
-- This mod requires that ***at least two XInput-compatible controllers*** are plugged into your computer before starting a co-op session.
+- First and foremost, ***expect a decent amount of jankiness/clunkiness***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply player 1 features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
+- The mod is meant to be played locally and ***is NOT a fully-fledged multiplayer experience*** like the incredible [Skyrim Together Reborn](https://www.nexusmods.com/skyrimspecialedition/mods/69993) mod. Online play is still possible via leveraging Steam's [Remote Play Together](https://store.steampowered.com/remoteplay) with [Remote Play Whatever](https://github.com/m4dEngi/RemotePlayWhatever) or via streaming with [Parsec](https://parsec.app/). Your mileage may vary.
+- This mod requires plugging ***at least two XInput-compatible controllers*** into your computer before starting a co-op session.
 - Almost all of the mod's testing was done on ***Skyrim version 1.5.97***, so for the most stable experience, your best bet is to downgrade your Skyrim installation to this version.
 - If you are playing ***Skyrim***, enable 'ALYSLC.esp' and disable 'ALYSLC Enderal.esp' in your load order. Otherwise, if you are playing ***Enderal***, enable 'ALYSLC Enderal.esp' and disable 'ALYSLC.esp'.
 - After installing the mod for the first time, always ***start a new playthrough and dedicate the playthrough to co-op***. Minimize progressing player 1's character outside of co-op.
@@ -139,10 +142,11 @@ Install the following mods + all their prerequisites:
 - [SKSE64](https://skse.silverlock.org/)
 - [SkyUI](https://www.nexusmods.com/skyrimspecialedition/mods/12604)
 - [Address Library](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
-- [Face Discoloration Fix](https://www.nexusmods.com/skyrimspecialedition/mods/42441)
 - [MCM Helper](https://www.nexusmods.com/skyrimspecialedition/mods/53000)
 - [PapyrusExtender](https://www.nexusmods.com/skyrimspecialedition/mods/22854)
 - [PapyrusUtil SE](https://www.nexusmods.com/skyrimspecialedition/mods/13048)
+- [Party Combat Parameters (SE Only)](https://www.nexusmods.com/skyrimspecialedition/mods/57127)
+   - Note: Provides essential functionality by showing Health/Magicka/Stamina and other useful stats for companion players. Unfortunately, the mod is not compatible with AE, so for the moment, installing [TrueHUD](https://www.nexusmods.com/skyrimspecialedition/mods/62775) is the best alternative if sticking with AE.
 - [Precision](https://www.nexusmods.com/skyrimspecialedition/mods/72347)
 - [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561)
    - Note: Already comes packaged with Enderal, so no need to install separately unless you’re only playing Skyrim.
@@ -156,20 +160,20 @@ Additional mods which are highly recommended, but not required for this mod to f
    - Seamlessly switch between controller and keyboard + mouse inputs.
 - [Detection Meter SE](https://www.nexusmods.com/skyrimspecialedition/mods/63057), [Detection Meter AE](https://www.nexusmods.com/skyrimspecialedition/mods/77350)
    - Properly show detection levels for player 1 while sneaking when the co-op camera is active.
-- [Party Combat Parameters (SE Only)](https://www.nexusmods.com/skyrimspecialedition/mods/57127)
-   - Shows Health/Magicka/Stamina and more useful stats for companion players.
+- [Face Discoloration Fix](https://www.nexusmods.com/skyrimspecialedition/mods/42441)
+	- Removes the face and body tone mismatch and neck seam issues when customizing companion players' appearances.
 - [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
    - Companion players can further customize their characters to their liking through the NPC editor suite.
 - [Quick Loot RE/EE](https://www.nexusmods.com/skyrimspecialedition/mods/21085)
     - Players can hover their crosshairs over a container to trigger and use the QuickLoot menu.
 - [Skyrim Souls RE](https://www.nexusmods.com/skyrimspecialedition/mods/27859)
-   - Unpause most menus, drastically improving the flow of co-op, since other players that are not in control of menus can still move and interact with certain objects. This mod has been developed, for the most part, with Skyrim Souls active.
+   - Unpause most menus, drastically improving the flow of co-op, since other players that are not in control of menus can still move and interact with certain objects. This mod has been developed, for the most part, with Skyrim Souls active. ***Highly recommended***.
 - [SSE Engine Fixes](https://www.nexusmods.com/skyrimspecialedition/mods/17230)
    - Fixes many bugs present in vanilla Skyrim.
 - [Super Fast Get Up Animation](https://www.nexusmods.com/skyrimspecialedition/mods/46714)
    - Regain control of your player characters faster after ragdolling.
 - [TrueHUD](https://www.nexusmods.com/skyrimspecialedition/mods/62775) 
-   - Displays floating health bars, boss health bars, and dynamic UI updates, all while being fully customizable.
+   - Displays floating health bars, boss health bars, and dynamic UI updates, all while being fully customizable. ***Highly recommended***.
 
 ### Known Issues and Tips and Tricks
 Certain systems were built to work around player 1-exclusivity or around restrictions that the game places on NPCs. Using the ***debug binds (see the mod's MCM for details)*** and additional options in the ***Debug Menu*** (opened by holding the `Start` button and then pressing the `Back` button by default) is highly recommended for fixing issues that arise during gameplay.
@@ -177,42 +181,43 @@ Certain systems were built to work around player 1-exclusivity or around restric
 #### The following features are more likely to bug out at times and require user intervention to fix:
 - Equipping/unequipping gear and player equipment selection.
     - Player can lock up or have the wrong gear equipped.
-    - The Favorites and Magic Menu selected entries reset when a companion player equips an item.
+    - The Favorites and Magic Menu selected entries reset when a companion player equips an item and must be refreshed by moving one category over and back again, which will reset the selected entry. Still looking for a seamless solution.
     - Ammo must be equipped 1 unit at a time for companion players to avoid creation of new inventory entries each time the ammo is equipped and to avoid issues with unequipping a large quantity of ammo at once.
 - Player revive system.
     - 'All or nothing' system to incentivize team play: if one player dies, all players die.
     - Refrain from saving while a player is downed.
-    - The game may sometimes consider P1 as dead after they are downed, which can bug out certain spells (such as Vigilant's weapon arts) or interactions (such as interacting with Myrad Keepers in Enderal). Must load a save made before the bug appeared to fix.
+    - The game may sometimes consider player 1 as dead after they are downed, which can bug out certain spells (such as Vigilant's weapon arts) or interactions (such as interacting with Myrad Keepers in Enderal). Must load a save made before the bug appeared to fix.
 - Menu control assignment.
     - Since the mod cannot always determine the triggering source of certain menus, such as Message Box menus triggered externally by scripts, the wrong player can gain control of menus at times. A colored border that matches the menu-controlling player's crosshair color is drawn around the screen to indicate which player is in charge of menus.
-    - Refrain from opening load doors, fast-traveling, or saving while menus are open, especially if a companion player is controlling menus. Data from the companion player (ex. name, race name, skill levels, or inventory) may still be copied to P1 when the game saves, which can only be undone by reloading an older save.
+    - Refrain from opening load doors, fast-traveling, or saving while menus are open, especially if a companion player is controlling menus. Data from the companion player (ex. name, race name, skill levels, or inventory) may still be copied to player 1 when the game saves, which can only be undone by reloading an older save.
 
 #### The following systems are not fully implemented or have some issues:
 - Projectile trajectory adjustments:
     - Predictive projectiles are not accurate when targeting fast-moving targets, such as dragons, because angular momentum is not taken into account as of now and NPC targets accelerate erratically. Consider switching to homing projectiles instead.
     - Certain enemies are difficult to hit, such as mudcrabs, because ~~they are the strongest beings in Tamriel~~ some of their model's targetable nodes protrude from their collision capsule and do not collide with projectiles.
-    - Beam projectiles, such as Lightning Bolt, fail to hit targets more often than other types of projectiles.
+    - Beam projectiles, such as Lightning Bolt, fail to hit targets at times, especially when fired along sloped terrain.
 - Staff usage for companion players:
     - No animations when casting.
     - Enchantment charging not implemented.
 - Torso and arm node adjustments:
-    - Blending only implemented for torso nodes.
-    - Collisions are not always accurate when spinal rotation is modified.
-    - Attacking a target when looking straight up or down leads to some pretty odd looking animations.
+    - Motion can spazz out at times.
+    - Nodes will sometimes snap back to their default orientations when the player resets their aim.
+    - Node positions do not match their associated collision capsules when spinal rotation is modified, which can lead to inaccurate collisions. Looking into a fix on my end.
+    - Attacking a target when looking straight up or down leads to some pretty odd looking animations at times.
 
 #### The following systems do not support fundamental or sweeping changes from other mods:
 - Player progression:
-    - Per-player progression only supports 1 perk point gained and 1 health/magicka/stamina levelup per level. Any mod which changes these points allotted on level up will likely break the per-player progression system of this mod.
-    - P1-specific sources of XP are not synchronized with other players.
+    - Per-player progression only supports 1 perk point gained and a health/magicka/stamina levelup per level. Any mod which changes these allotted points on level up will likely break the per-player progression system of this mod.
+    - Player 1-specific sources of XP are not synchronized with other players.
     - Not all perks in Skyrim's perk tree will apply to other players when unlocked. Example: the "Eagle Eye" Archery perk.
-    - Vampire/werewolf transformation perk trees only apply to P1 and not all powers are supported yet for companion players.
+    - Vampire/werewolf transformation perk trees only apply to player 1 and not all powers are supported yet for companion players.
 - Player 1's controlmap and the camera.
-    - This mod has its own binds system to ensure that all players are working with the same base controls ***while the co-op camera is active***. However, in order to trigger some P1-exclusive events with companion players, P1 input events are emulated and sent out to the game's control handlers, as if P1 were the source of those inputs. Any mod which remaps or disables controls could cause issues with this system. In addition, using the default controlmap if you are playing co-op is highly recommended.
-    - Also, playing without the co-op camera active is an option, but it hasn't been extensively tested, and certain binds, such as the 'Revive' bind will not work for P1 unless the co-op camera is active.
+    - This mod has its own binds system to ensure that all players are working with the same base controls ***while the co-op camera is active***. In order to trigger some player 1-exclusive events with companion players, player 1 input events are emulated and sent out to the game's control handlers, as if player 1 were the source of those inputs. Any mod which remaps or disables controls could cause issues with this system. Thus, using the default controlmap if you are playing co-op is highly recommended.
+    - Also, playing without the co-op camera active is an option, but it hasn't been extensively tested, and certain binds, such as the 'Revive' bind will not work for player 1 unless the co-op camera is active.
 
 #### Common Troubleshooting Tips
-- The game forcibly equips the gear it views as best-in-slot onto NPCs at certain times (example: when an item is added or equipped). This mod has a workaround in place to validate the equip state for companion players, but sometimes, players may still have their desired items unequipped or their character  may begin stuttering when moving/attacking. If this happens, try using the ***'Debug: Re-equip Items in Hands'***, ***'Debug: Refresh Player Managers'***, or ***'Debug: Reset Player'*** binds and see if it corrects the issue. If the issue persists, try the ***'Reset Player' Debug Menu player option***.
-- If the Summoning or Debug menus fail to open or if a player's inputs aren't being recognized, ***try tabbing out and then tabbing back in***. This will happen when the game doesn't have focus.
+- The game forcibly equips the gear it views as best-in-slot onto NPCs at certain times (example: when an item is added or equipped). This mod has a workaround in place to validate the equip state for companion players, but sometimes, players may still have their desired items unequipped or their character may begin stuttering when moving/attacking. If this happens, try using the ***'Debug: Re-equip Items in Hands'***, ***'Debug: Refresh Player Managers'***, or ***'Debug: Reset Player'*** binds and see if it corrects the issue. If the issue persists, try the ***'Reset Player' Debug Menu player option***.
+- If the Summoning or Debug menus fail to open or if a player's inputs aren't recognized, ***try tabbing out and then tabbing back in***. This will sometimes happen when the game doesn't have focus.
 - If the physics system has bugged out and the player is frozen, warped, or otherwise unresponsive, attempt to reset the player with either ***'Debug: Ragdoll Player'*** or ***'Debug: Reset Player'***. Or flop. Flopping solves a lot of problems from my experience.
 - If a companion player is controlling menus when they shouldn't be, opening the ***Debug Menu*** with any player and selecting ***'Stop Menu Input Manager'*** may resolve the issue.
 - If the player crosshairs or the menu control outline is not showing, ***pause and unpause the game***, which should force the mod's overlay menu to open and fix the problem.
@@ -226,11 +231,11 @@ Certain systems were built to work around player 1-exclusivity or around restric
 Mods which ***exclusively apply their changes to player 1 will NOT be fully compatible*** with this mod, since their changes will not apply to other summoned companion players.
 Examples of such mods include:
 - Mods that add new spells with attached scripts that check if the effect target is player 1 before applying the effect.
-- Mods that provide player exclusive animations.
+- Mods that provide player 1-exclusive animations.
 - Mods that change the death system for player 1.
 - Mods that add new keybinds.
 - Mods that modify the camera will have no effect at best or contribute to crashes at worst.
-- Mods that introduce new, player-centric mechanics.
+- Mods that introduce new, player 1-centric mechanics.
 A compatibility patch would be required in the future if I have the time to deploy both a Papyrus scripting framework and an SKSE plugin interface.  
 
 #### Shortlist of Tested Incompatible Mods
@@ -245,18 +250,18 @@ Degrees of incompatibility:
 - `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
 - `[SE/AE] HEAVY`: [Persistent Favorites](https://www.nexusmods.com/skyrimspecialedition/mods/118174)
-   - Reproducible crash when opening the Favorites Menu a second time with a companion player. Possibly a conflict when ALYSLC adds an item to P1 to favorite it for a companion player that is opening the Favorites Menu. Only solution for now is to remove the mod while playing co-op.
+   - Reproducible crash when opening the Favorites Menu a second time with a companion player. Possibly a conflict when ALYSLC adds an item to player 1 to favorite it for a companion player that is opening the Favorites Menu. Only solution for now is to remove the mod while playing co-op.
 - `[SE/AE] LIGHT`: [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252)
-   - Having the mod active while using the co-op camera can lead to sporadic raycasting crashes. For now, until a solution is bound, uninstall/disable SmoothCam with a hotkey if using the co-op camera while playing co-op.
+   - Having the mod active while using the co-op camera can lead to sporadic raycasting crashes. For now, until a solution is found, uninstall/disable SmoothCam with a hotkey if using the co-op camera while playing co-op.
 - `[AE] (Maybe) HEAVY`: [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
    - ***Might*** interfere with ALYSLC's system for player movement ONLY on AE. If player 1 is sliding around and not moving in the direction of the left stick, please uninstall TDM temporarily before playing co-op, at least until I find the issue on my end.
 - `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
-   - Essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
+   - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
 ## [Developer's Note]
-I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a ***fun*** multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
+I started developing this mod in January of 2021 without ever coding a personal project in C++ and without much programming knowledge at all. The mission: craft a fun multiplayer experience with as few concessions as possible, allowing each player to feel as if they were player 1 and not just a controllable NPC (even though under the hood, that is essentially what companion players 2-4 are).
 
-Over the intervening time period, I've probably clocked in close to 10k hours and ***have decided to take a break from active development, primarily due to health concerns***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing local multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
+Over the intervening time period, I've probably clocked in close to 9k hours and ***have decided to take a break from active development, primarily due to health concerns***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected when implementing local multiplayer in a singleplayer game, especially with my complete lack of reverse-engineering knowledge and very limited programming knowledge in general. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
 
 And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
 ***Experiencing Skyrim with friends and family — with adventurers like you!***
