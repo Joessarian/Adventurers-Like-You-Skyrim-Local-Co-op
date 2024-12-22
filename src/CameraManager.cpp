@@ -24,8 +24,12 @@ namespace ALYSLC
 		camCollisionFocusPoint = 
 		camCollisionOriginPoint = 
 		camCollisionTargetPos = 
-		camCollisionTargetPos2 = RE::NiPoint3();
-		camFocusPoint = camLockOnFocusPoint = camOriginPoint = camOriginPointDirection = camTargetPos = RE::NiPoint3();
+		camCollisionTargetPos2 =
+		camFocusPoint = 
+		camLockOnFocusPoint = 
+		camOriginPoint = 
+		camOriginPointDirection = 
+		camTargetPos = RE::NiPoint3();
 		camMaxAnchorPointZCoord = camMinAnchorPointZCoord = 0.0f;
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 		playerCam = RE::PlayerCamera::GetSingleton();
@@ -66,20 +70,23 @@ namespace ALYSLC
 			Settings::fSecsCamMovementYawUpdate
 		);
 		// State bools.
+		delayedZoomInUnderExteriorRoof = false;
+		delayedZoomOutUnderExteriorRoof = false;
 		exteriorCell = false;
 		isAutoTrailing = true;
 		isManuallyPositioned = false;
 		isLockedOn = false;
 		isTogglingPOV = false;
-		lockOnTargetInSight = false;
 		lockInteriorOrientationOnInit = false;
+		lockOnTargetInSight = false;
 		toggleBindPressedWhileWaiting = false;
 		waitForToggle = false;
-		delayedZoomInUnderExteriorRoof = false;
-		delayedZoomOutUnderExteriorRoof = false;
 		// Positional offset floats.
 		avgPlayerHeight = 100.0f;
-		camBaseRadialDistance = camCollisionRadialDistance = camTargetRadialDistance = camSavedBaseRadialDistance = 400.0f;
+		camBaseRadialDistance = 
+		camCollisionRadialDistance = 
+		camTargetRadialDistance = 
+		camSavedBaseRadialDistance = 400.0f;
 		camBaseFocusPointZOffset = camFocusPointZOffset = 0.0f;
 		// Rotation floats.
 		camBaseTargetPosPitch = camTargetPosPitch = 0.0f;
@@ -136,6 +143,7 @@ namespace ALYSLC
 				playerCam->currentState->id == RE::CameraState::kFurniture ||
 				playerCam->currentState->id == RE::CameraState::kBleedout
 			);
+			// Auto-switch back to the third person camera state if currently not in a supported state.
 			if (!isTogglingPOV && playerCam && playerCam->currentState && !isInSupportedCamState)
 			{
 				ToThirdPersonState(playerCam->currentState->id == RE::CameraState::kFirstPerson);
@@ -160,6 +168,7 @@ namespace ALYSLC
 			prevCamState = camState;
 			if (!isTogglingPOV)
 			{
+				// Set base interpolation factor.
 				if (camState == CamState::kManualPositioning) 
 				{
 					camInterpFactor = Settings::fCamManualPosInterpFactor;
@@ -174,6 +183,7 @@ namespace ALYSLC
 					);
 				}
 
+				// Framerate dependent factor.
 				camFrameDepInterpFactor = min(1.0f, *g_deltaTimeRealTime * 60.0f * camInterpFactor);
 
 				UpdateParentCell();
@@ -226,6 +236,7 @@ namespace ALYSLC
 					UpdateCamRotation();
 				}
 
+				// Adjust fade for obstructions between the camera and active players.
 				if (Settings::bFadeObstructions)
 				{
 					FadeObstructions();
@@ -240,6 +251,7 @@ namespace ALYSLC
 	void CameraManager::PrePauseTask()
 	{
 		ALYSLC::Log("[CAM] PrePauseTask");
+
 		// Reset no fade flags for all players.
 		SetPlayerFadePrevention(false);
 		// Add back camera-actor collisions before switching to default cam.

@@ -1613,6 +1613,20 @@ namespace ALYSLC
 		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
 		if (auto hitActorRigidBody = Util::GethkpRigidBody(hitActorPtr.get()); hitActorRigidBody)
 		{
+			// TODO: Add impulse without knockdown for less-impactful collisions.
+			/*if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
+			{
+				precisionAPI4->ApplyHitImpulse2
+				(
+					a_hitActorHandle, 
+					coopActor->GetHandle(), 
+					hitActorRigidBody.get(), 
+					ToNiPoint3(a_releasedRefrRigidBody->motion.linearVelocity) * HAVOK_TO_GAME, 
+					TohkVector4(a_contactPos) * GAME_TO_HAVOK, 
+					1.0f
+				);
+			}*/
+
 			Util::PushActorAway(hitActorPtr.get(), a_contactPos, havokImpactSpeed);
 		}
 
@@ -2179,7 +2193,6 @@ namespace ALYSLC
 						{
 							if (auto hitRefrPtr = Util::GetRefrPtrFromHandle(hitRefrHandle); hitRefrPtr)
 							{
-								auto contactPos = ToNiPoint3(hitPos);
 								bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(hitRefrPtr.get());
 								// Add hit refr to cached hit form IDs set.
 								releasedRefrInfo->AddHitRefr(hitRefrPtr.get());
@@ -2188,7 +2201,7 @@ namespace ALYSLC
 									hitActor && hitActor->currentProcess && 
 									hitRefrPtr != releasedRefrPtr && hitRefrPtr != coopActor && !hasAlreadyHitRefr)
 								{
-									HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), releasedRefrRigidBody.get(), contactPos);
+									HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), releasedRefrRigidBody.get(), hitPos);
 								}
 							}
 						}

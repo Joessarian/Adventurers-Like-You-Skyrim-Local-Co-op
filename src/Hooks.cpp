@@ -1684,12 +1684,12 @@ namespace ALYSLC
 					};
 
 					bool p1InMenu = !p1ManagersInactive && glob.menuCID == glob.player1CID;
-					bool skipProcessing = false;
+					bool invalidateEvent = false;
 					if (p1InMenu)
 					{
 						// Check to see if P1 is in the Favorites Menu and is trying to hotkey an entry 
 						// or is trying equip a quickslot item or spell.
-						skipProcessing = CheckForP1HotkeyReq(a_event) || CheckForP1QSEquipReq(a_event);
+						invalidateEvent = CheckForP1HotkeyReq(a_event) || CheckForP1QSEquipReq(a_event);
 					}
 					else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpen())
 					{
@@ -1697,10 +1697,10 @@ namespace ALYSLC
 						// In addition, check for pressing of the default binds:
 						// Pause + Wait -> Co-op Debug Menu
 						// Wait + Pause -> Co-op Summoning Menu binds.
-						skipProcessing = CheckForMenuTriggeringInput(a_event);
+						invalidateEvent = CheckForMenuTriggeringInput(a_event);
 					}
 
-					if (skipProcessing) 
+					if (invalidateEvent) 
 					{
 						auto inputEvent = *a_event;
 						auto idEvent = inputEvent->AsIDEvent();
@@ -1744,20 +1744,23 @@ namespace ALYSLC
 								inputEvent = inputEvent->next;
 							}
 						}
-					}
-					else
-					{
-						skipProcessing = FilterInputEvents(a_event);
-					}
 
-					// Filter out P1 controller inputs that should be ignored while in co-op.
-					if (skipProcessing)
-					{
+						// Should still process the modified, invalidated event.
 						return _ProcessEvent(a_this, a_event, a_eventSource);
 					}
 					else
 					{
-						return EventResult::kContinue;
+						// Filter out P1 controller inputs that should be ignored while in co-op.
+						bool shouldProcessHere = FilterInputEvents(a_event);
+						if (shouldProcessHere) 
+						{
+							return _ProcessEvent(a_this, a_event, a_eventSource);
+						
+						}
+						else
+						{
+							return EventResult::kContinue;
+						}
 					}
 				}
 			}
@@ -1768,8 +1771,9 @@ namespace ALYSLC
 		bool MenuControlsHooks::CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent)
 		{
 			// Check if P1 is trying to open the Summoning/Debug menus.
+			// Return true if the event triggered a co-op menu and should be invalidated.
 
-			bool skipProcessing = false;
+			bool invalidateEvent = false;
 			auto eventHead = *a_constEvent;
 			auto buttonEvent = eventHead->AsButtonEvent(); 
 			if (buttonEvent)
@@ -1840,7 +1844,7 @@ namespace ALYSLC
 									{
 										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
 										glob.onDebugMenuRequest.SendEvent(glob.player1Actor.get(), glob.coopSessionActive ? glob.player1CID : -1);
-										skipProcessing = true;
+										invalidateEvent = true;
 									}
 
 									debugMenuTriggered = true;
@@ -1855,7 +1859,7 @@ namespace ALYSLC
 									{
 										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
 										glob.onSummoningMenuRequest.SendEvent();
-										skipProcessing = true;
+										invalidateEvent = true;
 									}
 
 									summoningMenuTriggered = true;
@@ -1996,12 +2000,13 @@ namespace ALYSLC
 				pauseBindPressedFirst = summoningMenuTriggered = debugMenuTriggered = ignoringPauseWaitEvent = false;
 			}
 
-			return skipProcessing;
+			return invalidateEvent;
 		}
 
 		bool MenuControlsHooks::CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent)
 		{
 			// Check if P1 is trying to hotkey a FavoritesMenu entry.
+			// Return true if the event triggered a hotkey change and should be invalidated.
 
 			auto inputEvent = *a_constEvent;
 			auto ue = RE::UserEvents::GetSingleton();
@@ -2043,6 +2048,8 @@ namespace ALYSLC
 		{
 			// Check if P1 is trying to (un)tag a FavoritesMenu entry 
 			// as a quick slot item/spell.
+			// Return true if the event triggered a QS (un)equip should be invalidated.
+
 			auto inputEvent = *a_constEvent;
 			auto ue = RE::UserEvents::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
@@ -2582,10 +2589,9 @@ namespace ALYSLC
 					// First chain of downward pass recursive calls always has no flags set for the given node.
 					if (a_data.flags == RE::NiUpdateData::Flag::kNone)
 					{
-						const auto nodeNameHash = Hash(a_this->name);
 						// First call is always the NPC base node,
 						// so save the default rotations before any downward pass calls execute.
-						if (nodeNameHash == Hash(strings->npc))
+						if (a_this->name == strings->npc)
 						{
 							p->mm->nom->SavePlayerNodeWorldTransforms(p);
 							// Update default attack position and rotation after saving default node orientation data.

@@ -102,6 +102,7 @@ namespace ALYSLC
 			currentRotation =
 			startingRotation =
 			targetRotation = RE::NiMatrix3();
+			rotationInput.fill(0.0f);
 			interrupted = false;
 			prevInterrupted = false;
 			prevRotationModified = false;
@@ -163,13 +164,13 @@ namespace ALYSLC
 		{
 			defaultNodeLocalTransformsMap.clear();
 			defaultNodeWorldTransformsMap.clear();
-			nodeRotationDataMap.clear();
-			for (const auto& [nodePtr, data] : a_nom.nodeRotationDataMap)
+			nodeNameToRotationDataMap.clear();
+			for (const auto& [nodeHash, data] : a_nom.nodeNameToRotationDataMap)
 			{
 				if (data && data.get()) 
 				{
-					nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
-					auto& newData = nodeRotationDataMap[nodePtr];
+					nodeNameToRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+					auto& newData = nodeNameToRotationDataMap[nodeHash];
 					newData->blendInFrameCount = data->blendInFrameCount;
 					newData->blendOutFrameCount = data->blendOutFrameCount;
 					newData->blendStatus = data->blendStatus;
@@ -191,15 +192,20 @@ namespace ALYSLC
 
 		NodeOrientationManager& operator=(NodeOrientationManager&& a_nom)
 		{
-			nodeRotationDataMap.swap(a_nom.nodeRotationDataMap);
+			nodeNameToRotationDataMap.swap(a_nom.nodeNameToRotationDataMap);
 			return *this;
 		}
 
 		inline void ClearCustomRotation(const RE::NiPointer<RE::NiAVObject>& a_nodePtr)
 		{
-			if (nodeRotationDataMap.contains(a_nodePtr))
+			if (!a_nodePtr || !a_nodePtr.get())
 			{
-				if (auto& data = nodeRotationDataMap.at(a_nodePtr); data && data.get())
+				return;
+			}
+
+			if (nodeNameToRotationDataMap.contains(a_nodePtr->name))
+			{
+				if (auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); data && data.get())
 				{
 					data->prevInterrupted = data->interrupted;
 					data->prevRotationModified = data->prevRotationModified;
@@ -212,7 +218,7 @@ namespace ALYSLC
 
 		inline void ClearCustomRotations()
 		{
-			for (auto& [_, data] : nodeRotationDataMap)
+			for (auto& [_, data] : nodeNameToRotationDataMap)
 			{
 				data->prevInterrupted = data->interrupted;
 				data->prevRotationModified = data->prevRotationModified;
@@ -224,6 +230,10 @@ namespace ALYSLC
 
 		// Apply our custom rotation to the given node.
 		void ApplyCustomNodeRotation(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_nodePtr);
+
+		// Check if the player's arm nodes come into contact with another object
+		// and trigger an impact impulse/knockdown and apply damage if so.
+		void CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Debug function to display rotation axes for player nodes.
 		void DisplayAllNodeRotations(const std::shared_ptr<CoopPlayer>& a_p);
@@ -240,6 +250,11 @@ namespace ALYSLC
 		// Returns true if a custom cached rotation was set for the given node.
 		// Can check for the node in either the set of adjustable arm nodes or torso nodes.
 		bool NodeWasAdjusted(const RE::NiPointer<RE::NiAVObject>& a_nodePtr);
+
+		// Apply arm hit impulse to raycast-hit objects.
+		// TODO: Do away with raycasts for collision checks
+		// and use an active collider enclosing the player's arm nodes instead.
+		bool PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType);
 
 		// Restore saved node local transforms previously set by the game before our modifications.
 		void RestoreOriginalNodeLocalTransforms(const std::shared_ptr<CoopPlayer>& a_p);
@@ -308,8 +323,18 @@ namespace ALYSLC
 		// IMPORTANT: Lock before reading/adjusting any nodes' rotations
 		// managed by this manager.
 		std::mutex rotationDataMutex;
-		// Maps adjustable nodes by node name hash to their corresponding custom rotation data.
-		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::unique_ptr<NodeRotationData>> nodeRotationDataMap;
+		// Maps adjustable nodes by node name to their corresponding custom rotation data.
+		// IMPORTANT NOTE:
+		// I have not found out how to adjust Precision's cloned nodes directly in the Havok physics callback
+		// because NiAVObject's GetObjectByName() only returns the original node with that name.
+		// So for Precision compatibility, the adjustable nodes names are used as a key
+		// which allows the node check in the UpdateDownwardPass() hook to recognize
+		// Precision's cloned nodes, which have the same names as the original nodes,
+		// and apply our custom rotations to those nodes as well.
+		// This consistency ensures that Precision collisions will occur at our modified nodes' locations.
+		// Debug node: Toggle on skeleton colliders in Precision's MCM to see if the colliders 
+		// properly encapsulate the adjusted nodes.
+		std::unordered_map<RE::BSFixedString, std::unique_ptr<NodeRotationData>> nodeNameToRotationDataMap;
 		// Maps all player node name hashes to their default local transforms
 		// set by the game before our modifications.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, RE::NiTransform> defaultNodeLocalTransformsMap;

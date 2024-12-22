@@ -3024,6 +3024,11 @@ namespace ALYSLC
 		// If the node's rotation is handled by our node orientation manager,
 		// apply our custom rotation to the given node.
 
+		if (!a_nodePtr || !a_nodePtr.get())
+		{
+			return;
+		}
+
 		// Check if a supported node first.
 		bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE.contains(a_nodePtr->name);
 		bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE.contains(a_nodePtr->name);
@@ -3033,9 +3038,9 @@ namespace ALYSLC
 			return;
 		}
 
-		if (nodeRotationDataMap.contains(a_nodePtr))
+		if (nodeNameToRotationDataMap.contains(a_nodePtr->name))
 		{
-			const auto& data = nodeRotationDataMap[a_nodePtr];
+			const auto& data = nodeNameToRotationDataMap[a_nodePtr->name];
 
 			// Set default rotation.
 			data->defaultRotation = a_nodePtr->local.rotate;
@@ -3045,6 +3050,199 @@ namespace ALYSLC
 			if (isTorsoNode || Settings::bRotateArmsWhenSheathed)
 			{
 				a_nodePtr->local.rotate = data->currentRotation;
+			}
+		}
+	}
+
+	void NodeOrientationManager::CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p)
+	{
+		// Setup raycasting start and end positions
+		// along the lengths of the player's arms (approximation).
+		// Then perform said raycasts and check for collisions.
+		// Finally, if certain conditions hold, apply impulses/knockdowns/damage to hit objects.
+
+		if (!glob.coopSessionActive)
+		{
+			return;
+		}
+
+		const auto strings = RE::FixedStrings::GetSingleton();
+		if (!strings)
+		{
+			return;
+		}
+
+		// Not moving the right stick, so no need to check for collisions.
+		const auto& rsLinSpeed = glob.cdh->GetAnalogStickState(a_p->controllerID, false).stickLinearSpeed;
+		if (rsLinSpeed == 0.0f)
+		{
+			return;
+		}
+
+		auto loadedData = a_p->coopActor->loadedData;
+		if (!loadedData)
+		{
+			return;
+		}
+
+		auto data3D = loadedData->data3D;
+		if (!data3D || !data3D->parent)
+		{
+			return;
+		}
+
+		{
+			std::unique_lock<std::mutex> lock(rotationDataMutex);
+			const auto& uiRGBA = Settings::vuOverlayRGBAValues[a_p->playerID];
+			std::vector<RE::BSFixedString> nodeNamesToCheck{};
+			bool checkLeftArm = a_p->pam->IsPerformingOneOf(InputAction::kRotateLeftShoulder, InputAction::kRotateLeftForearm, InputAction::kRotateLeftHand);
+			bool checkRightArm = a_p->pam->IsPerformingOneOf(InputAction::kRotateRightShoulder, InputAction::kRotateRightForearm, InputAction::kRotateRightHand);
+			if (checkLeftArm)
+			{
+				nodeNamesToCheck.emplace_back("NPC L Hand [LHnd]");
+				nodeNamesToCheck.emplace_back(strings->npcLForearm);
+				nodeNamesToCheck.emplace_back(strings->npcLUpperArm);
+			}
+
+			if (checkRightArm)
+			{
+				nodeNamesToCheck.emplace_back("NPC R Hand [RHnd]");
+				nodeNamesToCheck.emplace_back("NPC R Forearm [RLar]");
+				nodeNamesToCheck.emplace_back(strings->npcRUpperArm);
+			}
+
+			const uint32_t raycastsPerNode = 10;
+			for (const auto& name : nodeNamesToCheck)
+			{
+				if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(name)); nodePtr && nodePtr.get())
+				{
+					// Update position and velocity first.
+					const auto& playerPos = a_p->coopActor->data.location;
+					const auto& nodeWorldPos = nodePtr->world.translate;
+					RE::NiPoint3 localPos = nodeWorldPos - playerPos;
+					if (!nodeNameToRotationDataMap.contains(nodePtr->name))
+					{
+						// Reset rotation and position to current values.
+						const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+						newData->currentRotation =
+						newData->defaultRotation =
+						newData->startingRotation =
+						newData->targetRotation = nodePtr->local.rotate;
+						newData->localPosition = localPos;
+					}
+
+					const auto& nodeData = nodeNameToRotationDataMap[nodePtr->name];
+					RE::NiPoint3 velocity = (localPos - nodeData->localPosition) / (*g_deltaTimeRealTime);
+					nodeData->localPosition = localPos;
+					nodeData->localVelocity = velocity;
+
+					ArmNodeType armNodeType = ArmNodeType::kShoulder;
+					if (nodePtr->name == "NPC L Hand [LHnd]" || nodePtr->name == "NPC R Hand [RHnd]")
+					{
+						armNodeType = ArmNodeType::kHand;
+					}
+					else if (nodePtr->name == strings->npcLForearm || nodePtr->name == "NPC R Forearm [RLar]")
+					{
+						armNodeType = ArmNodeType::kForearm;
+					}
+
+					if (auto armHkpRigidBody = Util::GethkpRigidBody(nodePtr.get()); armHkpRigidBody && armHkpRigidBody.get())
+					{
+						if (auto hkpShape = armHkpRigidBody->GetShape(); hkpShape->type == RE::hkpShapeType::kCapsule)
+						{
+							auto hkpCapsuleShape = static_cast<const RE::hkpCapsuleShape*>(hkpShape);
+							RE::NiPoint3 vertexA;
+							RE::NiPoint3 vertexB;
+							RE::NiPoint3 zAxisDir;
+							const float& capsuleRadius = hkpCapsuleShape->radius;
+							// Special raycast offset and rotation handling for hand nodes,
+							// since rigidbody capsule axes don't line up with the hands' node orientations.
+							if (armNodeType == ArmNodeType::kHand)
+							{
+								zAxisDir = RE::NiPoint3
+								(
+									nodePtr->world.rotate.entry[0][2],
+									nodePtr->world.rotate.entry[1][2],
+									nodePtr->world.rotate.entry[2][2]
+								);
+								zAxisDir.Unitize();
+
+								RE::NiPoint3 handCenterPos = nodePtr->world.translate + zAxisDir * capsuleRadius * 1.5f;
+								if (zAxisDir.z > 0.0f)
+								{
+									vertexA = handCenterPos + zAxisDir * capsuleRadius;
+									vertexB = handCenterPos - zAxisDir * capsuleRadius;
+								}
+								else
+								{
+									vertexA = handCenterPos - zAxisDir * capsuleRadius;
+									vertexB = handCenterPos + zAxisDir * capsuleRadius;
+								}
+							}
+							else
+							{
+								const auto& hkTransform = armHkpRigidBody->motion.motionState.transform;
+								RE::NiPoint3 vertAOffset = ToNiPoint3(hkpCapsuleShape->vertexA) * HAVOK_TO_GAME;
+								RE::NiPoint3 vertBOffset = ToNiPoint3(hkpCapsuleShape->vertexB) * HAVOK_TO_GAME;
+								RE::NiTransform niTransform;
+								niTransform.scale = 1.0f;
+								niTransform.translate = ToNiPoint3(hkTransform.translation) * HAVOK_TO_GAME;
+								niTransform.rotate.entry[0][0] = hkTransform.rotation.col0.quad.m128_f32[0];
+								niTransform.rotate.entry[1][0] = hkTransform.rotation.col0.quad.m128_f32[1];
+								niTransform.rotate.entry[2][0] = hkTransform.rotation.col0.quad.m128_f32[2];
+
+								niTransform.rotate.entry[0][1] = hkTransform.rotation.col1.quad.m128_f32[0];
+								niTransform.rotate.entry[1][1] = hkTransform.rotation.col1.quad.m128_f32[1];
+								niTransform.rotate.entry[2][1] = hkTransform.rotation.col1.quad.m128_f32[2];
+
+								niTransform.rotate.entry[0][2] = hkTransform.rotation.col2.quad.m128_f32[0];
+								niTransform.rotate.entry[1][2] = hkTransform.rotation.col2.quad.m128_f32[1];
+								niTransform.rotate.entry[2][2] = hkTransform.rotation.col2.quad.m128_f32[2];
+								vertexA = niTransform * vertAOffset;
+								vertexB = niTransform * vertBOffset;
+								RE::NiPoint3 temp = (vertexA.z > vertexB.z) ? vertexA - vertexB : vertexB - vertexA;
+								temp.Unitize();
+								zAxisDir = { temp.x, temp.y, temp.z };
+							}
+
+							// Extend a little past the capsule edges for some overlap between nodes.
+							const glm::vec4 zAxisDirVec = ToVec4(zAxisDir);
+							float capsuleLength = (vertexB - vertexA).Length() + 2.5f * hkpCapsuleShape->radius * HAVOK_TO_GAME;
+							glm::vec4 originPos =
+							(
+								vertexA.z > vertexB.z ?
+								ToVec4(vertexB - zAxisDir * hkpCapsuleShape->radius) :
+								ToVec4(vertexA - zAxisDir * hkpCapsuleShape->radius)
+							);
+							RE::hkVector4 velVec{};
+							glm::vec4 velDir{};
+							glm::vec4 startPos{};
+							glm::vec4 endPos{};
+							uint32_t castNum = 1;
+							bool hit = false;
+							while (!hit && castNum <= raycastsPerNode)
+							{
+								startPos = originPos + (zAxisDirVec * (capsuleLength / raycastsPerNode)) * static_cast<float>(castNum);
+								velVec = armHkpRigidBody->motion.GetPointVelocity(TohkVector4(startPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME;
+								velDir = ToVec4(velVec, true);
+								endPos = startPos + (velDir * hkpCapsuleShape->radius * 2.0f * HAVOK_TO_GAME);
+								hit = PerformArmCollisionRaycastCheck
+								(
+									a_p,
+									startPos,
+									endPos,
+									nodeData->localVelocity,
+									ToNiPoint3(velVec),
+									armNodeType
+								);
+
+								// REMOVE when done debugging.
+								//DebugAPI::QueueArrow3D(startPos, endPos, Settings::vuOverlayRGBAValues[a_p->playerID], 5.0f, 2.0f, 0.0f);
+								++castNum;
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -3132,7 +3330,7 @@ namespace ALYSLC
 
 		defaultNodeLocalTransformsMap.clear();
 		defaultNodeWorldTransformsMap.clear();
-		nodeRotationDataMap.clear();
+		nodeNameToRotationDataMap.clear();
 
 		// Return early if the player's loaded 3D data is invalid.
 		auto loadedData = a_p->coopActor->loadedData;
@@ -3154,7 +3352,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get()) 
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 
@@ -3163,7 +3367,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 
@@ -3172,7 +3382,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 	}
@@ -3201,7 +3417,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 
@@ -3210,7 +3432,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 	}
@@ -3239,7 +3467,13 @@ namespace ALYSLC
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
 			{
-				nodeRotationDataMap.insert_or_assign(nodePtr, std::make_unique<NodeRotationData>());
+				// Reset rotation and position to current values.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(nodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = nodePtr->local.rotate;
+				newData->localPosition = nodePtr->world.translate - a_p->coopActor->data.location;
 			}
 		}
 	}
@@ -3249,11 +3483,164 @@ namespace ALYSLC
 		// Returns true if a custom cached rotation was set for the given node.
 		// Can check for the node name hash in either the set of adjustable arm nodes or torso nodes.
 
-		if (nodeRotationDataMap.contains(a_nodePtr)) 
+		if (!a_nodePtr || !a_nodePtr.get())
 		{
-			if (const auto& data = nodeRotationDataMap.at(a_nodePtr); data && data.get()) 
+			return false;
+		}
+
+		if (nodeNameToRotationDataMap.contains(a_nodePtr->name)) 
+		{
+			if (const auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); data && data.get()) 
 			{
 				return data->rotationModified;
+			}
+		}
+
+		return false;
+	}
+
+	bool NodeOrientationManager::PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType)
+	{
+		// Perform raycast and iterate through results,
+		// applying impulses to hit actors and forces to inanimate objects
+		// at the raycasts' hit positions.
+		// If an actor is hit hard enough
+		// (hit speed above certain thresholds, depending on the connecting node),
+		// knock the actor down and apply damage.
+
+		const auto& rsLinSpeed = glob.cdh->GetAnalogStickState(a_p->controllerID, false).stickLinearSpeed;
+		auto raycastResults = Raycast::GetAllHavokCastHitResults(a_startPos, a_endPos);
+		for (const auto& result : raycastResults)
+		{
+			if (!result.hit || !result.hitObject || !result.hitObject.get())
+			{
+				continue;
+			}
+
+			if (auto hitRefrPtr = RE::TESObjectREFRPtr(Util::GetRefrFrom3D(result.hitObject.get()));
+				hitRefrPtr && hitRefrPtr.get() && Util::HandleIsValid(hitRefrPtr->GetHandle()) && hitRefrPtr != a_p->coopActor)
+			{
+				auto hitActor = hitRefrPtr->As<RE::Actor>();
+				// Direct skeleton hits deform the actor ragdoll much more when and impulse is applied.
+				bool skeletonHit = hitActor && std::string(result.hitObject->name).contains("skeleton");
+				if (auto hitHkpRigidBody = Util::GethkpRigidBody(result.hitObject.get()); hitHkpRigidBody)
+				{
+					Util::NativeFunctions::hkpEntity_Activate(hitHkpRigidBody.get());
+					if (hitActor)
+					{
+						// Stop hit actor from attacking when the slap connects.
+						if (hitActor->IsAttacking())
+						{
+							hitActor->NotifyAnimationGraph("attackStop");
+							hitActor->NotifyAnimationGraph("recoilStart");
+						}
+
+						if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
+						{
+							auto hitPosVec = TohkVector4(result.hitPos) * GAME_TO_HAVOK;
+							auto hitPosPointVel = ToNiPoint3
+							(
+								hitHkpRigidBody->motion.GetPointVelocity(TohkVector4(result.hitPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME
+							);
+							float hitSpeed = a_armPointVelocity.Length();
+							// Knock down if over a certain RS linear speed.
+							bool knockOut = false;
+							switch (a_armNodeType)
+							{
+							case ArmNodeType::kForearm:
+							{
+								knockOut = hitSpeed > 1100.0f;
+								break;
+							}
+							case ArmNodeType::kHand:
+							{
+								knockOut = hitSpeed > 1200.0f;
+								break;
+							}
+							case ArmNodeType::kShoulder:
+							{
+								knockOut = hitSpeed > 800.0f;
+								break;
+							}
+							default:
+								break;
+							}
+
+							// Apply weaker impulse mult when about to ragdoll or when hitting an actor's skeleton.nif,
+							// since the impulse effects are more pronounced by default in these two cases.
+							float impulseMult = 1.0f;
+							if (knockOut)
+							{
+								impulseMult = 0.5f;
+							}
+							else if (skeletonHit)
+							{
+								impulseMult = 0.6f;
+							}
+							else
+							{
+								impulseMult = 1.0f;
+							}
+
+							precisionAPI4->ApplyHitImpulse2
+							(
+								hitActor->GetHandle(), 
+								a_p->coopActor->GetHandle(), 
+								hitHkpRigidBody.get(), 
+								a_armPointVelocity, 
+								hitPosVec, 
+								impulseMult
+							);
+							// Damage scales with thrown object damage.
+							if (knockOut)
+							{
+								const auto handle = hitRefrPtr->GetHandle();
+								a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+								a_p->tm->rmm->ClearGrabbedRefr(handle);
+								if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
+								{
+									a_p->tm->SetIsGrabbing(false);
+								}
+
+								a_p->tm->rmm->AddReleasedRefr(a_p, handle);
+							}
+
+							// REMOVE when done debugging.
+							/*DebugAPI::QueuePoint3D(result.hitPos, Settings::vuOverlayRGBAValues[a_p->playerID], a_armPointVelocity.Length() / 200.0f, 1.0f);
+							ALYSLC::Log("[GLOB] PerformArmCollisionRaycastCheck: {} hit {} (0x{:X}, {}, {}) with {} node, RS lin speed {}, impulse mult {}, and node/point velocity {}, {}. Hit pos point vel: {}, rel vels: {}, {}. {}",
+								a_p->coopActor->GetName(),
+								hitRefrPtr->GetName(),
+								hitRefrPtr->formID,
+								hitRefrPtr->GetBaseObject() ? *hitRefrPtr->GetBaseObject()->formType : RE::FormType::None,
+								result.hitObject->name,
+								a_armNodeType == ArmNodeType::kForearm ? "forearm" : a_armNodeType == ArmNodeType::kHand ? "hand" : "shoulder",
+								rsLinSpeed,
+								impulseMult,
+								a_armNodeVelocity.Length(),
+								a_armPointVelocity.Length(),
+								hitPosPointVel.Length(),
+								(a_armNodeVelocity - hitPosPointVel).Length(),
+								(a_armPointVelocity - hitPosPointVel).Length(),
+								knockOut ? "KO!" : "SLAPPED!");*/
+						}
+					}
+					else
+					{
+						const auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+						float mass = hitHkpRigidBody->motion.GetMass();
+						RE::hkVector4 hitDirVec = RE::hkVector4(a_armPointVelocity.x, a_armPointVelocity.y, a_armPointVelocity.z, 0.0f);
+						hitDirVec = hitDirVec / hitDirVec.Length3();
+						float hitSpeed = a_armPointVelocity.Length();
+						// Attempt to normalize somewhat based on mass.
+						// Additional force if quickly flicking the RS.
+						// Use RS speed to adjust impulse.
+						float rsImpulseMult = Util::InterpolateEaseIn(1.0f, 1.5f, std::clamp(log(rsLinSpeed) / 3.0f, 0.0f, 1.0f), 3.0f);
+						auto hitVelocityVec = hitDirVec * hitSpeed * std::clamp((hitHkpRigidBody->motion.GetMass() + 1.0f) / 50.0f, 0.0f, 2.0f) * rsImpulseMult * GAME_TO_HAVOK;
+						hitHkpRigidBody->motion.ApplyForce(*g_deltaTimeRealTime * 1000.0f, hitVelocityVec);
+					}
+
+					return true;
+				}
 			}
 		}
 
@@ -3367,9 +3754,14 @@ namespace ALYSLC
 	{
 		// Update the blend status for the given node.
 
-		if (nodeRotationDataMap.contains(a_nodePtr)) 
+		if (!a_nodePtr || !a_nodePtr.get()) 
 		{
-			auto& data = nodeRotationDataMap.at(a_nodePtr); 
+			return;
+		}
+
+		if (nodeNameToRotationDataMap.contains(a_nodePtr->name)) 
+		{
+			auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); 
 			if (!data || !data.get())
 			{
 				return;
@@ -3404,18 +3796,28 @@ namespace ALYSLC
 		}
 
 		// Ensure both nodes are accounted for in the rotation data map.
-		if (!nodeRotationDataMap.contains(a_forearmNodePtr))
+		if (!nodeNameToRotationDataMap.contains(a_forearmNodePtr->name))
 		{
-			nodeRotationDataMap.insert_or_assign(a_forearmNodePtr, std::make_unique<NodeRotationData>());
+			// Set all rotations to the node's current local rotation so we have valid data to start off with.
+			const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(a_forearmNodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+			newData->currentRotation = 
+			newData->defaultRotation = 
+			newData->startingRotation = 
+			newData->targetRotation = a_forearmNodePtr->local.rotate;
 		}
 
-		if (!nodeRotationDataMap.contains(a_handNodePtr))
+		if (!nodeNameToRotationDataMap.contains(a_handNodePtr->name))
 		{
-			nodeRotationDataMap.insert_or_assign(a_handNodePtr, std::make_unique<NodeRotationData>());
+			// Set all rotations to the node's current local rotation so we have valid data to start off with.
+			const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(a_handNodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+			newData->currentRotation = 
+			newData->defaultRotation = 
+			newData->startingRotation = 
+			newData->targetRotation = a_handNodePtr->local.rotate;
 		}
 
-		const auto& forearmData = nodeRotationDataMap[a_forearmNodePtr];
-		const auto& handData = nodeRotationDataMap[a_handNodePtr];
+		const auto& forearmData = nodeNameToRotationDataMap[a_forearmNodePtr->name];
+		const auto& handData = nodeNameToRotationDataMap[a_handNodePtr->name];
 		// Set node target rotations for forearm and hand.
 		bool forearmRotHasBeenSet = forearmData->rotationModified;
 		bool handRotHasBeenSet = handData->rotationModified;
@@ -3961,13 +4363,18 @@ namespace ALYSLC
 		}
 
 		// Ensure the shoulder node is accounted for in rotation data map.
-		if (!nodeRotationDataMap.contains(a_shoulderNodePtr))
+		if (!nodeNameToRotationDataMap.contains(a_shoulderNodePtr->name))
 		{
-			nodeRotationDataMap.insert_or_assign(a_shoulderNodePtr, std::make_unique<NodeRotationData>());
+			// Set all rotations to the node's current local rotation so we have valid data to start off with.
+			const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(a_shoulderNodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+			newData->currentRotation = 
+			newData->defaultRotation = 
+			newData->startingRotation = 
+			newData->targetRotation = a_shoulderNodePtr->local.rotate;
 		}
 
 		// Rotation data we will modify.
-		const auto& shoulderData = nodeRotationDataMap[a_shoulderNodePtr];
+		const auto& shoulderData = nodeNameToRotationDataMap[a_shoulderNodePtr->name];
 		shoulderData->prevInterrupted = shoulderData->interrupted;
 		shoulderData->prevRotationModified = shoulderData->rotationModified;
 		shoulderData->interrupted =
@@ -3994,8 +4401,8 @@ namespace ALYSLC
 			// Set shoulder target rotation as modified.
 			shoulderData->rotationModified = true;
 
-			// Pick RS quadrant/axis based on its displacement.
 			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			// Pick RS quadrant/axis based on its displacement.
 			auto rsLoc = AnalogStickLocation::kCenter;
 			float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
 			float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
@@ -4603,13 +5010,18 @@ namespace ALYSLC
 			}
 				
 			// Ensure the torso node is accounted for in rotation data map.
-			if (!nodeRotationDataMap.contains(torsoNodePtr))
+			if (!nodeNameToRotationDataMap.contains(torsoNodePtr->name))
 			{
-				nodeRotationDataMap.insert_or_assign(torsoNodePtr, std::make_unique<NodeRotationData>());
+				// Set all rotations to the node's current local rotation so we have valid data to start off with.
+				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(torsoNodePtr->name, std::make_unique<NodeRotationData>()).first).second;
+				newData->currentRotation = 
+				newData->defaultRotation = 
+				newData->startingRotation = 
+				newData->targetRotation = torsoNodePtr->local.rotate;
 			}
 
 			// Rotation data we will modify.
-			const auto& torsoData = nodeRotationDataMap[torsoNodePtr];
+			const auto& torsoData = nodeNameToRotationDataMap[torsoNodePtr->name];
 			// Set the rotation state flags before updating the blend state.
 			torsoData->prevInterrupted = torsoData->interrupted;
 			torsoData->prevRotationModified = torsoData->rotationModified;

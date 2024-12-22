@@ -488,10 +488,6 @@ namespace ALYSLC
 		// Checks if this controller can control menus.
 		static bool CanControlMenus(const int32_t& a_controllerID);
 
-		// Check if the player's arm nodes come into contact with another object
-		// and trigger an impact impulse/knockdown and apply damage if so.
-		static void CheckAndPerformArmCollisions(const std::shared_ptr<CoopPlayer>& a_p);
-
 		// If the given argument is a co-op player, get the player's index in the co-op companions list (controller ID).
 		// Return -1 otherwise.
 		static int8_t GetCoopPlayerIndex(const RE::ActorPtr& a_actorPtr);
@@ -1552,12 +1548,7 @@ namespace ALYSLC
 		//
 		// Helpers
 		//
-		
-		// Apply arm hit impulse to raycast-hit objects.
-		// TODO: Do away with raycasts for collision checks 
-		// and use an active collider enclosing the player's arm nodes instead.
-		static bool PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType);
-		
+				
 		// Rescale health, magicka, and stamina AVs to their serialized values for this player.
 		// Use the passed-in base level to determine if the player has leveled up in co-op before rescaling.
 		static void RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel = 1.0f);

@@ -191,13 +191,13 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 
 			// Check if the correct binds were pressed to open the summoning or debug menus.
-			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			// Return true if the input was handled and should be invalidated.
 			static bool CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent);
 			// Check if P1 is in the Favorites Menu and is trying to hotkey an entry.
-			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			// Return true if the input was handled and should be invalidated.
 			static bool CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent);
 			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
-			// Return true if the input was handled and should NOT be processed by the menu controls handler.
+			// Return true if the input was handled and should be invalidated.
 			static bool CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent);
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
@@ -207,6 +207,8 @@ namespace ALYSLC
 			// 0xXXXXC0DA: proxied P1 input allowed through by this function.
 			// 0xXXXXCA11: emulated P1 input sent by another player from the MIM.
 			// 0xXXXXDEAD: ignore this input event.
+			// 
+			// Return true if the event should be processed by the MenuControls hook.
 			static bool FilterInputEvents(RE::InputEvent* const* a_constEvent);
 
 			// Was an attempt made to open the co-op debug menu?

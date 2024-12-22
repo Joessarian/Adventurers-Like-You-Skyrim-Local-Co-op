@@ -174,17 +174,17 @@ struct std::hash<RE::BSFixedString>
 {
 	std::size_t operator()(const RE::BSFixedString& a_string) const
 	{
-		return Hash(a_string);
+		return std::hash<const char*>()(a_string.data());
 	}
 };
 
-struct BSFixedStringComp
-{
-	bool operator()(const RE::BSFixedString& a_lhs, const RE::BSFixedString& a_rhs) const
-	{
-		return std::hash<RE::BSFixedString>()(a_lhs) < std::hash<RE::BSFixedString>()(a_rhs);
-	}
-};
+//struct BSFixedStringComp
+//{
+//	bool operator()(const RE::BSFixedString& a_lhs, const RE::BSFixedString& a_rhs) const
+//	{
+//		return std::hash<RE::BSFixedString>()(a_lhs) < std::hash<RE::BSFixedString>()(a_rhs);
+//	}
+//};
 
 
 namespace ALYSLC

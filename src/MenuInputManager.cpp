@@ -845,53 +845,71 @@ namespace ALYSLC
 		// Border is drawn while co-op is active or when in the Summoning Menu,
 		// and has the same color as the menu-controlling player's crosshair.
 
-		bool tempMenuOpen = !Util::MenusOnlyAlwaysOpen();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		// NOTE: Saving the old code until the new stuff is thoroughly tested.
+		//bool tempMenuOpen = !Util::MenusOnlyAlwaysOpen();
+		//// Update interpolated value and direction change flag + interpolation direction.
+		//// Use to set the overlay alpha value.
+		//const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpen);
+		//if ((glob.globalDataInit) && ((glob.coopSessionActive) || ((!menuNamesHashSet.empty() && menuNamesHashSet.contains(Hash(GlobalCoopData::SETUP_MENU_NAME))) || pmcFadeInterpData->interpToMin)))
+		//{
+
+		bool attemptingToOpenSetupMenu = 
+		{
+			!menuNamesHashSet.empty() && menuNamesHashSet.contains(Hash(GlobalCoopData::SETUP_MENU_NAME))
+		};
+		bool tempMenuOpenForCoop = 
+		{ 
+			(glob.coopSessionActive || attemptingToOpenSetupMenu) &&
+			(!Util::MenusOnlyAlwaysOpen())
+		};
 		// Update interpolated value and direction change flag + interpolation direction.
 		// Use to set the overlay alpha value.
-		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpen);
-		if ((glob.globalDataInit) && ((glob.coopSessionActive) || ((!menuNamesHashSet.empty() && menuNamesHashSet.contains(Hash(GlobalCoopData::SETUP_MENU_NAME))) || pmcFadeInterpData->interpToMin)))
+		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpenForCoop);
+		// Draw when a temporary menu is open or while still fading in/out.
+		if (tempMenuOpenForCoop || pmcFadeInterpData->interpToMax || pmcFadeInterpData->interpToMin) 
 		{
-			// Draw when a temporary menu is open or while still fading in/out.
-			if (tempMenuOpen || pmcFadeInterpData->interpToMax || pmcFadeInterpData->interpToMin) 
+			const uint8_t alpha = static_cast<uint8_t>(static_cast<float>(0x3F) * interpValue);
+			if (glob.coopSessionActive)
 			{
-				const uint8_t alpha = static_cast<uint8_t>(static_cast<float>(0x3F) * interpValue);
-				if (glob.coopSessionActive)
-				{
-					// Co-op session active.
-					// Set to the player ID of the player who last controlled opened menus,
-					// or P1's PID (0) if there is no recorded previous menu CID.
-					pmcPlayerID = glob.prevMenuCID != -1 ? glob.coopPlayers[glob.prevMenuCID]->playerID : 0;
-				}
-				else if (IsRunning()) 
-				{
-					// Co-op session not active and a player is in the co-op setup menu, 
-					// so set to the player ID of the player requesting control of this menu.
-					// Set to P1's PID (0) if there is no valid manager player PID.
-					pmcPlayerID = managerMenuPlayerID != -1 ? managerMenuPlayerID : 0;
-				}
-
-				// Should never happen, but if not a valid player ID, return.
-				if (pmcPlayerID == -1)
-				{
-					return;
-				}
-
-				uint32_t uiRGBA = (Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha;
-				const auto& thickness = Settings::fPlayerMenuControlOverlayOutlineThickness;
-				const auto halfThickness = 0.5f * thickness;
-				const float rectWidth = DebugAPI::screenResX;
-				const float rectHeight = DebugAPI::screenResY;
-
-				// No overlap at corners by making sure only one of the edges is drawn all the way to the corner.
-				// Left Edge.
-				DebugAPI::QueueLine2D(glm::vec2(halfThickness, thickness), glm::vec2(halfThickness, rectHeight - thickness), uiRGBA, thickness);
-				// Right Edge.
-				DebugAPI::QueueLine2D(glm::vec2(rectWidth - halfThickness, thickness), glm::vec2(rectWidth - halfThickness, rectHeight - thickness), uiRGBA, thickness);
-				// Top Edge.
-				DebugAPI::QueueLine2D(glm::vec2(0.0f, halfThickness), glm::vec2(rectWidth, halfThickness), uiRGBA, thickness);
-				// Bottom Edge.
-				DebugAPI::QueueLine2D(glm::vec2(0.0f, rectHeight - halfThickness), glm::vec2(rectWidth, rectHeight - halfThickness), uiRGBA, thickness);
+				// Co-op session active.
+				// Set to the player ID of the player who last controlled opened menus,
+				// or P1's PID (0) if there is no recorded previous menu CID.
+				pmcPlayerID = glob.prevMenuCID != -1 ? glob.coopPlayers[glob.prevMenuCID]->playerID : 0;
 			}
+			else if (IsRunning()) 
+			{
+				// Co-op session not active and a player is in the co-op setup menu, 
+				// so set to the player ID of the player requesting control of this menu.
+				// Set to P1's PID (0) if there is no valid manager player PID.
+				pmcPlayerID = managerMenuPlayerID != -1 ? managerMenuPlayerID : 0;
+			}
+
+			// Should never happen, but if not a valid player ID, return.
+			if (pmcPlayerID == -1)
+			{
+				return;
+			}
+
+			uint32_t uiRGBA = (Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha;
+			const auto& thickness = Settings::fPlayerMenuControlOverlayOutlineThickness;
+			const auto halfThickness = 0.5f * thickness;
+			const float rectWidth = DebugAPI::screenResX;
+			const float rectHeight = DebugAPI::screenResY;
+
+			// No overlap at corners by making sure only one of the edges is drawn all the way to the corner.
+			// Left Edge.
+			DebugAPI::QueueLine2D(glm::vec2(halfThickness, thickness), glm::vec2(halfThickness, rectHeight - thickness), uiRGBA, thickness);
+			// Right Edge.
+			DebugAPI::QueueLine2D(glm::vec2(rectWidth - halfThickness, thickness), glm::vec2(rectWidth - halfThickness, rectHeight - thickness), uiRGBA, thickness);
+			// Top Edge.
+			DebugAPI::QueueLine2D(glm::vec2(0.0f, halfThickness), glm::vec2(rectWidth, halfThickness), uiRGBA, thickness);
+			// Bottom Edge.
+			DebugAPI::QueueLine2D(glm::vec2(0.0f, rectHeight - halfThickness), glm::vec2(rectWidth, rectHeight - halfThickness), uiRGBA, thickness);
 		}
 	}
 
