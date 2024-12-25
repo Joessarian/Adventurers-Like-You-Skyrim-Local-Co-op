@@ -2024,7 +2024,7 @@ namespace ALYSLC
 			};
 			if (refreshFavorites) 
 			{
-				ALYSLC::Log("[PAFH] {} is no longer favorited by {}. Refreshing all favorited forms data.",
+				SPDLOG_DEBUG("[PAFH] {} is no longer favorited by {}. Refreshing all favorited forms data.",
 					a_hotkeyedForm->GetName(),
 					a_p->coopActor->GetName());
 
@@ -5290,7 +5290,7 @@ namespace ALYSLC
 					{
 						if (glob.moarm->reqDialoguePlayerCID != -1)
 						{
-							ALYSLC::Log("[PAFH] ChangeDialoguePlayer: {}: Dialogue req CID lock obtained. (0x{:X})",
+							SPDLOG_DEBUG("[PAFH] ChangeDialoguePlayer: {}: Dialogue req CID lock obtained. (0x{:X})",
 								a_p->coopActor->GetName(), hash);
 							const auto& reqP = glob.coopPlayers[glob.moarm->reqDialoguePlayerCID];
 							// Teleport the other player to the speaker/this player before handing over dialogue control
@@ -5357,7 +5357,7 @@ namespace ALYSLC
 					{
 						if (glob.moarm->reqDialoguePlayerCID == -1)
 						{
-							ALYSLC::Log("[PAFH] ChangeDialoguePlayer: {}: Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
+							SPDLOG_DEBUG("[PAFH] ChangeDialoguePlayer: {}: Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
 								a_p->coopActor->GetName(), hash, a_p->controllerID);
 
 							// Set requesting player CID.
@@ -6138,7 +6138,7 @@ namespace ALYSLC
 					a_p->taskRunner->AddTask(
 						[otherPlayer, a_p]() 
 						{
-							ALYSLC::Log("[PAFH] PreStartTask: {}: Target P pos: ({}, {}, {}) in cell {}, {} pos: ({}, {}, {}) in cell {}.",
+							SPDLOG_DEBUG("[PAFH] PreStartTask: {}: Target P pos: ({}, {}, {}) in cell {}, {} pos: ({}, {}, {}) in cell {}.",
 								otherPlayer->GetName(),
 								otherPlayer->data.location.x, otherPlayer->data.location.y, otherPlayer->data.location.z,
 								otherPlayer->GetParentCell() ? otherPlayer->GetParentCell()->GetName() : "NONE",
@@ -6378,7 +6378,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						ALYSLC::Log("[PAFH] {} is activating {} ({}, form type 0x{:X}, base form type: 0x{:X}, count: {})",
+						SPDLOG_DEBUG("[PAFH] {} is activating {} ({}, form type 0x{:X}, base form type: 0x{:X}, count: {})",
 							a_p->coopActor->GetName(), activationRefrPtr->GetName(),
 							p1Activate ? "via P1" : "via self",
 							activationRefrPtr->GetFormType(),

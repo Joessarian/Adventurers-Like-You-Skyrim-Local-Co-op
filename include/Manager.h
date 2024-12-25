@@ -23,12 +23,12 @@ namespace ALYSLC
 				return;
 			}
 
-			// REMOVE
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
-				ALYSLC::Log("{} RequestStateChange: Current State: {}, next state: {}. Getting lock. (0x{:X})", type, currentState, a_newState, hash);
+				SPDLOG_DEBUG("{} RequestStateChange: Current State: {}, next state: {}. Getting lock. (0x{:X})", 
+					type, currentState, a_newState, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				std::unique_lock<std::mutex> lock(setStateMutex);
-				ALYSLC::Log("{} RequestStateChange: Set state lock acquired. (0x{:X})", type, hash);
+				SPDLOG_DEBUG("{} RequestStateChange: Set state lock acquired. (0x{:X})", 
+					type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				nextState = a_newState;
 			}
 		}
@@ -107,7 +107,7 @@ namespace ALYSLC
 			{
 				if (nextState == ManagerState::kPaused || nextState == ManagerState::kAwaitingRefresh)
 				{
-					ALYSLC::Log("{} CheckForStateChange: Waiting to resume. State goes from {} -> {}.", type, currentState, nextState);
+					SPDLOG_DEBUG("{} CheckForStateChange: Waiting to resume. State goes from {} -> {}.", type, currentState, nextState);
 
 					// Run pre-pause task and switch to the paused/awaiting refresh execution state.
 					PrePauseTask();
@@ -115,7 +115,7 @@ namespace ALYSLC
 				}
 				else if (nextState == ManagerState::kRunning)
 				{
-					ALYSLC::Log("{} CheckForStateChange: Resuming. State goes from {} -> {}.", type, currentState, nextState);
+					SPDLOG_DEBUG("{} CheckForStateChange: Resuming. State goes from {} -> {}.", type, currentState, nextState);
 
 					// Refresh data if currently waiting to refresh data or uninitialized.
 					// Then run pre-start task and switch to the running execution state.
@@ -138,17 +138,18 @@ namespace ALYSLC
 			const auto reqState = ShouldSelfPause();
 			if (reqState == ManagerState::kPaused || reqState == ManagerState::kAwaitingRefresh)
 			{
-				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					std::unique_lock<std::mutex> lock(setStateMutex, std::try_to_lock);
 					if (lock)
 					{
 						nextState = reqState;
-						ALYSLC::Log("{} SelfPauseCheck: Succeeded in acquiring set state lock to pause. (0x{:X})", type, hash);
+						SPDLOG_DEBUG("{} SelfPauseCheck: Succeeded in acquiring set state lock to pause. (0x{:X})",
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					}
 					else
 					{
-						ALYSLC::Log("{} SelfPauseCheck: Failed to acquire set state lock to pause. (0x{:X})", type, hash);
+						SPDLOG_DEBUG("{} SelfPauseCheck: Failed to acquire set state lock to pause. (0x{:X})", 
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					}
 				}
 			}
@@ -162,17 +163,18 @@ namespace ALYSLC
 			const auto reqState = ShouldSelfResume();
 			if (reqState == ManagerState::kRunning)
 			{
-				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					std::unique_lock<std::mutex> lock(setStateMutex, std::try_to_lock);
 					if (lock)
 					{
 						nextState = reqState;
-						ALYSLC::Log("{} SelfResumeCheck: Succeeded in acquiring set state lock to resume. (0x{:X})", type, hash);
+						SPDLOG_DEBUG("{} SelfResumeCheck: Succeeded in acquiring set state lock to resume. (0x{:X})", 
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					}
 					else
 					{
-						ALYSLC::Log("{} SelfResumeCheck: Failed to acquire set state lock to resume. (0x{:X})", type, hash);
+						SPDLOG_DEBUG("{} SelfResumeCheck: Failed to acquire set state lock to resume. (0x{:X})",
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					}
 				}
 			}
@@ -207,14 +209,6 @@ namespace ALYSLC
 				{
 					queue.emplace(a_task);
 					queueCV.notify_all();
-
-					// REMOVE
-					ALYSLC::Log("[Manager] TaskRunner: Added a task. Queue size is now: {}.", queue.size());
-				}
-				else
-				{
-					// REMOVE
-					ALYSLC::Log("[Manager] TaskRunner: Failed to obtain lock. Not adding task. Queue size is now: {}.", queue.size());
 				}
 			});
 
@@ -237,11 +231,12 @@ namespace ALYSLC
 		// None are executed.
 		inline void ClearTasks()
 		{
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
-				ALYSLC::Log("[Manager] TaskRunner: ClearTasks: Getting lock. (0x{:X})", hash);
+				SPDLOG_DEBUG("[Manager] TaskRunner: ClearTasks: Getting lock. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				std::unique_lock<std::mutex> lock(queueMutex);
-				ALYSLC::Log("[Manager] TaskRunner: ClearTasks: Lock obtained. (0x{:X})", hash);
+				SPDLOG_DEBUG("[Manager] TaskRunner: ClearTasks: Lock obtained. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				while (!queue.empty())
 				{
 					queue.pop();
@@ -254,23 +249,23 @@ namespace ALYSLC
 			// Continue looping until externally prompted to stop.
 			while (!a_stoken.stop_requested())
 			{
-				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
-					ALYSLC::Log("[Manager] RunTasks: Getting lock. (0x{:X})", hash);
+					SPDLOG_DEBUG("[Manager] RunTasks: Getting lock. (0x{:X})", 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex);
 					queueCV.wait
 					(
 						lock,
 						[&]() 
 						{
-							ALYSLC::Log("[Manager] TaskRunner: Waiting for a task.");
+							SPDLOG_DEBUG("[Manager] TaskRunner: Waiting for a task.");
 							return (queue.size() > 0 || a_stoken.stop_requested());
 						}
 					);
 
 					while (queue.size() > 0)
 					{
-						ALYSLC::Log("[Manager] TaskRunner: Got a task.");
+						SPDLOG_DEBUG("[Manager] TaskRunner: Got a task.");
 						queue.front()();
 						queue.pop();
 					}
@@ -278,7 +273,7 @@ namespace ALYSLC
 			}
 
 			// Clear out all remaining tasks when done.
-			ALYSLC::Log("[Manager] TaskRunner: Requested to stop runner thread.");
+			SPDLOG_DEBUG("[Manager] TaskRunner: Requested to stop runner thread.");
 			ClearTasks();
 		}
 	};

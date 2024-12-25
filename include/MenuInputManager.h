@@ -122,11 +122,11 @@ namespace ALYSLC
 		// Signal to refresh equip state.
 		inline void SignalRefreshEquipState()
 		{
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-			ALYSLC::Log("[MIM] SignalRefreshEquipState: Getting lock. (0x{:X})", hash);
+			SPDLOG_DEBUG("[MIM] SignalRefreshEquipState: Getting lock. (0x{:X})", 
+				std::hash<std::jthread::id>()(std::this_thread::get_id()));
 			{
 				std::unique_lock<std::mutex> lock(equipEventMutex);
-				ALYSLC::Log("[MIM] SignalRefreshEquipState: Setting refresh equip state flag to true.");
+				SPDLOG_DEBUG("[MIM] SignalRefreshEquipState: Setting refresh equip state flag to true.");
 				equipEventRefreshReq = true;
 			}
 		}

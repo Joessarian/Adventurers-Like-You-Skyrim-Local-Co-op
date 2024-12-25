@@ -23,13 +23,18 @@ namespace ALYSLC
 
 	std::vector<uint32_t> ControllerDataHolder::SetupConnectedCoopControllers()
 	{
-		// Called in papyrus script before summoning players.
+		// Get and return a list of all connected XInput-compatible controllers' IDs.
+		// NOTE: Called in papyrus script before summoning players.
+
 		std::vector<uint32_t> controllerIDs;
-		// If P1's CID is not set yet, return empty list to end co-op.
+		// If P1's CID is not set yet, return an empty list to end co-op.
 		// P1's CID must be set before other players' CIDs are checked.
 		if (glob.player1CID == -1)
 		{
-			RE::DebugMessageBox("[ALYSLC] Player 1's controller ID has not been assigned.\nTry summoning again or assign Player 1's controller ID through the co-op debug menu before summoning.");
+			RE::DebugMessageBox
+			(
+				"[ALYSLC] Player 1's controller ID has not been assigned.\nTry summoning again or assign Player 1's controller ID through the co-op debug menu before summoning."
+			);
 			return controllerIDs;
 		}
 
@@ -45,12 +50,12 @@ namespace ALYSLC
 				auto errorNum = XInputGetState(controllerIndex, &inputState);
 				if (errorNum == ERROR_SUCCESS)
 				{
-					logger::info("[CDH] SetupConnectedCoopControllers: Co-op player controller {} has been registered.", controllerIndex);
+					SPDLOG_INFO("[CDH] SetupConnectedCoopControllers: Co-op player controller {} has been registered.", controllerIndex);
 					controllerIDs.push_back(controllerIndex);
 				}
 				else
 				{
-					ALYSLC::Log("[CDH] SetupConnectedCoopControllers: No controller connected at index {}. Error #{}.", controllerIndex, errorNum);
+					SPDLOG_DEBUG("[CDH] SetupConnectedCoopControllers: No controller connected at index {}. Error #{}.", controllerIndex, errorNum);
 				}
 			}
 
@@ -62,7 +67,11 @@ namespace ALYSLC
 
 	void ControllerDataHolder::UpdateAnalogStickState(const int32_t& a_controllerID, const int32_t& a_playerID, const bool& a_isLS, const bool& a_isControllingMenus)
 	{
-		// Code snippet adapted from here: https://docs.microsoft.com/en-us/windows/win32/xinput/getting-started-with-xinput
+		// Update the left/right analog stick data for the controller with the given ID.
+		// The deadzone is modified based on the player's settings (player given by their ID) 
+		// and if they are controlling menus.
+		// Function was adapted from code snippets found here: https://docs.microsoft.com/en-us/windows/win32/xinput/getting-started-with-xinput
+
 		XINPUT_STATE inputState;
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		if (XInputGetState(a_controllerID, &inputState) != ERROR_SUCCESS)
@@ -70,12 +79,13 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				ALYSLC::Log("[CDH] ERR: UpdateAnalogStickState: Could not get input state for active controller {}", a_controllerID);
+				SPDLOG_DEBUG("[CDH] ERR: UpdateAnalogStickState: Could not get input state for active controller {}", a_controllerID);
 			}
 
 			return;
 		}
 
+		// Invalid ID, cannot continue.
 		if (a_playerID <= -1) 
 		{
 			return;
@@ -90,13 +100,14 @@ namespace ALYSLC
 		}
 
 		// Larger deadzone when controlling menus to prevent slight analog stick displacements from
-		// changing the currently selected menu element.
+		// changing the currently-selected menu element.
 		float deadZone = 
 		(
 			SHRT_MAX * (a_isControllingMenus ? 
 			min(0.5f, Settings::vfAnalogDeadzoneRatio[a_playerID]) : 
 			Settings::vfAnalogDeadzoneRatio[a_playerID])
 		);
+		// Maximum displacement magnitude, accounting for deadzone.
 		data.maxMag = SHRT_MAX - deadZone;
 		float xDisp, yDisp = 0.0f;
 		if (a_isLS)
@@ -125,7 +136,9 @@ namespace ALYSLC
 					tempMag = SHRT_MAX;
 				}
 
+				// Account for deadzone now.
 				tempMag -= deadZone;
+				// Normalized displacement magnitude based on the maxiumum mag.
 				newNormMag = data.maxMag > 0.0f ? min(1.0f, tempMag / data.maxMag) : 0.0f;
 			}
 		}
@@ -149,6 +162,7 @@ namespace ALYSLC
 			yDisp = min(0.0f, yDisp + deadZone);
 		}
 
+		// Normalized X, Y components this and last frame.
 		float newNormXPos = xComp * newNormMag;
 		float newNormYPos = yComp * newNormMag;
 		float oldNormXPos = data.xComp * data.normMag;
@@ -163,15 +177,26 @@ namespace ALYSLC
 		{
 			data.stickAngularSpeed = 
 			(
-				fabsf(Util::NormalizeAngToPi(atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)) / *g_deltaTimeRealTime)
+				fabsf
+				(
+					Util::NormalizeAngToPi
+					(
+						atan2f(newNormYPos, newNormXPos) - atan2f(oldNormYPos, oldNormXPos)
+					) / *g_deltaTimeRealTime
+				)
 			);
 		}
 
-		data.stickLinearSpeed = Util::GetXYDistance(newNormXPos, newNormYPos, oldNormXPos, oldNormYPos) / *g_deltaTimeRealTime;
+		data.stickLinearSpeed = 
+		(
+			Util::GetXYDistance(newNormXPos, newNormYPos, oldNormXPos, oldNormYPos) / 
+			*g_deltaTimeRealTime
+		);
 		data.xComp = xComp;
 		data.yComp = yComp;
 		data.normMag = newNormMag;
 
+		// Only update previous if they differ.
 		if (data.normMag != data.prevNormMag)
 		{
 			data.prevNormMag = data.normMag;
@@ -180,6 +205,9 @@ namespace ALYSLC
 
 	void ControllerDataHolder::UpdateInputStatesAndMask(const int32_t& a_controllerID, const int32_t& a_playerID)
 	{
+		// Update input press/release state data for the controller with the given ID.
+		// The given player ID determines the deadzone for the controller.
+
 		XINPUT_STATE inputState;
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		if (XInputGetState(a_controllerID, &inputState) != ERROR_SUCCESS)
@@ -187,12 +215,13 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				ALYSLC::Log("[CDH] ERR: UpdateInputStatesAndMask: Could not get input state for active controller {}", a_controllerID);
+				SPDLOG_DEBUG("[CDH] ERR: UpdateInputStatesAndMask: Could not get input state for active controller {}", a_controllerID);
 			}
 
 			return;
 		}
 
+		// Invalid player ID, so return early.
 		if (a_playerID <= -1) 
 		{
 			return;
@@ -200,15 +229,18 @@ namespace ALYSLC
 
 		const auto& paInfo = glob.paInfoHolder;
 		auto& inputStates = inputStatesList[a_controllerID];
+		// Used to diff button state changes.
 		const auto prevMask = inputMasksList[a_controllerID];
 		auto& currentMask = inputMasksList[a_controllerID];
 		auto& firstPressTPs = firstPressTPsList[a_controllerID];
 		auto& lastReleaseTPs = lastReleaseTPsList[a_controllerID];
 
+		// DXScancode for the button to check.
 		uint32_t dxsc = FIRST_CTRLR_DXSC;
 		bool buttonPressed = false;
 		bool isButton = true;
 		bool ltPressed = false, rtPressed = false, lsMoved = false, rsMoved = false;
+		// Get deadzone from player settings.
 		const BYTE triggerDeadzone = static_cast<BYTE>(UCHAR_MAX * Settings::vfTriggerDeadzoneRatio[a_playerID]);
 		for (uint32_t i = !InputAction::kFirst; i < !InputAction::kInputTotal; ++i, ++dxsc) 
 		{
@@ -234,17 +266,20 @@ namespace ALYSLC
 					state.pressedMag = 1.0f;
 					// Only inc consecutive presses to > 1 if pressed again within between-presses threshold.
 					float secsSinceLastRelease = Util::GetElapsedSeconds(lastReleaseTP);
+					// Increment consecutive taps if tapped again within the frame count limit for consecutive taps.
 					state.consecPresses = 
 					(
 						secsSinceLastRelease <= Settings::fMaxFramesBetweenConsecTaps * *g_deltaTimeRealTime ? 
 						state.consecPresses + 1 : 
 						1
 					);
+					// Update input mask and first press time point.
 					currentMask |= 1 << i;
 					firstPressTP = SteadyClock::now();
 				}
 				else if (state.justPressed)
 				{
+					// Already pressed, so clear just pressed flag.
 					state.justPressed = false;
 				}
 
@@ -262,9 +297,9 @@ namespace ALYSLC
 					state.pressedMag = (inputState.Gamepad.bRightTrigger - triggerDeadzone) / (UCHAR_MAX - triggerDeadzone);
 				}
 			}
-			// Button/trigger not pressed or analog stick centered.
 			else
 			{
+				// Button/trigger not pressed or analog stick centered.
 				auto& state = inputStates[i];
 				// Just released.
 				if (state.isPressed) 
@@ -272,6 +307,7 @@ namespace ALYSLC
 					state.isPressed = false;
 					state.justReleased = true;
 					state.pressedMag = 0.0f;
+					// Clear bit flag in mask.
 					currentMask &= ~(1 << i);
 					lastReleaseTPs[i] = SteadyClock::now();
 				}
@@ -296,6 +332,8 @@ namespace ALYSLC
 
 	void ControllerDataHolder::UpdatePlayerControllerStates()
 	{
+		// Update button and left and right stick data for all players.
+
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -318,6 +356,8 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Maintain updated state even when out of co-op
+			// to ensure smoother transition once a co-op session starts.
 			uint32_t i = 0;
 			while (i < ALYSLC_MAX_PLAYER_COUNT)
 			{

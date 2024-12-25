@@ -87,7 +87,7 @@ namespace ALYSLC
 		camCollisionRadialDistance = 
 		camTargetRadialDistance = 
 		camSavedBaseRadialDistance = 400.0f;
-		camBaseFocusPointZOffset = camFocusPointZOffset = 0.0f;
+		camBaseHeightOffset = camHeightOffset = 0.0f;
 		// Rotation floats.
 		camBaseTargetPosPitch = camTargetPosPitch = 0.0f;
 		camBaseTargetPosYaw = camTargetPosYaw = 0.0f;
@@ -184,7 +184,7 @@ namespace ALYSLC
 				}
 
 				// Framerate dependent factor.
-				camFrameDepInterpFactor = min(1.0f, *g_deltaTimeRealTime * 60.0f * camInterpFactor);
+				camInterpFactorFrameDep = min(1.0f, *g_deltaTimeRealTime * 60.0f * camInterpFactor);
 
 				UpdateParentCell();
 				CalcNextOriginPoint();
@@ -250,7 +250,7 @@ namespace ALYSLC
 
 	void CameraManager::PrePauseTask()
 	{
-		ALYSLC::Log("[CAM] PrePauseTask");
+		SPDLOG_DEBUG("[CAM] PrePauseTask");
 
 		// Reset no fade flags for all players.
 		SetPlayerFadePrevention(false);
@@ -258,21 +258,22 @@ namespace ALYSLC
 		SetCamActorCollisions(true);
 		// Ensure all players are visible.
 		UpdatePlayerFadeAmounts(true);
+		// Toggle all of P1's controls back on.
 		Util::ToggleAllControls(true);
+		// P1 should be motion driven again.
 		Util::SetPlayerAIDriven(false);
+		// Reset third person camera orientation.
 		Util::ResetTPCamOrientation();
 		// Reset toggle press flag every time before pausing.
 		toggleBindPressedWhileWaiting = false;
 
-		// NOTE: Check for stability on cell change:
 		// Reset fade on handled objects.
 		ResetFadeOnObjects();
 	}
 
 	void CameraManager::PreStartTask()
 	{
-		ALYSLC::Log("[CAM] PreStartTask: cam FOV: {}", 
-			playerCam ? playerCam->worldFOV : -1.0f);
+		SPDLOG_DEBUG("[CAM] PreStartTask");
 		// Prevent the game from fading all players while the camera is active.
 		SetPlayerFadePrevention(true);
 		// Remove camera-actor collisions before switching to co-op cam.
@@ -281,14 +282,13 @@ namespace ALYSLC
 		RefreshData();
 		// Ensure all players are visible.
 		UpdatePlayerFadeAmounts(true);
-		// NOTE: Check for stability on cell change:
 		// Reset fade on handled objects.
 		ResetFadeOnObjects();
 	}
 
 	void CameraManager::RefreshData()
 	{
-		ALYSLC::Log("[CAM] RefreshData");
+		SPDLOG_DEBUG("[CAM] RefreshData");
 
 		// Update parent cell.
 		UpdateParentCell();
@@ -332,12 +332,14 @@ namespace ALYSLC
 			return ManagerState::kPaused;
 		}
 
+		// Keep paused while changing POV.
 		if (isTogglingPOV) 
 		{
 			return ManagerState::kPaused;
 		}
 
-		// Keep camera paused until no longer mining.
+		// Since P1 will stop mining unless the camera is allowed to change states,
+		// keep the camera manager paused until no longer mining.
 		if (playerCam->currentState->id == RE::CameraState::kFurniture && glob.player1Actor->GetOccupiedFurniture())
 		{
 			auto furnitureRef = Util::GetRefrPtrFromHandle(glob.player1Actor->GetOccupiedFurniture());
@@ -365,6 +367,7 @@ namespace ALYSLC
 		bool allPlayersValid = false;
 		if (glob.coopSessionActive && glob.livingPlayers > 1)
 		{
+			// Maintain paused state when changing POV.
 			if (isTogglingPOV)
 			{
 				return currentState;
@@ -392,14 +395,16 @@ namespace ALYSLC
 				}
 			}
 
-			// Then ensure the map/fader menus are not open.
-			// Pause when the map menu is open to prevent glitches upon closure and to also enable fast travel while in the map menu.
+			// Then ensure the map menu is not open.
+			// Pause when the map menu is open to prevent glitches upon closure 
+			// and to also enable fast travel while in the map menu.
 			if (auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::MapMenu::MENU_NAME))
 			{
 				return currentState;
 			}
 
-			// Have to pause here because the player will stop mining while the camera is enabled, even if the camera's current state is set to furniture.
+			// Have to pause here because the player will stop mining while the camera is enabled, 
+			// even if the camera's current state is set to furniture.
 			if (playerCam->currentState->id == RE::CameraState::kFurniture && glob.player1Actor->GetOccupiedFurniture())
 			{
 				auto furnitureRef = Util::GetRefrPtrFromHandle(glob.player1Actor->GetOccupiedFurniture());
@@ -419,8 +424,9 @@ namespace ALYSLC
 				}
 			}
 
-			// Next, ensure that all menus that pause the game are closed and that either
-			// the cam toggle bind was released or all players are moving.
+			// Next, when waiting to toggle the camera back on, 
+			// ensure that all menus that pause the game are closed
+			// and that the cam toggle bind was released.
 			if (allPlayersValid && waitForToggle)
 			{
 				auto ui = RE::UI::GetSingleton();
@@ -449,6 +455,7 @@ namespace ALYSLC
 					ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 					if (!(XInputGetState(glob.player1CID, &tempState)) == ERROR_SUCCESS)
 					{
+						// Could not read P1's controller state, so pause.
 						return ManagerState::kPaused;
 					}
 
@@ -457,12 +464,12 @@ namespace ALYSLC
 						(toggleBindPressedWhileWaiting) || 
 						((tempState.Gamepad.wButtons & camToggleXIMask) == camToggleXIMask)
 					);
+					// Previously pressed and now released the toggle bind.
 					shouldResume = (toggleBindPressedWhileWaiting) && ((tempState.Gamepad.wButtons & camToggleXIMask) == 0);
 				}
 
 				if (shouldResume)
 				{
-					// Reset toggle state.
 					return ManagerState::kRunning;
 				}
 				else
@@ -479,7 +486,7 @@ namespace ALYSLC
 
 	bool CameraManager::AllPlayersOnScreenAtCamOrientation(const RE::NiPoint3& a_camPos, const RE::NiPoint2& a_rotation, bool&& a_usePlayerPos, const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck)
 	{
-		// Check if all players are in within the camera's frustum at the given position and rotation.
+		// Check if all players are within the camera's frustum at the given position and rotation.
 		// Check the player's refr position or check a list of player nodes.
 
 		const auto strings = RE::FixedStrings::GetSingleton();
@@ -518,11 +525,13 @@ namespace ALYSLC
 					bool onePlayerNodeOnScreen = false;
 					if (a_nodeNamesToCheck.size() > 0)
 					{
+						// Check provided list.
 						for (const auto& nodeName : a_nodeNamesToCheck)
 						{
 							// Minimum of one node must be visible from the camera target position
 							// to consider the player as in view of the camera.
-							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
+							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
+								nodePtr && nodePtr.get())
 							{
 								onePlayerNodeOnScreen |= PointOnScreenAtCamOrientation
 								(
@@ -531,6 +540,7 @@ namespace ALYSLC
 									a_rotation, 
 									DebugAPI::screenResX / 10.0f
 								);
+
 								// No need to check other nodes if one is visible.
 								if (onePlayerNodeOnScreen)
 								{
@@ -545,11 +555,13 @@ namespace ALYSLC
 					}
 					else
 					{
+						// Check default list of nodes for visibility.
 						for (const auto& nodeName : GlobalCoopData::CAM_VISIBILITY_NPC_NODES)
 						{
 							// Minimum of one node must be visible from the camera target position
 							// to consider the player as in view of the camera.
-							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
+							if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
+								nodePtr && nodePtr.get())
 							{
 								onePlayerNodeOnScreen |= PointOnScreenAtCamOrientation
 								(
@@ -558,6 +570,7 @@ namespace ALYSLC
 									a_rotation, 
 									DebugAPI::screenResX / 10.0f
 								);
+
 								// No need to check other nodes if one is visible.
 								if (onePlayerNodeOnScreen)
 								{
@@ -593,40 +606,42 @@ namespace ALYSLC
 
 		auto camNodePos = tpState->camera->cameraRoot->world.translate;
 		auto oldFocusPoint = camFocusPoint;
-		auto prevOffset = camFocusPointZOffset;
+		auto prevOffset = camHeightOffset;
 
 		camCollisionFocusPoint = RE::NiPoint3
 		(
 			camCollisionOriginPoint.x, 
 			camCollisionOriginPoint.y, 
-			camCollisionOriginPoint.z + camFocusPointZOffset
+			camCollisionOriginPoint.z + camHeightOffset
 		);
 		if (Settings::bCamCollisions)
 		{
-			if (!isManuallyPositioned)
+			if (isManuallyPositioned)
 			{
-				camCollisionFocusPoint.z = camCollisionOriginPoint.z + camFocusPointZOffset;
+				// Focus point is the node point when in free cam mode.
+				camFocusPoint = camCollisionFocusPoint = camNodePos;
 			}
 			else
 			{
-				camFocusPoint = camCollisionFocusPoint = camNodePos;
+				camCollisionFocusPoint.z = camCollisionOriginPoint.z + camHeightOffset;
 			}
 
 			camBaseFocusPoint = RE::NiPoint3
 			(
 				camBaseOriginPoint.x, 
 				camBaseOriginPoint.y, 
-				camBaseOriginPoint.z + camFocusPointZOffset
+				camBaseOriginPoint.z + camHeightOffset
 			);
 			camFocusPoint = camCollisionFocusPoint;
 		}
 		else
 		{
+			// Same point if collisions are not enabled.
 			camFocusPoint = camBaseFocusPoint = RE::NiPoint3
 			(
 				camOriginPoint.x, 
 				camOriginPoint.y, 
-				camOriginPoint.z + camFocusPointZOffset
+				camOriginPoint.z + camHeightOffset
 			);
 		}
 	}
@@ -637,14 +652,25 @@ namespace ALYSLC
 		// Base point is equidistant to all players.
 		// Other derived origin points account for collisions with geometry
 		// and are kept from going 'out of bounds' to a normally unreachable position, 
-		// as this point is vital for calculating the cam target positions.
+		// since the collision origin points are vital for calculating the cam target positions.
 
 		auto oldOriginPoint = camOriginPoint;
 		auto oldBaseOriginPoint = camBaseOriginPoint;
+
+		// If true, no players are visible from the origin point.
 		bool originViewObstructed = false;
+		// Was there a raycast hit from the old origin point to the new base origin point?
 		bool hitToBasePos = false;
+		// Was there a raycast hit from the old origin point
+		// to the collision hit point obtained from raycasting
+		// from the old origin point to the base origin point 
+		// and shifting the result above ground?
 		bool hitToCollisionPos = false;
+		// Vertical coordinate bounds obtained from clamping 
+		// vertical raycasts hit results.
+		// +- FLT_MAX if unbounded.
 		std::pair<float, float> bounds{ oldOriginPoint.z, oldOriginPoint.z };
+		// Additional offset to apply above/below the vertical bounds.
 		float minZOffset = std::clamp(avgPlayerHeight, 50.0f, 100.0f);
 
 		//====================
@@ -668,8 +694,7 @@ namespace ALYSLC
 		//[Modified Origin Point]:
 		//========================
 		// Set the next origin point by accounting for collisions
-		// when moving from the previous origin point
-		// to the new base origin point.
+		// when moving from the previous origin point to the new base origin point.
 		// Want to ensure the origin point is in a valid, reachable position,
 		// and not clipping through geometry.
 
@@ -713,14 +738,17 @@ namespace ALYSLC
 				bounds.first, 
 				bounds.second
 			);
+
 			result = Raycast::CastRay(castStartPoint, castEndPoint, camAnchorPointHullSize);
 			if (result.hit)
 			{
 				hitToCollisionPos = true;
+				// Offset away from hit position to prevent clipping.
 				camCollisionOriginPoint = ToNiPoint3(result.hitPos + result.rayNormal * camAnchorPointHullSize);
 			}
 			else
 			{
+				// No hit, so the previous hit position was unobstructed.
 				camCollisionOriginPoint = ToNiPoint3(castEndPoint);
 			}
 
@@ -728,7 +756,7 @@ namespace ALYSLC
 
 		// Only bound above and below + set min/max anchor point positions
 		// when there is a clear path to the next origin position.
-		// Checking bounds during collisions leads to inconsistent shifts
+		// Clamping bounds during collisions leads to inconsistent shifts
 		// to both the lower and upper bounds if the collision point shifts
 		// the next origin position up or down, e.g. riding up a post in one of Solitude's guard towers.
 		if (!hitToBasePos && !hitToCollisionPos) 
@@ -744,26 +772,26 @@ namespace ALYSLC
 			{
 				camBaseOriginPoint.x = Util::InterpolateSmootherStep
 				(
-					oldBaseOriginPoint.x, camBaseOriginPoint.x, camFrameDepInterpFactor);
+					oldBaseOriginPoint.x, camBaseOriginPoint.x, camInterpFactorFrameDep);
 				camBaseOriginPoint.y = Util::InterpolateSmootherStep
 				(
-					oldBaseOriginPoint.y, camBaseOriginPoint.y, camFrameDepInterpFactor
+					oldBaseOriginPoint.y, camBaseOriginPoint.y, camInterpFactorFrameDep
 				);
 				camBaseOriginPoint.z = Util::InterpolateSmootherStep
 				(
-					oldBaseOriginPoint.z, camBaseOriginPoint.z, camFrameDepInterpFactor
+					oldBaseOriginPoint.z, camBaseOriginPoint.z, camInterpFactorFrameDep
 				);
 				camCollisionOriginPoint.x = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.x, camCollisionOriginPoint.x, camFrameDepInterpFactor
+					oldOriginPoint.x, camCollisionOriginPoint.x, camInterpFactorFrameDep
 				);
 				camCollisionOriginPoint.y = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.y, camCollisionOriginPoint.y, camFrameDepInterpFactor
+					oldOriginPoint.y, camCollisionOriginPoint.y, camInterpFactorFrameDep
 				);
 				camCollisionOriginPoint.z = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.z, camCollisionOriginPoint.z, camFrameDepInterpFactor
+					oldOriginPoint.z, camCollisionOriginPoint.z, camInterpFactorFrameDep
 				);
 			}
 
@@ -775,15 +803,15 @@ namespace ALYSLC
 			{
 				camOriginPoint.x = camBaseOriginPoint.x = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.x, camBaseOriginPoint.x, camFrameDepInterpFactor
+					oldOriginPoint.x, camBaseOriginPoint.x, camInterpFactorFrameDep
 				);
 				camOriginPoint.y = camBaseOriginPoint.y = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.y, camBaseOriginPoint.y, camFrameDepInterpFactor
+					oldOriginPoint.y, camBaseOriginPoint.y, camInterpFactorFrameDep
 				);
 				camOriginPoint.z = camBaseOriginPoint.z = Util::InterpolateSmootherStep
 				(
-					oldOriginPoint.z, camBaseOriginPoint.z, camFrameDepInterpFactor
+					oldOriginPoint.z, camBaseOriginPoint.z, camInterpFactorFrameDep
 				);
 			}
 			else
@@ -792,6 +820,7 @@ namespace ALYSLC
 			}
 		}
 
+		// Save origin point direction for auto pitch adjustments.
 		camOriginPointDirection = camOriginPoint - oldOriginPoint;
 		camOriginPointDirection.Unitize();
 	}
@@ -831,23 +860,25 @@ namespace ALYSLC
 					targetPosMovementOffset.Unitize();
 					targetPosMovementOffset *= camManualPosMaxMovementSpeed * *g_deltaTimeRealTime * rsMag;
 
+					// Base pos set before checking for collisions.
 					camBaseTargetPos = lastSetCamTargetPos + targetPosMovementOffset;
+					auto newTargetPos = camBaseTargetPos;
+
 					// Prevent camera from clipping into objects/surfaces by setting the new target position
 					// to the movement direction raycast hit position, if any.
-					auto newTargetPos = camBaseTargetPos;
 					if (Settings::bTargetPosSmoothing) 
 					{
 						newTargetPos.x = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.x, newTargetPos.x, camFrameDepInterpFactor
+							lastSetCamTargetPos.x, newTargetPos.x, camInterpFactorFrameDep
 						);
 						newTargetPos.y = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.y, newTargetPos.y, camFrameDepInterpFactor
+							lastSetCamTargetPos.y, newTargetPos.y, camInterpFactorFrameDep
 						);
 						newTargetPos.z = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.z, newTargetPos.z, camFrameDepInterpFactor
+							lastSetCamTargetPos.z, newTargetPos.z, camInterpFactorFrameDep
 						);
 					}
 
@@ -875,15 +906,15 @@ namespace ALYSLC
 					{
 						camTargetPos.x = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.x, camBaseTargetPos.x, camFrameDepInterpFactor
+							lastSetCamTargetPos.x, camBaseTargetPos.x, camInterpFactorFrameDep
 						);
 						camTargetPos.y = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.y, camBaseTargetPos.y, camFrameDepInterpFactor
+							lastSetCamTargetPos.y, camBaseTargetPos.y, camInterpFactorFrameDep
 						);
 						camTargetPos.z = Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.z, camBaseTargetPos.z, camFrameDepInterpFactor
+							lastSetCamTargetPos.z, camBaseTargetPos.z, camInterpFactorFrameDep
 						);
 					}
 					else
@@ -896,13 +927,14 @@ namespace ALYSLC
 		else
 		{
 			// Calculate base target position first.
+			// Using spherical coordinates.
 			float r = camTargetRadialDistance;
 			float phi = Util::ConvertAngle(camTargetPosYaw);
 			float theta = PI / 2.0f + camTargetPosPitch;
 			if (focalPlayerCID == -1) 
 			{
 				// Base target position is offset from the base focus position,
-				// and is not guaranteed to be in a reachable spot.
+				// and is not guaranteed to be a reachable spot.
 				camBaseTargetPos = camBaseFocusPoint;
 				camBaseTargetPos.z -= r * cosf(theta);
 				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
@@ -911,7 +943,7 @@ namespace ALYSLC
 			else
 			{
 				// Base target position is the focal player's focus point,
-				// which is guaranteed to be valid since it's based on the player's position.
+				// which is almmost guaranteed to be valid since it is offset from the player's position.
 				const auto& focalP = glob.coopPlayers[focalPlayerCID];
 				camPlayerFocusPoint = Util::GetPlayerFocusPoint(focalP->coopActor.get());
 				r = camBaseRadialDistance;
@@ -936,7 +968,7 @@ namespace ALYSLC
 			// each player can have the camera follow them as long as they rotate it
 			// while they are not in LOS of the rest of the players.
 			// The camera will automatically focus on the entire party again
-			// when the focal player is visible and close enough to the rest of the party again.
+			// when the focal player is visible and close enough to the rest of the party.
 
 			// NOTE 2: 
 			// No matter what, players should try to stay close together as much as possible
@@ -946,15 +978,12 @@ namespace ALYSLC
 			// If there's a hit, this means that the camera will hit a surface 
 			// if it moves directly to the base target position.
 			Raycast::RayResult movementResult = Raycast::CastRay(ToVec4(lastSetCamTargetPos), ToVec4(camBaseTargetPos), camTargetPosHullSize);
-			// Keep track of whether or not the camera was colliding last frame.
-			bool wasColliding = isColliding;
 			if (movementResult.hit)
 			{
 				// Upon movement hit, the camera is now colliding with geometry.
 				isColliding = true;
 			}
 			
-
 			// Reset focal player CID if the setting is now disabled.
 			if (!Settings::bFocalPlayerMode && focalPlayerCID != -1) 
 			{
@@ -974,13 +1003,14 @@ namespace ALYSLC
 							const auto& p = glob.coopPlayers[controlCamCID];
 							bool reqPlayerOnScreen = Util::PointIsOnScreen(Util::GetPlayerFocusPoint(p->coopActor.get()));
 							bool tooCloseToFocus = lastSetCamTargetPos.GetDistance(camFocusPoint) < camMinTrailingDistance;
-							// The requesting player must be off-screen
-							// or the camera's last target position must be too close to the focus point.
+							// The requesting player must be off-screen, 
+							// the camera's last target position must be too close to the focus point,
+							// or camera collisions must be disabled to update the focal player CID.
 							if (!reqPlayerOnScreen || tooCloseToFocus || !Settings::bCamCollisions)
 							{
 								if (tooCloseToFocus && !reqPlayerOnScreen) 
 								{
-									// Set directly without LOS check when too close to the focus point
+									// Set directly without an LOS check when too close to the focus point
 									// and the requesting player is not on the screen.
 									focalPlayerCID = controlCamCID;
 								}
@@ -988,25 +1018,18 @@ namespace ALYSLC
 								{
 									RE::NiPoint3 losStartPoint{ camFocusPoint };
 									RE::NiPoint3 losEndPoint{ Util::GetPlayerFocusPoint(p->coopActor.get()) };
-									// If neither all other players nor the focus point
-									// have LOS on the player rotating the camera,
+									// If no other players have LOS on the player rotating the camera,
 									// set the camera-rotating player as the focal player.
-
-									// Focus point first.
-									bool losOnFocalPlayer = false;	//!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit;
-									// No LOS from the focus, so check for LOS from all other players.
-									if (!losOnFocalPlayer)
+									bool losOnFocalPlayer = false;
+									for (const auto& otherP : glob.coopPlayers)
 									{
-										for (const auto& otherP : glob.coopPlayers)
+										if (otherP->isActive && otherP != p)
 										{
-											if (otherP->isActive && otherP != p)
+											losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
+											if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
 											{
-												losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
-												if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
-												{
-													losOnFocalPlayer = true;
-													break;
-												}
+												losOnFocalPlayer = true;
+												break;
 											}
 										}
 									}
@@ -1016,7 +1039,8 @@ namespace ALYSLC
 									{
 										focalPlayerCID = controlCamCID;
 									}
-								}							}
+								}							
+							}
 						}
 						else
 						{
@@ -1029,7 +1053,8 @@ namespace ALYSLC
 				else if (focalPlayerCID != -1)
 				{
 					const auto& focalP = glob.coopPlayers[controlCamCID];
-					// Within a reasonable range of not needing focal player-centric rotation anymore.
+					// If the focal player is now Within a reasonable range of not needing 
+					// focal player-centric rotation anymore, we can go back to following the entire party.
 					if (focalP->coopActor->data.location.GetDistance(camFocusPoint) < 500.0f)
 					{
 						RE::NiPoint3 losStartPoint{};
@@ -1045,20 +1070,16 @@ namespace ALYSLC
 						);
 						if (focalPlayerOnScreen)
 						{
-							// Focus point first.
-							bool losOnFocalPlayer = false; //!Raycast::hkpCastRay(ToVec4(camFocusPoint), ToVec4(losEndPoint), true).hit;
-							if (!losOnFocalPlayer)
+							bool losOnFocalPlayer = false;
+							for (const auto& otherP : glob.coopPlayers)
 							{
-								for (const auto& otherP : glob.coopPlayers)
+								if (otherP->isActive && otherP != focalP)
 								{
-									if (otherP->isActive && otherP != focalP)
+									losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
+									if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
 									{
-										losStartPoint = Util::GetPlayerFocusPoint(otherP->coopActor.get());
-										if (!Raycast::hkpCastRay(ToVec4(losStartPoint), ToVec4(losEndPoint), true).hit)
-										{
-											losOnFocalPlayer = true;
-											break;
-										}
+										losOnFocalPlayer = true;
+										break;
 									}
 								}
 							}
@@ -1079,12 +1100,12 @@ namespace ALYSLC
 			// and all active players' focus points. Use two raycasts per focus point to check visibility.
 			// 2. If the hull result does not hit or if the hit position is close to the start position
 			// and the zero-hull raycast does not hit, the base target position is valid and visible.
-			// Reason for the distance check from the hull cast hit position is to prevent the target position
+			// The reason for the distance check from the hull cast hit position is to prevent the target position
 			// from jumping forward to the focus point unless there is an obstruction to the base target position. 
 			// Example: All active players are within a hull size from a wall, which causes the hull casts starting
 			// from their focus points to hit the wall right away. However, the zero-hull cast will not hit the wall,
 			// unless all players have their focus points clipping through the wall, which shouldn't happen.
-			// The next target position is set to the base target position, instead of one of the wall-hit positions,
+			// The next target position is then set to the base target position, instead of one of the wall-hit positions,
 			// since the base target position is still reachable from the players' focus points.
 			// 3. Otherwise, for the next target position, choose the hull cast hit point that is closest to the previous target position,
 			// which will minimize camera jumping. The hull cast hit position is adjusted to avoid clipping into geometry
@@ -1095,10 +1116,14 @@ namespace ALYSLC
 
 			const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
 			const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
+			// Save the closest hit position to the previous target position.
 			glm::vec4 closestHitPosToPrevTargetPos = lastSetTargetPos;
 			glm::vec4 castStartPos = ToVec4(camFocusPoint);
+			// Adjust the hit position to avoid clipping.
 			glm::vec4 adjHitResultPos{};
+			// Save distance for comparison purposes.
 			float closestDistToPrevTargetPos = FLT_MAX;
+			// Two raycast results, one cast with a hull and one without.
 			Raycast::RayResult hitResultWithHull{};
 			Raycast::RayResult hitResultNoHull{};
 
@@ -1115,6 +1140,8 @@ namespace ALYSLC
 			}
 			else
 			{
+				// We have an obstruction to the base target position,
+				// so adjust the hit position away from the obstruction now.
 				adjHitResultPos =
 				(
 					hitResultWithHull.hitPos +
@@ -1122,12 +1149,15 @@ namespace ALYSLC
 					min(hitResultWithHull.rayLength, camTargetPosHullSize)
 				);
 
+				// Set the new closest hit position, if necessary.
 				if (float dist = glm::distance(adjHitResultPos, lastSetTargetPos); dist < closestDistToPrevTargetPos)
 				{
 					closestDistToPrevTargetPos = dist;
 					closestHitPosToPrevTargetPos = adjHitResultPos;
 				}
 
+				// Now cast from each player's focus point
+				// to check for a closer hit position.
 				for (const auto& p : glob.coopPlayers)
 				{
 					if (p->isActive)
@@ -1140,6 +1170,7 @@ namespace ALYSLC
 							(!hitResultWithHull.hit) || 
 							(glm::distance(hitResultWithHull.hitPos, castStartPos) <= camTargetPosHullSize && !hitResultNoHull.hit)
 						};
+						// Stop casting if there is no hit, and therefore no obstruction, from a cast.
 						if (baseTargetPosVisible)
 						{
 							closestHitPosToPrevTargetPos = baseTargetPos;
@@ -1154,6 +1185,7 @@ namespace ALYSLC
 								min(hitResultWithHull.rayLength, camTargetPosHullSize)
 							);
 
+							// Check for update to the closest hit position again.
 							if (float dist = glm::distance(adjHitResultPos, lastSetTargetPos); dist < closestDistToPrevTargetPos)
 							{
 								closestDistToPrevTargetPos = dist;
@@ -1179,7 +1211,7 @@ namespace ALYSLC
 
 			// Collision target position 2 is used for crosshair selection LOS checks
 			// when camera collisions are disabled.
-			// Check for a hit from the base focus position.
+			// Check for a hit from the focal player/base focus position when the base target position is not reachable.
 			if (!Settings::bCamCollisions && camCollisionTargetPos != camBaseTargetPos)
 			{
 				if (focalPlayerCID == -1) 
@@ -1187,40 +1219,44 @@ namespace ALYSLC
 					auto result = Raycast::CastRay(ToVec4(camBaseFocusPoint), ToVec4(camBaseTargetPos), camTargetPosHullSize);
 					if (result.hit)
 					{
+						// Base target position not reachable from focus point.
 						camCollisionTargetPos2 = ToNiPoint3(result.hitPos + result.rayNormal * camTargetPosHullSize);
 					}
 					else
 					{
+						// Reachable from focus point.
 						camCollisionTargetPos2 = camBaseTargetPos;
 					}
 				}
 				else
 				{
+					// Same if from the focal player, since the focal player has visibility on the collision position.
 					camCollisionTargetPos2 = camCollisionTargetPos;
 				}
 			}
 
 			if (Settings::bCamCollisions || lockInteriorOrientationOnInit) 
 			{
-				RE::NiPoint3 losCheckPos = camCollisionTargetPos;
 				// Apply smoothing if enabled.
-				// NOTE: Camera can still phase through surfaces when transitioning from the last set position (can be OOB) to the target position (not OOB)
-				// since the interpolated position is between the two positions. Only jumping instantly to the target position will prevent this from occurring.
+				// NOTE: Camera can still phase through surfaces when transitioning from the last set position 
+				// (can be OOB) to the target position (not OOB) since the interpolated position is between the two positions. 
+				// Only jumping instantly to the target position will prevent this from occurring,
+				// but obviously, this is more jarring.
 				if (Settings::bTargetPosSmoothing)
 				{
 					camCollisionTargetPos = 
 					{
 						Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.x, camCollisionTargetPos.x, camFrameDepInterpFactor
+							lastSetCamTargetPos.x, camCollisionTargetPos.x, camInterpFactorFrameDep
 						),
 						Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.y, camCollisionTargetPos.y, camFrameDepInterpFactor
+							lastSetCamTargetPos.y, camCollisionTargetPos.y, camInterpFactorFrameDep
 						),
 						Util::InterpolateSmootherStep
 						(
-							lastSetCamTargetPos.z, camCollisionTargetPos.z, camFrameDepInterpFactor
+							lastSetCamTargetPos.z, camCollisionTargetPos.z, camInterpFactorFrameDep
 						)
 					};
 				}
@@ -1233,15 +1269,15 @@ namespace ALYSLC
 				{
 					camTargetPos.x = Util::InterpolateSmootherStep
 					(
-						lastSetCamTargetPos.x, camBaseTargetPos.x, camFrameDepInterpFactor
+						lastSetCamTargetPos.x, camBaseTargetPos.x, camInterpFactorFrameDep
 					);
 					camTargetPos.y = Util::InterpolateSmootherStep
 					(
-						lastSetCamTargetPos.y, camBaseTargetPos.y, camFrameDepInterpFactor
+						lastSetCamTargetPos.y, camBaseTargetPos.y, camInterpFactorFrameDep
 					);
 					camTargetPos.z = Util::InterpolateSmootherStep
 					(
-						lastSetCamTargetPos.z, camBaseTargetPos.z, camFrameDepInterpFactor
+						lastSetCamTargetPos.z, camBaseTargetPos.z, camInterpFactorFrameDep
 					);
 				}
 				else
@@ -1250,6 +1286,7 @@ namespace ALYSLC
 				}
 			}
 
+			// Save the final target position's radial distance for zoom calculations later.
 			camCollisionRadialDistance = camTargetPos.GetDistance(camBaseFocusPoint);
 		}
 	}
@@ -1266,6 +1303,7 @@ namespace ALYSLC
 			auto actorPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 			if (!actorPtr)
 			{
+				// Target is invalid, so clear.
 				ClearLockOnData();
 			}
 			else
@@ -1278,7 +1316,7 @@ namespace ALYSLC
 				lockOnTargetInSight = true;
 			}
 
-			// Indicate request was handled.
+			// Indicate request was handled by clearing it.
 			lockOnActorReq = std::nullopt;
 		}
 
@@ -1290,7 +1328,7 @@ namespace ALYSLC
 			RE::NiPoint3 oldCamLockOnFocusPoint = camLockOnFocusPoint;
 			if (validLockOnTarget)
 			{
-				// Check if current target is valid.
+				// Periodically heck if current target is valid.
 				// LOS checks.
 				secsSinceLockOnTargetLOSChecked = Util::GetElapsedSeconds(lockOnLOSCheckTP);
 				if (secsSinceLockOnTargetLOSChecked > Settings::fSecsBetweenTargetVisibilityChecks)
@@ -1300,9 +1338,13 @@ namespace ALYSLC
 					bool hadLOS = lockOnTargetInSight;
 					bool falseRef = false;
 					auto p1 = RE::PlayerCharacter::GetSingleton();
+					// Use P1's LOS check.
 					lockOnTargetInSight = p1 && p1->HasLineOfSight(camLockOnTargetPtr.get(), falseRef);
+					// Just lost LOS.
 					bool lostLOS = camLockOnTargetPtr && hadLOS && !lockOnTargetInSight;
+					// Currently has no LOS.
 					bool noLOS = camLockOnTargetPtr && !lockOnTargetInSight;
+					// Gained LOS after losing it previously.
 					bool regainedLOS = camLockOnTargetPtr && !hadLOS && lockOnTargetInSight;
 
 					if (lostLOS)
@@ -1319,6 +1361,7 @@ namespace ALYSLC
 					}
 				}
 
+				// Clear out after not having LOS for a certain amount of time.
 				bool invalidateAfterNoLOS = secsSinceLockOnTargetLOSLost > Settings::fSecsWithoutLOSToInvalidateTarget;
 				// Clear invalid target.
 				if (invalidateAfterNoLOS || !camLockOnTargetPtr->Is3DLoaded() || !camLockOnTargetPtr->IsHandleValid() || 
@@ -1329,12 +1372,12 @@ namespace ALYSLC
 					{
 						secsSinceLockOnTargetLOSLost = 0.0f;
 					}
+
+					validLockOnTarget = false;
 				}
 				else
 				{
-					// Crosshair refr is valid.
-					validLockOnTarget = true;
-					// Update lock on pos.
+					// Crosshair refr is valid. Update lock on pos.
 					camLockOnFocusPoint = Util::GetHeadPosition(camLockOnTargetPtr.get());
 				}
 			}
@@ -1350,26 +1393,28 @@ namespace ALYSLC
 						camLockOnFocusPoint.z + 0.2f * camLockOnTargetPtr->GetHeight() 
 					}
 				);
+
 				DrawLockOnIndicator(lockOnIndicatorCenter.x, lockOnIndicatorCenter.y);
+
 				// Smooth out tracking of lock on target.
 				camLockOnFocusPoint.x = Util::InterpolateSmootherStep
 				(
-					oldCamLockOnFocusPoint.x, camLockOnFocusPoint.x, camFrameDepInterpFactor
+					oldCamLockOnFocusPoint.x, camLockOnFocusPoint.x, camInterpFactorFrameDep
 				);
 				camLockOnFocusPoint.y = Util::InterpolateSmootherStep
 				(
-					oldCamLockOnFocusPoint.y, camLockOnFocusPoint.y, camFrameDepInterpFactor
+					oldCamLockOnFocusPoint.y, camLockOnFocusPoint.y, camInterpFactorFrameDep
 				);
 				camLockOnFocusPoint.z = Util::InterpolateSmootherStep
 				(
-					oldCamLockOnFocusPoint.z, camLockOnFocusPoint.z, camFrameDepInterpFactor
+					oldCamLockOnFocusPoint.z, camLockOnFocusPoint.z, camInterpFactorFrameDep
 				);
 			}
 		}
 
 		// Clear lock on data if the lock on target is invalid or
-		// not in lock on mode but lock on target is still set.
-		if ((!isLockedOn && camLockOnTargetHandle) || (isLockedOn && !validLockOnTarget && camLockOnTargetHandle))
+		// not in lock on mode but a lock on target is still set.
+		if ((camLockOnTargetHandle) && (!isLockedOn || !validLockOnTarget))
 		{
 			ClearLockOnData();
 		}
@@ -1411,6 +1456,7 @@ namespace ALYSLC
 			endPointGapDelta = endPointGapDelta == 0.0f ? indicatorLength : 0.0f;
 		}
 
+		// Start a new interp cycle when the endpoint changes.
 		if (lockOnIndicatorOscillationInterpData->next != endPointGapDelta)
 		{
 			lockOnIndicatorOscillationInterpData->SetTimeSinceUpdate(0.0f);
@@ -1418,17 +1464,20 @@ namespace ALYSLC
 		}
 
 		lockOnIndicatorOscillationInterpData->next = endPointGapDelta;
+		// Continue interpolating until reaching the endpoint.
 		if (lockOnIndicatorOscillationInterpData->current != endPointGapDelta)
 		{
 			lockOnIndicatorOscillationInterpData->InterpolateSmootherStep
 			(
 				min
 				(
-					lockOnIndicatorOscillationInterpData->secsSinceUpdate / lockOnIndicatorOscillationInterpData->secsUpdateInterval, 
+					lockOnIndicatorOscillationInterpData->secsSinceUpdate / 
+					lockOnIndicatorOscillationInterpData->secsUpdateInterval, 
 					1.0f
 				)
 			);
 			lockOnIndicatorOscillationInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
+			// Endpoint now reached, so we're done.
 			if (lockOnIndicatorOscillationInterpData->current == endPointGapDelta)
 			{
 				lockOnIndicatorOscillationInterpData->SetUpdateDurationAsComplete();
@@ -1437,7 +1486,8 @@ namespace ALYSLC
 		}
 
 		// Points are offset downward from origin (+Y Scaleform axis).
-		// Have to rebase from the bottom tip by subtracting length for each segment.
+		// Have to rebase from the bottom tip by subtracting the length for each segment,
+		// multiplying with the base scaling offset, and then factoring in the gap.
 		float gapDelta = lockOnIndicatorOscillationInterpData->current;
 		for (auto& offset : upperPortionOffsets)
 		{
@@ -1470,6 +1520,7 @@ namespace ALYSLC
 			)
 		};
 
+		// Three prongs, with two rotated += 45 degrees about the origin.
 		float startingRotation = -PI / 4.0f;
 		DebugAPI::RotateOffsetPoints2D(lowerPortionOffsets, startingRotation);
 		DebugAPI::RotateOffsetPoints2D(upperPortionOffsets, startingRotation);
@@ -1493,58 +1544,64 @@ namespace ALYSLC
 		// Fade or unfade objects that obstruct the LOS from the camera to each player.
 
 		RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera();
-		if (niCam)
+		if (!niCam || !niCam.get())
 		{
-			std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::pair<int32_t, int32_t>> obstructions;
-			for (const auto& p : glob.coopPlayers)
+			return;
+		}
+
+		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::pair<int32_t, int32_t>> obstructions;
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (p->isActive)
 			{
-				if (p->isActive)
+				auto actorCenter = Util::GetTorsoPosition(p->coopActor.get());
+				auto camForwardOffset = Util::RotationToDirectionVect(-camPitch, Util::ConvertAngle(camYaw)) * camTargetPosHullSize;
+				// Cast from in front of the camera, along a ray in the camera's facing direction to each player's center.
+				auto camNodePos = camTargetPos + camForwardOffset;
+				auto results = Raycast::GetAllHavokCastHitResults(ToVec4(actorCenter), ToVec4(camNodePos));
+				for (uint32_t i = 0; i < results.size(); ++i)
 				{
-					auto actorCenter = Util::GetTorsoPosition(p->coopActor.get());
-					auto camForwardOffset = Util::RotationToDirectionVect(-camPitch, Util::ConvertAngle(camYaw)) * camTargetPosHullSize;
-					auto camNodePos = camTargetPos + camForwardOffset;
-					auto results = Raycast::GetAllHavokCastHitResults(ToVec4(actorCenter), ToVec4(camNodePos));
-					for (uint32_t i = 0; i < results.size(); ++i)
+					const auto& result = results[i];
+					if (result.hitObject && result.hitObject.get() && !result.hitObject->flags.all(RE::NiAVObject::Flag::kHidden))
 					{
-						const auto& result = results[i];
-						if (result.hitObject && result.hitObject.get() && !result.hitObject->flags.all(RE::NiAVObject::Flag::kHidden))
+						// Fade if not using proximity fade or if the hit object is close enough to the camera.
+						if (!Settings::bProximityFadeOnly || camTargetPos.GetDistance(ToNiPoint3(result.hitPos)) < camTargetRadialDistance)
 						{
-							if (!Settings::bProximityFadeOnly || camTargetPos.GetDistance(ToNiPoint3(result.hitPos)) < camTargetRadialDistance)
-							{
-								auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
-								auto asActor = hitRefrPtr ? hitRefrPtr->As<RE::Actor>() : nullptr;
-								auto asActivator = hitRefrPtr ? hitRefrPtr->As<RE::TESObjectACTI>() : nullptr;
+							auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+							auto asActor = hitRefrPtr ? hitRefrPtr->As<RE::Actor>() : nullptr;
+							auto asActivator = hitRefrPtr ? hitRefrPtr->As<RE::TESObjectACTI>() : nullptr;
 								
-								if (hitRefrPtr && hitRefrPtr->GetBaseObject() && hitRefrPtr->GetBaseObject()->Is(RE::FormType::Static)) 
+							// NOTE: May remove if this causes issues later.
+							// Allow fading of statics and lights that were set to never fade.
+							if (hitRefrPtr && hitRefrPtr->GetBaseObject() && hitRefrPtr->GetBaseObject()->Is(RE::FormType::Static)) 
+							{
+								auto asStatic = hitRefrPtr->GetBaseObject()->As<RE::TESObjectSTAT>();
+								if ((asStatic->formFlags & RE::TESObjectSTAT::RecordFlags::kNeverFades) != 0) 
 								{
-									auto asStatic = hitRefrPtr->GetBaseObject()->As<RE::TESObjectSTAT>();
-									if ((asStatic->formFlags & RE::TESObjectSTAT::RecordFlags::kNeverFades) != 0) 
-									{
-										asStatic->formFlags ^= RE::TESObjectSTAT::RecordFlags::kNeverFades;
-									}
+									asStatic->formFlags ^= RE::TESObjectSTAT::RecordFlags::kNeverFades;
 								}
+							}
 
-								if (hitRefrPtr && hitRefrPtr->GetBaseObject() && hitRefrPtr->GetBaseObject()->Is(RE::FormType::Light))
+							if (hitRefrPtr && hitRefrPtr->GetBaseObject() && hitRefrPtr->GetBaseObject()->Is(RE::FormType::Light))
+							{
+								if ((hitRefrPtr->formFlags & RE::TESObjectREFR::RecordFlags::kNeverFades) != 0)
 								{
-									if ((hitRefrPtr->formFlags & RE::TESObjectREFR::RecordFlags::kNeverFades) != 0)
-									{
-										hitRefrPtr->formFlags ^= RE::TESObjectREFR::RecordFlags::kNeverFades;
-									}
+									hitRefrPtr->formFlags ^= RE::TESObjectREFR::RecordFlags::kNeverFades;
 								}
+							}
 
-								if (!asActor)
+							if (!asActor)
+							{
+								auto object3D = hitRefrPtr ? Util::GetRefr3D(hitRefrPtr.get()) : result.hitObject;
+								if (object3D && object3D.get() && object3D->GetRefCount() > 0)
 								{
-									auto object3D = hitRefrPtr ? Util::GetRefr3D(hitRefrPtr.get()) : result.hitObject;
-									if (object3D && object3D.get() && object3D->GetRefCount() > 0)
+									RE::NiPointer<RE::NiAVObject> ptr{ object3D };
+									// Smaller objects cannot be cast into a fade node.
+									bool canFadeObj = Settings::bFadeLargerObstructions || !object3D->AsFadeNode();
+									// If not a faded object, add directly with raycast hit index as fade index.
+									if ((canFadeObj) && (obstructions.empty() || !obstructions.contains(ptr)))
 									{
-										RE::NiPointer<RE::NiAVObject> ptr{ object3D };
-										// Can only fade smaller objects if larger object fade setting is not enabled.
-										// If not a faded object, add directly with raycast hit index as fade index.
-										bool canFadeObj = Settings::bFadeLargerObstructions || !object3D->AsFadeNode();
-										if ((canFadeObj) && (obstructions.empty() || !obstructions.contains(ptr)))
-										{
-											obstructions.insert({ ptr, { i, p->controllerID } });
-										}
+										obstructions.insert({ ptr, { i, p->controllerID } });
 									}
 								}
 							}
@@ -1552,64 +1609,70 @@ namespace ALYSLC
 					}
 				}
 			}
+		}
 
-			// NiAVObjects in obstructions list should not be invalid since they've been IncRef'd
-			// when constructed as NiPointers.
-			// And the naked NiAVObject ptrs in the handled set are kept valid while inserted
-			// into the fade data list, which also wraps them in NiPointers.
-			for (const auto& [object3D, fadeIndexCIDPair] : obstructions) 
+		// NOTE: NiAVObjects in obstructions list should not be invalid since they've been IncRef'd
+		// when constructed as NiPointers.
+		// And the naked NiAVObject ptrs in the handled set are kept valid while they are inserted
+		// into the fade data list, which also wraps them in NiPointers.
+
+		// Add new obstructions or update fade indices if already added.
+		for (const auto& [object3D, fadeIndexCIDPair] : obstructions) 
+		{
+			if (object3D && object3D.get() && object3D->GetRefCount() > 0)
 			{
-				if (object3D && object3D.get() && object3D->GetRefCount() > 0)
+				if (obstructionsToFadeIndicesMap.empty() || !obstructionsToFadeIndicesMap.contains(object3D))
 				{
-					if (obstructionsToFadeIndicesMap.empty() || !obstructionsToFadeIndicesMap.contains(object3D))
-					{
-						obstructionFadeDataSet.insert
-						(
-							std::make_unique<ObjectFadeData>(object3D.get(), fadeIndexCIDPair.first, true)
-						);
-						obstructionsToFadeIndicesMap.insert({ object3D, fadeIndexCIDPair.first });
-					}
-					else if (obstructionsToFadeIndicesMap.at(object3D) < fadeIndexCIDPair.first)
-					{
-						// Update fade index.
-						obstructionsToFadeIndicesMap[object3D] = fadeIndexCIDPair.first;
-					}
+					// Insert new obstruction to fade.
+					obstructionFadeDataSet.insert
+					(
+						std::make_unique<ObjectFadeData>(object3D.get(), fadeIndexCIDPair.first, true)
+					);
+					obstructionsToFadeIndicesMap.insert({ object3D, fadeIndexCIDPair.first });
+				}
+				else if (obstructionsToFadeIndicesMap.at(object3D) < fadeIndexCIDPair.first)
+				{
+					// Update fade index.
+					obstructionsToFadeIndicesMap[object3D] = fadeIndexCIDPair.first;
 				}
 			}
+		}
 
-			for (const auto& fadeData : obstructionFadeDataSet) 
+		// Update fade data for handled obstructions.
+		for (const auto& fadeData : obstructionFadeDataSet) 
+		{
+			const auto& handled3D = fadeData->object;
+			if (handled3D && handled3D.get() && handled3D->GetRefCount() > 0)
 			{
-				const auto& handled3D = fadeData->object;
-				if (handled3D && handled3D.get() && handled3D->GetRefCount() > 0)
+				// Check if the object is not in the current obstructions set, and fade it back in if it isn't.
+				bool shouldFadeIn = 
 				{
-					// Check if the object is not in the current obstructions set, and fade it back in if it isn't.
-					bool shouldFadeIn = 
-					{
-						(fadeData->shouldFadeOut) && 
-						((obstructions.empty()) || (!obstructions.empty() && !obstructions.contains(handled3D)))
-					};
+					(fadeData->shouldFadeOut) && 
+					((obstructions.empty()) || (!obstructions.empty() && !obstructions.contains(handled3D)))
+				};
 
-					if (shouldFadeIn)
-					{
-						fadeData->SignalFadeStateChange(false, fadeData->fadeIndex);
-					}
-
-					if (int32_t updatedFadeIndex = obstructionsToFadeIndicesMap[handled3D]; updatedFadeIndex > fadeData->fadeIndex)
-					{
-						fadeData->SignalFadeStateChange(fadeData->shouldFadeOut, updatedFadeIndex);
-					}
-
-					bool shouldRemove = !fadeData->UpdateFade();
-					if (shouldRemove)
-					{
-						obstructionsToFadeIndicesMap.erase(handled3D);
-						obstructionFadeDataSet.erase(fadeData);
-					}
+				if (shouldFadeIn)
+				{
+					fadeData->SignalFadeStateChange(false, fadeData->fadeIndex);
 				}
-				else
+
+				// Updated fade index means we have to modify its fade amount.
+				if (int32_t updatedFadeIndex = obstructionsToFadeIndicesMap[handled3D]; updatedFadeIndex > fadeData->fadeIndex)
 				{
+					fadeData->SignalFadeStateChange(fadeData->shouldFadeOut, updatedFadeIndex);
+				}
+
+				// Remove fully faded in/out or invalid obstructions.
+				bool shouldRemove = !fadeData->UpdateFade();
+				if (shouldRemove)
+				{
+					obstructionsToFadeIndicesMap.erase(handled3D);
 					obstructionFadeDataSet.erase(fadeData);
 				}
+			}
+			else
+			{
+				obstructionFadeDataSet.erase(fadeData);
 			}
 		}
 	}
@@ -1620,9 +1683,12 @@ namespace ALYSLC
 		// Attempts to improve visibility when the party moves up or down slopes.
 
 		float avgMovPitch = 0.0f;
+		// Number of players considered when determining the movement pitch factor.
+		// Will divide into the total movement pitch accumulated.
 		uint32_t consideredPlayersCount = 0;
 		for (const auto& p : glob.coopPlayers)
 		{
+			// Only consider the focal player for calculating the movement pitch factor.
 			if (focalPlayerCID != -1 && p->controllerID != focalPlayerCID)
 			{
 				continue;
@@ -1641,95 +1707,100 @@ namespace ALYSLC
 					return 0.0f;
 				}
 
-				RE::ActorPtr mount{ nullptr };
-				p->coopActor->GetMount(mount);
-				RE::Actor* actor = mount && mount.get() ? mount.get() : p->coopActor.get();
-				if (auto charController = actor->GetCharController(); charController)
+				// Use the player actor or their mount, if mounted.
+				const auto& movementActor = p->mm->movementActor;
+				bool isMounted = movementActor && movementActor.get() && movementActor->IsAMount();
+				auto charController = movementActor && movementActor.get() ? movementActor->GetCharController() : nullptr;
+				if (charController)
 				{
 					const auto& lsData = glob.cdh->GetAnalogStickState(p->controllerID, true);
-					// Ensure that the player is moving fully in any direction 
-					// and not attacking/bashing before adding movement pitch delta.
-					auto occupiedFurnitureHandle = actor->GetOccupiedFurniture();
-					bool notUsingFurniture = 
-					{
-						!occupiedFurnitureHandle || !occupiedFurnitureHandle.get() || !occupiedFurnitureHandle.get().get()
-					};
-					if (notUsingFurniture)
-					{
-						auto velocity = Util::GetActorLinearVelocity(actor);
-						auto& currentState = charController->context.currentState;
 
-						// Velocity-based incline angle when in the air/flying/jumping.
-						if (currentState == RE::hkpCharacterStateType::kFlying ||
-							currentState == RE::hkpCharacterStateType::kInAir ||
-							currentState == RE::hkpCharacterStateType::kJumping)
-						{
-							auto speed = velocity.Length();
-							auto velPitch = speed > 0.0f ? asinf(velocity.z / speed) : 0.0f;
-							avgMovPitch += velPitch / 2.0f;
-						}
+					// Continue if the player is using furniture.
+					auto occupiedFurnitureHandle = movementActor->GetOccupiedFurniture();
+					bool usingFurniture = 
+					{
+						occupiedFurnitureHandle && occupiedFurnitureHandle.get() && occupiedFurnitureHandle.get().get()
+					};
+					if (usingFurniture)
+					{
+						continue;
+					}
+
+					auto velocity = Util::GetActorLinearVelocity(movementActor.get());
+					auto& currentState = charController->context.currentState;
+
+					// Velocity-based incline angle when in the air/flying/jumping.
+					if (currentState == RE::hkpCharacterStateType::kFlying ||
+						currentState == RE::hkpCharacterStateType::kInAir ||
+						currentState == RE::hkpCharacterStateType::kJumping)
+					{
+						auto speed = velocity.Length();
+						auto velPitch = speed > 0.0f ? asinf(velocity.z / speed) : 0.0f;
+						// Divide by 2 to prevent too large of a swing in pitch.
+						avgMovPitch += velPitch / 2.0f;
+					}
+					else
+					{
 						// Surface support-based incline angle when on the ground/climbing/swimming.
+						auto normalZComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
+						auto supportSurfaceIncline = fabsf(asinf(normalZComp) - PI / 2.0f);
+
+						// Supporting surface's normal must be pointing up.
+						// Flat or down indicates that the player is walking on a surface 
+						// that is parallel to their upright direction or above them, 
+						// and that's not possible, I think.
+						// Report an incline of 0 in that case.
+						if (charController->surfaceInfo.surfaceNormal.quad.m128_f32[2] > 0.0f) 
+						{
+							RE::NiPoint3 normal = ToNiPoint3(charController->surfaceInfo.surfaceNormal, true);
+							RE::NiPoint3 camRight = Util::RotationToDirectionVect
+							(
+								0.0f, 
+								Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw + PI / 2.0f))
+							);
+							RE::NiPoint3 camForwardXY = Util::RotationToDirectionVect
+							(
+								0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw))
+							);
+							float angNormalToForwardXY = acosf(std::clamp(normal.Dot(camForwardXY), -1.0f, 1.0f));
+							if (isnan(angNormalToForwardXY) || isinf(angNormalToForwardXY))
+							{
+								angNormalToForwardXY = PI / 2.0f;
+							}
+
+							supportSurfaceIncline = fabsf(angNormalToForwardXY - PI / 2.0f);
+						}
 						else
 						{
-							auto normalZComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
-							// Angle the camera downward if the player is moving downhill (no change to sign).
-							auto supportSurfaceIncline = fabsf(asinf(normalZComp) - PI / 2.0f);
-
-							// Supporting surface's normal must be pointing up.
-							// Flat or down indicates that the player is walking on a surface 
-							// that is parallel to their upright direction or above them, 
-							// and that's not possible, I think.
-							// Report an incline of 0 in that case.
-							if (charController->surfaceInfo.surfaceNormal.quad.m128_f32[2] > 0.0f) 
-							{
-								RE::NiPoint3 normal = ToNiPoint3(charController->surfaceInfo.surfaceNormal, true);
-								RE::NiPoint3 camRight = Util::RotationToDirectionVect
-								(
-									0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw + PI / 2.0f))
-								);
-								RE::NiPoint3 camForwardXY = Util::RotationToDirectionVect
-								(
-									0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(camYaw))
-								);
-								float angNormalToForwardXY = acosf(std::clamp(normal.Dot(camForwardXY), -1.0f, 1.0f));
-								if (isnan(angNormalToForwardXY) || isinf(angNormalToForwardXY))
-								{
-									angNormalToForwardXY = PI / 2.0f;
-								}
-
-								supportSurfaceIncline = fabsf(angNormalToForwardXY - PI / 2.0f);
-							}
-							else
-							{
-								supportSurfaceIncline = 0.0f;
-							}
-							
-							// Moving uphill means the pitch must decrease to angle the camera
-							// upward towards the players.
-							if (velocity.z > 0.0f)
-							{
-								supportSurfaceIncline = -supportSurfaceIncline;
-							}
-							// If the player's z velocity is insignificantly small, set the incline to 0.
-							else if (velocity.z == 0.0f)
-							{
-								supportSurfaceIncline = 0.0f;
-							}
-
-							avgMovPitch += supportSurfaceIncline;
+							supportSurfaceIncline = 0.0f;
 						}
+							
+						// Moving uphill means the pitch must decrease to angle the camera
+						// upward towards the players.
+						if (velocity.z > 0.0f)
+						{
+							supportSurfaceIncline = -supportSurfaceIncline;
+						}
+						else if (velocity.z == 0.0f)
+						{
+							// If the player's z velocity is 0, set the incline to 0.
+							supportSurfaceIncline = 0.0f;
+						}
+
+						avgMovPitch += supportSurfaceIncline;
 					}
 				}
 			}
 		}
 
 		// Four elevation change scenarios relative to the camera:
-		// 1. up a slope away from camera: pitch cam upward.
-		// 2. down a slope away from camera: pitch cam downward.
-		// 3. up a slope towards the camera: pitch cam downward.
-		// 4. down a slope towards the camera: pitch cam upward.
+		// 1. Up a slope away from camera: pitch cam upward.
+		// 2. Down a slope away from camera: pitch cam downward.
+		// 3. Up a slope towards the camera: pitch cam downward.
+		// 4. Down a slope towards the camera: pitch cam upward.
 		avgMovPitch /= max(1, consideredPlayersCount);
 		float signAdjustment = 1.0f;
+		// Use camera origin position's path direction as the camera movement direction. 
 		if (camOriginPointDirection.Length() > 0.0f) 
 		{
 			float originMovYaw = Util::DirectionToGameAngYaw(camOriginPointDirection); 
@@ -1750,12 +1821,15 @@ namespace ALYSLC
 
 		float yawDiff = 0.0f;
 		float avgMovementYawRelToCam = 0.0f;
+		// Only consider players that are not using furniture.
 		bool notUsingFurniture = true;
 		RE::ObjectRefHandle occupiedFurnitureHandle;
 		
+		// Divides into accumulated total movement yaw to get the average.
 		uint32_t consideredPlayersCount = 0;
 		for (const auto& p : glob.coopPlayers)
 		{
+			// Only consider the focal player for calculating the movement pitch factor.
 			if (focalPlayerCID != -1 && p->controllerID != focalPlayerCID)
 			{
 				continue;
@@ -1774,15 +1848,20 @@ namespace ALYSLC
 					return 0.0f;
 				}
 
-				RE::ActorPtr mount{ nullptr };
 				const auto& movementActor = p->mm->movementActor;
 				bool isMounted = movementActor && movementActor.get() && movementActor->IsAMount();
-				auto charController = movementActor && movementActor.get() ? movementActor->GetCharController() : nullptr;
+				auto charController = 
+				(
+					movementActor && movementActor.get() ? 
+					movementActor->GetCharController() : 
+					nullptr
+				);
 				// Ensure that the player is moving fully in any direction 
 				// and not attacking/bashing/using furniture before adding yaw delta.
 				bool addYawDiff = 
 				{ 
-					(charController) && 
+					(charController) &&
+					(isMounted || notUsingFurniture) && 
 					(
 						(
 							charController->speedPct != 0.0f &&
@@ -1795,8 +1874,7 @@ namespace ALYSLC
 							movementActor->actorState1.movingLeft ||
 							movementActor->actorState1.movingRight
 						)
-					) &&
-					(isMounted || notUsingFurniture)
+					)
 				};
 
 				if (addYawDiff) 
@@ -1808,7 +1886,7 @@ namespace ALYSLC
 					// Dependent on how committed the player is to moving 
 					// in their heading direction.
 					yawDiff *= lsData.normMag;
-					// Ease into the full movement yaw delta to prevent sharp yaw changes.
+					// Ease into the full movement yaw delta over 3 seconds to prevent sharp yaw changes.
 					yawDiff *= Util::InterpolateSmootherStep
 					(
 						0.0f,
@@ -1827,254 +1905,6 @@ namespace ALYSLC
 
 		avgMovementYawRelToCam /= max(1, consideredPlayersCount);
 		return avgMovementYawRelToCam;
-	}
-
-	bool CameraManager::GetPlayerHasLOSOnBaseTargetPos(RE::NiPoint3& a_playerClosestLOSPos)
-	{
-		// Perform raycasts along each players' vertical axis towards the base target position.
-		// If there is no obstruction to the base target position 
-		// (a ray does not hit for any player), the player has 'LOS', so return true.
-		// Also store the closest player 'LOS' position in the outparam.
-
-		RE::NiPoint3 playerFocusPoint = camCollisionFocusPoint;
-		float closestHitDist = FLT_MAX;
-		std::optional<glm::vec4> closestHitStartPos{ };
-		std::optional<glm::vec4> closestHitEndPos{ };
-		glm::vec4 startPos{ };
-		glm::vec4 endPos{ };
-		Raycast::RayResult result;
-		for (const auto& p : glob.coopPlayers)
-		{
-			if (!p->isActive)
-			{
-				continue;
-			}
-
-			playerFocusPoint = p->coopActor->data.location;
-			playerFocusPoint.z += p->coopActor->GetHeight();
-			auto vertBounds = Util::GetVertCollPoints(playerFocusPoint, 0.0f);
-			float startingZPos = vertBounds.second == -FLT_MAX ? p->coopActor->data.location.z : vertBounds.second;
-			ClampToZCoordAboveLowerBound
-			(
-				startingZPos, 
-				camTargetPosHullSize * 2.0f, 
-				camTargetPosHullSize * 2.0f, 
-				vertBounds.first, 
-				vertBounds.second
-			);
-			const float maxOffset = Settings::fMaxRaycastAndZoomOutDistance;
-			float endingZPos = 
-			{
-				vertBounds.first == FLT_MAX ?
-				vertBounds.second + maxOffset :
-				max(startingZPos, vertBounds.first - camTargetPosHullSize * 2.0f)
-			};
-
-			// Three casts along the player (feet level, torso level, head level),
-			// Two casts above the player and below the upper bound (halfway between, at upper bound).
-			const float zIncAlongPlayer = (playerFocusPoint.z - startingZPos) / 2.0f;
-			const float zIncAbovePlayer = max(0.0f, min(endingZPos - playerFocusPoint.z, maxOffset)) / 2.0f;
-			startPos = glm::vec4(playerFocusPoint.x, playerFocusPoint.y, startingZPos, 0.0f);
-			endPos = ToVec4(camBaseTargetPos);
-			result.hit = false;
-			uint8_t castIndex = 0;
-			const uint32_t numCastsAlongVertAxis = 5;
-			const uint32_t numCastsAlongPlayer = 3;
-			while (castIndex < numCastsAlongVertAxis)
-			{
-				DebugAPI::QueuePoint3D(startPos, Settings::vuOverlayRGBAValues[p->playerID], 3.0f, 0.0f);
-
-				result = Raycast::CastRay(startPos, endPos, 0.0f);
-				// Went through base target position, so the position is visible from the player's vertical axis.
-				if (!result.hit)
-				{
-					a_playerClosestLOSPos = camBaseTargetPos;
-					return true;
-				}
-				else if (float hitDist = glm::distance(result.hitPos, endPos); hitDist < closestHitDist)
-				{
-					// If this raycast hit closer to the base target position,
-					// set the new closest LOS position to the adjusted hit position.
-					closestHitDist = hitDist;
-					closestHitStartPos = startPos;
-					closestHitEndPos = endPos;
-				}
-
-				// Three casts along the player and two above to the upper bound.
-				if (castIndex < numCastsAlongPlayer)
-				{
-					startPos.z += zIncAlongPlayer;
-				}
-				else
-				{
-					startPos.z += zIncAbovePlayer;
-				}
-
-				++castIndex;
-			}
-		}
-
-		if (closestHitStartPos.has_value() && closestHitEndPos.has_value()) 
-		{
-			result = Raycast::CastRay
-			(
-				closestHitStartPos.value(), closestHitEndPos.value(), 2.0f * camTargetPosHullSize
-			);
-			if (result.hit) 
-			{
-				a_playerClosestLOSPos = ToNiPoint3
-				(
-					result.hitPos + result.rayNormal * min(result.rayLength, camTargetPosHullSize)
-				);
-			}
-		}
-
-		return false;
-	}
-
-	RE::NiPoint3 CameraManager::GetRaycastApproxTargetPosFromOrigin(const bool& a_baseTargetPosIsOOB, const RE::NiPoint3& a_playerClosestLOSPos)
-	{
-		// OOB = 'Out of Bounds'
-		// Perform casts along a vertical ray originating at the current true origin point.
-		// Break up this ray into subranges based on all the raycast hits along the ray and
-		// perform a set number of evenly-spaced casts in each range to the base target position.
-		// If the base target position is OOB or no player has LOS on the base target position, 
-		// choose the closest cast hit point that is not OOB 
-		// but never the base target position itself.
-		// Otherwise, choose the base target position itself as the next target position to set,
-		// since it is guaranteed to be in-bounds and at least one player has LOS.
-
-		const size_t maxEndpoints = 11;
-		const float maxZOffset = Settings::fMaxRaycastAndZoomOutDistance;
-		// Get lower bound Z pos offset slightly more than cam target pos hull size to prevent the first
-		// raycast from hitting the starting point.
-		auto bounds = Util::GetVertCollPoints(camOriginPoint, 0.0f);
-		// If unbound below, use cam collision origin point's Z coord, which should be valid.
-		// Give some leeway for subsequent casts along the origin vertical axis 
-		// by increasing the z offset from the lower bound.
-		float startZ = 
-		(
-			bounds.second != -FLT_MAX ? 
-			bounds.second + camTargetPosHullSize * 2.1f : 
-			camOriginPoint.z
-		);
-		float endZ = startZ + maxZOffset;
-
-		glm::vec4 startPos = { camOriginPoint.x, camOriginPoint.y, startZ, 0.0f };
-		glm::vec4 endPos = { camOriginPoint.x, camOriginPoint.y, endZ, 0.0f };
-		// Giving leeway for casts to the target position by doubling the hull size.
-		auto fromOriginPointResults = Raycast::GetAllCamCastHitResults
-		(
-			startPos, endPos, camTargetPosHullSize * 2.0f
-		);
-		// First range endpoint at the start pos.
-		std::vector<glm::vec4> raycastRangeEndpoints;
-		raycastRangeEndpoints.emplace_back(startPos);
-		if (!fromOriginPointResults.empty())
-		{
-			size_t resultNum = 0;
-			// Minus 2 (exterior cell, start + end range enpoints) or 1 (interior cell, only start range endpoint).
-			size_t maxNumResults = min
-			(
-				fromOriginPointResults.size(), 
-				exteriorCell ? 
-				maxEndpoints - 2 : 
-				maxEndpoints - 1
-			);
-			while (resultNum < maxNumResults)
-			{
-				auto result = fromOriginPointResults[resultNum];
-				if (auto result = fromOriginPointResults[resultNum]; result.hit)
-				{
-					// Adjust pos to maintain a distance slightly larger than the target pos hull size.
-					// Below and above the hit point.
-					raycastRangeEndpoints.emplace_back
-					(
-						result.hitPos + result.rayNormal * min(result.rayLength, camTargetPosHullSize * 2.0f)
-					);
-				}
-
-				++resultNum;
-			}
-		}
-
-		// Since the camera is free to move as high into the sky as possible when outside and is not out of bounds, 
-		// there will always be at least 2 end points.
-		// When inside, the camera is constrained to the ceiling to stay in bounds.
-		if (exteriorCell) 
-		{
-			raycastRangeEndpoints.emplace_back(endPos);
-		}
-
-		const size_t numRanges = max(raycastRangeEndpoints.size() - 1, 1);
-		const size_t castsPerRange = std::clamp(maxEndpoints / numRanges, 1ull, 10ull);
-
-		Raycast::RayResult result;
-		result.hit = false;
-		glm::vec4 adjustedHitPos{};
-		glm::vec4 castStartPos{};
-		glm::vec4 deltaPos{};
-		glm::vec4 closestHitPos = ToVec4(camCollisionTargetPos);
-		const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
-		const glm::vec4 focusPoint = ToVec4(camBaseFocusPoint);
-		const glm::vec4 toFocusDir = glm::normalize(focusPoint - baseTargetPos);
-		const glm::vec4 playerClosestLOSPos = ToVec4(a_playerClosestLOSPos);
-		// Closest Z coordinate difference between a raycast hit position below
-		// and the closest player LOS position to the base target position.
-		float closestHitZDist = FLT_MAX;
-		size_t totalCastCount = 0;
-		bool hitBaseTargetPos = false;
-		bool playerHasLOS = a_playerClosestLOSPos == camBaseTargetPos;
-		// Vertical offset ranges within which to raycast.
-		for (uint32_t endPointNum = 0; endPointNum < raycastRangeEndpoints.size() - 1; ++endPointNum)
-		{
-			if (hitBaseTargetPos) 
-			{
-				break; 
-			}
-
-			glm::vec4 endPointStartPos = raycastRangeEndpoints[endPointNum];
-			glm::vec4 endPointEndPos = raycastRangeEndpoints[endPointNum + 1];
-			deltaPos = (endPointEndPos - endPointStartPos) / static_cast<float>(castsPerRange);
-			size_t rangeCastCount = 0;
-			// Raycast a set number of times within each range.
-			while (rangeCastCount < castsPerRange)
-			{
-				castStartPos = endPointStartPos + deltaPos * static_cast<float>(rangeCastCount);
-				result = Raycast::CastRay(castStartPos, baseTargetPos, camTargetPosHullSize);
-				// Hit means the cam target position is not reachable via the raycast.
-				if (result.hit)
-				{
-					adjustedHitPos = 
-					(
-						result.hitPos + result.rayNormal * min(result.rayLength, camTargetPosHullSize)
-					);
-					float hitZDist = fabsf(playerClosestLOSPos.z - adjustedHitPos.z);
-					// If this raycast hit was closer in the vertical direction,
-					// set it as the new closest position to the closest player LOS position.
-					if (hitZDist < closestHitZDist)
-					{
-						closestHitPos = adjustedHitPos;
-						closestHitZDist = hitZDist;
-					}
-				}
-				else if (!a_baseTargetPosIsOOB && playerHasLOS)
-				{
-					// If the base target position is not out of bounds,
-					// at least one player has LOS on the base target position,
-					// and we haven't hit any obstructions while raycasting, 
-					// the base target position is valid. Break and return it now.
-					closestHitPos = baseTargetPos;
-					hitBaseTargetPos = true;
-					break;
-				}
-
-				++rangeCastCount;
-				++totalCastCount;
-			}
-		}
-
-		return ToNiPoint3(closestHitPos);
 	}
 
 	bool CameraManager::NoPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes)
@@ -2113,10 +1943,6 @@ namespace ALYSLC
 					// to consider the player as in view of the camera.
 					if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
 					{
-						// Cast from node to point instead of the other way around because 
-						// if there is a "one-way" surface that is facing up between 
-						// the point and the node (such as some terrain 3D objects),
-						// the raycast results will not contain a hit when casting from point to node.
 						auto losCheck = Raycast::hkpCastRay
 						(
 							ToVec4(nodePtr->world.translate), 
@@ -2184,29 +2010,39 @@ namespace ALYSLC
 		// also accounting for a pixel margin at the edges of the screen, if given.
 
 		bool onScreen = false;
-		const auto& niCam = Util::GetNiCamera();
+		auto niCam = Util::GetNiCamera();
+		if (!niCam || !niCam.get())
+		{
+			return false;
+		}
+
+		// Temporarily move the camera to the given position and set the given rotation.
 		Util::SetRotationMatrixPY(playerCam->cameraRoot->local.rotate, a_rotation.x, a_rotation.y);
 		Util::SetCameraPosition(playerCam, a_camPos);
 		RE::NiUpdateData updateData;
 		playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
-		if (const auto hud = DebugAPI::GetHUD(); hud)
+
+		const auto hud = DebugAPI::GetHUD(); 
+		if (!hud)
 		{
-			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = fabsf(gRect.right - gRect.left);
-			const float rectHeight = fabsf(gRect.bottom - gRect.top);
-			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
-			float x = 0.0f, y = 0.0f, z = 0.0f;
-			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_point, x, y, z, 1e-5f);
-			onScreen = 
-			(
-				x >= gRect.left + a_pixelMargin && 
-				x <= gRect.right - a_pixelMargin && 
-				y >= gRect.top + a_pixelMargin && 
-				y <= gRect.bottom - a_pixelMargin && 
-				z < 1.0f &&
-				z > -1.0f
-			);
+			return false;
 		}
+
+		RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
+		const float rectWidth = fabsf(gRect.right - gRect.left);
+		const float rectHeight = fabsf(gRect.bottom - gRect.top);
+		RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
+		float x = 0.0f, y = 0.0f, z = 0.0f;
+		RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_point, x, y, z, 1e-5f);
+		onScreen = 
+		(
+			x >= gRect.left + a_pixelMargin && 
+			x <= gRect.right - a_pixelMargin && 
+			y >= gRect.top + a_pixelMargin && 
+			y <= gRect.bottom - a_pixelMargin && 
+			z < 1.0f &&
+			z > -1.0f
+		);
 
 		return onScreen;
 	}
@@ -2223,6 +2059,7 @@ namespace ALYSLC
 		lockOnIndicatorOscillationInterpData->ResetData();
 		movementPitchInterpData->ResetData();
 		movementYawInterpData->ResetData();
+
 		// Reset interp factors and ratio for blending pitch/yaw changes.
 		if (camState == CamState::kManualPositioning)
 		{
@@ -2238,7 +2075,7 @@ namespace ALYSLC
 			);
 		}
 
-		camFrameDepInterpFactor = min(1.0f, *g_deltaTimeRealTime * 60.0f * camInterpFactor);
+		camInterpFactorFrameDep = min(1.0f, *g_deltaTimeRealTime * 60.0f * camInterpFactor);
 		prevRotInterpRatio = 0.0f;
 		// Reset to autotrail state.
 		prevCamState = camState = CamState::kAutoTrail;
@@ -2266,21 +2103,21 @@ namespace ALYSLC
 					); 
 					if (!tpState)
 					{
-						ALYSLC::Log("[CAM] ERR: ResetCamData: Could not get third person state.");
+						SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get third person state.");
 					}
 				}
 				else
 				{
-					ALYSLC::Log("[CAM] ERR: ResetCamData: Could not get camera state.");
+					SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get camera state.");
 				}
 			}
 		}
 		else
 		{
-			ALYSLC::Log("[CAM] ERR: ResetCamData: Could not get player cam.");
+			SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get player cam.");
 		}
 
-		// Set height. Higher above if exterior cell.
+		// Set average player height to use as the default origin point offset.
 		avgPlayerHeight = 0.0f;
 		std::for_each(glob.coopPlayers.begin(), glob.coopPlayers.end(),
 			[&](const auto& a_p) {
@@ -2294,7 +2131,7 @@ namespace ALYSLC
 		movementPitchRunningTotal = movementYawToCamRunningTotal = 0.0f;
 		numMovementPitchReadings = numMovementYawToCamReadings = 0;
 		// All anchor points set to origin point initially.
-		camBaseFocusPointZOffset = camFocusPointZOffset = 0.0f;
+		camBaseHeightOffset = camHeightOffset = 0.0f;
 		// Set radial distance. Further away from players if exterior cell.
 		camTargetRadialDistance = 
 		camBaseRadialDistance =
@@ -2302,17 +2139,8 @@ namespace ALYSLC
 		camSavedBaseRadialDistance = exteriorCell ? 700.0f : 200.0f;
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 
-		auto camNodePos = tpState->camera->cameraRoot->local.translate;
-		camBaseOriginPoint = camNodePos;
-		/*if (playerCam)
-		{
-			camBaseOriginPoint = playerCam->cameraRoot->world.translate;
-		}
-		else */if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
-		{
-			camBaseOriginPoint = p1->GetLookingAtLocation();
-		}
-
+		auto p1LookingAt = glob.player1Actor->GetLookingAtLocation();
+		camBaseOriginPoint = p1LookingAt;
 		camCollisionOriginPoint = camBaseOriginPoint;
 		camOriginPointDirection = RE::NiPoint3();
 		camBaseFocusPoint =
@@ -2328,7 +2156,6 @@ namespace ALYSLC
 		camMaxAnchorPointZCoord = bounds.first;
 		camMinAnchorPointZCoord = bounds.second;
 
-		auto p1LookingAt = glob.player1Actor->GetLookingAtLocation();
 		float p1Heading = glob.player1Actor->GetHeading(false);
 		// Set initial rotation.
 		camPitch = 
@@ -2354,8 +2181,9 @@ namespace ALYSLC
 		std::optional<RE::TESObjectREFR*> closestTeleportDoor = std::nullopt;
 		std::optional<float> closestTeleportDoorDistComp = std::nullopt;
 		// Check for nearby teleport doors within the current cam radial distance of player 1.
-		// If so, the camera should be set in front of the party when enabled.
-		Util::ForEachReferenceInRange(
+		// If so, the camera should be set in between the door and P1.
+		Util::ForEachReferenceInRange
+		(
 			p1LookingAt, camTargetRadialDistance + camTargetPosHullSize, false,
 			[&](RE::TESObjectREFR* a_refr) {
 				if (!a_refr || !Util::HandleIsValid(a_refr->GetHandle()) || !a_refr->IsHandleValid())
@@ -2373,40 +2201,13 @@ namespace ALYSLC
 						// Only consider doors that teleport the player when activated.
 						if (a_refr->extraList.HasType<RE::ExtraTeleport>())
 						{
-							// Set in front, if in exterior cell on cam enable.
-							if (exteriorCell)
+							auto refrCenter = Util::Get3DCenterPos(a_refr);
+							float p1ToDoorDist = p1LookingAt.GetDistance(refrCenter);
+							if ((!closestTeleportDoorDistComp.has_value()) ||
+								(p1ToDoorDist < closestTeleportDoorDistComp.value()))
 							{
-								auto refrCenter = Util::Get3DCenterPos(a_refr);
-								float p1ToDoorDist = p1LookingAt.GetDistance(refrCenter);
-								if ((!closestTeleportDoorDistComp.has_value()) || 
-									(p1ToDoorDist < closestTeleportDoorDistComp.value()))
-								{
-									closestTeleportDoorDistComp = p1ToDoorDist;
-									closestTeleportDoor = a_refr;
-								}
-							}
-							else
-							{
-								// Otherwise, place between door and P1 initially.
-								auto refrCenter = Util::Get3DCenterPos(a_refr);
-								auto toRefrCenterXY = refrCenter - p1LookingAt;
-								toRefrCenterXY.z = 0.0f;
-								toRefrCenterXY.Unitize();
-								auto camBackwardXY = Util::RotationToDirectionVect
-								(
-									0.0f, Util::ConvertAngle(Util::NormalizeAng0To2Pi(p1Heading + PI))
-								);
-								float xyComponentMag = toRefrCenterXY.Dot(camBackwardXY);
-
-								if (xyComponentMag >= 0.0f)
-								{
-									if ((!closestTeleportDoorDistComp.has_value()) || 
-										(xyComponentMag < closestTeleportDoorDistComp.value()))
-									{
-										closestTeleportDoorDistComp = xyComponentMag;
-										closestTeleportDoor = a_refr;
-									}
-								}
+								closestTeleportDoorDistComp = p1ToDoorDist;
+								closestTeleportDoor = a_refr;
 							}
 						}
 					}
@@ -2460,9 +2261,9 @@ namespace ALYSLC
 		// to prevent actors from fading when they are too close to
 		// the camera.
 
-		if (auto rBody = playerCam->rigidBody; rBody)
+		if (auto rigidBodyPtr = playerCam->rigidBody; rigidBodyPtr && rigidBodyPtr.get())
 		{
-			if (auto world = rBody->GetWorld1(); world)
+			if (auto world = rigidBodyPtr->GetWorld1(); world)
 			{
 				if (auto filterInfo = (RE::bhkCollisionFilter*)world->collisionFilter; filterInfo)
 				{
@@ -2513,15 +2314,14 @@ namespace ALYSLC
 					{
 						p3D->fadeAmount = 1.0f;
 						p3D->flags.set(RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade);
-						RE::NiUpdateData updateData;
-						p3D->UpdateDownwardPass(updateData, 0);
 					}
 					else
 					{
 						p3D->flags.reset(RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade);
-						RE::NiUpdateData updateData;
-						p3D->UpdateDownwardPass(updateData, 0);
 					}
+
+					RE::NiUpdateData updateData;
+					p3D->UpdateDownwardPass(updateData, 0);
 				}
 			}
 		}
@@ -2530,6 +2330,7 @@ namespace ALYSLC
 	void CameraManager::ToggleCoopCamera(bool a_enable)
 	{
 		// External request to toggle the co-op camera on/off.
+
 		if (a_enable)
 		{
 			RequestStateChange(ManagerState::kRunning);
@@ -2555,49 +2356,54 @@ namespace ALYSLC
 			// Hacky, but it works well enough.
 			if (a_fromFirstPerson)
 			{
-				// REMOVE
-				const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 				{
 					std::unique_lock<std::mutex> togglePOVLock(camTogglePOVMutex, std::try_to_lock);
 					if (togglePOVLock)
 					{
-						ALYSLC::Log("[CAM] ToThirdPersonState. Lock obtained. (0x{:X})", hash);
+						SPDLOG_DEBUG("[CAM] ToThirdPersonState. Lock obtained. (0x{:X})", 
+							std::hash<std::jthread::id>()(std::this_thread::get_id()));
 						isTogglingPOV = true;
 					}
 					else
 					{
 						// Could not obtain lock to toggle POV, so return here without enqueueing any tasks.
+						SPDLOG_DEBUG("[CAM] ToThirdPersonState. Failed to obtain lock: (0x{:X})",
+							std::hash<std::jthread::id>()(std::this_thread::get_id()));
 						return;
 					}
 				}
 
-				glob.taskRunner->AddTask([this]() {
-					if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap)
+				glob.taskRunner->AddTask
+				(
+					[this]() 
 					{
-						if (auto ue = RE::UserEvents::GetSingleton(); ue)
+						if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap)
 						{
-							std::this_thread::sleep_for(1s);
-							Util::AddSyncedTask(
-								[this, controlMap]() 
-								{
-									playerCam->lock.Lock();
-									playerCam->ForceThirdPerson();
-									playerCam->UpdateThirdPerson(true);
-									playerCam->lock.Unlock();
-								}
-							);
-							std::this_thread::sleep_for(1s);
-						}
+							if (auto ue = RE::UserEvents::GetSingleton(); ue)
+							{
+								// Wait, toggle to TP state, then wait again.
+								std::this_thread::sleep_for(1s);
+								Util::AddSyncedTask(
+									[this, controlMap]() 
+									{
+										playerCam->lock.Lock();
+										playerCam->ForceThirdPerson();
+										playerCam->UpdateThirdPerson(true);
+										playerCam->lock.Unlock();
+									}
+								);
+								std::this_thread::sleep_for(1s);
+							}
 
-						// REMOVE
-						const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-						ALYSLC::Log("[CAM] ToThirdPersonState. Getting lock from global task runner. (0x{:X})", hash);
-						{
-							std::unique_lock<std::mutex> togglePOVLock(camTogglePOVMutex);
-							isTogglingPOV = false;
+							SPDLOG_DEBUG("[CAM] ToThirdPersonState. Getting lock from global task runner. (0x{:X})", 
+								std::hash<std::jthread::id>()(std::this_thread::get_id()));
+							{
+								std::unique_lock<std::mutex> togglePOVLock(camTogglePOVMutex);
+								isTogglingPOV = false;
+							}
 						}
 					}
-				});
+				);
 			}
 			else
 			{
@@ -2618,17 +2424,20 @@ namespace ALYSLC
 
 		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 		bool validLockOnTarget = camLockOnTargetPtr && camLockOnTargetPtr.get();
-		// Snap to new targets, but rotate slowly when adjusting angle to the same target.
+		// Cap rotation speed.
 		float maxRotRads = camMaxAngRotRate * *g_deltaTimeRealTime;
+		// Changes in pitch/yaw to apply.
 		auto pitchDelta = 0.0f;
 		auto yawDelta = 0.0f;
+		// Right stick displacement components and magnitude.
 		float rsX = 0.0f;
 		float rsY = 0.0f;
 		float rsMag = 0.0f;
-		if (isAutoTrailing)
+		if (isAutoTrailing || isManuallyPositioned)
 		{
-			camMaxPitchAngMag = autoTrailPitchMax;
-			if (camAdjMode == CamAdjustmentMode::kRotate && controlCamCID > -1 && 
+			camMaxPitchAngMag = isAutoTrailing ? autoTrailPitchMax : PI / 2.0f;
+			if (camAdjMode == CamAdjustmentMode::kRotate && 
+				controlCamCID > -1 && 
 				controlCamCID < ALYSLC_MAX_PLAYER_COUNT)
 			{
 				const auto& rsData = glob.cdh->GetAnalogStickState(controlCamCID, false);
@@ -2644,17 +2453,20 @@ namespace ALYSLC
 					// Moving the RS up or down causes the camera to pitch
 					// upward or downward.
 					// Upward results in a negative pitch change,
-					// downward results in a positive pitch change.
+					// downward results in a positive pitch change, 
+					// so we flip the sign.
 					pitchDelta = maxRotRads * rsY * rsMag;
 					camBaseTargetPosPitch -= pitchDelta;
 				}
 			}
 		}
-		else if (isLockedOn)
+		else
 		{
+			// Zoom in or out when auto-zoom is not active.
 			if (Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom || !validLockOnTarget)
 			{
-				if (camAdjMode == CamAdjustmentMode::kRotate && controlCamCID > -1 &&
+				if (camAdjMode == CamAdjustmentMode::kRotate && 
+					controlCamCID > -1 &&
 					controlCamCID < ALYSLC_MAX_PLAYER_COUNT)
 				{
 					camMaxPitchAngMag = autoTrailPitchMax;
@@ -2673,28 +2485,7 @@ namespace ALYSLC
 				}
 			}
 		}
-		else
-		{
-			camMaxPitchAngMag = PI / 2.0f;
-			if (camAdjMode == CamAdjustmentMode::kRotate && controlCamCID > -1 && 
-				controlCamCID < ALYSLC_MAX_PLAYER_COUNT)
-			{
-				const auto& rsData = glob.cdh->GetAnalogStickState(controlCamCID, false);
-				rsX = rsData.xComp;
-				rsY = rsData.yComp;
-				rsMag = rsData.normMag;
-				if (rsMag > 0.0f)
-				{
-					yawDelta = maxRotRads * rsX * rsMag;
-					camBaseTargetPosYaw += yawDelta;
-					pitchDelta = maxRotRads * rsY * rsMag;
-					camBaseTargetPosPitch -= pitchDelta;
-				}
-			}
-		}
 
-		// Calculate pitch incline offset/yaw diff only when autotrailing or in lock on mode without a target
-		// and the camera-controlling player is not rotating the camera.
 		bool playerInCombat = std::any_of
 		(
 			glob.coopPlayers.begin(), glob.coopPlayers.end(), 
@@ -2703,12 +2494,15 @@ namespace ALYSLC
 				return a_p->isActive && a_p->coopActor->IsInCombat(); 
 			}
 		);
+		// For auto rotation, if a setting is enabled and the camera is not in manual positioning mode,
+		// calculate pitch incline offset/yaw diff only when rotation controls are unlocked,
+		// and the camera-controlling player is not rotating the camera.
 		bool autoRotate = 
 		{
 			(Settings::bAutoRotateCamPitch || Settings::bAutoRotateCamYaw) &&
 			(camAdjMode != CamAdjustmentMode::kRotate || rsMag == 0.0f) &&
 			(
-				!isManuallyPositioned && (isAutoTrailing || !validLockOnTarget ||
+				(!isManuallyPositioned) && (isAutoTrailing || !validLockOnTarget ||
 				Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
 			)
 		};
@@ -2719,7 +2513,7 @@ namespace ALYSLC
 				movementPitchInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
 				if (movementPitchInterpData->secsSinceUpdate >= movementPitchInterpData->secsUpdateInterval)
 				{
-					// Randomly becomes NAN, and must be reset. Temp solution.
+					// Sometimes becomes NAN, and must be reset. Temp solution.
 					movementPitchRunningTotal = 
 					(
 						isnan(movementPitchRunningTotal) ?
@@ -2729,12 +2523,14 @@ namespace ALYSLC
 					auto movementPitch = 
 					(
 						numMovementPitchReadings != 0.0f ? 
-						movementPitchRunningTotal / static_cast<float>(numMovementPitchReadings) : 
+						movementPitchRunningTotal /
+						static_cast<float>(numMovementPitchReadings) : 
 						0.0f
 					);
 					SetMovementPitchRunningTotal(true);
 					float sign = movementPitch < 0.0f ? -1.0f : 1.0f;
-					// It (maybe) just works. Used Desmos (https://www.desmos.com/calculator)
+					// It (maybe) just works. 
+					// Used Desmos (https://www.desmos.com/calculator)
 					// to create a curve that smooths out the changes in camera pitch relative
 					// to average support surface/vertical velocity pitch.
 					movementPitch = 1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f;
@@ -2754,7 +2550,8 @@ namespace ALYSLC
 				SetMovementPitchRunningTotal(false);
 				float tRatio = min
 				(
-					movementPitchInterpData->secsSinceUpdate / movementPitchInterpData->secsUpdateInterval, 
+					movementPitchInterpData->secsSinceUpdate / 
+					movementPitchInterpData->secsUpdateInterval, 
 					1.0f
 				);
 				movementPitchInterpData->InterpolateSmootherStep(tRatio);
@@ -2774,7 +2571,8 @@ namespace ALYSLC
 					float movementYaw = 
 					(
 						numMovementYawToCamReadings != 0.0f ? 
-						movementYawToCamRunningTotal / static_cast<float>(numMovementYawToCamReadings) :
+						movementYawToCamRunningTotal / 
+						static_cast<float>(numMovementYawToCamReadings) :
 						0.0f
 					);
 					SetMovementYawToCamRunningTotal(true);
@@ -2812,7 +2610,8 @@ namespace ALYSLC
 				SetMovementYawToCamRunningTotal(false);
 				float tRatio = min
 				(
-					movementYawInterpData->secsSinceUpdate / movementYawInterpData->secsUpdateInterval, 
+					movementYawInterpData->secsSinceUpdate / 
+					movementYawInterpData->secsUpdateInterval, 
 					1.0f
 				);
 				auto prev = movementYawInterpData->current;
@@ -2826,7 +2625,7 @@ namespace ALYSLC
 			SetMovementYawToCamRunningTotal(true);
 		}
 
-		// Cam pitch is clamped to +- autotrail/lock on max pitch.
+		// Cam pitch is clamped to +- the pre-determined max pitch magnitude.
 		if (!isnan(camBaseTargetPosPitch) && !isinf(camBaseTargetPosPitch))
 		{
 			camBaseTargetPosPitch = std::clamp
@@ -2852,10 +2651,11 @@ namespace ALYSLC
 			camBaseTargetPosYaw = glob.player1Actor->data.angle.z;
 		}
 
-		// Blend target/to focus pitch/yaw values if auto trailing or in partially automated lock on state.
-		if (!isManuallyPositioned && (isAutoTrailing || !validLockOnTarget || 
+		// Blend target and to-focus rotation angles if auto trailing or in partially automated lock on state.
+		if ((!isManuallyPositioned) && (isAutoTrailing || !validLockOnTarget || 
 			Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom))
 		{
+			// Apply movement pitch deltas calculated above.
 			float movementPitchDelta = 0.0f;
 			float movementYawDelta = 0.0f;
 			// Set directly to target pitch/yaw if not auto-rotating.
@@ -2913,9 +2713,6 @@ namespace ALYSLC
 				}
 			}
 
-			float oldPitchToFocus = camCurrentPitchToFocus;
-			float oldYawToFocus = camCurrentYawToFocus;
-
 			if (focalPlayerCID == -1) 
 			{
 				camCurrentPitchToFocus = Util::NormalizeAngToPi
@@ -2941,8 +2738,12 @@ namespace ALYSLC
 
 			if (Settings::bCamCollisions)
 			{
-				// TL;DR: Blend pitch/yaw when the camera is moving quickly relative to the focus point. 
-				// Best I can do for now.
+				// TL;DR: Blend pitch/yaw when the camera is moving quickly relative to the focus point,
+				// meaning the angle from the target position to the focus point is rapidly changing,
+				// making training the camera on the focus point directly a bad idea. 
+				// 
+				// I may be overthinking this and missing an obvious solution,
+				// but this is the best I can do for now. 
 				// 
 				// If the below trailing distance and/or pitch factors are large, 
 				// this means that the current camera target position is either
@@ -2958,23 +2759,26 @@ namespace ALYSLC
 				//
 				// 1. Stick to the focus point-relative readings 
 				// when the trailing distance and pitch factors are small.
-				// 2. Switch over to approaching the target pos pitch/yaw readings 
+				// 2. Approaching the target pos pitch/yaw readings 
 				// when the base radial distance approaches the min radial distance,
 				// or the base camera pitch magnitude approaches the max allowable pitch magnitude, 
 				// both "danger zones" where the pitch/yaw to the focus point changes rapidly.
 				// 3. The max pitch is also capped to prevent the camera 
 				// from getting too close to the focus point in the XY plane.
 				// NOTE: As a result of this imperfect blending, 
-				// a hitch results when moving towards and then away from max pitch,
+				// a small hitch results when moving towards and then away from max pitch,
 				// but it is, in my opinion, an acceptable tradeoff for smoother camera rotation 
 				// that nearly stays affixed to the focus point, 
 				// regardless of camera collisions and distance to the focus point.
 
 				float xyTrailingDist = max(0.1f, Util::GetXYDistance(camTargetPos, camFocusPoint));
+				// Larger when the camera's XY distance to the focus point is small.
 				float trailingDistFactor = 
 				(
 					powf(1.0f - (xyTrailingDist - camMinTrailingDistance) / xyTrailingDist, 0.5f)
 				);
+				// Interpolation power and ratio to raise to that power
+				// when computing the next pitch/yaw to set.
 				const float interpPower = 9.0f;
 				float interpRatio = prevRotInterpRatio;
 				if (focalPlayerCID != -1 || isColliding) 
@@ -2992,14 +2796,14 @@ namespace ALYSLC
 				else if (camAdjMode != CamAdjustmentMode::kRotate)
 				{
 					// Ease into an interp ratio of 1 (target pos pitch/yaw) when not rotating 
-					// or when the camera moving through/along an obstruction.
+					// or when the camera is moving through/along an obstruction.
 					interpRatio += (1.0f - prevRotInterpRatio) / 10.0f;
 				}
 				else
 				{
 					// Catch up to target interp ratio fast when rotating.
 					float diff = (min(trailingDistFactor, 1.0f) - prevRotInterpRatio);
-					// Slower shift towards pitch/yaw to focus point.
+					// Slower shift towards pitch/yaw to focus point (interp ratio decreasing).
 					if (diff < 0.0f)
 					{
 						diff /= 10.0f;
@@ -3010,8 +2814,9 @@ namespace ALYSLC
 
 				interpRatio = Util::InterpolateSmootherStep
 				(
-					prevRotInterpRatio, interpRatio, camFrameDepInterpFactor
+					prevRotInterpRatio, interpRatio, camInterpFactorFrameDep
 				);
+				// 'Ease in' from to-focus rotations to target pos rotations.
 				const float finalInterpFactor = powf(interpRatio, interpPower);
 
 				float targetPitch = Util::NormalizeAngToPi
@@ -3022,25 +2827,25 @@ namespace ALYSLC
 					)
 				);
 
-				// Modify target yaw by adding 2 PI if the difference between the two yaws is greater than PI to
-				// ensure that the interpolation heads in the correct direction.
-				// Pitch difference never reaches PI in magnitude, so no need to modify either endpoint.
 				float yawStart = camCurrentYawToFocus;
 				float yawEnd = camTargetPosYaw;
 				// Set cam pitch/yaw to apply.
 				float yawDiff = Util::NormalizeAngToPi(yawEnd - yawStart);
+				// Interpolate the diff instead of the target yaw
+				// to avoid issues with the interpolation taking the longer path to the target yaw.
 				float targetYaw = Util::NormalizeAng0To2Pi
 				(
 					yawStart + Util::InterpolateSmootherStep(0.0f, yawDiff, finalInterpFactor)
 				);
+
+				// Save our new values to set.
 				camPitch = targetPitch;
 				camYaw = targetYaw;
 				prevRotInterpRatio = interpRatio;
-
 			}
 			else if (lockInteriorOrientationOnInit)
 			{
-				// All set to base when not using camera collisions or orientation is locked.
+				// All set to base when not using camera collisions or when orientation is locked.
 				camPitch =
 				camTargetPosPitch = std::clamp(camBaseTargetPosPitch, -camMaxPitchAngMag, camMaxPitchAngMag);
 				camYaw = camTargetPosYaw = camBaseTargetPosYaw;
@@ -3049,8 +2854,8 @@ namespace ALYSLC
 			{
 				if (focalPlayerCID == -1)
 				{
-					// Set directly to target pos values if not blending.
-					// Must be far away enough from cam as well.
+					// Set directly to target pos values if collisions are not enabled,
+					// since we don't have to worry about performing the hacky blending above.
 					camPitch = std::clamp(camCurrentPitchToFocus, -camMaxPitchAngMag, camMaxPitchAngMag);
 					camYaw = camCurrentYawToFocus;
 				}
@@ -3065,12 +2870,11 @@ namespace ALYSLC
 		else if (isLockedOn && validLockOnTarget && Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kZoom)
 		{
 			// NOTE: Temporarily using the base target position as the rotation
-			// target to prevent frequent camera jumping from focus point hit to focus point hit.
-			// Have to figure out what's causing it, but the bug likely stems
-			// from rotation-to-position cross-influence and interpolation layered on top of that.
+			// target to lessen camera jumping relative to a rapidly changing collision focus point.
 			auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 			if (!camLockOnTargetPtr)
 			{
+				// No target. Bye.
 				return;
 			}
 
@@ -3087,7 +2891,9 @@ namespace ALYSLC
 				Util::GetYawBetweenPositions(camBaseTargetPos, camLockOnFocusPoint)
 			);
 
+			// Factor in both pitches to the lock on target and to the party (origin point).
 			float avgPitchPartyAndTarget = (pitchToTarget + pitchToParty) / 2.0f;
+			// Cap max change in pitch/yaw.
 			pitchDelta = std::clamp
 			(
 				Util::NormalizeAngToPi(avgPitchPartyAndTarget - camPitch), 
@@ -3101,8 +2907,9 @@ namespace ALYSLC
 				maxRotRads
 			);
 
-			float currentOriginToTargetXYDist = Util::GetXYDistance(camOriginPoint, camLockOnFocusPoint);
 			float distToOriginPoint = camBaseTargetPos.GetDistance(camOriginPoint);
+			// Slow down rotation when the camera is passing near the origin point
+			// to prevent jarring camera flips when tracking the target.
 			float targetPosToTargetFactor = Util::InterpolateEaseIn
 			(
 				0.0f, 
@@ -3135,7 +2942,10 @@ namespace ALYSLC
 				yawDiff = PI - yawDiff;
 			}
 
+			// Both factors below should add together to a number between 0 and 1.
+			// Multiplicative factor derived from the party's angle to the target to apply to the pitch/yaw deltas.
 			float partyToTargetYawFactor = Util::InterpolateSmootherStep(0.1, 0.4f, yawDiff / (PI / 2.0f));
+			// Multiplicative factor derived from the target's speed to apply to the pitch/yaw deltas.
 			float movementSpeedFactor = Util::InterpolateSmootherStep
 			(
 				0.1f,
@@ -3160,6 +2970,8 @@ namespace ALYSLC
 				-maxRotRads, 
 				maxRotRads
 			);
+
+			// Apply the deltas for this frame.
 			camPitch = Util::NormalizeAngToPi(camPitch + pitchDelta);
 			camYaw = Util::NormalizeAng0To2Pi(camYaw + yawDelta);
 
@@ -3192,7 +3004,8 @@ namespace ALYSLC
 		}
 
 		/*
-		// REMOVE DEBUG DRAWS
+		Debug draws for the blending system above.
+
 		// Red: Target Pitch/Yaw
 		// Green: New Pitch/Yaw to Focus.
 		// Blue: Last Set Pitch/Yaw to Focus.
@@ -3201,55 +3014,73 @@ namespace ALYSLC
 		glm::vec2 yawCenter{ 2.0f * DebugAPI::screenResX / 3.0f, DebugAPI::screenResY / 2.0f };
 
 		// Pitch
-		DebugAPI::QueueLine2D(pitchCenter,
+		DebugAPI::QueueLine2D
+		(
+			pitchCenter,
 			{ 
 				pitchCenter.x - linePixelLength * cosf(camTargetPosPitch),
 				pitchCenter.y + linePixelLength * sinf(camTargetPosPitch) 
 			},
-			0xFF0000FF, 2.0f);
+			0xFF0000FF, 2.0f
+		);
 
-		DebugAPI::QueueLine2D(pitchCenter,
+		DebugAPI::QueueLine2D
+		(
+			pitchCenter,
 			{ 
 				pitchCenter.x - linePixelLength * cosf(camCurrentPitchToFocus),
 				pitchCenter.y + linePixelLength * sinf(camCurrentPitchToFocus) 
 			},
-			0x00FF00FF, 2.0f);
+			0x00FF00FF, 2.0f
+		);
 
-		DebugAPI::QueueLine2D(pitchCenter,
+		DebugAPI::QueueLine2D
+		(
+			pitchCenter,
 			{
 				pitchCenter.x - linePixelLength * cosf(camPitch),
 				pitchCenter.y + linePixelLength * sinf(camPitch) 
 			},
-			0x0000FFFF, 2.0f);
+			0x0000FFFF, 2.0f
+		);
 
 		// Yaw.
-		DebugAPI::QueueLine2D(yawCenter,
+		DebugAPI::QueueLine2D
+		(
+			yawCenter,
 			{ 
 				yawCenter.x - linePixelLength * cosf(Util::ConvertAngle(camTargetPosYaw)),
 				yawCenter.y + linePixelLength * sinf(Util::ConvertAngle(camTargetPosYaw)) 
 			},
-			0xFF0000FF, 2.0f);
+			0xFF0000FF, 2.0f
+		);
 
-		DebugAPI::QueueLine2D(yawCenter,
+		DebugAPI::QueueLine2D
+		(
+			yawCenter,
 			{ 
 				yawCenter.x - linePixelLength * cosf(Util::ConvertAngle(camCurrentYawToFocus)),
 				yawCenter.y + linePixelLength * sinf(Util::ConvertAngle(camCurrentYawToFocus)) 
 			},
-			0x00FF00FF, 2.0f);
+			0x00FF00FF, 2.0f
+		);
 
-		DebugAPI::QueueLine2D(yawCenter,
+		DebugAPI::QueueLine2D
+		(
+			yawCenter,
 			{ 
 				yawCenter.x - linePixelLength * cosf(Util::ConvertAngle(camYaw)),
 				yawCenter.y + linePixelLength * sinf(Util::ConvertAngle(camYaw))
 			},
-			0x0000FFFF, 2.0f);
+			0x0000FFFF, 2.0f
+		);
 		*/
 	}
 
 
 	void CameraManager::UpdateCamHeight()
 	{
-		// Update the camera focus point's Z offset.
+		// Update the camera focus point's Z offset, or 'height' above the origin point.
 		
 		// No height offset to set when manually positioned.
 		if (isManuallyPositioned)
@@ -3259,13 +3090,15 @@ namespace ALYSLC
 
 		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 		bool validLockOnTarget = camLockOnTargetPtr && camLockOnTargetPtr.get();
-		bool canAdjustPosOffset = 
+		// No focal player, and not locked on to a target or zoom controls are enabled,
+		// and adjusting zoom.
+		bool canAdjustHeight = 
 		{
 			(focalPlayerCID == -1) &&
 			(!isLockedOn || !validLockOnTarget || Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kFull) &&
 			(camAdjMode == CamAdjustmentMode::kZoom && controlCamCID > -1 && controlCamCID < ALYSLC_MAX_PLAYER_COUNT)
 		};
-		if (canAdjustPosOffset)
+		if (canAdjustHeight)
 		{
 			const auto& rsData = glob.cdh->GetAnalogStickState(controlCamCID, false);
 			const auto& rsX = rsData.xComp;
@@ -3274,14 +3107,15 @@ namespace ALYSLC
 			// Change height of the focus point if the x comp is larger than the y comp.
 			if (fabsf(rsX) > fabsf(rsY))
 			{
-				// Right to increase height, down to decrease.
-				camBaseFocusPointZOffset += rsX * rsMag * camMaxMovementSpeed * *g_deltaTimeRealTime;
+				// Right to increase height, left to decrease.
+				camBaseHeightOffset += rsX * rsMag * camMaxMovementSpeed * *g_deltaTimeRealTime;
 			}
 		}
 		else if (isLockedOn && validLockOnTarget && Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kFull)
 		{
 			// Origin point already offset by average player height.
-			// Auto-set z offset to reach feet/head level when the target is at max upward/downward pitch relative to the origin point.
+			// Auto-set z offset to reach feet level or up to 4 body-lengths above feet level 
+			// when the target is at the max upward/downward pitch relative to the origin point.
 			float originPitchToTarget = Util::NormalizeAngToPi
 			(
 				Util::GetPitchBetweenPositions(camOriginPoint, camLockOnFocusPoint)
@@ -3292,51 +3126,56 @@ namespace ALYSLC
 				3.0f * avgPlayerHeight, 
 				(originPitchToTarget / (PI / 2.0f) + 1.0f) / 2.0f
 			);
-			camBaseFocusPointZOffset = newZOffset;
+			camBaseHeightOffset = newZOffset;
 		}
 
-		float prevOffset = camFocusPointZOffset;
+		float prevHeight = camHeightOffset;
 		if (Settings::bCamCollisions)
 		{
-			float newZOffset = camBaseFocusPointZOffset;
-			float currentFocusZPos = camCollisionOriginPoint.z + newZOffset;
+			float newHeight = camBaseHeightOffset;
+			float currentFocusZPos = camCollisionOriginPoint.z + newHeight;
 			float boundsDiff = fabsf(camMaxAnchorPointZCoord - camMinAnchorPointZCoord);
 			if ((boundsDiff < camAnchorPointHullSize) && 
 				(currentFocusZPos < camMinAnchorPointZCoord || currentFocusZPos > camMaxAnchorPointZCoord))
 			{
-				newZOffset = camMinAnchorPointZCoord + boundsDiff / 2.0f;
+				// Set to the Z coordinate between the two vertical bounds.
+				newHeight = camMinAnchorPointZCoord + boundsDiff / 2.0f;
 			}
 			else
 			{
 				if (currentFocusZPos > camMaxAnchorPointZCoord)
 				{
-					newZOffset = min
+					// Move below the upper bound.
+					newHeight = min
 					(
-						newZOffset, 
+						newHeight, 
 						camMaxAnchorPointZCoord - camCollisionOriginPoint.z - camAnchorPointHullSize
 					);
 				}
 
 				if (currentFocusZPos < camMinAnchorPointZCoord)
 				{
-					newZOffset = max
+					// Move above the lower bound.
+					newHeight = max
 					(
-						newZOffset, 
+						newHeight, 
 						camMinAnchorPointZCoord - camCollisionOriginPoint.z + camAnchorPointHullSize
 					);
 				}
 			}
 
-			camFocusPointZOffset = Util::InterpolateSmootherStep
+			// Approach the new height offset.
+			camHeightOffset = Util::InterpolateSmootherStep
 			(
-				prevOffset, newZOffset, camFrameDepInterpFactor
+				prevHeight, newHeight, camInterpFactorFrameDep
 			);
 		}
 		else
 		{
-			camFocusPointZOffset = Util::InterpolateSmootherStep
+			// Approach the base height offet.
+			camHeightOffset = Util::InterpolateSmootherStep
 			(
-				prevOffset, camBaseFocusPointZOffset, camFrameDepInterpFactor
+				prevHeight, camBaseHeightOffset, camInterpFactorFrameDep
 			);
 		}
 	}
@@ -3357,6 +3196,7 @@ namespace ALYSLC
 			// Only adjust base radial distance if requested.
 			auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 			bool validLockOnTarget = camLockOnTargetPtr && camLockOnTargetPtr.get();
+			// Adjusting zoom, and not locked on, or no lock on target, or zoom controls enabled.
 			bool canAdjustZoom = 
 			{
 				(!isLockedOn || !validLockOnTarget || Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kFull) &&
@@ -3370,20 +3210,23 @@ namespace ALYSLC
 				const auto& rsMag = rsData.normMag;
 				if (fabsf(rsY) > fabsf(rsX))
 				{
+					// Do not exceed the max camera movement speed when zooming in/out.
 					camBaseRadialDistance -= *g_deltaTimeRealTime * camMaxMovementSpeed * rsY * rsMag;
+					// Do not drop below the minimum trailing distance.
 					camBaseRadialDistance = max(camBaseRadialDistance, camMinTrailingDistance);
 				}
 			}
 			else if (isLockedOn && validLockOnTarget && Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kFull)
 			{
+				// Base is set to min trailing distance when full lock on assistance is enabled.
 				camBaseRadialDistance = camMinTrailingDistance;
 			}
 
 			camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 			// Raycast hits and on-screen checks seem inconsistent when zoomed out beyond a variable distance.
 			// Zooming out beyond this distance will result in the game considering all players offscreen (and no raycast hits),
-			// even though their positions are in front of the camera and in view.
-			// Get approximation by binary searching a range.
+			// even though their positions are in front of the camera and visually in view.
+			// Get approximation for the max settable radial distance by binary searching a range.
 			float radialDistanceRangeMin = 0.0f;
 			float radialDistanceRangeMax = Settings::fMaxRaycastAndZoomOutDistance;
 			float radialDistanceRangeMid = Settings::fMaxRaycastAndZoomOutDistance / 2.0f;
@@ -3392,20 +3235,23 @@ namespace ALYSLC
 				camTargetPosPitch, 
 				Util::ConvertAngle(Util::NormalizeAng0To2Pi(camTargetPosYaw + PI))
 			);
+			// Position from which to test for visibility of all players.
 			auto onScreenTestPos = camBaseFocusPoint + dirFromFocus * radialDistanceRangeMid;
 			bool minDiffReached = false;
 			bool currentCheckOnScreen = false;
 			uint32_t i = 0;
-			// With the default min zoom delta, this iterates 22 times.
+			// With the default min zoom delta, this iterates 22 times at most.
 			while (!minDiffReached)
 			{
 				currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation(onScreenTestPos, { camPitch, camYaw }, true);
 				if (currentCheckOnScreen)
 				{
+					// On screen at the checked position, so attempt to zoom out more.
 					radialDistanceRangeMin = radialDistanceRangeMid;
 				}
 				else
 				{
+					// Not on screen at the checked position, so zoom in.
 					radialDistanceRangeMax = radialDistanceRangeMid;
 				}
 
@@ -3415,6 +3261,7 @@ namespace ALYSLC
 				++i;
 			}
 
+			// Converged on a max zoom out distance.
 			if (currentCheckOnScreen)
 			{
 				camMaxZoomOutDist = radialDistanceRangeMid;
@@ -3426,7 +3273,7 @@ namespace ALYSLC
 				camMaxZoomOutDist = max(prevRadialDistance, radialDistanceRangeMin);
 			}
 
-			// Zoom in when all players are under a roof or protruding surface above their heads.
+			// Zoom in when all players are under a roof or any protruding surface above their heads.
 			if (exteriorCell)
 			{
 				if (focalPlayerCID == -1) 
@@ -3452,13 +3299,16 @@ namespace ALYSLC
 						}
 					}
 
-					// Zoom in close when under a roof.
-					// Maintain zoom level (disable zooming out manually) while under the roof.
+					// Zoom in close when all players are under a roof.
+					// Maintain zoom level (disable zooming out manually) while at least one player is under the roof.
 					// Keeps the camera from stuttering as much from noisy raycast hits recorded when casting to
-					// a base target position well outside of the enclosure that the players are inside.
+					// a base target position well outside the roof that the players are under.
 					if (allPlayersUnderExteriorRoof && !delayedZoomInUnderExteriorRoof && !delayedZoomOutUnderExteriorRoof)
 					{
+						// Save the originally-set base radial distance to restore later
+						// once all players are no longer under the roof.
 						camSavedBaseRadialDistance = camBaseRadialDistance;
+						// Start zooming in.
 						delayedZoomInUnderExteriorRoof = true;
 						delayedZoomOutUnderExteriorRoof = false;
 						underExteriorRoofZoomInTP = SteadyClock::now();
@@ -3467,10 +3317,12 @@ namespace ALYSLC
 					{
 						if (onePlayerUnderExteriorRoof && Util::GetElapsedSeconds(underExteriorRoofZoomInTP) > 1.5f)
 						{
+							// Zoom in all the way when under a roof.
 							camBaseRadialDistance = camMinTrailingDistance;
 						}
 						else if (!onePlayerUnderExteriorRoof && !delayedZoomOutUnderExteriorRoof)
 						{
+							// Start zooming out now that all players are no longer under the roof.
 							delayedZoomOutUnderExteriorRoof = true;
 							delayedZoomInUnderExteriorRoof = false;
 							noPlayersUnderExteriorRoofTP = SteadyClock::now();
@@ -3487,6 +3339,8 @@ namespace ALYSLC
 						}
 						else if (onePlayerUnderExteriorRoof && !delayedZoomInUnderExteriorRoof)
 						{
+							// Start zooming in again if previously zooming out
+							// but a player moves under the roof again.
 							delayedZoomOutUnderExteriorRoof = false;
 							delayedZoomInUnderExteriorRoof = true;
 							underExteriorRoofZoomInTP = SteadyClock::now();
@@ -3494,12 +3348,13 @@ namespace ALYSLC
 					}
 					else
 					{
+						// No changes to zoom, so simply update the TPs.
 						underExteriorRoofZoomInTP = noPlayersUnderExteriorRoofTP = SteadyClock::now();
 					}
 				}
 				else
 				{
-					// Restore zoom when no players are under a roof.
+					// No changes to apply when there is a focal player.
 					camSavedBaseRadialDistance = camBaseRadialDistance;
 					delayedZoomOutUnderExteriorRoof = false;
 					delayedZoomInUnderExteriorRoof = false;
@@ -3508,7 +3363,7 @@ namespace ALYSLC
 				
 			}
 
-			// Lock position when loading into a new cell since the target position 
+			// Lock radial distance when loading into a new cell since the target position 
 			// and focus point will be placed right behind P1 
 			// and the cam will track to follow this point, 
 			// which changes rapidly when close to the camera.
@@ -3517,6 +3372,7 @@ namespace ALYSLC
 			lockInteriorOrientationOnInit = wasLocked && distToFocus < camMinTrailingDistance;
 			if (wasLocked && !lockInteriorOrientationOnInit)
 			{
+				// No longer locked, so set the initial radial distances equal to the min trailing distance.
 				camTargetRadialDistance = camBaseRadialDistance = camMinTrailingDistance;
 			}
 
@@ -3528,79 +3384,94 @@ namespace ALYSLC
 				// First check if all players and any selected target are on screen
 				// at the base radial distance target position.
 				onScreenTestPos = camBaseFocusPoint + dirFromFocus * camTargetRadialDistance;
-				currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation(
-					onScreenTestPos, { camPitch, camYaw }, true);
+				currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation
+				(
+					onScreenTestPos, { camPitch, camYaw }, true
+				);
+				// Check lock on target visibility when there is one
+				// and zoom controls are automated.
 				if (isLockedOn && validLockOnTarget && camLockOnTargetPtr &&
 					Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation)
 				{
-					currentCheckOnScreen &= PointOnScreenAtCamOrientation(
+					currentCheckOnScreen &= PointOnScreenAtCamOrientation
+					(
 						camLockOnTargetPtr->data.location,
 						onScreenTestPos,
 						{ camPitch, camYaw },
-						DebugAPI::screenResX / 10.0f);
+						DebugAPI::screenResX / 10.0f
+					);
 				}
 
 				// Not on the screen at the base radial distance target position.
-				// Have to find a new radial distance that puts all players and the lock on target in view.
+				// Have to find a new minimum radial distance that puts all players and the lock on target in view.
 				if (!currentCheckOnScreen)
 				{
-					// Use a binary search-esque method to subdivide the radial distance range repeatedly until
+					// Binary search to subdivide the radial distance range repeatedly until
 					// the min zoom delta is reached (arbitrarily close to the target radial distance).
 					// Start from the base radial distance.
 					radialDistanceRangeMin = camTargetRadialDistance;
 					radialDistanceRangeMax =
-						(camTargetRadialDistance < camMaxZoomOutDist ?
-								camMaxZoomOutDist :
-								  camTargetRadialDistance * 2.0f);
-					radialDistanceRangeMid = max(
+					(
+						camTargetRadialDistance < camMaxZoomOutDist ?
+						camMaxZoomOutDist :
+						camTargetRadialDistance * 2.0f
+					);
+					radialDistanceRangeMid = max
+					(
 						prevRadialDistance,
-						(radialDistanceRangeMax + radialDistanceRangeMin) / 2.0f);
+						(radialDistanceRangeMax + radialDistanceRangeMin) / 2.0f
+					);
 					onScreenTestPos = camBaseFocusPoint + dirFromFocus * radialDistanceRangeMid;
-					// REMOVE
 					bool minZoomRangeReached = false;
 					uint32_t i = 0;
 					// Will iterate at most 22 times with the default min zoom delta.
 					bool lockOnTargetOnScreen = false;
 					while (!minZoomRangeReached)
 					{
-						currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation(
-							onScreenTestPos, { camPitch, camYaw }, true);
+						currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation
+						(
+							onScreenTestPos, { camPitch, camYaw }, true
+						);
 						if (isLockedOn && validLockOnTarget &&
 							Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation)
 						{
-							lockOnTargetOnScreen = PointOnScreenAtCamOrientation(
+							lockOnTargetOnScreen = PointOnScreenAtCamOrientation
+							(
 								camLockOnFocusPoint,
 								onScreenTestPos,
 								{ camPitch, camYaw },
-								DebugAPI::screenResX / 10.0f);
+								DebugAPI::screenResX / 10.0f
+							);
+							// Lock on target must also be on screen.
 							currentCheckOnScreen &= lockOnTargetOnScreen;
 						}
 
 						if (currentCheckOnScreen)
 						{
+							// On screen at the checked position, so zoom in.
 							radialDistanceRangeMax = radialDistanceRangeMid;
 						}
 						else
 						{
+							// Not on screen at the checked position, so zoom out further.
 							radialDistanceRangeMin = radialDistanceRangeMid;
 						}
 
 						radialDistanceRangeMid = (radialDistanceRangeMax + radialDistanceRangeMin) / 2.0f;
 						onScreenTestPos = camBaseFocusPoint + dirFromFocus * radialDistanceRangeMid;
+						// Stop once the minimum zoom delta is reached.
 						minZoomRangeReached = radialDistanceRangeMax - radialDistanceRangeMin < Settings::fMinAutoZoomDelta;
 						++i;
 					}
 
-					// If zoomed out beyond the max zoom out distance computed above, do not modify the radial distance.
-					// Set to current midpoint if on screen, or set to the max point if the current midpoint is not on screen.
 					if (currentCheckOnScreen)
 					{
+						// Set to current midpoint if on screen.
 						camTargetRadialDistance = radialDistanceRangeMid;
 					}
 					else if (radialDistanceRangeMax < camMaxZoomOutDist)
 					{
 						// Continue zooming out if not on screen.
-						// Max endpoint was on the screen previously.
 						camTargetRadialDistance = radialDistanceRangeMax;
 					}
 					else
@@ -3611,13 +3482,13 @@ namespace ALYSLC
 					}
 				}
 
+				// Interp from previous.
 				camTargetRadialDistance = Util::InterpolateSmootherStep
 				(
-					prevRadialDistance, camTargetRadialDistance, camFrameDepInterpFactor
+					prevRadialDistance, camTargetRadialDistance, camInterpFactorFrameDep
 				);
 
-				// Do not zoom out when colliding with a surface
-				// or passing through an object.
+				// Ensure the radial distance to set is never below the minimum trailing distance.
 				if (!isColliding || camTargetRadialDistance < prevRadialDistance)
 				{
 					camTargetRadialDistance = max(camTargetRadialDistance, camMinTrailingDistance);
@@ -3626,6 +3497,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Both are the same when manually positioned.
 			camTargetRadialDistance = camBaseRadialDistance;
 		}
 	}
@@ -3641,7 +3513,7 @@ namespace ALYSLC
 		if (p1Cell && currentCell != p1Cell && p1Cell->formID != 0x0)
 		{
 			bool newIsExterior = !p1Cell->IsInteriorCell();
-			// Interior/Invalid -> Exterior or Exterior/Invalid to Interior.
+			// Interior/Invalid -> Exterior or Exterior/Invalid -> Interior.
 			bool diffCellType = 
 			{
 				(newIsExterior && (!currentCell || currentCell->IsInteriorCell())) ||
@@ -3650,8 +3522,9 @@ namespace ALYSLC
 
 			currentCell = p1Cell;
 			exteriorCell = newIsExterior;
+			// Reset fade for all our handled objects.
 			ResetFadeOnObjects();
-			// Ensure all objects in the new cell are fully faded in.
+			// For extra peace of mind, ensure all objects in the new cell are fully faded in.
 			Util::ResetFadeOnAllObjectsInCell(currentCell);
 			// Set new default orientation when the cell type changes.
 			if (diffCellType)
@@ -3663,7 +3536,7 @@ namespace ALYSLC
 			// before checking if points are on screen fail (messes with auto-zoom).
 			// Switching to skybox only sometimes circumvents this issue 
 			// and allows for uncapped zooming out in interior cells.
-			// The alternative - disabling the sky altogether - has some clear undesirable side effects 
+			// The alternative - disabling the sky altogether - has some clearly undesirable side effects 
 			// like creating much harsher lighting throughout the cell.
 			Util::SetSkyboxOnlyForInteriorModeCell(currentCell);
 		}
@@ -3671,7 +3544,9 @@ namespace ALYSLC
 
 	void CameraManager::UpdatePlayerFadeAmounts(bool&& a_reset)
 	{
-		// Fade in/out players gradually as they move away from or too close to the camera.
+		// Fade out players gradually as they approach the camera or
+		// fade them in as they move away from the camera.
+		// Reset instantly to fully-faded in if requested.
 
 		for (const auto& p : glob.coopPlayers)
 		{
@@ -3694,28 +3569,30 @@ namespace ALYSLC
 						currentProc->high->fadeState.set(RE::HighProcessData::FADE_STATE::kNormal);
 					}
 
-					if (auto player3D = Util::GetRefr3D(p->coopActor.get()); player3D)
+					if (auto player3DPtr = Util::GetRefr3D(p->coopActor.get()); player3DPtr && player3DPtr.get())
 					{
-						player3D->fadeAmount = 1.0f;
-						player3D->flags.reset(RE::NiAVObject::Flag::kHidden);
+						player3DPtr->fadeAmount = 1.0f;
+						player3DPtr->flags.reset(RE::NiAVObject::Flag::kHidden);
 						RE::NiUpdateData updateData;
-						player3D->UpdateDownwardPass(updateData, 0);
+						player3DPtr->UpdateDownwardPass(updateData, 0);
 					}
 				}
 				else
 				{
 					const RE::NiPoint3& camPos = camTargetPos;
-					// Prevent player from fading when the camera is far enough away to not require fading.
-					if (auto player3D = Util::GetRefr3D(p->coopActor.get()); player3D)
+					// Prevent the player from fading when the camera is far enough away to not require fading.
+					if (auto player3DPtr = Util::GetRefr3D(p->coopActor.get()); player3DPtr)
 					{
-						float prevFadeAmount = player3D->fadeAmount;
+						float prevFadeAmount = player3DPtr->fadeAmount;
 						float newFadeAmount = prevFadeAmount;
+						// Get the player's extent for a rough radius at which to start fading out.
 						float maxXYExtent = (p->coopActor->GetBoundMax() - p->coopActor->GetBoundMin()).Length() / 2.0f;
 						if (maxXYExtent == 0.0f)
 						{
-							maxXYExtent = player3D->worldBound.radius;
+							maxXYExtent = player3DPtr->worldBound.radius;
 						}
 
+						// Fade out when the player's torso is within one max extent of the camera.
 						float torsoDistToCam = Util::GetTorsoPosition(p->coopActor.get()).GetDistance(camPos);
 						if (camPos.Length() != 0.0f && torsoDistToCam < maxXYExtent)
 						{
@@ -3729,11 +3606,12 @@ namespace ALYSLC
 							newFadeAmount = 1.0f;
 						}
 
+						// Set new fade amount if different from the previously set one.
 						if (newFadeAmount != prevFadeAmount)
 						{
-							player3D->fadeAmount = newFadeAmount;
+							player3DPtr->fadeAmount = newFadeAmount;
 							RE::NiUpdateData updateData;
-							player3D->UpdateDownwardPass(updateData, 0);
+							player3DPtr->UpdateDownwardPass(updateData, 0);
 						}
 					}
 				}

@@ -18,11 +18,11 @@ namespace ALYSLC
 		{
 			if (err = ini.LoadFile(defaultFilePathEnderal.c_str()); err != SI_OK) 
 			{
-				logger::error("[Settings] ERR ({}): ImportAllSettings: Could not load default Enderal settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
+				SPDLOG_ERROR("[Settings] ERR ({}): ImportAllSettings: Could not load default Enderal settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
 			}
 			else
 			{
-				logger::info("[Settings] ImportAllSettings: Successfully opened default Enderal settings configuration file '{}'.", defaultFilePathEnderal.string());
+				SPDLOG_INFO("[Settings] ImportAllSettings: Successfully opened default Enderal settings configuration file '{}'.", defaultFilePathEnderal.string());
 			}
 			
 		}
@@ -30,11 +30,11 @@ namespace ALYSLC
 		{
 			if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
 			{
-				logger::error("[Settings] ERR ({}): ImportAllSettings: Could not load default Skyrim SE settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
+				SPDLOG_ERROR("[Settings] ERR ({}): ImportAllSettings: Could not load default Skyrim SE settings file '{}'. Ensure the file exists at that location. About to import the user's modifiable settings.", err, defaultFilePathEnderal.string());
 			}
 			else
 			{
-				logger::info("[Settings] ImportAllSettings: Successfully opened default Skyrim settings configuration file '{}'.", defaultFilePathSSE.string());
+				SPDLOG_INFO("[Settings] ImportAllSettings: Successfully opened default Skyrim settings configuration file '{}'.", defaultFilePathSSE.string());
 			}
 		}
 
@@ -57,22 +57,22 @@ namespace ALYSLC
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathEnderal.c_str()); err != SI_OK)
 			{
-				logger::error("[Settings] ERR: ({}): ImportAllSettings: Could not load Enderal player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathEnderal.string());
+				SPDLOG_ERROR("[Settings] ERR: ({}): ImportAllSettings: Could not load Enderal player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathEnderal.string());
 			}
 			else
 			{
-				logger::info("[Settings] ImportAllSettings: Successfully opened user-modified Enderal settings configuration file '{}'.", userSettingsFilePathEnderal.string());
+				SPDLOG_INFO("[Settings] ImportAllSettings: Successfully opened user-modified Enderal settings configuration file '{}'.", userSettingsFilePathEnderal.string());
 			}
 		}
 		else
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
 			{
-				logger::error("[Settings] ERR: ({}): ImportAllSettings: could not load Skyrim SE player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathSSE.string());
+				SPDLOG_ERROR("[Settings] ERR: ({}): ImportAllSettings: could not load Skyrim SE player settings config file '{}'. If you've made changes to the default settings, ensure the file exists at that location. Now using the plugin's hardcoded default settings.", err, userSettingsFilePathSSE.string());
 			}
 			else
 			{
-				logger::info("[Settings] ImportAllSettings: Successfully opened user-modified Skyrim settings configuration file '{}'.", userSettingsFilePathSSE.string());
+				SPDLOG_INFO("[Settings] ImportAllSettings: Successfully opened user-modified Skyrim settings configuration file '{}'.", userSettingsFilePathSSE.string());
 			}
 		}
 
@@ -117,7 +117,7 @@ namespace ALYSLC
 			}
 		}
 
-		ALYSLC::Log("[Settings] ImportAllSettings: Done importing all settings.");
+		SPDLOG_DEBUG("[Settings] ImportAllSettings: Done importing all settings.");
 	}
 
 	bool Settings::ImportBinds(CSimpleIniA& a_ini)
@@ -208,7 +208,7 @@ namespace ALYSLC
 				{
 					playerPAParams[bindIndex].perfType = PerfType::kDisabled;
 					actionsWithBindErrors.insert(action);
-					logger::error("[BINDS] ERR: P{}: [INVALID]: {} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. Since these flags are mutually exclusive. Disabling the bind.",
+					SPDLOG_ERROR("[BINDS] ERR: P{}: [INVALID]: {} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. Since these flags are mutually exclusive. Disabling the bind.",
 						pIndex + 1, action);
 				}
 				else
@@ -313,7 +313,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::error("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
+								SPDLOG_ERROR("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
 									pIndex + 1, actionName, compActionSlot, assignedInputActionIndex);
 								// Invalid action, disable and add bind to invalid list.
 								playerPAParams[bindIndex].perfType = PerfType::kDisabled;
@@ -376,7 +376,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								logger::error("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
+								SPDLOG_ERROR("[BINDS] ERR: P{}: [INVALID]: {} -> composing action #{} is enabled but was not assigned a valid input action ({}). Disabling the bind.",
 									pIndex + 1, actionName, compActionSlot, assignedInputActionIndex);
 								// Invalid action, disable and add bind to invalid list.
 								playerPAParams[bindIndex].perfType = PerfType::kDisabled;
@@ -422,7 +422,7 @@ namespace ALYSLC
 				// Notify the player of their invalid binds.
 				if (actionsWithBindErrors.contains(action))
 				{
-					logger::error("[BINDS] ERR: P{}: [INVALID]: Action {}'s bind will be disabled. Please ensure the composing actions for this bind were assigned valid values.", pIndex + 1, actionName);
+					SPDLOG_ERROR("[BINDS] ERR: P{}: [INVALID]: Action {}'s bind will be disabled. Please ensure the composing actions for this bind were assigned valid values.", pIndex + 1, actionName);
 				}
 			}
 
@@ -446,7 +446,7 @@ namespace ALYSLC
 				// Recursion depth exceeded, so disable the bind.
 				if (recursionDepth >= uMaxComposingInputsCheckRecursionDepth)
 				{
-					logger::error("[BINDS] P{}: [INVALID] action {}'s bind may be circular (max of {} assigned inputs exceeded). Please ensure the composing actions for this bind are not themselves composed of this bind's actions. Disabling the bind.",
+					SPDLOG_ERROR("[BINDS] P{}: [INVALID] action {}'s bind may be circular (max of {} assigned inputs exceeded). Please ensure the composing actions for this bind are not themselves composed of this bind's actions. Disabling the bind.",
 						pIndex + 1, action, Settings::uMaxComposingInputsCheckRecursionDepth);
 					playerPAParams[bindIndex].perfType = PerfType::kDisabled;
 					actionsWithBindErrors.insert(action);
@@ -462,7 +462,7 @@ namespace ALYSLC
 			actionsWithBindErrors.clear();
 		}
 
-		ALYSLC::Log("[Settings] ImportBinds: All binds valid: {}.", allBindsValid);
+		SPDLOG_DEBUG("[Settings] ImportBinds: All binds valid: {}.", allBindsValid);
 		return allBindsValid;
 	}
 
@@ -590,7 +590,7 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "UI", "fCrosshairMaxTraversablePixelsPerSec", fCrosshairMaxTraversablePixelsPerSec, 160.0f, 7680.0f);
 		ReadFloatSetting(a_ini, "UI", "fPlayerMenuControlOverlayOutlineThickness", fPlayerMenuControlOverlayOutlineThickness, 1.0f, 50.0f);
 
-		ALYSLC::Log("[Settings] ImportGeneralSettings: Done importing.");
+		SPDLOG_DEBUG("[Settings] ImportGeneralSettings: Done importing.");
 	}
 
 	void Settings::ImportPlayerSpecificSettings(CSimpleIniA& a_ini)
@@ -670,7 +670,7 @@ namespace ALYSLC
 			ReadFloatSetting(a_ini, sectionName.data(), "fSecsToRotateCrosshair", (float&)vfSecsToRotateCrosshair[pIndex], 0.1f, 5.0f);
 		}
 
-		ALYSLC::Log("[Settings] ImportPlayerSpecificSettings: Done importing.");
+		SPDLOG_DEBUG("[Settings] ImportPlayerSpecificSettings: Done importing.");
 	}
 
 	bool Settings::ReadBoolSetting(CSimpleIniA& a_ini, const char* a_section, const char* a_settingKey, bool& a_settingOut)
@@ -685,7 +685,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadBoolSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadBoolSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -705,13 +705,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[Settings] ERR: ReadBoolSettingToIndex: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+				SPDLOG_ERROR("[Settings] ERR: ReadBoolSettingToIndex: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 				return false;
 			}
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadBoolSettingToIndex: Settings list for ({}:{}) is not large enough for reequested index ({}).", a_settingKey, a_section, a_index);
+			SPDLOG_ERROR("[Settings] ERR: ReadBoolSettingToIndex: Settings list for ({}:{}) is not large enough for reequested index ({}).", a_settingKey, a_section, a_index);
 			return false;
 		}
 	}
@@ -734,7 +734,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadFloatSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadFloatSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -752,7 +752,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -774,14 +774,14 @@ namespace ALYSLC
 			}
 			else
 			{
-				logger::error("[Settings] ERR: ReadRGBStringSetting: ({}:{}) has value '{}' but could not be converted to hex color format 'RRGGBB'.", a_settingKey, a_section, a_settingOut);
+				SPDLOG_ERROR("[Settings] ERR: ReadRGBStringSetting: ({}:{}) has value '{}' but could not be converted to hex color format 'RRGGBB'.", a_settingKey, a_section, a_settingOut);
 			}
 
 			return true;
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadRGBStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadRGBStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -798,7 +798,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadStringSetting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -816,7 +816,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[Settings] ERR: ReadUInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
+			SPDLOG_ERROR("[Settings] ERR: ReadUInt32Setting: Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}

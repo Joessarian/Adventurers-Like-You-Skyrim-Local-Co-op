@@ -27,12 +27,12 @@ namespace ALYSLC
 		if (g_enderalSSEInstalled)
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
-			logger::info("[Compatibility] Enderal SSE installed! Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
+			SPDLOG_INFO("[Compatibility] Enderal SSE installed! Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		else
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC.esp"sv;
-			logger::info("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
+			SPDLOG_INFO("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 	}
 	
@@ -51,7 +51,7 @@ namespace ALYSLC
 
 		if (g_mcoInstalled)
 		{
-			logger::info("[Compatibility] MCO installed!");
+			SPDLOG_INFO("[Compatibility] MCO installed!");
 		}
 	}
 
@@ -60,7 +60,7 @@ namespace ALYSLC
 		g_miniMapInstalled = static_cast<bool>(GetModuleHandleA("MiniMap.dll"));
 		if (g_miniMapInstalled)
 		{
-			logger::info("[Compatibility] Felisky384's MiniMap installed! Will setup culling hooks to minimize freezes in interior cells.");
+			SPDLOG_INFO("[Compatibility] Felisky384's MiniMap installed! Will setup culling hooks to minimize freezes in interior cells.");
 		}
 
 		g_shouldApplyCullingWorkaround = false;
@@ -71,7 +71,7 @@ namespace ALYSLC
 		g_persistentFavoritesInstalled = static_cast<bool>(GetModuleHandleA("PersistentFavorites.dll"));
 		if (g_persistentFavoritesInstalled)
 		{
-			logger::info("[Compatibility] PersistentFavorites installed!");
+			SPDLOG_INFO("[Compatibility] PersistentFavorites installed!");
 		}
 	}
 
@@ -83,50 +83,57 @@ namespace ALYSLC
 		if (const auto pluginInfo = a_loadInterface->GetPluginInfo(PRECISION_API::PrecisionPluginName); pluginInfo)
 		{
 			g_precisionInstalled = true;
-			logger::info("[Compatibility] Prerequisite mod {} is installed.", PRECISION_API::PrecisionPluginName);
+			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed.", PRECISION_API::PrecisionPluginName);
 			g_precisionAPI3 = reinterpret_cast<PRECISION_API::IVPrecision3*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V3));
 			if (g_precisionAPI3)
 			{
-				logger::info("[Compatibility] Received access to Precision API V3.");
+				SPDLOG_INFO("[Compatibility] Received access to Precision API V3.");
 			}
 			else
 			{
-				logger::error("[Compatibility] ERR: Could not get access to Precision API V3.");
+				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V3.");
 				return;
 			}
 
 			g_precisionAPI1 = reinterpret_cast<PRECISION_API::IVPrecision1*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V1));
 			if (g_precisionAPI1)
 			{
-				logger::info("[Compatibility] Received access to Precision API V1.");
+				SPDLOG_INFO("[Compatibility] Received access to Precision API V1.");
 
-				// Register havok callback.
-				g_precisionAPI1->AddPrePhysicsStepCallback(SKSE::GetPluginHandle(), [](RE::bhkWorld* a_world) { GlobalCoopData::HavokPrePhysicsStep(a_world); });
-				logger::info("[GLOB] InitializeGlobalCoopData: Registered Precision pre-physics step callback.");
+				// Register havok callback after obtaining the API.
+				g_precisionAPI1->AddPrePhysicsStepCallback
+				(
+					SKSE::GetPluginHandle(), 
+					[](RE::bhkWorld* a_world) 
+					{
+						GlobalCoopData::HavokPrePhysicsStep(a_world); 
+					}
+				);
+				SPDLOG_INFO("[Compatibility] Registered Precision pre-physics step callback.");
 			}
 			else
 			{
-				logger::error("[Compatibility] ERR: Could not get access to Precision API V1 and register Havok pre-physics step callback.");
+				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V1 and register Havok pre-physics step callback.");
 				return;
 			}
 
 			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V4));
 			if (g_precisionAPI4)
 			{
-				logger::info("[Compatibility] Received access to Precision API V4.");
+				SPDLOG_INFO("[Compatibility] Received access to Precision API V4.");
 			}
 			else
 			{
-				logger::error("[Compatibility] ERR: Could not get access to Precision API V4.");
+				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V4.");
 				return;
 			}
 
-			logger::info("[Compatibility] Gained access to all required Precision APIs.");
+			SPDLOG_INFO("[Compatibility] Gained access to all required Precision APIs.");
 		}
 		else
 		{
 			g_precisionInstalled = false;
-			logger::error("[Compatibility] ERR: Could not find prerequisite mod 'Precision'. Please ensure it is installed.");
+			SPDLOG_ERROR("[Compatibility] ERR: Could not find prerequisite mod 'Precision'. Please ensure it is installed.");
 		}
 	}
 
@@ -150,7 +157,7 @@ namespace ALYSLC
 
 		if (g_quickLootInstalled) 
 		{
-			logger::info("[Compatibility] QuickLootRE/EE installed!");
+			SPDLOG_INFO("[Compatibility] QuickLootRE/EE installed!");
 		}
 	}
 
@@ -165,18 +172,18 @@ namespace ALYSLC
 
 		if (g_requiemInstalled)
 		{
-			logger::info("[Compatibility] Requiem - The Roleplaying Overhaul installed!");
+			SPDLOG_INFO("[Compatibility] Requiem - The Roleplaying Overhaul installed!");
 		}
 	}
 
 	void SkyrimsParagliderCompat::CheckForParaglider()
 	{
-		// Paraglider check is done before P1 manager construction; init to false for now.
+		// Paraglider ownership check is done before P1 manager construction; init to false for now.
 		g_p1HasParaglider = false;
 		g_paragliderInstalled = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
 		if (g_paragliderInstalled)
 		{
-			logger::info("[Compatibility] Skyrim's Paraglider installed!");
+			SPDLOG_INFO("[Compatibility] Skyrim's Paraglider installed!");
 		}
 	}
 
@@ -189,7 +196,7 @@ namespace ALYSLC
 		};
 		if (g_tkDodgeInstalled)
 		{
-			logger::info("[Compatibility] TKDodge installed!");
+			SPDLOG_INFO("[Compatibility] TKDodge installed!");
 		}
 	}
 
@@ -209,7 +216,7 @@ namespace ALYSLC
 
 		if (g_trueDirectionalMovementInstalled)
 		{
-			logger::info("[Compatibility] True Directional Movement installed!");
+			SPDLOG_INFO("[Compatibility] True Directional Movement installed!");
 		}
 	}
 
@@ -219,24 +226,19 @@ namespace ALYSLC
 		if (const auto pluginInfo = a_loadInterface->GetPluginInfo(TRUEHUD_API::TrueHUDPluginName); pluginInfo) 
 		{
 			g_trueHUDInstalled = true;
-			logger::info("[Compatibility] Prerequisite mod {} is installed.", TRUEHUD_API::TrueHUDPluginName);
+			SPDLOG_INFO("[Compatibility] Mod {} is installed.", TRUEHUD_API::TrueHUDPluginName);
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>(TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3));
 			if (g_trueHUDAPI3)
 			{
-				logger::info("[Compatibility] Received access to TrueHUD API V3.");
+				SPDLOG_INFO("[Compatibility] Received access to TrueHUD API V3.");
 			}
 			else
 			{
-				logger::error("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
+				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
 				return;
 			}
 
-			logger::info("[Compatibility] Gained access to all required TrueHUD APIs.");
-		}
-		else
-		{
-			g_trueHUDInstalled = false;
-			logger::error("[Compatibility] ERR: Could not find prerequisite mod 'TrueHUD'. Please ensure it is installed.");
+			SPDLOG_INFO("[Compatibility] Gained access to all required TrueHUD APIs.");
 		}
 	}
 };

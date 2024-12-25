@@ -30,7 +30,7 @@ namespace ALYSLC
 			// If max recursion depth is reached, the bind is invalid and will be disabled.
 			if (recursionDepth >= Settings::uMaxComposingInputsCheckRecursionDepth) 
 			{
-				logger::error("[PAIH] ERR: PlayerActionInfoHolder: Default {} bind is invalid. Possibly a circular bind. Disabling.", static_cast<InputAction>(i));
+				SPDLOG_ERROR("[PAIH] ERR: PlayerActionInfoHolder: Default {} bind is invalid. Possibly a circular bind. Disabling.", static_cast<InputAction>(i));
 				inputsList.clear();
 				numComposingPlayerActions = 0;
 			}
@@ -48,7 +48,7 @@ namespace ALYSLC
 
 		// Set to defaults initially and then import custom binds later with the other settings.
 		playerPAParamsLists.fill(defPAParamsList);
-		ALYSLC::Log("[PAIH] Finished initializing.");
+		SPDLOG_DEBUG("[PAIH] Finished initializing.");
 	}
 
 	const uint32_t PlayerActionInfoHolder::GetInputMask(const std::vector<InputAction>& a_composingInputs) const noexcept
@@ -62,7 +62,7 @@ namespace ALYSLC
 			// Input action is a player action, not an input. Return a mask of 0.
 			if (!a_composingInputs[i] >= !InputAction::kInputTotal || a_composingInputs[i] == InputAction::kInvalid) 
 			{
-				ALYSLC::Log("[PAIH] ERR: GetInputMask: Composing input action {} is a player action and was not broken down. Mask set to 0.", a_composingInputs[i]);
+				SPDLOG_DEBUG("[PAIH] ERR: GetInputMask: Composing input action {} is a player action and was not broken down. Mask set to 0.", a_composingInputs[i]);
 				return 0;
 			}
 
@@ -98,7 +98,7 @@ namespace ALYSLC
 		// Recursion depth exceeded.
 		if (a_recursionDepthOut >= Settings::uMaxComposingInputsCheckRecursionDepth)
 		{
-			logger::error("[PAIH] ERR: GetComposingInputs. Invalid bind for {}: max recursion depth reached when attempting to break down player action bind into composing inputs. Possibly a circular bind. Bind will be disabled.", a_playerAction);
+			SPDLOG_ERROR("[PAIH] ERR: GetComposingInputs. Invalid bind for {}: max recursion depth reached when attempting to break down player action bind into composing inputs. Possibly a circular bind. Bind will be disabled.", a_playerAction);
 			a_numComposingPlayerActionsOut = 0;
 			return std::vector<InputAction>();
 		}

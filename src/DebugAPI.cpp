@@ -9,6 +9,7 @@ namespace ALYSLC
 {
 	// Global co-op data.
 	static GlobalCoopData& glob = GlobalCoopData::GetSingleton();
+
 	// Full credits to Shrimperator and ersh1.
 	// Code was pieced together from the mods BTPS:
 	// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection
@@ -81,11 +82,13 @@ namespace ALYSLC
 
 	void DebugAPI::Update()
 	{
+		// Wipe the overlay clean and then draw all queued points, lines, and shapes.
+
 		auto hud = GetHUD();
 		if (!hud || !hud->uiMovie)
 		{
 			DebugOverlayMenu::Load();
-			ALYSLC::Log("[DebugAPI] ERR: could not get HUD.");
+			SPDLOG_DEBUG("[DebugAPI] ERR: could not get HUD.");
 			return;
 		}
 
@@ -139,7 +142,7 @@ namespace ALYSLC
 				return;
 			}
 
-			DrawShape(hud->uiMovie, shape->origin, shape->offsets, shape->rgba, shape->fill, shape->lineThickness, shape->durationSecs);
+			DrawShape(hud->uiMovie, shape->origin, shape->offsets, shape->rgba, shape->fill, shape->lineThickness);
 			lifetimeSecs = Util::GetElapsedSeconds(shape->requestTimestamp);
 			// Erase zero-duration or expired shapes.
 			if (shape->durationSecs == 0.0f || lifetimeSecs > shape->durationSecs)
@@ -153,6 +156,8 @@ namespace ALYSLC
 
 	void DebugAPI::QueueArrow2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 2D arrow with the given attributes.
+
 		glm::vec2 arrowRay = a_to - a_from;
 		float arrowAng = atan2f(arrowRay.y, arrowRay.x);
 		// Converging lines at 45 degrees that make up the tip of the arrow.
@@ -167,6 +172,8 @@ namespace ALYSLC
 
 	void DebugAPI::QueueArrow3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 3D arrow with the given attributes.
+
 		glm::vec3 arrowRay = a_to - a_from;
 		RE::NiPoint3 fromPoint = ToNiPoint3(a_from);
 		RE::NiPoint3 toPoint = ToNiPoint3(a_to);
@@ -196,6 +203,8 @@ namespace ALYSLC
 
 	void DebugAPI::QueueCircle2D(glm::vec2 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 2D circle with the given attributes.
+
 		const float angleDelta = 2.0f * PI / a_segments;
 		// Right and down.
 		glm::vec2 xAxis = glm::vec2(1.0f, 0.0f);
@@ -204,7 +213,14 @@ namespace ALYSLC
 		glm::vec2 lastVertex = a_center + xAxis * a_radius;
 		for (uint32_t sideIndex = 0; sideIndex < a_segments; sideIndex++)
 		{
-			glm::vec2 vertex = a_center + (xAxis * cosf(angleDelta * (sideIndex + 1)) + yAxis * sinf(angleDelta * (sideIndex + 1))) * a_radius;
+			glm::vec2 vertex = 
+			(
+				a_center + 
+				(
+					xAxis * cosf(angleDelta * (sideIndex + 1)) + 
+					yAxis * sinf(angleDelta * (sideIndex + 1))
+				) * a_radius
+			);
 			linesToDraw.push_back(std::make_unique<DebugAPILine>(lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs));
 			lastVertex = vertex;
 		}
@@ -212,6 +228,8 @@ namespace ALYSLC
 
 	void DebugAPI::QueueCircle3D(glm::vec3 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 3D circle with the given attributes.
+
 		const float angleDelta = 2.0f * PI / a_segments;
 		// Right and down.
 		glm::vec2 right = glm::vec2(1.0f, 0.0f);
@@ -222,7 +240,14 @@ namespace ALYSLC
 
 		for (uint32_t sideIndex = 0; sideIndex < a_segments; sideIndex++)
 		{
-			glm::vec2 vertex = center2D + (right * cosf(angleDelta * (sideIndex + 1)) + up * sinf(angleDelta * (sideIndex + 1))) * a_radius;
+			glm::vec2 vertex = 
+			(
+				center2D + 
+				(
+					right * cosf(angleDelta * (sideIndex + 1)) + 
+					up * sinf(angleDelta * (sideIndex + 1))
+				) * a_radius
+			);
 			QueueLine2D(lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs);
 			lastVertex = vertex;
 		}
@@ -230,11 +255,15 @@ namespace ALYSLC
 
 	void DebugAPI::QueueLine2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 2D line with the given attributes.
+
 		linesToDraw.push_back(std::make_unique<DebugAPILine>(a_from, a_to, a_rgba, a_lineThickness, a_durationSecs));
 	}
 
 	void DebugAPI::QueueLine3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs)
 	{
+		// Queue a 3D line with the given attributes.
+
 		glm::vec2 from = WorldToScreenPoint(a_from);
 		glm::vec2 to = WorldToScreenPoint(a_to);
 		linesToDraw.push_back(std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs));
@@ -242,38 +271,54 @@ namespace ALYSLC
 
 	void DebugAPI::QueuePoint2D(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs)
 	{
+		// Queue a 2D point with the given attributes.
+
 		pointsToDraw.push_back(std::make_unique<DebugAPIPoint>(a_center, a_rgba, a_size, a_durationSecs));
 	}
 
 	void DebugAPI::QueuePoint3D(glm::vec3 a_center, uint32_t a_rgba, float a_size, float a_durationSecs)
 	{
+		// Queue a 3D point with the given attributes.
+
 		glm::vec2 center = WorldToScreenPoint(a_center);
 		pointsToDraw.push_back(std::make_unique<DebugAPIPoint>(center, a_rgba, a_size, a_durationSecs));
 	}
 
 	void DebugAPI::QueueShape2D(const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, bool&& a_fill, const float& a_lineThickness, const float& a_durationSecs)
 	{
+		// Queue a 2D shape with the given attributes.
+
 		shapesToDraw.push_back(std::make_unique<DebugAPIShape>(a_origin, a_offsets, a_rgba, a_fill, a_lineThickness, a_durationSecs));
 	}
 
-	void DebugAPI::RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_ang)
+	void DebugAPI::RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_angle)
 	{
+		// Rotate the line given by the pair of endpoints
+		// about the tiven pivot point by the desired angle.
+
+		// Shift the line to get its new coordinates relative to the pivot point.
 		a_line.first = a_line.first - a_pivotPoint;
 		a_line.second = a_line.second - a_pivotPoint;
 		// https://en.wikipedia.org/wiki/Rotation_matrix
 		// Counter-clockwise about origin.
 		// First column, second column.
-		const glm::mat2 rotMat{
-			cosf(a_ang), -sinf(a_ang),
-			sinf(a_ang), cosf(a_ang)
+		const glm::mat2 rotMat
+		{
+			cosf(a_angle), -sinf(a_angle),
+			sinf(a_angle), cosf(a_angle)
 		};
 
+		// Rotate both endpoints and then shift back by the original offset relative to the pivot point.
 		a_line.first = (rotMat * a_line.first) + a_pivotPoint;
 		a_line.second = (rotMat * a_line.second) + a_pivotPoint;
 	}
 
 	void DebugAPI::RotateLine3D(std::pair<glm::vec4, glm::vec4>& a_line, const glm::vec4& a_pivotPoint, const float& a_pitch, const float& a_yaw)
 	{
+		// Rotate the line given by the pair of endpoints
+		// about the tiven pivot point by the desired pitch and yaw angles.
+		
+		// Shift the line to get its new coordinates relative to the pivot point.
 		a_line.first = a_line.first - a_pivotPoint;
 		a_line.second = a_line.second - a_pivotPoint;
 		auto rightAxis = glm::vec3(1.0f, 0.0f, 0.0f);
@@ -285,18 +330,23 @@ namespace ALYSLC
 		rotMat = glm::rotate(rotMat, -a_yaw, glm::vec3(0.0f, 0.0f, 1.0f));
 		rotMat = glm::rotate(rotMat, -a_pitch, glm::vec3(1.0f, 0.0f, 0.0f));
 
+		// Rotate both endpoints and then shift back by the original offset relative to the pivot point.
 		a_line.first = (rotMat * a_line.first) + a_pivotPoint;
 		a_line.second = (rotMat * a_line.second) + a_pivotPoint;
 	}
 
-	void DebugAPI::RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_ang)
+	void DebugAPI::RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_angle)
 	{
+		// Rotate the set of points about the origin (0, 0)
+		// by the desired angle.
+
 		// https://en.wikipedia.org/wiki/Rotation_matrix
 		// Counter-clockwise about origin.
 		// First column, second column.
-		const glm::mat2 rotMat{
-			cosf(a_ang), -sinf(a_ang),
-			sinf(a_ang), cosf(a_ang)
+		const glm::mat2 rotMat
+		{
+			cosf(a_angle), -sinf(a_angle),
+			sinf(a_angle), cosf(a_angle)
 		};
 
 		for (auto& point : a_points)
@@ -307,6 +357,8 @@ namespace ALYSLC
 
 	void DebugAPI::DrawLine(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness)
 	{
+		// Draw a line of the given color and thickness that connects the given start and end coordinates.
+
 		uint32_t rgb = a_rgba >> 8;
 		uint32_t alpha = a_rgba & 0x000000FF;
 		// https://homepage.divms.uiowa.edu/~slonnegr/flash/ActionScript2Reference.pdf
@@ -327,6 +379,8 @@ namespace ALYSLC
 	// https://github.com/ersh1/TrueHUD/blob/master/src/Scaleform/TrueHUDMenu.cpp#L1744
 	void DebugAPI::DrawPoint(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_center, uint32_t a_rgba, float a_size)
 	{
+		// Draw a point of the given color and size centered at the given screen position.
+
 		uint32_t rgb = a_rgba >> 8;
 		uint32_t alpha = a_rgba & 0x000000FF;
 		// The angle of each of the eight segments is 45 degrees (360 divided by 8), which
@@ -334,7 +388,7 @@ namespace ALYSLC
 		constexpr float angleDelta = PI / 4;
 		// Find the distance from the circle's center to the control points for the curves.
 		float ctrlDist = a_size / cosf(angleDelta / 2.0f);
-		// Initialize the angle
+		// Initialize the angle.
 		float angle = 0.0f;
 		RE::GFxValue argsLineStyle[3]{ 0, 0, 0 };
 		a_movie->Invoke("lineStyle", nullptr, argsLineStyle, 3);
@@ -369,8 +423,11 @@ namespace ALYSLC
 		a_movie->Invoke("endFill", nullptr, nullptr, 0);
 	}
 
-	void DebugAPI::DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill, const float& a_lineThickness, const float& a_durationSecs)
+	void DebugAPI::DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill, const float& a_lineThickness)
 	{
+		// Draw a filled shape or shape outline of the given color and outline thickness, 
+		// bound by the given points set and centered at the given origin point.
+
 		uint32_t rgb = a_rgba >> 8;
 		uint32_t alpha = a_rgba & 0x000000FF;
 		if (a_fill)
@@ -391,13 +448,14 @@ namespace ALYSLC
 		// Start from the first offset point.
 		RE::GFxValue argsStartPos[2]{ a_origin.x + a_offsets[0].x, a_origin.y + a_offsets[0].y };
 		a_movie->Invoke("moveTo", nullptr, argsStartPos, 2);
+		// Draw lines connecting all points.
 		for (int32_t i = 1; i < a_offsets.size(); ++i)
 		{
 			RE::GFxValue argsEndPos[2]{ a_origin.x + a_offsets[i].x, a_origin.y + a_offsets[i].y };
 			a_movie->Invoke("lineTo", nullptr, argsEndPos, 2);
 		}
 
-		// Connect back to the first offset point.
+		// Connect back to the first offset point to close the shape.
 		RE::GFxValue argsEndPos[2]{ a_origin.x + a_offsets[0].x, a_origin.y + a_offsets[0].y };
 		a_movie->Invoke("lineTo", nullptr, argsEndPos, 2);
 		a_movie->Invoke("endFill", nullptr, nullptr, 0);
@@ -405,18 +463,25 @@ namespace ALYSLC
 
 	void DebugAPI::ClearOverlay(RE::GPtr<RE::GFxMovieView> a_movie)
 	{
+		// Clear out the overlay. Wow.
+
 		a_movie->Invoke("clear", nullptr, nullptr, 0);
 	}
 
 	glm::vec2 DebugAPI::WorldToScreenPoint(glm::vec3 a_worldPos)
 	{
+		// Convert the given world positino to a 2D screenspace position.
+
 		auto hud = GetHUD();
-		if (!hud || !hud->uiMovie)
+		if (!hud || !hud->uiMovie) 
+		{
 			return { 0.0f, 0.0f };
+		}
 
 		glm::vec2 screenPoint{ 0.0f, 0.0f };
-		if (RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera(); niCam)
+		if (RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera(); niCam && niCam.get())
 		{
+			// Get frame dimensions.
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
 			const float rectWidth = fabsf(gRect.right - gRect.left);
 			const float rectHeight = fabsf(gRect.bottom - gRect.top);
@@ -434,6 +499,8 @@ namespace ALYSLC
 
 	RE::GPtr<RE::IMenu> DebugAPI::GetHUD()
 	{
+		// Get this menu.
+
 		if (auto ui = RE::UI::GetSingleton(); ui)
 		{
 			return ui->GetMenu(DebugOverlayMenu::MENU_NAME);
@@ -444,21 +511,31 @@ namespace ALYSLC
 
 	DebugOverlayMenu::DebugOverlayMenu()
 	{
+		// Construct the debug menu overlay.
+
 		auto scaleformManager = RE::BSScaleformManager::GetSingleton();
 		if (!scaleformManager)
 		{
-			logger::error("[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. ScaleformManager not found.");
+			SPDLOG_ERROR("[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. ScaleformManager not found.");
 			return;
 		}
 
-		scaleformManager->LoadMovieEx(this, MENU_PATH, RE::GFxMovieView::ScaleModeType::kExactFit, 0.0f, [](RE::GFxMovieDef* a_def) -> void {
-			a_def->SetState(RE::GFxState::StateType::kLog,
-				RE::make_gptr<Logger>().get());
-		});
+		scaleformManager->LoadMovieEx
+		(
+			this, MENU_PATH, RE::GFxMovieView::ScaleModeType::kExactFit, 0.0f, 
+			[](RE::GFxMovieDef* a_def) -> void 
+			{
+				a_def->SetState
+				(
+					RE::GFxState::StateType::kLog,
+					RE::make_gptr<Logger>().get()
+				);
+			}
+		);
 
 		// Rendered above other menus.
 		depthPriority = 19;
-		// Can save while open. Not a menu that is opened temporarily.
+		// Can save while open. Menu is always open.
 		menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving, RE::UI_MENU_FLAGS::kAlwaysOpen);
 		// No input.
 		inputContext = RE::IMenu::Context::kNone;
@@ -473,17 +550,21 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::Register()
 	{
-		logger::info("[DebugAPI] Registering DebugOverlayMenu.");
+		// Register the debug overlay menu with the UI and then load it.
+
+		SPDLOG_INFO("[DebugAPI] Registering DebugOverlayMenu.");
 		if (auto ui = RE::UI::GetSingleton(); ui)
 		{
 			ui->Register(MENU_NAME, Creator);
 			DebugOverlayMenu::Load();
-			logger::info("[DebugAPI] Successfully registered DebugOverlayMenu.");
+			SPDLOG_INFO("[DebugAPI] Successfully registered DebugOverlayMenu.");
 		}
 	}
 
 	void DebugOverlayMenu::Load()
 	{
+		// Load the debug overlay menu.
+
 		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 		{
 			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
@@ -492,6 +573,8 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::Unload()
 	{
+		// Unload the debug overlay menu.
+
 		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 		{
 			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
@@ -500,6 +583,8 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::Show(std::string a_source)
 	{
+		// Show the debug overlay menu.
+
 		auto sourceIdx = std::find(hiddenSources.begin(), hiddenSources.end(), a_source);
 		if (sourceIdx != hiddenSources.end()) 
 		{
@@ -514,6 +599,8 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::Hide(std::string a_source)
 	{
+		// Hide the debug overlay menu.
+
 		auto sourceIdx = std::find(hiddenSources.begin(), hiddenSources.end(), a_source);
 		if (sourceIdx == hiddenSources.end())
 		{
@@ -528,6 +615,8 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::ToggleVisibility(bool a_mode)
 	{
+		// Show (true) or hide (false) the debug overlay menu.
+
 		auto ui = RE::UI::GetSingleton();
 		if (!ui)
 		{
@@ -545,6 +634,8 @@ namespace ALYSLC
 
 	void DebugAPI::CacheMenuData()
 	{
+		// Cache screen frame dimension data for later.
+
 		auto ui = RE::UI::GetSingleton();
 		if (!ui)
 		{
@@ -571,6 +662,9 @@ namespace ALYSLC
 
 	void DebugOverlayMenu::AdvanceMovie(float a_interval, std::uint32_t a_currentTime)
 	{
+		// Update function called each frame.
+		// Perform all repeating tasks here.
+
 		if (auto ui = RE::UI::GetSingleton(); ui)
 		{
 			auto menu = ui->GetMenu(DebugOverlayMenu::MENU_NAME);

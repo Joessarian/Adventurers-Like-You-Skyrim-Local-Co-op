@@ -133,7 +133,7 @@ namespace ALYSLC
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
 		{
-			ALYSLC::Log("[P] ShouldSelfPause: {}: controller input error for CID {}. About to pause all managers.",
+			SPDLOG_DEBUG("[P] ShouldSelfPause: {}: controller input error for CID {}. About to pause all managers.",
 				coopActor->GetName(), controllerID);
 			handledControllerInputError = false;
 			return ManagerState::kAwaitingRefresh;
@@ -162,7 +162,7 @@ namespace ALYSLC
 		if (!selfValid)
 		{
 			// REMOVE when done debugging.
-			ALYSLC::Log("[P] ShouldSelfPause: Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, NO loaded data: {}, NO current proc: {}, NO char controller: {}, parent cell NOT attached: {}",
+			SPDLOG_DEBUG("[P] ShouldSelfPause: Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, NO loaded data: {}, NO current proc: {}, NO char controller: {}, parent cell NOT attached: {}",
 				coopActor->IsDisabled(),
 				!coopActor->Is3DLoaded(),
 				!coopActor->IsHandleValid(),
@@ -182,7 +182,7 @@ namespace ALYSLC
 		// or if the game is paused or saving is disabled.
 		if (player1WaitForCam || shouldTeleportToP1 || ui->GameIsPaused() || !ui->IsSavingAllowed()) 
 		{
-			ALYSLC::Log("[P] ShouldSelfPause: {}: player 1 wait for cam: {}, should teleport to P1: {}, game is paused: {}, saving not allowed: {}.",
+			SPDLOG_DEBUG("[P] ShouldSelfPause: {}: player 1 wait for cam: {}, should teleport to P1: {}, game is paused: {}, saving not allowed: {}.",
 				coopActor->GetName(),
 				player1WaitForCam,
 				ShouldTeleportToP1(true),
@@ -212,7 +212,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					ALYSLC::Log("[P] ShouldSelfResume: {}'s controller input error has been resolved. CID is now {}.",
+					SPDLOG_DEBUG("[P] ShouldSelfResume: {}'s controller input error has been resolved. CID is now {}.",
 						coopActor->GetName(), controllerID);
 					handledControllerInputError = true;
 				}
@@ -247,7 +247,7 @@ namespace ALYSLC
 						{
 							if (coopActor->IsHandleValid() && Util::HandleIsValid(coopActor->GetHandle())) 
 							{
-								ALYSLC::Log("[P] ShouldSelfResume: Moving player {} to P1.", coopActor->GetName());
+								SPDLOG_DEBUG("[P] ShouldSelfResume: Moving player {} to P1.", coopActor->GetName());
 								// Temporary solution until I figure out what triggers the 'character controller and 3D desync warp glitch',
 								// which occurs ~0.5 seconds after unpausing with a player previously grabbed.
 								// Ragdolling fixes the issue, but I need to find a way to detect if this desync is happening
@@ -300,7 +300,7 @@ namespace ALYSLC
 				selfWasInvalid = false;
 			}
 
-			ALYSLC::Log("[P] ShouldSelfResume: {}: Resuming all co-op player manager threads.", coopActor->GetName());
+			SPDLOG_DEBUG("[P] ShouldSelfResume: {}: Resuming all co-op player manager threads.", coopActor->GetName());
 			return ManagerState::kRunning;
 		}
 		
@@ -316,7 +316,7 @@ namespace ALYSLC
 		// NOTE: Controller ID, player actor, and package form start index 
 		// already set through constructor or update function at this point.
 
-		ALYSLC::Log("[P] InitializeCoopPlayer: Init player with controller ID: {}, editor id: {}", controllerID, coopActor ? coopActor->GetFormEditorID() : "NONE");
+		SPDLOG_DEBUG("[P] InitializeCoopPlayer: Init player with controller ID: {}, editor id: {}", controllerID, coopActor ? coopActor->GetFormEditorID() : "NONE");
 		// Active if the player has a valid controller ID.
 		isActive = controllerID != -1;
 		if (isActive)
@@ -425,7 +425,7 @@ namespace ALYSLC
 
 	void CoopPlayer::UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex)
 	{
-		ALYSLC::Log("[P] UpdateCoopPlayer: Updating co-op player: {}, CID: {}", a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID);
+		SPDLOG_DEBUG("[P] UpdateCoopPlayer: Updating co-op player: {}, CID: {}", a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID);
 		if ((a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT) && a_packageFormListStartIndex != -1)
 		{
 			controllerID = a_controllerID;
@@ -439,7 +439,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			ALYSLC::Log("[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, package start index not found: {}.",
+			SPDLOG_DEBUG("[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, package start index not found: {}.",
 				coopActor ? coopActor->GetName() : "NONE",
 				a_controllerID <= -1 || a_controllerID >= 4,
 				a_packageFormListStartIndex == -1);
@@ -460,7 +460,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[P] CopyNPCAppearanceToPlayer: copying {}'s appearance to {}, set opposite gender animations: {}, current race, race to set: {}, {}",
+		SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: copying {}'s appearance to {}, set opposite gender animations: {}, current race, race to set: {}, {}",
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
 			coopActor->GetName(), a_setOppositeGenderAnims,
 			coopActor->race ? coopActor->race->GetName() : "NONE",
@@ -505,7 +505,7 @@ namespace ALYSLC
 					{
 						// Something went wrong if the head part is invalid, since the head parts count does not match the
 						// actual head parts array's size.
-						ALYSLC::Log("[P] ERR: CopyNPCAppearanceToPlayer: Num head parts not in sync with actual head parts array. No head part at index {}. Number of current head parts reported: {}. Copying preset head parts over directly: {} parts. Address of invalid head parts list: 0x{:p}.",
+						SPDLOG_DEBUG("[P] ERR: CopyNPCAppearanceToPlayer: Num head parts not in sync with actual head parts array. No head part at index {}. Number of current head parts reported: {}. Copying preset head parts over directly: {} parts. Address of invalid head parts list: 0x{:p}.",
 							headPartIndex, actorBase->numHeadParts, a_baseToCopy->numHeadParts, fmt::ptr(actorBase->headParts));
 						actorBase->numHeadParts = 0;
 						// Freeing the invalid array pointer causes the game to hang on save load.
@@ -550,7 +550,7 @@ namespace ALYSLC
 			coopActor->Update3DModel();
 			coopActor->DoReset3D(true);
 
-			ALYSLC::Log("[P] CopyNPCAppearanceToPlayer: Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName());
+			SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName());
 		}
 	}
 
@@ -577,7 +577,7 @@ namespace ALYSLC
 
 		// Have script run its cleanup.
 		onCoopEndReg.SendEvent(coopActor.get(), controllerID);
-		ALYSLC::Log("[P] DismissPlayer: Handled dismissal of {}. Script is now completing cleanup.", coopActor->GetName());
+		SPDLOG_DEBUG("[P] DismissPlayer: Handled dismissal of {}. Script is now completing cleanup.", coopActor->GetName());
 	}
 
 	void CoopPlayer::HandleControllerInputError()
@@ -586,7 +586,7 @@ namespace ALYSLC
 
 		if (currentState == ManagerState::kPaused || currentState == ManagerState::kAwaitingRefresh)
 		{
-			ALYSLC::Log("[P] ERR: HandleControllerInputError: Failed to get XInput state for CID {}, player {}.",
+			SPDLOG_DEBUG("[P] ERR: HandleControllerInputError: Failed to get XInput state for CID {}, player {}.",
 				controllerID, coopActor->GetName());
 			// Get controller "rank" or index in list of active controllers ordered by controller ID.
 			uint8_t controllerRank = 0;
@@ -612,7 +612,7 @@ namespace ALYSLC
 				// Only want to swap active player's CID (inactive players have a CID of -1).
 				if (swappedPlayer->isActive) 
 				{
-					ALYSLC::Log("[P] HandleControllerInputError: Swapping {} with {}. Swapped player {}'s new CID is now {}.",
+					SPDLOG_DEBUG("[P] HandleControllerInputError: Swapping {} with {}. Swapped player {}'s new CID is now {}.",
 						coopActor->GetName(), swappedPlayer->coopActor->GetName(),
 						swappedPlayer->coopActor->GetName(), oldCID);
 					swappedPlayer->controllerID = oldCID;
@@ -625,7 +625,7 @@ namespace ALYSLC
 					const auto& p = glob.coopPlayers[i];
 					if (p->isActive)
 					{
-						ALYSLC::Log("[P] HandleControllerInputError: Recalculating player IDs. {}'s ID was {} and is now {}.",
+						SPDLOG_DEBUG("[P] HandleControllerInputError: Recalculating player IDs. {}'s ID was {} and is now {}.",
 							p->coopActor->GetName(), p->playerID, p->isPlayer1 ? 0 : currentID);
 						if (!p->isPlayer1)
 						{
@@ -670,13 +670,13 @@ namespace ALYSLC
 		{
 			if (!onCoopEndReg.Register(coopActor.get()))
 			{
-				logger::error("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
+				SPDLOG_ERROR("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
 			}
 		}
 
 		if (!onCoopEndReg.Register(glob.player1RefAlias))
 		{
-			logger::error("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
+			SPDLOG_ERROR("[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName());
 		}
 	}
 
@@ -1131,13 +1131,13 @@ namespace ALYSLC
 		{
 			if (!onCoopEndReg.Unregister(coopActor.get()))
 			{
-				logger::error("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
+				SPDLOG_ERROR("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
 			}
 		}
 
 		if (!onCoopEndReg.Unregister(glob.player1RefAlias))
 		{
-			logger::error("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
+			SPDLOG_ERROR("[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", coopActor->GetName());
 		}
 	}
 
@@ -1152,7 +1152,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[P] UpdateGenderAndBody: {}: set female: {}, set opposite gender animations: {}, current race: {}",
+		SPDLOG_DEBUG("[P] UpdateGenderAndBody: {}: set female: {}, set opposite gender animations: {}, current race: {}",
 			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName());
 
 		auto actorBase = coopActor->GetActorBase();
@@ -1172,7 +1172,7 @@ namespace ALYSLC
 				{
 					// Something went wrong if the head part is invalid, since the head parts count does not match the
 					// actual head parts array's size.
-					ALYSLC::Log("[P] ERR: UpdateGenderAndBody: Num head parts not in sync with actual head parts array. No head part at index 0. Number of current head parts reported: {}. Address of invalid head parts list: 0x{:p}.",
+					SPDLOG_DEBUG("[P] ERR: UpdateGenderAndBody: Num head parts not in sync with actual head parts array. No head part at index 0. Number of current head parts reported: {}. Address of invalid head parts list: 0x{:p}.",
 						actorBase->numHeadParts, fmt::ptr(actorBase->headParts));
 					actorBase->numHeadParts = 0;
 					// Freeing the invalid array pointer causes the game to hang on save load.
@@ -1233,7 +1233,7 @@ namespace ALYSLC
 		//		- Player 1 is killed.
 		//		- Another save is loaded.
 
-		ALYSLC::Log("[P] DownedStateCountdownTask: {}", coopActor->GetName());
+		SPDLOG_DEBUG("[P] DownedStateCountdownTask: {}", coopActor->GetName());
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto resAV = coopActor->GetActorValue(RE::ActorValue::kRestoration);
 		// Health post-revive scales with the player's restoration skill level.
@@ -1316,7 +1316,7 @@ namespace ALYSLC
 			stopCountingDown = !glob.coopSessionActive || isRevived || reviveIntervalOver || loadingMenuOpened || coopActor->IsDead();
 		}
 
-		ALYSLC::Log("[P] DownedStateCountdownTask: Stopped downed countdown for {}. Reason: session ended: {}, is dead: {}, is revived: {}, revive window over: {} ({} : {})",
+		SPDLOG_DEBUG("[P] DownedStateCountdownTask: Stopped downed countdown for {}. Reason: session ended: {}, is dead: {}, is revived: {}, revive window over: {} ({} : {})",
 			coopActor->GetName(), !glob.coopSessionActive, coopActor->IsDead(), isRevived, reviveIntervalOver,
 			secsDowned, Settings::fSecsUntilDownedDeath);
 
@@ -1342,7 +1342,7 @@ namespace ALYSLC
 				tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
 				tm->UpdateCrosshairMessage();
 
-				ALYSLC::Log("[P] DownedStateCountdownTask: {} was NOT revived. About to teardown co-op session.", coopActor->GetName());
+				SPDLOG_DEBUG("[P] DownedStateCountdownTask: {} was NOT revived. About to teardown co-op session.", coopActor->GetName());
 
 				// Uh-oh!
 				Util::AddSyncedTask([this]() { GlobalCoopData::YouDied(coopActor.get()); });
@@ -1357,7 +1357,7 @@ namespace ALYSLC
 				tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
 				tm->UpdateCrosshairMessage();
 
-				ALYSLC::Log("[P] DownedStateCountdownTask: {} was revived. Toggle god mode until fully up.", coopActor->GetName());
+				SPDLOG_DEBUG("[P] DownedStateCountdownTask: {} was revived. Toggle god mode until fully up.", coopActor->GetName());
 
 				Util::AddSyncedTask([this]() {
 					// Invulnerable while getting up after revive and until weapons are equipped again.
@@ -1405,11 +1405,11 @@ namespace ALYSLC
 						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
 					});
 
-					ALYSLC::Log("[P] DownedStateCountdownTask: {} was revived and is no longer downed. Success!", coopActor->GetName());
+					SPDLOG_DEBUG("[P] DownedStateCountdownTask: {} was revived and is no longer downed. Success!", coopActor->GetName());
 				}
 				else
 				{
-					ALYSLC::Log("[P] DownedStateCountdownTask: Co-op session ended while {} was getting up!", coopActor->GetName());
+					SPDLOG_DEBUG("[P] DownedStateCountdownTask: Co-op session ended while {} was getting up!", coopActor->GetName());
 				}
 
 				return;
@@ -1417,7 +1417,7 @@ namespace ALYSLC
 		}
 
 		// If reaching this point, the player was not revived one way or another, so make sure the co-op session ends.
-		ALYSLC::Log("[P] DownedStateCountdownTask: {} was not revived: {}. Revive interval not over: {}, co-op session ended: {}, loading menu opened: {}, dead: {}. Dismissing all players.",
+		SPDLOG_DEBUG("[P] DownedStateCountdownTask: {} was not revived: {}. Revive interval not over: {}, co-op session ended: {}, loading menu opened: {}, dead: {}. Dismissing all players.",
 			coopActor->GetName(), !isRevived, !reviveIntervalOver, !glob.coopSessionActive, loadingMenuOpened, coopActor->IsDead());
 
 		// Always reset the paralysis flag.

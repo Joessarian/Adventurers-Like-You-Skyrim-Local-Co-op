@@ -18,7 +18,7 @@ namespace ALYSLC
 		if (a_p && a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			ALYSLC::Log("[MM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+			SPDLOG_DEBUG("[MM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count());
@@ -26,7 +26,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[MM] ERR: Initialize: Cannot construct Movement Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
+			SPDLOG_ERROR("[MM] ERR: Initialize: Cannot construct Movement Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
 		}
 	}
 
@@ -43,7 +43,7 @@ namespace ALYSLC
 
 	void MovementManager::PrePauseTask()
 	{
-		ALYSLC::Log("[MM] PrePauseTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("[MM] PrePauseTask: P{}", playerID + 1);
 
 		// Set player 1 as motion driven when the manager is not active
 		// to restore normal movement.
@@ -80,7 +80,7 @@ namespace ALYSLC
 
 	void MovementManager::PreStartTask()
 	{
-		ALYSLC::Log("[MM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("[MM] PreStartTask: P{}", playerID + 1);
 		ResetTPs();
 
 		// Set player 1 as AI driven to allow for movement manipulation with this manager.
@@ -196,7 +196,7 @@ namespace ALYSLC
 
 		// Reset time points used by this manager.
 		ResetTPs();
-		ALYSLC::Log("[MM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("[MM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState MovementManager::ShouldSelfPause()
@@ -807,7 +807,7 @@ namespace ALYSLC
 				}
 
 				// REMOVE when done debugging.
-				//ALYSLC::Log("[MM] {}: PerformJump: Flags while falling: 0b{:B}.", coopActor->GetName(), *charController->flags);
+				//SPDLOG_DEBUG("[MM] {}: PerformJump: Flags while falling: 0b{:B}.", coopActor->GetName(), *charController->flags);
 
 				// Handle ascent to peak of the jump at which the player begins to fall.
 				if (!isFallingWhileJumping)
@@ -2959,23 +2959,23 @@ namespace ALYSLC
 
 				if (isAIDriven && shouldRemoveAIDriven)
 				{
-					ALYSLC::Log("[MM] UpdateMovementState: {} is anim driven: {}, mounted: {}, ragdolled: {}, synced: {}, paragliding: {}. Sending motion driven events: {}, menu stops movement: {}, attempt discovery: {}. REMOVE AI driven.",
+					SPDLOG_DEBUG("[MM] UpdateMovementState: {} is anim driven: {}, mounted: {}, ragdolled: {}, synced: {}, paragliding: {}. Sending motion driven events: {}, menu stops movement: {}, attempt discovery: {}. REMOVE AI driven.",
 						glob.player1Actor->GetName(), isAnimDriven, isMounted, isRagdolled, isSynced, reqOrIsParagliding, p->pam->sendingP1MotionDrivenEvents, menuStopsMovement, attemptDiscovery);
 					bool changed = Util::SetPlayerAIDriven(false);
 					if (changed)
 					{
-						ALYSLC::Log("[MM] UpdateMovementState: {} AI driven state changed to false.", coopActor->GetName());
+						SPDLOG_DEBUG("[MM] UpdateMovementState: {} AI driven state changed to false.", coopActor->GetName());
 					}
 				}
 				else if (!isAIDriven && !shouldRemoveAIDriven)
 				{
-					ALYSLC::Log("[MM] UpdateMovementState: {} is anim driven: {}, mounted: {}, ragdolled: {}, synced: {}, paragliding: {}. Sending motion driven events: {}, menu stops movement: {}, attempt discovery: {}. SET AI driven.",
+					SPDLOG_DEBUG("[MM] UpdateMovementState: {} is anim driven: {}, mounted: {}, ragdolled: {}, synced: {}, paragliding: {}. Sending motion driven events: {}, menu stops movement: {}, attempt discovery: {}. SET AI driven.",
 						glob.player1Actor->GetName(), isAnimDriven, isMounted, isRagdolled, isSynced, reqOrIsParagliding, p->pam->sendingP1MotionDrivenEvents, menuStopsMovement, attemptDiscovery);
 
 					bool changed = Util::SetPlayerAIDriven(true);
 					if (changed)
 					{
-						ALYSLC::Log("[MM] UpdateMovementState: {} AI driven state changed to true.", coopActor->GetName());
+						SPDLOG_DEBUG("[MM] UpdateMovementState: {} AI driven state changed to true.", coopActor->GetName());
 					}
 				}
 			}
@@ -3607,7 +3607,7 @@ namespace ALYSLC
 
 							// REMOVE when done debugging.
 							/*DebugAPI::QueuePoint3D(result.hitPos, Settings::vuOverlayRGBAValues[a_p->playerID], a_armPointVelocity.Length() / 200.0f, 1.0f);
-							ALYSLC::Log("[GLOB] PerformArmCollisionRaycastCheck: {} hit {} (0x{:X}, {}, {}) with {} node, RS lin speed {}, impulse mult {}, and node/point velocity {}, {}. Hit pos point vel: {}, rel vels: {}, {}. {}",
+							SPDLOG_DEBUG("[GLOB] PerformArmCollisionRaycastCheck: {} hit {} (0x{:X}, {}, {}) with {} node, RS lin speed {}, impulse mult {}, and node/point velocity {}, {}. Hit pos point vel: {}, rel vels: {}, {}. {}",
 								a_p->coopActor->GetName(),
 								hitRefrPtr->GetName(),
 								hitRefrPtr->formID,
@@ -3768,7 +3768,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			//ALYSLC::Log("[MM] SetBlendStatus: {} -> {}.", data->blendStatus, a_newStatus);
+			//SPDLOG_DEBUG("[MM] SetBlendStatus: {} -> {}.", data->blendStatus, a_newStatus);
 			
 			if (a_newStatus == NodeRotationBlendStatus::kBlendIn)
 			{
@@ -4109,7 +4109,7 @@ namespace ALYSLC
 				if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from default.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from default.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from game's set rotation.
 					a_data->startingRotation = a_data->defaultRotation;
@@ -4117,7 +4117,7 @@ namespace ALYSLC
 				else if (prevStatus == NodeRotationBlendStatus::kTargetReached)
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from target.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from target.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from our set target rotation.
 					a_data->startingRotation = a_data->targetRotation;
@@ -4125,7 +4125,7 @@ namespace ALYSLC
 				else
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from current.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from current.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from the current blended rotation.
 					a_data->startingRotation = a_data->currentRotation;
@@ -4137,7 +4137,7 @@ namespace ALYSLC
 				a_data->blendInFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
 			{
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending in. {} frames elapsed.",
+				/*SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending in. {} frames elapsed.",
 					a_p->coopActor->GetName(),
 					a_nodePtr->name,
 					a_data->blendInFrameCount);*/
@@ -4157,7 +4157,7 @@ namespace ALYSLC
 				if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from default.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from default.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from game's set rotation.
 					a_data->startingRotation = a_data->defaultRotation;
@@ -4165,7 +4165,7 @@ namespace ALYSLC
 				else if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from target.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from target.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from our set target rotation.
 					a_data->startingRotation = a_data->targetRotation;
@@ -4173,7 +4173,7 @@ namespace ALYSLC
 				else
 				{
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from current.", a_p->coopActor->GetName(), a_nodePtr->name);
+					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from current.", a_p->coopActor->GetName(), a_nodePtr->name);
 
 					// Starting from the current blended rotation.
 					a_data->startingRotation = a_data->currentRotation;
@@ -4185,7 +4185,7 @@ namespace ALYSLC
 				a_data->blendOutFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
 			{
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending out. {} frames elapsed.",
+				/*SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending out. {} frames elapsed.",
 					a_p->coopActor->GetName(),
 					a_nodePtr->name,
 					a_data->blendOutFrameCount);*/
@@ -4198,12 +4198,12 @@ namespace ALYSLC
 		{
 			if (towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
 			{
-				//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Target rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+				//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Target rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
 				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kTargetReached);
 			}
 			else if (!towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
 			{
-				//ALYSLC::Log("[MM] UpdateNodeRotationBlendState: {}: {}: Default rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+				//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Default rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
 				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kDefaultReached);
 			}
 		}
@@ -5110,7 +5110,7 @@ namespace ALYSLC
 				}
 
 				/*float defaultPitch = Util::DirectionToGameAngPitch(baseYAxis);
-				ALYSLC::Log("[MM] {}: {}.", a_p->coopActor->GetName(), defaultPitch * TO_DEGREES);
+				SPDLOG_DEBUG("[MM] {}: {}.", a_p->coopActor->GetName(), defaultPitch * TO_DEGREES);
 				float aimPitchProportion = (a_p->mm->aimPitch + PI / 2.0f) / PI;
 				float remappedPitch = 0.0f;
 				if (aimPitchProportion >= 0.5f) 

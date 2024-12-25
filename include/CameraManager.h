@@ -660,18 +660,6 @@ namespace ALYSLC
 		// Calculate and return the current average movement yaw-to-cam angle.
 		float GetAverageMovementYawToCam();
 		
-		// NOTE: Currently unused.
-		// Check if the base target position (pre-collision) is visible when raycasting along each player's vertical axis.
-		// Return true if there are no raycast hits from at least one player's vertical axis to the base target position.
-		// Set the closest player LOS raycast hit position to the base target position through the outparam.
-		bool GetPlayerHasLOSOnBaseTargetPos(RE::NiPoint3& a_playerClosestLOSPos);
-
-		// NOTE: Currently unused.
-		// Raycast from the current collision origin point to the base target position along the origin point's vertical axis.
-		// Return the base target position if it is hit by a raycast and not out of bounds.
-		// Return the closest raycast hit position to the base target position otherwise.
-		RE::NiPoint3 GetRaycastApproxTargetPosFromOrigin(const bool& a_baseTargetPosOOB, const RE::NiPoint3& a_playerClosestLOSPos);
-		
 		// Check if any player is visible via raycast (hit one or all actor nodes) from the given point.
 		bool NoPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes = true);
 		
@@ -815,6 +803,7 @@ namespace ALYSLC
 		// Should wait to toggle the co-op camera on again.
 		bool waitForToggle;
 		// Max pitch angular magnitude when in the auto trail camera state.
+		// Capped for now to prevent jitter when blending pitch/yaw at high pitch angles.
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
@@ -833,7 +822,7 @@ namespace ALYSLC
 		// Average height of all active players.
 		float avgPlayerHeight;
 		// Base focus point Z displacement from the origin point.
-		float camBaseFocusPointZOffset;
+		float camBaseHeightOffset;
 		// Base radial distance from the focus point.
 		float camBaseRadialDistance;
 		// Base X rotation for the camera node.
@@ -848,10 +837,10 @@ namespace ALYSLC
 		// Current yaw from the camera node to the focus point.
 		float camCurrentYawToFocus;
 		// Focus point Z displacement from the origin point.
-		float camFocusPointZOffset;
+		float camHeightOffset;
 		// Interpolation factors for positioning/rotation.
 		// Frame rate dependent and base.
-		float camFrameDepInterpFactor;
+		float camInterpFactorFrameDep;
 		float camInterpFactor;
 		// Max and min Z positions bound by collidable surfaces above and below
 		// the current origin point.

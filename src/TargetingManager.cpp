@@ -20,7 +20,7 @@ namespace ALYSLC
 		if (a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			ALYSLC::Log("[TM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+			SPDLOG_DEBUG("[TM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count());
@@ -28,7 +28,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[TM] ERR: Initialize: Cannot construct Targeting Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
+			SPDLOG_ERROR("[TM] ERR: Initialize: Cannot construct Targeting Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
 		}
 	}
 
@@ -57,7 +57,7 @@ namespace ALYSLC
 	{
 		auto ui = RE::UI::GetSingleton();
 
-		ALYSLC::Log("[TM] PrePauseTask: P{}. Self invalid: {}. Grabbed refr info list size: {}.", playerID + 1, !p->selfValid, rmm->grabbedRefrInfoList.size());
+		SPDLOG_DEBUG("[TM] PrePauseTask: P{}. Self invalid: {}. Grabbed refr info list size: {}.", playerID + 1, !p->selfValid, rmm->grabbedRefrInfoList.size());
 		if (nextState == ManagerState::kAwaitingRefresh)
 		{
 			// Clear all targets.
@@ -76,7 +76,7 @@ namespace ALYSLC
 
 	void TargetingManager::PreStartTask()
 	{
-		ALYSLC::Log("[TM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("[TM] PreStartTask: P{}", playerID + 1);
 		// Reset TPs before starting.
 		ResetTPs();
 
@@ -185,7 +185,7 @@ namespace ALYSLC
 		// Reset all target handles, related data, and time points.
 		ResetTargeting();
 		ResetTPs();
-		ALYSLC::Log("[TM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("[TM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState TargetingManager::ShouldSelfPause()
@@ -211,7 +211,7 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> targetingLock(targetingMutex, std::try_to_lock);
 			if (targetingLock)
 			{
-				ALYSLC::Log("[TM] ClearTarget: {}: Lock obtained. (0x{:X})", coopActor->GetName(), hash);
+				SPDLOG_DEBUG("[TM] ClearTarget: {}: Lock obtained. (0x{:X})", coopActor->GetName(), hash);
 
 				if (a_targetType == TargetActorType::kAimCorrection)
 				{
@@ -243,7 +243,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				ALYSLC::Log("[TM] ClearTarget: {}: Failed to obtain lock. (0x{:X})", coopActor->GetName(), hash);
+				SPDLOG_DEBUG("[TM] ClearTarget: {}: Failed to obtain lock. (0x{:X})", coopActor->GetName(), hash);
 			}
 		}
 	}
@@ -1597,7 +1597,7 @@ namespace ALYSLC
 		float speedWeightFactor = sqrtf(weightFactor * havokImpactSpeed);
 
 		// REMOVE when done debugging.
-		/*ALYSLC::Log("[TM] {}: HandleBonk: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, impact speed: {}, speedweight factor: {}. Skill damage factor: {} (player level: {}). Sneak mult: {}. Final Damage: {}.", 
+		/*SPDLOG_DEBUG("[TM] {}: HandleBonk: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, impact speed: {}, speedweight factor: {}. Skill damage factor: {} (player level: {}). Sneak mult: {}. Final Damage: {}.", 
 			coopActor->GetName(), 
 			hitActorPtr->GetName(),
 			releasedRefrPtr->GetName(),
@@ -2311,7 +2311,7 @@ namespace ALYSLC
 				damage = speedWeightFactor * levelDamageFactor * 1.0f / ((float)(a_hitCount) * (float)(a_hitCount));
 
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[TM] HandleSplat: {}: Thrown actor: {}. Mass: {}, impact speed: {}, speedweight factor: {}, damage: {}. Hit #{}",
+				/*SPDLOG_DEBUG("[TM] HandleSplat: {}: Thrown actor: {}. Mass: {}, impact speed: {}, speedweight factor: {}, damage: {}. Hit #{}",
 				p->coopActor->GetName(),
 				thrownActorPtr->GetName(),
 				releasedRefrRigidBody->motion.GetMass(),
@@ -2526,7 +2526,7 @@ namespace ALYSLC
 			// REMOVE after debugging.
 			/*
 			RE::NiPoint3 hitPoint = ToNiPoint3(result.hitPos);
-			ALYSLC::Log("[TM] PickRaycastHitResult: {}: For target selection: {}. Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, type: {}). Distance to camera: {}, distance to player: {}.",
+			SPDLOG_DEBUG("[TM] PickRaycastHitResult: {}: For target selection: {}. Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, type: {}). Distance to camera: {}, distance to player: {}.",
 				coopActor->GetName(),
 				a_crosshairActiveForSelection,
 				i,
@@ -2676,7 +2676,7 @@ namespace ALYSLC
 		// REMOVE after debugging.
 		/*
 		auto activationRefrPtr = Util::GetRefrPtrFromHandle(chosenResult.hitRefrHandle);
-		ALYSLC::Log("[TM] PickRaycastHitResult: {}: chose result {}: {}. For target selection: {}, is closest result: {}.",
+		SPDLOG_DEBUG("[TM] PickRaycastHitResult: {}: chose result {}: {}. For target selection: {}, is closest result: {}.",
 			coopActor->GetName(), chosenResult.hit ? i : -1,
 			activationRefrPtr ? activationRefrPtr->GetName() : chosenResult.hitObject ? chosenResult.hitObject->name : "NONE",
 			a_crosshairActiveForSelection, choseClosestResult);
@@ -4351,7 +4351,7 @@ namespace ALYSLC
 				releaseSpeed = firstReleaseSpeed;
 
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
+				/*SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
 					a_p->coopActor->GetName(), tDiff, timeBailDeltaMax, step, targetActorPtr->GetName(), releaseSpeed);*/
 
 				// Failed to find intercept position, so set to the initially-aimed-at position.
@@ -4362,12 +4362,12 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				/*if (tDiff <= timeBailDeltaMin)
 				{
-					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
+					SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
 						a_p->coopActor->GetName(), step, tDiff);
 				}
 				else
 				{
-					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
+					SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
 						a_p->coopActor->GetName(), tDiff, step);
 				}*/
 
@@ -5082,13 +5082,13 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> lock(contactEventsQueueMutex, std::try_to_lock);
 			if (lock)
 			{
-				ALYSLC::Log("[TM] RefrManipulationManager: ClearAll: Lock obtained. (0x{:X})", hash);
+				SPDLOG_DEBUG("[TM] RefrManipulationManager: ClearAll: Lock obtained. (0x{:X})", hash);
 				collidedRefrFIDPairs.clear();
 				queuedReleasedRefrContactEvents.clear();
 			}
 			else
 			{
-				ALYSLC::Log("[TM] RefrManipulationManager: ClearAll: Failed to obtain lock. (0x{:X})", hash);
+				SPDLOG_DEBUG("[TM] RefrManipulationManager: ClearAll: Failed to obtain lock. (0x{:X})", hash);
 			}
 		}
 
@@ -5124,7 +5124,7 @@ namespace ALYSLC
 				asActor->NotifyAnimationGraph("GetUpBegin");
 			}
 
-			ALYSLC::Log("[TM] ClearGrabbedActors: {}. Releasing actor {}.", a_p->coopActor->GetName(), refrPtr->GetName());
+			SPDLOG_DEBUG("[TM] ClearGrabbedActors: {}. Releasing actor {}.", a_p->coopActor->GetName(), refrPtr->GetName());
 			ClearGrabbedRefr(grabbedRefrInfo->refrHandle);
 		}
 	}
@@ -5537,7 +5537,7 @@ namespace ALYSLC
 				(
 					[refrPtr, p1]() 
 					{
-						ALYSLC::Log("[TM] MoveUnloadedGrabbedRefrsToPlayer: Moving {} to P1 on unload.", refrPtr->GetName());
+						SPDLOG_DEBUG("[TM] MoveUnloadedGrabbedRefrsToPlayer: Moving {} to P1 on unload.", refrPtr->GetName());
 						refrPtr->MoveTo(p1);
 					}
 				);
@@ -5800,7 +5800,7 @@ namespace ALYSLC
 				releaseSpeed = firstReleaseSpeed;
 
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
+				/*SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Exceeded MAX t precision ({} > {} in {} steps)! Cannot hit {}, so setting target position to current aimed at pos. Release speed: {}",
 					a_p->coopActor->GetName(), tDiff, timeBailDeltaMax, step, targetActorPtr->GetName(), releaseSpeed);*/
 
 				// Failed to find intercept position, so set to the initially-aimed-at position.
@@ -5811,12 +5811,12 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				/*if (tDiff <= timeBailDeltaMin)
 				{
-					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
+					SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Met MIN t precision in {} steps: {}!", 
 						a_p->coopActor->GetName(), step, tDiff);
 				}
 				else
 				{
-					ALYSLC::Log("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
+					SPDLOG_DEBUG("[TM] CalculatePredInterceptPos: {}: RESULT: Did NOT meet MIN t precision! tDiff: {} in {} steps", 
 						a_p->coopActor->GetName(), tDiff, step);
 				}*/
 
@@ -6226,7 +6226,7 @@ namespace ALYSLC
 				}
 
 				trajectoryEndPos = releasePos + launchDir * farDist;
-				ALYSLC::Log("[TM] {}: Launch pitch, yaw: {}, {}, far dist: {}.",
+				SPDLOG_DEBUG("[TM] {}: Launch pitch, yaw: {}, {}, far dist: {}.",
 					a_p->coopActor->GetName(),
 					launchPitch * TO_DEGREES,
 					launchYaw * TO_DEGREES,

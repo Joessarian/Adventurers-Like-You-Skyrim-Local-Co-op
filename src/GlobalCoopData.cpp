@@ -379,10 +379,10 @@ namespace ALYSLC
 					float xpInc = Settings::vfSkillXPMult[p->playerID] * (avSkillInfo->useMult * a_baseXP + avSkillInfo->offsetMult);
 
 					const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-					ALYSLC::Log("[GLOB] AddSkillXP: {}: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
+					SPDLOG_DEBUG("[GLOB] AddSkillXP: {}: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 					{
 						std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_cid]);
-						ALYSLC::Log("[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
+						SPDLOG_DEBUG("[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 						glob.serializablePlayerData.at(p->coopActor->formID)->skillXPList.at(skill) += xpInc;
 					}
 				}
@@ -394,7 +394,7 @@ namespace ALYSLC
 	{
 		// Adjust serialized used, available, extra, and shared perk counts for all players.
 
-		ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts");
+		SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts");
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (!p1)
@@ -415,7 +415,7 @@ namespace ALYSLC
 			if (isP1)
 			{
 				playerActor = p1;
-				ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts: P1: CurrentXP: {}, current level: {}, serialized number of unlocked perks: {}", 
+				SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts: P1: CurrentXP: {}, current level: {}, serialized number of unlocked perks: {}", 
 					p1->skills->data->xp, p1->GetLevel(), totalUnlockedPerks);
 
 				// Ensure glob perk list matches the serialized one.
@@ -434,7 +434,7 @@ namespace ALYSLC
 					if (!alreadyAdded)
 					{
 						Util::ChangeP1Perk(perkToAdd, true);
-						ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts. Re-adding {} to p1's perks list. New perk count: {}",
+						SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts. Re-adding {} to p1's perks list. New perk count: {}",
 							perkToAdd->GetName(), p1->perks.size());
 					}
 				}
@@ -448,7 +448,7 @@ namespace ALYSLC
 					}
 				}
 
-				ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts. Perk glob list gives total unlocked perks count of {}.", totalUnlockedPerks);
+				SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts. Perk glob list gives total unlocked perks count of {}.", totalUnlockedPerks);
 			}
 			else
 			{
@@ -480,7 +480,7 @@ namespace ALYSLC
 						{
 							// Error: this player has unlocked more shared perks than the saved total.
 							// Clamp to total shared perks.
-							ALYSLC::Log("[GLOB] ERR: AdjustAllPlayerPerkCounts: Player with FID 0x{:X} has {} unlocked shared perks on record, but the total is {}. Resetting to {}.",
+							SPDLOG_DEBUG("[GLOB] ERR: AdjustAllPlayerPerkCounts: Player with FID 0x{:X} has {} unlocked shared perks on record, but the total is {}. Resetting to {}.",
 								fid, data->sharedPerksUnlocked, totalSharedPerksUnlocked, totalSharedPerksUnlocked);
 							data->sharedPerksUnlocked = totalSharedPerksUnlocked;
 						}
@@ -502,12 +502,12 @@ namespace ALYSLC
 				if (int32_t extraPerkPoints = totalUnlockedPerks - totalSharedPerksUnlocked + data->sharedPerksUnlocked - maxPerkPointsFromLevel; extraPerkPoints >= 0)
 				{
 					data->extraPerkPoints = extraPerkPoints;
-					ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks from external sources.",
+					SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks from external sources.",
 						playerActor->GetName(), extraPerkPoints);
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks from external sources. Resetting to 0.",
+					SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks from external sources. Resetting to 0.",
 						playerActor->GetName(), extraPerkPoints);
 					data->extraPerkPoints = 0;
 				}
@@ -516,7 +516,7 @@ namespace ALYSLC
 				if (int32_t perkCountDec = data->prevTotalUnlockedPerks - totalUnlockedPerks; perkCountDec > 0)
 				{
 					data->extraPerkPoints = max(0, static_cast<int32_t>(data->extraPerkPoints - perkCountDec));
-					ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks after total perk count decrease of {} from {} to {}.",
+					SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts: {} has {} extra perks after total perk count decrease of {} from {} to {}.",
 						playerActor->GetName(), data->extraPerkPoints, perkCountDec, data->prevTotalUnlockedPerks, totalUnlockedPerks);
 				}
 
@@ -526,7 +526,7 @@ namespace ALYSLC
 				data->usedPerkPoints = min(max(0, rawUsedPerkPoints), maxPerkPointsFromLevel);
 				// Available = Max total for the current level - used total
 				data->availablePerkPoints = max(0, maxPerkPointsFromLevel - data->usedPerkPoints);
-				ALYSLC::Log("[GLOB] AdjustAllPlayerPerkCounts: {} has {}/{} unlocked perks, {} unlocked shared perks out of {} total unlocked ({} by co-op companions), max perk points from leveling at level {}: {}, extra perks: {}, for a total of {} used perk points. Result: {} available perk points.",
+				SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts: {} has {}/{} unlocked perks, {} unlocked shared perks out of {} total unlocked ({} by co-op companions), max perk points from leveling at level {}: {}, extra perks: {}, for a total of {} used perk points. Result: {} available perk points.",
 					playerActor->GetName(),
 					unlockedPerksList.size(),
 					totalUnlockedPerks,
@@ -541,7 +541,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				ALYSLC::Log("[GLOB] ERR: AdjustAllPlayerPerkCounts: Could not get player form for FID 0xXX{:X}", fid & 0x00FFFFFF);
+				SPDLOG_DEBUG("[GLOB] ERR: AdjustAllPlayerPerkCounts: Could not get player form for FID 0xXX{:X}", fid & 0x00FFFFFF);
 			}
 
 			// Update previous unlocked perks count.
@@ -570,7 +570,7 @@ namespace ALYSLC
 			data->hmsBaseAVsOnMenuEntry[0] = a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth);
 			data->hmsBaseAVsOnMenuEntry[1] = a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka);
 			data->hmsBaseAVsOnMenuEntry[2] = a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina);
-			ALYSLC::Log("[GLOB] AdjustBaseHMSData: {}'s base HMS values saved as {}, {}, {} ON ENTRY. First saved level: {}.",
+			SPDLOG_DEBUG("[GLOB] AdjustBaseHMSData: {}'s base HMS values saved as {}, {}, {} ON ENTRY. First saved level: {}.",
 				a_playerActor->GetName(),
 				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
 				a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka),
@@ -584,7 +584,7 @@ namespace ALYSLC
 			data->hmsPointIncreasesList[0] += p1->GetBaseActorValue(RE::ActorValue::kHealth) - data->hmsBaseAVsOnMenuEntry[0];
 			data->hmsPointIncreasesList[1] += p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->hmsBaseAVsOnMenuEntry[1];
 			data->hmsPointIncreasesList[2] += p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->hmsBaseAVsOnMenuEntry[2];
-			ALYSLC::Log("[GLOB] AdjustBaseHMSData: {}'s HMS AVs have increased by {}, {}, {} since initial leveling. {}, {}, {} since entering the Stats Menu.",
+			SPDLOG_DEBUG("[GLOB] AdjustBaseHMSData: {}'s HMS AVs have increased by {}, {}, {} since initial leveling. {}, {}, {} since entering the Stats Menu.",
 				a_playerActor->GetName(),
 				data->hmsPointIncreasesList[0],
 				data->hmsPointIncreasesList[1],
@@ -597,7 +597,7 @@ namespace ALYSLC
 		// Update serialized player level if it does not match the current one.
 		if (const uint16_t currentLevel = a_playerActor->GetLevel(); currentLevel != data->level)
 		{
-			ALYSLC::Log("[GLOB] AdjustBaseHMSData: Levels do not match for {}: saved ({}) != current ({}). Updating now.",
+			SPDLOG_DEBUG("[GLOB] AdjustBaseHMSData: Levels do not match for {}: saved ({}) != current ({}). Updating now.",
 				a_playerActor->GetName(), data->level, currentLevel);
 			data->level = currentLevel;
 		}
@@ -627,7 +627,7 @@ namespace ALYSLC
 
 		if (!fid) 
 		{
-			ALYSLC::Log("[GLOB] ERR: AdjustInitialPlayer1PerkPoints: Could not get serialized player FID for {}.", a_playerActor->GetName());
+			SPDLOG_DEBUG("[GLOB] ERR: AdjustInitialPlayer1PerkPoints: Could not get serialized player FID for {}.", a_playerActor->GetName());
 			return false;
 		}
 
@@ -648,7 +648,7 @@ namespace ALYSLC
 		uint32_t hmsLevelUpsCount = 0;
 		hmsLevelUpsCount = std::accumulate(data->hmsPointIncreasesList.begin(), data->hmsPointIncreasesList.end(), hmsLevelUpsCount) / iAVDhmsLevelUp;
 		int32_t availableHMSLevelUps = max(0.0f, a_playerActor->GetLevel() - 1 - hmsLevelUpsCount);
-		ALYSLC::Log("[GLOB] AdjustInitialPlayer1PerkPoints: {}'s level up count from HMS increases so far: {} (({} + {} + {}) / {}), level ups still available: {}. Available perk points: {}. Perk points total from P1 singleton: {}.",
+		SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: {}'s level up count from HMS increases so far: {} (({} + {} + {}) / {}), level ups still available: {}. Available perk points: {}. Perk points total from P1 singleton: {}.",
 			a_playerActor->GetName(),
 			hmsLevelUpsCount,
 			data->hmsPointIncreasesList[0],
@@ -671,15 +671,15 @@ namespace ALYSLC
 		{
 			// No level ups, but ensure the player has the right number of perk points to spend.
 			p1->perkCount = data->availablePerkPoints;
-			ALYSLC::Log("[GLOB] AdjustInitialPlayer1PerkPoints: No available HMS level ups, but there are {} perk points available for use.", data->availablePerkPoints);
+			SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: No available HMS level ups, but there are {} perk points available for use.", data->availablePerkPoints);
 		}
 		else
 		{
 			// Additional perk points to add on top of the ones granted with each LevelUp Menu.
 			int16_t perkPointsToAdd = data->availablePerkPoints - availableHMSLevelUps;
-			ALYSLC::Log("[GLOB] AdjustInitialPlayer1PerkPoints: {} is attempting to access the level up menu, and has {} available perk points, with {} available HMS level ups. Adding {} perk points without HMS message box.",
+			SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: {} is attempting to access the level up menu, and has {} available perk points, with {} available HMS level ups. Adding {} perk points without HMS message box.",
 				a_playerActor->GetName(), data->availablePerkPoints, availableHMSLevelUps, perkPointsToAdd);
-			ALYSLC::Log("[GLOB] AdjustInitialPlayer1PerkPoints: New avaialble perk points (added + from level ups): {}, ({} + {})",
+			SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: New avaialble perk points (added + from level ups): {}, ({} + {})",
 				perkPointsToAdd + playerLevel - targetDipLevel, perkPointsToAdd, playerLevel - targetDipLevel);
 
 			p1->perkCount = perkPointsToAdd;
@@ -712,7 +712,7 @@ namespace ALYSLC
 					script->CompileAndRun(p1);
 					delete script;
 
-					ALYSLC::Log("[GLOB] AdjustInitialPlayer1PerkPoints: After dip: current XP, threshold: {}, {}, current level: {}, xpInc: {} from prev {}.",
+					SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: After dip: current XP, threshold: {}, {}, current level: {}, xpInc: {} from prev {}.",
 						p1->skills->data->xp, p1->skills->data->levelThreshold, p1->GetLevel(), xpInc, savedPlayerXP);
 				}
 			}
@@ -732,7 +732,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[GLOB] AdjustPerkDataForPlayer1: {} menu.", a_enteringMenu ? "Entering" : "Exiting");
+		SPDLOG_DEBUG("[GLOB] AdjustPerkDataForPlayer1: {} menu.", a_enteringMenu ? "Entering" : "Exiting");
 		// Save unlocked perks for P1 first before adjustments are made.
 		SaveUnlockedPerksForPlayer(p1);
 		if (a_enteringMenu)
@@ -746,7 +746,7 @@ namespace ALYSLC
 			bool rescaleSkillAVsOnP1LevelDip = AdjustInitialPlayer1PerkPoints(p1);
 			if (rescaleSkillAVsOnP1LevelDip)
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForPlayer1: About to rescale all companions' AVs after dipping P1's level to spawn level up menus.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForPlayer1: About to rescale all companions' AVs after dipping P1's level to spawn level up menus.");
 				RescaleActivePlayerAVs();
 			}
 		}
@@ -776,7 +776,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: {} menu.", a_enteringMenu ? "Entering" : "Exiting");
+		SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: {} menu.", a_enteringMenu ? "Entering" : "Exiting");
 		if (a_enteringMenu)
 		{
 			// Adjust perk counts before potentially copying data to P1.
@@ -795,35 +795,35 @@ namespace ALYSLC
 			// Copy the co-op companions AVs over to P1 only after we've rescaled.
 			if (rescaleSkillAVsOnP1LevelDip)
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: About to rescale all companions' AVs after dipping P1's level to spawn level up menus.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: About to rescale all companions' AVs after dipping P1's level to spawn level up menus.");
 				RescaleActivePlayerAVs();
 			}
 
 			// Copy perk tree, then name and race name, and then skill AVs.
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Import perk tree.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Import perk tree.");
 				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkTree);
 			}
 
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Import name.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Import name.");
 				CopyOverActorBaseData(a_playerActor, a_enteringMenu, true, false, false);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
 			}
 
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Import race name.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Import race name.");
 				CopyOverActorBaseData(a_playerActor, a_enteringMenu, false, true, false);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kRaceName);
 			}
 
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Import AVs.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Import AVs.");
 				CopyOverAVs(a_playerActor, a_enteringMenu, ALYSLC::RequiemCompat::g_requiemInstalled);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
@@ -838,28 +838,28 @@ namespace ALYSLC
 			// Restore name and race name, then skill AVs, and then perk tree.
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Restore name.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Restore name.");
 				CopyOverActorBaseData(a_playerActor, a_enteringMenu, true, false, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Restore race name.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Restore race name.");
 				CopyOverActorBaseData(a_playerActor, a_enteringMenu, false, true, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Restore AVs.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Restore AVs.");
 				CopyOverAVs(a_playerActor, a_enteringMenu, ALYSLC::RequiemCompat::g_requiemInstalled);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 			{
-				ALYSLC::Log("[GLOB] AdjustPerkDataForCompanionPlayer: Restore perk tree.");
+				SPDLOG_DEBUG("[GLOB] AdjustPerkDataForCompanionPlayer: Restore perk tree.");
 				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
 			}
@@ -1610,7 +1610,7 @@ namespace ALYSLC
 			}
 		}
 
-		ALYSLC::Log("[GLOB] GetHighestSharedAVLevel: {} -> {}.", Util::GetActorValueName(a_av), highestAVAmount);
+		SPDLOG_DEBUG("[GLOB] GetHighestSharedAVLevel: {} -> {}.", Util::GetActorValueName(a_av), highestAVAmount);
 		return highestAVAmount;
 	}
 
@@ -1643,7 +1643,7 @@ namespace ALYSLC
 							bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
 							if (nativeHasPerk || singletonListHasPerk)
 							{
-								ALYSLC::Log("[GLOB] GetUnlockedSharedPerksCount: Shared perk {} (0x{:X}): {}, {}", perk->GetName(), perk->formID, nativeHasPerk, singletonListHasPerk);
+								SPDLOG_DEBUG("[GLOB] GetUnlockedSharedPerksCount: Shared perk {} (0x{:X}): {}, {}", perk->GetName(), perk->formID, nativeHasPerk, singletonListHasPerk);
 								perksSet.insert(perk);
 							}
 
@@ -1655,7 +1655,7 @@ namespace ALYSLC
 
 		// Each player will have the same shared perks, so simply check P1 for shared perks.
 		Util::TraverseAllPerks(p1, getSharedPerksCount);
-		ALYSLC::Log("[GLOB] GetUnlockedSharedPerksCount: Total: {}", perksSet.size());
+		SPDLOG_DEBUG("[GLOB] GetUnlockedSharedPerksCount: Total: {}", perksSet.size());
 		return perksSet.size();
 	}
 
@@ -1906,7 +1906,7 @@ namespace ALYSLC
 						float newValue = data->skillBaseLevelsList[i] + data->skillLevelIncreasesList[i];
 						if (currentValue != newValue)
 						{
-							ALYSLC::Log("[GLOB] HandleEnderalProgressionChanges: {}: skill AV {} was set to {} when it should be set to {} ({} + {}).",
+							SPDLOG_DEBUG("[GLOB] HandleEnderalProgressionChanges: {}: skill AV {} was set to {} when it should be set to {} ({} + {}).",
 								p->coopActor->GetName(), std::format("{}", av), currentValue, newValue, data->skillBaseLevelsList[i], data->skillLevelIncreasesList[i]);
 							p->coopActor->SetBaseActorValue(av, newValue);
 						}
@@ -2033,7 +2033,7 @@ namespace ALYSLC
 	{
 		// Import all serialized perks that the player has unlocked.
 
-		ALYSLC::Log("[GLOB] ImportUnlockedPerks: {}", a_coopActor->GetName());
+		SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: {}", a_coopActor->GetName());
 		auto& glob = GetSingleton();
 		// Add saved perks to the player if they do not have them added already.
 		if (glob.serializablePlayerData.contains(a_coopActor->formID))
@@ -2084,7 +2084,7 @@ namespace ALYSLC
 			Util::TraverseAllPerks(a_coopActor, removeAllPerks);
 			const auto& data = glob.serializablePlayerData.at(a_coopActor->formID);
 			const auto& unlockedPerksList = data->GetUnlockedPerksList();
-			ALYSLC::Log("[GLOB] ImportUnlockedPerks: {} has {} unlocked perks serialized for this save file.", 
+			SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: {} has {} unlocked perks serialized for this save file.", 
 				a_coopActor->GetName(), unlockedPerksList.size());
 
 			// Add any new animationevent-based perks, if needed.
@@ -2163,7 +2163,7 @@ namespace ALYSLC
 			// Add back all unlocked perks.
 			for (const auto perk : unlockedPerksList)
 			{
-				ALYSLC::Log("[GLOB] ImportUnlockedPerks: Adding back {}'s has saved unlocked perk {} (0x{:X}). Has perk already: {}",
+				SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: Adding back {}'s has saved unlocked perk {} (0x{:X}). Has perk already: {}",
 					a_coopActor->GetName(), perk->GetName(), perk->formID, a_coopActor->HasPerk(perk));
 				// NOTE: Adding all unlocked perks again, regardless of whether or not the Actor::HasPerk()
 				// check returns true. Same reasoning as removing all perks above.
@@ -2191,7 +2191,7 @@ namespace ALYSLC
 						// Have to use native func check here as a result.
 						if (a_actor->HasPerk(perk))
 						{
-							ALYSLC::Log("[GLOB] ImportUnlockedPerks: AFTER IMPORT: {} has perk #{} {} (0x{:X})",
+							SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: AFTER IMPORT: {} has perk #{} {} (0x{:X})",
 								a_actor->GetName(), perkIndex, perk->GetName(), perk->formID);
 						}
 
@@ -2343,7 +2343,7 @@ namespace ALYSLC
 
 		if (newMult != currentMult)
 		{
-			ALYSLC::Log("[GLOB] ModifyLevelUpXPThreshold: Level {}, set for co-op: {}. P1's XP levelup mult is now {}, was {}.",
+			SPDLOG_DEBUG("[GLOB] ModifyLevelUpXPThreshold: Level {}, set for co-op: {}. P1's XP levelup mult is now {}, was {}.",
 				p1->GetLevel(), a_setForCoop, newMult, currentMult);
 			Util::SetGameSettingFloat("fXPLevelUpMult", newMult);
 		}
@@ -2359,7 +2359,7 @@ namespace ALYSLC
 
 		if (newThreshold != currentThreshold)
 		{
-			ALYSLC::Log("[GLOB] ModifyLevelUpXPThreshold: Level {}, set for co-op: {}. P1's level threshold is now {}, was {}, XP: {}.",
+			SPDLOG_DEBUG("[GLOB] ModifyLevelUpXPThreshold: Level {}, set for co-op: {}. P1's level threshold is now {}, was {}, XP: {}.",
 				p1->GetLevel(), a_setForCoop, newThreshold, currentThreshold, p1Skills->data->xp);
 			p1Skills->data->levelThreshold = newThreshold;
 		}
@@ -2390,7 +2390,7 @@ namespace ALYSLC
 		{
 			bool succ = Util::SetGameSettingFloat("fXPPerSkillRank", newXPMult);
 			// REMOVE
-			ALYSLC::Log("[GLOB] ModifyXPPerSkillLevelMult: Update fXPPerSkillRank: {} -> {}: {}. Set for co-op: {}.", 
+			SPDLOG_DEBUG("[GLOB] ModifyXPPerSkillLevelMult: Update fXPPerSkillRank: {} -> {}: {}. Set for co-op: {}.", 
 				currentXPMult, newXPMult, succ ? "SUCCESS" : "FAILURE", a_setForCoop);
 		}
 	}
@@ -2423,7 +2423,7 @@ namespace ALYSLC
 					}
 
 					data->firstSavedLevel = p1->GetLevel();
-					ALYSLC::Log("[GLOB] PerformInitialAVAutoScaling: First co-op level-up for {}. First saved level set to {}. Auto-scale AVs.",
+					SPDLOG_DEBUG("[GLOB] PerformInitialAVAutoScaling: First co-op level-up for {}. First saved level set to {}. Auto-scale AVs.",
 						data->firstSavedLevel, p->coopActor->GetName());
 
 					// Check for differences between auto-scaled skills and current skills lists.
@@ -2450,7 +2450,7 @@ namespace ALYSLC
 						if (SKILL_TO_AV_MAP.contains(currentSkill))
 						{
 							auto currentAV = SKILL_TO_AV_MAP.at(currentSkill);
-							ALYSLC::Log("[GLOB] PerformInitialAVAutoScaling: {}'s {} skill levels are now: ({} + {}) (current: {}, rescaled: {}).",
+							SPDLOG_DEBUG("[GLOB] PerformInitialAVAutoScaling: {}'s {} skill levels are now: ({} + {}) (current: {}, rescaled: {}).",
 								p->coopActor->GetName(),
 								std::format("{}", currentAV),
 								data->skillBaseLevelsList[j],
@@ -2464,7 +2464,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] ERR: PerformInitialAVAutoScaling: Auto-scaling failed. Not updating serialized base AVs for any player.");
+			SPDLOG_DEBUG("[GLOB] ERR: PerformInitialAVAutoScaling: Auto-scaling failed. Not updating serialized base AVs for any player.");
 		}
 		
 	}
@@ -2476,32 +2476,32 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		if (!glob.onCoopHelperMenuRequest.Register(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnCoopHelperMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnCoopHelperMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Registered OnCoopHelperMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Registered OnCoopHelperMenuRequest() event");
 		}
 
 		if (!glob.onDebugMenuRequest.Register(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnDebugMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnDebugMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Registered OnDebugMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Registered OnDebugMenuRequest() event");
 		}
 
 		if (!glob.onSummoningMenuRequest.Register(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnSummoningMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Could not register player ref alias ({}) for OnSummoningMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] RegisterEvents: Registered OnSummoningMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] RegisterEvents: Registered OnSummoningMenuRequest() event");
 		}
 	}
 
@@ -2520,14 +2520,14 @@ namespace ALYSLC
 					// Ensure active player's FID is used to index into serializable data map.
 					if (!glob.serializablePlayerData.contains(p->coopActor->formID))
 					{
-						ALYSLC::Log("[GLOB] ERR: RescaleActivePlayerAVs: Could not index serialized data with {}'s form ID (0x{:X}).",
+						SPDLOG_DEBUG("[GLOB] ERR: RescaleActivePlayerAVs: Could not index serialized data with {}'s form ID (0x{:X}).",
 							p->coopActor->GetName(), p->coopActor->formID);
 						continue;
 					}
 
 					if (!p->isPlayer1)
 					{
-						ALYSLC::Log("[GLOB] RescaleActivePlayerAVs: About to rescale HMS for {}.", p->coopActor->GetName());
+						SPDLOG_DEBUG("[GLOB] RescaleActivePlayerAVs: About to rescale HMS for {}.", p->coopActor->GetName());
 						// Skill AVs first.
 						RescaleSkillAVs(p->coopActor.get());
 						// NOTE for Enderal:
@@ -2540,7 +2540,7 @@ namespace ALYSLC
 					}
 					else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 					{
-						ALYSLC::Log("[GLOB] RescaleActivePlayerAVs: About to rescale HMS for P1.");
+						SPDLOG_DEBUG("[GLOB] RescaleActivePlayerAVs: About to rescale HMS for P1.");
 						RescaleHMS(p->coopActor.get());
 					}
 				}
@@ -2566,7 +2566,7 @@ namespace ALYSLC
 		// Ensure active player's FID is used to index into serializable data map.
 		if (!glob.serializablePlayerData.contains(a_playerActor->formID))
 		{
-			ALYSLC::Log("[GLOB] ERR: RescaleAVsOnBaseSkillAVChange: Could not index serialized data with {}'s form ID (0x{:X}).",
+			SPDLOG_DEBUG("[GLOB] ERR: RescaleAVsOnBaseSkillAVChange: Could not index serialized data with {}'s form ID (0x{:X}).",
 				a_playerActor->GetName(), a_playerActor->formID);
 			return;
 		}
@@ -2600,7 +2600,7 @@ namespace ALYSLC
 		int32_t newPrevCID = newCID != -1 ? newCID : glob.prevMenuCID;
 
 		// REMOVE when done debugging.
-		ALYSLC::Log("[GLOB] ResetMenuCIDs: reset menu CID from {} to {}, last menu CID from {} to {}.",
+		SPDLOG_DEBUG("[GLOB] ResetMenuCIDs: reset menu CID from {} to {}, last menu CID from {} to {}.",
 			glob.menuCID, 
 			newCID,
 			glob.prevMenuCID,
@@ -2611,13 +2611,13 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> lock(glob.menuCIDMutex, std::try_to_lock);
 			if (lock)
 			{
-				ALYSLC::Log("[GLOB] ResetMenuCIDs: Lock obtained. (0x{:X})", hash);
+				SPDLOG_DEBUG("[GLOB] ResetMenuCIDs: Lock obtained. (0x{:X})", hash);
 				glob.prevMenuCID = newPrevCID;
 				glob.menuCID = newCID;
 			}
 			else
 			{
-				ALYSLC::Log("[GLOB] ResetMenuCIDs: Failed to obtain lock. (0x{:X})", hash);
+				SPDLOG_DEBUG("[GLOB] ResetMenuCIDs: Failed to obtain lock. (0x{:X})", hash);
 			}
 		}
 	}
@@ -2648,7 +2648,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer: {}", a_coopActor ? a_coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer: {}", a_coopActor ? a_coopActor->GetName() : "NONE");
 		auto& glob = GetSingleton();
 		if (glob.serializablePlayerData.contains(a_coopActor->formID)) 
 		{
@@ -2675,11 +2675,11 @@ namespace ALYSLC
 								// If either check indicates that the player has the current perk, add it to the list.
 								if (glob.coopSessionActive) 
 								{
-									ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
+									SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
 										a_actor->GetName(), perk->GetName(), perk->formID, nativeFuncHasPerk, singletonListHasPerk);
 									if (nativeFuncHasPerk != singletonListHasPerk)
 									{
-										ALYSLC::Log("[GLOB] ERR: SaveUnlockedPerksForPlayer {} has perk check inconsistency. Adding {} (0x{:X}).",
+										SPDLOG_DEBUG("[GLOB] ERR: SaveUnlockedPerksForPlayer {} has perk check inconsistency. Adding {} (0x{:X}).",
 											a_actor->GetName(), perk->GetName(), perk->formID);
 										Util::Player1AddPerk(perk);
 									}
@@ -2688,7 +2688,7 @@ namespace ALYSLC
 								}
 								else if (nativeFuncHasPerk)
 								{
-									ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer: NO CO-OP: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
+									SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer: NO CO-OP: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
 										a_actor->GetName(), perk->GetName(), perk->formID, nativeFuncHasPerk, singletonListHasPerk);
 									// Only add the current perk if it is in the glob list.
 									Util::Player1AddPerk(perk);
@@ -2698,7 +2698,7 @@ namespace ALYSLC
 						}
 						else if (nativeFuncHasPerk)
 						{
-							ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer: {} has perk {} (0x{:X}), is shared: {}", a_actor->GetName(), perk->GetName(), perk->formID, shared);
+							SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer: {} has perk {} (0x{:X}), is shared: {}", a_actor->GetName(), perk->GetName(), perk->formID, shared);
 							serializedData->InsertUnlockedPerk(perk);
 						}
 
@@ -2707,17 +2707,17 @@ namespace ALYSLC
 				}
 			};
 
-			ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer BEFORE: {} has {} unlocked perks.",
+			SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer BEFORE: {} has {} unlocked perks.",
 				a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size());
 			// Clear and re-add.
 			serializedData->ClearUnlockedPerks();
 			Util::TraverseAllPerks(a_coopActor, savePlayerPerksVisitor);
-			ALYSLC::Log("[GLOB] SaveUnlockedPerksForPlayer AFTER: {} has {} unlocked perks.",
+			SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer AFTER: {} has {} unlocked perks.",
 				a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] ERR: SaveUnlockedPerksForPlayer: {}: Could not get serializable data for player with form ID 0x{:X}.",
+			SPDLOG_DEBUG("[GLOB] ERR: SaveUnlockedPerksForPlayer: {}: Could not get serializable data for player with form ID 0x{:X}.",
 				a_coopActor->GetName(), a_coopActor->formID);
 		}
 	}
@@ -2830,19 +2830,19 @@ namespace ALYSLC
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] SetMenuCIDs: Set current/last menu CIDs from {}/{} to {}.",
+			SPDLOG_DEBUG("[GLOB] SetMenuCIDs: Set current/last menu CIDs from {}/{} to {}.",
 				glob.menuCID, glob.prevMenuCID, a_controllerID);
 			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				std::unique_lock<std::mutex> lock(glob.menuCIDMutex, std::try_to_lock);
 				if (lock)
 				{
-					ALYSLC::Log("[GLOB] SetMenuCIDs: Lock obtained. (0x{:X})", hash);
+					SPDLOG_DEBUG("[GLOB] SetMenuCIDs: Lock obtained. (0x{:X})", hash);
 					glob.prevMenuCID = glob.menuCID = a_controllerID;
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] SetMenuCIDs: Failed to obtain lock. (0x{:X})", hash);
+					SPDLOG_DEBUG("[GLOB] SetMenuCIDs: Failed to obtain lock. (0x{:X})", hash);
 				}
 			}
 		}
@@ -3044,7 +3044,7 @@ namespace ALYSLC
 						// Add any shared perks that P1 has but this player does not have.
 						if (!p->coopActor->HasPerk(perk)) 
 						{
-							ALYSLC::Log("[GLOB] SyncSharedPerks: P1 {} has perk {}. Adding to {}.",
+							SPDLOG_DEBUG("[GLOB] SyncSharedPerks: P1 {} has perk {}. Adding to {}.",
 								p1->GetName(), perk->GetName(), p->coopActor->GetName());
 							Util::ChangePerk(p->coopActor.get(), perk, true);
 						}
@@ -3077,7 +3077,7 @@ namespace ALYSLC
 							}
 
 							bool succ = Util::ChangePerk(a_actor, perk, true);
-							ALYSLC::Log("[GLOB] SyncSharedPerks TraversePerkTree. Adding shared perk {} (0x{:X}) to {}: {}. Had unlocked shared perk in list: {}",
+							SPDLOG_DEBUG("[GLOB] SyncSharedPerks TraversePerkTree. Adding shared perk {} (0x{:X}) to {}: {}. Had unlocked shared perk in list: {}",
 								perk->GetName(), perk->formID,
 								a_actor->GetName(), succ ? "SUCC" : "FAIL",
 								hadSharedPerk);
@@ -3137,7 +3137,7 @@ namespace ALYSLC
 			{
 				if (p && p->isActive && !p->isPlayer1)
 				{
-					ALYSLC::Log("[GLOB] TeardownCoopSession: Co-op session over. Dismissing companion {}.", p->coopActor->GetName());
+					SPDLOG_DEBUG("[GLOB] TeardownCoopSession: Co-op session over. Dismissing companion {}.", p->coopActor->GetName());
 					p->DismissPlayer();
 				}
 			}
@@ -3145,7 +3145,7 @@ namespace ALYSLC
 			const auto& p1 = glob.coopPlayers[glob.player1CID];
 			if (p1 && p1.get() && p1->isActive) 
 			{
-				ALYSLC::Log("[GLOB] TeardownCoopSession: Co-op session over. Dismissing player 1 {}.", p1->coopActor->GetName());
+				SPDLOG_DEBUG("[GLOB] TeardownCoopSession: Co-op session over. Dismissing player 1 {}.", p1->coopActor->GetName());
 				glob.coopPlayers[glob.player1CID]->DismissPlayer();
 			}
 		}
@@ -3155,7 +3155,7 @@ namespace ALYSLC
 			{
 				if (p && p->isActive)
 				{
-					ALYSLC::Log("[GLOB] TeardownCoopSession: Co-op session over. Signalling managers to await refresh for {}.", p->coopActor->GetName());
+					SPDLOG_DEBUG("[GLOB] TeardownCoopSession: Co-op session over. Signalling managers to await refresh for {}.", p->coopActor->GetName());
 					p->RequestStateChange(ManagerState::kAwaitingRefresh);
 				}
 			}
@@ -3164,12 +3164,12 @@ namespace ALYSLC
 		// Ensure any copied data is reverted for P1.
 		if (glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
 		{
-			ALYSLC::Log("[GLOB] TeardownCoopSession: Co-op session ended with data copied (types: 0b{:B}) over to P1. Restoring P1's data.",
+			SPDLOG_DEBUG("[GLOB] TeardownCoopSession: Co-op session ended with data copied (types: 0b{:B}) over to P1. Restoring P1's data.",
 				*glob.copiedPlayerDataTypes);
 			CopyOverCoopPlayerData(false, "CO-OP SESSION ENDED", glob.player1Actor->GetHandle(), nullptr);
 		}
 
-		ALYSLC::Log("[GLOB] TeardownCoopSession: Co-op session over. Pausing camera manager and awaiting the start of a new co-op session.");
+		SPDLOG_DEBUG("[GLOB] TeardownCoopSession: Co-op session over. Pausing camera manager and awaiting the start of a new co-op session.");
 		glob.cam->RequestStateChange(ManagerState::kPaused);
 	}
 
@@ -3199,7 +3199,7 @@ namespace ALYSLC
 					p->isInGodMode = p->coopActor->IsInvulnerable() && !p->coopActor->IsGhost();
 					if ((a_enable && !p->isInGodMode) || (!a_enable && p->isInGodMode))
 					{
-						ALYSLC::Log("[GLOB] ToggleGodModeForPlayer: Should {} god mode for P1.", a_enable ? "set" : "unset");
+						SPDLOG_DEBUG("[GLOB] ToggleGodModeForPlayer: Should {} god mode for P1.", a_enable ? "set" : "unset");
 						const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
 						const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 						if (script)
@@ -3251,13 +3251,13 @@ namespace ALYSLC
 						// Set god mode flag to prevent AV expenditure.
 						if (a_enable && !p->isInGodMode)
 						{
-							ALYSLC::Log("[GLOB] ToggleGodModeForPlayer: Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName());
+							SPDLOG_DEBUG("[GLOB] ToggleGodModeForPlayer: Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName());
 							baseFlags.set(RE::ACTOR_BASE_DATA::Flag::kInvulnerable, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed);
 							p->isInGodMode = true;
 						}
 						else if (!a_enable && p->isInGodMode)
 						{
-							ALYSLC::Log("[GLOB] ToggleGodModeForPlayer: Set is ghost/invuln/nobleed to FALSE for {}", p->coopActor->GetName());
+							SPDLOG_DEBUG("[GLOB] ToggleGodModeForPlayer: Set is ghost/invuln/nobleed to FALSE for {}", p->coopActor->GetName());
 							baseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kInvulnerable, RE::ACTOR_BASE_DATA::Flag::kDoesntBleed);
 							p->isInGodMode = false;
 						}
@@ -3274,32 +3274,32 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		if (!glob.onCoopHelperMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnCoopHelperMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnCoopHelperMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Unregistered OnCoopHelperMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Unregistered OnCoopHelperMenuRequest() event");
 		}
 
 		if (!glob.onDebugMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnDebugMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnDebugMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Unregistered OnDebugMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Unregistered OnDebugMenuRequest() event");
 		}
 
 		if (!glob.onSummoningMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnSummoningMenuRequest() event",
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Could not unregister player ref alias ({}) for OnSummoningMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str());
 		}
 		else
 		{
-			ALYSLC::Log("[GLOB] UnregisterEvents: Unregistered OnSummoningMenuRequest() event");
+			SPDLOG_DEBUG("[GLOB] UnregisterEvents: Unregistered OnSummoningMenuRequest() event");
 		}
 	}
 
@@ -3322,7 +3322,7 @@ namespace ALYSLC
 			bool succ3 = GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey(companion3);
 			if (!succ1 || !succ2 || !succ3)
 			{
-				ALYSLC::Log("[GLOB] ERR: UpdateAllSerializedCompanionPlayerFIDKeys: Failed to update serialized FID key for {}: {}, {}: {}, {}: {}.",
+				SPDLOG_DEBUG("[GLOB] ERR: UpdateAllSerializedCompanionPlayerFIDKeys: Failed to update serialized FID key for {}: {}, {}: {}, {}: {}.",
 					companion1 ? companion1->GetName() : "NONE", !succ1,
 					companion2 ? companion2->GetName() : "NONE", !succ2,
 					companion3 ? companion3->GetName() : "NONE", !succ3);
@@ -3354,7 +3354,7 @@ namespace ALYSLC
 					bool newActorFID = formID != a_playerActor->formID && (formID & 0xFFFFFF) == (a_playerActor->formID & 0xFFFFFF);
 					if (newActorFID)
 					{
-						ALYSLC::Log("[GLOB] UpdateSerializedCompanionPlayerFIDKey: {}'s FID went from 0x{:X} to 0x{:X}, inserting new FID key into serializable data now.",
+						SPDLOG_DEBUG("[GLOB] UpdateSerializedCompanionPlayerFIDKey: {}'s FID went from 0x{:X} to 0x{:X}, inserting new FID key into serializable data now.",
 							a_playerActor->GetName(), formID, a_playerActor->formID, newActorFID);
 						auto node = glob.serializablePlayerData.extract(formID);
 						node.key() = a_playerActor->formID;
@@ -3383,7 +3383,7 @@ namespace ALYSLC
 		{
 			glob.livingPlayers = 0;
 			RE::DebugMessageBox("Your party was bested this time.\n\nOne thread of fate severed, another thread spun.");
-			ALYSLC::Log("[GLOB] YouDied: All players downed or dead. Ending co-op session.");
+			SPDLOG_DEBUG("[GLOB] YouDied: All players downed or dead. Ending co-op session.");
 			for (const auto& p : glob.coopPlayers)
 			{
 				if (p->isActive)
@@ -3477,11 +3477,11 @@ namespace ALYSLC
 
 						if (secsWaited >= maxSecsToWait) 
 						{
-							ALYSLC::Log("[GLOB EXT] ReloadTask: Loading most recent save game after {} seconds.", secsWaited);
+							SPDLOG_DEBUG("[GLOB EXT] ReloadTask: Loading most recent save game after {} seconds.", secsWaited);
 							saveLoadManager->LoadMostRecentSaveGame();
 						}
 
-						ALYSLC::Log("[GLOB EXT] ReloadTask: Now waiting for the game to reload the last save. Co-op session active: {}, p1 dead: {}, loading menu open: {}.",
+						SPDLOG_DEBUG("[GLOB EXT] ReloadTask: Now waiting for the game to reload the last save. Co-op session active: {}, p1 dead: {}, loading menu open: {}.",
 							glob.coopSessionActive,
 							p1->IsDead(),
 							ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME));
@@ -3516,7 +3516,7 @@ namespace ALYSLC
 						std::this_thread::sleep_for(std::chrono::seconds(static_cast<long long>(*g_deltaTimeRealTime)));
 					}
 
-					ALYSLC::Log("[GLOB EXT] KillTask: Waiting for P1 to die. Co-op session active: {}, p1 dead: {}, loading menu open: {}. Full reset: {}, reset game: {}, reload content: {}.",
+					SPDLOG_DEBUG("[GLOB EXT] KillTask: Waiting for P1 to die. Co-op session active: {}, p1 dead: {}, loading menu open: {}. Full reset: {}, reset game: {}, reload content: {}.",
 						glob.coopSessionActive,
 						p1->IsDead(),
 						ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
@@ -3540,7 +3540,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[GLOB] CopyPlayerData: Request to copy player data for {} on {} of {}.",
+		SPDLOG_DEBUG("[GLOB] CopyPlayerData: Request to copy player data for {} on {} of {}.",
 			requestingPlayer->GetName(),
 			a_info->shouldImport ? "opening" : "closing",
 			a_info->menuName);
@@ -3567,34 +3567,34 @@ namespace ALYSLC
 			{
 				if (a_info->shouldImport)
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Enderal Hero Menu: Should copy over AVs and name.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Enderal Hero Menu: Should copy over AVs and name.");
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Name.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Name.");
 						CopyOverActorBaseData(requestingPlayer.get(), a_info->shouldImport, true, false, false);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
 					}
 
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import AVs.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import AVs.");
 						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Enderal Hero Menu: Should restore AVs and name.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Enderal Hero Menu: Should restore AVs and name.");
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export Name.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Name.");
 						CopyOverActorBaseData(requestingPlayer.get(), a_info->shouldImport, true, false, false);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 					}
 
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export AVs.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export AVs.");
 						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
@@ -3604,20 +3604,20 @@ namespace ALYSLC
 			{
 				if (a_info->shouldImport)
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Barter Menu: Should copy over inventory on import.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Barter Menu: Should copy over inventory on import.");
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Inventory.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Inventory.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 					}
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Barter Menu: Should copy back inventory on export.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Barter Menu: Should copy back inventory on export.");
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export Inventory.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Inventory.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 					}
@@ -3632,48 +3632,48 @@ namespace ALYSLC
 				// Copy AVs, name, and perk list.
 				if (a_info->shouldImport) 
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Container Menu: Should copy over AVs, name, carryweight, and perk list.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Container Menu: Should copy over AVs, name, carryweight, and perk list.");
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Carryweight.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Carryweight.");
 						CopyOverActorBaseData(requestingPlayer.get(), a_info->shouldImport, false, false, true);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kCarryWeight);
 					}
 
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Perk list.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Perk list.");
 						CopyOverPerkLists(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkList);
 					}
 
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import AVs.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import AVs.");
 						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Container Menu: Should restore AVs, name, carryweight, and perk list.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Container Menu: Should restore AVs, name, carryweight, and perk list.");
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export Carryweight.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Carryweight.");
 						CopyOverActorBaseData(requestingPlayer.get(), a_info->shouldImport, false, false, true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kCarryWeight);
 					}
 
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export Perk List.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Perk List.");
 						CopyOverPerkLists(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkList);
 					}
 
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export AVs.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export AVs.");
 						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
@@ -3686,20 +3686,20 @@ namespace ALYSLC
 				// For now, the entire inventory is copied over to P1.
 				if (a_info->shouldImport)
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Crafting Menu: Should copy over inventory on import.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Crafting Menu: Should copy over inventory on import.");
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Inventory.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Inventory.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 					}
 				}
 				else
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Crafting Menu: Should copy back inventory on export.");
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Crafting Menu: Should copy back inventory on export.");
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Export Inventory.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Inventory.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 					}
@@ -3710,10 +3710,10 @@ namespace ALYSLC
 				if (a_info->shouldImport)
 				{
 					// Import this player's favorited forms before the menu opens.
-					ALYSLC::Log("[GLOB] CopyPlayerData: Favorites Menu: Should import {}'s favorites to P1.", requestingPlayer.get()->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Favorites Menu: Should import {}'s favorites to P1.", requestingPlayer.get()->GetName());
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Favorites to P1.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Favorites to P1.");
 						p->em->ImportCoopFavorites(false);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavorites);
 					}
@@ -3721,10 +3721,10 @@ namespace ALYSLC
 				else
 				{
 					// Revert changes to player 1's favorites if the favorites menu is closing.
-					ALYSLC::Log("[GLOB] CopyPlayerData: Favorites Menu: Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", requestingPlayer.get()->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Favorites Menu: Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", requestingPlayer.get()->GetName());
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Favorites.");
 						p->em->RestoreP1Favorites(false);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 					}
@@ -3735,10 +3735,10 @@ namespace ALYSLC
 				if (a_info->shouldImport)
 				{
 					// Import this player's favorited magic before the menu opens.
-					ALYSLC::Log("[GLOB] CopyPlayerData: Magic Menu: Should import {}'s favorites to P1.", requestingPlayer.get()->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Magic Menu: Should import {}'s favorites to P1.", requestingPlayer.get()->GetName());
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Import Favorites to P1.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Favorites to P1.");
 						p->em->ImportCoopFavorites(true);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavorites);
 					}
@@ -3746,10 +3746,10 @@ namespace ALYSLC
 				else
 				{
 					// Revert changes to player 1's magic favorites if the magic menu is closing.
-					ALYSLC::Log("[GLOB] CopyPlayerData: Magic Menu: Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", requestingPlayer.get()->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Magic Menu: Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", requestingPlayer.get()->GetName());
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Favorites.");
 						p->em->RestoreP1Favorites(true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 					}
@@ -3762,7 +3762,7 @@ namespace ALYSLC
 				// Don't adjust perk data if Enderal is installed.
 				if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 				{
-					ALYSLC::Log("[GLOB] CopyPlayerData: Adjust perk data for {} before entering the Stats Menu.", requestingPlayer->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyPlayerData: Adjust perk data for {} before entering the Stats Menu.", requestingPlayer->GetName());
 					AdjustPerkDataForCompanionPlayer(requestingPlayer.get(), a_info->shouldImport);
 				}
 			}
@@ -3776,7 +3776,7 @@ namespace ALYSLC
 					{
 						if (auto npcClass = asActor->GetActorBase()->npcClass; npcClass && npcClass->data.maximumTrainingLevel != 0)
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Dialogue NPC {} is a trainer: {} to level {}.",
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Dialogue NPC {} is a trainer: {} to level {}.",
 								asActor->GetName(), *npcClass->data.teaches, npcClass->data.maximumTrainingLevel);
 							isTrainer = true;
 						}
@@ -3788,20 +3788,20 @@ namespace ALYSLC
 					// Copy over AVs.
 					if (a_info->shouldImport)
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Trainer: Should copy over AVs on import.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Trainer: Should copy over AVs on import.");
 						if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Import AVs.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import AVs.");
 							CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 							glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 						}
 					}
 					else
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: Trainer: Should copy back AVs on export.");
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Trainer: Should copy back AVs on export.");
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Export AVs.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export AVs.");
 							CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 						}
@@ -3827,59 +3827,59 @@ namespace ALYSLC
 				{
 					if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 					{
-						ALYSLC::Log("[GLOB] CopyPlayerData: WARNING: still uncleared data types on export: 0x{:X}. Clearing now", *glob.copiedPlayerDataTypes);
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: WARNING: still uncleared data types on export: 0x{:X}. Clearing now", *glob.copiedPlayerDataTypes);
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Carryweight.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Carryweight.");
 							CopyOverActorBaseData(requestingPlayer.get(), false, false, false, true);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kCarryWeight);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavorites))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Favorites.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Favorites.");
 							p->em->RestoreP1Favorites(menuNameHash == Hash(RE::MagicMenu::MENU_NAME));
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavorites);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Inventory.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Inventory.");
 							CopyOverInventories(requestingPlayer.get(), false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Name.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Name.");
 							CopyOverActorBaseData(requestingPlayer.get(), false, true, false, false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Perk List.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Perk List.");
 							CopyOverPerkLists(requestingPlayer.get(), false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkList);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Perk Tree.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Perk Tree.");
 							CopyOverPerkTrees(requestingPlayer.get(), false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 Race Name.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 Race Name.");
 							CopyOverActorBaseData(requestingPlayer.get(), false, false, true, false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
 						}
 
 						if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 						{
-							ALYSLC::Log("[GLOB] CopyPlayerData: Restore P1 AVs.");
+							SPDLOG_DEBUG("[GLOB] CopyPlayerData: Restore P1 AVs.");
 							CopyOverAVs(requestingPlayer.get(), false);
 							glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 						}
@@ -4064,21 +4064,21 @@ namespace ALYSLC
 				tempHealthMods, tempMagickaMods, tempStaminaMods
 			};
 
-			ALYSLC::Log("[GLOB] CopyOverAVs: Setting player 1's Health base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Setting player 1's Health base/normal AV to {}, {}.",
 				glob.coopCompanionExchangeableData->hmsBaseAVs[0], glob.coopCompanionExchangeableData->hmsAVs[0]);
 			p1->SetActorValue(RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVs[0]);
 			p1->SetBaseActorValue(RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsBaseAVs[0]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVMods[0][0] - glob.p1ExchangeableData->hmsAVMods[0][0]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVMods[0][1] - glob.p1ExchangeableData->hmsAVMods[0][1]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVMods[0][2] - glob.p1ExchangeableData->hmsAVMods[0][2]);
-			ALYSLC::Log("[GLOB] CopyOverAVs: Setting player 1's Magicka base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Setting player 1's Magicka base/normal AV to {}, {}.",
 				glob.coopCompanionExchangeableData->hmsBaseAVs[1], glob.coopCompanionExchangeableData->hmsAVs[1]);
 			p1->SetActorValue(RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVs[1]);
 			p1->SetBaseActorValue(RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsBaseAVs[1]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVMods[1][0] - glob.p1ExchangeableData->hmsAVMods[1][0]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVMods[1][1] - glob.p1ExchangeableData->hmsAVMods[1][1]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVMods[1][2] - glob.p1ExchangeableData->hmsAVMods[1][2]);
-			ALYSLC::Log("[GLOB] CopyOverAVs: Setting player 1's Stamina base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Setting player 1's Stamina base/normal AV to {}, {}.",
 				glob.coopCompanionExchangeableData->hmsBaseAVs[2], glob.coopCompanionExchangeableData->hmsAVs[2]);
 			p1->SetActorValue(RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsAVs[2]);
 			p1->SetBaseActorValue(RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsBaseAVs[2]);
@@ -4103,7 +4103,7 @@ namespace ALYSLC
 					glob.p1ExchangeableData->skillAVMods[1][i] = p1->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kPermanent, currentAV);
 					glob.p1ExchangeableData->skillAVMods[2][i] = p1->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, currentAV);
 
-					ALYSLC::Log("[GLOB] CopyOverAVs: Setting player 1's {} base AV to {}, was {}. Setting temp modifiers to ({}, {}, {}), were ({}, {}, {}), diffs: ({}, {}, {}).",
+					SPDLOG_DEBUG("[GLOB] CopyOverAVs: Setting player 1's {} base AV to {}, was {}. Setting temp modifiers to ({}, {}, {}), were ({}, {}, {}), diffs: ({}, {}, {}).",
 						std::format("{}", currentAV), 
 						glob.coopCompanionExchangeableData->skillAVs[i], 
 						glob.p1ExchangeableData->skillAVs[i], 
@@ -4138,7 +4138,7 @@ namespace ALYSLC
 			};
 
 			// Restore saved player 1 AVs, AV mods.
-			ALYSLC::Log("[GLOB] CopyOverAVs: Resetting player 1's Health base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Resetting player 1's Health base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
 				glob.p1ExchangeableData->hmsBaseAVs[0], glob.p1ExchangeableData->hmsAVs[0],
 				a_coopActor->GetName(), newExportedBaseAVs[0], newExportedAVs[0]);
 			p1->SetActorValue(RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVs[0]);
@@ -4146,7 +4146,7 @@ namespace ALYSLC
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVMods[0][0] - glob.coopCompanionExchangeableData->hmsAVMods[0][0]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVMods[0][1] - glob.coopCompanionExchangeableData->hmsAVMods[0][1]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVMods[0][2] - glob.coopCompanionExchangeableData->hmsAVMods[0][2]);
-			ALYSLC::Log("[GLOB] CopyOverAVs: Resetting player 1's Magicka base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Resetting player 1's Magicka base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
 				glob.p1ExchangeableData->hmsBaseAVs[1], glob.p1ExchangeableData->hmsAVs[1],
 				a_coopActor->GetName(), newExportedBaseAVs[1], newExportedAVs[1]);
 			p1->SetActorValue(RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVs[1]);
@@ -4154,7 +4154,7 @@ namespace ALYSLC
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVMods[1][0] - glob.coopCompanionExchangeableData->hmsAVMods[1][0]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVMods[1][1] - glob.coopCompanionExchangeableData->hmsAVMods[1][1]);
 			p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVMods[1][2] - glob.coopCompanionExchangeableData->hmsAVMods[1][2]);
-			ALYSLC::Log("[GLOB] CopyOverAVs: Resetting player 1's Stamina base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Resetting player 1's Stamina base/normal AV to {}, {}, {}'s base/normal AV to {}, {}.",
 				glob.p1ExchangeableData->hmsBaseAVs[2], glob.p1ExchangeableData->hmsAVs[2],
 				a_coopActor->GetName(), newExportedBaseAVs[2], newExportedAVs[2]);
 			p1->SetActorValue(RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsAVs[2]);
@@ -4179,7 +4179,7 @@ namespace ALYSLC
 							if (glob.serializablePlayerData.contains(a_coopActor->formID))
 							{
 								auto& data = glob.serializablePlayerData[a_coopActor->formID];
-								ALYSLC::Log("[GLOB] CopyOverAVs: {}'s {} skill inc went from {} to {}.",
+								SPDLOG_DEBUG("[GLOB] CopyOverAVs: {}'s {} skill inc went from {} to {}.",
 									a_coopActor->GetName(), std::format("{}", currentAV),
 									data->skillLevelIncreasesList[i],
 									data->skillLevelIncreasesList[i] + newAV - glob.coopCompanionExchangeableData->skillAVs[i]);
@@ -4188,7 +4188,7 @@ namespace ALYSLC
 						}
 					}
 
-					ALYSLC::Log("[GLOB] CopyOverAVs: Resetting P1's {} AV to {}, was {}. Setting temp modifiers back to ({}, {}, {}), were copied from {} as ({}, {}, {}), diffs: ({}, {}, {}).",
+					SPDLOG_DEBUG("[GLOB] CopyOverAVs: Resetting P1's {} AV to {}, was {}. Setting temp modifiers back to ({}, {}, {}), were copied from {} as ({}, {}, {}), diffs: ({}, {}, {}).",
 						std::format("{}", currentAV),
 						glob.p1ExchangeableData->skillAVs[i],
 						glob.coopCompanionExchangeableData->skillAVs[i],
@@ -4234,7 +4234,7 @@ namespace ALYSLC
 				// Also do not remove P1's gold, since P1's gold total is the total of all players' collected gold.
 				if ((boundObj && entry.first > 0 && !Util::IsPartyWideItem(boundObj)) && (!entry.second || !entry.second->IsWorn()))
 				{
-					ALYSLC::Log("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", entry.first, boundObj->GetName(), a_toRefr->GetName());
+					SPDLOG_DEBUG("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", entry.first, boundObj->GetName(), a_toRefr->GetName());
 					p1->RemoveItem(boundObj, entry.first, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 					// IMPORTANT:
 					// Adding the object does not flag the player's inventory as changed and does not trigger the
@@ -4257,7 +4257,7 @@ namespace ALYSLC
 							auto count = invCounts.contains(obj) ? invCounts.at(obj) : 0;
 							if (count > 0) 
 							{
-								ALYSLC::Log("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", count, obj->GetName(), a_toRefr->GetName());
+								SPDLOG_DEBUG("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", count, obj->GetName(), a_toRefr->GetName());
 								p1->RemoveItem(obj, count, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
 								// IMPORTANT:
 								// Adding the object does not flag the player's inventory as changed and does not trigger the
@@ -4320,10 +4320,10 @@ namespace ALYSLC
 			}
 
 			// From P1 to storage chest.
-			ALYSLC::Log("[GLOB] CopyOverInventories: IMPORT: Move all P1 items to storage chest.");
+			SPDLOG_DEBUG("[GLOB] CopyOverInventories: IMPORT: Move all P1 items to storage chest.");
 			transferP1InventoryToRefr(p1StorageChestRefr.get());
 			// From co-op player to P1.
-			ALYSLC::Log("[GLOB] CopyOverInventories: IMPORT: Move all co-op companion items to P1.");
+			SPDLOG_DEBUG("[GLOB] CopyOverInventories: IMPORT: Move all co-op companion items to P1.");
 			transferRefrInventoryToP1(a_coopActor);
 
 			p1->OnArmorActorValueChanged();
@@ -4350,10 +4350,10 @@ namespace ALYSLC
 			}
 
 			// Transfer P1's current items back to the co-op player.
-			ALYSLC::Log("[GLOB] CopyOverInventories: EXPORT: Move all P1 items back to co-op companion.");
+			SPDLOG_DEBUG("[GLOB] CopyOverInventories: EXPORT: Move all P1 items back to co-op companion.");
 			transferP1InventoryToRefr(a_coopActor);
 			// Transfer P1's original items back to P1 via the storage chest.
-			ALYSLC::Log("[GLOB] CopyOverInventories: EXPORT: Move all P1 items from storage chest back to P1.");
+			SPDLOG_DEBUG("[GLOB] CopyOverInventories: EXPORT: Move all P1 items from storage chest back to P1.");
 			transferRefrInventoryToP1(p1StorageChestRefr.get());
 
 			p1->OnArmorActorValueChanged();
@@ -4465,14 +4465,14 @@ namespace ALYSLC
 					if (!glob.SHARED_SKILL_AVS_SET.contains(currentAV))
 					{
 						const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-						ALYSLC::Log("[GLOB] CopyOverPerkTrees Import: Getting lock. (0x{:X})", hash);
+						SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Import: Getting lock. (0x{:X})", hash);
 						{
 							std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex);
-							ALYSLC::Log("[GLOB] CopyOverPerkTrees Import: Lock obtained. (0x{:X})", hash);
+							SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Import: Lock obtained. (0x{:X})", hash);
 							p1SerializedData->skillXPList[i] = p1->skills->data->skills[i].xp;
 							p1->skills->data->skills[i].xp = coopPlayerSerializedData->skillXPList[i];
 							
-							ALYSLC::Log("[GLOB] CopyOverPerkTrees Import: Saved skill {}'s XP ({}) for P1. {}'s XP ({}) was imported.",
+							SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Import: Saved skill {}'s XP ({}) for P1. {}'s XP ({}) was imported.",
 								Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))),
 								p1SerializedData->skillXPList[i],
 								a_coopActor->GetName(),
@@ -4492,12 +4492,12 @@ namespace ALYSLC
 					{
 						// REMOVE
 						const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-						ALYSLC::Log("[GLOB] CopyOverPerkTrees Export: Getting lock. (0x{:X})", hash);
+						SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Export: Getting lock. (0x{:X})", hash);
 						{
 							std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex);
-							ALYSLC::Log("[GLOB] CopyOverPerkTrees Export: Lock obtained. (0x{:X})", hash);
+							SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Export: Lock obtained. (0x{:X})", hash);
 							p1->skills->data->skills[i].xp = p1SerializedData->skillXPList[i];
-							ALYSLC::Log("[GLOB] CopyOverPerkTrees Export: P1's skill {}'s XP ({}) was restored.",
+							SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees Export: P1's skill {}'s XP ({}) was restored.",
 								Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))),
 								p1SerializedData->skillXPList[i]);
 						}
@@ -4519,7 +4519,7 @@ namespace ALYSLC
 					// Have to use native func check here as a result.
 					if (p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk)) 
 					{
-						ALYSLC::Log("[GLOB] CopyOverPerkTrees: {}: CHECK: {} has perk #{} {} (0x{:X}) (assigned: {}, in singleton list: {})",
+						SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: {}: CHECK: {} has perk #{} {} (0x{:X}) (assigned: {}, in singleton list: {})",
 							a_shouldImport ? "Import" : "Export", a_actor->GetName(), perkIndex, perk->GetName(), perk->formID,
 							p1->HasPerk(perk), Util::Player1PerkListHasPerk(perk));
 					}
@@ -4555,7 +4555,7 @@ namespace ALYSLC
 							// Ensure P1 singleton perk list and actor perk list are in sync on import.
 							if (nativeFuncP1HasPerk != singletonListHasPerk)
 							{
-								ALYSLC::Log("[GLOB] ERR: CopyOverPerkTrees: {}: GetUnlockedPerks: Perk check inconsistency. Adding {} (0x{:X}).",
+								SPDLOG_DEBUG("[GLOB] ERR: CopyOverPerkTrees: {}: GetUnlockedPerks: Perk check inconsistency. Adding {} (0x{:X}).",
 									p1->GetName(), perk->GetName(), perk->formID);
 								Util::Player1AddPerk(perk);
 							}
@@ -4573,7 +4573,7 @@ namespace ALYSLC
 							}
 						}
 
-						ALYSLC::Log("[GLOB] CopyOverPerkTrees: {}: GetUnlockedPerks: P1 has perk #{} {} (0x{:X}) (assigned: {}, in singleton list: {}). SUCC: {}.",
+						SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: {}: GetUnlockedPerks: P1 has perk #{} {} (0x{:X}) (assigned: {}, in singleton list: {}). SUCC: {}.",
 							a_shouldImport ? "Import" : "Export", perkIndex, perk->GetName(), perk->formID,
 							p1->HasPerk(perk), Util::Player1PerkListHasPerk(perk), succ);
 
@@ -4597,7 +4597,7 @@ namespace ALYSLC
 					// and add all unlocked perks to outparam set for assignment to P1 later.
 					if (a_shouldImport && nativeFuncCoopPlayerHasPerk) 
 					{
-						ALYSLC::Log("[GLOB] CopyOverPerkTrees: {}: GetUnlockedPerks: {} has perk #{} {} (0x{:X}).",
+						SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: {}: GetUnlockedPerks: {} has perk #{} {} (0x{:X}).",
 							a_shouldImport ? "Import" : "Export", a_coopPlayer->GetName(), perkIndex, perk->GetName(), perk->formID);
 						// Save all unlocked perks to companion player's unlocked perks list on export.
 						succ = coopPlayerSerializedData->InsertUnlockedPerk(perk);
@@ -4722,7 +4722,7 @@ namespace ALYSLC
 			// Add companion player's perks to P1 and remove all other perks from P1.
 			Util::TraverseAllPerks(a_coopActor, addCompanionPlayerPerksOnImport);
 
-			ALYSLC::Log("[GLOB] CopyOverPerkTrees: Import: {} has {} unlocked perks, {} has {} unlocked perks.",
+			SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: Import: {} has {} unlocked perks, {} has {} unlocked perks.",
 				p1->GetName(), p1SerializedData->GetUnlockedPerksList().size(),
 				a_coopActor->GetName(), coopPlayerSerializedData->GetUnlockedPerksList().size());
 
@@ -4746,13 +4746,13 @@ namespace ALYSLC
 			// Add back all player 1's original perks cached when entering.
 			Util::TraverseAllPerks(a_coopActor, updatePlayerPerksOnExport);
 
-			ALYSLC::Log("[GLOB] CopyOverPerkTrees: Export: {} has {} unlocked perks, {} has {} unlocked perks", 
+			SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: Export: {} has {} unlocked perks, {} has {} unlocked perks", 
 				p1->GetName(), p1SerializedData->GetUnlockedPerksList().size(),
 				a_coopActor->GetName(), coopPlayerSerializedData->GetUnlockedPerksList().size());
 
 			// Update unlocked shared perks count for this player.
 			coopPlayerSerializedData->sharedPerksUnlocked += max(0, glob.exportUnlockedSharedPerksCount - glob.importUnlockedSharedPerksCount);
-			ALYSLC::Log("[GLOB] CopyOverPerkTrees: Export: {} has personally unlocked {} shared perks.",
+			SPDLOG_DEBUG("[GLOB] CopyOverPerkTrees: Export: {} has personally unlocked {} shared perks.",
 				a_coopActor->GetName(), coopPlayerSerializedData->sharedPerksUnlocked);
 		}
 	}
@@ -4761,7 +4761,7 @@ namespace ALYSLC
 	{
 		// Construct a data copy request with the given info and then perform the request.
 
-		ALYSLC::Log("[GLOB] CopyOverPlayerDataTask: {}: menu name: {}, requesting player: {}, associated form: {}",
+		SPDLOG_DEBUG("[GLOB] CopyOverPlayerDataTask: {}: menu name: {}, requesting player: {}, associated form: {}",
 			a_shouldImport ? "Import" : "Export", a_menuName,
 			Util::HandleIsValid(a_requestingPlayerHandle) ? a_requestingPlayerHandle.get()->GetName() : "NONE",
 			a_assocForm ? a_assocForm->GetName() : "NONE");
@@ -4957,7 +4957,7 @@ namespace ALYSLC
 			return;
 		}
 
-		ALYSLC::Log("[GLOB] RescaleHMS: {}: base level: {}.", a_playerActor->GetName(), a_baseLevel);
+		SPDLOG_DEBUG("[GLOB] RescaleHMS: {}: base level: {}.", a_playerActor->GetName(), a_baseLevel);
 		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
 		if (a_playerActor == p1) 
 		{
@@ -4980,7 +4980,7 @@ namespace ALYSLC
 					a_playerActor->SetBaseActorValue(RE::ActorValue::kStamina, data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]);
 				}
 
-				ALYSLC::Log("[GLOB] RescaleHMS: Resetting P1's base HMS AVs to ({}, {}, {}) -> ({} + {}, {} + {}, {} + {})",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: Resetting P1's base HMS AVs to ({}, {}, {}) -> ({} + {}, {} + {}, {} + {})",
 					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0],
 					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1],
 					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2],
@@ -4995,7 +4995,7 @@ namespace ALYSLC
 			if (a_baseLevel != 0) 
 			{
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kHealth, data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[0],
@@ -5003,7 +5003,7 @@ namespace ALYSLC
 					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]);
 
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kMagicka, data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[1],
@@ -5011,7 +5011,7 @@ namespace ALYSLC
 					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]);
 
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kStamina, data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[2],
@@ -5024,14 +5024,14 @@ namespace ALYSLC
 				data->hmsBasePointsList[0] = a_playerActor->race->data.startingHealth + a_playerActor->GetActorBase()->actorData.healthOffset;
 				data->hmsBasePointsList[1] = a_playerActor->race->data.startingMagicka + a_playerActor->GetActorBase()->actorData.magickaOffset;
 				data->hmsBasePointsList[2] = a_playerActor->race->data.startingStamina + a_playerActor->GetActorBase()->actorData.staminaOffset;
-				ALYSLC::Log("[GLOB] RescaleHMS: {} has not leveled up in co-op yet. Scaling HMS AVs down to their base values: {}, {}, {}.",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {} has not leveled up in co-op yet. Scaling HMS AVs down to their base values: {}, {}, {}.",
 					a_playerActor->GetName(),
 					data->hmsBasePointsList[0],
 					data->hmsBasePointsList[1],
 					data->hmsBasePointsList[2]);
 
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kHealth, data->hmsBasePointsList[0]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[0],
@@ -5039,7 +5039,7 @@ namespace ALYSLC
 					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]);
 
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kMagicka, data->hmsBasePointsList[1]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[1],
@@ -5047,7 +5047,7 @@ namespace ALYSLC
 					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]);
 
 				a_playerActor->SetBaseActorValue(RE::ActorValue::kStamina, data->hmsBasePointsList[2]);
-				ALYSLC::Log("[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
+				SPDLOG_DEBUG("[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
 					a_playerActor->GetName(),
 					a_baseLevel,
 					data->hmsBasePointsList[2],
@@ -5065,7 +5065,7 @@ namespace ALYSLC
 		// 2. Player 1 is valid,
 		// 3. Serializable data contains data for player actor.
 
-		ALYSLC::Log("[GLOB] RescaleSkillAVs: {}.", a_playerActor->GetName());
+		SPDLOG_DEBUG("[GLOB] RescaleSkillAVs: {}.", a_playerActor->GetName());
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto& glob = GetSingleton();
 		if (!p1 || !a_playerActor || !glob.serializablePlayerData.contains(a_playerActor->formID))
@@ -5082,7 +5082,7 @@ namespace ALYSLC
 			if (SKILL_TO_AV_MAP.contains(currentSkill))
 			{
 				currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
-				ALYSLC::Log("[GLOB] RescaleSkillAVs: base: {}, current: {}, modifiers (d, p, t): {}, {}, {}.",
+				SPDLOG_DEBUG("[GLOB] RescaleSkillAVs: base: {}, current: {}, modifiers (d, p, t): {}, {}, {}.",
 					a_playerActor->GetBaseActorValue(currentAV),
 					a_playerActor->GetActorValue(currentAV),
 					a_playerActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kDamage, currentAV),
@@ -5099,7 +5099,7 @@ namespace ALYSLC
 						data->skillBaseLevelsList[i] = value;
 						data->skillLevelIncreasesList[i] = 0.0f;
 						a_playerActor->SetBaseActorValue(currentAV, value);
-						ALYSLC::Log("[GLOB] RescaleSkillAVs: Set {}'s SHARED skill AV {} to {}.",
+						SPDLOG_DEBUG("[GLOB] RescaleSkillAVs: Set {}'s SHARED skill AV {} to {}.",
 							a_playerActor->GetName(), std::format("{}", currentAV), value);
 					}
 				}
@@ -5107,7 +5107,7 @@ namespace ALYSLC
 				{
 					// Add recorded skill increases on top of serialized base skill level to get new level for this skill.
 					a_playerActor->SetBaseActorValue(currentAV, data->skillBaseLevelsList[i] + data->skillLevelIncreasesList[i]);
-					ALYSLC::Log("[GLOB] RescaleSkillAVs: {}'s INDEP skill AV {} at base level {} is {} + {}. Set to {} ({}).",
+					SPDLOG_DEBUG("[GLOB] RescaleSkillAVs: {}'s INDEP skill AV {} at base level {} is {} + {}. Set to {} ({}).",
 						a_playerActor->GetName(),
 						std::format("{}", currentAV),
 						data->firstSavedLevel,
@@ -5129,7 +5129,7 @@ namespace ALYSLC
 		// may no longer allow them to unlock 
 		// (eg. perk requires level 50, but player's skill level decreased to 40).
 
-		ALYSLC::Log("[GLOB] ResetPerkDataOnBaseSkillAVChange: {}", a_playerActor->GetName());
+		SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange: {}", a_playerActor->GetName());
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (!p1 || !a_playerActor || !glob.serializablePlayerData.contains(a_playerActor->formID))
@@ -5179,7 +5179,7 @@ namespace ALYSLC
 									bool succ = Util::Player1RemovePerk(perkToRemove);
 									if (succ) 
 									{
-										ALYSLC::Log("[GLOB] ResetPerkDataOnBaseSkillAVChange. Removed shared perk {} (0x{:X}) from p1's perks list.",
+										SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange. Removed shared perk {} (0x{:X}) from p1's perks list.",
 											perkToRemove->GetName(), perkToRemove->formID);
 									}
 
@@ -5190,7 +5190,7 @@ namespace ALYSLC
 									bool succ = Util::ChangePerk(a_actor, perkToRemove, false);
 									if (succ) 
 									{
-										ALYSLC::Log("[GLOB] ResetPerkDataOnBaseSkillAVChange. Removing shared perk {} (0x{:X}) from {}'s perks list.",
+										SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange. Removing shared perk {} (0x{:X}) from {}'s perks list.",
 											perkToRemove->GetName(), perkToRemove->formID, a_actor->GetName());
 									}
 
@@ -5236,13 +5236,13 @@ namespace ALYSLC
 
 							data->SetUnlockedPerks(newUnlockedPerks);
 							data->sharedPerksUnlocked = 0;
-							ALYSLC::Log("[GLOB] ResetPerkDataOnBaseSkillAVChange: {} now has {} unlocked perks after shared perk removal.", playerActor->GetName(), data->GetUnlockedPerksList().size());
+							SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange: {} now has {} unlocked perks after shared perk removal.", playerActor->GetName(), data->GetUnlockedPerksList().size());
 						}
 					}
 				}
 			}
 
-			ALYSLC::Log("[GLOB] ResetPerkDataOnBaseSkillAVChange: Adjust all players' perk counts after shared perk removal.");
+			SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange: Adjust all players' perk counts after shared perk removal.");
 			AdjustAllPlayerPerkCounts();
 		}
 	}
@@ -5269,7 +5269,7 @@ namespace ALYSLC
 			return false;
 		}
 
-		ALYSLC::Log("[GLOB] TriggerAVAutoScaling: {}{}. Update base AVs: {}.", 
+		SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: {}{}. Update base AVs: {}.", 
 			a_playerActor ? "Player Changed Class/Race: " : "All Active Players",
 			a_playerActor ? a_playerActor->GetName() : "",
 			a_updateBaseAVs);
@@ -5288,7 +5288,7 @@ namespace ALYSLC
 				uint16_t targetLevel = p1Level < UINT16_MAX ? p1Level + 1 : p1Level - 1;
 				uint16_t savedLevel = p1Level;
 				float savedXP = p1->skills->data->xp;
-				ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Before inc/dec: current XP, threshold: {}, {}, current level: {}, target level: {}.",
+				SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Before inc/dec: current XP, threshold: {}, {}, current level: {}, target level: {}.",
 					p1->skills->data->xp, p1->skills->data->levelThreshold, p1Level, targetLevel);
 
 				p1->skills->data->xp = 0.0f;
@@ -5302,13 +5302,13 @@ namespace ALYSLC
 				p1->skills->data->xp = savedXP;
 
 				delete script;
-				ALYSLC::Log("[GLOB] TriggerAVAutoScaling: After inc/dec: current XP, threshold: {}, {}, current level: {}.",
+				SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: After inc/dec: current XP, threshold: {}, {}, current level: {}.",
 					p1->skills->data->xp, p1->skills->data->levelThreshold, p1Level);
 
 				// Update base AVs when playing Enderal, since companion players' base AVs start at 5, instead of 15.
 				if (a_updateBaseAVs || ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 				{
-					ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base AVs for all players. Enderal: {}, STACKED scaling: {}.",
+					SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Update base AVs for all players. Enderal: {}, STACKED scaling: {}.",
 						ALYSLC::EnderalCompat::g_enderalSSEInstalled, Settings::bStackCoopPlayerSkillAVAutoScaling);
 					// Set base Skill AV levels to newly-scaled ones.
 					for (const auto& p : glob.coopPlayers)
@@ -5355,7 +5355,7 @@ namespace ALYSLC
 					{
 						data->firstSavedLevel = savedP1Level > 1 ? savedP1Level - 1 : savedP1Level;
 						
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: First saved level for {} is 0. Set to {} now.", 
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: First saved level for {} is 0. Set to {} now.", 
 							a_playerActor->GetName(), data->firstSavedLevel);
 					}
 
@@ -5363,7 +5363,7 @@ namespace ALYSLC
 					if (data->firstSavedLevel < savedP1Level)
 					{
 						// P1's level is >= 2.
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Dip to update base skill AVs for {}. Assign to dipped-level base AVs list. Current level: {}, level to dip to: {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Dip to update base skill AVs for {}. Assign to dipped-level base AVs list. Current level: {}, level to dip to: {}.",
 							a_playerActor->GetName(), savedP1Level, data->firstSavedLevel);
 
 						float savedXP = p1->skills->data->xp;
@@ -5379,19 +5379,19 @@ namespace ALYSLC
 						// Temporary workaround which has its own issues: do not update the base skill levels if this occurs.
 						if (auto newLevel = p1->GetLevel(); newLevel != data->firstSavedLevel)
 						{
-							ALYSLC::Log("[GLOB] ERR: TriggerAVAutoScaling: Dip level ({}) not reached before setting new base skill actor values for {}. Current level is {}. Not setting base skill actor values this time.",
+							SPDLOG_DEBUG("[GLOB] ERR: TriggerAVAutoScaling: Dip level ({}) not reached before setting new base skill actor values for {}. Current level is {}. Not setting base skill actor values this time.",
 								data->firstSavedLevel, a_playerActor->GetName(), newLevel);
 						}
 						else
 						{
 							// Update base skill AVs.
-							ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Dip level ({}) reached. Setting new base skill actor values for {}.",
+							SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Dip level ({}) reached. Setting new base skill actor values for {}.",
 								data->firstSavedLevel, a_playerActor->GetName());
 							
 							data->skillBaseLevelsList = Util::GetActorSkillLevels(a_playerActor);
 						}
 
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After dip: current XP, threshold: {}, {}, current player levels: {}, {}, target level: {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After dip: current XP, threshold: {}, {}, current player levels: {}, {}, target level: {}.",
 							a_playerActor->GetName(), p1->skills->data->xp, p1->skills->data->levelThreshold, p1->GetLevel(), a_playerActor->GetLevel(), data->firstSavedLevel);
 						
 						// Restore original P1 level.
@@ -5400,7 +5400,7 @@ namespace ALYSLC
 						// Restore XP.
 						p1->skills->data->xp = savedXP;
 
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After dip: current XP, threshold: {}, {}, current player levels: {}, {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After dip: current XP, threshold: {}, {}, current player levels: {}, {}.",
 							a_playerActor->GetName(), p1->skills->data->xp, p1->skills->data->levelThreshold, p1->GetLevel(), a_playerActor->GetLevel());
 					}
 					else if (data->firstSavedLevel == savedP1Level)
@@ -5409,7 +5409,7 @@ namespace ALYSLC
 						// Scale up/down only one level to trigger auto-scaling.
 						uint16_t targetLevel = savedP1Level < UINT16_MAX ? savedP1Level + 1 : savedP1Level - 1;
 						
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: {}: Assign to current skill AVs after returning to saved P1 level: {}, first saved level: {}, target level: {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: {}: Assign to current skill AVs after returning to saved P1 level: {}, first saved level: {}, target level: {}.",
 							a_playerActor->GetName(), savedP1Level, data->firstSavedLevel, targetLevel);
 
 						float savedXP = p1->skills->data->xp;
@@ -5417,7 +5417,7 @@ namespace ALYSLC
 						script->SetCommand("SetLevel " + std::to_string(targetLevel));
 						script->CompileAndRun(p1);
 						
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. Before inc/dec: current XP, threshold: {}, {}, current level: {}, target level: {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. Before inc/dec: current XP, threshold: {}, {}, current level: {}, target level: {}.",
 							a_playerActor->GetName(), p1->skills->data->xp, p1->skills->data->levelThreshold, p1->GetLevel(), targetLevel);
 						
 						// Scale back up.
@@ -5426,7 +5426,7 @@ namespace ALYSLC
 						// Restore XP.
 						p1->skills->data->xp = savedXP;
 
-						ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After inc/dec: current XP, threshold: {}, {}, current level: {}.",
+						SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Update base skill AVs for {}. After inc/dec: current XP, threshold: {}, {}, current level: {}.",
 							a_playerActor->GetName(), p1->skills->data->xp, p1->skills->data->levelThreshold, p1->GetLevel());
 
 						// KNOWN MAJOR ISSUE: The world sometimes does not scale up to the original level in time
@@ -5435,12 +5435,12 @@ namespace ALYSLC
 						// Temporary workaround which has its own issues: do not update the base skill levels if this occurs.
 						if (auto newLevel = p1->GetLevel(); newLevel != savedP1Level)
 						{
-							ALYSLC::Log("[GLOB] ERR: TriggerAVAutoScaling: Original P1 level ({}) not reached before setting new base skill actor values for {}. Current level is {}. Not setting base skill actor values this time.",
+							SPDLOG_DEBUG("[GLOB] ERR: TriggerAVAutoScaling: Original P1 level ({}) not reached before setting new base skill actor values for {}. Current level is {}. Not setting base skill actor values this time.",
 								savedP1Level, a_playerActor->GetName(), newLevel);
 						}
 						else
 						{
-							ALYSLC::Log("[GLOB] TriggerAVAutoScaling: Original level ({}) reached. Setting base skill actor values for {}.",
+							SPDLOG_DEBUG("[GLOB] TriggerAVAutoScaling: Original level ({}) reached. Setting base skill actor values for {}.",
 								savedP1Level, a_playerActor->GetName());
 							
 							// Update base skill AVs at the current level.
@@ -5451,7 +5451,7 @@ namespace ALYSLC
 					else
 					{
 						// Should never happen. But alert me if it does. Thanks.
-						logger::error("[GLOB] ERR: TriggerAVAutoScaling: P1's level ({}) is below the target dip level ({}) for {}. Do not change base skill AVs.",
+						SPDLOG_ERROR("[GLOB] ERR: TriggerAVAutoScaling: P1's level ({}) is below the target dip level ({}) for {}. Do not change base skill AVs.",
 							savedP1Level, data->firstSavedLevel, a_playerActor->GetName());
 					}
 
@@ -5464,7 +5464,7 @@ namespace ALYSLC
 				bool succ = autoScaleAndSetBaseAVs(a_playerActor);
 				if (!succ)
 				{
-					ALYSLC::Log("[GLOB] ERR: TriggerAVAutoScaling: Could not modify P1's level with console command. No rescaling possible.");
+					SPDLOG_DEBUG("[GLOB] ERR: TriggerAVAutoScaling: Could not modify P1's level with console command. No rescaling possible.");
 					return false;
 				}
 
@@ -5538,10 +5538,10 @@ namespace ALYSLC
 							const auto fidPair = std::pair<RE::FormID, RE::FormID>(handleA.get().get()->formID, handleB.get().get()->formID);
 							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							ALYSLC::Log("[GLOB] ContactPointCallback. {}: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
+							SPDLOG_DEBUG("[GLOB] ContactPointCallback. {}: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
-								ALYSLC::Log("[GLOB] ContactPointCallback. {}: Lock obtained. (0x{:X}).", 
+								SPDLOG_DEBUG("[GLOB] ContactPointCallback. {}: Lock obtained. (0x{:X}).", 
 									p->coopActor->GetName(), hash);
 								if (!p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
 								{

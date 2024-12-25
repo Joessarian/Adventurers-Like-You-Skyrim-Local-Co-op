@@ -97,11 +97,11 @@ namespace ALYSLC
 		static void QueueShape2D(const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, bool&& a_fill = true, const float& a_lineThickness = 1.0f, const float& a_durationSecs = 0);
 		
 		// Rotate lines and points.
-		static void RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_ang);
+		static void RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_angle);
 		
 		static void RotateLine3D(std::pair<glm::vec4, glm::vec4>& a_line, const glm::vec4& a_pivotPoint, const float& a_pitch, const float& a_yaw);
 		
-		static void RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_ang);
+		static void RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_angle);
 		
 		// Run at an interval from AdvanceMovie().
 		// Clears and redraws queued lines, points, and shapes.
@@ -109,7 +109,7 @@ namespace ALYSLC
 		
 		// Get the corresponding screenspace point from the given worldspace position.
 		static glm::vec2 WorldToScreenPoint(glm::vec3 a_worldPos);
-		// Queued lines, points, and shapes to draw on the next update.
+		// Queued lines, points, and shapes to draw during the next update.
 		static std::vector<std::unique_ptr<DebugAPILine>> linesToDraw;
 		static std::vector<std::unique_ptr<DebugAPIPoint>> pointsToDraw;
 		static std::vector<std::unique_ptr<DebugAPIShape>> shapesToDraw;
@@ -125,7 +125,7 @@ namespace ALYSLC
 		
 		static void DrawPoint(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_center, uint32_t a_rgba, float a_size);
 		
-		static void DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill = true, const float& a_lineThickness = 1.0f, const float& a_durationSecs = 0);
+		static void DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill = true, const float& a_lineThickness = 1.0f);
 		
 		// Clear the overlay.
 		static void ClearOverlay(RE::GPtr<RE::GFxMovieView> a_movie);

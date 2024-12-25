@@ -56,7 +56,7 @@ namespace ALYSLC
 			ValueModifierEffectHooks::InstallHooks();
 			VampireLordEffectHooks::InstallHooks();
 			WerewolfEffectHooks::InstallHooks();
-			logger::info("[Hooks] Installed all hooks");
+			SPDLOG_INFO("[Hooks] Installed all hooks");
 		}
 
 //=============
@@ -126,7 +126,7 @@ namespace ALYSLC
 					if (!p->isPlayer1 && p->coopActor->race && p->coopActor->race->GetPlayable() && 
 						!p->isTransforming && !p->isTransformed)
 					{
-						ALYSLC::Log("[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+						SPDLOG_DEBUG("[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
 						if (auto reqEquipSlot = a_objectEquipParams.equipSlot; reqEquipSlot)
 						{
 							// Ensure 1H weapon gets equipped in the correct hand.
@@ -169,7 +169,7 @@ namespace ALYSLC
 							// Game tries to equip another ammo that was not requested.
 							if ((a_object->IsAmmo()) && a_object != p->em->desiredEquippedForms[!EquipIndex::kAmmo])
 							{
-								ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip ammo {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+								SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to equip ammo {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 								return;
 							}
 							else if (a_object->IsArmor())
@@ -201,7 +201,7 @@ namespace ALYSLC
 										// Game is trying to equip armor that the player did not request to have equipped.
 										if (armor != p->em->desiredEquippedForms[equipIndex])
 										{
-											ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+											SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to equip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 											return;
 										}
 									}
@@ -222,7 +222,7 @@ namespace ALYSLC
 								// Game is trying to equip a weapon that the player did not request to have equipped.
 								if (a_object != p->em->desiredEquippedForms[indexToCheck])
 								{
-									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to equip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -230,7 +230,7 @@ namespace ALYSLC
 							{
 								if (a_object != p->em->desiredEquippedForms[!EquipIndex::kVoice]) 
 								{
-									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to equip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -255,7 +255,7 @@ namespace ALYSLC
 									// Player did not request to equip a bound weapon, so ignore.
 									if (!reqToEquip)
 									{
-										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to equip bound weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to equip bound weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -284,7 +284,7 @@ namespace ALYSLC
 					if (!p->isPlayer1 && p->coopActor->race && p->coopActor->race->GetPlayable() &&
 						!p->isTransforming && !p->isTransformed)
 					{
-						ALYSLC::Log("[ActorEquipManager Hooks] UnequipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+						SPDLOG_DEBUG("[ActorEquipManager Hooks] UnequipObject: {}: {} (0x{:X}, type: 0x{:X}).", a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
 						bool isBound = {
 							(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 							(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
@@ -307,7 +307,7 @@ namespace ALYSLC
 									// if we currently have a bound weapon equipped in the LH, do not ignore the unequip call.
 									if (auto lhWeap = p->em->GetLHWeapon(); !lhWeap || !lhWeap->IsBound())
 									{
-										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip shield/torch {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to unequip shield/torch {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -331,7 +331,7 @@ namespace ALYSLC
 									// Ignore if the game is trying to unequip desired armor.
 									if (armor == p->em->desiredEquippedForms[equipIndex])
 									{
-										ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+										SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to unequip armor {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 										return;
 									}
 								}
@@ -352,7 +352,7 @@ namespace ALYSLC
 								// Ignore if the game is trying to equip the desired weapon.
 								if (a_object == p->em->desiredEquippedForms[indexToCheck])
 								{
-									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to unequip weapon {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -360,7 +360,7 @@ namespace ALYSLC
 							{
 								if (a_object == p->em->desiredEquippedForms[!EquipIndex::kVoice])
 								{
-									ALYSLC::Log("[ActorEquipManager Hooks] {}: trying to unequip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
+									SPDLOG_DEBUG("[ActorEquipManager Hooks] {}: trying to unequip shout {}. Ignoring.", a_actor->GetName(), a_object->GetName());
 									return;
 								}
 							}
@@ -559,10 +559,10 @@ namespace ALYSLC
 							p->lastAnimEventTag = a_event->tag;
 
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							ALYSLC::Log("[AnimationGraphManager Hook] ProcessEvent: {}: Getting Lock. (0x{:X})", p->coopActor->GetName(), hash);
+							SPDLOG_DEBUG("[AnimationGraphManager Hook] ProcessEvent: {}: Getting Lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								ALYSLC::Log("[AnimationGraphManager Hook] ProcessEvent: {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
+								SPDLOG_DEBUG("[AnimationGraphManager Hook] ProcessEvent: {}: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 								if (perfAVAnimEvent.first != PerfAnimEventTag::kNone)
 								{
 									p->pam->avcam->perfAnimEventsQueue.emplace(std::move(perfAVAnimEvent));
@@ -1086,7 +1086,7 @@ namespace ALYSLC
 					auto hash = Hash(a_eventName);
 					
 					// REMOVE when done debugging.
-					//ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//SPDLOG_DEBUG("[Character Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 
 					if (p->isTransformed) 
 					{
@@ -1138,10 +1138,10 @@ namespace ALYSLC
 						{
 							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
+							SPDLOG_DEBUG("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								ALYSLC::Log("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
+								SPDLOG_DEBUG("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 
 								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
 								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
@@ -1842,7 +1842,7 @@ namespace ALYSLC
 								{
 									if (glob.player1Actor)
 									{
-										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
+										SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: Debug menu binds pressed but not triggered. Opening menu now.");
 										glob.onDebugMenuRequest.SendEvent(glob.player1Actor.get(), glob.coopSessionActive ? glob.player1CID : -1);
 										invalidateEvent = true;
 									}
@@ -1857,7 +1857,7 @@ namespace ALYSLC
 									// and set to 0 if summoning failed or is complete.
 									if (glob.summoningMenuOpenGlob->value == 0.0f && glob.player1Actor && !glob.player1Actor->IsInCombat())
 									{
-										ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
+										SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: Summoning menu binds pressed but not triggered. Opening menu now.");
 										glob.onSummoningMenuRequest.SendEvent();
 										invalidateEvent = true;
 									}
@@ -1941,7 +1941,7 @@ namespace ALYSLC
 							if (buttonEvent->IsDown())
 							{
 								ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpen();
-								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} menu bind is now pressed. Ignore ({}) and trigger on release if no co-op menus are triggered by then.",
+								SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: {} menu bind is now pressed. Ignore ({}) and trigger on release if no co-op menus are triggered by then.",
 									pauseBindEvent ? "Pause" : "Wait",
 									ignoringPauseWaitEvent);
 							}
@@ -1958,7 +1958,7 @@ namespace ALYSLC
 							{
 								// No co-op menus triggered, so allow the button event to pass through on release
 								// and trigger either the Pause or Wait menu as usual.
-								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own. Simulating press to trigger {} menu.",
+								SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own. Simulating press to trigger {} menu.",
 									pauseBindEvent ? "Pause" : "Wait", pauseBindEvent ? "Pause" : "Wait");
 								buttonEvent->heldDownSecs = 0.0f;
 								buttonEvent->value = 1.0f;
@@ -1966,7 +1966,7 @@ namespace ALYSLC
 							else if (summoningMenuTriggered || debugMenuTriggered)
 							{
 								// A co-op menu was triggered, so ignore the button event on release.
-								ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own after {} menu triggered. Ignoring.",
+								SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: {} bind released on its own after {} menu triggered. Ignoring.",
 									pauseBindEvent ? "Pause" : "Wait", summoningMenuTriggered ? "Summoning" : "Debug");
 								buttonEvent->value = 0.0f;
 								buttonEvent->idCode = 0xFF;
@@ -1995,7 +1995,7 @@ namespace ALYSLC
 			bool needToResetState = summoningMenuTriggered || debugMenuTriggered || ignoringPauseWaitEvent;
 			if (buttonInputsReleased && needToResetState)
 			{
-				ALYSLC::Log("[MenuControls Hook] CheckForMenuTriggeringInput: Buttons released. Reset flags to false. Pause bind pressed first: {}, summoning menu triggered: {}, debug menu triggered: {}, ignoring Pause/Wait event: {}",
+				SPDLOG_DEBUG("[MenuControls Hook] CheckForMenuTriggeringInput: Buttons released. Reset flags to false. Pause bind pressed first: {}, summoning menu triggered: {}, debug menu triggered: {}, ignoring Pause/Wait event: {}",
 					pauseBindPressedFirst, summoningMenuTriggered, debugMenuTriggered, ignoringPauseWaitEvent);
 				pauseBindPressedFirst = summoningMenuTriggered = debugMenuTriggered = ignoringPauseWaitEvent = false;
 			}
@@ -2483,7 +2483,7 @@ namespace ALYSLC
 						bool propagateUnmodifiedEvent = !wasBlocked && !ignoreInput && (validP1Input || validCoopCompanionInput);
 
 						// REMOVE when done debugging.
-						/*ALYSLC::Log("[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, proxied P1 input: {}, coop player menu input: {}, dialogue menu open: {}, is blocked event: {}, valid co-op companion input: {}, valid p1 input: {}, two-player P1 lockpicking input: {}",
+						/*SPDLOG_DEBUG("[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, proxied P1 input: {}, coop player menu input: {}, dialogue menu open: {}, is blocked event: {}, valid co-op companion input: {}, valid p1 input: {}, two-player P1 lockpicking input: {}",
 							glob.menuCID,
 							glob.mim->managerMenuCID,
 							idEvent->userEvent,
@@ -2936,7 +2936,7 @@ namespace ALYSLC
 				auto hash = Hash(a_eventName);
 				if (glob.coopSessionActive)
 				{
-					//ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
+					//SPDLOG_DEBUG("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: {}.", p->coopActor->GetName(), a_eventName);
 					if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
 					{
 						// Skip bleedout animations when using the co-op revive system.
@@ -2956,10 +2956,10 @@ namespace ALYSLC
 						{
 							// REMOVE
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
+							SPDLOG_DEBUG("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
 							{
 								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								ALYSLC::Log("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
+								SPDLOG_DEBUG("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
 
 								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
 								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
@@ -3053,7 +3053,7 @@ namespace ALYSLC
 							// Obviously a better solution would involve finding a way to set movement speed
 							// directly to 0 when ragdolled or getting up, but for now, this'll have to do.
 
-							/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
+							/*SPDLOG_DEBUG("[PlayerCharacter Hooks] Update: {}: BEFORE: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
 								p->coopActor->GetName(),
 								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
 								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
@@ -3320,7 +3320,7 @@ namespace ALYSLC
 							}
 
 							// REMOVE when done debugging.
-							/*ALYSLC::Log("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
+							/*SPDLOG_DEBUG("[PlayerCharacter Hooks] Update: {}: AFTER: MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
 								p->coopActor->GetName(),
 								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kWalk],
 								high->currentMovementType.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kLeft][RE::Movement::MaxSpeeds::kRun],
@@ -3390,7 +3390,7 @@ namespace ALYSLC
 					if (lock)
 					{
 						// REMOVE
-						ALYSLC::Log("[PlayerCharacter Hooks] UseSkill: Lock obtained. (0x{:X})", hash);
+						SPDLOG_DEBUG("[PlayerCharacter Hooks] UseSkill: Lock obtained. (0x{:X})", hash);
 						// For melee skills, cache and delay if cached data does not match call args.
 						if (a_av == RE::ActorValue::kOneHanded || a_av == RE::ActorValue::kTwoHanded ||
 							a_av == RE::ActorValue::kArchery || a_av == RE::ActorValue::kBlock ||
@@ -3444,7 +3444,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						ALYSLC::Log("[PlayerCharacter Hooks] UseSkill: Failed to obtain lock (0x{:X}). Will not use skill.", hash);
+						SPDLOG_DEBUG("[PlayerCharacter Hooks] UseSkill: Failed to obtain lock (0x{:X}). Will not use skill.", hash);
 						return;
 					}
 				}
@@ -3829,7 +3829,7 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				/*if (auto current3D = Util::GetRefr3D(projectile); current3D) 
 				{
-					ALYSLC::Log("[Projectile Hooks] {}: DirectProjectileAtTarget: {} (0x{:X}), node {}, type {}. Pitch, yaw: {}, {}.",
+					SPDLOG_DEBUG("[Projectile Hooks] {}: DirectProjectileAtTarget: {} (0x{:X}), node {}, type {}. Pitch, yaw: {}, {}.",
 						a_p->coopActor->GetName(),
 						projectile->GetName(),
 						projectile->formID,
@@ -4287,7 +4287,7 @@ namespace ALYSLC
 				projectile->linearVelocity = a_resultingVelocity;
 
 				// REMOVE when done debugging.
-				/*ALYSLC::Log("[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, speed to set: {}, distance to target: {}, initial time to target: {}, remaining rotation smoothing lifetime ratio: {}, moved: {}, pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
+				/*SPDLOG_DEBUG("[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, speed to set: {}, distance to target: {}, initial time to target: {}, remaining rotation smoothing lifetime ratio: {}, moved: {}, pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
 					projectile->GetName(), projectile->formID,
 					managedProjInfo->startedHomingIn,
 					speed,
@@ -4894,7 +4894,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -4918,7 +4918,7 @@ namespace ALYSLC
 						// Have to restore P1's inventory here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							ALYSLC::Log("[BarterMenu Hooks] ERR: ProcessMessage. Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
+							SPDLOG_DEBUG("[BarterMenu Hooks] ERR: ProcessMessage. Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
 						}
 					}
@@ -4955,7 +4955,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5002,7 +5002,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5061,7 +5061,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5091,7 +5091,7 @@ namespace ALYSLC
 						// Have to restore P1's inventory here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							ALYSLC::Log("[CraftingMenu Hooks] ERR: ProcessMessage: Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
+							SPDLOG_DEBUG("[CraftingMenu Hooks] ERR: ProcessMessage: Restoring player 1's inventory, since the message to open the menu was ignored. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), assocForm);
 						}
 					}
@@ -5128,7 +5128,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5230,7 +5230,7 @@ namespace ALYSLC
 													view->SetVariableArray("_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1);
 													// Update the favorites entry list.
 													view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
-													ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage: Refreshing quickslot tags for P1.");
+													SPDLOG_DEBUG("[FavoritesMenu Hooks] ProcessMessage: Refreshing quickslot tags for P1.");
 												}
 											}
 										}
@@ -5330,7 +5330,7 @@ namespace ALYSLC
 													// Normal items receive an update to the "caret" equipped icon,
 													// while quick slot items have their entry text modified.
 													const auto& equipStateNum = glob.mim->favEntryEquipStates[index];
-													ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage: Favorites index {} item {} is getting its equip state set to {}",
+													SPDLOG_DEBUG("[FavoritesMenu Hooks] ProcessMessage: Favorites index {} item {} is getting its equip state set to {}",
 														index, favoritedItem->GetName(), equipStateNum);
 													RE::GFxValue equipState;
 													equipState.SetNumber(static_cast<double>(equipStateNum));
@@ -5381,7 +5381,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5453,7 +5453,7 @@ namespace ALYSLC
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							ALYSLC::Log("[FavoritesMenu Hooks] ERR: ProcessMessage. Restoring player 1's favorites, since the message to open the FavoritesMenu was not handled. RESULT: {}.", result);
+							SPDLOG_DEBUG("[FavoritesMenu Hooks] ERR: ProcessMessage. Restoring player 1's favorites, since the message to open the FavoritesMenu was not handled. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
 						}
 					}
@@ -5502,7 +5502,7 @@ namespace ALYSLC
 						bool succ = glob.moarm->InsertRequest(reqP->controllerID, InputAction::kInventory, SteadyClock::now(), RE::ContainerMenu::MENU_NAME, reqP->coopActor->GetHandle());
 						if (succ)
 						{
-							ALYSLC::Log("[InventoryMenu Hooks] ProcessMessage: Opening {}'s inventory instead of P1's.", reqP->coopActor->GetName());
+							SPDLOG_DEBUG("[InventoryMenu Hooks] ProcessMessage: Opening {}'s inventory instead of P1's.", reqP->coopActor->GetName());
 							Util::Papyrus::OpenInventory(reqP->coopActor.get());
 						}
 
@@ -5543,7 +5543,7 @@ namespace ALYSLC
 			// Restore P1 data if data was copied over before this LoadingMenu opened.
 			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
 			{
-				ALYSLC::Log("[LoadingMenu Hooks] ProcessMessage. Loading menu opened with data copied (types: 0x{:X}) over to P1. Restoring P1 data. Co-op session active: {}. RESULT: {}.",
+				SPDLOG_DEBUG("[LoadingMenu Hooks] ProcessMessage. Loading menu opened with data copied (types: 0x{:X}) over to P1. Restoring P1 data. Co-op session active: {}. RESULT: {}.",
 					*glob.copiedPlayerDataTypes, glob.coopSessionActive, result);
 				GlobalCoopData::CopyOverCoopPlayerData(false, a_this->MENU_NAME, glob.player1Actor->GetHandle(), nullptr);
 			}
@@ -5625,7 +5625,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[MagicMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[MagicMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5666,7 +5666,7 @@ namespace ALYSLC
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							ALYSLC::Log("[MagicMenu Hooks] ERR: ProcessMessage. Restoring player 1's magic favorites, since the message to open the MagicMenu was not handled. RESULT: {}.", result);
+							SPDLOG_DEBUG("[MagicMenu Hooks] ERR: ProcessMessage. Restoring player 1's magic favorites, since the message to open the MagicMenu was not handled. RESULT: {}.", result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), nullptr);
 						}
 					}
@@ -5720,7 +5720,7 @@ namespace ALYSLC
 				int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
 
 				// REMOVE when done debugging.
-				ALYSLC::Log("[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+				SPDLOG_DEBUG("[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 					glob.menuCID, resolvedCID, opening, closing);
 
 				// Control is/was requested by co-op companion player.
@@ -5777,7 +5777,7 @@ namespace ALYSLC
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
+			SPDLOG_DEBUG("[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. Opening: {}, closing: {}.",
 				glob.menuCID, resolvedCID, opening, closing);
 
 			// Control is/was requested by co-op companion player.
@@ -5807,7 +5807,7 @@ namespace ALYSLC
 						// Have to restore P1's AVs here if the game ignores this call to open the menu.
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							ALYSLC::Log("[TrainingMenu Hooks] ERR: ProcessMessage. Restoring AVs for {} and P1, since the message to open the menu was ignored. RESULT: {}.", 
+							SPDLOG_DEBUG("[TrainingMenu Hooks] ERR: ProcessMessage. Restoring AVs for {} and P1, since the message to open the menu was ignored. RESULT: {}.", 
 								p->coopActor->GetName(), result);
 							GlobalCoopData::CopyOverCoopPlayerData(false, menuName, p->coopActor->GetHandle(), assocForm);
 						}

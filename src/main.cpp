@@ -17,7 +17,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	switch (msg->type) {
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
-		logger::info("[MAIN] Data loaded.");
+		SPDLOG_INFO("[MAIN] Data loaded.");
 		// Install all hooks.
 		ALYSLC::Hooks::Install();
 		// Add event sinks for all necessary events.
@@ -28,11 +28,11 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kNewGame:
 	{
-		logger::info("[MAIN] New game.");
+		SPDLOG_INFO("[MAIN] New game.");
 		// Set default serialization data through the Load() function.
 		if (SKSE::SerializationInterface* intfc = SKSE::detail::APIStorage::get().serializationInterface; intfc)
 		{
-			logger::info("[MAIN] New game. Setting default serialization data on load.");
+			SPDLOG_INFO("[MAIN] New game. Setting default serialization data on load.");
 			ALYSLC::SerializationCallbacks::Load(intfc);
 		}
 
@@ -42,12 +42,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostLoad:
 	{
-		logger::info("[MAIN] Post load.");
+		SPDLOG_INFO("[MAIN] Post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoadGame:
 	{
-		logger::info("[MAIN] Post load game.");
+		SPDLOG_INFO("[MAIN] Post load game.");
 		// Run compatibility checks and initialization.
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
@@ -66,12 +66,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
 	{
-		logger::info("[MAIN] Post-post load.");
+		SPDLOG_INFO("[MAIN] Post-post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPreLoadGame:
 	{
-		logger::info("[MAIN] Pre load game.");
+		SPDLOG_INFO("[MAIN] Pre load game.");
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
 		break;
@@ -112,7 +112,7 @@ void InitializeLog()
 	// spdlog::set_pattern("[%H:%M:%S:%e] %v"s);
 	spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
 
-	logger::info("[MAIN] Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
+	SPDLOG_INFO("[MAIN] Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
 }
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
@@ -121,7 +121,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	while (!IsDebuggerPresent()) {};
 #endif
 
-	logger::info("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
+	SPDLOG_INFO("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	// Create global data singleton before doing anything else.
 	ALYSLC::GlobalCoopData::GetSingleton();
 
@@ -132,24 +132,24 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
 	if (auto messaging = SKSE::GetMessagingInterface(); !messaging->RegisterListener("SKSE", SKSEMessageHandler))
 	{
-		logger::error("[MAIN] ERR: Could not register messaging interface listener.");
+		SPDLOG_ERROR("[MAIN] ERR: Could not register messaging interface listener.");
 		return false;
 	}
 
 	if (auto papyrus = SKSE::GetPapyrusInterface(); !papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
 	{
-		logger::error("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
+		SPDLOG_ERROR("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
 		return false;
 	}
 
 	if (auto serialization = SKSE::GetSerializationInterface(); !serialization) 
 	{
-		logger::error("[MAIN] ERR: Could not get serialization interface.");
+		SPDLOG_ERROR("[MAIN] ERR: Could not get serialization interface.");
 		return false;
 	}
 	else
 	{
-		logger::info("[MAIN] Setting serialization callbacks.");
+		SPDLOG_INFO("[MAIN] Setting serialization callbacks.");
 		// Set serialization ID and callbacks.
 		serialization->SetUniqueID(Hash("ALYSLC"));
 		serialization->SetLoadCallback(ALYSLC::SerializationCallbacks::Load);
@@ -181,7 +181,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a
 
 	if (a_skse->IsEditor())
 	{
-		logger::error("[MAIN] Loaded in editor, marking as incompatible."sv);
+		SPDLOG_ERROR("[MAIN] Loaded in editor, marking as incompatible."sv);
 		return false;
 	}
 
@@ -194,7 +194,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a
 #endif
 	)
 	{
-		logger::error(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
+		SPDLOG_ERROR(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
 		return false;
 	}
 

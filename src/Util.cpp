@@ -276,13 +276,13 @@ namespace ALYSLC
 				if (a_shouldFavorite) 
 				{
 					magicFavorites->SetFavorite(a_form);
-					ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}.",
+					SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited {}.",
 						a_actor->GetName(), a_form->GetName());
 				}
 				else
 				{
 					magicFavorites->RemoveFavorite(a_form);
-					ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}.",
+					SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}.",
 						a_actor->GetName(), a_form->GetName());
 				}
 			}
@@ -313,7 +313,7 @@ namespace ALYSLC
 									if (!a_shouldFavorite)
 									{
 										NativeFunctions::Unfavorite(inventoryChanges, ied.get(), exDataList);
-										ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.",
+										SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.",
 											a_actor->GetName(), a_form->GetName(), !ied->IsFavorited());
 									}
 
@@ -335,7 +335,7 @@ namespace ALYSLC
 									ied->extraLists->front() :
 									 nullptr
 								);
-								ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
+								SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
 									a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
 							}
 						}
@@ -344,7 +344,7 @@ namespace ALYSLC
 							// Favorite the form right away because
 							// there is no extra data at all for this item.
 							NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
-							ALYSLC::Log("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
+							SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
 								a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
 						}
 
@@ -371,7 +371,7 @@ namespace ALYSLC
 			auto magicFavorites = RE::MagicFavorites::GetSingleton();
 			if (!magicFavorites)
 			{
-				ALYSLC::Log("[EM] ERR: ChangeFormHotkeyStatus: {}: Magic favorites invalid.", a_actor->GetName());
+				SPDLOG_DEBUG("[EM] ERR: ChangeFormHotkeyStatus: {}: Magic favorites invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -383,7 +383,7 @@ namespace ALYSLC
 				// Request to clear and the requested form was found, so clear out.
 				if (a_hotkeySlotToSet == -1 && magicFavorites->hotkeys[i] == a_form)
 				{
-					ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
+					SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
 						a_actor->GetName(), a_form->GetName(), i + 1);
 					magicFavorites->hotkeys[i] = nullptr;
 				}
@@ -392,7 +392,7 @@ namespace ALYSLC
 					// Request to set and the requested form is magical, so set this slot to the form.
 					if (formIsMagical)
 					{
-						ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
+						SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
 							a_actor->GetName(), a_form->GetName(), i + 1);
 						magicFavorites->hotkeys[i] = a_form;
 					}
@@ -400,7 +400,7 @@ namespace ALYSLC
 					{
 						// Request to set but the requested form is not magical, so clear the slot.
 						// Still have to look for the form among the actor's physical favorites.
-						ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
+						SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
 							a_actor->GetName(), magicFavorites->hotkeys[i]->GetName(), i + 1, a_form->GetName());
 						magicFavorites->hotkeys[i] = nullptr;
 					}
@@ -410,7 +410,7 @@ namespace ALYSLC
 			auto inventoryChanges = a_actor->GetInventoryChanges();
 			if (!inventoryChanges)
 			{
-				ALYSLC::Log("[EM] ERR: ChangeFormHotkeyStatus: {}: Inventory changes invalid.", a_actor->GetName());
+				SPDLOG_DEBUG("[EM] ERR: ChangeFormHotkeyStatus: {}: Inventory changes invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -450,7 +450,7 @@ namespace ALYSLC
 						if (a_hotkeySlotToSet == -1 && boundObj == a_form && hotkeySlot != -1) 
 						{
 							exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
-							ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}.",
+							SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}.",
 								a_actor->GetName(), a_form->GetName(), hotkeySlot + 1);
 							// Already added/removed the hotkey, so there's nothing more to do.
 							return;
@@ -471,12 +471,12 @@ namespace ALYSLC
 								{
 									if (formIsMagical) 
 									{
-										ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set MAG {} as the new hotkeyed form.",
+										SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set MAG {} as the new hotkeyed form.",
 											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
 									}
 									else
 									{
-										ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
+										SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
 											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
 									}
 
@@ -485,7 +485,7 @@ namespace ALYSLC
 							}
 							else if (boundObj == a_form)
 							{
-								ALYSLC::Log("[EM] ChangeFormHotkeyStatus: {}: Added PHYS {} to hotkey slot {}.",
+								SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Added PHYS {} to hotkey slot {}.",
 									a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1);
 								exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>(a_hotkeySlotToSet);
 							}
@@ -2117,7 +2117,7 @@ namespace ALYSLC
 				// REMOVE
 				if (a_showDebugDraws)
 				{
-					ALYSLC::Log
+					SPDLOG_DEBUG
 					(
 						"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to crosshair pos: ({}, 0x{:X}, type: {})",
 						a_targetRefr->GetName(),
@@ -2128,7 +2128,7 @@ namespace ALYSLC
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 						hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 					);
-					ALYSLC::Log
+					SPDLOG_DEBUG
 					(
 						"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 						hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -2166,7 +2166,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to data location pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -2177,7 +2177,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -2210,7 +2210,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to world translate pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -2221,7 +2221,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -2255,7 +2255,7 @@ namespace ALYSLC
 			// REMOVE
 			if (a_showDebugDraws)
 			{
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to 3D center pos: ({}, 0x{:X}, type: {})",
 					a_targetRefr->GetName(),
@@ -2266,7 +2266,7 @@ namespace ALYSLC
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
 				);
-				ALYSLC::Log
+				SPDLOG_DEBUG
 				(
 					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
 					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
@@ -4224,7 +4224,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					ALYSLC::Log("[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})", hash);
+					SPDLOG_DEBUG("[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})", hash);
 					// Save old level, XP, level threshold, and skill data.
 					// Will be restored after skill level up triggers.
 					const auto oldLevel = p1->GetBaseActorValue(a_avSkill);
@@ -4256,7 +4256,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					ALYSLC::Log("[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", hash);
+					SPDLOG_DEBUG("[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", hash);
 				}
 			}
 

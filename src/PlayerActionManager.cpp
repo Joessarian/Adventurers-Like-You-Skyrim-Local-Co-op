@@ -24,7 +24,7 @@ namespace ALYSLC
 		if (a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			ALYSLC::Log("[PAM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+			SPDLOG_DEBUG("[PAM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count());
@@ -36,7 +36,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			logger::error("[PAM] ERR: Initialize: Cannot construct Player Action Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
+			SPDLOG_ERROR("[PAM] ERR: Initialize: Cannot construct Player Action Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
 		}
 	}
 
@@ -93,7 +93,7 @@ namespace ALYSLC
 
 			if (!glob.coopPackageFormlists[p->packageFormListStartIndex] || !glob.coopPackageFormlists[p->packageFormListStartIndex + 1]) 
 			{
-				ALYSLC::Log("[PAM] ERR: MainTask: Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
+				SPDLOG_DEBUG("[PAM] ERR: MainTask: Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
 					coopActor->GetName(),
 					(bool)!glob.coopPackageFormlists[p->packageFormListStartIndex],
 					(bool)!glob.coopPackageFormlists[p->packageFormListStartIndex + 1]);
@@ -439,7 +439,7 @@ namespace ALYSLC
 									{
 										// Interrupted if started already.
 
-										ALYSLC::Log("[PAM] MainTask: {}: PASS 2: candidate PA {} ({}): conflicting STARTED action {} ({}) is now interrupted.",
+										SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 2: candidate PA {} ({}): conflicting STARTED action {} ({}) is now interrupted.",
 											coopActor->GetName(),
 											candidatePA, paStatesList[!candidatePA - !InputAction::kFirstAction].priority,
 											conflictingAction, paStatesList[!conflictingAction - !InputAction::kFirstAction].priority);
@@ -450,7 +450,7 @@ namespace ALYSLC
 									{
 										// Block conflicting candidate action that is not blocked yet.
 
-										ALYSLC::Log("[PAM] MainTask: {}: PASS 2: candidate PA {}'s conflicting CANDIDATE/INTERRUPTED PA {} (with perf stage {}) is now blocked from performing.",
+										SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 2: candidate PA {}'s conflicting CANDIDATE/INTERRUPTED PA {} (with perf stage {}) is now blocked from performing.",
 											coopActor->GetName(), candidatePA, conflictingAction, otherPerfStage);
 
 										otherPerfStage = PerfStage::kBlocked;
@@ -510,14 +510,14 @@ namespace ALYSLC
 						if (cleanUpAfterInterrupt)
 						{
 							// REMOVE when done debugging.
-							ALYSLC::Log("[PAM] MainTask: {}: PASS 3: performing cleanup on interrupted occurring action {} with perf stage {}.",
+							SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 3: performing cleanup on interrupted occurring action {} with perf stage {}.",
 								coopActor->GetName(), a_action, perfStage);
 
 							paFuncs->CallPAFunc(p, a_action, PAFuncType::kCleanupFunc);
 						}
 
 						// REMOVE when done debugging.
-						ALYSLC::Log("[PAM] MainTask: {}: PASS 3: Interrupted action {} should be removed (perf stage {}), removing from occurring PAs list.",
+						SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 3: Interrupted action {} should be removed (perf stage {}), removing from occurring PAs list.",
 							coopActor->GetName(), a_action, perfStage);
 					}
 
@@ -622,7 +622,7 @@ namespace ALYSLC
 					if (justStarted)
 					{
 						// REMOVE when done debugging.
-						ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {} just started with action perf type {}.",
+						SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {} just started with action perf type {}.",
 							coopActor->GetName(), action, perfType);
 
 						// Set as started now.
@@ -655,7 +655,7 @@ namespace ALYSLC
 						if (perfType == PerfType::kOnRelease || perfType == PerfType::kOnConsecTap)
 						{
 							// REMOVE when done debugging.
-							ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {}, perf type {}, is about to be performed ON RELEASE. Perf stage: {}",
+							SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {}, perf type {}, is about to be performed ON RELEASE. Perf stage: {}",
 								coopActor->GetName(), action, perfType, perfStage);
 
 							// Perform OnRelease/OnConsecTap actions on release.
@@ -664,7 +664,7 @@ namespace ALYSLC
 						else if (perfType == PerfType::kOnHold || perfType == PerfType::kOnPressAndRelease)
 						{
 							// REMOVE when done debugging.
-							ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {}, perf type {}, is about to clean up ON RELEASE. Perf stage: {}",
+							SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {}, perf type {}, is about to clean up ON RELEASE. Perf stage: {}",
 								coopActor->GetName(), action, perfType, perfStage);
 
 							// Clean up OnHold and OnPressAndRelease actions on release.
@@ -678,7 +678,7 @@ namespace ALYSLC
 					if (paState.paParams.triggerFlags.all(TriggerFlag::kBlockOnConditionFailure) && perfStage != PerfStage::kBlocked) 
 					{
 						// REMOVE when done debugging.
-						ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {} failed conditions. Set to blocked. Perf stage: {}",
+						SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {} failed conditions. Set to blocked. Perf stage: {}",
 							coopActor->GetName(), action, perfStage);
 
 						// Will not resume until released and pressed again.
@@ -687,7 +687,7 @@ namespace ALYSLC
 					else if (paState.paParams.triggerFlags.none(TriggerFlag::kBlockOnConditionFailure) && perfStage != PerfStage::kFailedConditions)
 					{
 						// REMOVE when done debugging.
-						ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {} failed conditions. Set to interrupted. Perf stage: {}",
+						SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {} failed conditions. Set to interrupted. Perf stage: {}",
 							coopActor->GetName(), action, perfStage);
 
 						// Can resume if conditions hold once more,
@@ -698,7 +698,7 @@ namespace ALYSLC
 				else
 				{
 					// REMOVE when done debugging.
-					ALYSLC::Log("[PAM] MainTask: {}: PASS 4: {} is already interrupted with perf stage {}.",
+					SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 4: {} is already interrupted with perf stage {}.",
 						coopActor->GetName(), action, perfStage);
 				}
 			}
@@ -728,14 +728,14 @@ namespace ALYSLC
 						if (cleanUpAfterInterrupt)
 						{
 							// REMOVE when done debugging.
-							ALYSLC::Log("[PAM] MainTask: {}: PASS 5: performing cleanup on interrupted occurring action {} with perf stage {}.",
+							SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 5: performing cleanup on interrupted occurring action {} with perf stage {}.",
 								coopActor->GetName(), a_action, perfStage);
 
 							paFuncs->CallPAFunc(p, a_action, PAFuncType::kCleanupFunc);
 						}
 
 						// REMOVE when done debugging.
-						ALYSLC::Log("[PAM] MainTask: {}: PASS 5: {} should be removed (perf stage {}), removing from occurring PAs list.",
+						SPDLOG_DEBUG("[PAM] MainTask: {}: PASS 5: {} should be removed (perf stage {}), removing from occurring PAs list.",
 							coopActor->GetName(), a_action, perfStage);
 					}
 
@@ -798,7 +798,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::PrePauseTask()
 	{
-		ALYSLC::Log("[PAM] PrePauseTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("[PAM] PrePauseTask: P{}", playerID + 1);
 		// Reset AVs, clear delayed AV cost actions, and change packages to default.
 		ResetAttackDamageMult();
 		avcam->Clear();
@@ -850,7 +850,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::PreStartTask()
 	{
-		ALYSLC::Log("[PAM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("[PAM] PreStartTask: P{}", playerID + 1);
 		if (p->isPlayer1) 
 		{
 			// Ensure all controls are enabled.
@@ -1017,7 +1017,7 @@ namespace ALYSLC
 		CopyOverSharedSkillAVs();
 		// Reset time points.
 		ResetTPs();
-		ALYSLC::Log("[PAM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("[PAM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState PlayerActionManager::ShouldSelfPause()
@@ -1179,7 +1179,7 @@ namespace ALYSLC
 			{
 				auto& actionState = paStatesList[actionIndex - !InputAction::kFirstAction];
 				actionState.perfStage = PerfStage::kBlocked;
-				ALYSLC::Log("[PAM] BlockCurrentInputActions: {}: {} is blocked before re-starting PAM.",
+				SPDLOG_DEBUG("[PAM] BlockCurrentInputActions: {}: {} is blocked before re-starting PAM.",
 					coopActor->GetName(), action);
 			}
 		}
@@ -2914,7 +2914,7 @@ namespace ALYSLC
 					std::unique_lock<std::mutex> perfAnimQueueLock(avcam->perfAnimQueueMutex, std::try_to_lock);
 					if (perfAnimQueueLock)
 					{
-						ALYSLC::Log("[PAM] HandleAVExpenditure: {}: Lock obtained. (0x{:X})", coopActor->GetName(), hash);
+						SPDLOG_DEBUG("[PAM] HandleAVExpenditure: {}: Lock obtained. (0x{:X})", coopActor->GetName(), hash);
 						while (!avcam->perfAnimEventsQueue.empty())
 						{
 							const auto& perfAnimEvent = avcam->perfAnimEventsQueue.front();
@@ -2942,7 +2942,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			ALYSLC::Log("[PAM] HandleAVExpenditure: {} received new anim event num {} ({}). Actions in progress: {}, queue size: {}",
+			SPDLOG_DEBUG("[PAM] HandleAVExpenditure: {} received new anim event num {} ({}). Actions in progress: {}, queue size: {}",
 				coopActor->GetName(), perfAnimEvent.second, perfAnimEvent.first, *avcam->actionsInProgress, copiedQueue.size());
 
 			// Handle state update of requested actions first.
@@ -3947,7 +3947,7 @@ namespace ALYSLC
 
 				// Get button mask from event.
 				const uint32_t& buttonCode = controlMap->GetMappedKey(ueString, a_inputDevice);
-				ALYSLC::Log("[PAM] SendButtonEvent: got button bind {} for PA {}, User Event '{}'. Button state to trigger: {}, Held for {}s. Toggle AI driven: {}.",
+				SPDLOG_DEBUG("[PAM] SendButtonEvent: got button bind {} for PA {}, User Event '{}'. Button state to trigger: {}, Held for {}s. Toggle AI driven: {}.",
 					buttonCode, a_inputAction, ueString, a_buttonStateToTrigger, heldTimeSecs, a_toggleAIDriven);
 
 				// Is a valid button mask and event.
@@ -4116,7 +4116,7 @@ namespace ALYSLC
 			}
 		}
 
-		ALYSLC::Log("[PAM] SetAttackDamageMult: Attacking hand: {}, weapon attack damage mult: {}, bashing: {}, power attacking: {}, sneaking: {}",
+		SPDLOG_DEBUG("[PAM] SetAttackDamageMult: Attacking hand: {}, weapon attack damage mult: {}, bashing: {}, power attacking: {}, sneaking: {}",
 			lastAttackingHand, damageMult, isBashing, isPowerAttacking, isSneaking);
 
 		if (damageMult != 1.0f)
@@ -4207,7 +4207,7 @@ namespace ALYSLC
 			// 2H weapon that was originally 1H.
 			if (lhWeap && rhWeap && lhWeap == rhWeap && lhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 			{
-				ALYSLC::Log("[PAM] SetWeaponGrip: {}: Setting original 1H grip flags for 2H weap: {}.",
+				SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Setting original 1H grip flags for 2H weap: {}.",
 					coopActor->GetName(), lhWeap->GetName());
 
 				lhWeap->weaponData.animationType.reset(RE::WEAPON_TYPE::kTwoHandSword);
@@ -4216,7 +4216,7 @@ namespace ALYSLC
 				rhWeap->weaponData.animationType.reset(RE::WEAPON_TYPE::kTwoHandSword);
 				rhWeap->weaponData.animationType.reset(RE::WEAPON_TYPE::kTwoHandAxe);
 				rhWeap->weaponData.animationType.set(p->em->rhOriginalType);
-				ALYSLC::Log("[PAM] SetWeaponGrip: {}: Reset 2H grip flags and set original 1H grip flags: {}, {}.",
+				SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Reset 2H grip flags and set original 1H grip flags: {}, {}.",
 					coopActor->GetName(),
 					static_cast<uint32_t>(p->em->lhOriginalType),
 					static_cast<uint32_t>(p->em->rhOriginalType));
@@ -4229,12 +4229,12 @@ namespace ALYSLC
 				// LH weapon that was orignally 2H.
 				if (lhWeap && lhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 				{
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Setting original 2H grip flags for LH weap: {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Setting original 2H grip flags for LH weap: {}.",
 						coopActor->GetName(),
 						lhWeap->GetName());
 					lhWeap->weaponData.animationType.reset(lhWeap->GetWeaponType());
 					lhWeap->weaponData.animationType.set(p->em->lhOriginalType);
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Set original 2H grip flag: {} for {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Set original 2H grip flag: {} for {}.",
 						coopActor->GetName(),
 						static_cast<uint32_t>(p->em->lhOriginalType), lhWeap->GetName());
 					lhWeap->SetEquipSlot(glob.bothHandsEquipSlot);
@@ -4243,12 +4243,12 @@ namespace ALYSLC
 				// RH weapon that was orignally 2H.
 				if (rhWeap && rhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 				{
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Setting original 2H grip flags for RH weap {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Setting original 2H grip flags for RH weap {}.",
 						coopActor->GetName(),
 						rhWeap->GetName());
 					rhWeap->weaponData.animationType.reset(rhWeap->GetWeaponType());
 					rhWeap->weaponData.animationType.set(p->em->rhOriginalType);
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Set original 2H grip flag: {} for {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Set original 2H grip flag: {} for {}.",
 						coopActor->GetName(),
 						static_cast<uint32_t>(p->em->rhOriginalType), rhWeap->GetName());
 					rhWeap->SetEquipSlot(glob.bothHandsEquipSlot);
@@ -4260,14 +4260,14 @@ namespace ALYSLC
 			// Set new 2H anim type for weapon that was originally 1H.
 			if (lhWeap && rhWeap && lhWeap == rhWeap && lhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 			{
-				ALYSLC::Log("[PAM] SetWeaponGrip: {}: Setting new 2H grip flag for 1H weapon: {}.",
+				SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Setting new 2H grip flag for 1H weapon: {}.",
 					coopActor->GetName(),
 					lhWeap->GetName());
 				lhWeap->weaponData.animationType.reset(p->em->lhOriginalType);
 				lhWeap->weaponData.animationType.set(p->em->lhNewGripType);
 				rhWeap->weaponData.animationType.reset(p->em->rhOriginalType);
 				rhWeap->weaponData.animationType.set(p->em->rhNewGripType);
-				ALYSLC::Log("[PAM] SetWeaponGrip: {}: Set new grip types: {}, {} for {}.",
+				SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Set new grip types: {}, {} for {}.",
 					coopActor->GetName(),
 					static_cast<uint32_t>(p->em->lhNewGripType),
 					static_cast<uint32_t>(p->em->rhNewGripType),
@@ -4280,12 +4280,12 @@ namespace ALYSLC
 				// Set new 1H anim type for LH weapon that was originally 2H.
 				if (lhWeap && lhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 				{
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Setting new 2H grip flag for LH weapon: {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Setting new 2H grip flag for LH weapon: {}.",
 						coopActor->GetName(),
 						lhWeap->GetName());
 					lhWeap->weaponData.animationType.reset(p->em->lhOriginalType);
 					lhWeap->weaponData.animationType.set(p->em->lhNewGripType);
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Set new grip type: {} for {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Set new grip type: {} for {}.",
 						coopActor->GetName(),
 						static_cast<uint32_t>(p->em->lhNewGripType), lhWeap->GetName());
 					lhWeap->SetEquipSlot(glob.leftHandEquipSlot);
@@ -4294,12 +4294,12 @@ namespace ALYSLC
 				// Set new 1H anim type for RH weapon that was originally 2H.
 				if (rhWeap && rhWeap->weaponData.flags.any(RE::TESObjectWEAP::Data::Flag::kEmbeddedWeapon))
 				{
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: SetSetting new 2H grip flag for RH weapon: {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: SetSetting new 2H grip flag for RH weapon: {}.",
 						coopActor->GetName(),
 						rhWeap->GetName());
 					rhWeap->weaponData.animationType.reset(p->em->rhOriginalType);
 					rhWeap->weaponData.animationType.set(p->em->rhNewGripType);
-					ALYSLC::Log("[PAM] SetWeaponGrip: {}: Set new grip type: {} for {}.",
+					SPDLOG_DEBUG("[PAM] SetWeaponGrip: {}: Set new grip type: {} for {}.",
 						coopActor->GetName(),
 						static_cast<uint32_t>(p->em->rhNewGripType), rhWeap->GetName());
 					rhWeap->SetEquipSlot(glob.rightHandEquipSlot);
@@ -4983,7 +4983,7 @@ namespace ALYSLC
 							// REMOVE
 							if (paStatesList[j].paParams.triggerFlags.none(TriggerFlag::kDoNotBlockConflictingActions))
 							{
-								ALYSLC::Log("[PAM] UpdatePlayerBinds: {} is blocked by conflicting action {}.",
+								SPDLOG_DEBUG("[PAM] UpdatePlayerBinds: {} is blocked by conflicting action {}.",
 									static_cast<InputAction>(i + !InputAction::kFirstAction),
 									static_cast<InputAction>(j + !InputAction::kFirstAction));
 							}

@@ -46,12 +46,12 @@ namespace ALYSLC
 			reqActionsSet = std::set<AVCostAction>();
 			actionsInProgress = AVCostAction::kNone;
 
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				std::unique_lock<std::mutex> perfAnimQueueLock(perfAnimQueueMutex, std::try_to_lock);
 				if (perfAnimQueueLock)
 				{
-					ALYSLC::Log("[PAM] AVCostManager: Clear: Lock obtained. (0x{:X})", hash);
+					SPDLOG_DEBUG("[PAM] AVCostManager: Clear: Lock obtained. (0x{:X})", 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					while (!perfAnimEventsQueue.empty())
 					{
 						perfAnimEventsQueue.pop();
@@ -59,7 +59,8 @@ namespace ALYSLC
 				}
 				else
 				{
-					ALYSLC::Log("[PAM] AVCostManager: Clear: Failed to obtain lock. (0x{:X})", hash);
+					SPDLOG_DEBUG("[PAM] AVCostManager: Clear: Failed to obtain lock. (0x{:X})", 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				}
 			}
 		}
