@@ -2546,7 +2546,8 @@ namespace ALYSLC
 
 		// Mount sprint not triggered by an animation, but rather by performing the sprint action.
 		bool mountSprint = coopActor->IsOnMount() && IsPerforming(InputAction::kSprint);
-		if (mountSprint || actionsInProgress.any(AVCostAction::kSprint))
+		// For P1, only mount-sprint stamina expenditure.
+		if ((mountSprint) || (!p->isPlayer1 && actionsInProgress.any(AVCostAction::kSprint)))
 		{
 			// Get seconds since starting to sprint.
 			float secsSinceLastCheck = Util::GetElapsedSeconds(p->expendSprintStaminaTP);
@@ -2560,7 +2561,7 @@ namespace ALYSLC
 			else
 			{
 				// Recalculated cost.
-				newStamina = currentStamina - (7.0f + 0.02f * p->em->GetWornWeight()) * secsSinceLastCheck;
+				newStamina = currentStamina - (7.0f * (1.0f + 0.02f * coopActor->GetEquippedWeight())) * secsSinceLastCheck;
 			}
 		}
 
@@ -2624,17 +2625,24 @@ namespace ALYSLC
 					// Set total stamina regeneration cooldown.
 					// Player cannot use stamina until this duration elapses.
 					// Min of two seconds for sprint stamina cooldown,
-					// and max of five seconds for all stamina cooldowns.
+					// and a variable max regen delay (determined by game setting, default to 5) otherwise.
+					auto regenDelayGameSetting = Util::GetGameSettingFloat("fStaminaRegenDelayMax");
+					float maxStaminaCooldownSecs = 
+					(
+						regenDelayGameSetting.has_value() ?
+						regenDelayGameSetting.value() :
+						5.0f
+					);
 					if (isSprinting)
 					{
-						secsTotalStaminaRegenCooldown = min(2.0f + 0.02f * p->em->GetWornWeight(), 5.0f);
+						secsTotalStaminaRegenCooldown = min(2.0f + 0.02f * coopActor->GetEquippedWeight(), maxStaminaCooldownSecs);
 						// Stop the player from sprinting right after running out of stamina.
 						p->coopActor->NotifyAnimationGraph("sprintStop");
 					}
 					else
 					{
 						// Scales down as regeneration rate multiplier increases.
-						secsTotalStaminaRegenCooldown = min((0.0f - newStamina) / (baseStaminaRegenRateMult / 100.0f), 5.0f);
+						secsTotalStaminaRegenCooldown = min((0.0f - newStamina) / (baseStaminaRegenRateMult / 100.0f), maxStaminaCooldownSecs);
 					}
 				}
 
@@ -2646,7 +2654,6 @@ namespace ALYSLC
 			}
 			else
 			{
-				// For P1, only mount-sprint stamina expenditure.
 				if (newStamina != currentStamina && currentStamina > 0.0f)
 				{
 					ModifyAV(RE::ActorValue::kStamina, newStamina - currentStamina);

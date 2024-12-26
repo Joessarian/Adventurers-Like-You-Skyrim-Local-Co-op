@@ -2629,7 +2629,7 @@ namespace ALYSLC
 					// The player will be able to roll at most once
 					// with full stamina and worn weight equal to carryweight
 					// and at most 10 times with full stamina and no worn weight.
-					float carryWeightRatio = a_p->em->GetWornWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight);
+					float carryWeightRatio = a_p->coopActor->GetEquippedWeight() / a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight);
 					cost = a_p->pam->baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
 				}
 				else if (!a_p->mm->isParagliding && !a_p->tm->isMARFing)
@@ -2637,7 +2637,7 @@ namespace ALYSLC
 					// No cost for paragliding or M.A.R.F as of now.
 					// https://en.uesp.net/wiki/Skyrim:Stamina
 					// Cost for sprinting and shield charge is the same.
-					cost = (7.0f + 0.02f * a_p->em->GetWornWeight());
+					cost = (7.0f * (1.0f + 0.02f * a_p->coopActor->GetEquippedWeight()));
 				}
 
 				break;

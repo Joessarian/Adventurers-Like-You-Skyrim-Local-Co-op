@@ -442,9 +442,6 @@ namespace ALYSLC
 		// Get the equip slot for the given form at the given equip index.
 		RE::BGSEquipSlot* GetEquipSlotForForm(RE::TESForm* a_form, const EquipIndex& a_index) const;
 		
-		// Get the total weight of all equipped forms.
-		float GetWornWeight() const;
-		
 		// Un/equip the desired form at the given index.
 		// NOTE: Not currently used and should never be called on P1.
 		void HandleEquipRequest(RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip);
@@ -626,8 +623,6 @@ namespace ALYSLC
 		std::set<RE::FormID> equippedFormFIDs;
 		// Indices of currently equipped favorited items.
 		std::set<uint32_t> favItemsEquippedIndices;
-		// Set of favorited emote idles' hashes.
-		std::set<uint32_t> favoritedEmoteIdlesHashes;
 		// Set of favorited items' form IDs for the co-op player.
 		std::set<RE::FormID> favoritedFormIDs;
 		// Favorited items separated into lists based on form type.
