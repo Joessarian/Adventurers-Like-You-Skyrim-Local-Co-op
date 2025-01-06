@@ -601,6 +601,131 @@ namespace ALYSLC
 			return succ;
 		}
 
+		void ChangeNodeColliderState
+		(
+			RE::Actor* a_actor,
+			RE::NiAVObject* a_node,
+			PrecisionAnnotationReqType&& a_reqType,
+			float&& a_damageMult,
+			float&& a_lengthMult
+		)
+		{
+			if (!a_actor)
+			{
+				return;
+			}
+
+			RE::BSAnimationGraphManagerPtr manager{ };
+			a_actor->GetAnimationGraphManager(manager);
+			if (!manager)
+			{
+				return;
+			}
+
+			int32_t activeGraphIdx = manager->activeGraph;
+			if (activeGraphIdx < 0 || 
+				activeGraphIdx >= manager->graphs.size() || 
+				!manager->graphs[activeGraphIdx] ||
+				!manager->graphs[activeGraphIdx].get())
+			{
+				return;
+			}
+
+			RE::BSTEventSource<RE::BSAnimationGraphEvent>* eventSource = 
+				manager->graphs[activeGraphIdx].get();
+			switch (a_reqType)
+			{
+			case (PrecisionAnnotationReqType::kStart):
+			{
+				auto event = std::make_unique<RE::BSAnimationGraphEvent>
+				(
+					"Collision_AttackStart", 
+					a_actor, 
+					""
+				);
+				eventSource->SendEvent(event.get());
+				event.release();
+
+				break;
+			}
+			case (PrecisionAnnotationReqType::kAdd):
+			{
+				if (!a_node) 
+				{
+					return;
+				}
+
+				auto event = std::make_unique<RE::BSAnimationGraphEvent>
+				(
+					"Collision_Add", 
+					a_actor, 
+					fmt::format
+					(
+						"Node({})|ID({})||DamageMult({})|LengthMult({})",
+						a_node->name, 1, a_damageMult, a_lengthMult
+					)
+				);
+				eventSource->SendEvent(event.get());
+				event.release();
+
+				break;
+			}
+			case (PrecisionAnnotationReqType::kRemove):
+			{
+				if (!a_node) 
+				{
+					return;
+				}
+
+				auto event = std::make_unique<RE::BSAnimationGraphEvent>
+				(
+					"Collision_Remove", 
+					a_actor, 
+					fmt::format("Node({})", a_node->name)
+				);
+				eventSource->SendEvent(event.get());
+				event.release();
+
+				break;
+			}
+			case (PrecisionAnnotationReqType::kRemoveAll):
+			{
+				auto event = std::make_unique<RE::BSAnimationGraphEvent>
+				(
+					"Collision_AttackEnd", 
+					a_actor, 
+					""
+				);
+				eventSource->SendEvent(event.get());
+				event.release();
+
+				break;
+			}
+			case (PrecisionAnnotationReqType::kMultiHit):
+			{
+				if (!a_node) 
+				{
+					return;
+				}
+
+				auto event = std::make_unique<RE::BSAnimationGraphEvent>
+				(
+					"Collision_ClearTargets", 
+					a_actor, 
+					fmt::format("Node({})", a_node->name)
+				);
+				eventSource->SendEvent(event.get());
+				event.release();
+
+				break;
+			}
+			default:
+			{
+				break;
+			}
+			}
+		}
+
 		RE::ThumbstickEvent* CreateThumbstickEvent(const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS)
 		{
 			// Create thumbstick event using the provided data
@@ -1059,19 +1184,12 @@ namespace ALYSLC
 			mat[0][0] = a_matrix.entry[0][0];
 			mat[1][0] = a_matrix.entry[0][1];
 			mat[2][0] = a_matrix.entry[0][2];
-			mat[3][0] = a_matrix.entry[0][3];
 			mat[0][1] = a_matrix.entry[1][0];
 			mat[1][1] = a_matrix.entry[1][1];
 			mat[2][1] = a_matrix.entry[1][2];
-			mat[3][1] = a_matrix.entry[1][3];
 			mat[0][2] = a_matrix.entry[2][0];
 			mat[1][2] = a_matrix.entry[2][1];
 			mat[2][2] = a_matrix.entry[2][2];
-			mat[3][2] = a_matrix.entry[2][3];
-			mat[0][3] = a_matrix.entry[3][0];
-			mat[1][3] = a_matrix.entry[3][1];
-			mat[2][3] = a_matrix.entry[3][2];
-			mat[3][3] = a_matrix.entry[3][3];
 
 			glm::extractEulerAngleXZY(mat, eulerAngles.x, eulerAngles.y, eulerAngles.z);
 			// Cruddy manual corrections to match the game's coordinate system, 
@@ -1435,6 +1553,32 @@ namespace ALYSLC
 			auto maxScreenExtent = WorldToScreenPoint3(maxExtent, false);
 			// Pixel width is the difference between the two refr screen extents.
 			return max(1.0f, minScreenExtent.GetDistance(maxScreenExtent));
+		}
+
+		// Full credits to ersh1: 
+		// https://github.com/ersh1/Precision/blob/main/src/Havok/ContactListener.cpp#L8
+		RE::hkVector4 GetParentNodeHavokPointVelocity(RE::NiAVObject* a_node, const RE::hkVector4& a_point)
+		{
+			// Get parent node's velocity at the given hit position.
+			if (!a_node || !a_node->parent) 
+			{
+				return RE::hkVector4();
+			}
+
+			if (a_node->parent->collisionObject) 
+			{
+				auto hkpRigidBody = Util::GethkpRigidBody(a_node);
+				if (hkpRigidBody) 
+				{
+					return hkpRigidBody->motion.GetPointVelocity(a_point);
+				}
+			} 
+			else 
+			{
+				return GetParentNodeHavokPointVelocity(a_node->parent, a_point);
+			}
+			
+			return RE::hkVector4();
 		}
 
 		RE::TESObjectREFR* GetRefrFrom3D(RE::NiAVObject* a_obj3D)
@@ -2783,7 +2927,12 @@ namespace ALYSLC
 			if (auto ui = RE::UI::GetSingleton(); ui)
 			{
 				bool onlyAlwaysOpen = MenusOnlyAlwaysOpen();
-				return onlyAlwaysOpen || ui->IsMenuOpen("LootMenu"sv) || ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
+				return 
+				(
+					onlyAlwaysOpen ||
+					ui->IsMenuOpen("LootMenu"sv) || 
+					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
+				);
 			}
 
 			return false;
@@ -3024,12 +3173,12 @@ namespace ALYSLC
 			// Slerp from quaternion A to quaternion B with the given ratio t.
 
 			// quaternion to return
-			RE::NiQuaternion result;
+			RE::NiQuaternion result{ };
 			// Calculate angle between them.
 			float cosHalfTheta = 
 			(
 				a_quatA.w * a_quatB.w + 
-				a_quatA.x * a_quatA.x + 
+				a_quatA.x * a_quatB.x + 
 				a_quatA.y * a_quatB.y + 
 				a_quatA.z * a_quatB.z
 			);
@@ -3400,6 +3549,15 @@ namespace ALYSLC
 			std::memset(crosshairEvent, 0, sizeof(SKSE::CrosshairRefEvent));
 			if (crosshairEvent) 
 			{
+				auto& glob = GlobalCoopData::GetSingleton();
+				// Save container handle to match against in the crosshair event handler
+				// and for menu CID resolution later.
+				glob.reqQuickLootContainerHandle = 
+				(
+					a_crosshairRefrToSet ? 
+					a_crosshairRefrToSet->GetHandle() :
+					RE::ObjectRefHandle()
+				);
 				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>(a_crosshairRefrToSet);
 				eventSource->SendEvent(crosshairEvent);
 				RE::free(crosshairEvent);
@@ -3447,6 +3605,254 @@ namespace ALYSLC
 			// Clear the pad and then free.
 			(*inputEvent.get())->AsIDEvent()->pad24 = 0x0;
 			RE::free(*inputEvent.get());
+		}
+
+		void Set3DCollisionFilterInfo(RE::NiAVObject* a_refr3D, const bool & a_set)
+		{
+			// Set/unset the layer bitfields to allow/disallow collisions between
+			// the char controller, biped, biped no char controller, and dead biped layers.
+
+			if (!a_refr3D)
+			{
+				return;
+			}
+
+			auto collisionObject = a_refr3D->GetCollisionObject();
+			if (!collisionObject)
+			{
+				return;
+			}
+
+			auto rigidBody = collisionObject->GetRigidBody();
+			if (!rigidBody) 
+			{
+				return;
+			}
+
+			auto world = rigidBody->GetWorld1(); 
+			if (!world)
+			{
+				return;
+			}
+
+			auto filterInfo = (RE::bhkCollisionFilter*)world->collisionFilter; 
+			if (!filterInfo)
+			{
+				return;
+			}
+
+			// Credits to ersh1 for the code on setting what other collision layers 
+			// collide with a collision layer:
+			// https://github.com/ersh1/Precision/blob/main/src/Hooks.cpp#L848
+			if (a_set)
+			{
+				filterInfo->layerBitfields[!RE::COL_LAYER::kCharController] |= 
+				(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kBiped] |= 
+				(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kBipedNoCC] |= 
+				(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kDeadBip] |= 
+				(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+			}
+			else
+			{
+				filterInfo->layerBitfields[!RE::COL_LAYER::kCharController] &= 
+				~(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kBiped] &= 
+				~(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kBipedNoCC] &= 
+				~(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+				filterInfo->layerBitfields[!RE::COL_LAYER::kDeadBip] &= 
+				~(
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBiped)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kBipedNoCC)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kCharController)
+					) |
+					(
+						static_cast<uint64_t>(1) << 
+						static_cast<uint8_t>(!RE::COL_LAYER::kDeadBip)
+					)
+				);
+			}
+		}
+
+		void SetActorsDetectionEvent
+		(
+			RE::Actor* a_actor, 
+			RE::TESObjectREFR* a_collidingRefr, 
+			RE::hkpRigidBody* a_collidingRigidBody,
+			const RE::NiPoint3 & a_contactPoint)
+		{
+
+			// Major thanks to powerof3 for Grab and Throw's method of doing this:
+			// https://github.com/powerof3/GrabAndThrow/blob/master/src/GrabThrowHandler.cpp#L250
+			if (auto currentProc = a_actor->currentProcess; currentProc)
+			{
+				RE::SOUND_LEVEL level = RE::SOUND_LEVEL::kNormal;
+				float mass = 
+				(
+					a_collidingRigidBody ? 
+					a_collidingRigidBody->motion.GetMass() :
+					0.0f
+				);
+
+				if (mass == 0.0f)
+				{
+					level = RE::SOUND_LEVEL::kSilent;
+				}
+				else if (mass < 3.0f)
+				{
+					level = RE::SOUND_LEVEL::kQuiet;
+				}
+				else if (mass < 10.0f)
+				{
+					level = RE::SOUND_LEVEL::kNormal;
+				}
+				else if (mass < 30.0f)
+				{
+					level = RE::SOUND_LEVEL::kLoud;
+				}
+				else
+				{
+					level = RE::SOUND_LEVEL::kVeryLoud;
+				}
+
+				currentProc->SetActorsDetectionEvent
+				(
+					a_actor, 
+					a_contactPoint, 
+					RE::AIFormulas::GetSoundLevelValue(level),
+					a_collidingRefr
+				);
+			}
 		}
 
 		void SetCameraPosition(RE::TESCamera* a_cam, const RE::NiPoint3& a_position)
@@ -4121,7 +4527,7 @@ namespace ALYSLC
 			}
 		}
 
-		void TraverseAllPerks(RE::Actor* a_actor, std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_treeVisitor)
+		void TraverseAllPerks(RE::Actor* a_actor, std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor)
 		{
 			// Run the provided visitor function 
 			// on all nodes in P1's skill perk trees.
@@ -4137,7 +4543,7 @@ namespace ALYSLC
 				// Each individual skill's perk tree.
 				if (av && av->perkTree)
 				{
-					TraversePerkTree(av->perkTree, a_actor, a_treeVisitor);
+					TraversePerkTree(av->perkTree, a_actor, a_visitor);
 				}
 			}
 		}

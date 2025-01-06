@@ -9,7 +9,9 @@ namespace ALYSLC
 	{
 	public:
 		Manager(ManagerType a_type) :
-			currentState(ManagerState::kUninitialized), nextState(ManagerState::kUninitialized), type(a_type)
+			currentState(ManagerState::kUninitialized), 
+			nextState(ManagerState::kUninitialized), 
+			type(a_type)
 		{ }
 
 		// External thread requesting a manager state change.
@@ -18,17 +20,25 @@ namespace ALYSLC
 		inline void RequestStateChange(const ManagerState& a_newState)
 		{
 			// Can only change to the running state when the manager is uninitialized.
-			if (currentState == ManagerState::kUninitialized && a_newState != ManagerState::kRunning) 
+			if (currentState == ManagerState::kUninitialized && 
+				a_newState != ManagerState::kRunning) 
 			{
 				return;
 			}
 
 			{
-				SPDLOG_DEBUG("{} RequestStateChange: Current State: {}, next state: {}. Getting lock. (0x{:X})", 
-					type, currentState, a_newState, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				SPDLOG_DEBUG
+				(
+					"{} RequestStateChange: Current State: {}, next state: {}. "
+					"Getting lock. (0x{:X})", 
+					type, currentState, 
+					a_newState, 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 				std::unique_lock<std::mutex> lock(setStateMutex);
 				SPDLOG_DEBUG("{} RequestStateChange: Set state lock acquired. (0x{:X})", 
-					type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					type, 
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				nextState = a_newState;
 			}
 		}
@@ -42,7 +52,8 @@ namespace ALYSLC
 			{
 				SelfPauseCheck();
 			}
-			else if (currentState == ManagerState::kPaused || currentState == ManagerState::kAwaitingRefresh)
+			else if (currentState == ManagerState::kPaused || 
+				currentState == ManagerState::kAwaitingRefresh)
 			{
 				SelfResumeCheck();
 			}
@@ -105,21 +116,30 @@ namespace ALYSLC
 			// Execution state was requested to change.
 			if (currentState != nextState)
 			{
-				if (nextState == ManagerState::kPaused || nextState == ManagerState::kAwaitingRefresh)
+				if (nextState == ManagerState::kPaused || 
+					nextState == ManagerState::kAwaitingRefresh)
 				{
-					SPDLOG_DEBUG("{} CheckForStateChange: Waiting to resume. State goes from {} -> {}.", type, currentState, nextState);
+					SPDLOG_DEBUG
+					(
+						"{} CheckForStateChange: Waiting to resume. "
+						"State goes from {} -> {}.", 
+						type, currentState, nextState
+					);
 
-					// Run pre-pause task and switch to the paused/awaiting refresh execution state.
+					// Run pre-pause task 
+					// and switch to the paused/awaiting refresh execution state.
 					PrePauseTask();
 					currentState = nextState;
 				}
 				else if (nextState == ManagerState::kRunning)
 				{
-					SPDLOG_DEBUG("{} CheckForStateChange: Resuming. State goes from {} -> {}.", type, currentState, nextState);
+					SPDLOG_DEBUG("{} CheckForStateChange: Resuming. State goes from {} -> {}.", 
+						type, currentState, nextState);
 
 					// Refresh data if currently waiting to refresh data or uninitialized.
 					// Then run pre-start task and switch to the running execution state.
-					if (currentState == ManagerState::kAwaitingRefresh || currentState == ManagerState::kUninitialized)
+					if (currentState == ManagerState::kAwaitingRefresh || 
+						currentState == ManagerState::kUninitialized)
 					{
 						RefreshData();
 					}
@@ -143,13 +163,21 @@ namespace ALYSLC
 					if (lock)
 					{
 						nextState = reqState;
-						SPDLOG_DEBUG("{} SelfPauseCheck: Succeeded in acquiring set state lock to pause. (0x{:X})",
-							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						SPDLOG_DEBUG
+						(
+							"{} SelfPauseCheck: Succeeded in acquiring set state lock to pause. "
+							"(0x{:X})",
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 					}
 					else
 					{
-						SPDLOG_DEBUG("{} SelfPauseCheck: Failed to acquire set state lock to pause. (0x{:X})", 
-							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						SPDLOG_DEBUG
+						(
+							"{} SelfPauseCheck: Failed to acquire set state lock to pause. "
+							"(0x{:X})", 
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 					}
 				}
 			}
@@ -168,13 +196,21 @@ namespace ALYSLC
 					if (lock)
 					{
 						nextState = reqState;
-						SPDLOG_DEBUG("{} SelfResumeCheck: Succeeded in acquiring set state lock to resume. (0x{:X})", 
-							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						SPDLOG_DEBUG
+						(
+							"{} SelfResumeCheck: Succeeded in acquiring set state lock to resume. "
+							"(0x{:X})", 
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 					}
 					else
 					{
-						SPDLOG_DEBUG("{} SelfResumeCheck: Failed to acquire set state lock to resume. (0x{:X})",
-							type, std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						SPDLOG_DEBUG
+						(
+							"{} SelfResumeCheck: Failed to acquire set state lock to resume. "
+							"(0x{:X})",
+							type, std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 					}
 				}
 			}

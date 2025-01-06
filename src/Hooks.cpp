@@ -19,6 +19,7 @@ namespace ALYSLC
 			MainHook::InstallHook();
 			ActorEquipManagerHooks::InstallHooks();
 			ActivateHandlerHooks::InstallHooks();
+			AIProcessHooks::InstallHooks();
 			AnimationGraphManagerHooks::InstallHooks();
 			AttackBlockHandlerHooks::InstallHooks();
 			BarterMenuHooks::InstallHooks();
@@ -113,6 +114,56 @@ namespace ALYSLC
 //=================
 // [GENERAL HOOKS]:
 //=================
+
+// [AI PROCESS HOOKS]:
+		void AIProcessHooks::AIProcess_SetRotationSpeedZ1(RE::AIProcess* a_this, float a_rotationSpeed)
+		{
+			// Players' rotation speeds are set elsewhere, so we'll skip the updates here.	
+
+			if (glob.coopSessionActive)
+			{
+				if (auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData()); 
+					playerIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[playerIndex];
+					return;
+				}
+			}
+
+			return _AIProcess_SetRotationSpeedZ1(a_this, a_rotationSpeed);
+		}
+
+		void AIProcessHooks::AIProcess_SetRotationSpeedZ2(RE::AIProcess* a_this, float a_rotationSpeed)
+		{
+			// Players' rotation speeds are set elsewhere, so we'll skip the updates here.	
+
+			if (glob.coopSessionActive)
+			{
+				if (auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData()); 
+					playerIndex != -1)
+				{
+					return;
+				}
+			}
+
+			return _AIProcess_SetRotationSpeedZ2(a_this, a_rotationSpeed);
+		}
+
+		void AIProcessHooks::AIProcess_SetRotationSpeedZ3(RE::AIProcess* a_this, float a_rotationSpeed)
+		{
+			// Players' rotation speeds are set elsewhere, so we'll skip the updates here.	
+
+			if (glob.coopSessionActive)
+			{
+				if (auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData()); 
+					playerIndex != -1)
+				{
+					return;
+				}
+			}
+
+			return _AIProcess_SetRotationSpeedZ3(a_this, a_rotationSpeed);
+		}
 
 // [ACTOR EQUIP MANAGER HOOKS]:
 		void ActorEquipManagerHooks::EquipObject(RE::ActorEquipManager* a_this, RE::Actor* a_actor, RE::TESBoundObject* a_object, const RE::ObjectEquipParams& a_objectEquipParams)
@@ -535,6 +586,24 @@ namespace ALYSLC
 								perfAVAnimEvent = { PerfAnimEventTag::kDodgeStop, pam->lastAnimEventID };
 								break;
 							}
+							case ("Collision_AttackStart"_h):
+							{
+								SPDLOG_DEBUG("[AnimationGraphManagerHooks] {}: Collision start animation event received.",
+									p->coopActor->GetName());
+								break;
+							}
+							case ("Collision_Add"_h):
+							{
+								SPDLOG_DEBUG("[AnimationGraphManagerHooks] {}: Collision add animation event with payload {} received.",
+									p->coopActor->GetName(), a_event->payload);
+								break;
+							}
+							case ("Collision_Remove"_h):
+							{
+								SPDLOG_DEBUG("[AnimationGraphManagerHooks] {}: Collision remove animation event received.",
+									p->coopActor->GetName());
+								break;
+							}
 							default:
 								// No need to handle.
 								return EventResult::kContinue;
@@ -557,6 +626,9 @@ namespace ALYSLC
 							}
 
 							p->lastAnimEventTag = a_event->tag;
+							SPDLOG_DEBUG("[AnimationGraphManager Hook] ProcessEvent: {}: {}", 
+								p->coopActor->GetName(), a_event->tag);
+
 
 							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 							SPDLOG_DEBUG("[AnimationGraphManager Hook] ProcessEvent: {}: Getting Lock. (0x{:X})", p->coopActor->GetName(), hash);
@@ -956,7 +1028,7 @@ namespace ALYSLC
 					// Killed by co-op player.
 					if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1 && !a_this->IsEssential() && a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)
 					{
-						// Enderal treats dead actors without an associated killer as killed by P1,
+						// NOTE: Enderal treats dead actors without an associated killer as killed by P1,
 						// so clear out the handle here to get XP from killing this actor.
 						if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 						{
@@ -964,6 +1036,8 @@ namespace ALYSLC
 						}
 						else
 						{
+							a_this->KillImpl(p1, FLT_MAX, false, false);
+							a_this->boolBits.set(RE::Actor::BOOL_BITS::kMurderAlarm);
 							a_this->myKiller = p1;
 						}
 
@@ -1055,6 +1129,12 @@ namespace ALYSLC
 						) * Settings::fDashDodgeAnimSpeedFactor * p->mm->dashDodgeLSDisplacement;
 						a_data.deltaTime *= weightAdjAnimSpeedFactor;
 					}
+					else if (a_this->IsSwimming() && p->pam->IsPerforming(InputAction::kSprint))
+					{
+						// Speed up swimming animation to match the increased speedmult
+						// while 'sprinting' in the water.
+						a_data.deltaTime *= Settings::fSprintingMovMult;
+					}
 				}
 			}
 
@@ -1129,27 +1209,6 @@ namespace ALYSLC
 					{
 						// Ignore requests to get up when the player is downed and not revived.
 						return false;
-					}
-					else if (p->mm->isRequestingDashDodge && !p->mm->isDashDodging && hash == "SneakStart"_h)
-					{
-						bool succ = _NotifyAnimationGraph(a_this, a_eventName);
-						// SneakStart fails when transformed.
-						if (succ || p->isTransformed)
-						{
-							// REMOVE
-							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							SPDLOG_DEBUG("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
-							{
-								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								SPDLOG_DEBUG("[Character Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
-
-								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
-								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
-								p->pam->lastAnimEventID = p->pam->lastAnimEventID == UINT16_MAX ? 1 : p->pam->lastAnimEventID + 1;
-							}
-						}
-
-						return succ || p->isTransformed;
 					}
 					else if ((p->coopActor->IsInKillMove()) && (hash == "PairEnd"_h || hash == "pairedStop"_h))
 					{
@@ -1337,7 +1396,7 @@ namespace ALYSLC
 									{
 										speedMultToSet = p->mm->baseSpeedMult;
 									}
-
+									
 									p->coopActor->SetBaseActorValue
 									(
 										RE::ActorValue::kSpeedMult, 
@@ -2769,6 +2828,10 @@ namespace ALYSLC
 						damageMult *= Settings::vfDamageDealtMult[p->playerID];
 					}
 
+					SPDLOG_DEBUG("[PlayerCharacter Hooks] HandleHealthDamage: {} attacked for a base damage of {} and mult {}.",
+						a_attacker ? a_attacker->GetName() : "NONE",
+						a_damage, damageMult);
+
 					// Add skill XP if P1 is not the attacker and P1 is not in god mode.
 					bool p1HitWhileInGodMode = glob.coopPlayers[glob.player1CID]->isInGodMode;
 					if (!p->isPlayer1 && !p1HitWhileInGodMode)
@@ -2923,6 +2986,12 @@ namespace ALYSLC
 					) * Settings::fDashDodgeAnimSpeedFactor * coopP1->mm->dashDodgeLSDisplacement;
 					a_data.deltaTime *= weightAdjAnimSpeedFactor;
 				}
+				else if (a_this->IsSwimming() && coopP1->pam->IsPerforming(InputAction::kSprint))
+				{
+					// Speed up swimming animation to match the increased speedmult
+					// while 'sprinting' in the water.
+					a_data.deltaTime *= Settings::fSprintingMovMult;
+				}
 			}
 
 			_ModifyAnimationUpdateData(a_this, a_data);
@@ -2947,27 +3016,6 @@ namespace ALYSLC
 					{
 						// Ignore requests to get up when the player is downed and not revived.
 						return false;
-					}
-					else if (p->mm->isRequestingDashDodge && !p->mm->isDashDodging && hash == "SneakStart"_h)
-					{
-						bool succ = _NotifyAnimationGraph(a_this, a_eventName);
-						// SneakStart fails when transformed.
-						if (succ || p->isTransformed)
-						{
-							// REMOVE
-							const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-							SPDLOG_DEBUG("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Getting lock. (0x{:X})", p->coopActor->GetName(), hash);
-							{
-								std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-								SPDLOG_DEBUG("[PlayerCharacter Hooks] NotifyAnimationGraph: {}: ProcessEvent: Lock obtained. (0x{:X})", p->coopActor->GetName(), hash);
-
-								// Queue dodge anim event tag so that this player's player action manager can handle stamina expenditure.
-								p->pam->avcam->perfAnimEventsQueue.emplace(std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kDodgeStart, p->pam->lastAnimEventID));
-								p->pam->lastAnimEventID = p->pam->lastAnimEventID == UINT16_MAX ? 1 : p->pam->lastAnimEventID + 1;
-							}
-						}
-
-						return succ;
 					}
 					else if ((p->coopActor->IsInKillMove()) && (hash == "PairEnd"_h || hash == "pairedStop"_h))
 					{

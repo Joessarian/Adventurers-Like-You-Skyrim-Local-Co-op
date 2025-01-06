@@ -33,7 +33,10 @@ namespace ALYSLC
 			nextUpdateIndex = 0;
 		}
 
-		CamCubicBezier3DData(CurrentControlPoints a_currentPoints, NextControlPoints a_nextPoints) :
+		CamCubicBezier3DData
+		(
+			CurrentControlPoints a_currentPoints, NextControlPoints a_nextPoints
+		) :
 			currentPoints(a_currentPoints), nextPoints(a_nextPoints),
 			lastCalcCurvePoint(RE::NiPoint3()),
 			lastCalcDirection(RE::NiPoint3()),
@@ -144,7 +147,10 @@ namespace ALYSLC
 		// Updates next control point list and shifts the next control points list
 		// into the current list, as needed, before returning the point on the current
 		// curve corresponding to the given time ratio.
-		inline RE::NiPoint3 UpdateCurve(CamMaxUpdateFrameCount a_maxUpdateFrameCount, const RE::NiPoint3& a_nextControlPoint)
+		inline RE::NiPoint3 UpdateCurve
+		(
+			CamMaxUpdateFrameCount a_maxUpdateFrameCount, const RE::NiPoint3& a_nextControlPoint
+		)
 		{
 			// Initialize camera path to start and end at the first-passed point.
 			if (lastCalcCurvePoint.Length() == 0.0f) 
@@ -163,9 +169,17 @@ namespace ALYSLC
 			nextUpdateIndex = min
 			(
 				nextPoints.size() - 1, 
-				(uint8_t)floorf((float)(frameCountSinceShift - 1) / (!a_maxUpdateFrameCount / (float)nextPoints.size()))
+				(uint8_t)floorf
+				(
+					(float)(frameCountSinceShift - 1) / 
+					(!a_maxUpdateFrameCount / (float)nextPoints.size())
+				)
 			);
-			float tRatio = min((float)frameCountSinceShift / (float)(!a_maxUpdateFrameCount), 1.0f);
+			float tRatio = min
+			(
+				(float)frameCountSinceShift / (float)(!a_maxUpdateFrameCount), 
+				1.0f
+			);
 
 			SetNextControlPoint(a_nextControlPoint);
 			auto point = GetCurvePoint(tRatio);
@@ -283,7 +297,10 @@ namespace ALYSLC
 		{
 			shouldFadeOut = false;
 			fadeStateChangeTP = SteadyClock::now();
-			currentFadeAmount = fadeAmountAtStateChange = interpIntervalProportion = targetFadeAmount = 1.0f;
+			currentFadeAmount = 
+			fadeAmountAtStateChange = 
+			interpIntervalProportion = 
+			targetFadeAmount = 1.0f;
 			fadeIndex = -1;
 			if (object && object.get() && object->GetRefCount() > 0)
 			{
@@ -297,8 +314,12 @@ namespace ALYSLC
 		}
 
 		// Start fading the object out/in. 
-		// Amount depends on its fade index (increases as the index does, meaning the object is further from the camera).
-		inline void SignalFadeStateChange(const bool& a_shouldFadeOut, const int32_t& a_objectFadeIndex) 
+		// Amount depends on its fade index 
+		// (increases as the index does, meaning the object is further from the camera).
+		inline void SignalFadeStateChange
+		(
+			const bool& a_shouldFadeOut, const int32_t& a_objectFadeIndex
+		) 
 		{
 			if (object && object.get() && object->GetRefCount() > 0)
 			{
@@ -318,8 +339,9 @@ namespace ALYSLC
 					{
 						// The NiAVObject's fade ranges from 0 to 1 for trees to make sure that
 						// the low definition model fades along with the full definition one.
-						// When fading in/out, we want to be as far from the fade endpoints as possible
-						// so that we don't effectively set the fade value directly to an endpoint value.
+						// When fading in/out, we want to be as far from the fade endpoints 
+						// as possible so that we don't effectively set the fade value 
+						// directly to an endpoint value.
 						// So we use the last set fade value or the current reported fade amount,
 						// whichever is farther away from the endpoint.
 						if (a_shouldFadeOut)
@@ -354,15 +376,18 @@ namespace ALYSLC
 
 				interpIntervalProportion = std::clamp
 				(
-					fabsf(targetFadeAmount - fadeAmountAtStateChange) / (1.0f - lowerBoundFadeAmount), 
+					fabsf(targetFadeAmount - fadeAmountAtStateChange) / 
+					(1.0f - lowerBoundFadeAmount), 
 					0.0f, 
 					1.0f
 				);
 			}
 		}
 
-		// Returns true if the object's fade level was updated successfully and has not been completely faded in/out.
-		// Returns false if the object is invalid or if the object has been completely faded in and does not need to be handled anymore.
+		// Returns true if the object's fade level was updated successfully 
+		// and has not been completely faded in/out.
+		// Returns false if the object is invalid or if the object has been completely faded in 
+		// and does not need to be handled anymore.
 		// Fade index indicates the object's distance from the camera;
 		// higher indices mean the object is further from the camera
 		// when the fade raycast(s) were performed.
@@ -374,13 +399,17 @@ namespace ALYSLC
 				float newFadeAmount = targetFadeAmount;
 				float tRatio = std::clamp
 				(
-					secsSinceStateChange / (interpIntervalProportion * Settings::fSecsObjectFadeInterval), 
+					secsSinceStateChange / 
+					(interpIntervalProportion * Settings::fSecsObjectFadeInterval), 
 					0.0f, 
 					1.0f
 				);
 				if (interpIntervalProportion != 0.0f) 
 				{
-					newFadeAmount = Util::InterpolateSmootherStep(fadeAmountAtStateChange, targetFadeAmount, tRatio);
+					newFadeAmount = Util::InterpolateSmootherStep
+					(
+						fadeAmountAtStateChange, targetFadeAmount, tRatio
+					);
 				}
 
 				currentFadeAmount = object->fadeAmount = newFadeAmount;
@@ -394,20 +423,32 @@ namespace ALYSLC
 						if (auto fadeNode = object->AsFadeNode(); fadeNode)
 						{
 							// For now:
-							// Decided having an ugly low detail model appear and properly fade without shadow flickering was better than
-							// having flickering shadows and smoother fading of the high detail model with the low detail model
+							// Decided having an ugly low detail model appear 
+							// and properly fade without shadow flickering was better than
+							// having flickering shadows and smoother fading 
+							// of the high detail model with the low detail model
 							// still fading in/out to a lesser degree.
 							if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
 							{
-								// Fade node's current fade controls shadow fade, and the low detail model
-								// fades in/out as the high detail model fades out/in once below half alpha,
-								// which is why we start reversing the fade direction for the low detail model at this point.
+								// Fade node's current fade controls shadow fade, 
+								// and the low detail model fades in/out as the high detail model 
+								// fades out/in once below half alpha,
+								// which is why we start reversing the fade direction 
+								// for the low detail model at this point.
 								currentFadeAmount = object->fadeAmount = newFadeAmount;
-								fadeNode->currentFade = newFadeAmount >= 0.5f ? newFadeAmount : 1.0f - newFadeAmount;
+								fadeNode->currentFade = 
+								(
+									newFadeAmount >= 0.5f ? 
+									newFadeAmount : 
+									1.0f - newFadeAmount
+								);
 							}
 							else
 							{
-								currentFadeAmount = fadeNode->currentFade = object->fadeAmount = newFadeAmount;
+								currentFadeAmount = 
+								fadeNode->currentFade =
+								object->fadeAmount = 
+								newFadeAmount;
 							}
 						}
 					}
@@ -423,7 +464,12 @@ namespace ALYSLC
 							{
 								// Same logic as when fading out.
 								object->fadeAmount = newFadeAmount;
-								fadeNode->currentFade = newFadeAmount >= 0.5f ? newFadeAmount : 1.0f - newFadeAmount;
+								fadeNode->currentFade = 
+								(
+									newFadeAmount >= 0.5f ? 
+									newFadeAmount : 
+									1.0f - newFadeAmount
+								);
 							}
 							else
 							{
@@ -531,8 +577,16 @@ namespace ALYSLC
 			return RE::PlayerCamera::GetSingleton()->yaw;
 		}
 
-		// Clamp Z coordinate to the given bounds, at the given lower/upper offsets from those bounds.
-		inline void ClampToZCoordAboveLowerBound(float& a_zCoordOut, const float& a_lowerOffset, const float& a_upperOffset, const float& a_zUpperBound, const float& a_zLowerBound) const
+		// Clamp Z coordinate to the given bounds, 
+		// at the given lower/upper offsets from those bounds.
+		inline void ClampToZCoordAboveLowerBound
+		(
+			float& a_zCoordOut, 
+			const float& a_lowerOffset, 
+			const float& a_upperOffset,
+			const float& a_zUpperBound, 
+			const float& a_zLowerBound
+		) const
 		{
 			// If both bounds don't exist, uh oh. Do not modify point.
 			if (a_zUpperBound == FLT_MAX && a_zLowerBound == -FLT_MAX) 
@@ -541,8 +595,13 @@ namespace ALYSLC
 			}
 			else if (a_zUpperBound != FLT_MAX && a_zLowerBound != -FLT_MAX)
 			{
-				// Place above lower bound or below upper bound, whichever modified Z position is lower.
-				if (float newLowerBound = min(a_zLowerBound + a_lowerOffset, a_zUpperBound - a_upperOffset); a_zCoordOut < newLowerBound) 
+				// Place above lower bound or below upper bound, 
+				// whichever modified Z position is lower.
+				float newLowerBound = min
+				(
+					a_zLowerBound + a_lowerOffset, a_zUpperBound - a_upperOffset
+				); 
+				if (a_zCoordOut < newLowerBound) 
 				{
 					a_zCoordOut = newLowerBound;
 				}
@@ -550,19 +609,46 @@ namespace ALYSLC
 			else if (a_zUpperBound == FLT_MAX)
 			{
 				// Simply place above lower bound.
-				if (float newLowerBound = a_zLowerBound + a_lowerOffset; a_zCoordOut < newLowerBound)
+				float newLowerBound = a_zLowerBound + a_lowerOffset; 
+				if (a_zCoordOut < newLowerBound)
 				{
 					a_zCoordOut = newLowerBound;
 				}
 			}
 			else
 			{
-				// Place above upper bound since we might've fallen through the floor and the void is below.
-				if (float newLowerBound = a_zUpperBound + a_lowerOffset; a_zCoordOut < newLowerBound)
+				// Place above upper bound since we might've fallen through the floor 
+				// and the void is below.
+				float newLowerBound = a_zUpperBound + a_lowerOffset; 
+				if (a_zCoordOut < newLowerBound)
 				{
 					a_zCoordOut = newLowerBound;
 				}
 			}
+		}
+		
+		// Set camera interpolation factors.
+		inline void SetCamInterpFactors()
+		{
+			if (camState == CamState::kManualPositioning) 
+			{
+				camInterpFactor = Settings::fCamManualPosInterpFactor;
+			}
+			else
+			{
+				camInterpFactor = 
+				(
+					Settings::bCamCollisions ? 
+					Settings::fCamCollisionInterpFactor : 
+					Settings::fCamNoCollisionInterpFactor
+				);
+			}
+
+			camInterpFactorFrameDep = min
+			(
+				1.0f, 
+				*g_deltaTimeRealTime * 60.0f * camInterpFactor
+			);
 		}
 
 		// Set orientation (rotation and position) for the camera.
@@ -583,7 +669,12 @@ namespace ALYSLC
 				Util::NativeFunctions::UpdateWorldToScaleform(niCam.get());
 			}
 
-			playerCam->worldFOV = exteriorCell ? Settings::fCamExteriorFOV : Settings::fCamInteriorFOV;
+			playerCam->worldFOV = 
+			(
+				exteriorCell ? 
+				Settings::fCamExteriorFOV :
+				Settings::fCamInteriorFOV
+			);
 		}
 
 		// Update movement pitch running total and number of readings, or reset both.
@@ -616,7 +707,8 @@ namespace ALYSLC
 			}
 		}
 
-		// Used externally: signal the camera manager to wait for toggle (co-op camera is only re-enabled by P1).
+		// Used externally: signal the camera manager to wait for toggle 
+		// (co-op camera is only re-enabled by P1).
 		inline void SetWaitForToggle(bool a_set)
 		{
 			waitForToggle = a_set;
@@ -633,8 +725,15 @@ namespace ALYSLC
 			secsSinceLockOnTargetLOSLost = 0.0f;
 		}
 
-		// Check if at least one node (or the player's refr position) is on screen at the given camera orientation.
-		bool AllPlayersOnScreenAtCamOrientation(const RE::NiPoint3& a_camPos, const RE::NiPoint2& a_rotation, bool&& a_usePlayerPos = false, const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck = { });
+		// Check if at least one node (or the player's refr position) 
+		// is on screen at the given camera orientation.
+		bool AllPlayersOnScreenAtCamOrientation
+		(
+			const RE::NiPoint3& a_camPos,
+			const RE::NiPoint2& a_rotation,
+			bool&& a_usePlayerPos = false, 
+			const std::vector<RE::BSFixedString>&& a_nodeNamesToCheck = { }
+		);
 		
 		// Calculate the next camera focus points: current, base, and collision.
 		void CalcNextFocusPoint();
@@ -660,12 +759,20 @@ namespace ALYSLC
 		// Calculate and return the current average movement yaw-to-cam angle.
 		float GetAverageMovementYawToCam();
 		
-		// Check if any player is visible via raycast (hit one or all actor nodes) from the given point.
+		// Check if any player is visible via raycast
+		// (hit one or all actor nodes) from the given point.
 		bool NoPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes = true);
 		
-		// Checks if the given point is within the camera's frustum at the given camera orientation (no raycasts for visiblity).
+		// Checks if the given point is within the camera's frustum 
+		// at the given camera orientation (no raycasts for visiblity).
 		// Can specify a pixel margin around the border of the screen as well.
-		bool PointOnScreenAtCamOrientation(const RE::NiPoint3& a_point, const RE::NiPoint3& a_camPos, const RE::NiPoint2& a_rotation, const float& a_pixelMargin);
+		bool PointOnScreenAtCamOrientation
+		(
+			const RE::NiPoint3& a_point,
+			const RE::NiPoint3& a_camPos,
+			const RE::NiPoint2& a_rotation, 
+			const float& a_pixelMargin
+		);
 		
 		// Reset all camera related data.
 		void ResetCamData();
@@ -684,7 +791,8 @@ namespace ALYSLC
 		
 		// Transition the camera back into third person.
 		// Used when the game automatically switches to a different camera state.
-		// Done with a small delay to avoid odd crashes and wait for the first person skeleton to disable.
+		// Done with a small delay to avoid odd crashes 
+		// and wait for the first person skeleton to disable.
 		void ToThirdPersonState(bool&& a_fromFirstPerson);
 		
 		// Update camera pitch and yaw data.
@@ -699,7 +807,8 @@ namespace ALYSLC
 		// Update data related to the current cell (P1's parent cell).
 		void UpdateParentCell();
 		
-		// Reset fade for players (set alpha to 1) or fade them out depending on how close they are to the camera.
+		// Reset fade for players (set alpha to 1) 
+		// or fade them out depending on how close they are to the camera.
 		void UpdatePlayerFadeAmounts(bool&& a_reset = false);
 
 		//
@@ -766,7 +875,8 @@ namespace ALYSLC
 		std::unique_ptr<InterpolationData<float>> lockOnIndicatorOscillationInterpData;
 		// Linear interpolation data set for the party's aggregate movement pitch.
 		std::unique_ptr<InterpolationData<float>> movementPitchInterpData;
-		// Linear interpolation data set for the party's aggregate movement yaw relative to the camera.
+		// Linear interpolation data set 
+		// for the party's aggregate movement yaw relative to the camera.
 		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
 		// Set of handled faded objects and their current fade indices.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, int32_t> obstructionsToFadeIndicesMap;
@@ -853,7 +963,8 @@ namespace ALYSLC
 		float camMaxZoomOutDist;
 		// Camera's current pitch to set.
 		float camPitch;
-		// Saved exterior radial distance from the focus point (before zooming in while under a roof).
+		// Saved exterior radial distance from the focus point 
+		// (before zooming in while under a roof).
 		float camSavedBaseRadialDistance;
 		// Target X rotation for the camera node relative to the focus point.
 		// Not necessarily the camera's current pitch to set (if collisions are enabled).

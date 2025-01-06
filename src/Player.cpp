@@ -1006,22 +1006,19 @@ namespace ALYSLC
 					actorBase->actorData.bleedoutOverride = 0.0f;
 				}
 			}
-
+			
 			// Make sure the player is not paralyzed.
-			coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed, RE::Actor::BOOL_BITS::kShouldRotateToTrack);
+			coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			// Set as teammate to prevent friendly fire and pickpocketing.
+			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
+			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kShouldRotateToTrack);
 			// Make sure the companion player is tagged as persistent.
 			coopActor->formFlags |= RE::Actor::RecordFlags::kPersistent;
+			// Ensure co-op companion players do not start combat with P1.
+			coopActor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
 			// Prevent P1 from talking to this companion player.
 			coopActor->AllowPCDialogue(false);
 			coopActor->AllowBleedoutDialogue(false);
-		}
-
-		if (!isPlayer1)
-		{
-			// Set as teammate to prevent friendly fire and pickpocketing.
-			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
-			// Ensure co-op companion players do not start combat with P1.
-			coopActor->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
 		}
 
 		// Add to special co-op player faction.

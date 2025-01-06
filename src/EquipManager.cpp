@@ -1537,7 +1537,13 @@ namespace ALYSLC
 						EquipIndex::kLeftHand
 					);
 					auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
-					auto numberOwned = coopActor->GetInventoryCounts().at(boundObj);
+					auto invCounts = coopActor->GetInventoryCounts();
+					auto numberOwned = 
+					(
+						invCounts.contains(boundObj) ? 
+						invCounts.at(boundObj) : 
+						0
+					);
 					bool alreadyEquippedInOtherHand = 
 					(
 						numberOwned == 1 && 
@@ -1612,7 +1618,13 @@ namespace ALYSLC
 				EquipIndex::kLeftHand
 			);
 			auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
-			auto numberOwned = coopActor->GetInventoryCounts().at(boundObj);
+			auto invCounts = coopActor->GetInventoryCounts();
+			auto numberOwned = 
+			(
+				invCounts.contains(boundObj) ? 
+				invCounts.at(boundObj) : 
+				0
+			);
 			bool alreadyEquippedInOtherHand = 
 			(
 				numberOwned == 1 && 
@@ -3984,7 +3996,6 @@ namespace ALYSLC
 					{
 						if (mismatch = equippedForms[i] != desiredEquippedForms[i]; mismatch)
 						{
-							// REMOVE after debugging.
 							SPDLOG_DEBUG("[EM] RefreshEquipState: {}: MISMATCH at index {}: equipped {} vs. should have equipped {}.",
 								coopActor->GetName(), i,
 								equippedForms[i] ? equippedForms[i]->GetName() : "NOTHING",
@@ -4010,6 +4021,7 @@ namespace ALYSLC
 						coopActor->GetName(), serializableEquippedForms.size());
 				}
 
+#ifdef DEBUGMODE
 				// REMOVE the following prints after fully debugging.
 				for (auto item : equippedForms)
 				{
@@ -4038,10 +4050,10 @@ namespace ALYSLC
 							coopActor->GetName(), item->GetName());
 					}
 				}
+#endif
 			}
 			else
 			{
-				// REMOVE
 				SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Failed to obtain lock. (0x{:X})", 
 					coopActor->GetName(), std::hash<std::jthread::id>()(std::this_thread::get_id()));
 			}
@@ -4661,9 +4673,13 @@ namespace ALYSLC
 		{
 			return;
 		}
-
-		const auto& invCounts = coopActor->GetInventoryCounts();
-		auto currentAmmoCount = invCounts.at(ammo);
+		auto invCounts = coopActor->GetInventoryCounts();
+		auto currentAmmoCount = 
+		(
+			invCounts.contains(ammo) ? 
+			invCounts.at(ammo) : 
+			0
+		);
 		bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toUnequip);
 		int32_t hotkeyIndex = 
 		(

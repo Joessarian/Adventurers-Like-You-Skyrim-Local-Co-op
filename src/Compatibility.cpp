@@ -27,18 +27,24 @@ namespace ALYSLC
 		if (g_enderalSSEInstalled)
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
-			SPDLOG_INFO("[Compatibility] Enderal SSE installed! Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
+			SPDLOG_INFO("[Compatibility] Enderal SSE installed! Plugin name to use: '{}'.",
+				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		else
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC.esp"sv;
-			SPDLOG_INFO("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.", ALYSLC::GlobalCoopData::PLUGIN_NAME);
+			SPDLOG_INFO("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.",
+				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 	}
 	
 	void MCOCompat::CheckForMCO(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_mcoInstalled = a_loadInterface->GetPluginInfo("Attack_DXP") || static_cast<bool>(GetModuleHandleA("MCO.dll"));
+		g_mcoInstalled = 
+		(
+			a_loadInterface->GetPluginInfo("Attack_DXP") || 
+			static_cast<bool>(GetModuleHandleA("MCO.dll"))
+		);
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
 		if (!g_mcoInstalled && dataHandler) 
 		{
@@ -60,7 +66,11 @@ namespace ALYSLC
 		g_miniMapInstalled = static_cast<bool>(GetModuleHandleA("MiniMap.dll"));
 		if (g_miniMapInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] Felisky384's MiniMap installed! Will setup culling hooks to minimize freezes in interior cells.");
+			SPDLOG_INFO
+			(
+				"[Compatibility] Felisky384's MiniMap installed!" 
+				"Will setup culling hooks to minimize freezes in interior cells."
+			);
 		}
 
 		g_shouldApplyCullingWorkaround = false;
@@ -68,7 +78,10 @@ namespace ALYSLC
 
 	void PersistentFavoritesCompat::CheckForPersistentFavorites()
 	{
-		g_persistentFavoritesInstalled = static_cast<bool>(GetModuleHandleA("PersistentFavorites.dll"));
+		g_persistentFavoritesInstalled = 
+		(
+			static_cast<bool>(GetModuleHandleA("PersistentFavorites.dll"))
+		);
 		if (g_persistentFavoritesInstalled)
 		{
 			SPDLOG_INFO("[Compatibility] PersistentFavorites installed!");
@@ -80,11 +93,16 @@ namespace ALYSLC
 		g_precisionAPI1 = nullptr;
 		g_precisionAPI3 = nullptr;
 		g_precisionAPI4 = nullptr;
-		if (const auto pluginInfo = a_loadInterface->GetPluginInfo(PRECISION_API::PrecisionPluginName); pluginInfo)
+		const auto pluginInfo = a_loadInterface->GetPluginInfo(PRECISION_API::PrecisionPluginName); 
+		if (pluginInfo)
 		{
 			g_precisionInstalled = true;
-			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed.", PRECISION_API::PrecisionPluginName);
-			g_precisionAPI3 = reinterpret_cast<PRECISION_API::IVPrecision3*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V3));
+			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed.", 
+				PRECISION_API::PrecisionPluginName);
+			g_precisionAPI3 = reinterpret_cast<PRECISION_API::IVPrecision3*>
+			(
+				PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V3)
+			);
 			if (g_precisionAPI3)
 			{
 				SPDLOG_INFO("[Compatibility] Received access to Precision API V3.");
@@ -95,7 +113,10 @@ namespace ALYSLC
 				return;
 			}
 
-			g_precisionAPI1 = reinterpret_cast<PRECISION_API::IVPrecision1*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V1));
+			g_precisionAPI1 = reinterpret_cast<PRECISION_API::IVPrecision1*>
+			(
+				PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V1)
+			);
 			if (g_precisionAPI1)
 			{
 				SPDLOG_INFO("[Compatibility] Received access to Precision API V1.");
@@ -113,11 +134,18 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V1 and register Havok pre-physics step callback.");
+				SPDLOG_ERROR
+				(
+					"[Compatibility] ERR: Could not get access to Precision API V1 "
+					"and register Havok pre-physics step callback."
+				);
 				return;
 			}
 
-			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>(PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V4));
+			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>
+			(
+				PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V4)
+			);
 			if (g_precisionAPI4)
 			{
 				SPDLOG_INFO("[Compatibility] Received access to Precision API V4.");
@@ -133,7 +161,11 @@ namespace ALYSLC
 		else
 		{
 			g_precisionInstalled = false;
-			SPDLOG_ERROR("[Compatibility] ERR: Could not find prerequisite mod 'Precision'. Please ensure it is installed.");
+			SPDLOG_ERROR
+			(
+				"[Compatibility] ERR: Could not find prerequisite mod 'Precision'. "
+				"Please ensure it is installed."
+			);
 		}
 	}
 
@@ -178,7 +210,8 @@ namespace ALYSLC
 
 	void SkyrimsParagliderCompat::CheckForParaglider()
 	{
-		// Paraglider ownership check is done before P1 manager construction; init to false for now.
+		// Paraglider ownership check is done before P1 manager construction; 
+		// init to false for now.
 		g_p1HasParaglider = false;
 		g_paragliderInstalled = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
 		if (g_paragliderInstalled)
@@ -200,7 +233,10 @@ namespace ALYSLC
 		}
 	}
 
-	void TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(const SKSE::LoadInterface* a_loadInterface)
+	void TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement
+	(
+		const SKSE::LoadInterface* a_loadInterface
+	)
 	{
 		g_trueDirectionalMovementInstalled = 
 		{
@@ -211,7 +247,10 @@ namespace ALYSLC
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
 		if (!g_trueDirectionalMovementInstalled && dataHandler)
 		{
-			g_trueDirectionalMovementInstalled = dataHandler->LookupModByName("TrueDirectionalMovement.esp") != nullptr;
+			g_trueDirectionalMovementInstalled = 
+			(
+				dataHandler->LookupModByName("TrueDirectionalMovement.esp") != nullptr
+			);
 		}
 
 		if (g_trueDirectionalMovementInstalled)
@@ -223,11 +262,15 @@ namespace ALYSLC
 	void TrueHUDCompat::RequestTrueHUDAPIs(const SKSE::LoadInterface* a_loadInterface) 
 	{
 		g_trueHUDAPI3 = nullptr;
-		if (const auto pluginInfo = a_loadInterface->GetPluginInfo(TRUEHUD_API::TrueHUDPluginName); pluginInfo) 
+		const auto pluginInfo = a_loadInterface->GetPluginInfo(TRUEHUD_API::TrueHUDPluginName); 
+		if (pluginInfo) 
 		{
 			g_trueHUDInstalled = true;
 			SPDLOG_INFO("[Compatibility] Mod {} is installed.", TRUEHUD_API::TrueHUDPluginName);
-			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>(TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3));
+			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>
+			(
+				TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3)
+			);
 			if (g_trueHUDAPI3)
 			{
 				SPDLOG_INFO("[Compatibility] Received access to TrueHUD API V3.");

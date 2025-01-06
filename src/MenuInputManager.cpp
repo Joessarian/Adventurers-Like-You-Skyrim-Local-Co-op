@@ -1482,7 +1482,7 @@ namespace ALYSLC
 			const auto invCounts = fromContainerPtr->GetInventoryCounts();
 			if (invCounts.contains(boundObj)) 
 			{
-				count = fromContainerPtr->GetInventoryCounts().at(boundObj);
+				count = invCounts.at(boundObj);
 			}
 
 			// Not within inventory, so nothing to loot.

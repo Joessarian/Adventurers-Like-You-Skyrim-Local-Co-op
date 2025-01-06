@@ -36,7 +36,10 @@ namespace ALYSLC
 		friend class TargetingManager;
 
 		CoopPlayer();
-		CoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor,  uint32_t a_packageFormListStartIndex);
+		CoopPlayer
+		(
+			int32_t a_controllerID, RE::Actor* a_coopActor,  uint32_t a_packageFormListStartIndex
+		);
 
 		// Implements ALYSLC::Manager:
 		void MainTask() override;
@@ -130,9 +133,13 @@ namespace ALYSLC
 		void UnregisterEvents();
 		
 		// Refresh all player data for this player, post-initialization.
-		void UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex);
+		void UpdateCoopPlayer
+		(
+			int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex
+		);
 
-		// Update gender, animations, skin tone, headparts, and refresh the player actor's 3D model when done.
+		// Update gender, animations, skin tone, headparts, 
+		// and refresh the player actor's 3D model when done.
 		void UpdateGenderAndBody(bool a_setFemale, bool a_setOppositeGenderAnims);
 
 		//
@@ -149,7 +156,8 @@ namespace ALYSLC
 		void DownedStateCountdownTask();
 
 		// Emulate P1 menu controls if a co-op player is controlling the Lockpicking Menu.
-		// NOTE: Currently run as a task to avoid a bug with repeated attempts to lockpick the same refr.
+		// NOTE: Currently run as a task to avoid a bug 
+		// with repeated attempts to lockpick the same refr.
 		// May move back to MIM if a solution for this bug is found.
 		void LockpickingTask();
 
@@ -160,8 +168,13 @@ namespace ALYSLC
 		void RefreshPlayerManagersTask();
 
 		// Debug option to reset a co-op companion player.
-		// Stops the player, resets any active transformation, re-equips saved gear/unequips all gear,
-		// resurrects the actor, disables and re-enables them, re-attaches havok, resets temporary flags,
+		// Stops the player, 
+		// resets any active transformation, 
+		// re-equips saved gear/unequips all gear,
+		// resurrects the actor, 
+		// disables and re-enables them, 
+		// re-attaches havok, 
+		// resets temporary flags,
 		// and finally re-enables movement.
 		void ResetCompanionPlayerStateTask(const bool& a_unequipAll, const bool& a_reattachHavok);
 
@@ -202,7 +215,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastAttackStartTP;
 		// Time point indicating when the last grabbed refr was auto-grabbed.
 		SteadyClock::time_point lastAutoGrabTP;
-		// Time point indicating when the player last successfully cast a bound weapon spell (companion players only).
+		// Time point indicating when the player last successfully cast a bound weapon spell 
+		// (companion players only).
 		SteadyClock::time_point lastBoundWeaponLHReqTP;
 		SteadyClock::time_point lastBoundWeaponRHReqTP;
 		// Time point indicating when the player's crosshair was last updated.
@@ -217,7 +231,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastDownedTP;
 		// Time at which the player last fully got up after being ragdolled.
 		SteadyClock::time_point lastGetupTP;
-		// Time point indicating when the player was last hidden within the stealth radius of a hostile actor.
+		// Time point indicating when the player was last hidden 
+		// within the stealth radius of a hostile actor.
 		SteadyClock::time_point lastHiddenInStealthRadiusTP;
 		// Time point indicating when the player's input actions were last blocked.
 		SteadyClock::time_point lastInputActionBlockTP;
@@ -233,7 +248,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastParaglidingStateChangeTP;
 		// Time point indicating when a non-concentration quick slot spell was cast.
 		SteadyClock::time_point lastQSSCastStartTP;
-		// Time point indicating when the last time this player's health was updated while reviving another player.
+		// Time point indicating when the last time this player's health was updated 
+		// while reviving another player.
 		SteadyClock::time_point lastReviveCheckTP;
 		// Time point indicating when the last RH spell cast started (companion players only).
 		SteadyClock::time_point lastRHCastStartTP;
@@ -249,7 +265,8 @@ namespace ALYSLC
 		SteadyClock::time_point outOfStaminaTP;
 		// Time point indicating when the player last started shouting.
 		SteadyClock::time_point shoutStartTP;
-		// Time point indicating when the player last transformed into a werewolf/vampire or other race via spell cast.
+		// Time point indicating when the player last transformed into a werewolf/vampire 
+		// or other race via spell cast.
 		SteadyClock::time_point transformationTP;
 
 		// Task interface for queueing tasks.
@@ -275,16 +292,20 @@ namespace ALYSLC
 		RE::ActorHandle targetedMountHandle;
 		// Last processable (used by AV cost manager) animation event's tag.
 		RE::BSFixedString lastAnimEventTag;
-		// Keyword used to link and set a targetable refr when running the co-op companion player's ranged attack package.
+		// Keyword used to link and set a targetable refr 
+		// when running the co-op companion player's ranged attack package.
 		RE::BGSKeyword* aimTargetKeyword;
 		// Saved player race prior to transforming.
 		RE::TESRace* preTransformationRace;
 		// Has this manager handled the present controller input error yet?
 		bool handledControllerInputError;
-		// Has this player been dismissed (DismissPlayer() called) during the current co-op session?
-		// Set to true BEFORE the current co-op session ends (before session cleanup is finished for all players).
+		// Has this player been dismissed (DismissPlayer() called) 
+		// during the current co-op session?
+		// Set to true BEFORE the current co-op session ends 
+		// (before session cleanup is finished for all players).
 		bool hasBeenDismissed;
-		// Has this player been initialized and assigned an active controller for the current/next co-op session?
+		// Has this player been initialized and assigned an active controller 
+		// for the current/next co-op session?
 		bool isActive;
 		// Is another player transferring their health to this downed player?
 		bool isBeingRevived;
@@ -310,7 +331,8 @@ namespace ALYSLC
 		bool isRevivingPlayer;
 		// Is the player toggling their levitation state while in Vampire Lord form?
 		bool isTogglingLevitationState;
-		// Is the levitation toggle task running? Used to prevent more than one such task from being queued at a time.
+		// Is the levitation toggle task running? Used to prevent more than one such task 
+		// from being queued at a time.
 		bool isTogglingLevitationStateTaskRunning;
 		// Has this player transformed via spell cast (i.e. now a member of a non-playable race)?
 		bool isTransformed;
@@ -323,7 +345,8 @@ namespace ALYSLC
 		bool shouldTeleportToP1;
 		// Health level once this downed player is fully revived.
 		float fullReviveHealth;
-		// How much health a reviver player has given to a downed player so far while reviving them.
+		// How much health a reviver player has given to a downed player so far 
+		// while reviving them.
 		float revivedHealth;
 		// How many seconds this player has been downed for since their downed countdown began.
 		float secsDowned;

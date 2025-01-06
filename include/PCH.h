@@ -1,10 +1,13 @@
 #pragma once
 
-// IMPORTANT FOR DEBUGGING:
-// Change the following define to 'SPDLOG_LEVEL_DEBUG'
-// to enable debug prints at compile time.
-// IMPORTANT DEV NOTE: Ensure the active level is set to 'SPDLOG_LEVEL_INFO' before committing changes.
-#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
+// IMPORTANT DEV NOTE: 
+// Ensure 'DEBUGMODE' is not defined before submitting a PR or committing changes.
+#define DEBUGMODE
+#ifdef DEBUGMODE
+	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
+#else 
+	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
+#endif
 
 #pragma warning(push)
 #if defined(FALLOUT4)

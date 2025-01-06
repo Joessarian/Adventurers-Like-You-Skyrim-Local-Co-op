@@ -11,7 +11,14 @@ namespace ALYSLC
 	{
 	public:
 		DebugAPILine();
-		DebugAPILine(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs);
+		DebugAPILine
+		(
+			glm::vec2 a_from,
+			glm::vec2 a_to,
+			uint32_t a_rgba,
+			float a_lineThickness, 
+			float a_durationSecs
+		);
 
 		// Screen coords to start drawing from.
 		glm::vec2 from;
@@ -49,7 +56,15 @@ namespace ALYSLC
 	{
 	public:
 		DebugAPIShape();
-		DebugAPIShape(glm::vec2 a_origin, std::vector<glm::vec2> a_offsets, uint32_t a_rgba, bool a_fill, float a_lineThickness, float a_durationSecs);
+		DebugAPIShape
+		(
+			glm::vec2 a_origin, 
+			std::vector<glm::vec2> a_offsets, 
+			uint32_t a_rgba, 
+			bool a_fill, 
+			float a_lineThickness, 
+			float a_durationSecs
+		);
 
 		// Screen coords for the origin point of the shape.
 		glm::vec2 origin;
@@ -76,30 +91,108 @@ namespace ALYSLC
 		// Get the UI menu.
 		static RE::GPtr<RE::IMenu> GetHUD();
 		
-		// Queue arrows, circles, lines, points, and shapes given 2D (screenspace) and 3D (worldspace) coordinates.
+		// Queue arrows, circles, lines, points, and shapes given 2D (screenspace) 
+		// and 3D (worldspace) coordinates.
 		// Drawn during the next update.
-		static void QueueArrow2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueArrow2D
+		(
+			glm::vec2 a_from, 
+			glm::vec2 a_to,
+			uint32_t a_rgba,
+			float a_headLength, 
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueArrow3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueArrow3D
+		(
+			glm::vec3 a_from, 
+			glm::vec3 a_to, 
+			uint32_t a_rgba, 
+			float a_headLength, 
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueCircle2D(glm::vec2 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueCircle2D
+		(
+			glm::vec2 a_center, 
+			uint32_t a_rgba,
+			uint32_t a_segments,
+			float a_radius, 
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueCircle3D(glm::vec3 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueCircle3D
+		(
+			glm::vec3 a_center, 
+			uint32_t a_rgba,
+			uint32_t a_segments,
+			float a_radius, 
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueLine2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueLine2D
+		(
+			glm::vec2 a_from, 
+			glm::vec2 a_to,
+			uint32_t a_rgba, 
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueLine3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs = 0);
+		static void QueueLine3D
+		(
+			glm::vec3 a_from,
+			glm::vec3 a_to, 
+			uint32_t a_rgba,
+			float a_lineThickness, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueuePoint2D(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs = 0);
+		static void QueuePoint2D
+		(
+			glm::vec2 a_center,
+			uint32_t a_rgba,
+			float a_size, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueuePoint3D(glm::vec3 a_center, uint32_t a_rgba, float a_size, float a_durationSecs = 0);
+		static void QueuePoint3D
+		(
+			glm::vec3 a_center, 
+			uint32_t a_rgba,
+			float a_size, 
+			float a_durationSecs = 0
+		);
 		
-		static void QueueShape2D(const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, bool&& a_fill = true, const float& a_lineThickness = 1.0f, const float& a_durationSecs = 0);
+		static void QueueShape2D
+		(
+			const glm::vec2& a_origin,
+			const std::vector<glm::vec2>& a_offsets, 
+			const uint32_t& a_rgba, 
+			bool&& a_fill = true,
+			const float& a_lineThickness = 1.0f,
+			const float& a_durationSecs = 0
+		);
 		
 		// Rotate lines and points.
-		static void RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_angle);
+		static void RotateLine2D
+		(
+			std::pair<glm::vec2, glm::vec2>& a_line,
+			const glm::vec2& a_pivotPoint, 
+			const float& a_angle
+		);
 		
-		static void RotateLine3D(std::pair<glm::vec4, glm::vec4>& a_line, const glm::vec4& a_pivotPoint, const float& a_pitch, const float& a_yaw);
+		static void RotateLine3D
+		(
+			std::pair<glm::vec4, glm::vec4>& a_line, 
+			const glm::vec4& a_pivotPoint, 
+			const float& a_pitch, 
+			const float& a_yaw
+		);
 		
 		static void RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_angle);
 		
@@ -121,11 +214,32 @@ namespace ALYSLC
 
 	private:
 		// Draw a queued line, point, or shape on the Scaleform overlay.
-		static void DrawLine(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness);
+		static void DrawLine
+		(
+			RE::GPtr<RE::GFxMovieView> a_movie,
+			glm::vec2 a_from,
+			glm::vec2 a_to,
+			uint32_t a_rgba,
+			float a_lineThickness
+		);
 		
-		static void DrawPoint(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_center, uint32_t a_rgba, float a_size);
+		static void DrawPoint
+		(
+			RE::GPtr<RE::GFxMovieView> a_movie, 
+			glm::vec2 a_center, 
+			uint32_t a_rgba,
+			float a_size
+		);
 		
-		static void DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill = true, const float& a_lineThickness = 1.0f);
+		static void DrawShape
+		(
+			RE::GPtr<RE::GFxMovieView> a_movie, 
+			const glm::vec2& a_origin, 
+			const std::vector<glm::vec2>& a_offsets,
+			const uint32_t& a_rgba, 
+			const bool& a_fill = true, 
+			const float& a_lineThickness = 1.0f
+		);
 		
 		// Clear the overlay.
 		static void ClearOverlay(RE::GPtr<RE::GFxMovieView> a_movie);
@@ -181,7 +295,13 @@ namespace ALYSLC
 
 				std::va_list args;
 				va_copy(args, a_argList);
-				std::vector<char> buf(static_cast<std::size_t>(std::vsnprintf(0, 0, fmt.c_str(), a_argList) + 1));
+				std::vector<char> buf
+				(
+					static_cast<std::size_t>
+					(
+						std::vsnprintf(0, 0, fmt.c_str(), a_argList) + 1
+					)
+				);
 				std::vsnprintf(buf.data(), buf.size(), fmt.c_str(), args);
 				va_end(args);
 

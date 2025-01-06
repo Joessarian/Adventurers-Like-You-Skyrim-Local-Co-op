@@ -1649,7 +1649,14 @@ namespace ALYSLC
 			// Will send assault alarm in hit event, unless in god mode.
 			// Power attack flag to add compatibility with Maximum Carnage,
 			// which will trigger gore effects on powerattack kill.
-			Util::SendHitEvent(coopActor.get(), hitActorPtr.get(), coopActor->formID, releasedRefrPtr->formID, hitFlags);
+			Util::SendHitEvent
+			(
+				coopActor.get(), 
+				hitActorPtr.get(), 
+				coopActor->formID,
+				releasedRefrPtr->formID,
+				hitFlags
+			);
 
 			// Handle health damage.
 			// Ignore damage to friendly actors if friendly fire is off.
@@ -1676,10 +1683,36 @@ namespace ALYSLC
 				}
 
 				// Apply non-zero damage.
-				if (damage != 0.0f)
-				{
-					hitActorPtr->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage);
-				}
+				hitActorPtr->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage);
+			}
+		}
+
+		// Play sound.
+		auto audioManager = RE::BSAudioManager::GetSingleton(); 
+		if (!audioManager)
+		{
+			return;
+		}
+				
+		RE::BSSoundHandle handle{ };
+		RE::BGSSoundDescriptorForm* flopSFX =
+		(
+			RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF664)
+		);
+		if (!flopSFX)
+		{	
+			return;
+		}
+
+		bool succ = audioManager->BuildSoundDataFromDescriptor(handle, flopSFX);
+		if (succ)
+		{
+			handle.SetPosition(a_contactPos);
+			auto actor3DPtr = Util::GetRefr3D(hitActorPtr.get());
+			if (actor3DPtr && actor3DPtr.get())
+			{
+				handle.SetObjectToFollow(actor3DPtr.get());
+				handle.Play();
 			}
 		}
 	}
@@ -1690,15 +1723,10 @@ namespace ALYSLC
 		// or close the LootMenu if the player moves their crosshair off the container 
 		// or the container becomes invalid.
 
-		// Only run if QuickLoot is loaded, the crosshair pick data singleton is available,
-		// no temporary menus are open, and the player is not transformed or transforming.
+		// Only run if QuickLoot is loaded,
+		// no temporary menus are open, 
+		// and the player is not transformed or transforming.
 		if (!ALYSLC::QuickLootCompat::g_quickLootInstalled)
-		{
-			return;
-		}
-
-		auto crosshairPickData = RE::CrosshairPickData::GetSingleton();
-		if (!crosshairPickData)
 		{
 			return;
 		}
@@ -1751,9 +1779,13 @@ namespace ALYSLC
 		};
 		// Close the QuickLoot menu if the player is controlling the menu 
 		// and the crosshair refr is no longer valid, or is no longer in range.
-		bool shouldSendClearCrosshairEvent = {
+		bool shouldSendClearCrosshairEvent = 
+		{
 			(controllingMenus) && 
-			((!crosshairRefrPtr && prevCrosshairRefrPtr) || (wasInRange && !crosshairRefrInRangeForQuickLoot))
+			(
+				(!crosshairRefrPtr && prevCrosshairRefrPtr) || 
+				(wasInRange && !crosshairRefrInRangeForQuickLoot)
+			)
 		};
 
 		// Can potentially open the QuickLoot menu.
@@ -1836,8 +1868,6 @@ namespace ALYSLC
 				bool passesLOSCheck = (Settings::bCamCollisions || (crosshairRefrPtr && Util::HasLOS(crosshairRefrPtr.get(), coopActor.get(), false, true, crosshairWorldPos)));
 				if (passesLOSCheck)
 				{
-					// Save container handle for menu CID resolution later.
-					glob.reqQuickLootContainerHandle = crosshairRefrHandle;
 					glob.moarm->InsertRequest(controllerID, InputAction::kMoveCrosshair, SteadyClock::now(), GlobalCoopData::LOOT_MENU, crosshairRefrPtr->GetHandle());
 					// Send SKSE crosshair event to allow QuickLoot menu to trigger.
 					// Clear out first if sending a new crosshair event.
@@ -2036,7 +2066,7 @@ namespace ALYSLC
 					// 4. The duration after first hit has expired.
 					bool shouldClearReleasedRefr = 
 					{
-						releasedRefrPtr &&
+						(releasedRefrPtr) &&
 						((releasedRefrPtr->Is(RE::FormType::ActorCharacter) && releasedRefrPtr->As<RE::Actor>()->actorState1.knockState == RE::KNOCK_STATE_ENUM::kNormal) ||
 						(targetActorPtr && releasedRefrInfo->hitRefrFIDs.contains(targetActorPtr->formID)) ||
 						(secsSinceRelease > Settings::fMaxSecsBeforeClearingReleasedRefr) ||
@@ -2079,9 +2109,9 @@ namespace ALYSLC
 						glm::vec4 start{};
 						glm::vec4 end{};
 						glm::vec4 velOffset{};
-						bool isActor = releasedRefrPtr->Is(RE::FormType::ActorCharacter);
+						auto asActor = releasedRefrPtr->As<RE::Actor>();
 						// Actor collisions -- multiple raycasts per actor.
-						if (isActor && !Settings::bSimpleActorCollisionRaycast) 
+						if (asActor && !Settings::bSimpleActorCollisionRaycast) 
 						{
 							// Again, must have valid loaded 3D.
 							if (!releasedRefrPtr->loadedData || !releasedRefrPtr->loadedData->data3D)
@@ -2093,6 +2123,108 @@ namespace ALYSLC
 							auto data3D = loadedData->data3D;
 							// Raycast once per major NPC skeleton node.
 							// Only need a single raycast to hit before breaking.
+							
+							RE::BSAnimationGraphManagerPtr manager{ };
+							releasedRefrPtr->GetAnimationGraphManager(manager);
+							if (!manager)
+							{
+								continue;
+							}
+
+							int32_t activeGraphIdx = manager->activeGraph;
+							if (activeGraphIdx < 0 || 
+								activeGraphIdx >= manager->graphs.size() || 
+								!manager->graphs[activeGraphIdx] ||
+								!manager->graphs[activeGraphIdx].get())
+							{
+								continue;
+							}
+
+							uint32_t numNodesCastFrom = 0;
+							Util::TraverseChildNodesDFS
+							(
+								data3D.get(), 
+								[
+									this, 
+									&releasedRefrPtr,
+									&start, 
+									&end, 
+									&hit, 
+									&hitRefrHandle,
+									&hitPos, 
+									&velDir,
+									&velOffset,
+									&numNodesCastFrom
+								](RE::NiAVObject* a_node)
+								{
+									if (hit)
+									{
+										return;
+									}
+
+									auto nodePtr = RE::NiPointer<RE::NiAVObject>(a_node);
+									if (!a_node || !nodePtr || !nodePtr.get() || !nodePtr->AsNode())
+									{
+										return;
+									}
+
+									auto hkpRigidBody = Util::GethkpRigidBody(nodePtr.get()); 
+									if (!hkpRigidBody || !hkpRigidBody->GetCollidable())
+									{
+										return;
+									}
+
+									const RE::hkpShape* hkpShape = hkpRigidBody->collidable.shape;
+									if (!hkpShape)
+									{
+										return;
+									}
+
+									auto convexShape = static_cast<const RE::hkpConvexShape*>(hkpShape); 
+									if (!convexShape)
+									{
+										return;
+									}
+
+									velDir = ToNiPoint3(hkpRigidBody->motion.linearVelocity, true);
+									float distPerFrame = 
+									(
+										hkpRigidBody->motion.linearVelocity.Length3() *
+										*g_deltaTimeRealTime
+									);
+									// Cast from node's world position outward a length equal to the node's radius
+									// in the direction of the node's velocity.
+									velOffset = ToVec4
+									(
+										velDir * 
+										((convexShape->radius + distPerFrame) * HAVOK_TO_GAME)
+									);
+									start = ToVec4(nodePtr->world.translate);
+									end = start + velOffset;
+									auto result = Raycast::hkpCastRay
+									(
+										start, 
+										end, 
+										std::vector<RE::TESObjectREFR*>({ releasedRefrPtr.get() })
+									);
+
+									// Only need a single hit, so once there is a hit, 
+									// we save the hit refr and position and then break.
+									if (result.hit)
+									{
+										hit = true;
+										hitRefrHandle = result.hitRefrHandle;
+										hitPos = ToNiPoint3(result.hitPos);
+									}
+									
+									// REMOVE when done debugging.
+									//DebugAPI::QueueArrow3D(start, end, Settings::vuOverlayRGBAValues[p->playerID], 3.0f, 2.0f);
+
+									numNodesCastFrom++;
+								}
+							);
+
+							/*
 							for (const auto& nodeName : GlobalCoopData::RAGDOLL_COLLISION_NPC_NODES)
 							{
 								if (auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); nodePtr && nodePtr.get())
@@ -2123,6 +2255,7 @@ namespace ALYSLC
 									}
 								}
 							}
+							*/
 						}
 						else
 						{
@@ -2133,7 +2266,7 @@ namespace ALYSLC
 							velDir = ToNiPoint3(releasedRefrRigidBody->motion.linearVelocity, true);
 							float distPerFrame = releasedRefrRigidBody->motion.linearVelocity.Length3() * *g_deltaTimeRealTime * HAVOK_TO_GAME;
 							float incThrownRefrRadius = 0.0f;
-							if (isActor)
+							if (asActor)
 							{
 								incThrownRefrRadius = releasedRefrPtr->GetHeight() / 2.0f + distPerFrame;
 							}
@@ -2145,7 +2278,7 @@ namespace ALYSLC
 							// Actor world bound center, particularly P1's, is much more erratic
 							// and sometimes not even within the visible 3D model, 
 							// so use the refr data position for actors instead.
-							if (isActor)
+							if (asActor)
 							{
 								start = 
 								{
@@ -2164,7 +2297,7 @@ namespace ALYSLC
 								};
 							}
 
-							if (isActor)
+							if (asActor)
 							{
 								end = 
 								{
@@ -2183,7 +2316,12 @@ namespace ALYSLC
 								};
 							}
 
-							auto result = Raycast::hkpCastRay(start, end, std::vector<RE::NiAVObject*>({ releasedRefr3D.get() }), RE::COL_LAYER::kActorZone);
+							auto result = Raycast::hkpCastRay
+							(
+								start, 
+								end, 
+								std::vector<RE::TESObjectREFR*>({ releasedRefrPtr.get() })
+							);
 							hit = result.hit;
 							hitRefrHandle = result.hitRefrHandle;
 							hitPos = ToNiPoint3(result.hitPos);
@@ -2191,17 +2329,30 @@ namespace ALYSLC
 
 						if (hit)
 						{
-							if (auto hitRefrPtr = Util::GetRefrPtrFromHandle(hitRefrHandle); hitRefrPtr)
+							if (auto hitRefrPtr = Util::GetRefrPtrFromHandle(hitRefrHandle); 
+								hitRefrPtr && hitRefrPtr.get())
 							{
 								bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(hitRefrPtr.get());
 								// Add hit refr to cached hit form IDs set.
 								releasedRefrInfo->AddHitRefr(hitRefrPtr.get());
 								// Hit a new, valid actor that is not the released refr or the player that released the refr.
 								if (auto hitActor = hitRefrPtr->As<RE::Actor>(); 
-									hitActor && hitActor->currentProcess && 
-									hitRefrPtr != releasedRefrPtr && hitRefrPtr != coopActor && !hasAlreadyHitRefr)
+									hitActor && 
+									hitActor->currentProcess && 
+									hitRefrPtr != releasedRefrPtr && 
+									hitRefrPtr != coopActor && 
+									!hasAlreadyHitRefr)
 								{
 									HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), releasedRefrRigidBody.get(), hitPos);
+								}
+
+								// Thrown actor hit a new refr that isn't itself. Splat.
+								if (asActor &&
+									asActor != hitRefrPtr.get() &&
+									!hasAlreadyHitRefr && 
+									!releasedRefrInfo->hitRefrFIDs.empty())
+								{
+									HandleSplat(asActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size());
 								}
 							}
 						}
@@ -2348,10 +2499,36 @@ namespace ALYSLC
 					damage *= Settings::vfDamageReceivedMult[thrownP->controllerID];
 				}
 
-				if (damage != 0.0f)
-				{
-					thrownActorPtr->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage);
-				}
+				thrownActorPtr->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage);
+			}
+		}
+
+		// Play sound.
+		auto audioManager = RE::BSAudioManager::GetSingleton(); 
+		if (!audioManager)
+		{
+			return;
+		}
+				
+		RE::BSSoundHandle handle{ };
+		RE::BGSSoundDescriptorForm* flopSFX =
+		(
+			RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF664)
+		);
+		if (!flopSFX)
+		{	
+			return;
+		}
+
+		bool succ = audioManager->BuildSoundDataFromDescriptor(handle, flopSFX);
+		if (succ)
+		{
+			handle.SetPosition(thrownActorPtr->data.location);
+			auto actor3DPtr = Util::GetRefr3D(thrownActorPtr.get());
+			if (actor3DPtr && actor3DPtr.get())
+			{
+				handle.SetObjectToFollow(actor3DPtr.get());
+				handle.Play();
 			}
 		}
 	}
@@ -3012,7 +3189,7 @@ namespace ALYSLC
 			if (coopActor->IsSneaking())
 			{
 				const auto isInCombat = coopActor->IsInCombat();
-				const bool checkSelectedTarget = selectedTargetActorPtr && !selectedTargetActorPtr->IsDead() && !isInCombat;
+				const bool checkSelectedTarget = selectedTargetActorPtr && !selectedTargetActorPtr->IsDead();
 				// Set sneak info text to indicate the player's hidden percent,
 				// which is determined by their remaining stealth points:
 				// (player's total stealth points - max(all aggro'd actors' stealth point decrements))
@@ -3287,7 +3464,7 @@ namespace ALYSLC
 		const float rectWidth = fabsf(gRect.right - gRect.left);
 		const float rectHeight = fabsf(gRect.bottom - gRect.top);
 		const bool isMovingCrosshair = p->pam->IsPerforming(InputAction::kMoveCrosshair);
-		// Only actors are selectable when in combat. \
+		// Only actors are selectable when in combat.
 		// Check if any player in the party is in combat.
 		bool playerInCombat = std::any_of
 		(
@@ -4099,7 +4276,13 @@ namespace ALYSLC
 			// Apply max speed mult.
 			grabbedRefrMaxSpeed *= maxSpeedMult;
 			// Should cap out at the player's movement speed if higher than the pre-defined max speed.
-			grabbedRefrMaxSpeed = max(grabbedRefrMaxSpeed, a_p->coopActor->DoGetMovementSpeed());
+			float playerMovementSpeed = 
+			(
+				isRagdolled && a_p->coopActor->GetCharController() ? 
+				a_p->coopActor->GetCharController()->outVelocity.Length3() :
+				a_p->coopActor->DoGetMovementSpeed()
+			);
+			grabbedRefrMaxSpeed = max(grabbedRefrMaxSpeed, playerMovementSpeed);
 			// Slow down when nearing the target position.
 			// Reduces jitter.
 			const float slowdownRadius = 3000.0f;
@@ -4117,12 +4300,64 @@ namespace ALYSLC
 			);
 
 			// Don't move at all when too close.
-			auto velocity = posDelta.Length() > 1.0f ? dir * fmin(heavinessFactor * posDelta.Length() * slowdownFactor, grabbedRefrMaxSpeed) : RE::NiPoint3();
+			auto playerToTargetDir = targetPosition - a_p->coopActor->data.location;
+			auto objectToPlayerDir = a_p->coopActor->data.location - objectPtr->data.location;
+			playerToTargetDir.Unitize();
+			objectToPlayerDir.Unitize();
+			float catchupFactor = 5.5f + playerToTargetDir.Dot(objectToPlayerDir) * 4.5f;
+
+			auto velocity = RE::NiPoint3();
+
+			if ((!isRagdolled) && (a_p->mm->lsMoved || playerMovementSpeed > 0.0f))
+			{
+				velocity = 
+				(
+					dir * 
+					fmin
+					(
+						playerMovementSpeed * catchupFactor, 
+						grabbedRefrMaxSpeed
+					) 
+				);
+			}
+			else
+			{
+				velocity = posDelta * catchupFactor;
+			}
+
 			velocity *= GAME_TO_HAVOK;
+
+			RE::NiPoint3 oldVelocity = ToNiPoint3(hkpRigidBody->motion.linearVelocity);
+			velocity.x = Util::InterpolateSmootherStep
+			(
+				oldVelocity.x, 
+				velocity.x, 
+				std::clamp(0.0f, 1.0f, 0.85f * (60.0f * *g_deltaTimeRealTime))
+			);
+			velocity.y = Util::InterpolateSmootherStep
+			(
+				oldVelocity.y, 
+				velocity.y, 
+				std::clamp(0.0f, 1.0f, 0.85f * (60.0f * *g_deltaTimeRealTime))
+			);
+			velocity.z = Util::InterpolateSmootherStep
+			(
+				oldVelocity.z,
+				velocity.z, 
+				std::clamp(0.0f, 1.0f, 0.85f * (60.0f * *g_deltaTimeRealTime))
+			);
 
 			// Activate the refr and set the computed velocity.
 			Util::NativeFunctions::hkpEntity_Activate(hkpRigidBody.get());
-			hkpRigidBody->motion.SetLinearVelocity({ velocity.x, velocity.y, velocity.z, 0.0f });
+			RE::hkVector4 newVelocity{ velocity.x, velocity.y, velocity.z, 0.0f };
+			hkpRigidBody->motion.SetLinearVelocity(newVelocity);
+
+			/*SPDLOG_DEBUG("[TM] UpdateGrabbedReference: {}: {}'s speed: {}. Catchup factor: {}, player movement speed: {}.",
+				a_p->coopActor->GetName(), 
+				objectPtr->GetName(),
+				velocity.Length(),
+				catchupFactor,
+				playerMovementSpeed);*/
 
 			// Adjust the grabbed object's rotation if performing the requisite action.
 			// [Rotation controls]:
@@ -5387,86 +5622,175 @@ namespace ALYSLC
 					const auto& contactEvent = queuedReleasedRefrContactEvents.front();
 					queuedReleasedRefrContactEvents.pop_front();
 
-					auto collidableA = contactEvent.bodies[0]->GetCollidable();
-					auto collidableB = contactEvent.bodies[1]->GetCollidable();
-
-					if (!contactEvent.contactPoint)
+					// Must have a contact point and two colliding bodies.
+					if (!contactEvent.contactPoint || 
+						!contactEvent.bodies[0] || 
+						!contactEvent.bodies[1])
 					{
-						// No contact point, nothing to handle for this event.
 						continue;
 					}
 
-					contactPoint = ToNiPoint3(contactEvent.contactPoint->position) * HAVOK_TO_GAME;
-					// Two valid colliding objects.
-					if (collidableA && collidableB)
+					// Must have two valid collidables.
+					auto collidableA = contactEvent.bodies[0]->GetCollidable();
+					auto collidableB = contactEvent.bodies[1]->GetCollidable();
+					if (!collidableA || !collidableB)
 					{
-						refrA = RE::TESHavokUtilities::FindCollidableRef(*collidableA);
-						refrB = RE::TESHavokUtilities::FindCollidableRef(*collidableB);
-						// At least one refr is invalid.
-						if (!refrA || !refrB) 
+						continue;
+					}
+
+					refrA = RE::TESHavokUtilities::FindCollidableRef(*collidableA);
+					refrB = RE::TESHavokUtilities::FindCollidableRef(*collidableB);
+					// SPECIAL CASE:
+					// If one refr is invalid, it means a thrown actor collided,
+					// so we have to potentially handle the splat and cleanup.
+					if (!refrA || !refrB) 
+					{
+						auto releasedActor =
+						(
+							refrA ?
+							refrA->As<RE::Actor>() :
+							refrB ?
+							refrB->As<RE::Actor>() :
+							nullptr
+						);
+						if (!releasedActor)
 						{
 							continue;
 						}
 
-						// Must have two valid associated refrs with valid handles.
-						handleA = refrA->GetHandle();
-						handleB = refrB->GetHandle();
-						if (!Util::HandleIsValid(handleA) || !Util::HandleIsValid(handleB))
+						auto releasedActorHandle = releasedActor->GetHandle();
+						if (!Util::HandleIsValid(releasedActorHandle))
 						{
 							continue;
 						}
 
-						// Check for instances where one of the two colliding refrs is managed and the other is not.
-						// Want to ignore collisions between non-managed refrs and between two managed refrs.
-						int32_t collidingReleasedRefrIndex = -1;
-						if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA) && 
-							!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB))
-						{
-							collidedWithRefr = refrB;
-							collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleA);
-						}
-
-						if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB) && 
-							!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA))
-						{
-							collidedWithRefr = refrA;
-							collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleB);
-						}
-
-						// Why are you hitting yourself? Eh, whatever. Next!
-						if (!collidedWithRefr || collidedWithRefr == a_p->coopActor.get())
+						const auto& releasedRefrIndicesMap = 
+						(
+							a_p->tm->rmm->releasedRefrHandlesToInfoIndices
+						);
+						bool releasedByAPlayer = releasedRefrIndicesMap.contains(releasedActorHandle);
+						if (!releasedByAPlayer)
 						{
 							continue;
 						}
 
-						// No index for the managed refr.
-						if (collidingReleasedRefrIndex == -1)
+						const auto index = releasedRefrIndicesMap.at(releasedActorHandle);
+						const auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[index];
+						// Hit 3D object without an associated refr.
+						// eg. Navmesh or terrain block.
+						a_p->tm->HandleSplat
+						(
+							releasedActorHandle, releasedRefrInfo->hitRefrFIDs.size() + 1
+						);
+
+						auto rigidBodyPtr = Util::GethkpRigidBody(releasedActor);
+						// Send detection event.
+						Util::SetActorsDetectionEvent
+						(
+							a_p->coopActor.get(), 
+							releasedActor, 
+							rigidBodyPtr ? rigidBodyPtr.get() : nullptr,
+							contactPoint
+						);
+						
+						SPDLOG_DEBUG("[TM] HandleQueuedContactEvents: {}: {} hit terrain.",
+							a_p->coopActor->GetName(),
+							releasedActor->GetName());
+
+						// No more handling required.
+						continue;
+					}
+
+					SPDLOG_DEBUG("[TM] HandleQueuedContactEvents: {}: {} hit by {}.",
+						a_p->coopActor->GetName(),
+						refrA->GetName(),
+						refrB->GetName());
+
+					// Must have two valid associated refrs with valid handles.
+					handleA = refrA->GetHandle();
+					handleB = refrB->GetHandle();
+					if (!Util::HandleIsValid(handleA) || !Util::HandleIsValid(handleB))
+					{
+						continue;
+					}
+
+					// Check for instances where one of the two colliding refrs is managed and the other is not.
+					// Want to ignore collisions between non-managed refrs and between two managed refrs.
+					int32_t collidingReleasedRefrIndex = -1;
+					if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA) && 
+						!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB))
+					{
+						collidedWithRefr = refrB;
+						collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleA);
+					}
+
+					if (a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleB) && 
+						!a_p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(handleA))
+					{
+						collidedWithRefr = refrA;
+						collidingReleasedRefrIndex = a_p->tm->rmm->releasedRefrHandlesToInfoIndices.at(handleB);
+					}
+
+					// Why are you hitting yourself? Eh, whatever. Next!
+					if (!collidedWithRefr || collidedWithRefr == a_p->coopActor.get())
+					{
+						continue;
+					}
+
+					// No index for the managed refr.
+					if (collidingReleasedRefrIndex == -1)
+					{
+						continue;
+					}
+
+					auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[collidingReleasedRefrIndex];
+					// Don't want repeated hits.
+					bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(collidedWithRefr);
+					// Add the refr the managed refr collided with.
+					releasedRefrInfo->AddHitRefr(collidedWithRefr);
+					auto releasedRefrPtr = Util::GetRefrPtrFromHandle(releasedRefrInfo->refrHandle);
+					auto releasedRigidBodyPtr = Util::GethkpRigidBody(releasedRefrPtr.get()); 
+
+					// Managed refr hit a new actor that isn't itself. Bonk.
+					if (auto hitActor = collidedWithRefr->As<RE::Actor>(); 
+						hitActor && 
+						hitActor->currentProcess && 
+						releasedRigidBodyPtr &&
+						releasedRefrPtr.get() != collidedWithRefr && 
+						!hasAlreadyHitRefr)
+					{
+						a_p->tm->HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), releasedRigidBodyPtr.get(), contactPoint);
+					}
+
+					// Thrown actor hit a new refr that isn't itself. Splat.
+					if (auto thrownActor = releasedRefrPtr->As<RE::Actor>(); 
+						thrownActor && 
+						thrownActor != collidedWithRefr &&
+						!hasAlreadyHitRefr && 
+						!releasedRefrInfo->hitRefrFIDs.empty())
+					{
+						a_p->tm->HandleSplat(thrownActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size());
+					}
+
+					
+					// Damage non-actors.
+					auto taskInterface = RE::TaskQueueInterface::GetSingleton(); 
+					if (taskInterface)
+					{
+						if (!releasedRefrPtr->Is(RE::FormType::ActorCharacter))
 						{
-							continue;
+							taskInterface->QueueUpdateDestructibleObject
+							(
+								releasedRefrPtr.get(), 100.0f, false, a_p->coopActor.get()
+							);
 						}
-
-						auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[collidingReleasedRefrIndex];
-						// Don't want repeated hits.
-						bool hasAlreadyHitRefr = releasedRefrInfo->HasAlreadyHitRefr(collidedWithRefr);
-						// Add the refr the managed refr collided with.
-						releasedRefrInfo->AddHitRefr(collidedWithRefr);
-						auto releasedRefrPtr = Util::GetRefrPtrFromHandle(releasedRefrInfo->refrHandle);
-
-						// Managed refr hit a new actor that isn't itself. Bonk.
-						if (auto hitActor = collidedWithRefr->As<RE::Actor>(); 
-							hitActor && hitActor->currentProcess && releasedRefrPtr.get() != collidedWithRefr && !hasAlreadyHitRefr)
+						
+						if (!collidedWithRefr->Is(RE::FormType::ActorCharacter))
 						{
-							if (auto hkpRigidBody = Util::GethkpRigidBody(releasedRefrPtr.get()); hkpRigidBody) 
-							{
-								a_p->tm->HandleBonk(hitActor->GetHandle(), releasedRefrPtr->GetHandle(), hkpRigidBody.get(), contactPoint);
-							}
-						}
-
-						// Thrown actor hit a new refr that isn't itself. Splat.
-						if (auto thrownActor = releasedRefrPtr->As<RE::Actor>(); 
-							thrownActor && thrownActor != collidedWithRefr && !hasAlreadyHitRefr && !releasedRefrInfo->hitRefrFIDs.empty())
-						{
-							a_p->tm->HandleSplat(thrownActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size());
+							taskInterface->QueueUpdateDestructibleObject
+							(
+								collidedWithRefr, 100.0f, false, a_p->coopActor.get()
+							);
 						}
 					}
 				}

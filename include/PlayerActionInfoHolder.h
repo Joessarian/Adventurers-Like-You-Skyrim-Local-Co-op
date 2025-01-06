@@ -22,7 +22,8 @@ namespace ALYSLC
 		// List of all player actions and their corresponding lists of composing input actions.
 		// Indexed with (player action index - index of the first player action). 
 		// Const time random access over logarithmic time map access.
-		using PACompInputActionLists = std::array<ComposingInputActionList, (size_t)(InputAction::kActionTotal)>;
+		using PACompInputActionLists = 
+		std::array<ComposingInputActionList, (size_t)(InputAction::kActionTotal)>;
 		// Flags representing press conditions to trigger a player action.
 		using TriggerFlags = SKSE::stl::enumeration<TriggerFlag>;
 		// Maps XInput masks to their associated input groups.
@@ -33,23 +34,34 @@ namespace ALYSLC
 		{
 		public: 
 			PlayerActionParams();
-			PlayerActionParams(PerfType a_perfType, TriggerFlags a_triggerFlags, ComposingInputActionList a_composingInputs, uint32_t a_inputMask, uint32_t a_composingPlayerActionsCount);
+			PlayerActionParams
+			(
+				PerfType a_perfType, 
+				TriggerFlags a_triggerFlags,
+				ComposingInputActionList a_composingInputs, 
+				uint32_t a_inputMask, 
+				uint32_t a_composingPlayerActionsCount
+			);
 			PlayerActionParams(const PlayerActionParams& a_other);
 			PlayerActionParams(PlayerActionParams&& a_other);
 
 			PlayerActionParams& operator=(const PlayerActionParams& a_other);
 			PlayerActionParams& operator=(PlayerActionParams&& a_other);
 
-			// Buttons which must be pressed/analog sticks that must be moved to trigger the action.
+			// Buttons which must be pressed/analog sticks 
+			// that must be moved to trigger the action.
 			ComposingInputActionList composingInputs;
 			// When to perform the action.
 			PerfType perfType;
-			// Flags related to triggering the action and what happens when the action is already triggered.
+			// Flags related to triggering the action 
+			// and what happens when the action is already triggered.
 			TriggerFlags triggerFlags;
 			// Input mask retrieved from bit operations on the composing inputs list.
-			// Bits represent an input index, and if set, the input is pressed/moved for this action.
+			// Bits represent an input index, and if set, 
+			// the input is pressed/moved for this action.
 			uint32_t inputMask;
-			// Number of composing player actions in this bind that were decomposed into composing inputs.
+			// Number of composing player actions in this bind 
+			// that were decomposed into composing inputs.
 			uint32_t composingPlayerActionsCount;
 		};
 
@@ -88,52 +100,80 @@ namespace ALYSLC
 			{ 
 				ActionGroup::kActivation,
 				{ 
-					!InputAction::kActivate, !InputAction::kActivateAllOfType, !InputAction::kActivateCancel 
+					!InputAction::kActivate, 
+					!InputAction::kActivateAllOfType, 
+					!InputAction::kActivateCancel 
 				} 
 			},
 			{ 
 				ActionGroup::kCamera,
 				{ 
-					!InputAction::kCamLockOn, !InputAction::kCamManualPos, !InputAction::kDisableCoopCam,
-					!InputAction::kRotateCam, !InputAction::kZoomCam 
+					!InputAction::kCamLockOn, 
+					!InputAction::kCamManualPos, 
+					!InputAction::kDisableCoopCam,
+					!InputAction::kRotateCam, 
+					!InputAction::kZoomCam 
 				} 
 			},
 			{ 
 				ActionGroup::kCombat,
 				{ 
-					!InputAction::kAttackLH, !InputAction::kAttackRH,
-					!InputAction::kBash, !InputAction::kBlock, 
-					!InputAction::kCastLH, !InputAction::kCastRH,
-					!InputAction::kPowerAttackDual, !InputAction::kPowerAttackLH,
-					!InputAction::kPowerAttackRH, !InputAction::kQuickSlotCast,
-					!InputAction::kShout, !InputAction::kSpecialAction
+					!InputAction::kAttackLH, 
+					!InputAction::kAttackRH,
+					!InputAction::kBash, 
+					!InputAction::kBlock, 
+					!InputAction::kCastLH, 
+					!InputAction::kCastRH,
+					!InputAction::kPowerAttackDual, 
+					!InputAction::kPowerAttackLH,
+					!InputAction::kPowerAttackRH,
+					!InputAction::kQuickSlotCast,
+					!InputAction::kShout, 
+					!InputAction::kSpecialAction
 				}
 			},
 			{ 
 				ActionGroup::kDebug,
 				{ 
-					!InputAction::kDebugRagdollPlayer, !InputAction::kDebugReEquipHandForms, 
-					!InputAction::kDebugRefreshPlayerManagers, !InputAction::kDebugResetPlayer
+					!InputAction::kDebugRagdollPlayer, 
+					!InputAction::kDebugReEquipHandForms, 
+					!InputAction::kDebugRefreshPlayerManagers, 
+					!InputAction::kDebugResetPlayer
 				} 
 			},
 			{ 
 				ActionGroup::kEquip,
 				{ 
-					!InputAction::kCycleAmmo, !InputAction::kCycleSpellCategoryLH, 
-					!InputAction::kCycleSpellCategoryRH, !InputAction::kCycleSpellLH, 
-					!InputAction::kCycleSpellRH, !InputAction::kCycleVoiceSlotMagic, 
-					!InputAction::kCycleWeaponCategoryLH, !InputAction::kCycleWeaponCategoryRH, 
-					!InputAction::kCycleWeaponLH, !InputAction::kCycleWeaponRH, 
-					!InputAction::kHotkeyEquip, !InputAction::kQuickSlotItem, !InputAction::kSheathe
+					!InputAction::kCycleAmmo, 
+					!InputAction::kCycleSpellCategoryLH, 
+					!InputAction::kCycleSpellCategoryRH, 
+					!InputAction::kCycleSpellLH, 
+					!InputAction::kCycleSpellRH, 
+					!InputAction::kCycleVoiceSlotMagic, 
+					!InputAction::kCycleWeaponCategoryLH, 
+					!InputAction::kCycleWeaponCategoryRH, 
+					!InputAction::kCycleWeaponLH, 
+					!InputAction::kCycleWeaponRH, 
+					!InputAction::kHotkeyEquip,
+					!InputAction::kQuickSlotItem,
+					!InputAction::kSheathe
 				}
 			},
 			{ 
 				ActionGroup::kMenu,
 				{
-					!InputAction::kCoopDebugMenu, !InputAction::kCoopIdlesMenu, !InputAction::kCoopMiniGamesMenu, 
-					!InputAction::kCoopSummoningMenu, !InputAction::kFavorites, !InputAction::kInventory, 
-					!InputAction::kMagicMenu, !InputAction::kMapMenu, !InputAction::kPause, 
-					!InputAction::kStatsMenu, !InputAction::kTradeWithPlayer, !InputAction::kTweenMenu,
+					!InputAction::kCoopDebugMenu, 
+					!InputAction::kCoopIdlesMenu, 
+					!InputAction::kCoopMiniGamesMenu, 
+					!InputAction::kCoopSummoningMenu, 
+					!InputAction::kFavorites, 
+					!InputAction::kInventory, 
+					!InputAction::kMagicMenu, 
+					!InputAction::kMapMenu, 
+					!InputAction::kPause, 
+					!InputAction::kStatsMenu, 
+					!InputAction::kTradeWithPlayer, 
+					!InputAction::kTweenMenu,
 					!InputAction::kWaitMenu,
 				} 
 			},
@@ -273,185 +313,400 @@ namespace ALYSLC
 		// Used to get all the DXSCs for inputs that are part of a input group.
 		const InputGroupsToDXSCsMap INPUT_GROUPS_TO_DXSCS = 
 		{
-			{ InputGroup::kBumper, { DXSC_LEFT_SHOULDER, DXSC_RIGHT_SHOULDER } },
-			{ InputGroup::kDPad, { DXSC_DPAD_UP, DXSC_DPAD_DOWN, DXSC_DPAD_LEFT, DXSC_DPAD_RIGHT } },
-			{ InputGroup::kMainFour, { DXSC_A, DXSC_B, DXSC_X, DXSC_Y } },
-			{ InputGroup::kMiddleTwo, { DXSC_START, DXSC_BACK } },
-			{ InputGroup::kThumbstick, { DXSC_LEFT_THUMB, DXSC_RIGHT_THUMB } },
-			{ InputGroup::kTrigger, { DXSC_LT, DXSC_RT } }
+			{ 
+				InputGroup::kBumper, 
+				{ DXSC_LEFT_SHOULDER, DXSC_RIGHT_SHOULDER } 
+			},
+			{ 
+				InputGroup::kDPad, 
+				{ DXSC_DPAD_UP, DXSC_DPAD_DOWN, DXSC_DPAD_LEFT, DXSC_DPAD_RIGHT }
+			},
+			{ 
+				InputGroup::kMainFour, 
+				{ DXSC_A, DXSC_B, DXSC_X, DXSC_Y }
+			},
+			{ 
+				InputGroup::kMiddleTwo, 
+				{ DXSC_START, DXSC_BACK } 
+			},
+			{ 
+				InputGroup::kThumbstick, 
+				{ DXSC_LEFT_THUMB, DXSC_RIGHT_THUMB } 
+			},
+			{ 
+				InputGroup::kTrigger, 
+				{ DXSC_LT, DXSC_RT } 
+			}
 		};
 
-		// Default list (indexed by player action index) of composing input actions for each player action.
+		// Default list (indexed by player action index) of composing input actions 
+		// for each player action.
 		const PACompInputActionLists DEF_PA_COMP_INPUT_ACTIONS_LIST = 
 			PACompInputActionLists(
 			{
 				// Activate
-				{ InputAction::kA },
+				{ 
+					InputAction::kA 
+				},
 				// ActivateAllOfType
-				{ InputAction::kActivate, InputAction::kLShoulder },
+				{ 
+					InputAction::kActivate, 
+					InputAction::kLShoulder 
+				},
 				// ActivateCancel
-				{ InputAction::kActivate, InputAction::kRShoulder },
+				{ 
+					InputAction::kActivate, 
+					InputAction::kRShoulder 
+				},
 				// AdjustAimPitch
-				{ InputAction::kLShoulder, InputAction::kRShoulder, InputAction::kRS },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kRShoulder, 
+					InputAction::kRS 
+				},
 				// AttackLH
-				{ InputAction::kLT },
+				{ 
+					InputAction::kLT 
+				},
 				// AttackRH
-				{ InputAction::kRT },
+				{
+					InputAction::kRT 
+				},
 				// Bash
-				{ InputAction::kAttackRH },
+				{ 
+					InputAction::kAttackRH 
+				},
 				// Block
-				{ InputAction::kAttackLH },
+				{ 
+					InputAction::kAttackLH 
+				},
 				// CamLockOn
-				{ InputAction::kLShoulder, InputAction::kRThumb },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kRThumb 
+				},
 				// CamManualPos
-				{ InputAction::kRShoulder, InputAction::kRThumb },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kRThumb
+				},
 				// CastLH
-				{ InputAction::kAttackLH },
+				{ 
+					InputAction::kAttackLH 
+				},
 				// CastRH
-				{ InputAction::kAttackRH },
+				{ 
+					InputAction::kAttackRH 
+				},
 				// ChangeDialoguePlayer
-				{ InputAction::kPause },
+				{ 
+					InputAction::kPause 
+				},
 				// CoopDebugMenu
-				{ InputAction::kStart, InputAction::kBack },
+				{ 
+					InputAction::kStart, 
+					InputAction::kBack 
+				},
 				// CoopIdlesMenu
-				{ InputAction::kRShoulder, InputAction::kDPadR },
+				{
+					InputAction::kRShoulder, 
+					InputAction::kDPadR 
+				},
 				// CoopMiniGamesMenu
-				{ InputAction::kRShoulder, InputAction::kDPadL },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kDPadL
+				},
 				// CoopSummoningMenu
-				{ InputAction::kBack, InputAction::kStart },
+				{ 
+					InputAction::kBack, 
+					InputAction::kStart 
+				},
 				// CycleAmmo
-				{ InputAction::kLShoulder, InputAction::kY },
+				{ 
+					InputAction::kLShoulder,
+					InputAction::kY
+				},
 				// CycleSpellCategoryLH
-				{ InputAction::kY, InputAction::kLShoulder },
+				{ 
+					InputAction::kY, 
+					InputAction::kLShoulder 
+				},
 				// CycleSpellCategoryRH
-				{ InputAction::kY, InputAction::kRShoulder },
+				{
+					InputAction::kY,
+					InputAction::kRShoulder 
+				},
 				// CycleSpellLH
-				{ InputAction::kLShoulder, InputAction::kX },
+				{ 
+					InputAction::kLShoulder,
+					InputAction::kX
+				},
 				// CycleSpellRH
-				{ InputAction::kRShoulder, InputAction::kX },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kX 
+				},
 				// CycleVoiceSlotMagic
-				{ InputAction::kRShoulder, InputAction::kY },
+				{
+					InputAction::kRShoulder,
+					InputAction::kY 
+				},
 				// CycleWeaponCategoryLH
-				{ InputAction::kY, InputAction::kLT },
+				{ 
+					InputAction::kY, 
+					InputAction::kLT 
+				},
 				// CycleWeaponCategoryRH
-				{ InputAction::kY, InputAction::kRT },
+				{ 
+					InputAction::kY,
+					InputAction::kRT 
+				},
 				// CycleWeaponLH
-				{ InputAction::kLShoulder, InputAction::kB },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kB 
+				},
 				// CycleWeaponRH
-				{ InputAction::kRShoulder, InputAction::kB },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kB 
+				},
 				// DebugRagdollPlayer
-				{ InputAction::kLShoulder, InputAction::kDPadR },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kDPadR
+				},
 				// DebugReEquipHandForms
-				{ InputAction::kLShoulder, InputAction::kDPadL },
+				{ 
+					InputAction::kLShoulder,
+					InputAction::kDPadL
+				},
 				// DebugRefreshPlayerManagers
-				{ InputAction::kLShoulder, InputAction::kDPadD },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kDPadD 
+				},
 				// DebugResetPlayer
-				{ InputAction::kLShoulder, InputAction::kDPadU },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kDPadU 
+				},
 				// DisableCoopCam
-				{ InputAction::kLThumb, InputAction::kRThumb },
+				{ 
+					InputAction::kLThumb, 
+					InputAction::kRThumb 
+				},
 				// Dismount
-				{ InputAction::kSneak },
+				{ 
+					InputAction::kSneak 
+				},
 				// Dodge
-				{ InputAction::kSprint },
+				{ 
+					InputAction::kSprint
+				},
 				// FaceTarget
-				{ InputAction::kLShoulder },
+				{
+					InputAction::kLShoulder
+				},
 				// Favorites
-				{ InputAction::kBack },
+				{
+					InputAction::kBack 
+				},
 				// GrabObject
-				{ InputAction::kFaceTarget, InputAction::kActivate },
+				{ 
+					InputAction::kFaceTarget, 
+					InputAction::kActivate 
+				},
 				// GrabRotateYZ
-				{ InputAction::kFaceTarget, InputAction::kRThumb, InputAction::kRS },
+				{ 
+					InputAction::kFaceTarget,
+					InputAction::kRThumb, 
+					InputAction::kRS 
+				},
 				// HotkeyEquip
-				{ InputAction::kRThumb, InputAction::kRS },
+				{ 
+					InputAction::kRThumb,
+					InputAction::kRS
+				},
 				// Inventory
-				{ InputAction::kDPadR },
+				{ 
+					InputAction::kDPadR
+				},
 				// Jump
-				{ InputAction::kY },
+				{ 
+					InputAction::kY
+				},
 				// MagicMenu
-				{ InputAction::kDPadL },
+				{
+					InputAction::kDPadL
+				},
 				// MapMenu
-				{ InputAction::kDPadD },
+				{ 
+					InputAction::kDPadD
+				},
 				// MoveCrosshair
-				{ InputAction::kRS },
+				{ 
+					InputAction::kRS 
+				},
 				// Pause
-				{ InputAction::kStart },
+				{
+					InputAction::kStart
+				},
 				// PowerAttackDual
-				{ InputAction::kRShoulder, InputAction::kAttackRH, InputAction::kAttackLH },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kAttackRH, 
+					InputAction::kAttackLH 
+				},
 				// PowerAttackLH
-				{ InputAction::kRShoulder, InputAction::kAttackLH },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kAttackLH
+				},
 				// PowerAttackRH
-				{ InputAction::kRShoulder, InputAction::kAttackRH },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kAttackRH
+				},
 				// QuickSlotCast
-				{ InputAction::kLShoulder, InputAction::kRShoulder, InputAction::kSpecialAction },
+				{
+					InputAction::kLShoulder,
+					InputAction::kRShoulder, 
+					InputAction::kSpecialAction 
+				},
 				// QuickSlotItem
-				{ InputAction::kRShoulder, InputAction::kLShoulder, InputAction::kSpecialAction },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kLShoulder,
+					InputAction::kSpecialAction 
+				},
 				// ResetAim
-				{ InputAction::kRShoulder },
+				{
+					InputAction::kRShoulder
+				},
 				// RotateCam
-				{ InputAction::kRShoulder, InputAction::kRS },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kRS 
+				},
 				// RotateLeftForearm
-				{ InputAction::kLShoulder, InputAction::kAttackLH, InputAction::kRS },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kAttackLH,
+					InputAction::kRS 
+				},
 				// RotateLeftHand
-				{ InputAction::kLShoulder, InputAction::kAttackLH, InputAction::kRThumb, InputAction::kRS },
+				{ 
+					InputAction::kLShoulder, 
+					InputAction::kAttackLH, 
+					InputAction::kRThumb, 
+					InputAction::kRS 
+				},
 				// RotateLeftShoulder
-				{ InputAction::kAttackLH, InputAction::kRS },
+				{ 
+					InputAction::kAttackLH,
+					InputAction::kRS
+				},
 				// RotateRightForearm
-				{ InputAction::kRShoulder, InputAction::kAttackRH, InputAction::kRS },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kAttackRH,
+					InputAction::kRS 
+				},
 				// RotateRightHand
-				{ InputAction::kRShoulder, InputAction::kAttackRH, InputAction::kRThumb, InputAction::kRS },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kAttackRH, 
+					InputAction::kRThumb, 
+					InputAction::kRS 
+				},
 				// RotateRightShoulder
-				{ InputAction::kAttackRH, InputAction::kRS },
+				{ 
+					InputAction::kAttackRH,
+					InputAction::kRS
+				},
 				// Sheathe
-				{ InputAction::kRThumb },
+				{ 
+					InputAction::kRThumb 
+				},
 				// Shout
-				{ InputAction::kRShoulder, InputAction::kA },
+				{ 
+					InputAction::kRShoulder,
+					InputAction::kA 
+				},
 				// Sneak
-				{ InputAction::kLThumb },
+				{ 
+					InputAction::kLThumb
+				},
 				// SpecialAction
-				{ InputAction::kX },
+				{
+					InputAction::kX 
+				},
 				// Sprint
-				{ InputAction::kB },
+				{ 
+					InputAction::kB
+				},
 				// StatsMenu
-				{ InputAction::kDPadU },
+				{
+					InputAction::kDPadU 
+				},
 				// TeleportToPlayer
-				{ InputAction::kRShoulder, InputAction::kDPadU },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kDPadU 
+				},
 				// TradeWithPlayer
-				{ InputAction::kRShoulder, InputAction::kDPadD },
+				{
+					InputAction::kRShoulder,
+					InputAction::kDPadD 
+				},
 				// TweenMenu
-				{ InputAction::kRShoulder, InputAction::kStart },
+				{ 
+					InputAction::kRShoulder, 
+					InputAction::kStart 
+				},
 				// WaitMenu
-				{ InputAction::kLShoulder, InputAction::kBack },
+				{ 
+					InputAction::kLShoulder,
+					InputAction::kBack
+				},
 				// ZoomCam
-				{ InputAction::kLShoulder, InputAction::kRS } 
+				{ 
+					InputAction::kLShoulder,
+					InputAction::kRS 
+				} 
 			}
 		);
 
 		// Maps inputs' XInput masks to the input group those inputs belong to.
 		// Useful for checking if XInput masks are in the same group of inputs.
 		const XInputMasksToInputGroups XIMASKS_TO_INPUT_GROUPS =
-			XInputMasksToInputGroups(
-				{ 
-					{ XINPUT_GAMEPAD_DPAD_UP, InputGroup::kDPad },
-					{ XINPUT_GAMEPAD_DPAD_DOWN, InputGroup::kDPad },
-					{ XINPUT_GAMEPAD_DPAD_LEFT, InputGroup::kDPad },
-					{ XINPUT_GAMEPAD_DPAD_RIGHT, InputGroup::kDPad },
-					{ XINPUT_GAMEPAD_START, InputGroup::kMiddleTwo },
-					{ XINPUT_GAMEPAD_BACK, InputGroup::kMiddleTwo },
-					{ XINPUT_GAMEPAD_LEFT_THUMB, InputGroup::kThumbstick },
-					{ XINPUT_GAMEPAD_RIGHT_THUMB, InputGroup::kThumbstick },
-					{ XINPUT_GAMEPAD_LEFT_SHOULDER, InputGroup::kBumper },
-					{ XINPUT_GAMEPAD_RIGHT_SHOULDER, InputGroup::kBumper },
-					{ XINPUT_GAMEPAD_A, InputGroup::kMainFour },
-					{ XINPUT_GAMEPAD_B, InputGroup::kMainFour },
-					{ XINPUT_GAMEPAD_X, InputGroup::kMainFour },
-					{ XINPUT_GAMEPAD_Y, InputGroup::kMainFour },
-					{ XMASK_LT, InputGroup::kTrigger },
-					{ XMASK_RT, InputGroup::kTrigger } 
-				}
-			);
+		XInputMasksToInputGroups
+		(
+			{ 
+				{ XINPUT_GAMEPAD_DPAD_UP, InputGroup::kDPad },
+				{ XINPUT_GAMEPAD_DPAD_DOWN, InputGroup::kDPad },
+				{ XINPUT_GAMEPAD_DPAD_LEFT, InputGroup::kDPad },
+				{ XINPUT_GAMEPAD_DPAD_RIGHT, InputGroup::kDPad },
+				{ XINPUT_GAMEPAD_START, InputGroup::kMiddleTwo },
+				{ XINPUT_GAMEPAD_BACK, InputGroup::kMiddleTwo },
+				{ XINPUT_GAMEPAD_LEFT_THUMB, InputGroup::kThumbstick },
+				{ XINPUT_GAMEPAD_RIGHT_THUMB, InputGroup::kThumbstick },
+				{ XINPUT_GAMEPAD_LEFT_SHOULDER, InputGroup::kBumper },
+				{ XINPUT_GAMEPAD_RIGHT_SHOULDER, InputGroup::kBumper },
+				{ XINPUT_GAMEPAD_A, InputGroup::kMainFour },
+				{ XINPUT_GAMEPAD_B, InputGroup::kMainFour },
+				{ XINPUT_GAMEPAD_X, InputGroup::kMainFour },
+				{ XINPUT_GAMEPAD_Y, InputGroup::kMainFour },
+				{ XMASK_LT, InputGroup::kTrigger },
+				{ XMASK_RT, InputGroup::kTrigger } 
+			}
+		);
 
 		// Base perform types for actions.
-		const std::vector<PerfType> ACTION_BASE_PERF_TYPES = {
+		const std::vector<PerfType> ACTION_BASE_PERF_TYPES =
+		{
 			// Activate
 			PerfType::kOnHold,
 			// ActivateAllOfType
@@ -593,161 +848,399 @@ namespace ALYSLC
 		};
 
 		// Base trigger flags for actions.
-		const std::vector<TriggerFlags> ACTION_BASE_TRIGGER_FLAGS = {
+		const std::vector<TriggerFlags> ACTION_BASE_TRIGGER_FLAGS = 
+		{
 			// Activate
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure
+			),
 			// ActivateAllOfType
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// ActivateCancel
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// AdjustAimPitch
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// AttackLH
-			TriggerFlags(TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// AttackRH
-			TriggerFlags(TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// Bash
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// Block
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// CamLockOn
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CamManualPos
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CastLH
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// CastRH
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// ChangeDialoguePlayer
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CoopDebugMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CoopIdlesMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CoopMiniGamesMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CoopSummoningMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// CycleAmmo
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleSpellCategoryLH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleSpellCategoryRH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleSpellLH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleSpellRH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleVoiceSlotMagic
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleWeaponCategoryLH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleWeaponCategoryRH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleWeaponLH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// CycleWeaponRH
-			TriggerFlags(TriggerFlag::kLoneAction, TriggerFlag::kNoCleanupAfterInterrupt),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction, 
+				TriggerFlag::kNoCleanupAfterInterrupt
+			),
 			// DebugRagdollPlayer
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// DebugReEquipHandForms
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// DebugRefreshPlayerManagers
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// DebugResetPlayer
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// DisableCoopCam
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering, TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering, 
+				TriggerFlag::kLoneAction
+			),
 			// Dismount
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// Dodge
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// FaceTarget
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// Favorites
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// GrabObject
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// GrabRotateYZ
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// HotkeyEquip
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// Inventory
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// Jump
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// MagicMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// MapMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// MoveCrosshair
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// Pause
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// PowerAttackDual
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// PowerAttackLH
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// PowerAttackRH
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// QuickSlotCast
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// QuickSlotItem
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// ResetAim
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// RotateCam
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateLeftForearm
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateLeftHand
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateLeftShoulder
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateRightForearm
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateRightHand
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// RotateRightShoulder
-			TriggerFlags(TriggerFlag::kBlockOnConditionFailure, TriggerFlag::kDoNotUseCompActionsOrdering),
+			TriggerFlags
+			(
+				TriggerFlag::kBlockOnConditionFailure, 
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			),
 			// Sheathe
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// Shout
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// Sneak
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// SpecialAction
-			TriggerFlags(TriggerFlag::kDefault),
+			TriggerFlags
+			(
+				TriggerFlag::kDefault
+			),
 			// Sprint
-			TriggerFlags(TriggerFlag::kMinHoldTime, TriggerFlag::kIgnoreConflictingActions),
+			TriggerFlags
+			(
+				TriggerFlag::kMinHoldTime, 
+				TriggerFlag::kIgnoreConflictingActions
+			),
 			// StatsMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// TeleportToPlayer
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// TradeWithPlayer
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// TweenMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// WaitMenu
-			TriggerFlags(TriggerFlag::kLoneAction),
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// ZoomCam
-			TriggerFlags(TriggerFlag::kDoNotUseCompActionsOrdering)
+			TriggerFlags
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			)
 		};
 
 		//
 		// Member funcs
 		//
 
-		// The given player action is decomposed into its composing inputs recursively up to a predetermined depth, which prevents infinite recursion.
-		// The list of composing InputAction lists for the action is referenced to make these decompositions.
+		// The given player action is decomposed into its composing inputs 
+		// recursively up to a predetermined depth, which prevents infinite recursion.
+		// The list of composing InputAction lists for the action 
+		// is referenced to make these decompositions.
 		// Returns a list of these composing inputs.
-		// Also sets the number of player actions broken down and the max depth of recursion reached through the outparams.
-		std::vector<InputAction> GetComposingInputs(const InputAction& a_playerAction, const PACompInputActionLists& a_paCompInputActionsLists, uint32_t& a_numComposingPlayerActionsOut, uint8_t& a_recursionDepthOut) const noexcept;
+		// Also sets the number of player actions broken down 
+		// and the max depth of recursion reached through the outparams.
+		std::vector<InputAction> GetComposingInputs
+		(
+			const InputAction& a_playerAction, 
+			const PACompInputActionLists& a_paCompInputActionsLists,
+			uint32_t& a_numComposingPlayerActionsOut, 
+			uint8_t& a_recursionDepthOut
+		) const noexcept;
 
 		// Get the input mask from a list of composing inputs, NOT player actions.
 		// NOTE: Break down lists of composing InputActions into lists of composing inputs
 		// before passing those lists into this function.
-		const uint32_t GetInputMask(const ComposingInputActionList& a_composingInputs) const noexcept;
+		const uint32_t GetInputMask
+		(
+			const ComposingInputActionList& a_composingInputs
+		) const noexcept;
 	};
 
 	using PlayerActionParams = PlayerActionInfoHolder::PlayerActionParams;

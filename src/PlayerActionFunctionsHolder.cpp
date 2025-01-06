@@ -560,6 +560,7 @@ namespace ALYSLC
 				(!tkDodging && !a_p->mm->isDashDodging) && 
 				(
 					(a_p->mm->isParagliding) || 
+					(a_p->coopActor->IsSwimming()) ||
 					(
 						!a_p->mm->isAirborneWhileJumping && 
 						charController && charController->context.currentState == RE::hkpCharacterStateType::kOnGround &&
@@ -570,7 +571,6 @@ namespace ALYSLC
 				(
 					!a_p->coopActor->IsOnMount() && 
 					!a_p->pam->IsPerforming(InputAction::kBlock) &&
-					!a_p->coopActor->IsSwimming() && 
 					!a_p->coopActor->IsFlying()
 				) &&
 				(HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kDodge))
@@ -616,7 +616,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			// Can jump if using furniture.
+			// Can jump if using furniture (stops furniture use animations).
 			if ((!a_p->isPlayer1 && a_p->mm->interactionPackageRunning) || 
 				(a_p->coopActor->GetOccupiedFurniture() && !a_p->coopActor->IsOnMount()))
 			{
@@ -806,9 +806,10 @@ namespace ALYSLC
 					// Revert transformation if transformed into another non-playable race.
 					pam->reqSpecialAction = SpecialActionType::kTransformation;
 				}
-				else if (a_p->mm->isParagliding && em->quickSlotSpell)
+				else if ((em->quickSlotSpell) && 
+						 (a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
 				{
-					// Quick slot cast while paragliding.
+					// Quick slot cast while paragliding or swimming.
 					pam->reqSpecialAction = SpecialActionType::kQuickCast;
 				}
 				else if (a_p->coopActor->IsWeaponDrawn())
@@ -890,7 +891,11 @@ namespace ALYSLC
 			}
 
 			// If a new special action to perform was chosen, perform HMS AV checks.
-			return pam->reqSpecialAction != SpecialActionType::kNone && HelperFuncs::CanPerformSpecialAction(a_p, pam->reqSpecialAction);
+			return 
+			(
+				pam->reqSpecialAction != SpecialActionType::kNone && 
+				HelperFuncs::CanPerformSpecialAction(a_p, pam->reqSpecialAction)
+			);
 		}
 
 		bool Sprint(const std::shared_ptr<CoopPlayer>& a_p)
@@ -917,13 +922,16 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Must be moving/paragliding, not attacking/bashing/blocking/casting,
+				// Must be moving without jumping/paragliding, 
+				// not attacking/bashing/blocking/casting,
 				// and cannot be dash dodging//ragdolled without M.A.R.F.
 				canPerform =  
 				(
-					(a_p->mm->lsMoved || a_p->mm->isParagliding) &&
-					(!a_p->pam->isJumping) &&
-					(!a_p->pam->isAttacking && !a_p->pam->isBashing && !a_p->pam->isBlocking && !a_p->pam->isInCastingAnim) && 
+					((a_p->mm->isParagliding) || (a_p->mm->lsMoved && !a_p->pam->isJumping)) &&
+					(
+						!a_p->pam->isAttacking && !a_p->pam->isBashing && 
+						!a_p->pam->isBlocking && !a_p->pam->isInCastingAnim
+					) && 
 					(!a_p->mm->isDashDodging) &&
 					(!a_p->coopActor->IsInRagdollState() || a_p->tm->isMARFing)
 				);
@@ -1379,6 +1387,7 @@ namespace ALYSLC
 				);
 				// Dash dodging costs more when the LS is displaced further from center (longer dodge).
 				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
+				// Minimum dodge cost is half the max cost to prevent spamming of short dodges.
 				float dashDodgeCommitmentMult = 
 				(
 					(
@@ -1386,7 +1395,7 @@ namespace ALYSLC
 						(!Settings::bUseDashDodgeSystem && ALYSLC::TKDodgeCompat::g_tkDodgeInstalled)
 					) ?
 					1.0f : 
-					lsMag
+					std::clamp(lsMag, 0.5f, 1.0f)
 				);
 				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
 
@@ -2596,6 +2605,7 @@ namespace ALYSLC
 					)
 				);
 				// Dash dodging costs more when the LS is displaced further from center (longer dodge).
+				// Minimum dodge cost is half the max cost to prevent spamming of short dodges.
 				const float& lsMag = glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag;
 				float dashDodgeCommitmentMult = 
 				(
@@ -2604,7 +2614,7 @@ namespace ALYSLC
 						(!Settings::bUseDashDodgeSystem && ALYSLC::TKDodgeCompat::g_tkDodgeInstalled)
 					) ? 
 					1.0f : 
-					lsMag
+					std::clamp(lsMag, 0.5f, 1.0f)
 				);
 				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
 				break;
@@ -2614,7 +2624,8 @@ namespace ALYSLC
 			case InputAction::kPowerAttackLH:
 			case InputAction::kPowerAttackRH:
 			{
-				// WORKAROUND NOTE: This non-zero cost is not used to reduce stamina, since the game already handles this.
+				// WORKAROUND NOTE: This non-zero cost is not used to reduce stamina, 
+				// since the game already handles this.
 				// Used instead to insert the action into the AV cost action queue for handling, 
 				// which will then set the 'is bashing' or 'is power attacking' flag.
 				cost = 0.1f;
@@ -3268,7 +3279,9 @@ namespace ALYSLC
 
 				// NOTE: Only will reach here if there is a revivable player target.
 				// Play revive animation if grounded.
-				if (!a_p->coopActor->IsOnMount() && !a_p->coopActor->IsSwimming() && !a_p->coopActor->IsFlying())
+				if (!a_p->coopActor->IsOnMount() &&
+					!a_p->coopActor->IsSwimming() && 
+					!a_p->coopActor->IsFlying())
 				{
 					// Sheathe weapon first.
 					a_p->coopActor->NotifyAnimationGraph("IdleForceDefaultState");
@@ -4830,7 +4843,15 @@ namespace ALYSLC
 			{
 				if (auto magicCaster = a_p->coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant); magicCaster)
 				{
-					if (HelperFuncs::ActionJustStarted(a_p, InputAction::kQuickSlotCast))
+					bool justStarted = 
+					(
+						(HelperFuncs::ActionJustStarted(a_p, InputAction::kQuickSlotCast)) ||
+						(
+							a_p->pam->reqSpecialAction == SpecialActionType::kQuickCast &&
+							HelperFuncs::ActionJustStarted(a_p, InputAction::kSpecialAction)
+						)
+					);
+					if (justStarted)
 					{
 						// Set cast start TP for casting FNF spells at an interval.
 						a_p->lastQSSCastStartTP = SteadyClock::now();
@@ -5807,8 +5828,8 @@ namespace ALYSLC
 			const auto qsBoundObj = qsItem && qsItem->IsBoundObject() ? qsItem->As<RE::TESBoundObject>() : nullptr;
 			if (qsBoundObj) 
 			{
-				const auto inventoryCounts = a_p->coopActor->GetInventoryCounts();
-				if (inventoryCounts.at(qsBoundObj) > 0)
+				const auto invCounts = a_p->coopActor->GetInventoryCounts();
+				if (invCounts.contains(qsBoundObj) && invCounts.at(qsBoundObj) > 0)
 				{
 					// Has at least 1, so use the item via equip.
 					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem) 
@@ -5911,6 +5932,15 @@ namespace ALYSLC
 			// If blocking, start shield charge.
 			// Otherwise, start sprint animation.
 			// And finally, if paragliding or using M.A.R.F, trigger gale spell.
+
+			SPDLOG_DEBUG("[PAFH] Sprint: {} has {} (valid: {}). Instant caster: {}. Char controller pitch and roll: {}, {}.",
+				a_p->coopActor->GetName(),
+				glob.tarhielsGaleSpell && glob.player1Actor->HasSpell(glob.tarhielsGaleSpell),
+				(bool)glob.tarhielsGaleSpell,
+				(bool)a_p->coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kInstant),
+				a_p->coopActor->GetCharController() ? a_p->coopActor->GetCharController()->pitchAngle * TO_DEGREES : 0.0f,
+				a_p->coopActor->GetCharController() ? a_p->coopActor->GetCharController()->rollAngle * TO_DEGREES : 0.0f
+				);
 
 			if (!a_p->mm->isParagliding && !a_p->tm->isMARFing) 
 			{

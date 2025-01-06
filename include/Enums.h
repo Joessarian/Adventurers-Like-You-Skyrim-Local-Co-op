@@ -82,9 +82,12 @@ namespace ALYSLC
 	// Level of assistance provided when locked on to a target.
 	enum class CamLockOnAssistanceLevel : std::uint8_t
 	{
-		kFull,		// Camera rotates and zooms out to keep players and lock on target in frame as much as possible.
-		kRotation,	// Camera rotates to keep the lock on target on screen. Can zoom in/out normally.
-		kZoom		// Camera zooms out to keep all players and the lock on target in frame. Can adjust rotation manually.
+		kFull,		// Camera rotates and zooms out to keep players 
+					// and lock on target in frame as much as possible.
+		kRotation,	// Camera rotates to keep the lock on target on screen. 
+					// Can zoom in/out normally.
+		kZoom		// Camera zooms out to keep all players and the lock on target in frame. 
+					//Can adjust rotation manually.
 	};
 
 	// Update camera data types if at least the given number of frames have elapsed.
@@ -102,7 +105,9 @@ namespace ALYSLC
 	{
 		kAutoTrail,			// Camera automatically follows the party.
 		kLockOn,			// Camera automatically tracks a target.
-		kManualPositioning	// Camera is positioned and rotated with the Zoom and Rotation adjustment modes, and is static otherwise.
+		kManualPositioning	// Camera is positioned and rotated 
+							// with the 'Zoom' and 'Rotation' adjustment modes, 
+							// and is static otherwise.
 	};
 
 	//============
@@ -446,18 +451,44 @@ namespace ALYSLC
 	// camera's yaw (Z rotation).
 	enum class MoveParams : std::uint16_t
 	{
-		kLSXComp,				// X (left/right) component of LS motion [-1.0f, 1.0f] relative to the camera's yaw (cam yaw points along the +Y axis).
-		kLSYComp,				// Y (up/down) component of LS motion [-1.0f, 1.0f]	relative to the camera's yaw (cam yaw points along the +Y axis).	
-		kRSXComp,				// X (left/right) component of RS motion [-1.0f, 1.0f] relative to the camera's yaw (cam yaw points along the +Y axis).
-		kRSYComp,				// Y (up/down) component of RS motion [-1.0f, 1.0f]	relative to the camera's yaw (cam yaw points along the +Y axis).
+		kLSXComp,				// X (left/right) component of LS motion [-1.0f, 1.0f] 
+								// relative to the camera's yaw (cam yaw points along the +Y axis).
+		kLSYComp,				// Y (up/down) component of LS motion [-1.0f, 1.0f]	
+								// relative to the camera's yaw (cam yaw points along the +Y axis).	
+		kRSXComp,				// X (left/right) component of RS motion [-1.0f, 1.0f] 
+								// relative to the camera's yaw (cam yaw points along the +Y axis).
+		kRSYComp,				// Y (up/down) component of RS motion [-1.0f, 1.0f]	
+								// relative to the camera's yaw (cam yaw points along the +Y axis).
 		kSpeedMult,				// Player actor value speedmult to set.
-		kLSGameAng,				// LS angle relative to the camera's yaw (0 along Y axis, increasing clockwise).
-		kRSGameAng,				// RS angle relative to the camera's yaw (0 along Y axis, increasing clockwise).
+		kLSGameAng,				// LS angle relative to the camera's yaw 
+								// (0 along Y axis, increasing clockwise).
+		kRSGameAng,				// RS angle relative to the camera's yaw 
+								// (0 along Y axis, increasing clockwise).
 		kDeltaLSAbsoluteAng,	// Change in LS game angle from the last frame to the current one.
-		kLSAbsoluteAng,			// LS angle in the game's coordinate system (0 along +Y axis, increasing clockwise).
-		kRSAbsoluteAng,			// RS angle in the game's coordinate system (0 along +Y axis, increasing clockwise).
+		kLSAbsoluteAng,			// LS angle in the game's coordinate system 
+								// (0 along +Y axis, increasing clockwise).
+		kRSAbsoluteAng,			// RS angle in the game's coordinate system 
+								// (0 along +Y axis, increasing clockwise).
 
 		kTotal
+	};
+
+	// Precision collider annotation request type.
+	// Details found on Precision's mod page under the 'Annotations' section:
+	// https://www.nexusmods.com/skyrimspecialedition/mods/72347
+	enum class PrecisionAnnotationReqType : std::uint8_t
+	{
+		kStart,		// Sends the 'Collision_AttackStart' event to signal Precision 
+					// that colliders will be added to nodes.
+		kAdd,		// Sends the 'Collision_Add' event to signal Precision
+					// to add a collider to a specified node.
+		kRemove,	// Sends the 'Collision_Remove' event to signal Precision
+					// to remove a collider from a specified node.
+		kRemoveAll,	// Sends the 'Collision_AttackEnd' event to signal Precision
+					// to remove all active colliders on the given actor.
+		kMultiHit	// Sends the 'Collision_ClearTargets' event to signal Precision
+					// to clear out the list of hit targets and allow an attack
+					// to hit multiple times.
 	};
 
 	// Custom node rotation blend status.
@@ -477,7 +508,8 @@ namespace ALYSLC
 	enum class SelectableRaceType : std::uint8_t
 	{
 		kPlayable,				// Only races with the playable flag.
-		kUsedByNPCActorBase,	// Only races that have the 'ActorTypeNPC' keyword and are used by at least 1 actor base.
+		kUsedByNPCActorBase,	// Only races that have the 'ActorTypeNPC' keyword
+								// and are used by at least 1 actor base.
 		kHasNPCKeyword,			// Has 'ActorTypeNPC' keyword in the CK.
 		kUsedByAnyActorBase,	// Only races used by at least 1 actor base.
 		kAll,					// Include all races.
@@ -583,9 +615,11 @@ namespace ALYSLC
 		kFailedConditions,		// Interrupted by failed conditions after starting.
 		kInputsPressed,			// All composing inputs pressed, but the action hasn't started yet.
 		kInputsReleased,		// Fully-stopped action: all required composing inputs released.
-		kSomeInputsPressed,		// Some composing inputs are pressed and the action has not already started.
+		kSomeInputsPressed,		// Some composing inputs are pressed 
+								// and the action has not already started.
 		kSomeInputsReleased,	// Some composing inputs released after the action has started.
-		kStarted				// Started action: inputs pressed, conditions passed, and is being performed.
+		kStarted				// Started action: inputs pressed, conditions passed, 
+								// and is being performed.
 	};
 
 	// When to perform an action.
@@ -623,8 +657,10 @@ namespace ALYSLC
 		// - Run cleanup function if one exists for this action and if this action
 		// was interrupted. Can run once some composing inputs are released.
 		kDefault = 0,
-		// Change perf stage to 'Blocked' instead of 'Failed Conditions' when this action fails its condition check.
-		// Prevents resumption if the condition check for the action passes later while the bind is still pressed.
+		// Change perf stage to 'Blocked' instead of 'Failed Conditions'
+		// when this action fails its condition check.
+		// Prevents resumption if the condition check for the action passes 
+		// later while the bind is still pressed.
 		kBlockOnConditionFailure = 1 << 0,
 		// Do not block any of this action's conflicting PAs.
 		kDoNotBlockConflictingActions = 1 << 1,
@@ -670,14 +706,18 @@ namespace ALYSLC
 	// Button press type to send when emulating P1 input.
 	enum class ButtonEventPressType : std::uint8_t
 	{
-		kInstantTrigger,	// Trigger right away: InputEvent 'value' arg set to 1, held time is not set (0).
-		kPressAndHold,		// Button is being held after first press: InputEvent 'value' arg is 1 and held time is set.
-		kRelease,			// Button was released: InputEvent 'value' arg is set to 0 and final held time is set.
+		kInstantTrigger,	// Trigger right away: InputEvent 'value' arg set to 1, 
+							// held time is not set (0).
+		kPressAndHold,		// Button is being held after first press: InputEvent 'value' arg is 1 
+							// and held time is set.
+		kRelease,			// Button was released: InputEvent 'value' arg is set to 0 
+							// and final held time is set.
 
 		kTotal
 	};
 
-	// Index for each co-op companion player's magic casting global variables used in their ranged attack package.
+	// Index for each co-op companion player's magic casting global variables 
+	// used in their ranged attack package.
 	enum class CastingGlobIndex : std::uint8_t
 	{
 		kLH,	// Left hand cast.
@@ -782,20 +822,30 @@ namespace ALYSLC
 		kPlayerFirstSavedLevel = 'PFSL',		// First saved player level in co-op.
 		kPlayerLevel = 'PLVL',					// Current player level.
 		kPlayerLevelXP = 'PLXP',				// Current player XP at the current level.
-		kPlayerBaseHMSPointsList = 'PBPL',		// List of base health, magicka, and stamina values.
-		kPlayerHMSPointsIncList = 'PPIL',		// List of increases to the base health, magicka, and stamina values.
+		kPlayerBaseHMSPointsList = 'PBPL',		// List of base health, magicka, 
+												// and stamina values.
+		kPlayerHMSPointsIncList = 'PPIL',		// List of increases to the base health, magicka, 
+												// and stamina values.
 		kPlayerBaseSkillLevelsList = 'PBSL',	// List of base skill AV levels.
 		kPlayerSkillIncreasesList = 'PSIL',		// List of increases to the base skill AV levels.
-		kPlayerSkillXPList = 'PSXL',			// List of XP earned towards each progressing skill AV.
-		kPlayerCopiedMagicList = 'PCML',		// List of spells copied into each placeholder spell slot for companion players.
-		kPlayerEquippedObjectsList = 'PEOL',	// List of all equipped objects for the player to restore on loading a save.
-		kPlayerMagFavoritesList = 'PMFL',		// List of all magical (spell) forms favorited by the player.
-		kPlayerHotkeyedFormsList = 'PHFL',		// List of all forms hotkeyed via the Favorites Menu for the player. 
-		kPlayerAvailablePerkPoints = 'PAPP',	// List of perk points availiable for this player when leveling up.
+		kPlayerSkillXPList = 'PSXL',			// List of XP earned 
+												// towards each progressing skill AV.
+		kPlayerCopiedMagicList = 'PCML',		// List of spells copied into each 
+												// placeholder spell slot for companion players.
+		kPlayerEquippedObjectsList = 'PEOL',	// List of all equipped objects 
+												// for the player to restore on loading a save.
+		kPlayerMagFavoritesList = 'PMFL',		// List of all magical (spell) forms 
+												// favorited by the player.
+		kPlayerHotkeyedFormsList = 'PHFL',		// List of all forms hotkeyed 
+												// via the Favorites Menu for the player. 
+		kPlayerAvailablePerkPoints = 'PAPP',	// List of perk points availiable 
+												// for this player when leveling up.
 		kPlayerUnlockedPerksList = 'PUPL',		// List of perks that this player has unlocked.
-		kPlayerSharedPerksUnlocked = 'PSPU',	// List of shared perks that are unlocked for all players.
+		kPlayerSharedPerksUnlocked = 'PSPU',	// List of shared perks 
+												// that are unlocked for all players.
 		kPlayerUsedPerkPoints = 'PUPP',			// Number of perk points this player has used.
-		kPlayerExtraPerkPoints = 'PEPP',		// Number of additional points gained outside of leveling up.
+		kPlayerExtraPerkPoints = 'PEPP',		// Number of additional points 
+												// gained outside of leveling up.
 		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
 		kSerializationVersion = 0				// Version info.
 	};
@@ -850,11 +900,14 @@ namespace ALYSLC
 	enum class ProjectileTrajType : std::uint8_t
 	{
 		kAimDirection,	// Shoot in aiming direction, no trajectory modification after launch.
-		kHoming,		// Shoot at target/crosshair position, trajectory modification during lifetime of projectile.
-		kPrediction		// Predict target intercept position on launch, no trajectory modification afterward.
+		kHoming,		// Shoot at target/crosshair position. 
+						// Trajectory modification during lifetime of projectile.
+		kPrediction		// Predict target intercept position on launch. 
+						// No trajectory modification afterward.
 	};
 
-	// Used when comparing and grouping objects for activation when looting objects within the player's reach.
+	// Used when comparing and grouping objects for activation 
+	// when looting objects within the player's reach.
 	enum class RefrCompType : std::uint8_t
 	{
 		kSameBaseForm,
@@ -865,7 +918,8 @@ namespace ALYSLC
 	enum class TargetActorType : std::int8_t
 	{
 		kNone = -1,		// Invalid/no target.
-		kAimCorrection,	// Closest actor relative to the player's facing direction. Aim Correction setting must be enabled.
+		kAimCorrection,	// Closest actor relative to the player's facing direction. 
+						// Aim Correction setting must be enabled.
 		kLinkedRefr,	// Linked refr target used by ranged attack package and Quick Slot casting.
 		kSelected,		// Actor selected by the player's crosshair.
 
@@ -900,7 +954,8 @@ namespace ALYSLC
 		kGeneralNotification,	// Catch-all.
 		kHotkeySelection,		// Info on selected hotkey slot and item.
 		kReviveAlert,			// Life/Revive percent for downed players.
-		kShoutCooldown,			// Shout cooldown remaining when attempting to shout while on cooldown.
+		kShoutCooldown,			// Shout cooldown remaining 
+								//when attempting to shout while on cooldown.
 		kStealthState,			// Detection percent overall and for selected target, if any.
 		kTargetSelection,		// Info about a selected actor or object.
 

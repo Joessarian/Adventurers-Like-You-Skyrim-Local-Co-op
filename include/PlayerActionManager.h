@@ -8,10 +8,12 @@ namespace ALYSLC
 	using SteadyClock = std::chrono::steady_clock;
 	class CoopPlayer;
 
-	// Contains actor value expenditure info about a requested player action that has already started.
+	// Contains actor value expenditure info about a requested player action 
+	// that has already started.
 	// Marked as complete once the appropriate animation event has fired 
 	// and the associated actor value is modified. 
-	// Actions progress from requested, to in-progress, and then completed (removed from in-progress action set).
+	// Actions progress from requested, to in-progress, and then completed 
+	// (removed from in-progress action set).
 	// Examples: power attacks, bashes, sprinting, and spell casting.
 	struct AVCostActionManager
 	{
@@ -47,7 +49,10 @@ namespace ALYSLC
 			actionsInProgress = AVCostAction::kNone;
 
 			{
-				std::unique_lock<std::mutex> perfAnimQueueLock(perfAnimQueueMutex, std::try_to_lock);
+				std::unique_lock<std::mutex> perfAnimQueueLock
+				(
+					perfAnimQueueMutex, std::try_to_lock
+				);
 				if (perfAnimQueueLock)
 				{
 					SPDLOG_DEBUG("[PAM] AVCostManager: Clear: Lock obtained. (0x{:X})", 
@@ -68,7 +73,12 @@ namespace ALYSLC
 		// Get actor value cost for this action once it's performed.
 		inline float GetCost(const AVCostAction& a_action) 
 		{
-			return avCostsMap.at(a_action);
+			if (avCostsMap.contains(a_action))
+			{
+				return avCostsMap.at(a_action);
+			}
+
+			return 0.0f;
 		}
 
 		// Insert a new AV cost action request.
@@ -137,7 +147,8 @@ namespace ALYSLC
 		// Mutex for accessing/modifying the performed animation events queue.
 		std::mutex perfAnimQueueMutex;
 		// Queue holding pairs of performed animation events and their IDs,
-		// which help distinguish between instances of the same anim event being performed in quick succession.
+		// which help distinguish between instances of the same anim event 
+		// being performed in quick succession.
 		std::queue<std::pair<PerfAnimEventTag, uint16_t>> perfAnimEventsQueue;
 		// Set holding requested AV cost actions.
 		// Requested actions get removed once completed.
@@ -153,9 +164,11 @@ namespace ALYSLC
 	{
 		// List of composing input actions for each player action.
 		using ComposingInputActionList = PlayerActionInfoHolder::ComposingInputActionList;
-		// List of sets of conflicting player actions that should be blocked/interrupted for each player action.
+		// List of sets of conflicting player actions 
+		// that should be blocked/interrupted for each player action.
 		// Indexed by player action index.
-		using PAConflictSetsList = std::array<std::set<InputAction>, (size_t)(InputAction::kActionTotal)>;
+		using PAConflictSetsList = 
+		std::array<std::set<InputAction>, (size_t)(InputAction::kActionTotal)>;
 		// Parameters related to triggering a specific action.
 		using PAParams = PlayerActionInfoHolder::PlayerActionParams;
 		// List of player actions and their trigger parameters.
@@ -183,7 +196,8 @@ namespace ALYSLC
 			SteadyClock::time_point releaseTP;
 			// Time point indicating when the action last started.
 			SteadyClock::time_point startTP;
-			// Time point indicating when some/all of a previously started action's inputs were released.
+			// Time point indicating when some/all 
+			// of a previously started action's inputs were released.
 			SteadyClock::time_point stopTP;
 			// Actor value cost per second.
 			float avCost;
@@ -201,7 +215,8 @@ namespace ALYSLC
 
 		PlayerActionManager();
 		// Delayed construction after the player is default-constructed
-		// and the player shared pointer is added to the list of co-op players in the global data holder.
+		// and the player shared pointer is added to the list of co-op players 
+		// in the global data holder.
 		void Initialize(std::shared_ptr<CoopPlayer> a_p);
 
 		// Implements ALYSLC::Manager:
@@ -251,56 +266,105 @@ namespace ALYSLC
 		// Are all inputs pressed for this action?
 		inline const bool AllPressed(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kInputsPressed;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kInputsPressed
+			);
 		}
 
 		// Are all inputs are released for this action?
 		inline const bool AllReleased(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kInputsReleased;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kInputsReleased
+			);
 		}
 
 		// Conditions failed after this action started.
 		inline const bool ConditionsFailed(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kFailedConditions;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kFailedConditions
+			);
 		}
 
 		// Seconds since all inputs for the given action were pressed or some inputs were released.
-		inline const float GetSecondsSinceLastInputStateChange(const InputAction& a_action, bool&& a_lastPressed) 
+		inline const float GetSecondsSinceLastInputStateChange
+		(
+			const InputAction& a_action, 
+			bool&& a_lastPressed
+		) 
 		{
 			if (a_lastPressed) 
 			{
-				return Util::GetElapsedSeconds(paStatesList[!a_action - !InputAction::kFirstAction].pressTP, true);
+				return 
+				(
+					Util::GetElapsedSeconds
+					(
+						paStatesList[!a_action - !InputAction::kFirstAction].pressTP, true
+					)
+				);
 			}
 			else
 			{
-				return Util::GetElapsedSeconds(paStatesList[!a_action - !InputAction::kFirstAction].releaseTP, true);
+				return 
+				(
+					Util::GetElapsedSeconds
+					(
+						paStatesList[!a_action - !InputAction::kFirstAction].releaseTP, true
+					)
+				);
 			}
 		}
 
 		// Seconds since this action was started.
 		inline const float GetSecondsSinceLastStart(const InputAction& a_action) 
 		{
-			return Util::GetElapsedSeconds(paStatesList[!a_action - !InputAction::kFirstAction].startTP); 
+			return 
+			(
+				Util::GetElapsedSeconds
+				(
+					paStatesList[!a_action - !InputAction::kFirstAction].startTP
+				)
+			); 
 		}
 
-		// Seconds since some/all of this action's inputs were released after starting the action previously.
+		// Seconds since some/all of this action's inputs were released 
+		// after starting the action previously.
 		inline const float GetSecondsSinceLastStop(const InputAction& a_action)
 		{
-			return Util::GetElapsedSeconds(paStatesList[!a_action - !InputAction::kFirstAction].stopTP);
+			return 
+			(
+				Util::GetElapsedSeconds
+				(
+					paStatesList[!a_action - !InputAction::kFirstAction].stopTP
+				)
+			);
 		}
 
 		// Check if this action was interrupted by another action.
 		inline const bool InterruptedByConflictingPA(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kConflictingAction;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kConflictingAction
+			);
 		}
 
 		// Is this action currently blocked from being performed?
 		inline const bool IsBlocked(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kBlocked;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kBlocked
+			);
 		}
 
 		// Is this action interrupted: stopped by conflicting action or failed conditions?
@@ -308,15 +372,25 @@ namespace ALYSLC
 		{
 			return 
 			(
-				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kConflictingAction ||
-				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kFailedConditions
+				(
+					paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+					PerfStage::kConflictingAction
+				) ||
+				(
+					paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+					PerfStage::kFailedConditions
+				)
 			);
 		}
 
 		// Is this action not being performed (any state except start)?
 		inline const bool IsNotPerforming(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage != PerfStage::kStarted;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage != 
+				PerfStage::kStarted
+			);
 		}
 
 		// Is not performing any of the given actions.
@@ -338,7 +412,11 @@ namespace ALYSLC
 		// Is this action being performed (action has started)?
 		inline const bool IsPerforming(const InputAction& a_action) 
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kStarted;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+				PerfStage::kStarted
+			);
 		}
 
 		// Is performing all of the given actions.
@@ -362,15 +440,22 @@ namespace ALYSLC
 		{
 			return 
 			(
-				paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kStarted &&
-				GetPlayerActionInputHoldTime(a_action) == 0.0f
+				(
+					paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
+					PerfStage::kStarted 
+				) &&
+				(GetPlayerActionInputHoldTime(a_action) == 0.0f)
 			);
 		}
 
 		// Were some of this action's inputs released?
 		inline const bool SomeReleased(const InputAction& a_action)
 		{
-			return paStatesList[!a_action - !InputAction::kFirstAction].perfStage == PerfStage::kSomeInputsReleased;
+			return 
+			(
+				paStatesList[!a_action - !InputAction::kFirstAction].perfStage ==
+				PerfStage::kSomeInputsReleased
+			);
 		}
 
 		//
@@ -393,7 +478,10 @@ namespace ALYSLC
 		{
 			if (auto avValueOwner = coopActor->As<RE::ActorValueOwner>(); avValueOwner)
 			{
-				avValueOwner->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount);
+				avValueOwner->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
+				);
 			}
 		}
 
@@ -412,8 +500,10 @@ namespace ALYSLC
 		// Are all of this action's buttons pressed and analog sticks moved?
 		bool AllInputsPressedForAction(const InputAction& a_action) noexcept;
 
-		// Block currently pressed player actions from being performed by setting their perform stage to 'Blocked',
-		// and optionally update the block TP, if requested, to allow for blocking over an interval.
+		// Block currently pressed player actions from being performed 
+		// by setting their perform stage to 'Blocked',
+		// and optionally update the block TP, if requested, 
+		// to allow for blocking over an interval.
 		void BlockCurrentInputActions(bool a_startBlockInterval = false);
 
 		// Cast the associated rune projectile from the given spell 
@@ -422,14 +512,26 @@ namespace ALYSLC
 		// so we have to do it directly here through the player's magic caster(s).
 		void CastRuneProjectile(RE::SpellItem* a_spell);
 
-		// Start/stop casting a spell equipped at the given equip index, using the associated magic caster at that index.
-		// Can also wait until the casting animation fires before casting or cast the spell with P1's magic caster.
-		void CastSpellWithMagicCaster(const EquipIndex& a_index, bool&& a_startCast, bool&& a_waitForCastingAnim, const bool& a_shouldCastWithP1);
+		// Start/stop casting a spell equipped at the given equip index, 
+		// using the associated magic caster at that index.
+		// Can also wait until the casting animation fires before casting 
+		// or cast the spell with P1's magic caster.
+		void CastSpellWithMagicCaster
+		(
+			const EquipIndex& a_index, 
+			bool&& a_startCast, 
+			bool&& a_waitForCastingAnim, 
+			const bool& a_shouldCastWithP1
+		);
 
 		// Cast/stop casting with the given staff equipped in the given hand.
-		// NOTE: Haven't figured out how to trigger staff casting animations for companion players yet.
+		// NOTE: 
+		// Haven't figured out how to trigger staff casting animations for companion players yet.
 		// The magic casting package procedure once again fails to execute.
-		void CastStaffSpell(RE::TESObjectWEAP* a_staff, const bool& a_isLeftHand, bool&& a_shouldCast);
+		void CastStaffSpell
+		(
+			RE::TESObjectWEAP* a_staff, const bool& a_isLeftHand, bool&& a_shouldCast
+		);
 
 		// Chain all queued P1 input events and send.
 		void ChainAndSendP1ButtonEvents();
@@ -440,7 +542,8 @@ namespace ALYSLC
 		// Update combat skills data when the player starts/stops performing a combat skill.
 		void CheckIfPerformingCombatSkills();
 
-		// Copy the highest shared skill level among all players to this player for all shared skills.
+		// Copy the highest shared skill level among all players 
+		// to this player for all shared skills.
 		void CopyOverSharedSkillAVs();
 
 		// Evaluate the current package atop the player's package stack.
@@ -478,7 +581,8 @@ namespace ALYSLC
 		// (order in which they were released does not matter).
 		bool GetPlayerActionInputJustReleased(const InputAction& a_action);
 
-		// Modify magicka/stamina actor values as necessary after the appropriate animation events trigger.
+		// Modify magicka/stamina actor values as necessary 
+		// after the appropriate animation events trigger.
 		void HandleAVExpenditure();
 
 		// Update the player's dialogue state, have the player and speaker look at one another,
@@ -506,10 +610,19 @@ namespace ALYSLC
 		// and/or held for long enough to trigger the action.
 		bool PassesInputPressCheck(const InputAction& a_action);
 
-		// Queue a P1 input event to send based on the given player action, input device, and press type.
-		// Can also set the held time for the input, and toggle AI driven to false before sending the event 
+		// Queue a P1 input event to send based on 
+		// the given player action, input device, and press type.
+		// Can also set the held time for the input, 
+		// and toggle AI driven to false before sending the event 
 		// and back to true after handling the event.
-		void QueueP1ButtonEvent(const InputAction& a_inputAction, RE::INPUT_DEVICE&& a_inputDevice, ButtonEventPressType&& a_buttonStateToTrigger, float&& a_heldDownSecs = 0.0f, bool&& a_toggleAIDriven = true) noexcept;
+		void QueueP1ButtonEvent
+		(
+			const InputAction& a_inputAction, 
+			RE::INPUT_DEVICE&& a_inputDevice, 
+			ButtonEventPressType&& a_buttonStateToTrigger, 
+			float&& a_heldDownSecs = 0.0f, 
+			bool&& a_toggleAIDriven = true
+		) noexcept;
 
 		// Draw or sheathe the player's weapons/magic.
 		void ReadyWeapon(const bool& a_shouldDraw);
@@ -521,7 +634,8 @@ namespace ALYSLC
 		// and clear out the cached requested damage multiplier.
 		void ResetAttackDamageMult();
 
-		// Stop ongoing killmove idle and reset player killmove victim data, if the victim is a player.
+		// Stop ongoing killmove idle and reset player killmove victim data, 
+		// if the victim is a player.
 		void ResetKillmoveVictimData(const int32_t& a_targetPlayerIndex);
 
 		// Stop all casting for this player by evaluating the current package twice,
@@ -537,14 +651,23 @@ namespace ALYSLC
 		void RestoreAVToMaxValue(RE::ActorValue a_av);
 
 		// Revive the targeted downed player.
-		// Remove and transfer health from the reviving player until the downed player is fully revived.
+		// Remove and transfer health from the reviving player 
+		// until the downed player is fully revived.
 		void RevivePlayer();
 
 		// Instantly send a P1 button event directly without queuing/chaining
 		// based on the given input action, device, and press type.
-		// Can also set the held time for the input, and toggle AI driven to false before sending the event 
+		// Can also set the held time for the input, 
+		// and toggle AI driven to false before sending the event 
 		// and back to true after handling the event.
-		void SendButtonEvent(const InputAction& a_inputAction, RE::INPUT_DEVICE&& a_inputDevice, ButtonEventPressType&& a_buttonStateToTrigger, float&& a_heldDownSecs = 0.0f, bool&& a_toggleAIDriven = true) noexcept;
+		void SendButtonEvent
+		(
+			const InputAction& a_inputAction, 
+			RE::INPUT_DEVICE&& a_inputDevice, 
+			ButtonEventPressType&& a_buttonStateToTrigger,
+			float&& a_heldDownSecs = 0.0f,
+			bool&& a_toggleAIDriven = true
+		) noexcept;
 
 		// Set the player's attack damage mult actor values for sneak attacks.
 		// Is applied when hit connects and deals damage in the HandleHealthDamage() hooks.
@@ -564,7 +687,8 @@ namespace ALYSLC
 		// Otherwise, set the original handedness.
 		void SetWeaponGrip(bool a_resetGrip);
 
-		// Stop combat between normally neutral actors, player allies/followers/summons and co-op players.
+		// Stop combat between normally neutral actors, 
+		// player allies/followers/summons, and co-op players.
 		void StopCombatWithFriendlyActors();
 
 		// Stop any ongoing idle animation or attack for this player.
@@ -594,7 +718,8 @@ namespace ALYSLC
 		// Keep tabs on the player's transformation 
 		// and revert their form once the transformation timer expires.
 		// Also check if the player is transformed or has reverted their form,
-		// and (un)equip items unique to the player's transformation (ex. vampiric drain spell or werewolf howl).
+		// and (un)equip items unique to the player's transformation 
+		// (ex. vampiric drain spell or werewolf howl).
 		void UpdateTransformationState();
 
 		//
@@ -621,10 +746,12 @@ namespace ALYSLC
 		RE::TESGlobal* usingRHStaff;
 		// Any performed combat skills that give XP.
 		SKSE::stl::enumeration<SkillIncCombatActionType> perfSkillIncCombatActions;
-		// Casting source globals used with companion player's ranged attack package to cast spells.
+		// Casting source globals used with companion player's ranged attack package 
+		// to cast spells.
 		std::array<RE::TESGlobal*, (size_t)CastingGlobIndex::kTotal> castingGlobVars;
 		// Occurring player actions. 
-		// By the end of the main task, only actions with the 'Started' stage remain in this list.
+		// By the end of the main task, 
+		// only actions with the 'Started' stage remain in this list.
 		std::forward_list<InputAction> occurringPAs;
 		// Handles AV cost action requests and AV expenditures associated with them.
 		std::unique_ptr<AVCostActionManager> avcam;

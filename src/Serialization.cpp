@@ -56,11 +56,10 @@ namespace ALYSLC
 			// Load all serialized data into our global serialized data structure.
 
 			SPDLOG_DEBUG("[SERIAL] Load: Read all serialized data from SKSE co-save.");
-			// REMOVE
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
-				SPDLOG_DEBUG("[SERIAL] Load: Lock obtained. (0x{:X})", hash);
+				SPDLOG_DEBUG("[SERIAL] Load: Lock obtained. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 
 				// If the serialization interface is not valid, set the default retrieved data.
 				if (!a_intfc)
@@ -78,7 +77,6 @@ namespace ALYSLC
 				RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 				// Player form ID serialized as a key for each grouping of data.
 				RE::FormID fid = 0;
-
 				// Type, serialization version, and length of record data read out.
 				uint32_t type;
 				uint32_t version;
@@ -112,7 +110,6 @@ namespace ALYSLC
 						type == !SerializableDataType::kPlayerSkillXPList ||
 						type == !SerializableDataType::kPlayerUnlockedPerksList ||
 						type == !SerializableDataType::kPlayerUsedPerkPoints)
-
 					{
 						for (auto i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
 						{
@@ -128,54 +125,12 @@ namespace ALYSLC
 								// Insert default data at first.
 								if (glob.serializablePlayerData.empty() || !glob.serializablePlayerData.contains(fid))
 								{
-									float lvlXP = 0;
-									uint32_t firstSavedLvl = 0.0f;
-									uint32_t availablePerkPoints = 0;
-									uint32_t lvl = 1;
-									uint32_t sharedPerksUnlocked = 0;
-									uint32_t usedPerkPoints = 0;
-									uint32_t extraPerkPoints = 0;
-									std::array<float, 3> baseHMSPoints{ 100.0f, 100.0f, 100.0f };
-									std::array<float, 3> hmsPointIncreases{ 0.0f, 0.0f, 0.0f };
-									std::array<RE::TESForm*, 8> hotkeyedForms{ };
-									hotkeyedForms.fill(nullptr);
-									SkillList skillList{ 0.0f };
-									auto& baseSkillLevels = skillList;
-									auto& skillXP = skillList;
-									auto& skillIncreases = skillList;
-									std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> copiedMagic;
-									copiedMagic.fill(nullptr);
-									std::array<RE::BSFixedString, 8> cyclableEmoteIdleEvents = GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS;
-									std::vector<RE::TESForm*> equippedForms{ !EquipIndex::kTotal, nullptr };
-									std::vector<RE::TESForm*> favoritedMagForms{ };
-									std::vector<RE::BGSPerk*> unlockedPerksList{ };
-
 									SPDLOG_DEBUG("[SERIAL] Load: Added new serialized data set for player with FID 0x{:X}.", fid);
 									glob.serializablePlayerData.insert
 									(
 										{ 
 											fid,
-											std::make_unique<ALYSLC::GlobalCoopData::SerializablePlayerData>
-											(
-												copiedMagic,
-												cyclableEmoteIdleEvents,
-												equippedForms,
-												favoritedMagForms,
-												lvlXP,
-												availablePerkPoints,
-												firstSavedLvl,
-												lvl,
-												sharedPerksUnlocked,
-												usedPerkPoints,
-												extraPerkPoints,
-												baseHMSPoints,
-												hmsPointIncreases,
-												hotkeyedForms,
-												baseSkillLevels,
-												skillIncreases,
-												skillXP,
-												unlockedPerksList
-											)
+											std::make_unique<ALYSLC::GlobalCoopData::SerializablePlayerData>()
 										}
 									);
 								}
@@ -250,7 +205,7 @@ namespace ALYSLC
 									{
 										RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
 										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has base skill {} of {}.",
-											fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
+											fid, Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
 											data->skillBaseLevelsList[j]);
 									}
 								}
@@ -260,7 +215,7 @@ namespace ALYSLC
 									{
 										RetrieveFloatData(a_intfc, data->skillLevelIncreasesList[j], type);
 										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has increased skill {} by {}.",
-											fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
+											fid, Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
 											data->skillLevelIncreasesList[j]);
 									}
 								}
@@ -270,7 +225,8 @@ namespace ALYSLC
 									{
 										RetrieveFloatData(a_intfc, data->skillXPList[j], type);
 										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has gained {} XP for skill {}.",
-											fid, data->skillXPList[j], glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j)));
+											fid, data->skillXPList[j], 
+											Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))));
 									}
 								}
 								else if (type == !SerializableDataType::kPlayerEquippedObjectsList)
@@ -708,7 +664,9 @@ namespace ALYSLC
 							for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 							{
 								SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.", 
-									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillBaseLevelsList[j]);
+									fid, 
+									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
+									data->skillBaseLevelsList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillBaseLevelsList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
 							}
 						}
@@ -722,7 +680,9 @@ namespace ALYSLC
 								for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 								{
 									SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.",
-										fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), skillBaseList[j]);
+										fid, 
+										Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
+										skillBaseList[j]);
 									SerializePlayerFloatData(a_intfc, skillBaseList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
 								}
 							}
@@ -758,7 +718,9 @@ namespace ALYSLC
 							for (uint8_t j = 0; j < numSkillIncEntries; ++j)
 							{
 								SPDLOG_DEBUG("[SERIAL] Save: Serialize SKILL LVL INC LIST for player with FID 0x{:X}: Skill {} has increment {}.",
-									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillLevelIncreasesList[j]);
+									fid,
+									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
+									data->skillLevelIncreasesList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillLevelIncreasesList[j], !SerializableDataType::kPlayerSkillIncreasesList);
 							}
 						}
@@ -819,7 +781,9 @@ namespace ALYSLC
 							for (uint8_t j = 0; j < numSkillXPEntries; ++j)
 							{
 								SPDLOG_DEBUG("[SERIAL] Save: Serialize SKILL XP LIST for player with FID 0x{:X}: Skill {} has {} XP.",
-									fid, std::format("{}", glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), data->skillXPList[j]);
+									fid, 
+									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))),
+									data->skillXPList[j]);
 								SerializePlayerFloatData(a_intfc, data->skillXPList[j], !SerializableDataType::kPlayerSkillXPList);
 							}
 						}
@@ -1110,10 +1074,6 @@ namespace ALYSLC
 			skillBaseLvlList.fill(15.0f);
 			skillIncList.fill(0.0f);
 			skillXPList.fill(0.0f);
-			uint32_t sharedPerksUnlocked = 0;
-
-			float p1Level = p1->GetLevel();
-			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
 
 			// Set skill base AVs.
 			skillBaseLvlList = Util::GetActorSkillLevels(p1);
@@ -1125,7 +1085,8 @@ namespace ALYSLC
 				if (glob.SKILL_TO_AV_MAP.contains(currentSkill))
 				{
 					auto currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
-					SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", std::format("{}", currentAV), skillBaseLvlList[i]);
+					SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", 
+						Util::GetActorValueName(currentAV), skillBaseLvlList[i]);
 				}
 			}
 
@@ -1137,7 +1098,8 @@ namespace ALYSLC
 				skillXPList[i] = p1->skills->data->skills[i].xp;
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.", std::format("{}", currentAV), skillXPList[i]);
+				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.",
+					Util::GetActorValueName(currentAV), skillXPList[i]);
 			}
 
 			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
@@ -1151,6 +1113,9 @@ namespace ALYSLC
 				p1->SetActorValue(RE::ActorValue::kMagicka, 100.0f);
 				p1->SetActorValue(RE::ActorValue::kStamina, 100.0f);
 			}
+			
+			auto p1Level = p1->GetLevel();
+			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
 
 			// Insert P1 first.
 			glob.serializablePlayerData.insert
@@ -1167,7 +1132,7 @@ namespace ALYSLC
 						0,
 						0,
 						p1Level,
-						sharedPerksUnlocked,
+						0,
 						0,
 						0, 
 						hmsBasePointsList,
@@ -1186,7 +1151,8 @@ namespace ALYSLC
 			if (const auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
 			{
 				auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
-				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1);
+				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", 
+					GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1);
 				coopPlayers[0] = dataHandler->LookupForm(0x22FD, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
 				coopPlayers[1] = dataHandler->LookupForm(0x22FE, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
 				coopPlayers[2] = dataHandler->LookupForm(0x22FF, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();

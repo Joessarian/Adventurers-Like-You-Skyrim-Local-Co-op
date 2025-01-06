@@ -2545,9 +2545,13 @@ namespace ALYSLC
 		// or a player action completes.
 
 		// Mount sprint not triggered by an animation, but rather by performing the sprint action.
-		bool mountSprint = coopActor->IsOnMount() && IsPerforming(InputAction::kSprint);
+		bool mountOrSwimmingSprint = 
+		(
+			(IsPerforming(InputAction::kSprint)) &&
+			(coopActor->IsOnMount() || coopActor->IsSwimming())
+		);
 		// For P1, only mount-sprint stamina expenditure.
-		if ((mountSprint) || (!p->isPlayer1 && actionsInProgress.any(AVCostAction::kSprint)))
+		if ((mountOrSwimmingSprint) || (!p->isPlayer1 && actionsInProgress.any(AVCostAction::kSprint)))
 		{
 			// Get seconds since starting to sprint.
 			float secsSinceLastCheck = Util::GetElapsedSeconds(p->expendSprintStaminaTP);
@@ -3166,10 +3170,14 @@ namespace ALYSLC
 
 		// Expend magicka/stamina only if AV cost actions are still in progress.
 		// Mount sprint is not triggered by an animation event, since only the mount's speedmult is modifed.
-		bool mountSprint = coopActor->IsOnMount() && IsPerforming(InputAction::kSprint);
+		bool mountOrSwimmingSprint = 
+		(
+			(IsPerforming(InputAction::kSprint)) &&
+			(coopActor->IsOnMount() || coopActor->IsSwimming())
+		);
 		bool shouldExpendStamina = 
 		{
-			mountSprint ||
+			mountOrSwimmingSprint ||
 			actionsInProgress.any
 			(
 				AVCostAction::kBash, 
@@ -3645,7 +3653,8 @@ namespace ALYSLC
 			// Avoids locking up the player's equip state (weapons out but unusable).
 			// If the animation event is sent while the player is mounted,
 			// surf's up dude!
-			if (a_shouldDraw && !p->mm->isMounting && !coopActor->IsOnMount()) 
+			if (a_shouldDraw && !p->mm->isMounting && !coopActor->IsOnMount() &&
+				!coopActor->IsSwimming() && !coopActor->IsFlying()) 
 			{
 				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 			}
@@ -3705,7 +3714,8 @@ namespace ALYSLC
 					// Avoids locking up the player's equip state (weapons out but unusable).
 					// If the animation event is sent while the player is mounted,
 					// surf's up dude!
-					if (!p->mm->isMounting && !coopActor->IsOnMount())
+					if (!p->mm->isMounting && !coopActor->IsOnMount() &&
+						!coopActor->IsSwimming() && !coopActor->IsFlying())
 					{
 						coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 					}

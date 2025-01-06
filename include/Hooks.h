@@ -22,7 +22,7 @@ namespace ALYSLC
 			{
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(35551, 36544) };
-				_Update = trampoline.write_call<5>(hook.address() + OFFSET(0x11F, 0x160), Update);	 // AE: 0x160
+				_Update = trampoline.write_call<5>(hook.address() + OFFSET(0x11F, 0x160), Update);
 				SPDLOG_INFO("[MainHook] Installed Update() hook");
 			}
 
@@ -44,17 +44,77 @@ namespace ALYSLC
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(37938, 38894) };
 				REL::Relocation<uintptr_t> hook2{ RELOCATION_ID(37945, 38901) };
-				_EquipObject = trampoline.write_call<5>(hook.address() + OFFSET(0xE5, 0x170), EquipObject);			// AE: 0x170
+				_EquipObject = trampoline.write_call<5>
+				(
+					hook.address() + 
+					OFFSET(0xE5, 0x170), 
+					EquipObject
+				);
 				SPDLOG_INFO("[ActorEquipManagerHooks] Installed EquipObject() hook.");
-				_UnequipObject = trampoline.write_call<5>(hook2.address() + OFFSET(0x138, 0x1B9), UnequipObject);	// AE: 0x1B9
+				_UnequipObject = trampoline.write_call<5>
+				(
+					hook2.address() + 
+					OFFSET(0x138, 0x1B9), 
+					UnequipObject
+				);
 				SPDLOG_INFO("[ActorEquipManagerHooks] Installed UnequipObject() hook.");
 			}
 
 		private:
-			static void EquipObject(RE::ActorEquipManager* a_this, RE::Actor* a_actor, RE::TESBoundObject* a_object, const RE::ObjectEquipParams& a_objectEquipParams);
-			static void UnequipObject(RE::ActorEquipManager* a_this, RE::Actor* a_actor, RE::TESBoundObject* a_object, const RE::ObjectEquipParams& a_objectEquipParams);
+			static void EquipObject
+			(
+				RE::ActorEquipManager* a_this,
+				RE::Actor* a_actor, 
+				RE::TESBoundObject* a_object, 
+				const RE::ObjectEquipParams& a_objectEquipParams
+			);
+			static void UnequipObject
+			(
+				RE::ActorEquipManager* a_this, 
+				RE::Actor* a_actor, 
+				RE::TESBoundObject* a_object, 
+				const RE::ObjectEquipParams& a_objectEquipParams
+			);
 			static inline REL::Relocation<decltype(EquipObject)> _EquipObject;
 			static inline REL::Relocation<decltype(UnequipObject)> _UnequipObject;
+		};
+
+		// [AIProcess Hooks]
+		// Credits to ersh1:
+		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Hooks.h#L318
+		class AIProcessHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				auto& trampoline = SKSE::GetTrampoline();
+				REL::Relocation<uintptr_t> hook1{ RELOCATION_ID(36365, 37356) };
+				REL::Relocation<uintptr_t> hook2{ RELOCATION_ID(41293, 42373) };
+
+				_AIProcess_SetRotationSpeedZ1 = trampoline.write_call<5>
+				(
+					hook1.address() + OFFSET(0x356, 0x3EF), AIProcess_SetRotationSpeedZ1
+				);
+				_AIProcess_SetRotationSpeedZ2 = trampoline.write_call<5>
+				(
+					hook1.address() + OFFSET(0x5E4, 0x632), AIProcess_SetRotationSpeedZ2
+				);
+				_AIProcess_SetRotationSpeedZ3 = trampoline.write_branch<5>
+				(
+					hook2.address() + OFFSET(0x49, 0x49), AIProcess_SetRotationSpeedZ3
+				);
+			}
+
+		private:
+			static void AIProcess_SetRotationSpeedZ1(RE::AIProcess* a_this, float a_rotationSpeed);
+			static void AIProcess_SetRotationSpeedZ2(RE::AIProcess* a_this, float a_rotationSpeed);
+			static void AIProcess_SetRotationSpeedZ3(RE::AIProcess* a_this, float a_rotationSpeed);
+			static inline REL::Relocation<decltype(AIProcess_SetRotationSpeedZ1)> 
+			_AIProcess_SetRotationSpeedZ1;
+			static inline REL::Relocation<decltype(AIProcess_SetRotationSpeedZ2)> 
+			_AIProcess_SetRotationSpeedZ2;
+			static inline REL::Relocation<decltype(AIProcess_SetRotationSpeedZ3)> 
+			_AIProcess_SetRotationSpeedZ3;
 		};
 
 		// [AnimationGraphManager Hooks]
@@ -69,7 +129,12 @@ namespace ALYSLC
 			}
 
 		private:
-			static EventResult ProcessEvent(RE::BSAnimationGraphManager* a_this, const RE::BSAnimationGraphEvent* a_event, RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_eventSource);  // 01
+			static EventResult ProcessEvent
+			(
+				RE::BSAnimationGraphManager* a_this, 
+				const RE::BSAnimationGraphEvent* a_event, 
+				RE::BSTEventSource<RE::BSAnimationGraphEvent>* a_eventSource
+			);
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 		};
 
@@ -81,19 +146,26 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BSCullingProcess[0] };
 
-				// Hooks to provide a partial fix for freezing issue that arises from having Felisky's MiniMap
-				// enabled while the camera is in a cell with at least 1 room marker + occlusion plane marker.
-				// Could not find a consistent repro method, but the game would always freeze eventually
-				// under these conditions.
-				// Side effect of adjusting the cull mode to prevent these freezes is that the minimap no longer updates
-				// the layout of interior cells. All map markers, however, still appear and update based on the player's location.
+				// Hooks to provide a partial fix for freezing issue 
+				// that arises from having Felisky384's MiniMap
+				// enabled while the camera is in a cell 
+				// with at least 1 room marker + occlusion plane marker.
+				// Could not find a consistent repro method, 
+				// but the game would always freeze eventually under these conditions.
+				// Side effect of adjusting the cull mode to prevent these freezes 
+				// is that the minimap no longer updates the layout of interior cells. 
+				// All map markers, however, still appear 
+				// and update based on the player's location.
 				// Enabling this workaround for stability's sake until something better is found.
 				_Process1 = vtbl.write_vfunc(0x16, Process1);
 				SPDLOG_INFO("[BSCullingProcessHooks Hook] Installed Process1() hook.");
 			}
 
 		private:
-			static void Process1(RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2);	 // 16
+			static void Process1
+			(
+				RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2
+			);
 			static inline REL::Relocation<decltype(Process1)> _Process1;
 		};
 
@@ -109,7 +181,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool QWithinPoint(RE::BSMultiBound* a_this, const RE::NiPoint3& a_pos);	// 25
+			static bool QWithinPoint(RE::BSMultiBound* a_this, const RE::NiPoint3& a_pos);
 			static inline REL::Relocation<decltype(QWithinPoint)> _QWithinPoint;
 		};
 
@@ -139,17 +211,31 @@ namespace ALYSLC
 			}
 
 		private:
-			static float CheckClampDamageModifier(RE::Character* a_this, RE::ActorValue a_av, float a_delta);					// 127
-			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);												// A6
-			static void HandleHealthDamage(RE::Character* a_this, RE::Actor* a_attacker, float a_damage);						// 104
-			static void ModifyAnimationUpdateData(RE::Character* a_this, RE::BSAnimationUpdateData& a_data);					// 79
-			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);	// 01
-			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);												// 8A
-			static void Update(RE::Character* a_this, float a_delta);															// AD
-			static inline REL::Relocation<decltype(CheckClampDamageModifier)> _CheckClampDamageModifier;
+			static float CheckClampDamageModifier
+			(
+				RE::Character* a_this, RE::ActorValue a_av, float a_delta
+			);
+			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);
+			static void HandleHealthDamage
+			(
+				RE::Character* a_this, RE::Actor* a_attacker, float a_damage
+			);
+			static void ModifyAnimationUpdateData
+			(
+				RE::Character* a_this, RE::BSAnimationUpdateData& a_data
+			);
+			static bool NotifyAnimationGraph
+			(
+				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
+			);
+			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
+			static void Update(RE::Character* a_this, float a_delta);
+			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
+			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
 			static inline REL::Relocation<decltype(HandleHealthDamage)> _HandleHealthDamage;
-			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> _ModifyAnimationUpdateData;
+			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
+			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(Update)> _Update;
@@ -165,7 +251,12 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(37673, 38627) };	 //628C20, 64E760
 				auto& trampoline = SKSE::GetTrampoline();
-				_ProcessHit = trampoline.write_call<5>(hook.address() + OFFSET(0x3C0, 0x4A8), ProcessHit); // AE: 0x4A8
+				_ProcessHit = trampoline.write_call<5>
+				(
+					hook.address() + 
+					OFFSET(0x3C0, 0x4A8), 
+					ProcessHit
+				);
 				SPDLOG_INFO("[MeleeHit Hook] Installed ProcessHit() hook.");
 			}
 
@@ -183,11 +274,19 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MenuControls[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
 				SPDLOG_INFO("[MenuControls Hook] Installed ProcessEvent() hook.");
-				debugMenuTriggered = ignoringPauseWaitEvent = pauseBindPressedFirst = summoningMenuTriggered = false;
+				debugMenuTriggered = 
+				ignoringPauseWaitEvent =
+				pauseBindPressedFirst = 
+				summoningMenuTriggered = false;
 			}
 
 		private:
-			static EventResult ProcessEvent(RE::MenuControls* a_this, RE::InputEvent* const* a_event, RE::BSTEventSource<RE::InputEvent*>* a_eventSource);	// 01
+			static EventResult ProcessEvent
+			(
+				RE::MenuControls* a_this, 
+				RE::InputEvent* const* a_event,
+				RE::BSTEventSource<RE::InputEvent*>* a_eventSource
+			);
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 
 			// Check if the correct binds were pressed to open the summoning or debug menus.
@@ -213,9 +312,11 @@ namespace ALYSLC
 
 			// Was an attempt made to open the co-op debug menu?
 			static inline bool debugMenuTriggered;
-			// Should the Pause/Wait menu-triggering input event be ignored while another menu is opened?
+			// Should the Pause/Wait menu-triggering input event be ignored 
+			// while another menu is opened?
 			static inline bool ignoringPauseWaitEvent;
-			// 'Pause'/'Jornal' bind was pressed before 'Wait' bind when attempting to open the co-op summoning menu.
+			// 'Pause'/'Jornal' bind was pressed before 'Wait' bind 
+			// when attempting to open the co-op summoning menu.
 			static inline bool pauseBindPressedFirst;
 			// Was an attempt made to open the co-op summoning menu?
 			static inline bool summoningMenuTriggered;
@@ -233,7 +334,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static void UpdateDownwardPass(RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2);		// 2C
+			static void UpdateDownwardPass
+			(
+				RE::NiNode* a_this, RE::NiUpdateData& a_data, std::uint32_t a_arg2
+			);
 			static inline REL::Relocation<decltype(UpdateDownwardPass)> _UpdateDownwardPass;
 		};
 
@@ -278,18 +382,38 @@ namespace ALYSLC
 			}
 
 		private:
-			static float CheckClampDamageModifier(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta);				// 127
-			static void DrawWeaponMagicHands(RE::PlayerCharacter* a_this, bool a_draw);											// A6
-			static void HandleHealthDamage(RE::PlayerCharacter* a_this, RE::Actor* a_attacker, float a_damage);					// 104
-			static void ModifyAnimationUpdateData(RE::PlayerCharacter* a_this, RE::BSAnimationUpdateData& a_data);				// 79
-			static bool NotifyAnimationGraph(RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName);	// 01
-			static void Update(RE::PlayerCharacter* a_this, float a_delta);														// AD
-			static void UseSkill(RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_points, RE::TESForm* a_arg3);		// F7
+			static float CheckClampDamageModifier
+			(
+				RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta
+			);
+			static void DrawWeaponMagicHands(RE::PlayerCharacter* a_this, bool a_draw);
+			static void HandleHealthDamage
+			(
+				RE::PlayerCharacter* a_this, RE::Actor* a_attacker, float a_damage
+			);
+			static void ModifyAnimationUpdateData
+			(
+				RE::PlayerCharacter* a_this, RE::BSAnimationUpdateData& a_data
+			);
+			static bool NotifyAnimationGraph
+			(
+				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
+			);
+			static void Update(RE::PlayerCharacter* a_this, float a_delta);													
+			static void UseSkill
+			(
+				RE::PlayerCharacter* a_this, 
+				RE::ActorValue a_av, 
+				float a_points, 
+				RE::TESForm* a_arg3
+			);
 
-			static inline REL::Relocation<decltype(CheckClampDamageModifier)> _CheckClampDamageModifier;
+			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
+			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
 			static inline REL::Relocation<decltype(HandleHealthDamage)> _HandleHealthDamage;
-			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> _ModifyAnimationUpdateData;
+			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
+			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
 			static inline REL::Relocation<decltype(Update)> _Update;
 			static inline REL::Relocation<decltype(UseSkill)> _UseSkill;
@@ -303,42 +427,112 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> projectileVtbl{ RE::VTABLE_Projectile[0] };
 				REL::Relocation<uintptr_t> arrowProjectileVtbl{ RE::VTABLE_ArrowProjectile[0] };
-				REL::Relocation<uintptr_t> barrierProjectileVtbl{ RE::VTABLE_BarrierProjectile[0] };
+				REL::Relocation<uintptr_t> barrierProjectileVtbl
+				{
+					RE::VTABLE_BarrierProjectile[0] 
+				};
 				REL::Relocation<uintptr_t> beamProjectileVtbl{ RE::VTABLE_BeamProjectile[0] };
 				REL::Relocation<uintptr_t> coneProjectileVtbl{ RE::VTABLE_ConeProjectile[0] };
 				REL::Relocation<uintptr_t> flameProjectileVtbl{ RE::VTABLE_FlameProjectile[0] };
-				REL::Relocation<uintptr_t> grenadeProjectileVtbl{ RE::VTABLE_GrenadeProjectile[0] };
-				REL::Relocation<uintptr_t> missileProjectileVtbl{ RE::VTABLE_MissileProjectile[0] };
-				_ArrowProjectile_GetLinearVelocity = arrowProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed ArrowProjectile GetLinearVelocity() hook.");
+				REL::Relocation<uintptr_t> grenadeProjectileVtbl
+				{
+					RE::VTABLE_GrenadeProjectile[0] 
+				};
+				REL::Relocation<uintptr_t> missileProjectileVtbl
+				{
+					RE::VTABLE_MissileProjectile[0] 
+				};
+				_ArrowProjectile_GetLinearVelocity = arrowProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed ArrowProjectile GetLinearVelocity() hook."
+				);
 				_ArrowProjectile_UpdateImpl = arrowProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed ArrowProjectile UpdateImpl() hook.");
-				_BarrierProjectile_GetLinearVelocity = barrierProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed BarrierProjectile GetLinearVelocity() hook.");
-				_BarrierProjectile_UpdateImpl = barrierProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
+				_BarrierProjectile_GetLinearVelocity = barrierProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed BarrierProjectile GetLinearVelocity() hook."
+				);
+				_BarrierProjectile_UpdateImpl = barrierProjectileVtbl.write_vfunc
+				(
+					0xAB, UpdateImpl
+				);
 				SPDLOG_INFO("[Projectile Hook] Installed BarrierProjectile UpdateImpl() hook.");
-				_BeamProjectile_GetLinearVelocity = beamProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed BeamProjectile GetLinearVelocity() hook.");
+				_BeamProjectile_GetLinearVelocity = beamProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] "
+					"Installed BeamProjectile GetLinearVelocity() hook."
+				);
 				_BeamProjectile_UpdateImpl = beamProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed BeamProjectile UpdateImpl() hook.");
-				_ConeProjectile_GetLinearVelocity = coneProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed ConeProjectile GetLinearVelocity() hook.");
+				_ConeProjectile_GetLinearVelocity = coneProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed ConeProjectile GetLinearVelocity() hook."
+				);
 				_ConeProjectile_UpdateImpl = coneProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed ConeProjectile UpdateImpl() hook.");
-				_FlameProjectile_GetLinearVelocity = flameProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed FlameProjectile GetLinearVelocity() hook.");
+				_FlameProjectile_GetLinearVelocity = flameProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed FlameProjectile GetLinearVelocity() hook."
+				);
 				_FlameProjectile_UpdateImpl = flameProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed FlameProjectile UpdateImpl() hook.");
-				_GrenadeProjectile_GetLinearVelocity = grenadeProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed GrenadeProjectile GetLinearVelocity() hook.");
-				_GrenadeProjectile_UpdateImpl = grenadeProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
+				_GrenadeProjectile_GetLinearVelocity = grenadeProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed GrenadeProjectile GetLinearVelocity() hook."
+				);
+				_GrenadeProjectile_UpdateImpl = grenadeProjectileVtbl.write_vfunc
+				(
+					0xAB, UpdateImpl
+				);
 				SPDLOG_INFO("[Projectile Hook] Installed GrenadeProjectile UpdateImpl() hook.");
-				_MissileProjectile_GetLinearVelocity = missileProjectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed MissileProjectile GetLinearVelocity() hook.");
-				_MissileProjectile_UpdateImpl = missileProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
+				_MissileProjectile_GetLinearVelocity = missileProjectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] " 
+					"Installed MissileProjectile GetLinearVelocity() hook."
+				);
+				_MissileProjectile_UpdateImpl = missileProjectileVtbl.write_vfunc
+				(
+					0xAB, UpdateImpl
+				);
 				SPDLOG_INFO("[Projectile Hook] Installed MissileProjectile UpdateImpl() hook.");
-				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc(0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed Projectile GetLinearVelocity() hook.");
+				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity);
+				SPDLOG_INFO("[Projectile Hook] Installed Projectile GetLinearVelocity() hook."
+				);
 				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed Projectile UpdateImpl() hook.");
 
@@ -349,37 +543,73 @@ namespace ALYSLC
 			static void GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity);
 			static void UpdateImpl(RE::Projectile* a_this, float a_delta);
 
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _ArrowProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_ArrowProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ArrowProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _BarrierProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_BarrierProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BarrierProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _BeamProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_BeamProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BeamProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _ConeProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_ConeProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ConeProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _FlameProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_FlameProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _FlameProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _GrenadeProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_GrenadeProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _GrenadeProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _MissileProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_MissileProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _MissileProjectile_UpdateImpl;
-			static inline REL::Relocation<decltype(GetLinearVelocity)> _Projectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(GetLinearVelocity)> 
+			_Projectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;
 
-			// Adjust projectile trajectory towards computed intercept position or the player's current target.
-			static void DirectProjectileAtTarget(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity, const bool& a_justReleased);
+			// Adjust projectile trajectory towards computed intercept position 
+			// or the player's current target.
+			static void DirectProjectileAtTarget
+			(
+				const std::shared_ptr<CoopPlayer>& a_p, 
+				const RE::ObjectRefHandle& a_projectileHandle,
+				RE::NiPoint3& a_resultingVelocity, 
+				const bool& a_justReleased
+			);
 			// Store the firing player's CID in one outparam (-1 if not by a player), 
 			// and true in the other outparam if the projectile was fired at a player.
-			static void GetFiredAtOrByPlayer(const RE::ObjectRefHandle& a_projectileHandle, int32_t& a_firingPlayerCIDOut, bool& a_firedAtPlayerOut);
+			static void GetFiredAtOrByPlayer
+			(
+				const RE::ObjectRefHandle& a_projectileHandle, 
+				int32_t& a_firingPlayerCIDOut,
+				bool& a_firedAtPlayerOut
+			);
 			// Adjust the projectile's trajectory to home in at the player's current target.
 			// Update the velocity through the outparam.
-			static void SetHomingTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
-			// Guide the projectile along a pre-determined trajectory towards the computed target intercept position.
+			static void SetHomingTrajectory
+			(
+				const std::shared_ptr<CoopPlayer>& a_p, 
+				const RE::ObjectRefHandle& a_projectileHandle,
+				RE::NiPoint3& a_resultingVelocity
+			);
+			// Guide the projectile along a pre-determined trajectory 
+			// towards the computed target intercept position.
 			// Update the velocity through the outparam.
-			static void SetFixedTrajectory(const std::shared_ptr<CoopPlayer>& a_p,  const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
-			// Direct flame and beam projectiles in a straight line directly at the target position.
-			static void SetStraightTrajectory(const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_projectileHandle, RE::NiPoint3& a_resultingVelocity);
-
+			static void SetFixedTrajectory
+			(
+				const std::shared_ptr<CoopPlayer>& a_p,  
+				const RE::ObjectRefHandle& a_projectileHandle, 
+				RE::NiPoint3& a_resultingVelocity
+			);
+			// Direct flame and beam projectiles in a straight line 
+			// directly at the target position.
+			static void SetStraightTrajectory
+			(
+				const std::shared_ptr<CoopPlayer>& a_p,
+				const RE::ObjectRefHandle& a_projectileHandle,
+				RE::NiPoint3& a_resultingVelocity
+			);
 		};
 
 		// [TESCamera Hooks]
@@ -391,9 +621,10 @@ namespace ALYSLC
 		public:
 			static void InstallHooks()
 			{
-				REL::Relocation<std::uintptr_t> hook1{ RELOCATION_ID(49852, 50784) };  // 84AB90, 876700
+				// 84AB90, 876700
+				REL::Relocation<std::uintptr_t> hook1{ RELOCATION_ID(49852, 50784) };  
 				auto& trampoline = SKSE::GetTrampoline();
-				_Update = trampoline.write_call<5>(hook1.address() + OFFSET(0x1A6, 0x1A6), Update);  // AE: 0x1A6
+				_Update = trampoline.write_call<5>(hook1.address() + OFFSET(0x1A6, 0x1A6), Update);
 				SPDLOG_INFO("[TESCamera Hooks] Installed Update() hook.");
 			}
 
@@ -414,7 +645,15 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool Activate(RE::TESObjectBOOK* a_this, RE::TESObjectREFR* a_targetRef, RE::TESObjectREFR* a_activatorRef, std::uint8_t a_arg3, RE::TESBoundObject* a_object, std::int32_t a_targetCount);	// 37
+			static bool Activate
+			(
+				RE::TESObjectBOOK* a_this, 
+				RE::TESObjectREFR* a_targetRef,
+				RE::TESObjectREFR* a_activatorRef,
+				std::uint8_t a_arg3, 
+				RE::TESBoundObject* a_object, 
+				std::int32_t a_targetCount
+			);
 			static inline REL::Relocation<decltype(Activate)> _Activate;
 		};
 
@@ -430,7 +669,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static void SetParentCell(RE::TESObjectREFR* a_this, RE::TESObjectCELL* a_cell);		// 98
+			static void SetParentCell(RE::TESObjectREFR* a_this, RE::TESObjectCELL* a_cell);
 			static inline REL::Relocation<decltype(SetParentCell)> _SetParentCell;
 		};
 
@@ -446,45 +685,101 @@ namespace ALYSLC
 				// HCS: Horse Camera State
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ThirdPersonState[0] };
 				_GetRotationTPCS = vtbl.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed ThirdPersonState::GetRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] "
+					"Installed ThirdPersonState::GetRotation() hook."
+				);
 				_HandleLookInputTPCS = vtbl.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed ThirdPersonState::HandleLookInput() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed ThirdPersonState::HandleLookInput() hook."
+				);
 				_SetFreeRotationModeTPCS = vtbl.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed ThirdPersonState::SetFreeRotationMode() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed ThirdPersonState::SetFreeRotationMode() hook."
+				);
 				_UpdateRotationTPCS = vtbl.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed ThirdPersonState::UpdateRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed ThirdPersonState::UpdateRotation() hook."
+				);
 
 				REL::Relocation<uintptr_t> vtbl1{ RE::VTABLE_BleedoutCameraState[0] };
 				_BeginBCS = vtbl1.write_vfunc(0x01, Begin);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed BleedOutCameraState::Begin() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed BleedOutCameraState::Begin() hook."
+				);
 				_GetRotationBCS = vtbl1.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed BleedOutCameraState::GetRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed BleedOutCameraState::GetRotation() hook."
+				);
 				_HandleLookInputBCS = vtbl1.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed BleedOutCameraState::HandleLookInput() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed BleedOutCameraState::HandleLookInput() hook."
+				);
 				_SetFreeRotationModeBCS = vtbl1.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed BleedOutCameraState::SetFreeRotationMode() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed BleedOutCameraState::SetFreeRotationMode() hook."
+				);
 				_UpdateRotationBCS = vtbl1.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed BleedOutCameraState::UpdateRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed BleedOutCameraState::UpdateRotation() hook."
+				);
 
 				REL::Relocation<uintptr_t> vtbl2{ RE::VTABLE_HorseCameraState[0] };
 				_BeginHCS = vtbl2.write_vfunc(0x01, Begin);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed HorseCameraState::Begin() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] "
+					"Installed HorseCameraState::Begin() hook."
+				);
 				_GetRotationHCS = vtbl2.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed HorseCameraState::GetRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] "
+					"Installed HorseCameraState::GetRotation() hook."
+				);
 				_HandleLookInputHCS = vtbl2.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed HorseCameraState::HandleLookInput() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed HorseCameraState::HandleLookInput() hook."
+				);
 				_SetFreeRotationModeHCS = vtbl2.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed HorseCameraState::SetFreeRotationMode() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed HorseCameraState::SetFreeRotationMode() hook."
+				);
 				_UpdateRotationHCS = vtbl2.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("[ThirdPersonCameraStates Hooks] Installed HorseCameraState::UpdateRotation() hook.");
+				SPDLOG_INFO
+				(
+					"[ThirdPersonCameraStates Hooks] " 
+					"Installed HorseCameraState::UpdateRotation() hook."
+				);
 			}
 
 		private:
-			static void Begin(RE::ThirdPersonState* a_this);										 // 01
-			static void GetRotation(RE::ThirdPersonState* a_this, RE::NiQuaternion& a_rotation);	 // 04
-			static void HandleLookInput(RE::ThirdPersonState* a_this, const RE::NiPoint2& a_input);	 // 0F
-			static void SetFreeRotationMode(RE::ThirdPersonState* a_this, bool a_weaponSheathed);	 // 0D
-			static void UpdateRotation(RE::ThirdPersonState* a_this);								 // 0E
+			static void Begin(RE::ThirdPersonState* a_this);									
+			static void GetRotation(RE::ThirdPersonState* a_this, RE::NiQuaternion& a_rotation);
+			static void HandleLookInput(RE::ThirdPersonState* a_this, const RE::NiPoint2& a_input);
+			static void SetFreeRotationMode(RE::ThirdPersonState* a_this, bool a_weaponSheathed);
+			static void UpdateRotation(RE::ThirdPersonState* a_this);							
 
 
 			static inline REL::Relocation<decltype(Begin)> _BeginTPCS;
@@ -516,7 +811,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Start(RE::ValueModifierEffect* a_this);	 // 0x14
+			static void Start(RE::ValueModifierEffect* a_this);
 			static inline REL::Relocation<decltype(Start)> _Start;
 		};
 
@@ -535,8 +830,8 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Start(RE::VampireLordEffect* a_this);		// 14
-			static void Finish(RE::VampireLordEffect* a_this);		// 15
+			static void Start(RE::VampireLordEffect* a_this);
+			static void Finish(RE::VampireLordEffect* a_this);
 			static inline REL::Relocation<decltype(Start)> _Start;
 			static inline REL::Relocation<decltype(Finish)> _Finish;
 		};
@@ -555,8 +850,8 @@ namespace ALYSLC
 			}
 
 		private:
-			static void Start(RE::WerewolfEffect* a_this);			// 14
-			static void Finish(RE::WerewolfEffect* a_this);			// 15
+			static void Start(RE::WerewolfEffect* a_this);
+			static void Finish(RE::WerewolfEffect* a_this);
 			static inline REL::Relocation<decltype(Start)> _Start;
 			static inline REL::Relocation<decltype(Finish)> _Finish;
 		};
@@ -577,7 +872,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::BarterMenu* a_this, RE::UIMessage& a_message);	// 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::BarterMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -593,7 +891,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::BookMenu* a_this, RE::UIMessage& a_message);	// 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::BookMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -609,7 +910,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::ContainerMenu* a_this, RE::UIMessage& a_message);	 // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::ContainerMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -625,7 +929,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::CraftingMenu* a_this, RE::UIMessage& a_message);	// 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::CraftingMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -641,7 +948,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::DialogueMenu* a_this, RE::UIMessage& a_message);	 // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::DialogueMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -657,7 +967,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::FavoritesMenu* a_this, RE::UIMessage& a_message);  // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::FavoritesMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -673,7 +986,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::InventoryMenu* a_this, RE::UIMessage& a_message);	 // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::InventoryMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -689,7 +1005,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::LoadingMenu* a_this, RE::UIMessage& a_message);	// 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::LoadingMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -705,7 +1024,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::MagicMenu* a_this, RE::UIMessage& a_message);  // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::MagicMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -721,7 +1043,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::StatsMenu* a_this, RE::UIMessage& a_message);	 // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::StatsMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -737,7 +1062,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static RE::UI_MESSAGE_RESULTS ProcessMessage(RE::TrainingMenu* a_this, RE::UIMessage& a_message);	 // 04
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::TrainingMenu* a_this, RE::UIMessage& a_message
+			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -757,7 +1085,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::ActivateHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess
+			(
+				RE::ActivateHandler* a_this, RE::InputEvent* a_event
+			);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -773,7 +1104,10 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::AttackBlockHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess
+			(
+				RE::AttackBlockHandler* a_this, RE::InputEvent* a_event
+			);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -788,7 +1122,7 @@ namespace ALYSLC
 				SPDLOG_INFO("[JumpHandler Hook] Installed CanProcess() hook.");
 			}
 		private:
-			static bool CanProcess(RE::JumpHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess(RE::JumpHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -804,7 +1138,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::LookHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess(RE::LookHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -820,7 +1154,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::MovementHandler* a_this, RE::InputEvent* a_event);	// 01
+			static bool CanProcess(RE::MovementHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -836,7 +1170,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::ReadyWeaponHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess(RE::ReadyWeaponHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -852,7 +1186,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::ShoutHandler* a_this, RE::InputEvent* a_event);	 // 01
+			static bool CanProcess(RE::ShoutHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -868,7 +1202,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::SneakHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess(RE::SneakHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -884,7 +1218,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::SprintHandler* a_this, RE::InputEvent* a_event);  // 01
+			static bool CanProcess(RE::SprintHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 
@@ -900,7 +1234,7 @@ namespace ALYSLC
 			}
 
 		private:
-			static bool CanProcess(RE::TogglePOVHandler* a_this, RE::InputEvent* a_event);	// 01
+			static bool CanProcess(RE::TogglePOVHandler* a_this, RE::InputEvent* a_event);
 			static inline REL::Relocation<decltype(CanProcess)> _CanProcess;
 		};
 	}

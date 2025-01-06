@@ -25,6 +25,8 @@ namespace ALYSLC
 		CoopCellFullyLoadedHandler::Register();
 		// Register container change event handler.
 		CoopContainerChangedHandler::Register();
+		// Register crosshair event handler.
+		CoopCrosshairEventHandler::Register();
 		// Register death event handler.
 		CoopDeathEventHandler::Register();
 		// Register equip event handler.
@@ -37,11 +39,16 @@ namespace ALYSLC
 		CoopMenuOpenCloseHandler::Register();
 		// Register position player event handler.
 		CoopPositionPlayerEventHandler::Register();
+
 		SPDLOG_INFO("[Events] RegisterEvents: event registration complete.");
 	}
 
 	void Events::ResetMenuState()
 	{
+		// Reset our handled menu data instantly:
+		// Stop MIM, reset menu controller IDs,
+		// set supported menus as closed.
+
 		glob.mim->ToggleCoopPlayerMenuMode(-1);
 		GlobalCoopData::ResetMenuCIDs();
 		glob.supportedMenuOpen.store(false);
@@ -70,31 +77,47 @@ namespace ALYSLC
 
 	EventResult CoopBleedoutEventHandler::ProcessEvent(const RE::TESEnterBleedoutEvent* a_bleedoutEvent, RE::BSTEventSource<RE::TESEnterBleedoutEvent>*)
 	{
-		if (glob.allPlayersInit && a_bleedoutEvent && a_bleedoutEvent->actor && Settings::bUseReviveSystem)
+		if (!glob.allPlayersInit || !Settings::bUseReviveSystem ||
+			!a_bleedoutEvent || !a_bleedoutEvent->actor || !a_bleedoutEvent->actor.get())
 		{
-			if (glob.livingPlayers == 0 && a_bleedoutEvent->actor->IsPlayerRef()) 
-			{
-				auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
-				Util::NativeFunctions::SetActorBaseDataFlag(p1->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false);
-				// Set to zero health, which usually triggers a death event.
-				p1->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -p1->GetActorValue(RE::ActorValue::kHealth));
-			}
-			else if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_bleedoutEvent->actor); foundIndex != -1) 
-			{
-				if (const auto& p = glob.coopPlayers[foundIndex]; p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh) 
-				{
-					auto midHighProc = p->coopActor->currentProcess->middleHigh;
-					midHighProc->deferredKillTimer = FLT_MAX;
-				}
+			return EventResult::kContinue;
+		}
 
-				return EventResult::kStop;
+		if (glob.livingPlayers == 0 && a_bleedoutEvent->actor->IsPlayerRef())
+		{
+			// All companion players are dead and P1 has just been downed.
+			auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
+			Util::NativeFunctions::SetActorBaseDataFlag
+			(
+				p1->GetActorBase(),
+				RE::ACTOR_BASE_DATA::Flag::kEssential,
+				false
+			);
+			// Set to zero health, which usually triggers a death event.
+			// Extra layer of redundancy, just in case P1 has not died.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ActorValue::kHealth,
+				-p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+		}
+		else if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_bleedoutEvent->actor); foundIndex != -1)
+		{
+			if (const auto& p = glob.coopPlayers[foundIndex];
+				p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh)
+			{
+				auto midHighProc = p->coopActor->currentProcess->middleHigh;
+				midHighProc->deferredKillTimer = FLT_MAX;
 			}
+
+			return EventResult::kStop;
 		}
 
 		return EventResult::kContinue;
 	}
 
-	CoopCellChangeHandler* CoopCellChangeHandler::GetSingleton() 
+	CoopCellChangeHandler* CoopCellChangeHandler::GetSingleton()
 	{
 		static CoopCellChangeHandler singleton;
 		return std::addressof(singleton);
@@ -108,54 +131,52 @@ namespace ALYSLC
 			scriptEventSourceHolder->AddEventSink(CoopCellChangeHandler::GetSingleton());
 			SPDLOG_INFO("[Events] Registered for cell change events.");
 		}
-		else 
-		{ 
-			SPDLOG_ERROR("[Events] ERR: Could not register for cell change events."); 
+		else
+		{
+			SPDLOG_ERROR("[Events] ERR: Could not register for cell change events.");
 		}
 	}
 
 	EventResult CoopCellChangeHandler::ProcessEvent(const RE::TESMoveAttachDetachEvent* a_cellChangeEvent, RE::BSTEventSource<RE::TESMoveAttachDetachEvent>*)
 	{
-		if (a_cellChangeEvent && a_cellChangeEvent->movedRef)
+		if (!glob.globalDataInit || !a_cellChangeEvent || !a_cellChangeEvent->movedRef || !a_cellChangeEvent->movedRef.get())
 		{
-			auto attachedRef = a_cellChangeEvent->movedRef;
-			if (attachedRef && attachedRef->GetCurrent3D()) 
+			return EventResult::kContinue;
+		}
+
+		auto attachedRefr = a_cellChangeEvent->movedRef;
+		if (!attachedRefr || !attachedRefr.get())
+		{
+			return EventResult::kContinue;
+		}
+
+		if (auto refr3D = Util::GetRefr3D(attachedRefr.get()); refr3D && refr3D.get())
+		{
+			// Ensure actor does not fade in co-op with our co-op cam enabled.
+			if (!refr3D->flags.all(RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade))
 			{
-				// Ensure actor does not fade in co-op with our co-op cam enabled.
-				attachedRef->GetCurrent3D()->flags.set(RE::NiAVObject::Flag::kIgnoreFade, RE::NiAVObject::Flag::kAlwaysDraw);
+				refr3D->flags.set(RE::NiAVObject::Flag::kIgnoreFade, RE::NiAVObject::Flag::kAlwaysDraw);
 				RE::NiUpdateData updateData;
-				attachedRef->GetCurrent3D()->UpdateDownwardPass(updateData, 0);
+				refr3D->UpdateDownwardPass(updateData, 0);
 			}
+		}
 
-			if (glob.coopSessionActive) 
+		SPDLOG_DEBUG("[Events] Cell change event: {} {}.",
+			attachedRefr->GetName(),
+			a_cellChangeEvent->isCellAttached ? "attached" : "detached");
+
+		if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRefr); foundIndex != -1)
+		{
+			const auto& p = glob.coopPlayers[foundIndex];
+			// Prevent equip state bug mentioned in the equip manager
+			// where two handed weapons' animations break.
+			// Sheathing and re-equipping on cell attach seems to do the trick in most cases.
+			for (const auto& p : glob.coopPlayers)
 			{
-				SPDLOG_DEBUG("[Events] Cell change event: {} {}.", 
-					a_cellChangeEvent->movedRef && a_cellChangeEvent->movedRef.get() ? a_cellChangeEvent->movedRef->GetName() : nullptr,
-					a_cellChangeEvent->isCellAttached ? "attached" : "detached");
-
-				if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRef); foundIndex != -1)
+				if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
 				{
-					// Ensure player does not get faded while in co-op.
-					if (attachedRef->GetCurrent3D())
-					{
-						if (!attachedRef->GetCurrent3D()->flags.all(RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade))
-						{
-							attachedRef->GetCurrent3D()->flags.set(RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade);
-							RE::NiUpdateData updateData;
-							attachedRef->GetCurrent3D()->UpdateDownwardPass(updateData, 0);
-						}
-					}
-
-					const auto& p = glob.coopPlayers[foundIndex];
-					// Prevent equip state bug mentioned in the equip manager where two handed weapons' animations break.
-					for (const auto& p : glob.coopPlayers)
-					{
-						if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
-						{
-							p->pam->ReadyWeapon(false);
-							p->em->ReEquipHandForms();
-						}
-					}
+					p->pam->ReadyWeapon(false);
+					p->em->ReEquipHandForms();
 				}
 			}
 		}
@@ -185,251 +206,408 @@ namespace ALYSLC
 
 	EventResult CoopContainerChangedHandler::ProcessEvent(const RE::TESContainerChangedEvent* a_containerChangedEvent, RE::BSTEventSource<RE::TESContainerChangedEvent>*)
 	{
-		if (glob.globalDataInit && glob.coopSessionActive) 
+		const auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!glob.globalDataInit || !glob.coopSessionActive ||
+			!p1 || !a_containerChangedEvent || !a_containerChangedEvent->baseObj)
 		{
-			if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1 && a_containerChangedEvent && a_containerChangedEvent->baseObj)
+			return EventResult::kContinue;
+		}
+
+		bool fromP1 = a_containerChangedEvent->oldContainer == p1->formID;
+		bool toP1 = a_containerChangedEvent->newContainer == p1->formID;
+		// From a player or a co-op chest.
+		bool fromCoopEntity = 
+		(
+			glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer) || 
+			std::any_of
+			(
+				glob.coopInventoryChests.begin(), glob.coopInventoryChests.end(),
+				[a_containerChangedEvent](const auto& a_chestRefrPtr)
+				{
+					return 
+					(
+						a_chestRefrPtr && a_chestRefrPtr.get() && 
+						a_chestRefrPtr->formID == a_containerChangedEvent->oldContainer
+					);
+				}
+			)
+		);
+		bool toCoopPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->newContainer);
+		int32_t fromCoopPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer);
+
+		// Update P1's has-paraglider state before doing anything else.
+		if ((ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled) && (toP1 || fromP1))
+		{
+			if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
 			{
-				bool fromP1 = a_containerChangedEvent->oldContainer == p1->formID;
-				bool toP1 = a_containerChangedEvent->newContainer == p1->formID;
-				bool fromCoopEntity = glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer);
-				bool toCoopPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->newContainer);
-				int32_t fromCoopPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer);
-
-				// Update P1's has-paraglider state before doing anything else.
-				if ((ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled) && (toP1 || fromP1))
+				if (auto paraglider = dataHandler->LookupForm<RE::TESObjectMISC>(0x802, "Paragliding.esp"); paraglider)
 				{
-					if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
+					if (a_containerChangedEvent->baseObj == paraglider->formID)
 					{
-						if (auto paraglider = dataHandler->LookupForm<RE::TESObjectMISC>(0x802, "Paragliding.esp"); paraglider)
-						{
-							if (a_containerChangedEvent->baseObj == paraglider->formID)
-							{
-								auto invCounts = p1->GetInventoryCounts();
-								ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = invCounts.contains(paraglider) && invCounts.at(paraglider) > 0;
+						auto invCounts = p1->GetInventoryCounts();
+						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = 
+						(
+							invCounts.contains(paraglider) && invCounts.at(paraglider) > 0
+						);
 
-								// Add gale spell if not known already (Enderal only).
-								if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
-									ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
-									!p1->HasSpell(glob.tarhielsGaleSpell))
-								{
-									p1->AddSpell(glob.tarhielsGaleSpell);
-								}
-							}
+						// Add gale spell if not known already (Enderal only).
+						if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+							ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
+							!p1->HasSpell(glob.tarhielsGaleSpell))
+						{
+							p1->AddSpell(glob.tarhielsGaleSpell);
 						}
 					}
 				}
+			}
+		}
 
-				// Added to player 1 or added to co-op player.
-				// Prioritize co-op companion player loot through menus before performing Enderal-specific item transfers.
-				const auto ui = RE::UI::GetSingleton(); 
-				if (ui && glob.mim->managerMenuCID != -1)
+		// Added to player 1 or added to co-op player.
+		// Prioritize co-op companion player loot through menus 
+		// before performing Enderal-specific item transfers.
+		const auto ui = RE::UI::GetSingleton(); 
+		// Companion player controlling menus.
+		if (ui && glob.mim->managerMenuCID != -1)
+		{
+			if (!fromCoopEntity && toCoopPlayer)
+			{
+				bool fromCraftingMenu = ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME);
+				bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
+				bool fromLootMenu = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
+				bool transferFromContainer = false;
+				if (fromCraftingMenu || fromContainerMenu || fromLootMenu)
 				{
-					if (!fromCoopEntity && toCoopPlayer)
+					if (fromContainerMenu)
 					{
-						bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
-						bool transferFromContainer = fromContainerMenu || ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
-						if (transferFromContainer)
-						{
-							if (fromContainerMenu)
-							{
-								auto mode = ui->GetMenu<RE::ContainerMenu>()->GetContainerMode();
-								transferFromContainer = 
-								{ 
-									mode == RE::ContainerMenu::ContainerMode::kLoot || 
-									mode == RE::ContainerMenu::ContainerMode::kPickpocket ||
-									mode == RE::ContainerMenu::ContainerMode::kSteal 
-								};
-							}
-							else
-							{
-								transferFromContainer = true;
-							}
-						}
-
-						// Move from player 1 to the co-op companion player if looting/stealing/pickpocketing from container or if buying the object from a vendor.
-						if (transferFromContainer)
-						{
-							RE::TESForm* baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
-							auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-							if (toP1)
-							{
-								const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
-								// Add to co-op player controlling menus if not a shared item.
-								if (baseObj && !Util::IsPartyWideItem(baseObj))
-								{
-									if (auto boundObj = baseObj->As<RE::TESBoundObject>(); boundObj)
-									{
-										SPDLOG_DEBUG("[Events] Container Changed Event: Removing base item {} (x{}) and giving to {}.", 
-											boundObj->GetName(), a_containerChangedEvent->itemCount, p->coopActor->GetName());
-										p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-										// IMPORTANT:
-										// Adding the object does not flag the player's inventory as changed and does not trigger the
-										// game's equip calculations, which normally clear out the player's currently equipped gear.
-										p->coopActor->AddObjectToContainer(boundObj, nullptr, a_containerChangedEvent->itemCount, p->coopActor.get());
-									}
-
-									return EventResult::kContinue;
-								}
-								else if (refr && !Util::IsPartyWideItem(refr.get()))
-								{
-									if (auto boundObj = refr->GetBaseObject(); boundObj)
-									{
-										SPDLOG_DEBUG("[Events] Container Changed Event: Removing reference item {} (x{}) and giving to {}.", 
-											boundObj->GetName(), a_containerChangedEvent->itemCount, p->coopActor->GetName());
-										p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-										// IMPORTANT:
-										// Adding the object does not flag the player's inventory as changed and does not trigger the
-										// game's equip calculations, which normally clear out the player's currently equipped gear.
-										p->coopActor->AddObjectToContainer(boundObj, nullptr, a_containerChangedEvent->itemCount, p->coopActor.get());
-									}
-
-									return EventResult::kContinue;
-								}
-							}
-							else if (toCoopPlayer)
-							{
-								if (baseObj && Util::IsPartyWideItem(baseObj))
-								{
-									// Give any looted keys/regular books/notes to player 1, since these items can be tough to find after being (un)intentionally looted by co-op companions.
-									if (fromCoopPlayerIndex != -1)
-									{
-										const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
-										RE::TESBoundObject* boundObj = nullptr;
-										if (refr)
-										{
-											boundObj = refr->GetBaseObject();
-										}
-
-										if (baseObj && !boundObj)
-										{
-											boundObj = baseObj->As<RE::TESBoundObject>();
-										}
-
-										if (boundObj)
-										{
-											SPDLOG_DEBUG("[Events] Container Changed Event: Removing item from {} (x{}) to P1 (from 0x{:X}).",
-												p->coopActor->GetName(), a_containerChangedEvent->itemCount, a_containerChangedEvent->oldContainer);
-											p->coopActor->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kStoreInTeammate, nullptr, p1);
-										}
-
-										return EventResult::kContinue;
-									}
-								}
-							}
-						}
+						auto mode = ui->GetMenu<RE::ContainerMenu>()->GetContainerMode();
+						// Must be looting, pickpocketing, or stealing.
+						transferFromContainer = 
+						{ 
+							mode == RE::ContainerMenu::ContainerMode::kLoot || 
+							mode == RE::ContainerMenu::ContainerMode::kPickpocket ||
+							mode == RE::ContainerMenu::ContainerMode::kSteal 
+						};
+					}
+					else
+					{
+						transferFromContainer = true;
 					}
 				}
 
-				bool fromCoopCompanionPlayer = fromCoopPlayerIndex != -1 && !fromP1;
-				// A co-op companion player is attempting to gift items to another co-op companion player
-				// by way of the GiftMenu through P1. Transfer all items added to P1 to the giftee companion player.
-				bool giftMenuOpen = ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
-				if (giftMenuOpen && fromCoopCompanionPlayer && toP1 && glob.mim->IsRunning() && glob.mim->managerMenuCID != -1 && Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
+				// Move from player 1 to the companion player 
+				// if crafting, looting, stealing, or pickpocketing,
+				// or move party-wide items to P1 if a companion player received the item.
+				if (transferFromContainer)
 				{
-					const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
-					auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
-					if (!gifteePtr || !gifteePtr.get()) 
-					{
-						return EventResult::kContinue;
-					}
-
 					RE::TESForm* baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
 					auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-					RE::TESBoundObject* boundObj = nullptr;
-					if (refr)
+					if (toP1)
 					{
-						boundObj = refr->GetBaseObject();
-					}
+						const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
+						// Add to co-op player controlling menus if not a shared item.
+						if (baseObj && !Util::IsPartyWideItem(baseObj))
+						{
+							if (auto boundObj = baseObj->As<RE::TESBoundObject>(); boundObj)
+							{
+								SPDLOG_DEBUG("[Events] Container Changed Event: Removing base item {} (x{}) and giving to {}.", 
+									boundObj->GetName(),
+									a_containerChangedEvent->itemCount, 
+									p->coopActor->GetName());
+								p1->RemoveItem
+								(
+									boundObj, 
+									a_containerChangedEvent->itemCount,
+									RE::ITEM_REMOVE_REASON::kRemove, 
+									nullptr, 
+									nullptr
+								);
+								// IMPORTANT:
+								// Adding the object here does not flag the companion player's inventory as changed 
+								// and does not trigger the game's equip calculations, 
+								// which normally clear out the player's currently equipped gear.
+								p->coopActor->AddObjectToContainer
+								(
+									boundObj, 
+									nullptr, 
+									a_containerChangedEvent->itemCount, 
+									p->coopActor.get()
+								);
+							}
 
-					if (baseObj && !boundObj)
-					{
-						boundObj = baseObj->As<RE::TESBoundObject>();
-					}
+							return EventResult::kContinue;
+						}
+						else if (refr && !Util::IsPartyWideItem(refr.get()))
+						{
+							if (auto boundObj = refr->GetBaseObject(); boundObj)
+							{
+								SPDLOG_DEBUG("[Events] Container Changed Event: Removing reference item {} (x{}) and giving to {}.", 
+									boundObj->GetName(), 
+									a_containerChangedEvent->itemCount,
+									p->coopActor->GetName());
+								p1->RemoveItem
+								(
+									boundObj, 
+									a_containerChangedEvent->itemCount,
+									RE::ITEM_REMOVE_REASON::kRemove,
+									nullptr,
+									nullptr
+								);
+								// IMPORTANT:
+								// Adding the object here does not flag the companion player's inventory as changed 
+								// and does not trigger the game's equip calculations, 
+								// which normally clear out the player's currently equipped gear.
+								p->coopActor->AddObjectToContainer
+								(
+									boundObj, 
+									nullptr, 
+									a_containerChangedEvent->itemCount, 
+									p->coopActor.get()
+								);
+							}
 
-					if (boundObj) 
+							return EventResult::kContinue;
+						}
+					}
+					else if (toCoopPlayer)
+					{							
+						// Give any looted keys/regular books/notes to player 1, 
+						// since these items can be tough to find 
+						// after being (un)intentionally looted by co-op companions.
+						if (baseObj && Util::IsPartyWideItem(baseObj))
+						{
+							if (fromCoopPlayerIndex != -1)
+							{
+								const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
+								RE::TESBoundObject* boundObj = nullptr;
+								if (refr)
+								{
+									boundObj = refr->GetBaseObject();
+								}
+
+								if (baseObj && !boundObj)
+								{
+									boundObj = baseObj->As<RE::TESBoundObject>();
+								}
+
+								if (boundObj)
+								{
+									SPDLOG_DEBUG("[Events] Container Changed Event: Removing item from {} (x{}) to P1 (from 0x{:X}).",
+										p->coopActor->GetName(), 
+										a_containerChangedEvent->itemCount, 
+										a_containerChangedEvent->oldContainer);
+									p->coopActor->RemoveItem
+									(
+										boundObj, 
+										a_containerChangedEvent->itemCount, 
+										RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+										nullptr, 
+										p1
+									);
+								}
+
+								return EventResult::kContinue;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		bool fromCoopCompanionPlayer = fromCoopPlayerIndex != -1 && !fromP1;
+		// A co-op companion player is attempting to gift items 
+		// to another co-op companion player by way of the GiftMenu through P1. 
+		// Transfer all items added to P1 to the giftee companion player.
+		bool giftMenuOpen = ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
+		if (giftMenuOpen && fromCoopCompanionPlayer && 
+			toP1 && glob.mim->IsRunning() && 
+			glob.mim->managerMenuCID != -1 && 
+			Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
+		{
+			const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
+			auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
+			if (!gifteePtr || !gifteePtr.get()) 
+			{
+				return EventResult::kContinue;
+			}
+
+			RE::TESForm* baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
+			auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
+			RE::TESBoundObject* boundObj = nullptr;
+			if (refr)
+			{
+				boundObj = refr->GetBaseObject();
+			}
+
+			if (baseObj && !boundObj)
+			{
+				boundObj = baseObj->As<RE::TESBoundObject>();
+			}
+
+			if (boundObj) 
+			{
+				SPDLOG_DEBUG("[Events] Container Changed Event: Removing {} (x{}) from P1 to {} (from gifting player {}).",
+					boundObj->GetName(), 
+					a_containerChangedEvent->itemCount,
+					gifteePtr->GetName(),
+					giftingP->coopActor->GetName());
+				p1->RemoveItem
+				(
+					boundObj, 
+					a_containerChangedEvent->itemCount, 
+					RE::ITEM_REMOVE_REASON::kRemove, 
+					nullptr, 
+					nullptr
+				);
+				// IMPORTANT:
+				// Adding the object here does not flag the companion player's inventory as changed 
+				// and does not trigger the game's equip calculations, 
+				// which normally clear out the player's currently equipped gear.
+				gifteePtr->AddObjectToContainer
+				(
+					boundObj, 
+					nullptr,
+					a_containerChangedEvent->itemCount,
+					gifteePtr.get()
+				);
+			}
+
+			return EventResult::kContinue;
+		}
+
+		bool barterMenuOpen = ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
+		// Enderal-specific gold scaling and skillbook loot.
+		// To a player but not from another player, and not from a transaction (barter menu open).
+		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
+			!fromCoopEntity && 
+			toCoopPlayer && 
+			!barterMenuOpen)
+		{
+			if (auto form = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj); 
+				form && form->IsGold())
+			{
+				// Scale added gold with party size.
+				// NOTE: Gold always goes to P1, 
+				// as P1's gold acts as a shared pool for all players.
+				if (Settings::fAdditionalGoldPerPlayerMult > 0.0f)
+				{
+					int32_t additionalGold = 
+					(
+						a_containerChangedEvent->itemCount * 
+						(glob.activePlayers - 1) * 
+						Settings::fAdditionalGoldPerPlayerMult
+					);
+					p1->AddObjectToContainer
+					(
+						form->As<RE::TESObjectMISC>(), 
+						nullptr, 
+						additionalGold, 
+						p1
+					);
+					bool inMenu = !Util::MenusOnlyAlwaysOpen();
+					// If not in a menu and activating all gold in activation range, 
+					// each individual gold piece added triggers a container changed event, 
+					// so the total amount is unspecificed when printing a notification here.
+					if (inMenu) 
 					{
-						SPDLOG_DEBUG("[Events] Container Changed Event: Removing {} (x{}) from P1 to {} (from gifting player {}).",
-							boundObj->GetName(), a_containerChangedEvent->itemCount,
-							gifteePtr->GetName(), giftingP->coopActor->GetName());
-						p1->RemoveItem(boundObj, a_containerChangedEvent->itemCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-						// IMPORTANT:
-						// Adding the object does not flag the player's inventory as changed and does not trigger the
-						// game's equip calculations, which normally clear out the player's currently equipped gear.
-						gifteePtr->AddObjectToContainer(boundObj, nullptr, a_containerChangedEvent->itemCount, gifteePtr.get());
+						RE::DebugNotification(fmt::format("Received an additional {} gold from party size scaling.", additionalGold).c_str());
+					}
+					else
+					{
+						RE::DebugNotification(fmt::format("Received additional gold from party size scaling (x{}).", glob.activePlayers * Settings::fAdditionalGoldPerPlayerMult).c_str());
 					}
 
 					return EventResult::kContinue;
 				}
-
-				bool barterMenuOpen = ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
-				// Enderal-specific gold scaling and skillbook loot.
-				// To a player but not from another player, and not from a transaction (barter menu open).
-				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && !fromCoopEntity && toCoopPlayer && !barterMenuOpen)
+			}
+			else if (GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains(a_containerChangedEvent->baseObj))
+			{
+				// Give each active player, 
+				// aside from the player receiving the current skillbook, 
+				// a random skillbook of the same tier.
+				if (Settings::bEveryoneGetsALootedEnderalSkillbook)
 				{
-					if (auto form = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj); form && form->IsGold())
-					{
-						// Scale added gold with party size.
-						// NOTE: Gold always goes to P1, as P1's gold acts as a shared pool for all players.
-						if (Settings::fAdditionalGoldPerPlayerMult > 0.0f)
-						{
-							int32_t additionalGold = a_containerChangedEvent->itemCount * (glob.activePlayers - 1) * Settings::fAdditionalGoldPerPlayerMult;
-							p1->AddObjectToContainer(form->As<RE::TESObjectMISC>(), nullptr, additionalGold, p1);
-							bool inMenu = !Util::MenusOnlyAlwaysOpen();
-							// If not in a menu and activating all gold in activation range, each individual gold piece added 
-							// triggers a container changed event, so the total amount is unspecificed when printing a notification here.
-							if (inMenu) 
-							{
-								RE::DebugNotification(fmt::format("Received an additional {} gold from party size scaling.", additionalGold).c_str());
-							}
-							else
-							{
-								RE::DebugNotification(fmt::format("Received an additional gold from party size scaling (x{}).", glob.activePlayers * Settings::fAdditionalGoldPerPlayerMult).c_str());
-							}
+					const auto& tierAndSkill = 
+					(
+						GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at(a_containerChangedEvent->baseObj)
+					);
+					const auto& tier = tierAndSkill.first;
+					const auto& skill = tierAndSkill.second;
+					std::mt19937 generator;
+					generator.seed(SteadyClock::now().time_since_epoch().count());
 
-							return EventResult::kContinue;
-						}
-					}
-					else if (GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains(a_containerChangedEvent->baseObj))
+					const auto& toP = 
+					(
+						glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer)]
+					);
+					for (const auto& p : glob.coopPlayers)
 					{
-						// Give each active player, aside from the player receiving the current skillbook, a random skillbook of the same tier.
-						if (Settings::bEveryoneGetsALootedEnderalSkillbook)
+						// Not the looting player.
+						if (p->isActive && 
+							p->coopActor->formID != a_containerChangedEvent->newContainer)
 						{
-							const auto& tierAndSkill = GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at(a_containerChangedEvent->baseObj);
-							const auto& tier = tierAndSkill.first;
-							const auto& skill = tierAndSkill.second;
-							std::mt19937 generator;
-							generator.seed(SteadyClock::now().time_since_epoch().count());
-
-							// REMOVE
-							const auto& toP = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer)];
-							for (const auto& p : glob.coopPlayers)
+							// To each player, add the same number as the number looted.
+							uint32_t numAdded = 0;
+							while (numAdded < a_containerChangedEvent->itemCount)
 							{
-								if (p->isActive && p->coopActor->formID != a_containerChangedEvent->newContainer)
+								// Random skillbook index.
+								float rand = 
+								(
+									static_cast<uint8_t>
+									(
+										GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size() * 
+										(generator() / (float)((std::mt19937::max)()))
+									)
+								);
+								const auto newSkillbookFID = 
+								(
+									GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand]
+								);
+								auto newSkillbook = RE::TESForm::LookupByID(newSkillbookFID);
+								p->coopActor->AddObjectToContainer
+								(
+									newSkillbook->As<RE::AlchemyItem>(), 
+									nullptr, 
+									1, 
+									p->coopActor.get()
+								);
+
+								// Show in TrueHUD recent loot widget by adding and removing the skillbook from P1.
+								if (ALYSLC::TrueHUDCompat::g_trueHUDInstalled && 
+									toP->coopActor.get() == p1)
 								{
-									uint32_t numAdded = 0;
-									while (numAdded < a_containerChangedEvent->itemCount)
-									{
-										float rand = static_cast<uint8_t>(GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size() * (generator() / (float)((std::mt19937::max)())));
-										const auto newSkillbookFID = GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand];
-										auto newSkillbook = RE::TESForm::LookupByID(newSkillbookFID);
-										p->coopActor->AddObjectToContainer(newSkillbook->As<RE::AlchemyItem>(), nullptr, 1, p->coopActor.get());
-
-										// Show in TrueHUD recent loot widget by adding and removing the skillbook from P1.
-										if (ALYSLC::TrueHUDCompat::g_trueHUDInstalled && toP->coopActor.get() == p1)
-										{
-											p1->AddObjectToContainer(newSkillbook->As<RE::AlchemyItem>(), nullptr, 1, p1);
-											p1->RemoveItem(newSkillbook->As<RE::AlchemyItem>(), 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-										}
-
-										RE::DebugNotification(fmt::format("{} received 1 {}.", p->coopActor->GetName(), newSkillbook->GetName()).c_str());
-										++numAdded;
-									}
+									p1->AddObjectToContainer
+									(
+										newSkillbook->As<RE::AlchemyItem>(),
+										nullptr, 
+										1, 
+										p1
+									);
+									p1->RemoveItem
+									(
+										newSkillbook->As<RE::AlchemyItem>(),
+										1, 
+										RE::ITEM_REMOVE_REASON::kRemove, 
+										nullptr, 
+										nullptr
+									);
 								}
-							}
 
-							return EventResult::kContinue;
+								RE::DebugNotification
+								(
+									fmt::format
+									(
+										"{} received 1 {}.", 
+										p->coopActor->GetName(), 
+										newSkillbook->GetName()
+									).c_str()
+								);
+
+								++numAdded;
+							}
 						}
 					}
+
+					return EventResult::kContinue;
 				}
 			}
 		}
@@ -437,6 +615,84 @@ namespace ALYSLC
 		return EventResult::kContinue;
 	}
 
+	CoopCrosshairEventHandler* CoopCrosshairEventHandler::GetSingleton()
+	{
+		static CoopCrosshairEventHandler singleton;
+		return std::addressof(singleton);
+	}
+
+	void CoopCrosshairEventHandler::Register()
+	{
+		auto source = SKSE::GetCrosshairRefEventSource();
+		if (source)
+		{
+			auto singleton = CoopCrosshairEventHandler::GetSingleton();
+			source->AddEventSink(singleton);
+			SPDLOG_INFO("[Events] Registered for crosshair events.");
+			int32_t sinkIndex = -1;
+			for (auto i = 0; i < source->sinks.size(); ++i)
+			{
+				if (source->sinks[i] == singleton)
+				{
+					sinkIndex = i;
+				}
+			}
+
+			if (sinkIndex == -1)
+			{
+				SPDLOG_ERROR("[Events] ERR: Could not get registered crosshair event sink.");
+			}
+			else
+			{
+				SPDLOG_DEBUG("[Events] Crosshair event sink found at index {}.", sinkIndex);
+				// Move our sink to the front so it processes events first.
+				for (auto i = 0; i < sinkIndex; ++i)
+				{
+					source->sinks[i + 1] = source->sinks[i]; 
+				}
+
+				source->sinks[0] = singleton;
+			}
+		}
+		else
+		{
+			SPDLOG_ERROR("[Events] ERR: Could not register for crosshair events."); 
+		}
+	}
+
+	EventResult CoopCrosshairEventHandler::ProcessEvent(const SKSE::CrosshairRefEvent* a_event, RE::BSTEventSource<SKSE::CrosshairRefEvent>*)
+	{
+		// While co-op is active, discard requests to set the crosshair refr
+		// to any refr other than the one requested by the currently active players.
+		// Will prevent the LootMenu from opening when the original crosshair pick refr changes.
+
+		if (glob.coopSessionActive)
+		{
+			bool matchesRequestedRefr = 
+			(
+				(
+					a_event->crosshairRef && a_event->crosshairRef.get() &&
+					a_event->crosshairRef->GetHandle() == glob.reqQuickLootContainerHandle
+				) ||
+				(
+					(!a_event->crosshairRef || !a_event->crosshairRef.get()) &&
+					(glob.reqQuickLootContainerHandle == RE::ObjectRefHandle())
+				)
+			);
+			if (matchesRequestedRefr)
+			{
+				return EventResult::kContinue;
+			}
+			else
+			{
+				// Prevent QuickLoot's event handler from processing this request
+				// and opening the LootMenu.
+				return EventResult::kStop;
+			}
+		}
+
+		return EventResult::kContinue;
+	}
 
 	CoopDeathEventHandler* CoopDeathEventHandler::GetSingleton() 
 	{
@@ -460,7 +716,7 @@ namespace ALYSLC
 
 	EventResult CoopDeathEventHandler::ProcessEvent(const RE::TESDeathEvent* a_deathEvent, RE::BSTEventSource<RE::TESDeathEvent>*)
 	{
-		// REMOVE after debugging.
+		// Purely for debugging purposes right now.
 		SPDLOG_DEBUG("[Events] Death Event: {}, killed by death, I mean, erm... by {}. Is dead: {}, essential flag set: {}, {}",
 			a_deathEvent->actorDying ? a_deathEvent->actorDying->GetName() : "N/A",
 			a_deathEvent->actorKiller ? a_deathEvent->actorKiller->GetName() : "N/A",
@@ -495,38 +751,45 @@ namespace ALYSLC
 
 	EventResult CoopEquipEventHandler::ProcessEvent(const RE::TESEquipEvent* a_equipEvent, RE::BSTEventSource<RE::TESEquipEvent>*)
 	{
-		if (glob.coopSessionActive && a_equipEvent && a_equipEvent->baseObject)
+		if (!glob.coopSessionActive || !a_equipEvent || !a_equipEvent->baseObject)
 		{
-			if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_equipEvent->actor); foundIndex != -1) 
+			return EventResult::kContinue;
+		}
+
+		if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_equipEvent->actor); foundIndex != -1) 
+		{
+			SPDLOG_DEBUG("[Events] Equip Event: {} -> {} (0x{:X}): equipped: {}, original refr: 0x{:X}, unique id: 0x{:X}",
+				(a_equipEvent && a_equipEvent->actor.get()) ? (a_equipEvent->actor->GetName()) : "N/A",
+				(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->GetName() : "N/A",
+				(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->formID : 0xDEAD,
+				a_equipEvent->equipped,
+				a_equipEvent->originalRefr,
+				a_equipEvent->uniqueID);
+
+			const auto& p = glob.coopPlayers[foundIndex];
+			// Don't handle equip event if the player is not loaded, downed, or dead.
+			if (p->coopActor->Is3DLoaded() && !p->isDowned && !p->coopActor->IsDead())
 			{
-				SPDLOG_DEBUG("[Events] Equip Event: {} -> {} (0x{:X}): equipped: {}, original refr: 0x{:X}, unique id: 0x{:X}",
-					(a_equipEvent && a_equipEvent->actor.get()) ? (a_equipEvent->actor->GetName()) : "N/A",
-					(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->GetName() : "N/A",
-					(a_equipEvent && a_equipEvent->baseObject && RE::TESForm::LookupByID(a_equipEvent->baseObject)) ? RE::TESForm::LookupByID(a_equipEvent->baseObject)->formID : 0xDEAD,
-					a_equipEvent->equipped,
-					a_equipEvent->originalRefr,
-					a_equipEvent->uniqueID);
-
-				const auto& p = glob.coopPlayers[foundIndex];
-				// Don't handle equip event if the player is not loaded, downed, or dead.
-				if (p->coopActor->Is3DLoaded() && !p->isDowned && !p->coopActor->IsDead())
+				auto equipForm = RE::TESForm::LookupByID(a_equipEvent->baseObject);
+				// Check if equipped while bartering 
+				// (with a co-op companion player's inventory copied over to P1).
+				// Ignore these equip events and do not refresh equip state.
+				auto ui = RE::UI::GetSingleton();
+				bool affectedByInventoryTransfer = 
 				{
-					auto equipForm = RE::TESForm::LookupByID(a_equipEvent->baseObject);
-					// Equipped while bartering (with a co-op companion player's inventory copied over to P1).
-					// Ignore these equip events and do not refresh equip state.
-					bool affectedByInventoryTransfer = 
-					{
-						RE::UI::GetSingleton()->IsMenuOpen(RE::BarterMenu::MENU_NAME) &&
-						((glob.mim->managerMenuCID != -1 && p->coopActor == glob.player1Actor) ||
-						 (glob.mim->managerMenuCID == p->controllerID))
-					};
-
-					// Game will sometimes unequip P1's weapons/magic during killmoves. Don't refresh equip state.
-					if ((equipForm && !affectedByInventoryTransfer) && 
-						(!p->isPlayer1 || (!p->coopActor->IsInKillMove() && !p->pam->isBeingKillmovedByAnotherPlayer)))
-					{
-						p->em->RefreshEquipState(RefreshSlots::kAll, equipForm, a_equipEvent->equipped);
-					}
+					(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
+					(
+						(glob.mim->managerMenuCID != -1 && p->coopActor == glob.player1Actor) ||
+						(glob.mim->managerMenuCID == p->controllerID)
+					)
+				};
+				// Game will sometimes unequip P1's weapons/magic during killmoves. 
+				// Don't refresh equip state in that case either.
+				if ((equipForm && !affectedByInventoryTransfer) && 
+					(!p->isPlayer1 || 
+					(!p->coopActor->IsInKillMove() && !p->pam->isBeingKillmovedByAnotherPlayer)))
+				{
+					p->em->RefreshEquipState(RefreshSlots::kAll, equipForm, a_equipEvent->equipped);
 				}
 			}
 		}
@@ -556,224 +819,513 @@ namespace ALYSLC
 
 	EventResult CoopHitEventHandler::ProcessEvent(const RE::TESHitEvent* a_hitEvent, RE::BSTEventSource<RE::TESHitEvent>*) 
 	{
-		if (glob.coopSessionActive && a_hitEvent)
+		if (!glob.coopSessionActive || !a_hitEvent)
 		{
-			auto aggressorRefr = a_hitEvent->cause;
-			auto hitRefr = a_hitEvent->target;
-			if (aggressorRefr && hitRefr && !hitRefr->IsDead())
+			return EventResult::kContinue;
+		}
+
+		auto aggressorRefr = a_hitEvent->cause;
+		auto hitRefr = a_hitEvent->target;
+		if (!aggressorRefr || !hitRefr || hitRefr->IsDead())
+		{
+			return EventResult::kContinue;
+		}
+
+		// Essential flag sometimes gets toggled off 
+		// when the game is about to killmove the hit actor.
+		// Have to set the flag again to prevent P1 
+		// and other players from being killed 
+		// during a killmove animation while using the revive system.
+		if (Settings::bUseReviveSystem) 
+		{
+			if (auto foundVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr.get());
+				foundVictimIndex != -1)
 			{
-				// Essential flag gets toggled off when the game is about to killmove the hit actor.
-				// Have to set the flag again to prevent P1 and other players from being killed 
-				// during a killmove animation while using the revive system.
-				if (Settings::bUseReviveSystem) 
+				const auto& p = glob.coopPlayers[foundVictimIndex];
+				if (!p->coopActor->IsEssential())
 				{
-					if (auto foundVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr.get()); foundVictimIndex != -1)
+					p->pam->SetEssentialForReviveSystem();
+				}
+			}
+		}
+
+		/*
+		// Just realized that spell damage does not level up armor skills.
+		// Going to comment this out for now, just in case it's needed later.
+		if (auto foundTargetIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr); foundTargetIndex != -1)
+		{
+			const auto& p = glob.coopPlayers[foundTargetIndex];
+			auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source);
+			auto attackingProj = RE::TESForm::LookupByID(a_hitEvent->projectile);
+			float damage = 0.0f;
+			if (attackingObj)
+			{
+				if (attackingObj->IsWeapon()) 
+				{
+					damage = (attackingObj->As<RE::TESObjectWEAP>()->GetAttackDamage();
+				}
+				else if (attackingObj->IsMagicItem() && attackingObj->As<RE::SpellItem>())
+				{
+					damage = attackingObj->As<RE::SpellItem>()->GetCostliestEffectItem()->GetMagnitude();
+				}
+
+				// No spell attack damage event hook.
+				// Workaround: use magnitude of spell.
+				if (attackingObj->IsMagicItem() && *a_hitEvent->flags != RE::TESHitEvent::Flag::kNone) 
+				{
+					const auto& armorRatings = p->em->armorRatings;
+					float lightArmorBaseXP = 
+					(
+						damage * armorRatings.first / 
+						(
+							armorRatings.first + armorRatings.second == 0.0f ? 
+							1.0f :
+							armorRatings.first + armorRatings.second
+						)
+					);
+					float heavyArmorBaseXP = 
+					(
+						damage * armorRatings.second / 
+						(
+							armorRatings.first + armorRatings.second == 0.0f ? 
+							1.0f : 
+							armorRatings.first + armorRatings.second
+						)
+					);
+
+					if (lightArmorBaseXP > 0.0f)
 					{
-						const auto& p = glob.coopPlayers[foundVictimIndex];
-						if (!p->coopActor->IsEssential())
+						SPDLOG_DEBUG("[Events] Hit Event: {} was hit by {}'s {}, adding Light Armor Skill XP, base XP: {}.",
+							p->coopActor->GetName(),
+							aggressorRefr ? aggressorRefr->GetName() : "NONE",
+							attackingObj->GetName(),
+							lightArmorBaseXP);
+						GlobalCoopData::AddSkillXP
+						(
+							p->controllerID, 
+							RE::ActorValue::kLightArmor, 
+							lightArmorBaseXP
+						);
+					}
+
+					if (heavyArmorBaseXP > 0.0f)
+					{
+						SPDLOG_DEBUG("[Events] Hit Event: {} was hit by {}'s {}, adding Heavy Armor Skill XP, base XP: {}.",
+							p->coopActor->GetName(),
+							aggressorRefr ? aggressorRefr->GetName() : "NONE",
+							attackingObj->GetName(),
+							heavyArmorBaseXP);
+						GlobalCoopData::AddSkillXP
+						(
+							p->controllerID,
+							RE::ActorValue::kHeavyArmor, 
+							heavyArmorBaseXP
+						);
+					}
+				}
+			}
+		}
+		*/
+
+		// Do not add XP if attacking another player or player teammate.
+		if (auto foundAggressorIndex = GlobalCoopData::GetCoopPlayerIndex(aggressorRefr); foundAggressorIndex != -1)
+		{
+			const auto& p = glob.coopPlayers[foundAggressorIndex];
+			auto hitActor = hitRefr->As<RE::Actor>();
+			// Was the hit refr hit by a flop or thrown object?
+			bool isBonkOrSplatHitEvent = false;
+			// Handle hit event for an actor hit by a player.
+			if (hitActor) 
+			{
+				auto projectileRefr = RE::TESForm::LookupByID(a_hitEvent->projectile);
+				isBonkOrSplatHitEvent = 
+				(
+					(a_hitEvent->cause == p->coopActor) && 
+					(
+						(a_hitEvent->projectile == hitActor->formID) || 
+						(projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
+					)
+				);
+				// Do no trigger combat if hitting a teammate or P1.
+				if (!hitActor->IsPlayerTeammate() && !hitActor->IsPlayerRef())
+				{
+					// Start combat between hit NPC and co-op companion player
+					// if the NPC has detected the player.
+					// Start assault alarm on P1 to trigger bounty 
+					// if the hit actor is not angry with the player
+					// and is not in combat currently.
+					float detectionPct = 
+					(
+						std::clamp
+						(
+							static_cast<float>
+							(
+								hitActor->RequestDetectionLevel(p->coopActor.get())
+							), 
+							-20.0f, 
+							0.0f
+						) + 20.0f
+					) * 5.0f;
+
+					bool hostileToAPlayer = std::find_if
+					(
+						glob.coopPlayers.begin(), glob.coopPlayers.end(),
+						[&hitActor](const auto& p) 
 						{
-							p->pam->SetEssentialForReviveSystem();
+							if (!p->isActive)
+							{
+								return false;
+							}
+
+							return hitActor->IsHostileToActor(p->coopActor.get());
+						}
+					) != glob.coopPlayers.end();
+
+					bool inCombatWithAPlayer = std::find_if
+					(
+						glob.coopPlayers.begin(), glob.coopPlayers.end(),
+						[&hitActor](const auto& p) 
+						{
+							if (!p->isActive)
+							{
+								return false;
+							}
+
+							if ((!hitActor->IsInCombat() || !hitActor->combatController) || 
+								(hitActor->currentCombatTarget != p->coopActor->GetHandle() && 
+								 hitActor->combatController->targetHandle != p->coopActor->GetHandle())) 
+							{
+								return false;
+							}
+
+							return true;
+						}
+					) != glob.coopPlayers.end();
+
+					SPDLOG_DEBUG("[Events] Hit Event: {}'s detection level of {}: {}, hostile: {}, in combat: {}. Hostile to a player ({}), combat with a player ({}).",
+						hitActor->GetName(),
+						p->coopActor->GetName(),
+						detectionPct,
+						hitActor->IsHostileToActor(p->coopActor.get()),
+						hitActor->IsInCombat(),
+						hostileToAPlayer,
+						inCombatWithAPlayer);
+
+					/*bool neutralOrFriendlyAlreadyInCombat = !hitActor->IsHostileToActor(p->coopActor.get()) && hitActor->IsInCombat();
+					if (neutralOrFriendlyAlreadyInCombat)
+					{
+						SPDLOG_DEBUG("[Events] Hit Event: {}: hit {} who was not hostile and was in combat with {} (prev {}). Health percent: {}. Negating damage.",
+							p->coopActor->GetName(),
+							hitActor->GetName(),
+							Util::HandleIsValid(hitActor->currentCombatTarget) ? hitActor->currentCombatTarget.get().get()->GetName() : "NONE",
+							hitActor->combatController && Util::HandleIsValid(hitActor->combatController->previousTargetHandle) ? hitActor->combatController->previousTargetHandle.get().get()->GetName() : "NONE",
+							hitActor->GetActorValue(RE::ActorValue::kHealth) / (hitActor->GetBaseActorValue(RE::ActorValue::kHealth) + hitActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth)));
+						hitActor->currentCombatTarget.reset();
+						if (hitActor->combatController) 
+						{
+							hitActor->combatController->targetHandle = hitActor->combatController->previousTargetHandle;
+							hitActor->combatController->cachedTarget = 
+							(
+								Util::HandleIsValid(hitActor->combatController->targetHandle) ?
+								hitActor->combatController->targetHandle.get() : 
+								nullptr
+							);
+
+							for (const auto& target : hitActor->combatController->combatGroup->targets) 
+							{
+								SPDLOG_DEBUG("[Events] Hit Event: {} has combat target {} who attacked {}.",
+									hitActor->GetName(),
+									Util::HandleIsValid(target.targetHandle) ? target.targetHandle.get().get()->GetName() : "NONE",
+									Util::HandleIsValid(target.attackedMember) ? target.attackedMember.get().get()->GetName() : "NONE");
+							}
+						}
+						p->coopActor->StopAlarmOnActor();
+						hitActor->StopCombat();
+						hitActor->UpdateCombat();
+						return EventResult::kContinue;
+					}*/
+
+					if ((!hitActor->IsHostileToActor(p->coopActor.get()) || !hitActor->IsInCombat()))
+					{
+						// Caused by player + projectile is the hit actor (splat) 
+						// or hit event projectile's form type is not projectile (bonk).
+						// If not a thrown object hit event and the aggressor player
+						// is not in god mode, start combat and send the assault alarm.
+						if (!isBonkOrSplatHitEvent || !p->isInGodMode) 
+						{
+							SPDLOG_DEBUG("[Events] Hit Event: Starting combat between {} and {}.",
+								p->coopActor->GetName(),
+								hitActor->GetName());
+							Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
+							// Issue:
+							// Sending the assault alarm here will trigger 40 bounty,
+							// but if the actor is killed afterward, 
+							// the murder bounty (1000) does not trigger.
+							// Commented out for now.
+							//Util::Papyrus::SendAssaultAlarm(hitActor);
 						}
 					}
 				}
 
-				/*
-				// Just realized that spell damage does not level up armor skills.
-				// Going to comment this out for now, just in case it's needed later.
-				if (auto foundTargetIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr); foundTargetIndex != -1)
+				// XP and damage modifications.
+				if (p->IsRunning())
 				{
-					const auto& p = glob.coopPlayers[foundTargetIndex];
-					auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source);
-					auto attackingProj = RE::TESForm::LookupByID(a_hitEvent->projectile);
-					float damage = 0.0f;
-					if (attackingObj)
+					auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
+					const float damageMult = p->pam->reqDamageMult;
+
+					// Grant co-op companion XP.
+					// Do not give attacking player XP 
+					// if hitting another player while they are in god mode.
+					const auto playerVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitActor);
+					bool victimPlayerInGodMode = 
+					(
+						playerVictimIndex != -1 && 
+						glob.coopPlayers[playerVictimIndex]->isInGodMode
+					);
+					// Also, do not give XP if friendly fire is disabled 
+					// and hitting a friendly actor.
+					bool canGrantXP = 
+					(
+						(!victimPlayerInGodMode) && 
+						(
+							Settings::vbFriendlyFire[p->controllerID] || 
+							!Util::IsPartyFriendlyActor(hitActor)
+						)
+					);
+					if (!p->isPlayer1 && canGrantXP)
 					{
-						if (attackingObj->IsWeapon()) 
+						auto weap = attackingObj ? attackingObj->As<RE::TESObjectWEAP>() : nullptr;
+						// Add XP to the attacking player.
+						if (weap)
 						{
-							damage = attackingObj->As<RE::TESObjectWEAP>()->GetAttackDamage();
-						}
-						else if (attackingObj->IsMagicItem() && attackingObj->As<RE::SpellItem>())
-						{
-							damage = attackingObj->As<RE::SpellItem>()->GetCostliestEffectItem()->GetMagnitude();
-						}
-
-						// No spell attack damage event hook.
-						// Workaround: use magnitude of spell.
-						if (attackingObj->IsMagicItem() && *a_hitEvent->flags != RE::TESHitEvent::Flag::kNone) 
-						{
-							const auto& armorRatings = p->em->armorRatings;
-							float lightArmorBaseXP = damage * armorRatings.first / ((armorRatings.first + armorRatings.second) == 0.0f ? 1.0f : (armorRatings.first + armorRatings.second));
-							float heavyArmorBaseXP = damage * armorRatings.second / ((armorRatings.first + armorRatings.second) == 0.0f ? 1.0f : (armorRatings.first + armorRatings.second));
-
-							if (lightArmorBaseXP > 0.0f)
+							if (weap->IsRanged() && !weap->IsStaff())
 							{
-								SPDLOG_DEBUG("[Events] Hit Event: {} was hit by {}'s {}, adding Light Armor Skill XP, base XP: {}.",
+								SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+									RE::ActorValue::kArchery, 
+									p->coopActor->GetName(), 
+									weap->GetAttackDamage(),
+									weap->GetName());
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID, 
+									RE::ActorValue::kArchery, 
+									weap->GetAttackDamage()
+								);
+							}
+							else if (weap->IsOneHandedAxe() || weap->IsOneHandedDagger() || 
+								     weap->IsOneHandedMace() || weap->IsOneHandedSword())
+							{
+								SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+									RE::ActorValue::kOneHanded,
 									p->coopActor->GetName(),
-									aggressorRefr ? aggressorRefr->GetName() : "NONE",
-									attackingObj->GetName(),
-									lightArmorBaseXP);
-								GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kLightArmor, lightArmorBaseXP);
+									weap->GetAttackDamage(),
+									weap->GetName());
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID,
+									RE::ActorValue::kOneHanded,
+									weap->GetAttackDamage()
+								);
+							}
+							else if (weap->IsTwoHandedAxe() || weap->IsTwoHandedSword())
+							{
+								SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
+									RE::ActorValue::kTwoHanded, 
+									p->coopActor->GetName(),
+									weap->GetAttackDamage(), 
+									weap->GetName());
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID,
+									RE::ActorValue::kTwoHanded, 
+									weap->GetAttackDamage()
+								);
+							}
+						}
+
+						// Block XP.
+						if (p->pam->isBashing && p->em->HasShieldEquipped())
+						{
+							SPDLOG_DEBUG("[Events] Hit Event: Adding 5 XP to {}'s Block Skill for a successful shield bash", p->coopActor->GetName());
+							GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kBlock, 5.0f);
+						}
+
+						// Print sneak attack message for companion player if needed.
+						auto magicItem = attackingObj ? attackingObj->As<RE::MagicItem>() : nullptr;
+						bool isSneakAttack = 
+						(
+							(damageMult > 1.0f) && 
+							(
+								(weap || magicItem) && 
+								p->coopActor->IsWeaponDrawn() &&
+								p->coopActor->IsSneaking()
+							)
+						);
+						// Sneak message and XP.
+						if (isSneakAttack)
+						{
+							const auto sneakMsg = fmt::format
+							(
+								"{} performed a sneak attack for {:.1f}x damage!",
+								p->coopActor->GetName(), 
+								damageMult
+							);
+							RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
+
+							// Ranged and melee attack sources give different XP.
+							if ((weap && weap->IsRanged()) || magicItem)
+							{
+								SPDLOG_DEBUG("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful ranged sneak attack with {} (0x{:X}, {})",
+									p->coopActor->GetName(),
+									weap ? weap->GetName() : magicItem ? magicItem->GetName() :   "NONE",
+									weap ? weap->formID : magicItem ? magicItem->formID : 0xDEAD,
+									weap ? "weapon" : magicItem ? "magic item" : "");
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID, 
+									RE::ActorValue::kSneak, 
+									2.5f
+								);
+							}
+							else
+							{
+								SPDLOG_DEBUG("[Events] Hit Event: Adding 30 XP to {}'s Sneak Skill for a successful melee sneak attack with {} (0x{:X}, {})",
+									p->coopActor->GetName(),
+									weap ? weap->GetName() : "fists",
+									weap ? weap->formID : 0xDEAD,
+									weap ? RE::FormType::Weapon : attackingObj ? *attackingObj->formType :  RE::FormType::None);
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID, 
+									RE::ActorValue::kSneak, 
+									30.0f
+								);
 							}
 
-							if (heavyArmorBaseXP > 0.0f)
-							{
-								SPDLOG_DEBUG("[Events] Hit Event: {} was hit by {}'s {}, adding Heavy Armor Skill XP, base XP: {}.",
-									p->coopActor->GetName(),
-									aggressorRefr ? aggressorRefr->GetName() : "NONE",
-									attackingObj->GetName(),
-									heavyArmorBaseXP);
-								GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kHeavyArmor, heavyArmorBaseXP);
-							}
+							// Send the sneak attack event.
+							Util::SendCriticalHitEvent(p->coopActor.get(), weap, true);
+						}
+					}
+
+					// Thrown object sneak attacks (for all players).
+					// Same XP awarded as for a ranged weapon sneak attack.
+					// 2.0 damage multiplier.
+					if (canGrantXP && a_hitEvent->flags.any(RE::TESHitEvent::Flag::kSneakAttack) && 
+						projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
+					{
+						SPDLOG_DEBUG("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful thrown object sneak attack with {} (0x{:X}, {})",
+							p->coopActor->GetName(), 
+							projectileRefr->GetName(), 
+							projectileRefr->formID,
+							*projectileRefr->formType);
+						GlobalCoopData::AddSkillXP
+						(
+							p->controllerID, 
+							RE::ActorValue::kSneak, 
+							2.5f
+						);
+						const auto sneakMsg = fmt::format
+						(
+							"{} performed a sneak attack for 2.0x damage!", 
+							p->coopActor->GetName()
+						);
+
+						RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
+						Util::SendCriticalHitEvent(p->coopActor.get(), nullptr, true);
+					}
+				}
+			}
+
+			// If a non-P1 player hit this refr, 
+			// or if the refr was hit by a flop or thrown object, 
+			// send a duplicate, no damage hit event with P1 as the aggressor
+			// to trigger any OnHit events or effects linked with P1 hitting the refr.
+			if (!p->isPlayer1 || isBonkOrSplatHitEvent)
+			{
+				// Check placeholder spells for the source FID, 
+				// and if found, send the copied spell's FID instead.
+				RE::FormID sourceFID = a_hitEvent->source;
+				auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
+				if (attackingObj && attackingObj->As<RE::SpellItem>())
+				{
+					for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i)
+					{
+						if (p->em->placeholderMagic[i] && 
+							p->em->placeholderMagic[i]->formID == a_hitEvent->source && 
+							p->em->copiedMagic[i])
+						{
+							sourceFID = p->em->copiedMagic[i]->formID;
+							break;
 						}
 					}
 				}
-				*/
 
-				// Do not add XP if attacking another player or player teammate.
-				if (auto foundAggressorIndex = GlobalCoopData::GetCoopPlayerIndex(aggressorRefr); foundAggressorIndex != -1)
+				if (hitActor) 
 				{
-					const auto& p = glob.coopPlayers[foundAggressorIndex];
+					// Constructing and applying hit data seems to more consistently trigger
+					// both the initial assault bounty (40) 
+					// and any subsequent murder bounty (1000).
+					// IMPORTANT NODE: If companion players commit crimes while P1 is hidden,
+					// no bounty is accrued.
+					RE::HitData hitData{};
+					Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
+					hitData.Populate(glob.player1Actor.get(), hitActor, nullptr);
+					SPDLOG_DEBUG("[Events] Hit Event: Duplicate hit event for {} has total damage {}, using weapon {} (0x{:X}).",
+						p->coopActor->GetName(),
+						hitData.totalDamage,
+						hitData.weapon ? hitData.weapon->GetName() : "NONE",
+						hitData.weapon ? hitData.weapon->formID : 0x0);
+					// Zero out damage on the duplicate hit.
+					hitData.bonusHealthDamageMult =
+					hitData.criticalDamageMult =
+					hitData.physicalDamage =
+					hitData.reflectedDamage =
+					hitData.resistedPhysicalDamage =
+					hitData.resistedTypedDamage =
+					hitData.targetedLimbDamage = 
+					hitData.totalDamage = 0.0f;
+					// Remove sneak attack bonus, if any,
+					// to prevent the new P1 hit event from triggering
+					// an additional sneak attack bonus.
+					hitData.sneakAttackBonus = 1.0f;
+					hitData.flags.reset(RE::HitData::Flag::kSneakAttack);
 
-					// If a non-P1 player hit this refr, send a duplicate hit event with P1 as the aggressor
-					// to trigger any OnHit events linked with P1 hitting the refr.
-					if (!p->isPlayer1)
+					// Set corresponding flags in the hit data.
+					if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kPowerAttack))
 					{
-						// Check placeholder spells for the source FID, and if found, send the copied spell's FID instead.
-						RE::FormID sourceFID = a_hitEvent->source;
-						if (auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); attackingObj && attackingObj->As<RE::SpellItem>())
-						{
-							for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i)
-							{
-								if (p->em->placeholderMagic[i] && p->em->placeholderMagic[i]->formID == a_hitEvent->source && p->em->copiedMagic[i])
-								{
-									sourceFID = p->em->copiedMagic[i]->formID;
-									break;
-								}
-							}
-						}
-
-						// Remove sneak attack flag, if any, to prevent the new P1 hit event from triggering a sneak attack.
-						auto flags = a_hitEvent->flags;
-						if (flags.all(RE::TESHitEvent::Flag::kSneakAttack))
-						{
-							flags.reset(RE::TESHitEvent::Flag::kSneakAttack);
-						}
-
-						Util::SendHitEvent(glob.player1Actor.get(), a_hitEvent->target.get(), sourceFID, a_hitEvent->projectile, flags);
+						hitData.flags.set(RE::HitData::Flag::kPowerAttack);
 					}
 
-					// Handle hit event for actor hit by player.
-					if (auto hitActor = hitRefr->As<RE::Actor>(); hitActor) 
+					if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kBashAttack))
 					{
-						auto projectileRefr = RE::TESForm::LookupByID(a_hitEvent->projectile);
-						if (!hitActor->IsPlayerTeammate() && !hitActor->IsPlayerRef())
-						{
-							// Start combat between hit NPC and co-op companion player.
-							// Start assault alarm on P1 to trigger bounty if the hit actor
-							// is not angry with the player and is not in combat currently.
-
-							float detectionPct = (std::clamp(static_cast<float>(hitActor->RequestDetectionLevel(p->coopActor.get())), -20.0f, 0.0f) + 20.0f) * 5.0f;
-							if ((detectionPct > 0.0f) && (!hitActor->IsHostileToActor(p->coopActor.get()) && !hitActor->IsInCombat()))
-							{
-								// Caused by player + projectile is the hit actor (splat) or hit event projectile's form type is not projectile (bonk).
-								bool isBonkOrSplatHitEvent = (a_hitEvent->cause == p->coopActor) && 
-															 ((a_hitEvent->projectile == hitActor->formID) || 
-															  (projectileRefr && !projectileRefr->As<RE::BGSProjectile>()));
-								if (!isBonkOrSplatHitEvent || !p->isInGodMode) 
-								{
-									Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
-									Util::Papyrus::SendAssaultAlarm(hitActor);
-								}
-							}
-						}
-
-						if (p->IsRunning())
-						{
-							auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
-							const float damageMult = p->pam->reqDamageMult;
-
-							// Grant co-op companion XP.
-							// Do not give attacking player XP if hitting another player while they are in god mode.
-							const auto playerVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitActor);
-							bool victimPlayerInGodMode = playerVictimIndex != -1 && glob.coopPlayers[playerVictimIndex]->isInGodMode;
-							// Also, do not give XP if friendly fire is disabled and hitting a friendly actor.
-							bool canGrantXP = !victimPlayerInGodMode && (Settings::vbFriendlyFire[p->controllerID] || !Util::IsPartyFriendlyActor(hitActor));
-							if (!p->isPlayer1 && canGrantXP)
-							{
-								auto weap = attackingObj ? attackingObj->As<RE::TESObjectWEAP>() : nullptr;
-								// Add XP to attacking player.
-								if (weap)
-								{
-									if (weap->IsRanged() && !weap->IsStaff())
-									{
-										SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
-											RE::ActorValue::kArchery, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
-										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kArchery, weap->GetAttackDamage());
-									}
-									else if (weap->IsOneHandedAxe() || weap->IsOneHandedDagger() || weap->IsOneHandedMace() || weap->IsOneHandedSword())
-									{
-										SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
-											RE::ActorValue::kOneHanded, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
-										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kOneHanded, weap->GetAttackDamage());
-									}
-									else if (weap->IsTwoHandedAxe() || weap->IsTwoHandedSword())
-									{
-										SPDLOG_DEBUG("[Events] Hit Event: Adding {} XP to {}, base XP: {}, weapon: {}",
-											RE::ActorValue::kTwoHanded, p->coopActor->GetName(), weap->GetAttackDamage(), weap->GetName());
-										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kTwoHanded, weap->GetAttackDamage());
-									}
-								}
-
-								// Block XP.
-								if (p->pam->isBashing && p->em->HasShieldEquipped())
-								{
-									SPDLOG_DEBUG("[Events] Hit Event: Adding 5 XP to {}'s Block Skill for a successful shield bash", p->coopActor->GetName());
-									GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kBlock, 5.0f);
-								}
-
-								// Print sneak attack message for co-op player if needed.
-								auto magicItem = attackingObj ? attackingObj->As<RE::MagicItem>() : nullptr;
-								bool isSneakAttack = (damageMult > 1.0f && ((weap || magicItem) && p->coopActor->IsWeaponDrawn() && p->coopActor->IsSneaking()));
-								// Sneak message and XP.
-								if (isSneakAttack)
-								{
-									const auto sneakMsg = fmt::format("{} performed a sneak attack for {:.1f}x damage!", p->coopActor->GetName(), damageMult);
-									RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
-									if ((weap && weap->IsRanged()) || magicItem)
-									{
-										SPDLOG_DEBUG("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful ranged sneak attack with {} (0x{:X}, {})",
-											p->coopActor->GetName(),
-											weap ? weap->GetName() : magicItem ? magicItem->GetName() :   "NONE",
-											weap ? weap->formID : magicItem ? magicItem->formID : 0xDEAD,
-											weap ? "weapon" : magicItem ? "magic item" : "");
-										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kSneak, 2.5f);
-									}
-									else
-									{
-										SPDLOG_DEBUG("[Events] Hit Event: Adding 30 XP to {}'s Sneak Skill for a successful melee sneak attack with {} (0x{:X}, {})",
-											p->coopActor->GetName(),
-											weap ? weap->GetName() : "fists",
-											weap ? weap->formID : 0xDEAD,
-											weap ? RE::FormType::Weapon : attackingObj ? *attackingObj->formType :  RE::FormType::None);
-										GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kSneak, 30.0f);
-									}
-
-									Util::SendCriticalHitEvent(p->coopActor.get(), weap, true);
-								}
-							}
-
-							// Thrown object sneak attacks (for all players).
-							if (canGrantXP && a_hitEvent->flags.any(RE::TESHitEvent::Flag::kSneakAttack) && projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
-							{
-								SPDLOG_DEBUG("[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill for a successful thrown object sneak attack with {} (0x{:X}, {})",
-									p->coopActor->GetName(), projectileRefr->GetName(), projectileRefr->formID, *projectileRefr->formType);
-								GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kSneak, 2.5f);
-								const auto sneakMsg = fmt::format("{} performed a sneak attack for 2.0x damage!", p->coopActor->GetName());
-								RE::DebugNotification(sneakMsg.data(), "UISneakAttack", true);
-								Util::SendCriticalHitEvent(p->coopActor.get(), nullptr, true);
-							}
-						}
+						hitData.flags.set(RE::HitData::Flag::kBash);
 					}
+
+					if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kHitBlocked))
+					{
+						hitData.flags.set(RE::HitData::Flag::kBlocked);
+					}
+
+					Util::NativeFunctions::Actor_ApplyHitData
+					(
+						hitActor, std::addressof(hitData)
+					);
+				}
+				else
+				{
+					// Remove sneak attack flag, if any,
+					// to prevent the new P1 hit event from triggering
+					// an additional sneak attack bonus.
+					auto flags = a_hitEvent->flags;
+					flags.reset(RE::TESHitEvent::Flag::kSneakAttack);
+					Util::SendHitEvent
+					(
+						glob.player1Actor.get(),
+						a_hitEvent->target.get(), 
+						sourceFID,
+						a_hitEvent->projectile, 
+						flags
+					);
 				}
 			}
 		}
@@ -834,394 +1386,446 @@ namespace ALYSLC
 
 	EventResult CoopMenuOpenCloseHandler::ProcessEvent(const RE::MenuOpenCloseEvent* a_menuEvent, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) 
 	{
-		if (glob.globalDataInit) 
+		if (!glob.globalDataInit)
 		{
-			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+			return EventResult::kContinue;
+		}
 
-			// REMOVE
-			SPDLOG_DEBUG("[Events] |Menu Open/Close Event|: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}.",
-				a_menuEvent->menuName, 
-				a_menuEvent->opening ? "OPENING" : "CLOSING",
-				glob.menuCID,
-				glob.prevMenuCID,
-				glob.mim->managerMenuCID,
-				glob.serializablePlayerData.empty(),
-				onlyAlwaysOpen);
+		bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+
+		SPDLOG_DEBUG("[Events] |Menu Open/Close Event|: menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. Only always open: {}.",
+			a_menuEvent->menuName, 
+			a_menuEvent->opening ? "OPENING" : "CLOSING",
+			glob.menuCID,
+			glob.prevMenuCID,
+			glob.mim->managerMenuCID,
+			glob.serializablePlayerData.empty(),
+			onlyAlwaysOpen);
 			
-			// Have to modify P1's level threshold each time the Stats menu opens and the LevelUp menu closes if changes were made to the XP threshold mult.
-			// Modifying the threshold right as the LevelUp menu opens will not always see changes reflected in P1's XP total 
-			// even after P1's current level increases by 1, so we have to do it after the menu closes and the game is fully done leveling up P1.
-			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled && Settings::fLevelUpXPThresholdMult != 1.0f) 
+		// Have to modify P1's level threshold 
+		// each time the Stats menu opens and the LevelUp menu closes 
+		// if changes were made to the XP threshold mult.
+		// Modifying the threshold right as the LevelUp menu opens 
+		// will not always see changes reflected in P1's XP total 
+		// even after P1's current level increases by 1,
+		// so we have to do it after the menu closes 
+		// and the game is fully done leveling up P1.
+		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+			Settings::fLevelUpXPThresholdMult != 1.0f) 
+		{
+			bool statsMenuEvent = a_menuEvent->menuName == RE::StatsMenu::MENU_NAME;
+			bool levelupMenuEvent = a_menuEvent->menuName == RE::LevelUpMenu::MENU_NAME;
+			if (auto p1 = RE::PlayerCharacter::GetSingleton(); 
+				(p1) && ((levelupMenuEvent && !a_menuEvent->opening) || (statsMenuEvent && a_menuEvent->opening)))
 			{
-				bool statsMenuEvent = Hash(a_menuEvent->menuName) == Hash(RE::StatsMenu::MENU_NAME);
-				bool levelupMenuEvent = Hash(a_menuEvent->menuName) == Hash(RE::LevelUpMenu::MENU_NAME);
-				if (auto p1 = RE::PlayerCharacter::GetSingleton(); (p1) && ((levelupMenuEvent && !a_menuEvent->opening) || (statsMenuEvent && a_menuEvent->opening)))
+				// REMOVE debug print blocks when the threshold changes are proved to work.
+#ifdef DEBUGMODE
+				float playerXP = p1->skills->data->xp;
+				float playerXPThreshold = p1->skills->data->levelThreshold;
+				float fXPLevelUpMult = 25.0f;
+				float fXPLevelUpBase = 75.0f;
+				auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
+				if (valueOpt.has_value())
 				{
-					// REMOVE
-					float playerXP = p1->skills->data->xp;
-					float playerXPThreshold = p1->skills->data->levelThreshold;
-					float fXPLevelUpMult = 25.0f;
-					float fXPLevelUpBase = 75.0f;
-					auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
-					if (valueOpt.has_value())
-					{
-						fXPLevelUpMult = valueOpt.value();
-					}
+					fXPLevelUpMult = valueOpt.value();
+				}
 
-					if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
-					{
-						fXPLevelUpBase = valueOpt.value();
-					}
+				if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
+				{
+					fXPLevelUpBase = valueOpt.value();
+				}
 
-					// REMOVE
-					SPDLOG_DEBUG("[Events] Menu Open/Close Event: BEFORE: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
-						levelupMenuEvent ? "LevelUp" : "Stats",
-						a_menuEvent->opening ? "opening" : "closing", 
-						playerXP, playerXPThreshold,
-						fXPLevelUpMult, fXPLevelUpBase);
+				SPDLOG_DEBUG("[Events] Menu Open/Close Event: BEFORE: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
+					levelupMenuEvent ? "LevelUp" : "Stats",
+					a_menuEvent->opening ? "opening" : "closing",
+					playerXP, playerXPThreshold,
+					fXPLevelUpMult, fXPLevelUpBase);
+#endif
 
-					GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
+				GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
 
-					// REMOVE
-					playerXP = p1->skills->data->xp;
-					playerXPThreshold = p1->skills->data->levelThreshold;
-					valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
-					if (valueOpt.has_value())
-					{
-						fXPLevelUpMult = valueOpt.value();
-					}
+#ifdef DEBUGMODE
+				playerXP = p1->skills->data->xp;
+				playerXPThreshold = p1->skills->data->levelThreshold;
+				valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
+				if (valueOpt.has_value())
+				{
+					fXPLevelUpMult = valueOpt.value();
+				}
 
-					if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
-					{
-						fXPLevelUpBase = valueOpt.value();
-					}
+				if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
+				{
+					fXPLevelUpBase = valueOpt.value();
+				}
 
-					// REMOVE
-					SPDLOG_DEBUG("[Events] Menu Open/Close Event: AFTER: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
-						levelupMenuEvent ? "LevelUp" : "Stats",
-						a_menuEvent->opening ? "opening" : "closing", 
-						playerXP, playerXPThreshold,
-						fXPLevelUpMult, fXPLevelUpBase);
+				SPDLOG_DEBUG("[Events] Menu Open/Close Event: AFTER: {} menu {}. P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
+					levelupMenuEvent ? "LevelUp" : "Stats",
+					a_menuEvent->opening ? "opening" : "closing", 
+					playerXP, playerXPThreshold,
+					fXPLevelUpMult, fXPLevelUpBase);
+#endif
+			}
+		}
+
+		//=======================================
+		// Special processing for specific menus:
+		//=======================================
+
+		const auto ui = RE::UI::GetSingleton();
+		auto msgQ = RE::UIMessageQueue::GetSingleton();
+		if (ui && glob.allPlayersInit && 
+			a_menuEvent->opening && 
+			a_menuEvent->menuName == RE::LoadingMenu::MENU_NAME)
+		{
+			// Close message box menu ('You died' message).
+			if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME)) 
+			{
+				if (msgQ)
+				{
+					msgQ->AddMessage
+					(
+						RE::MessageBoxMenu::MENU_NAME,
+						RE::UI_MESSAGE_TYPE::kForceHide, 
+						nullptr
+					);
 				}
 			}
 
-			//=======================================
-			// Special processing for specific menus:
-			//=======================================
-
-			const auto ui = RE::UI::GetSingleton();
-			auto msgQ = RE::UIMessageQueue::GetSingleton();
-			if (ui && glob.allPlayersInit && a_menuEvent->opening && Hash(a_menuEvent->menuName) == Hash(RE::LoadingMenu::MENU_NAME))
+			if (glob.coopSessionActive) 
 			{
-				// Close message box menu ('You died' message).
-				if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME)) 
+				// Helps prevent 2H weapon animation stuttering bug due to corrupted equip slots.
+				for (const auto& p : glob.coopPlayers)
 				{
-					if (msgQ)
+					if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
 					{
-						msgQ->AddMessage(RE::MessageBoxMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr);
+						p->pam->ReadyWeapon(false);
+						p->em->ReEquipHandForms();
 					}
 				}
+			}
+		}
 
-				if (glob.coopSessionActive) 
+		if (ui && glob.coopSessionActive && a_menuEvent)
+		{
+			// REMOVE when done debugging.
+#ifdef DEBUGMODE
+			SPDLOG_DEBUG("[Events] ===========[Menu Map BEGIN]===========");
+			for (auto& menu : ui->menuMap)
+			{
+				if (ui->IsMenuOpen(menu.first))
 				{
-					// Prevents 2H weapon animation stuttering bug due to corrupted equip slots.
-					for (const auto& p : glob.coopPlayers)
+					SPDLOG_DEBUG("[Events] Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.", 
+						menu.first,
+						menu.second.menu->PausesGame(),
+						menu.second.menu->AlwaysOpen(),
+						*menu.second.menu->menuFlags);
+				}
+			}
+
+			SPDLOG_DEBUG("[Events] ===========[Menu Map END]===========");
+
+			SPDLOG_DEBUG("[Events] ===========[Menu Stack BEGIN]===========");
+
+			for (auto iter = ui->menuStack.begin(); iter != ui->menuStack.end(); ++iter)
+			{
+				const auto& menu = *iter;
+				for (const auto& [name, menuEntry] : ui->menuMap)
+				{
+					if (menuEntry.menu == menu)
 					{
-						if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
-						{
-							p->pam->ReadyWeapon(false);
-							p->em->ReEquipHandForms();
-						}
+						SPDLOG_DEBUG("[Events] Index {}: Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.",
+							iter - ui->menuStack.begin(),
+							name,
+							menu->PausesGame(),
+							menu->AlwaysOpen(),
+							*menu->menuFlags);
 					}
 				}
 			}
 
-			if (ui && glob.coopSessionActive && a_menuEvent)
+			SPDLOG_DEBUG("[Events] ===========[Menu Stack END]===========");
+
+			if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap) 
 			{
-				// REMOVE when done debugging.
-				SPDLOG_DEBUG("[Events] ===========[Menu Map BEGIN]===========");
-				for (auto& menu : ui->menuMap)
+				SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack BEGIN]===========");
+
+				for (auto i = 0; i < controlMap->contextPriorityStack.size(); ++i)
 				{
-					if (ui->IsMenuOpen(menu.first))
-					{
-						SPDLOG_DEBUG("[Events] Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.", 
-							menu.first,
-							menu.second.menu->PausesGame(),
-							menu.second.menu->AlwaysOpen(),
-							*menu.second.menu->menuFlags);
-					}
+					const auto& context = controlMap->contextPriorityStack[i];
+					SPDLOG_DEBUG("[Events] Index {}: context: {}.", i, context);
 				}
 
-				SPDLOG_DEBUG("[Events] ===========[Menu Map END]===========");
+				SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack END]===========");
+			}
+#endif
 
-				SPDLOG_DEBUG("[Events] ===========[Menu Stack BEGIN]===========");
+			// Open the ALYSLC overlay if it isn't open already.
+			if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
+			{
+				SPDLOG_DEBUG("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
+				DebugOverlayMenu::Load();
+			}
 
-				for (auto iter = ui->menuStack.begin(); iter != ui->menuStack.end(); ++iter)
+			// NOTE: May not be necessary anymore, so commenting out for now.
+			// Ensure HUD stays open.
+			/*const auto& hudMenu = ui->GetMenu<RE::HUDMenu>();
+			if (!ui->IsMenuOpen(RE::HUDMenu::MENU_NAME) || (hudMenu && hudMenu->uiMovie && !hudMenu->uiMovie->GetVisible()))
+			{
+				if (msgQ)
 				{
-					const auto& menu = *iter;
-					for (const auto& [name, menuEntry] : ui->menuMap)
+					msgQ->AddMessage(RE::HUDMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
+				}
+
+				if (hudMenu) 
+				{
+					hudMenu->uiMovie->SetVisible(true);
+				}
+			}*/
+
+			// [Enderal]: Keep perks synced among all players whenever a MessageBox menu opens/closes.
+			// Can't differentiate between a regular MessageBox
+			// and Enderal's level up MessageBox,
+			// so we've got to sync whenever a MessageBox opens.
+			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+				a_menuEvent->menuName == RE::MessageBoxMenu::MENU_NAME)
+			{
+				GlobalCoopData::SyncSharedPerks();
+			}
+
+			// Reset dialogue control CID when dialogue menu opens and closes.
+			if (a_menuEvent->menuName == RE::DialogueMenu::MENU_NAME)
+			{
+				{
+					std::unique_lock<std::mutex> lock(glob.moarm->reqDialogueControlMutex, std::try_to_lock);
+					if (lock)
 					{
-						if (menuEntry.menu == menu)
+						SPDLOG_DEBUG("[Events] Menu Open/Close Event: Dialogue menu CID. Lock obtained. (0x{:X})", 
+							std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						glob.moarm->reqDialoguePlayerCID = -1;
+					}
+					else
+					{
+						SPDLOG_DEBUG("[Events] Menu Open/Close Event: Dialogue menu CID. Failed to obtain lock. (0x{:X})", 
+							std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					}
+				}
+			}
+
+			// Record changes in open/close state for supported menus.
+			bool wasSupportedMenuOpen = glob.supportedMenuOpen;
+			glob.supportedMenuOpen = GlobalCoopData::IsSupportedMenuOpen();
+			// Just closed.
+			if (wasSupportedMenuOpen && !glob.supportedMenuOpen.load())
+			{
+				glob.lastSupportedMenusClosedTP = SteadyClock::now();
+			}
+
+			//========================================================
+			// Check for co-op companion player menu control requests.
+			//========================================================
+
+			if (a_menuEvent->opening)
+			{
+				// Resolve the CID which will modify the requests queue 
+				// and clear out fulfilled requests even if we don't need to 
+				// set the menu CID to the resolved CID.
+				auto resolvedCID = glob.moarm->ResolveMenuControllerID(a_menuEvent->menuName);
+				if (glob.mim->IsRunning() && glob.mim->managerMenuCID != -1)
+				{
+					// Give the companion player continued control of menus.
+					GlobalCoopData::SetMenuCIDs(glob.mim->managerMenuCID);
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu input manager running. CIDs are now: {}, {}, {}.", 
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+				}
+				else if (glob.menuCID == -1)
+				{
+					// Give the player with the resolved CID control of menus.
+					GlobalCoopData::SetMenuCIDs(resolvedCID);
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+				}
+				else
+				{
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+				}
+			}
+
+			// Co-op player requesting menu control.
+			if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[glob.menuCID];
+				const auto menuName = std::string_view(a_menuEvent->menuName.c_str());
+				if (bool isSupportedMenu = glob.SUPPORTED_MENU_NAMES.contains(menuName); isSupportedMenu)
+				{
+					// Companion player's inventory menu (Container Menu) is open
+					// and the Tween Menu is already open.
+					// Close Tween Menu here since it will not auto-close after the Container Menu closes.
+					if (!a_menuEvent->opening && 
+						a_menuEvent->menuName == RE::ContainerMenu::MENU_NAME && 
+						ui->IsMenuOpen(RE::TweenMenu::MENU_NAME))
+					{
+						if (msgQ)
 						{
-							SPDLOG_DEBUG("[Events] Index {}: Menu {} is open. Pauses game: {}, always open: {}. Flags: 0b{:B}.",
-								iter - ui->menuStack.begin(),
-								name,
-								menu->PausesGame(),
-								menu->AlwaysOpen(),
-								*menu->menuFlags);
+							msgQ->AddMessage
+							(
+								RE::TweenMenu::MENU_NAME, 
+								RE::UI_MESSAGE_TYPE::kForceHide,
+								nullptr
+							);
 						}
 					}
-				}
 
-				SPDLOG_DEBUG("[Events] ===========[Menu Stack END]===========");
+					// Set newly opened menu in the menu input manager.
+					glob.mim->SetOpenedMenu(a_menuEvent->menuName, a_menuEvent->opening);
 
-				if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap) 
-				{
-					SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack BEGIN]===========");
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: Menu {} {} by CID {}, menus open: {}", 
+						a_menuEvent->menuName, 
+						a_menuEvent->opening ? "opened" : "closed", 
+						glob.menuCID, 
+						glob.mim->managedCoopMenusCount);
 
-					for (auto i = 0; i < controlMap->contextPriorityStack.size(); ++i)
+					// NOTE: Don't know of a way to hook ProcessMessage() for custom menus, 
+					// so we'll copy player data here instead.
+					// Must have Maxsu2017's awesome 'Hero Menu Enhanced' mod installed:
+					// https://www.nexusmods.com/enderalspecialedition/mods/563
+					if (a_menuEvent->menuName == GlobalCoopData::ENHANCED_HERO_MENU)
 					{
-						const auto& context = controlMap->contextPriorityStack[i];
-						SPDLOG_DEBUG("[Events] Index {}: context: {}.", i, context);
-					}
-
-					SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack END]===========");
-				}
-
-				// Open the ALYSLC overlay if it isn't open already.
-				if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
-				{
-					SPDLOG_DEBUG("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
-					DebugOverlayMenu::Load();
-				}
-
-				// NOTE: May not be necessary anymore.
-				// Ensure HUD stays open.
-				/*const auto& hudMenu = ui->GetMenu<RE::HUDMenu>();
-				if (!ui->IsMenuOpen(RE::HUDMenu::MENU_NAME) || (hudMenu && hudMenu->uiMovie && !hudMenu->uiMovie->GetVisible()))
-				{
-					if (msgQ)
-					{
-						msgQ->AddMessage(RE::HUDMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-					}
-
-					if (hudMenu) 
-					{
-						hudMenu->uiMovie->SetVisible(true);
-					}
-				}*/
-
-				// [Enderal]: Keep perks synced among all players whenever a MessageBox menu opens/closes.
-				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && Hash(a_menuEvent->menuName) == Hash(RE::MessageBoxMenu::MENU_NAME))
-				{
-					GlobalCoopData::SyncSharedPerks();
-				}
-
-				// Reset dialogue control CID when dialogue menu opens and closes.
-				if (Hash(a_menuEvent->menuName) == Hash(RE::DialogueMenu::MENU_NAME))
-				{
-					const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
-					{
-						std::unique_lock<std::mutex> lock(glob.moarm->reqDialogueControlMutex, std::try_to_lock);
-						if (lock)
+						if (a_menuEvent->opening)
 						{
-							SPDLOG_DEBUG("[Events] Menu Open/Close Event: Dialogue menu CID. Lock obtained. (0x{:X})", hash);
-							glob.moarm->reqDialoguePlayerCID = -1;
+							SPDLOG_DEBUG("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy AVs and name.");
+							if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
+							{
+								GlobalCoopData::CopyOverActorBaseData
+								(
+									p->coopActor.get(), 
+									true, 
+									true, 
+									false, 
+									false
+								);
+								glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
+							}
+
+							if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+							{
+								GlobalCoopData::CopyOverAVs(p->coopActor.get(), true);
+								glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
+							}
 						}
 						else
 						{
-							SPDLOG_DEBUG("[Events] Menu Open/Close Event: Dialogue menu CID. Failed to obtain lock. (0x{:X})", hash);
-						}
-					}
-				}
-
-				// Record changes in open/close state for supported menus.
-				bool wasSupportedMenuOpen = glob.supportedMenuOpen;
-				glob.supportedMenuOpen = GlobalCoopData::IsSupportedMenuOpen();
-				if (wasSupportedMenuOpen && !glob.supportedMenuOpen.load())
-				{
-					glob.lastSupportedMenusClosedTP = SteadyClock::now();
-				}
-
-				//========================================================
-				// Check for co-op companion player menu control requests.
-				//========================================================
-
-				if (a_menuEvent->opening)
-				{
-					// Resolve the CID which will modify the requests queue and clear out fulfilled requests
-					// even if we don't need to set the menu CID to the resolved CID.
-					auto resolvedCID = glob.moarm->ResolveMenuControllerID(a_menuEvent->menuName);
-					// REMOVE prints when done debugging.
-					if (glob.mim->IsRunning() && glob.mim->managerMenuCID != -1)
-					{
-						GlobalCoopData::SetMenuCIDs(glob.mim->managerMenuCID);
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu input manager running. CIDs are now: {}, {}, {}.", 
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-					}
-					else if (glob.menuCID == -1)
-					{
-						GlobalCoopData::SetMenuCIDs(resolvedCID);
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-					}
-					else
-					{
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: OPENING: Set menu CIDs. Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-					}
-				}
-
-				// Co-op player requesting menu control.
-				if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[glob.menuCID];
-					if (bool isSupportedMenu = glob.SUPPORTED_MENU_NAMES.contains(std::string_view(a_menuEvent->menuName.c_str())); isSupportedMenu)
-					{
-						auto menuNameHash = Hash(a_menuEvent->menuName);
-						// Companion player's inventory menu (Container Menu) is open and the Tween Menu is already open.
-						// Close Tween Menu since it will not auto-close after the Container Menu closes.
-						if (!a_menuEvent->opening && menuNameHash == Hash(RE::ContainerMenu::MENU_NAME) && ui->IsMenuOpen(RE::TweenMenu::MENU_NAME))
-						{
-							if (msgQ)
+							SPDLOG_DEBUG("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy back AVs and name.");
+							if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 							{
-								msgQ->AddMessage(RE::TweenMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr);
+								GlobalCoopData::CopyOverActorBaseData
+								(
+									p->coopActor.get(), 
+									false, 
+									true, 
+									false,
+									false
+								);
+								glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
+							}
+
+							if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+							{
+								GlobalCoopData::CopyOverAVs(p->coopActor.get(), false);
+								glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 							}
 						}
+					}
+					else if (a_menuEvent->menuName == RE::CraftingMenu::MENU_NAME)
+					{
+						// Stop co-op companion from interacting 
+						// with crafting station once the menu opens.
+						auto defPackage = p->pam->GetDefaultPackage();
+						p->pam->SetCurrentPackage(defPackage);
+						p->pam->EvaluatePackage();
+					}
 
-						// Set newly opened menu in the menu input manager.
-						glob.mim->SetOpenedMenu(a_menuEvent->menuName, a_menuEvent->opening);
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: Menu {} {} by CID {}, menus open: {}", 
-							a_menuEvent->menuName, 
-							a_menuEvent->opening ? "opened" : "closed", 
-							glob.menuCID, 
-							glob.mim->managedCoopMenusCount);
-
-						// NOTE: Don't know of a way to hook ProcessMessage() for custom menus, so we'll copy player data here instead.
-						// Must have Maxsu2017's awesome 'Hero Menu Enhanced' mod installed:
-						// https://www.nexusmods.com/enderalspecialedition/mods/563
-						if (menuNameHash == Hash(GlobalCoopData::ENHANCED_HERO_MENU))
-						{
-							if (a_menuEvent->opening)
-							{
-								SPDLOG_DEBUG("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy AVs and name.");
-								if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
-								{
-									GlobalCoopData::CopyOverActorBaseData(p->coopActor.get(), true, true, false, false);
-									glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
-								}
-
-								if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
-								{
-									GlobalCoopData::CopyOverAVs(p->coopActor.get(), true);
-									glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
-								}
-							}
-							else
-							{
-								SPDLOG_DEBUG("[Events] Menu Open/Close Event: Enderal Hero Menu: Should copy back AVs and name.");
-								if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
-								{
-									GlobalCoopData::CopyOverActorBaseData(p->coopActor.get(), false, true, false, false);
-									glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
-								}
-
-								if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
-								{
-									GlobalCoopData::CopyOverAVs(p->coopActor.get(), false);
-									glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
-								}
-							}
-						}
-						else if (menuNameHash == Hash(RE::CraftingMenu::MENU_NAME))
-						{
-							// Stop co-op companion from interacting with crafting station once the menu opens.
-							auto defPackage = p->pam->GetDefaultPackage();
-							p->pam->SetCurrentPackage(defPackage);
-							p->pam->EvaluatePackage();
-						}
-
+					if (a_menuEvent->opening)
+					{
 						// Give co-op companion player menu control.
-						if (a_menuEvent->opening)
-						{
-							glob.mim->ToggleCoopPlayerMenuMode(glob.menuCID);
-						}
-						//else if (glob.mim->managedCoopMenusCount == 0 && !menuPausesListeners && glob.mim->IsRunning())
-						else if (glob.mim->managedCoopMenusCount == 0 && glob.mim->IsRunning())
-						{
-							glob.mim->ToggleCoopPlayerMenuMode(-1);
-						}
+						glob.mim->ToggleCoopPlayerMenuMode(glob.menuCID);
 					}
-					else if (Hash(a_menuEvent->menuName) == Hash(RE::LockpickingMenu::MENU_NAME))
+					else if (glob.mim->managedCoopMenusCount == 0 && glob.mim->IsRunning())
 					{
-						// Notify player to perform lockpicking task to give them LockpickingMenu control.
-						p->taskRunner->AddTask([&p]() { p->LockpickingTask(); });
+						// Stop the MIM and relinquish menu control.
+						glob.mim->ToggleCoopPlayerMenuMode(-1);
 					}
 				}
-				else if (a_menuEvent->opening && Hash(a_menuEvent->menuName) == Hash(RE::FavoritesMenu::MENU_NAME))
+				else if (a_menuEvent->menuName == RE::LockpickingMenu::MENU_NAME)
 				{
-					// Update quick slot item/spell entry texts for player 1 if they are accessing the favorites menu.
-					glob.mim->InitP1QSFormEntries();
-				}
-
-				if (!a_menuEvent->opening)
-				{
-					// Reset menu controller ID once all menus are closed.
-					if (onlyAlwaysOpen && glob.menuCID != -1)
-					{
-						GlobalCoopData::ResetMenuCIDs();
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close. Reset menu CIDs. CIDs are now: {}, {}, {}.",
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-					}
-					else if (!onlyAlwaysOpen && glob.mim->managedCoopMenusCount == 0 && glob.menuCID != glob.player1CID)
-					{
-						// Co-op companion player relinquishes control of menus but at least one is still open, so give control to P1.
-						GlobalCoopData::ResetMenuCIDs();
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close with controllable menus open. Give control to P1. CIDs are now: {}, {}, {}.",
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-					}
-					else
-					{
-						// Catch-all case (may not need handling).
-						SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: Fallthrough: only always open: {}, MIM managed menus count: {}. CIDs are now: {}, {}, {}.",
-							onlyAlwaysOpen,
-							glob.mim->managedCoopMenusCount,
-							glob.menuCID,
-							glob.prevMenuCID,
-							glob.mim->managerMenuCID);
-
-						// If no menus are open, the managed menus count should be 0.
-						// Stop menu input manager and reset menu controller IDs if not.
-						if (onlyAlwaysOpen && glob.mim->managedCoopMenusCount > 0) 
-						{
-							SPDLOG_DEBUG("[Events] ERR: Menu Open/Close Event: CLOSING: MIM managed menus count should be 0 here. Pausing menu input manager and resetting menu CIDs.");
-							glob.mim->ToggleCoopPlayerMenuMode(-1);
-							GlobalCoopData::ResetMenuCIDs();
-						}
-					}
+					// Start lockpicking task to give the companion player LockpickingMenu control.
+					p->taskRunner->AddTask([&p]() { p->LockpickingTask(); });
 				}
 			}
-			else if (glob.mim->IsRunning() && glob.mim->managedCoopMenusCount > 0)
+			else if (a_menuEvent->opening && a_menuEvent->menuName == RE::FavoritesMenu::MENU_NAME)
 			{
-				// Prevents open menus count from being positive once the session ends,
-				// a bug which can be produced by opening the Summoning Menu with
-				// a co-op player-controlled menu open (e.g. Dialogue menu).
-				// This bug will keep the menu input manager running even without
-				// any co-op player-controlled menus open and lead to co-op player
-				// inputs affecting player 1 due to emulated keypresses.
-				// Give P1 control here.
-				Events::ResetMenuState();
+				// Update Favorites Menu item entries with quick slot item/spell tags for P1.
+				glob.mim->InitP1QSFormEntries();
 			}
+
+			if (!a_menuEvent->opening)
+			{
+				if (onlyAlwaysOpen && glob.menuCID != -1)
+				{
+					// Reset menu controller IDs once all menus are closed.
+					GlobalCoopData::ResetMenuCIDs();
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close. Reset menu CIDs. CIDs are now: {}, {}, {}.",
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+				}
+				else if (!onlyAlwaysOpen && 
+						 glob.mim->managedCoopMenusCount == 0 && 
+						 glob.menuCID != glob.player1CID)
+				{
+					// Co-op companion player relinquishes control of their menus
+					// but at least one is still open, so give control to P1.
+					GlobalCoopData::ResetMenuCIDs();
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: MIM signalled to close with controllable menus open. Give control to P1. CIDs are now: {}, {}, {}.",
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+				}
+				else
+				{
+					SPDLOG_DEBUG("[Events] Menu Open/Close Event: CLOSING: Fallthrough: only always open: {}, MIM managed menus count: {}. CIDs are now: {}, {}, {}.",
+						onlyAlwaysOpen,
+						glob.mim->managedCoopMenusCount,
+						glob.menuCID,
+						glob.prevMenuCID,
+						glob.mim->managerMenuCID);
+
+					// If no menus are open, the managed menus count should be 0.
+					// Stop the MIM and reset menu controller IDs if not.
+					if (onlyAlwaysOpen && glob.mim->managedCoopMenusCount > 0) 
+					{
+						SPDLOG_DEBUG("[Events] ERR: Menu Open/Close Event: CLOSING: MIM managed menus count should be 0 here. Pausing menu input manager and resetting menu CIDs.");
+						glob.mim->ToggleCoopPlayerMenuMode(-1);
+						GlobalCoopData::ResetMenuCIDs();
+					}
+				}
+			}
+		}
+		else if (glob.mim->IsRunning() && glob.mim->managedCoopMenusCount > 0)
+		{
+			// Prevents open menus count from being positive once the session ends,
+			// a bug which can be produced by opening the Summoning Menu
+			// with a companion player-controlled menu open (e.g. Dialogue menu).
+			// This bug will keep the MIM running even without any co-op player-controlled menus open 
+			// and lead to co-op player inputs affecting P1 due to emulated keypresses.
+			// Give P1 control here.
+			Events::ResetMenuState();
 		}
 
 		return EventResult::kContinue;
@@ -1249,32 +1853,38 @@ namespace ALYSLC
 
 	EventResult CoopCellFullyLoadedHandler::ProcessEvent(const RE::TESCellFullyLoadedEvent* a_cellFullyLoadedEvent, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*)
 	{
-		if (a_cellFullyLoadedEvent && a_cellFullyLoadedEvent->cell) 
+		if (!a_cellFullyLoadedEvent || !a_cellFullyLoadedEvent->cell)
 		{
-			const uint32_t p1CellNameHash = Hash(a_cellFullyLoadedEvent->cell->fullName);
-			if (p1CellNameHash != lastLoadP1CellNameHash)
-			{
-				lastLoadP1CellNameHash = p1CellNameHash;
+			return EventResult::kContinue;
+		}
 
-				if (ALYSLC::MiniMapCompat::g_miniMapInstalled && (Settings::bRemoveExteriorOcclusion && a_cellFullyLoadedEvent->cell->IsExteriorCell()) || (Settings::bRemoveInteriorOcclusion && a_cellFullyLoadedEvent->cell->IsInteriorCell())) 
+		const uint32_t p1CellNameHash = Hash(a_cellFullyLoadedEvent->cell->fullName);
+		if (p1CellNameHash != lastLoadP1CellNameHash)
+		{
+			lastLoadP1CellNameHash = p1CellNameHash;
+			// If using Felisky384's MiniMap mod and this cell has a room marker,
+			// signal culling proc to apply freeze workaround 
+			if ((ALYSLC::MiniMapCompat::g_miniMapInstalled) && 
+				(Settings::bRemoveExteriorOcclusion && a_cellFullyLoadedEvent->cell->IsExteriorCell()) || 
+				(Settings::bRemoveInteriorOcclusion && a_cellFullyLoadedEvent->cell->IsInteriorCell())) 
+			{
+				ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = false;
+				// Persistent refrs: only handle room markers, 
+				// since portal markers and occlusion planes are not persistent.
+				for (auto obj : a_cellFullyLoadedEvent->cell->objectList)
 				{
-					ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = false;
-					// Persistent refrs: only handle room markers, since portal markers and occlusion planes are not persistent.
-					for (auto obj : a_cellFullyLoadedEvent->cell->objectList)
+					if (obj->GetBaseObject() && obj->GetBaseObject()->formID == 0x1F)
 					{
-						// If this cell has a room marker, signal culling proc to apply freeze workaround if using the MiniMap mod.
-						if (obj->GetBaseObject() && obj->GetBaseObject()->formID == 0x1F)
-						{
-							ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = true;
-							break;
-						}
+						ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = true;
+						break;
 					}
 				}
 			}
-
-			Util::ResetFadeOnAllObjectsInCell(a_cellFullyLoadedEvent->cell);
 		}
 
+		// Reset fade on all the cell's objects, since our co-op cam
+		// may have left some fade values modified.
+		Util::ResetFadeOnAllObjectsInCell(a_cellFullyLoadedEvent->cell);
 		return EventResult::kContinue;
 	}
 
@@ -1300,10 +1910,12 @@ namespace ALYSLC
 	EventResult CoopPositionPlayerEventHandler::ProcessEvent(const RE::PositionPlayerEvent* a_positionPlayerEvent, RE::BSTEventSource<RE::PositionPlayerEvent>* a_eventSource)
 	{
 		// NOTE: Needs testing.
-		// Would like to see if this event fires when the player validity checks in the player manager do
-		// not signal to move co-op companion players to P1. 
-		// Examples where this could occur include short teleports with a fader menu opening and closing.
-		// Used to clear grabbed actors/released refrs when before P1 moves
+		// Would like to see if this event fires
+		// when the player validity checks in the player manager 
+		// do not signal to move co-op companion players to P1. 
+		// Examples where this could occur include short teleports 
+		// with a fader menu opening and closing.
+		// Used to clear grabbed actors/released refrs before P1 moves
 		// and then move companion players to P1 when P1 is finished moving.
 		
 		if (!glob.globalDataInit || !glob.coopSessionActive)
@@ -1313,6 +1925,17 @@ namespace ALYSLC
 
 		auto tes = RE::TES::GetSingleton(); 
 		if (!tes || !a_positionPlayerEvent)
+		{
+			return EventResult::kContinue;
+		}
+
+		// Fader Menu paired with a P1 move event
+		// typically indicates a need to move all other players to P1.
+		// Do not want to move all other players to P1 if P1 is attempting to
+		// teleport to another player, which will also trigger a position player event,
+		// but not open the Fader Menu.
+		auto ui = RE::UI::GetSingleton();
+		if (ui && !ui->IsMenuOpen(RE::FaderMenu::MENU_NAME))
 		{
 			return EventResult::kContinue;
 		}
@@ -1328,13 +1951,14 @@ namespace ALYSLC
 				{
 					if (p->IsRunning()) 
 					{
-						SPDLOG_DEBUG("[Events] Position Player Event: P{}'s managers are running. Pausing now before P1 moves.", p->playerID + 1);
+						SPDLOG_DEBUG("[Events] Position Player Event: P{}'s managers are running. Pausing now before P1 moves.", 
+							p->playerID + 1);
 						p->RequestStateChange(ManagerState::kPaused);
 					}
 
-					// Clear all released refrs and grabbed actors,
-					// since I haven't figured out a consistent, bug-free way
-					// of moving grabbed actors through load doors.
+					// Clear all released refrs and also grabbed actors,
+					// since I haven't figured out a consistent, 
+					// bug-free way of moving grabbed actors through load doors.
 					p->tm->rmm->ClearReleasedRefrs();
 					p->tm->rmm->ClearGrabbedActors(p);
 				}
@@ -1346,12 +1970,14 @@ namespace ALYSLC
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			bool player1Valid = 
 			{
-				p1 && !p1->IsDisabled() && p1->Is3DLoaded() && p1->IsHandleValid() &&
-				p1->loadedData && p1->currentProcess && p1->GetCharController() && p1->parentCell
+				p1 && !p1->IsDisabled() && 
+				p1->Is3DLoaded() && p1->IsHandleValid() &&
+				p1->loadedData && p1->currentProcess && 
+				p1->GetCharController() && p1->parentCell
 			};
 			if (!player1Valid) 
 			{
-				SPDLOG_DEBUG("[Events] Position Player Event: ERR: P1 is not valid after event finished.");
+				SPDLOG_DEBUG("[Events] ERR: Position Player Event: P1 is not valid after event finished.");
 				return EventResult::kContinue;
 			}
 
@@ -1361,18 +1987,21 @@ namespace ALYSLC
 				{
 					if (p->IsRunning())
 					{
-						SPDLOG_DEBUG("[Events] Position Player Event: P{}'s managers are running. Pausing now after P1 moved.", p->playerID + 1);
+						SPDLOG_DEBUG("[Events] Position Player Event: P{}'s managers are running. Pausing now after P1 moved.",
+							p->playerID + 1);
 						p->RequestStateChange(ManagerState::kPaused);
 					}
 
 					if (!p->isPlayer1) 
 					{
-						SPDLOG_DEBUG("[Events] Position Player Event: Moving player {} to P1.", p->coopActor->GetName());
+						SPDLOG_DEBUG("[Events] Position Player Event: Moving player {} to P1.", 
+							p->coopActor->GetName());
+						// Sheathe before moving to minimize incidence of equip state bugs.
 						p->pam->ReadyWeapon(false);
 						p->coopActor->MoveTo(p1);
 					}
 
-					// Also move all the player's grabbed objects to P1.
+					// Also move all the player's grabbed refrs (not actors) to P1.
 					p->tm->rmm->MoveUnloadedGrabbedObjectsToPlayer(p);
 				}
 			}

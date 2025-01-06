@@ -1,5 +1,6 @@
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/1L3zH5y.png)
@@ -105,6 +106,60 @@ Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `buil
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC Enderal.ini` file.
    - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
+
+## [Coding Style]
+- The codebase uses a custom style that emphasizes code-blocking of complex boolean conditions, assignments, and long parameter/argument lists. At the moment, ClangFormat does not seem to offer the style customization options that would automate formatting the codebase in this way, so if possible, please keep the following style guidelines in mind:
+	- All function parameters or arguments should have the ```a_``` prefix.
+	- Commonly used members can have abbreviated names:
+		- Examples:
+			- Players: (CoopPlayer -> p) 
+			- Managers: (EquipManager -> em, PlayerActionManager -> pam, etc.)
+			- Handlers: (ControllerDataHandler -> cdh, etc.) 
+	- Limit lines to 100 characters. Highly recommend installing this Visual Studio extension to provide a visual guideline for the column limit: [Editor Guidelines Extension for VS 2022](https://marketplace.visualstudio.com/items?itemName=PaulHarrington.EditorGuidelinesPreview&ssr=false#overview).
+		- Some exceptions (flexible, use best judgement):
+			- Debug prints
+			- Declarations
+			- Embedded URLs
+	- Brackets should adhere to the ['Allman' style](https://en.wikipedia.org/wiki/Indentation_style#Allman_style).
+	- Wrap parentheses/braces around longer assignments, chained function calls, function argument lists, etc. to create a code block around them. The resulting code block can be packed or further broken up with line breaks as the developer sees fit.
+	- In short, when a line of code exceeds the column limit, feel free to use more parentheses to order operations explicitly and drop down another line to make the code more readable.
+	
+### Examples:
+```
+static void GlobalCoopData::SomeFunction(const std::shared_ptr<CoopPlayer>& a_p, float a_1, float a_2, float a_3, float a_4, float a_5);
+
+// Becomes:
+
+static void GlobalCoopData::SomeFunction
+(
+	const std::shared_ptr<CoopPlayer>& a_p,
+	float a_1,
+	float a_2,
+	float a_3,
+	float a_4,
+	float a_5
+);
+```
+```
+bool something = (bool1) && ((bool2 || bool3) && ((operand1 * operand2 == 0) || longFunc1(func2(arg1, arg2))));
+
+// Becomes:
+
+bool something = 
+(
+	(bool1) &&
+	(
+		(bool2 || bool3) &&
+		(
+			(operand1 * operand2 == 0) ||
+			longFunc1
+			(
+				func2(arg1, arg2)
+			)
+		)
+	)
+);
+```
 
 ## [For Users]
 ### Getting Started and Important Notes
@@ -331,6 +386,9 @@ See the mod's source for more detailed credits.
 - `VersuchDrei`
   - For a reversed actor movement function used to stop players from moving, found here: [OStim GitHub Source](https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h).
   - [Check out VersuchDrei's Skyrim mods](https://next.nexusmods.com/profile/VersuchDrei/mods?gameId=1704)
+- `TrashQuixote` 
+  - For the function IDs for constructing and applying hit data, which are from their mod [TrashUtility](https://github.com/TrashQuixote/TrashUtility).
+  - [Check out TrashQuixote's Skyrim Mods](https://next.nexusmods.com/profile/LowbeeBob?gameId=1704)
 - `PJM Homebrew Fonts`
   - For the [font](https://www.fontspace.com/balgruf-font-f59539) (SIL Open Font License (OFL)) used in the banner image. 
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.

@@ -39,7 +39,10 @@ namespace Raycast
 
 		const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
 		// Get hit object refr, if any.
-		hit.hitRefr = RE::TESHavokUtilities::FindCollidableRef(*collisionObj);
+		hit.hitRefrPtr = RE::TESObjectREFRPtr
+		(
+			RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
+		);
 		
 		if (useOriginalFilter)
 		{
@@ -51,11 +54,25 @@ namespace Raycast
 			constexpr uint64_t filter = 0x40122716;	 //@TODO
 			if ((m & filter) != 0)
 			{
-				if (objectFilters.size() > 0)
+				if (!objectFilters.empty())
 				{
 					for (const auto filteredObj : objectFilters)
 					{
 						if (hit.GetAVObject() == filteredObj) 
+						{
+							return;
+						}
+					}
+				}
+				
+				if (hit.hitRefrPtr && hit.hitRefrPtr.get() && !refrFilters.empty())
+				{
+					for (const auto filteredRefr : refrFilters)
+					{
+						// Hit a refr that is not in the included list 
+						// or hit a refr in the excluded list.
+						if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
+							(!isIncludeFilter && hit.hitRefrPtr.get() == filteredRefr))
 						{
 							return;
 						}
@@ -74,7 +91,7 @@ namespace Raycast
 			{
 				for (const auto& filteredFormType : formTypesToFilter)
 				{
-					if (auto hitRefrPtr = RE::TESObjectREFRPtr(hit.hitRefr); hitRefrPtr)
+					if (auto hitRefrPtr = RE::TESObjectREFRPtr(hit.hitRefrPtr); hitRefrPtr)
 					{
 						if (isIncludeFilter)
 						{
@@ -87,7 +104,7 @@ namespace Raycast
 						else
 						{
 							// Exclude this type, so skip over objects of the same form type.
-							if (*hit.hitRefr->formType == filteredFormType || (hit.hitRefr->GetBaseObject() && *hit.hitRefr->GetBaseObject()->formType == filteredFormType))
+							if (*hit.hitRefrPtr->formType == filteredFormType || (hit.hitRefrPtr->GetBaseObject() && *hit.hitRefrPtr->GetBaseObject()->formType == filteredFormType))
 							{
 								return;
 							}
@@ -96,7 +113,7 @@ namespace Raycast
 				}
 			}
 
-			if (objectFilters.size() > 0)
+			if (!objectFilters.empty())
 			{
 				for (const auto filteredObj : objectFilters)
 				{
@@ -105,6 +122,20 @@ namespace Raycast
 					// or hit an object in the excluded list.
 					if ((isIncludeFilter && hit3D.get() != filteredObj) ||
 						(!isIncludeFilter && hit3D.get() == filteredObj))
+					{
+						return;
+					}
+				}
+			}
+
+			if (hit.hitRefrPtr && hit.hitRefrPtr.get() && !refrFilters.empty())
+			{
+				for (const auto filteredRefr : refrFilters)
+				{
+					// Hit a refr that is not in the included list 
+					// or hit a refr in the excluded list.
+					if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
+						(!isIncludeFilter && hit.hitRefrPtr.get() == filteredRefr))
 					{
 						return;
 					}
@@ -134,6 +165,7 @@ namespace Raycast
 		hits.clear();
 		objectFilters.clear();
 		formTypesToFilter.clear();
+		refrFilters.clear();
 	}
 
 	RE::NiAVObject* RayCollector::HitResult::GetAVObject()
@@ -293,6 +325,40 @@ namespace Raycast
 			collector->AddFilteredFormTypes(a_filteredFormTypes);
 		}
 
+
+		RE::bhkPickData pickData{};
+		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
+		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
+		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
+		pickData.rayHitCollectorA8 = reinterpret_cast<RE::hkpClosestRayHitCollector*>(collector);
+
+		return PerformHavokCast(pickData, a_start, dif);
+	}
+
+	RayResult hkpCastRay(const glm::vec4& a_start, const glm::vec4& a_end, const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, const std::vector<RE::FormType>& a_filteredFormTypes, bool&& a_isIncludeFilter) noexcept
+	{
+		// Cast ray and in/exclusively filter refrs and formtypes.
+
+		constexpr auto hkpScale = 0.0142875f;
+		const auto dif = a_end - a_start;
+
+		constexpr auto one = 1.0f;
+		const auto from = a_start * hkpScale;
+		const auto to = dif * hkpScale;
+
+		auto collector = GetCastCollector();
+		collector->Reset();
+		collector->SetFilterType(a_isIncludeFilter);
+
+		for (const auto filteredRefr : a_filteredRefrs)
+		{
+			collector->AddFilteredRefr(filteredRefr);
+		}
+
+		if (!a_filteredFormTypes.empty()) 
+		{
+			collector->AddFilteredFormTypes(a_filteredFormTypes);
+		}
 
 		RE::bhkPickData pickData{};
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
@@ -516,7 +582,7 @@ namespace Raycast
 				auto av = hit.GetAVObject();
 				result.hit = av != nullptr;
 				result.hitObject = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
-				result.hitRefrHandle = hit.hitRefr ? hit.hitRefr->GetHandle() : RE::ObjectRefHandle();
+				result.hitRefrHandle = hit.hitRefrPtr ? hit.hitRefrPtr->GetHandle() : RE::ObjectRefHandle();
 			}
 			else
 			{
@@ -605,7 +671,7 @@ namespace Raycast
 		auto av = best.GetAVObject();
 		result.hit = av != nullptr;
 		result.hitObject = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
-		result.hitRefrHandle = best.hitRefr ? best.hitRefr->GetHandle() : RE::ObjectRefHandle();
+		result.hitRefrHandle = best.hitRefrPtr ? best.hitRefrPtr->GetHandle() : RE::ObjectRefHandle();
 		return result;
 	}
 };

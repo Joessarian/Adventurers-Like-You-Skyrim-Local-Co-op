@@ -21,7 +21,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESEnterBleedoutEvent* a_bleedoutEvent, RE::BSTEventSource<RE::TESEnterBleedoutEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESEnterBleedoutEvent* a_bleedoutEvent, 
+			RE::BSTEventSource<RE::TESEnterBleedoutEvent>*
+		) override;
 
 	private:
 		CoopBleedoutEventHandler() = default;
@@ -41,7 +45,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESMoveAttachDetachEvent* a_cellChangeEvent, RE::BSTEventSource<RE::TESMoveAttachDetachEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESMoveAttachDetachEvent* a_cellChangeEvent, 
+			RE::BSTEventSource<RE::TESMoveAttachDetachEvent>*
+		) override;
 	
 	private:
 		CoopCellChangeHandler() = default;
@@ -61,7 +69,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESCellFullyLoadedEvent* a_cellFullyLoadedEvent, RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESCellFullyLoadedEvent* a_cellFullyLoadedEvent,
+			RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*
+		) override;
 		
 		static inline uint32_t lastLoadP1CellNameHash = Hash(""sv);
 	
@@ -83,7 +95,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESContainerChangedEvent* a_containerChangedEvent, RE::BSTEventSource<RE::TESContainerChangedEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESContainerChangedEvent* a_containerChangedEvent, 
+			RE::BSTEventSource<RE::TESContainerChangedEvent>*
+		) override;
 	
 	private:
 		CoopContainerChangedHandler() = default;
@@ -92,6 +108,30 @@ namespace ALYSLC
 		~CoopContainerChangedHandler() = default;
 		CoopContainerChangedHandler& operator=(const CoopContainerChangedHandler& a_ccch) = delete;
 		CoopContainerChangedHandler& operator=(CoopContainerChangedHandler&& a_ccch) = delete;
+	};
+
+	class CoopCrosshairEventHandler : public RE::BSTEventSink<SKSE::CrosshairRefEvent>
+	{
+	public:
+		using EventResult = RE::BSEventNotifyControl;
+		
+		static CoopCrosshairEventHandler* GetSingleton();
+		
+		static void Register();
+		
+		EventResult ProcessEvent
+		(
+			const SKSE::CrosshairRefEvent* a_event, 
+			RE::BSTEventSource<SKSE::CrosshairRefEvent>*
+		) override;
+
+	private:
+		CoopCrosshairEventHandler() = default;
+		CoopCrosshairEventHandler(const CoopCrosshairEventHandler& a_cceh) = delete;
+		CoopCrosshairEventHandler(CoopCrosshairEventHandler&& a_cceh) = delete;
+		~CoopCrosshairEventHandler() = default;
+		CoopCrosshairEventHandler& operator=(const CoopCrosshairEventHandler& a_cceh) = delete;
+		CoopCrosshairEventHandler& operator=(CoopCrosshairEventHandler&& a_cceh) = delete;
 	};
 
 	class CoopDeathEventHandler : public RE::BSTEventSink<RE::TESDeathEvent>
@@ -103,7 +143,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESDeathEvent* a_deathEvent, RE::BSTEventSource<RE::TESDeathEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESDeathEvent* a_deathEvent,
+			RE::BSTEventSource<RE::TESDeathEvent>*
+		) override;
 	
 	private:
 		CoopDeathEventHandler() = default;
@@ -123,7 +167,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESEquipEvent* a_equipEvent, RE::BSTEventSource<RE::TESEquipEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESEquipEvent* a_equipEvent, 
+			RE::BSTEventSource<RE::TESEquipEvent>*
+		) override;
 	
 	private:
 		CoopEquipEventHandler() = default;
@@ -143,7 +191,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESLoadGameEvent* a_loadGameEvent, RE::BSTEventSource<RE::TESLoadGameEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESLoadGameEvent* a_loadGameEvent, 
+			RE::BSTEventSource<RE::TESLoadGameEvent>*
+		) override;
 	
 	private:
 		CoopLoadGameEventHandler() = default;
@@ -163,7 +215,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::TESHitEvent* a_hitEvent, RE::BSTEventSource<RE::TESHitEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::TESHitEvent* a_hitEvent, 
+			RE::BSTEventSource<RE::TESHitEvent>*
+		) override;
 	
 	private:
 		CoopHitEventHandler() = default;
@@ -183,7 +239,11 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::MenuOpenCloseEvent* a_menuEvent, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override;
+		EventResult ProcessEvent
+		(
+			const RE::MenuOpenCloseEvent* a_menuEvent, 
+			RE::BSTEventSource<RE::MenuOpenCloseEvent>*
+		) override;
 	
 	private:
 		CoopMenuOpenCloseHandler() = default;
@@ -203,14 +263,24 @@ namespace ALYSLC
 		
 		static void Register();
 		
-		EventResult ProcessEvent(const RE::PositionPlayerEvent* a_positionPlayerEvent, RE::BSTEventSource<RE::PositionPlayerEvent>* a_eventSource) override;
+		EventResult ProcessEvent
+		(
+			const RE::PositionPlayerEvent* a_positionPlayerEvent, 
+			RE::BSTEventSource<RE::PositionPlayerEvent>* a_eventSource
+		) override;
 	
 	private:
 		CoopPositionPlayerEventHandler() = default;
 		CoopPositionPlayerEventHandler(const CoopPositionPlayerEventHandler& a_cppeh) = delete;
 		CoopPositionPlayerEventHandler(CoopPositionPlayerEventHandler&& a_cppeh) = delete;
 		~CoopPositionPlayerEventHandler() = default;
-		CoopPositionPlayerEventHandler& operator=(const CoopPositionPlayerEventHandler& a_cppeh) = delete;
-		CoopPositionPlayerEventHandler& operator=(CoopPositionPlayerEventHandler&& a_cppeh) = delete;
+		CoopPositionPlayerEventHandler& operator=
+		(
+			const CoopPositionPlayerEventHandler& a_cppeh
+		) = delete;
+		CoopPositionPlayerEventHandler& operator=
+		(
+			CoopPositionPlayerEventHandler&& a_cppeh
+		) = delete;
 	};
 }

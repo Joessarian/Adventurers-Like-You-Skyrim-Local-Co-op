@@ -24,6 +24,18 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::Events::RegisterEvents();
 		// Register debug overlay menu.
 		ALYSLC::DebugOverlayMenu::Register();
+		// Run compatibility checks and initialization.
+		ALYSLC::EnderalCompat::CheckForEnderalSSE();
+		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
+		ALYSLC::MiniMapCompat::CheckForMiniMap();
+		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
+		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
+		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
+		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
+		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
+		ALYSLC::TKDodgeCompat::CheckForTKDodge();
+		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
+		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:
@@ -48,18 +60,6 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	case SKSE::MessagingInterface::kPostLoadGame:
 	{
 		SPDLOG_INFO("[MAIN] Post load game.");
-		// Run compatibility checks and initialization.
-		ALYSLC::EnderalCompat::CheckForEnderalSSE();
-		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
-		ALYSLC::MiniMapCompat::CheckForMiniMap();
-		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
-		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
-		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
-		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
-		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
-		ALYSLC::TKDodgeCompat::CheckForTKDodge();
-		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
-		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
 		break;

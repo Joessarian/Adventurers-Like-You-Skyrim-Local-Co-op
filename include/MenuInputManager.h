@@ -12,7 +12,12 @@ namespace ALYSLC
 	struct MenuBindInfo
 	{
 		MenuBindInfo();
-		MenuBindInfo(RE::INPUT_DEVICE a_device, RE::BSFixedString a_eventName, RE::UserEvents::INPUT_CONTEXT_ID a_context);
+		MenuBindInfo
+		(
+			RE::INPUT_DEVICE a_device,
+			RE::BSFixedString a_eventName, 
+			RE::UserEvents::INPUT_CONTEXT_ID a_context
+		);
 
 		// Device linked with this bind.
 		// Should always be set to controller when sending emulated input events.
@@ -49,7 +54,14 @@ namespace ALYSLC
 				isExtRequest(false)
 			{ }
 
-			MenuOpeningActionRequests(InputAction a_fromAction, SteadyClock::time_point a_timestamp, RE::BSFixedString a_reqMenuName, RE::ObjectRefHandle a_assocRefrHandle, bool _isExtRequest) :
+			MenuOpeningActionRequests
+			(
+				InputAction a_fromAction, 
+				SteadyClock::time_point a_timestamp, 
+				RE::BSFixedString a_reqMenuName,
+				RE::ObjectRefHandle a_assocRefrHandle, 
+				bool _isExtRequest
+			) :
 				fromAction(a_fromAction),
 				timestamp(a_timestamp),
 				reqMenuName(a_reqMenuName),
@@ -70,7 +82,10 @@ namespace ALYSLC
 		};
 
 		MenuOpeningActionRequestsManager() :
-			menuOpeningActionRequests({ ALYSLC_MAX_PLAYER_COUNT, std::list<MenuOpeningActionRequests>({}) })
+			menuOpeningActionRequests
+			(
+				{ ALYSLC_MAX_PLAYER_COUNT, std::list<MenuOpeningActionRequests>({}) }
+			)
 		{ }
 
 		// Clear out all requests for all active players.
@@ -80,18 +95,33 @@ namespace ALYSLC
 		void ClearRequests(const int32_t& a_controllerID);
 
 		// Returns true if request was successfully inserted.
-		bool InsertRequest(const int32_t& a_controllerID, InputAction a_fromAction, SteadyClock::time_point a_timestamp, RE::BSFixedString a_reqMenuName, RE::ObjectRefHandle a_assocRefrHandle = RE::ObjectRefHandle(), bool a_isExtRequest = false);
+		bool InsertRequest
+		(
+			const int32_t& a_controllerID, 
+			InputAction a_fromAction, 
+			SteadyClock::time_point a_timestamp,
+			RE::BSFixedString a_reqMenuName, 
+			RE::ObjectRefHandle a_assocRefrHandle = RE::ObjectRefHandle(), 
+			bool a_isExtRequest = false
+		);
 
-		// Determine which player should receive control of the opening menu and return that player's controller ID
+		// Determine which player should receive control of the opening menu 
+		// and return that player's controller ID
 		// or -1 if no valid player was found.
-		// Can also keep the requests queue for each player intact and only compute the menu controller ID.
+		// Can also keep the requests queue for each player intact 
+		// and only compute the menu controller ID.
 		// Request queues are traversed and cleared by default.
-		int32_t ResolveMenuControllerID(const RE::BSFixedString& a_menuName, bool&& a_modifyReqQueue = true);
+		int32_t ResolveMenuControllerID
+		(
+			const RE::BSFixedString& a_menuName, bool&& a_modifyReqQueue = true
+		);
 
 		// Max number of queued requests at any given time.
-		// The oldest request is discarded if a new request comes in while the queue is at capacity.
+		// The oldest request is discarded if a new request comes in 
+		// while the queue is at capacity.
 		static inline const uint8_t maxCachedRequests = 5;
-		// CID of the player requesting control of the Dialogue Menu while another player currently has control.
+		// CID of the player requesting control of the Dialogue Menu 
+		// while another player currently has control.
 		static inline int32_t reqDialoguePlayerCID = -1;
 		// Mutices for each player's menu requests queue.
 		std::array<std::mutex, (size_t)ALYSLC_MAX_PLAYER_COUNT> reqQueueMutexList;
@@ -126,7 +156,11 @@ namespace ALYSLC
 				std::hash<std::jthread::id>()(std::this_thread::get_id()));
 			{
 				std::unique_lock<std::mutex> lock(equipEventMutex);
-				SPDLOG_DEBUG("[MIM] SignalRefreshMenuEquipState: Setting refresh equip state flag to true.");
+				SPDLOG_DEBUG
+				(
+					"[MIM] SignalRefreshMenuEquipState: "
+					"Setting refresh equip state flag to true."
+				);
 				equipEventRefreshReq = true;
 			}
 		}
@@ -143,7 +177,8 @@ namespace ALYSLC
 		// Equip a quick slot item/spell for P1
 		// and update the Favorites Menu entry list to reflect the change.
 		void EquipP1QSForm();
-		// Hotkey the currently selected favorited form, based on the menu-controlling player's RS orientation.
+		// Hotkey the currently selected favorited form, 
+		// based on the menu-controlling player's RS orientation.
 		void HotkeyFavoritedForm();
 		// Check if P1's quick slot item/spell are still favorited, save their indices in the 
 		// Favorites Menu entry list, and update the list to reflect their equip state.
@@ -152,7 +187,10 @@ namespace ALYSLC
 		// Will then update the current supported menu type.
 		void SetOpenedMenu(const RE::BSFixedString& a_menuName, const bool& a_isOpened);
 		// Start or stop the menu input manager for the given player.
-		void ToggleCoopPlayerMenuMode(const int32_t& a_controllerIDToSet, const int32_t& a_playerIDToSet = -1);
+		void ToggleCoopPlayerMenuMode
+		(
+			const int32_t& a_controllerIDToSet, const int32_t& a_playerIDToSet = -1
+		);
 
 		//
 		// Members
@@ -229,7 +267,11 @@ namespace ALYSLC
 			}
 
 			RE::GFxValue selectedIndex;
-			view->GetVariable(std::addressof(selectedIndex), "_root.MenuHolder.Menu_mc.itemList.selectedEntry.index");
+			view->GetVariable
+			(
+				std::addressof(selectedIndex), 
+				"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
+			);
 
 			// Index in favorites list.
 			uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
@@ -261,7 +303,8 @@ namespace ALYSLC
 		// Resolve a menu input event type to handle and then handle that event type.
 		void CheckControllerInput();
 
-		// Prints all menu event name/DXScancode combos for each menu input context and device type.
+		// Prints all menu event name/DXScancode combos 
+		// for each menu input context and device type.
 		void DebugPrintMenuBinds();
 
 		// Ensure all players have the same known spells/shouts
@@ -283,7 +326,8 @@ namespace ALYSLC
 		void HandleLootRequest();
 
 		// When the Favorites Menu opens, refresh the player's equip state, 
-		// set their favorited forms, and cache + update the equip states of each Favorites Menu entry.
+		// set their favorited forms, and cache + 
+		// update the equip states of each Favorites Menu entry.
 		void InitFavoritesEntries();
 
 		// When the Magic Menu opens, save a list of all known magic, 
@@ -297,43 +341,56 @@ namespace ALYSLC
 		// Refresh favorited cyclable spells list(s) for the player.
 		void RefreshCyclableSpells() const;
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Barter Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Barter Menu.
 		void ProcessBarterMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Book Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Book Menu.
 		void ProcessBookMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Container Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Container Menu.
 		void ProcessContainerMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Dialogue Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Dialogue Menu.
 		void ProcessDialogueMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Favorites Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Favorites Menu.
 		void ProcessFavoritesMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Gift Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Gift Menu.
 		void ProcessGiftMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Inventory Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Inventory Menu.
 		void ProcessInventoryMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Loot Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Loot Menu.
 		void ProcessLootMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Magic Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Magic Menu.
 		void ProcessMagicMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data based on the given player button input in the Map Menu.
+		// Set menu input event type and accompanying event data based on 
+		// the given player button input in the Map Menu.
 		void ProcessMapMenuButtonInput(const uint32_t& a_xMask);
 
-		// Set menu input event type and accompanying event data for the currently opened menu based on left or right trigger input.
+		// Set menu input event type and accompanying event data for the currently opened menu 
+		// based on left or right trigger input.
 		void ProcessTriggerInput(const bool& a_isLT);
 
-		// Update cached equip state and Favorites Menu item entries based on what items the player has equipped.
+		// Update cached equip state and Favorites Menu item entries based on 
+		// what items the player has equipped.
 		void RefreshFavoritesMenuEquipState(bool&& a_updateCachedEquipState);
 
-		// Update cached equip state and Magic Menu item entries based on what magic the player has equipped.
+		// Update cached equip state and Magic Menu item entries based on 
+		// what magic the player has equipped.
 		void RefreshMagicMenuEquipState(bool&& a_updateCachedEquipState);
 
 		// Refresh visible elements for the topmost supported menu.
@@ -355,8 +412,8 @@ namespace ALYSLC
 		// Initialize the menu-dependent control map.
 		void SetMenuControlMap();
 
-		// Based on the given selected consumable form and its index in the Favorites Menu's item list,
-		// append its count to the end of its entry.
+		// Based on the given selected consumable form and its index 
+		// in the Favorites Menu's item list, append its count to the end of its entry.
 		// Done for quick slot items which are consumed by co-op companions because the game
 		// does not update the count automatically since the Favorites Menu shows P1's item
 		// count for that consumable.
@@ -370,7 +427,8 @@ namespace ALYSLC
 		//
 
 		// Length of quick slot item/spell prefix tag ('[*QSS*] ' or '[*QSI*] ').
-		// Used when setting new prefix to denote a favorited item/spell as equipped in the quick slot.
+		// Used when setting new prefix to denote a favorited item/spell 
+		// as equipped in the quick slot.
 		const uint8_t qsPrefixTagLength = std::string("[*QS_*] ").length();
 
 		// Control map for P1.
@@ -420,7 +478,8 @@ namespace ALYSLC
 
 		// Equip index to (un)equip selected item to.
 		EquipIndex reqEquipIndex;
-		// Menu button binds info for the currently tapped/held/released input that triggered an event.
+		// Menu button binds info for the currently tapped/held/released input 
+		// that triggered an event.
 		MenuBindInfo currentBindInfo;
 		// Time point at which the last equip state delayed refresh request was made.
 		SteadyClock::time_point lastEquipStateRefreshReqTP;
@@ -429,7 +488,8 @@ namespace ALYSLC
 		// Delayed so that failed equip requests can be reflected in the UI,
 		// instead of updating the equip state before the item actually gets (un)equipped.
 		bool delayedEquipStateRefresh;
-		// Should refresh Favorites/Magic Menu equip state and cached equip data following an equip event.
+		// Should refresh Favorites/Magic Menu equip state 
+		// and cached equip data following an equip event.
 		bool equipEventRefreshReq;
 		// Is a new menu now on top of the menu stack?
 		// Update control map and refresh data if so.

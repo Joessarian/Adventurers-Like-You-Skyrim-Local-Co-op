@@ -142,6 +142,7 @@ namespace ALYSLC
 		// Node rotation data.
 		nom = std::make_unique<NodeOrientationManager>();
 		// Booleans.
+		adjustAimPitchToFaceTarget = false;
 		aimPitchAdjusted = false;
 		aimPitchManuallyAdjusted = false;
 		attemptDiscovery = false;
@@ -192,7 +193,8 @@ namespace ALYSLC
 		framesSinceAttemptingDiscovery =
 		framesSinceRequestingDashDodge = 
 		framesSinceStartingDashDodge = 
-		framesSinceStartingJump = 0;
+		framesSinceStartingJump = 
+		framesToCompleteDashDodge = 0;
 
 		// Reset time points used by this manager.
 		ResetTPs();
@@ -312,7 +314,8 @@ namespace ALYSLC
 			dashDodgeCompletionRatio = 0.0f;
 			return;
 		}
-
+		
+		bool isSwimming = coopActor->IsSwimming();
 		if (isRequestingDashDodge && !isDashDodging)
 		{
 			framesSinceStartingDashDodge = framesSinceRequestingDashDodge = 0;
@@ -335,7 +338,46 @@ namespace ALYSLC
 			coopActor->NotifyAnimationGraph("staggerStop");
 			coopActor->NotifyAnimationGraph("moveStart");
 			// Can dash dodge only if the sneak start animation event is processed successfully.
-			bool succ = isParagliding || coopActor->NotifyAnimationGraph("SneakStart");
+			bool succ = 
+			(
+				isParagliding || 
+				isSwimming ||
+				coopActor->NotifyAnimationGraph("SneakStart")
+			);
+
+			// SneakStart fails when transformed.
+			if (succ || p->isTransformed)
+			{
+				SPDLOG_DEBUG("[MM] PerformDashDodge: {}: Getting lock. (0x{:X})", 
+					coopActor->GetName(),
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				{
+					std::unique_lock<std::mutex> perfAnimQueueLock
+					(
+						p->pam->avcam->perfAnimQueueMutex
+					);
+					SPDLOG_DEBUG("[MM] PerformDashDodge: {}: Lock obtained. (0x{:X})", 
+						coopActor->GetName(), 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+
+					// Queue dodge anim event tag so that this player's player action manager 
+					// can handle stamina expenditure.
+					p->pam->avcam->perfAnimEventsQueue.emplace
+					(
+						std::pair<PerfAnimEventTag, uint16_t>
+						(
+							PerfAnimEventTag::kDodgeStart, 
+							p->pam->lastAnimEventID
+						)
+					);
+					p->pam->lastAnimEventID = 
+					(
+						p->pam->lastAnimEventID == UINT16_MAX ? 1 :
+						p->pam->lastAnimEventID + 1
+					);
+				}
+			}
+
 			isDashDodging = succ;
 			isRequestingDashDodge = !succ;
 			// Back step if not moving the LS or if staggered.
@@ -350,28 +392,34 @@ namespace ALYSLC
 				)
 			);
 		}
-
+		
 		if (isDashDodging)
 		{
 			if (framesSinceRequestingDashDodge == 0) 
 			{
+				// Varying I-Frames/speed to maintain the same dodge distance 
+				// at different framerates. Set once at dodge start.
+				const float frameScalingFactor = 1.0f / (60.0f * *g_deltaTimeRealTime);
+				framesToCompleteDashDodge = 
+				(
+					frameScalingFactor * 
+					static_cast<float>(Settings::uDashDodgeSetupFrameCount + Settings::uDashDodgeBaseAnimFrameCount)
+				);
+
 				p->lastDashDodgeTP = SteadyClock::now();
 				// Cache LS displacement and equipped weight.
 				dashDodgeLSDisplacement = isBackStepDodge ? 1.0f : glob.cdh->GetAnalogStickState(controllerID, true).normMag;
 				dashDodgeEquippedWeight = coopActor->GetEquippedWeight();
 			}
 
-			const uint32_t totalFrameCount = (Settings::uDashDodgeSetupFrameCount + Settings::uDashDodgeBaseAnimFrameCount);
 			float secsSinceStartingDodge = Util::GetElapsedSeconds(p->lastDashDodgeTP);
 			// Frame progress towards completing the dodge.
-			float framesCompletionRatio = std::clamp((float)framesSinceRequestingDashDodge / totalFrameCount, 0.0f, 1.0f);
-			// Completion time given at 60 FPS.
-			// How close the dodge is to ending based on the time elapsed.
-			float timeCompletionRatio = std::clamp(secsSinceStartingDodge / ((1.0f / 60.0f) * totalFrameCount), 0.0f, 1.0f);
-			// At low framerates, each frame takes longer to execute, so the player will dodge for 
-			// a longer time and the dodge displacement will be much further than intended.
-			// In this case, compare to the fixed 60 FPS dodge time interval instead.
-			dashDodgeCompletionRatio = timeCompletionRatio > framesCompletionRatio ? timeCompletionRatio : framesCompletionRatio;
+			dashDodgeCompletionRatio = std::clamp
+			(
+				static_cast<float>(framesSinceRequestingDashDodge) / framesToCompleteDashDodge, 
+				0.0f, 
+				1.0f
+			);
 
 			// Ensure the player can rotate so that they keep their dodge momentum
 			// even when interrupting a power attack, during the duration of which rotation is disabled.
@@ -407,6 +455,14 @@ namespace ALYSLC
 					if (!p->isTransformed)
 					{
 						coopActor->NotifyAnimationGraph("SneakStop");
+					}
+
+					// Set the state back to swimming to avoid dropping like a rock in the water
+					// after the dodge completes.
+					if (isSwimming)
+					{
+						charController->wantState = 
+						charController->context.currentState = RE::hkpCharacterStateType::kSwimming;
 					}
 
 					// Reset torso and character controller pitch.
@@ -487,7 +543,16 @@ namespace ALYSLC
 				{
 					if (glob.paraglidingMT)
 					{
-						maxXYSpeed *= (glob.paraglidingMT->movementTypeData.defaultData.speeds[RE::Movement::SPEED_DIRECTIONS::kForward][RE::Movement::MaxSpeeds::kRun]);
+						const auto& speeds = 
+						(
+							glob.paraglidingMT->movementTypeData.defaultData.speeds
+						);
+						maxXYSpeed *= 
+						(
+							speeds
+							[RE::Movement::SPEED_DIRECTIONS::kForward]
+							[RE::Movement::MaxSpeeds::kRun]
+						);
 					}
 					else
 					{
@@ -500,7 +565,10 @@ namespace ALYSLC
 				}
 				else
 				{
-					maxXYSpeed = Settings::fMaxDashDodgeSpeedmult;
+					maxXYSpeed = 
+					(
+						Settings::fMaxDashDodgeSpeedmult
+					);
 				}
 
 				// Scale down max dodge speed based on equipped weight.
@@ -546,8 +614,8 @@ namespace ALYSLC
 
 				// Convert back to havok units and then to hkVector4.
 				havokVel = TohkVector4(dashDodgeDir * dashDodgeXYSpeed * GAME_TO_HAVOK);
-				// Restore original Z component if paragliding.
-				if (isParagliding) 
+				// Restore original Z component if paragliding or swimming.
+				if (isParagliding || isSwimming) 
 				{
 					havokVel.quad.m128_f32[2] = zComp;
 				}
@@ -557,49 +625,99 @@ namespace ALYSLC
 					havokVel.quad.m128_f32[2] = -9.8f * secsSinceStartingDodge;
 				}
 				
-				// Velocity only changes when the current state is not grounded.
-				charController->wantState = charController->context.currentState = RE::hkpCharacterStateType::kInAir;
+				// Direct velocity changes are only possible
+				// when the current state is in-air or flying.
+				charController->wantState = 
+				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
 
 				// Set new dodge velocity.
 				charController->SetLinearVelocityImpl(havokVel);
 				// Check if the player should land when dash dodging on the ground.
-				if (!isParagliding)
+				if (!isParagliding && !isSwimming)
 				{
-					charController->flags.set(RE::CHARACTER_FLAGS::kCheckSupport, RE::CHARACTER_FLAGS::kFloatLand, RE::CHARACTER_FLAGS::kJumping);
+					charController->flags.set
+					(
+						RE::CHARACTER_FLAGS::kCheckSupport, 
+						RE::CHARACTER_FLAGS::kJumping
+					);
 				}
 
 				// Update leaning.
-				if (const float setupRatio = Settings::uDashDodgeSetupFrameCount / totalFrameCount; dashDodgeCompletionRatio >= setupRatio)
+				const float setupRatio = 
+				(
+					static_cast<float>(Settings::uDashDodgeSetupFrameCount) / 
+					(
+						Settings::uDashDodgeBaseAnimFrameCount + 
+						Settings::uDashDodgeSetupFrameCount
+					)
+				);
+				// Past the setup frames portion of the dodge.
+				if (dashDodgeCompletionRatio >= setupRatio)
 				{
 					// Adjust player character tilt to lean in the direction of the dodge.
 					const float animRatio = dashDodgeCompletionRatio - setupRatio;
 					const float animCompletionRatio = 1.0f - setupRatio;
 					const float halfAnimCompletionRatio = animCompletionRatio / 2.0f;
-					// Lean less when moving fast (trip hazard).
-					const float maxLeanAngle = 
+					float maxLeanAngle = 0.0f;
+					if (isParagliding)
 					{
-						(isParagliding) ?
-						(p->isPlayer1 ? PI / 2.0f : PI / 2.0f) :
+						maxLeanAngle = p->isPlayer1 ? PI / 4.0f : PI / 2.0f;
+					}
+					else if (isSwimming)
+					{
+						// Lean less when swimming slowly.
+						maxLeanAngle = Util::InterpolateSmootherStep
 						(
-							Util::InterpolateSmootherStep
-							(
-								7.0f * PI / 18.0f, 
-								PI / 6.0f, 
-								dashDodgeXYSpeed / Settings::fMaxDashDodgeSpeedmult
-							)
-						)
-					};
+							PI / 3.0f, 
+							PI / 6.0f, 
+							dashDodgeXYSpeed / Settings::fMaxDashDodgeSpeedmult
+						);
+					}
+					else
+					{
+						// Lean less when moving fast (trip hazard).
+						maxLeanAngle = Util::InterpolateSmootherStep
+						(
+							7.0f * PI / 18.0f, 
+							PI / 6.0f, 
+							dashDodgeXYSpeed / Settings::fMaxDashDodgeSpeedmult
+						);
+					}
 
 					// Reference to the pitch/roll angle we want to modify.
 					// We want to tilt the entire character controller when paragliding,
-					// but only the torso nodes when on the ground.
-					float& pitchToSet = isParagliding ? charController->pitchAngle : dashDodgeTorsoPitchOffset;
-					float& rollToSet = isParagliding ? charController->rollAngle : dashDodgeTorsoRollOffset;
+					// but only the torso nodes when on the ground or swimming.
+					float& pitchToSet = 
+					(
+						isParagliding ? 
+						charController->pitchAngle : 
+						dashDodgeTorsoPitchOffset
+					);
+					float& rollToSet = 
+					(
+						isParagliding ? 
+						charController->rollAngle : 
+						dashDodgeTorsoRollOffset
+					);
 					// Endpoint to interp from in the first half of the interval 
 					// and to interp to in the second half of the interval.
 					// NOTE: Our changes to char controller angles are wiped by the game each frame.
-					const float endpointPitch = charController->pitchAngle ? pitchToSet : 0.0f;
-					const float endpointRoll = charController->rollAngle ? rollToSet : 0.0f;
+					float endpointPitch = 0.0f;
+					float endpointRoll = 0.0f;
+					endpointPitch = 
+					(
+						animRatio < halfAnimCompletionRatio ? 
+						pitchToSet : 
+						0.0f
+					);
+
+					endpointRoll = 
+					(
+						animRatio < halfAnimCompletionRatio ? 
+						rollToSet : 
+						0.0f
+					);
+
 					if (isBackStepDodge)
 					{
 						if (animRatio < halfAnimCompletionRatio)
@@ -608,7 +726,7 @@ namespace ALYSLC
 							pitchToSet = Util::InterpolateEaseOut
 							(
 								endpointPitch, 
-								isParagliding ? -maxLeanAngle : maxLeanAngle, 
+								isParagliding || isSwimming ? -maxLeanAngle : maxLeanAngle, 
 								(animRatio / halfAnimCompletionRatio),
 								2.0f
 							);
@@ -618,7 +736,7 @@ namespace ALYSLC
 							// Straighten back out by the time the dodge ends.
 							pitchToSet = Util::InterpolateEaseIn
 							(
-								isParagliding ? -maxLeanAngle : maxLeanAngle,
+								isParagliding || isSwimming ? -maxLeanAngle : maxLeanAngle,
 								endpointPitch,
 								(animRatio / halfAnimCompletionRatio) - 1.0f,
 								2.0f
@@ -638,17 +756,25 @@ namespace ALYSLC
 							Util::NormalizeAngToPi(dashDodgeYaw - coopActor->data.angle.z)
 						);
 						float absAngDiffMod = fmodf(fabsf(movementToFacingYawDiff), PI);
-						float pitchRatio = 
-						(
-							absAngDiffMod <= PI / 2.0f ? 
-							(1.0f - absAngDiffMod / (PI / 2.0f)) : 
-							(absAngDiffMod / (PI / 2.0f) - 1.0f)
-						);
-						float rollRatio = 1.0f - pitchRatio;
-						float pitchSign = fabsf(movementToFacingYawDiff) <= PI / 2.0f ? -1.0f : 1.0f;
-						float rollSign = movementToFacingYawDiff <= 0.0f ? -1.0f : 1.0f;
-						// Flip sign convention when paragliding.
-						if (isParagliding) 
+						float pitchRatio = 1.0f;
+						float rollRatio = 0.0f;
+						float pitchSign = 1.0f;
+						float rollSign = 1.0f;
+						if (!isSwimming)
+						{
+							pitchRatio = 
+							(
+								absAngDiffMod <= PI / 2.0f ? 
+								(1.0f - absAngDiffMod / (PI / 2.0f)) : 
+								(absAngDiffMod / (PI / 2.0f) - 1.0f)
+							);
+							rollRatio = 1.0f - pitchRatio;
+							pitchSign = fabsf(movementToFacingYawDiff) <= PI / 2.0f ? -1.0f : 1.0f;
+							rollSign = movementToFacingYawDiff <= 0.0f ? -1.0f : 1.0f;
+						}
+
+						// Flip sign convention when paragliding or swimming.
+						if (isParagliding || isSwimming) 
 						{
 							pitchSign *= -1.0f;
 							rollSign *= -1.0f;
@@ -660,13 +786,15 @@ namespace ALYSLC
 							pitchToSet = Util::InterpolateEaseOut
 							(
 								endpointPitch, 
-								maxLeanAngle * pitchRatio * pitchSign, (animRatio / halfAnimCompletionRatio), 
+								maxLeanAngle * pitchRatio * pitchSign, 
+								(animRatio / halfAnimCompletionRatio), 
 								2.0f
 							);
 							rollToSet = Util::InterpolateEaseOut
 							(
 								endpointRoll, 
-								maxLeanAngle * rollRatio * rollSign, (animRatio / halfAnimCompletionRatio), 
+								maxLeanAngle * rollRatio * rollSign, 
+								(animRatio / halfAnimCompletionRatio), 
 								2.0f
 							);
 						}
@@ -677,34 +805,47 @@ namespace ALYSLC
 							(
 								maxLeanAngle * pitchRatio * pitchSign, 
 								endpointPitch, 
-								(animRatio / halfAnimCompletionRatio) - 1.0f, 2.0f
+								(animRatio / halfAnimCompletionRatio) - 1.0f,
+								2.0f
 							);
 							rollToSet = Util::InterpolateEaseIn
 							(
 								maxLeanAngle * rollRatio * rollSign, 
 								endpointRoll, 
-								(animRatio / halfAnimCompletionRatio) - 1.0f, 2.0f
+								(animRatio / halfAnimCompletionRatio) - 1.0f, 
+								2.0f
 							);
 						}
 					}
-
-					++framesSinceStartingDashDodge;
 				}
+
+				++framesSinceStartingDashDodge;
 			}
 
 			++framesSinceRequestingDashDodge;
 		}
-		else if (isRequestingDashDodge && 
-				p->pam->GetSecondsSinceLastStop(InputAction::kDodge) > *g_deltaTimeRealTime * 
-				(Settings::uDashDodgeBaseAnimFrameCount + Settings::uDashDodgeSetupFrameCount) * 2.0f)
+		else if (isRequestingDashDodge)
 		{
-			// Failsafe to reset after twice the dodge duration and dodge request was not handled.
-			isRequestingDashDodge = false;
-			p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
-			p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
-			if (auto actorBase = coopActor->GetActorBase(); actorBase)
+			const float frameScalingFactor = 1.0f / (60.0f * *g_deltaTimeRealTime);
+			const float maxSecsToWait = 
+			(
+				2.0f * frameScalingFactor * 
+				static_cast<float>
+				(
+					Settings::uDashDodgeSetupFrameCount + 
+					Settings::uDashDodgeBaseAnimFrameCount
+				) / 60.0f
+			);
+			if (p->pam->GetSecondsSinceLastStop(InputAction::kDodge) > maxSecsToWait)
 			{
-				actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+				// Failsafe to reset after twice the dodge duration and dodge request was not handled.
+				isRequestingDashDodge = false;
+				p->pam->avcam->RemoveRequestedAction(AVCostAction::kDodge);
+				p->pam->avcam->RemoveStartedAction(AVCostAction::kDodge);
+				if (auto actorBase = coopActor->GetActorBase(); actorBase)
+				{
+					actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+				}
 			}
 		}
 	}
@@ -716,7 +857,15 @@ namespace ALYSLC
 		if (auto charController = coopActor->GetCharController())
 		{
 			auto& currentHKPState = charController->context.currentState;
-			const uint32_t jumpAscentFramecount = max(1, static_cast<uint32_t>(Settings::fSecsAfterGatherToFall * (1.0f / *g_deltaTimeRealTime) + 0.5f));
+			const uint32_t jumpAscentFramecount = max
+			(
+				1, 
+				static_cast<uint32_t>
+				(
+					Settings::fSecsAfterGatherToFall * 
+					(1.0f / *g_deltaTimeRealTime) + 0.5f
+				)
+			);
 			// Start jump: play gather animation(s) and invert gravity for the player.
 			if (startJump)
 			{
@@ -735,7 +884,7 @@ namespace ALYSLC
 				// Plain jump
 				charController->lock.Lock();
 				{
-					charController->flags.set(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
+					charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
 					charController->context.currentState = RE::hkpCharacterStateType::kInAir;
 
 					const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
@@ -784,16 +933,38 @@ namespace ALYSLC
 				// Abort jump if ragdolling.
 				if (coopActor->IsInRagdollState())
 				{
-					// Reset jump state variables.
+					// Reset gravity and jump state variables,
+					// plus set fall start and height.
 					charController->lock.Lock();
 					{
-						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
+						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
 						charController->gravity = 1.0f;
 						RE::hkVector4 havokPos{};
 						charController->GetPositionImpl(havokPos, false);
 						float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
 						charController->fallStartHeight = zPos;
 						charController->fallTime = 0.0f;
+					}
+					charController->lock.Unlock();
+					isAirborneWhileJumping = false;
+					isFallingWhileJumping = false;
+					startJump = false;
+					sentJumpFallEvent = false;
+
+					p->jumpStartTP = SteadyClock::now();
+					framesSinceStartingJump = 0;
+					return;
+				}
+				else if (p->mm->isParagliding)
+				{
+					// Reset gravity and jump state variables.
+					charController->lock.Lock();
+					{
+						charController->flags.reset
+						(
+							RE::CHARACTER_FLAGS::kJumping
+						);
+						charController->gravity = 1.0f;
 					}
 					charController->lock.Unlock();
 					isAirborneWhileJumping = false;
@@ -818,7 +989,8 @@ namespace ALYSLC
 						// Zero gravity at apex.
 						charController->gravity = Util::InterpolateEaseIn
 						(
-							-Settings::fJumpingGravityMult, 0.0f,
+							-Settings::fJumpingGravityMult,
+							0.0f,
 							static_cast<float>(framesSinceStartingJump) / jumpAscentFramecount,
 							2.0f
 						);
@@ -834,7 +1006,7 @@ namespace ALYSLC
 					{
 						charController->lock.Lock();
 						{
-							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
 							RE::hkVector4 havokPos{};
 							charController->GetPositionImpl(havokPos, false);
 							float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
@@ -866,7 +1038,7 @@ namespace ALYSLC
 						// Reset jump state variables.
 						charController->lock.Lock();
 						{
-							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping, RE::CHARACTER_FLAGS::kFloatLand);
+							charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
 							charController->gravity = 1.0f;
 							RE::hkVector4 havokPos{};
 							charController->GetPositionImpl(havokPos, false);
@@ -901,10 +1073,12 @@ namespace ALYSLC
 					{
 						charController->gravity = Util::InterpolateEaseIn
 						(
-							0.0f, Settings::fJumpingGravityMult,
+							0.0f, 
+							Settings::fJumpingGravityMult,
 							(
 								max(framesSinceStartingJump - jumpAscentFramecount, 0.0f) /
-								jumpAscentFramecount),
+								jumpAscentFramecount
+							),
 							2.0f
 						);
 					}
@@ -1552,16 +1726,26 @@ namespace ALYSLC
 			faceTarget = 
 			{
 				(
-					shouldFaceTarget && !p->isRevivingPlayer && !isTKDodging && !
-					isTDMDodging && !isDashDodging && !coopActor->IsOnMount() && !coopActor->IsSwimming() &&
-					!p->pam->isSprinting && !coopActor->IsSprinting()
+					shouldFaceTarget && 
+					!p->isRevivingPlayer && 
+					!isTKDodging && 
+					!isTDMDodging && 
+					!isDashDodging && 
+					!coopActor->IsOnMount() && 
+					//!coopActor->IsSwimming() &&
+					!p->pam->isSprinting && 
+					!coopActor->IsSprinting()
 				) && 
 				(
-					!coopActor->IsSneaking() || !p->pam->AllInputsPressedForAction(InputAction::kSprint)
+					!coopActor->IsSneaking() || 
+					!p->pam->AllInputsPressedForAction(InputAction::kSprint)
 				) &&
 				(
 					(!crosshairTargetValidity) || 
-					(!p->tm->rmm->IsGrabbed(p->tm->crosshairRefrHandle) && !p->tm->rmm->IsReleased(p->tm->crosshairRefrHandle))
+					(
+						!p->tm->rmm->IsGrabbed(p->tm->crosshairRefrHandle) && 
+						!p->tm->rmm->IsReleased(p->tm->crosshairRefrHandle)
+					)
 				)
 			};
 
@@ -1592,12 +1776,20 @@ namespace ALYSLC
 			// 3. Reviving another player or using weapons/magic with a valid target while not sprinting.
 			turnToTarget = 
 			{ 
-				(!faceTarget && !isTKDodging && !isTDMDodging && !isDashDodging && !coopActor->IsOnMount()) &&
+				(
+					!faceTarget && 
+					!isTKDodging && 
+					!isTDMDodging && 
+					!isDashDodging && 
+					!coopActor->IsOnMount()
+				) &&
 				(
 					(p->isRevivingPlayer) || 
 					(
-						isUsingWeapMag && !p->pam->IsPerforming(InputAction::kSprint) &&
-						targetPtr && Util::IsValidRefrForTargeting(targetPtr.get())
+						isUsingWeapMag && 
+						!p->pam->IsPerforming(InputAction::kSprint) &&
+						targetPtr && 
+						Util::IsValidRefrForTargeting(targetPtr.get())
 					)
 				) 
 			};
@@ -1682,17 +1874,19 @@ namespace ALYSLC
 
 			// Normalize.
 			playerTargetYaw = Util::NormalizeAng0To2Pi(playerTargetYaw);
-
-			// Tilt player up/down when swimming, based on their aim pitch.
-			if (auto charController = coopActor->GetCharController(); charController && coopActor->IsSwimming())
-			{
-				charController->pitchAngle = aimPitch;
-			}
 		}
 
 		//==================
 		// [Movement Offset]
 		//==================
+
+		// Need to have active middle high process.
+		auto midHighProc = movementActor->GetMiddleHighProcess(); 
+		if (!midHighProc)
+		{
+			return;
+		}
+
 		const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
 		const auto& lsMag = lsData.normMag;
 
@@ -1702,29 +1896,33 @@ namespace ALYSLC
 		float yPosOffset = 0.0f;
 
 		// Interpolated yaw offset from the player's current yaw to the target yaw.
-		// NOTE: Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
+		// NOTE: 
+		// Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
 		// when moving the character, so we just interp the player's data angle instead
 		// to set the target rotation, and only use the movement offset for translational motion.
-		float rawYawOffset = Util::InterpolateSmootherStep
+		// NOTE 2: 
+		// Since the player will rotate through the same yaw offset
+		// less frequently at lower framerates,
+		// we want to scale up the offset higher at lower framerates to compensate.
+		float rawYawOffset = std::lerp
 		(
 			0.0f,
 			rotMult * Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z),
-			playerRotInterpFactor
+			playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
 		);
-		// Distance from the offset actor to start running to catch up.
-		float catchUpRadius = 0.0f;
-		// Distance from the offset actor within which to stop moving completely.
-		float followRadius = 0.0f;
-
 		// Player 1 is not AI driven if attempting discovery or motion driven flag is set.
 		bool p1MotionDriven = 
 		{
 			(p->isPlayer1) && 
 			(
 				(attemptDiscovery) || 
-				(glob.player1Actor->movementController && glob.player1Actor->movementController->unk1C5)
+				(
+					glob.player1Actor->movementController && 
+					glob.player1Actor->movementController->unk1C5
+				)
 			)
 		};
+
 		if (p1MotionDriven) 
 		{
 			if (attemptDiscovery)
@@ -1761,12 +1959,12 @@ namespace ALYSLC
 			};
 			if (shouldRotateWhileMotionDriven) 
 			{
-				movementActor->data.angle.z += std::clamp
+				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					rawYawOffset,
-					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+					movementActor->data.angle.z + rawYawOffset
 				);
+				movementActor->SetHeading(newYaw);
+				midHighProc->rotationSpeed.z = 0.0f;
 			}
 		}
 		else if (isAnimDriven || isSynced || isMounting || coopActor->IsInKillMove())
@@ -1801,22 +1999,25 @@ namespace ALYSLC
 			}
 			else
 			{
-				rawYawOffset = Util::InterpolateSmootherStep
+				rawYawOffset = std::lerp
 				(
 					0.0f,
 					Util::NormalizeAngToPi
 					(
-						Util::GetYawBetweenPositions(movementActor->data.location, interactionPackageEntryPos) - 
+						Util::GetYawBetweenPositions
+						(
+							movementActor->data.location, interactionPackageEntryPos
+						) - 
 						movementActor->data.angle.z
 					),
-					playerRotInterpFactor
+					playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
 				);
-				movementActor->data.angle.z += std::clamp
+				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					rawYawOffset,
-					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+					movementActor->data.angle.z + rawYawOffset
 				);
+				movementActor->SetHeading(newYaw);
+				midHighProc->rotationSpeed.z = 0.0f;
 				// Move to interaction package entry position which was set during activation.
 				// Slow down when nearing the interaction position.
 				KeepOffsetFromActor
@@ -1848,16 +2049,21 @@ namespace ALYSLC
 				// Set offset to keep throughout dodge during the first frame.
 				float facingToHeadingAngDiff = 
 				(
-					Util::NormalizeAngToPi(movementOffsetParams[!MoveParams::kLSGameAng] - movementActor->data.angle.z)
+					Util::NormalizeAngToPi
+					(
+						movementOffsetParams[!MoveParams::kLSGameAng] -
+						movementActor->data.angle.z
+					)
 				);
-				xPosOffset = 10.0f * sinf(facingToHeadingAngDiff);
-				yPosOffset = 10.0f * cosf(facingToHeadingAngDiff);
+				xPosOffset = 100.0f * sinf(facingToHeadingAngDiff);
+				yPosOffset = 100.0f * cosf(facingToHeadingAngDiff);
 				KeepOffsetFromActor
 				(
 					movementActor->GetHandle(), 
 					RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
 					RE::NiPoint3(), 0.0f, 0.0f
 				);
+				midHighProc->rotationSpeed.z = 0.0f;
 			}
 		}
 		else if (shouldCurtailMomentum)
@@ -1868,14 +2074,14 @@ namespace ALYSLC
 			// to expedite deceleration.
 			ClearKeepOffsetFromActor();
 			SetDontMove(true);
-			movementActor->data.angle.z += std::clamp
+			float newYaw = Util::NormalizeAng0To2Pi
 			(
-				rawYawOffset,
-				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+				movementActor->data.angle.z + rawYawOffset
 			);
+			movementActor->SetHeading(newYaw);
+			midHighProc->rotationSpeed.z = 0.0f;
 		}
-		else if ((!isParagliding) && (shouldStopMoving || lsMag == 0.0f))
+		else if (shouldStopMoving || lsMag == 0.0f)
 		{
 			// SetDontMove() freezes actors in midair, 
 			// so only set don't move flag when not paragliding, on the ground, 
@@ -1886,8 +2092,13 @@ namespace ALYSLC
 				movementActor->GetCharController() :
 				nullptr 
 			};
-			bool canFreeze = shouldStopMoving && !p->pam->isAttacking && !isAirborneWhileJumping && !startJump;
-			if (canFreeze && charController && charController->context.currentState == RE::hkpCharacterStateType::kInAir) 
+			bool canFreeze = 
+			(
+				shouldStopMoving && !p->pam->isAttacking && !isAirborneWhileJumping && !startJump
+			);
+			if (canFreeze && 
+				charController && 
+				charController->context.currentState == RE::hkpCharacterStateType::kInAir) 
 			{
 				canFreeze = false;
 			}
@@ -1914,21 +2125,14 @@ namespace ALYSLC
 			}
 
 			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
-			movementActor->data.angle.z += std::clamp
+			movementActor->data.angle.z = Util::NormalizeAng0To2Pi
 			(
-				rawYawOffset,
-				-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-				Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+				movementActor->data.angle.z + rawYawOffset
 			);
+			midHighProc->rotationSpeed.z = 0.0f;
 		}
 		else
 		{
-			float facingToHeadingAngDiff = 
-			(
-				Util::NormalizeAngToPi(movementOffsetParams[!MoveParams::kLSGameAng] - movementActor->data.angle.z)
-			);
-			xPosOffset = sinf(facingToHeadingAngDiff) * lsMag;
-			yPosOffset = cosf(facingToHeadingAngDiff) * lsMag;
 			// Ensure the player/mount can move first.
 			SetDontMove(false);
 
@@ -1939,12 +2143,11 @@ namespace ALYSLC
 			if (movementActor->IsAMount())
 			{
 				// Mounts cannot move sideways, so move forward and rotate.
-				movementActor->data.angle.z += std::clamp
+				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					rawYawOffset,
-					-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-					Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+					movementActor->data.angle.z + rawYawOffset
 				);
+				movementActor->SetHeading(newYaw);
 				KeepOffsetFromActor
 				(
 					movementActor->GetHandle(), 
@@ -1963,44 +2166,55 @@ namespace ALYSLC
 
 				// Movement offset doesn't rotate the player when bAllowRotation is set to true,
 				// so modify the middle high process rotation speed directly instead.
-				// Do this when attacking or shield charging.
+				// Do this when attacking, paragliding, or shield charging.
+				const float baseMTMult = Settings::fBaseMTRotationMult * Settings::fBaseRotationMult * PI;
+				const float maxAngDiffPerFrame = baseMTMult * *g_deltaTimeRealTime;
+				rawYawOffset = std::clamp(rawYawOffset, -maxAngDiffPerFrame, maxAngDiffPerFrame);
+
 				bool allowRotation = false;
 				coopActor->GetGraphVariableBool("bAllowRotation", allowRotation);
-				if (auto midHighProc = movementActor->GetMiddleHighProcess(); 
-					(allowRotation && p->pam->isAttacking) ||
-					(midHighProc && p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock)))
+				bool useMidHighProcRot =
+				(
+					(midHighProc) && 
+					(
+						(allowRotation && p->pam->isAttacking) ||
+						(isParagliding) ||
+						(p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock))
+					)
+				);
+				if (useMidHighProcRot)
 				{
-					float angMult = Settings::fBaseMTRotationMult;
-					float zRot = 0.0f;
-					float angDiff = Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z);
-					if (angDiff < 0.0f)
-					{
-						zRot = max(angDiff * angMult, -0.5f * angMult * PI) * rotMult;
-					}
-					else if (angDiff > 0.0f)
-					{
-						zRot = max(angDiff * angMult, 0.5f * angMult * PI) * rotMult;
-					}
-
-					midHighProc->rotationSpeed.z = zRot;
+					midHighProc->rotationSpeed.z = rawYawOffset * (1.0f / *g_deltaTimeRealTime);
 				}
 				else
 				{
-					movementActor->data.angle.z += std::clamp
+					float newYaw = Util::NormalizeAng0To2Pi
 					(
-						rawYawOffset,
-						-Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime,
-						Settings::fBaseMTRotationMult * PI * *g_deltaTimeRealTime
+						movementActor->data.angle.z + rawYawOffset
 					);
-					KeepOffsetFromActor
-					(
-						movementActor->GetHandle(), 
-						RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
-						RE::NiPoint3(), 
-						0.0f, 
-						0.0f
-					);
+					movementActor->SetHeading(newYaw);
+					midHighProc->rotationSpeed.z = 0.0f;
 				}
+				
+				float facingToHeadingAngDiff = 
+				(
+					Util::NormalizeAngToPi
+					(
+						movementOffsetParams[!MoveParams::kLSGameAng] - 
+						movementActor->data.angle.z
+					)
+				);
+				xPosOffset = sinf(facingToHeadingAngDiff) * 100.0f;
+				yPosOffset = cosf(facingToHeadingAngDiff) * 100.0f;
+
+				KeepOffsetFromActor
+				(
+					movementActor->GetHandle(), 
+					RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
+					RE::NiPoint3(), 
+					-FLT_MAX, 
+					-FLT_MAX
+				);
 			}
 		}
 
@@ -2169,12 +2383,14 @@ namespace ALYSLC
 		// Also haven't figured out how to properly account for different default spinal rotations when transformed,
 		// so don't adjust aim pitch to face the target while transformed for now.
 		// Can still manually adjust the transformed player's spinal rotation though.
-		bool adjustAimPitchToFaceTarget = 
+		adjustAimPitchToFaceTarget = 
 		{ 
 			(!p->isTransformed) && 
 			(!p->tm->rmm->isGrabbing) && 
 			(shouldFaceTarget || turningToCrosshairTarget || usingAimCorrectionTarget) 
 		};
+
+
 		bool resetAimPitchIfNotAdjusted = false;
 
 		auto targetPos = 
@@ -2298,10 +2514,10 @@ namespace ALYSLC
 			{
 				// Tip upward slightly when swimming to prevent players 
 				// from sinking while swimming with the reset aim pitch.
-				aimPitch = coopActor->IsSwimming() ? -PI / 24.0f : 0.0f; 
+				aimPitch = coopActor->IsSwimming() ? -PI / 24.0f : 0.0f;
 			}
 
-			// Indicate that aim pitch was reset and is no longer manually adjusted.
+			// Indicate that aim pitch was reset and is no longer adjusted.
 			aimPitchManuallyAdjusted = aimPitchAdjusted = false;
 			shouldResetAimAndBody = false;
 		}
@@ -2317,7 +2533,24 @@ namespace ALYSLC
 				eyePos.y + radialDist * sinf(Util::ConvertAngle(coopActor->GetHeading(false))) * cosf(aimPitch),
 				eyePos.z - radialDist * sinf(aimPitch)
 			);
+		}
 
+		// Tilt player up/down when swimming, based on their aim pitch.
+		if (auto charController = coopActor->GetCharController(); 
+			charController && coopActor->IsSwimming())
+		{
+			if (isDashDodging)
+			{
+				coopActor->data.angle.x = charController->pitchAngle;
+			}
+			else
+			{
+				charController->pitchAngle = aimPitch;
+				coopActor->data.angle.x = aimPitch;
+			}
+		}
+		else
+		{
 			// Modifications to P1's X angle here while aiming with a bow/crossbow
 			// double up the effects of our custom torso rotation, so set to zero here.
 			coopActor->data.angle.x = 0.0f;
@@ -2844,19 +3077,7 @@ namespace ALYSLC
 						charController->lock.Unlock();
 					}
 				}
-
-				// Perform dash dodge.
-				if (isRequestingDashDodge || isDashDodging) 
-				{
-					PerformDashDodge();
-				}
 				
-				// Perform magical-paraglide alternative which looks like trash.
-				if (isParagliding || shouldParaglide || !isParaglidingTiltAngleReset) 
-				{
-					PerformMagicalParaglide();
-				}
-
 				// Check if the player has started/stopped swimming and play the appropriate animation.
 				// Keep actor state and animation state in sync.
 				if (!isSwimming && coopActor->IsSwimming())
@@ -2877,6 +3098,18 @@ namespace ALYSLC
 					}
 
 					isSwimming = false;
+				}
+
+				// Perform dash dodge.
+				if (isRequestingDashDodge || isDashDodging) 
+				{
+					PerformDashDodge();
+				}
+				
+				// Perform magical-paraglide alternative which looks like trash.
+				if (isParagliding || shouldParaglide || !isParaglidingTiltAngleReset) 
+				{
+					PerformMagicalParaglide();
 				}
 			}
 			else
@@ -3030,9 +3263,9 @@ namespace ALYSLC
 		}
 
 		// Check if a supported node first.
-		bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE.contains(a_nodePtr->name);
-		bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE.contains(a_nodePtr->name);
-		bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODE.contains(a_nodePtr->name);
+		bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES.contains(a_nodePtr->name);
+		bool isRightArmNode = GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES.contains(a_nodePtr->name);
+		bool isTorsoNode = GlobalCoopData::ADJUSTABLE_TORSO_NODES.contains(a_nodePtr->name);
 		if (!isLeftArmNode && !isRightArmNode && !isTorsoNode)
 		{
 			return;
@@ -3223,16 +3456,25 @@ namespace ALYSLC
 							while (!hit && castNum <= raycastsPerNode)
 							{
 								startPos = originPos + (zAxisDirVec * (capsuleLength / raycastsPerNode)) * static_cast<float>(castNum);
-								velVec = armHkpRigidBody->motion.GetPointVelocity(TohkVector4(startPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME;
-								velDir = ToVec4(velVec, true);
+								//velVec = armHkpRigidBody->motion.GetPointVelocity(TohkVector4(startPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME;
+								velDir = ToVec4(nodeData->localVelocity, true);
 								endPos = startPos + (velDir * hkpCapsuleShape->radius * 2.0f * HAVOK_TO_GAME);
-								hit = PerformArmCollisionRaycastCheck
+								/*hit = PerformArmCollisionRaycastCheck
 								(
 									a_p,
 									startPos,
 									endPos,
 									nodeData->localVelocity,
 									ToNiPoint3(velVec),
+									armNodeType
+								);*/
+
+								hit = PerformArmCollisionRaycastCheck
+								(
+									a_p,
+									startPos,
+									endPos,
+									nodePtr.get(),
 									armNodeType
 								);
 
@@ -3332,6 +3574,14 @@ namespace ALYSLC
 		defaultNodeWorldTransformsMap.clear();
 		nodeNameToRotationDataMap.clear();
 
+		// Remove all colliders.
+		Util::ChangeNodeColliderState
+		(
+			a_p->coopActor.get(),
+			nullptr, 
+			PrecisionAnnotationReqType::kRemoveAll
+		);
+
 		// Return early if the player's loaded 3D data is invalid.
 		auto loadedData = a_p->coopActor->loadedData;
 		if (!loadedData)
@@ -3347,7 +3597,7 @@ namespace ALYSLC
 		}
 
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE) 
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES) 
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get()) 
@@ -3362,7 +3612,7 @@ namespace ALYSLC
 			}
 		}
 
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE)
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES)
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
@@ -3377,7 +3627,7 @@ namespace ALYSLC
 			}
 		}
 
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODE)
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODES)
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
@@ -3397,6 +3647,14 @@ namespace ALYSLC
 	{
 		// Only reset arm node data.
 		
+		// Remove all colliders.
+		Util::ChangeNodeColliderState
+		(
+			a_p->coopActor.get(), 
+			nullptr,
+			PrecisionAnnotationReqType::kRemoveAll
+		);
+
 		// Return early if the player's loaded 3D data is invalid.
 		auto loadedData = a_p->coopActor->loadedData;
 		if (!loadedData)
@@ -3412,7 +3670,7 @@ namespace ALYSLC
 		}
 
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODE)
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES)
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
@@ -3427,7 +3685,7 @@ namespace ALYSLC
 			}
 		}
 
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODE)
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES)
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
@@ -3447,6 +3705,14 @@ namespace ALYSLC
 	{
 		// Only reset torso node data.
 		
+		// Remove all colliders.
+		Util::ChangeNodeColliderState
+		(
+			a_p->coopActor.get(),
+			nullptr, 
+			PrecisionAnnotationReqType::kRemoveAll
+		);
+
 		// Return early if the player's loaded 3D data is invalid.
 		auto loadedData = a_p->coopActor->loadedData;
 		if (!loadedData)
@@ -3462,7 +3728,7 @@ namespace ALYSLC
 		}
 
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
-		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODE)
+		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODES)
 		{
 			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
 			if (nodePtr && nodePtr.get())
@@ -3499,7 +3765,14 @@ namespace ALYSLC
 		return false;
 	}
 
-	bool NodeOrientationManager::PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType)
+	bool NodeOrientationManager::PerformArmCollisionRaycastCheck
+	(
+		const std::shared_ptr<CoopPlayer>& a_p, 
+		const glm::vec4& a_startPos, 
+		const glm::vec4& a_endPos, 
+		RE::NiAVObject* a_armNode,
+		const ArmNodeType& a_armNodeType
+	)
 	{
 		// Perform raycast and iterate through results,
 		// applying impulses to hit actors and forces to inanimate objects
@@ -3508,8 +3781,20 @@ namespace ALYSLC
 		// (hit speed above certain thresholds, depending on the connecting node),
 		// knock the actor down and apply damage.
 
+		if (!a_armNode)
+		{
+			return false;
+		}
+
+		auto armHkpRigidBody = Util::GethkpRigidBody(a_armNode);
+		if (!armHkpRigidBody || !armHkpRigidBody.get())
+		{
+			return false;
+		}
+
 		const auto& rsLinSpeed = glob.cdh->GetAnalogStickState(a_p->controllerID, false).stickLinearSpeed;
 		auto raycastResults = Raycast::GetAllHavokCastHitResults(a_startPos, a_endPos);
+		bool firstHitHandled = false;
 		for (const auto& result : raycastResults)
 		{
 			if (!result.hit || !result.hitObject || !result.hitObject.get())
@@ -3517,130 +3802,205 @@ namespace ALYSLC
 				continue;
 			}
 
-			if (auto hitRefrPtr = RE::TESObjectREFRPtr(Util::GetRefrFrom3D(result.hitObject.get()));
-				hitRefrPtr && hitRefrPtr.get() && Util::HandleIsValid(hitRefrPtr->GetHandle()) && hitRefrPtr != a_p->coopActor)
+			auto hitRefrPtr = RE::TESObjectREFRPtr
+			(
+				Util::GetRefrFrom3D(result.hitObject.get())
+			);
+			if (!hitRefrPtr || !hitRefrPtr.get() || hitRefrPtr == a_p->coopActor)
 			{
-				auto hitActor = hitRefrPtr->As<RE::Actor>();
-				// Direct skeleton hits deform the actor ragdoll much more when and impulse is applied.
-				bool skeletonHit = hitActor && std::string(result.hitObject->name).contains("skeleton");
-				if (auto hitHkpRigidBody = Util::GethkpRigidBody(result.hitObject.get()); hitHkpRigidBody)
+				continue;
+			}
+
+			auto hitActor = hitRefrPtr->As<RE::Actor>();
+			// Direct skeleton hits deform the actor ragdoll much more when and impulse is applied.
+			bool skeletonHit = hitActor && std::string(result.hitObject->name).contains("skeleton");
+			if (auto hitHkpRigidBody = Util::GethkpRigidBody(result.hitObject.get()); hitHkpRigidBody)
+			{
+				auto hitPosVec = TohkVector4(result.hitPos) * GAME_TO_HAVOK;
+				auto hitVelocity = ToNiPoint3
+				(
+					armHkpRigidBody->motion.GetPointVelocity(hitPosVec) * HAVOK_TO_GAME
+				);
+				if (hitVelocity == RE::NiPoint3())
 				{
-					Util::NativeFunctions::hkpEntity_Activate(hitHkpRigidBody.get());
-					if (hitActor)
-					{
-						// Stop hit actor from attacking when the slap connects.
-						if (hitActor->IsAttacking())
-						{
-							hitActor->NotifyAnimationGraph("attackStop");
-							hitActor->NotifyAnimationGraph("recoilStart");
-						}
-
-						if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
-						{
-							auto hitPosVec = TohkVector4(result.hitPos) * GAME_TO_HAVOK;
-							auto hitPosPointVel = ToNiPoint3
-							(
-								hitHkpRigidBody->motion.GetPointVelocity(TohkVector4(result.hitPos) * GAME_TO_HAVOK) * HAVOK_TO_GAME
-							);
-							float hitSpeed = a_armPointVelocity.Length();
-							// Knock down if over a certain RS linear speed.
-							bool knockOut = false;
-							switch (a_armNodeType)
-							{
-							case ArmNodeType::kForearm:
-							{
-								knockOut = hitSpeed > 1100.0f;
-								break;
-							}
-							case ArmNodeType::kHand:
-							{
-								knockOut = hitSpeed > 1200.0f;
-								break;
-							}
-							case ArmNodeType::kShoulder:
-							{
-								knockOut = hitSpeed > 800.0f;
-								break;
-							}
-							default:
-								break;
-							}
-
-							// Apply weaker impulse mult when about to ragdoll or when hitting an actor's skeleton.nif,
-							// since the impulse effects are more pronounced by default in these two cases.
-							float impulseMult = 1.0f;
-							if (knockOut)
-							{
-								impulseMult = 0.5f;
-							}
-							else if (skeletonHit)
-							{
-								impulseMult = 0.6f;
-							}
-							else
-							{
-								impulseMult = 1.0f;
-							}
-
-							precisionAPI4->ApplyHitImpulse2
-							(
-								hitActor->GetHandle(), 
-								a_p->coopActor->GetHandle(), 
-								hitHkpRigidBody.get(), 
-								a_armPointVelocity, 
-								hitPosVec, 
-								impulseMult
-							);
-							// Damage scales with thrown object damage.
-							if (knockOut)
-							{
-								const auto handle = hitRefrPtr->GetHandle();
-								a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
-								a_p->tm->rmm->ClearGrabbedRefr(handle);
-								if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
-								{
-									a_p->tm->SetIsGrabbing(false);
-								}
-
-								a_p->tm->rmm->AddReleasedRefr(a_p, handle);
-							}
-
-							// REMOVE when done debugging.
-							/*DebugAPI::QueuePoint3D(result.hitPos, Settings::vuOverlayRGBAValues[a_p->playerID], a_armPointVelocity.Length() / 200.0f, 1.0f);
-							SPDLOG_DEBUG("[GLOB] PerformArmCollisionRaycastCheck: {} hit {} (0x{:X}, {}, {}) with {} node, RS lin speed {}, impulse mult {}, and node/point velocity {}, {}. Hit pos point vel: {}, rel vels: {}, {}. {}",
-								a_p->coopActor->GetName(),
-								hitRefrPtr->GetName(),
-								hitRefrPtr->formID,
-								hitRefrPtr->GetBaseObject() ? *hitRefrPtr->GetBaseObject()->formType : RE::FormType::None,
-								result.hitObject->name,
-								a_armNodeType == ArmNodeType::kForearm ? "forearm" : a_armNodeType == ArmNodeType::kHand ? "hand" : "shoulder",
-								rsLinSpeed,
-								impulseMult,
-								a_armNodeVelocity.Length(),
-								a_armPointVelocity.Length(),
-								hitPosPointVel.Length(),
-								(a_armNodeVelocity - hitPosPointVel).Length(),
-								(a_armPointVelocity - hitPosPointVel).Length(),
-								knockOut ? "KO!" : "SLAPPED!");*/
-						}
-					}
-					else
-					{
-						const auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
-						float mass = hitHkpRigidBody->motion.GetMass();
-						RE::hkVector4 hitDirVec = RE::hkVector4(a_armPointVelocity.x, a_armPointVelocity.y, a_armPointVelocity.z, 0.0f);
-						hitDirVec = hitDirVec / hitDirVec.Length3();
-						float hitSpeed = a_armPointVelocity.Length();
-						// Attempt to normalize somewhat based on mass.
-						// Additional force if quickly flicking the RS.
-						// Use RS speed to adjust impulse.
-						float rsImpulseMult = Util::InterpolateEaseIn(1.0f, 1.5f, std::clamp(log(rsLinSpeed) / 3.0f, 0.0f, 1.0f), 3.0f);
-						auto hitVelocityVec = hitDirVec * hitSpeed * std::clamp((hitHkpRigidBody->motion.GetMass() + 1.0f) / 50.0f, 0.0f, 2.0f) * rsImpulseMult * GAME_TO_HAVOK;
-						hitHkpRigidBody->motion.ApplyForce(*g_deltaTimeRealTime * 1000.0f, hitVelocityVec);
-					}
-
-					return true;
+					hitVelocity = ToNiPoint3
+					(
+						Util::GetParentNodeHavokPointVelocity(a_armNode, hitPosVec)
+					) * HAVOK_TO_GAME;
 				}
+
+				if (hitVelocity == RE::NiPoint3())
+				{
+					continue;
+				}
+
+				// Activate the hit rigid body to allow for impulse/force application.
+				Util::NativeFunctions::hkpEntity_Activate(hitHkpRigidBody.get());
+				bool knockOut = false;
+				if (hitActor)
+				{
+					// Stop hit actor from attacking when the slap connects.
+					if (hitActor->IsAttacking())
+					{
+						hitActor->NotifyAnimationGraph("attackStop");
+						hitActor->NotifyAnimationGraph("recoilStart");
+					}
+
+					if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
+					{
+						float hitSpeed = hitVelocity.Length();
+						//float hitSpeed = a_armPointVelocity.Length();
+						// Knock down if over a certain RS linear speed.
+						switch (a_armNodeType)
+						{
+						case ArmNodeType::kForearm:
+						{
+							knockOut = hitSpeed > 1200.0f;
+							break;
+						}
+						case ArmNodeType::kHand:
+						{
+							knockOut = hitSpeed > 1500.0f;
+							break;
+						}
+						case ArmNodeType::kShoulder:
+						{
+							knockOut = hitSpeed > 800.0f;
+							break;
+						}
+						default:
+							break;
+						}
+
+						// Apply weaker impulse mult when about to ragdoll or when hitting an actor's skeleton.nif,
+						// since the impulse effects are more pronounced by default in these two cases.
+						float impulseMult = 1.0f;
+						if (knockOut)
+						{
+							impulseMult = 0.5f;
+						}
+						else if (skeletonHit)
+						{
+							impulseMult = 0.4f;
+						}
+						else
+						{
+							impulseMult = 1.0f;
+						}
+
+						precisionAPI4->ApplyHitImpulse2
+						(
+							hitActor->GetHandle(), 
+							a_p->coopActor->GetHandle(), 
+							hitHkpRigidBody.get(), 
+							hitVelocity, 
+							hitPosVec, 
+							impulseMult
+						);
+						// Damage scales with thrown object damage.
+						if (knockOut)
+						{
+							const auto handle = hitRefrPtr->GetHandle();
+							a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+							a_p->tm->rmm->ClearGrabbedRefr(handle);
+							if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
+							{
+								a_p->tm->SetIsGrabbing(false);
+							}
+
+							a_p->tm->rmm->AddReleasedRefr(a_p, handle);
+						}
+
+						// REMOVE when done debugging.
+						/*DebugAPI::QueuePoint3D(result.hitPos, Settings::vuOverlayRGBAValues[a_p->playerID], hitVelocity.Length() / 200.0f, 1.0f);
+						SPDLOG_DEBUG("[GLOB] PerformArmCollisionRaycastCheck: {} hit {} (0x{:X}, {}, {}) with {} node, RS lin speed {}, impulse mult {}. Hit pos point vel: {}. {}",
+							a_p->coopActor->GetName(),
+							hitRefrPtr->GetName(),
+							hitRefrPtr->formID,
+							hitRefrPtr->GetBaseObject() ? *hitRefrPtr->GetBaseObject()->formType : RE::FormType::None,
+							result.hitObject->name,
+							a_armNodeType == ArmNodeType::kForearm ? "forearm" : a_armNodeType == ArmNodeType::kHand ? "hand" : "shoulder",
+							rsLinSpeed,
+							impulseMult,
+							hitVelocity.Length(),
+							knockOut ? "KO!" : "SLAPPED!");*/
+					}
+				}
+				else
+				{
+					// Use the local velocity for the node that we computed earlier.
+					const auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+					float mass = hitHkpRigidBody->motion.GetMass();
+					RE::hkVector4 hitDirVec = RE::hkVector4(hitVelocity);
+					hitDirVec = hitDirVec / hitDirVec.Length3();
+					float hitSpeed = hitVelocity.Length();
+					// Attempt to normalize somewhat based on mass.
+					// Additional force if quickly flicking the RS.
+					// Use RS speed to adjust impulse.
+					float rsImpulseMult = Util::InterpolateEaseIn(1.0f, 1.5f, std::clamp(log(rsLinSpeed) / 3.0f, 0.0f, 1.0f), 3.0f);
+					auto hitVelocityVec = hitDirVec * hitSpeed * std::clamp((hitHkpRigidBody->motion.GetMass() + 1.0f) / 50.0f, 0.0f, 2.0f) * rsImpulseMult * GAME_TO_HAVOK;
+					hitHkpRigidBody->motion.ApplyForce(*g_deltaTimeRealTime * 1000.0f, hitVelocityVec);
+				}
+				
+				bool shouldSendHitEvent = 
+				{
+					(!hitActor) ||
+					(!hitActor->IsGhost() && !hitActor->IsInvulnerable())
+				};
+				if (shouldSendHitEvent) 
+				{
+					// Send a hit event.
+					Util::SendHitEvent
+					(
+						a_p->coopActor.get(),
+						hitRefrPtr.get(),
+						a_p->coopActor->formID,
+						0x0,
+						RE::TESHitEvent::Flag::kNone
+					);
+				}
+
+				// Play sound.
+				auto audioManager = RE::BSAudioManager::GetSingleton(); 
+				if (!audioManager)
+				{
+					continue;
+				}
+
+				RE::BSSoundHandle handle{ };
+				// Wish I could play an old timey punch sound effect here.
+				if (knockOut)
+				{
+					RE::BGSSoundDescriptorForm* slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF664)
+					);
+					if (!slapSFX)
+					{	
+						return true;
+					}
+
+					bool succ = audioManager->BuildSoundDataFromDescriptor(handle, slapSFX);
+					if (succ)
+					{
+						handle.SetPosition(ToNiPoint3(result.hitPos));
+						handle.SetObjectToFollow(result.hitObject.get());
+						handle.Play();
+					}
+				}
+				else if (!hitActor)
+				{
+					// Send destructible object destruction event.
+					if (auto taskInterface = RE::TaskQueueInterface::GetSingleton(); taskInterface)
+					{
+						taskInterface->QueueUpdateDestructibleObject
+						(
+							hitRefrPtr.get(), 100.0f, false, a_p->coopActor.get()
+						);
+					}
+				}
+
+				return true;
 			}
 		}
 
@@ -3857,7 +4217,6 @@ namespace ALYSLC
 			a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
 			a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
 		};
-		bool onlyRotatingShoulder = rotatingShoulder && !rotatingForearm && !rotatingHand;
 
 		// Set rotation state flags first.
 		forearmData->prevInterrupted = forearmData->interrupted;
@@ -3889,7 +4248,7 @@ namespace ALYSLC
 					targetForearmYaw = -targetForearmYaw;
 					targetHandYaw = -targetHandYaw;
 				}
-					
+				
 				// Set hand AND forearm target rotation as modified.
 				handData->rotationModified = forearmData->rotationModified = true;
 			}
@@ -3957,7 +4316,7 @@ namespace ALYSLC
 			{
 				targetForearmYaw = -targetForearmYaw;
 			}
-
+			
 			// Only forearm target rotation modified.
 			forearmData->rotationModified = true;
 		}
@@ -4020,7 +4379,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			forearmData->targetRotation = forearmData->defaultRotation; //a_forearmNodePtr->local.rotate;
+			forearmData->targetRotation = forearmData->defaultRotation;
 		}
 		
 		if (handData->rotationModified) 
@@ -4054,8 +4413,192 @@ namespace ALYSLC
 		}
 		else
 		{
-			handData->targetRotation = handData->defaultRotation;  //a_handNodePtr->local.rotate;
+			handData->targetRotation = handData->defaultRotation;
 		}
+
+		// TODO: Figure out a way to produce a collision
+		// that doesn't trigger combat. 
+		// Also need to set hit data flags,
+		// such as power attack/sneak hit flags 
+		// for subsequent collider hits. 
+		// As of right now, all hits do damage,
+		// start combat with the hit target,
+		// and do not have applied effects from hit type flags.
+		// 
+		// Add Precision collider to forearm/hand node
+		// if the player just started modifying node rotations.
+		/*
+		bool shouldStart = 
+		(
+			(!forearmData->precisionColliderAdded) &&
+			(
+				(
+					a_rightArm ? 
+					a_p->pam->JustStarted(InputAction::kRotateRightForearm) ||
+					a_p->pam->JustStarted(InputAction::kRotateRightShoulder) :
+					a_p->pam->JustStarted(InputAction::kRotateLeftForearm) ||
+					a_p->pam->JustStarted(InputAction::kRotateLeftShoulder)
+				) ||
+				(
+					(rsData.stickLinearSpeed > 1E-2f) &&
+					(
+						a_rightArm ? 
+						a_p->pam->IsPerforming(InputAction::kRotateRightForearm) ||
+						a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
+						a_p->pam->IsPerforming(InputAction::kRotateLeftForearm) ||
+						a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
+					)
+				)
+			)
+		);
+		bool shouldStop = 
+		(
+			(forearmData->precisionColliderAdded) &&
+			(
+				(rsData.stickLinearSpeed <= 1E-2f) ||
+				(
+					a_rightArm ? 
+					a_p->pam->IsNotPerforming(InputAction::kRotateRightForearm) &&
+					a_p->pam->IsNotPerforming(InputAction::kRotateRightShoulder) :
+					a_p->pam->IsNotPerforming(InputAction::kRotateLeftForearm) &&
+					a_p->pam->IsNotPerforming(InputAction::kRotateLeftShoulder)
+				)
+			)
+		);
+		if (shouldStart)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_forearmNodePtr.get(), 
+				PrecisionAnnotationReqType::kStart
+			);
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_forearmNodePtr.get(), 
+				PrecisionAnnotationReqType::kAdd,
+				0.05f,
+				1.0f
+			);
+			
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
+				a_p->coopActor->GetName(),
+				a_forearmNodePtr->name);
+			forearmData->precisionColliderAdded = true;
+		}
+		else if (shouldStop)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_forearmNodePtr.get(), 
+				PrecisionAnnotationReqType::kRemove
+			);
+			
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
+				a_p->coopActor->GetName(),
+				a_forearmNodePtr->name);
+			forearmData->precisionColliderAdded = false;
+		}
+		
+		// Clear previous hits to allow for multiple hits while rotating the node.
+		if (rotatingShoulder || rotatingForearm)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_forearmNodePtr.get(), 
+				PrecisionAnnotationReqType::kMultiHit
+			);
+		}
+
+		shouldStart = 
+		(
+			(!handData->precisionColliderAdded) &&
+			(
+				(
+					a_rightArm ? 
+					a_p->pam->JustStarted(InputAction::kRotateRightHand) ||
+					a_p->pam->JustStarted(InputAction::kRotateRightShoulder) :
+					a_p->pam->JustStarted(InputAction::kRotateLeftHand) ||
+					a_p->pam->JustStarted(InputAction::kRotateLeftShoulder)
+				) ||
+				(
+					(rsData.stickLinearSpeed > 1E-2f) &&
+					(
+						a_rightArm ? 
+						a_p->pam->IsPerforming(InputAction::kRotateRightHand) ||
+						a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
+						a_p->pam->IsPerforming(InputAction::kRotateLeftHand) ||
+						a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
+					)
+				)
+			)
+		);
+		shouldStop = 
+		(
+			(handData->precisionColliderAdded) &&
+			(
+				(rsData.stickLinearSpeed <= 1E-2f) ||
+				(
+					a_rightArm ? 
+					a_p->pam->IsNotPerforming(InputAction::kRotateRightHand) &&
+					a_p->pam->IsNotPerforming(InputAction::kRotateRightShoulder) :
+					a_p->pam->IsNotPerforming(InputAction::kRotateLeftHand) &&
+					a_p->pam->IsNotPerforming(InputAction::kRotateLeftShoulder)
+				)
+			)
+		);
+		if (shouldStart)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_handNodePtr.get(), 
+				PrecisionAnnotationReqType::kStart
+			);
+			// Extend the collider a bit to fully encapsulate the fingers.
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_handNodePtr.get(), 
+				PrecisionAnnotationReqType::kAdd,
+				0.01f,
+				1.75f
+			);
+
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
+				a_p->coopActor->GetName(),
+				a_handNodePtr->name);
+			handData->precisionColliderAdded = true;
+		}
+		else if (shouldStop)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_handNodePtr.get(), 
+				PrecisionAnnotationReqType::kRemove
+			);
+			
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
+				a_p->coopActor->GetName(),
+				a_handNodePtr->name);
+			handData->precisionColliderAdded = false;
+		}
+		
+		// Clear previous hits to allow for multiple hits while rotating the node.
+		if (rotatingShoulder || rotatingHand)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_handNodePtr.get(), 
+				PrecisionAnnotationReqType::kMultiHit
+			);
+		}
+		*/
 
 		// Update forearm and hand node rotation to set (current) after potentially setting target rotations.
 		UpdateNodeRotationToSet(a_p, forearmData, a_forearmNodePtr, true);
@@ -4078,14 +4621,19 @@ namespace ALYSLC
 		bool towardsTargetRotation = a_data->rotationModified && !a_data->interrupted;
 		// Blend in flag for individual nodes.
 		// Continue blending in if target rotation was modified already
-		// and if previously interrupteed, currently auto-pitched to face a target,
+		// and if previously interrupted, 
+		// or auto-pitched to face a target or the node is an arm node 
+		// and the target rotation wasn't reached,
 		// or still blending in.
 		blendIn = 
 		{
 			(towardsTargetRotation) &&
 			(
 				(a_data->prevInterrupted) ||
-				(!a_p->mm->aimPitchManuallyAdjusted && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached) ||
+				(
+					(!a_p->mm->aimPitchManuallyAdjusted || a_isArmNode) && 
+					(a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
+				) ||
 				(a_data->blendStatus == NodeRotationBlendStatus::kBlendIn)
 			)
 		};
@@ -4096,7 +4644,17 @@ namespace ALYSLC
 			(!towardsTargetRotation) &&
 			(a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
 		};
-
+		
+		// More blend frames at a higher framerate.
+		uint32_t maxBlendFrames = max
+		(
+			Settings::uBlendPlayerNodeRotationsFrameCount,
+			static_cast<uint32_t>
+			(
+				(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
+				static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount)
+			)
+		);
 		if (blendIn)
 		{
 			if (a_data->blendStatus != NodeRotationBlendStatus::kBlendIn && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
@@ -4114,14 +4672,6 @@ namespace ALYSLC
 					// Starting from game's set rotation.
 					a_data->startingRotation = a_data->defaultRotation;
 				}
-				else if (prevStatus == NodeRotationBlendStatus::kTargetReached)
-				{
-					// REMOVE when done debugging.
-					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend in from target.", a_p->coopActor->GetName(), a_nodePtr->name);
-
-					// Starting from our set target rotation.
-					a_data->startingRotation = a_data->targetRotation;
-				}
 				else
 				{
 					// REMOVE when done debugging.
@@ -4134,7 +4684,7 @@ namespace ALYSLC
 
 			// Blend interval elapsed, so we'll now set the requested rotations to the target ones.
 			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn &&
-				a_data->blendInFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
+				a_data->blendInFrameCount >= maxBlendFrames)
 			{
 				// REMOVE when done debugging.
 				/*SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending in. {} frames elapsed.",
@@ -4154,15 +4704,7 @@ namespace ALYSLC
 				// Start blending out if not already blending out and if the default rotation was not reached.
 				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kBlendOut);
 				// Set starting rotation before blending out.
-				if (prevStatus == NodeRotationBlendStatus::kDefaultReached)
-				{
-					// REMOVE when done debugging.
-					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from default.", a_p->coopActor->GetName(), a_nodePtr->name);
-
-					// Starting from game's set rotation.
-					a_data->startingRotation = a_data->defaultRotation;
-				}
-				else if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
+				if (prevStatus == NodeRotationBlendStatus::kTargetReached && a_data->rotationModified)
 				{
 					// REMOVE when done debugging.
 					//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Start blend out from target.", a_p->coopActor->GetName(), a_nodePtr->name);
@@ -4181,8 +4723,8 @@ namespace ALYSLC
 			}
 
 			// Fully blended out.
-			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut &&
-				a_data->blendOutFrameCount >= Settings::uBlendPlayerNodeRotationsFrameCount)
+			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn &&
+				a_data->blendInFrameCount >= maxBlendFrames)
 			{
 				// REMOVE when done debugging.
 				/*SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Done blending out. {} frames elapsed.",
@@ -4199,11 +4741,13 @@ namespace ALYSLC
 			if (towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kTargetReached)
 			{
 				//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Target rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+
 				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kTargetReached);
 			}
 			else if (!towardsTargetRotation && a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
 			{
 				//SPDLOG_DEBUG("[MM] UpdateNodeRotationBlendState: {}: {}: Default rotation reached.", a_p->coopActor->GetName(), a_nodePtr->name);
+
 				SetBlendStatus(a_nodePtr, NodeRotationBlendStatus::kDefaultReached);
 			}
 		}
@@ -4243,11 +4787,21 @@ namespace ALYSLC
 			// Set directly to the target local rotation otherwise.
 			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn)
 			{
+				// More blend frames at a higher framerate.
+				uint32_t maxBlendFrames = max
+				(
+					Settings::uBlendPlayerNodeRotationsFrameCount,
+					static_cast<uint32_t>
+					(
+						(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
+						static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount)
+					)
+				);
 				// Blend in to reach the target rotation from the starting rotation.
 				float t = std::clamp
 				(
 					static_cast<float>(a_data->blendInFrameCount) / 
-					static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount - 1),
+					static_cast<float>(maxBlendFrames - 1),
 					0.0f,
 					1.0f
 				);
@@ -4293,24 +4847,38 @@ namespace ALYSLC
 		}
 		else
 		{
-				
+			// Do not change the current rotation,
+			// since we want to maintain the current rotation
+			// until we start blending in to face the target again.
+			if (a_p->mm->adjustAimPitchToFaceTarget && !a_isArmNode && !a_data->interrupted)
+			{
+				return;
+			}
+
 			// Interpolate between starting and game-given default local rotations when blending out.
 			// Set directly to the default local rotation otherwise.
 			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut)
 			{
+				// More blend frames at a higher framerate.
+				uint32_t maxBlendFrames = max
+				(
+					Settings::uBlendPlayerNodeRotationsFrameCount,
+					static_cast<uint32_t>
+					(
+						(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
+						static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount)
+					)
+				);
 				// Blend out to reach the game's assigned rotation from the starting rotation.
 				float t = std::clamp
 				(
 					static_cast<float>(a_data->blendOutFrameCount) / 
-					static_cast<float>(Settings::uBlendPlayerNodeRotationsFrameCount - 1),
+					static_cast<float>(maxBlendFrames - 1),
 					0.0f,
 					1.0f
 				);
 
-				// NOTE: Unsure why as of now, but switching start and end interpolation endpoints and inverting the time ratio
-				// correctly interpolates between the endpoints more consistently and does not modify the starting endpoint,
-				// which happens if the regular interpolation direction is used instead.
-				a_data->currentRotation = Util::InterpolateRotMatrix(a_data->defaultRotation, a_data->startingRotation, 1.0f - t);
+				a_data->currentRotation = Util::InterpolateRotMatrix(a_data->startingRotation, a_data->defaultRotation, t);
 
 				// REMOVE when done debugging.
 				/*glm::vec3 endSX = start + ToVec3(a_nodePtr->parent->world.rotate * a_data->startingRotation * right) * 10.0f;
@@ -4337,6 +4905,7 @@ namespace ALYSLC
 			}
 			else
 			{
+				// Reset to default rotation.
 				a_data->currentRotation = a_data->defaultRotation;
 
 				// REMOVE when done debugging.
@@ -4396,12 +4965,11 @@ namespace ALYSLC
 
 		// New rotation inputs to construct target rotation matrix with (if adjusted below).
 		std::array<float, 3> newRotationInput = shoulderData->rotationInput;
+		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
 		if (rotatingShoulder) 
 		{
 			// Set shoulder target rotation as modified.
 			shoulderData->rotationModified = true;
-
-			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
 			// Pick RS quadrant/axis based on its displacement.
 			auto rsLoc = AnalogStickLocation::kCenter;
 			float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
@@ -4858,11 +5426,27 @@ namespace ALYSLC
 		// Init to default rotation if not adjusted.
 		if (shoulderData->rotationModified) 
 		{
+			// Gives a more weighted feel to arm movement.
+			float stickSpeedFactor = 
+			(
+				Util::InterpolateEaseOut
+				(
+					0.85f,
+					1.0f, 
+					std::clamp
+					(
+						0.6f, 
+						1.0f, 
+						rsData.stickAngularSpeed / 20.0f
+					),
+					2.0f
+				)
+			);
 			// Set rotation angle inputs used to construct world rotation matrix below.
 			const float oldYaw = shoulderData->rotationInput[0];
 			const float oldPitch = shoulderData->rotationInput[1];
-			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, interpFactor));
-			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, interpFactor));
+			float yaw = Util::InterpolateSmootherStep(oldYaw, newRotationInput[0], min(1.0f, interpFactor * stickSpeedFactor));
+			float pitch = Util::InterpolateSmootherStep(oldPitch, newRotationInput[1], min(1.0f, interpFactor * stickSpeedFactor));
 			shoulderData->rotationInput = std::array<float, 3>({ yaw, pitch, 0.0f });
 
 			// Construct world rotation from our angle inputs.
@@ -4892,6 +5476,98 @@ namespace ALYSLC
 		{
 			shoulderData->targetRotation = shoulderData->defaultRotation;
 		}
+
+		// TODO: Figure out a way to produce a collision
+		// that doesn't trigger combat. 
+		// Also need to set hit data flags,
+		// such as power attack/sneak hit flags 
+		// for subsequent collider hits. 
+		// As of right now, all hits do damage,
+		// start combat with the hit target,
+		// and do not have applied effects from hit type flags.
+		// 
+		// Add Precision collider to shoulder node
+		// if the player just started modifying node rotations.
+		/*
+		bool shouldStart = 
+		(
+			(!shoulderData->precisionColliderAdded) &&
+			(
+				(
+					a_rightShoulder ? 
+					a_p->pam->JustStarted(InputAction::kRotateRightShoulder) :
+					a_p->pam->JustStarted(InputAction::kRotateLeftShoulder)
+				) ||
+				(
+					(rsData.stickLinearSpeed > 1E-2f) &&
+					(
+						a_rightShoulder ? 
+						a_p->pam->IsPerforming(InputAction::kRotateRightShoulder) :
+						a_p->pam->IsPerforming(InputAction::kRotateLeftShoulder)
+					)
+				)
+			)
+		);
+		bool shouldStop = 
+		(
+			(shoulderData->precisionColliderAdded) &&
+			(
+				(rsData.stickLinearSpeed <= 1E-2f) ||
+				(
+					a_rightShoulder ? 
+					a_p->pam->IsNotPerforming(InputAction::kRotateRightShoulder) :
+					a_p->pam->IsNotPerforming(InputAction::kRotateLeftShoulder)
+				)
+			)
+		);
+		if (shouldStart)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_shoulderNodePtr.get(), 
+				PrecisionAnnotationReqType::kStart
+			);
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_shoulderNodePtr.get(), 
+				PrecisionAnnotationReqType::kAdd,
+				0.05f,
+				1.0f
+			);
+			
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
+				a_p->coopActor->GetName(),
+				a_shoulderNodePtr->name);
+			shoulderData->precisionColliderAdded = true;
+		}
+		else if (shouldStop)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_shoulderNodePtr.get(), 
+				PrecisionAnnotationReqType::kRemove
+			);
+			
+			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
+				a_p->coopActor->GetName(),
+				a_shoulderNodePtr->name);
+			shoulderData->precisionColliderAdded = false;
+		}
+		
+		// Clear previous hits to allow for multiple hits while rotating the node.
+		if (rotatingShoulder)
+		{
+			Util::ChangeNodeColliderState
+			(
+				a_p->coopActor.get(), 
+				a_shoulderNodePtr.get(), 
+				PrecisionAnnotationReqType::kMultiHit
+			);
+		}
+		*/
 
 		// Update shoulder node rotation to set (current) after potentially setting target rotations.
 		UpdateNodeRotationToSet(a_p, shoulderData, a_shoulderNodePtr, true);
@@ -4992,7 +5668,7 @@ namespace ALYSLC
 			// in the XY plane as the forward vector along which to derive the axis.
 			auto aimingXYDir = 
 			(
-				Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_p->coopActor->data.angle.z))//a_p->coopActor->GetAimHeading()))
+				Util::RotationToDirectionVect(0.0f, Util::ConvertAngle(a_p->coopActor->data.angle.z))
 			);
 
 			a_p->mm->playerTorsoAxisOfRotation = aimingXYDir.Cross(up);
@@ -5012,6 +5688,7 @@ namespace ALYSLC
 			// Ensure the torso node is accounted for in rotation data map.
 			if (!nodeNameToRotationDataMap.contains(torsoNodePtr->name))
 			{
+				SPDLOG_DEBUG("[MM] UpdateTorsoNodeRotationData: {}: rest all rotations to current.", a_p->coopActor->GetName());
 				// Set all rotations to the node's current local rotation so we have valid data to start off with.
 				const auto& newData = (*nodeNameToRotationDataMap.insert_or_assign(torsoNodePtr->name, std::make_unique<NodeRotationData>()).first).second;
 				newData->currentRotation = 
@@ -5040,7 +5717,10 @@ namespace ALYSLC
 			torsoData->rotationModified = 
 			{
 				(a_p->mm->aimPitchAdjusted) || 
-				(a_p->mm->isDashDodging && !a_p->mm->isParagliding)
+				(
+					a_p->mm->isDashDodging && 
+					!a_p->mm->isParagliding
+				)
 			};
 
 			// Update blend state after modifying the rotation flags
@@ -5225,7 +5905,8 @@ namespace ALYSLC
 					}
 				}
 
-				if (a_p->mm->isDashDodging && !a_p->mm->isParagliding) 
+				if (a_p->mm->isDashDodging && 
+					!a_p->mm->isParagliding) 
 				{
 					if (a_p->mm->dashDodgeTorsoPitchOffset != 0.0f)
 					{
@@ -5302,7 +5983,15 @@ namespace ALYSLC
 				endZ = start + glm::vec3(baseZAxis.x, baseZAxis.y, baseZAxis.z) * 10.0f;
 				DebugAPI::QueueArrow3D(start, endX, 0xFFFF00FF, 5.0f, 2.0f);
 				DebugAPI::QueueArrow3D(start, endY, 0x00FFFFFF, 5.0f, 2.0f);
-				DebugAPI::QueueArrow3D(start, endZ, 0xFF00FFFF, 5.0f, 2.0f);
+				DebugAPI::QueueArrow3D(start, endZ, 0xFF00FFFF, 5.0f, 2.0f);*/
+				
+				/*const auto& defaultPos = defaultNodeWorldTransformsMap.at(torsoNodePtr).translate;
+				glm::vec3 start
+				{
+					defaultPos.x,
+					defaultPos.y,
+					defaultPos.z
+				};
 				DebugAPI::QueueArrow3D(start, start + ToVec3(a_p->mm->playerTorsoAxisOfRotation) * 10.0f, 0xFFFFF00FF, 5.0f, 2.0f);*/
 
 				// Set local rotation corresponding to our world rotation.

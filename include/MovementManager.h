@@ -29,6 +29,7 @@ namespace ALYSLC
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
 			interrupted = a_nrd.interrupted;
+			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
 			prevRotationModified = a_nrd.prevRotationModified;
 			rotationModified = a_nrd.rotationModified;
@@ -47,6 +48,7 @@ namespace ALYSLC
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
 			interrupted = std::move(a_nrd.interrupted);
+			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
 			prevRotationModified = std::move(a_nrd.prevRotationModified);
 			rotationModified = std::move(a_nrd.rotationModified);
@@ -65,6 +67,7 @@ namespace ALYSLC
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
 			interrupted = a_nrd.interrupted;
+			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
 			prevRotationModified = a_nrd.prevRotationModified;
 			rotationModified = a_nrd.rotationModified;
@@ -85,6 +88,7 @@ namespace ALYSLC
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
 			interrupted = std::move(a_nrd.interrupted);
+			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
 			prevRotationModified = std::move(a_nrd.prevRotationModified);
 			rotationModified = std::move(a_nrd.rotationModified);
@@ -104,6 +108,7 @@ namespace ALYSLC
 			targetRotation = RE::NiMatrix3();
 			rotationInput.fill(0.0f);
 			interrupted = false;
+			precisionColliderAdded = false;
 			prevInterrupted = false;
 			prevRotationModified = false;
 			rotationModified = false;
@@ -132,10 +137,11 @@ namespace ALYSLC
 		RE::NiPoint3 localPosition;
 		// Last recorded node velocity relative to the player's root position.
 		RE::NiPoint3 localVelocity;
-
 		// Was setting the custom rotation for this node interrupted
 		// by the player's state (eg. ragdolled, staggered, manager paused)?
 		bool interrupted;
+		// Precision collider added and active on this node.
+		bool precisionColliderAdded;
 		// Interrupted flag from the previous frame.
 		bool prevInterrupted;
 		// Rotation modified flag from the previous frame.
@@ -169,7 +175,10 @@ namespace ALYSLC
 			{
 				if (data && data.get()) 
 				{
-					nodeNameToRotationDataMap.insert_or_assign(nodeHash, std::make_unique<NodeRotationData>());
+					nodeNameToRotationDataMap.insert_or_assign
+					(
+						nodeHash, std::make_unique<NodeRotationData>()
+					);
 					auto& newData = nodeNameToRotationDataMap[nodeHash];
 					newData->blendInFrameCount = data->blendInFrameCount;
 					newData->blendOutFrameCount = data->blendOutFrameCount;
@@ -198,6 +207,9 @@ namespace ALYSLC
 
 		inline void ClearCustomRotation(const RE::NiPointer<RE::NiAVObject>& a_nodePtr)
 		{
+			// Clear rotation input angles and reset data for the given node.
+			// Can also reset the rotation modified flag if needed.
+
 			if (!a_nodePtr || !a_nodePtr.get())
 			{
 				return;
@@ -218,6 +230,9 @@ namespace ALYSLC
 
 		inline void ClearCustomRotations()
 		{
+			// Clear rotation input angles and reset data for all handled nodes.
+			// Can also reset the rotation modified flags if needed.
+
 			for (auto& [_, data] : nodeNameToRotationDataMap)
 			{
 				data->prevInterrupted = data->interrupted;
@@ -229,7 +244,11 @@ namespace ALYSLC
 		}
 
 		// Apply our custom rotation to the given node.
-		void ApplyCustomNodeRotation(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_nodePtr);
+		void ApplyCustomNodeRotation
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const RE::NiPointer<RE::NiAVObject>& a_nodePtr
+		);
 
 		// Check if the player's arm nodes come into contact with another object
 		// and trigger an impact impulse/knockdown and apply damage if so.
@@ -254,7 +273,14 @@ namespace ALYSLC
 		// Apply arm hit impulse to raycast-hit objects.
 		// TODO: Do away with raycasts for collision checks
 		// and use an active collider enclosing the player's arm nodes instead.
-		bool PerformArmCollisionRaycastCheck(const std::shared_ptr<CoopPlayer>& a_p, const glm::vec4& a_startPos, const glm::vec4& a_endPos, const RE::NiPoint3& a_armNodeVelocity, const RE::NiPoint3& a_armPointVelocity, const ArmNodeType& a_armNodeType);
+		bool PerformArmCollisionRaycastCheck
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const glm::vec4& a_startPos, 
+			const glm::vec4& a_endPos, 
+			RE::NiAVObject* a_armNode,
+			const ArmNodeType& a_armNodeType
+		);
 
 		// Restore saved node local transforms previously set by the game before our modifications.
 		void RestoreOriginalNodeLocalTransforms(const std::shared_ptr<CoopPlayer>& a_p);
@@ -262,23 +288,51 @@ namespace ALYSLC
 		// Recursively save all nodes' local rotations and world positions/rotations
 		// by walking the player's node tree from the given node.
 		// NOTE: Must be called each frame before any UpdateDownwardPass() calls fire
-		// to properly save the game's intended local rotations and world positions/rotations for all player nodes.
+		// to properly save the game's intended local rotations 
+		// and world positions/rotations for all player nodes.
 		void SavePlayerNodeWorldTransforms(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Update the blend status for the given node.
-		void SetBlendStatus(const RE::NiPointer<RE::NiAVObject>& a_nodePtr, NodeRotationBlendStatus&& a_newStatus);
+		void SetBlendStatus
+		(
+			const RE::NiPointer<RE::NiAVObject>& a_nodePtr, NodeRotationBlendStatus&& a_newStatus
+		);
 
 		// Update cached rotation data for arm nodes.
-		void UpdateArmNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_forearmNodePtr, const RE::NiPointer<RE::NiAVObject>& a_handNodePtr, bool a_rightArm);
+		void UpdateArmNodeRotationData
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const RE::NiPointer<RE::NiAVObject>& a_forearmNodePtr,
+			const RE::NiPointer<RE::NiAVObject>& a_handNodePtr,
+			bool a_rightArm
+		);
 
 		// Update node rotation blend status and endpoints.
-		void UpdateNodeRotationBlendState(const std::shared_ptr<CoopPlayer>& a_p, const std::unique_ptr<NodeRotationData>& a_data, const RE::NiPointer<RE::NiAVObject>& a_nodePtr, bool a_isArmNode);
+		void UpdateNodeRotationBlendState
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const std::unique_ptr<NodeRotationData>& a_data, 
+			const RE::NiPointer<RE::NiAVObject>& a_nodePtr, 
+			bool a_isArmNode
+		);
 
-		// Based on this node's blend state, update its rotation data to use when modifying the node's world position.
-		void UpdateNodeRotationToSet(const std::shared_ptr<CoopPlayer>& a_p, const std::unique_ptr<NodeRotationData>& a_data, const RE::NiPointer<RE::NiAVObject>& a_nodePtr, bool a_isArmNode);
+		// Based on this node's blend state, update its rotation data to use 
+		// when modifying the node's world position.
+		void UpdateNodeRotationToSet
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			const std::unique_ptr<NodeRotationData>& a_data, 
+			const RE::NiPointer<RE::NiAVObject>& a_nodePtr,
+			bool a_isArmNode
+		);
 
 		// Update cached rotation data for shoulder nodes.
-		void UpdateShoulderNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiAVObject>& a_shoulderNodePtr, bool a_rightShoulder);
+		void UpdateShoulderNodeRotationData
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const RE::NiPointer<RE::NiAVObject>& a_shoulderNodePtr, 
+			bool a_rightShoulder
+		);
 
 		// Update cached rotation data for torso nodes.
 		void UpdateTorsoNodeRotationData(const std::shared_ptr<CoopPlayer>& a_p);
@@ -287,15 +341,18 @@ namespace ALYSLC
 		// here are manually tested boundary rotation angles for blending.
 		// (RS X * 2PI, RS Y * 2PI, fixed Z), both radians and (degrees).
 		// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER):
-		//
-		// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)] // +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
+		// 
+		// +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
+		// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)]
 		// DOWNWARD [2.4250095 (138.9428), -3.1119285 (-178.30035), 0 (0)]
 		// INWARD [3.8038778 (217.94614), -1.8690848 (-107.09067), 0 (0)]
 		// OUTWARD [0.34484762 (19.758312), -1.7245883 (-98.81162), 0 (0)]
 		// FORWARD [2.9678023 (170.04254), -1.7808087 (-102.032814), 0 (0)]
 		// BACKWARD FROM BOTTOM [3.5985053 (206.17915), -4.5647597 (-261.54144), 0 (0)]
 		// BACKWARD FROM TOP [0.3231819 (18.516958), -1.531915 (-87.772255), 0 (0)]
-		const std::unordered_map<ArmOrientation, std::array<float, 3>> leftShoulderMatAngleInputs = {
+		const std::unordered_map<ArmOrientation, std::array<float, 3>> 
+		leftShoulderMatAngleInputs = 
+		{
 			{ ArmOrientation::kUpward, { 1.8315454f, -0.23093452f, 0.0f } },
 			{ ArmOrientation::kDownward, { 2.4250095f, -3.1119285f, 0.0f } },
 			{ ArmOrientation::kInward, { 3.8038778f, -1.8690848f, 0.0f } },
@@ -304,7 +361,9 @@ namespace ALYSLC
 			{ ArmOrientation::kBackward, { 3.5985053f, -4.5647597f, 0.0f } }
 		};
 
-		const std::unordered_map<ArmOrientation, std::array<float, 3>> rightShoulderMatAngleInputs = {
+		const std::unordered_map<ArmOrientation, std::array<float, 3>> 
+		rightShoulderMatAngleInputs = 
+		{
 			{ ArmOrientation::kUpward, { -1.8315454f, -0.23093452f, 0.0f } },
 			{ ArmOrientation::kDownward, { -2.4250095f, -3.1119285f, 0.0f } },
 			{ ArmOrientation::kInward, { -3.8038778f, -1.8690848f, 0.0f } },
@@ -314,7 +373,8 @@ namespace ALYSLC
 		};
 
 		// Node rotation interpolation factor.
-		// Higher values inch closer to directly setting the current rotation to the target rotation.
+		// Higher values inch closer to directly setting the current rotation 
+		// to the target rotation.
 		// Lower values create more sluggish, but smooother, movement.
 		// Used at 60 FPS, since all node rotation updates are run in a havok callback.
 		const float interpFactor = 0.333333f;
@@ -325,29 +385,39 @@ namespace ALYSLC
 		std::mutex rotationDataMutex;
 		// Maps adjustable nodes by node name to their corresponding custom rotation data.
 		// IMPORTANT NOTE:
-		// I have not found out how to adjust Precision's cloned nodes directly in the Havok physics callback
-		// because NiAVObject's GetObjectByName() only returns the original node with that name.
+		// I have not found out how to adjust Precision's cloned nodes directly 
+		// in the Havok physics callback  because NiAVObject's GetObjectByName() 
+		// only returns the original node with that name.
 		// So for Precision compatibility, the adjustable nodes names are used as a key
 		// which allows the node check in the UpdateDownwardPass() hook to recognize
 		// Precision's cloned nodes, which have the same names as the original nodes,
 		// and apply our custom rotations to those nodes as well.
-		// This consistency ensures that Precision collisions will occur at our modified nodes' locations.
+		// This consistency ensures that Precision collisions will occur 
+		// at our modified nodes' locations.
 		// Debug node: Toggle on skeleton colliders in Precision's MCM to see if the colliders 
 		// properly encapsulate the adjusted nodes.
-		std::unordered_map<RE::BSFixedString, std::unique_ptr<NodeRotationData>> nodeNameToRotationDataMap;
+		std::unordered_map<RE::BSFixedString, std::unique_ptr<NodeRotationData>> 
+		nodeNameToRotationDataMap;
 		// Maps all player node name hashes to their default local transforms
 		// set by the game before our modifications.
-		std::unordered_map<RE::NiPointer<RE::NiAVObject>, RE::NiTransform> defaultNodeLocalTransformsMap;
+		std::unordered_map<RE::NiPointer<RE::NiAVObject>, RE::NiTransform> 
+		defaultNodeLocalTransformsMap;
 		// Maps all player node name hashes to their default world transforms
 		// set by the game before our modifications.
-		std::unordered_map<RE::NiPointer<RE::NiAVObject>, RE::NiTransform> defaultNodeWorldTransformsMap;
+		std::unordered_map<RE::NiPointer<RE::NiAVObject>, RE::NiTransform> 
+		defaultNodeWorldTransformsMap;
 
 	private:
 		// Recursive helper functions which walk the player's node tree
 		// to display or save rotations.
 		void DisplayAllNodeRotations(const RE::NiPointer<RE::NiNode>& a_nodePtr);
 
-		void SavePlayerNodeWorldTransforms(const std::shared_ptr<CoopPlayer>& a_p, const RE::NiPointer<RE::NiNode>& a_nodePtr, const RE::NiTransform& a_parentWorldTransform);
+		void SavePlayerNodeWorldTransforms
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			const RE::NiPointer<RE::NiNode>& a_nodePtr, 
+			const RE::NiTransform& a_parentWorldTransform
+		);
 	};
 
 	// Handles player movement, actions related to movement, and node orientation.
@@ -355,7 +425,8 @@ namespace ALYSLC
 	{
 		MovementManager();
 		// Delayed construction after the player is default-constructed 
-		// and the player shared pointer is added to the list of co-op players in the global data holder.
+		// and the player shared pointer is added to the list of co-op players 
+		// in the global data holder.
 		void Initialize(std::shared_ptr<CoopPlayer> a_p);
 
 		// Implements ALYSLC::Manager:
@@ -377,7 +448,14 @@ namespace ALYSLC
 		float GetRotationMult();
 		
 		// Keep movement offset between player actor/mount and target.
-		void KeepOffsetFromActor(const RE::ActorHandle& a_targetHandle, const RE::NiPoint3& a_posOffset, const RE::NiPoint3& a_angOffset, float a_catchUpRadius, float a_followRadius);
+		void KeepOffsetFromActor
+		(
+			const RE::ActorHandle& a_targetHandle, 
+			const RE::NiPoint3& a_posOffset, 
+			const RE::NiPoint3& a_angOffset, 
+			float a_catchUpRadius, 
+			float a_followRadius
+		);
 		
 		// Perform a dash dodge, if requested and no dodge mods are installed.
 		void PerformDashDodge();
@@ -416,7 +494,8 @@ namespace ALYSLC
 		void UpdateAimPitch();
 
 		// Update worldspace attack source position and direction.
-		// Can also set the default position and direction using the cached default world rotation data.
+		// Can also set the default position and direction 
+		// using the cached default world rotation data.
 		void UpdateAttackSourceOrientationData(bool&& a_setDefaultDirAndPos);
 
 		// Update movement parameters based on controller input.
@@ -469,6 +548,8 @@ namespace ALYSLC
 		// Absolute right stick Z game angle (not factoring in cam angle).
 		std::vector<float> movementOffsetParams;
 
+		// Should the player's aim pitch be auto-adjusted so that they face the target?
+		bool adjustAimPitchToFaceTarget;
 		// If aim pitch was adjusted, either manually or to face a target.
 		bool aimPitchAdjusted;
 		// If aim pitch was manually adjusted with the 'AdjustAimPitch' bind.
@@ -522,8 +603,10 @@ namespace ALYSLC
 		bool sentJumpFallEvent;
 		// Should the player's aim pitch be adjusted?
 		bool shouldAdjustAimPitch;
-		// Continue forcing the player to remain stationary until their reported movement speed is 0.
-		// Prevents ragdolled players from getting up and shooting forward in their facing/movement direction
+		// Continue forcing the player to remain stationary 
+		// until their reported movement speed is 0.
+		// Prevents ragdolled players from getting up 
+		// and shooting forward in their facing/movement direction
 		// due to leftover momentum from prior to regdolling.
 		bool shouldCurtailMomentum;
 		// Should the player turn to directly face the targeted position?
@@ -588,7 +671,7 @@ namespace ALYSLC
 		// and short players from springing around like a frog on nose candy.
 		const float havokInitialJumpZVelocity = 5.0f;
 		// Interpolation factor for rotating the player.
-		const float playerRotInterpFactor = 0.25f;
+		const float playerRotInterpFactor = 0.15f;
 
 		// Player ID for this player.
 		int32_t playerID;
@@ -600,5 +683,7 @@ namespace ALYSLC
 		uint32_t framesSinceRequestingDashDodge;
 		uint32_t framesSinceStartingDashDodge;
 		uint32_t framesSinceStartingJump;
+		// Total frame count for the last/current dash dodge.
+		uint32_t framesToCompleteDashDodge;
 	};
 }

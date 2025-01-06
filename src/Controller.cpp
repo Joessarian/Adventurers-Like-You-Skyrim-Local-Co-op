@@ -17,8 +17,14 @@ namespace ALYSLC
 		rsStatesList.fill(AnalogStickState());
 		inputMasksList.fill(0);
 		inputStatesList.fill(std::vector<InputState>(!InputAction::kInputTotal, InputState()));
-		firstPressTPsList.fill(std::vector<SteadyClock::time_point>(!InputAction::kInputTotal, SteadyClock::now()));
-		lastReleaseTPsList.fill(std::vector<SteadyClock::time_point>(!InputAction::kInputTotal, SteadyClock::now()));
+		firstPressTPsList.fill
+		(
+			std::vector<SteadyClock::time_point>(!InputAction::kInputTotal, SteadyClock::now())
+		);
+		lastReleaseTPsList.fill
+		(
+			std::vector<SteadyClock::time_point>(!InputAction::kInputTotal, SteadyClock::now())
+		);
 	}
 
 	std::vector<uint32_t> ControllerDataHolder::SetupConnectedCoopControllers()
@@ -33,7 +39,8 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] Player 1's controller ID has not been assigned.\nTry summoning again or assign Player 1's controller ID through the co-op debug menu before summoning."
+				"[ALYSLC] Player 1's controller ID has not been assigned.\nTry summoning again"
+				"or assign Player 1's controller ID through the co-op debug menu before summoning."
 			);
 			return controllerIDs;
 		}
@@ -50,12 +57,22 @@ namespace ALYSLC
 				auto errorNum = XInputGetState(controllerIndex, &inputState);
 				if (errorNum == ERROR_SUCCESS)
 				{
-					SPDLOG_INFO("[CDH] SetupConnectedCoopControllers: Co-op player controller {} has been registered.", controllerIndex);
+					SPDLOG_INFO
+					(
+						"[CDH] SetupConnectedCoopControllers: Co-op player controller {} " 
+						"has been registered.",
+						controllerIndex
+					);
 					controllerIDs.push_back(controllerIndex);
 				}
 				else
 				{
-					SPDLOG_DEBUG("[CDH] SetupConnectedCoopControllers: No controller connected at index {}. Error #{}.", controllerIndex, errorNum);
+					SPDLOG_DEBUG
+					(
+						"[CDH] SetupConnectedCoopControllers: No controller connected at index {}."
+						" Error #{}.", 
+						controllerIndex, errorNum
+					);
 				}
 			}
 
@@ -65,12 +82,19 @@ namespace ALYSLC
 		return controllerIDs;
 	}
 
-	void ControllerDataHolder::UpdateAnalogStickState(const int32_t& a_controllerID, const int32_t& a_playerID, const bool& a_isLS, const bool& a_isControllingMenus)
+	void ControllerDataHolder::UpdateAnalogStickState
+	(
+		const int32_t& a_controllerID, 
+		const int32_t& a_playerID, 
+		const bool& a_isLS, 
+		const bool& a_isControllingMenus
+	)
 	{
 		// Update the left/right analog stick data for the controller with the given ID.
 		// The deadzone is modified based on the player's settings (player given by their ID) 
 		// and if they are controlling menus.
-		// Function was adapted from code snippets found here: https://docs.microsoft.com/en-us/windows/win32/xinput/getting-started-with-xinput
+		// Function was adapted from code snippets found here:
+		// https://docs.microsoft.com/en-us/windows/win32/xinput/getting-started-with-xinput
 
 		XINPUT_STATE inputState;
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
@@ -79,7 +103,12 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				SPDLOG_DEBUG("[CDH] ERR: UpdateAnalogStickState: Could not get input state for active controller {}", a_controllerID);
+				SPDLOG_DEBUG
+				(
+					"[CDH] ERR: UpdateAnalogStickState: "
+					"Could not get input state for active controller {}",
+					a_controllerID
+				);
 			}
 
 			return;
@@ -169,7 +198,8 @@ namespace ALYSLC
 		float oldNormYPos = data.yComp * data.normMag;
 
 		// Moving to/from center (no angular change in orientation).
-		if ((newNormXPos == 0.0f && newNormYPos == 0.0f) || (oldNormXPos == 0.0f && oldNormYPos == 0.0f))
+		if ((newNormXPos == 0.0f && newNormYPos == 0.0f) || 
+			(oldNormXPos == 0.0f && oldNormYPos == 0.0f))
 		{
 			data.stickAngularSpeed = 0.0f;
 		}
@@ -215,7 +245,12 @@ namespace ALYSLC
 			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
 				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
 			{
-				SPDLOG_DEBUG("[CDH] ERR: UpdateInputStatesAndMask: Could not get input state for active controller {}", a_controllerID);
+				SPDLOG_DEBUG
+				(
+					"[CDH] ERR: UpdateInputStatesAndMask: " 
+					"Could not get input state for active controller {}", 	
+					a_controllerID
+				);
 			}
 
 			return;
@@ -241,15 +276,48 @@ namespace ALYSLC
 		bool isButton = true;
 		bool ltPressed = false, rtPressed = false, lsMoved = false, rsMoved = false;
 		// Get deadzone from player settings.
-		const BYTE triggerDeadzone = static_cast<BYTE>(UCHAR_MAX * Settings::vfTriggerDeadzoneRatio[a_playerID]);
+		const BYTE triggerDeadzone = 
+		(
+			static_cast<BYTE>
+			(
+				UCHAR_MAX * Settings::vfTriggerDeadzoneRatio[a_playerID]
+			)
+		);
+		// Increase frame window at higher framerates
+		// to ensure that the player has enough time.
+		uint32_t consecTapFrames = max
+		(
+			static_cast<uint32_t>
+			(
+				(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
+				static_cast<float>(Settings::fConsecTapsFrameCountWindow)
+			), 
+			1
+		);
 		for (uint32_t i = !InputAction::kFirst; i < !InputAction::kInputTotal; ++i, ++dxsc) 
 		{
-			isButton = i != !InputAction::kLS && i != !InputAction::kRS && dxsc != DXSC_LT && dxsc != DXSC_RT;
-			buttonPressed = isButton && (inputState.Gamepad.wButtons & DXSC_TO_XIMASK.at(dxsc)) != 0;
+			isButton = 
+			(
+				i != !InputAction::kLS && 
+				i != !InputAction::kRS && 
+				dxsc != DXSC_LT && 
+				dxsc != DXSC_RT
+			);
+			buttonPressed = 
+			(
+				isButton && 
+				(inputState.Gamepad.wButtons & DXSC_TO_XIMASK.at(dxsc)) != 0
+			);
 			ltPressed = dxsc == DXSC_LT && inputState.Gamepad.bLeftTrigger > triggerDeadzone;
 			rtPressed = dxsc == DXSC_RT && inputState.Gamepad.bRightTrigger > triggerDeadzone;
-			lsMoved = i == !InputAction::kLS && GetAnalogStickState(a_controllerID, true).normMag > 0.0f;
-			rsMoved = i == !InputAction::kRS && GetAnalogStickState(a_controllerID, false).normMag > 0.0f;
+			lsMoved = 
+			(
+				i == !InputAction::kLS && GetAnalogStickState(a_controllerID, true).normMag > 0.0f
+			);
+			rsMoved = 
+			(
+				i == !InputAction::kRS && GetAnalogStickState(a_controllerID, false).normMag > 0.0f
+			);
 				
 			// Button/trigger pressed or analog stick moved.
 			if (buttonPressed || ltPressed || rtPressed || lsMoved || rsMoved) 
@@ -264,12 +332,16 @@ namespace ALYSLC
 					state.isPressed = true;
 					state.justPressed = true;
 					state.pressedMag = 1.0f;
-					// Only inc consecutive presses to > 1 if pressed again within between-presses threshold.
+					// Only inc consecutive presses to > 1 if pressed again 
+					// within between-presses threshold.
 					float secsSinceLastRelease = Util::GetElapsedSeconds(lastReleaseTP);
-					// Increment consecutive taps if tapped again within the frame count limit for consecutive taps.
+					// Increment consecutive taps if tapped again 
+					// within the frame count limit for consecutive taps.
 					state.consecPresses = 
 					(
-						secsSinceLastRelease <= Settings::fMaxFramesBetweenConsecTaps * *g_deltaTimeRealTime ? 
+						secsSinceLastRelease <= 
+						consecTapFrames * 
+						*g_deltaTimeRealTime ? 
 						state.consecPresses + 1 : 
 						1
 					);
@@ -290,11 +362,19 @@ namespace ALYSLC
 				// Normalize based on trigger deadzone threshold.
 				if (ltPressed)
 				{
-					state.pressedMag = (inputState.Gamepad.bLeftTrigger - triggerDeadzone) / (UCHAR_MAX - triggerDeadzone);
+					state.pressedMag = 
+					(
+						(inputState.Gamepad.bLeftTrigger - triggerDeadzone) / 
+						(UCHAR_MAX - triggerDeadzone)
+					);
 				}
 				else if (rtPressed)
 				{
-					state.pressedMag = (inputState.Gamepad.bRightTrigger - triggerDeadzone) / (UCHAR_MAX - triggerDeadzone);
+					state.pressedMag = 
+					(
+						(inputState.Gamepad.bRightTrigger - triggerDeadzone) / 
+						(UCHAR_MAX - triggerDeadzone)
+					);
 				}
 			}
 			else
@@ -321,7 +401,7 @@ namespace ALYSLC
 				{
 					const auto& firstPressTP = firstPressTPs[i];
 					float secsSinceLastPress = Util::GetElapsedSeconds(firstPressTP);
-					if (secsSinceLastPress > Settings::fMaxFramesBetweenConsecTaps * *g_deltaTimeRealTime)
+					if (secsSinceLastPress > consecTapFrames * *g_deltaTimeRealTime)
 					{
 						state.consecPresses = 0;
 					}
@@ -345,13 +425,19 @@ namespace ALYSLC
 			bool isControllingMenus = false;
 			for (const auto& p : glob.coopPlayers) 
 			{
-				if (p->isActive) 
+				if (!p->isActive) 
 				{
-					isControllingMenus = p->pam->isControllingUnpausedMenu || (ui && ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME));
-					UpdateAnalogStickState(p->controllerID, p->playerID, true, isControllingMenus);
-					UpdateAnalogStickState(p->controllerID, p->playerID, false, isControllingMenus);
-					UpdateInputStatesAndMask(p->controllerID, p->playerID);
+					continue;
 				}
+
+				isControllingMenus = 
+				(
+					(p->pam->isControllingUnpausedMenu) || 
+					(ui && ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME))
+				);
+				UpdateAnalogStickState(p->controllerID, p->playerID, true, isControllingMenus);
+				UpdateAnalogStickState(p->controllerID, p->playerID, false, isControllingMenus);
+				UpdateInputStatesAndMask(p->controllerID, p->playerID);
 			}
 		}
 		else
