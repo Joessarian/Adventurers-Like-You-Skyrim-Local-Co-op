@@ -300,6 +300,11 @@ namespace ALYSLC
 
 	const ManagerState CameraManager::ShouldSelfPause()
 	{
+		if (glob.loadingASave)
+		{
+			return ManagerState::kAwaitingRefresh;		
+		}
+
 		// Check if all players are valid, and if one isn't, pause.
 		for (const auto& p : glob.coopPlayers)
 		{
@@ -471,7 +476,7 @@ namespace ALYSLC
 						) :
 						GAMEPAD_MASK_RIGHT_THUMB
 					);
-					// Check if the toggle bind is pressed and released by player 1.
+					// Check if the toggle bind is pressed and released by P1.
 					XINPUT_STATE tempState;
 					ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 					if (!(XInputGetState(glob.player1CID, &tempState)) == ERROR_SUCCESS)
@@ -684,7 +689,7 @@ namespace ALYSLC
 			(
 				camOriginPoint.x, 
 				camOriginPoint.y, 
-				camOriginPoint.z + camHeightOffset
+				camOriginPoint.z + camBaseHeightOffset
 			);
 		}
 	}
@@ -1214,6 +1219,15 @@ namespace ALYSLC
 				}
 			}
 			
+			//=====================================================================================
+			// [Camera Collision Positions]:
+			//=====================================================================================
+			// Set (hopefully) to a position that is reachable and not outside the world geometry.
+			// One collision position is used to place the camera if camera collisions are enabled.
+			// The other collision position originates from the base focus position,
+			// which can be outside the traversable worldspace, and is used for crosshair
+			// selection when camera collisions are disabled.
+
 			// Basic system to minimize camera jumping and maximize visibility of all players:
 			// 1. Check for visibility of the base target position from the focus point 
 			// and all active players' focus points.
@@ -1244,7 +1258,9 @@ namespace ALYSLC
 			const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
 			const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
 			glm::vec4 closestHitPosToPrevTargetPos = lastSetTargetPos;
-			glm::vec4 castStartPos = ToVec4(camFocusPoint);
+			// Offset from the camera collision focus point,
+			// which should be within the traversable part of the world.
+			glm::vec4 castStartPos = ToVec4(camCollisionFocusPoint);
 			// Adjust the hit position to avoid clipping.
 			glm::vec4 adjHitResultPos{};
 			// Save distance for comparison purposes.
@@ -1753,6 +1769,9 @@ namespace ALYSLC
 	void CameraManager::FadeObstructions()
 	{
 		// Fade or unfade objects that obstruct the LOS from the camera to each player.
+		// Of course, creating a shader that selectively fades obstructions,
+		// preferably partially, especially for those objects without a fade node,
+		// would be the best solution here instead of fully fading each obstruction.
 
 		RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera();
 		if (!niCam || !niCam.get())
@@ -2763,7 +2782,8 @@ namespace ALYSLC
 						{
 							// Wait, toggle to TP state, then wait again.
 							std::this_thread::sleep_for(1s);
-							Util::AddSyncedTask(
+							Util::AddSyncedTask
+							(
 								[this, controlMap]() 
 								{
 									playerCam->lock.Lock();
@@ -2775,8 +2795,12 @@ namespace ALYSLC
 							std::this_thread::sleep_for(1s);
 						}
 
-						SPDLOG_DEBUG("[CAM] ToThirdPersonState. Getting lock from global task runner. (0x{:X})", 
-							std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						SPDLOG_DEBUG
+						(
+							"[CAM] ToThirdPersonState. "
+							"Getting lock from global task runner. (0x{:X})", 
+							std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 						{
 							std::unique_lock<std::mutex> togglePOVLock(camTogglePOVMutex);
 							isTogglingPOV = false;
@@ -3556,61 +3580,50 @@ namespace ALYSLC
 		}
 
 		float prevHeight = camHeightOffset;
-		if (Settings::bCamCollisions)
-		{
-			float newHeight = camBaseHeightOffset;
-			float currentFocusZPos = camCollisionOriginPoint.z + newHeight;
-			float boundsDiff = fabsf(camMaxAnchorPointZCoord - camMinAnchorPointZCoord);
-			if ((boundsDiff < camAnchorPointHullSize) && 
-				(
-					currentFocusZPos < camMinAnchorPointZCoord || 
-					currentFocusZPos > camMaxAnchorPointZCoord
-				))
-			{
-				// Set to the Z coordinate between the two vertical bounds.
-				newHeight = camMinAnchorPointZCoord + boundsDiff / 2.0f;
-			}
-			else
-			{
-				if (currentFocusZPos > camMaxAnchorPointZCoord)
-				{
-					// Move below the upper bound.
-					newHeight = min
-					(
-						newHeight, 
-						camMaxAnchorPointZCoord - 
-						camCollisionOriginPoint.z - 
-						camAnchorPointHullSize
-					);
-				}
-
-				if (currentFocusZPos < camMinAnchorPointZCoord)
-				{
-					// Move above the lower bound.
-					newHeight = max
-					(
-						newHeight, 
-						camMinAnchorPointZCoord - 
-						camCollisionOriginPoint.z + 
-						camAnchorPointHullSize
-					);
-				}
-			}
-
-			// Approach the new height offset.
-			camHeightOffset = Util::InterpolateSmootherStep
+		float newHeight = camBaseHeightOffset;
+		float currentFocusZPos = camCollisionOriginPoint.z + newHeight;
+		float boundsDiff = fabsf(camMaxAnchorPointZCoord - camMinAnchorPointZCoord);
+		if ((boundsDiff < camAnchorPointHullSize) && 
 			(
-				prevHeight, newHeight, camInterpFactorFrameDep
-			);
+				currentFocusZPos < camMinAnchorPointZCoord || 
+				currentFocusZPos > camMaxAnchorPointZCoord
+			))
+		{
+			// Set to the Z coordinate between the two vertical bounds.
+			newHeight = camMinAnchorPointZCoord + boundsDiff / 2.0f;
 		}
 		else
 		{
-			// Approach the base height offet.
-			camHeightOffset = Util::InterpolateSmootherStep
-			(
-				prevHeight, camBaseHeightOffset, camInterpFactorFrameDep
-			);
+			if (currentFocusZPos > camMaxAnchorPointZCoord)
+			{
+				// Move below the upper bound.
+				newHeight = min
+				(
+					newHeight, 
+					camMaxAnchorPointZCoord - 
+					camCollisionOriginPoint.z - 
+					camAnchorPointHullSize
+				);
+			}
+
+			if (currentFocusZPos < camMinAnchorPointZCoord)
+			{
+				// Move above the lower bound.
+				newHeight = max
+				(
+					newHeight, 
+					camMinAnchorPointZCoord - 
+					camCollisionOriginPoint.z + 
+					camAnchorPointHullSize
+				);
+			}
 		}
+
+		// Approach the new height offset.
+		camHeightOffset = Util::InterpolateSmootherStep
+		(
+			prevHeight, newHeight, camInterpFactorFrameDep
+		);
 	}
 
 	void CameraManager::UpdateCamZoom()
@@ -3990,36 +4003,54 @@ namespace ALYSLC
 		// from an exterior cell to an interior cell or vice versa.
 
 		auto p1Cell = glob.player1Actor->GetParentCell();
-		if (p1Cell && currentCell != p1Cell && p1Cell->formID != 0x0)
+		if (!p1Cell || currentCell == p1Cell || p1Cell->formID == 0x0)
 		{
-			bool newIsExterior = !p1Cell->IsInteriorCell();
-			// Interior/Invalid -> Exterior or Exterior/Invalid -> Interior.
-			bool diffCellType = 
-			{
-				(newIsExterior && (!currentCell || currentCell->IsInteriorCell())) ||
-				(!newIsExterior && (!currentCell || !currentCell->IsInteriorCell()))
-			};
+			return;
+		}
 
-			currentCell = p1Cell;
-			exteriorCell = newIsExterior;
-			// Reset fade for all our handled objects.
-			ResetFadeOnObjects();
-			// For extra peace of mind, ensure all objects in the new cell are fully faded in.
-			Util::ResetFadeOnAllObjectsInCell(currentCell);
-			// Set new default orientation when the cell type changes.
-			if (diffCellType)
-			{
-				ResetCamData();
-			}
+		bool newIsExterior = !p1Cell->IsInteriorCell();
+		// Interior/Invalid -> Exterior or Exterior/Invalid -> Interior.
+		bool diffCellType = 
+		{
+			(newIsExterior && (!currentCell || currentCell->IsInteriorCell())) ||
+			(!newIsExterior && (!currentCell || !currentCell->IsInteriorCell()))
+		};
 
-			// Some interior cells have fog and a max zoom out distance for the camera
-			// before checking if points are on screen fail (messes with auto-zoom).
-			// Switching to skybox only sometimes circumvents this issue 
-			// and allows for uncapped zooming out in interior cells.
-			// The alternative - disabling the sky altogether - 
-			// has some clearly undesirable side effects 
-			// like creating much harsher lighting throughout the cell.
-			Util::SetSkyboxOnlyForInteriorModeCell(currentCell);
+		currentCell = p1Cell;
+		exteriorCell = newIsExterior;
+		// Reset fade for all our handled objects.
+		ResetFadeOnObjects();
+		// For extra peace of mind, ensure all objects in the new cell are fully faded in.
+		Util::ResetFadeOnAllObjectsInCell(currentCell);
+		// Set new default orientation when the cell type changes.
+		if (diffCellType)
+		{
+			ResetCamData();
+		}
+
+		// Some interior cells have fog and a max zoom out distance for the camera
+		// before checking if points are on screen fail (messes with auto-zoom).
+		// Switching to skybox only sometimes circumvents this issue 
+		// and allows for uncapped zooming out in interior cells.
+		// The alternative - disabling the sky altogether - 
+		// has some clearly undesirable side effects 
+		// like creating much harsher lighting throughout the cell.
+		Util::SetSkyboxOnlyForInteriorModeCell(currentCell);
+
+		auto sky = RE::TES::GetSingleton() ? RE::TES::GetSingleton()->sky : nullptr;
+		if (sky)
+		{
+			SPDLOG_DEBUG
+			(
+				"[CAM] Cell change. {} (0x{:X}) has sky mode {}, and is an {} cell. "
+				"Worldspace: {}, flags: 0b{:B}.",
+				currentCell->GetName(),
+				currentCell->formID,
+				*sky->mode,
+				exteriorCell ? "exterior" : "interior",
+				currentCell->worldSpace ? currentCell->worldSpace->GetFullName() : "N/A",
+				*currentCell->cellFlags
+			);
 		}
 	}
 

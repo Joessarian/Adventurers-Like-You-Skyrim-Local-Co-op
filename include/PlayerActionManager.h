@@ -887,6 +887,8 @@ namespace ALYSLC
 		bool isSprinting;
 		// Is attacking with a weapon.
 		bool isWeaponAttack;
+		// Was the player sprinting during the last frame?
+		bool wasSprinting;
 
 		//
 		// AV conditionals/misc

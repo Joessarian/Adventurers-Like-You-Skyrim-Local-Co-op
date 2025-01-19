@@ -152,7 +152,7 @@ namespace ALYSLC
 		};
 
 		// Holds info about player data that should be copied 
-		// to player 1 before a menu opens or closes.
+		// to P1 before a menu opens or closes.
 		struct CopyPlayerDataRequestInfo
 		{
 			CopyPlayerDataRequestInfo() :
@@ -502,9 +502,9 @@ namespace ALYSLC
 		// times the player leveled up.
 		static void AdjustBaseHMSData(RE::Actor* a_playerActor, const bool& a_shouldImport);
 
-		// Adjust the amount of perk points for player 1 
+		// Adjust the amount of perk points for P1 
 		// when the given co-op player enters the Stats Menu.
-		// Returns true if player 1's level was decreased (dipped) to allow for HMS levelup(s).
+		// Returns true if P1's level was decreased (dipped) to allow for HMS levelup(s).
 		static bool AdjustInitialPlayer1PerkPoints(RE::Actor* a_playerActor);
 
 		// Adjust the number of available perk points for the given actor when they enter/exit
@@ -642,11 +642,11 @@ namespace ALYSLC
 		// resetting menu CID/overlay data as well.
 		static void StopMenuInputManager();
 
-		// Sync co-op companions' shared perks to player 1's so that all players have the same 
+		// Sync co-op companions' shared perks to P1's so that all players have the same 
 		// set of perks from the shared skill trees.
 		static void SyncSharedPerks();
 
-		// Sync co-op companions' shared AVs to player 1's so that all players have the same
+		// Sync co-op companions' shared AVs to P1's so that all players have the same
 		// skill AVs from the group of shared skills.
 		static void SyncSharedSkillAVs();
 
@@ -739,8 +739,8 @@ namespace ALYSLC
 			RE::TESForm* a_assocForm = nullptr
 		);
 
-		// Assign linked controller ID for player 1 via a prompt to press a certain button.
-		// Workaround until finding direct way of accessing player 1's controller's XInput index. 
+		// Assign linked controller ID for P1 via a prompt to press a certain button.
+		// Workaround until finding direct way of accessing P1's controller's XInput index. 
 		static void PromptForPlayer1CIDTask();
 
 		// Stop P1's managers, disable the co-op camera, and close the menu input manager.
@@ -1427,7 +1427,7 @@ namespace ALYSLC
 		// Keeps track of players' controller button and analog sticks' states.
 		std::unique_ptr<ControllerDataHolder> cdh;
 		// Menu Input Manager.
-		// Allows companion players to control menus as if they were player 1, 
+		// Allows companion players to control menus as if they were P1, 
 		// with some limitations, of course.
 		std::unique_ptr<MenuInputManager> mim;
 		// Menu Opening Action Requests Manager.
@@ -1437,14 +1437,14 @@ namespace ALYSLC
 		// Contact listener for thrown object collisions.
 		std::unique_ptr<ContactListener> contactListener;
 		// Stores info about the last request to copy player data 
-		// between a co-op companion player and player 1.
+		// between a co-op companion player and P1.
 		std::unique_ptr<CopyPlayerDataRequestInfo> copyDataReqInfo;
 		// Saved menu data for the menu-controlling co-op player.
 		std::unique_ptr<ExchangeablePlayerData> coopCompanionExchangeableData;
 		// Saved UseSkill() call arguments used to delay awarding of melee Skill XP
 		// until after friendly fire and other conditions are checked.
 		std::unique_ptr<LastP1MeleeUseSkillCallArgs> lastP1MeleeUseSkillCallArgs;
-		// Saved menu data for player 1 before importing another player's data.
+		// Saved menu data for P1 before importing another player's data.
 		std::unique_ptr<ExchangeablePlayerData> p1ExchangeableData;
 		// Player Action Functions Holder.
 		// Handles calling player action condition/press/hold/release functions.
@@ -1463,7 +1463,7 @@ namespace ALYSLC
 		// Effects applied when reviving players.
 		RE::BGSArtObject* reviveDragonSoulEffect;
 		RE::BGSArtObject* reviveHealingEffect;
-		// Reference alias to player 1.
+		// Reference alias to P1.
 		// Used to register co-op player menu events:
 		// Summoning Menu, Debug Menu. Helper Menu.
 		RE::BGSRefAlias* player1RefAlias;
@@ -1507,9 +1507,6 @@ namespace ALYSLC
 		RE::stl::enumeration<CopyablePlayerDataTypes, uint16_t> copiedPlayerDataTypes;
 		// Bound object for fists.
 		RE::TESBoundObject* fists;
-		// Factions.
-		// Co-op companion player faction.
-		RE::TESFaction* coopCompanionFaction;
 		// Shaders.
 		RE::TESEffectShader* activateHighlightShader;
 		RE::TESEffectShader* dragonHolesShader;
@@ -1593,6 +1590,8 @@ namespace ALYSLC
 		// Currently 4 PER player (in order): 
 		// default, combat override, ranged attack, special interaction.
 		std::vector<RE::TESPackage*> coopPackages;
+		// Base factions that all co-op players should be a member of.
+		std::vector<RE::TESFaction*> coopPlayerFactions;
 		// General killmoves applicable to humanoid and any other unaccounted-for races.
 		// Categorized by weapon type.
 		std::vector<std::vector<RE::TESIdleForm*>> genericKillmoveIdles;
@@ -1615,6 +1614,8 @@ namespace ALYSLC
 		bool coopSessionActive = false;
 		// Finished setting global co-op data.
 		bool globalDataInit = false;
+		// Is the game loading a save?
+		bool loadingASave = false;
 		// [Enderal only]
 		// Saved Crafting/Learning/Memory points from the last time these globals were checked.
 		// Used to check for increases in these values each frame.
@@ -1630,7 +1631,7 @@ namespace ALYSLC
 		// Controller ID for the player currently controlling menus.
 		// -1 if only "always open menus" are open.
 		int32_t menuCID;
-		// Controller ID for player 1 (typically, but not always, 0)
+		// Controller ID for P1 (typically, but not always, 0)
 		int32_t player1CID;
 		// Last set menu controller ID for the player that was in control of menus.
 		// Should never be -1 if a controllable menu is open, 
@@ -1652,7 +1653,7 @@ namespace ALYSLC
 		// allowing for a variable number of perk points
 		// given per level up to each player,
 		// instead of just 1 as in the default game.
-		// Saved perk count from the player 1 singleton.
+		// Saved perk count from the P1 singleton.
 		int32_t p1SavedPerkCount;
 		int32_t perkPointsAvailable;
 		int32_t totalPerkPointsGiven;

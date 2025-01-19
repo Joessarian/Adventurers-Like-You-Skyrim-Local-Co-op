@@ -28,6 +28,7 @@ namespace ALYSLC
 			defaultRotation = a_nrd.defaultRotation;
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
+			applyingHavokImpulse = a_nrd.applyingHavokImpulse;
 			interrupted = a_nrd.interrupted;
 			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
@@ -47,6 +48,7 @@ namespace ALYSLC
 			defaultRotation = std::move(a_nrd.defaultRotation);
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
+			applyingHavokImpulse = std::move(a_nrd.applyingHavokImpulse);
 			interrupted = std::move(a_nrd.interrupted);
 			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
@@ -66,6 +68,7 @@ namespace ALYSLC
 			defaultRotation = a_nrd.defaultRotation;
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
+			applyingHavokImpulse = a_nrd.applyingHavokImpulse;
 			interrupted = a_nrd.interrupted;
 			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
@@ -87,6 +90,7 @@ namespace ALYSLC
 			defaultRotation = std::move(a_nrd.defaultRotation);
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
+			applyingHavokImpulse = std::move(a_nrd.applyingHavokImpulse);
 			interrupted = std::move(a_nrd.interrupted);
 			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
@@ -107,6 +111,7 @@ namespace ALYSLC
 			startingRotation =
 			targetRotation = RE::NiMatrix3();
 			rotationInput.fill(0.0f);
+			applyingHavokImpulse = false;
 			interrupted = false;
 			precisionColliderAdded = false;
 			prevInterrupted = false;
@@ -137,6 +142,8 @@ namespace ALYSLC
 		RE::NiPoint3 localPosition;
 		// Last recorded node velocity relative to the player's root position.
 		RE::NiPoint3 localVelocity;
+		// Is this node applying a hit impulse this frame?
+		bool applyingHavokImpulse;
 		// Was setting the custom rotation for this node interrupted
 		// by the player's state (eg. ragdolled, staggered, manager paused)?
 		bool interrupted;
@@ -270,10 +277,11 @@ namespace ALYSLC
 		// Can check for the node in either the set of adjustable arm nodes or torso nodes.
 		bool NodeWasAdjusted(const RE::NiPointer<RE::NiAVObject>& a_nodePtr);
 
-		// Apply arm hit impulse to raycast-hit objects.
+		// Apply arm hit impulse and/or knockdown to raycast-hit objects.
+		// Return the first hit refr and total hits and impulse applied in the outparams.
 		// TODO: Do away with raycasts for collision checks
 		// and use an active collider enclosing the player's arm nodes instead.
-		bool PerformArmCollisionRaycastCheck
+		void PerformArmCollisionRaycast
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			const glm::vec4& a_startPos, 
@@ -380,7 +388,8 @@ namespace ALYSLC
 		const float interpFactor = 0.333333f;
 
 		// Mutex for setting rotation data.
-		// IMPORTANT: Lock before reading/adjusting any nodes' rotations
+		// IMPORTANT: 
+		// Lock before reading/adjusting any nodes' rotations
 		// managed by this manager.
 		std::mutex rotationDataMutex;
 		// Maps adjustable nodes by node name to their corresponding custom rotation data.
@@ -498,11 +507,14 @@ namespace ALYSLC
 		// using the cached default world rotation data.
 		void UpdateAttackSourceOrientationData(bool&& a_setDefaultDirAndPos);
 
+		// Update the player's encumbrance factor (inventory weight / current carryweight).
+		void UpdateEncumbranceFactor();
+
 		// Update movement parameters based on controller input.
 		void UpdateMovementParameters();
 		
 		// Check if the player should stop/start moving, 
-		// set appropriate AI/animation driven flags for player 1,
+		// set appropriate AI/animation driven flags for P1,
 		// update mounted/jump/swim/dodging states, or fix ragdoll state.
 		void UpdateMovementState();
 
@@ -595,6 +607,8 @@ namespace ALYSLC
 		bool lsMoved;
 		// Is an unpaused menu opened that stops movement?
 		bool menuStopsMovement;
+		// Movement yaw target changed from LS yaw to yaw-to-target or vice versa.
+		bool movementYawTargetChanged;
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
 		// Player is moving the right stick.
@@ -609,7 +623,7 @@ namespace ALYSLC
 		// and shooting forward in their facing/movement direction
 		// due to leftover momentum from prior to regdolling.
 		bool shouldCurtailMomentum;
-		// Should the player turn to directly face the targeted position?
+		// Should the player turn to directly face and aim at the targeted position?
 		bool shouldFaceTarget;
 		// Should the companion player start or stop paragliding?
 		// True: start, False: stop.
@@ -643,6 +657,9 @@ namespace ALYSLC
 		float dashDodgeTorsoPitchOffset;
 		// Total pitch offset to apply to torso nodes while dash dodging.
 		float dashDodgeTorsoRollOffset;
+		// Indicates how encumbered the player is:
+		// >= 1.0f = overencumbered.
+		float encumbranceFactor;
 		// Current left stick angle at max displacement from center.
 		float lsAngAtMaxDisp;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]

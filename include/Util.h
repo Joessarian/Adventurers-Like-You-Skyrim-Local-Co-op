@@ -2387,8 +2387,7 @@ namespace ALYSLC
 			RE::TESObjectREFR* a_target,
 			const RE::FormID& a_sourceFID, 
 			const RE::FormID& a_projFID, 
-			RE::stl::enumeration<RE::TESHitEvent::Flag, 
-			std::uint8_t> a_flags
+			RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> a_flags
 		)
 		{
 			if (auto sesh = RE::ScriptEventSourceHolder::GetSingleton(); sesh)
@@ -2480,11 +2479,8 @@ namespace ALYSLC
 			RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet
 		);
 
-		// Add/remove given perk to/from P1.
-		void ChangeP1Perk(RE::BGSPerk* a_perk, bool&& a_add);
-
 		// Add/remove given perk to/from the given actor.
-		bool ChangePerk(RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add);
+		bool ChangePerk(RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1);
 		
 		// Add/remove collision via Precision's attack colliders
 		// to the given actor's given node.
@@ -2769,7 +2765,7 @@ namespace ALYSLC
 
 		// Add the given perk to P1.
 		// Return true if successful.
-		bool Player1AddPerk(RE::BGSPerk* a_perk);
+		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank);
 
 		// Return true if P1 has the given perk
 		// in the P1 singleton perk list.
@@ -2875,6 +2871,24 @@ namespace ALYSLC
 		// Send a crosshair event with the given crosshair refr to set.
 		// Can be used to open/close the QuickLoot LootMenu.
 		void SendCrosshairEvent(RE::TESObjectREFR* a_crosshairRefrToSet);
+
+		// Apply and send hit data which triggers a hit event.
+		// Can set aggressor, target, source refr.
+		// Also total damage, flags, stagger, hit direction, and hit position,
+		// which are set to defaults unless given.
+		void SendHitData
+		(
+			const RE::ActorHandle& a_aggressor, 
+			const RE::ActorHandle& a_target, 
+			const RE::ObjectRefHandle& a_source, 
+			const float& a_damage = 0.0f, 
+			const SKSE::stl::enumeration<RE::HitData::Flag, std::uint32_t>& a_flags = 
+			RE::HitData::Flag::kMeleeAttack,
+			const float& a_stagger = 0.0f,
+			const float& a_pushBack = 0.0f,
+			const RE::NiPoint3& a_hitPos = RE::NiPoint3(),
+			const RE::NiPoint3& a_hitDir = RE::NiPoint3()
+		);
 
 		// Send the given input event.
 		void SendInputEvent(std::unique_ptr<RE::InputEvent* const>& a_inputEvent);

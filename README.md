@@ -1,6 +1,7 @@
 
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/1L3zH5y.png)
@@ -120,6 +121,8 @@ Open up the `ALYSLC_SE.sln` or `ALYSLC_AE.sln` inside your newly-generated `buil
 			- Debug prints
 			- Declarations
 			- Embedded URLs
+			- Long typenames
+			- Long names for functions/members that are part of a namespace
 	- Brackets should adhere to the ['Allman' style](https://en.wikipedia.org/wiki/Indentation_style#Allman_style).
 	- Wrap parentheses/braces around longer assignments, chained function calls, function argument lists, etc. to create a code block around them. The resulting code block can be packed or further broken up with line breaks as the developer sees fit.
 	- In short, when a line of code exceeds the column limit, feel free to use more parentheses to order operations explicitly and drop down another line to make the code more readable.
@@ -184,7 +187,8 @@ bool something =
   - User interface options
 - ***Save frequently*** while playing.
 - ***Stick together*** when possible to ensure all players are on-screen and easy to see. There are also some options to improve player visibility, such as player indicators, camera object fade options, and player-focal camera positioning when players are far apart. And finally, if seeing "the void" outside of the traversable map does not bother you, disabling camera collisions altogether provides the smoothest experience.
-- If a certain interaction is not triggering for any player, ***switch back to the default third person camera and attempt the interaction again with player 1***.
+- If attempting to interact with a nearby object by holding the 'Activate' bind, and the **"[Object] is not within player's line of sight"** crosshair notification message displays, ***try selecting the object with the player crosshair instead***.
+- If a certain interaction is still not working for any player, ***switch back to the default third person camera and attempt the interaction again with player 1***.
 - ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please include what debug options you've used and/or a crash log if you've also installed a crash logger.
 
 ### Performance
@@ -306,8 +310,6 @@ Degrees of incompatibility:
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
 - `[SE/AE] HEAVY`: [Persistent Favorites](https://www.nexusmods.com/skyrimspecialedition/mods/118174)
    - Reproducible crash when opening the Favorites Menu a second time with a companion player. Possibly a conflict when ALYSLC adds an item to player 1 to favorite it for a companion player that is opening the Favorites Menu. Only solution for now is to remove the mod while playing co-op.
-- `[SE/AE] LIGHT`: [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252)
-   - Having the mod active while using the co-op camera can lead to sporadic raycasting crashes. For now, until a solution is found, uninstall/disable SmoothCam with a hotkey if using the co-op camera while playing co-op.
 - `[AE] (Maybe) HEAVY`: [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
    - ***Might*** interfere with ALYSLC's system for player movement ONLY on AE. If player 1 is sliding around and not moving in the direction of the left stick, please uninstall TDM temporarily before playing co-op, at least until I find the issue on my end.
 - `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)

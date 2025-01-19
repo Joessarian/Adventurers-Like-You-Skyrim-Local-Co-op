@@ -152,7 +152,6 @@ namespace ALYSLC
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dismount(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dodge(const std::shared_ptr<CoopPlayer>& a_p);
-		bool FaceTarget(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Favorites(const std::shared_ptr<CoopPlayer>& a_p);
 		bool GrabRotateYZ(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Jump(const std::shared_ptr<CoopPlayer>& a_p);

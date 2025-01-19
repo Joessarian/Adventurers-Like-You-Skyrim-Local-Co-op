@@ -470,6 +470,7 @@ namespace ALYSLC
 		//RE::TESShout* CopyToPlaceholderShout(RE::TESShout* a_shoutToCopy);
 
 		// Copy the given spell to the placeholder spell at the given index.
+		// Return the placeholder spell with the requested spell copied into it.
 		RE::SpellItem* CopyToPlaceholderSpell
 		(
 			RE::SpellItem* a_spellToCopy, const PlaceholderMagicIndex& a_index
@@ -567,7 +568,7 @@ namespace ALYSLC
 		
 		// NOTE: Unused for now, but keeping for reference or if needed again in the future.
 		// Get equipable spells in the hand slots or powers/shouts in voice slot.
-		// Checks all of player 1's known spells/shouts 
+		// Checks all of P1's known spells/shouts 
 		// and this player's known spells/shouts to compile the list.
 		std::vector<RE::TESForm*> GetEquipableSpells(bool a_inHandSlot) const;
 		
@@ -744,7 +745,7 @@ namespace ALYSLC
 
 		// Attempts to rectify mismatches and equip state issues 
 		// with the player's equipped forms, and then re-equip the desired forms.
-		// NOTE: Not called on player 1 as of now.
+		// NOTE: Not called on P1 as of now.
 		void ValidateEquipState();
 		
 		//
@@ -756,7 +757,7 @@ namespace ALYSLC
 		// The co-op actor.
 		RE::ActorPtr coopActor;
 		// Spell that corresponds to the highest shout variation or power, 
-		// if equipped, that player 1 has learned.
+		// if equipped, that P1 has learned.
 		RE::SpellItem* voiceSpell;
 		// Quick slot spell.
 		RE::SpellItem* quickSlotSpell;
@@ -774,7 +775,7 @@ namespace ALYSLC
 		// Quick slot consumable item.
 		RE::TESForm* quickSlotItem;
 		// Form in the power/voice slot.
-		// Saved each time player 1 equips a power/shout,
+		// Saved each time P1 equips a power/shout,
 		// and once at the start of the co-op session.
 		RE::TESForm* voiceForm;
 		// Unused for now. Weapon types (original/grip changed) for LH/RH forms.
@@ -838,7 +839,7 @@ namespace ALYSLC
 		// List of bound object and spell forms favorited by the co-op player.
 		std::vector<RE::TESForm*> favoritedForms;
 		// List of flags indicating whether this co-op player's favorited item at each index
-		// is also favorited by player 1.
+		// is also favorited by P1.
 		std::vector<bool> favoritesIndicesInCommon;
 		// List of flags indicating whether this co-op player's favorited item at each index
 		// was added to P1 on import.

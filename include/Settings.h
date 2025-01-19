@@ -41,7 +41,8 @@ namespace ALYSLC
 		static inline bool bOriginPointSmoothing = true;
 		// Only fade objects that are a certain distance from the camera.
 		static inline bool bProximityFadeOnly = false;
-		// IMPORTANT: Disabling all occlusion markers in an exterior/interior cell, 
+		// IMPORTANT: 
+		// Disabling all occlusion markers in an exterior/interior cell, 
 		// whether through the CK or through a plugin at runtime,
 		// will lead to worse performance, as more objects must be rendered each frame.
 		// Only enable if you have the FPS headroom, want to have max visibility, 
@@ -658,6 +659,9 @@ namespace ALYSLC
 		// 10.0 seems to rarely cause crashes, if ever. Can set lower just to be safe.
 		// 5.0 seems to be completely stable.
 		static inline const float fEquipAnimSpeedFactor = 5.0f;
+		// Only knock down slapped actors based on the set knockdown mode.
+		static inline const uint32_t uSlapKnockdownCriteria = 
+		!SlapKnockdownCriteria::kSufficientContactSpeed;
 
 		//-------------
 		//[Controller]:
@@ -694,7 +698,7 @@ namespace ALYSLC
 		// Disabling will prevent such NPCs from being killmove'd.
 		static inline const bool bUseGenericKillmovesOnUnsupportedNPCs = false;
 		// Absolute max thrown object speed (in-game units / second).
-		static inline const float fAbsoluteMaxThrownRefrReleaseSpeed = 15000.0f;
+		static inline const float fAbsoluteMaxThrownRefrReleaseSpeed = 7500.0f;
 		// Base max speed at which a grabbed reference can move (ingame units / second).
 		static inline const float fBaseGrabbedRefrMaxSpeed = 131072.0f;
 		// Base max thrown object speed (in-game units / second).
@@ -762,7 +766,7 @@ namespace ALYSLC
 		// Seconds between updating crosshair text if the previous message's type
 		// is not of the same type as the current one.
 		static inline const float fSecsBetweenDiffCrosshairMsgs = 2.0f;
-		// Seconds between attempting to move invalid players to player 1.
+		// Seconds between attempting to move invalid players to P1.
 		static inline const float fSecsBetweenInvalidPlayerMoveRequests = 2.0f;
 		// Seconds between stealth state checks while sneaking.
 		static inline const float fSecsBetweenStealthStateChecks = 0.25f;

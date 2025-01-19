@@ -81,7 +81,6 @@ namespace ALYSLC
 				targetedMountHandle = a_handle;
 			}
 		}
-
 		//
 		// Member funcs
 		//
@@ -107,7 +106,7 @@ namespace ALYSLC
 		// Request state change for sub-managers (EM, MM, PAM, TM).
 		void RequestSubManagerStateChange(ManagerState&& a_newState);
 
-		// Debug option to reset player 1's state via resurrection and re-equipping hand forms.
+		// Debug option to reset P1's state via resurrection and re-equipping hand forms.
 		void ResetPlayer1();
 		
 		// Revert to saved pre-transformation race.
@@ -116,6 +115,10 @@ namespace ALYSLC
 		// Queue task to send animation event.
 		// Run from task/detached threads or secondary game threads.
 		void SendAnimEventSynced(RE::BSFixedString a_animEvent);
+
+		// Set this player as downed and reset all downed player state
+		// in preparation for updating the player until they are revived or the co-op session ends.
+		void SetAsDowned();
 
 		// Set up player for co-op by changing various actorbase data and form flags.
 		void SetCoopPlayerFlags();
@@ -141,6 +144,11 @@ namespace ALYSLC
 		// Update gender, animations, skin tone, headparts, 
 		// and refresh the player actor's 3D model when done.
 		void UpdateGenderAndBody(bool a_setFemale, bool a_setOppositeGenderAnims);
+
+		// Update player crosshair text, actor state, and more when downed.
+		// NOTE:
+		// Run in the Main() hook.
+		void UpdateWhenDowned();
 
 		//
 		// Tasks
@@ -229,6 +237,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastDashDodgeTP;
 		// Time at which the player was last downed.
 		SteadyClock::time_point lastDownedTP;
+		// Time at which the player last started to get up after being revived.
+		SteadyClock::time_point lastGetupAfterReviveTP;
 		// Time at which the player last fully got up after being ragdolled.
 		SteadyClock::time_point lastGetupTP;
 		// Time point indicating when the player was last hidden 
@@ -314,8 +324,8 @@ namespace ALYSLC
 		// [true] when health hits or goes below 0.
 		// [false] when revived and standing up.
 		bool isDowned;
-		// Is the player getting up after being ragdolled?
-		bool isGettingUp;
+		// Is the player getting up after being downed?
+		bool isGettingUpAfterRevive;
 		// Is this player in god mode?
 		bool isInGodMode;
 		// Is this player P1?
@@ -341,7 +351,7 @@ namespace ALYSLC
 		// Is the player actor valid this frame or was it invalid previously?
 		bool selfValid;
 		bool selfWasInvalid;
-		// Should this player teleport to player 1?
+		// Should this player teleport to P1?
 		bool shouldTeleportToP1;
 		// Health level once this downed player is fully revived.
 		float fullReviveHealth;

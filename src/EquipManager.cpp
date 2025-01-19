@@ -24,8 +24,12 @@ namespace ALYSLC
 				p ? p->controllerID : -1,
 				p.use_count());
 			// Init once.
-			lastCycledSpellCategory = lhSpellCategory = rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
-			lastCycledWeaponCategory = lhWeaponCategory = rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
+			lastCycledSpellCategory = 
+			lhSpellCategory = 
+			rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
+			lastCycledWeaponCategory =
+			lhWeaponCategory = 
+			rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
 			currentCycledLHSpellsList.fill(nullptr);
 			currentCycledRHSpellsList.fill(nullptr);
 			currentCycledLHWeaponsList.fill(nullptr);
@@ -40,7 +44,12 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR("[EM] ERR: Initialize: Cannot construct Equip Manager for controller ID {}.", a_p ? a_p->controllerID : -1);
+			SPDLOG_ERROR
+			(
+				"[EM] ERR: Initialize: "
+				"Cannot construct Equip Manager for controller ID {}.", 
+				a_p ? a_p->controllerID : -1
+			);
 		}
 	}
 
@@ -51,48 +60,61 @@ namespace ALYSLC
 		// Temporary solution until figuring out how to prevent the game from auto-equipping
 		// the "best" gear for co-op actors.
 
-		if (!p->isPlayer1)
+		// P1 does not require assistance, leave them be.
+		if (p->isPlayer1)
 		{
-			// Only resolve mismatches when no temp menus are showing (no Inventory/Favorites/Magic menus, etc. are open).
-			if (auto ui = RE::UI::GetSingleton(); ui)
+			return;
+		}
+
+		auto ui = RE::UI::GetSingleton(); 
+		if (!ui)
+		{
+			return;
+		}
+
+		// Ammo equipped one unit at a time to prevent odd reload/nocking 
+		// and inventory display issues when a large amount of ammo is equipped at once.
+		// Have to re-equip 1 unit here once the currently cached ammo is cleared 
+		// upon releasing the projectile.
+		if (!coopActor->GetCurrentAmmo() && desiredEquippedForms[!EquipIndex::kAmmo])
+		{
+			auto ammoToReEquip = 
+			(
+				desiredEquippedForms[!EquipIndex::kAmmo]->As<RE::TESBoundObject>()
+			);
+			// Also add 1 ammo unit when in god mode to maintain the same ammo count.
+			if (p->isInGodMode)
 			{
-				// Ammo equipped one unit at a time to prevent odd reload/nocking and inventory display issues 
-				// when a large amount of ammo is equipped at once.
-				// Have to re-equip 1 unit here once the currently cached ammo is cleared upon releasing the projectile.
-				if (!coopActor->GetCurrentAmmo() && desiredEquippedForms[!EquipIndex::kAmmo])
-				{
-					auto ammoToReEquip = desiredEquippedForms[!EquipIndex::kAmmo]->As<RE::TESBoundObject>();
-					// Also add 1 ammo unit when in god mode to maintain the same ammo count.
-					if (p->isInGodMode)
-					{
-						coopActor->AddObjectToContainer(ammoToReEquip, nullptr, 1, coopActor.get());
-					}
-
-					// Make sure the player still has at least 1 of the ammo before equipping.
-					const auto invCounts = coopActor->GetInventoryCounts();
-					if (invCounts.contains(ammoToReEquip) && invCounts.at(ammoToReEquip) > 0)
-					{
-						EquipAmmo(ammoToReEquip);
-					}
-				}
-
-				// Check if the game unequipped desired hand forms and re-equip them as needed.
-				// Sometimes these forms are unequipped without any equip event firing.
-				// Can also loop infintely in certain instances where the game interferes with the equip request's equip slots.
-				// Solution TBD.
-				bool isEquipping = false;
-				bool isUnequipping = false;
-				coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
-				coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-				// Not transforming/transformed, not (un)equipping, and not attacking or casting.
-				if (!p->isTransforming && !p->isTransformed &&
-					!isEquipping && !isUnequipping && 
-					!p->pam->isAttacking && !p->pam->isInCastingAnim) 
-				{
-					// Attempt to validate and re-equip.
-					ValidateEquipState();
-				}
+				coopActor->AddObjectToContainer(ammoToReEquip, nullptr, 1, coopActor.get());
 			}
+
+			// Make sure the player still has at least 1 of the ammo before equipping.
+			const auto invCounts = coopActor->GetInventoryCounts();
+			if (invCounts.contains(ammoToReEquip) && invCounts.at(ammoToReEquip) > 0)
+			{
+				EquipAmmo(ammoToReEquip);
+			}
+		}
+
+		// Check if the game unequipped desired hand forms and re-equip them as needed.
+		// Sometimes these forms are unequipped without any equip event firing.
+		// Can also loop infintely in certain instances 
+		// where the game interferes with the equip request's equip slots.
+		// Solution TBD.
+		bool isEquipping = false;
+		bool isUnequipping = false;
+		coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
+		coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
+		// Not transforming/transformed, not (un)equipping, and not attacking or casting.
+		if (!p->isTransforming && 
+			!p->isTransformed &&
+			!isEquipping && 
+			!isUnequipping && 
+			!p->pam->isAttacking && 
+			!p->pam->isInCastingAnim) 
+		{
+			// Attempt to validate and re-equip.
+			ValidateEquipState();
 		}
 	}
 
@@ -109,10 +131,19 @@ namespace ALYSLC
 		// Update our cached equip state.
 		RefreshEquipState(RefreshSlots::kAll);
 		// "Infinite" carryweight for coop players.
-		// NOTE: Modifies temporary modifier, so the previous temp buffs/debuffs are wiped.
-		float permMod = coopActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight);
-		float tempMod = coopActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight);
-		float damageMod = coopActor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight);
+		// NOTE: Adjusts the temporary modifier, so the previous temp buffs/debuffs are wiped.
+		float permMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
+		);
+		float tempMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
+		);
+		float damageMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
+		);
 		if (Settings::bInfiniteCarryweight)
 		{
 			coopActor->RestoreActorValue
@@ -124,7 +155,10 @@ namespace ALYSLC
 		}
 		else
 		{
-			coopActor->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight, -tempMod);
+			coopActor->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight, -tempMod
+			);
 		}
 
 		// Fixes skin glow/tone mismatches.
@@ -214,7 +248,10 @@ namespace ALYSLC
 		placeholderMagic.fill(nullptr);
 		for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i)
 		{
-			placeholderMagic[i] = glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * controllerID + i];
+			placeholderMagic[i] = 
+			(
+				glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * controllerID + i]
+			);
 		}
 
 		// Favorited items.
@@ -284,7 +321,10 @@ namespace ALYSLC
 			copiedShoutToEquip->variations[0] = a_shoutToCopy->variations[0];
 			copiedShoutToEquip->variations[1] = a_shoutToCopy->variations[1];
 			copiedShoutToEquip->variations[2] = a_shoutToCopy->variations[2];
-			copiedShoutToEquip->fullName = RE::BSFixedString("[Co-op] " + std::string(a_shoutToCopy->fullName.c_str()));
+			copiedShoutToEquip->fullName = 
+			(
+				RE::BSFixedString("[Co-op] " + std::string(a_shoutToCopy->fullName.c_str()))
+			);
 
 			// Ensure the placeholder shout does not show in the UI.
 			if (copiedShoutToEquip)
@@ -296,7 +336,10 @@ namespace ALYSLC
 					{
 						if (variation.spell->avEffectSetting) 
 						{
-							variation.spell->avEffectSetting->data.flags.set(RE::EffectSetting::EffectSettingData::Flag::kHideInUI);
+							variation.spell->avEffectSetting->data.flags.set
+							(
+								RE::EffectSetting::EffectSettingData::Flag::kHideInUI
+							);
 							variation.word->GetKnown();
 						}
 
@@ -304,9 +347,18 @@ namespace ALYSLC
 						{
 							if (effect && effect->baseEffect)
 							{
-								SPDLOG_DEBUG("[EM] Shout variation spell {} {} has archetype: {}",
-									variation.spell->GetName(), i, effect->baseEffect->GetArchetype());
-								effect->baseEffect->data.flags.set(RE::EffectSetting::EffectSettingData::Flag::kHideInUI);
+								SPDLOG_DEBUG
+								(
+									"[EM] Shout variation spell {} {} "
+									"has archetype: {}",
+									variation.spell->GetName(),
+									i, 
+									effect->baseEffect->GetArchetype()
+								);
+								effect->baseEffect->data.flags.set
+								(
+									RE::EffectSetting::EffectSettingData::Flag::kHideInUI)
+								);
 							}
 						}
 					}
@@ -314,7 +366,8 @@ namespace ALYSLC
 			}
 
 			copiedShoutToEquip->SetAltered(true);
-			SPDLOG_DEBUG("[EM] Copied shout data to placeholder shout {}.", copiedShoutToEquip->GetName());
+			SPDLOG_DEBUG("[EM] Copied shout data to placeholder shout {}.", 
+				copiedShoutToEquip->GetName());
 			SetCopiedMagicAndFID(a_shoutToCopy, PlaceholderMagicIndex::kVoice);
 			// Make sure the cached placeholder magic form is set to the newly copied shout.
 			placeholderMagic[!PlaceholderMagicIndex::kVoice] = copiedShoutToEquip;
@@ -324,7 +377,10 @@ namespace ALYSLC
 	}
 	*/
 
-	RE::SpellItem* EquipManager::CopyToPlaceholderSpell(RE::SpellItem* a_spellToCopy, const PlaceholderMagicIndex& a_index)
+	RE::SpellItem* EquipManager::CopyToPlaceholderSpell
+	(
+		RE::SpellItem* a_spellToCopy, const PlaceholderMagicIndex& a_index
+	)
 	{
 		// Copy the given spell's data to the requested placeholder spell, 
 		// save FID of the copied spell, and return the modified placeholder spell.
@@ -346,8 +402,9 @@ namespace ALYSLC
 		}
 
 		// IMPORTANT:
-		// Copying over the spell in its entirety using Copy() causes crashes when cycling certain spells
-		// while between casts (e.g. Sparks -> Flames), and I've yet to dig into the reason for it.
+		// Copying over the spell in its entirety using Copy() causes crashes 
+		// when cycling certain spells while between casts (e.g. Sparks -> Flames), 
+		// and I've yet to dig into the reason for it.
 		// Instead, we copy over the magic item data, spell data, and effects + effect setting.
 		RE::SpellItem* copiedSpellToEquip = 
 		(
@@ -357,7 +414,8 @@ namespace ALYSLC
 		copiedSpellToEquip->avEffectSetting = a_spellToCopy->avEffectSetting;
 		copiedSpellToEquip->data = a_spellToCopy->data;
 		copiedSpellToEquip->effects = a_spellToCopy->effects;
-		// Modify the full name so we can differentiate between the original and the placeholder spell.
+		// Modify the full name so we can differentiate
+		// between the original and the placeholder spell.
 		copiedSpellToEquip->fullName = 
 		(
 			RE::BSFixedString("[Co-op] " + std::string(a_spellToCopy->fullName.c_str()))
@@ -445,21 +503,24 @@ namespace ALYSLC
 					continue;
 				}
 
-				if (auto ammo = ammoForm->As<RE::TESAmmo>(); ammo)
+				auto ammo = ammoForm->As<RE::TESAmmo>(); 
+				if (!ammo)
 				{
-					// Set the new list's index of the currently cycled ammo.
-					if (ammo == currentCycledAmmo)
-					{
-						currentCycledAmmoIndex = j;
-					}
+					continue;
+				}
 
-					if ((ammoTypeToCycle == kArrow && !ammo->IsBolt()) ||
-						(ammoTypeToCycle == kBolt && ammo->IsBolt()))
-					{
-						// Ammo type matches, so add it to the list and update the index.
-						cyclableAmmoList.emplace_back(ammo);
-						++j;
-					}
+				// Set the new list's index of the currently cycled ammo.
+				if (ammo == currentCycledAmmo)
+				{
+					currentCycledAmmoIndex = j;
+				}
+
+				if ((ammoTypeToCycle == kArrow && !ammo->IsBolt()) ||
+					(ammoTypeToCycle == kBolt && ammo->IsBolt()))
+				{
+					// Ammo type matches, so add it to the list and update the index.
+					cyclableAmmoList.emplace_back(ammo);
+					++j;
 				}
 			}
 		}
@@ -519,7 +580,10 @@ namespace ALYSLC
 			(
 				(currentCycledIdleIndexPair.second + 1) % favoritedEmoteIdles.size()
 			);
-			currentCycledIdleIndexPair.first = favoritedEmoteIdles[currentCycledIdleIndexPair.second];
+			currentCycledIdleIndexPair.first = 
+			(
+				favoritedEmoteIdles[currentCycledIdleIndexPair.second]
+			);
 		}
 
 		SPDLOG_DEBUG("[EM] CycleEmoteIdles: {}: current idle: {}, index: {}.",
@@ -564,7 +628,9 @@ namespace ALYSLC
 			currentCycledRHSpellsList[!category] : 
 			currentCycledLHSpellsList[!category]
 		);
-		// Build list of cyclable spells based on the current category and set the current spell's index.
+
+		// Build list of cyclable spells based on the current category 
+		// and set the current spell's index.
 		// 'j' will hold the number of spells that match the chosen category.
 		for (uint32_t i = 0, j = 0; i < cyclableFormsMap[CyclableForms::kSpell].size(); ++i)
 		{
@@ -574,96 +640,99 @@ namespace ALYSLC
 				continue;
 			}
 
-			if (auto spell = spellForm->As<RE::SpellItem>(); spell)
+			auto spell = spellForm->As<RE::SpellItem>(); 
+			if (!spell)
 			{
-				auto spellType = spell->GetSpellType();
-				// Not a hand spell.
-				if (spellType != RE::MagicSystem::SpellType::kSpell)
-				{
-					continue;
-				}
+				continue;
+			}
 
-				// Current spell matches, so set its index.
-				if (spell == currentCycledSpellForm)
-				{
-					currentCycledSpellIndex = j;
-				}
+			auto spellType = spell->GetSpellType();
+			// Not a hand spell.
+			if (spellType != RE::MagicSystem::SpellType::kSpell)
+			{
+				continue;
+			}
 
-				// Match with the chosen category and update the match index.
-				switch (category)
-				{
-				case FavMagicCyclingCategory::kAllFavorites:
+			// Current spell matches, so set its index.
+			if (spell == currentCycledSpellForm)
+			{
+				currentCycledSpellIndex = j;
+			}
+
+			// Match with the chosen category and update the match index.
+			switch (category)
+			{
+			case FavMagicCyclingCategory::kAllFavorites:
+			{
+				cyclableSpellsList.emplace_back(spell);
+				++j;
+				continue;
+			}
+			case FavMagicCyclingCategory::kAlteration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kAlteration)
 				{
 					cyclableSpellsList.emplace_back(spell);
 					++j;
-					continue;
 				}
-				case FavMagicCyclingCategory::kAlteration:
-				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kAlteration)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kConjuration:
+				continue;
+			}
+			case FavMagicCyclingCategory::kConjuration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kConjuration)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kConjuration)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
+					cyclableSpellsList.emplace_back(spell);
+					++j;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kDestruction:
+				continue;
+			}
+			case FavMagicCyclingCategory::kDestruction:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kDestruction)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kDestruction)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
+					cyclableSpellsList.emplace_back(spell);
+					++j;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kIllusion:
+				continue;
+			}
+			case FavMagicCyclingCategory::kIllusion:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kIllusion)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kIllusion)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
+					cyclableSpellsList.emplace_back(spell);
+					++j;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kRestoration:
+				continue;
+			}
+			case FavMagicCyclingCategory::kRestoration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kRestoration)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kRestoration)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
+					cyclableSpellsList.emplace_back(spell);
+					++j;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kRitual:
+				continue;
+			}
+			case FavMagicCyclingCategory::kRitual:
+			{
+				// 2H spell.
+				if (spell->equipSlot == glob.bothHandsEquipSlot)
 				{
-					// 2H spell.
-					if (spell->equipSlot == glob.bothHandsEquipSlot)
-					{
-						cyclableSpellsList.emplace_back(spell);
-						++j;
-					}
+					cyclableSpellsList.emplace_back(spell);
+					++j;
+				}
 
-					continue;
-				}
-				default:
-				{
-					continue;
-				}
-				}
+				continue;
+			}
+			default:
+			{
+				continue;
+			}
 			}
 		}
 
@@ -703,8 +772,14 @@ namespace ALYSLC
 			if (!p->isPlayer1)
 			{
 				// Have to get the spell copied to the corresponding placeholder spell.
-				if (auto currentlyEquippedSpell = currentlyEquippedForm ? currentlyEquippedForm->As<RE::SpellItem>() : nullptr; 
-					currentlyEquippedSpell)
+				auto currentlyEquippedSpell = 
+				(
+					currentlyEquippedForm ?
+					currentlyEquippedForm->As<RE::SpellItem>() : 
+					nullptr
+				);
+
+				if (currentlyEquippedSpell)
 				{
 					bool is2HSpell = currentlyEquippedSpell->equipSlot == glob.bothHandsEquipSlot;
 					if (is2HSpell)
@@ -745,12 +820,16 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[EM] CycleHandSlotMagic: {}: right hand: {}, spell category {} and currently cycled spell {} from index {}.",
+		SPDLOG_DEBUG
+		(
+			"[EM] CycleHandSlotMagic: {}: right hand: {}, spell category {} "
+			"and currently cycled spell {} from index {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhSpellCategory : lhSpellCategory,
 			nextSpell ? nextSpell->GetName() : "NONE",
-			nextSpellIndex);
+			nextSpellIndex
+		);
 	}
 
 	void EquipManager::CycleHandSlotMagicCategory(bool&& a_rightHand)
@@ -795,10 +874,14 @@ namespace ALYSLC
 			lhSpellCategory = newCategory;
 		}
 
-		SPDLOG_DEBUG("[EM] CycleHandSlotMagicCategory: {}: right hand: {}, spell category is now: {}.",
+		SPDLOG_DEBUG
+		(
+			"[EM] CycleHandSlotMagicCategory: {}: right hand: {}, "
+			"spell category is now: {}.",
 			coopActor->GetName(),
 			a_rightHand,
-			a_rightHand ? rhSpellCategory : lhSpellCategory);
+			a_rightHand ? rhSpellCategory : lhSpellCategory
+		);
 	}
 
 	void EquipManager::CycleVoiceSlotMagic()
@@ -845,10 +928,14 @@ namespace ALYSLC
 
 		currentCycledVoiceMagic = cyclableVoiceMagicList[nextVoiceMagicIndex];
 
-		SPDLOG_DEBUG("[EM] CycleVoiceSlotMagic: {}: currently cycled voice magic: {} from index {}.",
+		SPDLOG_DEBUG
+		(
+			"[EM] CycleVoiceSlotMagic: {}: currently cycled voice magic: "
+			"{} from index {}.",
 			coopActor->GetName(),
 			currentCycledVoiceMagic ? currentCycledVoiceMagic->GetName() : "NONE",
-			nextVoiceMagicIndex);
+			nextVoiceMagicIndex
+		);
 	}
 
 	void EquipManager::CycleWeaponCategory(bool&& a_rightHand)
@@ -873,7 +960,8 @@ namespace ALYSLC
 
 		// Only consider categories that have at least one favorited item.
 		// Also stop cycling once the initial category is reached on wraparound.
-		while (!HasCyclableWeaponInCategory(newCategory, a_rightHand) && newCategory != initialCategory)
+		while (!HasCyclableWeaponInCategory(newCategory, a_rightHand) && 
+				newCategory != initialCategory)
 		{
 			newCategory =
 			(
@@ -913,7 +1001,8 @@ namespace ALYSLC
 			rhWeaponCategory : 
 			lhWeaponCategory
 		);
-		// If no weapons are favorited, clear current list and reset category before returning nullptr here.
+		// If no weapons are favorited, clear current list 
+		// and reset category before returning here.
 		if (cyclableFormsMap[CyclableForms::kWeapon].empty())
 		{
 			if (a_rightHand)
@@ -940,14 +1029,16 @@ namespace ALYSLC
 		);
 		// Index of the current cycled weapon in the new cyclable weapons list.
 		int32_t currentCycledWeaponIndex = -1;
-		// Build list of favorited weapons in the current category and set index of current weapon.
+		// Build list of favorited weapons in the current category 
+		// and set the index of the current weapon.
 		// After the loop, 'j' holds the number of cyclable weapons within our chosen category.
 		for (uint32_t i = 0, j = 0; i < cyclableFormsMap[CyclableForms::kWeapon].size(); ++i)
 		{
 			form = cyclableFormsMap[CyclableForms::kWeapon][i];
 			if (auto equipType = form->As<RE::BGSEquipType>(); equipType)
 			{
-				// Handle shield and torch first, so that the switch statement below can handle weapons exclusively.
+				// Handle shield and torch first, 
+				// so that the switch statement below can handle weapons exclusively.
 				bool isShield = 
 				(
 					form->As<RE::TESObjectARMO>() && form->As<RE::TESObjectARMO>()->IsShield()
@@ -958,7 +1049,7 @@ namespace ALYSLC
 					form->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)
 				);
 				// Incompatible equip slot.
-				if (a_rightHand && (isShield || isTorch))
+				if ((a_rightHand) && (isShield || isTorch))
 				{
 					continue;
 				}
@@ -1123,7 +1214,9 @@ namespace ALYSLC
 			}
 		}
 
-		// If there still are no cyclable weapons, clear the current cycled weapon and reset category before returning.
+		// If there still are no cyclable weapons, 
+		// clear the current cycled weapon 
+		// and reset the category before returning.
 		if (cyclableWeaponsList.empty())
 		{
 			if (a_rightHand)
@@ -1188,15 +1281,28 @@ namespace ALYSLC
 			currentCycledLHWeaponsList[!lhWeaponCategory] = nextForm;
 		}
 
-		SPDLOG_DEBUG("[EM] CycleWeapons: {}: right hand: {}, category is now {}, cycled weapon {} from index {}.",
+		SPDLOG_DEBUG
+		(
+			"[EM] CycleWeapons: {}: right hand: {}, category is now {}, "
+			"cycled weapon {} from index {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhWeaponCategory : lhWeaponCategory,
 			nextForm ? nextForm->GetName() : "NONE",
-			nextWeaponIndex);
+			nextWeaponIndex
+		);
 	}
 
-	void EquipManager::EquipAmmo(RE::TESForm* a_toEquip, RE::ExtraDataList* a_exData, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow)
+	void EquipManager::EquipAmmo
+	(
+		RE::TESForm* a_toEquip,
+		RE::ExtraDataList* a_exData, 
+		const RE::BGSEquipSlot* a_slot,
+		bool a_queueEquip, 
+		bool a_forceEquip, 
+		bool a_playSounds,
+		bool a_applyNow
+	)
 	{
 		// Equip the given ammo.
 
@@ -1323,7 +1429,17 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::EquipArmor(RE::TESForm* a_toEquip, RE::ExtraDataList* a_exData, uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow)
+	void EquipManager::EquipArmor
+	(
+		RE::TESForm* a_toEquip, 
+		RE::ExtraDataList* a_exData,
+		uint32_t a_count, 
+		const RE::BGSEquipSlot* a_slot,
+		bool a_queueEquip,
+		bool a_forceEquip,
+		bool a_playSounds, 
+		bool a_applyNow
+	)
 	{
 		// Equip the given armor.
 
@@ -1353,7 +1469,9 @@ namespace ALYSLC
 					a_toEquip->As<RE::TESObjectARMO>()->equipSlot :
 					a_slot
 				);
-				for (uint8_t i = !EquipIndex::kFirstBipedSlot; i <= !EquipIndex::kLastBipedSlot; ++i)
+				for (uint8_t i = !EquipIndex::kFirstBipedSlot; 
+					 i <= !EquipIndex::kLastBipedSlot; 
+					 ++i)
 				{
 					auto bitMask = 
 					(
@@ -1366,7 +1484,7 @@ namespace ALYSLC
 					{
 						equipIndices.emplace_back(i);
 						// Unequip armor in same slot first.
-						if (RE::TESForm* currentArmorForm = equippedForms[i]; currentArmorForm)
+						if (auto currentArmorForm = equippedForms[i]; currentArmorForm)
 						{
 							UnequipArmor(currentArmorForm);
 						}
@@ -1401,7 +1519,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Any other form which does not fit in a biped slot.
+				// Any other form that does not fit in a biped slot.
 				aem->EquipObject
 				(
 					coopActor.get(),
@@ -1467,7 +1585,7 @@ namespace ALYSLC
 		if (!p->isPlayer1) 
 		{
 			// NOTE: Can cause the game to stutter if unequipping right after equipping.
-			// Also, the game only unequips fists automatically for player 1. 
+			// Also, the game only unequips fists automatically for P1. 
 			// Must be done manually for other players.
 			aem->UnequipObject
 			(
@@ -1484,7 +1602,18 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::EquipForm(RE::TESForm* a_toEquip, const EquipIndex& a_equipIndex, RE::ExtraDataList* a_exData, uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow)
+	void EquipManager::EquipForm
+	(
+		RE::TESForm* a_toEquip, 
+		const EquipIndex& a_equipIndex, 
+		RE::ExtraDataList* a_exData,
+		uint32_t a_count, 
+		const RE::BGSEquipSlot* a_slot,
+		bool a_queueEquip,
+		bool a_forceEquip,
+		bool a_playSounds,
+		bool a_applyNow
+	)
 	{
 		// Equip the given form.
 
@@ -1500,7 +1629,7 @@ namespace ALYSLC
 		}
 
 		// Special case if trying to equip fists here.
-		// Desired form not cleared first.
+		// Desired form NOT cleared first.
 		if (a_toEquip == glob.fists) 
 		{
 			aem->EquipObject
@@ -1573,6 +1702,7 @@ namespace ALYSLC
 
 					// Set desired equipped form at the given index.
 					desiredEquippedForms[!a_equipIndex] = a_toEquip;
+
 					// Equip enchantment as well if equipping a staff.
 					if (auto weap = boundObj->As<RE::TESObjectWEAP>(); 
 						weap && weap->IsStaff() && weap->formEnchanting) 
@@ -1687,7 +1817,7 @@ namespace ALYSLC
 			}
 
 			// Unequip current spell/shout first.
-			if (RE::TESForm* currentVoiceForm = equippedForms[!EquipIndex::kVoice]; currentVoiceForm)
+			if (auto currentVoiceForm = equippedForms[!EquipIndex::kVoice]; currentVoiceForm)
 			{
 				if (currentVoiceForm->As<RE::SpellItem>())
 				{
@@ -1708,7 +1838,10 @@ namespace ALYSLC
 		aem->EquipShout(coopActor.get(), shout);
 	}
 
-	void EquipManager::EquipSpell(RE::TESForm* a_toEquip, const EquipIndex& a_equipIndex, const RE::BGSEquipSlot* a_slot)
+	void EquipManager::EquipSpell
+	(
+		RE::TESForm* a_toEquip, const EquipIndex& a_equipIndex, const RE::BGSEquipSlot* a_slot
+	)
 	{
 		// Equip the given spell.
 
@@ -1759,11 +1892,13 @@ namespace ALYSLC
 					// Fix placeholder spell being equipped in the wrong hand.
 					bool lhPlaceholderSpellInWrongHand = 
 					(
-						equippedForms[!EquipIndex::kRightHand] == placeholderMagic[!PlaceholderMagicIndex::kLH]
+						equippedForms[!EquipIndex::kRightHand] == 
+						placeholderMagic[!PlaceholderMagicIndex::kLH]
 					);
 					bool rhPlaceholderSpellInWrongHand = 
 					(
-						equippedForms[!EquipIndex::kLeftHand] == placeholderMagic[!PlaceholderMagicIndex::kRH]
+						equippedForms[!EquipIndex::kLeftHand] == 
+						placeholderMagic[!PlaceholderMagicIndex::kRH]
 					);
 					if (lhPlaceholderSpellInWrongHand || rhPlaceholderSpellInWrongHand)
 					{
@@ -1784,8 +1919,18 @@ namespace ALYSLC
 
 					// Handle placeholder spell copying before equipping.
 					// Don't copy the placeholder spell to itself.
-					if ((a_equipIndex == EquipIndex::kLeftHand && spell != placeholderMagic[!PlaceholderMagicIndex::kLH]) ||
-						(a_equipIndex == EquipIndex::kRightHand && spell != placeholderMagic[!PlaceholderMagicIndex::kRH]))
+					bool shouldCopyToPlaceholder = 
+					(
+						(
+							a_equipIndex == EquipIndex::kLeftHand && 
+							spell != placeholderMagic[!PlaceholderMagicIndex::kLH]
+						) ||
+						(
+							a_equipIndex == EquipIndex::kRightHand &&
+							spell != placeholderMagic[!PlaceholderMagicIndex::kRH]
+						)
+					);
+					if (shouldCopyToPlaceholder)
 					{
 						spell = CopyToPlaceholderSpell
 						(
@@ -1803,7 +1948,7 @@ namespace ALYSLC
 					// using the player's instant magic caster.
 							
 					// Unequip voice slot spell/shout first.
-					if (RE::TESForm* currentForm = equippedForms[!a_equipIndex]; currentForm)
+					if (auto currentForm = equippedForms[!a_equipIndex]; currentForm)
 					{
 						if (currentForm->Is(RE::FormType::Spell))
 						{
@@ -1868,37 +2013,48 @@ namespace ALYSLC
 		bool voiceSlotSpell = false;
 		if (auto p1ActorBase = p1->GetActorBase(); p1ActorBase)
 		{
-			if (auto p1BaseSpellList = (p1ActorBase->actorEffects) ? p1ActorBase->actorEffects->spells : nullptr; 
-				p1BaseSpellList)
+			auto p1BaseSpellList = 
+			(
+				p1ActorBase->actorEffects ? 
+				p1ActorBase->actorEffects->spells : 
+				nullptr
+			); 
+			if (p1BaseSpellList)
 			{
 				uint32_t spellListSize = p1ActorBase->actorEffects->numSpells;
-				// Get spells from player 1's actorbase spell list.
+				// Get spells from P1's actorbase spell list.
 				for (uint32_t i = 0; i < spellListSize; ++i)
 				{
-					if (auto spell = p1BaseSpellList[i]; spell)
+					auto spell = p1BaseSpellList[i]; 
+					if (!spell)
 					{
-						spellType = spell->GetSpellType();
-						handSlotSpell = a_inHandSlot && spellType == RE::MagicSystem::SpellType::kSpell;
-						voiceSlotSpell = 
-						(
-							(!a_inHandSlot) && 
-							(
-								spellType == RE::MagicSystem::SpellType::kLesserPower ||
-								spellType == RE::MagicSystem::SpellType::kPower ||
-								spellType == RE::MagicSystem::SpellType::kVoicePower
-							)
-						);
+						continue;
+					}
 
-						if (handSlotSpell || voiceSlotSpell)
-						{
-							equipableSpells.push_back(spell);
-						}
+					spellType = spell->GetSpellType();
+					handSlotSpell = 
+					(
+						a_inHandSlot && spellType == RE::MagicSystem::SpellType::kSpell
+					);
+					voiceSlotSpell = 
+					(
+						(!a_inHandSlot) && 
+						(
+							spellType == RE::MagicSystem::SpellType::kLesserPower ||
+							spellType == RE::MagicSystem::SpellType::kPower ||
+							spellType == RE::MagicSystem::SpellType::kVoicePower
+						)
+					);
+
+					if (handSlotSpell || voiceSlotSpell)
+					{
+						equipableSpells.push_back(spell);
 					}
 				}
 			}
 
 			// Add shouts that the co-op player has by virtue of their actor base, and
-			// add shouts that player 1 has by virtue of their actor base.
+			// add shouts that P1 has by virtue of their actor base.
 			if (!a_inHandSlot)
 			{
 				auto shoutList = 
@@ -1912,10 +2068,12 @@ namespace ALYSLC
 					uint32_t shoutListSize = p1ActorBase->actorEffects->numShouts;
 					for (uint32_t i = 0; i < shoutListSize; ++i)
 					{
-						if (shoutList[i] && strlen(shoutList[i]->GetName()) > 1)
+						if (!shoutList[i] || strlen(shoutList[i]->GetName()) <= 1)
 						{
-							equipableSpells.emplace_back(shoutList[i]);
+							continue;
 						}
+
+						equipableSpells.emplace_back(shoutList[i]);
 					}
 				}
 
@@ -1932,46 +2090,53 @@ namespace ALYSLC
 						uint32_t shoutListSize = coopPlayerActorBase->actorEffects->numShouts;
 						for (uint32_t i = 0; i < shoutListSize; ++i)
 						{
-							if (shoutList[i] && strlen(shoutList[i]->GetName()) > 1)
+							if (!shoutList[i] || strlen(shoutList[i]->GetName()) <= 1)
 							{
-								equipableSpells.emplace_back(shoutList[i]);
+								continue;
 							}
+							
+							equipableSpells.emplace_back(shoutList[i]);
 						}
 					}
 				}
 			}
 		}
 
-		// Add all hand or voice spells that player 1 has learned.
+		// Add all hand or voice spells that P1 has learned.
 		for (auto spell : p1->addedSpells)
 		{
-			if (spell)
+			if (!spell)
 			{
-				spellType = spell->GetSpellType();
-				handSlotSpell = a_inHandSlot && spellType == RE::MagicSystem::SpellType::kSpell;
-				voiceSlotSpell = 
-				{ 
-					(!a_inHandSlot) && 
-					(
-						spellType == RE::MagicSystem::SpellType::kLesserPower ||
-						spellType == RE::MagicSystem::SpellType::kPower ||
-						spellType == RE::MagicSystem::SpellType::kVoicePower
-					) 
-				};
+				continue;
+			}
 
-				if (handSlotSpell || voiceSlotSpell)
-				{
-					equipableSpells.push_back(spell);
-				}
+			spellType = spell->GetSpellType();
+			handSlotSpell = a_inHandSlot && spellType == RE::MagicSystem::SpellType::kSpell;
+			voiceSlotSpell = 
+			{ 
+				(!a_inHandSlot) && 
+				(
+					spellType == RE::MagicSystem::SpellType::kLesserPower ||
+					spellType == RE::MagicSystem::SpellType::kPower ||
+					spellType == RE::MagicSystem::SpellType::kVoicePower
+				) 
+			};
+
+			if (handSlotSpell || voiceSlotSpell)
+			{
+				equipableSpells.push_back(spell);
 			}
 		}
 
 		return equipableSpells;
 	}
 
-	RE::BGSEquipSlot* EquipManager::GetEquipSlotForForm(RE::TESForm* a_form, const EquipIndex& a_index) const
+	RE::BGSEquipSlot* EquipManager::GetEquipSlotForForm
+	(
+		RE::TESForm* a_form, const EquipIndex& a_index
+	) const
 	{
-		// Get equip slot for the given form with the requested equip index.
+		// Resolve equip slot for the given form with the requested equip index.
 
 		SPDLOG_DEBUG("[EM] GetEquipSlotForForm: {}: form: {}, index: {}.", 
 			coopActor->GetName(),
@@ -2006,7 +2171,10 @@ namespace ALYSLC
 		return equipSlot;
 	}
 
-	std::string_view EquipManager::FavMagCyclingCategoryToString(const FavMagicCyclingCategory& a_category) const
+	std::string_view EquipManager::FavMagCyclingCategoryToString
+	(
+		const FavMagicCyclingCategory& a_category
+	) const
 	{
 		// Favorited magic cycling category mapped to its name.
 
@@ -2082,7 +2250,10 @@ namespace ALYSLC
 		}
 	}
 
-	std::string_view EquipManager::FavWeaponCyclingCategoryToString(const FavWeaponCyclingCategory& a_category) const
+	std::string_view EquipManager::FavWeaponCyclingCategoryToString
+	(
+		const FavWeaponCyclingCategory& a_category
+	) const
 	{
 		// Favorited weapon cycling category mapped to its name.
 
@@ -2147,7 +2318,10 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::HandleEquipRequest(RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip)
+	void EquipManager::HandleEquipRequest
+	(
+		RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip
+	)
 	{
 		// Handle companion player (un)equip request for the given form at the given index.
 		// NOTE: Never called on P1.
@@ -2196,34 +2370,86 @@ namespace ALYSLC
 			}
 			case RE::FormType::Light:
 			{
-				if (auto asLight = a_form->As<RE::TESObjectLIGH>(); asLight && asLight->CanBeCarried())
+				auto asLight = a_form->As<RE::TESObjectLIGH>(); 
+				if (!asLight || !asLight->CanBeCarried())
 				{
-					EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+					return;
+				}
+				
+				EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+
+				break;
+			}
+			case RE::FormType::AlchemyItem:
+			{
+				auto asAlchemyItem = a_form->As<RE::AlchemyItem>();
+				if (!asAlchemyItem)
+				{
+					return;
+				}
+
+				if (asAlchemyItem->IsPoison())
+				{
+					// Apply poison if the requested hand has inventory entry data.
+					auto weapInvData = coopActor->GetEquippedEntryData
+					(
+						a_index == EquipIndex::kLeftHand
+					);
+
+					if (weapInvData)
+					{
+						weapInvData->PoisonObject(asAlchemyItem, 1);
+						// Remove after applying the poison.
+						coopActor->RemoveItem
+						(
+							asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+						);
+					}
+				}
+				else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+				{
+					// Equip the alchemy item as an object to use it.
+					// Just equip, do not update the desired equipped forms list 
+					// since there is no slot for it.
+					aem->EquipObject
+					(
+						coopActor.get(),
+						asAlchemyItem, 
+						nullptr, 
+						1, 
+						nullptr, 
+						false, 
+						true,
+						false, 
+						true
+					);
 				}
 
 				break;
 			}
 			default:
 			{
-				if (auto boundObj = a_form->As<RE::TESBoundObject>(); boundObj)
+				auto boundObj = a_form->As<RE::TESBoundObject>(); 
+				auto aem = RE::ActorEquipManager::GetSingleton(); 
+				if (!aem || !boundObj)
 				{
-					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-					{
-						// Just equip, do not update desired equipped forms list since there is no slot for it.
-						aem->EquipObject
-						(
-							coopActor.get(),
-							boundObj, 
-							nullptr, 
-							1, 
-							nullptr, 
-							false, 
-							true,
-							false, 
-							true
-						);
-					}
+					return;
 				}
+				
+				// Just equip, do not update the desired equipped forms list 
+				// since there is no slot for it.
+				aem->EquipObject
+				(
+					coopActor.get(),
+					boundObj, 
+					nullptr, 
+					1, 
+					nullptr, 
+					false, 
+					true,
+					false, 
+					true
+				);
 
 				break;
 			}
@@ -2242,20 +2468,26 @@ namespace ALYSLC
 			case RE::FormType::Armor:
 			case RE::FormType::Armature:
 			{
-				if (auto asBipedObjForm = a_form->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+				auto asBipedObjForm = a_form->As<RE::BGSBipedObjectForm>();
+				if (!asBipedObjForm)
 				{
-					UnequipArmor(a_form);
+					return;
 				}
+
+				UnequipArmor(a_form);
 
 				break;
 			}
 			case RE::FormType::Spell:
 			{
-				if (auto spell = a_form->As<RE::SpellItem>(); spell)
+				auto spell = a_form->As<RE::SpellItem>(); 
+				if (!spell)
 				{
-					// LH, RH, 2H, voice.
-					UnequipSpell(a_form, a_index);
+					return;
 				}
+
+				// LH, RH, 2H, voice.
+				UnequipSpell(a_form, a_index);
 
 				break;
 			}
@@ -2271,34 +2503,39 @@ namespace ALYSLC
 			}
 			case RE::FormType::Light:
 			{
-				if (auto asLight = a_form->As<RE::TESObjectLIGH>(); asLight && asLight->CanBeCarried())
+				auto asLight = a_form->As<RE::TESObjectLIGH>(); 
+				if (!asLight || !asLight->CanBeCarried())
 				{
-					UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+					return;
 				}
+
+				UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
 
 				break;
 			}
 			default:
 			{
-				if (auto boundObj = a_form->As<RE::TESBoundObject>(); boundObj)
+				auto boundObj = a_form->As<RE::TESBoundObject>(); 
+				auto aem = RE::ActorEquipManager::GetSingleton(); 
+				if (!aem || !boundObj)
 				{
-					if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-					{
-						// Just unequip, do not update desired equipped forms list since there is no slot for it.
-						aem->UnequipObject
-						(
-							coopActor.get(), 
-							boundObj, 
-							nullptr, 
-							1, 
-							nullptr, 
-							false, 
-							true,
-							false,
-							true
-						);
-					}
+					return;
 				}
+
+				// Just unequip, do not update the desired equipped forms list 
+				// since there is no slot for it.
+				aem->UnequipObject
+				(
+					coopActor.get(), 
+					boundObj, 
+					nullptr, 
+					1, 
+					nullptr, 
+					false, 
+					true,
+					false,
+					true
+				);
 
 				break;
 			}
@@ -2306,19 +2543,33 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::HandleMenuEquipRequest(RE::ObjectRefHandle a_fromContainerHandle, RE::TESForm* a_form, const EquipIndex& a_index, bool a_placeholderMagicChanged)
+	void EquipManager::HandleMenuEquipRequest
+	(
+		RE::ObjectRefHandle a_fromContainerHandle, 
+		RE::TESForm* a_form, 
+		const EquipIndex& a_index, 
+		bool a_placeholderMagicChanged
+	)
 	{
-		// Handle MIM equip request for the given form, from the given container, at the given index.
-		// Also indicates whether a placeholder spell was changed from copying over the form to equip.
+		// Handle MIM equip request for the given form, 
+		// from the given container, at the given index.
+		// Also take into account whether a placeholder spell was changed 
+		// from copying over the form to equip.
 		
 		// NOTE: Never called on P1.
 		// NOTE 2: Spells to equip should not be placeholder spells.
-		SPDLOG_DEBUG("[EM] HandleMenuEquipRequest: {}: container: {}, form: {}, index: {}, placeholder spell changed: {}.", 
+		SPDLOG_DEBUG
+		(
+			"[EM] HandleMenuEquipRequest: {}: container: {}, form: {}, index: {}, "
+			"placeholder spell changed: {}.", 
 			coopActor->GetName(),
-			Util::HandleIsValid(a_fromContainerHandle) ? Util::GetRefrPtrFromHandle(a_fromContainerHandle)->GetName() : "NONE",
+			Util::HandleIsValid(a_fromContainerHandle) ? 
+			Util::GetRefrPtrFromHandle(a_fromContainerHandle)->GetName() : 
+			"NONE",
 			a_form ? a_form->GetName() : "NONE",
 			a_index,
-			a_placeholderMagicChanged);
+			a_placeholderMagicChanged
+		);
 
 		// Must have a container from which the item originated
 		// and a valid item.
@@ -2344,8 +2595,7 @@ namespace ALYSLC
 			);
 		}
 
-		// Equip the form if it isn't in the requested slot already;
-		// otherwise, unequip it.
+		// Equip the form if it isn't in the requested slot already; otherwise, unequip it.
 		switch (*a_form->formType)
 		{
 		case RE::FormType::Weapon:
@@ -2366,25 +2616,41 @@ namespace ALYSLC
 		case RE::FormType::Armature:
 		{
 			RE::TESObjectARMO* currentArmorInSlot = nullptr;
-			if (auto asBipedObjForm = a_form->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+			auto asBipedObjForm = a_form->As<RE::BGSBipedObjectForm>(); 
+			if (!asBipedObjForm)
 			{
-				currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
-				if (a_form != currentArmorInSlot)
-				{
-					EquipArmor(a_form);
-				}
-				else
-				{
-					UnequipArmor(a_form);
-				}
+				return;
 			}
+
+			currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
+			if (a_form != currentArmorInSlot)
+			{
+				EquipArmor(a_form);
+			}
+			else
+			{
+				UnequipArmor(a_form);
+			}
+
+			break;
+		}
+		case RE::FormType::Scroll:
+		{
+			// TODO:
+			// Scrolls equip their corresponding spells to the player,
+			// but the player's ranged attack package fails to cast the spell.
+			// Do nothing for now.
+			SPDLOG_DEBUG("[EM] HandleMenuEquipRequest: {}: Attempting to equip a scroll: {}.",
+				coopActor->GetName(), a_form->GetName());
 
 			break;
 		}
 		case RE::FormType::Spell:
 		{
-			// Check if already equipped by comparing with the requested spell with the corresponding copied spell,
-			// and the currently equipped spell with the placeholder spell in the same slot.
+			// Check if already equipped by comparing the requested spell 
+			// with the corresponding copied spell,
+			// and comparing the currently equipped spell 
+			// to the placeholder spell in the same slot.
 			RE::TESForm* currentForm = equippedForms[!a_index];
 			// Should equip if there is no currently-equipped form in the slot.
 			bool shouldEquip = !currentForm;
@@ -2454,7 +2720,8 @@ namespace ALYSLC
 		}
 		case RE::FormType::Shout:
 		{
-			if (auto currentVoiceMag = equippedForms[!EquipIndex::kVoice]; a_form != currentVoiceMag)
+			auto currentVoiceMag = equippedForms[!EquipIndex::kVoice]; 
+			if (a_form != currentVoiceMag)
 			{
 				EquipShout(a_form);
 			}
@@ -2468,74 +2735,115 @@ namespace ALYSLC
 		case RE::FormType::Light:
 		{
 			// Torch.
-			if (auto asLight = a_form->As<RE::TESObjectLIGH>(); asLight && asLight->CanBeCarried())
+			auto asLight = a_form->As<RE::TESObjectLIGH>(); 
+			if (!asLight || !asLight->CanBeCarried())
 			{
-				if (auto currentLHForm = equippedForms[!EquipIndex::kLeftHand]; a_form != currentLHForm)
+				return;
+			}
+
+			auto currentLHForm = equippedForms[!EquipIndex::kLeftHand]; 
+			if (a_form != currentLHForm)
+			{
+				EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+			}
+			else
+			{
+				UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+			}
+			
+			break;
+		}
+		case RE::FormType::AlchemyItem:
+		{
+			auto asAlchemyItem = a_form->As<RE::AlchemyItem>();
+			if (!asAlchemyItem)
+			{
+				return;
+			}
+
+			if (asAlchemyItem->IsPoison())
+			{
+				// Apply poison if the requested hand has inventory entry data.
+				auto weapInvData = coopActor->GetEquippedEntryData
+				(
+					a_index == EquipIndex::kLeftHand
+				);
+
+				if (weapInvData)
 				{
-					EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+					weapInvData->PoisonObject(asAlchemyItem, 1);
+					// Remove after applying the poison.
+					coopActor->RemoveItem
+					(
+						asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+					);
 				}
-				else
-				{
-					UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
-				}
+			}
+			else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+			{
+				// Equip the alchemy item as an object to use it.
+				// Just equip, do not update the desired equipped forms list 
+				// since there is no slot for it.
+				aem->EquipObject
+				(
+					coopActor.get(),
+					asAlchemyItem, 
+					nullptr, 
+					1, 
+					nullptr, 
+					false, 
+					true,
+					false, 
+					true
+				);
 			}
 
 			break;
 		}
 		default:
 		{
-			if (auto boundObj = a_form->As<RE::TESBoundObject>(); boundObj)
+			auto aem = RE::ActorEquipManager::GetSingleton(); 
+			auto boundObj = a_form->As<RE::TESBoundObject>(); 
+			if (!aem || !boundObj)
 			{
-				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-				{
-					// Just (un)equip, do not update desired equipped forms list since there is no slot for it.
+				return;
+			}
 
-					// NOTE: Revert to always equipping if issues arise.
-					/*aem->EquipObject
-					(
-						coopActor.get(), 
-						boundObj, 
-						nullptr, 
-						1,
-						nullptr,
-						false,
-						true,
-						false, 
-						true
-					);*/
+			// Just (un)equip, do not update the desired equipped forms list 
+			// since there is no slot for it.
 
+			// NOTE: 
+			// Revert to always equipping if issues arise.
 
-					if (!IsEquipped(a_form)) 
-					{
-						aem->EquipObject
-						(
-							coopActor.get(), 
-							boundObj, 
-							nullptr, 
-							1,
-							nullptr,
-							false,
-							true,
-							false, 
-							true
-						);
-					}
-					else
-					{
-						aem->UnequipObject
-						(
-							coopActor.get(), 
-							boundObj, 
-							nullptr, 
-							1, 
-							nullptr, 
-							false, 
-							true,
-							false,
-							true
-						);
-					}
-				}
+			if (!IsEquipped(a_form)) 
+			{
+				aem->EquipObject
+				(
+					coopActor.get(), 
+					boundObj, 
+					nullptr, 
+					1,
+					nullptr,
+					false,
+					true,
+					false, 
+					true
+				);
+			}
+			else
+			{
+				aem->UnequipObject
+				(
+					coopActor.get(), 
+					boundObj, 
+					nullptr, 
+					1, 
+					nullptr, 
+					false, 
+					true,
+					false,
+					true
+				);
 			}
 
 			break;
@@ -2548,7 +2856,8 @@ namespace ALYSLC
 		// Does the given favorited spell category have a cyclable, equipable spell?
 
 		// Invalid category.
-		if (a_category == FavMagicCyclingCategory::kNone || a_category == FavMagicCyclingCategory::kTotal)
+		if (a_category == FavMagicCyclingCategory::kNone || 
+			a_category == FavMagicCyclingCategory::kTotal)
 		{
 			return false;
 		}
@@ -2563,95 +2872,104 @@ namespace ALYSLC
 		RE::SpellItem* spell = nullptr;
 		for (const auto spellForm : formsList)
 		{
-			if (spell = spellForm->As<RE::SpellItem>(); spell)
+			spell = spellForm->As<RE::SpellItem>(); 
+			if (!spell)
 			{
-				auto spellType = spell->GetSpellType();
-				// Not a hand spell.
-				if (spellType != RE::MagicSystem::SpellType::kSpell)
+				continue;
+			}
+
+			auto spellType = spell->GetSpellType();
+			// Not a hand spell.
+			if (spellType != RE::MagicSystem::SpellType::kSpell)
+			{
+				continue;
+			}
+
+			// Check associated skill or equip slot and match with category.
+			switch (a_category)
+			{
+			case FavMagicCyclingCategory::kAlteration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kAlteration)
 				{
-					continue;
+					return true;
 				}
 
-				// Check associated skill or equip slot and match with category.
-				switch (a_category)
+				continue;
+			}
+			case FavMagicCyclingCategory::kConjuration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kConjuration)
 				{
-				case FavMagicCyclingCategory::kAlteration:
-				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kAlteration)
-					{
-						return true;
-					}
+					return true;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kConjuration:
+				continue;
+			}
+			case FavMagicCyclingCategory::kDestruction:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kDestruction)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kConjuration)
-					{
-						return true;
-					}
+					return true;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kDestruction:
+				continue;
+			}
+			case FavMagicCyclingCategory::kIllusion:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kIllusion)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kDestruction)
-					{
-						return true;
-					}
+					return true;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kIllusion:
+				continue;
+			}
+			case FavMagicCyclingCategory::kRestoration:
+			{
+				if (spell->GetAssociatedSkill() == RE::ActorValue::kRestoration)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kIllusion)
-					{
-						return true;
-					}
+					return true;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kRestoration:
+				continue;
+			}
+			case FavMagicCyclingCategory::kRitual:
+			{
+				// 2H spell.
+				if (spell->equipSlot == glob.bothHandsEquipSlot)
 				{
-					if (spell->GetAssociatedSkill() == RE::ActorValue::kRestoration)
-					{
-						return true;
-					}
+					return true;
+				}
 
-					continue;
-				}
-				case FavMagicCyclingCategory::kRitual:
-				{
-					// 2H spell.
-					if (spell->equipSlot == glob.bothHandsEquipSlot)
-					{
-						return true;
-					}
-
-					continue;
-				}
-				default:
-				{
-					return false;
-				}
-				}
+				continue;
+			}
+			default:
+			{
+				return false;
+			}
 			}
 		}
 
 		return false;
 	}
 
-	bool EquipManager::HasCyclableWeaponInCategory(const FavWeaponCyclingCategory& a_category, const bool& a_rightHand)
+	bool EquipManager::HasCyclableWeaponInCategory
+	(
+		const FavWeaponCyclingCategory& a_category, const bool& a_rightHand
+	)
 	{
-		// Does the given favorited weapon category have a cyclable, equipable weapon for the given hand?
+		// Does the given favorited weapon category have a cyclable, 
+		// equipable weapon for the given hand?
 
 		// Invalid category.
-		if (a_category == FavWeaponCyclingCategory::kNone || a_category == FavWeaponCyclingCategory::kTotal)
+		if (a_category == FavWeaponCyclingCategory::kNone || 
+			a_category == FavWeaponCyclingCategory::kTotal)
 		{
 			return false;
 		}
 
-		// All favorites: only has a spell if at least one physical, hand-equipable form is favorited.
+		// All favorites: only has a spell if at least one physical, 
+		// hand-equipable form is favorited.
 		if (a_category == FavWeaponCyclingCategory::kAllFavorites)
 		{
 			return !cyclableFormsMap[CyclableForms::kWeapon].empty();
@@ -2820,6 +3138,7 @@ namespace ALYSLC
 	{
 		// Import this companion player's favorited items/magic onto P1.
 		// Can choose to only import the companion player's favorited spells.
+		// Wipe all P1's favorites and hotkeys before importing the companion player's.
 		
 		// Obviously should not be called on P1.
 		if (p->isPlayer1)
@@ -2827,7 +3146,8 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("[EM] ImportCoopFavorites: {}. Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites);
+		SPDLOG_DEBUG("[EM] ImportCoopFavorites: {}. Only magic favorites: {}.", 
+			coopActor->GetName(), a_onlyMagicFavorites);
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (!p1)
 		{
@@ -2835,7 +3155,8 @@ namespace ALYSLC
 		}
 
 		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
-		// Update P1's favorites and check for new favorited spells instead of using serialized data.
+		// Update P1's favorites and check for new favorited spells, 
+		// instead of using serialized data.
 		coopP1->em->UpdateFavoritedFormsLists(false);
 		// Use cached magic favorites here for the companion player
 		// since the current list of magic favorites is P1's
@@ -2845,8 +3166,12 @@ namespace ALYSLC
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
-			SPDLOG_DEBUG("[EM] ERR: ImportCoopFavorites: {}: Could not get magic favorites singleton.", 
-				coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[EM] ERR: ImportCoopFavorites: {}: "
+				"Could not get magic favorites singleton.", 
+				coopActor->GetName()
+			);
 			return;
 		}
 
@@ -2859,8 +3184,10 @@ namespace ALYSLC
 
 		// Clear out hotkeyed forms, since they linger behind even after the form is unfavorited.
 		// If the companion player hotkeys the same form to a different slot,
-		// there can be serialization bugs, since the same form is serialized multiple times.
-		// P1's hotkeys and magic favorites were cached above already and will be restored later on.
+		// there can be bugs when using the serialized data, 
+		// since the same form is serialized multiple times.
+		// P1's hotkeys and magic favorites were cached above already 
+		// and will be restored later on.
 		for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
 		{
 			magicFavorites->hotkeys[i] = nullptr;
@@ -2937,15 +3264,19 @@ namespace ALYSLC
 					// P1 has also favorited the item, 
 					// so no need to add to their inventory or change its favorites status.
 					favoritesIndicesInCommon[i] = true;
-					SPDLOG_DEBUG("[EM] ImportCoopFavorites: {}: P1 has also favorited {}. Not favoriting.",
-						coopActor->GetName(), form->GetName());
+					SPDLOG_DEBUG
+					(
+						"[EM] ImportCoopFavorites: {}: P1 has also favorited {}. "
+						"Not favoriting.",
+						coopActor->GetName(), form->GetName()
+					);
 				}
 				else
 				{
 					auto boundObj = form->As<RE::TESBoundObject>();
 					auto invCounts = p1->GetInventoryCounts();
 					// Not already favorited by P1 and P1 does not have the form,
-					// so add the favorited form to player 1 before favoriting it.
+					// so add the favorited form to P1 before favoriting it.
 					// Tag this favorited form as added, so it can be removed
 					// when P1's favorites are restored.
 					if (!invCounts.contains(boundObj) || invCounts.at(boundObj) <= 0)
@@ -2955,8 +3286,12 @@ namespace ALYSLC
 					}
 
 					Util::ChangeFormFavoritesStatus(p1, form, true);
-					SPDLOG_DEBUG("[EM] ImportCoopFavorites: {}: P1 has NOT favorited {}. Favoriting.",
-						coopActor->GetName(), form->GetName());
+					SPDLOG_DEBUG
+					(
+						"[EM] ImportCoopFavorites: {}: P1 has NOT favorited {}. "
+						"Favoriting.",
+						coopActor->GetName(), form->GetName()
+					);
 				}
 			}
 
@@ -2973,11 +3308,11 @@ namespace ALYSLC
 
 	bool EquipManager::IsUnarmed() const
 	{
+		// Return true if the player has no hand forms equipped.
+
 		return 
 		(
-			(
-				!equippedForms[!EquipIndex::kLeftHand] && !equippedForms[!EquipIndex::kRightHand]
-			) ||
+			(!equippedForms[!EquipIndex::kLeftHand] && !equippedForms[!EquipIndex::kRightHand]) ||
 			(
 				equippedForms[!EquipIndex::kLeftHand] == glob.fists && 
 				equippedForms[!EquipIndex::kRightHand] == glob.fists
@@ -3003,260 +3338,268 @@ namespace ALYSLC
 		for (auto i = 0; i < desiredEquippedForms.size(); ++i)
 		{
 			item = desiredEquippedForms[i];
-			// Do not include items without an editor name defined in the CK,
+			// Do not include items without a loaded name,
 			// such as the "SkinNaked" armor. 
-			// These items typically do not have a loaded full name.
-			if (item && strlen(item->GetName()) > 0)
+			if (!item || strlen(item->GetName()) == 0)
 			{
-				EquipIndex currentSlot = EquipIndex::kTotal;
-				if (i < !EquipIndex::kWeapMagTotal)
+				continue;
+			}
+
+			EquipIndex currentSlot = EquipIndex::kTotal;
+			if (i < !EquipIndex::kWeapMagTotal)
+			{
+				currentSlot = static_cast<EquipIndex>(i);
+			}
+
+			// Do not equip two handed weapons/spells twice,
+			// so skip over the RH item if it is the same 2H item
+			// as the earlier-equipped LH item.
+			if (currentSlot == EquipIndex::kRightHand)
+			{
+				auto lhObj = desiredEquippedForms[!EquipIndex::kLeftHand];
+				if (lhObj == item && 
+					item->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot)
 				{
-					currentSlot = static_cast<EquipIndex>(i);
+					continue;
+				}
+			}
+
+			// Add item back to co-op player's inventory if missing.
+			auto boundObj = item->IsBoundObject() ? item->As<RE::TESBoundObject>() : nullptr; 
+			if (boundObj)
+			{
+				// Getting the inventory count for a light source 
+				// with a valid bound object seems to crash the game;
+				// exclude it from the check, along with forms that are not bound objects.
+				if (!inventoryCounts.contains(boundObj) && 
+					!item->Is(RE::FormType::Spell, RE::FormType::Shout, RE::FormType::Light))
+				{
+					//std::addressof(coopActor->extraList)
+					coopActor->AddObjectToContainer
+					(
+						boundObj, (RE::ExtraDataList*)nullptr, 1, coopActor.get()
+					);
+				}
+			}
+
+			// Equip the cached item based on type.
+			switch (*item->formType)
+			{
+			case RE::FormType::Ammo:
+			{
+				if (auto currentAmmo = coopActor->GetCurrentAmmo(); item != currentAmmo)
+				{
+					EquipAmmo(item);
 				}
 
-				// Do not equip two handed weapons/spells twice,
-				// so skip over the RH item if it is the same 2H item
-				// as the earlier-equipped LH item.
-				if (currentSlot == EquipIndex::kRightHand)
+				break;
+			}
+			case RE::FormType::Armature:
+			case RE::FormType::Armor:
+			{
+				// Get the armor in the same slot.
+				// Only equip if different.
+				RE::TESObjectARMO* currentArmorInSlot = nullptr;
+				if (auto asBipedObjForm = item->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
 				{
-					auto lhObj = desiredEquippedForms[!EquipIndex::kLeftHand];
-					if (lhObj == item && 
-						item->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot)
-					{
-						continue;
-					}
+					currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
 				}
 
-				// Add item back to co-op player's inventory if missing.
-				if (auto boundObj = item->IsBoundObject() ? item->As<RE::TESBoundObject>() : nullptr; boundObj)
+				if (item != currentArmorInSlot)
 				{
-					// Getting the inventory count for a light source 
-					// with a valid bound object seems to crash the game;
-					// exclude it from the check, along with forms that are not bound objects.
-					if (!inventoryCounts.contains(boundObj) && 
-						!item->Is(RE::FormType::Spell, RE::FormType::Shout, RE::FormType::Light))
-					{
-						//std::addressof(coopActor->extraList)
-						coopActor->AddObjectToContainer(boundObj, (RE::ExtraDataList*)nullptr, 1, coopActor.get());
-					}
+					EquipArmor(item);
 				}
 
-				// Equip the cached item based on type.
-				switch (*item->formType)
+				break;
+			}
+			case RE::FormType::Shout:
+			{
+				EquipShout(item);
+				break;
+			}
+			case RE::FormType::Spell:
+			{
+				// Quick slot spell is not equipped by the game,
+				// as it is cast directly on demand. Break early.
+				if (i == !EquipIndex::kQuickSlotSpell)
 				{
-				case RE::FormType::Ammo:
-				{
-					if (auto currentAmmo = coopActor->GetCurrentAmmo(); item != currentAmmo)
-					{
-						EquipAmmo(item);
-					}
-
 					break;
 				}
-				case RE::FormType::Armature:
-				case RE::FormType::Armor:
+
+				if (i != !EquipIndex::kVoice)
 				{
-					RE::TESObjectARMO* currentArmorInSlot = nullptr;
-					if (auto asBipedObjForm = item->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+					auto spell = item->As<RE::SpellItem>();
+					auto equipSlot = glob.eitherHandEquipSlot;
+					if (spell->equipSlot == glob.bothHandsEquipSlot)
 					{
-						currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
-					}
-
-					if (item != currentArmorInSlot)
-					{
-						EquipArmor(item);
-					}
-
-					break;
-				}
-				case RE::FormType::Shout:
-				{
-					EquipShout(item);
-					break;
-				}
-				case RE::FormType::Spell:
-				{
-					// Quick slot spell is not equipped by the game,
-					// as it is cast directly on demand. Break early.
-					if (i == !EquipIndex::kQuickSlotSpell)
-					{
-						break;
-					}
-
-					if (i != !EquipIndex::kVoice)
-					{
-						auto spell = item->As<RE::SpellItem>();
-						auto equipSlot = glob.eitherHandEquipSlot;
-						if (spell->equipSlot == glob.bothHandsEquipSlot)
-						{
-							equipSlot = glob.bothHandsEquipSlot;
-						}
-						else
-						{
-							equipSlot = 
-							(
-								(i == !EquipIndex::kLeftHand) ? 
-								glob.leftHandEquipSlot : 
-								glob.rightHandEquipSlot
-							);
-						}
-
-						// Directly equip, if player 1.
-						if (p->isPlayer1)
-						{
-							EquipSpell
-							(
-								spell, 
-								i == !EquipIndex::kLeftHand ? 
-								EquipIndex::kLeftHand : 
-								EquipIndex::kRightHand, 
-								equipSlot
-							);
-						}
-						else
-						{
-							// Copy to placeholder spell before equipping.
-							if (equipSlot == glob.bothHandsEquipSlot)
-							{
-								spell = 
-								(
-									copiedMagic[!PlaceholderMagicIndex::k2H] ? 
-									copiedMagic[!PlaceholderMagicIndex::k2H]->As<RE::SpellItem>() :
-									nullptr
-								);
-								if (spell)
-								{
-									EquipSpell
-									(
-										CopyToPlaceholderSpell(spell, PlaceholderMagicIndex::k2H), 
-										EquipIndex::kRightHand, 
-										equipSlot
-									);
-								}
-							}
-							else
-							{
-								if (i == !EquipIndex::kRightHand)
-								{
-									spell = 
-									(
-										copiedMagic[!PlaceholderMagicIndex::kRH] ? 
-										copiedMagic[!PlaceholderMagicIndex::kRH]->As<RE::SpellItem>() : 
-										nullptr
-									);
-								}
-								else
-								{
-									spell = 
-									(
-										copiedMagic[!PlaceholderMagicIndex::kLH] ? 
-										copiedMagic[!PlaceholderMagicIndex::kLH]->As<RE::SpellItem>() : 
-										nullptr
-									);
-								}
-
-								EquipIndex index = 
-								(
-									i == !EquipIndex::kLeftHand ? 
-									EquipIndex::kLeftHand : 
-									EquipIndex::kRightHand
-								);
-								if (spell)
-								{
-									EquipSpell
-									(
-										CopyToPlaceholderSpell
-										(
-											spell, 
-											index == EquipIndex::kRightHand ? 
-											PlaceholderMagicIndex::kRH : 
-											PlaceholderMagicIndex::kLH
-										), 
-										index, 
-										equipSlot
-									);
-								}
-							}
-						}
+						equipSlot = glob.bothHandsEquipSlot;
 					}
 					else
 					{
-						auto spell = item->As<RE::SpellItem>();
-						auto equipSlot = glob.voiceEquipSlot;
-						EquipSpell
+						equipSlot = 
 						(
-							CopyToPlaceholderSpell(spell, PlaceholderMagicIndex::kVoice),
-							EquipIndex::kVoice, 
-							equipSlot
+							(i == !EquipIndex::kLeftHand) ? 
+							glob.leftHandEquipSlot : 
+							glob.rightHandEquipSlot
 						);
 					}
 
-					break;
-				}
-				case RE::FormType::Weapon:
-				{
-					auto lhObj = coopActor->GetEquippedObject(true);
-					auto rhObj = coopActor->GetEquippedObject(false);
-					// Do not equip 2H weapons twice.
-					if ((i == !EquipIndex::kLeftHand && item != lhObj) || 
-						(i == !EquipIndex::kRightHand && item != rhObj))
+					// Directly equip, if P1.
+					if (p->isPlayer1)
 					{
-						auto equipSlot = glob.eitherHandEquipSlot;
-						if (item->As<RE::TESObjectWEAP>()->equipSlot == glob.bothHandsEquipSlot)
-						{
-							equipSlot = glob.bothHandsEquipSlot;
-						}
-						else if (i == !EquipIndex::kLeftHand)
-						{
-							equipSlot = glob.leftHandEquipSlot;
-						}
-						else if (i == !EquipIndex::kRightHand)
-						{
-							equipSlot = glob.rightHandEquipSlot;
-						}
-
-						EquipForm
+						EquipSpell
 						(
-							item, 
+							spell, 
 							i == !EquipIndex::kLeftHand ? 
 							EquipIndex::kLeftHand : 
 							EquipIndex::kRightHand, 
-							(RE::ExtraDataList*)nullptr, 
-							1, 
 							equipSlot
 						);
-
-						// Auto-equip highest damage/count ammo based on ranged weapon type, 
-						// if the setting is enabled.
-						if (Settings::uAmmoAutoEquipMode != !AmmoAutoEquipMode::kNone) 
+					}
+					else
+					{
+						// Copy to placeholder spell before equipping.
+						if (equipSlot == glob.bothHandsEquipSlot)
 						{
-							if (auto weap = item->As<RE::TESObjectWEAP>(); 
-								weap &&
-								weap->IsRanged() && 
-								!weap->IsStaff() && !desiredEquippedForms[!EquipIndex::kAmmo])
+							spell = 
+							(
+								copiedMagic[!PlaceholderMagicIndex::k2H] ? 
+								copiedMagic[!PlaceholderMagicIndex::k2H]->As<RE::SpellItem>() :
+								nullptr
+							);
+							if (spell)
 							{
-								auto ammoAndCount = 
+								EquipSpell
 								(
-									Settings::uAmmoAutoEquipMode == !AmmoAutoEquipMode::kHighestDamage ? 
-									Util::GetHighestDamageAmmo(coopActor.get(), weap->IsBow()) :
-									Util::GetHighestCountAmmo(coopActor.get(), weap->IsBow())
+									CopyToPlaceholderSpell(spell, PlaceholderMagicIndex::k2H), 
+									EquipIndex::kRightHand, 
+									equipSlot
 								);
-								// Valid ammo.
-								if (ammoAndCount.first)
-								{
-									EquipAmmo(ammoAndCount.first);
-								}
+							}
+						}
+						else
+						{
+							if (i == !EquipIndex::kRightHand)
+							{
+								spell = 
+								(
+									copiedMagic[!PlaceholderMagicIndex::kRH] ? 
+									copiedMagic[!PlaceholderMagicIndex::kRH]->As<RE::SpellItem>() : 
+									nullptr
+								);
+							}
+							else
+							{
+								spell = 
+								(
+									copiedMagic[!PlaceholderMagicIndex::kLH] ? 
+									copiedMagic[!PlaceholderMagicIndex::kLH]->As<RE::SpellItem>() : 
+									nullptr
+								);
+							}
+
+							EquipIndex index = 
+							(
+								i == !EquipIndex::kLeftHand ? 
+								EquipIndex::kLeftHand : 
+								EquipIndex::kRightHand
+							);
+							if (spell)
+							{
+								EquipSpell
+								(
+									CopyToPlaceholderSpell
+									(
+										spell, 
+										index == EquipIndex::kRightHand ? 
+										PlaceholderMagicIndex::kRH : 
+										PlaceholderMagicIndex::kLH
+									), 
+									index, 
+									equipSlot
+								);
 							}
 						}
 					}
-
-					break;
 				}
-				default:
+				else
 				{
-					break;
+					auto spell = item->As<RE::SpellItem>();
+					auto equipSlot = glob.voiceEquipSlot;
+					EquipSpell
+					(
+						CopyToPlaceholderSpell(spell, PlaceholderMagicIndex::kVoice),
+						EquipIndex::kVoice, 
+						equipSlot
+					);
 				}
+
+				break;
+			}
+			case RE::FormType::Weapon:
+			{
+				auto lhObj = coopActor->GetEquippedObject(true);
+				auto rhObj = coopActor->GetEquippedObject(false);
+				// Do not equip 2H weapons twice.
+				if ((i == !EquipIndex::kLeftHand && item != lhObj) || 
+					(i == !EquipIndex::kRightHand && item != rhObj))
+				{
+					auto equipSlot = glob.eitherHandEquipSlot;
+					if (item->As<RE::TESObjectWEAP>()->equipSlot == glob.bothHandsEquipSlot)
+					{
+						equipSlot = glob.bothHandsEquipSlot;
+					}
+					else if (i == !EquipIndex::kLeftHand)
+					{
+						equipSlot = glob.leftHandEquipSlot;
+					}
+					else if (i == !EquipIndex::kRightHand)
+					{
+						equipSlot = glob.rightHandEquipSlot;
+					}
+
+					EquipForm
+					(
+						item, 
+						i == !EquipIndex::kLeftHand ? 
+						EquipIndex::kLeftHand : 
+						EquipIndex::kRightHand, 
+						(RE::ExtraDataList*)nullptr, 
+						1, 
+						equipSlot
+					);
+
+					// If the setting is enabled, auto-equip highest damage/count ammo 
+					// based on ranged weapon type. 
+					if (Settings::uAmmoAutoEquipMode != !AmmoAutoEquipMode::kNone) 
+					{
+						if (auto weap = item->As<RE::TESObjectWEAP>(); 
+							weap &&
+							weap->IsRanged() && 
+							!weap->IsStaff() && !desiredEquippedForms[!EquipIndex::kAmmo])
+						{
+							auto ammoAndCount = 
+							(
+								Settings::uAmmoAutoEquipMode == 
+								!AmmoAutoEquipMode::kHighestDamage ? 
+								Util::GetHighestDamageAmmo(coopActor.get(), weap->IsBow()) :
+								Util::GetHighestCountAmmo(coopActor.get(), weap->IsBow())
+							);
+							// Valid ammo.
+							if (ammoAndCount.first)
+							{
+								EquipAmmo(ammoAndCount.first);
+							}
+						}
+					}
 				}
+
+				break;
+			}
+			default:
+			{
+				break;
+			}
 			}
 		}
 	}
@@ -3266,7 +3609,8 @@ namespace ALYSLC
 		// Re-equip desired forms in this player's hands.
 
 		SPDLOG_DEBUG("[EM] ReEquipHandForms: {}.", coopActor->GetName());
-		// Interrupts Vampire Lord levitation, and Werewolves have no equipped items, so return here.
+		// Interrupts Vampire Lord levitation, 
+		// and Werewolves have no equipped items, so return here.
 		if (p->isTransformed)
 		{
 			return;
@@ -3456,16 +3800,20 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG("[EM] ReEquipVoiceForm: {}.", coopActor->GetName());
 		UnequipFormAtIndex(EquipIndex::kVoice);
-		if (auto toEquip = desiredEquippedForms[!EquipIndex::kVoice]; toEquip) 
+
+		auto toEquip = desiredEquippedForms[!EquipIndex::kVoice]; 
+		if (!toEquip) 
 		{
-			if (toEquip->As<RE::TESShout>())
-			{
-				EquipShout(toEquip);
-			}
-			else
-			{
-				EquipSpell(toEquip, EquipIndex::kVoice);
-			}
+			return;
+		}
+
+		if (toEquip->As<RE::TESShout>())
+		{
+			EquipShout(toEquip);
+		}
+		else
+		{
+			EquipSpell(toEquip, EquipIndex::kVoice);
 		}
 	}
 
@@ -3488,19 +3836,26 @@ namespace ALYSLC
 			return;
 		}
 
-		// Update the companion player's cached magic favorites before restoring P1's favorites below.
+		// Update the companion player's cached magic favorites,
+		// which may have changed since import,
+		// before restoring P1's favorites below.
 		UpdateFavoritedFormsLists(false);
 
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
-			SPDLOG_DEBUG("[EM] ERR: RestoreP1Favorites: {}: Could not get magic favorites singleton.", 
-				coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[EM] ERR: RestoreP1Favorites: {}: "
+				"Could not get magic favorites singleton.", 
+				coopActor->GetName()
+			);
 			return;
 		}
 
 		// Clear out hotkeyed forms, since they linger behind even after the form is unfavorited.
-		// P1's hotkeys and magic favorites were saved on import already and will be restored below.
+		// P1's hotkeys and magic favorites were saved on import already 
+		// and will be restored below.
 		for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
 		{
 			magicFavorites->hotkeys[i] = nullptr;
@@ -3517,6 +3872,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG("[EM] RestoreP1Favorites: {}: Remove P1 favorited magic {}.", 
 				coopActor->GetName(), magForm->GetName());
+
 			magicFavorites->RemoveFavorite(magForm);
 		}
 
@@ -3533,13 +3889,20 @@ namespace ALYSLC
 					continue;
 				}
 
-				// Remove co-op player-favorited forms that P1 has not also favorited and does not have equipped.
+				// Remove co-op player-favorited forms that P1 has not also favorited 
+				// and does not have equipped.
 				if (!favoritesIndicesInCommon[i])
 				{
 					Util::ChangeFormFavoritesStatus(p1, form, false);
-					SPDLOG_DEBUG("[EM] RestoreP1Favorites: {}: Unfavoriting not-in-common favorite {} for P1.",
-						coopActor->GetName(), form->GetName());
-					// If the co-op player favorited form was added previously, it should now be removed.
+					SPDLOG_DEBUG
+					(
+						"[EM] RestoreP1Favorites: {}: "
+						"Unfavoriting not-in-common favorite {} for P1.",
+						coopActor->GetName(), form->GetName()
+					);
+
+					// If the co-op player favorited form was added previously, 
+					// remove it now.
 					if (favoritedItemWasAdded[i])
 					{
 						SPDLOG_DEBUG("[EM] RestoreP1Favorites: {}: Removing {} (x1) from P1.",
@@ -3560,7 +3923,8 @@ namespace ALYSLC
 					{
 						coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID) &&
 						hotkeyedFormsToSlotsMap.contains(form->formID) &&
-						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] == hotkeyedFormsToSlotsMap[form->formID]
+						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] == 
+						hotkeyedFormsToSlotsMap[form->formID]
 					};
 					if (!sharedHotkey)
 					{
@@ -3574,7 +3938,7 @@ namespace ALYSLC
 			}
 		}
 		
-		// Re-favorite all of P1's cached favorited forms amd restore hotkeys.
+		// Re-favorite all of P1's cached favorited forms and restore hotkeys.
 		const auto& p1Favorites = coopP1->em->favoritedForms;
 		for (auto form : p1Favorites)
 		{
@@ -3606,31 +3970,39 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::RefreshEquipState(const RefreshSlots& a_slots, RE::TESForm* a_formEquipped, bool a_isEquipped)
+	void EquipManager::RefreshEquipState
+	(
+		const RefreshSlots& a_slots, RE::TESForm* a_formEquipped, bool a_isEquipped
+	)
 	{
 		// Refresh all equipped gear for this player in the given slots.
 		// For specific equip/unequip events, the form of interest is given, 
 		// as well as whether or not it is now equipped.
 
-		SPDLOG_DEBUG("[EM] RefreshEquipState: {}: slots to refresh: {}, form: {}, is equipped: {}.", 
+		SPDLOG_DEBUG
+		(
+			"[EM] RefreshEquipState: {}: "
+			"slots to refresh: {}, form: {}, is equipped: {}.", 
 			coopActor->GetName(),
 			a_slots,
 			a_formEquipped ? a_formEquipped->GetName() : "NONE",
-			a_isEquipped);
+			a_isEquipped
+		);
 
 		{
 			std::unique_lock<std::mutex> lock(equipStateMutex, std::try_to_lock);
 			if (lock)
 			{
 				SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Lock obtained. (0x{:X})", 
-					coopActor->GetName(), std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					coopActor->GetName(), 
+					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 
 				// Clear out cached equipped forms first.
 				equippedForms.fill(nullptr);
 				equippedFormFIDs.clear();
 				if (a_slots == RefreshSlots::kWeapMag || a_slots == RefreshSlots::kAll)
 				{
-					// Get L, R hand objects, shout, and ammo
+					// Get LH, RH objects, shout, and ammo.
 					auto lhObj = coopActor->GetEquippedObject(true);
 					auto rhObj = coopActor->GetEquippedObject(false);
 					auto ammo = coopActor->GetCurrentAmmo();
@@ -3642,7 +4014,7 @@ namespace ALYSLC
 					SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Current ammo: {}.", 
 						coopActor->GetName(), ammo ? ammo->GetName() : "NONE");
 
-					// Could be indicative of equip state bug 
+					// Could be indicative of an equip state bug 
 					// that causes choppy/mismatching attack animations and wonky hitboxes
 					// (requires full player reset to fix).
 					// Seems to occur when a 2H weapon is equipped to only one hand. 
@@ -3666,46 +4038,67 @@ namespace ALYSLC
 					// Notify the player and provide workaround steps.
 					if (onlyLHHas2HWeap || onlyRHHas2HWeap)
 					{
-						SPDLOG_ERROR("[EM] RefreshEquipState: {}: 2H stuttering equip state bug is likely since the 2H weapon {} is only in the {}. Fix the bug temporarily by using the Debug Menu or the 'DebugResetPlayer' bind.",
+						SPDLOG_ERROR
+						(
+							"[EM] RefreshEquipState: {}: 2H stuttering equip state bug "
+							"is likely since the 2H weapon {} is only in the {}. " 
+							"Fix the bug temporarily by using "
+							"the Debug Menu's 'Reset Player' option "
+							"or the 'DebugResetPlayer' bind.",
 							coopActor->GetName(), 
-							onlyLHHas2HWeap ? lhObj->GetName() : onlyRHHas2HWeap ? rhObj->GetName() : "ERROR",
+							onlyLHHas2HWeap ? 
+							lhObj->GetName() : 
+							onlyRHHas2HWeap ? 
+							rhObj->GetName() : 
+							"ERROR",
 							onlyLHHas2HWeap ? "LH" : onlyRHHas2HWeap ? "RH" : "ERROR");
 					}
 
 					// Disable combat aim correction on arrows/bolts.
-					if (ammo)
+					if (ammo && ammo->data.projectile)
 					{
-						auto projectile = ammo->data.projectile;
-						if (projectile)
-						{
-							projectile->data.flags.set
-							(
-								RE::BGSProjectileData::BGSProjectileFlags::kDisableCombatAimCorrection
-							);
-						}
+						ammo->data.projectile->data.flags.set
+						(
+							RE::BGSProjectileData::BGSProjectileFlags::kDisableCombatAimCorrection
+						);
 					}
 
 					// Sometimes the call to GetCurrentAmmo() still returns the unequipped ammo 
 					// that triggered this equip state refresh.
 					// Clear out the cached current ammo, 
 					// which will then properly correspond to the actual equip state
-					// after the unequip call fully completes.
+					// after the unequip fully completes.
 					if (ammo && a_formEquipped == ammo && !a_isEquipped)
 					{
-						SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Game unequipped ammo {}, but the GetCurrentAmmo() call still returns this ammo. Clearing cached ammo.",
-							coopActor->GetName(), ammo->GetName());
+						SPDLOG_DEBUG
+						(
+							"[EM] RefreshEquipState: {}: Game unequipped ammo {}, "
+							"but the GetCurrentAmmo() call still returns this ammo. "
+							"Clearing cached ammo.",
+							coopActor->GetName(), ammo->GetName()
+						);
 						ammo = nullptr;
 					}
 
 					// And sometimes the call to GetCurrentAmmo() returns nullptr 
 					// while this event fires upon equipping ammo.
-					// Similarly update the cached current ammo to reflect the post-equip event state.
-					if (!ammo && a_formEquipped && a_formEquipped->As<RE::TESAmmo>() && a_isEquipped)
+					// Similarly update the cached current ammo 
+					// to reflect the post-equip event state.
+					if (!ammo && 
+						a_formEquipped && 
+						a_isEquipped &&
+						a_formEquipped->As<RE::TESAmmo>())
 					{
-						SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Ammo equip event fired for {}, but the GetCurrentAmmo() call returns nothing. Set {} as cached ammo.",
+						SPDLOG_DEBUG
+						(
+							"[EM] RefreshEquipState: {}: "
+							"Ammo equip event fired for {}, "
+							"but the GetCurrentAmmo() call returns nothing. "
+							"Set {} as cached ammo.",
 							coopActor->GetName(), 
 							a_formEquipped->As<RE::TESAmmo>()->GetName(), 
-							a_formEquipped->As<RE::TESAmmo>()->GetName());
+							a_formEquipped->As<RE::TESAmmo>()->GetName()
+						);
 						ammo = a_formEquipped->As<RE::TESAmmo>();
 					}
 
@@ -3745,10 +4138,12 @@ namespace ALYSLC
 						voiceForm = nullptr;
 					}
 
-					// Update voice form to match equipped shout, if any, and set the highest shout variation spell.
+					// Update voice form to match equipped shout, 
+					// if any, and set the highest shout variation spell.
 					SetCurrentVoiceSpell();
 
-					// Ensure each equipped hand spell holds a valid placeholder spell before caching.
+					// Ensure each equipped hand spell 
+					// holds a valid placeholder spell before caching.
 					if (!p->isPlayer1)
 					{
 						bool is2HSpell = false;
@@ -3758,7 +4153,9 @@ namespace ALYSLC
 							lhObj = CopyToPlaceholderSpell
 							(
 								lhSpell, 
-								is2HSpell ? PlaceholderMagicIndex::k2H : PlaceholderMagicIndex::kLH
+								is2HSpell ? 
+								PlaceholderMagicIndex::k2H : 
+								PlaceholderMagicIndex::kLH
 							);
 						}
 
@@ -3768,13 +4165,15 @@ namespace ALYSLC
 							rhObj = CopyToPlaceholderSpell
 							(
 								rhSpell, 
-								is2HSpell ? PlaceholderMagicIndex::k2H : PlaceholderMagicIndex::kRH
+								is2HSpell ? 
+								PlaceholderMagicIndex::k2H : 
+								PlaceholderMagicIndex::kRH
 							);
 						}
 					}
 
 					// Must equip highest count/damage ammo 
-					// for co-op companions since the ranged package,
+					// for co-op companions, since the ranged package,
 					// which used to automatically equip the appropriate ammo, 
 					// is no longer used for firing ranged weapons.
 					if (Settings::uAmmoAutoEquipMode != !AmmoAutoEquipMode::kNone)
@@ -3785,8 +4184,9 @@ namespace ALYSLC
 							bool isBound = weap->IsBound();
 							bool isBow = weap->IsBow();
 							bool isCrossbow = weap->IsCrossbow();
-							// We already equip bound arrows elsewhere when a bound bow is equipped.
-							if (!isBound && (isBow || isCrossbow))
+							// We already equip bound arrows elsewhere 
+							// when a bound bow is equipped.
+							if ((!isBound) && (isBow || isCrossbow))
 							{
 								auto desiredAmmo = 
 								(
@@ -3794,7 +4194,8 @@ namespace ALYSLC
 									desiredEquippedForms[!EquipIndex::kAmmo]->As<RE::TESAmmo>() : 
 									nullptr
 								);
-								// Only auto equip if no current ammo, mismatching current ammo, or if equipping a bound bow.
+								// Only auto equip if no current ammo, mismatching current ammo, 
+								// or if equipping a bound bow.
 								if ((!desiredAmmo) || 
 									((desiredAmmo->IsBolt() && isBow) || 
 									 (!desiredAmmo->IsBolt() && isCrossbow)))
@@ -3808,11 +4209,13 @@ namespace ALYSLC
 
 									auto ammoAndCount = 
 									(
-										Settings::uAmmoAutoEquipMode == !AmmoAutoEquipMode::kHighestCount ?
+										Settings::uAmmoAutoEquipMode == 
+										!AmmoAutoEquipMode::kHighestCount ?
 										Util::GetHighestCountAmmo(coopActor.get(), isBow) :
 										Util::GetHighestDamageAmmo(coopActor.get(), isBow)
 									);
-									if (ammoAndCount.first && coopActor->GetCurrentAmmo() != ammoAndCount.first)
+									if (ammoAndCount.first && 
+										coopActor->GetCurrentAmmo() != ammoAndCount.first)
 									{
 										ammo = ammoAndCount.first;
 									}
@@ -3826,11 +4229,15 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Voice magic: {} (formType: 0x{:X}), Ammo: {}",
+					SPDLOG_DEBUG
+					(
+						"[EM] RefreshEquipState: {}: "
+						"Voice magic: {} (formType: 0x{:X}), Ammo: {}",
 						coopActor->GetName(),
 						voiceForm ? voiceForm->GetName() : "NONE",
 						voiceForm ? *voiceForm->formType : RE::FormType::None,
-						ammo ? ammo->GetName() : "NONE");
+						ammo ? ammo->GetName() : "NONE"
+					);
 
 					// Set weapon/magic slot forms.
 					equippedForms[!EquipIndex::kLeftHand] = lhObj;
@@ -3883,7 +4290,10 @@ namespace ALYSLC
 					armorRatings.first = armorRatings.second = 0.0f;
 					// Get armor in each biped slot
 					std::set<RE::FormID> equippedFormIDs;
-					for (uint32_t i = !EquipIndex::kFirstBipedSlot; i <= !EquipIndex::kLastBipedSlot; ++i)
+
+					for (uint32_t i = !EquipIndex::kFirstBipedSlot; 
+						 i <= !EquipIndex::kLastBipedSlot; 
+						 ++i)
 					{
 						auto armorInSlot = 
 						(
@@ -3898,14 +4308,24 @@ namespace ALYSLC
 						if (armorInSlot)
 						{
 							// NOTE: Leaving this for now just in case the bug re-surfaces.
-							// Have to handle the odd case where the unequip event for a piece of armor fires,
+							// Have to handle the odd case where the unequip event 
+							// for a piece of armor fires, 
 							// but the game hasn't finished unequipping it yet here.
-							// Either the armor in this slot is not the equipped armor sent from the equip event,
-							// or the armor in this slot is the equip event armor and it is being equipped.
+							// Either the armor in this slot is not the equipped armor 
+							// sent from the equip event, or the armor in this slot 
+							// is the equip event armor and it is being equipped.
 							if (armorInSlot != a_formEquipped || a_isEquipped)
 							{
-								SPDLOG_DEBUG("[EM] RefreshEquipState: {} has {} (armor) equipped in the {} biped slot. Equipped forms index: {}",
-									coopActor->GetName(), armorInSlot->GetName(), (i - !EquipIndex::kFirstBipedSlot), i);
+								SPDLOG_DEBUG
+								(
+									"[EM] RefreshEquipState: "
+									"{} has {} (armor) equipped in the {} biped slot. "
+									"Equipped forms index: {}",
+									coopActor->GetName(),
+									armorInSlot->GetName(), 
+									(i - !EquipIndex::kFirstBipedSlot), 
+									i
+								);
 
 								if (armorInSlot->IsLightArmor())
 								{
@@ -3920,11 +4340,19 @@ namespace ALYSLC
 							}
 							else
 							{
-								// The sent form was unequipped but is still in the biped armor slot (yet to be removed), 
+								// The sent form was unequipped 
+								// but is still in the biped armor slot (yet to be removed), 
 								// so remove from the equipped list.
-								SPDLOG_DEBUG("[EM] RefreshEquipState: {} has nothing equipped in the {} biped slot since {} was just unequipped. Equipped forms index: {}",
-									coopActor->GetName(), (i - !EquipIndex::kFirstBipedSlot),
-									armorInSlot ? armorInSlot->GetName() : "NONE", i);
+								SPDLOG_DEBUG
+								(
+									"[EM] RefreshEquipState: "
+									"{} has nothing equipped in the {} biped slot "
+									"since {} was just unequipped. Equipped forms index: {}",
+									coopActor->GetName(), 
+									(i - !EquipIndex::kFirstBipedSlot),
+									armorInSlot ? armorInSlot->GetName() : "NONE", 
+									i
+								);
 								equippedForms[i] = nullptr;
 							}
 						}
@@ -3934,12 +4362,18 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG("[EM] RefreshEquipState: {}: New armor ratings for light/heavy armor are: {}, {}",
-						coopActor->GetName(), armorRatings.first, armorRatings.second);
+					SPDLOG_DEBUG
+					(
+						"[EM] RefreshEquipState: {}: "
+						"New armor ratings for light/heavy armor are: {}, {}",
+						coopActor->GetName(), armorRatings.first, armorRatings.second
+					);
 				}
 
 				// If P1, serialize desired list of equipped forms, 
 				// since the game does not auto-equip forms on cell or inventory change for P1.
+				// Find mismatches for companion players, and if any are found,
+				// DO NOT serialize the desired forms list.
 				bool mismatch = false;
 				if (p->isPlayer1)
 				{
@@ -3978,9 +4412,11 @@ namespace ALYSLC
 					}
 
 					auto ammo = equippedForms[!EquipIndex::kAmmo];
-					if (bool ammoIsBound = ammo && ammo->HasKeywordByEditorID("WeapTypeBoundArrow"); !ammoIsBound)
+					bool ammoIsBound = ammo && ammo->HasKeywordByEditorID("WeapTypeBoundArrow");
+					if (!ammoIsBound)
 					{
-						desiredEquippedForms[!EquipIndex::kAmmo] = equippedForms[!EquipIndex::kAmmo];
+						desiredEquippedForms[!EquipIndex::kAmmo] = 
+						equippedForms[!EquipIndex::kAmmo];
 					}
 
 					// Copy over the rest.
@@ -3996,40 +4432,69 @@ namespace ALYSLC
 					{
 						if (mismatch = equippedForms[i] != desiredEquippedForms[i]; mismatch)
 						{
-							SPDLOG_DEBUG("[EM] RefreshEquipState: {}: MISMATCH at index {}: equipped {} vs. should have equipped {}.",
-								coopActor->GetName(), i,
+							SPDLOG_DEBUG
+							(
+								"[EM] RefreshEquipState: {}: "
+								"MISMATCH at index {}: equipped {} vs. should have equipped {}.",
+								coopActor->GetName(),
+								i,
 								equippedForms[i] ? equippedForms[i]->GetName() : "NOTHING",
-								desiredEquippedForms[i] ? desiredEquippedForms[i]->GetName() : "NOTHING");
+								desiredEquippedForms[i] ? 
+								desiredEquippedForms[i]->GetName() : 
+								"NOTHING"
+							);
 							break;
 						}
 					}
 
-					// Signal menu input manager to refresh menu equip state if it is currently running.
+					// Signal menu input manager to refresh menu equip state 
+					// if it is currently running.
 					if (glob.mim->IsRunning())
 					{
 						glob.mim->SignalRefreshMenuEquipState();
 					}
 				}
 
-				auto& serializableEquippedForms = glob.serializablePlayerData.at(coopActor->formID)->equippedForms;
+				auto& serializableEquippedForms = 
+				(
+					glob.serializablePlayerData.at(coopActor->formID)->equippedForms
+				);
 				// Save to serializable data if both equipped item lists are equivalent.
 				if (!mismatch)
 				{
-					serializableEquippedForms = std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr);
-					std::copy(equippedForms.begin(), equippedForms.end(), serializableEquippedForms.begin());
-					SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Copying list to serializable equipped forms list. LISTS MATCH. New equipped forms size: {}",
-						coopActor->GetName(), serializableEquippedForms.size());
+					serializableEquippedForms = 
+					(
+						std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr)
+					);
+					std::copy
+					(
+						equippedForms.begin(), 
+						equippedForms.end(), 
+						serializableEquippedForms.begin()
+					);
+					SPDLOG_DEBUG
+					(
+						"[EM] RefreshEquipState: {}: "
+						"Copying list to serializable equipped forms list. "
+						"LISTS MATCH. New equipped forms size: {}",
+						coopActor->GetName(), 
+						serializableEquippedForms.size()
+					);
 				}
 
-#ifdef DEBUGMODE
+#ifdef ALYSLC_DEBUG_MODE
 				// REMOVE the following prints after fully debugging.
 				for (auto item : equippedForms)
 				{
 					if (item)
 					{
 						equippedFormFIDs.insert(item->formID);
-						SPDLOG_DEBUG("[EM] RefreshAllEquippedItems: {} has a(n) {} in EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName());
+						SPDLOG_DEBUG
+						(
+							"[EM] RefreshAllEquippedItems: "
+							"{} has a(n) {} in EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName()
+						);
 					}
 				}
 
@@ -4037,8 +4502,12 @@ namespace ALYSLC
 				{
 					if (item)
 					{
-						SPDLOG_DEBUG("[EM] RefreshAllEquippedItems: {} has a(n) {} in DESIRED EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName());
+						SPDLOG_DEBUG
+						(
+							"[EM] RefreshAllEquippedItems: "
+							"{} has a(n) {} in DESIRED EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName()
+						);
 					}
 				}
 
@@ -4046,22 +4515,34 @@ namespace ALYSLC
 				{
 					if (item)
 					{
-						SPDLOG_DEBUG("[EM] RefreshAllEquippedItems: {} has a(n) {} in SERIALIZABLE EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName());
+						SPDLOG_DEBUG
+						(
+							"[EM] RefreshAllEquippedItems: "
+							"{} has a(n) {} in SERIALIZABLE EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName()
+						);
 					}
 				}
 #endif
 			}
 			else
 			{
-				SPDLOG_DEBUG("[EM] RefreshEquipState: {}: Failed to obtain lock. (0x{:X})", 
-					coopActor->GetName(), std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				SPDLOG_DEBUG
+				(
+					"[EM] RefreshEquipState: "
+					"{}: Failed to obtain lock. (0x{:X})", 
+					coopActor->GetName(), 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 			}
 		}
 		
 	}
 
-	void EquipManager::SetCopiedMagicAndFID(RE::TESForm* a_formToCopy, const PlaceholderMagicIndex& a_index)
+	void EquipManager::SetCopiedMagicAndFID
+	(
+		RE::TESForm* a_formToCopy, const PlaceholderMagicIndex& a_index
+	)
 	{
 		// Save the spell form (and its FID) copied to the placeholder spell at the given index.
 
@@ -4096,13 +4577,16 @@ namespace ALYSLC
 		// First: event name.
 		// Second: index in favorited idles list.
 		if (currentCycledIdleIndexPair.second < favoritedEmoteIdles.size() &&
-			currentCycledIdleIndexPair.first != favoritedEmoteIdles[currentCycledIdleIndexPair.second])
+			currentCycledIdleIndexPair.first != 
+			favoritedEmoteIdles[currentCycledIdleIndexPair.second])
 		{
-			currentCycledIdleIndexPair.first = favoritedEmoteIdles[currentCycledIdleIndexPair.second];
+			currentCycledIdleIndexPair.first =
+			favoritedEmoteIdles[currentCycledIdleIndexPair.second];
 		}
 
 		// Serialize the changes.
-		glob.serializablePlayerData.at(coopActor->formID)->cyclableEmoteIdleEvents = favoritedEmoteIdles;
+		glob.serializablePlayerData.at(coopActor->formID)->cyclableEmoteIdleEvents = 
+		favoritedEmoteIdles;
 	}
 
 	void EquipManager::SetInitialEquipState()
@@ -4112,17 +4596,24 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG("[EM] SetInitialEquipState: {}.", coopActor->GetName());
 
-		auto& savedEquippedForms = glob.serializablePlayerData.at(coopActor->formID)->equippedForms;
+		auto& savedEquippedForms = 
+		(
+			glob.serializablePlayerData.at(coopActor->formID)->equippedForms
+		);
 		if (savedEquippedForms.empty() || 
 			savedEquippedForms.size() == 0 || 
 			savedEquippedForms.size() != desiredEquippedForms.size())
 		{
-			SPDLOG_DEBUG("[EM] ERR: SetInitialEquipState: {}: saved equipped forms list is {} ({}).",
+			SPDLOG_DEBUG
+			(
+				"[EM] ERR: SetInitialEquipState: "
+				"{}: saved equipped forms list is {} ({}).",
 				coopActor->GetName(),
 				savedEquippedForms.empty() || savedEquippedForms.size() == 0 ? 
 				"empty" : 
 				"not the right size", 
-				savedEquippedForms.size());
+				savedEquippedForms.size()
+			);
 		}
 		else
 		{
@@ -4166,7 +4657,8 @@ namespace ALYSLC
 				{
 					copiedSpell = 
 					(
-						copiedMagic[!PlaceholderMagicIndex::kLH] && copiedMagic[!PlaceholderMagicIndex::kLH]->Is(RE::FormType::Spell) ?
+						copiedMagic[!PlaceholderMagicIndex::kLH] && 
+						copiedMagic[!PlaceholderMagicIndex::kLH]->Is(RE::FormType::Spell) ?
 						copiedMagic[!PlaceholderMagicIndex::kLH]->As<RE::SpellItem>() :
 						nullptr
 					);
@@ -4184,7 +4676,8 @@ namespace ALYSLC
 				{
 					copiedSpell = 
 					(
-						copiedMagic[!PlaceholderMagicIndex::k2H] && copiedMagic[!PlaceholderMagicIndex::k2H]->Is(RE::FormType::Spell) ?
+						copiedMagic[!PlaceholderMagicIndex::k2H] && 
+						copiedMagic[!PlaceholderMagicIndex::k2H]->Is(RE::FormType::Spell) ?
 						copiedMagic[!PlaceholderMagicIndex::k2H]->As<RE::SpellItem>() :
 						nullptr
 					);
@@ -4197,7 +4690,8 @@ namespace ALYSLC
 				{
 					copiedSpell = 
 					(
-						copiedMagic[!PlaceholderMagicIndex::kRH] && copiedMagic[!PlaceholderMagicIndex::kRH]->Is(RE::FormType::Spell) ?
+						copiedMagic[!PlaceholderMagicIndex::kRH] && 
+						copiedMagic[!PlaceholderMagicIndex::kRH]->Is(RE::FormType::Spell) ?
 						copiedMagic[!PlaceholderMagicIndex::kRH]->As<RE::SpellItem>() :
 						nullptr
 					);
@@ -4210,13 +4704,15 @@ namespace ALYSLC
 
 			if (voiceObj)
 			{
-				// Make sure desired equipped form is the voice placeholder spell if the saved voice form is a spell.
+				// Make sure desired equipped form is the voice placeholder spell
+				// if the saved voice form is a spell.
 				// Otherwise, directly set as the saved shout.
 				if (voiceObj->As<RE::SpellItem>()) 
 				{
 					copiedSpell = 
 					(
-						copiedMagic[!PlaceholderMagicIndex::kVoice] && copiedMagic[!PlaceholderMagicIndex::kVoice]->Is(RE::FormType::Spell) ?
+						copiedMagic[!PlaceholderMagicIndex::kVoice] &&
+						copiedMagic[!PlaceholderMagicIndex::kVoice]->Is(RE::FormType::Spell) ?
 						copiedMagic[!PlaceholderMagicIndex::kVoice]->As<RE::SpellItem>() :
 						nullptr
 					);
@@ -4234,7 +4730,7 @@ namespace ALYSLC
 
 		// Set initial quick slot item and spell to saved forms here 
 		// since they won't be set when refreshing equip state 
-		// (not really equipped in a slot like the other forms).
+		// (not equipped in a slot like the other forms).
 		// Any modification to these two members afterward is done in the menu input manager
 		// when the player reassigns forms to these slots.
 		// They get saved to the desired equipped forms list 
@@ -4256,22 +4752,25 @@ namespace ALYSLC
 		desiredEquippedForms[!EquipIndex::kQuickSlotSpell] =
 		quickSlotSpell;
 
-		// Any mismatches between the current equip state 
-		// and the desired equip state will be resolved in the main task.
 		if (p->isPlayer1)
 		{
 			// Update equipped forms list to reflect the current equip state for P1,
 			// which may be different from the saved equip state
 			// copied into the desired equipped forms list.
-			// Get player 1's equip state updated before the manager starts.
+			// Get P1's equip state updated before the manager starts.
 			RefreshEquipState(RefreshSlots::kAll);
 		}
 		else if (!p->isTransformed)
 		{
 			// NOTE:
-			// Since there may be mismatches that need handling, 
-			// all items are always re-equipped when the equip manager starts.
-			// This call will only clear out mismatching forms 
+			// Since the game may have equipped new gear
+			// that does not match the serialized forms list, 
+			// we do not perform an equip state refresh here for companion players.
+			// Also, since there may be mismatches that need handling, 
+			// all items are always re-equipped when the equip manager starts
+			// and then the equip state is refreshed via the propagated equip events.
+			// 
+			// This call to unequip all will clear out mismatching forms 
 			// that are not in the desired forms list 
 			// after passing through the UnequipObject() hook.
 			Util::Papyrus::UnequipAll(coopActor.get());
@@ -4309,13 +4808,23 @@ namespace ALYSLC
 						continue;
 					}
 
-					// Weapons, shields, torches.
+					bool isWeapon = *boundObj->formType == RE::FormType::Weapon;
+					bool isShield = 
+					(
+						boundObj->As<RE::TESObjectARMO>() && 
+						boundObj->As<RE::TESObjectARMO>()->IsShield()
+					);
+					bool isTorch = 
+					(
+						boundObj->As<RE::TESObjectLIGH>() && 
+						boundObj->As<RE::TESObjectLIGH>()->data.flags.all
+						(
+							RE::TES_LIGHT_FLAGS::kCanCarry
+						)
+					);
+					// Weapons, shields, torches, ammo.
 					if ((a_favFormType == CyclableForms::kWeapon) &&
-						((*boundObj->formType == RE::FormType::Weapon) ||
-						 (boundObj->As<RE::TESObjectARMO>() && 
-							 boundObj->As<RE::TESObjectARMO>()->IsShield()) ||
-						 (boundObj->As<RE::TESObjectLIGH>() && 
-							 boundObj->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry))))
+						(isWeapon || isShield || isTorch))
 					{
 						cyclableFormsMap[a_favFormType].push_back(boundObj);
 					}
@@ -4329,6 +4838,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Shouts and powers.
 			if (auto magicFavorites = RE::MagicFavorites::GetSingleton(); magicFavorites)
 			{
 				for (auto spellForm : magicFavorites->spells)
@@ -4378,7 +4888,7 @@ namespace ALYSLC
 
 	void EquipManager::SetCurrentVoiceSpell()
 	{
-		// Get highest known shout variation and set the voice spell for that variation.
+		// Get highest known shout variation and set the voice spell to that variation.
 		// Or if a power is equipped, set the voice spell to that power.
 
 		if (!voiceForm)
@@ -4389,10 +4899,9 @@ namespace ALYSLC
 		highestShoutVarIndex = -1;
 		voiceSpell = nullptr;
 		// Is a shout.
-		if (voiceForm->GetFormType() == RE::FormType::Shout)
+		if (auto shout = voiceForm->As<RE::TESShout>(); shout)
 		{
-			auto shout = voiceForm->As<RE::TESShout>();
-			// Get highest known variation spell and return its formID
+			// Get highest known variation spell and return its FID.
 			uint32_t i = 0;
 			for (; i < RE::TESShout::VariationIDs::kTotal; i++)
 			{
@@ -4422,11 +4931,13 @@ namespace ALYSLC
 			}
 
 			// Ensure both our cached shout and the high proc shout are consistent with each other.
-			if (auto highProc = 
-				(coopActor->currentProcess) ? 
+			auto highProc = 
+			(
+				coopActor->currentProcess ?
 				coopActor->currentProcess->high : 
-				nullptr; 
-				highProc)
+				nullptr
+			); 
+			if (highProc)
 			{
 				highProc->currentShout = shout;
 				highProc->currentShoutVariation = 
@@ -4441,7 +4952,10 @@ namespace ALYSLC
 			voiceSpell = voiceForm->As<RE::SpellItem>();
 		}
 
-		SPDLOG_DEBUG("[EM] SetCurrentVoiceSpell: {}: voice form: {}, voice spell: {}, highest shout var index: {}.", 
+		SPDLOG_DEBUG
+		(
+			"[EM] SetCurrentVoiceSpell: {}: voice form: {}, voice spell: {}, "
+			"highest shout var index: {}.", 
 			coopActor->GetName(),
 			voiceForm ? voiceForm->GetName() : "NONE",
 			voiceSpell ? voiceSpell->GetName() : "NONE",
@@ -4451,7 +4965,8 @@ namespace ALYSLC
 	void EquipManager::SetOriginalWeaponTypeFromKeyword(HandIndex&& a_handSlot)
 	{
 		// NOTE: Unused for now until grip switching is implemented.
-		// Update the cached LH/RH/2H weapon type to the weapon's default type based on its keywords.
+		// Update the cached LH/RH/2H weapon type 
+		// to the weapon's default type based on its keywords.
 	
 		// Invalid provided hand slot.
 		if (a_handSlot == HandIndex::kNone || a_handSlot == HandIndex::kBoth) 
@@ -4475,6 +4990,7 @@ namespace ALYSLC
 			return;
 		}
 
+		// Get weapon type keyword for the weapon.
 		auto foundIter = std::find_if
 		(
 			glob.weapTypeKeywordsList.begin(), glob.weapTypeKeywordsList.end(),
@@ -4490,33 +5006,47 @@ namespace ALYSLC
 			*foundIter : 
 			nullptr
 		);
-		if (keyword)
+		if (!keyword)
 		{
-			auto weaponType = Util::GetWeaponTypeFromKeyword(keyword);
-			if (a_handSlot == HandIndex::kLH)
-			{
-				lhOriginalType = weaponType;
-				SPDLOG_DEBUG("[EM] SetOriginalWeaponTypeFromKeyword: {}: LH weapon has keyword {}, which corresponds to weapon type: {}",
-					coopActor->GetName(), 
-					keyword->formEditorID, 
-					static_cast<uint32_t>(lhOriginalType));
-			}
-			else if (a_handSlot == HandIndex::kRH)
-			{
-				rhOriginalType = weaponType;
-				SPDLOG_DEBUG("[EM] SetOriginalWeaponTypeFromKeyword: {}: RH weapon has keyword {}, which corresponds to weapon type: {}",
-					coopActor->GetName(),
-					keyword->formEditorID, 
-					static_cast<uint32_t>(rhOriginalType));
-			}
-			else
-			{
-				lhOriginalType = rhOriginalType = weaponType;
-				SPDLOG_DEBUG("[EM] SetOriginalWeaponTypeFromKeyword: {}: 2H weapon has keyword {}, which corresponds to weapon type: {}", 
-					coopActor->GetName(), 
-					keyword->formEditorID,
-					static_cast<uint32_t>(lhOriginalType));
-			}
+			return;
+		}
+
+		auto weaponType = Util::GetWeaponTypeFromKeyword(keyword);
+		if (a_handSlot == HandIndex::kLH)
+		{
+			lhOriginalType = weaponType;
+			SPDLOG_DEBUG
+			(
+				"[EM] SetOriginalWeaponTypeFromKeyword: "
+				"{}: LH weapon has keyword {}, which corresponds to weapon type: {}",
+				coopActor->GetName(), 
+				keyword->formEditorID, 
+				static_cast<uint32_t>(lhOriginalType)
+			);
+		}
+		else if (a_handSlot == HandIndex::kRH)
+		{
+			rhOriginalType = weaponType;
+			SPDLOG_DEBUG
+			(
+				"[EM] SetOriginalWeaponTypeFromKeyword: "
+				"{}: RH weapon has keyword {}, which corresponds to weapon type: {}",
+				coopActor->GetName(),
+				keyword->formEditorID, 
+				static_cast<uint32_t>(rhOriginalType)
+			);
+		}
+		else
+		{
+			lhOriginalType = rhOriginalType = weaponType;
+			SPDLOG_DEBUG
+			(
+				"[EM] SetOriginalWeaponTypeFromKeyword: "
+				"{}: 2H weapon has keyword {}, which corresponds to weapon type: {}", 
+				coopActor->GetName(), 
+				keyword->formEditorID,
+				static_cast<uint32_t>(lhOriginalType)
+			);
 		}
 	}
 
@@ -4579,8 +5109,9 @@ namespace ALYSLC
 			if (GlobalCoopData::WEAP_ANIM_SWITCH_MAP.contains(currentType))
 			{
 				auto newType = GlobalCoopData::WEAP_ANIM_SWITCH_MAP.at(currentType);
-				// Special case with staves switching back to 1H ranged cast animations from 2H melee animations.
-				if (a_weapon->HasKeyword(glob.weapTypeKeywordsList[static_cast<uint32_t>(RE::WEAPON_TYPE::kStaff)]) &&
+				// Special case with staves switching back to 1H ranged cast animations 
+				// from 2H melee animations.
+				if (a_weapon->HasKeyword(glob.weapTypeKeywordsList[!RE::WEAPON_TYPE::kStaff]) &&
 					currentType != RE::WEAPON_TYPE::kStaff)
 				{
 					newType = RE::WEAPON_TYPE::kStaff;
@@ -4590,8 +5121,12 @@ namespace ALYSLC
 				a_weapon->weaponData.animationType.set(newType);
 				a_weapon->SetAltered(true);
 
-				SPDLOG_DEBUG("[EM] SwitchWeaponGrip: {}: Switched {}'s weapon animations from type {} to {}",
-					coopActor->GetName(), a_weapon->GetName(), currentType, newType);
+				SPDLOG_DEBUG
+				(
+					"[EM] SwitchWeaponGrip: {}: "
+					"Switched {}'s weapon animations from type {} to {}",
+					coopActor->GetName(), a_weapon->GetName(), currentType, newType
+				);
 			}
 
 			// Equip once grip and animation type have been changed.
@@ -4608,32 +5143,49 @@ namespace ALYSLC
 
 	void EquipManager::UnequipAll()
 	{
-		// Unequip all equipped gear after re-assigning saved equipped forms to the desired forms list.
+		// Unequip all equipped gear after re-assigning saved equipped forms 
+		// to the desired forms list.
 
 		SPDLOG_DEBUG("[EM] UnequipAll: {}.", coopActor->GetName());
 
 		// Re-assign saved serialized forms.
 		desiredEquippedForms.fill(nullptr);
-		auto& savedEquippedForms = glob.serializablePlayerData.at(coopActor->formID)->equippedForms;
-		std::copy(savedEquippedForms.begin(), savedEquippedForms.end(), desiredEquippedForms.begin());
+		auto& savedEquippedForms = 
+		(
+			glob.serializablePlayerData.at(coopActor->formID)->equippedForms
+		);
+		std::copy
+		(
+			savedEquippedForms.begin(),
+			savedEquippedForms.end(), 
+			desiredEquippedForms.begin()
+		);
 
 		EquipIndex equipIndex = EquipIndex::kTotal;
 		for (uint8_t i = 0; i < !EquipIndex::kTotal; ++i)
 		{
 			equipIndex = static_cast<EquipIndex>(i);
 			// Ignore accompanying equips to the forms that the player chose to equip.
-			// Examples include bound weapons that are equipped 
+			// Examples include bound weapons/ammo that are equipped 
 			// once the corresponding bound weapon spell is cast
 			// and enchantments that equip with the weapon they are attached to.
 			bool isBound = 
 			{
 				(
-					equippedForms[i] && (equipIndex == EquipIndex::kLeftHand || equipIndex == EquipIndex::kRightHand) &&
-					equippedForms[i]->Is(RE::FormType::Weapon) && equippedForms[i]->As<RE::TESObjectWEAP>()->IsBound()
+					(equippedForms[i]) && 
+					(
+						equipIndex == EquipIndex::kLeftHand || equipIndex == EquipIndex::kRightHand
+					) &&
+					(equippedForms[i]->Is(RE::FormType::Weapon)) && 
+					(equippedForms[i]->As<RE::TESObjectWEAP>()->IsBound())
 				) ||
 				(
-					equippedForms[i] && equipIndex == EquipIndex::kAmmo && equippedForms[i]->Is(RE::FormType::Ammo) &&
-					equippedForms[i]->As<RE::TESAmmo>()->HasKeywordID(0x10D501)
+					equippedForms[i] && 
+					equipIndex == EquipIndex::kAmmo && 
+					equippedForms[i]->Is(RE::FormType::Ammo) &&
+					equippedForms[i]->As<RE::TESAmmo>()->HasKeywordByEditorID("WeapTypeBoundArrow")
+					// Used to only support the vanilla bound arrow.
+					//equippedForms[i]->As<RE::TESAmmo>()->HasKeywordID(0x10D501)
 				)
 			};
 			bool isEnchantment = 
@@ -4659,7 +5211,17 @@ namespace ALYSLC
 		Util::Papyrus::UnequipAll(coopActor.get());
 	}
 
-	void EquipManager::UnequipAmmo(RE::TESForm* a_toUnequip, RE::ExtraDataList* a_exData, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow, const RE::BGSEquipSlot* a_slotToReplace)
+	void EquipManager::UnequipAmmo
+	(
+		RE::TESForm* a_toUnequip,
+		RE::ExtraDataList* a_exData,
+		const RE::BGSEquipSlot* a_slot, 
+		bool a_queueEquip, 
+		bool a_forceEquip,
+		bool a_playSounds,
+		bool a_applyNow,
+		const RE::BGSEquipSlot* a_slotToReplace
+	)
 	{
 		// Unequip the given ammo.
 
@@ -4673,6 +5235,7 @@ namespace ALYSLC
 		{
 			return;
 		}
+
 		auto invCounts = coopActor->GetInventoryCounts();
 		auto currentAmmoCount = 
 		(
@@ -4687,6 +5250,7 @@ namespace ALYSLC
 			hotkeyedFormsToSlotsMap[ammo->formID] : 
 			-1
 		);
+
 		// NOTE: The game has issues un/equipping ammo when count is large (e.g. 100000), 
 		// so remove and re-add as a failsafe after unequipping.
 		// Ugly but seems to work.
@@ -4742,7 +5306,18 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::UnequipArmor(RE::TESForm* a_toUnequip, RE::ExtraDataList* a_exData, uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow, const RE::BGSEquipSlot* a_slotToReplace)
+	void EquipManager::UnequipArmor
+	(
+		RE::TESForm* a_toUnequip, 
+		RE::ExtraDataList* a_exData,
+		uint32_t a_count, 
+		const RE::BGSEquipSlot* a_slot,
+		bool a_queueEquip,
+		bool a_forceEquip, 
+		bool a_playSounds,
+		bool a_applyNow,
+		const RE::BGSEquipSlot* a_slotToReplace
+	)
 	{
 		// Unequip the given armor.
 
@@ -4759,10 +5334,9 @@ namespace ALYSLC
 
 		if (!p->isPlayer1)
 		{
-			// Must remove all armor entries that correspond to the requested item to unequip,
+			// Must remove all armor entries that correspond to the requested armor to unequip,
 			// since armor pieces can fit into multiple biped slots.
-			if (auto asBipedObjForm = a_toUnequip->As<RE::BGSBipedObjectForm>(); 
-				asBipedObjForm && a_toUnequip->As<RE::TESBoundObject>())
+			if (auto asBipedObjForm = a_toUnequip->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
 			{
 				// Remove from desired equipped forms list.
 				auto slotMask = asBipedObjForm->bipedModelData.bipedObjectSlots;
@@ -4773,7 +5347,9 @@ namespace ALYSLC
 					a_toUnequip->As<RE::TESObjectARMO>()->equipSlot :
 					a_slot
 				);
-				for (uint8_t i = !EquipIndex::kFirstBipedSlot; i <= !EquipIndex::kLastBipedSlot; ++i)
+				for (uint8_t i = !EquipIndex::kFirstBipedSlot; 
+					 i <= !EquipIndex::kLastBipedSlot; 
+					 ++i)
 				{
 					auto bitMask = 
 					(
@@ -4782,7 +5358,8 @@ namespace ALYSLC
 							1 << (i - !EquipIndex::kFirstBipedSlot)
 						)
 					);
-					// Form mask contains the bit, so clear the corresponding desired equipped forms entry.
+					// Form mask contains the bit, 
+					// so clear the corresponding desired equipped forms entry.
 					if (slotMask.all(bitMask))
 					{
 						ClearDesiredEquippedFormOnUnequip(a_toUnequip, i);
@@ -4846,7 +5423,19 @@ namespace ALYSLC
 		}
 	}
 
-	void EquipManager::UnequipForm(RE::TESForm* a_toUnequip, const EquipIndex& a_equipIndex, RE::ExtraDataList* a_exData, uint32_t a_count, const RE::BGSEquipSlot* a_slot, bool a_queueEquip, bool a_forceEquip, bool a_playSounds, bool a_applyNow, const RE::BGSEquipSlot* a_slotToReplace)
+	void EquipManager::UnequipForm
+	(
+		RE::TESForm* a_toUnequip, 
+		const EquipIndex& a_equipIndex,
+		RE::ExtraDataList* a_exData,
+		uint32_t a_count,
+		const RE::BGSEquipSlot* a_slot,
+		bool a_queueEquip,
+		bool a_forceEquip,
+		bool a_playSounds, 
+		bool a_applyNow, 
+		const RE::BGSEquipSlot* a_slotToReplace
+	)
 	{
 		// Unequip the given form.
 
@@ -4882,8 +5471,12 @@ namespace ALYSLC
 
 		if (!p->isPlayer1)
 		{
-			// Remove from desired equipped forms list.
-			bool isHandForm = a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kRightHand;
+			// Remove from desired equipped forms list before unequipping.
+			bool isHandForm = 
+			(
+				a_equipIndex == EquipIndex::kLeftHand ||
+				a_equipIndex == EquipIndex::kRightHand
+			);
 			if (isHandForm)
 			{
 				if (a_slot != glob.bothHandsEquipSlot)
@@ -4951,7 +5544,7 @@ namespace ALYSLC
 			UnequipShield();
 		}
 
-		if (RE::TESForm* currentForm = equippedForms[!a_equipIndex]; currentForm)
+		if (auto currentForm = equippedForms[!a_equipIndex]; currentForm)
 		{
 			if (currentForm->Is(RE::FormType::Spell))
 			{
@@ -4972,10 +5565,13 @@ namespace ALYSLC
 				{
 					if (equipType->equipSlot == glob.eitherHandEquipSlot)
 					{
-						// Unequipping from the "either hand" equip slot causes a "lingering equip state" bug
-						// where the unequipped item still shows as equipped in the inventory/container menu,
+						// Unequipping from the "either hand" equip slot 
+						// causes a "lingering equip state" bug
+						// where the unequipped item still shows as equipped 
+						// in the inventory/container menu,
 						// and will require additional unequip requests to full unequip.
-						// So we force the equip slot to match the passed-in equip index in this case.
+						// So we force the equip slot for our unequip call 
+						// to match the passed-in equip index.
 						if (a_equipIndex == EquipIndex::kLeftHand)
 						{
 							equipSlot = glob.leftHandEquipSlot;
@@ -5005,7 +5601,8 @@ namespace ALYSLC
 						if (weap->IsBow())
 						{
 							if (auto boundArrow = equippedForms[!EquipIndex::kAmmo]; 
-								boundArrow && boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
+								boundArrow && 
+								boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
 							{
 								UnequipForm(boundArrow->As<RE::TESAmmo>(), EquipIndex::kAmmo);
 							}
@@ -5133,6 +5730,7 @@ namespace ALYSLC
 		{
 			if (a_slot == glob.bothHandsEquipSlot)
 			{
+				// Fists to clear out slots. Fists!
 				desiredEquippedForms[!EquipIndex::kLeftHand] = 
 				desiredEquippedForms[!EquipIndex::kRightHand] = nullptr;
 				EquipFists();
@@ -5182,6 +5780,7 @@ namespace ALYSLC
 		{
 			// Clear out LH slot first.
 			desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
+
 			// Clear out biped slots.
 			// Looping through just in case this shield has other biped slots
 			// in addition to the shield biped slot.
@@ -5305,8 +5904,10 @@ namespace ALYSLC
 
 	void EquipManager::UpdateFavoritedFormsLists(bool&& a_useCachedMagicFavorites)
 	{
-		// Update favorited forms list(s) to serialize (physical or magical or both).
+		// Update all favorited form data and list(s) to serialize (physical and magical).
 		// Also update assigned hotkeys for all favorited forms.
+		// Can choose to simply assign the cached serialized magic favorites list,
+		// instead of constructing an up-to-date list from the magic favorites singleton.
 
 		SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}. Use cached magic favorites: {}.", 
 			coopActor->GetName(), a_useCachedMagicFavorites);
@@ -5347,12 +5948,23 @@ namespace ALYSLC
 
 				favoritedFormIDs.insert(boundObj->formID);
 				favoritedForms.emplace_back(boundObj);
-				// Weapons, shields, torches.
-				if ((*boundObj->formType == RE::FormType::Weapon) ||
-					(boundObj->As<RE::TESObjectARMO>() && 
-						boundObj->As<RE::TESObjectARMO>()->IsShield()) ||
-					(boundObj->As<RE::TESObjectLIGH>() && 
-						boundObj->As<RE::TESObjectLIGH>()->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry)))
+
+				bool isWeapon = *boundObj->formType == RE::FormType::Weapon;
+				bool isShield = 
+				(
+					boundObj->As<RE::TESObjectARMO>() && 
+					boundObj->As<RE::TESObjectARMO>()->IsShield()
+				);
+				bool isTorch = 
+				(
+					boundObj->As<RE::TESObjectLIGH>() && 
+					boundObj->As<RE::TESObjectLIGH>()->data.flags.all
+					(
+						RE::TES_LIGHT_FLAGS::kCanCarry
+					)
+				);
+				// Weapons, shields, torches, ammo.
+				if (isWeapon || isShield || isTorch)
 				{
 					cyclableFormsMap[CyclableForms::kWeapon].push_back(boundObj);
 				}
@@ -5377,12 +5989,17 @@ namespace ALYSLC
 						hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID)) 
 					{
 						// Form is hotkeyed in this slot but also in another slot previously, 
-						// so remove the old linked hotkey.
-						SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: FORM {} was already hotkeyed in slot {}. Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+						// so remove the previously linked hotkey.
+						SPDLOG_DEBUG
+						(
+							"[EM] UpdateFavoritedFormsLists: {}: "
+							"FORM {} was already hotkeyed in slot {}. "
+							"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
 							coopActor->GetName(),
 							oldHotkeyedForm->GetName(), 
 							slot == -1 ? -1 : slot + 1, 
-							boundObj->GetName());
+							boundObj->GetName()
+						);
 
 						hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
 						exDataHotkey->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
@@ -5394,10 +6011,14 @@ namespace ALYSLC
 						hotkeyedForms[slot] = boundObj;
 						hotkeyedFormsToSlotsMap.insert_or_assign(boundObj->formID, slot);
 
-						SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: PHYS FORM {} is hotkeyed in slot {}.",
+						SPDLOG_DEBUG
+						(
+							"[EM] UpdateFavoritedFormsLists: {}: "
+							"PHYS FORM {} is hotkeyed in slot {}.",
 							coopActor->GetName(),
 							boundObj->GetName(), 
-							slot == -1 ? -1 : slot + 1);
+							slot == -1 ? -1 : slot + 1
+						);
 					}
 				}
 
@@ -5409,8 +6030,12 @@ namespace ALYSLC
 
 		if (!glob.serializablePlayerData.contains(coopActor->formID))
 		{
-			SPDLOG_DEBUG("[EM] ERR: UpdateFavoritedFormsLists: {}: No serialized data found. Cannot update or modify cached magic favorites.", 
-				coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[EM] ERR: UpdateFavoritedFormsLists: {}: "
+				"No serialized data found. Cannot update or modify cached magic favorites.", 
+				coopActor->GetName()
+			);
 			return;
 		}
 
@@ -5418,8 +6043,12 @@ namespace ALYSLC
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
-			SPDLOG_DEBUG("[EM] ERR: UpdateFavoritedFormsLists: {}: Could not get magic favorites singleton.", 
-				coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[EM] ERR: UpdateFavoritedFormsLists: {}: "
+				"Could not get magic favorites singleton.", 
+				coopActor->GetName()
+			);
 			return;
 		}
 
@@ -5441,24 +6070,36 @@ namespace ALYSLC
 				// NOTE: If another form, which can only be a physical favorited form here,
 				// is in the same hotkey slot, keep the physical form, since it is more up to date
 				// compared to the cached magical favorite form.
-				// For example, if the companion player opens their inventory and hotkeys a weapon
-				// in the same slot as a spell was saved to previously, we now want that weapon to be equipable
-				// from this slot, not the spell.
-				// There will be no issue with conflicting magical forms, since we always update 
-				// the cached magic favorites when exiting the Magic Menu.
+				// For example, if the companion player opens their inventory 
+				// and hotkeys a weapon in the same slot as a spell was saved to previously, 
+				// we now want that weapon to be equipable from this slot, not the spell.
+				// There will be no issue with a magical form occupying the same slot, 
+				// since we always update the cached magic favorites when exiting the Magic Menu,
+				// which is the only place players can change their favorited magical forms.
 				if (oldHotkeyedForm &&
 					oldHotkeyedForm != hotkeyedForm && 
 					hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID))
 				{
-					SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
-						coopActor->GetName(), oldHotkeyedForm->GetName(), i + 1, hotkeyedForm->GetName());
+					SPDLOG_DEBUG
+					(
+						"[EM] UpdateFavoritedFormsLists: {}: "
+						"SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
+						coopActor->GetName(),
+						oldHotkeyedForm->GetName(),
+						i + 1,
+						hotkeyedForm->GetName()
+					);
 					continue;
 				}
 
 				hotkeyedForms[i] = hotkeyedForm;
 				hotkeyedFormsToSlotsMap.insert_or_assign(hotkeyedForm->formID, i);
-				SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
-					coopActor->GetName(), hotkeyedForm->GetName(), i + 1);
+				SPDLOG_DEBUG
+				(
+					"[EM] UpdateFavoritedFormsLists: {}: "
+					"SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
+					coopActor->GetName(), hotkeyedForm->GetName(), i + 1
+				);
 			}
 		}
 		else
@@ -5496,11 +6137,16 @@ namespace ALYSLC
 				{
 					// Form is hotkeyed in this slot but also in another slot previously,
 					// so remove the old linked hotkey.
-					SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: FORM {} was already hotkeyed in slot {}. Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+					SPDLOG_DEBUG
+					(
+						"[EM] UpdateFavoritedFormsLists: {}: "
+						"FORM {} was already hotkeyed in slot {}. "
+						"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
 						coopActor->GetName(), 
 						oldHotkeyedForm->GetName(), 
 						i == -1 ? -1 : i + 1, 
-						magForm->GetName());
+						magForm->GetName()
+					);
 					hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
 					magicFavorites->hotkeys[i] = nullptr;
 				}
@@ -5510,8 +6156,12 @@ namespace ALYSLC
 					// or link a new hotkey slot to this form.
 					hotkeyedForms[i] = magForm;
 					hotkeyedFormsToSlotsMap.insert_or_assign(magForm->formID, i);
-					SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: MAGIC FORM {} is hotkeyed in slot {}.",
-						coopActor->GetName(), magForm->GetName(), i + 1);
+					SPDLOG_DEBUG
+					(
+						"[EM] UpdateFavoritedFormsLists: {}: "
+						"MAGIC FORM {} is hotkeyed in slot {}.",
+						coopActor->GetName(), magForm->GetName(), i + 1
+					);
 				}
 			}
 		}
@@ -5552,26 +6202,27 @@ namespace ALYSLC
 			++numFavoritedItems;
 		}
 
-		if (numFavoritedItems > 0)
+		if (numFavoritedItems == 0)
 		{
-			// Remove duplicates.
-			for (auto i = 0; i < !CyclableForms::kTotal; ++i)
-			{
-				auto& favFormsList = cyclableFormsMap[static_cast<CyclableForms>(i)]; 
-				if (favFormsList.empty())
-				{
-					continue;
-				}
-				
-				auto newEnd = std::unique(favFormsList.begin(), favFormsList.end());
-				if (newEnd != favFormsList.end())
-				{
-					uint32_t prevSize = favFormsList.size();
-					favFormsList.erase(newEnd, favFormsList.end());
-				}
-			}
+			return;
 		}
 
+		// Remove duplicates.
+		for (auto i = 0; i < !CyclableForms::kTotal; ++i)
+		{
+			auto& favFormsList = cyclableFormsMap[static_cast<CyclableForms>(i)]; 
+			if (favFormsList.empty())
+			{
+				continue;
+			}
+				
+			auto newEnd = std::unique(favFormsList.begin(), favFormsList.end());
+			if (newEnd != favFormsList.end())
+			{
+				uint32_t prevSize = favFormsList.size();
+				favFormsList.erase(newEnd, favFormsList.end());
+			}
+		}
 	}
 
 	void EquipManager::ValidateEquipState()
@@ -5609,46 +6260,69 @@ namespace ALYSLC
 				if (!desiredRHForm)
 				{
 					// RH empty and LH form should also be in the RH slot.
-					SPDLOG_DEBUG("[EM] ValidateEquipState: {}: 2H form {} should be in both LH and RH desired form slots. Adding to RH slot now.",
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"2H form {} should be in both LH and RH desired form slots. "
+						"Adding to RH slot now.",
 						coopActor->GetName(), 
-						desiredLHForm->GetName());
+						desiredLHForm->GetName()
+					);
 
 					desiredEquippedForms[!EquipIndex::kRightHand] = desiredLHForm;
 					shouldReEquip = true;
 				}
-				else if (!desiredRHEquipType || desiredRHEquipType->equipSlot != glob.bothHandsEquipSlot)
+				else if (!desiredRHEquipType || 
+						 desiredRHEquipType->equipSlot != glob.bothHandsEquipSlot)
 				{
 					// RH form invalid or RH form is not a 2H form.
 					// Move LH form into RH slot.
-					SPDLOG_DEBUG("[EM] ValidateEquipState: {}: 2H form {} is not also in the RH slot and RH form {} is not a 2H form. Moving 2H form to RH.",
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"2H form {} is not also in the RH slot and RH form {} is not a 2H form. "
+						"Moving 2H form to RH.",
 						coopActor->GetName(), 
 						desiredLHForm->GetName(), 
-						desiredRHForm ? desiredRHForm->GetName() : "INVALID");
+						desiredRHForm ? desiredRHForm->GetName() : "INVALID"
+					);
 
 					desiredEquippedForms[!EquipIndex::kRightHand] = desiredLHForm;
 					shouldReEquip = true;
 				}
 			}
-			else if (desiredRHEquipType && desiredRHEquipType->equipSlot == glob.bothHandsEquipSlot)
+			else if (desiredRHEquipType && 
+					 desiredRHEquipType->equipSlot == glob.bothHandsEquipSlot)
 			{
 				if (!desiredLHForm)
 				{
 					// LH empty and RH form should also be in the LH slot.
-					SPDLOG_DEBUG("[EM] ValidateEquipState: {}: 2H form {} should be in both LH and RH desired form slots. Adding to LH slot now.",
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"2H form {} should be in both LH and RH desired form slots. "
+						"Adding to LH slot now.",
 						coopActor->GetName(), 
-						desiredRHForm->GetName());
+						desiredRHForm->GetName()
+					);
 
 					desiredEquippedForms[!EquipIndex::kLeftHand] = desiredRHForm;
 					shouldReEquip = true;
 				}
-				else if (!desiredLHEquipType || desiredLHEquipType->equipSlot != glob.bothHandsEquipSlot)
+				else if (!desiredLHEquipType || 
+						 desiredLHEquipType->equipSlot != glob.bothHandsEquipSlot)
 				{
 					// LH form invalid or LH form is not a 2H form.
 					// Move RH form into LH slot.
-					SPDLOG_DEBUG("[EM] ValidateEquipState: {}: 2H form {} is not also in the LH slot and LH form {} is not a 2H form. Moving 2H form to LH.",
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"2H form {} is not also in the LH slot and LH form {} is not a 2H form. "
+						"Moving 2H form to LH.",
 						coopActor->GetName(), 
 						desiredRHForm->GetName(), 
-						desiredLHForm ? desiredLHForm->GetName() : "INVALID");
+						desiredLHForm ? desiredLHForm->GetName() : "INVALID"
+					);
 
 					desiredEquippedForms[!EquipIndex::kLeftHand] = desiredRHForm;
 					shouldReEquip = true;
@@ -5660,19 +6334,27 @@ namespace ALYSLC
 			// so I'm commenting this out for now.
 			/*if (desiredLHEquipType && desiredLHEquipType->equipSlot == glob.rightHandEquipSlot)
 			{
-				SPDLOG_DEBUG("[EM] ValidateEquipState: {}: LH form {} has RH equip slot. Moving to RH.",
-					coopActor->GetName(), desiredLHForm->GetName());
+				SPDLOG_DEBUG
+				(
+					"[EM] ValidateEquipState: {}: "
+					"LH form {} has RH equip slot. Moving to RH.",
+					coopActor->GetName(), desiredLHForm->GetName()
+				);
 				desiredEquippedForms[!EquipIndex::kRightHand] = desiredLHForm;
 				desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
 				shouldReEquip = true;
 			}*/
 
-			// RH form with a LH equipslot equipped is in the desired RH slot,
+			// RH form with a LH equipslot is in the desired RH slot,
 			// so move it to the desired LH slot and clear the desired RH slot.
 			if (desiredRHEquipType && desiredRHEquipType->equipSlot == glob.leftHandEquipSlot)
 			{
-				SPDLOG_DEBUG("[EM] ValidateEquipState: {}: RH form {} has LH equip slot. Moving to LH.",
-					coopActor->GetName(), desiredRHForm->GetName());
+				SPDLOG_DEBUG
+				(
+					"[EM] ValidateEquipState: {}: " 
+					"RH form {} has LH equip slot. Moving to LH.",
+					coopActor->GetName(), desiredRHForm->GetName()
+				);
 				desiredEquippedForms[!EquipIndex::kLeftHand] = desiredRHForm;
 				desiredEquippedForms[!EquipIndex::kRightHand] = nullptr;
 				shouldReEquip = true;
@@ -5691,8 +6373,13 @@ namespace ALYSLC
 				if (invCounts.contains(weap) && invCounts.at(weap) == 1)
 				{
 					// Unequip from LH, keep in RH.
-					SPDLOG_DEBUG("[EM] ValidateEquipState: {}: 1H form {} with count 1 is in both LH and RH desired form slots. Unequipping from the LH slot now.",
-						coopActor->GetName(), currentLHForm->GetName());
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"1H form {} with count 1 is in both LH and RH desired form slots. "
+						"Unequipping from the LH slot now.",
+						coopActor->GetName(), currentLHForm->GetName()
+					);
 
 					desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
 					desiredEquippedForms[!EquipIndex::kRightHand] = weap;
@@ -5714,7 +6401,15 @@ namespace ALYSLC
 			);
 			if (shouldReEquip) 
 			{
-				SPDLOG_DEBUG("[EM] ValidateEquipState: {}: Current LH form ({}, is bound weap req active: {}) does not match desired form ({}): {}, current RH form ({}, is bound weap req active: {}) does not match desired form ({}): {}, current Voice form ({}) does not match desired form ({}): {}",
+				SPDLOG_DEBUG
+				(
+					"[EM] ValidateEquipState: {}: "
+					"Current LH form ({}, is bound weap req active: {}) "
+					"does not match desired form ({}): {}, "
+					"current RH form ({}, is bound weap req active: {}) "
+					"does not match desired form ({}): {}, "
+					"current Voice form ({}) "
+					"does not match desired form ({}): {}",
 					coopActor->GetName(), 
 					currentLHForm ? currentLHForm->GetName() : "EMPTY",
 					p->pam->boundWeapReqLH,
@@ -5726,13 +6421,20 @@ namespace ALYSLC
 					currentRHForm != desiredRHForm,
 					currentVoiceForm ? currentVoiceForm->GetName() : "NONE",
 					desiredVoiceForm ? desiredVoiceForm->GetName() : "NONE",
-					currentVoiceForm != desiredVoiceForm);
+					currentVoiceForm != desiredVoiceForm
+				);
 			}
 		}
 
 		if (shouldReEquip)
 		{
-			SPDLOG_DEBUG("[EM] ValidateEquipState: {}: Desired equipped forms were invalid and modified. Re-equipping desired equipped hand forms.", coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[EM] ValidateEquipState: {}: "
+				"Desired equipped forms were invalid and modified. "
+				"Re-equipping desired equipped hand forms.", 
+				coopActor->GetName()
+			);
 			ReEquipHandForms();
 		}
 	}

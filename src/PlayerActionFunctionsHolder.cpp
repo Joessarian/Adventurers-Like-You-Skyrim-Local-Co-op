@@ -68,7 +68,6 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kCycleWeaponRH - actionIndexOffset] =
 		_condFuncs[!InputAction::kHotkeyEquip - actionIndexOffset] = ConditionFuncs::CycleEquipment;
 
-		_condFuncs[!InputAction::kFaceTarget - actionIndexOffset] = ConditionFuncs::FaceTarget;
 		_condFuncs[!InputAction::kDismount - actionIndexOffset] = ConditionFuncs::Dismount;
 		_condFuncs[!InputAction::kDodge - actionIndexOffset] = ConditionFuncs::Dodge;
 		_condFuncs[!InputAction::kGrabRotateYZ - actionIndexOffset] = ConditionFuncs::GrabRotateYZ;
@@ -114,7 +113,7 @@ namespace ALYSLC
 		// Without conditions:
 		// CycleSpellCategoryLH, CycleSpellCategoryRH, 
 		// CycleWeaponCategoryLH, CycleWeaponCategoryRH, 
-		// GrabObject, HotkeyEquip,
+		// FaceTarget, GrabObject, HotkeyEquip,
 		// MoveCrosshair, RotateCam, ZoomCam
 		// clang-format on
 #pragma endregion
@@ -577,13 +576,6 @@ namespace ALYSLC
 			);
 		}
 
-		bool FaceTarget(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Do not face a target when mounted because horses do not have backpedaling or strafe animations
-			// and will only be able to move towards the target or moonwalk backwards.
-			return !a_p->coopActor->IsOnMount() && !a_p->coopActor->IsSprinting();
-		}
-
 		bool Favorites(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			bool isEquipping = false;
@@ -592,12 +584,23 @@ namespace ALYSLC
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 
 			// No supported menus open or control is obtainable AND
-			// Either not transformed and not (un)equipping OR
+			// Either the player is part of an NPC race and not (un)equipping OR
 			// Player is a Vampire Lord (access to vampiric spells through the FavoritesMenu)
 			return
 			{
-				(!glob.supportedMenuOpen.load() || GlobalCoopData::CanControlMenus(a_p->controllerID)) &&
-				((!Util::IsRaceWithTransformation(a_p->coopActor->race) && !isEquipping && !isUnequipping) || (Util::IsVampireLord(a_p->coopActor.get())))
+				(
+					!glob.supportedMenuOpen.load() ||
+					GlobalCoopData::CanControlMenus(a_p->controllerID)
+				) &&
+				(
+					(
+						a_p->coopActor->race && 
+						a_p->coopActor->race->HasKeyword(glob.npcKeyword) &&
+						!isEquipping && 
+						!isUnequipping
+					) || 
+					(Util::IsVampireLord(a_p->coopActor.get()))
+				)
 			};
 		}
 
@@ -616,9 +619,29 @@ namespace ALYSLC
 				return false;
 			}
 
+			// NOTE: Ignore instances where P1 has occupied furniture
+			// but is not locked into a furniture-use animation 
+			// or the furniture does not have an associated idle form
+			// (such as when near an interactable EVGAT marker).
+			bool usingFurniture = 
+			(
+				(!a_p->isPlayer1 && a_p->mm->interactionPackageRunning) ||
+				(
+					(
+						!a_p->coopActor->IsOnMount() &&
+						a_p->coopActor->GetOccupiedFurniture()
+					) && 
+					(
+						(a_p->mm->isAnimDriven) ||
+						(
+							a_p->coopActor->GetMiddleHighProcess() && 
+							a_p->coopActor->GetMiddleHighProcess()->furnitureIdle
+						)
+					)
+				)
+			);
 			// Can jump if using furniture (stops furniture use animations).
-			if ((!a_p->isPlayer1 && a_p->mm->interactionPackageRunning) || 
-				(a_p->coopActor->GetOccupiedFurniture() && !a_p->coopActor->IsOnMount()))
+			if (usingFurniture)
 			{
 				return true;
 			}
@@ -640,8 +663,29 @@ namespace ALYSLC
 						charController->surfaceInfo.supportedState.get() == RE::hkpSurfaceInfo::SupportedState::kSupported
 					) 
 				);
+				// Have to check for a collidable surface under the player 
+				// with a single raycast, since the char controller flags and surface info
+				// sometimes indicate the player can start jumping while in midair.
 				if (stateAllowsJump) 
 				{
+					glm::vec4 start =
+					{
+						a_p->coopActor->data.location.x,
+						a_p->coopActor->data.location.y,
+						a_p->coopActor->data.location.z + a_p->coopActor->GetHeight(),
+						0.0f
+					};
+					glm::vec4 end = 
+					(
+						start - glm::vec4(0.0f, 0.0f, 1.1f * a_p->coopActor->GetHeight(), 0.0f)
+					);
+					auto result = Raycast::hkpCastRay(start, end, true, false);
+					// No surface beneath the player, so they cannot start to jump.
+					if (!result.hit)
+					{
+						return false;
+					}
+
 					// Check slope angle for the surface the player would like to jump off.
 					// Must be less than the defined max jump surface slope angle.
 					const float& zComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
@@ -649,18 +693,19 @@ namespace ALYSLC
 					// Vector along the surface is at 90 degrees to the normal, so subtract the normal from PI / 2.
 					if (charController->surfaceInfo.surfaceNormal.Length3() != 0.0f) 
 					{
-						supportAng = PI / 2.0f - fabsf(asinf(charController->surfaceInfo.surfaceNormal.quad.m128_f32[2]));
+						supportAng = 
+						(
+							PI / 2.0f - 
+							fabsf
+							(
+								asinf(charController->surfaceInfo.surfaceNormal.quad.m128_f32[2])
+							)
+						);
 					}
 					else
 					{
 						// Raycast as a fallback option if the support surface normal data is unavailable (0).
-						glm::vec4 start = ToVec4(a_p->coopActor->data.location);
-						glm::vec4 end = start - glm::vec4(0.0f, 0.0f, a_p->coopActor->GetHeight(), 0.0f);
-						auto rayResult = Raycast::hkpCastRay(start, end, true, false);
-						if (rayResult.hit)
-						{
-							supportAng = PI / 2.0f - fabsf(asinf(rayResult.rayNormal.z));
-						}
+						supportAng = PI / 2.0f - fabsf(asinf(result.rayNormal.z));
 					}	
 
 					return supportAng < Settings::fJumpingMaxSlopeAngle;
@@ -1021,7 +1066,7 @@ namespace ALYSLC
 			}
 
 			// Check sprint or normal power attack conditions next.
-			if (a_p->pam->isSprinting || a_p->coopActor->IsSprinting()) 
+			if (a_p->pam->isSprinting) 
 			{
 				// Next, check if a melee weapon is equipped in the appropriate hand and if the player has the appropriate perk.
 				const auto& em = a_p->em;
@@ -1150,7 +1195,7 @@ namespace ALYSLC
 		bool PlayerCanOpenItemMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// No supported menus open or can obtain menu control and
-			// is part of a playable race and not (un)equipping.
+			// is part of a race with the NPC keyword and not (un)equipping.
 			// Equipping items when not a member of a playable race causes problems,
 			// so to prevent issues, we don't open any item menus under these conditions.
 			bool isEquipping = false;
@@ -1160,7 +1205,7 @@ namespace ALYSLC
 			return 
 			(
 				(!glob.supportedMenuOpen.load() || GlobalCoopData::CanControlMenus(a_p->controllerID)) &&
-				!Util::IsRaceWithTransformation(a_p->coopActor->race) &&
+				a_p->coopActor->race && a_p->coopActor->race->HasKeyword(glob.npcKeyword) &&
 				!isEquipping && !isUnequipping
 			);
 		}
@@ -1260,7 +1305,7 @@ namespace ALYSLC
 			// and has the required dual casting perk.
 			// Overrides default single-hand double cast.
 			
-			// Not a player 1 action, since single trigger buttons events must
+			// Not a P1 action, since single trigger buttons events must
 			// be sent when dual casting.
 			bool isEquipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
@@ -3869,7 +3914,7 @@ namespace ALYSLC
 				if (em->Has2HRangedWeapEquipped() && !isLeftHand)
 				{
 					// Need to toggle AI driven to draw bow.
-					// Playing the right attack action on player 1 does not update
+					// Playing the right attack action on P1 does not update
 					// the draw timer, so all projectiles fire at the lowest release speed.
 					if (ActionJustStarted(a_p, a_action))
 					{
@@ -4056,7 +4101,21 @@ namespace ALYSLC
 					// Something to do with usability.
 					bool isPlayable = activationRefrPtr->GetPlayable();
 					// Player has LOS on the refr.
-					bool passesLOSCheck = (Settings::bCamCollisions || (activationRefrPtr && Util::HasLOS(activationRefrPtr.get(), a_p->coopActor.get(), false, a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, a_p->tm->crosshairWorldPos)));
+					bool passesLOSCheck = 
+					(
+						(Settings::bCamCollisions) || 
+						(
+							activationRefrPtr && 
+							Util::HasLOS
+							(
+								activationRefrPtr.get(), 
+								a_p->coopActor.get(), 
+								false, 
+								a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, 
+								a_p->tm->crosshairWorldPos
+							)
+						)
+					);
 					// Crosshair message to display.
 					RE::BSFixedString activationMessage = ""sv;
 					RE::BSString activationString = "";
@@ -5676,10 +5735,10 @@ namespace ALYSLC
 
 		void Inventory(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open player 1's inventory if the requesting player is player 1.
+			// Open P1's inventory if the requesting player is P1.
 			// Otherwise, open the companion player's 'inventory', which is a ContainerMenu.
 			
-			// Reset player 1 damage multiplier so that the co-op player's inventory 
+			// Reset P1 damage multiplier so that the co-op player's inventory 
 			// reports the correct damage for weapons, if perks are also imported.
 			glob.player1Actor->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
 			bool succ = glob.moarm->InsertRequest(a_p->controllerID, InputAction::kInventory, SteadyClock::now(), RE::ContainerMenu::MENU_NAME, a_p->coopActor->GetHandle());
@@ -5870,7 +5929,7 @@ namespace ALYSLC
 			// Pacify formerly-friendly actors after sheathing.
 			if (shouldSheathe)
 			{
-				a_p->pam->StopCombatWithFriendlyActors();
+				//a_p->pam->StopCombatWithFriendlyActors();
 			}
 		}
 
@@ -5927,11 +5986,40 @@ namespace ALYSLC
 
 		void Sprint(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Start sprinting if not paragliding or using M.A.R.F.
+			// Start sprinting if not overencumbered, paragliding, or using M.A.R.F.
 			// If sneaking with the silent roll perk, start rolling.
 			// If blocking, start shield charge.
 			// Otherwise, start sprint animation.
 			// And finally, if paragliding or using M.A.R.F, trigger gale spell.
+
+			// First check is for overencumbrance.
+			bool overencumbered = 
+			(
+				!Settings::bInfiniteCarryweight &&
+				!a_p->isInGodMode &&
+				a_p->mm->encumbranceFactor >= 1.0
+			);
+
+			// Inform the player that they are overencumbered before returning.
+			if (overencumbered)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format
+					(
+						"P{}: <font color=\"#FF0000\">Over-encumbered!</font>", a_p->playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+
+				return;
+			}
 
 			SPDLOG_DEBUG("[PAFH] Sprint: {} has {} (valid: {}). Instant caster: {}. Char controller pitch and roll: {}, {}.",
 				a_p->coopActor->GetName(),
@@ -5958,13 +6046,7 @@ namespace ALYSLC
 					// we trigger the mounted player actor sprint animation (hunched over)
 					// and modify the mount's speed separately in the Update() hook.
 					// Running the action command fails sometimes, so we directly notify the animation graph instead.
-					if (bool succ = a_p->coopActor->NotifyAnimationGraph("SprintStart"); succ)
-					{
-						// Turn to face the player's movement direction to prevent weird momentum effects
-						// which occur during movement type switching when strafing and turning
-						// to face the movement direction at the same time.
-						a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng]);
-					}
+					a_p->coopActor->NotifyAnimationGraph("SprintStart");
 				}
 
 				// Sprint stamina expenditure starts now.
@@ -6141,7 +6223,8 @@ namespace ALYSLC
 
 				if (facingPlayer) 
 				{
-					a_p->taskRunner->AddTask(
+					a_p->taskRunner->AddTask
+					(
 						[facingPlayer, a_p]() 
 						{
 							a_p->TeleportTask(facingPlayer->GetHandle()); 
@@ -6363,7 +6446,7 @@ namespace ALYSLC
 							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
 						};
 
-						// Unread skill/spell books are read right away by player 1 here, 
+						// Unread skill/spell books are read right away by P1 here, 
 						// since, once read, all players' skills increase or the learned spell is usable by all players.
 						// Other P1-activated items:
 						// Gold, lockpicks, all regular books, notes, keys, activators, workbenches, 
@@ -6437,7 +6520,7 @@ namespace ALYSLC
 
 						if (p1Activate)
 						{
-							// Can only activate with player 1 if no player is controlling menus.
+							// Can only activate with P1 if no player is controlling menus.
 							if (menusOnlyAlwaysOpen)
 							{
 								// Trick game into thinking that P1 is sneaking during activation to trigger the pickpocketing menu when targeting NPCs.
@@ -6535,7 +6618,7 @@ namespace ALYSLC
 			bool performingKillmove = HelperFuncs::CheckForKillmove(a_p, InputAction::kAttackLH);
 			if (!performingKillmove) 
 			{
-				if (a_p->pam->isSprinting || a_p->coopActor->IsSprinting()) 
+				if (a_p->pam->isSprinting) 
 				{
 					// Perform LH sprint attack.
 					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get());
@@ -6602,7 +6685,7 @@ namespace ALYSLC
 			bool performingKillmove = HelperFuncs::CheckForKillmove(a_p, InputAction::kAttackRH);
 			if (!performingKillmove)
 			{
-				if (a_p->pam->isSprinting || a_p->coopActor->IsSprinting())
+				if (a_p->pam->isSprinting)
 				{
 					// Perform RH sprint attack.
 					Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get());
@@ -7470,7 +7553,7 @@ namespace ALYSLC
 				else if (voiceForm->Is(RE::FormType::Shout) && !a_p->pam->canShout)
 				{
 					// TODO: Replace with bar fill progression and flash in a
-					// way that doesn't conflict with player 1's shout cooldown
+					// way that doesn't conflict with P1's shout cooldown
 					// if multiple players shout at once.
 					// Can use TrueHUD's special bar for this later on, but
 					// updating the crosshair text will serve for now.
@@ -7747,6 +7830,20 @@ namespace ALYSLC
 		void Sprint(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Stop silent roll/shield charge or sprinting if not paragliding and not using M.A.R.F.
+			// First check is for overencumbrance.
+			bool overencumbered = 
+			(
+				!Settings::bInfiniteCarryweight &&
+				!a_p->isInGodMode &&
+				a_p->mm->encumbranceFactor >= 1.0
+			);
+
+			// Already informed the player that they are overencumbered
+			// when the sprint bind was first pressed, so just return here.
+			if (overencumbered)
+			{
+				return;
+			}
 
 			if (!a_p->mm->isParagliding && !a_p->tm->isMARFing) 
 			{

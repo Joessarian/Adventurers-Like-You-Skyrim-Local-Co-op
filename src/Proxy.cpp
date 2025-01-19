@@ -38,14 +38,14 @@ namespace ALYSLC
 			// Player 1 data may change on loading a save (if another player's save is loaded).
 			// Must also ensure the co-op camera manager is not running on save load.
 
-			// Reset player 1's CID.
+			// Reset P1's CID.
 			// Will be automatically re-assigned on the first summoning after save load.
 			glob.player1CID = -1;
 			// Reset controller ID in control of dialogue.
 			glob.moarm->reqDialoguePlayerCID = -1;
 			// Set player ref alias, which may have changed.
 			glob.player1RefAlias = a_player1Ref;
-			// Get player 1, which may be a different character.
+			// Get P1, which may be a different character.
 			glob.player1Actor.reset();
 			glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
 			// Set living and active players to 0 when not in co-op.
@@ -58,7 +58,7 @@ namespace ALYSLC
 			glob.cam->ToggleCoopCamera(false);
 		}
 
-		// Import all settings.
+		// Import all settings after initializing co-op data.
 		ALYSLC::Settings::ImportAllSettings();
 		// Re-register for script events.
 		GlobalCoopData::UnregisterEvents();
@@ -75,8 +75,22 @@ namespace ALYSLC
 		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1 && p1->GetActorBase()) 
 		{
 			auto actorBase = p1->GetActorBase();
-			Util::NativeFunctions::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false);
+			Util::NativeFunctions::SetActorBaseDataFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
+			);
 			p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+
+			// NOTE: The game fails to save P1's perks properly at times,
+			// either clearing all of them, or only saving the perks unlocked by P1 
+			// and not by any other player.
+			// I have yet to find a reason why it does this or find a direct solution,
+			// so the current workaround is to import P1's perks
+			// to ensure that they can access their saved perks, even outside of co-op.
+			// Please note that if the mod is uninstalled, 
+			// P1 will have to respec all their perks manually,
+			// as the function below will not fire to import all the saved perks.
+			GlobalCoopData::ImportUnlockedPerks(p1);
 		}
 
 		return firstTimeInit;
@@ -115,7 +129,10 @@ namespace ALYSLC
 				(
 					fmt::format
 					(
-						"[ALYSLC] Error: Player 1's controller ID was not assigned.\nPlease open the debug menu with player 1's controller or manually assign a controller ID to player 1 through the debug menu option before summoning other players."
+						"[ALYSLC] Error: Player 1's controller ID was not assigned."
+						"\nPlease open the debug menu with Player 1's controller "
+						"or manually assign a controller ID to Player 1 "
+						"through the debug menu option before summoning other players."
 					).c_str()
 				);
 				glob.activePlayers = glob.livingPlayers = 0;
@@ -793,6 +810,42 @@ namespace ALYSLC
 		}
 	}
 
+	void CoopLib::TeleportToPlayerToActor(RE::StaticFunctionTag*, const int32_t a_controllerID, RE::Actor* a_teleportTarget)
+	{
+		// Teleport the player with the given CID to an actor.
+
+		SPDLOG_DEBUG("[Proxy] TeleportToPlayerToActor: CID {} -> {}.",
+			a_controllerID,
+			a_teleportTarget ? a_teleportTarget->GetName() : "NONE");
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit || 
+			a_controllerID == -1 || 
+			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+
+		const auto& p = glob.coopPlayers[a_controllerID]; 
+		if (!p || !p->isActive)
+		{
+			return;
+		}
+
+		RE::ActorPtr teleportTarget{ a_teleportTarget };
+		p->taskRunner->AddTask
+		(
+			[&p, teleportTarget]() 
+			{ 
+				if (!teleportTarget || !teleportTarget.get())
+				{
+					return;
+				}
+
+				p->TeleportTask(teleportTarget->GetHandle());
+			}
+		);
+	}
+
 	void CoopLib::ToggleCoopCamera(RE::StaticFunctionTag*, bool a_enable)
 	{
 		// Toggle the co-op camera on or off.
@@ -814,10 +867,12 @@ namespace ALYSLC
 			for (const auto& p : glob.coopPlayers)
 			{
 				// Enable/disable collision for all active players as well.
-				if (p->isActive && p->coopActor)
+				if (!p->isActive || !p->coopActor || !p->coopActor.get())
 				{
-					p->coopActor->SetCollision(a_enable);
+					continue;
 				}
+
+				p->coopActor->SetCollision(a_enable);
 			}
 		}
 	}
@@ -1143,6 +1198,7 @@ namespace ALYSLC
 		a_vm->RegisterFunction("SetGifteePlayerActor"s, "ALYSLC"s, SetGifteePlayerActor);
 		a_vm->RegisterFunction("SetPartyInvincibility"s, "ALYSLC"s, SetPartyInvincibility);
 		a_vm->RegisterFunction("SignalWaitForUpdate"s, "ALYSLC"s, SignalWaitForUpdate);
+		a_vm->RegisterFunction("TeleportToPlayerToActor"s, "ALYSLC"s, TeleportToPlayerToActor);
 		a_vm->RegisterFunction("ToggleCoopCamera"s, "ALYSLC"s, ToggleCoopCamera);
 		a_vm->RegisterFunction("ToggleCoopEntityCollision"s, "ALYSLC"s, ToggleCoopEntityCollision);
 		a_vm->RegisterFunction("ToggleSetupMenuControl"s, "ALYSLC"s, ToggleSetupMenuControl);

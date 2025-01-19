@@ -29,6 +29,7 @@ Function SetPartyInvincibility(Bool a_shouldSet) Global Native
 Function SignalCamEventHandled() Global Native
 Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
 Function StartPlayerManagers() Global Native
+Function TeleportToPlayerToActor(Int a_controllerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
 Function ToggleCoopEntityCollision(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_controllerID, int a_playerID, Bool a_shouldEnter) Global Native

@@ -135,6 +135,12 @@ namespace ALYSLC
 		// Either dismiss all active players or just request their managers to wait for refresh.
 		// Any active co-op session is flagged as ended.
 		void SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss);
+		
+		// Teleport the player with the given CID to an actor.
+		void TeleportToPlayerToActor
+		(
+			RE::StaticFunctionTag*, const int32_t a_controllerID, RE::Actor* a_teleportTarget
+		);
 
 		// Toggle the co-op camera on or off.
 		void ToggleCoopCamera(RE::StaticFunctionTag*, bool a_enable);

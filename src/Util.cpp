@@ -222,6 +222,7 @@ namespace ALYSLC
 			}
 		}
 
+
 		void AddSyncedTask(std::function<void()> a_func, bool a_isUITask)
 		{
 			// Run a task using one of the game's task threads.
@@ -495,34 +496,7 @@ namespace ALYSLC
 			}
 		}
 
-		void ChangeP1Perk(RE::BGSPerk* a_perk, bool&& a_add)
-		{
-			// Add or remove the perk from P1 via console command.
-
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!p1 || !a_perk)
-			{
-				return;
-			}
-
-			const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
-			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-			if (script)
-			{
-				if (a_add)
-				{
-					p1->AddPerk(a_perk);
-				}
-				else
-				{
-					p1->RemovePerk(a_perk);
-				}
-
-				delete script;
-			}
-		}
-
-		bool ChangePerk(RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add)
+		bool ChangePerk(RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank)
 		{
 			// Add or remove the perk from the actor.
 
@@ -532,34 +506,14 @@ namespace ALYSLC
 				return false;
 			}
 
-			if (a_actor->IsPlayerRef()) 
-			{
-				// Call actor add/remove perk function for P1.
-				auto p1 = RE::PlayerCharacter::GetSingleton();
-				if (!p1)
-				{
-					return false;
-				}
-
-				if (a_add) 
-				{
-					p1->AddPerk(a_perk, 1);
-				}
-				else
-				{
-					p1->RemovePerk(a_perk);
-				}
-
-				return true;
-			}
-			else if (auto actorBase = a_actor->GetActorBase(); actorBase)
+			if (auto actorBase = a_actor->GetActorBase(); actorBase)
 			{
 				// Credits to po3 for perk application/removal methods.
 				//https://github.com/powerof3/PapyrusExtenderSSE/blob/master/include/Serialization/Services.h#L54
 				if (a_add)
 				{
 					// Add perk and apply perk entry first.
-					if (succ = actorBase->AddPerk(a_perk, 1); succ)
+					if (succ = actorBase->AddPerk(a_perk, a_rank); succ)
 					{
 						for (auto& perkEntry : a_perk->perkEntries)
 						{
@@ -598,7 +552,29 @@ namespace ALYSLC
 				}
 			}
 
-			return succ;
+			if (a_actor->IsPlayerRef()) 
+			{
+				// Call actor add/remove perk function for P1.
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (p1)
+				{
+					if (a_add) 
+					{
+						p1->AddPerk(a_perk, a_rank);
+					}
+					else
+					{
+						p1->RemovePerk(a_perk);
+					}
+				}
+			}
+
+			return
+			(
+				a_add ?
+				a_actor->HasPerk(a_perk) :
+				!a_actor->HasPerk(a_perk)
+			);
 		}
 
 		void ChangeNodeColliderState
@@ -1303,17 +1279,18 @@ namespace ALYSLC
 			// Get the actor's head body part,
 			// falling back on their eye and look at body part's positions.
 			RE::BGSBodyPart* headBP = nullptr;
-			if (a_actor->race && a_actor->race->bodyPartData)
+			if (a_actor->race && a_actor->race->bodyPartData && a_actor->race->bodyPartData->parts)
 			{
-				if (auto bodyPart = a_actor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kHead]; bodyPart)
+				auto bpDataList = a_actor->race->bodyPartData->parts;
+				if (auto bodyPart = bpDataList[RE::BGSBodyPartDefs::LIMB_ENUM::kHead]; bodyPart)
 				{
 					headBP = bodyPart;
 				}
-				else if (bodyPart = a_actor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kEye]; bodyPart)
+				else if (bodyPart = bpDataList[RE::BGSBodyPartDefs::LIMB_ENUM::kEye]; bodyPart)
 				{
 					headBP = bodyPart;
 				}
-				else if (bodyPart = a_actor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kLookAt]; bodyPart)
+				else if (bodyPart = bpDataList[RE::BGSBodyPartDefs::LIMB_ENUM::kLookAt]; bodyPart)
 				{
 					headBP = bodyPart;
 				}
@@ -1322,8 +1299,11 @@ namespace ALYSLC
 			const auto actor3DPtr = Util::GetRefr3D(a_actor);
 			if (actor3DPtr && actor3DPtr.get() && headBP)
 			{
-				if (auto headBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(headBP->targetName));
-					headBPPtr && headBPPtr.get()) 
+				auto headBPPtr = RE::NiPointer<RE::NiAVObject>
+				(
+					actor3DPtr->GetObjectByName(headBP->targetName)
+				);
+				if (headBPPtr && headBPPtr.get()) 
 				{
 					// Return head body part position.
 					return headBPPtr->world.translate;
@@ -1869,20 +1849,32 @@ namespace ALYSLC
 			}
 		}
 
-		bool HasLOS(RE::TESObjectREFR* a_targetRefr, RE::Actor* a_observer, bool a_forCrosshairSelection, bool a_checkCrosshairPos, const RE::NiPoint3& a_crosshairWorldPos)
+		bool HasLOS
+		(
+			RE::TESObjectREFR* a_targetRefr,
+			RE::Actor* a_observer,
+			bool a_forCrosshairSelection, 
+			bool a_checkCrosshairPos, 
+			const RE::NiPoint3& a_crosshairWorldPos
+		)
 		{
 			// Check if the observer has an LOS to the target refr.
 
 			// Invalid target or observer, return false.
-			if (!a_observer || !a_targetRefr || !a_targetRefr->loadedData || 
-				a_targetRefr->IsDisabled() || a_targetRefr->IsDeleted() || !a_targetRefr->IsHandleValid())
+			if (!a_observer || 
+				!a_targetRefr || 
+				!a_targetRefr->loadedData || 
+				a_targetRefr->IsDisabled() || 
+				a_targetRefr->IsDeleted() || 
+				!a_targetRefr->IsHandleValid())
 			{
 				return false;
 			}
 
 			// Skip projectile LOS checks due to instability.
 			// Projectiles can get deleted or can become invalid mid-check.
-			if (a_targetRefr->GetBaseObject() && *a_targetRefr->GetBaseObject()->formType == RE::FormType::Projectile)
+			if (a_targetRefr->GetBaseObject() && 
+				*a_targetRefr->GetBaseObject()->formType == RE::FormType::Projectile)
 			{
 				return true;
 			}
@@ -1896,6 +1888,7 @@ namespace ALYSLC
 
 			bool hasLOS = false;
 			auto& glob = GlobalCoopData::GetSingleton();
+
 			// Raycast from the camera node's position.
 			auto camNodePos = 
 			(
@@ -1909,8 +1902,45 @@ namespace ALYSLC
 				Util::GetPlayerFocusPoint(a_observer->As<RE::Actor>()) : 
 				a_observer->GetLookingAtLocation()
 			);
+
+			// Target refr 3D to compare against.
+			auto target3DPtr = Util::GetRefr3D(a_targetRefr);
 			// Ignore the observer in the raycast hit results.
-			auto observer3D = Util::GetRefr3D(a_observer);
+			auto observer3DPtr = Util::GetRefr3D(a_observer);
+			// Excluded 3D objects:
+			// Camera node, observer, and all players.
+			std::vector<RE::NiAVObject*> excluded3DObjects{ playerCam->cameraRoot.get() };
+			bool observer3DValid = observer3DPtr && observer3DPtr.get();
+			if (observer3DValid)
+			{
+				excluded3DObjects.emplace_back(observer3DPtr.get());
+			}
+
+			std::for_each
+			(
+				glob.coopPlayers.begin(), glob.coopPlayers.end(),
+				[&excluded3DObjects, a_observer, a_targetRefr]
+				(const std::shared_ptr<CoopPlayer>& a_p)
+				{
+					if (!a_p->isActive)
+					{
+						return;
+					}
+
+					auto player3DPtr = Util::GetRefr3D(a_p->coopActor.get());
+					if (!player3DPtr || 
+						!player3DPtr.get() || 
+						a_p->coopActor.get() == a_targetRefr || 
+						a_p->coopActor.get() == a_observer)
+					{
+						return;
+					}
+					
+					// Valid 3D, not the target, and not the observer.
+					excluded3DObjects.emplace_back(player3DPtr.get());
+				}
+			);
+
 			// Same check for both selection and interaction if cam collisions are on, 
 			// or if the co-op camera is inactive.
 			// This is because the camera is (hopefully) sitting in a valid,
@@ -1935,18 +1965,18 @@ namespace ALYSLC
 					(
 						camNodePos, 
 						a_targetRefr, 
-						std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+						excluded3DObjects, 
 						a_checkCrosshairPos, 
 						a_crosshairWorldPos
 					);
 					// Next, check LOS from the observer's eye position.
-					if (!hasLOS && observer3D && observer3D.get())
+					if (!hasLOS && observer3DValid)
 					{
 						hasLOS = HasRaycastLOSFromPos
 						(
 							observerLOSStartPos, 
 							a_targetRefr, 
-							std::vector<RE::NiAVObject*>({ observer3D.get() }), 
+							excluded3DObjects, 
 							a_checkCrosshairPos, 
 							a_crosshairWorldPos
 						);
@@ -1981,7 +2011,7 @@ namespace ALYSLC
 						(
 							glob.cam->camCollisionTargetPos2,
 							a_targetRefr, 
-							std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+							excluded3DObjects, 
 							a_checkCrosshairPos, 
 							a_crosshairWorldPos
 						);
@@ -1993,18 +2023,18 @@ namespace ALYSLC
 							(
 								glob.cam->camCollisionTargetPos, 
 								a_targetRefr, 
-								std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }),
+								excluded3DObjects,
 								a_checkCrosshairPos, 
 								a_crosshairWorldPos
 							);
 							// Then check from the observer's eye position.
-							if (!hasLOS && observer3D && observer3D.get())
+							if (!hasLOS && observer3DValid)
 							{
 								hasLOS = HasRaycastLOSFromPos
 								(
 									observerLOSStartPos, 
 									a_targetRefr, 
-									std::vector<RE::NiAVObject*>({ observer3D.get() }), 
+									excluded3DObjects, 
 									a_checkCrosshairPos, 
 									a_crosshairWorldPos
 								);
@@ -2015,7 +2045,7 @@ namespace ALYSLC
 									(
 										playerCam->cameraRoot->world.translate,
 										a_targetRefr,
-										std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+										excluded3DObjects, 
 										a_checkCrosshairPos, 
 										a_crosshairWorldPos
 									);
@@ -2037,18 +2067,18 @@ namespace ALYSLC
 					(
 						glob.cam->camCollisionTargetPos, 
 						a_targetRefr, 
-						std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+						excluded3DObjects, 
 						a_checkCrosshairPos, 
 						a_crosshairWorldPos
 					);
-					// Then check from the observer's focus point..
-					if (!hasLOS && observer3D && observer3D.get())
+					// Then check from the observer's focus point.
+					if (!hasLOS && observer3DValid)
 					{
 						hasLOS = HasRaycastLOSFromPos
 						(
 							observerLOSStartPos, 
 							a_targetRefr, 
-							std::vector<RE::NiAVObject*>({ observer3D.get() }),
+							excluded3DObjects,
 							a_checkCrosshairPos, 
 							a_crosshairWorldPos
 						);
@@ -2058,13 +2088,13 @@ namespace ALYSLC
 
 			// As a final resort, cast along observer's vertical axis, 
 			// bound above and below to remain in traversable space.
-			if (!hasLOS && observer3D && observer3D.get())
+			if (!hasLOS && observer3DValid)
 			{
 				hasLOS = HasRaycastLOSAlongObserverAxis
 				(
 					a_observer, 
 					a_targetRefr, 
-					std::vector<RE::NiAVObject*>({ observer3D.get() }), 
+					excluded3DObjects, 
 					a_checkCrosshairPos, 
 					a_crosshairWorldPos
 				);
@@ -2073,7 +2103,15 @@ namespace ALYSLC
 			return hasLOS;
 		}
 
-		bool HasRaycastLOSAlongObserverAxis(RE::TESObjectREFR* a_observer, RE::TESObjectREFR* a_targetRefr, const std::vector<RE::NiAVObject*>& a_excluded3DObjects, bool a_checkCrosshairPos, const RE::NiPoint3& a_crosshairWorldPos, bool&& a_showDebugDraws)
+		bool HasRaycastLOSAlongObserverAxis
+		(
+			RE::TESObjectREFR* a_observer,
+			RE::TESObjectREFR* a_targetRefr, 
+			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
+			bool a_checkCrosshairPos, 
+			const RE::NiPoint3& a_crosshairWorldPos,
+			bool&& a_showDebugDraws
+		)
 		{
 			// Perform raycasts along a segment of the observer's vertical axis, 
 			// which is bound above and below to keep the casts within traversable space.
@@ -2103,11 +2141,11 @@ namespace ALYSLC
 			bounds.second = bounds.second == -FLT_MAX ? lookingAtLoc.z - 10000.0f : bounds.second;
 
 			Raycast::RayResult result{ };
-			glm::vec4 end = ToVec4(a_targetRefr->data.location);
+			glm::vec4 endPos = ToVec4(a_targetRefr->data.location);
 			// If requested, use the crosshair position as the raycast target point.
 			if (a_checkCrosshairPos)
 			{
-				end = ToVec4(a_crosshairWorldPos);
+				endPos = ToVec4(a_crosshairWorldPos);
 			}
 
 			// Break up bounds interval into two sections:
@@ -2116,7 +2154,7 @@ namespace ALYSLC
 
 			// Starting z coordinate increment between casts.
 			float zInc = (bounds.first - lookingAtLoc.z) / static_cast<float>(numCasts / 2);
-			glm::vec4 start = ToVec4(lookingAtLoc);
+			glm::vec4 startPos = ToVec4(lookingAtLoc);
 			// Upper bound is below the observer's eye level, 
 			// which is an error, so return false.
 			if (zInc <= 0.0f)
@@ -2127,26 +2165,80 @@ namespace ALYSLC
 			// Eye position to the upper bound.
 			for (auto i = 0; i < numCasts / 2; ++i)
 			{
-				// Do not include the observer,
-				// as they might be hit instantly
-				// at the cast start position.
+				// Extend ray through point.
+				endPos = startPos + (endPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
-					start, 
-					end, 
-					std::vector<RE::NiAVObject*>({ observer3D.get() }), 
+					startPos, 
+					endPos, 
+					a_excluded3DObjects, 
 					RE::COL_LAYER::kUnidentified, 
 					false
 				);
+
+				auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+				if (a_showDebugDraws)
+				{
+					SPDLOG_DEBUG
+					(
+						"[Util] HasRaycastLOSAlongObserverAxis: "
+						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+						"Raycast along upper observer axis: [{}] ({}, 0x{:X}, type: {:X})",
+						a_targetRefr->GetName(),
+						a_targetRefr->formID,
+						a_targetRefr->GetBaseObject() ? 
+						*a_targetRefr->GetBaseObject()->formType : 
+						RE::FormType::None,
+						result.hit,
+						result.hit,
+						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
+						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						*hitRefrPtr->GetObjectReference()->formType : 
+						RE::FormType::None
+					);
+					SPDLOG_DEBUG
+					(
+						"[Util] HasRaycastLOSAlongObserverAxis: "
+						"Has extra activate ref, extra activate ref children: {}, {}",
+						hitRefrPtr ?
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : 
+						false,
+						hitRefrPtr ?
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) :
+						false
+					);
+
+					DebugAPI::QueueArrow3D
+					(
+						startPos,
+						endPos, 
+						0x00FF0033, 
+						10.0f, 
+						2.0f,
+						Settings::fSecsBetweenActivationChecks
+					);
+					if (result.hit)
+					{
+						DebugAPI::QueuePoint3D
+						(
+							result.hitPos, 0x00FF00FF, 5.0f, Settings::fSecsBetweenActivationChecks
+						);
+						DebugAPI::QueueArrow3D
+						(
+							startPos, 
+							result.hitPos, 
+							0x00FF00FF, 
+							10.0f, 
+							2.0f, 
+							Settings::fSecsBetweenActivationChecks
+						);
+					}
+				}
+				
+				// Hit the target = has LOS.
 				if (result.hit)
 				{
-					if (a_showDebugDraws && result.hit)
-					{
-						DebugAPI::QueuePoint3D(result.hitPos, 0x00FF00FF, 5.0f, Settings::fSecsBetweenActivationChecks);
-						DebugAPI::QueueArrow3D(start, result.hitPos, 0x00FF00FF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
-					}
-
-					// Hit the target = has LOS.
 					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 					if (hitRefrPtr && hitRefrPtr.get() && hitRefrPtr.get() == a_targetRefr)
 					{
@@ -2155,7 +2247,7 @@ namespace ALYSLC
 				}
 
 				// Move up.
-				start.z += zInc;
+				startPos.z += zInc;
 			}
 
 			// Minus one since we already raycast from the looking at position.
@@ -2167,34 +2259,87 @@ namespace ALYSLC
 				return false;
 			}
 
-			start = ToVec4(lookingAtLoc);
+			startPos = ToVec4(lookingAtLoc);
 			// Don't need to cast from the looking at position again.
-			start.z -= zInc;
+			startPos.z -= zInc;
 
 			// One Z increment below the eye position to the lower bound.
 			for (auto i = 0; i < numCasts / 2 - 1; ++i) 
 			{
-				// Do not include the observer,
-				// as they might be hit instantly
-				// at the cast start position.
+				// Extend ray through point.
+				endPos = startPos + (endPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
-					start,
-					end,
-					std::vector<RE::NiAVObject*>({ observer3D.get() }),
+					startPos,
+					endPos,
+					a_excluded3DObjects,
 					RE::COL_LAYER::kUnidentified,
 					false
 				);
+				
+				auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+				if (a_showDebugDraws)
+				{
+					SPDLOG_DEBUG
+					(
+						"[Util] HasRaycastLOSAlongObserverAxis: "
+						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+						"Raycast along lower observer axis: [{}] ({}, 0x{:X}, type: {:X})",
+						a_targetRefr->GetName(),
+						a_targetRefr->formID,
+						a_targetRefr->GetBaseObject() ? 
+						*a_targetRefr->GetBaseObject()->formType :
+						RE::FormType::None,
+						result.hit,
+						result.hit,
+						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
+						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+						*hitRefrPtr->GetObjectReference()->formType : 
+						RE::FormType::None
+					);
+					SPDLOG_DEBUG
+					(
+						"[Util] HasRaycastLOSAlongObserverAxis: "
+						"Has extra activate ref, extra activate ref children: {}, {}",
+						hitRefrPtr ? 
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : 
+						false,
+						hitRefrPtr ? 
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : 
+						false
+					);
+
+					DebugAPI::QueueArrow3D
+					(
+						startPos, 
+						endPos, 
+						0xFF000033, 
+						10.0f,
+						2.0f, 
+						Settings::fSecsBetweenActivationChecks
+					);
+					if (result.hit)
+					{
+						DebugAPI::QueuePoint3D
+						(
+							result.hitPos, 0xFF0000FF, 5.0f, Settings::fSecsBetweenActivationChecks
+						);
+						DebugAPI::QueueArrow3D
+						(
+							startPos, 
+							result.hitPos, 
+							0xFF0000FF,
+							10.0f, 
+							2.0f, 
+							Settings::fSecsBetweenActivationChecks
+						);
+					}
+				}
+				
+				// Hit the target = has LOS.
 				if (result.hit)
 				{
-					if (a_showDebugDraws && result.hit)
-					{
-						DebugAPI::QueuePoint3D(result.hitPos, 0xFF0000FF, 5.0f, Settings::fSecsBetweenActivationChecks);
-						DebugAPI::QueueArrow3D(start, result.hitPos, 0xFF0000FF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
-					}
-
-					// Hit the target = has LOS.
-					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 					if (hitRefrPtr && hitRefrPtr.get() && hitRefrPtr.get() == a_targetRefr)
 					{
 						return true;
@@ -2202,13 +2347,21 @@ namespace ALYSLC
 				}
 
 				// Move down.
-				start.z -= zInc;
+				startPos.z -= zInc;
 			}
 
 			return false;
 		}
 
-		bool HasRaycastLOSFromPos(const RE::NiPoint3& a_startPos, RE::TESObjectREFR* a_targetRefr, const std::vector<RE::NiAVObject*>& a_excluded3DObjects, bool a_checkCrosshairPos, const RE::NiPoint3& a_crosshairWorldPos, bool&& a_showDebugDraws)
+		bool HasRaycastLOSFromPos
+		(
+			const RE::NiPoint3& a_startPos, 
+			RE::TESObjectREFR* a_targetRefr,
+			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
+			bool a_checkCrosshairPos, 
+			const RE::NiPoint3& a_crosshairWorldPos,
+			bool&& a_showDebugDraws
+		)
 		{
 			// Checks for raycast 'LOS' by casting from the start position
 			// to up to 4 different reported positions for the target refr.
@@ -2240,7 +2393,8 @@ namespace ALYSLC
 			std::vector<RE::FormType> filteredOutTypes{};
 			// Filter out activators if the targeted refr is not an activator.
 			if ((!a_targetRefr->As<RE::TESObjectACTI>()) && 
-				!(a_targetRefr->GetBaseObject() && a_targetRefr->GetBaseObject()->As<RE::TESObjectACTI>()))
+				!(a_targetRefr->GetBaseObject() && 
+				a_targetRefr->GetBaseObject()->As<RE::TESObjectACTI>()))
 			{
 				filteredOutTypes.emplace_back(RE::FormType::Activator);
 			}
@@ -2253,7 +2407,10 @@ namespace ALYSLC
 				auto dirToPos = 2.0f * (refrPos - startPos);
 				// Cast through the target position.
 				refrPos = startPos + dirToPos;
-				auto result = Raycast::hkpCastRay(startPos, refrPos, a_excluded3DObjects, filteredOutTypes);
+				auto result = Raycast::hkpCastRay
+				(
+					startPos, refrPos, a_excluded3DObjects, filteredOutTypes
+				);
 				hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 				// Check if the target was hit.
 				hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
@@ -2263,27 +2420,57 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to crosshair pos: ({}, 0x{:X}, type: {})",
+						"[Util] HasRaycastLOSFromPos: "
+						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X})",
 						a_targetRefr->GetName(),
 						a_targetRefr->formID,
-						a_targetRefr->GetBaseObject() ? *a_targetRefr->GetBaseObject()->formType : RE::FormType::None,
+						a_targetRefr->GetBaseObject() ? 
+						*a_targetRefr->GetBaseObject()->formType : 
+						RE::FormType::None,
 						hasLOS,
 						result.hit,
+						hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 						hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
-						hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
+						hitRefrPtr && hitRefrPtr->GetObjectReference() ?
+						*hitRefrPtr->GetObjectReference()->formType :
+						RE::FormType::None
 					);
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
-						hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
-						hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : false
+						"[Util] HasRaycastLOSFromPos: Has extra activate ref, "
+						"extra activate ref children: {}, {}",
+						hitRefrPtr ? 
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : 
+						false,
+						hitRefrPtr ? 
+						hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : 
+						false
 					);
 
-					DebugAPI::QueueArrow3D(startPos, refrPos, 0xFFFFFF33, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+					DebugAPI::QueueArrow3D
+					(
+						startPos,
+						refrPos,
+						0xFFFFFF33,
+						10.0f, 2.0f,
+						Settings::fSecsBetweenActivationChecks
+					);
 					if (result.hit)
 					{
-						DebugAPI::QueuePoint3D(result.hitPos, 0xFFFFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks);
-						DebugAPI::QueueArrow3D(startPos, result.hitPos, 0xFFFFFFFF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+						DebugAPI::QueuePoint3D
+						(
+							result.hitPos, 0xFFFFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks
+						);
+						DebugAPI::QueueArrow3D
+						(
+							startPos, 
+							result.hitPos, 
+							0xFFFFFFFF, 
+							10.0f, 
+							2.0f, 
+							Settings::fSecsBetweenActivationChecks
+						);
 					}
 				}
 
@@ -2302,7 +2489,10 @@ namespace ALYSLC
 			auto dirToPos1 = 2.0f * (refrPos1 - startPos);
 			// Cast through the target position.
 			refrPos1 = startPos + dirToPos1;
-			auto result1 = Raycast::hkpCastRay(startPos, refrPos1, a_excluded3DObjects, filteredOutTypes);
+			auto result1 = Raycast::hkpCastRay
+			(
+				startPos, refrPos1, a_excluded3DObjects, filteredOutTypes
+			);
 			hitRefrPtr = Util::GetRefrPtrFromHandle(result1.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
@@ -2312,27 +2502,58 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to data location pos: ({}, 0x{:X}, type: {})",
+					"[Util] HasRaycastLOSFromPos: "
+					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+					"Raycast to data location pos: [{}] ({}, 0x{:X}, type: {:X})",
 					a_targetRefr->GetName(),
 					a_targetRefr->formID,
-					a_targetRefr->GetBaseObject() ? *a_targetRefr->GetBaseObject()->formType : RE::FormType::None,
+					a_targetRefr->GetBaseObject() ? 
+					*a_targetRefr->GetBaseObject()->formType : 
+					RE::FormType::None,
 					hasLOS,
 					result1.hit,
+					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
-					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+					*hitRefrPtr->GetObjectReference()->formType : 
+					RE::FormType::None
 				);
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : false
+					"[Util] HasRaycastLOSFromPos: Has extra activate ref, "
+					"extra activate ref children: {}, {}",
+					hitRefrPtr ? 
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) :
+					false,
+					hitRefrPtr ? 
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : 
+					false
 				);
 
-				DebugAPI::QueueArrow3D(startPos, refrPos1, 0xFFFF0033, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+				DebugAPI::QueueArrow3D
+				(
+					startPos, 
+					refrPos1,
+					0xFFFF0033, 
+					10.0f, 
+					2.0f, 
+					Settings::fSecsBetweenActivationChecks
+				);
 				if (result1.hit)
 				{
-					DebugAPI::QueuePoint3D(result1.hitPos, 0xFFFF00FF, 5.0f, Settings::fSecsBetweenActivationChecks);
-					DebugAPI::QueueArrow3D(startPos, result1.hitPos, 0xFFFF00FF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+					DebugAPI::QueuePoint3D
+					(
+						result1.hitPos, 0xFFFF00FF, 5.0f, Settings::fSecsBetweenActivationChecks
+					);
+					DebugAPI::QueueArrow3D
+					(
+						startPos, 
+						result1.hitPos, 
+						0xFFFF00FF,
+						10.0f, 
+						2.0f, 
+						Settings::fSecsBetweenActivationChecks
+					);
 				}
 			}
 
@@ -2346,7 +2567,10 @@ namespace ALYSLC
 			auto dirToPos2 = 2.0f * (refrPos2 - startPos);
 			// Cast through the target position.
 			refrPos2 = startPos + dirToPos2;
-			auto result2 = Raycast::hkpCastRay(startPos, refrPos2, a_excluded3DObjects, filteredOutTypes);
+			auto result2 = Raycast::hkpCastRay
+			(
+				startPos, refrPos2, a_excluded3DObjects, filteredOutTypes
+			);
 			hitRefrPtr = Util::GetRefrPtrFromHandle(result2.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
@@ -2356,28 +2580,58 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to world translate pos: ({}, 0x{:X}, type: {})",
+					"[Util] HasRaycastLOSFromPos: "
+					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+					"Raycast to world translate pos: [{}] ({}, 0x{:X}, type: {:X})",
 					a_targetRefr->GetName(),
 					a_targetRefr->formID,
-					a_targetRefr->GetBaseObject() ? *a_targetRefr->GetBaseObject()->formType : RE::FormType::None,
+					a_targetRefr->GetBaseObject() ? 
+					*a_targetRefr->GetBaseObject()->formType : 
+					RE::FormType::None,
 					hasLOS,
 					result2.hit,
+					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
-					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+					*hitRefrPtr->GetObjectReference()->formType : 
+					RE::FormType::None
 				);
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : false
+					"[Util] HasRaycastLOSFromPos: Has extra activate ref, "
+					"extra activate ref children: {}, {}",
+					hitRefrPtr ? 
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : 
+					false,
+					hitRefrPtr ?
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : 
+					false
 				);
 
-				DebugAPI::QueueArrow3D(startPos, refrPos2, 0xFF00FF33, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks
+				DebugAPI::QueueArrow3D
+				(
+					startPos, 
+					refrPos2, 
+					0xFF00FF33, 
+					10.0f, 
+					2.0f, 
+					Settings::fSecsBetweenActivationChecks
 				);
 				if (result2.hit)
 				{
-					DebugAPI::QueuePoint3D(result2.hitPos, 0xFF00FFFF, 5.0f, Settings::fSecsBetweenActivationChecks);
-					DebugAPI::QueueArrow3D(startPos, result2.hitPos, 0xFF00FFFF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+					DebugAPI::QueuePoint3D
+					(
+						result2.hitPos, 0xFF00FFFF, 5.0f, Settings::fSecsBetweenActivationChecks
+					);
+					DebugAPI::QueueArrow3D
+					(
+						startPos, 
+						result2.hitPos, 
+						0xFF00FFFF, 
+						10.0f,
+						2.0f, 
+						Settings::fSecsBetweenActivationChecks
+					);
 				}
 			}
 
@@ -2391,7 +2645,10 @@ namespace ALYSLC
 			auto dirToPos3 = 2.0f * (refrPos3 - startPos);
 			// Cast through the target position.
 			refrPos3 = startPos + dirToPos3;
-			auto result3 = Raycast::hkpCastRay(startPos, refrPos3, a_excluded3DObjects, filteredOutTypes);
+			auto result3 = Raycast::hkpCastRay
+			(
+				startPos, refrPos3, a_excluded3DObjects, filteredOutTypes
+			);
 			hitRefrPtr = Util::GetRefrPtrFromHandle(result3.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
@@ -2401,27 +2658,58 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: A player HasLOS of {} (0x{:X}, type {}): [{}]. Raycast from cam to 3D center pos: ({}, 0x{:X}, type: {})",
+					"[Util] HasRaycastLOSFromPos: "
+					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
+					"Raycast to 3D center pos: [{}] ({}, 0x{:X}, type: {:X})",
 					a_targetRefr->GetName(),
 					a_targetRefr->formID,
-					a_targetRefr->GetBaseObject() ? *a_targetRefr->GetBaseObject()->formType : RE::FormType::None,
+					a_targetRefr->GetBaseObject() ? 
+					*a_targetRefr->GetBaseObject()->formType : 
+					RE::FormType::None,
 					hasLOS,
 					result3.hit,
+					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
-					hitRefrPtr && hitRefrPtr->GetObjectReference() ? *hitRefrPtr->GetObjectReference()->formType : RE::FormType::None
+					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
+					*hitRefrPtr->GetObjectReference()->formType : 
+					RE::FormType::None
 				);
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: Has extra activate ref, extra activate ref children: {}, {}",
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : false,
-					hitRefrPtr ? hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : false
+					"[Util] HasRaycastLOSFromPos: Has extra activate ref, "
+					"extra activate ref children: {}, {}",
+					hitRefrPtr ? 
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRef) : 
+					false,
+					hitRefrPtr ? 
+					hitRefrPtr->extraList.HasType(RE::ExtraDataType::kActivateRefChildren) : 
+					false
 				);
 
-				DebugAPI::QueueArrow3D(startPos, refrPos3, 0x00FFFF33, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+				DebugAPI::QueueArrow3D
+				(
+					startPos, 
+					refrPos3,
+					0x00FFFF33, 
+					10.0f, 
+					2.0f, 
+					Settings::fSecsBetweenActivationChecks
+				);
 				if (result3.hit)
 				{
-					DebugAPI::QueuePoint3D(result3.hitPos, 0x00FFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks);
-					DebugAPI::QueueArrow3D(startPos, result3.hitPos, 0x00FFFFFF, 10.0f, 2.0f, Settings::fSecsBetweenActivationChecks);
+					DebugAPI::QueuePoint3D
+					(
+						result3.hitPos, 0x00FFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks
+					);
+					DebugAPI::QueueArrow3D
+					(
+						startPos, 
+						result3.hitPos, 
+						0x00FFFFFF, 
+						10.0f, 
+						2.0f, 
+						Settings::fSecsBetweenActivationChecks
+					);
 				}
 			}
 
@@ -2938,7 +3226,7 @@ namespace ALYSLC
 			return false;
 		}
 
-		bool Player1AddPerk(RE::BGSPerk* a_perk)
+		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank)
 		{
 			// Add the perk to P1.
 			// Return true if successful.
@@ -2958,10 +3246,9 @@ namespace ALYSLC
 			{
 				p1->perks.emplace_back(a_perk);
 			}
-
-			succ = ChangePerk(p1, a_perk, true);
-			ChangeP1Perk(a_perk, true);
-			return succ;
+			
+			ChangePerk(p1, a_perk, true);
+			return p1->HasPerk(a_perk);
 		}
 
 		bool Player1PerkListHasPerk(RE::BGSPerk* a_perk)
@@ -3026,9 +3313,8 @@ namespace ALYSLC
 			// Remove perk from actor base and actor.
 			// NOTE: Have to use both funcs since neither consistently 
 			// removes/adds perks in time on their own before the LevelUp menu opens.
-			succ = ChangePerk(p1, a_perk, false);
-			ChangeP1Perk(a_perk, false);
-			return succ;
+			ChangePerk(p1, a_perk, false);
+			return !p1->HasPerk(a_perk);
 		}
 
 		bool PointIsOnScreen(const RE::NiPoint3& a_point, float&& a_marginPixels)
@@ -3564,6 +3850,84 @@ namespace ALYSLC
 			}
 		}
 
+		void SendHitData
+		(
+			const RE::ActorHandle& a_aggressor, 
+			const RE::ActorHandle& a_target, 
+			const RE::ObjectRefHandle& a_source,
+			const float& a_damage, 
+			const SKSE::stl::enumeration<RE::HitData::Flag,std::uint32_t>& a_flags, 
+			const float& a_stagger,
+			const float& a_pushBack,
+			const RE::NiPoint3& a_hitPos, 
+			const RE::NiPoint3& a_hitDir
+		)
+		{
+			if (!a_aggressor || !a_aggressor.get() || !a_target || !a_target.get())
+			{
+				return;
+			}
+
+			RE::HitData hitData{ };
+			Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
+			hitData.Populate(a_aggressor.get().get(), a_target.get().get(), nullptr);
+			SPDLOG_DEBUG
+			(
+				"[Util] SendHitData: Hit event for {} has total damage {}, " 
+				"using weapon {} (0x{:X}).",
+				a_aggressor.get()->GetName(),
+				hitData.totalDamage,
+				hitData.weapon ? hitData.weapon->GetName() : "NONE",
+				hitData.weapon ? hitData.weapon->formID : 0x0
+			);
+
+			// Zero out damage on the duplicate hit.
+			hitData.bonusHealthDamageMult =
+			hitData.criticalDamageMult =
+			hitData.reflectedDamage =
+			hitData.resistedPhysicalDamage =
+			hitData.resistedTypedDamage =
+			hitData.targetedLimbDamage = 0.0f;
+			hitData.physicalDamage =
+			hitData.totalDamage = a_damage;
+			// Stagger and push back.
+			hitData.stagger = a_stagger;
+			hitData.pushBack = a_pushBack;
+
+			// Hit position and direction.
+			if (a_hitPos != RE::NiPoint3())
+			{
+				hitData.hitPosition = a_hitPos;
+			}
+
+			if (a_hitDir != RE::NiPoint3())
+			{
+				hitData.hitDirection = a_hitDir;
+			}
+
+			// Set source, if any.
+			if (a_source && a_source.get() && a_source.get().get())
+			{
+				hitData.sourceRef = a_source;
+			}
+
+			hitData.flags = a_flags;
+			if (hitData.flags.all(RE::HitData::Flag::kSneakAttack))
+			{
+				hitData.sneakAttackBonus = 2.0f;
+			}
+			else
+			{
+				hitData.sneakAttackBonus = 1.0f;
+			}
+
+			// Triggers the hit and sends the event.
+			Util::NativeFunctions::Actor_ApplyHitData
+			(
+				a_target.get().get(), std::addressof(hitData)
+			);
+		};
+
 		void SendInputEvent(std::unique_ptr<RE::InputEvent* const>& a_inputEvent)
 		{
 			// Send the already-constructed input event and free it after handling.
@@ -3809,7 +4173,8 @@ namespace ALYSLC
 			RE::Actor* a_actor, 
 			RE::TESObjectREFR* a_collidingRefr, 
 			RE::hkpRigidBody* a_collidingRigidBody,
-			const RE::NiPoint3 & a_contactPoint)
+			const RE::NiPoint3 & a_contactPoint
+		)
 		{
 
 			// Major thanks to powerof3 for Grab and Throw's method of doing this:

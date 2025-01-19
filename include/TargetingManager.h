@@ -595,6 +595,7 @@ namespace ALYSLC
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
 				isGrabbing = a_other.isGrabbing;
 				isAutoGrabbing = a_other.isAutoGrabbing;
+				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 
 				grabbedRefrInfoList.clear();
 				releasedRefrInfoList.clear();
@@ -645,6 +646,7 @@ namespace ALYSLC
 				);
 				isGrabbing = std::move(a_other.isGrabbing);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 
 				grabbedRefrInfoList.swap(a_other.grabbedRefrInfoList);
 				releasedRefrInfoList.swap(a_other.releasedRefrInfoList);
@@ -657,6 +659,7 @@ namespace ALYSLC
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
 				isGrabbing = a_other.isGrabbing;
+				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 
 				grabbedRefrInfoList.clear();
 				releasedRefrInfoList.clear();
@@ -708,6 +711,8 @@ namespace ALYSLC
 					a_other.releasedRefrHandlesToInfoIndices
 				);
 				isGrabbing = std::move(a_other.isGrabbing);
+				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 
 				grabbedRefrInfoList.swap(a_other.grabbedRefrInfoList);
 				releasedRefrInfoList.swap(a_other.releasedRefrInfoList);
@@ -843,6 +848,12 @@ namespace ALYSLC
 			// Should the manager handle grabbed refrs? 
 			// If false, all grabbed refrs have been released.
 			bool isGrabbing;
+
+			// Damage to apply in sent hit data when bonk, slap, or splat hit event
+			// is handled in the Hit Event Handler. 
+			// Only have to cache one damage amount since hit events 
+			// are sent and fully handled one at a time.
+			float reqSpecialHitDamageAmount;
 		};
 
 		// NOTE: Much of the trajectory stuff is 'good enough for now'

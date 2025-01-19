@@ -43,6 +43,7 @@ namespace Raycast
 		(
 			RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
 		);
+		bool hitRefrValid = hit.hitRefrPtr && hit.hitRefrPtr.get();
 		
 		if (useOriginalFilter)
 		{
@@ -58,14 +59,49 @@ namespace Raycast
 				{
 					for (const auto filteredObj : objectFilters)
 					{
-						if (hit.GetAVObject() == filteredObj) 
+						RE::NiPointer<RE::NiAVObject> hit3D{ hit.GetAVObject() };
+						// Hit an object that is not in the included list 
+						// or hit an object in the excluded list,
+						// so skip this hit.
+						bool shouldExclude = 
+						(
+							(isIncludeFilter && hit3D.get() != filteredObj) ||
+							(!isIncludeFilter && hit3D.get() == filteredObj)
+						);
+						if (shouldExclude)
+						{
+							return;
+						}
+					
+						// Also check and compare the associated hit and filtered refrs 
+						// for inclusion or exclusion.
+						// If there is a hit refr and it is not an associated refr 
+						// for a 3D object in the included list,
+						// or if there is a hit refr and it is an associated refr
+						// for a 3D object in the excluded list,
+						// skip this hit.
+						const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D(filteredObj);
+						shouldExclude = 
+						(
+							(
+								isIncludeFilter && 
+								hitRefrValid &&
+								hit.hitRefrPtr.get() != filteredRefr
+							) ||
+							(
+								!isIncludeFilter && 
+								hitRefrValid &&
+								hit.hitRefrPtr.get() == filteredRefr
+							)
+						);
+						if (shouldExclude)
 						{
 							return;
 						}
 					}
 				}
 				
-				if (hit.hitRefrPtr && hit.hitRefrPtr.get() && !refrFilters.empty())
+				if (hitRefrValid && !refrFilters.empty())
 				{
 					for (const auto filteredRefr : refrFilters)
 					{
@@ -85,29 +121,30 @@ namespace Raycast
 		}
 		else
 		{
-			// Allow all hits through but filter with formtype or object 3D lists exclusively instead.
+			// Allow all hits through but filter with formtype 
+			// or object 3D lists exclusively instead.
 			// Form type filters.
-			if (!formTypesToFilter.empty())
+			if (hitRefrValid && !formTypesToFilter.empty())
 			{
+				auto baseObject = hitRefrValid ? hit.hitRefrPtr->GetBaseObject() : nullptr;
 				for (const auto& filteredFormType : formTypesToFilter)
 				{
-					if (auto hitRefrPtr = RE::TESObjectREFRPtr(hit.hitRefrPtr); hitRefrPtr)
+					if (isIncludeFilter)
 					{
-						if (isIncludeFilter)
+						// Include this type, so skip over objects of a different form type.
+						if ((*hit.hitRefrPtr->formType != filteredFormType) || 
+							(baseObject && *baseObject->formType != filteredFormType)) 
 						{
-							// Include this type, so skip over objects of a different form type.
-							if (*hitRefrPtr->formType != filteredFormType || (hitRefrPtr->GetBaseObject() && *hitRefrPtr->GetBaseObject()->formType != filteredFormType)) 
-							{
-								return;
-							}
+							return;
 						}
-						else
+					}
+					else
+					{
+						// Exclude this type, so skip over objects of the same form type.
+						if ((*hit.hitRefrPtr->formType == filteredFormType) || 
+							(baseObject && *baseObject->formType == filteredFormType))
 						{
-							// Exclude this type, so skip over objects of the same form type.
-							if (*hit.hitRefrPtr->formType == filteredFormType || (hit.hitRefrPtr->GetBaseObject() && *hit.hitRefrPtr->GetBaseObject()->formType == filteredFormType))
-							{
-								return;
-							}
+							return;
 						}
 					}
 				}
@@ -119,16 +156,47 @@ namespace Raycast
 				{
 					RE::NiPointer<RE::NiAVObject> hit3D{ hit.GetAVObject() };
 					// Hit an object that is not in the included list 
-					// or hit an object in the excluded list.
-					if ((isIncludeFilter && hit3D.get() != filteredObj) ||
-						(!isIncludeFilter && hit3D.get() == filteredObj))
+					// or hit an object in the excluded list,
+					// so skip this hit.
+					bool shouldExclude = 
+					(
+						(isIncludeFilter && hit3D.get() != filteredObj) ||
+						(!isIncludeFilter && hit3D.get() == filteredObj)
+					);
+					if (shouldExclude)
+					{
+						return;
+					}
+					
+					// Also check and compare the associated hit and filtered refrs 
+					// for inclusion or exclusion.
+					// If there is a hit refr and it is not an associated refr 
+					// for a 3D object in the included list,
+					// or if there is a hit refr and it is an associated refr
+					// for a 3D object in the excluded list,
+					// skip this hit.
+					const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D(filteredObj);
+					shouldExclude = 
+					(
+						(
+							isIncludeFilter && 
+							hitRefrValid &&
+							hit.hitRefrPtr.get() != filteredRefr
+						) ||
+						(
+							!isIncludeFilter && 
+							hitRefrValid &&
+							hit.hitRefrPtr.get() == filteredRefr
+						)
+					);
+					if (shouldExclude)
 					{
 						return;
 					}
 				}
 			}
 
-			if (hit.hitRefrPtr && hit.hitRefrPtr.get() && !refrFilters.empty())
+			if (hitRefrValid && !refrFilters.empty())
 			{
 				for (const auto filteredRefr : refrFilters)
 				{
@@ -200,7 +268,8 @@ namespace Raycast
 		if (physicsWorld)
 		{
 			{
-				RE::BSReadLockGuard lock(physicsWorld->worldLock);
+				// Remove comment if raycast int3 crash still occurs.
+				//RE::BSReadLockGuard lock(physicsWorld->worldLock);
 				RE::NiAVObject* object3D{ nullptr };
 				res.hit = ALYSLC::Util::NativeFunctions::PlayerCamera_LinearCast
 				(

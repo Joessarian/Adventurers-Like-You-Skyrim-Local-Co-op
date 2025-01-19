@@ -323,7 +323,7 @@ namespace ALYSLC
 		// Transfer selected or all objects from the currently displayed container to P1.
 		// A second transfer from P1 to the co-op companion player is performed in
 		// CoopContainerChangedHandler::ProcessEvent(), since additional processing is required.
-		void HandleLootRequest();
+		void HandleLootRequest(bool&& a_takeAll);
 
 		// When the Favorites Menu opens, refresh the player's equip state, 
 		// set their favorited forms, and cache + 
@@ -336,7 +336,8 @@ namespace ALYSLC
 
 		// Level up the companion player's skill AV by consuming the given Enderal skillbook.
 		// Provide notifications of success/failure.
-		void PerformEnderalSkillLevelUp(RE::AlchemyItem* a_skillbook);
+		// Return true on success.
+		bool PerformEnderalSkillLevelUp(RE::AlchemyItem* a_skillbook);
 
 		// Refresh favorited cyclable spells list(s) for the player.
 		void RefreshCyclableSpells() const;
@@ -500,7 +501,5 @@ namespace ALYSLC
 		bool shouldRefreshMenu;
 		// Spell was (un)favorited.
 		bool spellFavoriteStatusChanged;
-		// Player wants to take all items from the open container.
-		bool takeAll;
 	};
 }

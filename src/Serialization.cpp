@@ -75,6 +75,16 @@ namespace ALYSLC
 				}
 
 				RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
+				if (!dataHandler)
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Load: Could not get data handler. "
+						"Cannot load serialized data. Please inform the mod author."
+					);
+					return;
+				}
+
 				// Player form ID serialized as a key for each grouping of data.
 				RE::FormID fid = 0;
 				// Type, serialization version, and length of record data read out.
@@ -358,15 +368,6 @@ namespace ALYSLC
 					SPDLOG_DEBUG("[SERIAL] Load: Successfully retrieved serialized data for {} players from SKSE co-save.",
 						ALYSLC_MAX_PLAYER_COUNT);
 				}
-
-				// NOTE: The game fails to save P1's perks properly at times,
-				// either clearing all of them, or only saving the perks unlocked by P1 and not by any other player.
-				// I have yet to find a reason why it does this or find a direct solution,
-				// so the current workaround is to import P1's perks
-				// to ensure that they can access their saved perks, even outside of co-op.
-				// Please note that if the mod is uninstalled, P1 will have to respec all their perks manually,
-				// as the function below will not fire to import all the saved perks.
-				GlobalCoopData::ImportUnlockedPerks(RE::PlayerCharacter::GetSingleton());
 			}
 		}
 

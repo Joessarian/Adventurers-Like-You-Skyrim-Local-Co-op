@@ -817,14 +817,25 @@ namespace ALYSLC
 			}
 
 			// Reset packages to default.
-			if (packageStackMap[PackageIndex::kDefault] && glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]) 
+			if (packageStackMap[PackageIndex::kDefault] && 
+				glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]) 
 			{
-				packageStackMap[PackageIndex::kDefault]->forms[0] = glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault];
+				packageStackMap[PackageIndex::kDefault]->forms[0] = 
+				(
+					glob.coopPackages
+					[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+				);
 			}
 
-			if (packageStackMap[PackageIndex::kCombatOverride] && glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]) 
+			if (packageStackMap[PackageIndex::kCombatOverride] && 
+				glob.coopPackages
+				[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]) 
 			{
-				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride];
+				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
+				(
+					glob.coopPackages
+					[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
+				);
 			}
 		}
 
@@ -862,6 +873,32 @@ namespace ALYSLC
 			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 			{
 				Util::ActivateRef(coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false);
+			}
+
+			// Reset packages to default, since players may have changed their
+			// character assignment order 
+			// (ie. P2 chooses P3's character and P3 chooses P2's character) 
+			// and the current package atop the stack may no longer be assigned to them,
+			// since it depends on the controller ID of the player.
+			if (packageStackMap[PackageIndex::kDefault] && 
+				glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]) 
+			{
+				packageStackMap[PackageIndex::kDefault]->forms[0] = 
+				(
+					glob.coopPackages
+					[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+				);
+			}
+
+			if (packageStackMap[PackageIndex::kCombatOverride] && 
+				glob.coopPackages
+				[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]) 
+			{
+				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
+				(
+					glob.coopPackages
+					[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
+				);
 			}
 		}
 
@@ -905,7 +942,6 @@ namespace ALYSLC
 		// Setup initial default and combat override package formlists and packages.
 		packageStackMap.insert_or_assign(PackageIndex::kDefault, glob.coopPackageFormlists[p->packageFormListStartIndex]);
 		packageStackMap.insert_or_assign(PackageIndex::kCombatOverride, glob.coopPackageFormlists[p->packageFormListStartIndex + 1]);
-
 		// Attacking hand.
 		lastAttackingHand = HandIndex::kNone;
 		// Player action bookkeeping.
@@ -1004,12 +1040,33 @@ namespace ALYSLC
 		isSprinting = false;
 		isVoiceCasting = false;
 		isWeaponAttack = false;
+		wasSprinting = false;
 		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
-		weapMagReadied = coopActor->IsWeaponDrawn();
+		weapMagReadied = false; //coopActor->IsWeaponDrawn();
 		// Ints.
 		lastAnimEventID = 0;
 		inputBitMask = 0;
+		
+		// Stop sneaking and sheathe.
+		// Prevents odd issues stemming from carried-over
+		// sheathe/sneak state from a previous summoning.
+		if (!p->isPlayer1)
+		{
+			SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false);
+		}
+
+		if (coopActor->IsSneaking())
+		{
+			Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSneak, coopActor.get());
+		}
+
+		coopActor->actorState1.sneaking = 0;
+		coopActor->actorState2.forceSneak = 0;
+		if (coopActor->IsWeaponDrawn())
+		{
+			ReadyWeapon(false);
+		}
 
 		// Set player binds.
 		UpdatePlayerBinds();
@@ -1279,7 +1336,7 @@ namespace ALYSLC
 						spellType == RE::MagicSystem::SpellType::kVoicePower
 					};
 					bool isConcSpell = spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration;
-					// Can only cast self-targeted powers with player 1, so this means only one power can be used
+					// Can only cast self-targeted powers with P1, so this means only one power can be used
 					// among the entire party at any time.
 					if (!p->isPlayer1 && a_shouldCastWithP1)
 					{
@@ -1296,7 +1353,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								// Set spell for player 1.
+								// Set spell for P1.
 								magicCaster->SetCurrentSpellImpl(spell);
 								magicCaster->currentSpell = spell;
 								// Zero out magicka cost for P1 since they're not the one requesting the cast.
@@ -2231,7 +2288,7 @@ namespace ALYSLC
 	{
 		// Reduce the companion player's magicka based on what spell(s) they are casting.
 		
-		// Game already handles player 1's magicka expenditure and regen.
+		// Game already handles P1's magicka expenditure and regen.
 		if (p->isPlayer1)
 		{
 			return;
@@ -2530,7 +2587,7 @@ namespace ALYSLC
 	void PlayerActionManager::ExpendStamina() 
 	{
 		// Reduce the player's stamina based on what AV cost actions they are performing.
-		// Not for player 1, unless mounted, as their stamina regen and cooldown are handled by the game already.
+		// Not for P1, unless mounted, as their stamina regen and cooldown are handled by the game already.
 		
 		// NOTE: All formulas (aside from sneak roll cost) are from UESP:
 		// https://en.uesp.net/wiki/Skyrim:Stamina
@@ -3038,7 +3095,6 @@ namespace ALYSLC
 					 reqActionsSet.contains(AVCostAction::kSprint))
 			{
 				avcam->SetStartedAction(AVCostAction::kSprint);
-				isSprinting = true;
 			}
 
 			// Set weapon mults when melee/ranged attack triggers.
@@ -3125,7 +3181,6 @@ namespace ALYSLC
 		{
 			avcam->RemoveRequestedActions(AVCostAction::kSprint);
 			avcam->RemoveStartedActions(AVCostAction::kSprint);
-			isSprinting = false;
 		}
 
 		if ((IsNotPerforming(InputAction::kSprint)) && 
@@ -3653,8 +3708,12 @@ namespace ALYSLC
 			// Avoids locking up the player's equip state (weapons out but unusable).
 			// If the animation event is sent while the player is mounted,
 			// surf's up dude!
-			if (a_shouldDraw && !p->mm->isMounting && !coopActor->IsOnMount() &&
-				!coopActor->IsSwimming() && !coopActor->IsFlying()) 
+			if (a_shouldDraw && 
+				!p->mm->isMounting &&
+				!coopActor->IsOnMount() &&
+				!coopActor->IsSwimming() && 
+				!coopActor->IsFlying() &&
+				coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal) 
 			{
 				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 			}
@@ -3714,8 +3773,11 @@ namespace ALYSLC
 					// Avoids locking up the player's equip state (weapons out but unusable).
 					// If the animation event is sent while the player is mounted,
 					// surf's up dude!
-					if (!p->mm->isMounting && !coopActor->IsOnMount() &&
-						!coopActor->IsSwimming() && !coopActor->IsFlying())
+					if (!p->mm->isMounting && 
+						!coopActor->IsOnMount() &&
+						!coopActor->IsSwimming() && 
+						!coopActor->IsFlying() && 
+						coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
 					{
 						coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 					}
@@ -3772,7 +3834,8 @@ namespace ALYSLC
 			// is greater than or equal to their health after a full revive.
 			if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
 			{
-				// Now revived, reset revived health data.
+				// Signal the other player that they are now revived,
+				// and reset revived health data.
 				downedPlayerTarget->isRevived = true;
 				p->revivedHealth = 0.0f;
 			}
@@ -3890,6 +3953,7 @@ namespace ALYSLC
 		p->lastBoundWeaponRHReqTP		=
 		p->lastCyclingTP				=
 		p->lastDownedTP					=
+		p->lastGetupAfterReviveTP		=
 		p->lastInputActionBlockTP		= 
 		p->lastKillmoveCheckTP			=
 		p->lastLHCastStartTP			=
@@ -4716,6 +4780,37 @@ namespace ALYSLC
 
 		if (coopActor->race)
 		{
+			// Whether due to my own incompetence or if set by the game,
+			// if the companion player's base health regen is set to 0,
+			// set to the default and keep in sync with P1's regen,
+			// so if P1's regen is 0, set to 0.
+			// Ignore if downed.
+			auto p1 = RE::PlayerCharacter::GetSingleton(); 
+			if (p1 && !p->isPlayer1 && !p->isDowned)
+			{
+				float companionBaseHealRate = 
+				(
+					coopActor->GetBaseActorValue(RE::ActorValue::kHealRate)
+				);
+				float p1BaseHealRate = p1->GetBaseActorValue(RE::ActorValue::kHealRate);
+				if ((p1BaseHealRate != 0.0f && companionBaseHealRate == 0.0f) ||
+					(p1BaseHealRate == 0.0f && companionBaseHealRate != 0.0f))
+				{
+					coopActor->SetBaseActorValue(RE::ActorValue::kHealRate, p1BaseHealRate);
+				}
+
+				float companionCombatHealthRateMult = 
+				(
+					coopActor->GetBaseActorValue(RE::ActorValue::kCombatHealthRegenMultiply)
+				);
+				if (companionCombatHealthRateMult == 0.0f)
+				{
+					// Make sure the combat health regen multiplier is not zero as well.
+					coopActor->SetBaseActorValue(RE::ActorValue::kCombatHealthRegenMultiply, 0.7f);
+					coopActor->SetActorValue(RE::ActorValue::kCombatHealthRegenMultiply, 0.7f);
+				}
+			}
+
 			// Only update health regen to 0 here when downed.
 			if (auto avOwner = coopActor->As<RE::ActorValueOwner>(); avOwner)
 			{
@@ -4933,6 +5028,17 @@ namespace ALYSLC
 		isRangedWeaponAttack = isWeaponAttack && p->em->Has2HRangedWeapEquipped();
 		// Attacking with a spell or ranged weapon.
 		isRangedAttack = isRangedWeaponAttack || isInCastingAnim;
+		// Update sprint state.
+		wasSprinting = isSprinting;
+		isSprinting = 
+		(
+			(coopActor->IsSprinting()) ||
+			(avcam->actionsInProgress.all(AVCostAction::kSprint)) ||
+			(
+				(IsPerforming(InputAction::kSprint)) &&
+				(coopActor->IsOnMount() || coopActor->IsSwimming())
+			)
+		);
 	}
 
 	void PlayerActionManager::UpdatePlayerBinds()

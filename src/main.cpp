@@ -25,7 +25,6 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// Register debug overlay menu.
 		ALYSLC::DebugOverlayMenu::Register();
 		// Run compatibility checks and initialization.
-		ALYSLC::EnderalCompat::CheckForEnderalSSE();
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
 		ALYSLC::MiniMapCompat::CheckForMiniMap();
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
@@ -36,13 +35,21 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
 		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
 		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
+		// Import all settings after setting the plugin name to use
+		// in ALYSLC::EnderalCompat::CheckForEnderalSSE().
+		ALYSLC::EnderalCompat::CheckForEnderalSSE();
+		ALYSLC::Settings::ImportAllSettings();
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:
 	{
 		SPDLOG_INFO("[MAIN] New game.");
 		// Set default serialization data through the Load() function.
-		if (SKSE::SerializationInterface* intfc = SKSE::detail::APIStorage::get().serializationInterface; intfc)
+		SKSE::SerializationInterface* intfc = 
+		(
+			SKSE::detail::APIStorage::get().serializationInterface
+		); 
+		if (intfc)
 		{
 			SPDLOG_INFO("[MAIN] New game. Setting default serialization data on load.");
 			ALYSLC::SerializationCallbacks::Load(intfc);
@@ -62,6 +69,10 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		SPDLOG_INFO("[MAIN] Post load game.");
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
+
+		// No longer loading a save.
+		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
+		glob.loadingASave = false;
 		break;
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
@@ -74,6 +85,10 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		SPDLOG_INFO("[MAIN] Pre load game.");
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
+		// Stop any active co-op session and indicate that the game is loading.
+		ALYSLC::GlobalCoopData::TeardownCoopSession(true);
+		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
+		glob.loadingASave = true;
 		break;
 	}
 	default:
@@ -121,22 +136,22 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	while (!IsDebuggerPresent()) {};
 #endif
 
-	SPDLOG_INFO("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	// Create global data singleton before doing anything else.
 	ALYSLC::GlobalCoopData::GetSingleton();
-
 	g_loadInterface = a_skse;
 	SKSE::Init(a_skse);
 	InitializeLog();
 	SKSE::AllocTrampoline(1 << 8);
 
-	if (auto messaging = SKSE::GetMessagingInterface(); !messaging->RegisterListener("SKSE", SKSEMessageHandler))
+	auto messaging = SKSE::GetMessagingInterface(); 
+	if (!messaging->RegisterListener("SKSE", SKSEMessageHandler))
 	{
 		SPDLOG_ERROR("[MAIN] ERR: Could not register messaging interface listener.");
 		return false;
 	}
 
-	if (auto papyrus = SKSE::GetPapyrusInterface(); !papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
+	auto papyrus = SKSE::GetPapyrusInterface(); 
+	if (!papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
 	{
 		SPDLOG_ERROR("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
 		return false;
@@ -156,7 +171,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 		serialization->SetRevertCallback(ALYSLC::SerializationCallbacks::Revert);
 		serialization->SetSaveCallback(ALYSLC::SerializationCallbacks::Save);
 	}
-
+	
+	SPDLOG_INFO("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	return true;
 }
 
@@ -173,7 +189,10 @@ extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
 	return v;
 }();
 #else
-extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info)
+extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
+(
+	const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info
+)
 {
 	a_info->infoVersion = SKSE::PluginInfo::kVersion;
 	a_info->name = "ALYSLC";

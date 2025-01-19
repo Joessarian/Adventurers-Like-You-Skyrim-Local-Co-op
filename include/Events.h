@@ -12,6 +12,30 @@ namespace ALYSLC
 		void ResetMenuState();
 	}
 
+	class CoopActorKillEventHandler : public RE::BSTEventSink<RE::ActorKill::Event>
+	{
+	public:
+		using EventResult = RE::BSEventNotifyControl;
+		
+		static CoopActorKillEventHandler* GetSingleton();
+		
+		static void Register();
+		
+		EventResult ProcessEvent
+		(
+			const RE::ActorKill::Event* a_actorKillEvent,
+			RE::BSTEventSource<RE::ActorKill::Event>*
+		) override;
+	
+	private:
+		CoopActorKillEventHandler() = default;
+		CoopActorKillEventHandler(const CoopActorKillEventHandler& a_cakeh) = delete;
+		CoopActorKillEventHandler(CoopActorKillEventHandler&& a_cakeh) = delete;
+		~CoopActorKillEventHandler() = default;
+		CoopActorKillEventHandler& operator=(const CoopActorKillEventHandler& a_cakeh) = delete;
+		CoopActorKillEventHandler& operator=(CoopActorKillEventHandler&& a_cakeh) = delete;
+	};
+
 	class CoopBleedoutEventHandler : public RE::BSTEventSink<RE::TESEnterBleedoutEvent>
 	{
 	public:
@@ -146,7 +170,7 @@ namespace ALYSLC
 		EventResult ProcessEvent
 		(
 			const RE::TESDeathEvent* a_deathEvent,
-			RE::BSTEventSource<RE::TESDeathEvent>*
+			RE::BSTEventSource<RE::TESDeathEvent>* a_source
 		) override;
 	
 	private:

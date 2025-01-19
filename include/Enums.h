@@ -388,7 +388,6 @@ namespace ALYSLC
 		kPressedNoEvent,	// Inputs pressed, no special handling.
 		kEquipReq,			// Requested to equip an item.
 		kEmulateInput,		// Requested to send an input event from P1's controller/the keyboard.
-		kTakeItemReq,		// Requested to loot an item.
 
 		kTotal
 	};
@@ -685,6 +684,16 @@ namespace ALYSLC
 	//[Player Action Management]
 	//==========================
 
+	// Additional hit flags for RE::HitData::Flag (32 bit integer with only 4 bits used).
+	enum class AdditionalHitEventFlags : std::uint8_t
+	{
+		// 1 << 0 through 1 << 3 are defined by the game,
+		// so we have 1 << 4 through 1 << 7 to use.
+		kBonk = 1 << 4,		// Hit by thrown object or flop.
+		kSlap = 1 << 5,		// Hit by rotating arms.
+		kSplat = 1 << 6		// Hit by a surface after ragdolling.
+	};
+
 	// Lists out performable actions that modify an actor's actor values
 	// once an associated animation event triggers.
 	enum class AVCostAction : std::uint16_t
@@ -793,6 +802,15 @@ namespace ALYSLC
 		kRestorationSpellRH = 1 << 17,
 		kRestorationSpellQS = 1 << 18,
 		kTwoHanded = 1 << 19
+	};
+
+	// Criteria checked before knocking down a slapped actor.
+	enum class SlapKnockdownCriteria
+	{
+		kNoKnockdowns,			// No knockdowns from slap collisions.
+		kOnlyHeadshots,			// Only knock down when hitting a head node
+								// with a sufficiently fast slap.
+		kSufficientContactSpeed	// Only knock down if an arm node makes sufficiently fast contact.
 	};
 
 	// Types of contextual actions that can be performed with the 'SpecialAction' bind.

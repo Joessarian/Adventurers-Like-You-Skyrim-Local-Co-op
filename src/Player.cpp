@@ -55,6 +55,7 @@ namespace ALYSLC
 		lastCrosshairUpdateTP = SteadyClock::now();
 		lastCyclingTP = SteadyClock::now();
 		lastDownedTP = SteadyClock::now();
+		lastGetupAfterReviveTP = SteadyClock::now();
 		lastGetupTP = SteadyClock::now();
 		lastHiddenInStealthRadiusTP = SteadyClock::now();
 		lastLHCastStartTP = SteadyClock::now();
@@ -128,6 +129,11 @@ namespace ALYSLC
 
 	const ManagerState CoopPlayer::ShouldSelfPause()
 	{
+		if (glob.loadingASave)
+		{
+			return ManagerState::kAwaitingRefresh;		
+		}
+
 		// Controller error check.
 		XINPUT_STATE tempState;
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
@@ -178,16 +184,32 @@ namespace ALYSLC
 		auto ui = RE::UI::GetSingleton();
 		bool player1WaitForCam = isPlayer1 && glob.cam->IsPaused();
 		shouldTeleportToP1 = ShouldTeleportToP1(true);
+		bool fullscreenMenuOpen = 
+		(
+			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) ||
+			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
+			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)
+		);
 		// Pause if P1 and cam is disabled, or if the companion player should teleport to P1,
-		// or if the game is paused or saving is disabled.
-		if (player1WaitForCam || shouldTeleportToP1 || ui->GameIsPaused() || !ui->IsSavingAllowed()) 
+		// if the game is paused, saving is disabled, or if a 'fullscreen' menu is open.
+		if (player1WaitForCam || 
+			shouldTeleportToP1 || 
+			ui->GameIsPaused() || 
+			!ui->IsSavingAllowed() ||
+			fullscreenMenuOpen) 
 		{
-			SPDLOG_DEBUG("[P] ShouldSelfPause: {}: player 1 wait for cam: {}, should teleport to P1: {}, game is paused: {}, saving not allowed: {}.",
+			SPDLOG_DEBUG
+			(
+				"[P] ShouldSelfPause: {}: P1 wait for cam: {}, "
+				"should teleport to P1: {}, game is paused: {}, "
+				"saving not allowed: {}, lockpicking menu open: {}.",
 				coopActor->GetName(),
 				player1WaitForCam,
 				ShouldTeleportToP1(true),
 				ui->GameIsPaused(),
-				!ui->IsSavingAllowed());
+				!ui->IsSavingAllowed(),
+				fullscreenMenuOpen
+			);
 			return ManagerState::kPaused;
 		}
 
@@ -285,9 +307,20 @@ namespace ALYSLC
 				bool onlyAlwaysUnpaused= Util::MenusOnlyAlwaysUnpaused();
 				bool player1WaitForCam = isPlayer1 && glob.cam->IsPaused();
 				bool faderMenuOpen = ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) && ui->GetMenu<RE::FaderMenu>()->PausesGame();
+				bool fullscreenMenuOpen = 
+				(
+					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) ||
+					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
+					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)
+				);
 				// Remain paused if paused temp menus are open, if P1 and cam is disabled, a fader menu is open,
-				// or if the game is paused or saving is disabled.
-				if (!onlyAlwaysUnpaused || player1WaitForCam || faderMenuOpen || ui->GameIsPaused() || !ui->IsSavingAllowed())
+				// if the game is paused, saving is disabled, or if a 'fullscreen' menu is open.
+				if (!onlyAlwaysUnpaused ||
+					player1WaitForCam || 
+					faderMenuOpen ||
+					ui->GameIsPaused() || 
+					!ui->IsSavingAllowed() ||
+					fullscreenMenuOpen)
 				{
 					return ManagerState::kPaused;
 				}
@@ -375,7 +408,7 @@ namespace ALYSLC
 			preTransformationRace = nullptr;
 			// Set player actor flags.
 			SetCoopPlayerFlags();
-			// Ensure all players' factions are equivalent to player 1's.
+			// Ensure all players' factions are equivalent to P1's.
 			SyncPlayerFactions();
 			// Add serialized perks to the player.
 			GlobalCoopData::ImportUnlockedPerks(coopActor.get());
@@ -573,6 +606,7 @@ namespace ALYSLC
 		// Ensure player is not set to downed.
 		isDowned = false;
 		isRevived = false;
+		isGettingUpAfterRevive = false;
 		hasBeenDismissed = true;
 
 		// Have script run its cleanup.
@@ -959,6 +993,77 @@ namespace ALYSLC
 		Util::AddSyncedTask([this, &a_animEvent]() { coopActor->NotifyAnimationGraph(a_animEvent); });
 	}
 
+	void CoopPlayer::SetAsDowned()
+	{
+		// Reset downed state, 
+		// pause managers,
+		// ensure their essential flag is set to prevent death while downed, 
+		// prevent health regen and set health to 0, 
+		// ragdoll and paralyze the player to keep them from getting up while downed,
+		// and set initial revive data.
+
+		isDowned = true;
+		isRevived = false;
+		isGettingUpAfterRevive = false;
+		secsDowned = 0.0f;
+		revivedHealth = 0.0f;
+		lastDownedTP = SteadyClock::now();
+
+		auto resAV = coopActor->GetActorValue(RE::ActorValue::kRestoration);
+		// Health post-revive scales with the player's restoration skill level.
+		// Half-to-full health from levels 15-100.
+		float resAVMult = std::lerp(0.5f, 1.0f, (resAV - 15.0f) / (85.0f));
+		fullReviveHealth = 
+		(
+			resAVMult * 
+			coopActor->GetBaseActorValue(RE::ActorValue::kHealth) + 
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+			)
+		);
+
+		// Make sure the player's managers are paused..
+		RequestStateChange(ManagerState::kPaused);
+		
+		// Ensure that the player will stay downed 
+		// and no death events trigger during the downed state countdown.
+		// Certain attacks, such as spider venom, that occur while co-op data 
+		// is copied onto P1 seem to reset the essential flag.
+		pam->SetEssentialForReviveSystem();
+
+		// Set health/health regen to 0 to prevent player 
+		// from getting up prematurely when being revived.
+		coopActor->SetBaseActorValue(RE::ActorValue::kHealRateMult, 0.0f);
+		coopActor->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, 
+			RE::ActorValue::kHealth, 
+			-coopActor->GetActorValue(RE::ActorValue::kHealth)
+		);
+
+		SPDLOG_DEBUG("[P] SetAsDowned: {} was just downed.", coopActor->GetName());
+		// Remove all damaging active effects that could down the player again
+		// soon after they fully get up.
+		// Also ragdoll the player if they are not ragdolled already.
+		for (auto effect : *coopActor->GetActiveEffectList())
+		{
+			if (!effect || !effect->IsCausingHealthDamage())
+			{
+				continue;
+			}
+
+			effect->Dispel(true);
+		}
+
+		// Put in an alive ragdoll state.
+		Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
+		Util::PushActorAway
+		(
+			coopActor.get(), coopActor->data.location, -1.0f, true
+		);
+	}
+
 	void CoopPlayer::SetCoopPlayerFlags()
 	{
 		// Set essential flags and bleedout override if using revive system.
@@ -1020,12 +1125,6 @@ namespace ALYSLC
 			coopActor->AllowPCDialogue(false);
 			coopActor->AllowBleedoutDialogue(false);
 		}
-
-		// Add to special co-op player faction.
-		if (auto coopPlayerFaction = RE::TESDataHandler::GetSingleton()->LookupForm<RE::TESFaction>(0x53AF5, GlobalCoopData::PLUGIN_NAME); coopPlayerFaction && coopActor->IsInFaction(coopPlayerFaction))
-		{
-			coopActor->AddToFaction(coopPlayerFaction, 0);
-		}
 	}
 
 	bool CoopPlayer::ShouldTeleportToP1(bool&& a_selfPauseCheck)
@@ -1086,12 +1185,8 @@ namespace ALYSLC
 	void CoopPlayer::SyncPlayerFactions()
 	{
 		// All companion players should have the same factions as P1.
-
-		if (isPlayer1)
-		{
-			return;
-		}
-
+		// Add to a couple of co-op related faction as well.
+		
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto actorBase = coopActor->GetActorBase();
 		if (!p1 || !actorBase)
@@ -1099,20 +1194,53 @@ namespace ALYSLC
 			return;
 		}
 
-		actorBase->factions.clear();
-		coopActor->AddToFaction(glob.coopCompanionFaction, 0);
-		p1->VisitFactions
-		(
-			[this](RE::TESFaction* a_faction, int8_t a_rank) 
+		for (const auto coopFaction : glob.coopPlayerFactions)
+		{
+			if (!coopFaction || coopActor->IsInFaction(coopFaction))
 			{
-				if (!coopActor->IsInFaction(a_faction))
-				{
-					coopActor->AddToFaction(a_faction, a_rank);
-				}
-
-				return false;
+				continue;
 			}
-		);
+
+			coopActor->AddToFaction(coopFaction, 0);
+			SPDLOG_DEBUG
+			(
+				"[P] SyncPlayerFactions: {} added to co-op faction {} (0x{:X}): {}.",
+				coopActor->GetName(),
+				coopFaction->GetName(),
+				coopFaction->formID,
+				coopActor->IsInFaction(coopFaction)
+			);
+		}
+
+		if (!isPlayer1)
+		{
+			p1->VisitFactions
+			(
+				[this](RE::TESFaction* a_faction, int8_t a_rank) 
+				{
+					if (!coopActor->IsInFaction(a_faction))
+					{
+						coopActor->AddToFaction(a_faction, a_rank);
+					}
+
+					SPDLOG_DEBUG
+					(
+						"[P] SyncPlayerFactions: {} now is in faction {} (0x{:X}): {}.",
+						coopActor->GetName(),
+						a_faction->GetName(),
+						a_faction->formID,
+						coopActor->IsInFaction(a_faction)
+					);
+
+					return false;
+				}
+			);
+		}
+
+		if (auto procLists = RE::ProcessLists::GetSingleton(); procLists)
+		{
+			procLists->ClearCachedFactionFightReactions();
+		}
 	}
 
 	void CoopPlayer::UnregisterEvents() 
@@ -1215,6 +1343,307 @@ namespace ALYSLC
 		coopActor->DoReset3D(true);
 	}
 
+	void CoopPlayer::UpdateWhenDowned()
+	{
+		// Downed state changes are reflected in the crosshair text entry for the downed player.
+		// Exit conditions:
+		// - Player is revived and no longer in a downed state.
+		// - Player is not revived in time (all players are killed).
+		// - Co-op session ends while the player is downed:
+		//		- Players are dismissed.
+		//		- Player 1 is killed.
+		//		- Another save is loaded.
+
+		if (glob.loadingASave)
+		{
+			// All data will be re-initialized once the save loads, so nothing to clean up here.
+			SPDLOG_DEBUG
+			(
+				"[P] UpdateWhenDowned: Stopped downed countdown for {}. "
+				"Game is loading a save file. Skipping cleanup.",
+				coopActor->GetName()
+			);
+			return;
+		}
+
+		// A loading screen opened while downed.
+		bool loadingMenuOpened = false;
+		// Check if the LoadingMenu has opened.
+		if (const auto ui = RE::UI::GetSingleton(); ui)
+		{
+			loadingMenuOpened = ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
+		}
+
+		// Interval is over once the player has been downed for longer than the revive window.
+		// If true, the revive window is over and all players die.
+		bool reviveIntervalOver = secsDowned > Settings::fSecsUntilDownedDeath;
+
+		// Stop counting down if the co-op session ends, the game is loading a save,
+		// the LoadingMenu opens, this player is revived, the revive window is over, 
+		// or this player is dead.
+		bool stopCountingDown = 
+		(
+			!glob.coopSessionActive || 
+			glob.loadingASave ||
+			loadingMenuOpened || 
+			isRevived || 
+			reviveIntervalOver || 
+			coopActor->IsDead()
+		);
+
+		/*SPDLOG_DEBUG
+		(
+			"[P] UpdateWhenDowned: Downed countdown active for {}: {}. "
+			"Session ended: {} (loading screen open: {}, loading a save: {}), "
+			"is dead: {}, is revived: {}, revive window over: {} ({} : {})",
+			coopActor->GetName(), 
+			!stopCountingDown,
+			!glob.coopSessionActive,
+			loadingMenuOpened,
+			glob.loadingASave,
+			coopActor->IsDead(), 
+			isRevived, 
+			reviveIntervalOver,
+			secsDowned,
+			Settings::fSecsUntilDownedDeath
+		);*/
+
+		// Last time the player's downed state was checked.
+		RE::BSFixedString reviveText = ""sv;
+		if (stopCountingDown)
+		{
+			// Remove all new damaging active effects that could down the player again
+			// before the player fully gets up.
+			for (auto effect : *coopActor->GetActiveEffectList())
+			{
+				if (!effect || !effect->IsCausingHealthDamage())
+				{
+					continue;
+				}
+
+				effect->Dispel(true);
+			}
+
+			// Post-revive success/fail tasks.
+			// 
+			// If the co-op session is still active and the player has not died,
+			// thelayer could be revived, 
+			// getting up after being revived,
+			// or the revive window could have passed.
+			if (glob.coopSessionActive && !coopActor->IsDead())
+			{
+				if (reviveIntervalOver)
+				{
+					// Failure! The player's revive window has closed.
+					// 
+					// One last crosshair text update with final revive statistics.
+					reviveText = fmt::format
+					(
+						"P{}: <font color=\"#FF0000\">[Life]: 0.0%</font>, "
+						"<font color=\"#00FF00\">[Revive]: {:.1f}%</font>",
+						playerID + 1,
+						100.0f * min(1.0f, revivedHealth / fullReviveHealth)
+					);;
+					tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+					tm->UpdateCrosshairMessage();
+
+					SPDLOG_DEBUG
+					(
+						"[P] UpdateWhenDowned: {} was NOT revived. "
+						"About to teardown co-op session.", 
+						coopActor->GetName()
+					);
+
+					// Uh-oh!
+					GlobalCoopData::YouDied(coopActor.get()); 
+
+					isDowned = false;
+					isRevived = false;
+					isGettingUpAfterRevive = false;
+				}
+				else if (isRevived && !isGettingUpAfterRevive)
+				{
+					// Yay! Successful revive.
+					//
+					// Now getting up after revive.
+					isGettingUpAfterRevive = true;
+					lastGetupAfterReviveTP = SteadyClock::now();
+
+					// One last crosshair text update with fully revived message.
+					reviveText = fmt::format
+					(
+						"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, "
+						"<font color=\"#00FF00\">[Revive]: 100.0%</font>",
+						playerID + 1,
+						100.0f * 
+						max
+						(
+							0.0f, 
+							(1.0f - secsDowned / max(1.0f, Settings::fSecsUntilDownedDeath))
+						)
+					);
+					tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+					tm->UpdateCrosshairMessage();
+
+					SPDLOG_DEBUG
+					(
+						"[P] UpdateWhenDowned: {} was revived. "
+						"Toggle god mode until fully up.", 
+						coopActor->GetName()
+					);
+					
+					// Invulnerable while getting up after revive.
+					GlobalCoopData::ToggleGodModeForPlayer(controllerID, true);
+					// Indicates the player is temporarily invulnerable.
+					Util::StartEffectShader(coopActor.get(), glob.ghostFXShader);
+
+					// Set full revive health, un-paralyze, and set to alive.
+					pam->ModifyAV
+					(
+						RE::ActorValue::kHealth,
+						max
+						(
+							0.0f, 
+							revivedHealth - coopActor->GetActorValue(RE::ActorValue::kHealth)
+						)
+					);
+					coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					coopActor->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kAlive;
+				}
+				else if (isGettingUpAfterRevive)
+				{
+					// Wait until the player is standing up before restarting managers.
+					// Failsafe interval of 5 seconds.
+					float secsSinceGetUpStart = Util::GetElapsedSeconds(lastGetupAfterReviveTP);
+					const auto& knockState = coopActor->actorState1.knockState;
+					if (secsSinceGetUpStart < 5.0f && knockState != RE::KNOCK_STATE_ENUM::kNormal)
+					{
+						// Force the player to getup if not started already.
+						if (knockState != RE::KNOCK_STATE_ENUM::kGetUp)
+						{
+							coopActor->PotentiallyFixRagdollState();
+							coopActor->NotifyAnimationGraph("GetUpBegin");
+						}
+						else
+						{
+							// Otherwise, nothing to do but wait.
+							return;
+						}
+					}
+					else
+					{
+						// Wait an extra second before toggling off god mode.
+						if (secsSinceGetUpStart <= 6.0f)
+						{
+							// Have to wait the extra second after getting up.
+							return;
+						}
+
+						// Curtail momentum to stop the player after resuming.
+						mm->shouldCurtailMomentum = true;
+						// Reset downed time and health.
+						revivedHealth = secsDowned = 0.0f;
+						// No longer downed once the player has gotten up.
+						isDowned = false;
+						// Make sure the player is set as revived (should be true).
+						isRevived = true;
+						// Player has gotten up.
+						isGettingUpAfterRevive = false;
+
+						// Toggle off god mode and remove god mode indicator shader.
+						GlobalCoopData::ToggleGodModeForPlayer(controllerID, false);
+						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
+
+						// Restart managers.
+						RequestStateChange(ManagerState::kRunning);
+
+						SPDLOG_DEBUG
+						(
+							"[P] UpdateWhenDowned: "
+							"{} was revived and is no longer downed. Success!", 
+							coopActor->GetName()
+						);
+					}
+				}
+			}
+			else
+			{
+				// If reaching this point, the player was not revived one way or another, 
+				// so make sure the co-op session ends.
+				SPDLOG_DEBUG
+				(
+					"[P] UpdateWhenDowned: {} was not revived: {}. "
+					"Revive interval not over: {}, co-op session ended: {}, "
+					"loading a save: {}, loading menu opened: {}, dead: {}. "
+					"Dismissing all players.",
+					coopActor->GetName(),
+					!isRevived, 
+					!reviveIntervalOver,
+					!glob.coopSessionActive,
+					glob.loadingASave,
+					loadingMenuOpened,
+					coopActor->IsDead()
+				);
+
+				// Always reset the paralysis flag.
+				coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				// Not revived or downed anymore.
+				isRevived = isDowned = isGettingUpAfterRevive = false;
+				// Reset revive data.
+				revivedHealth = secsDowned = 0.0f;
+				// End co-op session.
+				GlobalCoopData::TeardownCoopSession(true);
+			}
+		}
+		else
+		{
+			// Update downed time.
+			secsDowned = Util::GetElapsedSeconds(lastDownedTP);
+
+			// Remove all damaging active effects that could down the player again
+			// soon after they fully get up.
+			for (auto effect : *coopActor->GetActiveEffectList())
+			{
+				if (!effect || !effect->IsCausingHealthDamage())
+				{
+					continue;
+				}
+
+				effect->Dispel(true);
+			}
+			
+			// Also ragdoll and paralyze the player if they are not ragdolled already.
+			if (!coopActor->IsInRagdollState())
+			{
+				Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
+				Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f, true);
+			}
+		
+			// Set as unconscious to prevent enemies from aggro-ing this downed player.
+			coopActor->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kUnconcious;
+			// Draw indicator at all times while the player is downed.
+			tm->DrawPlayerIndicator();
+
+			// Update crosshair text to set.
+			// Set crosshair text to allow players to see the downed player's
+			// remaining life time and time to revive.
+			// - Life percent: 100% * (time spent unrevived / unrevived time until death).
+			// - Revive percent: 100% * (revived health / full revive health).
+			reviveText = fmt::format
+			(
+				"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, <font color=\"#00FF00\">"
+				"[Revive]: {:.1f}%</font>",
+				playerID + 1, 
+				100.0f * 
+				max(0.0f, (1.0f - secsDowned / max(1.0f, Settings::fSecsUntilDownedDeath))),
+				100.0f * 
+				min(1.0f, revivedHealth / fullReviveHealth)
+			);
+			tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+			tm->UpdateCrosshairMessage();
+		}
+	}
+
 
 // NOTE: All run in a separate thread asynchronously.
 #pragma region TASK_FUNCS
@@ -1241,21 +1670,25 @@ namespace ALYSLC
 		// Remove all damaging active effects that could down the player again
 		// after they are no longer downed but before this task finishes.
 		// Also ragdoll the player if they are not ragdolled already.
-		Util::AddSyncedTask([this]() {
-			for (auto effect : *coopActor->GetActiveEffectList())
+		Util::AddSyncedTask
+		(
+			[this]()
 			{
-				if (effect && effect->IsCausingHealthDamage())
+				for (auto effect : *coopActor->GetActiveEffectList())
 				{
-					effect->Dispel(true);
+					if (effect && effect->IsCausingHealthDamage())
+					{
+						effect->Dispel(true);
+					}
+				}
+
+				if (!coopActor->IsInRagdollState())
+				{
+					Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
+					Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f, true);
 				}
 			}
-
-			if (!coopActor->IsInRagdollState())
-			{
-				Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
-				Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f, true);
-			}
-		});
+		);
 
 		// If true, the revive window is over and all players die.
 		bool reviveIntervalOver = false;
@@ -1269,7 +1702,6 @@ namespace ALYSLC
 		SteadyClock::time_point lastCrosshairTextUpdateTP = SteadyClock::now();
 		// Last time the player's downed state was checked.
 		SteadyClock::time_point lastDownedUpdateTP = SteadyClock::now();
-		std::array<RE::GFxValue, HUDBaseArgs::kTotal> args;
 		RE::BSFixedString reviveText = ""sv;
 		while (!stopCountingDown)
 		{
@@ -1293,9 +1725,16 @@ namespace ALYSLC
 				// remaining life time and time to revive.
 				// - Life percent: 100% * (time spent unrevived / unrevived time until death).
 				// - Revive percent: 100% * (revived health / full revive health).
-				reviveText = fmt::format("P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, <font color=\"#00FF00\">[Revive]: {:.1f}%</font>",
-					playerID + 1, 100.0f * max(0.0f, (1.0f - secsDowned / max(1.0f, Settings::fSecsUntilDownedDeath))),
-					100.0f * min(1.0f, revivedHealth / fullReviveHealth));
+				reviveText = fmt::format
+				(
+					"P{}: <font color=\"#FF0000\">[Life]: {:.1f}%</font>, <font color=\"#00FF00\">"
+					"[Revive]: {:.1f}%</font>",
+					playerID + 1, 
+					100.0f * 
+					max(0.0f, (1.0f - secsDowned / max(1.0f, Settings::fSecsUntilDownedDeath))),
+					100.0f * 
+					min(1.0f, revivedHealth / fullReviveHealth)
+				);
 				tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
 				tm->UpdateCrosshairMessage();
 			}
@@ -1310,23 +1749,67 @@ namespace ALYSLC
 
 			// Stop counting down if the co-op session ends, this player is revived, the revive window is over, 
 			// the LoadingMenu opens, or this player is dead.
-			stopCountingDown = !glob.coopSessionActive || isRevived || reviveIntervalOver || loadingMenuOpened || coopActor->IsDead();
+			stopCountingDown = 
+			(
+				!glob.coopSessionActive || 
+				glob.loadingASave ||
+				loadingMenuOpened || 
+				isRevived || 
+				reviveIntervalOver || 
+				coopActor->IsDead()
+			);
 		}
 
-		SPDLOG_DEBUG("[P] DownedStateCountdownTask: Stopped downed countdown for {}. Reason: session ended: {}, is dead: {}, is revived: {}, revive window over: {} ({} : {})",
-			coopActor->GetName(), !glob.coopSessionActive, coopActor->IsDead(), isRevived, reviveIntervalOver,
-			secsDowned, Settings::fSecsUntilDownedDeath);
+		SPDLOG_DEBUG
+		(
+			"[P] DownedStateCountdownTask: Stopped downed countdown for {}. "
+			"Reason: session ended: {} (loading screen open: {}, loading a save: {}), "
+			"is dead: {}, is revived: {}, revive window over: {} ({} : {})",
+			coopActor->GetName(), 
+			!glob.coopSessionActive,
+			loadingMenuOpened,
+			glob.loadingASave,
+			coopActor->IsDead(), 
+			isRevived, 
+			reviveIntervalOver,
+			secsDowned,
+			Settings::fSecsUntilDownedDeath
+		);
+
+		if (glob.loadingASave)
+		{
+			// All data will be re-initialized once the save loads, so nothing to clean up here.
+			SPDLOG_DEBUG
+			(
+				"[P] DownedStateCountdownTask: Stopped downed countdown for {}. "
+				"Game is loading a save file. Skipping cleanup."
+			);
+
+			//// Always reset the paralysis flag.
+			//coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			//// Not revived or downed anymore.
+			//isRevived = isDowned = false;
+			//// Reset revive data.
+			//revivedHealth = secsDowned = 0.0f;
+			//// End co-op session.
+			//GlobalCoopData::TeardownCoopSession(true);
+			return;
+		}
 
 		// Remove all new damaging active effects that could down the player again before this task finishes.
-		Util::AddSyncedTask([this]() {
-			for (auto effect : *coopActor->GetActiveEffectList())
+		Util::AddSyncedTask
+		(
+			[this]() 
 			{
-				if (effect && effect->IsCausingHealthDamage())
+				for (auto effect : *coopActor->GetActiveEffectList())
 				{
-					effect->Dispel(true);
+					if (effect && effect->IsCausingHealthDamage())
+					{
+						effect->Dispel(true);
+					}
 				}
 			}
-		});
+		);
 
 		// Post-revive success/fail tasks.
 		if (glob.coopSessionActive)
@@ -1420,7 +1903,7 @@ namespace ALYSLC
 		// Always reset the paralysis flag.
 		coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 		// Not revived or downed anymore.
-		isRevived = isDowned = false;
+		isRevived = isDowned = isGettingUpAfterRevive = false;
 		// Reset revive data.
 		revivedHealth = secsDowned = 0.0f;
 		// End co-op session.

@@ -301,7 +301,8 @@ namespace ALYSLC
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.
-			// IMPORTANT: InputEvent's 'pad24' member is used to store processing info:
+			// IMPORTANT: 
+			// InputEvent's 'pad24' member is used to store processing info:
 			// 0xC0DAXXXX: event was already filtered and handled here.
 			// 0xXXXXC0DA: proxied P1 input allowed through by this function.
 			// 0xXXXXCA11: emulated P1 input sent by another player from the MIM.
@@ -574,7 +575,7 @@ namespace ALYSLC
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, 
 				const RE::ObjectRefHandle& a_projectileHandle,
-				RE::NiPoint3& a_resultingVelocity, 
+				RE::NiPoint3& a_resultingVelocityOut, 
 				const bool& a_justReleased
 			);
 			// Store the firing player's CID in one outparam (-1 if not by a player), 
@@ -591,7 +592,7 @@ namespace ALYSLC
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, 
 				const RE::ObjectRefHandle& a_projectileHandle,
-				RE::NiPoint3& a_resultingVelocity
+				RE::NiPoint3& a_resultingVelocityOut
 			);
 			// Guide the projectile along a pre-determined trajectory 
 			// towards the computed target intercept position.
@@ -600,7 +601,7 @@ namespace ALYSLC
 			(
 				const std::shared_ptr<CoopPlayer>& a_p,  
 				const RE::ObjectRefHandle& a_projectileHandle, 
-				RE::NiPoint3& a_resultingVelocity
+				RE::NiPoint3& a_resultingVelocityOut
 			);
 			// Direct flame and beam projectiles in a straight line 
 			// directly at the target position.
@@ -608,7 +609,7 @@ namespace ALYSLC
 			(
 				const std::shared_ptr<CoopPlayer>& a_p,
 				const RE::ObjectRefHandle& a_projectileHandle,
-				RE::NiPoint3& a_resultingVelocity
+				RE::NiPoint3& a_resultingVelocityOut
 			);
 		};
 

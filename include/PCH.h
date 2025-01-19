@@ -1,9 +1,9 @@
 #pragma once
 
 // IMPORTANT DEV NOTE: 
-// Ensure 'DEBUGMODE' is not defined before submitting a PR or committing changes.
-#define DEBUGMODE
-#ifdef DEBUGMODE
+// Ensure 'ALYSLC_DEBUG_MODE' is not defined before submitting a PR or committing changes.
+#define ALYSLC_DEBUG_MODE
+#ifdef ALYSLC_DEBUG_MODE
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #else 
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO

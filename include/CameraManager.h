@@ -946,7 +946,8 @@ namespace ALYSLC
 		float camCurrentPitchToFocus;
 		// Current yaw from the camera node to the focus point.
 		float camCurrentYawToFocus;
-		// Focus point Z displacement from the origin point.
+		// Focus point Z displacement from the origin point,
+		// after collisions with world geometry are taken into account.
 		float camHeightOffset;
 		// Interpolation factors for positioning/rotation.
 		// Frame rate dependent and base.

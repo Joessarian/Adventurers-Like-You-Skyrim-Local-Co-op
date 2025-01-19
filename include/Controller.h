@@ -316,6 +316,26 @@ namespace ALYSLC
 			{ GAMEPAD_MASK_RT, DXSC_RT }
 		};
 
+		const std::unordered_map<std::uint8_t, InputAction> GAMEMASK_TO_INPUT_ACTION =
+		{
+			{ GAMEPAD_MASK_DPAD_UP, InputAction::kDPadU },
+			{ GAMEPAD_MASK_DPAD_DOWN, InputAction::kDPadD },
+			{ GAMEPAD_MASK_DPAD_LEFT, InputAction::kDPadL },
+			{ GAMEPAD_MASK_DPAD_RIGHT, InputAction::kDPadR },
+			{ GAMEPAD_MASK_START, InputAction::kStart },
+			{ GAMEPAD_MASK_BACK, InputAction::kBack },
+			{ GAMEPAD_MASK_LEFT_THUMB, InputAction::kLThumb },
+			{ GAMEPAD_MASK_RIGHT_THUMB, InputAction::kRThumb },
+			{ GAMEPAD_MASK_LEFT_SHOULDER, InputAction::kLShoulder },
+			{ GAMEPAD_MASK_RIGHT_SHOULDER, InputAction::kRShoulder },
+			{ GAMEPAD_MASK_A, InputAction::kA },
+			{ GAMEPAD_MASK_B, InputAction::kB },
+			{ GAMEPAD_MASK_X, InputAction::kX },
+			{ GAMEPAD_MASK_Y, InputAction::kY },
+			{ GAMEPAD_MASK_LT, InputAction::kLT },
+			{ GAMEPAD_MASK_RT, InputAction::kRT }
+		};
+
 		const std::unordered_map<std::uint32_t, std::uint32_t> GAMEMASK_TO_XIMASK =
 		{
 			{ GAMEPAD_MASK_DPAD_UP, XINPUT_GAMEPAD_DPAD_UP },

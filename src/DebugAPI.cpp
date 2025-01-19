@@ -32,7 +32,14 @@ namespace ALYSLC
 		requestTimestamp(SteadyClock::now())
 	{ }
 
-	DebugAPILine::DebugAPILine(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs)
+	DebugAPILine::DebugAPILine
+	(
+		glm::vec2 a_from,
+		glm::vec2 a_to,
+		uint32_t a_rgba,
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		from = a_from;
 		to = a_to;
@@ -50,7 +57,13 @@ namespace ALYSLC
 		requestTimestamp(SteadyClock::now())
 	{ }
 
-	DebugAPIPoint::DebugAPIPoint(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs)
+	DebugAPIPoint::DebugAPIPoint
+	(
+		glm::vec2 a_center,
+		uint32_t a_rgba, 
+		float a_size,
+		float a_durationSecs
+	)
 	{
 		center = a_center;
 		rgba = a_rgba;
@@ -69,7 +82,15 @@ namespace ALYSLC
 		requestTimestamp(SteadyClock::now())
 	{ }
 
-	DebugAPIShape::DebugAPIShape(glm::vec2 a_origin, std::vector<glm::vec2> a_offsets, uint32_t a_rgba, bool a_fill, float a_lineThickness, float a_durationSecs)
+	DebugAPIShape::DebugAPIShape
+	(
+		glm::vec2 a_origin, 
+		std::vector<glm::vec2> a_offsets,
+		uint32_t a_rgba, 
+		bool a_fill, 
+		float a_lineThickness,
+		float a_durationSecs
+	)
 	{
 		origin = a_origin;
 		offsets = a_offsets;
@@ -142,7 +163,15 @@ namespace ALYSLC
 				return;
 			}
 
-			DrawShape(hud->uiMovie, shape->origin, shape->offsets, shape->rgba, shape->fill, shape->lineThickness);
+			DrawShape
+			(
+				hud->uiMovie, 
+				shape->origin, 
+				shape->offsets,
+				shape->rgba,
+				shape->fill, 
+				shape->lineThickness
+			);
 			lifetimeSecs = Util::GetElapsedSeconds(shape->requestTimestamp);
 			// Erase zero-duration or expired shapes.
 			if (shape->durationSecs == 0.0f || lifetimeSecs > shape->durationSecs)
@@ -154,7 +183,15 @@ namespace ALYSLC
 		}
 	}
 
-	void DebugAPI::QueueArrow2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueArrow2D
+	(
+		glm::vec2 a_from,
+		glm::vec2 a_to,
+		uint32_t a_rgba,
+		float a_headLength,
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		// Queue a 2D arrow with the given attributes.
 
@@ -163,14 +200,38 @@ namespace ALYSLC
 		// Converging lines at 45 degrees that make up the tip of the arrow.
 		float headRay1Ang = Util::NormalizeAng0To2Pi(arrowAng - PI / 4.0f);
 		float headRay2Ang = Util::NormalizeAng0To2Pi(arrowAng + PI / 4.0f);
-		glm::vec2 headRay1 = a_to - (a_headLength * glm::vec2(cosf(headRay1Ang), sinf(headRay1Ang)));
-		glm::vec2 headRay2 = a_to - (a_headLength * glm::vec2(cosf(headRay2Ang), sinf(headRay2Ang)));
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(a_from, a_to, a_rgba, a_lineThickness, a_durationSecs));
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(headRay1, a_to, a_rgba, a_lineThickness, a_durationSecs));
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(headRay2, a_to, a_rgba, a_lineThickness, a_durationSecs));
+		glm::vec2 headRay1 = 
+		(
+			a_to - 
+			(a_headLength * glm::vec2(cosf(headRay1Ang), sinf(headRay1Ang)))
+		);
+		glm::vec2 headRay2 = 
+		(
+			a_to - (a_headLength * glm::vec2(cosf(headRay2Ang), sinf(headRay2Ang)))
+		);
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(a_from, a_to, a_rgba, a_lineThickness, a_durationSecs)
+		);
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(headRay1, a_to, a_rgba, a_lineThickness, a_durationSecs)
+		);
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(headRay2, a_to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueueArrow3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_headLength, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueArrow3D
+	(
+		glm::vec3 a_from, 
+		glm::vec3 a_to,
+		uint32_t a_rgba,
+		float a_headLength, 
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		// Queue a 3D arrow with the given attributes.
 
@@ -184,24 +245,47 @@ namespace ALYSLC
 		float headRayYaw2 = Util::ConvertAngle(Util::NormalizeAng0To2Pi(arrowYaw + PI / 4.0f));
 		RE::NiPoint3 headRay1NiP3 = Util::RotationToDirectionVect(headRayPitch, headRayYaw1);
 		RE::NiPoint3 headRay2NiP3 = Util::RotationToDirectionVect(headRayPitch, headRayYaw2);
-		glm::vec3 headRay1 = a_to - (a_headLength * glm::vec3(headRay1NiP3.x, headRay1NiP3.y, headRay1NiP3.z));
-		glm::vec3 headRay2 = a_to - (a_headLength * glm::vec3(headRay2NiP3.x, headRay2NiP3.y, headRay2NiP3.z));
+		glm::vec3 headRay1 = 
+		(
+			a_to - (a_headLength * glm::vec3(headRay1NiP3.x, headRay1NiP3.y, headRay1NiP3.z))
+		);
+		glm::vec3 headRay2 = 
+		(
+			a_to - (a_headLength * glm::vec3(headRay2NiP3.x, headRay2NiP3.y, headRay2NiP3.z))
+		);
 
 		// Body ray.
 		glm::vec2 from = WorldToScreenPoint(a_from);
 		glm::vec2 to = WorldToScreenPoint(a_to);
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs));
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 		// Head 1.
 		from = WorldToScreenPoint(headRay1);
 		to = WorldToScreenPoint(a_to);
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs));
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 		// Head 2.
 		from = WorldToScreenPoint(headRay2);
 		to = WorldToScreenPoint(a_to);
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs));
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueueCircle2D(glm::vec2 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueCircle2D
+	(
+		glm::vec2 a_center, 
+		uint32_t a_rgba, 
+		uint32_t a_segments, 
+		float a_radius, 
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		// Queue a 2D circle with the given attributes.
 
@@ -221,12 +305,26 @@ namespace ALYSLC
 					yAxis * sinf(angleDelta * (sideIndex + 1))
 				) * a_radius
 			);
-			linesToDraw.push_back(std::make_unique<DebugAPILine>(lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs));
+			linesToDraw.push_back
+			(
+				std::make_unique<DebugAPILine>
+				(
+					lastVertex, vertex, a_rgba, a_lineThickness, a_durationSecs
+				)
+			);
 			lastVertex = vertex;
 		}
 	}
 
-	void DebugAPI::QueueCircle3D(glm::vec3 a_center, uint32_t a_rgba, uint32_t a_segments, float a_radius, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueCircle3D
+	(
+		glm::vec3 a_center, 
+		uint32_t a_rgba,
+		uint32_t a_segments, 
+		float a_radius, 
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		// Queue a 3D circle with the given attributes.
 
@@ -253,48 +351,100 @@ namespace ALYSLC
 		}
 	}
 
-	void DebugAPI::QueueLine2D(glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueLine2D
+	(
+		glm::vec2 a_from,
+		glm::vec2 a_to,
+		uint32_t a_rgba, 
+		float a_lineThickness,
+		float a_durationSecs
+	)
 	{
 		// Queue a 2D line with the given attributes.
 
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(a_from, a_to, a_rgba, a_lineThickness, a_durationSecs));
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(a_from, a_to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueueLine3D(glm::vec3 a_from, glm::vec3 a_to, uint32_t a_rgba, float a_lineThickness, float a_durationSecs)
+	void DebugAPI::QueueLine3D
+	(
+		glm::vec3 a_from, 
+		glm::vec3 a_to,
+		uint32_t a_rgba, 
+		float a_lineThickness, 
+		float a_durationSecs
+	)
 	{
 		// Queue a 3D line with the given attributes.
 
 		glm::vec2 from = WorldToScreenPoint(a_from);
 		glm::vec2 to = WorldToScreenPoint(a_to);
-		linesToDraw.push_back(std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs));
+		linesToDraw.push_back
+		(
+			std::make_unique<DebugAPILine>(from, to, a_rgba, a_lineThickness, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueuePoint2D(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs)
+	void DebugAPI::QueuePoint2D
+	(
+		glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs
+	)
 	{
 		// Queue a 2D point with the given attributes.
 
-		pointsToDraw.push_back(std::make_unique<DebugAPIPoint>(a_center, a_rgba, a_size, a_durationSecs));
+		pointsToDraw.push_back
+		(
+			std::make_unique<DebugAPIPoint>(a_center, a_rgba, a_size, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueuePoint3D(glm::vec3 a_center, uint32_t a_rgba, float a_size, float a_durationSecs)
+	void DebugAPI::QueuePoint3D
+	(
+		glm::vec3 a_center, uint32_t a_rgba, float a_size, float a_durationSecs
+	)
 	{
 		// Queue a 3D point with the given attributes.
 
 		glm::vec2 center = WorldToScreenPoint(a_center);
-		pointsToDraw.push_back(std::make_unique<DebugAPIPoint>(center, a_rgba, a_size, a_durationSecs));
+		pointsToDraw.push_back
+		(
+			std::make_unique<DebugAPIPoint>(center, a_rgba, a_size, a_durationSecs)
+		);
 	}
 
-	void DebugAPI::QueueShape2D(const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, bool&& a_fill, const float& a_lineThickness, const float& a_durationSecs)
+	void DebugAPI::QueueShape2D
+	(
+		const glm::vec2& a_origin,
+		const std::vector<glm::vec2>& a_offsets, 
+		const uint32_t& a_rgba, 
+		bool&& a_fill, 
+		const float& a_lineThickness, 
+		const float& a_durationSecs
+	)
 	{
 		// Queue a 2D shape with the given attributes.
 
-		shapesToDraw.push_back(std::make_unique<DebugAPIShape>(a_origin, a_offsets, a_rgba, a_fill, a_lineThickness, a_durationSecs));
+		shapesToDraw.push_back
+		(
+			std::make_unique<DebugAPIShape>
+			(
+				a_origin, a_offsets, a_rgba, a_fill, a_lineThickness, a_durationSecs
+			)
+		);
 	}
 
-	void DebugAPI::RotateLine2D(std::pair<glm::vec2, glm::vec2>& a_line, const glm::vec2& a_pivotPoint, const float& a_angle)
+	void DebugAPI::RotateLine2D
+	(
+		std::pair<glm::vec2, 
+		glm::vec2>& a_line,
+		const glm::vec2& a_pivotPoint, 
+		const float& a_angle
+	)
 	{
 		// Rotate the line given by the pair of endpoints
-		// about the tiven pivot point by the desired angle.
+		// about the given pivot point by the desired angle.
 
 		// Shift the line to get its new coordinates relative to the pivot point.
 		a_line.first = a_line.first - a_pivotPoint;
@@ -308,15 +458,22 @@ namespace ALYSLC
 			sinf(a_angle), cosf(a_angle)
 		};
 
-		// Rotate both endpoints and then shift back by the original offset relative to the pivot point.
+		// Rotate both endpoints and then shift back by the original offset 
+		// relative to the pivot point.
 		a_line.first = (rotMat * a_line.first) + a_pivotPoint;
 		a_line.second = (rotMat * a_line.second) + a_pivotPoint;
 	}
 
-	void DebugAPI::RotateLine3D(std::pair<glm::vec4, glm::vec4>& a_line, const glm::vec4& a_pivotPoint, const float& a_pitch, const float& a_yaw)
+	void DebugAPI::RotateLine3D
+	(
+		std::pair<glm::vec4, glm::vec4>& a_line, 
+		const glm::vec4& a_pivotPoint, 
+		const float& a_pitch, 
+		const float& a_yaw
+	)
 	{
 		// Rotate the line given by the pair of endpoints
-		// about the tiven pivot point by the desired pitch and yaw angles.
+		// about the given pivot point by the desired pitch and yaw angles.
 		
 		// Shift the line to get its new coordinates relative to the pivot point.
 		a_line.first = a_line.first - a_pivotPoint;
@@ -330,7 +487,8 @@ namespace ALYSLC
 		rotMat = glm::rotate(rotMat, -a_yaw, glm::vec3(0.0f, 0.0f, 1.0f));
 		rotMat = glm::rotate(rotMat, -a_pitch, glm::vec3(1.0f, 0.0f, 0.0f));
 
-		// Rotate both endpoints and then shift back by the original offset relative to the pivot point.
+		// Rotate both endpoints and then shift back by the original offset 
+		// relative to the pivot point.
 		a_line.first = (rotMat * a_line.first) + a_pivotPoint;
 		a_line.second = (rotMat * a_line.second) + a_pivotPoint;
 	}
@@ -355,9 +513,17 @@ namespace ALYSLC
 		}
 	}
 
-	void DebugAPI::DrawLine(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_from, glm::vec2 a_to, uint32_t a_rgba, float a_lineThickness)
+	void DebugAPI::DrawLine
+	(
+		RE::GPtr<RE::GFxMovieView> a_movie,
+		glm::vec2 a_from,
+		glm::vec2 a_to,
+		uint32_t a_rgba,
+		float a_lineThickness
+	)
 	{
-		// Draw a line of the given color and thickness that connects the given start and end coordinates.
+		// Draw a line of the given color and thickness 
+		// that connects the given start and end coordinates.
 
 		uint32_t rgb = a_rgba >> 8;
 		uint32_t alpha = a_rgba & 0x000000FF;
@@ -371,13 +537,15 @@ namespace ALYSLC
 
 		RE::GFxValue argsEndPos[2]{ a_to.x, a_to.y };
 		a_movie->Invoke("lineTo", nullptr, argsEndPos, 2);
-
 		a_movie->Invoke("endFill", nullptr, nullptr, 0);
 	}
 
 	// Credits to ersh1:
 	// https://github.com/ersh1/TrueHUD/blob/master/src/Scaleform/TrueHUDMenu.cpp#L1744
-	void DebugAPI::DrawPoint(RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_center, uint32_t a_rgba, float a_size)
+	void DebugAPI::DrawPoint
+	(
+		RE::GPtr<RE::GFxMovieView> a_movie, glm::vec2 a_center, uint32_t a_rgba, float a_size
+	)
 	{
 		// Draw a point of the given color and size centered at the given screen position.
 
@@ -423,10 +591,18 @@ namespace ALYSLC
 		a_movie->Invoke("endFill", nullptr, nullptr, 0);
 	}
 
-	void DebugAPI::DrawShape(RE::GPtr<RE::GFxMovieView> a_movie, const glm::vec2& a_origin, const std::vector<glm::vec2>& a_offsets, const uint32_t& a_rgba, const bool& a_fill, const float& a_lineThickness)
+	void DebugAPI::DrawShape
+	(
+		RE::GPtr<RE::GFxMovieView> a_movie,
+		const glm::vec2& a_origin, 
+		const std::vector<glm::vec2>& a_offsets,
+		const uint32_t& a_rgba,
+		const bool& a_fill, 
+		const float& a_lineThickness
+	)
 	{
 		// Draw a filled shape or shape outline of the given color and outline thickness, 
-		// bound by the given points set and centered at the given origin point.
+		// bound by the given points set, and centered at the given origin point.
 
 		uint32_t rgb = a_rgba >> 8;
 		uint32_t alpha = a_rgba & 0x000000FF;
@@ -439,7 +615,10 @@ namespace ALYSLC
 		{
 			// https://homepage.divms.uiowa.edu/~slonnegr/flash/ActionScript2Reference.pdf
 			// Pages 885-887, or search "lineStyle".
-			RE::GFxValue argsLineStyle[8]{ a_lineThickness, rgb, alpha, true, "normal", "none", "miter", 1.414f };
+			RE::GFxValue argsLineStyle[8]
+			{
+				a_lineThickness, rgb, alpha, true, "normal", "none", "miter", 1.414f 
+			};
 			a_movie->Invoke("lineStyle", nullptr, argsLineStyle, 8);
 		}
 
@@ -479,20 +658,26 @@ namespace ALYSLC
 		}
 
 		glm::vec2 screenPoint{ 0.0f, 0.0f };
-		if (RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera(); niCam && niCam.get())
+		RE::NiPointer<RE::NiCamera> niCam = Util::GetNiCamera(); 
+		if (!niCam || !niCam.get())
 		{
-			// Get frame dimensions.
-			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
-			const float rectWidth = fabsf(gRect.right - gRect.left);
-			const float rectHeight = fabsf(gRect.bottom - gRect.top);
-			RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
-
-			float x = 0.0f, y = 0.0f, z = 0.0f;
-			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, ToNiPoint3(a_worldPos), x, y, z, 1e-5f);
-			// Clamp to frame dimensions.
-			screenPoint.x = std::clamp(x, gRect.left, gRect.right);
-			screenPoint.y = std::clamp(y, gRect.top, gRect.bottom);
+			return screenPoint;
 		}
+
+		// Get frame dimensions.
+		RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
+		const float rectWidth = fabsf(gRect.right - gRect.left);
+		const float rectHeight = fabsf(gRect.bottom - gRect.top);
+		RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
+
+		float x = 0.0f, y = 0.0f, z = 0.0f;
+		RE::NiCamera::WorldPtToScreenPt3
+		(
+			niCam->worldToCam, port, ToNiPoint3(a_worldPos), x, y, z, 1e-5f
+		);
+		// Clamp to frame dimensions.
+		screenPoint.x = std::clamp(x, gRect.left, gRect.right);
+		screenPoint.y = std::clamp(y, gRect.top, gRect.bottom);
 
 		return screenPoint;
 	}
@@ -501,22 +686,27 @@ namespace ALYSLC
 	{
 		// Get this menu.
 
-		if (auto ui = RE::UI::GetSingleton(); ui)
+		auto ui = RE::UI::GetSingleton(); 
+		if (!ui)
 		{
-			return ui->GetMenu(DebugOverlayMenu::MENU_NAME);
+			return nullptr;
 		}
-
-		return nullptr;
+		
+		return ui->GetMenu(DebugOverlayMenu::MENU_NAME);
 	}
 
 	DebugOverlayMenu::DebugOverlayMenu()
 	{
-		// Construct the debug menu overlay.
+		// Construct the debug overlay menu.
 
 		auto scaleformManager = RE::BSScaleformManager::GetSingleton();
 		if (!scaleformManager)
 		{
-			SPDLOG_ERROR("[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. ScaleformManager not found.");
+			SPDLOG_ERROR
+			(
+				"[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. "
+				"ScaleformManager not found."
+			);
 			return;
 		}
 
@@ -553,32 +743,41 @@ namespace ALYSLC
 		// Register the debug overlay menu with the UI and then load it.
 
 		SPDLOG_INFO("[DebugAPI] Registering DebugOverlayMenu.");
-		if (auto ui = RE::UI::GetSingleton(); ui)
+		auto ui = RE::UI::GetSingleton(); 
+		if (!ui)
 		{
-			ui->Register(MENU_NAME, Creator);
-			DebugOverlayMenu::Load();
-			SPDLOG_INFO("[DebugAPI] Successfully registered DebugOverlayMenu.");
+			return;
 		}
+
+		ui->Register(MENU_NAME, Creator);
+		DebugOverlayMenu::Load();
+		SPDLOG_INFO("[DebugAPI] Successfully registered DebugOverlayMenu.");
 	}
 
 	void DebugOverlayMenu::Load()
 	{
 		// Load the debug overlay menu.
 
-		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
+		auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+		if (!msgQ)
 		{
-			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
+			return;
 		}
+
+		msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
 	}
 
 	void DebugOverlayMenu::Unload()
 	{
 		// Unload the debug overlay menu.
 
-		if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
+		auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+		if (msgQ)
 		{
-			msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
+			return;
 		}
+		
+		msgQ->AddMessage(MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr);
 	}
 
 	void DebugOverlayMenu::Show(std::string a_source)
@@ -591,10 +790,12 @@ namespace ALYSLC
 			hiddenSources.erase(sourceIdx);
 		}
 
-		if (hiddenSources.empty())
+		if (!hiddenSources.empty())
 		{
-			ToggleVisibility(true);
+			return;
 		}
+
+		ToggleVisibility(true);
 	}
 
 	void DebugOverlayMenu::Hide(std::string a_source)
@@ -607,10 +808,12 @@ namespace ALYSLC
 			hiddenSources.push_back(a_source);
 		}
 
-		if (!hiddenSources.empty())
+		if (hiddenSources.empty())
 		{
-			ToggleVisibility(false);
+			return;
 		}
+
+		ToggleVisibility(false);
 	}
 
 	void DebugOverlayMenu::ToggleVisibility(bool a_mode)
@@ -665,13 +868,16 @@ namespace ALYSLC
 		// Update function called each frame.
 		// Perform all repeating tasks here.
 
-		if (auto ui = RE::UI::GetSingleton(); ui)
+		auto ui = RE::UI::GetSingleton(); 
+		if (!ui)
 		{
-			auto menu = ui->GetMenu(DebugOverlayMenu::MENU_NAME);
-			if (!menu || !menu->uiMovie)
-			{
-				return;
-			}
+			return;
+		}
+		
+		auto menu = ui->GetMenu(DebugOverlayMenu::MENU_NAME);
+		if (!menu || !menu->uiMovie)
+		{
+			return;
 		}
 
 		RE::IMenu::AdvanceMovie(a_interval, a_currentTime);

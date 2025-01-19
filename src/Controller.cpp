@@ -233,7 +233,10 @@ namespace ALYSLC
 		}
 	}
 
-	void ControllerDataHolder::UpdateInputStatesAndMask(const int32_t& a_controllerID, const int32_t& a_playerID)
+	void ControllerDataHolder::UpdateInputStatesAndMask
+	(
+		const int32_t& a_controllerID, const int32_t& a_playerID
+	)
 	{
 		// Update input press/release state data for the controller with the given ID.
 		// The given player ID determines the deadzone for the controller.
