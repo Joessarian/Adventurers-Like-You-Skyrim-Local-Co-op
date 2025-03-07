@@ -16,6 +16,11 @@
 
 namespace ALYSLC
 {
+	static GlobalCoopData& glob = GlobalCoopData::GetSingleton();
+	
+	//================
+	//[Interpolation]:
+	//================
 	float TwoWayInterpData::UpdateInterpolatedValue(const bool& a_directionChangeFlag)
 	{
 		// Update the interpolated value after updating the cached
@@ -30,7 +35,8 @@ namespace ALYSLC
 			valueAtDirectionChange = value;
 			directionChangeFlag = a_directionChangeFlag;
 		}
-		else if ((value == 0.0f && valueAtDirectionChange != 0.0f) || (value == 1.0f && valueAtDirectionChange != 1.0f))
+		else if ((value == 0.0f && valueAtDirectionChange != 0.0f) || 
+				 (value == 1.0f && valueAtDirectionChange != 1.0f))
 		{
 			// Reached an interp endpoint, so save the value
 			// for the next direction change.
@@ -48,13 +54,33 @@ namespace ALYSLC
 			// the remaining distance to the new endpoint on direction change.
 			if (interpToMax)
 			{
-				float secsInterpInterval = std::clamp(secsInterpToMaxInterval * (1.0f - valueAtDirectionChange), 0.0f, secsInterpToMaxInterval);
-				value = Util::InterpolateSmootherStep(valueAtDirectionChange, 1.0f, std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f));
+				float secsInterpInterval = std::clamp
+				(
+					secsInterpToMaxInterval * (1.0f - valueAtDirectionChange),
+					0.0f, 
+					secsInterpToMaxInterval
+				);
+				value = Util::InterpolateSmootherStep
+				(
+					valueAtDirectionChange, 
+					1.0f, 
+					std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
+				);
 			}
 			else if (interpToMin)
 			{
-				float secsInterpInterval = std::clamp(secsInterpToMinInterval * valueAtDirectionChange, 0.0f, secsInterpToMinInterval);
-				value = Util::InterpolateSmootherStep(valueAtDirectionChange, 0.0f, std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f));
+				float secsInterpInterval = std::clamp
+				(
+					secsInterpToMinInterval * valueAtDirectionChange,
+					0.0f,
+					secsInterpToMinInterval
+				);
+				value = Util::InterpolateSmootherStep
+				(
+					valueAtDirectionChange,
+					0.0f,
+					std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
+				);
 			}
 		}
 
@@ -70,7 +96,10 @@ namespace ALYSLC
 			// Real value solutions for the W0 and W-1 branches.
 			// If there is no real solution for a branch, nullopt is returned.
 			using FuncRealSolnPair = std::pair<std::optional<double>, std::optional<double>>;
-			FuncRealSolnPair ApproxRealSolutionBothBranches(const double& a_z, const double& a_precision)
+			FuncRealSolnPair ApproxRealSolutionBothBranches
+			(
+				const double& a_z, const double& a_precision
+			)
 			{
 				// Returns approximate REAL values of both of the Lambert W function's branches 
 				// at the given z value, approximated with the given number of steps.
@@ -86,7 +115,7 @@ namespace ALYSLC
 				const double ez = exp(1) * a_z;
 				// Set starting values for each branch.
 				double init0 = ((ez) / (1 + ez + sqrt(1 + ez))) * (log(1 + sqrt(1 + ez)));
-				double initMin1{ -0.25f };
+				double initMin1{ -0.25 };
 				if (a_z <= -0.25)
 				{
 					initMin1 = -1 - sqrt(2 * (1 + ez));
@@ -100,7 +129,14 @@ namespace ALYSLC
 				return RunApprox(ApproxMethod::kNewton, init0, initMin1, a_z, a_precision);
 			}
 
-			FuncRealSolnPair RunApprox(ApproxMethod&& a_method, const double& a_init0, const double& a_initMin1, const double& a_z, const double& a_precision)
+			FuncRealSolnPair RunApprox
+			(
+				ApproxMethod&& a_method,
+				const double& a_init0, 
+				const double& a_initMin1,
+				const double& a_z, 
+				const double& a_precision
+			)
 			{
 				// Helper function to get real solutions for both branches 
 				// of the Lambert W function using the given data.
@@ -199,7 +235,11 @@ namespace ALYSLC
 				const double dExpWn = a_wn * exp(a_wn);
 				return 
 				{
-					a_wn - ((dExpWn - a_z) / (expWn * (a_wn + 1) - ((a_wn + 2) * (dExpWn - a_z) / (2 * a_wn + 2))))
+					a_wn - 
+					(
+						(dExpWn - a_z) / 
+						(expWn * (a_wn + 1) - ((a_wn + 2) * (dExpWn - a_z) / (2 * a_wn + 2)))
+					)
 				};
 			}
 
@@ -227,37 +267,50 @@ namespace ALYSLC
 		{
 			// Run a task using one of the game's task threads.
 			// Return only after the task finishes.
-			// NOTE: Do not add a synced task from one of the game's own threads,
+			// NOTE: 
+			// Do not add a synced task from one of the game's own threads,
 			// as this will lock up the main thread and freeze the game.
 
-			if (const auto taskInterface = SKSE::GetTaskInterface(); taskInterface)
+			const auto taskInterface = SKSE::GetTaskInterface(); 
+			if (!taskInterface)
 			{
-				std::atomic_bool taskDone{ false };
-				// Queue a task through a regular or UI task pool thread.
-				if (!a_isUITask)
-				{
-					taskInterface->AddTask(
-						[&]() {
-							a_func();
-							taskDone.store(true);
-							taskDone.notify_all();
-						});
-					taskDone.wait(false);
-				}
-				else
-				{
-					taskInterface->AddUITask(
-						[&]() {
-							a_func();
-							taskDone.store(true);
-							taskDone.notify_all();
-						});
-					taskDone.wait(false);
-				}
+				return;
+			}
+
+			std::atomic_bool taskDone{ false };
+			// Queue a task through a regular or UI task pool thread.
+			if (a_isUITask)
+			{
+				taskInterface->AddUITask
+				(
+					[&]() 
+					{
+						a_func();
+						taskDone.store(true);
+						taskDone.notify_all();
+					}
+				);
+				taskDone.wait(false);
+			}
+			else
+			{
+				taskInterface->AddTask
+				(
+					[&]()
+					{
+						a_func();
+						taskDone.store(true);
+						taskDone.notify_all();
+					}
+				);
+				taskDone.wait(false);
 			}
 		}
 
-		void ChangeFormFavoritesStatus(RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite)
+		void ChangeFormFavoritesStatus
+		(
+			RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite
+		)
 		{
 			// Change the form in the actor's inventory to favorited/unfavorited.
 
@@ -277,13 +330,13 @@ namespace ALYSLC
 				if (a_shouldFavorite) 
 				{
 					magicFavorites->SetFavorite(a_form);
-					SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited {}.",
+					SPDLOG_DEBUG("[Util] ChangeFormFavoritesStatus: {}: Favorited {}.",
 						a_actor->GetName(), a_form->GetName());
 				}
 				else
 				{
 					magicFavorites->RemoveFavorite(a_form);
-					SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}.",
+					SPDLOG_DEBUG("[Util] ChangeFormFavoritesStatus: {}: Unfavorited {}.",
 						a_actor->GetName(), a_form->GetName());
 				}
 			}
@@ -300,65 +353,87 @@ namespace ALYSLC
 				for (auto& [boundObj, entryDataPair] : inventory)
 				{
 					const auto& [count, ied] = entryDataPair;
-					if (boundObj && boundObj == a_form &&
-						count > 0 && ied && ied.get())
+					if (!boundObj || 
+						boundObj != a_form ||
+						count <= 0 || 
+						!ied || 
+						!ied.get())
 					{
-						// Exists and has a non-zero count.
-						if (ied->extraLists)
-						{
-							for (auto exDataList : *ied->extraLists)
-							{
-								if (exDataList && exDataList->HasType(RE::ExtraDataType::kHotkey))
-								{
-									// Unfavorite only if extra hotkey data is present.
-									if (!a_shouldFavorite)
-									{
-										NativeFunctions::Unfavorite(inventoryChanges, ied.get(), exDataList);
-										SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.",
-											a_actor->GetName(), a_form->GetName(), !ied->IsFavorited());
-									}
-
-									// Return once extra hotkey data found,
-									// since this is the condition indicating
-									// that the item is already favorited or is now unfavorited.
-									return;
-								}
-							}
-
-							// Favorite only if not previously favorited.
-							if (a_shouldFavorite)
-							{
-								NativeFunctions::Favorite
-								(
-									inventoryChanges,
-									ied.get(),
-									!ied->extraLists->empty() ?
-									ied->extraLists->front() :
-									 nullptr
-								);
-								SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
-									a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
-							}
-						}
-						else if (a_shouldFavorite)
-						{
-							// Favorite the form right away because
-							// there is no extra data at all for this item.
-							NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
-							SPDLOG_DEBUG("[EM] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
-								a_actor->GetName(), a_form->GetName(), ied->IsFavorited());
-						}
-
-						// Item found.
-						// At this point, there is no reason to continue
-						// checking the actor's inventory.
-						return;
+						continue;
 					}
+
+					// Exists and has a non-zero count.
+					if (ied->extraLists)
+					{
+						for (auto exDataList : *ied->extraLists)
+						{
+							if (!exDataList || !exDataList->HasType(RE::ExtraDataType::kHotkey))
+							{
+								continue;
+							}
+
+							// Unfavorite only if extra hotkey data is present.
+							if (!a_shouldFavorite)
+							{
+								NativeFunctions::Unfavorite
+								(
+									inventoryChanges, ied.get(), exDataList
+								);
+								SPDLOG_DEBUG
+								(
+									"[Util] ChangeFormFavoritesStatus: {}: Unfavorited {}: {}.",
+									a_actor->GetName(), a_form->GetName(), !ied->IsFavorited()
+								);
+							}
+
+							// Return once extra hotkey data found,
+							// since this is the condition indicating
+							// that the item is already favorited or is now unfavorited.
+							return;
+						}
+
+						// Favorite only if not previously favorited.
+						if (a_shouldFavorite)
+						{
+							NativeFunctions::Favorite
+							(
+								inventoryChanges,
+								ied.get(),
+								!ied->extraLists->empty() ?
+								ied->extraLists->front() :
+									nullptr
+							);
+							SPDLOG_DEBUG
+							(
+								"[Util] ChangeFormFavoritesStatus: {}: Favorited {}: {}.",
+								a_actor->GetName(), a_form->GetName(), ied->IsFavorited()
+							);
+						}
+					}
+					else if (a_shouldFavorite)
+					{
+						// Favorite the form right away because
+						// there is no extra data at all for this item.
+						NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
+						SPDLOG_DEBUG
+						(
+							"[Util] ChangeFormFavoritesStatus: {}: Favorited new {}: {}.",
+							a_actor->GetName(), a_form->GetName(), ied->IsFavorited()
+						);
+					}
+
+					// Item found.
+					// At this point, there is no reason to continue
+					// checking the actor's inventory.
+					return;
 				}
 			}
 		}
 
-		void ChangeFormHotkeyStatus(RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet)
+		void ChangeFormHotkeyStatus
+		(
+			RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet
+		)
 		{
 			// Add/remove hotkey to the given form for the given actor.
 			// Set -1 as the hotkey index to remove the hotkey.
@@ -372,7 +447,6 @@ namespace ALYSLC
 			auto magicFavorites = RE::MagicFavorites::GetSingleton();
 			if (!magicFavorites)
 			{
-				SPDLOG_DEBUG("[EM] ERR: ChangeFormHotkeyStatus: {}: Magic favorites invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -381,28 +455,42 @@ namespace ALYSLC
 
 			for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
 			{
-				// Request to clear and the requested form was found, so clear out.
+				// Request to clear and the requested form was found, so clear out the hotkey.
 				if (a_hotkeySlotToSet == -1 && magicFavorites->hotkeys[i] == a_form)
 				{
-					SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
-						a_actor->GetName(), a_form->GetName(), i + 1);
-					magicFavorites->hotkeys[i] = nullptr;
+					SPDLOG_DEBUG
+					(
+						"[Util] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
+						a_actor->GetName(), a_form->GetName(), i + 1
+					);
 				}
 				else if (a_hotkeySlotToSet != -1 && i == a_hotkeySlotToSet)
 				{
-					// Request to set and the requested form is magical, so set this slot to the form.
+					// Request to set and the requested form is magical,
+					// so set this slot to the form.
 					if (formIsMagical)
 					{
-						SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
-							a_actor->GetName(), a_form->GetName(), i + 1);
+						SPDLOG_DEBUG
+						(
+							"[Util] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
+							a_actor->GetName(), a_form->GetName(), i + 1
+						);
 						magicFavorites->hotkeys[i] = a_form;
 					}
 					else if (magicFavorites->hotkeys[i])
 					{
 						// Request to set but the requested form is not magical, so clear the slot.
 						// Still have to look for the form among the actor's physical favorites.
-						SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
-							a_actor->GetName(), magicFavorites->hotkeys[i]->GetName(), i + 1, a_form->GetName());
+						SPDLOG_DEBUG
+						(
+							"[Util] ChangeFormHotkeyStatus: {}: "
+							"Removed MAG {} from hotkey slot {}, "
+							"since we want to set PHYS {} as the new hotkeyed form.",
+							a_actor->GetName(),
+							magicFavorites->hotkeys[i]->GetName(), 
+							i + 1,
+							a_form->GetName()
+						);
 						magicFavorites->hotkeys[i] = nullptr;
 					}
 				}
@@ -411,7 +499,6 @@ namespace ALYSLC
 			auto inventoryChanges = a_actor->GetInventoryChanges();
 			if (!inventoryChanges)
 			{
-				SPDLOG_DEBUG("[EM] ERR: ChangeFormHotkeyStatus: {}: Inventory changes invalid.", a_actor->GetName());
 				return;
 			}
 
@@ -420,76 +507,105 @@ namespace ALYSLC
 			for (auto& [boundObj, entryDataPair] : inventory)
 			{
 				const auto& [count, ied] = entryDataPair;
-				if (boundObj && count > 0 && ied && ied.get())
+				if (!boundObj || count <= 0 || !ied || !ied.get())
 				{
-					// Exists and has a non-zero count.
+					continue;
+				}
 
-					// No exralists, so no possibility of being favorited, continue.
-					if (!ied->extraLists)
+				// Exists and has a non-zero count, but no exralists, 
+				// so no possibility of being favorited, continue.
+				if (!ied->extraLists)
+				{
+					continue;
+				}
+
+				for (auto exDataList : *ied->extraLists)
+				{
+					// No extra data list, not favorited.
+					if (!exDataList)
 					{
 						continue;
 					}
 
-					for (auto exDataList : *ied->extraLists)
+					auto exHotkeyData = exDataList->GetByType<RE::ExtraHotkey>();
+					// No ExtraHotkey data, can't be favorited.
+					if (!exHotkeyData)
 					{
-						// No extra data list, not favorited.
-						if (!exDataList)
-						{
-							continue;
-						}
+						continue;
+					}
 
-						auto exHotkeyData = exDataList->GetByType<RE::ExtraHotkey>();
-						// No extrahotkey data, can't be favorited.
-						if (!exHotkeyData)
+					const auto hotkeySlot = (int32_t)(*exHotkeyData->hotkey);
+					// Request to remove hotkey and the form was found with an assigned hotkey,
+					// so unbind it.
+					if (a_hotkeySlotToSet == -1 && boundObj == a_form && hotkeySlot != -1) 
+					{
+						exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+						SPDLOG_DEBUG
+						(
+							"[Util] ChangeFormHotkeyStatus: {}: "
+							"Removed PHYS {} from hotkey slot {}.",
+							a_actor->GetName(), a_form->GetName(), hotkeySlot + 1
+						);
+						// Already removed the hotkey, so there's nothing more to do.
+						return;
+					}
+					else if (a_hotkeySlotToSet != -1)
+					{
+						// NOTE: 
+						// We don't return early after setting/removing hotkeys from physical forms
+						// because multiple physical forms can be bound to the same hotkey slot
+						// and we have to ensure that we remove the hotkey slot bindings 
+						// for all other forms that share the same requested slot.
+						// Unfortunately, this means we have to traverse the entire inventory.
+						if (hotkeySlot == a_hotkeySlotToSet) 
 						{
-							continue;
-						}
-
-						const auto hotkeySlot = (int32_t)(*exHotkeyData->hotkey);
-						// Request to remove hotkey and the form was found with an assigned hotkey,
-						// so unbind it.
-						if (a_hotkeySlotToSet == -1 && boundObj == a_form && hotkeySlot != -1) 
-						{
-							exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
-							SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}.",
-								a_actor->GetName(), a_form->GetName(), hotkeySlot + 1);
-							// Already added/removed the hotkey, so there's nothing more to do.
-							return;
-						}
-						else if (a_hotkeySlotToSet != -1)
-						{
-							// NOTE: We don't return early after setting/removing hotkeys from physical forms
-							// because multiple physical forms can be bound to the same hotkey slot
-							// and we have to ensure that we remove the hotkey slot bindings 
-							// for all other forms that share the same requested slot.
-							// Unfortunately, this means we have to traverse the entire inventory.
-							if (hotkeySlot == a_hotkeySlotToSet) 
+							// Form is already hotkeyed with the requested slot.
+							if (boundObj != a_form)
 							{
-								// Request to set and the requested form is magical,
-								// so since we've found a physical form with the requested hotkey slot,
-								// we'll clear the slot.
-								if (boundObj != a_form)
+								if (formIsMagical) 
 								{
-									if (formIsMagical) 
-									{
-										SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set MAG {} as the new hotkeyed form.",
-											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
-									}
-									else
-									{
-										SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Removed PHYS {} from hotkey slot {}, since we want to set PHYS {} as the new hotkeyed form.",
-											a_actor->GetName(), boundObj->GetName(), hotkeySlot + 1, a_form->GetName());
-									}
-
-									exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+									SPDLOG_DEBUG
+									(
+										"[Util] ChangeFormHotkeyStatus: {}: "
+										"Removed PHYS {} from hotkey slot {}, "
+										"since we want to set MAG {} as the new hotkeyed form.",
+										a_actor->GetName(), 
+										boundObj->GetName(), 
+										hotkeySlot + 1,
+										a_form->GetName()
+									);
 								}
+								else
+								{
+									SPDLOG_DEBUG
+									(
+										"[Util] ChangeFormHotkeyStatus: {}: "
+										"Removed PHYS {} from hotkey slot {}, "
+										"since we want to set PHYS {} as the new hotkeyed form.",
+										a_actor->GetName(),
+										boundObj->GetName(),
+										hotkeySlot + 1, 
+										a_form->GetName()
+									);
+								}
+
+								exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
 							}
-							else if (boundObj == a_form)
-							{
-								SPDLOG_DEBUG("[EM] ChangeFormHotkeyStatus: {}: Added PHYS {} to hotkey slot {}.",
-									a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1);
-								exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>(a_hotkeySlotToSet);
-							}
+						}
+						else if (boundObj == a_form)
+						{
+							// This requested form is not hotkeyed in the same slot as requested,
+							// so we can directly set its hotkey slot to the requested one.
+							SPDLOG_DEBUG
+							(
+								"[Util] ChangeFormHotkeyStatus: {}: "
+								"Added PHYS {} to hotkey slot {}.",
+								a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1
+							);
+							exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>
+							(
+								a_hotkeySlotToSet
+							);
 						}
 					}
 				}
@@ -555,6 +671,7 @@ namespace ALYSLC
 			if (a_actor->IsPlayerRef()) 
 			{
 				// Call actor add/remove perk function for P1.
+				// Does not function for NPCs.
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				if (p1)
 				{
@@ -569,6 +686,7 @@ namespace ALYSLC
 				}
 			}
 
+			// Then check if the perk was applied/removed as requested.
 			return
 			(
 				a_add ?
@@ -586,7 +704,11 @@ namespace ALYSLC
 			float&& a_lengthMult
 		)
 		{
-			if (!a_actor)
+			// Using Precision, construct a collider around the given node
+			// via sending an animation event with annotations derived from the given type.
+			// Can also modify the damage applied on hit and the length of the collider.
+
+			if (!a_actor || !PrecisionCompat::g_precisionInstalled)
 			{
 				return;
 			}
@@ -607,12 +729,15 @@ namespace ALYSLC
 				return;
 			}
 
-			RE::BSTEventSource<RE::BSAnimationGraphEvent>* eventSource = 
-				manager->graphs[activeGraphIdx].get();
+			RE::BSTEventSource<RE::BSAnimationGraphEvent>* eventSource = 	
+			(
+				manager->graphs[activeGraphIdx].get()
+			);
 			switch (a_reqType)
 			{
 			case (PrecisionAnnotationReqType::kStart):
 			{
+				// Signal that colliders will be added.
 				auto event = std::make_unique<RE::BSAnimationGraphEvent>
 				(
 					"Collision_AttackStart", 
@@ -626,6 +751,7 @@ namespace ALYSLC
 			}
 			case (PrecisionAnnotationReqType::kAdd):
 			{
+				// Add collider to the given node. Can specify damage and collider length.
 				if (!a_node) 
 				{
 					return;
@@ -648,6 +774,7 @@ namespace ALYSLC
 			}
 			case (PrecisionAnnotationReqType::kRemove):
 			{
+				// Remove a collider from the given node.
 				if (!a_node) 
 				{
 					return;
@@ -666,6 +793,7 @@ namespace ALYSLC
 			}
 			case (PrecisionAnnotationReqType::kRemoveAll):
 			{
+				// Remove all added colliders.
 				auto event = std::make_unique<RE::BSAnimationGraphEvent>
 				(
 					"Collision_AttackEnd", 
@@ -679,6 +807,7 @@ namespace ALYSLC
 			}
 			case (PrecisionAnnotationReqType::kMultiHit):
 			{
+				// Continue listening for collisions even after the collider(s) hit something.
 				if (!a_node) 
 				{
 					return;
@@ -702,17 +831,24 @@ namespace ALYSLC
 			}
 		}
 
-		RE::ThumbstickEvent* CreateThumbstickEvent(const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS)
+		RE::ThumbstickEvent* CreateThumbstickEvent
+		(
+			const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS
+		)
 		{
-			// Create thumbstick event using the provided data
+			// Create and return a thumbstick event using the provided data
 			// and return it.
-			// NOTE: Must be free'd by the caller.
+			// NOTE: 
+			// Must be free'd by the caller. Ideally, wrap in a smart ptr first.
 
 			auto thumbstickEvent = RE::malloc<RE::ThumbstickEvent>(sizeof(RE::ThumbstickEvent));
 			std::memset(thumbstickEvent, 0, sizeof(RE::ThumbstickEvent));
 			if (thumbstickEvent)
 			{
-				reinterpret_cast<std::uintptr_t*>(thumbstickEvent)[0] = RE::VTABLE_ThumbstickEvent[0].address();
+				reinterpret_cast<std::uintptr_t*>(thumbstickEvent)[0] = 
+				(
+					RE::VTABLE_ThumbstickEvent[0].address()
+				);
 				thumbstickEvent->device = RE::INPUT_DEVICE::kGamepad;
 				thumbstickEvent->eventType = RE::INPUT_EVENT_TYPE::kThumbstick;
 				thumbstickEvent->next = nullptr;
@@ -731,8 +867,34 @@ namespace ALYSLC
 
 			return thumbstickEvent;
 		}
+
+		void EnableCollisionForActor(RE::Actor* a_actor)
+		{
+			// Enable collisions for the given actor by setting their collision layer to 'Biped'.
+			if (!a_actor)
+			{
+				return;
+			}
+
+			a_actor->SetCollision(true);
+			auto actor3DPtr = GetRefr3D(a_actor);
+			if (!actor3DPtr || !actor3DPtr.get())
+			{
+				return;
+			}
+
+			// Change collision layer back to 'Biped'.
+			actor3DPtr->SetCollisionLayer(RE::COL_LAYER::kBiped);
+		}
 	
-		void ForEachReferenceInCellWithinRange(RE::TESObjectCELL* a_cell, RE::NiPoint3 a_originPos, float a_radius, const bool& a_use3DDist, std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback)
+		void ForEachReferenceInCellWithinRange
+		(
+			RE::TESObjectCELL* a_cell,
+			RE::NiPoint3 a_originPos, 
+			float a_radius,
+			const bool& a_use3DDist, 
+			std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback
+		)
 		{
 			// Modified version of TESObjectCELL's ForEachReferenceInRange() function
 			// to use cell refr's 3D center positions instead of the refr data world positions.
@@ -764,13 +926,20 @@ namespace ALYSLC
 			);
 		}
 
-		void ForEachReferenceInRange(RE::NiPoint3 a_originPos, float a_radius, const bool& a_use3DDist, std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback)
+		void ForEachReferenceInRange
+		(
+			RE::NiPoint3 a_originPos, 
+			float a_radius,
+			const bool& a_use3DDist, 
+			std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback
+		)
 		{
 			// Credits to Ryan for the CommonLibSSE TES::ForEachReferenceInRange() function,
 			// and Shrimperator for their adaptation of the function 
 			// to use an origin position instead of an origin reference:
 			// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection/-/blob/main/src/lib/Util.cpp
-			// NOTE: Cannot queue tasks in the passed filter function. Game will freeze.
+			// NOTE: 
+			// Do not queue tasks in the passed filter function. Game will freeze.
 
 			auto tes = RE::TES::GetSingleton();
 			if (tes->interiorCell)
@@ -788,7 +957,8 @@ namespace ALYSLC
 			else
 			{
 				// Check attached grid cells' refrs within radius of the origin point.
-				if (const auto gridLength = tes->gridCells ? tes->gridCells->length : 0; gridLength > 0)
+				const auto gridLength = tes->gridCells ? tes->gridCells->length : 0; 
+				if (gridLength > 0)
 				{
 					const float yPlus = a_originPos.y + a_radius;
 					const float yMinus = a_originPos.y - a_radius;
@@ -802,26 +972,32 @@ namespace ALYSLC
 						do
 						{
 							auto cell = tes->gridCells->GetCell(x, y);
-							if (cell && cell->IsAttached())
+							if (!cell || !cell->IsAttached())
 							{
-								const auto cellCoords = cell->GetCoordinates();
-								if (cellCoords)
-								{
-									const RE::NiPoint2 worldPos{ cellCoords->worldX, cellCoords->worldY };
-									// Cell is within range of the origin position.
-									if (worldPos.x < xPlus && (worldPos.x + 4096.0f) > xMinus && 
-										worldPos.y < yPlus && (worldPos.y + 4096.0f) > yMinus)
+								++y;
+								continue;
+							}
+
+							const auto cellCoords = cell->GetCoordinates();
+							if (!cellCoords)
+							{
+								++y;
+								continue;
+							}
+
+							const RE::NiPoint2 worldPos{ cellCoords->worldX, cellCoords->worldY };
+							// Cell is within range of the origin position.
+							if (worldPos.x < xPlus && (worldPos.x + 4096.0f) > xMinus && 
+								worldPos.y < yPlus && (worldPos.y + 4096.0f) > yMinus)
+							{
+								ForEachReferenceInCellWithinRange
+								(
+									cell, a_originPos, a_radius, a_use3DDist, 
+									[&](RE::TESObjectREFR* a_refr) 
 									{
-										ForEachReferenceInCellWithinRange
-										(
-											cell, a_originPos, a_radius, a_use3DDist, 
-											[&](RE::TESObjectREFR* a_refr) 
-											{
-												return a_callback(a_refr);
-											}
-										);
+										return a_callback(a_refr);
 									}
-								}
+								);
 							}
 
 							++y;
@@ -846,7 +1022,13 @@ namespace ALYSLC
 			}
 		}
 
-		float GetActorPixelHeight(RE::Actor* a_actor, const RE::NiPoint3& a_headWorldPos, const RE::NiPoint3& a_centerWorldPos, const RE::NiPoint3& a_boundExtents)
+		float GetActorPixelHeight
+		(
+			RE::Actor* a_actor,
+			const RE::NiPoint3& a_headWorldPos,
+			const RE::NiPoint3& a_centerWorldPos,
+			const RE::NiPoint3& a_boundExtents
+		)
 		{
 			// Get a very rough approximation of the actor's height in pixels on the screen.
 
@@ -856,18 +1038,61 @@ namespace ALYSLC
 				return 1.0f;
 			}
 
-			auto& glob = GlobalCoopData::GetSingleton();
-			float camPitch = glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x;
-			float camYaw = glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw;
+			float camPitch = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x
+			);
+			float camYaw = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw
+			);
 			// Up relative to the camera's facing direction.
-			auto camUp = RotationToDirectionVect(NormalizeAngToPi(PI / 2.0f - camPitch), ConvertAngle(NormalizeAng0To2Pi(camYaw)));
+			auto camUp = RotationToDirectionVect
+			(
+				NormalizeAngToPi(PI / 2.0f - camPitch), ConvertAngle(NormalizeAng0To2Pi(camYaw))
+			);
 
 			// Maximum/minimum local half extents relative to the camera's up direction.
-			auto extentsMin = RE::NiPoint3(-camUp.x * a_boundExtents.x, -camUp.y * a_boundExtents.y, -camUp.z * a_boundExtents.z) / 2.0f;
-			auto extentsMax = RE::NiPoint3(camUp.x * a_boundExtents.x, camUp.y * a_boundExtents.y, camUp.z * a_boundExtents.z) / 2.0f;
+			auto extentsMin = 
+			(
+				RE::NiPoint3
+				(
+					-camUp.x * a_boundExtents.x,
+					-camUp.y * a_boundExtents.y, 
+					-camUp.z * a_boundExtents.z
+				) / 2.0f
+			);
+			auto extentsMax = 
+			(
+				RE::NiPoint3
+				(
+					camUp.x * a_boundExtents.x,
+					camUp.y * a_boundExtents.y, 
+					camUp.z * a_boundExtents.z
+				) / 2.0f
+			);
 			// Get the world position equivalents.
 			RE::NiPoint3 minExtent = a_centerWorldPos + extentsMin;
 			RE::NiPoint3 maxExtent = a_centerWorldPos + extentsMax;
+
+			// REMOVE when done debugging.
+			/*DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(minExtent),
+				0x00FF00FF,
+				5.0f,
+				2.0f
+			);
+			DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(maxExtent),
+				0xFF0000FF,
+				5.0f,
+				2.0f
+			);*/
+
 			// And the screen positions.
 			auto minScreenExtent = WorldToScreenPoint3(minExtent, false);
 			auto maxScreenExtent = WorldToScreenPoint3(maxExtent, false);
@@ -875,7 +1100,12 @@ namespace ALYSLC
 			return max(1.0f, minScreenExtent.GetDistance(maxScreenExtent));
 		}
 
-		float GetActorPixelWidth(RE::Actor* a_actor, const RE::NiPoint3& a_centerWorldPos, const RE::NiPoint3& a_boundExtents)
+		float GetActorPixelWidth
+		(
+			RE::Actor* a_actor,
+			const RE::NiPoint3& a_centerWorldPos, 
+			const RE::NiPoint3& a_boundExtents
+		)
 		{
 			// Get a very rough approximation of the actor's width in pixels on the screen.
 
@@ -885,33 +1115,69 @@ namespace ALYSLC
 				return 1.0f;
 			}
 			
-			auto& glob = GlobalCoopData::GetSingleton();
-			float camPitch = glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x;
-			float camYaw = glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw;
+			float camPitch = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x
+			);
+			float camYaw = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw
+			);
 			// Right relative to the camera's facing direction.
-			auto camRight = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw + PI / 2.0f)));
+			auto camRight = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw + PI / 2.0f))
+			);
 
 			// Actor/camera facing directions at a flat pitch.
-			auto actorYawDir = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(a_actor->data.angle.z)));
-			auto camYawDir = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw)));
+			auto actorYawDir = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(a_actor->data.angle.z))
+			);
+			auto camYawDir = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw))
+			);
 			auto angDiff = acosf(camYawDir.Dot(actorYawDir));
 			// When lined up with the camera's facing direction,
 			// the actor's X axis lines up with the camera's,
 			// and likewise, when the actor is facing 90 degrees
 			// relative to the camera's facing direction,
 			// the actor's Y axis lines up with the camera's.
-			auto extentsHalfXYLength = RE::NiPoint3
+			auto extentsHalfXYLength = 
 			(
-				fabsf(cosf(angDiff)) * a_boundExtents.x, 
-				fabsf(sinf(angDiff)) * a_boundExtents.y, 
-				0.0f
-			).Length() / 2.0f;
+				RE::NiPoint3
+				(
+					fabsf(cosf(angDiff)) * a_boundExtents.x, 
+					fabsf(sinf(angDiff)) * a_boundExtents.y, 
+					0.0f
+				).Length() / 2.0f
+			);
 			// Get local offsets.
 			auto extentsMin = -camRight * extentsHalfXYLength;
 			auto extentsMax = camRight * extentsHalfXYLength;
 			// Get world positions.
 			RE::NiPoint3 minExtent = a_centerWorldPos + extentsMin;
 			RE::NiPoint3 maxExtent = a_centerWorldPos + extentsMax;
+
+			// REMOVE when done debugging.
+			/*DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(minExtent),
+				0x0000FFFF,
+				5.0f,
+				2.0f
+			);
+			DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(maxExtent),
+				0xFFFF00FF,
+				5.0f,
+				2.0f
+			);*/
+
 			// And screen positions.
 			auto minScreenExtent = WorldToScreenPoint3(minExtent, false);
 			auto maxScreenExtent = WorldToScreenPoint3(maxExtent, false);
@@ -931,7 +1197,6 @@ namespace ALYSLC
 				return skillsArr;
 			}
 
-			auto& glob = GlobalCoopData::GetSingleton();
 			constexpr auto totalSkills = Skill::kTotal;
 			Skill currentSkill = totalSkills;
 			RE::ActorValue currentAV = RE::ActorValue::kNone;
@@ -939,21 +1204,24 @@ namespace ALYSLC
 			{
 				// Skill AVs
 				currentSkill = static_cast<Skill>(i);
-				if (glob.SKILL_TO_AV_MAP.contains(currentSkill))
+				if (!glob.SKILL_TO_AV_MAP.contains(currentSkill))
 				{
-					currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
-					// Enderal companion player skills are hardcoded to start at level 5,
-					// and can't be changed directly since they are auto-calculated when scaled with P1.
-					// Make sure that the base values are at the minimum 15, 
-					// just like P1's skills when starting the game.
-					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
-					{
-						skillsArr[i] = 15.0f;  
-					}
-					else
-					{
-						skillsArr[i] = a_actor->GetBaseActorValue(currentAV);
-					}
+					continue;
+				}
+
+				currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
+				// Enderal companion player skills are hardcoded to start at level 5,
+				// and can't be changed directly since they are auto-calculated
+				// when scaled with P1.
+				// Make sure that the base values are at the minimum 15, 
+				// just like P1's skills when starting the game.
+				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+				{
+					skillsArr[i] = 15.0f;  
+				}
+				else
+				{
+					skillsArr[i] = a_actor->GetBaseActorValue(currentAV);
 				}
 			}
 
@@ -962,36 +1230,47 @@ namespace ALYSLC
 
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis)
 		{
-			// Rough estimates that do NOT rotate the refr's bounding box before calculating width/height.
-			// Get the vertical/horizontal refr bound pixel distance at the current camera orientation.
+			// Rough estimates that do NOT rotate the refr's bounding box 
+			// before calculating width/height.
+			// Get the vertical/horizontal refr bound pixel distance 
+			// at the current camera orientation.
 			// TODO: Improve this calculation, especially for flatter objects and activators.
 
 			if (!a_refr)
 			{
+				// Not zero, which would stall any crosshair passing over the refr.
 				return 1.0f;
 			}
 
-			auto refr3DPtr = Util::GetRefr3D(a_refr);
+			auto refr3DPtr = GetRefr3D(a_refr);
+			bool refr3DValidity = refr3DPtr && refr3DPtr.get();
 			// Handled differently for actors.
 			if (auto asActor = a_refr->As<RE::Actor>(); asActor) 
 			{
 				// Start by getting the head world position 
 				// to compute the upright direction for the actor,
 				// which is the vector from their refr data location to their head.
-				auto headWorldPos = asActor->data.location + RE::NiPoint3(0.0f, 0.0f, asActor->GetHeight());
+				auto headWorldPos = 
+				(
+					asActor->data.location + RE::NiPoint3(0.0f, 0.0f, asActor->GetHeight())
+				);
 				// Head body part.
 				auto headBP = 
 				(
-					(asActor->race && asActor->race->bodyPartData) ? 
+					asActor->race && asActor->race->bodyPartData ? 
 					asActor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kHead] : 
 					nullptr
 				);
+				// Default to world up.
 				auto uprightDir = RE::NiPoint3(0.0f, 0.0f, 1.0f);
-				auto boundExtents = (a_refr->GetBoundMax() - a_refr->GetBoundMin()) * a_refr->GetScale();
+				auto boundExtents = 
+				(
+					(a_refr->GetBoundMax() - a_refr->GetBoundMin()) * a_refr->GetScale()
+				);
 				// Fall back on the refr's radius and height when bound extents are 0.
 				if (boundExtents.Length() == 0.0f)
 				{
-					if (refr3DPtr && refr3DPtr.get())
+					if (refr3DValidity)
 					{
 						boundExtents.x = 
 						boundExtents.y =
@@ -1004,10 +1283,13 @@ namespace ALYSLC
 					}
 				}
 
-				bool useHeadBP = headBP && refr3DPtr && refr3DPtr.get();
+				bool useHeadBP = headBP && refr3DValidity;
 				if (useHeadBP) 
 				{
-					auto headBPPtr = RE::NiPointer<RE::NiAVObject>(refr3DPtr->GetObjectByName(headBP->targetName));
+					auto headBPPtr = RE::NiPointer<RE::NiAVObject>
+					(
+						refr3DPtr->GetObjectByName(headBP->targetName)
+					);
 					useHeadBP = headBPPtr && headBPPtr.get();
 					if (useHeadBP) 
 					{
@@ -1037,27 +1319,38 @@ namespace ALYSLC
 				// Default to half up the actor, then choose the world bound center,
 				// or refr data position offset by half the actor's height/Z bound
 				// in the upright direction calculated earlier.
-				auto centerWorldPos = asActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight());
-				if (refr3DPtr && refr3DPtr.get())
+				auto centerWorldPos = 
+				(
+					asActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+				);
+				if (refr3DValidity)
 				{
 					// Make sure the reported world bound center location is close to 
 					// the corresponding center location based off the refr's location 
 					// before using it as the center position.
-					if (refr3DPtr->worldBound.center.GetDistance(asActor->data.location) < refr3DPtr->worldBound.radius * 2.0f)
+					float dist = refr3DPtr->worldBound.center.GetDistance(asActor->data.location);
+					if (dist < refr3DPtr->worldBound.radius * 2.0f)
 					{
 						centerWorldPos = refr3DPtr->worldBound.center;
 					}
 					else
 					{
-						centerWorldPos = asActor->data.location + uprightDir * (boundExtents.z / 2.0f);
+						centerWorldPos = 
+						(
+							asActor->data.location + uprightDir * (boundExtents.z / 2.0f)
+						);
 					}
 				}
 				else
 				{
-					centerWorldPos = asActor->data.location + uprightDir * asActor->GetHeight() * 0.5f;
+					centerWorldPos = 
+					(
+						asActor->data.location + uprightDir * asActor->GetHeight() * 0.5f
+					);
 				}
 				
-				// NOTE: Obviously an approximation here, 
+				// NOTE: 
+				// For now, obviously an approximation here, 
 				// since we're not rotating the vertical axis
 				// based on the actor's bounding box.
 				if (fabsf(uprightDir.z) >= PI / 4.0f)
@@ -1065,7 +1358,10 @@ namespace ALYSLC
 					// Pitched at an absolute angle >= 45 degrees from horizontal.
 					if (a_vertAxis)
 					{
-						return GetActorPixelHeight(asActor, headWorldPos, centerWorldPos, boundExtents);
+						return GetActorPixelHeight
+						(
+							asActor, headWorldPos, centerWorldPos, boundExtents
+						);
 					}
 					else
 					{
@@ -1082,7 +1378,10 @@ namespace ALYSLC
 					}
 					else
 					{
-						return GetActorPixelHeight(asActor, headWorldPos, centerWorldPos, boundExtents);
+						return GetActorPixelHeight
+						(
+							asActor, headWorldPos, centerWorldPos, boundExtents
+						);
 					}
 				}
 			}
@@ -1093,14 +1392,19 @@ namespace ALYSLC
 				float pitch = -a_refr->data.angle.x;
 				float yaw = ConvertAngle(a_refr->data.angle.z);
 				auto uprightDir = RotationToDirectionVect(pitch + PI / 2.0f, yaw);
-				auto boundExtents = (a_refr->GetBoundMax() - a_refr->GetBoundMin()) * a_refr->GetScale();
+				auto boundExtents = 
+				(
+					(a_refr->GetBoundMax() - a_refr->GetBoundMin()) * a_refr->GetScale()
+				);
 				// Fallback cases for when bound data reports an extent of 0:
 				// 3D radius and height.
 				if (boundExtents.Length() == 0.0f) 
 				{
-					if (refr3DPtr && refr3DPtr.get()) 
+					if (refr3DValidity) 
 					{
-						boundExtents.x = boundExtents.y = boundExtents.z = 2.0f * refr3DPtr->worldBound.radius;
+						boundExtents.x =
+						boundExtents.y = 
+						boundExtents.z = 2.0f * refr3DPtr->worldBound.radius;
 					}
 
 					if (a_refr->GetHeight() != 0.0f) 
@@ -1114,21 +1418,25 @@ namespace ALYSLC
 				auto centerWorldPos = a_refr->data.location + uprightDir * boundExtents.z * 0.5f;
 
 				// If 3D is available, base around the 3D's world bound center instead.
-				if (refr3DPtr && refr3DPtr.get())
+				if (refr3DValidity)
 				{
-					// Make sure reported world bound center location is close to 
+					// Make sure the reported world bound center location is close to 
 					// the corresponding center location based off the refr's location
 					// before using it as the center position.
 					// Some activators seem to have no reported center position 
 					// or have their 3D world bound center position at the world origin (0, 0, 0)
 					// instead of offset from the actual world origin.
-					if (refr3DPtr->worldBound.center.GetDistance(a_refr->data.location) < refr3DPtr->worldBound.radius * 2.0f)
+					float dist = refr3DPtr->worldBound.center.GetDistance(a_refr->data.location);
+					if (dist < refr3DPtr->worldBound.radius * 2.0f)
 					{
 						centerWorldPos = refr3DPtr->worldBound.center;
 					}
 					else
 					{
-						centerWorldPos = a_refr->data.location + uprightDir * (boundExtents.z / 2.0f);
+						centerWorldPos = 
+						(
+							a_refr->data.location + uprightDir * (boundExtents.z / 2.0f)
+						);
 					}
 
 					// Halfway up the refr from the center.
@@ -1138,7 +1446,10 @@ namespace ALYSLC
 				// No swapping of height and width calculations for refrs as of now.
 				if (a_vertAxis)
 				{
-					return GetObjectPixelHeight(a_refr, topExtentWorldPos, centerWorldPos, boundExtents);
+					return GetObjectPixelHeight
+					(
+						a_refr, topExtentWorldPos, centerWorldPos, boundExtents
+					);
 				}
 				else
 				{
@@ -1146,7 +1457,30 @@ namespace ALYSLC
 				}
 			}
 
+			// Fallthrough width/height of 1.
+			// Not zero, which would stall any crosshair passing over the refr.
 			return 1.0f;
+		}
+
+		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D)
+		{
+			// Get the given 3D object's collision layer.
+
+			auto collisionLayer = a_refr3D->GetCollisionLayer();
+			if (collisionLayer == RE::COL_LAYER::kUnidentified)
+			{
+				auto hkpRigidBodyPtr = GethkpRigidBody(a_refr3D);
+				if (hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+				{
+					auto collidable = hkpRigidBodyPtr->GetCollidable();
+					if (collidable)
+					{
+						collisionLayer = collidable->GetCollisionLayer();
+					}
+				}
+			}
+
+			return collisionLayer;
 		}
 
 		RE::NiPoint3 GetEulerAnglesFromRotMatrix(const RE::NiMatrix3& a_matrix)
@@ -1192,10 +1526,14 @@ namespace ALYSLC
 				nullptr
 			);
 			// Get eye world position from the body part first, if available.
-			if (const auto actor3DPtr = Util::GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get() && targetEyeBP)
+			const auto actor3DPtr = GetRefr3D(a_actor); 
+			if (actor3DPtr && actor3DPtr.get() && targetEyeBP)
 			{
-				if (auto targetEyeBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(targetEyeBP->targetName));
-					targetEyeBPPtr && targetEyeBPPtr.get()) 
+				auto targetEyeBPPtr = RE::NiPointer<RE::NiAVObject>
+				(
+					actor3DPtr->GetObjectByName(targetEyeBP->targetName)
+				);
+				if (targetEyeBPPtr && targetEyeBPPtr.get()) 
 				{
 					return targetEyeBPPtr->world.translate;
 				}
@@ -1203,6 +1541,23 @@ namespace ALYSLC
 
 			// Fallback to the actor's 'looking at' location.
 			return a_actor->GetLookingAtLocation();
+		}
+
+		double GetGravitationalConstant()
+		{
+			// Get gravitational constant for P1's current cell.
+
+			double g = Settings::fG * HAVOK_TO_GAME;
+			if (glob.player1Actor && glob.player1Actor.get() && glob.player1Actor->parentCell)
+			{
+				auto bhkWorld = glob.player1Actor->parentCell->GetbhkWorld();
+				if (bhkWorld && bhkWorld->GetWorld1())
+				{
+					g = -bhkWorld->GetWorld1()->gravity.quad.m128_f32[2] * HAVOK_TO_GAME;
+				}
+			}
+
+			return g;
 		}
 
 		RE::hkRefPtr<RE::hkpRigidBody> GethkpRigidBody(RE::NiAVObject* a_node3D)
@@ -1216,24 +1571,38 @@ namespace ALYSLC
 
 			// Wrap in smart pointer first to hopefully
 			// extend the duration of its lifetime until we're done.
-			if (RE::NiPointer<RE::NiAVObject> node3D{ a_node3D }; node3D)
+			RE::NiPointer<RE::NiAVObject> node3DPtr{ a_node3D }; 
+			if (!node3DPtr)
 			{
-				if (auto collisionObject = node3D->GetCollisionObject(); collisionObject)
-				{
-					auto rigidBody = RE::NiPointer<RE::bhkRigidBody>(collisionObject->GetRigidBody());
-					if (rigidBody && rigidBody->referencedObject)
-					{
-						auto refObj = rigidBody->referencedObject;
-						if (auto hkpRigidBody = RE::hkRefPtr<RE::hkpRigidBody>(static_cast<RE::hkpRigidBody*>(refObj.get())); 
-							hkpRigidBody && hkpRigidBody.get())
-						{
-							return hkpRigidBody;
-						}
-					}
-				}
+				return nullptr;
 			}
 
-			return nullptr;
+			auto collisionObject = node3DPtr->GetCollisionObject(); 
+			if (!collisionObject)
+			{
+				return nullptr;
+			}
+
+			auto rigidBodyPtr = RE::NiPointer<RE::bhkRigidBody>(collisionObject->GetRigidBody());
+			if (!rigidBodyPtr || 
+				!rigidBodyPtr.get() || 
+				!rigidBodyPtr->referencedObject ||
+				!rigidBodyPtr->referencedObject.get())
+			{
+				return nullptr;
+			}
+
+			auto hkpRigidBodyPtr = RE::hkRefPtr<RE::hkpRigidBody>
+			(
+				static_cast<RE::hkpRigidBody*>(rigidBodyPtr->referencedObject.get())
+			); 
+			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			{
+				return nullptr;
+			}
+
+			// Finally, a valid rigid body pointer.
+			return hkpRigidBodyPtr;
 		}
 
 		RE::hkRefPtr<RE::hkpRigidBody> GethkpRigidBody(RE::TESObjectREFR* a_refr)
@@ -1244,27 +1613,8 @@ namespace ALYSLC
 			{
 				return nullptr;
 			}
-
-			// Wrap in smart pointer first to hopefully 
-			// extend the duration of its lifetime until we're done.
-			if (auto refr3D = Util::GetRefr3D(a_refr); refr3D)
-			{
-				if (auto collisionObject = refr3D->GetCollisionObject(); collisionObject)
-				{
-					auto rigidBody = RE::NiPointer<RE::bhkRigidBody>(collisionObject->GetRigidBody());
-					if (rigidBody && rigidBody->referencedObject)
-					{
-						auto refObj = rigidBody->referencedObject;
-						if (auto hkpRigidBody = RE::hkRefPtr<RE::hkpRigidBody>(static_cast<RE::hkpRigidBody*>(refObj.get())); 
-							hkpRigidBody && hkpRigidBody.get()) 
-						{
-							return hkpRigidBody;
-						}
-					}
-				}
-			}
-
-			return nullptr;
+			
+			return GethkpRigidBody(a_refr->GetCurrent3D());
 		}
 
 		RE::NiPoint3 GetHeadPosition(RE::Actor* a_actor)
@@ -1277,7 +1627,7 @@ namespace ALYSLC
 			}
 
 			// Get the actor's head body part,
-			// falling back on their eye and look at body part's positions.
+			// falling back on their eye and look-at body part's positions.
 			RE::BGSBodyPart* headBP = nullptr;
 			if (a_actor->race && a_actor->race->bodyPartData && a_actor->race->bodyPartData->parts)
 			{
@@ -1296,7 +1646,7 @@ namespace ALYSLC
 				}
 			}
 
-			const auto actor3DPtr = Util::GetRefr3D(a_actor);
+			const auto actor3DPtr = GetRefr3D(a_actor);
 			if (actor3DPtr && actor3DPtr.get() && headBP)
 			{
 				auto headBPPtr = RE::NiPointer<RE::NiAVObject>
@@ -1314,7 +1664,10 @@ namespace ALYSLC
 			return a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight());
 		}
 
-		std::pair<RE::TESAmmo*, int32_t> GetHighestCountAmmo(RE::Actor* a_actor, const bool& a_forBows)
+		std::pair<RE::TESAmmo*, int32_t> GetHighestCountAmmo
+		(
+			RE::Actor* a_actor, const bool& a_forBows
+		)
 		{
 			// Search the actor's inventory and return a pair 
 			// giving the ammo with the highest count and its count.
@@ -1324,24 +1677,29 @@ namespace ALYSLC
 			std::pair<RE::TESAmmo*, int32_t> ammoAndCount{ nullptr, 0 };
 			for (const auto& [boundObj, count] : inventoryCounts) 
 			{
-				if (boundObj && boundObj->IsAmmo() && count > 0) 
+				if (!boundObj || !boundObj->IsAmmo() || count <= 0) 
 				{
-					auto ammo = boundObj->As<RE::TESAmmo>();
-					bool forBows = a_forBows && !ammo->IsBolt();
-					bool forCrossbows = !a_forBows && ammo->IsBolt();
-					if ((forBows || forCrossbows) && (count > highestCount))
-					{
-						ammoAndCount.first = ammo;
-						ammoAndCount.second = count;
-						highestCount = count;
-					}
+					continue;
+				}
+
+				auto ammo = boundObj->As<RE::TESAmmo>();
+				bool forBows = a_forBows && !ammo->IsBolt();
+				bool forCrossbows = !a_forBows && ammo->IsBolt();
+				if ((forBows || forCrossbows) && (count > highestCount))
+				{
+					ammoAndCount.first = ammo;
+					ammoAndCount.second = count;
+					highestCount = count;
 				}
 			}
 
 			return ammoAndCount;
 		}
 
-		std::pair<RE::TESAmmo*, int32_t> GetHighestDamageAmmo(RE::Actor* a_actor, const bool& a_forBows)
+		std::pair<RE::TESAmmo*, int32_t> GetHighestDamageAmmo
+		(
+			RE::Actor* a_actor, const bool& a_forBows
+		)
 		{
 			// Search the actor's inventory and return a pair
 			// giving the ammo with the highest base damage and its count.
@@ -1351,17 +1709,19 @@ namespace ALYSLC
 			std::pair<RE::TESAmmo*, int32_t> ammoAndCount{ nullptr, 0 };
 			for (const auto& [boundObj, count] : inventoryCounts)
 			{
-				if (boundObj && boundObj->IsAmmo() && count > 0) 
+				if (!boundObj || !boundObj->IsAmmo() || count <= 0) 
 				{
-					auto ammo = boundObj->As<RE::TESAmmo>();
-					bool forBows = a_forBows && !ammo->IsBolt();
-					bool forCrossbows = !a_forBows && ammo->IsBolt();
-					if ((forBows || forCrossbows) && (ammo->data.damage > highestDamage))
-					{
-						ammoAndCount.first = ammo;
-						ammoAndCount.second = count;
-						highestDamage = ammo->data.damage;
-					}
+					continue;
+				}
+
+				auto ammo = boundObj->As<RE::TESAmmo>();
+				bool forBows = a_forBows && !ammo->IsBolt();
+				bool forCrossbows = !a_forBows && ammo->IsBolt();
+				if ((forBows || forCrossbows) && (ammo->data.damage > highestDamage))
+				{
+					ammoAndCount.first = ammo;
+					ammoAndCount.second = count;
+					highestDamage = ammo->data.damage;
 				}
 			}
 
@@ -1387,8 +1747,7 @@ namespace ALYSLC
 
 				for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
 				{
-					auto magForm = magicFavorites->hotkeys[i];
-					if (magForm == a_form)
+					if (magicFavorites->hotkeys[i] == a_form)
 					{
 						return i;
 					}
@@ -1399,7 +1758,7 @@ namespace ALYSLC
 				auto inventory = a_actor->GetInventory();
 				RE::InventoryEntryData* entryData = nullptr;
 				// Iterate through the actor's inventory entries.
-				for (auto& inventoryEntry : inventory)
+				for (const auto& inventoryEntry : inventory)
 				{
 					if (!inventoryEntry.first || inventoryEntry.first != a_form)
 					{
@@ -1407,7 +1766,7 @@ namespace ALYSLC
 					}
 
 					// Found the form.
-					auto& entryExtraLists = inventoryEntry.second.second;
+					const auto& entryExtraLists = inventoryEntry.second.second;
 					if (!entryExtraLists)
 					{
 						continue;
@@ -1419,7 +1778,7 @@ namespace ALYSLC
 						continue;
 					}
 
-					for (auto& exData : *extraLists)
+					for (auto exData : *extraLists)
 					{
 						if (!exData->HasType(RE::ExtraDataType::kHotkey))
 						{
@@ -1442,49 +1801,104 @@ namespace ALYSLC
 
 			// Credits to mwilsnd for the method of obtaining the NiCamera.
 			// https://github.com/mwilsnd/SkyrimSE-SmoothCam/blob/master/SmoothCam/source/camera.cpp#L286
-			if (const auto playerCam = RE::PlayerCamera::GetSingleton(); playerCam) 
+			const auto playerCam = RE::PlayerCamera::GetSingleton(); 
+			if (!playerCam) 
 			{
-				if (playerCam->cameraRoot && playerCam->cameraRoot.get()) 
-				{
-					for (auto child : playerCam->cameraRoot->children) 
-					{
-						if (!child || !child.get())
-						{
-							continue;
-						}
+				return nullptr;
+			}
 
-						auto asNiCamera = skyrim_cast<RE::NiCamera*>(child.get());
-						if (asNiCamera)
-						{
-							return RE::NiPointer<RE::NiCamera>(asNiCamera);
-						}
-					}
+			if (!playerCam->cameraRoot || !playerCam->cameraRoot.get()) 
+			{
+				return nullptr;
+			}
+
+			for (auto child : playerCam->cameraRoot->children) 
+			{
+				if (!child || !child.get())
+				{
+					continue;
+				}
+
+				auto asNiCamera = skyrim_cast<RE::NiCamera*>(child.get());
+				if (asNiCamera)
+				{
+					return RE::NiPointer<RE::NiCamera>(asNiCamera);
 				}
 			}
 
 			return nullptr;
 		}
 
-		float GetObjectPixelHeight(RE::TESObjectREFR* a_refr, const RE::NiPoint3& a_topExtentWorldPos, const RE::NiPoint3& a_centerWorldPos, const RE::NiPoint3& a_boundExtents)
+		float GetObjectPixelHeight
+		(
+			RE::TESObjectREFR* a_refr, 
+			const RE::NiPoint3& a_topExtentWorldPos,
+			const RE::NiPoint3& a_centerWorldPos, 
+			const RE::NiPoint3& a_boundExtents
+		)
 		{
 			// Get a very rough approximation of the refr's width in pixels on the screen.
 
 			if (!a_refr)
 			{
+				// Min pixel height of 0.
 				return 1.0f;
 			}
 
-			auto& glob = GlobalCoopData::GetSingleton();
-			float camPitch = glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x;
-			float camYaw = glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw;
+			float camPitch = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camPitch : glob.player1Actor->data.angle.x
+			);
+			float camYaw = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw
+			);
 			// Up relative to the camera's facing direction.
-			auto camUp = RotationToDirectionVect(NormalizeAngToPi(PI / 2.0f - camPitch), ConvertAngle(NormalizeAng0To2Pi(camYaw)));
+			auto camUp = RotationToDirectionVect
+			(
+				NormalizeAngToPi(PI / 2.0f - camPitch), ConvertAngle(NormalizeAng0To2Pi(camYaw))
+			);
 			// Local half extents along the camera's up direction.
-			auto extentsMin = RE::NiPoint3(-camUp.x * a_boundExtents.x, -camUp.y * a_boundExtents.y, -camUp.z * a_boundExtents.z) / 2.0f;
-			auto extentsMax = RE::NiPoint3(camUp.x * a_boundExtents.x, camUp.y * a_boundExtents.y, camUp.z * a_boundExtents.z) / 2.0f;
+			auto extentsMin = 
+			(
+				RE::NiPoint3
+				(
+					-camUp.x * a_boundExtents.x,
+					-camUp.y * a_boundExtents.y, 
+					-camUp.z * a_boundExtents.z
+				) / 2.0f
+			);
+			auto extentsMax = 
+			(
+				RE::NiPoint3
+				(
+					camUp.x * a_boundExtents.x, 
+					camUp.y * a_boundExtents.y, 
+					camUp.z * a_boundExtents.z
+				) / 2.0f
+			);
 			// Get the corresponding world positions.
 			RE::NiPoint3 minExtent = a_centerWorldPos + extentsMin;
 			RE::NiPoint3 maxExtent = a_centerWorldPos + extentsMax;
+
+			// REMOVE when done debugging.
+			/*DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(minExtent),
+				0x00FF00FF,
+				5.0f,
+				2.0f
+			);
+			DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(maxExtent),
+				0xFF0000FF,
+				5.0f,
+				2.0f
+			);*/
+
 			// And screen positions.
 			auto minScreenExtent = WorldToScreenPoint3(minExtent, false);
 			auto maxScreenExtent = WorldToScreenPoint3(maxExtent, false);
@@ -1492,24 +1906,41 @@ namespace ALYSLC
 			return max(1.0f, minScreenExtent.GetDistance(maxScreenExtent));
 		}
 
-		float GetObjectPixelWidth(RE::TESObjectREFR* a_refr, const RE::NiPoint3& a_centerWorldPos, const RE::NiPoint3& a_boundExtents)
+		float GetObjectPixelWidth
+		(
+			RE::TESObjectREFR* a_refr, 
+			const RE::NiPoint3& a_centerWorldPos, 
+			const RE::NiPoint3& a_boundExtents
+		)
 		{
 			// Get a very rough approximation of the refr's height in pixels on the screen.
 
 			if (!a_refr)
 			{
+				// Min width of 1.
 				return 1.0f;
 			}
 
-			auto& glob = GlobalCoopData::GetSingleton();
-			float camYaw = glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw;
+			float camYaw = 
+			(
+				glob.cam->IsRunning() ? glob.cam->camYaw : RE::PlayerCamera::GetSingleton()->yaw
+			);
 			// Right relative to the camera's facing direction.
-			auto camRight = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw + PI / 2.0f)));
+			auto camRight = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw + PI / 2.0f))
+			);
 			camRight.Unitize();
 
 			// Refr and cam facing directions when at a flat pitch.
-			auto refrYawDir = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(a_refr->data.angle.z)));
-			auto camYawDir = RotationToDirectionVect(0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw)));
+			auto refrYawDir = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(a_refr->data.angle.z))
+			);
+			auto camYawDir = RotationToDirectionVect
+			(
+				0.0f, ConvertAngle(NormalizeAng0To2Pi(camYaw))
+			);
 			auto angDiff = acosf(camYawDir.Dot(refrYawDir));
 			// When lined up with the camera's facing direction,
 			// the refr's X axis lines up with the camera's,
@@ -1528,6 +1959,25 @@ namespace ALYSLC
 			// World positions for the half extents.
 			RE::NiPoint3 minExtent = a_centerWorldPos + extentsMin;
 			RE::NiPoint3 maxExtent = a_centerWorldPos + extentsMax;
+
+			// REMOVE when done debugging.
+			/*DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(minExtent),
+				0x0000FFFF,
+				5.0f,
+				2.0f
+			);
+			DebugAPI::QueueArrow3D
+			(
+				ToVec3(a_centerWorldPos),
+				ToVec3(maxExtent),
+				0xFFFF00FF,
+				5.0f,
+				2.0f
+			);*/
+
 			// And screen positions.
 			auto minScreenExtent = WorldToScreenPoint3(minExtent, false);
 			auto maxScreenExtent = WorldToScreenPoint3(maxExtent, false);
@@ -1537,9 +1987,13 @@ namespace ALYSLC
 
 		// Full credits to ersh1: 
 		// https://github.com/ersh1/Precision/blob/main/src/Havok/ContactListener.cpp#L8
-		RE::hkVector4 GetParentNodeHavokPointVelocity(RE::NiAVObject* a_node, const RE::hkVector4& a_point)
+		RE::hkVector4 GetParentNodeHavokPointVelocity
+		(
+			RE::NiAVObject* a_node, const RE::hkVector4& a_point
+		)
 		{
-			// Get parent node's velocity at the given hit position.
+			// Get the given node's parent node's velocity at the given hit position.
+
 			if (!a_node || !a_node->parent) 
 			{
 				return RE::hkVector4();
@@ -1547,10 +2001,10 @@ namespace ALYSLC
 
 			if (a_node->parent->collisionObject) 
 			{
-				auto hkpRigidBody = Util::GethkpRigidBody(a_node);
-				if (hkpRigidBody) 
+				auto hkpRigidBodyPtr = GethkpRigidBody(a_node);
+				if (hkpRigidBodyPtr && hkpRigidBodyPtr.get()) 
 				{
-					return hkpRigidBody->motion.GetPointVelocity(a_point);
+					return hkpRigidBodyPtr->motion.GetPointVelocity(a_point);
 				}
 			} 
 			else 
@@ -1583,47 +2037,55 @@ namespace ALYSLC
 
 		void GetSkeletonModelNameForRace(RE::TESRace* a_race, std::string& a_skeletonNameOut)
 		{
-			// Get a lowercase shortened skeleton model name from the race.
+			// Get a lowercase shortened skeleton model name for the given race.
 
 			// Check the male skeleton model name first, then the female one
 			// if it doesn't contain the character assets substring,
 			// which I'm using to indicate that the string contains
 			// a shortened skeleton model name.
 
+			// Male first.
 			a_skeletonNameOut = std::string(a_race->skeletonModels[0].model);
 			// Model names seem to precede the '\Character Assets' path substring.
 			// Convert to lowercase before returning.
-			if (const auto posM1 = a_skeletonNameOut.find("\\Character Assets"sv); posM1 < a_skeletonNameOut.length())
+			const auto posM1 = a_skeletonNameOut.find("\\Character Assets"sv); 
+			if (posM1 < a_skeletonNameOut.length())
 			{
 				a_skeletonNameOut = a_skeletonNameOut.substr(0, posM1);
 				// Remove everything before the opening backslash to get just the name.
-				if (const auto posM2 = a_skeletonNameOut.rfind("\\"); posM2 < a_skeletonNameOut.length())
+				const auto posM2 = a_skeletonNameOut.rfind("\\"); 
+				if (posM2 < a_skeletonNameOut.length())
 				{
 					a_skeletonNameOut = a_skeletonNameOut.substr(posM2 + 1);
 					ToLowercase(a_skeletonNameOut);
 				}
+
+				// Substring found, so no need to check the female skeleton model name.
+				return;
 			}
-			else
+
+			// Female next.
+			a_skeletonNameOut = std::string(a_race->skeletonModels[1].model);
+			const auto posF1 = a_skeletonNameOut.find("\\Character Assets"sv); 
+			if (posF1 < a_skeletonNameOut.length())
 			{
-				a_skeletonNameOut = std::string(a_race->skeletonModels[1].model);
-				if (const auto posF1 = a_skeletonNameOut.find("\\Character Assets"sv); posF1 < a_skeletonNameOut.length())
+				a_skeletonNameOut = a_skeletonNameOut.substr(0, posF1);
+				// Remove everything before the opening backslash to get just the name.
+				const auto posF2 = a_skeletonNameOut.rfind("\\");
+				if (posF2 < a_skeletonNameOut.length())
 				{
-					a_skeletonNameOut = a_skeletonNameOut.substr(0, posF1);
-					// Remove everything before the opening backslash to get just the name.
-					if (const auto posF2 = a_skeletonNameOut.rfind("\\"); posF2 < a_skeletonNameOut.length())
-					{
-						a_skeletonNameOut = a_skeletonNameOut.substr(posF2 + 1);
-						ToLowercase(a_skeletonNameOut);
-					}
+					a_skeletonNameOut = a_skeletonNameOut.substr(posF2 + 1);
+					ToLowercase(a_skeletonNameOut);
 				}
 			}
 		}
 
 		float GetStealthPointsLost(RE::Actor* a_playerActor, RE::Actor* a_fromActor)
 		{
-			// Full credits to max-su-2019 for the method of retrieving the stealth points decrement
+			// Full credits to max-su-2019 for the method 
+			// of retrieving the stealth points decrement
 			// and for their Detection Meter mod:
-			// https://github.com/max-su-2019/MaxsuDetectionMeter/blob/main/src/DataHandler.cpp#L32;
+			// https://github.com/max-su-2019/MaxsuDetectionMeter/blob/main/src/DataHandler.cpp#L32
 			// Get the number of stealth points that the given actor's combat group removes
 			// from the player actor (0 - 100).
 			// At 100, the player is fully detected by this group.
@@ -1640,15 +2102,17 @@ namespace ALYSLC
 			{
 				// Targeting the player or a current attacked member 
 				// has the player as their combat target.
-				if (auto actor = a_targetData.targetHandle.get(); actor && actor.get())
+				if (auto actorPtr = a_targetData.targetHandle.get(); actorPtr && actorPtr.get())
 				{
-					return actor.get() == a_playerActor;
+					return actorPtr.get() == a_playerActor;
 				}
-				else if (auto attackedMember = a_targetData.attackedMember.get(); attackedMember)
+				else if (auto attackedMemberPtr = a_targetData.attackedMember.get();
+						 attackedMemberPtr && attackedMemberPtr.get())
 				{
-					if (auto combatTarget = attackedMember->currentCombatTarget.get(); combatTarget && combatTarget.get())
+					auto combatTargetPtr = attackedMemberPtr->currentCombatTarget.get(); 
+					if (combatTargetPtr && combatTargetPtr.get())
 					{
-						return combatTarget.get() == a_playerActor;
+						return combatTargetPtr.get() == a_playerActor;
 					}
 					else
 					{
@@ -1676,7 +2140,7 @@ namespace ALYSLC
 				}
 			}
 
-			// Not detected otherwise since no combat group or combat group targets.
+			// No combat group or combat group targets, so not detected.
 			return 0.0f;
 		}
 
@@ -1688,48 +2152,65 @@ namespace ALYSLC
 			// Credits to ersh1 for the method of getting the body part data:
 			// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Utils.cpp#L78
 
-			if (a_actor && a_actor->IsHandleValid() && a_actor->Is3DLoaded()) 
+			if (!a_actor || !a_actor->IsHandleValid() || !a_actor->Is3DLoaded()) 
 			{
-				auto targetTorsoBP = 
-				(
-					a_actor->race && a_actor->race->bodyPartData ?
-					a_actor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kTorso] :
-					nullptr
-				);
+				return RE::NiPoint3();
+			}
 
-				auto targetTorsoPos = a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight() * 0.5f);
-				if (const auto actor3DPtr = Util::GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get())
+			auto targetTorsoBP = 
+			(
+				a_actor->race && a_actor->race->bodyPartData ?
+				a_actor->race->bodyPartData->parts[RE::BGSBodyPartDefs::LIMB_ENUM::kTorso] :
+				nullptr
+			);
+
+			// Half up the actor first.
+			auto targetTorsoPos = 
+			(
+				a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight() * 0.5f)
+			);
+			if (const auto actor3DPtr = GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get())
+			{
+				// 3D bound's center next.
+				targetTorsoPos = actor3DPtr->worldBound.center;
+				// Then use body part world position if available.
+				if (targetTorsoBP) 
 				{
-					// 3D bound's center next.
-					targetTorsoPos = actor3DPtr->worldBound.center;
-					// Use body part world position if available.
-					if (targetTorsoBP) 
+					auto targetTorsoBPPtr = RE::NiPointer<RE::NiAVObject>
+					(
+						actor3DPtr->GetObjectByName(targetTorsoBP->targetName)
+					);
+					if (targetTorsoBPPtr && targetTorsoBPPtr.get()) 
 					{
-						if (auto targetTorsoBPPtr = RE::NiPointer<RE::NiAVObject>(actor3DPtr->GetObjectByName(targetTorsoBP->targetName));
-							targetTorsoBPPtr && targetTorsoBPPtr.get()) 
-						{
-							targetTorsoPos = targetTorsoBPPtr->world.translate;
-						}
+						targetTorsoPos = targetTorsoBPPtr->world.translate;
 					}
 				}
-
-				return targetTorsoPos;
 			}
-		
-			return RE::NiPoint3();
+
+			return targetTorsoPos;
 		}
 
 		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point)
 		{
-			// Get the raycast hit heights above and below the given points.
+			// Get the raycast hit Z coordinates above and below the given points.
 			// +- FLT_MAX if no hit.
 			// (Above, Below)
 
 			// Unbounded to start.
 			std::pair<float, float> vertBoundPoints{ FLT_MAX, -FLT_MAX };
 			// Cast reasonably far up and down.
-			auto aboveResult = Raycast::hkpCastRay(ToVec4(a_point), ToVec4(a_point) + glm::vec4(0.0f, 0.0f, 100000.0f, 0.0f), true);
-			auto belowResult = Raycast::hkpCastRay(ToVec4(a_point), ToVec4(a_point) - glm::vec4(0.0f, 0.0f, 100000.0f, 0.0f), true);
+			auto aboveResult = Raycast::hkpCastRay
+			(
+				ToVec4(a_point), 
+				ToVec4(a_point) + glm::vec4(0.0f, 0.0f, 131072.0f, 0.0f), 
+				true
+			);
+			auto belowResult = Raycast::hkpCastRay
+			(
+				ToVec4(a_point), 
+				ToVec4(a_point) - glm::vec4(0.0f, 0.0f, 131072.0f, 0.0f),
+				true
+			);
 			if (aboveResult.hit) 
 			{
 				vertBoundPoints.first = aboveResult.hitPos.z;
@@ -1743,9 +2224,12 @@ namespace ALYSLC
 			return vertBoundPoints;
 		}
 
-		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point, const float& a_hullSize)
+		std::pair<float, float> GetVertCollPoints
+		(
+			const RE::NiPoint3& a_point, const float& a_hullSize
+		)
 		{
-			// Get the raycast hit heights above and below the given points,
+			// Get the raycast hit Z coordinates above and below the given points,
 			// then offset by the given hull size to place the hit heights
 			// above the lower bound and below the upper bound.
 			// +- FLT_MAX if no hit.
@@ -1755,22 +2239,23 @@ namespace ALYSLC
 			std::pair<float, float> vertBoundPoints{ FLT_MAX, -FLT_MAX };
 			glm::vec4 start = ToVec4(a_point);
 			// Cast reasonably far up and down.
-			glm::vec4 abovePoint = ToVec4(a_point) + glm::vec4(0.0f, 0.0f, 100000.0f, 0.0f);
-			glm::vec4 belowPoint = ToVec4(a_point) - glm::vec4(0.0f, 0.0f, 100000.0f, 0.0f);
+			glm::vec4 abovePoint = ToVec4(a_point) + glm::vec4(0.0f, 0.0f, 131072.0f, 0.0f);
+			glm::vec4 belowPoint = ToVec4(a_point) - glm::vec4(0.0f, 0.0f, 131072.0f, 0.0f);
 			// Use camera caster to apply hull size.
+			// Above.
+			Raycast::RayResult result = Raycast::hkpCastRay(start, abovePoint, true);
+			if (result.hit)
+			{
+				vertBoundPoints.first = result.hitPos.z;
+			}
+
 			// Below.
-			Raycast::RayResult result = Raycast::CastRay(start, belowPoint, a_hullSize);
+			result = Raycast::hkpCastRay(start, belowPoint, true);
 			if (result.hit)
 			{
 				vertBoundPoints.second = result.hitPos.z;
 			}
 
-			// Above.
-			result = Raycast::CastRay(start, abovePoint, a_hullSize);
-			if (result.hit)
-			{
-				vertBoundPoints.first = result.hitPos.z;
-			}
 
 			// Both casts hit the same point if the given point 
 			// is within the given hullsize from a surface above and below.
@@ -1800,8 +2285,7 @@ namespace ALYSLC
 
 			if (!a_keyword) 
 			{
-				// No invalid/none weapon type, 
-				// so this will have to do.
+				// No invalid/none weapon type, so this will have to do.
 				return RE::WEAPON_TYPE::kTotal;
 			}
 
@@ -1830,7 +2314,7 @@ namespace ALYSLC
 			else if (Hash(keywordName) == "WeapTypeBattleaxe"_h ||
 					 Hash(keywordName) == "WeapTypeWarhammer"_h)
 			{
-				// No weapon type for battleaxes, so set to axe.
+				// No weapon type for warhammers, so set to axe as well.
 				return RE::WEAPON_TYPE::kTwoHandAxe;
 			}
 			else if (Hash(keywordName) == "WeapTypeBow"_h)
@@ -1844,7 +2328,8 @@ namespace ALYSLC
 			else
 			{
 				// Default to melee.
-				// NOTE: There is also no weapon type keyword for crossbows.
+				// NOTE: 
+				// There is no weapon type keyword for crossbows.
 				return RE::WEAPON_TYPE::kHandToHandMelee;
 			}
 		}
@@ -1887,8 +2372,6 @@ namespace ALYSLC
 			}
 
 			bool hasLOS = false;
-			auto& glob = GlobalCoopData::GetSingleton();
-
 			// Raycast from the camera node's position.
 			auto camNodePos = 
 			(
@@ -1896,19 +2379,12 @@ namespace ALYSLC
 				glob.cam->camCollisionTargetPos : 
 				playerCam->cameraRoot->world.translate
 			);
-			RE::NiPoint3 observerLOSStartPos = 
-			(
-				a_observer->As<RE::Actor>() ? 
-				Util::GetPlayerFocusPoint(a_observer->As<RE::Actor>()) : 
-				a_observer->GetLookingAtLocation()
-			);
-
-			// Target refr 3D to compare against.
-			auto target3DPtr = Util::GetRefr3D(a_targetRefr);
+			auto observerLOSStartPos = GetActorFocusPoint(a_observer->As<RE::Actor>());
 			// Ignore the observer in the raycast hit results.
-			auto observer3DPtr = Util::GetRefr3D(a_observer);
+			auto observer3DPtr = GetRefr3D(a_observer);
 			// Excluded 3D objects:
-			// Camera node, observer, and all players.
+			// Camera node, observer, and all players, 
+			// as long as they are not the target or observer.
 			std::vector<RE::NiAVObject*> excluded3DObjects{ playerCam->cameraRoot.get() };
 			bool observer3DValid = observer3DPtr && observer3DPtr.get();
 			if (observer3DValid)
@@ -1927,7 +2403,7 @@ namespace ALYSLC
 						return;
 					}
 
-					auto player3DPtr = Util::GetRefr3D(a_p->coopActor.get());
+					auto player3DPtr = GetRefr3D(a_p->coopActor.get());
 					if (!player3DPtr || 
 						!player3DPtr.get() || 
 						a_p->coopActor.get() == a_targetRefr || 
@@ -2059,7 +2535,7 @@ namespace ALYSLC
 					// More selective check for object interaction, 
 					// since the object must be reachable for interaction, 
 					// and not just visible on screen.
-					// P1's default LOS check is also too inconsistent 
+					// P1's HasLineOfSight() check is also too inconsistent 
 					// when targeting objets with an obstacle sitting between P1 and the camera.
 
 					// Start from the cam collision position.
@@ -2105,7 +2581,7 @@ namespace ALYSLC
 
 		bool HasRaycastLOSAlongObserverAxis
 		(
-			RE::TESObjectREFR* a_observer,
+			RE::Actor* a_observer,
 			RE::TESObjectREFR* a_targetRefr, 
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
@@ -2116,6 +2592,7 @@ namespace ALYSLC
 			// Perform raycasts along a segment of the observer's vertical axis, 
 			// which is bound above and below to keep the casts within traversable space.
 			// If any raycast hits the target refr, the target refr is 'visible' to the observer.
+			// Can also draw debug lines for the raycasts.
 
 			if (!a_observer || !a_targetRefr)
 			{
@@ -2126,17 +2603,10 @@ namespace ALYSLC
 			const uint8_t numCasts = 6;
 			// Use the looking at position as the observer's eye position 
 			// and the raycasts' divider point.
-			RE::NiPoint3 lookingAtLoc = 
-			(
-				a_observer->As<RE::Actor>() ? 
-				Util::GetPlayerFocusPoint(a_observer->As<RE::Actor>()) : 
-				a_observer->GetLookingAtLocation()
-			);
-			// Observer's 3D.
-			auto observer3D = Util::GetRefr3D(a_observer);
+			RE::NiPoint3 lookingAtLoc = GetActorFocusPoint(a_observer->As<RE::Actor>());
 			// Keep slightly offset from the bounds.
-			auto bounds = Util::GetVertCollPoints(lookingAtLoc, 10.0f);
-			// Cap bounds' maximum offsets from the base height.
+			auto bounds = GetVertCollPoints(lookingAtLoc, 10.0f);
+			// Cap bounds' maximum offsets from the looking at position if they are unbound.
 			bounds.first = bounds.first == FLT_MAX ? lookingAtLoc.z + 10000.0f : bounds.first;
 			bounds.second = bounds.second == -FLT_MAX ? lookingAtLoc.z - 10000.0f : bounds.second;
 
@@ -2149,8 +2619,8 @@ namespace ALYSLC
 			}
 
 			// Break up bounds interval into two sections:
-			// 1. Eye pos to lower bound
-			// 2. Eye pos to upper bound.
+			// 1. Eye pos to upper bound.
+			// 2. Eye pos to lower bound
 
 			// Starting z coordinate increment between casts.
 			float zInc = (bounds.first - lookingAtLoc.z) / static_cast<float>(numCasts / 2);
@@ -2165,7 +2635,7 @@ namespace ALYSLC
 			// Eye position to the upper bound.
 			for (auto i = 0; i < numCasts / 2; ++i)
 			{
-				// Extend ray through point.
+				// Extend ray through the target position.
 				endPos = startPos + (endPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
@@ -2176,7 +2646,7 @@ namespace ALYSLC
 					false
 				);
 
-				auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
 					SPDLOG_DEBUG
@@ -2239,7 +2709,7 @@ namespace ALYSLC
 				// Hit the target = has LOS.
 				if (result.hit)
 				{
-					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 					if (hitRefrPtr && hitRefrPtr.get() && hitRefrPtr.get() == a_targetRefr)
 					{
 						return true;
@@ -2262,11 +2732,10 @@ namespace ALYSLC
 			startPos = ToVec4(lookingAtLoc);
 			// Don't need to cast from the looking at position again.
 			startPos.z -= zInc;
-
 			// One Z increment below the eye position to the lower bound.
 			for (auto i = 0; i < numCasts / 2 - 1; ++i) 
 			{
-				// Extend ray through point.
+				// Extend ray through the target position.
 				endPos = startPos + (endPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
@@ -2277,7 +2746,7 @@ namespace ALYSLC
 					false
 				);
 				
-				auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
 					SPDLOG_DEBUG
@@ -2372,50 +2841,48 @@ namespace ALYSLC
 				return false;
 			}
 
-			auto niCam = GetNiCamera(); 
+			auto niCamPtr = GetNiCamera(); 
 			// No NiCamera, so nope.
-			if (!niCam)
+			if (!niCamPtr || !niCamPtr.get())
 			{
 				return false;
 			}
 
-			auto refr3D = Util::GetRefr3D(a_targetRefr); 
+			auto refr3DPtr = GetRefr3D(a_targetRefr); 
 			// No refr 3D, so nope.
-			if (!refr3D)
+			if (!refr3DPtr || !refr3DPtr.get())
 			{
 				return false;
 			}
 
 			bool hasLOS = false;
-			auto& glob = GlobalCoopData::GetSingleton();
 			glm::vec4 startPos = ToVec4(a_startPos);
-
-			std::vector<RE::FormType> filteredOutTypes{};
+			std::vector<RE::FormType> filteredOutTypes{ };
 			// Filter out activators if the targeted refr is not an activator.
 			if ((!a_targetRefr->As<RE::TESObjectACTI>()) && 
-				!(a_targetRefr->GetBaseObject() && 
-				a_targetRefr->GetBaseObject()->As<RE::TESObjectACTI>()))
+				(!a_targetRefr->GetBaseObject() || 
+				!a_targetRefr->GetBaseObject()->As<RE::TESObjectACTI>()))
 			{
 				filteredOutTypes.emplace_back(RE::FormType::Activator);
 			}
 						
-			RE::TESObjectREFRPtr hitRefrPtr = nullptr;
+			RE::TESObjectREFRPtr hitRefrPtr{ nullptr };
+			Raycast::RayResult result{ };
 			// Cast to crosshair position first, if requested.
 			if (a_checkCrosshairPos)
 			{
 				glm::vec4 refrPos = ToVec4(a_crosshairWorldPos);
-				auto dirToPos = 2.0f * (refrPos - startPos);
 				// Cast through the target position.
+				auto dirToPos = 2.0f * (refrPos - startPos);
 				refrPos = startPos + dirToPos;
-				auto result = Raycast::hkpCastRay
+				result = Raycast::hkpCastRay
 				(
 					startPos, refrPos, a_excluded3DObjects, filteredOutTypes
 				);
-				hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+				hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				// Check if the target was hit.
 				hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
 
-				// REMOVE
 				if (a_showDebugDraws)
 				{
 					SPDLOG_DEBUG
@@ -2486,14 +2953,14 @@ namespace ALYSLC
 
 			// Refr data location position.
 			auto refrPos1 = ToVec4(a_targetRefr->data.location);
-			auto dirToPos1 = 2.0f * (refrPos1 - startPos);
 			// Cast through the target position.
+			auto dirToPos1 = 2.0f * (refrPos1 - startPos);
 			refrPos1 = startPos + dirToPos1;
-			auto result1 = Raycast::hkpCastRay
+			result = Raycast::hkpCastRay
 			(
 				startPos, refrPos1, a_excluded3DObjects, filteredOutTypes
 			);
-			hitRefrPtr = Util::GetRefrPtrFromHandle(result1.hitRefrHandle);
+			hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
 
@@ -2511,7 +2978,7 @@ namespace ALYSLC
 					*a_targetRefr->GetBaseObject()->formType : 
 					RE::FormType::None,
 					hasLOS,
-					result1.hit,
+					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
@@ -2539,16 +3006,16 @@ namespace ALYSLC
 					2.0f, 
 					Settings::fSecsBetweenActivationChecks
 				);
-				if (result1.hit)
+				if (result.hit)
 				{
 					DebugAPI::QueuePoint3D
 					(
-						result1.hitPos, 0xFFFF00FF, 5.0f, Settings::fSecsBetweenActivationChecks
+						result.hitPos, 0xFFFF00FF, 5.0f, Settings::fSecsBetweenActivationChecks
 					);
 					DebugAPI::QueueArrow3D
 					(
 						startPos, 
-						result1.hitPos, 
+						result.hitPos, 
 						0xFFFF00FF,
 						10.0f, 
 						2.0f, 
@@ -2563,15 +3030,15 @@ namespace ALYSLC
 			}
 
 			// Next up, the refr 3D's world position.
-			auto refrPos2 = ToVec4(refr3D->world.translate);
-			auto dirToPos2 = 2.0f * (refrPos2 - startPos);
+			auto refrPos2 = ToVec4(refr3DPtr->world.translate);
 			// Cast through the target position.
+			auto dirToPos2 = 2.0f * (refrPos2 - startPos);
 			refrPos2 = startPos + dirToPos2;
-			auto result2 = Raycast::hkpCastRay
+			result = Raycast::hkpCastRay
 			(
 				startPos, refrPos2, a_excluded3DObjects, filteredOutTypes
 			);
-			hitRefrPtr = Util::GetRefrPtrFromHandle(result2.hitRefrHandle);
+			hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
 
@@ -2589,7 +3056,7 @@ namespace ALYSLC
 					*a_targetRefr->GetBaseObject()->formType : 
 					RE::FormType::None,
 					hasLOS,
-					result2.hit,
+					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
@@ -2617,16 +3084,16 @@ namespace ALYSLC
 					2.0f, 
 					Settings::fSecsBetweenActivationChecks
 				);
-				if (result2.hit)
+				if (result.hit)
 				{
 					DebugAPI::QueuePoint3D
 					(
-						result2.hitPos, 0xFF00FFFF, 5.0f, Settings::fSecsBetweenActivationChecks
+						result.hitPos, 0xFF00FFFF, 5.0f, Settings::fSecsBetweenActivationChecks
 					);
 					DebugAPI::QueueArrow3D
 					(
 						startPos, 
-						result2.hitPos, 
+						result.hitPos, 
 						0xFF00FFFF, 
 						10.0f,
 						2.0f, 
@@ -2640,16 +3107,16 @@ namespace ALYSLC
 				return true;
 			}
 
-			// Lastly, the refr 3D's World bound center position.
-			auto refrPos3 = ToVec4(refr3D->worldBound.center);
-			auto dirToPos3 = 2.0f * (refrPos3 - startPos);
+			// Lastly, the refr 3D's world bound center position.
+			auto refrPos3 = ToVec4(refr3DPtr->worldBound.center);
 			// Cast through the target position.
+			auto dirToPos3 = 2.0f * (refrPos3 - startPos);
 			refrPos3 = startPos + dirToPos3;
-			auto result3 = Raycast::hkpCastRay
+			result = Raycast::hkpCastRay
 			(
 				startPos, refrPos3, a_excluded3DObjects, filteredOutTypes
 			);
-			hitRefrPtr = Util::GetRefrPtrFromHandle(result3.hitRefrHandle);
+			hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 			// Check if the target was hit.
 			hasLOS = hitRefrPtr && hitRefrPtr.get() == a_targetRefr;
 
@@ -2667,7 +3134,7 @@ namespace ALYSLC
 					*a_targetRefr->GetBaseObject()->formType : 
 					RE::FormType::None,
 					hasLOS,
-					result3.hit,
+					result.hit,
 					hitRefrPtr ? hitRefrPtr->GetName() : "NONE",
 					hitRefrPtr ? hitRefrPtr->formID : 0xDEAD,
 					hitRefrPtr && hitRefrPtr->GetObjectReference() ? 
@@ -2695,16 +3162,16 @@ namespace ALYSLC
 					2.0f, 
 					Settings::fSecsBetweenActivationChecks
 				);
-				if (result3.hit)
+				if (result.hit)
 				{
 					DebugAPI::QueuePoint3D
 					(
-						result3.hitPos, 0x00FFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks
+						result.hitPos, 0x00FFFFFF, 5.0f, Settings::fSecsBetweenActivationChecks
 					);
 					DebugAPI::QueueArrow3D
 					(
 						startPos, 
-						result3.hitPos, 
+						result.hitPos, 
 						0x00FFFFFF, 
 						10.0f, 
 						2.0f, 
@@ -2716,12 +3183,15 @@ namespace ALYSLC
 			return hasLOS;
 		}
 
-		float InterpolateEaseIn(const float& a_prev, const float& a_next, float a_ratio, const float& a_pow)
+		float InterpolateEaseIn
+		(
+			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
+		)
 		{
 			// Ease in from the previous value to the next value using the interpolation ratio.
 			// Diverges from the previous endpoint slower, 
 			// but converges to the next endpoint faster at higher powers
-			// when comparing values computed from the same interpolation ratio.
+			// when comparing values computed from the same interpolation ratio and endpoints.
 
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
 			float powUpper = ceilf(a_pow);
@@ -2736,12 +3206,15 @@ namespace ALYSLC
 			return std::lerp(a_prev, a_next, newTRatio);
 		}
 
-		float InterpolateEaseOut(const float& a_prev, const float& a_next, float a_ratio, const float& a_pow)
+		float InterpolateEaseOut
+		(
+			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
+		)
 		{
 			// Ease out from the previous value to the next value using the interpolation ratio.
 			// Diverges from the previous endpoint faster, 
 			// but converges to the next endpoint slower at higher powers
-			// when comparing values computed from the same interpolation ratio.
+			// when comparing values computed from the same interpolation ratio and endpoints.
 
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
 			float powUpper = ceilf(a_pow);
@@ -2759,9 +3232,13 @@ namespace ALYSLC
 			return std::lerp(a_prev, a_next, newTRatio);
 		}
 
-		float InterpolateEaseInEaseOut(const float& a_prev, const float& a_next, float a_ratio, const float& a_pow)
+		float InterpolateEaseInEaseOut
+		(
+			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
+		)
 		{
-			// Ease in from the previous value then ease out to the next value using the interpolation ratio.
+			// Ease in from the previous value then ease out to the next value
+			// using the interpolation ratio.
 			// Raising the interpolation power increases the steepness of the interpolation curve.
 
 			a_ratio = std::clamp(a_ratio, 0.0f, 1.0f);
@@ -2786,26 +3263,28 @@ namespace ALYSLC
 						lowerPowCoeff * powf(2.0f * (1.0f - a_ratio), powLower) + 
 						upperPowerCoeff * powf(2.0f * (1.0f - a_ratio), powUpper)
 					)
-				) + 0.5f
+				) + 
+				0.5f
 			);
 			float newTRatio = (a_ratio < 0.5f) ? easeInT : easeOutT;
 			return std::lerp(a_prev, a_next, newTRatio);
 		}
 
-		RE::NiMatrix3 InterpolateRotMatrix(const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio)
+		RE::NiMatrix3 InterpolateRotMatrix
+		(
+			const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio
+		)
 		{
-			// Interpolate between matrices A and B using the given ratio and return the resulting matrix.
+			// Interpolate between matrices A and B using the given ratio 
+			// and return the resulting matrix.
 			// Must convert matrices to quaternions before interpolating.
 
 			RE::NiQuaternion qA;
 			RE::NiQuaternion qB;
 			// Credits to ersh1:
 			// https://github.com/ersh1/Precision/blob/main/src/Offsets.h#L98
-			typedef void (*tNiMatrixToNiQuaternion)(RE::NiQuaternion& a_quatOut, const RE::NiMatrix3& a_matIn);
-			static REL::Relocation<tNiMatrixToNiQuaternion> NiMatrixToNiQuaternion{ RELOCATION_ID(69467, 70844) };	// C6E2D0, C967D0
-			NiMatrixToNiQuaternion(qA, a_matA);
-			NiMatrixToNiQuaternion(qB, a_matB);
-
+			NativeFunctions::NiMatrixToNiQuaternion(qA, a_matA);
+			NativeFunctions::NiMatrixToNiQuaternion(qB, a_matB);
 			return QuaternionToRotationMatrix(QuaternionSlerp(qA, qB, a_ratio));
 		}
 
@@ -2842,24 +3321,33 @@ namespace ALYSLC
 				// Iterate through the actor's inventory entries.
 				for (auto& inventoryEntry : inventory)
 				{
-					// Found the form.
-					if (inventoryEntry.first && inventoryEntry.first == a_form)
+					// Not the form.
+					if (!inventoryEntry.first || inventoryEntry.first != a_form)
 					{
-						// Look for the hotkey extra data type
-						// in the inventory entry's extra data lists.
-						if (auto& entryExtraLists = inventoryEntry.second.second; entryExtraLists)
+						continue;
+					}
+
+					// Look for the hotkey extra data type
+					// in the inventory entry's extra data lists.
+
+					const auto& ied = inventoryEntry.second.second; 
+					if (!ied)
+					{
+						continue;
+					}
+
+					auto extraLists = ied->extraLists; 
+					if (!extraLists)
+					{
+						continue;
+					}
+
+					for (auto& exData : *extraLists)
+					{
+						// Is favorited since the hotkey extra data exists.
+						if (exData->HasType(RE::ExtraDataType::kHotkey))
 						{
-							if (auto extraLists = entryExtraLists->extraLists; extraLists)
-							{
-								for (auto& exData : *extraLists)
-								{
-									// Is favorited since the hotkey extra data exists.
-									if (exData->HasType(RE::ExtraDataType::kHotkey))
-									{
-										return true;
-									}
-								}
-							}
+							return true;
 						}
 					}
 				}
@@ -2901,19 +3389,22 @@ namespace ALYSLC
 				// Iterate through the actor's inventory entries.
 				for (auto& inventoryEntry : inventory)
 				{
+					// Not the form.
 					if (!inventoryEntry.first || inventoryEntry.first != a_form)
 					{
 						continue;
 					}
+					
+					// Look for the hotkey extra data type
+					// in the inventory entry's extra data lists.
 
-					// Found the form.
-					auto& entryExtraLists = inventoryEntry.second.second;
-					if (!entryExtraLists)
+					const auto& ied = inventoryEntry.second.second;
+					if (!ied)
 					{
 						continue;
 					}
 
-					auto extraLists = entryExtraLists->extraLists;
+					auto extraLists = ied->extraLists;
 					if (!extraLists)
 					{
 						continue;
@@ -2921,14 +3412,20 @@ namespace ALYSLC
 
 					for (auto& exData : *extraLists)
 					{
+						// Only consider favorited entries,
+						// since only favorited items can be hotkeyed.
 						if (!exData->HasType(RE::ExtraDataType::kHotkey))
 						{
 							continue;
 						}
 
-						// Is favorited since the hotkey extra data exists.
+						// Lastly, determine if there is a bound hotkey slot.
 						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
-						return (int8_t)(*exHotkeyData->hotkey) != (int8_t)(RE::ExtraHotkey::Hotkey::kUnbound);
+						return 
+						(
+							(int8_t)(*exHotkeyData->hotkey) != 
+							(int8_t)(RE::ExtraHotkey::Hotkey::kUnbound)
+						);
 					}
 				}
 			}
@@ -2942,12 +3439,11 @@ namespace ALYSLC
 
 			auto playerCam = RE::PlayerCamera::GetSingleton(); 
 			// Camera is invalid.
-			if (!playerCam)
+			if (!playerCam || !playerCam->cameraRoot || !playerCam->cameraRoot.get())
 			{
 				return false;
 			}
 
-			auto& glob = GlobalCoopData::GetSingleton();
 			// Camera node position.
 			auto camNodePos = playerCam->cameraRoot->world.translate;
 			// Camera forward direction.
@@ -2959,7 +3455,8 @@ namespace ALYSLC
 			auto camToPointDir = a_point - camNodePos;
 			camToPointDir.Unitize();
 				
-			// Less than 90 degrees away from camera's forward direction.
+			// Less than 90 degrees away (what I'm using as the vertical FOV)
+			// from camera's forward direction.
 			return camToPointDir.Dot(camDir) > 0.0f;
 		}
 
@@ -2969,8 +3466,12 @@ namespace ALYSLC
 
 			// Refr, its 3D, its handle, or base object are invalid,
 			// or it is deleted or disabled.
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() || 
-				a_refr->IsDeleted() || !a_refr->IsHandleValid() || !a_refr->GetObjectReference())
+			if (!a_refr || 
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() || 
+				a_refr->IsDeleted() ||
+				!a_refr->IsHandleValid() ||
+				!a_refr->GetObjectReference())
 			{
 				return false;
 			}
@@ -2978,7 +3479,8 @@ namespace ALYSLC
 			auto baseObj = a_refr->GetObjectReference();
 			// Base object must be of a lootable type,
 			// or if a flora object, it must not have been harvested,
-			// or if a projectile, it must not have become inactive (no collisions),
+			// or if a projectile, it must have become limited 
+			// (has impact or damaging collision checks are inactive),
 			// or if a light, it must be carryable (a torch).
 			return 
 			(
@@ -3063,7 +3565,6 @@ namespace ALYSLC
 				return false;
 			}
 
-
 			// If the object is a plant, it is selectable if not already harvested.
 			bool ifPlantCanHarvest = 
 			{
@@ -3071,7 +3572,8 @@ namespace ALYSLC
 				(a_refr->formFlags & RE::TESObjectREFR::RecordFlags::kHarvested) == 0 : 
 				false
 			};
-			// If the object is a projectile, it is selectable if its collision is inactive.
+			// If the object is a projectile, it is selectable if it has impacted something 
+			// or is no longer active for damaging collisions.
 			bool ifProjCanPickup = 
 			{
 				a_refr->As<RE::Projectile>() ? 
@@ -3128,10 +3630,14 @@ namespace ALYSLC
 			}
 
 			// Ignore DynDOLOD LOD activators, which shouldn't be selectable.
-			// TODO: Have to figure out a more efficient method to check if the refr is a DynDOLOD refr. 
+			// TODO: 
+			// Have to figure out a more efficient method to check if the refr is a DynDOLOD refr. 
 			// Filename comparison is haphazard, especially if the DynDOLOD plugin was renamed.
 			// Needs testing.
-			bool isActivator = baseObj->Is(RE::FormType::Activator, RE::FormType::TalkingActivator); 
+			bool isActivator = baseObj->Is
+			(
+				RE::FormType::Activator, RE::FormType::TalkingActivator
+			); 
 			if (isActivator) 
 			{
 				auto modIndex = (a_refr->formID & 0xFF000000) >> 24; 
@@ -3139,7 +3645,8 @@ namespace ALYSLC
 				{
 					if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler) 
 					{
-						if (auto mod = dataHandler->LookupLoadedModByIndex(modIndex); mod && mod->GetFilename().contains("DynDOLOD"))
+						auto mod = dataHandler->LookupLoadedModByIndex(modIndex); 
+						if (mod && mod->GetFilename().contains("DynDOLOD"))
 						{
 							return false;
 						}
@@ -3157,7 +3664,7 @@ namespace ALYSLC
 			// Construct a rotation matrix given an axis 
 			// and an angle to rotate about that axis.
 
-			RE::NiMatrix3 mat;
+			RE::NiMatrix3 mat{ };
 			a_axis.Unitize();
 			const float CosT = cosf(a_angle);
 			const float SinT = sinf(a_angle);
@@ -3185,7 +3692,8 @@ namespace ALYSLC
 
 			if (ALYSLC::QuickLootCompat::g_quickLootInstalled)
 			{
-				if (auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
+				auto ui = RE::UI::GetSingleton(); 
+				if (ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
 				{
 					return false;
 				}
@@ -3210,20 +3718,22 @@ namespace ALYSLC
 
 		bool MenusOnlyAlwaysUnpaused()
 		{
-			// Returns true if only 'always open' menus, the Dialogue Menu, or the LootMenu are open.
+			// Returns true if only 'always open' menus, the Dialogue Menu,
+			// or the LootMenu are open.
 
-			if (auto ui = RE::UI::GetSingleton(); ui)
+			auto ui = RE::UI::GetSingleton(); 
+			if (!ui)
 			{
-				bool onlyAlwaysOpen = MenusOnlyAlwaysOpen();
-				return 
-				(
-					onlyAlwaysOpen ||
-					ui->IsMenuOpen("LootMenu"sv) || 
-					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
-				);
+				return false;
 			}
 
-			return false;
+			bool onlyAlwaysOpen = MenusOnlyAlwaysOpen();
+			return 
+			(
+				onlyAlwaysOpen ||
+				ui->IsMenuOpen("LootMenu"sv) || 
+				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
+			);
 		}
 
 		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank)
@@ -3239,9 +3749,11 @@ namespace ALYSLC
 			}
 
 			// Add perk to actor base and actor.
-			// NOTE: Have to use both funcs since neither consistently
-			// removes/adds perks in time on their own before the LevelUp menu opens.
+			// NOTE:
+			// Have to use both funcs since neither consistently
+			// removes/adds perks in time on their own before the Stats Menu opens.
 			// Re-add to singleton perk list too.
+			// Keep everything consistent.
 			if (!Player1PerkListHasPerk(a_perk))
 			{
 				p1->perks.emplace_back(a_perk);
@@ -3288,45 +3800,53 @@ namespace ALYSLC
 			bool succ = false;
 
 			// Remove the perk from the P1 singleton perk list.
+			// Keep everything consistent.
 			if (Player1PerkListHasPerk(a_perk))
 			{
 				// Construct a list of perks without the removed perk.
 				RE::BSTArray<RE::BGSPerk*> newPerksList;
-				std::for_each(
+				std::for_each
+				(
 					p1->perks.begin(), p1->perks.end(),
-					[&newPerksList, a_perk](RE::BGSPerk* perk) {
+					[&newPerksList, a_perk](RE::BGSPerk* perk) 
+					{
 						if (perk != a_perk)
 						{
 							newPerksList.emplace_back(perk);
 						}
-					});
+					}
+				);
 
 				// Clear and re-add all other perks.
 				p1->perks.clear();
-				std::for_each(
+				std::for_each
+				(
 					newPerksList.begin(), newPerksList.end(),
-					[p1](RE::BGSPerk* perk) {
+					[p1](RE::BGSPerk* perk) 
+					{
 						p1->perks.emplace_back(perk);
-					});
+					}
+				);
 			}
 
 			// Remove perk from actor base and actor.
-			// NOTE: Have to use both funcs since neither consistently 
-			// removes/adds perks in time on their own before the LevelUp menu opens.
+			// NOTE: 
+			// Have to use both funcs since neither consistently 
+			// removes/adds perks in time on their own before the Stats Menu opens.
 			ChangePerk(p1, a_perk, false);
 			return !p1->HasPerk(a_perk);
 		}
 
-		bool PointIsOnScreen(const RE::NiPoint3& a_point, float&& a_marginPixels)
+		bool PointIsOnScreen(const RE::NiPoint3& a_point, const float& a_marginPixels)
 		{
 			// Returns true if the world position is on screen,
 			// after adjusting the screen dimensions to account for 
 			// a pixel margin along the borders of the screen.
 
-			auto niCam = GetNiCamera();
+			auto niCamPtr = GetNiCamera();
 			const auto hud = DebugAPI::GetHUD(); 
 			// Need the NiCamera and Debug Overlay Menu view.
-			if (!niCam || !hud || !hud->uiMovie)
+			if (!niCamPtr || !niCamPtr.get() || !hud || !hud->uiMovie)
 			{
 				return false;
 			}
@@ -3338,8 +3858,12 @@ namespace ALYSLC
 			float x = 0.0f;
 			float y = 0.0f;
 			float z = 0.0f;
-			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_point, x, y, z, 1e-5f);
-			// Adjust dimensions of the screen based on the pixel margin.
+			RE::NiCamera::WorldPtToScreenPt3
+			(
+				niCamPtr->worldToCam, port, a_point, x, y, z, 1e-5f
+			);
+			// Adjust the dimensions of the screen based on the pixel margin,
+			// and then check if the screen point falls within these new dimensions.
 			return 
 			(
 				x >= gRect.left + a_marginPixels && 
@@ -3349,11 +3873,15 @@ namespace ALYSLC
 				z < 1.0f && 
 				z > -1.0f
 			);
-
-			return false;
 		}
 
-		bool PointIsOnScreen(const RE::NiPoint3& a_point, RE::NiPoint3& a_screenPointOut, float&& a_marginPixels, bool&& a_shouldClamp)
+		bool PointIsOnScreen
+		(
+			const RE::NiPoint3& a_point, 
+			RE::NiPoint3& a_screenPointOut, 
+			float&& a_marginPixels, 
+			bool&& a_shouldClamp
+		)
 		{
 			// Returns true if the world position is on screen,
 			// after adjusting the screen dimensions to account for
@@ -3363,10 +3891,10 @@ namespace ALYSLC
 			// Store the screen position, on-screen or not, 
 			// in the screen point outparam.
 
-			auto niCam = GetNiCamera();
+			auto niCamPtr = GetNiCamera();
 			const auto hud = DebugAPI::GetHUD();
 			// Need the NiCamera and Debug Overlay Menu view.
-			if (!niCam || !hud || !hud->uiMovie)
+			if (!niCamPtr || !niCamPtr.get() || !hud || !hud->uiMovie)
 			{
 				return false;
 			}
@@ -3378,7 +3906,10 @@ namespace ALYSLC
 			float x = 0.0;
 			float y = 0.0f;
 			float z = 0.0f;
-			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_point, x, y, z, 1e-5f);
+			RE::NiCamera::WorldPtToScreenPt3
+			(
+				niCamPtr->worldToCam, port, a_point, x, y, z, 1e-5f
+			);
 
 			if (a_shouldClamp)
 			{
@@ -3392,7 +3923,9 @@ namespace ALYSLC
 				a_screenPointOut.y = y;
 				a_screenPointOut.z = z;
 			}
-
+			
+			// Adjust the dimensions of the screen based on the pixel margin,
+			// and then check if the screen point falls within these new dimensions.
 			return 
 			(
 				x >= gRect.left + a_marginPixels && 
@@ -3404,11 +3937,18 @@ namespace ALYSLC
 			);
 		}
 
-		void PushActorAway(RE::Actor* a_actorToPush, const RE::NiPoint3& a_contactPos, const float& a_force, bool&& a_downedRagdoll)
+		void PushActorAway
+		(
+			RE::Actor* a_actorToPush, 
+			const RE::NiPoint3& a_contactPos, 
+			const float& a_force,
+			bool&& a_downedRagdoll
+		)
 		{
 			// Apply an actor knock explosion with the provided force at the contact position.
-			// If requested, apply a 'downed ragdoll' when the actor's health hits 0,
-			// The actor is paralyzed, preventing them from getting up if they are set to essential.
+			// If requested, apply a 'downed ragdoll' when the actor's health hits 0.
+			// The actor is paralyzed, preventing them from getting up 
+			// if they are set to essential.
 			// Used to set players as downed if the revive system is enabled.
 
 			if (!a_actorToPush || !a_actorToPush->currentProcess)
@@ -3419,9 +3959,8 @@ namespace ALYSLC
 			// [Temp workaround]:
 			// Having Precision's ragdoll system enabled 
 			// while triggering a knock explosion here 
-			// seems to contribute, in part, to an improper ragdoll 
-			// reset position glitch on knock explosion 
-			// where the hit actor is teleported to their last ragdoll position 
+			// seems to contribute, in part, to an improper ragdoll reset position glitch 
+			// on knock explosion where the hit actor is teleported to their last ragdoll position 
 			// instead of staying at their current position.
 			// Is a major issue if the last ragdoll position 
 			// was far away or in another cell entirely.
@@ -3437,13 +3976,14 @@ namespace ALYSLC
 			if (a_downedRagdoll)
 			{
 				RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSheath, a_actorToPush);
-				// Prevent the downed actor from moving.
+				// Prevent the downed actor from moving and getting back up.
 				a_actorToPush->boolBits.set(RE::Actor::BOOL_BITS::kParalyzed);
 				// Prevent the game from downing the actor and entering bleedout
 				// once the deferred kill timer reaches 0.
-				// NOTE: May have side effects, 
-				// so keep an eye out for any odd behavior after ragdolling.
-				if (a_actorToPush->currentProcess && a_actorToPush->currentProcess->middleHigh) 
+				// NOTE: 
+				// May have side effects, so keeping an eye out for any odd behavior 
+				// after ragdolling.
+				if (a_actorToPush->currentProcess->middleHigh) 
 				{
 					a_actorToPush->currentProcess->middleHigh->deferredKillTimer = FLT_MAX;
 				}
@@ -3453,9 +3993,12 @@ namespace ALYSLC
 			a_actorToPush->currentProcess->KnockExplosion(a_actorToPush, a_contactPos, a_force);
 		}
 		
-		RE::NiQuaternion QuaternionSlerp(const RE::NiQuaternion& a_quatA, const RE::NiQuaternion& a_quatB, double a_t)
+		RE::NiQuaternion QuaternionSlerp
+		(
+			const RE::NiQuaternion& a_quatA, const RE::NiQuaternion& a_quatB, double a_t
+		)
 		{
-			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L139
+			// Credits to ersh1: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L139
 			// Slerp from quaternion A to quaternion B with the given ratio t.
 
 			// quaternion to return
@@ -3519,7 +4062,7 @@ namespace ALYSLC
 
 		RE::NiMatrix3 QuaternionToRotationMatrix(const RE::NiQuaternion& a_quat)
 		{
-			// Credits: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
+			// Credits to ersh1: https://github.com/ersh1/Precision/blob/main/src/Utils.cpp#L201
 			// Convert quaternion to rotation matrix.
 
 			float sqw = a_quat.w * a_quat.w;
@@ -3527,11 +4070,13 @@ namespace ALYSLC
 			float sqy = a_quat.y * a_quat.y;
 			float sqz = a_quat.z * a_quat.z;
 
-			RE::NiMatrix3 ret;
+			RE::NiMatrix3 ret{ };
 
-			// invs (inverse square length) is only required if quaternion is not already normalised
+			// invs (inverse square length) is only required 
+			// if quaternion is not already normalised
 			float invs = 1.f / (sqx + sqy + sqz + sqw);
-			ret.entry[0][0] = (sqx - sqy - sqz + sqw) * invs;  // since sqw + sqx + sqy + sqz =1/invs*invs
+			// since sqw + sqx + sqy + sqz =1/invs*invs
+			ret.entry[0][0] = (sqx - sqy - sqz + sqw) * invs;  
 			ret.entry[1][1] = (-sqx + sqy - sqz + sqw) * invs;
 			ret.entry[2][2] = (-sqx - sqy + sqz + sqw) * invs;
 
@@ -3594,24 +4139,32 @@ namespace ALYSLC
 			}
 
 			bool exteriorCell = a_cell->IsExteriorCell();
-			RE::BSSpinLockGuard lock(a_cell->spinLock);
-			for (auto refr : a_cell->references)
 			{
-				if (refr && refr.get())
+				RE::BSSpinLockGuard lock(a_cell->spinLock);
+				for (auto refr : a_cell->references)
 				{
-					if (auto object3D = Util::GetRefr3D(refr.get()); object3D)
+					if (!refr || !refr.get())
 					{
-						// Reset 3D fade amount to full.
-						if (object3D->fadeAmount != 1.0f)
-						{
-							object3D->fadeAmount = 1.0f;
-						}
+						continue;
+					}
 
-						// Reset fade node current 3D amount to full.
-						if (auto fadeNode = object3D->AsFadeNode(); fadeNode && fadeNode->currentFade != 1.0f)
-						{
-							fadeNode->currentFade = 1.0;
-						}
+					auto object3DPtr = GetRefr3D(refr.get()); 
+					if (!object3DPtr || !object3DPtr.get())
+					{
+						continue;
+					}
+
+					// Reset 3D fade amount to full.
+					if (object3DPtr->fadeAmount != 1.0f)
+					{
+						object3DPtr->fadeAmount = 1.0f;
+					}
+
+					// Reset fade node current 3D amount to full as well.
+					auto fadeNode = object3DPtr->AsFadeNode();
+					if (fadeNode && fadeNode->currentFade != 1.0f)
+					{
+						fadeNode->currentFade = 1.0;
 					}
 				}
 			}
@@ -3621,7 +4174,6 @@ namespace ALYSLC
 		{
 			// Reset the game's third person camera to its default orientation.
 
-			auto& glob = GlobalCoopData::GetSingleton();
 			if (!glob.globalDataInit)
 			{
 				return;
@@ -3636,8 +4188,7 @@ namespace ALYSLC
 			auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
 			if (tpState)
 			{
-				// Reset free rotation, zoom offset,
-				// yaw, positional offset (estimated default),
+				// Reset free rotation, zoom offset, yaw, positional offset (estimated default),
 				// and process draw/sheathe change.
 				tpState->freeRotationEnabled = false;
 				tpState->currentZoomOffset = tpState->targetZoomOffset = 1.0f;
@@ -3658,12 +4209,16 @@ namespace ALYSLC
 			// Rotate the vector about the axis by an amount given by the angle.
 			// Vector is unitized and set through the outparam.
 			// Precondition: Angle must be in radians.
-			// How to rotate a vector in 3d space around arbitrary axis,
-			// URLs: https://math.stackexchange.com/q/4034978,
+			// How to rotate a vector in 3d space around arbitrary axis:
+			// https://math.stackexchange.com/q/4034978,
 			// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
 
-			a_axis.Unitize();
+			if (a_axis.Length() == 0.0f || a_vectorOut.Length() == 0.0f)
+			{
+				return;
+			}
 
+			a_axis.Unitize();
 			RE::NiMatrix3 k
 			{
 				RE::NiPoint3(0.0f, -a_axis.z, a_axis.y),
@@ -3684,54 +4239,10 @@ namespace ALYSLC
 			a_vectorOut.Unitize();
 		}
 
-		RE::NiQuaternion RotationMatrixToQuaternion(const RE::NiMatrix3& a_matrix)
-		{	
-			// Return the quaternion that corresponds to the rotation matrix.
-			// https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
-
-			RE::NiQuaternion q{ };
-			const auto& m = a_matrix.entry;
-			const float trace = m[0][0] + m[1][1] + m[2][2];
-			if (trace > 0.f)
-			{
-				const float s = 2.0f * sqrtf(trace + 1.0f);
-				q.w = 0.25f * s;
-				q.x = (m[2][1] - m[1][2]) / s;
-				q.y = (m[0][2] - m[2][0]) / s;
-				q.z = (m[1][0] - m[0][1]) / s;
-			}
-			else if (m[0][0] > m[1][1] && m[0][0] > m[2][2])
-			{
-				const float s = 2.0f * sqrtf(1.0f + m[0][0] - m[1][1] - m[2][2]);
-				q.w = (m[2][1] - m[1][2]) / s;
-				q.x = 0.25f * s;
-				q.y = (m[0][1] + m[1][0]) / s;
-				q.z = (m[0][2] + m[2][0]) / s;
-			}
-			else if (m[1][1] > m[2][2])
-			{
-				const float s = 2.0f * sqrtf(1.0f + m[1][1] - m[0][0] - m[2][2]);
-				q.w = (m[0][2] - m[2][0]) / s;
-				q.x = (m[0][1] + m[1][0]) / s;
-				q.y = 0.25f * s;
-				q.z = (m[1][2] + m[2][1]) / s;
-			}
-			else
-			{
-				const float s = 2.0f * sqrtf(1.0f + m[2][2] - m[0][0] - m[1][1]);
-				q.w = (m[1][0] - m[0][1]) / s;
-				q.x = (m[0][2] + m[2][0]) / s;
-				q.y = (m[1][2] + m[2][1]) / s;
-				q.z = 0.25f * s;
-			}
-
-			return q;
-		}
-
 		void RunPlayerActionCommand(RE::DEFAULT_OBJECT&& a_defObj, RE::Actor* a_actor)
 		{
 			// Run a console command which directs the actor 
-			// to perform the action corresponding to the default object.
+			// to perform the action corresponding to the given default object.
 
 			auto defObjMgr = RE::BGSDefaultObjectManager::GetSingleton();
 			if (!defObjMgr)
@@ -3744,7 +4255,10 @@ namespace ALYSLC
 			// Credits to lfrazer for the VR fork of that mod.
 			// Source here: 
 			// https://github.com/lfrazer/ConsoleUtilVR/blob/master/src/Papyrus.cpp
-			const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
 			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 			if (script)
 			{
@@ -3753,11 +4267,21 @@ namespace ALYSLC
 					fmt::format("pa {}", defObjMgr->objects[a_defObj]->GetFormEditorID()).c_str()
 				);
 				script->CompileAndRun(a_actor);
+				// Cleanup.
 				delete script;
 			}
 		}
 
-		void SendButtonEvent(RE::INPUT_DEVICE a_inputDevice, RE::BSFixedString a_ueString, uint32_t a_buttonMask, float a_pressedValue, float a_heldTimeSecs, bool a_toggleAIDriven, bool a_setPadProxiedFlag)
+		void SendButtonEvent
+		(
+			RE::INPUT_DEVICE a_inputDevice,
+			RE::BSFixedString a_ueString,
+			uint32_t a_buttonMask, 
+			float a_pressedValue,
+			float a_heldTimeSecs, 
+			bool a_toggleAIDriven, 
+			bool a_setPadProxiedFlag
+		)
 		{
 			// Send a button event using the provided data
 			// and free the input event pointer afterward.
@@ -3772,15 +4296,18 @@ namespace ALYSLC
 				return;
 			}
 
-			std::unique_ptr<RE::InputEvent* const> inputEvent = std::make_unique<RE::InputEvent* const>
+			std::unique_ptr<RE::InputEvent* const> inputEvent = 
 			(
-				RE::ButtonEvent::Create
+				std::make_unique<RE::InputEvent* const>
 				(
-					a_inputDevice, 
-					a_ueString, 
-					a_buttonMask, 
-					a_pressedValue, 
-					a_heldTimeSecs
+					RE::ButtonEvent::Create
+					(
+						a_inputDevice, 
+						a_ueString, 
+						a_buttonMask, 
+						a_pressedValue, 
+						a_heldTimeSecs
+					)
 				)
 			);
 
@@ -3796,14 +4323,12 @@ namespace ALYSLC
 				// Toggle AI driven to false before sending/processing
 				// the button event.
 				SetPlayerAIDriven(false);
-
 				bsInputMgr->lock.Lock();
 				bsInputMgr->SendEvent(inputEvent.get());
 				bsInputMgr->lock.Unlock();
 				// Clear input event pad and free.
 				(*inputEvent.get())->AsButtonEvent()->pad24 = 0x0;
 				RE::free(*inputEvent.get());
-
 				// Toggle back on afterward.
 				SetPlayerAIDriven(true);
 			}
@@ -3831,11 +4356,13 @@ namespace ALYSLC
 				return;
 			}
 
-			SKSE::CrosshairRefEvent* crosshairEvent = RE::malloc<SKSE::CrosshairRefEvent>(sizeof(SKSE::CrosshairRefEvent));
+			SKSE::CrosshairRefEvent* crosshairEvent = RE::malloc<SKSE::CrosshairRefEvent>
+			(
+				sizeof(SKSE::CrosshairRefEvent)
+			);
 			std::memset(crosshairEvent, 0, sizeof(SKSE::CrosshairRefEvent));
 			if (crosshairEvent) 
 			{
-				auto& glob = GlobalCoopData::GetSingleton();
 				// Save container handle to match against in the crosshair event handler
 				// and for menu CID resolution later.
 				glob.reqQuickLootContainerHandle = 
@@ -3844,7 +4371,10 @@ namespace ALYSLC
 					a_crosshairRefrToSet->GetHandle() :
 					RE::ObjectRefHandle()
 				);
-				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>(a_crosshairRefrToSet);
+				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>
+				(
+					a_crosshairRefrToSet
+				);
 				eventSource->SendEvent(crosshairEvent);
 				RE::free(crosshairEvent);
 			}
@@ -3863,25 +4393,16 @@ namespace ALYSLC
 			const RE::NiPoint3& a_hitDir
 		)
 		{
-			if (!a_aggressor || !a_aggressor.get() || !a_target || !a_target.get())
+			if (!HandleIsValid(a_aggressor) || !HandleIsValid(a_target))
 			{
 				return;
 			}
 
 			RE::HitData hitData{ };
-			Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
+			NativeFunctions::HitData_Ctor(std::addressof(hitData));
 			hitData.Populate(a_aggressor.get().get(), a_target.get().get(), nullptr);
-			SPDLOG_DEBUG
-			(
-				"[Util] SendHitData: Hit event for {} has total damage {}, " 
-				"using weapon {} (0x{:X}).",
-				a_aggressor.get()->GetName(),
-				hitData.totalDamage,
-				hitData.weapon ? hitData.weapon->GetName() : "NONE",
-				hitData.weapon ? hitData.weapon->formID : 0x0
-			);
 
-			// Zero out damage on the duplicate hit.
+			// Zero everything except physical and total damage on the duplicate hit.
 			hitData.bonusHealthDamageMult =
 			hitData.criticalDamageMult =
 			hitData.reflectedDamage =
@@ -3906,7 +4427,7 @@ namespace ALYSLC
 			}
 
 			// Set source, if any.
-			if (a_source && a_source.get() && a_source.get().get())
+			if (HandleIsValid(a_source))
 			{
 				hitData.sourceRef = a_source;
 			}
@@ -3922,7 +4443,7 @@ namespace ALYSLC
 			}
 
 			// Triggers the hit and sends the event.
-			Util::NativeFunctions::Actor_ApplyHitData
+			NativeFunctions::Actor_ApplyHitData
 			(
 				a_target.get().get(), std::addressof(hitData)
 			);
@@ -3944,7 +4465,10 @@ namespace ALYSLC
 			RE::free(*a_inputEvent.get());
 		}
 
-		void SendThumbstickEvent(const RE::BSFixedString& a_ueString, float a_xValue, float a_yValue, bool a_isLS)
+		void SendThumbstickEvent
+		(
+			const RE::BSFixedString& a_ueString, float a_xValue, float a_yValue, bool a_isLS
+		)
 		{
 			// Send a thumbstick event for the left/right analog stick 
 			// using the provided X, Y displacements and user event name.
@@ -3956,9 +4480,12 @@ namespace ALYSLC
 				return;
 			}
 
-			std::unique_ptr<RE::InputEvent* const> inputEvent = std::make_unique<RE::InputEvent* const>
+			std::unique_ptr<RE::InputEvent* const> inputEvent = 
 			(
-				CreateThumbstickEvent(a_ueString, a_xValue, a_yValue, a_isLS)
+				std::make_unique<RE::InputEvent* const>
+				(
+					CreateThumbstickEvent(a_ueString, a_xValue, a_yValue, a_isLS)
+				)
 			);
 
 			// Set proxied bypass flag for all thumbstick events.
@@ -3966,12 +4493,12 @@ namespace ALYSLC
 			bsInputMgr->lock.Lock();
 			bsInputMgr->SendEvent(inputEvent.get());
 			bsInputMgr->lock.Unlock();
-			// Clear the pad and then free.
+			// Clear the pad and then free after sending.
 			(*inputEvent.get())->AsIDEvent()->pad24 = 0x0;
 			RE::free(*inputEvent.get());
 		}
 
-		void Set3DCollisionFilterInfo(RE::NiAVObject* a_refr3D, const bool & a_set)
+		void Set3DCollisionFilterInfo(RE::NiAVObject* a_refr3D, const bool& a_set)
 		{
 			// Set/unset the layer bitfields to allow/disallow collisions between
 			// the char controller, biped, biped no char controller, and dead biped layers.
@@ -3996,7 +4523,11 @@ namespace ALYSLC
 			auto world = rigidBody->GetWorld1(); 
 			if (!world)
 			{
-				return;
+				world = rigidBody->GetWorld2();
+				if (!world)
+				{
+					return;
+				}
 			}
 
 			auto filterInfo = (RE::bhkCollisionFilter*)world->collisionFilter; 
@@ -4166,65 +4697,79 @@ namespace ALYSLC
 					)
 				);
 			}
+
+			// NOTE:
+			// Unsure if traversing the node tree to modify each node's filterinfo is necessary,
+			// so will be removed in the future.
+			if (auto node = a_refr3D->AsNode(); node)
+			{
+				for (auto child : node->children)
+				{
+					if (!child || !child.get())
+					{
+						continue;
+					}
+
+					Set3DCollisionFilterInfo(child.get(), a_set);
+				}
+			}
 		}
 
 		void SetActorsDetectionEvent
 		(
 			RE::Actor* a_actor, 
 			RE::TESObjectREFR* a_collidingRefr, 
-			RE::hkpRigidBody* a_collidingRigidBody,
+			float a_collidingMass,
 			const RE::NiPoint3 & a_contactPoint
 		)
 		{
-
 			// Major thanks to powerof3 for Grab and Throw's method of doing this:
 			// https://github.com/powerof3/GrabAndThrow/blob/master/src/GrabThrowHandler.cpp#L250
-			if (auto currentProc = a_actor->currentProcess; currentProc)
+
+			auto currentProc = a_actor->currentProcess; 
+			if (!currentProc)
 			{
-				RE::SOUND_LEVEL level = RE::SOUND_LEVEL::kNormal;
-				float mass = 
-				(
-					a_collidingRigidBody ? 
-					a_collidingRigidBody->motion.GetMass() :
-					0.0f
-				);
-
-				if (mass == 0.0f)
-				{
-					level = RE::SOUND_LEVEL::kSilent;
-				}
-				else if (mass < 3.0f)
-				{
-					level = RE::SOUND_LEVEL::kQuiet;
-				}
-				else if (mass < 10.0f)
-				{
-					level = RE::SOUND_LEVEL::kNormal;
-				}
-				else if (mass < 30.0f)
-				{
-					level = RE::SOUND_LEVEL::kLoud;
-				}
-				else
-				{
-					level = RE::SOUND_LEVEL::kVeryLoud;
-				}
-
-				currentProc->SetActorsDetectionEvent
-				(
-					a_actor, 
-					a_contactPoint, 
-					RE::AIFormulas::GetSoundLevelValue(level),
-					a_collidingRefr
-				);
+				return;
 			}
+
+			RE::SOUND_LEVEL level = RE::SOUND_LEVEL::kNormal;
+
+			if (a_collidingMass == 0.0f)
+			{
+				level = RE::SOUND_LEVEL::kSilent;
+			}
+			else if (a_collidingMass < 3.0f)
+			{
+				level = RE::SOUND_LEVEL::kQuiet;
+			}
+			else if (a_collidingMass < 10.0f)
+			{
+				level = RE::SOUND_LEVEL::kNormal;
+			}
+			else if (a_collidingMass < 30.0f)
+			{
+				level = RE::SOUND_LEVEL::kLoud;
+			}
+			else
+			{
+				level = RE::SOUND_LEVEL::kVeryLoud;
+			}
+
+			currentProc->SetActorsDetectionEvent
+			(
+				a_actor, 
+				a_contactPoint, 
+				RE::AIFormulas::GetSoundLevelValue(level),
+				a_collidingRefr
+			);
 		}
 
 		void SetCameraPosition(RE::TESCamera* a_cam, const RE::NiPoint3& a_position)
 		{
 			// Place the current camera at the provided position.
 			// Ensure positioning consistency: 
-			// (NiAVObject node positions, NiCamera world position, and third person state positions).
+			// NiAVObject node positions, NiCamera world position, 
+			// and third person state positions.
 
 			const auto playerCam = RE::PlayerCamera::GetSingleton(); 
 			if (!a_cam || !a_cam->cameraRoot || !a_cam->cameraRoot.get() || !playerCam)
@@ -4235,15 +4780,16 @@ namespace ALYSLC
 			// Node 3D local and world positions should match.
 			a_cam->cameraRoot->local.translate = a_cam->cameraRoot->world.translate = a_position;
 			// Set the NiCamera world position.
-			if (auto niCam = GetNiCamera(); niCam) 
+			if (auto niCamPtr = GetNiCamera(); niCamPtr && niCamPtr.get()) 
 			{
-				niCam->world.translate = a_position;
+				niCamPtr->world.translate = a_position;
 			}
 
 			if (playerCam->currentState->id == RE::CameraState::kThirdPerson)
 			{
 				// Set the third person state world position and collision position.
-				if (auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get()); tpState)
+				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
+				if (tpState)
 				{
 					tpState->translation = a_position;
 					tpState->collisionPos = a_position;
@@ -4255,26 +4801,29 @@ namespace ALYSLC
 		{
 			// Set the rotation (pitch, yaw) of the camera to the pitch/yaw angles provided.
 			// Ensure rotational consistency: 
-			// (NiAVObject node world rotation, NiCamera world rotation, and third person state rotation quaternion).
-			// All credit goes to mwilsnd for the process of setting the camera's rotation properly:
+			// NiAVObject node world rotation, NiCamera world rotation, 
+			// and third person state rotation quaternion.
+			// All credit goes to mwilsnd for the process 
+			// of setting the camera's rotation properly:
 			// https://github.com/mwilsnd/SkyrimSE-SmoothCam/blob/master/SmoothCam/source/thirdperson.cpp#L685
 
-			auto& glob = GlobalCoopData::GetSingleton();
 			if (!glob.globalDataInit)
 			{
 				return;
 			}
 
-			RE::NiMatrix3 nodeMat;
+			RE::NiMatrix3 nodeMat{ };
 			SetRotationMatrixPY(nodeMat, glob.cam->camPitch, glob.cam->camYaw);
 
 			// Don't modify the local rotation matrix, 
 			// since other mods have features that make changes to it, 
-			// such as Precision's hitstop + camera shake (https://www.nexusmods.com/skyrimspecialedition/mods/72347)
-			// and Camera Noise's Perlin noise (https://www.nexusmods.com/skyrimspecialedition/mods/77185).
+			// such as Precision's hitstop + camera shake 
+			// (https://www.nexusmods.com/skyrimspecialedition/mods/72347)
+			// and Camera Noise's Perlin noise
+			// (https://www.nexusmods.com/skyrimspecialedition/mods/77185).
 			a_cam->cameraRoot->world.rotate = nodeMat;
 
-			RE::NiMatrix3 niMat;
+			RE::NiMatrix3 niMat{ };
 			// Rearrange matrix entries for the NiCamera's world rotation matrix.
 			niMat.entry[0][0] = nodeMat.entry[0][1];
 			niMat.entry[0][1] = nodeMat.entry[0][2];
@@ -4286,17 +4835,21 @@ namespace ALYSLC
 			niMat.entry[2][1] = nodeMat.entry[2][2];
 			niMat.entry[2][2] = nodeMat.entry[2][0];
 
-			if (auto niCam = GetNiCamera(); niCam) 
+			if (auto niCamPtr = GetNiCamera(); niCamPtr && niCamPtr.get()) 
 			{
-				niCam->world.rotate = niMat;
+				niCamPtr->world.rotate = niMat;
 			}
 
 			auto playerCam = RE::PlayerCamera::GetSingleton(); 
 			if (playerCam && playerCam->currentState && playerCam->currentState.get())
 			{
-				if (auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get()); tpState)
+				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get()); 
+				if (tpState)
 				{
-					glm::quat q = glm::quat(glm::vec3(-glob.cam->camPitch, 0.0f, -glob.cam->camYaw));
+					glm::quat q = glm::quat
+					(
+						glm::vec3(-glob.cam->camPitch, 0.0f, -glob.cam->camYaw)
+					);
 					tpState->rotation = RE::NiQuaternion(q.w, q.x, q.y, q.z);
 				}
 			}
@@ -4313,19 +4866,22 @@ namespace ALYSLC
 			}
 
 			a_velocity *= GAME_TO_HAVOK;
-			RE::hkVector4 oldVelVect;
+			RE::hkVector4 oldVelVect{ };
 			charController->GetLinearVelocityImpl(oldVelVect);
-			RE::hkVector4 velVect;
-			velVect.quad = _mm_setr_ps(a_velocity.x, a_velocity.y, a_velocity.z, oldVelVect.quad.m128_f32[3]);
+			RE::hkVector4 velVect{ };
+			velVect.quad = _mm_setr_ps
+			(
+				a_velocity.x, a_velocity.y, a_velocity.z, oldVelVect.quad.m128_f32[3]
+			);
 			charController->SetLinearVelocityImpl(velVect);
 		}
 
 		bool SetPlayerAIDriven(const bool&& a_shouldSet)
 		{
 			// Change P1's AI driven flag to the requested value.
-			// Return true if the request was fulfilled successfully.
+			// Return true if the request was fulfilled successfully
+			// and P1's AI driven state changed.
 
-			auto& glob = GlobalCoopData::GetSingleton();
 			if (!glob.globalDataInit)
 			{
 				return false;
@@ -4374,18 +4930,24 @@ namespace ALYSLC
 
 			a_position *= GAME_TO_HAVOK;
 			// Save old position's w component.
-			RE::hkVector4 oldPosVect;
+			RE::hkVector4 oldPosVect{ };
 			charController->GetPositionImpl(oldPosVect, true);
-			RE::hkVector4 newPosVect;
+			RE::hkVector4 newPosVect{ };
 			// Set w component to the old position's.
-			newPosVect.quad = _mm_setr_ps(a_position.x, a_position.y, a_position.z, oldPosVect.quad.m128_f32[3]);
+			newPosVect.quad = _mm_setr_ps
+			(
+				a_position.x, a_position.y, a_position.z, oldPosVect.quad.m128_f32[3]
+			);
 			charController->lock.Lock();
 			charController->SetPositionImpl(newPosVect, false, true);
 			charController->lock.Unlock();
 			a_actor->Update3DPosition(true);
 		}
 
-		void SetRotationMatrixPY(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw)
+		void SetRotationMatrixPY
+		(
+			RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw
+		)
 		{
 			// Construct a rotation matrix based on the game pitch and yaw angles.
 			// Then set the rotation matrix outparam to this new matrix.
@@ -4408,7 +4970,13 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		void SetRotationMatrixPYR(RE::NiMatrix3& a_rotMatrix, const float& a_pitch, const float& a_yaw, const float& a_roll)
+		void SetRotationMatrixPYR
+		(
+			RE::NiMatrix3& a_rotMatrix, 
+			const float& a_pitch,
+			const float& a_yaw,
+			const float& a_roll
+		)
 		{
 			// Construct a rotation matrix based on the game pitch, roll, and yaw angles.
 			// Then set the rotation matrix outparam to this new matrix.
@@ -4421,7 +4989,7 @@ namespace ALYSLC
 			const auto matRoll = MatrixFromAxisAndAngle(forwardAxis, a_roll);
 			const auto resultMat = matYaw * matRoll * matPitch;
 
-			// Manual corrections to match Skyrim's left-handed extrinsic ZYX Euler convention.
+			// Manual sign corrections to match Skyrim's left hand extrinsic ZYX Euler convention.
 			a_rotMatrix.entry[0][0] = resultMat.entry[0][0];
 			a_rotMatrix.entry[0][1] = -resultMat.entry[0][1];
 			a_rotMatrix.entry[0][2] = resultMat.entry[0][2];
@@ -4433,7 +5001,16 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		void SetRotationMatrixPYRAndAxes(RE::NiMatrix3& a_rotMatrix, const RE::NiPoint3& a_xAxis, const RE::NiPoint3& a_yAxis, const RE::NiPoint3& a_zAxis, const float& a_pitch, const float& a_yaw, const float& a_roll) 
+		void SetRotationMatrixPYRAndAxes
+		(
+			RE::NiMatrix3& a_rotMatrix, 
+			const RE::NiPoint3& a_xAxis,
+			const RE::NiPoint3& a_yAxis, 
+			const RE::NiPoint3& a_zAxis,
+			const float& a_pitch,
+			const float& a_yaw, 
+			const float& a_roll
+		) 
 		{
 			// Construct a rotation matrix by rotating the three axes provided 
 			// by the game pitch, roll, and yaw angles.
@@ -4443,8 +5020,8 @@ namespace ALYSLC
 			const auto matYaw = MatrixFromAxisAndAngle(a_zAxis, a_yaw);
 			const auto matRoll = MatrixFromAxisAndAngle(a_yAxis, a_roll);
 			const auto resultMat = matYaw * matRoll * matPitch;
-
-			// Manual corrections to match Skyrim's left-handed extrinsic ZYX Euler convention.
+			
+			// Manual sign corrections to match Skyrim's left hand extrinsic ZYX Euler convention.
 			a_rotMatrix.entry[0][0] = resultMat.entry[0][0];
 			a_rotMatrix.entry[0][1] = -resultMat.entry[0][1];
 			a_rotMatrix.entry[0][2] = resultMat.entry[0][2];
@@ -4465,7 +5042,8 @@ namespace ALYSLC
 				return false;
 			}
 
-			// Hard coded list of spells tested to work when cast by P1 and no one else.
+			// Eventually will check against a Hard coded list of spells 
+			// tested to work when cast by P1 and no one else.
 			// Only one so far.
 			bool shouldP1Cast = 
 			{ 
@@ -4509,13 +5087,20 @@ namespace ALYSLC
 			return false;
 		}
 
-		void StartEffectShader(RE::TESObjectREFR* a_refr, RE::TESEffectShader* a_shader, const float& a_timeSecs)
+		void StartEffectShader
+		(
+			RE::TESObjectREFR* a_refr, RE::TESEffectShader* a_shader, const float& a_timeSecs
+		)
 		{
 			// Start playing the effect shader on the refr for the provided number of seconds,
 			// or continue playing it indefinitely if the requested play time is -1.
 
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() || 
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr || 
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() || 
+				a_refr->IsDeleted() || 
+				!a_refr->IsHandleValid() || 
+				!a_shader)
 			{
 				return;
 			}
@@ -4525,30 +5110,36 @@ namespace ALYSLC
 			bool found = false;
 			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
 			{
-				RE::BSSpinLockGuard locker(processLists->magicEffectsLock);
-				for (auto& tempEffectPtr : processLists->magicEffects)
+				processLists->magicEffectsLock.Lock();
+				for (const auto& tempEffectPtr : processLists->magicEffects)
 				{
-					if (const auto& tempEffect = tempEffectPtr.get(); 
-						tempEffect && tempEffect->As<RE::ShaderReferenceEffect>())
+					if (!tempEffectPtr ||
+						!tempEffectPtr.get() ||
+						!tempEffectPtr->As<RE::ShaderReferenceEffect>())
 					{
-						auto shaderEffect = tempEffect->As<RE::ShaderReferenceEffect>();
-						if (shaderEffect && 
-							Util::HandleIsValid(shaderEffect->target) && 
-							shaderEffect->target.get().get() == a_refr &&
-							shaderEffect->effectData == a_shader)
-						{
-							// Update its lifetime if not playing indefinitely.
-							if (shaderEffect->lifetime != -1.0f)
-							{
-								shaderEffect->lifetime = a_timeSecs;
-								shaderEffect->finished = false;
-							}
+						continue;
+					}
 
-							found = true;
-							break;
+					// Check if the shader effect is currently playing on the target refr.
+					auto shaderEffect = tempEffectPtr->As<RE::ShaderReferenceEffect>();
+					if (shaderEffect && 
+						HandleIsValid(shaderEffect->target) && 
+						shaderEffect->target.get().get() == a_refr &&
+						shaderEffect->effectData == a_shader)
+					{
+						// Update its lifetime if not playing indefinitely.
+						if (shaderEffect->lifetime != -1.0f)
+						{
+							shaderEffect->lifetime = a_timeSecs;
 						}
+							
+						shaderEffect->finished = false;
+						shaderEffect->Resume();
+						found = true;
+						break;
 					}
 				}
+				processLists->magicEffectsLock.Unlock();
 			}
 
 			// Apply a new instance of the effect if it isn't already playing.
@@ -4558,44 +5149,69 @@ namespace ALYSLC
 			}
 		}
 
-		void StartHitArt(RE::TESObjectREFR* a_refr, RE::BGSArtObject* a_artObj, RE::TESObjectREFR* a_facingRefr, const float& a_timeSecs, bool&& a_faceTarget, bool&& a_attachToCamera)
+		void StartHitArt
+		(
+			RE::TESObjectREFR* a_refr,
+			RE::BGSArtObject* a_artObj, 
+			RE::TESObjectREFR* a_facingRefr, 
+			const float& a_timeSecs, 
+			bool&& a_faceTarget, 
+			bool&& a_attachToCamera
+		)
 		{
 			// Start playing the hit art on the refr, facing the other provided refr,
 			// for the provided number of seconds,
 			// or continue playing it indefinitely if the requested play time is -1.
 			
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr || 
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() ||
+				a_refr->IsDeleted() || 
+				!a_refr->IsHandleValid() || 
+				!a_artObj)
 			{
 				return;
 			}
 
 			// Find and stop the current instance of the hit art, if any,
 			// before applying a new instance.
-			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
 			{
-				RE::BSSpinLockGuard locker(processLists->magicEffectsLock);
-				for (auto& tempEffectPtr : processLists->magicEffects)
-				{
-					if (const auto& tempEffect = tempEffectPtr.get(); 
-						tempEffect && tempEffect->As<RE::ModelReferenceEffect>())
-					{
-						auto hitArtEffect = tempEffect->As<RE::ModelReferenceEffect>();
-						if (hitArtEffect && 
-							Util::HandleIsValid(hitArtEffect->target) && 
-							hitArtEffect->target.get().get() == a_refr &&
-							hitArtEffect->artObject == a_artObj)
-						{
-							hitArtEffect->finished = true;
-							hitArtEffect->Suspend();
-							hitArtEffect->Detach();
-							break;
-						}
-					}
-				}
+				return;
 			}
 
-			a_refr->ApplyArtObject(a_artObj, a_timeSecs, a_facingRefr, a_faceTarget, a_attachToCamera);
+			processLists->magicEffectsLock.Lock();
+			for (const auto& tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr || 
+					!tempEffectPtr.get() ||
+					!tempEffectPtr->As<RE::ModelReferenceEffect>())
+				{
+					continue;
+				}
+
+				// Check if the hit art is playing on the target already
+				// and mark it as finished, since we'll restart the effect instead
+				// to ensure the effect properly plays fully from the beginning to the end.
+				auto hitArtEffect = tempEffectPtr->As<RE::ModelReferenceEffect>();
+				if (hitArtEffect && 
+					HandleIsValid(hitArtEffect->target) && 
+					hitArtEffect->target.get().get() == a_refr &&
+					hitArtEffect->artObject == a_artObj)
+				{
+					hitArtEffect->finished = true;
+					hitArtEffect->Suspend();
+					hitArtEffect->Detach();
+					break;
+				}
+			}
+			processLists->magicEffectsLock.Unlock();
+
+			a_refr->ApplyArtObject
+			(
+				a_artObj, a_timeSecs, a_facingRefr, a_faceTarget, a_attachToCamera
+			);
 		}
 
 		void StopAllEffectShaders(RE::TESObjectREFR* a_refr)
@@ -4605,155 +5221,200 @@ namespace ALYSLC
 			// Adapted from their papyrus extender code found here:
 			// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Papyrus/Util/Graphics.cpp#L42
 
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() || 
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr ||
+				!a_refr->loadedData ||
+				a_refr->IsDisabled() || 
+				a_refr->IsDeleted() || 
+				!a_refr->IsHandleValid())
 			{
 				return;
 			}
 
-			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
 			{
-				RE::BSSpinLockGuard locker(processLists->magicEffectsLock);
-				for (auto& tempEffectPtr : processLists->magicEffects)
+				return;
+			}
+
+			processLists->magicEffectsLock.Lock();
+			for (const auto& tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr || 
+					!tempEffectPtr.get() ||
+					!tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
-					if (const auto& tempEffect = tempEffectPtr.get(); 
-						tempEffect && tempEffect->As<RE::ShaderReferenceEffect>())
-					{
-						auto shaderEffect = tempEffect->As<RE::ShaderReferenceEffect>();
-						// The effect is playing on the refr, so set it as finished.
-						if (shaderEffect && 
-							Util::HandleIsValid(shaderEffect->target) && 
-							shaderEffect->target.get().get() == a_refr)
-						{
-							shaderEffect->finished = true;
-						}
-					}
+					continue;
+				}
+
+				auto shaderEffect = tempEffectPtr->As<RE::ShaderReferenceEffect>();
+				// The effect is playing on the refr, so set it as finished
+				// and allow the game to clean it up at its own pace.
+				if (shaderEffect && 
+					HandleIsValid(shaderEffect->target) && 
+					shaderEffect->target.get().get() == a_refr)
+				{
+					shaderEffect->finished = true;
 				}
 			}
+			processLists->magicEffectsLock.Unlock();
 		}
 
 		void StopAllHitArtEffects(RE::TESObjectREFR* a_refr)
 		{
 			// Stop all hit art objects playing on the refr.
 
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr ||
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() ||
+				a_refr->IsDeleted() ||
+				!a_refr->IsHandleValid())
 			{
 				return;
 			}
 
-			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
 			{
-				RE::BSSpinLockGuard locker(processLists->magicEffectsLock);
-
-				for (auto& tempEffectPtr : processLists->magicEffects)
+				return;
+			}
+			
+			processLists->magicEffectsLock.Lock();
+			for (const auto& tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr ||
+					!tempEffectPtr.get() || 
+					!tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
-					if (const auto& tempEffect = tempEffectPtr.get(); tempEffect && tempEffect->As<RE::ModelReferenceEffect>())
-					{
-						auto hitArtEffect = tempEffect->As<RE::ModelReferenceEffect>();
-						// The effect is playing on the refr, so set it as finished.
-						if (hitArtEffect && 
-							Util::HandleIsValid(hitArtEffect->target) && 
-							hitArtEffect->target.get().get() == a_refr)
-						{
-							hitArtEffect->finished = true;
-						}
-					}
+					continue;
+				}
+
+				auto hitArtEffect = tempEffectPtr->As<RE::ModelReferenceEffect>();
+				// The effect is playing on the refr, so set it as finished
+				// and allow the game to clean it up at its own pace.
+				if (hitArtEffect && 
+					HandleIsValid(hitArtEffect->target) && 
+					hitArtEffect->target.get().get() == a_refr)
+				{
+					hitArtEffect->finished = true;
 				}
 			}
+			processLists->magicEffectsLock.Unlock();
 		}
 
-		void StopEffectShader(RE::TESObjectREFR* a_refr, RE::TESEffectShader* a_shader, float&& a_delayedStopSecs)
+		void StopEffectShader
+		(
+			RE::TESObjectREFR* a_refr, RE::TESEffectShader* a_shader, float&& a_delayedStopSecs
+		)
 		{
 			// Stop the effect shader on the refr, optionally setting its lifetime 
 			// to the provided delayed stop time to have it stop at a later point.
 
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr ||
+				!a_refr->loadedData || 
+				a_refr->IsDisabled() ||
+				a_refr->IsDeleted() || 
+				!a_refr->IsHandleValid() || 
+				!a_shader)
 			{
 				return;
 			}
 
-			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
 			{
-				// Instantly stop subsequent instances of the same effect
-				// after one is stopped, or instantly stop
-				// all instances of the effect if no delayed stop is requested.
-				bool oneChanged = a_delayedStopSecs == -1.0f;
+				return;
+			}
 
-				processLists->magicEffectsLock.Lock();
-				for (const auto tempEffect : processLists->magicEffects)
+			// Have one instance of the effect stop after the requested number of seconds, 
+			// while all others stop instantly.
+			// Or stop all instances if there was no specified delayed stop time.
+			bool oneChanged = a_delayedStopSecs == -1.0f;
+			processLists->magicEffectsLock.Lock();
+			for (const auto& tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr || 
+					!tempEffectPtr.get() || 
+					!tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
-					const auto shaderEffect = tempEffect.get()->As<RE::ShaderReferenceEffect>();
-					if (shaderEffect && 
-						Util::HandleIsValid(shaderEffect->target) && 
-						shaderEffect->target.get().get() == a_refr && 
-						shaderEffect->effectData == a_shader)
-					{
-						if (oneChanged)
-						{
-							shaderEffect->finished = true;
-						}
-						else
-						{
-							// Have one instance of the effect 
-							// stop after the requested number of seconds.
-							shaderEffect->lifetime = a_delayedStopSecs;
-							oneChanged = true;
-						}
-					}
+					continue;
 				}
 
-				processLists->magicEffectsLock.Unlock();
+				const auto shaderEffect = tempEffectPtr->As<RE::ShaderReferenceEffect>();
+				if (shaderEffect && 
+					HandleIsValid(shaderEffect->target) && 
+					shaderEffect->target.get().get() == a_refr && 
+					shaderEffect->effectData == a_shader)
+				{
+					if (oneChanged)
+					{
+						shaderEffect->finished = true;
+					}
+					else
+					{
+						shaderEffect->lifetime = a_delayedStopSecs;
+						oneChanged = true;
+					}
+				}
 			}
+			processLists->magicEffectsLock.Unlock();
 		}
 
-		void StopHitArt(RE::TESObjectREFR* a_refr, RE::BGSArtObject* a_artObj, float&& a_delayedStopSecs)
+		void StopHitArt
+		(
+			RE::TESObjectREFR* a_refr, RE::BGSArtObject* a_artObj, float&& a_delayedStopSecs
+		)
 		{
 			// Stop the hit art from playing on the refr, optionally setting its lifetime
 			// to the provided delayed stop time to have it stop at a later point.
 
-			if (!a_refr || !a_refr->loadedData || a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || !a_refr->IsHandleValid())
+			if (!a_refr || 
+				!a_refr->loadedData ||
+				a_refr->IsDisabled() ||
+				a_refr->IsDeleted() ||
+				!a_refr->IsHandleValid() || 
+				!a_artObj)
 			{
 				return;
 			}
 
-			if (a_refr && a_refr->loadedData && !a_refr->IsDisabled() && !a_refr->IsDeleted() && a_refr->IsHandleValid())
+			const auto processLists = RE::ProcessLists::GetSingleton(); 
+			if (!processLists)
 			{
-				if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
+				return;
+			}
+			
+			// Have one instance of the effect stop after the requested number of seconds,
+			// while all others stop instantly.
+			// Or stop all instances if there was no specified delayed stop time.
+			bool oneChanged = a_delayedStopSecs == -1.0f;
+			processLists->magicEffectsLock.Lock();
+			for (const auto& tempEffectPtr : processLists->magicEffects)
+			{
+				if (!tempEffectPtr ||
+					!tempEffectPtr.get() ||
+					!tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
-					// Instantly stop subsequent instances of the same effect
-					// after one is stopped, or instantly stop
-					// all instances of the effect if no delayed stop is requested.
-					bool oneChanged = a_delayedStopSecs == -1.0f;
+					continue;
+				}
 
-					processLists->magicEffectsLock.Lock();
-					for (const auto tempEffect : processLists->magicEffects)
+				const auto hitArtEffect = tempEffectPtr->As<RE::ModelReferenceEffect>();
+				if (hitArtEffect && 
+					HandleIsValid(hitArtEffect->target) && 
+					hitArtEffect->target.get().get() == a_refr && 
+					hitArtEffect->artObject == a_artObj)
+				{
+					if (oneChanged)
 					{
-						const auto hitArtEffect = tempEffect.get()->As<RE::ModelReferenceEffect>();
-						if (hitArtEffect && 
-							Util::HandleIsValid(hitArtEffect->target) && 
-							hitArtEffect->target.get().get() == a_refr && 
-							hitArtEffect->artObject == a_artObj)
-						{
-							if (oneChanged)
-							{
-								hitArtEffect->finished = true;
-							}
-							else
-							{
-								// Have one instance of the effect
-								// stop after the requested number of seconds.
-								hitArtEffect->lifetime = a_delayedStopSecs;
-								oneChanged = true;
-							}
-						}
+						hitArtEffect->finished = true;
 					}
-
-					processLists->magicEffectsLock.Unlock();
+					else
+					{
+						hitArtEffect->lifetime = a_delayedStopSecs;
+						oneChanged = true;
+					}
 				}
 			}
+			processLists->magicEffectsLock.Unlock();
 		}
 
 		void TeleportToActor(RE::Actor* a_teleportingActor, RE::Actor* a_target)
@@ -4767,12 +5428,7 @@ namespace ALYSLC
 			}
 
 			// Get the portal object.
-			RE::TESObjectACTI* teleportalActivator = nullptr;
-			if (auto form = RE::TESForm::LookupByID(0x7CD55); form)
-			{
-				teleportalActivator = RE::TESForm::LookupByID(0x7CD55)->As<RE::TESObjectACTI>();
-			}
-
+			auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55);
 			// No portal, no teleportation.
 			if (!teleportalActivator)
 			{
@@ -4780,8 +5436,7 @@ namespace ALYSLC
 			}
 
 			// Stop the actor from moving first.
-			Util::NativeFunctions::SetDontMove(a_teleportingActor, true);
-
+			NativeFunctions::SetDontMove(a_teleportingActor, true);
 			// Use MoveTo() instead of SetPosition() 
 			// if either parent cell is invalid,
 			// if the actors are in different types of cells,
@@ -4790,14 +5445,23 @@ namespace ALYSLC
 			bool shouldMoveTo = 
 			{
 				(!a_target->parentCell || !a_teleportingActor->parentCell) ||
-				(a_target->parentCell->IsExteriorCell() && a_teleportingActor->parentCell->IsInteriorCell()) ||
-				(a_target->parentCell->IsInteriorCell() && a_teleportingActor->parentCell->IsExteriorCell()) ||
+				(
+					a_target->parentCell->IsExteriorCell() &&
+					a_teleportingActor->parentCell->IsInteriorCell()
+				) ||
+				(
+					a_target->parentCell->IsInteriorCell() && 
+					a_teleportingActor->parentCell->IsExteriorCell()
+				) ||
 				(a_target->parentCell->IsAttached() && !a_teleportingActor->Is3DLoaded())
 			};
 
 			// Set down the entry portal at the teleporting actor's location
 			// and move the teleporting actor to it.
-			const auto entryPortal = a_teleportingActor->PlaceObjectAtMe(teleportalActivator, false);
+			const auto entryPortal = a_teleportingActor->PlaceObjectAtMe
+			(
+				teleportalActivator, false
+			);
 			// If no portal materializes, don't move the teleporting actor at all.
 			if (entryPortal && entryPortal.get())
 			{
@@ -4814,7 +5478,6 @@ namespace ALYSLC
 			// Set down the exit portal at the target's location
 			// and move the teleporting actor to it.
 			const auto exitPortal = a_target->PlaceObjectAtMe(teleportalActivator, false);
-			// If no portal materializes, move to the target actor's location instead.
 			if (exitPortal && exitPortal.get())
 			{
 				if (shouldMoveTo)
@@ -4828,6 +5491,7 @@ namespace ALYSLC
 			}
 			else
 			{
+				// If no portal materializes, move to the target actor's location instead.
 				if (shouldMoveTo)
 				{
 					a_teleportingActor->MoveTo(a_target);
@@ -4839,7 +5503,7 @@ namespace ALYSLC
 			}
 
 			// Re-enable movement for the teleporting actor when done.
-			Util::NativeFunctions::SetDontMove(a_teleportingActor, false);
+			NativeFunctions::SetDontMove(a_teleportingActor, false);
 		}
 
 		void ToggleAllControls(bool a_shouldEnable)
@@ -4871,20 +5535,28 @@ namespace ALYSLC
 			controlMap->lock.Unlock();
 
 			// Run console command to enable all player controls as well, 
-			// just in case.
+			// just in case something slipped through the cracks.
 			if (auto taskInterface = SKSE::GetTaskInterface(); taskInterface) 
 			{
 				taskInterface->AddTask
 				(
 					[]() 
 					{
-						const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+						const auto scriptFactory = 
+						(
+							RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+						);
 						const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-						auto p1 = RE::PlayerCharacter::GetSingleton();
-						if (p1 && script)
+						if (script)
 						{
-							script->SetCommand("epc");
-							script->CompileAndRun(p1);
+							auto p1 = RE::PlayerCharacter::GetSingleton();
+							if (p1)
+							{
+								script->SetCommand("epc");
+								script->CompileAndRun(p1);
+							}
+
+							// Cleanup.
 							delete script;
 						}
 					}
@@ -4892,10 +5564,13 @@ namespace ALYSLC
 			}
 		}
 
-		void TraverseAllPerks(RE::Actor* a_actor, std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor)
+		void TraverseAllPerks
+		(
+			RE::Actor* a_actor, 
+			std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor
+		)
 		{
-			// Run the provided visitor function 
-			// on all nodes in P1's skill perk trees.
+			// Run the provided visitor function on all nodes in P1's skill perk trees.
 
 			auto avList = RE::ActorValueList::GetSingleton(); 
 			if (!avList || !avList->actorValues)
@@ -4906,14 +5581,19 @@ namespace ALYSLC
 			for (auto av : avList->actorValues)
 			{
 				// Each individual skill's perk tree.
-				if (av && av->perkTree)
+				if (!av || !av->perkTree)
 				{
-					TraversePerkTree(av->perkTree, a_actor, a_visitor);
+					continue;
 				}
+
+				TraversePerkTree(av->perkTree, a_actor, a_visitor);
 			}
 		}
 
-		void TraverseChildNodesDFS(RE::NiAVObject* a_current3D, std::function<void(RE::NiAVObject* a_node)> a_visitor) 
+		void TraverseChildNodesDFS
+		(
+			RE::NiAVObject* a_current3D, std::function<void(RE::NiAVObject* a_node)> a_visitor
+		) 
 		{
 			// Run the visitor function on each child node of the passed-in node.
 			// Recursive pre-order, depth-first traversal.
@@ -4927,24 +5607,35 @@ namespace ALYSLC
 			a_visitor(a_current3D);
 
 			// Then check for valid children to visit.
-			if (auto asNode = a_current3D->AsNode(); asNode && !asNode->children.empty()) 
+			auto asNode = a_current3D->AsNode(); 
+			if (!asNode || asNode->children.empty()) 
 			{
-				for (auto child : asNode->children)
+				return;
+			}
+
+			for (auto child : asNode->children)
+			{
+				if (!child || !child.get() || child->GetRefCount() <= 0)
 				{
-					if (child && child->GetRefCount() > 0 && child.get())
-					{
-						TraverseChildNodesDFS(child.get(), a_visitor);
-					}
+					continue;
 				}
+				
+				TraverseChildNodesDFS(child.get(), a_visitor);
 			}
 		}
 
-		void TraversePerkTree(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor, std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor)
+		void TraversePerkTree
+		(
+			RE::BGSSkillPerkTreeNode* a_node,
+			RE::Actor* a_actor, 
+			std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor
+		)
 		{
 			// Run the visitor function on each node in the skill tree 
 			// starting from the provided root node.
 			// Recurse on the current node's children, if any.
-			// NOTE: The first node passed in should always be the root node 
+			// NOTE: 
+			// The first node passed in should always be the root node 
 			// for the perk tree, which does not have an associated perk 
 			// and simply points to the first perk node in the tree
 			// (its first child node).
@@ -4965,45 +5656,70 @@ namespace ALYSLC
 			{
 				for (const auto perkChildNode : a_node->children)
 				{
-					if (perkChildNode)
+					if (!perkChildNode)
 					{
-						// Visit the child node and then recurse on its children.
-						a_visitor(perkChildNode, a_actor);
-						TraversePerkTree(perkChildNode, a_actor, a_visitor);
+						continue;
 					}
+
+					// Visit the child node and then recurse on its children.
+					a_visitor(perkChildNode, a_actor);
+					TraversePerkTree(perkChildNode, a_actor, a_visitor);
 				}
 			}
 		}
 
-		bool TriggerFalseSkillLevelUp(const RE::ActorValue& a_avSkill, const Skill& a_skill, const std::string& a_skillName, const float& a_newLevel)
+		bool TriggerFalseSkillLevelUp
+		(
+			const RE::ActorValue& a_avSkill, 
+			const Skill& a_skill, 
+			const std::string& a_skillName, 
+			const float& a_newLevel
+		)
 		{
-			// Trigger the skill up widget for the provided skill, 
-			// as it levels to the new skill level.
+			// Trigger a temporary 'false' level up to display the skill up widget 
+			// for the provided skill, as P1 levels up to the new skill level.
 			// Modify P1's skill XP briefly to trigger the message
-			// and then restore the skill's original XP.
+			// and then restore the skill's original level and XP
+			// so that no permanent changes were made.
+			// Also prevent saving while this occurs because we don't want another player's stats 
+			// to be permanently copied over to P1 if the game saves.
 			// Return true if successful.
 
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			auto& glob = GlobalCoopData::GetSingleton();
-			if (!p1 || !p1->skills || !p1->skills->data || !glob.globalDataInit)
+			auto ui = RE::UI::GetSingleton();
+			auto hud = ui ? ui->GetMenu<RE::HUDMenu>() : nullptr;
+			if (!p1 ||
+				!p1->skills ||
+				!p1->skills->data || 
+				!glob.globalDataInit ||
+				!ui ||
+				!hud)
 			{
 				return false;
 			}
 
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG("[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})", hash);
+					// Prevent saving during our level changes.
+					hud->menuFlags.reset(RE::UI_MENU_FLAGS::kAllowSaving);
+
+					SPDLOG_DEBUG
+					(
+						"[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})",
+						std::hash<std::jthread::id>()(std::this_thread::get_id())
+					);
 					// Save old level, XP, level threshold, and skill data.
 					// Will be restored after skill level up triggers.
 					const auto oldLevel = p1->GetBaseActorValue(a_avSkill);
 					const auto oldLvlXP = p1->skills->data->xp;
 					const auto oldLvlThreshold = p1->skills->data->levelThreshold;
 					const auto oldSkill = p1->skills->data->skills[a_skill];
-
-					const auto scriptFactory = RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>();
+					const auto scriptFactory = 
+					(
+						RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+					);
 					const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 					if (script)
 					{
@@ -5020,14 +5736,24 @@ namespace ALYSLC
 						p1->skills->data->xp = oldLvlXP;
 						p1->skills->data->levelThreshold = oldLvlThreshold;
 						p1->skills->data->skills[a_skill] = oldSkill;
+						// Cleanup.
 						delete script;
-
+						
+						// Re-enable saving.
+						hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
 						return true;
 					}
+
+					// Re-enable saving.
+					hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
 				}
 				else
 				{
-					SPDLOG_DEBUG("[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", hash);
+					SPDLOG_DEBUG
+					(
+						"[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", 
+						std::hash<std::jthread::id>()(std::this_thread::get_id())
+					);
 				}
 			}
 
@@ -5037,7 +5763,8 @@ namespace ALYSLC
 		RE::NiPoint3 WorldToScreenPoint3(const RE::NiPoint3& a_worldPos, bool&& a_shouldClamp)
 		{
 			// Get the screen position corresponding to the provided world position,
-			// clamping the returned position's components to fit the screen's dimensions,
+			// potentially clamping the returned position's components 
+			// to fit the screen's dimensions,
 			// if requested.
 
 			auto hud = DebugAPI::GetHUD();
@@ -5046,13 +5773,13 @@ namespace ALYSLC
 				return RE::NiPoint3();
 			}
 
-			auto niCam = GetNiCamera(); 
-			if (!niCam)
+			auto niCamPtr = GetNiCamera(); 
+			if (!niCamPtr || !niCamPtr.get())
 			{
 				return RE::NiPoint3();
 			}
 
-			RE::NiPoint3 screenPoint{};
+			RE::NiPoint3 screenPoint{ };
 			// Get the debug overlay's dimensions.
 			RE::GRect gRect = hud->uiMovie->GetVisibleFrameRect();
 			const float rectWidth = fabsf(gRect.right - gRect.left);
@@ -5062,7 +5789,10 @@ namespace ALYSLC
 			float x = 0.0f;
 			float y = 0.0f;
 			float z = 0.0f;
-			RE::NiCamera::WorldPtToScreenPt3(niCam->worldToCam, port, a_worldPos, x, y, z, 1e-5f);
+			RE::NiCamera::WorldPtToScreenPt3
+			(
+				niCamPtr->worldToCam, port, a_worldPos, x, y, z, 1e-5f
+			);
 			
 			// Clamp to fit the overlay's dimensions, as needed.
 			if (a_shouldClamp) 

@@ -7,7 +7,22 @@ namespace ALYSLC
 	// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection
 	// and TrueHUD:
 	// https://github.com/ersh1/TrueHUD
-	class DebugAPILine
+
+	class DebugAPIDrawRequest
+	{
+	public:
+		DebugAPIDrawRequest();
+
+		virtual ~DebugAPIDrawRequest() = default;
+		virtual void Draw(RE::GPtr<RE::GFxMovieView> a_movie) = 0;
+
+		// Duration the line should be drawn for.
+		float durationSecs;
+		// Time point indicating when this draw request was made.
+		std::chrono::steady_clock::time_point requestTimestamp;
+	};
+
+	class DebugAPILine : public DebugAPIDrawRequest
 	{
 	public:
 		DebugAPILine();
@@ -19,6 +34,9 @@ namespace ALYSLC
 			float a_lineThickness, 
 			float a_durationSecs
 		);
+		
+		// Implements ALYSLC::DebugAPIDrawRequest:
+		void Draw(RE::GPtr<RE::GFxMovieView> a_movie) override;
 
 		// Screen coords to start drawing from.
 		glm::vec2 from;
@@ -28,17 +46,16 @@ namespace ALYSLC
 		uint32_t rgba;
 		// Thickness of the line in pixels.
 		float lineThickness;
-		// Duration the line should be drawn for.
-		float durationSecs;
-		// Time point indicating when this draw request was made.
-		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
-	class DebugAPIPoint
+	class DebugAPIPoint : public  DebugAPIDrawRequest
 	{
 	public:
 		DebugAPIPoint();
 		DebugAPIPoint(glm::vec2 a_center, uint32_t a_rgba, float a_size, float a_durationSecs);
+		
+		// Implements ALYSLC::DebugAPIDrawRequest:
+		void Draw(RE::GPtr<RE::GFxMovieView> a_movie) override;
 
 		// Screen coords for the center of the point.
 		glm::vec2 center;
@@ -46,13 +63,9 @@ namespace ALYSLC
 		uint32_t rgba;
 		// Size of the point in pixels.
 		float size;
-		// Duration the point should be drawn for.
-		float durationSecs;
-		// Time point indicating when this draw request was made.
-		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
-	class DebugAPIShape
+	class DebugAPIShape : public  DebugAPIDrawRequest
 	{
 	public:
 		DebugAPIShape();
@@ -65,6 +78,9 @@ namespace ALYSLC
 			float a_lineThickness, 
 			float a_durationSecs
 		);
+		
+		// Implements ALYSLC::DebugAPIDrawRequest:
+		void Draw(RE::GPtr<RE::GFxMovieView> a_movie) override;
 
 		// Screen coords for the origin point of the shape.
 		glm::vec2 origin;
@@ -76,10 +92,6 @@ namespace ALYSLC
 		bool fill;
 		// Thickness of the shape's boundary in pixels.
 		float lineThickness;
-		// Duration the shape should be drawn for.
-		float durationSecs;
-		// Time point indicating when this shape draw request was made.
-		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
 	class DebugAPI
@@ -88,9 +100,18 @@ namespace ALYSLC
 		// Get and save menu dimensions.
 		static void CacheMenuData();
 		
+		// Clamp the given line endpoints to the visible frame.
+		static void ClampLineToScreen(glm::vec2& a_startPos, glm::vec2& a_endPos);
+
+		// Clamp the given screen point to the visible frame.
+		static void ClampPointToScreen(glm::vec2& a_point);
+
 		// Get the UI menu.
 		static RE::GPtr<RE::IMenu> GetHUD();
 		
+		// Return true if the screen point is within the dimensions of the menu's frame.
+		static bool PointIsOnScreen(const glm::vec2& a_screenPoint);
+
 		// Queue arrows, circles, lines, points, and shapes given 2D (screenspace) 
 		// and 3D (worldspace) coordinates.
 		// Drawn during the next update.
@@ -127,10 +148,13 @@ namespace ALYSLC
 		static void QueueCircle3D
 		(
 			glm::vec3 a_center, 
+			glm::vec3 a_worldNormal,
 			uint32_t a_rgba,
 			uint32_t a_segments,
 			float a_radius, 
 			float a_lineThickness, 
+			bool a_connectCenterToVertices = false,
+			bool a_screenspaceRadius = false,
 			float a_durationSecs = 0
 		);
 		
@@ -201,11 +225,11 @@ namespace ALYSLC
 		static void Update();
 		
 		// Get the corresponding screenspace point from the given worldspace position.
+		// Clamps points beyond the visible frame to the boundary of the frame
+		// to keep them on-screen.
 		static glm::vec2 WorldToScreenPoint(glm::vec3 a_worldPos);
 		// Queued lines, points, and shapes to draw during the next update.
-		static std::vector<std::unique_ptr<DebugAPILine>> linesToDraw;
-		static std::vector<std::unique_ptr<DebugAPIPoint>> pointsToDraw;
-		static std::vector<std::unique_ptr<DebugAPIShape>> shapesToDraw;
+		static std::vector<std::unique_ptr<DebugAPIDrawRequest>> drawRequests;
 		// Has the menu's data been cached?
 		static bool cachedMenuData;
 		// Menu overlay dimensions.

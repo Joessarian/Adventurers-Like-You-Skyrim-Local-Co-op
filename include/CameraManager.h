@@ -529,54 +529,6 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
-		// Clear lock on target-related data.
-		inline void ClearLockOnData()
-		{
-			camLockOnTargetHandle.reset();
-			camLockOnFocusPoint = camFocusPoint;
-			lockOnTargetInSight = false;
-		}
-
-		// Get current camera pitch.
-		inline float GetCurrentPitch() const
-		{
-			if (IsRunning() && playerCam && playerCam->currentState)
-			{
-				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
-				if (tpState)
-				{
-					return camPitch;
-				}
-			}
-			else if (auto niCam = Util::GetNiCamera(); niCam)
-			{
-				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCam->world.rotate);
-				return eulerAngles.x;
-			}
-
-			return RE::PlayerCharacter::GetSingleton()->data.angle.x;
-		}
-
-		// Get current camera yaw.
-		inline float GetCurrentYaw() const
-		{
-			if (IsRunning() && playerCam && playerCam->currentState)
-			{
-				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
-				if (tpState)
-				{
-					return camYaw;
-				}
-			}
-			else if (auto niCam = Util::GetNiCamera(); niCam)
-			{
-				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCam->world.rotate);
-				return eulerAngles.z;
-			}
-
-			return RE::PlayerCamera::GetSingleton()->yaw;
-		}
-
 		// Clamp Z coordinate to the given bounds, 
 		// at the given lower/upper offsets from those bounds.
 		inline void ClampToZCoordAboveLowerBound
@@ -627,6 +579,82 @@ namespace ALYSLC
 			}
 		}
 		
+		// Clear lock on target-related data.
+		inline void ClearLockOnData()
+		{
+			camLockOnTargetHandle.reset();
+			camLockOnFocusPoint = camFocusPoint;
+			lockOnTargetInSight = false;
+		}
+
+		// Get current camera pitch.
+		inline float GetCurrentPitch() const
+		{
+			if (IsRunning() && playerCam && playerCam->currentState)
+			{
+				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
+				if (tpState)
+				{
+					return camPitch;
+				}
+			}
+			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+			{
+				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
+				return eulerAngles.x;
+			}
+
+			return RE::PlayerCharacter::GetSingleton()->data.angle.x;
+		}
+
+		inline RE::NiPoint3 GetCurrentPosition() const
+		{
+			// Return the current position of the camera.
+
+			// If using the co-op camera, return the last set target position.
+			if (IsRunning())
+			{
+				return camTargetPos;
+			}
+			else
+			{
+				// Return NiCamera position -> player camera position -> P1's position
+				// -> nothing because everything has failed.
+				if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+				{
+					return niCamPtr->world.translate;
+				}
+
+				if (playerCam && playerCam->cameraRoot && playerCam->cameraRoot.get())
+				{
+					return playerCam->cameraRoot->world.translate;
+				}
+				
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				return (p1 ? p1->data.location : RE::NiPoint3());
+			}
+		}
+
+		// Get current camera yaw.
+		inline float GetCurrentYaw() const
+		{
+			if (IsRunning() && playerCam && playerCam->currentState)
+			{
+				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
+				if (tpState)
+				{
+					return camYaw;
+				}
+			}
+			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+			{
+				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
+				return eulerAngles.z;
+			}
+
+			return RE::PlayerCamera::GetSingleton()->yaw;
+		}
+
 		// Set camera interpolation factors.
 		inline void SetCamInterpFactors()
 		{
@@ -664,9 +692,9 @@ namespace ALYSLC
 			RE::NiUpdateData updateData;
 			playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
 
-			if (auto niCam = Util::GetNiCamera(); niCam && niCam.get())
+			if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
 			{
-				Util::NativeFunctions::UpdateWorldToScaleform(niCam.get());
+				Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
 			}
 
 			playerCam->worldFOV = 
@@ -744,6 +772,21 @@ namespace ALYSLC
 		// Calculate the next camera target points: current, base, and collision.
 		void CalcNextTargetPosition();
 		
+		// Unused for now. Serves as a more performance-friendly, 
+		// less precise alternative to the spherical hull cast.
+		// Cast from the given start point to the given end point,
+		// and if a hit is recorded, return the result.
+		// Otherwise, cast the requested number of times 
+		// in concentric clusters of 4 about the initial raycast
+		// and return the hit result whose hit position is closest to its starting position.
+		Raycast::RayResult ClusterCast
+		(
+			const glm::vec4& a_start, 
+			const glm::vec4& a_end, 
+			const float& a_radius, 
+			const uint32_t& a_additionalRingsOfCasts
+		);
+
 		// Handle lock on requests, check for target validity, and enable/disable cam lock on.
 		void CheckLockOnTarget();
 		
@@ -765,13 +808,14 @@ namespace ALYSLC
 		
 		// Checks if the given point is within the camera's frustum 
 		// at the given camera orientation (no raycasts for visiblity).
-		// Can specify a pixel margin around the border of the screen as well.
+		// Can specify a pixel margin ratio (fraction of screen width/height [0, 1])
+		// around the border of the screen as well.
 		bool PointOnScreenAtCamOrientation
 		(
 			const RE::NiPoint3& a_point,
 			const RE::NiPoint3& a_camPos,
 			const RE::NiPoint2& a_rotation, 
-			const float& a_pixelMargin
+			const float& a_marginRatio
 		);
 		
 		// Reset all camera related data.
@@ -880,7 +924,8 @@ namespace ALYSLC
 		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
 		// Set of handled faded objects and their current fade indices.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, int32_t> obstructionsToFadeIndicesMap;
-
+		// List of all map marker refrs in the current cell.
+		std::vector<RE::TESObjectREFRPtr> cellMapMarkers;
 		// Should the camera zoom in temporarily if all players are under an exterior roof?
 		bool delayedZoomInUnderExteriorRoof;
 		// Should the camera zoom out after all players were under an exterior roof and
@@ -917,7 +962,7 @@ namespace ALYSLC
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
-		const float camAnchorPointHullSize = 50.0f;
+		const float camAnchorPointHullSize = 15.0f;	//50.0f;
 		// Maximum camera rotation rate in radians / second.
 		const float camMaxAngRotRate = PI / 1.5f;
 		// Max movement speed in units/second when in manual positioning mode.
@@ -928,13 +973,11 @@ namespace ALYSLC
 		const float camMinTrailingDistance = 100.0f;
 		// Hull size for target point when checking for collisions.
 		// Should always be smaller than anchor point hull size.
-		const float camTargetPosHullSize = 35.0f;
+		const float camTargetPosHullSize = 10.0f;	//35.0f;
 		// Average height of all active players.
 		float avgPlayerHeight;
 		// Base focus point Z displacement from the origin point.
 		float camBaseHeightOffset;
-		// Base radial distance from the focus point.
-		float camBaseRadialDistance;
 		// Base X rotation for the camera node.
 		float camBaseTargetPosPitch;
 		// Base Z rotation for the camera node.
@@ -962,11 +1005,14 @@ namespace ALYSLC
 		// Max (approximated) distance the camera can zoom out from the focus point before 
 		// before on-screen checks and raycasts fail.
 		float camMaxZoomOutDist;
+		// Radial distance offset to apply on top of the current base radial distance.
+		// [0, camMaxZoomOutDist]
+		float camRadialDistanceOffset;
 		// Camera's current pitch to set.
 		float camPitch;
-		// Saved exterior radial distance from the focus point 
+		// Saved exterior radial distance offset
 		// (before zooming in while under a roof).
-		float camSavedBaseRadialDistance;
+		float camSavedRadialDistanceOffset;
 		// Target X rotation for the camera node relative to the focus point.
 		// Not necessarily the camera's current pitch to set (if collisions are enabled).
 		float camTargetPosPitch;
@@ -990,14 +1036,14 @@ namespace ALYSLC
 		float secsSinceLockOnTargetLOSLost;
 		// ID of the player controller adjusting the camera.
 		int32_t controlCamCID;
-		// Controller ID for the player that requested direct focus.
+		// Controller ID for the player given direct focus of the camera.
 		// -1 if none or if focal player mode is not enabled.
 		int32_t focalPlayerCID;
 		// Number of movement pitch angle readings made since the last update.
 		uint32_t numMovementPitchReadings;
 		// Number of movement yaw angle readings made since the last update.
 		uint32_t numMovementYawToCamReadings;
-		// Player 1 cam toggle bind bitmask.
+		// P1 cam toggle bind bitmask.
 		uint16_t camToggleXIMask;
 	};
 }

@@ -664,14 +664,12 @@ namespace ALYSLC
 		// or unequip all if this player is a co-op companion 
 		// (desired forms will be re-equipped later).
 		void SetInitialEquipState();
-
-		// NOT USED FOR NOW:
-		// For grip switching, set the original weapon type for the weapon in hand slot 
-		// (0 = LH, 1 = RH, 2 = 2H).
-		void SetOriginalWeaponTypeFromKeyword(HandIndex&& a_handSlot);
 		
 		// NOT USED FOR NOW:
-		// Switch weapon grip type.
+		// A bridge too far for the ever-present feature creep in this mod.
+		// For now. Heh.
+		// Switch weapon grip type for the given weapon 
+		// and equip it to the right or left hand slot.
 		void SwitchWeaponGrip(RE::TESObjectWEAP* a_weapon, bool a_equipRH);
 		
 		// Re-assign serialized forms to desired list, clear out mismatches,
@@ -778,11 +776,6 @@ namespace ALYSLC
 		// Saved each time P1 equips a power/shout,
 		// and once at the start of the co-op session.
 		RE::TESForm* voiceForm;
-		// Unused for now. Weapon types (original/grip changed) for LH/RH forms.
-		RE::WEAPON_TYPE lhNewGripType;
-		RE::WEAPON_TYPE lhOriginalType;
-		RE::WEAPON_TYPE rhNewGripType;
-		RE::WEAPON_TYPE rhOriginalType;
 		// Favorites cycling categories for LH/RH spells and weapons.
 		FavMagicCyclingCategory lastCycledSpellCategory;
 		FavMagicCyclingCategory lhSpellCategory;

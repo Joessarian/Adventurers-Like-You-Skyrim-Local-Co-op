@@ -3,7 +3,7 @@
 
 namespace ALYSLC
 {
-	namespace SerializationCallbacks
+	namespace Serialization
 	{
 		// Get the form that corresponds to the retrieved serialized FID.
 		RE::TESForm* GetFormFromRetrievedFID

@@ -435,6 +435,20 @@ namespace ALYSLC
 			return (IsPerforming(a_actions) || ...);
 		}
 
+		// Is the player rotating their arms?
+		bool IsRotatingArms() 
+		{
+			return IsPerformingOneOf
+			(
+				InputAction::kRotateRightForearm,
+				InputAction::kRotateRightHand,
+				InputAction::kRotateRightShoulder,
+				InputAction::kRotateLeftForearm,
+				InputAction::kRotateLeftHand,
+				InputAction::kRotateLeftShoulder
+			);
+		}
+
 		// Did this action just start?
 		inline const bool JustStarted(const InputAction& a_action) 
 		{
@@ -519,6 +533,7 @@ namespace ALYSLC
 		void CastSpellWithMagicCaster
 		(
 			const EquipIndex& a_index, 
+			const bool& a_justStarted,
 			bool&& a_startCast, 
 			bool&& a_waitForCastingAnim, 
 			const bool& a_shouldCastWithP1
@@ -537,7 +552,7 @@ namespace ALYSLC
 		void ChainAndSendP1ButtonEvents();
 
 		// Level up the co-op player's skill(s) through advancing the same skill(s) for P1.
-		void CheckForCoopCompanionLevelUps();
+		void CheckForCompanionPlayerLevelUps();
 
 		// Update combat skills data when the player starts/stops performing a combat skill.
 		void CheckIfPerformingCombatSkills();
@@ -554,6 +569,9 @@ namespace ALYSLC
 
 		// Expend stamina when a stamina AV cost action is in progress or when sprinting.
 		void ExpendStamina();
+
+		// Directly expend stamina equal to the given cost.
+		void ExpendStamina(const float& a_cost);
 
 		// Flash the shout meter around the compass.
 		void FlashShoutMeter();
@@ -577,9 +595,12 @@ namespace ALYSLC
 		// and the action is now performable (check button ordering).
 		bool GetPlayerActionInputJustPressed(const InputAction& a_action);
 
-		// Return true if all inputs for the given action were just released
+		// Return true if all/some inputs for the given action were just released
 		// (order in which they were released does not matter).
-		bool GetPlayerActionInputJustReleased(const InputAction& a_action);
+		bool GetPlayerActionInputJustReleased
+		(
+			const InputAction& a_action, bool&& a_checkIfAllReleased
+		);
 
 		// Modify magicka/stamina actor values as necessary 
 		// after the appropriate animation events trigger.
@@ -665,7 +686,7 @@ namespace ALYSLC
 			const InputAction& a_inputAction, 
 			RE::INPUT_DEVICE&& a_inputDevice, 
 			ButtonEventPressType&& a_buttonStateToTrigger,
-			float&& a_heldDownSecs = 0.0f,
+			const float& a_heldDownSecs = 0.0f,
 			bool&& a_toggleAIDriven = true
 		) noexcept;
 
@@ -681,11 +702,6 @@ namespace ALYSLC
 
 		// Set/unset the given package flag for all of a companion player's packages.
 		void SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag&& a_flag, bool&& a_set);
-
-		// TODO: Not used at the moment, but keeping for now.
-		// If not resetting, swap 1H weapon's grip to 2H or 2H weapons grip to 1H.
-		// Otherwise, set the original handedness.
-		void SetWeaponGrip(bool a_resetGrip);
 
 		// Stop combat between normally neutral actors, 
 		// player allies/followers/summons, and co-op players.
@@ -814,11 +830,13 @@ namespace ALYSLC
 		// Time intervals for routine updates.
 		// Bound weapon equip durations from base effects.
 		// Note: Will not be modified by cost-reduction, as this is the base duration.
+		float secsBoundWeapon2HDuration;
 		float secsBoundWeaponLHDuration;
 		float secsBoundWeaponRHDuration;
 		// Currently equipped shout's cooldown.
 		float secsCurrentShoutCooldown;
-		// Seconds since the bound weapon in the LH/RH was equipped.
+		// Seconds since the bound weapon in the LH/RH or in 2H was equipped.
+		float secsSinceBoundWeap2HReq;
 		float secsSinceBoundWeapLHReq;
 		float secsSinceBoundWeapRHReq;
 		// Seconds since cycling the next activation refr from nearby references.
@@ -900,8 +918,9 @@ namespace ALYSLC
 		bool autoEndDialogue;
 		// Should block all input actions while set.
 		bool blockAllInputActions;
-		// Requested to equip bound weapon in the LH/RH.
+		// Requested to equip bound weapon in the LH/RH or in 2H.
 		// Cleared on unequip.
+		bool boundWeapReq2H;
 		bool boundWeapReqLH;
 		bool boundWeapReqRH;
 		// Player can shout (cooldown expired).

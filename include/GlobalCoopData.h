@@ -103,40 +103,54 @@ namespace ALYSLC
 			// Cache the world.
 			inline void AddContactListener(RE::ahkpWorld* a_world)
 			{
-				if (a_world)
+				if (!a_world)
 				{
-					bool alreadyAdded = std::any_of
-					(
-						world->contactListeners.begin(), 
-						world->contactListeners.end(), 
-						[this](RE::hkpContactListener* a_listener) 
-						{ 
-							return a_listener == this; 
-						}
-					);
-					if (!alreadyAdded)
-					{
-						world = a_world;
-						Util::NativeFunctions::hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world);
-						Util::NativeFunctions::hkpWorld_addContactListener(world, this);
-					}
+					return;
 				}
+
+				bool alreadyAdded = std::any_of
+				(
+					world->contactListeners.begin(), 
+					world->contactListeners.end(), 
+					[this](RE::hkpContactListener* a_listener) 
+					{ 
+						return a_listener == this; 
+					}
+				);
+				if (alreadyAdded)
+				{
+					return;
+				}
+
+				world = a_world;
+				Util::NativeFunctions::hkpCollisionCallbackUtil_requireCollisionCallbackUtil
+				(
+					world
+				);
+				Util::NativeFunctions::hkpWorld_addContactListener(world, this);
 			}
 
 			// Remove listener from the cached havok world.
 			inline void RemoveContactListener()
 			{
-				if (world)
+				if (!world)
 				{
-					for (auto listener : world->contactListeners)
+					return;
+				}
+
+				for (auto listener : world->contactListeners)
+				{
+					if (listener != this)
 					{
-						if (listener == this)
-						{
-							Util::NativeFunctions::hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(world);
-							Util::NativeFunctions::hkpWorld_removeContactListener(world, listener);
-							listener = nullptr;
-						}
+						continue;
 					}
+
+					Util::NativeFunctions::hkpCollisionCallbackUtil_releaseCollisionCallbackUtil
+					(
+						world
+					);
+					Util::NativeFunctions::hkpWorld_removeContactListener(world, listener);
+					listener = nullptr;
 				}
 			}
 
@@ -528,6 +542,14 @@ namespace ALYSLC
 		
 		// Checks if this controller can control menus.
 		static bool CanControlMenus(const int32_t& a_controllerID);
+
+		// Enable collisions among the biped, biped no char controller,
+		// dead biped, and char controller layers for all actors in the current cell.
+		// Allows the havok contact listener to respond to collisions between ragdolling bodies.
+		// NOTE:
+		// Currently haven't figured out how to enable ragdoll-to-P1 collisions,
+		// so all ragdolling actors pass through P1 without colliding.
+		static void EnableRagdollToActorCollisions();
 
 		// If the given argument is a co-op player, get the player's index 
 		// in the co-op companions list (controller ID).
@@ -1166,7 +1188,8 @@ namespace ALYSLC
 		};
 
 		// Enderal skillbook form IDs mapped to their tier and associated skill AV.
-		static inline const std::unordered_map<RE::FormID, std::pair<EnderalSkillbookTier, RE::ActorValue>> 
+		static inline const 
+		std::unordered_map<RE::FormID, std::pair<EnderalSkillbookTier, RE::ActorValue>> 
 		ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP = 
 		{
 			{ 0x31ACC, { EnderalSkillbookTier::kApprentice, RE::ActorValue::kOneHanded } },
@@ -1268,22 +1291,47 @@ namespace ALYSLC
 			{ RE::ActorValue::kSpeech, 17 }
 		};
 
-		// Set of menus that a co-op companion player can interact with when opened.
+		// Set of menus for which menu control is transferable from one player to another.
+		// NOTE:
+		// Opening these menus never involves importing a companion player's data to P1,
+		// and should also only contain menus that can open without a clear trigger
+		// that links the opened menu back to a player.
+		// Ex. Activating a refr that opens a custom menu, or the Enderal level up message
+		// box opening up once combat ends, or a guard starting a warning dialogue with the player.
+		static inline const std::set<std::string_view> TRANSFERABLE_CONTROL_MENU_NAMES = 
+		{
+			RE::DialogueMenu::MENU_NAME,
+			RE::MessageBoxMenu::MENU_NAME,
+			CUSTOM_MENU
+		};
+
+		// Set of menus that a companion player can interact with when opened.
 		// Most of these menus will have custom control maps, 
 		// and if not, a default control map is used.
 		static inline const std::set<std::string_view> SUPPORTED_MENU_NAMES = 
 		{
-			RE::BarterMenu::MENU_NAME, RE::BookMenu::MENU_NAME,
-			RE::ContainerMenu::MENU_NAME, RE::CraftingMenu::MENU_NAME,
-			RE::DialogueMenu::MENU_NAME, RE::FavoritesMenu::MENU_NAME,
-			RE::GiftMenu::MENU_NAME, RE::JournalMenu::MENU_NAME,
-			RE::InventoryMenu::MENU_NAME, RE::LevelUpMenu::MENU_NAME, 
+			RE::BarterMenu::MENU_NAME,
+			RE::BookMenu::MENU_NAME,
+			RE::Console::MENU_NAME,
+			RE::ContainerMenu::MENU_NAME,
+			RE::CraftingMenu::MENU_NAME,
+			RE::DialogueMenu::MENU_NAME,
+			RE::FavoritesMenu::MENU_NAME,
+			RE::GiftMenu::MENU_NAME,
+			RE::JournalMenu::MENU_NAME,
+			RE::InventoryMenu::MENU_NAME, 
+			RE::LevelUpMenu::MENU_NAME, 
 			RE::MagicMenu::MENU_NAME,
 			RE::MapMenu::MENU_NAME, 
-			RE::MessageBoxMenu::MENU_NAME, RE::RaceSexMenu::MENU_NAME,
-			RE::SleepWaitMenu::MENU_NAME, RE::StatsMenu::MENU_NAME, 
-			RE::TrainingMenu::MENU_NAME, RE::TweenMenu::MENU_NAME, 
-			ENHANCED_HERO_MENU, CUSTOM_MENU, LOOT_MENU
+			RE::MessageBoxMenu::MENU_NAME,
+			RE::RaceSexMenu::MENU_NAME,
+			RE::SleepWaitMenu::MENU_NAME,
+			RE::StatsMenu::MENU_NAME, 
+			RE::TrainingMenu::MENU_NAME,
+			RE::TweenMenu::MENU_NAME, 
+			ENHANCED_HERO_MENU,
+			CUSTOM_MENU,
+			LOOT_MENU
 		};
 
 		// Player nodes to raycast to from the camera node position 
@@ -1327,6 +1375,65 @@ namespace ALYSLC
 			RE::FixedStrings::GetSingleton()->npcSpine2
 		};
 
+		// Outer outline of prong of aim pitch indicator arrow facing right.
+		// Origin: leftmost point, centered vertically on prong.
+		static inline const std::vector<glm::vec2> AIM_PITCH_INDICATOR_HEAD_OUTER_PIXEL_OFFSETS =
+		{
+			{ 0.0f, 0.0f },
+			{ 0.0f, 5.0f },
+			{ 1.5f, 5.0f },
+			{ 3.5f, 4.0f },
+			{ 5.0f, 4.0f },
+			{ 7.0f, 5.0f },
+			{ 7.5f, 5.0f },
+			{ 19.5f, 0.0f },
+			{ 7.5f, -5.0f },
+			{ 7.0f, -5.0f },
+			{ 5.0f, -4.0f },
+			{ 1.5f, -5.0f },
+			{ 0.0f, -5.0f }
+		};
+		
+		// Default length of the aim pitch indicator outer shape in pixels.
+		static inline const float AIM_PITCH_INDICATOR_OUTER_DEF_LENGTH = 20.0f;
+
+		// Inner outline of prong of aim pitch indicator arrow facing right.
+		// Origin: leftmost point, centered vertically on prong.
+		static inline const std::vector<glm::vec2> AIM_PITCH_INDICATOR_HEAD_MID_PIXEL_OFFSETS =
+		{
+			{ 2.0f, 0.0f },
+			{ 2.0f, 1.75f },
+			{ 7.0f, 3.75f },
+			{ 8.0f, 3.75f },
+			{ 17.0f, 0.0f },
+			{ 8.0f, -3.75f },
+			{ 7.0f, -3.75f },
+			{ 2.0f, -1.75f },
+		};
+		
+		// Default length of the aim pitch indicator middle shape in pixels.
+		static inline const float AIM_PITCH_INDICATOR_MID_DEF_LENGTH = 15.0f;
+
+		// Body of prong of aim pitch indicator arrow facing right.
+		// Origin: leftmost point, centered vertically on prong.
+		// Default height: 12 pixels.
+		// Default width: 11 pixels.
+		static inline const std::vector<glm::vec2> AIM_PITCH_INDICATOR_HEAD_INNER_PIXEL_OFFSETS =
+		{
+			{ 6.5f, 0.0f },
+			{ 6.5f, 1.0f },
+			{ 7.5f, 1.5f },
+			{ 8.0f, 1.5f },
+			{ 12.0f, 0.5f },
+			{ 12.0f, 0.0f },
+			{ 8.0f, -1.5f },
+			{ 7.5f, -1.5f },
+			{ 6.5f, -1.0f },
+		};
+		
+		// Default length of the aim pitch indicator inner shape in pixels.
+		static inline const float AIM_PITCH_INDICATOR_INNER_DEF_LENGTH = 5.5f;
+
 		// Prong of default crosshair facing right.
 		// Origin: leftmost point on prong.
 		// Default length: 22px
@@ -1345,32 +1452,32 @@ namespace ALYSLC
 
 		// Upper "diamond" portion of the quest marker indicator.
 		// Drawn first.
-		// Origin: top of diamond.
+		// Origin: lower portion's bottom.
 		// Default length: 20
 		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS = 
 		{
-			{ 0.0f, 0.0f },
-			{ -5.0f, 11.0f },
-			{ -5.0f, 12.0f },
-			{ -4.0f, 12.0f },
-			{ 0.0f, 20.0f },
-			{ 4.0f, 12.0f },
-			{ 5.0f, 12.0f },
-			{ 5.0f, 11.0f }
+			{ 0.0f, -47.0f },
+			{ -5.0f, -38.0f },
+			{ -5.0f, -37.0f },
+			{ -4.0f, -37.0f },
+			{ 0.0f, -27.0f },
+			{ 4.0f, -37.0f },
+			{ 5.0f, -37.0f },
+			{ 5.0f, -38.0f }
 		};
 
 		// Lower "caret" portion of the quest marker indicator.
 		// Drawn second.
-		// Origin: shared origin with top.
+		// Origin: bottom of the caret.
 		// Default length: 34
 		static inline const std::vector<glm::vec2> PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS = 
 		{
-			{ -14.0f, 14.0f },
-			{ -3.0f, 13.0f },
-			{ 0.0f, 21.0f },
-			{ 3.0f, 13.0f },
-			{ 14.0f, 14.0f },
-			{ 0.0f, 47.0f }
+			{ -14.0f, -33.0f },
+			{ -3.0f, -34.0f },
+			{ 0.0f, -26.0f },
+			{ 3.0f, -34.0f },
+			{ 14.0f, -33.0f },
+			{ 0.0f, 0.0f }
 		};
 
 		// Default length of the player indicator in pixels.
@@ -1455,7 +1562,7 @@ namespace ALYSLC
 		// Detached thread running queued async tasks.
 		std::unique_ptr<TaskRunner> taskRunner;
 
-		// Player 1's actor
+		// P1's actor
 		RE::ActorPtr player1Actor;
 		// Effects to indicate that the companion player is 'paragliding'.
 		RE::BGSArtObject* paraglideIndicatorEffect1;
@@ -1628,6 +1735,9 @@ namespace ALYSLC
 		std::mutex menuCIDMutex;
 		// P1 skill XP modification mutex.
 		std::mutex p1SkillXPMutex;
+		// The last menu CID resolved (computed during the ProcessMessage() hook)
+		// and before the menu opens/closes/updates.
+		int32_t lastResolvedMenuCID;
 		// Controller ID for the player currently controlling menus.
 		// -1 if only "always open menus" are open.
 		int32_t menuCID;

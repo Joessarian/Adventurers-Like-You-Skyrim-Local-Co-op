@@ -7,44 +7,66 @@ namespace ALYSLC
 	// Global co-op data.
 	static GlobalCoopData& glob = GlobalCoopData::GetSingleton();
 
-	namespace SerializationCallbacks
+	using SerializablePlayerData = ALYSLC::GlobalCoopData::SerializablePlayerData;
+	namespace Serialization
 	{	
-		RE::TESForm* GetFormFromRetrievedFID(SKSE::SerializationInterface* a_intfc, RE::FormID& a_fid, RE::TESDataHandler* a_dataHandler)
+		RE::TESForm* GetFormFromRetrievedFID
+		(
+			SKSE::SerializationInterface* a_intfc, 
+			RE::FormID& a_fid,
+			RE::TESDataHandler* a_dataHandler
+		)
 		{
-			// Get form from serialized FID.
+			// Get form from the provided serialized FID.
 
 			bool succ = a_intfc->ResolveFormID(a_fid, a_fid);
 			if (a_fid != 0 && succ)
 			{
 				RE::TESForm* form = RE::TESForm::LookupByID(a_fid);
-
-				// If not found in Skyrim.esm, look through all mod files for the form.
-				if (!form && a_dataHandler)
+				if (form)
 				{
-					for (auto file : a_dataHandler->files)
-					{
-						if (file)
-						{
-							const auto form = a_dataHandler->LookupForm(a_fid, file->fileName);
-							if (form)
-							{
-								SPDLOG_DEBUG("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {} in mod file {}.", 
-									a_fid, form ? form->GetName() : "NONE",  file->fileName);
-								return form;
-							}
-						}
-					}
-				}
-				else
-				{
-					SPDLOG_DEBUG("[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {}.",
-						a_fid, form ? form->GetName() : "NONE");
+					SPDLOG_DEBUG
+					(
+						"[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {}.",
+						a_fid, form ? form->GetName() : "NONE"
+					);
 					return form;
+				}
+
+				if (!a_dataHandler)
+				{
+					return nullptr;
+				}
+				
+				// If not found in Skyrim.esm, look through all mod files for the form.
+				for (auto file : a_dataHandler->files)
+				{
+					if (!file)
+					{
+						continue;
+					}
+
+					const auto form = a_dataHandler->LookupForm(a_fid, file->fileName);
+					if (form)
+					{
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: "
+							"{} in mod file {}.", 
+							a_fid, form ? form->GetName() : "NONE",  file->fileName
+						);
+						return form;
+					}
 				}
 			}
 			else if (!succ)
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: GetFormFromRetrievedFID: Could resolve new form ID from form ID (0x{:X}) retrieved from co-save.", a_fid);
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: GetFormFromRetrievedFID: "
+					"Could resolve new form ID from retrieved form ID (0x{:X}).", 
+					a_fid
+				);
 				return nullptr;
 			}
 
@@ -58,13 +80,20 @@ namespace ALYSLC
 			SPDLOG_DEBUG("[SERIAL] Load: Read all serialized data from SKSE co-save.");
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
-				SPDLOG_DEBUG("[SERIAL] Load: Lock obtained. (0x{:X})", 
-					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				SPDLOG_DEBUG
+				(
+					"[SERIAL] Load: Lock obtained. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 
 				// If the serialization interface is not valid, set the default retrieved data.
 				if (!a_intfc)
 				{
-					SPDLOG_ERROR("[SERIAL] ERR: Load: Could not get serialization interface. Setting default data for all players.");
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Load: Could not get serialization interface. "
+						"Setting default data for all players."
+					);
 					SetDefaultRetrievedData(a_intfc);
 				}
 
@@ -80,12 +109,12 @@ namespace ALYSLC
 					SPDLOG_ERROR
 					(
 						"[SERIAL] ERR: Load: Could not get data handler. "
-						"Cannot load serialized data. Please inform the mod author."
+						"Cannot load serialized data."
 					);
 					return;
 				}
 
-				// Player form ID serialized as a key for each grouping of data.
+				// Player form ID serialized as a key for each data type.
 				RE::FormID fid = 0;
 				// Type, serialization version, and length of record data read out.
 				uint32_t type;
@@ -96,8 +125,16 @@ namespace ALYSLC
 				{
 					if (version != !SerializableDataType::kSerializationVersion)
 					{
-						SPDLOG_ERROR("[SERIAL] ERR: Load: Serialized data version ({}) does not match current version ({}) for entry of type {}, length {}.",
-							version, !SerializableDataType::kSerializationVersion, TypeToString(type), length);
+						SPDLOG_ERROR
+						(
+							"[SERIAL] ERR: Load: "
+							"Serialized data version ({}) does not match current version ({}) "
+							"for entry of type {}, length {}.",
+							version, 
+							!SerializableDataType::kSerializationVersion, 
+							TypeToString(type), 
+							length
+						);
 						continue;
 					}
 
@@ -125,232 +162,374 @@ namespace ALYSLC
 						{
 							if (!a_intfc->ReadRecordData(fid) || !a_intfc->ResolveFormID(fid, fid))
 							{
-								SPDLOG_ERROR("[SERIAL] ERR: Load: Could not read player form ID ({}, 0x{:X}) or resolve form ID ({}) for record of type {}, version {}, length {} when attempting to load serialized data. Continuing to next player record of the same type.",
-									!a_intfc->ReadRecordData(fid), fid, !a_intfc->ResolveFormID(fid, fid), TypeToString(type), version, length);
+								SPDLOG_ERROR
+								(
+									"[SERIAL] ERR: Load: "
+									"Could not read player form ID ({}, 0x{:X}) "
+									"or resolve form ID ({}) for record of type {}, version {}, "
+									"length {} when attempting to load serialized data. "
+									"Continuing to next player record of the same type.",
+									!a_intfc->ReadRecordData(fid), 
+									fid,
+									!a_intfc->ResolveFormID(fid, fid), 
+									TypeToString(type), 
+									version, 
+									length
+								);
 								continue;
 							}
-							else
+
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: "
+								"About to retrieve serialized data for player with FID 0x{:X}.", 
+								fid
+							);
+							// Insert default data at first.
+							if (glob.serializablePlayerData.empty() ||
+								!glob.serializablePlayerData.contains(fid))
 							{
-								SPDLOG_DEBUG("[SERIAL] Load: About to retrieve serialized data for player with FID 0x{:X}.", fid);
-								// Insert default data at first.
-								if (glob.serializablePlayerData.empty() || !glob.serializablePlayerData.contains(fid))
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: "
+									"Added new serialized data set for player with FID 0x{:X}.",
+									fid
+								);
+								glob.serializablePlayerData.insert
+								(
+									{ 
+										fid,
+										std::make_unique<SerializablePlayerData>()
+									}
+								);
+							}
+
+							const auto& data = glob.serializablePlayerData.at(fid);
+							if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
+							{
+								RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has {} available perk points to use still.",
+									fid, data->availablePerkPoints
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerUsedPerkPoints)
+							{
+								RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has used {} perk points.",
+									fid, data->usedPerkPoints
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
+							{
+								RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has unlocked {} shared perks.",
+									fid, data->sharedPerksUnlocked
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
+							{
+								RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has {} extra perks.",
+									fid, data->extraPerkPoints
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerFirstSavedLevel)
+							{
+								RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"was level {} when their data was first serialized.",
+									fid, data->firstSavedLevel
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerLevel)
+							{
+								RetrieveUInt32Data(a_intfc, data->level, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has saved level: {}.",
+									fid, data->level
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerLevelXP)
+							{
+								RetrieveFloatData(a_intfc, data->levelXP, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has saved level XP: {}.",
+									fid, data->levelXP
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerBaseHMSPointsList)
+							{
+								for (auto j = 0; j < 3; ++j)
 								{
-									SPDLOG_DEBUG("[SERIAL] Load: Added new serialized data set for player with FID 0x{:X}.", fid);
-									glob.serializablePlayerData.insert
+									RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
+									SPDLOG_DEBUG
 									(
-										{ 
-											fid,
-											std::make_unique<ALYSLC::GlobalCoopData::SerializablePlayerData>()
-										}
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has a base {} level of {} at first-saved level {}.",
+										fid, 
+										j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
+										data->hmsBasePointsList[j],
+										data->firstSavedLevel
 									);
 								}
+							}
+							else if (type == !SerializableDataType::kPlayerHMSPointsIncList)
+							{
+								for (auto j = 0; j < 3; ++j)
+								{
+									RetrieveFloatData
+									(
+										a_intfc, data->hmsPointIncreasesList[j], type
+									);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has increased {} by {}.",
+										fid, 
+										j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
+										data->hmsPointIncreasesList[j]
+									);
+								}
+							}
+							else if (type == !SerializableDataType::kPlayerBaseSkillLevelsList)
+							{
+								for (auto j = 0; j < Skill::kTotal; ++j)
+								{
+									RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has base skill {} of {}.",
+										fid, 
+										Util::GetActorValueName
+										(
+											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+										), 
+										data->skillBaseLevelsList[j]
+									);
+								}
+							}
+							else if (type == !SerializableDataType::kPlayerSkillIncreasesList)
+							{
+								for (auto j = 0; j < Skill::kTotal; ++j)
+								{
+									RetrieveFloatData
+									(
+										a_intfc, data->skillLevelIncreasesList[j], type
+									);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has increased skill {} by {}.",
+										fid, 
+										Util::GetActorValueName
+										(
+											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+										), 
+										data->skillLevelIncreasesList[j]
+									);
+								}
+							}
+							else if (type == !SerializableDataType::kPlayerSkillXPList)
+							{
+								for (auto j = 0; j < Skill::kTotal; ++j)
+								{
+									RetrieveFloatData(a_intfc, data->skillXPList[j], type);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has gained {} XP for skill {}.",
+										fid,
+										data->skillXPList[j], 
+										Util::GetActorValueName
+										(
+											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+										)
+									);
+								}
+							}
+							else if (type == !SerializableDataType::kPlayerEquippedObjectsList)
+							{
+								// Read in all saved equipped forms.
+								uint32_t numEquippedForms = 0;
+								RetrieveUInt32Data(a_intfc, numEquippedForms, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.",
+									fid, numEquippedForms
+								);
 
-								const auto& data = glob.serializablePlayerData.at(fid);
-								if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
+								data->equippedForms.clear();
+								RE::FormID equippedFID = 0;
+								for (auto j = 0; j < numEquippedForms; ++j)
 								{
-									RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} available perk points to use still.",
-										fid, data->availablePerkPoints);
+									RetrieveUInt32Data(a_intfc, equippedFID, type);
+									data->equippedForms.emplace_back
+									(
+										GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
+									);
 								}
-								else if (type == !SerializableDataType::kPlayerUsedPerkPoints)
-								{
-									RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has used {} perk points.",
-										fid, data->usedPerkPoints);
-								}
-								else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
-								{
-									RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has unlocked {} shared perks.",
-										fid, data->sharedPerksUnlocked);
-								}
-								else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
-								{
-									RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} extra perks.",
-										fid, data->extraPerkPoints);
-								}
-								else if (type == !SerializableDataType::kPlayerFirstSavedLevel)
-								{
-									RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} was level {} when their data was first serialized.",
-										fid, data->firstSavedLevel);
-								}
-								else if (type == !SerializableDataType::kPlayerLevel)
-								{
-									RetrieveUInt32Data(a_intfc, data->level, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has saved level: {}.",
-										fid, data->level);
-								}
-								else if (type == !SerializableDataType::kPlayerLevelXP)
-								{
-									RetrieveFloatData(a_intfc, data->levelXP, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has saved level XP: {}.",
-										fid, data->levelXP);
-								}
-								else if (type == !SerializableDataType::kPlayerBaseHMSPointsList)
-								{
-									for (auto j = 0; j < 3; ++j)
-									{
-										RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has a base {} level of {} at first-saved level {}.",
-											fid, j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
-											data->hmsBasePointsList[j],
-											data->firstSavedLevel);
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerHMSPointsIncList)
-								{
-									for (auto j = 0; j < 3; ++j)
-									{
-										RetrieveFloatData(a_intfc, data->hmsPointIncreasesList[j], type);
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has increased {} by {}.",
-											fid, j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
-											data->hmsPointIncreasesList[j]);
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerBaseSkillLevelsList)
-								{
-									for (auto j = 0; j < Skill::kTotal; ++j)
-									{
-										RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has base skill {} of {}.",
-											fid, Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
-											data->skillBaseLevelsList[j]);
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerSkillIncreasesList)
-								{
-									for (auto j = 0; j < Skill::kTotal; ++j)
-									{
-										RetrieveFloatData(a_intfc, data->skillLevelIncreasesList[j], type);
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has increased skill {} by {}.",
-											fid, Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
-											data->skillLevelIncreasesList[j]);
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerSkillXPList)
-								{
-									for (auto j = 0; j < Skill::kTotal; ++j)
-									{
-										RetrieveFloatData(a_intfc, data->skillXPList[j], type);
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has gained {} XP for skill {}.",
-											fid, data->skillXPList[j], 
-											Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))));
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerEquippedObjectsList)
-								{
-									// Read in all saved equipped forms.
-									uint32_t numEquippedForms = 0;
-									RetrieveUInt32Data(a_intfc, numEquippedForms, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.", fid, numEquippedForms);
+							}
+							else if (type == !SerializableDataType::kPlayerMagFavoritesList)
+							{
+								// Read in all saved favorited magical forms.
+								uint32_t numMagForms = 0;
+								RetrieveUInt32Data(a_intfc, numMagForms, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has {} favorited magical forms.", 
+									fid, numMagForms
+								);
 
-									data->equippedForms.clear();
-									RE::FormID equippedFID = 0;
-									for (auto j = 0; j < numEquippedForms; ++j)
-									{
-										RetrieveUInt32Data(a_intfc, equippedFID, type);
-										data->equippedForms.emplace_back(GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler));
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerMagFavoritesList)
+								data->favoritedMagForms.clear();
+								RE::FormID equippedFID = 0;
+								for (auto j = 0; j < numMagForms; ++j)
 								{
-									// Read in all saved physical forms.
-									uint32_t numMagForms = 0;
-									RetrieveUInt32Data(a_intfc, numMagForms, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} favorited magical forms.", fid, numMagForms);
+									RetrieveUInt32Data(a_intfc, equippedFID, type);
+									data->favoritedMagForms.emplace_back
+									(
+										GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
+									);
+								}
+							}
+							else if (type == !SerializableDataType::kPlayerHotkeyedFormsList)
+							{
+								// Read in all saved hotkeyed forms.
+								RE::FormID hotkeyedFID = 0;
+								RE::TESForm* hotkeyedForm = nullptr;
+								for (auto j = 0; j < data->hotkeyedForms.size(); ++j)
+								{
+									RetrieveUInt32Data(a_intfc, hotkeyedFID, type);
+									if (hotkeyedFID) 
+									{
+										hotkeyedForm = GetFormFromRetrievedFID
+										(
+											a_intfc, hotkeyedFID, dataHandler
+										);
+									}
+									else
+									{
+										// Empty slot, still assign.
+										hotkeyedForm = nullptr;
+									}
 
-									data->favoritedMagForms.clear();
-									RE::FormID equippedFID = 0;
-									for (auto j = 0; j < numMagForms; ++j)
-									{
-										RetrieveUInt32Data(a_intfc, equippedFID, type);
-										data->favoritedMagForms.emplace_back(GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler));
-									}
+									data->hotkeyedForms[j] = hotkeyedForm;
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has {} hotkeyed in slot {}.", 
+										fid, 
+										hotkeyedForm ? hotkeyedForm->GetName() : "NONE", 
+										j + 1
+									);
 								}
-								else if (type == !SerializableDataType::kPlayerHotkeyedFormsList)
+							}
+							else if (type == !SerializableDataType::kPlayerCopiedMagicList)
+							{
+								// Read in saved copied magic spell forms.
+								data->copiedMagic.fill(nullptr);
+								RE::FormID magicFID{};
+								for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i) 
 								{
-									// Read in all saved hotkeyed forms.
-									RE::FormID hotkeyedFID = 0;
-									RE::TESForm* hotkeyedForm = nullptr;
-									for (auto j = 0; j < data->hotkeyedForms.size(); ++j)
+									RetrieveUInt32Data(a_intfc, magicFID, type);
+									auto form = GetFormFromRetrievedFID
+									(
+										a_intfc, magicFID, dataHandler
+									); 
+									if (form && form->Is(RE::FormType::Spell, RE::FormType::Shout))
 									{
-										RetrieveUInt32Data(a_intfc, hotkeyedFID, type);
-										if (hotkeyedFID) 
-										{
-											hotkeyedForm = GetFormFromRetrievedFID(a_intfc, hotkeyedFID, dataHandler);
-										}
-										else
-										{
-											hotkeyedForm = nullptr;
-										}
+										data->copiedMagic[i] = form;
+									}
+									else
+									{
+										// Empty slot, still assign.
+										data->copiedMagic[i] = nullptr;
+									}
 
-										data->hotkeyedForms[j] = hotkeyedForm;
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} hotkeyed in slot {}.", 
-											fid, hotkeyedForm ? hotkeyedForm->GetName() : "NONE", j + 1);
-									}
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X} "
+										"has copied magic form {} (0x{:X}) in slot {}.",
+										fid, 
+										data->copiedMagic[i] ?
+										data->copiedMagic[i]->GetName() : 
+										"NONE",
+										data->copiedMagic[i] ? 
+										data->copiedMagic[i]->formID : 
+										0xDEAD,
+										i
+									);
 								}
-								else if (type == !SerializableDataType::kPlayerCopiedMagicList)
+							}
+							else if (type == !SerializableDataType::kPlayerEmoteIdleEvents)
+							{
+								// Eight cyclable emote idles' event names.
+								RE::BSFixedString eventName = ""sv;
+								uint32_t size = 0;
+								for (uint8_t i = 0; i < data->cyclableEmoteIdleEvents.size(); ++i) 
 								{
-									// Read in saved copied magic spell forms.
-									data->copiedMagic.fill(nullptr);
-									RE::FormID magicFID{};
-									for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i) 
+									// Length of serialized event name string.
+									RetrieveUInt32Data(a_intfc, size, type);
+									if (size == 0) 
 									{
-										RetrieveUInt32Data(a_intfc, magicFID, type);
-										if (auto form = GetFormFromRetrievedFID(a_intfc, magicFID, dataHandler); form && form->Is(RE::FormType::Spell, RE::FormType::Shout))
-										{
-											data->copiedMagic[i] = form;
-										}
-										else
-										{
-											data->copiedMagic[i] = nullptr;
-										}
+										continue;
+									}
 
-										SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has copied magic form {} (0x{:X}) in slot {}.",
-											fid, 
-											data->copiedMagic[i] ? data->copiedMagic[i]->GetName() : "NONE",
-											data->copiedMagic[i] ? data->copiedMagic[i]->formID : 0xDEAD,
-											i);
-									}
+									RetrieveStringData(a_intfc, eventName, type, size);
+									data->cyclableEmoteIdleEvents[i] = eventName;
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Load: Player with FID 0x{:X}'s "
+										"saved cyclable emote idle event {} is {}. "
+										"String length: {}.", 
+										fid, i, eventName, size
+									);
 								}
-								else if (type == !SerializableDataType::kPlayerEmoteIdleEvents)
-								{
-									// Eight cyclable emote idles.
-									RE::BSFixedString eventName = ""sv;
-									uint32_t size = 0;
-									for (uint8_t i = 0; i < data->cyclableEmoteIdleEvents.size(); ++i) 
-									{
-										RetrieveUInt32Data(a_intfc, size, type);
-										if (size > 0) 
-										{
-											RetrieveStringData(a_intfc, eventName, type, size);
-											data->cyclableEmoteIdleEvents[i] = eventName;
-											SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X}'s saved cyclable emote idle event {} is {}. String length: {}.", 
-												fid, i, eventName, size);
-										}
-									}
-								}
-								else if (type == !SerializableDataType::kPlayerUnlockedPerksList)
-								{
-									// Read in all unlocked perks.
-									uint32_t numUnlockedPerks = 0;
-									RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
-									SPDLOG_DEBUG("[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
-										fid, numUnlockedPerks);
+							}
+							else if (type == !SerializableDataType::kPlayerUnlockedPerksList)
+							{
+								// Read in all unlocked perks.
+								uint32_t numUnlockedPerks = 0;
+								RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
+									fid, numUnlockedPerks
+								);
 
-									data->ClearUnlockedPerks();
-									RE::TESForm* perkForm = nullptr;
-									RE::BGSPerk* perk = nullptr;
-									RE::FormID perkFID = 0;
-									for (auto j = 0; j < numUnlockedPerks; ++j)
-									{
-										RetrieveUInt32Data(a_intfc, perkFID, type);
-										perkForm = GetFormFromRetrievedFID(a_intfc, perkFID, dataHandler);
-										perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
-										data->InsertUnlockedPerk(perk);
-									}
+								// Clear and assign.
+								data->ClearUnlockedPerks();
+								RE::TESForm* perkForm = nullptr;
+								RE::BGSPerk* perk = nullptr;
+								RE::FormID perkFID = 0;
+								for (auto j = 0; j < numUnlockedPerks; ++j)
+								{
+									RetrieveUInt32Data(a_intfc, perkFID, type);
+									perkForm = GetFormFromRetrievedFID
+									(
+										a_intfc, perkFID, dataHandler
+									);
+									perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
+									data->InsertUnlockedPerk(perk);
 								}
 							}
 						}
@@ -360,39 +539,64 @@ namespace ALYSLC
 				// Set default data if not all data was retrieved successfully.
 				if (glob.serializablePlayerData.size() == 0)
 				{
-					SPDLOG_DEBUG("[SERIAL] Load: First time retrieval. Setting default data for all players.");
+					SPDLOG_DEBUG
+					(
+						"[SERIAL] Load: First time retrieval. "
+						"Setting default data for all players."
+					);
 					SetDefaultRetrievedData(a_intfc);
 				}
 				else
 				{
-					SPDLOG_DEBUG("[SERIAL] Load: Successfully retrieved serialized data for {} players from SKSE co-save.",
-						ALYSLC_MAX_PLAYER_COUNT);
+					SPDLOG_DEBUG
+					(
+						"[SERIAL] Load: Successfully retrieved serialized data for {} players "
+						"from SKSE co-save.",
+						ALYSLC_MAX_PLAYER_COUNT
+					);
 				}
 			}
 		}
 
-		void RetrieveFloatData(SKSE::SerializationInterface* a_intfc, float& a_data, const uint32_t& a_recordType)
+		void RetrieveFloatData
+		(
+			SKSE::SerializationInterface* a_intfc, float& a_data, const uint32_t& a_recordType
+		)
 		{
 			// Attempt to read a float value.
 
 			if (!a_intfc->ReadRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: RetrieveFloatData: Could not read FLOAT record data ({}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: RetrieveFloatData: "
+					"Could not read FLOAT record data ({}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void RetrieveStringData(SKSE::SerializationInterface* a_intfc, RE::BSFixedString& a_data, const uint32_t& a_recordType, const uint32_t& a_size)
+		void RetrieveStringData
+		(
+			SKSE::SerializationInterface* a_intfc, 
+			RE::BSFixedString& a_data, 
+			const uint32_t& a_recordType, 
+			const uint32_t& a_size
+		)
 		{
-			// Attempt to read char buffer data into fixed string.
+			// Attempt to read char buffer data into a fixed string.
 
 			// Reserve a string of the serialized size (includes null terminator in size).
-			std::string buff;
+			std::string buff{ };
 			buff.reserve(a_size);
 			if (!a_intfc->ReadRecordData(buff.data(), a_size))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: RetrieveStringData: Could not read STRING record data ({}, given size {}), record type: {}.",
-					a_data, a_size, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: RetrieveStringData: "
+					"Could not read STRING record data ({}, given size {}), record type: {}.",
+					a_data, a_size, TypeToString(a_recordType)
+				);
 			}
 			else
 			{
@@ -402,37 +606,57 @@ namespace ALYSLC
 			}
 		}
 
-		void RetrieveUInt8Data(SKSE::SerializationInterface* a_intfc, uint8_t& a_data, const uint32_t& a_recordType)
+		void RetrieveUInt8Data
+		(
+			SKSE::SerializationInterface* a_intfc, uint8_t& a_data, const uint32_t& a_recordType
+		)
 		{
 			// Attempt to read an unsigned 8-bit integer.
 
 			if (!a_intfc->ReadRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: RetrieveUInt8Data: Could not read UINT8 record data (0x{:X}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: RetrieveUInt8Data: "
+					"Could not read UINT8 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void RetrieveUInt16Data(SKSE::SerializationInterface* a_intfc, uint16_t& a_data, const uint32_t& a_recordType)
+		void RetrieveUInt16Data
+		(
+			SKSE::SerializationInterface* a_intfc, uint16_t& a_data, const uint32_t& a_recordType
+		)
 		{
 			// Attempt to read an unsigned 16-bit integer.
 
 			if (!a_intfc->ReadRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: RetrieveUInt16Data: Could not read UINT16 record data (0x{:X}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: RetrieveUInt16Data: "
+					"Could not read UINT16 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void RetrieveUInt32Data(SKSE::SerializationInterface* a_intfc, uint32_t& a_data, const uint32_t& a_recordType)
+		void RetrieveUInt32Data
+		(
+			SKSE::SerializationInterface* a_intfc, uint32_t& a_data, const uint32_t& a_recordType
+		)
 		{
 			// Attempt to read an unsigned 32-bit integer.
 
 			if (!a_intfc->ReadRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: RetrieveUInt32Data: Could not read UINT32 record data (0x{:X}), record type: {}.",
-					a_data,
-					TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: RetrieveUInt32Data: "
+					"Could not read UINT32 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
@@ -453,367 +677,755 @@ namespace ALYSLC
 			SPDLOG_DEBUG("[SERIAL] Save: Writing all serializable data to SKSE co-save.");
 			if (!a_intfc)
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: Save: Could not get serialization interface ({}), co-op session active ({}). Cannot serialize co-op data.",
-					(bool)!a_intfc, glob.coopSessionActive);
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: Save: Could not get serialization interface ({}), "
+					"co-op session active ({}). Cannot serialize co-op data.",
+					(bool)!a_intfc, glob.coopSessionActive
+				);
 				return;
 			}
 			
-			// REMOVE
-			const auto hash = std::hash<std::jthread::id>()(std::this_thread::get_id());
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
-				SPDLOG_DEBUG("[SERIAL] Save: Lock obtained. (0x{:X})", hash);
+				SPDLOG_DEBUG
+				(
+					"[SERIAL] Save: Lock obtained. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 
 				//=========================================
 				// Each player's saved data.
 				//=========================================
 
-				// NOTE: Capitalized data types are for easier recognition by my monkey brain.
+				// NOTE:
+				// Capitalized data type comments are for easier recognition by my monkey brain.
 
 				// AVAILABLE PERK POINTS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerAvailablePerkPoints, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerAvailablePerkPoints));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerAvailablePerkPoints, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize AVAIL PERK POINTS for player with FID 0x{:X}: {}.", fid, data->availablePerkPoints);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerAvailablePerkPoints);
-						SerializePlayerUInt32Data(a_intfc, data->availablePerkPoints, !SerializableDataType::kPlayerAvailablePerkPoints);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize AVAIL PERK POINTS "
+							"for player with FID 0x{:X}: {}.",
+							fid, data->availablePerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerAvailablePerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->availablePerkPoints, 
+							!SerializableDataType::kPlayerAvailablePerkPoints
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerAvailablePerkPoints)
+					);
 				}
 
 				// USED PERK POINTS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerUsedPerkPoints, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerUsedPerkPoints));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerUsedPerkPoints,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize USED PERK POINTS for player with FID 0x{:X}: {}.", fid, data->usedPerkPoints);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerUsedPerkPoints);
-						SerializePlayerUInt32Data(a_intfc, data->usedPerkPoints, !SerializableDataType::kPlayerUsedPerkPoints);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize USED PERK POINTS "
+							"for player with FID 0x{:X}: {}.", 
+							fid, data->usedPerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerUsedPerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->usedPerkPoints, 
+							!SerializableDataType::kPlayerUsedPerkPoints
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerUsedPerkPoints)
+					);
 				}
 
 				// SHARED PERKS UNLOCKED
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerSharedPerksUnlocked, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerSharedPerksUnlocked));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerSharedPerksUnlocked, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize SHARED PERKS UNLOCKED for player with FID 0x{:X}: {}.", fid, data->sharedPerksUnlocked);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerSharedPerksUnlocked);
-						SerializePlayerUInt32Data(a_intfc, data->sharedPerksUnlocked, !SerializableDataType::kPlayerSharedPerksUnlocked);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize SHARED PERKS UNLOCKED "
+							"for player with FID 0x{:X}: {}.", 
+							fid, data->sharedPerksUnlocked
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerSharedPerksUnlocked
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc,
+							data->sharedPerksUnlocked, 
+							!SerializableDataType::kPlayerSharedPerksUnlocked
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerSharedPerksUnlocked)
+					);
 				}
 
 				// EXTRA PERK POINTS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerExtraPerkPoints, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerExtraPerkPoints));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerExtraPerkPoints, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize EXTRA PERK POINTS for player with FID 0x{:X}: {}.", fid, data->extraPerkPoints);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerExtraPerkPoints);
-						SerializePlayerUInt32Data(a_intfc, data->extraPerkPoints, !SerializableDataType::kPlayerExtraPerkPoints);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize EXTRA PERK POINTS "
+							"for player with FID 0x{:X}: {}.",
+							fid, data->extraPerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerExtraPerkPoints
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->extraPerkPoints,
+							!SerializableDataType::kPlayerExtraPerkPoints
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerExtraPerkPoints)
+					);
 				}
 
 				// BASE LVL
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerFirstSavedLevel, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerFirstSavedLevel));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerFirstSavedLevel,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X}: {}.", fid, data->firstSavedLevel);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerFirstSavedLevel);
-						SerializePlayerUInt32Data(a_intfc, data->firstSavedLevel, !SerializableDataType::kPlayerFirstSavedLevel);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X}: {}.", 
+							fid, data->firstSavedLevel
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerFirstSavedLevel
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc,
+							data->firstSavedLevel, 
+							!SerializableDataType::kPlayerFirstSavedLevel
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerFirstSavedLevel)
+					);
 				}
 
 				// LVL
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerLevel, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerLevel));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerLevel, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize LVL for player with FID 0x{:X}: {}.", fid, data->level);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerLevel);
-						SerializePlayerUInt32Data(a_intfc, data->level, !SerializableDataType::kPlayerLevel);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize LVL for player with FID 0x{:X}: {}.",
+							fid, data->level
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerLevel
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, data->level, !SerializableDataType::kPlayerLevel
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerLevel)
+					);
 				}
 
 				// LVL XP
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerLevelXP, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerLevelXP));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerLevelXP, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize LVL XP for player with FID 0x{:X}: {}.", fid, data->levelXP);
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerLevelXP);
-						SerializePlayerFloatData(a_intfc, data->levelXP, !SerializableDataType::kPlayerLevelXP);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize LVL XP for player with FID 0x{:X}: {}.",
+							fid, data->levelXP
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerLevelXP
+						);
+						SerializePlayerFloatData
+						(
+							a_intfc, data->levelXP, !SerializableDataType::kPlayerLevelXP
+						);
 					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerLevelXP)
+					);
 				}
 
 				// HMS BASE POINTS LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerBaseHMSPointsList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerBaseHMSPointsList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerBaseHMSPointsList,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerBaseHMSPointsList);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerBaseHMSPointsList
+						);
 						uint32_t numEntries = data->hmsBasePointsList.size();
 						if (numEntries > 0)
 						{
 							for (uint8_t j = 0; j < numEntries; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize HMS BASE POINTS LIST for player with FID 0x{:X}: Base {} is {}.", 
-									fid, j == 0 ? "health" : j == 1 ? "magicka" : "stamina", data->hmsBasePointsList[j]);
-								SerializePlayerFloatData(a_intfc, data->hmsBasePointsList[j], !SerializableDataType::kPlayerBaseHMSPointsList);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize HMS BASE POINTS LIST "
+									"for player with FID 0x{:X}: Base {} is {}.", 
+									fid,
+									j == 0 ? "health" : j == 1 ? "magicka" : "stamina", 
+									data->hmsBasePointsList[j]
+								);
+								SerializePlayerFloatData
+								(
+									a_intfc,
+									data->hmsBasePointsList[j], 
+									!SerializableDataType::kPlayerBaseHMSPointsList
+								);
 							}
 						}
 						else
 						{
-							SPDLOG_ERROR("[SERIAL] ERR: Save: HMS BASE POINTS LIST is empty for player with FID 0x{:X}. Saving 100 as base value for health, magicka, and stamina.", fid);
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Save: HMS BASE POINTS LIST is empty "
+								"for player with FID 0x{:X}. Saving 100 as base value "
+								"for health, magicka, and stamina.", 
+								fid
+							);
 							for (uint8_t j = 0; j < 3; ++j)
 							{
-								SerializePlayerFloatData(a_intfc, 100.0f, !SerializableDataType::kPlayerBaseHMSPointsList);
+								SerializePlayerFloatData
+								(
+									a_intfc, 
+									100.0f, 
+									!SerializableDataType::kPlayerBaseHMSPointsList
+								);
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerBaseHMSPointsList)
+					);
+				}
 
 				// HMS INC LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerHMSPointsIncList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerHMSPointsIncList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerHMSPointsIncList,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerHMSPointsIncList);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerHMSPointsIncList
+						);
 						uint32_t numEntries = data->hmsPointIncreasesList.size();
 						if (numEntries > 0)
 						{
 							for (uint8_t j = 0; j < numEntries; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize HMS INC LIST for player with FID 0x{:X}: {} increment is {}.", 
-									fid, j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina", data->hmsPointIncreasesList[j]);
-								SerializePlayerFloatData(a_intfc, data->hmsPointIncreasesList[j], !SerializableDataType::kPlayerHMSPointsIncList);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize HMS INC LIST "
+									"for player with FID 0x{:X}: {} increment is {}.", 
+									fid, 
+									j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina", 
+									data->hmsPointIncreasesList[j]
+								);
+								SerializePlayerFloatData
+								(
+									a_intfc, 
+									data->hmsPointIncreasesList[j], 
+									!SerializableDataType::kPlayerHMSPointsIncList
+								);
 							}
 						}
 						else
 						{
-							SPDLOG_ERROR("[SERIAL] ERR: Save: HMS INC LIST is empty for player with FID 0x{:X}. Saving 0 point increases for health, magicka, and stamina.", fid);
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Save: HMS INC LIST is empty "
+								"for player with FID 0x{:X}. Saving 0 point increases "
+								"for health, magicka, and stamina.",
+								fid
+							);
 							for (uint8_t j = 0; j < 3; ++j)
 							{
-								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerHMSPointsIncList);
+								SerializePlayerFloatData
+								(
+									a_intfc, 0.0f, !SerializableDataType::kPlayerHMSPointsIncList
+								);
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerHMSPointsIncList)
+					);
+				}
 
 				// BASE SKILL LVL LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerBaseSkillLevelsList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerBaseSkillLevelsList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerBaseSkillLevelsList,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerBaseSkillLevelsList);
-						// Do not need to write the number of skill XP entries first, since this corresponds to the
-						// number of skill schools and is constant from save to save.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerBaseSkillLevelsList
+						);
+						// Do not need to write the number of skill XP entries first, 
+						// since this corresponds to the fixed number of skills 
+						// and is constant from save to save.
 						uint32_t numSkillLvlEntries = data->skillBaseLevelsList.size();
 						if (numSkillLvlEntries > 0)
 						{
 							for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.", 
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize BASE SKILL LVL LIST "
+									"for player with FID 0x{:X}: Skill {} has base value {}.", 
 									fid, 
-									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
-									data->skillBaseLevelsList[j]);
-								SerializePlayerFloatData(a_intfc, data->skillBaseLevelsList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									), 
+									data->skillBaseLevelsList[j]
+								);
+								SerializePlayerFloatData
+								(
+									a_intfc, 
+									data->skillBaseLevelsList[j], 
+									!SerializableDataType::kPlayerBaseSkillLevelsList
+								);
 							}
 						}
 						else
 						{
-							SPDLOG_ERROR("[SERIAL] ERR: Save: BASE SKILL LVL LIST list is empty for player 0x{:X}. Getting and setting each skill again for the player.", fid);
-							if (const auto playerActor = RE::TESForm::LookupByID(fid); playerActor && playerActor->As<RE::Actor>())
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Save: BASE SKILL LVL LIST list is empty "
+								"for player 0x{:X}. Getting and setting each skill again "
+								"for the player.",
+								fid
+							);
+							const auto playerActor = RE::TESForm::LookupByID<RE::Actor>(fid); 
+							if (playerActor)
 							{
-								auto skillBaseList = Util::GetActorSkillLevels(playerActor->As<RE::Actor>());
+								auto skillBaseList = Util::GetActorSkillLevels
+								(
+									playerActor->As<RE::Actor>()
+								);
 								uint8_t numSkillLvlEntries = skillBaseList.size();
 								for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 								{
-									SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE SKILL LVL LIST for player with FID 0x{:X}: Skill {} has base value {}.",
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Save: Serialize BASE SKILL LVL LIST "
+										"for player with FID 0x{:X}: "
+										"Skill {} has base value {}.",
 										fid, 
-										Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
-										skillBaseList[j]);
-									SerializePlayerFloatData(a_intfc, skillBaseList[j], !SerializableDataType::kPlayerBaseSkillLevelsList);
+										Util::GetActorValueName
+										(
+											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+										), 
+										skillBaseList[j]
+									);
+									SerializePlayerFloatData
+									(
+										a_intfc, 
+										skillBaseList[j], 
+										!SerializableDataType::kPlayerBaseSkillLevelsList
+									);
 								}
 							}
 							else
 							{
-								SPDLOG_ERROR("[SERIAL] ERR: Save: Could not get player actor for FID 0x{:X}. Setting each skill level to a base level of 15 for the player.", fid);
+								SPDLOG_ERROR
+								(
+									"[SERIAL] ERR: Save: Could not get player actor "
+									"for FID 0x{:X}. "
+									"Setting each skill level to a base level of 15 "
+									"for the player.",
+									fid
+								);
 								uint8_t numSkillLvlEntries = Skill::kTotal;
 								for (uint8_t j = 0; j < numSkillLvlEntries; ++j)
 								{
-									SerializePlayerFloatData(a_intfc, 15.0f, !SerializableDataType::kPlayerBaseSkillLevelsList);
+									SerializePlayerFloatData
+									(
+										a_intfc, 
+										15.0f, 
+										!SerializableDataType::kPlayerBaseSkillLevelsList
+									);
 								}
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerBaseSkillLevelsList)
+					);
+				}
 
 				// SKILL LVL INC LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerSkillIncreasesList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerSkillIncreasesList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerSkillIncreasesList, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerSkillIncreasesList);
-						// Do not need to write the number of skill XP entries first, since this corresponds to the
-						// number of skill schools and is constant from save to save.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerSkillIncreasesList
+						);
+						// Do not need to write the number of skill XP entries first, 
+						// since this corresponds to the number of skill schools 
+						// and is constant from save to save.
 						uint32_t numSkillIncEntries = data->skillLevelIncreasesList.size();
 						if (numSkillIncEntries > 0)
 						{
 							for (uint8_t j = 0; j < numSkillIncEntries; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize SKILL LVL INC LIST for player with FID 0x{:X}: Skill {} has increment {}.",
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize SKILL LVL INC LIST "
+									"for player with FID 0x{:X}: Skill {} has increment {}.",
 									fid,
-									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))), 
-									data->skillLevelIncreasesList[j]);
-								SerializePlayerFloatData(a_intfc, data->skillLevelIncreasesList[j], !SerializableDataType::kPlayerSkillIncreasesList);
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									), 
+									data->skillLevelIncreasesList[j]
+								);
+								SerializePlayerFloatData
+								(
+									a_intfc,
+									data->skillLevelIncreasesList[j], 
+									!SerializableDataType::kPlayerSkillIncreasesList
+								);
 							}
 						}
 						else
 						{
-							SPDLOG_ERROR("[SERIAL] ERR: Save: SKILL LVL INC LIST is empty for player 0x{:X}. Saving 0 level increase for each skill.", fid);
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Save: SKILL LVL INC LIST is empty "
+								"for player 0x{:X}. Saving 0 level increase for each skill.",
+								fid
+							);
 							for (uint8_t j = 0; j < numSkillIncEntries; ++j)
 							{
-								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerSkillIncreasesList);
+								SerializePlayerFloatData
+								(
+									a_intfc,
+									0.0f,
+									!SerializableDataType::kPlayerSkillIncreasesList
+								);
 							}
 
-							if (const auto playerActor = RE::TESForm::LookupByID(fid); playerActor)
+							const auto playerActor = RE::TESForm::LookupByID<RE::Actor>(fid); 
+							if (playerActor)
 							{
-								SPDLOG_ERROR("[SERIAL] ERR: Save: Re-serializing BASE LVL as 0 for player with FID 0x{:X} to force auto-scaling for all skill AVs until next level up during a co-op session.", fid);
-								if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerFirstSavedLevel, !SerializableDataType::kSerializationVersion))
+								SPDLOG_ERROR
+								(
+									"[SERIAL] ERR: Save: Re-serializing BASE LVL as 0 "
+									"for player with FID 0x{:X} to force auto-scaling "
+									"for all skill AVs until next level up "
+									"during a co-op session.", 
+									fid
+								);
+								if (a_intfc->OpenRecord
+								(
+									!SerializableDataType::kPlayerFirstSavedLevel,
+									!SerializableDataType::kSerializationVersion
+								))
 								{
-									SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-										TypeToString(!SerializableDataType::kPlayerFirstSavedLevel));
-								}
-								else
-								{
+									// Have to serialize all first saved levels again
+									// for all other players.
 									for (auto& [fid2, data2] : glob.serializablePlayerData)
 									{
 										if (fid2 != fid)
 										{
-											SPDLOG_DEBUG("[SERIAL] Save: Re-serialize BASE LVL for player with FID 0x{:X}: {}.", fid2, data2->firstSavedLevel);
-											SerializePlayerUInt32Data(a_intfc, fid2, !SerializableDataType::kPlayerFirstSavedLevel);
-											SerializePlayerUInt32Data(a_intfc, data2->firstSavedLevel, !SerializableDataType::kPlayerFirstSavedLevel);
+											SPDLOG_DEBUG
+											(
+												"[SERIAL] Save: Re-serialize BASE LVL "
+												"for player with FID 0x{:X}: {}.",
+												fid2, data2->firstSavedLevel
+											);
+											SerializePlayerUInt32Data
+											(
+												a_intfc,
+												fid2, 
+												!SerializableDataType::kPlayerFirstSavedLevel
+											);
+											SerializePlayerUInt32Data
+											(
+												a_intfc, 
+												data2->firstSavedLevel, 
+												!SerializableDataType::kPlayerFirstSavedLevel
+											);
 											continue;
 										}
 
-										SPDLOG_DEBUG("[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X} as 0 to force AV auto-scaling.", fid2);
-										SerializePlayerUInt32Data(a_intfc, fid2, !SerializableDataType::kPlayerFirstSavedLevel);
-										SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerFirstSavedLevel);
+										SPDLOG_DEBUG
+										(
+											"[SERIAL] Save: Serialize BASE LVL "
+											"for player with FID 0x{:X} as 0 "
+											"to force AV auto-scaling.", 
+											fid2
+										);
+										SerializePlayerUInt32Data
+										(
+											a_intfc,
+											fid2, 
+											!SerializableDataType::kPlayerFirstSavedLevel
+										);
+										SerializePlayerUInt32Data
+										(
+											a_intfc,
+											0, 
+											!SerializableDataType::kPlayerFirstSavedLevel
+										);
 									}
+								}
+								else
+								{
+									SPDLOG_ERROR
+									(
+										"[SERIAL] ERR: Save: Could not open record of type {}.",
+										TypeToString(!SerializableDataType::kPlayerFirstSavedLevel)
+									);
 								}
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerSkillIncreasesList)
+					);
+					
+				}
 
 				// SKILL XP LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerSkillXPList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerSkillXPList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerSkillXPList, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerSkillXPList);
-						// Do not need to write the number of skill XP entries first, since this corresponds to the
-						// number of skill schools and is constant from save to save.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerSkillXPList
+						);
+						// Do not need to write the number of skill XP entries first,
+						// since this corresponds to the number of skill schools 
+						// and is constant from save to save.
 						uint32_t numSkillXPEntries = data->skillXPList.size();
 						if (numSkillXPEntries > 0)
 						{
 							for (uint8_t j = 0; j < numSkillXPEntries; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize SKILL XP LIST for player with FID 0x{:X}: Skill {} has {} XP.",
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize SKILL XP LIST "
+									"for player with FID 0x{:X}: Skill {} has {} XP.",
 									fid, 
-									Util::GetActorValueName(glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))),
-									data->skillXPList[j]);
-								SerializePlayerFloatData(a_intfc, data->skillXPList[j], !SerializableDataType::kPlayerSkillXPList);
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									),
+									data->skillXPList[j]
+								);
+								SerializePlayerFloatData
+								(
+									a_intfc, 
+									data->skillXPList[j], 
+									!SerializableDataType::kPlayerSkillXPList
+								);
 							}
 						}
 						else
 						{
-							SPDLOG_ERROR("[SERIAL] ERR: Save: SKILL XP LIST is empty for player with FID 0x{:X}. Saving 0 XP for each skill, which will reset skill XP levels to P1's corresponding skill XPs on load.", fid);
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Save: SKILL XP LIST is empty "
+								"for player with FID 0x{:X}. Saving 0 XP for each skill, "
+								"which will reset skill XP levels to P1's corresponding skill XPs "
+								"on load.",
+								fid
+							);
 							for (uint8_t j = 0; j < numSkillXPEntries; ++j)
 							{
-								SerializePlayerFloatData(a_intfc, 0.0f, !SerializableDataType::kPlayerSkillXPList);
+								SerializePlayerFloatData
+								(
+									a_intfc, 0.0f, !SerializableDataType::kPlayerSkillXPList
+								);
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerSkillXPList)
+					);
+				}
 
 				// EQUIPPED OBJECTS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerEquippedObjectsList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerEquippedObjectsList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerEquippedObjectsList, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerEquippedObjectsList);
-						// Write number of equipped objects first, as this varies from save to save.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerEquippedObjectsList
+						);
+						// Write the number of equipped objects first, 
+						// as this varies from save to save.
 						uint32_t numEquippedForms = data->equippedForms.size();
-						SerializePlayerUInt32Data(a_intfc, numEquippedForms, !SerializableDataType::kPlayerEquippedObjectsList);
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize EQUIPPED OBJECTS LIST for 0x{:X}. Num equipped forms: {}.", fid, numEquippedForms);
+						SerializePlayerUInt32Data
+						(
+							a_intfc,
+							numEquippedForms, 
+							!SerializableDataType::kPlayerEquippedObjectsList
+						);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize EQUIPPED OBJECTS LIST "
+							"for 0x{:X}. Num equipped forms: {}.", 
+							fid, numEquippedForms
+						);
 
 						// Write each equipped form's FID next.
 						if (numEquippedForms > 0)
@@ -823,35 +1435,69 @@ namespace ALYSLC
 								const auto form = data->equippedForms[j];
 								if (form)
 								{
-									SPDLOG_DEBUG("[SERIAL] Save: Serialize EQUIPPED OBJECT {} (0x{:X}) for player with FID 0x{:X}.",
-										form->GetName(), form->formID, fid);
-									SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerEquippedObjectsList);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Save: Serialize EQUIPPED OBJECT {} (0x{:X}) "
+										"for player with FID 0x{:X}.",
+										form->GetName(), form->formID, fid
+									);
+									SerializePlayerUInt32Data
+									(
+										a_intfc, 
+										form->formID,
+										!SerializableDataType::kPlayerEquippedObjectsList
+									);
 								}
 								else
 								{
-									// Empty slot, write 0 for form ID.
-									SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerEquippedObjectsList);
+									// Empty slot, write 0 for FID.
+									SerializePlayerUInt32Data
+									(
+										a_intfc,
+										0, 
+										!SerializableDataType::kPlayerEquippedObjectsList
+									);
 								}
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerEquippedObjectsList)
+					);
+					
+				}
 
 				// FAVORITED MAGICAL OBJECTS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerMagFavoritesList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerMagFavoritesList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerMagFavoritesList, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerMagFavoritesList);
-						// Write number of magical forms first, as this varies from save to save.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerMagFavoritesList
+						);
+						// Write the number of magical forms first,
+						// as this varies from save to save.
 						uint32_t numMagForms = data->favoritedMagForms.size();
-						SerializePlayerUInt32Data(a_intfc, numMagForms, !SerializableDataType::kPlayerMagFavoritesList);
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize MAGICAL FAVORITES LIST for 0x{:X}. Num magical forms: {}.", fid, numMagForms);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, numMagForms, !SerializableDataType::kPlayerMagFavoritesList
+						);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize MAGICAL FAVORITES LIST "
+							"for 0x{:X}. Num magical forms: {}.",
+							fid, numMagForms
+						);
 
 						// Write each form's FID next.
 						if (numMagForms > 0)
@@ -861,194 +1507,371 @@ namespace ALYSLC
 								const auto form = data->favoritedMagForms[j];
 								if (form)
 								{
-									SPDLOG_DEBUG("[SERIAL] Save: Serialize MAGICAL FORM {} (0x{:X}) for player with FID 0x{:X}.",
-										form->GetName(), form->formID, fid);
-									SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerMagFavoritesList);
+									SPDLOG_DEBUG
+									(
+										"[SERIAL] Save: Serialize MAGICAL FORM {} (0x{:X}) "
+										"for player with FID 0x{:X}.",
+										form->GetName(), form->formID, fid
+									);
+									SerializePlayerUInt32Data
+									(
+										a_intfc, 
+										form->formID, 
+										!SerializableDataType::kPlayerMagFavoritesList
+									);
 								}
 								else
 								{
-									// Empty slot, write 0 for form ID.
-									SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerMagFavoritesList);
+									// Empty slot, write 0 for FID.
+									SerializePlayerUInt32Data
+									(
+										a_intfc, 
+										0, 
+										!SerializableDataType::kPlayerMagFavoritesList
+									);
 								}
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerMagFavoritesList)
+					);
+					
+				}
 
 				// HOTKEYED FORMS
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerHotkeyedFormsList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerHotkeyedFormsList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerHotkeyedFormsList, 
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerHotkeyedFormsList);
-						// Write each hotkeyed form's FID .
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerHotkeyedFormsList
+						);
+						// Write each hotkeyed form's FID.
 						for (uint16_t j = 0; j < data->hotkeyedForms.size(); ++j)
 						{
 							const auto form = data->hotkeyedForms[j];
 							if (form)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize HOTKEYED FORM {} (0x{:X}) in slot {} for player with FID 0x{:X}.",
-									form->GetName(), form->formID, j + 1, fid);
-								SerializePlayerUInt32Data(a_intfc, form->formID, !SerializableDataType::kPlayerHotkeyedFormsList);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize HOTKEYED FORM {} (0x{:X}) "
+									"in slot {} for player with FID 0x{:X}.",
+									form->GetName(),
+									form->formID,
+									j + 1,
+									fid
+								);
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 
+									form->formID, 
+									!SerializableDataType::kPlayerHotkeyedFormsList
+								);
 							}
 							else
 							{
-								// Empty slot, write 0 for form ID.
-								SerializePlayerUInt32Data(a_intfc, 0, !SerializableDataType::kPlayerHotkeyedFormsList);
+								// Empty slot, write 0 for FID.
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 
+									0, 
+									!SerializableDataType::kPlayerHotkeyedFormsList
+								);
 							}
 						}
 					}
 				}
-
-				// COPIED SPELLS PAIR
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerCopiedMagicList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerCopiedMagicList));
-				}
 				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerHotkeyedFormsList)
+					);
+				}
+
+				// COPIED SPELLS LIST
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerCopiedMagicList,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerCopiedMagicList);
-						RE::FormID magicFID{};
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerCopiedMagicList
+						);
+						RE::FormID magicFID{ };
 						const auto& copiedMagic = data->copiedMagic;
 						for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i)
 						{
-							magicFID = copiedMagic[i] && copiedMagic[i]->Is(RE::FormType::Spell, RE::FormType::Shout) ? copiedMagic[i]->formID : 0;
-							SerializePlayerUInt32Data(a_intfc, magicFID, !SerializableDataType::kPlayerCopiedMagicList);
-							SPDLOG_DEBUG("[SERIAL] Save: Player with FID 0x{:X} has COPIED SPELL form {} (0x{:X}) in slot {}.",
+							magicFID = 
+							(
+								(
+									copiedMagic[i] && 
+									copiedMagic[i]->Is(RE::FormType::Spell, RE::FormType::Shout)
+								) ? 
+								copiedMagic[i]->formID :
+								0
+							);
+							SerializePlayerUInt32Data
+							(
+								a_intfc, magicFID, !SerializableDataType::kPlayerCopiedMagicList
+							);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Save: Player with FID 0x{:X} "
+								"has COPIED SPELL form {} (0x{:X}) in slot {}.",
 								fid,
 								copiedMagic[i] ? copiedMagic[i]->GetName() : "NONE",
 								copiedMagic[i] ? copiedMagic[i]->formID : 0xDEAD,
-								i);
+								i
+							);
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerCopiedMagicList)
+					);
+				}
 
 				// CYCLABLE EMOTE IDLE EVENTS LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerEmoteIdleEvents, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerEmoteIdleEvents));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerEmoteIdleEvents,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerEmoteIdleEvents);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerEmoteIdleEvents
+						);
 						const auto& cyclableEmoteIdleEvents = data->cyclableEmoteIdleEvents;
 						uint32_t size = 0;
 						for (uint8_t i = 0; i < cyclableEmoteIdleEvents.size(); ++i)
 						{
-							// Serialize string length and then the string's buffer for each saved emote idle event name.
+							// Serialize string length and then the string's buffer 
+							// for each saved emote idle event name.
 							// +1 for the null terminator at the end of the string.
 							size = cyclableEmoteIdleEvents[i].length() * sizeof(char) + 1;
-							SerializePlayerUInt32Data(a_intfc, size, !SerializableDataType::kPlayerEmoteIdleEvents);
-							SerializePlayerStringData(a_intfc, cyclableEmoteIdleEvents[i], !SerializableDataType::kPlayerEmoteIdleEvents);
-							SPDLOG_DEBUG("[SERIAL] Save: Player with FID 0x{:X} has cyclable emote idle event {} (size {}) in slot {}.",
-								fid, cyclableEmoteIdleEvents[i], size, i);
+							SerializePlayerUInt32Data
+							(
+								a_intfc, size, !SerializableDataType::kPlayerEmoteIdleEvents
+							);
+							SerializePlayerStringData
+							(
+								a_intfc, 
+								cyclableEmoteIdleEvents[i], 
+								!SerializableDataType::kPlayerEmoteIdleEvents
+							);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Save: Player with FID 0x{:X} "
+								"has cyclable emote idle event {} (size {}) in slot {}.",
+								fid, cyclableEmoteIdleEvents[i], size, i
+							);
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerEmoteIdleEvents)
+					);
+				}
 
 				// UNLOCKED PERKS LIST
-				if (!a_intfc->OpenRecord(!SerializableDataType::kPlayerUnlockedPerksList, !SerializableDataType::kSerializationVersion))
-				{
-					SPDLOG_ERROR("[SERIAL] ERR: Save: Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerUnlockedPerksList));
-				}
-				else
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerUnlockedPerksList,
+					!SerializableDataType::kSerializationVersion
+				))
 				{
 					for (auto& [fid, data] : glob.serializablePlayerData)
 					{
-						SerializePlayerUInt32Data(a_intfc, fid, !SerializableDataType::kPlayerUnlockedPerksList);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerUnlockedPerksList
+						);
 						// Write number of unlocked perks first, as this varies from save to save.
 						const auto& unlockedPerksList = data->GetUnlockedPerksList();
 						uint32_t numUnlockedPerks = unlockedPerksList.size();
-						SPDLOG_DEBUG("[SERIAL] Save: Serialize UNLOCKED PERKS LIST for 0x{:X}. Number of unlocked perks: {}.", fid, numUnlockedPerks);
-						SerializePlayerUInt32Data(a_intfc, numUnlockedPerks, !SerializableDataType::kPlayerUnlockedPerksList);
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize UNLOCKED PERKS LIST "
+							"for 0x{:X}. Number of unlocked perks: {}.", 
+							fid, numUnlockedPerks
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							numUnlockedPerks, 
+							!SerializableDataType::kPlayerUnlockedPerksList
+						);
 
 						// Serialize the FID of each unlocked perk next.
 						if (numUnlockedPerks > 0)
 						{
 							for (uint8_t j = 0; j < numUnlockedPerks; ++j)
 							{
-								SPDLOG_DEBUG("[SERIAL] Save: Serialize UNLOCKED PERK {} (0x{:X}) for player with FID 0x{:X}.",
-									unlockedPerksList[j]->GetName(), unlockedPerksList[j]->formID, fid);
-								SerializePlayerUInt32Data(a_intfc, unlockedPerksList[j]->formID, !SerializableDataType::kPlayerUnlockedPerksList);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Save: Serialize UNLOCKED PERK {} (0x{:X}) "
+									"for player with FID 0x{:X}.",
+									unlockedPerksList[j] ? 
+									unlockedPerksList[j]->GetName() :
+									"NONE", 
+									unlockedPerksList[j] ? unlockedPerksList[j]->formID : 0, 
+									fid
+								);
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 
+									unlockedPerksList[j] ? unlockedPerksList[j]->formID : 0,
+									!SerializableDataType::kPlayerUnlockedPerksList
+								);
 							}
 						}
 					}
 				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerUnlockedPerksList)
+					);
+				}
 			}
 		}
 
-		void SerializePlayerFloatData(SKSE::SerializationInterface* a_intfc, const float& a_data, const uint32_t& a_recordType)
+		void SerializePlayerFloatData
+		(
+			SKSE::SerializationInterface* a_intfc, 
+			const float& a_data, 
+			const uint32_t& a_recordType
+		)
 		{
 			// Attempt to write float value to SKSE co-save.
 
 			if (!a_intfc->WriteRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: SerializePlayerFloatData: Could not write FLOAT record data ({}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: SerializePlayerFloatData: "
+					"Could not write FLOAT record data ({}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void SerializePlayerStringData(SKSE::SerializationInterface* a_intfc, const RE::BSFixedString& a_data, const uint32_t& a_recordType)
+		void SerializePlayerStringData
+		(
+			SKSE::SerializationInterface* a_intfc,
+			const RE::BSFixedString& a_data,
+			const uint32_t& a_recordType
+		)
 		{
 			// Attempt to write data from fixed string's buffer to the SKSE co-save.
 
 			// +1 for the null terminator at the end of the string.
 			if (!a_intfc->WriteRecordData(a_data.data(), a_data.length() * sizeof(char) + 1))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: SerializePlayerStringData: Could not write STRING record data ({}, size: {}), record type: {}.",
-					a_data.data(), a_data.length() * sizeof(char), TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: SerializePlayerStringData: "
+					"Could not write STRING record data ({}, size: {}), record type: {}.",
+					a_data.data(), a_data.length() * sizeof(char), TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void SerializePlayerUInt8Data(SKSE::SerializationInterface* a_intfc, const uint8_t& a_data, const uint32_t& a_recordType)
+		void SerializePlayerUInt8Data
+		(
+			SKSE::SerializationInterface* a_intfc,
+			const uint8_t& a_data,
+			const uint32_t& a_recordType
+		)
 		{
 			// Attempt to write an unsigned 8-bit integer to the SKSE co-save.
 
 			if (!a_intfc->WriteRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: SerializePlayerUInt8Data: Could not write UINT8 record data (0x{:X}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: SerializePlayerUInt8Data: "
+					"Could not write UINT8 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void SerializePlayerUInt16Data(SKSE::SerializationInterface* a_intfc, const uint16_t& a_data, const uint32_t& a_recordType)
+		void SerializePlayerUInt16Data
+		(
+			SKSE::SerializationInterface* a_intfc, 
+			const uint16_t& a_data, 
+			const uint32_t& a_recordType
+		)
 		{
 			// Attempt to write an unsigned 16-bit integer to the SKSE co-save.
 
 			if (!a_intfc->WriteRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: SerializePlayerUInt16Data: Could not write UINT16 record data (0x{:X}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: SerializePlayerUInt16Data: "
+					"Could not write UINT16 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
-		void SerializePlayerUInt32Data(SKSE::SerializationInterface* a_intfc, const uint32_t& a_data, const uint32_t& a_recordType)
+		void SerializePlayerUInt32Data
+		(
+			SKSE::SerializationInterface* a_intfc, 
+			const uint32_t& a_data, 
+			const uint32_t& a_recordType
+		)
 		{
 			// Attempt to write an unsigned 32-bit integer to the SKSE co-save.
 
 			if (!a_intfc->WriteRecordData(a_data))
 			{
-				SPDLOG_ERROR("[SERIAL] ERR: SerializePlayerUInt32Data: Could not write UINT32 record data (0x{:X}), record type: {}.",
-					a_data, TypeToString(a_recordType));
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: SerializePlayerUInt32Data: "
+					"Could not write UINT32 record data (0x{:X}), record type: {}.",
+					a_data, TypeToString(a_recordType)
+				);
 			}
 		}
 
 		void SetDefaultRetrievedData(SKSE::SerializationInterface* a_intfc)
 		{
 			// Set default data to write to the SKSE co-save. 
-			// Done when no data has been serialized yet or when the serialization interface is unavailable.
+			// Done when no data has been serialized yet 
+			// or when the serialization interface is unavailable.
 
 			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData.");
 			RE::PlayerCharacter* p1 = RE::PlayerCharacter::GetSingleton();
@@ -1058,7 +1881,9 @@ namespace ALYSLC
 				return;
 			}
 			
+			// Default data.
 			constexpr size_t numSkills = (size_t)Skill::kTotal;
+			std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> copiedMagic{ };
 			std::array<float, 3> hmsBasePointsList{ };
 			std::array<float, 3> hmsIncList{ };
 			std::array<RE::TESForm*, 8> hotkeyedFormsList{ };
@@ -1066,9 +1891,11 @@ namespace ALYSLC
 			std::array<float, numSkills> skillIncList{ };
 			std::array<float, numSkills> skillXPList{ };
 
+			// Default filled arrays.
 			// Serialize the co-op player's current level as their base level.
 			// Co-op actors start with 100.0 base HMS points, level 15 skills, 
 			// and 0 skill XP and level/HMS point increases across the board.
+			copiedMagic.fill(nullptr);
 			hmsBasePointsList.fill(100.0f);
 			hmsIncList.fill(0.0f);
 			hotkeyedFormsList.fill(nullptr);
@@ -1078,7 +1905,7 @@ namespace ALYSLC
 
 			// Set skill base AVs.
 			skillBaseLvlList = Util::GetActorSkillLevels(p1);
-
+			
 			// REMOVE when done debugging.
 			for (auto i = 0; i < skillBaseLvlList.size(); ++i)
 			{
@@ -1086,8 +1913,11 @@ namespace ALYSLC
 				if (glob.SKILL_TO_AV_MAP.contains(currentSkill))
 				{
 					auto currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
-					SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", 
-						Util::GetActorValueName(currentAV), skillBaseLvlList[i]);
+					SPDLOG_DEBUG
+					(
+						"[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", 
+						Util::GetActorValueName(currentAV), skillBaseLvlList[i]
+					);
 				}
 			}
 
@@ -1098,15 +1928,18 @@ namespace ALYSLC
 				currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
 				skillXPList[i] = p1->skills->data->skills[i].xp;
 
-				// REMOVE when done debugging.
-				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.",
-					Util::GetActorValueName(currentAV), skillXPList[i]);
+				SPDLOG_DEBUG
+				(
+					"[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.",
+					Util::GetActorValueName(currentAV), skillXPList[i]
+				);
 			}
 
 			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 			{
 				// Set base P1 HMS values to their starting values if Enderal is not installed.
-				// All perks are also cleared, meaning HMS values must be re-assigned along with perks through the Stats Menu.
+				// All perks are also cleared, meaning HMS values must be re-assigned 
+				// along with perks by leveling up again through the Stats Menu.
 				p1->SetBaseActorValue(RE::ActorValue::kHealth, 100.0f);
 				p1->SetBaseActorValue(RE::ActorValue::kMagicka, 100.0f);
 				p1->SetBaseActorValue(RE::ActorValue::kStamina, 100.0f);
@@ -1116,18 +1949,23 @@ namespace ALYSLC
 			}
 			
 			auto p1Level = p1->GetLevel();
-			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: P1's level: {}. Will set as first saved level for all players.", p1Level);
+			SPDLOG_DEBUG
+			(
+				"[SERIAL] SetDefaultRetrievedData: P1's level: {}. "
+				"Will set as first saved level for all players.",
+				p1Level
+			);
 
 			// Insert P1 first.
 			glob.serializablePlayerData.insert
 			(
 				{
 					p1->formID, 
-					std::make_unique<ALYSLC::GlobalCoopData::SerializablePlayerData>
+					std::make_unique<SerializablePlayerData>
 					(
-						std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal>(), 
+						copiedMagic, 
 						GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
-						std::vector<RE::TESForm*>{!EquipIndex::kTotal, nullptr},
+						std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
 						std::vector<RE::TESForm*>(),
 						p1->skills->data->xp, 
 						0,
@@ -1148,35 +1986,44 @@ namespace ALYSLC
 			);
 
 			// Insert co-op companions.
-			std::array<RE::Actor*, (size_t)(ALYSLC_MAX_PLAYER_COUNT - 1)> coopPlayers{ nullptr, nullptr, nullptr };
-			if (const auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
+			std::array<RE::Actor*, (size_t)(ALYSLC_MAX_PLAYER_COUNT - 1)> coopPlayers
 			{
-				auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
-				SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", 
-					GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1);
-				coopPlayers[0] = dataHandler->LookupForm(0x22FD, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
-				coopPlayers[1] = dataHandler->LookupForm(0x22FE, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
-				coopPlayers[2] = dataHandler->LookupForm(0x22FF, GlobalCoopData::PLUGIN_NAME)->As<RE::Actor>();
-			}
-			else
-			{
-				SPDLOG_ERROR("[SERIAL] ERR: SetDefaultRetrievedData: Could not get data handler to search for co-op players' forms.");
-			}
+				nullptr, nullptr, nullptr 
+			};
+
+			auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
+			SPDLOG_DEBUG
+			(
+				"[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", 
+				GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1
+			);
+			coopPlayers[0] = dataHandler->LookupForm<RE::Actor>
+			(
+				0x22FD, GlobalCoopData::PLUGIN_NAME
+			);
+			coopPlayers[1] = dataHandler->LookupForm<RE::Actor>
+			(
+				0x22FE, GlobalCoopData::PLUGIN_NAME
+			);
+			coopPlayers[2] = dataHandler->LookupForm<RE::Actor>
+			(
+				0x22FF, GlobalCoopData::PLUGIN_NAME
+			);
 
 			for (auto i = 0; i < coopPlayers.size(); ++i) 
 			{
 				if (coopPlayers[i]) 
 				{
-					auto fid = coopPlayers[i] ? coopPlayers[i]->formID : 0;
+					auto fid = coopPlayers[i]->formID;
 					if (fid)
 					{
 						// Set default cleared data first.
-						// Same as P1's.
 						hmsBasePointsList.fill(100.0f);
 						hmsIncList.fill(0.0f);
 						hotkeyedFormsList.fill(nullptr);
 						skillBaseLvlList.fill(15.0f);
 						skillIncList.fill(0.0f);
+						// No skill XP to start, unlike for P1.
 						skillXPList.fill(0.0f);
 						uint32_t sharedPerksUnlocked = 0;
 							
@@ -1186,9 +2033,9 @@ namespace ALYSLC
 						(
 							{ 
 								fid,
-								std::make_unique<ALYSLC::GlobalCoopData::SerializablePlayerData>
+								std::make_unique<SerializablePlayerData>
 								(
-									std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal>(),
+									copiedMagic,
 									GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS,
 									std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
 									std::vector<RE::TESForm*>(),
@@ -1212,16 +2059,30 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_ERROR("[SERIAL] ERR: SetDefaultRetrievedData: Could not get __CoopCharacter{}'s form ID.", i + 1);
+						SPDLOG_ERROR
+						(
+							"[SERIAL] ERR: SetDefaultRetrievedData: "
+							"Could not get __CoopCharacter{}'s form ID.", 
+							i + 1
+						);
 					}
 				}
 				else
 				{
-					SPDLOG_ERROR("[SERIAL] ERR: SetDefaultRetrievedData: Could not get __CoopCharacter{}. Game will likely crash when summoning other players.", i + 1);
+					SPDLOG_ERROR
+					(
+						"[SERIAL] ERR: SetDefaultRetrievedData: "
+						"Could not get __CoopCharacter{}. "
+						"Game will likely crash when summoning other players.",
+						i + 1
+					);
 				}
 			}
 
-			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData: Default data set and ready to serialize!");
+			SPDLOG_DEBUG
+			(
+				"[SERIAL] SetDefaultRetrievedData: Default data set and ready to serialize!"
+			);
 		}
 
 		// Credits to po3 for the decode function from here:

@@ -81,12 +81,10 @@ namespace ALYSLC
 			bool isExtRequest;
 		};
 
-		MenuOpeningActionRequestsManager() :
-			menuOpeningActionRequests
-			(
-				{ ALYSLC_MAX_PLAYER_COUNT, std::list<MenuOpeningActionRequests>({}) }
-			)
-		{ }
+		MenuOpeningActionRequestsManager()
+		{ 
+			menuOpeningActionRequests.fill(std::list<MenuOpeningActionRequests>({}));
+		}
 
 		// Clear out all requests for all active players.
 		void ClearAllRequests();
@@ -120,15 +118,17 @@ namespace ALYSLC
 		// The oldest request is discarded if a new request comes in 
 		// while the queue is at capacity.
 		static inline const uint8_t maxCachedRequests = 5;
-		// CID of the player requesting control of the Dialogue Menu 
+		// CID of the player requesting control of the current control-transferable menu
 		// while another player currently has control.
-		static inline int32_t reqDialoguePlayerCID = -1;
+		static inline int32_t reqTransferMenuControlPlayerCID = -1;
+		// Queued requests for each player. Inserted from newest to oldest, front to back.
+		std::array<std::list<MenuOpeningActionRequests>, (size_t)ALYSLC_MAX_PLAYER_COUNT> 
+		menuOpeningActionRequests;
 		// Mutices for each player's menu requests queue.
 		std::array<std::mutex, (size_t)ALYSLC_MAX_PLAYER_COUNT> reqQueueMutexList;
-		// Mutex for players attempting to request control of the Dialogue Menu.
-		std::mutex reqDialogueControlMutex;
-		// Queued requests for each player. Inserted from newest to oldest, front to back.
-		std::vector<std::list<MenuOpeningActionRequests>> menuOpeningActionRequests;
+		// Mutex for players attempting to request control 
+		// of the current control-transferable menu.
+		std::mutex reqTransferMenuControlMutex;
 	};
 
 	class MenuInputManager : public Manager
@@ -179,7 +179,8 @@ namespace ALYSLC
 		void EquipP1QSForm();
 		// Hotkey the currently selected favorited form, 
 		// based on the menu-controlling player's RS orientation.
-		void HotkeyFavoritedForm();
+		// Can set the hotkey or just temporarily append the hotkey
+		void HotkeyFavoritedForm(bool&& a_setHotkey);
 		// Check if P1's quick slot item/spell are still favorited, save their indices in the 
 		// Favorites Menu entry list, and update the list to reflect their equip state.
 		void InitP1QSFormEntries();

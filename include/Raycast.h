@@ -126,7 +126,7 @@ namespace Raycast
 		// True if the trace hit something before reaching its end position.
 		bool hit = false;
 		// If the ray hit an AV object, this will point to it.
-		RE::NiPointer<RE::NiAVObject> hitObject = nullptr;
+		RE::NiPointer<RE::NiAVObject> hitObjectPtr = nullptr;
 		// Reference handle for the hit object, if any.
 		RE::ObjectRefHandle hitRefrHandle{ };
 		// The length of the ray from start to hitPos.
@@ -208,7 +208,40 @@ namespace Raycast
 		const glm::vec4& a_start,
 		const glm::vec4& a_end, 
 		const std::vector<RE::NiAVObject*>& a_filteredObjects, 
-		RE::COL_LAYER&& a_collisionLayer = RE::COL_LAYER::kUnidentified,
+		RE::COL_LAYER&& a_collisionLayer,
+		bool&& a_defaultFilter = false
+	) noexcept;
+
+	// Cast a ray from 'a_start' to 'a_end', returning the first thing it hits
+	// This variant allows for filtering of specific objects 
+	// and objects with collision layers that do not collide with the passed-in collision layer.
+	// Params:
+	//		glm::vec4 a_start:									
+	//			Starting position for the trace in world space.
+	// 
+	//		glm::vec4 a_end:									
+	//			End position for the trace in world space.
+	// 
+	//		std::vector<RE::NiAVObject*> a_filteredObjects:		
+	//			Filtered 3D objects to not consider for collisions.
+	// 
+	//		RE::COL_LAYER a_collisionLayer:						
+	//			Collision layer to use for the raycast. 
+	//			Filters out objects that do not collide with this layer.
+	// 
+	//		bool a_defaultFilter:								
+	//			Use SmoothCam's default collision filter when filtering out hit objects.
+	// 
+	// Returns:
+	//		RayResult:
+	//		A structure holding the results of the ray cast.
+	//		If the ray hit something, result.hit will be true.
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start,
+		const glm::vec4& a_end, 
+		const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, 
+		RE::COL_LAYER&& a_collisionLayer,
 		bool&& a_defaultFilter = false
 	) noexcept;
 	
@@ -240,7 +273,7 @@ namespace Raycast
 		const glm::vec4& a_start, 
 		const glm::vec4& a_end, 
 		const std::vector<RE::NiAVObject*>& a_filteredObjects, 
-		const std::vector<RE::FormType>& a_filteredFormTypes = {}, 
+		const std::vector<RE::FormType>& a_filteredFormTypes,
 		bool&& a_isIncludeFilter = false
 	) noexcept;
 
@@ -272,7 +305,7 @@ namespace Raycast
 		const glm::vec4& a_start, 
 		const glm::vec4& a_end, 
 		const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, 
-		const std::vector<RE::FormType>& a_filteredFormTypes = {}, 
+		const std::vector<RE::FormType>& a_filteredFormTypes,
 		bool&& a_isIncludeFilter = false
 	) noexcept;
 
@@ -299,6 +332,8 @@ namespace Raycast
 		const glm::vec4& a_start, const glm::vec4& a_end, RE::COL_LAYER&& a_collisionLayer
 	) noexcept;
 
+	// NOTE:
+	// Unused at the moment.
 	// Get all camera raycast hit results sorted by distance 
 	// from the cast's start point in ascending order.
 	// Params:
@@ -345,7 +380,7 @@ namespace Raycast
 	) noexcept;
 
 	// Helper for performing havok raycasts with a collector.
-	RayResult PerformHavokCast
+	RayResult PerformHavokRaycast
 	(
 		RE::bhkPickData& a_pickDataIn, const glm::vec4& a_start, const glm::vec4& a_rayDir
 	);

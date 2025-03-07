@@ -302,7 +302,6 @@ Event OnCoopStart(Form akCoopPlayer)
         PO3_SKSEFunctions.AddKeywordToRef(Self, CoopPlayerKeyword)
         ALYSLC.Log(Self.GetDisplayName() + "'s player keyword is: " + CoopPlayerKeyword)
 
-        ; Add to current follower faction.
         Self.SetRelationshipRank(PlayerRef as Actor, 3)
         (PlayerRef as Actor).SetRelationshipRank(Self, 3)
         ; Clear target.

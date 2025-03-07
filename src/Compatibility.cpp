@@ -9,8 +9,6 @@ namespace ALYSLC
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3;
 	bool EnderalCompat::g_enderalSSEInstalled;
 	bool MCOCompat::g_mcoInstalled;
-	bool MiniMapCompat::g_miniMapInstalled;
-	bool MiniMapCompat::g_shouldApplyCullingWorkaround;
 	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled;
 	bool PrecisionCompat::g_precisionInstalled;
 	bool QuickLootCompat::g_quickLootInstalled;
@@ -59,21 +57,6 @@ namespace ALYSLC
 		{
 			SPDLOG_INFO("[Compatibility] MCO installed!");
 		}
-	}
-
-	void MiniMapCompat::CheckForMiniMap()
-	{
-		g_miniMapInstalled = static_cast<bool>(GetModuleHandleA("MiniMap.dll"));
-		if (g_miniMapInstalled)
-		{
-			SPDLOG_INFO
-			(
-				"[Compatibility] Felisky384's MiniMap installed!" 
-				"Will setup culling hooks to minimize freezes in interior cells."
-			);
-		}
-
-		g_shouldApplyCullingWorkaround = false;
 	}
 
 	void PersistentFavoritesCompat::CheckForPersistentFavorites()

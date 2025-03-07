@@ -156,13 +156,6 @@ namespace ALYSLC
 		
 		// NOTE: The delayed funcs below are all executed on the player's task runner.
 
-		// Run when the player is downed and until revived or dead.
-		// Keep track of downed player revive time and remaining life time, and update
-		// the crosshair text to show how much of each remains.
-		// Once revived, handle resetting the player so that they can continue co-op,
-		// and if not revived, signal that the player died and end the co-op session.
-		void DownedStateCountdownTask();
-
 		// Emulate P1 menu controls if a co-op player is controlling the Lockpicking Menu.
 		// NOTE: Currently run as a task to avoid a bug 
 		// with repeated attempts to lockpick the same refr.
@@ -225,6 +218,7 @@ namespace ALYSLC
 		SteadyClock::time_point lastAutoGrabTP;
 		// Time point indicating when the player last successfully cast a bound weapon spell 
 		// (companion players only).
+		SteadyClock::time_point lastBoundWeapon2HReqTP;
 		SteadyClock::time_point lastBoundWeaponLHReqTP;
 		SteadyClock::time_point lastBoundWeaponRHReqTP;
 		// Time point indicating when the player's crosshair was last updated.
@@ -366,7 +360,7 @@ namespace ALYSLC
 		float secsSinceInvalidPlayerMoved;
 		// Controller ID (CID = XInput index) for this player.
 		int32_t controllerID;
-		// Player 1 always has an ID of 0. 
+		// P1 always has an ID of 0. 
 		// Other players have their IDs assigned based on their CID,
 		// incrementing by 1 for each player with a higher CID.
 		int32_t playerID;

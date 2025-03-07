@@ -4,12 +4,15 @@ namespace Raycast
 {
 	RayCollector::RayCollector() {}
 
-	void RayCollector::AddRayHit(const RE::hkpCdBody& a_body, const RE::hkpShapeRayCastCollectorOutput& a_hitInfo)
+	void RayCollector::AddRayHit
+	(
+		const RE::hkpCdBody& a_body, const RE::hkpShapeRayCastCollectorOutput& a_hitInfo
+	)
 	{
 		// After potentially filtering out certain hits, enqueue the hit result.
 
 		HitResult hit;
-		// Set hit fraction and normal from output info.
+		// Set hit fraction and normal from input info.
 		hit.hitFraction = a_hitInfo.hitFraction;
 		hit.normal = 
 		{
@@ -18,7 +21,7 @@ namespace Raycast
 			a_hitInfo.normal.quad.m128_f32[2]
 		};
 
-		// Get root parent of the hit body.
+		// Get parent of the hit body.
 		const RE::hkpCdBody* obj = &a_body;
 		while (obj)
 		{
@@ -31,20 +34,62 @@ namespace Raycast
 		}
 
 		hit.body = obj;
-		// If there's no hit collision detection body, return early.
+		// Must have hit a collision detection body.
 		if (!hit.body) 
 		{
 			return;
 		}
 
-		const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
-		// Get hit object refr, if any.
-		hit.hitRefrPtr = RE::TESObjectREFRPtr
-		(
-			RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
-		);
+		// Clear out hit refr.
+		hit.hitRefrPtr = RE::TESObjectREFRPtr();
+		RE::NiPointer<RE::NiAVObject> hit3DPtr{ hit.GetAVObject() };
+		// Get hit object refr.
+		// Precedence of checks:
+		// 1. Check the hit 3D's user data; fastest way to obtain if valid.
+		// 2. Attempt to obtain the hit refr from the collidable.
+		// 3. If the hit 3D was invalid, obtain 3D via second method and then check its user data.
+		// 4. As a last resort, walk up the node tree and look for a valid parent refr.
+		if (hit3DPtr && hit3DPtr.get() && hit3DPtr->userData)
+		{
+			hit.hitRefrPtr = RE::TESObjectREFRPtr(hit3DPtr->userData);
+		}
+		else
+		{
+			const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
+			hit.hitRefrPtr = RE::TESObjectREFRPtr
+			(
+				RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
+			);
+
+			if (!hit.hitRefrPtr || !hit.hitRefrPtr.get())
+			{
+				if (!hit3DPtr || !hit3DPtr.get())
+				{
+					hit3DPtr = RE::NiPointer<RE::NiAVObject>
+					(
+						RE::TESHavokUtilities::FindCollidableObject(*collisionObj)
+					);
+				}
+
+				if (hit3DPtr && hit3DPtr.get())
+				{
+					if (hit3DPtr->userData)
+					{
+						hit.hitRefrPtr = RE::TESObjectREFRPtr(hit3DPtr->userData);
+					}
+					else
+					{
+						hit.hitRefrPtr = RE::TESObjectREFRPtr
+						(
+							ALYSLC::Util::GetRefrFrom3D(hit3DPtr.get())
+						);
+					}
+				}
+			}
+		}
+
+		// Is there an associated refr with the hit 3D object?
 		bool hitRefrValid = hit.hitRefrPtr && hit.hitRefrPtr.get();
-		
 		if (useOriginalFilter)
 		{
 			// Use SmoothCam's original collision filter mask here.
@@ -55,18 +100,22 @@ namespace Raycast
 			constexpr uint64_t filter = 0x40122716;	 //@TODO
 			if ((m & filter) != 0)
 			{
-				if (!objectFilters.empty())
+				if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
 				{
 					for (const auto filteredObj : objectFilters)
 					{
-						RE::NiPointer<RE::NiAVObject> hit3D{ hit.GetAVObject() };
+						if (!filteredObj)
+						{
+							continue;
+						}
+
 						// Hit an object that is not in the included list 
 						// or hit an object in the excluded list,
 						// so skip this hit.
 						bool shouldExclude = 
 						(
-							(isIncludeFilter && hit3D.get() != filteredObj) ||
-							(!isIncludeFilter && hit3D.get() == filteredObj)
+							(isIncludeFilter && hit3DPtr.get() != filteredObj) ||
+							(!isIncludeFilter && hit3DPtr.get() == filteredObj)
 						);
 						if (shouldExclude)
 						{
@@ -105,6 +154,11 @@ namespace Raycast
 				{
 					for (const auto filteredRefr : refrFilters)
 					{
+						if (!filteredRefr)
+						{
+							continue;
+						}
+
 						// Hit a refr that is not in the included list 
 						// or hit a refr in the excluded list.
 						if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
@@ -121,8 +175,7 @@ namespace Raycast
 		}
 		else
 		{
-			// Allow all hits through but filter with formtype 
-			// or object 3D lists exclusively instead.
+			// Consider all hits but filter with formtype or object 3D lists exclusively instead.
 			// Form type filters.
 			if (hitRefrValid && !formTypesToFilter.empty())
 			{
@@ -150,18 +203,22 @@ namespace Raycast
 				}
 			}
 
-			if (!objectFilters.empty())
+			if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
 			{
 				for (const auto filteredObj : objectFilters)
 				{
-					RE::NiPointer<RE::NiAVObject> hit3D{ hit.GetAVObject() };
+					if (!filteredObj)
+					{
+						continue;
+					}
+
 					// Hit an object that is not in the included list 
 					// or hit an object in the excluded list,
 					// so skip this hit.
 					bool shouldExclude = 
 					(
-						(isIncludeFilter && hit3D.get() != filteredObj) ||
-						(!isIncludeFilter && hit3D.get() == filteredObj)
+						(isIncludeFilter && hit3DPtr.get() != filteredObj) ||
+						(!isIncludeFilter && hit3DPtr.get() == filteredObj)
 					);
 					if (shouldExclude)
 					{
@@ -200,6 +257,11 @@ namespace Raycast
 			{
 				for (const auto filteredRefr : refrFilters)
 				{
+					if (!filteredRefr)
+					{
+						continue;
+					}
+
 					// Hit a refr that is not in the included list 
 					// or hit a refr in the excluded list.
 					if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
@@ -238,7 +300,7 @@ namespace Raycast
 
 	RE::NiAVObject* RayCollector::HitResult::GetAVObject()
 	{
-		// Get object 3D from collision detection body.
+		// Get object 3D from the collision detection body.
 		return body ? ALYSLC::Util::NativeFunctions::hkpCdBody_GetUserData(body) : nullptr;
 	}
 
@@ -253,54 +315,66 @@ namespace Raycast
 	RayResult CastRay(glm::vec4 a_start, glm::vec4 a_end, float a_traceHullSize) noexcept
 	{
 		// Cast a ray using the game's camera caster, which is a sphere cast of the given hullsize.
-		// NOTE: Does not provide info on the object that was hit.
+		// NOTE: 
+		// Does not provide info on the object that was hit, unless it is a character.
 
-		RayResult res{ };
 		const auto ply = RE::PlayerCharacter::GetSingleton();
 		const auto cam = RE::PlayerCamera::GetSingleton();
-		// If P1 is invalid, or no player camera, or no parent cell, or cam caster simple shape phantoms, return early.
+		// If P1 is invalid, or no player camera, or no parent cell, 
+		// or no cam caster simple shape phantoms, return early.
 		if (!ply || !cam || !ply->parentCell || !cam->unk120) 
 		{
-			return res;
+			return { };
 		}
 
 		auto physicsWorld = ply->parentCell->GetbhkWorld();
-		if (physicsWorld)
+		if (!physicsWorld)
 		{
-			{
-				// Remove comment if raycast int3 crash still occurs.
-				//RE::BSReadLockGuard lock(physicsWorld->worldLock);
-				RE::NiAVObject* object3D{ nullptr };
-				res.hit = ALYSLC::Util::NativeFunctions::PlayerCamera_LinearCast
-				(
-					cam->unk120, physicsWorld,
-					a_start, a_end, 
-					static_cast<uint32_t*>(res.data), &object3D,
-					a_traceHullSize
-				);
+			return { };
+		}
+		
+		RayResult res{ };
+		RE::Character* hitCharacter{ nullptr };
+		{
+			// Remove comment if raycast int3 crash still occurs.
+			//RE::BSReadLockGuard lock(physicsWorld->worldLock);
+			res.hit = ALYSLC::Util::NativeFunctions::PlayerCamera_LinearCast
+			(
+				cam->unk120,
+				physicsWorld,
+				a_start,
+				a_end, 
+				static_cast<uint32_t*>(res.data), 
+				&hitCharacter,
+				a_traceHullSize
+			);
+		}
 
-				if (res.hit)
-				{
-					// Does not seem to ever modify object3D during the cast.
-					res.hitObject = 
-					(
-						object3D && object3D->GetRefCount() > 0 ? 
-						RE::NiPointer<RE::NiAVObject>(object3D) : 
-						nullptr
-					);
-					// Set hit position and distance cast before the hit.
-					res.hitPos = a_end;
-					res.rayLength = glm::length(static_cast<glm::vec3>(res.hitPos) - static_cast<glm::vec3>(a_start));
-				}
-			}
+		if (res.hit)
+		{
+			res.hitObjectPtr = 
+			(
+				hitCharacter ? 
+				ALYSLC::Util::GetRefr3D(hitCharacter) : 
+				nullptr
+			);
+			// Set hit position and distance cast before the hit.
+			res.hitPos = a_end;
+			res.rayLength = glm::length(res.hitPos - a_start);
 		}
 
 		return res;
 	}
 
-	RayResult hkpCastRay(const glm::vec4& a_start, const glm::vec4& a_end, const bool& a_ignoreActors, const bool& a_onlyActors) noexcept
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		const bool& a_ignoreActors, 
+		const bool& a_onlyActors
+	) noexcept
 	{
-		// Cast ray either completely ignoring actors or only hitting actors.
+		// Cast ray and either completely ignore hit actors or only consider hit actors.
 
 		constexpr auto hkpScale = 0.0142875f;
 		const auto dif = a_end - a_start;
@@ -311,16 +385,15 @@ namespace Raycast
 
 		auto collector = GetCastCollector();
 		collector->Reset();
-
+		
+		collector->AddFilteredFormTypes({ RE::FormType::ActorCharacter });
 		if (a_ignoreActors)
 		{
 			collector->SetFilterType(false);
-			collector->AddFilteredFormTypes({ RE::FormType::ActorCharacter });
 		}
 		else if (a_onlyActors)
 		{
 			collector->SetFilterType(true);
-			collector->AddFilteredFormTypes({ RE::FormType::ActorCharacter });
 		}
 
 		RE::bhkPickData pickData{};
@@ -329,10 +402,17 @@ namespace Raycast
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
 		pickData.rayHitCollectorA8 = reinterpret_cast<RE::hkpClosestRayHitCollector*>(collector);
 
-		return PerformHavokCast(pickData, a_start, dif);
+		return PerformHavokRaycast(pickData, a_start, dif);
 	}
 
-	RayResult hkpCastRay(const glm::vec4& a_start, const glm::vec4& a_end, const std::vector<RE::NiAVObject*>& a_filteredObjects, RE::COL_LAYER&& a_collisionLayer, bool&& a_defaultFilter) noexcept
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start,
+		const glm::vec4& a_end,
+		const std::vector<RE::NiAVObject*>& a_filteredObjects,
+		RE::COL_LAYER&& a_collisionLayer, 
+		bool&& a_defaultFilter
+	) noexcept
 	{
 		// Cast ray, filtering out certain 3D objects 
 		// and objects that do not collide with the given collision filter.
@@ -347,6 +427,7 @@ namespace Raycast
 		auto collector = GetCastCollector();
 		collector->Reset();
 		collector->SetUseOriginalFilter(a_defaultFilter);
+		// Exclusion filter.
 		collector->SetFilterType(false);
 
 		// Add all objects to filter out.
@@ -363,13 +444,73 @@ namespace Raycast
 		// If not using the all-inclusive unidentified layer, set the filter info for the cast.
 		if (a_collisionLayer != RE::COL_LAYER::kUnidentified) 
 		{
-			pickData.rayInput.filterInfo = RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | std::to_underlying(a_collisionLayer);
+			pickData.rayInput.filterInfo = 
+			(
+				RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | 
+				std::to_underlying(a_collisionLayer)
+			);
 		}
 
-		return PerformHavokCast(pickData, a_start, dif);
+		return PerformHavokRaycast(pickData, a_start, dif);
 	}
 
-	RayResult hkpCastRay(const glm::vec4& a_start, const glm::vec4& a_end, const std::vector<RE::NiAVObject*>& a_filteredObjects, const std::vector<RE::FormType>& a_filteredFormTypes, bool&& a_isIncludeFilter) noexcept
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start,
+		const glm::vec4& a_end, 
+		const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, 
+		RE::COL_LAYER&& a_collisionLayer,
+		bool&& a_defaultFilter
+	) noexcept
+	{
+		// Cast ray, filtering out certain 3D objects 
+		// and objects that do not collide with the given collision filter.
+
+		constexpr auto hkpScale = 0.0142875f;
+		const auto dif = a_end - a_start;
+
+		constexpr auto one = 1.0f;
+		const auto from = a_start * hkpScale;
+		const auto to = dif * hkpScale;
+
+		auto collector = GetCastCollector();
+		collector->Reset();
+		collector->SetUseOriginalFilter(a_defaultFilter);
+		// Exclusion filter.
+		collector->SetFilterType(false);
+
+		// Add all refrs to filter out.
+		for (const auto filteredRefr : a_filteredRefrs)
+		{
+			collector->AddFilteredRefr(filteredRefr);
+		}
+
+		RE::bhkPickData pickData{};
+		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
+		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
+		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
+		pickData.rayHitCollectorA8 = reinterpret_cast<RE::hkpClosestRayHitCollector*>(collector);
+		// If not using the all-inclusive unidentified layer, set the filter info for the cast.
+		if (a_collisionLayer != RE::COL_LAYER::kUnidentified) 
+		{
+			pickData.rayInput.filterInfo = 
+			(
+				RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 |
+				std::to_underlying(a_collisionLayer)
+			);
+		}
+
+		return PerformHavokRaycast(pickData, a_start, dif);
+	}
+
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end,
+		const std::vector<RE::NiAVObject*>& a_filteredObjects, 
+		const std::vector<RE::FormType>& a_filteredFormTypes,
+		bool&& a_isIncludeFilter
+	) noexcept
 	{
 		// Cast ray and in/exclusively filter 3D objects and formtypes.
 
@@ -401,10 +542,17 @@ namespace Raycast
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
 		pickData.rayHitCollectorA8 = reinterpret_cast<RE::hkpClosestRayHitCollector*>(collector);
 
-		return PerformHavokCast(pickData, a_start, dif);
+		return PerformHavokRaycast(pickData, a_start, dif);
 	}
 
-	RayResult hkpCastRay(const glm::vec4& a_start, const glm::vec4& a_end, const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, const std::vector<RE::FormType>& a_filteredFormTypes, bool&& a_isIncludeFilter) noexcept
+	RayResult hkpCastRay
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		const std::vector<RE::TESObjectREFR*>& a_filteredRefrs, 
+		const std::vector<RE::FormType>& a_filteredFormTypes,
+		bool&& a_isIncludeFilter
+	) noexcept
 	{
 		// Cast ray and in/exclusively filter refrs and formtypes.
 
@@ -435,10 +583,15 @@ namespace Raycast
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
 		pickData.rayHitCollectorA8 = reinterpret_cast<RE::hkpClosestRayHitCollector*>(collector);
 
-		return PerformHavokCast(pickData, a_start, dif);
+		return PerformHavokRaycast(pickData, a_start, dif);
 	}
 
-	RayResult hkpCastRayWithColLayerFilter(const glm::vec4& a_start, const glm::vec4& a_end, RE::COL_LAYER&& a_collisionLayer) noexcept
+	RayResult hkpCastRayWithColLayerFilter
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		RE::COL_LAYER&& a_collisionLayer
+	) noexcept
 	{
 		// Cast ray filtering out all hits that do not collide with the given collision layer.
 
@@ -448,58 +601,70 @@ namespace Raycast
 		pickData.rayInput.to = ALYSLC::TohkVector4(a_end) * havokWorldScale;
 		pickData.rayInput.enableShapeCollectionFilter = false;
 		// Set filter info to use our collision layer.
-		pickData.rayInput.filterInfo = RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | std::to_underlying(a_collisionLayer);
+		pickData.rayInput.filterInfo = 
+		(
+			RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | 
+			std::to_underlying(a_collisionLayer)
+		);
 
 		// Construct hit result.
 		// Default data.
-		RayResult result;
+		RayResult result{ };
 		result.hit = false;
-		result.hitObject = nullptr;
+		result.hitObjectPtr = nullptr;
 		result.hitRefrHandle = RE::ObjectRefHandle();
 		result.hitPos = a_end;
 		result.rayLength = glm::length(a_end - a_start);
 		result.rayNormal = glm::vec4();
-		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1 && p1->parentCell)
+		const auto p1 = RE::PlayerCharacter::GetSingleton(); 
+		if (!p1 || !p1->parentCell)
 		{
-			if (auto physicsWorld = p1->parentCell->GetbhkWorld(); physicsWorld) 
-			{
-				RE::BSReadLockGuard lock(physicsWorld->worldLock);
-				physicsWorld->PickObject(pickData);
-			}
-			else
-			{
-				// No physics world, return.
-				return result;
-			}
+			return result;
+		}
 
-			if (pickData.rayOutput.HasHit())
-			{
-				// Set hit flag, position, normal, ray data.
-				result.hit = true;
-				const auto fullRay = a_end - a_start;
-				result.hitPos = a_start + (fullRay * pickData.rayOutput.hitFraction);
-				result.rayLength = glm::length(fullRay * pickData.rayOutput.hitFraction);
-				result.rayNormal = ALYSLC::ToVec4(pickData.rayOutput.normal);
+		auto physicsWorld = p1->parentCell->GetbhkWorld(); 
+		if (!physicsWorld) 
+		{
+			// No physics world, return.
+			return result;
+		}
 
-				// Set hit object/refr data.
-				auto hitCollidable = pickData.rayOutput.rootCollidable;
-				auto hitRefr = RE::TESHavokUtilities::FindCollidableRef(*hitCollidable);
-				result.hitObject = hitRefr ? ALYSLC::Util::GetRefr3D(hitRefr) : nullptr;
-				result.hitRefrHandle = hitRefr ? hitRefr->GetHandle() : RE::ObjectRefHandle();
-			}
+		{
+			RE::BSReadLockGuard lock(physicsWorld->worldLock);
+			physicsWorld->PickObject(pickData);
+		}
+
+		if (pickData.rayOutput.HasHit())
+		{
+			// Set hit flag, position, cast length, and normal.
+			result.hit = true;
+			const auto fullRay = a_end - a_start;
+			result.hitPos = a_start + (fullRay * pickData.rayOutput.hitFraction);
+			result.rayLength = glm::length(fullRay * pickData.rayOutput.hitFraction);
+			result.rayNormal = ALYSLC::ToVec4(pickData.rayOutput.normal);
+
+			// Set hit object/refr data.
+			auto hitCollidable = pickData.rayOutput.rootCollidable;
+			auto hitRefr = RE::TESHavokUtilities::FindCollidableRef(*hitCollidable);
+			result.hitObjectPtr = hitRefr ? ALYSLC::Util::GetRefr3D(hitRefr) : nullptr;
+			result.hitRefrHandle = hitRefr ? hitRefr->GetHandle() : RE::ObjectRefHandle();
 		}
 
 		return result;
 	}
 
-	std::vector<RayResult> GetAllCamCastHitResults(const glm::vec4& a_start, const glm::vec4& a_end, const float& a_hullSize) noexcept
+	std::vector<RayResult> GetAllCamCastHitResults
+	(
+		const glm::vec4& a_start, const glm::vec4& a_end, const float& a_hullSize
+	) noexcept
 	{
-		// Gets all (most of the time) hits between the start and end positions using the cam caster with the given hull size.
+		// Gets all (most of the time) hits between the start and end positions 
+		// using the cam caster with the given hull size.
 
 		const auto ply = RE::PlayerCharacter::GetSingleton();
 		if (!ply || !ply->parentCell) 
 		{
-			return {};
+			return { };
 		}
 
 		// Holds our results.
@@ -523,7 +688,7 @@ namespace Raycast
 		// Failsafe for my crappy code.
 		// Should never need this many casts anyway,
 		// unless the start and end points enclose tons of objects,
-		// and probably most of Skyrim's worldspace.
+		// and probably most of the current worldspace.
 		// (if you value your framerate, don't zoom out this far please)
 		uint16_t maxCasts = 20;
 		uint16_t casts = 0;
@@ -538,30 +703,44 @@ namespace Raycast
 				// Only want hits that are further towards the end position than the previous hit 
 				// to ensure that the cast chain eventually ends.
 				float angBetweenHitPosAndRay = 0.0f;
-				if (float distFromStart = glm::length(hitFromNewStart); distFromStart != 0.0f && rayLength != 0.0f) 
+				float distFromStart = glm::length(hitFromNewStart); 
+				if (distFromStart != 0.0f && rayLength != 0.0f) 
 				{
-					angBetweenHitPosAndRay = acosf(glm::dot(hitFromNewStart, ray) / (distFromStart * rayLength)); 
+					angBetweenHitPosAndRay = acosf
+					(
+						glm::dot(hitFromNewStart, ray) / (distFromStart * rayLength)
+					); 
 				}
 
-				// NOTE: To prevent subsequent casts from returning the same hit position 
+				// NOTE: 
+				// To prevent subsequent casts from returning the same hit position 
 				// and causing the cast chain to stall at this position,
 				// we inch the next cast's start position forward by a little over the hull size.
-				// Obviously, this could miss hitting some objects that are smaller than the tiny offset.
-				// Small price to pay for avoiding a soft lock.
+				// Obviously, this could miss hitting some objects that are smaller
+				// than the tiny offset. Small price to pay for avoiding a soft lock.
 				if (angBetweenHitPosAndRay < pi / 2.0f)
 				{
-					// Also, all collision normals should be at most 90 degrees from the reversed ray (from end to start).
-					// Only want the normals facing the start position, since each hit surface has 2 normals to choose from.
-					float angBetweenNormAndRayToStart = acosf(glm::dot(camCastResult.rayNormal, -unitRay)); 
+					// Also, all collision normals should be at most 90 degrees 
+					// from the reversed ray (from end to start).
+					// Only want the normals facing the start position, 
+					// since each hit surface has 2 normals to choose from.
+					float angBetweenNormAndRayToStart = acosf
+					(
+						glm::dot(camCastResult.rayNormal, -unitRay)
+					); 
 					if (angBetweenNormAndRayToStart <= pi / 2.0f)
 					{
 						// This hit is valid since its normal is facing our start position.
 						results.emplace_back(camCastResult);
-						newStart = newStart + (glm::dot(hitFromNewStart, ray) / rayLengthSquared) * ray + (unitRay * (a_hullSize + 1.0f));
 					}
 
 					// Move a bit over 1 hull's length past the hit point projected onto the ray.
-					newStart = newStart + (glm::dot(hitFromNewStart, ray) / rayLengthSquared) * ray + (unitRay * (a_hullSize + 1.0f));
+					newStart = 
+					(
+						newStart + 
+						(glm::dot(hitFromNewStart, ray) / rayLengthSquared) * ray + 
+						(unitRay * (a_hullSize + 1.0f))
+					);
 				}
 				else
 				{
@@ -579,7 +758,7 @@ namespace Raycast
 			else
 			{
 				// No hit from this cast's start position to the end position.
-				// We've reached the end, well done.
+				// We've reached the end.
 				newStart = a_end;
 			}
 
@@ -589,9 +768,16 @@ namespace Raycast
 		return results;
 	}
 
-	std::vector<RayResult> GetAllHavokCastHitResults(const glm::vec4& a_start, const glm::vec4& a_end, const std::vector<RE::FormType>& a_filteredFormTypesList, bool&& a_isIncludeFilter) noexcept
+	std::vector<RayResult> GetAllHavokCastHitResults
+	(
+		const glm::vec4& a_start, 
+		const glm::vec4& a_end, 
+		const std::vector<RE::FormType>& a_filteredFormTypesList,
+		bool&& a_isIncludeFilter
+	) noexcept
 	{
-		// Gets all hits from the start position to the end position, only in/excluding hit objects of the given form types.
+		// Gets all hits from the start position to the end position,
+		// only in/excluding hit objects of the given form types.
 
 		constexpr auto hkpScale = 0.0142875f;
 		const auto dif = a_end - a_start;
@@ -615,7 +801,7 @@ namespace Raycast
 		const auto ply = RE::PlayerCharacter::GetSingleton();
 		if (!ply || !ply->parentCell) 
 		{
-			return {};
+			return { };
 		}
 
 		// Add out filtered form types.
@@ -627,36 +813,38 @@ namespace Raycast
 		auto physicsWorld = ply->parentCell->GetbhkWorld(); 
 		if (!physicsWorld)
 		{
-			return {};
+			return { };
 		}
-		else
+
 		{
 			RE::BSReadLockGuard lock(physicsWorld->worldLock);
 			physicsWorld->PickObject(pickData);
 		}
 
 		// Add all results.
-		std::vector<RayResult> results;
+		std::vector<RayResult> results{ };
 		results.clear();
 		for (auto hit : collector->GetHits())
 		{
 			const auto pos = (dif * hit.hitFraction) + a_start;
-			RayResult result;
+			RayResult result{ };
 			result.hitPos = pos;
 			result.rayLength = glm::length(pos - a_start);
 			result.rayNormal = { hit.normal.x, hit.normal.y, hit.normal.z, 0.0f };
-
 			if (hit.body)
 			{
 				auto av = hit.GetAVObject();
 				result.hit = av != nullptr;
-				result.hitObject = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
-				result.hitRefrHandle = hit.hitRefrPtr ? hit.hitRefrPtr->GetHandle() : RE::ObjectRefHandle();
+				result.hitObjectPtr = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
+				result.hitRefrHandle = 
+				(
+					hit.hitRefrPtr ? hit.hitRefrPtr->GetHandle() : RE::ObjectRefHandle()
+				);
 			}
 			else
 			{
 				result.hit = false;
-				result.hitObject = nullptr;
+				result.hitObjectPtr = nullptr;
 				result.hitRefrHandle = RE::ObjectRefHandle();
 			}
 
@@ -669,41 +857,55 @@ namespace Raycast
 			results.begin(), results.end(),
 			[&a_start](const RayResult& a_result1, const RayResult& a_result2) 
 			{
-				return glm::distance(a_result1.hitPos, a_start) < glm::distance(a_result2.hitPos, a_start);
+				return 
+				(
+					glm::distance(a_result1.hitPos, a_start) < 
+					glm::distance(a_result2.hitPos, a_start)
+				);
 			}
 		);
 
 		return results;
 	}
 
-	RayResult PerformHavokCast(RE::bhkPickData& a_pickDataIn, const glm::vec4& a_start, const glm::vec4& a_rayDir)
+	RayResult PerformHavokRaycast
+	(
+		RE::bhkPickData& a_pickDataIn, const glm::vec4& a_start, const glm::vec4& a_rayDir
+	)
 	{
-		// Helper for performing a havok raycast with the given pick data, ray start position, and ray direction.
+		// Helper for performing a havok raycast with the given pick data, 
+		// ray start position, and ray direction.
 		// Returns the closest hit result to the start position.
 
 		const auto ply = RE::PlayerCharacter::GetSingleton();
 		// No player or parent cell, return early.
 		if (!ply || !ply->parentCell)
 		{
-			return {};
+			return { };
 		}
 
+		auto physicsWorld = ply->parentCell->GetbhkWorld(); 
+		if (!physicsWorld)
+		{
+			return { };
+		}
+		
 		// Perform cast if parent cell havok world is available.
-		if (auto physicsWorld = ply->parentCell->GetbhkWorld(); physicsWorld)
 		{
 			RE::BSReadLockGuard lock(physicsWorld->worldLock);
 			physicsWorld->PickObject(a_pickDataIn);
 		}
 
 		// Get closest valid result.
-		RayCollector::HitResult best{};
+		RayCollector::HitResult best{ };
 		best.hitFraction = 1.0f;
 		glm::vec4 bestPos = {};
 		glm::vec4 normal = {};
 		const auto collector = GetCastCollector();
 		for (auto& hit : collector->GetHits())
 		{
-			// Hit position is the ray direction multiplied by the ray length added to the start pos.
+			// Hit position is the ray direction 
+			// multiplied by the ray length added to the start pos.
 			const auto pos = (a_rayDir * hit.hitFraction) + a_start;
 			// Add hits without a hit body that aren't too close to the start position.
 			if (best.body == nullptr && glm::distance(pos, a_start) > 1e-2f)
@@ -714,8 +916,8 @@ namespace Raycast
 				continue;
 			}
 
-			// Ignore hits that are closer than the current best hit result
-			// or too close to the start position.
+			// Only consider hits that are closer than the current best hit result
+			// and not too close to the start position.
 			if (hit.hitFraction < best.hitFraction && glm::distance(pos, a_start) > 1e-2f)
 			{
 				best = hit;
@@ -725,7 +927,7 @@ namespace Raycast
 		}
 
 		// Construct result with our data.
-		RayResult result;
+		RayResult result{ };
 		result.hitPos = bestPos;
 		result.rayLength = glm::length(bestPos - a_start);
 		result.rayNormal = normal;
@@ -739,8 +941,11 @@ namespace Raycast
 		// Set as hit and get hit object and refr.
 		auto av = best.GetAVObject();
 		result.hit = av != nullptr;
-		result.hitObject = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
-		result.hitRefrHandle = best.hitRefrPtr ? best.hitRefrPtr->GetHandle() : RE::ObjectRefHandle();
+		result.hitObjectPtr = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
+		result.hitRefrHandle = 
+		(
+			best.hitRefrPtr ? best.hitRefrPtr->GetHandle() : RE::ObjectRefHandle()
+		);
 		return result;
 	}
 };

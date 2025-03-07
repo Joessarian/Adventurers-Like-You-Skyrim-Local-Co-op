@@ -32,6 +32,8 @@ static constexpr uint8_t MAX_NODE_RECURSION_DEPTH = 100;
 // https://github.com/ersh1/Precision/blob/main/src/Offsets.h
 // 2F6B94C, 30064CC
 static float* g_deltaTimeRealTime = (float*)RELOCATION_ID(523661, 410200).address();
+// 2F4DED0, 2FE8B98
+static RE::NiRect<float>* g_viewPort = (RE::NiRect<float>*)RELOCATION_ID(519618, 406160).address();  
 
 
 //==========
@@ -141,8 +143,17 @@ struct std::hash<RE::BSPointerHandle<T>>
 {
 	uint32_t operator()(const RE::BSPointerHandle<T>& a_handle) const
 	{
-		 // ugh
-		uint32_t nativeHandle = const_cast<RE::BSPointerHandle<T>*>(&a_handle)->native_handle();
+		uint32_t nativeHandle = 0;
+		if (!a_handle || !a_handle.get() || !a_handle.get().get())
+		{
+			return nativeHandle;
+		}
+
+		if (auto ptr = const_cast<RE::BSPointerHandle<T>*>(std::addressof(a_handle)); ptr)
+		{
+			nativeHandle = ptr->native_handle();
+		}
+
 		return nativeHandle;
 	}
 };
@@ -869,7 +880,7 @@ namespace ALYSLC
 				glm::vec4& a_rayStart,
 				glm::vec4& a_rayEnd,
 				uint32_t* a_rayResultInfo, 
-				RE::NiAVObject** a_object, 
+				RE::Character** a_hitCharacter, 
 				float a_traceHullSize
 			);
 			static REL::Relocation<tPlayerCamera_LinearCast> PlayerCamera_LinearCast
@@ -1520,13 +1531,77 @@ namespace ALYSLC
 				);
 			}
 		}
+		
+		// Check for and get any node with the given name for the given refr.
+		inline RE::NiPointer<RE::NiAVObject> Get3DObjectByName
+		(
+			RE::TESObjectREFR* a_refr, const RE::BSFixedString& a_nodeName
+		)
+		{
+			if (!a_refr)
+			{
+				return nullptr;
+			}
+
+			// Return early if the player's loaded 3D data is invalid.
+			auto loadedData = a_refr->loadedData;
+			if (!loadedData)
+			{
+				return nullptr;
+			}
+
+			// Return early if the player's 3D is invalid.
+			auto data3D = loadedData->data3D;
+			if (!data3D || !data3D->parent)
+			{
+				return nullptr;
+			}
+
+			auto obj3DPtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(a_nodeName)); 
+			if (!obj3DPtr || !obj3DPtr.get())
+			{
+				return nullptr;
+			}
+
+			return obj3DPtr;
+		}
+
+		// Get actor LOS cast start/end position, a focus point of sorts.
+		// The actor focus point is returned as their refr position
+		// offset by a fraction of their height.
+		// This varies less than their looking-at position,
+		// leading to more consistent raycast hit positions.
+		// Also prevents actors from clipping their head through walls, 
+		// and using their looking at position,
+		// which is now sticking through the wall, 
+		// to interact with objects that should not be reachable.
+		inline RE::NiPoint3 GetActorFocusPoint(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return RE::NiPoint3();
+			}
+
+			return 
+			(
+				a_actor->data.location +
+				RE::NiPoint3
+				(
+					0.0f,
+					0.0f,
+					a_actor->IsSneaking() ?
+					0.5f * a_actor->GetHeight() :
+					0.75f * a_actor->GetHeight()
+				)
+			);
+		}
 
 		// Get the given actor's character controller-reported linear velocity.
 		inline RE::NiPoint3 GetActorLinearVelocity(RE::Actor* a_actor)
 		{
 			if (const auto charController = a_actor->GetCharController(); charController)
 			{
-				RE::hkVector4 linVel{ 0 };
+				/*RE::hkVector4 linVel{ 0 };
 				charController->GetLinearVelocityImpl(linVel);
 				return 
 				(
@@ -1536,7 +1611,9 @@ namespace ALYSLC
 						linVel.quad.m128_f32[1], 
 						linVel.quad.m128_f32[2]
 					) * HAVOK_TO_GAME
-				);
+				);*/
+
+				return ToNiPoint3(charController->outVelocity) * HAVOK_TO_GAME;
 			}
 
 			return RE::NiPoint3();
@@ -1661,6 +1738,19 @@ namespace ALYSLC
 					).count() / 1000.0f
 				);
 			}
+		}
+
+		// Get the max AV amount for the given AV.
+		inline float GetFullAVAmount(RE::Actor* a_actor, const RE::ActorValue& a_av)
+		{
+			const float baseAV = a_actor->GetBaseActorValue(a_av);
+			// Get the amount to increase the current value by.
+			return
+			( 
+				a_actor->GetBaseActorValue(a_av) +
+				a_actor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, a_av) +
+				a_actor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kPermanent, a_av)
+			);
 		}
 
 		// Get boolean game setting from the given setting name.
@@ -1790,37 +1880,7 @@ namespace ALYSLC
 
 			return -1;
 		}
-
-		// Get player LOS cast start/end position, a focus point of sorts.
-		// The player focus point is returned as their refr position
-		// offset by a fraction of their height.
-		// This varies less than their looking-at position,
-		// leading to more consistent raycast hit positions.
-		// Also prevents players from clipping their head through walls, 
-		// and using their looking at position,
-		// which is now sticking through the wall, 
-		// to interact with objects that should not be reachable.
-		inline RE::NiPoint3 GetPlayerFocusPoint(RE::Actor* a_playerActor)
-		{
-			if (!a_playerActor)
-			{
-				return RE::NiPoint3();
-			}
-
-			return 
-			(
-				a_playerActor->data.location +
-				RE::NiPoint3
-				(
-					0.0f,
-					0.0f,
-					a_playerActor->IsSneaking() ?
-					0.5f * a_playerActor->GetHeight() :
-					0.75f * a_playerActor->GetHeight()
-				)
-			);
-		}
-
+		
 		// Get viewport dimensions.
 		inline RE::GRect<float> GetPort()
 		{
@@ -2480,7 +2540,10 @@ namespace ALYSLC
 		);
 
 		// Add/remove given perk to/from the given actor.
-		bool ChangePerk(RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1);
+		bool ChangePerk
+		(
+			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
+		);
 		
 		// Add/remove collision via Precision's attack colliders
 		// to the given actor's given node.
@@ -2501,6 +2564,9 @@ namespace ALYSLC
 		(
 			const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS
 		);
+
+		// Enable collisions for the given actor.
+		void EnableCollisionForActor(RE::Actor* a_actor);
 
 		// Helper function that iterates through all refrs in the given cell
 		// that are within the given radius from the provided origin position.
@@ -2529,7 +2595,7 @@ namespace ALYSLC
 			std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback
 		);
 
-		// Helper function that gets the approximated pixel height of the actor 
+		// Helper function that gets a rough approximation of the pixel height of the given actor 
 		// at the current camera position.
 		// Actor's lower bound is their world position
 		// and their upper bound is their head node or world position offset by their height.
@@ -2541,7 +2607,7 @@ namespace ALYSLC
 			const RE::NiPoint3& a_boundExtents
 		);
 		
-		// Helper function that gets the approximated pixel width of the actor 
+		// Helper function that gets a rough approximation of the pixel width of the given actor 
 		// at the current camera position.
 		// Actor's upper/lower bound is their center position offset by +- their X bound extent.
 		float GetActorPixelWidth
@@ -2554,9 +2620,12 @@ namespace ALYSLC
 		// Get all skill levels for the given actor.
 		SkillList GetActorSkillLevels(RE::Actor* a_actor);
 
-		// Get an approximation of the refr's 3D bounds pixel height (vert axis) 
+		// Get a rough approximation of the refr's 3D bounds pixel height (vert axis) 
 		// or width based on the current camera orientation.
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis);
+
+		// Return the refr 3D's havok collision layer.
+		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D);
 
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
 		// Pitch and yaw angles returned in the NiPoint follow the game's conventions for both.
@@ -2567,6 +2636,9 @@ namespace ALYSLC
 		// Credits to ersh1 for the method of getting the body part data:
 		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Utils.cpp
 		RE::NiPoint3 GetEyePosition(RE::Actor* a_actor);
+
+		// Get gravitational constant for P1's current cell.
+		double GetGravitationalConstant();
 
 		// Get the given 3D object or refr's associated rigid body.
 		RE::hkRefPtr<RE::hkpRigidBody> GethkpRigidBody(RE::NiAVObject* a_node3D);
@@ -2678,7 +2750,7 @@ namespace ALYSLC
 		// If any raycast hits the target refr, the observer has LOS on the target.
 		bool HasRaycastLOSAlongObserverAxis
 		(
-			RE::TESObjectREFR* a_observer,
+			RE::Actor* a_observer,
 			RE::TESObjectREFR* a_targetRefr,
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects, 
 			bool a_checkCrosshairPos, 
@@ -2778,7 +2850,7 @@ namespace ALYSLC
 		// Check if the given point is within the camera's frustum.
 		// Can set a pixel margin around the screen beyond which
 		// points are considered off-screen.
-		bool PointIsOnScreen(const RE::NiPoint3& a_point, float&& a_marginPixels = 0.0f);
+		bool PointIsOnScreen(const RE::NiPoint3& a_point, const float& a_pixelMargin = 0.0f);
 
 		// Check if the given point is within the camera's frustum.
 		// Also set the 2D screen position that corresponds to the given
@@ -2790,7 +2862,7 @@ namespace ALYSLC
 		(
 			const RE::NiPoint3& a_point,
 			RE::NiPoint3& a_screenPointOut, 
-			float&& a_marginPixels = 0.0f, 
+			float&& a_pixelMargin = 0.0f, 
 			bool&& a_shouldClamp = true
 		);
 
@@ -2841,10 +2913,6 @@ namespace ALYSLC
 		// URLs: https://math.stackexchange.com/q/4034978,
 		// https://en.wikipedia.org/wiki/Rotation_matrix#cite_note-5
 		void RotateVectorAboutAxis(RE::NiPoint3& a_vectorOut, RE::NiPoint3 a_axis, float a_angle);
-
-		// Return the quaternion that corresponds to the given rotation matrix.
-		// https://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/
-		RE::NiQuaternion RotationMatrixToQuaternion(const RE::NiMatrix3& a_matrix);
 
 		// Run player action console command that corresponds to 
 		// the given default object applied to the given actor.
@@ -2909,7 +2977,7 @@ namespace ALYSLC
 		(
 			RE::Actor* a_actor,
 			RE::TESObjectREFR* a_collidingRefr,
-			RE::hkpRigidBody* a_collidingRigidBody,
+			float a_collidingMass,
 			const RE::NiPoint3& a_contactPoint
 		);
 

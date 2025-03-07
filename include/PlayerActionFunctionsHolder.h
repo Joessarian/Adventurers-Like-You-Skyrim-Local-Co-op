@@ -158,9 +158,7 @@ namespace ALYSLC
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
-		bool QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		bool QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p);
-		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p);
@@ -258,12 +256,12 @@ namespace ALYSLC
 			RE::MagicCaster* a_caster
 		);
 
-		// Equip the cached hotkeyed item in the left or right hand.
+		// Equip the cached hotkeyed item to the requested equip index.
 		void EquipHotkeyedForm
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
 			RE::TESForm* a_hotkeyedForm, 
-			bool&& a_rightHand
+			EquipIndex&& a_equipIndex
 		);
 
 		// Get player action HMS costs.
@@ -327,6 +325,24 @@ namespace ALYSLC
 		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
 		void PerformActivationCycling(const std::shared_ptr<CoopPlayer>& a_p);
 
+		// Modify the player's X angle before cssting a target location spell
+		// to maximize chance of successfully casting the spell.
+		void PrepForTargetLocationSpellCast
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			RE::SpellItem* a_spell
+		);
+
+		// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
+		// Return true if the current occurring action should skip executing its perf funcs,
+		// since it is being used to equip the chosen hotkeyed item.
+		bool HandleDelayedHotkeyEquipRequest
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			const InputAction& a_occurringAction,
+			const PlayerActionManager::PlayerActionState& a_paState
+		);
+
 		// Play or stop the currently cycled emote idle.
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p);
 
@@ -383,6 +399,13 @@ namespace ALYSLC
 		void SetUpCastingPackage
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+		);
+		
+		// Update the target for the player's given magic caster.
+		void UpdatePlayerMagicCasterTarget
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			RE::MagicSystem::CastingSource&& a_casterSource
 		);
 
 		// Draw and use an equipped weapon while holding an attack bind.

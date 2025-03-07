@@ -138,37 +138,6 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 		};
 
-		// [BSCullingProcess Hooks]
-		class BSCullingProcessHooks
-		{
-		public:
-			static void InstallHooks()
-			{
-				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BSCullingProcess[0] };
-
-				// Hooks to provide a partial fix for freezing issue 
-				// that arises from having Felisky384's MiniMap
-				// enabled while the camera is in a cell 
-				// with at least 1 room marker + occlusion plane marker.
-				// Could not find a consistent repro method, 
-				// but the game would always freeze eventually under these conditions.
-				// Side effect of adjusting the cull mode to prevent these freezes 
-				// is that the minimap no longer updates the layout of interior cells. 
-				// All map markers, however, still appear 
-				// and update based on the player's location.
-				// Enabling this workaround for stability's sake until something better is found.
-				_Process1 = vtbl.write_vfunc(0x16, Process1);
-				SPDLOG_INFO("[BSCullingProcessHooks Hook] Installed Process1() hook.");
-			}
-
-		private:
-			static void Process1
-			(
-				RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2
-			);
-			static inline REL::Relocation<decltype(Process1)> _Process1;
-		};
-
 		// [BSMultiBound Hooks]
 		class BSMultiBoundHooks
 		{
@@ -537,15 +506,34 @@ namespace ALYSLC
 				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed Projectile UpdateImpl() hook.");
 
+				_OnArrowCollision = arrowProjectileVtbl.write_vfunc(190, OnProjectileCollision);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed ArrowProjectile OnArrowCollision() hook."
+				);
+				_OnMissileCollision = missileProjectileVtbl.write_vfunc(190, OnProjectileCollision);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed MissileProjectile OnMissileCollision() hook."
+				);
+
 			}
 
 		private:
 			// TODO: Template functions to reduce copied code.
 			static void GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity);
+			// Credits to dTry for both OnCollision hooks:
+			// https://github.com/D7ry/valhallaCombat/blob/Master/src/include/Hooks.h#L181
+			static void OnProjectileCollision
+			(
+				RE::Projectile* a_this, RE::hkpAllCdPointCollector* a_AllCdPointCollector
+			);
 			static void UpdateImpl(RE::Projectile* a_this, float a_delta);
+
 
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_ArrowProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnArrowCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ArrowProjectile_UpdateImpl;
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_BarrierProjectile_GetLinearVelocity;
@@ -564,14 +552,16 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(UpdateImpl)> _GrenadeProjectile_UpdateImpl;
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_MissileProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnMissileCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _MissileProjectile_UpdateImpl;
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_Projectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;
 
-			// Adjust projectile trajectory towards computed intercept position 
+			// Adjust projectile trajectory towards the computed intercept position 
 			// or the player's current target.
-			static void DirectProjectileAtTarget
+			// Return true if the projectile was directed at the target position.
+			static bool DirectProjectileAtTarget
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, 
 				const RE::ObjectRefHandle& a_projectileHandle,
@@ -585,6 +575,26 @@ namespace ALYSLC
 				const RE::ObjectRefHandle& a_projectileHandle, 
 				int32_t& a_firingPlayerCIDOut,
 				bool& a_firedAtPlayerOut
+			);
+			// Store the player CID for the player grabbing/releasing the given projectile 
+			// in the outparams (-1 if not by a player).
+			static void GetManipulatingPlayer
+			(
+				const RE::ObjectRefHandle& a_projHandle,
+				int32_t& a_grabbedByPlayerCID, 
+				int32_t& a_releasedByPlayerCID
+			);
+			// Position a grabbed hostile projectile or guide a released projectile
+			// along the trajectory set by the grabbing/releasing player's 
+			// reference manipulation manager.
+			// Update the velocity through the outparam.
+			// Return true if the projectile was manipulated.
+			static bool HandleManipulatedProjectile
+			(
+				const std::shared_ptr<CoopPlayer>& a_p,  
+				const RE::ObjectRefHandle& a_projectileHandle, 
+				bool a_isGrabbed,
+				RE::NiPoint3& a_resultingVelocityOut
 			);
 			// Adjust the projectile's trajectory to home in at the player's current target.
 			// Update the velocity through the outparam.
@@ -611,6 +621,22 @@ namespace ALYSLC
 				const RE::ObjectRefHandle& a_projectileHandle,
 				RE::NiPoint3& a_resultingVelocityOut
 			);
+		};
+
+		// [SpellItem Hooks]
+		class SpellItemHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_SpellItem[0] };
+				_AdjustCost = vtbl.write_vfunc(0x63, AdjustCost);
+				SPDLOG_INFO("[SpellItem Hooks] Installed AdjustCost() hook.");
+			}
+
+		private:
+			static void AdjustCost(RE::SpellItem* a_this, float& a_cost, RE::Actor* a_actor);
+			static inline REL::Relocation<decltype(AdjustCost)> _AdjustCost;
 		};
 
 		// [TESCamera Hooks]

@@ -1,4 +1,3 @@
-
 #include "Hooks.h" 
 #include <CameraManager.h>
 #include <Compatibility.h>
@@ -26,7 +25,6 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::DebugOverlayMenu::Register();
 		// Run compatibility checks and initialization.
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
-		ALYSLC::MiniMapCompat::CheckForMiniMap();
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
 		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
@@ -52,7 +50,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		if (intfc)
 		{
 			SPDLOG_INFO("[MAIN] New game. Setting default serialization data on load.");
-			ALYSLC::SerializationCallbacks::Load(intfc);
+			ALYSLC::Serialization::Load(intfc);
 		}
 
 		// Attempt to load the debug overlay.
@@ -86,7 +84,6 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
 		// Stop any active co-op session and indicate that the game is loading.
-		ALYSLC::GlobalCoopData::TeardownCoopSession(true);
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		glob.loadingASave = true;
 		break;
@@ -167,9 +164,9 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 		SPDLOG_INFO("[MAIN] Setting serialization callbacks.");
 		// Set serialization ID and callbacks.
 		serialization->SetUniqueID(Hash("ALYSLC"));
-		serialization->SetLoadCallback(ALYSLC::SerializationCallbacks::Load);
-		serialization->SetRevertCallback(ALYSLC::SerializationCallbacks::Revert);
-		serialization->SetSaveCallback(ALYSLC::SerializationCallbacks::Save);
+		serialization->SetLoadCallback(ALYSLC::Serialization::Load);
+		serialization->SetRevertCallback(ALYSLC::Serialization::Revert);
+		serialization->SetSaveCallback(ALYSLC::Serialization::Save);
 	}
 	
 	SPDLOG_INFO("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");

@@ -2,6 +2,7 @@
 
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/1L3zH5y.png)
@@ -192,9 +193,10 @@ bool something =
 - ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please include what debug options you've used and/or a crash log if you've also installed a crash logger.
 
 ### Performance
-- Expect a ***loss of ~4-5 FPS if the game regularly runs at 60 FPS without the mod***.
+- Expect a ***loss of, on average, at least 7-15% of your base framerate with some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
+- ***Turning off camera collisions, obstruction fading, and not removing occlusion*** produces the best performance when using the co-op camera.
 - Highly recommend ***capping your framerate to 60 FPS if possible***, since some of the physics-related code in this mod can act up at higher framerates.
-- As the project, and my programming skills, are still very much in alpha, expect performance optimizations down the line once the mod becomes more stable.
+- I realize that the code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in alpha, ***expect additional performance optimizations down the line once the mod becomes more stable***.
 
 ### Prerequisite Mods
 Install the following mods + all their prerequisites:
@@ -382,6 +384,9 @@ See the mod's source for more detailed credits.
   - [Check out bosn889's Skyrim mods](https://next.nexusmods.com/profile/bosn889/mods?gameId=1704)
 - `covey-j`
   - For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to companion players.
+- `fenix31415`
+	- For the method used in allowing grabbed projectiles to hit their original shooters when thrown back at them and for their extensive work on projectile-related code.
+	- [Check out fenix31415's Skyrim Mods](https://next.nexusmods.com/profile/fenix31415/mods?gameId=1704)
 - `Sylennus`
   - For a function used by their mod [Personalized Mannequins](https://www.nexusmods.com/skyrimspecialedition/mods/76386), which is used to set base actor flags.
   - [Check out Sylennus's Skyrim mods](https://next.nexusmods.com/profile/Sylennus/mods?gameId=1704)

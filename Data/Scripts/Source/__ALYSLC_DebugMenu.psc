@@ -45,9 +45,9 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; Ok...
     ; I'm just bad at the game and tired of typing the same console commands on reload.
     DebugMenu.AddEntryItem("Enable God Mode", 0, -1, False)
-    ; 5. Move all companion players to player 1.
+    ; 5. Move all companion players to the menu-controlling player.
     ; Useful for times where a particular actor may be unloaded or unresponsive.
-    DebugMenu.AddEntryItem("Move Co-op Actors to Player 1", 0, -1, False)
+    DebugMenu.AddEntryItem("Move Players to Me", 0, -1, False)
     ; 6. Refresh all player managers' data.
     ; Useful when a player cannot move or perform actions after a
     ; co-op session starts.
@@ -115,8 +115,8 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: enable god mode for all players.")
             ALYSLC.EnableGodModeForAllCoopPlayers()
         ElseIf (SelectedIndex == 5)
-            ALYSLC.Log("[CDM SCRIPT] DEBUG: move all companion players to player 1.")
-            ALYSLC.MoveAllCoopActorsToP1()
+            ALYSLC.Log("[CDM SCRIPT] DEBUG: move all players to " + PlayerInMenu.GetName())
+            ALYSLC.MoveAllPlayersToPlayer(PlayerInMenu)
         ElseIf (SelectedIndex == 6)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: stop, refresh, and restart player managers for all players.")
             ALYSLC.RefreshAllPlayerManagers()

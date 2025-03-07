@@ -72,8 +72,7 @@ namespace ALYSLC
 				stickAngularSpeed(0.0f), stickLinearSpeed(0.0f),
 				xComp(0.0f), 
 				yComp(0.0f),
-				maxMag(0),
-				setPrevStateTP(SteadyClock::now())
+				maxMag(0)
 			{ }
 
 			// Analog stick is displaced fully from center.
@@ -116,8 +115,6 @@ namespace ALYSLC
 			float yComp;
 			// Maximum pre-normalized full displacement from center.
 			SHORT maxMag;
-			// Time point at which the previous set of data was recorded.
-			SteadyClock::time_point setPrevStateTP;
 		};
 
 		struct InputState
@@ -278,7 +275,7 @@ namespace ALYSLC
 
 		// Various maps between button code conventions.
 
-		const std::unordered_map<std::uint32_t, std::uint16_t> DXSC_TO_XIMASK =
+		const std::unordered_map<std::uint16_t, std::uint16_t> DXSC_TO_XIMASK =
 		{
 			{ DXSC_DPAD_UP, XINPUT_GAMEPAD_DPAD_UP },
 			{ DXSC_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_DOWN },
@@ -296,7 +293,7 @@ namespace ALYSLC
 			{ DXSC_Y, XINPUT_GAMEPAD_Y }
 		};
 
-		const std::unordered_map<std::uint16_t, std::uint8_t> GAMEMASK_TO_DXSC = 
+		const std::unordered_map<std::uint16_t, std::uint16_t> GAMEMASK_TO_DXSC = 
 		{
 			{ GAMEPAD_MASK_DPAD_UP, DXSC_DPAD_UP },
 			{ GAMEPAD_MASK_DPAD_DOWN, DXSC_DPAD_DOWN },
@@ -316,7 +313,7 @@ namespace ALYSLC
 			{ GAMEPAD_MASK_RT, DXSC_RT }
 		};
 
-		const std::unordered_map<std::uint8_t, InputAction> GAMEMASK_TO_INPUT_ACTION =
+		const std::unordered_map<std::uint16_t, InputAction> GAMEMASK_TO_INPUT_ACTION =
 		{
 			{ GAMEPAD_MASK_DPAD_UP, InputAction::kDPadU },
 			{ GAMEPAD_MASK_DPAD_DOWN, InputAction::kDPadD },
@@ -336,7 +333,7 @@ namespace ALYSLC
 			{ GAMEPAD_MASK_RT, InputAction::kRT }
 		};
 
-		const std::unordered_map<std::uint32_t, std::uint32_t> GAMEMASK_TO_XIMASK =
+		const std::unordered_map<std::uint16_t, std::uint32_t> GAMEMASK_TO_XIMASK =
 		{
 			{ GAMEPAD_MASK_DPAD_UP, XINPUT_GAMEPAD_DPAD_UP },
 			{ GAMEPAD_MASK_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_DOWN },
@@ -358,7 +355,7 @@ namespace ALYSLC
 			{ GAMEPAD_MASK_RS, XMASK_RS }
 		};
 
-		const std::unordered_map<InputAction, std::uint8_t> INPUT_ACTION_TO_GAMEMASK =
+		const std::unordered_map<InputAction, std::uint16_t> INPUT_ACTION_TO_GAMEMASK =
 		{
 			{ InputAction::kDPadU, GAMEPAD_MASK_DPAD_UP },
 			{ InputAction::kDPadD, GAMEPAD_MASK_DPAD_DOWN },
@@ -378,7 +375,7 @@ namespace ALYSLC
 			{ InputAction::kRT, GAMEPAD_MASK_RT }
 		};
 
-		const std::unordered_map<std::uint32_t, std::uint32_t> XIMASK_TO_DXSC = 
+		const std::unordered_map<std::uint32_t, std::uint16_t> XIMASK_TO_DXSC = 
 		{
 			{ XINPUT_GAMEPAD_DPAD_UP, DXSC_DPAD_UP },
 			{ XINPUT_GAMEPAD_DPAD_DOWN, DXSC_DPAD_DOWN },
@@ -399,7 +396,7 @@ namespace ALYSLC
 
 		};
 
-		const std::unordered_map<std::uint32_t, std::uint32_t> XIMASK_TO_GAMEMASK = 
+		const std::unordered_map<std::uint32_t, std::uint16_t> XIMASK_TO_GAMEMASK = 
 		{
 			{ XINPUT_GAMEPAD_DPAD_UP, GAMEPAD_MASK_DPAD_UP },
 			{ XINPUT_GAMEPAD_DPAD_DOWN, GAMEPAD_MASK_DPAD_DOWN },

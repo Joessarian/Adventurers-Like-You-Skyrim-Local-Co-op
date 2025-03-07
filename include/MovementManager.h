@@ -28,7 +28,6 @@ namespace ALYSLC
 			defaultRotation = a_nrd.defaultRotation;
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
-			applyingHavokImpulse = a_nrd.applyingHavokImpulse;
 			interrupted = a_nrd.interrupted;
 			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
@@ -48,7 +47,6 @@ namespace ALYSLC
 			defaultRotation = std::move(a_nrd.defaultRotation);
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
-			applyingHavokImpulse = std::move(a_nrd.applyingHavokImpulse);
 			interrupted = std::move(a_nrd.interrupted);
 			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
@@ -68,7 +66,6 @@ namespace ALYSLC
 			defaultRotation = a_nrd.defaultRotation;
 			startingRotation = a_nrd.startingRotation;
 			targetRotation = a_nrd.targetRotation;
-			applyingHavokImpulse = a_nrd.applyingHavokImpulse;
 			interrupted = a_nrd.interrupted;
 			precisionColliderAdded = a_nrd.precisionColliderAdded;
 			prevInterrupted = a_nrd.prevInterrupted;
@@ -90,7 +87,6 @@ namespace ALYSLC
 			defaultRotation = std::move(a_nrd.defaultRotation);
 			startingRotation = std::move(a_nrd.startingRotation);
 			targetRotation = std::move(a_nrd.targetRotation);
-			applyingHavokImpulse = std::move(a_nrd.applyingHavokImpulse);
 			interrupted = std::move(a_nrd.interrupted);
 			precisionColliderAdded = std::move(a_nrd.precisionColliderAdded);
 			prevInterrupted = std::move(a_nrd.prevInterrupted);
@@ -111,7 +107,6 @@ namespace ALYSLC
 			startingRotation =
 			targetRotation = RE::NiMatrix3();
 			rotationInput.fill(0.0f);
-			applyingHavokImpulse = false;
 			interrupted = false;
 			precisionColliderAdded = false;
 			prevInterrupted = false;
@@ -142,8 +137,6 @@ namespace ALYSLC
 		RE::NiPoint3 localPosition;
 		// Last recorded node velocity relative to the player's root position.
 		RE::NiPoint3 localVelocity;
-		// Is this node applying a hit impulse this frame?
-		bool applyingHavokImpulse;
 		// Was setting the custom rotation for this node interrupted
 		// by the player's state (eg. ragdolled, staggered, manager paused)?
 		bool interrupted;
@@ -278,16 +271,21 @@ namespace ALYSLC
 		bool NodeWasAdjusted(const RE::NiPointer<RE::NiAVObject>& a_nodePtr);
 
 		// Apply arm hit impulse and/or knockdown to raycast-hit objects.
-		// Return the first hit refr and total hits and impulse applied in the outparams.
+		// Send the stamina cost for any collisions through the outparam.
 		// TODO: Do away with raycasts for collision checks
 		// and use an active collider enclosing the player's arm nodes instead.
-		void PerformArmCollisionRaycast
+		// Right now, the flexibility of triggering the impulse separately from applying damage
+		// and sending hit events is what makes the raycast solution a better option,
+		// but that could change.
+		bool PerformArmCollision
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			const glm::vec4& a_startPos, 
 			const glm::vec4& a_endPos, 
 			RE::NiAVObject* a_armNode,
-			const ArmNodeType& a_armNodeType
+			const ArmNodeType& a_armNodeType,
+			const bool& a_noPreviousHit,
+			float& a_staminaCostOut
 		);
 
 		// Restore saved node local transforms previously set by the game before our modifications.
@@ -452,10 +450,25 @@ namespace ALYSLC
 
 		// Clear movement offset for player actor/mount.
 		void ClearKeepOffsetFromActor();
+		
+		// Get arm/player rotation slowdown factor when the player is rotating their arms.
+		// If requesting the factor for arm rotation speed, 
+		// the lower the stamina level relative to max, the lower the rotation factor,
+		// meaning a tired player will flail their arms about and rotate more slowly.
+		// If requesting the factor for slap force application,
+		// the lower the stamina level relative to max, the lower the force applied.
+		// Return rotation speed factor related to arm rotation speed or slap force.
+		float GetArmRotationFactor(bool&& a_forArmRotationSpeed);
 
 		// Get the context-based Z rotation speed multiplier for the player.
 		float GetRotationMult();
 		
+		// Return true if the player has rotated at least one arm node.
+		bool HasRotatedArms();
+
+		// Return true if the player has rotated at least one torso node.
+		bool HasRotatedTorso();
+
 		// Keep movement offset between player actor/mount and target.
 		void KeepOffsetFromActor
 		(
@@ -594,7 +607,7 @@ namespace ALYSLC
 		bool isMounting;
 		// Is the player in the air paragliding?
 		bool isParagliding;
-		// Have the player's char controller pitch and roll angles been reset to 0?
+		// Have the player's char controller pitch and roll angles fully reset to 0?
 		bool isParaglidingTiltAngleReset;
 		// Is the player requesting to dash dodge?
 		bool isRequestingDashDodge;
@@ -611,31 +624,32 @@ namespace ALYSLC
 		bool movementYawTargetChanged;
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
+		// Player has requested, via player action,
+		// to directly face and aim at the targeted position.
+		bool reqFaceTarget;
+		// Player has requested, via player action, to reset aim pitch and body node rotations.
+		bool reqResetAimAndBody;
+		// Player has requested, via player action, to start jumping.
+		bool reqStartJump;
 		// Player is moving the right stick.
 		bool rsMoved;
 		// Has the JumpFall animation event been sent?
 		bool sentJumpFallEvent;
-		// Should the player's aim pitch be adjusted?
-		bool shouldAdjustAimPitch;
 		// Continue forcing the player to remain stationary 
 		// until their reported movement speed is 0.
 		// Prevents ragdolled players from getting up 
 		// and shooting forward in their facing/movement direction
 		// due to leftover momentum from prior to regdolling.
 		bool shouldCurtailMomentum;
-		// Should the player turn to directly face and aim at the targeted position?
-		bool shouldFaceTarget;
 		// Should the companion player start or stop paragliding?
 		// True: start, False: stop.
 		bool shouldParaglide;
-		// Reset aim pitch and body node rotations?
-		bool shouldResetAimAndBody;
 		// Should the stationary player start moving?
 		bool shouldStartMoving;
 		// Should the moving player stop moving and rotating?
 		bool shouldStopMoving;
-		// Indicates that the player has started to jump.
-		bool startJump;
+		// Speed up rotation when the player's yaw target changes.
+		bool speedUpRotOnYawTargetChange;
 		// Temporarily turn to face the target when certain actions trigger.
 		bool turnToTarget;
 		// Aim pitch for torso rotation and projectile calculations.

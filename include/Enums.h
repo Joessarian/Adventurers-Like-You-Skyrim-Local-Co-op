@@ -708,8 +708,9 @@ namespace ALYSLC
 		kPowerAttackDual = 1 << 5,
 		kPowerAttackLeft = 1 << 6,
 		kPowerAttackRight = 1 << 7,
-		kSneakRoll = 1 << 8,
-		kSprint = 1 << 9
+		kSlap = 1 << 8,
+		kSneakRoll = 1 << 9,
+		kSprint = 1 << 10
 	};
 
 	// Button press type to send when emulating P1 input.
@@ -823,10 +824,11 @@ namespace ALYSLC
 		kCycleOrPlayEmoteIdle,
 		kDodge,
 		kDualCast,
+		kFlop,
 		kGetUp,
 		kQuickCast,
 		kQuickItem,
-		kRagdoll,
+		kToggleGrabbedRefrCollisions,
 		kTransformation
 	};
 
@@ -969,11 +971,11 @@ namespace ALYSLC
 		kActivationInfo,		// Info about what object is being targeted for activation.
 		kCamera,				// Changes to camera state or adjustment mode.
 		kEquippedItem,			// Info about a newly-equipped item.
-		kGeneralNotification,	// Catch-all.
+		kGeneralNotification,	// Catch-all for anything else.
 		kHotkeySelection,		// Info on selected hotkey slot and item.
 		kReviveAlert,			// Life/Revive percent for downed players.
 		kShoutCooldown,			// Shout cooldown remaining 
-								//when attempting to shout while on cooldown.
+								// when attempting to shout while on cooldown.
 		kStealthState,			// Detection percent overall and for selected target, if any.
 		kTargetSelection,		// Info about a selected actor or object.
 

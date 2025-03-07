@@ -39,8 +39,14 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] Player 1's controller ID has not been assigned.\nTry summoning again"
-				"or assign Player 1's controller ID through the co-op debug menu before summoning."
+				"[ALYSLC] Player 1's controller ID has not been assigned "
+				"before setting all connected controllers.\n"
+				"Try summoning again or assign Player 1's controller ID "
+				"through the Debug Menu before summoning:\n"
+				"1. Hold the 'Pause/Journal' bind.\n"
+				"2. Press and release the 'Wait' bind.\n"
+				"3. Select 'Miscellaneous Options'.\n"
+				"4. Select 'Assign Player 1 Controller ID'."
 			);
 			return controllerIDs;
 		}
@@ -121,13 +127,6 @@ namespace ALYSLC
 		}
 
 		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
-		data.secsSincePrevStateSet = Util::GetElapsedSeconds(data.setPrevStateTP);
-		if (data.secsSincePrevStateSet > *g_deltaTimeRealTime)
-		{
-			data.prevNormMag = data.normMag;
-			data.setPrevStateTP = SteadyClock::now();
-		}
-
 		// Larger deadzone when controlling menus to prevent slight analog stick displacements from
 		// changing the currently-selected menu element.
 		float deadZone = 
@@ -224,13 +223,8 @@ namespace ALYSLC
 		);
 		data.xComp = xComp;
 		data.yComp = yComp;
+		data.prevNormMag = data.normMag;
 		data.normMag = newNormMag;
-
-		// Only update previous if they differ.
-		if (data.normMag != data.prevNormMag)
-		{
-			data.prevNormMag = data.normMag;
-		}
 	}
 
 	void ControllerDataHolder::UpdateInputStatesAndMask

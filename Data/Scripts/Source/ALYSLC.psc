@@ -45,7 +45,7 @@ Function DisableGodModeForAllCoopPlayers() Global Native
 Function DisableGodModeForPlayer(Int a_controllerID) Global Native
 Function EnableGodModeForAllCoopPlayers() Global Native
 Function EnableGodModeForPlayer(Int a_controllerID) Global Native
-Function MoveAllCoopActorsToP1() GLobal Native
+Function MoveAllPlayersToPlayer(Actor a_playerActor) GLobal Native
 Function ReEquipHandForms(Int a_controllerID) Global Native
 Function RefreshAllPlayerManagers() Global Native
 Function RefreshPlayerManagers(Int a_controllerID) Global Native

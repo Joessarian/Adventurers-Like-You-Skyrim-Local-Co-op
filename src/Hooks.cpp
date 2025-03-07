@@ -24,7 +24,6 @@ namespace ALYSLC
 			AttackBlockHandlerHooks::InstallHooks();
 			BarterMenuHooks::InstallHooks();
 			BookMenuHooks::InstallHooks();
-			BSCullingProcessHooks::InstallHooks();
 			BSMultiBoundHooks::InstallHooks();
 			CharacterHooks::InstallHooks();
 			ContainerMenuHooks::InstallHooks();
@@ -46,6 +45,7 @@ namespace ALYSLC
 			ReadyWeaponHandlerHooks::InstallHooks();
 			ShoutHandlerHooks::InstallHooks();
 			SneakHandlerHooks::InstallHooks();
+			SpellItemHooks::InstallHooks();
 			SprintHandlerHooks::InstallHooks();
 			StatsMenuHooks::InstallHooks();
 			TESCameraHooks::InstallHooks();
@@ -98,6 +98,7 @@ namespace ALYSLC
 				{
 					if (p->isActive)
 					{
+						SteadyClock::time_point pre = SteadyClock::now();
 						// NOTE: Update funcs must be run in this order.
 						p->Update();
 						p->em->Update();
@@ -368,34 +369,46 @@ namespace ALYSLC
 						auto weap = a_object->As<RE::TESObjectWEAP>();
 						auto equipSlotToUse = 
 						(
-							weap->equipSlot == glob.bothHandsEquipSlot ?
+							/*weap->equipSlot == glob.bothHandsEquipSlot ?
 							weap->equipSlot : 
-							a_objectEquipParams.equipSlot
+							a_objectEquipParams.equipSlot*/
+							weap->equipSlot
 						);
 						bool reqToEquip = 
 						(
 							(
-								equipSlotToUse == glob.leftHandEquipSlot && 
-								p->pam->boundWeapReqLH
+								(p->pam->boundWeapReqLH) &&
+								(
+									equipSlotToUse == glob.leftHandEquipSlot
+								)
+								
 							) ||
 							(
-								equipSlotToUse == glob.rightHandEquipSlot && 
-								p->pam->boundWeapReqRH
+								(p->pam->boundWeapReqRH) &&
+								(
+									equipSlotToUse == glob.rightHandEquipSlot
+								)
 							) ||
 							(
-								equipSlotToUse == glob.bothHandsEquipSlot && 
-								p->pam->boundWeapReqLH && 
-								p->pam->boundWeapReqRH
+								p->pam->boundWeapReq2H &&
+								equipSlotToUse == glob.bothHandsEquipSlot
 							)
 						);
+
 						// Player did not request to equip a bound weapon, so ignore.
 						if (!reqToEquip)
 						{
 							SPDLOG_DEBUG
 							(
 								"[ActorEquipManager Hooks] {}: "
-								"trying to equip bound weapon {}. Ignoring.", 
-								a_actor->GetName(), a_object->GetName()
+								"trying to equip bound weapon {} with equip slot 0x{:X}. "
+								"Ignoring. Reqs: {}, {}, {}.", 
+								a_actor->GetName(),
+								a_object->GetName(),
+								equipSlotToUse ? equipSlotToUse->formID : 0xDEAD,
+								p->pam->boundWeapReq2H,
+								p->pam->boundWeapReqLH,
+								p->pam->boundWeapReqRH
 							);
 							return;
 						}
@@ -892,48 +905,6 @@ namespace ALYSLC
 			return _ProcessEvent(a_this, a_event, a_eventSource);
 		}
 
-// [BS CULLING PROCESS HOOKS]:
-		void BSCullingProcessHooks::Process1
-		(
-			RE::BSCullingProcess* a_this, RE::NiAVObject* a_object, std::uint32_t a_arg2
-		)
-		{
-			// NOTE: 
-			// Reduces the number of freezes when using this mod with Felisky's Minimap active, 
-			// but they still occur.
-			// Turning on cam collisions and NOT removing occlusion 
-			// seems to be the most stable option.
-			if ((!ALYSLC::MiniMapCompat::g_miniMapInstalled) || 
-				(!ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround) || 
-				(!Settings::bRemoveExteriorOcclusion && !Settings::bRemoveInteriorOcclusion))
-			{
-				return _Process1(a_this, a_object, a_arg2);
-			}
-
-			auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			if (!p1 || !p1->parentCell)
-			{
-				return _Process1(a_this, a_object, a_arg2);
-			}
-
-			auto oldMode = a_this->cullMode;
-			if (auto ui = RE::UI::GetSingleton(); ui)
-			{
-				const auto& mapMenu = ui->GetMenu<RE::MapMenu>();
-				if (mapMenu && mapMenu.get())
-				{
-					a_this->cullMode = 3;
-				}
-				else
-				{
-					a_this->cullMode = 0;
-				}
-			}
-
-			_Process1(a_this, a_object, a_arg2);
-			a_this->cullMode = oldMode;
-		}
-
 // [BS MULTI BOUND HOOKS]:
 		bool BSMultiBoundHooks::QWithinPoint(RE::BSMultiBound* a_this, const RE::NiPoint3& a_pos)
 		{
@@ -974,21 +945,6 @@ namespace ALYSLC
 					refrMB.second->multiBound.get() && 
 					refrMB.second->multiBound.get() == a_this)
 				{
-					// Since there is a multibound refr in the current cell,
-					// signal to apply culling workaround.
-					if (ALYSLC::MiniMapCompat::g_miniMapInstalled && 
-						!ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround)
-					{
-						ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = true;
-					}
-					
-					SPDLOG_DEBUG
-					(
-						"[BSMultiBound Hooks] Cell: {} (0x{:X}): Set as within marker {}.",
-						cell->fullName,
-						cell->formID,
-						refrMB.second->name
-					);
 					return true;
 				}
 			}
@@ -1041,13 +997,9 @@ namespace ALYSLC
 					{
 						// Clamp first.
 						float currentHealth = p->coopActor->GetActorValue(RE::ActorValue::kHealth);
-						float currentMaxHealth = 
+						float currentMaxHealth = Util::GetFullAVAmount
 						(
-							p->coopActor->GetBaseActorValue(RE::ActorValue::kHealth) + 
-							p->coopActor->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-							)
+							a_this, RE::ActorValue::kHealth
 						);
 						float baseXP = std::clamp(a_delta, 0.0f, currentMaxHealth - currentHealth);
 						// Prevent full-heal on combat exit for co-op companions.
@@ -1137,23 +1089,26 @@ namespace ALYSLC
 							}
 						}
 					}
-					else if ((a_delta < 0.0f) && 
-							(a_av == RE::ActorValue::kMagicka || a_av == RE::ActorValue::kStamina))
+					else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 					{
+						// NOTE:
 						// Scaled by cost multiplier here instead of in the cost functions 
 						// in the player action function holder because we want 
 						// a consistent solution for both types of players.
 						// Drawback would be not being able to link an action
-						// with a specific magicka/stamina reduction, 
+						// with a specific stamina reduction, 
 						// since this function does not provide any context
 						// for the source of the AV change.
-						float mult = 
-						(
-							a_av == RE::ActorValue::kMagicka ? 
-							Settings::vfMagickaCostMult[p->playerID] : 
-							Settings::vfStaminaCostMult[p->playerID]
-						);
-						a_delta *= mult;
+
+						// NOTE 2:
+						// Magicka cost modifier is applied for this player 
+						// in the SpellItem::AdjustCost() hook, not here, 
+						// since there is a magicka cost check done by the game 
+						// before casting and expending magicka.
+						// So, even if the player's scaled magicka cost 
+						// is adequate to begin casting, the game will not allow the cast 
+						// because it is using the pre-scaled cost.
+						a_delta *= Settings::vfStaminaCostMult[p->playerID];
 					}
 				}
 			}
@@ -1174,13 +1129,9 @@ namespace ALYSLC
 					}
 
 					float currentHealth = a_this->GetActorValue(RE::ActorValue::kHealth);
-					float currentMaxHealth = 
+					float currentMaxHealth = Util::GetFullAVAmount
 					(
-						a_this->GetBaseActorValue(RE::ActorValue::kHealth) + 
-						a_this->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-						)
+						a_this, RE::ActorValue::kHealth
 					);
 					float healthDelta = std::clamp
 					(
@@ -1334,15 +1285,6 @@ namespace ALYSLC
 			if (float deltaHealth = a_damage * (damageMult - 1.0f); 
 				deltaHealth != 0.0f && a_attacker)
 			{
-				SPDLOG_DEBUG
-				(
-					"[Character Hooks] HandleHealthDamage: {} was hit by {} for {} damage, "
-					"modified to {}.",
-					a_this->GetName(),
-					a_attacker ? a_attacker->GetName() : "NONE",
-					a_damage,
-					a_damage * damageMult
-				);
 				a_this->RestoreActorValue
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, deltaHealth
@@ -1354,8 +1296,11 @@ namespace ALYSLC
 			if (playerVictim)
 			{
 				const auto& p = glob.coopPlayers[playerVictimIndex];
-				// Ignore duplicate calls if the player is already downed.
-				if (a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f && !p->isDowned)
+				// Ignore duplicate calls if the player is already downed 
+				// or if there are no living players.
+				if (a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f && 
+					glob.livingPlayers > 0 &&
+					!p->isDowned)
 				{
 					if (Settings::bUseReviveSystem)
 					{
@@ -1371,7 +1316,6 @@ namespace ALYSLC
 						);
 						if (!playerStillStanding)
 						{
-						
 							// All players downed, end co-op session.
 							GlobalCoopData::YouDied();
 						} 
@@ -1467,17 +1411,6 @@ namespace ALYSLC
 					!a_this->IsEssential() &&
 					a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)
 				{
-					SPDLOG_DEBUG
-					(
-						"[Character Hooks] HandleHealthDamage: "
-						"{} is about to be killed by {}. Reported killer is {}.",
-						a_this->GetName(),
-						p->coopActor->GetName(),
-						Util::HandleIsValid(a_this->myKiller) ?
-						a_this->myKiller.get()->GetName() :
-						"NONE"
-					);
-
 					// NOTE: 
 					// Enderal treats dead actors without an associated killer
 					// as killed by P1, so clear out the handle here 
@@ -1724,10 +1657,26 @@ namespace ALYSLC
 
 			if (GlobalCoopData::IsCoopPlayer(a_this))
 			{
-				// Let the game update the player first
+				const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
+
+				// Have to stop players' characters from aggro-ing NPCs or other players,
+				// since the game will interfere and auto-rotate the player to face
+				// their combat target or prevent combat resolution among players.
+				if (a_this->combatController)
+				{
+					a_this->combatController->inactive = true;
+					a_this->combatController->ignoringCombat = true;
+					a_this->combatController->stoppedCombat = true;
+					a_this->combatController->startedCombat = false;
+					a_this->combatController->targetHandle = 
+					a_this->combatController->previousTargetHandle = RE::ActorHandle();
+					a_this->combatController->cachedTarget = nullptr;
+				}
+
+				// Let the game update the player first after we've stopped combat.
 				_Update(a_this, a_delta);
 
-				const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
+
 				//===================
 				// Node Orientations.
 				//===================
@@ -1748,12 +1697,29 @@ namespace ALYSLC
 				// Movement and Player State.
 				//===========================
 
+				// NOTE:
+				// Seems to sometimes cause an inconsistent crash when in combat,
+				// and may not be necessary, so commenting out for now.
+				// 
 				// Don't know how to prevent combat from triggering 
 				// for co-op companion players towards other actors, including other players.
 				// Best bandaid solution for now is to remove the combat controller each frame,
 				// but combat will still initiate for a frame at most 
 				// until the controller is cleared here.
-				p->coopActor->combatController = nullptr;
+
+				//p->coopActor->combatController = nullptr;
+				
+				if (a_this->combatController)
+				{
+					a_this->combatController->inactive = true;
+					a_this->combatController->ignoringCombat = true;
+					a_this->combatController->stoppedCombat = true;
+					a_this->combatController->startedCombat = false;
+					a_this->combatController->targetHandle = 
+					a_this->combatController->previousTargetHandle = RE::ActorHandle();
+					a_this->combatController->cachedTarget = nullptr;
+				}
+				
 				// Make sure the player's life state reports them as alive once no longer downed.
 				bool inDownedLifeState = 
 				{
@@ -1761,7 +1727,7 @@ namespace ALYSLC
 					a_this->GetLifeState() == RE::ACTOR_LIFE_STATE::kEssentialDown ||
 					a_this->GetLifeState() == RE::ACTOR_LIFE_STATE::kUnconcious
 				};
-				if ((!p->isDowned) && inDownedLifeState)
+				if (glob.livingPlayers > 0 && !p->isDowned && inDownedLifeState)
 				{
 					a_this->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kAlive;
 				}
@@ -2275,7 +2241,7 @@ namespace ALYSLC
 						midHigh->deferredKillTimer = FLT_MAX;
 					}
 				}
-
+				
 				// Already performed the player update, so return.
 				return;
 			}
@@ -2368,7 +2334,7 @@ namespace ALYSLC
 							api->ToggleDisableActor(handle, false);
 						}
 					}
-					
+
 					// [TEMP WORKAROUND 2]:
 					// Temporary solution to allies/teammates attacking co-op players,
 					// even on accidental hits.
@@ -2376,14 +2342,7 @@ namespace ALYSLC
 					// Will maintain aggro if low on health.
 					// Player must sheathe weapons to indicate peaceful intentions 
 					// if below this threshold.
-					float maxHealth = 
-					(
-						a_this->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-						) + 
-						a_this->GetBaseActorValue(RE::ActorValue::kHealth)
-					);
+					float maxHealth = Util::GetFullAVAmount(a_this, RE::ActorValue::kHealth);
 					bool aboveQuarterHealth = 
 					(
 						a_this->GetActorValue(RE::ActorValue::kHealth) / maxHealth > 0.25f
@@ -2867,55 +2826,23 @@ namespace ALYSLC
 										)
 									);
 
-									// Skip if neither of the two requisite binds 
-									// are pressed on this controller.
-									if (!inputState1.isPressed && !inputState2.isPressed)
-									{
-										SPDLOG_DEBUG
-										(
-											"[MenuControls Hook] CheckForMenuTriggeringInput: "
-											"Skipping held time check for CID {}. "
-											"Event reported held times: Pause: {}, Wait: {}. "
-											"Input state held times: Pause: {}, Wait: {}. "
-											"Is pressed: Pause: {}, Wait: {}.",
-											i,
-											eventReportedPauseHoldTime,
-											eventReportedWaitHoldTime,
-											shouldTriggerDebugMenu ? 
-											inputState1.heldTimeSecs :
-											inputState2.heldTimeSecs,
-											shouldTriggerDebugMenu ?
-											inputState2.heldTimeSecs : 
-											inputState1.heldTimeSecs,
-											shouldTriggerDebugMenu ?
-											inputState1.isPressed : 
-											inputState2.isPressed,
-											shouldTriggerDebugMenu ?
-											inputState2.isPressed : 
-											inputState1.isPressed
-										);
-										continue;
-									}
-									else
-									{
-										SPDLOG_DEBUG
-										(
-											"[MenuControls Hook] CheckForMenuTriggeringInput: "
-											"Performing held time check for CID {}. "
-											"Event reported held times: Pause: {}, Wait: {}. "
-											"Input state reported held times: "
-											"Pause: {}, Wait: {}.",
-											i,
-											eventReportedPauseHoldTime,
-											eventReportedWaitHoldTime,
-											shouldTriggerDebugMenu ? 
-											inputState1.heldTimeSecs : 
-											inputState2.heldTimeSecs,
-											shouldTriggerDebugMenu ?
-											inputState2.heldTimeSecs : 
-											inputState1.heldTimeSecs
-										);
-									}
+									SPDLOG_DEBUG
+									(
+										"[MenuControls Hook] CheckForMenuTriggeringInput: "
+										"Performing held time check for CID {}. "
+										"Event reported held times: Pause: {}, Wait: {}. "
+										"Input state reported held times: "
+										"Pause: {}, Wait: {}.",
+										i,
+										eventReportedPauseHoldTime,
+										eventReportedWaitHoldTime,
+										shouldTriggerDebugMenu ? 
+										inputState1.heldTimeSecs : 
+										inputState2.heldTimeSecs,
+										shouldTriggerDebugMenu ?
+										inputState2.heldTimeSecs : 
+										inputState1.heldTimeSecs
+									);
 
 									float heldTimeDiffTotal = FLT_MAX;
 									if (shouldTriggerDebugMenu)
@@ -3021,6 +2948,16 @@ namespace ALYSLC
 									);
 									glob.onSummoningMenuRequest.SendEvent();
 									invalidateEvent = true;
+								}
+								else
+								{
+									RE::DebugMessageBox
+									(
+										"[ALYSLC] Summoning Menu was already triggered "
+										"or Player 1 is in combat. "
+										"Please ensure Player 1 is not in combat "
+										"before attempting to summon other players."
+									);
 								}
 
 								summoningMenuTriggered = true;
@@ -3183,16 +3120,13 @@ namespace ALYSLC
 				buttonEvent->idCode == GAMEPAD_MASK_RIGHT_THUMB &&
 				glob.cdh->GetAnalogStickState(glob.player1CID, false).normMag > 0.0f
 			};
-
-			// Only handle on initial press.
-			if (!isRThumbPressedAndRSMoved ||
-				buttonEvent->value != 1.0f || 
-				buttonEvent->heldDownSecs != 0.0f)
+			if (!isRThumbPressedAndRSMoved)
 			{
 				return false;
 			}
 			
-			glob.mim->HotkeyFavoritedForm();
+			// Set on release, preview on hold.
+			glob.mim->HotkeyFavoritedForm(buttonEvent->value == 0.0f);
 			return true;
 		}
 
@@ -3301,9 +3235,15 @@ namespace ALYSLC
 			// while using this mod to remove any chance of saving copied data onto P1, 
 			// such as another player's name or race name.
 			const auto eventName = inputEvent->QUserEvent();
-			if ((*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) &&
-				(eventName == ue->quicksave ||
-				eventName == ue->console))
+			bool couldSaveWithCopiedData =
+			(
+				(*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) &&
+				(
+					(eventName == ue->quicksave) ||
+					(eventName == ue->console && !ui->IsMenuOpen(RE::Console::MENU_NAME))
+				)
+			);
+			if (couldSaveWithCopiedData)
 			{
 				if (idEvent && buttonEvent)
 				{
@@ -3960,33 +3900,37 @@ namespace ALYSLC
 			}
 
 			{
-				std::unique_lock<std::mutex> lock
+				// Locking seems to cause jitter, although it is the correct thing to do.
+				/*std::unique_lock<std::mutex> lock
 				(
 					p->mm->nom->rotationDataMutex, std::try_to_lock
 				);
-				// First chain of downward pass recursive calls 
-				// always has no flags set for the given node.
-				if (a_data.flags == RE::NiUpdateData::Flag::kNone)
+				if (lock)*/
 				{
-					// First call in the recursive chain is always the NPC base node,
-					// so save the default rotations before any downward pass calls execute.
-					if (a_this->name == strings->npc)
+					// First chain of downward pass recursive calls 
+					// always has no flags set for the given node.
+					if (a_data.flags == RE::NiUpdateData::Flag::kNone)
 					{
-						p->mm->nom->SavePlayerNodeWorldTransforms(p);
-						// Update default attack position and rotation 
-						// after saving default node orientation data.
-						p->mm->UpdateAttackSourceOrientationData(true);
+						// First call in the recursive chain is always the NPC base node,
+						// so save the default rotations before any downward pass calls execute.
+						if (a_this->name == strings->npc)
+						{
+							p->mm->nom->SavePlayerNodeWorldTransforms(p);
+							// Update default attack position and rotation 
+							// after saving default node orientation data.
+							p->mm->UpdateAttackSourceOrientationData(true);
+						}
 					}
-				}
 
-				// Save local rotation and then apply our custom rotation
-				// before executing the downward pass to visually apply our changes.
-				auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
-				p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign
-				(
-					nodePtr, a_this->local
-				);
-				p->mm->nom->ApplyCustomNodeRotation(p, nodePtr);
+					// Save local rotation and then apply our custom rotation
+					// before executing the downward pass to visually apply our changes.
+					auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
+					p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign
+					(
+						nodePtr, a_this->local
+					);
+					p->mm->nom->ApplyCustomNodeRotation(p, nodePtr);
+				}
 			}
 
 			_UpdateDownwardPass(a_this, a_data, a_arg2);
@@ -4066,13 +4010,9 @@ namespace ALYSLC
 						}
 
 						float currentHealth = a_this->GetActorValue(RE::ActorValue::kHealth);
-						float currentMaxHealth = 
+						float currentMaxHealth = Util::GetFullAVAmount
 						(
-							a_this->GetBaseActorValue(RE::ActorValue::kHealth) + 
-							a_this->GetActorValueModifier
-							(
-								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-							)
+							a_this, RE::ActorValue::kHealth
 						);
 						float healthDelta = std::clamp
 						(
@@ -4156,23 +4096,24 @@ namespace ALYSLC
 						);
 					}
 				}
-				else if ((a_delta < 0.0f) && 
-						 (a_av == RE::ActorValue::kMagicka || a_av == RE::ActorValue::kStamina))
+				else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 				{
+					// NOTE:
 					// Scaled by cost multiplier here instead of in the cost functions 
 					// in the player action function holder
 					// because those cost functions do not affect P1.
 					// Drawback would be not being able to link an action 
-					// with a specific magicka/stamina reduction,
+					// with a specific stamina reduction,
 					// since this function does not provide any context 
-					// about the source of the stamina or magicka change.
-					float mult = 
-					(
-						a_av == RE::ActorValue::kMagicka ? 
-						Settings::vfMagickaCostMult[p->playerID] : 
-						Settings::vfStaminaCostMult[p->playerID]
-					);
-					a_delta *= mult;
+					// about the source of the stamina change.
+
+					// NOTE 2:
+					// Magicka cost modifier is applied for P1 in the SpellItem::AdjustCost()
+					// hook, not here, since there is a magicka cost check done by the game 
+					// before casting and expending magicka.
+					// So, even if the player's scaled magicka cost is adequate to begin casting,
+					// the game will not allow the cast because it is using the pre-scaled cost.
+					a_delta *= Settings::vfStaminaCostMult[p->playerID];
 				}
 			}
 
@@ -4336,8 +4277,11 @@ namespace ALYSLC
 
 			const auto& p = glob.coopPlayers[glob.player1CID];
 			// Check if the player must be set as downed when at or below 0 health.
-			// Ignore duplicate calls if the player is already downed.
-			if (a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f && !p->isDowned)
+			// Ignore duplicate calls if the player is already downed 
+			// or if there are no living players..
+			if (a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f && 
+				glob.livingPlayers > 0 &&
+				!p->isDowned)
 			{
 				// Set downed state for P1.
 				if (Settings::bUseReviveSystem && Settings::bCanRevivePlayer1)
@@ -4354,7 +4298,6 @@ namespace ALYSLC
 					);
 					if (!playerStillStanding)
 					{
-						
 						// All players downed, end co-op session.
 						GlobalCoopData::YouDied();
 					}
@@ -4503,7 +4446,7 @@ namespace ALYSLC
 					(
 						p1->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false
 					);
-
+					p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
 					p1->KillImpl(p1, FLT_MAX, false, false);
 					p1->KillImmediate();
 					p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
@@ -4521,6 +4464,7 @@ namespace ALYSLC
 					{
 						script->SetCommand("kill");
 						script->CompileAndRun(p1);
+						// Cleanup.
 						delete script;
 					}
 
@@ -4543,10 +4487,10 @@ namespace ALYSLC
 				a_this->playerFlags.shouldUpdateCrosshair = true;
 				return _Update(a_this, a_delta);
 			}
-
+			
 			// Run game's update first.
 			_Update(a_this, a_delta);
-				
+			
 			const auto& p = glob.coopPlayers[glob.player1CID];
 			//===================
 			// Node Orientations.
@@ -4577,7 +4521,7 @@ namespace ALYSLC
 				a_this->GetLifeState() == RE::ACTOR_LIFE_STATE::kEssentialDown ||
 				a_this->GetLifeState() == RE::ACTOR_LIFE_STATE::kUnconcious
 			);
-			if ((!p->isDowned) && inDownedLifeState)
+			if (glob.livingPlayers > 0 && !p->isDowned && inDownedLifeState)
 			{
 				a_this->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kAlive;
 			}
@@ -4614,50 +4558,6 @@ namespace ALYSLC
 				// finding a way to set movement speed directly to 0
 				// when ragdolled or getting up, but for now, this'll have to do.
 
-				/*SPDLOG_DEBUG
-				(
-					"[PlayerCharacter Hooks] Update: {}: BEFORE: "
-					"MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, "
-					"unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. "
-					"Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
-					p->coopActor->GetName(),
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kLeft]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kLeft]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRight]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRight]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kForward]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kForward]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kBack]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kBack]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRotations]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRotations]
-					[RE::Movement::MaxSpeeds::kRun],
-					rotateWhileMovingRun,
-					p->mm->shouldCurtailMomentum,
-					p->mm->dontMoveSet,
-					p->coopActor->DoGetMovementSpeed()
-				);
-				*/
-				
 				// Set movement speed to an obscenely high value to quickly
 				// arrest built up momentum while also keeping the player in place
 				// with the 'don't move' flag.
@@ -4852,12 +4752,13 @@ namespace ALYSLC
 						(
 							Settings::fBaseRotationMult * Settings::fBaseMTRotationMult * PI
 						);
+
 					}
 
 					//=================
 					// Movement speeds.
 					//=================
-					// NOTE: 
+					// NOTE:
 					// Paraglide dodge velocity changes are char controller velocity-based 
 					// and are not handled here.
 					// Simply set the movement type data to the paraglide MT equivalent.
@@ -5283,8 +5184,17 @@ namespace ALYSLC
 // [PROJECTILE HOOKS]:
 		void ProjectileHooks::GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity)
 		{
+			auto projMgr = RE::Projectile::Manager::GetSingleton();
+			if (!projMgr)
+			{
+				return;
+			}
+
+			projMgr->projectileLock.Lock();
+
 			if (!a_this || !a_this->GetHandle())
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5324,15 +5234,17 @@ namespace ALYSLC
 				{
 					_Projectile_GetLinearVelocity(a_this, a_velocity);
 				}
-
+				
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
 			// Ensure the projectile's handle is valid first.
 			const auto projectileHandle = a_this->GetHandle();
 			auto projectilePtr = Util::GetRefrPtrFromHandle(projectileHandle);
-			if (!projectilePtr)
+			if (!projectilePtr || !projectilePtr.get())
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5340,13 +5252,29 @@ namespace ALYSLC
 			int32_t firingPlayerIndex = -1;
 			bool firedAtPlayer = false;
 			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayer);
+
+			int32_t grabbedByPlayerCID = -1;
+			int32_t releasedByPlayerCID = -1;
+			GetManipulatingPlayer(projectileHandle, grabbedByPlayerCID, releasedByPlayerCID);
+			const int32_t cid = 
+			(
+				firingPlayerIndex != -1 ? 
+				firingPlayerIndex :
+				grabbedByPlayerCID != -1 ?
+				grabbedByPlayerCID :
+				releasedByPlayerCID != -1 ? 
+				releasedByPlayerCID :
+				-1
+			);
 			// Restore our linear velocity if fired by the player.
-			if (firingPlayerIndex != -1)
+			if (cid != -1)
 			{
-				const auto& p = glob.coopPlayers[firingPlayerIndex];
+				const auto& p = glob.coopPlayers[cid];
 				// Have to insert as managed on release if this hook was run 
 				// before the UpdateImpl() hook.
-				if (justReleased && !p->tm->mph->IsManaged(a_this->GetHandle()))
+				if (justReleased && 
+					firingPlayerIndex != -1 && 
+					!p->tm->mph->IsManaged(a_this->GetHandle()))
 				{
 					// Overwrite the projectile's velocity and angular orientation.
 					DirectProjectileAtTarget
@@ -5358,6 +5286,13 @@ namespace ALYSLC
 					);
 				}
 
+				/*HandleManipulatedProjectile
+				(
+					glob.coopPlayers[cid],
+					projectileHandle,
+					grabbedByPlayerCID != -1,
+					a_this->linearVelocity
+				);*/
 				// Output the velocity as our saved velocity from the UpdateImpl() hook.
 				a_velocity = a_this->linearVelocity;
 			}
@@ -5397,13 +5332,145 @@ namespace ALYSLC
 					_Projectile_GetLinearVelocity(a_this, a_velocity);
 				}
 			}
+			
+			projMgr->projectileLock.Unlock();
+		}
+
+		void ProjectileHooks::OnProjectileCollision
+		(
+			RE::Projectile* a_this, 
+			RE::hkpAllCdPointCollector* a_AllCdPointCollector
+		)
+		{
+			// Check for thrown active projectile collisions with actors
+			// and bonk as needed.
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				for (const auto& hit : a_AllCdPointCollector->hits)
+				{
+					if (!hit.rootCollidableA || !hit.rootCollidableB)
+					{
+						continue;
+					}
+
+					auto refrA = RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableA);
+					auto refrB = RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableB);
+					if (refrA && refrB)
+					{
+						// Ignore self-collisions.
+						if (refrA == refrB)
+						{
+							continue;
+						}
+
+						// Check to see if one of the two refrs is a manipulated refr
+						// and get the CID of the manipulating player.
+						int32_t manipulatingPlayerCID = -1;
+						for (const auto& p : glob.coopPlayers)
+						{
+							if (!p->isActive)
+							{
+								continue;
+							}
+
+							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
+								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
+							{
+								manipulatingPlayerCID = p->controllerID;
+								break;
+							}
+						}
+
+						// At least one refr in the hit pair must be a released refr 
+						// for one of the active players.
+						if (manipulatingPlayerCID == -1)
+						{
+							continue;
+						}
+
+						RE::Actor* hitActor = refrA->As<RE::Actor>();
+						if (!hitActor)
+						{
+							hitActor = refrB->As<RE::Actor>();
+							if (!hitActor)
+							{
+								// No hit actors, so continue since we're only looking for 
+								// projectile-to-actor hits.
+								continue;
+							}
+						}
+
+						const auto refrHandle = a_this->GetHandle();
+						const auto& p = glob.coopPlayers[manipulatingPlayerCID];
+						// Must be manipulated as a released refr.
+						if (!p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(refrHandle))
+						{
+							continue;
+						}
+						auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at(refrHandle);
+						if (index >= p->tm->rmm->releasedRefrInfoList.size())
+						{
+							continue;
+						}
+
+						const auto& releasedRefrInfo = p->tm->rmm->releasedRefrInfoList[index];
+						auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_this);
+						bool rigidBodyValid = hkpRigidBodyPtr && hkpRigidBodyPtr.get();
+						// Hit a new, valid actor that is not the released refr 
+						// or the player that released the refr.
+						bool shouldBonk = 
+						(
+							hitActor && 
+							hitActor->currentProcess && 
+							hitActor != p->coopActor.get() && 
+							!releasedRefrInfo->HasAlreadyHitRefr(hitActor)
+						);
+						if (shouldBonk)
+						{
+							p->tm->HandleBonk
+							(
+								hitActor->GetHandle(), 
+								refrHandle, 
+								rigidBodyValid ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
+								(
+									rigidBodyValid ? 
+									ToNiPoint3
+									(
+										hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
+									) :
+									a_this->linearVelocity
+								), 
+								ToNiPoint3(hit.contact.position * HAVOK_TO_GAME)
+							);
+						}
+					}
+				}
+			}
+
+			if (a_this->As<RE::ArrowProjectile>())
+			{
+				_OnArrowCollision(a_this, a_AllCdPointCollector);
+			}
+			else if (a_this->As<RE::MissileProjectile>())
+			{
+				_OnMissileCollision(a_this, a_AllCdPointCollector);
+			}
 		}
 
 		void ProjectileHooks::UpdateImpl(RE::Projectile* a_this, float a_delta)
 		{
+			auto projMgr = RE::Projectile::Manager::GetSingleton();
+			if (!projMgr)
+			{
+				return;
+			}
+
+			projMgr->projectileLock.Lock();
+
 			// Not handled outside of co-op.
 			if (!a_this || !a_this->GetHandle())
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5442,7 +5509,8 @@ namespace ALYSLC
 				{
 					_Projectile_UpdateImpl(a_this, a_delta);
 				}
-
+				
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5486,6 +5554,7 @@ namespace ALYSLC
 			// after running the game's update before continuing.
 			if (!a_this->GetHandle() || !Util::HandleIsValid(a_this->GetHandle()))
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5494,6 +5563,7 @@ namespace ALYSLC
 			auto projectilePtr = Util::GetRefrPtrFromHandle(projectileHandle);
 			if (!projectilePtr)
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
 
@@ -5507,17 +5577,6 @@ namespace ALYSLC
 				a_this->ApplyEffectShader(glob.activateHighlightShader, 5.0f);
 			}
 
-			// Adjust trajectory if fired by the player and just released (will be set as managed),
-			// or if the projectile is still managed by the firing player's projectile handler.
-			bool shouldAdjustTrajectory = 
-			{
-				(firingPlayerIndex != -1) &&
-				(
-					justReleased || 
-					glob.coopPlayers[firingPlayerIndex]->tm->mph->IsManaged(projectileHandle)
-				)
-			};
-
 			RE::Projectile* projectile = nullptr;
 			if (projectilePtr)
 			{
@@ -5526,13 +5585,55 @@ namespace ALYSLC
 
 			if (!projectile)
 			{
+				projMgr->projectileLock.Unlock();
 				return;
 			}
-
-			if (shouldAdjustTrajectory)
+			
+			int32_t grabbedByPlayerCID = -1;
+			int32_t releasedByPlayerCID = -1;
+			GetManipulatingPlayer(projectileHandle, grabbedByPlayerCID, releasedByPlayerCID);
+			// Adjust projectile position if a player has grabbed or released this projectile.
+			bool isManipulatedProjectile = grabbedByPlayerCID != -1 || releasedByPlayerCID != -1;
+			// Adjust trajectory if fired by the player and just released (will be set as managed),
+			// or if the projectile is still managed by the firing player's projectile handler.
+			bool isFiredProjectile = 
+			(
+				(firingPlayerIndex != -1) &&
+				(
+					justReleased || 
+					glob.coopPlayers[firingPlayerIndex]->tm->mph->IsManaged(projectileHandle)
+				)
+			);
+			bool wasAdjusted = false;
+			// Prioritize projectile manipulation by the grabbing/releasing player
+			// instead of the firing player who should no longer have control of their projectile.
+			if (isManipulatedProjectile)
 			{
 				// Overwrite the projectile's velocity and angular orientation.
-				DirectProjectileAtTarget
+				if (grabbedByPlayerCID != -1)
+				{
+					wasAdjusted = HandleManipulatedProjectile
+					(
+						glob.coopPlayers[grabbedByPlayerCID],
+						projectileHandle,
+						true,
+						a_this->linearVelocity
+					);
+				}
+				else if (releasedByPlayerCID != -1)
+				{
+					wasAdjusted = HandleManipulatedProjectile
+					(
+						glob.coopPlayers[releasedByPlayerCID],
+						projectileHandle,
+						false,
+						a_this->linearVelocity
+					);
+				}
+			}
+			else if (isFiredProjectile)
+			{
+				wasAdjusted = DirectProjectileAtTarget
 				(
 					glob.coopPlayers[firingPlayerIndex], 
 					projectileHandle, 
@@ -5540,15 +5641,19 @@ namespace ALYSLC
 					justReleased
 				);
 			}
-			else
+
+			if (!wasAdjusted)
 			{
-				// Restore saved XY velocity.
+				// Restore saved XY velocity if the projectile's position or velocity
+				// was not adjusted this frame.
 				a_this->linearVelocity.x = savedVel.x;
 				a_this->linearVelocity.y = savedVel.y;
 			}
+
+			projMgr->projectileLock.Unlock();
 		}
 
-		void ProjectileHooks::DirectProjectileAtTarget
+		bool ProjectileHooks::DirectProjectileAtTarget
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			const RE::ObjectRefHandle& a_projectileHandle,
@@ -5556,9 +5661,13 @@ namespace ALYSLC
 			const bool& a_justReleased
 		)
 		{
+			// Adjust projectile trajectory towards the computed intercept position 
+			// or the player's current target.
+			// Return true if the projectile was directed at the target position.
+
 			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
-				return;
+				return false;
 			}
 
 			RE::Projectile* projectile = nullptr;
@@ -5571,7 +5680,7 @@ namespace ALYSLC
 			// Smart ptr was invalid, so its managed projectile is as well.
 			if (!projectile)
 			{
-				return;
+				return false;
 			}
 
 			bool isManaged = a_p->tm->mph->IsManaged(a_projectileHandle);
@@ -5623,6 +5732,10 @@ namespace ALYSLC
 				{
 					projectile->desiredTarget = targetActorHandle;
 				}
+				else
+				{
+					projectile->desiredTarget = RE::ActorHandle();
+				}
 
 				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 				bool crosshairRefrValidity = 
@@ -5636,7 +5749,7 @@ namespace ALYSLC
 				{
 					(targetActorPtr != a_p->coopActor) &&
 					(
-						(targetActorValidity || a_p->mm->shouldFaceTarget) || 
+						(targetActorValidity || a_p->mm->reqFaceTarget) || 
 						(a_p->coopActor->IsOnMount() && crosshairRefrValidity)
 					)
 				};
@@ -5712,46 +5825,10 @@ namespace ALYSLC
 					SetFixedTrajectory(a_p, a_projectileHandle, a_resultingVelocityOut);
 				}
 
-				// REMOVE when done debugging.
-				/*if (auto current3D = Util::GetRefr3D(projectile); current3D) 
-				{
-					SPDLOG_DEBUG
-					(
-						"[Projectile Hooks] {}: DirectProjectileAtTarget: {} (0x{:X}), "
-						"node {}, type {}. Pitch, yaw: {}, {}.",
-						a_p->coopActor->GetName(),
-						projectile->GetName(),
-						projectile->formID,
-						current3D->name,
-						projectile->GetProjectileBase() ? 
-						(int32_t)(*projectile->GetProjectileBase()->data.types) : 
-						-1,
-						projectile->data.angle.x * TO_DEGREES,
-						projectile->data.angle.z * TO_DEGREES
-					);
-
-					glm::vec3 start = ToVec3(current3D->world.translate);
-					glm::vec3 offsetX = ToVec3
-					(
-						current3D->world.rotate * RE::NiPoint3(1.0f, 0.0f, 0.f)
-					);
-					glm::vec3 offsetY = ToVec3
-					(
-						current3D->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.f)
-					);
-					glm::vec3 offsetZ = ToVec3
-					(
-						current3D->world.rotate * RE::NiPoint3(0.0f, 0.0f, 1.f)
-					);
-					DebugAPI::QueuePoint3D
-					(
-						start, Settings::vuOverlayRGBAValues[a_p->playerID], 5.0f
-					);
-					DebugAPI::QueueArrow3D(start, start + offsetX * 15.0f, 0xFF0000FF, 3.0f, 2.0f);
-					DebugAPI::QueueArrow3D(start, start + offsetY * 15.0f, 0x00FF00FF, 3.0f, 2.0f);
-					DebugAPI::QueueArrow3D(start, start + offsetZ * 15.0f, 0x0000FFFF, 3.0f, 2.0f);
-				}*/
+				return true;
 			}
+
+			return false;
 		}
 
 		void ProjectileHooks::GetFiredAtOrByPlayer
@@ -5830,6 +5907,258 @@ namespace ALYSLC
 			}
 		}
 
+		void ProjectileHooks::GetManipulatingPlayer
+		(
+			const RE::ObjectRefHandle& a_projHandle,
+			int32_t& a_grabbingPlayerCID, 
+			int32_t& a_releasingPlayerCID
+		)
+		{
+			// Store the player CID for the player grabbing/releasing the given projectile 
+			// in the outparams (-1 if not by a player).
+			// Can only set one CID or the other since any one projectile
+			// can only be grabbed or released at a given time.
+
+			for (const auto& p : glob.coopPlayers)
+			{
+				if (!p->isActive)
+				{
+					continue;
+				}
+
+				if (p->tm->rmm->IsManaged(a_projHandle, true))
+				{
+					a_grabbingPlayerCID = p->controllerID;
+					break;
+				}
+
+				if (p->tm->rmm->IsManaged(a_projHandle, false))
+				{
+					a_releasingPlayerCID = p->controllerID;
+					break;
+				}
+			}
+		}
+
+		bool ProjectileHooks::HandleManipulatedProjectile
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, 
+			const RE::ObjectRefHandle& a_projectileHandle, 
+			bool a_isGrabbed, 
+			RE::NiPoint3& a_resultingVelocityOut
+		)
+		{
+			// Position a grabbed hostile projectile or guide a released projectile
+			// along the trajectory set by the grabbing/releasing player's 
+			// reference manipulation manager.
+			// Update the velocity through the outparam.
+			// Return true if the projectile was manipulated.
+
+			RE::Projectile* projectile = nullptr;
+			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
+			if (projectilePtr)
+			{
+				projectile = projectilePtr->As<RE::Projectile>();
+			}
+
+			// Smart ptr was invalid, so its managed projectile is as well.
+			if (!projectile)
+			{
+				return false;
+			}
+			
+			if (projectile->ShouldBeLimited())
+			{
+				return false;
+			}
+
+			if (a_isGrabbed)
+			{
+				const auto& rmm = a_p->tm->rmm;
+				int32_t index = 
+				(
+					rmm->grabbedRefrHandlesToInfoIndices.contains(a_projectileHandle) ?
+					rmm->grabbedRefrHandlesToInfoIndices.at(a_projectileHandle) : 
+					-1
+				);
+				if (index != -1 && index < rmm->grabbedRefrInfoList.size())
+				{
+					const auto& info = rmm->grabbedRefrInfoList[index];
+					if (info->grabTP.has_value() && 
+						Util::GetElapsedSeconds(info->grabTP.value()) <= *g_deltaTimeRealTime)
+					{
+						const auto handle = a_p->coopActor->GetHandle();
+						if (projectile->actorCause && projectile->actorCause.get())
+						{
+							auto originalShooterPtr = Util::GetActorPtrFromHandle
+							(
+								projectile->actorCause->actor
+							);
+						}
+					
+						projectile->SetActorCause(a_p->coopActor->GetActorCause());
+						projectile->shooter = handle;
+						// Full credits to fenix31415:
+						// https://github.com/TESRSkywind/SkywindProjectiles/blob/master/src/Capturing.h#L17
+						if (projectile->unk0E0)
+						{
+							auto refObj = reinterpret_cast<RE::bhkRefObject*>
+							(
+								projectile->unk0E0
+							);
+							if (refObj)
+							{
+								auto worldObj = static_cast<RE::hkpWorldObject*>
+								(
+									refObj->referencedObject.get()
+								);
+								if (worldObj)
+								{
+									auto collidable = worldObj->GetCollidableRW();
+									uint32_t filter;
+									a_p->coopActor->GetCollisionFilterInfo(filter);
+									auto& collFilterInfo = 
+									(
+										collidable->broadPhaseHandle.collisionFilterInfo
+									);
+									collFilterInfo &= (0x0000FFFF);
+									collFilterInfo |= (filter << 16);
+								}
+							}
+						}
+					}
+
+					if (a_p->mm->reqFaceTarget)
+					{
+						// Set projectile data angles to face the target.
+						projectile->data.angle.x = Util::GetPitchBetweenPositions
+						(
+							projectile->data.location,
+							a_p->tm->crosshairWorldPos
+						);
+						projectile->data.angle.z = Util::GetYawBetweenPositions
+						(
+							projectile->data.location,
+							a_p->tm->crosshairWorldPos
+						);
+						// Set rotation matrix to maintain consistency 
+						// with the previously set refr data angles.
+						auto current3DPtr = Util::GetRefr3D(projectile); 
+						if (current3DPtr && current3DPtr.get())
+						{
+							Util::SetRotationMatrixPY
+							(
+								current3DPtr->local.rotate, 
+								projectile->data.angle.x, 
+								projectile->data.angle.z
+							);
+						}
+					}
+					else
+					{
+						// Set projectile data angles to face the player's facing direction.
+						projectile->data.angle.x = a_p->mm->aimPitch;
+						projectile->data.angle.z = a_p->coopActor->GetHeading(false);
+						// Set rotation matrix to maintain consistency 
+						// with the previously set refr data angles.
+						auto current3DPtr = Util::GetRefr3D(projectile); 
+						if (current3DPtr && current3DPtr.get())
+						{
+							Util::SetRotationMatrixPY
+							(
+								current3DPtr->local.rotate, 
+								projectile->data.angle.x, 
+								projectile->data.angle.z
+							);
+						}
+					}
+
+					// Set velocity.
+					projectile->linearVelocity = a_resultingVelocityOut = info->lastSetVelocity;
+					return true;
+				}
+			}
+			else
+			{
+				const auto& rmm = a_p->tm->rmm;
+				int32_t index = 
+				(
+					rmm->releasedRefrHandlesToInfoIndices.contains(a_projectileHandle) ?
+					rmm->releasedRefrHandlesToInfoIndices.at(a_projectileHandle) : 
+					-1
+				);
+				if (index != -1 && index < rmm->releasedRefrInfoList.size())
+				{
+					const auto& info = rmm->releasedRefrInfoList[index];
+					if (info->releaseTP.has_value())
+					{
+						if (info->isThrown)
+						{
+							const auto handle = a_p->coopActor->GetHandle();
+							float t = Util::GetElapsedSeconds(info->releaseTP.value());
+							if (t <= *g_deltaTimeRealTime)
+							{
+								projectile->shooter = handle;
+								projectile->desiredTarget = info->targetRefrHandle;
+							}
+
+							auto velToSet = info->GuideRefrAlongTrajectory(a_p);
+							// Cap speed to the release speed, as with other refrs.
+							info->ApplyVelocity(velToSet);
+							projectile->data.angle.x = Util::DirectionToGameAngPitch(velToSet);
+							projectile->data.angle.z = Util::DirectionToGameAngYaw(velToSet);
+
+							// Set rotation matrix to maintain consistency 
+							// with the previously set refr data angles.
+							auto current3DPtr = Util::GetRefr3D(projectile); 
+							if (current3DPtr && current3DPtr.get())
+							{
+								Util::SetRotationMatrixPY
+								(
+									current3DPtr->local.rotate, 
+									projectile->data.angle.x, 
+									projectile->data.angle.z
+								);
+							}
+
+							// Set velocity.
+							projectile->linearVelocity = a_resultingVelocityOut = velToSet;
+						}
+						else
+						{
+							// Point in direction of velocity.
+							projectile->data.angle.x = Util::DirectionToGameAngPitch
+							(
+								a_resultingVelocityOut
+							);
+							projectile->data.angle.z = Util::DirectionToGameAngYaw
+							(
+								a_resultingVelocityOut
+							);
+						
+							// Set rotation matrix to maintain consistency 
+							// with the previously set refr data angles.
+							auto current3DPtr = Util::GetRefr3D(projectile); 
+							if (current3DPtr && current3DPtr.get())
+							{
+								Util::SetRotationMatrixPY
+								(
+									current3DPtr->local.rotate, 
+									projectile->data.angle.x, 
+									projectile->data.angle.z
+								);
+							}
+						}
+
+						return true;
+					}
+				}
+			}
+
+			// Not manipulated by a player.
+			return false;
+		}
+
 		void ProjectileHooks::SetHomingTrajectory
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, 
@@ -5859,66 +6188,79 @@ namespace ALYSLC
 			auto& managedProjInfo = a_p->tm->mph->GetInfo(a_projectileHandle);
 			RE::NiPoint3 velToSet = a_resultingVelocityOut;
 			RE::NiPoint3 aimTargetPos = a_p->tm->crosshairWorldPos;
-			auto targetActorPtr = Util::GetActorPtrFromHandle(managedProjInfo->targetActorHandle);
+			auto targetRefrPtr = Util::GetRefrPtrFromHandle(managedProjInfo->targetRefrHandle);
+			bool targetRefrValidity = 
+			(
+				targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
+			);
+			auto targetActorPtr = 
+			(
+				targetRefrValidity ? RE::ActorPtr(targetRefrPtr->As<RE::Actor>()) : nullptr
+			);
 			bool targetActorValidity = 
 			(
-				targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
+				targetActorPtr && 
+				targetActorPtr.get() &&
+				Util::IsValidRefrForTargeting(targetActorPtr.get())
 			);
 			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 			bool crosshairRefrIsTarget = 
 			{
 				crosshairRefrPtr && 
-				crosshairRefrPtr == targetActorPtr && 
+				crosshairRefrPtr == targetRefrPtr && 
 				Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 			};
-			if (targetActorValidity)
+			if (targetRefrValidity)
 			{
-				// TODO: Snap projectile to closest position 
-				// on the targeted actor's character controller collider.
-				// Get targeted node, if available.
-				// Using aim correction and a targeted actor node was selected.
-				//if (Settings::vbUseAimCorrection[a_p->playerID] && 
-				//	  managedProjInfo->targetedActorNode)
-				//{
-				//	aimTargetPos = managedProjInfo->targetedActorNode->world.translate;
-				//  auto hkpRigidBody = Util::GethkpRigidBody
-				//	(
-				//		managedProjInfo->targetedActorNode.get()
-				//	); 
-				//	if (hkpRigidBody)
-				//	{
-				//		// Direct at node's center of mass.
-				//		// NOTE: 
-				//		// Projectile is not guaranteed to collide with this node, 
-				//		// unless it is within the actor's character collider.
-				//		aimTargetPos = 
-				//		(
-				//			ToNiPoint3
-				//			(
-				//				hkpRigidBody->motion.motionState.sweptTransform.centerOfMass0
-				//			) * HAVOK_TO_GAME
-				//		);
-				//	}
-				//}
-				//else 
-				
-				// Choose the exact crosshair position locally offset from the target actor;
-				// otherwise, if not facing the crosshair, target the selected actor's torso.
-				// Done to maximize hit chance, since an actor's torso node is most likely 
-				// to be within their character controller collider.
-				if (crosshairRefrIsTarget && a_p->mm->shouldFaceTarget)
+				if (targetActorValidity)
 				{
-					// Targeted with crosshair.
-					// Direct at crosshair position offset from the target actor.
-					aimTargetPos = 
-					(
-						targetActorPtr->data.location + a_p->tm->crosshairLastHitLocalPos
-					);
+					// TODO: 
+					// Snap projectile to closest position 
+					// on the targeted actor's character controller collider.
+					// Get targeted node, if available.
+					// Using aim correction and a targeted actor node was selected.
+					//if (Settings::vbUseAimCorrection[a_p->playerID] && 
+					//	  managedProjInfo->targetedActorNode)
+					//{
+					//	aimTargetPos = managedProjInfo->targetedActorNode->world.translate;
+					//  auto hkpRigidBody = Util::GethkpRigidBody
+					//	(
+					//		managedProjInfo->targetedActorNode.get()
+					//	); 
+					//	if (hkpRigidBody)
+					//	{
+					//		// Direct at node's center of mass.
+					//		// NOTE: 
+					//		// Projectile is not guaranteed to collide with this node, 
+					//		// unless it is within the actor's character collider.
+					//		aimTargetPos = 
+					//		(
+					//			ToNiPoint3
+					//			(
+					//				hkpRigidBody->motion.motionState.sweptTransform.centerOfMass0
+					//			) * HAVOK_TO_GAME
+					//		);
+					//	}
+					//}
+					//else 
+				
+					// Choose the exact crosshair position locally offset from the target actor;
+					// otherwise, if not facing the crosshair, target the selected actor's torso.
+					// Done to maximize hit chance, since an actor's torso node is most likely 
+					// to be within their character controller collider.
+
+					aimTargetPos = Util::GetTorsoPosition(targetActorPtr.get());
 				}
 				else
 				{
-					// Aim correction target. Aim at the target's torso position.
-					aimTargetPos = Util::GetTorsoPosition(targetActorPtr.get());
+					aimTargetPos = Util::Get3DCenterPos(targetRefrPtr.get());
+				}
+
+				if (crosshairRefrIsTarget && a_p->mm->reqFaceTarget)
+				{
+					// Targeted with crosshair.
+					// Direct at crosshair position offset from the target refr.
+					aimTargetPos += a_p->tm->crosshairLocalPosOffset;
 				}
 			}
 
@@ -5936,47 +6278,7 @@ namespace ALYSLC
 			);
 			// Predicted time to target along the initial fixed trajectory.
 			const float& initialTimeToTargetSecs = managedProjInfo->initialTrajTimeToTarget;
-
-			// Immediately direct at the target position
-			// if the initial time to hit the target is less than one frame.
-			// Won't have multiple frames to direct it at the target,
-			// so do it here right after release.
-			if (initialTimeToTargetSecs <= *g_deltaTimeRealTime) 
-			{
-				// Set refr data angles.
-				projectile->data.angle.x = pitchToTarget;
-				projectile->data.angle.z = yawToTarget;
-				// Set rotation matrix to maintain consistency 
-				// with the previously set refr data angles.
-				auto current3D = Util::GetRefr3D(projectile); 
-				if (current3D && current3D.get())
-				{
-					Util::SetRotationMatrixPY
-					(
-						current3D->local.rotate, 
-						projectile->data.angle.x, 
-						projectile->data.angle.z
-					);
-				}
-
-				// Set velocity, keeping the original speed.
-				auto velToSet = 
-				(
-					Util::RotationToDirectionVect
-					(
-						-pitchToTarget, 
-						Util::ConvertAngle(yawToTarget)
-					) * a_resultingVelocityOut.Length()
-				);
-
-				a_resultingVelocityOut = velToSet;
-				projectile->linearVelocity = a_resultingVelocityOut;
-
-				// No longer handled after directing at the target position.
-				a_p->tm->mph->Remove(a_projectileHandle);
-				return;
-			}
-			else if (projectile->livingTime == 0.0f)
+			if (projectile->livingTime == 0.0f)
 			{
 				// Set launch angles on release.
 				// Set refr data angles.
@@ -5984,11 +6286,12 @@ namespace ALYSLC
 				projectile->data.angle.z = launchYaw;
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+				auto current3DPtr = Util::GetRefr3D(projectile); 
+				if (current3DPtr && current3DPtr.get())
 				{
 					Util::SetRotationMatrixPY
 					(
-						current3D->local.rotate,
+						current3DPtr->local.rotate,
 						projectile->data.angle.x, 
 						projectile->data.angle.z
 					);
@@ -6029,6 +6332,7 @@ namespace ALYSLC
 			// Pitch and yaw to set below.
 			float pitchToSet = currentPitch;
 			float yawToSet = currentYaw;
+
 			// Just launched, so set pitch and yaw to saved launch values,
 			// and adjust velocity to point in the direction given by these two launch angles.
 			if (projectile->livingTime == 0.0f)
@@ -6050,25 +6354,34 @@ namespace ALYSLC
 			const float& g = managedProjInfo->g;
 			const double& mu = managedProjInfo->mu;
 			const float& t = projectile->livingTime;
-
-			// Release speed for fixed trajectory determined by projectile launch data.
-			const float& releaseSpeed = managedProjInfo->releaseSpeed;
 			// Cap in-flight time.
 			const bool tooLongToReach = 
 			(
+				initialTimeToTargetSecs == 0.0f ||
 				initialTimeToTargetSecs >= Settings::fMaxProjAirborneSecsToTarget
 			);
-
-			// Fixed trajectory XY position and pitch along the trajectory (tangent line).
-			const float xy = releaseSpeed * t * cosf(launchPitch);
-			const float pitchOnTraj = 
+			// Cannot split the trajectory into two parts 
+			// if the projectile reaches the target in under two frames,
+			// so we'll start homing in right away.
+			const bool lessThanTwoFramesToReachTarget = 
 			(
-				-atan2f
-				(
-					tanf(launchPitch) - (g * xy) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 
-					1.0f
-				)
+				initialTimeToTargetSecs <= *g_deltaTimeRealTime * 2.0f
 			);
+
+
+			// Release speed for fixed trajectory determined by projectile launch data.
+			const float& releaseSpeed = managedProjInfo->releaseSpeed;
+			// Get velocity along fixed trajectory and speed.
+			// Without air resistance.
+			// XY, X, Y, and Z components of velocity.
+			const float velXY = releaseSpeed * cosf(launchPitch);
+			const float velX = velXY * cosf(launchYaw);
+			const float velY = velXY * sinf(launchYaw);
+			const float velZ = releaseSpeed * sinf(launchPitch) - g * t;
+			auto fixedTrajVel = RE::NiPoint3(velX, velY, velZ);
+			// Speed to set below.
+			float speedToSet = fixedTrajVel.Length();
+
 			if (!managedProjInfo->startedHomingIn)
 			{
 				// With air resistance.
@@ -6100,78 +6413,38 @@ namespace ALYSLC
 				);
 				*/
 
-				// Set projectile pitch to trajectory pitch when not homing.
-				pitchToSet = pitchOnTraj;
-				// Can't hit target with the given launch pitch.
-				if (initialTimeToTargetSecs == 0.0 || tooLongToReach)
-				{
-					// Set yaw to directly face the target right away.
-					yawToSet = yawToTarget;
-				}
-				else
-				{
-					// Lerp yaw to slowly rotate the projectile to face the target in the XY plane.
-					// Fully face the target in the XY plane once half 
-					// of the projectile's time to the initial target position has elapsed.
-					yawToSet = Util::NormalizeAng0To2Pi
-					(
-						currentYaw + 
-						Util::InterpolateSmootherStep
-						(
-							0.0f, 
-							0.75f, 
-							min(1.0f, projectile->livingTime / (0.5f * initialTimeToTargetSecs))
-						) * yawDiff
-					);
-				}
-
 				// Next, check if the homing projectile should fully start homing in on the target
 				// instead of following its initial fixed trajectory.
-				// Check if the projectile is projected to reach its apex 
-				// between now and the next frame.
-				const float nextXY = releaseSpeed * (t + *g_deltaTimeRealTime) * cosf(launchPitch);
-				const float nextPitchOnTraj = 
+				
+				// Fixed trajectory XY position and pitch along the trajectory (tangent line).
+				const float xy = releaseSpeed * t * cosf(launchPitch);
+				const float pitchOnTraj = 
 				(
 					-atan2f
 					(
-						tanf(launchPitch) - 
-						(g * nextXY) / powf(releaseSpeed * cosf(launchPitch), 2.0f), 
+						tanf(launchPitch) - (g * xy) /
+						powf(releaseSpeed * cosf(launchPitch), 2.0f), 
 						1.0f
 					)
 				);
-				// Pitch is zero at the apex.
-				bool atApex = pitchOnTraj == 0.0f;
-				// Different sign: angled up to angled down next frame.
-				bool willHitApexBeforeNextFrame = nextPitchOnTraj >= 0.0f && pitchOnTraj <= 0.0f;
-				bool reachingApex = atApex || willHitApexBeforeNextFrame;
-				// Target has moved above the projectile at a steeper pitch 
-				// than the projectile's current pitch.
-				bool moveUpwardOffTraj = (pitchOnTraj < 0.0f && pitchToTarget < pitchOnTraj);
-				// Target has moved below the projectile at a steeper pitch 
-				// than the projectile's current pitch.
-				bool moveDownwardOffTraj = (pitchOnTraj > 0.0f && pitchToTarget > pitchOnTraj);
+				// Changes smaller than this value are ignored.
+				const float epsilon = 1E-3f;
 				// Last point at which the projectile can stay on its fixed trajectory 
 				// before homing in.
-				bool passedHalfTimeOfFlight = 
+				bool passedHalfwayPoint = 
 				(
-					projectile->livingTime > 0.5f * managedProjInfo->initialTrajTimeToTarget
+					projectile->livingTime - 0.5f * initialTimeToTargetSecs >= -epsilon ||
+					xy > Util::GetXYDistance(releasePos, managedProjInfo->trajectoryEndPos)
 				);
-				// If the gravitational constant was modified and is arbitrarily close to 0, 
-				// also start homing in.
-				bool noGrav = g < 1e-5f;
-
 				// Set as homing if not already set 
 				// and one of the above conditions is true.
-				bool shouldSetAsHoming = 
+				bool shouldSetAsHoming =
 				(
 					(!managedProjInfo->startedHomingIn) && 
 					(
-						passedHalfTimeOfFlight || 
-						reachingApex || 
-						moveUpwardOffTraj ||
-						moveDownwardOffTraj || 
-						noGrav || 
-						tooLongToReach
+						passedHalfwayPoint || 
+						tooLongToReach ||
+						lessThanTwoFramesToReachTarget
 					)
 				);
 				if (shouldSetAsHoming)
@@ -6179,10 +6452,46 @@ namespace ALYSLC
 					managedProjInfo->startedHomingIn = true;
 					managedProjInfo->startedHomingTP = SteadyClock::now();
 				}
+				else
+				{
+					float nextT = (t + *g_deltaTimeRealTime);
+					auto targetPos = RE::NiPoint3
+					(
+						releasePos.x + releaseSpeed * cosf(launchPitch) * cosf(launchYaw) * nextT,
+						releasePos.y + releaseSpeed * cosf(launchPitch) * sinf(launchYaw) * nextT,
+						releasePos.z + 
+						releaseSpeed * sinf(launchPitch) * nextT - 
+						0.5f * g * nextT * nextT
+					);
+					velToSet = (targetPos - projectile->data.location) / *g_deltaTimeRealTime;
+					pitchToSet = Util::DirectionToGameAngPitch(velToSet);
+					yawToSet = Util::DirectionToGameAngYaw(velToSet);
+					speedToSet = velToSet.Length();
+				}
+
+				/*SPDLOG_DEBUG
+				(
+					"[Hooks] SetHomingTrajectory: {}: {} pitch to target: {}, pitch on traj: {}. "
+					"Initial time of flight: {}, current time: {}, passed halfway point: {}. "
+					"Move upward: {} move downward: {}. Set as homing: {}. G, MU: {}, {}.",
+					a_p->coopActor->GetName(),
+					projectile->GetName(),
+					pitchToTarget * TO_DEGREES,
+					pitchOnTraj * TO_DEGREES,
+					initialTimeToTargetSecs, 
+					t,
+					passedHalfwayPoint,
+					moveUpwardOffTraj,
+					moveDownwardOffTraj,
+					shouldSetAsHoming,
+					g, 
+					mu
+				);*/
 			}
 
 			// NOTE: 
-			// Might uncomment eventually if air resistance is desired.
+			// Might uncomment eventually if air resistance is desired during the fixed portion
+			// of the homing trajectory.
 			// Right now, it makes a negligible difference that is not worth the extra computation,
 			// especially since only at most half of the projectile's time of flight
 			// is spent along the fixed initial trajectory.
@@ -6199,17 +6508,7 @@ namespace ALYSLC
 			auto fixedTrajVel = RE::NiPoint3(velX, velY, velZ);
 			float speed = fixedTrajVel.Length();
 			*/
-
-			// Get velocity along fixed trajectory and speed.
-			// Without air resistance.
-			// XY, X, Y, and Z components of velocity.
-			const float velXY = releaseSpeed * cosf(launchPitch);
-			const float velX = velXY * cosf(launchYaw);
-			const float velY = velXY * sinf(launchYaw);
-			const float velZ = releaseSpeed * sinf(launchPitch) - g * t;
-			auto fixedTrajVel = RE::NiPoint3(velX, velY, velZ);
-			float speed = fixedTrajVel.Length();
-
+			
 			// Max distance the projectile will travel in 1 frame at its current velocity.
 			float maxDistPerFrame = 
 			(
@@ -6221,43 +6520,41 @@ namespace ALYSLC
 			(
 				powf(distToTarget / (maxDistPerFrame + 0.01f), 5.0f), 0.1f, 1.0f
 			);
-			// Direction from the current position to the target.
-			auto dirToTarget = aimTargetPos - projectile->data.location;
-			dirToTarget.Unitize();
-			// Last frame's velocity direction.
-			auto velDirLastFrame = a_resultingVelocityOut;
-			velDirLastFrame.Unitize();
-			// Angle between last frame's velocity and the target.
-			float angBetweenVelAndToTarget = acosf
-			(
-				std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
-			);
-			// Went past the target if velocity direction and direction to target 
-			// diverge by >= 90 degrees and the distance to the target 
-			// is less than the max distance travelable per frame.
-			bool wentPastTarget = 
-			(
-				angBetweenVelAndToTarget >= PI / 2.0f && distToTarget <= maxDistPerFrame
-			);
-
-			// Remaining portion of the rotation smoothing interval.
-			float remainingRotSmoothingLifetimeRatio = 1.0f;
 			// Projectile is now homing in, smooth out pitch and yaw to follow the target.
 			if (managedProjInfo->startedHomingIn)
 			{
+				// First, check if the projectile has moved past the target.
+
+				// Direction from the current position to the target.
+				auto dirToTarget = aimTargetPos - projectile->data.location;
+				dirToTarget.Unitize();
+				// Last frame's velocity direction.
+				auto velDirLastFrame = a_resultingVelocityOut;
+				velDirLastFrame.Unitize();
+				// Angle between last frame's velocity and the target.
+				float angBetweenVelAndToTarget = acosf
+				(
+					std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
+				);
+
+				// Went past the target if velocity direction and direction to target 
+				// diverge by >= 90 degrees and the distance to the target 
+				// is less than the max distance travelable per frame.
+				bool wentPastTarget = 
+				(
+					angBetweenVelAndToTarget >= PI / 2.0f && distToTarget <= maxDistPerFrame
+				);
+
 				float secsSinceStartedHoming = Util::GetElapsedSeconds
 				(
 					managedProjInfo->startedHomingTP.value(), true
 				);
 				// Can't hit target with given launch pitch, 
-				// so set pitch directly to target right away.
-				if (initialTimeToTargetSecs == 0.0 || 
-					tooLongToReach ||
-					!managedProjInfo->startedHomingTP.has_value())
+				// so set pitch and yaw directly to target right away.
+				if (tooLongToReach || lessThanTwoFramesToReachTarget)
 				{
 					pitchToSet = pitchToTarget;
 					yawToSet = yawToTarget;
-					remainingRotSmoothingLifetimeRatio = 0.0f;
 
 					// Turn directly to face the target once homing starts, 
 					// so the target is no longer behind the projectile.
@@ -6270,61 +6567,39 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Full pitch smoothing lifetime is at most half 
-					// of the projectile's fixed trajectory lifetime.
-					float smoothingLifetimeSecs = max(0.0f, 0.5f * initialTimeToTargetSecs);
-					remainingRotSmoothingLifetimeRatio = 
-					(
-						smoothingLifetimeSecs == 0.0f ? 
-						0.0f : 
-						1.0f - min(1.0f, secsSinceStartedHoming / smoothingLifetimeSecs)
-					);
-
-					// Gradually rotate towards target.
+					// Slowly turn to face.
+					float pitchDiff = Util::NormalizeAngToPi(pitchToTarget - currentPitch);
 					pitchToSet = Util::NormalizeAngToPi
 					(
 						currentPitch + 
-						Util::InterpolateEaseIn
+						Util::InterpolateSmootherStep
 						(
 							0.0f, 
-							0.75f, 
-							1.0f - remainingRotSmoothingLifetimeRatio,
-							3.0f
-						) * pitchDiff
+							pitchDiff,
+							min(1.0f, projectile->livingTime / (initialTimeToTargetSecs))
+						)
 					);
+					float yawDiff = Util::NormalizeAngToPi(yawToTarget - currentYaw);
 					yawToSet = Util::NormalizeAng0To2Pi
 					(
 						currentYaw + 
-						Util::InterpolateEaseIn
+						Util::InterpolateSmootherStep
 						(
 							0.0f, 
-							0.75f, 
-							1.0f - remainingRotSmoothingLifetimeRatio,
-							3.0f
-						) * yawDiff
+							yawDiff,
+							min(1.0f, projectile->livingTime / (initialTimeToTargetSecs))
+						)
 					);
 				}
 
 				// Projectile base speed when launched.
-				if (auto baseSpeed = projectile->GetSpeed(); baseSpeed > 0.0f)
-				{
-					// Modify the current speed by the distance-slowdown factor, 
-					// but set a lower bound to avoid instances where the projectile
-					// does 0 damage when hitting the target at too low of a speed.
-					speed = max(speed * distSlowdownFactor, min(baseSpeed, 1000.0f));
-				}
-				else
-				{
-					// No base speed, but set lower bound anyway.
-					speed = max(speed * distSlowdownFactor, 1000.0f);
-				}
+				// Modify the current speed by the distance-slowdown factor, 
+				// but set a lower bound to avoid instances where the projectile
+				// does 0 damage when hitting the target at too low of a speed.
+				speedToSet = max(speedToSet * distSlowdownFactor, min(releaseSpeed, 1000.0f));
 
-				// Continue homing in only if the original flight time has not been reached 
-				// or if the projectile has not gone past the target.
-				continueSettingTrajectory = 
-				(
-					remainingRotSmoothingLifetimeRatio > 0.0f || !wentPastTarget
-				);
+				// Continue homing in only if the projectile has not gone past the target.
+				continueSettingTrajectory = !wentPastTarget;
 			}
 
 			if (continueSettingTrajectory)
@@ -6334,75 +6609,26 @@ namespace ALYSLC
 				projectile->data.angle.z = yawToSet;
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+				auto current3DPtr = Util::GetRefr3D(projectile); 
+				if (current3DPtr && current3DPtr.get())
 				{
 					Util::SetRotationMatrixPY
 					(
-						current3D->local.rotate, 
+						current3DPtr->local.rotate,
 						projectile->data.angle.x, 
 						projectile->data.angle.z
 					);
 				}
-
+		
+				velToSet = 
+				(
+					Util::RotationToDirectionVect(-pitchToSet, Util::ConvertAngle(yawToSet)) * 
+					speedToSet
+				);
+			
 				// Set velocity.
-				if (managedProjInfo->startedHomingIn) 
-				{
-					auto currentDir = a_resultingVelocityOut;
-					currentDir.Unitize();
-					auto interpFactor = Util::InterpolateSmootherStep
-					(
-						0.0f, 1.0f, 1.0f - remainingRotSmoothingLifetimeRatio
-					);
-					// Adjust the velocity's direction to slowly converge 
-					// to the direction towards the target position.
-					velToSet.x = currentDir.x + (dirToTarget.x - currentDir.x) * interpFactor;
-					velToSet.y = currentDir.y + (dirToTarget.y - currentDir.y) * interpFactor;
-					velToSet.z = currentDir.z + (dirToTarget.z - currentDir.z) * interpFactor;
-
-					velToSet.Unitize();
-					velToSet *= speed;
-				}
-				else
-				{
-					// Set pitch and yaw to have the projectile 
-					// angled parallel to its pre-homing fixed trajectory.
-					velToSet = 
-					(
-						Util::RotationToDirectionVect(-pitchToSet, Util::ConvertAngle(yawToSet)) * 
-						speed
-					);
-				}
-
 				a_resultingVelocityOut = velToSet;
 				projectile->linearVelocity = a_resultingVelocityOut;
-
-				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
-				(
-					"[Projectile Hook] SetHomingTrajectory: {} (0x{:X}) is now homing: {}, "
-					"speed to set: {}, distance to target: {}, initial time to target: {}, "
-					"remaining rotation smoothing lifetime ratio: {}, moved: {}, "
-					"pitch/yaw to target: {}, {}, current pitch/yaw: {}, {}, yaw diff: {}, "
-					"pitch/yaw to set homing: {}, {}, resulting velocity: ({}, {}, {})",
-					projectile->GetName(), 
-					projectile->formID,
-					managedProjInfo->startedHomingIn,
-					speed,
-					projectile->data.location.GetDistance(aimTargetPos),
-					initialTimeToTargetSecs,
-					remainingRotSmoothingLifetimeRatio,
-					projectile->distanceMoved,
-					pitchToTarget * TO_DEGREES,
-					yawToTarget * TO_DEGREES,
-					currentPitch * TO_DEGREES,
-					currentYaw * TO_DEGREES,
-					yawDiff * TO_DEGREES,
-					pitchToSet * TO_DEGREES,
-					yawToSet * TO_DEGREES,
-					a_resultingVelocityOut.x, 
-					a_resultingVelocityOut.y, 
-					a_resultingVelocityOut.z
-				);*/
 			}
 			else
 			{
@@ -6470,11 +6696,12 @@ namespace ALYSLC
 				projectile->data.angle.z = yawToTarget;
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+				auto current3DPtr = Util::GetRefr3D(projectile); 
+				if (current3DPtr && current3DPtr.get())
 				{
 					Util::SetRotationMatrixPY
 					(
-						current3D->local.rotate, 
+						current3DPtr->local.rotate,
 						projectile->data.angle.x, 
 						projectile->data.angle.z
 					);
@@ -6504,11 +6731,14 @@ namespace ALYSLC
 				projectile->data.angle.z = launchYaw;
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
-				if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+				auto current3DPtr = Util::GetRefr3D(projectile); 
+				if (current3DPtr && current3DPtr.get())
 				{
 					Util::SetRotationMatrixPY
 					(
-						current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z
+						current3DPtr->local.rotate,
+						projectile->data.angle.x, 
+						projectile->data.angle.z
 					);
 				}
 			}
@@ -6620,11 +6850,12 @@ namespace ALYSLC
 			if (targetActorValidity) 
 			{
 				// Aim at the locally offset crosshair hit position or the target actor's torso.
-				if (a_p->mm->shouldFaceTarget) 
+				if (a_p->mm->reqFaceTarget) 
 				{
 					aimTargetPos = 
 					(
-						targetActorPtr->data.location + a_p->tm->crosshairLastHitLocalPos
+						Util::GetTorsoPosition(targetActorPtr.get()) + 
+						a_p->tm->crosshairLocalPosOffset
 					);
 				}
 				else
@@ -6634,7 +6865,7 @@ namespace ALYSLC
 
 				projectile->desiredTarget = targetActorHandle;
 			}
-			else if (a_p->mm->shouldFaceTarget)
+			else if (a_p->mm->reqFaceTarget)
 			{
 				// Aim at the crosshair world position that the player is facing.
 				aimTargetPos = a_p->tm->crosshairWorldPos;
@@ -6681,20 +6912,21 @@ namespace ALYSLC
 
 			// Set rotation matrix to maintain consistency 
 			// with the previously set refr data angles.
-			if (auto current3D = Util::GetRefr3D(projectile); current3D && current3D.get())
+			auto current3DPtr = Util::GetRefr3D(projectile); 
+			if (current3DPtr && current3DPtr.get())
 			{
 				Util::SetRotationMatrixPY
 				(
-					current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z
+					current3DPtr->local.rotate, projectile->data.angle.x, projectile->data.angle.z
 				);
-				auto parent = RE::NiPointer<RE::NiAVObject>(current3D->parent); 
+				auto parent = RE::NiPointer<RE::NiAVObject>(current3DPtr->parent); 
 				if (parent && parent.get()) 
 				{
-					current3D->world = parent->world * current3D->local;
+					current3DPtr->world = parent->world * current3DPtr->local;
 				}
 				else
 				{
-					current3D->world = current3D->local;
+					current3DPtr->world = current3DPtr->local;
 				}
 			}
 
@@ -6706,11 +6938,108 @@ namespace ALYSLC
 			}
 		}
 
+// [SPELLITEM HOOKS]:
+		void SpellItemHooks::AdjustCost
+		(
+			RE::SpellItem* a_this, float& a_cost, RE::Actor* a_actor
+		)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_actor); 
+				if (playerIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[playerIndex];
+					if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+					{
+						if (p->coopActor->IsPlayerRef())
+						{
+							const auto& menuP = glob.coopPlayers[glob.menuCID];
+							// Run the adjust cost function on the companion player's base cost
+							// for this spell and scale it up/down.
+							// Output this new cost to report the companion player's spell costs
+							// in the menu instead of P1's.
+							float menuPlayerMagCost = 
+							(
+								// This function gets called on the menu player here.
+								a_this->CalculateMagickaCost(menuP->coopActor.get())
+							);
+							// Do not run the adjustment a second time and just scale down
+							// the base cost here.
+							a_cost = 
+							(
+								menuPlayerMagCost * Settings::vfMagickaCostMult[menuP->playerID]
+							);
+
+							// REMOVE when done debugging.
+							/*SPDLOG_DEBUG
+							(
+								"[SpellItem Hooks] AdjustCost: {} in menus. "
+								"Spell {} had cost {}, now has cost {}.",
+								menuP->coopActor->GetName(),
+								a_this->GetName(),
+								menuPlayerMagCost,
+								a_cost
+							);*/
+						}
+						else
+						{
+							// Calling CalculateMagickaCost() above on the companion player
+							// will call this function, so to avoid creating 
+							// an infinite rucrusive loop and to obtain the original cost, 
+							// run the original function here to compute the pre-scaled cost 
+							// and return.
+							float orig = a_cost;
+							_AdjustCost(a_this, a_cost, a_actor);
+
+							// REMOVE when done debugging.
+							/*SPDLOG_DEBUG
+							(
+								"[SpellItem Hooks] AdjustCost: {} in menus. "
+								"Spell {} had original cost of {}, now has cost {}.",
+								p->coopActor->GetName(),
+								a_this->GetName(),
+								orig,
+								a_cost
+							);*/
+						}
+					}
+					else
+					{
+						float orig = a_cost;
+						// Scale the base cost by our player-specific multiplier first.
+						a_cost *= Settings::vfMagickaCostMult[p->playerID];
+						_AdjustCost(a_this, a_cost, a_actor);
+
+						// REMOVE when done debugging.
+						/*SPDLOG_DEBUG
+						(
+							"[SpellItem Hooks] AdjustCost: {}: "
+							"Spell {} had cost {}, now has cost {}.",
+							p->coopActor->GetName(),
+							a_this->GetName(),
+							orig,
+							a_cost
+						);*/
+					}
+					
+					return;
+				}
+			}
+					
+			_AdjustCost(a_this, a_cost, a_actor);
+		}
+
 // [TESCAMERA HOOKS]:
 		void TESCameraHooks::Update(RE::TESCamera* a_this)
 		{
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			if (!glob.globalDataInit || !glob.cam->IsRunning() || !p1)
+			//if (!glob.globalDataInit || !glob.cam->IsRunning() || !p1)
+			if (!glob.globalDataInit || 
+				!glob.allPlayersInit || 
+				!glob.coopSessionActive || 
+				!glob.cam->IsRunning() || 
+				!p1)
 			{
 				return _Update(a_this);
 			}
@@ -7125,7 +7454,7 @@ namespace ALYSLC
 			}
 				
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetTargetActor()); 
-			if (pIndex != -1)
+			if (pIndex == -1)
 			{
 				return _Finish(a_this);
 			}
@@ -7174,26 +7503,30 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			SPDLOG_DEBUG
 			(
 				"[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. "
-				"Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 			
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 
 			// Copy over player data.
@@ -7258,27 +7591,31 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. "
-				"Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return result;
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 			// Copy over player data.
 			GlobalCoopData::CopyOverCoopPlayerData
@@ -7321,27 +7658,31 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return result;
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 
 			// Copy over player data.
@@ -7408,27 +7749,31 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 			RE::TESForm* assocForm = nullptr;
 			// Set furniture (crafting station) as the associated form.
@@ -7500,27 +7845,31 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return result;
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 			RE::TESForm* assocForm = nullptr;
 			// Get speaker as associated form.
@@ -7668,12 +8017,6 @@ namespace ALYSLC
 										std::addressof(entry), 
 										1
 									);
-									// Update the favorites entry list.
-									view->InvokeNoReturn
-									(
-										"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
-									);
-
 									SPDLOG_DEBUG
 									(
 										"[FavoritesMenu Hooks] ProcessMessage: "
@@ -7681,6 +8024,17 @@ namespace ALYSLC
 									);
 								}
 							}
+							
+							SPDLOG_DEBUG
+							(
+								"[FavoritesMenu Hooks] ProcessMessage: "
+								"Updating favorites entries for P1."
+							);
+							// Update the favorites entry list.
+							view->InvokeNoReturn
+							(
+								"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
+							);
 						}
 					);
 				}
@@ -7879,7 +8233,13 @@ namespace ALYSLC
 									);
 								}
 							}
-
+							
+							SPDLOG_DEBUG
+							(
+								"[FavoritesMenu Hooks] ProcessMessage: "
+								"Updating favorites entries for {}.",
+								p->coopActor->GetName()
+							);
 							// Update the favorites entry list.
 							view->InvokeNoReturn
 							(
@@ -7895,21 +8255,23 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Control is/was requested by co-op companion player.
-			if (resolvedCID != -1 && resolvedCID != glob.player1CID)
+			if (glob.lastResolvedMenuCID != -1 && glob.lastResolvedMenuCID != glob.player1CID)
 			{
-				const auto& p = glob.coopPlayers[resolvedCID];
+				const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
 				// Do not import co-op favorites if transformed into a Vampire Lord,
 				// so we can have access to P1's Vampire Lord spells.
@@ -8253,21 +8615,23 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[MagicMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Control is/was requested by co-op companion player.
-			if (resolvedCID != -1 && resolvedCID != glob.player1CID)
+			if (glob.lastResolvedMenuCID != -1 && glob.lastResolvedMenuCID != glob.player1CID)
 			{
-				const auto& p = glob.coopPlayers[resolvedCID];
+				const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 				closing &= hasCopiedData;
 				if (opening || closing)
 				{
@@ -8393,7 +8757,7 @@ namespace ALYSLC
 				// Do not modify the requests queue, 
 				// since the menu input manager still needs this info
 				// when setting the request and menu controller IDs when this menu opens/closes.
-				int32_t resolvedCID = glob.moarm->ResolveMenuControllerID
+				glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
 				(
 					a_this->MENU_NAME, false
 				);
@@ -8401,19 +8765,21 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, "
-					"resolved menu CID: {}. Opening: {}, closing: {}.",
-					glob.menuCID, resolvedCID, opening, closing
+					"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+					glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 				);
 
-				// Control is/was requested by co-op companion player.
-				if (resolvedCID != -1 && resolvedCID != glob.player1CID && !p1IsTransformed)
+				// Control is/was requested by a companion player.
+				if (glob.lastResolvedMenuCID != -1 && 
+					glob.lastResolvedMenuCID != glob.player1CID && 
+					!p1IsTransformed)
 				{
 					// Copy back player data only if data was already copied.
 					// Ignore subsequent hide messages once P1's data is restored.
 					closing &= hasCopiedData;
 					if (opening || closing)
 					{
-						const auto& p = glob.coopPlayers[resolvedCID];
+						const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 						const RE::BSFixedString menuName = a_this->MENU_NAME;
 						// Copy over player data.
 						GlobalCoopData::CopyOverCoopPlayerData
@@ -8468,27 +8834,31 @@ namespace ALYSLC
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
-			int32_t resolvedCID = glob.moarm->ResolveMenuControllerID(a_this->MENU_NAME, false);
+			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+			(
+				a_this->MENU_NAME, false
+			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}.",
-				glob.menuCID, resolvedCID, opening, closing
+				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
 			// or if not opening or closing.
-			if ((resolvedCID == -1 || resolvedCID == glob.player1CID) || (!opening && !closing))
+			if ((glob.lastResolvedMenuCID == -1 || glob.lastResolvedMenuCID == glob.player1CID) || 
+				(!opening && !closing))
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
 
-			const auto& p = glob.coopPlayers[resolvedCID];
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuCID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 			RE::TESForm* assocForm = nullptr;
 			// Set speaker as associated form.

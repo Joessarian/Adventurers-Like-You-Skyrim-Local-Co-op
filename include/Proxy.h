@@ -28,7 +28,7 @@ namespace ALYSLC
 		bool InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
 
 		// Setup controller data for all connected controllers and return a list of controller IDs
-		// for all active controllers. Player 1's CID is always first.
+		// for all active controllers. P1's CID is always first.
 		std::vector<std::uint32_t> GetConnectedCoopControllerIDs(RE::StaticFunctionTag*);
 
 		// Initializes/updates all co-op players with the given data.
@@ -57,6 +57,9 @@ namespace ALYSLC
 			RE::TESNPC* a_baseToCopy, 
 			bool a_setOppositeGenderAnims
 		);
+
+		// Toggle collisions on for all active players.
+		void EnableCoopEntityCollision(RE::StaticFunctionTag*);
 
 		// Get all actor base NPC appearance presets, narrowed down by race and sex.
 		std::vector<RE::TESForm*> GetAllAppearancePresets
@@ -145,9 +148,6 @@ namespace ALYSLC
 		// Toggle the co-op camera on or off.
 		void ToggleCoopCamera(RE::StaticFunctionTag*, bool a_enable);
 
-		// Toggle collision on or off for all active players.
-		void ToggleCoopEntityCollision(RE::StaticFunctionTag*, bool a_enable);
-
 		// Toggle menu control on or off for the given player 
 		// when entering/exiting the Summoning Menu.
 		void ToggleSetupMenuControl
@@ -197,8 +197,8 @@ namespace ALYSLC
 			// Enable god mode for a specific player.
 			void EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
 
-			// Move all other players to P1.
-			void MoveAllCoopActorsToP1(RE::StaticFunctionTag*);
+			// Move all other players to the given player.
+			void MoveAllPlayersToPlayer(RE::StaticFunctionTag*, RE::Actor* a_playerActor);
 
 			// Re-equip the player's desired hand forms (weapons/magic/armor).
 			void ReEquipHandForms(RE::StaticFunctionTag*, int32_t a_controllerID);

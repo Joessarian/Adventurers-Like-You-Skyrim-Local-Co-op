@@ -19,13 +19,6 @@ namespace ALYSLC
 		static bool g_mcoInstalled;
 	};
 
-	struct MiniMapCompat
-	{
-		static void CheckForMiniMap();
-		static bool g_miniMapInstalled;
-		static bool g_shouldApplyCullingWorkaround;
-	};
-
 	struct PersistentFavoritesCompat
 	{
 		static void CheckForPersistentFavorites();

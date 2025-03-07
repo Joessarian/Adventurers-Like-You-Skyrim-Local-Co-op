@@ -105,8 +105,15 @@ namespace ALYSLC
 		}
 	}
 
-	EventResult CoopActorKillEventHandler::ProcessEvent(const RE::ActorKill::Event* a_actorKillEvent, RE::BSTEventSource<RE::ActorKill::Event>*)
+	EventResult CoopActorKillEventHandler::ProcessEvent
+	(
+		const RE::ActorKill::Event* a_actorKillEvent, RE::BSTEventSource<RE::ActorKill::Event>*
+	)
 	{
+		// NOTE:
+		// Only used for debugging right now.
+		// May replace DeathEvent handling eventually.
+
 		SPDLOG_DEBUG
 		(
 			"[Events] Actor kill event: {} ({}) killed {}.",
@@ -166,8 +173,8 @@ namespace ALYSLC
 				RE::ACTOR_BASE_DATA::Flag::kEssential,
 				false
 			);
-			// Set to zero health, which usually triggers a death event.
-			// Extra layer of redundancy, just in case P1 has not died.
+			p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+			// Set to zero health, which somtimes triggers a death event.
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kDamage,
@@ -746,14 +753,20 @@ namespace ALYSLC
 								(
 									GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand]
 								);
-								auto newSkillbook = RE::TESForm::LookupByID(newSkillbookFID);
-								p->coopActor->AddObjectToContainer
+								auto newSkillbook = RE::TESForm::LookupByID<RE::AlchemyItem>
 								(
-									newSkillbook->As<RE::AlchemyItem>(), 
-									nullptr, 
-									1, 
-									p->coopActor.get()
+									newSkillbookFID
 								);
+								if (newSkillbook)
+								{
+									p->coopActor->AddObjectToContainer
+									(
+										newSkillbook,
+										nullptr, 
+										1, 
+										p->coopActor.get()
+									);
+								}
 
 								// Show in TrueHUD recent loot widget 
 								// by adding and removing the skillbook from P1.
@@ -1261,7 +1274,7 @@ namespace ALYSLC
 		// Handle hit event for an actor hit by a player.
 		if (hitActor) 
 		{
-			auto projectileRefr = RE::TESForm::LookupByID(a_hitEvent->projectile);
+			auto projectileForm = RE::TESForm::LookupByID(a_hitEvent->projectile);
 			// Caused by player + projectile is the hit actor (splat) 
 			// or hit event projectile's form type is not projectile (bonk).
 			// Also flagged as a power attack.
@@ -1270,7 +1283,7 @@ namespace ALYSLC
 				(a_hitEvent->cause == p->coopActor) && 
 				(
 					(a_hitEvent->projectile == hitActor->formID) || 
-					(projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
+					(projectileForm && !projectileForm->As<RE::BGSProjectile>())
 				) &&
 				(
 					((!(*a_hitEvent->flags) & (!AdditionalHitEventFlags::kBonk)) != 0) || 
@@ -1480,16 +1493,16 @@ namespace ALYSLC
 				// Same XP awarded as for a ranged weapon sneak attack.
 				// 2.0 damage multiplier.
 				if (canGrantXP && a_hitEvent->flags.any(RE::TESHitEvent::Flag::kSneakAttack) && 
-					projectileRefr && !projectileRefr->As<RE::BGSProjectile>())
+					projectileForm && !projectileForm->As<RE::BGSProjectile>())
 				{
 					SPDLOG_DEBUG
 					(
 						"[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill "
 						"for a successful thrown object sneak attack with {} (0x{:X}, {})",
 						p->coopActor->GetName(), 
-						projectileRefr->GetName(), 
-						projectileRefr->formID,
-						*projectileRefr->formType
+						projectileForm->GetName(), 
+						projectileForm->formID,
+						*projectileForm->formType
 					);
 					GlobalCoopData::AddSkillXP
 					(
@@ -1695,160 +1708,7 @@ namespace ALYSLC
 				a_hitEvent->projectile, 
 				flags
 			);
-
-			if (hitActor && !hitActor->IsHostileToActor(p->coopActor.get()))
-			{
-				Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
-				hitActor->currentCombatTarget = p->coopActor->GetHandle();
-			}
 		}
-
-		/*
-		bool shouldTriggerAssaultAlarm = 
-		(
-			(
-				(hitActor && !isSlapEvent) && 
-				(!p->isInGodMode || !isBonkOrSplatHitEvent || isHostileToAPlayer)
-			) &&
-			(!p->isPlayer1 || isBonkOrSplatHitEvent)
-		);
-
-		SPDLOG_DEBUG
-		(
-			"[Events] Hit Event: {} hit {} "
-			"with a bonk or splat: {}, slap: {}, god mode: {}, trigger assault alarm: {}. "
-			"Hostile to players: {}. Flags: 0b{:B}. Requested special hit damage to apply: {}.",
-			p->coopActor->GetName(),
-			hitRefr ? hitRefr->GetName() : "NONE",
-			isBonkOrSplatHitEvent,
-			isSlapEvent,
-			p->isInGodMode,
-			shouldTriggerAssaultAlarm,
-			isHostileToAPlayer,
-			*a_hitEvent->flags,
-			p->tm->rmm->reqSpecialHitDamageAmount
-		);
-
-		if (shouldTriggerAssaultAlarm) 
-		{
-			// Constructing and applying hit data seems to more consistently trigger
-			// both the initial assault bounty (40) 
-			// and any subsequent murder bounty (1000).
-			// IMPORTANT NOTE: 
-			// If companion players commit crimes while P1 is hidden, no bounty is accrued.
-			RE::HitData hitData{};
-			Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
-			hitData.Populate(glob.player1Actor.get(), hitActor, nullptr);
-
-			// Zero out damage on the duplicate hit.
-			hitData.bonusHealthDamageMult =
-			hitData.criticalDamageMult =
-			hitData.reflectedDamage =
-			hitData.resistedPhysicalDamage =
-			hitData.resistedTypedDamage =
-			hitData.targetedLimbDamage = 0.0f;
-
-			// Damage was not applied in the targeting manager, which sent this event,
-			// so apply it here for bonk or splat events.
-			if (isBonkOrSplatHitEvent)
-			{
-				hitData.physicalDamage =
-				hitData.totalDamage = p->tm->rmm->reqSpecialHitDamageAmount;
-			}
-			else
-			{
-				hitData.physicalDamage =
-				hitData.totalDamage = 0.0f;
-			}
-
-			// Remove sneak attack bonus, if any,
-			// to prevent the new P1 hit event from triggering
-			// an additional sneak attack bonus.
-			hitData.sneakAttackBonus = 1.0f;
-			hitData.flags.reset(RE::HitData::Flag::kSneakAttack);
-
-			// Set corresponding flags in the hit data.
-			if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kPowerAttack))
-			{
-				hitData.flags.set(RE::HitData::Flag::kPowerAttack);
-			}
-
-			if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kBashAttack))
-			{
-				hitData.flags.set(RE::HitData::Flag::kBash);
-			}
-
-			if (a_hitEvent->flags.all(RE::TESHitEvent::Flag::kHitBlocked))
-			{
-				hitData.flags.set(RE::HitData::Flag::kBlocked);
-			}
-
-			// Triggers the hit and sends the event.
-			Util::NativeFunctions::Actor_ApplyHitData
-			(
-				hitActor, std::addressof(hitData)
-			);
-
-			if (!hitActor->IsHostileToActor(p->coopActor.get()))
-			{
-				Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
-				hitActor->currentCombatTarget = p->coopActor->GetHandle();
-			}
-		}
-		else if (!p->isPlayer1 && !hitPlayer)
-		{
-			// Also send a duplicate hit event with P1 as the aggressor
-			// to trigger any OnHit events or effects, but not any assault alarms.
-
-			// Check placeholder spells for the source FID, 
-			// and if found, send the copied spell's FID instead.
-			RE::FormID sourceFID = a_hitEvent->source;
-			auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
-			if (attackingObj && attackingObj->As<RE::SpellItem>())
-			{
-				for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i)
-				{
-					if (p->em->placeholderMagic[i] && 
-						p->em->placeholderMagic[i]->formID == a_hitEvent->source && 
-						p->em->copiedMagic[i])
-					{
-						sourceFID = p->em->copiedMagic[i]->formID;
-						break;
-					}
-				}
-			}
-
-			// Remove sneak attack flag, if any,
-			// to prevent the new P1 hit event from triggering
-			// an additional sneak attack bonus.
-			auto flags = a_hitEvent->flags;
-			flags.reset(RE::TESHitEvent::Flag::kSneakAttack);
-			// Only keep the aggressor and target if a flop or slap hit.
-			// Otherwise, keep the same source and projectile as the original.
-			if (isBonkOrSplatHitEvent || isSlapEvent)
-			{
-				Util::SendHitEvent
-				(
-					glob.player1Actor.get(),
-					a_hitEvent->target.get(), 
-					0x0,
-					0x0, 
-					flags
-				);
-			}
-			else
-			{
-				Util::SendHitEvent
-				(
-					glob.player1Actor.get(),
-					a_hitEvent->target.get(), 
-					sourceFID,
-					a_hitEvent->projectile, 
-					flags
-				);
-			}
-		}
-		*/
 
 		return EventResult::kContinue;
 	}
@@ -1923,7 +1783,7 @@ namespace ALYSLC
 		(
 			"[Events] |Menu Open/Close Event|: "
 			"menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. "
-			"Only always open: {}."
+			"Only always open: {}. "
 			"Copied data types: 0x{:X}",
 			a_menuEvent->menuName, 
 			a_menuEvent->opening ? "OPENING" : "CLOSING",
@@ -2087,12 +1947,20 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"[Events] Index {}: Menu {} is open. "
-							"Pauses game: {}, always open: {}. Flags: 0b{:B}.",
+							"Pauses game: {}, always open: {}. Flags: 0b{:B}. "
+							"Mouse/controller counts: {}, {}. Input context: 0b{:B}.",
 							iter - ui->menuStack.begin(),
 							name,
 							menu->PausesGame(),
 							menu->AlwaysOpen(),
-							*menu->menuFlags
+							*menu->menuFlags,
+							menu->uiMovie ?
+							menu->uiMovie->GetMouseCursorCount() :
+							-1,
+							menu->uiMovie ?
+							menu->uiMovie->GetControllerCount() :
+							-1,
+							static_cast<uint32_t>(menu->inputContext.underlying())
 						);
 					}
 				}
@@ -2149,29 +2017,31 @@ namespace ALYSLC
 			}
 
 			// Reset dialogue control CID when dialogue menu opens and closes.
-			if (a_menuEvent->menuName == RE::DialogueMenu::MENU_NAME)
+			if (GlobalCoopData::TRANSFERABLE_CONTROL_MENU_NAMES.contains(a_menuEvent->menuName))
 			{
 				{
 					std::unique_lock<std::mutex> lock
 					(
-						glob.moarm->reqDialogueControlMutex, std::try_to_lock
+						glob.moarm->reqTransferMenuControlMutex, std::try_to_lock
 					);
 					if (lock)
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Menu Open/Close Event: Dialogue menu CID. Lock obtained. "
-							"(0x{:X})", 
+							"[Events] Menu Open/Close Event: {}. Transfer menu control CID. "
+							"Lock obtained: (0x{:X}).", 
+							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
-						glob.moarm->reqDialoguePlayerCID = -1;
+						glob.moarm->reqTransferMenuControlPlayerCID = -1;
 					}
 					else
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Menu Open/Close Event: Dialogue menu CID. "
-							"Failed to obtain lock. (0x{:X})", 
+							"[Events] Menu Open/Close Event: {}. Transfer menu control CID. "
+							"Failed to obtain lock: (0x{:X})", 
+							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
 					}
@@ -2196,7 +2066,10 @@ namespace ALYSLC
 				// Resolve the CID which will modify the requests queue 
 				// and clear out fulfilled requests even if we don't need to 
 				// set the menu CID to the resolved CID.
-				auto resolvedCID = glob.moarm->ResolveMenuControllerID(a_menuEvent->menuName);
+				glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+				(
+					a_menuEvent->menuName
+				);
 				if (glob.mim->IsRunning() && glob.mim->managerMenuCID != -1)
 				{
 					// Give the companion player continued control of menus.
@@ -2213,7 +2086,7 @@ namespace ALYSLC
 				else if (glob.menuCID == -1)
 				{
 					// Give the player with the resolved CID control of menus.
-					GlobalCoopData::SetMenuCIDs(resolvedCID);
+					GlobalCoopData::SetMenuCIDs(glob.lastResolvedMenuCID);
 					SPDLOG_DEBUG
 					(
 						"[Events] Menu Open/Close Event: OPENING: Set menu CIDs. "
@@ -2510,41 +2383,6 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 
-		const uint32_t p1CellNameHash = Hash(a_cellFullyLoadedEvent->cell->fullName);
-		// If using Felisky384's MiniMap mod and this cell has a room marker,
-		// signal culling proc to apply freeze workaround.
-		// Only handle the first time the cell fully loads.
-		if (ALYSLC::MiniMapCompat::g_miniMapInstalled && 
-			p1CellNameHash != lastLoadP1CellNameHash)
-		{
-			lastLoadP1CellNameHash = p1CellNameHash;
-			bool shouldApplyCullingWorkaround = 
-			(
-				(
-					Settings::bRemoveExteriorOcclusion && 
-					a_cellFullyLoadedEvent->cell->IsExteriorCell()
-				) || 
-				(
-					Settings::bRemoveInteriorOcclusion && 
-					a_cellFullyLoadedEvent->cell->IsInteriorCell()
-				)
-			);
-			if (shouldApplyCullingWorkaround) 
-			{
-				ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = false;
-				// Persistent refrs: only handle room markers, 
-				// since portal markers and occlusion planes are not persistent.
-				for (auto obj : a_cellFullyLoadedEvent->cell->objectList)
-				{
-					if (obj->GetBaseObject() && obj->GetBaseObject()->formID == 0x1F)
-					{
-						ALYSLC::MiniMapCompat::g_shouldApplyCullingWorkaround = true;
-						break;
-					}
-				}
-			}
-		}
-
 		// Reset fade on all the cell's objects, since our co-op cam
 		// may have left some fade values modified.
 		Util::ResetFadeOnAllObjectsInCell(a_cellFullyLoadedEvent->cell);
@@ -2699,8 +2537,12 @@ namespace ALYSLC
 					p->coopActor->MoveTo(p1);
 				}
 
-				// Also move all the player's grabbed refrs (not actors) to P1.
-				p->tm->rmm->MoveUnloadedGrabbedObjectsToPlayer(p);
+				// TODO:
+				// Also move all the player's grabbed refrs and actors to P1.
+				// p->tm->rmm->MoveUnloadedGrabbedObjectsToPlayer(p);
+
+				// For now, clear all managed refrs.
+				p->tm->rmm->ClearAll();
 			}
 		}
 

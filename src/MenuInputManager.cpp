@@ -78,7 +78,6 @@ namespace ALYSLC
 		mapMenu = nullptr;
 	}
 	
-#pragma region MANAGER_FUNCS_IMPL
 	void MenuInputManager::MainTask()
 	{
 		if (newMenuAtopStack)
@@ -319,9 +318,7 @@ namespace ALYSLC
 		}
 		else if (favoritesMenu)
 		{
-			// Unsure why I had this line. Keep until proven useless.
-			//favoritesMenu->menuFlags.reset(RE::UI_MENU_FLAGS::kAllowSaving);
-
+			SPDLOG_DEBUG("[MIM] RefreshData: FavoritesMenu.");
 			// Set initial equip states for favorited items.
 			InitFavoritesEntries();
 			// Refresh menu after initializing equip states/favorited indices.
@@ -476,8 +473,6 @@ namespace ALYSLC
 		return ManagerState::kRunning;
 	}
 
-#pragma endregion
-
 	void MenuInputManager::CheckControllerInput()
 	{
 		// Update controller input state and set menu event type to handle.
@@ -507,7 +502,10 @@ namespace ALYSLC
 				(xMask == XMASK_LT && buttonState.Gamepad.bLeftTrigger > triggerDeadzone) ||
 				(xMask == XMASK_RT && buttonState.Gamepad.bRightTrigger > triggerDeadzone)
 			);
-			bool handleButtonPress = !handleTriggerPress && (xMask & buttonState.Gamepad.wButtons);
+			bool handleButtonPress = 
+			(
+				(!handleTriggerPress) && (xMask & buttonState.Gamepad.wButtons)
+			);
 			bool handleAnalogStickMovement = false;
 			bool shouldCheckAnalogStick = (xMask == XMASK_LS || xMask == XMASK_RS);
 			if (shouldCheckAnalogStick)
@@ -615,7 +613,15 @@ namespace ALYSLC
 					// or the analog stick is not centered.
 					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 				}
-							
+					
+				// Special case:
+				// Preview the hotkey to set for the selected Favorites Menu entry.
+				if (openedMenuType == SupportedMenu::kFavorites && 
+					xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
+				{
+					HotkeyFavoritedForm(false);
+				}
+
 				// If unable to set bind info, set event type to none.
 				if (!SetEmulatedInputEventInfo(xMask, bindInfo))
 				{
@@ -676,11 +682,19 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Analog stick centered or button/trigger released.
+				// Analog stick centered or button/trigger just released.
 				// Update press value on release.
 				if (bindInfo.value == 1.0f)
 				{
 					bindInfo.value = 0.0f;
+
+					// Special case:
+					// Set the previously previewed hotkey for the selected Favorites Menu entry.
+					if (openedMenuType == SupportedMenu::kFavorites && 
+						xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
+					{
+						HotkeyFavoritedForm(true);
+					}
 				}
 
 				// Only send release event if an event was handled before.
@@ -1102,7 +1116,7 @@ namespace ALYSLC
 			pmcFadeInterpData->interpToMax || 
 			pmcFadeInterpData->interpToMin) 
 		{
-			const uint8_t alpha = static_cast<uint8_t>(static_cast<float>(0x3F) * interpValue);
+			const uint8_t alpha = static_cast<uint8_t>(static_cast<float>(0x7F) * interpValue);
 			if (glob.coopSessionActive)
 			{
 				// Co-op session active.
@@ -1129,44 +1143,142 @@ namespace ALYSLC
 
 			uint32_t uiRGBA = (Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha;
 			const auto& thickness = Settings::fPlayerMenuControlOverlayOutlineThickness;
-			const auto halfThickness = 0.5f * thickness;
 			const float rectWidth = DebugAPI::screenResX;
 			const float rectHeight = DebugAPI::screenResY;
 
 			// No overlap at corners by making sure only one of the edges 
 			// is drawn all the way to the corner.
+
 			// Left Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(halfThickness, thickness), 
-				glm::vec2(halfThickness, rectHeight - thickness), 
-				uiRGBA, 
+				glm::vec2(0.5f * thickness, thickness), 
+				glm::vec2(0.5f * thickness, rectHeight - thickness), 
+				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
 				thickness
 			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(1.25f * thickness, 1.5f * thickness), 
+				glm::vec2(1.25f * thickness, rectHeight - 1.5f * thickness), 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(1.75f * thickness, 2.0f * thickness), 
+				glm::vec2(1.75f * thickness, rectHeight - 2.0f * thickness), 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+
 			// Right Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(rectWidth - halfThickness, thickness), 
-				glm::vec2(rectWidth - halfThickness, rectHeight - thickness), 
-				uiRGBA,
+				glm::vec2(rectWidth - 0.5f * thickness, thickness), 
+				glm::vec2(rectWidth - 0.5f * thickness, rectHeight - thickness), 
+				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
 				thickness
 			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(rectWidth - 1.25f * thickness, 1.5f * thickness), 
+				glm::vec2(rectWidth - 1.25f * thickness, rectHeight - 1.5f * thickness), 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(rectWidth - 1.75f * thickness, 2.0f * thickness), 
+				glm::vec2(rectWidth - 1.75f * thickness, rectHeight - 2.0f * thickness), 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+
 			// Top Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(0.0f, halfThickness), 
-				glm::vec2(rectWidth, halfThickness),
-				uiRGBA, 
+				glm::vec2(0.0f, 0.5f * thickness), 
+				glm::vec2(rectWidth, 0.5f * thickness),
+				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
 				thickness
 			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(thickness, 1.25f * thickness), 
+				glm::vec2(rectWidth - thickness, 1.25f * thickness),
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
+				0.5f * thickness
+			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(1.5f * thickness, 1.75f * thickness), 
+				glm::vec2(rectWidth - 1.5f * thickness, 1.75f * thickness),
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+
 			// Bottom Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(0.0f, rectHeight - halfThickness), 
-				glm::vec2(rectWidth, rectHeight - halfThickness), 
-				uiRGBA, 
+				glm::vec2(0.0f, rectHeight - 0.5f * thickness), 
+				glm::vec2(rectWidth, rectHeight - 0.5f * thickness), 
+				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
 				thickness
 			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(thickness, rectHeight - 1.25f * thickness), 
+				glm::vec2(rectWidth - thickness, rectHeight - 1.25f * thickness), 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
+				0.5f * thickness
+			);
+			DebugAPI::QueueLine2D
+			(
+				glm::vec2(1.5f * thickness, rectHeight - 1.75f * thickness), 
+				glm::vec2(rectWidth - 1.5f * thickness, rectHeight - 1.75f * thickness), 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				0.5f * thickness
+			);
+
+			// NOTE:
+			// Keeping the original single-color outline code to swap to 
+			// if three colors is just too much visual stimulation. Yeah.
+			// 
+			// No overlap at corners by making sure only one of the edges 
+			// is drawn all the way to the corner.
+			// Left Edge.
+			//DebugAPI::QueueLine2D
+			//(
+			//	glm::vec2(0.5f * thickness, thickness), 
+			//	glm::vec2(0.5f * thickness, rectHeight - thickness), 
+			//	uiRGBA, 
+			//	thickness
+			//);
+			//// Right Edge.
+			//DebugAPI::QueueLine2D
+			//(
+			//	glm::vec2(rectWidth - 0.5f * thickness, thickness), 
+			//	glm::vec2(rectWidth - 0.5f * thickness, rectHeight - thickness), 
+			//	uiRGBA,
+			//	thickness
+			//);
+			//// Top Edge.
+			//DebugAPI::QueueLine2D
+			//(
+			//	glm::vec2(0.0f, 0.5f * thickness), 
+			//	glm::vec2(rectWidth, 0.5f * thickness),
+			//	uiRGBA, 
+			//	thickness
+			//);
+			//// Bottom Edge.
+			//DebugAPI::QueueLine2D
+			//(
+			//	glm::vec2(0.0f, rectHeight - 0.5f * thickness), 
+			//	glm::vec2(rectWidth, rectHeight - 0.5f * thickness), 
+			//	uiRGBA, 
+			//	thickness
+			//);
 		}
 	}
 
@@ -1383,9 +1495,9 @@ namespace ALYSLC
 		);
 	}
 
-	void MenuInputManager::HotkeyFavoritedForm()
+	void MenuInputManager::HotkeyFavoritedForm(bool&& a_setHotkey)
 	{
-		// Hotkey the currently selected favorited item entry.
+		// Preview or set a hotkey to the currently selected favorited item entry.
 		// 8 possible hotkey slots starting from index 0 when the RS is pointed up.
 
 		if (!glob.globalDataInit || !glob.coopSessionActive)
@@ -1470,95 +1582,269 @@ namespace ALYSLC
 			hotkeySlotToChange = 7;
 		}
 
-		if (hotkeyEvent == ""sv)
+		if (a_setHotkey)
 		{
-			return;
-		}
-
-		// Hotkey the entry through an emulated keyboard input.
-		auto hotkeyCode = controlMap->GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
-		if (hotkeyCode == 0xFF)
-		{
-			return;
-		}
-
-		taskInterface->AddUITask
-		(
-			[this, hotkeyEvent, hotkeyCode, hotkeySlotToChange, menuCID]() 
+			if (hotkeyEvent == ""sv)
 			{
-				auto ui = RE::UI::GetSingleton(); 
-				if (!ui)
-				{
-					return;
-				}
+				return;
+			}
 
-				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-				if (!favoritesMenu || !favoritesMenu.get())
-				{
-					return;
-				}
+			// Hotkey the entry through an emulated keyboard input.
+			auto hotkeyCode = controlMap->GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
+			if (hotkeyCode == 0xFF)
+			{
+				return;
+			}
 
-				auto view = favoritesMenu->uiMovie; 
-				if (!view)
+			taskInterface->AddUITask
+			(
+				[this, hotkeyEvent, hotkeyCode, hotkeySlotToChange, menuCID]() 
 				{
-					return;
-				}
-				RE::GFxValue selectedIndex;
-				view->GetVariable
-				(
-					std::addressof(selectedIndex),
-					"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
-				);
+					auto ui = RE::UI::GetSingleton(); 
+					if (!ui)
+					{
+						return;
+					}
 
-				// Index in favorites list.
-				uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
-				auto form = favoritesMenu->favorites[index].item;
-				// Must have a valid selected form.
-				if (!form)
-				{
-					return;
-				}
+					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
+					if (!favoritesMenu || !favoritesMenu.get())
+					{
+						return;
+					}
 
-				const auto& p = glob.coopPlayers[menuCID];
-				Util::SendButtonEvent
-				(
-					RE::INPUT_DEVICE::kKeyboard, hotkeyEvent, hotkeyCode, 1.0f, 0.0f, false, true
-				);
-				Util::SendButtonEvent
-				(
-					RE::INPUT_DEVICE::kKeyboard, hotkeyEvent, hotkeyCode, 0.0f, 1.0f, false, true
-				);
-				bool isP1Hotkeyed = Util::IsHotkeyed(RE::PlayerCharacter::GetSingleton(), form);
-				if (!p->isPlayer1) 
-				{
-					// Ensure the companion player has the same hotkey state as P1 for the form.
-					Util::ChangeFormHotkeyStatus
+					auto view = favoritesMenu->uiMovie; 
+					if (!view)
+					{
+						return;
+					}
+
+					RE::GFxValue selectedIndex;
+					view->GetVariable
 					(
-						p->coopActor.get(), 
-						form, 
-						isP1Hotkeyed ? hotkeySlotToChange : -1
+						std::addressof(selectedIndex),
+						"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
 					);
 
-					SPDLOG_DEBUG("[MIM] HotkeyFavoritedForm: {} is now hotkeyed by P1: {}.",
-						form->GetName(), isP1Hotkeyed);
-					// Signal manager to refresh the menu.
-					shouldRefreshMenu = true;
-				}
-				else
-				{
-					// Send update request to have the Favorites Menu ProcessMessage() hook 
-					// apply the quickslot tag(s).
-					auto messageQueue = RE::UIMessageQueue::GetSingleton();
-					if (messageQueue)
+					// Index in favorites list.
+					uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+					auto form = favoritesMenu->favorites[index].item;
+					// Must have a valid selected form.
+					if (!form)
 					{
-						messageQueue->AddMessage
+						return;
+					}
+
+					const auto& p = glob.coopPlayers[menuCID];
+					// Press and release.
+					Util::SendButtonEvent
+					(
+						RE::INPUT_DEVICE::kKeyboard, 
+						hotkeyEvent,
+						hotkeyCode,
+						1.0f, 
+						0.0f, 
+						false, 
+						true
+					);
+					Util::SendButtonEvent
+					(
+						RE::INPUT_DEVICE::kKeyboard, 
+						hotkeyEvent, 
+						hotkeyCode, 
+						0.0f, 
+						1.0f,
+						false, 
+						true
+					);
+					bool isP1Hotkeyed = Util::IsHotkeyed
+					(
+						RE::PlayerCharacter::GetSingleton(), form
+					);
+
+					SPDLOG_DEBUG
+					(
+						"[MIM] HotkeyFavoritedForm: {}: Hotkeying {} into slot {}, "
+						"is now hotkeyed by P1: {}.",
+						p->coopActor->GetName(),
+						form->GetName(), 
+						hotkeySlotToChange, 
+						isP1Hotkeyed
+					);
+
+					if (!p->isPlayer1) 
+					{
+						// Ensure the companion player has the same hotkey state
+						// as P1 for the form.
+						Util::ChangeFormHotkeyStatus
 						(
-							RE::FavoritesMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr
+							p->coopActor.get(), 
+							form, 
+							isP1Hotkeyed ? hotkeySlotToChange : -1
 						);
+
+						SPDLOG_DEBUG("[MIM] HotkeyFavoritedForm: {} is now hotkeyed by P1: {}.",
+							form->GetName(), isP1Hotkeyed);
+						// Signal manager to refresh the menu.
+						shouldRefreshMenu = true;
+					}
+					else
+					{
+						// Send update request to have the Favorites Menu ProcessMessage() hook 
+						// apply the quickslot tag(s).
+						auto messageQueue = RE::UIMessageQueue::GetSingleton();
+						if (messageQueue)
+						{
+							messageQueue->AddMessage
+							(
+								RE::FavoritesMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr
+							);
+						}
 					}
 				}
+			);
+		}
+		else
+		{
+			if (hotkeySlotToChange == -1)
+			{
+				return;
 			}
-		);
+
+			taskInterface->AddUITask
+			(
+				[this, hotkeySlotToChange, menuCID]() 
+				{
+					auto ui = RE::UI::GetSingleton(); 
+					if (!ui)
+					{
+						return;
+					}
+
+					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
+					if (!favoritesMenu || !favoritesMenu.get())
+					{
+						return;
+					}
+
+					auto view = favoritesMenu->uiMovie; 
+					if (!view)
+					{
+						return;
+					}
+
+					// Get entry for the item/spell and its text.
+					RE::GFxValue entry{ };
+					view->GetVariable
+					(
+						std::addressof(entry),
+						"_root.MenuHolder.Menu_mc.itemList.selectedEntry"
+					);
+
+					// Need a valid selected entry.
+					if (entry.IsNull() || entry.IsUndefined())
+					{
+						return;
+					}
+
+					RE::GFxValue selectedIndex{ };
+					view->GetVariable
+					(
+						std::addressof(selectedIndex),
+						"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
+					);
+					
+					// Need a valid selected index.
+					if (selectedIndex.IsNull() || selectedIndex.IsUndefined())
+					{
+						return;
+					}
+
+					const int32_t index = static_cast<int32_t>(selectedIndex.GetNumber());
+					if (index == -1)
+					{
+						return;
+					}
+					
+					const auto& p = glob.coopPlayers[menuCID];
+					auto form = favoritesMenu->favorites[index].item;
+					// Must have a valid selected form.
+					if (!form)
+					{
+						return;
+					}
+
+					// Index must have a corresponding entry number.
+					if (!favMenuIndexToEntryMap.contains(index))
+					{
+						SPDLOG_DEBUG
+						(
+							"[MIM] HotkeyFavoritedForm: {}'s favorited form {} "
+							"does not have an entry number corresponding to an index of {}.",
+							p->coopActor->GetName(), form->GetName(), index
+						);
+						return;
+					}
+
+					// Get entry number corresponding to index.
+					const uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
+					// Get current hotkey.
+					RE::GFxValue entryHotkey{ };
+					entry.GetMember("hotkey", std::addressof(entryHotkey));
+
+					// Entry needs to have a hotkey member.
+					if (entryHotkey.IsNull() || entryHotkey.IsUndefined())
+					{
+						return;
+					}
+
+					auto currentHotkey = static_cast<int32_t>(entryHotkey.GetSInt());
+					// Already hotkeyed in the requested slot.
+					if (hotkeySlotToChange == currentHotkey)
+					{
+						return;
+					}
+
+					entryHotkey.SetNumber(hotkeySlotToChange);
+					entry.SetMember("hotkey", entryHotkey);
+					view->SetVariableArray
+					(
+						"_root.MenuHolder.Menu_mc.itemList.entryList", 
+						index, 
+						std::addressof(entry),
+						1
+					);
+					view->InvokeNoReturn
+					(
+						"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
+					);
+
+					if (!p->isPlayer1) 
+					{
+						SPDLOG_DEBUG
+						(
+							"[MIM] HotkeyFavoritedForm: {}: {} will be hotkeyed in slot {} "
+							"on release.",
+							p->coopActor->GetName(), form->GetName(), hotkeySlotToChange
+						);
+						// Signal manager to refresh the menu.
+						shouldRefreshMenu = true;
+					}
+					else
+					{
+						// Send update request to have the Favorites Menu ProcessMessage() hook 
+						// apply the quickslot tag(s).
+						auto messageQueue = RE::UIMessageQueue::GetSingleton();
+						if (messageQueue)
+						{
+							messageQueue->AddMessage
+							(
+								RE::FavoritesMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr
+							);
+						}
+					}
+				}
+			);
+		}
 	}
 
 	RE::TESForm* MenuInputManager::GetSelectedMagicMenuSpell()
@@ -1634,9 +1920,9 @@ namespace ALYSLC
 		// with the correct spell/shout if the player knows multiple spells/shouts 
 		// with the same name.
 
-		//=======================================================================================
+		//=========================================================================================
 		// First ensure both the player in the menu and P1 have the same known spells and shouts.
-		//=======================================================================================
+		//=========================================================================================
 
 		// Ensure placeholder spells/shout are not added to P1.
 		const auto& p = glob.coopPlayers[managerMenuCID];
@@ -1884,6 +2170,8 @@ namespace ALYSLC
 
 	void MenuInputManager::InitFavoritesEntries()
 	{
+		SPDLOG_DEBUG("[MIM] InitFavoritesEntries.");
+
 		// Update equip states in the Favorites Menu 
 		// for forms equipped by the co-op companion player.
 
@@ -2941,7 +3229,8 @@ namespace ALYSLC
 		else if (a_xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
 		{
 			// Hotkey the selected form, if any.
-			HotkeyFavoritedForm();
+			//HotkeyFavoritedForm();
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 	}
 
@@ -4761,11 +5050,16 @@ namespace ALYSLC
 
 	bool MenuInputManager::UpdateMenuType()
 	{
+		// Set the supported opened menu type to handle based on the menu name set earlier.
+		// Also get and save a pointer to the menu.
+		// Return true if the new opened menu type differs from the previous one.
+
 		SPDLOG_DEBUG("[MIM] UpdateMenuType: Menu name: {}", menuName);
 		auto oldMenuType = openedMenuType;
 		auto menuNameHash = Hash(menuName);
 
-		// Clear all menus.
+		// Clear all menus that have special control binds handled by this manager.
+		// Only one supported menu (the topmost one) handled at a time.
 		barterMenu = nullptr;
 		bookMenu = nullptr;
 		containerMenu = nullptr;
@@ -5101,10 +5395,19 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
-						"Got request for {}. Menu: {}. Seconds since request inserted: {}. "
+						"Got request for {}. Menu: {}, from action: {}, assoc refr: {} (0x{:X}), "
+						"ext req: {}. Seconds since request inserted: {}. "
 						"Seconds since chosen request inserted: {}. Queue size: {}.", 
 						p->coopActor->GetName(), 
 						currentReq.reqMenuName, 
+						currentReq.fromAction,
+						Util::HandleIsValid(currentReq.assocRefrHandle) ?
+						currentReq.assocRefrHandle.get()->GetName() :
+						"NONE",
+						Util::HandleIsValid(currentReq.assocRefrHandle) ?
+						currentReq.assocRefrHandle.get()->formID :
+						0xDEAD,
+						currentReq.isExtRequest,
 						secsSinceReq, 
 						secsSinceChosenReq, 
 						reqQueue.size()
@@ -5112,6 +5415,11 @@ namespace ALYSLC
 
 					// Message box menus consider the newest requests first.
 					bool isMessageBoxMenu = a_menuName == RE::MessageBoxMenu::MENU_NAME;
+					// For the 'CustomMenu', if there is a direct request or an external request,
+					// consider the oldest request first.
+					// Then, if there are any menu requests triggered by activation,
+					// consider the newest of these requests as well.
+					bool isCustomMenu = a_menuName == GlobalCoopData::CUSTOM_MENU;
 					// Ignore max 3 second request lifetime for the LootMenu.
 					bool ignoreReqExpiration = a_menuName == GlobalCoopData::LOOT_MENU;
 					// Want to choose the oldest valid request because, for example, 
@@ -5131,7 +5439,10 @@ namespace ALYSLC
 					// Currently only for MessageBoxMenu.
 					bool checkForNewestReq = 
 					(
-						(isMessageBoxMenu) && 
+						(
+							(isMessageBoxMenu) || 
+							(isCustomMenu && currentReq.fromAction == InputAction::kActivate)
+						) && 
 						(secsSinceChosenReq == FLT_MAX || secsSinceReq < secsSinceChosenReq)
 					);
 					// If the menu-associated refr the same as the request's one?
@@ -5865,15 +6176,23 @@ namespace ALYSLC
 							// the requesting menu control CID, 
 							// which bypasses queued request checks done here. 
 							// Serves more as a failsafe.
-							if ((Hash(currentReq.reqMenuName) == 
-								Hash(GlobalCoopData::CUSTOM_MENU)) ||
-								(currentReq.fromAction == InputAction::kCoopDebugMenu ||
-								currentReq.fromAction == InputAction::kCoopIdlesMenu ||
-								currentReq.fromAction == InputAction::kCoopMiniGamesMenu ||
-								currentReq.fromAction == InputAction::kCoopSummoningMenu ||
-								currentReq.fromAction == InputAction::kStatsMenu ||
-								currentReq.fromAction == InputAction::kTeleportToPlayer || 
-								currentReq.fromAction == InputAction::kTradeWithPlayer))
+							bool isDirectRequest = 
+							(
+								(
+									Hash(currentReq.reqMenuName) == 
+									Hash(GlobalCoopData::CUSTOM_MENU)
+								) ||
+								(
+									currentReq.fromAction == InputAction::kCoopDebugMenu ||
+									currentReq.fromAction == InputAction::kCoopIdlesMenu ||
+									currentReq.fromAction == InputAction::kCoopMiniGamesMenu ||
+									currentReq.fromAction == InputAction::kCoopSummoningMenu ||
+									currentReq.fromAction == InputAction::kStatsMenu ||
+									currentReq.fromAction == InputAction::kTeleportToPlayer || 
+									currentReq.fromAction == InputAction::kTradeWithPlayer
+								)
+							);
+							if (isDirectRequest)
 							{
 								secsSinceChosenReq = secsSinceReq;
 								resolvedCID = p->controllerID;
@@ -6004,7 +6323,8 @@ namespace ALYSLC
 							menuOpeningActionRequests[cid].pop_front();
 						}
 					}
-					else if (checkForNewestReq)
+					
+					if (checkForNewestReq)
 					{
 						// Direct requests can considered up to 5 seconds after enqueueing.
 						bool directlyRequested = 
@@ -6014,7 +6334,7 @@ namespace ALYSLC
 						// Can be triggered by a variety of things,
 						// so if no direct request was made, 
 						// choose the player that most recently activated an object.
-						// Shorter maximum request lifetime of 1 second here, 
+						// Shorter maximum request lifetime of 2 seconds here, 
 						// since more often than not, P1 should gain control of the menu.
 						bool throughActivation = 
 						(
@@ -6024,15 +6344,11 @@ namespace ALYSLC
 						);
 						if (directlyRequested || throughActivation) 
 						{
-							// Re-insert and do not remove,
+							// Do not remove,
 							// since multiple queued message box menus tend to 
 							// open in quick succession, and we want the same player 
 							// to retain control over all menus queued to open.
-							if (a_modifyReqQueue)
-							{
-								menuOpeningActionRequests[cid].emplace_front(currentReq);
-							}
-
+							
 							// Update seconds since most recent request.
 							secsSinceChosenReq = secsSinceReq;
 							resolvedCID = p->controllerID;
@@ -6080,13 +6396,27 @@ namespace ALYSLC
 		// give P1 control of menus.
 		if (resolvedCID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
 		{
-			if (glob.coopPlayers[glob.player1CID]->IsRunning()) 
+			// Always give P1 control of the Console Menu, 
+			// since companion players cannot control the keyboard anyways.
+			bool givePreviousPlayerControl = 
+			(
+				(a_menuName != RE::Console::MENU_NAME) && 
+				(
+					(glob.coopPlayers[glob.player1CID]->IsRunning()) ||
+					(glob.supportedMenuOpen && glob.mim->IsRunning())
+				)
+			);
+			if (givePreviousPlayerControl) 
 			{
 				SPDLOG_DEBUG
 				(
 					"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
-					"No valid requests to open supported menu {}, set to last menu CID: {}", 
-					a_menuName, glob.prevMenuCID
+					"No valid requests to open supported menu {}, set to last menu CID: {}. "
+					"Supported menus open: {}, data copied over: 0x{:X}.", 
+					a_menuName,
+					glob.prevMenuCID,
+					glob.supportedMenuOpen.load(),
+					*glob.copiedPlayerDataTypes
 				);
 				resolvedCID = glob.prevMenuCID;
 			}
@@ -6096,9 +6426,14 @@ namespace ALYSLC
 				(
 					"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
 					"No valid requests to open supported menu {} "
-					"while P1's managers are inactive, set to P1 CID: {}", 
-					a_menuName, 
-					glob.player1CID
+					"and P1's managers are inactive or the Console Menu is opening/closing, "
+					"set to P1 CID: {}. " 
+					"Supported menus open: {}, data copied over: 0x{:X}.", 
+					a_menuName,
+					glob.player1CID, 
+					glob.supportedMenuOpen.load(),
+					*glob.copiedPlayerDataTypes
+
 				);
 				resolvedCID = glob.player1CID;
 			}
