@@ -3,21 +3,22 @@
 
 namespace ALYSLC
 {
-	PRECISION_API::IVPrecision1* PrecisionCompat::g_precisionAPI1;
-	PRECISION_API::IVPrecision3* PrecisionCompat::g_precisionAPI3;
-	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4;
-	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3;
-	bool EnderalCompat::g_enderalSSEInstalled;
-	bool MCOCompat::g_mcoInstalled;
-	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled;
-	bool PrecisionCompat::g_precisionInstalled;
-	bool QuickLootCompat::g_quickLootInstalled;
-	bool RequiemCompat::g_requiemInstalled;
-	bool SkyrimsParagliderCompat::g_paragliderInstalled;
-	bool SkyrimsParagliderCompat::g_p1HasParaglider;
-	bool TKDodgeCompat::g_tkDodgeInstalled;
-	bool TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled;
-	bool TrueHUDCompat::g_trueHUDInstalled;
+	PRECISION_API::IVPrecision1* PrecisionCompat::g_precisionAPI1{ nullptr };
+	PRECISION_API::IVPrecision3* PrecisionCompat::g_precisionAPI3{ nullptr };
+	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4{ nullptr };
+	TRUEHUD_API::IVTrueHUD1* TrueHUDCompat::g_trueHUDAPI1{ nullptr };
+	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3{ nullptr };
+	bool EnderalCompat::g_enderalSSEInstalled{ false };
+	bool MCOCompat::g_mcoInstalled{ false };
+	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled{ false };
+	bool PrecisionCompat::g_precisionInstalled{ false };
+	bool QuickLootCompat::g_quickLootInstalled{ false };
+	bool RequiemCompat::g_requiemInstalled{ false };
+	bool SkyrimsParagliderCompat::g_paragliderInstalled{ false };
+	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
+	bool TKDodgeCompat::g_tkDodgeInstalled{ false };
+	bool TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled{ false };
+	bool TrueHUDCompat::g_trueHUDInstalled{ false };
 
 	void EnderalCompat::CheckForEnderalSSE()
 	{
@@ -250,6 +251,7 @@ namespace ALYSLC
 		{
 			g_trueHUDInstalled = true;
 			SPDLOG_INFO("[Compatibility] Mod {} is installed.", TRUEHUD_API::TrueHUDPluginName);
+
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>
 			(
 				TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V3)
@@ -261,6 +263,20 @@ namespace ALYSLC
 			else
 			{
 				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
+				return;
+			}
+
+			g_trueHUDAPI1 = reinterpret_cast<TRUEHUD_API::IVTrueHUD1*>
+			(
+				TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V1)
+			);
+			if (g_trueHUDAPI1)
+			{
+				SPDLOG_INFO("[Compatibility] Received access to TrueHUD API V1.");
+			}
+			else
+			{
+				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V1.");
 				return;
 			}
 

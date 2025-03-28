@@ -894,6 +894,32 @@ namespace ALYSLC
 				RELOCATION_ID(76160, 77988) 
 			};
 
+			inline bool ActivateRefr
+			(
+				RE::TESObjectREFR* a_targetRefr,
+				RE::TESObjectREFR* a_activator, 
+				uint8_t a_arg2, 
+				RE::TESBoundObject* a_object, 
+				int32_t a_count, 
+				bool a_defaultProcessingOnly
+			)
+			{
+				using func_t = decltype(ActivateRefr);
+				REL::Relocation<func_t> func{ RELOCATION_ID(19369, 19796) };
+				return 
+				(
+					func
+					(
+						a_targetRefr,
+						a_activator, 
+						a_arg2, 
+						a_object, 
+						a_count, 
+						a_defaultProcessingOnly
+					)
+				);
+			}
+
 			// Credits to adamhynek for the VR offset from his awesome mod PLANCK:
 			// https://github.com/adamhynek/activeragdoll/blob/master/src/RE/offsets.cpp#L304
 			// and to alandtse for Skyrim VR Address Library:
@@ -1269,7 +1295,7 @@ namespace ALYSLC
 		// Have the given activator refr activate the given interaction target refr.
 		// Can specify the refr's corresponding bound object,
 		// the number to activate, and if only default processing should be used.
-		inline void ActivateRef
+		inline void ActivateRefr
 		(
 			RE::TESObjectREFR* a_interactionTarget,
 			RE::TESObjectREFR* a_activator,
@@ -1291,9 +1317,14 @@ namespace ALYSLC
 			}
 
 			// Interaction target calls activate on itself.
-			a_interactionTarget->ActivateRef
+			Util::NativeFunctions::ActivateRefr
 			(
-				a_activator, a_arg2, a_object, a_count, a_defaultProcessingOnly
+				a_interactionTarget, 
+				a_activator,
+				a_arg2, 
+				a_object,
+				a_count, 
+				a_defaultProcessingOnly
 			);
 		}
 
@@ -2412,6 +2443,36 @@ namespace ALYSLC
 			return false;
 		}
 
+		
+		// Send a combat state change event constructed with the given source actor, 
+		// target actor, and combat state to set.
+		inline void SendCombatEvent
+		(
+			RE::TESObjectREFR* a_combatStateActor, 
+			RE::TESObjectREFR* a_targetActor,
+			RE::ACTOR_COMBAT_STATE&& a_newState
+		)
+		{
+			if (auto sesh = RE::ScriptEventSourceHolder::GetSingleton(); sesh)
+			{
+				// Construct and send event.
+				std::unique_ptr<RE::TESCombatEvent> combatEvent = 
+				(
+					std::make_unique<RE::TESCombatEvent>()
+				);
+				std::memset(combatEvent.get(), 0, sizeof(RE::TESCombatEvent));
+				if (combatEvent && combatEvent.get())
+				{
+					combatEvent->actor = RE::NiPointer<RE::TESObjectREFR>(a_combatStateActor);
+					combatEvent->targetActor = RE::NiPointer<RE::TESObjectREFR>(a_targetActor);
+					combatEvent->newState = a_newState;
+					sesh->SendEvent(combatEvent.get());
+				}
+
+				combatEvent.reset();
+			}
+		}
+
 		// Send a critical hit event constructed with the given aggressor actor,
 		// source weapon, and sneak attack flag (if requested).
 		inline void SendCriticalHitEvent
@@ -2739,7 +2800,8 @@ namespace ALYSLC
 			RE::Actor* a_observer, 
 			bool a_forCrosshairSelection, 
 			bool a_checkCrosshairPos, 
-			const RE::NiPoint3& a_crosshairWorldPos
+			const RE::NiPoint3& a_crosshairWorldPos,
+			bool a_showDebugDraws = false
 		);
 		
 		// Helper function which performs a series of raycasts
@@ -2755,7 +2817,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects, 
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
-			bool&& a_showDebugDraws = false
+			bool a_showDebugDraws = false
 		);
 
 		// Helper function which performs a series of raycasts
@@ -2771,7 +2833,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos, 
-			bool&& a_showDebugDraws = false
+			bool a_showDebugDraws = false
 		);
 
 		// Get interpolated values using various interpolation functions.
@@ -2968,9 +3030,11 @@ namespace ALYSLC
 			const RE::BSFixedString& a_ueString, float a_xValue, float a_yValue, bool a_isLS
 		);
 
+		// NOTE:
+		// Unused for now. Have to learn more about Havok.
 		// Allow the given 3D object to (not) collide with alive/dead actors when in co-op.
 		void Set3DCollisionFilterInfo(RE::NiAVObject* a_refr3D, const bool& a_set);
-
+		
 		// Set detection event for the given actor triggered by the collision 
 		// of the given refr/rigid body at the given contact point.
 		void SetActorsDetectionEvent
@@ -2985,7 +3049,14 @@ namespace ALYSLC
 		void SetCameraPosition(RE::TESCamera* a_cam, const RE::NiPoint3& a_position);
 
 		// Set the game's current camera rotation to the given pitch and yaw.
-		void SetCameraRotation(RE::TESCamera* a_cam, const float& a_pitch, const float& a_yaw);
+		// Can also override the local rotation as well.
+		void SetCameraRotation
+		(
+			RE::TESCamera* a_cam,
+			const float& a_pitch, 
+			const float& a_yaw,
+			bool a_overrideLocalRotation
+		);
 
 		// Set the given actor's linear velocity to the given velocity.
 		void SetLinearVelocity(RE::Actor* a_actor, RE::NiPoint3 a_velocity);

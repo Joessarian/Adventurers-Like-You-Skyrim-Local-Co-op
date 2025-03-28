@@ -671,12 +671,6 @@ namespace ALYSLC
 					Settings::fCamNoCollisionInterpFactor
 				);
 			}
-
-			camInterpFactorFrameDep = min
-			(
-				1.0f, 
-				*g_deltaTimeRealTime * 60.0f * camInterpFactor
-			);
 		}
 
 		// Set orientation (rotation and position) for the camera.
@@ -688,10 +682,18 @@ namespace ALYSLC
 			}
 
 			Util::SetCameraPosition(playerCam, camTargetPos);
-			Util::SetCameraRotation(playerCam, camPitch, camYaw);
-			RE::NiUpdateData updateData;
-			playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
+			// NOTE:
+			// Have not figured out why rotation fails unless the camera's local rotation 
+			// is overidden while in manual positioning mode 
+			// and while the default third person camera state is not active
+			// (ex. P1 ragdolled or on horseback).
+			Util::SetCameraRotation
+			(
+				playerCam, camPitch, camYaw, isManuallyPositioned
+			);
 
+			RE::NiUpdateData updateData{ };
+			playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
 			if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
 			{
 				Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
@@ -993,8 +995,6 @@ namespace ALYSLC
 		// after collisions with world geometry are taken into account.
 		float camHeightOffset;
 		// Interpolation factors for positioning/rotation.
-		// Frame rate dependent and base.
-		float camInterpFactorFrameDep;
 		float camInterpFactor;
 		// Max and min Z positions bound by collidable surfaces above and below
 		// the current origin point.

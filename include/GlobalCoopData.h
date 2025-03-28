@@ -327,6 +327,8 @@ namespace ALYSLC
 				hotkeyedForms.fill(nullptr);
 				skillBaseLevelsList.fill(0.0f);
 				skillLevelIncreasesList.fill(0.0f);
+				skillLevelsOnMenuEntry.fill(15.0f);
+				skillLevelThresholdsOnMenuEntry.fill(0.0f);
 				skillXPList.fill(0.0f);
 			}
 
@@ -371,6 +373,8 @@ namespace ALYSLC
 				unlockedPerksList(a_unlockedPerksList)
 			{
 				hmsBaseAVsOnMenuEntry.fill(0.0f);
+				skillLevelsOnMenuEntry.fill(15.0f);
+				skillLevelThresholdsOnMenuEntry.fill(0.0f);
 				unlockedPerksSet = std::set<RE::BGSPerk*>
 				(
 					unlockedPerksList.begin(), unlockedPerksList.end()
@@ -465,14 +469,17 @@ namespace ALYSLC
 			// Used levelup perk points.
 			uint32_t usedPerkPoints;
 
-			// [NOT Serialized]:
+			// [Helper data: NOT Serialized]:
 			// Previous total unlocked perks count.
 			uint32_t prevTotalUnlockedPerks;
-			// Helper data (not serialized).
 			// Previous HMS base actor values when opening the Stats Menu.
 			// NOTE: The difference in HMS between opening and closing the menu
 			// is used to calculate how many times the player leveled up.
 			std::array<float, 3> hmsBaseAVsOnMenuEntry;
+			// P1 skill levels and skill level thresholds saved when a companion player 
+			// enters the Stats Menu and restored when the player exits the menu.
+			SkillList skillLevelsOnMenuEntry;
+			SkillList skillLevelThresholdsOnMenuEntry;
 
 		private:
 			// List of perks that the player has unlocked.
@@ -625,6 +632,11 @@ namespace ALYSLC
 		// Done to set an AV baseline for players introduced for the first time mid-playthrough.
 		static void PerformInitialAVAutoScaling();
 
+		// Reset the player's health/magicka/stamina AVs to their initial values,
+		// remove all unlocked perks, and also remove all unlocked shared perks 
+		// for all active players.
+		static void PerformPlayerRespec(RE::Actor* a_playerActor);
+
 		// Register for global script events to send data to the player ref alias script.
 		static void RegisterEvents();
 
@@ -650,6 +662,9 @@ namespace ALYSLC
 		// Concatenate all individual player crosshair text entries,
 		// and then set the crosshair's info text to the result.
 		static void SetCrosshairText();
+
+		// Set the default game settings values to revert to for player XP calculations.
+		static void SetDefaultXPBaseAndMultFromGameSettings();
 
 		// Set menu controller IDs (current and previous).
 		// -1 to reset.
@@ -767,6 +782,12 @@ namespace ALYSLC
 
 		// Stop P1's managers, disable the co-op camera, and close the menu input manager.
 		static void ResetPlayer1AndCameraTask();
+
+		// Prompt the player given by the CID to press the 'Start' button on their controller
+		// to confirm their intentions to respec their character.
+		// Then, reset their HMS AVs and perk data 
+		// and remove all shared perks from all active players.
+		static void RespecPlayerTask(const int32_t a_controllerID);
 
 		// Pause and then restart the co-op camera manager.
 		static void RestartCoopCameraTask();
@@ -1723,6 +1744,11 @@ namespace ALYSLC
 		bool globalDataInit = false;
 		// Is the game loading a save?
 		bool loadingASave = false;
+		// Default level up base and mult game settings' values
+		// set each time the player first loads a save, 
+		// since the default values are re-applied on loading a save.
+		float defXPLevelUpBase;
+		float defXPLevelUpMult;
 		// [Enderal only]
 		// Saved Crafting/Learning/Memory points from the last time these globals were checked.
 		// Used to check for increases in these values each frame.
@@ -1788,14 +1814,16 @@ namespace ALYSLC
 		// Set skill levels equal to the serialized base AV level + skill increment amount.
 		static void RescaleSkillAVs(RE::Actor* a_playerActor);
 		
-		// On class/race change, the player's base AVs have changed
-		// and therefore their shared skill AV levels may not be high enough
-		// for the currently unlocked shared perks.
-		// The given player has all their perks removed and can respec.
-		// In addition, all players are refunded shared perk points and can re-select 
-		// the perks that they want.
-		static void ResetPerkDataOnBaseSkillAVChange(RE::Actor* a_playerActor);
-		
+		// The given player has all their perks removed, is refunded all perk points,
+		// and can respec.
+		// In addition, all other players are refunded shared perk points and can re-select 
+		// the perks that they want with these points.
+		static void ResetPerkData(RE::Actor* a_playerActor);
+
+		// Resets the given player's health/magicka/stamina actor values to their initial values,
+		// undoing all serialized progress to these AVs.
+		static void ResetToBaseHealthMagickaStamina(RE::Actor* a_playerActor);
+
 		// Modify P1's level to trigger the game's actor value auto-scaling on other players.
 		// If the given player actor is nullptr,
 		// all players have their AVs auto-scaled without resetting any perk data.

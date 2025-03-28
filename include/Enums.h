@@ -42,9 +42,9 @@ namespace fmt
 		}
 
 		template <class FormatContext>
-		auto format(const RE::BSString& a_string, FormatContext& a_ctx)
+		auto format(const RE::BSString& a_string, FormatContext& a_ctx) const
 		{
-			return fmt::format_to(a_ctx.out(), "{}", a_string.data());
+			return fmt::format_to(a_ctx.out(), "{}", a_string.c_str());
 		}
 	};
 }
@@ -86,8 +86,9 @@ namespace ALYSLC
 					// and lock on target in frame as much as possible.
 		kRotation,	// Camera rotates to keep the lock on target on screen. 
 					// Can zoom in/out normally.
-		kZoom		// Camera zooms out to keep all players and the lock on target in frame. 
+		kZoom,		// Camera zooms out to keep all players and the lock on target in frame. 
 					//Can adjust rotation manually.
+		kTotal
 	};
 
 	// Update camera data types if at least the given number of frames have elapsed.
@@ -251,7 +252,8 @@ namespace ALYSLC
 	{
 		kNone,			// No auto-equip.
 		kHighestCount,	// Equip matching ammo with the highest count.
-		kHighestDamage	// Equip matching ammo with the highest damage.
+		kHighestDamage,	// Equip matching ammo with the highest damage.
+		kTotal
 	};
 
 	// Types of cyclable items.
@@ -808,10 +810,10 @@ namespace ALYSLC
 	// Criteria checked before knocking down a slapped actor.
 	enum class SlapKnockdownCriteria
 	{
-		kNoKnockdowns,			// No knockdowns from slap collisions.
-		kOnlyHeadshots,			// Only knock down when hitting a head node
-								// with a sufficiently fast slap.
-		kSufficientContactSpeed	// Only knock down if an arm node makes sufficiently fast contact.
+		kNoKnockdowns,				// No knockdowns from slap collisions.
+		kOnlyStrongHeadshots,		// Only knock down when hitting a head node with a fast slap.
+		kSufficientContactSpeed,	// Only knock down if arm node makes sufficiently fast contact.
+		kTotal
 	};
 
 	// Types of contextual actions that can be performed with the 'SpecialAction' bind.
@@ -919,11 +921,12 @@ namespace ALYSLC
 	// Projectile trajectory type for each player.
 	enum class ProjectileTrajType : std::uint8_t
 	{
-		kAimDirection,	// Shoot in aiming direction, no trajectory modification after launch.
 		kHoming,		// Shoot at target/crosshair position. 
 						// Trajectory modification during lifetime of projectile.
-		kPrediction		// Predict target intercept position on launch. 
+		kPrediction,	// Predict target intercept position on launch. 
 						// No trajectory modification afterward.
+		kAimDirection,	// Shoot in aiming direction, no trajectory modification after launch.
+		kTotal
 	};
 
 	// Used when comparing and grouping objects for activation 
@@ -1002,11 +1005,12 @@ namespace ALYSLC
 	};
 
 	// Player indicator visibility settings.
-	enum PlayerIndicatorVisibilityType : std::uint8_t
+	enum class PlayerIndicatorVisibilityType : std::uint8_t
 	{
 		kDisabled,		// Never show.
 		kLowVisibility,	// Only show when the player is obscured or far away.
-		kAlways			// Always show.
+		kAlways,		// Always show.
+		kTotal
 	};
 
 	// Maps each action to its string name for logger prints.

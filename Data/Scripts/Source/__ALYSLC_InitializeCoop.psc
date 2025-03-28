@@ -82,7 +82,7 @@ Function Init()
 
 	; Weird crashes sometimes occur if any loaded co-op entity does not have collision enabled 
 	; when the the game loads in.
-	ALYSLC.ToggleCoopEntityCollision(True)
+	ALYSLC.EnableCoopEntityCollision()
 	; Indicate that co-op session is over and 
 	; pause listener threads for refresh if needed.
 	ALYSLC.SignalWaitForUpdate(True)
@@ -168,7 +168,7 @@ Function Init()
 		
 	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
 	If (FirstTimeInit)
-		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.")
+		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
 	EndIf
 EndFunction
 

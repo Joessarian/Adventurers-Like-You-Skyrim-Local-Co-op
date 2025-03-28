@@ -12,7 +12,7 @@ namespace ALYSLC
 	// Player manager that handles crosshair targeting, interaction with nearby objects,
 	// player crosshair notification messages, and the physics of projectiles, 
 	// ragdolling actors, and grabbed objects.
-	// All player -> environment targeting and interactions.
+	// All player-to-environment targeting and interactions.
 	struct TargetingManager : public Manager
 	{
 		// Information pertaining to an on-screen player-specific message
@@ -868,13 +868,19 @@ namespace ALYSLC
 
 			// Add the given refr to the grabbed list 
 			// if the maximum number of grabbed refrs has not been reached.
-			void AddGrabbedRefr
+			// Returns the next open index in the grabbed refr list
+			// at which the requested refr was inserted, 
+			// or -1 if the requested refr could not be grabbed.
+			int32_t AddGrabbedRefr
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_handle
 			);
 
 			// Add the given refr to the released list and set its release trajectory.
-			void AddReleasedRefr
+			// Returns the next open index in the released refr list
+			// at which the requested refr was inserted, 
+			// or -1 if the requested refr could not be released.
+			int32_t AddReleasedRefr
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, const RE::ObjectRefHandle& a_handle
 			);
@@ -1545,7 +1551,7 @@ namespace ALYSLC
 		// Set the player's last position and facing angle when cycling nearby activation refrs.
 		inline void SetLastActivationCyclingOrientation()
 		{
-			lastActivationReqPos = Util::Get3DCenterPos(coopActor.get());
+			lastActivationReqPos = coopActor->data.location;
 			lastActivationFacingAngle = coopActor->GetHeading(false);
 		}
 
@@ -1606,18 +1612,26 @@ namespace ALYSLC
 		);
 
 		// Get the closest targetable actor to the source refr 
-		// using the given FOV in radians centered at their aiming angle (LS or heading angle),
-		// and the given maximum range (XY or XYZ distance) to consider targets.
+		// (or player if no source refr handle is given)
+		// using the given FOV in radians centered at their aiming angle 
+		// (LS or heading angle in world or screen space),
+		// and the given maximum range to consider targets 
+		// (screen pixel distance or world XY or XYZ distance).
 		// If range is given as '-1', ignore the range check.
 		// If combat-dependent selection is requested, only consider hostile actors, 
 		// unless attempting to heal a target.
+		// If screen position checks are requested,
+		// all world positions are converted to screen positions before performing FOV checks,
+		// the FOV window is centered about the player's center in screen space, 
+		// and the given range should be given in pixels.
 		RE::ActorHandle GetClosestTargetableActorInFOV
 		(
 			const float& a_fovRads,
 			RE::ObjectRefHandle a_sourceRefrHandle = RE::ObjectRefHandle(),
 			const bool& a_useXYDistance = false, 
 			const float& a_range = -1.0f, 
-			const bool& a_combatDependentSelection = true
+			const bool& a_combatDependentSelection = true,
+			const bool& a_useScreenPositions = false
 		);
 		
 		// Get detection-level-modified gradient RGB value.
@@ -1720,13 +1734,6 @@ namespace ALYSLC
 		// Used to maintain up-to-date info on the selected crosshair target
 		// or stealth state while the player is sneaking.
 		void SetPeriodicCrosshairMessage(const CrosshairMessageType& a_type);
-
-		// Returns true if the cached refrs used previously when selecting
-		// a proximity refr should be refreshed:
-		// 1. The player's last activation position is too far away from their current position 
-		// -OR-
-		// 2. The player has turned away from their previous activation facing angle.
-		bool ShouldRefreshNearbyReferences();
 
 		// NOTE: Only when aim correction is enabled for this player.
 		// Either select a new aim correction target, clear the current invalid one,

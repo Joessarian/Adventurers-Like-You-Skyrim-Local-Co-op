@@ -446,6 +446,12 @@ namespace ALYSLC
 			(
 				dataHandler->LookupForm<RE::TESFaction>(0x53AF5, GlobalCoopData::PLUGIN_NAME)
 			);
+
+			// Potential follower faction.
+			glob.coopPlayerFactions.emplace_back
+			(
+				RE::TESForm::LookupByID<RE::TESFaction>(0x5C84D)
+			);
 			
 			// [Enderal Only]
 			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
@@ -666,6 +672,9 @@ namespace ALYSLC
 		AssignSkeletonSpecificKillmoves();
 		AssignGenericKillmoves();
 
+		// Set default XP-related game settings' values.
+		SetDefaultXPBaseAndMultFromGameSettings();
+
 		// Initialize managers, holders, and other global data members and wrap in smart pointers.
 		glob.cam = std::make_unique<CameraManager>();
 		glob.cdh = std::make_unique<ControllerDataHolder>();
@@ -789,6 +798,48 @@ namespace ALYSLC
 			return;
 		}
 
+		// If this function is called before any LevelUp menus open,
+		// we have to anticipate what level P1 will level up to after all LevelUp menus open.
+		auto currentLevel = p1->GetLevel();
+		uint32_t expectedLevelAfterLevelUp = currentLevel;
+		// Default values.
+		float fXPLevelUpMult = glob.defXPLevelUpMult;
+		float fXPLevelUpBase = glob.defXPLevelUpBase;
+		float thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+		(
+			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
+		);
+		float remainingXP = p1->skills->data->xp;
+		SPDLOG_DEBUG
+		(
+			"[GLOB] AdjustAllPlayerPerkCounts: Current level: {}, "
+			"remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
+			currentLevel,
+			remainingXP,
+			thresholdAtLevel,
+			fXPLevelUpBase,
+			fXPLevelUpMult
+		);
+		// Increment the expected level until there is not enough remaining XP to advance a level.
+		while (remainingXP >= thresholdAtLevel)
+		{
+			remainingXP -= thresholdAtLevel;
+			expectedLevelAfterLevelUp++;
+			// Set the level up XP threshold for the next level.
+			thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+			(
+				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] AdjustAllPlayerPerkCounts: Next level: {}, "
+				"remaining XP: {}, new threshold: {}.",
+				expectedLevelAfterLevelUp,
+				remainingXP,
+				thresholdAtLevel
+			);
+		}
+
 		// Adjust perk counts (used, available, extra, shared) for each player.
 		// Used perk points = 
 		// this player's total unlocked perks - 
@@ -799,13 +850,25 @@ namespace ALYSLC
 		{
 			const auto& unlockedPerksList = data->GetUnlockedPerksList();
 			// Players start with 3 perk points at level 1 if using Requiem.
-			// TODO: Additional/variable awarded perk points per level.
+			// TODO: 
+			// Additional/variable awarded perk points per level.
 			uint32_t maxPerkPointsFromLevel = 
-			(
+			/*(
 				ALYSLC::RequiemCompat::g_requiemInstalled ?
 				p1->GetLevel() + 2 : 
 				p1->GetLevel() - 1
+			);*/
+			static_cast<uint32_t>
+			(
+				(
+					ALYSLC::RequiemCompat::g_requiemInstalled ? 
+					expectedLevelAfterLevelUp + 2 :
+					expectedLevelAfterLevelUp - 1
+				) * 
+				Settings::fPerkPointsPerLevelUp + 
+				Settings::uFlatPerkPointsIncrease
 			);
+
 			uint32_t totalUnlockedPerks = unlockedPerksList.size();
 			RE::Actor* playerActor = nullptr;
 			bool isP1 = fid == p1->formID;
@@ -815,8 +878,12 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"[GLOB] AdjustAllPlayerPerkCounts: P1: CurrentXP: {}, "
-					"current level: {}, serialized number of unlocked perks: {}", 
-					p1->skills->data->xp, p1->GetLevel(), totalUnlockedPerks
+					"current level: {}, post-levelups: {}, "
+					"serialized number of unlocked perks: {}", 
+					p1->skills->data->xp, 
+					currentLevel, 
+					expectedLevelAfterLevelUp,
+					totalUnlockedPerks
 				);
 
 				// Ensure glob perk list matches the serialized one.
@@ -1007,20 +1074,22 @@ namespace ALYSLC
 					"[GLOB] AdjustAllPlayerPerkCounts: "
 					"{} has {}/{} unlocked perks, "
 					"{} unlocked shared perks out of {} total unlocked ({} by co-op companions), "
-					"max perk points from leveling at level {}: {}, "
+					"max perk points from leveling: {}, "
 					"extra perks: {}, for a total of {} used perk points. "
-					"Result: {} available perk points.",
+					"Result: {} available perk points. "
+					"Expected level after level up, current: {}, {}.",
 					playerActor->GetName(),
 					unlockedPerksList.size(),
 					totalUnlockedPerks,
 					data->sharedPerksUnlocked,
 					totalSharedPerksUnlocked,
 					coopCompanionSharedPerksUnlocked,
-					playerActor->GetLevel(),
 					maxPerkPointsFromLevel,
 					data->extraPerkPoints,
 					data->usedPerkPoints,
-					data->availablePerkPoints
+					data->availablePerkPoints,
+					expectedLevelAfterLevelUp,
+					currentLevel
 				);
 			}
 			else
@@ -1162,6 +1231,53 @@ namespace ALYSLC
 			);
 			return false;
 		}
+		
+		// If this function is called before any LevelUp menus open,
+		// we have to anticipate what level P1 will level up to after all LevelUp menus open.
+		auto currentLevel = p1->GetLevel();
+		uint32_t expectedLevelAfterLevelUp = currentLevel;
+		uint32_t expectedLevelUps = 0;
+		// Default values.
+		float fXPLevelUpMult = glob.defXPLevelUpMult;
+		float fXPLevelUpBase = glob.defXPLevelUpBase;
+		float thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+		(
+			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
+		);
+		float remainingXP = p1->skills->data->xp;
+		SPDLOG_DEBUG
+		(
+			"[GLOB] AdjustInitialPlayer1PerkPoints: Current level: {}, "
+			"remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
+			currentLevel,
+			remainingXP,
+			thresholdAtLevel,
+			fXPLevelUpBase,
+			fXPLevelUpMult
+		);
+		// Increment the expected level until there is not enough remaining XP 
+		// to advance a level.
+		while (remainingXP >= thresholdAtLevel)
+		{
+			remainingXP -= thresholdAtLevel;
+			expectedLevelAfterLevelUp++;
+			// Set the level up XP threshold for the next level.
+			thresholdAtLevel = Settings::fLevelUpXPThresholdMult *
+			(
+				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] AdjustInitialPlayer1PerkPoints: Next level: {}, "
+				"remaining XP: {}, new threshold: {}.",
+				expectedLevelAfterLevelUp,
+				remainingXP,
+				thresholdAtLevel
+			);
+		}
+
+		// Set the number of expected level ups due to XP overflowing the level up threshold.
+		expectedLevelUps = expectedLevelAfterLevelUp - currentLevel;
 
 		// Get HMS points increase per level up.
 		uint32_t iAVDhmsLevelUp = 10;
@@ -1195,7 +1311,8 @@ namespace ALYSLC
 			"[GLOB] AdjustInitialPlayer1PerkPoints: "
 			"{}'s level up count from HMS increases so far: "
 			"{} (({} + {} + {}) / {}), level ups still available: {}. "
-			"Available perk points: {}. Perk points total from P1 singleton: {}.",
+			"Available perk points: {}. "
+			"Perk points total from P1 singleton before modification: {}.",
 			a_playerActor->GetName(),
 			hmsLevelUpsCount,
 			data->hmsPointIncreasesList[0],
@@ -1218,41 +1335,42 @@ namespace ALYSLC
 		// Also, add perk points without showing the HMS level up message box.
 		if (availableHMSLevelUps == 0)
 		{
-			// No level ups, but ensure the player has the right number of perk points to spend.
-			p1->perkCount = data->availablePerkPoints;
+			// LevelUp menus will trigger and each one that triggers will add 1 to the perk
+			// count total, so we must anticipate and factor out these extra perks
+			// when figuring out how many perk points to set.
+			p1->perkCount = data->availablePerkPoints - expectedLevelUps;
 
 			SPDLOG_DEBUG
 			(
 				"[GLOB] AdjustInitialPlayer1PerkPoints: "
-				"No available HMS level ups, but there are {} perk points available for use.", 
-				data->availablePerkPoints
+				"No available HMS level ups, but there are {} perk points available for use. "
+				"{} is expected to level up from {} to {}, "
+				"meaning an extra {} perk points must be subtracted from their total.", 
+				data->availablePerkPoints,
+				a_playerActor ? a_playerActor->GetName() : "P1",
+				currentLevel,
+				expectedLevelAfterLevelUp,
+				expectedLevelUps
 			);
 		}
 		else
 		{
-			// Additional perk points to add on top of the ones granted with each LevelUp Menu.
-			int16_t perkPointsToAdd = data->availablePerkPoints - availableHMSLevelUps;
-
 			SPDLOG_DEBUG
 			(
 				"[GLOB] AdjustInitialPlayer1PerkPoints: "
 				"{} is attempting to access the level up menu, and has {} available perk points, "
-				"with {} available HMS level ups. Adding {} perk points without HMS message box.",
+				"with {} available HMS level ups and {} expected level ups. "
+				"Adding {} perk points on top of the points given by the LevelUp dialogs.",
 				a_playerActor->GetName(), 
 				data->availablePerkPoints, 
 				availableHMSLevelUps, 
-				perkPointsToAdd
+				expectedLevelUps,
+				data->availablePerkPoints - availableHMSLevelUps - expectedLevelUps
 			);
-			SPDLOG_DEBUG
-			(
-				"[GLOB] AdjustInitialPlayer1PerkPoints: "
-				"New avaialble perk points (added + from level ups): {}, ({} + {})",
-				perkPointsToAdd + playerLevel - targetDipLevel, 
-				perkPointsToAdd, 
-				playerLevel - targetDipLevel
-			);
-
-			p1->perkCount = perkPointsToAdd;
+			
+			// Additional perk points to add on top of the ones granted with each LevelUp Menu,
+			// whether triggered naturally by leveling or by dipping P1's level below.
+			p1->perkCount = data->availablePerkPoints - availableHMSLevelUps - expectedLevelUps;
 			if (!dipP1Level) 
 			{
 				SPDLOG_DEBUG("[GLOB] AdjustInitialPlayer1PerkPoints: No level dip needed.");
@@ -1278,8 +1396,8 @@ namespace ALYSLC
 			}
 
 			float savedPlayerXP = p1->skills->data->xp;
-			float defMult = 25.0f;
-			float defBase = 75.0f;
+			float defMult = glob.defXPLevelUpMult;
+			float defBase = glob.defXPLevelUpBase;
 			float stepLevel = targetDipLevel;
 			float thresholdAtLevel = (defBase + (defMult * stepLevel));
 			float xpInc = 0.0f;
@@ -1376,6 +1494,33 @@ namespace ALYSLC
 			SyncSharedPerks();
 			// Lastly, adjust perk counts.
 			AdjustAllPlayerPerkCounts();
+
+			// REMOVE when done debugging.
+			if (!glob.serializablePlayerData.empty() && 
+				glob.serializablePlayerData.contains(p1->formID))
+			{
+				const auto& data = glob.serializablePlayerData.at(p1->formID);
+				const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
+				SPDLOG_DEBUG
+				(
+					"[GLOB] AdjustPerkDataForPlayer1: P1 has unlocked {} perks "
+					"and has {} remaining perk points for {} total perk points available "
+					"(default max is {}).",
+					unlockedPerksSet.size(),
+					p1->perkCount,
+					unlockedPerksSet.size() + p1->perkCount,
+					static_cast<uint32_t>
+					(
+						(
+							ALYSLC::RequiemCompat::g_requiemInstalled ? 
+							p1->GetLevel() + 2 :
+							p1->GetLevel() - 1
+						) * 
+						Settings::fPerkPointsPerLevelUp + 
+						Settings::uFlatPerkPointsIncrease
+					)
+				);
+			}
 		}
 	}
 
@@ -2686,7 +2831,7 @@ namespace ALYSLC
 
 		auto& glob = GetSingleton();
 
-		if (!glob.coopSessionActive || !Settings::bRotateArmsWhenSheathed)
+		if (!glob.coopSessionActive || !Settings::bEnableArmsRotation)
 		{
 			return;
 		}
@@ -2980,7 +3125,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				if (Settings::bRotateArmsWhenSheathed)
+				if (Settings::bEnableArmsRotation)
 				{
 					// Get all arm nodes.
 					auto leftShoulderNode = 
@@ -3490,14 +3635,14 @@ namespace ALYSLC
 		}
 
 		// Scale levelup threshold with respect to the vanilla game's base and mult values for XP.
-		float defBase = 75.0f;
+		float defBase = glob.defXPLevelUpBase;
 		auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase");
 		if (valueOpt.has_value())
 		{
 			defBase = valueOpt.value();
 		}
 
-		float defMult = 25.0f;
+		float defMult = glob.defXPLevelUpMult;
 		float currentMult = defMult;
 		if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult"); valueOpt.has_value())
 		{
@@ -3516,6 +3661,11 @@ namespace ALYSLC
 					(defBase + currentLevel * defMult) - defBase
 				) / (currentLevel)
 			);
+		}
+		else
+		{
+			// Restore the saved original.
+			newMult = glob.defXPLevelUpMult;
 		}
 
 		// Set the new mult.
@@ -3537,6 +3687,11 @@ namespace ALYSLC
 		if (a_setForCoop)
 		{
 			newThreshold = Settings::fLevelUpXPThresholdMult * defaultThreshold;
+		}
+		else
+		{
+			// Restore the original.
+			newThreshold = defaultThreshold;
 		}
 
 		// Set new threshold.
@@ -3675,6 +3830,21 @@ namespace ALYSLC
 #endif
 			}
 		}
+	}
+
+	void GlobalCoopData::PerformPlayerRespec(RE::Actor* a_playerActor)
+	{
+		// Reset the player's health/magicka/stamina AVs to their initial values,
+		// remove all unlocked perks, and also remove all unlocked shared perks 
+		// for all active players.
+
+		if (!a_playerActor)
+		{
+			return;
+		}
+
+		ResetToBaseHealthMagickaStamina(a_playerActor);
+		ResetPerkData(a_playerActor);
 	}
 
 	void GlobalCoopData::RegisterEvents()
@@ -4144,6 +4314,31 @@ namespace ALYSLC
 					}
 				}
 			}
+		);
+	}
+
+	void GlobalCoopData::SetDefaultXPBaseAndMultFromGameSettings()
+	{
+		auto& glob = GetSingleton();
+
+		glob.defXPLevelUpMult = 25.0f;
+		glob.defXPLevelUpBase = 75.0f;
+		auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
+		if (valueOpt.has_value())
+		{
+			glob.defXPLevelUpMult = valueOpt.value();
+		}
+
+		if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
+		{
+			glob.defXPLevelUpBase = valueOpt.value();
+		}
+
+		SPDLOG_DEBUG
+		(
+			"[GLOB] SetDefaultXPBaseAndMultFromGameSettings: "
+			"Default XP game settings: base: {}, mult: {}.",
+			glob.defXPLevelUpBase, glob.defXPLevelUpMult
 		);
 	}
 
@@ -6730,7 +6925,7 @@ namespace ALYSLC
 		auto& p1SerializedData = glob.serializablePlayerData.at(p1->formID);
 		auto& coopPlayerSerializedData = glob.serializablePlayerData.at(a_coopActor->formID);
 
-		auto adjustSkillXP =
+		auto adjustSkillXP = 
 		[p1, a_coopActor, &a_shouldImport, &glob, &p1SerializedData, &coopPlayerSerializedData]() 
 		{
 			if (a_shouldImport)
@@ -6758,23 +6953,74 @@ namespace ALYSLC
 							"Lock obtained. (0x{:X})",
 							std::hash<std::jthread::id>()(std::this_thread::get_id()));
 
-						// Save P1's current XP for this skill 
-						// and then import the companion player's XP.
+						// Save P1's current XP, level, and level threshold for this skill 
+						// and then import the companion player's corresponding data.
+
+						// XP
 						p1SerializedData->skillXPList[i] = p1->skills->data->skills[i].xp;
 						p1->skills->data->skills[i].xp = coopPlayerSerializedData->skillXPList[i];
-							
+
+						// Level.
+						p1SerializedData->skillLevelsOnMenuEntry[i] = 
+						(
+							p1->skills->data->skills[i].level
+						);
+						p1->skills->data->skills[i].level = 
+						(
+							coopPlayerSerializedData->skillBaseLevelsList[i] + 
+							coopPlayerSerializedData->skillLevelIncreasesList[i]
+						);
+
+						// Level threshold.
+						// Source: https://en.uesp.net/wiki/Skyrim:Leveling#Skill_XP
+						// SkillLevelThreshold = ImproveMult * (CurrentLevel)^1.95 + ImproveOffset
+						auto actorValueList = RE::ActorValueList::GetSingleton(); 
+						if (actorValueList)
+						{
+							float skillCurveExp = 1.95f;
+							auto valueOpt = Util::GetGameSettingFloat("fSkillUseCurve");
+							if (valueOpt.has_value())
+							{
+								skillCurveExp = valueOpt.value();
+							}
+
+							auto avInfo = actorValueList->actorValues[!currentAV];
+							const auto p1 = RE::PlayerCharacter::GetSingleton(); 
+							if (avInfo && avInfo->skill)
+							{
+								auto avSkillInfo = avInfo->skill;
+								float newThreshold = 
+								(
+									avSkillInfo->improveMult * 
+									powf(p1->skills->data->skills[i].level, skillCurveExp) + 
+									avSkillInfo->improveOffset
+								);
+								p1SerializedData->skillLevelThresholdsOnMenuEntry[i] = 
+								(
+									p1->skills->data->skills[i].levelThreshold	
+								);
+								p1->skills->data->skills[i].levelThreshold = newThreshold;
+							}
+						}
+
 						SPDLOG_DEBUG
 						(
 							"[GLOB] CopyOverPerkTrees Import: AdjustSkillXP: "
 							"Saved skill {}'s XP ({}) for P1. "
-							"{}'s XP ({}) was imported.",
+							"{}'s XP ({}) was imported. "
+							"Level changed from {} to {}."
+							"XP threshold changed from {} to {}.",
 							Util::GetActorValueName
 							(
 								glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
 							),
 							p1SerializedData->skillXPList[i],
 							a_coopActor->GetName(),
-							coopPlayerSerializedData->skillXPList[i]
+							coopPlayerSerializedData->skillXPList[i],
+							p1SerializedData->skillLevelsOnMenuEntry[i],
+							p1->skills->data->skills[i].level,
+							p1SerializedData->skillLevelThresholdsOnMenuEntry[i],
+							p1->skills->data->skills[i].levelThreshold
 						);
 					}
 				}
@@ -6805,17 +7051,29 @@ namespace ALYSLC
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
 
-						// Restore the serializable XP value, which we cached on import.
+						// Restore the serializable XP value, level, and level threshold, 
+						// all of which we cached on import.
 						p1->skills->data->skills[i].xp = p1SerializedData->skillXPList[i];
+						p1->skills->data->skills[i].level = 
+						(
+							p1SerializedData->skillLevelsOnMenuEntry[i]
+						);
+						p1->skills->data->skills[i].levelThreshold = 
+						(
+							p1SerializedData->skillLevelThresholdsOnMenuEntry[i]
+						);
 						SPDLOG_DEBUG
 						(
 							"[GLOB] CopyOverPerkTrees Export: AdjustSkillXP: "
-							"P1's skill {}'s XP ({}) was restored.",
+							"P1's skill {}'s XP ({}), level ({}), "
+							"and level threshold ({}) were restored.",
 							Util::GetActorValueName
 							(
 								glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
 							),
-							p1SerializedData->skillXPList[i]
+							p1->skills->data->skills[i].xp,
+							p1->skills->data->skills[i].level,
+							p1->skills->data->skills[i].levelThreshold
 						);
 					}
 				}
@@ -7219,8 +7477,6 @@ namespace ALYSLC
 		}
 		
 		auto& glob = GetSingleton();
-		bool shouldSetP1CID = false;
-		bool openingMessagePrompt = false;
 		std::array<bool, ALYSLC_MAX_PLAYER_COUNT> pauseBindPressed = 
 		{
 			false, false, false, false 
@@ -7241,27 +7497,43 @@ namespace ALYSLC
 
 			return;
 		}
-			
+		
+		bool messageBoxOpen = false;
+		bool requestToOpenMessagePrompt = false;
+		bool shouldSetP1CID = false;
+		float waitTime = 0.0f;
 		while (!shouldSetP1CID && ui)
 		{
-			if (!openingMessagePrompt && !ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME))
+			if (!requestToOpenMessagePrompt && !ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME))
 			{
-				openingMessagePrompt = true;
+				requestToOpenMessagePrompt = true;
 				Util::AddSyncedTask
 				(
 					[]() 
 					{ 
-						RE::DebugMessageBox
+						auto gSettings = RE::GameSettingCollection::GetSingleton();
+						if (!gSettings)
+						{
+							return;
+						}
+						RE::CreateMessage
 						(
 							"[ALYSLC] Player 1: "
 							"Please press the 'Pause' or 'Journal Menu' button "
-							"to set your controller ID for co-op."
-						); 
+							"to set your controller ID for co-op.", 
+							nullptr,
+							0, 
+							4, 
+							10, 
+							gSettings->GetSetting("sBack")->GetString(),
+							nullptr
+						);
 					}
 				);			
 			}
 			else if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME))
 			{
+				messageBoxOpen = true;
 				auto userEvents = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
 				uint32_t pauseMask = GAMEPAD_MASK_START;
@@ -7273,7 +7545,6 @@ namespace ALYSLC
 					);
 				}
 
-				openingMessagePrompt = false;
 				cid = 0;
 				while (cid < ALYSLC_MAX_PLAYER_COUNT)
 				{
@@ -7343,6 +7614,22 @@ namespace ALYSLC
 					glob.player1CID = cid;
 				}
 			}
+			else
+			{
+				// Was already opened and now closed, so we can exit.
+				if (messageBoxOpen)
+				{
+					break;
+				}
+
+				// Wait at most 5 seconds for the MessageBox menu to open.
+				std::this_thread::sleep_for(0.1s);
+				waitTime += 0.1f;
+				if (waitTime > 5.0f)
+				{
+					break;
+				}
+			}
 		}
 	}
 
@@ -7401,6 +7688,173 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::RespecPlayerTask(const int32_t a_controllerID)
+	{
+		// Prompt the player given by the CID to press the 'Start' button on their controller
+		// to confirm their intentions to respec their character.
+		// Then, reset their HMS AVs and perk data 
+		// and remove all shared perks from all active players.
+
+		if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+
+		auto& glob = GetSingleton();
+		const auto& p = glob.coopPlayers[a_controllerID];
+		SPDLOG_DEBUG("[GLOB] RespecPlayerTask: {}.", p->coopActor->GetName());
+
+		auto ui = RE::UI::GetSingleton();
+		if (!ui)
+		{
+			return;
+		}
+
+		XINPUT_STATE inputState{ };
+		bool confirmedRespec = false;
+		bool listeningForPauseBindPress = true;
+		bool messageBoxOpen = false;
+		bool pauseBindPressed = false;
+		bool requestToOpenMessagePrompt = false;
+		float waitTime = 0.0f;
+		while (!confirmedRespec && ui)
+		{
+			if (!requestToOpenMessagePrompt && !ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME))
+			{
+				requestToOpenMessagePrompt = true;
+				Util::AddSyncedTask
+				(
+					[]() 
+					{ 
+						auto gSettings = RE::GameSettingCollection::GetSingleton();
+						if (!gSettings)
+						{
+							return;
+						}
+						RE::CreateMessage
+						(
+							"[ALYSLC] Are you sure that you'd like to respec your character?\n\n"
+							"Health, magicka, and stamina will be reset to their default values,\n"
+							"and all unlocked perks will be removed for this player, "
+							"along with all shared perks from all players.\n"
+							"Any removed perks will have their perk points refunded.\n\n"
+							"Please press the 'Pause' or 'Journal Menu' button to confirm.", 
+							nullptr,
+							0, 
+							4, 
+							10, 
+							gSettings->GetSetting("sBack")->GetString(),
+							nullptr
+						);
+					}
+				);			
+			}
+			else if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME))
+			{
+				messageBoxOpen = true;
+				auto userEvents = RE::UserEvents::GetSingleton();
+				auto controlMap = RE::ControlMap::GetSingleton();
+				uint32_t pauseMask = GAMEPAD_MASK_START;
+				if (userEvents && controlMap) 
+				{
+					pauseMask = controlMap->GetMappedKey
+					(
+						userEvents->journal, RE::INPUT_DEVICE::kGamepad
+					);
+				}
+
+				ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+				if (XInputGetState(a_controllerID, &inputState) == ERROR_SUCCESS)
+				{
+					// Should set once pause bind is released.
+					if ((inputState.Gamepad.wButtons & pauseMask) == pauseMask)
+					{
+						// Is pressed but not released yet.
+						pauseBindPressed = true;
+					}
+					else if ((inputState.Gamepad.wButtons & pauseMask) == 0 && pauseBindPressed)
+					{
+						SPDLOG_DEBUG
+						(
+							"[GLOB] RespecPlayerTask: Released pause bind, respec confirmed."
+						);
+						// Set now since the bind is released.
+						confirmedRespec = true;
+						break;
+					}
+				}
+			}
+			else
+			{
+				// Was already opened and now closed, so we can exit.
+				if (messageBoxOpen)
+				{
+					break;
+				}
+
+				// Wait at most 5 seconds for the MessageBox menu to open.
+				std::this_thread::sleep_for(0.1s);
+				waitTime += 0.1f;
+				if (waitTime > 5.0f)
+				{
+					break;
+				}
+				else
+				{
+					SPDLOG_DEBUG("[GLOB] RespecPlayerTask: Waiting ({}s).", waitTime);
+				}
+			}
+		}
+		
+		std::this_thread::sleep_for(0.1s);
+		auto msgQ = RE::UIMessageQueue::GetSingleton();
+		if (msgQ)
+		{
+			// Close prompt messagebox.
+			Util::AddSyncedTask
+			(
+				[msgQ]() 
+				{
+					msgQ->AddMessage
+					(
+						RE::MessageBoxMenu::MENU_NAME, 
+						RE::UI_MESSAGE_TYPE::kForceHide, 
+						nullptr
+					); 
+				}
+			);
+		}
+
+		float waitSecs = 0.0f;
+		while (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME) && waitSecs < 2.0f)
+		{
+			std::this_thread::sleep_for(0.1s);
+			waitSecs += 0.1f;
+		}
+
+		std::this_thread::sleep_for(0.1s);
+
+		if (confirmedRespec) 
+		{
+			// Perform respec and show result message box.
+			Util::AddSyncedTask
+			(
+				[&p]() 
+				{ 
+					GlobalCoopData::PerformPlayerRespec(p->coopActor.get());
+					RE::DebugMessageBox
+					(
+						fmt::format
+						(
+							"[ALYSLC] Respec successful!\n"
+							"Open up the perk tree to level up again and choose perks."
+						).c_str()
+					); 
+				}
+			);
+		}
+	}
+
 	void GlobalCoopData::RestartCoopCameraTask()
 	{
 		// Debug option: 
@@ -7441,6 +7895,7 @@ namespace ALYSLC
 			a_playerActor->GetName(), a_baseLevel);
 
 		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		/*
 		if (a_playerActor == p1) 
 		{
 			// If P1 has leveled up at least once 
@@ -7490,6 +7945,7 @@ namespace ALYSLC
 			}
 		}
 		else
+		*/
 		{
 			// Has recorded level up.
 			if (a_baseLevel != 0) 
@@ -7704,13 +8160,14 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::ResetPerkDataOnBaseSkillAVChange(RE::Actor* a_playerActor)
+	void GlobalCoopData::ResetPerkData(RE::Actor* a_playerActor)
 	{
 		// Remove all perks from this player, remove shared perks from
-		// all players, and reset all shared perk-related serialized data
-		// when the player's saved base skill AVs change.
-		// Done to prevent players from retaining perks that their new corresponding skill levels 
-		// may no longer allow them to unlock 
+		// all players, and reset all shared perk-related serialized data.
+		// Any removed perks have their perk points refunded.
+		// Done to allow the given player to fully respec and to prevent players 
+		// from retaining perks that their new corresponding skill levels 
+		// may no longer allow them to unlock if their base skill AVs have changed
 		// (eg. perk requires level 50, but player's skill level decreased to 40).
 
 		auto& glob = GetSingleton();
@@ -7720,7 +8177,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("[GLOB] ResetPerkDataOnBaseSkillAVChange: {}", a_playerActor->GetName());
+		SPDLOG_DEBUG("[GLOB] ResetPerkData: {}", a_playerActor->GetName());
 
 		auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
 		// If P1 has not leveled up at least once, no player will have selected perks,
@@ -7730,22 +8187,27 @@ namespace ALYSLC
 			return;
 		}
 
-		// Clear all of the given player's perks.
-		data->ClearUnlockedPerks();
 		// Players start with 3 perk points at level 1 if using Requiem.
-		data->availablePerkPoints = 
+		data->availablePerkPoints = static_cast<uint32_t>
 		(
-			ALYSLC::RequiemCompat::g_requiemInstalled ? p1->GetLevel() + 2 : p1->GetLevel() - 1
+			(
+				ALYSLC::RequiemCompat::g_requiemInstalled ? 
+				p1->GetLevel() + 2 :
+				p1->GetLevel() - 1
+			) * 
+			Settings::fPerkPointsPerLevelUp + 
+			Settings::uFlatPerkPointsIncrease
 		);
 		data->extraPerkPoints = 0;
 		data->prevTotalUnlockedPerks = 0;
 		data->usedPerkPoints = 0;
 
-		// Remove all shared perks for the passed in player.
+		// Remove all shared perks for the passed in player if they aren't the respeccing player
+		// and all perks for the respeccing player.
 		// Save the set of removed shared perks for later.
-		std::set<RE::BGSPerk*> sharedPerksRemoved;
-		auto removeAllSharedPerks = 
-		[p1, &sharedPerksRemoved](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		std::set<RE::BGSPerk*> perksRemoved{ };
+		auto removePerks = 
+		[p1, a_playerActor, &perksRemoved](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 		{
 			if (!a_node)
 			{
@@ -7753,7 +8215,7 @@ namespace ALYSLC
 			}
 
 			bool shared = SHARED_SKILL_NAMES_SET.contains(a_node->associatedSkill->enumName);
-			if (!shared) 
+			if (!shared && a_actor != a_playerActor) 
 			{
 				return;
 			}
@@ -7783,13 +8245,15 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[GLOB] ResetPerkDataOnBaseSkillAVChange. "
-								"Removed shared perk {} (0x{:X}) from p1's perks list.",
-								perkToRemove->GetName(), perkToRemove->formID
+								"[GLOB] ResetPerkData. "
+								"Removed {} perk {} (0x{:X}) from p1's perks list.",
+								shared ? "shared" : "unique",
+								perkToRemove->GetName(), 
+								perkToRemove->formID
 							);
 						}
 
-						sharedPerksRemoved.insert(perkToRemove);
+						perksRemoved.insert(perkToRemove);
 					}
 					else
 					{
@@ -7798,13 +8262,15 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[GLOB] ResetPerkDataOnBaseSkillAVChange. "
-								"Removing shared perk {} (0x{:X}) from {}'s perks list.",
-								perkToRemove->GetName(), perkToRemove->formID, a_actor->GetName()
+								"[GLOB] ResetPerkData. "
+								"Removing {} perk {} (0x{:X}) from {}'s perks list.",
+								shared ? "shared" : "unique",
+								perkToRemove->GetName(), 
+								perkToRemove->formID, a_actor->GetName()
 							);
 						}
 
-						sharedPerksRemoved.insert(perkToRemove);
+						perksRemoved.insert(perkToRemove);
 					}
 				}
 
@@ -7835,32 +8301,58 @@ namespace ALYSLC
 					continue;
 				}
 
-				Util::TraverseAllPerks(playerActor, removeAllSharedPerks);
-				const auto& unlockedPerks = data->GetUnlockedPerksList();
-				// No unlocked perks, so nothing to remove.
-				if (unlockedPerks.size() == 0) 
+				// Remove perks as needed.
+				perksRemoved.clear();
+				Util::TraverseAllPerks(playerActor, removePerks);
+				// New unlocked perk points list to set.
+				std::vector<RE::BGSPerk*> newUnlockedPerks{ };
+				if (fid == a_playerActor->formID)
 				{
-					continue;
+					SPDLOG_DEBUG
+					(
+						"[GLOB] ResetPerkData: "
+						"{} has {} unlocked perks before perk removal. Will now have 0.", 
+						playerActor->GetName(), data->GetUnlockedPerksList().size()
+					);
+					// Clear all of the respeccing player's serialized unlocked perks.
+					// The respeccing player should have no perks at all after this iteration.
+					data->ClearUnlockedPerks();
 				}
-				
-				// Construct new unlocked perks list with shared perks removed.
-				std::vector<RE::BGSPerk*> newUnlockedPerks{};
-				for (auto perk : unlockedPerks)
+				else
 				{
-					if (sharedPerksRemoved.contains(perk))
+					const auto& unlockedPerks = data->GetUnlockedPerksList();
+					SPDLOG_DEBUG
+					(
+						"[GLOB] ResetPerkData: "
+						"{} has {} unlocked perks before shared perk removal.", 
+						playerActor->GetName(), unlockedPerks.size()
+					);
+					// No unlocked perks, so nothing to remove.
+					if (unlockedPerks.size() == 0) 
 					{
 						continue;
 					}
+				
+					// Construct new unlocked perks list with shared perks removed.
+					for (auto perk : unlockedPerks)
+					{
+						if (perksRemoved.contains(perk))
+						{
+							continue;
+						}
 						
-					newUnlockedPerks.emplace_back(perk);
+						newUnlockedPerks.emplace_back(perk);
+					}
 				}
 
+				// Set the new perks list after removal of all or all shared perks.
 				data->SetUnlockedPerks(newUnlockedPerks);
+				// No player will have any shared perks.
 				data->sharedPerksUnlocked = 0;
 				SPDLOG_DEBUG
 				(
-					"[GLOB] ResetPerkDataOnBaseSkillAVChange: "
-					"{} now has {} unlocked perks after shared perk removal.", 
+					"[GLOB] ResetPerkData: "
+					"{} now has {} unlocked perks after perk removal.", 
 					playerActor->GetName(), data->GetUnlockedPerksList().size()
 				);
 			}
@@ -7868,10 +8360,29 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[GLOB] ResetPerkDataOnBaseSkillAVChange: "
+			"[GLOB] ResetPerkData: "
 			"Adjust all players' perk counts after shared perk removal."
 		);
 		AdjustAllPlayerPerkCounts();
+	}
+
+	void GlobalCoopData::ResetToBaseHealthMagickaStamina(RE::Actor* a_playerActor)
+	{
+		// Resets the given player's health/magicka/stamina actor values to their initial values,
+		// undoing all serialized progress to these AVs.
+		
+		auto& glob = GetSingleton();
+		if (!a_playerActor || 
+			!glob.globalDataInit || 
+			!glob.serializablePlayerData.contains(a_playerActor->formID))
+		{
+			return;
+		}
+		
+		SPDLOG_DEBUG("[GLOB] ResetToBaseHealthMagickaStamina: {}", a_playerActor->GetName());
+		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		data->hmsPointIncreasesList.fill(0.0f);
+		RescaleHMS(a_playerActor, data->firstSavedLevel);
 	}
 
 	bool GlobalCoopData::TriggerAVAutoScaling(RE::Actor* a_playerActor, bool&& a_updateBaseAVs) 
@@ -8219,7 +8730,12 @@ namespace ALYSLC
 				// Reset all perks if the player's base AVs have changed.
 				if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 				{
-					ResetPerkDataOnBaseSkillAVChange(a_playerActor);
+					// On class/race change, the player's base AVs have changed
+					// and therefore their shared skill AV levels may not be high enough
+					// for the currently unlocked shared perks, so reset all shared perks
+					// for all players and also remove all perks for the given player,
+					// allowing them to respec based on their new stats.
+					ResetPerkData(a_playerActor);
 				}
 			}
 			else

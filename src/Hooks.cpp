@@ -1672,10 +1672,9 @@ namespace ALYSLC
 					a_this->combatController->previousTargetHandle = RE::ActorHandle();
 					a_this->combatController->cachedTarget = nullptr;
 				}
-
+				
 				// Let the game update the player first after we've stopped combat.
 				_Update(a_this, a_delta);
-
 
 				//===================
 				// Node Orientations.
@@ -1708,17 +1707,6 @@ namespace ALYSLC
 				// until the controller is cleared here.
 
 				//p->coopActor->combatController = nullptr;
-				
-				if (a_this->combatController)
-				{
-					a_this->combatController->inactive = true;
-					a_this->combatController->ignoringCombat = true;
-					a_this->combatController->stoppedCombat = true;
-					a_this->combatController->startedCombat = false;
-					a_this->combatController->targetHandle = 
-					a_this->combatController->previousTargetHandle = RE::ActorHandle();
-					a_this->combatController->cachedTarget = nullptr;
-				}
 				
 				// Make sure the player's life state reports them as alive once no longer downed.
 				bool inDownedLifeState = 
@@ -3494,7 +3482,7 @@ namespace ALYSLC
 					// Attempting to move the player's arms.
 					bool isMoveArmsInput = 
 					(
-						Settings::bRotateArmsWhenSheathed && 
+						Settings::bEnableArmsRotation && 
 						isAttackInput &&
 						!p1->IsWeaponDrawn()
 					);
@@ -4904,7 +4892,7 @@ namespace ALYSLC
 						[RE::Movement::MaxSpeeds::kRun]				= dodgeSpeed;
 					}
 					else if (bool isAIDriven = p->coopActor->movementController && 
-							 !p->coopActor->movementController->unk1C5; isAIDriven)
+							 !p->coopActor->movementController->controlsDriven; isAIDriven)
 					{
 						RE::NiPoint3 linVelXY = RE::NiPoint3();
 						float movementToHeadingAngDiff = -1.0f;
@@ -6015,7 +6003,7 @@ namespace ALYSLC
 								if (worldObj)
 								{
 									auto collidable = worldObj->GetCollidableRW();
-									uint32_t filter;
+									uint32_t filter{ };
 									a_p->coopActor->GetCollisionFilterInfo(filter);
 									auto& collFilterInfo = 
 									(
@@ -6596,7 +6584,21 @@ namespace ALYSLC
 				// Modify the current speed by the distance-slowdown factor, 
 				// but set a lower bound to avoid instances where the projectile
 				// does 0 damage when hitting the target at too low of a speed.
-				speedToSet = max(speedToSet * distSlowdownFactor, min(releaseSpeed, 1000.0f));
+				RE::NiPoint3 targetLinVel{ };
+				if (targetActorValidity)
+				{
+					targetLinVel = Util::GetActorLinearVelocity(targetActorPtr.get());
+				}
+				else if (targetRefrValidity)
+				{
+					targetRefrPtr->GetLinearVelocity(targetLinVel);
+				}
+
+				speedToSet = max
+				(
+					speedToSet * distSlowdownFactor, 
+					min(releaseSpeed, 1000.0f) + targetLinVel.Length()
+				);
 
 				// Continue homing in only if the projectile has not gone past the target.
 				continueSettingTrajectory = !wentPastTarget;
@@ -7207,7 +7209,7 @@ namespace ALYSLC
 			// for other plugins that may be checking the camera's rotation by using this hook.
 			if (glob.globalDataInit && glob.coopSessionActive && glob.cam->IsRunning())
 			{
-				RE::NiMatrix3 m;
+				RE::NiMatrix3 m{ };
 				Util::SetRotationMatrixPY(m, glob.cam->camPitch, glob.cam->camYaw);
 				Util::NativeFunctions::NiMatrixToNiQuaternion(a_rotation, m);
 				return;
@@ -9086,7 +9088,7 @@ namespace ALYSLC
 				auto p1 = RE::PlayerCharacter::GetSingleton(); 
 				if (p1 && 
 					p1->movementController && 
-					p1->movementController->unk1C5 && 
+					p1->movementController->controlsDriven && 
 					thumbstickEvent->IsLeft() && 
 					!menuStopsMovement)
 				{

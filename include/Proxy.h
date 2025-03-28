@@ -243,6 +243,15 @@ namespace ALYSLC
 			// and reset dash dodge I-frames flag.
 			void ResetPlayer1State(RE::StaticFunctionTag*);
 
+			// First, reset HMS actor values to their base values for the provided player.
+			// Then, remove all perks and refund all allotted perk points for the given player,
+			// allowing them to completely respec their character once they re-enter the StatsMenu.
+			// Also remove all shared perks from all active players.
+			// Since all shared perks are removed, all other active players are also
+			// refunded any shared perk points and can re-use them as they see fit.
+			// Skill and HMS levels remain unchanged.
+			void RespecPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
+
 			// Toggle the co-op camera off and then on again.
 			void RestartCoopCamera(RE::StaticFunctionTag*);
 

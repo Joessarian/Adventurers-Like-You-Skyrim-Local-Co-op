@@ -1,0 +1,119 @@
+#pragma once
+#include <cstdint>
+
+/*
+* For modders: Copy this file into your own project if you wish to use this API.
+*/
+namespace ALYSLC_API
+{
+	constexpr const auto ALYSLCPluginName = "ALYSLC";
+	constexpr const auto ALYSLCEnderalPluginName = "ALYSLC Enderal";
+
+	// Available ALYSLC interface versions.
+	enum class InterfaceVersion : uint8_t
+	{
+		V1
+	};
+
+	// ALYSLC's modder interface.
+	class IVALYSLC1
+	{
+	public:
+		/// <summary>
+		/// Get the ID for the controller controlling the given player actor.
+		/// </summary>
+		/// <returns>
+		/// If the given actor ptr corresponds to an active (co-op session started) player, 
+		/// return the ID [0, 3] of the controller controlling the actor.
+		/// Otherwise, return -1.
+		/// </returns>
+		[[nodiscard]] virtual int32_t GetCoopPlayerCID(RE::Actor* a_actor) const noexcept = 0;
+
+		/// <summary>
+		/// Get the ID for the controller controlling the given player actor.
+		/// </summary>
+		/// <returns>
+		/// If the given actor smart ptr corresponds to an active (co-op session started) player, 
+		/// return the ID [0, 3] of the controller controlling the actor.
+		/// Otherwise, return -1.
+		/// </returns>
+		[[nodiscard]] virtual int32_t GetCoopPlayerCID(RE::ActorPtr a_actorPtr) const noexcept = 0;
+
+		/// <summary>
+		/// Get the ID for the controller controlling the given player actor.
+		/// </summary>
+		/// <returns>
+		/// If the given actor handle corresponds to an active (co-op session started) player, 
+		/// return the ID [0, 3] of the controller controlling the actor.
+		/// Otherwise, return -1.
+		/// </returns>
+		[[nodiscard]] virtual int32_t GetALYSLCPlayerCID
+		(
+			RE::ActorHandle a_actorHandle
+		) const noexcept = 0;
+
+		/// <summary>
+		/// Check if the given actor ptr points to a co-op player.
+		/// </summary>
+		/// <returns>
+		/// True if a co-op player (P1 or companion player NPC), false otherwise.
+		/// </returns>
+		[[nodiscard]] virtual bool IsALYSLCPlayer(RE::Actor* a_actor) const noexcept = 0;
+
+		/// <summary>
+		/// Check if the given actor smart ptr points to a co-op player.
+		/// </summary>
+		/// <returns>
+		/// True if a co-op player (P1 or companion player NPC), false otherwise.
+		/// </returns>
+		[[nodiscard]] virtual bool IsALYSLCPlayer(RE::ActorPtr a_actorPtr) const noexcept = 0;
+
+		/// <summary>
+		/// Check if the given actor handle corresponds to a co-op player.
+		/// </summary>
+		/// <returns>
+		/// True if a co-op player (P1 or companion player NPC), false otherwise.
+		/// </returns>
+		[[nodiscard]] virtual bool IsALYSLCPlayer
+		(
+			RE::ActorHandle a_actorHandle
+		) const noexcept = 0;
+
+		/// <summary>
+		/// Check if there is an active local co-op session.
+		/// </summary>
+		/// <returns>
+		/// True if companion players have been summoned.
+		/// False if no players have been summoned yet or all players were dismissed.
+		/// </returns>
+		[[nodiscard]] virtual bool IsALYSLCSessionActive() const noexcept = 0;
+	};
+
+	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);
+
+	/// <summary>
+	/// Request the ALYSLC interface.
+	/// Recommended: Send your request during or after SKSEMessagingInterface::kMessage_PostLoad 
+	/// to make sure the dll has already been loaded
+	/// </summary>
+	/// <param name="a_interfaceVersion">The interface version to request</param>
+	/// <returns>The pointer to the API singleton, or nullptr if request failed</returns>
+	[[nodiscard]] inline void* RequestPluginAPI
+	(
+		const InterfaceVersion a_interfaceVersion = InterfaceVersion::V1
+	)
+	{
+		REX::W32::HMODULE pluginHandle{ };
+		pluginHandle =  REX::W32::GetModuleHandleA("ALYSLC_SE.dll");
+		_RequestPluginAPI requestAPIFunction = 
+		(
+			(_RequestPluginAPI)GetProcAddress(pluginHandle, "RequestPluginAPI")
+		);
+		if (requestAPIFunction)
+		{
+			return requestAPIFunction(a_interfaceVersion);
+		}
+
+		return nullptr;
+	}
+}

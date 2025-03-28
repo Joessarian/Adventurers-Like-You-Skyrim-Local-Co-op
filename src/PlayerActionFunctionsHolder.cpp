@@ -449,7 +449,7 @@ namespace ALYSLC
 			// or if some inputs are still pressed for the arm rotation binds.
 			bool isTryingToRotateArms = 
 			{
-				(Settings::bRotateArmsWhenSheathed && !a_p->coopActor->IsWeaponDrawn()) &&
+				(Settings::bEnableArmsRotation && !a_p->coopActor->IsWeaponDrawn()) &&
 				a_p->pam->AllInputsPressedForAtLeastOneAction
 				(
 					InputAction::kRotateRightShoulder,
@@ -587,11 +587,10 @@ namespace ALYSLC
 				return false;
 			}
 
-			// Not attacking and must be blocking beforehand.
+			// Must be blocking beforehand.
 			// Then check stamina requirement.
 			return 
 			(
-				!a_p->pam->isAttacking && 
 				a_p->pam->IsPerforming(InputAction::kBlock) &&
 				HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kBash)
 			);
@@ -891,9 +890,12 @@ namespace ALYSLC
 			}
 
 			// Cannot start jumping if not on the ground.
+			// NOTE: 
+			// More stringent conditions commented out for now.
 			bool stateAllowsJump = 
 			(
-				(
+				charController->context.currentState == RE::hkpCharacterStateType::kOnGround
+				/*(
 					charController->flags.all
 					(
 						RE::CHARACTER_FLAGS::kCanJump, 
@@ -903,15 +905,15 @@ namespace ALYSLC
 				(
 					charController->context.currentState ==
 					RE::hkpCharacterStateType::kOnGround &&
-					charController->surfaceInfo.supportedState.get() == 
-					RE::hkpSurfaceInfo::SupportedState::kSupported
-				) 
+					charController->surfaceInfo.supportedState.get() != 
+					RE::hkpSurfaceInfo::SupportedState::kUnsupported
+				) */
 			);
 			if (!stateAllowsJump) 
 			{
 				return false;
 			}
-			
+
 			// Have to check for a collidable surface under the player 
 			// with a single raycast, since the char controller flags and surface info
 			// sometimes indicate the player can start jumping while in midair.
@@ -931,7 +933,10 @@ namespace ALYSLC
 				start,
 				end, 
 				std::vector<RE::TESObjectREFR*>({ a_p->coopActor.get() }),
-				std::vector<RE::FormType>()
+				std::vector<RE::FormType>
+				(
+					{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+				)
 			);
 			// No surface beneath the player, so they cannot start to jump.
 			if (!result.hit)
@@ -1153,13 +1158,17 @@ namespace ALYSLC
 						// or if the player has a LH weapon and an empty RH.
 						pam->reqSpecialAction = SpecialActionType::kBlock;
 					}
+					/*
 					else if (HelperFuncs::CanDualCast(a_p))
 					{
 						// TODO: 
 						// Dual cast when LH and RH both have the same 1H spells equipped 
 						// and the player has the dual cast perk.
+					    // Currently, the perks do not affect companion players, 
+						// so this is commented out.
 						pam->reqSpecialAction = SpecialActionType::kDualCast;
 					}
+					*/
 					else if ((em->HasLHSpellEquipped() && em->HasRHSpellEquipped()) ||
 							 (em->HasLHStaffEquipped() && em->HasRHStaffEquipped()))
 					{
@@ -1215,7 +1224,7 @@ namespace ALYSLC
 						pam->reqSpecialAction = SpecialActionType::kDodge;
 					}
 				}
-				else if (Settings::bAllowFlopping && !a_p->coopActor->IsWeaponDrawn())
+				else if (Settings::bEnableFlopping && !a_p->coopActor->IsWeaponDrawn())
 				{
 					bool isGrabbed = std::any_of
 					(
@@ -1346,7 +1355,7 @@ namespace ALYSLC
 			// since the RS input is used for that purpose.
 			bool isTryingToRotateArms =
 			{ 
-				(Settings::bRotateArmsWhenSheathed && !a_p->coopActor->IsWeaponDrawn()) && 
+				(Settings::bEnableArmsRotation && !a_p->coopActor->IsWeaponDrawn()) && 
 				a_p->pam->AllInputsPressedForAtLeastOneAction
 				(
 					InputAction::kRotateRightShoulder,
@@ -1500,7 +1509,7 @@ namespace ALYSLC
 
 			return 
 			(
-				Settings::bRotateArmsWhenSheathed &&
+				Settings::bEnableArmsRotation &&
 				inDialogueOrNotControllingMenus &&
 				a_p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
 				!a_p->coopActor->IsWeaponDrawn()
@@ -4635,7 +4644,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					Util::ActivateRef
+					Util::ActivateRefr
 					(
 						a_refrPtr.get(),
 						a_p->coopActor.get(), 
@@ -4682,7 +4691,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						Util::ActivateRef
+						Util::ActivateRefr
 						(
 							a_refrPtr.get(), p1, 0, a_refrPtr.get()->GetBaseObject(), count, false
 						);
@@ -4698,7 +4707,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						Util::ActivateRef
+						Util::ActivateRefr
 						(
 							a_refrPtr.get(), 
 							a_p->coopActor.get(),
@@ -4889,7 +4898,11 @@ namespace ALYSLC
 					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get())) && 
 					(
 						!crosshairRefrPtr->As<RE::Actor>() || 
-						!crosshairRefrPtr->As<RE::Actor>()->IsHostileToActor(a_p->coopActor.get())
+						!crosshairRefrPtr->As<RE::Actor>()->IsHostileToActor
+						(
+							a_p->coopActor.get()
+						) ||
+						crosshairRefrPtr->As<RE::Actor>()->IsAMount()
 					)
 				);
 				// Choose a valid crosshair refr for activation 
@@ -4955,7 +4968,7 @@ namespace ALYSLC
 						);
 					}
 				}
-
+				
 				// Cycle through nearby objects at regular intervals 
 				// while the activate bind is held.
 				// NOTE:
@@ -5099,7 +5112,7 @@ namespace ALYSLC
 				float yawToTarget = Util::GetYawBetweenPositions
 				(
 					a_p->coopActor->data.location,
-					Util::GetTorsoPosition(pam->downedPlayerTarget->coopActor.get())
+					pam->downedPlayerTarget->mm->playerTorsoPosition
 				);
 				float angDiff = Util::NormalizeAngToPi
 				(
@@ -5616,14 +5629,14 @@ namespace ALYSLC
 					}
 					else
 					{
+						// Have to trigger a normal RH attack before the H2H power attack idle;
+						// otherwise, the power attack idle will fail to play.
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+						);
 						if (a_p->em->IsUnarmed())
 						{
-							// Have to trigger a normal RH attack before the H2H power attack idle;
-							// otherwise, the power attack idle will fail to play.
-							Util::RunPlayerActionCommand
-							(
-								RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
-							);
 							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
 						}
 						else
@@ -6515,10 +6528,11 @@ namespace ALYSLC
 
 			bool canPowerBash = 
 			(
-				a_p->pam->GetSecondsSinceLastStart(InputAction::kBash) > 
+				a_p->pam->GetSecondsSinceLastInputStateChange(InputAction::kBash, true) > 
 				Settings::fSecsDefMinHoldTime && 
 				a_p->coopActor->HasPerk(glob.powerBashPerk) &&
-				!a_p->pam->isAttacking
+				!a_p->pam->isAttacking &&
+				a_p->em->HasShieldEquipped()
 			);
 
 			if (!canPowerBash) 
@@ -6539,10 +6553,7 @@ namespace ALYSLC
 			(
 				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
 			);
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get()
-			);
+			Util::PlayIdle("PowerBash", a_p->coopActor.get());
 			// Redundancy since block start/stop requests fail at times.
 			if (wasBlocking)
 			{
@@ -7211,14 +7222,14 @@ namespace ALYSLC
 			// Collect nearby clutter when this bind is held 
 			// and the auto-grab clutter setting is enabled.
 
-			// Check for any lootable objects to auto-grab.
-			// Nothing to do if the setting is not enabled.
-			bool shouldAutoGrab = Settings::bAutoGrabClutterOnHold; 
-			if (!shouldAutoGrab)
+			// Object manipulation must be enabled.
+			if (!Settings::bEnableObjectManipulation)
 			{
 				return;
 			}
 
+			// Check for any incoming projectiles to grab or lootable objects to auto-grab.
+			bool shouldGrab = false;
 			// Set auto grab TP to action start TP initially.
 			// Do not check yet.
 			bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kGrabObject);
@@ -7228,36 +7239,29 @@ namespace ALYSLC
 				a_p->lastAutoGrabTP = SteadyClock::now();
 			}
 
-			// Check for next object to grab at an interval.
-			float secsSinceLastAutoGrab = Util::GetElapsedSeconds(a_p->lastAutoGrabTP);
-			bool checkForGrabbableRefr = 
-			(
-				secsSinceLastAutoGrab > Settings::fSecsBeforeAutoGrabbingNextLootableObject
-			);
-			if (checkForGrabbableRefr) 
-			{
-				a_p->lastAutoGrabTP = SteadyClock::now();
-			}
-
 			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 			bool crosshairRefrValidity = 
 			(
 				crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 			);
-			// Can auto-grab if the check interval has passed,
-			// if not facing a target (face a target to throw instead), 
+			// Can grab on press/hold if not facing a target (face a target to throw instead), 
 			// if no refr is targeted by the crosshair, 
 			// and if another refr can be grabbed.
-			shouldAutoGrab = 
+			shouldGrab = 
 			(
-				checkForGrabbableRefr && 
 				!a_p->mm->reqFaceTarget &&
 				!crosshairRefrValidity && 
 				a_p->tm->rmm->CanGrabAnotherRefr()
 			);
-			if (!shouldAutoGrab)
+			if (!shouldGrab)
 			{
+				// Base requirements for grabbing not met; return early.
 				return;
+			}
+			else
+			{
+				// Reset before checking for grabbable incoming projectiles.
+				shouldGrab = false;
 			}
 			
 			// Max distance away from the player's torso to check for grabbable objects.
@@ -7276,16 +7280,16 @@ namespace ALYSLC
 			);
 			// Maximum number of frames from the player that a projectile 
 			// will be considered as grabbable.
-			const float incomingProjGrabFrames = 3.0f * remainingMagickaRatio; 
-			// On to the next check.
-			shouldAutoGrab = false;
-
+			const float incomingProjGrabFrames = 
+			(
+				Settings::fFrameWindowToGrabIncomingProjectiles * remainingMagickaRatio
+			); 
 			RE::ObjectRefHandle refrToGrabHandle = RE::ObjectRefHandle();
-			const auto playerTorsoPos = Util::Get3DCenterPos(a_p->coopActor.get());
+			const auto& playerTorsoPos = a_p->mm->playerTorsoPosition;
 			// Check if any incoming projectiles are within the player's grab radius
 			// and can be grabbed.
 			bool grabIncomingProjectile = false;
-			if (justStarted || Settings::bCanGrabIncomingProjectilesOnHold)
+			if (justStarted || Settings::bGrabIncomingProjectilesOnHold)
 			{
 				auto projectileMgr = RE::Projectile::Manager::GetSingleton();
 				if (projectileMgr)
@@ -7350,6 +7354,23 @@ namespace ALYSLC
 
 						if (projDistWindow != FLT_MAX)
 						{
+							// REMOVE when done debugging.
+							/*if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
+							{
+								auto upMat = RE::NiMatrix3();
+								trueHUD->DrawCapsule
+								(
+									a_p->coopActor->data.location + 
+									RE::NiPoint3(0.0f, 0.0f, 0.5f * a_p->coopActor->GetHeight()),
+									0.5f * a_p->coopActor->GetHeight() + projDistWindow,
+									projDistWindow,
+									RE::NiQuaternion(0.0f, 0.0f, 1.0f, 0.0f),
+									0.0f,
+									Settings::vuOverlayRGBAValues[a_p->playerID],
+									2.0f
+								);
+							}*/
+
 							// Not close enough to grab.
 							// Separate XY plane and Z axis distance checks -> 
 							// Capsule:
@@ -7432,8 +7453,8 @@ namespace ALYSLC
 
 						// Can only manipulate this object if it is not grabbed by another player 
 						// and has a supported motion type.
-						shouldAutoGrab = !grabbedByAnotherPlayer;
-						if (shouldAutoGrab)
+						shouldGrab = !grabbedByAnotherPlayer;
+						if (shouldGrab)
 						{
 							// Found an object to auto-grab.
 							// Save handle and stop iterating through nearby refrs.
@@ -7446,15 +7467,42 @@ namespace ALYSLC
 				}
 			}
 			
-			// Check for neaby lootable refrs within activation range if no projectile was grabbed.
+			// Next up, auto-grab checks.
+			// Check for nearby lootable refrs within activation range 
+			// if no projectile was grabbed and if auto-grab is enabled.
 			if (!grabIncomingProjectile)
 			{
+				// Nothing to do if auto-grab is not enabled.
+				if (!Settings::bAutoGrabNearbyLootableObjectsOnHold)
+				{
+					return;
+				}
+
+				// Can auto-grab if the check interval has passed,
+				// if not facing a target (face a target to throw instead), 
+				// if no refr is targeted by the crosshair, 
+				// and if another refr can be grabbed.
+				
+				// Reset flag before the next check(s).
+				shouldGrab = false;
+				// Check for next object to grab at an interval.
+				float secsSinceLastAutoGrab = Util::GetElapsedSeconds(a_p->lastAutoGrabTP);
+				if (secsSinceLastAutoGrab > Settings::fSecsBeforeAutoGrabbingNextLootableObject) 
+				{
+					a_p->lastAutoGrabTP = SteadyClock::now();
+				}
+				else
+				{
+					// Auto-grab interval has not elapsed yet, so nothing to grab; return early.
+					return;
+				}
+
 				Util::ForEachReferenceInRange
 				(
 					playerTorsoPos, 
 					maxGrabDist, 
 					true,
-					[&a_p, &shouldAutoGrab, &refrToGrabHandle](RE::TESObjectREFR* a_refr) 
+					[&a_p, &shouldGrab, &refrToGrabHandle](RE::TESObjectREFR* a_refr) 
 					{
 						// No refr, continue.
 						if (!a_refr)
@@ -7524,13 +7572,13 @@ namespace ALYSLC
 
 						// Can only manipulate this object if it is not grabbed by another player 
 						// and has a supported motion type.
-						shouldAutoGrab = 
+						shouldGrab = 
 						{ 
 							!grabbedByAnotherPlayer &&
 							hkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kFixed &&
 							hkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kInvalid 
 						};
-						if (shouldAutoGrab)
+						if (shouldGrab)
 						{
 							// Found an object to auto-grab.
 							// Save handle and stop iterating through nearby refrs.
@@ -7547,12 +7595,11 @@ namespace ALYSLC
 			}
 			
 			// Grab the valid refr and notify the player.
-			if (shouldAutoGrab && Util::HandleIsValid(refrToGrabHandle))
+			if (shouldGrab && Util::HandleIsValid(refrToGrabHandle))
 			{
 				auto targetRefrPtr = refrToGrabHandle.get();
 				if (grabIncomingProjectile)
 				{
-					// Now perform magicka cost check.
 					auto asProjectile = refrToGrabHandle.get()->As<RE::Projectile>();
 					if (asProjectile)
 					{
@@ -7619,6 +7666,24 @@ namespace ALYSLC
 								false
 							);
 						}
+
+						a_p->tm->SetIsGrabbing(true);
+						auto index = a_p->tm->rmm->AddGrabbedRefr
+						(
+							glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
+						);
+						a_p->tm->rmm->isAutoGrabbing = true;
+
+						// Stop the projectile momentarily do it does not continue
+						// towards the target player and potentially hit them 
+						// before the next UpdateImpl() call.
+						if (index > -1 && index < a_p->tm->rmm->grabbedRefrInfoList.size())
+						{
+							const auto& info = a_p->tm->rmm->grabbedRefrInfoList[index];
+							info->lastSetVelocity = RE::NiPoint3();
+							asProjectile->linearVelocity = RE::NiPoint3();
+							asProjectile->UpdateImpl(0.0f);
+						}
 					}
 				}
 				else
@@ -7638,14 +7703,14 @@ namespace ALYSLC
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
-				}
 
-				a_p->tm->SetIsGrabbing(true);
-				a_p->tm->rmm->AddGrabbedRefr
-				(
-					glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
-				);
-				a_p->tm->rmm->isAutoGrabbing = true;
+					a_p->tm->SetIsGrabbing(true);
+					a_p->tm->rmm->AddGrabbedRefr
+					(
+						glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
+					);
+					a_p->tm->rmm->isAutoGrabbing = true;
+				}
 			}
 		}
 
@@ -8304,7 +8369,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				if (!Settings::bRotateArmsWhenSheathed)
+				if (!Settings::bEnableArmsRotation)
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -8458,28 +8523,53 @@ namespace ALYSLC
 			}
 			else
 			{
-				// If set, clear focal player CID.
-				if (Settings::bFocalPlayerMode && glob.cam->focalPlayerCID != -1)
+				// If set, clear the focal player CID.
+				bool focalPlayerSet = Settings::bFocalPlayerMode && glob.cam->focalPlayerCID != -1;
+				if (focalPlayerSet)
 				{
 					glob.cam->focalPlayerCID = -1;
 				}
 
-				// Otherwise, send a request to clear the cam lock on target
+				// Send a request to clear the cam lock on target
 				// and reset the cam state to auto trail.
 				glob.cam->lockOnActorReq = RE::ActorHandle();
 				glob.cam->camState = CamState::kAutoTrail;
-				// Inform the player.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Camera auto trail mode", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
+				if (Util::HandleIsValid(glob.cam->camLockOnTargetHandle) || focalPlayerSet)
+				{
+					// Inform the player of switch back to auto-trail mode.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Camera auto trail mode", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
+				{
+					// Reset camera orientation if there is no current lock on target to clear.
+					// Reset radial distance and height offsets.
+					glob.cam->camRadialDistanceOffset = 
+					glob.cam->camSavedRadialDistanceOffset =
+					glob.cam->camBaseHeightOffset = 
+					glob.cam->camHeightOffset = 0.0f;
+					// Inform the player of switch back to auto-trail mode.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Reset camera orientation", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
 			}
 		}
 
@@ -9210,7 +9300,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackDual);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bEnableArmsRotation)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -9237,7 +9327,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackLH);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bEnableArmsRotation)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -9264,7 +9354,7 @@ namespace ALYSLC
 					HelperFuncs::PlayPowerAttackAnimation(a_p, InputAction::kPowerAttackRH);
 				}
 			}
-			else if (!Settings::bRotateArmsWhenSheathed)
+			else if (!Settings::bEnableArmsRotation)
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise, since the player is rotating their arms.
@@ -9609,9 +9699,7 @@ namespace ALYSLC
 							(
 								InputAction::kStatsMenu, 
 								RE::INPUT_DEVICE::kKeyboard,
-								ButtonEventPressType::kInstantTrigger,
-								0.0f, 
-								true
+								ButtonEventPressType::kInstantTrigger
 							);
 						}
 
@@ -10033,7 +10121,7 @@ namespace ALYSLC
 								"", 
 								a_p->tm->activationRefrHandle
 							);
-							Util::ActivateRef
+							Util::ActivateRefr
 							(
 								activationRefrPtr.get(), p1, 0, baseObj, count, false
 							);
@@ -10263,7 +10351,7 @@ namespace ALYSLC
 									"", 
 									activationRefrPtr->GetHandle()
 								);
-								Util::ActivateRef
+								Util::ActivateRefr
 								(
 									activationRefrPtr.get(), p1, 0, baseObj, count, false
 								);
@@ -10308,7 +10396,7 @@ namespace ALYSLC
 								);
 							}
 
-							Util::ActivateRef
+							Util::ActivateRefr
 							(
 								activationRefrPtr.get(), 
 								a_p->coopActor.get(), 
@@ -10331,7 +10419,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				if (!Settings::bRotateArmsWhenSheathed) 
+				if (!Settings::bEnableArmsRotation) 
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -10392,6 +10480,10 @@ namespace ALYSLC
 			else if (a_p->em->HasLHStaffEquipped())
 			{
 				a_p->pam->CastStaffSpell(a_p->em->GetLHWeapon(), true, false);
+				if (a_p->pam->usingLHStaff)
+				{
+					a_p->pam->usingLHStaff->value = 0.0f;
+				}
 				// TODO: Manually update charge for P1.
 				// Currently gets overidden by the game once the inventory menu is opened,
 				// and not all staves have their charges updated by the game when used.
@@ -10418,7 +10510,7 @@ namespace ALYSLC
 			{
 				// Unsheathe if not rotating arms.
 				// Do nothing otherwise.
-				if (!Settings::bRotateArmsWhenSheathed)
+				if (!Settings::bEnableArmsRotation)
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
@@ -10477,6 +10569,10 @@ namespace ALYSLC
 			else if (a_p->em->HasRHStaffEquipped())
 			{
 				a_p->pam->CastStaffSpell(a_p->em->GetRHWeapon(), false, false);
+				if (a_p->pam->usingRHStaff)
+				{
+					a_p->pam->usingRHStaff->value = 0.0f;
+				}
 				// TODO: Manually update charge for P1.
 				// Currently gets overidden by game once the inventory menu is opened,
 				// and not all staves have their charges updated by the game when used.
@@ -10502,10 +10598,12 @@ namespace ALYSLC
 			// Only bash if a power bash was not performed already while the bind was held.
 			bool canBashOnRelease = 
 			(
-				a_p->pam->GetSecondsSinceLastStart(InputAction::kBash) <= 
-				Settings::fSecsDefMinHoldTime ||
-				!a_p->coopActor->HasPerk(glob.powerBashPerk) || 
-				!a_p->pam->isBashing
+				(!a_p->pam->isAttacking) && 
+				(
+					a_p->pam->GetSecondsSinceLastInputStateChange(InputAction::kBash, true) <= 
+					Settings::fSecsDefMinHoldTime ||
+					!a_p->coopActor->HasPerk(glob.powerBashPerk)
+				)
 			);
 			if (!canBashOnRelease)
 			{
@@ -11465,6 +11563,12 @@ namespace ALYSLC
 			// and the player can grab another refr.
 			// Otherwise, release all grabbed refrs if not auto-grabbing.
 
+			// Object manipulation must be enabled.
+			if (!Settings::bEnableObjectManipulation)
+			{
+				return;
+			}
+
 			//===============
 			// [Grab Checks]:
 			//===============
@@ -11809,6 +11913,16 @@ namespace ALYSLC
 						// Stop casting with both staves.
 						a_p->pam->CastStaffSpell(a_p->em->GetLHWeapon(), true, false);
 						a_p->pam->CastStaffSpell(a_p->em->GetRHWeapon(), false, false);
+
+						if (a_p->pam->usingLHStaff)
+						{
+							a_p->pam->usingLHStaff->value = 0.0f;
+						}
+
+						if (a_p->pam->usingRHStaff)
+						{
+							a_p->pam->usingRHStaff->value = 0.0f;
+						}
 					}
 				}
 			}

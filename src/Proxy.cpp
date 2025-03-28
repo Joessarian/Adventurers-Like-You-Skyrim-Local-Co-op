@@ -415,6 +415,8 @@ namespace ALYSLC
 			GlobalCoopData::SyncSharedPerks();
 			GlobalCoopData::PerformInitialAVAutoScaling();
 			GlobalCoopData::RescaleActivePlayerAVs();
+			// Set or restore XP threshold.
+			GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
 
 			SPDLOG_DEBUG
 			(
@@ -511,7 +513,7 @@ namespace ALYSLC
 
 		std::vector<RE::TESForm*> npcList{ };
 		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
-		if (!dataHandler)
+		if (!dataHandler || !a_race)
 		{
 			return npcList;
 		}
@@ -520,7 +522,7 @@ namespace ALYSLC
 		for (const auto npcForm : npcForms)
 		{
 			auto npc = npcForm ? npcForm->As<RE::TESNPC>() : nullptr;
-			if (!npc)
+			if (!npc || !npc->race)
 			{
 				continue;
 			}
@@ -530,12 +532,14 @@ namespace ALYSLC
 			(
 				(npc->race == a_race) &&
 				(
-					a_female && 
-					npc->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kFemale)
-				) ||
-				(
-					!a_female &&
-					npc->actorData.actorBaseFlags.none(RE::ACTOR_BASE_DATA::Flag::kFemale)
+					(
+						a_female && 
+						npc->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kFemale)
+					) ||
+					(
+						!a_female &&
+						npc->actorData.actorBaseFlags.none(RE::ACTOR_BASE_DATA::Flag::kFemale)
+					)
 				)
 			);
 			if (sameRaceAndSex)
@@ -544,7 +548,15 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[Proxy] GetAllAppearancePresets: {} playable NPC forms.", npcList.size());
+		SPDLOG_DEBUG
+		(
+			"[Proxy] GetAllAppearancePresets: "
+			"{} playable NPC forms with race {} (0x{:X}) and {} sex.", 
+			npcList.size(),
+			a_race->GetName(),
+			a_race->formID,
+			a_female ? "female" : "male"
+		);
 		// Sort by name (A-Z).
 		std::sort
 		(
@@ -1164,6 +1176,8 @@ namespace ALYSLC
 
 		// Stop co-op camera manager and flag session as ended.
 		glob.cam->ToggleCoopCamera(false);
+		// Restore XP threshold.
+		GlobalCoopData::ModifyLevelUpXPThreshold(false);
 		glob.coopSessionActive = false;
 	}
 
@@ -1317,7 +1331,7 @@ namespace ALYSLC
 	void CoopLib::Log(RE::StaticFunctionTag*, RE::BSFixedString a_message)
 	{
 		// Script request to log a message to this mod's log file:
-		// 'ALYSLC_SE.log' or 'ALYSLC_AE.log'.
+		// 'ALYSLC.log'.
 
 		SPDLOG_DEBUG("{}", a_message.c_str());
 	}
@@ -1594,6 +1608,39 @@ namespace ALYSLC
 		p->ResetPlayer1();
 	}
 
+	void CoopLib::Debug::RespecPlayer(RE::StaticFunctionTag *, int32_t a_controllerID)
+	{
+		// NOTE:
+		// Not for Enderal.
+		// Reset HMS AVs to default.
+		// Remove all perks and refund all allotted perk points for the given player,
+		// allowing them to completely respec their character.
+		// Also remove all shared perks from all active players.
+		// Since all shared perks are removed, all other active players are also
+		// refunded any shared perk points and can re-use them as they see fit.
+
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit ||
+			ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
+			a_controllerID <= -1 ||
+			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT) 
+		{
+			return;
+		}
+
+		const auto& p = glob.coopPlayers[a_controllerID]; 
+		if (!p || !p->isActive)
+		{
+			return;
+		}
+		
+		SPDLOG_DEBUG("[Proxy] RespecPlayer: {}.", p->coopActor->GetName());
+		glob.taskRunner->AddTask
+		(
+			[a_controllerID]() { GlobalCoopData::RespecPlayerTask(a_controllerID); }
+		);
+	}
+
 	void CoopLib::Debug::RestartCoopCamera(RE::StaticFunctionTag*)
 	{
 		// Toggle the co-op camera off and then on again.
@@ -1728,6 +1775,10 @@ namespace ALYSLC
 		);
 		a_vm->RegisterFunction("RefreshPlayerManagers"s, "ALYSLC"s, Debug::RefreshPlayerManagers);
 		a_vm->RegisterFunction("ResetCoopCompanion"s, "ALYSLC"s, Debug::ResetCoopCompanion);
+		a_vm->RegisterFunction
+		(
+			"RespecPlayer"s, "ALYSLC"s, Debug::RespecPlayer
+		);
 		a_vm->RegisterFunction("ResetPlayer1AndCamera"s, "ALYSLC"s, Debug::ResetPlayer1AndCamera);
 		a_vm->RegisterFunction("ResetPlayer1State"s, "ALYSLC"s, Debug::ResetPlayer1State);
 		a_vm->RegisterFunction("RestartCoopCamera"s, "ALYSLC"s, Debug::RestartCoopCamera);

@@ -2340,7 +2340,8 @@ namespace ALYSLC
 			RE::Actor* a_observer,
 			bool a_forCrosshairSelection, 
 			bool a_checkCrosshairPos, 
-			const RE::NiPoint3& a_crosshairWorldPos
+			const RE::NiPoint3& a_crosshairWorldPos,
+			bool a_showDebugDraws
 		)
 		{
 			// Check if the observer has an LOS to the target refr.
@@ -2443,7 +2444,8 @@ namespace ALYSLC
 						a_targetRefr, 
 						excluded3DObjects, 
 						a_checkCrosshairPos, 
-						a_crosshairWorldPos
+						a_crosshairWorldPos,
+						a_showDebugDraws
 					);
 					// Next, check LOS from the observer's eye position.
 					if (!hasLOS && observer3DValid)
@@ -2454,7 +2456,8 @@ namespace ALYSLC
 							a_targetRefr, 
 							excluded3DObjects, 
 							a_checkCrosshairPos, 
-							a_crosshairWorldPos
+							a_crosshairWorldPos,
+							a_showDebugDraws
 						);
 					}
 				}
@@ -2489,7 +2492,8 @@ namespace ALYSLC
 							a_targetRefr, 
 							excluded3DObjects, 
 							a_checkCrosshairPos, 
-							a_crosshairWorldPos
+							a_crosshairWorldPos,
+							a_showDebugDraws
 						);
 						if (!hasLOS) 
 						{
@@ -2501,7 +2505,8 @@ namespace ALYSLC
 								a_targetRefr, 
 								excluded3DObjects,
 								a_checkCrosshairPos, 
-								a_crosshairWorldPos
+								a_crosshairWorldPos,
+								a_showDebugDraws
 							);
 							// Then check from the observer's eye position.
 							if (!hasLOS && observer3DValid)
@@ -2512,7 +2517,8 @@ namespace ALYSLC
 									a_targetRefr, 
 									excluded3DObjects, 
 									a_checkCrosshairPos, 
-									a_crosshairWorldPos
+									a_crosshairWorldPos,
+									a_showDebugDraws
 								);
 								// Next, if still no LOS, check from the camera node position.
 								if (!hasLOS)
@@ -2523,7 +2529,8 @@ namespace ALYSLC
 										a_targetRefr,
 										excluded3DObjects, 
 										a_checkCrosshairPos, 
-										a_crosshairWorldPos
+										a_crosshairWorldPos,
+										a_showDebugDraws
 									);
 								}
 							}
@@ -2545,7 +2552,8 @@ namespace ALYSLC
 						a_targetRefr, 
 						excluded3DObjects, 
 						a_checkCrosshairPos, 
-						a_crosshairWorldPos
+						a_crosshairWorldPos,
+						a_showDebugDraws
 					);
 					// Then check from the observer's focus point.
 					if (!hasLOS && observer3DValid)
@@ -2556,7 +2564,8 @@ namespace ALYSLC
 							a_targetRefr, 
 							excluded3DObjects,
 							a_checkCrosshairPos, 
-							a_crosshairWorldPos
+							a_crosshairWorldPos,
+							a_showDebugDraws
 						);
 					}
 				}
@@ -2572,7 +2581,8 @@ namespace ALYSLC
 					a_targetRefr, 
 					excluded3DObjects, 
 					a_checkCrosshairPos, 
-					a_crosshairWorldPos
+					a_crosshairWorldPos,
+					a_showDebugDraws
 				);
 			}
 
@@ -2586,7 +2596,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
-			bool&& a_showDebugDraws
+			bool a_showDebugDraws
 		)
 		{
 			// Perform raycasts along a segment of the observer's vertical axis, 
@@ -2829,7 +2839,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
-			bool&& a_showDebugDraws
+			bool a_showDebugDraws
 		)
 		{
 			// Checks for raycast 'LOS' by casting from the start position
@@ -4771,8 +4781,7 @@ namespace ALYSLC
 			// NiAVObject node positions, NiCamera world position, 
 			// and third person state positions.
 
-			const auto playerCam = RE::PlayerCamera::GetSingleton(); 
-			if (!a_cam || !a_cam->cameraRoot || !a_cam->cameraRoot.get() || !playerCam)
+			if (!a_cam || !a_cam->cameraRoot || !a_cam->cameraRoot.get())
 			{
 				return;
 			}
@@ -4784,8 +4793,9 @@ namespace ALYSLC
 			{
 				niCamPtr->world.translate = a_position;
 			}
-
-			if (playerCam->currentState->id == RE::CameraState::kThirdPerson)
+			
+			const auto playerCam = RE::PlayerCamera::GetSingleton(); 
+			if (playerCam && playerCam->currentState && playerCam->currentState.get())
 			{
 				// Set the third person state world position and collision position.
 				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
@@ -4797,7 +4807,13 @@ namespace ALYSLC
 			}
 		}
 
-		void SetCameraRotation(RE::TESCamera* a_cam, const float& a_pitch, const float& a_yaw)
+		void SetCameraRotation
+		(
+			RE::TESCamera* a_cam, 
+			const float& a_pitch,
+			const float& a_yaw,
+			bool a_overrideLocalRotation
+		)
 		{
 			// Set the rotation (pitch, yaw) of the camera to the pitch/yaw angles provided.
 			// Ensure rotational consistency: 
@@ -4814,14 +4830,17 @@ namespace ALYSLC
 
 			RE::NiMatrix3 nodeMat{ };
 			SetRotationMatrixPY(nodeMat, glob.cam->camPitch, glob.cam->camYaw);
-
-			// Don't modify the local rotation matrix, 
-			// since other mods have features that make changes to it, 
+			// Other mods have features that make changes to the camera's local rotation, 
 			// such as Precision's hitstop + camera shake 
 			// (https://www.nexusmods.com/skyrimspecialedition/mods/72347)
 			// and Camera Noise's Perlin noise
 			// (https://www.nexusmods.com/skyrimspecialedition/mods/77185).
+			// So we do not always want to modify it.
 			a_cam->cameraRoot->world.rotate = nodeMat;
+			if (a_overrideLocalRotation)
+			{
+				a_cam->cameraRoot->local.rotate = nodeMat;
+			}
 
 			RE::NiMatrix3 niMat{ };
 			// Rearrange matrix entries for the NiCamera's world rotation matrix.
@@ -4834,7 +4853,6 @@ namespace ALYSLC
 			niMat.entry[2][0] = nodeMat.entry[2][1];
 			niMat.entry[2][1] = nodeMat.entry[2][2];
 			niMat.entry[2][2] = nodeMat.entry[2][0];
-
 			if (auto niCamPtr = GetNiCamera(); niCamPtr && niCamPtr.get()) 
 			{
 				niCamPtr->world.rotate = niMat;
@@ -4907,8 +4925,8 @@ namespace ALYSLC
 			}
 
 			// Reset/set if different from the current value.
-			if ((p1->movementController->unk1C5 && a_shouldSet) ||
-				(!p1->movementController->unk1C5 && !a_shouldSet))
+			if ((p1->movementController->controlsDriven && a_shouldSet) ||
+				(!p1->movementController->controlsDriven && !a_shouldSet))
 			{
 				p1->SetAIDriven(a_shouldSet);
 				return true;

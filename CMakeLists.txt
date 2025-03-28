@@ -47,7 +47,7 @@ if(BUILD_SKYRIMAE)
 			"Variable ALYSLCPluginPathAE is not set. Will not copy plugin to directory after building."
 		)
 	endif()
-	set(NAME "ALYSLC_AE")
+	set(NAME "ALYSLC")
 elseif(BUILD_SKYRIMVR)
 	add_compile_definitions(SKYRIMVR)
 	add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
@@ -68,7 +68,7 @@ else()
 			"Variable ALYSLCPluginPathSE is not set. Will not copy plugin to directory after building."
 		)
 	endif()
-	set(NAME "ALYSLC_SE")
+	set(NAME "ALYSLC")
 endif()
 find_commonlib_path()
 
@@ -166,23 +166,7 @@ function(add_cxx_files TARGET)
 		FILES ${INCLUDE_FILES})
 
 	target_sources("${TARGET}" PUBLIC ${INCLUDE_FILES})
-
-	# Group headers in src dir.
-	file(GLOB_RECURSE HEADER_FILES
-		LIST_DIRECTORIES false
-		CONFIGURE_DEPENDS
-		"src/*.h"
-		"src/*.hpp"
-		"src/*.hxx"
-		"src/*.inl"
-	)
-
-	source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src
-		PREFIX "Header Files"
-		FILES ${HEADER_FILES})
-
-	target_sources("${TARGET}" PRIVATE ${HEADER_FILES})
-
+	
 	# Group source files in src dir.
 	file(GLOB_RECURSE SOURCE_FILES
 		LIST_DIRECTORIES false
@@ -266,6 +250,21 @@ target_link_libraries(
 		spdlog::spdlog
 )
 
+if(COPY_BUILD)
+	if(DEFINED ALYSLCPluginPath)
+		add_custom_command(
+			TARGET ${PROJECT_NAME}
+			PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E rm -rf ${ALYSLCPluginPath}
+		)
+	else()
+		message(
+			WARNING
+			"Variable ${ALYSLCPluginPath} is not defined. Skipping pre-build cleanup."
+		)
+	endif()
+endif()
+
 # Compile options for the project.
 if (MSVC)
 	target_compile_options(
@@ -283,8 +282,8 @@ if (MSVC)
 
 			"/wd4200" 			# nonstandard extension used : zero-sized array in struct/union
 
-			"$<$<CONFIG:DEBUG>:>"
-			#"$<$<CONFIG:RELEASE>:/Zc:inline;/JMC->"
+			#"$<$<CONFIG:DEBUG>:>"
+			"$<$<CONFIG:RELEASE>:/Zc:inline;/JMC->"
 	)
 
 	target_link_options(

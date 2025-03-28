@@ -238,6 +238,9 @@ namespace ALYSLC
 		// Time point indicating when the player was last hidden 
 		// within the stealth radius of a hostile actor.
 		SteadyClock::time_point lastHiddenInStealthRadiusTP;
+		// Time point indicating when all of the player's health/magicka/stamina actor values
+		// last reached their max value (fully restored).
+		SteadyClock::time_point lastHMSFullRestorationTP;
 		// Time point indicating when the player's input actions were last blocked.
 		SteadyClock::time_point lastInputActionBlockTP;
 		// Time point indicating when the last killmove check was made.

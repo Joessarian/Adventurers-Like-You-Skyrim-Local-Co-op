@@ -484,10 +484,10 @@ namespace ALYSLC
 			aimTargetKeyword = keywordForm ? keywordForm->As<RE::BGSKeyword>() : nullptr;
 			// Pre-transformation race.
 			preTransformationRace = nullptr;
-			// Set player actor flags.
-			SetCoopPlayerFlags();
 			// Ensure all players' factions are equivalent to P1's.
 			SyncPlayerFactions();
+			// Set player actor flags.
+			SetCoopPlayerFlags();
 			// Add serialized perks to the player.
 			GlobalCoopData::ImportUnlockedPerks(coopActor.get());
 
@@ -2308,7 +2308,7 @@ namespace ALYSLC
 					coopActor->SetGraphVariableBool("bIsSynced", true);
 					coopActor->SetPosition(leftOfMountPt, true);
 					coopActor->Update3DPosition(true);
-					Util::ActivateRef
+					Util::ActivateRefr
 					(
 						targetedMountPtr.get(), coopActor.get(), 0, nullptr, 1, false
 					);

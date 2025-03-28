@@ -25,6 +25,8 @@ namespace ALYSLC
 		CoopCellChangeHandler::Register();
 		// Register cell fully loaded event handler.
 		CoopCellFullyLoadedHandler::Register();
+		// Register combat event handler.
+		CoopCombatEventHandler::Register();
 		// Register container change event handler.
 		CoopContainerChangedHandler::Register();
 		// Register crosshair event handler.
@@ -118,7 +120,10 @@ namespace ALYSLC
 		(
 			"[Events] Actor kill event: {} ({}) killed {}.",
 			a_actorKillEvent->killer ? a_actorKillEvent->killer->GetName() : "NONE",
-			Util::HandleIsValid(a_actorKillEvent->victim->myKiller) ? 
+			a_actorKillEvent->victim &&
+			a_actorKillEvent->victim->myKiller &&
+			a_actorKillEvent->victim->myKiller.get() &&
+			a_actorKillEvent->victim->myKiller.get().get() ? 
 			a_actorKillEvent->victim->myKiller.get()->GetName() : 
 			"NONE",
 			a_actorKillEvent->victim ? a_actorKillEvent->victim->GetName() : "NONE"
@@ -276,6 +281,84 @@ namespace ALYSLC
 				}
 			}
 		}
+
+		return EventResult::kContinue;
+	}
+
+	CoopCombatEventHandler* CoopCombatEventHandler::GetSingleton()
+	{
+		static CoopCombatEventHandler singleton;
+		return std::addressof(singleton);
+	}
+
+	void CoopCombatEventHandler::Register()
+	{
+		auto scriptEventSourceHolder = RE::ScriptEventSourceHolder::GetSingleton();
+		if (scriptEventSourceHolder)
+		{
+			auto singleton = GetSingleton();
+			scriptEventSourceHolder->AddEventSink(CoopCombatEventHandler::GetSingleton());
+			auto source = scriptEventSourceHolder->GetEventSource<RE::TESCombatEvent>();
+			if (!source)
+			{
+				return;
+			}
+
+			// Find our added sink.
+			int32_t sinkIndex = -1;
+			for (auto i = 0; i < source->sinks.size(); ++i)
+			{
+				if (source->sinks[i] == singleton)
+				{
+					sinkIndex = i;
+				}
+			}
+
+			if (sinkIndex == -1)
+			{
+				SPDLOG_ERROR("[Events] ERR: Could not get registered combat event sink.");
+			}
+			else
+			{
+				SPDLOG_DEBUG("[Events] Combat event sink found at index {}.", sinkIndex);
+				// Move our sink to the front so it processes events first.
+				for (auto i = 0; i < sinkIndex; ++i)
+				{
+					source->sinks[i + 1] = source->sinks[i]; 
+				}
+
+				source->sinks[0] = singleton;
+			}
+
+			SPDLOG_INFO("[Events] Registered for combat events.");
+		}
+		else
+		{
+			SPDLOG_ERROR("[Events] ERR: Could not register for combat events.");
+		}
+	}
+
+	EventResult CoopCombatEventHandler::ProcessEvent
+	(
+		const RE::TESCombatEvent* a_combatEvent, RE::BSTEventSource<RE::TESCombatEvent>*
+	)
+	{
+		// NOTE: 
+		// Purely for debugging purposes right now.
+		if (!glob.globalDataInit || 
+			!glob.coopSessionActive ||
+			!a_combatEvent->actor || 
+			!a_combatEvent->actor.get() ||
+			!a_combatEvent->targetActor ||
+			!a_combatEvent->targetActor.get())
+		{
+			return EventResult::kContinue;
+		}
+		
+		SPDLOG_DEBUG("[Events] Combat Event: {} -> {}: {}.",
+			a_combatEvent->actor->GetName(),
+			a_combatEvent->targetActor->GetName(),
+			*a_combatEvent->newState);
 
 		return EventResult::kContinue;
 	}
@@ -1258,6 +1341,7 @@ namespace ALYSLC
 		*/
 
 		auto foundAggressorIndex = GlobalCoopData::GetCoopPlayerIndex(aggressorRefr); 
+		// Ignore hits that do not originate from a player.
 		if (foundAggressorIndex == -1)
 		{
 			return EventResult::kContinue;
@@ -1590,7 +1674,7 @@ namespace ALYSLC
 			*a_hitEvent->flags,
 			p->tm->rmm->reqSpecialHitDamageAmount
 		);
-
+		
 		if (shouldApplyDamageOrDrawAggro)
 		{
 			// Constructing and applying hit data seems to more consistently trigger
@@ -1654,9 +1738,10 @@ namespace ALYSLC
 			(
 				hitActor, std::addressof(hitData)
 			);
-
+			
 			if (hitActor && !hitActor->IsHostileToActor(p->coopActor.get()))
 			{
+				// Start combat with hit actor.
 				Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
 				hitActor->currentCombatTarget = p->coopActor->GetHandle();
 			}
@@ -1696,7 +1781,10 @@ namespace ALYSLC
 			// Remove sneak attack flag, if any,
 			// to prevent the new P1 hit event from triggering
 			// an additional sneak attack bonus.
-			auto flags = a_hitEvent->flags;
+			auto flags = 
+			(
+				RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t>(*a_hitEvent->flags)
+			);
 			flags.reset(RE::TESHitEvent::Flag::kSneakAttack);
 			// Remove our additional hit flags (bonk, slap, and splat starting at 1 << 4).
 			flags = static_cast<RE::TESHitEvent::Flag>((!(*flags) & ((1 << 4) - 1)));
@@ -1821,8 +1909,8 @@ namespace ALYSLC
 #ifdef ALYSLC_DEBUG_MODE
 				float playerXP = p1->skills->data->xp;
 				float playerXPThreshold = p1->skills->data->levelThreshold;
-				float fXPLevelUpMult = 25.0f;
-				float fXPLevelUpBase = 75.0f;
+				float fXPLevelUpMult = glob.defXPLevelUpMult;
+				float fXPLevelUpBase = glob.defXPLevelUpBase;
 				auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
 				if (valueOpt.has_value())
 				{

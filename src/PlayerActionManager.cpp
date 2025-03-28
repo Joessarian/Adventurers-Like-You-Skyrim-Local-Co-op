@@ -696,11 +696,15 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"[PAM] MainTask: {}: PASS 2: "
-								"candidate PA {}'s conflicting CANDIDATE/INTERRUPTED PA {} "
+								"candidate PA {}'s ({}) "
+								"conflicting CANDIDATE/INTERRUPTED PA {} ({}) "
 								"(with perf stage {}) is now blocked from performing.",
 								coopActor->GetName(), 
 								candidatePA, 
+								paStatesList[!candidatePA - !InputAction::kFirstAction].priority,
 								conflictingAction,
+								paStatesList
+								[!conflictingAction - !InputAction::kFirstAction].priority,
 								otherPerfStage
 							);
 
@@ -1229,7 +1233,7 @@ namespace ALYSLC
 			// Activate self with P1 to display this character in Party Combat Parameter's UI.
 			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 			{
-				Util::ActivateRef(coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false);
+				Util::ActivateRefr(coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false);
 			}
 
 			// Reset packages to default, since players may have changed their
@@ -1360,18 +1364,21 @@ namespace ALYSLC
 		perfSkillIncCombatActions = SkillIncCombatActionType::kNone;
 		// Health.
 		baseHealth = coopActor->GetBaseActorValue(RE::ActorValue::kHealth);
-		currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
 		baseHealthRegenRateMult = coopActor->GetBaseActorValue(RE::ActorValue::kHealRateMult);
+		currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		fullHealth = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kHealth);
 		// Magicka.
 		baseMagicka = coopActor->GetBaseActorValue(RE::ActorValue::kMagicka);
-		currentMagicka = coopActor->GetActorValue(RE::ActorValue::kMagicka);
-		lhCastDuration = rhCastDuration = 0.0f;
 		baseMagickaRegenRateMult = coopActor->GetBaseActorValue(RE::ActorValue::kMagickaRateMult);
+		currentMagicka = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		fullMagicka = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kMagicka);
+		lhCastDuration = rhCastDuration = 0.0f;
 		// Stamina.
 		baseStamina = coopActor->GetBaseActorValue(RE::ActorValue::kStamina);
-		currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
-		secsTotalStaminaRegenCooldown = 0.0f;
 		baseStaminaRegenRateMult = coopActor->GetBaseActorValue(RE::ActorValue::kStaminaRateMult);
+		currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		fullStamina = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina);
+		secsTotalStaminaRegenCooldown = 0.0f;
 		// Seconds since X event happened.
 		secsCurrentShoutCooldown =
 		secsSinceBoundWeap2HReq =
@@ -4095,8 +4102,6 @@ namespace ALYSLC
 					actionsInProgress.none(AVCostAction::kPowerAttackRight) 
 				};
 
-				// Set power attack flag.
-				isPowerAttacking = powerAttackDualReq || powerAttackLeftReq || powerAttackRightReq;
 				if (powerAttackDualReq)
 				{
 					avcam->SetStartedAction(AVCostAction::kPowerAttackDual);
@@ -4205,7 +4210,6 @@ namespace ALYSLC
 					AVCostAction::kBash, AVCostAction::kPowerAttackDual, 
 					AVCostAction::kPowerAttackLeft, AVCostAction::kPowerAttackRight
 				);
-				isBashing = isPowerAttacking = false;
 			}
 
 			// Dodge stop animation played, or no longer requested.
@@ -4267,8 +4271,8 @@ namespace ALYSLC
 
 		// Not performing RH cast or the special action both hands cast.
 		if ((IsNotPerforming(InputAction::kCastRH) &&
-			 IsNotPerforming(InputAction::kSpecialAction) && 
-		    (actionsInProgress.any(AVCostAction::kCastRight)) || 
+			 IsNotPerforming(InputAction::kSpecialAction)) && 
+		    (actionsInProgress.any(AVCostAction::kCastRight) || 
 			 reqActionsSet.contains(AVCostAction::kCastRight)))
 		{
 			avcam->RemoveStartedAction(AVCostAction::kCastRight);
@@ -4881,6 +4885,17 @@ namespace ALYSLC
 				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 			}
 			
+			// Must send a button event first and toggle off AI driven to allow P1 
+			// to surrender to guards if they've accrued a bounty.
+			SendButtonEvent
+			(
+				InputAction::kSheathe, 
+				RE::INPUT_DEVICE::kGamepad, 
+				ButtonEventPressType::kInstantTrigger, 
+				0.0f, 
+				true
+			);
+
 			// Redundancy, I know.
 			// But sometimes individual calls fail.
 			Util::RunPlayerActionCommand
@@ -5159,6 +5174,7 @@ namespace ALYSLC
 		p->lastCyclingTP				=
 		p->lastDownedTP					=
 		p->lastGetupAfterReviveTP		=
+		p->lastHMSFullRestorationTP		=
 		p->lastInputActionBlockTP		= 
 		p->lastKillmoveCheckTP			=
 		p->lastLHCastStartTP			=
@@ -5831,9 +5847,33 @@ namespace ALYSLC
 		// player HMS rate multipliers based on player state changes, 
 		// shout cooldown, and carryweight.
 
+		fullHealth = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kHealth);
+		fullMagicka = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kMagicka);
+		fullStamina = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina);
+		float prevHealth = currentHealth;
+		float prevMagicka = currentMagicka;
+		float prevStamina = currentStamina;
 		currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
-		currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
 		currentMagicka = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		bool fullyRestoredHMS = 
+		(
+			(
+				currentHealth == fullHealth && 
+				currentMagicka == fullMagicka && 
+				currentStamina == fullStamina
+			) &&
+			(
+				prevHealth < currentHealth ||
+				prevMagicka < currentMagicka ||
+				prevStamina < currentStamina
+			)
+		);
+		// HMS AVs all just hit their max, fully restored values.
+		if (fullyRestoredHMS)
+		{
+			p->lastHMSFullRestorationTP = SteadyClock::now();
+		}
 
 		// Update player carryweights if not using the infinite carryweight setting 
 		// and another player's carryweight is not imported onto P1.
@@ -6321,12 +6361,14 @@ namespace ALYSLC
 		isInCastingAnim = isInCastingAnimRH || isInCastingAnimLH || isInCastingAnimDual;
 		
 		coopActor->GetGraphVariableBool("IsAttacking", isAttacking);
+		coopActor->GetGraphVariableBool("IsBashing", isBashing);
 		coopActor->GetGraphVariableBool("IsBlocking", isBlocking);
 		coopActor->GetGraphVariableBool("bInJumpState", isJumping);
 		coopActor->GetGraphVariableBool("bIsRiding", isRiding);
 		coopActor->GetGraphVariableBool("IsSneaking", isSneaking);
 		// Also include non-default attack states.
 		isAttacking |= coopActor->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone;
+		isPowerAttacking = coopActor->IsPowerAttacking();
 
 		if (p->isPlayer1)
 		{
@@ -6380,10 +6422,15 @@ namespace ALYSLC
 		paParamsList = glob.paInfoHolder->playerPAParamsLists[playerID];
 		// Initialize player action states using their corresponding params.
 		// Set all actions as blocked to start.
+		// Also set the action's priority.
 		for (auto i = 0; i < !InputAction::kActionTotal; ++i) 
 		{
 			paStatesList[i] = PlayerActionState(paParamsList[i]);
 			paStatesList[i].perfStage = PerfStage::kBlocked;
+			paStatesList[i].priority = GetActionPriority
+			(
+				static_cast<InputAction>(!InputAction::kFirstAction + i)
+			);
 		}
 
 		// Generate sets of conflicting actions per action.

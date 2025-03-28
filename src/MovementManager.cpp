@@ -147,7 +147,10 @@ namespace ALYSLC
 		(
 			coopActor->data.location + RE::NiPoint3(0.0f, 0.0f, 0.75f * coopActor->GetHeight())
 		);
-		playerAttackSourceDir = playerDefaultAttackSourceDir = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+		playerAttackSourceDir =
+		playerDefaultAttackSourceDir = 
+		playerTorsoAxisOfRotation = RE::NiPoint3(0.0f, 0.0f, 0.0f);
+		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
 		// Externally set flags.
 		reqFaceTarget = reqResetAimAndBody = reqStartJump = false;
 		// Movement parameters list.
@@ -491,6 +494,7 @@ namespace ALYSLC
 		
 		if (isDashDodging)
 		{
+			const uint32_t noCollFlag = !RE::CFilter::Flag::kNoCollision;
 			if (framesSinceRequestingDashDodge == 0) 
 			{
 				// Varying I-Frames/speed to maintain the same dodge distance 
@@ -1019,9 +1023,9 @@ namespace ALYSLC
 		{
 			// Gotta move.
 			SetDontMove(false);
-			RE::hkVector4 velBeforeJump;
-			charController->GetLinearVelocityImpl(velBeforeJump);
-			if (velBeforeJump.Length3() == 0.0f)
+			RE::hkVector4 velBeforeJumpVect{ };
+			charController->GetLinearVelocityImpl(velBeforeJumpVect);
+			if (velBeforeJumpVect.Length3() == 0.0f)
 			{
 				coopActor->NotifyAnimationGraph("JumpStandingStart");
 			}
@@ -1035,45 +1039,35 @@ namespace ALYSLC
 			{
 				charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
 				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
-
 				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
-				const bool& lsMoved = lsData.normMag != 0.0f;
-				// Save the pre-jump horizontal velocity to tack on later.
-				RE::NiPoint2 velBeforeJumpXY
-				{
-					velBeforeJump.quad.m128_f32[0], velBeforeJump.quad.m128_f32[1]
-				};
-				// Initial velocity to set based on how far over the player has moved their LS.
-				RE::NiPoint2 lsVelXY
-				{
+				velBeforeJumpVect = RE::hkVector4
+				(
+					velBeforeJumpVect.quad.m128_f32[0] + 
 					(
 						GAME_TO_HAVOK *
-						Settings::fJumpBaseLSDirSpeed *
+						Settings::fJumpAdditionalLaunchSpeed *
 						lsData.normMag *
 						cosf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
 					),
+					velBeforeJumpVect.quad.m128_f32[1] + 
 					(
 						GAME_TO_HAVOK *
-						Settings::fJumpBaseLSDirSpeed *
+						Settings::fJumpAdditionalLaunchSpeed *
 						lsData.normMag *
 						sinf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
-					)
-				};
-
-				// Use LS XY velocity or pre-jump XY velocity, whichever is larger.
-				velBeforeJump =
-				(
-					velBeforeJumpXY.Length() >= lsVelXY.Length() ?
-					RE::hkVector4
+					),
+					havokInitialJumpZVelocity + 
+					velBeforeJumpVect.quad.m128_f32[2] +
 					(
-						velBeforeJumpXY.x, velBeforeJumpXY.y, havokInitialJumpZVelocity, 0.0f
-					) :
-					RE::hkVector4(lsVelXY.x, lsVelXY.y, havokInitialJumpZVelocity, 0.0f)
+						GAME_TO_HAVOK *
+						Settings::fJumpAdditionalLaunchSpeed
+					),
+					0.0f
 				);
 
 				// Invert gravity and set initial velocity.
 				charController->gravity = -Settings::fJumpingGravityMult;
-				charController->SetLinearVelocityImpl(velBeforeJump);
+				charController->SetLinearVelocityImpl(velBeforeJumpVect);
 			}
 			charController->lock.Unlock();
 
@@ -1193,8 +1187,8 @@ namespace ALYSLC
 					(
 						charController->context.currentState == 
 						RE::hkpCharacterStateType::kOnGround &&
-						charController->surfaceInfo.supportedState.get() == 
-						RE::hkpSurfaceInfo::SupportedState::kSupported
+						charController->surfaceInfo.supportedState.get() != 
+						RE::hkpSurfaceInfo::SupportedState::kUnsupported
 					) 
 				);
 				// Have to check for a collidable surface under the player 
@@ -1218,7 +1212,10 @@ namespace ALYSLC
 						start, 
 						end, 
 						std::vector<RE::TESObjectREFR*>({ coopActor.get() }),
-						std::vector<RE::FormType>()
+						std::vector<RE::FormType>
+						(
+							{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+						)
 					);
 					// No surface beneath the player, so they cannot land.
 					if (!result.hit)
@@ -1902,7 +1899,7 @@ namespace ALYSLC
 				// send the move stop animation event.
 				// Player could still be rotating in place here, but they should not move
 				// from their current spot.
-				movementActor->NotifyAnimationGraph("moveStop");
+				//movementActor->NotifyAnimationGraph("moveStop");
 			}
 
 			dontMoveSet = false;
@@ -2406,7 +2403,7 @@ namespace ALYSLC
 				(attemptDiscovery) || 
 				(
 					glob.player1Actor->movementController && 
-					glob.player1Actor->movementController->unk1C5
+					glob.player1Actor->movementController->controlsDriven
 				)
 			)
 		};
@@ -3784,6 +3781,9 @@ namespace ALYSLC
 		{
 			p->lastMovementStartReqTP = SteadyClock::now();
 		}
+		
+		// Save torso position this frame to use elsewhere.
+		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
 
 		// Update current mount.
 		if (!coopActor->IsOnMount() && Util::HandleIsValid(p->currentMountHandle))
@@ -3905,7 +3905,7 @@ namespace ALYSLC
 					(
 						"[MM] UpdateMovementState: {}: "
 						"finishedGettingUp: {}, turnToFaceTargetWhileStopped: {}, "
-						"movementYawTargetChanged: {}, isPowerAttacking: {}, "
+						"movementYawTargetChanged: {}, "
 						"turnToTarget: {}, faceTarget: {}.",
 						coopActor->GetName(),
 						finishedGettingUp,
@@ -4062,7 +4062,7 @@ namespace ALYSLC
 			bool isAIDriven = 
 			(
 				glob.player1Actor->movementController && 
-				!glob.player1Actor->movementController->unk1C5
+				!glob.player1Actor->movementController->controlsDriven
 			);
 			// NOTE: 
 			// Also when an event causes P1 to ragdoll, 
@@ -4236,7 +4236,7 @@ namespace ALYSLC
 
 		// Set new local rotations before the UpdateDownwardPass() call,
 		// so that it can use our modified local rotations to set the nodes' new world rotations.
-		if (isTorsoNode || Settings::bRotateArmsWhenSheathed)
+		if (isTorsoNode || Settings::bEnableArmsRotation)
 		{
 			a_nodePtr->local.rotate = data->currentRotation;
 		}
@@ -5044,7 +5044,8 @@ namespace ALYSLC
 			if (hitActor)
 			{
 				// Stop the hit actor from attacking when the slap connects.
-				if (hitActor->IsAttacking() || hitActor->IsBlocking())
+				if ((Settings::bSlapsStopAttacksAndBlocking) && 
+					(hitActor->IsAttacking() || hitActor->IsBlocking()))
 				{
 					hitActor->NotifyAnimationGraph("attackStop");
 					hitActor->NotifyAnimationGraph("recoilStart");
@@ -5103,7 +5104,6 @@ namespace ALYSLC
 				// Set speed ratio and hit volume after setting the min knockdown speed.
 				float hitToKnockdownSpeedRatio = min(1.0f, hitSpeed / knockdownMinSpeed);
 				hitVolume = min(2.0f, 2.0f * hitToKnockdownSpeedRatio);
-
 				auto handle = hitActor->GetHandle();
 				bool isAlreadyGrabbed = a_p->tm->rmm->IsManaged(handle, true);
 				if (isAlreadyGrabbed)
@@ -5123,7 +5123,7 @@ namespace ALYSLC
 					// in addition to meeting the requisite arm velocity.
 					if (slapKnockdown && 
 						Settings::uSlapKnockdownCriteria == 
-						!SlapKnockdownCriteria::kOnlyHeadshots)
+						!SlapKnockdownCriteria::kOnlyStrongHeadshots)
 					{
 						slapKnockdown = false;
 						// Get the actor's head node from their head body part,
@@ -5334,7 +5334,7 @@ namespace ALYSLC
 								a_p->tm->GetThrownRefrMagickaCost
 								(
 									hitActor,
-									0.5f * Settings::fGrabHoldSecsToMaxReleaseSpeed
+									0.5f * Settings::fSecsToReleaseObjectsAtMaxSpeed
 								)
 							);
 							a_p->tm->magickaOverflowSlowdownFactor = 
@@ -5618,7 +5618,7 @@ namespace ALYSLC
 						(
 							1.0f, 0.5f, hitToKnockdownSpeedRatio, 7.0f
 						), 
-						hitForce
+						hitForce * Settings::fArmCollisionForceMultiplier
 					);
 				}
 
@@ -5674,7 +5674,8 @@ namespace ALYSLC
 				hitHkpRigidBodyPtr->motion.ApplyForce
 				(
 					*g_deltaTimeRealTime,
-					(hitVelocity * hitHkpRigidBodyPtr->motion.GetMass() * 0.05f)
+					(hitVelocity * hitHkpRigidBodyPtr->motion.GetMass() * 0.05f) *
+					Settings::fArmCollisionForceMultiplier
 				);
 				if (a_noPreviousHit)
 				{
@@ -5737,7 +5738,7 @@ namespace ALYSLC
 								a_p->tm->GetThrownRefrMagickaCost
 								(
 									hitRefrPtr.get(),
-									0.5f * Settings::fGrabHoldSecsToMaxReleaseSpeed
+									0.5f * Settings::fSecsToReleaseObjectsAtMaxSpeed
 								)
 							);
 							a_p->tm->magickaOverflowSlowdownFactor = 

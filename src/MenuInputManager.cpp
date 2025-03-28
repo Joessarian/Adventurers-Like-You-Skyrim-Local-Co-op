@@ -1152,93 +1152,93 @@ namespace ALYSLC
 			// Left Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(0.5f * thickness, thickness), 
-				glm::vec2(0.5f * thickness, rectHeight - thickness), 
+				glm::vec2(0.25f * thickness, 0.5f * thickness), 
+				glm::vec2(0.25f * thickness, rectHeight - 0.5f * thickness), 
 				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				thickness
+				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(1.25f * thickness, 1.5f * thickness), 
-				glm::vec2(1.25f * thickness, rectHeight - 1.5f * thickness), 
+				glm::vec2(0.625f * thickness, 0.75f * thickness), 
+				glm::vec2(0.625f * thickness, rectHeight - 0.75f * thickness), 
 				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(1.75f * thickness, 2.0f * thickness), 
-				glm::vec2(1.75f * thickness, rectHeight - 2.0f * thickness), 
+				glm::vec2(0.875f * thickness, thickness), 
+				glm::vec2(0.875f * thickness, rectHeight - thickness), 
 				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 
 			// Right Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(rectWidth - 0.5f * thickness, thickness), 
-				glm::vec2(rectWidth - 0.5f * thickness, rectHeight - thickness), 
+				glm::vec2(rectWidth - 0.25f * thickness, 0.5f * thickness), 
+				glm::vec2(rectWidth - 0.25f * thickness, rectHeight - 0.5f * thickness), 
 				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				thickness
+				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(rectWidth - 1.25f * thickness, 1.5f * thickness), 
-				glm::vec2(rectWidth - 1.25f * thickness, rectHeight - 1.5f * thickness), 
+				glm::vec2(rectWidth - 0.625f * thickness, 0.75f * thickness), 
+				glm::vec2(rectWidth - 0.625f * thickness, rectHeight - 0.75f * thickness), 
 				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(rectWidth - 1.75f * thickness, 2.0f * thickness), 
-				glm::vec2(rectWidth - 1.75f * thickness, rectHeight - 2.0f * thickness), 
+				glm::vec2(rectWidth - 0.875f * thickness, thickness), 
+				glm::vec2(rectWidth - 0.875f * thickness, rectHeight - thickness), 
 				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 
 			// Top Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(0.0f, 0.5f * thickness), 
-				glm::vec2(rectWidth, 0.5f * thickness),
+				glm::vec2(0.0f, 0.25f * thickness), 
+				glm::vec2(rectWidth, 0.25f * thickness),
 				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				thickness
+				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(thickness, 1.25f * thickness), 
-				glm::vec2(rectWidth - thickness, 1.25f * thickness),
+				glm::vec2(0.5f * thickness, 0.625f * thickness), 
+				glm::vec2(rectWidth - 0.5f * thickness, 0.625f * thickness),
 				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
-				0.5f * thickness
+				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(1.5f * thickness, 1.75f * thickness), 
-				glm::vec2(rectWidth - 1.5f * thickness, 1.75f * thickness),
+				glm::vec2(0.75f * thickness, 0.875f * thickness), 
+				glm::vec2(rectWidth - 0.75f * thickness, 0.875f * thickness),
 				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 
 			// Bottom Edge.
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(0.0f, rectHeight - 0.5f * thickness), 
-				glm::vec2(rectWidth, rectHeight - 0.5f * thickness), 
+				glm::vec2(0.0f, rectHeight - 0.25f * thickness), 
+				glm::vec2(rectWidth, rectHeight - 0.25f * thickness), 
 				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				thickness
+				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(thickness, rectHeight - 1.25f * thickness), 
-				glm::vec2(rectWidth - thickness, rectHeight - 1.25f * thickness), 
+				glm::vec2(0.5f * thickness, rectHeight - 0.625f * thickness), 
+				glm::vec2(rectWidth - 0.5f * thickness, rectHeight - 0.625f * thickness), 
 				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
-				0.5f * thickness
+				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
-				glm::vec2(1.5f * thickness, rectHeight - 1.75f * thickness), 
-				glm::vec2(rectWidth - 1.5f * thickness, rectHeight - 1.75f * thickness), 
+				glm::vec2(0.75f * thickness, rectHeight - 0.875f * thickness), 
+				glm::vec2(rectWidth - 0.75f * thickness, rectHeight - 0.875f * thickness), 
 				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
-				0.5f * thickness
+				0.25f * thickness
 			);
 
 			// NOTE:
@@ -2854,7 +2854,7 @@ namespace ALYSLC
 					// Place in front of the player at torso height.
 					auto dropPos = 
 					(
-						Util::Get3DCenterPos(menuCoopActorPtr.get()) + 
+						glob.coopPlayers[managerMenuCID]->mm->playerTorsoPosition + 
 						Util::RotationToDirectionVect
 						(
 							0.0f, 

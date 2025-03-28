@@ -110,6 +110,30 @@ namespace ALYSLC
 		CoopCellFullyLoadedHandler& operator=(CoopCellFullyLoadedHandler&& a_cflh) = delete;
 	};
 
+	class CoopCombatEventHandler : public RE::BSTEventSink<RE::TESCombatEvent>
+	{
+	public:
+		using EventResult = RE::BSEventNotifyControl;
+		
+		static CoopCombatEventHandler* GetSingleton();
+		
+		static void Register();
+		
+		EventResult ProcessEvent
+		(
+			const RE::TESCombatEvent* a_combatEvent, 
+			RE::BSTEventSource<RE::TESCombatEvent>*
+		) override;
+	
+	private:
+		CoopCombatEventHandler() = default;
+		CoopCombatEventHandler(const CoopCombatEventHandler& a_cceh) = delete;
+		CoopCombatEventHandler(CoopCombatEventHandler&& a_cceh) = delete;
+		~CoopCombatEventHandler() = default;
+		CoopCombatEventHandler& operator=(const CoopCombatEventHandler& a_cceh) = delete;
+		CoopCombatEventHandler& operator=(CoopCombatEventHandler&& a_cceh) = delete;
+	};
+
 	class CoopContainerChangedHandler : public RE::BSTEventSink<RE::TESContainerChangedEvent>
 	{
 	public:

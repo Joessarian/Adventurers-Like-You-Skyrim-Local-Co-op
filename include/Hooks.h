@@ -198,7 +198,8 @@ namespace ALYSLC
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
 			);
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
-			static void Update(RE::Character* a_this, float a_delta);
+			static void Update(RE::Character* a_this, float a_delta);                                                                                                                                                          // 0E5
+
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
 			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
@@ -511,7 +512,10 @@ namespace ALYSLC
 				(
 					"[Projectile Hook] Installed ArrowProjectile OnArrowCollision() hook."
 				);
-				_OnMissileCollision = missileProjectileVtbl.write_vfunc(190, OnProjectileCollision);
+				_OnMissileCollision = missileProjectileVtbl.write_vfunc
+				(
+					190, OnProjectileCollision
+				);
 				SPDLOG_INFO
 				(
 					"[Projectile Hook] Installed MissileProjectile OnMissileCollision() hook."

@@ -128,6 +128,7 @@ namespace ALYSLC
 					!InputAction::kPowerAttackLH,
 					!InputAction::kPowerAttackRH,
 					!InputAction::kQuickSlotCast,
+					!InputAction::kQuickSlotItem,
 					!InputAction::kShout, 
 					!InputAction::kSpecialAction
 				}
@@ -155,7 +156,6 @@ namespace ALYSLC
 					!InputAction::kCycleWeaponLH, 
 					!InputAction::kCycleWeaponRH, 
 					!InputAction::kHotkeyEquip,
-					!InputAction::kQuickSlotItem,
 					!InputAction::kSheathe
 				}
 			},
@@ -287,7 +287,7 @@ namespace ALYSLC
 			{ !InputAction::kPowerAttackLH, ActionGroup::kCombat },
 			{ !InputAction::kPowerAttackRH, ActionGroup::kCombat },
 			{ !InputAction::kQuickSlotCast, ActionGroup::kCombat },
-			{ !InputAction::kQuickSlotItem, ActionGroup::kEquip },
+			{ !InputAction::kQuickSlotItem, ActionGroup::kCombat },
 			{ !InputAction::kResetAim, ActionGroup::kTargeting },
 			{ !InputAction::kRotateCam, ActionGroup::kCamera },
 			{ !InputAction::kRotateLeftForearm, ActionGroup::kMovement },
@@ -1223,6 +1223,7 @@ namespace ALYSLC
 		// recursively up to a predetermined depth, which prevents infinite recursion.
 		// The list of composing InputAction lists for the action 
 		// is referenced to make these decompositions.
+		// A set of composing inputs (not actions) is maintained to prevent duplicate insertions.
 		// Returns a list of these composing inputs.
 		// Also sets the number of player actions broken down 
 		// and the max depth of recursion reached through the outparams.
@@ -1230,6 +1231,7 @@ namespace ALYSLC
 		(
 			const InputAction& a_playerAction, 
 			const PACompInputActionLists& a_paCompInputActionsLists,
+			std::set<InputAction>& a_composingInputsSet,
 			uint32_t& a_numComposingPlayerActionsOut, 
 			uint8_t& a_recursionDepthOut
 		) const noexcept;

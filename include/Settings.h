@@ -83,10 +83,10 @@ namespace ALYSLC
 		static inline bool bInfiniteCarryweight = false;
 		// WIP: Speed up supported dodge animations. 
 		// Makes dodging more responsive but lowers dodge distance.
-		static inline bool bSpeedUpDodgeAnimations = true;
+		static inline bool bSpeedUpDodgeAnimations = false;
 		// Speed up equip/unequip animations. 
 		// Makes sheathing/drawing and cycling through gear faster.
-		static inline bool bSpeedUpEquipAnimations = true;
+		static inline bool bSpeedUpEquipAnimations = false;
 
 		//--------------
 		//[Emote Idles]:
@@ -127,6 +127,58 @@ namespace ALYSLC
 			"IdleWipeBrow"
 		};
 
+		//------------------
+		//[Extra Mechanics]:
+		//------------------
+		// Aim pitch angle affects flop trajectory. Check it out.
+		static inline bool bAimPitchAffectsFlopTrajectory = true;
+		// Attract nearby lootable objects while holding grab 
+		// and not targeting any object with the crosshair.
+		static inline bool bAutoGrabNearbyLootableObjectsOnHold = true;
+		// Can players grab actors (other players not included)?
+		static inline bool bCanGrabActors = false;
+		// Can players grab other players?
+		static inline bool bCanGrabOtherPlayers = true;
+		// Rotate arms when holding the corresponding bind(s) 
+		// and moving the right stick while weapons are sheathed.
+		static inline bool bEnableArmsRotation = true;
+		// Enable flopping (double tap special action bind when weapons are sheathed).
+		static inline bool bEnableFlopping = true;
+		// Enable object grabbing, moving, rotating, dropping, and throwing.
+		static inline bool bEnableObjectManipulation = true;
+		// Can grab incoming projectiles while holding the grab bind.
+		// Otherwise, only on release of the bind.
+		static inline bool bGrabIncomingProjectilesOnHold = false;
+		// Can grab actors indefinitely.
+		static inline bool bRemoveGrabbedActorAutoGetUp = true;
+		// Only one collision raycast per ragdolling actor per frame if true.
+		// Otherwise, one collision raycast 
+		// for each ragdolling actor's main skeleton nodes each frame.
+		static inline bool bSimpleThrownObjectCollisionCheck = false;
+		// Slaps interrupt NPC attacks, spell casting, and blocking.
+		static inline bool bSlapsStopAttacksAndBlocking = true;
+		// Allow toggling of grabbed refr collisions.
+		static inline bool bToggleGrabbedRefrCollisions = false;
+		// Multiplier for force applied by arm collisions.
+		static inline float fArmCollisionForceMultiplier = 1.0f;
+		// Base max thrown object speed (before magicka is leveled up, in-game units / second).
+		static inline float fBaseMaxThrownObjectReleaseSpeed = 1500.0f;
+		// If the requesting player has sufficient magicka,
+		// they can grab any incoming projectiles that are at most this many frames 
+		// from hitting them.
+		static inline float fFrameWindowToGrabIncomingProjectiles = 4.0f;
+		// Seconds before attracting another nearby lootable refr while holding grab.
+		static inline float fSecsBeforeAutoGrabbingNextLootableObject = 0.25f;
+		// Seconds to hold the grab bind in order to throw the grabbed form at max speed.
+		static inline float fSecsToReleaseObjectsAtMaxSpeed = 0.5f;
+		// Max number of grabbable objects at once.
+		// Additional grabbed objects are suspended in a ring around the first grabbed object,
+		// hence 1 is added to a number that divides 360 without a remainder.
+		static inline uint32_t uMaxGrabbedReferences = 41;
+		// Only knock down slapped actors based on the set knockdown mode.
+		static inline uint32_t uSlapKnockdownCriteria = 
+		!SlapKnockdownCriteria::kSufficientContactSpeed;
+
 		//---------------
 		//[Menus and UI]:
 		//---------------
@@ -146,8 +198,8 @@ namespace ALYSLC
 		// Maximum amount of pixels the crosshair can move across per second.
 		// Used as the base when scaling player crosshair sensitivities.
 		static inline float fCrosshairMaxTraversablePixelsPerSec = 1920.0f;
-		// Player menu control overlay (colored border) outline thickness (pixels).
-		static inline float fPlayerMenuControlOverlayOutlineThickness = 6.0f;
+		// Player menu control overlay (tri-colored border) outline thickness (pixels).
+		static inline float fPlayerMenuControlOverlayOutlineThickness = 12.0f;
 
 		//-----------
 		//[Movement]:
@@ -168,9 +220,10 @@ namespace ALYSLC
 		static inline float fCastingMovMult = 1.0f;
 		// Casting rotation multiplier.
 		static inline float fCastingRotMult = 0.75f;
-		// Jump base initial speed in LS direction.
+		// Additional jump launch speed in LS direction.
+		// Applied on the first frame of the jump.
 		// In game units / second.
-		static inline float fJumpBaseLSDirSpeed = 500.0f;
+		static inline float fJumpAdditionalLaunchSpeed = 0.0f;
 		// Jump rotation multiplier.
 		static inline float fJumpingRotMult = 0.3f;
 		// Gravity multiplier that affects how fast the player rises 
@@ -203,20 +256,10 @@ namespace ALYSLC
 		// Sprint rotation multiplier.
 		static inline float fSprintingRotMult = 0.67f;
 
-		//----------------
-		//[New Mechanics]:
-		//----------------
-		// Aim pitch angle affects flop trajectory. Check it out.
-		static inline bool bAimPitchAffectsFlopTrajectory = true;
-		// Enable flopping (double tap special action bind when weapons are sheathed).
-		static inline bool bAllowFlopping = true;
-		// Attract nearby lootable objects while holding grab 
-		// and not targeting any object with the crosshair.
-		static inline bool bAutoGrabClutterOnHold = true;
-		// Can players grab actors (other players not included)?
-		static inline bool bCanGrabActors = false;
-		// Can players grab other players?
-		static inline bool bCanGrabOtherPlayers = true;
+		//--------------
+		//[New Systems]:
+		//--------------
+		
 		// Can perform killmove executions on other players.
 		static inline bool bCanKillmoveOtherPlayers = true;
 		// Enable reviving of P1 if using the revive system.
@@ -226,17 +269,6 @@ namespace ALYSLC
 		// Hold a cycling bind to cycle through equipable items.
 		// Emote idles are cycled on hold by default.
 		static inline bool bHoldToCycle = false;
-		// Can grab actors indefinitely.
-		static inline bool bRemoveGrabbedActorAutoGetUp = true;
-		// Rotate arms when holding the corresponding bind(s) 
-		// and moving the right stick while weapons are sheathed.
-		static inline bool bRotateArmsWhenSheathed = true;
-		// Only one collision raycast per ragdolling actor per frame if true.
-		// Otherwise, one collision raycast 
-		// for each ragdolling actor's main skeleton nodes each frame.
-		static inline bool bSimpleActorCollisionRaycast = false;
-		// Allow toggling of grabbed refr collisions.
-		static inline bool bToggleGrabbedRefrCollisions = true;
 		// Use velocity-based dash dodge instead of animations from any installed dodge mods.
 		static inline bool bUseDashDodgeSystem = true;
 		// Perform killmoves using this mod's system.
@@ -248,8 +280,6 @@ namespace ALYSLC
 		// Use unarmed killmoves when casting spells at nearby low-health enemies.
 		// Add a mean streak to your mage in close quarters combat.
 		static inline bool bUseUnarmedKillmovesForSpellcasting = false;
-		// Base max thrown object speed (before magicka is leveled up, in-game units / second).
-		static inline float fBaseMaxThrownObjectReleaseSpeed = 1500.0f;
 		// Killmove chance per attack when target's health is below the killmove health threshold 
 		// (fKillmoveHealthFraction).
 		static inline float fKillmoveChance = 0.333333f;
@@ -261,8 +291,6 @@ namespace ALYSLC
 		static inline float fMinDashDodgeSpeedmult = 300.0f;
 		// Cycle through nearby references after holding the activate bind for this many seconds.
 		static inline float fSecsBeforeActivationCycling = 1.0f;
-		// Seconds before attracting another nearby lootable refr while holding grab.
-		static inline float fSecsBeforeAutoGrabbingNextLootableObject = 0.0f; //0.25f;
 		// Seconds between activation checks 
 		// (time between highlighting objects once cycling starts).
 		static inline float fSecsBetweenActivationChecks = 0.7f;
@@ -270,7 +298,7 @@ namespace ALYSLC
 		static inline float fSecsCyclingInterval = 0.8f;
 		// Default input hold time threshold for triggering on-hold player actions, 
 		// such as power attacks.
-		static inline float fSecsDefMinHoldTime = 0.15f;
+		static inline float fSecsDefMinHoldTime = 0.2f;
 		// Seconds to fully revive a player when downed, if uninterrupted.
 		static inline float fSecsReviveTime = 5.0f;
 		// Seconds until an unrevived downed player, and all other active players, die.
@@ -289,17 +317,11 @@ namespace ALYSLC
 		// at their max speedmult if the dodge lasts shorter/longer.
 		// The dodge also always has an additional 6 startup frames.
 		static inline uint32_t uDashDodgeBaseAnimFrameCount = 24;
-		// Max number of grabbable objects at once.
-		// Additional grabbed objects are suspended in a ring around the first grabbed object,
-		// hence 1 is added to a number that divides 360 without a remainder.
-		static inline uint32_t uMaxGrabbedReferences = 41;
-		// Only knock down slapped actors based on the set knockdown mode.
-		static inline uint32_t uSlapKnockdownCriteria = 
-		!SlapKnockdownCriteria::kSufficientContactSpeed;
 
 		//--------------
 		//[Progression]:
 		//--------------
+		
 		// Add auto-scaling to co-op player's own skill progression 
 		// when setting skill AVs on level up.
 		// Gives co-op players class-dependent extra levels to skills on character level up.
@@ -308,6 +330,17 @@ namespace ALYSLC
 		static inline bool bStackCoopPlayerSkillAVAutoScaling = false;
 		// Multiplier for the XP required to level up.
 		static inline float fLevelUpXPThresholdMult = 1.0f;
+		// Perk points gained per level up (vanilla: 1). Can be fractional.
+		// This number is multiplied by the player's current level - 1
+		// and then floored to get the total number of perk points available.
+		// For example, 1.5 means 3 perk points every two levels 
+		// (1 given on the first level up (1.5 rounded down) and 2 more on the next level up,
+		// from 3, rounded down, over two levels).
+		static inline float fPerkPointsPerLevelUp = 1.0f;
+		// Flat increase to perk points, not given out per level.
+		// For example, 3 means all players will receive 3 extra perk points
+		// on their next level up.
+		static inline uint32_t uFlatPerkPointsIncrease = 0;
 
 		// [Enderal-specific settings]
 		// Please note that the options below will in no way balance progression completely
@@ -459,16 +492,6 @@ namespace ALYSLC
 		{
 			true, true, true, true 
 		};
-		// Draw aim pitch indicator when adjusting the player's torso rotation..
-		static inline std::vector<bool> vbDrawAimPitchIndicator = 
-		{
-			true, true, true, true 
-		};
-		// Draw predicted projectile trajectory curves before they are released.
-		static inline std::vector<bool> vbDrawPredictedProjectileTrajectoryCurves = 
-		{
-			true, true, true, true 
-		};
 		// Is friendly fire enabled towards actors friendly to the party ?
 		// (followers, other players, summons, etc.)
 		static inline std::vector<bool> vbFriendlyFire = 
@@ -480,6 +503,19 @@ namespace ALYSLC
 		static inline std::vector<bool> vbUseAimCorrection = 
 		{
 			true, true, true, true 
+		};
+		// Use screenspace positions and LS angles converted to screenspace directions 
+		// for aim correction targeting if true;
+		// otherwise, use worldspace positions and LS angles 
+		// converted to worldspace directions if false.
+		// NOTE: 
+		// Screenspace-based target selection is currently more accurate,
+		// better for vertical target selection,
+		// and doesn't shift between targets as often, 
+		// but it also takes some getting used to.
+		static inline std::vector<bool> vbScreenspaceBasedAimCorrectionCheck = 
+		{
+			false, false, false, false
 		};
 		// Angular window (radians) centered at the player's current left stick/heading angle
 		// within which any actors will be considered as targets for attack aim correction.
@@ -534,6 +570,16 @@ namespace ALYSLC
 		{
 			true, true, true, true 
 		};
+		// Draw aim pitch indicator when adjusting the player's torso rotation..
+		static inline std::vector<bool> vbEnableAimPitchIndicator = 
+		{
+			true, true, true, true 
+		};
+		// Draw predicted projectile trajectory curves before they are released.
+		static inline std::vector<bool> vbEnablePredictedProjectileTrajectoryCurves = 
+		{
+			true, true, true, true 
+		};
 		// Crosshair gap radius (pixels).
 		static inline std::vector<float> vfCrosshairGapRadius =
 		{
@@ -578,7 +624,7 @@ namespace ALYSLC
 		// Thickness of any predicted projectile trajectory curves (pixels).
 		static inline std::vector<float> vfPredictedProjectileTrajectoryCurveThickness = 
 		{
-			2.5f, 2.5f, 2.5f, 2.5f
+			2.0f, 2.0f, 2.0f, 2.0f
 		};
 		// Crosshair body is the same color as the overlay.
 		// Red, Green, Cyan, Yellow by default.
@@ -697,6 +743,23 @@ namespace ALYSLC
 		// Max number of controllers supported.
 		static inline const std::uint8_t fMaxNumControllers = 4;
 
+		//------------------
+		//[Extra Mechanics]:
+		//------------------
+		// Absolute max thrown object speed (in-game units / second).
+		static inline const float fAbsoluteMaxThrownRefrReleaseSpeed = 75000.0f;
+		// Base max speed at which a grabbed reference can move (ingame units / second).
+		static inline const float fBaseGrabbedRefrMaxSpeed = 131072.0f;
+		// Max grabbed player speed multiplier.
+		static inline const float fGrabbedPlayerMaxSpeedMult = 0.5f;
+		// Max speed at which a grabbed reference can rotate (radians / second).
+		static inline const float fGrabbedRefrBaseRotSpeed = PI;
+		// Maximum number of seconds after releasing an object before it is no longer handled.
+		static inline const float fMaxSecsBeforeClearingReleasedRefr = 10.0f;
+		// Max number of seconds over which the last released refr is handled 
+		// following a collision.
+		static inline const float fSecsAfterCollisionBeforeClearingReleasedRefr = 5.0f;
+
 		//-----------
 		//[Movement]:
 		//-----------
@@ -704,35 +767,18 @@ namespace ALYSLC
 		// NOTE: Setting this value above 8 leads to choppier rotation,
 		// especially when facing a target.
 		static inline const float fBaseMTRotationMult = 8.0f;
+		
 
-		//----------
-		//[Physics]:
-		//----------
-		// Gravitational acceleration constant (units: meters / second^2).
-		static inline const float fG = 9.80665f;
-		// Air resistance constant (units: 1 / second).
-		static inline const float fMu = 0.099609375f;
-
-		//-----------------------------------
-		//[Player Actions and New Mechanics]:
-		//-----------------------------------
+		//---------------------------------
+		//[New Systems and Player Actions]:
+		//---------------------------------
 		// Attempt to perform generic 'character' skeleton killmoves on NPCs 
 		// with skeletons that have no assigned killmoves.
 		// WARNING: Will likely look odd or completely bug out when performed. 
 		// Disabling will prevent such NPCs from being killmove'd.
 		static inline const bool bUseGenericKillmovesOnUnsupportedNPCs = false;
-		// Absolute max thrown object speed (in-game units / second).
-		static inline const float fAbsoluteMaxThrownRefrReleaseSpeed = 50000.0f;
-		// Base max speed at which a grabbed reference can move (ingame units / second).
-		static inline const float fBaseGrabbedRefrMaxSpeed = 131072.0f;
 		// Speed up the player's animations with this factor while dash dodging.
 		static inline const float fDashDodgeAnimSpeedFactor = 2.0f;
-		// Max grabbed player speed multiplier.
-		static inline const float fGrabbedPlayerMaxSpeedMult = 0.5f;
-		// Max speed at which a grabbed reference can rotate (radians / second).
-		static inline const float fGrabbedRefrBaseRotSpeed = PI;
-		// Seconds to hold the grab bind in order to throw the grabbed form at max speed.
-		static inline const float fGrabHoldSecsToMaxReleaseSpeed = 0.75f;	//0.5f;
 		// Max radial distance from a revive target to start reviving.
 		static inline const float fMaxDistToRevive = 150.0f;
 		// Min health reached while reviving another player.
@@ -747,6 +793,40 @@ namespace ALYSLC
 		static inline const uint32_t uDashDodgeSetupFrameCount = 6;
 
 		//----------
+		//[Physics]:
+		//----------
+		// Gravitational acceleration constant (units: meters / second^2).
+		static inline const float fG = 9.80665f;
+		// Air resistance constant (units: 1 / second).
+		static inline const float fMu = 0.099609375f;
+
+		//---------------
+		//[Progressions]:
+		//---------------
+		// TODO: 
+		// Potential safer alternative options to not import companion player data over to P1
+		// and to not have companion players level their skills as P1 does 
+		// (auto scale character level to P1's level 
+		// and have the game auto-scale skill levels based on class choice instead).
+		// 
+		// (WIP): IMPORTANT: Can cause issues that require loading an older save
+		// if another player's data is copied over to P1 and the game saves.
+		// Copy over companion player actor values and character data onto P1 
+		// when a companion player is in control of certain supported menus.
+		// Some examples include:
+		// - Importing health/magicka/stamina, perks, player name, and race name
+		// when entering the Stats Menu,
+		// - Importing the companion player's inventory 
+		// when opening the Bartering Menu so they can sell their own items directly.
+		// - Importing the companion player's carryweight, perk lists, and health/magicka/stamina
+		// when they open their inventory so that they can accurately view their expected damage
+		// for any weapons in their inventory.
+		static inline bool bCopyCompanionPlayerDataToP1WhenInMenus = true;
+		// Independent leveling of companion player (P2-P4) skills using the same on-use leveling
+		// system as for P1. Must have the above setting set to true first.
+		static inline bool bIndependentSkillProgression = true;
+
+		//----------
 		//[Stealth]:
 		//----------
 		// Radial distance from hostile actor to start performing detection checks.
@@ -758,15 +838,10 @@ namespace ALYSLC
 		//------------
 		//[Targeting]:
 		//------------
-		// Can grab incoming projectiles while holding the grab bind.
-		// Otherwise, only on release of the bind.
-		static inline const bool bCanGrabIncomingProjectilesOnHold = true;
 		// Max time to continue adjusting the path of managed projectiles.
 		static inline const float fMaxProjAirborneSecsToTarget = 60.0f;
 		// Max time to continue drawing the trajectory of managed projectiles.
 		static inline const float fMaxProjTrajectorySecsToTarget = 5.0f;
-		// Maximum number of seconds after releasing an object before it is no longer handled.
-		static inline const float fMaxSecsBeforeClearingReleasedRefr = 10.0f;
 		// Minimum distance (in-game units) to move 
 		// before automatically refreshing nearby references when activation cycling.
 		static inline const float fMinMoveDistToRefreshRefrs = 10.0f;
@@ -775,9 +850,6 @@ namespace ALYSLC
 		static inline const float fMinTurnAngToRefreshRefrs = 1.0f * PI / 180.0f;
 		// Max activation reach multiplier when mounted.
 		static inline const float fMountedActivationReachMult = 2.0f;
-		// Max number of seconds over which the last released refr is handled 
-		// following a collision.
-		static inline const float fSecsAfterCollisionBeforeClearingReleasedRefr = 5.0f;
 		// If the distance from the player's attack source to the target position
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;

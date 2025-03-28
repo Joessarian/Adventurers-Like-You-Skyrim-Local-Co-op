@@ -131,9 +131,12 @@ namespace ALYSLC
 		// changing the currently-selected menu element.
 		float deadZone = 
 		(
-			SHRT_MAX * (a_isControllingMenus ? 
-			min(0.5f, Settings::vfAnalogDeadzoneRatio[a_playerID]) : 
-			Settings::vfAnalogDeadzoneRatio[a_playerID])
+			SHRT_MAX * 
+			(
+				a_isControllingMenus ? 
+				min(0.5f, Settings::vfAnalogDeadzoneRatio[a_playerID]) : 
+				Settings::vfAnalogDeadzoneRatio[a_playerID]
+			)
 		);
 		// Maximum displacement magnitude, accounting for deadzone.
 		data.maxMag = SHRT_MAX - deadZone;

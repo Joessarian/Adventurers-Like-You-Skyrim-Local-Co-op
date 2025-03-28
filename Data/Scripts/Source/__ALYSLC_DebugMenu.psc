@@ -86,20 +86,25 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; Useful when a player cannot move or perform actions after a
     ; co-op session starts.
     DebugMenu.AddEntryItem("Refresh Manager Data", 1, -1, False)
+    ; 14. Reset this player's health/magicka/stamina actor values to their base values.
+    ; Also remove all unlocked perks from this player and remove all shared perks from all active players.
+    ; All removed perks have their perk points refunded.
+    ; Allows this player to fully respec their character.
+    DebugMenu.AddEntryItem("Respec Player (Skyrim Only)", 1, -1, False)
 
     ; [Misc]
-    ; 14. Assign controller ID manually for player 1.
+    ; 15. Assign controller ID manually for player 1.
     ; Useful for when one controller is controlling multiple players or menus for multiple players or no players at all.
     ; Happens when Skyrim does not assign the controller with XInput index 0 (first controller) to player 1.
     ; Have yet to figure out how to get the XInput controller index for player 1 directly.
     DebugMenu.AddEntryItem("Assign Player 1 Controller ID", 2, -1, False)
-    ; 15. Disable co-op cam, reset player 1 to default motion-driven state, reset controls, and remove any other
+    ; 16. Disable co-op cam, reset player 1 to default motion-driven state, reset controls, and remove any other
     ; temporary modifications made to player 1's state since the last co-op session started.
     DebugMenu.AddEntryItem("Reset Cam and Player 1", 2, -1, False)
-    ; 16. Restart co-op camera.
+    ; 17. Restart co-op camera.
     ; Useful for when camera begins to stutter or is stuck in place.
     DebugMenu.AddEntryItem("Restart Co-op Camera", 2, -1, False)
-    ; 17. Stop menu input manager.
+    ; 18. Stop menu input manager.
     ; Useful for when a co-op player still has control of any open menus when they should not.
     DebugMenu.AddEntryItem("Stop Menu Input Manager", 2, -1, False)
 
@@ -155,13 +160,28 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
                 ALYSLC.RefreshPlayerManagers(PlayerInMenuCID)
             EndIf
         ElseIf (SelectedIndex == 14)
+            If (PlayerInMenu)
+                ALYSLC.Log("[CDM SCRIPT] DEBUG: respec " + PlayerInMenu.GetDisplayName() + " and remove all unlocked shared perks from all players.")
+                ALYSLC.RespecPlayer(PlayerInMenuCID)
+                ; Have to wait for message box prompt to open.
+                SecsWaited = 0.0
+                While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
+                    Utility.Wait(0.1)
+                    SecsWaited += 0.1
+                EndWhile
+    
+                ; Once open, wait until closed.
+                While (UI.IsMenuOpen("MessageBoxMenu"))
+                    Utility.WaitMenuMode(0.1)
+                EndWhile
+            EndIf
+        ElseIf (SelectedIndex == 15)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: assign player 1 CID.")
             ALYSLC.AssignPlayer1CID()
             ; Have to wait for message box prompt to open.
             SecsWaited = 0.0
             While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
                 Utility.Wait(0.1)
-                ;Utility.WaitMenuMode(0.1)
                 SecsWaited += 0.1
             EndWhile
 
@@ -169,7 +189,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
             While (UI.IsMenuOpen("MessageBoxMenu"))
                 Utility.WaitMenuMode(0.1)
             EndWhile
-        ElseIf (SelectedIndex == 15)
+        ElseIf (SelectedIndex == 16)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: reset cam, player 1 controls, and state.")
             ALYSLC.ResetPlayer1AndCamera()
             Utility.Wait(1.0)
@@ -182,10 +202,10 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
             Utility.Wait(1.0)
             Game.ForceThirdPerson()
             Game.SetCameraTarget(PlayerRef)
-        ElseIf (SelectedIndex == 16)
+        ElseIf (SelectedIndex == 17)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: restart co-op camera.")
             ALYSLC.RestartCoopCamera()
-        ElseIf (SelectedIndex == 17)
+        ElseIf (SelectedIndex == 18)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: stop menu input manager.")
             ALYSLC.StopMenuInputManager()
         EndIf

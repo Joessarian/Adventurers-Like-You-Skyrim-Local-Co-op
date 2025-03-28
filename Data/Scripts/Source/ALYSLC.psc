@@ -12,6 +12,7 @@ Bool Function InitializeCoop(Int a_numCompanions, Int[] a_controllerIDs, Actor[]
 Function AssignPlayer1CID() Global Native
 Function ChangeCoopSessionState(Bool a_start) Global Native
 Function CopyNPCAppearanceToPlayer(Int a_controllerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
+Function EnableCoopEntityCollision() Global Native
 Form[] Function GetAllAppearancePresets(Race a_race, Bool a_female) Global Native
 Form[] Function GetAllClasses() Global Native
 String[] Function GetAllCyclableEmoteIdleEvents() Global Native
@@ -31,7 +32,6 @@ Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
 Function StartPlayerManagers() Global Native
 Function TeleportToPlayerToActor(Int a_controllerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
-Function ToggleCoopEntityCollision(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_controllerID, int a_playerID, Bool a_shouldEnter) Global Native
 Function UpdateAllSerializedCompanionPlayerFIDKeys() Global Native
 Function UpdateGenderAndBody(Int a_controllerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
@@ -52,6 +52,7 @@ Function RefreshPlayerManagers(Int a_controllerID) Global Native
 Function ResetCoopCompanion(Int a_controllerID, Bool a_unequipAll, Bool a_reattachHavok) Global Native
 Function ResetPlayer1AndCamera() Global Native
 Function ResetPlayer1State() Global Native
+Function RespecPlayer(Int a_controllerID) Global Native
 Function RestartCoopCamera() Global Native
 Function StopAllCombatOnCoopPlayers(Bool a_clearBounties) Global Native
 Function StopMenuInputManager() Global Native

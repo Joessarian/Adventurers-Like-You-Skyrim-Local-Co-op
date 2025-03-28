@@ -415,10 +415,18 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"[BINDS] P{}: {}'s first composing action was disabled. "
-							"Disabling the bind.",
+							"Disabling the bind. "
+							"Binds that depend on this bind will not be affected.",
 							pIndex + 1, actionName
 						);
-						break;
+						// NOTE:
+						// Treat the first assigned input action as enabled
+						// to continue checking subsequent slots, which, if enabled,
+						// will have their actions added to the composing input actions list
+						// for this disabled bind.
+						// This is done to ensure these disabled actions 
+						// can act as composing actions for other enabled binds.
+						composingActionEnabled= true;
 					}
 
 					// Get the composing action's assigned input action index if it exists.
@@ -483,6 +491,19 @@ namespace ALYSLC
 								param.perfType = PerfType::kDisabled;
 								actionsWithBindErrors.insert(action);
 							}
+
+							SPDLOG_DEBUG
+							(
+								"[Settings] ImportBinds: P{}: "
+								"Bind for action {}: slot: {}, enabled: {}, "
+								"already assigned: {}, assigned input action: {}.", 
+								pIndex + 1,
+								action, 
+								compActionSlot,
+								composingActionEnabled,
+								alreadyAssigned,
+								assignedInputActionIndex
+							);
 						}
 					}
 					else if (slotModified && !slotInputActionIndexModified)
@@ -640,6 +661,8 @@ namespace ALYSLC
 			// Break down all binds' composing InputAction lists into composing input lists.
 			uint8_t recursionDepth = 0;
 			uint32_t numComposingPlayerActions = 0;
+			// Set of composing inputs for the current action.
+			std::set<InputAction> composingInputsSet{ };
 			for (auto actionIndex = !InputAction::kFirstAction; 
 				actionIndex <= !InputAction::kLastAction;
 				++actionIndex)
@@ -652,11 +675,19 @@ namespace ALYSLC
 				auto& param = playerPAParams[bindIndex];
 				// Reset outparam recursion and composing player actions count.
 				recursionDepth = numComposingPlayerActions = 0;
+				// Clear before getting all inputs.
+				composingInputsSet.clear();
 				// Get and set composing inputs for the current action.
 				param.composingInputs = paInfo->GetComposingInputs
 				(
-					action, tempComposingActionsLists, numComposingPlayerActions, recursionDepth
+					action, 
+					tempComposingActionsLists, 
+					composingInputsSet,
+					numComposingPlayerActions,
+					recursionDepth
 				);
+				// Remove duplicates.
+
 				// Recursion depth exceeded, so disable the bind.
 				if (recursionDepth >= uMaxComposingInputsCheckRecursionDepth)
 				{
@@ -676,6 +707,15 @@ namespace ALYSLC
 				// Lastly, set input mask and copy over composing player actions count.
 				param.inputMask = paInfo->GetInputMask(param.composingInputs);
 				param.composingPlayerActionsCount = numComposingPlayerActions;
+				SPDLOG_DEBUG
+				(
+					"[Settings] ImportBinds: P{}: "
+					"Bind for action {} has {} composing inputs and {} composing actions.", 
+					pIndex + 1,
+					action, 
+					param.composingInputs.size(),
+					param.composingPlayerActionsCount
+				);
 			}
 
 			// Check if all binds are still valid after assignment to the params list.
@@ -706,28 +746,21 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bTargetPosSmoothing", bTargetPosSmoothing);
 		ReadFloatSetting(a_ini, "Camera", "fCamExteriorFOV", fCamExteriorFOV, 0.0f, 180.0f);
 		ReadFloatSetting(a_ini, "Camera", "fCamInteriorFOV", fCamInteriorFOV, 0.0f, 180.0f);
-		ReadUInt32Setting(a_ini, "Camera", "uLockOnAssistance", uLockOnAssistance, 0, 1);
-
-		// Cheats and Debug
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bInfiniteCarryweight", bInfiniteCarryweight);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bAutoGrabClutterOnHold", bAutoGrabClutterOnHold);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bCanGrabActors", bCanGrabActors);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bCanGrabOtherPlayers", bCanGrabOtherPlayers);
-		ReadBoolSetting
-		(
-			a_ini, "Cheats/Fun", "bRemoveGrabbedActorAutoGetUp", bRemoveGrabbedActorAutoGetUp
-		);
-		ReadBoolSetting
-		(
-			a_ini, "Cheats/Fun", "bSimpleActorCollisionRaycast", bSimpleActorCollisionRaycast
-		);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
-		ReadBoolSetting(a_ini, "Cheats/Fun", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
 		ReadUInt32Setting
 		(
-			a_ini, "Cheats/Fun", "uMaxGrabbedReferences", uMaxGrabbedReferences, 0, 101
+			a_ini, 
+			"Camera",
+			"uLockOnAssistance",
+			uLockOnAssistance, 
+			0, 
+			!CamLockOnAssistanceLevel::kTotal - 1
 		);
+
+		// Cheats
+		ReadBoolSetting(a_ini, "Cheats", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
+		ReadBoolSetting(a_ini, "Cheats", "bInfiniteCarryweight", bInfiniteCarryweight);
+		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
+		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
 
 		// Emote Idles
 		ReadStringSetting(a_ini, "EmoteIdles", "sEmoteIdle1", sEmoteIdlesList[0]);
@@ -763,18 +796,167 @@ namespace ALYSLC
 		ReadStringSetting(a_ini, "EmoteIdles", "sEmoteIdle31", sEmoteIdlesList[30]);
 		ReadStringSetting(a_ini, "EmoteIdles", "sEmoteIdle32", sEmoteIdlesList[31]);
 
-		// Menus
-		ReadBoolSetting(a_ini, "Menus", "bTwoPlayerLockpicking", bTwoPlayerLockpicking);
+		// Extra Mechanics
+		ReadBoolSetting
+		(
+			a_ini, 
+			"ExtraMechanics",
+			"bAimPitchAffectsFlopTrajectory",
+			bAimPitchAffectsFlopTrajectory
+		);
+		ReadBoolSetting
+		(
+			a_ini, 
+			"ExtraMechanics",
+			"bAutoGrabNearbyLootableObjectsOnHold",
+			bAutoGrabNearbyLootableObjectsOnHold
+		);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanGrabActors", bCanGrabActors);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanGrabOtherPlayers", bCanGrabOtherPlayers);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bEnableArmsRotation", bEnableArmsRotation);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bEnableFlopping", bEnableFlopping);
+		ReadBoolSetting
+		(
+			a_ini, "ExtraMechanics", "bEnableObjectManipulation", bEnableObjectManipulation
+		);
 		ReadBoolSetting
 		(
 			a_ini,
-			"Menus", 
+			"ExtraMechanics", 
+			"bGrabIncomingProjectilesOnHold",
+			bGrabIncomingProjectilesOnHold
+		);
+		ReadBoolSetting
+		(
+			a_ini, "ExtraMechanics", "bRemoveGrabbedActorAutoGetUp", bRemoveGrabbedActorAutoGetUp
+		);
+		ReadBoolSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"bSimpleThrownObjectCollisionCheck",
+			bSimpleThrownObjectCollisionCheck
+		);
+		ReadBoolSetting
+		(
+			a_ini, "ExtraMechanics", "bSlapsStopAttacksAndBlocking", bSlapsStopAttacksAndBlocking
+		);
+		ReadBoolSetting
+		(
+			a_ini, "ExtraMechanics", "bToggleGrabbedRefrCollisions", bToggleGrabbedRefrCollisions
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fArmCollisionForceMultiplier", 
+			fArmCollisionForceMultiplier, 
+			0.0f, 
+			10.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fBaseMaxThrownObjectReleaseSpeed", 
+			fBaseMaxThrownObjectReleaseSpeed, 
+			0.0f, 
+			50000.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fFrameWindowToGrabIncomingProjectiles", 
+			fFrameWindowToGrabIncomingProjectiles, 
+			0.0f, 
+			30.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fSecsBeforeAutoGrabbingNextLootableObject", 
+			fSecsBeforeAutoGrabbingNextLootableObject, 
+			0.0f, 
+			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fSecsToReleaseObjectsAtMaxSpeed", 
+			fSecsToReleaseObjectsAtMaxSpeed, 
+			0.01f, 
+			5.0f
+		);
+		ReadUInt32Setting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"uMaxGrabbedReferences", 
+			uMaxGrabbedReferences, 
+			0,
+			101
+		);
+		ReadUInt32Setting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"uSlapKnockdownCriteria", 
+			uSlapKnockdownCriteria, 
+			0,
+			!SlapKnockdownCriteria::kTotal - 1
+		);
+
+		// Menus and UI
+		ReadBoolSetting(a_ini, "MenusAndUI", "bTwoPlayerLockpicking", bTwoPlayerLockpicking);
+		ReadBoolSetting
+		(
+			a_ini,
+			"MenusAndUI", 
 			"bUninitializedDialogueWithClosestPlayer",
 			bUninitializedDialogueWithClosestPlayer
 		);
 		ReadFloatSetting
 		(
-			a_ini, "Menus", "fAutoEndDialogueRadius", fAutoEndDialogueRadius, 100.0f, 2000.0f
+			a_ini, "MenusAndUI", "fAutoEndDialogueRadius", fAutoEndDialogueRadius, 100.0f, 2000.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini,
+			"MenusAndUI",
+			"fCamLockOnIndicatorLength", 
+			fCamLockOnIndicatorLength, 
+			1.0f,
+			200.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"MenusAndUI",
+			"fCamLockOnIndicatorThickness", 
+			fCamLockOnIndicatorThickness, 
+			1.0f, 
+			20.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini,
+			"MenusAndUI", 
+			"fCrosshairMaxTraversablePixelsPerSec",
+			fCrosshairMaxTraversablePixelsPerSec, 
+			160.0f,
+			7680.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"MenusAndUI", 
+			"fPlayerMenuControlOverlayOutlineThickness",
+			fPlayerMenuControlOverlayOutlineThickness, 
+			1.0f, 
+			50.0f
 		);
 
 		// Movement
@@ -787,7 +969,12 @@ namespace ALYSLC
 		ReadFloatSetting(a_ini, "Movement", "fJumpingRotMult", fJumpingRotMult, 0.1f, 1.0f);
 		ReadFloatSetting
 		(
-			a_ini, "Movement", "fJumpBaseLSDirSpeed", fJumpBaseLSDirSpeed, 0.0f, 2000.0f
+			a_ini, 
+			"Movement",
+			"fJumpAdditionalLaunchSpeed", 
+			fJumpAdditionalLaunchSpeed, 
+			0.0f, 
+			5000.0f
 		);
 		ReadFloatSetting
 		(
@@ -822,44 +1009,32 @@ namespace ALYSLC
 			a_ini, "Movement", "fSecsAfterGatherToFall", fSecsAfterGatherToFall, 0.01f, 2.0f
 		);
 
-		// Player Actions
+		// New Systems
+		ReadBoolSetting
+		(
+			a_ini, "NewSystems", "bCanKillmoveOtherPlayers", bCanKillmoveOtherPlayers
+		);
+		ReadBoolSetting(a_ini, "NewSystems", "bCanRevivePlayer1", bCanRevivePlayer1);
+		ReadBoolSetting(a_ini, "NewSystems", "bHoldToCycle", bHoldToCycle);
+		ReadBoolSetting(a_ini, "NewSystems", "bUseDashDodgeSystem", bUseDashDodgeSystem);
+		ReadBoolSetting(a_ini, "NewSystems", "bUseKillmovesSystem", bUseKillmovesSystem);
+		ReadBoolSetting(a_ini, "NewSystems", "bUseReviveSystem", bUseReviveSystem);
 		ReadBoolSetting
 		(
 			a_ini, 
-			"PlayerActions",
-			"bAimPitchAffectsFlopTrajectory",
-			bAimPitchAffectsFlopTrajectory
-		);
-		ReadBoolSetting(a_ini, "PlayerActions", "bAllowFlopping", bAllowFlopping);
-		ReadBoolSetting
-		(
-			a_ini, "PlayerActions", "bCanKillmoveOtherPlayers", bCanKillmoveOtherPlayers
-		);
-		ReadBoolSetting(a_ini, "PlayerActions", "bCanRevivePlayer1", bCanRevivePlayer1);
-		ReadBoolSetting(a_ini, "PlayerActions", "bHoldToCycle", bHoldToCycle);
-		ReadBoolSetting
-		(
-			a_ini, "PlayerActions", "bRotateArmsWhenSheathed", bRotateArmsWhenSheathed
-		);
-		ReadBoolSetting(a_ini, "PlayerActions", "bUseDashDodgeSystem", bUseDashDodgeSystem);
-		ReadBoolSetting(a_ini, "PlayerActions", "bUseKillmovesSystem", bUseKillmovesSystem);
-		ReadBoolSetting(a_ini, "PlayerActions", "bUseReviveSystem", bUseReviveSystem);
-		ReadBoolSetting
-		(
-			a_ini, 
-			"PlayerActions",
+			"NewSystems",
 			"bUseUnarmedKillmovesForSpellcasting", 
 			bUseUnarmedKillmovesForSpellcasting
 		);
-		ReadFloatSetting(a_ini, "PlayerActions", "fKillmoveChance", fKillmoveChance, 0.0f, 1.0f);
+		ReadFloatSetting(a_ini, "NewSystems", "fKillmoveChance", fKillmoveChance, 0.0f, 1.0f);
 		ReadFloatSetting
 		(
-			a_ini, "PlayerActions", "fKillmoveHealthFraction", fKillmoveHealthFraction, 0.0f, 1.0f
+			a_ini, "NewSystems", "fKillmoveHealthFraction", fKillmoveHealthFraction, 0.0f, 1.0f
 		);
 		ReadFloatSetting
 		(
 			a_ini,
-			"PlayerActions",
+			"NewSystems",
 			"fMaxDashDodgeSpeedmult", 
 			fMaxDashDodgeSpeedmult,
 			1.0f, 
@@ -868,7 +1043,7 @@ namespace ALYSLC
 		ReadFloatSetting
 		(
 			a_ini, 
-			"PlayerActions", 
+			"NewSystems", 
 			"fMinDashDodgeSpeedmult",
 			fMinDashDodgeSpeedmult,
 			1.0f, 
@@ -877,7 +1052,7 @@ namespace ALYSLC
 		ReadFloatSetting
 		(
 			a_ini, 
-			"PlayerActions", 
+			"NewSystems", 
 			"fSecsBeforeActivationCycling",
 			fSecsBeforeActivationCycling, 
 			0.0f,
@@ -886,7 +1061,7 @@ namespace ALYSLC
 		ReadFloatSetting
 		(
 			a_ini, 
-			"PlayerActions", 
+			"NewSystems", 
 			"fSecsBetweenActivationChecks", 
 			fSecsBetweenActivationChecks, 
 			0.1f,
@@ -894,25 +1069,33 @@ namespace ALYSLC
 		);
 		ReadFloatSetting
 		(
-			a_ini, "PlayerActions", "fSecsDefMinHoldTime", fSecsDefMinHoldTime, 0.1f, 1.0f
+			a_ini, "NewSystems", "fSecsCyclingInterval", fSecsCyclingInterval, 0.1f, 3.0f
 		);
 		ReadFloatSetting
 		(
-			a_ini, "PlayerActions", "fSecsCyclingInterval", fSecsCyclingInterval, 0.1f, 3.0f
+			a_ini, "NewSystems", "fSecsDefMinHoldTime", fSecsDefMinHoldTime, 0.1f, 1.0f
 		);
 		ReadFloatSetting
 		(
-			a_ini, "PlayerActions", "fSecsReviveTime", fSecsReviveTime, 1.0f, 60.0f
+			a_ini, "NewSystems", "fSecsReviveTime", fSecsReviveTime, 1.0f, 60.0f
 		);
 		ReadFloatSetting
 		(
-			a_ini, "PlayerActions", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 300.0f
+			a_ini, "NewSystems", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 300.0f
 		);
-		ReadUInt32Setting(a_ini, "PlayerActions", "uAmmoAutoEquipMode", uAmmoAutoEquipMode, 0, 2);
+		ReadUInt32Setting
+		(
+			a_ini,
+			"NewSystems", 
+			"uAmmoAutoEquipMode", 
+			uAmmoAutoEquipMode,
+			0, 
+			!AmmoAutoEquipMode::kTotal - 1
+		);
 		ReadUInt32Setting
 		(
 			a_ini, 
-			"PlayerActions",
+			"NewSystems",
 			"uDashDodgeBaseAnimFrameCount", 
 			uDashDodgeBaseAnimFrameCount,
 			0, 
@@ -926,6 +1109,40 @@ namespace ALYSLC
 			"Progression",
 			"bStackCoopPlayerSkillAVAutoScaling",
 			bStackCoopPlayerSkillAVAutoScaling
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Progression",
+			"fLevelUpXPThresholdMult", 
+			fLevelUpXPThresholdMult, 
+			0.1f, 
+			4.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Progression",
+			"fPerkPointsPerLevelUp", 
+			fPerkPointsPerLevelUp, 
+			0.0f, 
+			10.0f
+		);
+		ReadUInt32Setting
+		(
+			a_ini,
+			"Progression",
+			"uFlatPerkPointsIncrease",
+			uFlatPerkPointsIncrease,
+			0,
+			255
+		);
+		ReadBoolSetting
+		(
+			a_ini,
+			"Progression",
+			"bEveryoneGetsALootedEnderalSkillbook", 
+			bEveryoneGetsALootedEnderalSkillbook
 		);
 		ReadBoolSetting
 		(
@@ -948,13 +1165,6 @@ namespace ALYSLC
 			"bScaleMemoryPointsWithNumPlayers", 
 			bScaleMemoryPointsWithNumPlayers
 		);
-		ReadBoolSetting
-		(
-			a_ini,
-			"Progression",
-			"bEveryoneGetsALootedEnderalSkillbook", 
-			bEveryoneGetsALootedEnderalSkillbook
-		);
 		ReadFloatSetting
 		(
 			a_ini, 
@@ -963,43 +1173,6 @@ namespace ALYSLC
 			fAdditionalGoldPerPlayerMult,
 			0.0f,
 			10.0f
-		);
-		ReadFloatSetting
-		(
-			a_ini, 
-			"Progression",
-			"fLevelUpXPThresholdMult", 
-			fLevelUpXPThresholdMult, 
-			0.1f, 
-			4.0f
-		);
-
-		// UI
-		ReadFloatSetting
-		(
-			a_ini, "UI", "fCamLockOnIndicatorLength", fCamLockOnIndicatorLength, 1.0f, 200.0f
-		);
-		ReadFloatSetting
-		(
-			a_ini, "UI", "fCamLockOnIndicatorThickness", fCamLockOnIndicatorThickness, 1.0f, 20.0f
-		);
-		ReadFloatSetting
-		(
-			a_ini,
-			"UI", 
-			"fCrosshairMaxTraversablePixelsPerSec",
-			fCrosshairMaxTraversablePixelsPerSec, 
-			160.0f,
-			7680.0f
-		);
-		ReadFloatSetting
-		(
-			a_ini, 
-			"UI", 
-			"fPlayerMenuControlOverlayOutlineThickness",
-			fPlayerMenuControlOverlayOutlineThickness, 
-			1.0f, 
-			50.0f
 		);
 
 		SPDLOG_DEBUG("[Settings] ImportGeneralSettings: Done importing.");
@@ -1119,6 +1292,15 @@ namespace ALYSLC
 			(
 				a_ini, 
 				sectionName.data(),
+				"fSlapKnockdownDamageMult", 
+				(float&)vfSlapKnockdownDamageMult[pIndex], 
+				0.0f, 
+				100.0f
+			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
 				"fThrownObjectDamageMult", 
 				(float&)vfThrownObjectDamageMult[pIndex], 
 				0.0f, 
@@ -1189,6 +1371,14 @@ namespace ALYSLC
 			(
 				a_ini, sectionName.data(), "bUseAimCorrection", vbUseAimCorrection, pIndex
 			);
+			ReadBoolSettingToIndex
+			(
+				a_ini,
+				sectionName.data(),
+				"bScreenspaceBasedAimCorrectionCheck", 
+				vbScreenspaceBasedAimCorrectionCheck,
+				pIndex
+			);
 			ReadFloatSetting
 			(
 				a_ini, 
@@ -1209,6 +1399,7 @@ namespace ALYSLC
 				720.0f, 
 				true
 			);
+			// Skip 'kAimDirection', hence the '- 2'.
 			ReadUInt32Setting
 			(
 				a_ini, 
@@ -1216,7 +1407,7 @@ namespace ALYSLC
 				"uProjectileTrajectoryType", 
 				(uint32_t&)vuProjectileTrajectoryType[pIndex], 
 				0, 
-				2
+				!ProjectileTrajType::kTotal - 2
 			);
 
 			// UI
@@ -1226,14 +1417,6 @@ namespace ALYSLC
 				sectionName.data(), 
 				"bAnimatedCrosshair",
 				vbAnimatedCrosshair,
-				pIndex
-			);
-			ReadBoolSettingToIndex
-			(
-				a_ini, 
-				sectionName.data(),
-				"bSkyrimStyleCrosshair", 
-				vbSkyrimStyleCrosshair,
 				pIndex
 			);
 			ReadBoolSettingToIndex
@@ -1250,6 +1433,30 @@ namespace ALYSLC
 				sectionName.data(), 
 				"bRecenterInactiveCrosshair",
 				vbRecenterInactiveCrosshair,
+				pIndex
+			);
+			ReadBoolSettingToIndex
+			(
+				a_ini, 
+				sectionName.data(),
+				"bSkyrimStyleCrosshair", 
+				vbSkyrimStyleCrosshair,
+				pIndex
+			);
+			ReadBoolSettingToIndex
+			(
+				a_ini, 
+				sectionName.data(),
+				"bEnableAimPitchIndicator", 
+				vbEnableAimPitchIndicator,
+				pIndex
+			);
+			ReadBoolSettingToIndex
+			(
+				a_ini, 
+				sectionName.data(),
+				"bEnablePredictedProjectileTrajectoryCurves", 
+				vbEnablePredictedProjectileTrajectoryCurves,
 				pIndex
 			);
 			ReadFloatSetting
@@ -1315,6 +1522,15 @@ namespace ALYSLC
 				1.0f, 
 				10.0f
 			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
+				"fPredictedProjectileTrajectoryCurveThickness", 
+				(float&)vfPredictedProjectileTrajectoryCurveThickness[pIndex], 
+				1.0f, 
+				10.0f
+			);
 
 			// Default RGB values:
 			// P1: Red, P2: Green, P3: Cyan, P4: Yellow.
@@ -1358,7 +1574,7 @@ namespace ALYSLC
 				"uPlayerIndicatorVisibilityType",
 				(uint32_t&)vuPlayerIndicatorVisibilityType[pIndex],
 				0, 
-				2
+				!PlayerIndicatorVisibilityType::kTotal - 1
 			);
 			ReadFloatSetting
 			(

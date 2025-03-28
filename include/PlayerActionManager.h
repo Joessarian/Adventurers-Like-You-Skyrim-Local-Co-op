@@ -793,10 +793,12 @@ namespace ALYSLC
 		
 		// Base actor value.
 		float baseHealth;
-		// Current actor value.
-		float currentHealth;
 		// Base heal rate multiplier actor value.
 		float baseHealthRegenRateMult;
+		// Current actor value.
+		float currentHealth;
+		// Full actor value.
+		float fullHealth;
 
 		//
 		// Magicka.
@@ -804,14 +806,16 @@ namespace ALYSLC
 
 		// Base actor value.
 		float baseMagicka;
+		// Base magicka rate multiplier actor value.
+		float baseMagickaRegenRateMult;
 		// Current actor value.
 		float currentMagicka;
+		// Full actor value.
+		float fullMagicka;
 		// How long the player has been casting for with their LH.
 		float lhCastDuration;
 		// How long the player has been casting for with their RH.
 		float rhCastDuration;
-		// Base magicka rate multiplier actor value.
-		float baseMagickaRegenRateMult;
 
 		//
 		// Stamina.
@@ -819,10 +823,12 @@ namespace ALYSLC
 
 		// Base actor value.
 		float baseStamina;
-		// Current actor value.
-		float currentStamina;
 		// Base stamina rate multiplier actor value.
 		float baseStaminaRegenRateMult;
+		// Current actor value.
+		float currentStamina;
+		// Full actor value.
+		float fullStamina;
 
 		// Requested damage multiplier for all sources of damage.
 		float reqDamageMult;

@@ -558,6 +558,8 @@ namespace ALYSLC
 		RE::NiPoint3 playerDefaultAttackSourcePos;
 		// World-space axis of rotation about which to rotate torso nodes.
 		RE::NiPoint3 playerTorsoAxisOfRotation;
+		// Torso position for the player.
+		RE::NiPoint3 playerTorsoPosition;
 		// Manages saved orientation data for this player's nodes.
 		std::unique_ptr<NodeOrientationManager> nom;
 		// Ten floats: 

@@ -69,6 +69,7 @@ namespace ALYSLC
 	{
 		static void RequestTrueHUDAPIs(const SKSE::LoadInterface* a_loadInterface);
 		static bool g_trueHUDInstalled;
+		static TRUEHUD_API::IVTrueHUD1* g_trueHUDAPI1;
 		static TRUEHUD_API::IVTrueHUD3* g_trueHUDAPI3;
 	};
 };

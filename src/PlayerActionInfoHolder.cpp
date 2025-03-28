@@ -11,6 +11,8 @@ namespace ALYSLC
 		defPAParamsList = PAParamsList();
 		// List of inputs for the current player action.
 		ComposingInputActionList inputsList{ };
+		// Set of composing inputs for the current action.
+		std::set<InputAction> composingInputsSet{ };
 		// Subtract from each input action's index to get the player action index,
 		// since player actions are defined after all buttons in the enum.
 		const auto actionOffset = !InputAction::kFirstAction;
@@ -26,11 +28,13 @@ namespace ALYSLC
 			playerActionIndex = i - actionOffset;
 			recursionDepth = 0;
 			numComposingPlayerActions = 0;
+			composingInputsSet.clear();
 			// Get default composing input list.
 			inputsList = GetComposingInputs
 			(
 				static_cast<InputAction>(i), 
 				DEF_PA_COMP_INPUT_ACTIONS_LIST, 
+				composingInputsSet,
 				numComposingPlayerActions, 
 				recursionDepth
 			);
@@ -67,7 +71,7 @@ namespace ALYSLC
 
 	const uint32_t PlayerActionInfoHolder::GetInputMask
 	(
-		const std::vector<InputAction>& a_composingInputs
+		const ComposingInputActionList& a_composingInputs
 	) const noexcept
 	{
 		// Get input mask from a list of composing inputs, not a list of player actions.
@@ -101,18 +105,20 @@ namespace ALYSLC
 	(
 		const InputAction& a_playerAction, 
 		const PACompInputActionLists& a_paCompInputActionsLists,
+		std::set<InputAction>& a_composingInputsSet,
 		uint32_t& a_numComposingPlayerActionsOut, 
 		uint8_t& a_recursionDepthOut
 	) const noexcept
 	{
 		// Get a list of composing inputs by recursively decomposing the given player action 
 		// using the given list of composing input actions lists.
+		// A set of composing inputs (not actions) is maintained to prevent duplicate insertions.
 		// Only recurse up to the pre-defined max depth.
 		// Also send the total number of decomposed player actions and recursion depth reached
 		// through the outparams.
 
 		// List of composing inputs. No player actions allowed.
-		std::vector<InputAction> composingInputs;
+		std::vector<InputAction> composingInputs{ };
 		// List of composing input actions for the current player action.
 		const auto& composingInputActions = 
 		(
@@ -147,8 +153,14 @@ namespace ALYSLC
 			auto inputAction = composingInputActions[i];
 			if (inputAction < InputAction::kInputTotal)
 			{
-				// Is an input index, so insert right away.
-				composingInputs.emplace_back(inputAction);
+				// Is an input index, so insert right away if not previously inserted.
+				if (a_composingInputsSet.empty() || !a_composingInputsSet.contains(inputAction))
+				{
+					composingInputs.emplace_back(inputAction);
+					// Has now been added as a composing input, 
+					// so to prevent potential duplicates as we recurse further, add to the set.
+					a_composingInputsSet.insert(inputAction);
+				}
 			}
 			else if (inputAction >= InputAction::kFirstAction && 
 					 inputAction <= InputAction::kLastAction)
@@ -160,6 +172,7 @@ namespace ALYSLC
 				(
 					inputAction, 
 					a_paCompInputActionsLists,
+					a_composingInputsSet,
 					a_numComposingPlayerActionsOut, 
 					a_recursionDepthOut
 				); 
