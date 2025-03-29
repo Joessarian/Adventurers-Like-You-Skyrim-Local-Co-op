@@ -82,7 +82,7 @@ Ensure you have all of CommonLibSSE’s dependencies set up.
   - Create a variable with the name `ALYSLCPluginPathAE` to point to where the output .dll and .pdb will be exported to.
 
 ### Generating the Project
-- Open a command prompt in the cloned repository folder.
+- If not open already, open a command prompt where you cloned the respository.
 - To generate a project for SE, type:
   ```
   cmake --preset vs2022-windows-vcpkg-se
@@ -94,12 +94,19 @@ Ensure you have all of CommonLibSSE’s dependencies set up.
 - If successful, open the newly-generated solution folder `build` for SE, or `buildae` for AE.
 
 ### Post-Project Generation
-Open up the `ALYSLC.sln` inside your newly-generated `build` or `buildae` folder.
-- Once opened in Visual Studio 2022, click on `Project` then `ALYSLC Properties` and in the `Configuration Properties` pane, click on `Build Events`. Then choose `Pre-Build`, click on the `Command Line` entry, and type in:
+Build via the command line:
+- If not open already, open a command prompt where you cloned the respository.
+- For SE:
   ```
-  del /s /q $(TargetDir)*.pdb
+  cmake --build build --config Release
   ```
-- Click `Apply` and then `Ok`.
+- For AE:
+  ```
+  cmake --build buildae --config Release
+  ```
+
+Build via Visual Studio 2022:
+- Open up the `ALYSLC.sln` inside your newly-generated `build` or `buildae` folder.
 - Switch the active solution configuration from `Debug` to `Release`. - ***Note***: Building in debug currently does not work, so ensure the project's build configuration is set to release.
 - If you wish to enable all debug prints (`SPDLOG_DEBUG()` calls), uncomment ```#define ALYSLC_DEBUG``` in `PCH.h`. ***Always comment out the line before making a PR***. This is basically a reminder for myself, as I tend to forget.
 - Build the solution with `Ctrl + Shift + B` or by clicking on `Build` and then `Build Solution`.
@@ -108,7 +115,15 @@ Open up the `ALYSLC.sln` inside your newly-generated `build` or `buildae` folder
    - If you are playing Enderal, delete or deactivate the `ALYSLC.esp` in your mod manager.
       - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC Enderal.ini` file.
    - If you are playing Skyrim, delete or deactivate the `ALYSLC Enderal.esp` in your mod manager.
-      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file.
+      - Modify the mod's settings via the `/Data/MCM/Settings/ALYSLC.ini` file. 
+- Note for subsequent builds:
+   - If the generated `ALYSLC.pdb` file is growing in size rapidly with each subsequent build:
+      - From the main VS 2022 window, click on `Project` then `ALYSLC Properties` and in the `Configuration Properties` pane, click on `Build Events`. Then choose `Pre-Build`, click on the `Command Line` entry, and type in:
+        ```
+        del /s /q $(TargetDir)*.pdb
+        ```
+      - Click `Apply` and then `Ok`.
+	  - This command will delete the .pdb and force the linker to regenerate it every time the project is built.
 
 ## [Coding Style]
 - The codebase uses a custom style that emphasizes code-blocking of complex boolean conditions, assignments, and long parameter/argument lists. At the moment, ClangFormat does not seem to offer the style customization options that would automate formatting the codebase in this way, so if possible, please keep the following style guidelines in mind:

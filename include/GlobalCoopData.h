@@ -1601,6 +1601,8 @@ namespace ALYSLC
 		RE::BGSEquipSlot* leftHandEquipSlot;
 		RE::BGSEquipSlot* rightHandEquipSlot;
 		RE::BGSEquipSlot* voiceEquipSlot;
+		// Keyword only assigned to companion players (P2 - P4's characters).
+		RE::BGSKeyword* companionPlayerKeyword;
 		// NPC keyword (used when filtering playable races).
 		RE::BGSKeyword* npcKeyword;
 		// NOTE: Unused as of now:
@@ -1796,10 +1798,10 @@ namespace ALYSLC
 
 	private:
 		GlobalCoopData() = default;
-		GlobalCoopData(const GlobalCoopData& _globalCoopData) = delete;
-		GlobalCoopData(GlobalCoopData&& _globalCoopData) = delete;
-		GlobalCoopData& operator=(const GlobalCoopData& _globalCoopData) = delete;
-		GlobalCoopData& operator=(GlobalCoopData&& _globalCoopData) = delete;
+		GlobalCoopData(const GlobalCoopData& _other) = delete;
+		GlobalCoopData(GlobalCoopData&& _other) = delete;
+		GlobalCoopData& operator=(const GlobalCoopData& _other) = delete;
+		GlobalCoopData& operator=(GlobalCoopData&& _other) = delete;
 
 		//
 		// Helpers

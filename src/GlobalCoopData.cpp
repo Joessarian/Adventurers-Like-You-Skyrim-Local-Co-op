@@ -432,7 +432,12 @@ namespace ALYSLC
 				glob.placeholderSpellsSet.emplace(spell);
 			}
 
-			
+			// Keyword for companion players.
+			glob.companionPlayerKeyword = 
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x4AF06, PLUGIN_NAME)
+			);
+
 			// Factions.
 			
 			// PlayerFaction.

@@ -978,6 +978,17 @@ namespace ALYSLC
 			if (playerIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[playerIndex];
+				// Flash the H/M/S bar as needed.
+				if (auto trueHUD = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUD && hmsActorValue)
+				{
+					const auto handle = a_this->GetHandle();
+					float currentValue = a_this->GetActorValue(a_av);
+					if (currentValue > 0.0f && currentValue + a_delta <= 0.0f)
+					{
+						trueHUD->FlashActorValue(handle, a_av, true);
+					}
+				}
+
 				// Do not modify AVs when no players are being dismissed and
 				// the co-op actor is not revived or if an HMS AV is being decreased in god mode.
 				bool notDismissingPlayers = 
@@ -3959,6 +3970,18 @@ namespace ALYSLC
 				a_av == RE::ActorValue::kMagicka || 
 				a_av == RE::ActorValue::kStamina
 			);
+
+			// Flash the H/M/S bar as needed.
+			if (auto trueHUD = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUD && hmsActorValue)
+			{
+				const auto handle = a_this->GetHandle();
+				float currentValue = a_this->GetActorValue(a_av);
+				if (currentValue > 0.0f && currentValue + a_delta <= 0.0f)
+				{
+					trueHUD->FlashActorValue(handle, a_av, true);
+				}
+			}
+
 			// Do not modify AVs when no players are being dismissed and
 			// the co-op actor is not revived or if an HMS AV is being decreased in god mode.
 			bool notDismissingPlayers = 

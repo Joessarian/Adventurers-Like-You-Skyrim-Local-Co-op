@@ -207,6 +207,22 @@ endfunction()
 add_library("${PROJECT_NAME}" SHARED)
 add_cxx_files("${PROJECT_NAME}")
 
+if(COPY_BUILD)
+	if(DEFINED ALYSLCPluginPath)
+		add_custom_command(
+			TARGET ${PROJECT_NAME}
+			PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E rm -rf ${ALYSLCPluginPath}
+		)
+	else()
+		message(
+			WARNING
+			"Variable ${ALYSLCPluginPath} is not defined. Skipping pre-build cleanup."
+		)
+	endif()
+endif()
+
+
 # ---- Create DLL ----
 
 target_compile_features(
@@ -249,21 +265,6 @@ target_link_libraries(
 		glm::glm
 		spdlog::spdlog
 )
-
-if(COPY_BUILD)
-	if(DEFINED ALYSLCPluginPath)
-		add_custom_command(
-			TARGET ${PROJECT_NAME}
-			PRE_BUILD
-			COMMAND ${CMAKE_COMMAND} -E rm -rf ${ALYSLCPluginPath}
-		)
-	else()
-		message(
-			WARNING
-			"Variable ${ALYSLCPluginPath} is not defined. Skipping pre-build cleanup."
-		)
-	endif()
-endif()
 
 # Compile options for the project.
 if (MSVC)

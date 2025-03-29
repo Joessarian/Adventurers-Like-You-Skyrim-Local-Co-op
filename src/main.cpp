@@ -1,9 +1,10 @@
-#include "Hooks.h" 
 #include <CameraManager.h>
 #include <Compatibility.h>
 #include <DebugAPI.h>
 #include <Events.h>
+#include <Hooks.h> 
 #include <MenuInputManager.h>
+#include <ModAPI.h>
 #include <Proxy.h>
 #include <Serialization.h>
 #include <Util.h>
@@ -217,3 +218,26 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
 	return true;
 }
 #endif
+
+extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
+(
+	const ALYSLC_API::InterfaceVersion a_interfaceVersion
+)
+{
+	auto api = ALYSLC_API::ALYSLCInterface::GetSingleton();
+	SPDLOG_INFO
+	(
+		"[MAIN] RequestPluginAPI called, InterfaceVersion {}.", 
+		static_cast<uint8_t>(a_interfaceVersion)
+	);
+
+	switch (a_interfaceVersion) 
+	{
+	case ALYSLC_API::InterfaceVersion::V1:
+		SPDLOG_INFO("[MAIN] RequestPluginAPI returned the API singleton.");
+		return static_cast<void*>(api);
+	}
+
+	SPDLOG_INFO("[MAIN] RequestPluginAPI requested the wrong interface version.");
+	return nullptr;
+}
