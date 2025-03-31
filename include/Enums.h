@@ -841,33 +841,56 @@ namespace ALYSLC
 	// Identifiers for serializable co-op data.
 	enum class SerializableDataType : std::uint32_t
 	{
+		kPlayerCharacterCoopID = 'PCCI',		// Character ID used to identify a player
+												// when (de)serializing data
+												// and linking a serialized FID 
+												// to a current player character's FID 
+												// if it has changed between loads.
+												// 0 = Player 1
+												// 1 = NPC with '__CoopCharacter1'
+												// as its actor base editor ID.
+												// 2 = NPC with '__CoopCharacter2'
+												// as its actor base editor ID.
+												// 3 = NPC with '__CoopCharacter3'
+												// as its actor base editor ID.
+
 		kPlayerFirstSavedLevel = 'PFSL',		// First saved player level in co-op.
 		kPlayerLevel = 'PLVL',					// Current player level.
 		kPlayerLevelXP = 'PLXP',				// Current player XP at the current level.
 		kPlayerBaseHMSPointsList = 'PBPL',		// List of base health, magicka, 
 												// and stamina values.
+
 		kPlayerHMSPointsIncList = 'PPIL',		// List of increases to the base health, magicka, 
 												// and stamina values.
+
 		kPlayerBaseSkillLevelsList = 'PBSL',	// List of base skill AV levels.
 		kPlayerSkillIncreasesList = 'PSIL',		// List of increases to the base skill AV levels.
 		kPlayerSkillXPList = 'PSXL',			// List of XP earned 
 												// towards each progressing skill AV.
+
 		kPlayerCopiedMagicList = 'PCML',		// List of spells copied into each 
 												// placeholder spell slot for companion players.
+
 		kPlayerEquippedObjectsList = 'PEOL',	// List of all equipped objects 
 												// for the player to restore on loading a save.
+
 		kPlayerMagFavoritesList = 'PMFL',		// List of all magical (spell) forms 
 												// favorited by the player.
+
 		kPlayerHotkeyedFormsList = 'PHFL',		// List of all forms hotkeyed 
 												// via the Favorites Menu for the player. 
+
 		kPlayerAvailablePerkPoints = 'PAPP',	// List of perk points availiable 
 												// for this player when leveling up.
+
 		kPlayerUnlockedPerksList = 'PUPL',		// List of perks that this player has unlocked.
 		kPlayerSharedPerksUnlocked = 'PSPU',	// List of shared perks 
 												// that are unlocked for all players.
+
 		kPlayerUsedPerkPoints = 'PUPP',			// Number of perk points this player has used.
 		kPlayerExtraPerkPoints = 'PEPP',		// Number of additional points 
 												// gained outside of leveling up.
+
 		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
 		kSerializationVersion = 0				// Version info.
 	};

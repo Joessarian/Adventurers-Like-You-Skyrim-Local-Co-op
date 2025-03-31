@@ -7730,9 +7730,9 @@ namespace ALYSLC
 				// to get the next crosshair world position.
 				crosshairWorldPos = refrBasePos + crosshairLocalPosOffset;
 				// Update the crosshair's scaleform position based on its new world position.
-				const glm::vec2 temp = DebugAPI::WorldToScreenPoint(ToVec3(crosshairWorldPos));
-				crosshairScaleformPos.x = temp.x;
-				crosshairScaleformPos.y = temp.y;
+				auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
+				crosshairScaleformPos.x = screenPos.x;
+				crosshairScaleformPos.y = screenPos.y;
 			}
 			else
 			{

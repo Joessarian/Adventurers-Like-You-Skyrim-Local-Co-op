@@ -46,7 +46,14 @@ namespace ALYSLC
 						continue;
 					}
 
-					const auto form = a_dataHandler->LookupForm(a_fid, file->fileName);
+					// Note to self:
+					// Raw FID for light plugins does NOT include the small compile time index.
+					const auto form = 
+					(
+						file->IsLight() ? 
+						a_dataHandler->LookupForm(a_fid & 0xFFFFF000, file->fileName) :
+						a_dataHandler->LookupForm(a_fid & 0xFF000000, file->fileName)
+					);
 					if (form)
 					{
 						SPDLOG_DEBUG
@@ -94,7 +101,8 @@ namespace ALYSLC
 						"[SERIAL] ERR: Load: Could not get serialization interface. "
 						"Setting default data for all players."
 					);
-					SetDefaultRetrievedData(a_intfc);
+					SetDefaultRetrievedData();
+					return;
 				}
 
 				// Clear out current data before reading in new data.
@@ -139,7 +147,8 @@ namespace ALYSLC
 					}
 
 					// Per-player data.
-					if (type == !SerializableDataType::kPlayerAvailablePerkPoints ||
+					if (type == !SerializableDataType::kPlayerCharacterCoopID ||
+						type == !SerializableDataType::kPlayerAvailablePerkPoints ||
 						type == !SerializableDataType::kPlayerBaseHMSPointsList ||
 						type == !SerializableDataType::kPlayerBaseSkillLevelsList ||
 						type == !SerializableDataType::kPlayerCopiedMagicList ||
@@ -205,7 +214,19 @@ namespace ALYSLC
 							}
 
 							const auto& data = glob.serializablePlayerData.at(fid);
-							if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
+							if (type == !SerializableDataType::kPlayerCharacterCoopID)
+							{
+								uint32_t playerCharacterID = 0;
+								RetrieveUInt32Data(a_intfc, playerCharacterID, type);
+								// Serialized as unsigned but deserialized as signed.
+								data->SetPlayerCharacterID(playerCharacterID);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X}'s "
+									"character ID is {}.", fid, data->GetPlayerCharacterID()
+								);
+							}
+							else if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
 							{
 								RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
 								SPDLOG_DEBUG
@@ -447,7 +468,7 @@ namespace ALYSLC
 							{
 								// Read in saved copied magic spell forms.
 								data->copiedMagic.fill(nullptr);
-								RE::FormID magicFID{};
+								RE::FormID magicFID{ };
 								for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i) 
 								{
 									RetrieveUInt32Data(a_intfc, magicFID, type);
@@ -544,7 +565,7 @@ namespace ALYSLC
 						"[SERIAL] Load: First time retrieval. "
 						"Setting default data for all players."
 					);
-					SetDefaultRetrievedData(a_intfc);
+					SetDefaultRetrievedData();
 				}
 				else
 				{
@@ -700,6 +721,35 @@ namespace ALYSLC
 
 				// NOTE:
 				// Capitalized data type comments are for easier recognition by my monkey brain.
+
+				// PLAYER CHARACTER CO-OP ID
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerCharacterCoopID, 
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Save: Serialize PLAYER CHARACTER CO-OP ID "
+							"for player with FID 0x{:X}: {}.",
+							fid, data->GetPlayerCharacterID()
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerCharacterCoopID
+						);
+						// Serialized as unsigned but deserialized as signed.
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->GetPlayerCharacterID(), 
+							!SerializableDataType::kPlayerCharacterCoopID
+						);
+					}
+				}
 
 				// AVAILABLE PERK POINTS
 				if (a_intfc->OpenRecord
@@ -1867,7 +1917,7 @@ namespace ALYSLC
 			}
 		}
 
-		void SetDefaultRetrievedData(SKSE::SerializationInterface* a_intfc)
+		void SetDefaultRetrievedData()
 		{
 			// Set default data to write to the SKSE co-save. 
 			// Done when no data has been serialized yet 
@@ -1881,6 +1931,12 @@ namespace ALYSLC
 				return;
 			}
 			
+			// Clear out current data before setting fresh data.
+			if (!glob.serializablePlayerData.empty())
+			{
+				glob.serializablePlayerData.clear();
+			}
+
 			// Default data.
 			constexpr size_t numSkills = (size_t)Skill::kTotal;
 			std::array<RE::TESForm*, (size_t)PlaceholderMagicIndex::kTotal> copiedMagic{ };
@@ -1956,6 +2012,8 @@ namespace ALYSLC
 				p1Level
 			);
 
+			// Player 1's character ID is always 0.
+			uint32_t playerCharacterID = 0;
 			// Insert P1 first.
 			glob.serializablePlayerData.insert
 			(
@@ -1968,6 +2026,7 @@ namespace ALYSLC
 						std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
 						std::vector<RE::TESForm*>(),
 						p1->skills->data->xp, 
+						playerCharacterID,
 						0,
 						0,
 						p1Level,
@@ -1994,20 +2053,24 @@ namespace ALYSLC
 			auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
 			SPDLOG_DEBUG
 			(
-				"[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index {}.", 
+				"[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index 0x{:X}.", 
 				GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1
 			);
+			// Inserted in order of actor base's editor ID trailing index:
+			// 1. NPC with '__CoopCharacter1' as its actor base editor ID.
+			// 2. NPC with '__CoopCharacter2' as its actor base editor ID.
+			// 3. NPC with '__CoopCharacter3'  as its actor base editor ID.
 			coopPlayers[0] = dataHandler->LookupForm<RE::Actor>
 			(
-				0x22FD, GlobalCoopData::PLUGIN_NAME
+				0x802, GlobalCoopData::PLUGIN_NAME
 			);
 			coopPlayers[1] = dataHandler->LookupForm<RE::Actor>
 			(
-				0x22FE, GlobalCoopData::PLUGIN_NAME
+				0x803, GlobalCoopData::PLUGIN_NAME
 			);
 			coopPlayers[2] = dataHandler->LookupForm<RE::Actor>
 			(
-				0x22FF, GlobalCoopData::PLUGIN_NAME
+				0x804, GlobalCoopData::PLUGIN_NAME
 			);
 
 			for (auto i = 0; i < coopPlayers.size(); ++i) 
@@ -2029,6 +2092,12 @@ namespace ALYSLC
 							
 						// Set initial skill base AVs.
 						auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayers[i]);
+						// Companion player's character IDs are based on 
+						// their actor base's editor ID trailing index.
+						// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
+						// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
+						// 3 = NPC with '__CoopCharacter3' as its actor base editor ID.
+						playerCharacterID = i + 1;
 						glob.serializablePlayerData.insert
 						(
 							{ 
@@ -2040,6 +2109,7 @@ namespace ALYSLC
 									std::vector<RE::TESForm*>{ !EquipIndex::kTotal, nullptr },
 									std::vector<RE::TESForm*>(),
 									p1->skills->data->xp,
+									playerCharacterID,
 									0,
 									0,
 									p1Level,

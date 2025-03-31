@@ -79,6 +79,25 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(UnequipObject)> _UnequipObject;
 		};
 
+		// [ActorMagicCaster Hooks]
+		class ActorMagicCasterHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				// NOTE:
+				// Unused for now until I figure out a way to stall the FNF spellcast animation 
+				// when the spell is fully charged and the player is still holding the cast bind.
+				/*REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
+				_Update = vtbl.write_vfunc(0x1D, Update);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed Update() hook.");*/
+			}
+
+		private:
+			static void Update(RE::ActorMagicCaster* a_this, float a_delta);
+			static inline REL::Relocation<decltype(Update)> _Update;
+		};
+
 		// [AIProcess Hooks]
 		// Credits to ersh1:
 		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Hooks.h#L318

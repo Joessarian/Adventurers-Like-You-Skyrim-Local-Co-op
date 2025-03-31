@@ -33,7 +33,7 @@ Function StartPlayerManagers() Global Native
 Function TeleportToPlayerToActor(Int a_controllerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_controllerID, int a_playerID, Bool a_shouldEnter) Global Native
-Function UpdateAllSerializedCompanionPlayerFIDKeys() Global Native
+Function UpdateAllCompanionPlayerSerializationIDs() Global Native
 Function UpdateGenderAndBody(Int a_controllerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 Function Log(String a_messsage) Global Native

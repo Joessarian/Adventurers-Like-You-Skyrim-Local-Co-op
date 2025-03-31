@@ -53,10 +53,30 @@ namespace ALYSLC_API
 		virtual int32_t GetALYSLCPlayerCID(RE::ActorHandle a_actorHandle) const noexcept;
 
 		/// <summary>
-		/// Check if the given actor handle corresponds to a co-op player.
+		/// Get the player ID for the player controlling the given player actor.
 		/// </summary>
 		/// <returns>
-		/// True if a co-op player (P1 or companion player NPC), false otherwise.
+		/// If the given actor handle corresponds to an active (co-op session started) player, 
+		/// return the ID [0, 3] of the player controlling the actor.
+		/// Otherwise, return -1.
+		/// </returns>
+		virtual int32_t GetALYSLCPlayerPID(RE::ActorHandle a_actorHandle) const noexcept;
+		
+		/// <summary>
+		/// Check if the given actor handle corresponds to a character 
+		/// that is controllable by a co-op player.
+		/// A co-op session does not have to be active.
+		/// </summary>
+		/// <returns>
+		/// True if a co-op character (P1 or companion player NPC), false otherwise.
+		/// </returns>
+		virtual bool IsALYSLCCharacter(RE::ActorHandle a_actorHandle) const noexcept;
+
+		/// <summary>
+		/// Check if the given actor handle corresponds to an active co-op player.
+		/// </summary>
+		/// <returns>
+		/// True if an active co-op player character (P1 or companion player NPC), false otherwise.
 		/// </returns>
 		virtual bool IsALYSLCPlayer(RE::ActorHandle a_actorHandle) const noexcept;
 

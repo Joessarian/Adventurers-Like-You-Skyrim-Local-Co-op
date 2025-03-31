@@ -18,6 +18,7 @@ namespace ALYSLC
 		{
 			MainHook::InstallHook();
 			ActorEquipManagerHooks::InstallHooks();
+			ActorMagicCasterHooks::InstallHooks();
 			ActivateHandlerHooks::InstallHooks();
 			AIProcessHooks::InstallHooks();
 			AnimationGraphManagerHooks::InstallHooks();
@@ -567,6 +568,40 @@ namespace ALYSLC
 
 			_UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 		}
+
+// [ACTOR MAGIC CASTER HOOKS]:
+		
+	void ActorMagicCasterHooks::Update(RE::ActorMagicCaster* a_this, float a_delta)
+	{
+		if (glob.globalDataInit && glob.coopSessionActive)
+		{
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				auto source = a_this->GetCastingSource();
+				float mult = 1.0f;
+				bool stallCastUntilBindReleased = 
+				(
+					(a_this->state == RE::MagicCaster::State::kNone) &&
+					(
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH) && 
+							!p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							!p->pam->JustStarted(InputAction::kCastRH)
+						)
+					)
+				);
+			}
+		}
+
+		_Update(a_this, a_delta);
+	}
 
 // [ANIMATION GRAPH MANAGER HOOKS]:
 		EventResult AnimationGraphManagerHooks::ProcessEvent
@@ -9313,5 +9348,5 @@ namespace ALYSLC
 
 			return _CanProcess(a_this, a_event);
 		}
-	}
+}
 }

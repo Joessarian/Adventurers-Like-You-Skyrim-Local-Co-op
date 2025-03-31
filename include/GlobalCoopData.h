@@ -305,6 +305,7 @@ namespace ALYSLC
 		{
 		public:
 			SerializablePlayerData() :
+				playerCharacterID(0),
 				availablePerkPoints(0),
 				firstSavedLevel(0),
 				level(1),
@@ -339,6 +340,7 @@ namespace ALYSLC
 				std::vector<RE::TESForm*> a_equippedForms,
 				std::vector<RE::TESForm*> a_favoritedMagForms,
 				float a_levelXP,
+				uint32_t a_playerCharacterID,
 				uint32_t a_availablePerkPoints, 
 				uint32_t a_firstSavedLevel,
 				uint32_t a_level, 
@@ -357,6 +359,7 @@ namespace ALYSLC
 				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
 				equippedForms(a_equippedForms),
 				favoritedMagForms(a_favoritedMagForms),
+				playerCharacterID(a_playerCharacterID),
 				levelXP(a_levelXP),
 				availablePerkPoints(a_availablePerkPoints),
 				firstSavedLevel(a_firstSavedLevel),
@@ -390,6 +393,9 @@ namespace ALYSLC
 				prevTotalUnlockedPerks = 0;
 			}
 
+			// Get the serializable player character ID.
+			inline uint32_t GetPlayerCharacterID(){ return playerCharacterID; }
+
 			// Get list of all unlocked perks.
 			inline const std::vector<RE::BGSPerk*>& GetUnlockedPerksList() 
 			{ 
@@ -418,6 +424,12 @@ namespace ALYSLC
 				}
 
 				return false;
+			}
+
+			// Set the serializable player character ID to the given one.
+			inline void SetPlayerCharacterID(const uint32_t& a_playerCharacterID)
+			{
+				playerCharacterID = a_playerCharacterID;
 			}
 
 			// Set unlocked perks list and set directly.
@@ -482,6 +494,15 @@ namespace ALYSLC
 			SkillList skillLevelThresholdsOnMenuEntry;
 
 		private:
+
+			// Character ID used to identify a player  when (de)serializing data
+			// and linking a serialized FID to a current player character's FID 
+			// if it has changed between loads.
+			// 0 = Player 1.
+			// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
+			// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
+			// 3 = NPC with '__CoopCharacter3' as its actor base editor ID.
+			uint32_t playerCharacterID;
 			// List of perks that the player has unlocked.
 			std::vector<RE::BGSPerk*> unlockedPerksList;
 			// Set of perks that the player has unlocked.
@@ -603,6 +624,14 @@ namespace ALYSLC
 
 		// Checks if this controller is controlling menus.
 		static bool IsControllingMenus(const int32_t& a_controllerID);
+		
+		// Is the given argument a character controllable by a player?
+		// Co-op session does not have to be active.
+		static bool IsCoopCharacter(const RE::ActorPtr& a_actorPtr);
+		static bool IsCoopCharacter(RE::TESObjectREFR* a_refr);
+		static bool IsCoopCharacter(const RE::TESObjectREFRPtr& a_refrPtr);
+		static bool IsCoopCharacter(const RE::ObjectRefHandle& a_refrHandle);
+		static bool IsCoopCharacter(const RE::FormID& a_formID);
 
 		// Is the given argument a co-op player?
 		static bool IsCoopPlayer(const RE::ActorPtr& a_actorPtr);
@@ -699,16 +728,18 @@ namespace ALYSLC
 		// Unregister global script event registrations (with player ref alias).
 		static void UnregisterEvents();
 
-		// Update serlializable data form ID keys for all players.
-		// NOTE: Serialized data should contain all players' FID keys 
+		// Update serlializable data form ID keys/character IDs for all players.
+		// NOTE: 
+		// Serialized data should contain all players' FID keys 
 		// before the Summoning Menu is opened.
-		static void UpdateAllSerializedCompanionPlayerFIDKeys();
+		static void UpdateAllCompanionPlayerSerializationIDs();
 
-		// Update player actor's serialized form ID.
+		// Update player actor's serialized form ID and/or character ID.
 		// Form IDs for co-op companion players may change 
 		// if this mod's spot in the load order is modified.
-		static bool UpdateSerializedCompanionPlayerFIDKey(RE::Actor* a_playerActor);
-
+		// The given actor's character ID is used as a failsafe to link the given actor 
+		// to their serialized data, even if the form ID changes.
+		static bool UpdatePlayerSerializationIDs(RE::Actor* a_playerActor);
 
 		// Try again? The entire party gets wiped.
 		static void YouDied(RE::Actor* a_deadPlayer = nullptr);

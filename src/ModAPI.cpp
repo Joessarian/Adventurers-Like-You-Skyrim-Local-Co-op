@@ -50,8 +50,8 @@ namespace ALYSLC_API
 	int32_t ALYSLCInterface::GetALYSLCPlayerCID(RE::ActorHandle a_actorHandle) const noexcept
 	{
 		// Return the controller ID corresponding to the given actor handle,
-		// -1 if no co-op session is active, or  if the player is currently inactive,
-		// or if the given handle is invalid.
+		// -1 if no co-op session is active, if the player is currently inactive,
+		// if the given handle is invalid, or if the given actor is not a player.
 
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		if (!glob.globalDataInit || 
@@ -65,26 +65,45 @@ namespace ALYSLC_API
 		return ALYSLC::GlobalCoopData::GetCoopPlayerIndex(a_actorHandle);
 	}
 
-	bool ALYSLCInterface::IsALYSLCPlayer(RE::ActorHandle a_actorHandle) const noexcept
+	int32_t ALYSLCInterface::GetALYSLCPlayerPID(RE::ActorHandle a_actorHandle) const noexcept
 	{
-		// Return true if the given actor handle corresponds to a player, active or not.
-		// Return false otherwise.
+		// Return the player ID corresponding to the given actor handle,
+		// -1 if no co-op session is active, if the player is currently inactive,
+		// if the given handle is invalid, or if the given actor is not a player.
 
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
-		if (!ALYSLC::Util::HandleIsValid(a_actorHandle))
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit || 
+			!glob.coopSessionActive || 
+			!ALYSLC::Util::HandleIsValid(a_actorHandle))
 		{
-			return false;
+			return -1;
 		}
 
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		// Is P1 or has the '__ALYSLC_CoopCompanion' keyword.
-		if (a_actorHandle == p1->GetHandle() ||
-			a_actorHandle.get()->HasKeyword(glob.companionPlayerKeyword))
+		const auto pIndex = ALYSLC::GlobalCoopData::GetCoopPlayerIndex(a_actorHandle);
+		if (pIndex == -1)
 		{
-			return true;
+			return -1;
 		}
 
-		return false;
+		return glob.coopPlayers[pIndex]->playerID;
+	}
+
+	bool ALYSLCInterface::IsALYSLCCharacter(RE::ActorHandle a_actorHandle) const noexcept
+	{
+		// Return true if the given actor handle corresponds to a controllable co-op character.
+		// Return false otherwise.
+		// A co-op session does not have to be active.
+
+		return ALYSLC::GlobalCoopData::IsCoopCharacter(a_actorHandle);
+	}
+
+	bool ALYSLCInterface::IsALYSLCPlayer(RE::ActorHandle a_actorHandle) const noexcept
+	{
+		// Return true if the given actor handle corresponds to an active player.
+		// Return false otherwise.
+
+		return ALYSLC::GlobalCoopData::IsCoopPlayer(a_actorHandle);
 	}
 
 	bool ALYSLCInterface::IsSessionActive() const noexcept

@@ -1019,8 +1019,8 @@ Event OnSummoningMenuRequest()
     ; Default 3.000000 (ms?)
     Game.SetGameSettingFloat("fEvaluateProcedureTimer", 1.000000)
     
-    ; Update serialized companion player FIDs before showing the summoning menu.
-    ALYSLC.UpdateAllSerializedCompanionPlayerFIDKeys()
+    ; Update serialized companion player FIDs/character IDs before showing the summoning menu.
+    ALYSLC.UpdateAllCompanionPlayerSerializationIDs()
 
     ; Select companion(s).
     WasSelectingCharacter = False
@@ -1137,6 +1137,7 @@ Event OnSummoningMenuRequest()
 
     ; Signal that the co-op session has started.
     StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
+    
     ALYSLC.ChangeCoopSessionState(True)
     ; Enable the co-op camera.
     ALYSLC.ToggleCoopCamera(True)

@@ -4,6 +4,7 @@
 
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
@@ -420,6 +421,9 @@ See the mod's source for more detailed credits.
   - [Check out TrashQuixote's Skyrim Mods](https://next.nexusmods.com/profile/LowbeeBob?gameId=1704)
 - `PJM Homebrew Fonts`
   - For the [font](https://www.fontspace.com/balgruf-font-f59539) (SIL Open Font License (OFL)) used in the banner image. 
+- `SanneARBY`
+  - For the extracted [Skyrim UI elements](https://www.nexusmods.com/skyrimspecialedition/mods/82169) used on ALYSLC's modpage.
+  - [Check out SanneARBY's Skyrim mods](https://next.nexusmods.com/profile/SanneARBY?gameId=1704)
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
    - Thank you for helping a programming and C++ greenhorn get their bearings and for answering a ton of questions that I had during the development process.
 

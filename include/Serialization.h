@@ -101,9 +101,10 @@ namespace ALYSLC
 			const uint32_t& a_recordType
 		);
 
-		// Serialize default player data if no data exists for all players,
+		// Fill serialized data map with default player data 
+		// if no valid data exists for all players,
 		// or if there was an error getting the serialization interface.
-		void SetDefaultRetrievedData(SKSE::SerializationInterface* a_intfc);
+		void SetDefaultRetrievedData();
 
 		// Returns the name of a serializable data type.
 		std::string TypeToString(uint32_t a_type);

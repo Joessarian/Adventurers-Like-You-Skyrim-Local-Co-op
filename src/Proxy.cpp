@@ -4,6 +4,7 @@
 #include <Events.h>
 #include <GlobalCoopData.h>
 #include <MenuInputManager.h>
+#include <ModAPI.h>
 #include <Player.h>
 #include <Serialization.h>
 
@@ -218,7 +219,7 @@ namespace ALYSLC
 
 				// Update serialization key for this player, which may have changed
 				// if the mod load order has been modified since the last save.
-				bool succ = GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey
+				bool succ = GlobalCoopData::UpdatePlayerSerializationIDs
 				(
 					a_coopActors[coopActorIndex]
 				);
@@ -230,15 +231,15 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
-							"[ALYSLC] Failed to retrieve {}'s serialized data.\n"
-							"Please save the game and reload before summoning again.", 
+							"[ALYSLC] ERROR: Failed to retrieve {}'s saved data.\n"
+							"All saved player data has been fully reset prior to starting co-op.\n"
+							"Please re-customize and respec all characters.", 
 							a_coopActors[coopActorIndex] ? 
 							a_coopActors[coopActorIndex]->GetName() :
 							"NONE"
 						).c_str()
 					);
-					glob.activePlayers = glob.livingPlayers = 0;
-					return false;
+					Serialization::SetDefaultRetrievedData();
 				}
 
 				// Construct a new player or modify the current one at the same index,
@@ -1284,18 +1285,18 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopLib::UpdateAllSerializedCompanionPlayerFIDKeys(RE::StaticFunctionTag*)
+	void CoopLib::UpdateAllCompanionPlayerSerializationIDs(RE::StaticFunctionTag*)
 	{
 		// Update all serialized player FID keys.
 		// Used to access each player's serialized data.
 
-		SPDLOG_DEBUG("[Proxy] UpdateAllSerializedCompanionPlayerFIDKeys.");
+		SPDLOG_DEBUG("[Proxy] UpdateAllCompanionPlayerSerializationIDs.");
 		if (!glob.globalDataInit)
 		{
 			return;
 		}
 			
-		GlobalCoopData::UpdateAllSerializedCompanionPlayerFIDKeys();
+		GlobalCoopData::UpdateAllCompanionPlayerSerializationIDs();
 	}
 
 	void CoopLib::UpdateGenderAndBody
@@ -1688,14 +1689,117 @@ namespace ALYSLC
 		);
 		GlobalCoopData::StopMenuInputManager();
 	}
-
 	
-
+	//=============================================================================================
+	//[MCM Settings Import]
+	//=============================================================================================
+	
 	void CoopLib::Settings::OnConfigClose(RE::TESQuest*)
 	{
 		// Import all settings when this mod's MCM closes.
 
 		ALYSLC::Settings::ImportAllSettings();
+	}
+	
+	//=============================================================================================
+	//[Papyrus API Functions]
+	//=============================================================================================
+	
+	RE::Actor* ALYSLC::CoopLib::API::GetALYSLCPlayerByCID
+	(
+		RE::StaticFunctionTag*, int32_t a_controllerID
+	)
+	{
+		// Return the player character corresponding to the player with the given controller ID.
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		auto playerHandle = modAPI->GetALYSLCPlayerByCID(a_controllerID);
+		return
+		(
+			playerHandle && playerHandle.get() && playerHandle.get().get() ? 
+			playerHandle.get().get() : 
+			nullptr
+		);
+	}
+
+	RE::Actor* ALYSLC::CoopLib::API::GetALYSLCPlayerByPID
+	(
+		RE::StaticFunctionTag*, int32_t a_playerID
+	)
+	{
+		// Return the player character corresponding to the player with the given player ID.
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		auto playerHandle = modAPI->GetALYSLCPlayerByPID(a_playerID);
+		return
+		(
+			playerHandle && playerHandle.get() && playerHandle.get().get() ? 
+			playerHandle.get().get() : 
+			nullptr
+		);
+	}
+
+	int32_t ALYSLC::CoopLib::API::GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	{
+		// Return the controller ID for the controller controlling the given player character.
+
+		if (!a_actor)
+		{
+			return -1;
+		}
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->GetALYSLCPlayerCID(a_actor->GetHandle());
+	}
+
+	int32_t CoopLib::API::GetALYSLCPlayerPID(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	{
+		// Return the player ID for the player controlling the given player character.
+
+		if (!a_actor)
+		{
+			return -1;
+		}
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->GetALYSLCPlayerPID(a_actor->GetHandle());
+	}
+
+	bool ALYSLC::CoopLib::API::IsALYSLCCharacter(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	{
+		// Return true if the given actor is a player character (P1 or companion player).
+		// Can be called even when a co-op session is not active.
+
+		if (!a_actor)
+		{
+			return false;
+		}
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsALYSLCCharacter(a_actor->GetHandle());
+	}
+
+	bool ALYSLC::CoopLib::API::IsALYSLCPlayer(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	{
+		// Return true if the given actor is an active player character (P1 or companion player).
+		// Only returns true if a co-op session is active 
+		// and the given actor is being controlled by a player.
+
+		if (!a_actor)
+		{
+			return false;
+		}
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsALYSLCPlayer(a_actor->GetHandle());
+	}
+
+	bool ALYSLC::CoopLib::API::IsSessionActive(RE::StaticFunctionTag*)
+	{
+		// Return true if a co-op session is active.
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsSessionActive();
 	}
 
 	//=============================================================================================
@@ -1739,9 +1843,9 @@ namespace ALYSLC
 		a_vm->RegisterFunction("ToggleSetupMenuControl"s, "ALYSLC"s, ToggleSetupMenuControl);
 		a_vm->RegisterFunction
 		(
-			"UpdateAllSerializedCompanionPlayerFIDKeys"s,
+			"UpdateAllCompanionPlayerSerializationIDs"s,
 			"ALYSLC"s, 
-			UpdateAllSerializedCompanionPlayerFIDKeys
+			UpdateAllCompanionPlayerSerializationIDs
 		);
 		a_vm->RegisterFunction("UpdateGenderAndBody"s, "ALYSLC"s, UpdateGenderAndBody);
 		a_vm->RegisterFunction("Log"s, "ALYSLC"s, Log);
@@ -1791,8 +1895,17 @@ namespace ALYSLC
 		// MCM settings.
 		a_vm->RegisterFunction("OnConfigClose"s, "__ALYSLC_ConfigMenu"s, Settings::OnConfigClose);
 
+		// Papyrus API functions.
 		// TODO:
-		// Framework functions for any scripts wishing to access/modify ALYSLC data.
+		// More framework functions for any scripts wishing to access/modify ALYSLC data.
+		a_vm->RegisterFunction("GetALYSLCPlayerByCID"s, "ALYSLC_API"s, API::GetALYSLCPlayerByCID);
+		a_vm->RegisterFunction("GetALYSLCPlayerByPID"s, "ALYSLC_API"s, API::GetALYSLCPlayerByPID);
+		a_vm->RegisterFunction("GetALYSLCPlayerCID"s, "ALYSLC_API"s, API::GetALYSLCPlayerCID);
+		a_vm->RegisterFunction("GetALYSLCPlayerPID"s, "ALYSLC_API"s, API::GetALYSLCPlayerPID);
+		a_vm->RegisterFunction("IsALYSLCCharacter"s, "ALYSLC_API"s, API::IsALYSLCCharacter);
+		a_vm->RegisterFunction("IsALYSLCPlayer"s, "ALYSLC_API"s, API::IsALYSLCPlayer);
+		a_vm->RegisterFunction("IsSessionActive"s, "ALYSLC_API"s, API::IsSessionActive);
+
 		return true;
 	}
 }

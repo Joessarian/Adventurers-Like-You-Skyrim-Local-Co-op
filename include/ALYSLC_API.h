@@ -3,8 +3,8 @@
 // For modders: Copy this file into your own project if you wish to use this API.
 namespace ALYSLC_API
 {
-	constexpr const auto ALYSLCPluginName = "ALYSLC.esl";
-	constexpr const auto ALYSLCEnderalPluginName = "ALYSLC Enderal.esl";
+	constexpr const auto ALYSLCPluginName = "ALYSLC.esp";
+	constexpr const auto ALYSLCEnderalPluginName = "ALYSLC Enderal.esp";
 
 	// Available ALYSLC interface versions.
 	enum class InterfaceVersion : uint8_t
@@ -35,7 +35,7 @@ namespace ALYSLC_API
 		/// <summary>
 		/// Get the actor for the player with the given player ID.
 		/// Player 1 always has a player ID of 0, and all active companion players' IDs 
-		/// are assigned  sequentially in the order of their XInput controller IDs (CIDs).
+		/// are assigned sequentially in the order of their XInput controller IDs (CIDs).
 		/// Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
 		/// 0 -> Player 1
 		/// 1 -> Player 2
@@ -66,10 +66,36 @@ namespace ALYSLC_API
 		) const noexcept = 0;
 
 		/// <summary>
-		/// Check if the given actor handle corresponds to a co-op player.
+		/// Get the player ID for the player controlling the given player actor.
 		/// </summary>
 		/// <returns>
-		/// True if a co-op player (P1 or companion player NPC), false otherwise.
+		/// If the given actor handle corresponds to an active (co-op session started) player, 
+		/// return the ID [0, 3] of the player controlling the actor.
+		/// Otherwise, return -1.
+		/// </returns>
+		[[nodiscard]] virtual int32_t GetALYSLCPlayerPID
+		(
+			RE::ActorHandle a_actorHandle
+		) const noexcept = 0;
+
+		/// <summary>
+		/// Check if the given actor handle corresponds to a character 
+		/// that is controllable by a co-op player.
+		/// A co-op session does not have to be active.
+		/// </summary>
+		/// <returns>
+		/// True if a co-op character (P1 or companion player NPC), false otherwise.
+		/// </returns>
+		[[nodiscard]] virtual bool IsALYSLCCharacter
+		(
+			RE::ActorHandle a_actorHandle
+		) const noexcept = 0;
+
+		/// <summary>
+		/// Check if the given actor handle corresponds to an active co-op player.
+		/// </summary>
+		/// <returns>
+		/// True if an active co-op player character (P1 or companion player NPC), false otherwise.
 		/// </returns>
 		[[nodiscard]] virtual bool IsALYSLCPlayer
 		(

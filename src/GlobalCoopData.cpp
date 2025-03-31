@@ -62,15 +62,15 @@ namespace ALYSLC
 			// Co-op companion player actors.
 			glob.coopEntityBlacklist.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FD, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x802, PLUGIN_NAME)
 			);
 			glob.coopEntityBlacklist.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FE, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x803, PLUGIN_NAME)
 			);
 			glob.coopEntityBlacklist.emplace_back
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FF, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x804, PLUGIN_NAME)
 			);
 
 			// Used to check if an actor is a blacklisted one.
@@ -85,89 +85,89 @@ namespace ALYSLC
 			// One inventory chest per player.
 			glob.coopInventoryChests.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x13674, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x822, PLUGIN_NAME)
 			);
 			glob.coopInventoryChests.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x13675, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x823, PLUGIN_NAME)
 			);
 			glob.coopInventoryChests.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x13676, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x824, PLUGIN_NAME)
 			);
 			glob.coopInventoryChests.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESObjectREFR>(0x13677, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESObjectREFR>(0x825, PLUGIN_NAME)
 			);
 
 			// Packages for co-op companion player actors.
 			// (Default, combat override, ranged attack packages, special interaction) per player.
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B4, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x867, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B5, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x868, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B3, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x866, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x9E17, PLUGIN_NAME)
-			);
-
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B9, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B6, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4BC, PLUGIN_NAME)
-			);
-			glob.coopPackages.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESPackage>(0x9E18, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x815, PLUGIN_NAME)
 			);
 
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4BA, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x86C, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B7, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x869, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4BD, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x86F, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x9E19, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x816, PLUGIN_NAME)
 			);
 
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4BB, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x86D, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4B8, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x86A, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x4D4BE, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x870, PLUGIN_NAME)
 			);
 			glob.coopPackages.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESPackage>(0x9E1A, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESPackage>(0x817, PLUGIN_NAME)
+			);
+
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86E, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x86B, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x871, PLUGIN_NAME)
+			);
+			glob.coopPackages.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESPackage>(0x818, PLUGIN_NAME)
 			);
 
 			// Package formlists for each player 
@@ -175,48 +175,49 @@ namespace ALYSLC
 			// (Default, combat override) for each player.
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0xA509, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x81B, PLUGIN_NAME)
 			);
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x9FA3, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x81A, PLUGIN_NAME)
 			);
 
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x1B7DD, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x82B, PLUGIN_NAME)
 			);
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x1B7DC, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x82A, PLUGIN_NAME)
 			);
 
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x208D2, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x83E, PLUGIN_NAME)
 			);
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x208D3, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x83F, PLUGIN_NAME)
 			);
 
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x24ED3, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x842, PLUGIN_NAME)
 			);
 			glob.coopPackageFormlists.emplace_back
 			(
-				dataHandler->LookupForm<RE::BGSListForm>(0x24ED2, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSListForm>(0x841, PLUGIN_NAME)
 			);
-
+				
 			// Enderal experience point-gaining faction.
 			// Actors in this faction will award P1 XP when they kill certain enemies.
-			glob.coopPlayerFactions.emplace_back
-			(
-				ALYSLC::EnderalCompat::g_enderalSSEInstalled ? 
-				RE::TESForm::LookupByID<RE::TESFaction>(0x39DCE) :
-				nullptr
-			);
+			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			{
+				glob.coopPlayerFactions.emplace_back
+				(
+					RE::TESForm::LookupByID<RE::TESFaction>(0x39DCE)
+				);
+			}
 
 			// Global variables that indicate whether a co-op companion player is trying to cast
 			// a spell/shout using the LH, RH, 2H, dual, or voice slots.
@@ -224,108 +225,108 @@ namespace ALYSLC
 			// Order: LH, RH, 2H, Dual, Shout, Voice (same as cast package indexing enum).
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E87F, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x838, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E883, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x83B, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1D7, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x880, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x4D4AE, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x862, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DB, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x884, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DF, PLUGIN_NAME)
-			);
-
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E880, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E884, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1D8, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x4D4AF, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DC, PLUGIN_NAME)
-			);
-			glob.castingGlobVars.emplace_back
-			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1E0, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x888, PLUGIN_NAME)
 			);
 
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E881, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x839, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x1E885, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x83C, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1D9, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x881, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x4D4B0, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x863, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DD, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x885, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1E1, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x889, PLUGIN_NAME)
 			);
 
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x25998, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x83A, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x25999, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x83D, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DA, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x882, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x4D4B1, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x864, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1DE, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x886, PLUGIN_NAME)
 			);
 			glob.castingGlobVars.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x5B1E2, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x88A, PLUGIN_NAME)
+			);
+
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x845, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x846, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x883, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x865, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x887, PLUGIN_NAME)
+			);
+			glob.castingGlobVars.emplace_back
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x88B, PLUGIN_NAME)
 			);
 
 			// Other global variables.
 			glob.summoningMenuOpenGlob = 
 			(
-				dataHandler->LookupForm<RE::TESGlobal>(0x11A76, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESGlobal>(0x81F, PLUGIN_NAME)
 			);
 			glob.werewolfTransformationGlob =
 			(
@@ -339,103 +340,97 @@ namespace ALYSLC
 			// For each player.
 			glob.placeholderShouts.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESShout>(0x5B1D3, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESShout>(0x87C, PLUGIN_NAME)
 			);
 			glob.placeholderShouts.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESShout>(0x5B1D4, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESShout>(0x87D, PLUGIN_NAME)
 			);
 			glob.placeholderShouts.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESShout>(0x5B1D5, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESShout>(0x87E, PLUGIN_NAME)
 			);
 			glob.placeholderShouts.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESShout>(0x5B1D6, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESShout>(0x87F, PLUGIN_NAME)
 			);
-
+			
 			// Placeholder spells that hold copied data from existing spells.
 			// Allows co-op companion player actors to cast different spells 
 			// through their ranged attack package.
 			// Order: (LH, RH, 2H, Voice) for each player.
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD44, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x82D, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD48, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x82F, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x58A2A, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x874, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x5B1CB, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x878, PLUGIN_NAME)
 			);
 
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD45, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x82E, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD4B, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x831, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x58A2C, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x875, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x5B1CD, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x879, PLUGIN_NAME)
 			);
 
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD4A, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x830, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x1BD4E, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x832, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x58A2E, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x876, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x5B1CF, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x87A, PLUGIN_NAME)
 			);
 
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x2599A, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x847, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x2599C, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x848, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x58A30, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x877, PLUGIN_NAME)
 			);
 			glob.placeholderSpells.emplace_back
 			(
-				dataHandler->LookupForm<RE::SpellItem>(0x5B1D1, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::SpellItem>(0x87B, PLUGIN_NAME)
 			);
-
-			// For spell-to-placeholder spell comparison checks.
-			for (auto spell : glob.placeholderSpells)
-			{
-				glob.placeholderSpellsSet.emplace(spell);
-			}
 
 			// Keyword for companion players.
 			glob.companionPlayerKeyword = 
 			(
-				dataHandler->LookupForm<RE::BGSKeyword>(0x4AF06, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::BGSKeyword>(0x861, PLUGIN_NAME)
 			);
 
 			// Factions.
@@ -449,13 +444,7 @@ namespace ALYSLC
 			// ALYSLC companion player faction (P1 and 3 base co-op characters).
 			glob.coopPlayerFactions.emplace_back
 			(
-				dataHandler->LookupForm<RE::TESFaction>(0x53AF5, GlobalCoopData::PLUGIN_NAME)
-			);
-
-			// Potential follower faction.
-			glob.coopPlayerFactions.emplace_back
-			(
-				RE::TESForm::LookupByID<RE::TESFaction>(0x5C84D)
+				dataHandler->LookupForm<RE::TESFaction>(0x873, PLUGIN_NAME)
 			);
 			
 			// [Enderal Only]
@@ -517,7 +506,7 @@ namespace ALYSLC
 			// Shaders.
 			glob.activateHighlightShader = 
 			(
-				dataHandler->LookupForm<RE::TESEffectShader>(0x3262B, PLUGIN_NAME)
+				dataHandler->LookupForm<RE::TESEffectShader>(0x84B, PLUGIN_NAME)
 			);
 			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
 			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
@@ -940,7 +929,7 @@ namespace ALYSLC
 				{
 					playerActor = dataHandler->LookupForm<RE::Actor>
 					(
-						fid & 0x00FFFFFF, PLUGIN_NAME
+						fid & 0x00000FFF, PLUGIN_NAME
 					);
 				}
 			}
@@ -1102,8 +1091,8 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"[GLOB] ERR: AdjustAllPlayerPerkCounts: "
-					"Could not get player form for FID 0xXX{:X}", 
-					fid & 0x00FFFFFF
+					"Could not get player form for FID 0x{:X}", 
+					fid & 0x00000FFF
 				);
 			}
 
@@ -2644,7 +2633,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				playerActor = dataHandler->LookupForm<RE::Actor>(fid & 0x00FFFFFF, PLUGIN_NAME);
+				playerActor = dataHandler->LookupForm<RE::Actor>(fid & 0x00000FFF, PLUGIN_NAME);
 			}
 
 			if (!playerActor)
@@ -3489,6 +3478,104 @@ namespace ALYSLC
 		return glob.menuCID == p->controllerID;
 	}
 
+	bool GlobalCoopData::IsCoopCharacter(const RE::ActorPtr& a_actorPtr)
+	{
+		// Does the given actor smart ptr point to a character controllable by a player?
+		// Co-op session does not have to be active.
+
+		if (!a_actorPtr)
+		{
+			return false;
+		}
+
+		return IsCoopCharacter(a_actorPtr.get());
+	}
+
+	bool GlobalCoopData::IsCoopCharacter(RE::TESObjectREFR* a_refr)
+	{
+		// Does the given refr point to a character controllable by a player?
+		// Co-op session does not have to be active.
+
+		if (!a_refr)
+		{
+			return false;
+		}
+
+		if (a_refr->IsPlayerRef())
+		{
+			return true;
+		}
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (a_refr == p1)
+		{
+			return true;
+		}
+		
+		auto& glob = GetSingleton();
+		if (glob.globalDataInit && glob.companionPlayerKeyword)
+		{
+			return a_refr->HasKeyword(glob.companionPlayerKeyword);
+		}
+		else if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
+		{
+			auto companionPlayerKeyword = 
+			(
+				dataHandler->LookupForm<RE::BGSKeyword>(0x861, PLUGIN_NAME)
+			);
+			if (companionPlayerKeyword)
+			{
+				return a_refr->HasKeyword(companionPlayerKeyword);
+			}
+			else
+			{
+				return false;
+			}
+		}
+
+		return false;
+	}
+
+	bool GlobalCoopData::IsCoopCharacter(const RE::TESObjectREFRPtr& a_refrPtr)
+	{
+		// Does the given refr smart ptr point to a character controllable by a player?
+		// Co-op session does not have to be active.
+
+		if (!a_refrPtr)
+		{
+			return false;
+		}
+
+		return IsCoopCharacter(a_refrPtr.get());
+	}
+
+	bool GlobalCoopData::IsCoopCharacter(const RE::ObjectRefHandle& a_refrHandle)
+	{
+		// Does the given refr handle point to a character controllable by a player?
+		// Co-op session does not have to be active.
+
+		if (!a_refrHandle || !a_refrHandle.get())
+		{
+			return false;
+		}
+
+		return IsCoopCharacter(a_refrHandle.get().get());
+	}
+
+	bool GlobalCoopData::IsCoopCharacter(const RE::FormID& a_formID)
+	{
+		// Does the given form ID correspond to a character controllable by a player?
+		// Co-op session does not have to be active.
+
+		if (!a_formID)
+		{
+			return false;
+		}
+
+		auto actor = RE::TESForm::LookupByID<RE::Actor>(a_formID);
+		return IsCoopCharacter(actor);
+	}
+
 	bool GlobalCoopData::IsCoopPlayer(const RE::ActorPtr& a_actorPtr)
 	{
 		// Return true if the given actor smart pointer is a player.
@@ -3504,6 +3591,11 @@ namespace ALYSLC
 	bool GlobalCoopData::IsCoopPlayer(RE::TESObjectREFR* a_refr)
 	{
 		// Return true if the given object refr is a player.
+
+		if (!a_refr)
+		{
+			return false;
+		}
 
 		auto& glob = GetSingleton();
 		return 
@@ -3538,27 +3630,27 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		// Ensure refr is valid first.
 		auto refrPtr = Util::GetRefrPtrFromHandle(a_refrHandle); 
-		if (refrPtr && refrPtr->IsHandleValid()) 
+		if (!refrPtr || !refrPtr->IsHandleValid()) 
 		{
-			return 
-			(
-				std::any_of
-				(
-					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[a_refrHandle](const auto& a_p) 
-					{
-						return 
-						(
-							a_p->isActive && 
-							a_p->coopActor &&
-							a_p->coopActor->GetHandle() == a_refrHandle
-						); 
-					}
-				)
-			);
+			return false;
 		}
-		
-		return false;
+
+		return 
+		(
+			std::any_of
+			(
+				glob.coopPlayers.begin(), glob.coopPlayers.end(),
+				[a_refrHandle](const auto& a_p) 
+				{
+					return 
+					(
+						a_p->isActive && 
+						a_p->coopActor &&
+						a_p->coopActor->GetHandle() == a_refrHandle
+					); 
+				}
+			)
+		);
 	}
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::FormID& a_formID)
@@ -5042,7 +5134,7 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::UpdateAllSerializedCompanionPlayerFIDKeys()
+	void GlobalCoopData::UpdateAllCompanionPlayerSerializationIDs()
 	{
 		// This mod's load index might have changed between
 		// the initial serialization load function call and this function call,
@@ -5054,26 +5146,29 @@ namespace ALYSLC
 			// Co-op companion player actors.
 			auto companion1 = 
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FD, GlobalCoopData::PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x802, GlobalCoopData::PLUGIN_NAME)
 			);
 			auto companion2 = 
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FE, GlobalCoopData::PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x803, GlobalCoopData::PLUGIN_NAME)
 			);
 			auto companion3 = 
 			(
-				dataHandler->LookupForm<RE::Actor>(0x22FF, GlobalCoopData::PLUGIN_NAME)
+				dataHandler->LookupForm<RE::Actor>(0x804, GlobalCoopData::PLUGIN_NAME)
 			);
 
-			bool succ1 = GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey(companion1);
-			bool succ2 = GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey(companion2);
-			bool succ3 = GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey(companion3);
+			bool succ1 = GlobalCoopData::UpdatePlayerSerializationIDs(companion1);
+			bool succ2 = GlobalCoopData::UpdatePlayerSerializationIDs(companion2);
+			bool succ3 = GlobalCoopData::UpdatePlayerSerializationIDs(companion3);
 			if (!succ1 || !succ2 || !succ3)
 			{
 				SPDLOG_DEBUG
 				(
-					"[GLOB] ERR: UpdateAllSerializedCompanionPlayerFIDKeys: "
-					"Failed to update serialized FID key for {}: {}, {}: {}, {}: {}.",
+					"[GLOB] ERR: UpdateAllCompanionPlayerSerializationIDs: "
+					"Failed to update serialized FID key for "
+					"Companion Player Character 1 {}: {}, "
+					"Companion Player Character 2 {}: {}, "
+					"Companion Player Character 3 {}: {}.",
 					companion1 ? companion1->GetName() : "NONE", !succ1,
 					companion2 ? companion2->GetName() : "NONE", !succ2,
 					companion3 ? companion3->GetName() : "NONE", !succ3
@@ -5082,56 +5177,180 @@ namespace ALYSLC
 		}
 	}
 
-	bool GlobalCoopData::UpdateSerializedCompanionPlayerFIDKey(RE::Actor* a_playerActor)
+	bool GlobalCoopData::UpdatePlayerSerializationIDs(RE::Actor* a_playerActor)
 	{
-		// Update the given player's FID serialization key.
+		// Update the given player's FID serialization key and/or character ID.
 
-		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
-		if (!a_playerActor || !dataHandler) 
+		if (!a_playerActor || !GlobalCoopData::IsCoopCharacter(a_playerActor)) 
 		{
 			return false;
 		}
 
+		const auto actorBase = a_playerActor->GetActorBase();
+		if (!actorBase)
+		{
+			return false;
+		}
+		
 		auto& glob = GetSingleton();
+		// Handle P1 separately.
+		// P1's FID should never change (always 0x14),
+		// so we just need to potentially update the serialized character ID if it isn't 0,
+		// or leave an error message if P1 has no serialized data at this stage.
+		if (a_playerActor->IsPlayerRef())
+		{
+			if (glob.serializablePlayerData.contains(a_playerActor->formID))
+			{
+				const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+				// Ensure player 1's character ID is always 0.
+				if (data->GetPlayerCharacterID() != 0)
+				{
+					SPDLOG_DEBUG
+					(
+						"[GLOB] UpdatePlayerSerializationIDs: "
+						"Changed P1 {} (0x{:X})'s character ID to 0.",
+						a_playerActor->GetName(), a_playerActor->formID
+					);
+					data->SetPlayerCharacterID(0);
+				}
+
+				return true;
+			}
+			else
+			{
+				// Major problem: P1 does not have any serialized data.
+				SPDLOG_ERROR
+				(
+					"[GLOB] ERR: UpdatePlayerSerializationIDs: "
+					"Could not get serialized data for P1 {} (0x{:X}).",
+					a_playerActor->GetName(), a_playerActor->formID
+				);
+				return false;
+			}
+		}
+
+		// Character ID for the given companion player actor.
+		// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
+		// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
+		// 3 = NPC with '__CoopCharacter3'  as its actor base editor ID.
+		// Kinda gross.
+		uint32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+
 		// Serializable data:
 		// Ensure that the actor's updated FID is used 
 		// as the key for accessing their serializable data.
 		// Extract the node and update its key 
-		// if this mod's position has changed in the load order.
-		std::vector<RE::FormID> keys;
-		// Get current keys.
-		for (auto& [k, _] : glob.serializablePlayerData)
+		// if this mod's position has changed in the load order,
+		// or, if the actor's raw FID has changed, attempt to link the actor's character ID
+		// to the character ID of one of the serialized nodes,
+		// and update the node's form ID to the actor's.
+		for (auto& [fidKey, data] : glob.serializablePlayerData)
 		{
-			keys.emplace_back(k);
-		}
-
-		for (const auto& formID : keys)
-		{
-			// Full FIDs do not match but the raw FIDs match.
-			bool newActorFID = 
-			(
-				(formID != a_playerActor->formID) && 
-				(formID & 0xFFFFFF) == (a_playerActor->formID & 0xFFFFFF)
+			// The serialized data FID key's mod index-independent portion 
+			// and corresponding portion of the key for the actor differ.
+			bool diffRawFID = 
+			(	
+				(fidKey & 0xFFF) != (a_playerActor->formID & 0xFFF)
 			);
-			if (!newActorFID)
+			// Full FIDs do not match but the raw FIDs match, 
+			// meaning ALYSLC's mod index has changed.
+			bool newModLoadIndex = 
+			(
+				(fidKey != a_playerActor->formID) && !diffRawFID
+			);
+
+			// First, check to see if a companion player has been assigned P1's character ID (0),
+			// meaning the data was not read in properly on load.
+			const auto& savedCharacterID = data->GetPlayerCharacterID();
+			if (savedCharacterID == 0 && fidKey != 0x14)
+			{
+				if (newModLoadIndex || fidKey == a_playerActor->formID)
+				{
+					SPDLOG_DEBUG
+					(
+						"[GLOB] UpdatePlayerSerializationIDs: "
+						"Companion player {}'s character ID was invalid ({}). "
+						"New mod load index: {}, same FID key: {}, updated to {}.",
+						a_playerActor->GetName(),
+						savedCharacterID,
+						newModLoadIndex,
+						fidKey == a_playerActor->formID,
+						characterID
+					);
+					data->SetPlayerCharacterID(characterID);
+				}
+				else
+				{
+					// The saved character ID is invalid and the raw form ID of this actor
+					// does not match the key's, so we have no way of linking the actor 
+					// to this serialized dataset, so we'll continue.
+					SPDLOG_DEBUG
+					(
+						"[GLOB] UpdatePlayerSerializationIDs: "
+						"Cannot link companion player {} (0x{:X}, {}) "
+						"to the serialized data set (0x{:X}, {}).",
+						a_playerActor->GetName(),
+						a_playerActor->formID,
+						characterID,
+						fidKey,
+						savedCharacterID
+					);
+					continue;
+				}
+			}
+
+			// Only update if there is a clear link between this FID key and the actor.
+			bool shouldUpdateFIDKey = 
+			(
+				(newModLoadIndex) || 
+				(diffRawFID && characterID == data->GetPlayerCharacterID())
+			);
+			if (!shouldUpdateFIDKey)
 			{
 				continue;
 			}
 
 			SPDLOG_DEBUG
 			(
-				"[GLOB] UpdateSerializedCompanionPlayerFIDKey: "
+				"[GLOB] UpdatePlayerSerializationIDs: "
 				"{}'s FID went from 0x{:X} to 0x{:X}, "
-				"inserting new FID key into serializable data now.",
-				a_playerActor->GetName(), formID, a_playerActor->formID, newActorFID
+				"inserting new FID key into serializable data now. "
+				"New mod load index: {}, new raw form ID: {}.",
+				a_playerActor->GetName(),
+				fidKey, 
+				a_playerActor->formID,
+				newModLoadIndex,
+				diffRawFID
 			);
 
-			auto node = glob.serializablePlayerData.extract(formID);
+			auto node = glob.serializablePlayerData.extract(fidKey);
 			node.key() = a_playerActor->formID;
 			glob.serializablePlayerData.insert(std::move(node));
 		}
 
-		return glob.serializablePlayerData.contains(a_playerActor->formID);
+		bool updateSuccessful = glob.serializablePlayerData.contains(a_playerActor->formID);
+		if (!updateSuccessful)
+		{
+			SPDLOG_ERROR
+			(
+				"[GLOB] ERR: UpdatePlayerSerializationIDs: "
+				"Failed to update serialized FID key for {}. FID 0x{:X} not found.",
+				a_playerActor->GetName(), a_playerActor->formID
+			);
+		}
+		else
+		{
+			const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] UpdatePlayerSerializationIDs: "
+				"Successfully linked {} to their serialized data. "
+				"FID key: 0x{:X}, character ID: {}.",
+				a_playerActor->GetName(), a_playerActor->formID, data->GetPlayerCharacterID()
+			);
+		}
+
+		return updateSuccessful;
 	}
 
 	void GlobalCoopData::YouDied(RE::Actor* a_deadPlayer)
@@ -8297,7 +8516,7 @@ namespace ALYSLC
 				{
 					playerActor = dataHandler->LookupForm<RE::Actor>
 					(
-						fid & 0x00FFFFFF, PLUGIN_NAME
+						fid & 0x00000FFF, PLUGIN_NAME
 					);
 				}
 
