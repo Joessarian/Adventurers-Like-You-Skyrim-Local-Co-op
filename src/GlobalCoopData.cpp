@@ -23,6 +23,8 @@ namespace ALYSLC
 		// Global primitive data type members.
 		glob.allPlayersInit = false;
 		glob.coopSessionActive = false;
+		glob.isCameraShakeActive = false;
+		glob.isInCoopCombat = false;
 		glob.activePlayers = 0;
 		glob.exportUnlockedSharedPerksCount = 0;
 		glob.importUnlockedSharedPerksCount = 0;
@@ -208,20 +210,11 @@ namespace ALYSLC
 			(
 				dataHandler->LookupForm<RE::BGSListForm>(0x841, PLUGIN_NAME)
 			);
-				
-			// Enderal experience point-gaining faction.
-			// Actors in this faction will award P1 XP when they kill certain enemies.
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
-			{
-				glob.coopPlayerFactions.emplace_back
-				(
-					RE::TESForm::LookupByID<RE::TESFaction>(0x39DCE)
-				);
-			}
 
 			// Global variables that indicate whether a co-op companion player is trying to cast
 			// a spell/shout using the LH, RH, 2H, dual, or voice slots.
-			// NOTE: Currently, dual casting is not functional.
+			// NOTE: 
+			// Currently, dual casting is not functional.
 			// Order: LH, RH, 2H, Dual, Shout, Voice (same as cast package indexing enum).
 			glob.castingGlobVars.emplace_back
 			(
@@ -333,7 +326,8 @@ namespace ALYSLC
 				dataHandler->LookupForm<RE::TESGlobal>(0x2EA9A, "Enderal - Forgotten Stories.esm")
 			);
 
-			// NOTE: Not functional as of now, but may be used later.
+			// NOTE: 
+			// Not functional as of now, but may be used later.
 			// Placeholder shouts that hold copied data from existing shouts.
 			// Allows co-op companion player actors to cast different shouts 
 			// through their ranged attack package.
@@ -534,6 +528,53 @@ namespace ALYSLC
 					glob.boundArrowAmmoList.emplace_back(ammo);
 				}
 			}
+
+			// TODO:
+			// Make more races grabbable.
+			// What could go wrong?
+			// A lot apparently, so I'm keeping this block commented out.
+			/*
+			if (Settings::bCanGrabActors)
+			{
+				const auto& racesList = dataHandler->GetFormArray<RE::TESRace>();
+				for (auto race : racesList)
+				{
+					if (!race)
+					{
+						continue;
+					}
+
+					SPDLOG_DEBUG("[GLOB] InitializeGlobalCoopData: {} has race flags 0b{:B}.",
+						race->GetName(), *race->data.flags);
+					// Ignore races with ragdoll collision enabled, like dragons,
+					// since grabbing them causes them to freeze as if their AI were toggled off.
+					if (race->data.flags.all(RE::RACE_DATA::Flag::kNoKnockdowns))
+					{
+						SPDLOG_DEBUG("[GLOB] InitializeGlobalCoopData: {} cannot be knocked down.",
+							race->GetName());
+						race->data.flags.reset(RE::RACE_DATA::Flag::kNoKnockdowns);
+					}
+
+					if (race->data.flags.all(RE::RACE_DATA::Flag::kAllowRagdollCollision))
+					{
+						SPDLOG_DEBUG
+						(
+							"[GLOB] InitializeGlobalCoopData: {} allows ragdoll collision.",
+							race->GetName()
+						);
+					}
+
+					if (race->data.flags.all(RE::RACE_DATA::Flag::kAlwaysUseProxyController))
+					{
+						SPDLOG_DEBUG
+						(
+							"[GLOB] InitializeGlobalCoopData: {} uses proxy controller.",
+							race->GetName()
+						);
+					}
+				}
+			}
+			*/
 		}
 
 		// Get all hand equip slots by ID.
@@ -667,7 +708,7 @@ namespace ALYSLC
 		AssignGenericKillmoves();
 
 		// Set default XP-related game settings' values.
-		SetDefaultXPBaseAndMultFromGameSettings();
+		SaveDefaultXPBaseAndMultFromGameSettings();
 
 		// Initialize managers, holders, and other global data members and wrap in smart pointers.
 		glob.cam = std::make_unique<CameraManager>();
@@ -764,14 +805,20 @@ namespace ALYSLC
 			(avSkillInfo->useMult * a_baseXP + avSkillInfo->offsetMult)
 		);
 
-		SPDLOG_DEBUG("[GLOB] AddSkillXP: {}: Getting lock. (0x{:X})",
+		SPDLOG_DEBUG
+		(
+			"[GLOB] AddSkillXP: {}: Getting lock. (0x{:X})",
 			p->coopActor->GetName(),
-			std::hash<std::jthread::id>()(std::this_thread::get_id()));
+			std::hash<std::jthread::id>()(std::this_thread::get_id())
+		);
 		{
 			std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_cid]);
-			SPDLOG_DEBUG("[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X})", 
+			SPDLOG_DEBUG
+			(
+				"[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X})", 
 				p->coopActor->GetName(),
-				std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				std::hash<std::jthread::id>()(std::this_thread::get_id())
+			);
 			
 			const auto& skill = glob.AV_TO_SKILL_MAP.at(a_skillAV);
 			glob.serializablePlayerData.at(p->coopActor->formID)->skillXPList.at(skill) += xpInc;
@@ -785,7 +832,6 @@ namespace ALYSLC
 		SPDLOG_DEBUG("[GLOB] AdjustAllPlayerPerkCounts");
 
 		auto& glob = GetSingleton();
-
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (!p1)
 		{
@@ -846,13 +892,7 @@ namespace ALYSLC
 			// Players start with 3 perk points at level 1 if using Requiem.
 			// TODO: 
 			// Additional/variable awarded perk points per level.
-			uint32_t maxPerkPointsFromLevel = 
-			/*(
-				ALYSLC::RequiemCompat::g_requiemInstalled ?
-				p1->GetLevel() + 2 : 
-				p1->GetLevel() - 1
-			);*/
-			static_cast<uint32_t>
+			uint32_t maxPerkPointsFromLevel = static_cast<uint32_t>
 			(
 				(
 					ALYSLC::RequiemCompat::g_requiemInstalled ? 
@@ -892,7 +932,6 @@ namespace ALYSLC
 							return a_perk == perkToAdd;
 						}
 					);
-
 					if (!alreadyAdded)
 					{
 						Util::Player1AddPerk(perkToAdd, -1);
@@ -1449,8 +1488,11 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("[GLOB] AdjustPerkDataForPlayer1: {} menu.",
-			a_enteringMenu ? "Entering" : "Exiting");
+		SPDLOG_DEBUG
+		(
+			"[GLOB] AdjustPerkDataForPlayer1: {} menu.",
+			a_enteringMenu ? "Entering" : "Exiting"
+		);
 		
 		SaveUnlockedPerksForPlayer(p1);
 		if (a_enteringMenu)
@@ -1490,6 +1532,7 @@ namespace ALYSLC
 			AdjustAllPlayerPerkCounts();
 
 			// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
 			if (!glob.serializablePlayerData.empty() && 
 				glob.serializablePlayerData.contains(p1->formID))
 			{
@@ -1515,6 +1558,7 @@ namespace ALYSLC
 					)
 				);
 			}
+#endif
 		}
 	}
 
@@ -2034,7 +2078,6 @@ namespace ALYSLC
 							"pa_2HWKillMoveDragonRodeoSlash"
 						),
 						RE::TESForm::LookupByEditorID<RE::TESIdleForm>("pa_2HWKillMoveDragonSlash")
-
 					};
 
 					entry[!KillmoveType::kGeneral] = 
@@ -2649,8 +2692,6 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[GLOB] GetHighestSharedAVLevel: {} -> {}.",
-			Util::GetActorValueName(a_av), highestAVAmount);
 		return highestAVAmount;
 	}
 
@@ -3020,8 +3061,9 @@ namespace ALYSLC
 			}
 		}
 
-		// TODO: Attempt to find an event-driven method 
-		// or hook to check for AV changes, instead of every second.
+		// TODO:
+		// Attempt to find an event-driven method 
+		// or hook to check for skill AV changes, instead of every second.
 		// Restore skill AVs since the game will make changes to them 
 		// after our rescaling on level up.
 		// I haven't found a place to hook yet to listen for skill AV changes.
@@ -3050,16 +3092,6 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
-					(
-						"[GLOB] HandleEnderalProgressionChanges: {}: "
-						"skill AV {} was set to {} when it should be set to {} ({} + {}).",
-						p->coopActor->GetName(), 
-						Util::GetActorValueName(av), 
-						currentValue, 
-						newValue, 
-						data->skillBaseLevelsList[i], data->skillLevelIncreasesList[i]
-					);
 					p->coopActor->SetBaseActorValue(av, newValue);
 				}
 			}
@@ -3068,174 +3100,12 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::HavokPrePhysicsStep(RE::bhkWorld* a_world)
-	{
-		// Cache player arm and torso node rotations to restore later.
-		// which will overwrite the game's changes to all handled player arm/torso nodes.
-		// NOTE: 
-		// We do not set our computed custom rotations here
-		// because they will get overwritten sometime between when this callback is executed 
-		// and when the NiNode UpwardDownwardPass() hook executes.
-		// When this hook is run, reported node local rotations have been reset by the game,
-		// so the previously set custom rotations from the last frame are no longer in effect.
-		// However, we can save the game's default rotations to use when blending in/out.
-		// 
-		// NOTE: Not run every frame if the game's framerate is above 60.
-
-		auto& glob = GetSingleton();
-		if (!glob.coopSessionActive)
-		{
-			return;
-		}
-
-		for (const auto& p : glob.coopPlayers)
-		{
-			if ((!p->isActive) || (p->isPlayer1 && !glob.cam->IsRunning()))
-			{
-				continue;
-			}
-
-			// Obtain lock for node rotation data.
-			{
-				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
-				// Continue early if the fixed strings are not available.
-				const auto strings = RE::FixedStrings::GetSingleton();
-				if (!strings)
-				{
-					continue;
-				}
-
-				// Continue early if the player's loaded 3D data is invalid.
-				auto loadedData = p->coopActor->loadedData;
-				if (!loadedData)
-				{
-					continue;
-				}
-
-				// Continue early if the player's 3D is invalid.
-				auto data3D = loadedData->data3D;
-				if (!data3D || !data3D->parent)
-				{
-					continue;
-				}
-
-				if (Settings::bEnableArmsRotation)
-				{
-					// Get all arm nodes.
-					auto leftShoulderNode = 
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName(strings->npcLUpperArm)
-						)
-					);
-					auto rightShoulderNode =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName(strings->npcRUpperArm)
-						)
-					);
-					auto leftForearmNode = 
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName(strings->npcLForearm)
-						)
-					);
-					auto rightForearmNode =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName("NPC R Forearm [RLar]")
-						)
-					);
-					auto leftHandNode =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName("NPC L Hand [LHnd]")
-						)
-					);
-					auto rightHandNode =
-					(
-						RE::NiPointer<RE::NiAVObject>
-						(
-							data3D->GetObjectByName("NPC R Hand [RHnd]")
-						)
-					);
-					// Continue early if any node is invalid.
-					if (!leftShoulderNode			||
-						!leftShoulderNode.get()		||
-						!rightShoulderNode			||
-						!rightShoulderNode.get()	||
-						!leftForearmNode			||
-						!leftForearmNode.get()		||
-						!leftHandNode				||
-						!leftHandNode.get()			||
-						!rightForearmNode			||
-						!rightForearmNode.get()		||
-						!rightHandNode				||
-						!rightHandNode.get())
-					{
-						continue;
-					}
-
-					p->mm->nom->UpdateShoulderNodeRotationData(p, leftShoulderNode, false);
-					p->mm->nom->UpdateShoulderNodeRotationData(p, rightShoulderNode, true);
-					p->mm->nom->UpdateArmNodeRotationData(p, leftForearmNode, leftHandNode, false);
-					p->mm->nom->UpdateArmNodeRotationData
-					(
-						p, rightForearmNode, rightHandNode, true
-					);
-				}
-
-				auto spineNode = 
-				(
-					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine))
-				);
-				auto spineNode1 = 
-				(
-					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine1))
-				);
-				auto spineNode2 =
-				(
-					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine2))
-				);
-				auto neckNode =
-				(
-					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcNeck))
-				);
-				auto headNode =	
-				(
-					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcHead))
-				);
-				// Continue early if any node is invalid.
-				if (!spineNode			||
-					!spineNode.get()	||
-					!spineNode1			||
-					!spineNode1.get()	||
-					!spineNode2			||
-					!spineNode2.get()	||
-					!neckNode			||
-					!neckNode.get()		||
-					!headNode			||
-					!headNode.get())
-				{
-					continue;
-				}	
-				
-				// Adjust torso nodes' rotations after updating blending state.
-				p->mm->nom->UpdateTorsoNodeRotationData(p);
-			}
-		}
-	}
-
 	void GlobalCoopData::ImportUnlockedPerks(RE::Actor* a_coopActor)
 	{
 		// Import all serialized perks that the player has unlocked.
 
 		SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: {}", a_coopActor->GetName());
+
 		auto& glob = GetSingleton();
 		// Add saved perks to the player if they do not have them added already.
 		if (!glob.serializablePlayerData.contains(a_coopActor->formID))
@@ -3406,6 +3276,7 @@ namespace ALYSLC
 
 		// Prints out all unlocked perks in the perk tree.
 		// REMOVE after debugging.
+#ifdef ALYSLC_DEBUG_MODE
 		auto checkPerkTree = 
 		[](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 		{
@@ -3456,6 +3327,7 @@ namespace ALYSLC
 		};
 
 		Util::TraverseAllPerks(a_coopActor, checkPerkTree);
+#endif
 	}
 
 	bool GlobalCoopData::IsControllingMenus(const int32_t& a_controllerID)
@@ -3944,6 +3816,281 @@ namespace ALYSLC
 		ResetPerkData(a_playerActor);
 	}
 
+	PRECISION_API::PreHitCallbackReturn GlobalCoopData::PrecisionPreHitCallback
+	(
+		const PRECISION_API::PrecisionHitData& a_data
+	)
+	{
+		// Trigger combat between companion players and any NPCs they hit.
+		// P1 has no issues with dealing damage and starting combat with any NPC, in combat or not.
+		// 
+		// Have to make this correction because companion players can sometimes get locked out
+		// of doing damage in combat to neutral or even hostile enemies
+		// until those NPCs hit the player first.
+		// The culprit seems to be related to fight reactions between NPCs,
+		// and is present within the default game,
+		// so if we start combat before the hit applies, 
+		// the hit will do damage and aggro the NPC as expected.
+
+		auto& glob = GetSingleton();
+		// Skip if no co-op session is active.
+		if (!glob.coopSessionActive)
+		{
+			return PRECISION_API::PreHitCallbackReturn();
+		}
+		
+		auto hitActor = a_data.target ? a_data.target->As<RE::Actor>() : nullptr;
+		auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_data.attacker); 
+		// Pass on hits where the attacking refr is not a player or the hit refr is not an actor.
+		if (pIndex == -1 || !hitActor)
+		{
+			return PRECISION_API::PreHitCallbackReturn();
+		}
+
+		const auto& p = glob.coopPlayers[pIndex];
+		auto hitActorHandle = hitActor ? hitActor->GetHandle() : RE::ActorHandle();
+		bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
+		bool isHostile = hitActor->IsHostileToActor(p->coopActor.get());
+		bool isPartyFriendlyActor = Util::IsPartyFriendlyActor(hitActor);
+		bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
+		bool isCrosshairTargeted = 
+		(
+			hitActorHandle == p->tm->selectedTargetActorHandle
+		);
+		bool isAimCorrectionTarget = 
+		(
+			hitActorHandle == p->tm->aimCorrectionTargetHandle
+		);
+		bool collisionAllowed = 
+		(
+			(isHostile) ||
+			(isNeutralActor && isCrosshairTargeted) ||
+			(
+				isPartyFriendlyActor && Settings::vbFriendlyFire[p->playerID]
+			)
+		);
+		if (collisionAllowed)
+		{
+			// Do not start combat with other players
+			// and do not need to start combat for P1.
+			if (!hitActorIsPlayer && !p->isPlayer1)
+			{
+				// Add as a combat target first, just in case the hit actor is hostile 
+				// but not part of the player's combat group target list, 
+				// which would prevent the player from damaging the hit actor.
+				Util::AddAsCombatTarget(p->coopActor.get(), hitActor);
+
+				// Actor is not hostile to this player yet.
+				// Actor must also not be a party-friendly actor or be below 25% health
+				// to trigger combat.
+				bool shouldTriggerCombat = 
+				(
+					(hitActor && !GlobalCoopData::IsCoopPlayer(hitActor)) &&
+					(
+						!hitActor->IsHostileToActor(p->coopActor.get()) || 
+						!hitActor->IsCombatTarget(p->coopActor.get()) ||
+						!p->coopActor->IsCombatTarget(hitActor)
+					) &&
+					(
+						(!isPartyFriendlyActor) || 
+						(
+							hitActor->GetActorValue(RE::ActorValue::kHealth) / 
+							Util::GetFullAVAmount(hitActor, RE::ActorValue::kHealth) <= 0.25f
+						)
+					)
+				);
+				if (shouldTriggerCombat)
+				{
+					// Send a 0 damage hit to trigger combat right away.
+					Util::SendHitData
+					(
+						p->coopActor->GetHandle(), 
+						hitActor->GetHandle(),
+						p->coopActor->GetHandle()
+					);
+					// You hit me, I hit you, into combat we go.
+					Util::SendHitData
+					(
+						hitActor->GetHandle(),
+						p->coopActor->GetHandle(), 
+						hitActor->GetHandle()
+					);
+				}
+			}
+
+			return PRECISION_API::PreHitCallbackReturn();
+		}
+		else
+		{
+			// No collision and no damage.
+			return PRECISION_API::PreHitCallbackReturn(true, { });
+		}
+	}
+
+	void GlobalCoopData::PrecisionPrePhysicsStepCallback(RE::bhkWorld* a_world)
+	{
+		// Cache player arm and torso node rotations to restore later.
+		// which will overwrite the game's changes to all handled player arm/torso nodes.
+		// NOTE: 
+		// We do not set our computed custom rotations here
+		// because they will get overwritten sometime between when this callback is executed 
+		// and when the NiNode UpwardDownwardPass() hook executes.
+		// When this hook is run, reported node local rotations have been reset by the game,
+		// so the previously set custom rotations from the last frame are no longer in effect.
+		// However, we can save the game's default rotations to use when blending in/out.
+		// 
+		// NOTE: 
+		// Not run every frame if the game's framerate is above 60.
+
+		auto& glob = GetSingleton();
+		if (!glob.coopSessionActive)
+		{
+			return;
+		}
+
+		for (const auto& p : glob.coopPlayers)
+		{
+			if ((!p->isActive) || (p->isPlayer1 && !glob.cam->IsRunning()))
+			{
+				continue;
+			}
+
+			// Obtain lock for node rotation data.
+			{
+				std::unique_lock<std::mutex> lock(p->mm->nom->rotationDataMutex);
+				// Continue early if the fixed strings are not available.
+				const auto strings = RE::FixedStrings::GetSingleton();
+				if (!strings)
+				{
+					continue;
+				}
+
+				// Continue early if the player's loaded 3D data is invalid.
+				auto loadedData = p->coopActor->loadedData;
+				if (!loadedData)
+				{
+					continue;
+				}
+
+				// Continue early if the player's 3D is invalid.
+				auto data3D = loadedData->data3D;
+				if (!data3D || !data3D->parent)
+				{
+					continue;
+				}
+
+				if (Settings::bEnableArmsRotation)
+				{
+					// Get all arm nodes.
+					auto leftShoulderNode = 
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName(strings->npcLUpperArm)
+						)
+					);
+					auto rightShoulderNode =
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName(strings->npcRUpperArm)
+						)
+					);
+					auto leftForearmNode = 
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName(strings->npcLForearm)
+						)
+					);
+					auto rightForearmNode =
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName("NPC R Forearm [RLar]")
+						)
+					);
+					auto leftHandNode =
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName("NPC L Hand [LHnd]")
+						)
+					);
+					auto rightHandNode =
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3D->GetObjectByName("NPC R Hand [RHnd]")
+						)
+					);
+					// Continue early if any node is invalid.
+					if (!leftShoulderNode			||
+						!leftShoulderNode.get()		||
+						!rightShoulderNode			||
+						!rightShoulderNode.get()	||
+						!leftForearmNode			||
+						!leftForearmNode.get()		||
+						!leftHandNode				||
+						!leftHandNode.get()			||
+						!rightForearmNode			||
+						!rightForearmNode.get()		||
+						!rightHandNode				||
+						!rightHandNode.get())
+					{
+						continue;
+					}
+
+					p->mm->nom->UpdateShoulderNodeRotationData(p, leftShoulderNode, false);
+					p->mm->nom->UpdateShoulderNodeRotationData(p, rightShoulderNode, true);
+					p->mm->nom->UpdateArmNodeRotationData(p, leftForearmNode, leftHandNode, false);
+					p->mm->nom->UpdateArmNodeRotationData
+					(
+						p, rightForearmNode, rightHandNode, true
+					);
+				}
+
+				auto spineNode = 
+				(
+					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine))
+				);
+				auto spineNode1 = 
+				(
+					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine1))
+				);
+				auto spineNode2 =
+				(
+					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcSpine2))
+				);
+				auto neckNode =
+				(
+					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcNeck))
+				);
+				auto headNode =	
+				(
+					RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npcHead))
+				);
+				// Continue early if any node is invalid.
+				if (!spineNode			||
+					!spineNode.get()	||
+					!spineNode1			||
+					!spineNode1.get()	||
+					!spineNode2			||
+					!spineNode2.get()	||
+					!neckNode			||
+					!neckNode.get()		||
+					!headNode			||
+					!headNode.get())
+				{
+					continue;
+				}	
+				
+				// Adjust torso nodes' rotations after updating blending state.
+				p->mm->nom->UpdateTorsoNodeRotationData(p);
+			}
+		}
+	}
+
 	void GlobalCoopData::RegisterEvents()
 	{
 		// Register the P1 ref alias for script events.
@@ -4049,7 +4196,8 @@ namespace ALYSLC
 	{
 		// Rescale HMS and skill AVs.
 		// Call when the given player's base stats change.
-		// NOTE: Can be called with no co-op session active:
+		// NOTE:
+		// Can be called with no co-op session active:
 		// for example, when in the summoning menu and changing a companion player's class/race.
 		
 		// Cannot scale if either the co-op companion actor or P1 are invalid.
@@ -4103,7 +4251,6 @@ namespace ALYSLC
 		// Previous menu CID is NEVER -1 after it is first set.
 		int32_t newPrevCID = newCID != -1 ? newCID : glob.prevMenuCID;
 
-		// REMOVE when done debugging.
 		SPDLOG_DEBUG
 		(
 			"[GLOB] ResetMenuCIDs: Reset menu CID from {} to {}, last menu CID from {} to {}.",
@@ -4134,6 +4281,31 @@ namespace ALYSLC
 				);
 			}
 		}
+	}
+		
+	void GlobalCoopData::SaveDefaultXPBaseAndMultFromGameSettings()
+	{
+		auto& glob = GetSingleton();
+
+		glob.defXPLevelUpMult = 25.0f;
+		glob.defXPLevelUpBase = 75.0f;
+		auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
+		if (valueOpt.has_value())
+		{
+			glob.defXPLevelUpMult = valueOpt.value();
+		}
+
+		if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
+		{
+			glob.defXPLevelUpBase = valueOpt.value();
+		}
+
+		SPDLOG_DEBUG
+		(
+			"[GLOB] SaveDefaultXPBaseAndMultFromGameSettings: "
+			"Default XP game settings: base: {}, mult: {}.",
+			glob.defXPLevelUpBase, glob.defXPLevelUpMult
+		);
 	}
 
 	void GlobalCoopData::SaveUnlockedPerksForAllPlayers()
@@ -4283,54 +4455,74 @@ namespace ALYSLC
 			}
 		};
 
-		SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer BEFORE: {} has {} unlocked perks.",
-			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size());
+		SPDLOG_DEBUG
+		(
+			"[GLOB] SaveUnlockedPerksForPlayer BEFORE: {} has {} unlocked perks.",
+			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size()
+		);
 
 		// Clear and re-add.
 		serializedData->ClearUnlockedPerks();
 		Util::TraverseAllPerks(a_coopActor, savePlayerPerksVisitor);
 
-		SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer AFTER: {} has {} unlocked perks.",
-			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size());
+		SPDLOG_DEBUG
+		(
+			"[GLOB] SaveUnlockedPerksForPlayer AFTER: {} has {} unlocked perks.",
+			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size()
+		);
 	}
 
-	void GlobalCoopData::SetCrosshairText()
+	void GlobalCoopData::SetCrosshairText(bool&& a_shouldReset)
 	{
 		// Credits to Ryan-rsm-McKenzie and his quick loot repo for
 		// the code on modifying the crosshair text.
 		// https://github.com/Ryan-rsm-McKenzie
 		// Set crosshair text to the concatenation of all players' notification messages.
+		// Or reset the crosshair if requested.
 
+		RE::BSFixedString crosshairTextToSet = "";
 		auto& glob = GetSingleton(); 
-		if (!glob.coopSessionActive ||
-			glob.player1CID == -1 ||
-			!glob.coopPlayers[glob.player1CID]) 
+		// Do not set when the co-op camera is inactive.
+		if (!glob.cam->IsRunning())
 		{
 			return;
 		}
 
-		// Can't concatenate to fixed string, so use a temp string. P1 is always first.
-		std::string tempCrosshairText = 
-		(
-			std::string(glob.coopPlayers[glob.player1CID]->tm->crosshairMessage->text) + "\n"
-		);
-		// Concatenate the other active players' messages to P1's.
-		for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
+		// Get crosshair text to set.
+		if (!a_shouldReset)
 		{
-			const auto& p = glob.coopPlayers[i]; 
-			if (!p || !p->isActive || p->isPlayer1) 
+			// No co-op session active or P1 is invalid, so do not set.
+			if (!glob.coopSessionActive ||
+				glob.player1CID == -1 ||
+				!glob.coopPlayers[glob.player1CID]) 
 			{
-				continue;
+				return;
 			}
+
+			// Can't concatenate to fixed string, so use a temp string. P1 is always first.
+			std::string tempCrosshairText = 
+			(
+				std::string(glob.coopPlayers[glob.player1CID]->tm->crosshairMessage->text) + "\n"
+			);
+			// Concatenate the other active players' messages to P1's.
+			for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
+			{
+				const auto& p = glob.coopPlayers[i]; 
+				if (!p || !p->isActive || p->isPlayer1) 
+				{
+					continue;
+				}
 			
-			tempCrosshairText += std::string(p->tm->crosshairMessage->text) + "\n";
+				tempCrosshairText += std::string(p->tm->crosshairMessage->text) + "\n";
+			}
+
+			// Copy over to fixed string and send a copy to the task.
+			crosshairTextToSet = tempCrosshairText;
 		}
 
-		// Copy over to fixed string and send a copy to the task.
-		RE::BSFixedString crosshairTextToSet = tempCrosshairText;
 		SKSE::GetTaskInterface()->AddUITask
 		(
-			[&glob, crosshairTextToSet]() 
+			[&glob, crosshairTextToSet, a_shouldReset]() 
 			{
 				auto ui = RE::UI::GetSingleton(); 
 				if (!ui)
@@ -4350,7 +4542,7 @@ namespace ALYSLC
 					return;
 				}
 
-				RE::GFxValue hudBase;
+				RE::GFxValue hudBase{ };
 				view->GetVariable(std::addressof(hudBase), "_root.HUDMovieBaseInstance");
 				if (hudBase.IsNull() || hudBase.IsUndefined() || !hudBase.IsObject())
 				{
@@ -4361,13 +4553,27 @@ namespace ALYSLC
 				crosshairTextArgs.fill(RE::GFxValue());
 				crosshairTextArgs[HUDBaseArgs::kActivate] = RE::GFxValue(false);
 				crosshairTextArgs[HUDBaseArgs::kShowButton] = RE::GFxValue(false);
-				crosshairTextArgs[HUDBaseArgs::kTextOnly] = RE::GFxValue(true);
 				crosshairTextArgs[HUDBaseArgs::kFavorMode] = RE::GFxValue(false);
-				crosshairTextArgs[HUDBaseArgs::kShowCrosshair] = RE::GFxValue(false);
 				crosshairTextArgs[HUDBaseArgs::kName] = RE::GFxValue(crosshairTextToSet);
+				if (a_shouldReset)
+				{
+					// Show more than just text and the crosshair itself if resetting.
+					crosshairTextArgs[HUDBaseArgs::kTextOnly] = RE::GFxValue(false);
+					crosshairTextArgs[HUDBaseArgs::kShowCrosshair] = RE::GFxValue(true);
+				}
+				else
+				{
+					// Only text and no crosshair if the co-op camera is active during co-op.
+					crosshairTextArgs[HUDBaseArgs::kTextOnly] = RE::GFxValue(true);
+					crosshairTextArgs[HUDBaseArgs::kShowCrosshair] = RE::GFxValue
+					(
+						!glob.cam->IsRunning()
+					);
+				}
+					
 				hudBase.Invoke("SetCrosshairTarget", crosshairTextArgs);
 
-				RE::GFxValue rolloverText;
+				RE::GFxValue rolloverText{ };
 				view->GetVariable(&rolloverText, "HUDMovieBaseInstance.RolloverText");
 				if (rolloverText.IsNull() || 
 					rolloverText.IsUndefined() || 
@@ -4379,7 +4585,7 @@ namespace ALYSLC
 				// Ensure text is visible and has full alpha.
 				if (rolloverText.HasMember("_alpha"))
 				{
-					RE::GFxValue alpha;
+					RE::GFxValue alpha{ };
 					rolloverText.GetMember("_alpha", std::addressof(alpha));
 					if (alpha.GetNumber() != 100.0)
 					{
@@ -4396,7 +4602,7 @@ namespace ALYSLC
 
 				if (rolloverText.HasMember("_visible"))
 				{
-					RE::GFxValue visible;
+					RE::GFxValue visible{ };
 					rolloverText.GetMember("_visible", std::addressof(visible));
 					if (!visible.GetBool())
 					{
@@ -4411,31 +4617,6 @@ namespace ALYSLC
 					}
 				}
 			}
-		);
-	}
-
-	void GlobalCoopData::SetDefaultXPBaseAndMultFromGameSettings()
-	{
-		auto& glob = GetSingleton();
-
-		glob.defXPLevelUpMult = 25.0f;
-		glob.defXPLevelUpBase = 75.0f;
-		auto valueOpt = Util::GetGameSettingFloat("fXPLevelUpMult");
-		if (valueOpt.has_value())
-		{
-			glob.defXPLevelUpMult = valueOpt.value();
-		}
-
-		if (valueOpt = Util::GetGameSettingFloat("fXPLevelUpBase"); valueOpt.has_value())
-		{
-			glob.defXPLevelUpBase = valueOpt.value();
-		}
-
-		SPDLOG_DEBUG
-		(
-			"[GLOB] SetDefaultXPBaseAndMultFromGameSettings: "
-			"Default XP game settings: base: {}, mult: {}.",
-			glob.defXPLevelUpBase, glob.defXPLevelUpMult
 		);
 	}
 
@@ -4602,13 +4783,13 @@ namespace ALYSLC
 					RE::AIProcess::LowProcessFlags::kAlert
 				);
 			}
-
+			
 			procLists->ClearCachedFactionFightReactions();
 		};
 
 		// Stop combat for all actors at each process level, 
 		// so that there are no straggling NPCs that are still hostile,
-		// causing everyone's favorite 'can't wait while enemies are nearby' issue.
+		// causing everyone's favorite 'Can't wait while enemies are nearby' issue.
 		for (const auto& actorHandle : procLists->highActorHandles)
 		{
 			actorStopCombat(actorHandle);
@@ -4717,7 +4898,7 @@ namespace ALYSLC
 				for (auto perk : p1->perks)
 				{
 					// Already has the perk, so on to the next one.
-					if (p->coopActor->HasPerk(perk)) 
+					if (!perk || p->coopActor->HasPerk(perk)) 
 					{
 						continue;
 					}
@@ -5176,6 +5357,68 @@ namespace ALYSLC
 			}
 		}
 	}
+	
+	void GlobalCoopData::UpdatePlayerCoopCombatState()
+	{
+		// Update the global co-op combat state flag for all active players.
+		// If one player is in combat, all players are in combat.
+
+		auto procLists = RE::ProcessLists::GetSingleton();
+		if (!procLists)
+		{
+			return;
+		}
+		
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit || !glob.allPlayersInit)
+		{
+			return;
+		}
+
+		// Reset combat state first.
+		glob.isInCoopCombat = glob.player1Actor->IsInCombat();
+		// If P1 is in combat, we can return early.
+		if (glob.isInCoopCombat)
+		{
+			return;
+		}
+
+		RE::ActorPtr actorPtr{ };
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+			
+			for (const auto& actorHandle : procLists->highActorHandles)
+			{
+				actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+				if (!actorPtr || 
+					!actorPtr.get() || 
+					!actorPtr->combatController)
+				{
+					continue;
+				}
+
+				auto combatTarget1 = 
+				(
+					Util::GetRefrPtrFromHandle(actorPtr->currentCombatTarget)
+				);
+				auto combatTarget2 = 
+				(
+					Util::GetRefrPtrFromHandle(actorPtr->combatController->targetHandle)
+				);
+				// This actor is targeting the player, so the player is effectively in combat
+				// and we can set the flag and return early.
+				if (p->coopActor == combatTarget1 || p->coopActor == combatTarget2)
+				{
+					glob.isInCoopCombat = true;
+					return;
+				}
+			}
+		}
+	}
 
 	bool GlobalCoopData::UpdatePlayerSerializationIDs(RE::Actor* a_playerActor)
 	{
@@ -5356,7 +5599,8 @@ namespace ALYSLC
 	void GlobalCoopData::YouDied(RE::Actor* a_deadPlayer)
 	{
 		// All players downed or dead. Perform cleanup and end the co-op session.
-		// NOTE: P1 kill calls still fail at times.
+		// NOTE: 
+		// P1 kill calls still fail at times.
 		// One example being when all other players die 
 		// while P1 is getting up after being revived.
 		// Use the 'player.kill' console command 
@@ -5373,15 +5617,40 @@ namespace ALYSLC
 
 		// No more living players now, sorry.
 		glob.livingPlayers = 0;
-		RE::CreateMessage
+
+		RE::BSFixedString messageText =
 		(
 			"Your party was bested this time.\n"
-			"One thread of fate severed, another thread spun.", 
+			"One thread of fate severed, another thread spun."
+		);
+		RE::BSFixedString buttonText = "Ok";
+		std::mt19937 generator{ };
+		generator.seed(SteadyClock::now().time_since_epoch().count());
+		float rand = 
+		(
+			(generator() / (float)((std::mt19937::max)()))
+		);
+		if (rand <= 0.1f)
+		{
+			auto index = 
+			(
+				static_cast<size_t>
+				(
+					GlobalCoopData::YOU_DIED_SPECIAL_MESSAGE_OPTIONS.size() * 
+					(generator() / (float)((std::mt19937::max)()))
+				)
+			);
+			messageText = GlobalCoopData::YOU_DIED_SPECIAL_MESSAGE_OPTIONS[index];
+		}
+
+		RE::CreateMessage
+		(
+			messageText.c_str(), 
 			nullptr, 
 			0, 
 			4, 
 			10, 
-			"Ok",	//"Wow, that's a corny line",
+			nullptr,
 			nullptr
 		);
 
@@ -5450,17 +5719,35 @@ namespace ALYSLC
 			
 			auto currentHealth = p->coopActor->GetActorValue(RE::ActorValue::kHealth);
 			// Set health to 0.
+			// NOTE:
+			// For negative health deltas, nullify the player's damage received mult
+			// applied in the CheckClampDamageMultiplier() hook.
 			if (currentHealth > 0.0f)
 			{
-				p->pam->ModifyAV(RE::ActorValue::kHealth, -currentHealth);
+				p->pam->ModifyAV
+				(
+					RE::ActorValue::kHealth,
+					Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
+					-FLT_MAX :
+					(-currentHealth) * (1.0f / Settings::vfDamageReceivedMult[p->playerID])
+				);
 			}
 			else
 			{
 				// Sometimes when the player's health is negative, 
 				// the game does not consider them as dead and won't reload.
 				// Set to 1 health and then reduce to 0 again to simulate the player dying again.
-				p->pam->ModifyAV(RE::ActorValue::kHealth, 1.0f - currentHealth);
-				p->pam->ModifyAV(RE::ActorValue::kHealth, -1.0f);
+				p->pam->ModifyAV
+				(
+					RE::ActorValue::kHealth, 1.0f - currentHealth
+				);
+				p->pam->ModifyAV
+				(
+					RE::ActorValue::kHealth, 
+					Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
+					-FLT_MAX :
+					(-1.0f / Settings::vfDamageReceivedMult[p->playerID])
+				);
 			}
 
 			// And through all that... P1 is usually still not dead.
@@ -5496,10 +5783,6 @@ namespace ALYSLC
 						return;
 					}
 					
-					// NOTE:
-					// Commented out for now.
-					// Actually kills P1, but directly modifyign P1's health AV may cause a crash.
-
 					const float maxSecsToWait = 5.0f;
 					float secsWaited = 0.0f;
 					float secsSinceKillTask = 1.0f;
@@ -5637,10 +5920,13 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("[GLOB] CopyPlayerData: Request to copy player data for {} on {} of {}.",
+		SPDLOG_DEBUG
+		(
+			"[GLOB] CopyPlayerData: Request to copy player data for {} on {} of {}.",
 			requestingPlayer->GetName(),
 			a_info->shouldImport ? "opening" : "closing",
-			a_info->menuName);
+			a_info->menuName
+		);
 
 		auto& glob = GetSingleton();
 		const auto menuNameHash = Hash(a_info->menuName);
@@ -5742,10 +6028,36 @@ namespace ALYSLC
 			// Sync shared perks/skills before copying over/restoring both.
 			SyncSharedPerks();
 			SyncSharedSkillAVs();
+			
+			bool isPickpocketing = false;
+			auto containerMenuPtr = ui->GetMenu<RE::ContainerMenu>();
+			if (containerMenuPtr && containerMenuPtr.get())
+			{
+				isPickpocketing = 
+				(
+					containerMenuPtr->GetContainerMode() ==
+					RE::ContainerMenu::ContainerMode::kPickpocket
+				);
+			}
 
 			// Copy AVs, name, and perk list.
 			if (a_info->shouldImport) 
 			{
+				if (isPickpocketing)
+				{
+					SPDLOG_DEBUG
+					(
+						"[GLOB] CopyPlayerData: Container Menu: "
+						"Pickpocketing. Should copy over inventory on import."
+					);
+					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+					{
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Import Inventory.");
+						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
+					}
+				}
+
 				SPDLOG_DEBUG
 				(
 					"[GLOB] CopyPlayerData: Container Menu: "
@@ -5777,6 +6089,21 @@ namespace ALYSLC
 			}
 			else
 			{
+				if (isPickpocketing)
+				{
+					SPDLOG_DEBUG
+					(
+						"[GLOB] CopyPlayerData: Container Menu: "
+						"Pickpocketing. Should restore inventory on export."
+					);
+					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+					{
+						SPDLOG_DEBUG("[GLOB] CopyPlayerData: Export Inventory.");
+						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
+					}
+				}
+
 				SPDLOG_DEBUG
 				(
 					"[GLOB] CopyPlayerData: Container Menu: "
@@ -5937,13 +6264,6 @@ namespace ALYSLC
 					auto npcClass = asActor->GetActorBase()->npcClass; 
 					if (npcClass && npcClass->data.maximumTrainingLevel != 0)
 					{
-						SPDLOG_DEBUG
-						(
-							"[GLOB] CopyPlayerData: Dialogue NPC {} is a trainer: {} to level {}.",
-							asActor->GetName(), 
-							*npcClass->data.teaches, 
-							npcClass->data.maximumTrainingLevel
-						);
 						isTrainer = true;
 					}
 				}
@@ -6149,7 +6469,8 @@ namespace ALYSLC
 						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
 					)
 				};
-				glob.p1ExchangeableData->carryWeightAVData = {
+				glob.p1ExchangeableData->carryWeightAVData = 
+				{
 					p1->GetActorValue(RE::ActorValue::kCarryWeight),
 					p1->GetBaseActorValue(RE::ActorValue::kCarryWeight),
 					p1->GetActorValueModifier
@@ -6448,7 +6769,10 @@ namespace ALYSLC
 				glob.coopCompanionExchangeableData->hmsAVMods[0][0] - 
 				glob.p1ExchangeableData->hmsAVMods[0][0]
 			);
-			
+
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: P1's Health base/normal AVs are now {}, {}.",
+				p1->GetBaseActorValue(RE::ActorValue::kHealth), 
+				p1->GetActorValue(RE::ActorValue::kHealth));
 			SPDLOG_DEBUG("[GLOB] CopyOverAVs: Setting P1's Magicka base/normal AV to {}, {}.",
 				glob.coopCompanionExchangeableData->hmsBaseAVs[1], 
 				glob.coopCompanionExchangeableData->hmsAVs[1]);
@@ -6664,6 +6988,10 @@ namespace ALYSLC
 				glob.p1ExchangeableData->hmsAVMods[0][0] -
 				glob.coopCompanionExchangeableData->hmsAVMods[0][0]
 			);
+
+			SPDLOG_DEBUG("[GLOB] CopyOverAVs: P1's Health base/normal AVs are now {}, {}.",
+				p1->GetBaseActorValue(RE::ActorValue::kHealth), 
+				p1->GetActorValue(RE::ActorValue::kHealth));
 
 			SPDLOG_DEBUG
 			(
@@ -7138,7 +7466,8 @@ namespace ALYSLC
 		// Copy over all companion player-unlocked perks from the game's vanilla perk tree, 
 		// or restore P1's original perk tree perks.
 
-		// NOTE: Unlocked perks lists DO get modified on import and restore.
+		// NOTE: 
+		// Unlocked perks lists DO get modified on import and restore.
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!p1 || !a_coopActor)
@@ -7175,7 +7504,8 @@ namespace ALYSLC
 						(
 							"[GLOB] CopyOverPerkTrees Import: AdjustSkillXP: "
 							"Lock obtained. (0x{:X})",
-							std::hash<std::jthread::id>()(std::this_thread::get_id()));
+							std::hash<std::jthread::id>()(std::this_thread::get_id())
+						);
 
 						// Save P1's current XP, level, and level threshold for this skill 
 						// and then import the companion player's corresponding data.
@@ -7303,43 +7633,7 @@ namespace ALYSLC
 				}
 			}
 		};
-
-		// REMOVE when done debugging.
-		// For debug purposes only.
-		auto checkPerkTree = 
-		[p1, &a_shouldImport](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
-		{
-			if (!a_node)
-			{
-				return;
-			}
-
-			auto perk = a_node->perk;
-			uint32_t perkIndex = 0;
-			while (perk)
-			{
-				if (p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk)) 
-				{
-					SPDLOG_DEBUG
-					(
-						"[GLOB] CopyOverPerkTrees {}: CHECK: "
-						"{} has perk #{} {} (0x{:X}) "
-						"(assigned: {}, in singleton list: {})",
-						a_shouldImport ? "Import" : "Export", 
-						a_actor->GetName(), 
-						perkIndex,
-						perk->GetName(),
-						perk->formID,
-						p1->HasPerk(perk), 
-						Util::Player1PerkListHasPerk(perk)
-					);
-				}
-
-				perk = perk->nextPerk;
-				++perkIndex;
-			}
-		};
-
+		
 		// Set unlocked perks for P1/companion player on import,
 		// and for the companion player on export.
 		auto setUnlockedPerks = 
@@ -7552,7 +7846,7 @@ namespace ALYSLC
 			// Use created stack to remove perks from highest rank to lowest.
 			while (!perkStack.empty())
 			{
-				// For both players, remove any shared perks that weren't saved as unlocked.
+				// For both players, remove any perks that weren't saved as unlocked.
 				if (auto perkToRemove = perkStack.top(); perkToRemove)
 				{
 					if (!p1UnlockedPerksSet.contains(perkToRemove)) 
@@ -7569,6 +7863,42 @@ namespace ALYSLC
 				perkStack.pop();
 			}
 		};
+	
+#ifdef ALYSLC_DEBUG_MODE
+		auto checkPerkTree = 
+		[p1, &a_shouldImport](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		{
+			if (!a_node)
+			{
+				return;
+			}
+
+			auto perk = a_node->perk;
+			uint32_t perkIndex = 0;
+			while (perk)
+			{
+				if (p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk)) 
+				{
+					SPDLOG_DEBUG
+					(
+						"[GLOB] CopyOverPerkTrees {}: CHECK: "
+						"{} has perk #{} {} (0x{:X}) "
+						"(assigned: {}, in singleton list: {})",
+						a_shouldImport ? "Import" : "Export", 
+						a_actor->GetName(), 
+						perkIndex,
+						perk->GetName(),
+						perk->formID,
+						p1->HasPerk(perk), 
+						Util::Player1PerkListHasPerk(perk)
+					);
+				}
+
+				perk = perk->nextPerk;
+				++perkIndex;
+			}
+		};
+#endif
 
 		if (a_shouldImport)
 		{
@@ -7597,13 +7927,15 @@ namespace ALYSLC
 				glob.importUnlockedSharedPerksCount
 			);
 
-			// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
 			Util::TraverseAllPerks(a_coopActor, checkPerkTree);
+#endif
 		}
 		else
 		{
-			// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
 			Util::TraverseAllPerks(a_coopActor, checkPerkTree);
+#endif
 
 			// Adjust skill XP first.
 			adjustSkillXP();
@@ -7686,7 +8018,7 @@ namespace ALYSLC
 			return;
 		}
 
-		XINPUT_STATE inputState;
+		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		uint8_t cid = 0;
 		uint8_t activeControllers = 0;
@@ -7959,7 +8291,7 @@ namespace ALYSLC
 						(
 							"[ALYSLC] Are you sure that you'd like to respec your character?\n\n"
 							"Health, magicka, and stamina will be reset to their default values,\n"
-							"and all unlocked perks will be removed for this player, "
+							"and all unlocked perks will be removed from this player, "
 							"along with all shared perks from all players.\n"
 							"Any removed perks will have their perk points refunded.\n\n"
 							"Please press the 'Pause' or 'Journal Menu' button to confirm.", 
@@ -7998,10 +8330,6 @@ namespace ALYSLC
 					}
 					else if ((inputState.Gamepad.wButtons & pauseMask) == 0 && pauseBindPressed)
 					{
-						SPDLOG_DEBUG
-						(
-							"[GLOB] RespecPlayerTask: Released pause bind, respec confirmed."
-						);
 						// Set now since the bind is released.
 						confirmedRespec = true;
 						break;
@@ -8022,10 +8350,6 @@ namespace ALYSLC
 				if (waitTime > 5.0f)
 				{
 					break;
-				}
-				else
-				{
-					SPDLOG_DEBUG("[GLOB] RespecPlayerTask: Waiting ({}s).", waitTime);
 				}
 			}
 		}
@@ -8115,187 +8439,137 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("[GLOB] RescaleHMS: {}: base level: {}.", 
-			a_playerActor->GetName(), a_baseLevel);
+		SPDLOG_DEBUG
+		(
+			"[GLOB] RescaleHMS: {}: base level: {}.", 
+			a_playerActor->GetName(), a_baseLevel
+		);
 
 		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
-		/*
-		if (a_playerActor == p1) 
+		// Has recorded level up.
+		if (a_baseLevel != 0) 
 		{
-			// If P1 has leveled up at least once 
-			// and has a recorded increase to their health, magicka, or stamina,
-			// the serialized data is not the default saved data 
-			// and the HMS AVs can be set to these saved values.
-			bool useSerializedValues =
+			a_playerActor->SetBaseActorValue
 			(
-				(a_playerActor->GetLevel() > 1) && 
-				(
-					data->hmsPointIncreasesList[0] > 0.0f || 
-					data->hmsPointIncreasesList[1] > 0.0f || 
-					data->hmsPointIncreasesList[2] > 0.0f
-				)
+				RE::ActorValue::kHealth, 
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
 			);
-			if (useSerializedValues)
-			{
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kHealth,
-					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-				);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. "
+				"Health inc: {}, setting health to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[0],
+				data->hmsPointIncreasesList[0],
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+			);
 
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kMagicka, 
-					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-				);
-				
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kStamina, 
-					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-				);
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, 
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. "
+				"Magicka inc: {}, setting magicka to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[1],
+				data->hmsPointIncreasesList[1],
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
 
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: Resetting P1's base HMS AVs to "
-					"({}, {}, {}) -> ({} + {}, {} + {}, {} + {})",
-					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0],
-					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1],
-					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2],
-					data->hmsBasePointsList[0], data->hmsPointIncreasesList[0],
-					data->hmsBasePointsList[1], data->hmsPointIncreasesList[1],
-					data->hmsBasePointsList[2], data->hmsPointIncreasesList[2]
-				);
-			}
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, 
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. "
+				"Stamina inc: {}, setting stamina to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[2],
+				data->hmsPointIncreasesList[2],
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
 		}
-		else
-		*/
+		else if (a_playerActor->GetRace() && a_playerActor->GetActorBase())
 		{
-			// Has recorded level up.
-			if (a_baseLevel != 0) 
-			{
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kHealth, 
-					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. "
-					"Health inc: {}, setting health to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[0],
-					data->hmsPointIncreasesList[0],
-					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-				);
+			// Before first level up, use sum of the race's starting HMS AVs 
+			// and the actor base's HMS offsets.
+			data->hmsBasePointsList[0] = 
+			(
+				a_playerActor->race->data.startingHealth + 
+				a_playerActor->GetActorBase()->actorData.healthOffset
+			);
+			data->hmsBasePointsList[1] =
+			(
+				a_playerActor->race->data.startingMagicka + 
+				a_playerActor->GetActorBase()->actorData.magickaOffset
+			);
+			data->hmsBasePointsList[2] = 
+			(
+				a_playerActor->race->data.startingStamina +
+				a_playerActor->GetActorBase()->actorData.staminaOffset
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {} has not leveled up in co-op yet. "
+				"Scaling HMS AVs down to their base values: {}, {}, {}.",
+				a_playerActor->GetName(),
+				data->hmsBasePointsList[0],
+				data->hmsBasePointsList[1],
+				data->hmsBasePointsList[2]
+			);
 
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kMagicka, 
-					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. "
-					"Magicka inc: {}, setting magicka to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[1],
-					data->hmsPointIncreasesList[1],
-					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-				);
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kHealth, data->hmsBasePointsList[0]
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. "
+				"Health inc: {}, setting health to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[0],
+				data->hmsPointIncreasesList[0],
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+			);
 
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kStamina, 
-					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. "
-					"Stamina inc: {}, setting stamina to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[2],
-					data->hmsPointIncreasesList[2],
-					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-				);
-			}
-			else if (a_playerActor->GetRace() && a_playerActor->GetActorBase())
-			{
-				// Before first level up, use sum of the race's starting HMS AVs 
-				// and the actor base's HMS offsets.
-				data->hmsBasePointsList[0] = 
-				(
-					a_playerActor->race->data.startingHealth + 
-					a_playerActor->GetActorBase()->actorData.healthOffset
-				);
-				data->hmsBasePointsList[1] =
-				(
-					a_playerActor->race->data.startingMagicka + 
-					a_playerActor->GetActorBase()->actorData.magickaOffset
-				);
-				data->hmsBasePointsList[2] = 
-				(
-					a_playerActor->race->data.startingStamina +
-					a_playerActor->GetActorBase()->actorData.staminaOffset
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {} has not leveled up in co-op yet. "
-					"Scaling HMS AVs down to their base values: {}, {}, {}.",
-					a_playerActor->GetName(),
-					data->hmsBasePointsList[0],
-					data->hmsBasePointsList[1],
-					data->hmsBasePointsList[2]
-				);
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. "
+				"Magicka inc: {}, setting magicka to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[1],
+				data->hmsPointIncreasesList[1],
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
 
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kHealth, data->hmsBasePointsList[0]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s health AV at base level {} is {}. "
-					"Health inc: {}, setting health to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[0],
-					data->hmsPointIncreasesList[0],
-					data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-				);
-
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s magicka AV at base level {} is {}. "
-					"Magicka inc: {}, setting magicka to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[1],
-					data->hmsPointIncreasesList[1],
-					data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-				);
-
-				a_playerActor->SetBaseActorValue
-				(
-					RE::ActorValue::kStamina, data->hmsBasePointsList[2]
-				);
-				SPDLOG_DEBUG
-				(
-					"[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. "
-					"Stamina inc: {}, setting stamina to {}",
-					a_playerActor->GetName(),
-					a_baseLevel,
-					data->hmsBasePointsList[2],
-					data->hmsPointIncreasesList[2],
-					data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-				);
-			}
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, data->hmsBasePointsList[2]
+			);
+			SPDLOG_DEBUG
+			(
+				"[GLOB] RescaleHMS: {}'s stamina AV at base level {} is {}. "
+				"Stamina inc: {}, setting stamina to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[2],
+				data->hmsPointIncreasesList[2],
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
 		}
 	}
 
@@ -8404,13 +8678,6 @@ namespace ALYSLC
 		SPDLOG_DEBUG("[GLOB] ResetPerkData: {}", a_playerActor->GetName());
 
 		auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
-		// If P1 has not leveled up at least once, no player will have selected perks,
-		// so return early.
-		if (p1->GetLevel() == 1)
-		{
-			return;
-		}
-
 		// Players start with 3 perk points at level 1 if using Requiem.
 		data->availablePerkPoints = static_cast<uint32_t>
 		(
@@ -8686,7 +8953,8 @@ namespace ALYSLC
 
 			// Update base AVs when playing Enderal,
 			// since companion players' base AVs start at 5, instead of 15.
-			if (a_updateBaseAVs || ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+			if (Settings::bStackCoopPlayerSkillAVAutoScaling || 
+				ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 			{
 				SPDLOG_DEBUG
 				(
@@ -8769,8 +9037,8 @@ namespace ALYSLC
 					);
 				}
 				
-				
-				// NOTE: First saved level is guaranteed to be >= 1 here.
+				// NOTE: 
+				// First saved level is guaranteed to be >= 1 here.
 				if (data->firstSavedLevel < savedP1Level)
 				{
 					// P1's level is >= 2.
@@ -8978,8 +9246,6 @@ namespace ALYSLC
 
 			return true;
 		}
-
-		
 	}
 
 	//=============================================================================================
@@ -9013,8 +9279,8 @@ namespace ALYSLC
 		// Find collidable and handle for each colliding body.
 		auto collidableA = a_event.bodies[0]->GetCollidable();
 		auto collidableB = a_event.bodies[1]->GetCollidable();
-		RE::ObjectRefHandle handleA{};
-		RE::ObjectRefHandle handleB{};
+		RE::ObjectRefHandle handleA{ };
+		RE::ObjectRefHandle handleB{ };
 		if (!collidableA || !collidableB)
 		{
 			return;
@@ -9032,6 +9298,42 @@ namespace ALYSLC
 			handleB = refrB->GetHandle();
 		}
 
+		// Flags indicating that we've already negated fall damage for players,
+		// so we don't have to do it again later on.
+		bool refrAIsPlayer = false;
+		bool refrBIsPlayer = false;
+		// Generic check for collisions between a player and any object.
+		// Clear fall timer and height just to be safe and ensure fall damage is not applied.
+		if (Settings::bNegateFallDamage)
+		{
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(refrA);
+			if (pIndex != -1)
+			{
+				refrAIsPlayer = true;
+				auto charController = glob.coopPlayers[pIndex]->coopActor->GetCharController(); 
+				if (charController)
+				{
+					charController->lock.Lock();
+					Util::AdjustFallState(charController, false);
+					charController->lock.Unlock();
+				}
+			}
+
+			pIndex = GlobalCoopData::GetCoopPlayerIndex(refrB);
+			if (pIndex != -1)
+			{
+				refrBIsPlayer = true;
+				auto charController = glob.coopPlayers[pIndex]->coopActor->GetCharController(); 
+				if (charController)
+				{
+					charController->lock.Lock();
+					Util::AdjustFallState(charController, false);
+					charController->lock.Unlock();
+				}
+			}
+		}
+
+		// At least one refr was released by a player.
 		bool oneRefrIsManaged = false;
 		for (const auto& p : glob.coopPlayers)
 		{
@@ -9068,7 +9370,7 @@ namespace ALYSLC
 				(
 					std::pair<RE::FormID, RE::FormID>
 					(
-						handleA.get().get()->formID, handleB.get().get()->formID
+						refrA->formID, refrB->formID
 					)
 				);
 
@@ -9078,23 +9380,16 @@ namespace ALYSLC
 				{
 					std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
 
+					SPDLOG_DEBUG("[GLOB] ContactPointCallback. {}: Obtained lock. (0x{:X})", 
+						p->coopActor->GetName(), 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+
 					// Already collided, so do not queue this event for handling.
 					if (p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
 					{
 						continue;
 					}
 				
-					SPDLOG_DEBUG
-					(
-						"[GLOB] ContactPointCallback. {}: "
-						"{} (0x{:X}) collided with {} (0x{:X}).", 
-						p->coopActor->GetName(), 
-						Util::HandleIsValid(handleA) ? handleA.get()->GetName() : "NONE",
-						Util::HandleIsValid(handleA) ? handleA.get()->formID : 0xDEAD,
-						Util::HandleIsValid(handleB) ? handleB.get()->GetName() : "NONE",
-						Util::HandleIsValid(handleB) ? handleB.get()->formID : 0xDEAD
-					);
-
 					p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);			
 					p->tm->rmm->queuedReleasedRefrContactEvents.emplace_back
 					(
@@ -9124,14 +9419,10 @@ namespace ALYSLC
 				oneRefrIsManaged = 
 				(
 					(
-						handleA && handleA.get() && handleA.get().get() && 
-						handleA.get()->As<RE::Actor>() && 
-						p->tm->rmm->IsManaged(handleA, false)
+						refrA && refrA->As<RE::Actor>() && p->tm->rmm->IsManaged(handleA, false)
 					) ||
 					(
-						handleB && handleB.get() && handleB.get().get() && 
-						handleB.get()->As<RE::Actor>() && 
-						p->tm->rmm->IsManaged(handleB, false)
+						refrB && refrB->As<RE::Actor>() && p->tm->rmm->IsManaged(handleB, false)
 					)
 				);
 				if (!oneRefrIsManaged)
@@ -9139,15 +9430,10 @@ namespace ALYSLC
 					continue;
 				}
 
-				auto collidingRefrPtr = 
-				(
-					Util::HandleIsValid(handleA) ?
-					Util::GetRefrPtrFromHandle(handleA) :
-					Util::GetRefrPtrFromHandle(handleB)
-				);
+				auto collidingRefr = refrA ? refrA : refrB;
 				const auto fidPair = std::pair<RE::FormID, RE::FormID>
 				(
-					collidingRefrPtr->formID, 0x0
+					collidingRefr->formID, 0x0
 				);
 
 				SPDLOG_DEBUG("[GLOB] ContactPointCallback. {}: Getting lock. (0x{:X})", 
@@ -9156,6 +9442,10 @@ namespace ALYSLC
 				{
 					std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
 
+					SPDLOG_DEBUG("[GLOB] ContactPointCallback. {}: Obtained lock. (0x{:X})", 
+						p->coopActor->GetName(), 
+						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+
 					// Already collided with an object without an associated refr,
 					// so do not queue event.
 					if (p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
@@ -9163,17 +9453,6 @@ namespace ALYSLC
 						continue;
 					}
 					
-					SPDLOG_DEBUG
-					(
-						"[GLOB] ContactPointCallback. {}: "
-						"{} (0x{:X}) collided with {} (0x{:X}).", 
-						p->coopActor->GetName(), 
-						Util::HandleIsValid(handleA) ? handleA.get()->GetName() : "NO REFR",
-						Util::HandleIsValid(handleA) ? handleA.get()->formID : 0xDEAD,
-						Util::HandleIsValid(handleB) ? handleB.get()->GetName() : "NO REFR",
-						Util::HandleIsValid(handleB) ? handleB.get()->formID : 0xDEAD
-					);
-
 					p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);		
 					p->tm->rmm->queuedReleasedRefrContactEvents.emplace_back
 					(
@@ -9188,6 +9467,40 @@ namespace ALYSLC
 						)
 					);
 				}
+			}
+
+			if (Settings::bNegateFallDamage)
+			{
+				// No need to reset fall height and time if we already did earlier.
+				if (refrA && !refrAIsPlayer)
+				{
+					auto asActor = refrA->As<RE::Actor>();
+					if (asActor)
+					{
+						auto charController = asActor->GetCharController(); 
+						if (charController)
+						{
+							charController->lock.Lock();
+							Util::AdjustFallState(charController, false);
+							charController->lock.Unlock();
+						}
+					}
+				}	
+					
+				if (refrB && !refrBIsPlayer)
+				{
+					auto asActor = refrB->As<RE::Actor>();
+					if (asActor)
+					{
+						auto charController = asActor->GetCharController(); 
+						if (charController)
+						{
+							charController->lock.Lock();
+							Util::AdjustFallState(charController, false);
+							charController->lock.Unlock();
+						}
+					}
+				}	
 			}
 		}
 	}

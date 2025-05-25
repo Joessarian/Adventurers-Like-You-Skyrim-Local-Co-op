@@ -32,9 +32,6 @@ static constexpr uint8_t MAX_NODE_RECURSION_DEPTH = 100;
 // https://github.com/ersh1/Precision/blob/main/src/Offsets.h
 // 2F6B94C, 30064CC
 static float* g_deltaTimeRealTime = (float*)RELOCATION_ID(523661, 410200).address();
-// 2F4DED0, 2FE8B98
-static RE::NiRect<float>* g_viewPort = (RE::NiRect<float>*)RELOCATION_ID(519618, 406160).address();  
-
 
 //==========
 //[Hashing]:
@@ -78,7 +75,6 @@ inline const uint32_t Hash(const RE::BSFixedString& a_string) noexcept
 
 	return hash;
 }
-
 
 inline const uint32_t Hash(const std::string& a_string) noexcept
 {
@@ -656,7 +652,7 @@ namespace ALYSLC
 		float secsUpdateInterval;
 	};
 	
-	// Holds interpolation data for two-way constant interpolation
+	// Holds interpolation data for two-way perpetual interpolation
 	// from one endpoint to the other triggered by some state change
 	// related to the data.
 	struct TwoWayInterpData
@@ -674,23 +670,34 @@ namespace ALYSLC
 
 		// Force interpolation to one endpoint or the other,
 		// whichever serves as the starting endpoint (towards minimum by default).
-		inline void Reset(bool&& a_towardsMin = true) 
+		// Can instantly set the value to the min/max value.
+		inline void Reset(bool&& a_towardsMin = true, bool&& a_instant = false) 
 		{
+			valueAtDirectionChange = value;
 			if (a_towardsMin) 
 			{
 				interpToMin = true;
 				interpToMax = false;
 				directionChangeFlag = false;
+				if (a_instant)
+				{
+					value =
+					valueAtDirectionChange = 0.0f;
+				}
 			}
 			else
 			{
 				interpToMin = false;
 				interpToMax = true;
 				directionChangeFlag = true;
+				if (a_instant)
+				{
+					value =
+					valueAtDirectionChange = 1.0f;
+				}
 			}
 
 			directionChangeTP = SteadyClock::now();
-			valueAtDirectionChange = value;
 		}
 
 		// Set interval to interpolate over to the minimum or maximum endpoint.
@@ -749,7 +756,8 @@ namespace ALYSLC
 		//==================================================
 		//[Lambert W Function Solution Estimator Functions]:
 		//==================================================
-		// NOTE: Was previously used to set projectile release speeds 
+		// NOTE: 
+		// Was previously used to set projectile release speeds 
 		// when accounting for linear air drag.
 
 		namespace LambertWFunc
@@ -771,6 +779,11 @@ namespace ALYSLC
 			(
 				const double& a_z, const double& a_precision
 			);
+			// All approximation methods adapted from here:
+			// https://en.wikipedia.org/wiki/Lambert_W_function#Numerical_evaluation
+			double HalleyApprox(const double& a_wn, const double& a_z);
+			double IaconoBoydApprox(const double& a_wn, const double& a_z);
+			double NewtonApprox(const double& a_wn, const double& a_z);
 			// Helper function which runs an approximation of the Lambert W function 
 			// based on the given approximation type, the given z value,
 			// and using the initial W0 and W-1 branch values and given precision to reach.
@@ -782,11 +795,6 @@ namespace ALYSLC
 				const double& a_z, 
 				const double& a_precision
 			);
-			// All approximation methods adapted from here:
-			// https://en.wikipedia.org/wiki/Lambert_W_function#Numerical_evaluation
-			double HalleyApprox(const double& a_wn, const double& a_z);
-			double IaconoBoydApprox(const double& a_wn, const double& a_z);
-			double NewtonApprox(const double& a_wn, const double& a_z);
 		};
 
 		//===================
@@ -894,6 +902,7 @@ namespace ALYSLC
 				RELOCATION_ID(76160, 77988) 
 			};
 
+			// Have the given activating refr (activator) activate the given target refr.
 			inline bool ActivateRefr
 			(
 				RE::TESObjectREFR* a_targetRefr,
@@ -951,15 +960,6 @@ namespace ALYSLC
 				using func_t = decltype(&Favorite);
 				REL::Relocation<func_t> func{ RELOCATION_ID(15858, 16098) };
 				return func(a_changes, a_entryData, a_list);
-			}
-
-			// Full credit goes to Exit-9B:
-			// https://github.com/Exit-9B/Constellations/blob/main/src/Hooks/Athletics.cpp#L73
-			inline void ForceUpdateCachedMovementType(RE::Actor* a_actor)
-			{
-				using func_t = decltype(&ForceUpdateCachedMovementType);
-				REL::Relocation<func_t> func{ RELOCATION_ID(36916, 37941) };
-				return func(a_actor);
 			}
 
 			// Credits to adamhynek for the VR offset from his awesome VR mods PLANCK and HIGGS:
@@ -1331,10 +1331,16 @@ namespace ALYSLC
 		//=============================
 		//[External Utility Functions]:
 		//=============================
+
 		// Major thanks to po3 for this exported function:
 		// https://github.com/powerof3/CLibUtil/blob/master/include/CLIBUtil/editorID.hpp
 		inline std::string GetEditorID(const RE::TESForm* a_form)
 		{
+			if (!a_form)
+			{
+				return { };
+			}
+
 			switch (a_form->GetFormType()) 
 			{
 			case RE::FormType::Keyword:
@@ -1378,7 +1384,7 @@ namespace ALYSLC
 					return func(a_form->formID);
 				}
 
-				return {};
+				return { };
 			}
 			}
 		}
@@ -1488,7 +1494,7 @@ namespace ALYSLC
 		// Get the game pitch between the two positions.
 		inline float GetPitchBetweenPositions(RE::NiPoint3 a_sourcePos, RE::NiPoint3 a_targetPos)
 		{
-			// Sick formatting, bro (x2).
+			// Sick formatting, bro.
 			return 
 			(
 				asinf
@@ -1574,28 +1580,40 @@ namespace ALYSLC
 			);
 		}
 
-		// Smoother step interpolation implementation: https://en.wikipedia.org/wiki/Smoothstep
-		inline float InterpolateSmootherStep
+		//===================
+		// [Everything Else]:
+		//===================
+		inline void AdjustFallState
 		(
-			const float& a_lower, const float& a_upper, const float& a_t
+			RE::bhkCharacterController* a_charController, bool a_startFalling
 		)
 		{
-			return std::lerp
-			(
-				a_lower, 
-				a_upper, 
-				(a_t * a_t * a_t * (6.0f * a_t * a_t - 15.0f * a_t + 10.0f))
-			);
-		}
+			if (!a_charController)
+			{
+				return;
+			}
 
-		//=========================================================================================
+			if (a_startFalling)
+			{
+				RE::hkVector4 havokPos{ };
+				a_charController->GetPositionImpl(havokPos, false);
+				float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
+				a_charController->fallStartHeight = zPos;
+			}
+			else
+			{
+				a_charController->fallStartHeight = 0.0f;
+			}
+
+			a_charController->fallTime = 0.0f;
+		}
 
 		// Get the given refr's 3D center world position.
 		// If the current 3D is unavailable, return a position 
 		// halfway up the reference, given by its current position.
 		// Possible TODO: 
 		// If the current 3D is invalid, 
-		// account for the refr's pitch angle when getting halfway point,
+		// account for the refr's pitch angle when getting halfway point.
 		inline RE::NiPoint3 Get3DCenterPos(RE::TESObjectREFR* a_refr)
 		{
 			if (!a_refr)
@@ -1685,20 +1703,13 @@ namespace ALYSLC
 		// Get the given actor's character controller-reported linear velocity.
 		inline RE::NiPoint3 GetActorLinearVelocity(RE::Actor* a_actor)
 		{
+			if (!a_actor)
+			{
+				return RE::NiPoint3();
+			}
+
 			if (const auto charController = a_actor->GetCharController(); charController)
 			{
-				/*RE::hkVector4 linVel{ 0 };
-				charController->GetLinearVelocityImpl(linVel);
-				return 
-				(
-					RE::NiPoint3
-					(
-						linVel.quad.m128_f32[0], 
-						linVel.quad.m128_f32[1], 
-						linVel.quad.m128_f32[2]
-					) * HAVOK_TO_GAME
-				);*/
-
 				return ToNiPoint3(charController->outVelocity) * HAVOK_TO_GAME;
 			}
 
@@ -1776,26 +1787,7 @@ namespace ALYSLC
 
 			return nullptr;
 		}
-
-		// Get the detection percent of the requesting actor by the detecting actor [0.0, 100.0].
-		inline float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor) 
-		{
-			// Sick formatting, bro.
-			return 
-			(
-				5.0f * 
-				(
-					20.0f + 
-					std::clamp
-					(
-						static_cast<float>(a_detectingActor->RequestDetectionLevel(a_reqActor)), 
-						-20.0f, 
-						0.0f
-					)
-				)
-			);
-		}
-
+		
 		// Get number of seconds that have elapsed since the given time point.
 		// 3 extra decimal places of precision if requested.
 		inline float GetElapsedSeconds
@@ -1829,13 +1821,17 @@ namespace ALYSLC
 		// Get the max AV amount for the given AV.
 		inline float GetFullAVAmount(RE::Actor* a_actor, const RE::ActorValue& a_av)
 		{
-			const float baseAV = a_actor->GetBaseActorValue(a_av);
 			// Get the amount to increase the current value by.
+
+			if (!a_actor)
+			{
+				return 0.0f;
+			}
+
 			return
 			( 
-				a_actor->GetBaseActorValue(a_av) +
-				a_actor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, a_av) +
-				a_actor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kPermanent, a_av)
+				a_actor->GetPermanentActorValue(a_av) +
+				a_actor->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, a_av)
 			);
 		}
 
@@ -1899,7 +1895,6 @@ namespace ALYSLC
 			return std::nullopt;
 		}
 
-		
 		// Get string game setting from the given setting name.
 		// Nullopt if unable to get setting.
 		inline std::optional<RE::BSFixedString> GetGameSettingString
@@ -2018,6 +2013,18 @@ namespace ALYSLC
 			return a_handle && a_handle.get() && a_handle.get().get();
 		}
 
+		// Return true if this actor's crime faction has bounty on player 1.
+		inline bool HasBountyOnPlayer(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			const auto crimeFaction = a_actor->GetCrimeFaction();
+			return crimeFaction && crimeFaction->GetCrimeGold() > 0.0f;
+		}
+
 		// Return true if the given form is either a hostile spell,
 		// or a weapon with a hostile spell enchantment.
 		inline bool HasHostileSpell(RE::TESForm* a_form)
@@ -2046,6 +2053,20 @@ namespace ALYSLC
 			}
 
 			return false;
+		}
+		
+		// Return true if the given actor has a crime faction 
+		// but does not have a bounty on the player.
+		// Best indicator that the actor is normally passive towards the player.
+		inline bool HasNoBountyButInCrimeFaction(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			const auto crimeFaction = a_actor->GetCrimeFaction();
+			return crimeFaction && crimeFaction->GetCrimeGold() <= 0.0f;
 		}
 
 		// Return true if the given form is a restoration spell,
@@ -2091,10 +2112,67 @@ namespace ALYSLC
 				)
 			);
 		}
+		
+		// Smoother step interpolation implementation: https://en.wikipedia.org/wiki/Smoothstep
+		inline float InterpolateSmootherStep
+		(
+			const float& a_lower, const float& a_upper, const float& a_t
+		)
+		{
+			return std::lerp
+			(
+				a_lower, 
+				a_upper, 
+				(a_t * a_t * a_t * (6.0f * a_t * a_t - 15.0f * a_t + 10.0f))
+			);
+		}
 
+		// Is the given actor fleeing?
+		inline bool IsFleeing(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			return 
+			(
+				a_actor->currentProcess && 
+				a_actor->currentProcess->middleHigh && 
+				a_actor->currentProcess->middleHigh->isFleeing
+			) ||
+			(
+				a_actor->combatController && 
+				a_actor->combatController->IsFleeing()
+			);
+		}
+
+		// Is the given actor a guard?
+		inline bool IsGuard(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+			
+			return 
+			(
+				(a_actor->IsGuard()) || 
+				(
+					ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+					a_actor->IsInFaction
+					(
+						RE::TESForm::LookupByEditorID<RE::TESFaction>("IsGuardFaction")
+					)
+				)
+			);
+		}
+
+		//=========================================================================================
 		// Is the given bound object a lootable object for co-op players?
 		// (can be moved into a player's inventory directly through activation).
-		// NOTE: Reference instead of a pointer so that this function
+		// NOTE:
+		// Reference instead of a pointer so that this function
 		// can be used as an inventory filter function.
 		inline bool IsLootableObject(RE::TESBoundObject& a_object)
 		{
@@ -2130,7 +2208,8 @@ namespace ALYSLC
 						RE::FormType::Book,
 						RE::FormType::Misc,
 						RE::FormType::Weapon,
-						RE::FormType::SoulGem
+						RE::FormType::SoulGem,
+						RE::FormType::LeveledItem
 					) ||
 					(
 						(a_object.Is(RE::FormType::Flora, RE::FormType::Tree)) && 
@@ -2151,6 +2230,11 @@ namespace ALYSLC
 		// Is this actor friendly/neutral towards the co-op party?
 		inline bool IsPartyFriendlyActor(RE::Actor* a_actor)
 		{
+			if (!a_actor)
+			{
+				return false;
+			}
+
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			// P1 better not hate themselves.
 			if (p1 && a_actor == p1)
@@ -2286,7 +2370,7 @@ namespace ALYSLC
 			}
 		}
 
-		// Return true if a menu is open that stops the player from moving.
+		// Return true if a menu is open that stops or should stop the player from moving.
 		inline bool OpenMenuStopsMovement()
 		{
 			auto ui = RE::UI::GetSingleton();
@@ -2366,7 +2450,102 @@ namespace ALYSLC
 					sinf(a_pitch)
 				)
 			);
-		}	
+		}
+
+		// Send a combat state change event constructed with the given source actor, 
+		// target actor, and combat state to set.
+		inline void SendCombatEvent
+		(
+			RE::TESObjectREFR* a_combatStateActor, 
+			RE::TESObjectREFR* a_targetActor,
+			RE::ACTOR_COMBAT_STATE&& a_newState
+		)
+		{
+			auto sesh = RE::ScriptEventSourceHolder::GetSingleton(); 
+			if (!sesh)
+			{
+				return;
+			}
+
+			// Construct and send event.
+			std::unique_ptr<RE::TESCombatEvent> combatEvent = 
+			(
+				std::make_unique<RE::TESCombatEvent>()
+			);
+			std::memset(combatEvent.get(), 0, sizeof(RE::TESCombatEvent));
+			if (combatEvent && combatEvent.get())
+			{
+				combatEvent->actor = RE::NiPointer<RE::TESObjectREFR>(a_combatStateActor);
+				combatEvent->targetActor = RE::NiPointer<RE::TESObjectREFR>(a_targetActor);
+				combatEvent->newState = a_newState;
+				sesh->SendEvent(combatEvent.get());
+			}
+
+			combatEvent.reset();
+		}
+
+		// Send a critical hit event constructed with the given aggressor actor,
+		// source weapon, and sneak attack flag (if requested).
+		inline void SendCriticalHitEvent
+		(
+			RE::TESObjectREFR* a_aggressor, RE::TESObjectWEAP* a_weapon, const bool& a_sneakHit
+		)
+		{
+			auto critSource = RE::CriticalHit::GetEventSource(); 
+			if (!critSource)
+			{
+				return;
+			}
+
+			// Construct and send event.
+			std::unique_ptr<RE::CriticalHit::Event> critEvent = 
+			(
+				std::make_unique<RE::CriticalHit::Event>()
+			);
+			std::memset(critEvent.get(), 0, sizeof(RE::CriticalHit::Event));
+			if (critEvent && critEvent.get())
+			{
+				critEvent->aggressor = a_aggressor;
+				critEvent->weapon = a_weapon;
+				critEvent->sneakHit = a_sneakHit;
+				critSource->SendEvent(critEvent.get());
+			}
+
+			critEvent.reset();
+		}
+
+		// Send a hit event constructed with the given cause refr,
+		// target refr, source FID, projectile FID, and hit flags.
+		inline void SendHitEvent
+		(
+			RE::TESObjectREFR* a_cause,
+			RE::TESObjectREFR* a_target,
+			const RE::FormID& a_sourceFID, 
+			const RE::FormID& a_projFID, 
+			RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> a_flags
+		)
+		{
+			auto sesh = RE::ScriptEventSourceHolder::GetSingleton();
+			if (!sesh)
+			{
+				return;
+			}
+
+			// Construct and send event.
+			std::unique_ptr<RE::TESHitEvent> hitEvent = std::make_unique<RE::TESHitEvent>();
+			std::memset(hitEvent.get(), 0, sizeof(RE::TESHitEvent));
+			if (hitEvent && hitEvent.get())
+			{
+				hitEvent->cause = RE::TESObjectREFRPtr(a_cause);
+				hitEvent->flags = a_flags;
+				hitEvent->projectile = a_projFID;
+				hitEvent->source = a_sourceFID;
+				hitEvent->target = RE::TESObjectREFRPtr(a_target);
+				sesh->SendEvent<RE::TESHitEvent>(hitEvent.get());
+			}
+
+			hitEvent.reset();
+		}
 
 		// Set the boolean game setting, given by the setting name, to the given value.
 		// Return true if request succeeded.
@@ -2498,121 +2677,38 @@ namespace ALYSLC
 			return false;
 		}
 
-		
-		// Send a combat state change event constructed with the given source actor, 
-		// target actor, and combat state to set.
-		inline void SendCombatEvent
-		(
-			RE::TESObjectREFR* a_combatStateActor, 
-			RE::TESObjectREFR* a_targetActor,
-			RE::ACTOR_COMBAT_STATE&& a_newState
-		)
-		{
-			if (auto sesh = RE::ScriptEventSourceHolder::GetSingleton(); sesh)
-			{
-				// Construct and send event.
-				std::unique_ptr<RE::TESCombatEvent> combatEvent = 
-				(
-					std::make_unique<RE::TESCombatEvent>()
-				);
-				std::memset(combatEvent.get(), 0, sizeof(RE::TESCombatEvent));
-				if (combatEvent && combatEvent.get())
-				{
-					combatEvent->actor = RE::NiPointer<RE::TESObjectREFR>(a_combatStateActor);
-					combatEvent->targetActor = RE::NiPointer<RE::TESObjectREFR>(a_targetActor);
-					combatEvent->newState = a_newState;
-					sesh->SendEvent(combatEvent.get());
-				}
-
-				combatEvent.reset();
-			}
-		}
-
-		// Send a critical hit event constructed with the given aggressor actor,
-		// source weapon, and sneak attack flag (if requested).
-		inline void SendCriticalHitEvent
-		(
-			RE::TESObjectREFR* a_aggressor, RE::TESObjectWEAP* a_weapon, const bool& a_sneakHit
-		)
-		{
-			if (auto critSource = RE::CriticalHit::GetEventSource(); critSource)
-			{
-				// Construct and send event.
-				std::unique_ptr<RE::CriticalHit::Event> critEvent = 
-				(
-					std::make_unique<RE::CriticalHit::Event>()
-				);
-				std::memset(critEvent.get(), 0, sizeof(RE::CriticalHit::Event));
-				if (critEvent && critEvent.get())
-				{
-					critEvent->aggressor = a_aggressor;
-					critEvent->weapon = a_weapon;
-					critEvent->sneakHit = a_sneakHit;
-					critSource->SendEvent(critEvent.get());
-				}
-
-				critEvent.reset();
-			}
-		}
-
-		// Send a hit event constructed with the given cause refr,
-		// target refr, source FID, projectile FID, and hit flags.
-		inline void SendHitEvent
-		(
-			RE::TESObjectREFR* a_cause,
-			RE::TESObjectREFR* a_target,
-			const RE::FormID& a_sourceFID, 
-			const RE::FormID& a_projFID, 
-			RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> a_flags
-		)
-		{
-			if (auto sesh = RE::ScriptEventSourceHolder::GetSingleton(); sesh)
-			{
-				// Construct and send event.
-				std::unique_ptr<RE::TESHitEvent> hitEvent = std::make_unique<RE::TESHitEvent>();
-				std::memset(hitEvent.get(), 0, sizeof(RE::TESHitEvent));
-				if (hitEvent && hitEvent.get())
-				{
-					hitEvent->cause = RE::TESObjectREFRPtr(a_cause);
-					hitEvent->flags = a_flags;
-					hitEvent->projectile = a_projFID;
-					hitEvent->source = a_sourceFID;
-					hitEvent->target = RE::TESObjectREFRPtr(a_target);
-					sesh->SendEvent<RE::TESHitEvent>(hitEvent.get());
-				}
-
-				hitEvent.reset();
-			}
-		}
-
 		// NOTE: 
 		// Not sure if this sky mode change is necessary, 
 		// since some interior cells still have camera proximity-based fog afterward.
 		// May remove later.
-		// Attempt to remove fog from interior cells by setting the cell sky mode to 'SkyDoneOnly'.
+		// Attempt to remove fog from interior cells by setting the cell sky mode to 'SkyDomeOnly'.
 		inline void SetSkyboxOnlyForInteriorModeCell(const RE::TESObjectCELL* a_cell)
 		{
-			if (a_cell && a_cell->formID != 0)
+			if (!a_cell || a_cell->formID == 0)
 			{
-				if (auto tes = RE::TES::GetSingleton(); 
-					tes && tes->sky && *tes->sky->mode != RE::Sky::Mode::kInterior)
-				{
-					tes->sky->mode.reset
-					(
-						RE::Sky::Mode::kFull,
-						RE::Sky::Mode::kInterior, 
-						RE::Sky::Mode::kNone, 
-						RE::Sky::Mode::kSkyDomeOnly
-					);
-					if (a_cell->IsExteriorCell()) 
-					{
-						tes->sky->mode.set(RE::Sky::Mode::kFull);
-					}
-					else
-					{
-						tes->sky->mode.set(RE::Sky::Mode::kSkyDomeOnly);
-					}
-				}
+				return;
+			}
+
+			auto tes = RE::TES::GetSingleton(); 
+			if (!tes || !tes->sky || *tes->sky->mode == RE::Sky::Mode::kInterior)
+			{
+				return;
+			}
+
+			tes->sky->mode.reset
+			(
+				RE::Sky::Mode::kFull,
+				RE::Sky::Mode::kInterior, 
+				RE::Sky::Mode::kNone, 
+				RE::Sky::Mode::kSkyDomeOnly
+			);
+			if (a_cell->IsExteriorCell()) 
+			{
+				tes->sky->mode.set(RE::Sky::Mode::kFull);
+			}
+			else
+			{
+				tes->sky->mode.set(RE::Sky::Mode::kSkyDomeOnly);
 			}
 		}
 
@@ -2637,11 +2733,19 @@ namespace ALYSLC
 		//[Utility Functions]:
 		//====================
 
+		// Add the given target actor as a combat target for the source actor.
+		void AddAsCombatTarget(RE::Actor* a_sourceActor, RE::Actor* a_targetActor);
+
 		// Run task and wait until complete.
 		// Can choose to send a UI task instead.
-		// NOTE: DO NOT run on a main thread or the game will lock up.
+		// NOTE: 
+		// DO NOT run on a main thread or the game will lock up.
 		void AddSyncedTask(std::function<void()> a_func, bool a_isUITask = false);
-
+		
+		// Returns true if the given actor and rigid body supports manipulation of its velocity.
+		// Can use the supplied rigid body, or retrieve the rigid body from the actor's current 3D.
+		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody = nullptr);
+		
 		// Favorite/unfavorite the given form for the given actor.
 		void ChangeFormFavoritesStatus
 		(
@@ -2653,12 +2757,6 @@ namespace ALYSLC
 		void ChangeFormHotkeyStatus
 		(
 			RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet
-		);
-
-		// Add/remove given perk to/from the given actor.
-		bool ChangePerk
-		(
-			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
 		);
 		
 		// Add/remove collision via Precision's attack colliders
@@ -2672,10 +2770,17 @@ namespace ALYSLC
 			float&& a_lengthMult = 1.0f
 		);
 
+		// Add/remove given perk to/from the given actor.
+		bool ChangePerk
+		(
+			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
+		);
+		
 		// Creates a LS/RS thumbstick event using the provided user event name
 		// and stick X, Y displacement values. 
 		// Based on the Create() function for ButtonEvents.
-		// NOTE: Must be free'd by the caller.
+		// NOTE:
+		// Must be free'd by the caller.
 		RE::ThumbstickEvent* CreateThumbstickEvent
 		(
 			const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS
@@ -2701,7 +2806,8 @@ namespace ALYSLC
 		// and Shrimperator for their adaptation of the function to use an origin position 
 		// instead of an origin reference:
 		// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection/-/blob/main/src/lib/Util.cpp#L969
-		// NOTE: Cannot queue tasks in the passed-in filter function. 
+		// NOTE:
+		// Cannot queue tasks in the passed-in filter function. 
 		// Game will freeze.
 		void ForEachReferenceInRange
 		(
@@ -2709,28 +2815,6 @@ namespace ALYSLC
 			float a_radius, 
 			const bool& a_use3DDist, 
 			std::function<RE::BSContainer::ForEachResult(RE::TESObjectREFR* a_refr)> a_callback
-		);
-
-		// Helper function that gets a rough approximation of the pixel height of the given actor 
-		// at the current camera position.
-		// Actor's lower bound is their world position
-		// and their upper bound is their head node or world position offset by their height.
-		float GetActorPixelHeight
-		(
-			RE::Actor* a_actor, 
-			const RE::NiPoint3& a_headWorldPos, 
-			const RE::NiPoint3& a_centerWorldPos, 
-			const RE::NiPoint3& a_boundExtents
-		);
-		
-		// Helper function that gets a rough approximation of the pixel width of the given actor 
-		// at the current camera position.
-		// Actor's upper/lower bound is their center position offset by +- their X bound extent.
-		float GetActorPixelWidth
-		(
-			RE::Actor* a_actor, 
-			const RE::NiPoint3& a_centerWorldPos, 
-			const RE::NiPoint3& a_boundExtents
 		);
 
 		// Get all skill levels for the given actor.
@@ -2742,6 +2826,9 @@ namespace ALYSLC
 
 		// Return the refr 3D's havok collision layer.
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D);
+
+		// Get the detection percent of the requesting actor by the detecting actor [0.0, 100.0].
+		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor);
 
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
 		// Pitch and yaw angles returned in the NiPoint follow the game's conventions for both.
@@ -2763,6 +2850,9 @@ namespace ALYSLC
 
 		// Get the world position for the given actor's head body part.
 		RE::NiPoint3 GetHeadPosition(RE::Actor* a_actor);
+		
+		// Get the radiusfor the given actor's head body part.
+		float GetHeadRadius(RE::Actor* a_actor);
 
 		// Get the highest count ammo and its count in the given actor's inventory.
 		// Can exclusively check arrows or check bolts.
@@ -2778,30 +2868,11 @@ namespace ALYSLC
 			RE::Actor* a_actor, const bool& a_forBows
 		);
 
-		// Get the hotkey index, if any (-1 otherwise), for the given form.
-		int32_t GetHotkeyForForm(RE::Actor* a_actor, RE::TESForm* a_form);
+		// For the given player, get the hotkey index, if any (-1 otherwise), for the given form.
+		int32_t GetHotkeyForForm(RE::Actor* a_playerActor, RE::TESForm* a_form);
 
 		// Get a smart pointer to the game's NiCamera.
 		RE::NiPointer<RE::NiCamera> GetNiCamera();
-
-		// Helper function that gets the approximated pixel height
-		// of the given refr at the current camera orientation.
-		float GetObjectPixelHeight
-		(
-			RE::TESObjectREFR* a_refr,
-			const RE::NiPoint3& a_topExtentWorldPos, 
-			const RE::NiPoint3& a_centerWorldPos, 
-			const RE::NiPoint3& a_boundExtents
-		);
-
-		// Helper function that gets the approximated pixel width
-		// of the given refr at the current camera orientation.
-		float GetObjectPixelWidth
-		(
-			RE::TESObjectREFR* a_refr, 
-			const RE::NiPoint3& a_centerWorldPos, 
-			const RE::NiPoint3& a_boundExtents
-		);
 
 		// Get parent node's havok velocity at the given hit position.
 		// Full credits to ersh1: 
@@ -2813,7 +2884,18 @@ namespace ALYSLC
 
 		// Get associated refr from the given 3D object.
 		RE::TESObjectREFR* GetRefrFrom3D(RE::NiAVObject* a_obj3D);
+
+		// Get the given refr's position.
+		// Default to the refr data's reported position,
+		// then if the refr's current 3D is loaded choose the refr's 3D position,
+		// then if it's not available, choose the 3D center position,
+		// and lastly fall back to the havok rigid body position if necessary.
+		RE::NiPoint3 GetRefrPosition(RE::TESObjectREFR* a_refr);
 		
+		// Get the tip-to-tip length of the rigid body capsule for the given 3D object.
+		// In game units.
+		float GetRigidBodyCapsuleAxisLength(RE::NiAVObject* a_obj3D);
+
 		// Sets the shortened skeleton model name string for the given race
 		// through the given outparam.
 		void GetSkeletonModelNameForRace(RE::TESRace* a_race, std::string& a_skeletonNameOut);
@@ -2856,9 +2938,21 @@ namespace ALYSLC
 			bool a_forCrosshairSelection, 
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
-			bool a_showDebugDraws = false
+			bool a_showDebugInfo = false
 		);
 		
+		// WIP:
+		// Check for raycast LOS from the observer refr to the target refr and all its child nodes.
+		// Can cast from the given start point and to the crosshair world position as well.
+		bool HasRaycastLOS
+		(
+			RE::TESObjectREFR* a_targetRefr,
+			RE::Actor* a_observer,
+			std::optional<RE::NiPoint3> a_startPos = std::nullopt,
+			std::optional<RE::NiPoint3> a_crosshairWorldPos = std::nullopt,
+			bool a_showDebugInfo = false
+		);
+
 		// Helper function which performs a series of raycasts
 		// that all start along a vertical ray segment that is bounded 
 		// along the observer's vertical axis.
@@ -2872,7 +2966,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects, 
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos,
-			bool a_showDebugDraws = false
+			bool a_showDebugInfo = false
 		);
 
 		// Helper function which performs a series of raycasts
@@ -2888,7 +2982,7 @@ namespace ALYSLC
 			const std::vector<RE::NiAVObject*>& a_excluded3DObjects,
 			bool a_checkCrosshairPos, 
 			const RE::NiPoint3& a_crosshairWorldPos, 
-			bool a_showDebugDraws = false
+			bool a_showDebugInfo = false
 		);
 
 		// Get interpolated values using various interpolation functions.
@@ -2902,13 +2996,13 @@ namespace ALYSLC
 		(
 			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
 		);
-
-		float InterpolateEaseOut
+		
+		float InterpolateEaseInEaseOut
 		(
 			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
 		);
 
-		float InterpolateEaseInEaseOut
+		float InterpolateEaseOut
 		(
 			const float& a_prev, const float& a_next, float a_ratio, const float& a_pow
 		);
@@ -2916,7 +3010,6 @@ namespace ALYSLC
 		// Interpolate one rotation matrix to another.
 		// Full credits once again go to ersh1 for Precision:
 		// https://github.com/ersh1/Precision/blob/main/
-		// NOTE: Unused for now until I get back to improving node rotation blending.
 		RE::NiMatrix3 InterpolateRotMatrix
 		(
 			const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio
@@ -2934,6 +3027,12 @@ namespace ALYSLC
 		// Is the given refr lootable by co-op players
 		// (can be moved into a player's inventory directly through activation)?
 		bool IsLootableRefr(RE::TESObjectREFR* a_refr);
+
+		// Checks if the given refr's center is within the bound extents of the given 3D object.
+		// Return true if so.
+		// Return false otherwise or if the 3D object's associated refr is locked.
+		// Do not want to access a refr inside a locked container.
+		bool IsRefrAccessibleInside3DObject(RE::TESObjectREFR* a_refr, RE::NiAVObject* a_object3D);
 
 		// Is the given refr usable for target selection or activation?
 		bool IsSelectableRefr(RE::TESObjectREFR* a_refr);
@@ -3066,6 +3165,7 @@ namespace ALYSLC
 			const RE::ActorHandle& a_aggressor, 
 			const RE::ActorHandle& a_target, 
 			const RE::ObjectRefHandle& a_source, 
+			RE::InventoryEntryData* a_invEntryData = nullptr,
 			const float& a_damage = 0.0f, 
 			const SKSE::stl::enumeration<RE::HitData::Flag, std::uint32_t>& a_flags = 
 			RE::HitData::Flag::kMeleeAttack,
@@ -3124,7 +3224,8 @@ namespace ALYSLC
 		// current worldspace and parent cell.
 		// Precondition: 
 		// Position is in game coordinates, not havok coordinates.
-		// NOTE: Use MoveTo instead if desiring to 
+		// NOTE: 
+		// Use MoveTo instead if desiring to 
 		// move the actor from one cell/worldspace to another.
 		void SetPosition(RE::Actor* a_actor, RE::NiPoint3 a_position);
 
@@ -3241,7 +3342,8 @@ namespace ALYSLC
 		// Traverse a single skill's perk tree starting at the given node,
 		// with modifications in mind for the given player actor.
 		// Run the given visitor function on each perk tree node.
-		// NOTE: The first node passed in should always be the root node
+		// NOTE: 
+		// The first node passed in should always be the root node
 		// for the perk tree, which does not have an associated perk
 		// and simply points to the first perk node in the tree
 		// (its first child node).

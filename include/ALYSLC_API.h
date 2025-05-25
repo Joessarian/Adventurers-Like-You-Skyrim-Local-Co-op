@@ -9,16 +9,18 @@ namespace ALYSLC_API
 	// Available ALYSLC interface versions.
 	enum class InterfaceVersion : uint8_t
 	{
-		V1
+		V1,
+		V2
 	};
 
 	// ALYSLC's modder interface.
 	// NOTE:
 	// Only basic data for now. Will expose more player data in the future. 
+
+	// Session info and active player/character checks.
 	class IVALYSLC1
 	{
 	public:
-
 		/// <summary>
 		/// Get the actor for the player with the given controller ID.
 		/// </summary>
@@ -112,8 +114,40 @@ namespace ALYSLC_API
 		[[nodiscard]] virtual bool IsSessionActive() const noexcept = 0;
 	};
 
-	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);
+	// Player equip, movement, player action, and targeting state. 
+	class IVALYSLC2
+	{
+	public:
+		/// <summary>
+		/// Check if the player with the given controller ID 
+		/// is performing the action that corresponds to the given index.
+		/// </summary>
+		/// <returns>
+		/// True if the player is performing the action.
+		/// False if the player is not performing the action.
+		/// </returns>
+		[[nodiscard]] virtual bool IsPerformingAction
+		(
+			int32_t a_controllerID,
+			uint32_t a_playerActionIndex
+		) const noexcept = 0;
 
+		/// <summary>
+		/// Check if the player controlling the character with the given actor handle
+		/// is performing the action that corresponds to the given index.
+		/// </summary>
+		/// <returns>
+		/// True if the player is performing the action.
+		/// False if the player is not performing the action.
+		/// </returns>
+		[[nodiscard]] virtual bool IsPerformingAction
+		(
+			RE::ActorHandle a_playerActorHandle,
+			uint32_t a_playerActionIndex
+		) const noexcept = 0;
+	};
+
+	typedef void* (*_RequestPluginAPI)(const InterfaceVersion interfaceVersion);
 	/// <summary>
 	/// Request the ALYSLC interface.
 	/// Recommended: Send your request during or after SKSEMessagingInterface::kMessage_PostLoad 

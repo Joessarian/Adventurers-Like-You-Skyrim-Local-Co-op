@@ -51,8 +51,8 @@ namespace ALYSLC
 					const auto form = 
 					(
 						file->IsLight() ? 
-						a_dataHandler->LookupForm(a_fid & 0xFFFFF000, file->fileName) :
-						a_dataHandler->LookupForm(a_fid & 0xFF000000, file->fileName)
+						a_dataHandler->LookupForm(a_fid & 0x00000FFF, file->fileName) :
+						a_dataHandler->LookupForm(a_fid & 0x00FFFFFF, file->fileName)
 					);
 					if (form)
 					{
@@ -71,10 +71,20 @@ namespace ALYSLC
 				SPDLOG_ERROR
 				(
 					"[SERIAL] ERR: GetFormFromRetrievedFID: "
-					"Could resolve new form ID from retrieved form ID (0x{:X}).", 
+					"Could not resolve new form ID from retrieved form ID (0x{:X}).", 
 					a_fid
 				);
 				return nullptr;
+			}
+			
+			if (a_fid != 0)
+			{
+				SPDLOG_ERROR
+				(
+					"[SERIAL] ERR: GetFormFromRetrievedFID: "
+					"Could not find form for retrieved form ID (0x{:X}).", 
+					a_fid
+				);
 			}
 
 			return nullptr;
@@ -93,7 +103,7 @@ namespace ALYSLC
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 
-				// If the serialization interface is not valid, set the default retrieved data.
+				// If the serialization interface is not valid, set to the default retrieved data.
 				if (!a_intfc)
 				{
 					SPDLOG_ERROR
@@ -125,9 +135,9 @@ namespace ALYSLC
 				// Player form ID serialized as a key for each data type.
 				RE::FormID fid = 0;
 				// Type, serialization version, and length of record data read out.
-				uint32_t type;
-				uint32_t version;
-				uint32_t length;
+				uint32_t type{ };
+				uint32_t version{ };
+				uint32_t length{ };
 				// Read each record which contains data of the read-out type for each player.
 				while (a_intfc->GetNextRecordInfo(type, version, length))
 				{
@@ -146,418 +156,427 @@ namespace ALYSLC
 						continue;
 					}
 
-					// Per-player data.
-					if (type == !SerializableDataType::kPlayerCharacterCoopID ||
-						type == !SerializableDataType::kPlayerAvailablePerkPoints ||
-						type == !SerializableDataType::kPlayerBaseHMSPointsList ||
-						type == !SerializableDataType::kPlayerBaseSkillLevelsList ||
-						type == !SerializableDataType::kPlayerCopiedMagicList ||
-						type == !SerializableDataType::kPlayerEmoteIdleEvents ||
-						type == !SerializableDataType::kPlayerEquippedObjectsList ||
-						type == !SerializableDataType::kPlayerMagFavoritesList ||
-						type == !SerializableDataType::kPlayerHotkeyedFormsList ||
-						type == !SerializableDataType::kPlayerExtraPerkPoints ||
-						type == !SerializableDataType::kPlayerFirstSavedLevel ||
-						type == !SerializableDataType::kPlayerHMSPointsIncList ||
-						type == !SerializableDataType::kPlayerLevel ||
-						type == !SerializableDataType::kPlayerLevelXP ||
-						type == !SerializableDataType::kPlayerSharedPerksUnlocked ||
-						type == !SerializableDataType::kPlayerSkillIncreasesList ||
-						type == !SerializableDataType::kPlayerSkillXPList ||
-						type == !SerializableDataType::kPlayerUnlockedPerksList ||
-						type == !SerializableDataType::kPlayerUsedPerkPoints)
+					// Skip invalid types.
+					if (type != !SerializableDataType::kPlayerCharacterCoopID &&
+						type != !SerializableDataType::kPlayerAvailablePerkPoints &&
+						type != !SerializableDataType::kPlayerBaseHMSPointsList &&
+						type != !SerializableDataType::kPlayerBaseSkillLevelsList &&
+						type != !SerializableDataType::kPlayerCopiedMagicList &&
+						type != !SerializableDataType::kPlayerEmoteIdleEvents &&
+						type != !SerializableDataType::kPlayerEquippedObjectsList &&
+						type != !SerializableDataType::kPlayerMagFavoritesList &&
+						type != !SerializableDataType::kPlayerHotkeyedFormsList &&
+						type != !SerializableDataType::kPlayerExtraPerkPoints &&
+						type != !SerializableDataType::kPlayerFirstSavedLevel &&
+						type != !SerializableDataType::kPlayerHMSPointsIncList &&
+						type != !SerializableDataType::kPlayerLevel &&
+						type != !SerializableDataType::kPlayerLevelXP &&
+						type != !SerializableDataType::kPlayerSharedPerksUnlocked &&
+						type != !SerializableDataType::kPlayerSkillIncreasesList &&
+						type != !SerializableDataType::kPlayerSkillXPList &&
+						type != !SerializableDataType::kPlayerUnlockedPerksList &&
+						type != !SerializableDataType::kPlayerUsedPerkPoints)
 					{
-						for (auto i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
-						{
-							if (!a_intfc->ReadRecordData(fid) || !a_intfc->ResolveFormID(fid, fid))
-							{
-								SPDLOG_ERROR
-								(
-									"[SERIAL] ERR: Load: "
-									"Could not read player form ID ({}, 0x{:X}) "
-									"or resolve form ID ({}) for record of type {}, version {}, "
-									"length {} when attempting to load serialized data. "
-									"Continuing to next player record of the same type.",
-									!a_intfc->ReadRecordData(fid), 
-									fid,
-									!a_intfc->ResolveFormID(fid, fid), 
-									TypeToString(type), 
-									version, 
-									length
-								);
-								continue;
-							}
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Load: "
+							"Skipping invalid data type {} for player with FID 0x{:X}.",
+							type, fid
+						);
+						continue;
+					}
 
+					// Per-player data.
+					for (auto i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
+					{
+						if (!a_intfc->ReadRecordData(fid) || !a_intfc->ResolveFormID(fid, fid))
+						{
+							SPDLOG_ERROR
+							(
+								"[SERIAL] ERR: Load: "
+								"Could not read player form ID ({}, 0x{:X}) "
+								"or resolve form ID ({}) for record of type {}, version {}, "
+								"length {} when attempting to load serialized data. "
+								"Continuing to next player record of the same type.",
+								!a_intfc->ReadRecordData(fid), 
+								fid,
+								!a_intfc->ResolveFormID(fid, fid), 
+								TypeToString(type), 
+								version, 
+								length
+							);
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"[SERIAL] Load: "
+							"About to retrieve serialized data for player with FID 0x{:X}.", 
+							fid
+						);
+						// Insert default data at first.
+						if (glob.serializablePlayerData.empty() ||
+							!glob.serializablePlayerData.contains(fid))
+						{
 							SPDLOG_DEBUG
 							(
 								"[SERIAL] Load: "
-								"About to retrieve serialized data for player with FID 0x{:X}.", 
+								"Added new serialized data set for player with FID 0x{:X}.",
 								fid
 							);
-							// Insert default data at first.
-							if (glob.serializablePlayerData.empty() ||
-								!glob.serializablePlayerData.contains(fid))
+							glob.serializablePlayerData.insert
+							(
+								{ 
+									fid,
+									std::make_unique<SerializablePlayerData>()
+								}
+							);
+						}
+
+						const auto& data = glob.serializablePlayerData.at(fid);
+						if (type == !SerializableDataType::kPlayerCharacterCoopID)
+						{
+							uint32_t playerCharacterID = 0;
+							RetrieveUInt32Data(a_intfc, playerCharacterID, type);
+							// Serialized as unsigned but deserialized as signed.
+							data->SetPlayerCharacterID(playerCharacterID);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X}'s "
+								"character ID is {}.", fid, data->GetPlayerCharacterID()
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
+						{
+							RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has {} available perk points to use still.",
+								fid, data->availablePerkPoints
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerUsedPerkPoints)
+						{
+							RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has used {} perk points.",
+								fid, data->usedPerkPoints
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
+						{
+							RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has unlocked {} shared perks.",
+								fid, data->sharedPerksUnlocked
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
+						{
+							RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has {} extra perks.",
+								fid, data->extraPerkPoints
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerFirstSavedLevel)
+						{
+							RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"was level {} when their data was first serialized.",
+								fid, data->firstSavedLevel
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerLevel)
+						{
+							RetrieveUInt32Data(a_intfc, data->level, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has saved level: {}.",
+								fid, data->level
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerLevelXP)
+						{
+							RetrieveFloatData(a_intfc, data->levelXP, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has saved level XP: {}.",
+								fid, data->levelXP
+							);
+						}
+						else if (type == !SerializableDataType::kPlayerBaseHMSPointsList)
+						{
+							for (auto j = 0; j < 3; ++j)
 							{
+								RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: "
-									"Added new serialized data set for player with FID 0x{:X}.",
-									fid
-								);
-								glob.serializablePlayerData.insert
-								(
-									{ 
-										fid,
-										std::make_unique<SerializablePlayerData>()
-									}
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has a base {} level of {} at first-saved level {}.",
+									fid, 
+									j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
+									data->hmsBasePointsList[j],
+									data->firstSavedLevel
 								);
 							}
-
-							const auto& data = glob.serializablePlayerData.at(fid);
-							if (type == !SerializableDataType::kPlayerCharacterCoopID)
+						}
+						else if (type == !SerializableDataType::kPlayerHMSPointsIncList)
+						{
+							for (auto j = 0; j < 3; ++j)
 							{
-								uint32_t playerCharacterID = 0;
-								RetrieveUInt32Data(a_intfc, playerCharacterID, type);
-								// Serialized as unsigned but deserialized as signed.
-								data->SetPlayerCharacterID(playerCharacterID);
+								RetrieveFloatData
+								(
+									a_intfc, data->hmsPointIncreasesList[j], type
+								);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has increased {} by {}.",
+									fid, 
+									j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
+									data->hmsPointIncreasesList[j]
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerBaseSkillLevelsList)
+						{
+							for (auto j = 0; j < Skill::kTotal; ++j)
+							{
+								RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has base skill {} of {}.",
+									fid, 
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									), 
+									data->skillBaseLevelsList[j]
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerSkillIncreasesList)
+						{
+							for (auto j = 0; j < Skill::kTotal; ++j)
+							{
+								RetrieveFloatData
+								(
+									a_intfc, data->skillLevelIncreasesList[j], type
+								);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has increased skill {} by {}.",
+									fid, 
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									), 
+									data->skillLevelIncreasesList[j]
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerSkillXPList)
+						{
+							for (auto j = 0; j < Skill::kTotal; ++j)
+							{
+								RetrieveFloatData(a_intfc, data->skillXPList[j], type);
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has gained {} XP for skill {}.",
+									fid,
+									data->skillXPList[j], 
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									)
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerEquippedObjectsList)
+						{
+							// Read in all saved equipped forms.
+							uint32_t numEquippedForms = 0;
+							RetrieveUInt32Data(a_intfc, numEquippedForms, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.",
+								fid, numEquippedForms
+							);
+
+							data->equippedForms.clear();
+							RE::FormID equippedFID = 0;
+							for (auto j = 0; j < numEquippedForms; ++j)
+							{
+								RetrieveUInt32Data(a_intfc, equippedFID, type);
+								data->equippedForms.emplace_back
+								(
+									GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerMagFavoritesList)
+						{
+							// Read in all saved favorited magical forms.
+							uint32_t numMagForms = 0;
+							RetrieveUInt32Data(a_intfc, numMagForms, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} "
+								"has {} favorited magical forms.", 
+								fid, numMagForms
+							);
+
+							data->favoritedMagForms.clear();
+							RE::FormID equippedFID = 0;
+							for (auto j = 0; j < numMagForms; ++j)
+							{
+								RetrieveUInt32Data(a_intfc, equippedFID, type);
+								data->favoritedMagForms.emplace_back
+								(
+									GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerHotkeyedFormsList)
+						{
+							// Read in all saved hotkeyed forms.
+							RE::FormID hotkeyedFID = 0;
+							RE::TESForm* hotkeyedForm = nullptr;
+							for (auto j = 0; j < data->hotkeyedForms.size(); ++j)
+							{
+								RetrieveUInt32Data(a_intfc, hotkeyedFID, type);
+								if (hotkeyedFID) 
+								{
+									hotkeyedForm = GetFormFromRetrievedFID
+									(
+										a_intfc, hotkeyedFID, dataHandler
+									);
+								}
+								else
+								{
+									// Empty slot, still assign.
+									hotkeyedForm = nullptr;
+								}
+
+								data->hotkeyedForms[j] = hotkeyedForm;
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has {} hotkeyed in slot {}.", 
+									fid, 
+									hotkeyedForm ? hotkeyedForm->GetName() : "NONE", 
+									j + 1
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerCopiedMagicList)
+						{
+							// Read in saved copied magic spell forms.
+							data->copiedMagic.fill(nullptr);
+							RE::FormID magicFID{ };
+							for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i) 
+							{
+								RetrieveUInt32Data(a_intfc, magicFID, type);
+								auto form = GetFormFromRetrievedFID
+								(
+									a_intfc, magicFID, dataHandler
+								); 
+								if (form && form->Is(RE::FormType::Spell, RE::FormType::Shout))
+								{
+									data->copiedMagic[i] = form;
+								}
+								else
+								{
+									// Empty slot, still assign.
+									data->copiedMagic[i] = nullptr;
+								}
+
+								SPDLOG_DEBUG
+								(
+									"[SERIAL] Load: Player with FID 0x{:X} "
+									"has copied magic form {} (0x{:X}) in slot {}.",
+									fid, 
+									data->copiedMagic[i] ?
+									data->copiedMagic[i]->GetName() : 
+									"NONE",
+									data->copiedMagic[i] ? 
+									data->copiedMagic[i]->formID : 
+									0xDEAD,
+									i
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerEmoteIdleEvents)
+						{
+							// Eight cyclable emote idles' event names.
+							RE::BSFixedString eventName = ""sv;
+							uint32_t size = 0;
+							for (uint8_t i = 0; i < data->cyclableEmoteIdleEvents.size(); ++i) 
+							{
+								// Length of serialized event name string.
+								RetrieveUInt32Data(a_intfc, size, type);
+								if (size == 0) 
+								{
+									continue;
+								}
+
+								RetrieveStringData(a_intfc, eventName, type, size);
+								data->cyclableEmoteIdleEvents[i] = eventName;
 								SPDLOG_DEBUG
 								(
 									"[SERIAL] Load: Player with FID 0x{:X}'s "
-									"character ID is {}.", fid, data->GetPlayerCharacterID()
+									"saved cyclable emote idle event {} is {}. "
+									"String length: {}.", 
+									fid, i, eventName, size
 								);
 							}
-							else if (type == !SerializableDataType::kPlayerAvailablePerkPoints)
-							{
-								RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has {} available perk points to use still.",
-									fid, data->availablePerkPoints
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerUsedPerkPoints)
-							{
-								RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has used {} perk points.",
-									fid, data->usedPerkPoints
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
-							{
-								RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has unlocked {} shared perks.",
-									fid, data->sharedPerksUnlocked
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
-							{
-								RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has {} extra perks.",
-									fid, data->extraPerkPoints
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerFirstSavedLevel)
-							{
-								RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"was level {} when their data was first serialized.",
-									fid, data->firstSavedLevel
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerLevel)
-							{
-								RetrieveUInt32Data(a_intfc, data->level, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has saved level: {}.",
-									fid, data->level
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerLevelXP)
-							{
-								RetrieveFloatData(a_intfc, data->levelXP, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has saved level XP: {}.",
-									fid, data->levelXP
-								);
-							}
-							else if (type == !SerializableDataType::kPlayerBaseHMSPointsList)
-							{
-								for (auto j = 0; j < 3; ++j)
-								{
-									RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has a base {} level of {} at first-saved level {}.",
-										fid, 
-										j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
-										data->hmsBasePointsList[j],
-										data->firstSavedLevel
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerHMSPointsIncList)
-							{
-								for (auto j = 0; j < 3; ++j)
-								{
-									RetrieveFloatData
-									(
-										a_intfc, data->hmsPointIncreasesList[j], type
-									);
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has increased {} by {}.",
-										fid, 
-										j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
-										data->hmsPointIncreasesList[j]
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerBaseSkillLevelsList)
-							{
-								for (auto j = 0; j < Skill::kTotal; ++j)
-								{
-									RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has base skill {} of {}.",
-										fid, 
-										Util::GetActorValueName
-										(
-											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
-										), 
-										data->skillBaseLevelsList[j]
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerSkillIncreasesList)
-							{
-								for (auto j = 0; j < Skill::kTotal; ++j)
-								{
-									RetrieveFloatData
-									(
-										a_intfc, data->skillLevelIncreasesList[j], type
-									);
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has increased skill {} by {}.",
-										fid, 
-										Util::GetActorValueName
-										(
-											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
-										), 
-										data->skillLevelIncreasesList[j]
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerSkillXPList)
-							{
-								for (auto j = 0; j < Skill::kTotal; ++j)
-								{
-									RetrieveFloatData(a_intfc, data->skillXPList[j], type);
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has gained {} XP for skill {}.",
-										fid,
-										data->skillXPList[j], 
-										Util::GetActorValueName
-										(
-											glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
-										)
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerEquippedObjectsList)
-							{
-								// Read in all saved equipped forms.
-								uint32_t numEquippedForms = 0;
-								RetrieveUInt32Data(a_intfc, numEquippedForms, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.",
-									fid, numEquippedForms
-								);
+						}
+						else if (type == !SerializableDataType::kPlayerUnlockedPerksList)
+						{
+							// Read in all unlocked perks.
+							uint32_t numUnlockedPerks = 0;
+							RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
+							SPDLOG_DEBUG
+							(
+								"[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
+								fid, numUnlockedPerks
+							);
 
-								data->equippedForms.clear();
-								RE::FormID equippedFID = 0;
-								for (auto j = 0; j < numEquippedForms; ++j)
-								{
-									RetrieveUInt32Data(a_intfc, equippedFID, type);
-									data->equippedForms.emplace_back
-									(
-										GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerMagFavoritesList)
+							// Clear and assign.
+							data->ClearUnlockedPerks();
+							RE::TESForm* perkForm = nullptr;
+							RE::BGSPerk* perk = nullptr;
+							RE::FormID perkFID = 0;
+							for (auto j = 0; j < numUnlockedPerks; ++j)
 							{
-								// Read in all saved favorited magical forms.
-								uint32_t numMagForms = 0;
-								RetrieveUInt32Data(a_intfc, numMagForms, type);
-								SPDLOG_DEBUG
+								RetrieveUInt32Data(a_intfc, perkFID, type);
+								perkForm = GetFormFromRetrievedFID
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has {} favorited magical forms.", 
-									fid, numMagForms
+									a_intfc, perkFID, dataHandler
 								);
-
-								data->favoritedMagForms.clear();
-								RE::FormID equippedFID = 0;
-								for (auto j = 0; j < numMagForms; ++j)
-								{
-									RetrieveUInt32Data(a_intfc, equippedFID, type);
-									data->favoritedMagForms.emplace_back
-									(
-										GetFormFromRetrievedFID(a_intfc, equippedFID, dataHandler)
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerHotkeyedFormsList)
-							{
-								// Read in all saved hotkeyed forms.
-								RE::FormID hotkeyedFID = 0;
-								RE::TESForm* hotkeyedForm = nullptr;
-								for (auto j = 0; j < data->hotkeyedForms.size(); ++j)
-								{
-									RetrieveUInt32Data(a_intfc, hotkeyedFID, type);
-									if (hotkeyedFID) 
-									{
-										hotkeyedForm = GetFormFromRetrievedFID
-										(
-											a_intfc, hotkeyedFID, dataHandler
-										);
-									}
-									else
-									{
-										// Empty slot, still assign.
-										hotkeyedForm = nullptr;
-									}
-
-									data->hotkeyedForms[j] = hotkeyedForm;
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has {} hotkeyed in slot {}.", 
-										fid, 
-										hotkeyedForm ? hotkeyedForm->GetName() : "NONE", 
-										j + 1
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerCopiedMagicList)
-							{
-								// Read in saved copied magic spell forms.
-								data->copiedMagic.fill(nullptr);
-								RE::FormID magicFID{ };
-								for (uint8_t i = 0; i < !PlaceholderMagicIndex::kTotal; ++i) 
-								{
-									RetrieveUInt32Data(a_intfc, magicFID, type);
-									auto form = GetFormFromRetrievedFID
-									(
-										a_intfc, magicFID, dataHandler
-									); 
-									if (form && form->Is(RE::FormType::Spell, RE::FormType::Shout))
-									{
-										data->copiedMagic[i] = form;
-									}
-									else
-									{
-										// Empty slot, still assign.
-										data->copiedMagic[i] = nullptr;
-									}
-
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X} "
-										"has copied magic form {} (0x{:X}) in slot {}.",
-										fid, 
-										data->copiedMagic[i] ?
-										data->copiedMagic[i]->GetName() : 
-										"NONE",
-										data->copiedMagic[i] ? 
-										data->copiedMagic[i]->formID : 
-										0xDEAD,
-										i
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerEmoteIdleEvents)
-							{
-								// Eight cyclable emote idles' event names.
-								RE::BSFixedString eventName = ""sv;
-								uint32_t size = 0;
-								for (uint8_t i = 0; i < data->cyclableEmoteIdleEvents.size(); ++i) 
-								{
-									// Length of serialized event name string.
-									RetrieveUInt32Data(a_intfc, size, type);
-									if (size == 0) 
-									{
-										continue;
-									}
-
-									RetrieveStringData(a_intfc, eventName, type, size);
-									data->cyclableEmoteIdleEvents[i] = eventName;
-									SPDLOG_DEBUG
-									(
-										"[SERIAL] Load: Player with FID 0x{:X}'s "
-										"saved cyclable emote idle event {} is {}. "
-										"String length: {}.", 
-										fid, i, eventName, size
-									);
-								}
-							}
-							else if (type == !SerializableDataType::kPlayerUnlockedPerksList)
-							{
-								// Read in all unlocked perks.
-								uint32_t numUnlockedPerks = 0;
-								RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
-								SPDLOG_DEBUG
-								(
-									"[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
-									fid, numUnlockedPerks
-								);
-
-								// Clear and assign.
-								data->ClearUnlockedPerks();
-								RE::TESForm* perkForm = nullptr;
-								RE::BGSPerk* perk = nullptr;
-								RE::FormID perkFID = 0;
-								for (auto j = 0; j < numUnlockedPerks; ++j)
-								{
-									RetrieveUInt32Data(a_intfc, perkFID, type);
-									perkForm = GetFormFromRetrievedFID
-									(
-										a_intfc, perkFID, dataHandler
-									);
-									perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
-									data->InsertUnlockedPerk(perk);
-								}
+								perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
+								data->InsertUnlockedPerk(perk);
 							}
 						}
 					}
 				}
 
-				// Set default data if not all data was retrieved successfully.
+				// Set default data if no data was retrieved successfully.
 				if (glob.serializablePlayerData.size() == 0)
 				{
 					SPDLOG_DEBUG
@@ -622,7 +641,7 @@ namespace ALYSLC
 			else
 			{
 				// Assign the underlying buffer since direct assignment 
-				// to the string does not seem to work.
+				// to the string does not work.
 				a_data = buff.data();
 			}
 		}
@@ -1962,7 +1981,7 @@ namespace ALYSLC
 			// Set skill base AVs.
 			skillBaseLvlList = Util::GetActorSkillLevels(p1);
 			
-			// REMOVE when done debugging.
+#ifdef ALYSLC_DEBUG_MODE
 			for (auto i = 0; i < skillBaseLvlList.size(); ++i)
 			{
 				auto currentSkill = static_cast<Skill>(i);
@@ -1976,6 +1995,7 @@ namespace ALYSLC
 					);
 				}
 			}
+#endif
 
 			// Set initial skill XP.
 			auto currentAV = RE::ActorValue::kNone;
@@ -1983,12 +2003,6 @@ namespace ALYSLC
 			{
 				currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
 				skillXPList[i] = p1->skills->data->skills[i].xp;
-
-				SPDLOG_DEBUG
-				(
-					"[SERIAL] SetDefaultRetrievedData: P1's {} skill XP inc: {}.",
-					Util::GetActorValueName(currentAV), skillXPList[i]
-				);
 			}
 
 			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
@@ -2004,14 +2018,9 @@ namespace ALYSLC
 				p1->SetActorValue(RE::ActorValue::kStamina, 100.0f);
 			}
 			
+			// Set current level for all players to P1's current level.
+			// First saved level set to 0.
 			auto p1Level = p1->GetLevel();
-			SPDLOG_DEBUG
-			(
-				"[SERIAL] SetDefaultRetrievedData: P1's level: {}. "
-				"Will set as first saved level for all players.",
-				p1Level
-			);
-
 			// Player 1's character ID is always 0.
 			uint32_t playerCharacterID = 0;
 			// Insert P1 first.
@@ -2049,13 +2058,6 @@ namespace ALYSLC
 			{
 				nullptr, nullptr, nullptr 
 			};
-
-			auto index = dataHandler->GetModIndex(GlobalCoopData::PLUGIN_NAME);
-			SPDLOG_DEBUG
-			(
-				"[SERIAL] SetDefaultRetrievedData: '{}' is loaded at mod index 0x{:X}.", 
-				GlobalCoopData::PLUGIN_NAME, index.has_value() ? index.value() : -1
-			);
 			// Inserted in order of actor base's editor ID trailing index:
 			// 1. NPC with '__CoopCharacter1' as its actor base editor ID.
 			// 2. NPC with '__CoopCharacter2' as its actor base editor ID.
@@ -2072,7 +2074,6 @@ namespace ALYSLC
 			(
 				0x804, GlobalCoopData::PLUGIN_NAME
 			);
-
 			for (auto i = 0; i < coopPlayers.size(); ++i) 
 			{
 				if (coopPlayers[i]) 
@@ -2161,7 +2162,7 @@ namespace ALYSLC
 		{
 			constexpr std::size_t SIZE = sizeof(uint32_t);
 
-			std::string sig;
+			std::string sig{ };
 			sig.resize(SIZE);
 			const char* iter = reinterpret_cast<char*>(&a_type);
 			for (std::size_t i = 0, j = SIZE - 1; i < SIZE; ++i, --j)

@@ -144,7 +144,7 @@ namespace ALYSLC
 		}
 
 		// Controller error check.
-		XINPUT_STATE tempState;
+		XINPUT_STATE tempState{ };
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
 		{
@@ -206,9 +206,10 @@ namespace ALYSLC
 		shouldTeleportToP1 = ShouldTeleportToP1(true);
 		bool fullscreenMenuOpen = 
 		(
-			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) ||
-			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
-			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)
+			ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
 		);
 		// Pause if P1 and co-op cam are disabled,
 		// or if the companion player should teleport to P1,
@@ -252,7 +253,7 @@ namespace ALYSLC
 		if (!handledControllerInputError)
 		{
 			HandleControllerInputError();
-			XINPUT_STATE tempState;
+			XINPUT_STATE tempState{ };
 			ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 			if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
 			{
@@ -373,9 +374,10 @@ namespace ALYSLC
 		);
 		bool fullscreenMenuOpen = 
 		(
-			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) ||
-			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
-			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)
+			ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
 		);
 		// Remain paused if temp menus are open, 
 		// if P1 and co-op camera are disabled, 
@@ -412,7 +414,8 @@ namespace ALYSLC
 	{
 		// Refresh/set all members for this co-op player.
 		
-		// NOTE: Controller ID, player actor, and package form start index 
+		// NOTE:
+		// Controller ID, player actor, and package form start index 
 		// are already set through the constructor or UpdateCoopPlayer function at this point.
 
 		SPDLOG_DEBUG
@@ -443,7 +446,6 @@ namespace ALYSLC
 			shouldTeleportToP1 = false;
 			handledControllerInputError =
 			isRevived = true;
-
 			// Time points.
 			expendSprintStaminaTP = SteadyClock::now();
 			jumpStartTP = SteadyClock::now();
@@ -465,7 +467,6 @@ namespace ALYSLC
 			shoutStartTP = SteadyClock::now();
 			crosshairRefrVisibilityLostTP = SteadyClock::now();
 			transformationTP = SteadyClock::now();
-
 			// Strings.
 			lastAnimEventTag = ""sv;
 			// Floats.
@@ -521,10 +522,9 @@ namespace ALYSLC
 				}
 			}
 
-			// Create managers and task runner.
 			if (em && mm && pam && tm && taskRunner) 
 			{
-				// Prepare listener threads for data refresh when signalled to resume.
+				// Prepare managers for data refresh when signalled to resume.
 				// No need to construct new managers.
 				RequestStateChange(ManagerState::kAwaitingRefresh);
 			}
@@ -532,7 +532,7 @@ namespace ALYSLC
 			{
 				// Otherwise, this player has not been fully constructed before,
 				// and must create new equip, movement, player action, and targeting managers.
-				// Plus a task runner too.
+				// Plus a task runner.
 				em = std::make_unique<EquipManager>();
 				mm = std::make_unique<MovementManager>();
 				pam = std::make_unique<PlayerActionManager>();
@@ -572,7 +572,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			SPDLOG_ERROR
 			(
 				"[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, "
 				"package start index not found: {}.",
@@ -676,7 +676,7 @@ namespace ALYSLC
 					// Something went wrong if the head part is invalid, 
 					// since the head parts count does not match 
 					// the actual head parts array's size.
-					SPDLOG_DEBUG
+					SPDLOG_ERROR
 					(
 						"[P] ERR: CopyNPCAppearanceToPlayer: "
 						"Num head parts not in sync with actual head parts array. "
@@ -829,7 +829,6 @@ namespace ALYSLC
 			{
 				const auto oldCID = controllerID;
 				controllerID = newControllerIDsList[controllerRank];
-
 				// Shift player into new controller ID slot.
 				const auto& swappedPlayer = glob.coopPlayers[controllerID];
 				// Only want to swap an active player's CID (inactive players have a CID of -1).
@@ -949,6 +948,35 @@ namespace ALYSLC
 			return;
 		}
 
+		if (coopActor->IsOnMount())
+		{
+			// Activate to dismount for P1.
+			pam->SendButtonEvent
+			(
+				InputAction::kActivate,
+				RE::INPUT_DEVICE::kGamepad, 
+				ButtonEventPressType::kInstantTrigger,
+				0.0f
+			);
+			pam->SendButtonEvent
+			(
+				InputAction::kActivate,
+				RE::INPUT_DEVICE::kGamepad,
+				ButtonEventPressType::kPressAndHold,
+				1.0f
+			);
+			pam->SendButtonEvent
+			(
+				InputAction::kActivate, 
+				RE::INPUT_DEVICE::kGamepad, 
+				ButtonEventPressType::kRelease, 
+				1.0f
+			);
+		}
+
+		// Get off mount/stop interacting with furniture.
+		coopActor->StopInteractingQuick(false);
+
 		bool wasTransformed = isTransforming || isTransformed;
 		// Sheathe current weapons first.
 		pam->QueueP1ButtonEvent
@@ -964,6 +992,7 @@ namespace ALYSLC
 		float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
 		if (healthAfter != healthBefore)
 		{
+			// Always a positive delta, so no need to undo damage received mult.
 			pam->ModifyAV(RE::ActorValue::kHealth, healthBefore - healthAfter);
 		}
 
@@ -1010,8 +1039,8 @@ namespace ALYSLC
 			return false;
 		}
 		
-		// Revert if the pre-transformation race is different from the player's current race 
-		// and the player is not going from a race without a transformation 
+		// Do not revert if the pre-transformation race is the same as the player's current race 
+		// or the player is going from a race without a transformation 
 		// to one with a transformation (ex. Nord to Werewolf).
 		auto originalRace = 
 		(
@@ -1319,6 +1348,7 @@ namespace ALYSLC
 			preTransformationRace = nullptr;
 			// Cleanup.
 			delete script;
+
 			return true;
 		}
 	
@@ -1381,7 +1411,6 @@ namespace ALYSLC
 			-coopActor->GetActorValue(RE::ActorValue::kHealth)
 		);
 
-		SPDLOG_DEBUG("[P] SetAsDowned: {} was just downed.", coopActor->GetName());
 		// Remove all damaging active effects that could down the player again
 		// soon after they fully get up.
 		// Also ragdoll the player if they are not ragdolled already.
@@ -1529,7 +1558,8 @@ namespace ALYSLC
 
 				// Must have extra teleport data that could've triggered the FaderMenu.
 				auto objRefr = req.assocRefrHandle.get().get(); 
-				if (!objRefr->extraList.HasType(RE::ExtraDataType::kTeleport))
+				auto exTeleport = objRefr->extraList.GetByType<RE::ExtraTeleport>();
+				if (!exTeleport)
 				{
 					continue;
 				}
@@ -1540,8 +1570,7 @@ namespace ALYSLC
 					// as long as there was a menu-opening activation request with a teleport door.
 					return true;
 				}
-				else if (auto exTeleport = objRefr->extraList.GetByType<RE::ExtraTeleport>(); 
-						 exTeleport)
+				else
 				{
 					// Run by self-resume check, so this player's managers will continue 
 					// to pause while it attempts to teleport to P1 
@@ -1705,7 +1734,7 @@ namespace ALYSLC
 					// Something went wrong if the head part is invalid, 
 					// since the head parts count does not match 
 					// the actual head parts array's size.
-					SPDLOG_DEBUG
+					SPDLOG_ERROR
 					(
 						"[P] ERR: UpdateGenderAndBody: "
 						"Num head parts not in sync with actual head parts array. "
@@ -1802,7 +1831,6 @@ namespace ALYSLC
 		// Interval is over once the player has been downed for longer than the revive window.
 		// If true, the revive window is over and all players die.
 		bool reviveIntervalOver = secsDowned > Settings::fSecsUntilDownedDeath;
-
 		// Stop counting down if the co-op session ends, the game is loading a save,
 		// the LoadingMenu opens, this player is revived, the revive window is over, 
 		// or this player is dead.
@@ -1815,24 +1843,6 @@ namespace ALYSLC
 			reviveIntervalOver || 
 			coopActor->IsDead()
 		);
-
-		/*SPDLOG_DEBUG
-		(
-			"[P] UpdateWhenDowned: Downed countdown active for {}: {}. "
-			"Session ended: {} (loading screen open: {}, loading a save: {}), "
-			"is dead: {}, is revived: {}, revive window over: {} ({} : {})",
-			coopActor->GetName(), 
-			!stopCountingDown,
-			!glob.coopSessionActive,
-			loadingMenuOpened,
-			glob.loadingASave,
-			coopActor->IsDead(), 
-			isRevived, 
-			reviveIntervalOver,
-			secsDowned,
-			Settings::fSecsUntilDownedDeath
-		);*/
-
 		// Last time the player's downed state was checked.
 		RE::BSFixedString reviveText = ""sv;
 		if (stopCountingDown)
@@ -2029,7 +2039,6 @@ namespace ALYSLC
 		{
 			// While downed, update downed time.
 			secsDowned = Util::GetElapsedSeconds(lastDownedTP);
-
 			// Remove all damaging active effects that could down the player again
 			// soon after they fully get up.
 			for (auto effect : *coopActor->GetActiveEffectList())
@@ -2174,7 +2183,7 @@ namespace ALYSLC
 			}
 
 			// Check if the exit menu bind was pressed.
-			XINPUT_STATE buttonState;
+			XINPUT_STATE buttonState{ };
 			ZeroMemory(&buttonState, sizeof(buttonState));
 			if (XInputGetState(controllerID, &buttonState) == ERROR_SUCCESS)
 			{
@@ -2219,7 +2228,7 @@ namespace ALYSLC
 				}
 			}
 
-			// When done, wait to sync with the global time delta.
+			// When done, wait to sync with the main thread by waiting one global time delta.
 			if (waitTimeSecs > 0.0f)
 			{
 				std::this_thread::sleep_for
@@ -2262,7 +2271,6 @@ namespace ALYSLC
 		if (drawn)
 		{
 			Util::AddSyncedTask([this]() { pam->ReadyWeapon(false); });
-
 			const float secsMaxWait = 3.0f;
 			float secsWaited = 0.0f;
 			SteadyClock::time_point waitStartTP = SteadyClock::now();
@@ -2272,7 +2280,7 @@ namespace ALYSLC
 			coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			// Wait until fully sheathed.
 			while ((secsWaited < secsMaxWait) && 
-					(coopActor->IsWeaponDrawn() || isEquipping || isUnequipping))
+				   (coopActor->IsWeaponDrawn() || isEquipping || isUnequipping))
 			{
 				std::this_thread::sleep_for(0.1s);
 				secsWaited = Util::GetElapsedSeconds(waitStartTP);
@@ -2312,7 +2320,6 @@ namespace ALYSLC
 					(
 						targetedMountPtr.get(), coopActor.get(), 0, nullptr, 1, false
 					);
-
 					if (!isPlayer1) 
 					{
 						// Not sure if this helps the companion player 
@@ -2328,7 +2335,6 @@ namespace ALYSLC
 		std::this_thread::sleep_for(0.5s);
 		coopActor->SetGraphVariableBool("bAnimationDriven", false);
 		coopActor->SetGraphVariableBool("bIsSynced", false);
-
 		if (coopActor->IsOnMount())
 		{
 			// Mount successful.
@@ -2441,6 +2447,12 @@ namespace ALYSLC
 		(
 			[this, a_unequipAll, wasTransformed]() 
 			{
+				// Reset to default package first.
+				pam->SetAndEveluatePackage();
+
+				// Get off mount/stop interacting with furniture.
+				coopActor->StopInteractingQuick(false);
+
 				// Clear movement offset and sheathe weapons.
 				mm->ClearKeepOffsetFromActor();
 				pam->ReadyWeapon(false);
@@ -2553,7 +2565,11 @@ namespace ALYSLC
 				float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
 				if (healthAfter != healthBefore)
 				{
-					pam->ModifyAV(RE::ActorValue::kHealth, healthBefore - healthAfter);
+					// Always a positive delta, so no need to undo damage received mult.
+					pam->ModifyAV
+					(
+						RE::ActorValue::kHealth, healthBefore - healthAfter
+					);
 				}
 
 				// Reset 'ghost' flag used for I-frames.
@@ -2580,15 +2596,15 @@ namespace ALYSLC
 		auto voiceForm = em->voiceForm;
 		// Spell to cast corresponding to the highest shout variation or power.
 		auto voiceSpell = em->voiceSpell;
+		auto shout = voiceForm->As<RE::TESShout>();
 		// Get voice spell associated with shout/power.
-		bool isShout = voiceForm && voiceForm->Is(RE::FormType::Shout);
 		auto highestVar = em->highestShoutVarIndex;
 
 		// No voice form equipped, 
 		// no voice spell equipped,
 		// or P1 does not know any words of power for the current shout, 
 		// so return.
-		if ((!voiceForm) || (!voiceSpell) || (isShout && highestVar < 0))
+		if ((!voiceForm) || (!voiceSpell) || (shout && highestVar < 0))
 		{
 			pam->isVoiceCasting = false;
 			return;
@@ -2601,9 +2617,8 @@ namespace ALYSLC
 		}
 
 		// Send shout animations.
-		if (isShout)
+		if (shout)
 		{
-			auto shout = voiceForm->As<RE::TESShout>();
 			// Set cooldown.
 			pam->secsCurrentShoutCooldown = 
 			(
@@ -2650,7 +2665,7 @@ namespace ALYSLC
 						secsDelayAfterStart = 0.1s;
 					}
 				}
-				else if (shout && shout->formID == 0x48AC9)
+				else if (shout->formID == 0x48AC9)
 				{
 					// [Slow Time]
 					shoutReleaseAnim = "shoutReleaseSlowTime";
@@ -2678,12 +2693,13 @@ namespace ALYSLC
 			// Shout starts once the release animation plays.
 			shoutStartTP = SteadyClock::now();
 			SendAnimEventSynced(shoutReleaseAnim);
-			// Hold. HOLD.
+			// Hold it. HOLD IT.
 			std::this_thread::sleep_for(secsDelayAfterStart);
 
 			// Play associated shout sounds.
 			// Needs testing.
-			// TODO: Also play voice sound clips for each word in the shout,
+			// TODO: 
+			// Also play voice sound clips for each word in the shout,
 			// depending on the player's chosen voice type too.
 			const auto audioMgr = RE::BSAudioManager::GetSingleton(); 
 			if (audioMgr)
@@ -2820,33 +2836,33 @@ namespace ALYSLC
 		// Let it materialize.
 		std::this_thread::sleep_for(0.25s);
 		// Then place the exit portal at the target.
-		RE::TESObjectREFRPtr exitPortal{ };
+		RE::TESObjectREFRPtr exitPortalPtr{ };
 		Util::AddSyncedTask
 		(
-			[this, &exitPortal, targetActor, teleportalActivator]() 
+			[this, &exitPortalPtr, targetActor, teleportalActivator]() 
 			{
-				exitPortal = targetActor->PlaceObjectAtMe(teleportalActivator, false);
+				exitPortalPtr = targetActor->PlaceObjectAtMe(teleportalActivator, false);
 			}
 		);
 		std::this_thread::sleep_for(0.25s);
 
 		// If the portal was successfully placed, move the player to the exit portal.
-		if (exitPortal && exitPortal.get())
+		if (exitPortalPtr && exitPortalPtr.get())
 		{
 			if (shouldMoveTo)
 			{
 				Util::AddSyncedTask
 				(
-					[this, &exitPortal]() { coopActor->MoveTo(exitPortal.get()); }
+					[this, &exitPortalPtr]() { coopActor->MoveTo(exitPortalPtr.get()); }
 				);
 			}
 			else
 			{
 				Util::AddSyncedTask
 				(
-					[this, &exitPortal]() 
+					[this, &exitPortalPtr]() 
 					{
-						coopActor->SetPosition(exitPortal->data.location, true);
+						coopActor->SetPosition(exitPortalPtr->data.location, true);
 					}
 				);
 			}

@@ -15,6 +15,7 @@ namespace ALYSLC
 	// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection
 	// and TrueHUD:
 	// https://github.com/ersh1/TrueHUD
+
 	std::vector<std::unique_ptr<DebugAPIDrawRequest>> DebugAPI::drawRequests;
 	bool DebugAPI::cachedMenuData;
 	float DebugAPI::screenResX;
@@ -25,6 +26,98 @@ namespace ALYSLC
 		durationSecs(0.0f),
 		requestTimestamp(SteadyClock::now())
 	{ }
+
+	DebugAPICurve::DebugAPICurve() :
+		xyCoordsAndThickness(),
+		rgbaEnd(0xFFFFFFFF),
+		rgbaStart(0xFFFFFFFF)
+	{ }
+
+	DebugAPICurve::DebugAPICurve
+	(
+		std::vector<glm::vec3> a_xyCoordsAndThickness,
+		uint32_t a_rgbaStart,
+		uint32_t a_rgbaEnd,
+		float a_durationSecs
+	)
+	{
+		xyCoordsAndThickness = a_xyCoordsAndThickness;
+		rgbaEnd = a_rgbaEnd;
+		rgbaStart = a_rgbaStart;
+		durationSecs = a_durationSecs;
+		requestTimestamp = SteadyClock::now();
+	}
+
+	void DebugAPICurve::Draw(RE::GPtr<RE::GFxMovieView> a_movie)
+	{
+		// Draw a curve consisting of lines of the cached thickness that connect the cached points,
+		// with color based on the cached RGBA start and end values.
+
+		const uint32_t rgbStart = rgbaStart >> 8;
+		const uint32_t rgbEnd = rgbaEnd >> 8;
+		const uint32_t alphaStart = std::lerp(0, 100, (rgbaStart & 0x000000FF) / 255.0f);
+		const uint32_t alphaEnd = std::lerp(0, 100, (rgbaEnd & 0x000000FF) / 255.0f);
+		uint32_t rgb = 0xFFFFFF;
+		uint32_t alpha = 0xFF;
+		float interpRatio = 0.0f;
+		const size_t totalPoints = xyCoordsAndThickness.size();
+		for (auto i = 0; i < totalPoints - 1; ++i)
+		{
+			const auto& currentPoint = xyCoordsAndThickness[i];
+			interpRatio = static_cast<float>(i) / static_cast<float>(totalPoints);
+			rgb = 
+			(
+				(
+					static_cast<uint32_t>
+					(
+						std::lerp
+						(
+							(rgbStart & 0xFF0000) >> 16, 
+							(rgbEnd & 0xFF0000) >> 16,
+							interpRatio
+						)	
+					) << 16
+				) |
+				(
+					static_cast<uint32_t>
+					(
+						std::lerp
+						(
+							(rgbStart & 0x00FF00) >> 8, 
+							(rgbEnd & 0x00FF00) >> 8,
+							interpRatio
+						)	
+					) << 8
+				) |
+				(
+					static_cast<uint32_t>
+					(
+						std::lerp
+						(
+							(rgbStart & 0x0000FF), 
+							(rgbEnd & 0x0000FF),
+							interpRatio
+						)	
+					)
+				)
+			);
+			alpha = std::lerp(alphaStart, alphaEnd, interpRatio);
+
+			// https://homepage.divms.uiowa.edu/~slonnegr/flash/ActionScript2Reference.pdf
+			// Pages 885-887, or search "lineStyle".
+			RE::GFxValue argsLineStyle[6]{ currentPoint.z, rgb, alpha, true, "normal", "none" };
+			a_movie->Invoke("lineStyle", nullptr, argsLineStyle, 6);
+
+			RE::GFxValue argsStartPos[2]{ currentPoint.x, currentPoint.y };
+			a_movie->Invoke("moveTo", nullptr, argsStartPos, 2);
+			
+			const auto& nextPoint = xyCoordsAndThickness[i + 1];
+			RE::GFxValue argsEndPos[2]{ nextPoint.x, nextPoint.y };
+			a_movie->Invoke("lineTo", nullptr, argsEndPos, 2);
+		}
+
+		a_movie->Invoke("endFill", nullptr, nullptr, 0);
+	}
 
 	DebugAPILine::DebugAPILine() :
 		from(0.0f),
@@ -220,26 +313,34 @@ namespace ALYSLC
 		CacheMenuData();
 		ClearOverlay(hud->uiMovie);
 		
-		std::erase_if
-		(
-			drawRequests, 
-			[&](const std::unique_ptr<DebugAPIDrawRequest>& a_request)
-			{
-				float lifetimeSecs = Util::GetElapsedSeconds(a_request->requestTimestamp);
-				if (a_request->durationSecs == 0.0f || lifetimeSecs <= a_request->durationSecs)
+		if (drawRequests.size() > MAX_DRAW_REQUESTS)
+		{
+			SPDLOG_DEBUG("[DebugAPI] Max draw requests per frame reached. Clearing all now.");
+			drawRequests.clear();
+		}
+		else
+		{
+			std::erase_if
+			(
+				drawRequests, 
+				[&](const std::unique_ptr<DebugAPIDrawRequest>& a_request)
 				{
-					a_request->Draw(hud->uiMovie);
-				}
+					float lifetimeSecs = Util::GetElapsedSeconds(a_request->requestTimestamp);
+					if (a_request->durationSecs == 0.0f || lifetimeSecs <= a_request->durationSecs)
+					{
+						a_request->Draw(hud->uiMovie);
+					}
 
-				return 
-				(
-					!a_request || 
-					!a_request.get() || 
-					a_request->durationSecs == 0.0f ||
-					lifetimeSecs > a_request->durationSecs
-				);
-			}
-		);
+					return 
+					(
+						!a_request || 
+						!a_request.get() || 
+						a_request->durationSecs == 0.0f ||
+						lifetimeSecs > a_request->durationSecs
+					);
+				}
+			);
+		}
 	}
 
 	void DebugAPI::QueueArrow2D
@@ -261,8 +362,7 @@ namespace ALYSLC
 		float headRay2Ang = Util::NormalizeAng0To2Pi(arrowAng + PI / 4.0f);
 		glm::vec2 headRay1 = 
 		(
-			a_to - 
-			(a_headLength * glm::vec2(cosf(headRay1Ang), sinf(headRay1Ang)))
+			a_to - (a_headLength * glm::vec2(cosf(headRay1Ang), sinf(headRay1Ang)))
 		);
 		glm::vec2 headRay2 = 
 		(
@@ -419,9 +519,10 @@ namespace ALYSLC
 			);
 		}
 
-		// Set a fixed radius regardless of the circle's worldspace position.
 		if (a_screenspaceRadius)
 		{
+			// Set a fixed radius regardless of the circle's worldspace position.
+
 			// World yaw for the first offset (pre-rotation).
 			const float baseOffsetYaw = Util::DirectionToGameAngYaw(ToNiPoint3(worldOffset));
 			// Difference between the offset yaw and the cam right yaw.
@@ -459,7 +560,6 @@ namespace ALYSLC
 				if (vertexIndex == a_segments - 1)
 				{
 					vertex = firstVertex;
-
 				}
 				else
 				{
@@ -580,6 +680,75 @@ namespace ALYSLC
 				prevVertex = vertex;
 			}
 		}
+	}
+
+	void DebugAPI::QueueCurve2D
+	(
+		std::vector<glm::vec3> a_xyCoordsAndThickness, 
+		uint32_t a_rgbaStart,
+		uint32_t a_rgbaEnd,
+		float a_durationSecs
+	)
+	{
+		// Queue a 2D curve with the given attributes.
+
+		drawRequests.push_back
+		(
+			std::make_unique<DebugAPICurve>
+			(
+				a_xyCoordsAndThickness, a_rgbaStart, a_rgbaEnd, a_durationSecs
+			)
+		);
+	}
+
+	void DebugAPI::QueueCurve3D
+	(
+		std::vector<glm::vec4> a_xyzCoordsAndThickness,
+		uint32_t a_rgbaStart,
+		uint32_t a_rgbaEnd,
+		float a_durationSecs
+	)
+	{
+		// Queue a 3D curve with the given attributes.
+
+		std::vector<glm::vec3> xyCoordsAndThickness{ };
+		const size_t totalPoints = a_xyzCoordsAndThickness.size();
+		// Must have two points to draw a line.
+		if (totalPoints <= 1)
+		{
+			return;
+		}
+
+		for (auto i = 0; i < totalPoints - 1; ++i)
+		{
+			auto& currentPoint = a_xyzCoordsAndThickness[i];
+			auto& nextPoint = a_xyzCoordsAndThickness[i + 1];
+			glm::vec2 start = WorldToScreenPoint
+			(
+				{ currentPoint.x, currentPoint.y, currentPoint.z }
+			);
+			glm::vec2 end = WorldToScreenPoint
+			(
+				{ nextPoint.x, nextPoint.y, nextPoint.z }
+			);
+			// Clamp both endpoints to fit on screen.
+			ClampLineToScreen(start, end);
+			xyCoordsAndThickness.emplace_back(glm::vec3(start.x, start.y, currentPoint.w));
+
+			// Lastly, add the final point on the curve.
+			if (i + 1 == totalPoints - 1)
+			{
+				xyCoordsAndThickness.emplace_back(glm::vec3(end.x, end.y, nextPoint.w));
+			}
+		}
+
+		drawRequests.push_back
+		(
+			std::make_unique<DebugAPICurve>
+			(
+				xyCoordsAndThickness, a_rgbaStart, a_rgbaEnd, a_durationSecs
+			)
+		);
 	}
 
 	void DebugAPI::QueueLine2D
@@ -727,8 +896,9 @@ namespace ALYSLC
 
 	void DebugAPI::RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_angle)
 	{
-		// Rotate the set of points about the origin (0, 0)
+		// Rotate the list of points about the origin (0, 0)
 		// by the desired angle.
+		// Modifies the input list.
 
 		// https://en.wikipedia.org/wiki/Rotation_matrix
 		// Counter-clockwise about origin.
@@ -904,7 +1074,9 @@ namespace ALYSLC
 		const float rectHeight = fabsf(gRect.bottom - gRect.top);
 		RE::NiRect<float> port{ gRect.left, gRect.right, gRect.top, gRect.bottom };
 
-		float x = 0.0f, y = 0.0f, z = 0.0f;
+		float x = 0.0f;
+		float y = 0.0f; 
+		float z = 0.0f;
 		RE::NiCamera::WorldPtToScreenPt3
 		(
 			niCamPtr->worldToCam, port, ToNiPoint3(a_worldPos), x, y, z, 1e-5f

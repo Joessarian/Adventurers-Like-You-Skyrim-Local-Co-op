@@ -270,7 +270,8 @@ namespace ALYSLC
 		// is friendly to P1, and if so, skip awarding XP to P1 when friendly fire is off.
 		// For other skills, such as Destruction, UseSkill() seems to execute after damage 
 		// is calculated/associated hit events fire, so caching this data is unnecessary.
-		// NOTE: For now, will only work if each melee UseSkill() call is followed by ProcessHit(). 
+		// NOTE: 
+		// For now, will only work if each melee UseSkill() call is followed by ProcessHit(). 
 		// Otherwise, only the last UseSkill() call before ProcessHit() will get saved.
 		// Could eventually use a queue, 
 		// which would involve more costly comparisons (3 members per queued item).
@@ -455,7 +456,8 @@ namespace ALYSLC
 			// All forms that were saved as equipped for this player.
 			std::vector<RE::TESForm*> equippedForms;
 			// Favorited magical (spells/shouts) forms for this player.
-			// NOTE: Having the game store physical and magical favorites separately is a PITA.
+			// NOTE: 
+			// Having the game store physical and magical favorites separately is a PITA.
 			// Since the physical favorited forms are already saved through serialized extra data 
 			// and can be saved on NPCs, we only serialize the magical favorited forms, 
 			// which are normally saved as a single, P1-only list in MagicFavorites.
@@ -485,7 +487,8 @@ namespace ALYSLC
 			// Previous total unlocked perks count.
 			uint32_t prevTotalUnlockedPerks;
 			// Previous HMS base actor values when opening the Stats Menu.
-			// NOTE: The difference in HMS between opening and closing the menu
+			// NOTE: 
+			// The difference in HMS between opening and closing the menu
 			// is used to calculate how many times the player leveled up.
 			std::array<float, 3> hmsBaseAVsOnMenuEntry;
 			// P1 skill levels and skill level thresholds saved when a companion player 
@@ -603,17 +606,12 @@ namespace ALYSLC
 		// Check for arm node collisions with raycasts along each player's moving arms.
 		static void HandlePlayerArmCollisions();
 
-		// NOTE: Enderal only.
+		// NOTE: 
+		// Enderal only.
 		// Check for changes to P1 level-ups, and changes to crafting/learning/memory points.
 		// Have to poll for changes periodically in the absence of events 
 		// that signal changes to these quantities.
 		static void HandleEnderalProgressionChanges();
-
-		// Havok pre-physics callback queued and run by Precision.
-		// Cache player arm and torso node rotations to restore later 
-		// in an NiNode hook, which will overwrite the game's changes 
-		// to all handled player arm/torso nodes.
-		static void HavokPrePhysicsStep(RE::bhkWorld* a_world);
 
 		// Remove all perks for this player and then add back all serialized unlocked perks.
 		static void ImportUnlockedPerks(RE::Actor* a_coopActor);
@@ -666,6 +664,18 @@ namespace ALYSLC
 		// for all active players.
 		static void PerformPlayerRespec(RE::Actor* a_playerActor);
 
+		// Callback to run before Precision's hit function.
+		static PRECISION_API::PreHitCallbackReturn PrecisionPreHitCallback
+		(
+			const PRECISION_API::PrecisionHitData& a_data
+		);
+
+		// Havok pre-physics callback queued and run by Precision.
+		// Cache player arm and torso node rotations to restore later 
+		// in an NiNode hook, which will overwrite the game's changes 
+		// to all handled player arm/torso nodes.
+		static void PrecisionPrePhysicsStepCallback(RE::bhkWorld* a_world);
+
 		// Register for global script events to send data to the player ref alias script.
 		static void RegisterEvents();
 
@@ -681,6 +691,9 @@ namespace ALYSLC
 		// Set last menu controller ID to the current one and then
 		// reset the current menu controller ID.
 		static void ResetMenuCIDs();
+		
+		// Save the default game settings values to revert to for player XP calculations.
+		static void SaveDefaultXPBaseAndMultFromGameSettings();
 
 		// Save current unlocked perks for all active players to their serializable data sets.
 		static void SaveUnlockedPerksForAllPlayers();
@@ -690,10 +703,8 @@ namespace ALYSLC
 
 		// Concatenate all individual player crosshair text entries,
 		// and then set the crosshair's info text to the result.
-		static void SetCrosshairText();
-
-		// Set the default game settings values to revert to for player XP calculations.
-		static void SetDefaultXPBaseAndMultFromGameSettings();
+		// Or reset the crosshair if requested.
+		static void SetCrosshairText(bool&& a_shouldReset = false);
 
 		// Set menu controller IDs (current and previous).
 		// -1 to reset.
@@ -728,11 +739,16 @@ namespace ALYSLC
 		// Unregister global script event registrations (with player ref alias).
 		static void UnregisterEvents();
 
+
 		// Update serlializable data form ID keys/character IDs for all players.
 		// NOTE: 
 		// Serialized data should contain all players' FID keys 
 		// before the Summoning Menu is opened.
 		static void UpdateAllCompanionPlayerSerializationIDs();
+		
+		// Update the global co-op combat state flag for all active players.
+		// If one player is in combat, all players are in combat.
+		static void UpdatePlayerCoopCombatState();
 
 		// Update player actor's serialized form ID and/or character ID.
 		// Form IDs for co-op companion players may change 
@@ -793,7 +809,7 @@ namespace ALYSLC
 		// Tasks to run on task runner thread.
 		//
 		
-		// Run as a task or in the main hook.
+		// Run as a task or in a menu ProcessMessage() hook.
 		// Copy co-op companion player's data over to P1 before the given menu opens, 
 		// or restore P1's data before closing the given menu.
 		// Associated form is a linked form which provides additional info.
@@ -988,6 +1004,61 @@ namespace ALYSLC
 			{ RE::ActorValue::kIllusion, "Psionics" },
 			{ RE::ActorValue::kRestoration, "Light magic" },
 			{ RE::ActorValue::kEnchanting, "Enchantment" }
+		};
+
+		// Message to show when the co-op party is wiped.
+		static inline const std::vector<RE::BSFixedString> YOU_DIED_SPECIAL_MESSAGE_OPTIONS = 
+		{
+			"No.",
+			"Yes.",
+			"It's rewind time.",
+			"Hello, darkness, my old friend.",
+			"Wake up, Samurai.\nWe have a sweetroll to steal.",
+			"To the cloud district at last!",
+			"Haakk breough hrumph",
+			"911, I'd like to report a murder. Of me.",
+			"Alexa, add 'Quick Save' to my shopping list.",
+			">:(",
+			"YOU DIED",
+			"This isn't canon.",
+			"Booooo.",
+			"Can I get, uhh, one of those dragon breaks?",
+			"We'll be right back.",
+			"Body's still warm.",
+			"And skiiiiip.",
+			"If I lie really still, no one will notice that I'm dead.",
+			"I'm going to find whoever did this.",
+			"...",
+			"Do it again, I wasn't looking.",
+			"Mission failed. We'll get 'em next time.",
+			"Uhh, that one doesn't count.",
+			"Alrrrighty then!",
+			"Well, good googly moogly, diddly doo.",
+			"There goes the no-death run.",
+			"WASTED",
+			"Great success!",
+			"Must've been the wind.",
+			":)",
+			"By the Nine Divines! Assault! Assault!",
+			"Should've downed another Skooma first.\nOr 10 cabbages.\n10 cabbages sound good.",
+			"I'd like 1 resurrection, please.",
+			"If at first you don't succeed, tgm, tgm again.",
+			"Dang them enemies got hands.",
+			"Call an ambulance! But not for me!",
+			"?",
+			"HAHA HOHO HEHE",
+			"Insert coin to continue.",
+			"FUS RO GAHHHHHH",
+			"No one kills John Skyrim and lives to tell the tale!",
+			"Hey, you. You're finally awake.",
+			"Is this loss?",
+			"Hey, new high score!",
+			"Dragonborn? More like Dragondead.",
+			":(",
+			"I used to be alive like you.\nThen I took an arrow to the knee.",
+			"Looks like that's it.\nGot to go.",
+			"I'm gonna do what's called a pro gamer move.",
+			"EGUOUOSUHDKFANGPDNSKNFKSSDFK!11!1!!"
 		};
 
 		// Set of menus requiring import/export of co-op player data when entering/exiting.
@@ -1636,7 +1707,8 @@ namespace ALYSLC
 		RE::BGSKeyword* companionPlayerKeyword;
 		// NPC keyword (used when filtering playable races).
 		RE::BGSKeyword* npcKeyword;
-		// NOTE: Unused as of now:
+		// NOTE: 
+		// Unused as of now:
 		// Default formlist containing base game shouts' variation spells.
 		RE::BGSListForm* shoutVarSpellsFormList;
 		// Perks that add new tecniques/skills linked with a specific anim event.
@@ -1756,7 +1828,8 @@ namespace ALYSLC
 		// General killmoves applicable to humanoid and any other unaccounted-for races.
 		// Categorized by weapon type.
 		std::vector<std::vector<RE::TESIdleForm*>> genericKillmoveIdles;
-		// NOTE: Currently unused since the 'Shout' package procedure does not work.
+		// NOTE: 
+		// Currently unused since the 'Shout' package procedure does not work.
 		// Shouts which are equipped and overriden by another shout's data.
 		// Used in ranged attack package.
 		std::vector<RE::TESShout*> placeholderShouts;
@@ -1775,8 +1848,22 @@ namespace ALYSLC
 		bool coopSessionActive = false;
 		// Finished setting global co-op data.
 		bool globalDataInit = false;
+		// Is camera shake applied?
+		// True when the 'StartAnimatedCameraDelta' animation event plays on P1,
+		// False when the 'EndAnimatedCamera' animation event players on P1.
+		bool isCameraShakeActive = false;
+		// Is another non-player actor in combat with any active player?
+		// Need a separate flag here since we keep companion player characters 
+		// from initiating combat with other actors in order to prevent the game's combat AI
+		// from overriding player inputs and equipment choices.
+		bool isInCoopCombat = false;
 		// Is the game loading a save?
 		bool loadingASave = false;
+		// Default crosshair activation pick range.
+		// Saved once when first loading a save 
+		// and then restored after a player releases the 'Activate' bind
+		// or when the current co-op session starts/ends.
+		float defActivationPickRange;
 		// Default level up base and mult game settings' values
 		// set each time the player first loads a save, 
 		// since the default values are re-applied on loading a save.

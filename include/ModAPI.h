@@ -6,12 +6,15 @@ namespace ALYSLC_API
 	class ALYSLCInterface : public IVALYSLC1
 	{
 	public:
-
 		static ALYSLCInterface* GetSingleton() noexcept
 		{
 			static ALYSLCInterface singleton;
 			return std::addressof(singleton);
 		}
+
+		// 
+		// [V1]
+		//
 
 		/// <summary>
 		/// Get the actor for the player with the given controller ID.
@@ -26,7 +29,7 @@ namespace ALYSLC_API
 		/// <summary>
 		/// Get the actor for the player with the given player ID.
 		/// Player 1 always has a player ID of 0, and all active companion players' IDs 
-		/// are assigned  sequentially in the order of their XInput controller IDs (CIDs).
+		/// are assigned sequentially in the order of their XInput controller IDs (CIDs).
 		/// Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
 		/// 0 -> Player 1
 		/// 1 -> Player 2
@@ -80,6 +83,7 @@ namespace ALYSLC_API
 		/// </returns>
 		virtual bool IsALYSLCPlayer(RE::ActorHandle a_actorHandle) const noexcept;
 
+
 		/// <summary>
 		/// Check if there is an active local co-op session.
 		/// </summary>
@@ -88,9 +92,44 @@ namespace ALYSLC_API
 		/// False if no players have been summoned yet or all players were dismissed.
 		/// </returns>
 		virtual bool IsSessionActive() const noexcept;
+
+		//
+		// [V2]
+		//
+
+		/// <summary>
+		/// Check if the player with the given controller ID 
+		/// is performing the action that corresponds to the given index.
+		/// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+		/// for the supported action indices.
+		/// </summary>
+		/// <returns>
+		/// True if the player is performing the action.
+		/// False if the player is not performing the action.
+		/// </returns>
+		[[nodiscard]] virtual bool IsPerformingAction
+		(
+			int32_t a_controllerID,
+			uint32_t a_playerActionIndex
+		) const noexcept;
+
+		/// <summary>
+		/// Check if the player controlling the character with the given actor handle
+		/// is performing the action that corresponds to the given index.
+		/// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+		/// for the supported action indices.
+		/// </summary>
+		/// <returns>
+		/// True if the player is performing the action.
+		/// False if the player is not performing the action.
+		/// </returns>
+		[[nodiscard]] virtual bool IsPerformingAction
+		(
+			RE::ActorHandle a_playerActorHandle,
+			uint32_t a_playerActionIndex
+		) const noexcept;
 		
 	private:
-
 		ALYSLCInterface() noexcept = default;
 		virtual ~ALYSLCInterface() noexcept = default;
 

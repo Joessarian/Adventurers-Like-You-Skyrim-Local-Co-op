@@ -26,7 +26,7 @@ namespace RE
 }
 
 // Still have to call data() on passed-in BSString's when
-// attempting to format with fmt::format(), even with custom format_as() func defined.
+// attempting to format with fmt::format(), even with a custom format_as() func defined.
 // Formatted string becomes garbage otherwise.
 // Defining a formatter below seems to work though.
 #ifdef FMT_VERSION
@@ -77,6 +77,17 @@ namespace ALYSLC
 		kNone,		// Camera orientation is not being modified.
 		kRotate,	// Rotating the camera.
 		kZoom		// Adjusting camera zoom.
+	};
+
+	// Criteria for when the camera manager can auto-adjust the camera's pitch/yaw.
+	enum class CamAutoRotateCriteria : std::uint8_t
+	{
+		kOutsideOfCombat,		// Only rotate when outside of combat.
+		kNoCrosshairMovement,	// Only rotate when no players are moving their crosshairs.
+		kAllRestrictions,		// Only when all the other restrictive options' criteria hold.
+		kNoRestrictions,		// Can rotate at any time, no restrictions.
+
+		kTotal
 	};
 
 	// Level of assistance provided when locked on to a target.
@@ -218,6 +229,7 @@ namespace ALYSLC
 		kQuickSlotCast,
 		kQuickSlotItem,
 		kResetAim,
+		kResetCamOrientation,
 		kRotateCam,
 		kRotateLeftForearm,
 		kRotateLeftHand,
@@ -253,6 +265,7 @@ namespace ALYSLC
 		kNone,			// No auto-equip.
 		kHighestCount,	// Equip matching ammo with the highest count.
 		kHighestDamage,	// Equip matching ammo with the highest damage.
+
 		kTotal
 	};
 
@@ -278,6 +291,7 @@ namespace ALYSLC
 		kIllusion,
 		kRestoration,
 		kRitual,
+
 		kTotal
 	};
 
@@ -298,6 +312,7 @@ namespace ALYSLC
 		kStaff,
 		kShieldAndTorch,
 		kUnique,
+
 		kTotal
 	};
 
@@ -345,6 +360,7 @@ namespace ALYSLC
 		kModArmRight,
 		kModMisc2,
 		kFX01,
+
 		kTotal,
 		kLastBipedSlot = kTotal - 1,
 		kBipedTotal = kLastBipedSlot - kFirstBipedSlot + 1
@@ -424,7 +440,8 @@ namespace ALYSLC
 	{
 		kHand,
 		kForearm,
-		kShoulder
+		kShoulder,
+		kShield
 	};
 
 	// Arm orientation about shoulder joint.
@@ -436,6 +453,7 @@ namespace ALYSLC
 		kOutward,
 		kForward,
 		kBackward,
+
 		kTotal
 	};
 
@@ -632,7 +650,8 @@ namespace ALYSLC
 	// OnPressAndRelease:	Condition -> Start -> Cleanup
 	// OnRelease:			Condition -> Start
 	// NoAction:			Condition
-	// NOTE: Not all actions have 'Condition' functions.
+	// NOTE: 
+	// Not all actions have 'Condition' functions.
 	enum class PerfType : std::uint8_t
 	{
 		kDisabled = 0,
@@ -738,6 +757,7 @@ namespace ALYSLC
 		kDual,	// Left and right hand simultaneous cast.
 		kShout,	// Currently unused: perform Shout.
 		kVoice,	// Currently unused: cast Power.
+
 		kTotal
 	};
 
@@ -777,6 +797,7 @@ namespace ALYSLC
 		kRH,
 		k2H,
 		kVoice,
+
 		kTotal
 	};
 
@@ -813,6 +834,7 @@ namespace ALYSLC
 		kNoKnockdowns,				// No knockdowns from slap collisions.
 		kOnlyStrongHeadshots,		// Only knock down when hitting a head node with a fast slap.
 		kSufficientContactSpeed,	// Only knock down if arm node makes sufficiently fast contact.
+
 		kTotal
 	};
 
@@ -933,6 +955,7 @@ namespace ALYSLC
 		kGeneral,			// No specific weapon category.
 		kVampireLord,
 		kWerewolf,
+
 		kTotal,
 		kLast = kTotal - 1
 	};
@@ -949,6 +972,7 @@ namespace ALYSLC
 		kPrediction,	// Predict target intercept position on launch. 
 						// No trajectory modification afterward.
 		kAimDirection,	// Shoot in aiming direction, no trajectory modification after launch.
+
 		kTotal
 	};
 
@@ -1033,6 +1057,7 @@ namespace ALYSLC
 		kDisabled,		// Never show.
 		kLowVisibility,	// Only show when the player is obscured or far away.
 		kAlways,		// Always show.
+
 		kTotal
 	};
 
@@ -1181,6 +1206,8 @@ namespace ALYSLC
 			return "QuickSlotItem";
 		case InputAction::kResetAim:
 			return "ResetAim";
+		case InputAction::kResetCamOrientation:
+			return "ResetCamOrientation";
 		case InputAction::kRotateCam:
 			return "RotateCam";
 		case InputAction::kRotateLeftForearm:

@@ -109,7 +109,6 @@ namespace ALYSLC
 		std::mutex setStateMutex;
 
 	private:
-
 		// Monitor requests to change the current execution state and perform the state change.
 		inline void CheckForStateChange()
 		{
@@ -221,7 +220,8 @@ namespace ALYSLC
 	class TaskRunner
 	{
 	public:
-		// NOTE: All member functions are run on detached threads
+		// NOTE: 
+		// All member functions are run on detached threads
 		// to avoid deadlocking one of the game's main threads when waiting on a condition.
 		TaskRunner() :
 			queue(),
@@ -262,7 +262,6 @@ namespace ALYSLC
 		std::queue<std::function<void()>> queue;
 
 	private:
-
 		// Clear out all enqueued tasks.
 		// None are executed.
 		inline void ClearTasks()

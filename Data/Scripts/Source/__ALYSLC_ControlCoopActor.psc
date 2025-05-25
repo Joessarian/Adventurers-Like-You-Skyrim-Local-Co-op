@@ -33,28 +33,10 @@ Function SendCoopPlayerHome()
         Self.MoveToMyEditorLocation()
         Utility.Wait(0.1)
     EndWhile
-
-    ; Then remove all items from the dead player's inventory and save in a chest.
-    ; Resurrect the player, clear out the generated items the game gives them,
-    ; and move all their items back into their inventory.
-    ; If (Self.IsDead())
-    ;     ; Save all the co-op player's items temporarily to chest
-    ;     Self.RemoveAllItems(InventoryChest, True, True)
-    ;     Utility.Wait(0.25)
-    ;     Self.Resurrect()
-    ;     Utility.Wait(0.25)
-    ;     ; Clear out regenerated inventory
-    ;     Utility.Wait(0.25)
-    ;     Self.RemoveAllItems(None, True, True)
-    ;     Utility.Wait(0.25)
-    ;     ; Move items back
-    ;     InventoryChest.RemoveAllItems(Self, True, True)
-    ; EndIf
-
+    
     Self.Resurrect()
     ALYSLC.Log("[CCA SCRIPT] Sent " + Self.GetDisplayName() + " home.")
     Self.ResetHealthAndLimbs()
-    ;Self.Disable()
 EndFunction
 
 ; Refresh customization options on the co-op player's actor,

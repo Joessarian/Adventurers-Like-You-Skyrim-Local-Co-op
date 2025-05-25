@@ -3,6 +3,8 @@
 #include <GlobalCoopData.h>
 #include <Settings.h>
 
+#undef PlaySound
+
 namespace ALYSLC
 {
 	// Global co-op data.
@@ -47,7 +49,8 @@ namespace ALYSLC
 		// CycleSpellCategoryLH, CycleSpellCategoryRH, 
 		// CycleWeaponCategoryLH, CycleWeaponCategoryRH, 
 		// FaceTarget, GrabObject, 
-		// MoveCrosshair, QuickSlotCast, ResetAim
+		// MoveCrosshair, QuickSlotCast, QuickSlotItem, 
+		// ResetAim, Shout
 
 		// Unique conditions.
 		_condFuncs[!InputAction::kActivate - paOffset] =
@@ -86,12 +89,8 @@ namespace ALYSLC
 		ConditionFuncs::PowerAttackLH;
 		_condFuncs[!InputAction::kPowerAttackRH - paOffset] = 
 		ConditionFuncs::PowerAttackRH;
-		_condFuncs[!InputAction::kQuickSlotItem - paOffset] = 
-		ConditionFuncs::QuickSlotItem;
 		_condFuncs[!InputAction::kSheathe - paOffset] = 
 		ConditionFuncs::Sheathe;
-		_condFuncs[!InputAction::kShout - paOffset] =
-		ConditionFuncs::Shout;
 		_condFuncs[!InputAction::kSneak - paOffset] = 
 		ConditionFuncs::Sneak;
 		_condFuncs[!InputAction::kSpecialAction - paOffset] = 
@@ -105,6 +104,7 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kCamLockOn - paOffset] = 
 		_condFuncs[!InputAction::kCamManualPos - paOffset] = 
 		_condFuncs[!InputAction::kDisableCoopCam - paOffset] = 
+		_condFuncs[!InputAction::kResetCamOrientation - paOffset] = 
 		ConditionFuncs::CamActive;
 		_condFuncs[!InputAction::kRotateCam - paOffset] = 
 		_condFuncs[!InputAction::kZoomCam - paOffset] = 
@@ -124,9 +124,8 @@ namespace ALYSLC
 		_condFuncs[!InputAction::kCoopDebugMenu - paOffset] =
 		_condFuncs[!InputAction::kCoopIdlesMenu - paOffset] = 
 		_condFuncs[!InputAction::kCoopMiniGamesMenu - paOffset] = 
-		ConditionFuncs::PlayerCanOpenMenu;
 		_condFuncs[!InputAction::kCoopSummoningMenu - paOffset] = 
-		ConditionFuncs::CoopSummoningMenu;
+		ConditionFuncs::PlayerCanOpenMenu;
 
 		// Cycling/equipping hotkeyed gear/magic.
 		_condFuncs[!InputAction::kCycleAmmo - paOffset] =
@@ -275,6 +274,8 @@ namespace ALYSLC
 		StartFuncs::QuickSlotItem;
 		_startFuncs[!InputAction::kResetAim - paOffset] =
 		StartFuncs::ResetAim;
+		_startFuncs[!InputAction::kResetCamOrientation - paOffset] =
+		StartFuncs::ResetCamOrientation;
 		_startFuncs[!InputAction::kRotateCam - paOffset] = 
 		StartFuncs::RotateCam;
 		_startFuncs[!InputAction::kSheathe - paOffset] = 
@@ -394,6 +395,7 @@ namespace ALYSLC
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
+					RE::PlaySound("UIActivateFail");
 				}
 			}
 			
@@ -402,39 +404,8 @@ namespace ALYSLC
 
 		bool ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// First check validity and if the targeted refr is in range.
-			const auto lastTargetedRefrPtr = Util::GetRefrPtrFromHandle
-			(
-				a_p->tm->activationRefrHandle
-			); 
-			if (lastTargetedRefrPtr && 
-				Util::IsValidRefrForTargeting(lastTargetedRefrPtr.get()) && 
-				a_p->tm->RefrIsInActivationRange(a_p->tm->activationRefrHandle))
-			{
-				// Next, the targeted refr must not be off limits, 
-				// or the player must be sneaking to signal intent to steal.
-				// Finally, the refr must be a lootable loose refr,
-				// a corpse, or an unlocked container.
-				auto asActor = lastTargetedRefrPtr->As<RE::Actor>();
-				return 
-				(
-					(!lastTargetedRefrPtr->IsCrimeToActivate() || a_p->coopActor->IsSneaking()) &&
-					(
-						(Util::IsLootableRefr(lastTargetedRefrPtr.get())) || 
-						(
-							asActor &&
-							asActor->IsDead()
-						) ||
-						(
-							!lastTargetedRefrPtr->IsLocked() && 
-							!asActor && 
-							lastTargetedRefrPtr->HasContainer()
-						)
-					)
-				);
-			}
-
-			return false;
+			// Can't activate all objects of the same type if nothing is targeted.
+			return (bool)(Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle));
 		}
 
 		bool ActivateCancel(const std::shared_ptr<CoopPlayer>& a_p)
@@ -447,6 +418,7 @@ namespace ALYSLC
 		{
 			// Don't rotate torso while rotating arms 
 			// or if some inputs are still pressed for the arm rotation binds.
+			// Want to have independent arm and torso adjustment.
 			bool isTryingToRotateArms = 
 			{
 				(Settings::bEnableArmsRotation && !a_p->coopActor->IsWeaponDrawn()) &&
@@ -491,7 +463,6 @@ namespace ALYSLC
 			{
 				drawn && !a_p->pam->isBlocking
 			};
-
 			// Return early if baseline check fails.
 			if (!baselineCheck)
 			{
@@ -549,7 +520,6 @@ namespace ALYSLC
 			{
 				drawn && !a_p->pam->isBlocking
 			};
-
 			// Return early if baseline check fails.
 			if (!baselineCheck)
 			{
@@ -638,7 +608,6 @@ namespace ALYSLC
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-
 			if (isEquipping || isUnequipping)
 			{
 				return false;
@@ -674,7 +643,6 @@ namespace ALYSLC
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-
 			if (isEquipping || isUnequipping)
 			{
 				return false;
@@ -708,18 +676,6 @@ namespace ALYSLC
 			return false;
 		}
 
-		bool CoopSummoningMenu(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Normal menu check + no active players can be in combat.
-			bool playerInCombat = std::any_of
-			(
-				glob.coopPlayers.begin(), glob.coopPlayers.end(), 
-				[](const auto& p) { return p->isActive && p->coopActor->IsInCombat(); }
-			);
-
-			return PlayerCanOpenMenu(a_p) && !playerInCombat;
-		}
-
 		bool DebugRagdollPlayer(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Can ragdoll if not controlling menus.
@@ -747,7 +703,7 @@ namespace ALYSLC
 				return 
 				(
 					a_p->coopActor->IsOnMount() || 
-					a_p->coopActor->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal
+					Util::HandleIsValid(a_p->coopActor->GetOccupiedFurniture())
 				);
 			}
 			else
@@ -757,8 +713,8 @@ namespace ALYSLC
 				return 
 				(
 					a_p->coopActor->IsOnMount() || 
-					a_p->coopActor->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal || 
-					a_p->pam->GetCurrentPackage() != a_p->pam->GetDefaultPackage()
+					Util::HandleIsValid(a_p->coopActor->GetOccupiedFurniture()) || 
+					a_p->mm->interactionPackageRunning
 				);
 			}
 		}
@@ -808,14 +764,13 @@ namespace ALYSLC
 
 		bool Favorites(const std::shared_ptr<CoopPlayer>& a_p)
 		{
+			// No supported menus open or control is obtainable AND
+			// Either the player is part of an NPC race and not (un)equipping OR
+			// the player is a Vampire Lord (access vampiric spells through the Favorites Menu).
 			bool isEquipping = false;
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-
-			// No supported menus open or control is obtainable AND
-			// Either the player is part of an NPC race and not (un)equipping OR
-			// the player is a Vampire Lord (access vampiric spells through the Favorites Menu).
 			return
 			{
 				(
@@ -883,7 +838,7 @@ namespace ALYSLC
 				return true;
 			}
 
-			auto charController = a_p->mm->movementActor->GetCharController(); 
+			auto charController = a_p->mm->movementActorPtr->GetCharController(); 
 			if (!charController)
 			{
 				return false;
@@ -891,55 +846,13 @@ namespace ALYSLC
 
 			// Cannot start jumping if not on the ground.
 			// NOTE: 
-			// More stringent conditions commented out for now.
+			// Since jumping will frequently fail to trigger when it visually should,
+			// more stringent conditions commented out for now.
 			bool stateAllowsJump = 
 			(
 				charController->context.currentState == RE::hkpCharacterStateType::kOnGround
-				/*(
-					charController->flags.all
-					(
-						RE::CHARACTER_FLAGS::kCanJump, 
-						RE::CHARACTER_FLAGS::kSupport
-					)
-				) && 
-				(
-					charController->context.currentState ==
-					RE::hkpCharacterStateType::kOnGround &&
-					charController->surfaceInfo.supportedState.get() != 
-					RE::hkpSurfaceInfo::SupportedState::kUnsupported
-				) */
 			);
 			if (!stateAllowsJump) 
-			{
-				return false;
-			}
-
-			// Have to check for a collidable surface under the player 
-			// with a single raycast, since the char controller flags and surface info
-			// sometimes indicate the player can start jumping while in midair.
-			glm::vec4 start =
-			{
-				a_p->coopActor->data.location.x,
-				a_p->coopActor->data.location.y,
-				a_p->coopActor->data.location.z + a_p->coopActor->GetHeight(),
-				0.0f
-			};
-			glm::vec4 end = 
-			(
-				start - glm::vec4(0.0f, 0.0f, 1.25f * a_p->coopActor->GetHeight(), 0.0f)
-			);
-			auto result = Raycast::hkpCastRay
-			(
-				start,
-				end, 
-				std::vector<RE::TESObjectREFR*>({ a_p->coopActor.get() }),
-				std::vector<RE::FormType>
-				(
-					{ RE::FormType::Activator, RE::FormType::TalkingActivator }
-				)
-			);
-			// No surface beneath the player, so they cannot start to jump.
-			if (!result.hit)
 			{
 				return false;
 			}
@@ -947,7 +860,8 @@ namespace ALYSLC
 			// Check slope angle for the surface the player would like to jump off.
 			// Must be less than the defined max jump surface slope angle.
 			const float& zComp = charController->surfaceInfo.surfaceNormal.quad.m128_f32[2];
-			float supportAng = FLT_MAX;
+			// Default to allow the jump.
+			float supportAng = 0.0f;
 			// Vector along the surface is at 90 degrees to the normal, 
 			// so subtract the normal's pitch from PI / 2.
 			if (charController->surfaceInfo.surfaceNormal.Length3() != 0.0f) 
@@ -961,12 +875,36 @@ namespace ALYSLC
 					)
 				);
 			}
-			else
+			else 
 			{
 				// Raycast hit result as a fallback option if the support surface normal data 
 				// is unavailable (0).
-				supportAng = PI / 2.0f - fabsf(asinf(result.rayNormal.z));
-			}	
+				glm::vec4 start =
+				{
+					a_p->coopActor->data.location.x,
+					a_p->coopActor->data.location.y,
+					a_p->coopActor->data.location.z + a_p->coopActor->GetHeight(),
+					0.0f
+				};
+				glm::vec4 end = 
+				(
+					start - glm::vec4(0.0f, 0.0f, 1.25f * a_p->coopActor->GetHeight(), 0.0f)
+				);
+				auto result = Raycast::hkpCastRay
+				(
+					start,
+					end, 
+					std::vector<RE::TESObjectREFR*>({ a_p->coopActor.get() }),
+					std::vector<RE::FormType>
+					(
+						{ RE::FormType::Activator, RE::FormType::TalkingActivator }
+					)
+				);
+				if (result.hit)
+				{
+					supportAng = PI / 2.0f - fabsf(asinf(result.rayNormal.z));
+				}	
+			}
 
 			return supportAng < Settings::fJumpingMaxSlopeAngle;
 		}
@@ -986,31 +924,8 @@ namespace ALYSLC
 			return CanPowerAttack(a_p, InputAction::kPowerAttackRH);
 		}
 
-		bool QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Allow usage of a QS item only if the player HAD at least 1 in their inventory,
-			// as indicated by presence of an entry in the player's inventory counts.
-			// Otherwise, clear out the slot later after the action is started.
-			auto qsItem = a_p->em->equippedForms[!EquipIndex::kQuickSlotItem];
-			auto qsBoundObj = 
-			(
-				qsItem && qsItem->IsBoundObject() ? 
-				qsItem->As<RE::TESBoundObject>() : 
-				nullptr
-			);
-			const bool hadItem = 
-			{ 
-				qsBoundObj && 
-				qsBoundObj->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient) &&
-				a_p->coopActor->GetInventoryCounts().contains(qsBoundObj) 
-			};
-			return hadItem;
-		}
-
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			return true;
-
 			if (a_p->isPlayer1)
 			{
 				return true;
@@ -1031,12 +946,6 @@ namespace ALYSLC
 			isCasting = isCastingDual || isCastingLH || isCastingRH;
 
 			return !isAttacking && !isCasting;
-		}
-
-		bool Shout(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Must have a voice form equipped.
-			return (bool)(a_p->em->voiceForm);
 		}
 
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1080,114 +989,9 @@ namespace ALYSLC
 			// - Dodge
 
 			const bool isRagdolled = a_p->coopActor->IsInRagdollState();
-			// Single tap/hold.
-			if (!pam->PassesConsecTapsCheck(InputAction::kSpecialAction))
-			{
-				if (a_p->isTransforming)
-				{
-					return false;
-				}
-
-				// Toggle grabbed refr collision if the setting is enabled 
-				// and the player has selected a grabbed refr.
-				if (a_p->tm->rmm->isGrabbing && 
-					a_p->tm->rmm->IsManaged(a_p->tm->crosshairRefrHandle, true) && 
-					Settings::bToggleGrabbedRefrCollisions)
-				{
-					pam->reqSpecialAction = SpecialActionType::kToggleGrabbedRefrCollisions;
-				}
-				else if (isRagdolled)
-				{
-					// Hold to get up if grabbed or on the ground.
-					bool isGrabbed = std::any_of
-					(
-						glob.coopPlayers.begin(), glob.coopPlayers.end(),
-						[&a_p](const auto& p) 
-						{
-							return 
-							(
-								p->isActive && 
-								p->coopActor != a_p->coopActor && 
-								p->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
-							);
-						}
-					);
-
-					auto charController = a_p->coopActor->GetCharController();
-					bool shouldAttemptGetUp = 
-					{
-						(isGrabbed) ||
-						(
-							charController &&
-							charController->context.currentState == 
-							RE::hkpCharacterStateType::kOnGround
-						)
-					};
-					if (shouldAttemptGetUp)
-					{
-						pam->reqSpecialAction = SpecialActionType::kGetUp;
-					}
-				}
-				else if (a_p->isTransformed)
-				{
-					// If transformed into a Werewolf, show transformation time remaining 
-					// or feed on a targeted corpse.
-					// Currently, nothing for Vampire Lords.
-					// Revert transformation if transformed into another non-playable race.
-					pam->reqSpecialAction = SpecialActionType::kTransformation;
-				}
-				else if (a_p->coopActor->IsWeaponDrawn())
-				{
-					if ((em->quickSlotSpell) && 
-						 (a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
-					{
-						// Quick slot cast while paragliding or swimming.
-						pam->reqSpecialAction = SpecialActionType::kQuickCast;
-					}
-					else if ((em->HasRHMeleeWeapEquipped() || 
-							 em->IsUnarmed() || 
-							 em->Has2HMeleeWeapEquipped() ||
-							 em->Has2HRangedWeapEquipped() ||
-							 em->HasTorchEquipped()) ||
-							 (em->HasLHMeleeWeapEquipped() && em->HandIsEmpty(true)))
-					{
-						// Block if the RH has a weapon,
-						// if unarmed, 
-						// if there's a 2H weapon equipped, 
-						// if the LH has a torch,
-						// or if the player has a LH weapon and an empty RH.
-						pam->reqSpecialAction = SpecialActionType::kBlock;
-					}
-					/*
-					else if (HelperFuncs::CanDualCast(a_p))
-					{
-						// TODO: 
-						// Dual cast when LH and RH both have the same 1H spells equipped 
-						// and the player has the dual cast perk.
-					    // Currently, the perks do not affect companion players, 
-						// so this is commented out.
-						pam->reqSpecialAction = SpecialActionType::kDualCast;
-					}
-					*/
-					else if ((em->HasLHSpellEquipped() && em->HasRHSpellEquipped()) ||
-							 (em->HasLHStaffEquipped() && em->HasRHStaffEquipped()))
-					{
-						// Cast simultaneously with both hands if both have a spell/staff equipped.
-						pam->reqSpecialAction = SpecialActionType::kCastBothHands;
-					}
-					else if (em->quickSlotSpell)
-					{
-						// Quick slot cast otherwise.
-						pam->reqSpecialAction = SpecialActionType::kQuickCast;
-					}
-				}
-				else if (a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
-				{
-					// Emote when weapons are sheathed and not getting up/ragdolling.
-					pam->reqSpecialAction = SpecialActionType::kCycleOrPlayEmoteIdle;
-				}
-			}
-			else
+			const bool doubleTapped = pam->PassesConsecTapsCheck(InputAction::kSpecialAction);
+			// Check for double tap actions first.
+			if (doubleTapped)
 			{
 				// 2+ consecutive taps.
 				// Nothing to do right now when transformed.
@@ -1231,7 +1035,7 @@ namespace ALYSLC
 						glob.coopPlayers.begin(), glob.coopPlayers.end(),
 						[&a_p](const auto& p) 
 						{
-							return 
+							return
 							(
 								p->isActive && 
 								p->coopActor != a_p->coopActor && 
@@ -1255,8 +1059,124 @@ namespace ALYSLC
 						pam->reqSpecialAction = SpecialActionType::kFlop;
 					}
 				}
+
+				// No need to check single tap/on hold special actions 
+				// if a double tap action was selected and the AV check passes.
+				if (pam->reqSpecialAction != SpecialActionType::kNone && 
+					HelperFuncs::CanPerformSpecialAction(a_p, pam->reqSpecialAction))
+				{
+					return true;
+				} 
 			}
 
+			// Then check for single tap/hold actions if no double tap action request was set.
+			// Clear old requested action again in case it was set to a double tap action
+			// and conditions failed.+
+			pam->reqSpecialAction = SpecialActionType::kNone;
+			if (a_p->isTransforming)
+			{
+				return false;
+			}
+
+			// Toggle grabbed refr collision if the setting is enabled 
+			// and the player has selected a grabbed refr.
+			if (a_p->tm->rmm->isGrabbing && 
+				a_p->tm->rmm->IsManaged(a_p->tm->crosshairRefrHandle, true) && 
+				Settings::bToggleGrabbedRefrCollisions)
+			{
+				pam->reqSpecialAction = SpecialActionType::kToggleGrabbedRefrCollisions;
+			}
+			else if (isRagdolled)
+			{
+				// Hold to get up if grabbed or on the ground.
+				bool isGrabbed = std::any_of
+				(
+					glob.coopPlayers.begin(), glob.coopPlayers.end(),
+					[&a_p](const auto& p) 
+					{
+						return 
+						(
+							p->isActive && 
+							p->coopActor != a_p->coopActor && 
+							p->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+						);
+					}
+				);
+
+				auto charController = a_p->coopActor->GetCharController();
+				bool shouldAttemptGetUp = 
+				{
+					(isGrabbed) ||
+					(
+						charController &&
+						charController->context.currentState == 
+						RE::hkpCharacterStateType::kOnGround
+					)
+				};
+				if (shouldAttemptGetUp)
+				{
+					pam->reqSpecialAction = SpecialActionType::kGetUp;
+				}
+			}
+			else if (a_p->isTransformed)
+			{
+				// If transformed into a Werewolf, show transformation time remaining 
+				// or feed on a targeted corpse.
+				// Currently, nothing for Vampire Lords.
+				// Revert transformation if transformed into another non-playable race.
+				pam->reqSpecialAction = SpecialActionType::kTransformation;
+			}
+			else if (a_p->coopActor->IsWeaponDrawn())
+			{
+				if ((em->quickSlotSpell) && 
+					(a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
+				{
+					// Quick slot cast while paragliding or swimming.
+					pam->reqSpecialAction = SpecialActionType::kQuickCast;
+				}
+				else if ((em->HasRHMeleeWeapEquipped() || 
+						 em->IsUnarmed() || 
+						 em->Has2HMeleeWeapEquipped() ||
+						 em->Has2HRangedWeapEquipped() ||
+						 em->HasTorchEquipped()) ||
+						 (em->HasLHMeleeWeapEquipped() && em->HandIsEmpty(true)))
+				{
+					// Block if the RH has a weapon,
+					// if unarmed, 
+					// if there's a 2H weapon equipped, 
+					// if the LH has a torch,
+					// or if the player has a LH weapon and an empty RH.
+					pam->reqSpecialAction = SpecialActionType::kBlock;
+				}
+				/*
+				else if (HelperFuncs::CanDualCast(a_p))
+				{
+					// TODO: 
+					// Dual cast when LH and RH both have the same 1H spells equipped 
+					// and the player has the dual cast perk.
+					// Currently, the perks do not apply when casting with companion players, 
+					// so this is commented out.
+					pam->reqSpecialAction = SpecialActionType::kDualCast;
+				}
+				*/
+				else if ((em->HasLHSpellEquipped() && em->HasRHSpellEquipped()) ||
+						 (em->HasLHStaffEquipped() && em->HasRHStaffEquipped()))
+				{
+					// Cast simultaneously with both hands if both have a spell/staff equipped.
+					pam->reqSpecialAction = SpecialActionType::kCastBothHands;
+				}
+				else if (em->quickSlotSpell)
+				{
+					// Quick slot cast otherwise.
+					pam->reqSpecialAction = SpecialActionType::kQuickCast;
+				}
+			}
+			else if (a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
+			{
+				// Emote when weapons are sheathed and not getting up/ragdolling.
+				pam->reqSpecialAction = SpecialActionType::kCycleOrPlayEmoteIdle;
+			}
+			
 			// If a new special action to perform was chosen, perform HMS AV checks.
 			return 
 			(
@@ -1391,7 +1311,6 @@ namespace ALYSLC
 				!a_p->coopActor->IsOnMount() &&
 				HelperFuncs::EnoughOfAVToPerformPA(a_p, a_action)
 			};
-
 			// Return early if baseline check fails.
 			if (!baselineCheck)
 			{
@@ -1506,7 +1425,6 @@ namespace ALYSLC
 				(glob.menuCID != a_p->controllerID) ||
 				(ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
 			};
-
 			return 
 			(
 				Settings::bEnableArmsRotation &&
@@ -1531,20 +1449,13 @@ namespace ALYSLC
 			
 			// NOTE: 
 			// (Un)equipping when attempting to cycle equipment used to lead to crashes,
-			// so if these issues resurface, I'll uncomment the lines below.
-
-			/*bool isEquipping = false;
-			bool isUnequipping = false;
-			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
-			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);*/
-
+			// so if these issues resurface, I'll re-add the (un)equip restriction below.
 			// Cannot change equipment when a companion player's inventory is copied over to P1.
 			bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
 			(
 				CopyablePlayerDataTypes::kInventory
 			);
-			return !isAttacking && !isCasting && !inventoryCopiedToP1;	
-			//&& !isEquipping && !isUnequipping;
+			return !isAttacking && !isCasting && !inventoryCopiedToP1;
 		}
 
 		bool PlayerCanOpenMenu(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1653,6 +1564,7 @@ namespace ALYSLC
 			{
 				a_p->coopActor->NotifyAnimationGraph("bashRelease");
 			}
+
 			// Continue blocking afterward.
 			if (wasBlocking)
 			{
@@ -1801,10 +1713,12 @@ namespace ALYSLC
 			float costPerUpdate = 0.0f;
 			// Default to 'can perform' for all actions if in god mode.
 			bool canPerform = a_p->isInGodMode;
+			RE::ActorValue avToCheck = RE::ActorValue::kNone;
 			switch (a_actionType)
 			{
 			case SpecialActionType::kBash:
 			{
+				avToCheck = RE::ActorValue::kStamina;
 				// Don't need to handle the cost, 
 				// since the player action commands will do that.
 				// Only have to check if the player's stamina is on cooldown or not.
@@ -1813,6 +1727,7 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kCastBothHands:
 			{
+				avToCheck = RE::ActorValue::kMagicka;
 				if (a_p->em->HasLHSpellEquipped() && a_p->em->HasRHSpellEquipped())
 				{
 					auto lhSpell = a_p->em->GetLHSpell();
@@ -1854,6 +1769,7 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kDodge:
 			{
+				avToCheck = RE::ActorValue::kStamina;
 				// WIP:
 				// Custom dodge cost that factors LS displacement, 
 				// current equipped weight, 
@@ -1892,7 +1808,6 @@ namespace ALYSLC
 					std::clamp(lsMag, 0.5f, 1.0f)
 				);
 				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
-
 				// Set the Dodge action's cost.
 				a_p->pam->paStatesList
 				[!InputAction::kDodge - !InputAction::kFirstAction].avCost = cost;
@@ -1902,6 +1817,7 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kDualCast:
 			{
+				avToCheck = RE::ActorValue::kMagicka;
 				if (a_p->em->HasLHSpellEquipped() && a_p->em->HasRHSpellEquipped())
 				{
 					auto lhSpell = a_p->em->GetLHSpell();
@@ -1920,6 +1836,7 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kQuickCast:
 			{
+				avToCheck = RE::ActorValue::kMagicka;
 				// Must have a quick slot spell equipped.
 				auto qsSpell = a_p->em->equippedForms[!EquipIndex::kQuickSlotSpell]; 
 				if (qsSpell && qsSpell->Is(RE::FormType::Spell))
@@ -1967,6 +1884,27 @@ namespace ALYSLC
 
 			// Set cost.
 			paState.avCost = cost;
+
+			if (!canPerform && 
+				a_p->pam->GetPlayerActionInputJustPressed(InputAction::kSpecialAction) &&
+				avToCheck == RE::ActorValue::kMagicka)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+
+				// Everyone's favorite sound.
+				RE::PlaySound("MAGFailSD");
+			}
+
 			return canPerform;
 		}
 
@@ -2045,7 +1983,7 @@ namespace ALYSLC
 				hasCharacterSkeleton || Settings::bUseGenericKillmovesOnUnsupportedNPCs
 			);
 			// Get max health for the target.
-			float maxHealth = Util::GetFullAVAmount(a_p->coopActor.get(), RE::ActorValue::kHealth);
+			float maxHealth = Util::GetFullAVAmount(targetActorPtr.get(), RE::ActorValue::kHealth);
 			// Target actor's current health must be below the killmove health threshold.
 			bool canPerformRegularKillmove = 
 			(
@@ -2067,7 +2005,6 @@ namespace ALYSLC
 				a_p->coopActor->IsSneaking() && 
 				Util::GetDetectionPercent(a_p->coopActor.get(), targetActorPtr.get()) != 100.0f
 			);
-
 			if (canPerformRegularKillmove)
 			{
 				// Killmove chance check.
@@ -2369,14 +2306,12 @@ namespace ALYSLC
 						weapType == RE::WEAPON_TYPE::kOneHandMace ||
 						weapType == RE::WEAPON_TYPE::kOneHandSword
 					};
-
 					bool is2HMWeap = 
 					{
 						weapType == RE::WEAPON_TYPE::kStaff ||
 						weapType == RE::WEAPON_TYPE::kTwoHandAxe ||
 						weapType == RE::WEAPON_TYPE::kTwoHandSword
 					};
-
 					auto killmoveType = KillmoveType::kSneakH2H;
 					if (is1HMWeap)
 					{
@@ -2416,8 +2351,10 @@ namespace ALYSLC
 			float costToPerform = 0.0f;
 			// Default to 'can perform' for all actions if in god mode.
 			bool canPerform = a_p->isInGodMode;
+			RE::ActorValue avToCheck = RE::ActorValue::kNone;
 			if (a_action == InputAction::kActivate)
 			{
+				avToCheck = RE::ActorValue::kHealth;
 				// Revive health cost.
 				cost = GetPAHealthCost(a_p, a_action);
 				costToPerform = cost * *g_deltaTimeRealTime;
@@ -2430,6 +2367,7 @@ namespace ALYSLC
 				     (a_action == InputAction::kCastRH && a_p->em->GetRHSpell()) || 
 					 (a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell))
 			{
+				avToCheck = RE::ActorValue::kMagicka;
 				// Spellcast cost.
 				cost = costToPerform = GetPAMagickaCost(a_p, a_action);
 				bool isQuickslotCastCheck =  
@@ -2462,6 +2400,7 @@ namespace ALYSLC
 				{
 					costToPerform *= *g_deltaTimeRealTime;
 				}
+
 				// The hand caster magicka check is done by the game for P1 
 				// after input event processing, so we'll skip the magicka cost check 
 				// and just send the button events. Still have to check if P1 has enough magicka
@@ -2474,6 +2413,7 @@ namespace ALYSLC
 			}
 			else
 			{
+				avToCheck = RE::ActorValue::kStamina;
 				cost = GetPAStaminaCost(a_p, a_action);
 				// Check if the player has enough stamina if the cost is non-zero.
 				if (cost != 0.0f) 
@@ -2498,6 +2438,27 @@ namespace ALYSLC
 			// when expending health/magicka/stamina 
 			// once the action's corresponding start animation triggers.
 			pam->paStatesList[!a_action - !InputAction::kFirstAction].avCost = cost;
+
+			if (!canPerform && 
+				pam->currentMagicka > 0.0f && 
+				pam->GetPlayerActionInputJustPressed(a_action) &&
+				avToCheck == RE::ActorValue::kMagicka)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+
+				RE::PlaySound("MAGFailSD");
+			}
+			
 			return canPerform;
 		}
 
@@ -2761,7 +2722,7 @@ namespace ALYSLC
 						bool isUnequipping = true;
 						SteadyClock::time_point waitTP = SteadyClock::now();
 						while ((Util::GetElapsedSeconds(waitTP) < 2.0f) && 
-								(isEquipping || isUnequipping))
+							   (isEquipping || isUnequipping))
 						{
 							std::this_thread::sleep_for(0.25s);
 							a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
@@ -2856,13 +2817,6 @@ namespace ALYSLC
 			);
 			if (refreshFavorites) 
 			{
-				SPDLOG_DEBUG
-				(
-					"[PAFH] {} is no longer favorited by {}. Refreshing all favorited forms data.",
-					a_hotkeyedForm->GetName(),
-					a_p->coopActor->GetName()
-				);
-
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
@@ -3507,7 +3461,6 @@ namespace ALYSLC
 									nullptr, 
 									nullptr
 								);
-
 								a_p->tm->SetCrosshairMessageRequest
 								(
 									CrosshairMessageType::kEquippedItem,
@@ -3678,10 +3631,7 @@ namespace ALYSLC
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
 						}
-						
-						SPDLOG_DEBUG("[PAFH] EquipHotkeyedForm: {}: Equipping quick slot item {}.",
-							a_p->coopActor->GetName(),
-							a_hotkeyedForm->GetName());
+
 						// Set directly.
 						a_p->em->quickSlotItem = a_hotkeyedForm;
 						// Refresh equip state to apply changes.
@@ -3689,14 +3639,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
-						(
-							"[PAFH] EquipHotkeyedForm: {}: Cannot equip {} to item quick slot. "
-							"Current quick slot item: {}.",
-							a_p->coopActor->GetName(),
-							a_hotkeyedForm->GetName(),
-							a_p->em->quickSlotItem ? a_p->em->quickSlotItem->GetName() : "NONE"
-						);
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kEquippedItem,
@@ -3734,9 +3676,6 @@ namespace ALYSLC
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
-					SPDLOG_DEBUG("[PAFH] EquipHotkeyedForm: {}: Unequipping quick slot item {}.",
-						a_p->coopActor->GetName(),
-						a_p->em->quickSlotItem->GetName());
 					// Just clear out directly.
 					a_p->em->quickSlotItem = nullptr;
 					// Refresh equip state to apply changes.
@@ -3744,11 +3683,6 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
-					(
-						"[PAFH] EquipHotkeyedForm: {}: Item quick slot is already empty.",
-						a_p->coopActor->GetName()
-					);
 					// Notify the player that the item quick slot is already empty.
 					a_p->tm->SetCrosshairMessageRequest
 					(
@@ -3786,12 +3720,6 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						SPDLOG_DEBUG
-						(
-							"[PAFH] EquipHotkeyedForm: {}: Equipping quick slot spell {}.",
-							a_p->coopActor->GetName(),
-							spell->GetName()
-						);
 						// Just set directly.
 						a_p->em->quickSlotSpell = spell;
 						// Refresh equip state to apply changes.
@@ -3799,14 +3727,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
-						(
-							"[PAFH] EquipHotkeyedForm: {}: Cannot equip {} to spell quick slot. "
-							"Current quick slot spell: {}.",
-							a_p->coopActor->GetName(),
-							a_hotkeyedForm->GetName(),
-							a_p->em->quickSlotSpell ? a_p->em->quickSlotSpell->GetName() : "NONE"
-						);
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kEquippedItem,
@@ -3844,9 +3764,6 @@ namespace ALYSLC
 						},
 						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 					);
-					SPDLOG_DEBUG("[PAFH] EquipHotkeyedForm: {}: Unequipping quick slot spell {}.",
-						a_p->coopActor->GetName(),
-						a_p->em->quickSlotSpell->GetName());
 					// Just clear out directly.
 					a_p->em->quickSlotSpell = nullptr;
 					// Refresh equip state to apply changes.
@@ -3854,11 +3771,6 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
-					(
-						"[PAFH] EquipHotkeyedForm: {}: Spell quick slot is already empty.",
-						a_p->coopActor->GetName()
-					);
 					// Notify the player that the spell quick slot is already empty.
 					a_p->tm->SetCrosshairMessageRequest
 					(
@@ -4012,6 +3924,7 @@ namespace ALYSLC
 					std::clamp(lsMag, 0.5f, 1.0f)
 				);
 				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
+
 				break;
 			}
 			case InputAction::kBash:
@@ -4292,6 +4205,99 @@ namespace ALYSLC
 				setupBoundWeaponEquip(copiedSpell, Source::kRight);
 			}
 		}
+		
+		bool HandleDelayedHotkeyEquipRequest
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			const InputAction & a_occurringAction, 
+			const PlayerActionManager::PlayerActionState& a_paState
+		)
+		{
+			// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
+			// Return true if the current occurring action should skip executing its perf funcs,
+			// since it is being used to equip the chosen hotkeyed item.
+
+			// NOTE:
+			// Four actions' composing inputs are used to signal which slot 
+			// to equip the selected hotkeyed form into:
+			// Left Trigger -> LH
+			// Right Trigger -> RH
+			// Left Bumper -> Item Quick Slot
+			// Right Bumper -> Spell Quick Slot
+			// 
+			// If this occurring action is not a hotkey equip action,
+			// and if the player is attempting to equip a hotkeyed form,
+			// and the occurring PA includes one of the above composing inputs,
+			// we can't perform this action.
+
+			// Player has until the hotkey selection crosshair message is cleared
+			// to choose which hand to equip the hotkeyed item into.
+			bool choseHotkeyedItem = 
+			{
+				a_p->tm->lastCrosshairMessage->type == 
+				CrosshairMessageType::kHotkeySelection &&
+				Util::GetElapsedSeconds(a_p->tm->lastCrosshairMessage->setTP) < 
+				a_p->tm->lastCrosshairMessage->secsMaxDisplayTime
+			};
+			// Do not execute PA funcs for this occurring action if the player 
+			// has chosen a hotkeyed item and is now attempting
+			// to equip that hotkeyed item to a hand or the quick slot.
+			// Also do not run any funcs since we want the action to start and end normally 
+			// to keep track of its pressed state,
+			// but do not want the player to perform the action while the item is being equipped.
+			bool isHotkeyEquipSlotSelectionBind = 
+			(
+				(
+					a_occurringAction != InputAction::kHotkeyEquip
+				) &&
+				(
+					(a_p->pam->IsPerforming(InputAction::kHotkeyEquip) || choseHotkeyedItem) &&
+					(
+						(a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0 ||
+						(a_paState.paParams.inputMask & (1 << !InputAction::kRT)) != 0 ||
+						(
+							a_paState.paParams.inputMask & (1 << !InputAction::kLShoulder)
+						) != 0 ||
+						(
+							a_paState.paParams.inputMask & (1 << !InputAction::kRShoulder)
+						) != 0
+					)
+				)
+			);
+			// Equip the chosen hotkeyed item or notify the player of success/failure
+			// if this bind is used to select a slot to equip the hotkeyed form into,
+			// and the player is not currently selecting a hotkeyed form.
+			if (isHotkeyEquipSlotSelectionBind && 
+				choseHotkeyedItem &&
+				!a_p->pam->IsPerforming(InputAction::kHotkeyEquip) && 
+				a_paState.perfStage == PerfStage::kInputsReleased)
+			{
+				// Default to right hand.
+				EquipIndex equipIndex = EquipIndex::kRightHand;
+				if ((a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0)
+				{
+					equipIndex = EquipIndex::kLeftHand;
+				}
+				else if ((a_paState.paParams.inputMask & (1 << !InputAction::kLShoulder)) != 0)
+				{
+					equipIndex = EquipIndex::kQuickSlotItem;
+				}
+				else if ((a_paState.paParams.inputMask & (1 << !InputAction::kRShoulder)) != 0)
+				{
+					equipIndex = EquipIndex::kQuickSlotSpell;
+				}
+
+				// If the chosen hotkeyed form message is still displayed 
+				// after the 'HotkeyEquip' bind is released, 
+				// then on release of this bind, equip the chosen hotkeyed form.
+				HelperFuncs::EquipHotkeyedForm
+				(
+					a_p, a_p->em->lastChosenHotkeyedForm, std::move(equipIndex)
+				);
+			}
+
+			return isHotkeyEquipSlotSelectionBind;
+		}
 
 		bool InitiateSpecialInteractionPackage
 		(
@@ -4304,18 +4310,23 @@ namespace ALYSLC
 			// set up the special interaction package and entry position.
 			// Return true if successful.
 			
+			if (!a_interactionRefr || !a_interactionBaseObj)
+			{
+				return false;
+			}
+
 			// Get furniture entry point to serve as interaction package entry position.
-			bool asFurniture = 
+			bool isFurniture = 
 			(
 				a_interactionRefr->As<RE::TESFurniture>() || 
 				a_interactionBaseObj->As<RE::TESFurniture>()
 			);
-			bool asIdleMarker = 
+			bool isIdleMarker = 
 			(
 				a_interactionRefr->As<RE::BGSIdleMarker>() || 
 				a_interactionBaseObj->As<RE::BGSIdleMarker>()
 			);
-			if (!asFurniture && !asIdleMarker)
+			if (!isFurniture && !isIdleMarker)
 			{
 				return false;
 			}
@@ -4323,13 +4334,38 @@ namespace ALYSLC
 			// Set initial interaction entry position to the object's position.
 			// Will pick closest entry position to set below.
 			a_p->mm->interactionPackageEntryPos = a_interactionRefr->data.location;
+			auto asFurniture = 
+			(
+				a_interactionBaseObj->As<RE::TESFurniture>()
+			); 
 			if (asFurniture)
 			{
-				if (auto refr3D = Util::GetRefr3D(a_interactionRefr); refr3D)
+				// If there is no marker and no workbench type,
+				// there is no interaction animation to trigger,
+				// so we don't need to run the interaction package
+				// and can skip to just activating the object.
+				bool noInteractionAnimation = 
+				(
+					asFurniture->furnFlags ==
+					(
+						RE::TESFurniture::ActiveMarker::kNone
+					) &&
+					asFurniture->workBenchData.benchType ==
+					(
+						RE::TESFurniture::WorkBenchData::BenchType::kNone
+					)	
+				);
+				if (noInteractionAnimation)
+				{
+					return false;
+				}
+
+				auto refr3DPtr = Util::GetRefr3D(a_interactionRefr);
+				if (refr3DPtr && refr3DPtr.get())
 				{
 					RE::BSFurnitureMarkerNode* markerNode = 
 					(
-						refr3D->GetExtraData<RE::BSFurnitureMarkerNode>("FRN")
+						refr3DPtr->GetExtraData<RE::BSFurnitureMarkerNode>("FRN")
 					);
 					if (markerNode)
 					{
@@ -4365,7 +4401,7 @@ namespace ALYSLC
 								Util::RotationToDirectionVect(worldPitch, worldYaw) *
 								marker.offset.Length()
 							);
-							auto entryPoint = refr3D->world.translate + entryPointOffset;
+							auto entryPoint = refr3DPtr->world.translate + entryPointOffset;
 							// Set new closest entry point if there was no entry point 
 							// previously set or this one is closer.
 							if (!closestEntryPoint.has_value() ||
@@ -4382,7 +4418,7 @@ namespace ALYSLC
 						// Set to refr3D's world position if there's no closest entry point.
 						if (!closestEntryPoint.has_value())
 						{
-							closestEntryPoint = refr3D->world.translate;
+							closestEntryPoint = refr3DPtr->world.translate;
 						}
 
 						// Set interaction entry position.
@@ -4401,8 +4437,7 @@ namespace ALYSLC
 				glob.coopPackages
 				[!PackageIndex::kTotal * a_p->controllerID + !PackageIndex::kSpecialInteraction]
 			);
-			a_p->pam->SetCurrentPackage(interactionPackage);
-			a_p->pam->EvaluatePackage();
+			a_p->pam->SetAndEveluatePackage(interactionPackage, false);
 			// Turn to face when first activated.
 			a_p->coopActor->SetHeading
 			(
@@ -4725,6 +4760,7 @@ namespace ALYSLC
 		{
 			// Is moving backward relative to the player's facing direction 
 			// (90 degree window behind the player's facing direction).
+
 			return 
 			(
 				(
@@ -4740,8 +4776,9 @@ namespace ALYSLC
 
 		bool MovingForward(const std::shared_ptr<CoopPlayer>& a_p, float a_facingToMovingAngDiff)
 		{
-			// Is moving backward relative to the player's facing direction 
+			// Is moving forward relative to the player's facing direction 
 			// (90 degree window in front of the player's facing direction).
+
 			return 
 			(
 				(
@@ -4759,6 +4796,7 @@ namespace ALYSLC
 		{
 			// Is moving left relative to the player's facing direction 
 			// (90 degree window to the left of the player's facing direction).
+
 			return 
 			(
 				(
@@ -4775,6 +4813,7 @@ namespace ALYSLC
 		{
 			// Is moving right relative to the player's facing direction 
 			// (90 degree window to the right of the player's facing direction).
+
 			return 
 			(
 				(
@@ -4881,6 +4920,7 @@ namespace ALYSLC
 				}
 			}
 
+			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (!pam->downedPlayerTarget || !pam->downedPlayerTarget.get()) 
 			{
 				const float& secsSinceActivationStarted = 
@@ -4889,22 +4929,30 @@ namespace ALYSLC
 					[!InputAction::kActivate - !InputAction::kFirstAction].secsPerformed
 				);
 				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
-				// Ignore invalid refrs and hostile actors selected with the crosshair.
-				// Enemies are too angry to respond to requests for interaction,
-				// from my experience.
+				// Ignore invalid refrs and normally hostile actors selected with the crosshair.
+				// Enemies are too angry to interact with players, from my experience.
 				bool crosshairRefrValidity = 	
 				(
 					(crosshairRefrPtr && crosshairRefrPtr.get()) && 
-					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get())) && 
-					(
-						!crosshairRefrPtr->As<RE::Actor>() || 
-						!crosshairRefrPtr->As<RE::Actor>()->IsHostileToActor
-						(
-							a_p->coopActor.get()
-						) ||
-						crosshairRefrPtr->As<RE::Actor>()->IsAMount()
-					)
+					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
 				);
+				auto asActor = crosshairRefrValidity ? crosshairRefrPtr->As<RE::Actor>() : nullptr;
+				if (asActor)
+				{
+					crosshairRefrValidity &= 	
+					(
+						(asActor->IsDead()) ||
+						(asActor->IsAMount()) ||
+						(
+							p1 && 
+							!asActor->IsHostileToActor(p1) &&
+							!asActor->IsHostileToActor(a_p->coopActor.get())
+						) ||
+						(Util::IsGuard(asActor)) || 
+						(Util::HasNoBountyButInCrimeFaction(asActor))
+					);
+				}
+
 				// Choose a valid crosshair refr for activation 
 				// if the action press time is within the initial window before cycling.
 				// Otherwise, look for a nearby refr to activate.
@@ -4914,6 +4962,7 @@ namespace ALYSLC
 					!crosshairRefrValidity
 				);
 				a_p->tm->useProximityInteraction = useProximityInteraction;
+
 				if (justStarted)
 				{
 					a_p->lastActivationCheckTP = SteadyClock::now();
@@ -5129,132 +5178,6 @@ namespace ALYSLC
 			}
 		}
 
-		void PrepForTargetLocationSpellCast
-		(
-			const std::shared_ptr<CoopPlayer>& a_p, RE::SpellItem* a_spell)
-		{
-			// Look down at the ground or at the targeted world position
-			// to choose the destination point before casting 
-			// to maximize chances of a successful location-based cast, for P1 especially,
-			// since the game will check the casting direction (determined by the player's X angle) 
-			// and will not perform the cast if the player is looking at 
-			// a non-traversable location, such as the sky.
-			// Pitch angle will reset in the movement manager on the next iteration.
-
-			if (!a_spell || a_spell->GetDelivery() != RE::MagicSystem::Delivery::kTargetLocation)
-			{
-				return;
-			}
-			
-			a_p->coopActor->data.angle.x = 4.0f * PI / 9.0f;
-		}
-
-		bool HandleDelayedHotkeyEquipRequest
-		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			const InputAction & a_occurringAction, 
-			const PlayerActionManager::PlayerActionState& a_paState
-		)
-		{
-			// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
-			// Return true if the current occurring action should skip executing its perf funcs,
-			// since it is being used to equip the chosen hotkeyed item.
-
-			// NOTE:
-			// Four actions' composing inputs are used to signal which slot 
-			// to equip the selected hotkeyed form into:
-			// Left Trigger -> LH
-			// Right Trigger -> RH
-			// Left Bumper -> Item Quick Slot
-			// Right Bumper -> Spell Quick Slot
-			// 
-			// If this occurring action is not a hotkey equip action,
-			// and if the player is attempting to equip a hotkeyed form,
-			// and the occurring PA includes one of the above composing inputs,
-			// we can't perform this action.
-
-			// Player has until the hotkey selection crosshair message is cleared
-			// to choose which hand to equip the hotkeyed item into.
-			bool choseHotkeyedItem = 
-			{
-				a_p->tm->lastCrosshairMessage->type == 
-				CrosshairMessageType::kHotkeySelection &&
-				Util::GetElapsedSeconds(a_p->tm->lastCrosshairMessage->setTP) < 
-				a_p->tm->lastCrosshairMessage->secsMaxDisplayTime
-			};
-			// Do not execute PA funcs for this occurring action if the player 
-			// has chosen a hotkeyed item and is now attempting
-			// to equip that hotkeyed item to a hand or the quick slot.
-			// Also do not run any funcs since we want the action to start and end normally 
-			// to keep track of its pressed state,
-			// but do not want the player to perform the action while the item is being equipped.
-			bool isHotkeyEquipSlotSelectionBind = 
-			(
-				(
-					a_occurringAction != InputAction::kHotkeyEquip
-				) &&
-				(
-					(a_p->pam->IsPerforming(InputAction::kHotkeyEquip) || choseHotkeyedItem) &&
-					(
-						(a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0 ||
-						(a_paState.paParams.inputMask & (1 << !InputAction::kRT)) != 0 ||
-						(
-							a_paState.paParams.inputMask & (1 << !InputAction::kLShoulder)
-						) != 0 ||
-						(
-							a_paState.paParams.inputMask & (1 << !InputAction::kRShoulder)
-						) != 0
-					)
-				)
-			);
-			// Equip the chosen hotkeyed item or notify the player of success/failure
-			// if this bind is used to select a slot to equip the hotkeyed form into,
-			// and the player is not currently selecting a hotkeyed form.
-			if (isHotkeyEquipSlotSelectionBind && 
-				choseHotkeyedItem &&
-				!a_p->pam->IsPerforming(InputAction::kHotkeyEquip) && 
-				a_paState.perfStage == PerfStage::kInputsReleased)
-			{
-				// Default to right hand.
-				EquipIndex equipIndex = EquipIndex::kRightHand;
-				if ((a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0)
-				{
-					equipIndex = EquipIndex::kLeftHand;
-				}
-				else if ((a_paState.paParams.inputMask & (1 << !InputAction::kLShoulder)) != 0)
-				{
-					equipIndex = EquipIndex::kQuickSlotItem;
-				}
-				else if ((a_paState.paParams.inputMask & (1 << !InputAction::kRShoulder)) != 0)
-				{
-					equipIndex = EquipIndex::kQuickSlotSpell;
-				}
-
-				// If the chosen hotkeyed form message is still displayed 
-				// after the 'HotkeyEquip' bind is released, 
-				// then on release of this bind, equip the chosen hotkeyed form.
-				SPDLOG_DEBUG
-				(
-					"[PAFH] HandleDelayedHotkeyEquipRequest: {}: {} to index {}. "
-					"Action: {}, stopped {}s ago, perf stage: {}.",
-					a_p->coopActor->GetName(),
-					a_p->em->lastChosenHotkeyedForm ? 
-					a_p->em->lastChosenHotkeyedForm->GetName() : 
-					"NONE",
-					equipIndex,
-					a_occurringAction,
-					a_p->pam->GetSecondsSinceLastStop(a_occurringAction),
-					a_paState.perfStage
-				);
-				HelperFuncs::EquipHotkeyedForm
-				(
-					a_p, a_p->em->lastChosenHotkeyedForm, std::move(equipIndex)
-				);
-			}
-
-			return isHotkeyEquipSlotSelectionBind;
-		}
-
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Play idle animation corresponding to current cycled emote if not already requested. 
@@ -5276,85 +5199,6 @@ namespace ALYSLC
 				a_p->coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 				a_p->pam->isPlayingEmoteIdle = false;
 			}
-		}
-
-		void RemoveCastingPackage
-		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
-		)
-		{
-			// Stop companion player spell cast in the given hand(s).
-
-			auto& pam = a_p->pam;
-			// Reset casting global variables and caster durations.
-			if (a_lhCast && a_rhCast) 
-			{
-				pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
-				pam->lhCastDuration = 0.0f;
-				pam->rhCastDuration = 0.0f;
-			}
-			else if (a_lhCast) 
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
-				pam->lhCastDuration = 0.0f;
-			}
-			else if (a_rhCast)
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
-				pam->rhCastDuration = 0.0f;
-			}
-			else
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kShout]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kVoice]->value = 0.0f;
-			}
-
-			if (pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f && 
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f) 
-			{
-				// Reset to default package as well if both hands are no longer casting.
-				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
-				pam->ResetPackageCastingState();
-			}
-			else
-			{
-				// Re-evaluate the current package to allow the above changes 
-				// to casting globals to take effect.
-				a_p->pam->SetCurrentPackage(a_p->pam->GetDefaultPackage());
-				a_p->pam->EvaluatePackage();
-			}
-
-			// Try to re-obtain magic casters if either is invalid.
-			if (!pam->lhCaster || !pam->rhCaster)
-			{
-				pam->lhCaster = a_p->coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kLeftHand
-				);
-				pam->rhCaster = a_p->coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kRightHand
-				);
-			}
-
-			// Clear out casters' current spells once done casting to ensure the cast stops
-			// if package evaluation failed.
-			if (pam->lhCaster && pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f)
-			{
-				pam->lhCaster->currentSpell = nullptr;
-			}
-
-			if (pam->rhCaster && pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f)
-			{
-				pam->rhCaster->currentSpell = nullptr;
-			}
-
-			// Clear out linked refr target used by the casting package.
-			a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 		}
 
 		bool PlayKillmoveFromList
@@ -5635,7 +5479,7 @@ namespace ALYSLC
 						(
 							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
 						);
-						if (a_p->em->IsUnarmed())
+						if (a_p->em->RHEmpty())
 						{
 							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
 						}
@@ -5649,6 +5493,104 @@ namespace ALYSLC
 					}
 				}
 			}
+		}
+
+		void PrepForTargetLocationSpellCast
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, RE::SpellItem* a_spell)
+		{
+			// Look down at the ground or at the targeted world position
+			// to choose the destination point before casting 
+			// to maximize chances of a successful location-based cast, for P1 especially,
+			// since the game will check the casting direction (determined by the player's X angle) 
+			// and will not perform the cast if the player is looking at 
+			// a non-traversable location, such as the sky.
+			// Pitch angle will reset in the movement manager on the next iteration.
+
+			if (!a_spell || a_spell->GetDelivery() != RE::MagicSystem::Delivery::kTargetLocation)
+			{
+				return;
+			}
+			
+			a_p->coopActor->data.angle.x = 4.0f * PI / 9.0f;
+		}
+
+		void RemoveCastingPackage
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+		)
+		{
+			// Stop companion player spell cast in the given hand(s).
+
+			const auto& pam = a_p->pam;
+			// Reset casting global variables and caster durations.
+			if (a_lhCast && a_rhCast) 
+			{
+				pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
+				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
+				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
+				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
+				pam->lhCastDuration = 0.0f;
+				pam->rhCastDuration = 0.0f;
+			}
+			else if (a_lhCast) 
+			{
+				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
+				pam->lhCastDuration = 0.0f;
+			}
+			else if (a_rhCast)
+			{
+				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
+				pam->rhCastDuration = 0.0f;
+			}
+			else
+			{
+				pam->castingGlobVars[!CastingGlobIndex::kShout]->value = 0.0f;
+				pam->castingGlobVars[!CastingGlobIndex::kVoice]->value = 0.0f;
+			}
+
+			if (pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f && 
+				pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
+				pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f) 
+			{
+				// Reset to default package as well if both hands are no longer casting.
+				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
+				pam->ResetPackageCastingState();
+			}
+			else
+			{
+				// Re-evaluate the current default package to allow the above changes 
+				// to casting globals to take effect.
+				pam->SetAndEveluatePackage();
+			}
+
+			// Try to re-obtain magic casters if either is invalid.
+			if (!pam->lhCaster || !pam->rhCaster)
+			{
+				pam->lhCaster = a_p->coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kLeftHand
+				);
+				pam->rhCaster = a_p->coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kRightHand
+				);
+			}
+
+			// Clear out casters' current spells once done casting to ensure the cast stops
+			// if package evaluation failed.
+			if (pam->lhCaster && pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f)
+			{
+				pam->lhCaster->currentSpell = nullptr;
+			}
+
+			if (pam->rhCaster && pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f)
+			{
+				pam->rhCaster->currentSpell = nullptr;
+			}
+
+			// Clear out linked refr target used by the casting package.
+			a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 		}
 
 		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p)
@@ -5778,7 +5720,7 @@ namespace ALYSLC
 						CrosshairMessageType::kCamera,
 						fmt::format
 						(
-							"P{}: Camera auto trail mode", 
+							"P{}: Camera auto-trail mode", 
 							glob.coopPlayers[a_reqCID]->playerID + 1
 						),
 						{ 
@@ -5796,7 +5738,7 @@ namespace ALYSLC
 						CrosshairMessageType::kCamera,
 						fmt::format
 						(
-							"P{}: Camera lock on mode", 
+							"P{}: Camera lock-on mode", 
 							glob.coopPlayers[a_reqCID]->playerID + 1
 						),
 						{ 
@@ -5940,7 +5882,7 @@ namespace ALYSLC
 							pam->castingGlobVars[!CastingGlobIndex::kDual]->value
 						);*/
 					}
-
+					
 					// Evaluate ranged attack package with updated globals.
 					pam->EvaluatePackage();
 				}
@@ -6034,11 +5976,10 @@ namespace ALYSLC
 								fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
 								{
 									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kActivationInfo,
 									CrosshairMessageType::kStealthState, 
 									CrosshairMessageType::kTargetSelection 
 								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
+								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 							);
 						}
 						else
@@ -6053,12 +5994,11 @@ namespace ALYSLC
 									"P{}: Ammo counter: {}", a_p->playerID + 1, max(0, ammoCount)
 								),
 								{ 
-									CrosshairMessageType::kNone,
-									CrosshairMessageType::kActivationInfo, 
+									CrosshairMessageType::kNone, 
 									CrosshairMessageType::kStealthState, 
 									CrosshairMessageType::kTargetSelection 
 								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
+								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 							);
 						}
 						
@@ -6067,15 +6007,6 @@ namespace ALYSLC
 						(
 							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
 						);
-						// Send directly without queuing.
-						/*pam->SendButtonEvent
-						(
-							a_action,
-							RE::INPUT_DEVICE::kGamepad, 
-							ButtonEventPressType::kPressAndHold, 
-							0.0f,
-							true
-						);*/
 					}
 					else
 					{
@@ -6120,11 +6051,10 @@ namespace ALYSLC
 							fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
 							{ 
 								CrosshairMessageType::kNone,
-								CrosshairMessageType::kActivationInfo, 
 								CrosshairMessageType::kStealthState,
 								CrosshairMessageType::kTargetSelection 
 							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 						);
 					}
 					else
@@ -6138,12 +6068,11 @@ namespace ALYSLC
 								"P{}: Ammo counter: {}", a_p->playerID + 1, max(0, ammoCount)
 							),
 							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kActivationInfo, 
+								CrosshairMessageType::kNone,  
 								CrosshairMessageType::kStealthState, 
 								CrosshairMessageType::kTargetSelection 
 							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
 						);
 					}
 
@@ -6270,7 +6199,6 @@ namespace ALYSLC
 							return false;
 						}
 					);
-
 					// Other activation criteria.
 					bool menusOnlyAlwaysOpen = true;
 					if (auto ui = RE::UI::GetSingleton(); ui)
@@ -6328,41 +6256,45 @@ namespace ALYSLC
 					// Something to do with usability.
 					bool isPlayable = activationRefrPtr->GetPlayable();
 					// Player has LOS on the refr.
-					bool passesLOSCheck = 
+					bool passesLOSCheck =
 					(
-						(Settings::bCamCollisions) || 
+						activationRefrPtr && 
+						activationRefrPtr.get() &&
+						Util::HasLOS
 						(
-							activationRefrPtr && 
-							Util::HasLOS
-							(
-								activationRefrPtr.get(), 
-								a_p->coopActor.get(), 
-								false, 
-								a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, 
-								a_p->tm->crosshairWorldPos
-							)
+							activationRefrPtr.get(), 
+							a_p->coopActor.get(), 
+							false, 
+							a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, 
+							a_p->tm->crosshairWorldPos
 						)
 					);
+					
 					// Crosshair message to display.
 					RE::BSFixedString activationMessage = ""sv;
 					RE::BSString activationString = "";
 					if (!isSneaking && offLimits)
 					{
 						// Must sneak to interact with off-limits refrs.
-						if (!baseObj->GetActivateText(activationRefrPtr.get(), activationString))
+						bool succ = baseObj->GetActivateText
+						(
+							activationRefrPtr.get(), activationString
+						);
+						if (succ)
 						{
 							activationMessage = fmt::format
 							(
-								"P{}: Sneak to interact with {}",
-								a_p->playerID + 1, 
-								activationRefrPtr->GetName()
+								"P{}: Sneak to {}", a_p->playerID + 1, activationString
 							);
 						}
 						else
 						{
 							activationMessage = fmt::format
 							(
-								"P{}: Sneak to {}", a_p->playerID + 1, activationString
+								"P{}: Sneak to "
+								"<font color=\"#FF0000\">interact</font> with {}",
+								a_p->playerID + 1, 
+								activationRefrPtr->GetName()
 							);
 						}
 					}
@@ -6397,7 +6329,7 @@ namespace ALYSLC
 						// Another player is controlling menus and the target refr is not lootable.
 						activationMessage = fmt::format
 						(
-							"P{}: Another player is controlling menus.", a_p->playerID + 1
+							"P{}: Another player is controlling menus", a_p->playerID + 1
 						);
 					}
 					else if (!passesLOSCheck)
@@ -6405,7 +6337,7 @@ namespace ALYSLC
 						// Player has no LOS.
 						activationMessage = fmt::format
 						(
-							"P{}: {} is not within the player's line of sight",
+							"P{}: {} is not accessible from this position",
 							a_p->playerID + 1, activationRefrPtr->GetName()
 						);
 					}
@@ -6425,26 +6357,85 @@ namespace ALYSLC
 						{
 							if (isInRange)
 							{
-								// Player can activate this refr.
-								// Set activation text to the refr's name if no text is available.
-								if (!baseObj->GetActivateText
+								auto p1 = RE::PlayerCharacter::GetSingleton();
+								auto asActor = activationRefrPtr->As<RE::Actor>();
+								// Selected a hostile actor with the crosshair.
+								bool crosshairTargetedHostileActor = 
+								(
 									(
-										activationRefrPtr.get(), activationString
-									))
+										asActor && 
+										asActor->GetHandle() == a_p->tm->crosshairRefrHandle
+									) &&
+									(
+										asActor->IsHostileToActor(a_p->coopActor.get()) ||
+										asActor->IsHostileToActor(p1)
+									)
+								);
+								// Living guard with a bounty out on the player.
+								bool showSurrenderMessage = 
+								(
+									crosshairTargetedHostileActor &&
+									!asActor->IsDead() &&
+									Util::IsGuard(asActor) &&
+									Util::HasBountyOnPlayer(asActor)
+								);
+								// Living, normally passive actor with no bounty on the player,
+								// or fleeing the player.
+								bool showStopCombatMessage = 
+								(
+									(
+										!showSurrenderMessage &&
+										crosshairTargetedHostileActor &&
+										!asActor->IsDead()
+									) &&
+									(
+										Util::HasNoBountyButInCrimeFaction(asActor) || 
+										Util::IsFleeing(asActor)
+									)
+								);
+								if (showSurrenderMessage)
 								{
 									activationMessage = fmt::format
 									(
-										"P{}: Interact with {}",
+										"P{}: Surrender to {}",
+										a_p->playerID + 1,
+										activationRefrPtr->GetName()
+									);
+								}
+								else if (showStopCombatMessage)
+								{
+									activationMessage = fmt::format
+									(
+										"P{}: Stop combat with {}",
 										a_p->playerID + 1,
 										activationRefrPtr->GetName()
 									);
 								}
 								else
 								{
-									activationMessage = fmt::format
+									// Player can activate this refr.
+									// Set activation text to the refr's name 
+									// if no text is available.
+									bool succ = baseObj->GetActivateText
 									(
-										"P{}: {}", a_p->playerID + 1, activationString
+										activationRefrPtr.get(), activationString
 									);
+									if (succ)
+									{
+										activationMessage = fmt::format
+										(
+											"P{}: {}", a_p->playerID + 1, activationString
+										);
+									}
+									else
+									{
+										activationMessage = fmt::format
+										(
+											"P{}: Interact with {}",
+											a_p->playerID + 1,
+											activationRefrPtr->GetName()
+										);
+									}
 								}
 
 								a_p->tm->canActivateRefr = true;
@@ -6534,7 +6525,6 @@ namespace ALYSLC
 				!a_p->pam->isAttacking &&
 				a_p->em->HasShieldEquipped()
 			);
-
 			if (!canPowerBash) 
 			{
 				return;
@@ -6669,7 +6659,6 @@ namespace ALYSLC
 				(
 					a_p, RE::MagicSystem::CastingSource::kRightHand
 				);
-
 				a_p->pam->QueueP1ButtonEvent
 				(
 					InputAction::kCastRH,
@@ -7230,6 +7219,7 @@ namespace ALYSLC
 
 			// Check for any incoming projectiles to grab or lootable objects to auto-grab.
 			bool shouldGrab = false;
+
 			// Set auto grab TP to action start TP initially.
 			// Do not check yet.
 			bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kGrabObject);
@@ -7244,24 +7234,37 @@ namespace ALYSLC
 			(
 				crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 			);
-			// Can grab on press/hold if not facing a target (face a target to throw instead), 
-			// if no refr is targeted by the crosshair, 
-			// and if another refr can be grabbed.
-			shouldGrab = 
-			(
-				!a_p->mm->reqFaceTarget &&
-				!crosshairRefrValidity && 
-				a_p->tm->rmm->CanGrabAnotherRefr()
-			);
-			if (!shouldGrab)
+			bool canGrabAnotherRefr = a_p->tm->rmm->CanGrabAnotherRefr();
+			// Cannot auto-grab on press/hold if facing a target (face a target to throw instead), 
+			// or if a refr is targeted by the crosshair (target for the throw), 
+			// or if another refr cannot be grabbed.
+			if (a_p->mm->reqFaceTarget || crosshairRefrValidity || !canGrabAnotherRefr)
 			{
+				// Trying to grab, but no more slots available.
+				if (!a_p->mm->reqFaceTarget && !crosshairRefrValidity && !canGrabAnotherRefr)
+				{
+					// Notify the player that they've reached max capacity for grabbed objects.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: <font color=\"#FF0000\">"
+							"Cannot grab another object!</font>",
+							a_p->playerID + 1
+						),
+						{
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kEquippedItem,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
 				// Base requirements for grabbing not met; return early.
 				return;
-			}
-			else
-			{
-				// Reset before checking for grabbable incoming projectiles.
-				shouldGrab = false;
 			}
 			
 			// Max distance away from the player's torso to check for grabbable objects.
@@ -7278,33 +7281,158 @@ namespace ALYSLC
 				0.0f,
 				1.0f
 			);
-			// Maximum number of frames from the player that a projectile 
-			// will be considered as grabbable.
-			const float incomingProjGrabFrames = 
-			(
-				Settings::fFrameWindowToGrabIncomingProjectiles * remainingMagickaRatio
-			); 
-			RE::ObjectRefHandle refrToGrabHandle = RE::ObjectRefHandle();
+			// List of handles for projectiles/released refrs to grab, if any.
+			std::vector<RE::ObjectRefHandle> projectilesToGrabHandlesList{ };
+			// Single handle for the refr to auto-grab, if any.
+			RE::ObjectRefHandle autoGrabRefrHandle{ };
 			const auto& playerTorsoPos = a_p->mm->playerTorsoPosition;
 			// Check if any incoming projectiles are within the player's grab radius
 			// and can be grabbed.
-			bool grabIncomingProjectile = false;
+			bool grabIncomingProjectiles = false;
 			if (justStarted || Settings::bGrabIncomingProjectilesOnHold)
 			{
+				// Maximum number of frames from the player that a projectile 
+				// will be considered as grabbable.
+				// Framerate independent; grab window lasts the same number of seconds.
+				const float incomingProjGrabFrames = 
+				(
+					(Settings::fFrameWindowToGrabIncomingProjectiles * remainingMagickaRatio) * 
+					((1.0f / *g_deltaTimeRealTime) / 60.0f)
+				); 
+				// Approximation of the player's width.
+				const float playerWidth = 
+				(
+					0.5f * a_p->coopActor->GetScale() *
+					Util::GetXYDistance
+					(
+						a_p->coopActor->GetBoundMax(),
+						a_p->coopActor->GetBoundMin()
+					)
+				);
+				auto isInGrabbingRange = 
+				[
+					&a_p, 
+					&incomingProjGrabFrames, 
+					&playerWidth
+				]
+				(RE::TESObjectREFR* a_projectile) -> bool
+				{
+					// Max bound range (guaranteed grab) 
+					// if grabbing the player's own projectile when not firing at a target.
+					float projDistWindow = FLT_MAX;
+					auto asProjectile = a_projectile->As<RE::Projectile>();
+
+					// Otherwise, the projectile is a released refr 
+					// or is shot by someone else or by the player and directed at a target.
+					if (!asProjectile || 
+						asProjectile->shooter != a_p->coopActor->GetHandle() ||
+						Util::HandleIsValid(asProjectile->desiredTarget))
+					{
+						RE::NiPoint3 gameVelocity{ }; 
+						a_projectile->GetLinearVelocity(gameVelocity);
+						if (asProjectile)
+						{
+							gameVelocity = asProjectile->linearVelocity;
+						}
+						else if (auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_projectile);
+								 hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+						{
+							gameVelocity = ToNiPoint3
+							(
+								hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
+							);
+						}
+
+						projDistWindow =
+						(
+							gameVelocity.Length() * 
+							*g_deltaTimeRealTime * 
+							incomingProjGrabFrames
+						) + playerWidth;
+					}
+
+					if (projDistWindow != FLT_MAX)
+					{
+						// REMOVE when done debugging.
+						/*if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
+						{
+							trueHUD->DrawCapsule
+							(
+								a_p->coopActor->data.location + 
+								RE::NiPoint3(0.0f, 0.0f, 0.5f * a_p->coopActor->GetHeight()),
+								0.5f * a_p->coopActor->GetHeight() + projDistWindow,
+								projDistWindow,
+								RE::NiQuaternion(0.0f, 0.0f, 1.0f, 0.0f),
+								0.0f,
+								Settings::vuOverlayRGBAValues[a_p->playerID],
+								2.0f
+							);
+						}*/
+
+						// Not close enough to grab.
+						// Separate XY plane and Z axis distance checks -> 
+						// Capsule:
+						// height: 2 * distance window 
+						// radius: distance window
+						bool playerLevelAndTooFarAway = 
+						(
+							(
+								a_projectile->data.location.z >= 
+								a_p->coopActor->data.location.z 
+							) &&
+							(
+								a_projectile->data.location.z <=
+								a_p->coopActor->data.location.z + 
+								a_p->coopActor->GetHeight()
+							) &&
+							(
+								Util::GetXYDistance
+								(
+									a_projectile->data.location, a_p->coopActor->data.location
+								) > projDistWindow	
+							)
+						);
+						if (playerLevelAndTooFarAway)
+						{
+							return false;
+						}
+						
+						bool aboveAndTooFarAway = 
+						(
+							a_projectile->data.location.z > 
+							a_p->coopActor->data.location.z + a_p->coopActor->GetHeight() &&
+							a_projectile->data.location.GetDistance
+							(
+								a_p->coopActor->data.location + 
+								RE::NiPoint3(0.0f, 0.0f, a_p->coopActor->GetHeight())
+							) > projDistWindow
+						);
+						if (aboveAndTooFarAway)
+						{
+							return false;
+						}
+						
+						bool belowAndTooFarAway = 
+						(
+							a_projectile->data.location.z < a_p->coopActor->data.location.z &&
+							a_projectile->data.location.GetDistance
+							(
+								a_p->coopActor->data.location
+							) > projDistWindow	
+						);
+						if (belowAndTooFarAway)
+						{
+							return false;
+						}
+					}
+
+					return true;
+				};
+
 				auto projectileMgr = RE::Projectile::Manager::GetSingleton();
 				if (projectileMgr)
 				{
 					projectileMgr->projectileLock.Lock();
-					float playerWidth = 
-					(
-						0.5f * a_p->coopActor->GetScale() *
-						Util::GetXYDistance
-						(
-							a_p->coopActor->GetBoundMax(),
-							a_p->coopActor->GetBoundMin()
-						)
-					);
-
 					for (const auto& handle : projectileMgr->unlimited)
 					{
 						auto projectilePtr = Util::GetRefrPtrFromHandle(handle);
@@ -7321,111 +7449,24 @@ namespace ALYSLC
 						}
 					
 						auto asProjectile = projectilePtr->As<RE::Projectile>();
-						// Ignore limited projectiles, those who have lived
-						// longer than the max duration for released refrs,
+						// Ignore limited projectiles, those that've hit something,
+						// those who have lived longer than the max duration for released refrs,
 						// and any projectile types which do not fly along a trajectory.
 						if ((asProjectile->ShouldBeLimited() || 
+							!asProjectile->impacts.empty() ||
 							asProjectile->livingTime > 
 							Settings::fMaxSecsBeforeClearingReleasedRefr) ||
 							(!asProjectile->As<RE::ArrowProjectile>() &&
-							!asProjectile->As<RE::MissileProjectile>()))
+							!asProjectile->As<RE::MissileProjectile>() &&
+							!asProjectile->As<RE::ConeProjectile>()))
 						{
 							continue;
 						}
 
-						// Max bound range (guaranteed grab) 
-						// if grabbing the player's own projectile when not firing at a target.
-						float projDistWindow = FLT_MAX;
-
-						// Otherwise, the arrow is shot by someone else 
-						// or by the player and directed at a target.
-						if (asProjectile->shooter != a_p->coopActor->GetHandle() ||
-							Util::HandleIsValid(asProjectile->desiredTarget))
+						// Ignore projectiles that are out of range.
+						if (!isInGrabbingRange(asProjectile))
 						{
-							projDistWindow =
-							(
-								asProjectile ?
-								asProjectile->linearVelocity.Length() * 
-								*g_deltaTimeRealTime * 
-								incomingProjGrabFrames :
-								maxGrabDist
-							) + playerWidth;
-						}
-
-						if (projDistWindow != FLT_MAX)
-						{
-							// REMOVE when done debugging.
-							/*if (auto trueHUD = TrueHUDCompat::g_trueHUDAPI3; trueHUD)
-							{
-								auto upMat = RE::NiMatrix3();
-								trueHUD->DrawCapsule
-								(
-									a_p->coopActor->data.location + 
-									RE::NiPoint3(0.0f, 0.0f, 0.5f * a_p->coopActor->GetHeight()),
-									0.5f * a_p->coopActor->GetHeight() + projDistWindow,
-									projDistWindow,
-									RE::NiQuaternion(0.0f, 0.0f, 1.0f, 0.0f),
-									0.0f,
-									Settings::vuOverlayRGBAValues[a_p->playerID],
-									2.0f
-								);
-							}*/
-
-							// Not close enough to grab.
-							// Separate XY plane and Z axis distance checks -> 
-							// Capsule:
-							// height: 2 * distance window 
-							// radius: distance window
-							bool playerLevelAndTooFarAway = 
-							(
-								(
-									projectilePtr->data.location.z >= 
-									a_p->coopActor->data.location.z 
-								) &&
-								(
-									projectilePtr->data.location.z <=
-									a_p->coopActor->data.location.z + 
-									a_p->coopActor->GetHeight()
-								) &&
-								(
-									Util::GetXYDistance
-									(
-										projectilePtr->data.location, a_p->coopActor->data.location
-									) > projDistWindow	
-								)
-							);
-							if (playerLevelAndTooFarAway)
-							{
-								continue;
-							}
-						
-							bool aboveAndTooFarAway = 
-							(
-								projectilePtr->data.location.z > 
-								a_p->coopActor->data.location.z + a_p->coopActor->GetHeight() &&
-								projectilePtr->data.location.GetDistance
-								(
-									a_p->coopActor->data.location + 
-									RE::NiPoint3(0.0f, 0.0f, a_p->coopActor->GetHeight())
-								) > projDistWindow
-							);
-							if (aboveAndTooFarAway)
-							{
-								continue;
-							}
-						
-							bool belowAndTooFarAway = 
-							(
-								projectilePtr->data.location.z < a_p->coopActor->data.location.z &&
-								projectilePtr->data.location.GetDistance
-								(
-									a_p->coopActor->data.location
-								) > projDistWindow	
-							);
-							if (belowAndTooFarAway)
-							{
-								continue;
-							}
+							continue;
 						}
 
 						bool grabbedByAnotherPlayer = false;
@@ -7453,24 +7494,97 @@ namespace ALYSLC
 
 						// Can only manipulate this object if it is not grabbed by another player 
 						// and has a supported motion type.
-						shouldGrab = !grabbedByAnotherPlayer;
-						if (shouldGrab)
+						if (!grabbedByAnotherPlayer)
 						{
 							// Found an object to auto-grab.
-							// Save handle and stop iterating through nearby refrs.
-							refrToGrabHandle = handle;
-							grabIncomingProjectile = true;
-							break;
+							// Save handle and add it to the list of grabbable refr handles.
+							projectilesToGrabHandlesList.emplace_back(handle);
+							// Signal as trying to grab and grabbing an incoming projectile.
+							if (!shouldGrab || !grabIncomingProjectiles)
+							{
+								shouldGrab = true;
+								grabIncomingProjectiles = true;
+							}
 						}
 					}
 					projectileMgr->projectileLock.Unlock();
+				}
+
+				// Check for refrs released by other players next.
+				// Temporary mapping of an attacking player's CID 
+				// to a list of grabbable released refr candidates.
+				// Done to avoid modifying the released refr info list until after looping through.
+				std::unordered_map<int32_t, std::vector<RE::ObjectRefHandle>> 
+				playerLinkedGrabCandidates{ };
+				for (const auto& otherP : glob.coopPlayers)
+				{
+					if (!otherP->isActive || otherP == a_p)
+					{
+						continue;
+					}
+
+					for (const auto& releasedRefrInfo : otherP->tm->rmm->releasedRefrInfoList)
+					{
+						if (!releasedRefrInfo->IsValid() || 
+							releasedRefrInfo->firstHitTP.has_value())
+						{
+							continue;
+						}
+
+						auto releasedRefrPtr = Util::GetRefrPtrFromHandle
+						(
+							releasedRefrInfo->refrHandle
+						);
+
+						// Just has to be in range to grab.
+						if (isInGrabbingRange(releasedRefrPtr.get()))
+						{
+							if (playerLinkedGrabCandidates.contains(otherP->controllerID))
+							{
+								playerLinkedGrabCandidates.at(otherP->controllerID).emplace_back
+								(
+									releasedRefrInfo->refrHandle
+								);
+							}
+							else
+							{
+								playerLinkedGrabCandidates.insert
+								(
+									{ otherP->controllerID, { releasedRefrInfo->refrHandle} }
+								);
+							}
+						}
+					}
+				}
+
+				// Remove all candidates from the attacking player's managed released refrs list.
+				for (const auto& [cid, candidateHandles] : playerLinkedGrabCandidates)
+				{
+					// Should never happen. But who knows.
+					if (cid == -1)
+					{
+						continue;
+					}
+
+					for (const auto& handle : candidateHandles)
+					{
+						glob.coopPlayers[cid]->tm->rmm->ClearRefr(handle);
+						// Add to list of handles for refrs to grab.
+						projectilesToGrabHandlesList.emplace_back(handle);
+						// Signal as trying to grab and grabbing an incoming 'projectile'.
+						if (!shouldGrab || !grabIncomingProjectiles)
+						{
+							shouldGrab = true;
+							grabIncomingProjectiles = true;
+						}
+					}
 				}
 			}
 			
 			// Next up, auto-grab checks.
 			// Check for nearby lootable refrs within activation range 
 			// if no projectile was grabbed and if auto-grab is enabled.
-			if (!grabIncomingProjectile)
+			if (!grabIncomingProjectiles)
 			{
 				// Nothing to do if auto-grab is not enabled.
 				if (!Settings::bAutoGrabNearbyLootableObjectsOnHold)
@@ -7502,7 +7616,7 @@ namespace ALYSLC
 					playerTorsoPos, 
 					maxGrabDist, 
 					true,
-					[&a_p, &shouldGrab, &refrToGrabHandle](RE::TESObjectREFR* a_refr) 
+					[&a_p, &shouldGrab, &autoGrabRefrHandle](RE::TESObjectREFR* a_refr) 
 					{
 						// No refr, continue.
 						if (!a_refr)
@@ -7511,8 +7625,8 @@ namespace ALYSLC
 						}
 
 						auto handle = a_refr->GetHandle(); 
-						// Continue if handle is invalid.
-						if (!Util::HandleIsValid(handle))
+						// Continue if handle or 3D is invalid.
+						if (!Util::HandleIsValid(handle) || !a_refr->Is3DLoaded())
 						{
 							return RE::BSContainer::ForEachResult::kContinue;
 						}
@@ -7566,7 +7680,7 @@ namespace ALYSLC
 							// since this player is about to grab it.
 							if (otherP->tm->rmm->IsManaged(handle, false))
 							{
-								otherP->tm->rmm->ClearRefr(handle);
+								return RE::BSContainer::ForEachResult::kContinue;
 							}
 						}
 
@@ -7575,14 +7689,16 @@ namespace ALYSLC
 						shouldGrab = 
 						{ 
 							!grabbedByAnotherPlayer &&
-							hkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kFixed &&
-							hkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kInvalid 
+							hkpRigidBodyPtr->motion.type !=
+							RE::hkpMotion::MotionType::kFixed &&
+							hkpRigidBodyPtr->motion.type !=
+							RE::hkpMotion::MotionType::kInvalid
 						};
 						if (shouldGrab)
 						{
 							// Found an object to auto-grab.
 							// Save handle and stop iterating through nearby refrs.
-							refrToGrabHandle = handle;
+							autoGrabRefrHandle = handle;
 							return RE::BSContainer::ForEachResult::kStop;
 						}
 						else
@@ -7595,67 +7711,68 @@ namespace ALYSLC
 			}
 			
 			// Grab the valid refr and notify the player.
-			if (shouldGrab && Util::HandleIsValid(refrToGrabHandle))
+			if (shouldGrab)
 			{
-				auto targetRefrPtr = refrToGrabHandle.get();
-				if (grabIncomingProjectile)
+				if (grabIncomingProjectiles)
 				{
-					auto asProjectile = refrToGrabHandle.get()->As<RE::Projectile>();
-					if (asProjectile)
+					// Cool catch hit art effect.
+					auto wardEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0xEA518);
+					size_t numGrabbedProjectiles = 0;
+					for (const auto& projHandle : projectilesToGrabHandlesList)
 					{
-						float magickaCost = 0.0f;
-						if (asProjectile->spell)
+						if (!Util::HandleIsValid(projHandle) || 
+							!a_p->tm->rmm->CanGrabRefr(projHandle))
 						{
-							magickaCost = asProjectile->spell->CalculateMagickaCost
-							(
-								a_p->coopActor.get()
-							);
-						}
-						else 
-						{
-							magickaCost = 
-							(
-								(Settings::vfDamageReceivedMult[a_p->playerID]) *
-								(asProjectile->power) *
-								(
-									asProjectile->weaponDamage + 
-									(
-										asProjectile->ammoSource ? 
-										asProjectile->ammoSource->data.damage :
-										1.0f
-									)
-								)
-							);
+							continue;
 						}
 
-						// Expend magicka.
-						if (!a_p->isInGodMode && magickaCost > 0.0f)
+						auto targetRefrPtr = projHandle.get();
+						auto asProjectile = targetRefrPtr->As<RE::Projectile>();
+						// If the refr is a fired projectile, expend magicka before grabbing.
+						if (asProjectile)
 						{
-							a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
+							float magickaCost = 0.0f;
+							if (asProjectile->spell)
+							{
+								// NOTE:
+								// Magicka cost is auto-scaled by the player-specific multiplier
+								// in CalculateMagickaCost() is because of our hook.
+								magickaCost = asProjectile->spell->CalculateMagickaCost
+								(
+									a_p->coopActor.get()
+								);
+							}
+							else 
+							{
+								magickaCost = 
+								(
+									(Settings::vfMagickaCostMult[a_p->playerID]) *
+									(asProjectile->power) *
+									(
+										asProjectile->weaponDamage + 
+										(
+											asProjectile->ammoSource ? 
+											asProjectile->ammoSource->data.damage :
+											1.0f
+										)
+									)
+								);
+							}
+
+							// Expend magicka.
+							if (!a_p->isInGodMode && magickaCost > 0.0f)
+							{
+								// Tack on object manipulation cost mult.
+								magickaCost *= 
+								(
+									Settings::vfObjectManipulationMagickaCostMult[a_p->playerID]
+								);
+								a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
+							}
 						}
-							
-						auto wardEffect = RE::TESForm::LookupByID<RE::BGSArtObject>(0xEA518);
+	
 						if (wardEffect)
 						{
-							a_p->tm->SetCrosshairMessageRequest
-							(
-								CrosshairMessageType::kActivationInfo,
-								fmt::format
-								(
-									"P{}: <font color=\"#00FF00\">"
-									"Grabbed a projectile!</font>",
-									a_p->playerID + 1, 
-									targetRefrPtr->GetName()
-								),
-								{
-									CrosshairMessageType::kNone,
-									CrosshairMessageType::kEquippedItem,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
-							);
-
 							Util::StartHitArt
 							(
 								targetRefrPtr.get(),
@@ -7667,31 +7784,65 @@ namespace ALYSLC
 							);
 						}
 
+						// Is now grabbing the refr.
 						a_p->tm->SetIsGrabbing(true);
 						auto index = a_p->tm->rmm->AddGrabbedRefr
 						(
 							glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
 						);
 						a_p->tm->rmm->isAutoGrabbing = true;
-
-						// Stop the projectile momentarily do it does not continue
-						// towards the target player and potentially hit them 
-						// before the next UpdateImpl() call.
 						if (index > -1 && index < a_p->tm->rmm->grabbedRefrInfoList.size())
 						{
 							const auto& info = a_p->tm->rmm->grabbedRefrInfoList[index];
+							// Zero out velocity.
 							info->lastSetVelocity = RE::NiPoint3();
-							asProjectile->linearVelocity = RE::NiPoint3();
-							asProjectile->UpdateImpl(0.0f);
+
+							// Stop the projectile momentarily do it does not continue
+							// towards the target player and potentially hit them 
+							// before the next UpdateImpl() call.
+							if (asProjectile)
+							{
+								asProjectile->linearVelocity = RE::NiPoint3();
+								asProjectile->UpdateImpl(0.0f);
+							}
 						}
+
+						numGrabbedProjectiles++;
+					}
+
+					if (numGrabbedProjectiles > 0)
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kActivationInfo,
+							fmt::format
+							(
+								"P{}: <font color=\"#00FF00\">"
+								"Intercepted {} {}!</font>",
+								a_p->playerID + 1,
+								numGrabbedProjectiles,
+								numGrabbedProjectiles > 1 ? "projectiles" : "projectile"
+							),
+							{
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kEquippedItem,
+								CrosshairMessageType::kStealthState,
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
 					}
 				}
-				else
+				else if (Util::HandleIsValid(autoGrabRefrHandle) && 
+						 a_p->tm->rmm->CanGrabRefr(autoGrabRefrHandle))
 				{
+					auto targetRefrPtr = autoGrabRefrHandle.get();
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kActivationInfo,
-						fmt::format("P{}: Auto-grabbing {}",
+						fmt::format
+						(
+							"P{}: Auto-grabbing {}",
 							a_p->playerID + 1, 
 							targetRefrPtr->GetName()
 						),
@@ -7703,7 +7854,6 @@ namespace ALYSLC
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
-
 					a_p->tm->SetIsGrabbing(true);
 					a_p->tm->rmm->AddGrabbedRefr
 					(
@@ -7833,8 +7983,23 @@ namespace ALYSLC
 			// and if the player has enough magicka to cast the spell.
 
 			auto quickSlotSpell = a_p->em->quickSlotSpell;
-			if (!quickSlotSpell ||
-				!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kQuickSlotCast))
+			if (!quickSlotSpell)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format("P{}: No quick slot spell equipped!", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection
+					},
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
+			if (!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kQuickSlotCast))
 			{
 				return;
 			}
@@ -7867,7 +8032,6 @@ namespace ALYSLC
 						HelperFuncs::ActionJustStarted(a_p, InputAction::kSpecialAction)
 					)
 				);
-
 				// Since the targeting manager's update call runs 
 				// after the player action manager's main task,
 				// any selected aim correction target would get set 
@@ -7894,6 +8058,12 @@ namespace ALYSLC
 			// Queue up emulated shout button press for P1 while the Shout bind is held.
 			// TODO:
 			// For companion players: play shout anims and charge shout on hold, just like for P1.
+
+			// Will notify the player that they do not have voice magic equipped on release.
+			if (!a_p->em->voiceForm)
+			{
+				return;
+			}
 
 			if (a_p->isPlayer1)
 			{
@@ -8114,8 +8284,9 @@ namespace ALYSLC
 					// Reset fall time and height before attempting to get up.
 					if (auto charController = a_p->coopActor->GetCharController(); charController)
 					{
-						charController->fallStartHeight = a_p->coopActor->data.location.z;
-						charController->fallTime = 0.0f;
+						charController->lock.Lock();
+						Util::AdjustFallState(charController, false);
+						charController->lock.Unlock();
 					}
 
 					a_p->coopActor->NotifyAnimationGraph("GetUpBegin");
@@ -8162,12 +8333,97 @@ namespace ALYSLC
 		void ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Get all nearby objects of the same type and activate each.
-
 			auto activationRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
-			bool activationRefrValidity = Util::IsValidRefrForTargeting(activationRefrPtr.get());
+			bool activationRefrValidity = 
+			(
+				activationRefrPtr &&
+				activationRefrPtr.get() && 
+				Util::IsValidRefrForTargeting(activationRefrPtr.get())
+			);
 			if (!activationRefrValidity)
 			{
 				return;
+			}
+			
+			auto asActor = activationRefrPtr->As<RE::Actor>();
+			auto baseObj = activationRefrPtr->GetBaseObject(); 
+			if (!a_p->tm->RefrIsInActivationRange(a_p->tm->activationRefrHandle))
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: {} is too far away", 
+						a_p->playerID + 1,
+						baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
+			// Next, the targeted refr must not be off limits, 
+			// or the player must be sneaking to signal intent to steal.
+			// Finally, the refr must be a lootable loose refr,
+			// a corpse, or an unlocked container.
+			if (activationRefrPtr->IsCrimeToActivate() && !a_p->coopActor->IsSneaking())
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
+						"with every '{}' in range", 
+						a_p->playerID + 1,
+						baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+			
+			bool isLootableRefr = 
+			(
+				(Util::IsLootableRefr(activationRefrPtr.get())) || 
+				(
+					asActor &&
+					asActor->IsDead()
+				)	
+			);
+			if (!isLootableRefr)
+			{
+				if (activationRefrPtr->IsLocked() || asActor || !activationRefrPtr->HasContainer())
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: Cannot interact with every '{}' in range", 
+							a_p->playerID + 1,
+							baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					return;
+				}
 			}
 
 			// If the targeted activation refr is grabbed,
@@ -8302,21 +8558,35 @@ namespace ALYSLC
 					}
 
 					// Notify player.
-					if (!nearbyObjectsOfSameType.empty() && activationRefrPtr)
+					if (!nearbyObjectsOfSameType.empty())
 					{
-						auto baseObj = activationRefrPtr->GetBaseObject(); 
-						if (!baseObj) 
-						{
-							return;
-						}
-
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kActivationInfo,
 							fmt::format
 							(
 								"P{}: Looted every '{}' in range", 
-								a_p->playerID + 1, baseObj->GetName()
+								a_p->playerID + 1, 
+								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+							),
+							{
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kActivationInfo,
+							fmt::format
+							(
+								"P{}: No '{}' in range", 
+								a_p->playerID + 1, 
+								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
 							),
 							{
 								CrosshairMessageType::kNone, 
@@ -8401,6 +8671,10 @@ namespace ALYSLC
 				);
 			}
 
+			Util::RunPlayerActionCommand
+			(
+				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+			);
 			bool canShieldChargeAfter = 
 			{
 				a_p->mm->lsMoved &&
@@ -8408,11 +8682,6 @@ namespace ALYSLC
 				a_p->coopActor->HasPerk(glob.shieldChargePerk) &&
 				a_p->pam->IsPerforming(InputAction::kSprint)
 			};
-
-			Util::RunPlayerActionCommand
-			(
-				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-			);
 			if (canShieldChargeAfter)
 			{
 				Util::RunPlayerActionCommand
@@ -8424,9 +8693,9 @@ namespace ALYSLC
 
 		void CamLockOn(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Switch to lock on state if a new valid actor is targeted
+			// Switch to lock-on state if a new valid actor is targeted
 			// by this player's crosshair.
-			// Reset to auto trail otherwise.
+			// Reset to auto-trail otherwise.
 
 			// Give this player control of the camera.
 			auto& controllingCID = glob.cam->controlCamCID;
@@ -8460,25 +8729,62 @@ namespace ALYSLC
 				GlobalCoopData::GetCoopPlayerIndex(targetActorPtr.get()) :
 				-1
 			);
-			// Either the current focal player or the current lock on target.
-			auto currentCamTargetActor = 
+			auto currentFocalPlayerPtr = 
 			(
 				Settings::bFocalPlayerMode && glob.cam->focalPlayerCID != -1 ?
 				glob.coopPlayers[glob.cam->focalPlayerCID]->coopActor :
-				Util::GetActorPtrFromHandle(glob.cam->camLockOnTargetHandle)
+				nullptr
 			);
-			bool newTarget = 
+			auto currentLockOnTargetPtr = 
+			(
+				Util::HandleIsValid(glob.cam->camLockOnTargetHandle) ? 
+				Util::GetActorPtrFromHandle(glob.cam->camLockOnTargetHandle) :
+				nullptr
+			);
+			// Can target another player (not downed) to set as the focal player.
+			bool newFocalPlayerTarget = 
+			(
+				targetActorValidity && 
+				Settings::bFocalPlayerMode &&
+				targetPlayerCID != -1 &&
+				!glob.coopPlayers[targetPlayerCID]->isDowned &&
+				targetActorPtr != currentFocalPlayerPtr
+			);
+			// Can set a new lock-on target if not the focal player or the current target,
+			// and is either not a player or is a player that is not downed.
+			bool newLockOnTarget = 
 			(
 				(targetActorValidity) && 
-				(!Settings::bFocalPlayerMode || glob.cam->focalPlayerCID == -1) &&
-				(!currentCamTargetActor || targetActorPtr != currentCamTargetActor)
+				(!newFocalPlayerTarget) &&
+				(targetActorPtr != currentFocalPlayerPtr) &&
+				(targetActorPtr != currentLockOnTargetPtr) &&
+				(targetPlayerCID == -1 || !glob.coopPlayers[targetPlayerCID]->isDowned)
 			);
-			if (newTarget)
+			if (newFocalPlayerTarget || newLockOnTarget)
 			{
 				// Set the targeted player as the focal player.
-				if (Settings::bFocalPlayerMode && 
-					targetPlayerCID != -1 && 
-					glob.cam->focalPlayerCID != targetPlayerCID)
+				if (newLockOnTarget)
+				{
+					// If the crosshair refr target is not the same 
+					// as the current cam lock-on target,
+					// send a request to update the lock-on target,
+					// and switch to the lock-on state.
+					glob.cam->lockOnActorReq = a_p->tm->selectedTargetActorHandle;
+					glob.cam->camState = CamState::kLockOn;
+					// Inform the player.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Camera lock-on mode", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
 				{
 					glob.cam->focalPlayerCID = targetPlayerCID;
 					// Inform the player.
@@ -8499,19 +8805,40 @@ namespace ALYSLC
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 				}
-				else
+			}
+			else if (targetActorValidity)
+			{
+				// Clear the selected target, focal player or lock-on target.
+				if (targetActorPtr == currentLockOnTargetPtr)
 				{
-					// If the crosshair refr target is not the same 
-					// as the current cam lock on target,
-					// send a request to update the lock on target,
-					// and switch to the lock on state.
-					glob.cam->lockOnActorReq = a_p->tm->selectedTargetActorHandle;
-					glob.cam->camState = CamState::kLockOn;
-					// Inform the player.
+					// Send a request to clear the cam lock-on target
+					// and reset the cam state to auto-trail.
+					glob.cam->lockOnActorReq = RE::ActorHandle();
+					glob.cam->camState = CamState::kAutoTrail;
+					// Inform the player of switch back to auto-trail mode.
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera lock on mode", a_p->playerID + 1),
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else if (targetActorPtr == currentFocalPlayerPtr)
+				{
+					glob.cam->focalPlayerCID = -1;
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format
+						(
+							"P{}: Reset camera focus", 
+							a_p->playerID + 1
+						),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
@@ -8523,24 +8850,39 @@ namespace ALYSLC
 			}
 			else
 			{
-				// If set, clear the focal player CID.
-				bool focalPlayerSet = Settings::bFocalPlayerMode && glob.cam->focalPlayerCID != -1;
-				if (focalPlayerSet)
+				if (a_p->controllerID == glob.cam->focalPlayerCID)
 				{
-					glob.cam->focalPlayerCID = -1;
-				}
+					if (glob.cam->camState == CamState::kLockOn)
+					{
+						// Send a request to clear the cam lock-on target
+						// and reset the cam state to auto-trail.
+						glob.cam->lockOnActorReq = RE::ActorHandle();
+						glob.cam->camState = CamState::kAutoTrail;
+						// Inform the player of switch back to auto-trail mode.
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kCamera,
+							fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
 
-				// Send a request to clear the cam lock on target
-				// and reset the cam state to auto trail.
-				glob.cam->lockOnActorReq = RE::ActorHandle();
-				glob.cam->camState = CamState::kAutoTrail;
-				if (Util::HandleIsValid(glob.cam->camLockOnTargetHandle) || focalPlayerSet)
-				{
+					// Clear focal player and current lock-on target if not targeting anything.
+					glob.cam->focalPlayerCID = -1;
+					// Send a request to clear the cam lock-on target
+					// and reset the cam state to auto-trail.
+					glob.cam->lockOnActorReq = RE::ActorHandle();
+					glob.cam->camState = CamState::kAutoTrail;
 					// Inform the player of switch back to auto-trail mode.
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto trail mode", a_p->playerID + 1),
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
@@ -8551,17 +8893,21 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Reset camera orientation if there is no current lock on target to clear.
-					// Reset radial distance and height offsets.
-					glob.cam->camRadialDistanceOffset = 
-					glob.cam->camSavedRadialDistanceOffset =
-					glob.cam->camBaseHeightOffset = 
-					glob.cam->camHeightOffset = 0.0f;
+					// Clear focal player and current lock-on target if not targeting anything.
+					glob.cam->focalPlayerCID = -1;
+					// Send a request to clear the cam lock-on target
+					// and reset the cam state to auto-trail.
+					glob.cam->lockOnActorReq = RE::ActorHandle();
+					glob.cam->camState = CamState::kAutoTrail;
 					// Inform the player of switch back to auto-trail mode.
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Reset camera orientation", a_p->playerID + 1),
+						fmt::format
+						(
+							"P{}: Reset camera focus and now auto-trailing", 
+							a_p->playerID + 1
+						),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
@@ -8575,7 +8921,7 @@ namespace ALYSLC
 
 		void CamManualPos(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Toggle camera state between auto trail and manual positioning if the player can
+			// Toggle camera state between auto-trail and manual positioning if the player can
 			// obtain control of the camera.
 
 			auto& controllingCID = glob.cam->controlCamCID;
@@ -8595,6 +8941,12 @@ namespace ALYSLC
 			// Switch to manual positioning state if not already set.
 			if (glob.cam->camState != CamState::kManualPositioning)
 			{
+				// Clear focal player if switching to manual positioning.
+				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPlayerCID != -1)
+				{
+					glob.cam->focalPlayerCID = -1;
+				}
+
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kCamera,
@@ -8614,7 +8966,7 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Camera auto trail mode", a_p->playerID + 1),
+					fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
 					{ 
 						CrosshairMessageType::kNone,
 						CrosshairMessageType::kStealthState,
@@ -8674,7 +9026,7 @@ namespace ALYSLC
 									);
 								}
 
-								if (speakerPtr) 
+								if (speakerPtr && speakerPtr.get()) 
 								{
 									float distToSpeaker = 
 									(
@@ -8830,12 +9182,51 @@ namespace ALYSLC
 		void CoopSummoningMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Open the co-op summoning menu via script event, which will also set the menu CID.
-			// Don't open if already open.
+			// Don't open if already open or a player is in combat.
 
 			if (glob.summoningMenuOpenGlob->value != 0.0f)
 			{
 				return;
 			}
+
+			if (glob.isInCoopCombat)
+			{
+				RE::DebugMessageBox
+				(
+					"[ALYSLC] A player is in combat. "
+					"Please ensure that all players are not in combat "
+					"before attempting to open the Summoning Menu."
+				);
+				return;
+			}
+
+			for (const auto& p : glob.coopPlayers)
+			{
+				if (!p->isActive)
+				{
+					continue;
+				}
+
+				if (p->isDowned)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kReviveAlert,
+						fmt::format
+						(
+							"P{}: Cannot summon while a player is downed", a_p->playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					return;
+				}
+			}
+
 
 			glob.onSummoningMenuRequest.SendEvent();
 		}
@@ -8951,7 +9342,7 @@ namespace ALYSLC
 		{
 			// Disable co-op camera and reset to the normal Third Person cam which follows P1.
 			
-			// Clear lock on target and reset adjustment mode before waiting for toggle.
+			// Clear lock-on target and reset adjustment mode before waiting for toggle.
 			glob.cam->camAdjMode = CamAdjustmentMode::kNone;
 			glob.cam->ClearLockOnData();
 			glob.cam->waitForToggle = true;
@@ -8964,7 +9355,7 @@ namespace ALYSLC
 			// Also stop running the special interaction package 
 			// to free the companion player from occupied furniture.
 			// NOTE: 
-			// Jumping also unlinks the player from occupied furniture.
+			// Jumping/dodging also unlinks the player from occupied furniture.
 
 			if (a_p->isPlayer1)
 			{
@@ -8994,9 +9385,7 @@ namespace ALYSLC
 			else
 			{
 				// Reset to default package first.
-				auto defPackage = a_p->pam->GetDefaultPackage();
-				a_p->pam->SetCurrentPackage(defPackage);
-				a_p->pam->EvaluatePackage();
+				a_p->pam->SetAndEveluatePackage();
 			}
 
 			// Get off mount/stop interacting with furniture.
@@ -9015,6 +9404,45 @@ namespace ALYSLC
 			
 			if (Settings::bUseDashDodgeSystem) 
 			{
+				// Reset to default package first.
+				bool occupyingFurniture = 
+				(
+					(Util::HandleIsValid(a_p->coopActor->GetOccupiedFurniture()))
+				);
+				if (occupyingFurniture)
+				{
+					if (a_p->isPlayer1)
+					{
+						// Activate to exit furniture for P1.
+						a_p->pam->SendButtonEvent
+						(
+							InputAction::kActivate,
+							RE::INPUT_DEVICE::kGamepad, 
+							ButtonEventPressType::kInstantTrigger,
+							0.0f
+						);
+						a_p->pam->SendButtonEvent
+						(
+							InputAction::kActivate,
+							RE::INPUT_DEVICE::kGamepad,
+							ButtonEventPressType::kPressAndHold,
+							1.0f
+						);
+						a_p->pam->SendButtonEvent
+						(
+							InputAction::kActivate, 
+							RE::INPUT_DEVICE::kGamepad, 
+							ButtonEventPressType::kRelease, 
+							1.0f
+						);
+					}
+					else
+					{
+						// Reset to default package to exit furniture for companion players.
+						a_p->pam->SetAndEveluatePackage();
+					}
+				}
+
 				// Signal movement manager to dash dodge.
 				a_p->mm->isRequestingDashDodge = true;
 			}
@@ -9172,9 +9600,6 @@ namespace ALYSLC
 			// Open P1's inventory if the requesting player is P1.
 			// Otherwise, open the companion player's 'inventory', which is a ContainerMenu.
 			
-			// Reset P1 damage multiplier so that the co-op player's inventory 
-			// reports the correct damage for weapons, if perks are also imported.
-			glob.player1Actor->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
 			bool succ = glob.moarm->InsertRequest
 			(
 				a_p->controllerID, 
@@ -9199,7 +9624,10 @@ namespace ALYSLC
 			}
 			else
 			{
-				Util::Papyrus::OpenInventory(a_p->coopActor.get());
+				// Reset P1 damage multiplier so that the co-op player's inventory 
+				// reports the correct damage for weapons, if perks are also imported.
+				glob.player1Actor->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
+				a_p->coopActor->OpenContainer(!RE::ContainerMenu::ContainerMode::kNPCMode);
 			}
 		}
 
@@ -9215,9 +9643,7 @@ namespace ALYSLC
 			// Reset to default package.
 			if (!a_p->isPlayer1 && !a_p->coopActor->IsOnMount())
 			{
-				auto defPackage = a_p->pam->GetDefaultPackage();
-				a_p->pam->SetCurrentPackage(defPackage);
-				a_p->pam->EvaluatePackage();
+				a_p->pam->SetAndEveluatePackage();
 			}
 
 			a_p->mm->reqStartJump = true;
@@ -9276,8 +9702,8 @@ namespace ALYSLC
 
 		void Pause(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open the JournalMenu to pause the game
-			// .
+			// Open the JournalMenu to pause the game.
+
 			HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kPause);
 		}
 
@@ -9374,72 +9800,86 @@ namespace ALYSLC
 				qsItem->As<RE::TESBoundObject>() :
 				nullptr
 			);
-			if (qsBoundObj) 
+			if (!qsBoundObj) 
 			{
-				const auto invCounts = a_p->coopActor->GetInventoryCounts();
-				int32_t count = invCounts.contains(qsBoundObj) ? invCounts.at(qsBoundObj) : -1;
-				if (count > 0)
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format("P{}: No quick slot item equipped!", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection
+					},
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+			
+			// Allow usage of a QS item only if the player HAD at least 1 in their inventory,
+			// as indicated by presence of an entry in the player's inventory counts.
+			// Otherwise, clear out the slot and notify the player.
+			const auto invCounts = a_p->coopActor->GetInventoryCounts();
+			int32_t count = invCounts.contains(qsBoundObj) ? invCounts.at(qsBoundObj) : -1;
+			if (count > 0)
+			{
+				// Has at least 1, so use the item via equip.
+				auto aem = RE::ActorEquipManager::GetSingleton(); 
+				if (!aem) 
 				{
-					// Has at least 1, so use the item via equip.
-					auto aem = RE::ActorEquipManager::GetSingleton(); 
-					if (!aem) 
-					{
-						return;
-					}
-
-					aem->EquipObject
-					(
-						a_p->coopActor.get(),
-						qsItem->As<RE::TESBoundObject>(), 
-						nullptr, 
-						1,
-						nullptr,
-						false,
-						true, 
-						true, 
-						true
-					);
-
-					// Notify the player of quick item use and how many remain.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kEquippedItem,
-						fmt::format
-						(
-							"P{}: Using item '{}' ({} remaining)",
-							a_p->playerID + 1, qsItem->GetName(), count - 1
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
+					return;
 				}
-				else
-				{
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kEquippedItem,
-						fmt::format
-						(
-							"P{}: Out of item '{}'",
-							a_p->playerID + 1, qsItem->GetName()
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
 
-					// Remove QS item since the player does not have the item anymore.
-					a_p->em->quickSlotItem = nullptr;
-					a_p->em->equippedQSItemIndex = -1;
-					a_p->em->RefreshEquipState(RefreshSlots::kWeapMag);
-				}
+				aem->EquipObject
+				(
+					a_p->coopActor.get(),
+					qsItem->As<RE::TESBoundObject>(), 
+					nullptr, 
+					1,
+					nullptr,
+					false,
+					true, 
+					true, 
+					true
+				);
+				// Notify the player of quick item use and how many remain.
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format
+					(
+						"P{}: Using item '{}' ({} remaining)",
+						a_p->playerID + 1, qsItem->GetName(), count - 1
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			else
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format
+					(
+						"P{}: Out of item '{}'",
+						a_p->playerID + 1, qsItem->GetName()
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				// Remove QS item since the player does not have the item anymore.
+				a_p->em->quickSlotItem = nullptr;
+				a_p->em->equippedQSItemIndex = -1;
+				a_p->em->RefreshEquipState(RefreshSlots::kWeapMag);
 			}
 		}
 
@@ -9450,6 +9890,42 @@ namespace ALYSLC
 
 			a_p->mm->reqResetAimAndBody = true;
 			a_p->tm->grabbedRefrDistanceOffset = 0.0f;
+		}
+
+		void ResetCamOrientation(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Reset camera orientation by resetting radial distance and height offsets.
+
+			// Give this player control of the camera.
+			auto& controllingCID = glob.cam->controlCamCID;
+			if (controllingCID != a_p->controllerID && 
+				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			{
+				controllingCID = a_p->controllerID;
+			}
+
+			// Same controller as the one with control over camera can adjust the cam state freely.
+			// Nothing to do otherwise.
+			if (controllingCID != a_p->controllerID)
+			{
+				return;
+			}
+
+			glob.cam->camRadialDistanceOffset = 
+			glob.cam->camSavedRadialDistanceOffset =
+			glob.cam->camBaseHeightOffset = 0.0f;
+			// Inform the player of switch back to auto-trail mode.
+			a_p->tm->SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kCamera,
+				fmt::format("P{}: Reset camera orientation", a_p->playerID + 1),
+				{ 
+					CrosshairMessageType::kNone,
+					CrosshairMessageType::kStealthState, 
+					CrosshairMessageType::kTargetSelection 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
 		}
 
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9463,16 +9939,7 @@ namespace ALYSLC
 		{
 			// Sheathe if weapons/magic is out, draw otherwise.
 
-			const bool shouldSheathe = a_p->coopActor->IsWeaponDrawn();
-			a_p->pam->ReadyWeapon(!shouldSheathe);
-
-			// NOTE:
-			// Commented out for now, needs testing.
-			// Pacify formerly-friendly actors after sheathing.
-			/*if (shouldSheathe)
-			{
-				a_p->pam->StopCombatWithFriendlyActors();
-			}*/
+			a_p->pam->ReadyWeapon(!a_p->coopActor->IsWeaponDrawn());
 		}
 
 		void Sneak(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9491,32 +9958,19 @@ namespace ALYSLC
 					return;
 				}
 
-				a_p->taskRunner->AddTask([&a_p]() { a_p->ToggleVampireLordLevitationTask(); });
+				a_p->taskRunner->AddTask([a_p]() { a_p->ToggleVampireLordLevitationTask(); });
 			}
 			else
 			{
 				// Toggle with action command.
 				// Ensure package flags are in sync for co-op companions,
 				// and also update the actor state to keep everything in sync.
-				bool isSneaking = a_p->coopActor->IsSneaking();
-				if (isSneaking)
-				{
-					if (!a_p->isPlayer1)
-					{
-						a_p->pam->SetPackageFlag
-						(
-							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
-						);
-					}
-
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
-					);
-					a_p->coopActor->actorState1.sneaking = 0;
-					a_p->coopActor->actorState2.forceSneak = 0;
-				}
-				else
+				// Additional state sync corrections are made in the movement manager
+				// to ensure all three states are equivalent.
+				// Sneak state changes are still sometimes delayed
+				// for companion players unfortunately.
+				a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
+				if (a_p->pam->wantsToSneak)
 				{
 					// Ensure package flags are in sync for co-op companions.
 					if (!a_p->isPlayer1)
@@ -9534,6 +9988,23 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.sneaking = 1;
 					a_p->coopActor->actorState2.forceSneak = 1;
 				}
+				else
+				{
+					if (!a_p->isPlayer1)
+					{
+						a_p->pam->SetPackageFlag
+						(
+							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
+						);
+					}
+
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
+					);
+					a_p->coopActor->actorState1.sneaking = 0;
+					a_p->coopActor->actorState2.forceSneak = 0;
+				}
 			}
 		}
 
@@ -9546,22 +10017,42 @@ namespace ALYSLC
 			// And finally, if paragliding or using M.A.R.F, trigger gale spell.
 
 			// First check is for overencumbrance.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kSprint))
+			{
+				a_p->mm->UpdateEncumbranceFactor();
+			}
+
 			bool overencumbered = 
 			(
-				!Settings::bInfiniteCarryweight &&
-				!a_p->isInGodMode &&
-				a_p->mm->encumbranceFactor >= 1.0
+				(
+					!Settings::bInfiniteCarryweight &&
+					!a_p->isInGodMode
+				) &&
+				(
+					a_p->mm->encumbranceFactor >= 1.0f ||
+					a_p->coopActor->IsOverEncumbered()
+				)
 			);
 
 			// Inform the player that they are overencumbered before returning.
 			if (overencumbered)
 			{
+				float inventoryWeight = a_p->coopActor->GetWeightInContainer();
+				const auto invChanges = a_p->coopActor->GetInventoryChanges();
+				if (invChanges)
+				{
+					inventoryWeight = invChanges->totalWeight;
+				}
+
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format
 					(
-						"P{}: <font color=\"#FF0000\">Over-encumbered!</font>", a_p->playerID + 1
+						"P{}: <font color=\"#FF0000\">Over-encumbered! ({:.0f} / {:.0f})</font>", 
+						a_p->playerID + 1,
+						inventoryWeight,
+						max(1.0f, a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight))
 					),
 					{ 
 						CrosshairMessageType::kNone, 
@@ -9682,7 +10173,7 @@ namespace ALYSLC
 						glob.paInfoHolder->ACTIONS_TO_P1_UE_STRINGS.at(!InputAction::kStatsMenu), 
 						RE::INPUT_DEVICE::kKeyboard
 					);
-					if (keyCode != 255)
+					if (keyCode != 0xFF)
 					{
 						// Stats Menu-opening bind found, insert request.
 						bool succ = glob.moarm->InsertRequest
@@ -10046,6 +10537,7 @@ namespace ALYSLC
 				const auto& canActivate = a_p->tm->canActivateRefr;
 				if (!canActivate)
 				{
+					RE::PlaySound("UIActivateFail");
 					return;
 				}
 
@@ -10057,16 +10549,6 @@ namespace ALYSLC
 				{
 					a_p->tm->rmm->ClearRefr(a_p->tm->activationRefrHandle);
 				}
-
-				// Check if another player is controlling menus.
-				// This influences what objects this player can activate.
-				// Cannot activate anything that could potentially open a menu 
-				// if another player is controlling menus.
-				bool menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
-				bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus
-				(
-					a_p->controllerID
-				);
 
 				// Get count.
 				uint32_t count = 1;
@@ -10081,18 +10563,159 @@ namespace ALYSLC
 				auto baseObj = activationRefrPtr->GetBaseObject();
 				if (!baseObj)
 				{
-					SPDLOG_DEBUG("[PAFH] Activate: {}: {} has no base object.",
-						a_p->coopActor->GetName(), activationRefrPtr->GetName());
 					return;
 				}
 
+				// Special handling first:
+				// 1. Stop combat with a crosshair-selected, normally neutral or friendly actor 
+				// that has no bounty on the player or is fleeing. -OR-
+				// 2. Start arrest dialogue with the crosshair-selected guard
+				// if the guard is hostile and the player has accrued a bounty
+				// with the guard's crime faction.
+				auto asActor = activationRefrPtr->As<RE::Actor>();
+				bool crosshairTargetedHostileActor = 
+				(
+					(
+						asActor && 
+						asActor->GetHandle() == a_p->tm->crosshairRefrHandle
+					) &&
+					(
+						asActor->IsHostileToActor(a_p->coopActor.get()) ||
+						asActor->IsHostileToActor(p1)
+					)
+				);
+				bool startArrestDialogue = 
+				(
+					crosshairTargetedHostileActor &&
+					!asActor->IsDead() &&
+					Util::IsGuard(asActor) &&
+					Util::HasBountyOnPlayer(asActor)
+				);
+				bool stopCombatWithNonHostiles = 
+				(
+					(
+						!startArrestDialogue &&
+						crosshairTargetedHostileActor &&
+						!asActor->IsDead()
+					) &&
+					(
+						Util::HasNoBountyButInCrimeFaction(asActor) || 
+						Util::IsFleeing(asActor)
+					)
+				);
+				if (startArrestDialogue)
+				{
+					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+					{
+						// Tried the following topic, but it's probably not the right one.
+						// For reference:
+						/*RE::TESForm::LookupByEditorID<RE::TESTopic>
+						(
+							"GuardDialogueCrimeForcegreetTopic"
+						)*/
+						
+						// Do not specify topic to trigger generic 'Hey, I know you!'
+						// arrest dialogue for Enderal.
+						bool succ = glob.moarm->InsertRequest
+						(
+							a_p->controllerID, 
+							InputAction::kActivate, 
+							SteadyClock::now(), 
+							RE::DialogueMenu::MENU_NAME,
+							asActor->GetHandle()
+						);
+						if (succ)
+						{
+							asActor->SetDialogueWithPlayer
+							(
+								true, true, nullptr
+							);
+							auto procLists = RE::ProcessLists::GetSingleton();
+							if (procLists)
+							{
+								// Prevent other aggroed actors from ganging up on players
+								// while the Dialogue Menu is open.
+								procLists->StopCombatAndAlarmOnActor(p1, false);
+								if (!a_p->isPlayer1)
+								{
+									procLists->StopCombatAndAlarmOnActor
+									(
+										a_p->coopActor.get(), false
+									);
+								}
+							}
+
+							return;
+						}
+					}
+					else
+					{
+						auto topic = 
+						(
+							RE::TESForm::LookupByEditorID<RE::TESTopic>
+							(
+								"DGCrimeForcegreetTopic"
+							)
+						);
+						if (topic)
+						{
+							bool succ = glob.moarm->InsertRequest
+							(
+								a_p->controllerID, 
+								InputAction::kActivate, 
+								SteadyClock::now(), 
+								RE::DialogueMenu::MENU_NAME,
+								asActor->GetHandle()
+							);
+							// 'You have committed crimes against Skyrim and her people' line
+							// at index 4 for default Skyrim guard forcegreet topic.
+							if (succ && topic->numTopicInfos >= 5)
+							{
+								asActor->SetDialogueWithPlayer
+								(
+									true, true, topic->topicInfos[4]
+								);
+								auto procLists = RE::ProcessLists::GetSingleton();
+								if (procLists)
+								{
+									// Prevent other aggroed actors from ganging up on players
+									// while the Dialogue Menu is open.
+									procLists->StopCombatAndAlarmOnActor(p1, false);
+									if (!a_p->isPlayer1)
+									{
+										procLists->StopCombatAndAlarmOnActor
+										(
+											a_p->coopActor.get(), false
+										);
+									}
+								}
+
+								return;
+							}
+						}
+					}
+				}
+				else if (stopCombatWithNonHostiles)
+				{
+					a_p->pam->StopCombatWithFriendlyActors();
+					return;
+				}
+				
+				// Check if another player is controlling menus.
+				// This influences what objects this player can activate.
+				// Cannot activate anything that could potentially open a menu 
+				// if another player is controlling menus.
+				bool menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+				bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus
+				(
+					a_p->controllerID
+				);
 				if (a_p->isPlayer1)
 				{
 					bool lootable = Util::IsLootableRefr(activationRefrPtr.get());
 					if (menusOnlyAlwaysOpen)
 					{
 						// No player is controlling menus.
-						RE::Actor* asActor = activationRefrPtr->As<RE::Actor>();
 						if (asActor && asActor->IsAMount() && !asActor->IsDead())
 						{
 							// Attempt to mount.
@@ -10146,13 +10769,18 @@ namespace ALYSLC
 					(
 						asActor && asActor->CanPickpocket() && a_p->coopActor->IsSneaking()
 					);
-					// Is this player running the special interaction package
-					// to interact with targeted furniture?
-					bool inInteractionPackage = false;
 					bool lootable = Util::IsLootableRefr(activationRefrPtr.get());
 					bool isActivator = baseObj->Is
 					(
 						RE::FormType::Activator, RE::FormType::TalkingActivator
+					);
+					bool isBed = 
+					(
+						baseObj->Is(RE::FormType::Furniture) && 
+						baseObj->As<RE::TESFurniture>()->furnFlags.all
+						(
+							RE::TESFurniture::ActiveMarker::kCanSleep
+						)
 					);
 					bool isBook = baseObj->IsBook();
 					bool isPartyWideItem = Util::IsPartyWideItem(baseObj);
@@ -10160,13 +10788,15 @@ namespace ALYSLC
 					// Might not necessarily be a quest item, but better safe than sorry.
 					bool isQuestItem = 
 					{
-						activationRefrPtr->extraList.HasType
+						(lootable) && 
 						(
-							RE::ExtraDataType::kAliasInstanceArray
-						) ||
-						activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
+							activationRefrPtr->extraList.HasType
+							(
+								RE::ExtraDataType::kAliasInstanceArray
+							) ||
+							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
+						)
 					};
-
 					// Unread skill/spell books are read right away by P1 here, 
 					// since, once read, all players' skills increase 
 					// or the learned spell is usable by all players.
@@ -10196,10 +10826,12 @@ namespace ALYSLC
 						baseObj->As<RE::TESFurniture>()->workBenchData.benchType.get() != 
 						RE::TESFurniture::WorkBenchData::BenchType::kNone
 					);
+					bool requiresP1ToOpenMenu = isBed || isWorkBenchFurniture;
 					p1Activate = 
 					(
 						(
 							isActivator || 
+							isBed ||
 							isPartyWideItem || 
 							isQuestItem || 
 							isWorkBenchFurniture || 
@@ -10223,9 +10855,11 @@ namespace ALYSLC
 							)
 						) 
 					);
-
+					
+					// Is this player running the special interaction package
+					// to interact with targeted furniture?
 					// Start furniture interaction, if needed.
-					inInteractionPackage = HelperFuncs::InitiateSpecialInteractionPackage
+					bool inInteractionPackage = HelperFuncs::InitiateSpecialInteractionPackage
 					(
 						a_p, activationRefrPtr.get(), baseObj
 					);
@@ -10246,16 +10880,39 @@ namespace ALYSLC
 					}
 					else
 					{
+						// WOOO
 						SPDLOG_DEBUG
 						(
 							"[PAFH] {} is activating {} ({}, form type 0x{:X}, "
-							"base form type: 0x{:X}, count: {})",
+							"base form type: 0x{:X}, count: {}). "
+							"Is activator: {}, is bed: {}, is party wide item: {}, "
+							"is quest item: {}, "
+							"is workbench furniture: {}, is unread skill or spellbook: {}, "
+							"is regular book: {}, not lootable and not furniture: {}, "
+							"is door: {}, is locked: {}, is dead: {}, no container: {}, "
+							"non mount actor: {}. Furn flags: 0b{:B}.",
 							a_p->coopActor->GetName(), 
 							activationRefrPtr->GetName(),
 							p1Activate ? "via P1" : "via self",
 							activationRefrPtr->GetFormType(),
 							*baseObj->formType,
-							extraCount ? extraCount->count : -1
+							extraCount ? extraCount->count : -1,
+							isActivator,
+							isBed,
+							isPartyWideItem,
+							isQuestItem,
+							isWorkBenchFurniture,
+							isUnreadSkillbook || isUnreadSpellbook,
+							isBook && !isSkillBook && !isSpellBook,
+							!lootable && baseObj->IsNot(RE::FormType::Furniture),
+							baseObj->Is(RE::FormType::Door),
+							activationRefrPtr->IsLocked(),
+							activationRefrPtr->IsDead(),
+							!asActor && activationRefrPtr->HasContainer(),
+							asActor && !asActor->IsAMount(),
+							baseObj->Is(RE::FormType::Furniture) ? 
+							*baseObj->As<RE::TESFurniture>()->furnFlags :
+							RE::TESFurniture::ActiveMarker::kNone
 						);
 
 						// Will get caught stealing when activating while fully detected. 
@@ -10268,7 +10925,6 @@ namespace ALYSLC
 								p1, p1->data.location, 1, p1
 							);
 							p1->currentProcess->high->detectAlert = true;
-
 							p1->StealAlarm
 							(
 								activationRefrPtr.get(),
@@ -10288,7 +10944,7 @@ namespace ALYSLC
 								return;
 							}
 
-							// Trick game into thinking that P1 is sneaking during activation 
+							// Trick the game into thinking that P1 is sneaking during activation 
 							// to trigger the pickpocketing menu when targeting NPCs.
 							// Match P1 and this players' sneak states briefly 
 							// before and during activation.
@@ -10317,7 +10973,7 @@ namespace ALYSLC
 								p1->data.location.GetDistance(a_p->coopActor->data.location) >
 								a_p->tm->GetMaxActivationDist()
 							);
-							if (inInteractionPackage && p1TooFarAway)
+							if (inInteractionPackage && requiresP1ToOpenMenu && p1TooFarAway)
 							{
 								a_p->tm->SetCrosshairMessageRequest
 								(
@@ -10368,8 +11024,12 @@ namespace ALYSLC
 								p1->actorState1.sneaking = 1;
 							}
 						}
-						else
+						else if (!inInteractionPackage)
 						{
+							// If there is an accompanying interaction animation,
+							// do not activate here, as the activation will not occur in sync 
+							// with the interaction animation.
+							// 
 							// Activate the refr after sending an activation request 
 							// to give this player control if any menus triggered by activation
 							// open afterward.
@@ -10382,8 +11042,7 @@ namespace ALYSLC
 								a_p->tm->activationRefrHandle
 							);
 							// Show in TrueHUD recent loot widget.
-							if (Util::IsLootableObject(*baseObj) && 
-								ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
+							if (lootable && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
 							{
 								p1->AddObjectToContainer(baseObj, nullptr, count, p1);
 								p1->RemoveItem
@@ -10484,7 +11143,8 @@ namespace ALYSLC
 				{
 					a_p->pam->usingLHStaff->value = 0.0f;
 				}
-				// TODO: Manually update charge for P1.
+				// TODO: 
+				// Manually update charge for P1.
 				// Currently gets overidden by the game once the inventory menu is opened,
 				// and not all staves have their charges updated by the game when used.
 			}
@@ -10550,13 +11210,6 @@ namespace ALYSLC
 					(
 						RE::DEFAULT_OBJECT::kActionRightRelease, a_p->coopActor.get()
 					);
-					// Actual held time used this time on release.
-					/*a_p->pam->SendButtonEvent
-					(
-						InputAction::kAttackRH,
-						RE::INPUT_DEVICE::kGamepad,
-						ButtonEventPressType::kRelease
-					);*/
 				}
 				else
 				{
@@ -10699,7 +11352,6 @@ namespace ALYSLC
 					// Ensure P1 is AI driven again after.
 					a_p->pam->sendingP1MotionDrivenEvents = false;
 					Util::SetPlayerAIDriven(true);
-
 					// Redundancy since block start/stop requests fail at times.
 					if (wasBlocking)
 					{
@@ -10730,7 +11382,6 @@ namespace ALYSLC
 					(
 						RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
 					);
-
 					// Redundancy since block start/stop requests fail at times.
 					if (wasBlocking)
 					{
@@ -11595,7 +12246,7 @@ namespace ALYSLC
 				RE::Actor* targetPlayerActor = nullptr;
 				bool targetPlayerIsDowned = false;
 				bool grabbedByAnotherPlayer = false;
-				bool isTargetingActor = targetRefrPtr->Is(RE::FormType::ActorCharacter);
+				auto targetActor = targetRefrPtr->As<RE::Actor>();
 				for (const auto& otherP : glob.coopPlayers)
 				{
 					if (!otherP->isActive || otherP == a_p)
@@ -11634,33 +12285,40 @@ namespace ALYSLC
 				// 4. Can grab other players and targeting a player -AND-
 				//	a. Can grab other players 
 				//     and grabbing a player that is not trying to get up -OR-
-				//	b. Can't grab players normally but the target player is downed.
+				//	b. The target player is downed.
 				shouldGrab = 
 				{
 					(!grabbedByAnotherPlayer) &&
 					(
-						(!isTargetingActor) || 
-						(Settings::bCanGrabActors && !targetPlayerActor) || 
+						(!targetActor) || 
+						(targetActor->IsDead()) ||
+						(
+							Settings::bCanGrabActors && 
+							!targetPlayerActor && 
+							targetActor->actorState1.knockState !=
+							RE::KNOCK_STATE_ENUM::kGetUp &&
+							targetActor->actorState1.knockState !=
+							RE::KNOCK_STATE_ENUM::kQueued
+						) || 
 						(
 							(targetPlayerActor) &&
 							(
 								(
-									(Settings::bCanGrabOtherPlayers) && 
-									(
-										targetPlayerActor->IsInRagdollState() ||
-										targetPlayerActor->actorState1.knockState !=
-										RE::KNOCK_STATE_ENUM::kGetUp
-									)
+									Settings::bCanGrabOtherPlayers && 
+									targetPlayerActor->actorState1.knockState !=
+									RE::KNOCK_STATE_ENUM::kGetUp &&
+									targetPlayerActor->actorState1.knockState !=
+									RE::KNOCK_STATE_ENUM::kQueued
 								) || 
 								(
-									!Settings::bCanGrabOtherPlayers && targetPlayerIsDowned
+									targetPlayerIsDowned
 								)
 							)
 						)
 					)
 				};
 
-				// Motion type check.
+				// Motion type/race knockdown flag check.
 				if (shouldGrab)
 				{
 					shouldGrab = false;
@@ -11670,13 +12328,23 @@ namespace ALYSLC
 						auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get());
 						if (hkpRigidBodyPtr && hkpRigidBodyPtr.get()) 
 						{
+							// Cannot pick up actors that can't be knocked down,
+							// such as horses, dragons, skeletons.
+							// Once dead, however, these actors can be picked up.
 							// Can only manipulate this object if it has a supported motion type.
 							shouldGrab = 
 							(
-								hkpRigidBodyPtr->motion.type != 
-								RE::hkpMotion::MotionType::kFixed &&
-								hkpRigidBodyPtr->motion.type != 
-								RE::hkpMotion::MotionType::kInvalid
+								(
+									targetActor &&
+									Util::CanManipulateActor(targetActor, hkpRigidBodyPtr.get())
+								) ||
+								(
+									!targetActor && 
+									hkpRigidBodyPtr->motion.type !=
+									RE::hkpMotion::MotionType::kFixed &&
+									hkpRigidBodyPtr->motion.type !=
+									RE::hkpMotion::MotionType::kInvalid
+								)
 							);
 						}
 					}
@@ -11739,6 +12407,47 @@ namespace ALYSLC
 			if (shouldRelease)
 			{
 				a_p->tm->SetIsGrabbing(false);
+				// Notify the player that all grabbed objects are about to be released.
+				const auto objectsToRelease = a_p->tm->rmm->grabbedRefrInfoList.size();
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: {} {} {}",
+						a_p->playerID + 1, 
+						a_p->mm->reqFaceTarget ? "Throwing" : "Dropping",
+						objectsToRelease,
+						objectsToRelease == 1 ? "object" : "objects"
+					),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			} 
+			else if (!shouldGrab && targetRefrValidity)
+			{
+				// Notify the player that this refr is not grabbable/throwable.
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: Cannot {} {}",
+						a_p->playerID + 1, 
+						a_p->mm->reqFaceTarget ? "throw" : "grab",
+						targetRefrPtr->GetName()
+					),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
 			}
 		}
 
@@ -11798,6 +12507,22 @@ namespace ALYSLC
 			// Have co-op companion players release their shouts on hold, 
 			// instead of on release, just like P1.
 
+			if (!a_p->em->voiceForm)
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format("P{}: No shout or power equipped!", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection
+					},
+					0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
 			if (a_p->isPlayer1)
 			{
 				// Send input event to emulate pressing the shout key
@@ -11837,21 +12562,19 @@ namespace ALYSLC
 					// Can use TrueHUD's special bar for this later on, 
 					// but updating the crosshair text will serve for now.
 					a_p->pam->FlashShoutMeter();
-					const RE::BSFixedString shoutCooldownText = fmt::format
-					(
-						"P{}: Shout cooldown: {}% ",
-						a_p->playerID + 1, 
-						static_cast<uint32_t>
-						(
-							100.0f * 
-							(a_p->pam->secsSinceLastShout / a_p->pam->secsCurrentShoutCooldown)
-						)
-					);
-
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kShoutCooldown,
-						shoutCooldownText,
+						fmt::format
+						(
+							"P{}: Shout cooldown: {}% ",
+							a_p->playerID + 1, 
+							static_cast<uint32_t>
+							(
+								100.0f * 
+								(a_p->pam->secsSinceLastShout / a_p->pam->secsCurrentShoutCooldown)
+							)
+						),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
@@ -12215,6 +12938,8 @@ namespace ALYSLC
 						},
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
+
+					// Nothing else to do.
 					return;
 				}
 			}
@@ -12249,8 +12974,7 @@ namespace ALYSLC
 				);
 				if (isGrabbedIter != glob.coopPlayers.end())
 				{
-					// If grabbed, have the other player release this player first
-					// before ragdolling.
+					// If grabbed, have the other player release this player before ragdolling.
 					const auto& grabbingP = *isGrabbedIter;
 					grabbingP->tm->rmm->ClearRefr(a_p->coopActor->GetHandle());
 				}
@@ -12263,13 +12987,14 @@ namespace ALYSLC
 					a_p->coopActor->NotifyAnimationGraph("IdleForceDefaultState");
 					a_p->pam->isPlayingEmoteIdle = false;
 				}
-
+				
 				// Reset fall time and height before ragdolling.
-				if (auto charController = a_p->coopActor->GetCharController(); charController)
+				/*if (auto charController = a_p->coopActor->GetCharController(); charController)
 				{
-					charController->fallStartHeight = a_p->coopActor->data.location.z;
-					charController->fallTime = 0.0f;
-				}
+					charController->lock.Lock();
+					Util::AdjustFallState(charController, false);
+					charController->lock.Unlock();
+				}*/
 
 				// Drop on the deck and flop like a fish!
 				// Set self as grabbed refr to ragdoll the player, clear the grabbed refr, 
@@ -12277,12 +13002,13 @@ namespace ALYSLC
 				const auto handle = a_p->coopActor->GetHandle();
 				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
 				a_p->tm->rmm->ClearGrabbedRefr(handle);
+
 				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
 				{
 					a_p->tm->SetIsGrabbing(false);
 				}
 
-				a_p->tm->rmm->AddReleasedRefr(a_p, handle);
+				a_p->tm->rmm->AddReleasedRefr(a_p, handle, 0.0f);
 			}
 			else if (reqAction == SpecialActionType::kQuickItem)
 			{
@@ -12317,6 +13043,7 @@ namespace ALYSLC
 		void Sprint(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Stop silent roll/shield charge/sprinting if not paragliding and not using M.A.R.F.
+
 			// First check is for over-encumbrance.
 			bool overencumbered = 
 			(
@@ -12324,7 +13051,6 @@ namespace ALYSLC
 				!a_p->isInGodMode &&
 				a_p->mm->encumbranceFactor >= 1.0
 			);
-
 			// Already informed the player that they are overencumbered
 			// when the sprint bind was first pressed, so just return here.
 			if (overencumbered)

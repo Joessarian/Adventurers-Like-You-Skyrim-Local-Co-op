@@ -22,6 +22,31 @@ namespace ALYSLC
 		std::chrono::steady_clock::time_point requestTimestamp;
 	};
 
+	class DebugAPICurve : public DebugAPIDrawRequest
+	{
+	public:
+		DebugAPICurve();
+		DebugAPICurve
+		(
+			std::vector<glm::vec3> a_xyCoordsAndThickness,
+			uint32_t a_rgbaStart,
+			uint32_t a_rgbaEnd,
+			float a_durationSecs
+		);
+		
+		// Implements ALYSLC::DebugAPIDrawRequest:
+		void Draw(RE::GPtr<RE::GFxMovieView> a_movie) override;
+
+		// Screen coords for all points to connect along the curve
+		// and the thickness of the line to connect between the current and next points.
+		// (X coord, Y coord, Thickness connecting to next point).
+		std::vector<glm::vec3> xyCoordsAndThickness;
+		// Red, Green, Blue, Alpha to create a gradient between the start 
+		// and end points of the curve.
+		uint32_t rgbaEnd;
+		uint32_t rgbaStart;
+	};
+
 	class DebugAPILine : public DebugAPIDrawRequest
 	{
 	public:
@@ -158,6 +183,22 @@ namespace ALYSLC
 			float a_durationSecs = 0
 		);
 		
+		static void QueueCurve2D
+		(
+			std::vector<glm::vec3> a_xyCoordsAndThickness,
+			uint32_t a_rgbaStart,
+			uint32_t a_rgbaEnd,
+			float a_durationSecs = 0
+		);
+		
+		static void QueueCurve3D
+		(
+			std::vector<glm::vec4> a_xyzCoordsAndThickness,
+			uint32_t a_rgbaStart,
+			uint32_t a_rgbaEnd,
+			float a_durationSecs = 0
+		);
+
 		static void QueueLine2D
 		(
 			glm::vec2 a_from, 
@@ -221,13 +262,14 @@ namespace ALYSLC
 		static void RotateOffsetPoints2D(std::vector<glm::vec2>& a_points, const float& a_angle);
 		
 		// Run at an interval from AdvanceMovie().
-		// Clears and redraws queued lines, points, and shapes.
+		// Clears and re-draws queued lines, points, and shapes.
 		static void Update();
 		
 		// Get the corresponding screenspace point from the given worldspace position.
 		// Clamps points beyond the visible frame to the boundary of the frame
 		// to keep them on-screen.
 		static glm::vec2 WorldToScreenPoint(glm::vec3 a_worldPos);
+
 		// Queued lines, points, and shapes to draw during the next update.
 		static std::vector<std::unique_ptr<DebugAPIDrawRequest>> drawRequests;
 		// Has the menu's data been cached?
@@ -235,8 +277,13 @@ namespace ALYSLC
 		// Menu overlay dimensions.
 		static float screenResX;
 		static float screenResY;
+		// Max number of draw requests per frame.
+		static constexpr uint32_t MAX_DRAW_REQUESTS = 5000;
 
 	private:
+		// NOTE:
+		// Unused at the moment.
+		
 		// Draw a queued line, point, or shape on the Scaleform overlay.
 		static void DrawLine
 		(
@@ -279,11 +326,11 @@ namespace ALYSLC
 
 		static RE::stl::owner<RE::IMenu*> Creator() { return new DebugOverlayMenu(); }
 		
-		// Message the menu to show.
-		static void Load();
-		
 		// Toggle visibility to false.
 		static void Hide(std::string a_source);
+
+		// Message the menu to show.
+		static void Load();
 		
 		// Register the menu using its name and creator.
 		// Show afterward.

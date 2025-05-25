@@ -55,32 +55,48 @@ namespace ALYSLC
 		// Camera FOV to set for exterior and interior cells.
 		static inline float fCamExteriorFOV = 75.0f;
 		static inline float fCamInteriorFOV = 75.0f;
-		
+		// Criteria that determines when the camera can auto-rotate (if enabled).
+		// 0: OutsideOfCombat,	
+		// Only rotate when outside of combat.
+		// 
+		// 1: NoCrosshairMovement:
+		// Only rotate when no players are moving their crosshairs.
+		//
+		// 2: AllRestrictions:
+		// Only when all the other restrictive options' criteria hold.
+		//
+		// 3: Anytime:
+		// Can rotate at any time, no restrictions.
+		static inline uint32_t uAutoRotateCriteria = !CamAutoRotateCriteria::kAllRestrictions;
 		// Lock on mode assistance type.
 		// 0: Full (WIP): 
-		// Auto zoom, rotate, and position the camera 
+		// Zoom, rotate, and position the camera automatically
 		// to keep all players and the lock on target on screen.
 		// Zoom, position, and rotation controls are disabled.
 		// 
 		// 1: Rotation: 
-		// Auto rotate the camera to track the lock on target 
+		// Rotate the camera automatically to track the lock on target 
 		// and zoom out to keep the party in view as much as possible. 
 		// Can still zoom in/out and change the camera's positional offset.
 		// 
 		// 2: Zoom: 
-		// Auto zoom out the camera to keep the players and lock on target on screen. 
+		// Zoom out the camera automatically to keep the players and lock on target on screen. 
 		// Can still rotate the camera normally.
 		static inline uint32_t uLockOnAssistance = !ALYSLC::CamLockOnAssistanceLevel::kRotation;
 
 		//---------
 		//[Cheats]:
 		//---------
-		// NOTE: Not for Enderal.
+		// NOTE: 
+		// Not for Enderal.
 		// Add all perks that have corresponding animation events, 
 		// such as shield charge and silent roll.
 		static inline bool bAddAnimEventSkillPerks = false;
 		// Infinite carryweight for all players while in co-op.
 		static inline bool bInfiniteCarryweight = false;
+		// Negate fall damage when falling, ragdolling, flopping, 
+		// or when a thrown/slapped/dropped actor collides with something.
+		static inline bool bNegateFallDamage = true;
 		// WIP: Speed up supported dodge animations. 
 		// Makes dodging more responsive but lowers dodge distance.
 		static inline bool bSpeedUpDodgeAnimations = false;
@@ -160,7 +176,7 @@ namespace ALYSLC
 		// Allow toggling of grabbed refr collisions.
 		static inline bool bToggleGrabbedRefrCollisions = false;
 		// Multiplier for force applied by arm collisions.
-		static inline float fArmCollisionForceMultiplier = 1.0f;
+		static inline float fArmCollisionForceMult = 1.0f;
 		// Base max thrown object speed (before magicka is leveled up, in-game units / second).
 		static inline float fBaseMaxThrownObjectReleaseSpeed = 1500.0f;
 		// If the requesting player has sufficient magicka,
@@ -171,6 +187,11 @@ namespace ALYSLC
 		static inline float fSecsBeforeAutoGrabbingNextLootableObject = 0.25f;
 		// Seconds to hold the grab bind in order to throw the grabbed form at max speed.
 		static inline float fSecsToReleaseObjectsAtMaxSpeed = 0.5f;
+		// Multipliers to apply to the knockdown slap speed threshold for each arm part
+		// when determining if a slapped actor should be knocked down.
+		static inline float fSlapKnockdownForearmSpeedThresholdMult = 1.0f;
+		static inline float fSlapKnockdownHandSpeedThresholdMult = 1.0f;
+		static inline float fSlapKnockdownShoulderSpeedThresholdMult = 1.0f;
 		// Max number of grabbable objects at once.
 		// Additional grabbed objects are suspended in a ring around the first grabbed object,
 		// hence 1 is added to a number that divides 360 without a remainder.
@@ -310,7 +331,8 @@ namespace ALYSLC
 		// [2] for highest damage.
 		static inline uint32_t uAmmoAutoEquipMode = !ALYSLC::AmmoAutoEquipMode::kHighestCount;
 		// The number of frames the dash dodge lasts at 60 FPS.
-		// NOTE: This is also the number of I-frames for the dodge, 
+		// NOTE: 
+		// This is also the number of I-frames for the dodge, 
 		// since the player is invulnerable throughout the duration of the dodge. 
 		// Decreasing/increasing the frame count also decreases/increases 
 		// the distance of the dodge because the player spends less/more time 
@@ -325,7 +347,8 @@ namespace ALYSLC
 		// Add auto-scaling to co-op player's own skill progression 
 		// when setting skill AVs on level up.
 		// Gives co-op players class-dependent extra levels to skills on character level up.
-		// NOTE: Base skill AVs are solely dependent on race at level 1, 
+		// NOTE:
+		// Base skill AVs are solely dependent on race at level 1, 
 		// so no scaling occurs when changing class until leveling up after level 1.
 		static inline bool bStackCoopPlayerSkillAVAutoScaling = false;
 		// Multiplier for the XP required to level up.
@@ -375,7 +398,8 @@ namespace ALYSLC
 		//============================
 		//============================
 		// 
-		// NOTE: All should be indexed via player ID, not controller ID.
+		// NOTE:
+		// All should be indexed via player ID, not controller ID.
 
 		//-----------------
 		//[Stat Modifiers]:
@@ -448,6 +472,26 @@ namespace ALYSLC
 		static inline std::vector<float> vfThrownObjectDamageMult = 
 		{
 			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		//---------------------------------
+		//[Extra Mechanics Cost Modifiers]:
+		//---------------------------------
+		// Health cost multiplier applied to the self-damage inflicted on flop collision.
+		static inline std::vector<float> vfFlopHealthCostMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f
+		};
+		// Magicka cost multiplier applied to the magicka expended 
+		// when the player throws objects or intercepts projectiles.
+		static inline std::vector<float> vfObjectManipulationMagickaCostMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f
+		};
+		// Stamina cost multiplier applied to the stamina expended when the player lands a slap.
+		static inline std::vector<float> vfSlapStaminaCostMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f
 		};
 
 		//-------------
@@ -664,7 +708,7 @@ namespace ALYSLC
 		// at max right stick displacement.
 		static inline std::vector<float> vfMinSecsCrosshairTargetTraversal = 
 		{
-			0.2f, 0.2f, 0.2f, 0.2f 
+			0.15f, 0.2f, 0.2f, 0.2f 
 		};
 		// Seconds before fading/re-centering crosshair when it is not over a target, 
 		// not moving, and not in 'face target' mode.
@@ -694,23 +738,26 @@ namespace ALYSLC
 		//[Camera Constants]:
 		//-------------------
 		// Interpolation factors [0, 1].
-		// Cam interp factor is lower if camera collisions are enabled to smooth out 
-		// jumps past obstacles and movement above the ground.
+		// Cam positioning interp factor is lower to smooth out jumps past obstacles
+		// and movement above the ground.
 		// May also be compensating for some sub-par positioning code. Heh.
-		static inline const float fCamCollisionInterpFactor = 0.2f;
+		static inline const float fCamInterpFactor = 0.2f;
 		static inline const float fCamManualPosInterpFactor = 0.5f;
-		static inline const float fCamNoCollisionInterpFactor = 0.266667f;
 		// Max raycast distance for calculating the camera target position.
-		// Also max calculated auto zoom delta at which to bail out of the loop 
+		// Also max calculated auto-zoom delta at which to bail out of the loop 
 		// when attempting to keep all players in frame.
 		static inline const float fMaxRaycastAndZoomOutDistance = 16384.0f;
-		// Constants used as sentinel values when calculating the auto zoom radial distance
+		// Constants used as sentinel values when calculating the auto-zoom radial distance
 		// at which all players are within the camera's frustum.
-		// Min calculated auto zoom delta at which to bail out of loop 
+		// Min calculated auto-zoom delta at which to bail out of loop 
 		// when attempting to keep all players in frame.
 		// 10 -> 11 iterations,
-		// 1/128 -> 22 iterations.
-		static inline const float fMinAutoZoomDelta = 10.0f; //1.0f / 128.0f;
+		// 1/100 -> 21 iterations.
+		// NOTE:
+		// Inreasing this value while also using a larger interp factor will lead to jittering,
+		// since the camera will jump forward/back when auto-zooming in/out
+		// to keep all players in frame.
+		static inline const float fMinAutoZoomDelta = 1.0f / 100.0f;
 		// Interpolation interval when oscillating the lock on target's indicator.
 		static inline const float fSecsCamLockOnIndicatorOscillationUpdate = 0.5f;
 		// Interpolation interval when calculating the average of player movement pitch angles.
@@ -721,17 +768,30 @@ namespace ALYSLC
 		// Interpolation interval when fading obstructions in/out.
 		static inline const float fSecsObjectFadeInterval = 0.75f;
 
-		//-------------------
-		//[Cheats and Debug]:
-		//-------------------
+		//---------
+		//[Cheats]:
+		//---------
 		// Speeding up dodge animations also shortens dodge distance.
-		// NOTE: Does not affect dash dodge.
+		// NOTE: 
+		// Does not affect dash dodge.
 		static inline const float fDodgeAnimSpeedFactor = 1.5f;
 		// Animation play speed factor for equip/unequip/draw/sheathe and dodge animations.
 		// Have had crashes with Precision when this value is too high.
 		// 10.0 seems to rarely cause crashes, if ever. Can set lower just to be safe.
 		// 5.0 seems to be completely stable.
 		static inline const float fEquipAnimSpeedFactor = 5.0f;
+
+		//--------
+		//[Debug]:
+		//--------
+		// Experimental ragdoll-warp fix that prevents ragdolled actors from warping
+		// to their last saved position, which can be quite far from their current position.
+		// Disables Precision on-ragdoll and re-enables once the actor gets back up.
+		// Side effect: Inconsistent collisions when attacking a ragdolled actor,
+		// and throwing multiple projectiles typically only triggers a collision
+		// and applies damage on the first impact,
+		// even if multiple projectiles visually hit the target.
+		static inline const bool bApplyTemporaryRagdollWarpWorkaround = false;
 
 		//-------------
 		//[Controller]:
@@ -764,11 +824,11 @@ namespace ALYSLC
 		//[Movement]:
 		//-----------
 		// Multiplier to apply to rotation speed for each movement type.
-		// NOTE: Setting this value above 8 leads to choppier rotation,
+		// NOTE: 
+		// Setting this value above 8 leads to choppier rotation,
 		// especially when facing a target.
 		static inline const float fBaseMTRotationMult = 8.0f;
 		
-
 		//---------------------------------
 		//[New Systems and Player Actions]:
 		//---------------------------------
@@ -842,9 +902,6 @@ namespace ALYSLC
 		static inline const float fMaxProjAirborneSecsToTarget = 60.0f;
 		// Max time to continue drawing the trajectory of managed projectiles.
 		static inline const float fMaxProjTrajectorySecsToTarget = 5.0f;
-		// Minimum distance (in-game units) to move 
-		// before automatically refreshing nearby references when activation cycling.
-		static inline const float fMinMoveDistToRefreshRefrs = 10.0f;
 		// Minimum angle to turn before automatically refreshing nearby references 
 		// when activation cycling.
 		static inline const float fMinTurnAngToRefreshRefrs = 1.0f * PI / 180.0f;

@@ -30,9 +30,10 @@ namespace ALYSLC
 	std::vector<uint32_t> ControllerDataHolder::SetupConnectedCoopControllers()
 	{
 		// Get and return a list of all connected XInput-compatible controllers' IDs.
-		// NOTE: Called in papyrus script before summoning players.
+		// NOTE: 
+		// Called in papyrus script before summoning players.
 
-		std::vector<uint32_t> controllerIDs;
+		std::vector<uint32_t> controllerIDs{ };
 		// If P1's CID is not set yet, return an empty list to end co-op.
 		// P1's CID must be set before other players' CIDs are checked.
 		if (glob.player1CID == -1)
@@ -51,10 +52,11 @@ namespace ALYSLC
 			return controllerIDs;
 		}
 
-		XINPUT_STATE inputState;
+		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		uint32_t controllerIndex = 0;
-		// NOTE: P1's CID must always be first.
+		// NOTE:
+		// P1's CID must always be first.
 		controllerIDs.push_back(glob.player1CID);
 		while (controllerIndex < Settings::fMaxNumControllers)
 		{
@@ -102,12 +104,14 @@ namespace ALYSLC
 		// Function was adapted from code snippets found here:
 		// https://docs.microsoft.com/en-us/windows/win32/xinput/getting-started-with-xinput
 
-		XINPUT_STATE inputState;
+		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		if (XInputGetState(a_controllerID, &inputState) != ERROR_SUCCESS)
 		{
-			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
-				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
+			if (a_controllerID > -1 && 
+				a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
+				glob.coopSessionActive &&
+				glob.coopPlayers[a_controllerID]->isActive)
 			{
 				SPDLOG_DEBUG
 				(
@@ -127,8 +131,8 @@ namespace ALYSLC
 		}
 
 		auto& data = (a_isLS) ? lsStatesList[a_controllerID] : rsStatesList[a_controllerID];
-		// Larger deadzone when controlling menus to prevent slight analog stick displacements from
-		// changing the currently-selected menu element.
+		// Larger deadzone when controlling menus to prevent slight analog stick displacements
+		// from changing the currently-selected menu element.
 		float deadZone = 
 		(
 			SHRT_MAX * 
@@ -158,6 +162,7 @@ namespace ALYSLC
 		float newNormMag = 0.0f;
 		if (tempMag > 0.0f)
 		{
+			// Account for deadzone now.
 			if (tempMag > deadZone)
 			{
 				xComp = xDisp / tempMag;
@@ -167,7 +172,6 @@ namespace ALYSLC
 					tempMag = SHRT_MAX;
 				}
 
-				// Account for deadzone now.
 				tempMag -= deadZone;
 				// Normalized displacement magnitude based on the maxiumum mag.
 				newNormMag = data.maxMag > 0.0f ? min(1.0f, tempMag / data.maxMag) : 0.0f;
@@ -224,9 +228,11 @@ namespace ALYSLC
 			Util::GetXYDistance(newNormXPos, newNormYPos, oldNormXPos, oldNormYPos) / 
 			*g_deltaTimeRealTime
 		);
+		data.prevXComp = data.xComp;
+		data.prevYComp = data.yComp;
+		data.prevNormMag = data.normMag;
 		data.xComp = xComp;
 		data.yComp = yComp;
-		data.prevNormMag = data.normMag;
 		data.normMag = newNormMag;
 	}
 
@@ -238,12 +244,14 @@ namespace ALYSLC
 		// Update input press/release state data for the controller with the given ID.
 		// The given player ID determines the deadzone for the controller.
 
-		XINPUT_STATE inputState;
+		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		if (XInputGetState(a_controllerID, &inputState) != ERROR_SUCCESS)
 		{
-			if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
-				glob.coopSessionActive && glob.coopPlayers[a_controllerID]->isActive)
+			if (a_controllerID > -1 &&
+				a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
+				glob.coopSessionActive && 
+				glob.coopPlayers[a_controllerID]->isActive)
 			{
 				SPDLOG_DEBUG
 				(
@@ -264,6 +272,7 @@ namespace ALYSLC
 
 		const auto& paInfo = glob.paInfoHolder;
 		auto& inputStates = inputStatesList[a_controllerID];
+
 		// Used to diff button state changes.
 		const auto prevMask = inputMasksList[a_controllerID];
 		auto& currentMask = inputMasksList[a_controllerID];
@@ -274,7 +283,10 @@ namespace ALYSLC
 		uint32_t dxsc = FIRST_CTRLR_DXSC;
 		bool buttonPressed = false;
 		bool isButton = true;
-		bool ltPressed = false, rtPressed = false, lsMoved = false, rsMoved = false;
+		bool ltPressed = false; 
+		bool rtPressed = false;
+		bool lsMoved = false;
+		bool rsMoved = false;
 		// Get deadzone from player settings.
 		const BYTE triggerDeadzone = 
 		(
@@ -284,7 +296,7 @@ namespace ALYSLC
 			)
 		);
 		// Increase frame window at higher framerates
-		// to ensure that the player has enough time.
+		// to ensure that the player has enough time to double tap inputs.
 		uint32_t consecTapFrames = max
 		(
 			static_cast<uint32_t>

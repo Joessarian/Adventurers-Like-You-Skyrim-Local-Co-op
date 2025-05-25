@@ -156,7 +156,8 @@ namespace ALYSLC
 		);
 
 		// Update all serialized player FID keys.
-		// NOTE: Serialized data should contain all players' FID keys 
+		// NOTE:
+		// Serialized data should contain all players' FID keys 
 		// before the Summoning Menu is opened.
 		void UpdateAllCompanionPlayerSerializationIDs(RE::StaticFunctionTag*);
 
@@ -169,10 +170,9 @@ namespace ALYSLC
 			bool a_setOppositeGenderAnims
 		);
 
-
 		//=========================================================================================
 
-		// Debug function for scripts to write log messages to ALYSLC_(SE/AE).log.
+		// Debug function for scripts to write log messages to ALYSLC.log.
 		void Log(RE::StaticFunctionTag*, RE::BSFixedString a_message);
 
 		// Register all papyrus functions.
@@ -273,51 +273,81 @@ namespace ALYSLC
 		// Papyrus API functions.
 		namespace API
 		{
-			/// Get the actor for the player with the given controller ID.
-			/// If the controller given by the ID is controlling a player, 
-			/// return a pointer to that player actor.
-			/// Otherwise, return nullptr.
+			//
+			// [V1]
+			//
+
+			// Get the actor for the player with the given controller ID.
+			// If the controller given by the ID is controlling a player, 
+			// return a pointer to that player actor.
+			// Otherwise, return nullptr.
 			RE::Actor* GetALYSLCPlayerByCID(RE::StaticFunctionTag*, int32_t a_controllerID);
 
-			/// Get the actor for the player with the given player ID.
-			/// Player 1 always has a player ID of 0, and all active companion players' IDs 
-			/// are assigned sequentially in the order of their XInput controller IDs (CIDs).
-			/// Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
-			/// 0 -> Player 1
-			/// 1 -> Player 2
-			/// 2 -> Player 3
-			/// 3 -> Player 4
-			/// If the player ID is in the range [0, 3] and the corresponding player is active,
-			/// return that player's actor.
-			/// Otherwise, return nullptr.
+			// Get the actor for the player with the given player ID.
+			// Player 1 always has a player ID of 0, and all active companion players' IDs 
+			// are assigned sequentially in the order of their XInput controller IDs (CIDs).
+			// Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
+			// 0 -> Player 1
+			// 1 -> Player 2
+			// 2 -> Player 3
+			// 3 -> Player 4
+			// If the player ID is in the range [0, 3] and the corresponding player is active,
+			// return that player's actor.
+			// Otherwise, return nullptr.
 			RE::Actor* GetALYSLCPlayerByPID(RE::StaticFunctionTag*, int32_t a_playerID);
 
-			/// Get the ID for the controller controlling the given player actor.
-			/// If the given actor handle corresponds to an active (co-op session started) player, 
-			/// return the ID [0, 3] of the controller controlling the actor.
-			/// Otherwise, return -1.
+			// Get the ID for the controller controlling the given player actor.
+			// If the given actor handle corresponds to an active (co-op session started) player, 
+			// return the ID [0, 3] of the controller controlling the actor.
+			// Otherwise, return -1.
 			int32_t GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor);
 
-			/// Get the ID for the player controlling the given player actor.
-			/// If the given actor corresponds to an active (co-op session started) player, 
-			/// return the ID [0, 3] of the player controlling the actor.
-			/// Otherwise, return -1.
+			// Get the ID for the player controlling the given player actor.
+			// If the given actor corresponds to an active (co-op session started) player, 
+			// return the ID [0, 3] of the player controlling the actor.
+			// Otherwise, return -1.
 			int32_t GetALYSLCPlayerPID(RE::StaticFunctionTag*, RE::Actor* a_actor);
 
-			/// Check if the given actor corresponds to a actor 
-			/// that is controllable by a co-op player.
-			/// A co-op session does not have to be active.
-			/// True if a co-op character (P1 or companion player NPC), false otherwise.
+			// Check if the given actor corresponds to a actor 
+			// that is controllable by a co-op player.
+			// A co-op session does not have to be active.
+			// True if a co-op character (P1 or companion player NPC), false otherwise.
 			bool IsALYSLCCharacter(RE::StaticFunctionTag*, RE::Actor* a_actor);
 
-			/// Check if the given actor corresponds to an active co-op player.
-			/// True if an active co-op player actor (P1 or companion player NPC), 
-			/// false otherwise.
+			// Check if the given actor corresponds to an active co-op player.
+			// True if an active co-op player actor (P1 or companion player NPC), 
+			// false otherwise.
 			bool IsALYSLCPlayer(RE::StaticFunctionTag*, RE::Actor* a_actor);
+			
+			// Check if the player controlling the given actor
+			// is performing the action that corresponds to the given index.
+			// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+			// for the supported action indices.
+			// True if the player is performing the action,
+			// false otherwise.
+			bool IsPlayerActorPerformingAction
+			(
+				RE::StaticFunctionTag*, 
+				RE::Actor* a_playerActor,
+				uint32_t a_playerActionIndex
+			);
 
-			/// Check if there is an active local co-op session.
-			/// True if companion players have been summoned.
-			/// False if no players have been summoned yet or all players were dismissed.
+			// Check if the player with the given controller ID 
+			// is performing the action that corresponds to the given index.
+			// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+			// for the supported action indices.
+			// True if the player is performing the action,
+			// false otherwise.
+			bool IsPlayerCIDPerformingAction
+			(
+				RE::StaticFunctionTag*, 
+				int32_t a_controllerID,
+				uint32_t a_playerActionIndex
+			);
+
+			// Check if there is an active local co-op session.
+			// True if companion players have been summoned.
+			// False if no players have been summoned yet or all players were dismissed.
 			bool IsSessionActive(RE::StaticFunctionTag*);
 		}
 	};

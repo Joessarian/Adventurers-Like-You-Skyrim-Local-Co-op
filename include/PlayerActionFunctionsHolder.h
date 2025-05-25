@@ -109,7 +109,6 @@ namespace ALYSLC
 		void PopulateFuncLists();
 
 	private:
-
 		// See 'PerfType' enum in Enums.h for more details on
 		// which functions are run for different action perform types.
 
@@ -146,7 +145,6 @@ namespace ALYSLC
 		bool CastLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool CastRH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool ChangeDialoguePlayer(const std::shared_ptr<CoopPlayer>& a_p);
-		bool CoopSummoningMenu(const std::shared_ptr<CoopPlayer>& a_p);
 		bool DebugRagdollPlayer(const std::shared_ptr<CoopPlayer>& a_p);
 		bool DebugRefreshPlayerManagers(const std::shared_ptr<CoopPlayer>& a_p);
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p);
@@ -158,9 +156,7 @@ namespace ALYSLC
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
-		bool QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
-		bool Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p);
 		bool SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sprint(const std::shared_ptr<CoopPlayer>& a_p);
@@ -225,7 +221,8 @@ namespace ALYSLC
 		);
 
 		// Can the player dual cast their selected spells.
-		// NOTE: Currently not functional.
+		// NOTE: 
+		// Currently not functional.
 		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Cache AV cost for special action and return true if the special action can be performed.
@@ -271,13 +268,11 @@ namespace ALYSLC
 		);
 		const float GetPAMagickaCost
 		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			const InputAction& a_action
+			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
 		const float GetPAStaminaCost
 		(
-			const std::shared_ptr<CoopPlayer>& a_p, 
-			const InputAction& a_action
+			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
 
 		// Get the currently selected hotkey slot based on the player's RS orientation.
@@ -289,6 +284,16 @@ namespace ALYSLC
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
 			const InputAction& a_action
+		);
+
+		// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
+		// Return true if the current occurring action should skip executing its perf funcs,
+		// since it is being used to equip the chosen hotkeyed item.
+		bool HandleDelayedHotkeyEquipRequest
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			const InputAction& a_occurringAction,
+			const PlayerActionManager::PlayerActionState& a_paState
 		);
 
 		// Set up and run special interaction package if interacting with furniture.
@@ -315,6 +320,13 @@ namespace ALYSLC
 		// Have the given player activate the given lootable refr (through P1 or otherwise).
 		void LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr);
 
+		// Check if the player is moving in a particular direction 
+		// relative to the direction they're facing.
+		bool MovingBackward(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
+		bool MovingForward(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
+		bool MovingLeft(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
+		bool MovingRight(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
+
 		// Open menu corresponding to the given player action by emulating keyboard input for P1.
 		void OpenMenuWithKeyboard
 		(
@@ -324,35 +336,10 @@ namespace ALYSLC
 
 		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
 		void PerformActivationCycling(const std::shared_ptr<CoopPlayer>& a_p);
-
-		// Modify the player's X angle before cssting a target location spell
-		// to maximize chance of successfully casting the spell.
-		void PrepForTargetLocationSpellCast
-		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			RE::SpellItem* a_spell
-		);
-
-		// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
-		// Return true if the current occurring action should skip executing its perf funcs,
-		// since it is being used to equip the chosen hotkeyed item.
-		bool HandleDelayedHotkeyEquipRequest
-		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			const InputAction& a_occurringAction,
-			const PlayerActionManager::PlayerActionState& a_paState
-		);
-
+		
 		// Play or stop the currently cycled emote idle.
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p);
-
-		// Remove the LH/RH casting package from the top of the player's package stack 
-		// to stop the companion player from casting in the LH/RH.
-		void RemoveCastingPackage
-		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
-		);
-
+		
 		// Choose and play a killmove idle from the killmove list, 
 		// if orientation and killmove type conditions hold.
 		// Return true if a killmove was successfully played.
@@ -373,12 +360,20 @@ namespace ALYSLC
 			const InputAction& a_action
 		);
 
-		// Check if the player is moving in a particular direction 
-		// relative to the direction they're facing.
-		bool MovingBackward(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
-		bool MovingForward(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
-		bool MovingLeft(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
-		bool MovingRight(const std::shared_ptr<CoopPlayer>& a_p, float a_lookMoveDiffAng);
+		// Modify the player's X angle before cssting a target location spell
+		// to maximize chance of successfully casting the spell.
+		void PrepForTargetLocationSpellCast
+		(
+			const std::shared_ptr<CoopPlayer>& a_p,
+			RE::SpellItem* a_spell
+		);
+
+		// Remove the LH/RH casting package from the top of the player's package stack 
+		// to stop the companion player from casting in the LH/RH.
+		void RemoveCastingPackage
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+		);
 
 		// Returns true if P1 is requesting to use the paraglider from Loki's awesome mod:
 		// https://www.nexusmods.com/skyrimspecialedition/mods/53256
@@ -472,6 +467,7 @@ namespace ALYSLC
 		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotItem(const std::shared_ptr<CoopPlayer>& a_p);
 		void ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
+		void ResetCamOrientation(const std::shared_ptr<CoopPlayer>& a_p);
 		void RotateCam(const std::shared_ptr<CoopPlayer>& a_p);
 		void Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
 		void Sneak(const std::shared_ptr<CoopPlayer>& a_p);

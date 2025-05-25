@@ -111,6 +111,7 @@ namespace ALYSLC
 					!InputAction::kCamLockOn, 
 					!InputAction::kCamManualPos, 
 					!InputAction::kDisableCoopCam,
+					!InputAction::kResetCamOrientation,
 					!InputAction::kRotateCam, 
 					!InputAction::kZoomCam 
 				} 
@@ -289,6 +290,7 @@ namespace ALYSLC
 			{ !InputAction::kQuickSlotCast, ActionGroup::kCombat },
 			{ !InputAction::kQuickSlotItem, ActionGroup::kCombat },
 			{ !InputAction::kResetAim, ActionGroup::kTargeting },
+			{ !InputAction::kResetCamOrientation, ActionGroup::kCamera },
 			{ !InputAction::kRotateCam, ActionGroup::kCamera },
 			{ !InputAction::kRotateLeftForearm, ActionGroup::kMovement },
 			{ !InputAction::kRotateLeftHand, ActionGroup::kMovement },
@@ -585,6 +587,12 @@ namespace ALYSLC
 				{
 					InputAction::kRShoulder
 				},
+				// ResetCamOrientation
+				{
+					InputAction::kLShoulder,
+					InputAction::kRShoulder,
+					InputAction::kRThumb,
+				},
 				// RotateCam
 				{ 
 					InputAction::kRShoulder, 
@@ -808,6 +816,8 @@ namespace ALYSLC
 			// QuickSlotItem
 			PerfType::kOnRelease,
 			// ResetAim
+			PerfType::kOnRelease,
+			// ResetCamOrientation
 			PerfType::kOnRelease,
 			// RotateCam
 			PerfType::kOnPressAndRelease,
@@ -1116,6 +1126,11 @@ namespace ALYSLC
 			(
 				TriggerFlag::kDefault
 			),
+			// ResetCamOrientation
+			TriggerFlags
+			(
+				TriggerFlag::kLoneAction
+			),
 			// RotateCam
 			TriggerFlags
 			(
@@ -1237,7 +1252,8 @@ namespace ALYSLC
 		) const noexcept;
 
 		// Get the input mask from a list of composing inputs, NOT player actions.
-		// NOTE: Break down lists of composing InputActions into lists of composing inputs
+		// NOTE: 
+		// Break down lists of composing InputActions into lists of composing inputs
 		// before passing those lists into this function.
 		const uint32_t GetInputMask
 		(

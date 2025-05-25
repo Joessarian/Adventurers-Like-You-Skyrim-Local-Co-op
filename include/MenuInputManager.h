@@ -18,7 +18,11 @@ namespace ALYSLC
 			RE::BSFixedString a_eventName, 
 			RE::UserEvents::INPUT_CONTEXT_ID a_context
 		);
-
+		
+		// Event type to send when this bind is pressed/released.
+		MenuInputEventType eventType;
+		// Time point at which the input source was first pressed.
+		SteadyClock::time_point firstPressTP;
 		// Device linked with this bind.
 		// Should always be set to controller when sending emulated input events.
 		RE::INPUT_DEVICE device;
@@ -34,10 +38,6 @@ namespace ALYSLC
 		// Indicates if the linked input source is pressed.
 		// 0 when not pressed, 1 for fully pressed, (0, 1] for triggers.
 		float value;
-		// Time point at which the input source was first pressed.
-		SteadyClock::time_point firstPressTP;
-		// Event type to send when this bind is pressed/released.
-		MenuInputEventType eventType;
 	};
 
 	// Holds information that links player actions to menu opening requests.
@@ -172,7 +172,7 @@ namespace ALYSLC
 		}
 
 		// Draw outline around screen edges to indicate what player is controlling menus.
-		// Overlay color matches the player's crosshair color.
+		// Overlay color matches the player's crosshair colors.
 		void DrawPlayerMenuControlOverlay();
 		// Equip a quick slot item/spell for P1
 		// and update the Favorites Menu entry list to reflect the change.
@@ -229,10 +229,12 @@ namespace ALYSLC
 		bool isCoopInventory;
 		// Controller ID for the co-op companion player controlling menus.
 		// -1 when the manager is not active.
-		// NOTE: Should never equal P1's CID.
+		// NOTE: 
+		// Should never equal P1's CID.
 		int32_t managerMenuCID;
 		// Player ID for the co-op companion player controlling menus.
-		// NOTE: Should never equal P1's player ID (0).
+		// NOTE: 
+		// Should never equal P1's player ID (0).
 		int32_t managerMenuPlayerID;
 		// Player ID to use when drawing the player menu control overlay.
 		// Updated in DrawPlayerMenuControlOverlay().
@@ -241,7 +243,6 @@ namespace ALYSLC
 		uint32_t managedCoopMenusCount;
 
 	private:
-
 		//
 		// Member funcs
 		//
@@ -311,6 +312,11 @@ namespace ALYSLC
 		// Ensure all players have the same known spells/shouts
 		// and then find a matching spell for the currently selected item in the Magic Menu.
 		RE::TESForm* GetSelectedMagicMenuSpell();
+		
+		// Transfer selected or all objects from the currently displayed container to P1.
+		// A second transfer from P1 to the co-op companion player is performed in
+		// CoopContainerChangedHandler::ProcessEvent(), since additional processing is required.
+		void HandleLootRequest(bool&& a_takeAll);
 
 		// Perform menu-dependent action based on the current menu input event type.
 		// Supported actions are:
@@ -320,11 +326,6 @@ namespace ALYSLC
 		// or moved the same analog stick on their controller.
 		// 3. Take item(s) from the Container Menu.
 		void HandleMenuEvent();
-
-		// Transfer selected or all objects from the currently displayed container to P1.
-		// A second transfer from P1 to the co-op companion player is performed in
-		// CoopContainerChangedHandler::ProcessEvent(), since additional processing is required.
-		void HandleLootRequest(bool&& a_takeAll);
 
 		// When the Favorites Menu opens, refresh the player's equip state, 
 		// set their favorited forms, and cache + 
@@ -339,9 +340,6 @@ namespace ALYSLC
 		// Provide notifications of success/failure.
 		// Return true on success.
 		bool PerformEnderalSkillLevelUp(RE::AlchemyItem* a_skillbook);
-
-		// Refresh favorited cyclable spells list(s) for the player.
-		void RefreshCyclableSpells() const;
 
 		// Set menu input event type and accompanying event data based on 
 		// the given player button input in the Barter Menu.
@@ -386,6 +384,9 @@ namespace ALYSLC
 		// Set menu input event type and accompanying event data for the currently opened menu 
 		// based on left or right trigger input.
 		void ProcessTriggerInput(const bool& a_isLT);
+
+		// Refresh favorited cyclable spells list(s) for the player.
+		void RefreshCyclableSpells() const;
 
 		// Update cached equip state and Favorites Menu item entries based on 
 		// what items the player has equipped.
@@ -472,7 +473,8 @@ namespace ALYSLC
 		// to menu bind information.
 		std::unordered_map<uint32_t, MenuBindInfo> menuControlMap;
 		// List of (usually) all magic forms displayed in the Magic Menu.
-		// NOTE: If a magic form is not found within the Magic Menu's own forms list 
+		// NOTE: 
+		// If a magic form is not found within the Magic Menu's own forms list 
 		// or P1's known spells/shouts lists, it will not be added to this list.
 		std::vector<RE::TESForm*> magFormsList;
 		// Queued emulated P1 InputEvents to send once chained.

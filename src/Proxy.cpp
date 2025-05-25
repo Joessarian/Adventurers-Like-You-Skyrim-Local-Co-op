@@ -49,6 +49,9 @@ namespace ALYSLC
 			// Co-op camera set to paused and not waiting for toggle.
 			glob.cam->waitForToggle = false;
 			glob.cam->ToggleCoopCamera(false);
+			// Reset combat and camera shake state.
+			glob.isCameraShakeActive = false;
+			glob.isInCoopCombat = false;
 		}
 		else 
 		{
@@ -139,7 +142,7 @@ namespace ALYSLC
 
 		// Set P1's controller ID.
 		// Is always the first index in the controller IDs list.
-		// P1 CID must be set before starting co-op.
+		// P1's CID must be set before starting co-op.
 		if (glob.player1CID == -1) 
 		{
 			RE::DebugMessageBox
@@ -155,7 +158,6 @@ namespace ALYSLC
 			);
 			return false;
 		}
-
 
 		// Attempting to account for discontinuities in which controller ports are active.
 		// E.g. port 1 and port 3 are active,
@@ -294,7 +296,7 @@ namespace ALYSLC
 			}
 		}
 
-		// Set player IDs and initialize all other sub-managers after construction.
+		// Set player IDs and initialize all sub-managers after construction.
 		uint8_t currentID = 1;
 		for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i)
 		{
@@ -325,8 +327,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[Proxy] InitializeCoop: Number of active players for co-op session: {}",
-			glob.activePlayers);
+		SPDLOG_DEBUG("[Proxy] InitializeCoop: Players this session: {}", glob.activePlayers);
 
 		// All players have now been initialized for the first time.
 		glob.allPlayersInit = true;
@@ -418,6 +419,10 @@ namespace ALYSLC
 			GlobalCoopData::RescaleActivePlayerAVs();
 			// Set or restore XP threshold.
 			GlobalCoopData::ModifyLevelUpXPThreshold(glob.coopSessionActive);
+			// Reset crosshair text.
+			GlobalCoopData::SetCrosshairText(true);
+			// Load debug overlay menu to show crosshairs/other UI elements.
+			DebugOverlayMenu::Load();
 
 			SPDLOG_DEBUG
 			(
@@ -429,7 +434,7 @@ namespace ALYSLC
 		{ 
 			SPDLOG_ERROR
 			(
-				"[Proxy] ERR: ChangeCoopSessionState: Cannot start co-op session. "
+				"[Proxy] ERR: ChangeCoopSessionState: Cannot start or stop co-op session. "
 				"Global data not initialized: {}, all players not initialized: {}", 
 				!glob.globalDataInit, !glob.allPlayersInit
 			);
@@ -444,6 +449,8 @@ namespace ALYSLC
 			glob.prevMenuCID = 
 			glob.mim->managerMenuCID = -1;
 			glob.mim->managerMenuPlayerID = glob.mim->pmcPlayerID = 0;
+			// Clear all menu opening requests.
+			glob.moarm->ClearAllRequests();
 		}
 	}
 
@@ -1417,7 +1424,8 @@ namespace ALYSLC
 	{
 		// Move all other players to the given player.
 
-		SPDLOG_DEBUG("[Proxy] MoveAllCoopActorsToP1");
+		SPDLOG_DEBUG("[Proxy] MoveAllCoopActorsToPlayer: {}",
+			a_playerActor ? a_playerActor->GetName() : "P1");
 		if (!glob.globalDataInit || !glob.coopSessionActive) 
 		{
 			return;
@@ -1609,7 +1617,7 @@ namespace ALYSLC
 		p->ResetPlayer1();
 	}
 
-	void CoopLib::Debug::RespecPlayer(RE::StaticFunctionTag *, int32_t a_controllerID)
+	void CoopLib::Debug::RespecPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
 	{
 		// NOTE:
 		// Not for Enderal.
@@ -1705,7 +1713,7 @@ namespace ALYSLC
 	//[Papyrus API Functions]
 	//=============================================================================================
 	
-	RE::Actor* ALYSLC::CoopLib::API::GetALYSLCPlayerByCID
+	RE::Actor* CoopLib::API::GetALYSLCPlayerByCID
 	(
 		RE::StaticFunctionTag*, int32_t a_controllerID
 	)
@@ -1722,7 +1730,7 @@ namespace ALYSLC
 		);
 	}
 
-	RE::Actor* ALYSLC::CoopLib::API::GetALYSLCPlayerByPID
+	RE::Actor* CoopLib::API::GetALYSLCPlayerByPID
 	(
 		RE::StaticFunctionTag*, int32_t a_playerID
 	)
@@ -1739,7 +1747,7 @@ namespace ALYSLC
 		);
 	}
 
-	int32_t ALYSLC::CoopLib::API::GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	int32_t CoopLib::API::GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor)
 	{
 		// Return the controller ID for the controller controlling the given player character.
 
@@ -1765,7 +1773,7 @@ namespace ALYSLC
 		return modAPI->GetALYSLCPlayerPID(a_actor->GetHandle());
 	}
 
-	bool ALYSLC::CoopLib::API::IsALYSLCCharacter(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	bool CoopLib::API::IsALYSLCCharacter(RE::StaticFunctionTag*, RE::Actor* a_actor)
 	{
 		// Return true if the given actor is a player character (P1 or companion player).
 		// Can be called even when a co-op session is not active.
@@ -1779,7 +1787,7 @@ namespace ALYSLC
 		return modAPI->IsALYSLCCharacter(a_actor->GetHandle());
 	}
 
-	bool ALYSLC::CoopLib::API::IsALYSLCPlayer(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	bool CoopLib::API::IsALYSLCPlayer(RE::StaticFunctionTag*, RE::Actor* a_actor)
 	{
 		// Return true if the given actor is an active player character (P1 or companion player).
 		// Only returns true if a co-op session is active 
@@ -1794,7 +1802,40 @@ namespace ALYSLC
 		return modAPI->IsALYSLCPlayer(a_actor->GetHandle());
 	}
 
-	bool ALYSLC::CoopLib::API::IsSessionActive(RE::StaticFunctionTag*)
+	bool CoopLib::API::IsPlayerActorPerformingAction
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, uint32_t a_playerActionIndex
+	)
+	{
+		// Return true if the player controlling the given actor 
+		// is performing the player action corresponding to the given player action index.
+		// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+		// for the supported action indices.
+
+		if (!a_playerActor)
+		{
+			return false;
+		}
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsPerformingAction(a_playerActor->GetHandle(), a_playerActionIndex);
+	}
+	
+	bool CoopLib::API::IsPlayerCIDPerformingAction
+	(
+		RE::StaticFunctionTag*, int32_t a_controllerID, uint32_t a_playerActionIndex
+	)
+	{
+		// Return true if the player with the given controller ID
+		// is performing the player action corresponding to the given player action index.
+		// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
+		// for the supported action indices.
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsPerformingAction(a_controllerID, a_playerActionIndex);
+	}
+
+	bool CoopLib::API::IsSessionActive(RE::StaticFunctionTag*)
 	{
 		// Return true if a co-op session is active.
 
@@ -1904,6 +1945,14 @@ namespace ALYSLC
 		a_vm->RegisterFunction("GetALYSLCPlayerPID"s, "ALYSLC_API"s, API::GetALYSLCPlayerPID);
 		a_vm->RegisterFunction("IsALYSLCCharacter"s, "ALYSLC_API"s, API::IsALYSLCCharacter);
 		a_vm->RegisterFunction("IsALYSLCPlayer"s, "ALYSLC_API"s, API::IsALYSLCPlayer);
+		a_vm->RegisterFunction
+		(
+			"IsPlayerActorPerformingAction"s, "ALYSLC_API"s, API::IsPlayerActorPerformingAction
+		);
+		a_vm->RegisterFunction
+		(
+			"IsPlayerCIDPerformingAction"s, "ALYSLC_API"s, API::IsPlayerCIDPerformingAction
+		);
 		a_vm->RegisterFunction("IsSessionActive"s, "ALYSLC_API"s, API::IsSessionActive);
 
 		return true;

@@ -103,6 +103,23 @@ namespace ALYSLC
 		{
 			(RemoveRequestedAction(a_actions), ...);
 		}
+		
+		// Remove a started AV cost action.
+		inline void RemoveStartedAction(AVCostAction a_action)
+		{
+			if (actionsInProgress.any(a_action))
+			{
+				actionsInProgress.reset(a_action);
+			}
+		}
+
+		// Remove all started AV cost actions.
+		template <class... Args>
+		inline void RemoveStartedActions(Args... a_actions)
+			requires(std::same_as<Args, AVCostAction>&&...)
+		{
+			(RemoveStartedAction(a_actions), ...);
+		}
 
 		// Set actor value cost for this action.
 		inline void SetCost(AVCostAction a_action, float a_cost)
@@ -125,23 +142,6 @@ namespace ALYSLC
 			requires(std::same_as<Args, AVCostAction>&&...)
 		{
 			(SetStartedAction(a_actions), ...);
-		}
-		
-		// Remove a started AV cost action.
-		inline void RemoveStartedAction(AVCostAction a_action)
-		{
-			if (actionsInProgress.any(a_action))
-			{
-				actionsInProgress.reset(a_action);
-			}
-		}
-
-		// Remove all started AV cost actions.
-		template <class... Args>
-		inline void RemoveStartedActions(Args... a_actions)
-			requires(std::same_as<Args, AVCostAction>&&...)
-		{
-			(RemoveStartedAction(a_actions), ...);
 		}
 
 		// Mutex for accessing/modifying the performed animation events queue.
@@ -214,7 +214,7 @@ namespace ALYSLC
 		using PAStatesList = std::array<PlayerActionState, (size_t)(InputAction::kActionTotal)>;
 
 		PlayerActionManager();
-		// Delayed construction after the player is default-constructed
+		// Delayed initialization after the player is default-constructed
 		// and the player shared pointer is added to the list of co-op players 
 		// in the global data holder.
 		void Initialize(std::shared_ptr<CoopPlayer> a_p);
@@ -458,7 +458,7 @@ namespace ALYSLC
 					paStatesList[!a_action - !InputAction::kFirstAction].perfStage == 
 					PerfStage::kStarted 
 				) &&
-				(GetPlayerActionInputHoldTime(a_action) == 0.0f)
+				(paStatesList[!a_action - !InputAction::kFirstAction].secsPerformed == 0.0f)
 			);
 		}
 
@@ -588,7 +588,8 @@ namespace ALYSLC
 		RE::TESPackage* GetDefaultPackage();
 
 		// Get how long this player action's inputs have been held for in seconds.
-		// NOTE: Does not require that the action is being performed.
+		// NOTE:
+		// Does not require that the action is being performed.
 		float GetPlayerActionInputHoldTime(const InputAction& a_action);
 
 		// Return true if all inputs for the given action were just pressed
@@ -693,6 +694,14 @@ namespace ALYSLC
 		// Set the player's attack damage mult actor values for sneak attacks.
 		// Is applied when hit connects and deals damage in the HandleHealthDamage() hooks.
 		void SetAttackDamageMult();
+		
+		// Set the current package atop the player's package stack to the given package,
+		// or the default package if none is provided,
+		// and evaluate the new package if it differs from the old one or regardless.
+		void SetAndEveluatePackage
+		(
+			RE::TESPackage* a_package = nullptr, bool a_evaluateOnlyIfDifferent = false
+		);
 
 		// Set the package atop the player's package stack to the given package.
 		void SetCurrentPackage(RE::TESPackage* a_package);
@@ -871,7 +880,8 @@ namespace ALYSLC
 		bool isBeingKillmovedByAnotherPlayer;
 		// Is blocking with a shield/weapon/torch (from graph var).
 		bool isBlocking;
-		// NOTE: Not used right now, at least until dual casting is implemented.
+		// NOTE: 
+		// Not used right now, at least until dual casting is implemented.
 		bool isCastingDual;
 		// Is casting with the LH/RH (NOT from graph var, set when casting animation triggers).
 		bool isCastingLH;
@@ -903,6 +913,8 @@ namespace ALYSLC
 		bool isRiding;
 		// Is performing a silent roll (set when animation triggers).
 		bool isRolling;
+		// Is shouting according to the player's animation graph variable.
+		bool isShouting;
 		// Is casting a power or shout from the voice slot (set when performing shout task).
 		bool isVoiceCasting;
 		// Is in sneak state (from graph var).
@@ -911,6 +923,8 @@ namespace ALYSLC
 		bool isSprinting;
 		// Is attacking with a weapon.
 		bool isWeaponAttack;
+		// Does the player want to sneak?
+		bool wantsToSneak;
 		// Was the player sprinting during the last frame?
 		bool wasSprinting;
 

@@ -113,12 +113,12 @@ namespace ALYSLC
 		// Update controller state and event type to handle, if any.
 		CheckControllerInput();
 
-		// Update equip state when signalled to externally or when there is a delayed request.
 		bool delayedReq = 
 		(
 			delayedEquipStateRefresh && 
 			Util::GetElapsedSeconds(lastEquipStateRefreshReqTP) > 1.0f
 		);
+		// Update equip state when signalled to externally or when there is a delayed request.
 		if (equipEventRefreshReq || delayedReq) 
 		{
 			if (delayedReq) 
@@ -166,7 +166,6 @@ namespace ALYSLC
 						);
 					}
 				}
-
 			}
 			else
 			{
@@ -189,8 +188,8 @@ namespace ALYSLC
 
 	void MenuInputManager::PrePauseTask()
 	{
-		// Release all inputs if menus closed when input(s) were being held.
 		SPDLOG_DEBUG("[MIM] PrePauseTask.");
+		// Release all inputs if menus closed when input(s) were being held.
 		for (auto& [xMask, info] : menuControlMap)
 		{
 			if (info.eventType == MenuInputEventType::kEmulateInput)
@@ -289,15 +288,15 @@ namespace ALYSLC
 			// If so, the co-op player is accessing their inventory,
 			// and the handling of certain button presses changes:
 			// e.g. the "X" button does not take all but instead drops the selected item.
-			RE::NiPointer<RE::TESObjectREFR> containerRefr;
+			RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
 			bool succ = RE::TESObjectREFR::LookupByHandle
 			(
-				RE::ContainerMenu::GetTargetRefHandle(), containerRefr
+				RE::ContainerMenu::GetTargetRefHandle(), containerRefrPtr
 			);
 			menuContainerHandle = 
 			(
-				containerRefr && containerRefr.get() ? 
-				containerRefr->GetHandle() :
+				containerRefrPtr && containerRefrPtr.get() ? 
+				containerRefrPtr->GetHandle() :
 				RE::ObjectRefHandle()
 			);
 			// If the container is the co-op companion player themselves, 
@@ -318,7 +317,6 @@ namespace ALYSLC
 		}
 		else if (favoritesMenu)
 		{
-			SPDLOG_DEBUG("[MIM] RefreshData: FavoritesMenu.");
 			// Set initial equip states for favorited items.
 			InitFavoritesEntries();
 			// Refresh menu after initializing equip states/favorited indices.
@@ -327,7 +325,7 @@ namespace ALYSLC
 
 		// Set controlmap initial input states so that inputs already held as the menu opens
 		// do not trigger any input events until they are released and pressed again.
-		XINPUT_STATE buttonState;
+		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
 		// First, check for input presses as given by the menu control map above
 		if (XInputGetState(managerMenuCID, &buttonState) == ERROR_SUCCESS)
@@ -354,7 +352,7 @@ namespace ALYSLC
 		}
 
 		// Pause self if the menu controller's state is inaccessible.
-		XINPUT_STATE buttonState;
+		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
 		auto err = XInputGetState(managerMenuCID, &buttonState);
 		if (managerMenuCID == -1 || err != ERROR_SUCCESS)
@@ -405,7 +403,7 @@ namespace ALYSLC
 		}
 		
 		// Is viewing P1's inventory from container.
-		RE::NiPointer<RE::TESObjectREFR> containerRefr;
+		RE::NiPointer<RE::TESObjectREFR> containerRefr{ };
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
 		// Container is not a companion player's inventory.
 		if (!GlobalCoopData::IsCoopPlayer(containerRefr)) 
@@ -413,7 +411,8 @@ namespace ALYSLC
 			return currentState;
 		}
 		
-		// The container is a co-op companion's inventory.
+		// The container is a co-op companion's inventory and the tab has been switched
+		// to display P1's inventory, so we pause here.
 		GlobalCoopData::SetMenuCIDs(glob.player1CID);
 		return ManagerState::kPaused;
 	}
@@ -483,7 +482,7 @@ namespace ALYSLC
 		}
 
 		auto& paInfo = glob.paInfoHolder;
-		XINPUT_STATE buttonState;
+		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
 		auto err = XInputGetState(managerMenuCID, &buttonState);
 		if (err != ERROR_SUCCESS)
@@ -614,7 +613,7 @@ namespace ALYSLC
 					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 				}
 					
-				// Special case:
+				// Special case (on hold):
 				// Preview the hotkey to set for the selected Favorites Menu entry.
 				if (openedMenuType == SupportedMenu::kFavorites && 
 					xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
@@ -687,7 +686,6 @@ namespace ALYSLC
 				if (bindInfo.value == 1.0f)
 				{
 					bindInfo.value = 0.0f;
-
 					// Special case:
 					// Set the previously previewed hotkey for the selected Favorites Menu entry.
 					if (openedMenuType == SupportedMenu::kFavorites && 
@@ -1105,8 +1103,7 @@ namespace ALYSLC
 		};
 		bool tempMenuOpenForCoop = 
 		{ 
-			(glob.coopSessionActive || attemptingToOpenSetupMenu) &&
-			(!Util::MenusOnlyAlwaysOpen())
+			(glob.coopSessionActive || attemptingToOpenSetupMenu) && (!Util::MenusOnlyAlwaysOpen())
 		};
 		// Update interpolated value and direction change flag + interpolation direction.
 		// Use to set the overlay alpha value.
@@ -1240,45 +1237,6 @@ namespace ALYSLC
 				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
-
-			// NOTE:
-			// Keeping the original single-color outline code to swap to 
-			// if three colors is just too much visual stimulation. Yeah.
-			// 
-			// No overlap at corners by making sure only one of the edges 
-			// is drawn all the way to the corner.
-			// Left Edge.
-			//DebugAPI::QueueLine2D
-			//(
-			//	glm::vec2(0.5f * thickness, thickness), 
-			//	glm::vec2(0.5f * thickness, rectHeight - thickness), 
-			//	uiRGBA, 
-			//	thickness
-			//);
-			//// Right Edge.
-			//DebugAPI::QueueLine2D
-			//(
-			//	glm::vec2(rectWidth - 0.5f * thickness, thickness), 
-			//	glm::vec2(rectWidth - 0.5f * thickness, rectHeight - thickness), 
-			//	uiRGBA,
-			//	thickness
-			//);
-			//// Top Edge.
-			//DebugAPI::QueueLine2D
-			//(
-			//	glm::vec2(0.0f, 0.5f * thickness), 
-			//	glm::vec2(rectWidth, 0.5f * thickness),
-			//	uiRGBA, 
-			//	thickness
-			//);
-			//// Bottom Edge.
-			//DebugAPI::QueueLine2D
-			//(
-			//	glm::vec2(0.0f, rectHeight - 0.5f * thickness), 
-			//	glm::vec2(rectWidth, rectHeight - 0.5f * thickness), 
-			//	uiRGBA, 
-			//	thickness
-			//);
 		}
 	}
 
@@ -1286,7 +1244,8 @@ namespace ALYSLC
 	{
 		// Update equipped quick slot item/spell for P1
 		// and update the Favorites Menu quick slot tag(s) as needed.
-		// NOTE: Run from MenuControls hook.
+		// NOTE:
+		// Run from MenuControls hook.
 
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -1690,7 +1649,7 @@ namespace ALYSLC
 					else
 					{
 						// Send update request to have the Favorites Menu ProcessMessage() hook 
-						// apply the quickslot tag(s).
+						// re-apply the quickslot tag(s).
 						auto messageQueue = RE::UIMessageQueue::GetSingleton();
 						if (messageQueue)
 						{
@@ -1859,8 +1818,8 @@ namespace ALYSLC
 
 		// Form for spell to equip.
 		RE::TESForm* formToEquip = nullptr;
-		// Not actually an ItemList, but the cast does preserve some of the structure
-		// found in the ItemList class and all we need is some way of identifying the spell.
+		// Not actually an ItemList but likely inherits from it.
+		// At the very least, the cast allows us to identify the selected item.
 		auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30);
 		RE::ItemList::Item* selectedItem = GetSelectedItem(magicItemList);
 		if (!selectedItem)
@@ -2039,64 +1998,6 @@ namespace ALYSLC
 		return formToEquip;
 	}
 
-	void MenuInputManager::HandleMenuEvent()
-	{
-		// Handle resolved menu event type.
-
-		switch (currentMenuInputEventType)
-		{
-		case MenuInputEventType::kEquipReq:
-		{
-			SPDLOG_DEBUG
-			(
-				"[MIM] HandleMenuEvent: Equip Request Event: from container: {}, "
-				"form: {}, equip index: {}, placeholder spell changed: {}.",
-				(Util::HandleIsValid(fromContainerHandle)) ? 
-				fromContainerHandle.get()->GetName() : 
-				"NONE",
-				(selectedForm) ? selectedForm->GetName() : "NONE",
-				reqEquipIndex,
-				placeholderMagicChanged
-			);
-			// Equip/unequip the selected form.
-			glob.coopPlayers[managerMenuCID]->em->HandleMenuEquipRequest
-			(
-				fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
-			);
-			// Reset placeholder magic changed flag and equip index.
-			placeholderMagicChanged = false;
-			reqEquipIndex = EquipIndex::kRightHand;
-			break;
-		}
-		case MenuInputEventType::kEmulateInput:
-		{
-			SendQueuedInputEvents();
-			if (magicMenu)
-			{
-				if (spellFavoriteStatusChanged)
-				{
-					// Have to set cyclable favorited spells
-					// after a spell is favorited/unfavorited.
-					RefreshCyclableSpells();
-					// Equip "carets" get cleared, 
-					// so we have to update the equip state when (un)favoriting.
-					RefreshMagicMenuEquipState(true);
-					spellFavoriteStatusChanged = false;
-				}
-			}
-
-			break;
-		}
-		default:
-		{
-			break;
-		}
-		}
-
-		// Reset menu event type to none after handling the event.
-		currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
-	}
-
 	void MenuInputManager::HandleLootRequest(bool&& a_takeAll)
 	{
 		// Loot all items or all of the selected item in the Container Menu.
@@ -2166,6 +2067,64 @@ namespace ALYSLC
 				p1
 			);
 		}
+	}
+
+	void MenuInputManager::HandleMenuEvent()
+	{
+		// Handle resolved menu event type.
+
+		switch (currentMenuInputEventType)
+		{
+		case MenuInputEventType::kEquipReq:
+		{
+			SPDLOG_DEBUG
+			(
+				"[MIM] HandleMenuEvent: Equip Request Event: from container: {}, "
+				"form: {}, equip index: {}, placeholder spell changed: {}.",
+				(Util::HandleIsValid(fromContainerHandle)) ? 
+				fromContainerHandle.get()->GetName() : 
+				"NONE",
+				(selectedForm) ? selectedForm->GetName() : "NONE",
+				reqEquipIndex,
+				placeholderMagicChanged
+			);
+			// Equip/unequip the selected form.
+			glob.coopPlayers[managerMenuCID]->em->HandleMenuEquipRequest
+			(
+				fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
+			);
+			// Reset placeholder magic changed flag and equip index.
+			placeholderMagicChanged = false;
+			reqEquipIndex = EquipIndex::kRightHand;
+			break;
+		}
+		case MenuInputEventType::kEmulateInput:
+		{
+			SendQueuedInputEvents();
+			if (magicMenu)
+			{
+				if (spellFavoriteStatusChanged)
+				{
+					// Have to set cyclable favorited spells
+					// after a spell is favorited/unfavorited.
+					RefreshCyclableSpells();
+					// Equip "carets" get cleared, 
+					// so we have to update the equip state when (un)favoriting.
+					RefreshMagicMenuEquipState(true);
+					spellFavoriteStatusChanged = false;
+				}
+			}
+
+			break;
+		}
+		default:
+		{
+			break;
+		}
+		}
+
+		// Reset menu event type to none after handling the event.
+		currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
 	}
 
 	void MenuInputManager::InitFavoritesEntries()
@@ -2246,9 +2205,8 @@ namespace ALYSLC
 		favMenuIndexToEntryMap.clear();
 		// Update equip state.
 		em->RefreshEquipState(RefreshSlots::kAll);
-
 		// Iterate through the favorites list in order, 
-		// get the list indices for  any quick slot forms 
+		// get the list indices for any quick slot forms 
 		// and check if any current quick slot forms are still in the favorites list.
 		bool itemStillFavorited = false;
 		bool spellStillFavorited = false;
@@ -2267,8 +2225,6 @@ namespace ALYSLC
 				auto quickSlotSpell = em->quickSlotSpell;
 				if (quickSlotSpell && quickSlotSpell == favForm)
 				{
-					SPDLOG_DEBUG("[MIM] InitP1QSFormEntries: Quick slot spell {} favorited.",
-						favForm->GetName());
 					em->equippedQSSpellIndex = i;
 					spellStillFavorited = true;
 				}
@@ -2279,8 +2235,6 @@ namespace ALYSLC
 				auto quickSlotItem = em->quickSlotItem;
 				if (quickSlotItem && quickSlotItem == favForm)
 				{
-					SPDLOG_DEBUG("[MIM] InitP1QSFormEntries: Quick slot item {} favorited.",
-						favForm->GetName());
 					em->equippedQSItemIndex = i;
 					itemStillFavorited = true;
 				}
@@ -2325,8 +2279,9 @@ namespace ALYSLC
 				}
 
 				// Entry positions in the menu DO NOT correspond to 
-				// their indices in the favorites list. Have to get the index for each entry.
-				RE::GFxValue entryList;
+				// their indices in the favorites list. 
+				// Have to map out the entries for all indices.
+				RE::GFxValue entryList{ };
 				view->CreateArray(std::addressof(entryList));
 				view->GetVariable
 				(
@@ -2338,7 +2293,7 @@ namespace ALYSLC
 				);
 				for (uint32_t i = 0; i < numEntries; ++i)
 				{
-					RE::GFxValue entryIndex;
+					RE::GFxValue entryIndex{ };
 					RE::GFxValue entry;
 					view->GetVariableArray
 					(
@@ -2347,7 +2302,7 @@ namespace ALYSLC
 					entry.GetMember("index", std::addressof(entryIndex));
 
 					uint32_t index = static_cast<uint32_t>(entryIndex.GetNumber());
-					RE::GFxValue entryText;
+					RE::GFxValue entryText{ };
 					entry.GetMember("text", std::addressof(entryText));
 					std::string entryStr = entryText.GetString();
 
@@ -2380,8 +2335,6 @@ namespace ALYSLC
 							(
 								"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
 							);
-							SPDLOG_DEBUG("[MIM] InitP1QSFormEntries: Entry text is now: {}", 
-								entryStr);
 						}
 					}
 
@@ -2399,9 +2352,17 @@ namespace ALYSLC
 		// for the player currently controlling menus.
 
 		// Get player requesting use to level up with the book
-		// (the player controlling the Inventory Menu).
+		// (the player controlling the Container Menu).
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr || !menuCoopActorPtr.get() || !a_skillbook)
+		{
+			return false;
+		}
+
+		// Get the container, which should be the player if they are in their own inventory,
+		// or the container the player is attempting to loot the book from.
+		auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
+		if (!containerRefrPtr || !containerRefrPtr.get()) 
 		{
 			return false;
 		}
@@ -2508,23 +2469,9 @@ namespace ALYSLC
 			}
 
 			const float avLvl = menuCoopActorPtr->GetBaseActorValue(skillAV);
-			SPDLOG_DEBUG
-			(
-				"[MIM] PerformEnderalSkillLevelUp: {} leveled up Skill {} "
-				"from level {} to {} by reading {}. Skill inc list entry goes from {} to {}.",
-				menuCoopActorPtr->GetName(),
-				skillAV,
-				avLvl,
-				avLvl + 1,
-				a_skillbook->GetName(),
-				skillIncList[skillAVIndex],
-				skillIncList[skillAVIndex] + 1
-			);
-
 			// Update serialized skill increments list and increment skill AV level.
 			skillIncList[skillAVIndex]++;
 			menuCoopActorPtr->SetBaseActorValue(skillAV, avLvl + 1);
-
 			// Adjust crafting/learning points.
 			if (isShared)
 			{
@@ -2549,7 +2496,7 @@ namespace ALYSLC
 			);
 
 			// Remove consumed book.
-			menuCoopActorPtr->RemoveItem
+			containerRefrPtr->RemoveItem
 			(
 				a_skillbook, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 			);
@@ -2630,7 +2577,6 @@ namespace ALYSLC
 		(
 			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 		);
-
 		if (a_xMask == glob.cdh->GAMEMASK_TO_XIMASK.at(acceptIDCode))
 		{
 			// Ensure that the co-op companion cannot sell any object 
@@ -2653,8 +2599,8 @@ namespace ALYSLC
 		
 		// Should not refresh if an item is selected, 
 		// since refreshing while attempting to select the number of an item to sell 
-		// through the bottom right item card quantity menu (I don't know the proper name for it)
-		// glitches the entire barter menu until the item card quantity menu is closed.
+		// through the bottom right quantity menu (I don't know the proper name for it)
+		// glitches the entire barter menu until the quantity menu is closed.
 		auto currentItem = barterMenu->itemList->GetSelectedItem(); 
 		if (currentItem)
 		{
@@ -2703,7 +2649,6 @@ namespace ALYSLC
 		(
 			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 		);
-		// Close the book menu.
 		// Press the bind.
 		std::unique_ptr<RE::InputEvent* const> buttonEvent = 
 		(
@@ -2764,6 +2709,7 @@ namespace ALYSLC
 			RE::ContainerMenu::GetTargetRefHandle()
 		);
 		const auto& mode = containerMenu->GetContainerMode();
+		bool isPickpocketing = mode == RE::ContainerMenu::ContainerMode::kPickpocket;
 		RE::ItemList::Item* selectedItem = GetSelectedItem(containerMenu->itemList);
 
 		// NOTE:
@@ -2782,10 +2728,11 @@ namespace ALYSLC
 		// Don't allow switching to P1's inventory when looting a container 
 		// (not another player's inventory).
 		if (!isCoopInventory && 
+			!isPickpocketing &&
 			glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask) == 
 			controlMap->GetMappedKey(ue->wait, RE::INPUT_DEVICE::kGamepad))
 		{
-			RE::DebugNotification
+			RE::DebugMessageBox
 			(
 				"[ALYSLC] P1's inventory is not accessible to other players while looting."
 			);
@@ -2794,6 +2741,13 @@ namespace ALYSLC
 
 		if (!selectedItem)
 		{
+			if (isPickpocketing)
+			{
+				// Signal to refresh the menu to show the companion pleyer's inventory items.
+				// Will still show P1's inventory on tab switch if the list isn't force-refreshed.
+				shouldRefreshMenu = true;
+			}
+
 			return;
 		}
 
@@ -2874,6 +2828,19 @@ namespace ALYSLC
 				// upon dropping or transferring the item.
 				shouldRefreshMenu = true;
 			}
+			else if (isPickpocketing)
+			{
+				// Ensure that the co-op companion cannot reverse-pickpocket any object 
+				// that is currently equipped by P1.
+				if (selectedItem && selectedItem->data.GetEquipState() != 0)
+				{
+					RE::DebugMessageBox
+					(
+						"[ALYSLC] Cannot plant an item currently equipped by Player 1!"
+					);
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				}
+			}
 		}
 		// Favorite the selected item.
 		else if (a_xMask == XINPUT_GAMEPAD_Y)
@@ -2927,10 +2894,11 @@ namespace ALYSLC
 					for (auto& exData : *entryData->extraLists)
 					{
 						// Already has favorited data, so unfavorite instead.
-						if (exData->HasType(RE::ExtraDataType::kHotkey))
+						auto exHotkey = exData->GetByType<RE::ExtraHotkey>();
+						if (exHotkey)
 						{
 							// Remove hotkey to prevent lingering assignment after unfavoriting.
-							exData->GetByType<RE::ExtraHotkey>()->hotkey = 
+							exHotkey->hotkey = 
 							(
 								RE::ExtraHotkey::Hotkey::kUnbound
 							);
@@ -3229,7 +3197,6 @@ namespace ALYSLC
 		else if (a_xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
 		{
 			// Hotkey the selected form, if any.
-			//HotkeyFavoritedForm();
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 	}
@@ -3310,7 +3277,7 @@ namespace ALYSLC
 
 		auto buttonGroup = glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask);
 		// Companion players can only move through P1's inventory or exit.
-		// Ignore all other inputs events.
+		// Ignore all other input events.
 		auto cancelIDCode = controlMap->GetMappedKey
 		(
 			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
@@ -3361,9 +3328,9 @@ namespace ALYSLC
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 		else if (buttonGroup != InputGroup::kDPad && 
-			gameMask != cancelIDCode && 
-			gameMask != acceptIDCode && 
-			gameMask != readyWeaponIDCode)
+				gameMask != cancelIDCode && 
+				gameMask != acceptIDCode && 
+				gameMask != readyWeaponIDCode)
 		{
 			// Ignore all button presses (do not send emulated input event)
 			// that are not the DPad or the 'Cancel', 'Accept', or 'Ready Weapon' binds.
@@ -3488,12 +3455,25 @@ namespace ALYSLC
 				reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
 				selectedForm = obj;
 				placeholderMagicChanged = false;
-				// Refresh equip state later once the item is (un)equipped.
-				delayedEquipStateRefresh = true;
-				lastEquipStateRefreshReqTP = SteadyClock::now();
+				bool isEquipped = glob.coopPlayers[managerMenuCID]->em->IsEquipped(selectedForm);
+				// If the item will be equipped/unequipped from the player's own inventory,
+				// or if the item is looted from a container and is not already equipped,
+				// we want to wait until the equip event fires
+				// before refreshing the player's equip state.
+				if (isCoopInventory || !isEquipped)
+				{
+					// Refresh equip state later once the item is (un)equipped.
+					delayedEquipStateRefresh = true;
+					lastEquipStateRefreshReqTP = SteadyClock::now();
+				}
+				else
+				{
+					// Refresh right away after item removal otherwise.
+					shouldRefreshMenu = true;
+				}
 
 				// If container reference is the player,
-				// or the item is not valid, do not remove it first.
+				// or the item is not valid, do not remove it from its container.
 				if (isCoopInventory || !obj)
 				{
 					return;
@@ -3504,18 +3484,46 @@ namespace ALYSLC
 				{
 					return;
 				}
-				
-				// If the container the item is being equipped from 
-				// is not the companion player's inventory, 
-				// add the item-to-equip to the companion player first.
-				containerRefrPtr->RemoveItem
-				(
-					obj, 
-					1,
-					RE::ITEM_REMOVE_REASON::kRemove, 
-					nullptr,
-					menuCoopActorPtr.get()
-				);
+
+				auto droppedInventory = containerRefrPtr->GetDroppedInventory();
+				// Loot dropped inventory items from the overworld,
+				// since they cannot be removed from the container directly.
+				if (droppedInventory.contains(obj))
+				{
+					const auto& countHandlePair = droppedInventory.at(obj);
+					if (countHandlePair.first > 0)
+					{
+						for (const auto& handle : countHandlePair.second)
+						{
+							if (!Util::HandleIsValid(handle))
+							{
+								continue;
+							}
+
+							menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
+						}
+					}
+				}
+				else
+				{
+					auto counts = containerRefrPtr->GetInventoryCounts();
+					if (counts.contains(obj))
+					{
+						auto count = counts.at(obj);
+						if (count > 0)
+						{
+							// Loot with P1 then transfer to the companion player as usual.
+							containerRefrPtr->RemoveItem
+							(	
+								obj,
+								count, 
+								RE::ITEM_REMOVE_REASON::kStoreInContainer,
+								nullptr,
+								p1
+							);
+						}
+					}
+				}
 			}
 
 			break;
@@ -3539,8 +3547,8 @@ namespace ALYSLC
 			}
 
 			// Get the selected form from the selected entry's index.
-			RE::GFxValue selectedIndex;
-			RE::GFxValue selectedFID;
+			RE::GFxValue selectedIndex{ };
+			RE::GFxValue selectedFID{ };
 			view->GetVariable
 			(
 				std::addressof(selectedIndex), 
@@ -3634,7 +3642,8 @@ namespace ALYSLC
 							RE::FormType::Shout
 						 ))
 				{
-					// NOTE: Shield is equipped to left hand slot 
+					// NOTE: 
+					// Shield is equipped to left hand slot 
 					// but uses the default entry equip caret.
 					newEquipState = EntryEquipState::kDefault;
 					if (selectedForm->Is(RE::FormType::Ammo)) 
@@ -3810,7 +3819,7 @@ namespace ALYSLC
 				(
 					fmt::format
 					(
-						"[ALYSLC] Cannot equip this spell for {}", 
+						"Cannot equip this spell for {}", 
 						menuCoopActorPtr->GetName()
 					).c_str()
 				);
@@ -4564,7 +4573,8 @@ namespace ALYSLC
 			return;
 		}
 
-		if (menuCoopActorPtr->GetInventoryChanges()->changed)
+		auto invChanges = menuCoopActorPtr->GetInventoryChanges();
+		if (invChanges && invChanges->changed)
 		{
 			// Queue NiNode update for the player if their inventory changed.
 			menuCoopActorPtr->Update3DModel();
@@ -4658,7 +4668,7 @@ namespace ALYSLC
 		{
 			for (const auto& menu : ui->menuStack)
 			{
-				// NOTE: Will remove when AE support is added.
+				// NOTE:
 				// AE added the kMarketplace context, 
 				// which incremented kFavor, kTotal, and kNone by 1.
 				// Was causing a crash with the latest version of TrueHUD, 
@@ -4719,6 +4729,7 @@ namespace ALYSLC
 			currentMenuInputEventType
 		);
 		a_bindInfoOut.context = context;
+
 		return true;
 	}
 
@@ -4737,7 +4748,7 @@ namespace ALYSLC
 		magFormsList.clear();
 
 		// Ensure there are no duplicate FIDs.
-		std::set<RE::FormID> insertedFIDs{};
+		std::set<RE::FormID> insertedFIDs{ };
 		auto numMagicItems = magicItemList->items.size();
 		RE::TESForm* formToAdd = nullptr;
 		for (uint32_t i = 0; i < numMagicItems; ++i)
@@ -4901,7 +4912,7 @@ namespace ALYSLC
 		if (shouldEnter) 
 		{
 			// Ensure that menu controller is available before starting/resuming the manager.
-			XINPUT_STATE buttonState;
+			XINPUT_STATE buttonState{ };
 			ZeroMemory(&buttonState, sizeof(buttonState));
 			if (XInputGetState(a_controllerIDToSet, &buttonState) != ERROR_SUCCESS)
 			{
@@ -5005,7 +5016,7 @@ namespace ALYSLC
 				}
 
 				// Get entry and its text to search for the count bounded by parens.
-				RE::GFxValue entry;
+				RE::GFxValue entry{ };
 				view->GetVariableArray
 				(
 					"_root.MenuHolder.Menu_mc.itemList.entryList", 
@@ -5014,7 +5025,7 @@ namespace ALYSLC
 					1
 				);
 
-				RE::GFxValue entryText;
+				RE::GFxValue entryText{ };
 				entry.GetMember("text", std::addressof(entryText));
 				std::string entryStr = entryText.GetString();
 				auto parenPos1 = entryStr.find("(");
@@ -5071,7 +5082,6 @@ namespace ALYSLC
 		lockpickingMenu = nullptr;
 		magicMenu = nullptr;
 		mapMenu = nullptr;
-
 		auto ui = RE::UI::GetSingleton();
 		if (ui)
 		{
@@ -5346,7 +5356,7 @@ namespace ALYSLC
 						Util::GetRefrPtrFromHandle(menuTopicManager->speaker) : 
 						Util::GetRefrPtrFromHandle(menuTopicManager->lastSpeaker)
 					);
-					if (speakerPtr) 
+					if (speakerPtr && speakerPtr.get()) 
 					{
 						float closestDistToSpeaker = FLT_MAX;
 						for (const auto& p : glob.coopPlayers)
@@ -5479,7 +5489,7 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: External request:"
+								"ResolveMenuControllerID: External request: "
 								"{} is in control of {}.",
 								p->coopActor->GetName(), a_menuName
 							);
@@ -5512,7 +5522,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5567,7 +5579,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5632,7 +5646,6 @@ namespace ALYSLC
 								succ && 
 								containerMenu->GetContainerMode() == 
 								RE::ContainerMenu::ContainerMode::kNPCMode && 
-								refrPtr && 
 								refrPtr == p->coopActor
 							);
 							// Container is this player's inventory 
@@ -5665,7 +5678,9 @@ namespace ALYSLC
 								(
 									currentReq.assocRefrHandle
 								); 
-								if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+								if (!assocRefrPtr || 
+									!assocRefrPtr.get() || 
+									!assocRefrPtr->GetObjectReference())
 								{
 									break;
 								}
@@ -5718,7 +5733,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5786,7 +5803,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5969,7 +5988,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -6066,6 +6087,45 @@ namespace ALYSLC
 									p->coopActor->GetName()
 								);
 							}
+							else if (currentReq.fromAction == InputAction::kActivate)
+							{
+								// Can also open the Wait Menu via activation of furniture
+								// with the 'can sleep' flag.
+								auto assocRefrPtr = Util::GetRefrPtrFromHandle
+								(
+									currentReq.assocRefrHandle
+								); 
+								if (!assocRefrPtr || 
+									!assocRefrPtr.get() || 
+									!assocRefrPtr->GetObjectReference())
+								{
+									break;
+								}
+
+								auto asFurniture = 
+								(
+									assocRefrPtr->GetObjectReference()->As<RE::TESFurniture>()
+								); 
+								if (asFurniture && 
+									asFurniture->furnFlags.all
+									(
+										RE::TESFurniture::ActiveMarker::kCanSleep
+									))
+								{
+									secsSinceChosenReq = secsSinceReq;
+									resolvedCID = p->controllerID;
+									SPDLOG_DEBUG
+									(
+										"[MIM] MenuOpeningActionRequestsManager: "
+										"ResolveMenuControllerID: WaitMenu: "
+										"{} is in control of menu by activating {} "
+										"with furniture flags 0x{:X}.",
+										p->coopActor->GetName(), 
+										assocRefrPtr->GetName(), 
+										*asFurniture->furnFlags
+									);
+								}
+							}
 
 							break;
 						}
@@ -6107,7 +6167,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -6225,7 +6287,9 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || 
+								!assocRefrPtr.get() || 
+								!assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}

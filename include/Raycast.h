@@ -46,22 +46,45 @@ namespace Raycast
 			const RE::hkpCdBody& a_body, const RE::hkpShapeRayCastCollectorOutput& a_hitInfo
 		);
 
-		// Add a 3D object to filter out from hit results.
-		inline void AddFilteredObject(RE::NiAVObject* a_obj) noexcept
-		{
-			objectFilters.push_back(a_obj);
-		}
-
 		// Add formtype(s) to either filter out or exclusively include in hit results.
 		inline void AddFilteredFormTypes(const std::vector<RE::FormType>& a_formTypesList)
 		{
+			if (a_formTypesList.empty())
+			{
+				return;
+			}
+
 			formTypesToFilter = a_formTypesList;
 		}
 
-		// Add a refr to filter out/in to the hit results.
-		inline void AddFilteredRefr(RE::TESObjectREFR* a_refr) noexcept
+		// Add 3D objects to filter out from hit results.
+		inline void AddFilteredObjects(const std::vector<RE::NiAVObject*>& a_objList) noexcept
 		{
-			refrFilters.push_back(a_refr);
+			if (a_objList.empty())
+			{
+				return;
+			}
+
+			objectFilters.clear();
+			for (const auto obj : a_objList)
+			{
+				objectFilters.emplace_back(RE::NiPointer<RE::NiAVObject>(obj));
+			}
+		}
+
+		// Add refrs to filter out/in to the hit results.
+		inline void AddFilteredRefrs(const std::vector<RE::TESObjectREFR*>& a_refrList) noexcept
+		{
+			if (a_refrList.empty())
+			{
+				return;
+			}
+
+			refrFilters.clear();
+			for (const auto refr : a_refrList)
+			{
+				refrFilters.emplace_back(RE::TESObjectREFRPtr(refr));
+			}
 		}
 
 		inline void SetFilterType(const bool& a_include) 
@@ -97,11 +120,11 @@ namespace Raycast
 		// Hits from the performed raycast.
 		std::vector<HitResult> hits{};
 		// Hit 3D objects to include/exclude.
-		std::vector<RE::NiAVObject*> objectFilters;
+		std::vector<RE::NiPointer<RE::NiAVObject>> objectFilters;
 		// Formtypes for hit objects to include/exclude.
 		std::vector<RE::FormType> formTypesToFilter;
 		// Refrs associated with hit objects to include/exclude.
-		std::vector<RE::TESObjectREFR*> refrFilters;
+		std::vector<RE::TESObjectREFRPtr> refrFilters;
 	};
 
 #pragma warning(push)
@@ -142,9 +165,6 @@ namespace Raycast
 	static_assert(sizeof(RayResult) == 128);
 #pragma warning(pop)
 
-	// Get the ray collector.
-	RayCollector* GetCastCollector() noexcept;
-
 	// Cast a ray from 'a_start' to 'a_end', returning the first thing it hits.
 	// This variant is used by the camera to test for clipping during positional changes.
 	// Params:
@@ -157,6 +177,9 @@ namespace Raycast
 	//		A structure holding the results of the ray cast.
 	//		If the ray hit something, result.hit will be true.
 	RayResult CastRay(glm::vec4 a_start, glm::vec4 a_end, float a_traceHullSize) noexcept;
+
+	// Get the ray collector.
+	RayCollector* GetCastCollector() noexcept;
 
 	// Cast a ray from 'a_start' to 'a_end', returning the first filtered thing it hits
 	// If both actor filter flags are false, 
@@ -360,6 +383,9 @@ namespace Raycast
 	//		glm::vec4 a_end:									
 	//			End position for the trace in world space
 	// 
+	//		std::vector<RE::NiAVObject*> a_filteredObjects:		
+	//			Filtered 3D objects to not consider for collisions.
+	// 
 	//		std::vector<RE::FormType> a_filteredFormTypes:		
 	//			Filtered formtypes for hit objects to only/not consider for collisions.
 	// 
@@ -375,6 +401,7 @@ namespace Raycast
 	(
 		const glm::vec4& a_start, 
 		const glm::vec4& a_end, 
+		const std::vector<RE::NiAVObject*>& a_filteredObjects = {}, 
 		const std::vector<RE::FormType>& a_filteredFormTypesList = {}, 
 		bool&& a_isIncludeFilter = false
 	) noexcept;

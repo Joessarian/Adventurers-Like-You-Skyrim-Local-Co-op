@@ -11,7 +11,7 @@ namespace ALYSLC
 	{
 		// Constructors.
 		EquipManager();
-		// Delayed construction after the player is default-constructed 
+		// Delayed initialization after the player is default-constructed 
 		// and the player shared pointer is added to the list of co-op players 
 		// in the global data holder.
 		void Initialize(std::shared_ptr<CoopPlayer> a_p);
@@ -81,39 +81,7 @@ namespace ALYSLC
 		{
 			return voiceSpell;
 		}
-
-		// Get the placeholder spell form at the given index.
-		inline RE::TESForm* GetPlaceholderMagic(const PlaceholderMagicIndex& a_index) const
-		{
-			return 
-			(
-				!a_index >= 0 && 
-				!a_index < !PlaceholderMagicIndex::kTotal ? placeholderMagic[!a_index] : nullptr
-			);
-		}
 		
-		// Get the max reach for any equipped weapons.
-		// Not sure what the base reach is in in-game units, 
-		// so the weapon's reach is multiplied by the actor's height.
-		inline float GetMaxWeapReach() const
-		{
-			const auto lhForm = equippedForms[!EquipIndex::kLeftHand];
-			const auto lhWeapReach = 
-			(
-				lhForm && lhForm->As<RE::TESObjectWEAP>() ?
-				lhForm->As<RE::TESObjectWEAP>()->GetReach() * coopActor->GetHeight() :
-				coopActor->race->data.unarmedReach
-			);
-			const auto rhForm = equippedForms[!EquipIndex::kRightHand];
-			const auto rhWeapReach = 
-			(
-				rhForm && rhForm->As<RE::TESObjectWEAP>() ?
-				rhForm->As<RE::TESObjectWEAP>()->GetReach() * coopActor->GetHeight() :
-				coopActor->race->data.unarmedReach
-			);
-			return (lhWeapReach > rhWeapReach) ? lhWeapReach : rhWeapReach;
-		}
-
 		// Get the spell equipped in the left hand, if any.
 		inline RE::SpellItem* GetLHSpell() const
 		{
@@ -136,6 +104,38 @@ namespace ALYSLC
 			return nullptr;
 		}
 
+		// Get the max reach for any equipped weapons.
+		// Not sure what the base reach is in in-game units, 
+		// so the weapon's reach is multiplied by the actor's height.
+		inline float GetMaxWeapReach() const
+		{
+			const auto lhForm = equippedForms[!EquipIndex::kLeftHand];
+			const auto lhWeapReach = 
+			(
+				lhForm && lhForm->As<RE::TESObjectWEAP>() ?
+				lhForm->As<RE::TESObjectWEAP>()->GetReach() * coopActor->GetHeight() :
+				coopActor->race->data.unarmedReach
+			);
+			const auto rhForm = equippedForms[!EquipIndex::kRightHand];
+			const auto rhWeapReach = 
+			(
+				rhForm && rhForm->As<RE::TESObjectWEAP>() ?
+				rhForm->As<RE::TESObjectWEAP>()->GetReach() * coopActor->GetHeight() :
+				coopActor->race->data.unarmedReach
+			);
+			return (lhWeapReach > rhWeapReach) ? lhWeapReach : rhWeapReach;
+		}
+		
+		// Get the placeholder spell form at the given index.
+		inline RE::TESForm* GetPlaceholderMagic(const PlaceholderMagicIndex& a_index) const
+		{
+			return 
+			(
+				!a_index >= 0 && 
+				!a_index < !PlaceholderMagicIndex::kTotal ? placeholderMagic[!a_index] : nullptr
+			);
+		}
+		
 		// Get the spell equipped in the right hand, if any.
 		inline RE::SpellItem* GetRHSpell() const
 		{
@@ -466,7 +466,9 @@ namespace ALYSLC
 		// Member funcs
 		//
 
-		// NOTE: Currently unused since the 'Shout' package procedure does not work.
+		// NOTE:
+		// Currently unused since I can't seem to trigger the 'Shout' package procedure 
+		// in the same way as I'm triggering the 'UseMagic' procedure for spellcasting.
 		//RE::TESShout* CopyToPlaceholderShout(RE::TESShout* a_shoutToCopy);
 
 		// Copy the given spell to the placeholder spell at the given index.
@@ -526,7 +528,8 @@ namespace ALYSLC
 		);
 		
 		// Equip fists to clear out hand slots.
-		// NOTE: Does not clear desired hand slot forms.
+		// NOTE: 
+		// Does not clear desired hand slot forms.
 		void EquipFists();
 		
 		// Equip form and update desired forms for co-op companion players.
@@ -566,7 +569,8 @@ namespace ALYSLC
 			const FavWeaponCyclingCategory& a_category
 		) const;
 		
-		// NOTE: Unused for now, but keeping for reference or if needed again in the future.
+		// NOTE: 
+		// Unused for now, but keeping for reference or if needed again in the future.
 		// Get equipable spells in the hand slots or powers/shouts in voice slot.
 		// Checks all of P1's known spells/shouts 
 		// and this player's known spells/shouts to compile the list.
@@ -579,7 +583,8 @@ namespace ALYSLC
 		) const;
 		
 		// Un/equip the desired form at the given index.
-		// NOTE: Not currently used and should never be called on P1.
+		// NOTE: 
+		// Not currently used and should never be called on P1.
 		void HandleEquipRequest
 		(
 			RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip
@@ -607,7 +612,8 @@ namespace ALYSLC
 		
 		// Add favorited items/spells from this player to P1 as needed, favorite them, 
 		// and unfavorite all P1's favorited items/spells.
-		// NOTE: Should not be called on P1 
+		// NOTE: 
+		// Should not be called on P1 
 		// since there's no need to re-import P1's favorites onto themselves.
 		void ImportCoopFavorites(bool&& a_onlyMagicFavorites);
 
@@ -625,7 +631,8 @@ namespace ALYSLC
 		void ReEquipVoiceForm();
 		
 		// Unfavorite this player's favorited items/spells and restore P1's favorited items/spells.
-		// NOTE: Also should not be called on P1.
+		// NOTE: 
+		// Also should not be called on P1.
 		void RestoreP1Favorites(bool&& a_onlyMagicFavorites);
 		
 		// Update cached equip data in the given slots, auto-equip ammo, 
@@ -743,7 +750,8 @@ namespace ALYSLC
 
 		// Attempts to rectify mismatches and equip state issues 
 		// with the player's equipped forms, and then re-equip the desired forms.
-		// NOTE: Not called on P1 as of now.
+		// NOTE:
+		// Not called on P1 as of now.
 		void ValidateEquipState();
 		
 		//

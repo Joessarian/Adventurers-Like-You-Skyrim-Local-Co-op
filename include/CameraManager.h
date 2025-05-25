@@ -7,7 +7,8 @@
 namespace ALYSLC
 {
 	using SteadyClock = std::chrono::steady_clock;
-	// NOTE: Unused for now.
+	// NOTE: 
+	// Unused for now.
 	// Can use to trace out camera origin point path for movement pitch calculations if necessary.
 	struct CamCubicBezier3DData
 	{
@@ -89,13 +90,19 @@ namespace ALYSLC
 			auto omt = 1.0f - a_t;
 			auto omt2 = omt * omt;
 			auto omt3 = omt2 * omt;
-			lastCalcCurvePoint = (currentPoints[0] * omt3 +
-								  currentPoints[1] * 3.0f * omt2 * a_t +
-								  currentPoints[2] * 3.0f * omt * t2 +
-								  currentPoints[3] * t3);
-			lastCalcDirection = ((currentPoints[1] - currentPoints[0]) * 3.0f * omt2 +
-								 (currentPoints[2] - currentPoints[1]) * 6.0f * omt * a_t +
-								 (currentPoints[3] - currentPoints[2]) * 3.0f * t2);
+			lastCalcCurvePoint = 
+			(
+				currentPoints[0] * omt3 +
+				currentPoints[1] * 3.0f * omt2 * a_t +
+				currentPoints[2] * 3.0f * omt * t2 +
+				currentPoints[3] * t3
+			);
+			lastCalcDirection = 
+			(
+				(currentPoints[1] - currentPoints[0]) * 3.0f * omt2 +
+				(currentPoints[2] - currentPoints[1]) * 6.0f * omt * a_t +
+				(currentPoints[3] - currentPoints[2]) * 3.0f * t2
+			);
 			return lastCalcCurvePoint;
 		}
 
@@ -218,22 +225,30 @@ namespace ALYSLC
 	struct ObjectFadeData
 	{
 		ObjectFadeData() :
-			object(RE::NiPointer<RE::NiAVObject>()),
+			objectPtr(RE::NiPointer<RE::NiAVObject>()),
 			fadeStateChangeTP(SteadyClock::now()),
 			shouldFadeOut(false),
 			currentFadeAmount(1.0f),
 			fadeAmountAtStateChange(1.0f),
+			hitToCamDist(0.0f),
 			interpIntervalProportion(1.0f),
 			targetFadeAmount(1.0f),
 			fadeIndex(-1)
 		{ }
 
-		ObjectFadeData(RE::NiAVObject* a_object, int32_t a_fadeIndex, bool a_shouldFadeOut) :
-			object(a_object),
+		ObjectFadeData
+		(
+			RE::NiAVObject* a_object, 
+			int32_t a_fadeIndex, 
+			float a_hitToCamDist,
+			bool a_shouldFadeOut
+		) :
+			objectPtr(a_object),
 			fadeStateChangeTP(SteadyClock::now()),
 			shouldFadeOut(a_shouldFadeOut),
 			currentFadeAmount(1.0f),
 			fadeAmountAtStateChange(1.0f),
+			hitToCamDist(a_hitToCamDist),
 			interpIntervalProportion(1.0f),
 			targetFadeAmount(1.0f),
 			fadeIndex(a_fadeIndex)
@@ -243,22 +258,24 @@ namespace ALYSLC
 		}
 
 		ObjectFadeData(const ObjectFadeData& a_other) :
-			object(a_other.object),
+			objectPtr(a_other.objectPtr),
 			fadeStateChangeTP(a_other.fadeStateChangeTP),
 			shouldFadeOut(a_other.shouldFadeOut),
 			currentFadeAmount(a_other.currentFadeAmount),
 			fadeAmountAtStateChange(a_other.fadeAmountAtStateChange),
+			hitToCamDist(a_other.hitToCamDist),
 			interpIntervalProportion(a_other.interpIntervalProportion),
 			targetFadeAmount(a_other.targetFadeAmount),
 			fadeIndex(a_other.fadeIndex)
 		{ }
 
 		ObjectFadeData(ObjectFadeData&& a_other) :
-			object(std::move(a_other.object)),
+			objectPtr(std::move(a_other.objectPtr)),
 			fadeStateChangeTP(std::move(a_other.fadeStateChangeTP)),
 			shouldFadeOut(std::move(a_other.shouldFadeOut)),
 			currentFadeAmount(std::move(a_other.currentFadeAmount)),
 			fadeAmountAtStateChange(std::move(a_other.fadeAmountAtStateChange)),
+			hitToCamDist(std::move(a_other.hitToCamDist)),
 			interpIntervalProportion(std::move(a_other.interpIntervalProportion)),
 			targetFadeAmount(std::move(a_other.targetFadeAmount)),
 			fadeIndex(std::move(a_other.fadeIndex))
@@ -266,11 +283,12 @@ namespace ALYSLC
 
 		ObjectFadeData& operator=(const ObjectFadeData& a_other)
 		{
-			object = a_other.object;
+			objectPtr = a_other.objectPtr;
 			fadeStateChangeTP = a_other.fadeStateChangeTP;
 			shouldFadeOut = a_other.shouldFadeOut;
 			currentFadeAmount = a_other.currentFadeAmount;
 			fadeAmountAtStateChange = a_other.fadeAmountAtStateChange;
+			hitToCamDist = a_other.hitToCamDist;
 			interpIntervalProportion = a_other.interpIntervalProportion;
 			targetFadeAmount = a_other.targetFadeAmount;
 			fadeIndex = a_other.fadeIndex;
@@ -280,11 +298,12 @@ namespace ALYSLC
 
 		ObjectFadeData& operator=(ObjectFadeData&& a_other)
 		{
-			object = std::move(a_other.object);
+			objectPtr = std::move(a_other.objectPtr);
 			fadeStateChangeTP = std::move(a_other.fadeStateChangeTP);
 			shouldFadeOut = std::move(a_other.shouldFadeOut);
 			currentFadeAmount = std::move(a_other.currentFadeAmount);
 			fadeAmountAtStateChange = std::move(a_other.fadeAmountAtStateChange);
+			hitToCamDist = std::move(a_other.hitToCamDist);
 			interpIntervalProportion = std::move(a_other.interpIntervalProportion);
 			targetFadeAmount = std::move(a_other.targetFadeAmount);
 			fadeIndex = std::move(a_other.fadeIndex);
@@ -302,14 +321,14 @@ namespace ALYSLC
 			interpIntervalProportion = 
 			targetFadeAmount = 1.0f;
 			fadeIndex = -1;
-			if (object && object.get() && object->GetRefCount() > 0)
+			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
 			{
-				if (auto fadeNode = object->AsFadeNode(); fadeNode)
+				if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
 				{
 					fadeNode->currentFade = 1.0;
 				}
 
-				object->fadeAmount = 1.0f;
+				objectPtr->fadeAmount = 1.0f;
 			}
 		}
 
@@ -321,11 +340,11 @@ namespace ALYSLC
 			const bool& a_shouldFadeOut, const int32_t& a_objectFadeIndex
 		) 
 		{
-			if (object && object.get() && object->GetRefCount() > 0)
+			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
 			{
 				shouldFadeOut = a_shouldFadeOut;
 				fadeStateChangeTP = SteadyClock::now();
-				fadeAmountAtStateChange = object->fadeAmount;
+				fadeAmountAtStateChange = objectPtr->fadeAmount;
 				if (fadeIndex < a_objectFadeIndex) 
 				{
 					fadeIndex = a_objectFadeIndex;
@@ -335,7 +354,7 @@ namespace ALYSLC
 				// Fade for larger objects such as trees and interior structures.
 				if (Settings::bFadeLargerObstructions)
 				{
-					if (auto fadeNode = object->AsFadeNode(); fadeNode)
+					if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
 					{
 						// The NiAVObject's fade ranges from 0 to 1 for trees to make sure that
 						// the low definition model fades along with the full definition one.
@@ -346,11 +365,17 @@ namespace ALYSLC
 						// whichever is farther away from the endpoint.
 						if (a_shouldFadeOut)
 						{
-							fadeAmountAtStateChange = max(currentFadeAmount, object->fadeAmount);
+							fadeAmountAtStateChange = max
+							(
+								currentFadeAmount, objectPtr->fadeAmount
+							);
 						}
 						else
 						{
-							fadeAmountAtStateChange = min(currentFadeAmount, object->fadeAmount);
+							fadeAmountAtStateChange = min
+							(
+								currentFadeAmount, objectPtr->fadeAmount
+							);
 						}
 
 						if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
@@ -393,7 +418,7 @@ namespace ALYSLC
 		// when the fade raycast(s) were performed.
 		inline bool UpdateFade() 
 		{
-			if (object && object.get() && object->GetRefCount() > 0)
+			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
 			{
 				float secsSinceStateChange = Util::GetElapsedSeconds(fadeStateChangeTP);
 				float newFadeAmount = targetFadeAmount;
@@ -412,7 +437,7 @@ namespace ALYSLC
 					);
 				}
 
-				currentFadeAmount = object->fadeAmount = newFadeAmount;
+				currentFadeAmount = objectPtr->fadeAmount = newFadeAmount;
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				bool isInteriorCell = p1 && p1->parentCell && !p1->parentCell->IsExteriorCell();
 				if (shouldFadeOut)
@@ -420,7 +445,7 @@ namespace ALYSLC
 					// Fade for larger objects such as trees and buildings.
 					if (Settings::bFadeLargerObstructions)
 					{
-						if (auto fadeNode = object->AsFadeNode(); fadeNode)
+						if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
 						{
 							// For now:
 							// Decided having an ugly low detail model appear 
@@ -435,7 +460,7 @@ namespace ALYSLC
 								// fades out/in once below half alpha,
 								// which is why we start reversing the fade direction 
 								// for the low detail model at this point.
-								currentFadeAmount = object->fadeAmount = newFadeAmount;
+								currentFadeAmount = objectPtr->fadeAmount = newFadeAmount;
 								fadeNode->currentFade = 
 								(
 									newFadeAmount >= 0.5f ? 
@@ -447,7 +472,7 @@ namespace ALYSLC
 							{
 								currentFadeAmount = 
 								fadeNode->currentFade =
-								object->fadeAmount = 
+								objectPtr->fadeAmount = 
 								newFadeAmount;
 							}
 						}
@@ -458,12 +483,12 @@ namespace ALYSLC
 					// Fade for larger objects such as trees and buildings.
 					if (Settings::bFadeLargerObstructions)
 					{
-						if (auto fadeNode = object->AsFadeNode(); fadeNode)
+						if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
 						{
 							if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
 							{
 								// Same logic as when fading out.
-								object->fadeAmount = newFadeAmount;
+								objectPtr->fadeAmount = newFadeAmount;
 								fadeNode->currentFade = 
 								(
 									newFadeAmount >= 0.5f ? 
@@ -473,7 +498,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								fadeNode->currentFade = object->fadeAmount = newFadeAmount;
+								fadeNode->currentFade = objectPtr->fadeAmount = newFadeAmount;
 							}
 						}
 					}
@@ -498,7 +523,7 @@ namespace ALYSLC
 		}
 
 		// Object which should have its fade level modified.
-		RE::NiPointer<RE::NiAVObject> object;
+		RE::NiPointer<RE::NiAVObject> objectPtr;
 		// Time point at which the fade direction last changed.
 		SteadyClock::time_point fadeStateChangeTP;
 		// True if the object should fade out, false if the object should fade in.
@@ -507,6 +532,8 @@ namespace ALYSLC
 		float fadeAmountAtStateChange;
 		// Current fade level.
 		float currentFadeAmount;
+		// Hit position recorded on this object when raycasting from the camera to the player.
+		float hitToCamDist;
 		// Proportion of the fade interval that has elapsed since the last fade direction change.
 		float interpIntervalProportion;
 		// Target fade level.
@@ -606,12 +633,12 @@ namespace ALYSLC
 
 			return RE::PlayerCharacter::GetSingleton()->data.angle.x;
 		}
-
+		
+		// Return the current position of the camera.
+		// If using the co-op camera, return the last set target position.
+		// Otherwise, return the camera node position.
 		inline RE::NiPoint3 GetCurrentPosition() const
 		{
-			// Return the current position of the camera.
-
-			// If using the co-op camera, return the last set target position.
 			if (IsRunning())
 			{
 				return camTargetPos;
@@ -664,47 +691,8 @@ namespace ALYSLC
 			}
 			else
 			{
-				camInterpFactor = 
-				(
-					Settings::bCamCollisions ? 
-					Settings::fCamCollisionInterpFactor : 
-					Settings::fCamNoCollisionInterpFactor
-				);
+				camInterpFactor = Settings::fCamInterpFactor;
 			}
-		}
-
-		// Set orientation (rotation and position) for the camera.
-		inline void SetCamOrientation() 
-		{
-			if (!playerCam || !playerCam->cameraRoot)
-			{
-				return;
-			}
-
-			Util::SetCameraPosition(playerCam, camTargetPos);
-			// NOTE:
-			// Have not figured out why rotation fails unless the camera's local rotation 
-			// is overidden while in manual positioning mode 
-			// and while the default third person camera state is not active
-			// (ex. P1 ragdolled or on horseback).
-			Util::SetCameraRotation
-			(
-				playerCam, camPitch, camYaw, isManuallyPositioned
-			);
-
-			RE::NiUpdateData updateData{ };
-			playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
-			if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
-			{
-				Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
-			}
-
-			playerCam->worldFOV = 
-			(
-				exteriorCell ? 
-				Settings::fCamExteriorFOV :
-				Settings::fCamInteriorFOV
-			);
 		}
 
 		// Update movement pitch running total and number of readings, or reset both.
@@ -712,7 +700,7 @@ namespace ALYSLC
 		{
 			if (!a_reset)
 			{
-				movementPitchRunningTotal += GetAverageMovementPitch();
+				movementPitchRunningTotal += GetAutoRotateAngle(true);
 				++numMovementPitchReadings;
 			}
 			else
@@ -727,7 +715,7 @@ namespace ALYSLC
 		{
 			if (!a_reset) 
 			{
-				movementYawToCamRunningTotal += GetAverageMovementYawToCam();
+				movementYawToCamRunningTotal += GetAutoRotateAngle(false);
 				++numMovementYawToCamReadings;
 			}
 			else
@@ -737,16 +725,34 @@ namespace ALYSLC
 			}
 		}
 
-		// Used externally: signal the camera manager to wait for toggle 
+		// Used externally. Signal the camera manager to wait for toggle 
 		// (co-op camera is only re-enabled by P1).
 		inline void SetWaitForToggle(bool a_set)
 		{
 			waitForToggle = a_set;
 		}
 
+		// Return true if the current lock on target should be considered as a player
+		// for camera origin point, target position, and auto-zoom calculations.
+		// Since rotation assistance does not auto-zoom to keep the lock on target in frame, 
+		// we do not have to treat the target as a player.
+		inline bool ShouldConsiderLockOnTargetAsPlayer()
+		{
+			auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+			return 
+			(
+				isLockedOn && 
+				camLockOnTargetPtr && 
+				camLockOnTargetPtr.get() && 
+				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation
+			);
+		}
+
 		// Reset time point data.
 		inline void ResetTPs()
 		{
+			autoRotateJustResumedTP = SteadyClock::now();
+			autoRotateJustSuspendedTP = SteadyClock::now();
 			lockOnLOSCheckTP = SteadyClock::now();
 			lockOnLOSLostTP = SteadyClock::now();
 			noPlayersUnderExteriorRoofTP = SteadyClock::now();
@@ -798,11 +804,8 @@ namespace ALYSLC
 		// Fade objects that obscure players from the camera's LOS.
 		void FadeObstructions();
 		
-		// Calculate and return the camera's current average movement pitch angle.
-		float GetAverageMovementPitch();
-		
-		// Calculate and return the current average movement yaw-to-cam angle.
-		float GetAverageMovementYawToCam();
+		// Calculate and return the camera's current average movement pitch or yaw-to-cam angle.
+		float GetAutoRotateAngle(bool&& a_computePitch);
 		
 		// Check if any player is visible via raycast
 		// (hit one or all actor nodes) from the given point.
@@ -812,23 +815,34 @@ namespace ALYSLC
 		// at the given camera orientation (no raycasts for visiblity).
 		// Can specify a pixel margin ratio (fraction of screen width/height [0, 1])
 		// around the border of the screen as well.
-		bool PointOnScreenAtCamOrientation
+		bool PointOnScreenAtCamOrientationScreenspaceMargin
 		(
 			const RE::NiPoint3& a_point,
 			const RE::NiPoint3& a_camPos,
 			const RE::NiPoint2& a_rotation, 
 			const float& a_marginRatio
 		);
+
+		bool PointOnScreenAtCamOrientationWorldspaceMargin
+		(
+			const RE::NiPoint3& a_point,
+			const RE::NiPoint3& a_camPos,
+			const RE::NiPoint2& a_rotation, 
+			const float& a_marginWorldDist
+		);
 		
 		// Reset all camera related data.
 		void ResetCamData();
 		
-		// Reset fade amount on all handled objects.
-		void ResetFadeOnObjects();
+		// Reset fade on all handled obstructions and then clear them.
+		void ResetFadeAndClearObstructions();
 		
 		// Enable or disable collision between the camera and character controllers.
 		void SetCamActorCollisions(bool&& a_set);
 		
+		// Set orientation (rotation and position) for the camera.
+		void SetCamOrientation(bool&& a_overrideLocalRotation);
+
 		// Prevent/enable fading of players.
 		void SetPlayerFadePrevention(bool&& a_noFade);
 		
@@ -840,6 +854,9 @@ namespace ALYSLC
 		// Done with a small delay to avoid odd crashes 
 		// and wait for the first person skeleton to disable.
 		void ToThirdPersonState(bool&& a_fromFirstPerson);
+
+		// Update the auto rotation angles' (pitch/yaw) multiplier.
+		void UpdateAutoRotateAngleMult();
 		
 		// Update camera pitch and yaw data.
 		void UpdateCamRotation();
@@ -872,9 +889,6 @@ namespace ALYSLC
 		RE::NiPoint3 camCollisionFocusPoint;
 		RE::NiPoint3 camCollisionOriginPoint;
 		RE::NiPoint3 camCollisionTargetPos;
-		// Target position offset from the base focus point.
-		// Used for LOS checks when selecting objects with camera collisions disabled.
-		RE::NiPoint3 camCollisionTargetPos2;
 		// Current focus point.
 		RE::NiPoint3 camFocusPoint;
 		// Current lock on target focus point.
@@ -900,6 +914,12 @@ namespace ALYSLC
 		// Current camera adjustment mode.
 		CamAdjustmentMode camAdjMode;
 		// Time points.
+		// Last time the movement pitch/yaw running totals started re-accumulating
+		// after suspension.
+		SteadyClock::time_point autoRotateJustResumedTP;
+		// Last time the movement pitch/yaw running totals started to approach 0 
+		// outside of updating.
+		SteadyClock::time_point autoRotateJustSuspendedTP;
 		// Last time an LOS check for the cam lock on target was made.
 		SteadyClock::time_point lockOnLOSCheckTP;
 		// Last time at which LOS was lost on the cam lock on target.
@@ -926,8 +946,12 @@ namespace ALYSLC
 		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
 		// Set of handled faded objects and their current fade indices.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, int32_t> obstructionsToFadeIndicesMap;
+		// Interpolated multiplier for auto-rotation angles.
+		std::unique_ptr<TwoWayInterpData> movementAngleMultInterpData;
 		// List of all map marker refrs in the current cell.
 		std::vector<RE::TESObjectREFRPtr> cellMapMarkers;
+		// Is auto-rotation suspended (both pitch and yaw values are approaching 0)?
+		bool autoRotateSuspended;
 		// Should the camera zoom in temporarily if all players are under an exterior roof?
 		bool delayedZoomInUnderExteriorRoof;
 		// Should the camera zoom out after all players were under an exterior roof and
@@ -959,23 +983,21 @@ namespace ALYSLC
 		bool toggleBindPressedWhileWaiting;
 		// Should wait to toggle the co-op camera on again.
 		bool waitForToggle;
-		// Max pitch angular magnitude when in the auto trail camera state.
+		// Max pitch angular magnitude when in the auto-trail camera state.
 		// Capped for now to prevent jitter when blending pitch/yaw at high pitch angles.
 		const float autoTrailPitchMax = 75.0f * PI / 180.0f;
 		// Hull size for anchor points when checking for collisions.
 		// Should always be larger than target pos hull size.
-		const float camAnchorPointHullSize = 15.0f;	//50.0f;
+		const float camAnchorPointHullSize = 35.0f; //15.0f;
 		// Maximum camera rotation rate in radians / second.
 		const float camMaxAngRotRate = PI / 1.5f;
 		// Max movement speed in units/second when in manual positioning mode.
 		const float camManualPosMaxMovementSpeed = 2000.0f;
 		// Max movement speed in units/second.
 		const float camMaxMovementSpeed = 1000.0f;
-		// Minimum trailing distance (cam node to focus point).
-		const float camMinTrailingDistance = 100.0f;
 		// Hull size for target point when checking for collisions.
 		// Should always be smaller than anchor point hull size.
-		const float camTargetPosHullSize = 10.0f;	//35.0f;
+		const float camTargetPosHullSize = 30.0f; //10.0f;
 		// Average height of all active players.
 		float avgPlayerHeight;
 		// Base focus point Z displacement from the origin point.
@@ -984,9 +1006,6 @@ namespace ALYSLC
 		float camBaseTargetPosPitch;
 		// Base Z rotation for the camera node.
 		float camBaseTargetPosYaw;
-		// Camera's true radial distance from the focus point
-		// after collisions are accounted for.
-		float camCollisionRadialDistance;
 		// Current pitch from the camera node to the focus point.
 		float camCurrentPitchToFocus;
 		// Current yaw from the camera node to the focus point.
@@ -1005,6 +1024,8 @@ namespace ALYSLC
 		// Max (approximated) distance the camera can zoom out from the focus point before 
 		// before on-screen checks and raycasts fail.
 		float camMaxZoomOutDist;
+		// Minimum trailing distance (cam node to focus point).
+		float camMinTrailingDistance;
 		// Radial distance offset to apply on top of the current base radial distance.
 		// [0, camMaxZoomOutDist]
 		float camRadialDistanceOffset;
@@ -1022,6 +1043,9 @@ namespace ALYSLC
 		// Camera's target/desired radial distance from the focus point
 		// if there are no collisions from the focus point to the base target position.
 		float camTargetRadialDistance;
+		// Camera's true radial distance from the focus point
+		// after collisions are accounted for.
+		float camTrueRadialDistance;
 		// Camera's current yaw to set.
 		float camYaw;
 		// Movement pitch angle total for all players since the last update.

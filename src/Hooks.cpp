@@ -18,7 +18,6 @@ namespace ALYSLC
 		{
 			MainHook::InstallHook();
 			ActorEquipManagerHooks::InstallHooks();
-			ActorMagicCasterHooks::InstallHooks();
 			ActivateHandlerHooks::InstallHooks();
 			AIProcessHooks::InstallHooks();
 			AnimationGraphManagerHooks::InstallHooks();
@@ -95,12 +94,15 @@ namespace ALYSLC
 
 			if (glob.allPlayersInit)
 			{
+				// Update combat state first.
+				GlobalCoopData::UpdatePlayerCoopCombatState();
 				for (const auto& p : glob.coopPlayers)
 				{
 					if (p->isActive)
 					{
 						SteadyClock::time_point pre = SteadyClock::now();
-						// NOTE: Update funcs must be run in this order.
+						// NOTE: 
+						// Update funcs must be run in this order.
 						p->Update();
 						p->em->Update();
 						p->pam->Update();
@@ -115,11 +117,21 @@ namespace ALYSLC
 				}
 			}
 
-			// Update crosshair text after the players' managers have run their updates.
+			// Update crosshair text and check for arm collisions
+			// after the players' managers have run their updates.
 			if (glob.coopSessionActive && !glob.loadingASave) 
 			{
 				GlobalCoopData::HandlePlayerArmCollisions();
-				GlobalCoopData::SetCrosshairText();
+				// Clear if a fullscreen menu is open.
+				auto ui = RE::UI::GetSingleton();
+				GlobalCoopData::SetCrosshairText
+				(
+					ui->GameIsPaused() || 
+					ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 
+				);
 			}
 		}
 
@@ -245,7 +257,6 @@ namespace ALYSLC
 				}
 			}
 
-
 			// Do not want to unequip auto-equipped bound objects, 
 			// since these objects are typically equipped after a spell is cast
 			// and take the place of the cast spell in its hand slot.
@@ -368,13 +379,7 @@ namespace ALYSLC
 					if (a_object->IsWeapon())
 					{
 						auto weap = a_object->As<RE::TESObjectWEAP>();
-						auto equipSlotToUse = 
-						(
-							/*weap->equipSlot == glob.bothHandsEquipSlot ?
-							weap->equipSlot : 
-							a_objectEquipParams.equipSlot*/
-							weap->equipSlot
-						);
+						auto equipSlotToUse = weap->equipSlot;
 						bool reqToEquip = 
 						(
 							(
@@ -447,9 +452,7 @@ namespace ALYSLC
 			
 			// Ignore if P1, not a supported race, or transform(ing/ed).
 			const auto& p = glob.coopPlayers[playerIndex];
-			if (p->isPlayer1 || 
-				/*!p->coopActor->race || 
-				!p->coopActor->race->GetPlayable() ||*/
+			if (p->isPlayer1 ||
 				p->isTransforming || 
 				p->isTransformed)
 			{
@@ -570,9 +573,11 @@ namespace ALYSLC
 		}
 
 // [ACTOR MAGIC CASTER HOOKS]:
-		
 	void ActorMagicCasterHooks::Update(RE::ActorMagicCaster* a_this, float a_delta)
 	{
+		// NOTE:
+		// Unused for now until I figure out a way to stall the FNF spellcast animation 
+		// when the spell is fully charged and the player is still holding the cast bind.
 		if (glob.globalDataInit && glob.coopSessionActive)
 		{
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
@@ -783,6 +788,21 @@ namespace ALYSLC
 					}
 				}
 			}
+			
+			// Match supported animation event tags with the event's tag.
+			const auto tagHash = Hash(a_event->tag);
+			// Update camera shake state.
+			if (p->isPlayer1)
+			{
+				if (tagHash == "StartAnimatedCameraDelta"_h)
+				{
+					glob.isCameraShakeActive = true;
+				}
+				else if (tagHash == "EndAnimatedCamera"_h)
+				{
+					glob.isCameraShakeActive = false;
+				}
+			}
 
 			// Set performed action anim event tag so that the player action manager
 			// can handle AV modification later when it updates, which minimizes processing done
@@ -791,7 +811,7 @@ namespace ALYSLC
 			(
 				std::pair<PerfAnimEventTag, uint16_t>(PerfAnimEventTag::kNone, 0)
 			);
-			switch (Hash(a_event->tag))
+			switch (tagHash)
 			{
 			// Starting to cast a spell.
 			case ("BeginCastLeft"_h):
@@ -864,6 +884,7 @@ namespace ALYSLC
 			}
 			// Sprint/sneak roll stopped.
 			case ("EndAnimatedCameraDelta"_h):
+			case ("EndAnimatedCamera"_h):
 			{
 				perfAVAnimEvent = { PerfAnimEventTag::kSprintStop, pam->lastAnimEventID };
 				break;
@@ -943,6 +964,8 @@ namespace ALYSLC
 // [BS MULTI BOUND HOOKS]:
 		bool BSMultiBoundHooks::QWithinPoint(RE::BSMultiBound* a_this, const RE::NiPoint3& a_pos)
 		{
+			// Ensure players are not occluded by any occlusion volumes 
+			// in the current cell.
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
 			if (!p1 || !p1->parentCell)
 			{
@@ -962,7 +985,8 @@ namespace ALYSLC
 					(Settings::bRemoveInteriorOcclusion) && 
 					(
 						(cell->IsInteriorCell()) || 
-						(sky && sky->mode == RE::Sky::Mode::kInterior))
+						(sky->mode == RE::Sky::Mode::kInterior)
+					)
 				) ||
 				(Settings::bRemoveExteriorOcclusion && cell->IsExteriorCell())	
 			);
@@ -973,7 +997,7 @@ namespace ALYSLC
 
 			for (auto refrMB : cell->loadedData->multiboundRefMap)
 			{
-				// Treat as within multibound if this multibound is within the current cell
+				// Treat as within multibound if this multibound is within the current cell.
 				// Prevents occlusion of refrs inside the multibound.
 				if (refrMB.second && 
 					refrMB.second->multiBound && 
@@ -1037,10 +1061,23 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Check if the player is self-healing, 
-					// and if so, add skill XP to their Restoration skill.
-					if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
+					// Apply damage received mult if the player was damaged.
+					// Do not care about the source of the damage in this case,
+					// as the damage received mult should apply to all sources of damage.
+					if (a_av ==  RE::ActorValue::kHealth && a_delta < 0.0f)
 					{
+						// Max negative delta (-FLT_MAX) means that this player 
+						// should have <= 0 health even if their damage received multiplier is 0, 
+						// so don't apply the mult in that case.
+						if (a_delta != -FLT_MAX)
+						{
+							a_delta *= Settings::vfDamageReceivedMult[p->playerID];
+						}
+					}
+					else if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
+					{
+						// Check if the player is self-healing, 
+						// and if so, add skill XP to their Restoration skill.
 						// Clamp first.
 						float currentHealth = p->coopActor->GetActorValue(RE::ActorValue::kHealth);
 						float currentMaxHealth = Util::GetFullAVAmount
@@ -1048,6 +1085,7 @@ namespace ALYSLC
 							a_this, RE::ActorValue::kHealth
 						);
 						float baseXP = std::clamp(a_delta, 0.0f, currentMaxHealth - currentHealth);
+						// HACKY ALERT:
 						// Prevent full-heal on combat exit for co-op companions.
 						// Check if heal delta is larger than 
 						// the total health regen from healing effects,
@@ -1071,7 +1109,6 @@ namespace ALYSLC
 									(
 										skyrim_cast<RE::ValueModifierEffect*>(effect)
 									); 
-
 									bool isHealingEffect = 
 									(
 										valueModifierEffect && 
@@ -1079,7 +1116,6 @@ namespace ALYSLC
 										RE::ActorValue::kHealth &&
 										valueModifierEffect->value > 0.0f
 									);
-
 									if (isHealingEffect)
 									{
 										isHealing = true;
@@ -1269,7 +1305,8 @@ namespace ALYSLC
 			RE::Character* a_this, RE::Actor* a_attacker, float a_damage
 		)
 		{
-			// NOTE: The given damage is negative.
+			// NOTE: 
+			// The given damage is negative.
 			if (!glob.globalDataInit && !glob.coopSessionActive)
 			{
 				return _HandleHealthDamage(a_this, a_attacker, a_damage);;
@@ -1281,17 +1318,11 @@ namespace ALYSLC
 			auto playerVictimIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
 			bool playerVictim = playerVictimIndex != -1;
 			bool playerAttacker = playerAttackerIndex != -1;
-
+			// Multiplier to apply to the damage argument.
 			float damageMult = 1.0f;
-			if (playerVictim)
-			{
-				// Apply damage received mult if a player was hit.
-				const auto& p = glob.coopPlayers[playerVictimIndex];
-				damageMult *= Settings::vfDamageReceivedMult[p->playerID];
-			}
-
 			if (playerAttacker)
 			{
+				// The attacking player.
 				const auto& p = glob.coopPlayers[playerAttackerIndex];
 				// Check for friendly fire (not from self) and negate damage.
 				if (!Settings::vbFriendlyFire[p->playerID] && 
@@ -1309,7 +1340,10 @@ namespace ALYSLC
 				damageMult *= Settings::vfDamageDealtMult[p->playerID];
 				// TEMP until I find a direct way of applying the sneak damage multiplier 
 				// to all forms of damage.
-				if (p->pam->attackDamageMultSet && p->pam->reqDamageMult != 1.0f)
+				// Apply sneak/additional damage mult if not attacking self.
+				if (a_this != p->coopActor.get() && 
+					p->pam->attackDamageMultSet &&
+					p->pam->reqDamageMult != 1.0f)
 				{
 					// Apply sneak attack mult.
 					damageMult *= p->pam->reqDamageMult;
@@ -1324,18 +1358,69 @@ namespace ALYSLC
 
 			// Adjust damage based off new damage mult.
 			// Done before death (< 0 HP) checks below.
-			// Ignore direct modifications of HP or no direct attacker (a_attacker == nullptr).
+			// Ignore direct modifications of HP, which occur with direct changes to HP, 
+			// such as RestoreActorValue() below.
+			// Don't want to get caught in a recursive loop.
 			// NOTE: 
-			// Unfortunately, this means fall damage (no attacker) 
-			// will not scale down with the player's damage received mult.
-			if (float deltaHealth = a_damage * (damageMult - 1.0f); 
-				deltaHealth != 0.0f && a_attacker)
+			// As a result, certain types of damage without an attributable attacker, 
+			// such as explosion damage,
+			// will not be affected by the player's damage dealt multiplier.
+			// TODO:
+			// Find a way to do health damage without this function triggering,
+			// since we currently have to adjust the damage dealt
+			// via direct modification of the health actor value.
+			// Or will have to figure out how to determine 
+			// if the damage source has been scaled already.
+			float deltaHealth = a_damage * (damageMult - 1.0f); 
+			if (deltaHealth != 0.0f && a_attacker)
 			{
+				// Apply the inverse of the damage received mult for friendly fire, 
+				// since the RestoreActorValue() call below will run through
+				// our CheckClampDamageModifier() hook
+				// and will apply the damage received mult again to any negative health delta.
+				// We can cancel out the second application in this way.
+				if (playerVictim)
+				{
+					const auto& victimP = glob.coopPlayers[playerVictimIndex];
+					if (Settings::vfDamageReceivedMult[victimP->playerID] > 0.0f)
+					{
+						// If additional damage is required,
+						// damage to apply for this second call is not modified.
+						// Otherwise, this hook will only fire once 
+						// and we can set the damage applied to the original damage 
+						// (received damage mult already applied) times the attacker damage mult.
+						if (deltaHealth < 0.0f)
+						{
+							// Not modifying the damage arg itself, 
+							// since after multiplying it with the computed damage mult, 
+							// we'll have one application each of the damage dealt 
+							// and received mults, as required.
+							deltaHealth *= 
+							(
+								1.0f / Settings::vfDamageReceivedMult[victimP->playerID]
+							);
+						}
+						else
+						{
+							a_damage *= damageMult;
+						}
+					}
+					else
+					{
+						a_damage = 0.0f;
+					}
+				}
+				else
+				{
+					a_damage *= damageMult;
+				}
+
+				// This hook will run again with no attacker given 
+				// and then execution will return here.
 				a_this->RestoreActorValue
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, deltaHealth
 				);
-				a_damage *= damageMult;
 			}
 
 			// Check if the player must be set as downed when at or below 0 health.
@@ -1450,7 +1535,7 @@ namespace ALYSLC
 						addDestructionXP(qsSpellForm);
 					}
 				}
-				
+
 				// Killed by co-op player.
 				auto p1 = RE::PlayerCharacter::GetSingleton(); 
 				if (p1 &&
@@ -1462,15 +1547,14 @@ namespace ALYSLC
 					// as killed by P1, so clear out the handle here 
 					// to get XP from killing this actor.
 					// Setting directly to P1 does not properly grant XP for some reason.
+					a_this->boolBits.set(RE::Actor::BOOL_BITS::kMurderAlarm);
 					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
 					{
-						a_this->boolBits.set(RE::Actor::BOOL_BITS::kMurderAlarm);
 						a_this->KillImpl(p->coopActor.get(), FLT_MAX, false, false);
 						a_this->myKiller = p->coopActor.get();
 					}
 					else
 					{
-						a_this->boolBits.set(RE::Actor::BOOL_BITS::kMurderAlarm);
 						a_this->KillImpl(p1, FLT_MAX, false, false);
 						a_this->myKiller = p1;
 					}
@@ -1535,7 +1619,8 @@ namespace ALYSLC
 			if (p->coopActor->HasKeyword(glob.npcKeyword))
 			{
 				// Speed up (un)equip/dodging anims.
-				// TODO: Support for more dodge mods.
+				// TODO: 
+				// Support for more dodge mods.
 				bool isEquipping = false;
 				bool isUnequipping = false;
 				bool isTDMDodging = false;
@@ -1615,7 +1700,6 @@ namespace ALYSLC
 
 			const auto& p = glob.coopPlayers[playerIndex];
 			auto hash = Hash(a_eventName);
-
 			if (p->isTransformed) 
 			{
 				// Do not allow the game to toggle the levitation state again
@@ -1630,25 +1714,21 @@ namespace ALYSLC
 			}
 
 			// Prevent the game from forcing the co-op companion player 
-			// out of sneaking while in combat.
-			if (hash == "SneakStop"_h)
+			// into/out of sneaking against their wishes.
+			// Dash dodges trigger the sneak animation briefly, 
+			// so ignore such animation event requests.
+			bool sneakStateChangeAttempt = 
+			(
+				(!p->mm->isRequestingDashDodge && !p->mm->isDashDodging) && 
+				(hash == "SneakStart"_h || hash == "SneakStop"_h)
+			);
+			if (sneakStateChangeAttempt)
 			{
-				auto package = p->coopActor->GetCurrentPackage();
-				bool alwaysSneakFlagSet = false;
-				if (package)
-				{
-					alwaysSneakFlagSet = package->packData.packFlags.all
-					(
-						RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak
-					);
-				}
-
-				// Flag gets ignored and is not modified while in combat,
-				// so it retains the value set by the player action functions holder,
-				// which is used to indicate whether the player wants to sneak or not.
-				// If attempting to exit the sneak state while the player wants to remain sneaking,
+				// If trying to exit the sneak state while the player wants to remain sneaking,
+				// or if trying to enter the sneak state while the player wants to stop sneaking,
 				// return false.
-				if (alwaysSneakFlagSet)
+				if ((p->pam->wantsToSneak && hash == "SneakStop"_h) ||
+					(!p->pam->wantsToSneak && hash == "SneakStart"_h))
 				{
 					return false;
 				}
@@ -1705,10 +1785,30 @@ namespace ALYSLC
 			{
 				const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(a_this)];
 
-				// Have to stop players' characters from aggro-ing NPCs or other players,
-				// since the game will interfere and auto-rotate the player to face
-				// their combat target or prevent combat resolution among players.
-				if (a_this->combatController)
+				// IMPORTANT NOTE:
+				// If instead using a package flag to ignore combat,
+				// the player will still enter combat and any external checks querying the combat
+				// state for the player will return the right value, but the player cannot damage 
+				// neutral NPCs with weapons, may have their chosen gear (un)equipped 
+				// based on what the game thinks is preferrable,
+				// or even have their character rotate automatically
+				// towards a targeted actor when spellcasting.
+				// 
+				// If doing the following below, the only downsides are having to keep track
+				// of combat state ourselves and have the IsInCombat() func always return false,
+				// so any other plugins making this call to determine if they should do something
+				// to this player character or not will not receive the proper combat state.
+				// 
+				// Doing the following will stop players' characters
+				// from aggro-ing NPCs or other players
+				// and is proven to prevent the game from auto-equipping gear
+				// or rotating the player to face their combat target as it sees fit.
+				// However, by disabling combat altogether for companion players,
+				// mods that check if a character is in combat will not function properly;
+				// for example, TrueHUD will not display actor info bars for companion players
+				// even if other NPCs are attacking them.
+				
+				/*if (a_this->combatController)
 				{
 					a_this->combatController->inactive = true;
 					a_this->combatController->ignoringCombat = true;
@@ -1717,8 +1817,8 @@ namespace ALYSLC
 					a_this->combatController->targetHandle = 
 					a_this->combatController->previousTargetHandle = RE::ActorHandle();
 					a_this->combatController->cachedTarget = nullptr;
-				}
-				
+				}*/
+
 				// Let the game update the player first after we've stopped combat.
 				_Update(a_this, a_delta);
 
@@ -1771,8 +1871,11 @@ namespace ALYSLC
 				{
 					return;
 				}
-
-				if (auto high = currentProc->high; high)
+				
+				auto ui = RE::UI::GetSingleton();
+				auto high = currentProc->high; 
+				bool gamePaused = ui->GameIsPaused();
+				if (high && !gamePaused && p->mm->IsRunning())
 				{
 					auto paraMT = glob.paraglidingMT;
 					auto& speeds = 
@@ -1783,6 +1886,30 @@ namespace ALYSLC
 					(
 						high->currentMovementType.defaultData.rotateWhileMovingRun	
 					);
+
+					// NOTE: 
+					// Base movement type data values seem to only reset 
+					// to their defaults each frame 
+					// if the player's speedmult is modified.
+					// Otherwise, the movement speed changes each frame will accumulate, 
+					// reaching infinity and preventing the player from moving.
+					float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
+					if (speedMultToSet < 0.0f || isnan(speedMultToSet) || isinf(speedMultToSet))
+					{
+						speedMultToSet = p->mm->baseSpeedMult;
+					}
+
+					p->coopActor->SetBaseActorValue(RE::ActorValue::kSpeedMult, speedMultToSet);
+					// Applies the new speedmult right away,
+					p->coopActor->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f
+					);
+					p->coopActor->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
+					);
+
 					// NOTE:
 					// Another annoying issue to work around:
 					// Since movement speed does not update 
@@ -1799,8 +1926,14 @@ namespace ALYSLC
 					// Set movement speed to an obscenely high value to quickly
 					// arrest built up momentum while also keeping the player in place
 					// with the 'don't move' flag.
-					if (p->mm->shouldCurtailMomentum && p->mm->dontMoveSet)
+					if (p->mm->shouldCurtailMomentum)
 					{
+						// Ensure the player is set to not move 
+						// and any lingering movement offset is cleared.
+						// Otherwise, sanic mode.
+						p->mm->ClearKeepOffsetFromActor();
+						Util::NativeFunctions::SetDontMove(p->coopActor.get(), true);
+
 						// Affects how quickly the player slows down.
 						// The higher, the faster the reported movement speed becomes zero.
 						speeds
@@ -1829,85 +1962,8 @@ namespace ALYSLC
 						[RE::Movement::MaxSpeeds::kRun]				= 100000.0f;
 					}
 					else if (auto charController = p->coopActor->GetCharController(); 
-							 charController && p->mm->IsRunning())
+							 charController)
 					{
-						// NOTE: 
-						// Base movement type data values seem to only reset 
-						// to their defaults each frame 
-						// if the player's speedmult is modified.
-						// Otherwise, the movement speed changes each frame will accumulate, 
-						// reaching infinity and preventing the player from moving.
-						if (!p->coopActor->IsOnMount())
-						{
-							float speedMultToSet = 
-							(
-								p->mm->movementOffsetParams[!MoveParams::kSpeedMult]
-							);
-							if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
-							{
-								speedMultToSet = p->mm->baseSpeedMult;
-							}
-									
-							p->coopActor->SetBaseActorValue
-							(
-								RE::ActorValue::kSpeedMult, 
-								speedMultToSet
-							);
-							// Applies the new speedmult right away,
-							p->coopActor->RestoreActorValue
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, 
-								RE::ActorValue::kCarryWeight,
-								-0.001f
-							);
-							p->coopActor->RestoreActorValue
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage,
-								RE::ActorValue::kCarryWeight, 
-								0.001f
-							);
-						}
-
-						// REMOVE when done debugging.
-						/*if (p->mm->isDashDodging || p->mm->isParagliding)
-						{
-							RE::NiPoint3 linVelXY = RE::NiPoint3
-							(
-								charController->outVelocity.quad.m128_f32[0], 
-								charController->outVelocity.quad.m128_f32[1], 
-								0.0f
-							);
-							RE::NiPoint3 facingDir = Util::RotationToDirectionVect
-							(
-								0.0f, 
-								Util::ConvertAngle(p->coopActor->data.angle.z)
-							);
-							RE::NiPoint3 lsDir = Util::RotationToDirectionVect
-							(
-								0.0f,
-								Util::ConvertAngle
-								(
-									p->mm->movementOffsetParams[!MoveParams::kLSGameAng]
-								)
-							);
-							glm::vec3 start = ToVec3(p->coopActor->data.location);
-							glm::vec3 offsetFacing = ToVec3(facingDir);
-							glm::vec3 offsetLSDir = ToVec3(lsDir);
-							glm::vec3 offsetVel = ToVec3(linVelXY);
-							DebugAPI::QueueArrow3D
-							(
-								start, start + offsetFacing * 50.0f, 0xFF0000FF, 5.0f, 3.0f
-							);
-							DebugAPI::QueueArrow3D
-							(
-								start, start + offsetLSDir * 50.0f, 0x00FF00FF, 5.0f, 3.0f
-							);
-							DebugAPI::QueueArrow3D
-							(
-								start, start + offsetVel * 50.0f, 0x0000FFFF, 5.0f, 3.0f
-							);
-						}*/
-
 						//================
 						// Rotation speed.
 						//================
@@ -2220,7 +2276,7 @@ namespace ALYSLC
 								// is slow deceleration/acceleration 
 								// when changing directions rapidly.
 								// First noticed that playing the 'SprintStart' animation event
-								// right as the player started pivoting caused them to turn
+								// right as the player starts pivoting causes them to turn
 								// and face the new movement direction almost instantly.
 								// Increasing the movement type's directional max speed values, 
 								// depending on how rapidly the player is turning,
@@ -2283,13 +2339,13 @@ namespace ALYSLC
 			else
 			{
 				bool isMountedByPlayer = false;
-				RE::ActorPtr rider = nullptr;
+				RE::ActorPtr riderPtr{ nullptr };
 				if (a_this->IsAMount())
 				{
-					a_this->GetMountedBy(rider);
-					if (rider && rider.get())
+					a_this->GetMountedBy(riderPtr);
+					if (riderPtr && riderPtr.get())
 					{
-						isMountedByPlayer = GlobalCoopData::IsCoopPlayer(rider.get());
+						isMountedByPlayer = GlobalCoopData::IsCoopPlayer(riderPtr.get());
 					}
 				}
 
@@ -2299,7 +2355,7 @@ namespace ALYSLC
 					// between P1 and other players' mounts.
 					const auto& p =
 					(
-						glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(rider.get())]
+						glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(riderPtr.get())]
 					);
 					if (p->pam->IsPerforming(InputAction::kSprint))
 					{
@@ -2344,70 +2400,69 @@ namespace ALYSLC
 					{
 						return _Update(a_this, a_delta);
 					}
+					
+					// [TEMP WORKAROUND 1]:
+					// Temporary solution to allies/teammates attacking co-op players,
+					// even on accidental hits.
+					// Stop combat right away if the current combat target is a co-op player.
+					if (Util::IsPartyFriendlyActor(a_this))
+					{
+						a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+						// Stop attacking and combat.
+						a_this->NotifyAnimationGraph("attackStop");
+						if (auto combatGroup = a_this->GetCombatGroup(); combatGroup)
+						{
+							combatGroup->lock.LockForWrite();
+
+							bool isATarget = false;
+							for (auto iter = combatGroup->targets.begin();
+								iter >= combatGroup->targets.begin() &&
+								iter < combatGroup->targets.end();
+								++iter)
+							{
+								// Already a target, so we can exit.
+								auto pIndex = GlobalCoopData::GetCoopPlayerIndex
+								(
+									iter->targetHandle
+								);
+								if (pIndex != -1 &&
+									!Settings::vbFriendlyFire[glob.coopPlayers[pIndex]->playerID])
+								{
+									iter = combatGroup->targets.erase(iter);
+									if (iter > combatGroup->targets.begin())
+									{
+										--iter;
+									}
+								}
+							}
+
+							combatGroup->lock.UnlockForWrite();
+						}
+					}
 
 					// Let the game update this character first.
 					_Update(a_this, a_delta);
 							
-					// [TEMP WORKAROUND 1]:
+					// [TEMP WORKAROUND 2]:
 					// Disable Precision on this actor when ragdolled 
 					// to avoid a ragdoll reset position glitch on knock explosion
 					// where the hit actor is teleported to their last ragdoll position 
 					// instead of staying at their current position.
 					// Precision is re-enabled on the actor after they get up.
-					if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI3; api)
+					if (Settings::bApplyTemporaryRagdollWarpWorkaround)
 					{
-						const auto handle = a_this->GetHandle();
-						if (a_this->IsInRagdollState() && api->IsActorActive(handle))
+						if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
 						{
-							api->ToggleDisableActor(handle, true);
-						}
-						else if (!a_this->IsInRagdollState() && 
-								 a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
-								 !api->IsActorActive(handle))
-						{
-							api->ToggleDisableActor(handle, false);
-						}
-					}
-
-					// [TEMP WORKAROUND 2]:
-					// Temporary solution to allies/teammates attacking co-op players,
-					// even on accidental hits.
-					// Stop combat right away if the current combat target is a co-op player.
-					// Will maintain aggro if low on health.
-					// Player must sheathe weapons to indicate peaceful intentions 
-					// if below this threshold.
-					float maxHealth = Util::GetFullAVAmount(a_this, RE::ActorValue::kHealth);
-					bool aboveQuarterHealth = 
-					(
-						a_this->GetActorValue(RE::ActorValue::kHealth) / maxHealth > 0.25f
-					);
-					if (aboveQuarterHealth && Util::IsPartyFriendlyActor(a_this))
-					{
-						a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
-						if (a_this->combatController)
-						{
-							auto combatTarget1 = 
-							(
-								Util::GetRefrPtrFromHandle(a_this->currentCombatTarget)
-							);
-							auto combatTarget2 = 
-							(
-								Util::GetRefrPtrFromHandle(a_this->combatController->targetHandle)
-							);
-							auto playerActorTarget = 
-							( 
-								GlobalCoopData::IsCoopPlayer(combatTarget1.get()) ? 
-								combatTarget1->As<RE::Actor>() :
-								GlobalCoopData::IsCoopPlayer(combatTarget2.get()) ? 
-								combatTarget2->As<RE::Actor>() : 
-								nullptr
-							);
-							if (playerActorTarget)
+							const auto handle = a_this->GetHandle();
+							if (a_this->IsInRagdollState() && api->IsActorActive(handle))
 							{
-								if (auto procLists = RE::ProcessLists::GetSingleton(); procLists)
-								{
-									procLists->StopCombatAndAlarmOnActor(playerActorTarget, false);
-								}
+								api->ToggleDisableActor(handle, true);
+							}
+							else if (!a_this->IsInRagdollState() && 
+									 a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
+									 !api->IsActorActive(handle))
+							{
+								api->ToggleDisableActor(handle, false);
 							}
 						}
 					}
@@ -2558,10 +2613,34 @@ namespace ALYSLC
 		)
 		{
 			auto ui = RE::UI::GetSingleton();
-			if ((!glob.globalDataInit || !ui || !a_event) || !(*a_event))
+			if (!glob.globalDataInit || !ui || !a_event || !(*a_event))
 			{
 				return _ProcessEvent(a_this, a_event, a_eventSource);
 			}
+
+			// REMOVE when done debugging.
+			// Troubleshooting an inconsistent 'stuck key' issue
+			// that produces a lingering 'Tab' keyboard input
+			// which heads every input chain after alt-tabbing into another window
+			// and tabbibg back into Skyrim.
+			// As a result, we have to skip over this keyboard device input event each time.
+			/*uint32_t i = 1;
+			auto event = *a_event;
+			while (event)
+			{
+				SPDLOG_DEBUG
+				(
+					"[MenuControls Hooks] ProcessEvent: Event #{}: "
+					"{} (0x{:X}, type: {}, device: {}).",
+					i,
+					event->AsIDEvent() ? event->AsIDEvent()->QUserEvent() : "NONE",
+					event->AsButtonEvent() ? event->AsButtonEvent()->idCode : 0xFF,
+					event->GetEventType(),
+					*event->device
+				);
+				event = event->next;
+				++i;
+			}*/
 
 			// P1's managers are inactive when there is no co-op session, 
 			// when the co-op camera is disabled,
@@ -2573,13 +2652,20 @@ namespace ALYSLC
 			);
 
 			bool p1InMenu = !p1ManagersInactive && glob.menuCID == glob.player1CID;
-			// Invalidate the event to prevent other handlers from processing the original event.
+			// Should invalidate the event to prevent other handlers
+			// from processing the original event.
 			bool invalidateEvent = false;
+			// Save the first gamepad device input event in the chain, if any.
+			auto firstGamepadEvent = GetFirstGamepadInputEvent(a_event);
 			if (p1InMenu)
 			{
 				// Check to see if P1 is in the Favorites Menu and is trying to hotkey an entry 
 				// or is trying equip a quickslot item or spell.
-				invalidateEvent = CheckForP1HotkeyReq(a_event) || CheckForP1QSEquipReq(a_event);
+				invalidateEvent = 
+				(
+					CheckForP1HotkeyReq(firstGamepadEvent) ||
+					CheckForP1QSEquipReq(firstGamepadEvent)
+				);
 			}
 			else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpen())
 			{
@@ -2588,55 +2674,53 @@ namespace ALYSLC
 				// In addition, check for pressing of the default binds:
 				// Pause + Wait -> Co-op Debug Menu
 				// Wait + Pause -> Co-op Summoning Menu binds.
-				invalidateEvent = CheckForMenuTriggeringInput(a_event);
+				invalidateEvent = CheckForMenuTriggeringInput(firstGamepadEvent);
 			}
 
-			if (invalidateEvent) 
+			// First gamepad event exists and at least 1 gamepad event should be invalidated.
+			if (firstGamepadEvent && invalidateEvent) 
 			{
-				auto inputEvent = *a_event;
-				auto idEvent = inputEvent->AsIDEvent();
-				auto buttonEvent = inputEvent->AsButtonEvent();
+				auto idEvent = firstGamepadEvent->AsIDEvent();
+				auto buttonEvent = firstGamepadEvent->AsButtonEvent();
 				auto thumbstickEvent = 
 				(
-					inputEvent->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ? 
-					static_cast<RE::ThumbstickEvent*>(inputEvent) : 
+					firstGamepadEvent->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ? 
+					static_cast<RE::ThumbstickEvent*>(firstGamepadEvent) : 
 					nullptr
 				);
-				if (inputEvent && inputEvent->GetDevice() == RE::INPUT_DEVICE::kGamepad)
+				auto event = firstGamepadEvent;
+				while (event)
 				{
-					while (inputEvent)
+					// Get chained event's event sub-types.
+					idEvent = event->AsIDEvent();
+					buttonEvent = event->AsButtonEvent();
+					thumbstickEvent =
+					(
+						event->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ?
+						static_cast<RE::ThumbstickEvent*>(event) :
+						nullptr
+					);
+
+					if (buttonEvent)
 					{
-						// Get chained event's event sub-types.
-						idEvent = inputEvent->AsIDEvent();
-						buttonEvent = inputEvent->AsButtonEvent();
-						thumbstickEvent =
-						(
-							inputEvent->GetEventType() == RE::INPUT_EVENT_TYPE::kThumbstick ?
-							static_cast<RE::ThumbstickEvent*>(inputEvent) :
-							nullptr
-						);
-
-						if (buttonEvent)
-						{
-							// Reset device connect flag (used to block an analog stick event) 
-							// which seems to carry over once set.
-							inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-							idEvent->userEvent = "BLOCKED";
-							buttonEvent->idCode = 0xFF;
-							buttonEvent->heldDownSecs = 0.0f;
-							buttonEvent->value = 0.0f;
-						}
-						else
-						{
-							idEvent->userEvent = "BLOCKED";
-							// JANK ALERT:
-							// Must also set this event type flag
-							// to stop analog stick events from being processed by action handlers.
-							inputEvent->eventType.set(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-						}
-
-						inputEvent = inputEvent->next;
+						// Reset device connect flag (used to block an analog stick event) 
+						// which seems to carry over once set.
+						event->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+						idEvent->userEvent = "BLOCKED";
+						buttonEvent->idCode = 0xFF;
+						buttonEvent->heldDownSecs = 0.0f;
+						buttonEvent->value = 0.0f;
 					}
+					else
+					{
+						idEvent->userEvent = "BLOCKED";
+						// JANK ALERT:
+						// Must also set this event type flag
+						// to stop analog stick events from being processed by action handlers.
+						event->eventType.set(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+					}
+
+					event = event->next;
 				}
 
 				// Should still process the modified, invalidated event.
@@ -2644,13 +2728,12 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Filter out P1 controller inputs that should be ignored 
+				// Filter out P1 inputs, gamepad or otherwise, that should be ignored 
 				// by this menu event handler while in co-op.
-				bool shouldProcessHere = FilterInputEvents(a_event);
+				bool shouldProcessHere = FilterInputEvents(a_event, firstGamepadEvent);
 				if (shouldProcessHere) 
 				{
-					return _ProcessEvent(a_this, a_event, a_eventSource);
-						
+					return _ProcessEvent(a_this, a_event, a_eventSource);	
 				}
 				else
 				{
@@ -2661,416 +2744,393 @@ namespace ALYSLC
 			return _ProcessEvent(a_this, a_event, a_eventSource);
 		}
 
-		bool MenuControlsHooks::CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::CheckForMenuTriggeringInput(RE::InputEvent* a_firstGamepadEvent)
 		{
 			// Check if P1 is trying to open the Summoning/Debug menus.
 			// Return true if the event triggered a co-op menu and should be invalidated.
 
+			// Must have a valid gamepad event; do not invalidate otherwise.
+			if (!a_firstGamepadEvent)
+			{
+				return false;
+			}
+
 			bool invalidateEvent = false;
-			auto eventHead = *a_constEvent;
-			auto buttonEvent = eventHead->AsButtonEvent(); 
+			auto buttonEvent = a_firstGamepadEvent->AsButtonEvent();
 			if (buttonEvent)
 			{
-				// Only need to handle gamepad button presses.
-				if (eventHead->GetDevice() == RE::INPUT_DEVICE::kGamepad)
+				auto userEvents = RE::UserEvents::GetSingleton();
+				auto controlMap = RE::ControlMap::GetSingleton();
+				// Debug: always Pause + Wait when not in co-op.
+				// Summon: always Wait + Pause when not in co-op.
+				auto pauseMask = GAMEPAD_MASK_START;
+				auto waitMask = GAMEPAD_MASK_BACK;
+				if (userEvents && controlMap)
 				{
-					auto userEvents = RE::UserEvents::GetSingleton();
-					auto controlMap = RE::ControlMap::GetSingleton();
-					// Debug: always Pause + Wait when not in co-op.
-					// Summon: always Wait + Pause when not in co-op.
-					auto pauseMask = GAMEPAD_MASK_START;
-					auto waitMask = GAMEPAD_MASK_BACK;
-					if (userEvents && controlMap)
+					pauseMask = controlMap->GetMappedKey
+					(
+						userEvents->pause, RE::INPUT_DEVICE::kGamepad
+					);
+					waitMask = controlMap->GetMappedKey
+					(
+						userEvents->wait, RE::INPUT_DEVICE::kGamepad
+					);
+				}
+
+				// Sometimes the associated user event is 'Journal' instead of 'Pause'.
+				if (pauseMask == 0xFF) 
+				{
+					pauseMask = controlMap->GetMappedKey
+					(
+						userEvents->journal, RE::INPUT_DEVICE::kGamepad
+					);
+				}
+
+				// Ensure both masks are valid, despite failing to get mapped button ID code.
+				if (pauseMask == 0xFF) 
+				{
+					pauseMask = GAMEPAD_MASK_START;
+				}
+
+				if (waitMask == 0xFF) 
+				{
+					waitMask = GAMEPAD_MASK_BACK;
+				}
+
+				// Both binds are sometimes the same here, 
+				// so ensure they aren't by falling back to the default binds.
+				if (pauseMask == waitMask) 
+				{
+					pauseMask = GAMEPAD_MASK_START;
+					waitMask = GAMEPAD_MASK_BACK;
+				}
+
+				// Button events seem to be chained in a manner 
+				// that does not depend on when their buttons were pressed.
+				// Check for both Pause and Wait binds being pressed/held 
+				// in any order to trigger co-op debug/summoning menus.
+				bool pauseBindEvent = buttonEvent->idCode == pauseMask;
+				bool waitBindEvent = buttonEvent->idCode == waitMask;
+				if (pauseBindEvent || waitBindEvent)
+				{
+					// Pause/Wait bind pressed by itself.
+					if (!a_firstGamepadEvent->next)
 					{
-						pauseMask = controlMap->GetMappedKey
+						pauseBindPressedFirst = pauseBindEvent;
+					}
+					else if (auto buttonEvent2 = a_firstGamepadEvent->next->AsButtonEvent();
+								buttonEvent2)
+					{
+						bool pauseBindEvent2 = buttonEvent2->idCode == pauseMask;
+						bool waitBindEvent2 = buttonEvent2->idCode == waitMask;
+						bool debugMenuBindPressedAndReleased = 
 						(
-							userEvents->pause, RE::INPUT_DEVICE::kGamepad
+							(pauseBindPressedFirst) && 
+							(
+								(pauseBindEvent && waitBindEvent2) || 
+								(pauseBindEvent2 && waitBindEvent)
+							) &&
+							(buttonEvent->IsUp() || buttonEvent2->IsUp())
 						);
-						waitMask = controlMap->GetMappedKey
+						bool summoningMenuBindPressedAndReleased = 
 						(
-							userEvents->wait, RE::INPUT_DEVICE::kGamepad
+							(!pauseBindPressedFirst) && 
+							(
+								(waitBindEvent && pauseBindEvent2) || 
+								(waitBindEvent2 && pauseBindEvent)
+							) &&
+							(buttonEvent->IsUp() || buttonEvent2->IsUp())
 						);
-					}
 
-					// Sometimes the associated user event is 'Journal' instead of 'Pause'.
-					if (pauseMask == 0xFF) 
-					{
-						pauseMask = controlMap->GetMappedKey
+						// Check if either menu is triggerable,
+						// but do not attempt to open either just yet.
+						bool shouldTriggerDebugMenu = 
 						(
-							userEvents->journal, RE::INPUT_DEVICE::kGamepad
+							debugMenuBindPressedAndReleased && !debugMenuTriggered
 						);
-					}
-
-					// Ensure both masks are valid, despite failing to get mapped button ID code.
-					if (pauseMask == 0xFF) 
-					{
-						pauseMask = GAMEPAD_MASK_START;
-					}
-
-					if (waitMask == 0xFF) 
-					{
-						waitMask = GAMEPAD_MASK_BACK;
-					}
-
-					// Both binds are sometimes the same here, 
-					// so ensure they aren't by falling back to the default binds.
-					if (pauseMask == waitMask) 
-					{
-						pauseMask = GAMEPAD_MASK_START;
-						waitMask = GAMEPAD_MASK_BACK;
-					}
-
-					// Button events seem to be chained in a manner 
-					// that does not depend on when their buttons were pressed.
-					// Check for both Pause and Wait binds being pressed/held 
-					// in any order to trigger co-op debug/summoning menus.
-					bool pauseBindEvent = buttonEvent->idCode == pauseMask;
-					bool waitBindEvent = buttonEvent->idCode == waitMask;
-					if (pauseBindEvent || waitBindEvent)
-					{
-						// Pause/Wait bind pressed by itself.
-						if (!eventHead->next)
-						{
-							pauseBindPressedFirst = pauseBindEvent;
-						}
-						else if (auto buttonEvent2 = eventHead->next->AsButtonEvent();
-								 buttonEvent2)
-						{
-							bool pauseBindEvent2 = buttonEvent2->idCode == pauseMask;
-							bool waitBindEvent2 = buttonEvent2->idCode == waitMask;
-							bool debugMenuBindPressedAndReleased = 
-							(
-								(pauseBindPressedFirst) && 
-								(
-									(pauseBindEvent && waitBindEvent2) || 
-									(pauseBindEvent2 && waitBindEvent)
-								) &&
-								(buttonEvent->IsUp() || buttonEvent2->IsUp())
-							);
-							bool summoningMenuBindPressedAndReleased = 
-							(
-								(!pauseBindPressedFirst) && 
-								(
-									(waitBindEvent && pauseBindEvent2) || 
-									(waitBindEvent2 && pauseBindEvent)
-								) &&
-								(buttonEvent->IsUp() || buttonEvent2->IsUp())
-							);
-
-							// Check if either menu is triggerable,
-							// but do not attempt to open either just yet.
-							bool shouldTriggerDebugMenu = 
-							(
-								debugMenuBindPressedAndReleased && !debugMenuTriggered
-							);
 							
-							bool shouldTriggerSummoningMenu = 
-							(
-								summoningMenuBindPressedAndReleased && !summoningMenuTriggered
-							);
+						bool shouldTriggerSummoningMenu = 
+						(
+							summoningMenuBindPressedAndReleased && !summoningMenuTriggered
+						);
 							
-							// BEFORE sending events to open any menus.
-							// Temp solution (not failproof), 
-							// since I can't find a direct way of getting the XInput
-							// controller index for the controller Skyrim recognizes as P1's.
-							// NOTE: 
-							// The BSPCGamepadDeviceDelegate's 'userIndex' member seems to 
-							// always equal 0, even if the XInput-reported controller index 
-							// for P1 is not 0, so we can't use that member to set P1's CID.
-							// 
-							// Check to see which controller is requesting to open the menu 
-							// and assign its ID as P1's CID.
-							// Heuristic checks the two buttons' event-reported held times 
-							// against the XInput controller state held times.
-							// Will sometimes fail if two players press the same binds 
-							// at nearly the exact same time (within a couple frames),
-							// as the wrong player's CID may be assigned as P1's CID.
-							// Fix by manually assigning the P1 CID through the Debug Menu.
-							auto devMgr = RE::BSInputDeviceManager::GetSingleton();
-							auto gamepad = devMgr ? devMgr->GetGamepad() : nullptr;
-							bool checkForP1CID = 
-							(
-								(
-									(glob.cdh) && 
-									(
-										glob.player1CID == -1 ||
-										!gamepad ||
-										gamepad->userIndex == -1
-									)
-								) && 
-								(shouldTriggerDebugMenu || shouldTriggerSummoningMenu)
-							);
-							SPDLOG_DEBUG
-							(
-								"[MenuControls Hook] CheckForMenuTriggeringInput: "
-								"Checking for P1 CID: {}, {}. "
-								"Reported gamepad user index: {}.",
-								shouldTriggerDebugMenu, shouldTriggerSummoningMenu,
-								gamepad ? gamepad->userIndex : -1337
-							);
-							if (checkForP1CID)
+						// BEFORE sending events to open any menus.
+						// Temp solution (not failproof), 
+						// since I can't find a direct way of getting the XInput
+						// controller index for the controller Skyrim recognizes as P1's.
+						// NOTE: 
+						// The BSPCGamepadDeviceDelegate's 'userIndex' member seems to 
+						// always equal 0, even if the XInput-reported controller index 
+						// for P1 is not 0, so we can't use that member to set P1's CID.
+						// 
+						// Check to see which controller is requesting to open the menu 
+						// and assign its ID as P1's CID.
+						// Heuristic checks the two buttons' event-reported held times 
+						// against the XInput controller state held times.
+						// Will sometimes fail if two players press the same binds 
+						// at nearly the exact same time (within a couple frames),
+						// as the wrong player's CID may be assigned as P1's CID.
+						// Fix by manually assigning the P1 CID through the Debug Menu.
+						auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+						auto gamepad = devMgr ? devMgr->GetGamepad() : nullptr;
+						bool checkForP1CID = 
+						(
+							(glob.cdh && glob.player1CID == -1) && 
+							(shouldTriggerDebugMenu || shouldTriggerSummoningMenu)
+						);
+						SPDLOG_DEBUG
+						(
+							"[MenuControls Hook] CheckForMenuTriggeringInput: "
+							"Checking for P1 CID: {}, {}. "
+							"Reported gamepad user index: {}.",
+							shouldTriggerDebugMenu, shouldTriggerSummoningMenu,
+							gamepad ? gamepad->userIndex : -1337
+						);
+						if (checkForP1CID)
+						{
+							int32_t newCID = -1;
+							// Choose the controller with the smallest held time difference.
+							float smallestHeldTimeDiffTotal = FLT_MAX;
+							for (uint32_t i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
 							{
-								int32_t newCID = -1;
-								// Choose the controller with the smallest held time difference.
-								float smallestHeldTimeDiffTotal = FLT_MAX;
-								for (uint32_t i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
+								XINPUT_STATE inputState{ };
+								ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+								bool succ = 
+								(
+									XInputGetState(i, std::addressof(inputState)) == 
+									ERROR_SUCCESS
+								);
+								if (!succ)
 								{
-									XINPUT_STATE inputState;
-									ZeroMemory(&inputState, sizeof(XINPUT_STATE));
-									bool succ = 
-									(
-										XInputGetState(i, std::addressof(inputState)) == 
-										ERROR_SUCCESS
-									);
-									if (!succ)
-									{
-										continue;
-									}
+									continue;
+								}
 
-									float eventReportedPauseHoldTime = 
+								float eventReportedPauseHoldTime = 
+								(
+									pauseBindEvent ? 
+									buttonEvent->heldDownSecs : 
+									buttonEvent2->heldDownSecs
+								);
+								float eventReportedWaitHoldTime = 
+								(
+									waitBindEvent ?
+									buttonEvent->heldDownSecs : 
+									buttonEvent2->heldDownSecs
+								);
+								const auto& inputState1 = 
+								(
+									glob.cdh->GetInputState
 									(
-										pauseBindEvent ? 
-										buttonEvent->heldDownSecs : 
-										buttonEvent2->heldDownSecs
-									);
-									float eventReportedWaitHoldTime = 
-									(
-										waitBindEvent ?
-										buttonEvent->heldDownSecs : 
-										buttonEvent2->heldDownSecs
-									);
-									const auto& inputState1 = 
-									(
-										glob.cdh->GetInputState
-										(
-											i, 
-											shouldTriggerDebugMenu ?
-											glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask) :
-											glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask)
-										)
-									);
-									const auto& inputState2 = 
-									(
-										glob.cdh->GetInputState
-										(
-											i, 
-											shouldTriggerDebugMenu ? 
-											glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask) : 
-											glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask)
-										)
-									);
-
-									SPDLOG_DEBUG
-									(
-										"[MenuControls Hook] CheckForMenuTriggeringInput: "
-										"Performing held time check for CID {}. "
-										"Event reported held times: Pause: {}, Wait: {}. "
-										"Input state reported held times: "
-										"Pause: {}, Wait: {}.",
-										i,
-										eventReportedPauseHoldTime,
-										eventReportedWaitHoldTime,
-										shouldTriggerDebugMenu ? 
-										inputState1.heldTimeSecs : 
-										inputState2.heldTimeSecs,
+										i, 
 										shouldTriggerDebugMenu ?
-										inputState2.heldTimeSecs : 
-										inputState1.heldTimeSecs
-									);
+										glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask) :
+										glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask)
+									)
+								);
+								const auto& inputState2 = 
+								(
+									glob.cdh->GetInputState
+									(
+										i, 
+										shouldTriggerDebugMenu ? 
+										glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask) : 
+										glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask)
+									)
+								);
 
-									float heldTimeDiffTotal = FLT_MAX;
-									if (shouldTriggerDebugMenu)
-									{
-										heldTimeDiffTotal = 
+								float heldTimeDiffTotal = FLT_MAX;
+								if (shouldTriggerDebugMenu)
+								{
+									heldTimeDiffTotal = 
+									(
+										fabsf
 										(
-											fabsf
-											(
-												eventReportedPauseHoldTime -
-												inputState1.heldTimeSecs
-											) + 
-											fabsf
-											(
-												eventReportedWaitHoldTime -
-												inputState2.heldTimeSecs
-											)
-										);
-									}
-									else
-									{
-										heldTimeDiffTotal = 
+											eventReportedPauseHoldTime -
+											inputState1.heldTimeSecs
+										) + 
+										fabsf
 										(
-											fabsf
-											(
-												eventReportedWaitHoldTime - 
-												inputState1.heldTimeSecs
-											) + 
-											fabsf
-											(
-												eventReportedPauseHoldTime - 
-												inputState2.heldTimeSecs
-											)
-										);
-									}
-
-									SPDLOG_DEBUG
-									(
-										"[MenuControls Hook] CheckForMenuTriggeringInput: "
-										"Total held time differential for CID {} is {}.",
-										i, heldTimeDiffTotal
+											eventReportedWaitHoldTime -
+											inputState2.heldTimeSecs
+										)
 									);
-
-									if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
-									{
-										smallestHeldTimeDiffTotal = heldTimeDiffTotal;
-										newCID = i;
-									}
-								}
-
-								if (newCID != -1)
-								{
-									SPDLOG_DEBUG
-									(
-										"[MenuControls Hook] CheckForMenuTriggeringInput: "
-										"P1 CID set to {};",
-										newCID
-									);
-									glob.player1CID = newCID;
-								}
-							}
-
-							// After performing P1 CID check,
-							// we can now open either menu.
-							if (shouldTriggerDebugMenu)
-							{
-								// Can trigger the debug menu at any time, 
-								// even if the camera/P1 manager threads are inactive.
-								if (glob.player1Actor)
-								{
-									SPDLOG_DEBUG
-									(
-										"[MenuControls Hook] CheckForMenuTriggeringInput: "
-										"Debug menu binds pressed but not triggered. "
-										"Opening menu now."
-									);
-									glob.onDebugMenuRequest.SendEvent
-									(
-										glob.player1Actor.get(), 
-										glob.coopSessionActive ? glob.player1CID : -1
-									);
-									invalidateEvent = true;
-								}
-
-								debugMenuTriggered = true;
-							}
-							
-							if (shouldTriggerSummoningMenu)
-							{
-								// NOTE: 
-								// Have to wait until P1 is out of combat to summon other players.
-								// Summoning global variable is set to 1 
-								// in the summoning menu script, and set to 0 
-								// if summoning failed or is complete.
-								if (glob.summoningMenuOpenGlob->value == 0.0f && 
-									glob.player1Actor && 
-									!glob.player1Actor->IsInCombat())
-								{
-									SPDLOG_DEBUG
-									(
-										"[MenuControls Hook] CheckForMenuTriggeringInput: "
-										"Summoning menu binds pressed but not triggered. "
-										"Opening menu now."
-									);
-									glob.onSummoningMenuRequest.SendEvent();
-									invalidateEvent = true;
 								}
 								else
 								{
-									RE::DebugMessageBox
+									heldTimeDiffTotal = 
 									(
-										"[ALYSLC] Summoning Menu was already triggered "
-										"or Player 1 is in combat. "
-										"Please ensure Player 1 is not in combat "
-										"before attempting to summon other players."
+										fabsf
+										(
+											eventReportedWaitHoldTime - 
+											inputState1.heldTimeSecs
+										) + 
+										fabsf
+										(
+											eventReportedPauseHoldTime - 
+											inputState2.heldTimeSecs
+										)
 									);
 								}
 
-								summoningMenuTriggered = true;
+								if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
+								{
+									smallestHeldTimeDiffTotal = heldTimeDiffTotal;
+									newCID = i;
+								}
 							}
 
-							// After processing, ignore the second button event entirely, 
-							// since we do not want either the pause or wait menus to trigger once
-							// both the pause and wait binds are pressed at the same time.
-							if (buttonEvent2->IsDown() ||
-								buttonEvent2->IsHeld() || 
-								buttonEvent2->IsUp())
+							if (newCID != -1)
 							{
-								buttonEvent2->heldDownSecs = 0.0f;
-								buttonEvent2->value = 0.0f;
-								buttonEvent2->idCode = 0xFF;
-							}
-						}
-
-						if (buttonEvent->IsDown() || buttonEvent->IsHeld())
-						{
-							if (buttonEvent->IsDown())
-							{
-								ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpen();
 								SPDLOG_DEBUG
 								(
 									"[MenuControls Hook] CheckForMenuTriggeringInput: "
-									"{} menu bind is now pressed. "
-									"Ignore ({}) and trigger on release "
-									"if no co-op menus are triggered by then.",
-									pauseBindEvent ? "Pause" : "Wait",
-									ignoringPauseWaitEvent
+									"P1 CID set to {};",
+									newCID
+								);
+								glob.player1CID = newCID;
+							}
+						}
+
+						// After performing P1 CID check,
+						// we can now open either menu.
+						if (shouldTriggerDebugMenu)
+						{
+							// Can trigger the debug menu at any time, 
+							// even if the camera/P1 manager threads are inactive.
+							if (glob.player1Actor)
+							{
+								SPDLOG_DEBUG
+								(
+									"[MenuControls Hook] CheckForMenuTriggeringInput: "
+									"Debug menu binds pressed but not triggered. "
+									"Opening menu now."
+								);
+								glob.onDebugMenuRequest.SendEvent
+								(
+									glob.player1Actor.get(), 
+									glob.coopSessionActive ? glob.player1CID : -1
+								);
+								invalidateEvent = true;
+							}
+
+							debugMenuTriggered = true;
+						}
+							
+						if (shouldTriggerSummoningMenu)
+						{
+							// NOTE: 
+							// Have to wait until P1 is out of combat to summon other players.
+							// Summoning global variable is set to 1 
+							// in the summoning menu script, and set to 0 
+							// if summoning failed or is complete.
+							if (glob.summoningMenuOpenGlob->value == 0.0f && 
+								glob.player1Actor && 
+								!glob.player1Actor->IsInCombat())
+							{
+								SPDLOG_DEBUG
+								(
+									"[MenuControls Hook] CheckForMenuTriggeringInput: "
+									"Summoning menu binds pressed but not triggered. "
+									"Opening menu now."
+								);
+								glob.onSummoningMenuRequest.SendEvent();
+								invalidateEvent = true;
+							}
+							else
+							{
+								RE::DebugMessageBox
+								(
+									"[ALYSLC] Summoning Menu was already triggered "
+									"or Player 1 is in combat. "
+									"Please ensure Player 1 is not in combat "
+									"before attempting to summon other players."
+								);
+								SPDLOG_DEBUG
+								(
+									"[MenuControls Hook] CheckForMenuTriggeringInput: "
+									"Summoning glob: {}, P1 valid: {}, P1 in combat: {}.",
+									glob.summoningMenuOpenGlob->value,
+									glob.player1Actor && glob.player1Actor.get(),
+									glob.player1Actor ? glob.player1Actor->IsInCombat() : false
 								);
 							}
 
-							// Clear out first button event to prevent it 
-							// from triggering the Pause or Wait menus
-							// while the button is still pressed.
+							summoningMenuTriggered = true;
+						}
+
+						// After processing, ignore the second button event entirely, 
+						// since we do not want either the pause or wait menus to trigger once
+						// both the pause and wait binds are pressed at the same time.
+						if (buttonEvent2->IsDown() ||
+							buttonEvent2->IsHeld() || 
+							buttonEvent2->IsUp())
+						{
+							buttonEvent2->heldDownSecs = 0.0f;
+							buttonEvent2->value = 0.0f;
+							buttonEvent2->idCode = 0xFF;
+						}
+					}
+
+					if (buttonEvent->IsDown() || buttonEvent->IsHeld())
+					{
+						if (buttonEvent->IsDown())
+						{
+							ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpen();
+							SPDLOG_DEBUG
+							(
+								"[MenuControls Hook] CheckForMenuTriggeringInput: "
+								"{} menu bind is now pressed. "
+								"Ignore ({}) and trigger on release "
+								"if no co-op menus are triggered by then.",
+								pauseBindEvent ? "Pause" : "Wait",
+								ignoringPauseWaitEvent
+							);
+						}
+
+						// Clear out first button event to prevent it 
+						// from triggering the Pause or Wait menus
+						// while the button is still pressed.
+						buttonEvent->heldDownSecs = 0.0f;
+						buttonEvent->value = 0.0f;
+						buttonEvent->idCode = 0xFF;
+					}
+					else if (buttonEvent->IsUp())
+					{
+						if (!summoningMenuTriggered && 
+							!debugMenuTriggered && 
+							!ignoringPauseWaitEvent && 
+							Util::MenusOnlyAlwaysOpen())
+						{
+							// No co-op menus triggered, 
+							// so allow the button event to pass through on release
+							// and trigger either the Pause or Wait menu as usual.
+							SPDLOG_DEBUG
+							(
+								"[MenuControls Hook] CheckForMenuTriggeringInput: "
+								"{} bind released on its own. "
+								"Simulating press to trigger {} menu.",
+								pauseBindEvent ? "Pause" : "Wait", 
+								pauseBindEvent ? "Pause" : "Wait"
+							);
+
 							buttonEvent->heldDownSecs = 0.0f;
+							buttonEvent->value = 1.0f;
+						}
+						else if (summoningMenuTriggered || debugMenuTriggered)
+						{
+							// A co-op menu was triggered, 
+							// so ignore the button event on release.
+							SPDLOG_DEBUG
+							(
+								"[MenuControls Hook] CheckForMenuTriggeringInput: "
+								"{} bind released on its own after {} menu triggered. "
+								"Ignoring.",
+								pauseBindEvent ? "Pause" : "Wait", 
+								summoningMenuTriggered ? "Summoning" : "Debug"
+							);
+
 							buttonEvent->value = 0.0f;
 							buttonEvent->idCode = 0xFF;
-						}
-						else if (buttonEvent->IsUp())
-						{
-							if (!summoningMenuTriggered && 
-								!debugMenuTriggered && 
-								!ignoringPauseWaitEvent && 
-								Util::MenusOnlyAlwaysOpen())
-							{
-								// No co-op menus triggered, 
-								// so allow the button event to pass through on release
-								// and trigger either the Pause or Wait menu as usual.
-								SPDLOG_DEBUG
-								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
-									"{} bind released on its own. "
-									"Simulating press to trigger {} menu.",
-									pauseBindEvent ? "Pause" : "Wait", 
-									pauseBindEvent ? "Pause" : "Wait"
-								);
-
-								buttonEvent->heldDownSecs = 0.0f;
-								buttonEvent->value = 1.0f;
-							}
-							else if (summoningMenuTriggered || debugMenuTriggered)
-							{
-								// A co-op menu was triggered, 
-								// so ignore the button event on release.
-								SPDLOG_DEBUG
-								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
-									"{} bind released on its own after {} menu triggered. "
-									"Ignoring.",
-									pauseBindEvent ? "Pause" : "Wait", 
-									summoningMenuTriggered ? "Summoning" : "Debug"
-								);
-
-								buttonEvent->value = 0.0f;
-								buttonEvent->idCode = 0xFF;
-							}
 						}
 					}
 				}
@@ -3080,7 +3140,7 @@ namespace ALYSLC
 			// so reset menu triggered states.
 			bool buttonInputsReleased = 
 			{
-				(eventHead && !buttonEvent && !eventHead->next) || 
+				(a_firstGamepadEvent && !buttonEvent && !a_firstGamepadEvent->next) || 
 				(
 					(buttonEvent && buttonEvent->IsUp()) && 
 					(
@@ -3119,28 +3179,29 @@ namespace ALYSLC
 			return invalidateEvent;
 		}
 
-		bool MenuControlsHooks::CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::CheckForP1HotkeyReq(RE::InputEvent* a_firstGamepadEvent)
 		{
 			// Check if P1 is trying to hotkey a FavoritesMenu entry.
 			// Return true if the event triggered a hotkey change and should be invalidated.
 
-			auto inputEvent = *a_constEvent;
+			// Must have a valid gamepad event; do not invalidate otherwise.
+			if (!a_firstGamepadEvent)
+			{
+				return false;
+			}
+
 			auto ue = RE::UserEvents::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
 			auto controlMap = RE::ControlMap::GetSingleton();
 			// Must have a valid input event, access to the UI and user events singletons,
 			// and be displaying the Favorites Menu.
-			if (!inputEvent || 
-				!ue || 
-				!ui || 
-				!ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || 
-				!controlMap)
+			if (!ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
 			{
 				return false;
 			}
 
-			auto idEvent = inputEvent->AsIDEvent();
-			auto buttonEvent = inputEvent->AsButtonEvent();
+			auto idEvent = a_firstGamepadEvent->AsIDEvent();
+			auto buttonEvent = a_firstGamepadEvent->AsButtonEvent();
 			// Only handle button events with an ID.
 			if (!idEvent || !buttonEvent)
 			{
@@ -3164,29 +3225,30 @@ namespace ALYSLC
 			return true;
 		}
 
-		bool MenuControlsHooks::CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::CheckForP1QSEquipReq(RE::InputEvent* a_firstGamepadEvent)
 		{
 			// Check if P1 is trying to (un)tag a FavoritesMenu entry 
 			// as a quick slot item/spell.
 			// Return true if the event triggered a QS (un)equip and should be invalidated.
 
-			auto inputEvent = *a_constEvent;
+			// Must have a valid gamepad event; do not invalidate otherwise.
+			if (!a_firstGamepadEvent)
+			{
+				return false;
+			}
+
 			auto ue = RE::UserEvents::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
 			auto controlMap = RE::ControlMap::GetSingleton();
 			// Must have a valid input event, access to the UI and user events singletons,
 			// and be displaying the Favorites Menu.
-			if (!inputEvent || 
-				!ue || 
-				!ui || 
-				!ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || 
-				!controlMap)
+			if (!ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
 			{
 				return false;
 			}
 
-			auto idEvent = inputEvent->AsIDEvent();
-			auto buttonEvent = inputEvent->AsButtonEvent();
+			auto idEvent = a_firstGamepadEvent->AsIDEvent();
+			auto buttonEvent = a_firstGamepadEvent->AsButtonEvent();
 			// Only handle button events with an ID.
 			if (!idEvent || !buttonEvent)
 			{
@@ -3216,7 +3278,11 @@ namespace ALYSLC
 			return true;
 		}
 
-		bool MenuControlsHooks::FilterInputEvents(RE::InputEvent* const* a_constEvent)
+		bool MenuControlsHooks::FilterInputEvents
+		(
+			RE::InputEvent* const* a_eventHead,
+			RE::InputEvent* a_firstGamepadEvent
+		)
 		{
 			// Check which player sent the input events in the input event chain,
 			// and modify individual input events in the chain to block them 
@@ -3224,7 +3290,7 @@ namespace ALYSLC
 			// Return true if the event should be processed by the MenuControls hook.
 			// 
 			// NOTE: 
-			// This function is messy, I know.
+			// This function is messy even compared to the rest of the project, I know.
 			// 
 			// IMPORTANT:
 			// InputEvent's 'pad24' member is used to store processing info:
@@ -3233,7 +3299,7 @@ namespace ALYSLC
 			// and should be allowed through by this function.
 			// 0xXXXXCA11:	emulated P1 input sent by another player from the MIM.
 			// 0xXXXXDEAD:	ignore this input event.
-			
+
 			// Should this menu controls handler handle the input event here 
 			// or pass it on without processing?
 			bool shouldProcess = true;
@@ -3241,7 +3307,9 @@ namespace ALYSLC
 			const auto ui = RE::UI::GetSingleton();
 			const auto ue = RE::UserEvents::GetSingleton();
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			auto inputEvent = *a_constEvent;
+			// NOTE:
+			// Does not have to be a gamepad event here.
+			auto inputEvent = *a_eventHead;
 			auto idEvent = inputEvent->AsIDEvent();
 			auto buttonEvent = inputEvent->AsButtonEvent();
 			auto thumbstickEvent = 
@@ -3269,6 +3337,7 @@ namespace ALYSLC
 			// while using this mod to remove any chance of saving copied data onto P1, 
 			// such as another player's name or race name.
 			const auto eventName = inputEvent->QUserEvent();
+			// These are keyboard events.
 			bool couldSaveWithCopiedData =
 			(
 				(*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) &&
@@ -3307,31 +3376,60 @@ namespace ALYSLC
 					buttonEvent->idCode = 0xFF;
 					buttonEvent->heldDownSecs = 0.0f;
 					buttonEvent->value = 0.0f;
+					inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
 					return false;
 				}
 			}
 
-			if (!ui ||
-				!ue ||
-				!p1 || 
-				!inputEvent ||
-				inputEvent->GetDevice() != RE::INPUT_DEVICE::kGamepad)
+			if (!ui || !ue || !p1 || !a_firstGamepadEvent)
 			{
-				// Reset device connect flag that may have been set before 
+				// Prior to returning as processable,
+				// reset the device connect flag which may have been set before 
 				// when preventing analog stick inputs from propagating unmodified.
 				inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-				return shouldProcess;
+				return true;
 			}
+
+			// NOTE:
+			// There is guaranteed to be at least 1 gamepad input event now.
 
 			bool dialogueMenuOpen = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
 			bool lootMenuOpen = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
 			// Open the targeted container while in the LootMenu.
 			bool lootMenuOpenContainer = false;
 			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+			// Start from the first gamepad input event and walk the chain.
+			inputEvent = a_firstGamepadEvent;
 			while (inputEvent)
 			{
+				// Reset blocked analog stick event flag which seems to carry over once set.
+				inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+
+				// Skip all input events except gamepad events.
+				if (inputEvent->GetDevice() != RE::INPUT_DEVICE::kGamepad)
+				{
+					inputEvent = inputEvent->next;
+					continue;
+				}
+
 				// Get chained event sub-types.
 				idEvent = inputEvent->AsIDEvent();
+				// Skip events with no ID.
+				if (!idEvent)
+				{
+					inputEvent = inputEvent->next;
+					continue;
+				}
+				
+				// Clear pad24 first because the pad flag sticks around for reused id events.
+				// NOTE: 
+				// Top 2 bytes == 0xC0DA means this event has been processed before.
+				if (idEvent->pad24 >> 16 == 0xC0DA)
+				{
+					idEvent->pad24 = 0;
+				}
+				
+				// Downcast.
 				buttonEvent = inputEvent->AsButtonEvent();
 				thumbstickEvent = 
 				(
@@ -3340,530 +3438,519 @@ namespace ALYSLC
 					nullptr
 				);
 
-				// Reset blocked analog stick event flag which seems to carry over once set.
-				inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-				if (idEvent)
+				// Has a bypass flag indicating that the event was sent by another player.
+				// Co-op companion players: 0xCA11
+				bool coopPlayerMenuInput = 
+				(
+					(coopPlayerControllingMenus && idEvent) && 
+					((idEvent->pad24 & 0xFFFF) == 0xCA11)
+				);
+
+				//======================================
+				// Special QuickLoot menu compatibility.
+				//======================================
+				bool validLootMenuInput = lootMenuOpen;
+				auto controlMap = RE::ControlMap::GetSingleton(); 
+				if (controlMap && lootMenuOpen && buttonEvent)
 				{
-					// Clear pad24 first because the pad flag sticks around for reused id events.
-					// NOTE: 
-					// Top 2 bytes == 0xC0DA means this event has been processed before.
-					if (idEvent->pad24 >> 16 == 0xC0DA)
+					if (buttonEvent->heldDownSecs == 0.0f)
 					{
-						idEvent->pad24 = 0;
-					}
-
-					// Has a bypass flag indicating that the event was sent by another player.
-					// Co-op companion players: 0xCA11
-					bool coopPlayerMenuInput = 
-					(
-						(coopPlayerControllingMenus && idEvent) && 
-						((idEvent->pad24 & 0xFFFF) == 0xCA11)
-					);
-
-					//======================================
-					// Special QuickLoot menu compatibility.
-					//======================================
-					bool validLootMenuInput = lootMenuOpen;
-					auto controlMap = RE::ControlMap::GetSingleton(); 
-					if (controlMap && lootMenuOpen && buttonEvent)
-					{
-						if (buttonEvent->heldDownSecs == 0.0f)
+						// Save "Ready Weapon" input, if any, 
+						// to prepare for giving this player control 
+						// when opening the selected container while in the QuickLoot menu.
+						// IDK why the event name that QuickLoot uses 
+						// to switch to the ContainerMenu here is an empty string,
+						// but hey, check the ID code instead, 
+						// since that still equals the ID code for the "Ready Weapon" bind.
+						if (!lootMenuOpenContainer && 
+							buttonEvent->idCode == 
+							controlMap->GetMappedKey
+							(
+								ue->readyWeapon, RE::INPUT_DEVICE::kGamepad
+							))
 						{
-							// Save "Ready Weapon" input, if any, 
-							// to prepare for giving this player control 
-							// when opening the selected container while in the QuickLoot menu.
-							// IDK why the event name that QuickLoot uses 
-							// to switch to the ContainerMenu here is an empty string,
-							// but hey, check the ID code instead, 
-							// since that still equals the ID code for the "Ready Weapon" bind.
-							if (!lootMenuOpenContainer && 
-								buttonEvent->idCode == 
-								controlMap->GetMappedKey
+							lootMenuOpenContainer = true;
+						}
+						else if ((coopPlayerControllingMenus && !coopPlayerMenuInput) &&
 								(
-									ue->readyWeapon, RE::INPUT_DEVICE::kGamepad
+									buttonEvent->idCode ==
+									controlMap->GetMappedKey
+									(
+										ue->accept, 
+										RE::INPUT_DEVICE::kGamepad, 
+										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+									) ||
+									buttonEvent->idCode == 
+									controlMap->GetMappedKey
+									(
+										ue->cancel, 
+										RE::INPUT_DEVICE::kGamepad, 
+										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+									) ||
+									buttonEvent->idCode == 
+									controlMap->GetMappedKey
+									(
+										ue->xButton, 
+										RE::INPUT_DEVICE::kGamepad,
+										RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu
+									)
 								))
-							{
-								lootMenuOpenContainer = true;
-							}
-							else if ((coopPlayerControllingMenus && !coopPlayerMenuInput) &&
+						{
+							// Questionable formatting as usual.
+							// Ignore P1 inputs that would affect the Loot Menu 
+							// (eg. Take, Take All, or Exit).
+							validLootMenuInput = false;
+						}
+						else if ((!coopPlayerControllingMenus) && 
+								(
+									buttonEvent->idCode == 
+									controlMap->GetMappedKey
 									(
-										buttonEvent->idCode ==
-										controlMap->GetMappedKey
-										(
-											ue->accept, 
-											RE::INPUT_DEVICE::kGamepad, 
-											RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-										) ||
-										buttonEvent->idCode == 
-										controlMap->GetMappedKey
-										(
-											ue->cancel, 
-											RE::INPUT_DEVICE::kGamepad, 
-											RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-										) ||
-										buttonEvent->idCode == 
-										controlMap->GetMappedKey
-										(
-											ue->xButton, 
-											RE::INPUT_DEVICE::kGamepad,
-											RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu
-										)
-									))
+										ue->cancel,
+										RE::INPUT_DEVICE::kGamepad,
+										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+									)
+								))
+						{
+							// Have to stop the Tween Menu from opening for P1 here, 
+							// so swallow the 'Cancel' input, 
+							// and instead close the Loot Menu by clearing the crosshair refr.
+							// Keeps things consistent with the other players,
+							// who also close the LootMenu via clearing the crosshair refr.
+							validLootMenuInput = false;
+							// Exit menu and relinquish control when cancel bind is pressed.
+							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
+							if (crosshairPickData)
 							{
-								// Questionable formatting as usual.
-								// Ignore P1 inputs that would affect the Loot Menu 
-								// (eg. Take, Take All, or Exit).
-								validLootMenuInput = false;
-							}
-							else if ((!coopPlayerControllingMenus) && 
-									(
-										buttonEvent->idCode == 
-										controlMap->GetMappedKey
-										(
-											ue->cancel,
-											RE::INPUT_DEVICE::kGamepad,
-											RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-										)
-									))
-							{
-								// Have to stop the Tween Menu from opening for P1 here, 
-								// so swallow the 'Cancel' input, 
-								// and instead close the Loot Menu by clearing the crosshair refr.
-								// Keeps things consistent with the other players,
-								// who also close the LootMenu via clearing the crosshair refr.
-								validLootMenuInput = false;
-								// Exit menu and relinquish control when cancel bind is pressed.
-								auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
-								if (crosshairPickData)
-								{
-									// Clears crosshair refr data.
-									Util::SendCrosshairEvent(nullptr);
-								}
+								// Clears crosshair refr data.
+								Util::SendCrosshairEvent(nullptr);
 							}
 						}
 					}
-					else if (buttonEvent && !coopPlayerMenuInput)
+				}
+				else if (buttonEvent && !coopPlayerMenuInput)
+				{
+					if (coopPlayerControllingMenus) 
 					{
-						if (coopPlayerControllingMenus) 
+						// Change event name to the corresponding gameplay context event name 
+						// for P1 input events when P1 is not controlling menus.
+						// Ensures that menu processing will not occur for these inputs.
+						auto p1GameplayContextEvent = 
+						(
+							controlMap->GetUserEventName
+							(
+								buttonEvent->idCode, RE::INPUT_DEVICE::kGamepad
+							)
+						);
+						if (Hash(p1GameplayContextEvent) != ""_h)
 						{
-							// Change event name to the corresponding gameplay context event name 
-							// for P1 input events when P1 is not controlling menus.
-							// Ensures that menu processing will not occur for these inputs.
-							auto p1GameplayContextEvent = 
+							idEvent->userEvent = p1GameplayContextEvent;
+						}
+					}
+					else if (!onlyAlwaysOpen)
+					{
+						// Change DPad event name to the corresponding menu context event name 
+						// for P1 input events when P1 is controlling menus.
+						// Ensures that menu -- and not gameplay -- processing 
+						// will occur for these inputs.
+						// eg. Instead of 'Hotkey1'/'Hotkey2' triggering 
+						// while P1 is in the Favorites Menu 
+						// and pressing left/right on the DPad,
+						// the proper 'Left'/'Right' DPad user events will be sent instead.
+						// DPad gamepad masks are all < 0xF.
+						if (buttonEvent->idCode < 0x0000000F) 
+						{
+							auto p1MenuContextEvent = 
 							(
 								controlMap->GetUserEventName
 								(
-									buttonEvent->idCode, RE::INPUT_DEVICE::kGamepad
+									buttonEvent->idCode, 
+									RE::INPUT_DEVICE::kGamepad, 
+									RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 								)
 							);
-							if (Hash(p1GameplayContextEvent) != ""_h)
+							if (Hash(p1MenuContextEvent) != ""_h)
 							{
-								idEvent->userEvent = p1GameplayContextEvent;
-							}
-						}
-						else
-						{
-							// Change DPad event name to the corresponding menu context event name 
-							// for P1 input events when P1 is controlling menus.
-							// Ensures that menu -- and not gameplay -- processing 
-							// will occur for these inputs.
-							// eg. Instead of 'Hotkey1'/'Hotkey2' triggering 
-							// while P1 is in the Favorites Menu 
-							// and pressing left/right on the DPad,
-							// the proper 'Left'/'Right' DPad user events will be sent instead.
-							// DPad gamepad masks are all < 0xF.
-							if (buttonEvent->idCode < 0x0000000F) 
-							{
-								auto p1MenuContextEvent = 
-								(
-									controlMap->GetUserEventName
-									(
-										buttonEvent->idCode, 
-										RE::INPUT_DEVICE::kGamepad, 
-										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-									)
-								);
-								if (Hash(p1MenuContextEvent) != ""_h)
-								{
-									idEvent->userEvent = p1MenuContextEvent;
-								}
+								idEvent->userEvent = p1MenuContextEvent;
 							}
 						}
 					}
+				}
 
-					//=============================================================================
-					// Two tasks to perform here:
-					// 1. Check if the event should be processed once returning from this function.
-					// If allowed, the subsequent ProcessEvent() call will allow 
-					// any open menus to process the chained input events.
-					// Otherwise, the event will not be processed by any menus, 
-					// but can still be processed by handlers further down the propagation chain.
-					// 2. Propagate the input event unmodified.
-					// If unmodified, all following handlers, such as P1's action handlers,
-					// can process the event.
-					// Otherwise, after modification, 
-					// the event will not be processed by any subsequent handlers.
-					//=============================================================================
+				//=============================================================================
+				// Two tasks to perform here:
+				// 1. Check if the event should be processed once returning from this function.
+				// If allowed, the subsequent ProcessEvent() call will allow 
+				// any open menus to process the chained input events.
+				// Otherwise, the event will not be processed by any menus, 
+				// but can still be processed by handlers further down the propagation chain.
+				// 2. Propagate the input event unmodified.
+				// If unmodified, all following handlers, such as P1's action handlers,
+				// can process the event.
+				// Otherwise, after modification, 
+				// the event will not be processed by any subsequent handlers.
+				//=============================================================================
 
-					// Attempting to attack with the LH/RH hand form.
-					bool isAttackInput = 
+				// Attempting to attack with the LH/RH hand form.
+				bool isAttackInput = 
+				(
+					idEvent->userEvent == ue->leftAttack || 
+					idEvent->userEvent == ue->rightAttack
+				);
+				// Is an event that should be blocked from propagating.
+				bool isBlockedP1Event = false;
+				// P1 input event names become the empty string when in the LootMenu.
+				// Filter these out as blocked.
+				bool isBlockedP1LootMenuEvent = 
+				(
+					coopPlayerControllingMenus && 
+					!coopPlayerMenuInput && 
+					Hash(idEvent->userEvent) == ""_h
+				);
+				// Attacking on foot.
+				bool isGroundedAttackInput = !p1->IsOnMount() && isAttackInput;
+				// Attempting to move the camera.
+				bool isLookInput = idEvent->userEvent == ue->look;
+				// Attempting to move the player's arms.
+				bool isMoveArmsInput = 
+				(
+					Settings::bEnableArmsRotation && 
+					isAttackInput &&
+					!p1->IsWeaponDrawn()
+				);
+				// Attempting to move P1.
+				bool isMoveInput = idEvent->userEvent == ue->move;
+				// Attempting to start or stop paragliding.
+				bool isParaglidingInput = 
+				{
 					(
-						idEvent->userEvent == ue->leftAttack || 
-						idEvent->userEvent == ue->rightAttack
-					);
-					// Is an event that should be blocked from propagating.
-					bool isBlockedP1Event = false;
-					// P1 input event names become the empty string when in the LootMenu.
-					// Filter these out as blocked.
-					bool isBlockedP1LootMenuEvent = 
-					(
-						coopPlayerControllingMenus && 
-						!coopPlayerMenuInput && 
-						Hash(idEvent->userEvent) == ""_h
-					);
-					// Attacking on foot.
-					bool isGroundedAttackInput = !p1->IsOnMount() && isAttackInput;
-					// Attempting to move the camera.
-					bool isLookInput = idEvent->userEvent == ue->look;
-					// Attempting to move the player's arms.
-					bool isMoveArmsInput = 
-					(
-						Settings::bEnableArmsRotation && 
-						isAttackInput &&
-						!p1->IsWeaponDrawn()
-					);
-					// Attempting to move P1.
-					bool isMoveInput = idEvent->userEvent == ue->move;
-					// Attempting to start or stop paragliding.
-					bool isParaglidingInput = 
+						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider && 
+						p1->GetCharController() && 
+						p1->GetCharController()->context.currentState ==
+						RE::hkpCharacterStateType::kInAir
+					) &&
+					(idEvent->userEvent == ue->activate || isMoveInput)
+				};
+				// Attempting to rotate the camera for P1.
+				bool isRotateInput = idEvent->userEvent == ue->rotate;
+				// Attempting to rotate the camera while mounted.
+				bool isMountedCamInputEvent = 
+				(
+					(p1->IsOnMount()) && (isRotateInput || isLookInput)
+				);
+
+				//=============================================================================
+				// Container Tab Switch Check:
+				//=============================================================================
+
+				// Can P1 switch the container tab to/from their inventory?
+				bool isValidContainerTabSwitch = false;
+				if (idEvent->userEvent == ue->wait &&
+					ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) 
+				{
+					auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
+					if (containerMenu && containerMenu.get())
 					{
+						RE::NiPointer<RE::TESObjectREFR> containerRefr;
+						RE::TESObjectREFR::LookupByHandle
 						(
-							ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider && 
-							p1->GetCharController() && 
-							p1->GetCharController()->context.currentState ==
-							RE::hkpCharacterStateType::kInAir
-						) &&
-						(idEvent->userEvent == ue->activate || isMoveInput)
-					};
-					// Attempting to rotate the camera for P1.
-					bool isRotateInput = idEvent->userEvent == ue->rotate;
-					// Attempting to rotate the camera while mounted.
-					bool isMountedCamInputEvent = 
-					(
-						(p1->IsOnMount()) && (isRotateInput || isLookInput)
-					);
-
-					//=============================================================================
-					// Container Tab Switch Check:
-					//=============================================================================
-
-					// Can P1 switch the container tab to/from their inventory?
-					bool isValidContainerTabSwitch = false;
-					if (idEvent->userEvent == ue->wait &&
-						ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) 
-					{
-						auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
-						if (containerMenu && containerMenu.get())
+							RE::ContainerMenu::GetTargetRefHandle(), containerRefr
+						);
+						// If the container is not a companion player's inventory,
+						// or if P1 is attempting to switch back 
+						// to the companion player's inventory,
+						// the tab switch request is valid.
+						if (!GlobalCoopData::IsCoopPlayer(containerRefr)) 
 						{
-							RE::NiPointer<RE::TESObjectREFR> containerRefr;
-							RE::TESObjectREFR::LookupByHandle
+							isValidContainerTabSwitch = true;
+						}
+						else if (auto view = containerMenu->uiMovie; view)
+						{
+							RE::GFxValue result;
+							view->Invoke
 							(
-								RE::ContainerMenu::GetTargetRefHandle(), containerRefr
+								"_root.Menu_mc.isViewingContainer",
+								std::addressof(result),
+								nullptr,
+								0
 							);
-							// If the container is not a companion player's inventory,
-							// or if P1 is attempting to switch back 
-							// to the companion player's inventory,
-							// the tab switch request is valid.
-							if (!GlobalCoopData::IsCoopPlayer(containerRefr)) 
+							bool isViewingContainer = result.GetBool();
+							// Only allow a tab switch from P1's inventory 
+							// back to the co-op companion's inventory.
+							if (!isViewingContainer)
 							{
 								isValidContainerTabSwitch = true;
 							}
-							else if (auto view = containerMenu->uiMovie; view)
-							{
-								RE::GFxValue result;
-								view->Invoke
-								(
-									"_root.Menu_mc.isViewingContainer",
-									std::addressof(result),
-									nullptr,
-									0
-								);
-								bool isViewingContainer = result.GetBool();
-								// Only allow a tab switch from P1's inventory 
-								// back to the co-op companion's inventory.
-								if (!isViewingContainer)
-								{
-									isValidContainerTabSwitch = true;
-								}
-							}
 						}
 					}
+				}
 
-					//=============================================================================
-					// Should Block or Propagate Events:
-					//=============================================================================
+				//=============================================================================
+				// Should Block or Propagate Events:
+				//=============================================================================
 
-					if (p1ManagersActive)
-					{
-						// While P1 is controlled in co-op by its managers,
-						// block LootMenu events, attack inputs, arm movement inputs, 
-						// and mounted cam adjustment events while no menus are open.
-						// And always block P1 inputs that involve activating objects, 
-						// opening menus, equipping favorited items,
-						// readying weapons, shouting, sneaking, sprinting, 
-						// and changing the camera's POV.
-						isBlockedP1Event =
+				if (p1ManagersActive)
+				{
+					// While P1 is controlled in co-op by its managers,
+					// block LootMenu events, attack inputs, arm movement inputs, 
+					// and mounted cam adjustment events while no menus are open.
+					// And always block P1 inputs that involve activating objects, 
+					// opening menus, equipping favorited items,
+					// readying weapons, shouting, sneaking, sprinting, 
+					// and changing the camera's POV.
+					isBlockedP1Event =
+					(
+						(!isParaglidingInput) &&
 						(
-							(!isParaglidingInput) &&
+							(isBlockedP1LootMenuEvent) ||
 							(
-								(isBlockedP1LootMenuEvent) ||
+								(onlyAlwaysOpen) && 
 								(
-									(onlyAlwaysOpen) && 
-									(
-										isGroundedAttackInput || 
-										isMoveArmsInput || 
-										isMountedCamInputEvent
-									)
-								) ||
-								(idEvent->userEvent == ue->wait && !isValidContainerTabSwitch) ||
-								(
-									idEvent->userEvent == ue->activate ||
-									idEvent->userEvent == ue->favorites ||
-									idEvent->userEvent == ue->hotkey1 ||
-									idEvent->userEvent == ue->hotkey2 ||
-									idEvent->userEvent == ue->journal ||
-									idEvent->userEvent == ue->pause ||
-									idEvent->userEvent == ue->readyWeapon ||
-									idEvent->userEvent == ue->shout ||
-									idEvent->userEvent == ue->sneak ||
-									idEvent->userEvent == ue->sprint ||
-									idEvent->userEvent == ue->togglePOV ||
-									idEvent->userEvent == ue->tweenMenu
+									isGroundedAttackInput || 
+									isMoveArmsInput || 
+									isMountedCamInputEvent
 								)
+							) ||
+							(idEvent->userEvent == ue->wait && !isValidContainerTabSwitch) ||
+							(
+								idEvent->userEvent == ue->activate ||
+								idEvent->userEvent == ue->favorites ||
+								idEvent->userEvent == ue->hotkey1 ||
+								idEvent->userEvent == ue->hotkey2 ||
+								idEvent->userEvent == ue->journal ||
+								idEvent->userEvent == ue->pause ||
+								idEvent->userEvent == ue->readyWeapon ||
+								idEvent->userEvent == ue->shout ||
+								idEvent->userEvent == ue->sneak ||
+								idEvent->userEvent == ue->sprint ||
+								idEvent->userEvent == ue->togglePOV ||
+								idEvent->userEvent == ue->tweenMenu
 							)
+						)
+					);
+				}
+				else
+				{
+					if (coopPlayerControllingMenus)
+					{
+						// Prevent the usual binds from activating objects, 
+						// opening menus, changing the camera POV, and equipping items
+						// while another player is controlling menus.
+						isBlockedP1Event = 
+						(
+							isBlockedP1LootMenuEvent ||
+							idEvent->userEvent == ue->activate ||
+							idEvent->userEvent == ue->favorites ||
+							idEvent->userEvent == ue->journal ||
+							idEvent->userEvent == ue->pause ||
+							idEvent->userEvent == ue->leftEquip ||
+							idEvent->userEvent == ue->rightEquip ||
+							idEvent->userEvent == ue->togglePOV ||
+							idEvent->userEvent == ue->tweenMenu ||
+							idEvent->userEvent == ue->wait
 						);
 					}
 					else
 					{
-						if (coopPlayerControllingMenus)
-						{
-							// Prevent the usual binds from activating objects, 
-							// opening menus, changing the camera POV, and equipping items
-							// while another player is controlling menus.
-							isBlockedP1Event = 
-							(
-								isBlockedP1LootMenuEvent ||
-								idEvent->userEvent == ue->activate ||
-								idEvent->userEvent == ue->favorites ||
-								idEvent->userEvent == ue->journal ||
-								idEvent->userEvent == ue->pause ||
-								idEvent->userEvent == ue->leftEquip ||
-								idEvent->userEvent == ue->rightEquip ||
-								idEvent->userEvent == ue->togglePOV ||
-								idEvent->userEvent == ue->tweenMenu ||
-								idEvent->userEvent == ue->wait
-							);
-						}
-						else
-						{
-							// Prevent the camera from changing POV at all other times.
-							isBlockedP1Event = idEvent->userEvent == ue->togglePOV;
-						}
+						// Prevent the camera from changing POV at all other times.
+						isBlockedP1Event = idEvent->userEvent == ue->togglePOV;
 					}
-
-					bool isLeftStickInput = idEvent->userEvent == ue->leftStick;
-					// Special P1 input cases where the co-op camera is not active.
-					if (!p1ManagersActive && !coopPlayerMenuInput && idEvent && !isBlockedP1Event)
-					{
-						// Set bypass flag here to allow P1's action handlers
-						// to process the event when the co-op camera is not active.
-						if (buttonEvent)
-						{
-							buttonEvent->pad24 = 0xC0DA;
-						}
-
-						// Change 'Left Stick' and 'Rotate' (menu) P1 user events 
-						// to 'Move' and 'Look' user events (gameplay context)
-						// because P1 is not in control of menus 
-						// and should not affect another player's menu control.
-						if (coopPlayerControllingMenus)
-						{
-							if (isLeftStickInput)
-							{
-								idEvent->userEvent = ue->move;
-							}
-							else if (isRotateInput)
-							{
-								idEvent->userEvent = ue->look;
-							}
-						}
-					}
-
-					// NOTE: LS and RS inputs are blocked in the Crafting and Dialogue menus.
-					// Use the DPad to navigate, which frees up character movement with the LS, 
-					// and camera rotation with the RS.
-					bool blockedAnalogStickInput = 
-					(
-						(thumbstickEvent || isLeftStickInput || isRotateInput) &&
-						(
-							ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
-							ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
-						)
-					);
-					// Menus which overlay the entire screen or block players.
-					bool fullscreenMenuOpen = 
-					( 
-						ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
-						ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
-						ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 
-					);
-					// Ignore this input if pad24 == 0xDEAD.
-					bool ignoreInput = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xDEAD);
-					// P1 input event to rotate the lock while another player rotates the pick.
-					bool twoPlayerLockpickingP1Input = 
-					(
-						Settings::bTwoPlayerLockpicking && 
-						coopPlayerControllingMenus &&
-						!coopPlayerMenuInput && 
-						idEvent->userEvent == "RotateLock"sv
-					);
-					// P1 input that should be processed by MenuControls.
-					bool processableP1Event = 
-					(
-						!coopPlayerControllingMenus || twoPlayerLockpickingP1Input
-					);
-					// Has a bypass flag indicating that the event 
-					// was sent/allowed through by this plugin.
-					// P1: 0xC0DA
-					bool proxiedP1Input = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xC0DA);
-					// Input event was blocked before, so do not propagate or handle.
-					bool wasBlocked = idEvent->userEvent == "BLOCKED" && idEvent->idCode == 0xFF;
-
-					//=============================================================================
-					// Final Determinations for Propagation:
-					//=============================================================================
- 
-					// [FOR CO-OP COMPANIONS]
-					// 1. Input event sent by a non-P1 player.
-					// 2. P1 not in control of menus.
-					// 3. Not an analog stick input while in the Dialogue/Crafting Menu.
-					// 4. Does not move P1 or the camera: 
-					// Either:
-					// a. Full screen menu is open 
-					// (all players immobile and camera rotation prohibited, so allow through).
-					// -OR-
-					// b. Is not a move/look input 
-					// (does not move P1 or rotate the default FP/TP camera).
-					bool validCoopCompanionInput = 
-					( 
-						(
-							coopPlayerMenuInput && 
-							coopPlayerControllingMenus && 
-							!blockedAnalogStickInput
-						) && 
-						((fullscreenMenuOpen) || (!isMoveInput && !isLookInput)) 
-					);
-						
-					// [FOR P1]
-					// 1. Proxied through with bypass flag.
-					// 2. Rotate lock input while another player is attempting to lockpick
-					// and two player lockpicking is enabled.
-					// 3.
-					//	a. Another player is not controlling menus.
-					//	-OR-
-					//	b. No fullscreen menu is open, and the input event is from P1.
-					// 
-					// -AND-
-					// 
-					//	a. Not an analog stick input while in the Dialogue/Crafting Menu.
-					//	-AND-
-					//	b. Not an explicitly blocked P1 input event.
-					bool validP1Input = 
-					{ 
-						(proxiedP1Input || twoPlayerLockpickingP1Input) ||
-						(
-							(!isBlockedP1Event && !blockedAnalogStickInput) && 
-							(
-								(!coopPlayerControllingMenus) || 
-								(!coopPlayerMenuInput && !fullscreenMenuOpen)
-							)
-						) 
-					};
-
-					// NOTE:
-					// Processing is done directly after this function by MenuControls, 
-					// which modifies open menus based on the input event(s).
-					// Unmodified propagation involves allowing the event through 
-					// without any modifications that would invalidate it
-					// when being processed by P1's action handlers, 
-					// which receive the event(s) after the MenuControls handler processes them.
-
-					// Event should be processed by MenuControls 
-					// if the block/ignore flags are not set 
-					// and the event is a valid companion player event or a processable P1 event.
-					shouldProcess = 
-					(
-						(!wasBlocked && !ignoreInput) && 
-						(coopPlayerMenuInput || processableP1Event)
-					);
-
-					// Propagate the event to P1's action handlers if it shouldn't be ignored 
-					// and if it is a valid P1 or co-op player input event.
-					bool propagateUnmodifiedEvent = 
-					(
-						(!wasBlocked && !ignoreInput) && (validP1Input || validCoopCompanionInput)
-					);
-
-					// REMOVE when done debugging.
-					/*SPDLOG_DEBUG
-					(
-						"[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, "
-						"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
-						"p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, "
-						"proxied P1 input: {}, coop player menu input: {}, "
-						"dialogue menu open: {}, is blocked event: {}, "
-						"valid co-op companion input: {}, valid p1 input: {}, "
-						"two-player P1 lockpicking input: {}",
-						glob.menuCID,
-						glob.mim->managerMenuCID,
-						idEvent->userEvent,
-						buttonEvent ? buttonEvent->idCode : 0xFF,
-						*inputEvent->eventType,
-						wasBlocked,
-						coopPlayerControllingMenus,
-						p1ManagersActive,
-						propagateUnmodifiedEvent,
-						shouldProcess,
-						proxiedP1Input,
-						coopPlayerMenuInput,
-						dialogueMenuOpen,
-						isBlockedP1Event,
-						validCoopCompanionInput,
-						validP1Input,
-						twoPlayerLockpickingP1Input);*/
-
-					if (!propagateUnmodifiedEvent)
-					{
-						if (buttonEvent)
-						{
-							idEvent->userEvent = "BLOCKED";
-							buttonEvent->idCode = 0xFF;
-							buttonEvent->heldDownSecs = 0.0f;
-							buttonEvent->value = 0.0f;
-						}
-						else
-						{
-							idEvent->userEvent = "BLOCKED";
-							// Must also set this event type flag 
-							// to stop analog stick events being processed by action handlers.
-							inputEvent->eventType.set(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-						}
-					}
-
-					// Set as handled.
-					idEvent->pad24 = 0xC0DA0000 + (idEvent->pad24 & 0xFFFF);
 				}
 
+				bool isLeftStickInput = idEvent->userEvent == ue->leftStick;
+				// Special P1 input cases where the co-op camera is not active.
+				if (!p1ManagersActive && !coopPlayerMenuInput && idEvent && !isBlockedP1Event)
+				{
+					// Set bypass flag here to allow P1's action handlers
+					// to process the event when the co-op camera is not active.
+					if (buttonEvent)
+					{
+						buttonEvent->pad24 = 0xC0DA;
+					}
+
+					// Change 'Left Stick' and 'Rotate' (menu) P1 user events 
+					// to 'Move' and 'Look' user events (gameplay context)
+					// because P1 is not in control of menus 
+					// and should not affect another player's menu control.
+					if (coopPlayerControllingMenus)
+					{
+						if (isLeftStickInput)
+						{
+							idEvent->userEvent = ue->move;
+						}
+						else if (isRotateInput)
+						{
+							idEvent->userEvent = ue->look;
+						}
+					}
+				}
+
+				// NOTE:
+				// LS and RS inputs are blocked in the Crafting and Dialogue menus.
+				// Use the DPad to navigate, which frees up character movement with the LS, 
+				// and camera rotation with the RS.
+				bool blockedAnalogStickInput = 
+				(
+					(thumbstickEvent || isLeftStickInput || isRotateInput) &&
+					(
+						ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) ||
+						ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
+					)
+				);
+				// Menus which overlay the entire screen or block players.
+				bool fullscreenMenuOpen = 
+				(
+					ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
+				);
+				// Ignore this input if pad24 == 0xDEAD.
+				bool ignoreInput = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xDEAD);
+				// P1 input event to rotate the lock while another player rotates the pick.
+				bool twoPlayerLockpickingP1Input = 
+				(
+					Settings::bTwoPlayerLockpicking && 
+					coopPlayerControllingMenus &&
+					!coopPlayerMenuInput && 
+					idEvent->userEvent == "RotateLock"sv
+				);
+				// P1 input that should be processed by MenuControls.
+				bool processableP1Event = 
+				(
+					!coopPlayerControllingMenus || twoPlayerLockpickingP1Input
+				);
+				// Has a bypass flag indicating that the event 
+				// was sent/allowed through by this plugin.
+				// P1: 0xC0DA
+				bool proxiedP1Input = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xC0DA);
+				// Input event was blocked before, so do not propagate or handle.
+				bool wasBlocked = idEvent->userEvent == "BLOCKED" && idEvent->idCode == 0xFF;
+
+				//=============================================================================
+				// Final Determinations for Propagation:
+				//=============================================================================
+ 
+				// [FOR CO-OP COMPANIONS]
+				// 1. Input event sent by a non-P1 player. -AND-
+				// 2. P1 not in control of menus. -AND-
+				// 3. Not an analog stick input while in the Dialogue/Crafting Menu. -AND-
+				// Either:
+				// a. Full screen menu is open 
+				// (all players immobile and camera rotation prohibited, so allow through).
+				// -OR-
+				// b. Is not a move/look input 
+				// (does not move P1 or rotate the default FP/TP camera).
+				bool validCoopCompanionInput = 
+				( 
+					(
+						coopPlayerMenuInput && 
+						coopPlayerControllingMenus && 
+						!blockedAnalogStickInput
+					) && 
+					((fullscreenMenuOpen) || (!isMoveInput && !isLookInput)) 
+				);
+						
+				// [FOR P1]
+				// 1. Proxied through with bypass flag. -OR-
+				// 2. Rotate lock input while another player is attempting to lockpick
+				// and two player lockpicking is enabled. -OR-
+				// 3.
+				//	a. Not an analog stick input while in the Dialogue/Crafting Menu.
+				//	-AND-
+				//	b. Not an explicitly blocked P1 input event.
+				// 
+				// -AND-
+				// 
+				//	a. Another player is not controlling menus.
+				//	-OR-
+				//	b. No fullscreen menu is open, and the input event is from P1.
+				bool validP1Input = 
+				{ 
+					(proxiedP1Input || twoPlayerLockpickingP1Input) ||
+					(
+						(!blockedAnalogStickInput && !isBlockedP1Event) && 
+						(
+							(!coopPlayerControllingMenus) || 
+							(!fullscreenMenuOpen && !coopPlayerMenuInput)
+						)
+					) 
+				};
+
+				// NOTE:
+				// Processing is done directly after this function by MenuControls, 
+				// which modifies open menus based on the input event(s).
+				// Unmodified propagation involves allowing the event through 
+				// without any modifications that would invalidate it
+				// when being processed by P1's action handlers, 
+				// which receive the event(s) after the MenuControls handler processes them.
+
+				// Event should be processed by MenuControls 
+				// if the block/ignore flags are not set 
+				// and the event is a valid companion player event or a processable P1 event.
+				shouldProcess = 
+				(
+					(!wasBlocked && !ignoreInput) && 
+					(coopPlayerMenuInput || processableP1Event)
+				);
+
+				// Propagate the event to P1's action handlers if it shouldn't be ignored 
+				// and if it is a valid P1 or co-op player input event.
+				bool propagateUnmodifiedEvent = 
+				(
+					(!wasBlocked && !ignoreInput) && (validP1Input || validCoopCompanionInput)
+				);
+
+				// REMOVE when done debugging.
+				/*SPDLOG_DEBUG
+				(
+					"[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, "
+					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
+					"p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, "
+					"proxied P1 input: {}, coop player menu input: {}, "
+					"dialogue menu open: {}, is blocked event: {}, "
+					"valid co-op companion input: {}, valid p1 input: {}, "
+					"two-player P1 lockpicking input: {}",
+					glob.menuCID,
+					glob.mim->managerMenuCID,
+					idEvent->userEvent,
+					buttonEvent ? buttonEvent->idCode : 0xFF,
+					*inputEvent->eventType,
+					wasBlocked,
+					coopPlayerControllingMenus,
+					p1ManagersActive,
+					propagateUnmodifiedEvent,
+					shouldProcess,
+					proxiedP1Input,
+					coopPlayerMenuInput,
+					dialogueMenuOpen,
+					isBlockedP1Event,
+					validCoopCompanionInput,
+					validP1Input,
+					twoPlayerLockpickingP1Input
+				);*/
+
+				if (!propagateUnmodifiedEvent)
+				{
+					if (buttonEvent)
+					{
+						idEvent->userEvent = "BLOCKED";
+						buttonEvent->idCode = 0xFF;
+						buttonEvent->heldDownSecs = 0.0f;
+						buttonEvent->value = 0.0f;
+					}
+					else
+					{
+						idEvent->userEvent = "BLOCKED";
+						// Must also set this event type flag 
+						// to stop analog stick events being processed by action handlers.
+						inputEvent->eventType.set(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+					}
+				}
+
+				// Set as handled.
+				idEvent->pad24 = 0xC0DA0000 + (idEvent->pad24 & 0xFFFF);
+				// On to the next one.
 				inputEvent = inputEvent->next;
 			}
 
@@ -3901,6 +3988,33 @@ namespace ALYSLC
 			return shouldProcess;
 		}
 
+		RE::InputEvent * MenuControlsHooks::GetFirstGamepadInputEvent
+		(
+			RE::InputEvent* const* a_constEvent
+		)
+		{
+			// Sometimes, the head event is sent by another device (such as the keyboard) 
+			// instead of the controller, so skip over these input events
+			// and look for the first gamepad device event in the chain.
+			// Done to work around the 'stuck key' bug which causes the 'Tab' keyboard key
+			// (or other key) to remain considered as held and send a key event each frame
+			// after alt-tabbing out to a certain window (Visual Studio for me)
+			// and tabbing back in.
+			auto event = *a_constEvent;
+			while (event && event->GetDevice() != RE::INPUT_DEVICE::kGamepad)
+			{
+				event = event->next;
+			}
+			
+			// No gamepad event, nothing to handl
+			if (!event || event->GetDevice() != RE::INPUT_DEVICE::kGamepad)
+			{
+				return nullptr;
+			}
+
+			return event;
+		}
+
 // NINODE HOOKS
 		void NiNodeHooks::UpdateDownwardPass
 		(
@@ -3933,39 +4047,29 @@ namespace ALYSLC
 				return _UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
 
+			// First chain of downward pass recursive calls 
+			// always has no flags set for the given node.
+			if (a_data.flags == RE::NiUpdateData::Flag::kNone)
 			{
-				// Locking seems to cause jitter, although it is the correct thing to do.
-				/*std::unique_lock<std::mutex> lock
-				(
-					p->mm->nom->rotationDataMutex, std::try_to_lock
-				);
-				if (lock)*/
+				// First call in the recursive chain is always the NPC base node,
+				// so save the default rotations before any downward pass calls execute.
+				if (a_this->name == strings->npc)
 				{
-					// First chain of downward pass recursive calls 
-					// always has no flags set for the given node.
-					if (a_data.flags == RE::NiUpdateData::Flag::kNone)
-					{
-						// First call in the recursive chain is always the NPC base node,
-						// so save the default rotations before any downward pass calls execute.
-						if (a_this->name == strings->npc)
-						{
-							p->mm->nom->SavePlayerNodeWorldTransforms(p);
-							// Update default attack position and rotation 
-							// after saving default node orientation data.
-							p->mm->UpdateAttackSourceOrientationData(true);
-						}
-					}
-
-					// Save local rotation and then apply our custom rotation
-					// before executing the downward pass to visually apply our changes.
-					auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
-					p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign
-					(
-						nodePtr, a_this->local
-					);
-					p->mm->nom->ApplyCustomNodeRotation(p, nodePtr);
+					p->mm->nom->SavePlayerNodeWorldTransforms(p);
+					// Update default attack position and rotation 
+					// after saving default node orientation data.
+					p->mm->UpdateAttackSourceOrientationData(true);
 				}
 			}
+
+			// Save local rotation and then apply our custom rotation
+			// before executing the downward pass to visually apply our changes.
+			auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
+			p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign
+			(
+				nodePtr, a_this->local
+			);
+			p->mm->nom->ApplyCustomNodeRotation(p, nodePtr);
 
 			_UpdateDownwardPass(a_this, a_data, a_arg2);
 		}
@@ -4043,9 +4147,22 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Check if another player is healing P1, and if so, give them XP.
-				if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
+				// Apply damage received mult if the player was damaged.
+				// Do not care about the source of the damage in this case,
+				// as the damage received mult should apply to all sources of damage.
+				if (a_av ==  RE::ActorValue::kHealth && a_delta < 0.0f)
 				{
+					// Max negative delta (-FLT_MAX) means that this player 
+					// should have <= 0 health even if their damage received multiplier is 0, 
+					// so don't apply the mult in that case.
+					if (a_delta != -FLT_MAX)
+					{
+						a_delta *= Settings::vfDamageReceivedMult[p->playerID];
+					}
+				}
+				else if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
+				{
+					// Check if another player is healing P1, and if so, give them XP.
 					for (const auto& otherP : glob.coopPlayers)
 					{
 						if (otherP->isPlayer1 || 
@@ -4182,7 +4299,6 @@ namespace ALYSLC
 			// Blocking weapon/magic drawing while transforming crashes the game at times.
 			if (!p->IsRunning() ||
 				a_draw == p->pam->weapMagReadied || 
-				//p->isTransformed || 
 				p->isTransforming)
 			{
 				return _DrawWeaponMagicHands(a_this, a_draw);
@@ -4203,10 +4319,11 @@ namespace ALYSLC
 			}
 
 			auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(a_attacker);
-			float damageMult = Settings::vfDamageReceivedMult[0];
+			float damageMult = 1.0f;
 			// Co-op player inflicted health damage on P1.
 			if (playerAttackerIndex != -1)
 			{
+				// The attacking player.
 				const auto& p = glob.coopPlayers[playerAttackerIndex];
 				// Check for friendly fire (not from self) and negate damage.
 				if (!Settings::vbFriendlyFire[p->playerID] && a_this != p->coopActor.get())
@@ -4218,13 +4335,14 @@ namespace ALYSLC
 					return;
 				}
 
-				// Modify damage mult.
+				// Apply damage dealt mult for the attacking player.
+				damageMult *= Settings::vfDamageDealtMult[p->playerID];
+				// TEMP until I find a direct way of applying the sneak damage multiplier 
+				// to all forms of damage.
+				// Apply sneak/additional damage mult if not attacking self.
 				if (!p->isPlayer1 && p->pam->attackDamageMultSet && p->pam->reqDamageMult != 1.0f)
 				{
-					damageMult *= 
-					(
-						p->pam->reqDamageMult * Settings::vfDamageDealtMult[p->playerID]
-					);
+					damageMult *= p->pam->reqDamageMult;
 					// Reset damage multiplier if performing a ranged sneak attack.
 					// Melee sneak attacks reset the damage multiplier on attack stop,
 					// but I have yet to find a way to check 
@@ -4232,20 +4350,7 @@ namespace ALYSLC
 					// so reset the damage multiplier on damaging hit.
 					p->pam->ResetAttackDamageMult();
 				}
-				else
-				{
-					// Regular attack.
-					// P1 can attack themselves and this multiplier will apply as well.
-					damageMult *= Settings::vfDamageDealtMult[p->playerID];
-				}
-
-				SPDLOG_DEBUG
-				(
-					"[PlayerCharacter Hooks] HandleHealthDamage: "
-					"{} attacked for a base damage of {} and mult {}.",
-					a_attacker ? a_attacker->GetName() : "NONE", a_damage, damageMult
-				);
-
+				
 				// Add skill XP if P1 is not the attacker and P1 is not in god mode.
 				bool p1HitWhileInGodMode = glob.coopPlayers[glob.player1CID]->isInGodMode;
 				if (!p->isPlayer1 && !p1HitWhileInGodMode)
@@ -4304,21 +4409,65 @@ namespace ALYSLC
 					}
 				}
 			}
-
+			
 			// Adjust damage based off new damage mult.
-			// Ignore direct modifications of HP or if there is no direct attacker:
-			// (a_attacker == nullptr).
+			// Done before death (< 0 HP) checks below.
+			// Ignore direct modifications of HP, which occur with direct changes to HP, 
+			// such as RestoreActorValue() below.
+			// Don't want to get caught in a recursive loop.
 			// NOTE: 
-			// Unfortunately, this means fall damage (no attacker) 
-			// will not scale down with the player's damage received mult.
+			// As a result, certain types of damage without an attributable attacker, 
+			// such as explosion damage,
+			// will not be affected by the player's damage dealt multiplier.
+			// TODO:
+			// Find a way to do health damage without this function triggering,
+			// since we currently have to adjust the damage dealt
+			// via direct modification of the health actor value.
+			// Or will have to figure out how to determine 
+			// if the damage source has been scaled already.
 			float deltaHealth = a_damage * (damageMult - 1.0f); 
 			if (deltaHealth != 0.0f && a_attacker)
 			{
+				// Apply the inverse of the damage received mult for friendly fire, 
+				// since the RestoreActorValue() call below will run through
+				// our CheckClampDamageModifier() hook
+				// and will apply the damage received mult again to any negative health delta.
+				// We can cancel out the second application in this way.
+				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				if (Settings::vfDamageReceivedMult[coopP1->playerID] > 0.0f)
+				{
+					// If additional damage is required,
+					// damage to apply for this second call is not modified.
+					// Otherwise, this hook will only fire once and we can set the damage applied
+					// to the original damage (received damage mult already applied)
+					// times the attacker damage mult.
+					if (deltaHealth < 0.0f)
+					{
+						// Not modifying the damage arg itself, 
+						// since after multiplying it with the computed damage mult, 
+						// we'll have one application each of the damage dealt 
+						// and received mults, as required.
+						deltaHealth *= 
+						(
+							1.0f / Settings::vfDamageReceivedMult[coopP1->playerID]
+						);
+					}
+					else
+					{
+						a_damage *= damageMult;
+					}
+				}
+				else
+				{
+					a_damage = 0.0f;
+				}
+				
+				// This hook will run again with no attacker given 
+				// and then execution will return here.
 				a_this->RestoreActorValue
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, deltaHealth
 				);
-				a_damage *= damageMult;
 			}
 
 			const auto& p = glob.coopPlayers[glob.player1CID];
@@ -4477,14 +4626,17 @@ namespace ALYSLC
 				else if (!p->isTransformed && hash == "BiteStart"_h)
 				{
 					// Can't recall what this was for, but... oh well.
+					// It's probably doing something and isn't messing with anything else
+					// as far as I can tell.
 					return true;
 				}
 			}
 			// Failsafe to ensure that P1 does not get up when dead after co-op ends.
 			else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
 			{
-				// Ensure P1 is dead if all other players are dead after the co-op session ends.
-				// Ignore requests to get up while downed.
+				// P1 should be dead if all other players are dead after the co-op session ends,
+				// so ignore requests to get up while downed and waiting for the game to reload.
+				// Also attempt to force the issue by killing P1 if a get up is requested.
 				if (glob.livingPlayers == 0 && hash == "GetUpBegin"_h)
 				{
 					// First, make sure the essential flag is unset.
@@ -4541,7 +4693,8 @@ namespace ALYSLC
 			//===================
 			// Node Orientations.
 			//===================
-			// NOTE: All downward passes for the player's nodes have been performed at this point,
+			// NOTE: 
+			// All downward passes for the player's nodes have been performed at this point,
 			// so restore all saved default local transforms for the next frame.
 			// Reasoning: Sometimes, such as when a havok impulse is applied to the player,
 			// the game won't restore the animation-derived local transforms 
@@ -4557,7 +4710,8 @@ namespace ALYSLC
 			// Movement and Player State.
 			//===========================
 			
-			// Prevent game from updating crosshair text while co-op cam is active.
+			// Prevent the game from updating the crosshair text on its own 
+			// while the co-op cam is active.
 			a_this->playerFlags.shouldUpdateCrosshair = false;
 
 			// Make sure player is set to alive if not downed.
@@ -4579,7 +4733,10 @@ namespace ALYSLC
 				return;
 			}
 
-			if (auto high = currentProc->high; high)
+			auto ui = RE::UI::GetSingleton();
+			auto high = currentProc->high; 
+			bool gamePaused = ui->GameIsPaused();
+			if (high && !gamePaused && p->mm->IsRunning())
 			{
 				auto paraMT = glob.paraglidingMT;
 				auto& speeds = 
@@ -4589,6 +4746,29 @@ namespace ALYSLC
 				auto& rotateWhileMovingRun = 
 				(
 					high->currentMovementType.defaultData.rotateWhileMovingRun	
+				);
+				
+				// NOTE: 
+				// Base movement type data values seem to only reset 
+				// to their defaults each frame 
+				// if the player's speedmult is modified.
+				// Otherwise, the movement speed changes each frame will accumulate, 
+				// reaching infinity and preventing the player from moving.
+				float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
+				if (speedMultToSet < 0.0f || isnan(speedMultToSet) || isinf(speedMultToSet))
+				{
+					speedMultToSet = p->mm->baseSpeedMult;
+				}
+
+				p->coopActor->SetBaseActorValue(RE::ActorValue::kSpeedMult, speedMultToSet);
+				// Applies the new speedmult right away,
+				p->coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f
+				);
+				p->coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
 				);
 
 				// NOTE:
@@ -4607,8 +4787,14 @@ namespace ALYSLC
 				// Set movement speed to an obscenely high value to quickly
 				// arrest built up momentum while also keeping the player in place
 				// with the 'don't move' flag.
-				if (p->mm->shouldCurtailMomentum && p->mm->dontMoveSet)
+				if (p->mm->shouldCurtailMomentum)
 				{
+					// Ensure the player is set to not move 
+					// and any lingering movement offset is cleared.
+					// Otherwise, sanic mode.
+					p->mm->ClearKeepOffsetFromActor();
+					Util::NativeFunctions::SetDontMove(p->coopActor.get(), true);
+
 					// Affects how quickly the player slows down.
 					// The higher, the faster the reported movement speed becomes zero.
 					speeds
@@ -4636,77 +4822,8 @@ namespace ALYSLC
 					[RE::Movement::SPEED_DIRECTIONS::kBack]
 					[RE::Movement::MaxSpeeds::kRun]				= 100000.0f;
 				}
-				else if (auto charController = p->coopActor->GetCharController(); 
-						 charController && p->mm->IsRunning())
+				else if (auto charController = p->coopActor->GetCharController(); charController)
 				{
-					// NOTE: 
-					// Base movement type data values seem to only reset 
-					// to their defaults each frame 
-					// if the player's speedmult is modified.
-					// Otherwise, the movement speed changes each frame will accumulate, 
-					// reaching infinity and preventing the player from moving.
-					float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
-					if (p->mm->movementOffsetParams[!MoveParams::kSpeedMult] < 0.0f)
-					{
-						speedMultToSet = p->mm->baseSpeedMult;
-					}
-
-					p->coopActor->SetBaseActorValue
-					(
-						RE::ActorValue::kSpeedMult, 
-						speedMultToSet
-					);
-					// Applies the new speedmult right away,
-					p->coopActor->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, -0.001f
-					);
-					p->coopActor->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
-					);
-
-					// REMOVE when done debugging.
-					/*
-					if (p->mm->isDashDodging || p->mm->isParagliding) 
-					{
-						RE::NiPoint3 linVelXY = RE::NiPoint3
-						(
-							charController->outVelocity.quad.m128_f32[0], 
-							charController->outVelocity.quad.m128_f32[1], 
-							0.0f
-						);
-						RE::NiPoint3 facingDir = Util::RotationToDirectionVect
-						(
-							0.0f, Util::ConvertAngle(p->coopActor->data.angle.z)
-						);
-						RE::NiPoint3 lsDir = Util::RotationToDirectionVect
-						(
-							0.0f, 
-							Util::ConvertAngle
-							(
-								p->mm->movementOffsetParams[!MoveParams::kLSGameAng]
-							)
-						);
-						glm::vec3 start = ToVec3(p->coopActor->data.location);
-						glm::vec3 offsetFacing = ToVec3(facingDir);
-						glm::vec3 offsetLSDir = ToVec3(lsDir);
-						glm::vec3 offsetVel = ToVec3(linVelXY);
-						DebugAPI::QueueArrow3D
-						(
-							start, start + offsetFacing * 50.0f, 0xFF0000FF, 5.0f, 3.0f
-						);
-						DebugAPI::QueueArrow3D
-						(
-							start, start + offsetLSDir * 50.0f, 0x00FF00FF, 5.0f, 3.0f
-						);
-						DebugAPI::QueueArrow3D
-						(
-							start, start + offsetVel * 50.0f, 0x0000FFFF, 5.0f, 3.0f
-						);
-					}
-					*/
-
 					//================
 					// Rotation speed.
 					//================
@@ -4970,7 +5087,7 @@ namespace ALYSLC
 							// is slow deceleration/acceleration 
 							// when changing directions rapidly.
 							// First noticed that playing the 'SprintStart' animation event
-							// right as the player started pivoting caused them to turn
+							// right as the player starts pivoting causes them to turn
 							// and face the new movement direction almost instantly.
 							// Increasing the movement type's directional max speed values, 
 							// depending on how rapidly the player is turning,
@@ -5061,50 +5178,6 @@ namespace ALYSLC
 					}
 				}
 
-				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
-				(
-					"[PlayerCharacter Hooks] Update: {}: AFTER: "
-					"MT data: unkF8: {}, unkFC: {}, unk100: {}, unk104: {}, unk108: {}, "
-					"unk10C: {}, unk110: {}, unk114: {}, unk118: {}, unk11C: {}, unk120: {}. "
-					"Curtail momentum: {}, don't move set: {}. Movement speed: {}.",
-					p->coopActor->GetName(),
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kLeft]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kLeft]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRight]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRight]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kForward]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kForward]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kBack]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kBack]
-					[RE::Movement::MaxSpeeds::kRun],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRotations]
-					[RE::Movement::MaxSpeeds::kWalk],
-					speeds
-					[RE::Movement::SPEED_DIRECTIONS::kRotations]
-					[RE::Movement::MaxSpeeds::kRun],
-					rotateWhileMovingRun,
-					p->mm->shouldCurtailMomentum,
-					p->mm->dontMoveSet,
-					p->coopActor->DoGetMovementSpeed()
-				);*/
-
 				// Not sure if this affects P1, but max out to prevent armor re-equip.
 				high->reEquipArmorTimer = FLT_MAX;
 			}
@@ -5127,7 +5200,8 @@ namespace ALYSLC
 			RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_points, RE::TESForm* a_arg3
 		)
 		{
-			// NOTE: For melee-related skills, 
+			// NOTE: 
+			// For melee-related skills, 
 			// eg. OneHanded/TwoHanded/Archery/HeavyArmor/LightArmor/Block,
 			// this call fires before the corresponding hit event(s) are propagated
 			// and HandleHealthDamage() call(s) are fired,
@@ -5226,7 +5300,6 @@ namespace ALYSLC
 			_UseSkill(a_this, a_av, a_points, a_arg3);
 		}
 
-		
 // [PROJECTILE HOOKS]:
 		void ProjectileHooks::GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity)
 		{
@@ -5332,13 +5405,6 @@ namespace ALYSLC
 					);
 				}
 
-				/*HandleManipulatedProjectile
-				(
-					glob.coopPlayers[cid],
-					projectileHandle,
-					grabbedByPlayerCID != -1,
-					a_this->linearVelocity
-				);*/
 				// Output the velocity as our saved velocity from the UpdateImpl() hook.
 				a_velocity = a_this->linearVelocity;
 			}
@@ -5390,48 +5456,96 @@ namespace ALYSLC
 		{
 			// Check for thrown active projectile collisions with actors
 			// and bonk as needed.
-			if (glob.globalDataInit && glob.coopSessionActive)
+			// NOTE:
+			// Unsure if modifying the hits collected and then clearing all recorded hits 
+			// before copying back into the collector's in-place hits array is a good idea.
+			// And the method is obviously not efficient, 
+			// but it does allow us to ignore specific collisions along a projectile's path.
+			// Needs thorough testing for stability.
+
+			// Nothing to do if global data is not initialized or no co-op session is active.
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				for (const auto& hit : a_AllCdPointCollector->hits)
+				if (a_this->As<RE::ArrowProjectile>())
+				{
+					_OnArrowCollision(a_this, a_AllCdPointCollector);
+				}
+				else if (a_this->As<RE::ConeProjectile>())
+				{
+					_OnConeCollision(a_this, a_AllCdPointCollector);
+				}
+				else if (a_this->As<RE::MissileProjectile>())
+				{
+					_OnMissileCollision(a_this, a_AllCdPointCollector);
+				}
+				else
+				{
+					_OnProjectileCollision(a_this, a_AllCdPointCollector);
+				}
+
+				return;
+			}
+			
+			const auto refrHandle = a_this->GetHandle();
+			// Unsure why copy construction via range constructors
+			// results in cone projectiles stalling, as if their collision gets disabled,
+			// even when all the original hits are copied over.
+			// Default construction and then std::ranges::copy seems to work fine
+			// as an alternative.
+			std::vector<RE::hkpRootCdPoint> newHits{ };
+			if (!a_AllCdPointCollector->hits.empty())
+			{
+				std::ranges::copy
+				(
+					a_AllCdPointCollector->hits.begin(),
+					a_AllCdPointCollector->hits.end(), 
+					std::back_inserter(newHits)
+				);
+			}
+
+			// Hit actors to trigger collisions and potentially start combat with.
+			// Pairs of (player actor, targeted actor).
+			std::vector<std::pair<RE::Actor*, RE::Actor*>> combatTargetStartPairs{ };
+			// Delayed bonks to apply. 
+			// Maps aggressor players' CIDs to the hit actor to knock down
+			// and the hit position.
+			// Ew.
+			std::unordered_map<int32_t, std::pair<RE::ActorHandle, RE::NiPoint3>> 
+			delayedActorCollisions{ };
+			// Set of FIDs for the actors hit or to start combat with.
+			std::unordered_set<RE::FormID> combatTargetFIDs{ };
+			// Remove any hits that should be ignored.
+			std::erase_if
+			(
+				newHits, 
+				[
+					a_this,
+					&refrHandle,
+					&combatTargetStartPairs,
+					&combatTargetFIDs,
+					&delayedActorCollisions
+				]
+				(const auto& hit)
 				{
 					if (!hit.rootCollidableA || !hit.rootCollidableB)
 					{
-						continue;
+						return false;
 					}
 
-					auto refrA = RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableA);
-					auto refrB = RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableB);
+					auto refrA = RE::TESHavokUtilities::FindCollidableRef
+					(
+						*hit.rootCollidableA
+					);
+					auto refrB = RE::TESHavokUtilities::FindCollidableRef
+					(
+						*hit.rootCollidableB
+					);
 					if (refrA && refrB)
 					{
 						// Ignore self-collisions.
 						if (refrA == refrB)
 						{
-							continue;
-						}
-
-						// Check to see if one of the two refrs is a manipulated refr
-						// and get the CID of the manipulating player.
-						int32_t manipulatingPlayerCID = -1;
-						for (const auto& p : glob.coopPlayers)
-						{
-							if (!p->isActive)
-							{
-								continue;
-							}
-
-							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
-								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
-							{
-								manipulatingPlayerCID = p->controllerID;
-								break;
-							}
-						}
-
-						// At least one refr in the hit pair must be a released refr 
-						// for one of the active players.
-						if (manipulatingPlayerCID == -1)
-						{
-							continue;
+							return false;
 						}
 
 						RE::Actor* hitActor = refrA->As<RE::Actor>();
@@ -5442,26 +5556,171 @@ namespace ALYSLC
 							{
 								// No hit actors, so continue since we're only looking for 
 								// projectile-to-actor hits.
+								return false;
+							}
+						}
+						
+						// Check to see if one of the two refrs is a manipulated refr
+						// and get the CID of the manipulating player.
+						// Also start combat between NPCs and the aggressor player
+						// before the hit applies.
+						int32_t manipulatingPlayerCID = -1;
+						bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
+						const auto hitActorHandle = hitActor->GetHandle();
+						for (const auto& p : glob.coopPlayers)
+						{
+							if (!p->isActive)
+							{
 								continue;
+							}
+							
+							// See GlobalCoopData::PrecisionPreHitCallback() 
+							// for an explanation.
+							// Trigger combat between companion players and any NPCs they hit.
+							bool hitByPlayer =
+							(
+								hitActor && 
+								p->coopActor->GetHandle() == a_this->shooter
+							);
+							if (hitByPlayer)
+							{
+								bool isHostile = hitActor->IsHostileToActor
+								(
+									p->coopActor.get()
+								);
+								bool isPartyFriendlyActor = Util::IsPartyFriendlyActor
+								(
+									hitActor
+								);
+								bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
+								bool isCrosshairTargeted = 
+								(
+									hitActorHandle == p->tm->selectedTargetActorHandle
+								);
+								bool isBeneficialProjectile =
+								(
+									a_this->spell && 
+									!Util::HasHostileSpell(a_this->spell)
+								);
+								// Only allow collisions through if targeting a hostile actor,
+								// directly targeting an neutral actor with the crosshair,
+								// or targeting an ally with a beneficial projectile
+								// while friendly fire is on.
+								bool collisionAllowed = 
+								(
+									(isHostile) ||
+									(isNeutralActor && isCrosshairTargeted) ||
+									(
+										(isPartyFriendlyActor) && 
+										(
+											Settings::vbFriendlyFire[p->playerID] || 
+											isBeneficialProjectile
+										)
+									)
+								);
+								if (collisionAllowed)
+								{
+									// Do not start combat with other players
+									// and do not need to start combat for P1.
+									if (!hitActorIsPlayer && !p->isPlayer1)
+									{
+										Util::AddAsCombatTarget
+										(
+											p->coopActor.get(), hitActor
+										);
+
+										// Trigger combat if the target is not already hostile,
+										// or if the hit actor and player 
+										// are not combat targets for each other.
+										// 
+										// And check friendliness: 
+										// 1. Start combat with hostile/neutral actors.
+										// 2. Start combat with friendly actors 
+										// if they are below 1/4 full health.
+										// 
+										// Finally, also only start combat 
+										// if this is the first time the actor is hit this frame.
+										bool shouldTriggerCombat = 
+										(
+											(
+												!hitActor->IsHostileToActor
+												(
+													p->coopActor.get()
+												) || 
+												!hitActor->IsCombatTarget
+												(
+													p->coopActor.get()
+												) ||
+												!p->coopActor->IsCombatTarget(hitActor)
+											) &&
+											(
+												(!isPartyFriendlyActor) || 
+												(
+													hitActor->GetActorValue
+													(
+														RE::ActorValue::kHealth
+													) / 
+													Util::GetFullAVAmount
+													(
+														hitActor, RE::ActorValue::kHealth
+													) <= 0.25f
+												)
+											) &&
+											(
+												combatTargetFIDs.empty() ||
+												!combatTargetFIDs.contains(hitActor->formID)
+											)
+										);
+										if (shouldTriggerCombat)
+										{
+											combatTargetStartPairs.emplace_back
+											(
+												std::pair<RE::Actor*, RE::Actor*>
+												(
+													p->coopActor.get(),
+													hitActor
+												)
+											);
+											combatTargetFIDs.insert(hitActor->formID);
+										}
+									}
+								}
+								else
+								{
+									return true;
+								}
+							}
+
+							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
+								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
+							{
+								manipulatingPlayerCID = p->controllerID;
 							}
 						}
 
-						const auto refrHandle = a_this->GetHandle();
+						// At least one refr in the hit pair must be a released refr 
+						// for one of the active players.
+						if (manipulatingPlayerCID == -1)
+						{
+							return false;
+						}
+
 						const auto& p = glob.coopPlayers[manipulatingPlayerCID];
 						// Must be manipulated as a released refr.
 						if (!p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(refrHandle))
 						{
-							continue;
+							return false;
 						}
-						auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at(refrHandle);
+						auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at
+						(
+							refrHandle
+						);
 						if (index >= p->tm->rmm->releasedRefrInfoList.size())
 						{
-							continue;
+							return false;
 						}
 
 						const auto& releasedRefrInfo = p->tm->rmm->releasedRefrInfoList[index];
-						auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_this);
-						bool rigidBodyValid = hkpRigidBodyPtr && hkpRigidBodyPtr.get();
 						// Hit a new, valid actor that is not the released refr 
 						// or the player that released the refr.
 						bool shouldBonk = 
@@ -5473,33 +5732,170 @@ namespace ALYSLC
 						);
 						if (shouldBonk)
 						{
-							p->tm->HandleBonk
+							// Save for later.
+							delayedActorCollisions.insert_or_assign
 							(
-								hitActor->GetHandle(), 
-								refrHandle, 
-								rigidBodyValid ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
+								p->controllerID,
+								std::pair<RE::ActorHandle, RE::NiPoint3>
 								(
-									rigidBodyValid ? 
-									ToNiPoint3
-									(
-										hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
-									) :
-									a_this->linearVelocity
-								), 
-								ToNiPoint3(hit.contact.position * HAVOK_TO_GAME)
+									hitActor->GetHandle(),
+									ToNiPoint3(hit.contact.position) * HAVOK_TO_GAME
+								)
 							);
 						}
+
+						// Add as a hit refr to prevent multi-hits.
+						releasedRefrInfo->AddHitRefr(refrB);
 					}
+
+					return false;
+				}
+			);
+				
+			// Clear out old hits before re-adding all filtered hits
+			// if at least 1 hit was removed.
+			if (newHits.size() < a_AllCdPointCollector->hits.size())
+			{
+				a_AllCdPointCollector->Reset();
+				if (!newHits.empty())
+				{
+					std::ranges::copy
+					(
+						newHits.begin(),
+						newHits.end(), 
+						std::back_inserter(a_AllCdPointCollector->hits)
+					);
 				}
 			}
 
+			// Start combat between players and any cached hit actors 
+			// before allowing the game to process the collision.
+			for (const auto& actorStarCombatPair : combatTargetStartPairs)
+			{
+				if (!actorStarCombatPair.first || !actorStarCombatPair.second)
+				{
+					continue;
+				}
+
+				// Send a 0 damage hit to trigger combat right away.
+				Util::SendHitData
+				(
+					actorStarCombatPair.first->GetHandle(), 
+					actorStarCombatPair.second->GetHandle(),
+					refrHandle
+				);
+				// You hit me, I hit you, into combat we go.
+				Util::SendHitData
+				(
+					actorStarCombatPair.second->GetHandle(), 
+					actorStarCombatPair.first->GetHandle(),
+					refrHandle
+				);					
+			}
+
+			// Now, let the game handle the projectile collision.
 			if (a_this->As<RE::ArrowProjectile>())
 			{
 				_OnArrowCollision(a_this, a_AllCdPointCollector);
 			}
+			else if (a_this->As<RE::ConeProjectile>())
+			{
+				_OnConeCollision(a_this, a_AllCdPointCollector);
+			}
 			else if (a_this->As<RE::MissileProjectile>())
 			{
 				_OnMissileCollision(a_this, a_AllCdPointCollector);
+			}
+			else
+			{
+				_OnProjectileCollision(a_this, a_AllCdPointCollector);
+			}
+
+			// And lastly, handle delayed thrown projectile knockdowns,
+			// which provides more consistent damage output because the game's original function
+			// does not always apply damage to hit actors that have already ragdolled.
+			auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_this);
+			if (!Util::HandleIsValid(refrHandle))
+			{
+				return;
+			}
+
+			bool rigidBodyValid = hkpRigidBodyPtr && hkpRigidBodyPtr.get();
+			for (const auto& [cid, actorHitPosPair] : delayedActorCollisions)
+			{
+				if (cid < 0 || cid >= ALYSLC_MAX_PLAYER_COUNT)
+				{
+					continue;
+				}
+					
+				const auto& p = glob.coopPlayers[cid];
+				if (!p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(refrHandle))
+				{
+					continue;
+				}
+
+				auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at
+				(
+					refrHandle
+				);
+				if (index >= p->tm->rmm->releasedRefrInfoList.size())
+				{
+					continue;
+				}
+
+				const auto& releasedRefrInfo = p->tm->rmm->releasedRefrInfoList[index];
+				p->tm->HandleBonk
+				(
+					actorHitPosPair.first, 
+					refrHandle, 
+					rigidBodyValid ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
+					(
+						rigidBodyValid ? 
+						ToNiPoint3
+						(
+							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
+						) :
+						a_this->linearVelocity
+					), 
+					actorHitPosPair.second
+				);
+			}
+		}
+
+		bool ProjectileHooks::ShouldUseDesiredTarget(RE::Projectile* a_this)
+		{
+			// If the player launched this projectile, 
+			// ensure the chosen target is the player's current ranged target actor.
+			// Allows beam and flame projectiles to hit more consistently.
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
+			if (pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				auto rangedTargetActor = p->tm->GetRangedTargetActor();
+				a_this->desiredTarget = rangedTargetActor;
+				return Util::HandleIsValid(rangedTargetActor);
+			}
+
+			if (a_this->As<RE::BarrierProjectile>())
+			{
+				return _BarrierProjectile_ShouldUseDesiredTarget(a_this);
+			}
+			else if (a_this->As<RE::BeamProjectile>())
+			{
+				return _BeamProjectile_ShouldUseDesiredTarget(a_this);
+			}
+			else if (a_this->As<RE::FlameProjectile>())
+			{
+				return _FlameProjectile_ShouldUseDesiredTarget(a_this);
+			}
+			else if (a_this->As<RE::GrenadeProjectile>())
+			{
+				return _GrenadeProjectile_ShouldUseDesiredTarget(a_this);
+			}
+			else
+			{
+				return _Projectile_ShouldUseDesiredTarget(a_this);
 			}
 		}
 
@@ -5767,6 +6163,7 @@ namespace ALYSLC
 			// so once it is managed, do not insert again.
 			if (a_justReleased && !isManaged)
 			{
+				projectile->shooter = a_p->coopActor->GetHandle();
 				auto targetActorHandle = a_p->tm->GetRangedTargetActor();
 				auto targetActorPtr = Util::GetRefrPtrFromHandle(targetActorHandle);
 				bool targetActorValidity = 
@@ -5782,6 +6179,8 @@ namespace ALYSLC
 				{
 					projectile->desiredTarget = RE::ActorHandle();
 				}
+
+				projectile->flags.reset(RE::Projectile::Flags::kNoDamageOutsideCombat);
 
 				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 				bool crosshairRefrValidity = 
@@ -5885,10 +6284,10 @@ namespace ALYSLC
 		)
 		{
 			// Store player index (CID) of the player 
-			// that released this projectile in one out param.
+			// that released this projectile in one outparam.
 			// -1 if not released by a player.
 			// Also store whether or not the projectile 
-			// was fired at a player in the other out param.
+			// was fired at a player in the other outparam.
 
 			// Default to not fired by a player or at a player.
 			a_firingPlayerCIDOut = -1;
@@ -6042,6 +6441,8 @@ namespace ALYSLC
 							);
 						}
 					
+						// Prevent the grabbed projectile from colliding with its new shooter:
+						// the player.
 						projectile->SetActorCause(a_p->coopActor->GetActorCause());
 						projectile->shooter = handle;
 						// Full credits to fenix31415:
@@ -6061,14 +6462,17 @@ namespace ALYSLC
 								if (worldObj)
 								{
 									auto collidable = worldObj->GetCollidableRW();
-									uint32_t filter{ };
-									a_p->coopActor->GetCollisionFilterInfo(filter);
-									auto& collFilterInfo = 
-									(
-										collidable->broadPhaseHandle.collisionFilterInfo
-									);
-									collFilterInfo &= (0x0000FFFF);
-									collFilterInfo |= (filter << 16);
+									if (collidable)
+									{
+										uint32_t filter{ };
+										a_p->coopActor->GetCollisionFilterInfo(filter);
+										auto& collFilterInfo = 
+										(
+											collidable->broadPhaseHandle.collisionFilterInfo
+										);
+										collFilterInfo &= (0x0000FFFF);
+										collFilterInfo |= (filter << 16);
+									}
 								}
 							}
 						}
@@ -6260,48 +6664,17 @@ namespace ALYSLC
 			{
 				if (targetActorValidity)
 				{
-					// TODO: 
-					// Snap projectile to closest position 
-					// on the targeted actor's character controller collider.
-					// Get targeted node, if available.
-					// Using aim correction and a targeted actor node was selected.
-					//if (Settings::vbUseAimCorrection[a_p->playerID] && 
-					//	  managedProjInfo->targetedActorNode)
-					//{
-					//	aimTargetPos = managedProjInfo->targetedActorNode->world.translate;
-					//  auto hkpRigidBody = Util::GethkpRigidBody
-					//	(
-					//		managedProjInfo->targetedActorNode.get()
-					//	); 
-					//	if (hkpRigidBody)
-					//	{
-					//		// Direct at node's center of mass.
-					//		// NOTE: 
-					//		// Projectile is not guaranteed to collide with this node, 
-					//		// unless it is within the actor's character collider.
-					//		aimTargetPos = 
-					//		(
-					//			ToNiPoint3
-					//			(
-					//				hkpRigidBody->motion.motionState.sweptTransform.centerOfMass0
-					//			) * HAVOK_TO_GAME
-					//		);
-					//	}
-					//}
-					//else 
-				
-					// Choose the exact crosshair position locally offset from the target actor;
-					// otherwise, if not facing the crosshair, target the selected actor's torso.
-					// Done to maximize hit chance, since an actor's torso node is most likely 
-					// to be within their character controller collider.
-
 					aimTargetPos = Util::GetTorsoPosition(targetActorPtr.get());
 				}
 				else
 				{
 					aimTargetPos = Util::Get3DCenterPos(targetRefrPtr.get());
 				}
-
+				
+				// Choose the exact crosshair position locally offset from the target actor;
+				// otherwise, if not facing the crosshair, target the selected actor's torso.
+				// Done to maximize hit chance, since an actor's torso node is most likely 
+				// to be within their character controller collider.
 				if (crosshairRefrIsTarget && a_p->mm->reqFaceTarget)
 				{
 					// Targeted with crosshair.
@@ -6309,7 +6682,7 @@ namespace ALYSLC
 					aimTargetPos += a_p->tm->crosshairLocalPosOffset;
 				}
 			}
-
+			
 			// Saved pitch/yaw at launch.
 			const float& launchPitch = managedProjInfo->launchPitch;
 			const float& launchYaw = managedProjInfo->launchYaw;
@@ -6514,25 +6887,6 @@ namespace ALYSLC
 					yawToSet = Util::DirectionToGameAngYaw(velToSet);
 					speedToSet = velToSet.Length();
 				}
-
-				/*SPDLOG_DEBUG
-				(
-					"[Hooks] SetHomingTrajectory: {}: {} pitch to target: {}, pitch on traj: {}. "
-					"Initial time of flight: {}, current time: {}, passed halfway point: {}. "
-					"Move upward: {} move downward: {}. Set as homing: {}. G, MU: {}, {}.",
-					a_p->coopActor->GetName(),
-					projectile->GetName(),
-					pitchToTarget * TO_DEGREES,
-					pitchOnTraj * TO_DEGREES,
-					initialTimeToTargetSecs, 
-					t,
-					passedHalfwayPoint,
-					moveUpwardOffTraj,
-					moveDownwardOffTraj,
-					shouldSetAsHoming,
-					g, 
-					mu
-				);*/
 			}
 
 			// NOTE: 
@@ -6860,11 +7214,12 @@ namespace ALYSLC
 
 			// Set rotation matrix to maintain consistency 
 			// with the previously set refr data angles.
-			if (auto current3D = Util::GetRefr3D(projectile))
+			auto current3DPtr = Util::GetRefr3D(projectile); 
+			if (current3DPtr && current3DPtr.get())
 			{
 				Util::SetRotationMatrixPY
 				(
-					current3D->local.rotate, projectile->data.angle.x, projectile->data.angle.z
+					current3DPtr->local.rotate, projectile->data.angle.x, projectile->data.angle.z
 				);
 			}
 		}
@@ -6979,10 +7334,10 @@ namespace ALYSLC
 				(
 					current3DPtr->local.rotate, projectile->data.angle.x, projectile->data.angle.z
 				);
-				auto parent = RE::NiPointer<RE::NiAVObject>(current3DPtr->parent); 
-				if (parent && parent.get()) 
+				auto parentPtr = RE::NiPointer<RE::NiAVObject>(current3DPtr->parent); 
+				if (parentPtr && parentPtr.get()) 
 				{
-					current3DPtr->world = parent->world * current3DPtr->local;
+					current3DPtr->world = parentPtr->world * current3DPtr->local;
 				}
 				else
 				{
@@ -7004,90 +7359,57 @@ namespace ALYSLC
 			RE::SpellItem* a_this, float& a_cost, RE::Actor* a_actor
 		)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_actor); 
-				if (playerIndex != -1)
+				return _AdjustCost(a_this, a_cost, a_actor);
+			}
+
+			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_actor); 
+			if (playerIndex == -1)
+			{
+				return _AdjustCost(a_this, a_cost, a_actor);
+			}
+
+			const auto& p = glob.coopPlayers[playerIndex];
+			if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+			{
+				// Trying to get P1's spell costs 
+				// while a companion player is accessing a menu.
+				if (p->coopActor->IsPlayerRef())
 				{
-					const auto& p = glob.coopPlayers[playerIndex];
-					if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
-					{
-						if (p->coopActor->IsPlayerRef())
-						{
-							const auto& menuP = glob.coopPlayers[glob.menuCID];
-							// Run the adjust cost function on the companion player's base cost
-							// for this spell and scale it up/down.
-							// Output this new cost to report the companion player's spell costs
-							// in the menu instead of P1's.
-							float menuPlayerMagCost = 
-							(
-								// This function gets called on the menu player here.
-								a_this->CalculateMagickaCost(menuP->coopActor.get())
-							);
-							// Do not run the adjustment a second time and just scale down
-							// the base cost here.
-							a_cost = 
-							(
-								menuPlayerMagCost * Settings::vfMagickaCostMult[menuP->playerID]
-							);
-
-							// REMOVE when done debugging.
-							/*SPDLOG_DEBUG
-							(
-								"[SpellItem Hooks] AdjustCost: {} in menus. "
-								"Spell {} had cost {}, now has cost {}.",
-								menuP->coopActor->GetName(),
-								a_this->GetName(),
-								menuPlayerMagCost,
-								a_cost
-							);*/
-						}
-						else
-						{
-							// Calling CalculateMagickaCost() above on the companion player
-							// will call this function, so to avoid creating 
-							// an infinite rucrusive loop and to obtain the original cost, 
-							// run the original function here to compute the pre-scaled cost 
-							// and return.
-							float orig = a_cost;
-							_AdjustCost(a_this, a_cost, a_actor);
-
-							// REMOVE when done debugging.
-							/*SPDLOG_DEBUG
-							(
-								"[SpellItem Hooks] AdjustCost: {} in menus. "
-								"Spell {} had original cost of {}, now has cost {}.",
-								p->coopActor->GetName(),
-								a_this->GetName(),
-								orig,
-								a_cost
-							);*/
-						}
-					}
-					else
-					{
-						float orig = a_cost;
-						// Scale the base cost by our player-specific multiplier first.
-						a_cost *= Settings::vfMagickaCostMult[p->playerID];
-						_AdjustCost(a_this, a_cost, a_actor);
-
-						// REMOVE when done debugging.
-						/*SPDLOG_DEBUG
-						(
-							"[SpellItem Hooks] AdjustCost: {}: "
-							"Spell {} had cost {}, now has cost {}.",
-							p->coopActor->GetName(),
-							a_this->GetName(),
-							orig,
-							a_cost
-						);*/
-					}
-					
-					return;
+					const auto& menuP = glob.coopPlayers[glob.menuCID];
+					// Run the adjust cost function on the companion player's base cost
+					// for this spell and scale it up/down.
+					// Output this new cost to report the companion player's spell costs
+					// in the menu instead of P1's.
+					float menuPlayerMagCost = 
+					(
+						// This function gets called on the menu player here.
+						a_this->CalculateMagickaCost(menuP->coopActor.get())
+					);
+					// Do not run the adjustment a second time and just scale down
+					// the base cost here.
+					a_cost = 
+					(
+						menuPlayerMagCost * Settings::vfMagickaCostMult[menuP->playerID]
+					);
+				}
+				else
+				{
+					// Calling CalculateMagickaCost() above on the companion player
+					// will call this function, so to avoid creating 
+					// an infinite recursive loop and to obtain the original cost, 
+					// run the original function here to compute the pre-scaled cost 
+					// and return.
+					_AdjustCost(a_this, a_cost, a_actor);
 				}
 			}
-					
-			_AdjustCost(a_this, a_cost, a_actor);
+			else
+			{
+				// Scale the base cost by our P1-specific multiplier first.
+				a_cost *= Settings::vfMagickaCostMult[p->playerID];
+				_AdjustCost(a_this, a_cost, a_actor);
+			}
 		}
 
 // [TESCAMERA HOOKS]:
@@ -7107,21 +7429,25 @@ namespace ALYSLC
 			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
 			// Camera local position/rotation is modified when ragdolled 
 			// (bleedout camera position), inactive, staggered, sitting/sleeping, 
-			// or sprinting (AnimatedCameraDelta), 
+			// sprinting or when camera shake is applied (AnimatedCameraDelta), 
 			// and we want to discard these position/rotation changes, so return without updating.
 			bool orbitStateActive = a_this->currentState->id == RE::CameraState::kAutoVanity;
 			bool bleedoutStateActive = a_this->currentState->id == RE::CameraState::kBleedout;
 			bool furnitureStateActive = a_this->currentState->id == RE::CameraState::kFurniture;
 			bool localRotationModified = 
 			{
-				orbitStateActive || bleedoutStateActive || furnitureStateActive ||
+				orbitStateActive ||
+				bleedoutStateActive ||
+				furnitureStateActive ||
 				p1->IsInRagdollState() ||
 				p1->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 				p1->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal ||
-				coopP1->pam->isSprinting
+				coopP1->pam->isSprinting ||
+				glob.isCameraShakeActive
 			};
 			if (localRotationModified) 
 			{
+				glob.cam->SetCamOrientation(true);
 				return;
 			}
 			else
@@ -7131,7 +7457,7 @@ namespace ALYSLC
 				// before we re-apply the co-op camera orientation,
 				// which was previously applied in the main hook.
 				_Update(a_this);
-				glob.cam->SetCamOrientation();
+				glob.cam->SetCamOrientation(false);
 				return;
 			}
 		}
@@ -7225,11 +7551,6 @@ namespace ALYSLC
 			);
 			if (shouldRemoveOcclusionMarker)
 			{
-				SPDLOG_DEBUG("[TESObjectREFR Hooks] Cell: {} (0x{:X}): delete marker {} (0x{:X}).",
-					a_this->parentCell->fullName,
-					a_this->parentCell->formID,
-					a_this->GetName(),
-					a_this->formID);
 				// Delete marker.
 				a_this->SetDelete(true);
 				// Set skybox only for interior cells to sometimes remove fog
@@ -7657,7 +7978,6 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. "
@@ -7724,7 +8044,6 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, "
@@ -7754,15 +8073,15 @@ namespace ALYSLC
 			const auto containerMode = a_this->GetContainerMode();
 			if (closing && containerMode == RE::ContainerMenu::ContainerMode::kNPCMode) 
 			{
-				RE::NiPointer<RE::TESObjectREFR> containerRefr;
+				RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
 				bool succ = RE::TESObjectREFR::LookupByHandle
 				(
-					RE::ContainerMenu::GetTargetRefHandle(), containerRefr
+					RE::ContainerMenu::GetTargetRefHandle(), containerRefrPtr
 				);
 				auto menuContainerHandle = 
 				(
-					containerRefr && containerRefr.get() ? 
-					containerRefr->GetHandle() : 
+					containerRefrPtr && containerRefrPtr.get() ? 
+					containerRefrPtr->GetHandle() : 
 					RE::ObjectRefHandle()
 				);
 				// If the container is the co-op companion player themselves, 
@@ -7815,7 +8134,6 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, "
@@ -7911,7 +8229,6 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, "
@@ -7967,7 +8284,7 @@ namespace ALYSLC
 			// until the requesting player's favorited items have been imported by P1.
 
 			// Nothing to do here, since co-op is not active, serializable data is not available,
-			// or this menu is not the target of the message. 
+			// or this menu is not the target of the message.
 			if (!glob.globalDataInit || 
 				!glob.coopSessionActive || 
 				glob.serializablePlayerData.empty() || 
@@ -8100,7 +8417,8 @@ namespace ALYSLC
 				}
 				else if (glob.menuCID != -1)
 				{
-					// Update equip state for all favorited entries and refresh the item list.
+					// For companion players, update equip state for all favorited entries 
+					// and refresh the item list.
 					taskInterface->AddUITask
 					(
 						[]() 
@@ -8241,13 +8559,6 @@ namespace ALYSLC
 									(
 										glob.mim->favEntryEquipStates[index]
 									);
-									SPDLOG_DEBUG
-									(
-										"[FavoritesMenu Hooks] ProcessMessage: "
-										"Favorites index {} item {} "
-										"is getting its equip state set to {}",
-										index, favoritedItem->GetName(), equipStateNum
-									);
 									RE::GFxValue equipState;
 									equipState.SetNumber(static_cast<double>(equipStateNum));
 									entry.SetMember("equipState", equipState);
@@ -8294,12 +8605,6 @@ namespace ALYSLC
 								}
 							}
 							
-							SPDLOG_DEBUG
-							(
-								"[FavoritesMenu Hooks] ProcessMessage: "
-								"Updating favorites entries for {}.",
-								p->coopActor->GetName()
-							);
 							// Update the favorites entry list.
 							view->InvokeNoReturn
 							(
@@ -8407,7 +8712,7 @@ namespace ALYSLC
 										)
 									)
 								);
-								// Indicate as sent by companion player.
+								// Indicate that the event was sent by a companion player.
 								(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
 								Util::SendInputEvent(buttonEvent);
 							}
@@ -8512,7 +8817,10 @@ namespace ALYSLC
 							"Opening {}'s inventory instead of P1's.", 
 							reqP->coopActor->GetName()
 						);
-						Util::Papyrus::OpenInventory(reqP->coopActor.get());
+						reqP->coopActor->OpenContainer
+						(
+							!RE::ContainerMenu::ContainerMode::kNPCMode
+						);
 					}
 
 					// Ignore request to prevent further processing,
@@ -8900,7 +9208,6 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
 				"[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, "
@@ -8970,7 +9277,7 @@ namespace ALYSLC
 
 		bool ActivateHandlerHooks::CanProcess(RE::ActivateHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9018,7 +9325,7 @@ namespace ALYSLC
 			RE::AttackBlockHandler* a_this, RE::InputEvent* a_event
 		)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9050,7 +9357,7 @@ namespace ALYSLC
 		
 		bool JumpHandlerHooks::CanProcess(RE::JumpHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9083,7 +9390,7 @@ namespace ALYSLC
 
 		bool LookHandlerHooks::CanProcess(RE::LookHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; 
+			// From companion player; 
 			// ignore since we don't want another player controlling the camera orientation.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
@@ -9116,7 +9423,7 @@ namespace ALYSLC
 
 		bool MovementHandlerHooks::CanProcess(RE::MovementHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; 
+			// From companion player; 
 			// ignore since we don't want another player to control P1's movement.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11)) 
@@ -9193,7 +9500,7 @@ namespace ALYSLC
 			RE::ReadyWeaponHandler* a_this, RE::InputEvent* a_event
 		)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9226,7 +9533,7 @@ namespace ALYSLC
 
 		bool ShoutHandlerHooks::CanProcess(RE::ShoutHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9259,7 +9566,7 @@ namespace ALYSLC
 
 		bool SneakHandlerHooks::CanProcess(RE::SneakHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9292,7 +9599,7 @@ namespace ALYSLC
 
 		bool SprintHandlerHooks::CanProcess(RE::SprintHandler* a_this, RE::InputEvent* a_event)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9328,7 +9635,7 @@ namespace ALYSLC
 			RE::TogglePOVHandler* a_this, RE::InputEvent* a_event
 		)
 		{
-			// From co-op player; ignore since we don't want another player controlling P1.
+			// From companion player; ignore since we don't want another player controlling P1.
 			auto idEvent = a_event->AsIDEvent(); 
 			if ((idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xCA11))
 			{
@@ -9348,5 +9655,5 @@ namespace ALYSLC
 
 			return _CanProcess(a_this, a_event);
 		}
-}
+	}
 }

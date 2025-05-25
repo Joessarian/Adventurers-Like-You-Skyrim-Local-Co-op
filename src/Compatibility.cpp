@@ -3,10 +3,7 @@
 
 namespace ALYSLC
 {
-	PRECISION_API::IVPrecision1* PrecisionCompat::g_precisionAPI1{ nullptr };
-	PRECISION_API::IVPrecision3* PrecisionCompat::g_precisionAPI3{ nullptr };
 	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4{ nullptr };
-	TRUEHUD_API::IVTrueHUD1* TrueHUDCompat::g_trueHUDAPI1{ nullptr };
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3{ nullptr };
 	bool EnderalCompat::g_enderalSSEInstalled{ false };
 	bool MCOCompat::g_mcoInstalled{ false };
@@ -74,57 +71,13 @@ namespace ALYSLC
 
 	void PrecisionCompat::RequestPrecisionAPIs(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_precisionAPI1 = nullptr;
-		g_precisionAPI3 = nullptr;
 		g_precisionAPI4 = nullptr;
 		const auto pluginInfo = a_loadInterface->GetPluginInfo(PRECISION_API::PrecisionPluginName); 
 		if (pluginInfo)
 		{
 			g_precisionInstalled = true;
-			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed.", 
+			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed!", 
 				PRECISION_API::PrecisionPluginName);
-			g_precisionAPI3 = reinterpret_cast<PRECISION_API::IVPrecision3*>
-			(
-				PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V3)
-			);
-			if (g_precisionAPI3)
-			{
-				SPDLOG_INFO("[Compatibility] Received access to Precision API V3.");
-			}
-			else
-			{
-				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V3.");
-				return;
-			}
-
-			g_precisionAPI1 = reinterpret_cast<PRECISION_API::IVPrecision1*>
-			(
-				PRECISION_API::RequestPluginAPI(PRECISION_API::InterfaceVersion::V1)
-			);
-			if (g_precisionAPI1)
-			{
-				SPDLOG_INFO("[Compatibility] Received access to Precision API V1.");
-
-				// Register havok callback after obtaining the API.
-				g_precisionAPI1->AddPrePhysicsStepCallback
-				(
-					SKSE::GetPluginHandle(), 
-					[](RE::bhkWorld* a_world) 
-					{
-						GlobalCoopData::HavokPrePhysicsStep(a_world); 
-					}
-				);
-				SPDLOG_INFO("[Compatibility] Registered Precision pre-physics step callback.");
-			}
-			else
-			{
-				SPDLOG_ERROR
-				(
-					"[Compatibility] ERR: Could not get access to Precision API V1 "
-					"and register Havok pre-physics step callback."
-				);
-				return;
-			}
 
 			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>
 			(
@@ -133,6 +86,27 @@ namespace ALYSLC
 			if (g_precisionAPI4)
 			{
 				SPDLOG_INFO("[Compatibility] Received access to Precision API V4.");
+
+				// Register havok callback after obtaining the API.
+				g_precisionAPI4->AddPrePhysicsStepCallback
+				(
+					SKSE::GetPluginHandle(), 
+					[](RE::bhkWorld* a_world) 
+					{
+						GlobalCoopData::PrecisionPrePhysicsStepCallback(a_world); 
+					}
+				);
+				SPDLOG_INFO("[Compatibility] Registered Precision pre-physics step callback.");
+
+				g_precisionAPI4->AddPreHitCallback
+				(
+					SKSE::GetPluginHandle(),
+					[](const PRECISION_API::PrecisionHitData& a_data)
+					{
+						return GlobalCoopData::PrecisionPreHitCallback(a_data);
+					}
+				);
+				SPDLOG_INFO("[Compatibility] Registered Precision pre-hit callback.");
 			}
 			else
 			{
@@ -250,7 +224,7 @@ namespace ALYSLC
 		if (pluginInfo) 
 		{
 			g_trueHUDInstalled = true;
-			SPDLOG_INFO("[Compatibility] Mod {} is installed.", TRUEHUD_API::TrueHUDPluginName);
+			SPDLOG_INFO("[Compatibility] {} is installed!", TRUEHUD_API::TrueHUDPluginName);
 
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>
 			(
@@ -263,20 +237,6 @@ namespace ALYSLC
 			else
 			{
 				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
-				return;
-			}
-
-			g_trueHUDAPI1 = reinterpret_cast<TRUEHUD_API::IVTrueHUD1*>
-			(
-				TRUEHUD_API::RequestPluginAPI(TRUEHUD_API::InterfaceVersion::V1)
-			);
-			if (g_trueHUDAPI1)
-			{
-				SPDLOG_INFO("[Compatibility] Received access to TrueHUD API V1.");
-			}
-			else
-			{
-				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V1.");
 				return;
 			}
 

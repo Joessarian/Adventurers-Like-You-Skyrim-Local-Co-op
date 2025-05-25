@@ -118,10 +118,9 @@ namespace ALYSLC
 		// Blend status for this node.
 		NodeRotationBlendStatus blendStatus;
 
-		// IMPORTANT NOTE: Currently, torso node rotation data is based on nodes' world rotations
-		// and arm node rotation data is based on nodes' local rotations.
-		// TODO: Change all saved rotation data to world rotations.
-		
+		// NOTE:
+		// All local rotations below.
+
 		// List of three angles (yaw, pitch, roll)
 		// Derived from right stick X, Y displacement (yaw, pitch), and const (roll).
 		std::array<float, 3> rotationInput;
@@ -293,7 +292,8 @@ namespace ALYSLC
 
 		// Recursively save all nodes' local rotations and world positions/rotations
 		// by walking the player's node tree from the given node.
-		// NOTE: Must be called each frame before any UpdateDownwardPass() calls fire
+		// NOTE: 
+		// Must be called each frame before any UpdateDownwardPass() calls fire
 		// to properly save the game's intended local rotations 
 		// and world positions/rotations for all player nodes.
 		void SavePlayerNodeWorldTransforms(const std::shared_ptr<CoopPlayer>& a_p);
@@ -346,7 +346,7 @@ namespace ALYSLC
 		// So after a dozen hours of getting nowhere mathematically,
 		// here are manually tested boundary rotation angles for blending.
 		// (RS X * 2PI, RS Y * 2PI, fixed Z), both radians and (degrees).
-		// LEFT SHOULDER (Flip X sign for RIGHT SHOULDER):
+		// LEFT SHOULDER (Flip X coord sign for RIGHT SHOULDER):
 		// 
 		// +BACK [3.3239334 (190.44734), 0.8360221 (47.900536), 0 (0)]
 		// UPWARD [ 1.8315454 (104.93981), -0.23093452 (-13.231572), 0 (0)]
@@ -393,7 +393,7 @@ namespace ALYSLC
 		// Maps adjustable nodes by node name to their corresponding custom rotation data.
 		// IMPORTANT NOTE:
 		// I have not found out how to adjust Precision's cloned nodes directly 
-		// in the Havok physics callback  because NiAVObject's GetObjectByName() 
+		// in the Havok physics callback because NiAVObject's GetObjectByName() 
 		// only returns the original node with that name.
 		// So for Precision compatibility, the adjustable nodes names are used as a key
 		// which allows the node check in the UpdateDownwardPass() hook to recognize
@@ -401,7 +401,7 @@ namespace ALYSLC
 		// and apply our custom rotations to those nodes as well.
 		// This consistency ensures that Precision collisions will occur 
 		// at our modified nodes' locations.
-		// Debug node: Toggle on skeleton colliders in Precision's MCM to see if the colliders 
+		// Debug note: Toggle on skeleton colliders in Precision's MCM to see if the colliders 
 		// properly encapsulate the adjusted nodes.
 		std::unordered_map<RE::BSFixedString, std::unique_ptr<NodeRotationData>> 
 		nodeNameToRotationDataMap;
@@ -431,7 +431,7 @@ namespace ALYSLC
 	struct MovementManager : public Manager
 	{
 		MovementManager();
-		// Delayed construction after the player is default-constructed 
+		// Delayed initialization after the player is default-constructed 
 		// and the player shared pointer is added to the list of co-op players 
 		// in the global data holder.
 		void Initialize(std::shared_ptr<CoopPlayer> a_p);
@@ -541,7 +541,7 @@ namespace ALYSLC
 		RE::ActorPtr coopActor;
 		// Actor to keep a movement offset from.
 		// Either the player actor themselves or the current mount.
-		RE::ActorPtr movementActor;
+		RE::ActorPtr movementActorPtr;
 		// Last aim pitch position.
 		RE::NiPoint3 aimPitchPos;
 		// Dash dodge direction set on the first frame of the dodge.
@@ -587,8 +587,6 @@ namespace ALYSLC
 		bool dontMoveSet;
 		// Face the target directly at all times after toggled on by FaceTarget bind.
 		bool faceTarget;
-		// Has a movement offset been set for this player's actor/mount?
-		bool hasMovementOffset;
 		// Nearby map marker is undiscovered and in range to discover.
 		bool inRangeOfUndiscoveredMarker;
 		// Is this player's interaction package running?
@@ -624,6 +622,8 @@ namespace ALYSLC
 		bool menuStopsMovement;
 		// Movement yaw target changed from LS yaw to yaw-to-target or vice versa.
 		bool movementYawTargetChanged;
+		// Is an external package running on P1 (not started by this mod)?
+		bool p1ExtPackageRunning;
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
 		// Player has requested, via player action,
@@ -676,8 +676,10 @@ namespace ALYSLC
 		// Indicates how encumbered the player is:
 		// >= 1.0f = overencumbered.
 		float encumbranceFactor;
-		// Current left stick angle at max displacement from center.
-		float lsAngAtMaxDisp;
+		// Last left stick angle recorded when moving from center.
+		float lastLSAngMovingFromCenter;
+		// Last right stick angle recorded when moving from center.
+		float lastRSAngMovingFromCenter;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]
 		float magicParaglideVelInterpFactor;
 		// Starting and ending upward vertical speed while pseudo-paragliding.
@@ -691,12 +693,6 @@ namespace ALYSLC
 		float playerScaledHeight;
 		// Yaw to set for this player.
 		float playerYaw;
-		// Previous left stick angle at max displacement from center.
-		float prevLSAngAtMaxDisp;
-		// Previous right stick angle at max displacement from center.
-		float prevRSAngAtMaxDisp;
-		// Current right stick angle at max displacement from center.
-		float rsAngAtMaxDisp;
 
 		// Initial jump vertical velocity when springing up after gather (havok units).
 		// Takes into account player scale to prevent tall players from

@@ -11,7 +11,7 @@ namespace ALYSLC
 	{
 		// Import all MCM settings.
 
-		CSimpleIniA ini;
+		CSimpleIniA ini{ };
 		ini.SetUnicode();
 
 		// Import defaults.
@@ -77,7 +77,7 @@ namespace ALYSLC
 		ini.Reset();
 
 		// Import player-modified settings.
-		CSimpleIniA ini2;
+		CSimpleIniA ini2{ };
 		ini2.SetUnicode();
 		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 		{
@@ -148,7 +148,7 @@ namespace ALYSLC
 				fmt::format
 				(
 					"[ALYSLC] Invalid binds found:\nDefault settings.ini: "
-					"{}\n{}: {}\nTroubleshooting info messages are in the ALYSLC '.log' file "
+					"{}\n{}: {}\nTroubleshooting info messages are in the 'ALYSLC.log' file "
 					"and have the [BINDS] tag.\nAll invalid binds were disabled.", 
 					!defBindsSucc ? "[Invalid]" : "[Valid]", 
 					ALYSLC::EnderalCompat::g_enderalSSEInstalled ? 
@@ -201,7 +201,7 @@ namespace ALYSLC
 		// Composing InputActions for each player action.
 		// Read in binds and then break down into only composing inputs afterward.
 		std::array<std::vector<InputAction>, (size_t)(InputAction::kActionTotal)> 
-		tempComposingActionsLists;
+		tempComposingActionsLists{ };
 		tempComposingActionsLists.fill(std::vector<InputAction>());
 		// For troubleshooting purposes.
 		// Binds in this set are invalid and will be disabled.
@@ -261,7 +261,7 @@ namespace ALYSLC
 					TriggerFlag::kMinHoldTime
 				);
 
-				// Read in the two-to-three modifiable bind flags.
+				// Read in the 2-3 modifiable bind flags.
 				ReadBoolSetting
 				(
 					a_ini, 
@@ -686,7 +686,6 @@ namespace ALYSLC
 					numComposingPlayerActions,
 					recursionDepth
 				);
-				// Remove duplicates.
 
 				// Recursion depth exceeded, so disable the bind.
 				if (recursionDepth >= uMaxComposingInputsCheckRecursionDepth)
@@ -732,7 +731,7 @@ namespace ALYSLC
 	{
 		// Import settings not linked with a specific player.
 		
-		// Camera Page
+		// Camera
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamPitch", bAutoRotateCamPitch);
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamYaw", bAutoRotateCamYaw);
 		ReadBoolSetting(a_ini, "Camera", "bCamCollisions", bCamCollisions);
@@ -750,6 +749,15 @@ namespace ALYSLC
 		(
 			a_ini, 
 			"Camera",
+			"uAutoRotateCriteria", 
+			uAutoRotateCriteria,
+			0,
+			!CamAutoRotateCriteria::kTotal - 1
+		);
+		ReadUInt32Setting
+		(
+			a_ini, 
+			"Camera",
 			"uLockOnAssistance",
 			uLockOnAssistance, 
 			0, 
@@ -759,6 +767,7 @@ namespace ALYSLC
 		// Cheats
 		ReadBoolSetting(a_ini, "Cheats", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
 		ReadBoolSetting(a_ini, "Cheats", "bInfiniteCarryweight", bInfiniteCarryweight);
+		ReadBoolSetting(a_ini, "Cheats", "bNegateFallDamage", bNegateFallDamage);
 		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
 		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
 
@@ -849,8 +858,8 @@ namespace ALYSLC
 		(
 			a_ini, 
 			"ExtraMechanics", 
-			"fArmCollisionForceMultiplier", 
-			fArmCollisionForceMultiplier, 
+			"fArmCollisionForceMult", 
+			fArmCollisionForceMult, 
 			0.0f, 
 			10.0f
 		);
@@ -888,6 +897,33 @@ namespace ALYSLC
 			"fSecsToReleaseObjectsAtMaxSpeed", 
 			fSecsToReleaseObjectsAtMaxSpeed, 
 			0.01f, 
+			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fSlapKnockdownForearmSpeedThresholdMult", 
+			fSlapKnockdownForearmSpeedThresholdMult, 
+			0.0f, 
+			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fSlapKnockdownHandSpeedThresholdMult", 
+			fSlapKnockdownHandSpeedThresholdMult, 
+			0.0f, 
+			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"ExtraMechanics", 
+			"fSlapKnockdownShoulderSpeedThresholdMult", 
+			fSlapKnockdownShoulderSpeedThresholdMult, 
+			0.0f, 
 			5.0f
 		);
 		ReadUInt32Setting
@@ -1261,6 +1297,8 @@ namespace ALYSLC
 				0.0f, 
 				1.0f
 			);
+
+			// Damage Modifiers
 			ReadFloatSetting
 			(
 				a_ini, 
@@ -1304,6 +1342,35 @@ namespace ALYSLC
 				"fThrownObjectDamageMult", 
 				(float&)vfThrownObjectDamageMult[pIndex], 
 				0.0f, 
+				100.0f
+			);
+			
+			// Extra Mechanics Cost Modifiers
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
+				"fFlopHealthCostMult", 
+				(float&)vfFlopHealthCostMult[pIndex],
+				0.0f,
+				100.0f
+			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
+				"fObjectManipulationMagickaCostMult", 
+				(float&)vfObjectManipulationMagickaCostMult[pIndex],
+				0.0f,
+				100.0f
+			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
+				"fSlapStaminaCostMult", 
+				(float&)vfSlapStaminaCostMult[pIndex],
+				0.0f,
 				100.0f
 			);
 

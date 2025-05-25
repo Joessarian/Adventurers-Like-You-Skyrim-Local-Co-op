@@ -88,9 +88,9 @@ namespace ALYSLC
 				// NOTE:
 				// Unused for now until I figure out a way to stall the FNF spellcast animation 
 				// when the spell is fully charged and the player is still holding the cast bind.
-				/*REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
 				_Update = vtbl.write_vfunc(0x1D, Update);
-				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed Update() hook.");*/
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed Update() hook.");
 			}
 
 		private:
@@ -217,7 +217,7 @@ namespace ALYSLC
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
 			);
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
-			static void Update(RE::Character* a_this, float a_delta);                                                                                                                                                          // 0E5
+			static void Update(RE::Character* a_this, float a_delta);
 
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
 			_CheckClampDamageModifier;
@@ -278,15 +278,19 @@ namespace ALYSLC
 			);
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 
+			// NOTE:
+			// The following three checks only process gamepad events.
+			
 			// Check if the correct binds were pressed to open the summoning or debug menus.
 			// Return true if the input was handled and should be invalidated.
-			static bool CheckForMenuTriggeringInput(RE::InputEvent* const* a_constEvent);
+			static bool CheckForMenuTriggeringInput(RE::InputEvent* a_firstGamepadEvent);
 			// Check if P1 is in the Favorites Menu and is trying to hotkey an entry.
 			// Return true if the input was handled and should be invalidated.
-			static bool CheckForP1HotkeyReq(RE::InputEvent* const* a_constEvent);
+			static bool CheckForP1HotkeyReq(RE::InputEvent* a_firstGamepadEvent);
 			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
 			// Return true if the input was handled and should be invalidated.
-			static bool CheckForP1QSEquipReq(RE::InputEvent* const* a_constEvent);
+			static bool CheckForP1QSEquipReq(RE::InputEvent* a_firstGamepadEvent);
+
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.
@@ -298,7 +302,13 @@ namespace ALYSLC
 			// 0xXXXXDEAD: ignore this input event.
 			// 
 			// Return true if the event should be processed by the MenuControls hook.
-			static bool FilterInputEvents(RE::InputEvent* const* a_constEvent);
+			static bool FilterInputEvents
+			(
+				RE::InputEvent* const* a_eventHead,
+				RE::InputEvent* a_firstGamepadEvent
+			);
+			// Return a pointer to the first gamepad device input event in the given chain.
+			static RE::InputEvent* GetFirstGamepadInputEvent(RE::InputEvent* const* a_eventHead);
 
 			// Was an attempt made to open the co-op debug menu?
 			static inline bool debugMenuTriggered;
@@ -432,6 +442,8 @@ namespace ALYSLC
 				{
 					RE::VTABLE_MissileProjectile[0] 
 				};
+
+				// Arrow.
 				_ArrowProjectile_GetLinearVelocity = arrowProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -441,8 +453,15 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed ArrowProjectile GetLinearVelocity() hook."
 				);
+				_OnArrowCollision = arrowProjectileVtbl.write_vfunc(190, OnProjectileCollision);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed ArrowProjectile OnArrowCollision() hook."
+				);
 				_ArrowProjectile_UpdateImpl = arrowProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed ArrowProjectile UpdateImpl() hook.");
+
+				// Barrier.
 				_BarrierProjectile_GetLinearVelocity = barrierProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -452,11 +471,21 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed BarrierProjectile GetLinearVelocity() hook."
 				);
+				_BarrierProjectile_ShouldUseDesiredTarget = barrierProjectileVtbl.write_vfunc
+				(
+					0xC1, ShouldUseDesiredTarget
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed BarrierProjectile ShouldUseDesiredTarget() hook."
+				);
 				_BarrierProjectile_UpdateImpl = barrierProjectileVtbl.write_vfunc
 				(
 					0xAB, UpdateImpl
 				);
 				SPDLOG_INFO("[Projectile Hook] Installed BarrierProjectile UpdateImpl() hook.");
+
+				// Beam.
 				_BeamProjectile_GetLinearVelocity = beamProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -466,8 +495,18 @@ namespace ALYSLC
 					"[Projectile Hook] "
 					"Installed BeamProjectile GetLinearVelocity() hook."
 				);
+				_BeamProjectile_ShouldUseDesiredTarget = beamProjectileVtbl.write_vfunc
+				(
+					0xC1, ShouldUseDesiredTarget
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed BeamProjectile ShouldUseDesiredTarget() hook."
+				);
 				_BeamProjectile_UpdateImpl = beamProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed BeamProjectile UpdateImpl() hook.");
+
+				// Cone.
 				_ConeProjectile_GetLinearVelocity = coneProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -477,8 +516,18 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed ConeProjectile GetLinearVelocity() hook."
 				);
+				_OnConeCollision = coneProjectileVtbl.write_vfunc
+				(
+					190, OnProjectileCollision
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed ConeProjectile OnConeCollision() hook."
+				);
 				_ConeProjectile_UpdateImpl = coneProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed ConeProjectile UpdateImpl() hook.");
+
+				// Flame.
 				_FlameProjectile_GetLinearVelocity = flameProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -488,8 +537,18 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed FlameProjectile GetLinearVelocity() hook."
 				);
+				_FlameProjectile_ShouldUseDesiredTarget = flameProjectileVtbl.write_vfunc
+				(
+					0xC1, ShouldUseDesiredTarget
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed FlameProjectile ShouldUseDesiredTarget() hook."
+				);
 				_FlameProjectile_UpdateImpl = flameProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed FlameProjectile UpdateImpl() hook.");
+
+				// Grenade.
 				_GrenadeProjectile_GetLinearVelocity = grenadeProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -499,11 +558,21 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed GrenadeProjectile GetLinearVelocity() hook."
 				);
+				_GrenadeProjectile_ShouldUseDesiredTarget = grenadeProjectileVtbl.write_vfunc
+				(
+					0xC1, ShouldUseDesiredTarget
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed GrenadeProjectile ShouldUseDesiredTarget() hook."
+				);
 				_GrenadeProjectile_UpdateImpl = grenadeProjectileVtbl.write_vfunc
 				(
 					0xAB, UpdateImpl
 				);
 				SPDLOG_INFO("[Projectile Hook] Installed GrenadeProjectile UpdateImpl() hook.");
+
+				// Missile.
 				_MissileProjectile_GetLinearVelocity = missileProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
@@ -513,24 +582,6 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed MissileProjectile GetLinearVelocity() hook."
 				);
-				_MissileProjectile_UpdateImpl = missileProjectileVtbl.write_vfunc
-				(
-					0xAB, UpdateImpl
-				);
-				SPDLOG_INFO("[Projectile Hook] Installed MissileProjectile UpdateImpl() hook.");
-				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc
-				(
-					0x86, GetLinearVelocity);
-				SPDLOG_INFO("[Projectile Hook] Installed Projectile GetLinearVelocity() hook."
-				);
-				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("[Projectile Hook] Installed Projectile UpdateImpl() hook.");
-
-				_OnArrowCollision = arrowProjectileVtbl.write_vfunc(190, OnProjectileCollision);
-				SPDLOG_INFO
-				(
-					"[Projectile Hook] Installed ArrowProjectile OnArrowCollision() hook."
-				);
 				_OnMissileCollision = missileProjectileVtbl.write_vfunc
 				(
 					190, OnProjectileCollision
@@ -539,6 +590,37 @@ namespace ALYSLC
 				(
 					"[Projectile Hook] Installed MissileProjectile OnMissileCollision() hook."
 				);
+				_MissileProjectile_UpdateImpl = missileProjectileVtbl.write_vfunc
+				(
+					0xAB, UpdateImpl
+				);
+				SPDLOG_INFO("[Projectile Hook] Installed MissileProjectile UpdateImpl() hook.");
+
+				// Generic.
+				
+				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc
+				(
+					0x86, GetLinearVelocity
+				);
+				SPDLOG_INFO("[Projectile Hook] Installed Projectile GetLinearVelocity() hook.");
+				_OnProjectileCollision = projectileVtbl.write_vfunc
+				(
+					190, OnProjectileCollision
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed Projectile OnMissileCollision() hook."
+				);
+				_Projectile_ShouldUseDesiredTarget = projectileVtbl.write_vfunc
+				(
+					0xC1, ShouldUseDesiredTarget
+				);
+				SPDLOG_INFO
+				(
+					"[Projectile Hook] Installed Projectile ShouldUseDesiredTarget() hook."
+				);
+				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
+				SPDLOG_INFO("[Projectile Hook] Installed Projectile UpdateImpl() hook.");
 
 			}
 
@@ -551,34 +633,61 @@ namespace ALYSLC
 			(
 				RE::Projectile* a_this, RE::hkpAllCdPointCollector* a_AllCdPointCollector
 			);
+			static bool ShouldUseDesiredTarget(RE::Projectile* a_this); 
 			static void UpdateImpl(RE::Projectile* a_this, float a_delta);
 
-
+			// Arrow
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_ArrowProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnArrowCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ArrowProjectile_UpdateImpl;
+			
+			// Barrier
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_BarrierProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
+			_BarrierProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BarrierProjectile_UpdateImpl;
+
+			// Beam
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_BeamProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
+			_BeamProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BeamProjectile_UpdateImpl;
+
+			// Cone
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_ConeProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnConeCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ConeProjectile_UpdateImpl;
+			
+			// Flame
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_FlameProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
+			_FlameProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _FlameProjectile_UpdateImpl;
+
+			// Grenade
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_GrenadeProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)>
+			_GrenadeProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _GrenadeProjectile_UpdateImpl;
+
+			// Missile
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_MissileProjectile_GetLinearVelocity;
 			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnMissileCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _MissileProjectile_UpdateImpl;
+			
+			// Generic
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_Projectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnProjectileCollision;
+			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
+			_Projectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;
 
 			// Adjust projectile trajectory towards the computed intercept position 

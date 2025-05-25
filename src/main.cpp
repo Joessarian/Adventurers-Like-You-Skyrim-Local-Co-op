@@ -234,6 +234,7 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
 	switch (a_interfaceVersion) 
 	{
 	case ALYSLC_API::InterfaceVersion::V1:
+	case ALYSLC_API::InterfaceVersion::V2:
 		SPDLOG_INFO("[MAIN] RequestPluginAPI returned the API singleton.");
 		return static_cast<void*>(api);
 	}

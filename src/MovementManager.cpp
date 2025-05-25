@@ -36,6 +36,7 @@ namespace ALYSLC
 
 	void MovementManager::MainTask()
 	{
+		// Update movement state and then set rotation and speed.
 		UpdateMovementParameters();
 		UpdateMovementState();
 		UpdateAttackSourceOrientationData(false);
@@ -55,16 +56,21 @@ namespace ALYSLC
 			Util::SetPlayerAIDriven(false);
 		}
 
-		// Force the player to get up out of ragdoll state before pausing.
-		if (coopActor->IsInRagdollState() &&
-			glob.coopSessionActive &&
-			!p->isDowned && 
-			!coopActor->IsDead())
+		// Stop movement.
+		if (auto mountPtr = p->GetCurrentMount(); mountPtr && mountPtr.get())
 		{
-			coopActor->NotifyAnimationGraph("GetUpBegin");
-			coopActor->PotentiallyFixRagdollState();
+			Util::NativeFunctions::ClearKeepOffsetFromActor(mountPtr.get());
+			Util::NativeFunctions::SetDontMove(mountPtr.get(), true);
+			Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 		}
 
+		if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
+		{			
+			Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
+			Util::NativeFunctions::SetDontMove(coopActor.get(), true);
+			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
+		}
+		
 		// Reset pitch angle, speedmult.
 		coopActor->data.angle.x = 0.0f;
 		coopActor->SetActorValue(RE::ActorValue::kSpeedMult, 100.0f);
@@ -77,16 +83,16 @@ namespace ALYSLC
 			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
 		);
 
-		// Stop movement.
-		ClearKeepOffsetFromActor();
-		coopActor->StopMoving(*g_deltaTimeRealTime);
-		Util::NativeFunctions::SetDontMove(coopActor.get(), true);
-		Util::NativeFunctions::SetDontMove(coopActor.get(), false);
-
-		// Reset node rotations.
 		if (nextState == ManagerState::kAwaitingRefresh) 
 		{
+			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
+			// Force the player to get up out of ragdoll state.
+			if (glob.coopSessionActive && !p->isDowned && !coopActor->IsDead())
+			{
+				coopActor->NotifyAnimationGraph("GetUpBegin");
+				coopActor->PotentiallyFixRagdollState();
+			}
 		}
 	}
 
@@ -101,17 +107,16 @@ namespace ALYSLC
 			Util::SetPlayerAIDriven(true);
 		}
 
-		// Ensure that the player is upright if ragdolled or in a glitched ragdoll state.
-		if (glob.coopSessionActive && !p->isDowned && !coopActor->IsDead()) 
+		// Ensure the player/mount is not set to stationary.
+		if (auto mountPtr = p->GetCurrentMount(); mountPtr && mountPtr.get())
 		{
-			coopActor->NotifyAnimationGraph("GetUpBegin");
+			Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 		}
 
-		// Ensure the player is not set to stationary.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 
 		// If Precision is installed, make sure Precision is enabled on this actor.
-		if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI3; api)
+		if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
 		{
 			api->ToggleDisableActor(coopActor->GetHandle(), false);
 		}
@@ -120,10 +125,16 @@ namespace ALYSLC
 		aimPitchPos = glob.player1Actor->data.location;
 		coopActor->data.angle.x = 0.0f;
 
-		// Reset node rotations.
 		if (currentState == ManagerState::kAwaitingRefresh)
 		{
+			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
+			// Force the player to get up out of ragdoll state.
+			if (glob.coopSessionActive && !p->isDowned && !coopActor->IsDead())
+			{
+				coopActor->NotifyAnimationGraph("GetUpBegin");
+				coopActor->PotentiallyFixRagdollState();
+			}
 		}
 		
 		// Make sure collision is enabled for the player.
@@ -134,7 +145,7 @@ namespace ALYSLC
 	{
 		// Player and actors.
 		coopActor = p->coopActor;
-		movementActor = coopActor;
+		movementActorPtr = coopActor;
 		// CID.
 		controllerID = p->controllerID;
 		// Player ID.
@@ -164,7 +175,6 @@ namespace ALYSLC
 		attemptDiscovery = false;
 		dontMoveSet = true;
 		faceTarget = false;
-		hasMovementOffset = false;
 		inRangeOfUndiscoveredMarker = false;
 		interactionPackageRunning = false;
 		isAirborneWhileJumping = false;
@@ -180,6 +190,7 @@ namespace ALYSLC
 		isSwimming = false;
 		isSynced = false;
 		lsMoved = false;
+		p1ExtPackageRunning = false;
 		playerRagdollTriggered = false;
 		menuStopsMovement = false;
 		movementYawTargetChanged = false;
@@ -200,12 +211,11 @@ namespace ALYSLC
 		dashDodgeLSDisplacement = 0.0f;
 		dashDodgeTorsoPitchOffset = 0.0f;
 		dashDodgeTorsoRollOffset = 0.0f;
-		lsAngAtMaxDisp = rsAngAtMaxDisp = 0.0f;
+		lastLSAngMovingFromCenter = lastRSAngMovingFromCenter = 0.0f;
 		oldLSAngle = 0.0f;
 		playerScaledHeight = coopActor->GetHeight();
 		playerPitch = 0.0f;
 		playerYaw = coopActor->GetHeading(false);
-		prevLSAngAtMaxDisp = prevRSAngAtMaxDisp = 0.0f;
 		magicParaglideEndZVel = magicParaglideStartZVel = magicParaglideVelInterpFactor = 0.0f;
 		framesSinceAttemptingDiscovery =
 		framesSinceRequestingDashDodge = 
@@ -236,14 +246,50 @@ namespace ALYSLC
 	{
 		// Clear movement offset if one is set.
 
-		if (hasMovementOffset)
+		if (!movementActorPtr || !movementActorPtr.get())
 		{
-			if (movementActor && movementActor.get())
-			{
-				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActor.get());
-			}
+			return;
+		}
 
-			hasMovementOffset = false;
+		// IMPORTANT NOTE:
+		// Jank, jank as far as the eye can see.
+		// Clearing the offset allows the game to set the companion player 
+		// as animation driven and lock the character in idle animations.
+		// Example: 
+		// If the companion player stops moving and their movement offset is cleared here, 
+		// the game will sometimes evaluate a 'run once' package 
+		// that forces the character to face P1, even if another package
+		// is placed atop the stack and evaluated.
+		// For the duration of the animation, the player cannot move their character.
+		// 
+		// So for companion players, we instead maintain a movement offset,
+		// but set the catch up and follow radii
+		// to prevent the player from moving.
+		// 
+		// If curtailing momentum, since the movement type speed
+		// is set to a very high value while the player is stuck in place 
+		// to lower their reported movement speed as quickly as possible,
+		// keeping a movement offset without the 'dontmove' flag set 
+		// will sometimes cause a glitch  where the player is stuck in place 
+		// but the running animation plays at breakneck speed.
+				 
+		if (p->isPlayer1)
+		{
+			Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
+		}
+		else
+		{
+			// Stop radius is smaller than run-to-catchup radius,
+			// so running won't occur.
+			Util::NativeFunctions::KeepOffsetFromActor
+			(
+				movementActorPtr.get(), 
+				movementActorPtr->GetHandle(), 
+				RE::NiPoint3(), 
+				RE::NiPoint3(),
+				100.0f,
+				99.0f
+			);
 		}
 	}
 
@@ -264,15 +310,8 @@ namespace ALYSLC
 		}
 
 		const float maxStamina = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina);
-		const float currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
-		if (a_forArmRotationSpeed)
-		{
-			return (0.25f * currentStamina / maxStamina + 0.75f);
-		}
-		else
-		{
-			return (0.5f * currentStamina / maxStamina + 0.5f);
-		}
+		const float currentStamina = max(0.0f, coopActor->GetActorValue(RE::ActorValue::kStamina));
+		return max(0.25f, powf(currentStamina / maxStamina, 0.2f));
 	}
 
 	float MovementManager::GetRotationMult()
@@ -326,6 +365,7 @@ namespace ALYSLC
 	bool MovementManager::HasRotatedArms()
 	{
 		// Return true if the player has rotated at least one arm node.
+
 		for (const auto& armNodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES)
 		{
 			if (!nom->nodeNameToRotationDataMap.contains(armNodeName))
@@ -386,18 +426,17 @@ namespace ALYSLC
 	{
 		// Set movement offset from the player's movement actor (themselves or mount).
 
-		if (movementActor && movementActor.get())
+		if (movementActorPtr && movementActorPtr.get())
 		{
 			Util::NativeFunctions::KeepOffsetFromActor
 			(
-				movementActor.get(), 
+				movementActorPtr.get(), 
 				a_targetHandle, 
 				a_posOffset, 
 				a_angOffset, 
 				a_catchUpRadius, 
 				a_followRadius
 			);
-			hasMovementOffset = true;
 		}
 	}
 
@@ -439,6 +478,8 @@ namespace ALYSLC
 			SetDontMove(false);
 			// Stop attacking/sprinting before dodging.
 			coopActor->NotifyAnimationGraph("attackStop");
+			coopActor->NotifyAnimationGraph("bashExit");
+			coopActor->NotifyAnimationGraph("blockStop");
 			coopActor->NotifyAnimationGraph("SprintStop");
 			coopActor->NotifyAnimationGraph("staggerStop");
 			coopActor->NotifyAnimationGraph("moveStart");
@@ -447,9 +488,9 @@ namespace ALYSLC
 			// unless the player is on the ground. Will also fail when transformed.
 			bool succ = 
 			(
-				isParagliding || 
+				isParagliding ||
 				isSwimming ||
-				p->isTransformed || 
+				p->isTransformed ||
 				coopActor->NotifyAnimationGraph("SneakStart")
 			);
 
@@ -488,13 +529,11 @@ namespace ALYSLC
 			isDashDodging = succ;
 			isRequestingDashDodge = !succ;
 			// Back step if not moving the LS.
-			const auto& lsMag = glob.cdh->GetAnalogStickState(controllerID, true).normMag;
 			isBackStepDodge = isDashDodging && !lsMoved;
 		}
 		
 		if (isDashDodging)
 		{
-			const uint32_t noCollFlag = !RE::CFilter::Flag::kNoCollision;
 			if (framesSinceRequestingDashDodge == 0) 
 			{
 				// Varying I-Frames/speed to maintain the same dodge distance 
@@ -529,14 +568,12 @@ namespace ALYSLC
 				0.0f, 
 				1.0f
 			);
-
 			// Ensure the player can rotate so that they keep their dodge momentum
 			// even when interrupting a power attack, 
-			// during the duration of which rotation is disabled.
+			// during the duration of which rotation is fully controlled by the animation.
 			bool allowRotation = false;
 			coopActor->GetGraphVariableBool("bAllowRotation", allowRotation);
-			// Yes, I'm not sure why it's named 'bAllowRotation' 
-			// when setting it to true does just the opposite here.
+			// Set to false to allow the player to follow the direction of their movement.
 			if (allowRotation) 
 			{
 				coopActor->SetGraphVariableBool("bAllowRotation", false);
@@ -655,7 +692,7 @@ namespace ALYSLC
 				}
 
 				// Z velocity set elsewhere, so save the Z component and restore later.
-				RE::hkVector4 havokVel;
+				RE::hkVector4 havokVel{ };
 				charController->GetLinearVelocityImpl(havokVel);
 				float zComp = havokVel.quad.m128_f32[2];
 				// Get dodge speed mult ratio (max / min)
@@ -763,7 +800,6 @@ namespace ALYSLC
 				// when the current state is in-air or flying.
 				charController->wantState = 
 				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
-
 				// Set new dodge velocity.
 				charController->SetLinearVelocityImpl(havokVel);
 				// Check if the player should land when dash dodging on the ground.
@@ -852,7 +888,6 @@ namespace ALYSLC
 						rollToSet : 
 						0.0f
 					);
-
 					if (isBackStepDodge)
 					{
 						if (animRatio < halfAnimCompletionRatio)
@@ -1057,14 +1092,12 @@ namespace ALYSLC
 						sinf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
 					),
 					havokInitialJumpZVelocity + 
-					velBeforeJumpVect.quad.m128_f32[2] +
 					(
 						GAME_TO_HAVOK *
 						Settings::fJumpAdditionalLaunchSpeed
 					),
 					0.0f
 				);
-
 				// Invert gravity and set initial velocity.
 				charController->gravity = -Settings::fJumpingGravityMult;
 				charController->SetLinearVelocityImpl(velBeforeJumpVect);
@@ -1087,22 +1120,15 @@ namespace ALYSLC
 				// Reset gravity and jump state variables,
 				// plus set fall start height and time.
 				charController->lock.Lock();
-				{
-					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-					charController->gravity = 1.0f;
-					RE::hkVector4 havokPos{};
-					charController->GetPositionImpl(havokPos, false);
-					float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
-					charController->fallStartHeight = zPos;
-					charController->fallTime = 0.0f;
-				}
+				charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+				charController->gravity = 1.0f;
+				Util::AdjustFallState(charController, true);
 				charController->lock.Unlock();
 
 				isAirborneWhileJumping = false;
 				isFallingWhileJumping = false;
 				reqStartJump = false;
 				sentJumpFallEvent = false;
-
 				p->jumpStartTP = SteadyClock::now();
 				framesSinceStartingJump = 0;
 				return;
@@ -1124,7 +1150,6 @@ namespace ALYSLC
 				isFallingWhileJumping = false;
 				reqStartJump = false;
 				sentJumpFallEvent = false;
-
 				p->jumpStartTP = SteadyClock::now();
 				framesSinceStartingJump = 0;
 				return;
@@ -1146,6 +1171,7 @@ namespace ALYSLC
 					);
 				}
 				charController->lock.Unlock();
+
 				framesSinceStartingJump++;
 			}
 			else
@@ -1160,16 +1186,11 @@ namespace ALYSLC
 				if (!sentJumpFallEvent && !startedAttackAfterJumping && !p->pam->isAttacking)
 				{
 					charController->lock.Lock();
-					{
-						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-						// Set fall start time and height.
-						RE::hkVector4 havokPos{};
-						charController->GetPositionImpl(havokPos, false);
-						float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
-						charController->fallStartHeight = zPos;
-						charController->fallTime = 0.0f;
-					}
+					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+					// Set fall start time and height.
+					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
+
 					coopActor->NotifyAnimationGraph("JumpFall");
 					sentJumpFallEvent = true;
 				}
@@ -1228,22 +1249,15 @@ namespace ALYSLC
 				{
 					// Reset jump state variables.
 					charController->lock.Lock();
-					{
-						charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
-						charController->gravity = 1.0f;
-						// Set fall start time and height.
-						RE::hkVector4 havokPos{};
-						charController->GetPositionImpl(havokPos, false);
-						float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
-						charController->fallStartHeight = zPos;
-						charController->fallTime = 0.0f;
-					}
+					charController->flags.reset(RE::CHARACTER_FLAGS::kJumping);
+					charController->gravity = 1.0f;
+					// Set fall start time and height.
+					Util::AdjustFallState(charController, true);
 					charController->lock.Unlock();
 
 					isAirborneWhileJumping = false;
 					isFallingWhileJumping = false;
 					reqStartJump = false;
-
 					// Have to manually trigger the landing animation 
 					// to minimize occurrences of the hovering bug.
 					// No more 'Surf's up, dude!'.
@@ -1256,6 +1270,7 @@ namespace ALYSLC
 						RE::hkpSurfaceInfo::SupportedState::kSupported;
 					}
 					charController->lock.Unlock();
+
 					// Update jump start TP on landing.
 					p->jumpStartTP = SteadyClock::now();
 					framesSinceStartingJump = 0;
@@ -1278,6 +1293,7 @@ namespace ALYSLC
 					);
 				}
 				charController->lock.Unlock();
+
 				framesSinceStartingJump++;
 			}
 		}
@@ -1314,19 +1330,20 @@ namespace ALYSLC
 			return;
 		}
 
+		//=========================================================================================
+		charController->lock.Lock();
+		//=========================================================================================
+
 		bool isAirborne = 
 		(
 			charController->context.currentState == RE::hkpCharacterStateType::kInAir
 		);
-		// Reset paragliding request flag if now on the ground.
-		if (!isAirborne && (shouldParaglide || isParagliding))
+		// Reset paragliding request flag if now on the ground or knocked about.
+		if ((!isAirborne || coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal) &&
+			(shouldParaglide || isParagliding))
 		{
 			// Set fall height once done paragliding.
-			RE::hkVector4 havokPos{};
-			charController->GetPositionImpl(havokPos, false);
-			float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
-			charController->fallStartHeight = zPos;
-			charController->fallTime = 0.0f;
+			Util::AdjustFallState(charController, true);
 			// Stop art effects.
 			Util::StopHitArt(coopActor.get(), glob.paraglideIndicatorEffect1);
 			Util::StopHitArt(coopActor.get(), glob.paraglideIndicatorEffect2);
@@ -1339,9 +1356,8 @@ namespace ALYSLC
 		// Start/continue pseudo-paragliding.
 		if (shouldParaglide)
 		{
-			RE::hkVector4 havokVel;
+			RE::hkVector4 havokVel{ };
 			charController->GetLinearVelocityImpl(havokVel);
-
 			// Start art effects and adjust velocity.
 			if (!isParagliding) 
 			{
@@ -1373,9 +1389,7 @@ namespace ALYSLC
 			}
 
 			// No fall damage while still paragliding.
-			charController->fallStartHeight = 0.0f;
-			charController->fallTime = 0.0f;
-
+			Util::AdjustFallState(charController, false);
 			// Hardcoded defaults for now.
 			// Will read from the paraglide config file later.
 			// Default fall speed.
@@ -1403,12 +1417,11 @@ namespace ALYSLC
 			// Set the new Z component and apply the velocity.
 			havokVel.quad.m128_f32[2] = newHavokZVel;
 			charController->SetLinearVelocityImpl(havokVel);
-			
 			// Tilt the character controller in the player's gliding direction 
 			// when not dash dodging.
 			if (!isDashDodging) 
 			{
-				const float maxTiltAngle = PI / 2.0f;
+				const float maxTiltAngle = PI / 4.0f;
 				RE::NiPoint3 linVelXY = RE::NiPoint3
 				(
 					charController->outVelocity.quad.m128_f32[0], 
@@ -1447,14 +1460,14 @@ namespace ALYSLC
 				(
 					charController->pitchAngle,
 					maxTiltAngle * pitchSign * pitchRatio, 
-					0.25f, 
+					0.2f, 
 					2.0f
 				);
 				charController->rollAngle = Util::InterpolateEaseInEaseOut
 				(
 					charController->rollAngle,
 					maxTiltAngle * rollSign * rollRatio,
-					0.25f,
+					0.2f,
 					2.0f
 				);
 			}
@@ -1469,14 +1482,8 @@ namespace ALYSLC
 			{
 				Util::StopHitArt(coopActor.get(), glob.paraglideIndicatorEffect1);
 				Util::StopHitArt(coopActor.get(), glob.paraglideIndicatorEffect2);
-
 				// Set fall height once done paragliding.
-				RE::hkVector4 havokPos{};
-				charController->GetPositionImpl(havokPos, false);
-				float zPos = havokPos.quad.m128_f32[2] * HAVOK_TO_GAME;
-				charController->fallStartHeight = zPos;
-				charController->fallTime = 0.0f;
-
+				Util::AdjustFallState(charController, true);
 				// Reset interp factor, end, and start speed.
 				magicParaglideVelInterpFactor = 0.0f;
 				magicParaglideEndZVel = magicParaglideStartZVel = 0.0f;
@@ -1491,11 +1498,11 @@ namespace ALYSLC
 			// Rotate char controller back to the upright position.
 			charController->pitchAngle = Util::InterpolateEaseInEaseOut
 			(
-				charController->pitchAngle, 0.0f, 0.25f, 2.0f
+				charController->pitchAngle, 0.0f, 0.2f, 2.0f
 			);
 			charController->rollAngle = Util::InterpolateEaseInEaseOut
 			(
-				charController->rollAngle, 0.0f, 0.25f, 2.0f
+				charController->rollAngle, 0.0f, 0.2f, 2.0f
 			);
 			// Close enough to 0 to set directly.
 			isParaglidingTiltAngleReset = 
@@ -1507,6 +1514,10 @@ namespace ALYSLC
 				charController->pitchAngle = charController->rollAngle = 0.0f;
 			}
 		}
+		
+		//=========================================================================================
+		charController->lock.Unlock();
+		//=========================================================================================
 	}
 
 	void MovementManager::ResetTPs()
@@ -1544,7 +1555,6 @@ namespace ALYSLC
 		(
 			data3D->GetObjectByName(strings->npcRMagicNode)
 		);
-
 		bool isCastingDual = false;
 		bool isCastingLH = false;
 		bool isCastingRH = false;
@@ -1558,7 +1568,6 @@ namespace ALYSLC
 		coopActor->GetGraphVariableBool("IsCastingDual", isCastingDual);
 		coopActor->GetGraphVariableBool("IsCastingLeft", isCastingLH);
 		coopActor->GetGraphVariableBool("IsCastingRight", isCastingRH);
-
 		// Make sure the magic casters are active, 
 		// in addition to having the casting animation playing.
 		auto lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
@@ -1575,7 +1584,6 @@ namespace ALYSLC
 			rhCaster->state.none(RE::MagicCaster::State::kNone)
 		);
 		isCastingRH |= isCastingDual || p->pam->usingRHStaff->value == 1.0f;
-
 		// Set node's rotation to face the target position.
 		auto directNodeAtTarget = 
 		[this]
@@ -1636,10 +1644,10 @@ namespace ALYSLC
 		(
 			targetPtr && targetPtr.get() && Util::IsValidRefrForTargeting(targetPtr.get())
 		);
-		if (!targetValidity && Settings::vbUseAimCorrection[playerID])
+		if (!targetValidity)
 		{
-			// Set to aim correction target's torso position.
-			targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimCorrectionTargetHandle); 
+			// Set to aim correction/linked refr target's torso position.
+			targetPtr = Util::GetRefrPtrFromHandle(p->tm->GetRangedTargetActor()); 
 			targetValidity = 
 			(
 				targetPtr && targetPtr.get() && Util::IsValidRefrForTargeting(targetPtr.get())
@@ -1689,12 +1697,6 @@ namespace ALYSLC
 						actorMagicCaster->magicNode->world.translate, targetPos
 					);
 				}
-
-				glm::vec3 start = ToVec3(actorMagicCaster->magicNode->world.translate);
-				glm::vec3 offset = ToVec3
-				(
-					actorMagicCaster->magicNode->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)
-				);
 
 				++activeNodesCount;
 				return;
@@ -1817,15 +1819,6 @@ namespace ALYSLC
 				"AimHeadingCurrent",
 				-Util::NormalizeAngToPi(avgPitchYawPair.second - coopActor->data.angle.z)
 			);
-
-			glm::vec3 start = ToVec3(headMagicNode->world.translate);
-			glm::vec3 offset = ToVec3
-			(
-				Util::RotationToDirectionVect
-				(
-					-avgPitchYawPair.first, Util::ConvertAngle(avgPitchYawPair.second)
-				)
-			);
 		}
 		else
 		{
@@ -1839,13 +1832,13 @@ namespace ALYSLC
 		// Prevent or allow movement for the player or their mount,
 		// based on player movement speed and LS position (centered or not).
 
-		auto mount = p->GetCurrentMount();
+		auto mountPtr = p->GetCurrentMount();
 		if (a_set) 
 		{
 			// Set once to stop the mount from moving.
-			if (!dontMoveSet && mount && mount.get())
+			if (!dontMoveSet && mountPtr && mountPtr.get())
 			{
-				Util::NativeFunctions::SetDontMove(mount.get(), true);
+				Util::NativeFunctions::SetDontMove(mountPtr.get(), true);
 			}
 
 			// Send move stop animation when the player is not in a killmove
@@ -1853,7 +1846,7 @@ namespace ALYSLC
 			// Keeping commented out for now to see if everything still works fine without it.
 			if (!coopActor->IsInKillMove() && !dontMoveSet)
 			{
-				movementActor->NotifyAnimationGraph("moveStop");
+				movementActorPtr->NotifyAnimationGraph("moveStop");
 			}
 
 			// Set once.
@@ -1867,9 +1860,9 @@ namespace ALYSLC
 		else
 		{
 			// Set once to allow the mount to move.
-			if (dontMoveSet && mount && mount.get()) 
+			if (dontMoveSet && mountPtr && mountPtr.get()) 
 			{
-				Util::NativeFunctions::SetDontMove(mount.get(), false);
+				Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 			}
 
 			// Allow the player to move if they were stopped.
@@ -1884,22 +1877,8 @@ namespace ALYSLC
 				// or stopped moving but the LS is moved,
 				// send the move start animation event.
 				// Stop any playing idles as well before moving.
-				movementActor->NotifyAnimationGraph("IdleStopInstant");
-				movementActor->NotifyAnimationGraph("moveStart");
-			}
-			else if (!lsMoved && 
-					 !isDashDodging && 
-					 !isRequestingDashDodge && 
-					 !isParagliding && 
-					 !interactionPackageRunning && 
-					 dontMoveSet)
-			{
-				// If the LS is centered and the player has been stopped 
-				// and is not dash dodging, paragliding, or interacting with an object, 
-				// send the move stop animation event.
-				// Player could still be rotating in place here, but they should not move
-				// from their current spot.
-				//movementActor->NotifyAnimationGraph("moveStop");
+				movementActorPtr->NotifyAnimationGraph("IdleStopInstant");
+				movementActorPtr->NotifyAnimationGraph("moveStart");
 			}
 
 			dontMoveSet = false;
@@ -1960,14 +1939,14 @@ namespace ALYSLC
 				(
 					p->tm->activationRefrHandle
 				);
-				bool interactionTargetvalid = 
+				bool interactionTargetValid = 
 				(
 					interactionTargetPtr &&
 					interactionTargetPtr.get() && 
 					Util::IsValidRefrForTargeting(interactionTargetPtr.get()) && 
 					interactionTargetPtr->parentCell->IsAttached()
 				);
-				if (!interactionTargetvalid)
+				if (!interactionTargetValid)
 				{
 					return;
 				}
@@ -2059,37 +2038,50 @@ namespace ALYSLC
 		// [Rotation]
 		//===========
 		// Normalize current facing angle first.
-		movementActor->data.angle.z = Util::NormalizeAng0To2Pi(movementActor->data.angle.z);
+		movementActorPtr->data.angle.z = Util::NormalizeAng0To2Pi(movementActorPtr->data.angle.z);
 		// Get rotation multipluer from base and context-dependent rotation speed multipliers.
 		float rotMult = Settings::fBaseRotationMult * GetRotationMult();
 		// The target yaw angle to set for the player or their mount.
-		float playerTargetYaw = movementActor->data.angle.z;
+		float playerTargetYaw = movementActorPtr->data.angle.z;
 		// Can set rotation if AI driven, no menu is open that stops movement,
-		// not animation driven, not in a synced animation, 
+		// not interacting, not in a synced animation, 
 		// not mounting, not in a killmove, and not staggered.
-		if (!menuStopsMovement && 
-			!isAnimDriven && 
-			!isSynced && 
-			!isMounting && 
-			!coopActor->IsInKillMove() && 
-			coopActor->actorState1.knockState == RE::KNOCK_STATE_ENUM::kNormal)
+		bool canModifyRotation = 
+		(
+			((!p->isPlayer1 && !interactionPackageRunning) || (p->isPlayer1 && !isAnimDriven)) && 
+			(
+				!menuStopsMovement && 
+				!isSynced && 
+				!isMounting && 
+				!coopActor->IsInKillMove() && 
+				coopActor->actorState1.knockState == RE::KNOCK_STATE_ENUM::kNormal
+			)
+		);
+		if (canModifyRotation)
 		{
 			// Target actor -- either crosshair-selected or downed player.
-			RE::ActorPtr targetPtr = Util::GetActorPtrFromHandle(p->tm->GetRangedTargetActor());
+			RE::ActorPtr targetActorPtr = Util::GetActorPtrFromHandle
+			(
+				p->tm->GetRangedTargetActor()
+			);
 			// Prioritize the downed player.
 			if (p->isRevivingPlayer && p->pam->downedPlayerTarget)
 			{
-				targetPtr = p->pam->downedPlayerTarget->coopActor;
+				targetActorPtr = p->pam->downedPlayerTarget->coopActor;
 			}
 
 			// Default to targeting the aim pitch position.
 			auto targetLocation = aimPitchPos;
 			if (!p->isRevivingPlayer)
 			{
-				if (targetPtr && targetPtr->GetHandle() == p->tm->aimCorrectionTargetHandle)
+				if ((targetActorPtr && targetActorPtr.get()) &&
+					(
+						(targetActorPtr->GetHandle() == p->tm->aimCorrectionTargetHandle) ||
+						(targetActorPtr->GetHandle() == p->tm->aimTargetLinkedRefrHandle)
+					))
 				{
-					// Face the aim correction target's torso.
-					targetLocation = Util::GetTorsoPosition(targetPtr.get());
+					// Face the aim correction/linked refr target's torso.
+					targetLocation = Util::GetTorsoPosition(targetActorPtr.get());
 				}
 				else
 				{
@@ -2097,10 +2089,10 @@ namespace ALYSLC
 					targetLocation = p->tm->crosshairWorldPos;
 				}
 			}
-			else if (targetPtr)
+			else if (targetActorPtr)
 			{
 				// Face the downed player's torso.
-				targetLocation = Util::GetTorsoPosition(targetPtr.get());
+				targetLocation = Util::GetTorsoPosition(targetActorPtr.get());
 			}
 
 			bool isTKDodging = false;
@@ -2116,12 +2108,9 @@ namespace ALYSLC
 			(
 				targetLocation - coopActor->data.location
 			);
-
-
 			// Save old turn to/face target state to record changes.
 			bool oldFaceTarget = faceTarget;
 			bool oldTurnToTarget = turnToTarget;
-
 			// Stay facing the target position.
 			// Conditions:
 			// 1. FaceTarget toggled on.
@@ -2154,14 +2143,12 @@ namespace ALYSLC
 					)
 				)
 			};
-
 			// Check if the player is using their weapons/magic.
 			bool isUsingWeapMag = 
 			{ 
 				(p->pam->isAttacking || p->pam->isBlocking ||
 				 p->pam->isBashing || p->pam->isInCastingAnim) 
 			};
-
 			// Secondary check to see if the player is pressing 
 			// binds for combat-related player actions.
 			if (!isUsingWeapMag && coopActor->IsWeaponDrawn())
@@ -2206,10 +2193,12 @@ namespace ALYSLC
 				(
 					(p->isRevivingPlayer) || 
 					(
+						coopActor->IsWeaponDrawn() &&
 						isUsingWeapMag && 
 						!p->pam->IsPerforming(InputAction::kSprint) &&
-						targetPtr && 
-						Util::IsValidRefrForTargeting(targetPtr.get())
+						targetActorPtr &&
+						targetActorPtr.get() &&
+						Util::IsValidRefrForTargeting(targetActorPtr.get())
 					)
 				) 
 			};
@@ -2227,7 +2216,6 @@ namespace ALYSLC
 					(oldTurnToTarget || oldFaceTarget)
 				)
 			);
-
 			if (turnToTarget || faceTarget) 
 			{
 				// Slow down rotation quickly if too close to the target
@@ -2235,11 +2223,11 @@ namespace ALYSLC
 				// and causes jittering when rotating to directly face the target.
 				float xyDistToTarget = Util::GetXYDistance
 				(
-					movementActor->data.location, targetLocation
+					movementActorPtr->data.location, targetLocation
 				);
 				float minDistToSlowRotation = Util::GetXYDistance
 				(
-					coopActor->data.location, movementActor->data.location
+					coopActor->data.location, movementActorPtr->data.location
 				) * 0.1f;
 				// Default radius at which to start slowing rotation.
 				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
@@ -2277,11 +2265,11 @@ namespace ALYSLC
 					// Directly face the target position by tacking on the aim heading offset.
 					yawToTarget = Util::DirectionToGameAngYaw
 					(
-						targetLocation - movementActor->data.location
+						targetLocation - movementActorPtr->data.location
 					);
 					playerTargetYaw = 
 					(
-						movementActor->data.angle.z + 
+						movementActorPtr->data.angle.z + 
 						(
 							Util::NormalizeAngToPi
 							(
@@ -2299,7 +2287,7 @@ namespace ALYSLC
 					// Commented out for now until a proper solution is found.
 					/*playerTargetYaw = 
 					(
-						movementActor->data.angle.z + 
+						movementActorPtr->data.angle.z + 
 						(
 							Util::NormalizeAngToPi
 							(
@@ -2331,7 +2319,7 @@ namespace ALYSLC
 		//==================
 
 		// Need to have an active middle high process.
-		auto midHighProc = movementActor->GetMiddleHighProcess(); 
+		auto midHighProc = movementActorPtr->GetMiddleHighProcess(); 
 		if (!midHighProc)
 		{
 			return;
@@ -2343,7 +2331,6 @@ namespace ALYSLC
 		// Y axis is in the player's facing direction.
 		float xPosOffset = 0.0f;
 		float yPosOffset = 0.0f;
-
 		// NOTE:
 		// The player does not directly follow their movement offset right away,
 		// so when changing the player's facing direction rapidly
@@ -2356,14 +2343,14 @@ namespace ALYSLC
 		// movement direction and rotation when using a movement offset,
 		// even while setting a rotation offset of 0 and directly setting their facing angle, 
 		// I have to speed up rotation when the player is changing their facing direction rapidly.
-		float yawDiff = Util::NormalizeAngToPi(playerTargetYaw - movementActor->data.angle.z);
+		float yawDiff = Util::NormalizeAngToPi(playerTargetYaw - movementActorPtr->data.angle.z);
 		if (movementYawTargetChanged)
 		{
 			speedUpRotOnYawTargetChange = true;
 		}
 		else if (fabsf(yawDiff) <= PI / 180.0f)
 		{
-			// Stop speedingn up rotation when the difference between facing and moving
+			// Stop speeding up rotation when the difference between facing and moving
 			// yaw is near zero.
 			speedUpRotOnYawTargetChange = false;
 		}
@@ -2394,7 +2381,6 @@ namespace ALYSLC
 			min(playerRotInterpFactor * interpFactorScalar, 1.0f) * 
 			max(1.0f, 60.0f * *g_deltaTimeRealTime)
 		);
-		
 		// P1 is not AI driven if attempting discovery or motion driven flag is set.
 		bool p1MotionDriven = 
 		{
@@ -2407,8 +2393,14 @@ namespace ALYSLC
 				)
 			)
 		};
-		
-		if (p1MotionDriven) 
+		// Clear movement offset and do not adjust P1's movement at all
+		// when a package is running or a scene is playing.
+		if (p1ExtPackageRunning)
+		{
+			SetDontMove(false);
+			ClearKeepOffsetFromActor();
+		}
+		else if (p1MotionDriven) 
 		{
 			if (attemptDiscovery)
 			{
@@ -2440,20 +2432,20 @@ namespace ALYSLC
 				(isParagliding) || 
 				(
 					(!ALYSLC::TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled) && 
-					(isEquipping || isUnequipping)
+					(isEquipping || isUnequipping || coopActor->IsOnMount())
 				)
 			};
 			if (shouldRotateWhileMotionDriven) 
 			{
 				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					movementActor->data.angle.z + rawYawOffset
+					movementActorPtr->data.angle.z + rawYawOffset
 				);
-				movementActor->SetHeading(newYaw);
+				movementActorPtr->SetHeading(newYaw);
 				midHighProc->rotationSpeed.z = 0.0f;
 			}
 		}
-		else if (interactionPackageRunning)
+		else if (interactionPackageRunning && coopActor->currentProcess)
 		{
 			// Ensure the player can move first.
 			SetDontMove(false);
@@ -2463,23 +2455,64 @@ namespace ALYSLC
 			);
 			// Stop when close enough for the package 
 			// to kick in and start the activation animation.
-			if (xyDistToInteractionPos < 0.5f * p->tm->GetMaxActivationDist())
+			if (xyDistToInteractionPos < 0.25f * p->tm->GetMaxActivationDist())
 			{
-				ClearKeepOffsetFromActor();
+				// Animation driven movement during interaction package, so remove offset directly.
+				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
+				bool packageDone = coopActor->currentProcess->lowProcessFlags.all
+				(
+					RE::AIProcess::LowProcessFlags::kPackageDoneOnce
+				);
 
 				// Execute interaction package again 
 				// if the player does not have any occupied furniture 
 				// after setting the interaction package target and position earlier.
 				auto interactionFurniture = coopActor->GetOccupiedFurniture(); 
-				if (!Util::HandleIsValid(interactionFurniture)) 
+				bool occupyingFurniture = Util::HandleIsValid(interactionFurniture);
+				if (!occupyingFurniture && !packageDone) 
 				{
 					auto interactionPackage = 
 					(
 						glob.coopPackages
 						[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
 					);
-					p->pam->SetCurrentPackage(interactionPackage);
-					p->pam->EvaluatePackage();
+					p->pam->SetAndEveluatePackage(interactionPackage, false);
+				}
+				else
+				{
+					auto linkedRefrPtr = Util::GetRefrPtrFromHandle
+					(
+						p->tm->aimTargetLinkedRefrHandle
+					);
+					// Delayed activation once the package completes
+					// so the activation occurs in sync with the animation.
+					if (packageDone && 
+						!occupyingFurniture && 
+						linkedRefrPtr && 
+						linkedRefrPtr.get())
+					{
+						auto baseObj = linkedRefrPtr->GetObjectReference();
+						if ((baseObj) &&
+							(baseObj->As<RE::TESFurniture>() || baseObj->As<RE::BGSIdleMarker>()))
+						{
+							Util::ActivateRefr
+							(
+								linkedRefrPtr.get(), 
+								coopActor.get(), 
+								0,
+								baseObj,
+								1,
+								false
+							);
+						}
+					}
+
+					// Package completed once and the player is trying to move, 
+					// so switch back to the default package to stop interacting.
+					if (lsMoved && packageDone)
+					{
+						p->pam->SetAndEveluatePackage();
+					}
 				}
 			}
 			else
@@ -2492,17 +2525,17 @@ namespace ALYSLC
 					(
 						Util::GetYawBetweenPositions
 						(
-							movementActor->data.location, interactionPackageEntryPos
+							movementActorPtr->data.location, interactionPackageEntryPos
 						) - 
-						movementActor->data.angle.z
+						movementActorPtr->data.angle.z
 					),
 					playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
 				);
 				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					movementActor->data.angle.z + rawYawOffset
+					movementActorPtr->data.angle.z + rawYawOffset
 				);
-				movementActor->SetHeading(newYaw);
+				movementActorPtr->SetHeading(newYaw);
 				midHighProc->rotationSpeed.z = 0.0f;
 				// Move to interaction package entry position which was set during activation.
 				// Slow down when nearing the interaction position.
@@ -2527,45 +2560,6 @@ namespace ALYSLC
 				 coopActor->currentProcess->middleHigh && 
 				 coopActor->currentProcess->middleHigh->furnitureIdle)
 		{
-			SPDLOG_DEBUG
-			(
-				"[MM] SetPlayerOrientation: {}: "
-				"is anim driven: {}, current idle: {} (0x{:X}), last idle: {} (0x{:X}), "
-				"furniture idle: {} (0x{:X}).",
-				coopActor->GetName(),
-				isAnimDriven,
-				coopActor->currentProcess && 
-				coopActor->currentProcess->high && 
-				coopActor->currentProcess->high->currentProcessIdle ?
-				coopActor->currentProcess->high->currentProcessIdle->GetName() :
-				"NONE",
-				coopActor->currentProcess && 
-				coopActor->currentProcess->high && 
-				coopActor->currentProcess->high->currentProcessIdle ?
-				coopActor->currentProcess->high->currentProcessIdle->formID : 
-				0xDEAD,
-				coopActor->currentProcess && 
-				coopActor->currentProcess->middleHigh && 
-				coopActor->currentProcess->middleHigh->lastIdlePlayed ? 
-				coopActor->currentProcess->middleHigh->lastIdlePlayed->GetName() : 
-				"NONE",
-				coopActor->currentProcess && 
-				coopActor->currentProcess->middleHigh && 
-				coopActor->currentProcess->middleHigh->lastIdlePlayed ? 
-				coopActor->currentProcess->middleHigh->lastIdlePlayed->formID : 
-				0xDEAD,
-				coopActor->currentProcess && 
-				coopActor->currentProcess->middleHigh &&
-				coopActor->currentProcess->middleHigh->furnitureIdle ? 
-				coopActor->currentProcess->middleHigh->furnitureIdle->GetName() : 
-				"NONE",
-				coopActor->currentProcess && 
-				coopActor->currentProcess->middleHigh && 
-				coopActor->currentProcess->middleHigh->furnitureIdle ? 
-				coopActor->currentProcess->middleHigh->furnitureIdle->formID : 
-				0xDEAD
-			);
-
 			// Make sure the player can move to interact with furniture
 			// and is not directed by this manager.
 			SetDontMove(false);
@@ -2588,7 +2582,7 @@ namespace ALYSLC
 				// Move backward throughout.
 				KeepOffsetFromActor
 				(
-					movementActor->GetHandle(), 
+					movementActorPtr->GetHandle(), 
 					RE::NiPoint3(0.0f, -10.0f, 0.0f), 
 					RE::NiPoint3(), 0.0f, 0.0f
 				);
@@ -2601,14 +2595,14 @@ namespace ALYSLC
 					Util::NormalizeAngToPi
 					(
 						movementOffsetParams[!MoveParams::kLSGameAng] -
-						movementActor->data.angle.z
+						movementActorPtr->data.angle.z
 					)
 				);
 				xPosOffset = 100.0f * sinf(facingToHeadingAngDiff);
 				yPosOffset = 100.0f * cosf(facingToHeadingAngDiff);
 				KeepOffsetFromActor
 				(
-					movementActor->GetHandle(), 
+					movementActorPtr->GetHandle(), 
 					RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
 					RE::NiPoint3(), 0.0f, 0.0f
 				);
@@ -2626,9 +2620,9 @@ namespace ALYSLC
 			// Can still rotate.
 			float newYaw = Util::NormalizeAng0To2Pi
 			(
-				movementActor->data.angle.z + rawYawOffset
+				movementActorPtr->data.angle.z + rawYawOffset
 			);
-			movementActor->SetHeading(newYaw);
+			movementActorPtr->SetHeading(newYaw);
 			midHighProc->rotationSpeed.z = 0.0f;
 		}
 		else if (shouldStopMoving || lsMag == 0.0f)
@@ -2638,8 +2632,8 @@ namespace ALYSLC
 			// and not trying to jump.
 			RE::bhkCharacterController* charController
 			{
-				movementActor && movementActor.get() ? 
-				movementActor->GetCharController() :
+				movementActorPtr && movementActorPtr.get() ? 
+				movementActorPtr->GetCharController() :
 				nullptr 
 			};
 			bool canFreeze = 
@@ -2676,11 +2670,11 @@ namespace ALYSLC
 			}
 
 			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
-			movementActor->SetHeading
+			movementActorPtr->SetHeading
 			(
 				Util::NormalizeAng0To2Pi
 				(
-					movementActor->data.angle.z + rawYawOffset
+					movementActorPtr->data.angle.z + rawYawOffset
 				)
 			);
 			midHighProc->rotationSpeed.z = 0.0f;
@@ -2693,17 +2687,17 @@ namespace ALYSLC
 			// NOTE:
 			// KeepOffsetFromActor() called on P1's mount does not work, 
 			// so while P1 is mounted, they must not be AI driven.
-			if (movementActor->IsAMount())
+			if (movementActorPtr->IsAMount())
 			{
 				// Mounts cannot move sideways, so move forward and rotate.
 				float newYaw = Util::NormalizeAng0To2Pi
 				(
-					movementActor->data.angle.z + rawYawOffset
+					movementActorPtr->data.angle.z + rawYawOffset
 				);
-				movementActor->SetHeading(newYaw);
+				movementActorPtr->SetHeading(newYaw);
 				KeepOffsetFromActor
 				(
-					movementActor->GetHandle(), 
+					movementActorPtr->GetHandle(), 
 					RE::NiPoint3(0.0f, 1.0f, 0.0f), 
 					RE::NiPoint3(), 
 					0.0f, 
@@ -2712,15 +2706,12 @@ namespace ALYSLC
 			}
 			else
 			{
+				// Clear previous offset first.
+				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
+				// No slowdown or catch up radius.
 				// NOTE: 
 				// Keeping a rotational offset with KeepOffsetFromActor() leads to jittering
-				// when moving the character, so we just interp the player's data angle instead
-				// to set the target rotation.
-				//if (p->isPlayer1) 
-				{
-					Util::NativeFunctions::ClearKeepOffsetFromActor(movementActor.get());
-				}
-
+				// when moving the character, so we just interp the player's data angle instead.
 				const float baseMTMult = 
 				(
 					Settings::fBaseMTRotationMult * Settings::fBaseRotationMult * PI
@@ -2728,7 +2719,6 @@ namespace ALYSLC
 				const float maxAngDiffPerFrame = baseMTMult * *g_deltaTimeRealTime;
 				// Clamp to max per-frame rotation angle.
 				rawYawOffset = std::clamp(rawYawOffset, -maxAngDiffPerFrame, maxAngDiffPerFrame);
-				
 				// Movement offset doesn't rotate the player when bAllowRotation is set to true,
 				// so modify the middle high process rotation speed directly instead.
 				// Do this when attacking, paragliding, or shield charging.
@@ -2750,11 +2740,11 @@ namespace ALYSLC
 				else
 				{
 					// Tack on offset.
-					movementActor->SetHeading
+					movementActorPtr->SetHeading
 					(
 						Util::NormalizeAng0To2Pi
 						(
-							movementActor->data.angle.z + rawYawOffset
+							movementActorPtr->data.angle.z + rawYawOffset
 						)
 					);
 					midHighProc->rotationSpeed.z = 0.0f;
@@ -2766,16 +2756,14 @@ namespace ALYSLC
 					Util::NormalizeAngToPi
 					(
 						movementOffsetParams[!MoveParams::kLSGameAng] - 
-						movementActor->data.angle.z
+						movementActorPtr->data.angle.z
 					)
 				);
-
 				xPosOffset = sinf(facingToHeadingAngDiff) * 100.0f;
 				yPosOffset = cosf(facingToHeadingAngDiff) * 100.0f;
-				// No slowdown or catch up radius.
 				KeepOffsetFromActor
 				(
-					movementActor->GetHandle(), 
+					movementActorPtr->GetHandle(), 
 					RE::NiPoint3(xPosOffset, yPosOffset, 0.0f), 
 					RE::NiPoint3(), 
 					-FLT_MAX, 
@@ -2785,8 +2773,8 @@ namespace ALYSLC
 		}
 
 		// Store the set pitch and yaw.
-		playerPitch = movementActor->data.angle.x;
-		playerYaw = movementActor->data.angle.z;
+		playerPitch = movementActorPtr->data.angle.x;
+		playerYaw = movementActorPtr->data.angle.z;
 	}
 
 	void MovementManager::SetShouldPerformLocationDiscovery()
@@ -2835,7 +2823,6 @@ namespace ALYSLC
 			!lsMoved && 
 			movementSpeed == 0.0f
 		};
-
 		if (cell->IsExteriorCell() && !attemptDiscovery)
 		{
 			// Check for map marker discovery in exterior cells 
@@ -2845,17 +2832,16 @@ namespace ALYSLC
 			// Check if the player has just moved into range of a marker.
 			bool prevInRange = inRangeOfUndiscoveredMarker;
 			inRangeOfUndiscoveredMarker = false;
-
 			const auto& origin = glob.cam->camOriginPoint;
-			for (const auto& markerRefr : glob.cam->cellMapMarkers)
+			for (const auto& markerRefrPtr : glob.cam->cellMapMarkers)
 			{
-				if (!markerRefr || !markerRefr.get())
+				if (!markerRefrPtr || !markerRefrPtr.get())
 				{
 					continue;
 				}
 
 				// Check if this marker is already visible on the map or not.
-				auto extraMarker = markerRefr->extraList.GetByType<RE::ExtraMapMarker>(); 
+				auto extraMarker = markerRefrPtr->extraList.GetByType<RE::ExtraMapMarker>(); 
 				if (!extraMarker || !extraMarker->mapData)
 				{
 					continue;
@@ -2865,11 +2851,10 @@ namespace ALYSLC
 				(
 					RE::MapMarkerData::Flag::kVisible
 				);
-
 				// If one is available, get the marker discovery radius.
 				// Default radius is 1000 in the CK.
 				float thisRadius = 1000.0f;
-				auto extraRadius = markerRefr->extraList.GetByType<RE::ExtraRadius>(); 
+				auto extraRadius = markerRefrPtr->extraList.GetByType<RE::ExtraRadius>(); 
 				if (extraRadius)
 				{
 					thisRadius = extraRadius->radius;
@@ -2880,9 +2865,8 @@ namespace ALYSLC
 				inRangeOfUndiscoveredMarker = 
 				(
 					(!visible) && 
-					(markerRefr->data.location.GetDistance(origin) < thisRadius)
+					(markerRefrPtr->data.location.GetDistance(origin) < thisRadius)
 				);
-
 				if (inRangeOfUndiscoveredMarker)
 				{
 					// No need to continue searching if in range of one undiscovered marker.
@@ -2935,15 +2919,28 @@ namespace ALYSLC
 			crosshairRefrPtr.get() &&
 			Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 		);
-		auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle
-		(
-			p->tm->aimCorrectionTargetHandle
-		);
+		// Aim correction target or linked refr (if no crosshair refr is selected).
+		auto aimCorrectionOrLinkedTargetPtr = RE::ActorPtr();
+		if (Util::HandleIsValid(p->tm->aimCorrectionTargetHandle))
+		{
+			aimCorrectionOrLinkedTargetPtr = Util::GetActorPtrFromHandle
+			(
+				p->tm->aimCorrectionTargetHandle
+			);
+		}
+		else if (!crosshairRefrValidity)
+		{
+			aimCorrectionOrLinkedTargetPtr = Util::GetActorPtrFromHandle
+			(
+				p->tm->GetRangedTargetActor()
+			);
+		}
+
 		bool aimCorrectionTargetValidity = 
 		(
-			aimCorrectionTargetPtr && 
-			aimCorrectionTargetPtr.get() &&
-			Util::IsValidRefrForTargeting(aimCorrectionTargetPtr.get())
+			aimCorrectionOrLinkedTargetPtr && 
+			aimCorrectionOrLinkedTargetPtr.get() &&
+			Util::IsValidRefrForTargeting(aimCorrectionOrLinkedTargetPtr.get())
 		);
 		bool isUsingWeapMag = 
 		(
@@ -2954,7 +2951,7 @@ namespace ALYSLC
 		);
 		// Can adjust pitch to face either a crosshair-targeted refr or an aim correction target.
 		bool turningToCrosshairTarget = isUsingWeapMag && crosshairRefrValidity;
-		bool usingAimCorrectionTarget = 
+		bool usingAimCorrectionOrLinkedTarget = 
 		(
 			aimCorrectionTargetValidity && 
 			!turningToCrosshairTarget && 
@@ -2962,7 +2959,6 @@ namespace ALYSLC
 			!reqFaceTarget && 
 			isUsingWeapMag
 		);
-		
 		// Also haven't figured out how to properly account for 
 		// different default spinal rotations when transformed,
 		// so don't adjust aim pitch to face the target while transformed for now.
@@ -2970,18 +2966,16 @@ namespace ALYSLC
 		adjustAimPitchToFaceTarget = 
 		{ 
 			(!p->isTransformed) && 
-			(!p->tm->rmm->isGrabbing) && 
-			(reqFaceTarget || turningToCrosshairTarget || usingAimCorrectionTarget) 
+			(reqFaceTarget || turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget) 
 		};
-
 		// Default to pitching towards the current crosshair position,
 		// but if an aim correction target is selected,
 		// or if not facing the crosshair position and an actor is selected with the crosshair,
 		// aim at the targeted actor's torso.
 		auto targetPos = p->tm->crosshairWorldPos;
-		if (usingAimCorrectionTarget)
+		if (usingAimCorrectionOrLinkedTarget)
 		{
-			targetPos = Util::GetTorsoPosition(aimCorrectionTargetPtr.get());
+			targetPos = Util::GetTorsoPosition(aimCorrectionOrLinkedTargetPtr.get());
 		}
 		else if (!reqFaceTarget && crosshairRefrValidity && crosshairRefrPtr->As<RE::Actor>())
 		{
@@ -3026,7 +3020,6 @@ namespace ALYSLC
 		const auto& rsX = rsData.xComp;
 		const auto& rsY = rsData.yComp;
 		const auto& rsMag = rsData.normMag;
-		
 		// Reset to default pitch when not targeting anything 
 		// and aim pitch was not manually adjusted.
 		bool resetAimPitchIfNotAdjusted = false;
@@ -3178,7 +3171,6 @@ namespace ALYSLC
 			// Modifications to P1's X angle here while aiming with a bow/crossbow
 			// double up the effects of our custom torso rotation, so set to zero here.
 			coopActor->data.angle.x = 0.0f;
-
 			if (p->isPlayer1 && p->pam->isInCastingAnim)
 			{
 				auto lhCaster = coopActor->GetMagicCaster
@@ -3269,16 +3261,15 @@ namespace ALYSLC
 		(
 			a_setDefaultDirAndPos ? playerDefaultAttackSourceDir : playerAttackSourceDir
 		);
-
 		// Default attack source position is at eye level 
 		// and in the facing direction of the player.
 		attackSourcePos = coopActor->GetLookingAtLocation();
+		auto prevAttackSourceDir = attackSourceDir;
 		attackSourceDir = Util::RotationToDirectionVect
 		(
 			-coopActor->data.angle.x, 
 			Util::ConvertAngle(coopActor->data.angle.z)
 		);
-
 		// Adjust attack source position and rotation 
 		// based on what attack action the player is performing.
 		// Casting source position and direction.
@@ -3531,6 +3522,12 @@ namespace ALYSLC
 			}
 		}
 
+		if (prevAttackSourceDir.Length() != 0.0f &&
+			prevAttackSourceDir.Dot(attackSourceDir) <= 0.0f)
+		{
+			attackSourceDir = prevAttackSourceDir;
+		}
+
 		// Ensure direction is normalized.
 		attackSourceDir.Unitize();
 	}
@@ -3708,10 +3705,14 @@ namespace ALYSLC
 		}
 
 		// Set analog stick angles (relative to camera) at max displacement.
-		prevLSAngAtMaxDisp = lsAngAtMaxDisp;
-		prevRSAngAtMaxDisp = rsAngAtMaxDisp;
-		lsAngAtMaxDisp = (lsMag == 1.0f) ? lsAng : lsAngAtMaxDisp;
-		rsAngAtMaxDisp = (rsMag == 1.0f) ? rsAng : rsAngAtMaxDisp;
+		lastLSAngMovingFromCenter = 
+		(
+			lsData.MovingAwayFromCenter() ? lsAng : lastLSAngMovingFromCenter
+		);
+		lastRSAngMovingFromCenter = 
+		(
+			rsData.MovingAwayFromCenter() ? rsAng : lastRSAngMovingFromCenter
+		);
 
 		// All angles are in game coordinates before adding to params list.
 		movementOffsetParams[!MoveParams::kLSXComp] = lxComp;
@@ -3808,17 +3809,53 @@ namespace ALYSLC
 		}
 
 		// Set movement actor (any mount if the player is mounted, player actor otherwise).
-		auto mount = p->GetCurrentMount();
-		movementActor = mount && mount.get() ? mount : coopActor;
-		const float movementSpeed = movementActor->DoGetMovementSpeed();
-
-		// Ensure animation sneak state syncs up with actor sneak state.
+		auto mountPtr = p->GetCurrentMount();
+		movementActorPtr = mountPtr && mountPtr.get() ? mountPtr : coopActor;
+		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
+		// Ensure all sneak states sync up with the player's requested state.
 		if (!coopActor->IsOnMount() &&
 			!coopActor->IsSwimming() && 
 			!coopActor->IsFlying() && 
 			!isRequestingDashDodge && 
 			!isDashDodging)
 		{
+			// Sync actor state to desired state.
+			if (p->pam->wantsToSneak && !coopActor->IsSneaking())
+			{
+				if (!p->isPlayer1)
+				{
+					p->pam->SetPackageFlag
+					(
+						RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
+					);
+				}
+
+				Util::RunPlayerActionCommand
+				(
+					RE::DEFAULT_OBJECT::kActionSneak, p->coopActor.get()
+				);
+				p->coopActor->actorState1.sneaking = 1;
+				p->coopActor->actorState2.forceSneak = 1;
+			}
+			else if (!p->pam->wantsToSneak && coopActor->IsSneaking())
+			{
+				if (!p->isPlayer1)
+				{
+					p->pam->SetPackageFlag
+					(
+						RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
+					);
+				}
+
+				Util::RunPlayerActionCommand
+				(
+					RE::DEFAULT_OBJECT::kActionSneak, p->coopActor.get()
+				);
+				p->coopActor->actorState1.sneaking = 0;
+				p->coopActor->actorState2.forceSneak = 0;
+			}
+
+			// Then sync animation state to actor state.
 			if (coopActor->IsSneaking() && !p->pam->isSneaking)
 			{
 				coopActor->NotifyAnimationGraph("SneakStart");
@@ -3840,11 +3877,14 @@ namespace ALYSLC
 		bool isRagdolled = coopActor->IsInRagdollState();
 		if (isRagdolled && !playerRagdollTriggered)
 		{
-			if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI3; api)
+			if (Settings::bApplyTemporaryRagdollWarpWorkaround)
 			{
-				api->ToggleDisableActor(coopActor->GetHandle(), true);
+				if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
+				{
+					api->ToggleDisableActor(coopActor->GetHandle(), true);
+				}
 			}
-
+			
 			coopActor->PotentiallyFixRagdollState();
 			playerRagdollTriggered = true;
 		}
@@ -3852,9 +3892,13 @@ namespace ALYSLC
 				 playerRagdollTriggered && 
 				 coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
 		{
-			if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI3; api)
+			
+			if (Settings::bApplyTemporaryRagdollWarpWorkaround)
 			{
-				api->ToggleDisableActor(coopActor->GetHandle(), false);
+				if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
+				{
+					api->ToggleDisableActor(coopActor->GetHandle(), false);
+				}
 			}
 
 			coopActor->PotentiallyFixRagdollState();
@@ -3892,29 +3936,18 @@ namespace ALYSLC
 			(
 				(movementYawTargetChanged) && (turnToTarget || faceTarget)
 			);
-			if (finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget)
+			// Do not completely stop the player when they're performing a killmove.
+			// Otherwise, well, they won't perform the killmvoe.
+			bool canCurtailMomentum = 
+			(
+				(!coopActor->IsInKillMove() && !coopActor->IsOnMount()) && 
+				(finishedGettingUp || turnToFaceTargetWhileStopped || stopWhenTurningToTarget)
+			);
+			if (canCurtailMomentum)
 			{
 				if (finishedGettingUp)
 				{
 					p->lastGetupTP = SteadyClock::now();
-				}
-
-				if (!shouldCurtailMomentum)
-				{
-					SPDLOG_DEBUG
-					(
-						"[MM] UpdateMovementState: {}: "
-						"finishedGettingUp: {}, turnToFaceTargetWhileStopped: {}, "
-						"movementYawTargetChanged: {}, "
-						"turnToTarget: {}, faceTarget: {}.",
-						coopActor->GetName(),
-						finishedGettingUp,
-						turnToFaceTargetWhileStopped,
-						movementYawTargetChanged,
-						p->pam->isPowerAttacking,
-						turnToTarget,
-						faceTarget
-					);
 				}
 
 				shouldCurtailMomentum = true;
@@ -3938,7 +3971,7 @@ namespace ALYSLC
 			shouldCurtailMomentum &= movementSpeed > 0.0f;
 		}
 
-		auto charController = movementActor->GetCharController(); 
+		auto charController = movementActorPtr->GetCharController(); 
 		// Everything below requires a valid character controller first.
 		if (!charController)
 		{
@@ -3946,7 +3979,7 @@ namespace ALYSLC
 		}
 
 		// Is the player.
-		if (!movementActor->IsAMount())
+		if (!movementActorPtr->IsAMount())
 		{
 			const auto& currentCharacterState = charController->context.currentState;
 			// Jump up and get down.
@@ -3966,10 +3999,7 @@ namespace ALYSLC
 				{
 					// Reset fall state.
 					charController->lock.Lock();
-					{
-						charController->fallStartHeight = 0.0f;
-						charController->fallTime = 0.0f;
-					}
+					Util::AdjustFallState(charController, false);
 					charController->lock.Unlock();
 				}
 			}
@@ -4008,6 +4038,15 @@ namespace ALYSLC
 			{
 				PerformMagicalParaglide();
 			}
+
+			// Prevent fall damage when falling, even when not ragdolling.
+			if (Settings::bNegateFallDamage && 
+				currentCharacterState != RE::hkpCharacterStateType::kOnGround)
+			{
+				charController->lock.Lock();
+				Util::AdjustFallState(charController, false);
+				charController->lock.Unlock();
+			}
 		}
 		else
 		{
@@ -4017,11 +4056,11 @@ namespace ALYSLC
 				bool mountMoving = charController->speedPct > 0.0f;
 				if (mountMoving)
 				{
-					mount->NotifyAnimationGraph("forwardJumpStart");
+					mountPtr->NotifyAnimationGraph("forwardJumpStart");
 				}
 				else
 				{
-					mount->NotifyAnimationGraph("StandingRearUp");
+					mountPtr->NotifyAnimationGraph("StandingRearUp");
 				}
 
 				reqStartJump = false;
@@ -4064,18 +4103,31 @@ namespace ALYSLC
 				glob.player1Actor->movementController && 
 				!glob.player1Actor->movementController->controlsDriven
 			);
+			
+			auto aliasPackage = coopActor->CheckForCurrentAliasPackage();
+			auto currentPackage = coopActor->GetCurrentPackage();
+			auto currentScene = coopActor->GetCurrentScene();
+			// Ensure the player is AI driven if a package is running during a scene.
+			p1ExtPackageRunning = 
+			(
+				(currentScene) && (aliasPackage || currentPackage)
+			);
+
 			// NOTE: 
 			// Also when an event causes P1 to ragdoll, 
 			// they will not exit the ragdolling state and attempt to get up 
 			// unless AI driven is unset.
 			bool shouldRemoveAIDriven =	
 			{
-				p->pam->sendingP1MotionDrivenEvents ||
-				isMounted ||
-				isRagdolled ||
-				reqOrIsParagliding ||
-				menuStopsMovement ||
-				attemptDiscovery
+				(!p1ExtPackageRunning) && 
+				(
+					p->pam->sendingP1MotionDrivenEvents ||
+					isMounted ||
+					isRagdolled ||
+					reqOrIsParagliding ||
+					menuStopsMovement ||
+					attemptDiscovery
+				)
 			};
 
 			if (isAIDriven && shouldRemoveAIDriven)
@@ -4145,13 +4197,13 @@ namespace ALYSLC
 		{
 			(movementSpeed > 0.0f) &&
 			(
-				movementActor->actorState1.movingBack | 
-				movementActor->actorState1.movingForward |
-				movementActor->actorState1.movingLeft | 
-				movementActor->actorState1.movingRight |
-				movementActor->actorState1.running |
-				movementActor->actorState1.sprinting |
-				movementActor->actorState1.swimming
+				movementActorPtr->actorState1.movingBack | 
+				movementActorPtr->actorState1.movingForward |
+				movementActorPtr->actorState1.movingLeft | 
+				movementActorPtr->actorState1.movingRight |
+				movementActorPtr->actorState1.running |
+				movementActorPtr->actorState1.sprinting |
+				movementActorPtr->actorState1.swimming
 			) != 0
 		};
 		bool isTKDodging = false;
@@ -4165,7 +4217,10 @@ namespace ALYSLC
 			glob.coopPackages
 			[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
 		);
-		interactionPackageRunning = p->pam->GetCurrentPackage() == interactionPackage;
+		interactionPackageRunning = 
+		(
+			coopActor->currentProcess && p->pam->GetCurrentPackage() == interactionPackage
+		);
 
 		// Stop moving if currently moving and not dodging, 
 		// and if the LS is centered, a menu stops movement, 
@@ -4184,7 +4239,8 @@ namespace ALYSLC
 				menuStopsMovement || 
 				p->isRevivingPlayer || 
 				attemptDiscovery
-			)
+			) &&
+			(!p1ExtPackageRunning)
 		};
 
 		// Start movement if the LS is displaced and if the player is not moving or dodging,
@@ -4197,6 +4253,7 @@ namespace ALYSLC
 			!isDashDodging && 
 			!isRequestingDashDodge && 
 			!interactionPackageRunning && 
+			!p1ExtPackageRunning &&
 			!menuStopsMovement && 
 			!p->isRevivingPlayer
 		};
@@ -4230,10 +4287,8 @@ namespace ALYSLC
 		}
 
 		const auto& data = nodeNameToRotationDataMap[a_nodePtr->name];
-
 		// Set default rotation.
 		data->defaultRotation = a_nodePtr->local.rotate;
-
 		// Set new local rotations before the UpdateDownwardPass() call,
 		// so that it can use our modified local rotations to set the nodes' new world rotations.
 		if (isTorsoNode || Settings::bEnableArmsRotation)
@@ -4301,10 +4356,15 @@ namespace ALYSLC
 				InputAction::kRotateRightForearm, 
 				InputAction::kRotateRightHand
 			);
+			bool shieldEquipped = a_p->em->HasShieldEquipped();
 			if (checkLeftArm)
 			{
-				nodeNamesToCheck.emplace_back("NPC L Hand [LHnd]");
-				nodeNamesToCheck.emplace_back(strings->npcLForearm);
+				if (!shieldEquipped)
+				{
+					nodeNamesToCheck.emplace_back("NPC L Hand [LHnd]");
+					nodeNamesToCheck.emplace_back(strings->npcLForearm);
+				}
+
 				nodeNamesToCheck.emplace_back(strings->npcLUpperArm);
 			}
 
@@ -4315,9 +4375,28 @@ namespace ALYSLC
 				nodeNamesToCheck.emplace_back(strings->npcRUpperArm);
 			}
 
-			const uint32_t raycastsPerNode = 5;
+			// Cast from 5 points along the current node's Z axis.
+			const uint32_t raycastsClustersPerNode = 5;
+			// Cast 3 times per cluster, one in the direction of velocity at the start position,
+			// and two offset 45 degrees in either direction about the node's Z axis.
+			const uint32_t raycastsPerCluster = 3;
 			bool noPreviousHit = true;
+			// TODO:
+			// Framerate-independent hit detection.
+			// Currently, at lower framerates, fewer collisions occur per frame,
+			// and if the player swings their arms so fast that they effectively
+			// move through the target within a single frame, no hits register,
+			// so we extend the raycasts out more at lower framerates in anticipation
+			// of a collision.
+			// Slight improvement to hit detection for now.
+			const float framerateDepMult = std::clamp
+			(
+				(*g_deltaTimeRealTime / (1.0f / 60.0f)),
+				1.0f,
+				2.0f
+			);
 			float staminaCost = 0.0f;
+			const auto& playerPos = a_p->coopActor->data.location;
 			for (const auto& name : nodeNamesToCheck)
 			{
 				auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(name)); 
@@ -4327,7 +4406,6 @@ namespace ALYSLC
 				}
 
 				// Update position and velocity first.
-				const auto& playerPos = a_p->coopActor->data.location;
 				const auto& nodeWorldPos = nodePtr->world.translate;
 				RE::NiPoint3 localPos = nodeWorldPos - playerPos;
 				if (!nodeNameToRotationDataMap.contains(nodePtr->name))
@@ -4358,12 +4436,13 @@ namespace ALYSLC
 
 				// Set arm node type, which determines how raycasts and impacts are calculated.
 				ArmNodeType armNodeType = ArmNodeType::kShoulder;
-				if (nodePtr->name == "NPC L Hand [LHnd]" || nodePtr->name == "NPC R Hand [RHnd]")
+				if (nodePtr->name == "NPC L Hand [LHnd]" || 
+					nodePtr->name == "NPC R Hand [RHnd]")
 				{
 					armNodeType = ArmNodeType::kHand;
 				}
 				else if (nodePtr->name == strings->npcLForearm || 
-						 nodePtr->name == "NPC R Forearm [RLar]")
+							nodePtr->name == "NPC R Forearm [RLar]")
 				{
 					armNodeType = ArmNodeType::kForearm;
 				}
@@ -4383,12 +4462,13 @@ namespace ALYSLC
 				}
 
 				auto hkpCapsuleShape = static_cast<const RE::hkpCapsuleShape*>(hkpShape);
-				RE::NiPoint3 vertexA;
-				RE::NiPoint3 vertexB;
-				RE::NiPoint3 zAxisDir;
+				RE::NiPoint3 vertexA{ };
+				RE::NiPoint3 vertexB{ };
+				RE::NiPoint3 zAxisDir{ };
 				const float& capsuleRadius = hkpCapsuleShape->radius;
 				// Special raycast offset and rotation handling for hand nodes,
-				// since rigidbody capsule axes don't line up with the hands' node orientations.
+				// since rigidbody capsule axes don't line up 
+				// with the hands' node orientations.
 				if (armNodeType == ArmNodeType::kHand)
 				{
 					zAxisDir = RE::NiPoint3
@@ -4429,17 +4509,17 @@ namespace ALYSLC
 					niTransform.scale = 1.0f;
 					niTransform.translate = ToNiPoint3(hkTransform.translation) * HAVOK_TO_GAME;
 					// Set each corresponding column from the havok rotation matrix.
-					niTransform.rotate.entry[0][0] = hkTransform.rotation.col0.quad.m128_f32[0];
-					niTransform.rotate.entry[1][0] = hkTransform.rotation.col0.quad.m128_f32[1];
-					niTransform.rotate.entry[2][0] = hkTransform.rotation.col0.quad.m128_f32[2];
+					niTransform.rotate.entry[0][0] = (hkTransform.rotation.col0.quad.m128_f32[0]);
+					niTransform.rotate.entry[1][0] = (hkTransform.rotation.col0.quad.m128_f32[1]);
+					niTransform.rotate.entry[2][0] = (hkTransform.rotation.col0.quad.m128_f32[2]);
 
-					niTransform.rotate.entry[0][1] = hkTransform.rotation.col1.quad.m128_f32[0];
-					niTransform.rotate.entry[1][1] = hkTransform.rotation.col1.quad.m128_f32[1];
-					niTransform.rotate.entry[2][1] = hkTransform.rotation.col1.quad.m128_f32[2];
+					niTransform.rotate.entry[0][1] = (hkTransform.rotation.col1.quad.m128_f32[0]);
+					niTransform.rotate.entry[1][1] = (hkTransform.rotation.col1.quad.m128_f32[1]);
+					niTransform.rotate.entry[2][1] = (hkTransform.rotation.col1.quad.m128_f32[2]);
 
-					niTransform.rotate.entry[0][2] = hkTransform.rotation.col2.quad.m128_f32[0];
-					niTransform.rotate.entry[1][2] = hkTransform.rotation.col2.quad.m128_f32[1];
-					niTransform.rotate.entry[2][2] = hkTransform.rotation.col2.quad.m128_f32[2];
+					niTransform.rotate.entry[0][2] = (hkTransform.rotation.col2.quad.m128_f32[0]);
+					niTransform.rotate.entry[1][2] = (hkTransform.rotation.col2.quad.m128_f32[1]);
+					niTransform.rotate.entry[2][2] = (hkTransform.rotation.col2.quad.m128_f32[2]);
 					vertexA = niTransform * vertAOffset;
 					vertexB = niTransform * vertBOffset;
 					RE::NiPoint3 temp = 
@@ -4463,27 +4543,32 @@ namespace ALYSLC
 				glm::vec4 originPos =
 				(
 					vertexA.z > vertexB.z ?
-					ToVec4(vertexB - zAxisDir * hkpCapsuleShape->radius) :
-					ToVec4(vertexA - zAxisDir * hkpCapsuleShape->radius)
+					ToVec4(vertexB - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME) :
+					ToVec4(vertexA - zAxisDir * hkpCapsuleShape->radius * HAVOK_TO_GAME)
 				);
 				// Velocity direction 
-				glm::vec4 velDir{};
-				glm::vec4 startPos{};
-				glm::vec4 endPos{};
-				uint32_t castNum = 1;
+				glm::vec4 velDir{ };
+				glm::vec4 startPos{ };
+				glm::vec4 endPos{ };
+				uint32_t castClusterIndex = 0;
 				bool hit = false;
 				float impulseApplied = 0.0f;
 				uint32_t impulseHits = 0;
-				std::vector<RE::TESObjectREFRPtr> hitRefrPtrs{ };
-				while (castNum <= raycastsPerNode)
+				uint8_t castIndex = 0;
+				while (castClusterIndex < raycastsClustersPerNode)
 				{
 					// Offset by a fraction of the capsule length
 					// from one end (on the first cast) to the other end (on the last cast).
 					startPos = 
 					(
 						originPos + 
-						(zAxisDirVec * (capsuleLength / raycastsPerNode)) * 
-						static_cast<float>(castNum)
+						(
+							(zAxisDirVec * capsuleLength) * 
+							(
+								static_cast<float>(castClusterIndex) / 
+								static_cast<float>(raycastsClustersPerNode - 1)
+							)
+						)
 					);
 					velDir = ToVec4
 					(
@@ -4492,12 +4577,15 @@ namespace ALYSLC
 							TohkVector4(startPos) * GAME_TO_HAVOK
 						)
 					);
-					float havokSpeed = glm::length(velDir);
+					float havokSpeed = 
+					(
+						glm::length(velDir)
+					);
 					// Cast further out when the starting point is moving fast.
-					float havokSpeedFactor = std::lerp
+					float frameDepHavokSpeedFactor = std::lerp
 					(
 						1.5f, 
-						4.0f, 
+						4.0f * framerateDepMult, 
 						std::clamp(havokSpeed / 20.0f, 0.0f, 1.0f)
 					);
 					velDir = 
@@ -4506,48 +4594,210 @@ namespace ALYSLC
 						glm::vec4(0.0f, 0.0f, 0.0f, 0.0f) : 
 						glm::normalize(velDir)
 					);
-					endPos = 
-					(
-						startPos + 
-						(velDir * hkpCapsuleShape->radius * havokSpeedFactor * HAVOK_TO_GAME)
-					);
-					bool hit = PerformArmCollision
-					(
-						a_p,
-						startPos,
-						endPos,
-						nodePtr.get(),
-						armNodeType,
-						noPreviousHit,
-						staminaCost
-					);
-
-					// Don't play hit sound after the first raycast hit this frame.
-					if (hit)
+					while (castIndex < raycastsPerCluster)
 					{
-						noPreviousHit = false;
+						RE::NiPoint3 rotVelDir = ToNiPoint3(velDir); 
+						Util::RotateVectorAboutAxis
+						(
+							rotVelDir, zAxisDir, (PI / 4.0f * (float)(castIndex - 1))
+						);
+						endPos = 
+						(
+							startPos + 
+							(ToVec4(rotVelDir) *
+							hkpCapsuleShape->radius * 
+							frameDepHavokSpeedFactor * 
+							HAVOK_TO_GAME)
+						);
+						bool hit = PerformArmCollision
+						(
+							a_p,
+							startPos,
+							endPos,
+							nodePtr.get(),
+							armNodeType,
+							noPreviousHit,
+							staminaCost
+						);
+						// Don't play hit sound after the first raycast hit this frame.
+						if (hit)
+						{
+							noPreviousHit = false;
+						}
+
+						castIndex++;
 					}
 
-					// REMOVE when done debugging.
-					/*DebugAPI::QueueArrow3D
-					(
-						startPos, 
-						endPos, 
-						Settings::vuOverlayRGBAValues[a_p->playerID],
-						5.0f,
-						2.0f, 
-						0.0f
-					);*/
-
-					// Leaving commented out for now:
-					// For better performance, if there is a hit,
-					// break early and move on to the next node.
-					/*if (hit)
+					castIndex = 0;
+					castClusterIndex++;
+				}
+			}
+			
+			// Extra raycasts for shield slap collisions.
+			if (shieldEquipped && checkLeftArm)
+			{
+				auto nodePtr = RE::NiPointer<RE::NiAVObject>
+				(
+					data3D->GetObjectByName(strings->shield)
+				); 
+				if (nodePtr && nodePtr.get())
+				{
+					// Update position and velocity first.
+					const auto& nodeWorldPos = nodePtr->world.translate;
+					float radius = nodePtr->worldBound.radius;
+					RE::NiPoint3 zAxisDir
 					{
-						break;
-					}*/
+						nodePtr->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)
+					};
+					// Need arm rigid body and capsule shape to determine raycast
+					// start and end points.
+					auto shieldRigidBodyPtr = Util::GethkpRigidBody(nodePtr.get()); 
+					if (shieldRigidBodyPtr && shieldRigidBodyPtr.get())
+					{
+						noPreviousHit = true;
+						auto origin = nodeWorldPos;
+						auto nodeForward = nodePtr->world.rotate * RE::NiPoint3(0.0f, 0.0f, -1.0f);
+						bool hit = false;
+						float impulseApplied = 0.0f;
+						uint32_t impulseHits = 0;
+						const uint8_t totalCastClusters = 10;
+						uint8_t castIndex = 0;
+						glm::vec4 startPos{ };
+						glm::vec4 endPos{ };
+						uint32_t castClusterIndex = 0;
+						while (castClusterIndex < totalCastClusters)
+						{
+							if (castClusterIndex == 0)
+							{
+								startPos = ToVec4
+								(
+									nodeWorldPos
+								);
+								auto velDir = ToVec4
+								(
+									shieldRigidBodyPtr->motion.GetPointVelocity
+									(
+										TohkVector4(startPos) * GAME_TO_HAVOK
+									)
+								);
+								float havokSpeed = glm::length(velDir);
+								// Cast further out when the starting point is moving fast.
+								float frameDepHavokSpeedFactor = std::lerp
+								(
+									1.0f, 
+									framerateDepMult, 
+									std::clamp(havokSpeed / 20.0f, 0.0f, 1.0f)
+								);
+								velDir = 
+								(
+									havokSpeed <= 1e-5f ? 
+									glm::vec4(0.0f, 0.0f, 0.0f, 0.0f) : 
+									glm::normalize(velDir)
+								);
+								endPos = 
+								(
+									startPos + 
+									(
+										velDir *
+										radius *
+										frameDepHavokSpeedFactor
+									)
+								);
+								bool hit = PerformArmCollision
+								(
+									a_p,
+									startPos,
+									endPos,
+									nodePtr.get(),
+									ArmNodeType::kShield,
+									noPreviousHit,
+									staminaCost
+								);
+								// Don't play hit sound after the first raycast hit this frame.
+								if (hit)
+								{
+									noPreviousHit = false;
+								}
+							}
+							
+							auto offset = zAxisDir;
+							Util::RotateVectorAboutAxis
+							(
+								offset, 
+								nodeForward, 
+								(2.0f * PI) * 
+								(
+									static_cast<float>(castClusterIndex) / 
+									static_cast<float>(totalCastClusters)
+								)
+							);
+							startPos = ToVec4
+							(
+								nodeWorldPos + offset * radius
+							);
+							while (castIndex < raycastsPerCluster)
+							{
+								auto velDir = ToVec4
+								(
+									shieldRigidBodyPtr->motion.GetPointVelocity
+									(
+										TohkVector4(startPos) * GAME_TO_HAVOK
+									)
+								);
+								float havokSpeed = 
+								(
+									glm::length(velDir)
+								);
+								// Cast further out when the starting point is moving fast.
+								float frameDepHavokSpeedFactor = std::lerp
+								(
+									1.0f, 
+									framerateDepMult, 
+									std::clamp(havokSpeed / 20.0f, 0.0f, 1.0f)
+								);
+								velDir = 
+								(
+									havokSpeed <= 1e-5f ? 
+									glm::vec4(0.0f, 0.0f, 0.0f, 0.0f) : 
+									glm::normalize(velDir)
+								);
+								RE::NiPoint3 rotVelDir = ToNiPoint3(velDir); 
+								Util::RotateVectorAboutAxis
+								(
+									rotVelDir, zAxisDir, (PI / 4.0f * (float)(castIndex - 1))
+								);
+								endPos = 
+								(
+									startPos + 
+									(
+										ToVec4(rotVelDir) *
+										radius * 
+										frameDepHavokSpeedFactor
+									)
+								);
+								bool hit = PerformArmCollision
+								(
+									a_p,
+									startPos,
+									endPos,
+									nodePtr.get(),
+									ArmNodeType::kShield,
+									noPreviousHit,
+									staminaCost
+								);
+								// Don't play hit sound after the first raycast hit this frame.
+								if (hit)
+								{
+									noPreviousHit = false;
+								}
 
-					++castNum;
+								castIndex++;
+							}
+
+							castIndex = 0;
+							castClusterIndex++;
+						}
+					}
 				}
 			}
 
@@ -4604,7 +4854,6 @@ namespace ALYSLC
 		const RE::NiPoint3 up = RE::NiPoint3(0.0f, 0.0f, 1.0f);
 		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
 		const RE::NiPoint3 right = RE::NiPoint3(1.0f, 0.0f, 0.0f);
-
 		const auto& newWorldRot = a_nodePtr->world.rotate;
 		auto worldXAxis = RE::NiPoint3(newWorldRot * right);
 		auto worldYAxis = RE::NiPoint3(newWorldRot * forward);
@@ -4621,7 +4870,6 @@ namespace ALYSLC
 		DebugAPI::QueueArrow3D(start, endX, 0xFF000088, 3.0f, 2.0f);
 		DebugAPI::QueueArrow3D(start, endY, 0x00FF0088, 3.0f, 2.0f);
 		DebugAPI::QueueArrow3D(start, endZ, 0x0000FF88, 3.0f, 2.0f);
-
 		for (const auto child : a_nodePtr->children)
 		{
 			if (!child || !child.get() || !child->AsNode())
@@ -4644,7 +4892,7 @@ namespace ALYSLC
 
 		// NOTE:
 		// Not used at the moment.
-		// Remove all colliders.
+		// Remove all Precision colliders.
 		/*Util::ChangeNodeColliderState
 		(
 			a_p->coopActor.get(),
@@ -4746,7 +4994,7 @@ namespace ALYSLC
 		
 		// NOTE:
 		// Unused for now.
-		// Remove all colliders.
+		// Remove all Precision colliders.
 		/*Util::ChangeNodeColliderState
 		(
 			a_p->coopActor.get(), 
@@ -4827,7 +5075,7 @@ namespace ALYSLC
 		
 		// NOTE:
 		// Unused for now.
-		// Remove all colliders.
+		// Remove all Precision colliders.
 		/*Util::ChangeNodeColliderState
 		(
 			a_p->coopActor.get(),
@@ -4911,11 +5159,8 @@ namespace ALYSLC
 	)
 	{
 		// Perform raycast and iterate through results,
-		// applying impulses to hit actors and forces to inanimate objects
-		// at the raycasts' hit positions.
-		// If an actor is hit hard enough
-		// (hit speed above certain thresholds, depending on the connecting node),
-		// knock the actor down and apply damage.
+		// applying forces to hit actors and to inanimate objects at the raycasts' hit positions.
+		// Also knock down hit actors and apply damage if knockdown conditions hold.
 		// Return true if a 'collision' was applied through a Havok impulse.
 
 		if (!a_armNode)
@@ -4923,14 +5168,15 @@ namespace ALYSLC
 			return false;
 		}
 
-		auto armHkpRigidBody = Util::GethkpRigidBody(a_armNode);
-		if (!armHkpRigidBody || !armHkpRigidBody.get())
+		auto armHkpRigidBodyPtr = Util::GethkpRigidBody(a_armNode);
+		if (!armHkpRigidBodyPtr || !armHkpRigidBodyPtr.get())
 		{
 			return false;
 		}
 		
 		// Ensure the arm node is accounted for in the rotation data map before continuing.
-		if (!nodeNameToRotationDataMap.contains(a_armNode->name))
+		if (!nodeNameToRotationDataMap.contains(a_armNode->name) && 
+			a_armNodeType != ArmNodeType::kShield)
 		{
 			// Set all rotations to the node's current local rotation 
 			// so we have valid data to start off with.
@@ -4950,8 +5196,14 @@ namespace ALYSLC
 			newData->targetRotation = a_armNode->local.rotate;
 		}
 		
-		// Rotation data for this node.
-		const auto& data = nodeNameToRotationDataMap.at(a_armNode->name);
+		// Arm node hit something collidable.
+		bool hitRecorded = false;
+		const float framerateDepMult = std::clamp
+		(
+			(*g_deltaTimeRealTime / (1.0f / 60.0f)),
+			0.5f,
+			1.0f
+		);
 		// Raycast and get all hit results, so we can apply multiple impulses
 		// along the arm swing trajectory and create more of a 'push'
 		// instead of a one-off impulse.
@@ -4964,10 +5216,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			auto hitRefrPtr = RE::TESObjectREFRPtr
-			(
-				Util::GetRefrFrom3D(result.hitObjectPtr.get())
-			);
+			auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 			// Ignore hits to the player themselves.
 			// Stop hitting yourself.
 			if (!hitRefrPtr || !hitRefrPtr.get() || hitRefrPtr == a_p->coopActor)
@@ -4982,22 +5231,9 @@ namespace ALYSLC
 				continue;
 			}
 
-			// Hit position and velocity in game coordinates.
-			auto hitPosVec = TohkVector4(result.hitPos * GAME_TO_HAVOK);
-			float hitSpeed =
-			(
-				armHkpRigidBody->motion.GetPointVelocity(hitPosVec) * HAVOK_TO_GAME
-			).Length3();
-			if (hitSpeed == 0.0f)
-			{
-				hitSpeed =
-				(
-					Util::GetParentNodeHavokPointVelocity(a_armNode, hitPosVec) * HAVOK_TO_GAME
-				).Length3();
-			}
-
-			// Not enough speed to apply an impulse, so continue;
-			if (hitSpeed == 0.0f)
+			auto hitPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefrPtr.get());
+			// Skip collisions with other players that are dash dodging.
+			if (hitPlayerIndex != -1 && glob.coopPlayers[hitPlayerIndex]->mm->isDashDodging)
 			{
 				continue;
 			}
@@ -5005,7 +5241,7 @@ namespace ALYSLC
 			// Activate the hit rigid body to allow for impulse/force application.
 			Util::NativeFunctions::hkpEntity_Activate(hitHkpRigidBodyPtr.get());
 			// Get handle for the refr.
-			auto refHandle = hitRefrPtr->GetHandle();
+			auto refrHandle = hitRefrPtr->GetHandle();
 			
 			// Ensure we do not slap something another player is grabbing.
 			bool grabbedByAnotherPlayer = false;
@@ -5016,31 +5252,55 @@ namespace ALYSLC
 					continue;
 				}
 
-				if (!grabbedByAnotherPlayer && 
-					otherP->tm->rmm->IsManaged(refHandle, true))
+				// Remove grabbed/released refr from the other player's managed lists.
+				if (otherP->tm->rmm->IsManaged(refrHandle, true) || 
+					otherP->tm->rmm->IsManaged(refrHandle, false))
 				{
-					grabbedByAnotherPlayer = true;
-				}
-
-				// If released by another player, 
-				// remove this refr from that player's released refr manager,
-				// since this player could grab it.
-				if (otherP->tm->rmm->IsManaged(refHandle, false))
-				{
-					otherP->tm->rmm->ClearRefr(refHandle);
+					otherP->tm->rmm->ClearRefr(refrHandle);
 				}
 			}
 
-			// Use our local velocity relative to the player's root node for better hit reg.
-			auto hitVelocity = data->localVelocity;
-			hitVelocity.Unitize();
-			hitVelocity *= hitSpeed;
+			// Hit position and velocity in game coordinates.
+			auto hitPosVec = TohkVector4(result.hitPos * GAME_TO_HAVOK);
+			RE::NiPoint3 hitVelocity = ToNiPoint3
+			(
+				armHkpRigidBodyPtr->motion.GetPointVelocity(hitPosVec) * HAVOK_TO_GAME
+			);
+			float hitSpeed = hitVelocity.Length();
+			if (hitSpeed == 0.0f)
+			{
+				hitVelocity = ToNiPoint3
+				(
+					Util::GetParentNodeHavokPointVelocity(a_armNode, hitPosVec) * HAVOK_TO_GAME
+				);
+				hitSpeed = hitVelocity.Length();
+			}
+
+			// Not enough speed to apply an impulse, so continue;
+			if (hitSpeed == 0.0f)
+			{
+				continue;
+			}
+
+			if (a_armNodeType != ArmNodeType::kShield)
+			{
+				// Use our local velocity relative to the player's root node for better hit reg.
+				// Rotation data for this node.
+				const auto& data = nodeNameToRotationDataMap.at(a_armNode->name);
+				hitVelocity = data->localVelocity;
+				hitVelocity.Unitize();
+				hitVelocity *= hitSpeed;
+			}
+
 			// Volume scaling factor to apply to the hit sound we will play.
 			// Scales with the inverse square of the hit speed.
 			float hitVolume = 0.0f;
 			// Strong enough to floor someone?
 			bool slapKnockdown = false;
+			// Hit the skeleton node?
+			bool hitSkeleton = result.hitObjectPtr->name == "skeleton.nif"sv;
 			auto hitActor = hitRefrPtr->As<RE::Actor>();
+			RE::hkVector4 hitForce{ 0.0f };
 			if (hitActor)
 			{
 				// Stop the hit actor from attacking when the slap connects.
@@ -5076,15 +5336,18 @@ namespace ALYSLC
 					(
 						(a_p->mm->reqFaceTarget ? 1100.0f : 1600.0f) * invArmForceFactor
 					);
+					knockdownMinSpeed *= Settings::fSlapKnockdownForearmSpeedThresholdMult;
 
 					break;
 				}
 				case ArmNodeType::kHand:
+				case ArmNodeType::kShield:
 				{
 					knockdownMinSpeed = 
 					(
 						(a_p->mm->reqFaceTarget ? 1000.0f : 1500.0f) * invArmForceFactor
 					);
+					knockdownMinSpeed *= Settings::fSlapKnockdownHandSpeedThresholdMult;
 
 					break;
 				}
@@ -5094,15 +5357,19 @@ namespace ALYSLC
 					(
 						(a_p->mm->reqFaceTarget ? 700.0f : 1200.0f) * invArmForceFactor
 					);
+					knockdownMinSpeed *= Settings::fSlapKnockdownShoulderSpeedThresholdMult;
 
 					break;
 				}
 				default:
 					break;
 				}
-				
+
 				// Set speed ratio and hit volume after setting the min knockdown speed.
-				float hitToKnockdownSpeedRatio = min(1.0f, hitSpeed / knockdownMinSpeed);
+				float hitToKnockdownSpeedRatio = powf
+				(
+					min(1.0f, hitSpeed / knockdownMinSpeed), 2.0f
+				);
 				hitVolume = min(2.0f, 2.0f * hitToKnockdownSpeedRatio);
 				auto handle = hitActor->GetHandle();
 				bool isAlreadyGrabbed = a_p->tm->rmm->IsManaged(handle, true);
@@ -5151,16 +5418,16 @@ namespace ALYSLC
 							const auto actor3DPtr = Util::GetRefr3D(hitActor);
 							if (actor3DPtr && actor3DPtr.get())
 							{
-								auto headNode = RE::NiPointer<RE::NiAVObject>
+								auto headNodePtr = RE::NiPointer<RE::NiAVObject>
 								(
 									actor3DPtr->GetObjectByName(headBP->targetName)
 								);
 
-								if (headNode && headNode.get())
+								if (headNodePtr && headNodePtr.get())
 								{
 									hasHeadNode = true;
 									// Direct hits to the head node will trigger a knockdown.
-									if (result.hitObjectPtr == headNode)
+									if (result.hitObjectPtr == headNodePtr)
 									{
 										slapKnockdown = true;
 									}
@@ -5172,90 +5439,22 @@ namespace ALYSLC
 										// Will trigger a knockdown if the hits lands
 										// within the actor's head node capsule,
 										// which is approximated as a sphere here for simplicity.
-										auto headRigidBody = Util::GethkpRigidBody
+										float radius = 
 										(
-											headNode.get()
-										); 
-										if (headRigidBody && headRigidBody.get())
-										{
-											auto hkpShape = headRigidBody->GetShape(); 
-											if (hkpShape->type == RE::hkpShapeType::kCapsule)
-											{
-												auto hkpCapsuleShape = 
-												(
-													static_cast<const RE::hkpCapsuleShape*>
-													(
-														hkpShape
-													)
-												);
-												RE::NiPoint3 vertexA;
-												RE::NiPoint3 vertexB;
-												RE::NiPoint3 zAxisDir;
-
-												const auto& hkTransform = 
-												(
-													headRigidBody->motion.motionState.transform
-												);
-												RE::NiPoint3 vertAOffset = 
-												(
-													ToNiPoint3(hkpCapsuleShape->vertexA) * 
-													HAVOK_TO_GAME
-												);
-												RE::NiPoint3 vertBOffset = 
-												(
-													ToNiPoint3(hkpCapsuleShape->vertexB) * 
-													HAVOK_TO_GAME
-												);
-												RE::NiTransform niTransform;
-												niTransform.scale = 1.0f;
-												niTransform.translate = 
-												(
-													ToNiPoint3(hkTransform.translation) * 
-													HAVOK_TO_GAME
-												);
-												niTransform.rotate.entry[0][0] = 
-												hkTransform.rotation.col0.quad.m128_f32[0];
-												niTransform.rotate.entry[1][0] = 
-												hkTransform.rotation.col0.quad.m128_f32[1];
-												niTransform.rotate.entry[2][0] = 
-												hkTransform.rotation.col0.quad.m128_f32[2];
-
-												niTransform.rotate.entry[0][1] = 
-												hkTransform.rotation.col1.quad.m128_f32[0];
-												niTransform.rotate.entry[1][1] = 
-												hkTransform.rotation.col1.quad.m128_f32[1];
-												niTransform.rotate.entry[2][1] = 
-												hkTransform.rotation.col1.quad.m128_f32[2];
-
-												niTransform.rotate.entry[0][2] = 
-												hkTransform.rotation.col2.quad.m128_f32[0];
-												niTransform.rotate.entry[1][2] = 
-												hkTransform.rotation.col2.quad.m128_f32[1];
-												niTransform.rotate.entry[2][2] = 
-												hkTransform.rotation.col2.quad.m128_f32[2];
-												vertexA = niTransform * vertAOffset;
-												vertexB = niTransform * vertBOffset;
-													
-												// For a bit more leeway, scale up a bit.
-												float radius = 
-												(
-													(vertexB - vertexA).Length() + 
-													1.25f *
-													hkpCapsuleShape->radius *
-													HAVOK_TO_GAME
-												);
-
-												auto hitPos = ToNiPoint3(result.hitPos);
-												// Within the radius of the sphere to knock down.
-												slapKnockdown = 
-												(
-													hitPos.GetDistance
-													(
-														headNode->world.translate
-													) < radius
-												);
-											}
-										}
+											0.625f * 
+											Util::GetRigidBodyCapsuleAxisLength(headNodePtr.get())
+										);
+										// For a bit more leeway, 
+										// scale up a bit from half the capsule length.
+										auto hitPos = ToNiPoint3(result.hitPos);
+										// Within the radius of the sphere to knock down.
+										slapKnockdown = 
+										(
+											hitPos.GetDistance
+											(
+												headNodePtr->world.translate
+											) < radius
+										);
 									}
 								}
 							}
@@ -5281,13 +5480,13 @@ namespace ALYSLC
 				// or not essential/protected or hostile to the player.
 				bool hittable = 
 				{
-					(!hitActor) || 
 					(!hitActor->IsGhost() && !hitActor->IsInvulnerable())
 				};
 				bool isReleasedActor = a_p->tm->rmm->IsManaged(handle, false);
-				RE::hkVector4 hitForce{ 0.0f };
-				// Ensure the actor is not already managed as a released refr 
+				// Ensure the actor is manipulable,
+				// and not already managed as a released refr 
 				// or grabbed by another player before releasing it.
+				slapKnockdown &= Util::CanManipulateActor(hitActor) && !hitSkeleton;
 				if (slapKnockdown && !isReleasedActor && !grabbedByAnotherPlayer)
 				{
 					// Stop momentum before knocking down.
@@ -5299,12 +5498,17 @@ namespace ALYSLC
 					{
 						a_p->tm->SetIsGrabbing(false);
 					}
-
-					a_p->tm->rmm->AddReleasedRefr(a_p, handle);
+					
+					const float magickaCost = 
+					(
+						a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitActor)
+					);
+					a_p->tm->rmm->AddReleasedRefr(a_p, handle, magickaCost);
 					a_staminaCostOut = 
 					(
-						(4.0f * sqrtf(hitActor->GetWeight() + 100.0f)) *
-						(Settings::vfStaminaCostMult[a_p->playerID])
+						(2.0f * sqrtf(hitActor->GetWeight() + 100.0f)) *
+						(Settings::vfStaminaCostMult[a_p->playerID]) * 
+						(Settings::vfSlapStaminaCostMult[a_p->playerID])
 					);
 					// Sneaky mechanic that may or may not have been intentional:
 					// Knocking down an actor while facing the crosshair will throw them,
@@ -5325,30 +5529,9 @@ namespace ALYSLC
 						// Expend magicka.
 						// Actor is thrown as if the grab bind were held and released
 						// after half the max thrown window.
-						if (insertedAsReleasedRefr)
+						if (insertedAsReleasedRefr && magickaCost > 0.0f)
 						{
-							// Update magicka overflow slowdown factor to use 
-							// when determining the trajectory of thrown refrs.
-							float magickaCost = 
-							(
-								a_p->tm->GetThrownRefrMagickaCost
-								(
-									hitActor,
-									0.5f * Settings::fSecsToReleaseObjectsAtMaxSpeed
-								)
-							);
-							a_p->tm->magickaOverflowSlowdownFactor = 
-							(
-								a_p->tm->GetThrownRefrMagickaOverflowSlowdownFactor
-								(
-									magickaCost
-								)
-							);
-
-							if (magickaCost > 0.0f)
-							{
-								a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
-							}
+							a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
 						}
 					}
 					
@@ -5358,7 +5541,6 @@ namespace ALYSLC
 
 					// Set power attack, slap, and potentially the sneak attack flag 
 					// before sending a hit event.
-
 					float sneakMult = 
 					(
 						a_p->coopActor->IsSneaking() && a_p->tm->detectionPct < 100.0f ? 
@@ -5454,7 +5636,6 @@ namespace ALYSLC
 							armWeightFactor * 
 							sneakMult
 						);
-
 						// Handle health damage.
 						// Ignore damage to friendly actors if friendly fire is off.
 						if ((damage != 0.0f) && 
@@ -5481,8 +5662,6 @@ namespace ALYSLC
 							auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(hitActor); 
 							if (playerIndex != -1)
 							{
-								const auto& hitP = glob.coopPlayers[playerIndex];
-								damage *= Settings::vfDamageReceivedMult[hitP->controllerID];
 								// No requested damage to deal in second hit event.
 								a_p->tm->rmm->reqSpecialHitDamageAmount = 0.0f;
 								// Apply damage directly to the health AV.
@@ -5515,7 +5694,6 @@ namespace ALYSLC
 									0.0f :
 									damage / p1DamageDealtMult
 								);
-					
 								// Set the requested special hit damage to apply
 								// when sending the second hit event that triggers an alarm/bounty
 								// in the Hit Event Handler.
@@ -5575,14 +5753,13 @@ namespace ALYSLC
 							hitPosVec, 
 							0.0f
 						);
-
 						a_staminaCostOut = 
 						(
 							sqrtf(hitActor->GetWeight() + 100.0f) *
-							Util::InterpolateEaseIn(0.0f, 1.0f, hitToKnockdownSpeedRatio, 3.0f) *
-							Settings::vfStaminaCostMult[a_p->playerID]
+							Util::InterpolateEaseIn(0.0f, 1.0f, hitToKnockdownSpeedRatio, 5.0f) *
+							Settings::vfStaminaCostMult[a_p->playerID] * 
+							Settings::vfSlapStaminaCostMult[a_p->playerID]
 						);
-						
 						// No reason to send hit events for refrs or invulnerable NPCs.
 						// Only sent on first hit as well.
 						if (hittable) 
@@ -5610,16 +5787,28 @@ namespace ALYSLC
 						knockedDownMult * 
 						armForceFactor
 					);
-					hitHkpRigidBodyPtr->motion.ApplyForce
+					// TODO:
+					// Framerate-independent force application.
+					// Currently, at lower framerates, it is harder to knock down NPCs,
+					// and the force applied to them in total is greater at higher framerates,
+					// since more collisions occur over the same contact window.
+					// Temporary improvement to normalizing the force application
+					// using this factor  for now.
+					const float actorFactor = 
 					(
-						*g_deltaTimeRealTime * 
-						1000.0f * 
+						framerateDepMult * framerateDepMult * (500.0f / 60.0f)
+					);
+					hitForce = 
+					(
+						hitForce * 
 						Util::InterpolateEaseOut
 						(
 							1.0f, 0.5f, hitToKnockdownSpeedRatio, 7.0f
-						), 
-						hitForce * Settings::fArmCollisionForceMultiplier
+						) *
+						actorFactor *
+						Settings::fArmCollisionForceMult	
 					);
+					hitHkpRigidBodyPtr->motion.ApplyForce(1.0f, hitForce);
 				}
 
 				// REMOVE when done debugging.
@@ -5629,9 +5818,9 @@ namespace ALYSLC
 					Settings::vuOverlayRGBAValues[a_p->playerID], 
 					hitVelocity.Length() / 400.0f,
 					1.0f
-				);*/
+				);
 
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"[GLOB] PerformArmCollision: "
 					"{} hit {} (0x{:X}, {}, {}) with {} node, "
@@ -5648,35 +5837,36 @@ namespace ALYSLC
 					"forearm" : 
 					a_armNodeType == ArmNodeType::kHand ? 
 					"hand" : 
-					"shoulder",
+					a_armNodeType == ArmNodeType::kShoulder ? 
+					"shoulder" :
+					"shield",
 					hitVelocity.Length(),
 					hitForce.Length3(),
-					knockdown ? "KO!" : "SLAPPED!",
+					slapKnockdown ? "KO!" : "SLAPPED!",
 					raycastResults.size(),
 					a_staminaCostOut
 				);*/
 			}
 			else
 			{
-				/*SPDLOG_DEBUG
-				(
-					"[MM] PerformArmCollision: {}: {} has mass of {}, "
-					"inv mass of {}, hit velocity: {}, force applied: {} over {}s.",
-					a_p->coopActor->GetName(),
-					hitRefrPtr->GetName(),
-					hitHkpRigidBodyPtr->motion.GetMass(),
-					hitHkpRigidBodyPtr->motion.inertiaAndMassInv.quad.m128_f32[3],
-					hitVelocity.Length(),
-					(hitVelocity * GAME_TO_HAVOK * hitHkpRigidBodyPtr->motion.GetMass()).Length(),
-					*g_deltaTimeRealTime
-				);*/
+				const float mass = hitHkpRigidBodyPtr->motion.GetMass();
+				if (mass != 0.0f && !isinf(mass) && !isnan(mass))
+				{
+					const float refrFactor = 
+					(
+						framerateDepMult * framerateDepMult * (1.0f / 60.0f)
+					);
+					hitForce = 
+					(
+						(hitVelocity * (1.0f + logf(mass)) * 0.5f) *
+						refrFactor *
+						Settings::fArmCollisionForceMult
+					);
+					float hitToKnockdownSpeedRatio = powf(min(1.0f, hitSpeed / 2000.0f), 2.0f);
+					hitVolume = min(1.0f, hitToKnockdownSpeedRatio);
+					hitHkpRigidBodyPtr->motion.ApplyForce(1.0f, hitForce);
+				}
 
-				hitHkpRigidBodyPtr->motion.ApplyForce
-				(
-					*g_deltaTimeRealTime,
-					(hitVelocity * hitHkpRigidBodyPtr->motion.GetMass() * 0.05f) *
-					Settings::fArmCollisionForceMultiplier
-				);
 				if (a_noPreviousHit)
 				{
 					// Send a hit event on first-contact.
@@ -5695,7 +5885,7 @@ namespace ALYSLC
 						// Slap -> telekinetic throw at target if facing the crosshair.
 						// No stamina cost.
 						// Dunno how useful this is, but it is cool.
-						bool isReleasedAlready = a_p->tm->rmm->IsManaged(refHandle, false);
+						bool isReleasedAlready = a_p->tm->rmm->IsManaged(refrHandle, false);
 						// Can only manipulate this object if it has not been released,
 						// is not grabbed by another player,
 						// and has a supported motion type.
@@ -5703,19 +5893,26 @@ namespace ALYSLC
 						{ 
 							!isReleasedAlready &&
 							!grabbedByAnotherPlayer &&
-							hitHkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kFixed &&
-							hitHkpRigidBodyPtr->motion.type != RE::hkpMotion::MotionType::kInvalid 
+							hitHkpRigidBodyPtr->motion.type !=
+							RE::hkpMotion::MotionType::kFixed &&
+							hitHkpRigidBodyPtr->motion.type !=
+							RE::hkpMotion::MotionType::kInvalid
 						};
+						float magickaCost = 0.0f;
 						if (canGrabAndThrow)
 						{
-							a_p->tm->rmm->AddGrabbedRefr(a_p, refHandle);
-							a_p->tm->rmm->ClearGrabbedRefr(refHandle);
+							a_p->tm->rmm->AddGrabbedRefr(a_p, refrHandle);
+							a_p->tm->rmm->ClearGrabbedRefr(refrHandle);
 							if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
 							{
 								a_p->tm->SetIsGrabbing(false);
 							}
 
-							a_p->tm->rmm->AddReleasedRefr(a_p, refHandle);
+							magickaCost = 
+							(
+								a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitRefrPtr.get())
+							);
+							a_p->tm->rmm->AddReleasedRefr(a_p, refrHandle, magickaCost);
 						}
 
 						// Handle magicka cost as well.
@@ -5724,40 +5921,41 @@ namespace ALYSLC
 						(
 							a_p->tm->rmm->releasedRefrInfoList.empty() ?
 							false :
-							a_p->tm->rmm->releasedRefrInfoList[0]->refrHandle == refHandle
+							a_p->tm->rmm->releasedRefrInfoList[0]->refrHandle == refrHandle
 						);
 						// Expend magicka.
 						// Actor is thrown as if the grab bind were held and released
 						// after half the max thrown window.
-						if (insertedAsReleasedRefr)
+						if (insertedAsReleasedRefr && magickaCost > 0.0f)
 						{
-							// Update magicka overflow slowdown factor to use 
-							// when determining the trajectory of thrown refrs.
-							float magickaCost = 
-							(
-								a_p->tm->GetThrownRefrMagickaCost
-								(
-									hitRefrPtr.get(),
-									0.5f * Settings::fSecsToReleaseObjectsAtMaxSpeed
-								)
-							);
-							a_p->tm->magickaOverflowSlowdownFactor = 
-							(
-								a_p->tm->GetThrownRefrMagickaOverflowSlowdownFactor
-								(
-									magickaCost
-								)
-							);
-
-							if (magickaCost > 0.0f)
-							{
-								a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
-							}
+							a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
 						}
 					}
 				}
-			}
+
+				// REMOVE when done debugging.
+				/*DebugAPI::QueuePoint3D
+				(
+					result.hitPos, 
+					Settings::vuOverlayRGBAValues[a_p->playerID], 
+					hitVelocity.Length() / 400.0f,
+					1.0f
+				);
 				
+				SPDLOG_DEBUG
+				(
+					"[MM] PerformArmCollision: {}: {} has mass of {}, "
+					"inv mass of {}, hit velocity: {}, force applied: {} over 1s.",
+					a_p->coopActor->GetName(),
+					hitRefrPtr->GetName(),
+					hitHkpRigidBodyPtr->motion.GetMass(),
+					hitHkpRigidBodyPtr->motion.inertiaAndMassInv.quad.m128_f32[3],
+					hitVelocity.Length(),
+					hitForce.Length3()
+				);*/
+			}
+			
+			hitRecorded = true;
 			// Do not need to play hit sounds for subsequent hits.
 			if (!a_noPreviousHit)
 			{
@@ -5765,7 +5963,7 @@ namespace ALYSLC
 			}
 			
 			// Wish I could play an old timey punch sound effect here.
-			// Only play the hit sound when first applying an impulse.
+			// Only play the hit sound when first applying a force.
 			// Otherwise the sheer number of arm collision-triggeed SFX
 			// will sound like hail falling on a tin roof.
 			auto audioManager = RE::BSAudioManager::GetSingleton(); 
@@ -5776,26 +5974,55 @@ namespace ALYSLC
 
 			RE::BSSoundHandle handle{ };
 			RE::BGSSoundDescriptorForm* slapSFX = nullptr;
-			if (slapKnockdown)
+			if (a_armNodeType == ArmNodeType::kShield)
 			{
-				slapSFX =
-				(
-					RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xC190D)
-				);
-			}
-			else if (hitActor)
-			{
-				slapSFX =
-				(
-					RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xC1AD1)
-				);
+				if (slapKnockdown)
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0x92C90)
+					);
+				}
+				else if (hitActor)
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0x3C7CA)
+					);
+				}
+				else
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0x3C7C8)
+					);
+				}
+
+				hitVolume *= 0.25f;
 			}
 			else
 			{
-				slapSFX =
-				(
-					RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF63E)
-				);
+				if (slapKnockdown)
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xC190D)
+					);
+				}
+				else if (hitActor)
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xC1AD1)
+					);
+				}
+				else
+				{
+					slapSFX =
+					(
+						RE::TESForm::LookupByID<RE::BGSSoundDescriptorForm>(0xAF63E)
+					);
+				}
 			}
 
 			if (!slapSFX)
@@ -6054,6 +6281,7 @@ namespace ALYSLC
 		// Set node target rotations for forearm and hand.
 		bool forearmRotHasBeenSet = forearmData->rotationModified;
 		bool handRotHasBeenSet = handData->rotationModified;
+
 		const float oldForearmYaw = forearmRotHasBeenSet ? forearmData->rotationInput[0] : 0.0f;
 		const float oldForearmPitch = forearmRotHasBeenSet ? forearmData->rotationInput[1] : 0.0f;
 		const float oldForearmRoll = forearmRotHasBeenSet ? forearmData->rotationInput[2] : 0.0f;
@@ -6067,6 +6295,7 @@ namespace ALYSLC
 		);
 		const float oldHandPitch = handRotHasBeenSet ? handData->rotationInput[1] : 0.0f;
 		const float oldHandRoll = handRotHasBeenSet ? handData->rotationInput[2] : 0.0f;
+
 		float targetForearmPitch = oldForearmPitch;
 		float targetForearmRoll = oldForearmRoll;
 		float targetForearmYaw = oldForearmYaw;
@@ -6277,7 +6506,6 @@ namespace ALYSLC
 		
 		if (handData->rotationModified) 
 		{
-
 			// Gives a slightly more weighted feel to arm movement.
 			float stickSpeedFactor = 
 			(
@@ -6294,7 +6522,6 @@ namespace ALYSLC
 					2.0f
 				)
 			);
-
 			// Slow down if low on stamina -> less likely to knock down NPCs with a slap.
 			const float staminaSlowdownFactor = a_p->mm->GetArmRotationFactor(true);
 			if (oldHandPitch != targetHandPitch)
@@ -6348,7 +6575,8 @@ namespace ALYSLC
 			handData->targetRotation = handData->defaultRotation;
 		}
 
-		// TODO: Figure out a way to produce a collision
+		// TODO: 
+		// Figure out a way to produce a collision
 		// that doesn't trigger combat. 
 		// Also need to set hit data flags,
 		// such as power attack/sneak hit flags 
@@ -6357,7 +6585,6 @@ namespace ALYSLC
 		// start combat with the hit target,
 		// and do not have applied effects from special hit type flags.
 		
-
 		// Add Precision colliders to forearm/hand nodes
 		// if the player just started modifying node rotations.
 		/*
@@ -6584,8 +6811,8 @@ namespace ALYSLC
 			(!towardsTargetRotation) &&
 			(a_data->blendStatus != NodeRotationBlendStatus::kDefaultReached)
 		};
-		
-		// More blend frames at a higher framerate.
+		// More blend frames at a higher framerate 
+		// so the blend lasts the same number of seconds.
 		uint32_t maxBlendFrames = max
 		(
 			Settings::uBlendPlayerNodeRotationsFrameCount,
@@ -6695,7 +6922,8 @@ namespace ALYSLC
 			// Set directly to the target local rotation otherwise.
 			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendIn)
 			{
-				// More blend frames at a higher framerate.
+				// More blend frames at a higher framerate 
+				// so the blend lasts the same number of seconds.
 				uint32_t maxBlendFrames = max
 				(
 					Settings::uBlendPlayerNodeRotationsFrameCount,
@@ -6748,7 +6976,8 @@ namespace ALYSLC
 			// when blending out. Set directly to the default local rotation otherwise.
 			if (a_data->blendStatus == NodeRotationBlendStatus::kBlendOut)
 			{
-				// More blend frames at a higher framerate.
+				// More blend frames at a higher framerate 
+				// so the blend lasts the same number of seconds.
 				uint32_t maxBlendFrames = max
 				(
 					Settings::uBlendPlayerNodeRotationsFrameCount,
@@ -7643,14 +7872,14 @@ namespace ALYSLC
 			);
 
 			// Get and set corresponding local rotation from our desired world rotation.
-			auto parent = RE::NiPointer<RE::NiAVObject>(a_shoulderNodePtr->parent); 
-			if (parent && parent.get())
+			auto parentPtr = RE::NiPointer<RE::NiAVObject>(a_shoulderNodePtr->parent); 
+			if (parentPtr && parentPtr.get())
 			{
 				RE::NiTransform inverseParent
 				{
-					defaultNodeWorldTransformsMap.contains(parent) ?
-					defaultNodeWorldTransformsMap.at(parent).Invert() : 
-					parent->world.Invert()
+					defaultNodeWorldTransformsMap.contains(parentPtr) ?
+					defaultNodeWorldTransformsMap.at(parentPtr).Invert() : 
+					parentPtr->world.Invert()
 				};
 
 				shoulderData->targetRotation = (inverseParent * newWorldTransform).rotate;
@@ -7662,7 +7891,8 @@ namespace ALYSLC
 			shoulderData->targetRotation = shoulderData->defaultRotation;
 		}
 
-		// TODO: Figure out a way to produce a collision
+		// TODO: 
+		// Figure out a way to produce a collision
 		// that doesn't trigger combat. 
 		// Also need to set hit data flags,
 		// such as power attack/sneak hit flags 
@@ -7882,7 +8112,6 @@ namespace ALYSLC
 		{
 			const auto& nodeName = GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[i];
 			auto torsoNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
-
 			// Node is invalid, on to the next one.
 			if (!torsoNodePtr || !torsoNodePtr.get())
 			{
@@ -7950,22 +8179,21 @@ namespace ALYSLC
 				baseYAxis = defaultWorldRotation * forward;
 				baseZAxis = defaultWorldRotation * up;
 				baseWorldRot = defaultWorldRotation;
-
 				// Get parent world transform of the base spinal node.
 				// All other nodes will have their world rotations set 
 				// with respect to this node's default world rotation.
 				if (i == 0) 
 				{
-					auto parentNodePtr = RE::NiPointer<RE::NiAVObject>(torsoNodePtr->parent);
-					if (parentNodePtr && parentNodePtr.get()) 
+					auto parentPtr = RE::NiPointer<RE::NiAVObject>(torsoNodePtr->parent);
+					if (parentPtr && parentPtr.get()) 
 					{
-						if (defaultNodeWorldTransformsMap.contains(parentNodePtr))
+						if (defaultNodeWorldTransformsMap.contains(parentPtr))
 						{
-							parentWorld = defaultNodeWorldTransformsMap.at(parentNodePtr);
+							parentWorld = defaultNodeWorldTransformsMap.at(parentPtr);
 						}
 						else
 						{
-							parentWorld = parentNodePtr->world;
+							parentWorld = parentPtr->world;
 						}
 					}
 				}
@@ -8155,7 +8383,8 @@ namespace ALYSLC
 				}
 				
 				RE::NiMatrix3 newWorldRot{ newXAxis, newYAxis, newZAxis };
-				// NOTE: Must transpose to ensure that our modified axes 
+				// NOTE:
+				// Must transpose to ensure that our modified axes 
 				// are set as the new target local rotation matrix's axes.
 				newWorldRot = newWorldRot.Transpose();
 				RE::NiTransform newTrans

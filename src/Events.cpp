@@ -17,22 +17,16 @@ namespace ALYSLC
 
 	void Events::RegisterEvents()
 	{
-		// Register actor kill event handler.
-		CoopActorKillEventHandler::Register();
 		// Register bleedout event handler.
 		CoopBleedoutEventHandler::Register();
 		// Register cell change event handler.
 		CoopCellChangeHandler::Register();
 		// Register cell fully loaded event handler.
 		CoopCellFullyLoadedHandler::Register();
-		// Register combat event handler.
-		CoopCombatEventHandler::Register();
 		// Register container change event handler.
 		CoopContainerChangedHandler::Register();
 		// Register crosshair event handler.
 		CoopCrosshairEventHandler::Register();
-		// Register death event handler.
-		CoopDeathEventHandler::Register();
 		// Register equip event handler.
 		CoopEquipEventHandler::Register();
 		// Register hit event handler.
@@ -43,6 +37,14 @@ namespace ALYSLC
 		CoopMenuOpenCloseHandler::Register();
 		// Register position player event handler.
 		CoopPositionPlayerEventHandler::Register();
+
+		// For debugging only as of now:
+		// Register actor kill event handler.
+		//CoopActorKillEventHandler::Register();
+		// Register combat event handler.
+		//CoopCombatEventHandler::Register();
+		// Register death event handler.
+		//CoopDeathEventHandler::Register();
 
 		SPDLOG_INFO("[Events] RegisterEvents: event registration complete.");
 	}
@@ -59,7 +61,6 @@ namespace ALYSLC
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
 	}
 
-	
 	CoopActorKillEventHandler* CoopActorKillEventHandler::GetSingleton()
 	{
 		static CoopActorKillEventHandler singleton;
@@ -113,7 +114,7 @@ namespace ALYSLC
 	)
 	{
 		// NOTE:
-		// Only used for debugging right now.
+		// Purely for debugging purposes right now.
 		// May replace DeathEvent handling eventually.
 
 		SPDLOG_DEBUG
@@ -192,8 +193,8 @@ namespace ALYSLC
 		{
 			// Prevent deferred kill from triggering.
 			// Might remove if not necessary.
-			if (const auto& p = glob.coopPlayers[foundIndex];
-				p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh)
+			const auto& p = glob.coopPlayers[foundIndex];
+			if (p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh)
 			{
 				auto midHighProc = p->coopActor->currentProcess->middleHigh;
 				midHighProc->deferredKillTimer = FLT_MAX;
@@ -239,34 +240,34 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 
-		auto attachedRefr = a_cellChangeEvent->movedRef;
-		if (!attachedRefr || !attachedRefr.get())
+		auto attachedRefrPtr = a_cellChangeEvent->movedRef;
+		if (!attachedRefrPtr || !attachedRefrPtr.get())
 		{
 			return EventResult::kContinue;
 		}
 
-		if (auto refr3D = Util::GetRefr3D(attachedRefr.get()); refr3D && refr3D.get())
+		if (auto refr3DPtr = Util::GetRefr3D(attachedRefrPtr.get()); refr3DPtr && refr3DPtr.get())
 		{
 			// Ensure actor does not fade during co-op with our co-op cam enabled.
-			if (!refr3D->flags.all
+			if (!refr3DPtr->flags.all
 				(
 					RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade
 				))
 			{
-				refr3D->flags.set
+				refr3DPtr->flags.set
 				(
-					RE::NiAVObject::Flag::kIgnoreFade, RE::NiAVObject::Flag::kAlwaysDraw
+					RE::NiAVObject::Flag::kAlwaysDraw, RE::NiAVObject::Flag::kIgnoreFade
 				);
-				RE::NiUpdateData updateData;
-				refr3D->UpdateDownwardPass(updateData, 0);
+				RE::NiUpdateData updateData{ };
+				refr3DPtr->UpdateDownwardPass(updateData, 0);
 			}
 		}
 
 		SPDLOG_DEBUG("[Events] Cell change event: {} {}.",
-			attachedRefr->GetName(),
+			attachedRefrPtr->GetName(),
 			a_cellChangeEvent->isCellAttached ? "attached" : "detached");
-
-		if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRefr); foundIndex != -1)
+		auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRefrPtr);
+		if (foundIndex != -1)
 		{
 			const auto& p = glob.coopPlayers[foundIndex];
 			// Prevent equip state bug mentioned in the equip manager
@@ -421,7 +422,8 @@ namespace ALYSLC
 				{
 					return 
 					(
-						a_chestRefrPtr && a_chestRefrPtr.get() && 
+						a_chestRefrPtr &&
+						a_chestRefrPtr.get() && 
 						a_chestRefrPtr->formID == a_containerChangedEvent->oldContainer
 					);
 				}
@@ -687,7 +689,6 @@ namespace ALYSLC
 					gifteePtr->GetName(),
 					giftingP->coopActor->GetName()
 				);
-
 				p1->RemoveItem
 				(
 					boundObj, 
@@ -696,7 +697,6 @@ namespace ALYSLC
 					nullptr, 
 					nullptr
 				);
-
 				gifteePtr->AddObjectToContainer
 				(
 					boundObj, 
@@ -721,7 +721,8 @@ namespace ALYSLC
 			if (form && form->IsGold())
 			{
 				// Scale added gold with party size.
-				// NOTE: Gold always goes to P1, 
+				// NOTE: 
+				// Gold always goes to P1, 
 				// as P1's gold acts as a shared pool for all players.
 				if (Settings::fAdditionalGoldPerPlayerMult > 0.0f)
 				{
@@ -741,7 +742,8 @@ namespace ALYSLC
 					bool inMenu = !Util::MenusOnlyAlwaysOpen();
 					// If not in a menu and activating all gold in activation range, 
 					// each individual gold piece added triggers a container changed event, 
-					// so the total amount looted is unspecified when printing a notification here.
+					// so the total amount looted is unknown until all events fire
+					// and we cannot print a single notification with that total here.
 					if (inMenu) 
 					{
 						RE::DebugNotification
@@ -770,6 +772,11 @@ namespace ALYSLC
 			}
 			else 
 			{
+				if (!Settings::bEveryoneGetsALootedEnderalSkillbook)
+				{
+					return EventResult::kContinue;
+				}
+
 				bool isEnderalSkillbook = 
 				(
 					GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains
@@ -785,72 +792,68 @@ namespace ALYSLC
 				// Give each active player, 
 				// aside from the player receiving the current skillbook, 
 				// a random skillbook of the same tier.
-				if (Settings::bEveryoneGetsALootedEnderalSkillbook)
-				{
-					const auto& tierAndSkill = 
+				const auto& tierAndSkill = 
+				(
+					GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at
 					(
-						GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at
+						a_containerChangedEvent->baseObj
+					)
+				);
+				const auto& tier = tierAndSkill.first;
+				const auto& skill = tierAndSkill.second;
+				std::mt19937 generator{ };
+				generator.seed(SteadyClock::now().time_since_epoch().count());
+
+				const auto& toP = 
+				(
+					glob.coopPlayers
+					[
+						GlobalCoopData::GetCoopPlayerIndex
 						(
-							a_containerChangedEvent->baseObj
+							a_containerChangedEvent->newContainer
 						)
-					);
-					const auto& tier = tierAndSkill.first;
-					const auto& skill = tierAndSkill.second;
-					std::mt19937 generator;
-					generator.seed(SteadyClock::now().time_since_epoch().count());
-
-					const auto& toP = 
-					(
-						glob.coopPlayers
-						[
-							GlobalCoopData::GetCoopPlayerIndex
-							(
-								a_containerChangedEvent->newContainer
-							)
-						]
-					);
-					for (const auto& p : glob.coopPlayers)
+					]
+				);
+				for (const auto& p : glob.coopPlayers)
+				{
+					// Not the looting player.
+					if (p->isActive && 
+						p->coopActor->formID != a_containerChangedEvent->newContainer)
 					{
-						// Not the looting player.
-						if (p->isActive && 
-							p->coopActor->formID != a_containerChangedEvent->newContainer)
+						// To each player, add the same number as the number looted.
+						uint32_t numAdded = 0;
+						while (numAdded < a_containerChangedEvent->itemCount)
 						{
-							// To each player, add the same number as the number looted.
-							uint32_t numAdded = 0;
-							while (numAdded < a_containerChangedEvent->itemCount)
+							// Random skillbook index.
+							const auto totalSkillBooksCount = 
+							(
+								GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size()
+							);
+							float rand = 
+							(
+								static_cast<uint8_t>
+								(
+									totalSkillBooksCount * 
+									(generator() / (float)((std::mt19937::max)()))
+								)
+							);
+							const auto newSkillbookFID = 
+							(
+								GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand]
+							);
+							auto newSkillbook = RE::TESForm::LookupByID<RE::AlchemyItem>
+							(
+								newSkillbookFID
+							);
+							if (newSkillbook)
 							{
-								// Random skillbook index.
-								const auto totalSkillBooksCount = 
+								p->coopActor->AddObjectToContainer
 								(
-									GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size()
+									newSkillbook,
+									nullptr, 
+									1, 
+									p->coopActor.get()
 								);
-								float rand = 
-								(
-									static_cast<uint8_t>
-									(
-										totalSkillBooksCount * 
-										(generator() / (float)((std::mt19937::max)()))
-									)
-								);
-								const auto newSkillbookFID = 
-								(
-									GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand]
-								);
-								auto newSkillbook = RE::TESForm::LookupByID<RE::AlchemyItem>
-								(
-									newSkillbookFID
-								);
-								if (newSkillbook)
-								{
-									p->coopActor->AddObjectToContainer
-									(
-										newSkillbook,
-										nullptr, 
-										1, 
-										p->coopActor.get()
-									);
-								}
-
 								// Show in TrueHUD recent loot widget 
 								// by adding and removing the skillbook from P1.
 								if (ALYSLC::TrueHUDCompat::g_trueHUDInstalled && 
@@ -882,13 +885,11 @@ namespace ALYSLC
 										newSkillbook->GetName()
 									).c_str()
 								);
-
-								++numAdded;
 							}
+
+							++numAdded;
 						}
 					}
-
-					return EventResult::kContinue;
 				}
 			}
 		}
@@ -1238,8 +1239,8 @@ namespace ALYSLC
 		// during a killmove animation while using the co-op revive system.
 		if (Settings::bUseReviveSystem) 
 		{
-			if (auto foundVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr.get());
-				foundVictimIndex != -1)
+			auto foundVictimIndex = GlobalCoopData::GetCoopPlayerIndex(hitRefr.get());
+			if (foundVictimIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[foundVictimIndex];
 				if (!p->coopActor->IsEssential())
@@ -1261,6 +1262,8 @@ namespace ALYSLC
 			float damage = 0.0f;
 			if (attackingObj)
 			{
+				// No spell attack damage event hook.
+				// Approximation: use magnitude of spell.
 				if (attackingObj->IsWeapon()) 
 				{
 					damage = (attackingObj->As<RE::TESObjectWEAP>()->GetAttackDamage();
@@ -1273,8 +1276,6 @@ namespace ALYSLC
 					);
 				}
 
-				// No spell attack damage event hook.
-				// Workaround: use magnitude of spell.
 				if (attackingObj->IsMagicItem() && 
 					*a_hitEvent->flags != RE::TESHitEvent::Flag::kNone) 
 				{
@@ -1354,6 +1355,7 @@ namespace ALYSLC
 		bool isHostileToAPlayer = false;
 		// Was the refr hit by a flop or thrown object?
 		bool isBonkOrSplatHitEvent = false;
+		// How can she slap?
 		bool isSlapEvent = false;
 		// Handle hit event for an actor hit by a player.
 		if (hitActor) 
@@ -1426,6 +1428,8 @@ namespace ALYSLC
 						!Util::IsPartyFriendlyActor(hitActor)
 					)
 				);
+				// XP formulas pulled from UESP:
+				// https://en.uesp.net/wiki/Skyrim:Leveling#Skill_XP
 				if (!p->isPlayer1 && canGrantXP)
 				{
 					auto weap = attackingObj ? attackingObj->As<RE::TESObjectWEAP>() : nullptr;
@@ -1504,7 +1508,7 @@ namespace ALYSLC
 					// Display sneak attack message for companion player if needed.
 					auto magicItem = attackingObj ? attackingObj->As<RE::MagicItem>() : nullptr;
 					// Is a sneak attack if the player's damage mult was previously set
-					// to a value above the 1.0.
+					// to a value above 1.0.
 					// Must also have their weapons out and be sneaking when the attack hits.
 					bool isSneakAttack = 
 					(
@@ -1613,9 +1617,10 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 		
-		// WARNING. INSANE JANK AHEAD.
+		// WARNING. INSANE JANK AHEAD. TURN BACK NOW.
 		// P1 only receives 1000 bounty for murder if they deal the killing blow,
-		// so we have to send additional hit events to pin blame on P1 if assaulting an actor.
+		// so we have to send additional hit events to pin blame on P1 
+		// if another player is assaulting an actor.
 		// Will also allow companion players to 'hit' targets through P1.
 
 		auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
@@ -1659,30 +1664,15 @@ namespace ALYSLC
 			)
 		);
 
-		SPDLOG_DEBUG
-		(
-			"[Events] Hit Event: {} hit {} "
-			"with a bonk or splat: {}, slap: {}, god mode: {}. Apply damage and aggro: {}. "
-			"Hostile to players: {}. Flags: 0b{:B}. Requested special hit damage to apply: {}.",
-			p->coopActor->GetName(),
-			hitRefr ? hitRefr->GetName() : "NONE",
-			isBonkOrSplatHitEvent,
-			isSlapEvent,
-			p->isInGodMode,
-			shouldApplyDamageOrDrawAggro,
-			isHostileToAPlayer,
-			*a_hitEvent->flags,
-			p->tm->rmm->reqSpecialHitDamageAmount
-		);
-		
 		if (shouldApplyDamageOrDrawAggro)
 		{
 			// Constructing and applying hit data seems to more consistently trigger
 			// both the initial assault bounty (40) 
 			// and any subsequent murder bounty (1000).
 			// IMPORTANT NOTE: 
-			// If companion players commit crimes while P1 is hidden, no bounty is accrued.
-			RE::HitData hitData{};
+			// If companion players commit crimes while P1 is hidden, 
+			// no bounty is accrued no matter what.
+			RE::HitData hitData{ };
 			Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
 			hitData.Populate(glob.player1Actor.get(), hitActor, nullptr);
 
@@ -1754,14 +1744,6 @@ namespace ALYSLC
 			RE::FormID sourceFID = a_hitEvent->source;
 			auto attackingObj = RE::TESForm::LookupByID(a_hitEvent->source); 
 
-			// Bonks, slaps, and splats all have the player actor as the source,
-			// and the aggro-triggering event sent above will have this member
-			// set to the player actor, so we won't send another event here.
-			/*if (attackingObj == p->coopActor.get())
-			{
-				return EventResult::kContinue;
-			}*/
-			
 			// Check placeholder spells for the source FID, 
 			// and if found, send the copied spell's FID instead.
 			if (attackingObj && attackingObj->As<RE::SpellItem>())
@@ -1826,7 +1808,7 @@ namespace ALYSLC
 		const RE::TESLoadGameEvent* a_loadGameEvent, RE::BSTEventSource<RE::TESLoadGameEvent>*
 	)
 	{
-		// Teardown any active co-op session when P1 loads a save.
+		// Tear down any active co-op session when P1 loads a save.
 		if (glob.coopSessionActive && a_loadGameEvent)
 		{
 			GlobalCoopData::TeardownCoopSession(false);
@@ -1869,7 +1851,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Events] |Menu Open/Close Event|: "
+			"[Events] |MENU EVENT|: "
 			"menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. "
 			"Only always open: {}. "
 			"Copied data types: 0x{:X}",
@@ -1905,7 +1887,6 @@ namespace ALYSLC
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
 			if ((p1) && (statsMenuOpening || levelupMenuClosing))
 			{
-				// REMOVE debug print blocks when the threshold changes are proven to be bug-free.
 #ifdef ALYSLC_DEBUG_MODE
 				float playerXP = p1->skills->data->xp;
 				float playerXPThreshold = p1->skills->data->levelThreshold;
@@ -1968,7 +1949,8 @@ namespace ALYSLC
 
 		const auto ui = RE::UI::GetSingleton();
 		auto msgQ = RE::UIMessageQueue::GetSingleton();
-		if (ui && glob.allPlayersInit && 
+		if (ui && 
+			glob.allPlayersInit && 
 			a_menuEvent->opening && 
 			a_menuEvent->menuName == RE::LoadingMenu::MENU_NAME)
 		{
@@ -2002,7 +1984,6 @@ namespace ALYSLC
 
 		if (ui && glob.coopSessionActive && a_menuEvent)
 		{
-			// REMOVE when done debugging.
 #ifdef ALYSLC_DEBUG_MODE
 			SPDLOG_DEBUG("[Events] ===========[Menu Map BEGIN]===========");
 			for (auto& menu : ui->menuMap)
@@ -2076,23 +2057,6 @@ namespace ALYSLC
 				SPDLOG_DEBUG("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
 				DebugOverlayMenu::Load();
 			}
-
-			// NOTE: May not be necessary anymore, so commenting out for now.
-			// Ensure HUD stays open.
-			/*const auto& hudMenu = ui->GetMenu<RE::HUDMenu>();
-			if ((!ui->IsMenuOpen(RE::HUDMenu::MENU_NAME)) || 
-				(hudMenu && hudMenu->uiMovie && !hudMenu->uiMovie->GetVisible()))
-			{
-				if (msgQ)
-				{
-					msgQ->AddMessage(RE::HUDMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr);
-				}
-
-				if (hudMenu) 
-				{
-					hudMenu->uiMovie->SetVisible(true);
-				}
-			}*/
 
 			// [Enderal]: 
 			// Keep perks synced among all players whenever a MessageBox menu opens/closes.
@@ -2236,7 +2200,8 @@ namespace ALYSLC
 						glob.mim->managedCoopMenusCount
 					);
 
-					// NOTE: Don't know of a way to hook ProcessMessage() for custom menus, 
+					// NOTE:
+					// Don't know of a way to hook ProcessMessage() for custom menus, 
 					// so we'll copy player data here instead.
 					// Must have Maxsu2017's awesome 'Hero Menu Enhanced' mod installed:
 					// https://www.nexusmods.com/enderalspecialedition/mods/563
@@ -2335,9 +2300,7 @@ namespace ALYSLC
 					{
 						// Stop co-op companion from interacting 
 						// with crafting station once the menu opens.
-						auto defPackage = p->pam->GetDefaultPackage();
-						p->pam->SetCurrentPackage(defPackage);
-						p->pam->EvaluatePackage();
+						p->pam->SetAndEveluatePackage();
 					}
 
 					if (a_menuEvent->opening)
@@ -2502,10 +2465,11 @@ namespace ALYSLC
 		RE::BSTEventSource<RE::PositionPlayerEvent>* a_eventSource
 	)
 	{
-		// NOTE: Needs testing.
+		// NOTE: 
+		// Needs testing.
 		// Would like to see if this event fires and covers cases
 		// when the player validity checks in the player manager 
-		// do not signal to move co-op companion players to P1. 
+		// do not signal to move companion players to P1. 
 		// Examples where this could occur include short teleports 
 		// with a fader menu opening and closing.
 		// Used to clear grabbed actors/released refrs before P1 moves
@@ -2533,9 +2497,12 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 
-		SPDLOG_DEBUG("[Events] Position Player Event: {}. Should move players to P1: {}.",
+		SPDLOG_DEBUG
+		(
+			"[Events] Position Player Event: {}. Should move players to P1: {}.",
 			*a_positionPlayerEvent->type,
-			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish));
+			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)
+		);
 		bool preMove = 
 		(
 			a_positionPlayerEvent->type.any
@@ -2573,7 +2540,6 @@ namespace ALYSLC
 			}
 		}
 
-
 		bool postMove = 
 		(
 			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)
@@ -2583,10 +2549,14 @@ namespace ALYSLC
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			bool player1Valid = 
 			{
-				p1 && !p1->IsDisabled() && 
-				p1->Is3DLoaded() && p1->IsHandleValid() &&
-				p1->loadedData && p1->currentProcess && 
-				p1->GetCharController() && p1->parentCell
+				p1 && 
+				!p1->IsDisabled() && 
+				p1->Is3DLoaded() &&
+				p1->IsHandleValid() &&
+				p1->loadedData &&
+				p1->currentProcess && 
+				p1->GetCharController() &&
+				p1->parentCell
 			};
 			if (!player1Valid) 
 			{

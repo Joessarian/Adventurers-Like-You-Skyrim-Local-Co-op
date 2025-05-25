@@ -67,9 +67,12 @@ namespace ALYSLC
 		struct AnalogStickState
 		{
 			AnalogStickState() :
-				normMag(0.0f), prevNormMag(0.0f),
-				secsSincePrevStateSet(0.0f),
-				stickAngularSpeed(0.0f), stickLinearSpeed(0.0f),
+				normMag(0.0f), 
+				prevNormMag(0.0f),
+				stickAngularSpeed(0.0f), 
+				stickLinearSpeed(0.0f),
+				prevXComp(0.0f),
+				prevYComp(0.0f),
 				xComp(0.0f), 
 				yComp(0.0f),
 				maxMag(0)
@@ -99,16 +102,50 @@ namespace ALYSLC
 				return normMag == 0.0f && prevNormMag != 0.0f;
 			} 
 
+			// Analog stick is moving away from the center.
+			inline bool MovingAwayFromCenter() const
+			{
+				auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
+				if (deltaPos.Length() == 0.0f)
+				{
+					return false;
+				}
+
+				deltaPos.Unitize();
+				return 
+				(
+					acosf(deltaPos.Dot(RE::NiPoint2(xComp, yComp))) >= 0.0f
+				);	
+			}
+
+			// Analog stick is moving towards the center.
+			inline bool MovingTowardsCenter() const
+			{
+				auto deltaPos = RE::NiPoint2(xComp - prevXComp, yComp - prevYComp);
+				if (deltaPos.Length() == 0.0f)
+				{
+					return false;
+				}
+
+				deltaPos.Unitize();
+				return 
+				(
+					acosf(deltaPos.Dot(RE::NiPoint2(xComp, yComp))) < 0.0f
+				);	
+			}
+
 			// Normalized magnitude of the analog stick's displacement: [0.0, 1.0].
 			float normMag;
 			// Previous normalized magnitude recorded the last frame.
 			float prevNormMag;
-			// Seconds since the previous set of data was updated.
-			float secsSincePrevStateSet;
 			// Angular speed of the analog stick (radians per second).
 			float stickAngularSpeed;
 			// Linear speed of the analog stick (normalized magnitude change per second).
 			float stickLinearSpeed;
+			// Previous X component of the analog stick's displacement.
+			float prevXComp;
+			// Previous Y component of the analog stick's displacement.
+			float prevYComp;
 			// X component of the analog stick's displacement.
 			float xComp;
 			// Y component of the analog stick's displacement.
@@ -130,6 +167,7 @@ namespace ALYSLC
 
 			// Is this input pressed?
 			bool isPressed;
+			// Was the input just pressed or released?
 			bool justPressed;
 			bool justReleased;
 			// Time this input has been held for.

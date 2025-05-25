@@ -11,7 +11,7 @@ namespace Raycast
 	{
 		// After potentially filtering out certain hits, enqueue the hit result.
 
-		HitResult hit;
+		HitResult hit{ };
 		// Set hit fraction and normal from input info.
 		hit.hitFraction = a_hitInfo.hitFraction;
 		hit.normal = 
@@ -60,7 +60,6 @@ namespace Raycast
 			(
 				RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
 			);
-
 			if (!hit.hitRefrPtr || !hit.hitRefrPtr.get())
 			{
 				if (!hit3DPtr || !hit3DPtr.get())
@@ -102,9 +101,9 @@ namespace Raycast
 			{
 				if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
 				{
-					for (const auto filteredObj : objectFilters)
+					for (const auto filteredObjPtr : objectFilters)
 					{
-						if (!filteredObj)
+						if (!filteredObjPtr || !filteredObjPtr.get())
 						{
 							continue;
 						}
@@ -114,8 +113,8 @@ namespace Raycast
 						// so skip this hit.
 						bool shouldExclude = 
 						(
-							(isIncludeFilter && hit3DPtr.get() != filteredObj) ||
-							(!isIncludeFilter && hit3DPtr.get() == filteredObj)
+							(isIncludeFilter && hit3DPtr != filteredObjPtr) ||
+							(!isIncludeFilter && hit3DPtr == filteredObjPtr)
 						);
 						if (shouldExclude)
 						{
@@ -129,7 +128,10 @@ namespace Raycast
 						// or if there is a hit refr and it is an associated refr
 						// for a 3D object in the excluded list,
 						// skip this hit.
-						const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D(filteredObj);
+						const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D
+						(
+							filteredObjPtr.get()
+						);
 						shouldExclude = 
 						(
 							(
@@ -152,17 +154,17 @@ namespace Raycast
 				
 				if (hitRefrValid && !refrFilters.empty())
 				{
-					for (const auto filteredRefr : refrFilters)
+					for (const auto filteredRefrPtr : refrFilters)
 					{
-						if (!filteredRefr)
+						if (!filteredRefrPtr || !filteredRefrPtr.get())
 						{
 							continue;
 						}
 
 						// Hit a refr that is not in the included list 
 						// or hit a refr in the excluded list.
-						if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
-							(!isIncludeFilter && hit.hitRefrPtr.get() == filteredRefr))
+						if ((isIncludeFilter && hit.hitRefrPtr != filteredRefrPtr) ||
+							(!isIncludeFilter && hit.hitRefrPtr == filteredRefrPtr))
 						{
 							return;
 						}
@@ -205,9 +207,9 @@ namespace Raycast
 
 			if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
 			{
-				for (const auto filteredObj : objectFilters)
+				for (const auto filteredObjPtr : objectFilters)
 				{
-					if (!filteredObj)
+					if (!filteredObjPtr || !filteredObjPtr.get())
 					{
 						continue;
 					}
@@ -217,8 +219,8 @@ namespace Raycast
 					// so skip this hit.
 					bool shouldExclude = 
 					(
-						(isIncludeFilter && hit3DPtr.get() != filteredObj) ||
-						(!isIncludeFilter && hit3DPtr.get() == filteredObj)
+						(isIncludeFilter && hit3DPtr != filteredObjPtr) ||
+						(!isIncludeFilter && hit3DPtr == filteredObjPtr)
 					);
 					if (shouldExclude)
 					{
@@ -232,7 +234,7 @@ namespace Raycast
 					// or if there is a hit refr and it is an associated refr
 					// for a 3D object in the excluded list,
 					// skip this hit.
-					const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D(filteredObj);
+					const auto filteredRefr = ALYSLC::Util::GetRefrFrom3D(filteredObjPtr.get());
 					shouldExclude = 
 					(
 						(
@@ -255,17 +257,17 @@ namespace Raycast
 
 			if (hitRefrValid && !refrFilters.empty())
 			{
-				for (const auto filteredRefr : refrFilters)
+				for (const auto filteredRefrPtr : refrFilters)
 				{
-					if (!filteredRefr)
+					if (!filteredRefrPtr)
 					{
 						continue;
 					}
 
 					// Hit a refr that is not in the included list 
 					// or hit a refr in the excluded list.
-					if ((isIncludeFilter && hit.hitRefrPtr.get() != filteredRefr) ||
-						(!isIncludeFilter && hit.hitRefrPtr.get() == filteredRefr))
+					if ((isIncludeFilter && hit.hitRefrPtr != filteredRefrPtr) ||
+						(!isIncludeFilter && hit.hitRefrPtr == filteredRefrPtr))
 					{
 						return;
 					}
@@ -301,6 +303,7 @@ namespace Raycast
 	RE::NiAVObject* RayCollector::HitResult::GetAVObject()
 	{
 		// Get object 3D from the collision detection body.
+
 		return body ? ALYSLC::Util::NativeFunctions::hkpCdBody_GetUserData(body) : nullptr;
 	}
 
@@ -314,9 +317,11 @@ namespace Raycast
 
 	RayResult CastRay(glm::vec4 a_start, glm::vec4 a_end, float a_traceHullSize) noexcept
 	{
-		// Cast a ray using the game's camera caster, which is a sphere cast of the given hullsize.
+		// Cast a ray using the game's camera caster, 
+		// which performs a sphere cast of the given hullsize.
 		// NOTE: 
 		// Does not provide info on the object that was hit, unless it is a character.
+		// Occasional int3 raycast crash occurs.
 
 		const auto ply = RE::PlayerCharacter::GetSingleton();
 		const auto cam = RE::PlayerCamera::GetSingleton();
@@ -336,8 +341,6 @@ namespace Raycast
 		RayResult res{ };
 		RE::Character* hitCharacter{ nullptr };
 		{
-			// Remove comment if raycast int3 crash still occurs.
-			//RE::BSReadLockGuard lock(physicsWorld->worldLock);
 			res.hit = ALYSLC::Util::NativeFunctions::PlayerCamera_LinearCast
 			(
 				cam->unk120,
@@ -396,7 +399,7 @@ namespace Raycast
 			collector->SetFilterType(true);
 		}
 
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -429,14 +432,9 @@ namespace Raycast
 		collector->SetUseOriginalFilter(a_defaultFilter);
 		// Exclusion filter.
 		collector->SetFilterType(false);
+		collector->AddFilteredObjects(a_filteredObjects);
 
-		// Add all objects to filter out.
-		for (const auto filtered3D : a_filteredObjects)
-		{
-			collector->AddFilteredObject(filtered3D);
-		}
-
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -478,14 +476,9 @@ namespace Raycast
 		collector->SetUseOriginalFilter(a_defaultFilter);
 		// Exclusion filter.
 		collector->SetFilterType(false);
+		collector->AddFilteredRefrs(a_filteredRefrs);
 
-		// Add all refrs to filter out.
-		for (const auto filteredRefr : a_filteredRefrs)
-		{
-			collector->AddFilteredRefr(filteredRefr);
-		}
-
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -524,19 +517,10 @@ namespace Raycast
 		auto collector = GetCastCollector();
 		collector->Reset();
 		collector->SetFilterType(a_isIncludeFilter);
+		collector->AddFilteredObjects(a_filteredObjects);
+		collector->AddFilteredFormTypes(a_filteredFormTypes);
 
-		for (const auto filtered3D : a_filteredObjects)
-		{
-			collector->AddFilteredObject(filtered3D);
-		}
-
-		if (!a_filteredFormTypes.empty()) 
-		{
-			collector->AddFilteredFormTypes(a_filteredFormTypes);
-		}
-
-
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -566,18 +550,10 @@ namespace Raycast
 		auto collector = GetCastCollector();
 		collector->Reset();
 		collector->SetFilterType(a_isIncludeFilter);
+		collector->AddFilteredRefrs(a_filteredRefrs);
+		collector->AddFilteredFormTypes(a_filteredFormTypes);
 
-		for (const auto filteredRefr : a_filteredRefrs)
-		{
-			collector->AddFilteredRefr(filteredRefr);
-		}
-
-		if (!a_filteredFormTypes.empty()) 
-		{
-			collector->AddFilteredFormTypes(a_filteredFormTypes);
-		}
-
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -668,7 +644,7 @@ namespace Raycast
 		}
 
 		// Holds our results.
-		std::vector<RayResult> results;
+		std::vector<RayResult> results{ };
 		results.clear();
 
 		constexpr auto pi = 3.14159265358979323846f;
@@ -772,6 +748,7 @@ namespace Raycast
 	(
 		const glm::vec4& a_start, 
 		const glm::vec4& a_end, 
+		const std::vector<RE::NiAVObject*>& a_filteredObjects, 
 		const std::vector<RE::FormType>& a_filteredFormTypesList,
 		bool&& a_isIncludeFilter
 	) noexcept
@@ -791,7 +768,7 @@ namespace Raycast
 		// To include or exclude, that is the question.
 		collector->SetFilterType(a_isIncludeFilter);
 
-		RE::bhkPickData pickData{};
+		RE::bhkPickData pickData{ };
 		pickData.rayInput.from = RE::hkVector4(from.x, from.y, from.z, one);
 		pickData.rayInput.to = RE::hkVector4(0.0, 0.0, 0.0, 0.0);
 		pickData.ray = RE::hkVector4(to.x, to.y, to.z, one);
@@ -804,11 +781,9 @@ namespace Raycast
 			return { };
 		}
 
-		// Add out filtered form types.
-		if (!a_filteredFormTypesList.empty())
-		{
-			collector->AddFilteredFormTypes(a_filteredFormTypesList);
-		}
+		// Add filtered objects and form types.
+		collector->AddFilteredObjects(a_filteredObjects);
+		collector->AddFilteredFormTypes(a_filteredFormTypesList);
 
 		auto physicsWorld = ply->parentCell->GetbhkWorld(); 
 		if (!physicsWorld)
@@ -899,8 +874,8 @@ namespace Raycast
 		// Get closest valid result.
 		RayCollector::HitResult best{ };
 		best.hitFraction = 1.0f;
-		glm::vec4 bestPos = {};
-		glm::vec4 normal = {};
+		glm::vec4 bestPos{ };
+		glm::vec4 normal{ };
 		const auto collector = GetCastCollector();
 		for (auto& hit : collector->GetHits())
 		{
@@ -946,6 +921,7 @@ namespace Raycast
 		(
 			best.hitRefrPtr ? best.hitRefrPtr->GetHandle() : RE::ObjectRefHandle()
 		);
+
 		return result;
 	}
 };

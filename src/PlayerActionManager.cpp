@@ -114,7 +114,6 @@ namespace ALYSLC
 				PackageIndex::kCombatOverride, 
 				glob.coopPackageFormlists[p->packageFormListStartIndex + 1]
 			);
-
 			if (!glob.coopPackageFormlists[p->packageFormListStartIndex] || 
 				!glob.coopPackageFormlists[p->packageFormListStartIndex + 1]) 
 			{
@@ -160,6 +159,16 @@ namespace ALYSLC
 			// Check if a companion player has leveled up a skill.
 			CheckForCompanionPlayerLevelUps();
 		}
+
+		// IMPORTANT NOTE:
+		// Does not prevent companion players from entering combat,
+		// just hopefully does enough to disable their combat AI.
+		// If the game decides to modify the player's movement or equipped items
+		// even with these flags set, then we must disable combat each frame in the Update() hook.
+		// Current main issue: cannot ranged or melee attack certain targets when in combat.
+		// Must either hit such targets with magic or have P1 attack them.
+		SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kIgnoreCombat, true);
+		SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kNoCombatAlert, true);
 
 		// Failsafe.
 		// Ensure that dual casts release properly
@@ -218,7 +227,6 @@ namespace ALYSLC
 				// Copy of input bit mask that may be specifically modified below 
 				// for the current action.
 				modifiedInputBitMask = inputBitMask;
-
 				// Action is disabled. Set as blocked, if not blocked already, and move on.
 				if (checkedPAState.paParams.perfType == PerfType::kDisabled)
 				{
@@ -344,7 +352,6 @@ namespace ALYSLC
 							uint32_t dpadLMask = 1 << !InputAction::kDPadL;
 							uint32_t dpadRMask = 1 << !InputAction::kDPadR;
 							uint32_t dpadUMask = 1 << !InputAction::kDPadU;
-
 							// If available, obtain the input action masks 
 							// corresponding to the game's mapped buttons for each user event.
 							if (controlMap)
@@ -537,7 +544,6 @@ namespace ALYSLC
 					checkedPAState.perfStage != PerfStage::kStarted &&
 					PassesInputPressCheck(action)
 				};
-
 				// Some, but not all, required inputs are pressed for this action.
 				someReqPressed = 
 				(
@@ -546,7 +552,6 @@ namespace ALYSLC
 				);
 				// All required inputs for this action were released.
 				allReqReleased = (checkedPAInputMask & modifiedInputBitMask) == 0;
-
 				if (canPerfOnCondPass)
 				{
 					// Update last press TP.
@@ -617,7 +622,6 @@ namespace ALYSLC
 				candidatePA = pressedPACandidates.top();
 				pressedPACandidates.pop();
 				auto& checkedPAState = paStatesList[!candidatePA - !InputAction::kFirstAction];
-
 				// All inputs must be pressed.
 				if (checkedPAState.perfStage != PerfStage::kInputsPressed)
 				{
@@ -634,7 +638,6 @@ namespace ALYSLC
 
 				// Add to the set of candidate player actions once condition checks hold.
 				paCandidatesSet.insert(candidatePA);
-
 				// Skip action blocking for actions that do not block conflicting actions.
 				if (checkedPAState.paParams.triggerFlags.all
 					(
@@ -654,7 +657,6 @@ namespace ALYSLC
 					);
 					// Other perform stage to potentially modify.
 					auto& otherPerfStage = otherPAState.perfStage;
-
 					// Don't block/interrupt actions that have the ignore conflicting actions flag
 					// or more composing inputs than the current player action.
 					// Actions with more composing inputs are never blocked by 
@@ -813,7 +815,8 @@ namespace ALYSLC
 					}
 
 					return interrupted;
-				});
+				}
+			);
 
 			//==============================================
 			// [Pass 4]: 
@@ -843,7 +846,6 @@ namespace ALYSLC
 				// Perform stage to potentially modify.
 				auto& perfStage = paState.perfStage;
 				const auto& perfType = paState.paParams.perfType;
-
 				// Check conditions for occurring actions each iteration.
 				passesConditions = paFuncs->CallPAFunc(p, action, PAFuncType::kCondFunc);
 				// Can't be performed if interrupted.
@@ -913,7 +915,6 @@ namespace ALYSLC
 
 						// Set as started now.
 						perfStage = PerfStage::kStarted;
-
 						// Start performing OnPress/OnPressAndRelease/OnHold actions.
 						if (perfType == PerfType::kOnPress ||
 							perfType == PerfType::kOnPressAndRelease || 
@@ -1173,6 +1174,7 @@ namespace ALYSLC
 			// Stop sneaking before awaiting refresh.
 			if (coopActor->IsSneaking() && nextState == ManagerState::kAwaitingRefresh)
 			{
+				wantsToSneak = false;
 				SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false);
 			}
 
@@ -1261,6 +1263,8 @@ namespace ALYSLC
 					[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
 				);
 			}
+			
+			SetAndEveluatePackage();
 		}
 
 		// Set base HMS rate mults to the default of 100 initially. Will be modified later.
@@ -1422,10 +1426,12 @@ namespace ALYSLC
 		isRangedWeaponAttack = false;
 		isRiding = false;
 		isRolling = false;
+		isShouting = false;
 		isSneaking = false;
 		isSprinting = false;
 		isVoiceCasting = false;
 		isWeaponAttack = false;
+		wantsToSneak = false;
 		wasSprinting = false;
 		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
@@ -1613,7 +1619,6 @@ namespace ALYSLC
 		inputBitMask = glob.cdh->inputMasksList[controllerID];
 		auto buttonsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
 		buttonsMask &= (1 << !InputAction::kButtonTotal) - 1;
-
 		return (inputBitMask & buttonsMask) == buttonsMask;
 	}
 
@@ -1647,11 +1652,6 @@ namespace ALYSLC
 
 			auto& actionState = paStatesList[actionIndex - !InputAction::kFirstAction];
 			actionState.perfStage = PerfStage::kBlocked;
-			SPDLOG_DEBUG
-			(
-				"[PAM] BlockCurrentInputActions: {}: {} is blocked before re-starting PAM.",
-				coopActor->GetName(), action
-			);
 		}
 
 		// Start blocking all PAs over the course of an interval, if requested.
@@ -1733,7 +1733,8 @@ namespace ALYSLC
 		(
 			std::addressof(resultProj), coopActor.get(), a_spell, targetPos, angles
 		);
-		// TODO: Proper rune orientation along the hit surface.
+		// TODO:
+		// Proper rune orientation along the hit surface.
 		// Set rotation after launch.
 		if (resultProj && resultProj.get())
 		{
@@ -1810,7 +1811,6 @@ namespace ALYSLC
 				(
 					RE::MagicSystem::CastingSource::kInstant
 				);
-
 				// Ensure both caster and target are valid before casting.
 				if (!magicCaster || !targetValidity)
 				{
@@ -1829,7 +1829,6 @@ namespace ALYSLC
 				(
 					spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration
 				);
-
 				// Set cast start TP for casting concentration spells
 				// just as the action starts and during the cast.
 				// For all other non-continuous spells, 
@@ -1865,7 +1864,6 @@ namespace ALYSLC
 					{
 						// Update time since last cast.
 						secsSinceQSSCastStart = Util::GetElapsedSeconds(p->lastQSSCastStartTP);
-
 						// Set spell for P1.
 						magicCaster->SetCurrentSpellImpl(spell);
 						magicCaster->currentSpell = spell;
@@ -1912,6 +1910,7 @@ namespace ALYSLC
 								)
 							);
 						}
+
 						// Not enough magicka or cannot re-cast spell yet.
 						if ((!p->isInGodMode && magickaCost > currentMagicka) ||
 							(!isConcSpell && secsSinceQSSCastStart <= minRecastInterval))
@@ -1948,7 +1947,7 @@ namespace ALYSLC
 						// while not in god mode.
 						// Done here instead of in the HandleHealthDamage() hook 
 						// because the attacker would be listed as P1 instead of this player.
-						// Restoration skill, or spell modifies health.
+						// Restoration skill, or a spell that modifies health.
 						bool notHealingSpell = 
 						{
 							(spellSkillAV != RE::ActorValue::kRestoration) ||
@@ -2001,7 +2000,6 @@ namespace ALYSLC
 					{
 						// Update time since last cast.
 						secsSinceQSSCastStart = Util::GetElapsedSeconds(p->lastQSSCastStartTP);
-
 						// Cast spell immediate function does not automatically update 
 						// the player's magicka when casting a non-concentration spell. Do it here.
 						float magickaCost = 
@@ -2294,6 +2292,7 @@ namespace ALYSLC
 		// NOTE: 
 		// Companion players will not cast with staff casting animations.
 		// Haven't figured out how to trigger those animations in tandem with the cast yet.
+
 		if (p->isPlayer1) 
 		{
 			// Fill staff enchantment if in god mode.
@@ -2477,6 +2476,7 @@ namespace ALYSLC
 									0.0f,
 									nullptr
 								);
+
 								// Update staff usage globals.
 								if (a_isLeftHand)
 								{
@@ -2650,6 +2650,7 @@ namespace ALYSLC
 			return;
 		}
 
+		// Skill level increments and XP lists to modify via ref.
 		auto& skillIncList = 
 		(
 			glob.serializablePlayerData.at(coopActor->formID)->skillLevelIncreasesList
@@ -3115,12 +3116,6 @@ namespace ALYSLC
 		(
 			glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kRangedAttack]
 		);
-		auto interactionPackage = 
-		(
-			glob.coopPackages
-			[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
-		);
-
 		// Interrupt cast, if necessary, when the current package atop the stack is the default 
 		// or ranged attack package.
 		// Just evaluate otherwise.
@@ -3210,7 +3205,6 @@ namespace ALYSLC
 			float rhMagCostDelta = 0.0f;
 			// Requested AV cost actions.
 			auto& reqActionsSet = avcam->reqActionsSet;
-
 			if (dualCasting)
 			{
 				// TODO: 
@@ -3641,6 +3635,7 @@ namespace ALYSLC
 			avcam->RemoveRequestedAction(AVCostAction::kPowerAttackRight);
 		}
 
+		// Finally, expend stamina using the computed cost.
 		ExpendStamina(cost);
 	}
 
@@ -3996,7 +3991,7 @@ namespace ALYSLC
 
 		// Copy over the queue to unlock it faster for the hook thread 
 		// adding animation events to the same queue.
-		std::queue<std::pair<PerfAnimEventTag, uint16_t>> copiedQueue;
+		std::queue<std::pair<PerfAnimEventTag, uint16_t>> copiedQueue{ };
 		{
 			if (!avcam->perfAnimEventsQueue.empty()) 
 			{
@@ -4518,7 +4513,6 @@ namespace ALYSLC
 				!targetActorPtr->IsDead() && 
 				targetActorPtr->IsInKillMove()
 			};
-
 			// Killmove target is dead or done with the paired animation.
 			if (!victimStillInKillmove) 
 			{
@@ -4528,10 +4522,16 @@ namespace ALYSLC
 				{
 					if (targetIsPlayer)
 					{
+						// Nullify application of the target player's damage received mult
+						// in the CheckClampDamageMultiplier() hook.
 						glob.coopPlayers[pIndex]->pam->ModifyAV
 						(
 							RE::ActorValue::kHealth, 
-							-targetActorPtr->GetActorValue(RE::ActorValue::kHealth)
+							(-targetActorPtr->GetActorValue(RE::ActorValue::kHealth)) * 
+							(
+								1.0f / 
+								Settings::vfDamageReceivedMult[glob.coopPlayers[pIndex]->playerID]
+							)
 						);
 					}
 					else if (auto avOwner = targetActorPtr->As<RE::ActorValueOwner>(); avOwner)
@@ -4566,7 +4566,7 @@ namespace ALYSLC
 				StopCurrentIdle();
 				// Sheathe/unsheathe if spellcasting unarmed killmove was performed.
 				// If we don't do this, spells remain visually equipped post-killmove
-				// but spellcasting will trigger unarmed attacks.
+				// but any subsequent spellcasting will trigger unarmed attacks.
 				bool performedSpellcastingUnarmedKillmove = 
 				(
 					(!p->isTransformed) && 
@@ -4713,7 +4713,7 @@ namespace ALYSLC
 		{
 			for (auto inputIndex : inputComp)
 			{
-				// One input not pressed -> instantly fails the press check..
+				// One input not pressed -> instantly fails the press check.
 				if (!glob.cdh->GetInputState(controllerID, inputIndex).isPressed)
 				{
 					return false;
@@ -4845,7 +4845,7 @@ namespace ALYSLC
 		// Get button code mask from the input event name.
 		const uint32_t& buttonMask = controlMap->GetMappedKey(ueString, a_inputDevice);
 		// If a valid mask and event name, send the event.
-		if (buttonMask != 255 && !ueString.empty())
+		if (buttonMask != 0xFF && !ueString.empty())
 		{
 			auto buttonEvent = std::make_unique<RE::InputEvent* const>
 			(
@@ -4867,6 +4867,12 @@ namespace ALYSLC
 		coopActor->NotifyAnimationGraph("attackStop");
 		if (p->isPlayer1)
 		{
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (p1)
+			{
+				p1->playerFlags.attemptedYieldInCurrentCombat = false;
+			}
+
 			weapMagReadied = a_shouldDraw;
 			// Forcing the default state before drawing avoids locking up the player's equip state 
 			// (weapons out but unusable).
@@ -4999,61 +5005,6 @@ namespace ALYSLC
 				);
 				coopActor->DrawWeaponMagicHands(a_shouldDraw);
 			}
-		}
-	}
-
-	void PlayerActionManager::RevivePlayer()
-	{
-		// Transfer health from this player to a health pool that is given 
-		// to the targeted downed player all at once when they are fully revived. 
-		// Keep track of how much health was transferred and if the downed player is fully revived.
-
-		if (!downedPlayerTarget) 
-		{
-			return;
-		}
-
-		secsSinceReviveCheck = Util::GetElapsedSeconds(p->lastReviveCheckTP);
-		// Downed target must not be revived yet.
-		if (downedPlayerTarget->isRevived)
-		{
-			return;
-		}
-
-		p->lastReviveCheckTP = SteadyClock::now();
-		const auto& revivePAState = 
-		(
-			paStatesList[!InputAction::kActivate - !InputAction::kFirstAction]
-		);
-		// Can transfer health up until the minimum remaining health level.
-		float healthCost = min
-		(
-			revivePAState.avCost * secsSinceReviveCheck, 
-			currentHealth - Settings::fMinHealthWhileReviving
-		);
-		// Total transferable health for a full revive.
-		float fullHealthCost = revivePAState.avCost * Settings::fSecsReviveTime;
-		// Ratio of the downed player's health after being fully revived
-		// to the health this player must give up to fully revive them.
-		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
-		// Don't reduce this player's health when in god mode.
-		if (!p->isInGodMode) 
-		{
-			ModifyAV(RE::ActorValue::kHealth, -healthCost);
-		}
-
-		// Amount of health this player transfers away this check.
-		p->revivedHealth += healthCost;
-		// Amount of health the downed player target will gain from this check.
-		downedPlayerTarget->revivedHealth += healthTransferRatio * healthCost;
-		// Done reviving when the total health the downed player should receive
-		// is greater than or equal to their health after a full revive.
-		if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
-		{
-			// Signal the other player that they are now revived,
-			// and reset revived health data.
-			downedPlayerTarget->isRevived = true;
-			p->revivedHealth = 0.0f;
 		}
 	}
 
@@ -5212,6 +5163,61 @@ namespace ALYSLC
 		}
 	}
 
+	void PlayerActionManager::RevivePlayer()
+	{
+		// Transfer health from this player to a health pool that is given 
+		// to the targeted downed player after they are fully revived. 
+		// Keep track of how much health was transferred and if the downed player is fully revived.
+
+		if (!downedPlayerTarget) 
+		{
+			return;
+		}
+
+		secsSinceReviveCheck = Util::GetElapsedSeconds(p->lastReviveCheckTP);
+		// Downed target must not be revived yet.
+		if (downedPlayerTarget->isRevived)
+		{
+			return;
+		}
+
+		p->lastReviveCheckTP = SteadyClock::now();
+		const auto& revivePAState = 
+		(
+			paStatesList[!InputAction::kActivate - !InputAction::kFirstAction]
+		);
+		// Can transfer health up until the minimum remaining health level.
+		float healthCost = min
+		(
+			revivePAState.avCost * secsSinceReviveCheck, 
+			currentHealth - Settings::fMinHealthWhileReviving
+		);
+		// Total transferable health for a full revive.
+		float fullHealthCost = revivePAState.avCost * Settings::fSecsReviveTime;
+		// Ratio of the downed player's health after being fully revived
+		// to the health this player must give up to fully revive them.
+		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
+		// Don't reduce this player's health when in god mode.
+		if (!p->isInGodMode) 
+		{
+			ModifyAV(RE::ActorValue::kHealth, -healthCost);
+		}
+
+		// Amount of health this player transfers away this check.
+		p->revivedHealth += healthCost;
+		// Amount of health the downed player target will gain from this check.
+		downedPlayerTarget->revivedHealth += healthTransferRatio * healthCost;
+		// Done reviving when the total health the downed player should receive
+		// is greater than or equal to their health after a full revive.
+		if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
+		{
+			// Signal the other player that they are now revived,
+			// and reset revived health data.
+			downedPlayerTarget->isRevived = true;
+			p->revivedHealth = 0.0f;
+		}
+	}
+
 	void PlayerActionManager::SendButtonEvent
 	(
 		const InputAction& a_inputAction, 
@@ -5265,7 +5271,7 @@ namespace ALYSLC
 		// Get button mask from event.
 		const uint32_t& buttonMask = controlMap->GetMappedKey(ueString, a_inputDevice);
 		// Is a valid button mask and event.
-		if (buttonMask != 255 && !ueString.empty())
+		if (buttonMask != 0xFF && !ueString.empty())
 		{
 			// Certain actions do not trigger or terminate properly 
 			// when the 'DontMove' flag is set on P1.
@@ -5310,23 +5316,17 @@ namespace ALYSLC
 		// Set damage mults with sneak state taken into consideration.
 		if (coopActor->IsSneaking())
 		{
-			auto targetActorHandle = p->tm->selectedTargetActorHandle;
 			int32_t detectionPct = 0;
-			// Not targeting an actor with the crosshair, so use the aim correction target,
+			// If not targeting an actor with the crosshair, 
+			// use the aim correction or linked target,
 			// or choose a new target based on proximity and facing angle.
+			auto targetActorHandle = p->tm->GetRangedTargetActor();
 			if (!Util::HandleIsValid(targetActorHandle))
 			{
-				if (Settings::vbUseAimCorrection[playerID])
-				{
-					targetActorHandle = p->tm->aimCorrectionTargetHandle;
-				}
-				else
-				{
-					targetActorHandle = p->tm->GetClosestTargetableActorInFOV
-					(
-						PI, coopActor->GetHandle(), false, -1.0f, false
-					);
-				}
+				targetActorHandle = p->tm->GetClosestTargetableActorInFOV
+				(
+					PI, RE::ObjectRefHandle(), false, -1.0f, false
+				);
 			}
 
 			auto targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
@@ -5345,7 +5345,7 @@ namespace ALYSLC
 				{
 					targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 					(
-						PI, coopActor->GetHandle(), true, weapReach, false
+						PI, RE::ObjectRefHandle(), true, weapReach, false
 					);
 				}
 			}
@@ -5449,13 +5449,6 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
-		(
-			"[PAM] SetAttackDamageMult: Attacking hand: {}, weapon attack damage mult: {}, "
-			"bashing: {}, power attacking: {}, sneaking: {}",
-			lastAttackingHand, damageMult, isBashing, isPowerAttacking, isSneaking
-		);
-
 		if (damageMult != 1.0f)
 		{
 			reqDamageMult = damageMult;
@@ -5463,22 +5456,47 @@ namespace ALYSLC
 		}
 	}
 
+	void PlayerActionManager::SetAndEveluatePackage
+	(
+		RE::TESPackage* a_package, bool a_evaluateOnlyIfDifferent
+	)
+	{
+		// Set the package to evaluate to the given package,
+		// and either only evaluate it if it differs from the current package,
+		// or evaluate it regardless.
+		// If no package is given, set to the default package.
+
+		auto currentPackage = coopActor->GetCurrentPackage();
+		if (!a_package)
+		{
+			a_package = GetDefaultPackage();
+		}
+
+		if (a_package)
+		{
+			SetCurrentPackage(a_package);
+		}
+
+		if (!a_evaluateOnlyIfDifferent || a_package != currentPackage)
+		{
+			EvaluatePackage();
+		}
+	}
+
 	void PlayerActionManager::SetCurrentPackage(RE::TESPackage* a_package)
 	{
 		// Set the given package as the player's current package to evaluate.
 
-		const bool isInCombat = coopActor->IsInCombat();
-		auto& packageStack =
-		(
-			isInCombat ?
-			packageStackMap[PackageIndex::kCombatOverride]->forms :
-			packageStackMap[PackageIndex::kDefault]->forms
-		);
-
+		// To make sure the package is run, modify both stacks.
 		// Only set if different.
-		if (packageStack[0] != a_package)
+		if (packageStackMap[PackageIndex::kDefault]->forms[0] != a_package)
 		{
-			packageStack[0] = a_package;
+			packageStackMap[PackageIndex::kDefault]->forms[0] = a_package;
+		}
+
+		if (packageStackMap[PackageIndex::kCombatOverride]->forms[0] != a_package)
+		{
+			packageStackMap[PackageIndex::kCombatOverride]->forms[0] = a_package;
 		}
 	}
 
@@ -5554,36 +5572,59 @@ namespace ALYSLC
 		// Stop combat between this player and all friendly actors:
 		// followers, teammates, commanded actors, 
 		// and normally neutral actors that are hostile to a player without any accrued bounty.
+		// 
+		// ISSUES (spent an infuriating amount of time on this):
+		// 
+		// 1. Seems as if there's only one combat alarm for all enemies of the player,
+		// meaning there's no way to stop combat and combat alarm for a specific hostile NPC.
+		// Stopping combat on its own will not last more than a moment, since the combat alarm
+		// is still active and will restart combat soonafter.
+		// Clearing the crime bounty for a specific faction has the same effect
+		// and pacifies all hostile NPCs, even those not within the faction.
+		// 
+		// 2. Stopping combat and alarm while guards are pursuing the player 
+		// will prevent the arrest dialogue from triggering at times. 
+		// Must hit a guard and sheathe again, or resort to sheathing without the co-op cam active
+		// or using the debug options. 
+		// 
+		// 3. Some NPCs are not recognized as enemies 
+		// even after checking their faction flags (such as some bandits),
+		// and thus, without a foolproof way of determining whether or not an NPC is an enemy,
+		// sheathing will sometimes stop combat with all NPCs 
+		// and cause them to momentarily sheathe their weapons.
+		// 
+		// NOTE:
+		// If I could find a way of disabling the collision for beam and flame projectiles
+		// when the player is not using friendly fire, all sources of accidental damage 
+		// would be accounted for and this function wouldn't be necessary.
 
 		auto procLists = RE::ProcessLists::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!procLists || !p1 || !coopActor->IsInCombat())
+		if (!procLists || !p1)
 		{
 			return;
 		}
-
-		std::set<RE::ActorHandle, HandleComp<RE::Actor>> friendlyActorHandles;
-		if (auto followerExData = p1->extraList.GetByType<RE::ExtraFollower>(); followerExData)
+		
+		procLists->ClearCachedFactionFightReactions();
+		for (const auto& p : glob.coopPlayers)
 		{
-			// Followers.
-			for (const auto& follower : followerExData->actorFollowers)
+			if (!p->isActive || !p->coopActor->currentProcess)
 			{
-				if (!Util::HandleIsValid(follower.actor))
-				{
-					continue;
-				}
-
-				friendlyActorHandles.insert(follower.actor);
+				continue;
 			}
+
+			p->coopActor->currentProcess->endAlarmOnActor = true;
 		}
 
-		// If the player has bounty (through P1), 
-		// do not stop combat and alarm after attempting to pacify each friendly/neutral actor.
-		bool hasZeroTotalBounty = true;
-		// Teammates and summons and mounts. 
-		// Not sure how to directly access a list of the player's teammates and summons, 
-		// so we'll iterate through the high process actors.
-		for (auto& handle : procLists->highActorHandles)
+		bool canArrest = false;
+		// For some reason, stopping the alarm on all players above 
+		// and then stopping combat with normally-passive actors below will sometimes,
+		// especially if P1 initiated combat, stop combat between players and actors
+		// that have a crime faction with non-zero crime gold, 
+		// even though we've ended combat with actors of a different faction.
+		// Save such actors and restart combat with them afterward.
+		std::vector<RE::ActorHandle> actorsToRestartCombatWith{ };
+		for (const auto& handle : procLists->highActorHandles)
 		{
 			if (!Util::HandleIsValid(handle))
 			{
@@ -5591,121 +5632,93 @@ namespace ALYSLC
 			}
 
 			auto actor = handle.get().get();
-			bool isSelf = actor == coopActor.get();
-			// No self-conflict, I guess.
-			if (isSelf) 
+			// No self-conflict or infighting allowed, I guess.
+			if (GlobalCoopData::IsCoopPlayer(actor)) 
 			{
 				continue;
 			}
 
-			// Is friendly to P1 or the party. No bounty check needed.
-			if (Util::IsPartyFriendlyActor(actor)) 
+			bool isHostile = false;
+			for (const auto& p : glob.coopPlayers)
 			{
-				friendlyActorHandles.insert(handle);
-				continue;
-			}
-
-			// Check this actor's factions to see if any of them have a bounty on P1,
-			// or if the faction is an enemy faction.
-			bool hasBounty = false;
-			bool isEnemy = 
-			(
-				actor->GetActorBase() ?
-				actor->GetActorBase()->AggroRadiusBehaviourIsEnabled() :
-				false
-			);
-			actor->VisitFactions
-			(
-				[p1, actor, &isEnemy, &hasBounty](RE::TESFaction* a_faction, const int8_t& a_rank) 
+				if (!p->isActive)
 				{
-					if (a_faction) 
-					{
-						if (a_faction->GetCrimeGold() > 0.0f)
-						{
-							hasBounty = true;
-							return true;
-						}
-
-						if (a_faction->IsPlayerEnemy()) 
-						{
-							isEnemy = true;
-							return true;
-						}
-					}
-
-					return false;
-				}
-			);
-
-			if (hasBounty && hasZeroTotalBounty)
-			{
-				hasZeroTotalBounty = false;
-			}
-
-			// Pacify aggroed actors that are not normally antagonistic towards the player.
-			// Must have 0 crimegold/bounty with all of this actor's factions.
-			bool shouldPacify = 
-			(
-				(!isEnemy && !hasBounty) && 
-				(
-					actor->boolFlags.all(RE::Actor::BOOL_FLAGS::kAngryWithPlayer) || 
-					actor->IsHostileToActor(p1) || 
-					actor->IsHostileToActor(coopActor.get())
-				)
-			);
-			if (shouldPacify)
-			{
-				friendlyActorHandles.insert(handle);
-			}
-		}
-
-		// Next, pacify party-friendly NPCs.
-		for (auto actorHandle : friendlyActorHandles)
-		{
-			auto actorPtr = Util::GetActorPtrFromHandle(actorHandle); 
-			if (!actorPtr || !actorPtr.get())
-			{
-				continue;
-			}
-
-			// Either a party-friendly actor or a normally neutral one 
-			// that is above 25% of their max health.
-			bool canPacify = Util::IsPartyFriendlyActor(actorPtr.get());
-			if (!canPacify) 
-			{
-				float maxHealth = Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kHealth);
-				canPacify = actorPtr->GetActorValue(RE::ActorValue::kHealth) / maxHealth > 0.25f;
-			}
-
-			if (canPacify && actorPtr->IsHostileToActor(coopActor.get()))
-			{
-				// Stop attacking and combat.
-				actorPtr->NotifyAnimationGraph("attackStop");
-				if (actorPtr->combatController)
-				{
-					actorPtr->combatController->stoppedCombat = true;
+					continue;
 				}
 
-				actorPtr->StopCombat();
-				actorPtr->StopAlarmOnActor();
-				actorPtr->currentProcess->lowProcessFlags.reset
-				(
-					RE::AIProcess::LowProcessFlags::kAlert
-				);
+				if (actor->IsHostileToActor(p->coopActor.get()))
+				{
+					isHostile = true;
+					break;
+				}
 			}
-		}
 
-		// If the player has 0 total bounty, we can also stop all alarms on the player.
-		if (hasZeroTotalBounty) 
-		{
-			procLists->StopCombatAndAlarmOnActor(coopActor.get(), false);
-			procLists->ClearCachedFactionFightReactions();
+			// Skip non-hostile actors since they don't need to be pacified.
+			if (!isHostile)
+			{
+				continue;
+			}
 			
-			// Stop alarm and combat on the player's end.
-			coopActor->StopAlarmOnActor();
-			coopActor->StopCombat();
-			p1->StopAlarmOnActor();
-			p1->StopCombat();
+			// Lacking a crime faction seems to be the best general indicator
+			// that an actor is hostile by default, 
+			// since performing crimes near them does not trigger a bounty.
+			bool hasNoBountyAndCrimeFaction = Util::HasNoBountyButInCrimeFaction(actor);
+			bool hasBountyAndCrimeFaction = Util::HasBountyOnPlayer(actor);
+			bool isFriendly = Util::IsPartyFriendlyActor(actor);
+			bool isFleeing = Util::IsFleeing(actor);
+			if (hasNoBountyAndCrimeFaction || isFriendly || isFleeing)
+			{
+				// Have to still stop combat here after removing the alarm to prevent combat 
+				// from starting right back up again.
+				actor->NotifyAnimationGraph("attackStop");
+				actor->StopCombat();
+				actor->StopAlarmOnActor();
+
+				// Restore health/magicka/stamina to full -- 
+				// no cheesing by exiting combat and re-attacking a now-pacified target for free.
+				if (!actor->IsInCombat())
+				{
+					float fullAV = Util::GetFullAVAmount(actor, RE::ActorValue::kHealth);
+					float currentAV = actor->GetActorValue(RE::ActorValue::kHealth);
+					actor->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage,
+						RE::ActorValue::kHealth,
+						fullAV - currentAV
+					);
+					fullAV = Util::GetFullAVAmount(actor, RE::ActorValue::kMagicka);
+					currentAV = actor->GetActorValue(RE::ActorValue::kMagicka);
+					actor->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage,
+						RE::ActorValue::kMagicka,
+						fullAV - currentAV
+					);
+					fullAV = Util::GetFullAVAmount(actor, RE::ActorValue::kStamina);
+					currentAV = actor->GetActorValue(RE::ActorValue::kStamina);
+					actor->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage,
+						RE::ActorValue::kStamina,
+						fullAV - currentAV
+					);
+				}
+			}
+			else if (hasBountyAndCrimeFaction)
+			{
+				// Ensure actors with a bounty on the player are still hostile afterward.
+				actorsToRestartCombatWith.emplace_back(handle);
+			}
+		}
+
+		for (auto actorHandle : actorsToRestartCombatWith)
+		{
+			if (!Util::HandleIsValid(actorHandle))
+			{
+				continue;
+			}
+
+			Util::Papyrus::StartCombat(actorHandle.get().get(), p1);
 		}
 	}
 
@@ -5723,6 +5736,7 @@ namespace ALYSLC
 		{
 			coopActor->currentProcess->StopCurrentIdle(coopActor.get(), true);
 		}
+
 		coopActor->NotifyAnimationGraph("IdleStop");
 		coopActor->NotifyAnimationGraph("attackStop");
 		coopActor->NotifyAnimationGraph("moveStart");
@@ -6085,55 +6099,51 @@ namespace ALYSLC
 		// Must apply combat HMS rate multiplier here for companion players 
 		// since the game does not seem to do this for NPCs 
 		// and because calling IsInCombat() on companion players is inconsistent, 
-		// First check if any player is in combat (usually P1) and then apply the multiplier.  
-		bool playerInCombat = 
-		{ 
-			std::any_of
-			(
-				glob.coopPlayers.begin(), glob.coopPlayers.end(), 
-				[](auto& a_p) 
-				{ 
-					return a_p->isActive && a_p->coopActor->IsInCombat(); 
-				}
-			) 
-		};
-
+		// First check if any player is in combat (usually P1) and then apply the multiplier. 
 		if (p->isPlayer1) 
 		{
 			// Divide player-specific combat mults by default combat mults first for P1.
 			baseHealthRegenRateMult = 
 			(
 				(100.0f * Settings::vfHealthRegenMult[playerID]) * 
-				(playerInCombat ? Settings::vfHealthRegenCombatRatio[playerID] / 0.7f : 1.0f)
+				(glob.isInCoopCombat ? Settings::vfHealthRegenCombatRatio[playerID] / 0.7f : 1.0f)
 			);
 			baseMagickaRegenRateMult = 
 			(
 				(100.0f * Settings::vfMagickaRegenMult[playerID]) *
-				(playerInCombat ? Settings::vfMagickaRegenCombatRatio[playerID] / 0.33f : 1.0f)
+				(
+					glob.isInCoopCombat ? 
+					Settings::vfMagickaRegenCombatRatio[playerID] / 0.33f : 
+					1.0f
+				)
 			);
 			baseStaminaRegenRateMult = 
 			(
 				(100.0f * Settings::vfStaminaRegenMult[playerID]) * 
-				(playerInCombat ? Settings::vfStaminaRegenCombatRatio[playerID] / 0.35f : 1.0f)
+				(
+					glob.isInCoopCombat ?
+					Settings::vfStaminaRegenCombatRatio[playerID] / 0.35f :
+					1.0f
+				)
 			);
 		}
 		else
 		{
-			// No default mult applied, so apply the player-specific mult directly.
+			// No default mult already applied, so apply the player-specific mult directly.
 			baseHealthRegenRateMult = 
 			(
 				(100.0f * Settings::vfHealthRegenMult[playerID]) * 
-				(playerInCombat ? Settings::vfHealthRegenCombatRatio[playerID] : 1.0f)
+				(glob.isInCoopCombat ? Settings::vfHealthRegenCombatRatio[playerID] : 1.0f)
 			);
 			baseMagickaRegenRateMult = 
 			(
 				(100.0f * Settings::vfMagickaRegenMult[playerID]) * 
-				(playerInCombat ? Settings::vfMagickaRegenCombatRatio[playerID] : 1.0f)
+				(glob.isInCoopCombat ? Settings::vfMagickaRegenCombatRatio[playerID] : 1.0f)
 			);
 			baseStaminaRegenRateMult = 
 			(
 				(100.0f * Settings::vfStaminaRegenMult[playerID]) * 
-				(playerInCombat ? Settings::vfStaminaRegenCombatRatio[playerID] : 1.0f)
+				(glob.isInCoopCombat ? Settings::vfStaminaRegenCombatRatio[playerID] : 1.0f)
 			);
 		}
 
@@ -6365,9 +6375,14 @@ namespace ALYSLC
 		coopActor->GetGraphVariableBool("IsBlocking", isBlocking);
 		coopActor->GetGraphVariableBool("bInJumpState", isJumping);
 		coopActor->GetGraphVariableBool("bIsRiding", isRiding);
+		coopActor->GetGraphVariableBool("IsShouting", isShouting);
 		coopActor->GetGraphVariableBool("IsSneaking", isSneaking);
 		// Also include non-default attack states.
-		isAttacking |= coopActor->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone;
+		isAttacking |= 
+		(
+			coopActor->IsWeaponDrawn() &&
+			coopActor->GetAttackState() != RE::ATTACK_STATE_ENUM::kNone
+		);
 		isPowerAttacking = coopActor->IsPowerAttacking();
 
 		if (p->isPlayer1)
@@ -6393,9 +6408,12 @@ namespace ALYSLC
 		// Attacking with a weapon.
 		isWeaponAttack = isAttacking && !isInCastingAnim;
 		// Attacking a ranged weapon.
-		isRangedWeaponAttack = isWeaponAttack && p->em->Has2HRangedWeapEquipped();
+		isRangedWeaponAttack = isWeaponAttack && p->em->Has2HRangedWeapEquipped() && !isBashing;
 		// Attacking with a spell or ranged weapon.
-		isRangedAttack = isRangedWeaponAttack || isInCastingAnim;
+		isRangedAttack = 
+		(
+			isRangedWeaponAttack || isInCastingAnim || IsPerforming(InputAction::kQuickSlotCast)
+		);
 		// Update sprint state.
 		wasSprinting = isSprinting;
 		isSprinting = 
@@ -6434,6 +6452,10 @@ namespace ALYSLC
 		}
 
 		// Generate sets of conflicting actions per action.
+		// Conflicting actions:
+		// Given 2 actions A and B,
+		// 1. If A conflicts with B, A should block and prevent B from executing.
+		// 2. If B conflicts with A, B should block and prevent A from executing.
 		for (auto i = 0; i < !InputAction::kActionTotal; ++i)
 		{
 			// Composing inputs for action 1.
@@ -6490,7 +6512,6 @@ namespace ALYSLC
 						static_cast<InputAction>(i + !InputAction::kFirstAction)
 					);
 
-					// REMOVE after debugging.
 					bool shouldBlockConflictingActions = 
 					(
 						paStatesList[j].paParams.triggerFlags.none
@@ -6564,7 +6585,6 @@ namespace ALYSLC
 				p->isPlayer1 &&
 				coopActor->race->formEditorID == "_00E_Theriantrophist_PlayerWerewolfRace"sv
 			};
-
 			// For compatibility with other transformations 
 			// that use the Werewolf transformation spell archetype.
 			// Does not include Vampire Lord transformation, 

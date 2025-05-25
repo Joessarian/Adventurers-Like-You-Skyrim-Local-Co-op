@@ -81,6 +81,7 @@ namespace ALYSLC
 				targetedMountHandle = a_handle;
 			}
 		}
+
 		//
 		// Member funcs
 		//
@@ -154,10 +155,12 @@ namespace ALYSLC
 		// Tasks
 		//
 		
-		// NOTE: The delayed funcs below are all executed on the player's task runner.
+		// NOTE: 
+		// The delayed funcs below are all executed on the player's task runner.
 
 		// Emulate P1 menu controls if a co-op player is controlling the Lockpicking Menu.
-		// NOTE: Currently run as a task to avoid a bug 
+		// NOTE: 
+		// Currently run as a task to avoid a bug 
 		// with repeated attempts to lockpick the same refr.
 		// May move back to MIM if a solution for this bug is found.
 		void LockpickingTask();
@@ -170,6 +173,8 @@ namespace ALYSLC
 
 		// Debug option to reset a co-op companion player.
 		// Stops the player, 
+		// dismounts them,
+		// ends any ongoing activation interactions,
 		// resets any active transformation, 
 		// re-equips saved gear/unequips all gear,
 		// resurrects the actor, 
@@ -195,7 +200,8 @@ namespace ALYSLC
 		// Members
 		//
 
-		// NOTE: Time points are reset by the specific sub-manager they are linked to.
+		// NOTE: 
+		// Time points are reset by the specific sub-manager they are linked to.
 		// Time at which the player's crosshair was last active:
 		// Object selected, selected object changed, crosshair moved, 
 		// or crosshair hit the edge of the screen.
@@ -224,7 +230,8 @@ namespace ALYSLC
 		// Time point indicating when the player's crosshair was last updated.
 		SteadyClock::time_point lastCrosshairUpdateTP;
 		// Time point indicating when favorited items/emote idles were last cycled to equip/play.
-		// NOTE: All cycling binds share a cycling time point, so configure player binds such that
+		// NOTE: 
+		// All cycling binds share a cycling time point, so configure player binds such that
 		// only one cycling action can be performed at once.
 		SteadyClock::time_point lastCyclingTP;
 		// Time at which the player last started dash dodging.
