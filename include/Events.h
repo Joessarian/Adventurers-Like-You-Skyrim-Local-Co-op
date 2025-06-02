@@ -98,8 +98,6 @@ namespace ALYSLC
 			const RE::TESCellFullyLoadedEvent* a_cellFullyLoadedEvent,
 			RE::BSTEventSource<RE::TESCellFullyLoadedEvent>*
 		) override;
-		
-		static inline uint32_t lastLoadP1CellNameHash = Hash(""sv);
 	
 	private:
 		CoopCellFullyLoadedHandler() = default;

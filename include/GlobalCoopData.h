@@ -1774,7 +1774,7 @@ namespace ALYSLC
 				RE::Actor*, uint32_t>("OnDebugMenuRequest"sv);
 		SKSE::Impl::RegistrationSet<void> onSummoningMenuRequest =
 			SKSE::Impl::RegistrationSet<void>("OnSummoningMenuRequest"sv);
-
+		
 		// Time point at which co-op companion player Enderal skill AVs 
 		// were last checked for changes.
 		SteadyClock::time_point lastCoopCompanionSkillLevelsCheckTP;
@@ -1787,6 +1787,8 @@ namespace ALYSLC
 		std::array<std::mutex, ALYSLC_MAX_PLAYER_COUNT> skillXPMutexes;
 		// List of current players (P1 and co-op companions, active and inactive).
 		std::array<std::shared_ptr<CoopPlayer>, ALYSLC_MAX_PLAYER_COUNT> coopPlayers;
+		// Crosshair text offsets (X, Y) to restore when the co-op camera is not active.
+		std::optional<std::pair<float, float>> originalCrosshairTextOffsets;
 		// Set of co-op entities that are players or are blocked from selection.
 		// Used to filter out these entities in the targeting manager.
 		std::set<RE::FormID> coopEntityBlacklistFIDSet;
@@ -1841,6 +1843,9 @@ namespace ALYSLC
 		std::vector<RE::SpellItem*> placeholderSpells;
 		// Weapon type keywords list. 
 		std::vector<RE::BGSKeyword*> weapTypeKeywordsList;
+		// Interpolation data for fading the crosshair text in/out.
+		std::unique_ptr<TwoWayInterpData> crosshairTextFadeInterpData;
+
 		// All players constructed.
 		bool allPlayersInit = false;
 		// Co-op session started (all players summoned and session cleanup
@@ -1904,6 +1909,8 @@ namespace ALYSLC
 		uint32_t importUnlockedSharedPerksCount;
 		// Number of living co-op players.
 		uint32_t livingPlayers;
+		// Hash for the previously set crosshair text.
+		uint32_t prevCrosshairTextHash;
 
 		// TODO: Use as max number of usable perk points,
 		// allowing for a variable number of perk points

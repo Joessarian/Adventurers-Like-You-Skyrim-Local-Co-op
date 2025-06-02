@@ -114,15 +114,19 @@ namespace ALYSLC
 				CrosshairMessageType&& a_type, 
 				const RE::BSFixedString a_text, 
 				std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-				float a_secsMaxDisplayTime = 0.0f
+				float a_secsMaxDisplayTime = 0.0f,
+				bool a_updateSetTP = true
 			) noexcept
 			{
 				type = a_type;
-				setTP = SteadyClock::now();
 				text = a_text;
 				delayedMessageTypes = a_delayedMessageTypes;
 				secsMaxDisplayTime = a_secsMaxDisplayTime;
 				hash = Hash(a_text);
+				if (a_updateSetTP)
+				{
+					setTP = SteadyClock::now();
+				}
 			}
 
 			// This message's type.
@@ -1509,7 +1513,8 @@ namespace ALYSLC
 			CrosshairMessageType&& a_type, 
 			const RE::BSFixedString a_text, 
 			std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-			float a_secsMaxDisplayTime = 0.0f
+			float a_secsMaxDisplayTime = 0.0f,
+			bool a_updateSetTP = true
 		)
 		{
 			SetCurrentCrosshairMessage
@@ -1518,7 +1523,8 @@ namespace ALYSLC
 				std::move(a_type), 
 				a_text, 
 				std::move(a_delayedMessageTypes), 
-				a_secsMaxDisplayTime
+				a_secsMaxDisplayTime,
+				a_updateSetTP
 			);
 		}
 
@@ -1532,7 +1538,8 @@ namespace ALYSLC
 			CrosshairMessageType&& a_type, 
 			const RE::BSFixedString a_text, 
 			std::set<CrosshairMessageType>&& a_delayedMessageTypes = {}, 
-			float a_secsMaxDisplayTime = 0.0f
+			float a_secsMaxDisplayTime = 0.0f,
+			bool a_updateSetTP = true
 		)
 		{
 			{
@@ -1559,7 +1566,8 @@ namespace ALYSLC
 								std::move(a_type), 
 								a_text, 
 								std::move(a_delayedMessageTypes), 
-								std::move(a_secsMaxDisplayTime)
+								std::move(a_secsMaxDisplayTime),
+								a_updateSetTP
 							);
 						}
 						else
@@ -1569,7 +1577,8 @@ namespace ALYSLC
 								std::move(a_type), 
 								a_text, 
 								std::move(a_delayedMessageTypes), 
-								std::move(a_secsMaxDisplayTime)
+								std::move(a_secsMaxDisplayTime),
+								a_updateSetTP
 							);
 						}
 					}

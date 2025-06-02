@@ -4,12 +4,15 @@
 // Ensure 'ALYSLC_DEBUG_MODE' is not defined before submitting a PR 
 // or committing changes for release versions.
 // Removes all debug-level prints, and all associated overhead, during compilation if not defined.
-// #define ALYSLC_DEBUG_MODE
+//#define ALYSLC_DEBUG_MODE
 #ifdef ALYSLC_DEBUG_MODE
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #else 
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
 #endif
+
+// For profiling only. Keep commented out otherwise.
+//#define ALYSLC_PROFILING
 
 #pragma warning(push)
 #if defined(FALLOUT4)

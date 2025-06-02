@@ -4040,7 +4040,7 @@ namespace ALYSLC
 			}
 
 			// Prevent fall damage when falling, even when not ragdolling.
-			if (Settings::bNegateFallDamage && 
+			if (Settings::bPreventFallDamage && 
 				currentCharacterState != RE::hkpCharacterStateType::kOnGround)
 			{
 				charController->lock.Lock();

@@ -734,6 +734,7 @@ namespace ALYSLC
 		// Camera
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamPitch", bAutoRotateCamPitch);
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamYaw", bAutoRotateCamYaw);
+		ReadBoolSetting(a_ini, "Camera", "bAutoAdjustCamZoom", bAutoAdjustCamZoom);
 		ReadBoolSetting(a_ini, "Camera", "bCamCollisions", bCamCollisions);
 		ReadBoolSetting(a_ini, "Camera", "bFadeLargerObstructions", bFadeLargerObstructions);
 		ReadBoolSetting(a_ini, "Camera", "bFadeObstructions", bFadeObstructions);
@@ -767,7 +768,7 @@ namespace ALYSLC
 		// Cheats
 		ReadBoolSetting(a_ini, "Cheats", "bAddAnimEventSkillPerks", bAddAnimEventSkillPerks);
 		ReadBoolSetting(a_ini, "Cheats", "bInfiniteCarryweight", bInfiniteCarryweight);
-		ReadBoolSetting(a_ini, "Cheats", "bNegateFallDamage", bNegateFallDamage);
+		ReadBoolSetting(a_ini, "Cheats", "bPreventFallDamage", bPreventFallDamage);
 		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpDodgeAnimations", bSpeedUpDodgeAnimations);
 		ReadBoolSetting(a_ini, "Cheats", "bSpeedUpEquipAnimations", bSpeedUpEquipAnimations);
 
@@ -946,6 +947,7 @@ namespace ALYSLC
 		);
 
 		// Menus and UI
+		ReadBoolSetting(a_ini, "MenusAndUI", "bCrosshairTextFade", bCrosshairTextFade);
 		ReadBoolSetting(a_ini, "MenusAndUI", "bTwoPlayerLockpicking", bTwoPlayerLockpicking);
 		ReadBoolSetting
 		(
@@ -969,15 +971,6 @@ namespace ALYSLC
 		);
 		ReadFloatSetting
 		(
-			a_ini, 
-			"MenusAndUI",
-			"fCamLockOnIndicatorThickness", 
-			fCamLockOnIndicatorThickness, 
-			1.0f, 
-			20.0f
-		);
-		ReadFloatSetting
-		(
 			a_ini,
 			"MenusAndUI", 
 			"fCrosshairMaxTraversablePixelsPerSec",
@@ -988,11 +981,50 @@ namespace ALYSLC
 		ReadFloatSetting
 		(
 			a_ini, 
+			"MenusAndUI",
+			"fCamLockOnIndicatorThickness", 
+			fCamLockOnIndicatorThickness, 
+			1.0f, 
+			20.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini,
+			"MenusAndUI",
+			"fCrosshairTextAnchorPointHeightRatio", 
+			fCrosshairTextAnchorPointHeightRatio,
+			0.0f, 
+			1.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini,
+			"MenusAndUI",
+			"fCrosshairTextAnchorPointWidthRatio", 
+			fCrosshairTextAnchorPointWidthRatio,
+			0.0f, 
+			1.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, "MenusAndUI", "fCrosshairTextMargin", fCrosshairTextMargin, 0.0f, 1000.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, "MenusAndUI", "fCrosshairTextMaxAlpha", fCrosshairTextMaxAlpha, 0.0f, 100.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
 			"MenusAndUI", 
 			"fPlayerMenuControlOverlayOutlineThickness",
 			fPlayerMenuControlOverlayOutlineThickness, 
 			1.0f, 
 			50.0f
+		);
+		ReadUInt32Setting
+		(
+			a_ini, "MenusAndUI", "uCrosshairTextFontSize", uCrosshairTextFontSize, 0, 256
 		);
 
 		// Movement

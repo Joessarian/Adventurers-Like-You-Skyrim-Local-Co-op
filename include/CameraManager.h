@@ -880,14 +880,10 @@ namespace ALYSLC
 
 		// Currently set camera lock on target's handle.
 		RE::ActorHandle camLockOnTargetHandle;
-		// Base positions (before collision calculations).
-		RE::NiPoint3 camBaseFocusPoint;
-		RE::NiPoint3 camBaseOriginPoint;
+		// Base position (before collision calculations).
 		RE::NiPoint3 camBaseTargetPos;
 		// Position at which the cam collides with geometry (if there are obstructions).
 		// Equal to the base position when there are no obstructions.
-		RE::NiPoint3 camCollisionFocusPoint;
-		RE::NiPoint3 camCollisionOriginPoint;
 		RE::NiPoint3 camCollisionTargetPos;
 		// Current focus point.
 		RE::NiPoint3 camFocusPoint;

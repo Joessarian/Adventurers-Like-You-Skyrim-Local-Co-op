@@ -200,9 +200,9 @@ namespace ALYSLC
 		// World positions.
 		crosshairLastMovementHitPosOffset = 
 		crosshairInitialMovementHitPosOffset = 
-		crosshairLocalPosOffset =
+		crosshairLocalPosOffset = RE::NiPoint3();
 		crosshairWorldPos = 
-		lastActivationReqPos = RE::NiPoint3();
+		lastActivationReqPos = Util::GetTorsoPosition(coopActor.get());
 
 		// Crosshair scaleform position.
 		ResetCrosshairPosition();
@@ -5308,7 +5308,7 @@ namespace ALYSLC
 					// which effectively caps bonk damage as well.
 					releasedRefrInfo->ApplyVelocity(velToSet);
 				}
-				else if (!Settings::bNegateFallDamage)
+				else if (!Settings::bPreventFallDamage)
 				{
 					// Set fall height at the apex of the trajectory to properly apply fall damage 
 					// once the dropped actor hits a surface.
@@ -5749,6 +5749,8 @@ namespace ALYSLC
 			checkLOS && 
 			!Util::HasLOS(refrPtr.get(), coopActor.get(), true, true, crosshairWorldPos))
 		{
+			SPDLOG_DEBUG("[TM] IsRefrValidForCrosshairSelection: {}: No LOS on {}.",
+				coopActor->GetName(), refrPtr->GetName());
 			// Can't select if there is no LOS.
 			return false;
 		}
@@ -5756,6 +5758,10 @@ namespace ALYSLC
 		// New crosshair refr is on the screen, at least initially.
 		if (newSelection)
 		{
+			SPDLOG_DEBUG("[TM] IsRefrValidForCrosshairSelection: {}: LOS on newly selected {}. "
+				"Chose closest result: {}, moving crosshair: {}",
+				coopActor->GetName(), refrPtr->GetName(),
+				choseClosestResult, p->pam->IsPerforming(InputAction::kMoveCrosshair));
 			crosshairRefrInSight = true;
 			return true;
 		}
@@ -6142,6 +6148,20 @@ namespace ALYSLC
 				);
 				if (excluded || !inFrontOfCam || isAnObstruction)
 				{
+					if (a_showDebugPrints)
+					{
+						SPDLOG_DEBUG
+						(
+							"[TM] PickRaycastHitResult: {}: "
+							"Skipping refr {}. Excluded: {}, in front of cam: {}, obstruction: {}.",
+							coopActor->GetName(),
+							hitRefrPtr->GetName(),
+							excluded,
+							inFrontOfCam,
+							isAnObstruction
+						);
+					}
+
 					continue;
 				}
 
@@ -6160,6 +6180,8 @@ namespace ALYSLC
 						)
 					)
 				};
+				// Save previous activator hit state to check if this is the first activator hit.
+				bool activatorWasHit = activatorHit;
 				// An activator was hit in this group of hit results.
 				if (isActivator && !activatorHit)
 				{
@@ -6222,7 +6244,6 @@ namespace ALYSLC
 					// if no other result was chosen yet and if the hit object is not an activator.
 					if (!validType)
 					{
-						chosenResultSelectable = isSelectable;
 						// Set first non-activator hit index.
 						if (firstNonActivatorHitIndex == -1 && !isActivator)
 						{
@@ -6236,6 +6257,7 @@ namespace ALYSLC
 							chosenResult.hit = true;
 							chosenResult.hitPos = result.hitPos;
 							chosenHitPosIndex = i;
+							chosenResultSelectable = isSelectable;
 						}
 
 						if (a_showDebugPrints)
@@ -6359,12 +6381,12 @@ namespace ALYSLC
 					// If a non-activator has not been hit yet, 
 					// or if the currently chosen result's refr is not selectable
 					// we can potentially update the chosen result.
-					// Also, if an activator has not been hit yet, set the result.
+					// Also, if this is the first activator hit, set the result.
 					// However, in the case of consecutive activators, 
 					// we do not want to set a subsequent activator's hit result
 					// as the chosen one, since it would be further away than the first one.
 					if ((firstNonActivatorHitIndex == -1 || !chosenResultSelectable) && 
-						((!activatorHit || !isActivator)))
+						((!isActivator || !activatorWasHit)))
 					{
 						chosenResult = result;
 						chosenHitPosIndex = chosenHitResultIndex = i;
@@ -6876,6 +6898,8 @@ namespace ALYSLC
 		RE::BSFixedString text = ""sv;
 		CrosshairMessageType type = CrosshairMessageType::kNone;
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
+		// Should update set TP, even if the crosshair message is the same.
+		bool updateSetTP = false;
 		if (a_type == CrosshairMessageType::kTargetSelection)
 		{
 			if (selectedTargetActorPtr && 
@@ -6901,6 +6925,8 @@ namespace ALYSLC
 					selectedTargetActorPtr->GetDisplayFullName()
 				);
 				type = a_type;
+				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
+				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 			}
 			else if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle); 
 					 crosshairRefrPtr && crosshairRefrPtr.get())
@@ -6914,6 +6940,8 @@ namespace ALYSLC
 
 				text = fmt::format("P{}: {}", playerID + 1, activationText);
 				type = a_type;
+				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
+				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 			}
 		}
 		else if (a_type == CrosshairMessageType::kStealthState)
@@ -6979,16 +7007,19 @@ namespace ALYSLC
 				}
 
 				type = a_type;
+				// Always show when sneaking.
+				updateSetTP = true;
 			}
 		}
-
+		
 		SetCurrentCrosshairMessage
 		(
 			false,
 			std::move(type),
 			text, 
-			{ CrosshairMessageType::kNone }, 
-			0.25f
+			{ }, 
+			3.0f,
+			updateSetTP
 		);
 	}
 
@@ -7855,65 +7886,80 @@ namespace ALYSLC
 		}
 		else
 		{
-			// No targeted refr, so we only have to update the crosshair world position.
-
-			// Calculate near and far plane world positions for the current scaleform position.
-			glm::mat4 pvMat{ };
-			// Transpose first.
-			pvMat[0][0] = niCamPtr->worldToCam[0][0];
-			pvMat[1][0] = niCamPtr->worldToCam[0][1];
-			pvMat[2][0] = niCamPtr->worldToCam[0][2];
-			pvMat[3][0] = niCamPtr->worldToCam[0][3];
-			pvMat[0][1] = niCamPtr->worldToCam[1][0];
-			pvMat[1][1] = niCamPtr->worldToCam[1][1];
-			pvMat[2][1] = niCamPtr->worldToCam[1][2];
-			pvMat[3][1] = niCamPtr->worldToCam[1][3];
-			pvMat[0][2] = niCamPtr->worldToCam[2][0];
-			pvMat[1][2] = niCamPtr->worldToCam[2][1];
-			pvMat[2][2] = niCamPtr->worldToCam[2][2];
-			pvMat[3][2] = niCamPtr->worldToCam[2][3];
-			pvMat[0][3] = niCamPtr->worldToCam[3][0];
-			pvMat[1][3] = niCamPtr->worldToCam[3][1];
-			pvMat[2][3] = niCamPtr->worldToCam[3][2];
-			pvMat[3][3] = niCamPtr->worldToCam[3][3];
-			// Then invert.
-			auto invPVMat = glm::inverse(pvMat);
-			// Causes crosshair jitter if the Z component is set to +-1,
-			// so they're set reasonably close to those values instead.
-			glm::vec4 clipSpacePosNear = glm::vec4
+			// No chosen refr, so we only have to potentially update the crosshair world position.
+			// Only update the target position if the player's crosshair 
+			// isn't fully faded or re-centered.
+			bool isNotRemoved = 
 			(
-				crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
-				1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
-				-0.999999f,
-				1.0f
+				(
+					!Settings::vbRecenterInactiveCrosshair[playerID] &&
+					!Settings::vbFadeInactiveCrosshair[playerID]
+				) ||
+				(
+					Util::GetElapsedSeconds(p->crosshairLastActiveTP) > 
+					Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+				)
 			);
-			glm::vec4 clipSpacePosFar = glm::vec4
-			(
-				crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
-				1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
-				0.999999f,
-				1.0f
-			);
-			// Derive world positions using the inverted projection view matrix 
-			// and the clip space vectors.
-			glm::vec4 worldPosNear = (invPVMat * clipSpacePosNear);
-			glm::vec4 worldPosFar = (invPVMat * clipSpacePosFar);
-			worldPosNear /= worldPosNear.w;
-			worldPosFar /= worldPosFar.w;
-
-			// Set initial crosshair world position to the far plane point.
-			crosshairWorldPos = ToNiPoint3(worldPosFar);
-			// Raycast for selectable refrs. Get all hits from near to far plane points.
-			auto results = Raycast::GetAllHavokCastHitResults(worldPosNear, worldPosFar);
-			// Get a valid result that does not have to contain a selectable refr.
-			Raycast::RayResult centerResult = PickRaycastHitResult
-			(
-				results, glob.isInCoopCombat, false
-			);
-			// Set crosshair world position on hit.
-			if (centerResult.hit)
+			if (isNotRemoved)
 			{
-				crosshairWorldPos = ToNiPoint3(centerResult.hitPos);
+				// Calculate near and far plane world positions for the current scaleform position.
+				glm::mat4 pvMat{ };
+				// Transpose first.
+				pvMat[0][0] = niCamPtr->worldToCam[0][0];
+				pvMat[1][0] = niCamPtr->worldToCam[0][1];
+				pvMat[2][0] = niCamPtr->worldToCam[0][2];
+				pvMat[3][0] = niCamPtr->worldToCam[0][3];
+				pvMat[0][1] = niCamPtr->worldToCam[1][0];
+				pvMat[1][1] = niCamPtr->worldToCam[1][1];
+				pvMat[2][1] = niCamPtr->worldToCam[1][2];
+				pvMat[3][1] = niCamPtr->worldToCam[1][3];
+				pvMat[0][2] = niCamPtr->worldToCam[2][0];
+				pvMat[1][2] = niCamPtr->worldToCam[2][1];
+				pvMat[2][2] = niCamPtr->worldToCam[2][2];
+				pvMat[3][2] = niCamPtr->worldToCam[2][3];
+				pvMat[0][3] = niCamPtr->worldToCam[3][0];
+				pvMat[1][3] = niCamPtr->worldToCam[3][1];
+				pvMat[2][3] = niCamPtr->worldToCam[3][2];
+				pvMat[3][3] = niCamPtr->worldToCam[3][3];
+				// Then invert.
+				auto invPVMat = glm::inverse(pvMat);
+				// Causes crosshair jitter if the Z component is set to +-1,
+				// so they're set reasonably close to those values instead.
+				glm::vec4 clipSpacePosNear = glm::vec4
+				(
+					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
+					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
+					-0.999999f,
+					1.0f
+				);
+				glm::vec4 clipSpacePosFar = glm::vec4
+				(
+					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
+					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
+					0.999999f,
+					1.0f
+				);
+				// Derive world positions using the inverted projection view matrix 
+				// and the clip space vectors.
+				glm::vec4 worldPosNear = (invPVMat * clipSpacePosNear);
+				glm::vec4 worldPosFar = (invPVMat * clipSpacePosFar);
+				worldPosNear /= worldPosNear.w;
+				worldPosFar /= worldPosFar.w;
+
+				// Set initial crosshair world position to the far plane point.
+				crosshairWorldPos = ToNiPoint3(worldPosFar);
+				// Raycast for selectable refrs. Get all hits from near to far plane points.
+				auto results = Raycast::GetAllHavokCastHitResults(worldPosNear, worldPosFar);
+				// Get a valid result that does not have to contain a selectable refr.
+				Raycast::RayResult centerResult = PickRaycastHitResult
+				(
+					results, glob.isInCoopCombat, false
+				);
+				// Set crosshair world position on hit.
+				if (centerResult.hit)
+				{
+					crosshairWorldPos = ToNiPoint3(centerResult.hitPos);
+				}
 			}
 		}
 
@@ -9619,7 +9665,7 @@ namespace ALYSLC
 
 			// Set fall height at the apex of the trajectory to properly apply fall damage
 			// once the thrown actor hits a surface.
-			if (!Settings::bNegateFallDamage)
+			if (!Settings::bPreventFallDamage)
 			{
 				auto thrownActor = objectPtr->As<RE::Actor>();
 				auto charController = thrownActor ? thrownActor->GetCharController() : nullptr;

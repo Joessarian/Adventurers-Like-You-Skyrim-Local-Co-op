@@ -61,31 +61,21 @@ namespace ALYSLC
 
 		// Import all settings after initializing co-op data.
 		ALYSLC::Settings::ImportAllSettings();
-
 		// Re-register for script events.
 		GlobalCoopData::UnregisterEvents();
 		GlobalCoopData::RegisterEvents();
-
 		// Reset supported menu open state because it won't reset
 		// properly if the previous co-op session ended while a supported menu was open.
 		Events::ResetMenuState();
-
 		// Re-enable any controls for P1 that might have been disabled.
 		Util::ToggleAllControls(true);
 		// Reset to the default third person camera orientation, 
 		// just in case the game was saved while the co-op cam was active.
 		Util::ResetTPCamOrientation();
-
 		// Reset essential flag for P1, which may have been set if using the revive system.
-		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1 && p1->GetActorBase()) 
+		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 		{
-			auto actorBase = p1->GetActorBase();
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
-			);
-			p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-
+			Util::ChangeEssentialStatus(p1, false);
 			// NOTE: 
 			// The game fails to save P1's perks properly at times,
 			// either clearing all of them, or only saving the perks unlocked by P1 
@@ -378,16 +368,7 @@ namespace ALYSLC
 				if (a_shouldStart)
 				{
 					// Make sure P1 and companion players are not set to essential before starting.
-					if (p->isPlayer1)
-					{
-						glob.player1RefAlias->flags.reset(RE::BGSBaseAlias::FLAGS::kEssential);
-					}
-
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						p->coopActor->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false
-					);
-					p->coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+					Util::ChangeEssentialStatus(p->coopActor.get(), false);
 					// Make sure the player is not paralyzed either (from being downed).
 					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 

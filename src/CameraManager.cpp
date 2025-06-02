@@ -18,11 +18,7 @@ namespace ALYSLC
 	{
 		camLockOnTargetHandle = RE::ActorHandle();
 		lockOnActorReq = std::nullopt;
-		camBaseFocusPoint = 
-		camBaseOriginPoint = 
-		camBaseTargetPos = 
-		camCollisionFocusPoint = 
-		camCollisionOriginPoint = 
+		camBaseTargetPos =  
 		camCollisionTargetPos = 
 		camFocusPoint = 
 		camLockOnFocusPoint = 
@@ -228,6 +224,9 @@ namespace ALYSLC
 
 		// Reset fade on handled objects.
 		ResetFadeAndClearObstructions();
+
+		// Reset crosshair text and position.
+		GlobalCoopData::SetCrosshairText(true);
 	}
 
 	void CameraManager::PreStartTask()
@@ -635,36 +634,27 @@ namespace ALYSLC
 		auto oldFocusPoint = camFocusPoint;
 		auto prevOffset = camHeightOffset;
 
-		camCollisionFocusPoint = RE::NiPoint3
-		(
-			camCollisionOriginPoint.x, 
-			camCollisionOriginPoint.y, 
-			camCollisionOriginPoint.z + camHeightOffset
-		);
 		if (Settings::bCamCollisions)
 		{
 			if (isManuallyPositioned)
 			{
 				// Focus point is the node point when in free cam mode.
-				camFocusPoint = camCollisionFocusPoint = camNodePos;
+				camFocusPoint = camNodePos;
 			}
 			else
 			{
-				camCollisionFocusPoint.z = camCollisionOriginPoint.z + camHeightOffset;
+				camFocusPoint = RE::NiPoint3
+				(
+					camOriginPoint.x, 
+					camOriginPoint.y, 
+					camOriginPoint.z + camHeightOffset
+				);
 			}
-
-			camBaseFocusPoint = RE::NiPoint3
-			(
-				camBaseOriginPoint.x, 
-				camBaseOriginPoint.y, 
-				camBaseOriginPoint.z + camHeightOffset
-			);
-			camFocusPoint = camCollisionFocusPoint;
 		}
 		else
 		{
 			// Same point if collisions are not enabled.
-			camFocusPoint = camBaseFocusPoint = RE::NiPoint3
+			camFocusPoint = RE::NiPoint3
 			(
 				camOriginPoint.x, 
 				camOriginPoint.y, 
@@ -681,29 +671,12 @@ namespace ALYSLC
 		// and are kept from going 'out of bounds' to a normally unreachable position, 
 		// since the collision origin points are vital for calculating the cam target positions.
 
-		auto oldOriginPoint = camOriginPoint;
-		auto oldBaseOriginPoint = camBaseOriginPoint;
-		// If true, no players are visible from the origin point.
-		bool originViewObstructed = false;
-		// Was there a raycast hit from the old origin point to the new base origin point?
-		bool hitToBasePos = false;
-		// Was there a raycast hit from the old origin point
-		// to the collision hit point obtained from raycasting
-		// from the old origin point to the base origin point 
-		// and shifting the result above ground?
-		bool hitToCollisionPos = false;
-		// Vertical coordinate bounds obtained from clamping 
-		// vertical raycasts hit results.
-		// +- FLT_MAX if unbounded.
-		std::pair<float, float> bounds{ oldOriginPoint.z, oldOriginPoint.z };
-		// Additional offset to apply above/below the vertical bounds.
-		float minZOffset = std::clamp(avgPlayerHeight, 50.0f, 100.0f);
-
 		//====================
 		//[Base Origin Point]:
 		//====================
 
-		camBaseOriginPoint = RE::NiPoint3();
+		auto oldOriginPoint = camOriginPoint;
+		camOriginPoint = RE::NiPoint3();
 		for (const auto& p : glob.coopPlayers)
 		{
 			if (!p->isActive)
@@ -712,7 +685,7 @@ namespace ALYSLC
 			}
 			
 			auto mountPtr = p->GetCurrentMount();
-			camBaseOriginPoint += 
+			camOriginPoint += 
 			(
 				mountPtr && mountPtr.get() ?
 				mountPtr->data.location :
@@ -723,9 +696,9 @@ namespace ALYSLC
 		// Base origin point before processing.
 		if (ShouldConsiderLockOnTargetAsPlayer())
 		{			
-			camBaseOriginPoint += camLockOnTargetHandle.get()->data.location;
-			camBaseOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers + 1));
-			camBaseOriginPoint.z += 
+			camOriginPoint += camLockOnTargetHandle.get()->data.location;
+			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers + 1));
+			camOriginPoint.z += 
 			(
 				(
 					(avgPlayerHeight * static_cast<float>(glob.livingPlayers)) +
@@ -735,158 +708,28 @@ namespace ALYSLC
 		}
 		else
 		{
-			camBaseOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
-			camBaseOriginPoint.z += avgPlayerHeight;
+			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+			camOriginPoint.z += avgPlayerHeight;
 		}
-
-		if (Settings::bCamCollisions)
+		
+		// Update origin point bounds.
+		auto bounds = Util::GetVertCollPoints(camOriginPoint, 0.0f);
+		camMaxAnchorPointZCoord = bounds.first;
+		camMinAnchorPointZCoord = bounds.second;
+		if (Settings::bOriginPointSmoothing)
 		{
-			//========================
-			//[Modified Origin Point]:
-			//========================
-			// Set the next origin point by accounting for collisions
-			// when moving from the previous origin point to the new base origin point.
-			// Want to ensure the origin point is in a valid, reachable position,
-			// and not clipping through geometry.
-
-			glm::vec4 castStartPoint{ ToVec4(oldOriginPoint) };
-			glm::vec4 castEndPoint{ ToVec4(camBaseOriginPoint) };
-			auto result = Raycast::CastRay(castStartPoint, castEndPoint, camAnchorPointHullSize);
-			if (result.hit)
-			{
-				hitToBasePos = true;
-			}
-
-			// Get point above ground at the base origin point's XY coords.
-			RE::NiPoint3 basePointAboveGround = camBaseOriginPoint;
-			bounds = Util::GetVertCollPoints(basePointAboveGround, 0.0f);
-			ClampToZCoordAboveLowerBound
+			camOriginPoint.x = Util::InterpolateSmootherStep
 			(
-				basePointAboveGround.z, 
-				minZOffset, 
-				camAnchorPointHullSize, 
-				bounds.first, 
-				bounds.second
+				oldOriginPoint.x, camOriginPoint.x, camInterpFactor
 			);
-
-			// Initially, set to base origin point shifted above ground.
-			camCollisionOriginPoint = basePointAboveGround;
-			// If no LOS to a player at the base above-ground position, 
-			// move to above-ground raycast collision position.
-			originViewObstructed = NoPlayersVisibleAtPoint(camCollisionOriginPoint, true); 
-			if (originViewObstructed)
-			{
-				if (result.hit)
-				{
-					castEndPoint = result.hitPos;
-				}
-
-				// Second cast to hit pos or base pos moved above ground.
-				bounds = Util::GetVertCollPoints(ToNiPoint3(castEndPoint), 0.0f);
-				ClampToZCoordAboveLowerBound
-				(
-					castEndPoint.z, 
-					minZOffset, 
-					camAnchorPointHullSize, 
-					bounds.first, 
-					bounds.second
-				);
-
-				auto result = Raycast::CastRay
-				(
-					castStartPoint, castEndPoint, camAnchorPointHullSize
-				);
-				if (result.hit)
-				{
-					hitToCollisionPos = true;
-					// Offset away from hit position to prevent clipping.
-					camCollisionOriginPoint = ToNiPoint3
-					(
-						result.hitPos + result.rayNormal * camAnchorPointHullSize
-					);
-				}
-				else
-				{
-					// No hit, so the previous hit position was unobstructed.
-					camCollisionOriginPoint = ToNiPoint3(castEndPoint);
-				}
-
-			}
-
-			if (focalPlayerCID == -1)
-			{
-				// Only bound above and below + set min/max anchor point positions
-				// when there is a clear path to the next origin position.
-				// Clamping bounds during collisions leads to inconsistent shifts
-				// to both the lower and upper bounds if the collision point shifts
-				// the next origin position up or down, 
-				// e.g. riding up a post in one of Solitude's guard towers.
-				if (!hitToBasePos && !hitToCollisionPos) 
-				{
-					bounds = Util::GetVertCollPoints(camCollisionOriginPoint, 0.0f);
-					camMaxAnchorPointZCoord = bounds.first;
-					camMinAnchorPointZCoord = bounds.second;
-				}
-			}
-			else
-			{
-				// Bound the player focus point above and below.
-				bounds = Util::GetVertCollPoints(camPlayerFocusPoint, 0.0f);
-				camMaxAnchorPointZCoord = bounds.first;
-				camMinAnchorPointZCoord = bounds.second;
-			}
-
-			if (Settings::bOriginPointSmoothing)
-			{
-				camBaseOriginPoint.x = Util::InterpolateSmootherStep
-				(
-					oldBaseOriginPoint.x, camBaseOriginPoint.x, camInterpFactor);
-				camBaseOriginPoint.y = Util::InterpolateSmootherStep
-				(
-					oldBaseOriginPoint.y, camBaseOriginPoint.y, camInterpFactor
-				);
-				camBaseOriginPoint.z = Util::InterpolateSmootherStep
-				(
-					oldBaseOriginPoint.z, camBaseOriginPoint.z, camInterpFactor
-				);
-				camCollisionOriginPoint.x = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.x, camCollisionOriginPoint.x, camInterpFactor
-				);
-				camCollisionOriginPoint.y = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.y, camCollisionOriginPoint.y, camInterpFactor
-				);
-				camCollisionOriginPoint.z = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.z, camCollisionOriginPoint.z, camInterpFactor
-				);
-			}
-
-			camOriginPoint = camCollisionOriginPoint;
-		}
-		else
-		{
-			camCollisionOriginPoint = camBaseOriginPoint;
-			if (Settings::bOriginPointSmoothing)
-			{
-				camOriginPoint.x = camBaseOriginPoint.x = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.x, camBaseOriginPoint.x, camInterpFactor
-				);
-				camOriginPoint.y = camBaseOriginPoint.y = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.y, camBaseOriginPoint.y, camInterpFactor
-				);
-				camOriginPoint.z = camBaseOriginPoint.z = Util::InterpolateSmootherStep
-				(
-					oldOriginPoint.z, camBaseOriginPoint.z, camInterpFactor
-				);
-			}
-			else
-			{
-				camOriginPoint = camBaseOriginPoint;
-			}
+			camOriginPoint.y = Util::InterpolateSmootherStep
+			(
+				oldOriginPoint.y, camOriginPoint.y, camInterpFactor
+			);
+			camOriginPoint.z = Util::InterpolateSmootherStep
+			(
+				oldOriginPoint.z, camOriginPoint.z, camInterpFactor
+			);
 		}
 
 		// Save origin point direction for auto pitch adjustments.
@@ -1016,7 +859,7 @@ namespace ALYSLC
 			{
 				// Base target position is offset from the base focus position,
 				// and is not guaranteed to be a reachable spot.
-				camBaseTargetPos = camBaseFocusPoint;
+				camBaseTargetPos = camFocusPoint;
 				camBaseTargetPos.z -= r * cosf(theta);
 				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
 				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
@@ -1045,378 +888,377 @@ namespace ALYSLC
 				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
 			}
 
-			// NOTE: 
-			// Still need to obtain the collision position for crosshair selection purposes,
-			// even if camera collisions are disabled.
-			
-			// [(Questionable?) Methods to the Madness Below]:
-			// 
-			// To ensure that we have a valid target position that isn't out of bounds
-			// or in an area that no player can reach, we need a valid starting position
-			// to raycast to our base target position, which could also be invalid.
-			// 
-			// We use player-to-target LOS hit positions as the base positions 
-			// for determining the next target postiion, since these are always valid positions 
-			// (because they are offset from the players' positions themselves).
-			// 
-			// An additional feature is that if players are far apart, 
-			// each player can have the camera follow them as long as they rotate it
-			// while they are not in LOS of the rest of the players.
-			// The camera will automatically focus on the entire party again
-			// when the focal player is visible and close enough to the rest of the party.
-
-			// No matter what, players should try to stay close together as much as possible
-			// for the smoothest experience when using the co-op camera.
-
-			// Raycast result from the previous position to the current base position.
-			// If there's a hit, this means that the camera will hit a surface 
-			// if it moves directly to the base target position.
-
-			Raycast::RayResult movementResult = Raycast::CastRay
-			(
-				ToVec4(lastSetCamTargetPos), ToVec4(camBaseTargetPos), camTargetPosHullSize
-			);
-			if (movementResult.hit)
-			{
-				// Upon movement hit, the camera is now colliding with geometry.
-				isColliding = true;
-			}
-			
-			// Reset focal player CID if the setting is now disabled 
-			// or if the focal player is downed.
-			bool shouldAutoResetFocalPlayer = 
-			(
-				(focalPlayerCID != -1) && 
-				(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPlayerCID]->isDowned)
-			);
-			if (shouldAutoResetFocalPlayer) 
-			{
-				focalPlayerCID = -1;
-			}
-
-			//=================================================================================
-			// [Camera Collision Positions]:
-			//=================================================================================
-			// Set (hopefully) to a position that is reachable 
-			// and not outside the world geometry.
-			// One collision position is used to place the camera 
-			// if camera collisions are enabled.
-			// The other collision position originates from the base focus position,
-			// which can be outside the traversable worldspace, and is used for crosshair
-			// selection when camera collisions are disabled.
-
-			// Basic system to minimize camera jumping and maximize visibility of all players:
-			// 1. Check for visibility of the base target position from the focus point 
-			// and all active players' focus points.
-			// Use two raycasts per focus point to check visibility.
-			// 2. If the hull result does not hit or if the hit position 
-			// is close to the start position and the zero-hull raycast does not hit, 
-			// the base target position is valid and visible. 
-			// The reason for the distance check from the hull cast hit position 
-			// is to prevent the target position from jumping forward to the focus point 
-			// unless there is an obstruction to the base target position. 
-			// Example: All active players are within a hull size from a wall, 
-			// which causes the hull casts starting from their focus points 
-			// to hit the wall right away. However, the zero-hull cast will not hit the wall,
-			// unless all players have their focus points clipping through the wall, 
-			// which shouldn't happen.
-			// The next target position is then set to the base target position, 
-			// instead of one of the wall-hit positions, since the base target position 
-			// is still reachable from the players' focus points.
-			// 3. Otherwise, for the next target position, 
-			// choose the hull cast hit point that is closest to the previous target position,
-			// which will minimize camera jumping. 
-			// The hull cast hit position is adjusted to avoid clipping into geometry
-			// and is always at a valid, reachable position.
-			// 
-			// Min 2 raycasts (2 from camera focus point).
-			// Max 6-10 raycasts (2 from camera focus point + 2 per active player).
-
-			// Sources of stuttering:
-			// 1. Raycast hit results from different start positions 
-			// changing from hit to no hit recorded and vice versa on a frame-to-frame basis. 
-			// 2. Raycast hit normal changing rapidly from one frame to the next,
-			// even when cast from almost the same start and end positions.
-			// 3. Auto-zoom consistency problems, 
-			// leading to a rapidly varying target radial distance,
-			// and thus, a rapidly changing base camera target position.
-				
-			// For debugging.
-			int32_t closestIndex = -1337;
-			const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
-			const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
-			glm::vec4 closestHitPos = lastSetTargetPos;
-			// Offset from the camera collision focus point,
-			// which should be within the traversable part of the world.
-			glm::vec4 castStartPos = ToVec4(camBaseFocusPoint);
-			// Raycast result.
-			// Raycast hit position adjusted to avoid hit geometry.
-			glm::vec4 adjHitResultPos{ };
-			// Distance from hit position to the last set target position.
-			float dist = 0.0f; 
-			// Save raycast hit position distance to target position for comparison purposes.
-			float closestDist = FLT_MAX;
-			// Hull raycast hit result.
-			auto result = Raycast::CastRay
-			(
-				castStartPos, baseTargetPos, camTargetPosHullSize
-			);
-			bool baseTargetPosVisible = !result.hit;
-			if (baseTargetPosVisible)
-			{
-				closestHitPos = baseTargetPos;
-			}
-			else
-			{
-				// Now cast from each player's focus point
-				// to check for a closer hit position.
-				closestIndex = 1337;
-				// We have an obstruction to the base target position,
-				// so adjust the hit position away from the obstruction now.
-				adjHitResultPos =
-				(
-					result.hitPos +
-					result.rayNormal *
-					min(result.rayLength, camTargetPosHullSize)
-				);
-				// Set the initial closest distance to the previous target position.
-				closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
-				closestHitPos = adjHitResultPos;
-				// Now cast from each player's focus point
-				// to check for a closer hit position.
-				for (const auto& p : glob.coopPlayers)
-				{
-					if (!p->isActive)
-					{
-						continue;
-					}
-
-					castStartPos = ToVec4(Util::GetActorFocusPoint(p->coopActor.get()));
-					result = Raycast::CastRay
-					(
-						castStartPos, baseTargetPos, camTargetPosHullSize
-					);
-					baseTargetPosVisible = 
-					{
-						(!result.hit) || 
-						(
-							glm::distance
-							(
-								result.hitPos, castStartPos
-							) <= camTargetPosHullSize && 
-							!Raycast::CastRay(castStartPos, baseTargetPos, 0.0f).hit
-						)
-					};
-
-					// Stop casting if there is no hit, 
-					// and therefore no obstruction, from a cast.
-					if (baseTargetPosVisible)
-					{
-						closestIndex = -p->controllerID;
-						closestHitPos = baseTargetPos;
-						break;
-					}
-					else
-					{
-						closestIndex = p->controllerID;
-						adjHitResultPos =
-						(
-							result.hitPos +
-							result.rayNormal *
-							min(result.rayLength, camTargetPosHullSize)
-						);
-						// Check for update to the closest hit position again.
-						dist = glm::distance(adjHitResultPos, lastSetTargetPos); 
-						if (dist < closestDist)
-						{
-							closestDist = dist;
-							closestHitPos = adjHitResultPos;
-						}
-					}
-				}
-
-				// Also check from lock-on target's focus point.
-				if (ShouldConsiderLockOnTargetAsPlayer())
-				{
-					castStartPos = ToVec4
-					(
-						Util::GetActorFocusPoint(camLockOnTargetHandle.get().get())
-					);
-					result = Raycast::CastRay
-					(
-						castStartPos, baseTargetPos, camTargetPosHullSize
-					);
-					baseTargetPosVisible = 
-					{
-						(!result.hit) || 
-						(
-							glm::distance
-							(
-								result.hitPos, castStartPos
-							) <= camTargetPosHullSize && 
-							!Raycast::CastRay(castStartPos, baseTargetPos, 0.0f).hit
-						)
-					};
-
-					// Stop casting if there is no hit, 
-					// and therefore no obstruction, from a cast.
-					if (baseTargetPosVisible)
-					{
-						closestIndex = -69420;
-						closestHitPos = baseTargetPos;
-					}
-					else if (Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
-					{
-						// Also allow the lock-on target to determine LOS 
-						// on the base target position if the lock-on assistance level 
-						// is set to zoom. 
-						// Will find more instances where the base target position 
-						// is in traversible space.
-						closestIndex = 69420;
-						adjHitResultPos =
-						(
-							result.hitPos +
-							result.rayNormal *
-							min(result.rayLength, camTargetPosHullSize)
-						);
-						// Check for update to the closest hit position again.
-						dist = glm::distance(adjHitResultPos, lastSetTargetPos); 
-						if (dist < closestDist)
-						{
-							closestDist = dist;
-							closestHitPos = adjHitResultPos;
-						}
-					}
-				}
-			}
-				
-			// NOTE:
-			// Keeping this alternative positioning logic that chooses the LOS hit position
-			// from the player closest to the base camera position
-			// as the next camera target position. Position, position, position.
-			/*
-			const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
-			const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
-			glm::vec4 closestHitPos = lastSetTargetPos;
-			// Offset from the camera collision focus point,
-			// which should be within the traversable part of the world.
-			glm::vec4 castStartPos = ToVec4(camBaseFocusPoint);
-			// Save distance for comparison purposes.
-			float closestDist = FLT_MAX;
-			Raycast::RayResult result = Raycast::CastRay
-			(
-				castStartPos,
-				baseTargetPos, 
-				camTargetPosHullSize
-			);
-			bool baseTargetPosVisible = !result.hit;
-			if (baseTargetPosVisible)
-			{
-				closestHitPos = baseTargetPos;
-			}
-			else
-			{
-				float dist = 0.0f;
-				int32_t closestPlayerCID = -1;
-				for (const auto& p : glob.coopPlayers)
-				{
-					if (!p->isActive)
-					{
-						continue;
-					}
-
-					dist = Util::GetActorFocusPoint(p->coopActor.get()).GetDistance
-					(
-						camBaseTargetPos
-					);
-					if (dist < closestDist)
-					{
-						closestDist = dist;
-						closestPlayerCID = p->controllerID;
-					}
-				}
-
-				if (closestPlayerCID != -1)
-				{
-					const auto& closestP = glob.coopPlayers[closestPlayerCID];
-					castStartPos = ToVec4(Util::GetActorFocusPoint(closestP->coopActor.get()));
-					result = Raycast::CastRay
-					(
-						castStartPos,
-						baseTargetPos, 
-						camTargetPosHullSize
-					);
-					if (result.hit)
-					{
-						closestIndex = closestPlayerCID;
-						// Adjust the hit position to avoid clipping.
-						closestHitPos =
-						(
-							result.hitPos +
-							result.rayNormal *
-							min(result.rayLength, camTargetPosHullSize)
-						);
-					}
-					else
-					{
-						closestIndex = -closestPlayerCID;
-						// If there's LOS, set to the base target pos.
-						baseTargetPosVisible = true;
-						closestHitPos = baseTargetPos;
-					}
-				}
-			}*/
-
-			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG
-			(
-				"[CAM] Base target pos visible: {}, closest hit index: {}, "
-				"ray normal: ({}, {}, {}), "
-				"target pos: ({}, {}, {}), dist from prev: {}, "
-				"radial distance: {}, offset: {}, pitch, yaw: {}, {}. "
-				"Start: ({}, {}, {}), base: ({}, {}, {}), "
-				"focus point Z bounds: {}, {}, height offset: {}. Is colliding: {}.",
-				baseTargetPosVisible,
-				closestIndex,
-				result.hit ? result.rayNormal.x : -1.0f,
-				result.hit ? result.rayNormal.y : -1.0f,
-				result.hit ? result.rayNormal.z : -1.0f,
-				closestHitPos.x,
-				closestHitPos.y,
-				closestHitPos.z,
-				glm::distance(closestHitPos, lastSetTargetPos),
-				camTargetRadialDistance,
-				camRadialDistanceOffset,
-				camTargetPosPitch * TO_DEGREES,
-				camTargetPosYaw * TO_DEGREES,
-				castStartPos.x,
-				castStartPos.y,
-				castStartPos.z,
-				baseTargetPos.x,
-				baseTargetPos.y,
-				baseTargetPos.z,
-				camMinAnchorPointZCoord,
-				camMaxAnchorPointZCoord,
-				camHeightOffset,
-				isColliding
-			);*/
-
-			// Set next collision target position and set colliding flag.
-			camCollisionTargetPos = ToNiPoint3(closestHitPos);
-			// Not colliding if the collision target position 
-			// is the same as the base target position and there is no movement hit.
-			if (camCollisionTargetPos == camBaseTargetPos && !movementResult.hit) 
-			{
-				isColliding = false;
-			}
-			else
-			{
-				isColliding = true;
-			}
-
-			
 			if (Settings::bCamCollisions)
 			{
+				// NOTE: 
+				// Still need to obtain the collision position for crosshair selection purposes,
+				// even if camera collisions are disabled.
+			
+				// [(Questionable?) Methods to the Madness Below]:
+				// 
+				// To ensure that we have a valid target position that isn't out of bounds
+				// or in an area that no player can reach, we need a valid starting position
+				// to raycast to our base target position, which could also be invalid.
+				// 
+				// We use player-to-target LOS hit positions as the base positions 
+				// for determining the next target postiion, since these are always valid positions 
+				// (because they are offset from the players' positions themselves).
+				// 
+				// An additional feature is that if players are far apart, 
+				// each player can have the camera follow them as long as they rotate it
+				// while they are not in LOS of the rest of the players.
+				// The camera will automatically focus on the entire party again
+				// when the focal player is visible and close enough to the rest of the party.
+
+				// No matter what, players should try to stay close together as much as possible
+				// for the smoothest experience when using the co-op camera.
+
+				// Raycast result from the previous position to the current base position.
+				// If there's a hit, this means that the camera will hit a surface 
+				// if it moves directly to the base target position.
+
+				Raycast::RayResult movementResult = Raycast::CastRay
+				(
+					ToVec4(lastSetCamTargetPos), ToVec4(camBaseTargetPos), camTargetPosHullSize
+				);
+				if (movementResult.hit)
+				{
+					// Upon movement hit, the camera is now colliding with geometry.
+					isColliding = true;
+				}
+			
+				// Reset focal player CID if the setting is now disabled 
+				// or if the focal player is downed.
+				bool shouldAutoResetFocalPlayer = 
+				(
+					(focalPlayerCID != -1) && 
+					(!Settings::bFocalPlayerMode || glob.coopPlayers[focalPlayerCID]->isDowned)
+				);
+				if (shouldAutoResetFocalPlayer) 
+				{
+					focalPlayerCID = -1;
+				}
+
+				//=================================================================================
+				// [Camera Collision Positions]:
+				//=================================================================================
+				// Set (hopefully) to a position that is reachable 
+				// and not outside the world geometry.
+				// One collision position is used to place the camera 
+				// if camera collisions are enabled.
+				// The other collision position originates from the base focus position,
+				// which can be outside the traversable worldspace, and is used for crosshair
+				// selection when camera collisions are disabled.
+
+				// Basic system to minimize camera jumping and maximize visibility of all players:
+				// 1. Check for visibility of the base target position from the focus point 
+				// and all active players' focus points.
+				// Use two raycasts per focus point to check visibility.
+				// 2. If the hull result does not hit or if the hit position 
+				// is close to the start position and the zero-hull raycast does not hit, 
+				// the base target position is valid and visible. 
+				// The reason for the distance check from the hull cast hit position 
+				// is to prevent the target position from jumping forward to the focus point 
+				// unless there is an obstruction to the base target position. 
+				// Example: All active players are within a hull size from a wall, 
+				// which causes the hull casts starting from their focus points 
+				// to hit the wall right away. However, the zero-hull cast will not hit the wall,
+				// unless all players have their focus points clipping through the wall, 
+				// which shouldn't happen.
+				// The next target position is then set to the base target position, 
+				// instead of one of the wall-hit positions, since the base target position 
+				// is still reachable from the players' focus points.
+				// 3. Otherwise, for the next target position, 
+				// choose the hull cast hit point that is closest to the previous target position,
+				// which will minimize camera jumping. 
+				// The hull cast hit position is adjusted to avoid clipping into geometry
+				// and is always at a valid, reachable position.
+				// 
+				// Min 2 raycasts (2 from camera focus point).
+				// Max 6-10 raycasts (2 from camera focus point + 2 per active player).
+
+				// Sources of stuttering:
+				// 1. Raycast hit results from different start positions 
+				// changing from hit to no hit recorded and vice versa on a frame-to-frame basis. 
+				// 2. Raycast hit normal changing rapidly from one frame to the next,
+				// even when cast from almost the same start and end positions.
+				// 3. Auto-zoom consistency problems, 
+				// leading to a rapidly varying target radial distance,
+				// and thus, a rapidly changing base camera target position.
+				
+				// For debugging.
+				int32_t closestIndex = -1337;
+				const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
+				const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
+				glm::vec4 closestHitPos = lastSetTargetPos;
+				// Offset from the camera collision focus point,
+				// which should be within the traversable part of the world.
+				glm::vec4 castStartPos = ToVec4(camFocusPoint);
+				// Raycast result.
+				// Raycast hit position adjusted to avoid hit geometry.
+				glm::vec4 adjHitResultPos{ };
+				// Distance from hit position to the last set target position.
+				float dist = 0.0f; 
+				// Save raycast hit position distance to target position for comparison purposes.
+				float closestDist = FLT_MAX;
+				// Hull raycast hit result.
+				auto result = Raycast::CastRay
+				(
+					castStartPos, baseTargetPos, camTargetPosHullSize
+				);
+				bool baseTargetPosVisible = !result.hit;
+				if (baseTargetPosVisible)
+				{
+					closestHitPos = baseTargetPos;
+				}
+				else
+				{
+					// Now cast from each player's focus point
+					// to check for a closer hit position.
+					closestIndex = 1337;
+					// We have an obstruction to the base target position,
+					// so adjust the hit position away from the obstruction now.
+					adjHitResultPos =
+					(
+						result.hitPos +
+						result.rayNormal *
+						min(result.rayLength, camTargetPosHullSize)
+					);
+					// Set the initial closest distance to the previous target position.
+					closestDist = glm::distance(adjHitResultPos, lastSetTargetPos); 
+					closestHitPos = adjHitResultPos;
+					// Now cast from each player's focus point
+					// to check for a closer hit position.
+					for (const auto& p : glob.coopPlayers)
+					{
+						if (!p->isActive)
+						{
+							continue;
+						}
+
+						castStartPos = ToVec4(Util::GetActorFocusPoint(p->coopActor.get()));
+						result = Raycast::CastRay
+						(
+							castStartPos, baseTargetPos, camTargetPosHullSize
+						);
+						baseTargetPosVisible = 
+						{
+							(!result.hit) || 
+							(
+								glm::distance
+								(
+									result.hitPos, castStartPos
+								) <= camTargetPosHullSize && 
+								!Raycast::CastRay(castStartPos, baseTargetPos, 0.0f).hit
+							)
+						};
+
+						// Stop casting if there is no hit, 
+						// and therefore no obstruction, from a cast.
+						if (baseTargetPosVisible)
+						{
+							closestIndex = -p->controllerID;
+							closestHitPos = baseTargetPos;
+							break;
+						}
+						else
+						{
+							closestIndex = p->controllerID;
+							adjHitResultPos =
+							(
+								result.hitPos +
+								result.rayNormal *
+								min(result.rayLength, camTargetPosHullSize)
+							);
+							// Check for update to the closest hit position again.
+							dist = glm::distance(adjHitResultPos, lastSetTargetPos); 
+							if (dist < closestDist)
+							{
+								closestDist = dist;
+								closestHitPos = adjHitResultPos;
+							}
+						}
+					}
+
+					// Also check from lock-on target's focus point.
+					if (ShouldConsiderLockOnTargetAsPlayer())
+					{
+						castStartPos = ToVec4
+						(
+							Util::GetActorFocusPoint(camLockOnTargetHandle.get().get())
+						);
+						result = Raycast::CastRay
+						(
+							castStartPos, baseTargetPos, camTargetPosHullSize
+						);
+						baseTargetPosVisible = 
+						{
+							(!result.hit) || 
+							(
+								glm::distance
+								(
+									result.hitPos, castStartPos
+								) <= camTargetPosHullSize && 
+								!Raycast::CastRay(castStartPos, baseTargetPos, 0.0f).hit
+							)
+						};
+
+						// Stop casting if there is no hit, 
+						// and therefore no obstruction, from a cast.
+						if (baseTargetPosVisible)
+						{
+							closestIndex = -69420;
+							closestHitPos = baseTargetPos;
+						}
+						else if (Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
+						{
+							// Also allow the lock-on target to determine LOS 
+							// on the base target position if the lock-on assistance level 
+							// is set to zoom. 
+							// Will find more instances where the base target position 
+							// is in traversible space.
+							closestIndex = 69420;
+							adjHitResultPos =
+							(
+								result.hitPos +
+								result.rayNormal *
+								min(result.rayLength, camTargetPosHullSize)
+							);
+							// Check for update to the closest hit position again.
+							dist = glm::distance(adjHitResultPos, lastSetTargetPos); 
+							if (dist < closestDist)
+							{
+								closestDist = dist;
+								closestHitPos = adjHitResultPos;
+							}
+						}
+					}
+				}
+				
+				// NOTE:
+				// Keeping this alternative positioning logic that chooses the LOS hit position
+				// from the player closest to the base camera position
+				// as the next camera target position. Position, position, position.
+				/*
+				const glm::vec4 baseTargetPos = ToVec4(camBaseTargetPos);
+				const glm::vec4 lastSetTargetPos = ToVec4(lastSetCamTargetPos);
+				glm::vec4 closestHitPos = lastSetTargetPos;
+				// Offset from the camera collision focus point,
+				// which should be within the traversable part of the world.
+				glm::vec4 castStartPos = ToVec4(camBaseFocusPoint);
+				// Save distance for comparison purposes.
+				float closestDist = FLT_MAX;
+				Raycast::RayResult result = Raycast::CastRay
+				(
+					castStartPos,
+					baseTargetPos, 
+					camTargetPosHullSize
+				);
+				bool baseTargetPosVisible = !result.hit;
+				if (baseTargetPosVisible)
+				{
+					closestHitPos = baseTargetPos;
+				}
+				else
+				{
+					float dist = 0.0f;
+					int32_t closestPlayerCID = -1;
+					for (const auto& p : glob.coopPlayers)
+					{
+						if (!p->isActive)
+						{
+							continue;
+						}
+
+						dist = Util::GetActorFocusPoint(p->coopActor.get()).GetDistance
+						(
+							camBaseTargetPos
+						);
+						if (dist < closestDist)
+						{
+							closestDist = dist;
+							closestPlayerCID = p->controllerID;
+						}
+					}
+
+					if (closestPlayerCID != -1)
+					{
+						const auto& closestP = glob.coopPlayers[closestPlayerCID];
+						castStartPos = ToVec4(Util::GetActorFocusPoint(closestP->coopActor.get()));
+						result = Raycast::CastRay
+						(
+							castStartPos,
+							baseTargetPos, 
+							camTargetPosHullSize
+						);
+						if (result.hit)
+						{
+							closestIndex = closestPlayerCID;
+							// Adjust the hit position to avoid clipping.
+							closestHitPos =
+							(
+								result.hitPos +
+								result.rayNormal *
+								min(result.rayLength, camTargetPosHullSize)
+							);
+						}
+						else
+						{
+							closestIndex = -closestPlayerCID;
+							// If there's LOS, set to the base target pos.
+							baseTargetPosVisible = true;
+							closestHitPos = baseTargetPos;
+						}
+					}
+				}*/
+
+				// REMOVE when done debugging.
+				/*SPDLOG_DEBUG
+				(
+					"[CAM] Base target pos visible: {}, closest hit index: {}, "
+					"ray normal: ({}, {}, {}), "
+					"target pos: ({}, {}, {}), dist from prev: {}, "
+					"radial distance: {}, offset: {}, pitch, yaw: {}, {}. "
+					"Start: ({}, {}, {}), base: ({}, {}, {}), "
+					"focus point Z bounds: {}, {}, height offset: {}. Is colliding: {}.",
+					baseTargetPosVisible,
+					closestIndex,
+					result.hit ? result.rayNormal.x : -1.0f,
+					result.hit ? result.rayNormal.y : -1.0f,
+					result.hit ? result.rayNormal.z : -1.0f,
+					closestHitPos.x,
+					closestHitPos.y,
+					closestHitPos.z,
+					glm::distance(closestHitPos, lastSetTargetPos),
+					camTargetRadialDistance,
+					camRadialDistanceOffset,
+					camTargetPosPitch * TO_DEGREES,
+					camTargetPosYaw * TO_DEGREES,
+					castStartPos.x,
+					castStartPos.y,
+					castStartPos.z,
+					baseTargetPos.x,
+					baseTargetPos.y,
+					baseTargetPos.z,
+					camMinAnchorPointZCoord,
+					camMaxAnchorPointZCoord,
+					camHeightOffset,
+					isColliding
+				);*/
+
+				// Set next collision target position and set colliding flag.
+				camCollisionTargetPos = ToNiPoint3(closestHitPos);
+				// Not colliding if the collision target position 
+				// is the same as the base target position and there is no movement hit.
+				if (camCollisionTargetPos == camBaseTargetPos && !movementResult.hit) 
+				{
+					isColliding = false;
+				}
+				else
+				{
+					isColliding = true;
+				}
+
 				// Apply smoothing if enabled.
 				// NOTE: 
 				// Camera can still phase through surfaces 
@@ -1473,6 +1315,8 @@ namespace ALYSLC
 				{
 					camTargetPos = camBaseTargetPos;
 				}
+
+				camCollisionTargetPos = camTargetPos;
 			}
 
 			// Save the final target position's radial distance for zoom calculations later.
@@ -2100,11 +1944,18 @@ namespace ALYSLC
 		// And the naked NiAVObject ptrs in the handled set are kept valid while they are inserted
 		// into the fade data list, which also wraps them in NiPointers.
 
-		// Clear and re-add all obstructions if fading is disabled.
+		// Reset fade, and clear and re-add all obstructions if fading is disabled.
 		// Do not want to continue accumulating obstructions from frame to frame.
 		if (!Settings::bFadeObstructions)
 		{
 			ResetFadeAndClearObstructions();
+		}
+		else
+		{
+			// Clear out obstructions-to-indices map and reconstruct if fading obstructions.
+			// Do not want lingering 3D objects to map to fade indices
+			// even though they are no longer considered as obstructions.
+			obstructionsToFadeIndicesMap.clear();
 		}
 
 		// Add new obstructions or update fade indices if already added.
@@ -2714,8 +2565,8 @@ namespace ALYSLC
 		numMovementPitchReadings = numMovementYawToCamReadings = 0;
 
 		// Positions.
-		// Set focus and origin points to the base origin point.
-		camBaseOriginPoint = RE::NiPoint3();
+		// Set focus point to the origin point.
+		camOriginPoint = RE::NiPoint3();
 		// Set average player height to offset the base origin point.
 		avgPlayerHeight = 0.0f;
 		for (const auto& p : glob.coopPlayers)
@@ -2726,22 +2577,18 @@ namespace ALYSLC
 			}
 			
 			avgPlayerHeight += p->mm->playerScaledHeight;
-			camBaseOriginPoint += p->coopActor->data.location;
+			camOriginPoint += p->coopActor->data.location;
 		}
 		
 		avgPlayerHeight /= glob.livingPlayers;
-		camBaseOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
-		camBaseOriginPoint.z += avgPlayerHeight;
+		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+		camOriginPoint.z += avgPlayerHeight;
 
-		camOriginPoint =
-		camCollisionOriginPoint =
-		camBaseFocusPoint =
 		camFocusPoint =
-		camCollisionFocusPoint =
-		camLockOnFocusPoint = camBaseOriginPoint;
+		camLockOnFocusPoint = camOriginPoint;
 
 		camOriginPointDirection = RE::NiPoint3();
-		auto bounds = Util::GetVertCollPoints(camCollisionOriginPoint, 0.0f);
+		auto bounds = Util::GetVertCollPoints(camOriginPoint, 0.0f);
 		camMaxAnchorPointZCoord = bounds.first;
 		camMinAnchorPointZCoord = bounds.second;
 
@@ -2756,11 +2603,11 @@ namespace ALYSLC
 			p1LookingAt
 		);
 		
-		// Set radial distance equal to the node's distance from the base origin point.
+		// Set radial distance equal to the node's distance from the origin point.
 		camRadialDistanceOffset = camSavedRadialDistanceOffset = 0.0f;
 		camMinTrailingDistance = 100.0f;
 		camTargetRadialDistance = 
-		camTrueRadialDistance = camBaseTargetPos.GetDistance(camBaseOriginPoint);
+		camTrueRadialDistance = camBaseTargetPos.GetDistance(camFocusPoint);
 		// Reset base height and zoom offsets.
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 		camBaseHeightOffset = camHeightOffset = 0.0f;
@@ -2887,7 +2734,10 @@ namespace ALYSLC
 		{
 			for (const auto& objectData : obstructionFadeDataSet)
 			{
-				objectData->InstantlyResetFade();
+				if (objectData->currentFadeAmount != 1.0f)
+				{
+					objectData->InstantlyResetFade();
+				}
 			}
 		}
 
@@ -3311,7 +3161,7 @@ namespace ALYSLC
 		float currentFocusZPos = 
 		(
 			focalPlayerCID == -1 ? 
-			camCollisionOriginPoint.z + newHeight :
+			camOriginPoint.z + newHeight :
 			camPlayerFocusPoint.z + newHeight
 		);
 		float boundsDiff = fabsf(camMaxAnchorPointZCoord - camMinAnchorPointZCoord);
@@ -3329,7 +3179,7 @@ namespace ALYSLC
 				// Offset to the point equidistant between the two bounds.
 				newHeight = 
 				(
-					camMinAnchorPointZCoord + boundsDiff / 2.0f - camCollisionOriginPoint.z
+					camMinAnchorPointZCoord + boundsDiff / 2.0f - camOriginPoint.z
 				);
 				isBound = true;
 			}
@@ -3342,7 +3192,7 @@ namespace ALYSLC
 					(
 						newHeight, 
 						camMaxAnchorPointZCoord - 
-						camCollisionOriginPoint.z - 
+						camOriginPoint.z - 
 						camAnchorPointHullSize
 					);
 					isBound = true;
@@ -3355,7 +3205,7 @@ namespace ALYSLC
 					(
 						newHeight, 
 						camMinAnchorPointZCoord - 
-						camCollisionOriginPoint.z + 
+						camOriginPoint.z + 
 						camAnchorPointHullSize
 					);
 					isBound = true;
@@ -3675,11 +3525,11 @@ namespace ALYSLC
 			{
 				camCurrentPitchToFocus = Util::NormalizeAngToPi
 				(
-					Util::GetPitchBetweenPositions(camTargetPos, camBaseFocusPoint)
+					Util::GetPitchBetweenPositions(camTargetPos, camFocusPoint)
 				);
 				camCurrentYawToFocus = Util::NormalizeAng0To2Pi
 				(
-					Util::GetYawBetweenPositions(camTargetPos, camBaseFocusPoint)
+					Util::GetYawBetweenPositions(camTargetPos, camFocusPoint)
 				);
 			}
 			else
@@ -4178,6 +4028,25 @@ namespace ALYSLC
 
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 
+		// If not using auto-zoom, we can set the target radial distance directly here 
+		// and return early.
+		if (!Settings::bAutoAdjustCamZoom)
+		{
+			camTargetRadialDistance = camMinTrailingDistance + camRadialDistanceOffset;
+			// Interp from previous.
+			camTargetRadialDistance = Util::InterpolateSmootherStep
+			(
+				prevRadialDistance, camTargetRadialDistance, camInterpFactor
+			);
+			// Ensure the radial distance to set is never below the minimum trailing distance.
+			if (!isColliding || camTargetRadialDistance < prevRadialDistance)
+			{
+				camTargetRadialDistance = max(camTargetRadialDistance, camMinTrailingDistance);
+			}
+
+			return;
+		}
+
 		// Raycast hits and on-screen checks seem inconsistent 
 		// when zoomed out beyond a variable distance.
 		// Zooming out beyond this distance will result in the game 
@@ -4188,7 +4057,7 @@ namespace ALYSLC
 		float radialDistanceRangeMax = Settings::fMaxRaycastAndZoomOutDistance;
 		float radialDistanceRangeMid = Settings::fMaxRaycastAndZoomOutDistance / 2.0f;
 		float lastOnScreenRadialDist = Settings::fMaxRaycastAndZoomOutDistance;
-		auto focusPoint = focalPlayerCID == -1 ? camBaseFocusPoint : camPlayerFocusPoint;
+		auto focusPoint = focalPlayerCID == -1 ? camFocusPoint : camPlayerFocusPoint;
 		auto dirFromFocus = camBaseTargetPos - focusPoint;
 		dirFromFocus.Unitize();
 		// Position from which to test for visibility of all players.

@@ -610,12 +610,14 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"[P] CopyNPCAppearanceToPlayer: Copying {}'s appearance to {}, "
-			"set opposite gender animations: {}, current race, race to set: {}, {}",
+			"set opposite gender animations: {}, "
+			"current race, race to set: {}, {}, equal: {}.",
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
 			coopActor->GetName(), 
 			a_setOppositeGenderAnims,
 			coopActor->race ? coopActor->race->GetName() : "NONE",
-			a_baseToCopy && a_baseToCopy->race ? a_baseToCopy->race->GetName() : "NONE"
+			a_baseToCopy && a_baseToCopy->race ? a_baseToCopy->race->GetName() : "NONE",
+			coopActor->race == a_baseToCopy->race
 		);
 
 		auto actorBase = coopActor->GetActorBase();
@@ -666,6 +668,8 @@ namespace ALYSLC
 			{
 				if (actorBase->headParts[0])
 				{
+					SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: Removing head part #{}: {}.", 
+						headPartIndex, actorBase->headParts[0]->GetName());
 					Util::NativeFunctions::RemoveHeadPart
 					(
 						actorBase, *actorBase->headParts[0]->type
@@ -710,7 +714,9 @@ namespace ALYSLC
 				{
 					continue;
 				}
-
+				
+				SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: Adding head part #{}: {}.", 
+					i, headPart->GetName());
 				actorBase->ChangeHeadPart(headPart);
 			}
 		}
@@ -718,7 +724,6 @@ namespace ALYSLC
 		// Copy over everything else related to appearance.
 		if (a_baseToCopy->headRelatedData)
 		{
-			actorBase->headRelatedData = a_baseToCopy->headRelatedData;
 			actorBase->SetFaceTexture(a_baseToCopy->headRelatedData->faceDetails);
 			actorBase->SetHairColor(a_baseToCopy->headRelatedData->hairColor);
 		}
@@ -749,15 +754,7 @@ namespace ALYSLC
 		// Stop managers first.
 		RequestStateChange(ManagerState::kAwaitingRefresh);
 		// Remove essential flag on dismissal.
-		if (auto actorBase = coopActor->GetActorBase(); actorBase) 
-		{
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
-			);
-			coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-		}
-
+		Util::ChangeEssentialStatus(coopActor.get(), false);
 		// Revert to original race if transformed.
 		RevertTransformation();
 
@@ -912,7 +909,7 @@ namespace ALYSLC
 		{
 			if (!onCoopEndReg.Register(coopActor.get()))
 			{
-				SPDLOG_ERROR
+				SPDLOG_DEBUG
 				(
 					"[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", 
 					coopActor->GetName()
@@ -922,7 +919,7 @@ namespace ALYSLC
 
 		if (!onCoopEndReg.Register(glob.player1RefAlias))
 		{
-			SPDLOG_ERROR
+			SPDLOG_DEBUG
 			(
 				"[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", 
 				coopActor->GetName()
@@ -1438,77 +1435,33 @@ namespace ALYSLC
 		
 		// Set essential flags and bleedout override if using the revive system.
 		auto actorBase = coopActor->GetActorBase();
-		if (isPlayer1)
+		if (actorBase)
 		{
-			if (actorBase)
+			if (Settings::bUseReviveSystem)
 			{
-				if (Settings::bUseReviveSystem && Settings::bCanRevivePlayer1)
+				if (!isPlayer1 || Settings::bCanRevivePlayer1)
 				{
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, true
-					);
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, true
-					);
-					coopActor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
-					// Never bleedout.
-					actorBase->actorData.bleedoutOverride = -INT16_MAX;
+					// Not P1 or can revive P1, so set as essential.
+					Util::ChangeEssentialStatus(coopActor.get(), true, true);
 				}
 				else
 				{
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
-					);
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, false
-					);
-					coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-					actorBase->actorData.bleedoutOverride = 0.0f;
+					// Is P1 and cannot revive P1, so clear essential flags.
+					Util::ChangeEssentialStatus(coopActor.get(), false, true);
 				}
 			}
-
-			// Make sure the player is not paralyzed.
-			coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+			else
+			{
+				// Player revive disabled, so clear essential flags.
+				Util::ChangeEssentialStatus(coopActor.get(), false, true);
+			}
 		}
-		else if (!isPlayer1)
+		
+		// Make sure the player is not paralyzed.
+		coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+		// Extra flags to modify for companion players.
+		if (!isPlayer1)
 		{
-			if (actorBase)
-			{
-				if (Settings::bUseReviveSystem)
-				{
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, true
-					);
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, true
-					);
-					coopActor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
-					// Never bleedout.
-					actorBase->actorData.bleedoutOverride = -INT16_MAX;
-				}
-				else
-				{
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
-					);
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, false
-					);
-					coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-					actorBase->actorData.bleedoutOverride = 0.0f;
-				}
-			}
-			
-			// Make sure the player is not paralyzed.
-			coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 			// Set as teammate to prevent friendly fire and pickpocketing.
 			coopActor->boolBits.set(RE::Actor::BOOL_BITS::kPlayerTeammate);
 			// Allow rotation.
@@ -1672,7 +1625,7 @@ namespace ALYSLC
 		{
 			if (!onCoopEndReg.Unregister(coopActor.get()))
 			{
-				SPDLOG_ERROR
+				SPDLOG_DEBUG
 				(
 					"[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.",
 					coopActor->GetName()
@@ -1682,7 +1635,7 @@ namespace ALYSLC
 
 		if (!onCoopEndReg.Unregister(glob.player1RefAlias))
 		{
-			SPDLOG_ERROR
+			SPDLOG_DEBUG
 			(
 				"[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", 
 				coopActor->GetName()
@@ -1879,7 +1832,13 @@ namespace ALYSLC
 						playerID + 1,
 						100.0f * min(1.0f, revivedHealth / fullReviveHealth)
 					);;
-					tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+					tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kReviveAlert, 
+						reviveText,
+						{ },
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
 					tm->UpdateCrosshairMessage();
 
 					SPDLOG_DEBUG
@@ -1918,7 +1877,13 @@ namespace ALYSLC
 							(1.0f - secsDowned / max(1.0f, Settings::fSecsUntilDownedDeath))
 						)
 					);
-					tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+					tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kReviveAlert, 
+						reviveText,
+						{ },
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
 					tm->UpdateCrosshairMessage();
 
 					SPDLOG_DEBUG
@@ -2078,7 +2043,13 @@ namespace ALYSLC
 				100.0f * 
 				min(1.0f, revivedHealth / fullReviveHealth)
 			);
-			tm->SetCrosshairMessageRequest(CrosshairMessageType::kReviveAlert, reviveText);
+			tm->SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kReviveAlert, 
+				reviveText,
+				{ },
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
 			tm->UpdateCrosshairMessage();
 		}
 	}
@@ -2396,8 +2367,8 @@ namespace ALYSLC
 
 		secsWaited = 0.0f;
 		// Wait until the manager's state changes to running.
-		// 1 second failsafe.
-		while (secsWaited < 1.0f && currentState != ManagerState::kRunning)
+		// 3 second failsafe.
+		while (secsWaited < 3.0f && currentState != ManagerState::kRunning)
 		{
 			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			// Wait one frame at a time.

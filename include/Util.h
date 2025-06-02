@@ -2746,6 +2746,13 @@ namespace ALYSLC
 		// Can use the supplied rigid body, or retrieve the rigid body from the actor's current 3D.
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody = nullptr);
 		
+		// Set or unset the essential flags for the given actor.
+		// Can also adjust bleedout override.
+		void ChangeEssentialStatus
+		(
+			RE::Actor* a_actor, bool a_shouldSet, bool a_adjustBleedout = false
+		);
+
 		// Favorite/unfavorite the given form for the given actor.
 		void ChangeFormFavoritesStatus
 		(

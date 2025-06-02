@@ -54,6 +54,8 @@ namespace ALYSLC
 		glob.coopPlayerFactions.clear();
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
+		// Crosshair text offsets.
+		glob.originalCrosshairTextOffsets = std::nullopt;
 
 		// Load in data by form ID.
 		if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
@@ -528,53 +530,6 @@ namespace ALYSLC
 					glob.boundArrowAmmoList.emplace_back(ammo);
 				}
 			}
-
-			// TODO:
-			// Make more races grabbable.
-			// What could go wrong?
-			// A lot apparently, so I'm keeping this block commented out.
-			/*
-			if (Settings::bCanGrabActors)
-			{
-				const auto& racesList = dataHandler->GetFormArray<RE::TESRace>();
-				for (auto race : racesList)
-				{
-					if (!race)
-					{
-						continue;
-					}
-
-					SPDLOG_DEBUG("[GLOB] InitializeGlobalCoopData: {} has race flags 0b{:B}.",
-						race->GetName(), *race->data.flags);
-					// Ignore races with ragdoll collision enabled, like dragons,
-					// since grabbing them causes them to freeze as if their AI were toggled off.
-					if (race->data.flags.all(RE::RACE_DATA::Flag::kNoKnockdowns))
-					{
-						SPDLOG_DEBUG("[GLOB] InitializeGlobalCoopData: {} cannot be knocked down.",
-							race->GetName());
-						race->data.flags.reset(RE::RACE_DATA::Flag::kNoKnockdowns);
-					}
-
-					if (race->data.flags.all(RE::RACE_DATA::Flag::kAllowRagdollCollision))
-					{
-						SPDLOG_DEBUG
-						(
-							"[GLOB] InitializeGlobalCoopData: {} allows ragdoll collision.",
-							race->GetName()
-						);
-					}
-
-					if (race->data.flags.all(RE::RACE_DATA::Flag::kAlwaysUseProxyController))
-					{
-						SPDLOG_DEBUG
-						(
-							"[GLOB] InitializeGlobalCoopData: {} uses proxy controller.",
-							race->GetName()
-						);
-					}
-				}
-			}
-			*/
 		}
 
 		// Get all hand equip slots by ID.
@@ -723,6 +678,10 @@ namespace ALYSLC
 		glob.paFuncsHolder = std::make_unique<PlayerActionFunctionsHolder>();
 		glob.paInfoHolder = std::make_unique<PlayerActionInfoHolder>();
 		glob.taskRunner	= std::make_unique<TaskRunner>();
+		// Interp data.
+		glob.crosshairTextFadeInterpData = std::make_unique<TwoWayInterpData>();
+		glob.crosshairTextFadeInterpData->SetInterpInterval(1.0f, true);
+		glob.crosshairTextFadeInterpData->SetInterpInterval(2.0f, false);
 
 		// Create inactive co-op players.
 		std::generate
@@ -4489,6 +4448,7 @@ namespace ALYSLC
 		}
 
 		// Get crosshair text to set.
+		float alpha = 100.0f;
 		if (!a_shouldReset)
 		{
 			// No co-op session active or P1 is invalid, so do not set.
@@ -4500,29 +4460,118 @@ namespace ALYSLC
 			}
 
 			// Can't concatenate to fixed string, so use a temp string. P1 is always first.
+			bool isEmpty = glob.coopPlayers[glob.player1CID]->tm->crosshairMessage->text == "";
 			std::string tempCrosshairText = 
 			(
 				std::string(glob.coopPlayers[glob.player1CID]->tm->crosshairMessage->text) + "\n"
 			);
 			// Concatenate the other active players' messages to P1's.
+			float longestLifetimeRemaining = -1.0f;
 			for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
 			{
 				const auto& p = glob.coopPlayers[i]; 
-				if (!p || !p->isActive || p->isPlayer1) 
+				if (!p || !p->isActive) 
 				{
 					continue;
 				}
-			
+				if (Settings::bCrosshairTextFade)
+				{
+					if (isEmpty && Hash(p->tm->crosshairMessage->text) != Hash(""))
+					{
+						isEmpty = false;
+					}
+
+					auto timeSinceSet = Util::GetElapsedSeconds(p->tm->crosshairMessage->setTP);
+					if (timeSinceSet == 0.0f || timeSinceSet > longestLifetimeRemaining)
+					{
+						float maxDisplayTime = 
+						(
+							p->tm->crosshairMessage->secsMaxDisplayTime == 0.0f ? 
+							Settings::fSecsBetweenDiffCrosshairMsgs : 
+							p->tm->crosshairMessage->secsMaxDisplayTime
+						);
+						if (timeSinceSet <= maxDisplayTime)
+						{
+							longestLifetimeRemaining = 
+							(
+								maxDisplayTime - timeSinceSet
+							);
+							if (timeSinceSet == 0.0f)
+							{
+								float interpInterval = longestLifetimeRemaining / 3.0f;
+								// Ensure that the activation message is fully faded in
+								// and allows the player enough time to react to 
+								// what is being targeted for activation.
+								if (p->tm->crosshairMessage->type ==
+									CrosshairMessageType::kActivationInfo)
+								{
+									interpInterval = min
+									(
+										interpInterval,
+										min
+										(
+											Settings::fSecsBetweenActivationChecks,
+											Settings::fSecsBeforeActivationCycling
+										) / 3.0f
+									);
+								}
+
+								glob.crosshairTextFadeInterpData->SetInterpInterval
+								(
+									interpInterval, false
+								);
+								glob.crosshairTextFadeInterpData->SetInterpInterval
+								(
+									interpInterval, true
+								);
+							}
+						}
+					}
+				}
+
+				// Already set P1's portion of the crosshair text message.
+				if (p->isPlayer1)
+				{
+					continue;
+				}
+
 				tempCrosshairText += std::string(p->tm->crosshairMessage->text) + "\n";
 			}
 
 			// Copy over to fixed string and send a copy to the task.
-			crosshairTextToSet = tempCrosshairText;
+			crosshairTextToSet = fmt::format
+			(
+				"<font size=\"{}\">{}</font>",
+				Settings::uCrosshairTextFontSize,
+				tempCrosshairText
+			);
+			if (Settings::bCrosshairTextFade)
+			{
+				if (isEmpty)
+				{
+					alpha == 0.0f;
+					glob.crosshairTextFadeInterpData->Reset(true, true);
+				}
+				else
+				{
+					bool fadeOut = 
+					(
+						longestLifetimeRemaining == -1.0f || 
+						longestLifetimeRemaining <= 
+						glob.crosshairTextFadeInterpData->secsInterpToMinInterval
+					);
+					alpha =
+					(
+						Settings::fCrosshairTextMaxAlpha *
+						glob.crosshairTextFadeInterpData->UpdateInterpolatedValue(!fadeOut)
+					);
+				}
+			}
 		}
 
 		SKSE::GetTaskInterface()->AddUITask
 		(
-			[&glob, crosshairTextToSet, a_shouldReset]() 
+			[&glob, crosshairTextToSet, alpha, a_shouldReset]() 
 			{
 				auto ui = RE::UI::GetSingleton(); 
 				if (!ui)
@@ -4582,14 +4631,159 @@ namespace ALYSLC
 					return;
 				}
 
-				// Ensure text is visible and has full alpha.
+				// Save the original X, Y offsets the first time this function is called.
+				if (!glob.originalCrosshairTextOffsets.has_value())
+				{
+					RE::GFxValue::DisplayInfo info{ };
+					bool succ = rolloverText.GetDisplayInfo(std::addressof(info));
+					if (succ)
+					{
+						SPDLOG_DEBUG("[GLOB] SetCrosshairText: Set original offsets to {}, {}.",
+							info.GetX(), info.GetY());
+						glob.originalCrosshairTextOffsets = std::pair<float, float>
+						(
+							info.GetX(), info.GetY()
+						);
+					}
+				}
+
+				if (rolloverText.IsDisplayObject())
+				{
+					if (a_shouldReset)
+					{
+						if (glob.originalCrosshairTextOffsets.has_value())
+						{
+							RE::GFxValue::DisplayInfo loc{ };
+							loc.SetPosition
+							(
+								glob.originalCrosshairTextOffsets.value().first,
+								glob.originalCrosshairTextOffsets.value().second
+							);
+							rolloverText.SetDisplayInfo(loc);
+						}
+					}
+					else
+					{
+						// Credits to mwilsnd for the additional crosshair offset:
+						// https://github.com/mwilsnd/SkyrimSE-SmoothCam/blob/master/SmoothCam/source/crosshair.cpp#L444
+						RE::GFxValue crosshairOffset{ };
+						view->GetVariable
+						(
+							std::addressof(crosshairOffset), 
+							"HUDMovieBaseInstance.CrosshairInstance._x"
+						);
+						double xOff = crosshairOffset.GetNumber();
+						view->GetVariable
+						(
+							std::addressof(crosshairOffset), 
+							"HUDMovieBaseInstance.CrosshairInstance._y"
+						);
+						double yOff = crosshairOffset.GetNumber();
+
+						const auto rect = view->GetVisibleFrameRect();
+						const double frameCenterX = static_cast<double>
+						(
+							0.5f * (rect.right + rect.left)
+						);
+						const double frameCenterY = static_cast<double>
+						(
+							0.5 * (rect.bottom + rect.top)
+						);
+						const double frameWidth = static_cast<double>
+						(
+							rect.right - rect.left
+						);
+						const double frameHeight = static_cast<double>
+						(
+							rect.bottom - rect.top
+						);
+						RE::GFxValue textFieldHeight{ };
+						RE::GFxValue textFieldWidth{ };
+						RE::GFxValue textHeight{ };
+						RE::GFxValue textWidth{ };
+						rolloverText.GetMember("_width", std::addressof(textFieldWidth));
+						rolloverText.GetMember("_height", std::addressof(textFieldHeight));
+						rolloverText.GetMember("textWidth", std::addressof(textWidth));
+						rolloverText.GetMember("textHeight", std::addressof(textHeight));
+						// Move left from the center, add the crosshair's offset,
+						// and then offset left by half the difference 
+						// between the text field's width (larger) and the text's width.
+						double topLeftOffsetX = 
+						(
+							(xOff - frameCenterX) - 
+							(0.5 * (textFieldWidth.GetNumber() - textWidth.GetNumber()))
+						);
+						// Move up from the center, add the crosshair's offset,
+						// and then offset up by half the difference 
+						// between the text field's height (larger) and the text's height.
+						double topLeftOffsetY = 
+						(
+							(yOff - frameCenterY) - 
+							(0.5 * (textFieldHeight.GetNumber() - textHeight.GetNumber()))
+						);
+						// Starting from the top left, move one frame width to the right,
+						// then offset back to the left by the width of the text.
+						double bottomRightOffsetX = 
+						(
+							topLeftOffsetX +
+							frameWidth - 
+							textWidth.GetNumber()
+						);
+						// Starting from the top left, move one frame height down,
+						// then offset back up by the height of the text.
+						double bottomRightOffsetY = 
+						(
+							topLeftOffsetY + 
+							frameHeight - 
+							textHeight.GetNumber()
+						);
+						topLeftOffsetX += Settings::fCrosshairTextMargin;
+						topLeftOffsetY += Settings::fCrosshairTextMargin;
+						bottomRightOffsetX -= Settings::fCrosshairTextMargin;
+						bottomRightOffsetY -= Settings::fCrosshairTextMargin;
+						// Swap if the top offset coord(s) are larger 
+						// than the bottom offset coord(s).
+						if (topLeftOffsetX > bottomRightOffsetX)
+						{
+							auto temp = topLeftOffsetX;
+							topLeftOffsetX = bottomRightOffsetX;
+							bottomRightOffsetX = temp;
+						}
+
+						if (topLeftOffsetY > bottomRightOffsetY)
+						{
+							auto temp = topLeftOffsetY;
+							topLeftOffsetY = bottomRightOffsetY;
+							bottomRightOffsetY = temp;
+						}
+
+						// Place between the top left and bottom right bounding points.
+						double x = 
+						(
+							topLeftOffsetX + 
+							Settings::fCrosshairTextAnchorPointWidthRatio *
+							(bottomRightOffsetX - topLeftOffsetX)
+						);
+						double y = 
+						(
+							topLeftOffsetY + 
+							Settings::fCrosshairTextAnchorPointHeightRatio *
+							(bottomRightOffsetY - topLeftOffsetY)
+						);
+						RE::GFxValue::DisplayInfo loc{ };
+						loc.SetPosition(x, y);
+						rolloverText.SetDisplayInfo(loc);
+					}
+				}
+				
+				// Set alpha.
 				if (rolloverText.HasMember("_alpha"))
 				{
-					RE::GFxValue alpha{ };
-					rolloverText.GetMember("_alpha", std::addressof(alpha));
-					if (alpha.GetNumber() != 100.0)
+					RE::GFxValue alphaValue{ };
+					rolloverText.GetMember("_alpha", std::addressof(alphaValue));
+					if (alphaValue.GetNumber() != alpha)
 					{
-						alpha.SetNumber(100.0);
+						alphaValue.SetNumber(alpha);
 						rolloverText.SetMember("_alpha", alpha);
 						view->SetVariable
 						(
@@ -4600,6 +4794,7 @@ namespace ALYSLC
 					}
 				}
 
+				// Ensure text is visible.
 				if (rolloverText.HasMember("_visible"))
 				{
 					RE::GFxValue visible{ };
@@ -5680,19 +5875,8 @@ namespace ALYSLC
 				p->RevertTransformation();
 			}
 
-			auto actorBase = p->coopActor->GetActorBase(); 
-			if (!actorBase)
-			{
-				continue;
-			}
-			
 			// Reset essential flags before killing actor.
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, false
-			);
-			p->coopActor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
-			glob.player1RefAlias->SetEssential(false);
+			Util::ChangeEssentialStatus(p->coopActor.get(), false);
 
 			// Kill calls fail on P1 at times, especially when the player dies in water,
 			// and the game will not reload.
@@ -5751,12 +5935,20 @@ namespace ALYSLC
 			}
 
 			// And through all that... P1 is usually still not dead.
-			SPDLOG_DEBUG("[GLOB] YouDied: {}: is dead: {}, health: {}. Essential flag: {}, {}.",
+			SPDLOG_DEBUG
+			(
+				"[GLOB] YouDied: {}: is dead: {}, health: {}. Essential flag: {}, {}.",
 				p->coopActor->GetName(),
 				p->coopActor->IsDead(),
 				p->coopActor->GetActorValue(RE::ActorValue::kHealth),
-				actorBase->actorData.actorBaseFlags.all(RE::ACTOR_BASE_DATA::Flag::kEssential),
-				p->coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential));
+				p->coopActor->GetActorBase() ? 
+				p->coopActor->GetActorBase()->actorData.actorBaseFlags.all
+				(
+					RE::ACTOR_BASE_DATA::Flag::kEssential
+				) :
+				false,
+				p->coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential)
+			);
 		}
 
 		// Reset skill gain multiplier since there are no living players in the party now.
@@ -5819,6 +6011,7 @@ namespace ALYSLC
 					}
 
 					// Force a reload if P1 is still not dead and the Loading Menu has not opened.
+					bool succ = false;
 					if (secsWaited >= maxSecsToWait) 
 					{
 						SPDLOG_DEBUG
@@ -5827,17 +6020,21 @@ namespace ALYSLC
 							"Loading most recent save game after {} seconds.", 
 							secsWaited
 						);
-						saveLoadManager->LoadMostRecentSaveGame();
+						succ = saveLoadManager->LoadMostRecentSaveGame();
 					}
 
 					SPDLOG_DEBUG
 					(
 						"[GLOB EXT] ReloadTask: Now waiting for the game to reload the last save. "
-						"Co-op session active: {}, p1 dead: {}, loading menu open: {}, {}.",
+						"Co-op session active: {}, p1 dead: {}, loading a save: {}. "
+						"Success: {}. Full reset: {}, reset game: {}, reload content: {}.",
 						glob.coopSessionActive,
 						p1->IsDead(),
-						ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
-						glob.loadingASave
+						glob.loadingASave, 
+						succ,
+						RE::Main::GetSingleton()->fullReset, 
+						RE::Main::GetSingleton()->resetGame,
+						RE::Main::GetSingleton()->reloadContent
 					);
 				}
 			);
@@ -5880,11 +6077,10 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"[GLOB EXT] KillTask: Waiting for P1 to die. "
-						"Co-op session active: {}, loading a save: {}, loading menu open: {}. "
+						"Co-op session active: {}, loading a save: {}. "
 						"Full reset: {}, reset game: {}, reload content: {}.",
 						glob.coopSessionActive,
 						glob.loadingASave,
-						ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 						RE::Main::GetSingleton()->fullReset, 
 						RE::Main::GetSingleton()->resetGame,
 						RE::Main::GetSingleton()->reloadContent
@@ -9304,7 +9500,7 @@ namespace ALYSLC
 		bool refrBIsPlayer = false;
 		// Generic check for collisions between a player and any object.
 		// Clear fall timer and height just to be safe and ensure fall damage is not applied.
-		if (Settings::bNegateFallDamage)
+		if (Settings::bPreventFallDamage)
 		{
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(refrA);
 			if (pIndex != -1)
@@ -9469,7 +9665,7 @@ namespace ALYSLC
 				}
 			}
 
-			if (Settings::bNegateFallDamage)
+			if (Settings::bPreventFallDamage)
 			{
 				// No need to reset fall height and time if we already did earlier.
 				if (refrA && !refrAIsPlayer)

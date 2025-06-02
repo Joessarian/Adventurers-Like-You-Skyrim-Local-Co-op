@@ -5525,9 +5525,12 @@ namespace ALYSLC
 				coopActor->GetActorBase()
 			) &&
 			(
-				coopActor->GetActorBase()->actorData.actorBaseFlags.none
 				(
-					RE::ACTOR_BASE_DATA::Flag::kEssential
+					!p->isPlayer1 && 
+					coopActor->GetActorBase()->actorData.actorBaseFlags.none
+					(
+						RE::ACTOR_BASE_DATA::Flag::kEssential
+					)
 				) || 
 				coopActor->boolFlags.none(RE::Actor::BOOL_FLAGS::kEssential)
 			) &&
@@ -5536,11 +5539,7 @@ namespace ALYSLC
 		if (canSetAsEssential)
 		{
 			// Set both actor base and actor flags.
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				coopActor->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, true
-			);
-			coopActor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
+			Util::ChangeEssentialStatus(coopActor.get(), true);
 		}
 	}
 

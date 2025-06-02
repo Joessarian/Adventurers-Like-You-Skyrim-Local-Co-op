@@ -20,6 +20,8 @@ namespace ALYSLC
 		// the collective heading direction of all players.
 		static inline bool bAutoRotateCamPitch = true;
 		static inline bool bAutoRotateCamYaw = true;
+		// Adjust the camera zoom automatically to keep all players in frame as much as possible.
+		static inline bool bAutoAdjustCamZoom = true;
 		// Experimental. Do not use if you suffer from motion sickness, as the camera
 		// will jump through obstacles regularly to keep as many players in frame as possible.
 		// The camera may also catch on a surface and stutter or cause the screen to flicker.
@@ -94,9 +96,9 @@ namespace ALYSLC
 		static inline bool bAddAnimEventSkillPerks = false;
 		// Infinite carryweight for all players while in co-op.
 		static inline bool bInfiniteCarryweight = false;
-		// Negate fall damage when falling, ragdolling, flopping, 
+		// Prevent fall damage when falling, ragdolling, flopping, 
 		// or when a thrown/slapped/dropped actor collides with something.
-		static inline bool bNegateFallDamage = true;
+		static inline bool bPreventFallDamage = true;
 		// WIP: Speed up supported dodge animations. 
 		// Makes dodging more responsive but lowers dodge distance.
 		static inline bool bSpeedUpDodgeAnimations = false;
@@ -203,6 +205,9 @@ namespace ALYSLC
 		//---------------
 		//[Menus and UI]:
 		//---------------
+		// Fade the crosshair text in when there is a message to display
+		// and fade out when the last message's duration expires.
+		static inline bool bCrosshairTextFade = true;
 		// Lockpicking is a team effort when enabled.
 		// The lock-activating companion player rotates the pick, and P1 rotates the lock.
 		static inline bool bTwoPlayerLockpicking = false;
@@ -219,8 +224,24 @@ namespace ALYSLC
 		// Maximum amount of pixels the crosshair can move across per second.
 		// Used as the base when scaling player crosshair sensitivities.
 		static inline float fCrosshairMaxTraversablePixelsPerSec = 1920.0f;
+		// Proportion of the screen's height at which to anchor the crosshair text.
+		// For example, a value of 0.5 will anchor the text at the center of the screen 
+		// along its height.
+		static inline float fCrosshairTextAnchorPointHeightRatio = 0.5f;
+		// Proportion of the screen's width at which to anchor the crosshair text.
+		// For example, a value of 0.5 will anchor the text at the center of the screen 
+		// along its width.
+		static inline float fCrosshairTextAnchorPointWidthRatio = 0.5f;
+		// Margin (pixels) to place around the crosshair text to keep it from reaching 
+		// the edges of the screen.
+		static inline float fCrosshairTextMargin = 10.0f;
+		// Transparency of the crosshair text when fading in/out is disabled 
+		// or when fully faded in.
+		static inline float fCrosshairTextMaxAlpha = 100.0f;
 		// Player menu control overlay (tri-colored border) outline thickness (pixels).
 		static inline float fPlayerMenuControlOverlayOutlineThickness = 12.0f;
+		// Font size for the crosshair text.
+		static inline uint32_t uCrosshairTextFontSize = 12;
 
 		//-----------
 		//[Movement]:

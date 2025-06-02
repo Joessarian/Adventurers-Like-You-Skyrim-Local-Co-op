@@ -173,13 +173,7 @@ namespace ALYSLC
 			// All companion players are dead and P1 has just been downed.
 			// Unset essential flag to allow for player death.
 			auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				p1->GetActorBase(),
-				RE::ACTOR_BASE_DATA::Flag::kEssential,
-				false
-			);
-			p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+			Util::ChangeEssentialStatus(p1, false);
 			// Set to zero health, which somtimes triggers a death event.
 			p1->RestoreActorValue
 			(
@@ -2433,10 +2427,20 @@ namespace ALYSLC
 		{
 			return EventResult::kContinue;
 		}
+		
+		SPDLOG_DEBUG
+		(
+			"[Events] Cell {} (0x{:X}) fully loaded. Resetting fade on all objects in cell. "
+			"Is loading a save: {}.",
+			a_cellFullyLoadedEvent->cell->GetName(),
+			a_cellFullyLoadedEvent->cell->formID,
+			glob.loadingASave
+		);
 
 		// Reset fade on all the cell's objects, since our co-op cam
 		// may have left some fade values modified.
 		Util::ResetFadeOnAllObjectsInCell(a_cellFullyLoadedEvent->cell);
+
 		return EventResult::kContinue;
 	}
 

@@ -8850,56 +8850,10 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (a_p->controllerID == glob.cam->focalPlayerCID)
+				if (glob.cam->focalPlayerCID != -1)
 				{
-					if (glob.cam->camState == CamState::kLockOn)
-					{
-						// Send a request to clear the cam lock-on target
-						// and reset the cam state to auto-trail.
-						glob.cam->lockOnActorReq = RE::ActorHandle();
-						glob.cam->camState = CamState::kAutoTrail;
-						// Inform the player of switch back to auto-trail mode.
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kCamera,
-							fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
-
-					// Clear focal player and current lock-on target if not targeting anything.
-					glob.cam->focalPlayerCID = -1;
-					// Send a request to clear the cam lock-on target
-					// and reset the cam state to auto-trail.
-					glob.cam->lockOnActorReq = RE::ActorHandle();
-					glob.cam->camState = CamState::kAutoTrail;
-					// Inform the player of switch back to auto-trail mode.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kCamera,
-						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else
-				{
-					// Clear focal player and current lock-on target if not targeting anything.
-					glob.cam->focalPlayerCID = -1;
-					// Send a request to clear the cam lock-on target
-					// and reset the cam state to auto-trail.
-					glob.cam->lockOnActorReq = RE::ActorHandle();
-					glob.cam->camState = CamState::kAutoTrail;
-					// Inform the player of switch back to auto-trail mode.
+					// Inform the player of the removal of camera focus
+					// and the switch back to auto-trail mode.
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
@@ -8916,6 +8870,28 @@ namespace ALYSLC
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 				}
+				else
+				{
+					// Inform the player of switch back to auto-trail mode.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				// Clear focal player and current lock-on target if not targeting anything.
+				glob.cam->focalPlayerCID = -1;
+				// Send a request to clear the cam lock-on target
+				// and reset the cam state to auto-trail.
+				glob.cam->lockOnActorReq = RE::ActorHandle();
+				glob.cam->camState = CamState::kAutoTrail;
 			}
 		}
 

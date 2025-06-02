@@ -406,6 +406,48 @@ namespace ALYSLC
 			);	
 		}
 
+		void ChangeEssentialStatus(RE::Actor* a_actor, bool a_shouldSet, bool a_adjustBleedout)
+		{
+			// Set or unset the essential flags for the given actor.
+			// Can also adjust bleedout override.
+
+			if (!a_actor)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (actorBase)
+			{
+				NativeFunctions::SetActorBaseDataFlag
+				(
+					actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, a_shouldSet
+				);
+				if (a_adjustBleedout)
+				{
+					NativeFunctions::SetActorBaseDataFlag
+					(
+						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, a_shouldSet
+					);
+					actorBase->actorData.bleedoutOverride = a_shouldSet ? -INT16_MAX : 0.0f;
+				}
+			}
+
+			if (a_shouldSet)
+			{
+				a_actor->boolFlags.set(RE::Actor::BOOL_FLAGS::kEssential);
+			}
+			else
+			{
+				a_actor->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+			}
+
+			if (auto p1 = RE::PlayerCharacter::GetSingleton(); a_actor == p1)
+			{
+				glob.player1RefAlias->SetEssential(a_shouldSet);
+			}
+		}
+
 		void ChangeFormFavoritesStatus
 		(
 			RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite
@@ -1253,7 +1295,7 @@ namespace ALYSLC
 			else
 			{
 				// Set rotation using the refr data angles as a fallback.
-				Util::SetRotationMatrixPYR
+				SetRotationMatrixPYR
 				(
 					rotMat,
 					a_refr->data.angle.x,
@@ -1353,7 +1395,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1366,7 +1408,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1379,7 +1421,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords			
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1392,7 +1434,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			// Bottom face.
@@ -1406,7 +1448,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1419,7 +1461,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1432,7 +1474,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1445,7 +1487,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			// Connecting the faces.
@@ -1459,7 +1501,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1472,7 +1514,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1485,7 +1527,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			start = 
@@ -1498,7 +1540,7 @@ namespace ALYSLC
 			);
 			setMinMaxCoords
 			(
-				{ Util::WorldToScreenPoint3(start, false), Util::WorldToScreenPoint3(end, false) }
+				{ WorldToScreenPoint3(start, false), WorldToScreenPoint3(end, false) }
 			);
 
 			// Return the diff clamped to [1, screen dimension] pixels.
@@ -2065,7 +2107,7 @@ namespace ALYSLC
 			}
 			
 			pos = a_refr->data.location;
-			if (auto refr3DPtr = Util::GetRefr3D(a_refr); refr3DPtr && refr3DPtr.get())
+			if (auto refr3DPtr = GetRefr3D(a_refr); refr3DPtr && refr3DPtr.get())
 			{
 				pos = refr3DPtr->world.translate;
 				if (pos.Length() == 0.0f)
@@ -2073,7 +2115,7 @@ namespace ALYSLC
 					pos = refr3DPtr->worldBound.center;
 					if (pos.Length() == 0.0f)
 					{
-						auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get()); 
+						auto hkpRigidBodyPtr = GethkpRigidBody(refr3DPtr.get()); 
 						if (hkpRigidBodyPtr && hkpRigidBodyPtr.get())
 						{
 							pos = ToNiPoint3
@@ -2631,7 +2673,8 @@ namespace ALYSLC
 					SPDLOG_DEBUG("[Util] HasLOS: From camera collision pos.");
 				}
 				
-				auto camCollisionNodePos = 
+				// First from the camera's node position.
+				/*auto camCollisionNodePos = 
 				(
 					glob.cam->IsRunning() ? 
 					glob.cam->camCollisionTargetPos : 
@@ -2640,6 +2683,35 @@ namespace ALYSLC
 				hasLOS = HasRaycastLOSFromPos
 				(
 					camCollisionNodePos, 
+					a_targetRefr, 
+					excluded3DObjects, 
+					a_checkCrosshairPos, 
+					a_crosshairWorldPos,
+					a_showDebugInfo
+				);
+				*/
+
+				// First, from the camera's node position or the collision point
+				// from the observer's LOS start position to the current camera target position.
+				RE::NiPoint3 losCamTargetPos = playerCam->cameraRoot->world.translate;
+				auto result = Raycast::hkpCastRay
+				(
+					ToVec4(observerLOSStartPos),
+					ToVec4(playerCam->cameraRoot->world.translate),
+					true
+				);
+				if (result.hit)
+				{
+					losCamTargetPos = ToNiPoint3
+					(
+						result.hitPos +
+						result.rayNormal *
+						min(result.rayLength, glob.cam->camTargetPosHullSize)
+					);
+				}
+				hasLOS = HasRaycastLOSFromPos
+				(
+					losCamTargetPos, 
 					a_targetRefr, 
 					excluded3DObjects, 
 					a_checkCrosshairPos, 
@@ -4879,7 +4951,7 @@ namespace ALYSLC
 					}
 
 					auto object3DPtr = GetRefr3D(refr.get()); 
-					if (!object3DPtr || !object3DPtr.get())
+					if (!object3DPtr || !object3DPtr.get() || object3DPtr->GetRefCount() <= 0)
 					{
 						continue;
 					}

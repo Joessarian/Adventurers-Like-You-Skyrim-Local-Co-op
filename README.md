@@ -7,9 +7,14 @@
 
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
+
+> What's better than experiencing the boundless magic of Skyrim?  
+> ***Experiencing Skyrim with friends and family — with adventurers like you!***
+
 ## [Features]
 - ***Local co-op with controllers*** for 2-4 players.
 - ***Fully adjustable co-op camera*** that is controllable by any player, with toggleable camera collisions, object fade, and additional lock on and free cam modes (no split screen).
@@ -129,8 +134,17 @@ Build via Visual Studio 2022:
       - Click `Apply` and then `Ok`.
 	  - This command will delete the .pdb and force the linker to regenerate it every time the project is built.
 
+Editing Papyrus scripts:
+- If you're using Visual Studio Code, check out [Joel Day's 'Papyrus for Visual Studio Code' extension](https://marketplace.visualstudio.com/items?itemName=joelday.papyrus-lang-vscode) to set up a build environment for editing Papyrus scripts.
+- If you wish to edit and build any of the Papyrus scripts packaged with this mod (`.psc` files in the mod's`/Data/Scripts/Source` folder), ensure you've already extracted all script source files from the following mods into your Skyrim install directory's `/Data/Scripts/Source` or `/Data/Source/Scripts`folder:
+	- [SKSE](https://skse.silverlock.org/)
+	- [Papyrus Extender](https://www.nexusmods.com/skyrimspecialedition/mods/22854)
+	- [Papyrus Util SE](https://www.nexusmods.com/skyrimspecialedition/mods/13048)
+	- [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561)
+- Functions from the Papyrus files provided by these mods are utilized in ALYSLC's Papyrus source code.
+
 ## [Coding Style]
-- The codebase uses a custom style that emphasizes code-blocking of complex boolean conditions, assignments, and long parameter/argument lists. At the moment, ClangFormat does not seem to offer the style customization options that would automate formatting the codebase in this way, so if possible, please keep the following style guidelines in mind:
+- The C++ codebase uses a custom style that emphasizes code-blocking of complex boolean conditions, assignments, and long parameter/argument lists. At the moment, ClangFormat does not seem to offer the style customization options that would automate formatting the codebase in this way, so if possible, please keep the following style guidelines in mind:
 	- All function parameters or arguments should have the ```a_``` prefix.
 	- Commonly used members can have abbreviated names:
 		- Examples:
@@ -197,6 +211,9 @@ bool something =
 - As of this time, ***removing the mod mid-playthrough is not supported*** and will lead to freezes when loading saves.
 - To summon other players, after loading a save, first ***ensure player 1 is not in combat***. Then hold the `Back` button and press the `Start` button on ***player 1's*** controller. This will establish which player is recognized as player 1 by the mod and open the Summoning Menu.
 - A tri-colored border overlay will appear around any menu opened during co-op. This ***player menu control (PMC) border's colors identify which player is in control of menus*** and correspond to the player's chosen main UI overlay color, crosshair inner outline, and crosshair outer outline colors.
+- ***Save frequently*** while playing and ***disable any sources of autosaving or only load manual saves*** to minimize issues where a companion player's data might've been imported onto player 1 and saved.
+- ***Stick together*** when possible to ensure all players are on-screen and easy to see. There are also some options to improve player visibility, such as player indicators, camera object fade options, and player-focal camera positioning when players are far apart. And finally, if seeing "the void" outside of the traversable map does not bother you, disabling camera collisions altogether provides the smoothest experience.
+- ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please report the issue and include what debug options you've used and/or a crash log if you've also installed a crash logger.
 - Have a peek at the mod's ***MCM*** once it fully loads to ***learn about and customize the mod's extensive settings***.  Settings include:
   - Camera options
   - Cheats
@@ -207,10 +224,8 @@ bool something =
   - Movement speed/rotation options for all players
   - Progression options
   - Unique controls customization for each player
-- ***Save frequently*** while playing and ***disable any sources of autosaving or only load manual saves*** to minimize issues where a companion player's data might've been imported onto player 1 and saved.
-- ***Stick together*** when possible to ensure all players are on-screen and easy to see. There are also some options to improve player visibility, such as player indicators, camera object fade options, and player-focal camera positioning when players are far apart. And finally, if seeing "the void" outside of the traversable map does not bother you, disabling camera collisions altogether provides the smoothest experience.
-- ***Bugs are inevitable, and in some cases, correctable***. Before reporting an issue, please use the ***debug binds*** or ***Debug Menu options*** to troubleshoot issues as they arise. If the bug recurs frequently even after using said options, please report the issue and include what debug options you've used and/or a crash log if you've also installed a crash logger.
-
+### Binds
+![](https://i.imgur.com/f6itQHk.png)
 ### Performance
 - Expect a ***loss of, on average, at least 7-15% of your base framerate with some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
 - ***Turning off camera collisions, obstruction fading, and not removing occlusion*** produces the best performance when using the co-op camera. ***See the MCM for other performance-impacting options.***
@@ -264,7 +279,11 @@ bool something =
 - If you are playing Enderal, ***activate*** `ALYSLC Enderal.esp` and ***delete or deactivate*** `ALYSLC.esp` in your mod manager.
 - ***Run LOOT or modify your plugin load order manually***. Ensure ALYSLC's .esp files are placed near the bottom of the load order.
 - ***Run Nemesis or Pandora***. Make sure the `Precision` checkbox is ticked at the minimum before running either engine.
-
+#### Example Mod Lists (AE/SE) In MO2
+##### Anniversary Edition (1.6.1170)
+![](https://i.imgur.com/djItudx.png)
+##### Special Edition (1.5.97)
+![](https://i.imgur.com/HlqmK8f.png)
 ### Known Issues and Tips and Tricks
 Certain systems were built to work around player 1 exclusivity or around restrictions that the game places on NPCs. Using the ***debug binds (see the mod's MCM for details)*** and additional options in the ***Debug Menu*** (opened by holding the `Start` button and then pressing the `Back` button by default) is highly recommended for fixing issues that arise during gameplay.
 
@@ -359,10 +378,9 @@ Degrees of incompatibility:
    - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
 ## [Developer's Note]
-I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've probably clocked in over 10k hours and ***have decided to take a break from active development, primarily due to health issues***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are clearly a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
+I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've clocked in over 10k hours and ***have decided to take a break from active development, primarily due to health issues***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are definitely a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
 
-And with that being said, I hope you enjoy the mod because what's better than experiencing the boundless magic of modded Skyrim?  
-***Experiencing Skyrim with friends and family — with adventurers like you!***
+And with that being said, I really hope you enjoy the mod and thanks for reading!
 
 ## [Credits]
 See the mod's source for more detailed credits.
@@ -438,7 +456,7 @@ See the mod's source for more detailed credits.
 - `PJM Homebrew Fonts`
   - For the [font](https://www.fontspace.com/balgruf-font-f59539) (SIL Open Font License (OFL)) used in the banner image. 
 - `SanneARBY`
-  - For the extracted [Skyrim UI elements](https://www.nexusmods.com/skyrimspecialedition/mods/82169) used on ALYSLC's modpage.
+  - For the extracted [Skyrim UI elements](https://www.nexusmods.com/skyrimspecialedition/mods/82169) used on ALYSLC's GitHub and Nexus pages.
   - [Check out SanneARBY's Skyrim mods](https://next.nexusmods.com/profile/SanneARBY?gameId=1704)
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
    - Thank you for helping a programming and C++ greenhorn get their bearings and for answering a ton of questions that I had during the development process.

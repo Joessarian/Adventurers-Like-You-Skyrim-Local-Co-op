@@ -66,11 +66,174 @@ namespace ALYSLC
 
 		void MainHook::Update(RE::Main* a_this, float a_a2)
 		{
+#ifdef ALYSLC_PROFILING
+			float modUpdateMS = 0.0f;
+			float modUpdateMS2 = 0.0f;
+			float funcMS = 0.0f;
+			SteadyClock::time_point tp = SteadyClock::now();
 			// Run the game's update first.
 			_Update(a_this, a_a2);
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			SPDLOG_DEBUG("[Main Hooks] Update: Game update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+			SteadyClock::time_point tpStart = SteadyClock::now();
 
 			// Skip if global data isn't set yet.
 			if (!glob.globalDataInit)
+			{
+				return;
+			}
+
+			// Handle any changes to Enderal progression.
+			// Eg. P1 level ups, or changes to crafting, memory, or learning points.
+			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			{
+				GlobalCoopData::HandleEnderalProgressionChanges();
+			}
+
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			modUpdateMS2 += funcMS;
+			SPDLOG_DEBUG("[Main Hooks] Update: Enderal progression update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+
+			// Update all connected controllers' button and analog states, in or out of co-op,
+			// since we still need controller state data when in the co-op summoning menu.
+			glob.cdh->UpdatePlayerControllerStates();
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			modUpdateMS2 += funcMS;
+			SPDLOG_DEBUG("[Main Hooks] Update: Controller state update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+
+			// Cam/menu input managers run their update funcs next.
+			glob.cam->Update();
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			modUpdateMS2 += funcMS;
+			SPDLOG_DEBUG("[Main Hooks] Update: Camera update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+
+			glob.mim->Update();
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			modUpdateMS2 += funcMS;
+			SPDLOG_DEBUG("[Main Hooks] Update: MIM update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+
+			// Draw the menu control overlay if a player is controlling menus 
+			// while in co-op or the co-op summoning menu.
+			glob.mim->DrawPlayerMenuControlOverlay();
+			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+			modUpdateMS2 += funcMS;
+			SPDLOG_DEBUG("[Main Hooks] Update: PMC update took {}ms.", funcMS);
+			tp = SteadyClock::now();
+
+			if (glob.allPlayersInit)
+			{
+				// Update combat state first.
+				GlobalCoopData::UpdatePlayerCoopCombatState();
+				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+				modUpdateMS2 += funcMS;
+				SPDLOG_DEBUG("[Main Hooks] Update: Combat state update took {}ms.", funcMS);
+				tp = SteadyClock::now();
+
+				for (const auto& p : glob.coopPlayers)
+				{
+					if (p->isActive)
+					{
+						// NOTE: 
+						// Update funcs must be run in this order.
+						p->Update();
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s P Update took {}ms.", 
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+
+						p->em->Update();
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s EM Update took {}ms.",
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+
+						p->pam->Update();
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s PAM Update took {}ms.",
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+
+						p->mm->Update();
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s M Update took {}ms.", 
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+
+						p->tm->Update();
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s TM Update took {}ms.", 
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+
+						if (p->isDowned)
+						{
+							p->UpdateWhenDowned();
+						}
+
+						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+						modUpdateMS2 += funcMS;
+						SPDLOG_DEBUG("[Main Hooks] Update: {}'s downed update took {}ms.", 
+							p->coopActor->GetName(), funcMS);
+						tp = SteadyClock::now();
+					}
+				}
+			}
+			
+			// Update crosshair text and check for arm collisions
+			// after the players' managers have run their updates.
+			tp = SteadyClock::now();
+			if (glob.coopSessionActive)
+			{
+				GlobalCoopData::HandlePlayerArmCollisions();
+				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+				modUpdateMS2 += funcMS;
+				SPDLOG_DEBUG("[Main Hooks] Update: Player arm collisions took {}ms.", funcMS);
+				tp = SteadyClock::now();
+
+				// Clear if a fullscreen menu is open.
+				auto ui = RE::UI::GetSingleton();
+				GlobalCoopData::SetCrosshairText
+				(
+					ui->GameIsPaused() || 
+					ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
+					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 
+				);
+				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
+				modUpdateMS2 += funcMS;
+				SPDLOG_DEBUG("[Main Hooks] Update: Crosshair text update took {}ms.", funcMS);
+			}
+
+			modUpdateMS = Util::GetElapsedSeconds(tpStart, true) * 1000.0f;
+			SPDLOG_DEBUG
+			(
+				"[Main Hooks] Update: Game global time delta: {}ms, "
+				"ALYSLC update time delta: {}ms, {}ms.", 
+				*g_deltaTimeRealTime * 1000.0f,
+				modUpdateMS,
+				modUpdateMS2
+			);
+#else 
+			// Run the game's update first.
+			_Update(a_this, a_a2);
+			// Skip if global data isn't set yet.
+			if (!glob.globalDataInit)
+			{
+				return;
+			}
+
+			if (glob.loadingASave)
 			{
 				return;
 			}
@@ -91,7 +254,6 @@ namespace ALYSLC
 			// Draw the menu control overlay if a player is controlling menus 
 			// while in co-op or the co-op summoning menu.
 			glob.mim->DrawPlayerMenuControlOverlay();
-
 			if (glob.allPlayersInit)
 			{
 				// Update combat state first.
@@ -100,7 +262,6 @@ namespace ALYSLC
 				{
 					if (p->isActive)
 					{
-						SteadyClock::time_point pre = SteadyClock::now();
 						// NOTE: 
 						// Update funcs must be run in this order.
 						p->Update();
@@ -108,7 +269,6 @@ namespace ALYSLC
 						p->pam->Update();
 						p->mm->Update();
 						p->tm->Update();
-
 						if (p->isDowned)
 						{
 							p->UpdateWhenDowned();
@@ -116,10 +276,10 @@ namespace ALYSLC
 					}
 				}
 			}
-
+			
 			// Update crosshair text and check for arm collisions
 			// after the players' managers have run their updates.
-			if (glob.coopSessionActive && !glob.loadingASave) 
+			if (glob.coopSessionActive)
 			{
 				GlobalCoopData::HandlePlayerArmCollisions();
 				// Clear if a fullscreen menu is open.
@@ -133,6 +293,7 @@ namespace ALYSLC
 					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 
 				);
 			}
+#endif
 		}
 
 //=================
@@ -4640,11 +4801,7 @@ namespace ALYSLC
 				if (glob.livingPlayers == 0 && hash == "GetUpBegin"_h)
 				{
 					// First, make sure the essential flag is unset.
-					Util::NativeFunctions::SetActorBaseDataFlag
-					(
-						p1->GetActorBase(), RE::ACTOR_BASE_DATA::Flag::kEssential, false
-					);
-					p1->boolFlags.reset(RE::Actor::BOOL_FLAGS::kEssential);
+					Util::ChangeEssentialStatus(p1, false);
 					p1->KillImpl(p1, FLT_MAX, false, false);
 					p1->KillImmediate();
 					p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
@@ -9080,7 +9237,7 @@ namespace ALYSLC
 
 			return _ProcessMessage(a_this, a_message);
 		}
-
+		
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
 		(
 			RE::StatsMenu* a_this, RE::UIMessage& a_message
