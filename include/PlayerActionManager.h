@@ -73,9 +73,9 @@ namespace ALYSLC
 		// Get actor value cost for this action once it's performed.
 		inline float GetCost(const AVCostAction& a_action) 
 		{
-			if (avCostsMap.contains(a_action))
+			if (auto iter = avCostsMap.find(a_action); iter != avCostsMap.end())
 			{
-				return avCostsMap.at(a_action);
+				return iter->second;
 			}
 
 			return 0.0f;

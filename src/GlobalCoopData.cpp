@@ -4549,7 +4549,7 @@ namespace ALYSLC
 			{
 				if (isEmpty)
 				{
-					alpha == 0.0f;
+					alpha = 0.0f;
 					glob.crosshairTextFadeInterpData->Reset(true, true);
 				}
 				else

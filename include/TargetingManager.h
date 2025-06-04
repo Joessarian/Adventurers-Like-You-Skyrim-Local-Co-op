@@ -1885,9 +1885,10 @@ namespace ALYSLC
 		std::string crosshairTextEntry;
 		// Selected target refr's motion info.
 		std::unique_ptr<RefrTargetMotionState> targetMotionState;
-		// Interpolation data for fading drawn UI elements.
+		// Interpolation data for fading drawn UI elements and for crosshair size adjustments.
 		std::unique_ptr<TwoWayInterpData> aimPitchIndicatorFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairFadeInterpData;
+		std::unique_ptr<TwoWayInterpData> crosshairSizeRatioInterpData;
 		std::unique_ptr<TwoWayInterpData> playerIndicatorFadeInterpData;
 		// Current crosshair message entry to set.
 		std::unique_ptr<CrosshairMessage> crosshairMessage;

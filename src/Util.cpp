@@ -36,8 +36,8 @@ namespace ALYSLC
 			valueAtDirectionChange = value;
 			directionChangeFlag = a_directionChangeFlag;
 		}
-		else if ((value == 0.0f && valueAtDirectionChange != 0.0f) || 
-				 (value == 1.0f && valueAtDirectionChange != 1.0f))
+		else if ((value == minEndpoint && valueAtDirectionChange != minEndpoint) || 
+				 (value == maxEndpoint && valueAtDirectionChange != maxEndpoint))
 		{
 			// Reached an interp endpoint, so save the value
 			// for the next direction change.
@@ -45,8 +45,8 @@ namespace ALYSLC
 		}
 
 		float secsSinceChange = Util::GetElapsedSeconds(directionChangeTP);
-		interpToMax = directionChangeFlag && value != 1.0f;
-		interpToMin = !directionChangeFlag && value != 0.0f;
+		interpToMax = directionChangeFlag && value != maxEndpoint;
+		interpToMin = !directionChangeFlag && value != minEndpoint;
 		// Continue interpolating to the currently targeted endpoint.
 		if (interpToMin || interpToMax)
 		{
@@ -56,31 +56,45 @@ namespace ALYSLC
 			{
 				float secsInterpInterval = std::clamp
 				(
-					secsInterpToMaxInterval * (1.0f - valueAtDirectionChange),
+					secsInterpToMaxInterval * (maxEndpoint - valueAtDirectionChange),
 					0.0f, 
 					secsInterpToMaxInterval
 				);
-				value = Util::InterpolateSmootherStep
-				(
-					valueAtDirectionChange, 
-					1.0f, 
-					std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
-				);
+				if (secsInterpInterval == 0.0f)
+				{
+					value = maxEndpoint;
+				}
+				else
+				{
+					value = Util::InterpolateSmootherStep
+					(
+						valueAtDirectionChange, 
+						maxEndpoint, 
+						std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
+					);
+				}
 			}
 			else if (interpToMin)
 			{
 				float secsInterpInterval = std::clamp
 				(
-					secsInterpToMinInterval * valueAtDirectionChange,
+					secsInterpToMinInterval * (valueAtDirectionChange - minEndpoint),
 					0.0f,
 					secsInterpToMinInterval
 				);
-				value = Util::InterpolateSmootherStep
-				(
-					valueAtDirectionChange,
-					0.0f,
-					std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
-				);
+				if (secsInterpInterval == 0.0f)
+				{
+					value = minEndpoint;
+				}
+				else
+				{
+					value = Util::InterpolateSmootherStep
+					(
+						valueAtDirectionChange,
+						minEndpoint,
+						std::clamp(secsSinceChange / secsInterpInterval, 0.0f, 1.0f)
+					);
+				}
 			}
 		}
 
@@ -1208,6 +1222,207 @@ namespace ALYSLC
 			return skillsArr;
 		}
 
+		float GetBoundMaxOrMinEdgePixelDist(RE::TESObjectREFR* a_refr, bool&& a_max)
+		{
+			// Get the maximum/minimum bound edge length in pixels for the given refr.
+			// Retrieves the base edge length via the refr's bounds, 
+			// orients the bounds at the refr's center position in worldspace
+			// and so that the axis of interest is perpendicular to the camera's facing direction,
+			// and then calculates the pixel distance from one end of the edge to the other.
+			// Then returns the max/min of the three distances.
+			
+			if (!a_refr)
+			{
+				return 1.0f;
+			}
+			
+			RE::NiPoint3 boundMax{ };
+			RE::NiPoint3 boundMin{ };
+			RE::NiPoint3 boundCenter{ };
+			auto asActor = a_refr->As<RE::Actor>();
+			boundMax = a_refr->GetBoundMax();
+			boundMin = a_refr->GetBoundMin();
+			boundCenter = a_refr->data.location;
+			auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr);
+			bool isDead = a_refr->IsDead();
+			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
+			bool isRagdolled = asActor && asActor->IsInRagdollState();
+			bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
+			if (isUprightActor)
+			{
+				// Offset halfway up the actor if upright.
+				boundCenter = 
+				(
+					asActor->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+				);
+			}
+			else if (refrHkpRigidBodyPtr &&  refrHkpRigidBodyPtr.get())
+			{
+				if ((asActor) && (isDead || isKnocked || isRagdolled))
+				{
+					// Centered at the rigid body's position when ragdolled.
+					// The 3D center position is still upright, so we can't use it.
+					boundCenter = ToNiPoint3
+					(
+						refrHkpRigidBodyPtr->motion.motionState.transform.translation *
+						HAVOK_TO_GAME
+					);
+				}
+				else
+				{
+					// 3D center pos otherwise.
+					boundCenter = Get3DCenterPos(a_refr);
+				}
+
+				// Grab bounds from collidable shape and the refr bounds are unspecified.
+				if ((refrHkpRigidBodyPtr->collidable.GetShape() &&
+					 refrHkpRigidBodyPtr->collidable.GetShape()->type == RE::hkpShapeType::kBox) &&
+					(boundMax == RE::NiPoint3() || boundMin == RE::NiPoint3()))
+				{
+					auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
+					RE::hkTransform hkTrans{ };
+					hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
+					hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
+					hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
+					RE::hkAabb aabb{ };
+					shape->GetAabbImpl(hkTrans, 0.0f, aabb);
+					boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
+					boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
+				}
+			}
+			
+			auto hit3DPtr = GetRefr3D(a_refr); 
+			if (hit3DPtr && hit3DPtr.get())
+			{
+				if (boundMin == boundMax && boundMax.Length() == 0.0f)
+				{
+					// Fall back to the radius for the bounds.
+					boundMax = 
+					(
+						RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
+					);
+					boundMin = -boundMax;
+				}
+			}
+
+			// Next fallback: halfway up the refr as the center position.
+			if (boundCenter.Length() == 0.0f)
+			{
+				boundCenter = 
+				(
+					a_refr->data.location + 
+					RE::NiPoint3(0.0f, 0.0f, 0.5f * a_refr->GetHeight())
+				);
+			}
+
+			// Last fallback: bounds determined by half the refr's height.
+			if (boundMin == boundMax && boundMax.Length() == 0.0f)
+			{
+				boundMax = 
+				(
+					RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * a_refr->GetHeight()
+				);
+				boundMin = -boundMax;
+			}
+		
+			// Offset from the bounding box's center to one of the corners 
+			// along the positive X and Y axes.
+			auto halfExtent = (boundMax - boundMin) / 2.0f;
+
+			enum
+			{
+				kX,
+				kY,
+				kZ
+			};
+			auto axis = kX;
+			// Max/min edge pixel distance.
+			float chosenDist = a_max ? -FLT_MAX : FLT_MAX;
+			// Current edge's pixel distance.
+			float edgeDist = 0.0f;
+			// Current half extents coordinate.
+			float halfCoord = 0.0f;
+			// Camera 'up' axis.
+			RE::NiPoint3 camUp = 
+			(
+				glob.cam->playerCam && glob.cam->playerCam->cameraRoot ? 
+				glob.cam->playerCam->cameraRoot->local.rotate * RE::NiPoint3(0.0f, 0.0f, 1.0f) :
+				Util::RotationToDirectionVect
+				(
+					-Util::NormalizeAngToPi(glob.cam->GetCurrentPitch() - PI / 2.0f),
+					Util::ConvertAngle(glob.cam->GetCurrentYaw())
+				)
+			);
+			// Camera 'right' axis.
+			RE::NiPoint3 camRight = 
+			(
+				glob.cam->playerCam && glob.cam->playerCam->cameraRoot ? 
+				glob.cam->playerCam->cameraRoot->local.rotate * RE::NiPoint3(1.0f, 0.0f, 0.0f) :
+				Util::RotationToDirectionVect
+				(
+					0.0f,
+					Util::ConvertAngle
+					(
+						Util::NormalizeAng0To2Pi(glob.cam->GetCurrentYaw() + PI / 2.0f)
+					)
+				)
+			);
+
+			// Edge along the X axis.
+			halfCoord = halfExtent.x;
+			edgeDist = std::clamp
+			(
+				WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+				(
+					WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
+				),
+				1.0f, 
+				DebugAPI::screenResX
+			);
+			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
+			{
+				chosenDist = edgeDist;
+				axis = kX;
+			}
+			
+			// Edge along the Y axis.
+			halfCoord = halfExtent.y;
+			edgeDist = std::clamp
+			(
+				WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+				(
+					WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
+				),
+				1.0f, 
+				DebugAPI::screenResX
+			);
+			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
+			{
+				chosenDist = edgeDist;
+				axis = kY;
+			}
+			
+			// Edge along the Z axis.
+			halfCoord = halfExtent.z;
+			edgeDist = std::clamp
+			(
+				WorldToScreenPoint3(boundCenter + camUp * halfCoord, false).GetDistance
+				(
+					WorldToScreenPoint3(boundCenter - camUp * halfCoord, false)
+				),
+				1.0f, 
+				DebugAPI::screenResY
+			);
+			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
+			{
+				chosenDist = edgeDist;
+				axis = kZ;
+			}
+			
+			return chosenDist;
+		}
+
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis)
 		{
 			// Return the vertical or horizontal axis's screenspace length for the given refr.
@@ -1327,7 +1542,7 @@ namespace ALYSLC
 			// Offset from the bounding box's center to one of the corners 
 			// along the positive X and Y axes.
 			auto halfExtent = (boundMax - boundMin) / 2.0f;
-			
+
 			//
 			// Compute the minimum and maximum X or Y screen coordinates from all the edges.
 			//
@@ -1457,7 +1672,9 @@ namespace ALYSLC
 			);
 			end = 
 			(
-				boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				boundCenter +
+				rotMat * 
+				RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
 			);
 			setMinMaxCoords
 			(
@@ -1466,7 +1683,9 @@ namespace ALYSLC
 
 			start = 
 			(
-				boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				boundCenter + 
+				rotMat * 
+				RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
 			);
 			end = 
 			(
@@ -1523,7 +1742,9 @@ namespace ALYSLC
 			);
 			end = 
 			(
-				boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				boundCenter + 
+				rotMat * 
+				RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
 			);
 			setMinMaxCoords
 			(

@@ -662,6 +662,8 @@ namespace ALYSLC
 			directionChangeFlag(false),
 			interpToMax(false),
 			interpToMin(true),
+			maxEndpoint(1.0f),
+			minEndpoint(0.0f),
 			secsInterpToMaxInterval(1.0f),
 			secsInterpToMinInterval(1.0f),
 			valueAtDirectionChange(0.0f),
@@ -682,7 +684,7 @@ namespace ALYSLC
 				if (a_instant)
 				{
 					value =
-					valueAtDirectionChange = 0.0f;
+					valueAtDirectionChange = minEndpoint;
 				}
 			}
 			else
@@ -693,11 +695,33 @@ namespace ALYSLC
 				if (a_instant)
 				{
 					value =
-					valueAtDirectionChange = 1.0f;
+					valueAtDirectionChange = maxEndpoint;
 				}
 			}
 
 			directionChangeTP = SteadyClock::now();
+		}
+
+
+		// Set the max or min endpoint to the given value.
+		inline void SetEndpoint(const float& a_value, bool a_maxEndpoint)
+		{
+			if (a_maxEndpoint)
+			{
+				maxEndpoint = a_value;
+			}
+			else
+			{
+				minEndpoint = a_value;
+			}
+
+			// Swap endpoints if the minimum endpoint is larger than the maximum endpoint.
+			if (minEndpoint > maxEndpoint)
+			{
+				float temp = maxEndpoint;
+				maxEndpoint = minEndpoint;
+				minEndpoint = temp;
+			}
 		}
 
 		// Set interval to interpolate over to the minimum or maximum endpoint.
@@ -727,9 +751,6 @@ namespace ALYSLC
 		// Members
 		//
 		
-		// Max endpoint: 1.0
-		// Min endpoint: 0.0
-		
 		// Time point indicating when the interpolation direction last changed.
 		SteadyClock::time_point directionChangeTP;
 		// Should continue interpolating to the maximum or minimum endpoints.
@@ -739,6 +760,9 @@ namespace ALYSLC
 		// True		->		max endpoint.
 		// False	->		min endpoint.
 		bool directionChangeFlag;
+		// Min/max value endpoints.
+		float maxEndpoint;
+		float minEndpoint;
 		// Max number of seconds to reach the maximum endpoint value
 		// starting from the minimum endpoint value.
 		float secsInterpToMaxInterval;
@@ -747,7 +771,7 @@ namespace ALYSLC
 		float secsInterpToMinInterval;
 		// Saved interpolated value when the interpolation direction changes.
 		float valueAtDirectionChange;
-		// Range: [0.0, 1.0]
+		// Range: [min endpoint, max endpoint]
 		float value;
 	};
 
@@ -2827,8 +2851,19 @@ namespace ALYSLC
 		// Get all skill levels for the given actor.
 		SkillList GetActorSkillLevels(RE::Actor* a_actor);
 
+		// Get the maximum/minimum bound edge length in pixels for the given refr.
+		// Retrieves the base edge length via the refr's bounds, 
+		// orients the bounds at the refr's center position in worldspace
+		// and so that the axis of interest is perpendicular to the camera's facing direction,
+		// and then calculates the pixel distance from one end of the edge to the other.
+		// Then returns the max/min of the three distances.
+		float GetBoundMaxOrMinEdgePixelDist(RE::TESObjectREFR* a_refr, bool&& a_max);
+
 		// Get a rough approximation of the refr's 3D bounds pixel height (vert axis) 
 		// or width based on the current camera orientation.
+		// If requesting the unrotated bound's pixel distance, 
+		// calculate the pixel distance as if the refr were orientated such that
+		// their 'up' and 'right' axes were aligned with the camera's.
 		float GetBoundPixelDist(RE::TESObjectREFR* a_refr, bool&& a_vertAxis);
 
 		// Return the refr 3D's havok collision layer.

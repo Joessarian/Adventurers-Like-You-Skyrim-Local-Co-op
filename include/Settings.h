@@ -619,6 +619,13 @@ namespace ALYSLC
 		{
 			true, true, true, true 
 		};
+		// Auto-adjust the size of the crosshair to fit the smallest dimension of selected objects.
+		// Provides better visual feedback when selecting an object and also maximizes visibility
+		// by obscuring less of the selected object.
+		static inline std::vector<bool> vbAutoScaleCrosshairSize = 
+		{
+			true, true, true, true 
+		};
 		// Fade inactive crosshair.
 		static inline std::vector<bool> vbFadeInactiveCrosshair = 
 		{
@@ -635,7 +642,7 @@ namespace ALYSLC
 		{
 			true, true, true, true 
 		};
-		// Draw aim pitch indicator when adjusting the player's torso rotation..
+		// Draw aim pitch indicator when adjusting the player's torso rotation.
 		static inline std::vector<bool> vbEnableAimPitchIndicator = 
 		{
 			true, true, true, true 

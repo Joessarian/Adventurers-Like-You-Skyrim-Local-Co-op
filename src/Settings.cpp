@@ -1522,6 +1522,14 @@ namespace ALYSLC
 			(
 				a_ini, 
 				sectionName.data(), 
+				"bAutoScaleCrosshairSize",
+				vbAutoScaleCrosshairSize,
+				pIndex
+			);
+			ReadBoolSettingToIndex
+			(
+				a_ini, 
+				sectionName.data(), 
 				"bFadeInactiveCrosshair", 
 				vbFadeInactiveCrosshair, 
 				pIndex

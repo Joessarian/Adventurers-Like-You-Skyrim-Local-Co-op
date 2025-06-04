@@ -180,6 +180,9 @@ namespace ALYSLC
 		crosshairFadeInterpData = std::make_unique<TwoWayInterpData>();
 		crosshairFadeInterpData->SetInterpInterval(0.5f, true);
 		crosshairFadeInterpData->SetInterpInterval(1.0f, false);
+		crosshairSizeRatioInterpData = std::make_unique<TwoWayInterpData>();
+		crosshairSizeRatioInterpData->SetInterpInterval(1.0f, true);
+		crosshairSizeRatioInterpData->SetInterpInterval(1.0f, false);
 		playerIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
 		playerIndicatorFadeInterpData->SetInterpInterval(1.0f, true);
 		playerIndicatorFadeInterpData->SetInterpInterval(1.0f, false);
@@ -589,15 +592,16 @@ namespace ALYSLC
 		else
 		{
 			// Draw a retro-style crosshair with four lines for prongs.
-			// Draw lines first.
-			DrawCrosshairLines();
-			// First, inner outline.
-			DrawCrosshairOutline(1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]);
-			// Second, outer outline if the crosshair raycast check selected a valid object.
+			// First, outer outline if the crosshair raycast check selected a valid object.
 			if (validCrosshairRefrHit)
 			{
 				DrawCrosshairOutline(2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]);
 			}
+
+			// Second, inner outline.
+			DrawCrosshairOutline(1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]);
+			// Draw prong lines last.
+			DrawCrosshairLines();
 		}
 	}
 
@@ -616,16 +620,30 @@ namespace ALYSLC
 			angToRotate = crosshairRotationData->current;
 			gapDelta = crosshairOscillationData->current;
 		}
-
-		const float& crosshairLength = Settings::vfCrosshairLength[playerID];
-		const float& crosshairGap = Settings::vfCrosshairGapRadius[playerID] + gapDelta;
+		
+		// Scale the lengt and base gap but not the gap delta to allow for 
+		// unmodified contraction/expansion.
+		const float crosshairLength = 
+		(
+			crosshairSizeRatioInterpData->value *  Settings::vfCrosshairLength[playerID]
+		);
+		const float crosshairGap = 
+		(
+			crosshairSizeRatioInterpData->value * Settings::vfCrosshairGapRadius[playerID] +
+			gapDelta
+		);
+		// Thickness is not auto-scaled.
 		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
 		// Draw crosshair lines.
 		// '+' shape when not facing a target, 'X' shape otherwise.
 		// Pairs of 2D line start and end points.
+
 		std::pair<glm::vec2, glm::vec2> crosshairUp = 
 		{
-			glm::vec2(crosshairScaleformPos.x, crosshairScaleformPos.y + crosshairGap),
+			glm::vec2
+			(
+				crosshairScaleformPos.x, crosshairScaleformPos.y + crosshairGap
+			),
 			glm::vec2
 			(
 				crosshairScaleformPos.x, crosshairScaleformPos.y + crosshairGap + crosshairLength
@@ -757,255 +775,97 @@ namespace ALYSLC
 		
 		// Must be a whole number to prevent overlap.
 		a_outlineIndex = floorf(a_outlineIndex);
-		float crosshairLength = Settings::vfCrosshairLength[playerID];
+		// Scale the length and base gap but not the gap delta to allow for 
+		// unmodified contraction/expansion.
+		float crosshairLength = 
+		(
+			crosshairSizeRatioInterpData->value * Settings::vfCrosshairLength[playerID]
+		);
+		// Thickness is not auto-scaled.
 		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
-		// Offset from crosshair body lines.
-		const float outlineThicknessOffset = crosshairThickness * a_outlineIndex;
-		// Longer than crosshair body lines and inner outlines.
-		crosshairLength += 2.0f * outlineThicknessOffset;
-		// Add gap delta and thickness offset.
+		// Longer than crosshair body lines. 
+		// Since the line thickness does not trace around the caps of the line,
+		// we have to extend the line a bit to achieve the same 'thickness' trace effect.
+		crosshairLength += crosshairThickness * a_outlineIndex;
+		// Apply scale mult to base gap, subtract half a thickness to properly trace around 
+		// the 'start' cap of the inner prong line, and then add the unscaled gap delta.
 		const float crosshairGap = 
 		(
-			Settings::vfCrosshairGapRadius[playerID] - outlineThicknessOffset + gapDelta
+			crosshairSizeRatioInterpData->value * 
+			Settings::vfCrosshairGapRadius[playerID] -
+			0.5f * crosshairThickness * a_outlineIndex + 
+			gapDelta
 		);
 
 		// Pairs of 2D line start and end coordinates.
-		// 
-		// Up outlines for each prong.
-		std::pair<glm::vec2, glm::vec2> up1 = 
+
+		// Up outline endpoints.
+		std::pair<glm::vec2, glm::vec2> up = 
 		{
 			glm::vec2
 			(
-				crosshairScaleformPos.x - outlineThicknessOffset, 
+				crosshairScaleformPos.x, 
 				crosshairScaleformPos.y + crosshairGap
 			),
 			glm::vec2
 			(
-				crosshairScaleformPos.x - outlineThicknessOffset,
+				crosshairScaleformPos.x,
 				crosshairScaleformPos.y + crosshairGap + crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> up2 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset, 
-				crosshairScaleformPos.y + crosshairGap
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset,
-				crosshairScaleformPos.y + crosshairGap + crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> up3 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset, 
-				crosshairScaleformPos.y + crosshairGap + crosshairLength
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - outlineThicknessOffset, 
-				crosshairScaleformPos.y + crosshairGap + crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> up4 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset, 
-				crosshairScaleformPos.y + crosshairGap
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - outlineThicknessOffset,
-				crosshairScaleformPos.y + crosshairGap
 			)
 		};
 
-		// Down outlines for each prong.
-		std::pair<glm::vec2, glm::vec2> down1 = 
+		// Down outline endpoints.
+		std::pair<glm::vec2, glm::vec2> down = 
 		{
 			glm::vec2
 			(
-				crosshairScaleformPos.x - outlineThicknessOffset,
+				crosshairScaleformPos.x,
 				crosshairScaleformPos.y - crosshairGap
 			),
 			glm::vec2
 			(
-				crosshairScaleformPos.x - outlineThicknessOffset, 
+				crosshairScaleformPos.x, 
 				crosshairScaleformPos.y - crosshairGap - crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> down2 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset,
-				crosshairScaleformPos.y - crosshairGap
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset,
-				crosshairScaleformPos.y - crosshairGap - crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> down3 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset, 
-				crosshairScaleformPos.y - crosshairGap - crosshairLength
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - outlineThicknessOffset, 
-				crosshairScaleformPos.y - crosshairGap - crosshairLength
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> down4 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + outlineThicknessOffset, 
-				crosshairScaleformPos.y - crosshairGap
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - outlineThicknessOffset, 
-				crosshairScaleformPos.y - crosshairGap
 			)
 		};
 
-		// Left outlines for each prong.
-		std::pair<glm::vec2, glm::vec2> left1 = 
+		// Left outline endpoints.
+		std::pair<glm::vec2, glm::vec2> left = 
 		{
 			glm::vec2
 			(
 				crosshairScaleformPos.x - crosshairGap,
-				crosshairScaleformPos.y - outlineThicknessOffset
+				crosshairScaleformPos.y
 			),
 			glm::vec2
 			(
 				crosshairScaleformPos.x - crosshairGap - crosshairLength,
-				crosshairScaleformPos.y - outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> left2 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap, 
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap - crosshairLength, 
-				crosshairScaleformPos.y + outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> left3 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap - crosshairLength,
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap - crosshairLength,
-				crosshairScaleformPos.y - outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> left4 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap,
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x - crosshairGap, 
-				crosshairScaleformPos.y - outlineThicknessOffset
+				crosshairScaleformPos.y
 			)
 		};
 
-		// Right outlines for each prong.
-		std::pair<glm::vec2, glm::vec2> right1 = 
+		// Right outline endpoints.
+		std::pair<glm::vec2, glm::vec2> right = 
 		{
 			glm::vec2
 			(
 				crosshairScaleformPos.x + crosshairGap, 
-				crosshairScaleformPos.y - outlineThicknessOffset
+				crosshairScaleformPos.y
 			),
 			glm::vec2
 			(
 				crosshairScaleformPos.x + crosshairGap + crosshairLength, 
-				crosshairScaleformPos.y - outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> right2 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap, 
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap + crosshairLength, 
-				crosshairScaleformPos.y + outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> right3 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap + crosshairLength,
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap + crosshairLength,
-				crosshairScaleformPos.y - outlineThicknessOffset
-			)
-		};
-		std::pair<glm::vec2, glm::vec2> right4 = 
-		{
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap, 
-				crosshairScaleformPos.y + outlineThicknessOffset
-			),
-			glm::vec2
-			(
-				crosshairScaleformPos.x + crosshairGap,
-				crosshairScaleformPos.y - outlineThicknessOffset
+				crosshairScaleformPos.y
 			)
 		};
 
 		// Rotate if facing crosshair target.
 		if (angToRotate != 0.0f)
 		{
-			DebugAPI::RotateLine2D(up1, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(up2, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(up3, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(up4, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(down1, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(down2, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(down3, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(down4, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(left1, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(left2, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(left3, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(left4, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(right1, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(right2, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(right3, crosshairScaleformPos, angToRotate);
-			DebugAPI::RotateLine2D(right4, crosshairScaleformPos, angToRotate);
+			DebugAPI::RotateLine2D(up, crosshairScaleformPos, angToRotate);
+			DebugAPI::RotateLine2D(down, crosshairScaleformPos, angToRotate);
+			DebugAPI::RotateLine2D(left, crosshairScaleformPos, angToRotate);
+			DebugAPI::RotateLine2D(right, crosshairScaleformPos, angToRotate);
 		}
 
 		// Use interped fade value if enabled; otherwise, use the player's static fade value.
@@ -1018,77 +878,33 @@ namespace ALYSLC
 			) :
 			0xFF
 		);
-
-		// Up
 		DebugAPI::QueueLine2D
 		(
-			up1.first, up1.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
+			up.first, 
+			up.second,
+			(a_outlineRGBA & 0xFFFFFF00) + alpha, 
+			crosshairThickness * (a_outlineIndex + 1.0f)
 		);
 		DebugAPI::QueueLine2D
 		(
-			up2.first, up2.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
+			down.first, 
+			down.second, 
+			(a_outlineRGBA & 0xFFFFFF00) + alpha,
+			crosshairThickness * (a_outlineIndex + 1.0f)
 		);
 		DebugAPI::QueueLine2D
 		(
-			up3.first, up3.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
+			left.first, 
+			left.second,
+			(a_outlineRGBA & 0xFFFFFF00) + alpha, 
+			crosshairThickness * (a_outlineIndex + 1.0f)
 		);
 		DebugAPI::QueueLine2D
 		(
-			up4.first, up4.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-
-		// Down.
-		DebugAPI::QueueLine2D
-		(
-			down1.first, down1.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			down2.first, down2.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			down3.first, down3.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			down4.first, down4.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-
-		// Left.
-		DebugAPI::QueueLine2D
-		(
-			left1.first, left1.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			left2.first, left2.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			left3.first, left3.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			left4.first, left4.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-
-		// Right.
-		DebugAPI::QueueLine2D
-		(
-			right1.first, right1.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			right2.first, right2.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			right3.first, right3.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
-		);
-		DebugAPI::QueueLine2D
-		(
-			right4.first, right4.second, (a_outlineRGBA & 0xFFFFFF00) + alpha, crosshairThickness
+			right.first,
+			right.second, 
+			(a_outlineRGBA & 0xFFFFFF00) + alpha, 
+			crosshairThickness * (a_outlineIndex + 1.0f)
 		);
 	}
 	
@@ -1559,7 +1375,6 @@ namespace ALYSLC
 		// Center at the crosshair position.
 		const auto origin = glm::vec2(crosshairScaleformPos.x, crosshairScaleformPos.y);
 		const float& crosshairLength = Settings::vfCrosshairLength[playerID];
-		const float& crosshairGap = Settings::vfCrosshairGapRadius[playerID] + gapDelta;
 		const float& crosshairThickness = Settings::vfCrosshairThickness[playerID];
 
 		// Points are offset to the right of the origin (+X Scaleform axis).
@@ -1585,7 +1400,11 @@ namespace ALYSLC
 			prongOffsets = baseProngOffsets;
 			for (auto& coord : prongOffsets)
 			{
-				coord.x += crosshairGap;
+				coord.x += Settings::vfCrosshairGapRadius[playerID];
+				// Scale the base gap but not the gap delta to allow for 
+				// unmodified contraction/expansion.
+				coord *= crosshairSizeRatioInterpData->value;
+				coord.x += gapDelta;
 			}
 
 			// Four prongs.
@@ -1630,7 +1449,11 @@ namespace ALYSLC
 		prongOffsets = baseProngOffsets;
 		for (auto& coord : prongOffsets)
 		{
-			coord.x += crosshairGap;
+			coord.x += Settings::vfCrosshairGapRadius[playerID];
+			// Scale the base gap but not the gap delta to allow for 
+			// unmodified contraction/expansion.
+			coord *= crosshairSizeRatioInterpData->value;
+			coord.x += gapDelta;
 		}
 
 		// Four prongs.
@@ -1673,7 +1496,11 @@ namespace ALYSLC
 		prongOffsets = baseProngOffsets;
 		for (auto& coord : prongOffsets)
 		{
-			coord.x += crosshairGap;
+			coord.x += Settings::vfCrosshairGapRadius[playerID]; 
+			// Scale the base gap but not the gap delta to allow for 
+			// unmodified contraction/expansion.
+			coord *= crosshairSizeRatioInterpData->value;
+			coord.x += gapDelta;
 		}
 
 		// Four prongs.
@@ -1726,7 +1553,13 @@ namespace ALYSLC
 				crosshairScaleformPos, 
 				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 				64, 
-				2.0f * crosshairThickness + crosshairGap + crosshairLength,
+				crosshairSizeRatioInterpData->value * 
+				(
+					2.0f * 
+					crosshairThickness + 
+					crosshairLength + 
+					Settings::vfCrosshairGapRadius[playerID]
+				) + gapDelta,
 				2.0f * crosshairThickness
 			);
 			DebugAPI::QueueCircle2D
@@ -1734,7 +1567,13 @@ namespace ALYSLC
 				crosshairScaleformPos, 
 				0xFFFFFF00 + alpha, 
 				64, 
-				4.0f * crosshairThickness + crosshairGap + crosshairLength,
+				crosshairSizeRatioInterpData->value * 
+				(
+					4.0f * 
+					crosshairThickness + 
+					crosshairLength + 
+					Settings::vfCrosshairGapRadius[playerID]
+				) + gapDelta,
 				2.0f * crosshairThickness
 			);
 		}
@@ -5749,8 +5588,6 @@ namespace ALYSLC
 			checkLOS && 
 			!Util::HasLOS(refrPtr.get(), coopActor.get(), true, true, crosshairWorldPos))
 		{
-			SPDLOG_DEBUG("[TM] IsRefrValidForCrosshairSelection: {}: No LOS on {}.",
-				coopActor->GetName(), refrPtr->GetName());
 			// Can't select if there is no LOS.
 			return false;
 		}
@@ -5758,10 +5595,6 @@ namespace ALYSLC
 		// New crosshair refr is on the screen, at least initially.
 		if (newSelection)
 		{
-			SPDLOG_DEBUG("[TM] IsRefrValidForCrosshairSelection: {}: LOS on newly selected {}. "
-				"Chose closest result: {}, moving crosshair: {}",
-				coopActor->GetName(), refrPtr->GetName(),
-				choseClosestResult, p->pam->IsPerforming(InputAction::kMoveCrosshair));
 			crosshairRefrInSight = true;
 			return true;
 		}
@@ -8064,6 +7897,90 @@ namespace ALYSLC
 			}
 		}
 
+		// Dynamic crosshair resizing based on the selected object.
+		if (Settings::vbAutoScaleCrosshairSize[playerID])
+		{
+			// Update crosshair size mult.
+			auto refrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle); 
+			const float maxCrosshairGapDelta = 
+			(
+				Settings::vbAnimatedCrosshair[playerID] ? 
+				max
+				(
+					Settings::vfCrosshairLength[playerID],
+					Settings::vfCrosshairGapRadius[playerID] * 2.0f
+				) : 
+				0.0f
+			);
+			const float maxCrosshairSize = 
+			(
+				2.0f * 
+				(
+					Settings::vfCrosshairLength[playerID] +
+					2.0f * Settings::vfCrosshairThickness[playerID] +
+					Settings::vfCrosshairGapRadius[playerID] +
+					maxCrosshairGapDelta
+				)
+			);
+			const float minCrosshairSize = 
+			(
+				0.005f * static_cast<float>(RE::BSGraphics::State::GetSingleton()->screenHeight)
+			);
+			if (refrPtr && refrPtr.get())
+			{
+				float minPixelDimension = 0.0f;
+				if (minCrosshairSize >= maxCrosshairSize)
+				{
+					minPixelDimension = min
+					(
+						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
+						maxCrosshairSize
+					);
+				}
+				else
+				{
+					minPixelDimension = std::clamp
+					(
+						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
+						minCrosshairSize,
+						maxCrosshairSize
+					);
+				}
+			
+				crosshairSizeRatioInterpData->SetEndpoint
+				(
+					Util::InterpolateSmootherStep
+					(
+						crosshairSizeRatioInterpData->minEndpoint,
+						minPixelDimension / maxCrosshairSize,
+						0.25f
+					),
+					false
+				);
+				crosshairSizeRatioInterpData->UpdateInterpolatedValue(false);
+			}
+			else
+			{
+				// Back to full size.
+				crosshairSizeRatioInterpData->SetEndpoint
+				(
+					Util::InterpolateSmootherStep
+					(
+						crosshairSizeRatioInterpData->maxEndpoint,
+						1.0f,
+						0.25f
+					),
+					true
+				);
+				crosshairSizeRatioInterpData->UpdateInterpolatedValue(true);
+			}
+		}
+		else
+		{
+			// Maintain default crosshair size.
+			crosshairSizeRatioInterpData->value = 1.0f;
+		}
+		
 		// Set last update time point.
 		p->lastCrosshairUpdateTP = SteadyClock::now();
 	}
