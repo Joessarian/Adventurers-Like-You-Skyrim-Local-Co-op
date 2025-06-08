@@ -340,7 +340,7 @@ namespace ALYSLC
 		);
 		if (glob.globalDataInit && glob.allPlayersInit) 
 		{
-			// Enable P1's controls just to be safe.
+			// Enable P1's controls and saving just to be safe.
 			SKSE::GetTaskInterface()->AddTask
 			(
 				[]() 
@@ -353,6 +353,14 @@ namespace ALYSLC
 					controlMap->ToggleControls(RE::ControlMap::UEFlag::kMenu, true);
 					controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
 					controlMap->lock.Unlock();
+					auto ui = RE::UI::GetSingleton();
+					if (ui)
+					{
+						if (auto hud = ui->GetMenu<RE::HUDMenu>(); hud)
+						{
+							hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
+						}
+					}
 				}
 			);
 			

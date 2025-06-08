@@ -506,9 +506,11 @@ namespace ALYSLC
 					if (paraglider)
 					{
 						auto invCounts = coopActor->GetInventoryCounts();
+						const auto iter = invCounts.find(paraglider);
 						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = 
 						(
-							invCounts.contains(paraglider) && invCounts.at(paraglider) > 0
+							iter != invCounts.end() &&
+							iter->second > 0
 						);
 						// Add gale spell if not known already.
 						// Enderal only, since the quest to obtain it is not compatible.
@@ -1776,7 +1778,8 @@ namespace ALYSLC
 		// A loading screen opened while downed.
 		bool loadingMenuOpened = false;
 		// Check if the LoadingMenu has opened.
-		if (const auto ui = RE::UI::GetSingleton(); ui)
+		const auto ui = RE::UI::GetSingleton();
+		if (ui)
 		{
 			loadingMenuOpened = ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME);
 		}
@@ -2173,9 +2176,10 @@ namespace ALYSLC
 						RE::INPUT_DEVICE::kGamepad, 
 						RE::ControlMap::InputContextID::kMenuMode
 					);
-					if (glob.cdh->GAMEMASK_TO_XIMASK.contains(idCode))
+					const auto iter = glob.cdh->GAMEMASK_TO_XIMASK.find(idCode);
+					if (iter != glob.cdh->GAMEMASK_TO_XIMASK.end())
 					{
-						escapeXIMask = glob.cdh->GAMEMASK_TO_XIMASK.at(idCode);
+						escapeXIMask = iter->second;
 					}
 				}
 

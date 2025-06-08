@@ -214,9 +214,10 @@ namespace ALYSLC
 				return;
 			}
 
-			if (nodeNameToRotationDataMap.contains(a_nodePtr->name))
+			const auto iter = nodeNameToRotationDataMap.find(a_nodePtr->name); 
+			if (iter != nodeNameToRotationDataMap.end())
 			{
-				if (auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); data && data.get())
+				if (auto& data = iter->second; data && data.get())
 				{
 					data->prevInterrupted = data->interrupted;
 					data->prevRotationModified = data->prevRotationModified;

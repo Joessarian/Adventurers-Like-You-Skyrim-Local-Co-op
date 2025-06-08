@@ -110,7 +110,8 @@ namespace ALYSLC
 		//[Emote Idles]:
 		//--------------
 		// All default assignable and cyclable emote idle events.
-		static inline std::vector<RE::BSFixedString> sEmoteIdlesList = {
+		static inline std::vector<RE::BSFixedString> sEmoteIdlesList = 
+		{
 			"IdleApplaud2",
 			"IdleApplaud3",
 			"IdleApplaud4",
@@ -224,13 +225,17 @@ namespace ALYSLC
 		// Maximum amount of pixels the crosshair can move across per second.
 		// Used as the base when scaling player crosshair sensitivities.
 		static inline float fCrosshairMaxTraversablePixelsPerSec = 1920.0f;
-		// Proportion of the screen's height at which to anchor the crosshair text.
-		// For example, a value of 0.5 will anchor the text at the center of the screen 
+		// Proportion of the HUD's height at which to anchor the crosshair text.
+		// For example, a value of 0.5 will anchor the text at the center of the HUD 
 		// along its height.
-		static inline float fCrosshairTextAnchorPointHeightRatio = 0.5f;
-		// Proportion of the screen's width at which to anchor the crosshair text.
-		// For example, a value of 0.5 will anchor the text at the center of the screen 
+		// Expanded range to allow for fine-tuning when additional offsets 
+		// affect the positioning of the text before ALYSLC's changes. 
+		static inline float fCrosshairTextAnchorPointHeightRatio = 0.08f;
+		// Proportion of the HUD's width at which to anchor the crosshair text.
+		// For example, a value of 0.5 will anchor the text at the center of the HUD 
 		// along its width.
+		// Expanded range to allow for fine-tuning when additional offsets 
+		// affect the positioning of the text before ALYSLC's changes. 
 		static inline float fCrosshairTextAnchorPointWidthRatio = 0.5f;
 		// Margin (pixels) to place around the crosshair text to keep it from reaching 
 		// the edges of the screen.

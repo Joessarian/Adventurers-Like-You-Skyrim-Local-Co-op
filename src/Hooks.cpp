@@ -3497,23 +3497,44 @@ namespace ALYSLC
 			// Also recommended that the player disable auto-saving 
 			// while using this mod to remove any chance of saving copied data onto P1, 
 			// such as another player's name or race name.
-			const auto eventName = inputEvent->QUserEvent();
-			// These are keyboard events.
 			bool couldSaveWithCopiedData =
 			(
-				(*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) &&
+				*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone
+			);
+			bool playerIsDowned = 
+			(
+				std::any_of
 				(
-					(eventName == ue->quicksave) ||
-					(eventName == ue->console && !ui->IsMenuOpen(RE::Console::MENU_NAME))
+					glob.coopPlayers.begin(),
+					glob.coopPlayers.end(),
+					[](const auto& a_p)
+					{
+						return a_p->isActive && a_p->isDowned;
+					}
 				)
 			);
-			if (couldSaveWithCopiedData)
+			const auto eventName = inputEvent->QUserEvent();
+			// Could be triggered by keyboard button events as well.
+			bool eventCanLeadToSave = 
+			(
+				(idEvent && buttonEvent) &&
+				(couldSaveWithCopiedData || playerIsDowned) &&
+				(
+					(eventName == ue->quicksave) ||
+					(eventName == ue->console && !ui->IsMenuOpen(RE::Console::MENU_NAME)) ||
+					(
+						(playerIsDowned) && 
+						(eventName == ue->pause || eventName == ue->journal)
+					)
+				)
+			);
+			if (eventCanLeadToSave)
 			{
-				if (idEvent && buttonEvent)
+				if (buttonEvent->IsDown())
 				{
-					if (buttonEvent->IsDown())
+					if (eventName == ue->quicksave)
 					{
-						if (eventName == ue->quicksave)
+						if (couldSaveWithCopiedData)
 						{
 							RE::DebugMessageBox
 							(
@@ -3526,20 +3547,44 @@ namespace ALYSLC
 						{
 							RE::DebugMessageBox
 							(
+								"[ALYSLC] Cannot quicksave while another player is downed!"
+							);
+						}
+					}
+					else if (eventName == ue->console)
+					{
+						if (couldSaveWithCopiedData)
+						{
+							RE::DebugMessageBox
+							(
 								"[ALYSLC] Cannot open the console while another player's data "
 								"is copied over to P1.\n"
 								"Please ensure all menus are closed or reload an older save."
 							);
 						}
+						else
+						{
+							RE::DebugMessageBox
+							(
+								"[ALYSLC] Cannot open the console while another player is downed!"
+							);
+						}
 					}
-
-					idEvent->userEvent = "BLOCKED";
-					buttonEvent->idCode = 0xFF;
-					buttonEvent->heldDownSecs = 0.0f;
-					buttonEvent->value = 0.0f;
-					inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
-					return false;
+					else
+					{
+						RE::DebugMessageBox
+						(
+							"[ALYSLC] Cannot pause the game while another player is downed!"
+						);	
+					}
 				}
+
+				idEvent->userEvent = "BLOCKED";
+				buttonEvent->idCode = 0xFF;
+				buttonEvent->heldDownSecs = 0.0f;
+				buttonEvent->value = 0.0f;
+				inputEvent->eventType.reset(RE::INPUT_EVENT_TYPE::kDeviceConnect);
+				return false;
 			}
 
 			if (!ui || !ue || !p1 || !a_firstGamepadEvent)
@@ -5864,14 +5909,15 @@ namespace ALYSLC
 
 						const auto& p = glob.coopPlayers[manipulatingPlayerCID];
 						// Must be manipulated as a released refr.
-						if (!p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(refrHandle))
+						const auto iter = 
+						(
+							p->tm->rmm->releasedRefrHandlesToInfoIndices.find(refrHandle)
+						);
+						if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
 						{
 							return false;
 						}
-						auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at
-						(
-							refrHandle
-						);
+						auto index = iter->second;
 						if (index >= p->tm->rmm->releasedRefrInfoList.size())
 						{
 							return false;
@@ -5986,15 +6032,16 @@ namespace ALYSLC
 				}
 					
 				const auto& p = glob.coopPlayers[cid];
-				if (!p->tm->rmm->releasedRefrHandlesToInfoIndices.contains(refrHandle))
+				const auto iter = 
+				(
+					p->tm->rmm->releasedRefrHandlesToInfoIndices.find(refrHandle)
+				);
+				if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
 				{
 					continue;
 				}
 
-				auto index = p->tm->rmm->releasedRefrHandlesToInfoIndices.at
-				(
-					refrHandle
-				);
+				auto index = iter->second;
 				if (index >= p->tm->rmm->releasedRefrInfoList.size())
 				{
 					continue;
@@ -6577,10 +6624,11 @@ namespace ALYSLC
 			if (a_isGrabbed)
 			{
 				const auto& rmm = a_p->tm->rmm;
+				const auto iter = rmm->grabbedRefrHandlesToInfoIndices.find(a_projectileHandle);
 				int32_t index = 
 				(
-					rmm->grabbedRefrHandlesToInfoIndices.contains(a_projectileHandle) ?
-					rmm->grabbedRefrHandlesToInfoIndices.at(a_projectileHandle) : 
+					iter != rmm->grabbedRefrHandlesToInfoIndices.end() ?
+					iter->second : 
 					-1
 				);
 				if (index != -1 && index < rmm->grabbedRefrInfoList.size())
@@ -6688,10 +6736,11 @@ namespace ALYSLC
 			else
 			{
 				const auto& rmm = a_p->tm->rmm;
+				const auto iter = rmm->releasedRefrHandlesToInfoIndices.find(a_projectileHandle);
 				int32_t index = 
 				(
-					rmm->releasedRefrHandlesToInfoIndices.contains(a_projectileHandle) ?
-					rmm->releasedRefrHandlesToInfoIndices.at(a_projectileHandle) : 
+					iter != rmm->releasedRefrHandlesToInfoIndices.end() ?
+					iter->second : 
 					-1
 				);
 				if (index != -1 && index < rmm->releasedRefrInfoList.size())
@@ -8678,10 +8727,11 @@ namespace ALYSLC
 										))
 									{
 										auto boundObj = favoritedItem->As<RE::TESBoundObject>();
+										const auto iter = invCounts.find(boundObj);
 										uint32_t count = 
 										(
-											invCounts.contains(boundObj) ? 
-											invCounts.at(boundObj) :
+											iter != invCounts.end() ? 
+											iter->second :
 											0
 										);
 										if (count > 1)

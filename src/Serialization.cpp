@@ -1985,9 +1985,10 @@ namespace ALYSLC
 			for (auto i = 0; i < skillBaseLvlList.size(); ++i)
 			{
 				auto currentSkill = static_cast<Skill>(i);
-				if (glob.SKILL_TO_AV_MAP.contains(currentSkill))
+				const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
+				if (iter != glob.SKILL_TO_AV_MAP.end())
 				{
-					auto currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
+					auto currentAV = iter->second;
 					SPDLOG_DEBUG
 					(
 						"[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", 

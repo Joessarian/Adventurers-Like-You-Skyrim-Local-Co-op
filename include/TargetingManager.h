@@ -1410,9 +1410,10 @@ namespace ALYSLC
 					return;
 				}
 
-				if (managedProjHandleToTrajInfoMap.contains(a_projectileHandle)) 
+				const auto iter = managedProjHandleToTrajInfoMap.find(a_projectileHandle); 
+				if (iter != managedProjHandleToTrajInfoMap.end())
 				{
-					managedProjHandleToTrajInfoMap.erase(a_projectileHandle);
+					managedProjHandleToTrajInfoMap.erase(iter);
 				}
 			}
 

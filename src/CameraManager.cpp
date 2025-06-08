@@ -2023,11 +2023,9 @@ namespace ALYSLC
 					{
 						(fadeData->shouldFadeOut) && 
 						(
-							(obstructions.empty()) || 
-							(!obstructions.empty() && !obstructions.contains(handled3DPtr))
+							(obstructions.empty() || !obstructions.contains(handled3DPtr))
 						)
 					};
-
 					if (shouldFadeIn)
 					{
 						fadeData->SignalFadeStateChange(false, fadeData->fadeIndex);

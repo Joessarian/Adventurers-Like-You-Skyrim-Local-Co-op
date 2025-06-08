@@ -993,8 +993,8 @@ namespace ALYSLC
 			"MenusAndUI",
 			"fCrosshairTextAnchorPointHeightRatio", 
 			fCrosshairTextAnchorPointHeightRatio,
-			0.0f, 
-			1.0f
+			-1.0f, 
+			2.0f
 		);
 		ReadFloatSetting
 		(
@@ -1002,8 +1002,8 @@ namespace ALYSLC
 			"MenusAndUI",
 			"fCrosshairTextAnchorPointWidthRatio", 
 			fCrosshairTextAnchorPointWidthRatio,
-			0.0f, 
-			1.0f
+			-1.0f, 
+			2.0f
 		);
 		ReadFloatSetting
 		(

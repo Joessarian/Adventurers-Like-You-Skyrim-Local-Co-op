@@ -59,6 +59,16 @@ namespace ALYSLC
 		GlobalCoopData::ResetMenuCIDs();
 		glob.supportedMenuOpen.store(false);
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
+		// Ensure the allow saving flag is set for the HUD Menu,
+		// since we may have unset it previously, preventing all saving.
+		auto ui = RE::UI::GetSingleton();
+		if (ui)
+		{
+			if (auto hud = ui->GetMenu<RE::HUDMenu>(); hud)
+			{
+				hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
+			}
+		}
 	}
 
 	CoopActorKillEventHandler* CoopActorKillEventHandler::GetSingleton()
@@ -461,9 +471,10 @@ namespace ALYSLC
 					if (a_containerChangedEvent->baseObj == paraglider->formID)
 					{
 						auto invCounts = p1->GetInventoryCounts();
+						const auto iter = invCounts.find(paraglider);
 						ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = 
 						(
-							invCounts.contains(paraglider) && invCounts.at(paraglider) > 0
+							iter != invCounts.end() && iter->second > 0
 						);
 
 						// Add gale spell if not known already.

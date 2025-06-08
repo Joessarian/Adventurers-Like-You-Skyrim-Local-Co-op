@@ -101,7 +101,7 @@ namespace ALYSLC
 		// PR for TrueHUD to allow for continuous display of actor info/boss bars 
 		// for players even when not in combat.
 		// Commented out for now.
-		/*if (auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUDAPI3)
+		if (auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUDAPI3)
 		{
 			const auto handle = coopActor->GetHandle();
 			if (trueHUDAPI3->HasInfoBar(handle))
@@ -109,7 +109,7 @@ namespace ALYSLC
 				trueHUDAPI3->RemoveActorInfoBar(handle, TRUEHUD_API::WidgetRemovalMode::Normal);
 				trueHUDAPI3->RemoveBoss(handle, TRUEHUD_API::WidgetRemovalMode::Normal);
 			}
-		}*/
+		}
 	}
 
 	void TargetingManager::PreStartTask()
@@ -929,7 +929,7 @@ namespace ALYSLC
 		// when not in combat and if the player's HMS AVs have changed.
 		// Commented out for now.
 		// TrueHUD API to request addition/removal of actor info or boss bars for this player.
-		/*
+		
 		auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; 
 		if (trueHUDAPI3)
 		{
@@ -1001,7 +1001,6 @@ namespace ALYSLC
 
 			hasTrueHUDInfoBar = trueHUDAPI3->HasInfoBar(handle);
 		}
-		*/
 
 		// If the player is not on screen, 
 		// draw the player indicator pointed at the player's position.
@@ -10459,7 +10458,7 @@ namespace ALYSLC
 
 		int32_t nextOpenIndex = releasedRefrInfoList.size();
 		// Store mapped index and then add to list.
-		releasedRefrHandlesToInfoIndices.insert_or_assign(a_handle, nextOpenIndex);
+		releasedRefrHandlesToInfoIndices.insert({ a_handle, nextOpenIndex });
 		releasedRefrInfoList.emplace_back
 		(
 			std::make_unique<ReleasedReferenceInfo>(a_p->controllerID, a_handle)
@@ -11142,7 +11141,7 @@ namespace ALYSLC
 					(
 						refrPtrA && refrPtrA.get() ?
 						refrPtrA :
-						refrPtrB && refrPtrB.get()?
+						refrPtrB && refrPtrB.get() ?
 						refrPtrB :
 						nullptr
 					);
@@ -11157,13 +11156,14 @@ namespace ALYSLC
 						continue;
 					}
 
-					bool releasedByAPlayer = releasedRefrIndicesMap.contains(releasedRefrHandle);
-					if (!releasedByAPlayer)
+					const auto iter = releasedRefrIndicesMap.find(releasedRefrHandle);
+					// Not released by this player, no need to handle.
+					if (iter == releasedRefrIndicesMap.end())
 					{
 						continue;
 					}
 
-					const auto index = releasedRefrIndicesMap.at(releasedRefrPtr->GetHandle());
+					const auto index = iter->second;
 					const auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[index];
 					// Set first hit, if necessary.
 					// Ignore hits within 30 frames of release to allow the released refr
@@ -11212,26 +11212,20 @@ namespace ALYSLC
 				// Want to ignore collisions between non-managed refrs
 				// and between two managed refrs.
 				int32_t collidingReleasedRefrIndex = -1;
-				if (releasedRefrIndicesMap.contains(contactEvent->handleA) && 
-					!releasedRefrIndicesMap.contains(contactEvent->handleB))
+				const auto iterA = releasedRefrIndicesMap.find(contactEvent->handleA);
+				const auto iterB = releasedRefrIndicesMap.find(contactEvent->handleB);
+				if (iterA != releasedRefrIndicesMap.end() && iterB == releasedRefrIndicesMap.end())
 				{
 					collidedWithRefrPtr = refrPtrB;
-					collidingReleasedRefrIndex = releasedRefrIndicesMap.at
-					(
-						contactEvent->handleA
-					);
+					collidingReleasedRefrIndex = iterA->second;
 					hitRigidBodyPtr = contactEvent->rigidBodyB;
 					releasedRigidBodyPtr = contactEvent->rigidBodyA;
 				}
 
-				if (releasedRefrIndicesMap.contains(contactEvent->handleB) && 
-					!releasedRefrIndicesMap.contains(contactEvent->handleA))
+				if (iterB != releasedRefrIndicesMap.end() && iterA == releasedRefrIndicesMap.end())
 				{
 					collidedWithRefrPtr = refrPtrA;
-					collidingReleasedRefrIndex = releasedRefrIndicesMap.at
-					(
-						contactEvent->handleB
-					);
+					collidingReleasedRefrIndex = iterB->second;
 					hitRigidBodyPtr = contactEvent->rigidBodyA;
 					releasedRigidBodyPtr = contactEvent->rigidBodyB;
 				}

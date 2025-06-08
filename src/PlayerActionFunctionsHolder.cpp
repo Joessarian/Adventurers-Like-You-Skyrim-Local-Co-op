@@ -5430,16 +5430,24 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Have to trigger a normal LH attack first 
-					// so that the power attack command executes successfully.
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-					);
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get()
-					);
+					if (a_p->em->LHEmpty() && a_p->em->GetRHWeapon())
+					{
+						// Prevents blocking when there is a weapon in the RH.
+						Util::PlayIdle("H2HLeftHandPowerAttack", a_p->coopActor.get());
+					}
+					else
+					{
+						// Have to trigger a normal LH attack first 
+						// so that the power attack command executes successfully.
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+						);
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionLeftPowerAttack, a_p->coopActor.get()
+						);
+					}
 				}
 			}
 			else if (a_action == InputAction::kPowerAttackRH)
@@ -5963,10 +5971,8 @@ namespace ALYSLC
 					{
 						auto currentAmmo = a_p->coopActor->GetCurrentAmmo();
 						auto invCounts = a_p->coopActor->GetInventoryCounts();
-						const int32_t ammoCount = 
-						(
-							invCounts.contains(currentAmmo) ? invCounts.at(currentAmmo) : -1
-						);
+						const auto iter = invCounts.find(currentAmmo);
+						const int32_t ammoCount = iter != invCounts.end() ? iter->second : -1;
 						if (!currentAmmo || ammoCount <= 0)
 						{
 							// Notify the player that they do not have ammo equipped.
@@ -6038,10 +6044,8 @@ namespace ALYSLC
 				{
 					auto currentAmmo = a_p->coopActor->GetCurrentAmmo();
 					auto invCounts = a_p->coopActor->GetInventoryCounts();
-					const int32_t ammoCount = 
-					(
-						invCounts.contains(currentAmmo) ? invCounts.at(currentAmmo) : -1
-					);
+					const auto iter = invCounts.find(currentAmmo);
+					const int32_t ammoCount = iter != invCounts.end() ? iter->second : -1;
 					if (!currentAmmo || ammoCount <= 0)
 					{
 						// Notify the player that they do not have ammo equipped.
@@ -7539,9 +7543,13 @@ namespace ALYSLC
 						// Just has to be in range to grab.
 						if (isInGrabbingRange(releasedRefrPtr.get()))
 						{
-							if (playerLinkedGrabCandidates.contains(otherP->controllerID))
+							const auto iter = playerLinkedGrabCandidates.find
+							(
+								otherP->controllerID
+							);
+							if (iter != playerLinkedGrabCandidates.end())
 							{
-								playerLinkedGrabCandidates.at(otherP->controllerID).emplace_back
+								iter->second.emplace_back
 								(
 									releasedRefrInfo->refrHandle
 								);
@@ -9795,8 +9803,9 @@ namespace ALYSLC
 			// Allow usage of a QS item only if the player HAD at least 1 in their inventory,
 			// as indicated by presence of an entry in the player's inventory counts.
 			// Otherwise, clear out the slot and notify the player.
-			const auto invCounts = a_p->coopActor->GetInventoryCounts();
-			int32_t count = invCounts.contains(qsBoundObj) ? invCounts.at(qsBoundObj) : -1;
+			const auto invCounts = a_p->coopActor->GetInventoryCounts();				
+			const auto iter = invCounts.find(qsBoundObj);
+			const int32_t count = iter != invCounts.end() ? iter->second : -1;
 			if (count > 0)
 			{
 				// Has at least 1, so use the item via equip.

@@ -71,14 +71,15 @@ namespace ALYSLC
 		}
 
 		// Get actor value cost for this action once it's performed.
-		inline float GetCost(const AVCostAction& a_action) 
+		// Return the cached cost, if any, or nullopt otherwise.
+		inline std::optional<float> GetCost(const AVCostAction& a_action) 
 		{
-			if (auto iter = avCostsMap.find(a_action); iter != avCostsMap.end())
+			if (const auto iter = avCostsMap.find(a_action); iter != avCostsMap.end())
 			{
 				return iter->second;
 			}
 
-			return 0.0f;
+			return std::nullopt;
 		}
 
 		// Insert a new AV cost action request.
@@ -88,37 +89,47 @@ namespace ALYSLC
 		}
 		
 		// Remove an AV cost action request.
-		inline void RemoveRequestedAction(AVCostAction a_action)
+		// Return true if any action request was removed.
+		inline bool RemoveRequestedAction(AVCostAction a_action)
 		{
-			if (reqActionsSet.contains(a_action))
+			if (const auto iter = reqActionsSet.find(a_action); iter != reqActionsSet.end())
 			{
-				reqActionsSet.erase(a_action);
+				reqActionsSet.erase(iter);
+				return true;
 			}
+
+			return false;
 		}
 
 		// Remove all AV cost action requests.
+		// Return true if at least one of the given action requests were removed.
 		template <class... Args>
-		inline void RemoveRequestedActions(Args... a_actions)
+		inline bool RemoveRequestedActions(Args... a_actions)
 			requires(std::same_as<Args, AVCostAction>&&...)
 		{
-			(RemoveRequestedAction(a_actions), ...);
+			return (RemoveRequestedAction(a_actions) | ...);
 		}
 		
 		// Remove a started AV cost action.
-		inline void RemoveStartedAction(AVCostAction a_action)
+		// Return true if any started action was removed.
+		inline bool RemoveStartedAction(AVCostAction a_action)
 		{
 			if (actionsInProgress.any(a_action))
 			{
 				actionsInProgress.reset(a_action);
+				return true;
 			}
+
+			return false;
 		}
 
 		// Remove all started AV cost actions.
+		// Return true if at least one of the given started actions were removed.
 		template <class... Args>
-		inline void RemoveStartedActions(Args... a_actions)
+		inline bool RemoveStartedActions(Args... a_actions)
 			requires(std::same_as<Args, AVCostAction>&&...)
 		{
-			(RemoveStartedAction(a_actions), ...);
+			return (RemoveStartedAction(a_actions) | ...);
 		}
 
 		// Set actor value cost for this action.
@@ -128,20 +139,25 @@ namespace ALYSLC
 		}
 
 		// Add AV cost action to in-progress set if it was previously requested.
-		inline void SetStartedAction(AVCostAction a_action)
+		// Return true if an action was added as started.
+		inline bool SetStartedAction(AVCostAction a_action)
 		{
 			if (reqActionsSet.contains(a_action))
 			{
 				actionsInProgress.set(a_action);
+				return true;
 			}
+
+			return false;
 		}
 
 		// Set multiple actions as started.
+		// Return true if at least one of the given actions was added as started.
 		template <class... Args>
 		inline void SetStartedActions(Args... a_actions)
 			requires(std::same_as<Args, AVCostAction>&&...)
 		{
-			(SetStartedAction(a_actions), ...);
+			return (SetStartedAction(a_actions) | ...);
 		}
 
 		// Mutex for accessing/modifying the performed animation events queue.

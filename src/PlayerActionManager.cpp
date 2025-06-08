@@ -362,16 +362,16 @@ namespace ALYSLC
 									RE::INPUT_DEVICE::kGamepad,
 									RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 								);
-								if (acceptGameMask != 0xFF && 
-									glob.cdh->GAMEMASK_TO_INPUT_ACTION.contains(acceptGameMask))
+								if (acceptGameMask != 0xFF)
 								{
-									acceptMask = 
+									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
 									(
-										1 << 
-										(
-											!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(acceptGameMask)
-										)
+										acceptGameMask
 									);
+									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									{
+										acceptMask = 1 << (!iter->second);
+									}
 								}
 
 								auto xButtonGameMask = controlMap->GetMappedKey
@@ -380,16 +380,16 @@ namespace ALYSLC
 									RE::INPUT_DEVICE::kGamepad,
 									RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu
 								);
-								if (xButtonGameMask != 0xFF && 
-									glob.cdh->GAMEMASK_TO_INPUT_ACTION.contains(xButtonGameMask))
+								if (xButtonGameMask != 0xFF)
 								{
-									xButtonMask = 
+									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
 									(
-										1 << 
-										(
-											!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(xButtonGameMask)
-										)
+										xButtonGameMask
 									);
+									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									{
+										xButtonMask = 1 << (!iter->second);
+									}
 								}
 
 								auto cancelGameMask = controlMap->GetMappedKey
@@ -398,16 +398,16 @@ namespace ALYSLC
 									RE::INPUT_DEVICE::kGamepad, 
 									RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 								);
-								if (cancelGameMask != 0xFF && 
-									glob.cdh->GAMEMASK_TO_INPUT_ACTION.contains(cancelGameMask))
+								if (cancelGameMask != 0xFF)
 								{
-									cancelMask = 
+									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
 									(
-										1 << 
-										(
-											!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(cancelGameMask)
-										)
+										cancelGameMask
 									);
+									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									{
+										cancelMask = 1 << (!iter->second);
+									}
 								}
 							}
 
@@ -2309,9 +2309,10 @@ namespace ALYSLC
 					// Attempt to set to full charge below.
 					// Game will reset the charge once P1 attempts to use the staff
 					// without running this func.
-					if (inventory.contains(a_staff))
+					const auto iter = inventory.find(a_staff);
+					if (iter != inventory.end())
 					{
-						auto& invEntry = inventory.at(a_staff).second;
+						const auto& invEntry = iter->second.second;
 						if (invEntry->extraLists)
 						{
 							for (auto& xList : *invEntry->extraLists)
@@ -2438,12 +2439,16 @@ namespace ALYSLC
 								// Get charge level from staff directly.
 								enchCharge = a_staff->amountofEnchantment;
 							}
-							else if (auto inventory = coopActor->GetInventory(); 
-									 inventory.contains(a_staff))
+							else 
 							{
-								// Get charge level from inventory entry.
-								auto& invEntry = inventory.at(a_staff).second;
-								enchCharge = invEntry->GetEnchantmentCharge();
+								auto inventory = coopActor->GetInventory(); 
+								const auto iter = inventory.find(a_staff);
+								if (iter != inventory.end())
+								{
+									// Get charge level from inventory entry.
+									const auto& invEntry = iter->second.second;
+									enchCharge = invEntry->GetEnchantmentCharge();
+								}
 							}
 
 							if (enchCharge > 0.0f)
@@ -2663,10 +2668,11 @@ namespace ALYSLC
 		for (auto i = 0; i < Skill::kTotal; ++i)
 		{
 			currentSkill = static_cast<Skill>(i);
+			const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
 			currentAV = 
 			(
-				glob.SKILL_TO_AV_MAP.contains(currentSkill) ? 
-				glob.SKILL_TO_AV_MAP.at(currentSkill) : 
+				iter != glob.SKILL_TO_AV_MAP.end() ? 
+				iter->second : 
 				RE::ActorValue::kNone
 			);
 			const auto avInfo = actorValueList->GetActorValue(currentAV); 
@@ -3221,13 +3227,11 @@ namespace ALYSLC
 					if (castingType == CastingType::kConcentration)
 					{
 						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
-						if (reqActionsSet.contains(AVCostAction::kCastDual))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastDual);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost and multiply by frametime.
-							deltaMagCost = 
-							(
-								-avcam->GetCost(AVCostAction::kCastDual) * *g_deltaTimeRealTime
-							);
+							deltaMagCost = -cachedCost.value() * *g_deltaTimeRealTime;
 						}
 						else
 						{
@@ -3240,10 +3244,11 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (reqActionsSet.contains(AVCostAction::kCastDual))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastDual);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost.
-							deltaMagCost = -avcam->GetCost(AVCostAction::kCastDual);
+							deltaMagCost = -cachedCost.value();
 						}
 						else
 						{
@@ -3291,13 +3296,11 @@ namespace ALYSLC
 					if (castingType == CastingType::kConcentration)
 					{
 						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
-						if (reqActionsSet.contains(AVCostAction::kCastRight))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastRight);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost and multiply by frametime.
-							rhMagCostDelta = 
-							(
-								-avcam->GetCost(AVCostAction::kCastRight) * *g_deltaTimeRealTime
-							);
+							rhMagCostDelta = -cachedCost.value() * *g_deltaTimeRealTime;
 						}
 						else
 						{
@@ -3313,10 +3316,11 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (reqActionsSet.contains(AVCostAction::kCastRight))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastRight);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost.
-							rhMagCostDelta = -avcam->GetCost(AVCostAction::kCastRight);
+							rhMagCostDelta = -cachedCost.value();
 						}
 						else
 						{
@@ -3354,13 +3358,11 @@ namespace ALYSLC
 					if (castingType == CastingType::kConcentration)
 					{
 						float newCastDuration = Util::GetElapsedSeconds(p->lastLHCastStartTP);
-						if (reqActionsSet.contains(AVCostAction::kCastLeft))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastLeft);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost and multiply by frametime.
-							lhMagCostDelta = 
-							(
-								-avcam->GetCost(AVCostAction::kCastLeft) * *g_deltaTimeRealTime
-							);
+							lhMagCostDelta = -cachedCost.value() * *g_deltaTimeRealTime;
 						}
 						else
 						{
@@ -3376,10 +3378,11 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (reqActionsSet.contains(AVCostAction::kCastLeft))
+						auto cachedCost = avcam->GetCost(AVCostAction::kCastLeft);
+						if (cachedCost.has_value())
 						{
 							// Use cached cost.
-							lhMagCostDelta = -avcam->GetCost(AVCostAction::kCastLeft);
+							lhMagCostDelta = -cachedCost.value();
 						}
 						else
 						{
@@ -3569,10 +3572,11 @@ namespace ALYSLC
 			float secsSinceLastCheck = Util::GetElapsedSeconds(p->expendSprintStaminaTP);
 			p->expendSprintStaminaTP = SteadyClock::now();
 			// Sprint cost is modified by the number of seconds sprinted. 
-			if (reqActionsSet.contains(AVCostAction::kSprint))
+			auto cachedCost = avcam->GetCost(AVCostAction::kSprint);
+			if (cachedCost.has_value())
 			{
 				// Cached cost.
-				cost = avcam->GetCost(AVCostAction::kSprint) * secsSinceLastCheck;
+				cost = cachedCost.value() * secsSinceLastCheck;
 			}
 			else
 			{
@@ -3604,7 +3608,8 @@ namespace ALYSLC
 			reqActionsSet.contains(AVCostAction::kDodge))
 		{
 			// Use our cached dodge cost.
-			cost = avcam->GetCost(AVCostAction::kDodge);
+			auto cachedCost = avcam->GetCost(AVCostAction::kDodge);
+			cost = cachedCost.has_value() ? cachedCost.value() : 0.0f;
 			avcam->RemoveRequestedAction(AVCostAction::kDodge);
 		}
 
@@ -3612,7 +3617,8 @@ namespace ALYSLC
 			reqActionsSet.contains(AVCostAction::kSneakRoll))
 		{
 			// Use our cached roll cost.
-			cost = avcam->GetCost(AVCostAction::kSneakRoll);
+			auto cachedCost = avcam->GetCost(AVCostAction::kSneakRoll);
+			cost = cachedCost.has_value() ? cachedCost.value() : 0.0f;
 			avcam->RemoveRequestedAction(AVCostAction::kSneakRoll);
 		}
 
@@ -4046,17 +4052,15 @@ namespace ALYSLC
 			// and the action is not already executing.
 			if (perfAnimEvent.first == PerfAnimEventTag::kPreHitFrame &&
 				actionsInProgress.none(AVCostAction::kBash) &&
-				reqActionsSet.contains(AVCostAction::kBash))
+				avcam->SetStartedAction(AVCostAction::kBash))
 			{
 				// Triggers on pre-hit frame if the action was requested.
-				avcam->SetStartedAction(AVCostAction::kBash);
 				isBashing = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kCastLeft &&
 					 actionsInProgress.none(AVCostAction::kCastLeft) &&
-					 reqActionsSet.contains(AVCostAction::kCastLeft))
+					 avcam->SetStartedAction(AVCostAction::kCastLeft))
 			{
-				avcam->SetStartedAction(AVCostAction::kCastLeft);
 				// Set cast start TP, reset duration, and set flag.
 				p->lastLHCastStartTP = SteadyClock::now();
 				lhCastDuration = 0.0f;
@@ -4064,65 +4068,47 @@ namespace ALYSLC
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kCastRight &&
 					 actionsInProgress.none(AVCostAction::kCastRight) &&
-					 reqActionsSet.contains(AVCostAction::kCastRight))
+					 avcam->SetStartedAction(AVCostAction::kCastRight))
 			{
-				avcam->SetStartedAction(AVCostAction::kCastRight);
 				// Set cast start TP, reset duration, and set flag.
 				p->lastRHCastStartTP = SteadyClock::now();
 				rhCastDuration = 0.0f;
 				isCastingRH = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kDodgeStart &&
-					 actionsInProgress.none(AVCostAction::kDodge) &&
-					 reqActionsSet.contains(AVCostAction::kDodge))
+					 actionsInProgress.none(AVCostAction::kDodge))
 			{
+				// Start dodging, if not already.
 				avcam->SetStartedAction(AVCostAction::kDodge);
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kPreHitFrame)
 			{
 				// Triggers on pre-hit frame if the action was requested.
-				bool powerAttackDualReq = 
-				{ 
-					reqActionsSet.contains(AVCostAction::kPowerAttackDual) &&
-					actionsInProgress.none(AVCostAction::kPowerAttackDual) 
-				};
-				bool powerAttackLeftReq = 
-				{ 
-					reqActionsSet.contains(AVCostAction::kPowerAttackLeft) &&
-					actionsInProgress.none(AVCostAction::kPowerAttackLeft) 
-				};
-				bool powerAttackRightReq = 
-				{ 
-					reqActionsSet.contains(AVCostAction::kPowerAttackRight) &&
-					actionsInProgress.none(AVCostAction::kPowerAttackRight) 
-				};
-
-				if (powerAttackDualReq)
+				// Start power attacking, if not already.
+				if (actionsInProgress.none(AVCostAction::kPowerAttackDual))
 				{
 					avcam->SetStartedAction(AVCostAction::kPowerAttackDual);
 				}
-				else if (powerAttackLeftReq)
+				else if (actionsInProgress.none(AVCostAction::kPowerAttackLeft))
 				{
 					avcam->SetStartedAction(AVCostAction::kPowerAttackLeft);
 				}
-				else if (powerAttackRightReq)
+				else if (actionsInProgress.none(AVCostAction::kPowerAttackRight) )
 				{
 					avcam->SetStartedAction(AVCostAction::kPowerAttackRight);
 				}
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kSprintStart &&
 					 actionsInProgress.none(AVCostAction::kSneakRoll) &&
-					 reqActionsSet.contains(AVCostAction::kSneakRoll))
+					 avcam->SetStartedAction(AVCostAction::kSneakRoll))
 			{
 				// Rollin', Rollin', Rollin'.
-				avcam->SetStartedAction(AVCostAction::kSneakRoll);
 				isRolling = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kSprintStart &&
-					 actionsInProgress.none(AVCostAction::kSprint) &&
-					 reqActionsSet.contains(AVCostAction::kSprint))
+					 actionsInProgress.none(AVCostAction::kSprint))
 			{
-				// Started sprinting.
+				// Start sprinting, if not already.
 				avcam->SetStartedAction(AVCostAction::kSprint);
 			}
 
@@ -4178,7 +4164,7 @@ namespace ALYSLC
 					AVCostAction::kPowerAttackDual
 				) 
 			};
-			// In progress, but not requested any longer. 
+			// In progress, but not requested any longer.
 			bool stopIfRequested = 
 			{ 
 				(
@@ -4202,18 +4188,27 @@ namespace ALYSLC
 			{
 				avcam->RemoveStartedActions
 				(
-					AVCostAction::kBash, AVCostAction::kPowerAttackDual, 
-					AVCostAction::kPowerAttackLeft, AVCostAction::kPowerAttackRight
+					AVCostAction::kBash, 
+					AVCostAction::kPowerAttackDual, 
+					AVCostAction::kPowerAttackLeft,
+					AVCostAction::kPowerAttackRight
 				);
 			}
 
-			// Dodge stop animation played, or no longer requested.
-			if ((actionsInProgress.any(AVCostAction::kDodge)) && 
-				(perfAnimEvent.first == PerfAnimEventTag::kDodgeStop || 
-				 !reqActionsSet.contains(AVCostAction::kDodge)))
+			// Currently dodging.
+			if (actionsInProgress.any(AVCostAction::kDodge))
 			{
-				avcam->RemoveRequestedAction(AVCostAction::kDodge);
-				avcam->RemoveStartedAction(AVCostAction::kDodge);
+				// Remove both request and started action if dodge stop animation played.
+				if (perfAnimEvent.first == PerfAnimEventTag::kDodgeStop)
+				{
+					avcam->RemoveRequestedAction(AVCostAction::kDodge);
+					avcam->RemoveStartedAction(AVCostAction::kDodge);
+				}
+				else if (!reqActionsSet.contains(AVCostAction::kDodge))
+				{
+					// Only remove started action if the request is no longer present.
+					avcam->RemoveStartedAction(AVCostAction::kDodge);
+				}
 			}
 		}
 
@@ -4224,17 +4219,15 @@ namespace ALYSLC
 		// Failsafe: check that the sprint input(s) is released.
 		if ((IsNotPerforming(InputAction::kSprint)) && 
 			(actionsInProgress.any(AVCostAction::kSprint) || 
-			 reqActionsSet.contains(AVCostAction::kSprint)))
+			 avcam->RemoveRequestedAction(AVCostAction::kSprint)))
 		{
-			avcam->RemoveRequestedActions(AVCostAction::kSprint);
-			avcam->RemoveStartedActions(AVCostAction::kSprint);
+			avcam->RemoveStartedAction(AVCostAction::kSprint);
 		}
 
 		if ((IsNotPerforming(InputAction::kSprint)) && 
 			(actionsInProgress.any(AVCostAction::kSneakRoll) ||
-			 reqActionsSet.contains(AVCostAction::kSneakRoll)))
+			 avcam->RemoveRequestedAction(AVCostAction::kSneakRoll)))
 		{
-			avcam->RemoveRequestedActions(AVCostAction::kSneakRoll);
 			avcam->RemoveStartedActions(AVCostAction::kSneakRoll);
 			isRolling = false;
 		}
@@ -4244,10 +4237,9 @@ namespace ALYSLC
 		// Have to check for block/interrupt/input release for dual casting instead.
 		if ((IsNotPerforming(InputAction::kSpecialAction)) && 
 			(actionsInProgress.any(AVCostAction::kCastDual) || 
-			 reqActionsSet.contains(AVCostAction::kCastDual)))
+			 avcam->RemoveRequestedAction(AVCostAction::kCastDual)))
 		{
 			avcam->RemoveStartedAction(AVCostAction::kCastDual);
-			avcam->RemoveRequestedAction(AVCostAction::kCastDual);
 			rhCastDuration = lhCastDuration = 0.0f;
 			isCastingDual = false;
 		}
@@ -4256,10 +4248,9 @@ namespace ALYSLC
 		if ((IsNotPerforming(InputAction::kCastLH) && 
 			 IsNotPerforming(InputAction::kSpecialAction)) && 
 			(actionsInProgress.any(AVCostAction::kCastLeft) || 
-			 reqActionsSet.contains(AVCostAction::kCastLeft)))
+			 avcam->RemoveRequestedAction(AVCostAction::kCastLeft)))
 		{
 			avcam->RemoveStartedAction(AVCostAction::kCastLeft);
-			avcam->RemoveRequestedAction(AVCostAction::kCastLeft);
 			lhCastDuration = 0.0f;
 			isCastingLH = false;
 		}
@@ -4268,10 +4259,9 @@ namespace ALYSLC
 		if ((IsNotPerforming(InputAction::kCastRH) &&
 			 IsNotPerforming(InputAction::kSpecialAction)) && 
 		    (actionsInProgress.any(AVCostAction::kCastRight) || 
-			 reqActionsSet.contains(AVCostAction::kCastRight)))
+			 avcam->RemoveRequestedAction(AVCostAction::kCastRight)))
 		{
 			avcam->RemoveStartedAction(AVCostAction::kCastRight);
-			avcam->RemoveRequestedAction(AVCostAction::kCastRight);
 			rhCastDuration = 0.0f;
 			isCastingRH = false;
 		}
@@ -4608,12 +4598,13 @@ namespace ALYSLC
 		// Get index in serializable skill increments list
 		// that corresponds to this book's taught skill AV.
 		int32_t skillAVIndex = -1;
-		if (!GlobalCoopData::AV_TO_SKILL_MAP.contains(skillAV)) 
+		const auto iter = GlobalCoopData::AV_TO_SKILL_MAP.find(skillAV);
+		if (iter == GlobalCoopData::AV_TO_SKILL_MAP.end()) 
 		{
 			return;
 		}
 			
-		skillAVIndex = GlobalCoopData::AV_TO_SKILL_MAP.at(skillAV);
+		skillAVIndex = iter->second;
 		if (skillAVIndex == -1)
 		{
 			return;
@@ -4815,13 +4806,14 @@ namespace ALYSLC
 		}
 
 		auto& paInfo = glob.paInfoHolder;
-		if (!paInfo->ACTIONS_TO_P1_UE_STRINGS.contains(!a_inputAction))
+		const auto iter = paInfo->ACTIONS_TO_P1_UE_STRINGS.find(!a_inputAction);
+		if (iter == paInfo->ACTIONS_TO_P1_UE_STRINGS.end())
 		{
 			return;
 		}
 		
 		// Get event name to send.
-		const std::string_view& ueString = paInfo->ACTIONS_TO_P1_UE_STRINGS.at(!a_inputAction);
+		const std::string_view& ueString = iter->second;
 		// Value indicates if the button is pressed (1.0) or not (0.0).
 		const float value = a_buttonStateToTrigger == ButtonEventPressType::kRelease ? 0.0f : 1.0f;
 		float heldTimeSecs = 0.0f;
@@ -5233,13 +5225,14 @@ namespace ALYSLC
 		// Toggle AI driven if necessary.
 
 		auto& paInfo = glob.paInfoHolder;
-		// Check if the given action maps to a valid P1 input event name.
-		if (!paInfo->ACTIONS_TO_P1_UE_STRINGS.contains(!a_inputAction))
+		const auto iter = paInfo->ACTIONS_TO_P1_UE_STRINGS.find(!a_inputAction);
+		if (iter == paInfo->ACTIONS_TO_P1_UE_STRINGS.end())
 		{
 			return;
 		}
-
-		const std::string_view& ueString = paInfo->ACTIONS_TO_P1_UE_STRINGS.at(!a_inputAction);
+		
+		// Get event name to send.
+		const std::string_view& ueString = iter->second;
 		// Pressed == 1.0, released == 0.0.
 		// Instant trigger means just pressed and does not need a paired 'released' button event
 		// (value == 0.0).
@@ -5915,42 +5908,44 @@ namespace ALYSLC
 					);
 				}
 			}
-			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
-					 glob.serializablePlayerData.contains(coopActor->formID))
+			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 			{
-				// Get HMS AVs inc per level up.
-				uint32_t iAVDhmsLevelUp = 10;
-				auto valueOpt = Util::GetGameSettingInt("iAVDhmsLevelUp");
-				if (valueOpt.has_value())
+				const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+				if (iter != glob.serializablePlayerData.end())
 				{
-					iAVDhmsLevelUp = valueOpt.value();
-				}
+					// Get HMS AVs inc per level up.
+					uint32_t iAVDhmsLevelUp = 10;
+					auto valueOpt = Util::GetGameSettingInt("iAVDhmsLevelUp");
+					if (valueOpt.has_value())
+					{
+						iAVDhmsLevelUp = valueOpt.value();
+					}
 
-				// Carryweight increase per level.
-				float carryWeightIncPerLevel = 5.0f;
-				valueOpt = Util::GetGameSettingFloat("fLevelUpCarryWeightMod");
-				if (valueOpt.has_value())
-				{
-					carryWeightIncPerLevel = valueOpt.value();
-				}
+					// Carryweight increase per level.
+					float carryWeightIncPerLevel = 5.0f;
+					valueOpt = Util::GetGameSettingFloat("fLevelUpCarryWeightMod");
+					if (valueOpt.has_value())
+					{
+						carryWeightIncPerLevel = valueOpt.value();
+					}
 
-				// Check how many times stamina was leveled 
-				// and multiply by carryweight-increase-per-level value.
-				float staminaLevelInc = 
-				(
-					glob.serializablePlayerData.at(coopActor->formID)->hmsPointIncreasesList[2] / 
-					iAVDhmsLevelUp
-				);
-				float newPermCarryWeightInc = staminaLevelInc * carryWeightIncPerLevel;
-				// Update if not already set.
-				if (permCarryWeightInc != newPermCarryWeightInc)
-				{
-					coopActor->RestoreActorValue
+					// Check how many times stamina was leveled 
+					// and multiply by carryweight-increase-per-level value.
+					float staminaLevelInc = 
 					(
-						RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-						RE::ActorValue::kCarryWeight, 
-						newPermCarryWeightInc - permCarryWeightInc
+						iter->second->hmsPointIncreasesList[2] / iAVDhmsLevelUp
 					);
+					float newPermCarryWeightInc = staminaLevelInc * carryWeightIncPerLevel;
+					// Update if not already set.
+					if (permCarryWeightInc != newPermCarryWeightInc)
+					{
+						coopActor->RestoreActorValue
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+							RE::ActorValue::kCarryWeight, 
+							newPermCarryWeightInc - permCarryWeightInc
+						);
+					}
 				}
 			}
 		}

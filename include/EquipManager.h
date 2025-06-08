@@ -402,8 +402,8 @@ namespace ALYSLC
 				return true;
 			}
 
-			if (auto invChanges = coopActor->GetInventoryChanges(); 
-				invChanges && invChanges->entryList)
+			auto invChanges = coopActor->GetInventoryChanges(); 
+			if (invChanges && invChanges->entryList)
 			{
 				for (auto invChangesEntry : *invChanges->entryList)
 				{

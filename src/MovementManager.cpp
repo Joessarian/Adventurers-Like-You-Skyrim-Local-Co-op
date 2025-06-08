@@ -368,25 +368,27 @@ namespace ALYSLC
 
 		for (const auto& armNodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES)
 		{
-			if (!nom->nodeNameToRotationDataMap.contains(armNodeName))
+			auto iter = nom->nodeNameToRotationDataMap.find(armNodeName);
+			if (iter == nom->nodeNameToRotationDataMap.end())
 			{
 				continue;
 			}
 
-			if (nom->nodeNameToRotationDataMap.at(armNodeName)->rotationModified)
+			if (iter->second->rotationModified)
 			{
 				return true;
 			}
 		}
 
-		for (const auto& armNodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES)
+		for (const auto& armNodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES)
 		{
-			if (!nom->nodeNameToRotationDataMap.contains(armNodeName))
+			auto iter = nom->nodeNameToRotationDataMap.find(armNodeName);
+			if (iter == nom->nodeNameToRotationDataMap.end())
 			{
 				continue;
 			}
 
-			if (nom->nodeNameToRotationDataMap.at(armNodeName)->rotationModified)
+			if (iter->second->rotationModified)
 			{
 				return true;
 			}
@@ -401,12 +403,13 @@ namespace ALYSLC
 
 		for (const auto& torsoNodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODES)
 		{
-			if (!nom->nodeNameToRotationDataMap.contains(torsoNodeName))
+			auto iter = nom->nodeNameToRotationDataMap.find(torsoNodeName);
+			if (iter == nom->nodeNameToRotationDataMap.end())
 			{
 				continue;
 			}
 
-			if (nom->nodeNameToRotationDataMap.at(torsoNodeName)->rotationModified)
+			if (iter->second->rotationModified)
 			{
 				return true;
 			}
@@ -3294,23 +3297,22 @@ namespace ALYSLC
 				if (lMagNodePtr && 
 					lMagNodePtr.get() &&
 					rMagNodePtr && 
-					rMagNodePtr.get() &&
-					nom->defaultNodeWorldTransformsMap.contains(lMagNodePtr) && 
-					nom->defaultNodeWorldTransformsMap.contains(rMagNodePtr))
+					rMagNodePtr.get())
 				{
-					const auto& lhPos = 
-					(
-						nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).translate
-					);
-					const auto& rhPos = 
-					(
-						nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).translate
-					);
-					attackSourcePos = (lhPos + rhPos) / 2.0f;
+					
+					auto iter1 = nom->defaultNodeWorldTransformsMap.find(lMagNodePtr);
+					auto iter2 = nom->defaultNodeWorldTransformsMap.find(rMagNodePtr);
+					if (iter1 != nom->defaultNodeWorldTransformsMap.end() &&
+						iter2 != nom->defaultNodeWorldTransformsMap.end())
+					{
+						const auto& lhPos = iter1->second.translate;
+						const auto& rhPos = iter2->second.translate;
+						attackSourcePos = (lhPos + rhPos) / 2.0f;
 
-					const auto& lhRot = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).rotate;
-					const auto& rhRot = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).rotate;
-					attackSourceDir = (lhRot * forward + rhRot * forward) / 2.0f;
+						const auto& lhRot = iter1->second.rotate;
+						const auto& rhRot = iter2->second.rotate;
+						attackSourceDir = (lhRot * forward + rhRot * forward) / 2.0f;
+					}
 				}
 			}
 			else
@@ -3342,15 +3344,17 @@ namespace ALYSLC
 			);
 			if (a_setDefaultDirAndPos)
 			{
-				if (lMagNodePtr && 
-					lMagNodePtr.get() &&
-					nom->defaultNodeWorldTransformsMap.contains(lMagNodePtr))
+				if (lMagNodePtr && lMagNodePtr.get())
 				{
-					attackSourcePos = nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).translate;
-					attackSourceDir = 
-					(
-						nom->defaultNodeWorldTransformsMap.at(lMagNodePtr).rotate * forward
-					);
+					const auto iter = nom->defaultNodeWorldTransformsMap.find(lMagNodePtr);
+					if (iter != nom->defaultNodeWorldTransformsMap.end())
+					{
+						attackSourcePos = iter->second.translate;
+						attackSourceDir = 
+						(
+							iter->second.rotate * forward
+						);
+					}
 				}
 			}
 			else
@@ -3371,15 +3375,17 @@ namespace ALYSLC
 			);
 			if (a_setDefaultDirAndPos)
 			{
-				if (rMagNodePtr && 
-					rMagNodePtr.get() && 
-					nom->defaultNodeWorldTransformsMap.contains(rMagNodePtr))
+				if (rMagNodePtr && rMagNodePtr.get())
 				{
-					attackSourcePos = nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).translate;
-					attackSourceDir = 
-					(
-						nom->defaultNodeWorldTransformsMap.at(rMagNodePtr).rotate * forward
-					);
+					const auto iter = nom->defaultNodeWorldTransformsMap.find(rMagNodePtr);
+					if (iter != nom->defaultNodeWorldTransformsMap.end())
+					{
+						attackSourcePos = iter->second.translate;
+						attackSourceDir = 
+						(
+							iter->second.rotate * forward
+						);
+					}
 				}
 			}
 			else
@@ -3432,39 +3438,30 @@ namespace ALYSLC
 					);
 					if (a_setDefaultDirAndPos)
 					{
-						if (weaponNodePtr && 
-							weaponNodePtr.get() && 
-							nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
+						if (lhNodePtr && 
+							lhNodePtr.get() &&
+							rhNodePtr && 
+							rhNodePtr.get() &&
+							weaponNodePtr &&
+							weaponNodePtr.get())
 						{
-							attackSourcePos = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).translate
-							);
-						}
-
-						if (lhNodePtr && lhNodePtr.get() &&
-							rhNodePtr && rhNodePtr.get() &&
-							nom->defaultNodeWorldTransformsMap.contains(lhNodePtr) &&
-							nom->defaultNodeWorldTransformsMap.contains(rhNodePtr) && 
-							nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
-						{
-							const auto& lhPos = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(lhNodePtr).translate
-							);
-							const auto& rhPos = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(rhNodePtr).translate
-							);
-							const auto& weapRot = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).rotate
-							);
-							attackSourceDir = Util::RotationToDirectionVect
-							(
-								-Util::DirectionToGameAngPitch(weapRot * forward),
-								Util::ConvertAngle(Util::DirectionToGameAngYaw(lhPos - rhPos))
-							);
+							auto iter1 = nom->defaultNodeWorldTransformsMap.find(lhNodePtr);
+							auto iter2 = nom->defaultNodeWorldTransformsMap.find(rhNodePtr);
+							auto iter3 = nom->defaultNodeWorldTransformsMap.find(weaponNodePtr);
+							if (iter1 != nom->defaultNodeWorldTransformsMap.end() &&
+								iter2 != nom->defaultNodeWorldTransformsMap.end() &&
+								iter3 != nom->defaultNodeWorldTransformsMap.end())
+							{
+								const auto& lhPos = iter1->second.translate;
+								const auto& rhPos = iter2->second.translate;
+								const auto& weapRot = iter3->second.rotate;
+								attackSourcePos = iter3->second.translate;
+								attackSourceDir = Util::RotationToDirectionVect
+								(
+									-Util::DirectionToGameAngPitch(weapRot * forward),
+									Util::ConvertAngle(Util::DirectionToGameAngYaw(lhPos - rhPos))
+								);
+							}
 						}
 					}
 					else
@@ -3496,21 +3493,11 @@ namespace ALYSLC
 					// if nocking a crossbow or if the bow/crossbow is already fully drawn.
 					if (a_setDefaultDirAndPos)
 					{
-						if (nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
+						const auto iter = nom->defaultNodeWorldTransformsMap.find(weaponNodePtr);
+						if (iter != nom->defaultNodeWorldTransformsMap.end())
 						{
-							attackSourcePos = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).translate
-							);
-						}
-
-						if (nom->defaultNodeWorldTransformsMap.contains(weaponNodePtr))
-						{
-							attackSourceDir = 
-							(
-								nom->defaultNodeWorldTransformsMap.at(weaponNodePtr).rotate * 
-								forward
-							);
+							attackSourcePos = iter->second.translate;
+							attackSourceDir = iter->second.rotate * forward;
 						}
 					}
 					else
@@ -4281,12 +4268,13 @@ namespace ALYSLC
 			return;
 		}
 
-		if (!nodeNameToRotationDataMap.contains(a_nodePtr->name))
+		const auto iter = nodeNameToRotationDataMap.find(a_nodePtr->name);
+		if (iter == nodeNameToRotationDataMap.end())
 		{
 			return;
 		}
 
-		const auto& data = nodeNameToRotationDataMap[a_nodePtr->name];
+		const auto& data = iter->second;
 		// Set default rotation.
 		data->defaultRotation = a_nodePtr->local.rotate;
 		// Set new local rotations before the UpdateDownwardPass() call,
@@ -4408,16 +4396,18 @@ namespace ALYSLC
 				// Update position and velocity first.
 				const auto& nodeWorldPos = nodePtr->world.translate;
 				RE::NiPoint3 localPos = nodeWorldPos - playerPos;
-				if (!nodeNameToRotationDataMap.contains(nodePtr->name))
+				auto iter = nodeNameToRotationDataMap.find(nodePtr->name);
+				if (iter == nodeNameToRotationDataMap.end())
 				{
 					// Reset rotation and position to current values.
-					const auto& newData = 
+					iter = 
 					(
-						*nodeNameToRotationDataMap.insert_or_assign
+						nodeNameToRotationDataMap.insert_or_assign
 						(
 							nodePtr->name, std::make_unique<NodeRotationData>()
 						).first
-					).second;
+					);
+					const auto& newData = iter->second;
 					newData->currentRotation =
 					newData->defaultRotation =
 					newData->startingRotation =
@@ -4425,8 +4415,15 @@ namespace ALYSLC
 					newData->localPosition = localPos;
 				}
 
+				// Insertion or find not successful.
+				// Skip.
+				if (iter == nodeNameToRotationDataMap.end())
+				{
+					continue;
+				}
+
 				// Set local velocity and position.
-				const auto& nodeData = nodeNameToRotationDataMap[nodePtr->name];
+				const auto& nodeData = iter->second;
 				RE::NiPoint3 velocity = 
 				(
 					(localPos - nodeData->localPosition) / (*g_deltaTimeRealTime)
@@ -5133,12 +5130,13 @@ namespace ALYSLC
 			return false;
 		}
 
-		if (!nodeNameToRotationDataMap.contains(a_nodePtr->name)) 
+		const auto iter = nodeNameToRotationDataMap.find(a_nodePtr->name);
+		if (iter == nodeNameToRotationDataMap.end())
 		{
 			return false;
 		}
-
-		const auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); 
+		
+		const auto& data = iter->second;
 		if (!data || !data.get()) 
 		{
 			return false;
@@ -5175,25 +5173,32 @@ namespace ALYSLC
 		}
 		
 		// Ensure the arm node is accounted for in the rotation data map before continuing.
-		if (!nodeNameToRotationDataMap.contains(a_armNode->name) && 
-			a_armNodeType != ArmNodeType::kShield)
+		auto iter = nodeNameToRotationDataMap.find(a_armNode->name);
+		if (a_armNodeType != ArmNodeType::kShield)
 		{
-			// Set all rotations to the node's current local rotation 
-			// so we have valid data to start off with.
-			const auto& newData = 
-			(
+			if (iter == nodeNameToRotationDataMap.end())
+			{
+				// Reset rotation and position to current values.
+				iter = 
 				(
-					*nodeNameToRotationDataMap.insert_or_assign
+					nodeNameToRotationDataMap.insert_or_assign
 					(
-						a_armNode->name, 
-						std::make_unique<NodeRotationData>()
+						a_armNode->name, std::make_unique<NodeRotationData>()
 					).first
-				).second
-			);
-			newData->currentRotation = 
-			newData->defaultRotation = 
-			newData->startingRotation = 
-			newData->targetRotation = a_armNode->local.rotate;
+				);
+				const auto& newData = iter->second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
+				newData->targetRotation = a_armNode->local.rotate;
+			}
+
+			// Insertion or find not successful.
+			// Should not happen, but if it does, skip.
+			if (iter == nodeNameToRotationDataMap.end())
+			{
+				return false;
+			}
 		}
 		
 		// Arm node hit something collidable.
@@ -5286,7 +5291,7 @@ namespace ALYSLC
 			{
 				// Use our local velocity relative to the player's root node for better hit reg.
 				// Rotation data for this node.
-				const auto& data = nodeNameToRotationDataMap.at(a_armNode->name);
+				const auto& data = iter->second;
 				hitVelocity = data->localVelocity;
 				hitVelocity.Unitize();
 				hitVelocity *= hitSpeed;
@@ -5624,7 +5629,7 @@ namespace ALYSLC
 
 						if (auto shield = a_p->em->GetShield(); shield && isLeftArmNode)
 						{
-							armWeightFactor += shield->weight;
+							armWeightFactor += shield->weight * 2.0f;
 						}
 
 						armWeightFactor = 1.0f + armWeightFactor / 30.0f;
@@ -6199,12 +6204,13 @@ namespace ALYSLC
 			return;
 		}
 
-		if (!nodeNameToRotationDataMap.contains(a_nodePtr->name)) 
+		const auto iter = nodeNameToRotationDataMap.find(a_nodePtr->name);
+		if (iter == nodeNameToRotationDataMap.end()) 
 		{
 			return;
 		}
 
-		auto& data = nodeNameToRotationDataMap.at(a_nodePtr->name); 
+		auto& data = iter->second;
 		if (!data || !data.get())
 		{
 			return;
@@ -6242,42 +6248,58 @@ namespace ALYSLC
 		}
 
 		// Ensure both nodes are accounted for in the rotation data map.
-		if (!nodeNameToRotationDataMap.contains(a_forearmNodePtr->name))
+		auto iter1 = nodeNameToRotationDataMap.find(a_forearmNodePtr->name);
+		if (iter1 == nodeNameToRotationDataMap.end())
 		{
-			// Set all rotations to the node's current local rotation
-			// so we have valid data to start off with.
-			const auto& newData = 
+			// Reset rotation and position to current values.
+			iter1 = 
 			(
-				*nodeNameToRotationDataMap.insert_or_assign
+				nodeNameToRotationDataMap.insert_or_assign
 				(
 					a_forearmNodePtr->name, std::make_unique<NodeRotationData>()
 				).first
-			).second;
-			newData->currentRotation = 
-			newData->defaultRotation = 
-			newData->startingRotation = 
+			);
+			const auto& newData = iter1->second;
+			newData->currentRotation =
+			newData->defaultRotation =
+			newData->startingRotation =
 			newData->targetRotation = a_forearmNodePtr->local.rotate;
 		}
 
-		if (!nodeNameToRotationDataMap.contains(a_handNodePtr->name))
+		// Insertion or find not successful.
+		// Should not happen, but if it does, skip.
+		if (iter1 == nodeNameToRotationDataMap.end())
 		{
-			// Set all rotations to the node's current local rotation 
-			// so we have valid data to start off with.
-			const auto& newData = 
+			return;
+		}
+
+		auto iter2 = nodeNameToRotationDataMap.find(a_handNodePtr->name);
+		if (iter2 == nodeNameToRotationDataMap.end())
+		{
+			// Reset rotation and position to current values.
+			iter2 = 
 			(
-				*nodeNameToRotationDataMap.insert_or_assign
+				nodeNameToRotationDataMap.insert_or_assign
 				(
 					a_handNodePtr->name, std::make_unique<NodeRotationData>()
 				).first
-			).second;
-			newData->currentRotation = 
-			newData->defaultRotation = 
-			newData->startingRotation = 
+			);
+			const auto& newData = iter2->second;
+			newData->currentRotation =
+			newData->defaultRotation =
+			newData->startingRotation =
 			newData->targetRotation = a_handNodePtr->local.rotate;
 		}
 
-		const auto& forearmData = nodeNameToRotationDataMap[a_forearmNodePtr->name];
-		const auto& handData = nodeNameToRotationDataMap[a_handNodePtr->name];
+		// Insertion or find not successful.
+		// Should not happen, but if it does, skip.
+		if (iter2 == nodeNameToRotationDataMap.end())
+		{
+			return;
+		}
+
+		const auto& forearmData = iter1->second;
+		const auto& handData = iter2->second;
 		// Set node target rotations for forearm and hand.
 		bool forearmRotHasBeenSet = forearmData->rotationModified;
 		bool handRotHasBeenSet = handData->rotationModified;
@@ -7027,25 +7049,33 @@ namespace ALYSLC
 		}
 
 		// Ensure the shoulder node is accounted for in rotation data map.
-		if (!nodeNameToRotationDataMap.contains(a_shoulderNodePtr->name))
+		auto iter = nodeNameToRotationDataMap.find(a_shoulderNodePtr->name);
+		if (iter == nodeNameToRotationDataMap.end())
 		{
-			// Set all rotations to the node's current local rotation 
-			// so we have valid data to start off with.
-			const auto& newData = 
+			// Reset rotation and position to current values.
+			iter = 
 			(
-				*nodeNameToRotationDataMap.insert_or_assign
+				nodeNameToRotationDataMap.insert_or_assign
 				(
 					a_shoulderNodePtr->name, std::make_unique<NodeRotationData>()
 				).first
-			).second;
-			newData->currentRotation = 
-			newData->defaultRotation = 
-			newData->startingRotation = 
+			);
+			const auto& newData = iter->second;
+			newData->currentRotation =
+			newData->defaultRotation =
+			newData->startingRotation =
 			newData->targetRotation = a_shoulderNodePtr->local.rotate;
 		}
 
+		// Insertion or find not successful.
+		// Should not happen, but if it does, skip.
+		if (iter == nodeNameToRotationDataMap.end())
+		{
+			return;
+		}
+
 		// Rotation data we will modify.
-		const auto& shoulderData = nodeNameToRotationDataMap[a_shoulderNodePtr->name];
+		const auto& shoulderData = iter->second;
 		shoulderData->prevInterrupted = shoulderData->interrupted;
 		shoulderData->prevRotationModified = shoulderData->rotationModified;
 		shoulderData->interrupted =
@@ -7875,10 +7905,11 @@ namespace ALYSLC
 			auto parentPtr = RE::NiPointer<RE::NiAVObject>(a_shoulderNodePtr->parent); 
 			if (parentPtr && parentPtr.get())
 			{
+				const auto iter = defaultNodeWorldTransformsMap.find(parentPtr);
 				RE::NiTransform inverseParent
 				{
-					defaultNodeWorldTransformsMap.contains(parentPtr) ?
-					defaultNodeWorldTransformsMap.at(parentPtr).Invert() : 
+					iter != defaultNodeWorldTransformsMap.end() ?
+					iter->second.Invert() : 
 					parentPtr->world.Invert()
 				};
 
@@ -8117,27 +8148,35 @@ namespace ALYSLC
 			{
 				continue;
 			}
-				
-			// Ensure the torso node is accounted for in rotation data map.
-			if (!nodeNameToRotationDataMap.contains(torsoNodePtr->name))
+			
+			// Ensure both nodes are accounted for in the rotation data map.
+			auto iter1 = nodeNameToRotationDataMap.find(torsoNodePtr->name);
+			if (iter1 == nodeNameToRotationDataMap.end())
 			{
-				// Set all rotations to the node's current local rotation 
-				// so we have valid data to start off with.
-				const auto& newData = 
+				// Reset rotation and position to current values.
+				iter1 = 
 				(
-					*nodeNameToRotationDataMap.insert_or_assign
+					nodeNameToRotationDataMap.insert_or_assign
 					(
 						torsoNodePtr->name, std::make_unique<NodeRotationData>()
 					).first
-				).second;
-				newData->currentRotation = 
-				newData->defaultRotation = 
-				newData->startingRotation = 
+				);
+				const auto& newData = iter1->second;
+				newData->currentRotation =
+				newData->defaultRotation =
+				newData->startingRotation =
 				newData->targetRotation = torsoNodePtr->local.rotate;
 			}
 
+			// Insertion or find not successful.
+			// Should not happen, but if it does, skip.
+			if (iter1 == nodeNameToRotationDataMap.end())
+			{
+				continue;
+			}
+
 			// Rotation data we will modify.
-			const auto& torsoData = nodeNameToRotationDataMap[torsoNodePtr->name];
+			const auto& torsoData = iter1->second;
 			// Set the rotation state flags before updating the blend state.
 			torsoData->prevInterrupted = torsoData->interrupted;
 			torsoData->prevRotationModified = torsoData->rotationModified;
@@ -8169,12 +8208,10 @@ namespace ALYSLC
 			UpdateNodeRotationBlendState(a_p, torsoData, torsoNodePtr, false);
 
 			// Get the game's default world rotation for this node and derive its axes.
-			if (defaultNodeWorldTransformsMap.contains(torsoNodePtr))
+			auto iter2 = defaultNodeWorldTransformsMap.find(torsoNodePtr);
+			if (iter2 != defaultNodeWorldTransformsMap.end())
 			{
-				const auto& defaultWorldRotation = 
-				(
-					defaultNodeWorldTransformsMap.at(torsoNodePtr).rotate
-				);
+				const auto& defaultWorldRotation = iter2->second.rotate;
 				baseXAxis = defaultWorldRotation * right;
 				baseYAxis = defaultWorldRotation * forward;
 				baseZAxis = defaultWorldRotation * up;
@@ -8187,9 +8224,10 @@ namespace ALYSLC
 					auto parentPtr = RE::NiPointer<RE::NiAVObject>(torsoNodePtr->parent);
 					if (parentPtr && parentPtr.get()) 
 					{
-						if (defaultNodeWorldTransformsMap.contains(parentPtr))
+						const auto iter2 = defaultNodeWorldTransformsMap.find(parentPtr);
+						if (iter2 != defaultNodeWorldTransformsMap.end())
 						{
-							parentWorld = defaultNodeWorldTransformsMap.at(parentPtr);
+							parentWorld = iter2->second;
 						}
 						else
 						{

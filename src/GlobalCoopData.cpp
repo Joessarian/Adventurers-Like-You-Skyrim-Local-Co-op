@@ -1492,10 +1492,15 @@ namespace ALYSLC
 
 			// REMOVE when done debugging.
 #ifdef ALYSLC_DEBUG_MODE
-			if (!glob.serializablePlayerData.empty() && 
-				glob.serializablePlayerData.contains(p1->formID))
+			if (glob.serializablePlayerData.empty())
 			{
-				const auto& data = glob.serializablePlayerData.at(p1->formID);
+				return;
+			}
+
+			const auto iter = glob.serializablePlayerData.find(p1->formID);
+			if (iter != glob.serializablePlayerData.end())
+			{
+				const auto& data = iter->second;
 				const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
 				SPDLOG_DEBUG
 				(
@@ -2614,10 +2619,11 @@ namespace ALYSLC
 
 		RE::Actor* playerActor = nullptr;
 		float highestAVAmount = -1.0f;
+		const auto iter = AV_TO_SKILL_MAP.find(a_av);
 		const auto skill = 
 		(
-			AV_TO_SKILL_MAP.contains(a_av) ? 
-			AV_TO_SKILL_MAP.at(a_av) : 
+			iter != AV_TO_SKILL_MAP.end() ? 
+			iter->second : 
 			Skill::kTotal
 		);
 		// Index should not equal the length of the skills lists.
@@ -2794,10 +2800,11 @@ namespace ALYSLC
 					continue;
 				}
 				
+				const auto iter = invCounts.find(boundObj);
 				auto count = 
 				(
-					invCounts.contains(boundObj) ? 
-					invCounts.at(boundObj) : 
+					iter != invCounts.end() ? 
+					iter->second : 
 					0
 				);
 				if (count <= 0)
@@ -2874,9 +2881,10 @@ namespace ALYSLC
 			return;
 		}
 
-		if (glob.serializablePlayerData.contains(p1->formID)) 
+		const auto iter = glob.serializablePlayerData.find(p1->formID);
+		if (iter != glob.serializablePlayerData.end()) 
 		{
-			const auto& p1Data = glob.serializablePlayerData.at(p1->formID);
+			const auto& p1Data = iter->second;
 			// Using the Enderal player level global 
 			// which is unaffected by the SetLevel console command.
 			// Want to ignore false level ups triggered from our AV auto-scaling.
@@ -3030,14 +3038,18 @@ namespace ALYSLC
 		{
 			for (const auto& p : glob.coopPlayers)
 			{
-				if (!p->isActive || 
-					p->isPlayer1 || 
-					!glob.serializablePlayerData.contains(p->coopActor->formID))
+				if (!p->isActive || p->isPlayer1)
 				{
 					continue;
 				}
 
-				auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
+				const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+				if (iter == glob.serializablePlayerData.end()) 
+				{
+					continue;
+				}
+
+				auto& data = iter->second;
 				for (uint8_t i = 0; i < SKILL_ACTOR_VALUES_LIST.size(); ++i)
 				{
 					const auto& av = SKILL_ACTOR_VALUES_LIST[i];
@@ -3065,9 +3077,15 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG("[GLOB] ImportUnlockedPerks: {}", a_coopActor->GetName());
 
+		if (!a_coopActor)
+		{
+			return;
+		}
+
 		auto& glob = GetSingleton();
 		// Add saved perks to the player if they do not have them added already.
-		if (!glob.serializablePlayerData.contains(a_coopActor->formID))
+		const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
+		if (iter == glob.serializablePlayerData.end()) 
 		{
 			return;
 		}
@@ -3123,7 +3141,8 @@ namespace ALYSLC
 		};
 
 		Util::TraverseAllPerks(a_coopActor, removeAllPerks);
-		const auto& data = glob.serializablePlayerData.at(a_coopActor->formID);
+
+		auto& data = iter->second;
 		const auto& unlockedPerksList = data->GetUnlockedPerksList();
 		SPDLOG_DEBUG
 		(
@@ -3694,14 +3713,18 @@ namespace ALYSLC
 
 		for (const auto& p : glob.coopPlayers)
 		{
-			if (!p->isActive || 
-				p->isPlayer1 || 
-				!glob.serializablePlayerData.contains(p->coopActor->formID))
+			if (!p->isActive || p->isPlayer1)
 			{
 				continue;
 			}
 
-			auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
+			const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+			if (iter == glob.serializablePlayerData.end()) 
+			{
+				continue;
+			}
+
+			auto& data = iter->second;
 			// Already saved previously, no need to handle.
 			if (data->firstSavedLevel != 0)
 			{
@@ -3738,12 +3761,13 @@ namespace ALYSLC
 #ifdef ALYSLC_DEBUG_MODE
 				// REMOVE after debugging.
 				auto currentSkill = static_cast<Skill>(j);
-				if (!SKILL_TO_AV_MAP.contains(currentSkill))
+				const auto iter = SKILL_TO_AV_MAP.find(currentSkill);
+				if (iter == SKILL_TO_AV_MAP.end())
 				{
 					continue;
 				}
 					
-				auto currentAV = SKILL_TO_AV_MAP.at(currentSkill);
+				auto currentAV = iter->second;
 				SPDLOG_DEBUG
 				(
 					"[GLOB] PerformInitialAVAutoScaling: "
@@ -4117,7 +4141,8 @@ namespace ALYSLC
 			}
 
 			// Ensure active player's FID is used to index into serializable data map.
-			if (!glob.serializablePlayerData.contains(p->coopActor->formID))
+			const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+			if (iter == glob.serializablePlayerData.end()) 
 			{
 				SPDLOG_DEBUG
 				(
@@ -4127,7 +4152,7 @@ namespace ALYSLC
 				);
 				continue;
 			}
-			
+
 			// NOTE for Enderal:
 			// No need to rescale HMS AVs for P1,
 			// and companion player HMS values are only affected by the player's class as of now.
@@ -4139,7 +4164,7 @@ namespace ALYSLC
 				RescaleSkillAVs(p->coopActor.get());
 				if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
 				{
-					const auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
+					const auto& data = iter->second;
 					RescaleHMS(p->coopActor.get(), data->firstSavedLevel);
 				}
 			}
@@ -4168,7 +4193,8 @@ namespace ALYSLC
 
 		auto& glob = GetSingleton();
 		// Ensure active player's FID is used to index into serializable data map.
-		if (!glob.serializablePlayerData.contains(a_playerActor->formID))
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end()) 
 		{
 			SPDLOG_DEBUG
 			(
@@ -4193,7 +4219,7 @@ namespace ALYSLC
 				return;
 			}
 
-			const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+			const auto& data = iter->second;
 			RescaleHMS(a_playerActor, data->firstSavedLevel);
 		}
 	}
@@ -4313,7 +4339,9 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG("[GLOB] SaveUnlockedPerksForPlayer: {}", a_coopActor->GetName());
 		auto& glob = GetSingleton();
-		if (!glob.serializablePlayerData.contains(a_coopActor->formID)) 
+		// Ensure active player's FID is used to index into serializable data map.
+		const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
+		if (iter == glob.serializablePlayerData.end()) 
 		{
 			SPDLOG_DEBUG
 			(
@@ -4323,8 +4351,8 @@ namespace ALYSLC
 			);
 			return;
 		}
-
-		auto& serializedData = glob.serializablePlayerData.at(a_coopActor->formID);
+		
+		auto& serializedData = iter->second;
 		// Save each player's perks to their serializable unlocked perks list.
 		auto savePlayerPerksVisitor = 
 		[p1, &serializedData, &glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
@@ -4670,20 +4698,20 @@ namespace ALYSLC
 						view->GetVariable
 						(
 							std::addressof(crosshairOffset), 
-							"HUDMovieBaseInstance.CrosshairInstance._x"
+							"HUDMovieBaseInstance.Crosshair._x"
 						);
 						double xOff = crosshairOffset.GetNumber();
 						view->GetVariable
 						(
 							std::addressof(crosshairOffset), 
-							"HUDMovieBaseInstance.CrosshairInstance._y"
+							"HUDMovieBaseInstance.Crosshair._y"
 						);
 						double yOff = crosshairOffset.GetNumber();
 
 						const auto rect = view->GetVisibleFrameRect();
 						const double frameCenterX = static_cast<double>
 						(
-							0.5f * (rect.right + rect.left)
+							0.5 * (rect.right + rect.left)
 						);
 						const double frameCenterY = static_cast<double>
 						(
@@ -4697,6 +4725,7 @@ namespace ALYSLC
 						(
 							rect.bottom - rect.top
 						);
+
 						RE::GFxValue textFieldHeight{ };
 						RE::GFxValue textFieldWidth{ };
 						RE::GFxValue textHeight{ };
@@ -4773,6 +4802,62 @@ namespace ALYSLC
 						RE::GFxValue::DisplayInfo loc{ };
 						loc.SetPosition(x, y);
 						rolloverText.SetDisplayInfo(loc);
+
+						/*RE::GFxValue hudOffset{ };
+						view->GetVariable
+						(
+							std::addressof(hudOffset), 
+							"HUDMovieBaseInstance.TopLeftRefX"
+						);
+						double xOffBase = hudOffset.GetNumber();
+						view->GetVariable
+						(
+							std::addressof(hudOffset), 
+							"HUDMovieBaseInstance.TopLeftRefY"
+						);
+						double yOffBase = hudOffset.GetNumber();
+
+						view->GetVariable
+						(
+							std::addressof(hudOffset), 
+							"HUDMovieBaseInstance.BottomRightRefX"
+						);
+						double xOffBase2 = hudOffset.GetNumber();
+						view->GetVariable
+						(
+							std::addressof(hudOffset), 
+							"HUDMovieBaseInstance.BottomRightRefY"
+						);
+						double yOffBase2 = hudOffset.GetNumber();
+						SPDLOG_DEBUG
+						(
+							"[GLOB] SetCrosshairText: HUD center: {}, {}, height, width: {}, {}, "
+							"crosshair offset: {}, {}, Game resolution: {}, {}, ratios: {}, {}, "
+							"top left/bottom right offsets: ({}, {}), ({}, {}), "
+							"hud base offset: {}, {} and {}, {}. View scale/align types: {}, {}. "
+							"Rect: ({}, {}, {}, {}). Movie def height, width: {}, {}.",
+							frameCenterX, frameCenterY, frameHeight, frameWidth, xOff, yOff,
+							RE::BSGraphics::State::GetSingleton()->screenHeight, 
+							RE::BSGraphics::State::GetSingleton()->screenWidth,
+							RE::BSGraphics::State::GetSingleton()->dynamicResolutionHeightRatio,
+							RE::BSGraphics::State::GetSingleton()->dynamicResolutionWidthRatio,
+							topLeftOffsetX,
+							topLeftOffsetY,
+							bottomRightOffsetX,
+							bottomRightOffsetY,
+							xOffBase,
+							yOffBase,
+							xOffBase2,
+							yOffBase2,
+							view->GetViewScaleMode(),
+							view->GetViewAlignment(),
+							rect.left,
+							rect.right,
+							rect.top,
+							rect.bottom,
+							view->GetMovieDef()->GetHeight(),
+							view->GetMovieDef()->GetWidth()
+						);*/
 					}
 				}
 				
@@ -5066,6 +5151,17 @@ namespace ALYSLC
 
 			ResetMenuCIDs();
 		}
+
+		// Ensure the allow saving flag is set for the HUD Menu,
+		// since we may have unset it previously, preventing all saving.
+		auto ui = RE::UI::GetSingleton();
+		if (ui)
+		{
+			if (auto hud = ui->GetMenu<RE::HUDMenu>(); hud)
+			{
+				hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
+			}
+		}
 	}
 
 	void GlobalCoopData::SyncSharedPerks()
@@ -5130,9 +5226,10 @@ namespace ALYSLC
 						bool hadSharedPerk = true;
 						// Add unlocked shared perk to serialized data
 						// if it's not already present.
-						if (glob.serializablePlayerData.contains(a_actor->formID))
+						const auto iter = glob.serializablePlayerData.find(a_actor->formID);
+						if (iter != glob.serializablePlayerData.end())
 						{
-							auto& data = glob.serializablePlayerData.at(a_actor->formID);
+							auto& data = iter->second;
 							if (!data->HasUnlockedPerk(perk))
 							{
 								data->InsertUnlockedPerk(perk);
@@ -5637,9 +5734,10 @@ namespace ALYSLC
 		// or leave an error message if P1 has no serialized data at this stage.
 		if (a_playerActor->IsPlayerRef())
 		{
-			if (glob.serializablePlayerData.contains(a_playerActor->formID))
+			const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+			if (iter != glob.serializablePlayerData.end())
 			{
-				const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+				auto& data = iter->second;
 				// Ensure player 1's character ID is always 0.
 				if (data->GetPlayerCharacterID() != 0)
 				{
@@ -5766,25 +5864,27 @@ namespace ALYSLC
 			glob.serializablePlayerData.insert(std::move(node));
 		}
 
-		bool updateSuccessful = glob.serializablePlayerData.contains(a_playerActor->formID);
-		if (!updateSuccessful)
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		const bool updateSuccessful = iter != glob.serializablePlayerData.end();
+		if (updateSuccessful)
+		{
+			SPDLOG_DEBUG
+			(
+				"[GLOB] UpdatePlayerSerializationIDs: "
+				"Successfully linked {} to their serialized data. "
+				"FID key: 0x{:X}, character ID: {}.",
+				a_playerActor->GetName(),
+				a_playerActor->formID, 
+				iter->second->GetPlayerCharacterID()
+			);
+		}
+		else
 		{
 			SPDLOG_ERROR
 			(
 				"[GLOB] ERR: UpdatePlayerSerializationIDs: "
 				"Failed to update serialized FID key for {}. FID 0x{:X} not found.",
 				a_playerActor->GetName(), a_playerActor->formID
-			);
-		}
-		else
-		{
-			const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
-			SPDLOG_DEBUG
-			(
-				"[GLOB] UpdatePlayerSerializationIDs: "
-				"Successfully linked {} to their serialized data. "
-				"FID key: 0x{:X}, character ID: {}.",
-				a_playerActor->GetName(), a_playerActor->formID, data->GetPlayerCharacterID()
 			);
 		}
 
@@ -7282,9 +7382,10 @@ namespace ALYSLC
 					if (newAV == glob.coopCompanionExchangeableData->skillAVs[i])
 					{
 						a_coopActor->SetBaseActorValue(currentAV, newAV);
-						if (glob.serializablePlayerData.contains(a_coopActor->formID))
+						const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
+						if (iter != glob.serializablePlayerData.end())
 						{
-							auto& data = glob.serializablePlayerData[a_coopActor->formID];
+							auto& data = iter->second;
 							SPDLOG_DEBUG
 							(
 								"[GLOB] CopyOverAVs: {}'s {} skill inc went from {} to {}.",
@@ -7416,7 +7517,8 @@ namespace ALYSLC
 						continue;
 					}
 
-					auto count = invCounts.contains(obj) ? invCounts.at(obj) : 0;
+					const auto iter = invCounts.find(obj);
+					auto count = iter != invCounts.end() ? iter->second : 0;
 					// Does not have one.
 					if (count <= 0) 
 					{
@@ -7470,7 +7572,8 @@ namespace ALYSLC
 						continue;
 					}
 
-					auto count = invCounts.contains(obj) ? invCounts.at(obj) : 0;
+					const auto iter = invCounts.find(obj);
+					auto count = iter != invCounts.end() ? iter->second : 0;
 					// Does not have one.
 					if (count <= 0)
 					{
@@ -8630,7 +8733,13 @@ namespace ALYSLC
 		
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!p1 || !a_playerActor || !glob.serializablePlayerData.contains(a_playerActor->formID)) 
+		if (!p1 || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
 		{
 			return;
 		}
@@ -8641,7 +8750,7 @@ namespace ALYSLC
 			a_playerActor->GetName(), a_baseLevel
 		);
 
-		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		const auto& data = iter->second;
 		// Has recorded level up.
 		if (a_baseLevel != 0) 
 		{
@@ -8775,25 +8884,32 @@ namespace ALYSLC
 
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto& glob = GetSingleton();
-		if (!p1 || !a_playerActor || !glob.serializablePlayerData.contains(a_playerActor->formID))
+		if (!p1 || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
 		{
 			return;
 		}
 		
 		SPDLOG_DEBUG("[GLOB] RescaleSkillAVs: {}.", a_playerActor->GetName());
 
-		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		const auto& data = iter->second;
 		Skill currentSkill = Skill::kTotal;
 		RE::ActorValue currentAV = RE::ActorValue::kNone;
 		for (auto i = 0; i < Skill::kTotal; ++i)
 		{
 			currentSkill = static_cast<Skill>(i);
-			if (!SKILL_TO_AV_MAP.contains(currentSkill))
+			const auto iter = SKILL_TO_AV_MAP.find(currentSkill);
+			if (iter == SKILL_TO_AV_MAP.end())
 			{
 				continue;
 			}
 
-			currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
+			currentAV = iter->second;
 			SPDLOG_DEBUG
 			(
 				"[GLOB] RescaleSkillAVs: base: {}, current: {}, modifiers (d, p, t): {}, {}, {}.",
@@ -8866,14 +8982,20 @@ namespace ALYSLC
 
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
-		if (!p1 || !a_playerActor || !glob.serializablePlayerData.contains(a_playerActor->formID))
+		if (!p1 || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
 		{
 			return;
 		}
 		
 		SPDLOG_DEBUG("[GLOB] ResetPerkData: {}", a_playerActor->GetName());
 
-		auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		auto& data = iter->second;
 		// Players start with 3 perk points at level 1 if using Requiem.
 		data->availablePerkPoints = static_cast<uint32_t>
 		(
@@ -9059,15 +9181,19 @@ namespace ALYSLC
 		// undoing all serialized progress to these AVs.
 		
 		auto& glob = GetSingleton();
-		if (!a_playerActor || 
-			!glob.globalDataInit || 
-			!glob.serializablePlayerData.contains(a_playerActor->formID))
+		if (!a_playerActor || !glob.globalDataInit)
 		{
 			return;
 		}
 		
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+
 		SPDLOG_DEBUG("[GLOB] ResetToBaseHealthMagickaStamina: {}", a_playerActor->GetName());
-		const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
+		const auto& data = iter->second;
 		data->hmsPointIncreasesList.fill(0.0f);
 		RescaleHMS(a_playerActor, data->firstSavedLevel);
 	}
@@ -9163,14 +9289,18 @@ namespace ALYSLC
 				// Set base Skill AV levels to newly-scaled ones.
 				for (const auto& p : glob.coopPlayers)
 				{
-					if (!p->isActive || 
-						!p->coopActor || 
-						!glob.serializablePlayerData.contains(p->coopActor->formID))
+					if (!p->isActive || !p->coopActor)
 					{
 						continue;
 					}
 
-					auto& data = glob.serializablePlayerData.at(p->coopActor->formID);
+					const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+					if (iter == glob.serializablePlayerData.end())
+					{
+						continue;
+					}
+
+					auto& data = iter->second;
 					data->skillBaseLevelsList = Util::GetActorSkillLevels(p->coopActor.get());
 				}
 			}

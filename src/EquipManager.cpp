@@ -92,7 +92,8 @@ namespace ALYSLC
 
 			// Make sure the player still has at least 1 of the ammo before equipping.
 			const auto invCounts = coopActor->GetInventoryCounts();
-			if (invCounts.contains(ammoToReEquip) && invCounts.at(ammoToReEquip) > 0)
+			const auto iter = invCounts.find(ammoToReEquip);
+			if (iter != invCounts.end() && iter->second > 0)
 			{
 				EquipAmmo(ammoToReEquip);
 			}
@@ -1339,14 +1340,19 @@ namespace ALYSLC
 			else
 			{
 				const auto& invCounts = coopActor->GetInventoryCounts();
-				int32_t newAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1; 
+				const auto iter = invCounts.find(ammo);
+				int32_t newAmmoCount = 
+				(
+					iter != invCounts.end() ? iter->second : -1
+				); 
 				if (newAmmoCount != -1)
 				{
 					bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toEquip);
+					const auto iter = hotkeyedFormsToSlotsMap.find(ammo->formID);
 					int32_t hotkeyIndex =
 					(
-						hotkeyedFormsToSlotsMap.contains(ammo->formID) ?
-						hotkeyedFormsToSlotsMap[ammo->formID] :
+						iter != hotkeyedFormsToSlotsMap.end() ?
+						iter->second :
 						-1
 					);
 					// Remove directly back into P1's inventory.
@@ -1390,14 +1396,19 @@ namespace ALYSLC
 				// Remove all of this ammo and add back to reset equip state.
 				// Ugly but seems to avoid creating new entries.
 				const auto& invCounts = coopActor->GetInventoryCounts();
-				int32_t newAmmoCount = invCounts.contains(ammo) ? invCounts.at(ammo) : -1;
+				const auto iter = invCounts.find(ammo);
+				int32_t newAmmoCount = 
+				(
+					iter != invCounts.end() ? iter->second : -1
+				); 
 				if (newAmmoCount != -1)
 				{
 					bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toEquip);
-					int32_t hotkeyIndex = 
+					const auto iter = hotkeyedFormsToSlotsMap.find(ammo->formID);
+					int32_t hotkeyIndex =
 					(
-						hotkeyedFormsToSlotsMap.contains(ammo->formID) ? 
-						hotkeyedFormsToSlotsMap[ammo->formID] : 
+						iter != hotkeyedFormsToSlotsMap.end() ?
+						iter->second :
 						-1
 					);
 					coopActor->RemoveItem
@@ -1680,10 +1691,11 @@ namespace ALYSLC
 			);
 			auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
 			auto invCounts = coopActor->GetInventoryCounts();
+			const auto iter = invCounts.find(boundObj);
 			auto numberOwned = 
 			(
-				invCounts.contains(boundObj) ? 
-				invCounts.at(boundObj) : 
+				iter != invCounts.end() ? 
+				iter->second : 
 				0
 			);
 			bool alreadyEquippedInOtherHand = 
@@ -1742,10 +1754,11 @@ namespace ALYSLC
 					);
 					auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
 					auto invCounts = coopActor->GetInventoryCounts();
+					const auto iter = invCounts.find(boundObj);
 					auto numberOwned = 
 					(
-						invCounts.contains(boundObj) ? 
-						invCounts.at(boundObj) : 
+						iter != invCounts.end() ? 
+						iter->second : 
 						0
 					);
 					bool alreadyEquippedInOtherHand = 
@@ -3280,13 +3293,14 @@ namespace ALYSLC
 				}
 
 				// Hotkeyed by P1, so remove the hotkey.
-				if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+				const auto iter = coopP1->em->hotkeyedFormsToSlotsMap.find(form->formID);
+				if (iter != coopP1->em->hotkeyedFormsToSlotsMap.end())
 				{
 					SPDLOG_DEBUG
 					(
 						"[EM] ImportCoopFavorites: {}: Removing P1 hotkey {} for {}.",
 						coopActor->GetName(), 
-						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] + 1, 
+						iter->second + 1, 
 						form->GetName()
 					);
 					Util::ChangeFormHotkeyStatus(p1, form, -1);
@@ -3334,7 +3348,8 @@ namespace ALYSLC
 					// so add the favorited form to P1 before favoriting it.
 					// Tag this favorited form as added, so it can be removed
 					// when P1's favorites are restored.
-					if (!invCounts.contains(boundObj) || invCounts.at(boundObj) <= 0)
+					const auto iter = invCounts.find(boundObj);
+					if (iter == invCounts.end() || iter->second <= 0)
 					{
 						p1->AddObjectToContainer(form->As<RE::TESBoundObject>(), nullptr, 1, p1);
 						favoritedItemWasAdded[i] = true;
@@ -3351,9 +3366,10 @@ namespace ALYSLC
 			}
 
 			// Hotkeyed by the companion player, so set the corresponding hotkey slot.
-			if (hotkeyedFormsToSlotsMap.contains(form->formID))
+			const auto iter = hotkeyedFormsToSlotsMap.find(form->formID);
+			if (iter != hotkeyedFormsToSlotsMap.end())
 			{
-				auto slot = hotkeyedFormsToSlotsMap[form->formID];
+				auto slot = iter->second;
 				SPDLOG_DEBUG
 				(
 					"[EM] ImportCoopFavorites: {}: Adding hotkey {} for {}.",
@@ -3989,12 +4005,13 @@ namespace ALYSLC
 				}
 				else
 				{
+					const auto iter1 = coopP1->em->hotkeyedFormsToSlotsMap.find(form->formID);
+					const auto iter2 = hotkeyedFormsToSlotsMap.find(form->formID);
 					bool sharedHotkey = 
 					{
-						coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID) &&
-						hotkeyedFormsToSlotsMap.contains(form->formID) &&
-						coopP1->em->hotkeyedFormsToSlotsMap[form->formID] == 
-						hotkeyedFormsToSlotsMap[form->formID]
+						iter1 != coopP1->em->hotkeyedFormsToSlotsMap.end() &&
+						iter2 != hotkeyedFormsToSlotsMap.end() &&
+						iter1->second == iter2->second
 					};
 					if (!sharedHotkey)
 					{
@@ -4035,10 +4052,11 @@ namespace ALYSLC
 				);
 				Util::ChangeFormFavoritesStatus(p1, form, true);
 			}
-
-			if (coopP1->em->hotkeyedFormsToSlotsMap.contains(form->formID))
+			
+			const auto iter = coopP1->em->hotkeyedFormsToSlotsMap.find(form->formID);
+			if (iter != coopP1->em->hotkeyedFormsToSlotsMap.end())
 			{
-				const auto slot = coopP1->em->hotkeyedFormsToSlotsMap[form->formID];
+				const auto slot = iter->second;
 				SPDLOG_DEBUG
 				(
 					"[EM] RestoreP1Favorites: {}: Reapplying P1 hotkey {} for {}.",
@@ -4906,9 +4924,10 @@ namespace ALYSLC
 		else
 		{
 			// Read in the cached magical favorites and assign to each category.
-			if (glob.serializablePlayerData.contains(coopActor->formID))
+			const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+			if (iter != glob.serializablePlayerData.end())
 			{
-				auto& data = glob.serializablePlayerData.at(coopActor->formID);
+				auto& data = iter->second;
 				for (auto spellForm : data->favoritedMagForms)
 				{
 					if (!spellForm)
@@ -5091,9 +5110,10 @@ namespace ALYSLC
 
 			// Switch weapon animation type with grip change.
 			auto currentType = *a_weapon->weaponData.animationType;
-			if (GlobalCoopData::WEAP_ANIM_SWITCH_MAP.contains(currentType))
+			const auto iter = GlobalCoopData::WEAP_ANIM_SWITCH_MAP.find(currentType);
+			if (iter != GlobalCoopData::WEAP_ANIM_SWITCH_MAP.end())
 			{
-				auto newType = GlobalCoopData::WEAP_ANIM_SWITCH_MAP.at(currentType);
+				auto newType = iter->second;
 				// Special case with staves switching back to 1H ranged cast animations 
 				// from 2H melee animations.
 				if (a_weapon->HasKeyword(glob.weapTypeKeywordsList[!RE::WEAPON_TYPE::kStaff]) &&
@@ -5223,17 +5243,19 @@ namespace ALYSLC
 		}
 
 		auto invCounts = coopActor->GetInventoryCounts();
+		const auto iter = invCounts.find(ammo);
 		auto currentAmmoCount = 
 		(
-			invCounts.contains(ammo) ? 
-			invCounts.at(ammo) : 
+			iter != invCounts.end() ? 
+			iter->second : 
 			0
 		);
 		bool wasFavorited = Util::IsFavorited(coopActor.get(), a_toUnequip);
+		const auto iter2 = hotkeyedFormsToSlotsMap.find(ammo->formID);
 		int32_t hotkeyIndex = 
 		(
-			hotkeyedFormsToSlotsMap.contains(ammo->formID) ? 
-			hotkeyedFormsToSlotsMap[ammo->formID] : 
+			iter2 != hotkeyedFormsToSlotsMap.end() ? 
+			iter2->second : 
 			-1
 		);
 
@@ -5995,27 +6017,32 @@ namespace ALYSLC
 				{
 					auto slot = (int8_t)(*exDataHotkey->hotkey);
 					auto oldHotkeyedForm = hotkeyedForms[slot];
-					if (oldHotkeyedForm && 
-						oldHotkeyedForm != boundObj && 
-						hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID)) 
+					bool removedHotkey = false;
+					if (oldHotkeyedForm && oldHotkeyedForm != boundObj) 
 					{
-						// Form is hotkeyed in this slot but also in another slot previously, 
-						// so remove the previously linked hotkey.
-						SPDLOG_DEBUG
-						(
-							"[EM] UpdateFavoritedFormsLists: {}: "
-							"FORM {} was already hotkeyed in slot {}. "
-							"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
-							coopActor->GetName(),
-							oldHotkeyedForm->GetName(), 
-							slot == -1 ? -1 : slot + 1, 
-							boundObj->GetName()
-						);
+						const auto iter = hotkeyedFormsToSlotsMap.find(oldHotkeyedForm->formID);
+						if (iter != hotkeyedFormsToSlotsMap.end())
+						{
+							// Form is hotkeyed in this slot but also in another slot previously, 
+							// so remove the previously linked hotkey.
+							SPDLOG_DEBUG
+							(
+								"[EM] UpdateFavoritedFormsLists: {}: "
+								"FORM {} was already hotkeyed in slot {}. "
+								"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+								coopActor->GetName(),
+								oldHotkeyedForm->GetName(), 
+								slot == -1 ? -1 : slot + 1, 
+								boundObj->GetName()
+							);
 
-						hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
-						exDataHotkey->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+							hotkeyedFormsToSlotsMap.erase(iter);
+							exDataHotkey->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
+							removedHotkey = true;
+						}
 					}
-					else
+
+					if (!removedHotkey)
 					{
 						// Assign form to previously empty hotkey slot 
 						// or link a new hotkey slot to this form.
@@ -6039,7 +6066,8 @@ namespace ALYSLC
 			}
 		}
 
-		if (!glob.serializablePlayerData.contains(coopActor->formID))
+		const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+		if (iter == glob.serializablePlayerData.end())
 		{
 			SPDLOG_DEBUG
 			(
@@ -6050,7 +6078,7 @@ namespace ALYSLC
 			return;
 		}
 
-		auto& data = glob.serializablePlayerData.at(coopActor->formID);
+		auto& data = iter->second;
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
@@ -6142,29 +6170,34 @@ namespace ALYSLC
 					continue;
 				}
 
-				auto oldHotkeyedForm = hotkeyedForms[i];
-				if (oldHotkeyedForm &&
-					oldHotkeyedForm != magForm &&
-					hotkeyedFormsToSlotsMap.contains(oldHotkeyedForm->formID))
+				auto oldHotkeyedForm = hotkeyedForms[i];					
+				bool removedHotkey = false;
+				if (oldHotkeyedForm && oldHotkeyedForm != magForm) 
 				{
-					// Form is hotkeyed in this slot but also in another slot previously,
-					// so remove the old linked hotkey.
-					// This magic form should have hotkey precedence over the previous form,
-					// since it is not a cached magic form and is more up to date.
-					SPDLOG_DEBUG
-					(
-						"[EM] UpdateFavoritedFormsLists: {}: "
-						"FORM {} was already hotkeyed in slot {}. "
-						"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
-						coopActor->GetName(), 
-						oldHotkeyedForm->GetName(), 
-						i == -1 ? -1 : i + 1, 
-						magForm->GetName()
-					);
-					hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
-					magicFavorites->hotkeys[i] = nullptr;
+					const auto iter = hotkeyedFormsToSlotsMap.find(oldHotkeyedForm->formID);
+					if (iter != hotkeyedFormsToSlotsMap.end())
+					{
+						// Form is hotkeyed in this slot but also in another slot previously,
+						// so remove the old linked hotkey.
+						// This magic form should have hotkey precedence over the previous form,
+						// since it is not a cached magic form and is more up to date.
+						SPDLOG_DEBUG
+						(
+							"[EM] UpdateFavoritedFormsLists: {}: "
+							"FORM {} was already hotkeyed in slot {}. "
+							"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
+							coopActor->GetName(), 
+							oldHotkeyedForm->GetName(), 
+							i == -1 ? -1 : i + 1, 
+							magForm->GetName()
+						);
+						hotkeyedFormsToSlotsMap.erase(oldHotkeyedForm->formID);
+						magicFavorites->hotkeys[i] = nullptr;
+						removedHotkey = true;
+					}
 				}
-				else
+
+				if (!removedHotkey)
 				{
 					// Assign form to previously empty hotkey slot
 					// or link a new hotkey slot to this form.
@@ -6388,7 +6421,8 @@ namespace ALYSLC
 			{
 				auto weap = currentLHForm->As<RE::TESObjectWEAP>();
 				const auto invCounts = coopActor->GetInventoryCounts();
-				if (invCounts.contains(weap) && invCounts.at(weap) == 1)
+				const auto iter = invCounts.find(weap);
+				if (iter != invCounts.end() && iter->second == 1)
 				{
 					// Unequip from LH, keep in RH.
 					SPDLOG_DEBUG

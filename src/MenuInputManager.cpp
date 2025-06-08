@@ -1304,6 +1304,12 @@ namespace ALYSLC
 				const uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
 				// Get mapped entry for the selected index.
 				// Entry is used to update the item's text in the menu.
+				const auto iter = favMenuIndexToEntryMap.find(index);
+				if (iter == favMenuIndexToEntryMap.end())
+				{
+					return;
+				}
+				
 				SPDLOG_DEBUG
 				(
 					"[MIM] EquipP1QSForm: {} at index {} is mapped to {}. "
@@ -1313,18 +1319,11 @@ namespace ALYSLC
 					favoritesMenu->favorites[index].item->GetName() :
 					"NONE",
 					index,
-					favMenuIndexToEntryMap.contains(index) ? 
-					favMenuIndexToEntryMap.at(index) : 
-					-1,
+					iter->second,
 					favMenuIndexToEntryMap.size(), 
 					favMenuIndexToEntryMap.empty()
 				);
-				if (!favMenuIndexToEntryMap.contains(index))
-				{
-					return;
-				}
-
-				const uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
+				const uint32_t selectedEntryNum = iter->second;
 				const auto form = favoritesMenu->favorites[index].item;
 				if (!form)
 				{
@@ -1733,7 +1732,8 @@ namespace ALYSLC
 					}
 
 					// Index must have a corresponding entry number.
-					if (!favMenuIndexToEntryMap.contains(index))
+					const auto iter = favMenuIndexToEntryMap.find(index);
+					if (iter == favMenuIndexToEntryMap.end())
 					{
 						SPDLOG_DEBUG
 						(
@@ -2045,9 +2045,10 @@ namespace ALYSLC
 			// Loot a specific item.
 			int32_t count = -1;
 			const auto invCounts = fromContainerPtr->GetInventoryCounts();
-			if (invCounts.contains(boundObj)) 
+			const auto iter = invCounts.find(boundObj);
+			if (iter != invCounts.end()) 
 			{
-				count = invCounts.at(boundObj);
+				count = iter->second;
 			}
 
 			// Not inside inventory, so nothing to loot.
@@ -2371,12 +2372,10 @@ namespace ALYSLC
 		auto skillbookTier = EnderalSkillbookTier::kTotal;
 		const RE::FormID& fid = a_skillbook->formID;
 		// Get tier and skill to level up for this skillbook.
-		if (GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains(fid)) 
+		const auto iter = GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.find(fid);
+		if (iter != GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.end()) 
 		{
-			const auto& tierSkillPair = 
-			(
-				GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at(fid)
-			);
+			const auto& tierSkillPair = iter->second;
 			skillbookTier = tierSkillPair.first;
 			skillAV = tierSkillPair.second;
 		}
@@ -2781,9 +2780,10 @@ namespace ALYSLC
 				// Get the current number owned before dropping/transferring.
 				int32_t currentCount = 0;
 				auto inventory = menuCoopActorPtr->GetInventory();
-				if (inventory.contains(boundObj))
+				const auto iter = inventory.find(boundObj);
+				if (iter != inventory.end())
 				{
-					currentCount = inventory.at(boundObj).first;
+					currentCount = iter->second.first;
 				}
 
 				// Unfavorite the item if none of this item will remain 
@@ -3250,9 +3250,10 @@ namespace ALYSLC
 
 			int32_t currentCount = 0;
 			auto inventory = menuCoopActorPtr->GetInventory();
-			if (inventory.contains(boundObj))
+			const auto iter = inventory.find(boundObj);
+			if (iter != inventory.end())
 			{
-				currentCount = inventory.at(boundObj).first;
+				currentCount = iter->second.first;
 			}
 
 			// Unfavorite if none of this item will remain after gifting one.
@@ -3486,11 +3487,12 @@ namespace ALYSLC
 				}
 
 				auto droppedInventory = containerRefrPtr->GetDroppedInventory();
+				const auto iter = droppedInventory.find(obj);
 				// Loot dropped inventory items from the overworld,
 				// since they cannot be removed from the container directly.
-				if (droppedInventory.contains(obj))
+				if (iter != droppedInventory.end())
 				{
-					const auto& countHandlePair = droppedInventory.at(obj);
+					const auto& countHandlePair = iter->second;
 					if (countHandlePair.first > 0)
 					{
 						for (const auto& handle : countHandlePair.second)
@@ -3507,9 +3509,10 @@ namespace ALYSLC
 				else
 				{
 					auto counts = containerRefrPtr->GetInventoryCounts();
-					if (counts.contains(obj))
+					const auto iter2 = counts.find(obj);
+					if (iter2 != counts.end())
 					{
-						auto count = counts.at(obj);
+						auto count = iter2->second;
 						if (count > 0)
 						{
 							// Loot with P1 then transfer to the companion player as usual.
@@ -3566,13 +3569,18 @@ namespace ALYSLC
 			// in the co-op player's inventory, then attempt to equip and update the menu.
 			bool equipable = 
 			{
-				(selectedForm->Is(RE::FormType::Shout, RE::FormType::Spell)) ||
-				(
-					boundObj &&
-					menuCoopActorPtr->GetInventory().contains(boundObj) && 
-					menuCoopActorPtr->GetInventory().at(boundObj).first > 0
-				)
+				(selectedForm->Is(RE::FormType::Shout, RE::FormType::Spell))
 			};
+			if (!equipable && boundObj)
+			{
+				auto inventory = menuCoopActorPtr->GetInventory();
+				const auto iter = inventory.find(boundObj);
+				equipable = 
+				(
+					iter != inventory.end() && 
+					iter->second.first > 0
+				);
+			}
 			if (equipable)
 			{
 				currentMenuInputEventType = MenuInputEventType::kEquipReq;
@@ -3857,11 +3865,7 @@ namespace ALYSLC
 			if (!menuNamesHashSet.contains(newHash))
 			{
 				menuNamesStack.emplace_front(a_menuName);
-			}
-
-			// Add new menu name.
-			if (!menuNamesHashSet.contains(newHash)) 
-			{
+				// Add new menu name.
 				menuNamesHashSet.insert(newHash);
 			}
 		}
@@ -3876,9 +3880,10 @@ namespace ALYSLC
 			}
 
 			// Remove menu name.
-			if (menuNamesHashSet.contains(newHash)) 
+			const auto iter = menuNamesHashSet.find(newHash);
+			if (iter != menuNamesHashSet.end()) 
 			{
-				menuNamesHashSet.erase(newHash);
+				menuNamesHashSet.erase(iter);
 			}
 		}
 
@@ -4627,9 +4632,10 @@ namespace ALYSLC
 		a_bindInfoOut.device = RE::INPUT_DEVICE::kGamepad;
 		// Set to invalid ID code at first.
 		a_bindInfoOut.idCode = 0xFF;
-		if (glob.cdh->XIMASK_TO_GAMEMASK.contains(a_xMask))
+		const auto iter = glob.cdh->XIMASK_TO_GAMEMASK.find(a_xMask);
+		if (iter != glob.cdh->XIMASK_TO_GAMEMASK.end())
 		{
-			a_bindInfoOut.idCode = glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask);
+			a_bindInfoOut.idCode = iter->second;
 		}
 		else
 		{
@@ -4804,6 +4810,7 @@ namespace ALYSLC
 					!insertedFIDs.contains(spellItem->formID))
 				{
 					formToAdd = spellItem;
+					insertedFIDs.insert(spellItem->formID);
 					break;
 				}
 			}
@@ -4825,6 +4832,7 @@ namespace ALYSLC
 						!insertedFIDs.contains(spellItem->formID))
 					{
 						formToAdd = spellItem;
+						insertedFIDs.insert(spellItem->formID);
 						break;
 					}
 				}
@@ -4843,6 +4851,7 @@ namespace ALYSLC
 						!insertedFIDs.contains(shoutList[i]->formID))
 					{
 						formToAdd = shoutList[i];
+						insertedFIDs.insert(shoutList[i]->formID);
 						break;
 					}
 				}
@@ -4890,14 +4899,15 @@ namespace ALYSLC
 		// Copy over old in-common linked menu events 
 		// so that held buttons from the previously opened
 		// menu do register as presses in the new menu when it opens.
-		for (auto& [xMask, menuBindInfo] : oldMenuControlMap) 
+		for (const auto& [xMask, menuBindInfo] : oldMenuControlMap) 
 		{
-			if (!menuControlMap.contains(xMask)) 
+			const auto iter = menuControlMap.find(xMask);
+			if (iter == menuControlMap.end()) 
 			{
 				continue;
 			}
 
-			menuControlMap[xMask] = menuBindInfo;
+			iter->second = menuBindInfo;
 		}
 	}
 
@@ -4977,10 +4987,7 @@ namespace ALYSLC
 			{
 
 				RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-				if (!menuCoopActorPtr  ||
-					!menuCoopActorPtr.get() || 
-					!a_selectedForm ||
-					!favMenuIndexToEntryMap.contains(a_selectedIndex))
+				if (!menuCoopActorPtr || !menuCoopActorPtr.get() || !a_selectedForm)
 				{
 					return;
 				}
@@ -5003,13 +5010,26 @@ namespace ALYSLC
 					return;
 				}
 
-				uint32_t selectedEntry = favMenuIndexToEntryMap.at(a_selectedIndex);
+				
+				const auto iter = favMenuIndexToEntryMap.find(a_selectedIndex);
+				if (iter == favMenuIndexToEntryMap.end())
+				{
+					return;
+				}
+
+				uint32_t selectedEntry = iter->second;
 				auto invCounts = menuCoopActorPtr->GetInventoryCounts();
+				int32_t newCount = -1;
 				auto boundObj = a_selectedForm->As<RE::TESBoundObject>();
-				int32_t newCount = 
-				(
-					boundObj && invCounts.contains(boundObj) ? invCounts.at(boundObj) : -1
-				);
+				if (boundObj)
+				{
+					const auto iter = invCounts.find(boundObj);
+					if (iter != invCounts.end())
+					{
+						newCount = iter->second;
+					}
+				}
+
 				if (newCount < 0)
 				{
 					return;

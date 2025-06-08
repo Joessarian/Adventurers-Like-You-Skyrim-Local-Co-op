@@ -1978,9 +1978,14 @@ namespace ALYSLC
 				defObjMgr->objects[RE::DEFAULT_OBJECT::kLockpick]->As<RE::TESObjectMISC>()
 			);
 			const auto invCounts = a_actor->GetInventoryCounts();
-			if (lockpickObj && invCounts.contains(lockpickObj))
+			if (!lockpickObj)
 			{
-				return invCounts.at(lockpickObj); 
+				return -1;
+			}
+
+			if (const auto iter = invCounts.find(lockpickObj); iter != invCounts.end())
+			{
+				return iter->second; 
 			}
 
 			return -1;

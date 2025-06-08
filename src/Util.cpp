@@ -1198,12 +1198,13 @@ namespace ALYSLC
 			{
 				// Skill AVs
 				currentSkill = static_cast<Skill>(i);
-				if (!glob.SKILL_TO_AV_MAP.contains(currentSkill))
+				const auto iter = glob.SKILL_TO_AV_MAP.find(currentSkill);
+				if (iter == glob.SKILL_TO_AV_MAP.end())
 				{
 					continue;
 				}
 
-				currentAV = glob.SKILL_TO_AV_MAP.at(currentSkill);
+				currentAV = iter->second;
 				// Enderal companion player skills are hardcoded to start at level 5,
 				// and can't be changed directly since they are auto-calculated
 				// when scaled with P1.
@@ -2173,16 +2174,19 @@ namespace ALYSLC
 						}
 					}
 				}
-				else if (glob.globalDataInit && 
-						 glob.serializablePlayerData.contains(a_playerActor->formID))
+				else if (glob.globalDataInit)
 				{
-					const auto& data = glob.serializablePlayerData.at(a_playerActor->formID);
-					for (auto i = 0; i < data->hotkeyedForms.size(); ++i)
+					const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+					if (iter != glob.serializablePlayerData.end())
 					{
-						auto savedHotkeyedForm = data->hotkeyedForms[i];
-						if (savedHotkeyedForm == a_form)
+						const auto& data = iter->second;
+						for (auto i = 0; i < data->hotkeyedForms.size(); ++i)
 						{
-							return i;
+							auto savedHotkeyedForm = data->hotkeyedForms[i];
+							if (savedHotkeyedForm == a_form)
+							{
+								return i;
+							}
 						}
 					}
 				}

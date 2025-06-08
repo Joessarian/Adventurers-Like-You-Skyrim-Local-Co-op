@@ -256,13 +256,14 @@ namespace ALYSLC
 		{
 			if (a_keyCode != 0xFF)
 			{
-				if (GAMEMASK_TO_DXSC.contains(a_keyCode))
+				const auto iter = GAMEMASK_TO_DXSC.find(a_keyCode); 
+				if (iter != GAMEMASK_TO_DXSC.end())
 				{
 					return 
 					(
 						static_cast<InputAction>
 						(
-							GAMEMASK_TO_DXSC.at(a_keyCode) - FIRST_CTRLR_DXSC
+							iter->second - FIRST_CTRLR_DXSC
 						)
 					);
 				}
