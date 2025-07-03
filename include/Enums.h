@@ -385,9 +385,24 @@ namespace ALYSLC
 		kWeapMag,	// Only weapons/magic.
 	};
 
-	//============
-	//[Menu Input]
-	//============
+	//=======
+	//[Menus]
+	//=======
+	
+	// Data copyable from one player to another when opening certain menus.
+	enum class CopyablePlayerDataTypes : std::uint16_t
+	{
+		kNone = 0,
+		kCarryWeight = 1 << 0,
+		kFavoritesMagic = 1 << 1,
+		kFavoritesPhysical = 1 << 2,
+		kInventory = 1 << 3,
+		kName = 1 << 4,
+		kPerkList = 1 << 5,
+		kPerkTree = 1 << 6,
+		kRaceName = 1 << 7,
+		kSkillsAndHMS = 1 << 8
+	};
 
 	// Helper (UIExtensions) menu request indices.
 	enum class HelperMenu : std::uint8_t
@@ -427,6 +442,7 @@ namespace ALYSLC
 		kLoot,
 		kMagic,
 		kMap,
+		kSleepWaitMenu,
 
 		kTotal
 	};
@@ -999,20 +1015,6 @@ namespace ALYSLC
 	//====
 	//[UI]
 	//====
-
-	// Data copyable from one player to another when opening certain menus.
-	enum class CopyablePlayerDataTypes : std::uint8_t
-	{
-		kNone = 0,
-		kCarryWeight = 1 << 0,
-		kFavorites = 1 << 1,
-		kInventory = 1 << 2,
-		kName = 1 << 3,
-		kPerkList = 1 << 4,
-		kPerkTree = 1 << 5,
-		kRaceName = 1 << 6,
-		kSkillsAndHMS = 1 << 7
-	};
 
 	// Crosshair text notification type.
 	enum class CrosshairMessageType : std::uint16_t

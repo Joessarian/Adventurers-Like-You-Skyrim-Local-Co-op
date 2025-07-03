@@ -57,7 +57,7 @@ namespace ALYSLC
 		}
 
 		// Stop movement.
-		if (auto mountPtr = p->GetCurrentMount(); mountPtr && mountPtr.get())
+		if (auto mountPtr = p->GetCurrentMount(); mountPtr)
 		{
 			Util::NativeFunctions::ClearKeepOffsetFromActor(mountPtr.get());
 			Util::NativeFunctions::SetDontMove(mountPtr.get(), true);
@@ -82,8 +82,10 @@ namespace ALYSLC
 		(
 			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight, 0.001f
 		);
-
-		if (nextState == ManagerState::kAwaitingRefresh) 
+		
+		auto ui = RE::UI::GetSingleton();
+		if (nextState == ManagerState::kAwaitingRefresh ||
+			ui->IsMenuOpen(RE::FaderMenu::MENU_NAME))
 		{
 			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
@@ -108,7 +110,7 @@ namespace ALYSLC
 		}
 
 		// Ensure the player/mount is not set to stationary.
-		if (auto mountPtr = p->GetCurrentMount(); mountPtr && mountPtr.get())
+		if (auto mountPtr = p->GetCurrentMount(); mountPtr)
 		{
 			Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 		}
@@ -176,6 +178,7 @@ namespace ALYSLC
 		dontMoveSet = true;
 		faceTarget = false;
 		inRangeOfUndiscoveredMarker = false;
+		interactionInRange = false;
 		interactionPackageRunning = false;
 		isAirborneWhileJumping = false;
 		isAnimDriven = false;
@@ -201,6 +204,7 @@ namespace ALYSLC
 		shouldStartMoving = false;
 		shouldStopMoving = false;
 		turnToTarget = false;
+		wantsToMount = false;
 		// Floats.
 		aimPitch = PI / 18.0f;
 		baseHeightMult = max(0.001f, static_cast<float>(coopActor->refScale) / 100.0f);
@@ -246,7 +250,7 @@ namespace ALYSLC
 	{
 		// Clear movement offset if one is set.
 
-		if (!movementActorPtr || !movementActorPtr.get())
+		if (!movementActorPtr)
 		{
 			return;
 		}
@@ -429,7 +433,7 @@ namespace ALYSLC
 	{
 		// Set movement offset from the player's movement actor (themselves or mount).
 
-		if (movementActorPtr && movementActorPtr.get())
+		if (movementActorPtr)
 		{
 			Util::NativeFunctions::KeepOffsetFromActor
 			(
@@ -1547,16 +1551,16 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& data3D = coopActor->loadedData->data3D;
+		const auto& data3DPtr = coopActor->loadedData->data3D;
 		// Head and LH/RH magic nodes.
-		auto headMagicNode = data3D->GetObjectByName(strings->npcHeadMagicNode);
+		auto headMagicNode = data3DPtr->GetObjectByName(strings->npcHeadMagicNode);
 		auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>
 		(
-			data3D->GetObjectByName(strings->npcLMagicNode)
+			data3DPtr->GetObjectByName(strings->npcLMagicNode)
 		);
 		auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>
 		(
-			data3D->GetObjectByName(strings->npcRMagicNode)
+			data3DPtr->GetObjectByName(strings->npcRMagicNode)
 		);
 		bool isCastingDual = false;
 		bool isCastingLH = false;
@@ -1601,7 +1605,7 @@ namespace ALYSLC
 			if (auto magicCaster = coopActor->GetMagicCaster(a_source); magicCaster)
 			{
 				auto magNodePtr = RE::NiPointer<RE::NiAVObject>(magicCaster->GetMagicNode());
-				if (!magNodePtr || !magNodePtr.get()) 
+				if (!magNodePtr) 
 				{
 					return;
 				}
@@ -1645,7 +1649,7 @@ namespace ALYSLC
 		auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->crosshairRefrHandle);
 		bool targetValidity = 
 		(
-			targetPtr && targetPtr.get() && Util::IsValidRefrForTargeting(targetPtr.get())
+			targetPtr && Util::IsValidRefrForTargeting(targetPtr.get())
 		);
 		if (!targetValidity)
 		{
@@ -1653,7 +1657,7 @@ namespace ALYSLC
 			targetPtr = Util::GetRefrPtrFromHandle(p->tm->GetRangedTargetActor()); 
 			targetValidity = 
 			(
-				targetPtr && targetPtr.get() && Util::IsValidRefrForTargeting(targetPtr.get())
+				targetPtr && Util::IsValidRefrForTargeting(targetPtr.get())
 			);
 			if (targetValidity)
 			{
@@ -1717,9 +1721,7 @@ namespace ALYSLC
 			(
 				coopActor->loadedData->data3D->GetObjectByName(strings->npcHeadMagicNode)
 			); 
-			if (headMagNodePtr && 
-				headMagNodePtr.get() && 
-				p->pam->IsPerforming(InputAction::kQuickSlotCast))
+			if (headMagNodePtr && p->pam->IsPerforming(InputAction::kQuickSlotCast))
 			{
 				if (!useAimPitchPos)
 				{
@@ -1744,9 +1746,7 @@ namespace ALYSLC
 				(
 					coopActor->loadedData->data3D->GetObjectByName(strings->npcLookNode)
 				); 
-				if (!lookNodePtr || 
-					!lookNodePtr.get() || 
-					!p->pam->IsPerforming(InputAction::kQuickSlotCast))
+				if (!lookNodePtr || !p->pam->IsPerforming(InputAction::kQuickSlotCast))
 				{
 					return;
 				}
@@ -1839,7 +1839,7 @@ namespace ALYSLC
 		if (a_set) 
 		{
 			// Set once to stop the mount from moving.
-			if (!dontMoveSet && mountPtr && mountPtr.get())
+			if (!dontMoveSet && mountPtr)
 			{
 				Util::NativeFunctions::SetDontMove(mountPtr.get(), true);
 			}
@@ -1863,7 +1863,7 @@ namespace ALYSLC
 		else
 		{
 			// Set once to allow the mount to move.
-			if (dontMoveSet && mountPtr && mountPtr.get()) 
+			if (dontMoveSet && mountPtr) 
 			{
 				Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
 			}
@@ -1911,10 +1911,7 @@ namespace ALYSLC
 			// While attacking, if targeting an actor while not facing them,
 			// look at the actor's torso; otherwise look at the crosshair world position.
 			auto rangedTargetActorPtr = Util::GetActorPtrFromHandle(p->tm->GetRangedTargetActor());
-			bool lookAtTorso = 
-			(
-				!reqFaceTarget && rangedTargetActorPtr && rangedTargetActorPtr.get()
-			);
+			bool lookAtTorso = !reqFaceTarget && rangedTargetActorPtr;
 			if (lookAtTorso)
 			{
 				auto torsoPos = Util::GetTorsoPosition(rangedTargetActorPtr.get());
@@ -1945,7 +1942,6 @@ namespace ALYSLC
 				bool interactionTargetValid = 
 				(
 					interactionTargetPtr &&
-					interactionTargetPtr.get() && 
 					Util::IsValidRefrForTargeting(interactionTargetPtr.get()) && 
 					interactionTargetPtr->parentCell->IsAttached()
 				);
@@ -1996,9 +1992,7 @@ namespace ALYSLC
 				(
 					p->tm->GetRangedTargetActor()
 				); 
-				if (targetActorPtr &&
-					targetActorPtr.get() && 
-					Util::IsValidRefrForTargeting(targetActorPtr.get()))
+				if (targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get()))
 				{
 					// Look at the targeted actor's eyes if on-screen.
 					auto targetEyePos = targetActorPtr->GetLookingAtLocation();
@@ -2014,9 +2008,7 @@ namespace ALYSLC
 						Util::GetRefrPtrFromHandle(p->tm->crosshairRefrHandle)
 					); 
 					// Not valid.
-					if (!targetRefrPtr ||
-						!targetRefrPtr.get() ||
-						!Util::IsValidRefrForTargeting(targetRefrPtr.get()))
+					if (!targetRefrPtr || !Util::IsValidRefrForTargeting(targetRefrPtr.get()))
 					{
 						return;
 					}
@@ -2077,7 +2069,7 @@ namespace ALYSLC
 			auto targetLocation = aimPitchPos;
 			if (!p->isRevivingPlayer)
 			{
-				if ((targetActorPtr && targetActorPtr.get()) &&
+				if ((targetActorPtr) &&
 					(
 						(targetActorPtr->GetHandle() == p->tm->aimCorrectionTargetHandle) ||
 						(targetActorPtr->GetHandle() == p->tm->aimTargetLinkedRefrHandle)
@@ -2200,7 +2192,6 @@ namespace ALYSLC
 						isUsingWeapMag && 
 						!p->pam->IsPerforming(InputAction::kSprint) &&
 						targetActorPtr &&
-						targetActorPtr.get() &&
 						Util::IsValidRefrForTargeting(targetActorPtr.get())
 					)
 				) 
@@ -2236,7 +2227,7 @@ namespace ALYSLC
 				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
 				// Slow down when within the player actor's bounds.
 				auto player3DPtr = Util::GetRefr3D(coopActor.get()); 
-				if (player3DPtr && player3DPtr.get()) 
+				if (player3DPtr) 
 				{
 					radius = player3DPtr->worldBound.radius;
 				}
@@ -2456,10 +2447,27 @@ namespace ALYSLC
 			(
 				coopActor->data.location, interactionPackageEntryPos
 			);
+			float autoMoveRadius = 0.25f * p->tm->GetMaxActivationDist();
+			auto linkedRefrPtr = Util::GetRefrPtrFromHandle
+			(
+				p->tm->aimTargetLinkedRefrHandle
+			);
+			// Make sure the radius at which to begin moving towards the refr directly 
+			// without player input is not within the radius of the targeted object itself.
+			if (linkedRefrPtr)
+			{
+				auto refr3DPtr = Util::GetRefr3D(linkedRefrPtr.get()); 
+				if (refr3DPtr && refr3DPtr->worldBound.radius > autoMoveRadius)
+				{
+					autoMoveRadius = refr3DPtr->worldBound.radius;
+				}
+			}
+			
 			// Stop when close enough for the package 
 			// to kick in and start the activation animation.
-			if (xyDistToInteractionPos < 0.25f * p->tm->GetMaxActivationDist())
+			if (xyDistToInteractionPos < autoMoveRadius)
 			{
+				interactionInRange = true;
 				// Animation driven movement during interaction package, so remove offset directly.
 				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
 				bool packageDone = coopActor->currentProcess->lowProcessFlags.all
@@ -2474,25 +2482,16 @@ namespace ALYSLC
 				bool occupyingFurniture = Util::HandleIsValid(interactionFurniture);
 				if (!occupyingFurniture && !packageDone) 
 				{
-					auto interactionPackage = 
+					p->pam->SetAndEveluatePackage
 					(
-						glob.coopPackages
-						[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
+						p->pam->GetCoopPackage(PackageIndex::kSpecialInteraction), false
 					);
-					p->pam->SetAndEveluatePackage(interactionPackage, false);
 				}
 				else
 				{
-					auto linkedRefrPtr = Util::GetRefrPtrFromHandle
-					(
-						p->tm->aimTargetLinkedRefrHandle
-					);
 					// Delayed activation once the package completes
 					// so the activation occurs in sync with the animation.
-					if (packageDone && 
-						!occupyingFurniture && 
-						linkedRefrPtr && 
-						linkedRefrPtr.get())
+					if (packageDone && !occupyingFurniture && linkedRefrPtr)
 					{
 						auto baseObj = linkedRefrPtr->GetObjectReference();
 						if ((baseObj) &&
@@ -2515,29 +2514,53 @@ namespace ALYSLC
 					if (lsMoved && packageDone)
 					{
 						p->pam->SetAndEveluatePackage();
+						// Play exit animation.
+						coopActor->StopInteractingQuick(false);
 					}
 				}
 			}
-			else
+			else if (!interactionInRange)
 			{
-				// Turn to face the interaction entry position.
-				rawYawOffset = std::lerp
-				(
-					0.0f,
-					Util::NormalizeAngToPi
+				float newYaw = movementActorPtr->data.angle.z;
+				// Can adjust the player's path to the interaction entry position by moving the LS.
+				if (lsMoved)
+				{
+					rawYawOffset = std::lerp
 					(
-						Util::GetYawBetweenPositions
+						0.0f,
+						Util::NormalizeAngToPi
 						(
-							movementActorPtr->data.location, interactionPackageEntryPos
-						) - 
-						movementActorPtr->data.angle.z
-					),
-					playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
-				);
-				float newYaw = Util::NormalizeAng0To2Pi
-				(
-					movementActorPtr->data.angle.z + rawYawOffset
-				);
+							movementOffsetParams[!MoveParams::kLSGameAng] - newYaw
+						),
+						playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
+					);
+					newYaw = Util::NormalizeAng0To2Pi
+					(
+						newYaw + rawYawOffset
+					);
+				}
+				else
+				{;
+					// Turn to face the interaction entry position.
+					rawYawOffset = std::lerp
+					(
+						0.0f,
+						Util::NormalizeAngToPi
+						(
+							Util::GetYawBetweenPositions
+							(
+								movementActorPtr->data.location, interactionPackageEntryPos
+							) - 
+							newYaw
+						),
+						playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
+					);
+					newYaw = Util::NormalizeAng0To2Pi
+					(
+						newYaw + rawYawOffset
+					);
+				}
+
 				movementActorPtr->SetHeading(newYaw);
 				midHighProc->rotationSpeed.z = 0.0f;
 				// Move to interaction package entry position which was set during activation.
@@ -2567,6 +2590,34 @@ namespace ALYSLC
 			// and is not directed by this manager.
 			SetDontMove(false);
 			ClearKeepOffsetFromActor();
+
+			// Exit furniture for P1 if moving the left stick 
+			// while the furniture camera state is active.
+			if (p->isPlayer1 && lsMoved)
+			{
+				auto playerCam = RE::PlayerCamera::GetSingleton();
+				SPDLOG_DEBUG
+				(
+					"[MM] SetPlayerOrientation: {} is animation driven with idle: {}. "
+					"Cam state: {}. Occupied furniture: {}.",
+					coopActor->GetName(),
+					Util::GetEditorID(coopActor->currentProcess->middleHigh->furnitureIdle),
+					playerCam && 
+					playerCam->currentState ?
+					playerCam->currentState->id :
+					RE::CameraState::kTotal,
+					Util::HandleIsValid(coopActor->GetOccupiedFurniture()) ? 
+					coopActor->GetOccupiedFurniture().get()->GetName() : 
+					"NONE"
+				);
+				if (playerCam && 
+					playerCam->currentState &&
+					playerCam->currentState->id != RE::CameraState::kFurniture)
+				{
+					// Play exit animation.
+					coopActor->StopInteractingQuick(false);
+				}
+			}
 		}
 		else if (menuStopsMovement || 
 				 coopActor->IsInRagdollState() ||
@@ -2635,7 +2686,7 @@ namespace ALYSLC
 			// and not trying to jump.
 			RE::bhkCharacterController* charController
 			{
-				movementActorPtr && movementActorPtr.get() ? 
+				movementActorPtr ? 
 				movementActorPtr->GetCharController() :
 				nullptr 
 			};
@@ -2838,7 +2889,7 @@ namespace ALYSLC
 			const auto& origin = glob.cam->camOriginPoint;
 			for (const auto& markerRefrPtr : glob.cam->cellMapMarkers)
 			{
-				if (!markerRefrPtr || !markerRefrPtr.get())
+				if (!markerRefrPtr)
 				{
 					continue;
 				}
@@ -2919,7 +2970,6 @@ namespace ALYSLC
 		bool crosshairRefrValidity = 
 		(
 			crosshairRefrPtr && 
-			crosshairRefrPtr.get() &&
 			Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 		);
 		// Aim correction target or linked refr (if no crosshair refr is selected).
@@ -2942,7 +2992,6 @@ namespace ALYSLC
 		bool aimCorrectionTargetValidity = 
 		(
 			aimCorrectionOrLinkedTargetPtr && 
-			aimCorrectionOrLinkedTargetPtr.get() &&
 			Util::IsValidRefrForTargeting(aimCorrectionOrLinkedTargetPtr.get())
 		);
 		bool isUsingWeapMag = 
@@ -3252,7 +3301,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& data3D = coopActor->loadedData->data3D;
+		const auto& data3DPtr = coopActor->loadedData->data3D;
 		const RE::NiPoint3 forward = RE::NiPoint3(0.0f, 1.0f, 0.0f);
 		// Attack source position and direction to set via refr.
 		// Either the default position/direction or the post-torso rotation modification one.
@@ -3286,18 +3335,15 @@ namespace ALYSLC
 			// of the magic node's orientation.
 			auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>
 			(
-				data3D->GetObjectByName(strings->npcLMagicNode)
+				data3DPtr->GetObjectByName(strings->npcLMagicNode)
 			);
 			auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>
 			(
-				data3D->GetObjectByName(strings->npcRMagicNode)
+				data3DPtr->GetObjectByName(strings->npcRMagicNode)
 			);
 			if (a_setDefaultDirAndPos)
 			{
-				if (lMagNodePtr && 
-					lMagNodePtr.get() &&
-					rMagNodePtr && 
-					rMagNodePtr.get())
+				if (lMagNodePtr && rMagNodePtr)
 				{
 					
 					auto iter1 = nom->defaultNodeWorldTransformsMap.find(lMagNodePtr);
@@ -3317,7 +3363,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (lMagNodePtr && lMagNodePtr.get() && rMagNodePtr && rMagNodePtr.get()) 
+				if (lMagNodePtr && rMagNodePtr) 
 				{
 					attackSourcePos = 
 					(
@@ -3340,11 +3386,11 @@ namespace ALYSLC
 			// Get position of the LH magic node and its direction.
 			auto lMagNodePtr = RE::NiPointer<RE::NiAVObject>
 			(
-				data3D->GetObjectByName(strings->npcLMagicNode)
+				data3DPtr->GetObjectByName(strings->npcLMagicNode)
 			);
 			if (a_setDefaultDirAndPos)
 			{
-				if (lMagNodePtr && lMagNodePtr.get())
+				if (lMagNodePtr)
 				{
 					const auto iter = nom->defaultNodeWorldTransformsMap.find(lMagNodePtr);
 					if (iter != nom->defaultNodeWorldTransformsMap.end())
@@ -3359,7 +3405,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (lMagNodePtr && lMagNodePtr.get())
+				if (lMagNodePtr)
 				{
 					attackSourcePos = lMagNodePtr->world.translate;
 					attackSourceDir = lMagNodePtr->world.rotate * forward;
@@ -3371,11 +3417,11 @@ namespace ALYSLC
 			// Get position of the RH magic node and its direction.
 			auto rMagNodePtr = RE::NiPointer<RE::NiAVObject>
 			(
-				data3D->GetObjectByName(strings->npcRMagicNode)
+				data3DPtr->GetObjectByName(strings->npcRMagicNode)
 			);
 			if (a_setDefaultDirAndPos)
 			{
-				if (rMagNodePtr && rMagNodePtr.get())
+				if (rMagNodePtr)
 				{
 					const auto iter = nom->defaultNodeWorldTransformsMap.find(rMagNodePtr);
 					if (iter != nom->defaultNodeWorldTransformsMap.end())
@@ -3390,7 +3436,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (rMagNodePtr && rMagNodePtr.get())
+				if (rMagNodePtr)
 				{
 					attackSourcePos = rMagNodePtr->world.translate;
 					attackSourceDir = rMagNodePtr->world.rotate * forward;
@@ -3402,9 +3448,9 @@ namespace ALYSLC
 			// Handle ranged attack source position and rotation.
 			auto weaponNodePtr = 
 			(
-				RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->weapon))
+				RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->weapon))
 			); 
-			if (weaponNodePtr && weaponNodePtr.get()) 
+			if (weaponNodePtr) 
 			{
 				bool ammoDrawnOrLater = 
 				{
@@ -3430,20 +3476,15 @@ namespace ALYSLC
 					// The arrow node rotation will not be stable until it is fully drawn.
 					auto lhNodePtr = RE::NiPointer<RE::NiAVObject>
 					(
-						data3D->GetObjectByName("NPC L Hand [LHnd]"sv)
+						data3DPtr->GetObjectByName("NPC L Hand [LHnd]"sv)
 					);
 					auto rhNodePtr = RE::NiPointer<RE::NiAVObject>
 					(
-						data3D->GetObjectByName("NPC R Hand [RHnd]"sv)
+						data3DPtr->GetObjectByName("NPC R Hand [RHnd]"sv)
 					);
 					if (a_setDefaultDirAndPos)
 					{
-						if (lhNodePtr && 
-							lhNodePtr.get() &&
-							rhNodePtr && 
-							rhNodePtr.get() &&
-							weaponNodePtr &&
-							weaponNodePtr.get())
+						if (lhNodePtr && rhNodePtr && weaponNodePtr)
 						{
 							auto iter1 = nom->defaultNodeWorldTransformsMap.find(lhNodePtr);
 							auto iter2 = nom->defaultNodeWorldTransformsMap.find(rhNodePtr);
@@ -3466,7 +3507,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (lhNodePtr && lhNodePtr.get() && rhNodePtr && rhNodePtr.get())
+						if (lhNodePtr && rhNodePtr)
 						{
 							attackSourceDir = Util::RotationToDirectionVect
 							(
@@ -3570,12 +3611,11 @@ namespace ALYSLC
 		// Use co-op cam-reported yaw when it's active; otherwise, use the NiCamera reported value.
 		if (glob.cam->IsRunning() && 
 			playerCam->currentState && 
-			playerCam->currentState.get() &&
 			playerCam->currentState->id == RE::CameraState::kThirdPerson) 
 		{
 			camYaw = glob.cam->GetCurrentYaw();
 		}
-		else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get()) 
+		else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr) 
 		{
 			// Player cam's yaw does not always correspond to 
 			// the actual camera forward direction angle in certain camera states, 
@@ -3785,7 +3825,7 @@ namespace ALYSLC
 		}
 		else if (coopActor->IsOnMount() && !p->currentMountHandle.get())
 		{
-			RE::ActorPtr mount;
+			RE::ActorPtr mount{ };
 			coopActor->GetMount(mount);
 			if (mount) 
 			{
@@ -3797,7 +3837,7 @@ namespace ALYSLC
 
 		// Set movement actor (any mount if the player is mounted, player actor otherwise).
 		auto mountPtr = p->GetCurrentMount();
-		movementActorPtr = mountPtr && mountPtr.get() ? mountPtr : coopActor;
+		movementActorPtr = mountPtr ? mountPtr : coopActor;
 		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
 		// Ensure all sneak states sync up with the player's requested state.
 		if (!coopActor->IsOnMount() &&
@@ -4056,7 +4096,7 @@ namespace ALYSLC
 
 		// P1 only.
 		// Toggle AI driven as needed.
-		if (p->isPlayer1 && glob.player1Actor && glob.player1Actor.get())
+		if (p->isPlayer1 && glob.player1Actor)
 		{
 			bool isActivating = 
 			{
@@ -4204,10 +4244,21 @@ namespace ALYSLC
 			glob.coopPackages
 			[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
 		);
+		bool wasInteractionPackageRunning = interactionPackageRunning;
+		if (!wasInteractionPackageRunning)
+		{
+			interactionInRange = false;
+		}
 		interactionPackageRunning = 
 		(
 			coopActor->currentProcess && p->pam->GetCurrentPackage() == interactionPackage
 		);
+
+		if (coopActor->IsInRagdollState() && interactionPackageRunning)
+		{
+			interactionPackageRunning = false;
+			p->pam->SetAndEveluatePackage(p->pam->GetDefaultPackage());
+		}
 
 		// Stop moving if currently moving and not dodging, 
 		// and if the LS is centered, a menu stops movement, 
@@ -4254,7 +4305,7 @@ namespace ALYSLC
 		// If the node's rotation is handled by our node orientation manager,
 		// apply our custom rotation to the given node.
 
-		if (!a_nodePtr || !a_nodePtr.get())
+		if (!a_nodePtr)
 		{
 			return;
 		}
@@ -4322,8 +4373,8 @@ namespace ALYSLC
 			return;
 		}
 
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
@@ -4387,8 +4438,8 @@ namespace ALYSLC
 			const auto& playerPos = a_p->coopActor->data.location;
 			for (const auto& name : nodeNamesToCheck)
 			{
-				auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(name)); 
-				if (!nodePtr || !nodePtr.get())
+				auto nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(name)); 
+				if (!nodePtr)
 				{
 					continue;
 				}
@@ -4446,13 +4497,13 @@ namespace ALYSLC
 
 				// Need arm rigid body and capsule shape to determine raycast
 				// start and end points.
-				auto armHkpRigidBody = Util::GethkpRigidBody(nodePtr.get()); 
-				if (!armHkpRigidBody || !armHkpRigidBody.get())
+				auto armHkpRigidBodyPtr = Util::GethkpRigidBody(nodePtr.get()); 
+				if (!armHkpRigidBodyPtr)
 				{
 					continue;
 				}
 
-				auto hkpShape = armHkpRigidBody->GetShape(); 
+				auto hkpShape = armHkpRigidBodyPtr->GetShape(); 
 				if (hkpShape->type != RE::hkpShapeType::kCapsule)
 				{
 					continue;
@@ -4493,7 +4544,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					const auto& hkTransform = armHkpRigidBody->motion.motionState.transform;
+					const auto& hkTransform = armHkpRigidBodyPtr->motion.motionState.transform;
 					RE::NiPoint3 vertAOffset = 
 					(
 						ToNiPoint3(hkpCapsuleShape->vertexA) * HAVOK_TO_GAME
@@ -4569,7 +4620,7 @@ namespace ALYSLC
 					);
 					velDir = ToVec4
 					(
-						armHkpRigidBody->motion.GetPointVelocity
+						armHkpRigidBodyPtr->motion.GetPointVelocity
 						(
 							TohkVector4(startPos) * GAME_TO_HAVOK
 						)
@@ -4635,9 +4686,9 @@ namespace ALYSLC
 			{
 				auto nodePtr = RE::NiPointer<RE::NiAVObject>
 				(
-					data3D->GetObjectByName(strings->shield)
+					data3DPtr->GetObjectByName(strings->shield)
 				); 
-				if (nodePtr && nodePtr.get())
+				if (nodePtr)
 				{
 					// Update position and velocity first.
 					const auto& nodeWorldPos = nodePtr->world.translate;
@@ -4649,7 +4700,7 @@ namespace ALYSLC
 					// Need arm rigid body and capsule shape to determine raycast
 					// start and end points.
 					auto shieldRigidBodyPtr = Util::GethkpRigidBody(nodePtr.get()); 
-					if (shieldRigidBodyPtr && shieldRigidBodyPtr.get())
+					if (shieldRigidBodyPtr)
 					{
 						noPreviousHit = true;
 						auto origin = nodeWorldPos;
@@ -4819,13 +4870,13 @@ namespace ALYSLC
 		}
 
 		auto obj3DPtr = Util::Get3DObjectByName(a_p->coopActor.get(), strings->npc);
-		if (!obj3DPtr || !obj3DPtr.get())
+		if (!obj3DPtr)
 		{
 			return;
 		}
 
 		auto nodePtr = RE::NiPointer<RE::NiNode>(obj3DPtr->AsNode()); 
-		if (!nodePtr || !nodePtr.get())
+		if (!nodePtr)
 		{
 			return;
 		}
@@ -4843,7 +4894,7 @@ namespace ALYSLC
 		// The parent world transform is modified to the current node's world transform
 		// before traversing its children.
 
-		if (!a_nodePtr || !a_nodePtr.get())
+		if (!a_nodePtr)
 		{
 			return;
 		}
@@ -4867,15 +4918,15 @@ namespace ALYSLC
 		DebugAPI::QueueArrow3D(start, endX, 0xFF000088, 3.0f, 2.0f);
 		DebugAPI::QueueArrow3D(start, endY, 0x00FF0088, 3.0f, 2.0f);
 		DebugAPI::QueueArrow3D(start, endZ, 0x0000FF88, 3.0f, 2.0f);
-		for (const auto child : a_nodePtr->children)
+		for (const auto childPtr : a_nodePtr->children)
 		{
-			if (!child || !child.get() || !child->AsNode())
+			if (!childPtr || !childPtr->AsNode())
 			{
 				continue;
 			}
 
-			auto childNode = RE::NiPointer<RE::NiNode>(child->AsNode());
-			DisplayAllNodeRotations(childNode);
+			auto childNodePtr = RE::NiPointer<RE::NiNode>(childPtr->AsNode());
+			DisplayAllNodeRotations(childNodePtr);
 		}
 	}
 
@@ -4905,8 +4956,8 @@ namespace ALYSLC
 		}
 
 		// Return early if the player's 3D is invalid.
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
@@ -4915,8 +4966,8 @@ namespace ALYSLC
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES) 
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get()) 
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr) 
 			{
 				continue;
 			}
@@ -4939,8 +4990,8 @@ namespace ALYSLC
 		// Right arm.
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES)
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get())
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -4963,8 +5014,8 @@ namespace ALYSLC
 		// Torso.
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODES)
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get())
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -5007,8 +5058,8 @@ namespace ALYSLC
 		}
 
 		// Return early if the player's 3D is invalid.
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
@@ -5017,8 +5068,8 @@ namespace ALYSLC
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES)
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get())
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -5041,8 +5092,8 @@ namespace ALYSLC
 		// Right arm.
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_RIGHT_ARM_NODES)
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get())
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -5088,8 +5139,8 @@ namespace ALYSLC
 		}
 
 		// Return early if the player's 3D is invalid.
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
@@ -5098,8 +5149,8 @@ namespace ALYSLC
 		RE::NiPointer<RE::NiAVObject> nodePtr{ nullptr };
 		for (const auto& nodeName : GlobalCoopData::ADJUSTABLE_TORSO_NODES)
 		{
-			nodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName));
-			if (!nodePtr || !nodePtr.get())
+			nodePtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(nodeName));
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -5125,7 +5176,7 @@ namespace ALYSLC
 		// Returns true if a custom cached rotation was set for the given node.
 		// Can check for the node name hash in either the set of adjustable arm or torso nodes.
 
-		if (!a_nodePtr || !a_nodePtr.get())
+		if (!a_nodePtr)
 		{
 			return false;
 		}
@@ -5137,7 +5188,7 @@ namespace ALYSLC
 		}
 		
 		const auto& data = iter->second;
-		if (!data || !data.get()) 
+		if (!data) 
 		{
 			return false;
 		}
@@ -5167,7 +5218,7 @@ namespace ALYSLC
 		}
 
 		auto armHkpRigidBodyPtr = Util::GethkpRigidBody(a_armNode);
-		if (!armHkpRigidBodyPtr || !armHkpRigidBodyPtr.get())
+		if (!armHkpRigidBodyPtr)
 		{
 			return false;
 		}
@@ -5216,7 +5267,7 @@ namespace ALYSLC
 		for (uint32_t i = 0; i < raycastResults.size(); ++i)
 		{
 			const auto& result = raycastResults[i];
-			if (!result.hit || !result.hitObjectPtr || !result.hitObjectPtr.get())
+			if (!result.hit || !result.hitObjectPtr)
 			{
 				continue;
 			}
@@ -5224,14 +5275,14 @@ namespace ALYSLC
 			auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 			// Ignore hits to the player themselves.
 			// Stop hitting yourself.
-			if (!hitRefrPtr || !hitRefrPtr.get() || hitRefrPtr == a_p->coopActor)
+			if (!hitRefrPtr || hitRefrPtr == a_p->coopActor)
 			{
 				continue;
 			}
 
 			// Need a valid rigid body to apply an impulse to.
 			auto hitHkpRigidBodyPtr = Util::GethkpRigidBody(result.hitObjectPtr.get()); 
-			if (!hitHkpRigidBodyPtr || !hitHkpRigidBodyPtr.get())
+			if (!hitHkpRigidBodyPtr)
 			{
 				continue;
 			}
@@ -5421,14 +5472,14 @@ namespace ALYSLC
 						if (headBP)
 						{
 							const auto actor3DPtr = Util::GetRefr3D(hitActor);
-							if (actor3DPtr && actor3DPtr.get())
+							if (actor3DPtr)
 							{
 								auto headNodePtr = RE::NiPointer<RE::NiAVObject>
 								(
 									actor3DPtr->GetObjectByName(headBP->targetName)
 								);
 
-								if (headNodePtr && headNodePtr.get())
+								if (headNodePtr)
 								{
 									hasHeadNode = true;
 									// Direct hits to the head node will trigger a knockdown.
@@ -5512,7 +5563,6 @@ namespace ALYSLC
 					a_staminaCostOut = 
 					(
 						(2.0f * sqrtf(hitActor->GetWeight() + 100.0f)) *
-						(Settings::vfStaminaCostMult[a_p->playerID]) * 
 						(Settings::vfSlapStaminaCostMult[a_p->playerID])
 					);
 					// Sneaky mechanic that may or may not have been intentional:
@@ -5587,9 +5637,10 @@ namespace ALYSLC
 							1.0f / 
 							(max(hitActor->CalcArmorRating() / 25.0f, 1.0f))
 						);
+						// Base damage depends on the actor's unarmed damage.
+						float armWeightFactor = a_p->coopActor->CalcUnarmedDamage();
 						// Scale up damage with the total weight of the armor 
 						// making contact with the hit actor.
-						float armWeightFactor = 1.0f;
 						auto forearmArmor = 
 						(
 							a_p->coopActor->GetWornArmor
@@ -5632,7 +5683,7 @@ namespace ALYSLC
 							armWeightFactor += shield->weight * 2.0f;
 						}
 
-						armWeightFactor = 1.0f + armWeightFactor / 30.0f;
+						armWeightFactor = 1.0f + powf(armWeightFactor, 1.4f) / 30.0f;
 						float damage = 
 						(
 							havokHitSpeedFactor * 
@@ -5718,13 +5769,13 @@ namespace ALYSLC
 						);
 
 						// REMOVE when done debugging.
-						/*SPDLOG_DEBUG
+						SPDLOG_DEBUG
 						(
 							"[MM] PerformArmCollision: {}: Hit actor {}. "
 							"Havok hit speed factor: {}, "
 							"level damage factor: {}, "
 							"armor rating factor: {}, "
-							"arm weight factor: {}, "
+							"arm weight factor: {}, (unarmed damage: {}) "
 							"sneak mult: {}. "
 							"Final damage: {}.", 
 							a_p->coopActor->GetName(), 
@@ -5733,9 +5784,10 @@ namespace ALYSLC
 							levelDamageFactor,
 							armorRatingFactor,
 							armWeightFactor,
+							a_p->coopActor->CalcUnarmedDamage(),
 							sneakMult,
 							damage
-						);*/
+						);
 					}
 				}
 				else
@@ -5762,7 +5814,6 @@ namespace ALYSLC
 						(
 							sqrtf(hitActor->GetWeight() + 100.0f) *
 							Util::InterpolateEaseIn(0.0f, 1.0f, hitToKnockdownSpeedRatio, 5.0f) *
-							Settings::vfStaminaCostMult[a_p->playerID] * 
 							Settings::vfSlapStaminaCostMult[a_p->playerID]
 						);
 						// No reason to send hit events for refrs or invulnerable NPCs.
@@ -6071,24 +6122,10 @@ namespace ALYSLC
 	)
 	{
 		// Restore saved node local transforms previously set by the game before our modifications.
-		
-		// Return early if the player's loaded 3D data is invalid.
-		auto loadedData = a_p->coopActor->loadedData;
-		if (!loadedData)
-		{
-			return;
-		}
-
-		// Return early if the player's 3D is invalid.
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
-		{
-			return;
-		}
 
 		for (const auto& [nodePtr, localTrans] : defaultNodeLocalTransformsMap)
 		{
-			if (!nodePtr || !nodePtr.get())
+			if (!nodePtr)
 			{
 				continue;
 			}
@@ -6125,20 +6162,20 @@ namespace ALYSLC
 		}
 
 		// Return early if the player's 3D is invalid.
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
 
-		auto npc3DPtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(strings->npc)); 
-		if (!npc3DPtr || !npc3DPtr.get())
+		auto npc3DPtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npc)); 
+		if (!npc3DPtr)
 		{
 			return;
 		}
 
 		auto nodePtr = RE::NiPointer<RE::NiNode>(npc3DPtr->AsNode());
-		if (!nodePtr || !nodePtr.get())
+		if (!nodePtr)
 		{
 			return;
 		}
@@ -6159,7 +6196,7 @@ namespace ALYSLC
 		// The parent world transform is modified to the current node's world transform
 		// before traversing its children.
 
-		if (!a_nodePtr || !a_nodePtr.get())
+		if (!a_nodePtr)
 		{
 			return;
 		}
@@ -6180,15 +6217,15 @@ namespace ALYSLC
 		// Save default world transform.
 		defaultNodeWorldTransformsMap.insert_or_assign(a_nodePtr, newParentTransform);
 
-		for (const auto child : a_nodePtr->children)
+		for (const auto childPtr : a_nodePtr->children)
 		{
-			if (!child || !child.get() || !child->AsNode())
+			if (!childPtr || !childPtr->AsNode())
 			{
 				continue;
 			}
 
-			auto childNode = RE::NiPointer<RE::NiNode>(child->AsNode());
-			SavePlayerNodeWorldTransforms(a_p, childNode, newParentTransform);
+			auto childNodePtr = RE::NiPointer<RE::NiNode>(childPtr->AsNode());
+			SavePlayerNodeWorldTransforms(a_p, childNodePtr, newParentTransform);
 		}
 	}
 
@@ -6199,7 +6236,7 @@ namespace ALYSLC
 	{
 		// Update the blend status for the given node.
 
-		if (!a_nodePtr || !a_nodePtr.get()) 
+		if (!a_nodePtr) 
 		{
 			return;
 		}
@@ -6211,7 +6248,7 @@ namespace ALYSLC
 		}
 
 		auto& data = iter->second;
-		if (!data || !data.get())
+		if (!data)
 		{
 			return;
 		}
@@ -6242,7 +6279,7 @@ namespace ALYSLC
 		// adjustments based on the player's RS movement.
 
 		// Invalid nodes or not accounted for in the rotation data map.
-		if (!a_forearmNodePtr || !a_forearmNodePtr.get() || !a_handNodePtr || !a_handNodePtr.get())
+		if (!a_forearmNodePtr || !a_handNodePtr)
 		{
 			return;
 		}
@@ -6798,7 +6835,7 @@ namespace ALYSLC
 	{
 		// Update the blend status and endpoints to blend to/from for the given node.
 
-		if (!a_data || !a_data.get() || !a_nodePtr || !a_nodePtr.get())
+		if (!a_data || !a_nodePtr)
 		{
 			return;
 		}
@@ -6932,7 +6969,7 @@ namespace ALYSLC
 		// Update the local node rotation to eventually set
 		// by interpolating between the starting and target/default rotation endpoints.
 
-		if (!a_data || !a_data.get() || !a_nodePtr || !a_nodePtr.get())
+		if (!a_data || !a_nodePtr)
 		{
 			return;
 		}
@@ -7043,7 +7080,7 @@ namespace ALYSLC
 		// computed from hardcoded, manually verified interpolation endpoints for pitch/roll/yaw.
 		// The player's RS movement determines the orientation of their arms.
 
-		if (!a_shoulderNodePtr || !a_shoulderNodePtr.get())
+		if (!a_shoulderNodePtr)
 		{
 			return;
 		}
@@ -7903,7 +7940,7 @@ namespace ALYSLC
 
 			// Get and set corresponding local rotation from our desired world rotation.
 			auto parentPtr = RE::NiPointer<RE::NiAVObject>(a_shoulderNodePtr->parent); 
-			if (parentPtr && parentPtr.get())
+			if (parentPtr)
 			{
 				const auto iter = defaultNodeWorldTransformsMap.find(parentPtr);
 				RE::NiTransform inverseParent
@@ -8042,8 +8079,8 @@ namespace ALYSLC
 			return;
 		}
 
-		auto data3D = loadedData->data3D;
-		if (!data3D || !data3D->parent)
+		auto data3DPtr = loadedData->data3D;
+		if (!data3DPtr || !data3DPtr->parent)
 		{
 			return;
 		}
@@ -8142,9 +8179,12 @@ namespace ALYSLC
 		for (uint8_t i = 0; i < numAdjustableNodes; ++i)
 		{
 			const auto& nodeName = GlobalCoopData::TORSO_ADJUSTMENT_NPC_NODES[i];
-			auto torsoNodePtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(nodeName)); 
+			auto torsoNodePtr = RE::NiPointer<RE::NiAVObject>
+			(
+				data3DPtr->GetObjectByName(nodeName)
+			); 
 			// Node is invalid, on to the next one.
-			if (!torsoNodePtr || !torsoNodePtr.get())
+			if (!torsoNodePtr)
 			{
 				continue;
 			}
@@ -8222,7 +8262,7 @@ namespace ALYSLC
 				if (i == 0) 
 				{
 					auto parentPtr = RE::NiPointer<RE::NiAVObject>(torsoNodePtr->parent);
-					if (parentPtr && parentPtr.get()) 
+					if (parentPtr) 
 					{
 						const auto iter2 = defaultNodeWorldTransformsMap.find(parentPtr);
 						if (iter2 != defaultNodeWorldTransformsMap.end())

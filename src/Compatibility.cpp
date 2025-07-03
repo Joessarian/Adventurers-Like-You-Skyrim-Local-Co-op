@@ -10,6 +10,7 @@ namespace ALYSLC
 	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled{ false };
 	bool PrecisionCompat::g_precisionInstalled{ false };
 	bool QuickLootCompat::g_quickLootInstalled{ false };
+	bool QuickLootCompat::g_isQuickLootIE{ false };
 	bool RequiemCompat::g_requiemInstalled{ false };
 	bool SkyrimsParagliderCompat::g_paragliderInstalled{ false };
 	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
@@ -129,25 +130,33 @@ namespace ALYSLC
 
 	void QuickLootCompat::CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface)
 	{
+		g_isQuickLootIE = a_loadInterface->GetPluginInfo("QuickLootIE");
 		g_quickLootInstalled = 
 		{
 			a_loadInterface->GetPluginInfo("QuickLootRE") ||
-			a_loadInterface->GetPluginInfo("QuickLootEE")
+			a_loadInterface->GetPluginInfo("QuickLootEE") ||
+			g_isQuickLootIE
 		};
 
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
 		if (!g_quickLootInstalled && dataHandler)
 		{
+			g_isQuickLootIE = dataHandler->LookupModByName("QuickLootIE.esp") != nullptr;
 			g_quickLootInstalled = 
 			{
 				dataHandler->LookupModByName("QuickLootRE.esp") != nullptr ||
-				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr
+				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr ||
+				g_isQuickLootIE
 			};
 		}
 
 		if (g_quickLootInstalled) 
 		{
-			SPDLOG_INFO("[Compatibility] QuickLootRE/EE installed!");
+			SPDLOG_INFO
+			(
+				"[Compatibility] {} installed!", 
+				g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE"
+			);
 		}
 	}
 

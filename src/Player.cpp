@@ -58,10 +58,12 @@ namespace ALYSLC
 		lastGetupAfterReviveTP = SteadyClock::now();
 		lastGetupTP = SteadyClock::now();
 		lastHiddenInStealthRadiusTP = SteadyClock::now();
+		lastLHCastChargeStartTP = SteadyClock::now();
 		lastLHCastStartTP = SteadyClock::now();
 		lastParaglidingStateChangeTP = SteadyClock::now();
 		lastQSSCastStartTP = SteadyClock::now();
 		lastReviveCheckTP = SteadyClock::now();
+		lastRHCastChargeStartTP = SteadyClock::now();
 		lastRHCastStartTP = SteadyClock::now();
 		lastStaminaCooldownCheckTP = SteadyClock::now();
 		lastStealthStateCheckTP = SteadyClock::now();
@@ -174,13 +176,7 @@ namespace ALYSLC
 
 		// Companion player validity check. 
 		// If invalid, pause and attempt to move to P1 until valid again.
-		selfValid = 
-		(
-			!coopActor->IsDisabled() && coopActor->Is3DLoaded() && 
-			coopActor->IsHandleValid() && coopActor->loadedData && 
-			coopActor->currentProcess && coopActor->GetCharController() && 
-			coopActor->parentCell && coopActor->parentCell->IsAttached()
-		);
+		selfValid = Util::ActorIsValid(coopActor.get());
 		if (!selfValid)
 		{
 			SPDLOG_DEBUG
@@ -282,18 +278,7 @@ namespace ALYSLC
 
 		shouldTeleportToP1 = ShouldTeleportToP1(false);
 		// Player validity check and resolution attempt.		
-		selfValid = 
-		(
-			!shouldTeleportToP1 && 
-			!coopActor->IsDisabled() &&
-			coopActor->Is3DLoaded() && 
-			coopActor->IsHandleValid() && 
-			coopActor->loadedData && 
-			coopActor->currentProcess && 
-			coopActor->GetCharController() && 
-			coopActor->parentCell && 
-			coopActor->parentCell->IsAttached()
-		);
+		selfValid = !shouldTeleportToP1 && Util::ActorIsValid(coopActor.get());
 		if (!selfValid)
 		{
 			secsSinceInvalidPlayerMoved = Util::GetElapsedSeconds(invalidPlayerMovedTP);
@@ -302,17 +287,7 @@ namespace ALYSLC
 			{
 				// P1 must also be valid as the moveto target.
 				auto p1 = RE::PlayerCharacter::GetSingleton();
-				bool player1Valid = 
-				{
-					p1 && 
-					!p1->IsDisabled() && 
-					p1->Is3DLoaded() && 
-					p1->IsHandleValid() &&
-					p1->loadedData && 
-					p1->currentProcess && 
-					p1->GetCharController() &&
-					p1->parentCell
-				};
+				bool player1Valid = Util::ActorIsValid(p1);
 				if (player1Valid)
 				{
 					if (coopActor->IsHandleValid() && 
@@ -628,10 +603,7 @@ namespace ALYSLC
 		const bool isFemale = actorBase->IsFemale();
 		if ((!setFemale && isFemale) || (setFemale && !isFemale))
 		{
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale
-			);
+			Util::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale);
 		}
 
 		// Set opposite gender animations flag if necessary.
@@ -639,9 +611,9 @@ namespace ALYSLC
 		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || 
 			(!usesOppositeGenderAnims && a_setOppositeGenderAnims))
 		{
-			Util::NativeFunctions::SetActorBaseDataFlag
+			Util::SetActorBaseDataFlag
 			(
-				actorBase,
+				actorBase, 
 				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
 				a_setOppositeGenderAnims
 			);
@@ -974,7 +946,7 @@ namespace ALYSLC
 		}
 
 		// Get off mount/stop interacting with furniture.
-		coopActor->StopInteractingQuick(false);
+		coopActor->StopInteractingQuick(true);
 
 		bool wasTransformed = isTransforming || isTransformed;
 		// Sheathe current weapons first.
@@ -1033,7 +1005,7 @@ namespace ALYSLC
 			return false;
 		}
 
-		if (!coopActor || !coopActor.get() || !coopActor->race || !coopActor->GetActorBase())
+		if (!coopActor || !coopActor->race || !coopActor->GetActorBase())
 		{
 			return false;
 		}
@@ -1652,7 +1624,6 @@ namespace ALYSLC
 		// Does not update appearance preset or change the player's race.
 
 		if (!coopActor || 
-			!coopActor.get() || 
 			!coopActor->race || 
 			!coopActor->race->faceRelatedData ||
 			!coopActor->GetActorBase() || 
@@ -1712,10 +1683,7 @@ namespace ALYSLC
 		const bool isFemale = actorBase->IsFemale();
 		if ((!a_setFemale && isFemale) || (a_setFemale && !isFemale))
 		{
-			Util::NativeFunctions::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale
-			);
+			Util::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale);
 		}
 
 		// Set opposite gender animations flag if necessary.
@@ -1723,10 +1691,10 @@ namespace ALYSLC
 		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || 
 			(!usesOppositeGenderAnims && a_setOppositeGenderAnims))
 		{
-			Util::NativeFunctions::SetActorBaseDataFlag
+			Util::SetActorBaseDataFlag
 			(
 				actorBase, 
-				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims,
+				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
 				a_setOppositeGenderAnims
 			);
 		}
@@ -1852,7 +1820,12 @@ namespace ALYSLC
 					);
 
 					// Uh-oh!
-					GlobalCoopData::YouDied(coopActor.get()); 
+					//GlobalCoopData::YouDied(coopActor.get()); 
+					auto handle = coopActor->GetHandle();
+					glob.taskRunner->AddTask
+					(
+						[handle](){ GlobalCoopData::YouDiedTask(handle); }
+					);
 
 					isDowned = false;
 					isRevived = false;
@@ -2063,7 +2036,7 @@ namespace ALYSLC
 	// NOTE: 
 	// All run in a separate thread asynchronously.
 
-	void CoopPlayer::LockpickingTask()
+	void CoopPlayer::LockpickingTask(bool a_fullControl)
 	{
 		// NOTE: 
 		// Menu input manager crashes the game when the Lockpicking menu is opened twice 
@@ -2080,7 +2053,11 @@ namespace ALYSLC
 		}
 
 		// Set CIDs, as the MIM would normally.
-		glob.mim->managerMenuCID = glob.prevMenuCID = controllerID;
+		if (a_fullControl)
+		{
+			glob.mim->managerMenuCID = glob.prevMenuCID = controllerID;
+		}
+
 		// Flags indicating whether either analog stick was moved.
 		bool lsWasMoved = false;
 		bool rsWasMoved = false;
@@ -2093,7 +2070,7 @@ namespace ALYSLC
 		while (ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME))
 		{
 			// Make sure this player has control throughout.
-			if (glob.mim->managerMenuCID == -1 || glob.prevMenuCID == -1)
+			if ((a_fullControl) && (glob.mim->managerMenuCID == -1 || glob.prevMenuCID == -1))
 			{
 				glob.mim->managerMenuCID = glob.prevMenuCID = controllerID;
 			}
@@ -2103,33 +2080,39 @@ namespace ALYSLC
 			iterationTP = SteadyClock::now();
 			waitTimeSecs = max(0.0f, (*g_deltaTimeRealTime - secsIteration));
 
-			// Rotate pick with the LS.
-			const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
-			const auto& lsX = lsData.xComp;
-			const auto& lsY = lsData.yComp;
-			const auto& lsMag = lsData.normMag;
-			// LS was centered if true.
-			const bool lsMovedToRest = (lsWasMoved && lsMag == 0.0f);
-			if (lsMag > 0.0f || lsMovedToRest)
+			// Always rotate the pick if given full control.
+			if (a_fullControl)
 			{
-				RE::BSFixedString eventName = "RotatePick"sv;
-				lsWasMoved = lsMag != 0.0f;
-				// Create thumbstick event to send.
-				auto thumbstickEvent = std::make_unique<RE::InputEvent* const>
-				(
-					Util::CreateThumbstickEvent(eventName, lsX * lsMag, lsY * lsMag, true)
-				);
-				// Set pad to indicate that a companion player sent the input, not P1.
-				(*thumbstickEvent)->AsIDEvent()->pad24 = 0xCA11;
-				Util::AddSyncedTask
-				(
-					[&thumbstickEvent]() { Util::SendInputEvent(thumbstickEvent); }
-				);
+				// Rotate pick with the LS.
+				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+				const auto& lsX = lsData.xComp;
+				const auto& lsY = lsData.yComp;
+				const auto& lsMag = lsData.normMag;
+				// LS was centered if true.
+				const bool lsMovedToRest = (lsWasMoved && lsMag == 0.0f);
+				if (lsMag > 0.0f || lsMovedToRest)
+				{
+					RE::BSFixedString eventName = "RotatePick"sv;
+					lsWasMoved = lsMag != 0.0f;
+					// Create thumbstick event to send.
+					auto thumbstickEvent = std::make_unique<RE::InputEvent* const>
+					(
+						Util::CreateThumbstickEvent(eventName, lsX * lsMag, lsY * lsMag, true)
+					);
+					// Set pad to indicate that a companion player sent the input, not P1.
+					(*thumbstickEvent)->AsIDEvent()->pad24 = 0xCA11;
+					Util::AddSyncedTask
+					(
+						[&thumbstickEvent]() { Util::SendInputEvent(thumbstickEvent); }
+					);
+				}
 			}
 
-			// Co-op player in lockpicking menu also rotates the lock 
-			// if two player lockpicking is not enabled.
-			if (!Settings::bTwoPlayerLockpicking)
+			// Companion player in Lockpicking Menu also rotates the lock 
+			// if two player lockpicking is not enabled,
+			// or if there are more than 2 players, 
+			// or if sharing control with P1, who is in charge of rotating the pick.
+			if (!Settings::bTwoPlayerLockpicking || glob.activePlayers > 2 || !a_fullControl)
 			{
 				// Rotate lock with the RS.
 				const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
@@ -2156,50 +2139,57 @@ namespace ALYSLC
 				}
 			}
 
-			// Check if the exit menu bind was pressed.
-			XINPUT_STATE buttonState{ };
-			ZeroMemory(&buttonState, sizeof(buttonState));
-			if (XInputGetState(controllerID, &buttonState) == ERROR_SUCCESS)
+			// Check if the exit menu bind was pressed and close the menu 
+			// if the companion player has full control.
+			if (a_fullControl)
 			{
-				// Get XInput and game mask for the 'Cancel' bind.
-				// Default to the 'B' button.
-				auto escapeXIMask = XINPUT_GAMEPAD_B;
-				uint32_t idCode = GAMEPAD_MASK_B;
-				RE::BSFixedString eventName = "Cancel"sv;
-				if (auto userEvents = RE::UserEvents::GetSingleton(); userEvents) 
+				XINPUT_STATE buttonState{ };
+				ZeroMemory(&buttonState, sizeof(buttonState));
+				if (XInputGetState(controllerID, &buttonState) == ERROR_SUCCESS)
 				{
-					// Set id code, event name, and XInputMask.
-					eventName = userEvents->cancel;
-					idCode = controlMap->GetMappedKey
-					(
-						eventName, 
-						RE::INPUT_DEVICE::kGamepad, 
-						RE::ControlMap::InputContextID::kMenuMode
-					);
-					const auto iter = glob.cdh->GAMEMASK_TO_XIMASK.find(idCode);
-					if (iter != glob.cdh->GAMEMASK_TO_XIMASK.end())
+					// Get XInput and game mask for the 'Cancel' bind.
+					// Default to the 'B' button.
+					auto escapeXIMask = XINPUT_GAMEPAD_B;
+					uint32_t idCode = GAMEPAD_MASK_B;
+					RE::BSFixedString eventName = "Cancel"sv;
+					if (auto userEvents = RE::UserEvents::GetSingleton(); userEvents) 
 					{
-						escapeXIMask = iter->second;
-					}
-				}
-
-				// Button is pressed according to XInput controller state.
-				if (buttonState.Gamepad.wButtons & escapeXIMask)
-				{
-					// Create button event and send through task.
-					std::unique_ptr<RE::InputEvent* const> buttonEvent = 
-					(
-						std::make_unique<RE::InputEvent* const>
+						// Set id code, event name, and XInputMask.
+						eventName = userEvents->cancel;
+						idCode = controlMap->GetMappedKey
 						(
-							RE::ButtonEvent::Create
+							eventName, 
+							RE::INPUT_DEVICE::kGamepad, 
+							RE::ControlMap::InputContextID::kMenuMode
+						);
+						const auto iter = glob.cdh->GAMEMASK_TO_XIMASK.find(idCode);
+						if (iter != glob.cdh->GAMEMASK_TO_XIMASK.end())
+						{
+							escapeXIMask = iter->second;
+						}
+					}
+
+					// Button is pressed according to XInput controller state.
+					if (buttonState.Gamepad.wButtons & escapeXIMask)
+					{
+						// Create button event and send through task.
+						std::unique_ptr<RE::InputEvent* const> buttonEvent = 
+						(
+							std::make_unique<RE::InputEvent* const>
 							(
-								RE::INPUT_DEVICE::kGamepad, eventName, idCode, 1.0f, 0.0f
+								RE::ButtonEvent::Create
+								(
+									RE::INPUT_DEVICE::kGamepad, eventName, idCode, 1.0f, 0.0f
+								)
 							)
-						)
-					);
-					// Sent by companion player.
-					(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
-					Util::AddSyncedTask([&buttonEvent]() { Util::SendInputEvent(buttonEvent); });
+						);
+						// Sent by companion player.
+						(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
+						Util::AddSyncedTask
+						(
+							[&buttonEvent]() { Util::SendInputEvent(buttonEvent); }
+						);
+					}
 				}
 			}
 
@@ -2223,7 +2213,8 @@ namespace ALYSLC
 	void CoopPlayer::MountTask()
 	{
 		// Attempt to mount the player's targeted mount asynchronously.
-		// Mounting through activation of the refr alone fails often,
+		// Mounting through activation of the refr alone fails often, 
+		// mostly due to interference from scene/run-once packages,
 		// and the companion player floats around and never attempts to mount
 		// when approaching from the mount's right side or when the player's weapon is drawn.
 		// Have to forcibly place the actor at the mounting point before activating
@@ -2232,13 +2223,21 @@ namespace ALYSLC
 		// Ugly solution until the cause of the activation failure is found.
 
 		auto targetedMountPtr = Util::GetActorPtrFromHandle(targetedMountHandle);
-		if (!targetedMountPtr || !targetedMountPtr.get()) 
+		if (!targetedMountPtr) 
 		{
 			mm->isMounting = false;
 			return;
 		}
 
-		// Player is mounting while this task is executing.
+		// Already mounted, so no need to try to mount again.
+		if (coopActor->IsOnMount())
+		{
+			mm->isMounting = false;
+			return;
+		}
+
+		// Player wants to mount and is mounting while this task is executing.
+		mm->wantsToMount = true;
 		mm->isMounting = true;
 
 		// Must fully sheathe weapons first to trigger the mount animation.
@@ -2262,6 +2261,17 @@ namespace ALYSLC
 				coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 				coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			}
+
+			SPDLOG_DEBUG
+			(
+				"[P] MountTask: {} waited {}s before attempting mount. "
+				"Draw state: {}, (un)equipping: {}, {}",
+				coopActor->GetName(), 
+				secsWaited,
+				!coopActor->actorState2.weaponState,
+				isEquipping,
+				isUnequipping
+			);
 		}
 
 		// Mount point is to the left of the mount.
@@ -2317,12 +2327,26 @@ namespace ALYSLC
 		}
 		else
 		{
+			bool isEquipping = false;
+			bool isUnequipping = false;
+			coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
+			coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
+			SPDLOG_DEBUG
+			(
+				"[P] MountTask: {} failed mount. Draw state: {}, (un)equipping: {}, {}.",
+				coopActor->GetName(), 
+				!coopActor->actorState2.weaponState,
+				isEquipping,
+				isUnequipping
+			);
 			// Mount failed, so resurrect the mount just in case it glitched out.
 			Util::AddSyncedTask
 			(
 				[targetedMountPtr]() { targetedMountPtr->Resurrect(false, true); }
 			);
 			currentMountHandle.reset();
+			// Flag as no longer wants to mount. Have to try again.
+			mm->wantsToMount = false;
 		}
 
 		// Draw the player's weapons/magic once fully mounted
@@ -2426,7 +2450,7 @@ namespace ALYSLC
 				pam->SetAndEveluatePackage();
 
 				// Get off mount/stop interacting with furniture.
-				coopActor->StopInteractingQuick(false);
+				coopActor->StopInteractingQuick(true);
 
 				// Clear movement offset and sheathe weapons.
 				mm->ClearKeepOffsetFromActor();
@@ -2719,7 +2743,7 @@ namespace ALYSLC
 					{
 						auto player3DPtr = Util::GetRefr3D(coopActor.get());
 						handle.SetPosition(coopActor->data.location);
-						if (player3DPtr && player3DPtr.get())
+						if (player3DPtr)
 						{
 							handle.SetObjectToFollow(player3DPtr.get());
 						}
@@ -2756,7 +2780,7 @@ namespace ALYSLC
 		// Teleport to another player through a pair of portals.
 
 		auto targetActorPtr = Util::GetActorPtrFromHandle(a_targetHandle); 
-		if (!targetActorPtr || !targetActorPtr.get())
+		if (!targetActorPtr)
 		{
 			return;
 		}
@@ -2798,13 +2822,13 @@ namespace ALYSLC
 		(
 			[this, teleportalActivator]() 
 			{
-				const auto entryPortal = coopActor->PlaceObjectAtMe(teleportalActivator, false);
-				if (!entryPortal || !entryPortal.get())
+				const auto entryPortalPtr = coopActor->PlaceObjectAtMe(teleportalActivator, false);
+				if (!entryPortalPtr)
 				{
 					return;
 				}
 
-				coopActor->SetPosition(entryPortal.get()->data.location, true);
+				coopActor->SetPosition(entryPortalPtr.get()->data.location, true);
 			}
 		);
 
@@ -2822,7 +2846,7 @@ namespace ALYSLC
 		std::this_thread::sleep_for(0.25s);
 
 		// If the portal was successfully placed, move the player to the exit portal.
-		if (exitPortalPtr && exitPortalPtr.get())
+		if (exitPortalPtr)
 		{
 			if (shouldMoveTo)
 			{

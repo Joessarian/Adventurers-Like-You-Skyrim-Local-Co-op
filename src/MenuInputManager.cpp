@@ -76,6 +76,7 @@ namespace ALYSLC
 		lockpickingMenu = nullptr;
 		magicMenu = nullptr;
 		mapMenu = nullptr;
+		sleepWaitMenu = nullptr;
 	}
 	
 	void MenuInputManager::MainTask()
@@ -295,7 +296,7 @@ namespace ALYSLC
 			);
 			menuContainerHandle = 
 			(
-				containerRefrPtr && containerRefrPtr.get() ? 
+				containerRefrPtr ? 
 				containerRefrPtr->GetHandle() :
 				RE::ObjectRefHandle()
 			);
@@ -383,7 +384,7 @@ namespace ALYSLC
 		}
 
 		containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
-		if (!containerMenu || !containerMenu.get())
+		if (!containerMenu)
 		{
 			return currentState;
 		}
@@ -433,7 +434,7 @@ namespace ALYSLC
 			return currentState;
 		}
 			containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
-		if (!containerMenu || !containerMenu.get())
+		if (!containerMenu)
 		{
 			return currentState;
 		}
@@ -1282,7 +1283,7 @@ namespace ALYSLC
 
 				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
 				// Favorites menu must be open.
-				if (!favoritesMenu || !favoritesMenu.get())
+				if (!favoritesMenu)
 				{
 					return;
 				}
@@ -1565,7 +1566,7 @@ namespace ALYSLC
 					}
 
 					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-					if (!favoritesMenu || !favoritesMenu.get())
+					if (!favoritesMenu)
 					{
 						return;
 					}
@@ -1679,7 +1680,7 @@ namespace ALYSLC
 					}
 
 					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-					if (!favoritesMenu || !favoritesMenu.get())
+					if (!favoritesMenu)
 					{
 						return;
 					}
@@ -1811,7 +1812,7 @@ namespace ALYSLC
 		// Get the spell/shout that the player has selected in the Magic Menu.
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return nullptr;
 		}
@@ -2040,6 +2041,7 @@ namespace ALYSLC
 				);
 			}
 		}
+
 		if (auto boundObj = selectedForm->As<RE::TESBoundObject>(); boundObj)
 		{
 			// Loot a specific item.
@@ -2268,7 +2270,7 @@ namespace ALYSLC
 				}
 
 				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-				if (!favoritesMenu || !favoritesMenu.get())
+				if (!favoritesMenu)
 				{
 					return;
 				}
@@ -2355,7 +2357,7 @@ namespace ALYSLC
 		// Get player requesting use to level up with the book
 		// (the player controlling the Container Menu).
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get() || !a_skillbook)
+		if (!menuCoopActorPtr || !a_skillbook)
 		{
 			return false;
 		}
@@ -2363,7 +2365,7 @@ namespace ALYSLC
 		// Get the container, which should be the player if they are in their own inventory,
 		// or the container the player is attempting to loot the book from.
 		auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
-		if (!containerRefrPtr || !containerRefrPtr.get()) 
+		if (!containerRefrPtr) 
 		{
 			return false;
 		}
@@ -2445,10 +2447,6 @@ namespace ALYSLC
 
 		if (canUseToLevelUp && pointsAvailable)
 		{
-			auto& skillIncList = 
-			(
-				glob.serializablePlayerData.at(menuCoopActorPtr->formID)->skillLevelIncreasesList
-			);
 			// Index in P1's singleton skills list that corresponds to this AV.
 			int32_t skillAVIndex = -1;
 			// Get skill index for the skill actor value.
@@ -2468,9 +2466,23 @@ namespace ALYSLC
 			}
 
 			const float avLvl = menuCoopActorPtr->GetBaseActorValue(skillAV);
-			// Update serialized skill increments list and increment skill AV level.
-			skillIncList[skillAVIndex]++;
+			// Update serialized skill base/increments list entry and increment skill AV level.
+			// Must have serializable data.
+			const auto iter = glob.serializablePlayerData.find(menuCoopActorPtr->formID);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				return false;
+			}
+
+			auto& skillList = 
+			(
+				isShared ? 
+				iter->second->skillBaseLevelsList :
+				iter->second->skillLevelIncreasesList
+			);
+			skillList[skillAVIndex]++;
 			menuCoopActorPtr->SetBaseActorValue(skillAV, avLvl + 1);
+
 			// Adjust crafting/learning points.
 			if (isShared)
 			{
@@ -2692,7 +2704,7 @@ namespace ALYSLC
 		// Handle ContainerMenu input.
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return;
 		}
@@ -2883,7 +2895,7 @@ namespace ALYSLC
 				}
 
 				auto& entryData = inventoryEntry.second.second;
-				if (!entryData || !entryData.get())
+				if (!entryData)
 				{
 					continue;
 				}
@@ -3017,7 +3029,7 @@ namespace ALYSLC
 					}
 
 					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-					if (!favoritesMenu || !favoritesMenu.get())
+					if (!favoritesMenu)
 					{
 						return;
 					}
@@ -3206,13 +3218,13 @@ namespace ALYSLC
 		// Handle GiftMenu input.
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return;
 		}
 
 		auto ue = RE::UserEvents::GetSingleton();
-		if (!ue || !giftMenu || !giftMenu.get())
+		if (!ue || !giftMenu)
 		{
 			return;
 		}
@@ -3299,9 +3311,12 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		// Button codes for QuickLootMenu binds.
+		std::set<uint32_t> allowedButtonIDCodes{ };
 		auto buttonGroup = glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask);
 		const auto gameMask = glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask);
+		// Add all default QuickLootEE button codes.
 		auto acceptIDCode = controlMap->GetMappedKey
 		(
 			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
@@ -3316,22 +3331,50 @@ namespace ALYSLC
 			RE::INPUT_DEVICE::kGamepad, 
 			RE::UserEvents::INPUT_CONTEXT_ID::kGameplay
 		);
-		
+
+		// For QuickLootIE, check for binds with the 'QUICKLOOT_EVENT_GROUP_FLAG'
+		// user event group flag set and add to the allowed codes set.
+		// https://github.com/MissCorruption/QuickLootIE/blob/main/src/Input/InputManager.cpp#L106
+		if (ALYSLC::QuickLootCompat::g_isQuickLootIE)
+		{
+			auto context = controlMap->controlMap[RE::ControlMap::InputContextID::kGameplay];
+			if (context)
+			{
+				const auto& mappings = context->deviceMappings[RE::INPUT_DEVICE::kGamepad];
+				for (const auto& mapping : mappings)
+				{
+					auto qlieUserEventGroupFlag = static_cast<RE::ControlMap::UEFlag>(1 << 12);
+					if (mapping.userEventGroupFlag.all(qlieUserEventGroupFlag))
+					{
+						allowedButtonIDCodes.insert(mapping.inputKey);
+					}
+				}
+			}
+		}
+		else
+		{
+			allowedButtonIDCodes.insert(acceptIDCode);
+			allowedButtonIDCodes.insert(cancelIDCode);
+			allowedButtonIDCodes.insert(readyWeaponIDCode);
+		}
+
 		// Close the LootMenu with the 'Cancel' bind.
 		if (gameMask == cancelIDCode)
 		{
 			// Exit menu and relinquish control when cancel bind is pressed.
 			if (auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); crosshairPickData)
 			{
+				SPDLOG_DEBUG("[MIM] ProcessLootMenuButtonInput: {} is closing LootMenu.",
+					Util::HandleIsValid(menuCoopActorHandle) ?
+					menuCoopActorHandle.get()->GetName() :
+					"NONE"
+				);
 				Util::SendCrosshairEvent(nullptr);
 			}
 
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
-		else if (buttonGroup != InputGroup::kDPad && 
-				gameMask != cancelIDCode && 
-				gameMask != acceptIDCode && 
-				gameMask != readyWeaponIDCode)
+		else if (buttonGroup != InputGroup::kDPad && !allowedButtonIDCodes.contains(gameMask))
 		{
 			// Ignore all button presses (do not send emulated input event)
 			// that are not the DPad or the 'Cancel', 'Accept', or 'Ready Weapon' binds.
@@ -3388,7 +3431,7 @@ namespace ALYSLC
 		// Perform menu-dependent actions based on trigger press.
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return;
 		}
@@ -3450,82 +3493,190 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Setup equip request.
-				currentMenuInputEventType = MenuInputEventType::kEquipReq;
-				fromContainerHandle = isCoopInventory ? menuCoopActorHandle : menuContainerHandle;
-				reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
-				selectedForm = obj;
-				placeholderMagicChanged = false;
-				bool isEquipped = glob.coopPlayers[managerMenuCID]->em->IsEquipped(selectedForm);
-				// If the item will be equipped/unequipped from the player's own inventory,
-				// or if the item is looted from a container and is not already equipped,
-				// we want to wait until the equip event fires
-				// before refreshing the player's equip state.
-				if (isCoopInventory || !isEquipped)
+				const auto mode = containerMenu->GetContainerMode();
+				// Only transfer if the player is not pickpocketing the item,
+				// or if the pickpocket attempt was successful.
+				// Can't simply emulate a trigger press for P1 
+				// because even though this will attempt the pickpocket for us,
+				// it will equip the item on P1, instead of the companion player, if successful.
+				bool canTransfer = true;
+				if (mode == RE::ContainerMenu::ContainerMode::kPickpocket)
 				{
-					// Refresh equip state later once the item is (un)equipped.
-					delayedEquipStateRefresh = true;
-					lastEquipStateRefreshReqTP = SteadyClock::now();
-				}
-				else
-				{
-					// Refresh right away after item removal otherwise.
-					shouldRefreshMenu = true;
-				}
-
-				// If container reference is the player,
-				// or the item is not valid, do not remove it from its container.
-				if (isCoopInventory || !obj)
-				{
-					return;
-				}
-
-				auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
-				if (!containerRefrPtr || !containerRefrPtr.get()) 
-				{
-					return;
-				}
-
-				auto droppedInventory = containerRefrPtr->GetDroppedInventory();
-				const auto iter = droppedInventory.find(obj);
-				// Loot dropped inventory items from the overworld,
-				// since they cannot be removed from the container directly.
-				if (iter != droppedInventory.end())
-				{
-					const auto& countHandlePair = iter->second;
-					if (countHandlePair.first > 0)
+					auto refrPtr = menuContainerHandle.get();
+					if (refrPtr)
 					{
-						for (const auto& handle : countHandlePair.second)
-						{
-							if (!Util::HandleIsValid(handle))
-							{
-								continue;
-							}
+						canTransfer = p1->AttemptPickpocket
+						(
+							menuContainerHandle.get().get(), selectedItem->data.objDesc, 1
+						);
 
-							menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
-						}
-					}
-				}
-				else
-				{
-					auto counts = containerRefrPtr->GetInventoryCounts();
-					const auto iter2 = counts.find(obj);
-					if (iter2 != counts.end())
-					{
-						auto count = iter2->second;
-						if (count > 0)
+						// Pickpocketing was a success! 
+						// Add skill XP for P1,
+						// since the above function does not do it automatically.
+						if (canTransfer)
 						{
-							// Loot with P1 then transfer to the companion player as usual.
-							containerRefrPtr->RemoveItem
-							(	
-								obj,
-								count, 
-								RE::ITEM_REMOVE_REASON::kStoreInContainer,
-								nullptr,
-								p1
+							SPDLOG_DEBUG("{}'s Gold value: {}.", 
+								obj->GetName(), 
+								obj->GetGoldValue());
+							p1->UseSkill
+							(
+								RE::ActorValue::kPickpocket, 
+								obj->GetGoldValue(),
+								obj
 							);
 						}
 					}
+				}
+
+				if (canTransfer)
+				{
+					// Setup equip request.
+					currentMenuInputEventType = MenuInputEventType::kEquipReq;
+					fromContainerHandle = 
+					(
+						isCoopInventory ? menuCoopActorHandle : menuContainerHandle
+					);
+					reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
+					selectedForm = obj;
+					placeholderMagicChanged = false;
+					bool isEquipped = glob.coopPlayers[managerMenuCID]->em->IsEquipped
+					(
+						selectedForm
+					);
+					// If the item will be equipped/unequipped from the player's own inventory,
+					// or if the item is looted from a container and is not already equipped,
+					// we want to wait until the equip event fires
+					// before refreshing the player's equip state.
+					if (isCoopInventory || !isEquipped)
+					{
+						// Refresh equip state later once the item is (un)equipped.
+						delayedEquipStateRefresh = true;
+						lastEquipStateRefreshReqTP = SteadyClock::now();
+					}
+					else
+					{
+						// Refresh right away after item removal otherwise.
+						shouldRefreshMenu = true;
+					}
+
+					// If container reference is the player,
+					// or the item is not valid, do not remove it from its container.
+					if (isCoopInventory || !obj)
+					{
+						return;
+					}
+
+					auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
+					if (!containerRefrPtr) 
+					{
+						return;
+					}
+
+					auto droppedInventory = containerRefrPtr->GetDroppedInventory();
+					const auto iter = droppedInventory.find(obj);
+					// Loot dropped inventory items from the overworld,
+					// since they cannot be removed from the container directly.
+					if (iter != droppedInventory.end())
+					{
+						const auto& countHandlePair = iter->second;
+						if (countHandlePair.first > 0)
+						{
+							for (const auto& handle : countHandlePair.second)
+							{
+								if (!Util::HandleIsValid(handle))
+								{
+									continue;
+								}
+
+								menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
+							}
+						}
+					}
+					else
+					{
+						auto counts = containerRefrPtr->GetInventoryCounts();
+						const auto iter2 = counts.find(obj);
+						if (iter2 != counts.end())
+						{
+							auto count = iter2->second;
+							if (count > 0)
+							{
+								// NOTE: 
+								// Directly to the menu-controlling companion player
+								// to be equipped immediately. 
+								// Delaying the transfer may cause the equip call to execute
+								// before the item is transfered and the equip will fail.
+								containerRefrPtr->RemoveItem
+								(	
+									obj,
+									count, 
+									RE::ITEM_REMOVE_REASON::kStoreInContainer,
+									nullptr,
+									menuCoopActorPtr.get()
+								);
+							}
+						}
+					}
+				}
+				else
+				{
+					// Exit the menu if caught pickpocketing.
+					// No event to handle.
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+					auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+					if (msgQ)
+					{
+						const auto& reqP = glob.coopPlayers[glob.menuCID];
+						msgQ->AddMessage
+						(
+							RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr
+						);
+						return;
+					}
+
+					/*
+					auto ue = RE::UserEvents::GetSingleton();
+					if (!ue)
+					{
+						return;
+					}
+
+					// Need to send a 'Cancel' input event to close the menu.
+					auto cancelIDCode = controlMap->GetMappedKey
+					(
+						ue->cancel,
+						RE::INPUT_DEVICE::kGamepad, 
+						RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+					);
+					// Press the bind.
+					std::unique_ptr<RE::InputEvent* const> buttonEvent = 
+					(
+						std::make_unique<RE::InputEvent* const>
+						(
+							RE::ButtonEvent::Create
+							(
+								RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 1.0f, 0.0f
+							)
+						)
+					);
+					// Sent by a companion player.
+					(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
+					// Release the bind.
+					std::unique_ptr<RE::InputEvent* const> buttonEvent2 = 
+					(
+						std::make_unique<RE::InputEvent* const>
+						(
+							RE::ButtonEvent::Create
+							(
+								RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 0.0f, 1.0f)
+						)
+					);
+					// Sent by a companion player.
+					(*buttonEvent2.get())->AsIDEvent()->pad24 = 0xCA11;
+
+					Util::SendInputEvent(buttonEvent);
+					Util::SendInputEvent(buttonEvent2);
+					*/
 				}
 			}
 
@@ -3975,7 +4126,7 @@ namespace ALYSLC
 		}
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return;
 		}
@@ -4573,7 +4724,7 @@ namespace ALYSLC
 		}
 
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+		if (!menuCoopActorPtr)
 		{
 			return;
 		}
@@ -4642,6 +4793,14 @@ namespace ALYSLC
 			// Invalid XInput mask.
 			return false;
 		}
+		
+		// NOTE:
+		// AE added the kMarketplace context, 
+		// which incremented kFavor, kTotal, and kNone by 1.
+		// Was causing a crash with the AE versions of TrueHUD and QuickLootIE, 
+		// which have their menu contexts set to kNone (19), 
+		// which is not a valid context defined by the SE versions of CommonLib. 
+		// Clamp here to ensure the context index is valid.
 
 		// Search for a context with a valid event name for the gamepad ID code.
 		auto context = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
@@ -4650,12 +4809,20 @@ namespace ALYSLC
 		const auto& currentMenu = ui->GetMenu(menuName); 
 		if (currentMenu && *currentMenu->inputContext != RE::UserEvents::INPUT_CONTEXT_ID::kNone) 
 		{
-			context = *currentMenu->inputContext;
-			a_bindInfoOut.eventName = controlMap->GetUserEventName
+			SPDLOG_DEBUG("[MIM] SetEmulatedEventInfo: Current menu {} has context {}.",
+				menuName, *currentMenu->inputContext);
+			context = static_cast<RE::UserEvents::INPUT_CONTEXT_ID>
 			(
-				a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
+				min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*currentMenu->inputContext))
 			);
-			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
+			if (context != RE::UserEvents::INPUT_CONTEXT_ID::kNone)
+			{
+				a_bindInfoOut.eventName = controlMap->GetUserEventName
+				(
+					a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
+				);
+				validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
+			}
 		}
 
 		// Fall back to menu mode context.
@@ -4674,13 +4841,6 @@ namespace ALYSLC
 		{
 			for (const auto& menu : ui->menuStack)
 			{
-				// NOTE:
-				// AE added the kMarketplace context, 
-				// which incremented kFavor, kTotal, and kNone by 1.
-				// Was causing a crash with the latest version of TrueHUD, 
-				// which has its menu context set to kNone (19), 
-				// which is not a valid context defined by the SE versions of CommonLib. 
-				// Clamp here to ensure the context index is valid.
 				context = static_cast<RE::UserEvents::INPUT_CONTEXT_ID>
 				(
 					min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*menu->inputContext))
@@ -4987,7 +5147,7 @@ namespace ALYSLC
 			{
 
 				RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-				if (!menuCoopActorPtr || !menuCoopActorPtr.get() || !a_selectedForm)
+				if (!menuCoopActorPtr || !a_selectedForm)
 				{
 					return;
 				}
@@ -4999,7 +5159,7 @@ namespace ALYSLC
 				}
 				
 				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-				if (!favoritesMenu || !favoritesMenu.get())
+				if (!favoritesMenu)
 				{
 					return;
 				}
@@ -5102,6 +5262,7 @@ namespace ALYSLC
 		lockpickingMenu = nullptr;
 		magicMenu = nullptr;
 		mapMenu = nullptr;
+		sleepWaitMenu = nullptr;
 		auto ui = RE::UI::GetSingleton();
 		if (ui)
 		{
@@ -5148,6 +5309,10 @@ namespace ALYSLC
 			else if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
 			{
 				mapMenu = ui->GetMenu<RE::MapMenu>();
+			}
+			else if (menuNameHash == Hash(RE::SleepWaitMenu::MENU_NAME))
+			{
+				sleepWaitMenu = ui->GetMenu<RE::SleepWaitMenu>();
 			}
 		}
 
@@ -5196,7 +5361,13 @@ namespace ALYSLC
 		{
 			openedMenuType = SupportedMenu::kMap;
 		}
-		else if (ui && ui->GetMenu(GlobalCoopData::LOOT_MENU))
+		else if (sleepWaitMenu)
+		{
+			openedMenuType = SupportedMenu::kSleepWaitMenu;
+		}
+		else if (ui && 
+				 ui->GetMenu(GlobalCoopData::LOOT_MENU) &&
+				 menuNameHash == Hash(GlobalCoopData::LOOT_MENU))
 		{
 			openedMenuType = SupportedMenu::kLoot;
 		}
@@ -5362,13 +5533,18 @@ namespace ALYSLC
 			a_menuName == RE::LockpickingMenu::MENU_NAME)
 		{
 			// First conditional check for dialogue menu control.
-			// If the dialogue menu is open,
+			// If the dialogue menu is open and no player is already controlling menus,
 			// the player closest to the speaker is given control of the menu.
 			// Overriden by valid requests below.
 			if (Settings::bUninitializedDialogueWithClosestPlayer && 
 				a_menuName == RE::DialogueMenu::MENU_NAME)
 			{
-				if (auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); menuTopicManager)
+				if (glob.menuCID != -1)
+				{
+					resolvedCID = glob.menuCID;
+				}
+				else if (auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
+						 menuTopicManager)
 				{
 					auto speakerPtr =
 					(
@@ -5376,7 +5552,7 @@ namespace ALYSLC
 						Util::GetRefrPtrFromHandle(menuTopicManager->speaker) : 
 						Util::GetRefrPtrFromHandle(menuTopicManager->lastSpeaker)
 					);
-					if (speakerPtr && speakerPtr.get()) 
+					if (speakerPtr) 
 					{
 						float closestDistToSpeaker = FLT_MAX;
 						for (const auto& p : glob.coopPlayers)
@@ -5399,13 +5575,43 @@ namespace ALYSLC
 					}
 				}
 			}
-
-			float secsSinceChosenReq = FLT_MAX;
+			
+			// Hash of the opening/closing menu's name.
+			auto menuNameHash = Hash(a_menuName);
+			// Message box menus consider the newest requests first.
+			bool isMessageBoxMenu = a_menuName == RE::MessageBoxMenu::MENU_NAME;
+			// For the 'CustomMenu', if there is a direct request or an external request,
+			// consider the oldest request first.
+			// Then, if there are any menu requests triggered by activation,
+			// consider the newest of these requests as well.
+			bool isCustomMenu = a_menuName == GlobalCoopData::CUSTOM_MENU;
+			// Ignore max 3 second request lifetime for the LootMenu.
+			bool ignoreReqExpiration = a_menuName == GlobalCoopData::LOOT_MENU;
+			// Type for the currently chosen request determining 
+			// which player should obtain control of the given menu.
+			enum
+			{
+				kNone,
+				kMaintainControl,
+				kExternal,
+				kOldest,
+				kNewestDirect,
+				kNewestIndirect
+			};
+			auto chosenReqType = kNone;
+			// Seconds since the currently chosen req was made.
+			std::optional<float> secsSinceChosenReq = std::nullopt;
 			for (const auto& p : glob.coopPlayers)
 			{
 				if (!p->isActive)
 				{
 					continue;
+				}
+
+				// No need to check requests for other players once one is guaranteed control.
+				if (chosenReqType == kMaintainControl)
+				{
+					break;
 				}
 
 				const auto& cid = p->controllerID;
@@ -5421,13 +5627,20 @@ namespace ALYSLC
 				{
 					// Oldest to newest.
 					auto currentReq = reqQueue.back();
+					// Insert for now. Will remove later after handling.
+					if (a_modifyReqQueue) 
+					{
+						menuOpeningActionRequests[cid].emplace_front(currentReq);
+					}
+
 					float secsSinceReq = Util::GetElapsedSeconds(currentReq.timestamp);
 					SPDLOG_DEBUG
 					(
 						"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
 						"Got request for {}. Menu: {}, from action: {}, assoc refr: {} (0x{:X}), "
 						"ext req: {}. Seconds since request inserted: {}. "
-						"Seconds since chosen request inserted: {}. Queue size: {}.", 
+						"Chosen req type: {}, seconds since chosen request inserted: {}. "
+						"Queue size: {}.", 
 						p->coopActor->GetName(), 
 						currentReq.reqMenuName, 
 						currentReq.fromAction,
@@ -5439,70 +5652,36 @@ namespace ALYSLC
 						0xDEAD,
 						currentReq.isExtRequest,
 						secsSinceReq, 
-						secsSinceChosenReq, 
+						chosenReqType,
+						secsSinceChosenReq.has_value() ? secsSinceChosenReq.value() : -1.0f, 
 						reqQueue.size()
 					);
 
-					// Message box menus consider the newest requests first.
-					bool isMessageBoxMenu = a_menuName == RE::MessageBoxMenu::MENU_NAME;
-					// For the 'CustomMenu', if there is a direct request or an external request,
-					// consider the oldest request first.
-					// Then, if there are any menu requests triggered by activation,
-					// consider the newest of these requests as well.
-					bool isCustomMenu = a_menuName == GlobalCoopData::CUSTOM_MENU;
-					// Ignore max 3 second request lifetime for the LootMenu.
-					bool ignoreReqExpiration = a_menuName == GlobalCoopData::LOOT_MENU;
-					// Want to choose the oldest valid request because, for example, 
-					// if two players activate the same NPC and a menu opens 
-					// to interact with that NPC, the player that activated the NPC first 
-					// (oldest request) should control the menu.
-					// Ignore requests that are older than 3 seconds.
-					bool checkForOldestReq = 
-					(
-						(!isMessageBoxMenu) &&
-						(ignoreReqExpiration || secsSinceReq < 3.0f) && 
-						(secsSinceChosenReq == FLT_MAX || secsSinceReq > secsSinceChosenReq) 
-					);
-					// Alternatively, for menus that have no clearly defined trigger, 
-					// check which player submitted the most recent request 
-					// and give that player control.
-					// Currently only for MessageBoxMenu.
-					bool checkForNewestReq = 
-					(
-						(
-							(isMessageBoxMenu) || 
-							(isCustomMenu && currentReq.fromAction == InputAction::kActivate)
-						) && 
-						(secsSinceChosenReq == FLT_MAX || secsSinceReq < secsSinceChosenReq)
-					);
-					// If the menu-associated refr the same as the request's one?
-					bool isSameRefr = false;
+					// Hash of the current request's menu's name.
+					auto reqMenuNameHash = Hash(currentReq.reqMenuName);
+					// True if this request's associated menu is the same
+					// as the opening/closing one.
+					bool isRequestedMenu = reqMenuNameHash == menuNameHash;
 
-					// NOTE: 
-					// If an activator was activated and a menu opens, 
-					// compare the menu's associated refr's name with the activated refr's name.
-					// Can't figure out another way to check an activator's associated refr 
-					// and compare to the menu's refr, and this will lead to instances
-					// where the wrong player gains control of the menu 
-					// if two players or more submit requests to activate objects 
-					// of the same name at almost the same time.
-					// Will continue looking for a direct way to link activators to references.
-					if (checkForOldestReq) 
+					// Prioritize validity of the most recent external requests first
+					// (ex. from a script).
+					if (currentReq.isExtRequest)
 					{
-						// Insert for now. Will remove later if fulfilled.
-						if (a_modifyReqQueue) 
-						{
-							menuOpeningActionRequests[cid].emplace_front(currentReq);
-						}
-
-						// Check validity of external requests first (ex. from a script). 
-						// Only have to compare menu names.
-						bool validExtRequest = 
+						bool isMaintainControlRequest = 
 						(
-							currentReq.isExtRequest && 
-							Hash(currentReq.reqMenuName) == Hash(a_menuName)
-						); 
-						if (validExtRequest) 
+							currentReq.reqMenuName == GlobalCoopData::RETAIN_MENU_CONTROL
+						);
+						bool isValidExtRequest = 
+						(
+							(isRequestedMenu) &&
+							(ignoreReqExpiration || secsSinceReq < 3.0f) && 
+							(
+								chosenReqType != kExternal ||
+								!secsSinceChosenReq.has_value() || 
+								secsSinceReq > secsSinceChosenReq.value()
+							)
+						);
+						if (isMaintainControlRequest || isValidExtRequest)
 						{
 							secsSinceChosenReq = secsSinceReq;
 							resolvedCID = p->controllerID;
@@ -5510,21 +5689,68 @@ namespace ALYSLC
 							(
 								"[MIM] MenuOpeningActionRequestsManager: "
 								"ResolveMenuControllerID: External request: "
-								"{} is in control of {}.",
-								p->coopActor->GetName(), a_menuName
+								"{} is in control of {}. Should maintain control: {}.",
+								p->coopActor->GetName(), a_menuName, isMaintainControlRequest
 							);
-							// Remove the current fulfilled request.
-							if (a_modifyReqQueue)
+
+							// Skip the rest of the requests if maintaining control.
+							if (isMaintainControlRequest)
 							{
-								menuOpeningActionRequests[cid].pop_front();
+								chosenReqType = kMaintainControl;
+								if (a_modifyReqQueue) 
+								{
+									menuOpeningActionRequests[cid].pop_front();
+								}
+
+								reqQueue.pop_back();
+								break; 
 							}
-
-							reqQueue.pop_back();
-							// Move on to the next request.
-							continue;
+							else
+							{
+								chosenReqType = kExternal;
+							}
 						}
-
-						switch (Hash(a_menuName.c_str(), a_menuName.size()))
+					}
+					
+					// Next, we want to choose the oldest valid request because, for example, 
+					// if two players activate the same NPC and a menu opens 
+					// to interact with that NPC, the player that activated the NPC first 
+					// (oldest request) should control the menu.
+					// Ignore requests that are older than 3 seconds.
+					// Also look for a direct request if an indirect one is currently chosen.
+					bool checkForOldestReq = 
+					(
+						(
+							chosenReqType == kNone || 
+							chosenReqType == kOldest || 
+							chosenReqType == kNewestIndirect
+						) &&
+						(!isMessageBoxMenu) &&
+						(ignoreReqExpiration || secsSinceReq < 3.0f) && 
+						(
+							chosenReqType == kNewestIndirect ||
+							!secsSinceChosenReq.has_value() || 
+							secsSinceReq > secsSinceChosenReq.value()
+						)
+					);
+					if (checkForOldestReq) 
+					{
+						// NOTE: 
+						// If an activator was activated and a menu opens, 
+						// compare the menu's associated refr's name 
+						// with the activated refr's name.
+						// Can't figure out another way to check an activator's associated refr 
+						// and compare to the menu's refr, and this will lead to instances
+						// where the wrong player gains control of the menu 
+						// if two players or more submit requests to activate objects 
+						// of the same name at almost the same time.
+						// Will continue looking for a direct way to link activators to references.
+						
+						// If the menu-associated refr the same as the request's one?
+						bool isSameRefr = false;
+						// Set the chosen request to the current one.
+						bool setAsChosen = false;
+						switch (menuNameHash)
 						{
 						case Hash
 						(
@@ -5542,19 +5768,17 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
 
-							RE::TESObjectREFRPtr refrPtr;
+							RE::TESObjectREFRPtr refrPtr{ };
 							RE::TESObjectREFR::LookupByHandle
 							(
 								barterMenu->GetTargetRefHandle(), refrPtr
 							);
-							if (!refrPtr || !refrPtr.get())
+							if (!refrPtr)
 							{
 								break;
 							}
@@ -5573,8 +5797,7 @@ namespace ALYSLC
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5599,9 +5822,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5626,8 +5847,7 @@ namespace ALYSLC
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5672,13 +5892,12 @@ namespace ALYSLC
 							// and the player pressed their inventory bind 
 							// or are requesting to open a container.
 							if ((isReqPlayersInventory) && 
-								(currentReq.fromAction == InputAction::kInventory || 
-								 Hash(currentReq.reqMenuName) == 
-								 Hash(RE::ContainerMenu::MENU_NAME)
+								(
+									currentReq.fromAction == InputAction::kInventory || 
+									isRequestedMenu
 								))
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5689,7 +5908,7 @@ namespace ALYSLC
 							}
 							else if (currentReq.fromAction == InputAction::kActivate)
 							{
-								if (!refrPtr || !refrPtr.get())
+								if (!refrPtr)
 								{
 									break;
 								}
@@ -5698,9 +5917,7 @@ namespace ALYSLC
 								(
 									currentReq.assocRefrHandle
 								); 
-								if (!assocRefrPtr || 
-									!assocRefrPtr.get() || 
-									!assocRefrPtr->GetObjectReference())
+								if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 								{
 									break;
 								}
@@ -5724,8 +5941,7 @@ namespace ALYSLC
 								};
 								if (isSameRefr)
 								{
-									secsSinceChosenReq = secsSinceReq;
-									resolvedCID = p->controllerID;
+									setAsChosen = true;
 									SPDLOG_DEBUG
 									(
 										"[MIM] MenuOpeningActionRequestsManager: "
@@ -5753,9 +5969,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5789,8 +6003,7 @@ namespace ALYSLC
 								*asFurniture->workBenchData.benchType != 
 								RE::TESFurniture::WorkBenchData::BenchType::kNone)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5823,9 +6036,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -5857,16 +6068,13 @@ namespace ALYSLC
 										RE::FormType::Activator, RE::FormType::TalkingActivator
 									) &&
 									lastSpeakerPtr && 
-									Hash
-									(
-										assocRefrPtr->GetName()) == Hash(lastSpeakerPtr->GetName()
-									)
+									Hash(assocRefrPtr->GetName()) ==
+									Hash(lastSpeakerPtr->GetName())
 								)
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5890,11 +6098,10 @@ namespace ALYSLC
 						):
 						{
 							// Wants to access the FavoritesMenu.
-							if (currentReq.fromAction == InputAction::kFavorites || 
-								Hash(currentReq.reqMenuName) == Hash(RE::FavoritesMenu::MENU_NAME))
+							if (isRequestedMenu || 
+								currentReq.fromAction == InputAction::kFavorites)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5911,8 +6118,7 @@ namespace ALYSLC
 							// Wants to trade with another player.
 							if (currentReq.fromAction == InputAction::kTradeWithPlayer)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5929,11 +6135,9 @@ namespace ALYSLC
 						):
 						{
 							// Wants to pause the game (open JournalMenu).
-							if (currentReq.fromAction == InputAction::kPause || 
-								Hash(currentReq.reqMenuName) == Hash(RE::JournalMenu::MENU_NAME))
+							if (isRequestedMenu || currentReq.fromAction == InputAction::kPause)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5952,11 +6156,11 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open P1's inventory directly or from the TweenMenu.
-							if (currentReq.fromAction == InputAction::kInventory || 
+							if (isRequestedMenu ||
+								currentReq.fromAction == InputAction::kInventory || 
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -5974,11 +6178,11 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open the LevelUpMenu through the StatsMenu or TweenMenu.
-							if (currentReq.fromAction == InputAction::kStatsMenu || 
+							if (isRequestedMenu || 
+								currentReq.fromAction == InputAction::kStatsMenu || 
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6008,9 +6212,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -6035,8 +6237,7 @@ namespace ALYSLC
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6054,11 +6255,10 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open the MagicMenu.
-							if (currentReq.fromAction == InputAction::kMagicMenu || 
-								Hash(currentReq.reqMenuName) == Hash(RE::MagicMenu::MENU_NAME))
+							if (isRequestedMenu || 
+								currentReq.fromAction == InputAction::kMagicMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6073,11 +6273,9 @@ namespace ALYSLC
 						case Hash(RE::MapMenu::MENU_NAME.data(), RE::MapMenu::MENU_NAME.size()):
 						{
 							// Wants to open the MapMenu.
-							if (currentReq.fromAction == InputAction::kMapMenu || 
-								Hash(currentReq.reqMenuName) == Hash(RE::MapMenu::MENU_NAME))
+							if (isRequestedMenu || currentReq.fromAction == InputAction::kMapMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6095,11 +6293,9 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open the WaitMenu.
-							if (currentReq.fromAction == InputAction::kWaitMenu || 
-								Hash(currentReq.reqMenuName) == Hash(RE::SleepWaitMenu::MENU_NAME))
+							if (isRequestedMenu || currentReq.fromAction == InputAction::kWaitMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6115,9 +6311,7 @@ namespace ALYSLC
 								(
 									currentReq.assocRefrHandle
 								); 
-								if (!assocRefrPtr || 
-									!assocRefrPtr.get() || 
-									!assocRefrPtr->GetObjectReference())
+								if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 								{
 									break;
 								}
@@ -6132,8 +6326,7 @@ namespace ALYSLC
 										RE::TESFurniture::ActiveMarker::kCanSleep
 									))
 								{
-									secsSinceChosenReq = secsSinceReq;
-									resolvedCID = p->controllerID;
+									setAsChosen = true;
 									SPDLOG_DEBUG
 									(
 										"[MIM] MenuOpeningActionRequestsManager: "
@@ -6155,11 +6348,11 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open the StatsMenu directly or through the TweenMenu.
-							if (currentReq.fromAction == InputAction::kStatsMenu || 
+							if (isRequestedMenu || 
+								currentReq.fromAction == InputAction::kStatsMenu || 
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6187,9 +6380,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -6211,8 +6402,7 @@ namespace ALYSLC
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6231,11 +6421,10 @@ namespace ALYSLC
 						):
 						{
 							// Wants to open the TweenMenu.
-							if (currentReq.fromAction == InputAction::kTweenMenu || 
-								Hash(currentReq.reqMenuName) == Hash(RE::TweenMenu::MENU_NAME))
+							if (isRequestedMenu || 
+								currentReq.fromAction == InputAction::kTweenMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6260,10 +6449,7 @@ namespace ALYSLC
 							// Serves more as a failsafe.
 							bool isDirectRequest = 
 							(
-								(
-									Hash(currentReq.reqMenuName) == 
-									Hash(GlobalCoopData::CUSTOM_MENU)
-								) ||
+								(isRequestedMenu) ||
 								(
 									currentReq.fromAction == InputAction::kCoopDebugMenu ||
 									currentReq.fromAction == InputAction::kCoopIdlesMenu ||
@@ -6276,8 +6462,7 @@ namespace ALYSLC
 							);
 							if (isDirectRequest)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6296,9 +6481,9 @@ namespace ALYSLC
 						{
 							// Crosshair pick data valid and request queued by crosshair movement.
 							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
-							if (!crosshairPickData || 
-								currentReq.fromAction != InputAction::kMoveCrosshair || 
-								Hash(currentReq.reqMenuName) != Hash(GlobalCoopData::LOOT_MENU))
+							if (!isRequestedMenu || 
+								!crosshairPickData || 
+								currentReq.fromAction != InputAction::kMoveCrosshair)
 							{
 								break;
 							}
@@ -6307,9 +6492,7 @@ namespace ALYSLC
 							(
 								currentReq.assocRefrHandle
 							); 
-							if (!assocRefrPtr || 
-								!assocRefrPtr.get() || 
-								!assocRefrPtr->GetObjectReference())
+							if (!assocRefrPtr || !assocRefrPtr->GetObjectReference())
 							{
 								break;
 							}
@@ -6319,7 +6502,7 @@ namespace ALYSLC
 							(
 								glob.reqQuickLootContainerHandle
 							); 
-							if (!reqContainerRefrPtr || !reqContainerRefrPtr.get())
+							if (!reqContainerRefrPtr)
 							{
 								break;
 							}
@@ -6348,8 +6531,7 @@ namespace ALYSLC
 							};
 							if (isSameRefr)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6360,8 +6542,8 @@ namespace ALYSLC
 									assocRefrPtr->GetName()
 								);
 
-								// Store info about which player sent the last crosshair event.
-								glob.quickLootReqCID = p->controllerID;
+								// Store which player will receive control of the LootMenu.
+								glob.quickLootControlCID = p->controllerID;
 							}
 
 							break;
@@ -6373,12 +6555,10 @@ namespace ALYSLC
 						):
 						{
 							// Request to open the enhanced Hero Menu.
-							if (Hash(currentReq.reqMenuName) ==
-								Hash(GlobalCoopData::ENHANCED_HERO_MENU) || 
+							if (isRequestedMenu || 
 								currentReq.fromAction == InputAction::kStatsMenu)
 							{
-								secsSinceChosenReq = secsSinceReq;
-								resolvedCID = p->controllerID;
+								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
 									"[MIM] MenuOpeningActionRequestsManager: "
@@ -6394,28 +6574,58 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: Defaulting to P1 control of {}.",
+								"ResolveMenuControllerID: FALLTHROUGH for {}.",
 								a_menuName
 							);
 							break;
 						}
 						}
 
-						// Remove since this request was fulfilled.
-						if (a_modifyReqQueue && resolvedCID == p->controllerID) 
+						if (setAsChosen)
 						{
-							menuOpeningActionRequests[cid].pop_front();
+							secsSinceChosenReq = secsSinceReq;
+							resolvedCID = p->controllerID;
+							chosenReqType = kOldest;
 						}
-					}
+					} 
 					
+					// If this player's request was not chosen, 
+					// for menus that have no clearly defined trigger, 
+					// check which player submitted the most recent request 
+					// and give that player control.
+					// Currently only for MessageBoxMenus and CustomMenus, 
+					// if triggered by activation.
+					// Once a request is chosen and it is direct, 
+					// do not continue looking for the newest request for this player.
+					bool checkForNewestReq = 
+					(
+						(
+							chosenReqType == kNone || 
+							chosenReqType == kNewestDirect || 
+							chosenReqType == kNewestIndirect
+						) &&
+						(
+							(isMessageBoxMenu) || 
+							(isCustomMenu && currentReq.fromAction == InputAction::kActivate)
+						) && 
+						(
+							(!secsSinceChosenReq.has_value()) || 
+							(secsSinceReq < secsSinceChosenReq.value())
+						)
+					);
 					if (checkForNewestReq)
 					{
-						// Direct requests can considered up to 5 seconds after enqueueing.
-						bool directlyRequested = 
+						SPDLOG_DEBUG
 						(
-							Hash(currentReq.reqMenuName) == Hash(a_menuName) && secsSinceReq < 5.0f
+							"[MIM] MenuOpeningActionRequestsManager: "
+							"ResolveMenuControllerID: {}: "
+							"Check for newest req for {}.",
+							a_menuName,
+							p->coopActor->GetName()
 						);
-						// Can be triggered by a variety of things,
+						// Direct requests can considered up to 5 seconds after enqueueing.
+						bool directlyRequested = isRequestedMenu && secsSinceReq < 5.0f;
+						// Message box menus can be triggered by a variety of things,
 						// so if no direct request was made, 
 						// choose the player that most recently activated an object.
 						// Shorter maximum request lifetime of 2 seconds here, 
@@ -6423,34 +6633,55 @@ namespace ALYSLC
 						bool throughActivation = 
 						(
 							currentReq.fromAction == InputAction::kActivate && 
-							secsSinceReq < 2.0f && 
-							secsSinceReq < secsSinceChosenReq
+							secsSinceReq < 2.0f
 						);
 						if (directlyRequested || throughActivation) 
 						{
-							// Do not remove,
-							// since multiple queued message box menus tend to 
-							// open in quick succession, and we want the same player 
-							// to retain control over all menus queued to open.
-							
 							// Update seconds since most recent request.
 							secsSinceChosenReq = secsSinceReq;
 							resolvedCID = p->controllerID;
+							chosenReqType = directlyRequested ? kNewestDirect : kNewestIndirect;
 							SPDLOG_DEBUG
 							(
 								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: MessageBoxMenu: "
-								"{} is in control of menu by {}.", 
+								"ResolveMenuControllerID: {}: "
+								"{} is in control of menu by {}.",
+								a_menuName,
 								p->coopActor->GetName(), 
-								directlyRequested ? "direct request" : "activation"
+								directlyRequested ? "direct request" : "indirect activation"
 							);
 
-							// No need to check other requests once a direct request is found.
-							if (directlyRequested)
-							{
-								break;
-							}
+							// NOTE:
+							// Do not remove chosen newest requests,
+							// since multiple queued message box menus tend to 
+							// open in quick succession, and we want the same player 
+							// to retain control over all menus queued to open.
+							// The request will clear out when its lifetime expires
+							// (2 or 5 seconds).
+
+							// Move on to the next request.
+							reqQueue.pop_back();
+							continue;
 						}
+					}
+					
+					// Remove since this request was handled, fulfilled or not.
+					if (a_modifyReqQueue) 
+					{
+						SPDLOG_DEBUG
+						(
+							"[MIM] MenuOpeningActionRequestsManager: "
+							"ResolveMenuControllerID: {}: "
+							"Removed handled request (menu: {}, action: {}, refr: {}) for {}.",
+							a_menuName,
+							currentReq.reqMenuName,
+							currentReq.fromAction,
+							Util::HandleIsValid(currentReq.assocRefrHandle) ?
+							currentReq.assocRefrHandle.get()->GetName() :
+							"NONE",
+							p->coopActor->GetName()
+						);
+						menuOpeningActionRequests[cid].pop_front();
 					}
 
 					// Move on to the next request.

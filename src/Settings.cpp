@@ -38,7 +38,6 @@ namespace ALYSLC
 					defaultFilePathEnderal.string()
 				);
 			}
-			
 		}
 		else
 		{
@@ -188,7 +187,7 @@ namespace ALYSLC
 		// Import binds for each player.
 
 		bool allBindsValid = true;
-		if (!glob.paInfoHolder || !glob.paInfoHolder.get()) 
+		if (!glob.paInfoHolder) 
 		{
 			// Binds are not invalid, but are not importable before global co-op data is set.
 			return true;
@@ -1330,7 +1329,7 @@ namespace ALYSLC
 				1.0f
 			);
 
-			// Damage Modifiers
+			// Damage Multipliers
 			ReadFloatSetting
 			(
 				a_ini, 
@@ -1377,7 +1376,7 @@ namespace ALYSLC
 				100.0f
 			);
 			
-			// Extra Mechanics Cost Modifiers
+			// Extra Mechanics Cost Multipliers
 			ReadFloatSetting
 			(
 				a_ini, 

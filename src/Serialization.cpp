@@ -47,7 +47,7 @@ namespace ALYSLC
 					}
 
 					// Note to self:
-					// Raw FID for light plugins does NOT include the small compile time index.
+					// Raw FID for light plugins does NOT include the small file compile index.
 					const auto form = 
 					(
 						file->IsLight() ? 

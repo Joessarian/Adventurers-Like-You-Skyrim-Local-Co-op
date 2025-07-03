@@ -1,8 +1,10 @@
 #pragma once
 #include <Enums.h>
+#include <Util.h>
 
 namespace ALYSLC
 {
+	using SteadyClock = std::chrono::steady_clock;
 	// Outlines a system of per-frame execution that performs a task, tracks its own running state,
 	// can self-start/pause, refresh its data, and react to external running state change requests.
 	class Manager
@@ -53,7 +55,7 @@ namespace ALYSLC
 				SelfPauseCheck();
 			}
 			else if (currentState == ManagerState::kPaused || 
-				currentState == ManagerState::kAwaitingRefresh)
+					 currentState == ManagerState::kAwaitingRefresh)
 			{
 				SelfResumeCheck();
 			}
@@ -240,11 +242,23 @@ namespace ALYSLC
 		{
 			std::jthread tempEnqueuerThread([this, a_task]() 
 			{
-				std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
-				if (lock)
+				// Continue trying to enqueue task for, at most, 5 seconds.
+				SteadyClock::time_point startTP = SteadyClock::now();
+				while (Util::GetElapsedSeconds(startTP, true) < 5.0f)
 				{
-					queue.emplace(a_task);
-					queueCV.notify_all();
+					std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
+					if (lock)
+					{	queue.emplace(a_task);
+						queueCV.notify_all();
+						break;
+					}
+					else
+					{
+						std::this_thread::sleep_for
+						(
+							std::chrono::seconds(static_cast<long long>(*g_deltaTimeRealTime))
+						);
+					}
 				}
 			});
 

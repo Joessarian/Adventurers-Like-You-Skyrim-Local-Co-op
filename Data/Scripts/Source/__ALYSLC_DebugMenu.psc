@@ -105,7 +105,8 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; Useful for when camera begins to stutter or is stuck in place.
     DebugMenu.AddEntryItem("Restart Co-op Camera", 2, -1, False)
     ; 18. Stop menu input manager.
-    ; Useful for when a co-op player still has control of any open menus when they should not.
+    ; Useful for when a companion player still has control of any open menus 
+    ; or has data copied over to P1 when they should not.
     DebugMenu.AddEntryItem("Stop Menu Input Manager", 2, -1, False)
 
     ALYSLC.RequestMenuControl(PlayerInMenuCID, DebugMenu.ROOT_MENU)
@@ -211,7 +212,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
         EndIf
 
         ; Re-open.
-        ALYSLC.RequestMenuControl(PlayerInMenuCID, DebugMenu.ROOT_MENU)
+        ALYSLC.RequestMenuControl(PlayerInMenuCID, "ALYSLC Retain Menu Control")
         DebugMenu.OpenMenu()
         SelectedIndex = DebugMenu.GetResultInt()
     EndWhile

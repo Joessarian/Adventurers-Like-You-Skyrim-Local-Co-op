@@ -230,6 +230,10 @@ namespace ALYSLC
 		voiceForm = nullptr;
 		voiceSpell = nullptr;
 
+		// Cached bound weapons the player last requested to equip.
+		lastReqBoundWeapLH = 
+		lastReqBoundWeapRH = nullptr;
+
 		// Armor ratings for XP calc.
 		armorRatings.first = armorRatings.second = 0.0f;
 
@@ -1580,6 +1584,61 @@ namespace ALYSLC
 		}
 	}
 
+	void EquipManager::EquipDummy1H(RE::BGSEquipSlot* a_slot)
+	{
+		// Equip dummy 1H weapon to clear out the given hand slot.
+		// NOTE: 
+		// Does not clear the desired hand slot form in the same slot.
+
+		SPDLOG_DEBUG("[EM] EquipDummy1H: {}.", coopActor->GetName());
+
+		auto aem = RE::ActorEquipManager::GetSingleton();
+		if (!aem)
+		{
+			return;
+		}
+
+		// NOTE: 
+		// Very important: calling EquipObject() or UnequipObject() for P1 
+		// with the a_forceEquip param set to true messes up P1's equip state,
+		// which means a previously equipped item will auto-equip 
+		// even when trying to equip a different item.
+		// NEVER force equip with P1.
+		// 
+		// Also do not queue the equip here, we want it to happen ASAP.
+		aem->EquipObject
+		(
+			coopActor.get(), 
+			glob.dummy1H,
+			nullptr, 
+			1, 
+			a_slot, 
+			false, 
+			p->isPlayer1 ? false : true, 
+			false, 
+			true
+		);
+		if (!p->isPlayer1) 
+		{
+			// NOTE: 
+			// Can cause the game to stutter if unequipping right after equipping.
+			// Also, the game only unequips dummy wewapons automatically for P1. 
+			// Must be done here for other players.
+			aem->UnequipObject
+			(
+				coopActor.get(),
+				glob.dummy1H,
+				nullptr,
+				1,
+				a_slot, 
+				false, 
+				p->isPlayer1 ? false : true, 
+				false, 
+				true
+			);
+		}
+	}
+
 	void EquipManager::EquipFists()
 	{
 		// Clear out both hand slots by equipping the 'fists' item.
@@ -1662,14 +1721,14 @@ namespace ALYSLC
 			return;
 		}
 
-		// Special case if trying to equip fists here.
+		// Special case if trying to equip dummy1H/fists here.
 		// Desired form NOT cleared first.
-		if (a_toEquip == glob.fists) 
+		if (a_toEquip == glob.fists || a_toEquip == glob.dummy1H) 
 		{
 			aem->EquipObject
 			(
 				coopActor.get(), 
-				glob.fists, 
+				a_toEquip->As<RE::TESBoundObject>(), 
 				nullptr, 
 				1, 
 				a_slot, 
@@ -2201,6 +2260,11 @@ namespace ALYSLC
 			(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
 		{
 			equipSlot = glob.bothHandsEquipSlot;
+		}
+		else if ((asEquipType->equipSlot == glob.shieldEquipSlot) && 
+			(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
+		{
+			equipSlot = glob.shieldEquipSlot;
 		}
 		else if (a_index == EquipIndex::kLeftHand)
 		{
@@ -3677,6 +3741,122 @@ namespace ALYSLC
 		}
 	}
 
+	void EquipManager::ReEquipHandForm(bool a_rhSlot)
+	{
+		// Re-equip desired forms in this player's hands.
+
+		SPDLOG_DEBUG
+		(
+			"[EM] ReEquipHandForm: {}: {}.", 
+			coopActor->GetName(), a_rhSlot ? "RH" : "LH"
+		);
+
+		// Interrupts Vampire Lord levitation, 
+		// and Werewolves have no equipped items, so return here.
+		if (p->isTransformed)
+		{
+			return;
+		}
+
+		auto handForm = desiredEquippedForms
+		[
+			a_rhSlot ? !EquipIndex::kRightHand : !EquipIndex::kLeftHand
+		];
+		if (!handForm)
+		{
+			// Still unequip to clear out hand slot, since the desired form is none.
+			UnequipHandForms(a_rhSlot ? glob.rightHandEquipSlot : glob.leftHandEquipSlot);
+			return;
+		}
+		
+		const auto equipIndex = a_rhSlot ? EquipIndex::kRightHand : EquipIndex::kLeftHand;
+		auto equipSlot = GetEquipSlotForForm(handForm, equipIndex);
+		// If a 2H form, unequip and re-equip from both hands instead.
+		if (equipSlot == glob.bothHandsEquipSlot)
+		{
+			ReEquipHandForms();
+		}
+
+		// Unequip to clear out hand slot before re-equipping.
+		UnequipHandForms(a_rhSlot ? glob.rightHandEquipSlot : glob.leftHandEquipSlot);
+		// Re-equip.
+		if (auto spell = handForm->As<RE::SpellItem>(); spell)
+		{
+			if (p->isPlayer1)
+			{
+				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem) 
+				{
+					aem->EquipSpell(p->coopActor.get(), spell, equipSlot);
+				}
+			}
+			else
+			{
+				if (spell == 
+					(
+						a_rhSlot ? 
+						placeholderMagic[!PlaceholderMagicIndex::kRH] : 
+						placeholderMagic[!PlaceholderMagicIndex::kLH]
+							
+					))
+				{
+					EquipSpell(spell, equipIndex, equipSlot);
+				}
+				else
+				{
+					// Copy to placeholder spell, if needed.
+					EquipSpell
+					(
+						CopyToPlaceholderSpell
+						(
+							spell, 
+							a_rhSlot ? PlaceholderMagicIndex::kRH : PlaceholderMagicIndex::kLH
+						), 
+						equipIndex,
+						equipSlot
+					);
+				}
+			}
+		}
+		else if (auto asBipedObjForm = handForm->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+		{
+			// Is armor.
+			if (p->isPlayer1) 
+			{
+				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+				{
+					aem->EquipObject(p->coopActor.get(), handForm->As<RE::TESBoundObject>());
+				}
+			}
+			else
+			{
+				EquipArmor(handForm);
+			}
+		}
+		else
+		{
+			// Anything else gets equipped normally to the hand slot.
+			equipSlot = GetEquipSlotForForm(handForm, equipIndex);
+			if (p->isPlayer1)
+			{
+				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+				{
+					aem->EquipObject
+					(
+						p->coopActor.get(), 
+						handForm->As<RE::TESBoundObject>(),
+						nullptr, 
+						1, 
+						equipSlot
+					);
+				}
+			}
+			else
+			{
+				EquipForm(handForm, equipIndex, nullptr, 1, equipSlot);
+			}
+		}
+	}
+
 	void EquipManager::ReEquipHandForms()
 	{
 		// Re-equip desired forms in this player's hands.
@@ -4875,7 +5055,7 @@ namespace ALYSLC
 			auto inventory = coopActor->GetInventory();
 			for (const auto& [boundObj, entryDataPair] : inventory)
 			{
-				if (!boundObj || entryDataPair.first <= 0 || !entryDataPair.second.get()) 
+				if (!boundObj || entryDataPair.first <= 0 || !entryDataPair.second) 
 				{
 					continue;
 				}
@@ -5465,14 +5645,14 @@ namespace ALYSLC
 			return;
 		}
 
-		// Special case if trying to unequip fists here.
+		// Special case if trying to unequip dummy1H/fists here.
 		// Do not clear desired equipped forms entry.
-		if (a_toUnequip == glob.fists)
+		if (a_toUnequip == glob.fists || a_toUnequip == glob.dummy1H) 
 		{
 			aem->UnequipObject
 			(
 				coopActor.get(), 
-				glob.fists, 
+				a_toUnequip->As<RE::TESBoundObject>(), 
 				nullptr, 
 				1, 
 				a_slot,
@@ -5557,7 +5737,7 @@ namespace ALYSLC
 		// since they may have a lingering entry in the biped slots section 
 		// of the equipped forms list that can cause problems.
 		if ((a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kShield) && 
-			HasShieldEquipped())
+			(HasShieldEquipped()))
 		{
 			UnequipShield();
 		}
@@ -5625,7 +5805,8 @@ namespace ALYSLC
 								UnequipForm(boundArrow->As<RE::TESAmmo>(), EquipIndex::kAmmo);
 							}
 						}
-
+						
+						auto aem = RE::ActorEquipManager::GetSingleton();
 						if (equipSlot == glob.bothHandsEquipSlot)
 						{
 							// Clearing out both hands means all bound weapons will be unequipped,
@@ -5649,7 +5830,14 @@ namespace ALYSLC
 						}
 					}
 				}
-
+				
+				SPDLOG_DEBUG
+				(
+					"[EM] UnequipFormAtIndex: {}: {} from equip slot {}.", 
+					coopActor->GetName(), 
+					currentForm->GetName(),
+					equipSlot ? Util::GetEditorID(equipSlot) : "NONE"
+				);
 				UnequipForm(currentForm, a_equipIndex, nullptr, 1, equipSlot);
 			}
 		}
@@ -5961,7 +6149,7 @@ namespace ALYSLC
 		auto inventory = coopActor->GetInventory();
 		for (auto& [boundObj, entryDataPair] : inventory)
 		{
-			if (!boundObj || entryDataPair.first <= 0 || !entryDataPair.second.get())
+			if (!boundObj || entryDataPair.first <= 0 || !entryDataPair.second)
 			{
 				continue;
 			}
@@ -6283,6 +6471,18 @@ namespace ALYSLC
 
 		auto currentLHForm = coopActor->GetEquippedObject(true);
 		auto currentRHForm = coopActor->GetEquippedObject(false);
+		bool currentLHFormIsBound = 
+		(
+			currentLHForm && 
+			currentLHForm->As<RE::TESObjectWEAP>() && 
+			currentLHForm->As<RE::TESObjectWEAP>()->IsBound()
+		);
+		bool currentRHFormIsBound = 
+		(
+			currentRHForm && 
+			currentRHForm->As<RE::TESObjectWEAP>() && 
+			currentRHForm->As<RE::TESObjectWEAP>()->IsBound()
+		);
 		auto currentVoiceForm = equippedForms[!EquipIndex::kVoice];
 		auto currentLHEquipType = currentLHForm ? currentLHForm->As<RE::BGSEquipType>() : nullptr;
 		auto currentRHEquipType = currentRHForm ? currentRHForm->As<RE::BGSEquipType>() : nullptr;
@@ -6295,8 +6495,8 @@ namespace ALYSLC
 		// or if fists are equipped when there is a desired LH or RH form.
 		bool shouldCheckHandForms =
 		(
-			(!currentLHForm && desiredLHForm) ||
-			(!currentRHForm && desiredRHForm) ||
+			(!currentLHForm && !currentLHFormIsBound && desiredLHForm) ||
+			(!currentRHForm && !currentRHFormIsBound && desiredRHForm) ||
 			((currentLHForm == glob.fists) && (desiredLHForm || desiredRHForm))
 		);
 		bool shouldReEquip = false;
@@ -6414,7 +6614,9 @@ namespace ALYSLC
 		else
 		{
 			// 1H weapon that the player only owns 1 of, is in both LH and RH slots. Rectifiable.
-			if (currentLHForm && currentLHForm->As<RE::TESObjectWEAP>() &&
+			if (currentLHForm &&
+				currentLHForm->As<RE::TESObjectWEAP>() &&
+				!currentLHFormIsBound &&
 				currentLHEquipType->equipSlot != glob.bothHandsEquipSlot &&
 				currentLHForm != glob.fists &&
 				currentLHForm == currentRHForm)
@@ -6443,53 +6645,196 @@ namespace ALYSLC
 		// If there were no corrections made to the desired forms list,
 		// check if there are equip mismatches between the current and desired hand/voice forms,
 		// and re-equip the desired forms.
-		// Do not re-equip desired hand forms when there is at least one bound weapon equipped.
 		if (!shouldReEquip) 
 		{
-			shouldReEquip |= 
-			(
-				(!p->pam->boundWeapReq2H && !p->pam->boundWeapReqLH && !p->pam->boundWeapReqRH) && 
-				(currentLHForm != desiredLHForm || currentRHForm != desiredRHForm)
-			);
-			if (shouldReEquip) 
+			// Ugh.
+			// Game might have silently unequipped a bound weapon,
+			// with no equip object call firing here
+			// or without propagating an equip event.
+			// Re-equip the requested bound weapon(s) here.
+			auto lhObj = p->coopActor->GetEquippedObject(true);
+			auto rhObj = p->coopActor->GetEquippedObject(false);
+			auto aem = RE::ActorEquipManager::GetSingleton();
+			bool hasBoundWeapToReEquip = false;
+			if (aem)
 			{
-				SPDLOG_DEBUG
-				(
-					"[EM] ValidateEquipState: {}: "
-					"Current LH form ({}, is bound weap req active: {}, {}) "
-					"does not match desired form ({}): {}, "
-					"current RH form ({}, is bound weap req active: {}, {}) "
-					"does not match desired form ({}): {}, "
-					"current Voice form ({}) "
-					"does not match desired form ({}): {}",
-					coopActor->GetName(), 
-					currentLHForm ? currentLHForm->GetName() : "EMPTY",
-					p->pam->boundWeapReqLH,
-					p->pam->boundWeapReq2H,
-					desiredLHForm ? desiredLHForm->GetName() : "EMPTY",
-					currentLHForm != desiredLHForm,
-					currentRHForm ? currentRHForm->GetName() : "EMPTY",
-					p->pam->boundWeapReqRH,
-					p->pam->boundWeapReq2H,
-					desiredRHForm ? desiredRHForm->GetName() : "EMPTY",
-					currentRHForm != desiredRHForm,
-					currentVoiceForm ? currentVoiceForm->GetName() : "NONE",
-					desiredVoiceForm ? desiredVoiceForm->GetName() : "NONE",
-					currentVoiceForm != desiredVoiceForm
-				);
-			}
-		}
+				if ((p->pam->boundWeapReq2H && 
+					lastReqBoundWeapRH && 
+					lastReqBoundWeapRH->As<RE::BGSEquipType>() &&
+					lastReqBoundWeapRH->As<RE::BGSEquipType>()->equipSlot == 
+					glob.bothHandsEquipSlot) &&
+					(
+						lhObj != p->em->lastReqBoundWeapRH ||
+						rhObj != p->em->lastReqBoundWeapRH
+					))
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"Re-equipping requested 2H bound weapon {} "
+						"in place of {}.",
+						coopActor->GetName(),
+						lastReqBoundWeapRH->GetName(),
+						lhObj != p->em->lastReqBoundWeapRH ? 
+						lhObj ? 
+						lhObj->GetName() : 
+						"NONE" :
+						rhObj ? 
+						rhObj->GetName() :
+						"NONE"
+					);
+					hasBoundWeapToReEquip = true;
 
-		if (shouldReEquip)
-		{
-			SPDLOG_DEBUG
-			(
-				"[EM] ValidateEquipState: {}: "
-				"Desired equipped forms were invalid and modified. "
-				"Re-equipping desired equipped hand forms.", 
-				coopActor->GetName()
-			);
-			ReEquipHandForms();
+					// Re-equip bound ammo, if re-equipping a bound bow/crossbow.
+					auto weap = lastReqBoundWeapRH->As<RE::TESObjectWEAP>();
+					auto cachedAmmo = p->em->equippedForms[!EquipIndex::kAmmo];
+					if ((cachedAmmo && weap) && 
+						(cachedAmmo->HasKeywordByEditorID("WeapTypeBoundArrow")) && 
+						(weap->IsBow() || weap->IsCrossbow()))
+					{
+						aem->EquipObject
+						(
+							p->coopActor.get(), cachedAmmo->As<RE::TESAmmo>()
+						);
+					}
+
+					aem->EquipObject
+					(
+						coopActor.get(), 
+						lastReqBoundWeapRH->As<RE::TESObjectWEAP>(), 
+						nullptr,
+						1, 
+						glob.rightHandEquipSlot
+					);
+				}
+				else if (p->pam->boundWeapReqLH && 
+						 lastReqBoundWeapLH && 
+						 lastReqBoundWeapLH->As<RE::BGSEquipType>() &&
+						 lastReqBoundWeapLH->As<RE::BGSEquipType>()->equipSlot == 
+						 glob.leftHandEquipSlot &&
+						 lhObj != p->em->lastReqBoundWeapLH)
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"Re-equipping requested LH bound weapon {} "
+						"in place of {}.",
+						coopActor->GetName(),
+						lastReqBoundWeapLH->GetName(),
+						lhObj ? lhObj->GetName() : "NONE"
+					);
+					hasBoundWeapToReEquip = true;
+					
+					aem->EquipObject
+					(
+						coopActor.get(), 
+						lastReqBoundWeapLH->As<RE::TESObjectWEAP>(), 
+						nullptr,
+						1, 
+						glob.leftHandEquipSlot
+					);
+				}
+				else if (p->pam->boundWeapReqRH && 
+						lastReqBoundWeapRH && 
+						lastReqBoundWeapRH->As<RE::BGSEquipType>() &&
+						lastReqBoundWeapRH->As<RE::BGSEquipType>()->equipSlot == 
+						glob.rightHandEquipSlot &&
+						rhObj != p->em->lastReqBoundWeapRH)
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"Re-equipping requested RH bound weapon {} "
+						"in place of {}.",
+						coopActor->GetName(),
+						lastReqBoundWeapRH->GetName(),
+						rhObj ? rhObj->GetName() : "NONE"
+					);
+					hasBoundWeapToReEquip = true;
+
+					aem->EquipObject
+					(
+						coopActor.get(), 
+						lastReqBoundWeapRH->As<RE::TESObjectWEAP>(), 
+						nullptr,
+						1, 
+						glob.rightHandEquipSlot
+					);
+				}
+			}
+
+			if (!p->pam->boundWeapReq2H && !hasBoundWeapToReEquip)
+			{
+				// No bound weapon request in the LH/RH,
+				// LH/RH desired form does not match the current form,
+				// and the other hand does not contain a bound weapon, 
+				// or the desired equip slot for the LH/RH weapon is not the 2H slot, 
+				// which would unequip the other hand's bound weapon when equipped.
+				bool shouldReEquipLH = 
+				(
+					(!p->pam->boundWeapReqLH) && 
+					(currentLHForm != desiredLHForm) &&
+					(
+						!currentRHFormIsBound ||
+						!desiredLHEquipType ||
+						desiredLHEquipType->equipSlot != glob.bothHandsEquipSlot
+					)
+				);
+				bool shouldReEquipRH = 
+				(
+					(!p->pam->boundWeapReqRH) && 
+					(currentRHForm != desiredRHForm) &&
+					(
+						!currentLHFormIsBound ||
+						!desiredRHEquipType ||
+						desiredRHEquipType->equipSlot != glob.bothHandsEquipSlot
+					)
+				);
+				if (shouldReEquipLH || shouldReEquipRH) 
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {}: "
+						"Current LH form ({}, is bound weap req active: {}, {}) "
+						"does not match desired form ({}): {}, "
+						"current RH form ({}, is bound weap req active: {}, {}) "
+						"does not match desired form ({}): {}, "
+						"current Voice form ({}) "
+						"does not match desired form ({}): {}. "
+						"Should RE-EQUIP: Both: {}, LH: {}, RH: {}.",
+						coopActor->GetName(), 
+						currentLHForm ? currentLHForm->GetName() : "EMPTY",
+						p->pam->boundWeapReqLH,
+						p->pam->boundWeapReq2H,
+						desiredLHForm ? desiredLHForm->GetName() : "EMPTY",
+						currentLHForm != desiredLHForm,
+						currentRHForm ? currentRHForm->GetName() : "EMPTY",
+						p->pam->boundWeapReqRH,
+						p->pam->boundWeapReq2H,
+						desiredRHForm ? desiredRHForm->GetName() : "EMPTY",
+						currentRHForm != desiredRHForm,
+						currentVoiceForm ? currentVoiceForm->GetName() : "NONE",
+						desiredVoiceForm ? desiredVoiceForm->GetName() : "NONE",
+						currentVoiceForm != desiredVoiceForm,
+						shouldReEquipLH && shouldReEquipRH,
+						shouldReEquipLH,
+						shouldReEquipRH
+					);
+
+					if (shouldReEquipLH && shouldReEquipRH)
+					{
+						ReEquipHandForms();
+					}
+					else if (shouldReEquipRH)
+					{
+						ReEquipHandForm(true);
+					}
+					else if (shouldReEquipLH)
+					{
+						ReEquipHandForm(false);
+					}
+				}
+			}
 		}
 	}
 }

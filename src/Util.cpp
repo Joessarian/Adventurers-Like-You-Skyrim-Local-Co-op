@@ -383,7 +383,7 @@ namespace ALYSLC
 				GethkpRigidBody(a_actor) : 
 				RE::hkRefPtr<RE::hkpRigidBody>(a_rigidBody)
 			);
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			if (!hkpRigidBodyPtr)
 			{
 				return false;
 			}
@@ -420,6 +420,26 @@ namespace ALYSLC
 			);	
 		}
 
+		bool CanStopCombatWithActor(RE::Actor * a_aggroedActor)
+		{
+			// Can stop combat (surrender or just stop) between a player and the given actor.
+			if (!a_aggroedActor)
+			{
+				return false;
+			}
+
+			// Pacify mounts, guards (surrender), actors with no bounty on the player,
+			// fleeing actors, or friendly actors.
+			return
+			(
+				a_aggroedActor->IsAMount() ||
+				IsGuard(a_aggroedActor) || 
+				HasNoBountyButInCrimeFaction(a_aggroedActor) ||
+				IsFleeing(a_aggroedActor) ||
+				IsPartyFriendlyActor(a_aggroedActor)
+			);
+		}
+
 		void ChangeEssentialStatus(RE::Actor* a_actor, bool a_shouldSet, bool a_adjustBleedout)
 		{
 			// Set or unset the essential flags for the given actor.
@@ -433,13 +453,13 @@ namespace ALYSLC
 			auto actorBase = a_actor->GetActorBase();
 			if (actorBase)
 			{
-				NativeFunctions::SetActorBaseDataFlag
+				SetActorBaseDataFlag
 				(
 					actorBase, RE::ACTOR_BASE_DATA::Flag::kEssential, a_shouldSet
 				);
 				if (a_adjustBleedout)
 				{
-					NativeFunctions::SetActorBaseDataFlag
+					SetActorBaseDataFlag
 					(
 						actorBase, RE::ACTOR_BASE_DATA::Flag::kBleedoutOverride, a_shouldSet
 					);
@@ -504,11 +524,7 @@ namespace ALYSLC
 				for (auto& [boundObj, entryDataPair] : inventory)
 				{
 					const auto& [count, ied] = entryDataPair;
-					if (!boundObj || 
-						boundObj != a_form ||
-						count <= 0 || 
-						!ied || 
-						!ied.get())
+					if (!boundObj || boundObj != a_form || count <= 0 || !ied)
 					{
 						continue;
 					}
@@ -643,7 +659,7 @@ namespace ALYSLC
 			for (auto& [boundObj, entryDataPair] : inventory)
 			{
 				const auto& [count, ied] = entryDataPair;
-				if (!boundObj || count <= 0 || !ied || !ied.get())
+				if (!boundObj || count <= 0 || !ied)
 				{
 					continue;
 				}
@@ -779,8 +795,7 @@ namespace ALYSLC
 			int32_t activeGraphIdx = manager->activeGraph;
 			if (activeGraphIdx < 0 || 
 				activeGraphIdx >= manager->graphs.size() || 
-				!manager->graphs[activeGraphIdx] ||
-				!manager->graphs[activeGraphIdx].get())
+				!manager->graphs[activeGraphIdx])
 			{
 				return;
 			}
@@ -1016,7 +1031,7 @@ namespace ALYSLC
 
 			a_actor->SetCollision(true);
 			auto actor3DPtr = GetRefr3D(a_actor);
-			if (!actor3DPtr || !actor3DPtr.get())
+			if (!actor3DPtr)
 			{
 				return;
 			}
@@ -1223,6 +1238,58 @@ namespace ALYSLC
 			return skillsArr;
 		}
 
+		RE::BSFixedString GetActivationText
+		(
+			RE::TESBoundObject* a_baseObj, RE::TESObjectREFR* a_refr, bool& a_hasActivationText
+		)
+		{
+			// Get modified activation text for the given refr.
+			// Return whether or not the refr has valid activation text (is a selectable object)
+			// through the outparam.
+			
+			a_hasActivationText = false;
+			if (!a_baseObj || !a_refr)
+			{
+				return ""sv;
+			}
+
+			// NOTE:
+			// Saving option to bold the name of the refr.
+			//RE::BSFixedString activationText = fmt::format
+			//(
+			//	"<font face=\"$EverywhereBoldFont\">{}</font>", a_refr->GetName()
+			//);
+			//RE::BSString baseActivationText{ "" };
+			//a_baseObj->GetActivateText(a_refr, baseActivationText);
+			//// Get modified activation text for the given refr.
+			//std::string activateStr{ baseActivationText.c_str() };
+			//auto firstNewlinePos = activateStr.find_first_of("\n") + 1;
+			//if (firstNewlinePos != std::string::npos && firstNewlinePos < activateStr.size())
+			//{
+			//	activationText = fmt::format
+			//	(
+			//		"{} <font face=\"$EverywhereBoldFont\">{}</font>",
+			//		activateStr.substr(0, firstNewlinePos - 1),
+			//		activateStr.substr(firstNewlinePos)
+			//	);
+			//	a_hasActivationText = true;
+			//}
+
+			RE::BSFixedString activationText = a_refr->GetName();
+			RE::BSString baseActivationText{ "" };
+			a_baseObj->GetActivateText(a_refr, baseActivationText);
+			// Get modified activation text for the given refr.
+			std::string activateStr{ baseActivationText.c_str() };
+			auto firstNewlinePos = activateStr.find_first_of("\n") + 1;
+			if (firstNewlinePos != std::string::npos && firstNewlinePos < activateStr.size())
+			{
+				activationText = activateStr;
+				a_hasActivationText = true;
+			}
+
+			return activationText;
+		}
+
 		float GetBoundMaxOrMinEdgePixelDist(RE::TESObjectREFR* a_refr, bool&& a_max)
 		{
 			// Get the maximum/minimum bound edge length in pixels for the given refr.
@@ -1244,7 +1311,6 @@ namespace ALYSLC
 			boundMax = a_refr->GetBoundMax();
 			boundMin = a_refr->GetBoundMin();
 			boundCenter = a_refr->data.location;
-			auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr);
 			bool isDead = a_refr->IsDead();
 			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
 			bool isRagdolled = asActor && asActor->IsInRagdollState();
@@ -1258,7 +1324,7 @@ namespace ALYSLC
 					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
 				);
 			}
-			else if (refrHkpRigidBodyPtr &&  refrHkpRigidBodyPtr.get())
+			else if (auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr); refrHkpRigidBodyPtr)
 			{
 				if ((asActor) && (isDead || isKnocked || isRagdolled))
 				{
@@ -1294,7 +1360,7 @@ namespace ALYSLC
 			}
 			
 			auto hit3DPtr = GetRefr3D(a_refr); 
-			if (hit3DPtr && hit3DPtr.get())
+			if (hit3DPtr)
 			{
 				if (boundMin == boundMax && boundMax.Length() == 0.0f)
 				{
@@ -1443,7 +1509,6 @@ namespace ALYSLC
 			boundMax = a_refr->GetBoundMax();
 			boundMin = a_refr->GetBoundMin();
 			boundCenter = a_refr->data.location;
-			auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr);
 			bool isDead = a_refr->IsDead();
 			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
 			bool isRagdolled = asActor && asActor->IsInRagdollState();
@@ -1457,8 +1522,7 @@ namespace ALYSLC
 					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
 				);
 			}
-			else if (refrHkpRigidBodyPtr && 
-						refrHkpRigidBodyPtr.get())
+			else if (auto refrHkpRigidBodyPtr = GethkpRigidBody(a_refr); refrHkpRigidBodyPtr)
 			{
 				if ((asActor) && (isDead || isKnocked || isRagdolled))
 				{
@@ -1494,7 +1558,7 @@ namespace ALYSLC
 			}
 			
 			auto hit3DPtr = GetRefr3D(a_refr); 
-			if (hit3DPtr && hit3DPtr.get())
+			if (hit3DPtr)
 			{
 				// Rotation from the refr's 3D.
 				rotMat = hit3DPtr->world.rotate;
@@ -1787,7 +1851,7 @@ namespace ALYSLC
 				// Check if the rigid body's collidable has a collision layer next.
 				// Must do this for certain refrs, such as actors.
 				auto hkpRigidBodyPtr = GethkpRigidBody(a_refr3D);
-				if (hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+				if (hkpRigidBodyPtr)
 				{
 					auto collidable = hkpRigidBodyPtr->GetCollidable();
 					if (collidable)
@@ -1877,13 +1941,13 @@ namespace ALYSLC
 			);
 			// Get eye world position from the body part first, if available.
 			const auto actor3DPtr = GetRefr3D(a_actor); 
-			if (actor3DPtr && actor3DPtr.get() && targetEyeBP)
+			if (actor3DPtr && targetEyeBP)
 			{
 				auto targetEyeBPPtr = RE::NiPointer<RE::NiAVObject>
 				(
 					actor3DPtr->GetObjectByName(targetEyeBP->targetName)
 				);
-				if (targetEyeBPPtr && targetEyeBPPtr.get()) 
+				if (targetEyeBPPtr) 
 				{
 					return targetEyeBPPtr->world.translate;
 				}
@@ -1899,7 +1963,7 @@ namespace ALYSLC
 			// In game units, not havok units.
 
 			double g = Settings::fG * HAVOK_TO_GAME;
-			if (glob.player1Actor && glob.player1Actor.get() && glob.player1Actor->parentCell)
+			if (glob.player1Actor && glob.player1Actor->parentCell)
 			{
 				auto bhkWorld = glob.player1Actor->parentCell->GetbhkWorld();
 				if (bhkWorld && bhkWorld->GetWorld1())
@@ -1935,10 +1999,7 @@ namespace ALYSLC
 			}
 
 			auto rigidBodyPtr = RE::NiPointer<RE::bhkRigidBody>(collisionObject->GetRigidBody());
-			if (!rigidBodyPtr || 
-				!rigidBodyPtr.get() || 
-				!rigidBodyPtr->referencedObject ||
-				!rigidBodyPtr->referencedObject.get())
+			if (!rigidBodyPtr || !rigidBodyPtr->referencedObject)
 			{
 				return nullptr;
 			}
@@ -1947,7 +2008,7 @@ namespace ALYSLC
 			(
 				static_cast<RE::hkpRigidBody*>(rigidBodyPtr->referencedObject.get())
 			); 
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			if (!hkpRigidBodyPtr)
 			{
 				return nullptr;
 			}
@@ -1998,13 +2059,13 @@ namespace ALYSLC
 			}
 
 			const auto actor3DPtr = GetRefr3D(a_actor);
-			if (actor3DPtr && actor3DPtr.get() && headBP)
+			if (actor3DPtr && headBP)
 			{
 				auto headBPPtr = RE::NiPointer<RE::NiAVObject>
 				(
 					actor3DPtr->GetObjectByName(headBP->targetName)
 				);
-				if (headBPPtr && headBPPtr.get()) 
+				if (headBPPtr) 
 				{
 					// Return head body part position.
 					return headBPPtr->world.translate;
@@ -2045,13 +2106,13 @@ namespace ALYSLC
 			}
 
 			const auto actor3DPtr = GetRefr3D(a_actor);
-			if (actor3DPtr && actor3DPtr.get() && headBP)
+			if (actor3DPtr && headBP)
 			{
 				auto headBPPtr = RE::NiPointer<RE::NiAVObject>
 				(
 					actor3DPtr->GetObjectByName(headBP->targetName)
 				);
-				if (headBPPtr && headBPPtr.get()) 
+				if (headBPPtr) 
 				{
 					return GetRigidBodyCapsuleAxisLength(headBPPtr.get()) / 2.0f;
 				}
@@ -2246,19 +2307,19 @@ namespace ALYSLC
 				return nullptr;
 			}
 
-			if (!playerCam->cameraRoot || !playerCam->cameraRoot.get()) 
+			if (!playerCam->cameraRoot) 
 			{
 				return nullptr;
 			}
 
-			for (auto child : playerCam->cameraRoot->children) 
+			for (auto childPtr : playerCam->cameraRoot->children) 
 			{
-				if (!child || !child.get())
+				if (!childPtr)
 				{
 					continue;
 				}
 
-				auto asNiCamera = skyrim_cast<RE::NiCamera*>(child.get());
+				auto asNiCamera = skyrim_cast<RE::NiCamera*>(childPtr.get());
 				if (asNiCamera)
 				{
 					return RE::NiPointer<RE::NiCamera>(asNiCamera);
@@ -2285,7 +2346,7 @@ namespace ALYSLC
 			if (a_node->parent->collisionObject) 
 			{
 				auto hkpRigidBodyPtr = GethkpRigidBody(a_node->parent);
-				if (hkpRigidBodyPtr && hkpRigidBodyPtr.get()) 
+				if (hkpRigidBodyPtr) 
 				{
 					return hkpRigidBodyPtr->motion.GetPointVelocity(a_point);
 				}
@@ -2332,7 +2393,7 @@ namespace ALYSLC
 			}
 			
 			pos = a_refr->data.location;
-			if (auto refr3DPtr = GetRefr3D(a_refr); refr3DPtr && refr3DPtr.get())
+			if (auto refr3DPtr = GetRefr3D(a_refr); refr3DPtr)
 			{
 				pos = refr3DPtr->world.translate;
 				if (pos.Length() == 0.0f)
@@ -2341,7 +2402,7 @@ namespace ALYSLC
 					if (pos.Length() == 0.0f)
 					{
 						auto hkpRigidBodyPtr = GethkpRigidBody(refr3DPtr.get()); 
-						if (hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+						if (hkpRigidBodyPtr)
 						{
 							pos = ToNiPoint3
 							(
@@ -2361,7 +2422,7 @@ namespace ALYSLC
 			// In game units.
 
 			auto hkpRigidBodyPtr = GethkpRigidBody(a_obj3D);
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			if (!hkpRigidBodyPtr)
 			{
 				return 0.0f;
 			}
@@ -2506,15 +2567,15 @@ namespace ALYSLC
 			{
 				// Targeting the player or a current attacked member 
 				// has the player as their combat target.
-				if (auto actorPtr = a_targetData.targetHandle.get(); actorPtr && actorPtr.get())
+				if (auto actorPtr = a_targetData.targetHandle.get(); actorPtr)
 				{
 					return actorPtr.get() == a_playerActor;
 				}
 				else if (auto attackedMemberPtr = a_targetData.attackedMember.get();
-						 attackedMemberPtr && attackedMemberPtr.get())
+						 attackedMemberPtr)
 				{
 					auto combatTargetPtr = attackedMemberPtr->currentCombatTarget.get(); 
-					if (combatTargetPtr && combatTargetPtr.get())
+					if (combatTargetPtr)
 					{
 						return combatTargetPtr.get() == a_playerActor;
 					}
@@ -2572,7 +2633,7 @@ namespace ALYSLC
 			(
 				a_actor->data.location + RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight() * 0.5f)
 			);
-			if (const auto actor3DPtr = GetRefr3D(a_actor); actor3DPtr && actor3DPtr.get())
+			if (const auto actor3DPtr = GetRefr3D(a_actor); actor3DPtr)
 			{
 				// 3D bound's center next.
 				targetTorsoPos = actor3DPtr->worldBound.center;
@@ -2583,7 +2644,7 @@ namespace ALYSLC
 					(
 						actor3DPtr->GetObjectByName(targetTorsoBP->targetName)
 					);
-					if (targetTorsoBPPtr && targetTorsoBPPtr.get()) 
+					if (targetTorsoBPPtr) 
 					{
 						targetTorsoPos = targetTorsoBPPtr->world.translate;
 					}
@@ -2735,6 +2796,127 @@ namespace ALYSLC
 			}
 		}
 
+		void GetWeightAndValueInRefr
+		(
+			RE::TESObjectREFR* a_refrContainer,
+			float& a_weight,
+			int32_t& a_value
+		)
+		{
+			// Get the weight and value of all items in the container/corpse refr.
+
+			// No weight or value by default.
+			a_weight = 0.0f;
+			a_value = 0;
+			if (!a_refrContainer)
+			{
+				return;
+			}
+
+			auto asActor = a_refrContainer->As<RE::Actor>();
+			bool isCorpse = asActor && asActor->IsDead();
+			if (isCorpse)
+			{
+				// Check inventory first.
+				auto inventory = asActor->GetInventory();
+				if (!inventory.empty())
+				{
+					for (const auto& [boundObj, countInvEntryDataPair] : inventory)
+					{
+						if (!boundObj || 
+							countInvEntryDataPair.first <= 0 || 
+							!Util::IsLootableObject(*boundObj))
+						{
+							continue;
+						}
+					
+						a_weight += boundObj->GetWeight() * countInvEntryDataPair.first;
+						if (int32_t value = boundObj->GetGoldValue(); value > -1)
+						{
+							a_value += value * countInvEntryDataPair.first;
+						}
+					}
+				}
+
+				// Check dropped inventory next.
+				auto droppedInventory = asActor->GetDroppedInventory();
+				if (!droppedInventory.empty())
+				{
+					for (const auto& [boundObj, countHandlePair] : droppedInventory)
+					{
+						if (!boundObj ||
+							countHandlePair.first <= 0 || 
+							!Util::IsLootableObject(*boundObj))
+						{
+							continue;
+						}
+					
+							
+						a_weight += boundObj->GetWeight() * countHandlePair.first;
+						if (int32_t value = boundObj->GetGoldValue(); value > -1)
+						{
+							a_value += value * countHandlePair.first;
+						}
+					}
+				}
+			}
+			else
+			{
+				/*
+				auto container = a_refrContainer->GetContainer();
+				// Check base container first.
+				container->ForEachContainerObject
+				(
+					[a_refrContainer, &a_weight, &a_value](RE::ContainerObject& a_object) 
+					{
+						if (a_object.obj && Util::IsLootableObject(*a_object.obj)) 
+						{
+							if (a_object.count > 0)
+							{
+								a_weight += a_object.obj->GetWeight() * a_object.count;
+								if (int32_t value = a_object.obj->GetGoldValue(); value > -1)
+								{
+									a_value += value * a_object.count;
+								}
+
+								SPDLOG_DEBUG
+								(
+									"[Util] GetWeightAndValueInRefr: "
+									"{}'s base container has {}, weight {}, value {} x{}.",
+									a_refrContainer->GetName(),
+									a_object.obj->GetName(),
+									a_object.obj->GetWeight(),
+									a_object.obj->GetGoldValue(),
+									a_object.count
+								);
+							}
+						}
+
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+				);
+				*/
+
+				// Check inventory next.
+				auto inventory = a_refrContainer->GetInventory();
+				for (const auto& [boundObj, countInvEntryDataPair] : inventory)
+				{
+					if (!boundObj || 
+						countInvEntryDataPair.first <= 0 || 
+						!Util::IsLootableObject(*boundObj))
+					{
+						continue;
+					}
+
+					a_weight += boundObj->GetWeight() * countInvEntryDataPair.first;
+					if (int32_t value = boundObj->GetGoldValue(); value > -1)
+					{
+						a_value += value * countInvEntryDataPair.first;
+					}
+				}
+			}
+		}
+
 		bool HasLOS
 		(
 			RE::TESObjectREFR* a_targetRefr,
@@ -2768,7 +2950,7 @@ namespace ALYSLC
 
 			// No player camera, no LOS check, simple as.
 			auto playerCam = RE::PlayerCamera::GetSingleton(); 
-			if (!playerCam || !playerCam->cameraRoot || !playerCam->cameraRoot.get())
+			if (!playerCam || !playerCam->cameraRoot)
 			{
 				return false;
 			}
@@ -2791,8 +2973,7 @@ namespace ALYSLC
 			// Camera node, observer, and all players, 
 			// as long as they are not the target or observer.
 			std::vector<RE::NiAVObject*> excluded3DObjects{ playerCam->cameraRoot.get() };
-			bool observer3DValid = observer3DPtr && observer3DPtr.get();
-			if (observer3DValid)
+			if (observer3DPtr)
 			{
 				excluded3DObjects.emplace_back(observer3DPtr.get());
 			}
@@ -2810,7 +2991,6 @@ namespace ALYSLC
 
 					auto player3DPtr = GetRefr3D(a_p->coopActor.get());
 					if (!player3DPtr || 
-						!player3DPtr.get() || 
 						a_p->coopActor.get() == a_targetRefr || 
 						a_p->coopActor.get() == a_observer)
 					{
@@ -2869,7 +3049,7 @@ namespace ALYSLC
 							SPDLOG_DEBUG("[Util] HasLOS: From observer focus pos.");
 						}
 
-						if (observer3DValid)
+						if (observer3DPtr)
 						{
 							hasLOS = HasRaycastLOSFromPos
 							(
@@ -2944,7 +3124,7 @@ namespace ALYSLC
 					a_showDebugInfo
 				);
 				// Then check from the observer's focus point.
-				if (!hasLOS && observer3DValid)
+				if (!hasLOS && observer3DPtr)
 				{
 					if (a_showDebugInfo)
 					{
@@ -2965,7 +3145,7 @@ namespace ALYSLC
 			
 			// As a final resort, cast along observer's vertical axis, 
 			// bound above and below to remain in traversable space.
-			if (!hasLOS && observer3DValid)
+			if (!hasLOS && observer3DPtr)
 			{
 				hasLOS = HasRaycastLOSAlongObserverAxis
 				(
@@ -3036,7 +3216,6 @@ namespace ALYSLC
 					) || 
 					(
 						result.hitObjectPtr &&
-						result.hitObjectPtr.get() && 
 						IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 					)
 				);
@@ -3106,7 +3285,6 @@ namespace ALYSLC
 					) || 
 					(
 						result.hitObjectPtr &&
-						result.hitObjectPtr.get() && 
 						IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 					)
 				);
@@ -3160,7 +3338,7 @@ namespace ALYSLC
 				if (!hasLOS)
 				{
 					auto refr3DPtr = GetRefr3D(a_targetRefr);
-					if (refr3DPtr && refr3DPtr.get())
+					if (refr3DPtr)
 					{
 						endPos - ToVec4(refr3DPtr->worldBound.center);
 						result = Raycast::hkpCastRay
@@ -3177,8 +3355,7 @@ namespace ALYSLC
 								result.hitRefrHandle == refrHandle
 							) || 
 							(
-								result.hitObjectPtr &&
-								result.hitObjectPtr.get() && 
+								result.hitObjectPtr && 
 								IsRefrAccessibleInside3DObject
 								(
 									a_targetRefr, result.hitObjectPtr.get()
@@ -3274,8 +3451,7 @@ namespace ALYSLC
 										result.hitRefrHandle == refrHandle
 									) || 
 									(
-										result.hitObjectPtr &&
-										result.hitObjectPtr.get() && 
+										result.hitObjectPtr && 
 										IsRefrAccessibleInside3DObject
 										(
 											a_targetRefr, result.hitObjectPtr.get()
@@ -3385,7 +3561,7 @@ namespace ALYSLC
 				// that corresponds to the edge-of-screen position 
 				// directly above or below the player.
 				// Along the top (if unbound above) or bottom (if unbound below) of the screen.
-				if (niCamPtr && niCamPtr.get())
+				if (niCamPtr)
 				{					
 					RE::NiPoint3 origin{ };
 					RE::NiPoint3 dir{ };
@@ -3573,10 +3749,9 @@ namespace ALYSLC
 				if (result.hit)
 				{
 					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
-					if ((hitRefrPtr && hitRefrPtr.get() && hitRefrPtr.get() == a_targetRefr) ||
+					if ((hitRefrPtr && hitRefrPtr.get() == a_targetRefr) ||
 						(
 							result.hitObjectPtr && 
-							result.hitObjectPtr.get() && 
 							IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 						))
 					{
@@ -3664,10 +3839,9 @@ namespace ALYSLC
 				// Hit the target = has LOS.
 				if (result.hit)
 				{
-					if ((hitRefrPtr && hitRefrPtr.get() && hitRefrPtr.get() == a_targetRefr) ||
+					if ((hitRefrPtr && hitRefrPtr.get() == a_targetRefr) ||
 						(
 							result.hitObjectPtr && 
-							result.hitObjectPtr.get() && 
 							IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 						))
 					{
@@ -3704,14 +3878,14 @@ namespace ALYSLC
 
 			auto niCamPtr = GetNiCamera(); 
 			// No NiCamera, so nope.
-			if (!niCamPtr || !niCamPtr.get())
+			if (!niCamPtr)
 			{
 				return false;
 			}
 
 			auto refr3DPtr = GetRefr3D(a_targetRefr); 
 			// No refr 3D, so nope.
-			if (!refr3DPtr || !refr3DPtr.get())
+			if (!refr3DPtr)
 			{
 				return false;
 			}
@@ -3752,8 +3926,7 @@ namespace ALYSLC
 						hitRefrPtr && hitRefrPtr.get() == a_targetRefr
 					) || 
 					(
-						result.hitObjectPtr &&
-						result.hitObjectPtr.get() && 
+						result.hitObjectPtr && 
 						IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 					)
 				);
@@ -3833,8 +4006,7 @@ namespace ALYSLC
 					hitRefrPtr && hitRefrPtr.get() == a_targetRefr
 				) || 
 				(
-					result.hitObjectPtr &&
-					result.hitObjectPtr.get() && 
+					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 				)
 			);
@@ -3910,8 +4082,7 @@ namespace ALYSLC
 					hitRefrPtr && hitRefrPtr.get() == a_targetRefr
 				) || 
 				(
-					result.hitObjectPtr &&
-					result.hitObjectPtr.get() && 
+					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 				)
 			);
@@ -3987,8 +4158,7 @@ namespace ALYSLC
 					hitRefrPtr && hitRefrPtr.get() == a_targetRefr
 				) || 
 				(
-					result.hitObjectPtr &&
-					result.hitObjectPtr.get() && 
+					result.hitObjectPtr && 
 					IsRefrAccessibleInside3DObject(a_targetRefr, result.hitObjectPtr.get())
 				)
 			);
@@ -4296,7 +4466,7 @@ namespace ALYSLC
 
 			auto playerCam = RE::PlayerCamera::GetSingleton(); 
 			// Camera is invalid.
-			if (!playerCam || !playerCam->cameraRoot || !playerCam->cameraRoot.get())
+			if (!playerCam || !playerCam->cameraRoot)
 			{
 				return false;
 			}
@@ -4432,12 +4602,11 @@ namespace ALYSLC
 
 			// Check if refr center is ithin the bound extents of the 3D object.
 			auto refr3DPtr = GetRefr3D(a_refr);
-			auto refr3DValidity = refr3DPtr && refr3DPtr.get();
 			// Grab the center position from the world bound
 			// or the refr data position if no 3D is available.
 			auto refr3DCenter = 
 			(
-				refr3DValidity ? refr3DPtr->worldBound.center : a_refr->data.location
+				refr3DPtr ? refr3DPtr->worldBound.center : a_refr->data.location
 			);
 			// Fall back to the refr data location offset by half the refr's height.
 			if (refr3DCenter.Length() == 0.0f)
@@ -4839,7 +5008,7 @@ namespace ALYSLC
 			auto niCamPtr = GetNiCamera();
 			const auto hud = DebugAPI::GetHUD(); 
 			// Need the NiCamera and Debug Overlay Menu view.
-			if (!niCamPtr || !niCamPtr.get() || !hud || !hud->uiMovie)
+			if (!niCamPtr || !hud || !hud->uiMovie)
 			{
 				return false;
 			}
@@ -4887,7 +5056,7 @@ namespace ALYSLC
 			auto niCamPtr = GetNiCamera();
 			const auto hud = DebugAPI::GetHUD();
 			// Need the NiCamera and Debug Overlay Menu view.
-			if (!niCamPtr || !niCamPtr.get() || !hud || !hud->uiMovie)
+			if (!niCamPtr || !hud || !hud->uiMovie)
 			{
 				return false;
 			}
@@ -5008,7 +5177,8 @@ namespace ALYSLC
 			);
 			if (isInteracting)
 			{
-				// 'True' seems to reset AI.
+				// 'True' seems to forgo any associated exit animation for the interaction
+				// and thus quickly unsets the animation driven state.
 				a_actorToPush->StopInteractingQuick(true);
 				// Re-init havok.
 				a_actorToPush->DetachHavok(a_actorToPush->GetCurrent3D());
@@ -5168,15 +5338,15 @@ namespace ALYSLC
 			bool exteriorCell = a_cell->IsExteriorCell();
 			{
 				RE::BSSpinLockGuard lock(a_cell->spinLock);
-				for (auto refr : a_cell->references)
+				for (auto refrPtr : a_cell->references)
 				{
-					if (!refr || !refr.get())
+					if (!refrPtr)
 					{
 						continue;
 					}
 
-					auto object3DPtr = GetRefr3D(refr.get()); 
-					if (!object3DPtr || !object3DPtr.get() || object3DPtr->GetRefCount() <= 0)
+					auto object3DPtr = GetRefr3D(refrPtr.get()); 
+					if (!object3DPtr || object3DPtr->GetRefCount() <= 0)
 					{
 						continue;
 					}
@@ -5369,12 +5539,19 @@ namespace ALYSLC
 			}
 		}
 
-		void SendCrosshairEvent(RE::TESObjectREFR* a_crosshairRefrToSet)
+		void SendCrosshairEvent
+		(
+			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingCID
+		)
 		{
 			// Send a crosshair refr event after setting the crosshair refr.
 			// Will trigger the QuickLoot menu to open, if the refr is valid,
 			// or close the open QuickLoot menu if the refr is nullptr.
 			// Free the event pointer when done.
+			// // IMPORTANT:
+			// Specify a CID for any player trying to set the crosshair refr (non-nullptr).
+			// To clear the crosshair refr, pass in nullptr as the crosshair refr to set 
+			// and do not provide a requesting CID.
 
 			const auto eventSource = SKSE::GetCrosshairRefEventSource();
 			if (!eventSource)
@@ -5397,12 +5574,20 @@ namespace ALYSLC
 					a_crosshairRefrToSet->GetHandle() :
 					RE::ObjectRefHandle()
 				);
+				glob.quickLootReqCID = a_requestingCID;
 				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>
 				(
 					a_crosshairRefrToSet
 				);
 				eventSource->SendEvent(crosshairEvent);
 				RE::free(crosshairEvent);
+
+				SPDLOG_DEBUG
+				(
+					"[Util] SendCrosshairEvent: Set to {}, CID: {}.",
+					a_crosshairRefrToSet ? a_crosshairRefrToSet->GetName() : "NONE",
+					a_requestingCID
+				);
 			}
 		}
 
@@ -5731,14 +5916,14 @@ namespace ALYSLC
 			// so will be removed in the future.
 			if (auto node = a_refr3D->AsNode(); node)
 			{
-				for (auto child : node->children)
+				for (auto childPtr : node->children)
 				{
-					if (!child || !child.get())
+					if (!childPtr)
 					{
 						continue;
 					}
 
-					Set3DCollisionFilterInfo(child.get(), a_set);
+					Set3DCollisionFilterInfo(childPtr.get(), a_set);
 				}
 			}
 		}
@@ -5798,7 +5983,7 @@ namespace ALYSLC
 			// NiAVObject node positions, NiCamera world position, 
 			// and third person state positions.
 
-			if (!a_cam || !a_cam->cameraRoot || !a_cam->cameraRoot.get())
+			if (!a_cam || !a_cam->cameraRoot)
 			{
 				return;
 			}
@@ -5806,13 +5991,13 @@ namespace ALYSLC
 			// Node 3D local and world positions should match.
 			a_cam->cameraRoot->local.translate = a_cam->cameraRoot->world.translate = a_position;
 			// Set the NiCamera world position.
-			if (auto niCamPtr = GetNiCamera(); niCamPtr && niCamPtr.get()) 
+			if (auto niCamPtr = GetNiCamera(); niCamPtr) 
 			{
 				niCamPtr->world.translate = a_position;
 			}
 			
 			const auto playerCam = RE::PlayerCamera::GetSingleton(); 
-			if (playerCam && playerCam->currentState && playerCam->currentState.get())
+			if (playerCam && playerCam->currentState)
 			{
 				// Set the third person state world position and collision position.
 				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get());
@@ -5871,13 +6056,13 @@ namespace ALYSLC
 			niMat.entry[2][0] = nodeMat.entry[2][1];
 			niMat.entry[2][1] = nodeMat.entry[2][2];
 			niMat.entry[2][2] = nodeMat.entry[2][0];
-			if (auto niCamPtr = GetNiCamera(); niCamPtr && niCamPtr.get()) 
+			if (auto niCamPtr = GetNiCamera(); niCamPtr) 
 			{
 				niCamPtr->world.rotate = niMat;
 			}
 
 			auto playerCam = RE::PlayerCamera::GetSingleton(); 
-			if (playerCam && playerCam->currentState && playerCam->currentState.get())
+			if (playerCam && playerCam->currentState)
 			{
 				auto tpState = skyrim_cast<RE::ThirdPersonState*>(playerCam->currentState.get()); 
 				if (tpState)
@@ -6150,11 +6335,9 @@ namespace ALYSLC
 			if (const auto processLists = RE::ProcessLists::GetSingleton(); processLists)
 			{
 				processLists->magicEffectsLock.Lock();
-				for (const auto& tempEffectPtr : processLists->magicEffects)
+				for (const auto tempEffectPtr : processLists->magicEffects)
 				{
-					if (!tempEffectPtr ||
-						!tempEffectPtr.get() ||
-						!tempEffectPtr->As<RE::ShaderReferenceEffect>())
+					if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 					{
 						continue;
 					}
@@ -6221,11 +6404,9 @@ namespace ALYSLC
 			}
 
 			processLists->magicEffectsLock.Lock();
-			for (const auto& tempEffectPtr : processLists->magicEffects)
+			for (const auto tempEffectPtr : processLists->magicEffects)
 			{
-				if (!tempEffectPtr || 
-					!tempEffectPtr.get() ||
-					!tempEffectPtr->As<RE::ModelReferenceEffect>())
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
 					continue;
 				}
@@ -6276,11 +6457,9 @@ namespace ALYSLC
 			}
 
 			processLists->magicEffectsLock.Lock();
-			for (const auto& tempEffectPtr : processLists->magicEffects)
+			for (const auto tempEffectPtr : processLists->magicEffects)
 			{
-				if (!tempEffectPtr || 
-					!tempEffectPtr.get() ||
-					!tempEffectPtr->As<RE::ShaderReferenceEffect>())
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
 					continue;
 				}
@@ -6318,11 +6497,9 @@ namespace ALYSLC
 			}
 			
 			processLists->magicEffectsLock.Lock();
-			for (const auto& tempEffectPtr : processLists->magicEffects)
+			for (const auto tempEffectPtr : processLists->magicEffects)
 			{
-				if (!tempEffectPtr ||
-					!tempEffectPtr.get() || 
-					!tempEffectPtr->As<RE::ModelReferenceEffect>())
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
 					continue;
 				}
@@ -6369,11 +6546,9 @@ namespace ALYSLC
 			// Or stop all instances if there was no specified delayed stop time.
 			bool shouldStop = a_delayedStopSecs == -1.0f;
 			processLists->magicEffectsLock.Lock();
-			for (const auto& tempEffectPtr : processLists->magicEffects)
+			for (const auto tempEffectPtr : processLists->magicEffects)
 			{
-				if (!tempEffectPtr || 
-					!tempEffectPtr.get() || 
-					!tempEffectPtr->As<RE::ShaderReferenceEffect>())
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ShaderReferenceEffect>())
 				{
 					continue;
 				}
@@ -6427,11 +6602,9 @@ namespace ALYSLC
 			// Or stop all instances if there was no specified delayed stop time.
 			bool shouldStop = a_delayedStopSecs == -1.0f;
 			processLists->magicEffectsLock.Lock();
-			for (const auto& tempEffectPtr : processLists->magicEffects)
+			for (const auto tempEffectPtr : processLists->magicEffects)
 			{
-				if (!tempEffectPtr ||
-					!tempEffectPtr.get() ||
-					!tempEffectPtr->As<RE::ModelReferenceEffect>())
+				if (!tempEffectPtr || !tempEffectPtr->As<RE::ModelReferenceEffect>())
 				{
 					continue;
 				}
@@ -6502,7 +6675,7 @@ namespace ALYSLC
 				teleportalActivator, false
 			);
 			// If no portal materializes, don't move the teleporting actor at all.
-			if (portalPtr && portalPtr.get())
+			if (portalPtr)
 			{
 				if (shouldMoveTo)
 				{
@@ -6517,7 +6690,7 @@ namespace ALYSLC
 			// Set down the exit portal at the target's location
 			// and move the teleporting actor to it.
 			portalPtr = a_target->PlaceObjectAtMe(teleportalActivator, false);
-			if (portalPtr && portalPtr.get())
+			if (portalPtr)
 			{
 				if (shouldMoveTo)
 				{
@@ -6606,6 +6779,36 @@ namespace ALYSLC
 			);
 		}
 
+		void ToggleMagicCasterChecks
+		(
+			RE::Actor* a_actor, const RE::MagicSystem::CastingSource& a_source, bool a_on
+		)
+		{
+			// Toggling on restores all checks that are performed before casting a spell.
+			// Toggling off allows the actor to cast any spell
+			// without magicka and target location check restrictions.
+
+			if (!a_actor)
+			{
+				return;
+			}
+
+			auto caster = a_actor->magicCasters[!a_source];
+			if (!caster)
+			{
+				return;
+			}
+
+			if (a_on)
+			{
+				caster->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+			}
+			else
+			{
+				caster->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+			}
+		}
+
 		void TraverseAllPerks
 		(
 			RE::Actor* a_actor, 
@@ -6655,14 +6858,14 @@ namespace ALYSLC
 				return;
 			}
 
-			for (auto child : asNode->children)
+			for (auto childPtr : asNode->children)
 			{
-				if (!child || !child.get() || child->GetRefCount() <= 0)
+				if (!childPtr || childPtr->GetRefCount() <= 0)
 				{
 					continue;
 				}
 				
-				TraverseChildNodesDFS(child.get(), a_visitor);
+				TraverseChildNodesDFS(childPtr.get(), a_visitor);
 			}
 		}
 
@@ -6751,7 +6954,7 @@ namespace ALYSLC
 					);
 
 					// Prevent saving during our level changes.
-					hud->menuFlags.reset(RE::UI_MENU_FLAGS::kAllowSaving);
+					p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kDisableSaving;
 					// Save old level, XP, level threshold, and skill data.
 					// Will be restored after skill level up triggers.
 					const auto oldLevel = p1->GetBaseActorValue(a_avSkill);
@@ -6782,12 +6985,12 @@ namespace ALYSLC
 						delete script;
 						
 						// Re-enable saving.
-						hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
+						p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 						return true;
 					}
 
 					// Re-enable saving.
-					hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
+					p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 				}
 				else
 				{
@@ -6815,7 +7018,7 @@ namespace ALYSLC
 			}
 
 			auto niCamPtr = GetNiCamera(); 
-			if (!niCamPtr || !niCamPtr.get())
+			if (!niCamPtr)
 			{
 				return RE::NiPoint3();
 			}

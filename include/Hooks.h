@@ -32,10 +32,9 @@ namespace ALYSLC
 		};
 
 		// [ActorEquipManager Hooks]
-		// Credits to po3 for the equip hook location:
-		// https://github.com/powerof3/ItemEquipRestrictor/blob/master/src/Manager.cpp#L285
-		// and bosnThs for the unequip hook location:
-		// https://github.com/bosnThs/dynamicGrip/blob/main/src/XSEPlugin.cpp#L1105
+		// Credits to po3 for the equip and unequip hook locations:
+		// https://github.com/powerof3/Spell-Perk-Item-Distributor/blob/master/SPID/src/Outfits/OutfitManager%2BHooks.cpp#L225
+		// https://github.com/powerof3/Spell-Perk-Item-Distributor/blob/master/SPID/src/Outfits/OutfitManager%2BHooks.cpp#L246
 		class ActorEquipManagerHooks
 		{
 		public:
@@ -85,16 +84,60 @@ namespace ALYSLC
 		public:
 			static void InstallHooks()
 			{
-				// NOTE:
-				// Unused for now until I figure out a way to stall the FNF spellcast animation 
-				// when the spell is fully charged and the player is still holding the cast bind.
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
+				/*_DeselectSpellImpl = vtbl.write_vfunc(0x12, DeselectSpellImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed DeselectSpellImpl() hook.");
+				_FinishCastImpl = vtbl.write_vfunc(0x07, FinishCastImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed FinishCastImpl() hook.");*/
+				_InterruptCastImpl = vtbl.write_vfunc(0x08, InterruptCastImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed InterruptCastImpl() hook.");
+				_RequestCastImpl = vtbl.write_vfunc(0x03, RequestCastImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed RequestCastImpl() hook.");
+				/*_SelectSpellImpl = vtbl.write_vfunc(0x11, SelectSpellImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed SelectSpellImpl() hook.");
+				_SetCurrentSpellImpl = vtbl.write_vfunc(0x10, SetCurrentSpellImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed SetCurrentSpellImpl() hook.");
+				_SpellCast = vtbl.write_vfunc(0x09, SpellCast);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed SpellCast() hook.");
+				_StartCastImpl = vtbl.write_vfunc(0x06, StartCastImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed StartCastImpl() hook.");*/
+				_StartChargeImpl = vtbl.write_vfunc(0x04, StartChargeImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed StartChargeImpl() hook.");
+				/*_StartReadyImpl = vtbl.write_vfunc(0x05, StartReadyImpl);
+				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed StartReadyImpl() hook.");*/
 				_Update = vtbl.write_vfunc(0x1D, Update);
 				SPDLOG_INFO("[ActorMagicCasterHooks Hook] Installed Update() hook.");
 			}
 
 		private:
+			static void DeselectSpellImpl(RE::ActorMagicCaster* a_this);
+			static void FinishCastImpl(RE::ActorMagicCaster* a_this);
+			static void InterruptCastImpl(RE::ActorMagicCaster* a_this, bool a_depleteEnergy);
+			static void RequestCastImpl(RE::ActorMagicCaster* a_this);
+			static void SelectSpellImpl(RE::ActorMagicCaster* a_this);
+			static void SetCurrentSpellImpl(RE::ActorMagicCaster* a_this, RE::MagicItem* a_spell);
+			static void SpellCast
+			(
+				RE::ActorMagicCaster* a_this,
+				bool a_doCast, 
+				uint32_t a_arg2, 
+				RE::MagicItem* a_spell
+			);
+			static void StartCastImpl(RE::ActorMagicCaster* a_this);
+			static bool StartChargeImpl(RE::ActorMagicCaster* a_this);
+			static void StartReadyImpl(RE::ActorMagicCaster* a_this);
 			static void Update(RE::ActorMagicCaster* a_this, float a_delta);
+			
+			static inline REL::Relocation<decltype(DeselectSpellImpl)> _DeselectSpellImpl;
+			static inline REL::Relocation<decltype(FinishCastImpl)> _FinishCastImpl;
+			static inline REL::Relocation<decltype(InterruptCastImpl)> _InterruptCastImpl;
+			static inline REL::Relocation<decltype(RequestCastImpl)> _RequestCastImpl;
+			static inline REL::Relocation<decltype(SelectSpellImpl)> _SelectSpellImpl;
+			static inline REL::Relocation<decltype(SetCurrentSpellImpl)> _SetCurrentSpellImpl;
+			static inline REL::Relocation<decltype(SpellCast)> _SpellCast;
+			static inline REL::Relocation<decltype(StartCastImpl)> _StartCastImpl;
+			static inline REL::Relocation<decltype(StartChargeImpl)> _StartChargeImpl;
+			static inline REL::Relocation<decltype(StartReadyImpl)> _StartReadyImpl;
 			static inline REL::Relocation<decltype(Update)> _Update;
 		};
 
@@ -192,8 +235,14 @@ namespace ALYSLC
 				SPDLOG_INFO("[Character Hook] Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
 				SPDLOG_INFO("[Character Hook] Installed NotifyAnimationGraph() hook.");
+				_PutCreatedPackage = vtbl.write_vfunc(0xDF, PutCreatedPackage);
+				SPDLOG_INFO("[Character Hook] Installed PutCreatedPackage() hook.");
+				_RemoveWeapon = vtbl.write_vfunc(0x82, RemoveWeapon);
+				SPDLOG_INFO("[Character Hook] Installed RemoveWeapon() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
 				SPDLOG_INFO("[Character Hook] Installed ResetInventory() hook.");
+				_SetCurrentScene = vtbl.write_vfunc(0x4B, SetCurrentScene);
+				SPDLOG_INFO("[Character Hook] Installed SetCurrentScene() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
 				SPDLOG_INFO("[Character Hook] Installed Update() hook.");
 			}
@@ -216,7 +265,16 @@ namespace ALYSLC
 			(
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
 			);
+			static void PutCreatedPackage
+			(
+				RE::Character* a_this, 
+				RE::TESPackage* a_package, 
+				bool a_tempPackage,
+				bool a_createdPackage
+			);
+			static void RemoveWeapon(RE::Character* a_this, RE::BIPED_OBJECT a_equipIndex);
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
+			static void SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene);
 			static void Update(RE::Character* a_this, float a_delta);
 
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
@@ -226,7 +284,10 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
 			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
+			static inline REL::Relocation<decltype(PutCreatedPackage)> _PutCreatedPackage;
+			static inline REL::Relocation<decltype(RemoveWeapon)> _RemoveWeapon;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
+			static inline REL::Relocation<decltype(SetCurrentScene)> _SetCurrentScene;
 			static inline REL::Relocation<decltype(Update)> _Update;
 		};
 
@@ -756,6 +817,9 @@ namespace ALYSLC
 		};
 
 		// [SpellItem Hooks]
+		// NOTE:
+		// Unused for now, since this hook only seems to fire in vanilla Enderal,
+		// not in vanilla Skyrim.
 		class SpellItemHooks
 		{
 		public:
@@ -957,7 +1021,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(UpdateRotation)> _UpdateRotationBCS;
 			static inline REL::Relocation<decltype(UpdateRotation)> _UpdateRotationHCS;
 		};
-
+		
 		// [ValueModifierEffect Hooks]
 		class ValueModifierEffectHooks
 		{
@@ -974,7 +1038,6 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(Start)> _Start;
 		};
 
-		
 		// [VampireLordEffect Hooks]
 		class VampireLordEffectHooks
 		{

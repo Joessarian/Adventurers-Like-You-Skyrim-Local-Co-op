@@ -172,7 +172,7 @@ namespace ALYSLC
 			nodeNameToRotationDataMap.clear();
 			for (const auto& [nodeHash, data] : a_nom.nodeNameToRotationDataMap)
 			{
-				if (data && data.get()) 
+				if (data) 
 				{
 					nodeNameToRotationDataMap.insert_or_assign
 					(
@@ -209,7 +209,7 @@ namespace ALYSLC
 			// Clear rotation input angles and reset data for the given node.
 			// Can also reset the rotation modified flag if needed.
 
-			if (!a_nodePtr || !a_nodePtr.get())
+			if (!a_nodePtr)
 			{
 				return;
 			}
@@ -217,7 +217,7 @@ namespace ALYSLC
 			const auto iter = nodeNameToRotationDataMap.find(a_nodePtr->name); 
 			if (iter != nodeNameToRotationDataMap.end())
 			{
-				if (auto& data = iter->second; data && data.get())
+				if (auto& data = iter->second; data)
 				{
 					data->prevInterrupted = data->interrupted;
 					data->prevRotationModified = data->prevRotationModified;
@@ -590,6 +590,9 @@ namespace ALYSLC
 		bool faceTarget;
 		// Nearby map marker is undiscovered and in range to discover.
 		bool inRangeOfUndiscoveredMarker;
+		// Is this player close enough to the interaction entry position 
+		// to run the interaction package?
+		bool interactionInRange;
 		// Is this player's interaction package running?
 		bool interactionPackageRunning;
 		// Is the player airborne after jumping?
@@ -655,6 +658,8 @@ namespace ALYSLC
 		bool speedUpRotOnYawTargetChange;
 		// Temporarily turn to face the target when certain actions trigger.
 		bool turnToTarget;
+		// Does the player want to mount a targeted mount?
+		bool wantsToMount;
 		// Aim pitch for torso rotation and projectile calculations.
 		float aimPitch;
 		// Height factor relative to base height.

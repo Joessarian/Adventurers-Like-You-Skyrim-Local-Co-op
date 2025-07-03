@@ -135,7 +135,6 @@ namespace ALYSLC
 	{
 		// Specific to player action.
 		bool Activate(const std::shared_ptr<CoopPlayer>& a_p);
-		bool ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p);
 		bool ActivateCancel(const std::shared_ptr<CoopPlayer>& a_p);
 		bool AdjustAimPitch(const std::shared_ptr<CoopPlayer>& a_p);
 		bool AttackLH(const std::shared_ptr<CoopPlayer>& a_p);
@@ -186,6 +185,11 @@ namespace ALYSLC
 		// if no other players are controlling menus already, 
 		// and not changing gear or is transformed.
 		bool PlayerCanOpenMenu(const std::shared_ptr<CoopPlayer>& a_p);
+
+		// Can open co-op (UIExtensions-based) menu 
+		// if no players are controlling menus already, 
+		// and not changing gear or is transformed.
+		bool PlayerCanOpenCoopMenu(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can open item menu (Favorites, Inventory, Magic) 
 		// if no other players are controlling menus, and not transformed.
@@ -260,17 +264,30 @@ namespace ALYSLC
 			RE::TESForm* a_hotkeyedForm, 
 			EquipIndex&& a_equipIndex
 		);
+		
+		// If casting a fire and forget spell, trigger the spellcast.
+		// Otherwise, remove the LH/RH casting package from the top of the player's package stack 
+		// to stop the companion player from casting in the LH/RH.
+		// NOTE: 
+		// Ranged package cast data will be cleared in the PAM later on
+		// if the player is casting a fire and forget spell,
+		// since the package must continue executing after the cast bind is released
+		// to cast the spell.
+		void FinishCasting
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+		);
 
 		// Get player action HMS costs.
-		const float GetPAHealthCost
+		const float GetPABaseHealthCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
-		const float GetPAMagickaCost
+		const float GetPABaseMagickaCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
-		const float GetPAStaminaCost
+		const float GetPABaseStaminaCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		);
@@ -306,19 +323,22 @@ namespace ALYSLC
 		);
 
 		// Have the given player loot all lootable items from the given container.
-		void LootAllItemsFromContainer
+		// Return the number of looted objects.
+		uint32_t LootAllItemsFromContainer
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_containerPtr
 		);
 
 		// Have the given player loot all lootable items from the given corpse.
-		void LootAllItemsFromCorpse
+		// Return the number of looted objects.
+		uint32_t LootAllItemsFromCorpse
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_corpseRefrPtr
 		);
 
 		// Have the given player activate the given lootable refr (through P1 or otherwise).
-		void LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr);
+		// Return the number of looted objects.
+		uint32_t LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr);
 
 		// Check if the player is moving in a particular direction 
 		// relative to the direction they're facing.
@@ -368,13 +388,6 @@ namespace ALYSLC
 			RE::SpellItem* a_spell
 		);
 
-		// Remove the LH/RH casting package from the top of the player's package stack 
-		// to stop the companion player from casting in the LH/RH.
-		void RemoveCastingPackage
-		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
-		);
-
 		// Returns true if P1 is requesting to use the paraglider from Loki's awesome mod:
 		// https://www.nexusmods.com/skyrimspecialedition/mods/53256
 		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p);
@@ -393,7 +406,10 @@ namespace ALYSLC
 		// Set up casting package to have a companion player cast a spell in the LH/RH.
 		void SetUpCastingPackage
 		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+			const std::shared_ptr<CoopPlayer>& a_p,
+			bool&& a_lhCast, 
+			bool&& a_rhCast,
+			bool a_actionJustSterted
 		);
 		
 		// Update the target for the player's given magic caster.

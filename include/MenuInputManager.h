@@ -257,7 +257,7 @@ namespace ALYSLC
 			}
 
 			auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
-			if (!favoritesMenu || !favoritesMenu.get())
+			if (!favoritesMenu)
 			{
 				return nullptr;
 			}
@@ -458,6 +458,8 @@ namespace ALYSLC
 		RE::GPtr<RE::MagicMenu> magicMenu;
 		// Map menu.
 		RE::GPtr<RE::MapMenu> mapMenu;
+		// Sleep/Wait menu.
+		RE::GPtr<RE::SleepWaitMenu> sleepWaitMenu;
 		// Container to equip/loot from.
 		RE::ObjectRefHandle fromContainerHandle;
 		// Form selected from current menu item list.

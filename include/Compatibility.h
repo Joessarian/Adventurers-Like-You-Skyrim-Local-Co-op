@@ -35,6 +35,7 @@ namespace ALYSLC
 	{
 		static void CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface);
 		static bool g_quickLootInstalled;
+		static bool g_isQuickLootIE;
 	};
 
 	struct RequiemCompat

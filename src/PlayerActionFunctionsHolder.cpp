@@ -55,8 +55,6 @@ namespace ALYSLC
 		// Unique conditions.
 		_condFuncs[!InputAction::kActivate - paOffset] =
 		ConditionFuncs::Activate;
-		_condFuncs[!InputAction::kActivateAllOfType - paOffset] = 
-		ConditionFuncs::ActivateAllOfType;
 		_condFuncs[!InputAction::kActivateCancel - paOffset] =
 		ConditionFuncs::ActivateCancel;
 		_condFuncs[!InputAction::kAdjustAimPitch - paOffset] =
@@ -402,12 +400,6 @@ namespace ALYSLC
 			return false;
 		}
 
-		bool ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Can't activate all objects of the same type if nothing is targeted.
-			return (bool)(Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle));
-		}
-
 		bool ActivateCancel(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cannot cancel if no object is targeted.
@@ -603,6 +595,14 @@ namespace ALYSLC
 				return false;
 			}
 
+			// Casting does not function when mounted and can cause the game to automatically
+			// dismount the player if the player presses this bind and then hits an enemy
+			// with a melee weapon.
+			if (a_p->coopActor->IsOnMount())
+			{
+				return false;
+			}
+
 			// Do not cast when swapping out weapons/spells. Can lead to crashes.
 			bool isEquipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
@@ -634,6 +634,14 @@ namespace ALYSLC
 		{
 			// Spells are not out.
 			if (!a_p->coopActor->IsWeaponDrawn())
+			{
+				return false;
+			}
+			
+			// Casting does not function when mounted and can cause the game to automatically
+			// dismount the player if the player presses this bind and then hits an enemy
+			// with a melee weapon.
+			if (a_p->coopActor->IsOnMount())
 			{
 				return false;
 			}
@@ -934,18 +942,7 @@ namespace ALYSLC
 			// Can only sheathe if the companion player is not in the process of attacking, 
 			// since actions such as loading a crossbow while attempting to sheathe 
 			// cause the crossbow to disappear.
-			bool isAttacking = false;
-			bool isCasting = false;
-			bool isCastingDual = false;
-			bool isCastingLH = false;
-			bool isCastingRH = false;
-			a_p->coopActor->GetGraphVariableBool("IsAttacking", isAttacking);
-			a_p->coopActor->GetGraphVariableBool("IsCastingDual", isCastingDual);
-			a_p->coopActor->GetGraphVariableBool("IsCastingLeft", isCastingLH);
-			a_p->coopActor->GetGraphVariableBool("IsCastingRight", isCastingRH);
-			isCasting = isCastingDual || isCastingLH || isCastingRH;
-
-			return !isAttacking && !isCasting;
+			return !a_p->pam->isRangedWeaponAttack;
 		}
 
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1239,6 +1236,7 @@ namespace ALYSLC
 		{
 			// No menus that stop movement (ex. StatsMenu/MapMenu/LockpickingMenu) can be open
 			// and the player must not be controlling menus.
+
 			return 
 			(
 				!Util::OpenMenuStopsMovement() && 
@@ -1296,6 +1294,7 @@ namespace ALYSLC
 		{
 			// If arms rotation is disabled,
 			// will draw weapons/magic/fists on release instead of attacking.
+
 			bool drawn = a_p->coopActor->IsWeaponDrawn();
 			if (!drawn && !a_p->isTransformed)
 			{
@@ -1414,6 +1413,7 @@ namespace ALYSLC
 			// if they are in dialogue or not controlling menus,
 			// if they are not knocked down, getting up, or staggered,
 			// and if their weapons/magic are sheathed.
+
 			auto ui = RE::UI::GetSingleton();
 			if (!ui)
 			{
@@ -1462,6 +1462,7 @@ namespace ALYSLC
 		{
 			// Crash when equipping magic/weapons while opening the Magic/Favorites menus,
 			// so ensure the player is not (un)equipping before opening any menus.
+
 			bool isEquipping = false;
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
@@ -1480,12 +1481,36 @@ namespace ALYSLC
 			);
 		}
 
+		bool PlayerCanOpenCoopMenu(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// Crash when equipping magic/weapons while opening the Magic/Favorites menus,
+			// so ensure the player is not (un)equipping before opening any menus.
+
+			bool isEquipping = false;
+			bool isUnequipping = false;
+			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
+			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
+			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->controllerID);
+			// No supported menus open or can obtain menu control,
+			// and either a non-playable race, or not (un)equipping as a playable race.
+			// Non-playable races can still access menus which do not allow them to equip items.
+			return 
+			(
+				(!glob.supportedMenuOpen.load()) && 
+				(
+					(Util::IsRaceWithTransformation(a_p->coopActor->race)) || 
+					(!isEquipping && !isUnequipping)
+				)
+			);
+		}
+
 		bool PlayerCanOpenItemMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// No supported menus open or can obtain menu control and
 			// is part of a race with the NPC keyword and not (un)equipping.
 			// Equipping items when not a member of a playable race causes problems,
 			// so to prevent issues, we don't open any item menus under these conditions.
+
 			bool isEquipping = false;
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
@@ -1508,6 +1533,7 @@ namespace ALYSLC
 			// By 'perks menus', I mean menus that give access to the player's perk tree,
 			// whether directly (StatsMenu) or indirectly (TweenMenu).
 			// Same general condition check.
+
 			bool baselineCheck = PlayerCanOpenMenu(a_p);
 			if (!baselineCheck)
 			{
@@ -1709,8 +1735,8 @@ namespace ALYSLC
 			(
 				a_p->pam->paStatesList[!InputAction::kSpecialAction - !InputAction::kFirstAction]
 			);
-			float cost = 0.0f;
-			float costPerUpdate = 0.0f;
+			float baseCost = 0.0f;
+			float costToPerform = 0.0f;
 			// Default to 'can perform' for all actions if in god mode.
 			bool canPerform = a_p->isInGodMode;
 			RE::ActorValue avToCheck = RE::ActorValue::kNone;
@@ -1728,30 +1754,8 @@ namespace ALYSLC
 			case SpecialActionType::kCastBothHands:
 			{
 				avToCheck = RE::ActorValue::kMagicka;
-				if (a_p->em->HasLHSpellEquipped() && a_p->em->HasRHSpellEquipped())
-				{
-					auto lhSpell = a_p->em->GetLHSpell();
-					auto rhSpell = a_p->em->GetRHSpell();
-					// Cost multiplier from here:
-					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
-					float costLH = lhSpell->CalculateMagickaCost(a_p->coopActor.get());
-					float costRH = rhSpell->CalculateMagickaCost(a_p->coopActor.get());
-
-					// Set individual costs for magicka consumption for each casting action.
-					a_p->pam->paStatesList
-					[!InputAction::kCastLH - !InputAction::kFirstAction].avCost = costLH;
-					a_p->pam->paStatesList
-					[!InputAction::kCastRH - !InputAction::kFirstAction].avCost = costRH;
-					// Must be able to cast both spells at once, 
-					// so the magicka cost check uses the sum of both spells' costs.
-					// The magicka check is done by the game for P1.
-					cost = costLH + costRH;
-					// The hand caster magicka check is done by the game for P1 
-					// after input event processing, so we'll skip the magicka cost check 
-					// and just send the button events.
-					canPerform |= a_p->isPlayer1 || pam->currentMagicka - cost > 0.0f;
-				}
-				else if (a_p->em->HasLHStaffEquipped() && a_p->em->HasRHStaffEquipped())
+				// Hand casting magicka cost already handled by the game.
+				if (a_p->em->HasLHStaffEquipped() && a_p->em->HasRHStaffEquipped())
 				{
 					auto lhWeap = a_p->em->GetLHWeapon();
 					auto rhWeap = a_p->em->GetRHWeapon();
@@ -1763,6 +1767,11 @@ namespace ALYSLC
 							lhWeap->amountofEnchantment > 0 && rhWeap->amountofEnchantment > 0
 						);
 					}
+				}
+				else
+				{
+					// Hand casting magicka cost already handled by the game.
+					canPerform = true;
 				}
 
 				break;
@@ -1807,31 +1816,20 @@ namespace ALYSLC
 					1.0f : 
 					std::clamp(lsMag, 0.5f, 1.0f)
 				);
-				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
+				costToPerform = 
+				baseCost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
 				// Set the Dodge action's cost.
 				a_p->pam->paStatesList
-				[!InputAction::kDodge - !InputAction::kFirstAction].avCost = cost;
+				[!InputAction::kDodge - !InputAction::kFirstAction].avBaseCost = baseCost;
 				// Must not be on cooldown.
 				canPerform |= pam->secsTotalStaminaRegenCooldown == 0.0f;
 				break;
 			}
 			case SpecialActionType::kDualCast:
 			{
+				// Hand casting magicka cost already handled by the game.
 				avToCheck = RE::ActorValue::kMagicka;
-				if (a_p->em->HasLHSpellEquipped() && a_p->em->HasRHSpellEquipped())
-				{
-					auto lhSpell = a_p->em->GetLHSpell();
-					auto rhSpell = a_p->em->GetRHSpell();
-					// Cost multiplier from here:
-					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
-					// Same spells in both hands, same cost.
-					cost = 2.8f * lhSpell->CalculateMagickaCost(a_p->coopActor.get());
-					// The hand caster magicka check is done by the game for P1 
-					// after input event processing, so we'll skip the magicka cost check 
-					// and just send the button events.
-					canPerform |= a_p->isPlayer1 || pam->currentMagicka - cost > 0.0f;
-				}
-
+				canPerform = true;
 				break;
 			}
 			case SpecialActionType::kQuickCast:
@@ -1842,22 +1840,22 @@ namespace ALYSLC
 				if (qsSpell && qsSpell->Is(RE::FormType::Spell))
 				{
 					auto asSpell = qsSpell->As<RE::SpellItem>();
-					cost = asSpell->CalculateMagickaCost(a_p->coopActor.get());
-					// Cost per frame for concentration spells.
-					cost *= 
-					(
-						asSpell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration ? 
-						*g_deltaTimeRealTime : 
-						1.0f
-					);
+					baseCost = asSpell->CalculateMagickaCost(a_p->coopActor.get());
+					costToPerform = baseCost * Settings::vfMagickaCostMult[a_p->playerID];
+					if (asSpell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration)
+					{
+						costToPerform *= *g_deltaTimeRealTime;
+					}
 
 					// Set the QuickSlotCast action's cost.
 					a_p->pam->paStatesList
-					[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avCost = cost;
+					[
+						!InputAction::kQuickSlotCast - !InputAction::kFirstAction
+					].avBaseCost = baseCost;
 					// Since the spell is cast with a magic caster directly,
 					// there is no input event to send for P1, 
 					// so we need to perform a magicka check here.
-					canPerform |= pam->currentMagicka - cost > 0.0f;
+					canPerform |= pam->currentMagicka - costToPerform > 0.0f;
 				}
 
 				break;
@@ -1883,8 +1881,9 @@ namespace ALYSLC
 			}
 
 			// Set cost.
-			paState.avCost = cost;
-
+			paState.avBaseCost = baseCost;
+			// Notify the player that they do not have sufficient magicka 
+			// to cast with both hands, dual cast, or quick cast.
 			if (!canPerform && 
 				a_p->pam->GetPlayerActionInputJustPressed(InputAction::kSpecialAction) &&
 				avToCheck == RE::ActorValue::kMagicka)
@@ -2027,7 +2026,8 @@ namespace ALYSLC
 					{
 						performedKillmove = PlayKillmoveFromList
 						(
-							a_p, targetActorPtr.get(), 
+							a_p, 
+							targetActorPtr.get(), 
 							isOtherPlayer, 
 							hasCharacterSkeleton, 
 							glob.genericKillmoveIdles[!KillmoveType::kVampireLord]
@@ -2048,7 +2048,8 @@ namespace ALYSLC
 					{
 						performedKillmove = PlayKillmoveFromList
 						(
-							a_p, targetActorPtr.get(), 
+							a_p, 
+							targetActorPtr.get(), 
 							isOtherPlayer, 
 							hasCharacterSkeleton, 
 							glob.genericKillmoveIdles[!KillmoveType::kShield]
@@ -2242,7 +2243,7 @@ namespace ALYSLC
 							// even if all cast binds are released.
 							if (!a_p->isPlayer1) 
 							{
-								RemoveCastingPackage(a_p, true, true);
+								FinishCasting(a_p, true, true);
 							}
 
 							performedKillmove = PlayKillmoveFromList
@@ -2253,6 +2254,12 @@ namespace ALYSLC
 								hasCharacterSkeleton,
 								glob.genericKillmoveIdles[!killmoveType]
 							);
+
+							// Set request for melee spellcast killmove.
+							if (performedKillmove)
+							{
+								a_p->pam->reqMeleeSpellcastKillmove = true;
+							}
 						}
 					}
 				}
@@ -2345,9 +2352,10 @@ namespace ALYSLC
 			// Does the player have enough health/magicka/stamina to perform the given action?
 
 			const auto& pam = a_p->pam;
-			// Total cost.
-			float cost = 0.0f;
-			// Cost once the player starts performing the action.
+			// Total base cost.
+			float baseCost = 0.0f;
+			// Cost, after player cost mult application, 
+			// once the player starts performing the action.
 			float costToPerform = 0.0f;
 			// Default to 'can perform' for all actions if in god mode.
 			bool canPerform = a_p->isInGodMode;
@@ -2356,8 +2364,8 @@ namespace ALYSLC
 			{
 				avToCheck = RE::ActorValue::kHealth;
 				// Revive health cost.
-				cost = GetPAHealthCost(a_p, a_action);
-				costToPerform = cost * *g_deltaTimeRealTime;
+				baseCost = GetPABaseHealthCost(a_p, a_action);
+				costToPerform = baseCost * *g_deltaTimeRealTime;
 				canPerform |= 
 				(
 					pam->currentHealth - costToPerform > Settings::fMinHealthWhileReviving
@@ -2368,8 +2376,13 @@ namespace ALYSLC
 					 (a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell))
 			{
 				avToCheck = RE::ActorValue::kMagicka;
-				// Spellcast cost.
-				cost = costToPerform = GetPAMagickaCost(a_p, a_action);
+				// Base cost.
+				baseCost = GetPABaseMagickaCost(a_p, a_action);
+				// NOTE:
+				// Must scale by the player's magicka cost mult here.
+				// This 'true' cost is applied later in the CheckClampDamageModifier() hook
+				// by rescaling the base cost by this modifier again.
+				costToPerform = baseCost * Settings::vfMagickaCostMult[a_p->playerID];
 				bool isQuickslotCastCheck =  
 				(
 					a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell
@@ -2410,13 +2423,34 @@ namespace ALYSLC
 					(a_p->isPlayer1 && !isQuickslotCastCheck) ||
 					(pam->currentMagicka - costToPerform > 0.0f)
 				);
+				// Notify the player that they do not have sufficient magicka to quick slot cast.
+				if (!canPerform && 
+					pam->currentMagicka > 0.0f && 
+					pam->GetPlayerActionInputJustPressed(a_action) &&
+					isQuickslotCastCheck &&
+					avToCheck == RE::ActorValue::kMagicka)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+
+					RE::PlaySound("MAGFailSD");
+				}
 			}
 			else
 			{
 				avToCheck = RE::ActorValue::kStamina;
-				cost = GetPAStaminaCost(a_p, a_action);
+				baseCost = GetPABaseStaminaCost(a_p, a_action);
 				// Check if the player has enough stamina if the cost is non-zero.
-				if (cost != 0.0f) 
+				if (baseCost != 0.0f) 
 				{
 					// Can perform if in god mode.
 					// Check for sufficient stamina, if P1,
@@ -2434,31 +2468,10 @@ namespace ALYSLC
 				}
 			}
 
-			// Cache cost so that it does not have to be recomputed later 
+			// Cache base cost so that it does not have to be recomputed later 
 			// when expending health/magicka/stamina 
 			// once the action's corresponding start animation triggers.
-			pam->paStatesList[!a_action - !InputAction::kFirstAction].avCost = cost;
-
-			if (!canPerform && 
-				pam->currentMagicka > 0.0f && 
-				pam->GetPlayerActionInputJustPressed(a_action) &&
-				avToCheck == RE::ActorValue::kMagicka)
-			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kGeneralNotification,
-					fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-
-				RE::PlaySound("MAGFailSD");
-			}
-			
+			pam->paStatesList[!a_action - !InputAction::kFirstAction].avBaseCost = baseCost;
 			return canPerform;
 		}
 
@@ -2487,7 +2500,9 @@ namespace ALYSLC
 
 			// Most cursed thing I've ever done, aside from this entire mod of course.
 			// But nothing else works.
-			// Console command equip funcs worked whereas the CLib ones did not for some reason.
+			// Console command equip funcs worked whereas the CLib ones did not for some reason
+			// (likely due to having to equip both the underlying bound weapon form 
+			// and its enchantment for the visuals).
 			// Must also have a delay between executing console commands, 
 			// otherwise the second command does not execute successfully.
 			a_p->taskRunner->AddTask
@@ -2517,7 +2532,15 @@ namespace ALYSLC
 						auto rhForm = a_p->em->desiredEquippedForms[!EquipIndex::kRightHand];
 						Util::AddSyncedTask
 						(
-							[a_p, a_slot, lhForm, rhForm, &lhEquipIndices, &rhEquipIndices]() 
+							[
+								a_p, 
+								a_slot, 
+								a_boundWeap,
+								lhForm, 
+								rhForm,
+								&lhEquipIndices,
+								&rhEquipIndices
+							]() 
 							{
 								// Get equip indices and clear out both hands' desired forms.
 								for (auto i = 0; i < a_p->em->desiredEquippedForms.size(); ++i)
@@ -2550,6 +2573,8 @@ namespace ALYSLC
 									a_p->pam->boundWeapReq2H = true;
 									a_p->pam->boundWeapReqLH =
 									a_p->pam->boundWeapReqRH = false;
+									a_p->em->lastReqBoundWeapLH = 
+									a_p->em->lastReqBoundWeapRH = a_boundWeap;
 									a_p->lastBoundWeapon2HReqTP = SteadyClock::now();
 								}
 								else if (a_slot == glob.leftHandEquipSlot)
@@ -2560,6 +2585,7 @@ namespace ALYSLC
 										a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqLH = true;
+									a_p->em->lastReqBoundWeapLH = a_boundWeap;
 									a_p->lastBoundWeaponLHReqTP = SteadyClock::now();
 								}
 								else
@@ -2570,6 +2596,7 @@ namespace ALYSLC
 										a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqRH = true;
+									a_p->em->lastReqBoundWeapRH = a_boundWeap;
 									a_p->lastBoundWeaponRHReqTP = SteadyClock::now();
 								}
 
@@ -2744,17 +2771,26 @@ namespace ALYSLC
 								originalEquipSlot
 							]() 
 							{
-								// Restore saved equip slot, if any.
+								// Set equip slot to either hand, if a one-handed weapon,
+								// or to both hands, if a two-handed weapon.
 								if (a_boundWeap && originalEquipSlot)
 								{
-									a_boundWeap->SetEquipSlot(originalEquipSlot);
+									if (originalEquipSlot == glob.bothHandsEquipSlot)
+									{
+										a_boundWeap->SetEquipSlot(glob.bothHandsEquipSlot);
+									}
+									else
+									{
+										a_boundWeap->SetEquipSlot(glob.eitherHandEquipSlot);
+									}
 								}
 
 								// Expend magicka.
 								a_p->pam->ModifyAV
 								(
 									RE::ActorValue::kMagicka,
-									-a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get())
+									-a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get()) *
+									Settings::vfMagickaCostMult[a_p->playerID]
 								);
 
 								// Restore LH and RH desired forms to their previous indices.
@@ -3788,7 +3824,184 @@ namespace ALYSLC
 			}
 		}
 
-		const float GetPAHealthCost
+		void FinishCasting
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+		)
+		{
+			// Finish companion player spell cast in the given hand(s).
+			// NOTE: 
+			// Ranged package cast data will be cleared in the PAM later on
+			// if the player is casting a fire and forget spell,
+			// since the package must continue executing after the cast bind is released
+			// to cast the spell.
+
+			const auto& pam = a_p->pam;
+			auto lhCaster = 
+			(
+				a_p->coopActor->magicCasters[RE::Actor::SlotTypes::kLeftHand]
+			);
+			auto rhCaster = 
+			(
+				a_p->coopActor->magicCasters[RE::Actor::SlotTypes::kRightHand]
+			);
+			// Need valid hand casters.
+			if ((a_lhCast && !lhCaster) || (a_rhCast && !rhCaster))
+			{
+				SPDLOG_DEBUG
+				(
+					"[PAFH] ERR: FinishCasting: {}: {} finished. "
+					"LH caster invalid: {}, RH caster invalid: {}.", 
+					a_p->coopActor->GetName(),
+					a_lhCast && a_rhCast ? "2H cast" : a_lhCast ? "LH cast" : "RH cast",
+					!lhCaster, !rhCaster
+				);
+				a_p->pam->ResetPackageCastingState();
+				return;
+			}
+			
+			// If casting a fire and forget spell, start the cast here;
+			// otherwise, clear the casters state, 
+			// which will signal the PAM to stop the cast and reset cast globals.
+			// NOTE:
+			// Must also check if the player has enough magicka to release the FNF spell,
+			// since they may have held the fully-charged spell as their magicka 
+			// dwindled below the original cost.
+			// Interrupt the cast if this is the case.
+			auto lhSpell = a_p->em->GetLHSpell();
+			auto rhSpell = a_p->em->GetRHSpell();
+			bool is2HSpell = 
+			(
+				lhSpell &&
+				rhSpell && 
+				lhSpell == rhSpell &&
+				rhSpell->equipSlot == glob.bothHandsEquipSlot
+			);
+			bool hasEnoughMagicka = false;
+			if (is2HSpell && lhCaster && rhCaster)
+			{
+				// For 2H casts, even though we have the same spell equipped in both hands,
+				// the cast bind used to trigger the cast determines 
+				// which hand caster releases the spell.
+				// The other hand's caster may be inactive or not have the 2H spell 
+				// as its current spell, so we have to obtain the active caster
+				// loaded with the 2H spell in order to start the cast.
+				auto casterUsed = 
+				(
+					lhCaster->currentSpell == lhSpell ? lhCaster : rhCaster
+				);
+				// Could not get caster, so cannot start/finish casting.
+				if (!casterUsed)
+				{
+					SPDLOG_DEBUG
+					(
+						"[PAFH] ERR: FinishCasting: {}: "
+						"Neither LH nor RH caster has started casting 2H spell {}.",
+						a_p->coopActor->GetName(),
+						rhSpell->GetName()
+					);
+					return;
+				}
+
+				float chargedTime = 0.0f;
+				float baseChargeTime = rhSpell->GetChargeTime();
+				if (casterUsed == lhCaster)
+				{
+					chargedTime = Util::GetElapsedSeconds(a_p->lastLHCastChargeStartTP);
+				}
+				else
+				{
+					chargedTime = Util::GetElapsedSeconds(a_p->lastRHCastChargeStartTP);
+				}
+				SPDLOG_DEBUG
+				(
+					"[PAFH] FinishCasting: {}: 2H cast of {}. "
+					"Time since charge start: {}. Spell charge time: {}.", 
+					a_p->coopActor->GetName(),
+					rhSpell->GetName(),
+					chargedTime,
+					rhSpell->GetChargeTime()
+				);
+
+				auto castingType = rhSpell->GetCastingType();
+				if (castingType == RE::MagicSystem::CastingType::kFireAndForget)
+				{
+					if (chargedTime > baseChargeTime)
+					{
+						casterUsed->StartCastImpl();
+						return;
+					}
+					
+					pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
+					pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
+					pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
+					casterUsed->InterruptCast(true);
+					pam->SetAndEveluatePackage(pam->GetCoopPackage(PackageIndex::kRangedAttack));
+				}
+			}
+			else
+			{
+				if (lhSpell && lhCaster && a_lhCast)
+				{
+					SPDLOG_DEBUG
+					(
+						"[PAFH] FinishCasting: {}: LH cast of {}. "
+						"Time since charge start: {}. Spell charge time: {}.", 
+						a_p->coopActor->GetName(),
+						lhSpell->GetName(),
+						Util::GetElapsedSeconds(a_p->lastLHCastChargeStartTP),
+						lhSpell->GetChargeTime()
+					);
+
+					auto castingType = lhSpell->GetCastingType();
+					if (castingType == RE::MagicSystem::CastingType::kFireAndForget)
+					{
+						if (Util::GetElapsedSeconds(a_p->lastLHCastChargeStartTP) > 
+							lhSpell->GetChargeTime()) 
+						{
+							lhCaster->StartCastImpl();
+						}
+						else
+						{
+							pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
+							pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
+							lhCaster->InterruptCast(true);
+						}
+					}
+				}
+
+				if (rhSpell && rhCaster && a_rhCast)
+				{
+					SPDLOG_DEBUG
+					(
+						"[PAFH] FinishCasting: {}: RH cast of {}. "
+						"Time since charge start: {}. Spell charge time: {}.", 
+						a_p->coopActor->GetName(),
+						rhSpell->GetName(),
+						Util::GetElapsedSeconds(a_p->lastRHCastChargeStartTP),
+						rhSpell->GetChargeTime()
+					);
+
+					auto castingType = rhSpell->GetCastingType();
+					if (castingType == RE::MagicSystem::CastingType::kFireAndForget)
+					{
+						if (Util::GetElapsedSeconds(a_p->lastRHCastChargeStartTP) > 
+							rhSpell->GetChargeTime())
+						{
+							rhCaster->StartCastImpl();
+						}
+						else
+						{
+							pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
+							pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
+							rhCaster->InterruptCast(true);
+						}
+					}
+				}
+			}
+		}
+
+		const float GetPABaseHealthCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		)
@@ -3825,7 +4038,7 @@ namespace ALYSLC
 			return cost;
 		}
 
-		const float GetPAMagickaCost
+		const float GetPABaseMagickaCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		)
@@ -3836,23 +4049,9 @@ namespace ALYSLC
 			switch (a_action)
 			{
 			case InputAction::kCastLH:
-			{
-				if (a_p->em->HasLHSpellEquipped())
-				{
-					auto lhSpell = a_p->em->GetLHSpell();
-					cost = lhSpell->CalculateMagickaCost(a_p->coopActor.get());
-				}
-
-				break;
-			}
 			case InputAction::kCastRH:
 			{
-				if (a_p->em->HasRHSpellEquipped())
-				{
-					auto rhSpell = a_p->em->GetRHSpell();
-					cost = rhSpell->CalculateMagickaCost(a_p->coopActor.get());
-				}
-
+				// Already handled automatically when casting.
 				break;
 			}
 			case InputAction::kQuickSlotCast:
@@ -3873,7 +4072,7 @@ namespace ALYSLC
 			return cost;
 		}
 
-		const float GetPAStaminaCost
+		const float GetPABaseStaminaCost
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action
 		)
@@ -4109,6 +4308,31 @@ namespace ALYSLC
 					return;
 				}
 						
+				// Player must have sufficient magicka.
+				float cost = 
+				(
+					a_spell->CalculateMagickaCost(a_p->coopActor.get()) *
+					Settings::vfMagickaCostMult[a_p->playerID]
+				);
+				if (cost > a_p->coopActor->GetActorValue(RE::ActorValue::kMagicka))
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+
+					RE::PlaySound("MAGFailSD");
+					// No need to attempt to equip.
+					return;
+				}
+
 				// If the spell has base effects, 
 				// set the bound weapon duration to the duration of first base effect.
 				// Otherwise, default to 120 seconds.
@@ -4361,7 +4585,7 @@ namespace ALYSLC
 				}
 
 				auto refr3DPtr = Util::GetRefr3D(a_interactionRefr);
-				if (refr3DPtr && refr3DPtr.get())
+				if (refr3DPtr)
 				{
 					RE::BSFurnitureMarkerNode* markerNode = 
 					(
@@ -4432,12 +4656,10 @@ namespace ALYSLC
 			a_p->pam->ReadyWeapon(false);
 			a_p->coopActor->extraList.SetLinkedRef(a_interactionRefr, a_p->aimTargetKeyword);
 			a_p->tm->aimTargetLinkedRefrHandle = a_p->tm->activationRefrHandle;
-			auto interactionPackage = 
+			a_p->pam->SetAndEveluatePackage
 			(
-				glob.coopPackages
-				[!PackageIndex::kTotal * a_p->controllerID + !PackageIndex::kSpecialInteraction]
+				a_p->pam->GetCoopPackage(PackageIndex::kSpecialInteraction), false
 			);
-			a_p->pam->SetAndEveluatePackage(interactionPackage, false);
 			// Turn to face when first activated.
 			a_p->coopActor->SetHeading
 			(
@@ -4451,40 +4673,68 @@ namespace ALYSLC
 			return true;
 		}
 
-		void LootAllItemsFromContainer
+		uint32_t LootAllItemsFromContainer
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_containerPtr
 		)
 		{
 			// Move all lootable items from the given container to the requesting player.
+			// Return the number of looted objects.
 
 			// Only loot if the container is available, not locked, 
 			// and has a base type of TESContainer.
 			if (!a_containerPtr || 
-				!a_containerPtr.get() || 
 				a_containerPtr->IsLocked() || 
 				!a_containerPtr->HasContainer()) 
 			{
-				return;
+				return 0;
 			}
 
+			uint32_t lootedObjects = 0;
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			auto container = a_containerPtr->GetContainer();
 			// Check base container first.
 			container->ForEachContainerObject
 			(
-				[&a_p, &a_containerPtr, p1](RE::ContainerObject& a_object) 
+				[&a_p, &a_containerPtr, &lootedObjects, p1](RE::ContainerObject& a_object) 
 				{
 					if (a_object.obj && Util::IsLootableObject(*a_object.obj)) 
 					{
-						a_containerPtr->RemoveItem
+						/*Util::ActivateRefr
 						(
-							a_object.obj, 
-							a_object.count,
-							RE::ITEM_REMOVE_REASON::kStoreInContainer,
-							nullptr,
-							a_p->coopActor.get()
-						);
+							nullptr, a_p->coopActor.get(), 0, a_object.obj, a_object.count, false
+						);*/
+						if (a_p->isPlayer1)
+						{
+							a_containerPtr->RemoveItem
+							(
+								a_object.obj,
+								a_object.count,
+								RE::ITEM_REMOVE_REASON::kStoreInContainer,
+								nullptr,
+								a_p->coopActor.get()
+							);
+						}
+						else
+						{
+							a_containerPtr->RemoveItem
+							(
+								a_object.obj,
+								a_object.count,
+								RE::ITEM_REMOVE_REASON::kRemove,
+								nullptr,
+								nullptr
+							);
+							a_p->coopActor->AddObjectToContainer
+							(
+								a_object.obj,
+								nullptr,
+								a_object.count,
+								a_p->coopActor.get()
+							);
+						}
+
+						lootedObjects += a_object.count;
 						// Show in TrueHUD recent loot widget 
 						// by adding and removing the object from P1.
 						if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1) 
@@ -4511,13 +4761,13 @@ namespace ALYSLC
 			// Check inventory next.
 			auto inventory = 
 			(
-				a_containerPtr && a_containerPtr.get() ? 
+				a_containerPtr ? 
 				a_containerPtr->GetInventory() : 
 				RE::TESObjectREFR::InventoryItemMap()
 			);
 			if (inventory.empty())
 			{
-				return;
+				return lootedObjects;
 			}
 
 			for (auto& [boundObj, countInvEntryDataPair] : inventory)
@@ -4529,15 +4779,46 @@ namespace ALYSLC
 					continue;
 				}
 
-				a_containerPtr->RemoveItem
+				/*Util::ActivateRefr
 				(
-					boundObj,
-					countInvEntryDataPair.first, 
-					RE::ITEM_REMOVE_REASON::kStoreInContainer,
 					nullptr,
-					a_p->coopActor.get()
-				);
+					a_p->coopActor.get(),
+					0, 
+					boundObj,
+					countInvEntryDataPair.first,
+					false
+				);*/
+				if (a_p->isPlayer1)
+				{
+					a_containerPtr->RemoveItem
+					(
+						boundObj,
+						countInvEntryDataPair.first,
+						RE::ITEM_REMOVE_REASON::kStoreInContainer,
+						nullptr,
+						a_p->coopActor.get()
+					);
+				}
+				else
+				{
+					a_containerPtr->RemoveItem
+					(
+						boundObj,
+						countInvEntryDataPair.first,
+						RE::ITEM_REMOVE_REASON::kRemove,
+						nullptr,
+						nullptr
+					);
+					a_p->coopActor->AddObjectToContainer
+					(
+						boundObj,
+						nullptr,
+						countInvEntryDataPair.first,
+						a_p->coopActor.get()
+					);
+				}
 
+				lootedObjects += countInvEntryDataPair.first;
 				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
 				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1)
 				{
@@ -4555,24 +4836,27 @@ namespace ALYSLC
 					);
 				}
 			}
+
+			return lootedObjects;
 		}
 
-		void LootAllItemsFromCorpse
+		uint32_t LootAllItemsFromCorpse
 		(
 			const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_corpseRefrPtr
 		)
 		{
 			// Move all lootable items from the corpse to the requesting player.
+			// Return the number of looted objects.
 
 			// Only loot if the corpse is available.
-			if (!a_corpseRefrPtr || 
-				!a_corpseRefrPtr.get() ||
+			if (!a_corpseRefrPtr ||
 				!a_corpseRefrPtr->As<RE::Actor>() || 
 				!a_corpseRefrPtr->As<RE::Actor>()->IsDead())
 			{
-				return;
+				return 0;
 			}
-
+			
+			uint32_t lootedObjects = 0;
 			auto asActor = a_corpseRefrPtr->As<RE::Actor>();
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			// Check inventory first.
@@ -4588,14 +4872,46 @@ namespace ALYSLC
 						continue;
 					}
 						
-					asActor->RemoveItem
+					/*Util::ActivateRefr
 					(
+						nullptr,
+						a_p->coopActor.get(),
+						0, 
 						boundObj,
 						countInvEntryDataPair.first,
-						RE::ITEM_REMOVE_REASON::kStoreInContainer,
-						nullptr,
-						a_p->coopActor.get()
-					);
+						false
+					);*/
+					if (a_p->isPlayer1)
+					{
+						asActor->RemoveItem
+						(
+							boundObj,
+							countInvEntryDataPair.first,
+							RE::ITEM_REMOVE_REASON::kStoreInContainer,
+							nullptr,
+							a_p->coopActor.get()
+						);
+					}
+					else
+					{
+						asActor->RemoveItem
+						(
+							boundObj,
+							countInvEntryDataPair.first,
+							RE::ITEM_REMOVE_REASON::kRemove,
+							nullptr,
+							nullptr
+						);
+						a_p->coopActor->AddObjectToContainer
+						(
+							boundObj,
+							nullptr,
+							countInvEntryDataPair.first,
+							a_p->coopActor.get()
+						);
+					}
+
+					lootedObjects += countInvEntryDataPair.first;
 					// Show in TrueHUD recent loot widget 
 					// by adding and removing the object from P1.
 					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1)
@@ -4632,26 +4948,29 @@ namespace ALYSLC
 					for (const auto& refrHandle : countHandlePair.second)
 					{
 						auto refrPtr = Util::GetRefrPtrFromHandle(refrHandle); 
-						if (!refrPtr || !refrPtr.get())
+						if (!refrPtr)
 						{
 							continue;
 						}
 							
-						// Loot loose refr.
-						LootRefr(a_p, refrPtr);
+						// Loot loose refr(s).
+						lootedObjects += LootRefr(a_p, refrPtr);
 					}
 				}
 			}
+
+			return lootedObjects;
 		}
 
-		void LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr)
+		uint32_t LootRefr(const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFRPtr a_refrPtr)
 		{
 			// Loot a single refr or aggregation of the same refr.
+			// Return the number of looted objects.
 
 			// Must be valid.
-			if (!a_refrPtr || !a_refrPtr.get())
+			if (!a_refrPtr)
 			{
-				return;
+				return 0;
 			}
 
 			// Get count.
@@ -4754,6 +5073,8 @@ namespace ALYSLC
 					}
 				}
 			}
+
+			return count;
 		}
 
 		bool MovingBackward(const std::shared_ptr<CoopPlayer>& a_p, float a_facingToMovingAngDiff)
@@ -4921,7 +5242,7 @@ namespace ALYSLC
 			}
 
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!pam->downedPlayerTarget || !pam->downedPlayerTarget.get()) 
+			if (!pam->downedPlayerTarget) 
 			{
 				const float& secsSinceActivationStarted = 
 				(
@@ -4933,7 +5254,7 @@ namespace ALYSLC
 				// Enemies are too angry to interact with players, from my experience.
 				bool crosshairRefrValidity = 	
 				(
-					(crosshairRefrPtr && crosshairRefrPtr.get()) && 
+					(crosshairRefrPtr) && 
 					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
 				);
 				auto asActor = crosshairRefrValidity ? crosshairRefrPtr->As<RE::Actor>() : nullptr;
@@ -4949,19 +5270,19 @@ namespace ALYSLC
 							!asActor->IsHostileToActor(a_p->coopActor.get())
 						) ||
 						(Util::IsGuard(asActor)) || 
-						(Util::HasNoBountyButInCrimeFaction(asActor))
+						(Util::HasNoBountyButInCrimeFaction(asActor)) ||
+						(a_p->coopActor->IsSneaking())
 					);
 				}
 
 				// Choose a valid crosshair refr for activation 
 				// if the action press time is within the initial window before cycling.
 				// Otherwise, look for a nearby refr to activate.
-				const bool useProximityInteraction = 
+				a_p->tm->useProximityInteraction =
 				(
 					secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling ||
 					!crosshairRefrValidity
 				);
-				a_p->tm->useProximityInteraction = useProximityInteraction;
 
 				if (justStarted)
 				{
@@ -4972,7 +5293,6 @@ namespace ALYSLC
 						a_p->tm->activationRefrHandle
 					); 
 					if (activationRefrPtr &&
-						activationRefrPtr.get() &&
 						Util::IsValidRefrForTargeting(activationRefrPtr.get()))
 					{
 						Util::StopEffectShader
@@ -4981,41 +5301,25 @@ namespace ALYSLC
 						);
 					}
 
-					// Get next object to activate after setting proximity interaction flag.
-					auto targetedRefrPtr = Util::GetRefrPtrFromHandle
+					// Get new refr to activate.
+					auto refrToActivatePtr = 
 					(
-						a_p->tm->GetNextObjectToActivate()
+						Util::GetRefrPtrFromHandle(a_p->tm->UpdateNextObjectToActivate())
 					);
-					if (targetedRefrPtr && 
-						targetedRefrPtr.get() && 
-						Util::IsValidRefrForTargeting(targetedRefrPtr.get()))
+					if (refrToActivatePtr && 
+						Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
 					{
-						// Highlight targeted refr.
+						// Play highlight shader on crosshair refr.
 						Util::StartEffectShader
 						(
-							targetedRefrPtr.get(),
-							glob.activateHighlightShader, 
-							max
-							(
-								0.1f,
-								useProximityInteraction ? 
-								Settings::fSecsBetweenActivationChecks : 
-								Settings::fSecsBeforeActivationCycling
-							)
+							refrToActivatePtr.get(),
+							glob.activateHighlightShader,
+							max(0.1f, Settings::fSecsBeforeActivationCycling)
 						);
 					}
-				}
-				else if (secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling)
-				{
-					// Cycling begins now, so remove activation effect shader on crosshair refr,
-					// if any.
-					if (crosshairRefrValidity)
-					{
-						Util::StopEffectShader
-						(
-							crosshairRefrPtr.get(), glob.activateHighlightShader
-						);
-					}
+
+					// Not activation cycling yet.
+					a_p->pam->startedActivationCycling = false;
 				}
 				
 				// Cycle through nearby objects at regular intervals 
@@ -5025,20 +5329,51 @@ namespace ALYSLC
 				// We are just caching the cycled refr and highlighting it.
 				if (a_p->tm->useProximityInteraction)
 				{
-					pam->secsSinceLastActivationCyclingCheck = Util::GetElapsedSeconds
+					// Seconds since cycling the next activation refr from nearby references.
+					float secsSinceLastActivationCyclingCheck = Util::GetElapsedSeconds
 					(
 						a_p->lastActivationCheckTP
 					);
-					if (pam->secsSinceLastActivationCyclingCheck > 
-						max(0.1f, Settings::fSecsBetweenActivationChecks))
+					bool shouldStartCycling =
+					(
+						!a_p->pam->startedActivationCycling && 
+						secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling
+					);
+					bool shouldCycleNewRefr = 
+					(
+						a_p->pam->startedActivationCycling &&
+						secsSinceLastActivationCyclingCheck >=
+						Settings::fSecsBetweenActivationChecks
+					);
+					if (shouldStartCycling || shouldCycleNewRefr)
 					{
 						a_p->lastActivationCheckTP = SteadyClock::now();
-						auto refrToActivatePtr = 
+						// Remove activation effect shader on previous activation refr, if any.
+						auto refrToActivatePtr = Util::GetRefrPtrFromHandle
 						(
-							Util::GetRefrPtrFromHandle(a_p->tm->GetNextObjectToActivate())
+							a_p->tm->activationRefrHandle
+						); 
+						if (refrToActivatePtr &&
+							Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
+						{
+							Util::StopEffectShader
+							(
+								refrToActivatePtr.get(), glob.activateHighlightShader
+							);
+						}
+
+						// Flag as started activation cycling.
+						if (shouldStartCycling)
+						{
+							a_p->pam->startedActivationCycling = true;
+						}
+
+						// Get new refr to activate.
+						refrToActivatePtr = 
+						(
+							Util::GetRefrPtrFromHandle(a_p->tm->UpdateNextObjectToActivate())
 						);
 						if (refrToActivatePtr && 
-							refrToActivatePtr.get() && 
 							Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
 						{
 							// Play highlight shader on cycled activation refr.
@@ -5064,9 +5399,7 @@ namespace ALYSLC
 				auto targetRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
 				auto targetRefrValidity = 
 				(
-					targetRefrPtr &&
-					targetRefrPtr.get() &&
-					Util::IsValidRefrForTargeting(targetRefrPtr.get())
+					targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 				);
 				// No valid target or too far away to activate.
 				// NOTE: 
@@ -5470,7 +5803,7 @@ namespace ALYSLC
 					// Play the corresponding MCO idle instead.
 					if (ALYSLC::MCOCompat::g_mcoInstalled) 
 					{
-						if (a_p->em->IsUnarmed()) 
+						if (a_p->em->RHEmpty()) 
 						{
 							Util::PlayIdle("ADXP_NPCPowerAttack_H2H", a_p->coopActor.get());
 						}
@@ -5521,84 +5854,6 @@ namespace ALYSLC
 			}
 			
 			a_p->coopActor->data.angle.x = 4.0f * PI / 9.0f;
-		}
-
-		void RemoveCastingPackage
-		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
-		)
-		{
-			// Stop companion player spell cast in the given hand(s).
-
-			const auto& pam = a_p->pam;
-			// Reset casting global variables and caster durations.
-			if (a_lhCast && a_rhCast) 
-			{
-				pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
-				pam->lhCastDuration = 0.0f;
-				pam->rhCastDuration = 0.0f;
-			}
-			else if (a_lhCast) 
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 0.0f;
-				pam->lhCastDuration = 0.0f;
-			}
-			else if (a_rhCast)
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
-				pam->rhCastDuration = 0.0f;
-			}
-			else
-			{
-				pam->castingGlobVars[!CastingGlobIndex::kShout]->value = 0.0f;
-				pam->castingGlobVars[!CastingGlobIndex::kVoice]->value = 0.0f;
-			}
-
-			if (pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f && 
-				pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
-				pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f) 
-			{
-				// Reset to default package as well if both hands are no longer casting.
-				pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 0.0f;
-				pam->ResetPackageCastingState();
-			}
-			else
-			{
-				// Re-evaluate the current default package to allow the above changes 
-				// to casting globals to take effect.
-				pam->SetAndEveluatePackage();
-			}
-
-			// Try to re-obtain magic casters if either is invalid.
-			if (!pam->lhCaster || !pam->rhCaster)
-			{
-				pam->lhCaster = a_p->coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kLeftHand
-				);
-				pam->rhCaster = a_p->coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kRightHand
-				);
-			}
-
-			// Clear out casters' current spells once done casting to ensure the cast stops
-			// if package evaluation failed.
-			if (pam->lhCaster && pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f)
-			{
-				pam->lhCaster->currentSpell = nullptr;
-			}
-
-			if (pam->rhCaster && pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f)
-			{
-				pam->rhCaster->currentSpell = nullptr;
-			}
-
-			// Clear out linked refr target used by the casting package.
-			a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 		}
 
 		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p)
@@ -5780,7 +6035,10 @@ namespace ALYSLC
 
 		void SetUpCastingPackage
 		(
-			const std::shared_ptr<CoopPlayer>& a_p, bool&& a_lhCast, bool&& a_rhCast
+			const std::shared_ptr<CoopPlayer>& a_p,
+			bool&& a_lhCast,
+			bool&& a_rhCast,
+			bool a_actionJustSterted
 		)
 		{
 			// Prepare companion player ranged package for casting with the given hand(s).
@@ -5789,19 +6047,106 @@ namespace ALYSLC
 			const auto& pam = a_p->pam;
 			if (a_p->coopActor->IsWeaponDrawn())
 			{
-				pam->SetCurrentPackage
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * a_p->controllerID + !PackageIndex::kRangedAttack]
-				);
+				auto lhSpell = em->GetLHSpell();
+				auto rhSpell = em->GetRHSpell();
+				auto& lhCasting = pam->castingGlobVars[!CastingGlobIndex::kLH];
+				auto& rhCasting = pam->castingGlobVars[!CastingGlobIndex::kRH];
+				auto& casting2H = pam->castingGlobVars[!CastingGlobIndex::k2H];
+				auto& dualCasting = pam->castingGlobVars[!CastingGlobIndex::kDual];
+				auto& shouting = pam->castingGlobVars[!CastingGlobIndex::kShout];
+				auto& voiceCasting = pam->castingGlobVars[!CastingGlobIndex::kVoice];
 				bool is2HSpellCast = 
 				(
 					a_lhCast && 
 					a_rhCast && 
-					em->GetLHSpell() && 
-					em->GetRHSpell() && 
-					em->GetRHSpell()->equipSlot == glob.bothHandsEquipSlot
+					lhSpell && 
+					rhSpell && 
+					rhSpell->equipSlot == glob.bothHandsEquipSlot
 				);
+				// Potentially notify the player that they have insufficient magicka 
+				// to cast the spell when the bind is first pressed.
+				// Skip the cast if there is not enough magicka.
+				if (a_actionJustSterted)
+				{
+					float cost = 0.0f;
+					if (is2HSpellCast)
+					{
+						cost = 
+						(
+							rhSpell ? rhSpell->CalculateMagickaCost(a_p->coopActor.get()) : 0.0f
+						);
+						if (rhSpell &&
+							rhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							cost *= *g_deltaTimeRealTime;
+						}
+					}
+					else
+					{
+						if (a_lhCast)
+						{
+							lhCasting->value = 0.0f;
+							float lhCost = 
+							(
+								lhSpell ?
+								lhSpell->CalculateMagickaCost(a_p->coopActor.get()) :
+								0.0f
+							);
+							if (lhSpell &&
+								lhSpell->GetCastingType() == 
+								RE::MagicSystem::CastingType::kConcentration)
+							{
+								lhCost *= *g_deltaTimeRealTime;
+							}
+
+							cost += lhCost;
+						}
+
+						if (a_rhCast)
+						{
+							rhCasting->value = 0.0f;
+							float rhCost = 
+							(
+								rhSpell ? 
+								rhSpell->CalculateMagickaCost(a_p->coopActor.get()) : 
+								0.0f
+							);
+							if (rhSpell &&
+								rhSpell->GetCastingType() == 
+								RE::MagicSystem::CastingType::kConcentration)
+							{
+								rhCost *= *g_deltaTimeRealTime;
+							}
+
+							cost += rhCost;
+						}
+					}
+					
+					casting2H->value = 0.0f;
+					cost *= Settings::vfMagickaCostMult[a_p->playerID];
+					if (cost > a_p->pam->currentMagicka)
+					{
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kStealthState,
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+
+						RE::PlaySound("MAGFailSD");
+						// No need to attempt to cast.
+						return;
+					}
+				}
+
+				auto rangedAttackPackage = pam->GetCoopPackage(PackageIndex::kRangedAttack);
+				pam->SetCurrentPackage(rangedAttackPackage);
 				bool isVoiceSpellCast = 
 				(
 					!a_lhCast && !a_rhCast && em->voiceForm && em->voiceForm->As<RE::SpellItem>()
@@ -5810,39 +6155,80 @@ namespace ALYSLC
 				(
 					!a_lhCast && !a_rhCast && em->voiceForm && em->voiceForm->As<RE::TESShout>()
 				);
+				auto lhCaster = a_p->coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kLeftHand
+				);
+				auto rhCaster = a_p->coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kRightHand
+				);
+				
+				// Typically, if a caster is stuck at state 1 for multiple frames,
+				// the casting package is either not being executed or has stalled,
+				// preventing the cast from occurring.
+				// Request to cast again if this happens.
+				// Unfortunately, from what I can tell, this unresponsiveness 
+				// is tied to how often the package evaluates and is unavoidable.
+				bool restartPackage = 
+				(
+					(a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01) || 
+					(a_rhCast && *rhCaster->state == RE::MagicCaster::State::kUnk01)
+				);
+				if (restartPackage)
+				{
+					SPDLOG_DEBUG
+					(
+						"[PAFH] SetUpCastingPackage: {}: Restart package.",
+						a_p->coopActor->GetName()
+					);
+					if (a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01)
+					{
+						lhCaster->RequestCastImpl();
+					}
+					if (a_rhCast && *rhCaster->state == RE::MagicCaster::State::kUnk01)
+					{
+						rhCaster->RequestCastImpl();
+					}
+				}
+				
+				// Extra flags for debug purposes.
+				// 
 				// Set casting global variables to match the requested hand/voice slots.
 				bool globVarNotSetYet = 
 				{ 
+					(is2HSpellCast && casting2H->value != 1.0f) ||
+					(isShoutCast && shouting->value != 1.0f) ||
+					(isVoiceSpellCast && voiceCasting->value != 1.0f) ||
 					(
-						is2HSpellCast && 
-						pam->castingGlobVars[!CastingGlobIndex::k2H]->value != 1.0f
-					) ||
-					(
-						isShoutCast && 
-						pam->castingGlobVars[!CastingGlobIndex::kShout]->value != 1.0f
-					) ||
-					(
-						isVoiceSpellCast && 
-						pam->castingGlobVars[!CastingGlobIndex::kVoice]->value != 1.0f
-					) ||
-					(
-						(!is2HSpellCast) &&
+						(!is2HSpellCast) && 
 						(
-							a_lhCast &&
-							pam->castingGlobVars[!CastingGlobIndex::kLH]->value != 1.0f
-						) ||
-						(
-							a_rhCast && 
-							pam->castingGlobVars[!CastingGlobIndex::kRH]->value != 1.0f
+							(a_lhCast && lhCasting->value != 1.0f) || 
+							(a_rhCast && rhCasting->value != 1.0f)
 						)
 					) 
 				};
-
-				// Cast requested but the player actor is not casting yet.
+				// At least one hand caster is inactive or interrupted.
 				bool notHandCastingYet = 
 				(
-					(a_lhCast && !pam->isCastingLH) || 
-					(a_rhCast && !pam->isCastingRH)
+					(
+						(a_lhCast) && 
+						(
+							(lhCaster->state == RE::MagicCaster::State::kNone) ||
+							(lhCaster->state == RE::MagicCaster::State::kUnk07) ||
+							(lhCaster->state == RE::MagicCaster::State::kUnk08) ||
+							(lhCaster->state == RE::MagicCaster::State::kUnk09)
+						)
+					) || 
+					(
+						(a_rhCast) && 
+						(
+							(rhCaster->state == RE::MagicCaster::State::kNone) ||
+							(rhCaster->state == RE::MagicCaster::State::kUnk07) ||
+							(rhCaster->state == RE::MagicCaster::State::kUnk08) ||
+							(rhCaster->state == RE::MagicCaster::State::kUnk09)
+						)
+					)
 				);
 				// Set target linked reference before setting and evaluating package.
 				bool aimTargetRefrChanged = a_p->tm->UpdateAimTargetLinkedRefr
@@ -5850,49 +6236,148 @@ namespace ALYSLC
 					a_lhCast ? EquipIndex::kLeftHand : EquipIndex::kRightHand
 				);
 
+				float dualValue = dualCasting->value;
+				float dualPrevValue = dualCasting->value;
+				float casting2HValue = casting2H->value;
+				float casting2HPrevValue = casting2H->value;
+				float lhValue = lhCasting->value;
+				float lhPrevValue = lhCasting->value;
+				float rhValue = rhCasting->value;
+				float rhPrevValue = rhCasting->value;
+				float shoutingValue = shouting->value;
+				float shoutingPrevValue = shouting->value;
+				float voiceValue = voiceCasting->value;
+				float voicePrevValue = voiceCasting->value;
+				if (is2HSpellCast) 
+				{
+					lhValue = 
+					rhValue = 0.0f;
+					casting2HValue = 1.0f;
+				}
+				else if (isShoutCast)
+				{
+					shoutingValue = 1.0f;
+					voiceValue = 0.0f;
+				}
+				else if (isVoiceSpellCast)
+				{
+					shoutingValue = 0.0f;
+					voiceValue = 1.0f;
+				}
+				else
+				{
+					if (a_lhCast)
+					{
+						lhValue = 1.0f;
+					}
+
+					if (a_rhCast)
+					{
+						rhValue = 1.0f;
+					}
+
+					voiceValue = 0.0f;
+						
+					// TODO: Add dual casting support
+					/*if (a_lhCast && a_rhCast)
+					{
+						dualValue = 1.0f;
+					}*/
+				}
+
+				// Avoid evaluating the package when the caster has just started the cast,
+				// or is charging the cast. 
+				// Re-evaluating here can restart the cast or stall the caster.
+				bool casterNotPreppedYet = 
+				(
+					(
+						(a_lhCast) && 
+						(
+							(lhCaster->state == RE::MagicCaster::State::kUnk01) ||
+							(lhCaster->state == RE::MagicCaster::State::kUnk02)
+						)
+					) || 
+					(
+						(a_rhCast) && 
+						(
+							(rhCaster->state == RE::MagicCaster::State::kUnk01) ||
+							(rhCaster->state == RE::MagicCaster::State::kUnk02)
+						)
+					)
+				);
+				// Evaluate when a casting global variable has changed.
+				bool valueChanged = 
+				(
+					lhValue != lhPrevValue ||
+					rhValue != rhPrevValue ||
+					casting2HValue != casting2HPrevValue ||
+					shoutingValue != shoutingPrevValue ||
+					voiceValue != voicePrevValue ||
+					dualValue != dualPrevValue
+				);
 				// Set casting global variables that are used in the ranged attack package.
 				// Also evaluate package if the aim target linked reference changed mid-execution.
-				if (globVarNotSetYet || notHandCastingYet || aimTargetRefrChanged)
+				if (!casterNotPreppedYet || valueChanged)
 				{
+					SPDLOG_DEBUG
+					(
+						"[PAFH] SetUpCastingPackage: {}: "
+						"glob var not set yet: {}, "
+						"not hand casting yet: {}, "
+						"aim target refr changed: {}, "
+						"action just started: {}, "
+						"caster prepped: {}, value changed: {}. "
+						"LH/RH caster states: {}, {}.",
+						a_p->coopActor->GetName(),
+						globVarNotSetYet,
+						notHandCastingYet,
+						aimTargetRefrChanged,
+						a_actionJustSterted,
+						!casterNotPreppedYet,
+						valueChanged,
+						lhCaster ? *lhCaster->state : RE::MagicCaster::State::kNone,
+						rhCaster ? *rhCaster->state : RE::MagicCaster::State::kNone
+					);
+
 					if (is2HSpellCast) 
 					{
-						pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 
-						pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 0.0f;
-						pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 1.0f;
+						lhCasting->value = 
+						rhCasting->value = 0.0f;
+						casting2H->value = 1.0f;
 					}
 					else if (isShoutCast)
 					{
-						pam->castingGlobVars[!CastingGlobIndex::kShout]->value = 1.0f;
-						pam->castingGlobVars[!CastingGlobIndex::kVoice]->value = 0.0f;
+						shouting->value = 1.0f;
+						voiceCasting->value = 0.0f;
 					}
 					else if (isVoiceSpellCast)
 					{
-						pam->castingGlobVars[!CastingGlobIndex::kShout]->value = 0.0f;
-						pam->castingGlobVars[!CastingGlobIndex::kVoice]->value = 1.0f;
+						shouting->value = 0.0f;
+						voiceCasting->value = 1.0f;
 					}
 					else
 					{
-						pam->castingGlobVars[!CastingGlobIndex::kLH]->value = 
-						(
-							a_lhCast ? 1.0f : pam->castingGlobVars[!CastingGlobIndex::kLH]->value
-						);
-						pam->castingGlobVars[!CastingGlobIndex::kRH]->value = 
-						(
-							a_rhCast ? 1.0f : pam->castingGlobVars[!CastingGlobIndex::kRH]->value
-						);
-						pam->castingGlobVars[!CastingGlobIndex::k2H]->value = 0.0f;
+						if (a_lhCast)
+						{
+							lhCasting->value = 1.0f;
+						}
+
+						if (a_rhCast)
+						{
+							rhCasting->value = 1.0f;
+						}
+
+						casting2H->value = 0.0f;
 						
 						// TODO: Add dual casting support
-						/*pam->castingGlobVars[!CastingGlobIndex::kDual]->value = 
-						(
-							a_lhCast && a_rhCast ? 
-							1.0f : 
-							pam->castingGlobVars[!CastingGlobIndex::kDual]->value
-						);*/
+						/*if (a_lhCast && a_rhCast)
+						{
+							dualCasting->value = 1.0f;
+						}*/
 					}
 					
 					// Evaluate ranged attack package with updated globals.
-					pam->EvaluatePackage();
+					pam->SetAndEveluatePackage(rangedAttackPackage);
 				}
 			}
 			else
@@ -5936,7 +6421,7 @@ namespace ALYSLC
 			(
 				rangedTargetActorHandle
 			);
-			if (rangedTargetActorPtr && rangedTargetActorPtr.get())
+			if (rangedTargetActorPtr)
 			{
 				caster->desiredTarget = rangedTargetActorHandle;
 			}
@@ -6166,9 +6651,7 @@ namespace ALYSLC
 					a_p->tm->activationRefrHandle
 				);
 				// Set activation message if activation refr is valid.
-				if (activationRefrPtr && 
-					activationRefrPtr.get() && 
-					Util::IsValidRefrForTargeting(activationRefrPtr.get()))
+				if (activationRefrPtr && Util::IsValidRefrForTargeting(activationRefrPtr.get()))
 				{
 					// Get base object; return early if invalid.
 					auto baseObj = activationRefrPtr->GetObjectReference(); 
@@ -6262,8 +6745,7 @@ namespace ALYSLC
 					// Player has LOS on the refr.
 					bool passesLOSCheck =
 					(
-						activationRefrPtr && 
-						activationRefrPtr.get() &&
+						activationRefrPtr &&
 						Util::HasLOS
 						(
 							activationRefrPtr.get(), 
@@ -6276,15 +6758,16 @@ namespace ALYSLC
 					
 					// Crosshair message to display.
 					RE::BSFixedString activationMessage = ""sv;
-					RE::BSString activationString = "";
+					RE::BSFixedString activationString = ""sv;
+					bool hasActivationText = false;
 					if (!isSneaking && offLimits)
 					{
 						// Must sneak to interact with off-limits refrs.
-						bool succ = baseObj->GetActivateText
+						activationString = Util::GetActivationText
 						(
-							activationRefrPtr.get(), activationString
+							baseObj, activationRefrPtr.get(), hasActivationText
 						);
-						if (succ)
+						if (hasActivationText)
 						{
 							activationMessage = fmt::format
 							(
@@ -6394,7 +6877,8 @@ namespace ALYSLC
 									) &&
 									(
 										Util::HasNoBountyButInCrimeFaction(asActor) || 
-										Util::IsFleeing(asActor)
+										Util::IsFleeing(asActor) ||
+										asActor->IsAMount()
 									)
 								);
 								if (showSurrenderMessage)
@@ -6420,11 +6904,11 @@ namespace ALYSLC
 									// Player can activate this refr.
 									// Set activation text to the refr's name 
 									// if no text is available.
-									bool succ = baseObj->GetActivateText
+									activationString = Util::GetActivationText
 									(
-										activationRefrPtr.get(), activationString
+										baseObj, activationRefrPtr.get(), hasActivationText
 									);
-									if (succ)
+									if (hasActivationText)
 									{
 										activationMessage = fmt::format
 										(
@@ -6438,6 +6922,72 @@ namespace ALYSLC
 											"P{}: Interact with {}",
 											a_p->playerID + 1,
 											activationRefrPtr->GetName()
+										);
+									}
+
+									int32_t value = -1;
+									float weight = 0.0f;
+									auto asActor = activationRefrPtr->As<RE::Actor>();
+									if ((asActor && asActor->IsDead()) || 
+										(!asActor && activationRefrPtr->GetContainer()))
+									{
+										// Get total weight and value in the container.
+										Util::GetWeightAndValueInRefr
+										(
+											activationRefrPtr.get(), weight, value
+										);
+									}
+									else if (baseObj)
+									{
+										// Get weight and value for this individual refr.
+										value = baseObj->GetGoldValue();
+										weight = activationRefrPtr->GetWeight();
+									}
+
+									if (value >= 0)
+									{
+										float inventoryWeight = 
+										(
+											a_p->coopActor->GetWeightInContainer()
+										);
+										const auto invChanges = 
+										(
+											a_p->coopActor->GetInventoryChanges()
+										);
+										if (invChanges)
+										{
+											inventoryWeight = invChanges->totalWeight;
+										}
+
+										const float carryweight = 
+										(
+											a_p->coopActor->GetTotalCarryWeight()
+										);
+										float remainingCarryweight = carryweight - inventoryWeight;
+										std::string weightValue = fmt::format
+										(
+											", <font color=\"#{:X}\">Value: </font>"
+											"<font face=\"$EverywhereBoldFont\">{}</font>, "
+											"<font color=\"#{:X}\">Weight: </font>"
+											"<font face=\"$EverywhereBoldFont\">{}</font>, "
+											"<font color=\"#{:X}\">Space: </font>"
+											"<font face=\"$EverywhereBoldFont\">"
+											"<font color=\"#{:X}\">{:.0f}</font>"
+											"</font>",
+											0xBBA53D,
+											value,
+											0x999999,
+											weight,
+											0x804a00,
+											remainingCarryweight - weight <= 0.0f ? 
+											0xFF0000 : 
+											0xFFFFFF,
+											remainingCarryweight,
+											carryweight
+										);
+										activationMessage = fmt::format
+										(
+											"{}", std::string(activationMessage) + weightValue
 										);
 									}
 								}
@@ -6613,14 +7163,27 @@ namespace ALYSLC
 				}
 				else
 				{
+					bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kCastLH);
 					bool is2HSpell = lhSpell && lhSpell->equipSlot == glob.bothHandsEquipSlot;
 					if (is2HSpell)
 					{
-						HelperFuncs::SetUpCastingPackage(a_p, true, true);
+						HelperFuncs::SetUpCastingPackage
+						(
+							a_p, 
+							true, 
+							true, 
+							justStarted
+						);
 					}
 					else
 					{
-						HelperFuncs::SetUpCastingPackage(a_p, true, false);
+						HelperFuncs::SetUpCastingPackage
+						(
+							a_p, 
+							true,
+							false,
+							justStarted
+						);
 					}
 
 					// Cast with P1 if necessary.
@@ -6629,7 +7192,7 @@ namespace ALYSLC
 						a_p->pam->CastSpellWithMagicCaster
 						(
 							EquipIndex::kLeftHand,
-							HelperFuncs::ActionJustStarted(a_p, InputAction::kCastLH),
+							justStarted,
 							true,
 							true,
 							shouldCastWithP1
@@ -6642,7 +7205,7 @@ namespace ALYSLC
 		void CastRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Cast with spell in the RH.
-			
+	
 			if (a_p->isPlayer1)
 			{
 				// Draw weapon if not out already.
@@ -6652,7 +7215,6 @@ namespace ALYSLC
 				{
 					a_p->pam->ReadyWeapon(true);
 				}
-				
 				
 				// Set target actor/refr directly before sending each cast button event.
 				// Allows for more consistent targeting with 'Aimed' spells
@@ -6685,14 +7247,27 @@ namespace ALYSLC
 				}
 				else
 				{
+					bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kCastRH);
 					bool is2HSpell = rhSpell && rhSpell->equipSlot == glob.bothHandsEquipSlot;
 					if (is2HSpell)
 					{
-						HelperFuncs::SetUpCastingPackage(a_p, true, true);
+						HelperFuncs::SetUpCastingPackage
+						(
+							a_p, 
+							true,
+							true,
+							justStarted
+						);
 					}
 					else
 					{
-						HelperFuncs::SetUpCastingPackage(a_p, false, true);
+						HelperFuncs::SetUpCastingPackage
+						(
+							a_p, 
+							false,
+							true,
+							justStarted
+						);
 					}
 
 					// Cast with P1 if necessary.
@@ -6701,7 +7276,7 @@ namespace ALYSLC
 						a_p->pam->CastSpellWithMagicCaster
 						(
 							EquipIndex::kRightHand,
-							HelperFuncs::ActionJustStarted(a_p, InputAction::kCastRH),
+							justStarted,
 							true,
 							true, 
 							shouldCastWithP1
@@ -7339,7 +7914,7 @@ namespace ALYSLC
 							gameVelocity = asProjectile->linearVelocity;
 						}
 						else if (auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_projectile);
-								 hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+								 hkpRigidBodyPtr)
 						{
 							gameVelocity = ToNiPoint3
 							(
@@ -7441,7 +8016,7 @@ namespace ALYSLC
 					{
 						auto projectilePtr = Util::GetRefrPtrFromHandle(handle);
 						// Invalid projectile.
-						if (!projectilePtr || !projectilePtr.get())
+						if (!projectilePtr)
 						{
 							continue;
 						}
@@ -7657,14 +8232,14 @@ namespace ALYSLC
 
 						auto refr3DPtr = Util::GetRefr3D(a_refr);
 						// Continue if refr's 3D is unavailable.
-						if (!refr3DPtr || !refr3DPtr.get())
+						if (!refr3DPtr)
 						{
 							return RE::BSContainer::ForEachResult::kContinue;
 						}
 
 						auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get());
 						// Continue if refr's havok rigid body is unavailable.
-						if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+						if (!hkpRigidBodyPtr)
 						{
 							return RE::BSContainer::ForEachResult::kContinue;
 						}
@@ -7754,7 +8329,6 @@ namespace ALYSLC
 							{
 								magickaCost = 
 								(
-									(Settings::vfMagickaCostMult[a_p->playerID]) *
 									(asProjectile->power) *
 									(
 										asProjectile->weaponDamage + 
@@ -8191,7 +8765,7 @@ namespace ALYSLC
 					if (!assocWeapLH && !assocWeapRH) 
 					{
 						// No bound weapons to equip, so cast with both hands.
-						HelperFuncs::SetUpCastingPackage(a_p, true, true);
+						HelperFuncs::SetUpCastingPackage(a_p, true, true, justStarted);
 						shouldCastWithP1 = Util::ShouldCastWithP1(lhSpell); 
 						if (shouldCastWithP1)
 						{
@@ -8219,7 +8793,7 @@ namespace ALYSLC
 					{
 						// Bound weap in LH, regular spell cast in RH.
 						HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kSpecialAction);
-						HelperFuncs::SetUpCastingPackage(a_p, false, true);
+						HelperFuncs::SetUpCastingPackage(a_p, false, true, justStarted);
 
 						shouldCastWithP1 = Util::ShouldCastWithP1(rhSpell);
 						if (shouldCastWithP1)
@@ -8234,7 +8808,7 @@ namespace ALYSLC
 					{
 						// Bound weap in RH, regular spell cast in LH.
 						HelperFuncs::HandleBoundWeaponEquip(a_p, InputAction::kSpecialAction);
-						HelperFuncs::SetUpCastingPackage(a_p, true, false);
+						HelperFuncs::SetUpCastingPackage(a_p, true, false, justStarted);
 
 						shouldCastWithP1 = Util::ShouldCastWithP1(lhSpell);
 						if (shouldCastWithP1)
@@ -8340,20 +8914,58 @@ namespace ALYSLC
 	{
 		void ActivateAllOfType(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Get all nearby objects of the same type and activate each.
-			auto activationRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
+			// Get all nearby objects of the same type and activate/loot each.
+			
+			// Temp menus are open, so ignore the request to loot all.
+			// Can cause a crash with Skyrim Souls if one player loots from a container 
+			// while another player is viewing the container via the Container Menu.
+			if (!Util::MenusOnlyAlwaysOpen())
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format("P{}: Another player is controlling menus", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
+			// If the player has a crosshair refr, get all refrs of the same type.
+			// Otherwise, choose what refrs to loot based on the closest refr 
+			// in the player's facing direction.
+			auto activationRefrPtr = Util::GetRefrPtrFromHandle
+			(
+				a_p->tm->activationRefrHandle
+			);
 			bool activationRefrValidity = 
 			(
-				activationRefrPtr &&
-				activationRefrPtr.get() && 
-				Util::IsValidRefrForTargeting(activationRefrPtr.get())
+				activationRefrPtr && Util::IsValidRefrForTargeting(activationRefrPtr.get())
 			);
 			if (!activationRefrValidity)
 			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kActivationInfo,
+					fmt::format
+					(
+						"P{}: No object chosen to interact with", 
+						a_p->playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
 				return;
 			}
 			
-			auto asActor = activationRefrPtr->As<RE::Actor>();
 			auto baseObj = activationRefrPtr->GetBaseObject(); 
 			if (!a_p->tm->RefrIsInActivationRange(a_p->tm->activationRefrHandle))
 			{
@@ -8376,50 +8988,24 @@ namespace ALYSLC
 				return;
 			}
 
-			// Next, the targeted refr must not be off limits, 
-			// or the player must be sneaking to signal intent to steal.
-			// Finally, the refr must be a lootable loose refr,
-			// a corpse, or an unlocked container.
-			if (activationRefrPtr->IsCrimeToActivate() && !a_p->coopActor->IsSneaking())
+			bool hasCrosshairRefr = a_p->tm->activationRefrHandle == a_p->tm->crosshairRefrHandle;
+			uint32_t lootedObjects = 0;
+			if (hasCrosshairRefr)
 			{
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kActivationInfo,
-					fmt::format
-					(
-						"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
-						"with every '{}' in range", 
-						a_p->playerID + 1,
-						baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-				return;
-			}
-			
-			bool isLootableRefr = 
-			(
-				(Util::IsLootableRefr(activationRefrPtr.get())) || 
-				(
-					asActor &&
-					asActor->IsDead()
-				)	
-			);
-			if (!isLootableRefr)
-			{
-				if (activationRefrPtr->IsLocked() || asActor || !activationRefrPtr->HasContainer())
+				auto asActor = activationRefrPtr->As<RE::Actor>();
+				// Next, the targeted refr must not be off limits, 
+				// or the player must be sneaking to signal intent to steal.
+				// Finally, the refr must be a lootable loose refr,
+				// a corpse, or an unlocked container.
+				if (activationRefrPtr->IsCrimeToActivate() && !a_p->coopActor->IsSneaking())
 				{
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kActivationInfo,
 						fmt::format
 						(
-							"P{}: Cannot interact with every '{}' in range", 
+							"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
+							"with every '{}' in range", 
 							a_p->playerID + 1,
 							baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
 						),
@@ -8432,100 +9018,97 @@ namespace ALYSLC
 					);
 					return;
 				}
-			}
-
-			// If the targeted activation refr is grabbed,
-			// loot all lootable objects that the player is currently grabbing.
-			bool isGrabbedRefr = a_p->tm->rmm->IsManaged(activationRefrPtr->GetHandle(), true);
-			if (isGrabbedRefr) 
-			{
-				// Have to clear all grabbed objects before looting,
-				// since looting and removing one at a time
-				// causes a crash from accessing an invalid handle 
-				// due to the grabbed refr info list changing in size during iteration.
-
-				// Save grabbed refr handles before they're cleared.
-				std::vector<RE::ObjectRefHandle> grabbedRefrHandles{ };
-				for (auto& grabbedRefrInfo : a_p->tm->rmm->grabbedRefrInfoList)
-				{
-					grabbedRefrHandles.emplace_back(grabbedRefrInfo->refrHandle);
-				}
-
-				// No longer managed once looted.
-				// Clear grabbed refrs.
-				a_p->tm->rmm->ClearAll();
-				// Loot all saved grabbed refrs.
-				for (const auto& grabbedRefrHandle : grabbedRefrHandles) 
-				{
-					auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrHandle);
-					if (!grabbedRefrPtr || !grabbedRefrPtr.get())
-					{
-						continue;
-					}
-
-					if (Util::IsLootableRefr(grabbedRefrPtr.get()))
-					{
-						// Loot individual item/aggregation of the same item.
-						HelperFuncs::LootRefr(a_p, grabbedRefrPtr);
-					}
-					else if (grabbedRefrPtr->As<RE::Actor>() && grabbedRefrPtr->IsDead())
-					{
-						// Loot all items from grabbed corpse.
-						HelperFuncs::LootAllItemsFromCorpse(a_p, grabbedRefrPtr);
-					}
-				}
-
-				a_p->tm->SetCrosshairMessageRequest
+			
+				bool isLootableRefr = 
 				(
-					CrosshairMessageType::kActivationInfo,
-					fmt::format("P{}: Looted all grabbed objects", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
+					(Util::IsLootableRefr(activationRefrPtr.get())) || 
+					(
+						asActor &&
+						asActor->IsDead()
+					)	
 				);
-			}
-			else
-			{
-				auto asActor = activationRefrPtr->As<RE::Actor>();
-				bool isCorpse = asActor && asActor->IsDead();
-				if (isCorpse)
+				if (!isLootableRefr)
 				{
-					// Is corpse.
-					HelperFuncs::LootAllItemsFromCorpse(a_p, activationRefrPtr);
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kActivationInfo,
-						fmt::format
+					if (activationRefrPtr->IsLocked() ||
+						asActor || 
+						!activationRefrPtr->HasContainer())
+					{
+						a_p->tm->SetCrosshairMessageRequest
 						(
-							"P{}: Looted everything from '{}'",
-							a_p->playerID + 1, activationRefrPtr->GetName()
-						),
-						{
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
+							CrosshairMessageType::kActivationInfo,
+							fmt::format
+							(
+								"P{}: Cannot interact with every '{}' in range", 
+								a_p->playerID + 1,
+								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+							),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+						return;
+					}
 				}
-				else if (!activationRefrPtr->IsLocked() && activationRefrPtr->HasContainer())
+
+				// If the targeted activation refr is grabbed,
+				// loot all lootable objects that the player is currently grabbing.
+				bool isGrabbedRefr = a_p->tm->rmm->IsManaged(activationRefrPtr->GetHandle(), true);
+				if (isGrabbedRefr) 
 				{
-					// Is unlocked container.
-					HelperFuncs::LootAllItemsFromContainer(a_p, activationRefrPtr);
+					// Have to clear all grabbed objects before looting,
+					// since looting and removing one at a time
+					// causes a crash from accessing an invalid handle 
+					// due to the grabbed refr info list changing in size during iteration.
+
+					// Save grabbed refr handles before they're cleared.
+					std::vector<RE::ObjectRefHandle> grabbedRefrHandles{ };
+					for (auto& grabbedRefrInfo : a_p->tm->rmm->grabbedRefrInfoList)
+					{
+						grabbedRefrHandles.emplace_back(grabbedRefrInfo->refrHandle);
+					}
+
+					// No longer managed once looted.
+					// Clear grabbed refrs.
+					a_p->tm->rmm->ClearAll();
+					// Loot all saved grabbed refrs.
+					for (const auto& grabbedRefrHandle : grabbedRefrHandles) 
+					{
+						auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrHandle);
+						if (!grabbedRefrPtr)
+						{
+							continue;
+						}
+
+						if (Util::IsLootableRefr(grabbedRefrPtr.get()))
+						{
+							// Loot individual item/aggregation of the same item.
+							lootedObjects += HelperFuncs::LootRefr(a_p, grabbedRefrPtr);
+						}
+						else if (grabbedRefrPtr->As<RE::Actor>() && grabbedRefrPtr->IsDead())
+						{
+							// Loot all items from grabbed corpse.
+							lootedObjects += HelperFuncs::LootAllItemsFromCorpse
+							(
+								a_p, grabbedRefrPtr
+							);
+						}
+					}
+
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kActivationInfo,
 						fmt::format
 						(
-							"P{}: Looted everything from container '{}'",
+							"P{}: Looted {} {} from all grabbed objects",
 							a_p->playerID + 1, 
-							activationRefrPtr->GetName()
+							lootedObjects,
+							lootedObjects == 1 ? "item" : "items"
 						),
 						{ 
-							CrosshairMessageType::kNone,
+							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
 							CrosshairMessageType::kTargetSelection 
 						},
@@ -8534,51 +9117,54 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Is lootable refr, but not a corpse or container.
-					const auto& nearbyObjectsOfSameType = a_p->tm->GetNearbyRefrsOfSameType
-					(
-						a_p->tm->activationRefrHandle
-					);
-					for (const auto& handle : nearbyObjectsOfSameType)
+					auto asActor = activationRefrPtr->As<RE::Actor>();
+					bool isCorpse = asActor && asActor->IsDead();
+					if (isCorpse)
 					{
-						auto objectPtr = Util::GetRefrPtrFromHandle(handle);
-						auto objectValidity = 
+						// Is corpse.
+						lootedObjects = HelperFuncs::LootAllItemsFromCorpse
 						(
-							objectPtr && 
-							objectPtr.get() &&
-							Util::IsValidRefrForTargeting(objectPtr.get())
+							a_p, activationRefrPtr
 						);
-						if (!objectValidity)
-						{
-							continue;
-						}
-
-						// Clear released refr if activating it, 
-						// as its 3D will be removed once picked up 
-						// and will no longer need to be tracked in the targeting manager.
-						if (a_p->tm->rmm->IsManaged(handle, true) || 
-							a_p->tm->rmm->IsManaged(handle, false))
-						{
-							a_p->tm->rmm->ClearRefr(handle);
-						}
-
-						HelperFuncs::LootRefr(a_p, objectPtr);
-					}
-
-					// Notify player.
-					if (!nearbyObjectsOfSameType.empty())
-					{
 						a_p->tm->SetCrosshairMessageRequest
 						(
 							CrosshairMessageType::kActivationInfo,
 							fmt::format
 							(
-								"P{}: Looted every '{}' in range", 
+								"P{}: Looted {} {} from '{}'",
 								a_p->playerID + 1, 
-								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+								lootedObjects,
+								lootedObjects == 1 ? "item" : "items",
+								activationRefrPtr->GetName()
 							),
 							{
-								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState,
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else if (!activationRefrPtr->IsLocked() && activationRefrPtr->HasContainer())
+					{
+						// Is unlocked container.
+						lootedObjects = HelperFuncs::LootAllItemsFromContainer
+						(
+							a_p, activationRefrPtr
+						);
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kActivationInfo,
+							fmt::format
+							(
+								"P{}: Looted {} {} from container '{}'",
+								a_p->playerID + 1,
+								lootedObjects,
+								lootedObjects == 1 ? "item" : "items",
+								activationRefrPtr->GetName()
+							),
+							{ 
+								CrosshairMessageType::kNone,
 								CrosshairMessageType::kStealthState, 
 								CrosshairMessageType::kTargetSelection 
 							},
@@ -8587,23 +9173,199 @@ namespace ALYSLC
 					}
 					else
 					{
-						a_p->tm->SetCrosshairMessageRequest
+						// Is lootable refr, but not a corpse or container.
+						const auto& nearbyObjectsOfSameType = a_p->tm->GetNearbyRefrsOfSameType
 						(
-							CrosshairMessageType::kActivationInfo,
-							fmt::format
-							(
-								"P{}: No '{}' in range", 
-								a_p->playerID + 1, 
-								baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
-							),
-							{
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
+							a_p->tm->activationRefrHandle, Settings::uMaxGrabbedReferences
 						);
+						for (const auto& handle : nearbyObjectsOfSameType)
+						{
+							auto objectPtr = Util::GetRefrPtrFromHandle(handle);
+							auto objectValidity = 
+							(
+								objectPtr && Util::IsValidRefrForTargeting(objectPtr.get())
+							);
+							if (!objectValidity)
+							{
+								continue;
+							}
+
+							// Clear released refr if activating it, 
+							// as its 3D will be removed once picked up 
+							// and will no longer need to be tracked in the targeting manager.
+							if (a_p->tm->rmm->IsManaged(handle, true) || 
+								a_p->tm->rmm->IsManaged(handle, false))
+							{
+								a_p->tm->rmm->ClearRefr(handle);
+							}
+
+							lootedObjects += HelperFuncs::LootRefr(a_p, objectPtr);
+						}
+
+						// Notify player.
+						if (!nearbyObjectsOfSameType.empty())
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kActivationInfo,
+								fmt::format
+								(
+									"P{}: Looted {} of '{}' in range", 
+									a_p->playerID + 1, 
+									lootedObjects,
+									baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+								),
+								{
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+						}
+						else
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kActivationInfo,
+								fmt::format
+								(
+									"P{}: No '{}' in range", 
+									a_p->playerID + 1, 
+									baseObj ? baseObj->GetName() : activationRefrPtr->GetName()
+								),
+								{
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+						}
 					}
+				}
+			}
+			else
+			{
+				// If a loose refr is selected for activation, 
+				// activate all lootable objects in range,
+				// or if a container is selected for activation,
+				// activate all objects from all lootable containers in range.
+				// Is lootable refr, but not a corpse or container.
+				bool hasContainer = activationRefrPtr->HasContainer();
+				bool isLootable = !hasContainer && Util::IsLootableRefr(activationRefrPtr.get());
+				bool isStealing = activationRefrPtr->IsCrimeToActivate();
+				if (isStealing && !a_p->coopActor->IsSneaking())
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: Sneak to <font color=\"#FF0000\">steal</font> "
+							"{}", 
+							a_p->playerID + 1,
+							hasContainer ? 
+							"from every container in range" : 
+							"every object in range"
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					return;
+				}
+
+				// Get potential refrs to activate.
+				const auto refrsToActivate = a_p->tm->GetLootableRefrsInRange
+				(
+					hasContainer, Settings::uMaxGrabbedReferences
+				);
+				for (const auto& handle : refrsToActivate)
+				{
+					auto objectPtr = Util::GetRefrPtrFromHandle(handle);
+					auto objectValidity = 
+					(
+						objectPtr && Util::IsValidRefrForTargeting(objectPtr.get())
+					);
+					if (!objectValidity)
+					{
+						continue;
+					}
+
+					// Clear grabbed/released refr if activating it, 
+					// as its 3D will be removed once picked up 
+					// and will no longer need to be tracked in the targeting manager.
+					if (a_p->tm->rmm->IsManaged(handle, true) || 
+						a_p->tm->rmm->IsManaged(handle, false))
+					{
+						a_p->tm->rmm->ClearRefr(handle);
+					}
+
+					if (objectPtr->HasContainer())
+					{
+						if (!objectPtr->As<RE::Actor>())
+						{
+							lootedObjects += HelperFuncs::LootAllItemsFromContainer
+							(
+								a_p, objectPtr
+							);
+						}
+						else if (objectPtr->IsDead())
+						{
+							lootedObjects += HelperFuncs::LootAllItemsFromCorpse(a_p, objectPtr);
+						}
+					}
+					else
+					{
+						lootedObjects += HelperFuncs::LootRefr(a_p, objectPtr);
+					}
+				}
+
+				if (hasContainer)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: {} {} {} from all unlocked containers in range", 
+							a_p->playerID + 1,
+							isStealing ? "<font color=\"#FF0000\">Stealing</font>" : "Looting",
+							lootedObjects,
+							lootedObjects == 1 ? "item" : "items"
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kActivationInfo,
+						fmt::format
+						(
+							"P{}: {} {} {} in range", 
+							a_p->playerID + 1,
+							isStealing ? "<font color=\"#FF0000\">Stealing</font>" : "Looting",
+							lootedObjects,
+							lootedObjects == 1 ? "item" : "items"
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
 				}
 			}
 		}
@@ -8614,7 +9376,7 @@ namespace ALYSLC
 			// Useful when accidentally selecting an item that you do not want to activate.
 
 			auto activationRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
-			if (!activationRefrPtr || !activationRefrPtr.get()) 
+			if (!activationRefrPtr) 
 			{
 				return;
 			}
@@ -8725,9 +9487,7 @@ namespace ALYSLC
 			auto targetActorPtr = Util::GetActorPtrFromHandle(a_p->tm->selectedTargetActorHandle);
 			auto targetActorValidity = 
 			(
-				targetActorPtr && 
-				targetActorPtr.get() &&
-				Util::IsValidRefrForTargeting(targetActorPtr.get())
+				targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 			);
 			// CID of the targeted player.
 			// If no player is targeted, the CID is -1.
@@ -9010,7 +9770,7 @@ namespace ALYSLC
 									);
 								}
 
-								if (speakerPtr && speakerPtr.get()) 
+								if (speakerPtr) 
 								{
 									float distToSpeaker = 
 									(
@@ -9211,7 +9971,6 @@ namespace ALYSLC
 				}
 			}
 
-
 			glob.onSummoningMenuRequest.SendEvent();
 		}
 
@@ -9372,8 +10131,9 @@ namespace ALYSLC
 				a_p->pam->SetAndEveluatePackage();
 			}
 
-			// Get off mount/stop interacting with furniture.
-			a_p->coopActor->StopInteractingQuick(false);
+			a_p->mm->wantsToMount = false;
+			// Get off mount/stop interacting with furniture instantly.
+			a_p->coopActor->StopInteractingQuick(true);
 		}
 
 		void Dodge(const std::shared_ptr<CoopPlayer>& a_p) 
@@ -9424,6 +10184,8 @@ namespace ALYSLC
 					{
 						// Reset to default package to exit furniture for companion players.
 						a_p->pam->SetAndEveluatePackage();
+						// Get off mount/stop interacting with furniture instantly.
+						a_p->coopActor->StopInteractingQuick(true);
 					}
 				}
 
@@ -9443,9 +10205,7 @@ namespace ALYSLC
 				(
 					(a_p->mm->reqFaceTarget) || 
 					(
-						crosshairRefrPtr && 
-						crosshairRefrPtr.get() &&
-						Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
+						crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 					)
 				);
 				const float& lsGameAngle = a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
@@ -9624,10 +10384,12 @@ namespace ALYSLC
 			(
 				RE::DEFAULT_OBJECT::kActionSprintStop, a_p->coopActor.get()
 			);
-			// Reset to default package.
+			// Reset to default package and stop any interaction idles.
 			if (!a_p->isPlayer1 && !a_p->coopActor->IsOnMount())
 			{
 				a_p->pam->SetAndEveluatePackage();
+				// Quickly exit any interaction.
+				a_p->coopActor->StopInteractingQuick(true);
 			}
 
 			a_p->mm->reqStartJump = true;
@@ -9636,7 +10398,7 @@ namespace ALYSLC
 		void MagicMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Open the MagicMenu.
-
+			
 			HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kMagicMenu);
 			// Magic menu is blocked from opening via player input
 			// when P1 is transformed into a Werewolf or Vampire Lord,
@@ -9924,7 +10686,7 @@ namespace ALYSLC
 		{
 			// Sheathe if weapons/magic is out, draw otherwise.
 
-			a_p->pam->ReadyWeapon(!a_p->coopActor->IsWeaponDrawn());
+			a_p->pam->ReadyWeapon(!a_p->coopActor->IsWeaponDrawn(), false);
 		}
 
 		void Sneak(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9990,6 +10752,9 @@ namespace ALYSLC
 					a_p->coopActor->actorState1.sneaking = 0;
 					a_p->coopActor->actorState2.forceSneak = 0;
 				}
+				
+				// TODO:
+				// Properly toggle the widget's fade state to sync with P1's sneak state in co-op.
 			}
 		}
 
@@ -10203,7 +10968,7 @@ namespace ALYSLC
 						// by reading an Enderal MCM script property,
 						// and then open it using the hotkey.
 						auto skyrimVM = RE::SkyrimVM::GetSingleton(); 
-						if (skyrimVM->impl && skyrimVM->impl.get())
+						if (skyrimVM->impl)
 						{
 							const auto& vm = skyrimVM->impl;
 							if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
@@ -10239,7 +11004,7 @@ namespace ALYSLC
 										(
 											handle, "_00E_Game_SkillmenuSC", objectPtr
 										);
-										if (objectPtr && objectPtr.get())
+										if (objectPtr)
 										{
 											auto heroMenuDXSCVar = objectPtr->GetVariable
 											(
@@ -10507,9 +11272,7 @@ namespace ALYSLC
 				auto activationRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
 				auto activationRefrValidity = 
 				(
-					activationRefrPtr &&
-					activationRefrPtr.get() &&
-					Util::IsValidRefrForTargeting(activationRefrPtr.get())
+					activationRefrPtr && Util::IsValidRefrForTargeting(activationRefrPtr.get())
 				);
 				// Both P1 and the refr to activate must be valid. Return early otherwise.
 				if (!p1 || !activationRefrValidity)
@@ -10585,7 +11348,8 @@ namespace ALYSLC
 					) &&
 					(
 						Util::HasNoBountyButInCrimeFaction(asActor) || 
-						Util::IsFleeing(asActor)
+						Util::IsFleeing(asActor) ||
+						asActor->IsAMount()
 					)
 				);
 				if (startArrestDialogue)
@@ -10601,6 +11365,7 @@ namespace ALYSLC
 						
 						// Do not specify topic to trigger generic 'Hey, I know you!'
 						// arrest dialogue for Enderal.
+						// Only works for some guards, though.
 						bool succ = glob.moarm->InsertRequest
 						(
 							a_p->controllerID, 
@@ -10695,25 +11460,66 @@ namespace ALYSLC
 				(
 					a_p->controllerID
 				);
+
+				bool isBook = baseObj->IsBook();
+				bool isNote = baseObj->IsNote();
+				bool lootable = Util::IsLootableRefr(activationRefrPtr.get());
+				// Has extra data with an associated quest.
+				// Might not necessarily be a quest item, but better safe than sorry.
+				bool isQuestItem = 
+				{
+					(lootable) && 
+					(
+						activationRefrPtr->extraList.HasType
+						(
+							RE::ExtraDataType::kAliasInstanceArray
+						) ||
+						activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
+					)
+				};
+				// Pick up notes and books if they are activated 
+				// while not selected by the crosshair.
+				// Also, can still loot refrs when another player is controlling menus.
+				bool shouldPickup = 
+				(
+					(
+						(menusOnlyAlwaysOpen) &&
+						(a_p->tm->activationRefrHandle != a_p->tm->crosshairRefrHandle) &&
+						(!isQuestItem || a_p->isPlayer1) && 
+						(isBook || isNote)
+					) ||
+					(
+						(!menusOnlyAlwaysOpen) &&
+						(!isQuestItem || a_p->isPlayer1) && 
+						(anotherPlayerControllingMenus && lootable)
+					)
+				);
 				if (a_p->isPlayer1)
 				{
-					bool lootable = Util::IsLootableRefr(activationRefrPtr.get());
-					if (menusOnlyAlwaysOpen)
+					if (shouldPickup)
+					{
+						a_p->coopActor->PickUpObject(activationRefrPtr.get(), count);
+					}
+					else if (menusOnlyAlwaysOpen)
 					{
 						// No player is controlling menus.
 						if (asActor && asActor->IsAMount() && !asActor->IsDead())
 						{
-							// Attempt to mount.
-							a_p->SetTargetedMount(asActor->GetHandle());
-							glob.moarm->InsertRequest
-							(
-								a_p->controllerID, 
-								InputAction::kActivate,
-								SteadyClock::now(), 
-								"", 
-								a_p->tm->activationRefrHandle
-							);
-							a_p->taskRunner->AddTask([a_p](){ a_p->MountTask(); });
+							// Ignore if already attempting to mount or mounted.
+							if (!a_p->mm->isMounting && !a_p->coopActor->IsOnMount())
+							{
+								// Attempt to mount.
+								a_p->SetTargetedMount(asActor->GetHandle());
+								glob.moarm->InsertRequest
+								(
+									a_p->controllerID, 
+									InputAction::kActivate,
+									SteadyClock::now(), 
+									"", 
+									a_p->tm->activationRefrHandle
+								);
+								a_p->taskRunner->AddTask([a_p](){ a_p->MountTask(); });
+							}
 						}
 						else
 						{
@@ -10736,11 +11542,6 @@ namespace ALYSLC
 							Util::SetPlayerAIDriven(true);
 						}
 					}
-					else if (anotherPlayerControllingMenus && lootable)
-					{
-						// Can still loot refrs when another player is controlling menus.
-						a_p->coopActor->PickUpObject(activationRefrPtr.get(), count);
-					}
 				}
 				else
 				{
@@ -10754,7 +11555,6 @@ namespace ALYSLC
 					(
 						asActor && asActor->CanPickpocket() && a_p->coopActor->IsSneaking()
 					);
-					bool lootable = Util::IsLootableRefr(activationRefrPtr.get());
 					bool isActivator = baseObj->Is
 					(
 						RE::FormType::Activator, RE::FormType::TalkingActivator
@@ -10767,21 +11567,7 @@ namespace ALYSLC
 							RE::TESFurniture::ActiveMarker::kCanSleep
 						)
 					);
-					bool isBook = baseObj->IsBook();
 					bool isPartyWideItem = Util::IsPartyWideItem(baseObj);
-					// Has extra data with an associated quest.
-					// Might not necessarily be a quest item, but better safe than sorry.
-					bool isQuestItem = 
-					{
-						(lootable) && 
-						(
-							activationRefrPtr->extraList.HasType
-							(
-								RE::ExtraDataType::kAliasInstanceArray
-							) ||
-							activationRefrPtr->extraList.HasType(RE::ExtraDataType::kFromAlias)
-						)
-					};
 					// Unread skill/spell books are read right away by P1 here, 
 					// since, once read, all players' skills increase 
 					// or the learned spell is usable by all players.
@@ -10817,6 +11603,7 @@ namespace ALYSLC
 						(
 							isActivator || 
 							isBed ||
+							isNote ||
 							isPartyWideItem || 
 							isQuestItem || 
 							isWorkBenchFurniture || 
@@ -10851,17 +11638,21 @@ namespace ALYSLC
 
 					if (asActor && asActor->IsAMount() && !asActor->IsDead())
 					{
-						// Attempt to mount.
-						a_p->SetTargetedMount(asActor->GetHandle());
-						glob.moarm->InsertRequest
-						(
-							a_p->controllerID, 
-							InputAction::kActivate,
-							SteadyClock::now(),
-							"",
-							asActor->GetHandle()
-						);
-						a_p->taskRunner->AddTask([a_p](){ a_p->MountTask(); });
+						// Ignore if already attempting to mount or mounted.
+						if (!a_p->mm->isMounting && !a_p->coopActor->IsOnMount())
+						{
+							// Attempt to mount.
+							a_p->SetTargetedMount(asActor->GetHandle());
+							glob.moarm->InsertRequest
+							(
+								a_p->controllerID, 
+								InputAction::kActivate,
+								SteadyClock::now(),
+								"",
+								asActor->GetHandle()
+							);
+							a_p->taskRunner->AddTask([a_p](){ a_p->MountTask(); });
+						}
 					}
 					else
 					{
@@ -10921,7 +11712,12 @@ namespace ALYSLC
 							);
 						}
 
-						if (p1Activate)
+						if (shouldPickup)
+						{
+							// Pick up the object to loot it.
+							a_p->coopActor->PickUpObject(activationRefrPtr.get(), count);
+						}
+						else if (p1Activate)
 						{
 							// Can only activate with P1 if no player is controlling menus.
 							if (!menusOnlyAlwaysOpen)
@@ -11452,11 +12248,11 @@ namespace ALYSLC
 				bool is2HSpell = lhSpell && lhSpell->equipSlot == glob.bothHandsEquipSlot;
 				if (is2HSpell)
 				{
-					HelperFuncs::RemoveCastingPackage(a_p, true, true);
+					HelperFuncs::FinishCasting(a_p, true, true);
 				}
 				else
 				{
-					HelperFuncs::RemoveCastingPackage(a_p, true, false);
+					HelperFuncs::FinishCasting(a_p, true, false);
 				}
 
 				// Quit casting with P1 if the spell should've been cast with P1.
@@ -11467,7 +12263,7 @@ namespace ALYSLC
 						EquipIndex::kLeftHand, false, false, false, shouldCastWithP1
 					);
 				}
-			}
+			}	
 		}
 
 		void CastRH(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11501,11 +12297,11 @@ namespace ALYSLC
 				bool is2HSpell = rhSpell && rhSpell->equipSlot == glob.bothHandsEquipSlot;
 				if (is2HSpell)
 				{
-					HelperFuncs::RemoveCastingPackage(a_p, true, true);
+					HelperFuncs::FinishCasting(a_p, true, true);
 				}
 				else
 				{
-					HelperFuncs::RemoveCastingPackage(a_p, false, true);
+					HelperFuncs::FinishCasting(a_p, false, true);
 				}
 
 				// Quit casting with P1 if the spell should've been cast with P1.
@@ -12212,9 +13008,7 @@ namespace ALYSLC
 			auto targetRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 			bool targetRefrValidity = 
 			(
-				targetRefrPtr &&
-				targetRefrPtr.get() && 
-				Util::IsValidRefrForTargeting(targetRefrPtr.get())
+				targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 			);
 			bool shouldGrab = 
 			{
@@ -12308,10 +13102,10 @@ namespace ALYSLC
 				{
 					shouldGrab = false;
 					auto refr3DPtr = Util::GetRefr3D(targetRefrPtr.get());
-					if (refr3DPtr && refr3DPtr.get()) 
+					if (refr3DPtr) 
 					{
 						auto hkpRigidBodyPtr = Util::GethkpRigidBody(refr3DPtr.get());
-						if (hkpRigidBodyPtr && hkpRigidBodyPtr.get()) 
+						if (hkpRigidBodyPtr) 
 						{
 							// Cannot pick up actors that can't be knocked down,
 							// such as horses, dragons, skeletons.
@@ -12614,7 +13408,7 @@ namespace ALYSLC
 					{
 						// At least one spell still equipped.
 						// (other hand may have a bound weapon now after casting)
-						HelperFuncs::RemoveCastingPackage(a_p, true, true);
+						HelperFuncs::FinishCasting(a_p, true, true);
 					}
 					else if (a_p->em->HasLHStaffEquipped() && a_p->em->HasRHStaffEquipped())
 					{
@@ -12664,7 +13458,7 @@ namespace ALYSLC
 					);
 					// If no/invalid feeding target or target is alive, 
 					// show remaining transformation time.
-					if (!targetActorPtr || !targetActorPtr.get() || !targetActorPtr->IsDead())
+					if (!targetActorPtr || !targetActorPtr->IsDead())
 					{
 						a_p->tm->SetCrosshairMessageRequest
 						(

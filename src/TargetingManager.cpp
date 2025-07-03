@@ -78,7 +78,8 @@ namespace ALYSLC
 		);
 		
 		auto ui = RE::UI::GetSingleton();
-		if (nextState == ManagerState::kAwaitingRefresh)
+		if (nextState == ManagerState::kAwaitingRefresh ||
+			ui->IsMenuOpen(RE::FaderMenu::MENU_NAME))
 		{
 			// Clear all targets.
 			ClearTargetHandles();
@@ -325,7 +326,7 @@ namespace ALYSLC
 
 		// Need to have an aim correction target.
 		auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
-		if (!aimCorrectionTargetPtr || !aimCorrectionTargetPtr.get())
+		if (!aimCorrectionTargetPtr)
 		{
 			return;
 		}
@@ -999,7 +1000,7 @@ namespace ALYSLC
 				}
 			}
 
-			hasTrueHUDInfoBar = trueHUDAPI3->HasInfoBar(handle);
+			hasTrueHUDInfoBar = trueHUDAPI3->HasInfoBar(handle, true);
 		}
 
 		// If the player is not on screen, 
@@ -1046,12 +1047,7 @@ namespace ALYSLC
 			bool shouldDraw = 
 			(
 				(!hasTrueHUDInfoBar) &&
-				(
-					baseCanDrawOverlayElements && 
-					playerCam &&
-					playerCam->cameraRoot && 
-					playerCam->cameraRoot.get()
-				)
+				(baseCanDrawOverlayElements && playerCam && playerCam->cameraRoot)
 			);
 			if (shouldDraw) 
 			{
@@ -1094,7 +1090,7 @@ namespace ALYSLC
 					// No hit or if the player is hit means that there is LOS on the player.
 					hasLOS = 
 					(
-						(!result.hitObjectPtr || !result.hitObjectPtr.get()) || 
+						(!result.hitObjectPtr) || 
 						(hitRefrPtr && hitRefrPtr.get() == coopActor.get())
 					);
 				}
@@ -1110,24 +1106,11 @@ namespace ALYSLC
 				playerIndicatorFadeInterpData->interpToMin) 
 			{
 				// Point facing downward above the player's head.
-				auto fixedStrings = RE::FixedStrings::GetSingleton();
-				auto niCamPtr = Util::GetNiCamera();
 				RE::NiPoint3 topOfTheHeadPos = Util::GetHeadPosition(coopActor.get());
-				if (fixedStrings && niCamPtr && niCamPtr.get())
-				{
-					// Based on the head body part's radius.
-					auto headRadius = Util::GetHeadRadius(coopActor.get());
-					topOfTheHeadPos.z += headRadius + 10.0f;
-					posScreenCoords = Util::WorldToScreenPoint3(topOfTheHeadPos);
-				}
-				else
-				{
-					posScreenCoords = Util::WorldToScreenPoint3
-					(
-						topOfTheHeadPos + 
-						RE::NiPoint3(0.0f, 0.0f, 0.25f * coopActor->GetHeight())
-					);
-				}
+				// Based on the head body part's radius.
+				auto headRadius = Util::GetHeadRadius(coopActor.get());
+				topOfTheHeadPos.z += headRadius + 10.0f;
+				posScreenCoords = Util::WorldToScreenPoint3(topOfTheHeadPos);
 				// Origin and lower/upper shape offsets from this origin.
 				glm::vec2 origin
 				{
@@ -1600,16 +1583,12 @@ namespace ALYSLC
 		auto targetActorPtr = Util::GetRefrPtrFromHandle(targetActorHandle);
 		bool targetActorValidity = 
 		(
-			targetActorPtr && 
-			targetActorPtr.get() &&
-			Util::IsValidRefrForTargeting(targetActorPtr.get())
+			targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 		);
 		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
 		bool crosshairRefrValidity = 
 		(
-			crosshairRefrPtr && 
-			crosshairRefrPtr.get() &&
-			Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
+			crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 		);
 		// Actor targeted (aim correction or otherwise), 
 		// should face crosshair position (never true while mounted), 
@@ -1727,7 +1706,7 @@ namespace ALYSLC
 		(
 			lhSpell ? lhSpell->GetDelivery() : RE::MagicSystem::Delivery::kTotal
 		);
-		auto lhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kLeftHand];
+		auto lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
 		// Caster loaded up with a targeted spell and actively casting.
 		bool canDrawLHSpellTraj = 
 		(
@@ -1740,7 +1719,11 @@ namespace ALYSLC
 			) && 
 			(
 				(usingStaff) || 
-				(!lhWeap && lhCaster->state != RE::MagicCaster::State::kNone)
+				(
+					!lhWeap &&
+					*lhCaster->state > RE::MagicCaster::State::kUnk01 &&
+					*lhCaster->state < RE::MagicCaster::State::kUnk07
+				)
 			)
 		);
 		if (canDrawLHSpellTraj)
@@ -1759,9 +1742,10 @@ namespace ALYSLC
 
 			// Release from left hand node, or looking at pos, if unavailable.
 			RE::NiPoint3 releasePos = coopActor->GetLookingAtLocation();
-			if (lhCaster->magicNode) 
+			auto magicNodePtr = RE::NiPointer<RE::NiAVObject>(lhCaster->GetMagicNode()); 
+			if (magicNodePtr) 
 			{
-				releasePos = lhCaster->magicNode->world.translate;
+				releasePos = magicNodePtr->world.translate;
 			}
 			else
 			{
@@ -1769,7 +1753,7 @@ namespace ALYSLC
 				(
 					coopActor.get(), "NPC L Hand [LHnd]"
 				); 
-				if (leftHandNodePtr && leftHandNodePtr.get())
+				if (leftHandNodePtr)
 				{
 					releasePos = leftHandNodePtr->world.translate;
 				}
@@ -1820,7 +1804,7 @@ namespace ALYSLC
 		(
 			rhSpell ? rhSpell->GetDelivery() : RE::MagicSystem::Delivery::kTotal
 		);
-		auto rhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kRightHand];
+		auto rhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
 		// Caster loaded up with a targeted spell and actively casting.
 		bool canDrawRHSpellTraj = 
 		(
@@ -1833,7 +1817,11 @@ namespace ALYSLC
 			) && 
 			(
 				(usingStaff) || 
-				(!rhWeap && rhCaster->state != RE::MagicCaster::State::kNone)
+				(
+					!rhWeap && 
+					*rhCaster->state > RE::MagicCaster::State::kUnk01 &&
+					*rhCaster->state < RE::MagicCaster::State::kUnk07
+				)
 			)
 		);
 		if (canDrawRHSpellTraj)
@@ -1852,9 +1840,10 @@ namespace ALYSLC
 			
 			// Release from right hand node, or looking at pos, if unavailable.
 			RE::NiPoint3 releasePos = coopActor->GetLookingAtLocation();
-			if (rhCaster->magicNode) 
+			auto magicNodePtr = RE::NiPointer<RE::NiAVObject>(rhCaster->GetMagicNode()); 
+			if (magicNodePtr) 
 			{
-				releasePos = rhCaster->magicNode->world.translate;
+				releasePos = magicNodePtr->world.translate;
 			}
 			else
 			{
@@ -1862,7 +1851,7 @@ namespace ALYSLC
 				(
 					coopActor.get(), "NPC R Hand [RHnd]"
 				); 
-				if (rightHandNodePtr && rightHandNodePtr.get())
+				if (rightHandNodePtr)
 				{
 					releasePos = rightHandNodePtr->world.translate;
 				}
@@ -1941,7 +1930,7 @@ namespace ALYSLC
 					(
 						coopActor.get(), strings->npcHeadMagicNode
 					); 
-					if (headMagicNodePtr && headMagicNodePtr.get())
+					if (headMagicNodePtr)
 					{
 						releasePos = headMagicNodePtr->world.translate;
 					}
@@ -2026,7 +2015,7 @@ namespace ALYSLC
 					(
 						coopActor.get(), strings->npcHeadMagicNode
 					); 
-					if (headMagicNodePtr && headMagicNodePtr.get())
+					if (headMagicNodePtr)
 					{
 						releasePos = headMagicNodePtr->world.translate;
 					}
@@ -2097,19 +2086,21 @@ namespace ALYSLC
 					controllerID, firstRefrHandle
 				)
 			);
-			if (!firstRefrInfo || !firstRefrInfo.get())
+			if (!firstRefrInfo)
 			{
 				return;
 			}
 
 			// Set the total magicka cost to throw all grabbed refrs,
 			// and then compute the magicka overflow factor before populating the trajectory data.
+			// Modify by the player's magicka cost multiplier 
+			// to reflect the true cost applied through the CheckClampDamageModifier() hook.
 			rmm->SetTotalThrownRefrMagickaCost(p, true);
 			firstRefrInfo->magickaOverflowSlowdownFactor = 
 			(
 				rmm->GetThrownRefrMagickaOverflowSlowdownFactor
 				(
-					p, rmm->totalThrownRefrMagickaCost
+					p, rmm->totalThrownRefrMagickaCost * Settings::vfMagickaCostMult[playerID]
 				)
 			);
 			firstRefrInfo->InitPreviewTrajectory(p);
@@ -2207,9 +2198,7 @@ namespace ALYSLC
 		bool trajCollision = false;
 		// Projectile and current crosshair target refrs.
 		auto projRefrPtr = Util::GetRefrPtrFromHandle(a_projHandle);
-		bool projRefrValidity = projRefrPtr && projRefrPtr.get();
 		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
-		bool crosshairRefrValidity = crosshairRefrPtr && crosshairRefrPtr.get();
 		auto rangedTargetActorHandle = GetRangedTargetActor();
 		bool rangedTargetActorValidity = Util::HandleIsValid(rangedTargetActorHandle);
 		// Hit result for casts between time slice start and end positions.
@@ -2218,12 +2207,12 @@ namespace ALYSLC
 		// and the projectile itself, if given, when filtering through raycast collision results 
 		// for each time slice.
 		std::vector<RE::TESObjectREFR*> raycastExcludedRefrs{ coopActor.get() };
-		if (crosshairRefrValidity)
+		if (crosshairRefrPtr)
 		{
 			raycastExcludedRefrs.emplace_back(crosshairRefrPtr.get());
 		}
 
-		if (projRefrValidity)
+		if (projRefrPtr)
 		{
 			raycastExcludedRefrs.emplace_back(projRefrPtr.get());
 		}
@@ -2531,7 +2520,7 @@ namespace ALYSLC
 								rangedTargetActorHandle.get().get()
 							);
 						}
-						else if (crosshairRefrValidity)
+						else if (crosshairRefrPtr)
 						{
 							crosshairRefrPtr->GetLinearVelocity(targetLinVel);
 						}
@@ -2766,9 +2755,7 @@ namespace ALYSLC
 					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 					bool hitRefrValidity =
 					(
-						hitRefrPtr &&
-						hitRefrPtr.get() && 
-						Util::IsValidRefrForTargeting(hitRefrPtr.get())
+						hitRefrPtr && Util::IsValidRefrForTargeting(hitRefrPtr.get())
 					);
 					// No need to continue walking the curve afterward.
 					trajCollision = true;
@@ -2777,7 +2764,7 @@ namespace ALYSLC
 					(
 						(Util::HandleIsValid(result.hitRefrHandle)) &&
 						(
-							crosshairRefrValidity &&
+							crosshairRefrPtr &&
 							hitRefrValidity &&
 							hitRefrPtr == crosshairRefrHandle.get()
 						) ||
@@ -2897,7 +2884,7 @@ namespace ALYSLC
 					(!trajCollision) &&
 					(
 						(rangedTargetActorValidity) || 
-						(crosshairRefrValidity && p->mm->reqFaceTarget)
+						(crosshairRefrPtr && p->mm->reqFaceTarget)
 					)
 				);
 				if ((inRange) && (hitTarget || hitSelectableNonTargetRefr))
@@ -3239,13 +3226,14 @@ namespace ALYSLC
 		// Should only target allies if casting a non-hostile spell.
 		// Don't want to go around healing enemies, do we?
 		bool shouldOnlyTargetAllies = false;
+		// Attack source triggering the call.
+		RE::TESForm* attackSource = nullptr;
 		// Does the attack source chosen based on the player's current combat action
 		// contain a spell.
 		bool sourceHasSpell = false;
 		// Choosing to select based on combat and attack state.
 		if (a_combatDependentSelection) 
 		{
-			RE::TESForm* attackSource = nullptr;
 			// Ranged options in right and left hand + quick cast + shout.
 			if ((p->pam->AllInputsPressedForAction(InputAction::kCastRH) && 
 				 p->em->HasRHSpellEquipped()) ||
@@ -3254,6 +3242,16 @@ namespace ALYSLC
 				(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) &&
 				 p->em->Has2HRangedWeapEquipped()))
 			{
+				auto asWeap = p->em->GetRHWeapon();
+				if (asWeap && asWeap->IsStaff() && asWeap->formEnchanting)
+				{
+					// No need to select a target if casting at self.
+					if (asWeap->formEnchanting->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
 				attackSource = p->em->equippedForms[!EquipIndex::kRightHand];
 			}
 			else if ((p->pam->AllInputsPressedForAction(InputAction::kCastLH) && 
@@ -3261,30 +3259,71 @@ namespace ALYSLC
 					 (p->pam->AllInputsPressedForAction(InputAction::kAttackLH) &&
 					  p->em->HasLHStaffEquipped()))
 			{
+				auto asWeap = p->em->GetLHWeapon();
+				if (asWeap && asWeap->IsStaff() && asWeap->formEnchanting)
+				{
+					// No need to select a target if casting at self.
+					if (asWeap->formEnchanting->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
 				attackSource = p->em->equippedForms[!EquipIndex::kLeftHand];
 			}
 			else if ((p->pam->AllInputsPressedForAction(InputAction::kQuickSlotCast) && 
 					  p->em->quickSlotSpell) ||
 					  (p->pam->reqSpecialAction == SpecialActionType::kQuickCast))
 			{
+				if (p->em->quickSlotSpell)
+				{
+					// No need to select a target if casting at self.
+					if (p->em->quickSlotSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
 				attackSource = p->em->equippedForms[!EquipIndex::kQuickSlotSpell];
 			}
 			else if (p->pam->AllInputsPressedForAction(InputAction::kShout) && p->em->voiceSpell) 
 			{
+				if (p->em->voiceSpell)
+				{
+					// No need to select a target if casting at self.
+					if (p->em->voiceSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
 				attackSource = p->em->equippedForms[!EquipIndex::kVoice];
 			}
 
 			if (p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
 				p->pam->reqSpecialAction == SpecialActionType::kDualCast)
 			{
+				RE::MagicItem* lhSpell = p->em->GetLHSpell();
+				auto lhWeap = p->em->GetLHWeapon();
+				lhSpell = !lhSpell && lhWeap ? lhWeap->formEnchanting : lhSpell;
+				RE::MagicItem* rhSpell = p->em->GetRHSpell();
+				auto rhWeap = p->em->GetRHWeapon();
+				rhSpell = !rhSpell && rhWeap ? rhWeap->formEnchanting : rhSpell;
+				bool castingAtSelfOnly = 
+				(
+					lhSpell && lhSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf &&
+					rhSpell && rhSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf
+				);
+				// No need to select a target if casting both spells at self.
+				if (castingAtSelfOnly)
+				{
+					return RE::ActorHandle();
+				}
+
+				sourceHasSpell = lhSpell && rhSpell;
 				// Must be casting healing spells in both hands.
 				// Don't want a situation where the player is firing a destruction spell 
 				// and a healing spell at a friendly target.
-				sourceHasSpell = 
-				(
-					(p->em->HasLHSpellEquipped() || p->em->HasLHStaffEquipped()) &&
-					(p->em->HasRHSpellEquipped() || p->em->HasRHStaffEquipped())
-				);
 				shouldOnlyTargetAllies = 
 				{
 					sourceHasSpell && 
@@ -3294,10 +3333,32 @@ namespace ALYSLC
 			}
 			else if (attackSource)
 			{
+				auto asSpell = attackSource->As<RE::SpellItem>();
+				if (asSpell)
+				{
+					// No need to select a target if casting at self.
+					if (asSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
 				// Single attack source, so check if it has a hostile spell.
-				sourceHasSpell = attackSource->As<RE::SpellItem>();
+				sourceHasSpell = asSpell;
 				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileSpell(attackSource);
 			}
+
+			/*SPDLOG_DEBUG
+			(
+				"[TM] GetClosestTargetableActorInFOV: {}: "
+				"Attack source: {}, has spell: {}, has hostile spell: {}. "
+				"Should only target allies: {}.",
+				coopActor->GetName(),
+				attackSource ? attackSource->GetName() : "NONE",
+				attackSource ? (bool)attackSource->As<RE::SpellItem>() : false,
+				Util::HasHostileSpell(attackSource),
+				shouldOnlyTargetAllies
+			);*/
 		}
 
 		// From the player's torso.
@@ -3312,7 +3373,7 @@ namespace ALYSLC
 		// Position of the source to perform range checks from.
 		auto sourceRefrPos = playerTorsoPos;
 		auto sourceRefrPtr = Util::GetRefrPtrFromHandle(a_sourceRefrHandle); 
-		if (sourceRefrPtr && sourceRefrPtr.get())
+		if (sourceRefrPtr)
 		{
 			sourceRefrPos = Util::Get3DCenterPos(sourceRefrPtr.get());
 			if (a_useScreenPositions)
@@ -3398,10 +3459,7 @@ namespace ALYSLC
 		for (const auto& closeActorHandle : procLists->highActorHandles)
 		{
 			auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
-			if (!actorPtr || 
-				!actorPtr.get() || 
-				!Util::IsValidRefrForTargeting(actorPtr.get()) || 
-				actorPtr->IsDead())
+			if (!actorPtr || !Util::IsValidRefrForTargeting(actorPtr.get()) || actorPtr->IsDead())
 			{
 				continue;
 			}
@@ -3485,11 +3543,12 @@ namespace ALYSLC
 					(!shouldOnlyTargetAllies && !isActivelyHostileToAPlayerOrAlly)
 				)
 			);
+
 			if (filteredOut)
 			{
 				continue;
 			}
-				
+
 			// Run close actor check to update the new closest actor within the FOV window.
 			auto actorTorsoPos = Util::GetTorsoPosition(actorPtr.get());
 			if (a_useScreenPositions)
@@ -3722,7 +3781,7 @@ namespace ALYSLC
 
 		uint32_t levelRGB = 0xFFFFFF;
 		auto actorPtr = Util::GetActorPtrFromHandle(a_actorHandle); 
-		if (!actorPtr || !actorPtr.get())
+		if (!actorPtr)
 		{
 			return levelRGB;
 		}
@@ -3781,9 +3840,92 @@ namespace ALYSLC
 		return levelRGB;
 	}
 
+	std::vector<RE::ObjectRefHandle> TargetingManager::GetLootableRefrsInRange
+	(
+		bool a_containersOnly, const uint32_t& a_maxLOSChecks
+	)
+	{
+		// Get a list of reachable, lootable refrs' handles in range of the player.
+		// Can return a list of loose refrs' handles 
+		// or a list of lootable containers' handles.
+		// Max number of LOS checks for can be specified, 
+		// since LOS checks for each refr can get expensive.
+	
+		// Clear old nearby objects of the same type before refreshing.
+		nearbyObjectsOfSameType.clear();
+		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+		// Player wants to steal objects when sneaking.
+		bool canSteal = coopActor->IsSneaking();
+		// Number of LOS checks performed.
+		uint32_t losChecksPerformed = 0;
+		// Check each refr in range.
+		Util::ForEachReferenceInRange
+		(
+			playerTorsoPos, GetMaxActivationDist(), true,
+			[&](RE::TESObjectREFR* a_refr) 
+			{
+				// Ensure that the object reference is an interactable object, 
+				// not a crime to activate, and lootable or a container
+
+				// Stop checking once the max number of LOS checks have been performed.
+				if (losChecksPerformed > a_maxLOSChecks)
+				{
+					return RE::BSContainer::ForEachResult::kStop;
+				}
+
+				// Refrs without a loaded name are usually statics or other uninteractable objects.
+				if (!a_refr || 
+					!Util::HandleIsValid(a_refr->GetHandle()) || 
+					!a_refr->IsHandleValid() || 
+					!a_refr->Is3DLoaded() || 
+					!a_refr->GetCurrent3D() || 
+					a_refr->IsDeleted() ||
+					strlen(a_refr->GetName()) == 0) 
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				auto baseObj = a_refr->GetBaseObject();
+				// Lootable refr or unlocked container/corpse 
+				// and either the player is choosing to steal the object 
+				// or the object is not a crime to activate.
+				bool canLoot = 
+				(
+					(canSteal || !a_refr->IsCrimeToActivate()) &&
+					(
+						(
+							(a_containersOnly && a_refr->HasContainer() && !a_refr->IsLocked()) &&
+							(!a_refr->As<RE::Actor>() || a_refr->IsDead())
+						) ||
+						(
+							!a_containersOnly && 
+							Util::IsLootableRefr(a_refr) && 
+							!a_refr->HasContainer()
+						)
+					)
+				);
+				if (canLoot)
+				{
+					++losChecksPerformed;
+					if (Util::HasLOS(a_refr, coopActor.get(), false, false, crosshairWorldPos))
+					{
+						nearbyObjectsOfSameType.emplace_back(a_refr);
+					}
+				}
+
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+		);
+
+		return nearbyObjectsOfSameType;
+	}
+
+
 	const std::vector<RE::ObjectRefHandle>& TargetingManager::GetNearbyRefrsOfSameType
 	(
-		RE::ObjectRefHandle a_refrHandle, RefrCompType&& a_compType
+		RE::ObjectRefHandle a_refrHandle, 
+		const uint32_t& a_maxLOSChecks,
+		RefrCompType&& a_compType
 	)
 	{
 		// Get a list of nearby refrs that are the of the same base form type
@@ -3792,7 +3934,7 @@ namespace ALYSLC
 		// Clear old nearby objects of the same type before refreshing.
 		nearbyObjectsOfSameType.clear();
 		auto refrPtr = Util::GetRefrPtrFromHandle(a_refrHandle);
-		if (!refrPtr || !refrPtr.get())
+		if (!refrPtr)
 		{
 			return nearbyObjectsOfSameType;
 		}
@@ -3801,6 +3943,8 @@ namespace ALYSLC
 		auto refrBaseObject = refrPtr->GetBaseObject();
 		// Player wants to steal objects when sneaking.
 		bool canSteal = coopActor->IsSneaking();
+		// Number of LOS checks performed.
+		uint32_t losChecksPerformed = 0;
 		// Check each refr in range.
 		Util::ForEachReferenceInRange
 		(
@@ -3810,6 +3954,12 @@ namespace ALYSLC
 				// Ensure that the object reference is an interactable object, 
 				// not a crime to activate,
 				// and of the same form type as requested. 
+
+				// Stop checking once the max number of LOS checks have been performed.
+				if (losChecksPerformed > a_maxLOSChecks)
+				{
+					return RE::BSContainer::ForEachResult::kStop;
+				}
 
 				// Refrs without a loaded name are usually statics or other uninteractable objects.
 				if (!a_refr || 
@@ -3843,9 +3993,14 @@ namespace ALYSLC
 						);
 					}
 
+
 					if (sameType)
 					{
-						nearbyObjectsOfSameType.emplace_back(a_refr);
+						++losChecksPerformed;
+						if (Util::HasLOS(a_refr, coopActor.get(), false, false, crosshairWorldPos))
+						{
+							nearbyObjectsOfSameType.emplace_back(a_refr);
+						}
 					}
 				}
 
@@ -3854,28 +4009,6 @@ namespace ALYSLC
 		);
 
 		return nearbyObjectsOfSameType;
-	}
-
-	RE::ObjectRefHandle TargetingManager::GetNextObjectToActivate()
-	{
-		// Cycle through nearby objects to get an interactable refr,
-		// or choose the player's current crosshair refr.
-		// Set the result as the next object to activate when the bind is released.
-
-		if (useProximityInteraction)
-		{
-			// Cycle through nearby objects for a valid, interactable one.
-			SelectProximityRefr();
-			activationRefrHandle = proximityRefrHandle;
-			// Update last activation orientation after setting the proximity refr.
-			SetLastActivationCyclingOrientation();
-		}
-		else
-		{
-			activationRefrHandle = crosshairRefrHandle;
-		}
-
-		return activationRefrHandle;
 	}
 
 	RE::ObjectRefHandle TargetingManager::GetRangedPackageTargetRefr
@@ -4023,14 +4156,10 @@ namespace ALYSLC
 			// since this is the fall-through case that simply 
 			// enables the ranged attack package to execute.
 			const auto refrPtr = Util::GetRefrPtrFromHandle(aimTargetLinkedRefrHandle); 
-			if (refrPtr && refrPtr.get() && refrPtr->As<RE::Actor>() && refrPtr != coopActor)
+			if (refrPtr && refrPtr->As<RE::Actor>() && refrPtr != coopActor)
 			{
-				auto rangedPackage = 
-				(
-					glob.coopPackages
-					[!PackageIndex::kTotal * controllerID + !PackageIndex::kRangedAttack]
-				);
-				if (p->pam->GetCurrentPackage() == rangedPackage)
+				if (p->pam->GetCurrentPackage() ==
+					p->pam->GetCoopPackage(PackageIndex::kRangedAttack))
 				{
 					return refrPtr->As<RE::Actor>()->GetHandle();
 				}
@@ -4060,10 +4189,7 @@ namespace ALYSLC
 		auto hitActorPtr = Util::GetActorPtrFromHandle(a_hitActorHandle);
 		auto releasedRefrPtr = Util::GetRefrPtrFromHandle(a_releasedRefrHandle);
 		// The hit actor and released refr must be valid.
-		if (!hitActorPtr || 
-			!hitActorPtr.get() ||
-			!releasedRefrPtr || 
-			!releasedRefrPtr.get())
+		if (!hitActorPtr || !releasedRefrPtr)
 		{
 			return;
 		}
@@ -4107,7 +4233,7 @@ namespace ALYSLC
 
 		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
 		auto hitActorRigidBodyPtr = Util::GethkpRigidBody(hitActorPtr.get()); 
-		if (hitActorRigidBodyPtr && hitActorRigidBodyPtr.get())
+		if (hitActorRigidBodyPtr)
 		{
 			// TODO: 
 			// Add impulse without knockdown setting for less-impactful collisions.
@@ -4327,7 +4453,7 @@ namespace ALYSLC
 		{
 			handle.SetPosition(a_contactPos);
 			auto actor3DPtr = Util::GetRefr3D(hitActorPtr.get());
-			if (actor3DPtr && actor3DPtr.get())
+			if (actor3DPtr)
 			{
 				handle.SetObjectToFollow(actor3DPtr.get());
 				handle.SetVolume(min(1.0f, havokImpactSpeed / 5.0f));
@@ -4379,9 +4505,7 @@ namespace ALYSLC
 		auto prevCrosshairRefrPtr = Util::GetRefrPtrFromHandle(prevCrosshairRefrHandle);
 		bool crosshairRefrValidity = 
 		(
-			crosshairRefrPtr &&
-			crosshairRefrPtr.get() &&
-			Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
+			crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 		);
 		// Has the player moved into/out of range of their targeted refr?
 		bool wasInRange = crosshairRefrInRangeForQuickLoot;
@@ -4400,14 +4524,17 @@ namespace ALYSLC
 			glob.lastSupportedMenusClosedTP
 		);
 		bool newCrosshairRefr = prevCrosshairRefrPtr != crosshairRefrPtr;
-		// Check if this player sent the last successful QuickLoot menu opening request.
-		bool sentLastCrosshairRefrEvent = glob.quickLootReqCID == controllerID;
-		// If no temporary menus are open and an eighth of a second has passed, 
-		// any player can request to open the QuickLoot menu.
-		bool anyPlayerCanSet = 
+		// Check if this player was last in control of the LootMenu.
+		bool wasInControl = glob.quickLootControlCID == controllerID;
+		// Grace period of 1/8 of a second first.
+		// Then also make sure there is no active request from a player.
+		bool anyPlayerCanSet =
 		(
-			!glob.supportedMenuOpen.load() && secsSinceAllSupportedMenusClosed > 0.125f
+			!glob.supportedMenuOpen.load() &&
+			secsSinceAllSupportedMenusClosed > 0.125f &&
+			glob.quickLootReqCID == -1
 		);
+
 		// Is this player controlling menus?
 		bool controllingMenus = 
 		(
@@ -4423,7 +4550,7 @@ namespace ALYSLC
 			(crosshairRefrValidity && anyPlayerCanSet) &&
 			(
 				(crosshairRefrInRangeForQuickLoot) && 
-				(newCrosshairRefr || !wasInRange || !sentLastCrosshairRefrEvent)
+				(newCrosshairRefr || !wasInRange || !wasInControl)
 			)
 		};
 		// Validate the crosshair event if the crosshair refr is valid,
@@ -4436,14 +4563,33 @@ namespace ALYSLC
 			newCrosshairRefr &&
 			crosshairRefrInRangeForQuickLoot
 		};
-		// Close the QuickLoot menu if the player is controlling the menu 
+		// Close the LootMenu menu if the player is controlling the menu 
 		// and the crosshair refr is no longer valid, or is no longer in range.
+		// Also can clear if no supported menus are open,
+		// this player was previously controlling the menu 
+		// and is not selecting anything or is out of range,
+		// and no other player is requesting to open the LootMenu,
+		// but the requested container to open was not cleared.
 		bool shouldSendClearCrosshairEvent = 
 		{
 			(controllingMenus) && 
 			(
 				(!crosshairRefrPtr && prevCrosshairRefrPtr) || 
 				(wasInRange && !crosshairRefrInRangeForQuickLoot)
+			) || 
+			(
+				(
+					(
+						!glob.supportedMenuOpen &&
+						controllerID == glob.quickLootControlCID &&
+						glob.reqQuickLootContainerHandle != RE::ObjectRefHandle()
+					) &&
+					(!crosshairRefrPtr || !crosshairRefrInRangeForQuickLoot)
+				) &&
+				(
+					controllerID == glob.quickLootReqCID ||
+					glob.quickLootReqCID == -1
+				)
 			)
 		};
 		// Can potentially open the QuickLoot menu.
@@ -4509,16 +4655,23 @@ namespace ALYSLC
 					// when the HandleHealthDamage() hook fired before this actor died.
 					const auto targetExData = corpse->extraList.GetByType<RE::ExtraForcedTarget>();
 					bool killedByAPlayer = GlobalCoopData::IsCoopPlayer(corpse->myKiller);
+					// Small file compile index can differ, depending on the load order,
+					// but not the raw FID and ESL bits portion.
 					firstTimeLootingKilledActor = 
 					{
-						killedByAPlayer && 
-						targetExData && 
-						targetExData->pad14 == coopActor->formID
+						(killedByAPlayer && targetExData) && 
+						(targetExData->pad14 & 0xFF000FFF) == (coopActor->formID & 0xFF000FFF)
 					};
-					// Is looted if there is no exData or once the exData's pad is cleared.
+					// Is looted if there is no exData or once the exData's pad is cleared
+					// or is not set to an FID within the ESL range 
+					// (ALYSLC.esp is an ESL-flagged ESP).
 					bool corpseLootedByKiller = 
 					(
-						(killedByAPlayer) && (!targetExData || targetExData->pad14 == 0)
+						(killedByAPlayer) && 
+						(
+							(!targetExData || targetExData->pad14 == 0) || 
+							(targetExData->pad14 & 0xFE000000) != 0xFE000000
+						)
 					);
 					// Can loot now if this player is looting the actor 
 					// they killed for the first time,
@@ -4526,7 +4679,7 @@ namespace ALYSLC
 					// or looted already by the killer player.
 					canOpenLootMenu &= 
 					(
-						(firstTimeLootingKilledActor) || (!killedByAPlayer || corpseLootedByKiller)
+						firstTimeLootingKilledActor || !killedByAPlayer || corpseLootedByKiller
 					);
 				}
 			}
@@ -4561,10 +4714,23 @@ namespace ALYSLC
 					// Deselect current crosshair refr first if sending a new crosshair event.
 					if (shouldSendNewSetCrosshairEvent)
 					{
+						SPDLOG_DEBUG
+						(
+							"[TM] HandleQuickLootMenu: "
+							"{} is closing LootMenu, if open.",
+							coopActor->GetName()
+						);
 						Util::SendCrosshairEvent(nullptr);
 					}
-
-					Util::SendCrosshairEvent(crosshairRefrPtr.get());
+					
+					SPDLOG_DEBUG
+					(
+						"[TM] HandleQuickLootMenu: "
+						"{} opening LootMenu -> {}.",
+						coopActor->GetName(),
+						crosshairRefrPtr->GetName()
+					);
+					Util::SendCrosshairEvent(crosshairRefrPtr.get(), controllerID);
 
 					// After sending a crosshair event to open the LootMenu for a corpse,
 					// clear out the exData pad so other players can freely loot the corpse.
@@ -4589,12 +4755,27 @@ namespace ALYSLC
 			{
 				// Clear crosshair pick refr if the player's new crosshair refr is not lootable.
 				// Closes the menu.
+				SPDLOG_DEBUG
+				(
+					"[TM] HandleQuickLootMenu: "
+					"{} is closing LootMenu after moving crosshair onto un-lootable refr.",
+					coopActor->GetName()
+				);
 				Util::SendCrosshairEvent(nullptr);
 			}
 		}
 		else if (shouldSendClearCrosshairEvent)
 		{
 			// Close the menu by clearing the crosshair pick refr on request.
+			SPDLOG_DEBUG
+			(
+				"[TM] HandleQuickLootMenu: "
+				"{} is closing LootMenu after no longer selecting a refr: {}, "
+				"moving too far away: {}.",
+				coopActor->GetName(),
+				!crosshairRefrValidity,
+				!crosshairRefrInRangeForQuickLoot
+			);
 			Util::SendCrosshairEvent(nullptr);
 		}
 	}
@@ -4663,7 +4844,7 @@ namespace ALYSLC
 					// Set even if the actor getup removal setting is enabled 
 					// since we don't want NPCs getting up in midair.
 					auto refrPtr = Util::GetRefrPtrFromHandle(handle); 
-					if (!refrPtr || !refrPtr.get()) 
+					if (!refrPtr) 
 					{
 						continue;
 					}
@@ -4710,14 +4891,14 @@ namespace ALYSLC
 				for (uint8_t i = 0; i < rmm->grabbedRefrInfoList.size(); ++i)
 				{
 					auto& grabbedRefrInfo = rmm->grabbedRefrInfoList[i];
-					if (!grabbedRefrInfo || !grabbedRefrInfo.get())
+					if (!grabbedRefrInfo)
 					{
 						continue;
 					}
 
 					const auto& handle = grabbedRefrInfo->refrHandle;
 					auto refrPtr = Util::GetRefrPtrFromHandle(handle);
-					if (!refrPtr || !refrPtr.get())
+					if (!refrPtr)
 					{
 						continue;
 					}
@@ -4727,7 +4908,7 @@ namespace ALYSLC
 					{
 						// Must use the first valid refr's radius for spacing purposes.
 						auto refr3DPtr = Util::GetRefr3D(refrPtr.get()); 
-						if (refr3DPtr && refr3DPtr.get())
+						if (refr3DPtr)
 						{
 							ringBufferDist = 
 							(
@@ -4816,7 +4997,7 @@ namespace ALYSLC
 				}
 
 				// Clear invalid refr and move on to the next one.
-				if (!releasedRefrPtr || !releasedRefrPtr.get())
+				if (!releasedRefrPtr)
 				{
 					rmm->ClearRefr(handle);
 					--i;
@@ -4888,10 +5069,7 @@ namespace ALYSLC
 				auto releasedRefr3DPtr = Util::GetRefr3D(releasedRefrPtr.get());
 				auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(releasedRefrPtr.get()); 
 				// Must have both valid 3D and rigid body for raycast collision checks.
-				if (!releasedRefr3DPtr ||
-					!releasedRefr3DPtr.get() ||
-					!releasedRefrRigidBodyPtr || 
-					!releasedRefrRigidBodyPtr.get())
+				if (!releasedRefr3DPtr || !releasedRefrRigidBodyPtr)
 				{
 					continue;
 				}
@@ -4920,10 +5098,10 @@ namespace ALYSLC
 					}
 
 					auto loadedData = releasedRefrPtr->loadedData; 
-					auto data3D = loadedData->data3D;
+					auto data3DPtr = loadedData->data3D;
 					RE::BSVisit::TraverseScenegraphObjects
 					(
-						data3D.get(),
+						data3DPtr.get(),
 						[
 							this, 
 							&releasedRefrPtr,
@@ -4940,10 +5118,7 @@ namespace ALYSLC
 						{
 							auto nodePtr = RE::NiPointer<RE::NiAVObject>(a_node);
 							// Invalid node.
-							if (!a_node || 
-								!nodePtr || 
-								!nodePtr.get() || 
-								!nodePtr->AsNode())
+							if (!a_node || !nodePtr || !nodePtr->AsNode())
 							{
 								return RE::BSVisit::BSVisitControl::kContinue;
 							}
@@ -4964,9 +5139,7 @@ namespace ALYSLC
 
 							// Need a rigid body.
 							auto hkpRigidBodyPtr = Util::GethkpRigidBody(nodePtr.get()); 
-							if (!hkpRigidBodyPtr || 
-								!hkpRigidBodyPtr.get() || 
-								!hkpRigidBodyPtr->GetCollidable())
+							if (!hkpRigidBodyPtr || !hkpRigidBodyPtr->GetCollidable())
 							{
 								return RE::BSVisit::BSVisitControl::kContinue;
 							}
@@ -5112,10 +5285,9 @@ namespace ALYSLC
 				(
 					hit ? Util::GetRefrPtrFromHandle(hitRefrHandle) : nullptr
 				); 
-				bool hitRefrValid = hitRefrPtr && hitRefrPtr.get();
 				// Do not continue setting the released refr's trajectory,
 				// or bonk or splat if the hit actor is a player that is dash dodging.
-				if (hitRefrValid)
+				if (hitRefrPtr)
 				{
 					auto hitPlayerIndex = GlobalCoopData::GetCoopPlayerIndex
 					(
@@ -5153,7 +5325,7 @@ namespace ALYSLC
 					auto asActor = releasedRefrPtr->As<RE::Actor>(); 
 					auto hkpRigidBodyPtr = Util::GethkpRigidBody(asActor);
 					auto charController = asActor ? asActor->GetCharController() : nullptr;
-					if (charController && hkpRigidBodyPtr && hkpRigidBodyPtr.get())
+					if (charController && hkpRigidBodyPtr)
 					{
 						auto currentVelocity = ToNiPoint3
 						(
@@ -5199,7 +5371,7 @@ namespace ALYSLC
 				}
 
 				// Handle potential collisions.
-				if (hitRefrValid)
+				if (hitRefrPtr)
 				{
 					bool hasAlreadyHitRefr = 
 					(
@@ -5316,7 +5488,7 @@ namespace ALYSLC
 
 		auto thrownActorPtr = Util::GetActorPtrFromHandle(a_thrownActorHandle);
 		// Invalid thrown actor.
-		if (!thrownActorPtr || !thrownActorPtr.get())
+		if (!thrownActorPtr)
 		{
 			return;
 		}
@@ -5331,7 +5503,7 @@ namespace ALYSLC
 		};
 		if (damageable)
 		{
-			if (releasedRefrRigidBodyPtr && releasedRefrRigidBodyPtr.get()) 
+			if (releasedRefrRigidBodyPtr) 
 			{
 				havokImpactSpeed = releasedRefrRigidBodyPtr->motion.linearVelocity.Length3();
 				// Get refr linear speed if rigidbody speed is 0.
@@ -5516,7 +5688,7 @@ namespace ALYSLC
 		{
 			handle.SetPosition(thrownActorPtr->data.location);
 			auto actor3DPtr = Util::GetRefr3D(thrownActorPtr.get());
-			if (actor3DPtr && actor3DPtr.get())
+			if (actor3DPtr)
 			{
 				handle.SetObjectToFollow(actor3DPtr.get());
 				handle.SetVolume(min(1.0f, havokImpactSpeed / 5.0f));
@@ -5529,7 +5701,7 @@ namespace ALYSLC
 		(
 			coopActor.get(), 
 			thrownActorPtr.get(), 
-			releasedRefrRigidBodyPtr && releasedRefrRigidBodyPtr.get() ? 
+			releasedRefrRigidBodyPtr ? 
 			releasedRefrRigidBodyPtr->motion.GetMass() : 
 			0.0f,
 			thrownActorPtr->data.location
@@ -5542,7 +5714,7 @@ namespace ALYSLC
 
 		auto refrPtr = Util::GetRefrPtrFromHandle(a_refrHandle);
 		// No target refr.
-		if (!refrPtr || !refrPtr.get()) 
+		if (!refrPtr) 
 		{
 			return false;
 		}
@@ -5607,7 +5779,7 @@ namespace ALYSLC
 			bool falseRef = false;
 			auto refr3DPtr = Util::GetRefr3D(refrPtr.get());
 			// No current 3D -> not on screen or visible.
-			if (!refr3DPtr || !refr3DPtr.get()) 
+			if (!refr3DPtr) 
 			{
 				return false;
 			}
@@ -5758,7 +5930,7 @@ namespace ALYSLC
 
 		// No NiCam means no bounds-in-frustum checks, so return result early.
 		auto niCamPtr = Util::GetNiCamera();
-		if (!niCamPtr || !niCamPtr.get())
+		if (!niCamPtr)
 		{
 			return chosenResult;
 		}
@@ -5779,7 +5951,8 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"[TM] PickRaycastHitResult: {}: For target selection: {}. "
-					"Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, type: {}). "
+					"Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, "
+					"base name: {}, 0x{:X}, type: {}). "
 					"Distance to camera: {}, distance to player: {}. Model: {}, hostile: {}.",
 					coopActor->GetName(),
 					a_crosshairActiveForSelection,
@@ -5791,6 +5964,14 @@ namespace ALYSLC
 					"NONE",
 					Util::HandleIsValid(result.hitRefrHandle) ? 
 					result.hitRefrHandle.get()->formID : 
+					0xDEAD,
+					Util::HandleIsValid(result.hitRefrHandle) &&
+					result.hitRefrHandle.get()->GetObjectReference() ? 
+					result.hitRefrHandle.get()->GetObjectReference()->GetName() : 
+					"NONE",
+					Util::HandleIsValid(result.hitRefrHandle) &&
+					result.hitRefrHandle.get()->GetObjectReference() ? 
+					result.hitRefrHandle.get()->GetObjectReference()->formID : 
 					0xDEAD,
 					Util::HandleIsValid(result.hitRefrHandle) &&
 					result.hitRefrHandle.get()->GetObjectReference() ? 
@@ -5837,7 +6018,7 @@ namespace ALYSLC
 			auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
 			// If the hit refr is valid and selectable and not the player,
 			// set crosshair refr and positional data.
-			isObjNoRefr = !hitRefrPtr || !hitRefrPtr.get();
+			isObjNoRefr = !hitRefrPtr;
 			if (isObjNoRefr)
 			{
 				// Hit object is a navmesh block or terrain without an associated refr.
@@ -6057,18 +6238,19 @@ namespace ALYSLC
 						isHostile = 
 						(
 							(asActor) && 
+							(!asActor->IsDead()) &&
 							(
 								asActor->IsHostileToActor(coopActor.get()) || 
 								asActor->IsHostileToActor(glob.player1Actor.get())
 							)
 						);
 						// Do not target corpses (unless locked on to one) while in combat.
-						validType &= 
+						/*validType &= 
 						(
 							!asActor || 
 							!asActor->IsDead() ||
 							asActor->GetHandle() == glob.cam->camLockOnTargetHandle
-						);
+						);*/
 					}
 
 					// Not a valid type to use for selection,
@@ -6346,7 +6528,7 @@ namespace ALYSLC
 
 		auto refrPtr = Util::GetRefrPtrFromHandle(a_refrHandle);
 		// Invalid refr.
-		if (!refrPtr || !refrPtr.get()) 
+		if (!refrPtr) 
 		{
 			return false;
 		}
@@ -6451,6 +6633,12 @@ namespace ALYSLC
 			facingDirXY.Unitize();
 			// Max activation reach distance.
 			const float maxCheckDist = GetMaxActivationDist();
+			// Used to check if activation cycling has started.
+			const float& secsSinceActivationStarted = 
+			(
+				p->pam->paStatesList
+				[!InputAction::kActivate - !InputAction::kFirstAction].secsPerformed
+			);
 			// Get each reference within range and record the magnitude of
 			// its angular distance from the player's facing angle.
 			Util::ForEachReferenceInRange
@@ -6461,7 +6649,8 @@ namespace ALYSLC
 					&currentMount, 
 					&playerTorsoPos, 
 					&facingDirXY, 
-					&maxCheckDist
+					&maxCheckDist,
+					&secsSinceActivationStarted
 				]
 				(RE::TESObjectREFR* a_refr) 
 				{
@@ -6500,6 +6689,7 @@ namespace ALYSLC
 							asActor->IsHostileToActor(coopActor.get())
 						)
 					};
+
 					if (blacklisted || 
 						activateHostileActor || 
 						!Util::IsSelectableRefr(a_refr) || 
@@ -6507,6 +6697,13 @@ namespace ALYSLC
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
+
+					// Skip refrs that are not within a 180 degree FOV cone 
+					// in the player's facing direction.
+					// Do not want to select a door or furniture, for example,
+					// that is behind the player.
+					bool allPositionsBehindPlayer = true;
+					float facingToRefrDot = 0.0f;
 
 					// Check three points on the refr for the best measurement 
 					// of where the refr is located relative to the player.
@@ -6525,16 +6722,22 @@ namespace ALYSLC
 					// Lastly scale by the distance from the player to the object,
 					// meaning objects that are further away have a larger factor.
 					// Divide by max reach distance to set range to [0, 1]
+					facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+					if (facingToRefrDot >= 0.0f)
+					{
+						allPositionsBehindPlayer = false;
+					}
+
 					float minSelectionFactor = 
 					(
-						(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) +
+						(0.5f * (1.0f - facingToRefrDot)) +
 						(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
 					);
 
 					// Next two positions only exist if the refr's 3D is available.
 					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
 					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
-					if (auto refr3DPtr = Util::GetRefr3D(a_refr); refr3DPtr && refr3DPtr.get())
+					if (auto refr3DPtr = Util::GetRefr3D(a_refr); refr3DPtr)
 					{
 						refrLoc2 = refr3DPtr->world.translate;
 						refrLoc3 = refr3DPtr->worldBound.center;
@@ -6546,9 +6749,15 @@ namespace ALYSLC
 						toRefrDirXY = refrLoc2.value() - playerTorsoPos;
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
+						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						{
+							allPositionsBehindPlayer = false;
+						}
+
 						float selectionFactor = 
 						(
-							(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) +
+							(0.5f * (1.0f - facingToRefrDot)) +
 							(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
 						);
 						if (selectionFactor < minSelectionFactor) 
@@ -6563,15 +6772,28 @@ namespace ALYSLC
 						toRefrDirXY = refrLoc3.value() - playerTorsoPos;
 						toRefrDirXY.z = 0.0f;
 						toRefrDirXY.Unitize();
+						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						{
+							allPositionsBehindPlayer = false;
+						}
+
 						float selectionFactor = 
 						(
-							(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) + 
+							(0.5f * (1.0f - facingToRefrDot)) + 
 							(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
 						);
 						if (selectionFactor < minSelectionFactor)
 						{
 							minSelectionFactor = selectionFactor;
 						}
+					}
+					
+					// Player is not turned towards the object if its refr data, 3D,
+					// and 3D center positions are behind the player.
+					if (allPositionsBehindPlayer)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
 					}
 					
 					nearbyReferences.insert
@@ -6590,9 +6812,8 @@ namespace ALYSLC
 			if (auto pickData = RE::CrosshairPickData::GetSingleton(); pickData)
 			{
 				auto pickRefrPtr = Util::GetRefrPtrFromHandle(pickData->target); 
-				if (pickRefrPtr && 
-					pickRefrPtr.get() && 
-					Util::IsValidRefrForTargeting(pickRefrPtr.get()))
+				// Must be valid for targeting.
+				if (pickRefrPtr && Util::IsValidRefrForTargeting(pickRefrPtr.get()))
 				{
 					// Must be in range of this player still.
 					float distToRefr = playerTorsoPos.GetDistance
@@ -6612,22 +6833,32 @@ namespace ALYSLC
 						);
 						if (!blacklisted) 
 						{
-							// Save pick data refr handle.
-							crosshairPickRefrHandle = pickData->target;
+							// Skip if not within a 180 degree FOV cone 
+							// in the player's facing direction.
+							// Do not want to select a door or furniture, for example,
+							// that is behind the player.
+							bool allPositionsBehindPlayer = true;
+							float facingToRefrDot = 0.0f;
 							// Same three tests as for the nearby refrs above.
 							RE::NiPoint3 refrLoc1 = pickRefrPtr->data.location;
 							RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
 							toRefrDirXY.z = 0.0f;
 							toRefrDirXY.Unitize();
+							facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+							if (facingToRefrDot >= 0.0f)
+							{
+								allPositionsBehindPlayer = false;
+							}
+
 							float minSelectionFactor = 
 							(
-								(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) +
+								(0.5f * (1.0f - facingToRefrDot)) +
 								(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
 							);
 							std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
 							std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
 							auto refr3DPtr = Util::GetRefr3D(pickRefrPtr.get()); 
-							if (refr3DPtr && refr3DPtr.get())
+							if (refr3DPtr)
 							{
 								refrLoc2 = refr3DPtr->world.translate;
 								refrLoc3 = refr3DPtr->worldBound.center;
@@ -6638,9 +6869,15 @@ namespace ALYSLC
 								toRefrDirXY = refrLoc2.value() - playerTorsoPos;
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
+								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								{
+									allPositionsBehindPlayer = false;
+								}
+
 								float selectionFactor = 
 								(
-									(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) +
+									(0.5f * (1.0f - facingToRefrDot)) +
 									(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
 								);
 								if (selectionFactor < minSelectionFactor) 
@@ -6654,9 +6891,15 @@ namespace ALYSLC
 								toRefrDirXY = refrLoc3.value() - playerTorsoPos;
 								toRefrDirXY.z = 0.0f;
 								toRefrDirXY.Unitize();
+								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								{
+									allPositionsBehindPlayer = false;
+								}
+
 								float selectionFactor = 
 								(
-									(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) + 
+									(0.5f * (1.0f - facingToRefrDot)) + 
 									(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
 								);
 								if (selectionFactor < minSelectionFactor)
@@ -6664,14 +6907,21 @@ namespace ALYSLC
 									minSelectionFactor = selectionFactor;
 								}
 							}
-						
-							nearbyReferences.insert
-							(
-								std::pair<float, RE::ObjectRefHandle>
+
+							// Player is not turned towards the object if its refr data, 3D,
+							// and 3D center positions are behind the player.
+							if (!allPositionsBehindPlayer)
+							{
+								// Save pick data refr handle.
+								crosshairPickRefrHandle = pickData->target;
+								nearbyReferences.insert
 								(
-									minSelectionFactor, crosshairPickRefrHandle
-								)
-							);
+									std::pair<float, RE::ObjectRefHandle>
+									(
+										minSelectionFactor, crosshairPickRefrHandle
+									)
+								);
+							}
 						}
 					}
 				}
@@ -6702,7 +6952,7 @@ namespace ALYSLC
 			// so LOS still has to be checked.
 			const auto& nextRefrHandle = nextRefrNodeHandle.mapped();
 			auto nextRefrPtr = Util::GetRefrPtrFromHandle(nextRefrHandle); 
-			if (!nextRefrPtr || !nextRefrPtr.get()) 
+			if (!nextRefrPtr) 
 			{
 				continue;
 			}
@@ -6734,9 +6984,7 @@ namespace ALYSLC
 		bool updateSetTP = false;
 		if (a_type == CrosshairMessageType::kTargetSelection)
 		{
-			if (selectedTargetActorPtr && 
-				selectedTargetActorPtr.get() && 
-				!selectedTargetActorPtr->IsDead())
+			if (selectedTargetActorPtr && !selectedTargetActorPtr->IsDead())
 			{
 				// Alive actor. Show name and level.
 				// Passive actors' names are displayed in white,
@@ -6750,8 +6998,7 @@ namespace ALYSLC
 					levelRGB, selectedTargetActorPtr->GetLevel(),
 					!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
 					0xFFFFFF : 
-					Util::IsGuard(selectedTargetActorPtr.get()) || 
-					Util::HasNoBountyButInCrimeFaction(selectedTargetActorPtr.get()) ?
+					Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
 					0xFFBBBB :
 					0xFF0000,
 					selectedTargetActorPtr->GetDisplayFullName()
@@ -6761,16 +7008,113 @@ namespace ALYSLC
 				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 			}
 			else if (auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle); 
-					 crosshairRefrPtr && crosshairRefrPtr.get())
+					 crosshairRefrPtr)
 			{
+				// Notify the player that they should sneak to activate.
+				bool shouldSneakToActivate = 
+				(
+					crosshairRefrPtr->IsCrimeToActivate() && !coopActor->IsSneaking()
+				);
 				// Get activation text for the crosshair refr.
-				RE::BSString activationText = crosshairRefrPtr->GetName();
-				if (auto objRef = crosshairRefrPtr->GetObjectReference(); objRef)
+				bool hasActivationText = false;
+				auto baseObj = crosshairRefrPtr->GetObjectReference();
+				text = Util::GetActivationText
+				(
+					baseObj, 
+					crosshairRefrPtr.get(),
+					hasActivationText
+				);
+				if (hasActivationText)
 				{
-					objRef->GetActivateText(crosshairRefrPtr.get(), activationText);
+					if (shouldSneakToActivate)
+					{
+						text = fmt::format
+						(
+							"P{}: Sneak to {}", p->playerID + 1, text
+						);
+					}
+					else
+					{
+						text = fmt::format
+						(
+							"P{}: {}", p->playerID + 1, text
+						);
+					}
+				}
+				else
+				{
+					if (shouldSneakToActivate)
+					{
+						text = fmt::format
+						(
+							"P{}: Sneak to "
+							"<font color=\"#FF0000\">interact</font> with {}",
+							p->playerID + 1, text
+						);
+					}
+					else
+					{
+						text = fmt::format
+						(
+							"P{}: Interact with {}", p->playerID + 1, text
+						);
+					}
 				}
 
-				text = fmt::format("P{}: {}", playerID + 1, activationText);
+				int32_t value = -1;
+				float weight = 0.0f;
+				auto asActor = crosshairRefrPtr->As<RE::Actor>();
+				if ((asActor && asActor->IsDead()) || 
+					(!asActor && crosshairRefrPtr->GetContainer()))
+				{
+					// Get total weight and value in the container.
+					Util::GetWeightAndValueInRefr(crosshairRefrPtr.get(), weight, value);
+				}
+				else if (baseObj)
+				{
+					// Get weight and value for this individual refr.
+					value = baseObj->GetGoldValue();
+					weight = crosshairRefrPtr->GetWeight();
+				}
+
+				if (value >= 0)
+				{
+					float inventoryWeight = coopActor->GetWeightInContainer();
+					const auto invChanges = coopActor->GetInventoryChanges();
+					if (invChanges)
+					{
+						inventoryWeight = invChanges->totalWeight;
+					}
+
+					const float carryweight = coopActor->GetTotalCarryWeight();
+					float remainingCarryweight = carryweight - inventoryWeight;
+					std::string weightValue = fmt::format
+					(
+						", <font color=\"#{:X}\">Value: </font>"
+						"<font face=\"$EverywhereBoldFont\">{}</font>, "
+						"<font color=\"#{:X}\">Weight: </font>"
+						"<font face=\"$EverywhereBoldFont\">{}</font>, "
+						"<font color=\"#{:X}\">Space: </font>"
+						"<font face=\"$EverywhereBoldFont\">"
+						"<font color=\"#{:X}\">{:.0f}</font>"
+						"</font>",
+						0xBBA53D,
+						value,
+						0x999999,
+						weight,
+						0x804a00,
+						remainingCarryweight - weight <= 0.0f ? 
+						0xFF0000 : 
+						0xFFFFFF,
+						remainingCarryweight,
+						carryweight
+					);
+					text = fmt::format
+					(
+						"{}", std::string(text) + weightValue
+					);
+				}
+
 				type = a_type;
 				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
 				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
@@ -6816,8 +7160,7 @@ namespace ALYSLC
 						playerID + 1,
 						!selectedTargetActorPtr->IsHostileToActor(coopActor.get()) ? 
 						0xFFFFFF : 
-						Util::IsGuard(selectedTargetActorPtr.get()) || 
-						Util::HasNoBountyButInCrimeFaction(selectedTargetActorPtr.get()) ?
+						Util::CanStopCombatWithActor(selectedTargetActorPtr.get()) ?
 						0xFFBBBB :
 						0xFF0000,
 						selectedTargetActorPtr->GetDisplayFullName(),
@@ -6871,7 +7214,7 @@ namespace ALYSLC
 		auto currentTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
 		bool isNoLongerTargetable = 
 		(
-			(currentTargetPtr && currentTargetPtr.get()) &&
+			(currentTargetPtr) &&
 			(
 				!Util::IsValidRefrForTargeting(currentTargetPtr.get()) || 
 				currentTargetPtr->IsDead()
@@ -7018,7 +7361,7 @@ namespace ALYSLC
 				);
 
 				bool diffTarget = nextTargetPtr != currentTargetPtr;
-				if ((diffTarget) && (!nextTargetPtr || !nextTargetPtr.get()))
+				if (diffTarget && !nextTargetPtr)
 				{
 					// Clear current target if there is no next target while moving away.
 					ClearTarget(TargetActorType::kAimCorrection);
@@ -7028,8 +7371,7 @@ namespace ALYSLC
 					// Set valid, different target that is within LOS of the player.
 					bool canSet = 
 					(
-						nextTargetPtr && 
-						nextTargetPtr.get() &&
+						nextTargetPtr &&
 						diffTarget && 
 						Util::IsValidRefrForTargeting(nextTargetPtr.get()) &&
 						Util::HasLOS
@@ -7049,10 +7391,7 @@ namespace ALYSLC
 			
 			// Potentially clear the current target if the player is committing 
 			// to fully moving away from it and the target is no longer in the FOV window.
-			if (retainingCurrentTarget &&
-				currentTargetPtr && 
-				currentTargetPtr.get() && 
-				lsCommitment)
+			if (retainingCurrentTarget && currentTargetPtr && lsCommitment)
 			{
 				auto playerTorsoPos = p->mm->playerTorsoPosition;
 				auto targetTorsoPos = Util::GetTorsoPosition(currentTargetPtr.get());
@@ -7123,7 +7462,7 @@ namespace ALYSLC
 				}
 			}
 			 
-			if ((currentTargetPtr && currentTargetPtr.get()) && 
+			if ((currentTargetPtr) && 
 				((selectedTargetActorPtr) || (!combatActionBindsPressed && !p->pam->isAttacking)))
 			{
 				ClearTarget(TargetActorType::kAimCorrection);
@@ -7171,8 +7510,7 @@ namespace ALYSLC
 			);
 			bool newTargetIsValid = 
 			(
-				newTargetRefrPtr && 
-				newTargetRefrPtr.get() &&
+				newTargetRefrPtr &&
 				Util::IsValidRefrForTargeting(newTargetRefrPtr.get())
 			);
 			if (newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr)
@@ -7399,7 +7737,7 @@ namespace ALYSLC
 		// Overlay menu to draw the crosshair on.
 		auto overlay = ui ? ui->GetMenu(DebugOverlayMenu::MENU_NAME) : nullptr;
 		auto view = overlay ? overlay->uiMovie : nullptr;
-		if (!niCamPtr || !niCamPtr.get() || !ui || !overlay || !view)
+		if (!niCamPtr || !ui || !overlay || !view)
 		{
 			// Set last update time point before returning early.
 			p->lastCrosshairUpdateTP = SteadyClock::now();
@@ -7472,7 +7810,7 @@ namespace ALYSLC
 			// This will allow the crosshair to 'stick' to moving targets
 			// while moving it across the target,
 			// since the change in pixels is made relative to the target's movement.
-			if (crosshairRefrPtr && crosshairRefrPtr.get())
+			if (crosshairRefrPtr)
 			{
 				// Add to cumulative pixels deltas.
 				crosshairOnRefrPixelXYDeltas.x += pixelDeltas.x;
@@ -7721,18 +8059,18 @@ namespace ALYSLC
 			// No chosen refr, so we only have to potentially update the crosshair world position.
 			// Only update the target position if the player's crosshair 
 			// isn't fully faded or re-centered.
-			bool isNotRemoved = 
+			bool isActive = 
 			(
 				(
 					!Settings::vbRecenterInactiveCrosshair[playerID] &&
 					!Settings::vbFadeInactiveCrosshair[playerID]
 				) ||
 				(
-					Util::GetElapsedSeconds(p->crosshairLastActiveTP) > 
+					Util::GetElapsedSeconds(p->crosshairLastActiveTP) < 
 					Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
 				)
 			);
-			if (isNotRemoved)
+			if (isActive)
 			{
 				// Calculate near and far plane world positions for the current scaleform position.
 				glm::mat4 pvMat{ };
@@ -7901,6 +8239,7 @@ namespace ALYSLC
 		{
 			// Update crosshair size mult.
 			auto refrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle); 
+			// Maximum gap length when the crosshair fully extends when animated.
 			const float maxCrosshairGapDelta = 
 			(
 				Settings::vbAnimatedCrosshair[playerID] ? 
@@ -7911,6 +8250,13 @@ namespace ALYSLC
 				) : 
 				0.0f
 			);
+			// Crosshair size includes all dimensions passed through when drawing a line 
+			// along the length of a prong from the crosshair screen position
+			// to the tip of the prong:
+			// 1. One prong length
+			// 2. Two thickness lengths
+			// 3. The base gap radius
+			// 4. The max additional gap radius
 			const float maxCrosshairSize = 
 			(
 				2.0f * 
@@ -7921,15 +8267,18 @@ namespace ALYSLC
 					maxCrosshairGapDelta
 				)
 			);
+			// Prevent the crosshair from getting too small; otherwise, it will not be visible.
 			const float minCrosshairSize = 
 			(
 				0.005f * static_cast<float>(RE::BSGraphics::State::GetSingleton()->screenHeight)
 			);
-			if (refrPtr && refrPtr.get())
+			if (refrPtr)
 			{
 				float minPixelDimension = 0.0f;
 				if (minCrosshairSize >= maxCrosshairSize)
 				{
+					// Shrink down to the smaller of the min bound pixel distance
+					// and the max crosshair size.
 					minPixelDimension = min
 					(
 						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
@@ -7938,6 +8287,8 @@ namespace ALYSLC
 				}
 				else
 				{
+					// Ensure the min bound pixel distance is bound above and below
+					// by the minimum and maximum crosshair sizes.
 					minPixelDimension = std::clamp
 					(
 						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
@@ -7945,7 +8296,8 @@ namespace ALYSLC
 						maxCrosshairSize
 					);
 				}
-			
+				
+				// Shrink down.
 				crosshairSizeRatioInterpData->SetEndpoint
 				(
 					Util::InterpolateSmootherStep
@@ -8012,7 +8364,7 @@ namespace ALYSLC
 		}
 
 		auto hitRefrPtr = Util::GetRefrPtrFromHandle(a_chosenResult.hitRefrHandle);
-		if (!hitRefrPtr || !hitRefrPtr.get())
+		if (!hitRefrPtr)
 		{
 			return;
 		}
@@ -8039,7 +8391,7 @@ namespace ALYSLC
 		// Keeping commented out for now, in case I want to revisit the idea.
 		
 		/*bool validDimensionsFrom3D = false;
-		if (a_chosenResult.hitObjectPtr && a_chosenResult.hitObjectPtr.get())
+		if (a_chosenResult.hitObjectPtr)
 		{
 			boundMax = 
 			(
@@ -8055,7 +8407,7 @@ namespace ALYSLC
 			rotMat = a_chosenResult.hitObjectPtr->world.rotate;
 
 			auto hitHkpRigidBodyPtr = Util::GethkpRigidBody(a_chosenResult.hitObjectPtr.get());
-			if (hitHkpRigidBodyPtr && hitHkpRigidBodyPtr.get())
+			if (hitHkpRigidBodyPtr)
 			{
 				SPDLOG_DEBUG
 				(
@@ -8091,106 +8443,102 @@ namespace ALYSLC
 			);
 		}*/
 
-		if (hitRefrPtr && hitRefrPtr.get())
+		boundMax = hitRefrPtr->GetBoundMax();
+		boundMin = hitRefrPtr->GetBoundMin();
+		boundCenter = hitRefrPtr->data.location;
+		auto refrHkpRigidBodyPtr = Util::GethkpRigidBody(hitRefrPtr.get());
+		bool isDead = hitRefrPtr->IsDead();
+		bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
+		bool isRagdolled = asActor && asActor->IsInRagdollState();
+		bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
+		if (isUprightActor)
 		{
-			boundMax = hitRefrPtr->GetBoundMax();
-			boundMin = hitRefrPtr->GetBoundMin();
-			boundCenter = hitRefrPtr->data.location;
-			auto refrHkpRigidBodyPtr = Util::GethkpRigidBody(hitRefrPtr.get());
-			bool isDead = hitRefrPtr->IsDead();
-			bool isKnocked = asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal;
-			bool isRagdolled = asActor && asActor->IsInRagdollState();
-			bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
-			if (isUprightActor)
+			// Half up upright actor.
+			boundCenter = 
+			(
+				asActor->data.location + 
+				RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+			);
+		}
+		else if (refrHkpRigidBodyPtr)
+		{
+			// Use rigidbody translation when ragdolled.
+			if ((asActor) && (isDead || isKnocked || isRagdolled))
 			{
-				// Half up upright actor.
-				boundCenter = 
+				boundCenter = ToNiPoint3
 				(
-					asActor->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+					refrHkpRigidBodyPtr->motion.motionState.transform.translation *
+					HAVOK_TO_GAME
 				);
-			}
-			else if (refrHkpRigidBodyPtr && 
-					 refrHkpRigidBodyPtr.get())
-			{
-				// Use rigidbody translation when ragdolled.
-				if ((asActor) && (isDead || isKnocked || isRagdolled))
-				{
-					boundCenter = ToNiPoint3
-					(
-						refrHkpRigidBodyPtr->motion.motionState.transform.translation *
-						HAVOK_TO_GAME
-					);
-				}
-				else
-				{
-					boundCenter = Util::Get3DCenterPos(hitRefrPtr.get());
-				}
-
-				// Get bounds from collidable.
-				if (refrHkpRigidBodyPtr->collidable.GetShape() &&
-					refrHkpRigidBodyPtr->collidable.GetShape()->type == 
-					RE::hkpShapeType::kBox)
-				{
-					auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
-					RE::hkTransform hkTrans{ };
-					hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
-					hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
-					RE::hkAabb aabb{ };
-					shape->GetAabbImpl(hkTrans, 0.0f, aabb);
-					boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
-					boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
-				}
-			}
-			
-			auto hit3DPtr = Util::GetRefr3D(hitRefrPtr.get()); 
-			if (hit3DPtr && hit3DPtr.get())
-			{
-				// Rotation from hit refr's 3D object.
-				rotMat = hit3DPtr->world.rotate;
-				// Fall back to 3D object's radius for the bounds,
-				// if not found from the collidable above.
-				if (boundMin == boundMax && boundMax.Length() == 0.0f)
-				{
-					boundMax = 
-					(
-						RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
-					);
-					boundMin = -boundMax;
-				}
 			}
 			else
 			{
-				// Fall back to refr reported angles if the refr's 3D is unavailable.
-				Util::SetRotationMatrixPYR
-				(
-					rotMat,
-					hitRefrPtr->data.angle.x,
-					hitRefrPtr->data.angle.z,
-					hitRefrPtr->data.angle.y
-				);
+				boundCenter = Util::Get3DCenterPos(hitRefrPtr.get());
 			}
 
-			// Fall back to half up the refr if the bound center is unavailable.
-			if (boundCenter.Length() == 0.0f)
+			// Get bounds from collidable.
+			if (refrHkpRigidBodyPtr->collidable.GetShape() &&
+				refrHkpRigidBodyPtr->collidable.GetShape()->type == 
+				RE::hkpShapeType::kBox)
 			{
-				boundCenter = 
-				(
-					hitRefrPtr->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, 0.5f * hitRefrPtr->GetHeight())
-				);
+				auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
+				RE::hkTransform hkTrans{ };
+				hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
+				hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
+				hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
+				RE::hkAabb aabb{ };
+				shape->GetAabbImpl(hkTrans, 0.0f, aabb);
+				boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
+				boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
 			}
-
-			// Finally, one more fallback to using half the object's height as the bounds.
+		}
+			
+		auto hit3DPtr = Util::GetRefr3D(hitRefrPtr.get()); 
+		if (hit3DPtr)
+		{
+			// Rotation from hit refr's 3D object.
+			rotMat = hit3DPtr->world.rotate;
+			// Fall back to 3D object's radius for the bounds,
+			// if not found from the collidable above.
 			if (boundMin == boundMax && boundMax.Length() == 0.0f)
 			{
 				boundMax = 
 				(
-					RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * hitRefrPtr->GetHeight()
+					RE::NiPoint3(0.0f, 1.0f, 0.0f) * hit3DPtr->worldBound.radius
 				);
 				boundMin = -boundMax;
 			}
+		}
+		else
+		{
+			// Fall back to refr reported angles if the refr's 3D is unavailable.
+			Util::SetRotationMatrixPYR
+			(
+				rotMat,
+				hitRefrPtr->data.angle.x,
+				hitRefrPtr->data.angle.z,
+				hitRefrPtr->data.angle.y
+			);
+		}
+
+		// Fall back to half up the refr if the bound center is unavailable.
+		if (boundCenter.Length() == 0.0f)
+		{
+			boundCenter = 
+			(
+				hitRefrPtr->data.location + 
+				RE::NiPoint3(0.0f, 0.0f, 0.5f * hitRefrPtr->GetHeight())
+			);
+		}
+
+		// Finally, one more fallback to using half the object's height as the bounds.
+		if (boundMin == boundMax && boundMax.Length() == 0.0f)
+		{
+			boundMax = 
+			(
+				RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * hitRefrPtr->GetHeight()
+			);
+			boundMin = -boundMax;
 		}
 		
 		//
@@ -8526,6 +8874,28 @@ namespace ALYSLC
 			crosshairSpeedMult = 1.0f;
 		}
 	}
+	
+	RE::ObjectRefHandle TargetingManager::UpdateNextObjectToActivate()
+	{
+		// Cycle through nearby objects to get an interactable refr,
+		// or choose the player's current crosshair refr.
+		// Set the result as the next object to activate when the bind is released.
+
+		if (useProximityInteraction)
+		{
+			// Cycle through nearby objects for a valid, interactable one.
+			SelectProximityRefr();
+			activationRefrHandle = proximityRefrHandle;
+			// Update last activation orientation after setting the proximity refr.
+			SetLastActivationCyclingOrientation();
+		}
+		else
+		{
+			activationRefrHandle = crosshairRefrHandle;
+		}
+
+		return activationRefrHandle;
+	}
 
 	void TargetingManager::UpdateSneakState()
 	{
@@ -8564,8 +8934,7 @@ namespace ALYSLC
 					// Not fully detected (< 100% detection) 
 					// within stealth radius of a hostile actor.
 					if (detectionPct < 100.0f && 
-						closestHostileActorPtr && 
-						closestHostileActorPtr.get() &&
+						closestHostileActorPtr &&
 						closestHostileActorDist <= Settings::fHostileTargetStealthRadius)
 					{
 						// Just got within stealth XP radius of hostile actor.
@@ -8597,8 +8966,7 @@ namespace ALYSLC
 					// within stealth radius of hostile actor.
 					if (prevDetectionPct > 0.0f &&
 						detectionPct == 0.0f && 
-						closestHostileActorPtr && 
-						closestHostileActorPtr.get() &&
+						closestHostileActorPtr &&
 						closestHostileActorDist <= Settings::fHostileTargetStealthRadius)
 					{
 						GlobalCoopData::AddSkillXP(controllerID, RE::ActorValue::kSneak, 2.5f);
@@ -8641,10 +9009,7 @@ namespace ALYSLC
 			// Must be valid, targetable, and not dead.
 			// Dead men tell no tales, after all.
 			auto actorPtr = Util::GetActorPtrFromHandle(handle);
-			if (!actorPtr || 
-				!actorPtr.get() || 
-				!Util::IsValidRefrForTargeting(actorPtr.get()) || 
-				actorPtr->IsDead())
+			if (!actorPtr || !Util::IsValidRefrForTargeting(actorPtr.get()) || actorPtr->IsDead())
 			{
 				continue;
 			}
@@ -8760,7 +9125,7 @@ namespace ALYSLC
 		
 		auto objectPtr = refrHandle.get();
 		auto refr3DPtr = Util::GetRefr3D(objectPtr.get()); 
-		if (!refr3DPtr || !refr3DPtr.get())
+		if (!refr3DPtr)
 		{
 			return;
 		}
@@ -8795,7 +9160,7 @@ namespace ALYSLC
 		
 		auto objectPtr = refrHandle.get();
 		auto refr3DPtr = Util::GetRefr3D(objectPtr.get()); 
-		if (!refr3DPtr || !refr3DPtr.get())
+		if (!refr3DPtr)
 		{
 			return;
 		}
@@ -8816,7 +9181,7 @@ namespace ALYSLC
 
 		auto objectPtr = Util::GetRefrPtrFromHandle(refrHandle);
 		auto refr3DPtr = Util::GetRefr3D(objectPtr.get());
-		if (!refr3DPtr || !refr3DPtr.get())
+		if (!refr3DPtr)
 		{
 			return;
 		}
@@ -8880,7 +9245,7 @@ namespace ALYSLC
 		if (!hasCollision)
 		{
 			auto refr3DPtr = Util::GetRefr3D(objectPtr.get());
-			if (refr3DPtr && refr3DPtr.get())
+			if (refr3DPtr)
 			{
 				refr3DPtr->fadeAmount = 0.5f;
 				if (auto fadeNode = refr3DPtr->AsFadeNode(); fadeNode)
@@ -8939,7 +9304,7 @@ namespace ALYSLC
 		auto indexBasedOffset = RE::NiPoint3();
 		// Spacing between subsequent grabbed objects is dependent on the objects' radii/heights.
 		float indexOffsetScalar = a_firstGrabbedReferenceBufferDist;
-		if (auto object3DPtr = Util::GetRefr3D(objectPtr.get()); object3DPtr && object3DPtr.get())
+		if (auto object3DPtr = Util::GetRefr3D(objectPtr.get()); object3DPtr)
 		{
 			// Add the central object's radius to a portion of the current grabbed object's radius.
 			indexOffsetScalar = 
@@ -9092,7 +9457,7 @@ namespace ALYSLC
 		(
 			isRagdolled && a_p->coopActor->GetCharController() ? 
 			a_p->coopActor->GetCharController()->outVelocity.Length3() :
-			mountPtr && mountPtr.get() ? 
+			mountPtr ? 
 			mountPtr->DoGetMovementSpeed() :
 			a_p->coopActor->DoGetMovementSpeed()
 		);
@@ -9182,7 +9547,7 @@ namespace ALYSLC
 		{
 			// Need a valid rigid body if not an active projectile.
 			auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get()); 
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			if (!hkpRigidBodyPtr)
 			{
 				return;
 			}
@@ -9281,7 +9646,7 @@ namespace ALYSLC
 		if (!isActiveProjectile)
 		{
 			auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get()); 
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get() || !isThrown)
+			if (!hkpRigidBodyPtr || !isThrown)
 			{
 				return;
 			}
@@ -9307,14 +9672,13 @@ namespace ALYSLC
 
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		// No valid target refr, so aim at the crosshair position.
-		if (!targetRefrPtr || !targetRefrPtr.get())
+		if (!targetRefrPtr)
 		{
 			return a_p->tm->crosshairWorldPos;
 		}
 
 		// Get targeted actor, if targeting one.
 		auto targetActorPtr = RE::ActorPtr(targetRefrPtr->As<RE::Actor>());
-		bool targetActorValidity = targetActorPtr && targetActorPtr.get();
 		// Invert pitch convention for use with trig functions.
 		const double& aimPitch = -a_p->mm->aimPitch;
 		// Set the initial predicted intercept/hit position to the initial end position.
@@ -9329,7 +9693,7 @@ namespace ALYSLC
 		// Current delta yaw and yaw rotation speed.
 		const float& currentYawAngDelta = a_p->tm->targetMotionState->cYawAngDeltaPerFrame;
 		float currentZRotSpeed = 0.0f;
-		if (targetActorValidity)
+		if (targetActorPtr)
 		{
 			currentZRotSpeed =
 			(
@@ -9465,22 +9829,16 @@ namespace ALYSLC
 		// Set the target position. Default to crosshair world position first.
 		RE::NiPoint3 aimTargetPos = a_p->tm->crosshairWorldPos;
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
-		bool targetRefrValidity = targetRefrPtr && targetRefrPtr.get();
 		auto asActorPtr = 
 		(
-			targetRefrValidity ? RE::ActorPtr(targetRefrPtr->As<RE::Actor>()) : nullptr
+			targetRefrPtr ? RE::ActorPtr(targetRefrPtr->As<RE::Actor>()) : nullptr
 		);
-		bool targetActorValidity = 
-		(
-			asActorPtr && 
-			asActorPtr.get() &&
-			Util::IsValidRefrForTargeting(asActorPtr.get())
-		);
+		bool targetActorValidity = asActorPtr && Util::IsValidRefrForTargeting(asActorPtr.get());
 		if (shouldUseHomingTrajectory)
 		{
 			targetLocalPosOffset = 
 			(
-				targetRefrValidity ? 
+				targetRefrPtr ? 
 				a_p->tm->crosshairLocalPosOffset : 
 				RE::NiPoint3()
 			);
@@ -9488,7 +9846,7 @@ namespace ALYSLC
 			{
 				aimTargetPos = Util::GetTorsoPosition(asActorPtr.get()) + targetLocalPosOffset;
 			}
-			else if (targetRefrValidity)
+			else if (targetRefrPtr)
 			{
 				aimTargetPos = Util::Get3DCenterPos(targetRefrPtr.get()) + targetLocalPosOffset;
 			}
@@ -9524,7 +9882,7 @@ namespace ALYSLC
 		else
 		{
 			auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get());
-			if (!hkpRigidBodyPtr || !hkpRigidBodyPtr.get())
+			if (!hkpRigidBodyPtr)
 			{
 				return velToSet;
 			}
@@ -9685,7 +10043,7 @@ namespace ALYSLC
 				(!passingTarget) && 
 				(
 					(hitRefrFIDs.empty()) ||
-					(targetRefrValidity && !hitRefrFIDs.contains(targetRefrPtr->formID))
+					(targetRefrPtr && !hitRefrFIDs.contains(targetRefrPtr->formID))
 				)
 			)
 		);
@@ -9783,7 +10141,7 @@ namespace ALYSLC
 		}
 
 		auto objectPtr = refrHandle.get();
-		if (!objectPtr || !objectPtr.get())
+		if (!objectPtr)
 		{
 			return false;
 		}
@@ -9803,9 +10161,7 @@ namespace ALYSLC
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		bool targetRefrPtrValidity = 
 		(
-			targetRefrPtr && 
-			targetRefrPtr.get() &&
-			Util::IsValidRefrForTargeting(targetRefrPtr.get())
+			targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 		);
 		auto targetActor = targetRefrPtrValidity ? targetRefrPtr->As<RE::Actor>() : nullptr;
 		targetLocalPosOffset = 
@@ -9825,41 +10181,6 @@ namespace ALYSLC
 		{
 			trajectoryEndPos = Util::Get3DCenterPos(targetRefrPtr.get()) + targetLocalPosOffset;
 		}
-
-		// REMOVE when done debugging.
-		/*DebugAPI::QueuePoint3D
-		(
-			ToVec3(objectPtr->data.location),
-			Settings::vuOverlayRGBAValues[a_p->playerID], 
-			10.0f
-		);
-
-		auto refr3DPtr = Util::GetRefr3D(objectPtr.get());
-		if (refr3DPtr && refr3DPtr.get())
-		{
-			DebugAPI::QueuePoint3D
-			(
-				ToVec3(refr3DPtr->world.translate), 
-				Settings::vuCrosshairOuterOutlineRGBAValues[a_p->playerID], 
-				8.0f
-			);
-			DebugAPI::QueuePoint3D
-			(
-				ToVec3(refr3DPtr->worldBound.center), 0xFFFF00FF, 6.0f
-			);
-		}
-
-		auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get());
-		if (hkpRigidBodyPtr && hkpRigidBodyPtr.get())
-		{
-			DebugAPI::QueuePoint3D
-			(
-				ToVec3(hkpRigidBodyPtr->motion.motionState.transform.translation) *
-				HAVOK_TO_GAME,
-				0x00FFFFFF,
-				4.0f
-			);
-		}*/
 		
 		// Released from suspended position.
 		releasePos = Util::GetRefrPosition(objectPtr.get());
@@ -10074,9 +10395,7 @@ namespace ALYSLC
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		bool targetRefrPtrValidity = 
 		(
-			targetRefrPtr && 
-			targetRefrPtr.get() &&
-			Util::IsValidRefrForTargeting(targetRefrPtr.get())
+			targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 		);
 		auto targetActor = targetRefrPtrValidity ? targetRefrPtr->As<RE::Actor>() : nullptr;
 		targetLocalPosOffset = 
@@ -10113,11 +10432,10 @@ namespace ALYSLC
 			Settings::vuProjectileTrajectoryType[a_p->playerID]
 		);
 
-		auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get()); 
-		bool hkpRigidBodyValidity = hkpRigidBodyPtr && hkpRigidBodyPtr.get();
+		auto hkpRigidBodyPtr = Util::GethkpRigidBody(objectPtr.get());
 		// Release velocity to apply.
 		// Set to the current velocity initially.
-		if (hkpRigidBodyValidity)
+		if (hkpRigidBodyPtr)
 		{
 			releaseVelocity = ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity) * HAVOK_TO_GAME;
 		}
@@ -10142,7 +10460,7 @@ namespace ALYSLC
 			auto asActor = objectPtr->As<RE::Actor>();
 			// Throw refr telekinetically.
 			// Zero out velocity first.
-			if (!isActiveProjectile && hkpRigidBodyValidity)
+			if (!isActiveProjectile && hkpRigidBodyPtr)
 			{
 				Util::NativeFunctions::hkpEntity_Activate(hkpRigidBodyPtr.get());
 				hkpRigidBodyPtr->motion.SetPosition(releasePos * GAME_TO_HAVOK);
@@ -10317,7 +10635,7 @@ namespace ALYSLC
 			);
 			releaseVelocity = RE::NiPoint3(velX, velY, velZ);
 			releaseSpeed = releaseVelocity.Length();
-			if (hkpRigidBodyValidity)
+			if (hkpRigidBodyPtr)
 			{
 				// Activate the refr and set the computed velocity.
 				// Without activation, the object will not always move to our target position
@@ -10445,7 +10763,7 @@ namespace ALYSLC
 		// or -1 if the requested refr could not be released.
 
 		auto objectPtr = Util::GetRefrPtrFromHandle(a_handle); 
-		if (!objectPtr || !objectPtr.get())
+		if (!objectPtr)
 		{
 			return -1;
 		}
@@ -10472,9 +10790,11 @@ namespace ALYSLC
 		);
 		// Set the magicka overflow factor using the magicka cost
 		// before initializing the trajectory.
+		// Modify by the player's magicka cost multiplier 
+		// to reflect the true cost applied through the CheckClampDamageModifier() hook.
 		info->magickaOverflowSlowdownFactor = GetThrownRefrMagickaOverflowSlowdownFactor
 		(
-			a_p, a_magickaCost
+			a_p, a_magickaCost * Settings::vfMagickaCostMult[a_p->playerID]
 		);
 		// Set initial homing/aim prediction trajectory info.
 		info->InitTrajectory(a_p);
@@ -10644,7 +10964,7 @@ namespace ALYSLC
 			{
 				auto refrPtr = Util::GetRefrPtrFromHandle(a_info->refrHandle);
 				// Invalid or not an actor so do not clear.
-				if (!refrPtr || !refrPtr.get() || !refrPtr->As<RE::Actor>())
+				if (!refrPtr || !refrPtr->As<RE::Actor>())
 				{
 					return false;
 				}
@@ -10701,7 +11021,7 @@ namespace ALYSLC
 			RefreshHandleToIndexMappings(true);
 		}
 
-		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr && refrPtr.get())
+		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
 		{
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
@@ -10720,7 +11040,7 @@ namespace ALYSLC
 			// Reset collision layer, just in case collisions were disabled.
 			info->RestoreSavedCollisionLayer();
 			const auto& handle = info->refrHandle;
-			if (auto refrPtr = Util::GetRefrPtrFromHandle(handle); refrPtr&& refrPtr.get())
+			if (auto refrPtr = Util::GetRefrPtrFromHandle(handle); refrPtr)
 			{
 				// Ensure actors are no longer paralyzed.
 				if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
@@ -10748,7 +11068,7 @@ namespace ALYSLC
 				{
 					const auto& handle = a_info->refrHandle;
 					auto refrPtr = Util::GetRefrPtrFromHandle(handle); 
-					if (refrPtr && refrPtr.get())
+					if (refrPtr)
 					{
 						// Ensure actors are no longer paralyzed.
 						if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
@@ -10875,7 +11195,7 @@ namespace ALYSLC
 			RefreshHandleToIndexMappings(false);
 		}
 
-		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr && refrPtr.get())
+		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
 		{
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
@@ -10907,7 +11227,7 @@ namespace ALYSLC
 			RefreshHandleToIndexMappings(false);
 		}
 
-		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr && refrPtr.get())
+		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
 		{
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
@@ -10925,7 +11245,7 @@ namespace ALYSLC
 		{
 			const auto& handle = info->refrHandle;
 			auto refrPtr = Util::GetRefrPtrFromHandle(handle); 
-			if (!refrPtr || !refrPtr.get())
+			if (!refrPtr)
 			{
 				continue;
 			}
@@ -11000,7 +11320,7 @@ namespace ALYSLC
 		const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFR* a_refrToThrow
 	)
 	{
-		// Return the magicka cost for throwing the given refr,
+		// Return the base magicka cost for throwing the given refr,
 		// factoring in the grab bind held time to adjust the cost.
 
 		if (a_p->isInGodMode || !a_refrToThrow)
@@ -11025,7 +11345,6 @@ namespace ALYSLC
 			(
 				(4.0f * sqrtf(objectWeight)) * 
 				(0.5f * normHoldTime + 0.5f) *
-				(Settings::vfMagickaCostMult[a_p->playerID]) *
 				(Settings::vfObjectManipulationMagickaCostMult[a_p->playerID])
 			);
 		}
@@ -11036,7 +11355,6 @@ namespace ALYSLC
 			(
 				(4.0f * sqrtf(objectWeight)) * 
 				(0.5f * normHoldTime + 0.5f) *
-				(Settings::vfMagickaCostMult[a_p->playerID])*
 				(Settings::vfObjectManipulationMagickaCostMult[a_p->playerID])
 			);
 		}
@@ -11044,7 +11362,7 @@ namespace ALYSLC
 
 	float TargetingManager::RefrManipulationManager::GetThrownRefrMagickaOverflowSlowdownFactor
 	(
-		const std::shared_ptr<CoopPlayer>& a_p, const float& a_totalMagickaCost
+		const std::shared_ptr<CoopPlayer>& a_p, const float& a_trueMagickaCost
 	)
 	{
 		// Factor by which to slow down all thrown refrs' release speeds.
@@ -11070,7 +11388,7 @@ namespace ALYSLC
 		(
 			std::clamp
 			(
-				1.0f - max(0.0f, (a_totalMagickaCost - currentMagicka) / maxMagicka),
+				1.0f - max(0.0f, (a_trueMagickaCost - currentMagicka) / maxMagicka),
 				0.25f,
 				1.0f
 			)
@@ -11121,10 +11439,7 @@ namespace ALYSLC
 			{
 				const auto& contactEvent = *iter;
 				// Must have two colliding bodies.
-				if (!contactEvent->rigidBodyA || 
-					!contactEvent->rigidBodyA.get() || 
-					!contactEvent->rigidBodyB ||
-					!contactEvent->rigidBodyB.get())
+				if (!contactEvent->rigidBodyA || !contactEvent->rigidBodyB)
 				{
 					continue;
 				}
@@ -11135,17 +11450,17 @@ namespace ALYSLC
 				// If one refr is invalid, it means a thrown refr collided with an object
 				// that has no associated refr, such as a terrain block,
 				// so we have to record the hit and potentially handle the splat and cleanup.
-				if (!refrPtrA || !refrPtrA.get() || !refrPtrB || !refrPtrB.get()) 
+				if (!refrPtrA || !refrPtrB) 
 				{
 					auto releasedRefrPtr =
 					(
-						refrPtrA && refrPtrA.get() ?
+						refrPtrA ?
 						refrPtrA :
-						refrPtrB && refrPtrB.get() ?
+						refrPtrB ?
 						refrPtrB :
 						nullptr
 					);
-					if (!releasedRefrPtr || !releasedRefrPtr.get())
+					if (!releasedRefrPtr)
 					{
 						continue;
 					}
@@ -11229,39 +11544,32 @@ namespace ALYSLC
 					hitRigidBodyPtr = contactEvent->rigidBodyA;
 					releasedRigidBodyPtr = contactEvent->rigidBodyB;
 				}
-
-				// Why are you hitting yourself? Eh, whatever. Next!
-				if (!collidedWithRefrPtr || 
-					!collidedWithRefrPtr.get() || 
-					collidedWithRefrPtr == a_p->coopActor)
+				
+				// No released refr rigid body.
+				if (!releasedRigidBodyPtr)
 				{
 					continue;
 				}
-
-				// Ignore refrs without collision, such as activators.
-				bool hasCollidable =
-				(
-					hitRigidBodyPtr &&
-					hitRigidBodyPtr.get() && 
-					hitRigidBodyPtr->GetCollidable()
-				);
-				if (!hasCollidable)
-				{
-					continue;
-				}
-
+				
 				// No index for the managed refr.
 				if (collidingReleasedRefrIndex == -1)
 				{
 					continue;
 				}
 
-				// No released refr rigid body.
-				if (!releasedRigidBodyPtr || !releasedRigidBodyPtr.get())
+				// Why are you hitting yourself? Eh, whatever. Next!
+				if (!collidedWithRefrPtr || collidedWithRefrPtr == a_p->coopActor)
 				{
 					continue;
 				}
-				
+
+				// Ignore refrs without collision, such as activators.
+				bool hasCollidable = hitRigidBodyPtr && hitRigidBodyPtr->GetCollidable();
+				if (!hasCollidable)
+				{
+					continue;
+				}
+
 				// Do not handle if the hit refr is a player that is dash dodging.
 				auto hitPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(collidedWithRefrPtr);
 				if (hitPlayerIndex != -1)
@@ -11358,7 +11666,7 @@ namespace ALYSLC
 				if (havokHitSpeed == 0.0f)
 				{
 					auto refr3DPtr = Util::GetRefr3D(releasedRefrPtr.get());
-					if (refr3DPtr && refr3DPtr.get())
+					if (refr3DPtr)
 					{
 						havokHitSpeed = Util::GetParentNodeHavokPointVelocity
 						(
@@ -11456,14 +11764,14 @@ namespace ALYSLC
 		{
 			// Move unloaded or far away grabbed objects to the player.
 			auto& grabbedRefrInfo = grabbedRefrInfoList[i];
-			if (!grabbedRefrInfo || !grabbedRefrInfo.get())
+			if (!grabbedRefrInfo)
 			{
 				continue;
 			}
 
 			const auto& handle = grabbedRefrInfo->refrHandle;
 			auto refrPtr = Util::GetRefrPtrFromHandle(handle);
-			if (!refrPtr || !refrPtr.get() || refrPtr->As<RE::Actor>())
+			if (!refrPtr || refrPtr->As<RE::Actor>())
 			{
 				continue;
 			}
@@ -11531,7 +11839,7 @@ namespace ALYSLC
 		bool&& a_checkGrabbedRefrsList
 	)
 	{
-		// Cache the total magicka cost for throwing all this player's grabbed refrs,
+		// Cache the total base magicka cost for throwing all this player's grabbed refrs,
 		// factoring in the given grab hold time to adjust the cost.
 		// Either calculate the cost from the grabbed refrs or released refrs list.
 
@@ -11555,7 +11863,7 @@ namespace ALYSLC
 				}
 
 				auto objectPtr = Util::GetRefrPtrFromHandle(info->refrHandle);
-				if (!objectPtr || !objectPtr.get())
+				if (!objectPtr)
 				{
 					continue;
 				}
@@ -11575,8 +11883,7 @@ namespace ALYSLC
 					totalMagickaCost += 
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f) *
-						(Settings::vfMagickaCostMult[a_p->playerID])
+						(0.5f * normHoldTime + 0.5f)
 					);
 				}
 				else
@@ -11585,8 +11892,7 @@ namespace ALYSLC
 					totalMagickaCost +=
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f) *
-						(Settings::vfMagickaCostMult[a_p->playerID])
+						(0.5f * normHoldTime + 0.5f)
 					);
 				}
 			}
@@ -11602,7 +11908,7 @@ namespace ALYSLC
 				}
 
 				auto objectPtr = Util::GetRefrPtrFromHandle(info->refrHandle);
-				if (!objectPtr || !objectPtr.get())
+				if (!objectPtr)
 				{
 					continue;
 				}
@@ -11622,8 +11928,7 @@ namespace ALYSLC
 					totalMagickaCost += 
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f) *
-						(Settings::vfMagickaCostMult[a_p->playerID])
+						(0.5f * normHoldTime + 0.5f)
 					);
 				}
 				else
@@ -11632,18 +11937,17 @@ namespace ALYSLC
 					totalMagickaCost +=
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f) *
-						(Settings::vfMagickaCostMult[a_p->playerID])
+						(0.5f * normHoldTime + 0.5f)
 					);
 				}
 			}
 		}
 
-		// Apply the player-dependent magicka modifiers last.
+		// Apply the player-dependent object manipulation magicka mult last.
+		// The player's magicka cost mult is applied in the CheckClampDamageModifier() hook.
 		totalThrownRefrMagickaCost = 
 		(
-			totalMagickaCost * 
-			Settings::vfMagickaCostMult[a_p->playerID] * 
+			totalMagickaCost *
 			Settings::vfObjectManipulationMagickaCostMult[a_p->playerID]
 		);
 	}
@@ -11686,19 +11990,15 @@ namespace ALYSLC
 
 		targetRefrHandle = a_targetRefrHandle;
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle); 
-		bool targetRefrValidity = 
-		(
-			targetRefrPtr && targetRefrPtr.get() && targetRefrPtr->IsHandleValid()
-		);
+		bool targetRefrValidity = targetRefrPtr && targetRefrPtr->IsHandleValid();
 		if (!targetRefrValidity)
 		{
 			return;
 		}
 
 		auto asActorPtr = RE::ActorPtr(targetRefrPtr->As<RE::Actor>());
-		bool isActor = asActorPtr && asActorPtr.get();
 		// Need a valid char controller for targeted actors.
-		if (isActor && !asActorPtr->GetCharController())
+		if (asActorPtr && !asActorPtr->GetCharController())
 		{
 			return;
 		}
@@ -11708,7 +12008,7 @@ namespace ALYSLC
 		{
 			// Need to set both current and previous positions/velocities/angles
 			// to their corresponding initial values on the first update.
-			if (isActor)
+			if (asActorPtr)
 			{
 				RE::hkVector4 pos{ };
 				asActorPtr->GetCharController()->GetPosition(pos, false);
@@ -11751,7 +12051,7 @@ namespace ALYSLC
 			pYaw = cYaw;
 			pYawAngDeltaPerFrame = cYawAngDeltaPerFrame;
 
-			if (isActor)
+			if (asActorPtr)
 			{
 				// NOTE: 
 				// Both the reported actor movement speed (DoGetMovementSpeed())
@@ -11839,7 +12139,7 @@ namespace ALYSLC
 		
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		// No valid target refr, so aim at the crosshair position.
-		if (!targetRefrPtr || !targetRefrPtr.get())
+		if (!targetRefrPtr)
 		{
 			double xy = Util::GetXYDistance(trajectoryEndPos, releasePos);
 			double z = (trajectoryEndPos - releasePos).z;
@@ -11857,10 +12157,9 @@ namespace ALYSLC
 		// Want to avoid shooting at an aim correction target 
 		// while mounted and targeting another object.
 		auto targetActorPtr = RE::ActorPtr(targetRefrPtr->As<RE::Actor>());
-		auto targetActorValidity = targetActorPtr && targetActorPtr.get();
 		bool aimAtActor = 
 		{
-			(targetActorValidity) && 
+			(targetActorPtr) && 
 			(
 				!a_p->coopActor->IsOnMount() || 
 				targetActorPtr->GetHandle() == a_p->tm->selectedTargetActorHandle
@@ -11886,7 +12185,7 @@ namespace ALYSLC
 		// Current delta yaw and yaw rotation speed.
 		const float& currentYawAngDelta = a_p->tm->targetMotionState->cYawAngDeltaPerFrame;
 		float currentZRotSpeed = 0.0f;
-		if (targetActorValidity)
+		if (targetActorPtr)
 		{
 			currentZRotSpeed =
 			(
@@ -12112,7 +12411,7 @@ namespace ALYSLC
 		
 		RE::Projectile* projectile = nullptr;
 		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle); 
-		if (projectilePtr && projectilePtr.get()) 
+		if (projectilePtr) 
 		{
 			projectile = projectilePtr->As<RE::Projectile>();
 		}
@@ -12311,7 +12610,7 @@ namespace ALYSLC
 
 		RE::Projectile* projectile = nullptr;
 		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
-		if (projectilePtr && projectilePtr.get())
+		if (projectilePtr)
 		{
 			projectile = projectilePtr->As<RE::Projectile>();
 		}
@@ -12433,15 +12732,12 @@ namespace ALYSLC
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		bool targetRefrValidity = 
 		(
-			targetRefrPtr && 
-			targetRefrPtr.get() && 
-			Util::IsValidRefrForTargeting(targetRefrPtr.get())
+			targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
 		);
 		auto targetActorPtr = 
 		(
 			targetRefrValidity ? RE::ActorPtr(targetRefrPtr->As<RE::Actor>()) : nullptr
 		);
-		bool targetActorValidity = targetActorPtr && targetActorPtr.get();
 		targetLocalPosOffset = 
 		(
 			Util::HandleIsValid(targetRefrHandle) ? 
@@ -12461,7 +12757,7 @@ namespace ALYSLC
 		{
 			trajectoryEndPos =
 			(
-				targetActorValidity ? 
+				targetActorPtr ? 
 				Util::GetTorsoPosition(targetActorPtr.get()) :
 				Util::Get3DCenterPos(targetRefrPtr.get())
 			);
@@ -12478,7 +12774,7 @@ namespace ALYSLC
 		(
 			(a_trajType != ProjectileTrajType::kHoming) && 
 			(!a_setStraightTrajectory) &&
-			((targetActorValidity) || (a_p->mm->reqFaceTarget))
+			((targetActorPtr) || (a_p->mm->reqFaceTarget))
 		);
 		if (predictInterceptPos) 
 		{
@@ -12640,7 +12936,7 @@ namespace ALYSLC
 			);
 			bool aimAtActor = 
 			{
-				(targetActorValidity) && 
+				(targetActorPtr) && 
 				(!a_p->coopActor->IsOnMount() || targetActorPtr == selectedTargetActorPtr)
 			};
 			if (aimAtActor) 
@@ -12768,7 +13064,7 @@ namespace ALYSLC
 			// or directly at the current crosshair position without modifying the release speed.
 
 			// Set launch angles, end position, and time to target.
-			if (!a_p->mm->reqFaceTarget && !targetActorValidity) 
+			if (!a_p->mm->reqFaceTarget && !targetActorPtr) 
 			{
 				// Launch far away in aiming direction.
 				launchPitch = -a_p->mm->aimPitch;
@@ -12938,7 +13234,7 @@ namespace ALYSLC
 
 		auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
 		// Smart ptr was invalid, so its managed projectile is as well.
-		if (!projectilePtr || !projectilePtr.get())
+		if (!projectilePtr)
 		{
 			return;
 		}

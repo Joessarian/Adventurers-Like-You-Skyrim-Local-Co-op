@@ -369,11 +369,26 @@ namespace ALYSLC
 			const auto lhObj = equippedForms[!EquipIndex::kLeftHand];
 			const auto rhObj = equippedForms[!EquipIndex::kRightHand];
 
-			return 
-			(
-				(lhObj && lhObj->IsArmor() && lhObj->As<RE::TESObjectARMO>()->IsShield()) ||
-				(rhObj && rhObj->IsArmor() && rhObj->As<RE::TESObjectARMO>()->IsShield())
-			);
+			if ((lhObj && lhObj->IsArmor() && lhObj->As<RE::TESObjectARMO>()->IsShield()) ||
+				(rhObj && rhObj->IsArmor() && rhObj->As<RE::TESObjectARMO>()->IsShield()))
+			{
+				return true;
+			}
+
+			// Check the current shield biped slot next.
+			auto biped = coopActor->GetBiped();
+			if (biped)
+			{
+				auto form = biped->objects[RE::BIPED_OBJECT::kShield].item;
+				if (form &&
+					form->As<RE::TESObjectARMO>() &&
+					form->As<RE::TESObjectARMO>()->IsShield())
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		// Check if the player has a torch equipped.
@@ -527,6 +542,11 @@ namespace ALYSLC
 			bool a_applyNow = true
 		);
 		
+		// Equip dummy 1H weapon to clear out the given hand slot.
+		// NOTE: 
+		// Does not clear the desired hand slot form in the same slot.
+		void EquipDummy1H(RE::BGSEquipSlot* a_slot);
+
 		// Equip fists to clear out hand slots.
 		// NOTE: 
 		// Does not clear desired hand slot forms.
@@ -624,6 +644,9 @@ namespace ALYSLC
 		// optionally refreshing the cached equipped state beforehand.
 		void ReEquipAll(bool a_refreshBeforeEquipping);
 		
+		// Unequip and re-equip 1H form in the given slot (LH or RH).
+		void ReEquipHandForm(bool a_rhSlot);
+
 		// Unequip and re-equip forms in the two hand slots.
 		void ReEquipHandForms();
 
@@ -767,6 +790,10 @@ namespace ALYSLC
 		RE::SpellItem* voiceSpell;
 		// Quick slot spell.
 		RE::SpellItem* quickSlotSpell;
+		// LH/RH bound weapons the player last requested to equip.
+		// If 2H, LH and RH are set to the same weapon.
+		RE::TESForm* lastReqBoundWeapLH;
+		RE::TESForm* lastReqBoundWeapRH;
 		// Current cycled ammo and voice magic forms.
 		RE::TESForm* currentCycledAmmo;
 		RE::TESForm* currentCycledVoiceMagic;

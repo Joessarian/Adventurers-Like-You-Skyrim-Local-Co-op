@@ -49,7 +49,7 @@ namespace Raycast
 		// 2. Attempt to obtain the hit refr from the collidable.
 		// 3. If the hit 3D was invalid, obtain 3D via second method and then check its user data.
 		// 4. As a last resort, walk up the node tree and look for a valid parent refr.
-		if (hit3DPtr && hit3DPtr.get() && hit3DPtr->userData)
+		if (hit3DPtr && hit3DPtr->userData)
 		{
 			hit.hitRefrPtr = RE::TESObjectREFRPtr(hit3DPtr->userData);
 		}
@@ -60,9 +60,9 @@ namespace Raycast
 			(
 				RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
 			);
-			if (!hit.hitRefrPtr || !hit.hitRefrPtr.get())
+			if (!hit.hitRefrPtr)
 			{
-				if (!hit3DPtr || !hit3DPtr.get())
+				if (!hit3DPtr)
 				{
 					hit3DPtr = RE::NiPointer<RE::NiAVObject>
 					(
@@ -70,7 +70,7 @@ namespace Raycast
 					);
 				}
 
-				if (hit3DPtr && hit3DPtr.get())
+				if (hit3DPtr)
 				{
 					if (hit3DPtr->userData)
 					{
@@ -88,7 +88,6 @@ namespace Raycast
 		}
 
 		// Is there an associated refr with the hit 3D object?
-		bool hitRefrValid = hit.hitRefrPtr && hit.hitRefrPtr.get();
 		if (useOriginalFilter)
 		{
 			// Use SmoothCam's original collision filter mask here.
@@ -99,11 +98,11 @@ namespace Raycast
 			constexpr uint64_t filter = 0x40122716;	 //@TODO
 			if ((m & filter) != 0)
 			{
-				if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
+				if (!objectFilters.empty() && hit3DPtr)
 				{
 					for (const auto filteredObjPtr : objectFilters)
 					{
-						if (!filteredObjPtr || !filteredObjPtr.get())
+						if (!filteredObjPtr)
 						{
 							continue;
 						}
@@ -136,12 +135,12 @@ namespace Raycast
 						(
 							(
 								isIncludeFilter && 
-								hitRefrValid &&
+								hit.hitRefrPtr &&
 								hit.hitRefrPtr.get() != filteredRefr
 							) ||
 							(
 								!isIncludeFilter && 
-								hitRefrValid &&
+								hit.hitRefrPtr &&
 								hit.hitRefrPtr.get() == filteredRefr
 							)
 						);
@@ -152,11 +151,11 @@ namespace Raycast
 					}
 				}
 				
-				if (hitRefrValid && !refrFilters.empty())
+				if (hit.hitRefrPtr && !refrFilters.empty())
 				{
 					for (const auto filteredRefrPtr : refrFilters)
 					{
-						if (!filteredRefrPtr || !filteredRefrPtr.get())
+						if (!filteredRefrPtr)
 						{
 							continue;
 						}
@@ -179,9 +178,9 @@ namespace Raycast
 		{
 			// Consider all hits but filter with formtype or object 3D lists exclusively instead.
 			// Form type filters.
-			if (hitRefrValid && !formTypesToFilter.empty())
+			if (hit.hitRefrPtr && !formTypesToFilter.empty())
 			{
-				auto baseObject = hitRefrValid ? hit.hitRefrPtr->GetBaseObject() : nullptr;
+				auto baseObject = hit.hitRefrPtr ? hit.hitRefrPtr->GetBaseObject() : nullptr;
 				for (const auto& filteredFormType : formTypesToFilter)
 				{
 					if (isIncludeFilter)
@@ -205,11 +204,11 @@ namespace Raycast
 				}
 			}
 
-			if (!objectFilters.empty() && hit3DPtr && hit3DPtr.get())
+			if (!objectFilters.empty() && hit3DPtr)
 			{
 				for (const auto filteredObjPtr : objectFilters)
 				{
-					if (!filteredObjPtr || !filteredObjPtr.get())
+					if (!filteredObjPtr)
 					{
 						continue;
 					}
@@ -239,12 +238,12 @@ namespace Raycast
 					(
 						(
 							isIncludeFilter && 
-							hitRefrValid &&
+							hit.hitRefrPtr &&
 							hit.hitRefrPtr.get() != filteredRefr
 						) ||
 						(
 							!isIncludeFilter && 
-							hitRefrValid &&
+							hit.hitRefrPtr &&
 							hit.hitRefrPtr.get() == filteredRefr
 						)
 					);
@@ -255,7 +254,7 @@ namespace Raycast
 				}
 			}
 
-			if (hitRefrValid && !refrFilters.empty())
+			if (hit.hitRefrPtr && !refrFilters.empty())
 			{
 				for (const auto filteredRefrPtr : refrFilters)
 				{

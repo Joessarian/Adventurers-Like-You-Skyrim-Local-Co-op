@@ -170,27 +170,6 @@ namespace ALYSLC
 		SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kIgnoreCombat, true);
 		SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag::kNoCombatAlert, true);
 
-		// Failsafe.
-		// Ensure that dual casts release properly
-		// when there is a delay between the releasing of the two casting binds.
-		// A bug would cause the player to continue to cast for free on the hand
-		// corresponding to the second button released, 
-		// despite neither attack button being held.
-		bool stuckInCastingAnim = 
-		{
-			!p->isPlayer1 &&
-			coopActor->HasKeyword(glob.npcKeyword) && 
-			isInCastingAnim &&
-			castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f && 
-			castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f
-		};
-		if (stuckInCastingAnim)
-		{
-			// Since both casting globals are cleared,
-			// the player should stop casting once the package executes.
-			EvaluatePackage();
-		}
-
 		//==========================
 		// Player Action Check Loop.
 		//==========================
@@ -298,17 +277,17 @@ namespace ALYSLC
 				{
 					if (shouldBlockActionsInMenu) 
 					{
-						if (!isControllingUnpausedMenu)
-						{
-							// Block all menu-opening actions 
-							// since this player is not controlling menus.
-							blockActionInUnpausedMenu = 
-							(
-								paInfo->DEF_ACTION_INDICES_TO_GROUPS.at(actionIndex) == 
-								ActionGroup::kMenu
-							);
-						}
-						else if (ui->menuStack.size() > 0)
+						// Block all menu-opening actions if any player is controlling menus.
+						blockActionInUnpausedMenu = 
+						(
+							paInfo->DEF_ACTION_INDICES_TO_GROUPS.at(actionIndex) == 
+							ActionGroup::kMenu
+						);
+						// Check for other actions that should be blocked 
+						// if this player is controlling menus.
+						if (!blockActionInUnpausedMenu && 
+							isControllingUnpausedMenu && 
+							ui->menuStack.size() > 0)
 						{
 							// Search for a supported menu 
 							// from the top-most to the bottom-most menus
@@ -343,6 +322,10 @@ namespace ALYSLC
 								}
 							}
 
+							const auto& toInputActionsMap = 
+							(
+								glob.cdh->GAMEMASK_TO_INPUT_ACTION
+							);
 							auto controlMap = RE::ControlMap::GetSingleton();
 							auto ue = RE::UserEvents::GetSingleton();
 							uint32_t acceptMask = 1 << !InputAction::kA;
@@ -352,6 +335,7 @@ namespace ALYSLC
 							uint32_t dpadLMask = 1 << !InputAction::kDPadL;
 							uint32_t dpadRMask = 1 << !InputAction::kDPadR;
 							uint32_t dpadUMask = 1 << !InputAction::kDPadU;
+							uint32_t waitMask = 1 << !InputAction::kBack;
 							// If available, obtain the input action masks 
 							// corresponding to the game's mapped buttons for each user event.
 							if (controlMap)
@@ -364,11 +348,11 @@ namespace ALYSLC
 								);
 								if (acceptGameMask != 0xFF)
 								{
-									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
+									const auto iter = toInputActionsMap.find
 									(
 										acceptGameMask
 									);
-									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									if (iter != toInputActionsMap.end())
 									{
 										acceptMask = 1 << (!iter->second);
 									}
@@ -382,11 +366,11 @@ namespace ALYSLC
 								);
 								if (xButtonGameMask != 0xFF)
 								{
-									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
+									const auto iter = toInputActionsMap.find
 									(
 										xButtonGameMask
 									);
-									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									if (iter != toInputActionsMap.end())
 									{
 										xButtonMask = 1 << (!iter->second);
 									}
@@ -400,11 +384,11 @@ namespace ALYSLC
 								);
 								if (cancelGameMask != 0xFF)
 								{
-									const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
+									const auto iter = toInputActionsMap.find
 									(
 										cancelGameMask
 									);
-									if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+									if (iter != toInputActionsMap.end())
 									{
 										cancelMask = 1 << (!iter->second);
 									}
@@ -413,22 +397,69 @@ namespace ALYSLC
 
 							if (lootMenuOpen)
 							{
+								// Binds to block since they're used in the Loot Menu.
+								uint32_t blacklistedBindsMask = 0;
+								if (ALYSLC::QuickLootCompat::g_isQuickLootIE)
+								{
+									// For QuickLootIE, check for binds with the 
+									// 'QUICKLOOT_EVENT_GROUP_FLAG' user event group flag set
+									// and add to the allowed codes set.
+									// https://github.com/MissCorruption/QuickLootIE/blob/main/src/Input/InputManager.cpp#L106
+									auto context = controlMap->controlMap
+									[
+										RE::ControlMap::InputContextID::kGameplay
+									];
+									if (context)
+									{
+										const auto& mappings = context->deviceMappings
+										[
+											RE::INPUT_DEVICE::kGamepad
+										];
+										for (const auto& mapping : mappings)
+										{
+											if (mapping.userEventGroupFlag.all
+											(
+												static_cast<RE::ControlMap::UEFlag>(1 << 12)
+											))
+											{
+												// Map game mask to InputAction and generate mask.
+												const auto iter = toInputActionsMap.find
+												(
+													mapping.inputKey
+												);
+												if (iter != toInputActionsMap.end())
+												{
+													// Add to bind blacklist mask.
+													blacklistedBindsMask |= 
+													(
+														1 << (!iter->second)
+													);
+												}
+											}
+										}
+									}
+								}
+								else
+								{
+									// Default binds to block for QuickLootEE.
+									blacklistedBindsMask = 
+									(
+										(acceptMask) | 
+										(cancelMask) |
+										(xButtonMask) | 
+										(dpadDMask) | 
+										(dpadLMask) | 
+										(dpadRMask) | 
+										(dpadUMask)
+									);
+								}
+
 								// Block actions that are composed of 
-								// the 'Take', 'Take All', 'Cancel', and DPad buttons.
+								// the 'Take', 'Take All', 'Cancel', DPad buttons,
+								// and any others that are part of QuickLootIE's binds set.
 								blockActionInUnpausedMenu = 
 								{ 
-									(
-										checkedPAInputMask & 
-										(
-											(acceptMask) | 
-											(cancelMask) |
-											(xButtonMask) | 
-											(dpadDMask) | 
-											(dpadLMask) | 
-											(dpadRMask) | 
-											(dpadUMask)
-										)
-									) != 0 
+									(checkedPAInputMask & (blacklistedBindsMask)) != 0 
 								};
 							}
 							else if (customMenuOpen || dialogueMenuOpen)
@@ -727,7 +758,7 @@ namespace ALYSLC
 				}
 
 				// Add AV cost action request if this action comes with an associated AV cost.
-				if (paState.avCost != 0.0f)
+				if (paState.avBaseCost != 0.0f)
 				{
 					AddAVCostActionRequest(action);
 				}
@@ -1094,6 +1125,8 @@ namespace ALYSLC
 
 		if (p->isPlayer1)
 		{
+			auto lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
+			auto rhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
 			if (lhCaster && !lhCaster->currentSpell)
 			{
 				lhCaster->currentSpellCost = 0.0f;
@@ -1134,7 +1167,11 @@ namespace ALYSLC
 			// and unequip bound weapons once their lifetime expires.
 			UpdateBoundWeaponTimers();
 		}
-
+		
+		// Check if an FNF cast was triggered on release of a cast bind 
+		// and if package casting data is no longer in sync with the player's casting state.
+		// Make sure to reset the data if the player is no longer casting.
+		CheckForDelayedCastCompletion();
 		// Update player transformation state.
 		UpdateTransformationState();
 		// Update the last hand used to perform an attack or cast.
@@ -1349,9 +1386,6 @@ namespace ALYSLC
 			std::string("__CoopPlayerUseRHStaff") + std::to_string(controllerID + 1)
 		);
 		usingRHStaff = globForm ? globForm->As<RE::TESGlobal>() : nullptr;
-		// Casting.
-		lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
-		rhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);
 		castingGlobVars.fill(nullptr);
 		// Clear all casting globals to prevent the ranged attack package
 		// from starting to cast spells on resumption.
@@ -1388,7 +1422,6 @@ namespace ALYSLC
 		secsSinceBoundWeap2HReq =
 		secsSinceBoundWeapLHReq =
 		secsSinceBoundWeapRHReq =
-		secsSinceLastActivationCyclingCheck =
 		secsSinceLastShout =
 		secsSinceQSSCastStart =
 		secsSinceReviveCheck = 0.0f;
@@ -1433,8 +1466,10 @@ namespace ALYSLC
 		isWeaponAttack = false;
 		wantsToSneak = false;
 		wasSprinting = false;
+		reqMeleeSpellcastKillmove = false;
 		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
+		startedActivationCycling = false;
 		weapMagReadied = false;
 		// Ints.
 		lastAnimEventID = 0;
@@ -1455,10 +1490,7 @@ namespace ALYSLC
 
 		coopActor->actorState1.sneaking = 0;
 		coopActor->actorState2.forceSneak = 0;
-		if (coopActor->IsWeaponDrawn())
-		{
-			ReadyWeapon(false);
-		}
+		ReadyWeapon(false);
 
 		// Set player binds.
 		UpdatePlayerBinds();
@@ -1561,12 +1593,12 @@ namespace ALYSLC
 					avcam->SetCost
 					(
 						AVCostAction::kCastLeft, 
-						paStatesList[!InputAction::kCastLH - !InputAction::kFirstAction].avCost
+						paStatesList[!InputAction::kCastLH - !InputAction::kFirstAction].avBaseCost
 					);
 					avcam->SetCost
 					(
 						AVCostAction::kCastRight, 
-						paStatesList[!InputAction::kCastRH - !InputAction::kFirstAction].avCost
+						paStatesList[!InputAction::kCastRH - !InputAction::kFirstAction].avBaseCost
 					);
 				}
 			}
@@ -1577,7 +1609,7 @@ namespace ALYSLC
 				avcam->SetCost
 				(
 					AVCostAction::kDodge, 
-					paStatesList[!InputAction::kDodge - !InputAction::kFirstAction].avCost
+					paStatesList[!InputAction::kDodge - !InputAction::kFirstAction].avBaseCost
 				);
 			}
 			else if (reqSpecialAction == SpecialActionType::kDualCast)
@@ -1590,7 +1622,7 @@ namespace ALYSLC
 					(
 						AVCostAction::kCastDual,
 						paStatesList
-						[!InputAction::kSpecialAction - !InputAction::kFirstAction].avCost
+						[!InputAction::kSpecialAction - !InputAction::kFirstAction].avBaseCost
 					);
 				}
 			}
@@ -1608,7 +1640,10 @@ namespace ALYSLC
 			(avcam->reqActionsSet.empty() || !avcam->reqActionsSet.contains(avAction)))
 		{
 			avcam->InsertRequestedAction(avAction);
-			avcam->SetCost(avAction, paStatesList[!a_action - !InputAction::kFirstAction].avCost);
+			avcam->SetCost
+			(
+				avAction, paStatesList[!a_action - !InputAction::kFirstAction].avBaseCost
+			);
 		}
 	}
 
@@ -1681,8 +1716,8 @@ namespace ALYSLC
 		}
 
 		RE::NiPoint3 targetPos = coopActor->data.location;
-		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(p->tm->crosshairPickRefrHandle); 
-		if (crosshairRefrPtr && crosshairRefrPtr.get())
+		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(p->tm->crosshairRefrHandle); 
+		if (crosshairRefrPtr)
 		{
 			targetPos = crosshairRefrPtr->data.location;
 		}
@@ -1741,7 +1776,7 @@ namespace ALYSLC
 			auto proj = resultProj.get();
 			proj->data.angle.x = pitch;
 			proj->data.angle.z = yaw;
-			if (auto proj3DPtr = Util::GetRefr3D(proj.get()); proj3DPtr && proj3DPtr.get())
+			if (auto proj3DPtr = Util::GetRefr3D(proj.get()); proj3DPtr)
 			{
 				Util::SetRotationMatrixPY
 				(
@@ -1800,12 +1835,7 @@ namespace ALYSLC
 				// Set ranged attack package target.
 				p->tm->UpdateAimTargetLinkedRefr(a_index);
 				auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimTargetLinkedRefrHandle);
-				bool targetValidity = 
-				(
-					targetPtr &&
-					targetPtr.get() &&
-					Util::IsValidRefrForTargeting(targetPtr.get())
-				);
+				bool targetValidity = targetPtr && Util::IsValidRefrForTargeting(targetPtr.get());
 				// Will use instant caster.
 				auto magicCaster = coopActor->GetMagicCaster
 				(
@@ -1884,8 +1914,9 @@ namespace ALYSLC
 						);
 						float magickaCost = 
 						(
+							Settings::vfMagickaCostMult[playerID] * 
 							paStatesList
-							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avCost
+							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost
 						);
 						// Concentration spells' cost scales with cast time.
 						if (isConcSpell)
@@ -1921,6 +1952,7 @@ namespace ALYSLC
 						// Can start casting now.
 						// Update time point, cast the spell, and then expend magicka.
 						p->lastQSSCastStartTP = SteadyClock::now();
+						magicCaster->currentSpellCost = magickaCost;
 						magicCaster->CastSpellImmediate
 						(
 							spell, false, targetPtr.get(), 1.0f, false, 0.0f, coopActor.get()
@@ -2002,10 +2034,13 @@ namespace ALYSLC
 						secsSinceQSSCastStart = Util::GetElapsedSeconds(p->lastQSSCastStartTP);
 						// Cast spell immediate function does not automatically update 
 						// the player's magicka when casting a non-concentration spell. Do it here.
+						// BAse cost for P1, since this cost will get modified 
+						// in the CheckClampDamageMultiplier() hook.
 						float magickaCost = 
 						(
+							Settings::vfMagickaCostMult[playerID] * 
 							paStatesList
-							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avCost
+							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost
 						);
 						if (isConcSpell)
 						{
@@ -2051,6 +2086,7 @@ namespace ALYSLC
 						);
 						magicCaster->SetCurrentSpellImpl(spell);
 						magicCaster->currentSpell = spell;
+						magicCaster->currentSpellCost = magickaCost;
 						magicCaster->CastSpellImmediate
 						(
 							spell, false, targetPtr.get(), 1.0f, false, 0.0f, coopActor.get()
@@ -2153,9 +2189,7 @@ namespace ALYSLC
 					auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimTargetLinkedRefrHandle);
 					bool targetValidity = 
 					(
-						targetPtr &&
-						targetPtr.get() && 
-						Util::IsValidRefrForTargeting(targetPtr.get())
+						targetPtr && Util::IsValidRefrForTargeting(targetPtr.get())
 					);
 					// Target the caster (P1).
 					if (targetPtr && targetPtr == coopActor)
@@ -2459,9 +2493,7 @@ namespace ALYSLC
 								);
 								bool targetValidity = 
 								(
-									targetPtr &&
-									targetPtr.get() &&
-									Util::IsValidRefrForTargeting(targetPtr.get())
+									targetPtr && Util::IsValidRefrForTargeting(targetPtr.get())
 								);
 								// Cast spell immediately (no animations).
 								handCaster->desiredTarget = 
@@ -2562,10 +2594,7 @@ namespace ALYSLC
 		// Link 'em up.
 		for (uint32_t i = 0; i < queuedP1ButtonEvents.size() - 1; ++i)
 		{
-			if (queuedP1ButtonEvents[i] &&
-				queuedP1ButtonEvents[i].get() &&
-				queuedP1ButtonEvents[i + 1] &&
-				queuedP1ButtonEvents[i + 1].get()) 
+			if (queuedP1ButtonEvents[i] && queuedP1ButtonEvents[i + 1]) 
 			{
 				(*(queuedP1ButtonEvents[i].get()))->next = *(queuedP1ButtonEvents[i + 1].get());
 			}
@@ -2577,7 +2606,7 @@ namespace ALYSLC
 		// or will continue casting if DontMove is set while the cast bind is released.
 		p->mm->SetDontMove(false);
 		// Send the first event to send the entire chain.
-		if (queuedP1ButtonEvents[0] && queuedP1ButtonEvents[0].get()) 
+		if (queuedP1ButtonEvents[0]) 
 		{
 			// '1C0DA' pad means toggle AI driven.
 			if ((*(queuedP1ButtonEvents[0].get()))->AsIDEvent()->pad24 == 0x1C0DA)
@@ -2600,7 +2629,7 @@ namespace ALYSLC
 		// Clear out padding before freeing input event.
 		for (auto& ptr : queuedP1ButtonEvents) 
 		{
-			if (ptr && ptr.get() && (*ptr.get())->AsIDEvent()) 
+			if (ptr && (*ptr.get())->AsIDEvent()) 
 			{
 				(*ptr.get())->AsIDEvent()->pad24 = 0x0;
 			}
@@ -2654,13 +2683,16 @@ namespace ALYSLC
 		{
 			return;
 		}
+		
+		// Must have serializable data.
+		const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
 
-		// Skill level increments and XP lists to modify via ref.
-		auto& skillIncList = 
-		(
-			glob.serializablePlayerData.at(coopActor->formID)->skillLevelIncreasesList
-		);
-		auto& skillXPList = glob.serializablePlayerData.at(coopActor->formID)->skillXPList;
+		auto& data = iter->second;
+		auto& skillXPList = data->skillXPList;
 		float levelUpThreshold = 0.0f;
 		RE::ActorValue currentAV = RE::ActorValue::kNone;
 		Skill currentSkill = Skill::kTotal;
@@ -2726,8 +2758,16 @@ namespace ALYSLC
 
 			// Set to XP overshoot amount after level up.
 			skillXP = skillXP - levelUpThreshold;
-			// Increment saved skill increments entry.
-			skillIncList[i]++;
+			// Increment saved skill base/increments entry.
+			if (GlobalCoopData::SHARED_SKILL_AVS_SET.contains(currentAV))
+			{
+				data->skillBaseLevelsList[i]++;
+			}
+			else
+			{
+				data->skillLevelIncreasesList[i]++;
+			}
+
 			// Increment player skill AV level.
 			coopActor->SetBaseActorValue(currentAV, avLvl + 1);
 
@@ -2756,6 +2796,363 @@ namespace ALYSLC
 			{
 				data->levelXP = newLevelXP;
 			}
+		}
+	}
+
+	void PlayerActionManager::CheckForDelayedCastCompletion()
+	{
+		// Reset ranged attack package cast data if the player has released a FNF spell
+		// and the package is still executing.
+
+		/*auto lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
+		auto rhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);*/
+		auto lhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kLeftHand];
+		auto rhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kRightHand];
+		bool lhCasterInactive = !lhCaster || *lhCaster->state == RE::MagicCaster::State::kNone;
+		bool rhCasterInactive = !rhCaster || *rhCaster->state == RE::MagicCaster::State::kNone;
+		
+		// Failsafe.
+		// Ensure that the player does not get stuck in a casting animation 
+		// even after the spell isn't being cast anymore.
+		bool stuckInCastingAnim = false;
+		if (p->isPlayer1)
+		{
+			stuckInCastingAnim = 
+			(
+				isInCastingAnim &&
+				IsNotPerformingAnyOf
+				(
+					InputAction::kCastLH, InputAction::kCastRH, InputAction::kSpecialAction
+				) &&
+				(
+					lhCasterInactive && rhCasterInactive
+				)
+			);
+		}
+		else
+		{
+			stuckInCastingAnim = 
+			(
+				coopActor->HasKeyword(glob.npcKeyword) && 
+				isInCastingAnim &&
+				castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f && 
+				castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f && 
+				castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f &&
+				lhCasterInactive &&
+				rhCasterInactive
+			);
+		}
+		// Player is in a casting animation but isn't not performing a casting action
+		// and both casters are also inactive.
+		// We can just stop the animation at this point.
+		if (stuckInCastingAnim)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {} is stuck in casting animation.", 
+				coopActor->GetName()
+			);
+			coopActor->NotifyAnimationGraph("CastStop");
+			coopActor->InterruptCast(false);
+		}
+
+		// P1 does not make use of the ranged attack package,
+		// so we can return here.
+		if (p->isPlayer1)
+		{
+			return;
+		}
+
+		auto voiceCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kPowerOrShout];
+		bool voiceCasterInactive = 
+		(
+			!voiceCaster || *voiceCaster->state == RE::MagicCaster::State::kNone
+		);
+
+		// Casting using both hand's magic casters:
+		// 1. Casting a 2H spell (ritual spell).
+		// 2. Casting 2 1H spells with the LH and RH casters.
+		// 3. Dual-casting 2 1H spells with the LH and RH casters.
+		bool is2HCasting = 
+		(
+			(
+				p->em->Has2HSpellEquipped() && 
+				IsPerformingOneOf(InputAction::kCastLH, InputAction::kCastRH)
+			) ||
+			(
+				(IsPerforming(InputAction::kSpecialAction)) && 
+				(
+					reqSpecialAction == SpecialActionType::kCastBothHands || 
+					reqSpecialAction == SpecialActionType::kDualCast
+				)
+			)
+		);
+		// Casting globals.
+		auto lhCasting = castingGlobVars[!CastingGlobIndex::kLH];
+		auto rhCasting = castingGlobVars[!CastingGlobIndex::kRH];
+		auto casting2H = castingGlobVars[!CastingGlobIndex::k2H];
+		auto dualCasting = castingGlobVars[!CastingGlobIndex::kDual];
+		auto shouting = castingGlobVars[!CastingGlobIndex::kShout];
+		auto voiceCasting = castingGlobVars[!CastingGlobIndex::kVoice];
+		
+		// NOTE:
+		// Concentration spellcasts stop on release of the casting bind,
+		// while fire-and-forget spells (FNF) stop once the firing caster becomes inactive.
+
+		auto lhSpell = p->em->GetLHSpell();
+		bool lhSpellFNF = 
+		(
+			lhSpell && lhSpell->GetCastingType() == RE::MagicSystem::CastingType::kFireAndForget
+		);
+		// Reset the LH/RH casting globals and caster if the global is still set
+		// while the player is not performing the LH/RH cast action
+		// and the spell is no longer being cast.
+		bool shouldResetLHCastData = 
+		(
+			(!lhSpellFNF || lhCasterInactive) &&
+			(lhCasting->value != 0.0f && !IsPerforming(InputAction::kCastLH) && !is2HCasting)
+		);
+		auto rhSpell = p->em->GetRHSpell();
+		bool rhSpellFNF = 
+		(
+			rhSpell && rhSpell->GetCastingType() == RE::MagicSystem::CastingType::kFireAndForget
+		);
+		bool shouldResetRHCastData = 
+		(
+			(!rhSpellFNF || rhCasterInactive) &&
+			(rhCasting->value != 0.0f && !IsPerforming(InputAction::kCastRH) && !is2HCasting)
+		);
+		// Reset the 2H casting global and both casters if the global is still set
+		// while the player is not performing the LH and RH cast actions
+		// and the spell is no longer being cast.
+		bool shouldReset2HCastData = 
+		(
+			(lhSpell == rhSpell && rhSpell && rhSpell->equipSlot == glob.bothHandsEquipSlot) && 
+			(!rhSpellFNF || rhCasterInactive) &&
+			(
+				casting2H->value != 0.0f &&
+				!IsPerforming(InputAction::kCastLH) &&
+				!IsPerforming(InputAction::kCastRH) &&
+				!is2HCasting
+			)
+		);
+		// Not shouting anymore, so reset the voice caster and global.
+		bool shouldResetVoiceCastData = 
+		(
+			(
+				shouting->value != 0.0f ||
+				voiceCasting->value != 0.0f
+			) &&
+			(
+				voiceCasterInactive &&
+				!isShouting && 
+				!IsPerforming(InputAction::kShout)
+			)
+		);
+		// Casting globals can still be set even though both hand casters are inactive, 
+		// the player's character is not in a casting animation,
+		// and the player is not performing a hand casting action.
+		// Clear them all and reset.
+		bool shouldResetAllCastingData = 
+		(
+			(lhCasterInactive && rhCasterInactive && voiceCasterInactive) && 
+			(!isInCastingAnim) &&
+			(
+				!is2HCasting && 
+				IsNotPerformingAnyOf
+				(
+					InputAction::kCastLH, 
+					InputAction::kCastRH, 
+					InputAction::kShout
+				)
+			) &&
+			(
+				lhCasting->value != 0.0f ||
+				rhCasting->value != 0.0f || 
+				casting2H->value != 0.0f ||
+				dualCasting->value != 0.0f ||
+				shouting->value != 0.0f ||
+				voiceCasting->value != 0.0f
+			)
+		);
+
+		/*
+		// REMOVE when done debugging.
+		SPDLOG_DEBUG
+		(
+			"[PAM] CheckForDelayedCastCompletion: {}: "
+			"LH/RH spells: {} (FNF: {}), {} (FNF: {}). "
+			"Casting glob vars: LH: {}, RH: {}, 2H: {}. "
+			"Is performing cast actions: LH: {}, RH: {}, 2H: {}, Both: {}. "
+			"Caster spells/state: LH: {}, {}, RH: {}, {}. "
+			"Should reset: LH: {}, RH: {}, 2H: {}, Voice: {}, All: {}.",
+			coopActor->GetName(),
+			lhSpell ? lhSpell->GetName() : "NONE",
+			lhSpellFNF,
+			rhSpell ? rhSpell->GetName() : "NONE",
+			rhSpellFNF,
+			lhCasting->value,
+			rhCasting->value,
+			casting2H->value,
+			IsPerforming(InputAction::kCastLH),
+			IsPerforming(InputAction::kCastRH),
+			(
+				p->em->Has2HSpellEquipped() && 
+				IsPerformingOneOf(InputAction::kCastLH, InputAction::kCastRH)
+			),
+			(IsPerforming(InputAction::kSpecialAction)) && 
+			(
+				reqSpecialAction == SpecialActionType::kCastBothHands || 
+				reqSpecialAction == SpecialActionType::kDualCast
+			),
+			lhCaster && lhCaster->currentSpell ? lhCaster->currentSpell->GetName() : "NONE",
+			lhCaster ? *lhCaster->state : RE::MagicCaster::State::kNone,
+			rhCaster && rhCaster->currentSpell ? rhCaster->currentSpell->GetName() : "NONE",
+			rhCaster ? *rhCaster->state : RE::MagicCaster::State::kNone,
+			shouldResetLHCastData,
+			shouldResetRHCastData,
+			shouldReset2HCastData,
+			shouldResetVoiceCastData,
+			shouldResetAllCastingData
+		);
+		*/
+
+		if (shouldResetAllCastingData)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: RESET ALL.",
+				coopActor->GetName()
+			);
+			StopCastingHandSpells();
+			return;
+		}
+
+		if (shouldResetLHCastData)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: RESET LH.",
+				coopActor->GetName()
+			);
+			casting2H->value = 0.0f;
+			dualCasting->value = 0.0f;
+			lhCasting->value = 0.0f;
+			lhCastDuration = 0.0f;
+		}
+
+		if (shouldResetRHCastData)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: RESET RH.",
+				coopActor->GetName()
+			);
+			casting2H->value = 0.0f;
+			dualCasting->value = 0.0f;
+			rhCasting->value = 0.0f;
+			rhCastDuration = 0.0f;
+		}
+
+		if (shouldReset2HCastData)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: RESET 2H.",
+				coopActor->GetName()
+			);
+			casting2H->value = 0.0f;
+			dualCasting->value = 0.0f;
+			lhCasting->value = 0.0f;
+			rhCasting->value = 0.0f;
+			lhCastDuration = 0.0f;
+			rhCastDuration = 0.0f;
+		}
+
+		if (shouldResetVoiceCastData)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: RESET VOICE.",
+				coopActor->GetName()
+			);
+			shouting->value = 0.0f;
+			voiceCasting->value = 0.0f;
+			if (voiceCaster)
+			{
+				voiceCaster->currentSpell = nullptr;
+				voiceCaster->state = RE::MagicCaster::State::kNone;
+			}
+		}
+
+		if (shouldResetLHCastData || shouldResetRHCastData || shouldReset2HCastData)
+		{
+			if (casting2H->value == 0.0f && lhCasting->value == 0.0f && rhCasting->value == 0.0f) 
+			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] CheckForDelayedCastCompletion: {}: RESET HAND CASTERS.",
+					coopActor->GetName()
+				);
+				// Reset to default package as well if both hands are no longer casting.
+				ResetPackageCastingState();
+				// Clear out linked refr target used by the casting package.
+				p->tm->ClearTarget(TargetActorType::kLinkedRefr);
+			}
+			else
+			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] CheckForDelayedCastCompletion: {}: RESET AND EVALUATE.",
+					coopActor->GetName()
+				);
+				// Evaluate if any caster is active or casting global is still set.
+				SetAndEveluatePackage(GetCoopPackage(PackageIndex::kRangedAttack));
+			}
+		}
+
+		// Clear out casters' current spells once done casting to ensure the cast stops
+		// if package evaluation failed to stop the cast.
+		bool shouldInterruptCaster = 
+		(
+			(!lhSpellFNF || shouldResetLHCastData || shouldReset2HCastData) && 
+			(
+				lhCaster &&
+				lhCasting->value == 0.0f && 
+				casting2H->value == 0.0f &&
+				isInCastingAnimLH
+			)
+		);
+		if (shouldInterruptCaster)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: CLEAR LH MAG NODE AND CASTER.",
+				coopActor->GetName()
+			);
+			lhCaster->InterruptCast(false);
+			lhCaster->NotifyAnimationGraph("CastStop");
+		}
+
+		shouldInterruptCaster = 
+		(
+			(!rhSpellFNF || shouldResetRHCastData || shouldReset2HCastData) && 
+			(
+				rhCaster && 
+				rhCasting->value == 0.0f && 
+				casting2H->value == 0.0f && 
+				isInCastingAnimRH
+			)
+		);
+		if (shouldInterruptCaster)
+		{
+			SPDLOG_DEBUG
+			(
+				"[PAM] CheckForDelayedCastCompletion: {}: CLEAR RH MAG NODE AND CASTER.",
+				coopActor->GetName()
+			);
+			rhCaster->InterruptCast(false);
+			rhCaster->NotifyAnimationGraph("CastStop");
 		}
 	}
 
@@ -3082,6 +3479,7 @@ namespace ALYSLC
 	void PlayerActionManager::CopyOverSharedSkillAVs()
 	{
 		// Copy over the highest skill AV level among all players for each shared skill.
+		// Also save the highest skill AV level to the player's serialized skill base levels list.
 
 		for (const auto& av : glob.SHARED_SKILL_AVS_SET)
 		{
@@ -3111,17 +3509,12 @@ namespace ALYSLC
 		auto defPackage =
 		(
 			isInCombat ?
-			glob.coopPackages
-			[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride] :
-			glob.coopPackages
-			[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+			GetCoopPackage(PackageIndex::kCombatOverride) :
+			GetCoopPackage(PackageIndex::kDefault)
 		);
 		// Ranged attack and interaction packages to use 
 		// if the companion player is casting or attempting to use furniture.
-		auto rangedAttackPackage = 
-		(
-			glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kRangedAttack]
-		);
+		auto rangedAttackPackage = GetCoopPackage(PackageIndex::kRangedAttack);
 		// Interrupt cast, if necessary, when the current package atop the stack is the default 
 		// or ranged attack package.
 		// Just evaluate otherwise.
@@ -3187,10 +3580,10 @@ namespace ALYSLC
 		// Reduce the companion player's magicka based on what spell(s) they are casting.
 		
 		// Game already handles P1's magicka expenditure and regen.
-		if (p->isPlayer1)
+		/*if (p->isPlayer1)
 		{
 			return;
-		}
+		}*/
 
 		bool dualCasting = avcam->actionsInProgress.all(AVCostAction::kCastDual);
 		bool usingLHSpell = avcam->actionsInProgress.all(AVCostAction::kCastLeft);
@@ -3222,7 +3615,7 @@ namespace ALYSLC
 					auto castingType = rhSpell->GetCastingType();
 					// Check and update magicka every frame if casting a concentration spell,
 					// otherwise, update magicka once on spell cast.
-					// x2.8 modifier when dual casting:
+					// x2.8 mult when dual casting:
 					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
 					if (castingType == CastingType::kConcentration)
 					{
@@ -3440,7 +3833,7 @@ namespace ALYSLC
 			// not by the spell's magicka cost.
 			// Only give XP if targeting a valid actor.
 			// https://en.uesp.net/wiki/Skyrim:Leveling#Skill_XP
-			if (Util::HandleIsValid(p->tm->GetRangedTargetActor()))
+			if (!p->isPlayer1 && Util::HandleIsValid(p->tm->GetRangedTargetActor()))
 			{
 				// Separate deltas for XP calc.
 				if (dualCasting)
@@ -3525,7 +3918,6 @@ namespace ALYSLC
 					}
 				}
 			}
-
 		}
 		else
 		{
@@ -3647,7 +4039,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::ExpendStamina(const float& a_cost)
 	{
-		// Directly expend stamina equal to the given cost.
+		// Directly expend stamina equal to the given base cost.
 
 		// No stamina cost if in god mode.
 		if (p->isInGodMode) 
@@ -3663,7 +4055,6 @@ namespace ALYSLC
 			return;
 		}
 
-		float newStamina = currentStamina - a_cost;
 		if (p->isPlayer1) 
 		{
 			if (currentStamina > 0.0f)
@@ -3673,6 +4064,9 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Factor in the player's stamina cost multiplier to get the amount of stamina
+			// remaining after the modification below.
+			float newStamina = currentStamina - a_cost * Settings::vfStaminaCostMult[playerID];
 			// Handle companion player's stamina cooldown here.
 			if (newStamina < 0.0f)
 			{
@@ -3705,10 +4099,13 @@ namespace ALYSLC
 				}
 				else
 				{
+					// NOTE:
+					// Scale by the player's cost mult here to account for the true amount 
+					// of stamina spent after modification in the CheckClampDamageModifier() hook.
 					// Scales down as regeneration rate multiplier increases.
 					secsTotalStaminaRegenCooldown = min
 					(
-						(0.0f - newStamina) / (baseStaminaRegenRateMult / 100.0f),
+						(-newStamina) / (baseStaminaRegenRateMult / 100.0f),
 						maxStaminaCooldownSecs
 					);
 				}
@@ -3808,6 +4205,16 @@ namespace ALYSLC
 		}
 
 		return priority;
+	}
+
+	RE::TESPackage * PlayerActionManager::GetCoopPackage(const PackageIndex& a_index)
+	{
+		// Get the co-op package corresponding to the given index.
+
+		return 
+		(
+			glob.coopPackages[!PackageIndex::kTotal * controllerID + !a_index]
+		);
 	}
 
 	RE::TESPackage* PlayerActionManager::GetCurrentPackage()
@@ -4037,6 +4444,7 @@ namespace ALYSLC
 		}
 
 		// Handle copied anim events.
+		bool startedNewAction = false;
 		while (!copiedQueue.empty())
 		{
 			const auto& perfAnimEvent = copiedQueue.front();
@@ -4056,6 +4464,7 @@ namespace ALYSLC
 			{
 				// Triggers on pre-hit frame if the action was requested.
 				isBashing = true;
+				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kCastLeft &&
 					 actionsInProgress.none(AVCostAction::kCastLeft) &&
@@ -4065,6 +4474,7 @@ namespace ALYSLC
 				p->lastLHCastStartTP = SteadyClock::now();
 				lhCastDuration = 0.0f;
 				isCastingLH = true;
+				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kCastRight &&
 					 actionsInProgress.none(AVCostAction::kCastRight) &&
@@ -4074,12 +4484,14 @@ namespace ALYSLC
 				p->lastRHCastStartTP = SteadyClock::now();
 				rhCastDuration = 0.0f;
 				isCastingRH = true;
+				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kDodgeStart &&
 					 actionsInProgress.none(AVCostAction::kDodge))
 			{
 				// Start dodging, if not already.
 				avcam->SetStartedAction(AVCostAction::kDodge);
+				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kPreHitFrame)
 			{
@@ -4087,15 +4499,15 @@ namespace ALYSLC
 				// Start power attacking, if not already.
 				if (actionsInProgress.none(AVCostAction::kPowerAttackDual))
 				{
-					avcam->SetStartedAction(AVCostAction::kPowerAttackDual);
+					startedNewAction = avcam->SetStartedAction(AVCostAction::kPowerAttackDual);
 				}
 				else if (actionsInProgress.none(AVCostAction::kPowerAttackLeft))
 				{
-					avcam->SetStartedAction(AVCostAction::kPowerAttackLeft);
+					startedNewAction = avcam->SetStartedAction(AVCostAction::kPowerAttackLeft);
 				}
 				else if (actionsInProgress.none(AVCostAction::kPowerAttackRight) )
 				{
-					avcam->SetStartedAction(AVCostAction::kPowerAttackRight);
+					startedNewAction = avcam->SetStartedAction(AVCostAction::kPowerAttackRight);
 				}
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kSprintStart &&
@@ -4104,12 +4516,13 @@ namespace ALYSLC
 			{
 				// Rollin', Rollin', Rollin'.
 				isRolling = true;
+				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kSprintStart &&
 					 actionsInProgress.none(AVCostAction::kSprint))
 			{
 				// Start sprinting, if not already.
-				avcam->SetStartedAction(AVCostAction::kSprint);
+				startedNewAction = avcam->SetStartedAction(AVCostAction::kSprint);
 			}
 
 			// Set weapon mults when melee/ranged attack triggers.
@@ -4209,61 +4622,75 @@ namespace ALYSLC
 					// Only remove started action if the request is no longer present.
 					avcam->RemoveStartedAction(AVCostAction::kDodge);
 				}
+				else if (Settings::bUseDashDodgeSystem && !p->mm->isDashDodging)
+				{
+					// Remove dash dodge request.
+					avcam->RemoveRequestedAction(AVCostAction::kDodge);
+					avcam->RemoveRequestedAction(AVCostAction::kDodge);
+				}
 			}
 		}
 
 		//--------------------------
 		// On-hold AV expenditures.
 		//--------------------------
-		// Sprint stop ends any shield charge/sprint/roll animations.
-		// Failsafe: check that the sprint input(s) is released.
-		if ((IsNotPerforming(InputAction::kSprint)) && 
-			(actionsInProgress.any(AVCostAction::kSprint) || 
-			 avcam->RemoveRequestedAction(AVCostAction::kSprint)))
+		// Do not remove started actions if they were just started above.
+		// Allows for AV expenditure on release of any associated bind.
+		if (!startedNewAction)
 		{
-			avcam->RemoveStartedAction(AVCostAction::kSprint);
-		}
+			// Sprint stop ends any shield charge/sprint/roll animations.
+			// Failsafe: check that the sprint input(s) is released.
+			if ((IsNotPerforming(InputAction::kSprint)) && 
+				(actionsInProgress.any(AVCostAction::kSprint) || 
+				 avcam->RemoveRequestedAction(AVCostAction::kSprint)))
+			{
+				avcam->RemoveStartedAction(AVCostAction::kSprint);
+			}
 
-		if ((IsNotPerforming(InputAction::kSprint)) && 
-			(actionsInProgress.any(AVCostAction::kSneakRoll) ||
-			 avcam->RemoveRequestedAction(AVCostAction::kSneakRoll)))
-		{
-			avcam->RemoveStartedActions(AVCostAction::kSneakRoll);
-			isRolling = false;
-		}
+			if ((IsNotPerforming(InputAction::kSprint)) && 
+				(actionsInProgress.any(AVCostAction::kSneakRoll) ||
+				 avcam->RemoveRequestedAction(AVCostAction::kSneakRoll)))
+			{
+				avcam->RemoveStartedActions(AVCostAction::kSneakRoll);
+				isRolling = false;
+			}
 
-		// CastStop anim event tag only appears when all casting stops,
-		// so casting with both hands and releasing one hand will not trigger an anim event.
-		// Have to check for block/interrupt/input release for dual casting instead.
-		if ((IsNotPerforming(InputAction::kSpecialAction)) && 
-			(actionsInProgress.any(AVCostAction::kCastDual) || 
-			 avcam->RemoveRequestedAction(AVCostAction::kCastDual)))
-		{
-			avcam->RemoveStartedAction(AVCostAction::kCastDual);
-			rhCastDuration = lhCastDuration = 0.0f;
-			isCastingDual = false;
-		}
+			// CastStop anim event tag only appears when all casting stops,
+			// so casting with both hands and releasing one hand will not trigger an anim event.
+			// Have to check for block/interrupt/input release for dual casting instead.
+			if ((!isInCastingAnim && 
+				IsNotPerforming(InputAction::kSpecialAction)) && 
+				(actionsInProgress.any(AVCostAction::kCastDual) || 
+				 avcam->RemoveRequestedAction(AVCostAction::kCastDual)))
+			{
+				avcam->RemoveStartedAction(AVCostAction::kCastDual);
+				rhCastDuration = lhCastDuration = 0.0f;
+				isCastingDual = false;
+			}
 
-		// Not performing LH cast or the special action both hands cast.
-		if ((IsNotPerforming(InputAction::kCastLH) && 
-			 IsNotPerforming(InputAction::kSpecialAction)) && 
-			(actionsInProgress.any(AVCostAction::kCastLeft) || 
-			 avcam->RemoveRequestedAction(AVCostAction::kCastLeft)))
-		{
-			avcam->RemoveStartedAction(AVCostAction::kCastLeft);
-			lhCastDuration = 0.0f;
-			isCastingLH = false;
-		}
-
-		// Not performing RH cast or the special action both hands cast.
-		if ((IsNotPerforming(InputAction::kCastRH) &&
-			 IsNotPerforming(InputAction::kSpecialAction)) && 
-		    (actionsInProgress.any(AVCostAction::kCastRight) || 
-			 avcam->RemoveRequestedAction(AVCostAction::kCastRight)))
-		{
-			avcam->RemoveStartedAction(AVCostAction::kCastRight);
-			rhCastDuration = 0.0f;
-			isCastingRH = false;
+			// Not performing LH cast or the special action both hands cast.
+			if ((!isInCastingAnimLH && 
+				 IsNotPerforming(InputAction::kCastLH) && 
+				 IsNotPerforming(InputAction::kSpecialAction)) && 
+				(actionsInProgress.any(AVCostAction::kCastLeft) || 
+				 avcam->RemoveRequestedAction(AVCostAction::kCastLeft)))
+			{
+				avcam->RemoveStartedAction(AVCostAction::kCastLeft);
+				lhCastDuration = 0.0f;
+				isCastingLH = false;
+			}
+		
+			// Not performing RH cast or the special action both hands cast.
+			if ((!isInCastingAnimRH && 
+				 IsNotPerforming(InputAction::kCastRH) &&
+				 IsNotPerforming(InputAction::kSpecialAction)) && 
+				(actionsInProgress.any(AVCostAction::kCastRight) || 
+				 avcam->RemoveRequestedAction(AVCostAction::kCastRight)))
+			{
+				avcam->RemoveStartedAction(AVCostAction::kCastRight);
+				rhCastDuration = 0.0f;
+				isCastingRH = false;
+			}
 		}
 
 		// Expend magicka/stamina only if AV cost actions are still in progress.
@@ -4301,7 +4728,7 @@ namespace ALYSLC
 		);
 		if (shouldExpendMagicka)
 		{
-			ExpendMagicka();
+			//ExpendMagicka();
 		}
 	}
 
@@ -4340,26 +4767,26 @@ namespace ALYSLC
 			return;
 		}
 
-		auto speakerRefr = speakerHandle.get();
+		auto speakerRefrPtr = speakerHandle.get();
 		bool closeEnoughToTalk = 
 		(
-			coopActor->data.location.GetDistance(speakerRefr->data.location) <=
+			coopActor->data.location.GetDistance(speakerRefrPtr->data.location) <=
 			Settings::fAutoEndDialogueRadius
 		);
 		if (closeEnoughToTalk)
 		{
 			autoEndDialogue = false;
 			// Have the speaker look at the player.
-			if (auto actorSpeakingWithPtr = speakerRefr->As<RE::Actor>(); actorSpeakingWithPtr)
+			if (auto actorSpeakingWith = speakerRefrPtr->As<RE::Actor>(); actorSpeakingWith)
 			{
-				if (auto currentProc = actorSpeakingWithPtr->currentProcess; currentProc)
+				if (auto currentProc = actorSpeakingWith->currentProcess; currentProc)
 				{
 					auto headTrackHandle = currentProc->GetHeadtrackTarget();
 					auto headTrackTarget = Util::GetRefrPtrFromHandle(headTrackHandle);
 					if (!headTrackTarget || headTrackTarget != coopActor)
 					{
 						auto lookAtActorPos = coopActor->GetLookingAtLocation();
-						currentProc->SetHeadtrackTarget(actorSpeakingWithPtr, lookAtActorPos);
+						currentProc->SetHeadtrackTarget(actorSpeakingWith, lookAtActorPos);
 					}
 				}
 			}
@@ -4401,9 +4828,7 @@ namespace ALYSLC
 		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
 		auto targetValidity = 
 		(
-			targetActorPtr && 
-			targetActorPtr.get() && 
-			Util::IsValidRefrForTargeting(targetActorPtr.get())
+			targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 		);
 		if (!targetValidity) 
 		{
@@ -4552,6 +4977,9 @@ namespace ALYSLC
 			// This player is finished attacking and done with the killmove paired animation.
 			if (!aggressorStillInKillmove) 
 			{
+				// If still attacking, we can sheathe and unsheathe 
+				// if performing an unarmed spellcast killmove.
+				bool stillAttacking = coopActor->IsAttacking();
 				// Stop any ongoing killmove idle.
 				StopCurrentIdle();
 				// Sheathe/unsheathe if spellcasting unarmed killmove was performed.
@@ -4559,14 +4987,16 @@ namespace ALYSLC
 				// but any subsequent spellcasting will trigger unarmed attacks.
 				bool performedSpellcastingUnarmedKillmove = 
 				(
-					(!p->isTransformed) && 
-					(
-						Settings::bUseUnarmedKillmovesForSpellcasting && 
-						coopActor->IsWeaponDrawn()
-					) && 
-					(p->em->GetRHSpell() || p->em->GetLHSpell())
+					Settings::bUseUnarmedKillmovesForSpellcasting && 
+					coopActor->IsWeaponDrawn() && 
+					reqMeleeSpellcastKillmove &&
+					!p->isTransformed
 				);
-				if (performedSpellcastingUnarmedKillmove)
+				// If the killmove fails and the victim is still in the killmove,
+				// we do not want to continue sheathing and unsheathing until 30 seconds expires,
+				// so this block will only run once, since the player will have stopped attacking
+				// once their weapons are sheathed the first time the block runs.
+				if (performedSpellcastingUnarmedKillmove && stillAttacking)
 				{
 					ReadyWeapon(false);
 					ReadyWeapon(true);
@@ -4578,9 +5008,39 @@ namespace ALYSLC
 			if (!victimStillInKillmove && !aggressorStillInKillmove)
 			{
 				isPerformingKillmove = false;
+				reqMeleeSpellcastKillmove = false;
 				killmoveTargetActorHandle = RE::ActorHandle();
 			}
 		}
+	}
+
+	bool PlayerActionManager::HasEnoughMagickaToCast(RE::MagicItem * a_spell)
+	{
+		// Return true if the given player actor has enough magicka to cast the given spell.
+		// Accounts for player-specific magicka cost multiplier.
+
+		if (!a_spell)
+		{
+			return false;
+		}
+
+		if (p->isInGodMode)
+		{
+			return true;
+		}
+
+		const float currentMagicka = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		float cost = a_spell->CalculateMagickaCost(coopActor.get());
+		if (a_spell->GetCastingType() == RE::MagicSystem::CastingType::kConcentration)
+		{
+			cost *= *g_deltaTimeRealTime;
+		}
+
+		cost *= Settings::vfMagickaCostMult[playerID];
+		return 
+		(
+			cost <= currentMagicka		
+		);
 	}
 
 	void PlayerActionManager::LevelUpSkillWithBook(RE::TESObjectBOOK* a_book)
@@ -4609,14 +5069,25 @@ namespace ALYSLC
 		{
 			return;
 		}
+		
+		// Must have serializable data.
+		const auto iter2 = glob.serializablePlayerData.find(coopActor->formID);
+		if (iter2 == glob.serializablePlayerData.end())
+		{
+			return;
+		}
 
 		const float avLvl = coopActor->GetBaseActorValue(skillAV);
-		// +1 to the paired skill's serialized level increase count.
-		auto& skillIncList = 
-		(
-			glob.serializablePlayerData.at(coopActor->formID)->skillLevelIncreasesList
-		);
-		skillIncList[skillAVIndex]++;
+		// +1 to the paired skill's serialized base level or level increase count.
+		if (GlobalCoopData::SHARED_SKILL_AVS_SET.contains(skillAV))
+		{
+			iter2->second->skillBaseLevelsList[skillAVIndex]++;
+		}
+		else
+		{
+			iter2->second->skillLevelIncreasesList[skillAVIndex]++;
+		}
+
 		// Set new leveled up AV.
 		coopActor->SetBaseActorValue(skillAV, avLvl + 1);
 	}
@@ -4850,10 +5321,59 @@ namespace ALYSLC
 		}
 	}
 
-	void PlayerActionManager::ReadyWeapon(const bool& a_shouldDraw) 
+	void PlayerActionManager::ReadyWeapon(const bool& a_shouldDraw, bool&& a_ignoreState) 
 	{
-		// Sheathe or draw the player's weapons/magic.
-		// This function is yet another flavor of "it just works".
+		// Draw or sheathe the player's weapons/magic.
+		// If 'ignore state' is true, force the player to draw/sheathe 
+		// regardless of their current weapon state.
+		// Otherwise, only draw when fully sheathed and only sheathe when fully drawn.
+
+		SPDLOG_DEBUG
+		(
+			"[PAM] ReadyWeapon: {}: drawn: {}, state: {}, req: {}.",
+			coopActor->GetName(),
+			coopActor->IsWeaponDrawn(), 
+			!coopActor->actorState2.weaponState, 
+			a_shouldDraw
+		);
+
+		// Stop attacking and casting first.
+		if (isWeaponAttack)
+		{
+			coopActor->NotifyAnimationGraph("attackStop");
+		}
+		
+		if (isCastingDual || isCastingLH || isCastingRH || isInCastingAnim)
+		{
+			StopCastingHandSpells();
+			return;
+		}
+
+		// Allow draw/sheathe request if ignoring the current weapon state
+		// and the player's weapons are fully sheathed when requesting to draw,
+		// or fully drawn when requesting to sheathe.
+		const auto weaponState = coopActor->actorState2.weaponState;
+		bool allowRequest = 
+		(
+			(a_ignoreState) ||
+			(
+				(a_shouldDraw) && 
+				(
+					weaponState == RE::WEAPON_STATE::kSheathed
+				)	
+			) ||
+			(
+				(!a_shouldDraw) && 
+				(
+					weaponState == RE::WEAPON_STATE::kDrawn
+				)	
+			)
+		);
+
+		if (!allowRequest)
+		{
+			return;
+		}
 
 		// Stop attacking first.
 		coopActor->NotifyAnimationGraph("attackStop");
@@ -4912,6 +5432,16 @@ namespace ALYSLC
 			{
 				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
 				{
+					// Reset bound weapon state.
+					boundWeapReq2H = false;
+					boundWeapReqLH = false;
+					boundWeapReqRH = false;
+					secsSinceBoundWeap2HReq = 
+					secsSinceBoundWeapLHReq =
+					secsSinceBoundWeapRHReq = 0.0f;
+					p->em->lastReqBoundWeapLH =
+					p->em->lastReqBoundWeapRH = nullptr;
+
 					// Right hand.
 					if (auto rhForm = coopActor->GetEquippedObject(false); rhForm)
 					{
@@ -4946,14 +5476,6 @@ namespace ALYSLC
 							p->em->EquipFists();
 						}
 					}
-
-					// Reset bound weapon state.
-					boundWeapReq2H = false;
-					boundWeapReqLH = false;
-					boundWeapReqRH = false;
-					secsSinceBoundWeap2HReq = 
-					secsSinceBoundWeapLHReq =
-					secsSinceBoundWeapRHReq = 0.0f;
 				}
 			}
 
@@ -5008,6 +5530,7 @@ namespace ALYSLC
 		ResetKillmoveVictimData(a_targetPlayerIndex);
 		StopCurrentIdle();
 		isPerformingKillmove = false;
+		reqMeleeSpellcastKillmove = false;
 		killmoveTargetActorHandle = RE::ActorHandle();
 	}
 
@@ -5050,7 +5573,7 @@ namespace ALYSLC
 		// and reset the killmove victim flag.
 
 		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
-		if (targetActorPtr && targetActorPtr.get())
+		if (targetActorPtr)
 		{
 			// Ensure the target can move again.
 			Util::NativeFunctions::SetDontMove(targetActorPtr.get(), false);
@@ -5120,9 +5643,11 @@ namespace ALYSLC
 		p->lastHMSFullRestorationTP		=
 		p->lastInputActionBlockTP		= 
 		p->lastKillmoveCheckTP			=
+		p->lastLHCastChargeStartTP		=
 		p->lastLHCastStartTP			=
 		p->lastQSSCastStartTP			=
 		p->lastReviveCheckTP			=
+		p->lastRHCastChargeStartTP		=
 		p->lastRHCastStartTP			=
 		p->lastStaffLHCastTP			=
 		p->lastStaffRHCastTP			=
@@ -5181,11 +5706,11 @@ namespace ALYSLC
 		// Can transfer health up until the minimum remaining health level.
 		float healthCost = min
 		(
-			revivePAState.avCost * secsSinceReviveCheck, 
+			revivePAState.avBaseCost * secsSinceReviveCheck, 
 			currentHealth - Settings::fMinHealthWhileReviving
 		);
 		// Total transferable health for a full revive.
-		float fullHealthCost = revivePAState.avCost * Settings::fSecsReviveTime;
+		float fullHealthCost = revivePAState.avBaseCost * Settings::fSecsReviveTime;
 		// Ratio of the downed player's health after being fully revived
 		// to the health this player must give up to fully revive them.
 		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
@@ -5332,7 +5857,6 @@ namespace ALYSLC
 				const float weapReach = p->em->GetMaxWeapReach();
 				// Get closest actor in front of the player.
 				if (targetActorPtr &&
-					targetActorPtr.get() &&
 					targetActorPtr->data.location.GetDistance(coopActor->data.location) > 
 					weapReach)
 				{
@@ -5346,9 +5870,7 @@ namespace ALYSLC
 			targetActorPtr = Util::GetActorPtrFromHandle(targetActorHandle);
 			auto targetActorValidity = 
 			(
-				targetActorPtr &&
-				targetActorPtr.get() && 
-				Util::IsValidRefrForTargeting(targetActorPtr.get())
+				targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 			);
 			if (targetActorValidity)
 			{
@@ -5491,6 +6013,13 @@ namespace ALYSLC
 		{
 			packageStackMap[PackageIndex::kCombatOverride]->forms[0] = a_package;
 		}
+
+		if (auto currentProc = coopActor->currentProcess; currentProc)
+		{
+			// Scene packages override run-once and package stack packages,
+			// so it's best to clear the current scene here too, just in case one is set.
+			coopActor->SetCurrentScene(nullptr);
+		}
 	}
 
 	void PlayerActionManager::SetEssentialForReviveSystem()
@@ -5559,6 +6088,53 @@ namespace ALYSLC
 		}
 	}
 
+	void PlayerActionManager::StopCastingHandSpells()
+	{
+		// Stop the player from casting hand spells instantly.
+		
+		SPDLOG_DEBUG
+		(
+			"[PAM] StopCastingHandSpells: {}.",
+			coopActor->GetName()
+		);
+
+		if (p->isPlayer1)
+		{
+			// Refund magicka.
+			coopActor->InterruptCast(true);
+		}
+		else
+		{
+			auto lhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kLeftHand];
+			auto rhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kRightHand];
+			// Stop ranged target package from casting.
+			// No need to refund magicka, since companion players do not expend magicka 
+			// when casting fire and forget spells until the spell release animation plays.
+			ResetPackageCastingState();
+			// Clear out linked refr target used by the casting package.
+			p->tm->ClearTarget(TargetActorType::kLinkedRefr);
+
+			// Interrupt any ongoing casts and clear out casters' current spells
+			// once done casting to ensure the cast stops if package evaluation failed.
+			if (lhCaster)
+			{
+				lhCaster->InterruptCast(true);
+				lhCaster->currentSpell = nullptr;
+				lhCaster->state = RE::MagicCaster::State::kNone;
+			}
+
+			if (rhCaster)
+			{
+				rhCaster->InterruptCast(true);
+				rhCaster->currentSpell = nullptr;
+				rhCaster->state = RE::MagicCaster::State::kNone;
+			}
+		}
+
+		// Stop animations as well.
+		coopActor->NotifyAnimationGraph("CastStop");
+	}
+
 	void PlayerActionManager::StopCombatWithFriendlyActors()
 	{
 		// Stop combat between this player and all friendly actors:
@@ -5576,13 +6152,13 @@ namespace ALYSLC
 		// 
 		// 2. Stopping combat and alarm while guards are pursuing the player 
 		// will prevent the arrest dialogue from triggering at times. 
-		// Must hit a guard and sheathe again, or resort to sheathing without the co-op cam active
-		// or using the debug options. 
+		// Must hit a guard and run the function again,
+		// or resort to sheathing without the co-op cam active or using the debug options. 
 		// 
 		// 3. Some NPCs are not recognized as enemies 
 		// even after checking their faction flags (such as some bandits),
 		// and thus, without a foolproof way of determining whether or not an NPC is an enemy,
-		// sheathing will sometimes stop combat with all NPCs 
+		// this function will sometimes stop combat with all NPCs 
 		// and cause them to momentarily sheathe their weapons.
 		// 
 		// NOTE:
@@ -5658,7 +6234,8 @@ namespace ALYSLC
 			bool hasBountyAndCrimeFaction = Util::HasBountyOnPlayer(actor);
 			bool isFriendly = Util::IsPartyFriendlyActor(actor);
 			bool isFleeing = Util::IsFleeing(actor);
-			if (hasNoBountyAndCrimeFaction || isFriendly || isFleeing)
+			bool isMount = actor->IsAMount();
+			if (hasNoBountyAndCrimeFaction || isFriendly || isFleeing || isMount)
 			{
 				// Have to still stop combat here after removing the alarm to prevent combat 
 				// from starting right back up again.
@@ -5718,7 +6295,7 @@ namespace ALYSLC
 	{
 		// Stop any ongoing idle.
 
-		if (!coopActor || !coopActor.get())
+		if (!coopActor)
 		{
 			return;
 		}
@@ -5726,7 +6303,12 @@ namespace ALYSLC
 		Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 		if (coopActor->currentProcess)
 		{
-			coopActor->currentProcess->StopCurrentIdle(coopActor.get(), true);
+			// Do not want to 'IdleForceDefaultState' when the player has their weapons drawn
+			// because this will result in the unusable weapons glitch and require re-equipping.
+			coopActor->currentProcess->StopCurrentIdle
+			(
+				coopActor.get(), !coopActor->IsWeaponDrawn()
+			);
 		}
 
 		coopActor->NotifyAnimationGraph("IdleStop");
@@ -6172,14 +6754,7 @@ namespace ALYSLC
 			avOwner->SetBaseActorValue(RE::ActorValue::kHealRateMult, baseHealthRegenRateMult);
 		}
 
-		bool isCasting = 
-		(
-			isInCastingAnim ||
-			IsPerformingOneOf
-			(
-				InputAction::kCastLH, InputAction::kCastRH, InputAction::kQuickSlotCast
-			)
-		);
+		bool isCasting = isInCastingAnim || IsPerformingSpellCastAction();
 		const float currentBaseMagickaRegenRateMult = coopActor->GetBaseActorValue
 		(
 			RE::ActorValue::kMagickaRateMult
@@ -6260,10 +6835,16 @@ namespace ALYSLC
 							aem->UnequipObject(coopActor.get(), boundArrow->As<RE::TESAmmo>());
 						}
 					}
-
-					// Clear out hand slots and reset request duration data.
-					p->em->EquipFists();
+					
+					// Reset flags, durations, and requested forms.
+					boundWeapReq2H =
+					boundWeapReqLH = 
+					boundWeapReqRH = false;
 					secsSinceBoundWeap2HReq = 0.0f;
+					p->em->lastReqBoundWeapLH =
+					p->em->lastReqBoundWeapRH = nullptr;
+					// Clear out hand slots.
+					p->em->EquipFists();
 				}
 			}
 		}
@@ -6282,9 +6863,12 @@ namespace ALYSLC
 						"Unequipping LH bound weapon.",
 						coopActor->GetName()
 					);
-					aem->UnequipObject(coopActor.get(), lhWeap);
-					// Reset request duration data.
+					// Reset flag, duration, and requested form.
+					boundWeapReqLH = false;
 					secsSinceBoundWeapLHReq = 0.0f;
+					p->em->lastReqBoundWeapLH = nullptr;
+					// Clear out hand slot.
+					aem->UnequipObject(coopActor.get(), lhWeap);
 				}
 			}
 		}
@@ -6303,9 +6887,12 @@ namespace ALYSLC
 						"Unequipping RH bound weapon.",
 						coopActor->GetName()
 					);
-					aem->UnequipObject(coopActor.get(), rhWeap);
-					// Reset request duration data.
+					// Reset flag, duration, and requested form.
+					boundWeapReqRH = false;
 					secsSinceBoundWeapRHReq = 0.0f;
+					p->em->lastReqBoundWeapRH = nullptr;
+					// Clear out hand slot.
+					aem->UnequipObject(coopActor.get(), rhWeap);
 				}
 			}
 		}
@@ -6327,6 +6914,8 @@ namespace ALYSLC
 			secsSinceBoundWeap2HReq = 0.0f;
 			secsSinceBoundWeapLHReq = 0.0f;
 			secsSinceBoundWeapRHReq = 0.0f;
+			p->em->lastReqBoundWeapLH =
+			p->em->lastReqBoundWeapRH = nullptr;
 		}
 		
 		secsSinceReq = Util::GetElapsedSeconds(p->lastBoundWeaponRHReqTP);
@@ -6339,6 +6928,7 @@ namespace ALYSLC
 			);
 			boundWeapReqRH = false;
 			secsSinceBoundWeapRHReq = 0.0f;
+			p->em->lastReqBoundWeapRH = nullptr;
 		}
 
 		secsSinceReq = Util::GetElapsedSeconds(p->lastBoundWeaponLHReqTP);
@@ -6351,6 +6941,7 @@ namespace ALYSLC
 			);
 			boundWeapReqLH = false;
 			secsSinceBoundWeapLHReq = 0.0f;
+			p->em->lastReqBoundWeapLH = nullptr;
 		}
 	}
 
@@ -6887,13 +7478,13 @@ namespace ALYSLC
 		paParams(PAParams()), perfStage(PerfStage::kInputsReleased),
 		pressTP(SteadyClock::now()), releaseTP(SteadyClock::now()),
 		startTP(SteadyClock::now()), stopTP(SteadyClock::now()),
-		avCost(0.0f), secsPerformed(0.0f), priority(0.0f)
+		avBaseCost(0.0f), secsPerformed(0.0f), priority(0.0f)
 	{ }
 
 	PlayerActionManager::PlayerActionState::PlayerActionState(const PAParams& a_params) :
 		paParams(a_params), perfStage(PerfStage::kInputsReleased),
 		pressTP(SteadyClock::now()), releaseTP(SteadyClock::now()),
 		startTP(SteadyClock::now()), stopTP(SteadyClock::now()),
-		avCost(0.0f), secsPerformed(0.0f), priority(0.0f)
+		avBaseCost(0.0f), secsPerformed(0.0f), priority(0.0f)
 	{ }
 }

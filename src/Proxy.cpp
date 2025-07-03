@@ -44,6 +44,7 @@ namespace ALYSLC
 			// Set living and active players to 0 when not in co-op.
 			glob.livingPlayers = glob.activePlayers = 0;
 			// Reset QuickLoot menu-opening data.
+			glob.quickLootControlCID = -1;
 			glob.quickLootReqCID = -1;
 			glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
 			// Co-op camera set to paused and not waiting for toggle.
@@ -353,13 +354,13 @@ namespace ALYSLC
 					controlMap->ToggleControls(RE::ControlMap::UEFlag::kMenu, true);
 					controlMap->ToggleControls(RE::ControlMap::UEFlag::kLooking, true);
 					controlMap->lock.Unlock();
-					auto ui = RE::UI::GetSingleton();
-					if (ui)
+					// Re-enable saving too if P1 is not dead.
+					auto p1 = RE::PlayerCharacter::GetSingleton();
+					if (p1 &&
+						!p1->IsDead() && 
+						*glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
 					{
-						if (auto hud = ui->GetMenu<RE::HUDMenu>(); hud)
-						{
-							hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
-						}
+						p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 					}
 				}
 			);
@@ -487,16 +488,12 @@ namespace ALYSLC
 
 		for (const auto playerActor : glob.coopEntityBlacklist)
 		{
-			if (!playerActor || 
-				!playerActor.get() || 
-				playerActor->IsDisabled() || 
-				!playerActor->Is3DLoaded())
+			if (!playerActor || playerActor->IsDisabled() || !playerActor->Is3DLoaded())
 			{
 				continue;
 			}
 				
-			SPDLOG_DEBUG("[Proxy] EnableCoopEntityCollision: {}.",
-				playerActor->GetName());
+			SPDLOG_DEBUG("[Proxy] EnableCoopEntityCollision: {}.", playerActor->GetName());
 			Util::EnableCollisionForActor(playerActor.get());
 		}
 	}
@@ -1114,7 +1111,7 @@ namespace ALYSLC
 
 		for (const auto& p : glob.coopPlayers)
 		{
-			if (!p || !p->coopActor || !p->coopActor.get())
+			if (!p || !p->coopActor)
 			{
 				continue;
 			}
@@ -1205,17 +1202,17 @@ namespace ALYSLC
 			return;
 		}
 
-		RE::ActorPtr teleportTarget{ a_teleportTarget };
+		RE::ActorPtr teleportTargetPtr{ a_teleportTarget };
 		p->taskRunner->AddTask
 		(
-			[&p, teleportTarget]() 
+			[&p, teleportTargetPtr]() 
 			{ 
-				if (!teleportTarget || !teleportTarget.get())
+				if (!teleportTargetPtr)
 				{
 					return;
 				}
 
-				p->TeleportTask(teleportTarget->GetHandle());
+				p->TeleportTask(teleportTargetPtr->GetHandle());
 			}
 		);
 	}
@@ -1428,9 +1425,7 @@ namespace ALYSLC
 
 		auto moveToActorPtr = RE::ActorPtr(a_playerActor);
 		// Move to P1 if the target player actor is invalid.
-		if (!moveToActorPtr || 
-			!moveToActorPtr.get() || 
-			!Util::IsValidRefrForTargeting(moveToActorPtr.get()))
+		if (!moveToActorPtr || !Util::IsValidRefrForTargeting(moveToActorPtr.get()))
 		{
 			moveToActorPtr = glob.player1Actor;
 		}
@@ -1446,7 +1441,7 @@ namespace ALYSLC
 			(
 				[otherP, moveToActorPtr]() 
 				{
-					if (!moveToActorPtr || !moveToActorPtr.get())
+					if (!moveToActorPtr)
 					{
 						return;
 					}
@@ -1582,7 +1577,7 @@ namespace ALYSLC
 			p1->SetGraphVariableBool("bAnimationDriven", false);
 			p1->SetGraphVariableBool("bIsSynced", false);
 		}
-
+		
 		// Also ensure P1 is not AI driven anymore.
 		Util::SetPlayerAIDriven(false);
 	}
@@ -1713,7 +1708,7 @@ namespace ALYSLC
 		auto playerHandle = modAPI->GetALYSLCPlayerByCID(a_controllerID);
 		return
 		(
-			playerHandle && playerHandle.get() && playerHandle.get().get() ? 
+			playerHandle && playerHandle.get() ? 
 			playerHandle.get().get() : 
 			nullptr
 		);
@@ -1730,7 +1725,7 @@ namespace ALYSLC
 		auto playerHandle = modAPI->GetALYSLCPlayerByPID(a_playerID);
 		return
 		(
-			playerHandle && playerHandle.get() && playerHandle.get().get() ? 
+			playerHandle && playerHandle.get() ? 
 			playerHandle.get().get() : 
 			nullptr
 		);

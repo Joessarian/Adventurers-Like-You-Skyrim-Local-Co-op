@@ -59,15 +59,12 @@ namespace ALYSLC
 		GlobalCoopData::ResetMenuCIDs();
 		glob.supportedMenuOpen.store(false);
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Ensure the allow saving flag is set for the HUD Menu,
 		// since we may have unset it previously, preventing all saving.
-		auto ui = RE::UI::GetSingleton();
-		if (ui)
+		if (p1 && *glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
 		{
-			if (auto hud = ui->GetMenu<RE::HUDMenu>(); hud)
-			{
-				hud->menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
-			}
+			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 		}
 	}
 
@@ -132,9 +129,7 @@ namespace ALYSLC
 			"[Events] Actor kill event: {} ({}) killed {}.",
 			a_actorKillEvent->killer ? a_actorKillEvent->killer->GetName() : "NONE",
 			a_actorKillEvent->victim &&
-			a_actorKillEvent->victim->myKiller &&
-			a_actorKillEvent->victim->myKiller.get() &&
-			a_actorKillEvent->victim->myKiller.get().get() ? 
+			a_actorKillEvent->victim->myKiller ? 
 			a_actorKillEvent->victim->myKiller.get()->GetName() : 
 			"NONE",
 			a_actorKillEvent->victim ? a_actorKillEvent->victim->GetName() : "NONE"
@@ -172,8 +167,7 @@ namespace ALYSLC
 		if (!glob.allPlayersInit || 
 			!Settings::bUseReviveSystem ||
 			!a_bleedoutEvent || 
-			!a_bleedoutEvent->actor || 
-			!a_bleedoutEvent->actor.get())
+			!a_bleedoutEvent->actor)
 		{
 			return EventResult::kContinue;
 		}
@@ -238,19 +232,18 @@ namespace ALYSLC
 	{
 		if (!glob.globalDataInit ||
 			!a_cellChangeEvent || 
-			!a_cellChangeEvent->movedRef || 
-			!a_cellChangeEvent->movedRef.get())
+			!a_cellChangeEvent->movedRef)
 		{
 			return EventResult::kContinue;
 		}
 
 		auto attachedRefrPtr = a_cellChangeEvent->movedRef;
-		if (!attachedRefrPtr || !attachedRefrPtr.get())
+		if (!attachedRefrPtr)
 		{
 			return EventResult::kContinue;
 		}
-
-		if (auto refr3DPtr = Util::GetRefr3D(attachedRefrPtr.get()); refr3DPtr && refr3DPtr.get())
+		
+		if (auto refr3DPtr = Util::GetRefr3D(attachedRefrPtr.get()); refr3DPtr)
 		{
 			// Ensure actor does not fade during co-op with our co-op cam enabled.
 			if (!refr3DPtr->flags.all
@@ -353,9 +346,7 @@ namespace ALYSLC
 		if (!glob.globalDataInit || 
 			!glob.coopSessionActive ||
 			!a_combatEvent->actor || 
-			!a_combatEvent->actor.get() ||
-			!a_combatEvent->targetActor ||
-			!a_combatEvent->targetActor.get())
+			!a_combatEvent->targetActor)
 		{
 			return EventResult::kContinue;
 		}
@@ -427,7 +418,6 @@ namespace ALYSLC
 					return 
 					(
 						a_chestRefrPtr &&
-						a_chestRefrPtr.get() && 
 						a_chestRefrPtr->formID == a_containerChangedEvent->oldContainer
 					);
 				}
@@ -539,30 +529,67 @@ namespace ALYSLC
 					{
 						if (auto boundObj = baseObj->As<RE::TESBoundObject>(); boundObj)
 						{
-							SPDLOG_DEBUG
-							(
-								"[Events] Container Changed Event: "
-								"Removing base item {} (x{}) and giving to {}.", 
-								boundObj->GetName(),
-								a_containerChangedEvent->itemCount, 
-								p->coopActor->GetName()
-							);
+							const int32_t count = a_containerChangedEvent->itemCount;
+							// Do not transfer quest objects.
+							auto inventory = p1->GetInventory();
+							const auto iter = inventory.find(boundObj); 
+							if (iter != inventory.end())
+							{
+								const auto& invEntryData = iter->second.second;
+								if (invEntryData && invEntryData->IsQuestObject())
+								{
+									SPDLOG_DEBUG
+									(
+										"[Events] Container Changed Event: "
+										"Not transfering quest item object {} (x{}) to {}.",
+										baseObj->GetName(),
+										count,
+										p->coopActor->GetName()
+									);
+									return EventResult::kContinue;
+								}
+							}
 
-							p1->RemoveItem
+							// Run on the main thread by running the removal/addition code
+							// through a synced task with the player's task runner thread.
+							// Could prevent threading issues from crashing the game here,
+							// since this event handler is not run by the main thread.
+							// Ugly, but fixes a RaceMenu crash 
+							// when transferring over a single torch. Needs more testing.
+							p->taskRunner->AddTask
 							(
-								boundObj, 
-								a_containerChangedEvent->itemCount,
-								RE::ITEM_REMOVE_REASON::kRemove, 
-								nullptr, 
-								nullptr
-							);
-
-							p->coopActor->AddObjectToContainer
-							(
-								boundObj, 
-								nullptr, 
-								a_containerChangedEvent->itemCount, 
-								p->coopActor.get()
+								[p, p1, boundObj, count]()
+								{
+									Util::AddSyncedTask
+									(
+										[p, p1, boundObj, count]()
+										{
+											SPDLOG_DEBUG
+											(
+												"[Events] Container Changed Event: "
+												"Removing base item {} (x{}) and giving to {}.", 
+												boundObj->GetName(),
+												count, 
+												p->coopActor->GetName()
+											);
+											p1->RemoveItem
+											(
+												boundObj, 
+												count,
+												RE::ITEM_REMOVE_REASON::kRemove, 
+												nullptr, 
+												nullptr
+											);
+											p->coopActor->AddObjectToContainer
+											(
+												boundObj, 
+												nullptr, 
+												count, 
+												p->coopActor.get()
+											);
+										}
+									);
+								}
 							);
 						}
 
@@ -570,32 +597,63 @@ namespace ALYSLC
 					}
 					else if (refr && !Util::IsPartyWideItem(refr.get()))
 					{
-						if (auto boundObj = refr->GetBaseObject(); boundObj)
+						const int32_t count = a_containerChangedEvent->itemCount;
+						// Do not transfer quest objects.
+						bool isQuestItem = 
+						{
+							refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
+							refr->extraList.HasType(RE::ExtraDataType::kFromAlias)
+						};
+						if (isQuestItem)
 						{
 							SPDLOG_DEBUG
 							(
 								"[Events] Container Changed Event: "
-								"Removing reference item {} (x{}) and giving to {}.", 
-								boundObj->GetName(), 
-								a_containerChangedEvent->itemCount,
+								"Not moving quest item refr {} (x{}) to {}.",
+								refr->GetName(),
+								count,
 								p->coopActor->GetName()
 							);
+							return EventResult::kContinue;
+						}
 
-							p1->RemoveItem
+						if (auto boundObj = refr->GetBaseObject(); boundObj)
+						{
+							p->taskRunner->AddTask
 							(
-								boundObj, 
-								a_containerChangedEvent->itemCount,
-								RE::ITEM_REMOVE_REASON::kRemove,
-								nullptr,
-								nullptr
-							);
-
-							p->coopActor->AddObjectToContainer
-							(
-								boundObj, 
-								nullptr, 
-								a_containerChangedEvent->itemCount, 
-								p->coopActor.get()
+								[p, p1, boundObj, count]()
+								{
+									Util::AddSyncedTask
+									(
+										[p, p1, boundObj, count]()
+										{
+											SPDLOG_DEBUG
+											(
+												"[Events] Container Changed Event: "
+												"Removing reference item {} (x{}) "
+												"and giving to {}.", 
+												boundObj->GetName(), 
+												count,
+												p->coopActor->GetName()
+											);
+											p1->RemoveItem
+											(
+												boundObj, 
+												count,
+												RE::ITEM_REMOVE_REASON::kRemove, 
+												nullptr, 
+												nullptr
+											);
+											p->coopActor->AddObjectToContainer
+											(
+												boundObj, 
+												nullptr, 
+												count, 
+												p->coopActor.get()
+											);
+										}
+									);
+								}
 							);
 						}
 
@@ -625,22 +683,53 @@ namespace ALYSLC
 
 							if (boundObj)
 							{
-								SPDLOG_DEBUG
-								(
-									"[Events] Container Changed Event: "
-									"Removing item from {} (x{}) to P1 (from 0x{:X}).",
-									p->coopActor->GetName(), 
-									a_containerChangedEvent->itemCount, 
-									a_containerChangedEvent->oldContainer
-								);
+								const int32_t count = a_containerChangedEvent->itemCount;
+								// Do not transfer quest objects.
+								auto inventory = p->coopActor->GetInventory();
+								const auto iter = inventory.find(boundObj); 
+								if (iter != inventory.end())
+								{
+									SPDLOG_DEBUG
+									(
+										"[Events] Container Changed Event: "
+										"Moving quest item {} (x{}) from {} to P1.",
+										baseObj->GetName(),
+										count,
+										p->coopActor->GetName()
+									);
+									const auto& invEntryData = iter->second.second;
+									if (invEntryData && invEntryData->IsQuestObject())
+									{
+										return EventResult::kContinue;
+									}
+								}
 
-								p->coopActor->RemoveItem
+								p->taskRunner->AddTask
 								(
-									boundObj, 
-									a_containerChangedEvent->itemCount, 
-									RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-									nullptr, 
-									p1
+									[p, p1, boundObj, count]()
+									{
+										Util::AddSyncedTask
+										(
+											[p, p1, boundObj, count]()
+											{
+												SPDLOG_DEBUG
+												(
+													"[Events] Container Changed Event: "
+													"Moving party-wide item from {} (x{}) to P1.",
+													p->coopActor->GetName(), 
+													count
+												);
+												p->coopActor->RemoveItem
+												(
+													boundObj, 
+													count, 
+													RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+													nullptr, 
+													p1
+												);
+											}
+										);
+									}
 								);
 							}
 
@@ -665,7 +754,7 @@ namespace ALYSLC
 		{
 			const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
 			auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
-			if (!gifteePtr || !gifteePtr.get()) 
+			if (!gifteePtr) 
 			{
 				return EventResult::kContinue;
 			}
@@ -685,29 +774,42 @@ namespace ALYSLC
 
 			if (boundObj) 
 			{
-				SPDLOG_DEBUG
+				const int32_t count = a_containerChangedEvent->itemCount;
+				giftingP->taskRunner->AddTask
 				(
-					"[Events] Container Changed Event: "
-					"Removing {} (x{}) from P1 to {} (from gifting player {}).",
-					boundObj->GetName(), 
-					a_containerChangedEvent->itemCount,
-					gifteePtr->GetName(),
-					giftingP->coopActor->GetName()
-				);
-				p1->RemoveItem
-				(
-					boundObj, 
-					a_containerChangedEvent->itemCount, 
-					RE::ITEM_REMOVE_REASON::kRemove, 
-					nullptr, 
-					nullptr
-				);
-				gifteePtr->AddObjectToContainer
-				(
-					boundObj, 
-					nullptr,
-					a_containerChangedEvent->itemCount,
-					gifteePtr.get()
+					[giftingP, gifteePtr, p1, boundObj, count]()
+					{
+						Util::AddSyncedTask
+						(
+							[giftingP, gifteePtr, p1, boundObj, count]()
+							{
+								SPDLOG_DEBUG
+								(
+									"[Events] Container Changed Event: "
+									"Removing {} (x{}) from P1 to {} (from gifting player {}).",
+									boundObj->GetName(), 
+									count,
+									gifteePtr->GetName(),
+									giftingP->coopActor->GetName()
+								);
+								p1->RemoveItem
+								(
+									boundObj, 
+									count,
+									RE::ITEM_REMOVE_REASON::kRemove, 
+									nullptr, 
+									nullptr
+								);
+								gifteePtr->AddObjectToContainer
+								(
+									boundObj, 
+									nullptr, 
+									count, 
+									gifteePtr.get()
+								);
+							}
+						);
+					}
 				);
 			}
 
@@ -737,13 +839,28 @@ namespace ALYSLC
 						(glob.activePlayers - 1) * 
 						Settings::fAdditionalGoldPerPlayerMult
 					);
-					p1->AddObjectToContainer
+					const auto& toP = glob.coopPlayers[toCoopPlayerIndex];
+					const auto gold = form->As<RE::TESObjectMISC>();
+					toP->taskRunner->AddTask
 					(
-						form->As<RE::TESObjectMISC>(), 
-						nullptr, 
-						additionalGold, 
-						p1
+						[toP, p1, gold, additionalGold]()
+						{
+							Util::AddSyncedTask
+							(
+								[toP, p1, gold, additionalGold]()
+								{
+									p1->AddObjectToContainer
+									(
+										gold, 
+										nullptr, 
+										additionalGold, 
+										p1
+									);
+								}
+							);
+						}
 					);
+
 					bool inMenu = !Util::MenusOnlyAlwaysOpen();
 					// If not in a menu and activating all gold in activation range, 
 					// each individual gold piece added triggers a container changed event, 
@@ -852,32 +969,57 @@ namespace ALYSLC
 							);
 							if (newSkillbook)
 							{
-								p->coopActor->AddObjectToContainer
+								p->taskRunner->AddTask
 								(
-									newSkillbook,
-									nullptr, 
-									1, 
-									p->coopActor.get()
+									[p, p1, newSkillbook]()
+									{
+										Util::AddSyncedTask
+										(
+											[p, p1, newSkillbook]()
+											{
+
+												p->coopActor->AddObjectToContainer
+												(
+													newSkillbook,
+													nullptr, 
+													1, 
+													p->coopActor.get()
+												);
+											}
+										);
+									}
 								);
 								// Show in TrueHUD recent loot widget 
 								// by adding and removing the skillbook from P1.
 								if (ALYSLC::TrueHUDCompat::g_trueHUDInstalled && 
 									toP->coopActor.get() == p1)
 								{
-									p1->AddObjectToContainer
+									toP->taskRunner->AddTask
 									(
-										newSkillbook->As<RE::AlchemyItem>(),
-										nullptr, 
-										1, 
-										p1
-									);
-									p1->RemoveItem
-									(
-										newSkillbook->As<RE::AlchemyItem>(),
-										1, 
-										RE::ITEM_REMOVE_REASON::kRemove, 
-										nullptr, 
-										nullptr
+										[p1, newSkillbook]()
+										{
+											Util::AddSyncedTask
+											(
+												[p1, newSkillbook]()
+												{
+													p1->AddObjectToContainer
+													(
+														newSkillbook->As<RE::AlchemyItem>(),
+														nullptr, 
+														1, 
+														p1
+													);
+													p1->RemoveItem
+													(
+														newSkillbook->As<RE::AlchemyItem>(),
+														1, 
+														RE::ITEM_REMOVE_REASON::kRemove, 
+														nullptr, 
+														nullptr
+													);
+												}
+											);
+										}
 									);
 								}
 
@@ -964,12 +1106,12 @@ namespace ALYSLC
 			bool matchesRequestedRefr = 
 			(
 				(
-					a_event->crosshairRef && a_event->crosshairRef.get() &&
+					a_event->crosshairRef &&
 					a_event->crosshairRef->GetHandle() == glob.reqQuickLootContainerHandle
 				) ||
 				(
-					(!a_event->crosshairRef || !a_event->crosshairRef.get()) &&
-					(glob.reqQuickLootContainerHandle == RE::ObjectRefHandle())
+					!a_event->crosshairRef &&
+					glob.reqQuickLootContainerHandle == RE::ObjectRefHandle()
 				)
 			);
 			if (matchesRequestedRefr)
@@ -1109,8 +1251,8 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"[Events] Equip Event: {} -> {} (0x{:X}): "
-			"equipped: {}, original refr: 0x{:X}, unique id: 0x{:X}",
-			a_equipEvent && a_equipEvent->actor.get() ? (a_equipEvent->actor->GetName()) : "N/A",
+			"equipped: {} (type: 0x{:X}), original refr: 0x{:X}, unique id: 0x{:X}",
+			a_equipEvent ? (a_equipEvent->actor->GetName()) : "N/A",
 			a_equipEvent && 
 			a_equipEvent->baseObject && 
 			RE::TESForm::LookupByID(a_equipEvent->baseObject) ? 
@@ -1122,6 +1264,11 @@ namespace ALYSLC
 			RE::TESForm::LookupByID(a_equipEvent->baseObject)->formID :
 			0xDEAD,
 			a_equipEvent->equipped,
+			a_equipEvent && 
+			a_equipEvent->baseObject && 
+			RE::TESForm::LookupByID(a_equipEvent->baseObject) ? 
+			*RE::TESForm::LookupByID(a_equipEvent->baseObject)->formType :
+			RE::FormType::None,
 			a_equipEvent->originalRefr,
 			a_equipEvent->uniqueID
 		);
@@ -1668,7 +1815,6 @@ namespace ALYSLC
 				)
 			)
 		);
-
 		if (shouldApplyDamageOrDrawAggro)
 		{
 			// Constructing and applying hit data seems to more consistently trigger
@@ -2212,94 +2358,13 @@ namespace ALYSLC
 					// https://www.nexusmods.com/enderalspecialedition/mods/563
 					if (a_menuEvent->menuName == GlobalCoopData::ENHANCED_HERO_MENU)
 					{
-						if (a_menuEvent->opening)
-						{
-							SPDLOG_DEBUG
-							(
-								"[Events] Menu Open/Close Event: "
-								"Enderal Hero Menu: Should copy AVs and name."
-							);
-
-							bool copyOverBaseDataAndName = 
-							(
-								!glob.copiedPlayerDataTypes.all
-								(
-									CopyablePlayerDataTypes::kName
-								)
-							);
-							if (copyOverBaseDataAndName)
-							{
-								GlobalCoopData::CopyOverActorBaseData
-								(
-									p->coopActor.get(), 
-									true, 
-									true, 
-									false, 
-									false
-								);
-								glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
-							}
-
-							bool copyOverAVs = 
-							(
-								!glob.copiedPlayerDataTypes.all
-								(
-									CopyablePlayerDataTypes::kSkillsAndHMS
-								)
-							);
-							if (copyOverAVs)
-							{
-								GlobalCoopData::CopyOverAVs(p->coopActor.get(), true);
-								glob.copiedPlayerDataTypes.set
-								(
-									CopyablePlayerDataTypes::kSkillsAndHMS
-								);
-							}
-						}
-						else
-						{
-							SPDLOG_DEBUG
-							(
-								"[Events] Menu Open/Close Event: Enderal Hero Menu: "
-								"Should copy back AVs and name."
-							);
-
-							bool restoreBaseDataAndName = 
-							(
-								glob.copiedPlayerDataTypes.all
-								(
-									CopyablePlayerDataTypes::kName
-								)
-							);
-							if (restoreBaseDataAndName)
-							{
-								GlobalCoopData::CopyOverActorBaseData
-								(
-									p->coopActor.get(), 
-									false, 
-									true, 
-									false,
-									false
-								);
-								glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
-							}
-
-							bool restoreAVs = 
-							(
-								glob.copiedPlayerDataTypes.all
-								(
-									CopyablePlayerDataTypes::kSkillsAndHMS
-								)
-							);
-							if (restoreAVs)
-							{
-								GlobalCoopData::CopyOverAVs(p->coopActor.get(), false);
-								glob.copiedPlayerDataTypes.reset
-								(
-									CopyablePlayerDataTypes::kSkillsAndHMS
-								);
-							}
-						}
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							a_menuEvent->opening, 
+							a_menuEvent->menuName, 
+							p->coopActor->GetHandle(),
+							nullptr
+						);
 					}
 					else if (a_menuEvent->menuName == RE::CraftingMenu::MENU_NAME)
 					{
@@ -2322,7 +2387,29 @@ namespace ALYSLC
 				else if (a_menuEvent->menuName == RE::LockpickingMenu::MENU_NAME)
 				{
 					// Start lockpicking task to give the companion player LockpickingMenu control.
-					p->taskRunner->AddTask([&p]() { p->LockpickingTask(); });
+					p->taskRunner->AddTask([&p]() { p->LockpickingTask(true); });
+				}
+			}
+			else if (Settings::bTwoPlayerLockpicking && 
+					 glob.activePlayers == 2 &&
+					 a_menuEvent->opening && 
+					 a_menuEvent->menuName == RE::LockpickingMenu::MENU_NAME)
+			{
+				// P1 is controlling the Lockpicking Menu, but since we have two players,
+				// and two player lockpicking is enabled, we can grant the other player 
+				// control of rotating the lock.
+				// Get the other player.
+				for (const auto& otherP : glob.coopPlayers)
+				{
+					if (otherP->isActive && !otherP->isPlayer1)
+					{
+						// Start lockpicking task to give the companion player
+						// partial Lockpicking Menu control.
+						otherP->taskRunner->AddTask
+						(
+							[&otherP]() { otherP->LockpickingTask(false); }
+						);
+					}
 				}
 			}
 			else if (a_menuEvent->opening && a_menuEvent->menuName == RE::FavoritesMenu::MENU_NAME)
@@ -2516,15 +2603,12 @@ namespace ALYSLC
 		(
 			"[Events] Position Player Event: {}. Should move players to P1: {}.",
 			*a_positionPlayerEvent->type,
-			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)
+			a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kFinish
 		);
 		bool preMove = 
 		(
-			a_positionPlayerEvent->type.any
-			(
-				RE::PositionPlayerEvent::EVENT_TYPE::kPre, 
-				RE::PositionPlayerEvent::EVENT_TYPE::kPreUpdatePackages
-			)
+			a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kPre ||
+			a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kPreUpdatePackages
 		);
 		if (preMove) 
 		{
@@ -2546,33 +2630,29 @@ namespace ALYSLC
 					);
 					p->RequestStateChange(ManagerState::kPaused);
 				}
-
+				
 				// Clear all released refrs and also grabbed actors,
 				// since I haven't figured out a consistent, 
 				// bug-free way of moving grabbed actors through load doors yet.
 				p->tm->rmm->ClearReleasedRefrs();
 				p->tm->rmm->ClearGrabbedActors(p);
+				SPDLOG_DEBUG
+				(
+					"[Events] Position Player Event: Pre-move: "
+					"Cleared P{}'s managed grabbed and released refrs.", 
+					p->playerID + 1
+				);
 			}
 		}
 
 		bool postMove = 
 		(
-			a_positionPlayerEvent->type.any(RE::PositionPlayerEvent::EVENT_TYPE::kFinish)
+			a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kFinish
 		);
 		if (postMove) 
 		{
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			bool player1Valid = 
-			{
-				p1 && 
-				!p1->IsDisabled() && 
-				p1->Is3DLoaded() &&
-				p1->IsHandleValid() &&
-				p1->loadedData &&
-				p1->currentProcess && 
-				p1->GetCharController() &&
-				p1->parentCell
-			};
+			bool player1Valid = Util::ActorIsValid(p1);
 			if (!player1Valid) 
 			{
 				SPDLOG_DEBUG
@@ -2603,19 +2683,46 @@ namespace ALYSLC
 
 				if (!p->isPlayer1) 
 				{
-					SPDLOG_DEBUG("[Events] Position Player Event: Moving player {} to P1.", 
+					SPDLOG_DEBUG("[Events] Position Player Event: About to move player {} to P1.", 
 						p->coopActor->GetName());
 					// Sheathe before moving to minimize incidence of equip state bugs.
 					p->pam->ReadyWeapon(false);
-					p->coopActor->MoveTo(p1);
+					auto taskInterface = SKSE::GetTaskInterface();
+					if (taskInterface)
+					{
+						taskInterface->AddTask
+						(
+							[p, p1]()
+							{
+								SPDLOG_DEBUG
+								(
+									"[Events] Position Player Event: Now moving player {} to P1.", 
+									p->coopActor->GetName()
+								);
+								p->coopActor->MoveTo(p1); 
+							}
+						);
+					}
 				}
 
 				// TODO:
 				// Also move all the player's grabbed refrs and actors to P1.
 				// p->tm->rmm->MoveUnloadedGrabbedObjectsToPlayer(p);
-
+				
+				SPDLOG_DEBUG
+				(
+					"[Events] Position Player Event: Post-move: "
+					"Should clear P{}'s managed grabbed and released refrs.", 
+					p->playerID + 1
+				);
 				// For now, clear all managed refrs.
 				p->tm->rmm->ClearAll();
+				SPDLOG_DEBUG
+				(
+					"[Events] Position Player Event: Post-move: "
+					"Cleared P{}'s managed grabbed and released refrs.", 
+					p->playerID + 1
+				);
 			}
 		}
 

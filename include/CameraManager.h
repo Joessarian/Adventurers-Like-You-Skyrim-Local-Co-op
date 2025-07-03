@@ -321,7 +321,7 @@ namespace ALYSLC
 			interpIntervalProportion = 
 			targetFadeAmount = 1.0f;
 			fadeIndex = -1;
-			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
+			if (objectPtr && objectPtr->GetRefCount() > 0)
 			{
 				if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
 				{
@@ -340,7 +340,7 @@ namespace ALYSLC
 			const bool& a_shouldFadeOut, const int32_t& a_objectFadeIndex
 		) 
 		{
-			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
+			if (objectPtr && objectPtr->GetRefCount() > 0)
 			{
 				shouldFadeOut = a_shouldFadeOut;
 				fadeStateChangeTP = SteadyClock::now();
@@ -418,7 +418,7 @@ namespace ALYSLC
 		// when the fade raycast(s) were performed.
 		inline bool UpdateFade() 
 		{
-			if (objectPtr && objectPtr.get() && objectPtr->GetRefCount() > 0)
+			if (objectPtr && objectPtr->GetRefCount() > 0)
 			{
 				float secsSinceStateChange = Util::GetElapsedSeconds(fadeStateChangeTP);
 				float newFadeAmount = targetFadeAmount;
@@ -625,7 +625,7 @@ namespace ALYSLC
 					return camPitch;
 				}
 			}
-			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 			{
 				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
 				return eulerAngles.x;
@@ -647,12 +647,12 @@ namespace ALYSLC
 			{
 				// Return NiCamera position -> player camera position -> P1's position
 				// -> nothing because everything has failed.
-				if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+				if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 				{
 					return niCamPtr->world.translate;
 				}
 
-				if (playerCam && playerCam->cameraRoot && playerCam->cameraRoot.get())
+				if (playerCam && playerCam->cameraRoot)
 				{
 					return playerCam->cameraRoot->world.translate;
 				}
@@ -673,7 +673,7 @@ namespace ALYSLC
 					return camYaw;
 				}
 			}
-			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr && niCamPtr.get())
+			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 			{
 				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
 				return eulerAngles.z;
@@ -743,7 +743,6 @@ namespace ALYSLC
 			(
 				isLockedOn && 
 				camLockOnTargetPtr && 
-				camLockOnTargetPtr.get() && 
 				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation
 			);
 		}

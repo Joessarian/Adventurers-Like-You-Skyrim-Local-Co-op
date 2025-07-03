@@ -97,6 +97,31 @@ inline constexpr uint32_t operator"" _h(const char* a_str, size_t a_size) noexce
 //[Hashing and Comparators]:
 //==========================
 
+// String hashing and comp.
+template <>
+struct std::hash<RE::BSFixedString>
+{
+	std::size_t operator()(const RE::BSFixedString& a_string) const
+	{
+		return std::hash<std::string_view>()(a_string.data());
+	}
+};
+
+struct BSFixedStringComp
+{
+	bool operator()
+	(
+		const RE::BSFixedString& a_lhs, 
+		const RE::BSFixedString& a_rhs
+	) const
+	{
+		return
+		(
+			std::hash<RE::BSFixedString>()(a_lhs) < std::hash<RE::BSFixedString>()(a_rhs)
+		);
+	}
+};
+
 // Hash NiAVObjects wrapped in NiPointers.
 // For use in sets and maps.
 template <>
@@ -140,7 +165,7 @@ struct std::hash<RE::BSPointerHandle<T>>
 	uint32_t operator()(const RE::BSPointerHandle<T>& a_handle) const
 	{
 		uint32_t nativeHandle = 0;
-		if (!a_handle || !a_handle.get() || !a_handle.get().get())
+		if (!a_handle || !a_handle.get())
 		{
 			return nativeHandle;
 		}
@@ -199,15 +224,6 @@ struct FormIDPairComp
 			std::hash<std::pair<RE::FormID, RE::FormID>>()(a_lhs) < 
 			std::hash<std::pair<RE::FormID, RE::FormID>>()(a_rhs)
 		);
-	}
-};
-
-template <>
-struct std::hash<RE::BSFixedString>
-{
-	std::size_t operator()(const RE::BSFixedString& a_string) const
-	{
-		return std::hash<std::string_view>()(a_string.data());
 	}
 };
 
@@ -1036,22 +1052,6 @@ namespace ALYSLC
 				return func(a_npc, a_type);
 			}
 
-			// Credit to Sylennus:
-			// https://github.com/Sylennus/PlayerMannequin/blob/master/src/MannequinInterface.cpp#L311
-
-			// (Re)set the given actor base data flag for the given actor base data.
-			inline void SetActorBaseDataFlag
-			(
-				RE::TESActorBaseData* a_actorBaseData,
-				RE::ACTOR_BASE_DATA::Flag a_flag, 
-				bool a_enable
-			)
-			{
-				using func_t = decltype(&SetActorBaseDataFlag);
-				REL::Relocation<func_t> func{ RELOCATION_ID(14261, 14383) };
-				return func(a_actorBaseData, a_flag, a_enable);
-			}
-
 			// All credits for the following function go to VersuchDrei:
 			// https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h#L90
 
@@ -1352,6 +1352,28 @@ namespace ALYSLC
 			);
 		}
 
+		inline void SetActorBaseDataFlag
+		(
+			RE::TESActorBase* a_actorBase,
+			RE::ACTOR_BASE_DATA::Flag a_flag, 
+			bool a_enable
+		)
+		{
+			if (!a_actorBase)
+			{
+				return;
+			}
+
+			if (a_enable)
+			{
+				a_actorBase->actorData.actorBaseFlags.set(a_flag);
+			}
+			else
+			{
+				a_actorBase->actorData.actorBaseFlags.reset(a_flag);
+			}
+		}
+
 		//=============================
 		//[External Utility Functions]:
 		//=============================
@@ -1607,6 +1629,28 @@ namespace ALYSLC
 		//===================
 		// [Everything Else]:
 		//===================
+
+		// Return true if the actor is enabled, has loaded 3D, its handle is valid,
+		// has a valid current process and character controller, 
+		// and if its parent cell is attached.
+		inline bool ActorIsValid(RE::Actor* a_actor)
+		{
+			return 
+			(
+				a_actor &&
+				!a_actor->IsDisabled() && 
+				a_actor->Is3DLoaded() && 
+				a_actor->IsHandleValid() && 
+				a_actor->loadedData && 
+				a_actor->currentProcess &&
+				a_actor->GetCharController() && 
+				a_actor->parentCell && 
+				a_actor->parentCell->IsAttached()
+			);
+		}
+
+		// Adjust character controller fall start height and time if starting to fall,
+		// or reset to zero if not falling.
 		inline void AdjustFallState
 		(
 			RE::bhkCharacterController* a_charController, bool a_startFalling
@@ -1645,8 +1689,8 @@ namespace ALYSLC
 				return RE::NiPoint3();
 			}
 
-			if (const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(a_refr->GetCurrent3D());
-				refr3DPtr && refr3DPtr.get())
+			const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(a_refr->GetCurrent3D());
+			if (refr3DPtr)
 			{
 				return refr3DPtr->worldBound.center;
 			}
@@ -1679,14 +1723,14 @@ namespace ALYSLC
 			}
 
 			// Return early if the player's 3D is invalid.
-			auto data3D = loadedData->data3D;
-			if (!data3D || !data3D->parent)
+			auto data3DPtr = loadedData->data3D;
+			if (!data3DPtr || !data3DPtr->parent)
 			{
 				return nullptr;
 			}
 
-			auto obj3DPtr = RE::NiPointer<RE::NiAVObject>(data3D->GetObjectByName(a_nodeName)); 
-			if (!obj3DPtr || !obj3DPtr.get())
+			auto obj3DPtr = RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(a_nodeName)); 
+			if (!obj3DPtr)
 			{
 				return nullptr;
 			}
@@ -1710,18 +1754,25 @@ namespace ALYSLC
 				return RE::NiPoint3();
 			}
 
-			return 
-			(
-				a_actor->data.location +
-				RE::NiPoint3
+			if (a_actor->IsInRagdollState())
+			{
+				return a_actor->data.location;
+			}
+			else
+			{
+				return 
 				(
-					0.0f,
-					0.0f,
-					a_actor->IsSneaking() ?
-					0.5f * a_actor->GetHeight() :
-					0.75f * a_actor->GetHeight()
-				)
-			);
+					a_actor->data.location +
+					RE::NiPoint3
+					(
+						0.0f,
+						0.0f,
+						a_actor->IsSneaking() ?
+						0.5f * a_actor->GetHeight() :
+						0.75f * a_actor->GetHeight()
+					)
+				);
+			}
 		}
 
 		// Get the given actor's character controller-reported linear velocity.
@@ -1745,7 +1796,7 @@ namespace ALYSLC
 		// or its raw pointer are invalid.
 		inline RE::ActorPtr GetActorPtrFromHandle(const RE::ActorHandle& a_handle) 
 		{
-			if (a_handle && a_handle.get() && a_handle.get().get()) 
+			if (a_handle && a_handle.get()) 
 			{
 				return a_handle.get();
 			}
@@ -2012,7 +2063,7 @@ namespace ALYSLC
 			}
 
 			const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(a_refr->GetCurrent3D());
-			return refr3DPtr && refr3DPtr.get() ? refr3DPtr : nullptr;
+			return refr3DPtr;
 		}
 
 		// Get the object reference smart pointer from the given handle.
@@ -2020,7 +2071,7 @@ namespace ALYSLC
 		// or its raw pointer are invalid.
 		inline RE::TESObjectREFRPtr GetRefrPtrFromHandle(const RE::ObjectRefHandle& a_handle)
 		{
-			if (a_handle && a_handle.get() && a_handle.get().get())
+			if (a_handle && a_handle.get())
 			{
 				return a_handle.get();
 			}
@@ -2032,14 +2083,14 @@ namespace ALYSLC
 		// smart and raw pointers are all valid.
 		inline bool HandleIsValid(const RE::ActorHandle& a_handle)
 		{
-			return a_handle && a_handle.get() && a_handle.get().get();
+			return a_handle && a_handle.get();
 		}
 
 		// Return true if the given object reference handle and its managed
 		// smart and raw pointers are all valid.
 		inline bool HandleIsValid(const RE::ObjectRefHandle& a_handle) 
 		{
-			return a_handle && a_handle.get() && a_handle.get().get();
+			return a_handle && a_handle.get();
 		}
 
 		// Return true if this actor's crime faction has bounty on player 1.
@@ -2058,12 +2109,21 @@ namespace ALYSLC
 		// or a weapon with a hostile spell enchantment.
 		inline bool HasHostileSpell(RE::TESForm* a_form)
 		{
+			if (!a_form)
+			{
+				return false;
+			}
+
 			if (auto spell = a_form->As<RE::SpellItem>(); spell) 
 			{
 				return 
 				(
 					(spell->IsHostile()) || 
-					(spell->GetAVEffect() && spell->GetAVEffect()->IsHostile())
+					(spell->GetAVEffect() && spell->GetAVEffect()->IsHostile()) ||
+					(
+						spell->GetCostliestEffectItem() && 
+						spell->GetCostliestEffectItem()->IsHostile()
+					)
 				);
 			}
 			else if (auto weap = a_form->As<RE::TESObjectWEAP>(); weap && weap->IsStaff())
@@ -2281,7 +2341,7 @@ namespace ALYSLC
 			auto commandingActorPtr = a_actor->GetCommandingActor();
 			bool isPartyCommandedActor = 
 			{
-				(commandingActorPtr && commandingActorPtr.get()) &&
+				(commandingActorPtr) &&
 				((p1 && commandingActorPtr.get() == p1) ||
 				(commandingActorPtr.get()->IsPlayerTeammate()))
 			};
@@ -2502,7 +2562,7 @@ namespace ALYSLC
 				std::make_unique<RE::TESCombatEvent>()
 			);
 			std::memset(combatEvent.get(), 0, sizeof(RE::TESCombatEvent));
-			if (combatEvent && combatEvent.get())
+			if (combatEvent)
 			{
 				combatEvent->actor = RE::NiPointer<RE::TESObjectREFR>(a_combatStateActor);
 				combatEvent->targetActor = RE::NiPointer<RE::TESObjectREFR>(a_targetActor);
@@ -2532,7 +2592,7 @@ namespace ALYSLC
 				std::make_unique<RE::CriticalHit::Event>()
 			);
 			std::memset(critEvent.get(), 0, sizeof(RE::CriticalHit::Event));
-			if (critEvent && critEvent.get())
+			if (critEvent)
 			{
 				critEvent->aggressor = a_aggressor;
 				critEvent->weapon = a_weapon;
@@ -2563,7 +2623,7 @@ namespace ALYSLC
 			// Construct and send event.
 			std::unique_ptr<RE::TESHitEvent> hitEvent = std::make_unique<RE::TESHitEvent>();
 			std::memset(hitEvent.get(), 0, sizeof(RE::TESHitEvent));
-			if (hitEvent && hitEvent.get())
+			if (hitEvent)
 			{
 				hitEvent->cause = RE::TESObjectREFRPtr(a_cause);
 				hitEvent->flags = a_flags;
@@ -2763,6 +2823,7 @@ namespace ALYSLC
 		//====================
 
 		// Add the given target actor as a combat target for the source actor.
+		// Return true if successfully added.
 		void AddAsCombatTarget(RE::Actor* a_sourceActor, RE::Actor* a_targetActor);
 
 		// Run task and wait until complete.
@@ -2774,7 +2835,10 @@ namespace ALYSLC
 		// Returns true if the given actor and rigid body supports manipulation of its velocity.
 		// Can use the supplied rigid body, or retrieve the rigid body from the actor's current 3D.
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody = nullptr);
-		
+
+		// Can stop combat (surrender or just stop) between a player and the given actor.
+		bool CanStopCombatWithActor(RE::Actor* a_aggroedActor);
+
 		// Set or unset the essential flags for the given actor.
 		// Can also adjust bleedout override.
 		void ChangeEssentialStatus
@@ -2855,6 +2919,14 @@ namespace ALYSLC
 
 		// Get all skill levels for the given actor.
 		SkillList GetActorSkillLevels(RE::Actor* a_actor);
+
+		// Get modified activation text for the given refr.
+		// Return whether or not the refr has valid activation text (is a selectable object)
+		// through the outparam.
+		RE::BSFixedString GetActivationText
+		(
+			RE::TESBoundObject* a_baseObj, RE::TESObjectREFR* a_refr, bool& a_hasActivationText
+		);
 
 		// Get the maximum/minimum bound edge length in pixels for the given refr.
 		// Retrieves the base edge length via the refr's bounds, 
@@ -2972,6 +3044,15 @@ namespace ALYSLC
 
 		// Get the weapon type that corresponds to the given keyword.
 		RE::WEAPON_TYPE GetWeaponTypeFromKeyword(RE::BGSKeyword* a_keyword);
+
+		// Get the weight and value of all items in the container/corpse refr
+		// and return through the outparams.
+		void GetWeightAndValueInRefr
+		(
+			RE::TESObjectREFR* a_refrContainer,
+			float& a_weight,
+			int32_t& a_value
+		);
 
 		// Check if the given observer has an LOS to the target refr.
 		// The criteria for having LOS varies if the observer is attempting
@@ -3201,7 +3282,14 @@ namespace ALYSLC
 		
 		// Send a crosshair event with the given crosshair refr to set.
 		// Can be used to open/close the QuickLoot LootMenu.
-		void SendCrosshairEvent(RE::TESObjectREFR* a_crosshairRefrToSet);
+		// IMPORTANT:
+		// Specify a CID for any player trying to set the crosshair refr (non-nullptr).
+		// To clear the crosshair refr, pass in nullptr as the crosshair refr to set 
+		// and do not provide a requesting CID.
+		void SendCrosshairEvent
+		(
+			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingCID = -1
+		);
 
 		// Apply and send hit data which triggers a hit event.
 		// Can set aggressor, target, source refr.
@@ -3370,6 +3458,16 @@ namespace ALYSLC
 
 		// Toggle all of P1's controls on or off.
 		void ToggleAllControls(bool a_shouldEnable);
+
+		// Toggling on restores all checks that are performed before casting a spell.
+		// Toggling off allows the actor to cast any spell
+		// without magicka and target location check restrictions.
+		void ToggleMagicCasterChecks
+		(
+			RE::Actor* a_actor, 
+			const RE::MagicSystem::CastingSource& a_source,
+			bool a_on
+		);
 
 		// Traverse P1's entire perk tree with modifications in mind for the given player actor.
 		// Run the given visitor function on each perk tree node.

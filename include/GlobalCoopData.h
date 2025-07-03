@@ -591,7 +591,7 @@ namespace ALYSLC
 		static int8_t GetCoopPlayerIndex(const RE::ObjectRefHandle& a_refrHandle);
 		static int8_t GetCoopPlayerIndex(const RE::FormID& a_formID);
 
-		// Get highest AV amount for the shared AV among all active players.
+		// Get the current highest level for the shared AV among all active players.
 		// Return -1 if there is no active co-op session.
 		static float GetHighestSharedAVLevel(const RE::ActorValue& a_av);
 		
@@ -691,6 +691,19 @@ namespace ALYSLC
 		// Set last menu controller ID to the current one and then
 		// reset the current menu controller ID.
 		static void ResetMenuCIDs();
+
+		// Restore any P1 data that was overwritten by a companion player's data 
+		// when they gained control of menus.
+		// Can provide the player character currently or previously in control of menus.
+		// If unknown, set to nullptr, and the player with data copied over to P1 
+		// will be retrieved.
+		// Can also provide the name of the menu 
+		// Failsafe if the data remains copied over 
+		// after the companion player relinquishes control of menus.
+		static void RestoreP1CopyablePlayerData
+		(
+			RE::Actor* a_menuControllingPlayer = nullptr
+		);
 		
 		// Save the default game settings values to revert to for player XP calculations.
 		static void SaveDefaultXPBaseAndMultFromGameSettings();
@@ -745,6 +758,11 @@ namespace ALYSLC
 		// Serialized data should contain all players' FID keys 
 		// before the Summoning Menu is opened.
 		static void UpdateAllCompanionPlayerSerializationIDs();
+
+		// Check if P1 can save the game or not and set the appropriate flag
+		// to enable or disable all sources of saving.
+		// Return true if saving is enabled and false if it is disabled.
+		static bool UpdateAllowSavingFlag();
 		
 		// Update the global co-op combat state flag for all active players.
 		// If one player is in combat, all players are in combat.
@@ -758,7 +776,7 @@ namespace ALYSLC
 		static bool UpdatePlayerSerializationIDs(RE::Actor* a_playerActor);
 
 		// Try again? The entire party gets wiped.
-		static void YouDied(RE::Actor* a_deadPlayer = nullptr);
+		static void YouDied(RE::ActorHandle a_deadPlayerHandle = RE::ActorHandle());
 
 		// Co-op player data copying on menu open/close events.
 		static void CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info);
@@ -839,6 +857,9 @@ namespace ALYSLC
 		// Pause and then restart the co-op camera manager.
 		static void RestartCoopCameraTask();
 
+		// Task version of the party-wipe cleanup function.
+		static void YouDiedTask(RE::ActorHandle a_deadPlayerHandle = RE::ActorHandle());
+
 		//
 		// Const Members
 		//
@@ -865,6 +886,12 @@ namespace ALYSLC
 
 		// Summoning menu name.
 		static constexpr inline std::string_view SETUP_MENU_NAME = "ALYSLC Setup Menu"sv;
+
+		// Menu name to pass into the RequestMenuControl() Papyrus function 
+		// to allow the requesting player to maintain menu control,
+		// regardless of what menu opens next.
+		static constexpr inline std::string_view RETAIN_MENU_CONTROL = 
+		"ALYSLC Retain Menu Control"sv;
 
 		// Maps actor values to their corresponding player skills.
 		static inline const std::unordered_map<RE::ActorValue, Skill> AV_TO_SKILL_MAP = 
@@ -1040,7 +1067,7 @@ namespace ALYSLC
 			"Must've been the wind.",
 			":)",
 			"By the Nine Divines! Assault! Assault!",
-			"Should've downed another Skooma first.\nOr 10 cabbages.\n10 cabbages sound good.",
+			"Should've downed another Skooma first. Or 10 cabbages. 10 cabbages sound good.",
 			"I'd like 1 resurrection, please.",
 			"If at first you don't succeed, tgm, tgm again.",
 			"Dang them enemies got hands.",
@@ -1055,8 +1082,8 @@ namespace ALYSLC
 			"Hey, new high score!",
 			"Dragonborn? More like Dragondead.",
 			":(",
-			"I used to be alive like you.\nThen I took an arrow to the knee.",
-			"Looks like that's it.\nGot to go.",
+			"I used to be alive like you. Then I took an arrow to the knee.",
+			"Looks like that's it. Got to go.",
 			"I'm gonna do what's called a pro gamer move.",
 			"EGUOUOSUHDKFANGPDNSKNFKSSDFK!11!1!!"
 		};
@@ -1421,11 +1448,13 @@ namespace ALYSLC
 		// that links the opened menu back to a player.
 		// Ex. Activating a refr that opens a custom menu, or the Enderal level up message
 		// box opening up once combat ends, or a guard starting a warning dialogue with the player.
+		// TODO:
+		// MessageBox and Custom Menu support.
 		static inline const std::set<std::string_view> TRANSFERABLE_CONTROL_MENU_NAMES = 
 		{
 			RE::DialogueMenu::MENU_NAME,
-			RE::MessageBoxMenu::MENU_NAME,
-			CUSTOM_MENU
+			/*RE::MessageBoxMenu::MENU_NAME,
+			CUSTOM_MENU*/
 		};
 
 		// Set of menus that a companion player can interact with when opened.
@@ -1607,7 +1636,8 @@ namespace ALYSLC
 		static inline const float PLAYER_INDICATOR_DEF_LENGTH = 47.0f;
 
 		// Adjustable player left arm nodes when rotating that arm.
-		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_LEFT_ARM_NODES = 
+		static inline const std::unordered_set<RE::BSFixedString>
+		ADJUSTABLE_LEFT_ARM_NODES = 
 		{
 			RE::FixedStrings::GetSingleton()->npcLUpperArm,
 			RE::FixedStrings::GetSingleton()->npcLForearm,
@@ -1615,7 +1645,8 @@ namespace ALYSLC
 		};
 
 		// Adjustable player right arm nodes when rotating that arm.
-		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_RIGHT_ARM_NODES = 
+		static inline const std::unordered_set<RE::BSFixedString>
+		ADJUSTABLE_RIGHT_ARM_NODES = 
 		{
 			RE::FixedStrings::GetSingleton()->npcRUpperArm,
 			"NPC R Forearm [RLar]",
@@ -1623,7 +1654,8 @@ namespace ALYSLC
 		};
 
 		// Adjustable player torso nodes when adjusting aim pitch.
-		static inline const std::unordered_set<RE::BSFixedString> ADJUSTABLE_TORSO_NODES =
+		static inline const std::unordered_set<RE::BSFixedString>
+		ADJUSTABLE_TORSO_NODES =
 		{
 			RE::FixedStrings::GetSingleton()->npcSpine,
 			RE::FixedStrings::GetSingleton()->npcSpine1,
@@ -1697,11 +1729,12 @@ namespace ALYSLC
 		// Used to register co-op player menu events:
 		// Summoning Menu, Debug Menu. Helper Menu.
 		RE::BGSRefAlias* player1RefAlias;
-		// Equip slots: both hands, either hand, left, right, voice.
+		// Equip slots: both hands, either hand, left, right, shield, voice.
 		RE::BGSEquipSlot* bothHandsEquipSlot;
 		RE::BGSEquipSlot* eitherHandEquipSlot;
 		RE::BGSEquipSlot* leftHandEquipSlot;
 		RE::BGSEquipSlot* rightHandEquipSlot;
+		RE::BGSEquipSlot* shieldEquipSlot;
 		RE::BGSEquipSlot* voiceEquipSlot;
 		// Keyword only assigned to companion players (P2 - P4's characters).
 		RE::BGSKeyword* companionPlayerKeyword;
@@ -1738,7 +1771,9 @@ namespace ALYSLC
 		RE::SpellItem* tarhielsGaleSpell;
 		// Current copied menu data types (co-op companion onto P1).
 		RE::stl::enumeration<CopyablePlayerDataTypes, uint16_t> copiedPlayerDataTypes;
-		// Bound object for fists.
+		// Bound object for dummy 1H weapon used to clear out a hand slot.
+		RE::TESBoundObject* dummy1H;
+		// Bound object for fists used to clear out both hand slots.
 		RE::TESBoundObject* fists;
 		// Shaders.
 		RE::TESEffectShader* activateHighlightShader;
@@ -1886,6 +1921,9 @@ namespace ALYSLC
 		std::mutex menuCIDMutex;
 		// P1 skill XP modification mutex.
 		std::mutex p1SkillXPMutex;
+		// CID of the player who last had data copied over to P1 when controlling menus.
+		// NOT reset when all data is copied back to P1. Only -1 on initialization.
+		int32_t copiedDataPlayerCID;
 		// The last menu CID resolved (computed during the ProcessMessage() hook)
 		// and before the menu opens/closes/updates.
 		int32_t lastResolvedMenuCID;
@@ -1899,7 +1937,9 @@ namespace ALYSLC
 		// unless no player has opened the Summoning Menu after loading a save.
 		int32_t prevMenuCID;
 		// For QuickLoot compatibility:
-		// CID of the player who last requested to open the menu.
+		// CID of the player who last received control of the LootMenu.
+		int32_t quickLootControlCID;
+		// CID of the player who last requested to open the LootMenu.
 		int32_t quickLootReqCID;
 		// Number of active, summoned co-op players.
 		uint32_t activePlayers;

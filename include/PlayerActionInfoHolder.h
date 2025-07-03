@@ -1175,7 +1175,7 @@ namespace ALYSLC
 			// Sheathe
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kDefault
 			),
 			// Shout
 			TriggerFlags

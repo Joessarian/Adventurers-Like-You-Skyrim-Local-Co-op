@@ -8,6 +8,8 @@
 
 
 
+
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
@@ -205,6 +207,7 @@ bool something =
 - The mod is meant to be played locally and ***is NOT a fully-fledged multiplayer experience*** like the incredible [Skyrim Together Reborn](https://www.nexusmods.com/skyrimspecialedition/mods/69993) mod. Online play is still possible via leveraging Steam's [Remote Play Together](https://store.steampowered.com/remoteplay) with [Remote Play Whatever](https://github.com/m4dEngi/RemotePlayWhatever) or via streaming with [Parsec](https://parsec.app/). Your mileage may vary.
 - This mod requires plugging ***at least two XInput-compatible controllers*** into your computer before starting a co-op session.
 - Almost all of the mod's testing was done on ***Skyrim version 1.5.97, so for the most stable experience (and for the best mod compatibility), your best bet is to downgrade your Skyrim installation to this version***.
+- The mod comes with the default Skyrim ```controlmap.txt``` and ***should have priority over any mods that provide a custom control map***. This is done to apply the default binds and prevent potential controls conflicts for P1 while in co-op.
 - If you are playing ***Skyrim***, enable 'ALYSLC.esp' and disable 'ALYSLC Enderal.esp' in your load order. Otherwise, if you are playing ***Enderal***, enable 'ALYSLC Enderal.esp' and disable 'ALYSLC.esp'.
 - After installing the mod for the first time, always ***start a new playthrough and dedicate the playthrough to co-op***. Minimize progressing player 1's character outside of co-op.
 - ***Important note on starting a new game***: If sticking with the ***vanilla start*** sequence, summoning other players right from the get-go causes a slew of bugs (and horrifying glitches) that must be fixed with debug options + console commands and is probably not worth the effort. ***Try waiting until player 1 has their shackles removed, before summoning other players***. Otherwise, have fun tipping over the carriage, getting player 1 stuck under the driver's seat, and feverishly trying out every console command and debug option available to remedy a hilarious situation that is quickly getting out of hand.
@@ -264,6 +267,8 @@ bool something =
 		- Removes the face and body tone mismatch and neck seam issues when customizing companion players' appearances. ***Highly recommended***.
 	- [Motion Sensitive Fix SE](https://www.nexusmods.com/skyrimspecialedition/mods/35833)
 		- Removes almost every source of camera shake. Use if you're still experiencing camera shake while the co-op camera is active. ***Highly recommended***.
+	- [No Silly Physics Damage - Carts Pots Bones etc](https://www.nexusmods.com/skyrimspecialedition/mods/36132)
+		- Removes excessive physics damage when a havok-enabled object is squeezed against a character, such as when walking into a cart or cauldron. ***Highly recommended***.
 	- [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
 		- Companion players can further customize their characters to their liking through the NPC editor suite.
 		- Set a companion player's race through this mod's Summoning Menu first before modifying the player's appearance with Proteus.
@@ -271,6 +276,7 @@ bool something =
 		- Players can hover their crosshairs over a container to trigger and use the QuickLoot menu.
 	- [Skyrim Souls RE](https://www.nexusmods.com/skyrimspecialedition/mods/27859)
 		- Unpause most menus, drastically improving the flow of co-op, since other players that are not in control of menus can still move and interact with certain objects. This mod has been developed, for the most part, with Skyrim Souls active. ***Highly recommended***.
+		- ***Important***: To prevent a companion player's inventory (Container Menu) from closing when they are far away from player 1, open up the configuration file located locally at `SKSE/Plugins/SkyrimSoulsRE.ini` and change `bAutoCloseMenus` to ***false*** or adjust the other auto-close settings to your liking.
 	- [SSE Engine Fixes](https://www.nexusmods.com/skyrimspecialedition/mods/17230)
 		- Fixes many bugs present in vanilla Skyrim. ***Highly recommended***.
 	- [Super Fast Get Up Animation](https://www.nexusmods.com/skyrimspecialedition/mods/46714)
@@ -281,17 +287,19 @@ bool something =
 - ***Run Nemesis or Pandora***. Make sure the `Precision` checkbox is ticked at the minimum before running either engine.
 #### Example Mod Lists (AE/SE) In MO2
 ##### Anniversary Edition (1.6.1170)
-![](https://i.imgur.com/djItudx.png)
+![](https://i.imgur.com/rtMfT7K.png)
 ##### Special Edition (1.5.97)
-![](https://i.imgur.com/HlqmK8f.png)
+
+![](https://i.imgur.com/Jh3g8EF.png)
 ### Known Issues and Tips and Tricks
 Certain systems were built to work around player 1 exclusivity or around restrictions that the game places on NPCs. Using the ***debug binds (see the mod's MCM for details)*** and additional options in the ***Debug Menu*** (opened by holding the `Start` button and then pressing the `Back` button by default) is highly recommended for fixing issues that arise during gameplay.
 
 #### The following features are more likely to bug out at times and require user intervention to fix:
-- Equipping/unequipping gear and player equipment selection.
-    - Player can lock up or have the wrong gear equipped.
+- Equipping/unequipping gear and companion player equipment selection.
+    - Player can lock up or have the wrong gear equipped. The game will periodically force-equip what gear it thinks is best. Until a proper solution is found, the only recourse is to manually re-equip the unequipped items.
     - The Favorites and Magic Menu selected entries reset when a companion player equips an item and must be refreshed by moving one category over and back again, which will reset the selected entry. Still looking for a seamless solution.
     - Ammo must be equipped 1 unit at a time for companion players to avoid creation of new inventory entries each time the ammo is equipped and to avoid issues with unequipping a large quantity of ammo at once.
+	- Equipped bound weapons will sometimes bug out, become invisible, or get unequipped by the game when picking up an object of the same type from the overworld. Must sheathe, draw, and cast the spell again to re-equip the weapon.
 - Player revive system.
     - 'All or nothing' system to incentivize team play: if one player dies, all players die.
     - Refrain from saving while a player is downed.
@@ -299,7 +307,11 @@ Certain systems were built to work around player 1 exclusivity or around restric
 - Menu control assignment.
     - Since the mod cannot always determine the triggering source of certain menus, such as Message Box menus triggered externally by scripts, the wrong player can gain control of menus at times. A colored border that matches the menu-controlling player's crosshair color is drawn around the screen to indicate which player is in charge of menus.
     - Refrain from opening load doors, fast-traveling, or saving while menus are open, especially if a companion player is controlling menus. Data from the companion player (ex. name, race name, skill levels, or inventory) may still be copied to player 1 when the game saves, which can only be undone by reloading an older save.
-
+- Spellcasting for companion players:
+	- Left and right hand casting can feel 'sticky' or unresponsive at times. Will require sheathing and drawing the spells and potentially trying some of the debug options to reset the hand casters.
+	- Moving further away from the camera can lead to a slower casting charge speed and less responsive casting overall. Haven't found the cause for this yet.
+	- Fire-and-forget spellcasts can fail if a bound weapon is equipped in the other hand.
+	
 #### The following systems are not fully implemented or have some issues:
 - Crosshair magnetism:
 	- Certain objects' apparent widths/heights on the screen may not match the game's reported bounding box dimensions in some cases.
@@ -313,6 +325,9 @@ Certain systems were built to work around player 1 exclusivity or around restric
     - Predictive projectiles are not accurate when targeting fast-moving targets, such as dragons, because angular momentum is not taken into account as of now and NPC targets accelerate erratically. Consider switching to homing projectiles instead.
     - Certain enemies are difficult to hit, such as mudcrabs, because ~~they are the strongest beings in Tamriel~~ some of their model's targetable nodes protrude from their collision capsule and do not collide with projectiles.
     - Beam projectiles, such as Lightning Bolt, fail to hit targets at times, especially when fired along sloped terrain or pitched upward or downward too much.
+- Spellcasting for companion players:
+	- Not every spell will work properly for companion players as they do for player 1. Example: ```Raise Zombie``` glitches out upon re-animating the targeted corpse.
+	- Some spells only apply effects if the target or caster is player 1. Example: ```Vigilant's weapon art powers```.
 - Staff usage for companion players:
     - No animations when casting.
     - Enchantment charging not implemented.
@@ -331,20 +346,21 @@ Certain systems were built to work around player 1 exclusivity or around restric
     - Vampire/werewolf transformation perk trees only apply to player 1 and not all powers are supported yet for companion players.
     - Any custom skill trees will likely only work for P1.
 - Player 1's controlmap and the camera.
-    - This mod has its own binds system to ensure that all players are working with the same base controls while the co-op camera is active. In order to trigger some player 1-exclusive events with companion players, player 1 input events are emulated and sent out to the game's control handlers, as if player 1 were the source of those inputs. Any mod which remaps or disables controls could cause issues with this system. Thus, ***using the default controlmap if you are playing co-op is highly recommended***.
+    - This mod has its own binds system to ensure that all players are working with the same base controls while the co-op camera is active. In order to trigger some player 1-exclusive events with companion players, player 1 input events are emulated and sent out to the game's control handlers, as if player 1 were the source of those inputs. Any mod which remaps or disables controls could cause issues with this system. Thus, ***using the default controlmap if you are playing co-op is essential***.
     - Also, playing without the co-op camera active is an option, but it hasn't been extensively tested. Certain binds, such as the 'Revive' bind, will not work for player 1, and the crosshair text will not update for companion players unless the co-op camera is active.
 
 #### Common Troubleshooting Tips
 - The game forcibly equips the gear it views as best-in-slot onto NPCs at certain times (example: when an item is added or equipped). This mod has a workaround in place to validate the equip state for companion players, but sometimes, players may still have their desired items unequipped or their character may begin stuttering when moving/attacking. If this happens, try using the ***'Debug: Re-equip Items in Hands'***, ***'Debug: Refresh Player Managers'***, or ***'Debug: Reset Player'*** binds and see if it corrects the issue. If the issue persists, try the ***'Reset Player' Debug Menu player option***.
 - If the Summoning or Debug menus fail to open or if a player's inputs aren't recognized, ***try tabbing out and then tabbing back in***. This will sometimes happen when the game doesn't have focus. And if the Wait or Pause/Journal menus are opening instead, ALYSLC's .dll may not have been loaded properly by SKSE. A restart should fix the problem.
 - If the physics system has bugged out and the player is frozen, warped, or otherwise unresponsive, attempt to reset the player with either ***'Debug: Ragdoll Player'*** or ***'Debug: Reset Player'***. Or flop. Flopping solves a lot of problems from my experience.
-- If a companion player is controlling menus when they shouldn't be, opening the ***Debug Menu*** with any player and selecting ***'Stop Menu Input Manager'*** may resolve the issue.
+- If a companion player is controlling menus when they shouldn’t be, or the option to quicksave or save is greyed out even though no players are downed, opening the ***Debug Menu*** with any player and selecting ***'Stop Menu Input Manager'*** may resolve the issue.
 - If the player crosshairs or the menu control outline is not showing, ***pause and unpause the game***, which should force the mod's overlay menu to open and fix the problem.
 - If a follower or player ally is still aggroed towards a player, ***try sheathing all players' weapons or using the Debug Menu's 'Stop Combat' option***.
 - If the player's character is rotating on their own or not facing the right way, re-equip the items in their hands with '***Debug: Re-equip Items In Hands***', or re-equip the items manually. Then, sheathe/unsheathe the player's weapons. Can also press the '***Debug: Reset Player***' bind if the automatic rotation persists.
 - If the player is trying to use furniture but is just standing around in a complete daze, the pathing issue will likely resolve on its own after a while, but to break them out of their confusion instantly, either ***jump or press the 'Sneak' bind***.
 - If attempting to interact with a nearby object by holding the 'Activate' bind, and the **"[Object] is not within player's line of sight"** crosshair notification message displays, ***try selecting the object with the player crosshair instead***.
 - If a certain interaction is still not working for any player, ***switch back to the default third person camera and attempt the interaction again with player 1***.
+- If a companion player is locked in an idle animation, or isn't responding to movement inputs, try ***jumping***, ***ragdolling***, or pressing the ***'Debug: Reset Player'*** bind.
 - Finally, if all else fails, ***give the 'Reset Player' Debug Menu player option a try, reload a save, or relaunch the game***. Please inform me of any issues that are not resolved even after performing these last-ditch measures.
 
 ### Mod Compatiblity Notes
@@ -370,10 +386,6 @@ Degrees of incompatibility:
    - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently targeted object properly and other issues can arise. 
 - `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
-- `[SE/AE] HEAVY`: [Persistent Favorites](https://www.nexusmods.com/skyrimspecialedition/mods/118174)
-   - Reproducible crash when opening the Favorites Menu a second time with a companion player. Possibly a conflict when ALYSLC adds an item to player 1 to favorite it for a companion player that is opening the Favorites Menu. Only solution for now is to remove the mod while playing co-op.
-- `[AE] (Maybe) HEAVY`: [True Directional Movement - Modernized Third Person Gameplay](https://www.nexusmods.com/skyrimspecialedition/mods/51614)
-   - ***Might*** interfere with ALYSLC's system for player movement ONLY on AE. If player 1 is sliding around and not moving in the direction of the left stick, please uninstall TDM temporarily before playing co-op, at least until I find the issue on my end. Re-run Nemesis/Pandora and see if the issue persists.
 - `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
    - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
@@ -386,7 +398,7 @@ And with that being said, I really hope you enjoy the mod and thanks for reading
 See the mod's source for more detailed credits.
 - `Moopus1`
    - [Couch Co-Op Skyrim](https://www.nexusmods.com/skyrim/mods/72743)
-   - Served as the original local co-op mod idea and laid out foundational work on adding a controllable npc to the game. 
+   - Served as the original local co-op mod idea and laid out foundational work on adding a controllable NPC to the game. 
 - `The SKSE Dev Team`
    - [SKSE](https://skse.silverlock.org/)
    - Thank you for allowing modders to truly push the boundaries of modding.
@@ -412,14 +424,14 @@ See the mod's source for more detailed credits.
   - For groundbreaking Havok reverse engineering in their [HIGGS - Enhanced VR Interaction](https://www.nexusmods.com/skyrimspecialedition/mods/43930) and [PLANCK - Physical Animation and Character Kinetics](https://www.nexusmods.com/skyrimspecialedition/mods/66025) VR mods, from which a couple of functions were ID'd for use in moving around NPCs in SE/AE.
   - [Check out FlyingParticle's Skyrim VR mods](https://next.nexusmods.com/profile/FlyingParticle/mods?gameId=1704)
 - `dTry`
-  - For their revolutionary combat mod [Valhalla Combat](), from which a melee hit hook was obtained.
+  - For their revolutionary combat mod [Valhalla Combat](https://www.nexusmods.com/skyrimspecialedition/mods/64741), from which a melee hit hook was obtained.
   - [Check out dTry's Skyrim mods](https://next.nexusmods.com/profile/dTry/mods?gameId=1704)
 - `doodlum`
    -  For the po3 CommonLibSSE project template linked on the Skyrim RE discord, which helped me set up a build environment for coding the early versions of this mod.
    -  [Check out doodlum's Skyrim mods](https://next.nexusmods.com/profile/doodlum/mods?gameId=1704)
 - `Loki`
   -  For the outstanding mod [Skyrim's Paraglider](https://www.nexusmods.com/skyrimspecialedition/mods/53256), which was so much fun to use that I had to directly provide partial compatibility for companion players (must install Skyrim's Paraglider to unlock 'magical paragliding' for players 2-4).
-  -  [Check out Loki's Skyrim mods](https://next.nexusmods.com/profile/LokiCXXVIII/mods?gameId=1704)
+  -  [Check out Loki's Skyrim mods](https://next.nexusmods.com/profile/0x4Ch0x4Fh0x4Bh0x49h/mods?gameId=1704)
 - `mwilsnd`
    - For [SmoothCam](https://www.nexusmods.com/skyrimspecialedition/mods/41252), which was used as a reference for adjusting the camera’s orientation and for raycasting code.
    - [Check out mwilsnd's Skyrim mods](https://next.nexusmods.com/profile/mwilsnd/mods?gameId=1704)
@@ -435,10 +447,7 @@ See the mod's source for more detailed credits.
    - [Check out meh321's Skyrim mods](https://next.nexusmods.com/profile/meh321/mods?gameId=1704)
 - `Expired6978`
    - For [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561), which provides the backbone for co-op player customization and a number of co-op menus.
-   - [Check out Expired6978's Skyrim mods](https://next.nexusmods.com/profile/expired6978/mods?gameId=110)
-- `bosn889`
-  - For the actor unequip hook from their grip switch mod [Dynamic Grip](https://www.nexusmods.com/skyrimspecialedition/mods/110031), which is used to prevent companion players from auto-equipping gear.
-  - [Check out bosn889's Skyrim mods](https://next.nexusmods.com/profile/bosn889/mods?gameId=1704)
+   - [Check out Expired6978's Skyrim mods](https://next.nexusmods.com/profile/expired6978/mods?gameId=1704)
 - `covey-j`
   - For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to companion players.
 - `fenix31415`
@@ -459,7 +468,8 @@ See the mod's source for more detailed credits.
   - For the extracted [Skyrim UI elements](https://www.nexusmods.com/skyrimspecialedition/mods/82169) used on ALYSLC's GitHub and Nexus pages.
   - [Check out SanneARBY's Skyrim mods](https://next.nexusmods.com/profile/SanneARBY?gameId=1704)
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
-   - Thank you for helping a programming and C++ greenhorn get their bearings and for answering a ton of questions that I had during the development process.
-
+   -   Thank you for helping a programming and C++ greenhorn get their bearings with CommonLibSSE.
+- **Everyone who open-sources their SKSE plugin code on GitHub.**  
+	- Thank you for lighting the way for all newbie plugin developers, such as myself, who wouldn't have been able to even code a single line without having such references to learn from.
 ## [License]
 [GPL V3](https://github.com/Joessarian/Adventurers-Like-You-Skyrim-Local-Co-op/blob/main/LICENSE)

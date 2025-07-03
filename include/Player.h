@@ -158,12 +158,14 @@ namespace ALYSLC
 		// NOTE: 
 		// The delayed funcs below are all executed on the player's task runner.
 
-		// Emulate P1 menu controls if a co-op player is controlling the Lockpicking Menu.
+		// Emulate P1 menu controls if a companion player is controlling the Lockpicking Menu.
+		// Can control rotation for both the lock and the pick, 
+		// or just the lock for two player lockpicking.
 		// NOTE: 
 		// Currently run as a task to avoid a bug 
 		// with repeated attempts to lockpick the same refr.
 		// May move back to MIM if a solution for this bug is found.
-		void LockpickingTask();
+		void LockpickingTask(bool a_fullControl);
 
 		// Attempt to (dis)mount the targeted refr.
 		void MountTask();
@@ -252,6 +254,9 @@ namespace ALYSLC
 		SteadyClock::time_point lastInputActionBlockTP;
 		// Time point indicating when the last killmove check was made.
 		SteadyClock::time_point lastKillmoveCheckTP;
+		// Time point indicating when the LH spell last started charging.
+		// (companion players only).
+		SteadyClock::time_point lastLHCastChargeStartTP;
 		// Time point indicating when the last LH spell cast started (companion players only).
 		SteadyClock::time_point lastLHCastStartTP;
 		// Time point indicating when the player last attempted to start moving.
@@ -265,6 +270,9 @@ namespace ALYSLC
 		// Time point indicating when the last time this player's health was updated 
 		// while reviving another player.
 		SteadyClock::time_point lastReviveCheckTP;
+		// Time point indicating when the RH spell last started charging.
+		// (companion players only).
+		SteadyClock::time_point lastRHCastChargeStartTP;
 		// Time point indicating when the last RH spell cast started (companion players only).
 		SteadyClock::time_point lastRHCastStartTP;
 		// Time point indicating when the last staff LH cast started (companion players only).

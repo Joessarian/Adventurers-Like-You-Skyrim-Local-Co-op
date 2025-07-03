@@ -150,7 +150,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
             EndIf
             ; Re-open idles assignment menu.
             ; Set player menu control.
-            ALYSLC.RequestMenuControl(PlayerInMenuCID, CoopIdlesAssignmentMenu.ROOT_MENU)
+            ALYSLC.RequestMenuControl(PlayerInMenuCID, "ALYSLC Retain Menu Control")
             FavoritesSlot = CoopIdlesAssignmentMenu.OpenMenu()
         EndWhile
     ; !!!TODO!!! Mini Games

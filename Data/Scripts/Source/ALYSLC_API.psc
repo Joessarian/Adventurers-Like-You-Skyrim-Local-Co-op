@@ -90,27 +90,32 @@ Int Property Action_PowerAttackRH = 65 AutoReadOnly
 Int Property Action_QuickSlotCast = 66 AutoReadOnly
 Int Property Action_QuickSlotItem = 67 AutoReadOnly
 Int Property Action_ResetAim = 68 AutoReadOnly
-Int Property Action_RotateCam = 69 AutoReadOnly
-Int Property Action_RotateLeftForearm = 70 AutoReadOnly
-Int Property Action_RotateLeftHand = 71 AutoReadOnly
-Int Property Action_RotateLeftShoulder = 72 AutoReadOnly
-Int Property Action_RotateRightForearm = 73 AutoReadOnly
-Int Property Action_RotateRightHand = 74 AutoReadOnly
-Int Property Action_RotateRightShoulder = 75 AutoReadOnly
-Int Property Action_Sheathe = 76 AutoReadOnly
-Int Property Action_Shout = 77 AutoReadOnly
-Int Property Action_Sneak = 78 AutoReadOnly
-Int Property Action_SpecialAction = 79 AutoReadOnly
-Int Property Action_Sprint = 80 AutoReadOnly
-Int Property Action_StatsMenu = 81 AutoReadOnly
-Int Property Action_TeleportToPlayer = 82 AutoReadOnly
-Int Property Action_TradeWithPlayer = 83 AutoReadOnly
-Int Property Action_TweenMenu = 84 AutoReadOnly
-Int Property Action_WaitMenu = 85 AutoReadOnly
-Int Property Action_ZoomCam = 86 AutoReadOnly
+Int Property Action_kResetCamOrientation = 69 AutoReadOnly
+Int Property Action_RotateCam = 70 AutoReadOnly
+Int Property Action_RotateLeftForearm = 71 AutoReadOnly
+Int Property Action_RotateLeftHand = 72 AutoReadOnly
+Int Property Action_RotateLeftShoulder = 73 AutoReadOnly
+Int Property Action_RotateRightForearm = 74 AutoReadOnly
+Int Property Action_RotateRightHand = 75 AutoReadOnly
+Int Property Action_RotateRightShoulder = 76 AutoReadOnly
+Int Property Action_Sheathe = 77 AutoReadOnly
+Int Property Action_Shout = 78 AutoReadOnly
+Int Property Action_Sneak = 79 AutoReadOnly
+Int Property Action_SpecialAction = 80 AutoReadOnly
+Int Property Action_Sprint = 81 AutoReadOnly
+Int Property Action_StatsMenu = 82 AutoReadOnly
+Int Property Action_TeleportToPlayer = 83 AutoReadOnly
+Int Property Action_TradeWithPlayer = 84 AutoReadOnly
+Int Property Action_TweenMenu = 85 AutoReadOnly
+Int Property Action_WaitMenu = 86 AutoReadOnly
+Int Property Action_ZoomCam = 87 AutoReadOnly
 
-; Total action count. Nice.
-Int Property ActionTotal = 69 AutoReadOnly
+; Total action count.
+Int Property ActionTotal = 70 AutoReadOnly
+
+; NOTE:
+; Not usable through the API until menu control-granting function(s) are implemented.
+String Property RETAIN_MENU_CONTROL = "ALYSLC Retain Menu Control" AutoReadOnly
 
 ;========================================================================================================================================================================================================================
 ;=====[General Player And Co-op Session State Functions]=================================================================================================================================================================

@@ -334,7 +334,6 @@ namespace ALYSLC
 					return 
 					(
 						!a_request || 
-						!a_request.get() || 
 						a_request->durationSecs == 0.0f ||
 						lifetimeSecs > a_request->durationSecs
 					);
@@ -1051,7 +1050,7 @@ namespace ALYSLC
 
 	glm::vec2 DebugAPI::WorldToScreenPoint(glm::vec3 a_worldPos)
 	{
-		// Convert the given world positino to a 2D screenspace position.
+		// Convert the given world position to a 2D screenspace position.
 		// NOTE:
 		// Does not clamp points to the screen's boundaries.
 
@@ -1063,7 +1062,7 @@ namespace ALYSLC
 
 		glm::vec2 screenPoint{ 0.0f, 0.0f };
 		RE::NiPointer<RE::NiCamera> niCamPtr = Util::GetNiCamera(); 
-		if (!niCamPtr || !niCamPtr.get())
+		if (!niCamPtr)
 		{
 			return screenPoint;
 		}

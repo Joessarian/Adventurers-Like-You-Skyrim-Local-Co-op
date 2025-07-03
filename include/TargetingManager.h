@@ -93,7 +93,7 @@ namespace ALYSLC
 			// Copy another message's data to this one without invalidating the other message.
 			inline void CopyMessageData(const std::unique_ptr<CrosshairMessage>& a_other)
 			{
-				if (!a_other || !a_other.get())
+				if (!a_other)
 				{
 					return;
 				}
@@ -156,7 +156,7 @@ namespace ALYSLC
 
 			inline bool IsValid()
 			{
-				return refrHandle && refrHandle.get() && refrHandle.get().get();
+				return refrHandle && refrHandle.get();
 			}
 
 			// Clear data for the manipulable refr.
@@ -700,7 +700,7 @@ namespace ALYSLC
 					a_other.queuedReleasedRefrContactEvents.end(),
 					[this](const std::unique_ptr<HavokContactEventInfo>& a_info) 
 					{
-						if (a_info && a_info.get()) 
+						if (a_info) 
 						{
 							queuedReleasedRefrContactEvents.emplace_back
 							(
@@ -716,7 +716,7 @@ namespace ALYSLC
 					a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
 					[this](const std::unique_ptr<GrabbedReferenceInfo>& a_info) 
 					{
-						if (a_info && a_info.get()) 
+						if (a_info) 
 						{
 							grabbedRefrInfoList.emplace_back
 							(
@@ -732,7 +732,7 @@ namespace ALYSLC
 					a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
 					[this](const std::unique_ptr<ReleasedReferenceInfo>& a_info) 
 					{
-						if (a_info && a_info.get())
+						if (a_info)
 						{
 							releasedRefrInfoList.emplace_back
 							(
@@ -780,7 +780,7 @@ namespace ALYSLC
 					a_other.queuedReleasedRefrContactEvents.end(),
 					[this](const std::unique_ptr<HavokContactEventInfo>& a_info) 
 					{
-						if (a_info && a_info.get()) 
+						if (a_info) 
 						{
 							queuedReleasedRefrContactEvents.emplace_back
 							(
@@ -796,7 +796,7 @@ namespace ALYSLC
 					a_other.grabbedRefrInfoList.begin(), a_other.grabbedRefrInfoList.end(),
 					[this](const std::unique_ptr<GrabbedReferenceInfo>& a_info) 
 					{
-						if (a_info && a_info.get())
+						if (a_info)
 						{
 							grabbedRefrInfoList.emplace_back
 							(
@@ -812,7 +812,7 @@ namespace ALYSLC
 					a_other.releasedRefrInfoList.begin(), a_other.releasedRefrInfoList.end(),
 					[this](const std::unique_ptr<ReleasedReferenceInfo>& a_info) 
 					{
-						if (a_info && a_info.get())
+						if (a_info)
 						{
 							releasedRefrInfoList.emplace_back
 							(
@@ -948,7 +948,7 @@ namespace ALYSLC
 			// which directly influences the speed at which released refrs are thrown.
 			float GetReleasedRefrBindHoldTimeFactor(const std::shared_ptr<CoopPlayer>& a_p);
 
-			// Return the magicka cost for throwing the given refr.
+			// Return the base magicka cost for throwing the given refr.
 			float GetThrownRefrMagickaCost
 			(
 				const std::shared_ptr<CoopPlayer>& a_p,
@@ -956,9 +956,10 @@ namespace ALYSLC
 			);
 			// Factor by which to slow down all thrown refrs' release speeds.
 			// The more magicka used up below a magicka level of 0, the slower the release speed.
+			// 'True' magicka cost means post-modification by the player's magicka cost multiplier.
 			float GetThrownRefrMagickaOverflowSlowdownFactor
 			(
-				const std::shared_ptr<CoopPlayer>& a_p, const float& a_totalMagickaCost
+				const std::shared_ptr<CoopPlayer>& a_p, const float& a_trueMagickaCost
 			);
 
 			// For each queued contact event, get both colliding objects 
@@ -979,7 +980,7 @@ namespace ALYSLC
 			// for either all managed grabbed or released refrs.
 			void RefreshHandleToIndexMappings(const bool& a_grabbed);
 			
-			// Cache the total magicka cost for throwing all this player's grabbed refrs.
+			// Cache the total base magicka cost for throwing all this player's grabbed refrs.
 			// Compute the total from the grabbed refrs or released refrs list.
 			void SetTotalThrownRefrMagickaCost
 			(
@@ -1026,9 +1027,9 @@ namespace ALYSLC
 			// are sent and fully handled one at a time.
 			float reqSpecialHitDamageAmount;
 
-			// Cached total magicka to expend when releasing all grabbed objects.
+			// Cached total magicka, prior to multiplication by the player's cost mult,
+			// to expend when releasing all grabbed objects.
 			float totalThrownRefrMagickaCost;
-
 		};
 
 		// Stores physical movement data for a targeted refr.
@@ -1697,6 +1698,16 @@ namespace ALYSLC
 		// Get actor level-difference-modified RGB value
 		// which represents the difference in level between the player and the given actor.
 		uint32_t GetLevelDifferenceRGB(const RE::ActorHandle& a_actorHandle);
+
+		// Get a list of reachable, lootable refrs' handles in range of the player.
+		// Can return a list of loose refrs' handles 
+		// or a list of lootable containers' handles.
+		// Max number of LOS checks for can be specified, 
+		// since LOS checks for each refr can get expensive.
+		std::vector<RE::ObjectRefHandle> GetLootableRefrsInRange
+		(
+			bool a_containersOnly, const uint32_t& a_maxLOSChecks
+		);
 		
 		// Get a list of all nearby refrs that are the same type as the given refr.
 		// Can compare based on having the exact same base form, 
@@ -1704,15 +1715,14 @@ namespace ALYSLC
 		// E.g. Consider two book refrs: "Lusty Argonian Maid" and "Cats of Skyrim"
 		// Same base form (Not the same book) => 'false',
 		// Same form type (TESObjectBOOK) => 'true'
+		// Max number of LOS checks for can be specified, 
+		// since LOS checks for each refr can get expensive.
 		const std::vector<RE::ObjectRefHandle>& GetNearbyRefrsOfSameType
 		(
 			RE::ObjectRefHandle a_refrHandle, 
+			const uint32_t& a_maxLOSChecks,
 			RefrCompType&& a_compType = RefrCompType::kSameBaseForm
 		);
-
-		// If cycling nearby objects, cycle one time and return the resulting refr's handle.
-		// Otherwise, return the selected crosshair refr's handle.
-		RE::ObjectRefHandle GetNextObjectToActivate();
 
 		// Get the ranged target to set for the player's ranged attack package
 		// based on the given attack source form.
@@ -1806,6 +1816,11 @@ namespace ALYSLC
 		// and compute the new speedmult to apply the the crosshair's pixel displacement 
 		// when moving the crosshair across the object.
 		void UpdateCrosshairSpeedmult(const Raycast::RayResult& a_chosenResult);
+
+		// If cycling nearby objects, cycle one time and choose the resulting refr's handle.
+		// Otherwise, choose the selected crosshair refr's handle.
+		// Set the activation refr handle to the chosen handle and return it.
+		RE::ObjectRefHandle UpdateNextObjectToActivate();
 
 		// Award Sneak XP for companion players as necessary after updating their detection state.
 		void UpdateSneakState();

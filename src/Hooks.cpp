@@ -17,8 +17,9 @@ namespace ALYSLC
 		void Install()
 		{
 			MainHook::InstallHook();
-			ActorEquipManagerHooks::InstallHooks();
 			ActivateHandlerHooks::InstallHooks();
+			ActorEquipManagerHooks::InstallHooks();
+			ActorMagicCasterHooks::InstallHooks();
 			AIProcessHooks::InstallHooks();
 			AnimationGraphManagerHooks::InstallHooks();
 			AttackBlockHandlerHooks::InstallHooks();
@@ -71,7 +72,9 @@ namespace ALYSLC
 			float modUpdateMS2 = 0.0f;
 			float funcMS = 0.0f;
 			SteadyClock::time_point tp = SteadyClock::now();
-			// Run the game's update first.
+			// Update allow-saving flag before running the main update.
+			GlobalCoopData::UpdateAllowSavingFlag();
+			// Run the game's update next.
 			_Update(a_this, a_a2);
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			SPDLOG_DEBUG("[Main Hooks] Update: Game update took {}ms.", funcMS);
@@ -80,6 +83,11 @@ namespace ALYSLC
 
 			// Skip if global data isn't set yet.
 			if (!glob.globalDataInit)
+			{
+				return;
+			}
+
+			if (glob.loadingASave)
 			{
 				return;
 			}
@@ -225,7 +233,9 @@ namespace ALYSLC
 				modUpdateMS2
 			);
 #else 
-			// Run the game's update first.
+			// Update allow-saving flag before running the main update.
+			GlobalCoopData::UpdateAllowSavingFlag();
+			// Run the game's update next.
 			_Update(a_this, a_a2);
 			// Skip if global data isn't set yet.
 			if (!glob.globalDataInit)
@@ -382,15 +392,20 @@ namespace ALYSLC
 				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 					
-			SPDLOG_DEBUG("[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", 
-				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+			SPDLOG_DEBUG
+			(
+				"[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", 
+				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType
+			);
 
+			RE::BGSEquipSlot* equipSlotToRestore = nullptr;
 			if (auto reqEquipSlot = a_objectEquipParams.equipSlot; reqEquipSlot)
 			{
 				// Ensure 1H weapon gets equipped in the correct hand.
 				// Certain races, like the Manakin race, 
 				// do not equip weapons in the LH 
 				// unless the weapon's equip slot is set to the LH slot.
+				// Save the original equip slot to restore after the equip call.
 				// NOTE: 
 				// Has not been tested thoroughly for long-term side-effects, 
 				// but nothing to report so far.
@@ -405,12 +420,14 @@ namespace ALYSLC
 							if (reqEquipSlot == glob.leftHandEquipSlot && 
 								itemEquipType->equipSlot == glob.rightHandEquipSlot)
 							{
+								equipSlotToRestore = glob.rightHandEquipSlot;
 								itemEquipType->SetEquipSlot(glob.eitherHandEquipSlot);
 							}
 							// Left equip slot to right. Set to right.
 							else if (reqEquipSlot == glob.rightHandEquipSlot && 
 									 itemEquipType->equipSlot == glob.leftHandEquipSlot)
 							{
+								equipSlotToRestore = glob.leftHandEquipSlot;
 								itemEquipType->SetEquipSlot(glob.rightHandEquipSlot);
 							}
 						}
@@ -427,7 +444,7 @@ namespace ALYSLC
 				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 				(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
 			);
-			if (!isBound && a_object != glob.fists)
+			if (!isBound && a_object != glob.fists && a_object != glob.dummy1H)
 			{
 				//=================================================
 				// Cases in which the equip call should be skipped.
@@ -439,7 +456,8 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[ActorEquipManager Hooks] {}: trying to equip ammo {}. Ignoring.", 
+						"[ActorEquipManager Hooks] EquipObject: {}: "
+						"trying to equip ammo {}. Ignoring.", 
 						a_actor->GetName(), a_object->GetName()
 					);
 					return;
@@ -451,6 +469,12 @@ namespace ALYSLC
 						// Game tries to equip a shield that was not requested in the left hand.
 						if (armor != p->em->desiredEquippedForms[!EquipIndex::kLeftHand])
 						{
+							SPDLOG_DEBUG
+							(
+								"[ActorEquipManager Hooks] EquipObject: {}: "
+								"trying to equip shield {}. Ignoring.", 
+								a_actor->GetName(), a_object->GetName()
+							);
 							return;
 						}
 					}
@@ -477,7 +501,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[ActorEquipManager Hooks] {}: "
+									"[ActorEquipManager Hooks] EquipObject: {}: "
 									"trying to equip armor {}. Ignoring.", 
 									a_actor->GetName(), a_object->GetName()
 								);
@@ -508,7 +532,8 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] {}: trying to equip weapon {}. Ignoring.",
+							"[ActorEquipManager Hooks] EquipObject: {}: "
+							"trying to equip weapon {}. Ignoring.",
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -520,7 +545,37 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] {}: trying to equip shout {}. Ignoring.", 
+							"[ActorEquipManager Hooks] EquipObject: {}: "
+							"trying to equip shout {}. Ignoring.", 
+							a_actor->GetName(), a_object->GetName()
+						);
+						return;
+					}
+				}
+				else if (a_object->As<RE::ScrollItem>())
+				{
+					uint8_t indexToCheck = !EquipIndex::kRightHand;
+					bool isLHEquip = 
+					(
+						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
+						(
+							a_object->As<RE::BGSEquipType>() && 
+							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
+						)
+					);
+					if (isLHEquip)
+					{
+						indexToCheck = !EquipIndex::kLeftHand;
+					}
+
+					// Game is trying to equip a scroll that the player 
+					// did not request to have equipped.
+					if (a_object != p->em->desiredEquippedForms[indexToCheck])
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] EquipObject: {}: "
+							"trying to equip scroll {}. Ignoring.",
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -544,39 +599,73 @@ namespace ALYSLC
 						bool reqToEquip = 
 						(
 							(
-								(p->pam->boundWeapReqLH) &&
-								(
-									equipSlotToUse == glob.leftHandEquipSlot
-								)
-								
+								p->pam->boundWeapReqLH &&
+								equipSlotToUse == glob.leftHandEquipSlot &&
+								weap == p->em->lastReqBoundWeapLH
 							) ||
 							(
-								(p->pam->boundWeapReqRH) &&
-								(
-									equipSlotToUse == glob.rightHandEquipSlot
-								)
+								p->pam->boundWeapReqRH &&
+								equipSlotToUse == glob.rightHandEquipSlot &&
+								weap == p->em->lastReqBoundWeapRH
 							) ||
 							(
 								p->pam->boundWeapReq2H &&
-								equipSlotToUse == glob.bothHandsEquipSlot
+								equipSlotToUse == glob.bothHandsEquipSlot  &&
+								weap == p->em->lastReqBoundWeapRH
 							)
 						);
 
-						// Player did not request to equip a bound weapon, so ignore.
-						if (!reqToEquip)
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] EquipObject: {}: "
+							"trying to equip bound weapon {} with equip slot 0x{:X}. "
+							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
+							"Already equipped: {}. Ammo: {}, {}.", 
+							a_actor->GetName(),
+							a_object->GetName(),
+							equipSlotToUse ? equipSlotToUse->formID : 0xDEAD,
+							reqToEquip ? "ALLOWING" : "IGNORING",
+							p->pam->boundWeapReq2H,
+							p->pam->boundWeapReqLH,
+							p->pam->boundWeapReqRH,
+							p->coopActor->GetEquippedObject(true) ? 
+							p->coopActor->GetEquippedObject(true)->GetName() :
+							"NONE",
+							p->coopActor->GetEquippedObject(false) ? 
+							p->coopActor->GetEquippedObject(false)->GetName() :
+							"NONE",
+							equipSlotToUse == glob.leftHandEquipSlot ?
+							p->coopActor->GetEquippedObject(true) == a_object :
+							p->coopActor->GetEquippedObject(false) == a_object,
+							p->coopActor->GetCurrentAmmo() ? 
+							p->coopActor->GetCurrentAmmo()->GetName() :
+							"NONE",
+							p->em->equippedForms[!EquipIndex::kAmmo] ? 
+							p->em->equippedForms[!EquipIndex::kAmmo]->GetName() :
+							"NONE"
+						);
+
+						auto aem = RE::ActorEquipManager::GetSingleton();
+						if (reqToEquip)
 						{
-							SPDLOG_DEBUG
-							(
-								"[ActorEquipManager Hooks] {}: "
-								"trying to equip bound weapon {} with equip slot 0x{:X}. "
-								"Ignoring. Reqs: {}, {}, {}.", 
-								a_actor->GetName(),
-								a_object->GetName(),
-								equipSlotToUse ? equipSlotToUse->formID : 0xDEAD,
-								p->pam->boundWeapReq2H,
-								p->pam->boundWeapReqLH,
-								p->pam->boundWeapReqRH
-							);
+							// Player did request to equip this bound weapon,
+							// so also equip previously equipped bound ammo, if any.
+							// Ammo might have been unequipped silently, so re-equip here.
+							auto cachedAmmo = p->em->equippedForms[!EquipIndex::kAmmo];
+							if ((cachedAmmo) && 
+								(cachedAmmo->HasKeywordByEditorID("WeapTypeBoundArrow")) && 
+								(weap->IsBow() || weap->IsCrossbow()))
+							{
+								aem->EquipObject
+								(
+									p->coopActor.get(), cachedAmmo->As<RE::TESAmmo>()
+								);
+							}
+						}
+						else
+						{
+							// Player did not request to equip a bound weapon
+							// or the weapon is already equipped, so ignore.
 							return;
 						}
 					}
@@ -590,6 +679,16 @@ namespace ALYSLC
 			}
 
 			_EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
+
+			// Restore original equip slot if modified.
+			if (equipSlotToRestore)
+			{
+				auto itemEquipType = a_object->As<RE::BGSEquipType>();
+				if (itemEquipType)
+				{
+					itemEquipType->SetEquipSlot(equipSlotToRestore);
+				}
+			}
 		}
 
 		void ActorEquipManagerHooks::UnequipObject
@@ -628,10 +727,9 @@ namespace ALYSLC
 				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 				(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
 			);
-
 			// Ignore instances where the game unequips bound weapons 
 			// and unequips the "fists" weapon after clearing hand slots.
-			if (!isBound && a_object != glob.fists)
+			if (!isBound && a_object != glob.fists && a_object != glob.dummy1H)
 			{
 				//===================================================
 				// Cases in which the unequip call should be skipped.
@@ -651,7 +749,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[ActorEquipManager Hooks] {}: "
+								"[ActorEquipManager Hooks] UnequipObject: {}: "
 								"trying to unequip shield/torch {}. Ignoring.", 
 								a_actor->GetName(), a_object->GetName()
 							);
@@ -681,7 +779,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[ActorEquipManager Hooks] {}: "
+								"[ActorEquipManager Hooks] UnequipObject: {}: "
 								"trying to unequip armor {}. Ignoring.", 
 								a_actor->GetName(), a_object->GetName()
 							);
@@ -710,7 +808,8 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] {}: trying to unequip weapon {}. Ignoring.", 
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip weapon {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -722,8 +821,117 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] {}: trying to unequip shout {}. Ignoring.", 
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip shout {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
+						);
+						return;
+					}
+				}
+				else if (a_object->As<RE::ScrollItem>())
+				{
+					uint8_t indexToCheck = !EquipIndex::kRightHand;
+					bool isLHEquip = 
+					{
+						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
+						(
+							a_object->As<RE::BGSEquipType>() && 
+							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
+						)
+					};
+					if (isLHEquip)
+					{
+						indexToCheck = !EquipIndex::kLeftHand;
+					}
+
+					// Ignore if the game is trying to equip the desired scroll item.
+					if (a_object == p->em->desiredEquippedForms[indexToCheck])
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip scroll {}. Ignoring.", 
+							a_actor->GetName(), a_object->GetName()
+						);
+						return;
+					}
+				}
+			}
+			else if (isBound && p->coopActor->IsWeaponDrawn())
+			{
+				SPDLOG_DEBUG
+				(
+					"[ActorEquipManager Hooks] UnequipObject: {}: "
+					"trying to unequip bound weapon {}. Equip slot: {}.", 
+					a_actor->GetName(),
+					a_object->GetName(), 
+					Util::GetEditorID(a_objectEquipParams.equipSlot)
+				);
+				// TODO: 
+				// Prevent the game from unequipping bound weapons if their duration 
+				// has not expired yet and the player has drawn their weapons.
+				auto aem = RE::ActorEquipManager::GetSingleton();
+				auto weap = a_object->As<RE::TESObjectWEAP>();
+				if (p->pam->boundWeapReq2H)
+				{
+					float remainingLifetime = 
+					(
+						p->pam->secsBoundWeapon2HDuration - p->pam->secsSinceBoundWeap2HReq
+					);
+					if ((remainingLifetime > 0.0f) && 
+						(a_object == p->em->lastReqBoundWeapRH || a_object->IsAmmo()))
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip bound 2H weapon/ammo {}. Time left: {}. Ignoring.", 
+							a_actor->GetName(),
+							a_object->GetName(), 
+							p->pam->secsBoundWeapon2HDuration - p->pam->secsSinceBoundWeap2HReq
+						);
+						return;
+					}
+				} 
+				
+				if (p->pam->boundWeapReqLH)
+				{
+					float remainingLifetime = 
+					(
+						p->pam->secsBoundWeaponLHDuration - p->pam->secsSinceBoundWeapLHReq
+					);
+					if (remainingLifetime > 0.0f && 
+						a_object == p->em->lastReqBoundWeapLH &&
+						a_objectEquipParams.equipSlot == glob.leftHandEquipSlot)
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
+							a_actor->GetName(),
+							a_object->GetName(), 
+							p->pam->secsBoundWeaponLHDuration - p->pam->secsSinceBoundWeapLHReq
+						);
+						return;
+					}
+				}
+				
+				if (p->pam->boundWeapReqRH)
+				{
+					float remainingLifetime = 
+					(
+						p->pam->secsBoundWeaponRHDuration - p->pam->secsSinceBoundWeapRHReq
+					);
+					if (remainingLifetime > 0.0f && 
+						a_object == p->em->lastReqBoundWeapRH &&
+						a_objectEquipParams.equipSlot == glob.rightHandEquipSlot)
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorEquipManager Hooks] UnequipObject: {}: "
+							"trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
+							a_actor->GetName(),
+							a_object->GetName(), 
+							p->pam->secsBoundWeaponRHDuration - p->pam->secsSinceBoundWeapRHReq
 						);
 						return;
 					}
@@ -734,40 +942,852 @@ namespace ALYSLC
 		}
 
 // [ACTOR MAGIC CASTER HOOKS]:
-	void ActorMagicCasterHooks::Update(RE::ActorMagicCaster* a_this, float a_delta)
-	{
-		// NOTE:
-		// Unused for now until I figure out a way to stall the FNF spellcast animation 
-		// when the spell is fully charged and the player is still holding the cast bind.
-		if (glob.globalDataInit && glob.coopSessionActive)
+		void ActorMagicCasterHooks::DeselectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
-			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			if (pIndex != -1 && pIndex != glob.player1CID)
+			if (glob.globalDataInit && glob.coopSessionActive)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
-				auto source = a_this->GetCastingSource();
-				float mult = 1.0f;
-				bool stallCastUntilBindReleased = 
-				(
-					(a_this->state == RE::MagicCaster::State::kNone) &&
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _DeselectSpellImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
 					(
+						"[ActorMagicCasterHooks] DeselectSpellImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
 						(
 							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH) && 
-							!p->pam->JustStarted(InputAction::kCastLH)
+							p->pam->IsPerforming(InputAction::kCastLH)
 						) ||
 						(
 							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
 							p->pam->IsPerforming(InputAction::kCastRH) && 
-							!p->pam->JustStarted(InputAction::kCastRH)
-						)
-					)
-				);
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
 			}
+
+			_DeselectSpellImpl(a_this);
 		}
 
-		_Update(a_this, a_delta);
-	}
+		void ActorMagicCasterHooks::FinishCastImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _FinishCastImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] FinishCastImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
+			}
+
+			_FinishCastImpl(a_this);
+		}
+		
+		void ActorMagicCasterHooks::InterruptCastImpl
+		(
+			RE::ActorMagicCaster* a_this, bool a_depleteEnergy
+		)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _InterruptCastImpl(a_this, a_depleteEnergy);
+					}
+
+					auto source = a_this->GetCastingSource();
+					if (source != RE::MagicSystem::CastingSource::kLeftHand &&
+						source != RE::MagicSystem::CastingSource::kRightHand)
+					{
+						return _InterruptCastImpl(a_this, a_depleteEnergy);
+					}
+
+					// Can restore magicka when the spell is fully charged,
+					// even when the call is trying to deplete magicka.
+					// Pre-cast state only.
+					if (*a_this->state <= RE::MagicCaster::State::kUnk04)
+					{
+						// Think the 'deplete magicka' arg might actually be 'refund magicka'.
+						_InterruptCastImpl(a_this, true);
+						// Magicka gets depleted/refunded in another function run after this call,
+						// so if we set the magicka charged to 0, 
+						// it will be refunded to the pre-cast level.
+						a_this->costCharged = 0.0f;
+					}
+					else
+					{
+						_InterruptCastImpl(a_this, a_depleteEnergy);
+					}
+
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] InterruptCastImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}, cost charged: {}. State: {}, deplete energy: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						a_this->costCharged,
+						*a_this->state,
+						a_depleteEnergy
+					);
+					return;
+				}
+			}
+
+			return _InterruptCastImpl(a_this, a_depleteEnergy);
+		}
+
+		void ActorMagicCasterHooks::RequestCastImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && a_this->currentSpell)
+				{
+					// Apply player-specific magicka multiplier,
+					// check if the new cost is less than the player's current magicka level,
+					// and if it is, force-allow the cast by disabling the cast check 
+					// before running the original request func,
+					// which would normally reject the cast due to the unmodified cost 
+					// being larger than the player's current magicka level.
+					// Restore the original cast checks afterward.
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _RequestCastImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] RequestCastImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+					// Ignore requests to cast when the companion player 
+					// has not started performing the corresponding cast input action.
+					if (!p->isPlayer1)
+					{
+						bool notRequested = 
+						(
+							(
+								source == RE::MagicSystem::CastingSource::kLeftHand &&
+								p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
+								p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
+							) ||
+							(
+								source == RE::MagicSystem::CastingSource::kRightHand &&
+								p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f&&
+								p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
+							)
+						);
+						if (notRequested)
+						{
+							SPDLOG_DEBUG
+							(
+								"[ActorMagicCasterHooks] RequestCastImpl: {}: "
+								"{} cast of {} not requested.",
+								p->coopActor->GetName(),
+								source == RE::MagicSystem::CastingSource::kLeftHand ?
+								"LH" :
+								"RH",
+								a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
+							);
+							a_this->currentSpell = nullptr;
+							a_this->state = RE::MagicCaster::State::kNone;
+							return;
+						}
+					}
+
+					a_this->currentSpellCost *= Settings::vfMagickaCostMult[p->playerID];
+					float cost = a_this->currentSpellCost;
+					if (a_this->currentSpell->GetCastingType() == 
+						RE::MagicSystem::CastingType::kConcentration)
+					{
+						cost *= *g_deltaTimeRealTime;
+					}
+
+					if (p->isInGodMode || 
+						cost <= p->coopActor->GetActorValue(RE::ActorValue::kMagicka))
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorMagicCasterHooks] RequestCastImpl: {}: "
+							"Enough magicka ({} < {}) for {} cast of {}.",
+							p->coopActor->GetName(),
+							cost,
+							p->coopActor->GetActorValue(RE::ActorValue::kMagicka),
+							source == RE::MagicSystem::CastingSource::kLeftHand ?
+							"LH" :
+							"RH",
+							a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
+						);
+						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+						_RequestCastImpl(a_this);
+						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+						return;
+					}
+					else
+					{
+						SPDLOG_DEBUG
+						(
+							"[ActorMagicCasterHooks] RequestCastImpl: {}: "
+							"Not enough magicka ({} >= {}) for {} cast of {}.",
+							p->coopActor->GetName(),
+							cost,
+							p->coopActor->GetActorValue(RE::ActorValue::kMagicka),
+							source == RE::MagicSystem::CastingSource::kLeftHand ?
+							"LH" :
+							"RH",
+							a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
+						);
+						return;
+					}
+				}
+			}
+
+			_RequestCastImpl(a_this);
+		}
+
+		void ActorMagicCasterHooks::SelectSpellImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _SelectSpellImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] SelectSpellImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
+			}
+
+			_SelectSpellImpl(a_this);
+		}
+
+		void ActorMagicCasterHooks::SetCurrentSpellImpl
+		(
+			RE::ActorMagicCaster* a_this, RE::MagicItem* a_spell
+		)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _SetCurrentSpellImpl(a_this, a_spell);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] SetCurrentSpellImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
+			}
+
+			_SetCurrentSpellImpl(a_this, a_spell);
+		}
+
+		void ActorMagicCasterHooks::SpellCast
+		(
+			RE::ActorMagicCaster* a_this,
+			bool a_doCast,
+			uint32_t a_arg2, 
+			RE::MagicItem* a_spell
+		)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] SpellCast: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}. "
+						"Casting globs: LH: {}, RH: {}, 2H: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state,
+						p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value,
+						p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value,
+						p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value
+					);
+				}
+			}
+
+			_SpellCast(a_this, a_doCast, a_arg2, a_spell);
+		}
+
+		void ActorMagicCasterHooks::StartCastImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _StartCastImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] StartCastImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
+			}
+
+			_StartCastImpl(a_this);
+		}
+
+		bool ActorMagicCasterHooks::StartChargeImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _StartChargeImpl(a_this);
+					}
+
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] StartChargeImpl: "
+						"{}, caster {}, spell {}, cost {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+					
+					auto source = a_this->GetCastingSource();
+					// Set cast start TPs.
+					if (source == RE::MagicSystem::CastingSource::kLeftHand)
+					{
+						p->lastLHCastChargeStartTP = SteadyClock::now();
+					}
+					else if (source == RE::MagicSystem::CastingSource::kRightHand)
+					{
+						p->lastRHCastChargeStartTP = SteadyClock::now();
+					}
+				}
+			}
+
+			return _StartChargeImpl(a_this);
+		}
+
+		void ActorMagicCasterHooks::StartReadyImpl(RE::ActorMagicCaster* a_this)
+		{
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _StartReadyImpl(a_this);
+					}
+
+					auto source = a_this->GetCastingSource();
+					SPDLOG_DEBUG
+					(
+						"[ActorMagicCasterHooks] StartReadyImpl: "
+						"{}, caster {} (performing: {}, just started: {}, type: {}), "
+						"spell {}, cost: {}. State: {}.",
+						a_this->actor->GetName(),
+						!a_this->castingSource,
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand && 
+							p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand && 
+							p->pam->IsPerforming(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->JustStarted(InputAction::kCastLH)
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->JustStarted(InputAction::kCastRH)
+						),
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->IsPerforming(InputAction::kCastLH) &&
+							p->em->GetLHSpell() ?
+							!p->em->GetLHSpell()->GetCastingType() :
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->IsPerforming(InputAction::kCastRH) && 
+							p->em->GetRHSpell() ?
+							!p->em->GetRHSpell()->GetCastingType() :
+							!RE::MagicSystem::CastingType::kConstantEffect
+						),
+						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+						a_this->currentSpellCost,
+						*a_this->state
+					);
+				}
+			}
+
+			_StartReadyImpl(a_this);
+		}
+
+		void ActorMagicCasterHooks::Update(RE::ActorMagicCaster* a_this, float a_delta)
+		{
+			// NOTE:
+			// Unused for now until I figure out a way to stall the FNF spellcast animation 
+			// when the spell is fully charged and the player is still holding the cast bind.
+
+			if (glob.globalDataInit && glob.coopSessionActive)
+			{
+				auto source = a_this->GetCastingSource();
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+				if (pIndex != -1 && pIndex != glob.player1CID)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!p->IsRunning())
+					{
+						return _Update(a_this, a_delta);
+					}
+
+					auto lhSpell = p->em->GetLHSpell();
+					auto rhSpell = p->em->GetRHSpell();
+					bool isCasting = 
+					(
+						(p->pam->IsPerforming(InputAction::kCastLH)) ||
+						(p->pam->IsPerforming(InputAction::kCastRH)) ||
+						(  
+							(
+								p->pam->IsPerforming(InputAction::kSpecialAction)
+							) &&
+							(
+								p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
+								p->pam->reqSpecialAction == SpecialActionType::kDualCast
+							)
+						)
+					);
+					bool is2HCast = 
+					(
+						isCasting &&
+						lhSpell &&
+						rhSpell &&
+						lhSpell == rhSpell &&
+						rhSpell->equipSlot == glob.bothHandsEquipSlot
+					);
+					bool stallCastUntilBindReleased = false;
+					// NOTE:
+					// 
+					// 2H spellcasts seem to use only one hand caster (usually the RH caster).
+					// We do not want to link the player's pressed cast bind 
+					// to the act of casting itself, since the 2H cast can be triggered 
+					// through the opposite hand's cast bind, 
+					// but that caster isn't guaranteed to have the 2H spell equipped and active.
+					// For example, we can cast 'Blizzard' with the 'CastLH' bind,
+					// but the player's LH caster will remain inactive,
+					// while its RH caster equips and charges the spell.
+					if (is2HCast)
+					{
+						stallCastUntilBindReleased = 
+						(
+							a_this->currentSpell == rhSpell &&
+							rhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kFireAndForget &&
+							a_this->state == RE::MagicCaster::State::kReady 
+						);
+					}
+					else
+					{
+						if (source == RE::MagicSystem::CastingSource::kLeftHand)
+						{
+							stallCastUntilBindReleased = 
+							(
+								(
+									lhSpell &&
+									lhSpell->GetCastingType() == 
+									RE::MagicSystem::CastingType::kFireAndForget &&
+									a_this->state == RE::MagicCaster::State::kReady 
+								) &&
+								(
+									(p->pam->AllButtonsPressedForAction(InputAction::kCastLH)) ||
+									(
+										p->pam->AllButtonsPressedForAction
+										(
+											InputAction::kSpecialAction
+										) &&
+										p->pam->reqSpecialAction ==
+										SpecialActionType::kCastBothHands
+									)
+								)
+							);
+						}
+						else if (source == RE::MagicSystem::CastingSource::kRightHand)
+						{
+							stallCastUntilBindReleased = 
+							(
+								(
+									rhSpell &&
+									rhSpell->GetCastingType() == 
+									RE::MagicSystem::CastingType::kFireAndForget &&
+									a_this->state == RE::MagicCaster::State::kReady 
+								) &&
+								(
+									(p->pam->AllButtonsPressedForAction(InputAction::kCastRH)) ||
+									(
+										p->pam->AllButtonsPressedForAction
+										(
+											InputAction::kSpecialAction
+										) &&
+										p->pam->reqSpecialAction == 
+										SpecialActionType::kCastBothHands
+									)
+								)
+							);
+						}
+					}
+					
+
+					// Modify caster state to loop the charge animation 
+					// just when the caster reaches the ready state.
+					// Returning directly afterward without performing the update 
+					// seems to do the trick.
+					if (stallCastUntilBindReleased)
+					{
+						// Looping ready animation.
+						a_this->state = RE::ActorMagicCaster::State::kUnk04;
+						// Skip this update.
+						return;
+					}
+
+					if (a_this->currentSpell)
+					{
+						const float baseCost = a_this->currentSpell->CalculateMagickaCost
+						(
+							p->coopActor.get()
+						);
+						float cost = baseCost;
+						if (a_this->currentSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							cost *= *g_deltaTimeRealTime;
+						}
+					}
+
+					// Setting the 'skip check' flag only during the 'start' state
+					// suddenly re-enables the game's caster magicka expenditure?
+					// It just works.
+					if (*a_this->state == RE::MagicCaster::State::kUnk01)
+					{	
+						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+					}
+					else
+					{
+						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+					}
+				}
+			}
+
+			_Update(a_this, a_delta);
+		}
 
 // [ANIMATION GRAPH MANAGER HOOKS]:
 		EventResult AnimationGraphManagerHooks::ProcessEvent
@@ -1162,7 +2182,6 @@ namespace ALYSLC
 				// Prevents occlusion of refrs inside the multibound.
 				if (refrMB.second && 
 					refrMB.second->multiBound && 
-					refrMB.second->multiBound.get() && 
 					refrMB.second->multiBound.get() == a_this)
 				{
 					return true;
@@ -1222,6 +2241,17 @@ namespace ALYSLC
 				}
 				else
 				{
+					// NOTE:
+					// For stamina, the delta amount is scaled by cost multiplier here
+					// instead of in the cost functions in the player action function holder
+					// because we want a consistent solution for both types of players.
+					// Drawback would be not being able to link an action
+					// with a specific stamina reduction, 
+					// since this function does not provide any context
+					// for the source of the AV change.
+					// However, any source of stamina damage can be scaled here,
+					// including absorption from enemy spells.
+
 					// Apply damage received mult if the player was damaged.
 					// Do not care about the source of the damage in this case,
 					// as the damage received mult should apply to all sources of damage.
@@ -1331,26 +2361,39 @@ namespace ALYSLC
 								);
 							}
 						}
+
+						if (baseXP > 0.0f && 
+							p->pam->perfSkillIncCombatActions.any
+							(
+								SkillIncCombatActionType::kRestorationSpellQS
+							))
+						{
+							// Targets self.
+							if (p->em->quickSlotSpell && 
+								p->em->quickSlotSpell->GetDelivery() == 
+								RE::MagicSystem::Delivery::kSelf)
+							{
+								GlobalCoopData::AddSkillXP
+								(
+									p->controllerID, RE::ActorValue::kRestoration, a_delta
+								);
+							}
+						}
 					}
 					else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 					{
 						// NOTE:
-						// Scaled by cost multiplier here instead of in the cost functions 
-						// in the player action function holder because we want 
-						// a consistent solution for both types of players.
-						// Drawback would be not being able to link an action
-						// with a specific stamina reduction, 
-						// since this function does not provide any context
-						// for the source of the AV change.
-
-						// NOTE 2:
-						// Magicka cost modifier is applied for this player 
-						// in the SpellItem::AdjustCost() hook, not here, 
-						// since there is a magicka cost check done by the game 
-						// before casting and expending magicka.
-						// So, even if the player's scaled magicka cost 
-						// is adequate to begin casting, the game will not allow the cast 
-						// because it is using the pre-scaled cost.
+						// This applies to all sources of stamina damage,
+						// whether the cost of a stamina-consuming action,
+						// or stamina absorption from an outside source.
+						//
+						// However, the same cannot be done with magicka,
+						// since we are already scaling the magicka costs for casting spells
+						// in the ActorMagicCaster::RequestCastImpl() hook.
+						// Scaling the delta here would double the application of the multiplier.
+						// We also have no way of linking each call of this function 
+						// to its originating action, so there is no way to scale
+						// magicka absorption and other sources of magicka damage.
 						a_delta *= Settings::vfStaminaCostMult[p->playerID];
 					}
 				}
@@ -1609,7 +2652,8 @@ namespace ALYSLC
 						if (!playerStillStanding)
 						{
 							// All players downed, end co-op session.
-							GlobalCoopData::YouDied();
+							//GlobalCoopData::YouDied();
+							glob.taskRunner->AddTask([](){ GlobalCoopData::YouDiedTask(); });
 						} 
 						else if (a_this->GetActorValue(RE::ActorValue::kHealth) < 0.0f)
 						{
@@ -1621,7 +2665,12 @@ namespace ALYSLC
 					{
 						// If not using the revive system, once one player dies,
 						// all other players die and the co-op session ends.
-						GlobalCoopData::YouDied(p->coopActor.get());
+						//GlobalCoopData::YouDied(p->coopActor.get());
+						auto handle = p->coopActor->GetHandle();
+						glob.taskRunner->AddTask
+						(
+							[handle](){ GlobalCoopData::YouDiedTask(handle); }
+						);
 					}
 				}
 			}
@@ -1874,6 +2923,23 @@ namespace ALYSLC
 				}
 			}
 
+			// Stop any scene package idle from playing.
+			if (p->coopActor->currentProcess && 
+				p->coopActor->currentProcess->middleHigh && 
+				p->coopActor->currentProcess->middleHigh->unk210)
+			{
+				if (p->coopActor->IsWeaponDrawn())
+				{
+					_NotifyAnimationGraph(a_this, "IdleStopInstant");
+				}
+				else
+				{
+					_NotifyAnimationGraph(a_this, "IdleForceDefaultState");
+				}
+
+				return true;
+			}
+
 			// Prevent the game from forcing the co-op companion player 
 			// into/out of sneaking against their wishes.
 			// Dash dodges trigger the sneak animation briefly, 
@@ -1893,6 +2959,18 @@ namespace ALYSLC
 				{
 					return false;
 				}
+			}
+			else if ((hash == "staggerStart"_h) &&
+					 (
+						 p->isRevivingPlayer || 
+						 p->coopActor->IsOnMount() || 
+						 Util::HandleIsValid(p->coopActor->GetOccupiedFurniture())
+					 ))
+			{
+				// Prevent stagger when reviving, mounted, or using furniture,
+				// which will make the companion player exit the animation or dismount prematurely 
+				// and potentially glitch their equip state.
+				return _NotifyAnimationGraph(a_this, "staggerStop");
 			}
 			else if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
 			{
@@ -1920,6 +2998,330 @@ namespace ALYSLC
 			return _NotifyAnimationGraph(a_this, a_eventName);
 		}
 
+		void CharacterHooks::PutCreatedPackage
+		(
+			RE::Character* a_this,
+			RE::TESPackage* a_package,
+			bool a_tempPackage, 
+			bool a_createdPackage
+		)
+		{
+			// Prevent the game force-running packages that can play idles 
+			// or equip gear on the companion player's character.
+
+			if (glob.globalDataInit && glob.allPlayersInit)
+			{
+				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					if (!a_package)
+					{
+						SPDLOG_DEBUG
+						(
+							"[Character Hooks] PutCreatedPackage: "
+							"{}: RUNNING NONE (temp: {}, created: {}).",
+							a_this->GetName(), 
+							a_tempPackage,
+							a_createdPackage
+						);
+						return _PutCreatedPackage
+						(
+							a_this, a_package, a_tempPackage, a_createdPackage
+						);
+					}
+					// Only allow getting up from furniture 
+					// while the interaction package is NOT running,
+					// and allow attempts to dismount only if the player 
+					// is no longer requesting to mount.
+					// Also allow a choice selection of procedures 
+					// if the current package is the interaction package.
+					// Choice. Needs testing. Boo.
+					bool allow = 
+					(
+						(
+							!p->mm->interactionPackageRunning &&
+							*a_package->procedureType == 
+							RE::PACKAGE_PROCEDURE_TYPE::kGetUpFromChairBed
+						) ||
+						(
+							!p->mm->wantsToMount &&
+							*a_package->procedureType == 
+							RE::PACKAGE_PROCEDURE_TYPE::kDismountActor
+						) ||
+						(
+							p->mm->wantsToMount &&
+							*a_package->procedureType == 
+							RE::PACKAGE_PROCEDURE_TYPE::kMountActor
+						) ||
+						(
+							*a_package->procedureType == 
+							RE::PACKAGE_PROCEDURE_TYPE::kDoNothing ||
+							*a_package->procedureType == 
+							RE::PACKAGE_PROCEDURE_TYPE::kPackage
+						)
+						/*||
+						(
+							(p->mm->interactionPackageRunning) &&
+							(
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kActivate ||
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kCannibal ||
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kEat ||
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kSleep ||
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kUseItemAt ||
+								*a_package->procedureType ==
+								RE::PACKAGE_PROCEDURE_TYPE::kVampireFeed
+							)
+						)*/
+					);
+					if (!allow)
+					{
+						auto currentCoopPackage = p->pam->GetCurrentPackage();
+						SPDLOG_DEBUG
+						(
+							"[Character Hooks] PutCreatedPackage: "
+							"{}: IGNORE {} (0x{:X}, temp: {}, created: {}, procedure type: {}. "
+							"Run {} (0x{:X}, type {}) instead.",
+							a_this->GetName(), 
+							a_package->GetName(),
+							a_package->formID,
+							a_tempPackage,
+							a_createdPackage,
+							*a_package->procedureType,
+							currentCoopPackage ? Util::GetEditorID(currentCoopPackage) : "NONE",
+							currentCoopPackage ? currentCoopPackage->formID : 0xDEAD,
+							currentCoopPackage ? 
+							*currentCoopPackage->procedureType :
+							RE::PACKAGE_PROCEDURE_TYPE::kNone
+						);
+						return;
+					}
+
+					SPDLOG_DEBUG
+					(
+						"[Character Hooks] PutCreatedPackage: "
+						"{}: RUNNING {} (0x{:X}, temp: {}, created: {}, procedure type: {}.",
+						a_this->GetName(), 
+						a_package->GetName(),
+						a_package->formID,
+						a_tempPackage,
+						a_createdPackage,
+						*a_package->procedureType
+					);
+				}
+			}
+
+			_PutCreatedPackage(a_this, a_package, a_tempPackage, a_createdPackage);
+		}
+
+		void CharacterHooks::RemoveWeapon(RE::Character* a_this, RE::BIPED_OBJECT a_equipIndex)
+		{
+			// Sometimes, the game removes bound weapons before or without an equip event 
+			// or our unequip hook firing.
+			// Catch such instances before they occur and prevent removal of the bound weapon/ammo
+			// if their duration has not expired.
+
+			if (glob.globalDataInit && glob.allPlayersInit)
+			{
+				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[pIndex];
+					const auto biped = p->coopActor->GetBiped();
+					SPDLOG_DEBUG
+					(
+						"[Character Hooks] RemoveWeapon: {}: Equip index {}.",
+						p->coopActor->GetName(), 
+						!a_equipIndex
+					);
+					if (!biped)
+					{
+						return _RemoveWeapon(a_this, a_equipIndex);
+					}
+
+					const auto& bipedObj = biped->objects[a_equipIndex];
+					bool shouldPreventRemovel = false;
+					if (bipedObj.item)
+					{
+						auto weap = bipedObj.item->As<RE::TESObjectWEAP>();
+						bool is1HEquipType = weap->equipSlot != glob.bothHandsEquipSlot;
+						bool isBoundWeap = weap && weap->IsBound();
+						bool isBoundAmmo = 
+						(
+							bipedObj.item->As<RE::TESAmmo>() && 
+							bipedObj.item->As<RE::TESAmmo>()->HasKeywordByEditorID
+							(
+								"WeapTypeBoundArrow"
+							)
+						);
+						if (isBoundWeap)
+						{
+							uint8_t active1HBoundWeapReqs = 0;
+							uint8_t active2HBoundWeapReqs = 0;
+							if (p->em->lastReqBoundWeapRH && 
+								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>())
+							{
+								auto rhBoundWeap = 
+								(
+									p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()
+								);
+								if (rhBoundWeap->equipSlot == glob.bothHandsEquipSlot &&
+									p->pam->boundWeapReq2H &&
+									p->pam->secsBoundWeapon2HDuration - 
+									p->pam->secsSinceBoundWeap2HReq > 0.0f)
+								{
+									active2HBoundWeapReqs++;
+								}
+								else if (rhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
+										 p->pam->boundWeapReqRH &&
+										 p->pam->secsBoundWeaponRHDuration - 
+										 p->pam->secsSinceBoundWeapRHReq > 0.0f)
+								{
+									active1HBoundWeapReqs++;
+								}
+							}
+							
+							if (p->em->lastReqBoundWeapLH && 
+								p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>())
+							{
+								auto lhBoundWeap = 
+								(
+									p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>()
+								);
+								if (lhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
+									p->pam->boundWeapReqLH &&
+									p->pam->secsBoundWeaponLHDuration - 
+									p->pam->secsSinceBoundWeapLHReq > 0.0f)
+								{
+									active1HBoundWeapReqs++;
+								}
+							}
+
+							uint8_t equipped1HBoundWeaps = 0;
+							auto lhObj = p->coopActor->GetEquippedObject(true);
+							auto lhWeap = lhObj ? lhObj->As<RE::TESObjectWEAP>() : nullptr; 
+							auto rhObj = p->coopActor->GetEquippedObject(false);
+							auto rhWeap = rhObj ? rhObj->As<RE::TESObjectWEAP>() : nullptr; 
+							if (lhWeap && 
+								lhWeap->IsBound() && 
+								lhWeap->equipSlot != glob.bothHandsEquipSlot)
+							{
+								equipped1HBoundWeaps++;
+							}
+
+							if (rhWeap && 
+								rhWeap->IsBound() &&
+								rhWeap->equipSlot != glob.bothHandsEquipSlot)
+							{
+								equipped1HBoundWeaps++;
+							}
+
+							bool reqRemovalOf2HWeap = weap->equipSlot == glob.bothHandsEquipSlot;
+							shouldPreventRemovel = 
+							(
+								(
+									reqRemovalOf2HWeap &&
+									active2HBoundWeapReqs != 0
+								) ||
+								(
+									!reqRemovalOf2HWeap &&
+									active1HBoundWeapReqs > 0 &&
+									equipped1HBoundWeaps == active1HBoundWeapReqs
+								)
+							);
+
+							SPDLOG_DEBUG
+							(
+								"[Character Hooks] RemoveWeapon: {}: "
+								"Active 1H/2H requests: {}, {}, "
+								"equipped 1H bound weaps: {}, "
+								"Removal request is for {} ({}, index: {}). {}.",
+								p->coopActor->GetName(), 
+								active1HBoundWeapReqs,
+								active2HBoundWeapReqs,
+								equipped1HBoundWeaps,
+								weap->GetName(),
+								weap->equipSlot == glob.bothHandsEquipSlot ? "2H" : "1H",
+								a_equipIndex,
+								shouldPreventRemovel ? "IGNORE" : "ALLOW"
+							);
+						}
+						else if (isBoundAmmo)
+						{
+							if (p->pam->boundWeapReq2H &&
+								p->em->lastReqBoundWeapRH &&
+								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>() &&
+								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()->IsRanged() &&
+								p->pam->secsBoundWeapon2HDuration - 
+								p->pam->secsSinceBoundWeap2HReq > 0.0f)
+							{
+								SPDLOG_DEBUG
+								(
+									"[Character Hooks] RemoveWeapon: {}: "
+									"Ignore removal of bound ammo {}.",
+									p->coopActor->GetName(), 
+									bipedObj.item->GetName()
+								);
+								shouldPreventRemovel = true;
+							}
+						}
+						else
+						{
+							// If the weapon biped object to remove is not in preparation 
+							// for a bound weapon equip, 
+							// prevent the game from removing the biped object.
+							shouldPreventRemovel = 
+							(
+								(
+									a_equipIndex == RE::BIPED_OBJECT::kShield &&
+									bipedObj.item == 
+									p->em->desiredEquippedForms[!EquipIndex::kLeftHand]
+								) ||
+								(
+									a_equipIndex != RE::BIPED_OBJECT::kShield &&
+									bipedObj.item == 
+									p->em->desiredEquippedForms[!EquipIndex::kRightHand]
+								)
+							);
+							SPDLOG_DEBUG
+							(
+								"[Character Hooks] RemoveWeapon: {}: {} at equip index {}. "
+								"Desired form in the same slot is {}.",
+								p->coopActor->GetName(), 
+								bipedObj.item ? bipedObj.item->GetName() : "NONE",
+								!a_equipIndex,
+								a_equipIndex == RE::BIPED_OBJECT::kShield ?
+								p->em->desiredEquippedForms[!EquipIndex::kLeftHand] ?
+								p->em->desiredEquippedForms[!EquipIndex::kLeftHand]->GetName() :
+								"NONE" :
+								p->em->desiredEquippedForms[!EquipIndex::kRightHand] ?
+								p->em->desiredEquippedForms[!EquipIndex::kRightHand]->GetName() : 
+								"NONE"
+							);
+						}
+					}	
+
+					SPDLOG_DEBUG
+					(
+						"[Character Hooks] RemoveWeapon: {}: {} at equip index {}. {}.",
+						p->coopActor->GetName(), 
+						bipedObj.item ? bipedObj.item->GetName() : "NONE",
+						!a_equipIndex,
+						shouldPreventRemovel ? "IGNORE" : "ALLOW"
+					);
+					if (shouldPreventRemovel)
+					{
+						return;
+					}
+				}
+			}
+
+			return _RemoveWeapon(a_this, a_equipIndex);	
+		}
+
 		void CharacterHooks::ResetInventory(RE::Character* a_this, bool a_leveledOnly)
 		{
 			// Prevent players from resetting their inventory when disabled/resurrected,
@@ -1933,6 +3335,23 @@ namespace ALYSLC
 			{
 				return _ResetInventory(a_this, a_leveledOnly);	
 			}
+		}
+
+		void CharacterHooks::SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene)
+		{
+			// Prevent the game from roping companion players into scenes,
+			// which can force-play idles on the companion player's character
+			// and lock them in place, despite player attempts to move the character.
+
+			if (glob.globalDataInit && glob.allPlayersInit && a_scene)
+			{
+				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
+				{
+					return _SetCurrentScene(a_this, nullptr);;
+				}
+			}
+
+			_SetCurrentScene(a_this, a_scene);
 		}
 
 		void CharacterHooks::Update(RE::Character* a_this, float a_delta)
@@ -1979,6 +3398,85 @@ namespace ALYSLC
 					a_this->combatController->previousTargetHandle = RE::ActorHandle();
 					a_this->combatController->cachedTarget = nullptr;
 				}*/
+
+				// Stop idles and any executing scene packages, but not run-once packages, 
+				// which are generated at runtime and have the 'FF' mod index.
+				// Unfortunately, the any already-triggered idle still briefly plays 
+				// until the previously-running co-op package is evaluated.
+				// Prevents companion players from losing control of their character
+				// and getting locked into animations.
+				if (p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh)
+				{
+					auto runningPackage = p->coopActor->GetCurrentPackage();
+					// Different package than current and not a run-once package 
+					// or a package from this mod.
+					if ((runningPackage && runningPackage != p->pam->GetCurrentPackage()) &&
+						((runningPackage->formID >> 24) != 0xFF) && 
+						((runningPackage->formID >> 12) != (p->coopActor->formID >> 12)))
+					{
+						SPDLOG_DEBUG
+						(
+							"[Character Hooks] Update: {}: "
+							"Stop current package: idle: {}, running: {}, scene: {}.", 
+							p->coopActor->GetName(),
+							p->coopActor->currentProcess->middleHigh->unk210 ?
+							Util::GetEditorID(p->coopActor->currentProcess->middleHigh->unk210) :
+							"NONE",
+							p->coopActor->GetCurrentPackage() ?
+							Util::GetEditorID(p->coopActor->GetCurrentPackage()) :
+							"NONE",
+							p->coopActor->GetCurrentScene() ? 
+							Util::GetEditorID(p->coopActor->GetCurrentScene()) :
+							"NONE"
+						);
+					
+						p->coopActor->SetCurrentScene(nullptr);
+						// Package idle playing currently.
+						if (p->coopActor->currentProcess->middleHigh->unk210)
+						{
+							// Only way to stop package
+							// xidles from playing
+							// and from continuing to evaluate the package originating the idle.
+							// The game will continue to set the radiant package 
+							// as the current package in subsequent frames otherwise.
+							p->coopActor->StopInteractingQuick(true);
+							p->pam->StopCurrentIdle();
+						}
+
+						// Execute the previously-run co-op package following the interruption.
+						p->pam->SetAndEveluatePackage(p->pam->GetCurrentPackage());
+					}
+				}
+
+				// Stop combat between companion players (P2, P3, P4).
+				a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+				if (auto combatGroup = a_this->GetCombatGroup(); combatGroup)
+				{
+					combatGroup->lock.LockForWrite();
+							
+					// Stop attacking and combat.
+					for (auto iter = combatGroup->targets.begin();
+						iter >= combatGroup->targets.begin() &&
+						iter < combatGroup->targets.end();
+						++iter)
+					{
+						// Already a target, so we can exit.
+						auto pIndex = GlobalCoopData::GetCoopPlayerIndex
+						(
+							iter->targetHandle
+						);
+						if (pIndex != -1)
+						{
+							iter = combatGroup->targets.erase(iter);
+							if (iter > combatGroup->targets.begin())
+							{
+								--iter;
+							}
+						}
+					}
+
+					combatGroup->lock.UnlockForWrite();
+				}
 
 				// Let the game update the player first after we've stopped combat.
 				_Update(a_this, a_delta);
@@ -2504,7 +4002,7 @@ namespace ALYSLC
 				if (a_this->IsAMount())
 				{
 					a_this->GetMountedBy(riderPtr);
-					if (riderPtr && riderPtr.get())
+					if (riderPtr)
 					{
 						isMountedByPlayer = GlobalCoopData::IsCoopPlayer(riderPtr.get());
 					}
@@ -2569,13 +4067,11 @@ namespace ALYSLC
 					if (Util::IsPartyFriendlyActor(a_this))
 					{
 						a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
-						// Stop attacking and combat.
-						a_this->NotifyAnimationGraph("attackStop");
 						if (auto combatGroup = a_this->GetCombatGroup(); combatGroup)
 						{
 							combatGroup->lock.LockForWrite();
-
-							bool isATarget = false;
+							
+							// Stop attacking and combat.
 							for (auto iter = combatGroup->targets.begin();
 								iter >= combatGroup->targets.begin() &&
 								iter < combatGroup->targets.end();
@@ -2594,6 +4090,8 @@ namespace ALYSLC
 									{
 										--iter;
 									}
+
+									a_this->NotifyAnimationGraph("attackStop");
 								}
 							}
 
@@ -2644,20 +4142,20 @@ namespace ALYSLC
 				return _ProcessHit(a_victim, a_hitData);
 			}
 
-			const auto attacker = Util::GetActorPtrFromHandle(a_hitData.aggressor); 
-			if (!attacker || !attacker.get())
+			const auto attackerPtr = Util::GetActorPtrFromHandle(a_hitData.aggressor); 
+			if (!attackerPtr)
 			{
 				return _ProcessHit(a_victim, a_hitData);;
 			}
 
 			auto playerVictimIndex = GlobalCoopData::GetCoopPlayerIndex(a_victim);
-			auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(attacker.get());
+			auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(attackerPtr.get());
 			// Handle cached melee UseSkill() calls for P1 
 			// (always fires before this hook does for melee skills).
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
 			if ((p1) && 
 				(glob.lastP1MeleeUseSkillCallArgs) && 
-				(attacker.get() == p1 || a_victim == p1))
+				(attackerPtr.get() == p1 || a_victim == p1))
 			{
 				// Conditions to execute delayed UseSkill call:
 				// 1. P1 is the attacker:
@@ -2668,7 +4166,7 @@ namespace ALYSLC
 				// or is a player that has friendly fire enabled.
 				bool p1AttackerCanUseSkill = 
 				(
-					(attacker.get() == p1) && 
+					(attackerPtr.get() == p1) && 
 					(Settings::vbFriendlyFire[0] || !Util::IsPartyFriendlyActor(a_victim))
 				);
 				bool p1VictimCanUseSkill = 
@@ -2839,7 +4337,7 @@ namespace ALYSLC
 			}
 
 			// First gamepad event exists and at least 1 gamepad event should be invalidated.
-			if (firstGamepadEvent && invalidateEvent) 
+			if (firstGamepadEvent && invalidateEvent)
 			{
 				auto idEvent = firstGamepadEvent->AsIDEvent();
 				auto buttonEvent = firstGamepadEvent->AsButtonEvent();
@@ -3211,7 +4709,7 @@ namespace ALYSLC
 									"[MenuControls Hook] CheckForMenuTriggeringInput: "
 									"Summoning glob: {}, P1 valid: {}, P1 in combat: {}.",
 									glob.summoningMenuOpenGlob->value,
-									glob.player1Actor && glob.player1Actor.get(),
+									(bool)glob.player1Actor,
 									glob.player1Actor ? glob.player1Actor->IsInCombat() : false
 								);
 							}
@@ -3518,15 +5016,8 @@ namespace ALYSLC
 			bool eventCanLeadToSave = 
 			(
 				(idEvent && buttonEvent) &&
-				(couldSaveWithCopiedData || playerIsDowned) &&
-				(
-					(eventName == ue->quicksave) ||
-					(eventName == ue->console && !ui->IsMenuOpen(RE::Console::MENU_NAME)) ||
-					(
-						(playerIsDowned) && 
-						(eventName == ue->pause || eventName == ue->journal)
-					)
-				)
+				(couldSaveWithCopiedData || playerIsDowned) && 
+				(eventName == ue->quicksave)
 			);
 			if (eventCanLeadToSave)
 			{
@@ -3550,32 +5041,6 @@ namespace ALYSLC
 								"[ALYSLC] Cannot quicksave while another player is downed!"
 							);
 						}
-					}
-					else if (eventName == ue->console)
-					{
-						if (couldSaveWithCopiedData)
-						{
-							RE::DebugMessageBox
-							(
-								"[ALYSLC] Cannot open the console while another player's data "
-								"is copied over to P1.\n"
-								"Please ensure all menus are closed or reload an older save."
-							);
-						}
-						else
-						{
-							RE::DebugMessageBox
-							(
-								"[ALYSLC] Cannot open the console while another player is downed!"
-							);
-						}
-					}
-					else
-					{
-						RE::DebugMessageBox
-						(
-							"[ALYSLC] Cannot pause the game while another player is downed!"
-						);	
 					}
 				}
 
@@ -3601,8 +5066,6 @@ namespace ALYSLC
 
 			bool dialogueMenuOpen = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
 			bool lootMenuOpen = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
-			// Open the targeted container while in the LootMenu.
-			bool lootMenuOpenContainer = false;
 			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 			// Start from the first gamepad input event and walk the chain.
 			inputEvent = a_firstGamepadEvent;
@@ -3646,16 +5109,15 @@ namespace ALYSLC
 
 				// Has a bypass flag indicating that the event was sent by another player.
 				// Co-op companion players: 0xCA11
-				bool coopPlayerMenuInput = 
+				bool fromCompanionPlayer = 
 				(
-					(coopPlayerControllingMenus && idEvent) && 
-					((idEvent->pad24 & 0xFFFF) == 0xCA11)
+					(idEvent->pad24 & 0xFFFF) == 0xCA11
 				);
+				bool coopPlayerMenuInput = coopPlayerControllingMenus && fromCompanionPlayer;
 
 				//======================================
 				// Special QuickLoot menu compatibility.
 				//======================================
-				bool validLootMenuInput = lootMenuOpen;
 				auto controlMap = RE::ControlMap::GetSingleton(); 
 				if (controlMap && lootMenuOpen && buttonEvent)
 				{
@@ -3668,70 +5130,94 @@ namespace ALYSLC
 						// to switch to the ContainerMenu here is an empty string,
 						// but hey, check the ID code instead, 
 						// since that still equals the ID code for the "Ready Weapon" bind.
-						if (!lootMenuOpenContainer && 
+						bool isCancelBind = 
+						(
 							buttonEvent->idCode == 
 							controlMap->GetMappedKey
 							(
-								ue->readyWeapon, RE::INPUT_DEVICE::kGamepad
-							))
+								ue->cancel, 
+								RE::INPUT_DEVICE::kGamepad,
+								RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+							)	
+						);
+						bool isReadyWeaponBind = 
+						(
+							buttonEvent->idCode == 
+							controlMap->GetMappedKey
+							(
+								ue->readyWeapon, 
+								RE::INPUT_DEVICE::kGamepad
+							)	
+						);
+						bool isWaitBind = 
+						(
+							buttonEvent->idCode == 
+							controlMap->GetMappedKey
+							(
+								ue->wait, 
+								RE::INPUT_DEVICE::kGamepad
+							)	
+						);
+						// Haven't worked out a way to get the player's currently assigned bind 
+						// for opening the container for QuickLoot, 
+						// so we'll use the default binds ('Wait' and 'Ready Weapon').
+						// TODO:
+						// Attempt to read the 'Transfer' bind keycode property 
+						// from the QuickLootIE MCM script.
+						bool shouldGiveControlOfContainer = 
+						(
+							(ALYSLC::QuickLootCompat::g_isQuickLootIE) ? 
+							(isWaitBind) :
+							(isReadyWeaponBind)
+						);
+						if (shouldGiveControlOfContainer)
 						{
-							lootMenuOpenContainer = true;
-						}
-						else if ((coopPlayerControllingMenus && !coopPlayerMenuInput) &&
+							// Send Container Menu request for the player controlling menus.
+							if (glob.menuCID != -1 &&
+								Util::HandleIsValid(glob.reqQuickLootContainerHandle))
+							{
+								glob.moarm->InsertRequest
 								(
-									buttonEvent->idCode ==
-									controlMap->GetMappedKey
-									(
-										ue->accept, 
-										RE::INPUT_DEVICE::kGamepad, 
-										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-									) ||
-									buttonEvent->idCode == 
-									controlMap->GetMappedKey
-									(
-										ue->cancel, 
-										RE::INPUT_DEVICE::kGamepad, 
-										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-									) ||
-									buttonEvent->idCode == 
-									controlMap->GetMappedKey
-									(
-										ue->xButton, 
-										RE::INPUT_DEVICE::kGamepad,
-										RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu
-									)
-								))
-						{
-							// Questionable formatting as usual.
-							// Ignore P1 inputs that would affect the Loot Menu 
-							// (eg. Take, Take All, or Exit).
-							validLootMenuInput = false;
-						}
-						else if ((!coopPlayerControllingMenus) && 
+									glob.menuCID, 
+									InputAction::kActivate, 
+									SteadyClock::now(),
+									RE::ContainerMenu::MENU_NAME,
+									glob.reqQuickLootContainerHandle
+								);
+								// Issues with opening the container,
+								// even though the crosshair pick refr 
+								// is set to the requested object,
+								// means that I'm going to force the issue here.
+								// Open the container directly.
+								glob.reqQuickLootContainerHandle.get()->OpenContainer
 								(
-									buttonEvent->idCode == 
-									controlMap->GetMappedKey
-									(
-										ue->cancel,
-										RE::INPUT_DEVICE::kGamepad,
-										RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-									)
-								))
+									!RE::ContainerMenu::ContainerMode::kLoot
+								);
+							}
+						}
+						else if (!coopPlayerControllingMenus && isCancelBind)
 						{
 							// Have to stop the Tween Menu from opening for P1 here, 
 							// so swallow the 'Cancel' input, 
 							// and instead close the Loot Menu by clearing the crosshair refr.
 							// Keeps things consistent with the other players,
 							// who also close the LootMenu via clearing the crosshair refr.
-							validLootMenuInput = false;
-							// Exit menu and relinquish control when cancel bind is pressed.
+							// Exit menu and relinquish control when the cancel bind is pressed.
 							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
 							if (crosshairPickData)
 							{
 								// Clears crosshair refr data.
 								Util::SendCrosshairEvent(nullptr);
+								SPDLOG_DEBUG
+								(
+									"[MenuControls Hooks] FilterInputEvents: "
+									"{} is closing LootMenu.",
+									p1->GetName()
+								);
 							}
 						}
+
+						idEvent->userEvent = "";
 					}
 				}
 				else if (buttonEvent && !coopPlayerMenuInput)
@@ -3855,7 +5341,7 @@ namespace ALYSLC
 					ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) 
 				{
 					auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
-					if (containerMenu && containerMenu.get())
+					if (containerMenu)
 					{
 						RE::NiPointer<RE::TESObjectREFR> containerRefr;
 						RE::TESObjectREFR::LookupByHandle
@@ -4013,18 +5499,53 @@ namespace ALYSLC
 				);
 				// Ignore this input if pad24 == 0xDEAD.
 				bool ignoreInput = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xDEAD);
-				// P1 input event to rotate the lock while another player rotates the pick.
-				bool twoPlayerLockpickingP1Input = 
+				// If a companion player is in control of the Lockpicking Menu,
+				// allow the P1 input event to rotate the lock
+				// while the other player rotates the pick.
+				// If P1 is in control of the Lockpicking Menu 
+				// and there are only two active players,
+				// allow the P1 input even to rotate the pick,
+				// while the other player rotates the lock.
+				bool canTwoPlayerLockpick = 
 				(
-					Settings::bTwoPlayerLockpicking && 
-					coopPlayerControllingMenus &&
-					!coopPlayerMenuInput && 
-					idEvent->userEvent == "RotateLock"sv
+					Settings::bTwoPlayerLockpicking && glob.activePlayers == 2
+				);
+				bool allowP1RotateLock = 
+				(
+					(canTwoPlayerLockpick) && 
+					(
+						!fromCompanionPlayer && 
+						coopPlayerControllingMenus && 
+						idEvent->userEvent == "RotateLock"sv
+					)
+				);
+				bool allowP2RotateLock = 
+				(
+					(canTwoPlayerLockpick) && 
+					(
+						(
+							fromCompanionPlayer && 
+							!coopPlayerControllingMenus && 
+							idEvent->userEvent == "RotateLock"
+						)
+					)
+				);
+				bool isBlockedP1RotateLockInput = 
+				(
+					(canTwoPlayerLockpick) && 
+					(
+						(
+							!fromCompanionPlayer && 
+							!coopPlayerControllingMenus && 
+							idEvent->userEvent == "RotateLock"
+						)
+					)
 				);
 				// P1 input that should be processed by MenuControls.
 				bool processableP1Event = 
 				(
-					!coopPlayerControllingMenus || twoPlayerLockpickingP1Input
+					(coopPlayerControllingMenus && allowP1RotateLock) ||
+					(!coopPlayerControllingMenus && !isBlockedP1RotateLockInput)
 				);
 				// Has a bypass flag indicating that the event 
 				// was sent/allowed through by this plugin.
@@ -4038,9 +5559,10 @@ namespace ALYSLC
 				//=============================================================================
  
 				// [FOR CO-OP COMPANIONS]
-				// 1. Input event sent by a non-P1 player. -AND-
-				// 2. P1 not in control of menus. -AND-
-				// 3. Not an analog stick input while in the Dialogue/Crafting Menu. -AND-
+				// 1. P2 is trying to rotate the lock for P1 (two player lockpicking enabled).
+				// 2. Input event sent by a non-P1 player. -AND-
+				// 3. P1 not in control of menus. -AND-
+				// 4. Not an analog stick input while in the Dialogue/Crafting Menu. -AND-
 				// Either:
 				// a. Full screen menu is open 
 				// (all players immobile and camera rotation prohibited, so allow through).
@@ -4049,12 +5571,15 @@ namespace ALYSLC
 				// (does not move P1 or rotate the default FP/TP camera).
 				bool validCoopCompanionInput = 
 				( 
+					(allowP2RotateLock) ||
 					(
-						coopPlayerMenuInput && 
-						coopPlayerControllingMenus && 
-						!blockedAnalogStickInput
-					) && 
-					((fullscreenMenuOpen) || (!isMoveInput && !isLookInput)) 
+						(
+							coopPlayerMenuInput && 
+							coopPlayerControllingMenus && 
+							!blockedAnalogStickInput
+						) && 
+						((fullscreenMenuOpen) || (!isMoveInput && !isLookInput)) 
+					)
 				);
 						
 				// [FOR P1]
@@ -4062,9 +5587,11 @@ namespace ALYSLC
 				// 2. Rotate lock input while another player is attempting to lockpick
 				// and two player lockpicking is enabled. -OR-
 				// 3.
-				//	a. Not an analog stick input while in the Dialogue/Crafting Menu.
+				//  a. Not a P1 rotate-lock input while two player lockpicking is enabled,
+				//	since, with 2 active players, P1 is only given control of rotating the pick.
+				//	b. Not an analog stick input while in the Dialogue/Crafting Menu.
 				//	-AND-
-				//	b. Not an explicitly blocked P1 input event.
+				//	c. Not an explicitly blocked P1 input event.
 				// 
 				// -AND-
 				// 
@@ -4073,8 +5600,9 @@ namespace ALYSLC
 				//	b. No fullscreen menu is open, and the input event is from P1.
 				bool validP1Input = 
 				{ 
-					(proxiedP1Input || twoPlayerLockpickingP1Input) ||
+					(proxiedP1Input || allowP1RotateLock) ||
 					(
+						(!isBlockedP1RotateLockInput) &&
 						(!blockedAnalogStickInput && !isBlockedP1Event) && 
 						(
 							(!coopPlayerControllingMenus) || 
@@ -4116,7 +5644,8 @@ namespace ALYSLC
 					"proxied P1 input: {}, coop player menu input: {}, "
 					"dialogue menu open: {}, is blocked event: {}, "
 					"valid co-op companion input: {}, valid p1 input: {}, "
-					"two-player P1 lockpicking input: {}",
+					"two-player P1 lockpicking "
+					"(allow P1/P2 rotate lock, blocked P1 rotate lock input): {}, {}, {}",
 					glob.menuCID,
 					glob.mim->managerMenuCID,
 					idEvent->userEvent,
@@ -4133,7 +5662,9 @@ namespace ALYSLC
 					isBlockedP1Event,
 					validCoopCompanionInput,
 					validP1Input,
-					twoPlayerLockpickingP1Input
+					allowP1RotateLock,
+					allowP2RotateLock,
+					isBlockedP1RotateLockInput
 				);*/
 
 				if (!propagateUnmodifiedEvent)
@@ -4247,8 +5778,14 @@ namespace ALYSLC
 			}
 
 			const auto& p = glob.coopPlayers[index];
-			// The co-op camera is not enabled, so do not restore P1's node rotations.
+			// The co-op camera is not enabled, so do not restore P1's modified node rotations.
 			if (p->isPlayer1 && !glob.cam->IsRunning())
+			{
+				return _UpdateDownwardPass(a_this, a_data, a_arg2);
+			}
+
+			// Player actor must be valid too.
+			if (!Util::ActorIsValid(p->coopActor.get()))
 			{
 				return _UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
@@ -4353,10 +5890,21 @@ namespace ALYSLC
 			}
 			else
 			{
+				// NOTE:
+				// For stamina, the delta amount is scaled by cost multiplier here
+				// instead of in the cost functions in the player action function holder
+				// because we want a consistent solution for both types of players.
+				// Drawback would be not being able to link an action
+				// with a specific stamina reduction, 
+				// since this function does not provide any context
+				// for the source of the AV change.
+				// However, any source of stamina damage can be scaled here,
+				// including absorption from enemy spells.
+
 				// Apply damage received mult if the player was damaged.
 				// Do not care about the source of the damage in this case,
 				// as the damage received mult should apply to all sources of damage.
-				if (a_av ==  RE::ActorValue::kHealth && a_delta < 0.0f)
+				if (a_av == RE::ActorValue::kHealth && a_delta < 0.0f)
 				{
 					// Max negative delta (-FLT_MAX) means that this player 
 					// should have <= 0 health even if their damage received multiplier is 0, 
@@ -4468,20 +6016,17 @@ namespace ALYSLC
 				else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 				{
 					// NOTE:
-					// Scaled by cost multiplier here instead of in the cost functions 
-					// in the player action function holder
-					// because those cost functions do not affect P1.
-					// Drawback would be not being able to link an action 
-					// with a specific stamina reduction,
-					// since this function does not provide any context 
-					// about the source of the stamina change.
-
-					// NOTE 2:
-					// Magicka cost modifier is applied for P1 in the SpellItem::AdjustCost()
-					// hook, not here, since there is a magicka cost check done by the game 
-					// before casting and expending magicka.
-					// So, even if the player's scaled magicka cost is adequate to begin casting,
-					// the game will not allow the cast because it is using the pre-scaled cost.
+					// This applies to all sources of stamina damage,
+					// whether the cost of a stamina-consuming action,
+					// or stamina absorption from an outside source.
+					//
+					// However, the same cannot be done with magicka,
+					// since we are already scaling the magicka costs for casting spells
+					// in the ActorMagicCaster::RequestCastImpl() hook.
+					// Scaling the delta here would double the application of the multiplier.
+					// We also have no way of linking each call of this function 
+					// to its originating action, so there is no way to scale
+					// magicka absorption and other sources of magicka damage.
 					a_delta *= Settings::vfStaminaCostMult[p->playerID];
 				}
 			}
@@ -4503,9 +6048,7 @@ namespace ALYSLC
 			// Do not allow the game to automatically sheathe/unsheathe 
 			// the player actor's weapons/magic.
 			// Blocking weapon/magic drawing while transforming crashes the game at times.
-			if (!p->IsRunning() ||
-				a_draw == p->pam->weapMagReadied || 
-				p->isTransforming)
+			if (!p->IsRunning() || a_draw == p->pam->weapMagReadied || p->isTransforming)
 			{
 				return _DrawWeaponMagicHands(a_this, a_draw);
 			}
@@ -4700,7 +6243,8 @@ namespace ALYSLC
 					if (!playerStillStanding)
 					{
 						// All players downed, end co-op session.
-						GlobalCoopData::YouDied();
+						//GlobalCoopData::YouDied();
+						glob.taskRunner->AddTask([](){ GlobalCoopData::YouDiedTask(); });
 					}
 					else if (a_this->GetActorValue(RE::ActorValue::kHealth) < 0.0f)
 					{
@@ -4712,7 +6256,12 @@ namespace ALYSLC
 				{
 					// If not using the revive system, once one player dies, 
 					// all other players die and the co-op session ends.
-					GlobalCoopData::YouDied(a_this);
+					//GlobalCoopData::YouDied(a_this);
+					auto handle = a_this->GetHandle();
+					glob.taskRunner->AddTask
+					(
+						[handle](){ GlobalCoopData::YouDiedTask(handle); }
+					);
 				}
 			}
 
@@ -4836,6 +6385,18 @@ namespace ALYSLC
 					// as far as I can tell.
 					return true;
 				}
+			}
+			else if ((hash == "staggerStart"_h) &&
+					 (
+						 p->isRevivingPlayer || 
+						 p->coopActor->IsOnMount() || 
+						 Util::HandleIsValid(p->coopActor->GetOccupiedFurniture())
+					 ))
+			{
+				// Prevent stagger when reviving, mounted, or using furniture,
+				// which will make the companion player exit the animation or dismount prematurely 
+				// and potentially glitch their equip state.
+				return _NotifyAnimationGraph(a_this, "staggerStop");
 			}
 			// Failsafe to ensure that P1 does not get up when dead after co-op ends.
 			else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
@@ -5563,7 +7124,7 @@ namespace ALYSLC
 			// Ensure the projectile's handle is valid first.
 			const auto projectileHandle = a_this->GetHandle();
 			auto projectilePtr = Util::GetRefrPtrFromHandle(projectileHandle);
-			if (!projectilePtr || !projectilePtr.get())
+			if (!projectilePtr)
 			{
 				projMgr->projectileLock.Unlock();
 				return;
@@ -5786,9 +7347,16 @@ namespace ALYSLC
 							);
 							if (hitByPlayer)
 							{
-								bool isHostile = hitActor->IsHostileToActor
+								bool isHostile = 
 								(
-									p->coopActor.get()
+									(hitActor->IsHostileToActor(p->coopActor.get())) || 
+									(
+										Util::HandleIsValid(hitActor->currentCombatTarget) &&
+										Util::IsPartyFriendlyActor
+										(
+											hitActor->currentCombatTarget.get().get()
+										)
+									)
 								);
 								bool isPartyFriendlyActor = Util::IsPartyFriendlyActor
 								(
@@ -6023,7 +7591,6 @@ namespace ALYSLC
 				return;
 			}
 
-			bool rigidBodyValid = hkpRigidBodyPtr && hkpRigidBodyPtr.get();
 			for (const auto& [cid, actorHitPosPair] : delayedActorCollisions)
 			{
 				if (cid < 0 || cid >= ALYSLC_MAX_PLAYER_COUNT)
@@ -6052,9 +7619,9 @@ namespace ALYSLC
 				(
 					actorHitPosPair.first, 
 					refrHandle, 
-					rigidBodyValid ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
+					hkpRigidBodyPtr ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
 					(
-						rigidBodyValid ? 
+						hkpRigidBodyPtr ? 
 						ToNiPoint3
 						(
 							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
@@ -6505,14 +8072,14 @@ namespace ALYSLC
 			}
 
 			// Return early if the projectile is not valid.
-			if (!projectile || !projectile->actorCause || !projectile->actorCause.get())
+			if (!projectile || !projectile->actorCause)
 			{
 				return;
 			}
 
 			auto firingActorHandle = 
 			(
-				projectile->actorCause && projectile->actorCause.get() ? 
+				projectile->actorCause ? 
 				projectile->actorCause->actor : 
 				RE::ActorHandle()
 			);
@@ -6638,7 +8205,7 @@ namespace ALYSLC
 						Util::GetElapsedSeconds(info->grabTP.value()) <= *g_deltaTimeRealTime)
 					{
 						const auto handle = a_p->coopActor->GetHandle();
-						if (projectile->actorCause && projectile->actorCause.get())
+						if (projectile->actorCause)
 						{
 							auto originalShooterPtr = Util::GetActorPtrFromHandle
 							(
@@ -6699,7 +8266,7 @@ namespace ALYSLC
 						// Set rotation matrix to maintain consistency 
 						// with the previously set refr data angles.
 						auto current3DPtr = Util::GetRefr3D(projectile); 
-						if (current3DPtr && current3DPtr.get())
+						if (current3DPtr)
 						{
 							Util::SetRotationMatrixPY
 							(
@@ -6717,7 +8284,7 @@ namespace ALYSLC
 						// Set rotation matrix to maintain consistency 
 						// with the previously set refr data angles.
 						auto current3DPtr = Util::GetRefr3D(projectile); 
-						if (current3DPtr && current3DPtr.get())
+						if (current3DPtr)
 						{
 							Util::SetRotationMatrixPY
 							(
@@ -6767,7 +8334,7 @@ namespace ALYSLC
 							// Set rotation matrix to maintain consistency 
 							// with the previously set refr data angles.
 							auto current3DPtr = Util::GetRefr3D(projectile); 
-							if (current3DPtr && current3DPtr.get())
+							if (current3DPtr)
 							{
 								Util::SetRotationMatrixPY
 								(
@@ -6795,7 +8362,7 @@ namespace ALYSLC
 							// Set rotation matrix to maintain consistency 
 							// with the previously set refr data angles.
 							auto current3DPtr = Util::GetRefr3D(projectile); 
-							if (current3DPtr && current3DPtr.get())
+							if (current3DPtr)
 							{
 								Util::SetRotationMatrixPY
 								(
@@ -6856,7 +8423,6 @@ namespace ALYSLC
 			bool targetActorValidity = 
 			(
 				targetActorPtr && 
-				targetActorPtr.get() &&
 				Util::IsValidRefrForTargeting(targetActorPtr.get())
 			);
 			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
@@ -6912,7 +8478,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
 				auto current3DPtr = Util::GetRefr3D(projectile); 
-				if (current3DPtr && current3DPtr.get())
+				if (current3DPtr)
 				{
 					Util::SetRotationMatrixPY
 					(
@@ -7230,7 +8796,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
 				auto current3DPtr = Util::GetRefr3D(projectile); 
-				if (current3DPtr && current3DPtr.get())
+				if (current3DPtr)
 				{
 					Util::SetRotationMatrixPY
 					(
@@ -7317,7 +8883,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
 				auto current3DPtr = Util::GetRefr3D(projectile); 
-				if (current3DPtr && current3DPtr.get())
+				if (current3DPtr)
 				{
 					Util::SetRotationMatrixPY
 					(
@@ -7352,7 +8918,7 @@ namespace ALYSLC
 				// Set rotation matrix to maintain consistency 
 				// with the previously set refr data angles.
 				auto current3DPtr = Util::GetRefr3D(projectile); 
-				if (current3DPtr && current3DPtr.get())
+				if (current3DPtr)
 				{
 					Util::SetRotationMatrixPY
 					(
@@ -7421,7 +8987,7 @@ namespace ALYSLC
 			// Set rotation matrix to maintain consistency 
 			// with the previously set refr data angles.
 			auto current3DPtr = Util::GetRefr3D(projectile); 
-			if (current3DPtr && current3DPtr.get())
+			if (current3DPtr)
 			{
 				Util::SetRotationMatrixPY
 				(
@@ -7534,14 +9100,14 @@ namespace ALYSLC
 			// Set rotation matrix to maintain consistency 
 			// with the previously set refr data angles.
 			auto current3DPtr = Util::GetRefr3D(projectile); 
-			if (current3DPtr && current3DPtr.get())
+			if (current3DPtr)
 			{
 				Util::SetRotationMatrixPY
 				(
 					current3DPtr->local.rotate, projectile->data.angle.x, projectile->data.angle.z
 				);
 				auto parentPtr = RE::NiPointer<RE::NiAVObject>(current3DPtr->parent); 
-				if (parentPtr && parentPtr.get()) 
+				if (parentPtr) 
 				{
 					current3DPtr->world = parentPtr->world * current3DPtr->local;
 				}
@@ -7565,6 +9131,9 @@ namespace ALYSLC
 			RE::SpellItem* a_this, float& a_cost, RE::Actor* a_actor
 		)
 		{
+			// IMPORTANT:
+			// Not called before casting in AE.
+		
 			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
 				return _AdjustCost(a_this, a_cost, a_actor);
@@ -7897,7 +9466,10 @@ namespace ALYSLC
 				_UpdateRotationTPCS(a_this);
 			}
 		}
-		
+//
+// [ACTIVE EFFECT HOOKS]:
+//
+
 // [VALUE MODIFIER EFFECT HOOKS]: 
 		void ValueModifierEffectHooks::Start(RE::ValueModifierEffect* a_this)
 		{
@@ -8242,6 +9814,13 @@ namespace ALYSLC
 				return result;
 			}
 
+			// Reset LootMenu request CID, since we want to allow other players to open the menu
+			// if this Container Menu closed after a player opened it via the LootMenu previously.
+			if (closing)
+			{
+				Util::SendCrosshairEvent(nullptr);
+			}
+
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu controller IDs when this menu opens/closes.
 			glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
@@ -8286,7 +9865,7 @@ namespace ALYSLC
 				);
 				auto menuContainerHandle = 
 				(
-					containerRefrPtr && containerRefrPtr.get() ? 
+					containerRefrPtr ? 
 					containerRefrPtr->GetHandle() : 
 					RE::ObjectRefHandle()
 				);
@@ -8533,7 +10112,7 @@ namespace ALYSLC
 							}
 
 							auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-							if (!favoritesMenu || !favoritesMenu.get())
+							if (!favoritesMenu)
 							{
 								return;
 							}
@@ -8636,7 +10215,7 @@ namespace ALYSLC
 							}
 
 							auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-							if (!favoritesMenu || !favoritesMenu.get())
+							if (!favoritesMenu)
 							{
 								return;
 							}
@@ -8652,7 +10231,7 @@ namespace ALYSLC
 							(
 								Util::GetActorPtrFromHandle(glob.mim->menuCoopActorHandle)
 							);
-							if (!menuCoopActorPtr || !menuCoopActorPtr.get())
+							if (!menuCoopActorPtr)
 							{
 								return;
 							}
@@ -9137,7 +10716,7 @@ namespace ALYSLC
 							}
 
 							auto magicMenu = ui->GetMenu<RE::MagicMenu>(); 
-							if (!magicMenu || !magicMenu.get())
+							if (!magicMenu)
 							{
 								return;
 							}

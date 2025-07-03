@@ -215,8 +215,8 @@ namespace ALYSLC
 			// Time point indicating when some/all 
 			// of a previously started action's inputs were released.
 			SteadyClock::time_point stopTP;
-			// Actor value cost per second.
-			float avCost;
+			// Actor value base cost (pre-player cost modifier) per second.
+			float avBaseCost;
 			// Note to self: Think of better names. Please.
 			// How many seconds this action has been performed for.
 			float secsPerformed;
@@ -451,6 +451,27 @@ namespace ALYSLC
 			return (IsPerforming(a_actions) || ...);
 		}
 
+		// Is the player performing a spell cast action?
+		bool IsPerformingSpellCastAction()
+		{
+			return 
+			(
+				(
+					IsPerformingOneOf
+					(
+						InputAction::kCastLH, InputAction::kCastRH, InputAction::kQuickSlotCast
+					)
+				) ||
+				(
+					(IsPerforming(InputAction::kSpecialAction)) &&
+					(
+						reqSpecialAction == SpecialActionType::kCastBothHands ||
+						reqSpecialAction == SpecialActionType::kDualCast
+					)
+				)
+			);
+		}
+
 		// Is the player rotating their arms?
 		bool IsRotatingArms() 
 		{
@@ -503,6 +524,8 @@ namespace ALYSLC
 			return -a_spell->CalculateMagickaCost(coopActor.get());
 		}
 
+		
+		
 		// Modify the current value of the given actor value by the given amount.
 		inline void ModifyAV(const RE::ActorValue& a_av, float a_deltaAmount)
 		{
@@ -570,6 +593,10 @@ namespace ALYSLC
 		// Level up the co-op player's skill(s) through advancing the same skill(s) for P1.
 		void CheckForCompanionPlayerLevelUps();
 
+		// Reset ranged attack package cast data if the player has released a FNF spell
+		// and the package is still executing.
+		void CheckForDelayedCastCompletion();
+
 		// Update combat skills data when the player starts/stops performing a combat skill.
 		void CheckIfPerformingCombatSkills();
 
@@ -596,6 +623,9 @@ namespace ALYSLC
 		// when multiple actions are being evaluated for conflicts before starting execution.
 		// Larger integers indicate higher priority.
 		const int32_t GetActionPriority(const InputAction& a_action) const noexcept;
+
+		// Get the co-op package corresponding to the given index.
+		RE::TESPackage* GetCoopPackage(const PackageIndex& a_index);
 
 		// Get current package atop the player's package stack.
 		RE::TESPackage* GetCurrentPackage();
@@ -631,6 +661,10 @@ namespace ALYSLC
 		// Sounds kind of dark, but that's what it does. Most of the time.
 		void HandleKillmoveRequests();
 
+		// Return true if the given player actor has enough magicka to cast the given spell.
+		// Accounts for player-specific magicka cost multiplier.
+		bool HasEnoughMagickaToCast(RE::MagicItem* a_spell);
+
 		// Level up the skill taught by this book.
 		void LevelUpSkillWithBook(RE::TESObjectBOOK* a_book);
 
@@ -663,7 +697,10 @@ namespace ALYSLC
 		) noexcept;
 
 		// Draw or sheathe the player's weapons/magic.
-		void ReadyWeapon(const bool& a_shouldDraw);
+		// If 'ignore state' is true, force the player to draw/sheathe 
+		// regardless of their current weapon state.
+		// Otherwise, only draw when fully sheathed and only sheathe when fully drawn.
+		void ReadyWeapon(const bool& a_shouldDraw, bool&& a_ignoreState = true);
 
 		// Reset killmove data for this player and the killmove victim player, if any.
 		void ResetAllKillmoveData(const int32_t& a_targetPlayerIndex);
@@ -728,6 +765,9 @@ namespace ALYSLC
 		// Set/unset the given package flag for all of a companion player's packages.
 		void SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag&& a_flag, bool&& a_set);
 
+		// Stop the player from casting hand spells instantly.
+		void StopCastingHandSpells();
+
 		// Stop combat between normally neutral actors, 
 		// player allies/followers/summons, and co-op players.
 		void StopCombatWithFriendlyActors();
@@ -779,9 +819,6 @@ namespace ALYSLC
 		RE::ActorHandle killmoveTargetActorHandle;
 		// P1 ref alias registered for script events.
 		RE::BGSRefAlias* player1RefAlias;
-		// Player's LH and RH magic casters.
-		RE::MagicCaster* lhCaster;
-		RE::MagicCaster* rhCaster;
 		// Is the player using a staff in their LH or RH?
 		RE::TESGlobal* usingLHStaff;
 		RE::TESGlobal* usingRHStaff;
@@ -870,8 +907,6 @@ namespace ALYSLC
 		float secsSinceBoundWeap2HReq;
 		float secsSinceBoundWeapLHReq;
 		float secsSinceBoundWeapRHReq;
-		// Seconds since cycling the next activation refr from nearby references.
-		float secsSinceLastActivationCyclingCheck;
 		// Seconds since the last staff cast (LH/RH) with the player's hand caster.
 		float secsSinceLastLHStaffCast;
 		float secsSinceLastRHStaffCast;
@@ -939,6 +974,9 @@ namespace ALYSLC
 		bool isSprinting;
 		// Is attacking with a weapon.
 		bool isWeaponAttack;
+		// Is trying to perform a melee spellcast killmove,
+		// which requires special handling on cleanup.
+		bool reqMeleeSpellcastKillmove;
 		// Does the player want to sneak?
 		bool wantsToSneak;
 		// Was the player sprinting during the last frame?
@@ -965,6 +1003,8 @@ namespace ALYSLC
 		bool requestedToParaglide;
 		// Are all queued P1 input events that toggle animation driven to false being sent?
 		bool sendingP1MotionDrivenEvents;
+		// Has the player started cycling through nearby objects for activation?
+		bool startedActivationCycling;
 		// Does the player want to drawn their weapons/magic?
 		// This information is kept here and used to 
 		// prevent the game from sheathing/drawing weapons/magic on its own.
