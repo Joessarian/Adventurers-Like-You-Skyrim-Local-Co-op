@@ -1235,6 +1235,8 @@ namespace ALYSLC
 							);
 							a_this->currentSpell = nullptr;
 							a_this->state = RE::MagicCaster::State::kNone;
+							/*a_this->InterruptCast(false);
+							a_this->NotifyAnimationGraph("CastStop");*/
 							return;
 						}
 					}
@@ -1250,18 +1252,6 @@ namespace ALYSLC
 					if (p->isInGodMode || 
 						cost <= p->coopActor->GetActorValue(RE::ActorValue::kMagicka))
 					{
-						SPDLOG_DEBUG
-						(
-							"[ActorMagicCasterHooks] RequestCastImpl: {}: "
-							"Enough magicka ({} < {}) for {} cast of {}.",
-							p->coopActor->GetName(),
-							cost,
-							p->coopActor->GetActorValue(RE::ActorValue::kMagicka),
-							source == RE::MagicSystem::CastingSource::kLeftHand ?
-							"LH" :
-							"RH",
-							a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
-						);
 						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
 						_RequestCastImpl(a_this);
 						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
@@ -1269,18 +1259,6 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
-						(
-							"[ActorMagicCasterHooks] RequestCastImpl: {}: "
-							"Not enough magicka ({} >= {}) for {} cast of {}.",
-							p->coopActor->GetName(),
-							cost,
-							p->coopActor->GetActorValue(RE::ActorValue::kMagicka),
-							source == RE::MagicSystem::CastingSource::kLeftHand ?
-							"LH" :
-							"RH",
-							a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
-						);
 						return;
 					}
 				}
@@ -1745,11 +1723,12 @@ namespace ALYSLC
 						}
 					}
 					
-
 					// Modify caster state to loop the charge animation 
 					// just when the caster reaches the ready state.
 					// Returning directly afterward without performing the update 
 					// seems to do the trick.
+					// NOTE:
+					// Does not work for spell animations that do not reach the ready state (3).
 					if (stallCastUntilBindReleased)
 					{
 						// Looping ready animation.
@@ -2405,7 +2384,7 @@ namespace ALYSLC
 				{
 					return _CheckClampDamageModifier(a_this, a_av, a_delta);
 				}
-				
+
 				// Check if this actor is being healed by a co-op player.
 				for (const auto& p : glob.coopPlayers)
 				{
@@ -2502,6 +2481,27 @@ namespace ALYSLC
 			{
 				return _DrawWeaponMagicHands(a_this, a_draw);;
 			}
+		}
+
+		RE::CombatGroup* CharacterHooks::GetCombatGroup(RE::Character* a_this)
+		{
+			if (glob.globalDataInit && 
+				glob.allPlayersInit && 
+				GlobalCoopData::IsCoopPlayer(a_this))
+			{
+				auto group = _GetCombatGroup(a_this);
+				SPDLOG_DEBUG
+				(
+					"[Character Hooks] GetCombatGroup: "
+					"Set {}'s group to ID 0x{:X}, index: 0x{:X}.",
+					a_this->GetName(),
+					group ? group->groupID : 0xDEAD,
+					group ? group->groupIndex : 0xDEAD
+				);
+				return group;
+			}
+
+			return _GetCombatGroup(a_this);
 		}
 
 		void CharacterHooks::HandleHealthDamage
@@ -7231,25 +7231,25 @@ namespace ALYSLC
 			{
 				if (a_this->As<RE::ArrowProjectile>())
 				{
-					_OnArrowCollision(a_this, a_AllCdPointCollector);
+					_ArrowProjectile_OnArrowCollision(a_this, a_AllCdPointCollector);
 				}
 				else if (a_this->As<RE::ConeProjectile>())
 				{
-					_OnConeCollision(a_this, a_AllCdPointCollector);
+					_ConeProjectile_OnConeCollision(a_this, a_AllCdPointCollector);
 				}
 				else if (a_this->As<RE::MissileProjectile>())
 				{
-					_OnMissileCollision(a_this, a_AllCdPointCollector);
+					_MissileProjectile_OnMissileCollision(a_this, a_AllCdPointCollector);
 				}
 				else
 				{
-					_OnProjectileCollision(a_this, a_AllCdPointCollector);
+					_Projectile_OnProjectileCollision(a_this, a_AllCdPointCollector);
 				}
 
 				return;
 			}
 			
-			const auto refrHandle = a_this->GetHandle();
+			const auto projHandle = a_this->GetHandle();
 			// Unsure why copy construction via range constructors
 			// results in cone projectiles stalling, as if their collision gets disabled,
 			// even when all the original hits are copied over.
@@ -7283,7 +7283,7 @@ namespace ALYSLC
 				newHits, 
 				[
 					a_this,
-					&refrHandle,
+					&projHandle,
 					&combatTargetStartPairs,
 					&combatTargetFIDs,
 					&delayedActorCollisions
@@ -7315,12 +7315,18 @@ namespace ALYSLC
 						if (!hitActor)
 						{
 							hitActor = refrB->As<RE::Actor>();
-							if (!hitActor)
+							if (!hitActor || hitActor->IsDead())
 							{
 								// No hit actors, so continue since we're only looking for 
 								// projectile-to-actor hits.
 								return false;
 							}
+						}
+
+						// Ignore collisions not involving this projectile.
+						if (refrA != a_this && refrB != a_this)
+						{
+							return false;
 						}
 						
 						// Check to see if one of the two refrs is a manipulated refr
@@ -7337,6 +7343,12 @@ namespace ALYSLC
 								continue;
 							}
 							
+							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
+								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
+							{
+								manipulatingPlayerCID = p->controllerID;
+							}
+
 							// See GlobalCoopData::PrecisionPreHitCallback() 
 							// for an explanation.
 							// Trigger combat between companion players and any NPCs they hit.
@@ -7349,12 +7361,15 @@ namespace ALYSLC
 							{
 								bool isHostile = 
 								(
-									(hitActor->IsHostileToActor(p->coopActor.get())) || 
+									(!hitActorIsPlayer) &&
 									(
-										Util::HandleIsValid(hitActor->currentCombatTarget) &&
-										Util::IsPartyFriendlyActor
+										(hitActor->IsHostileToActor(p->coopActor.get())) || 
 										(
-											hitActor->currentCombatTarget.get().get()
+											Util::HandleIsValid(hitActor->currentCombatTarget) &&
+											Util::IsPartyFriendlyActor
+											(
+												hitActor->currentCombatTarget.get().get()
+											)
 										)
 									)
 								);
@@ -7370,11 +7385,12 @@ namespace ALYSLC
 								bool isBeneficialProjectile =
 								(
 									a_this->spell && 
-									!Util::HasHostileSpell(a_this->spell)
+									!Util::HasHostileEffect(a_this->spell)
 								);
 								// Only allow collisions through if targeting a hostile actor,
 								// directly targeting an neutral actor with the crosshair,
 								// or targeting an ally with a beneficial projectile
+								// or targeting an ally with the crosshair 
 								// while friendly fire is on.
 								bool collisionAllowed = 
 								(
@@ -7383,30 +7399,31 @@ namespace ALYSLC
 									(
 										(isPartyFriendlyActor) && 
 										(
-											Settings::vbFriendlyFire[p->playerID] || 
-											isBeneficialProjectile
+											(isBeneficialProjectile) ||
+											(
+												isCrosshairTargeted &&
+												Settings::vbFriendlyFire[p->playerID]
+											)
 										)
 									)
 								);
 								if (collisionAllowed)
 								{
+									SPDLOG_DEBUG
+									(
+										"[Projectile Hooks] OnProjectileCollision: ALLOWED"
+									);
 									// Do not start combat with other players
 									// and do not need to start combat for P1.
 									if (!hitActorIsPlayer && !p->isPlayer1)
 									{
-										Util::AddAsCombatTarget
+										Util::UpdateCombatTargets
 										(
-											p->coopActor.get(), hitActor
+											p->coopActor.get(), hitActor, false
 										);
-
 										// Trigger combat if the target is not already hostile,
 										// or if the hit actor and player 
 										// are not combat targets for each other.
-										// 
-										// And check friendliness: 
-										// 1. Start combat with hostile/neutral actors.
-										// 2. Start combat with friendly actors 
-										// if they are below 1/4 full health.
 										// 
 										// Finally, also only start combat 
 										// if this is the first time the actor is hit this frame.
@@ -7422,19 +7439,6 @@ namespace ALYSLC
 													p->coopActor.get()
 												) ||
 												!p->coopActor->IsCombatTarget(hitActor)
-											) &&
-											(
-												(!isPartyFriendlyActor) || 
-												(
-													hitActor->GetActorValue
-													(
-														RE::ActorValue::kHealth
-													) / 
-													Util::GetFullAVAmount
-													(
-														hitActor, RE::ActorValue::kHealth
-													) <= 0.25f
-												)
 											) &&
 											(
 												combatTargetFIDs.empty() ||
@@ -7457,14 +7461,12 @@ namespace ALYSLC
 								}
 								else
 								{
+									SPDLOG_DEBUG
+									(
+										"[Projectile Hooks] OnProjectileCollision: IGNORED"
+									);	
 									return true;
 								}
-							}
-
-							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
-								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
-							{
-								manipulatingPlayerCID = p->controllerID;
 							}
 						}
 
@@ -7479,7 +7481,7 @@ namespace ALYSLC
 						// Must be manipulated as a released refr.
 						const auto iter = 
 						(
-							p->tm->rmm->releasedRefrHandlesToInfoIndices.find(refrHandle)
+							p->tm->rmm->releasedRefrHandlesToInfoIndices.find(projHandle)
 						);
 						if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
 						{
@@ -7496,7 +7498,7 @@ namespace ALYSLC
 						// or the player that released the refr.
 						bool shouldBonk = 
 						(
-							hitActor && 
+							hitActor &&
 							hitActor->currentProcess && 
 							hitActor != p->coopActor.get() && 
 							!releasedRefrInfo->HasAlreadyHitRefr(hitActor)
@@ -7538,55 +7540,68 @@ namespace ALYSLC
 					);
 				}
 			}
-
+			
 			// Start combat between players and any cached hit actors 
 			// before allowing the game to process the collision.
-			for (const auto& actorStarCombatPair : combatTargetStartPairs)
+			for (const auto& actorStartCombatPair : combatTargetStartPairs)
 			{
-				if (!actorStarCombatPair.first || !actorStarCombatPair.second)
+				if (!actorStartCombatPair.first || !actorStartCombatPair.second)
 				{
 					continue;
 				}
-
-				// Send a 0 damage hit to trigger combat right away.
-				Util::SendHitData
+				
+				if (actorStartCombatPair.second->IsInRagdollState())
+				{
+					continue;
+				}
+				
+				Util::TriggerCombatAndDealDamage
 				(
-					actorStarCombatPair.first->GetHandle(), 
-					actorStarCombatPair.second->GetHandle(),
-					refrHandle
+					actorStartCombatPair.first,
+					actorStartCombatPair.second,
+					0.0f,
+					true
 				);
-				// You hit me, I hit you, into combat we go.
-				Util::SendHitData
+				SPDLOG_DEBUG
 				(
-					actorStarCombatPair.second->GetHandle(), 
-					actorStarCombatPair.first->GetHandle(),
-					refrHandle
-				);					
+					"[Projectile Hooks] OnProjectileCollision: Trigger combat between {} and {}. "
+					"Combat groups: 0x{:X}, 0x{:X}, are combat targets: {}, {}.",
+					actorStartCombatPair.first->GetName(),
+					actorStartCombatPair.second->GetName(),
+					actorStartCombatPair.first->GetCombatGroup() ? 
+					actorStartCombatPair.first->GetCombatGroup()->groupID :
+					0xDEAD,
+					actorStartCombatPair.second->GetCombatGroup() ? 
+					actorStartCombatPair.second->GetCombatGroup()->groupID :
+					0xDEAD,
+					actorStartCombatPair.first->IsCombatTarget(actorStartCombatPair.second),
+					actorStartCombatPair.second->IsCombatTarget(actorStartCombatPair.first)
+				);				
 			}
 
 			// Now, let the game handle the projectile collision.
 			if (a_this->As<RE::ArrowProjectile>())
 			{
-				_OnArrowCollision(a_this, a_AllCdPointCollector);
+				_ArrowProjectile_OnArrowCollision(a_this, a_AllCdPointCollector);
 			}
 			else if (a_this->As<RE::ConeProjectile>())
 			{
-				_OnConeCollision(a_this, a_AllCdPointCollector);
+				_ConeProjectile_OnConeCollision(a_this, a_AllCdPointCollector);
 			}
 			else if (a_this->As<RE::MissileProjectile>())
 			{
-				_OnMissileCollision(a_this, a_AllCdPointCollector);
+				_MissileProjectile_OnMissileCollision(a_this, a_AllCdPointCollector);
 			}
 			else
 			{
-				_OnProjectileCollision(a_this, a_AllCdPointCollector);
+				_Projectile_OnProjectileCollision(a_this, a_AllCdPointCollector);
 			}
-
+			
 			// And lastly, handle delayed thrown projectile knockdowns,
 			// which provides more consistent damage output because the game's original function
 			// does not always apply damage to hit actors that have already ragdolled.
 			auto hkpRigidBodyPtr = Util::GethkpRigidBody(a_this);
-			if (!Util::HandleIsValid(refrHandle))
+			if (!Util::HandleIsValid(projHandle))
 			{
 				return;
 			}
@@ -7601,7 +7616,7 @@ namespace ALYSLC
 				const auto& p = glob.coopPlayers[cid];
 				const auto iter = 
 				(
-					p->tm->rmm->releasedRefrHandlesToInfoIndices.find(refrHandle)
+					p->tm->rmm->releasedRefrHandlesToInfoIndices.find(projHandle)
 				);
 				if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
 				{
@@ -7618,8 +7633,9 @@ namespace ALYSLC
 				p->tm->HandleBonk
 				(
 					actorHitPosPair.first, 
-					refrHandle, 
+					projHandle, 
 					hkpRigidBodyPtr ? hkpRigidBodyPtr->motion.GetMass() : 0.0f,
+					releasedRefrInfo->fallHeight,
 					(
 						hkpRigidBodyPtr ? 
 						ToNiPoint3
@@ -7630,7 +7646,133 @@ namespace ALYSLC
 					), 
 					actorHitPosPair.second
 				);
+
+				// Update fall height to the projectile's position after handling the collision.
+				releasedRefrInfo->fallHeight = a_this->data.location.z;
 			}
+		}
+
+		inline bool ProjectileHooks::ProcessHit
+		(
+			RE::Projectile* a_this,
+			RE::TESObjectREFR* a_hitRefr,
+			RE::NiPoint3* a_location,
+			RE::hkVector4* a_unknown,
+			RE::COL_LAYER a_collisionLayer,
+			RE::MATERIAL_ID a_materialID,
+			bool* a_handled
+		)
+		{
+			// Check for projectile explosions that hit friendly actors
+			// and prevent damage if friendly fire conditions are not met.
+
+			if (!a_this || !a_hitRefr)
+			{
+				return 
+				(
+					_Projectile_ProcessHit
+					(
+						a_this,
+						a_hitRefr, 
+						a_location, 
+						a_unknown, 
+						a_collisionLayer,
+						a_materialID,
+						a_handled
+					)
+				);
+			}
+			
+			RE::Actor* hitActor = a_hitRefr->As<RE::Actor>();
+			if (!hitActor)
+			{
+				return 
+				(
+					_Projectile_ProcessHit
+					(
+						a_this,
+						a_hitRefr, 
+						a_location, 
+						a_unknown, 
+						a_collisionLayer,
+						a_materialID,
+						a_handled
+					)
+				);
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
+			if (pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				// See GlobalCoopData::PrecisionPreHitCallback() 
+				// for an explanation.
+				// Trigger combat between companion players and any NPCs they hit.
+				bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
+				bool isHostile = 
+				(
+					(!hitActorIsPlayer) &&
+					(
+						(hitActor->IsHostileToActor(p->coopActor.get())) || 
+						(
+							Util::HandleIsValid(hitActor->currentCombatTarget) &&
+							Util::IsPartyFriendlyActor(hitActor->currentCombatTarget.get().get())
+						)
+					)
+				);
+				bool isPartyFriendlyActor = Util::IsPartyFriendlyActor
+				(
+					hitActor
+				);
+				bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
+				bool isCrosshairTargeted = 
+				(
+					hitActor->GetHandle() == p->tm->selectedTargetActorHandle
+				);
+				bool isBeneficialProjectile =
+				(
+					a_this->spell && 
+					!Util::HasHostileEffect(a_this->spell)
+				);
+				// Only allow collisions through if targeting a hostile actor,
+				// directly targeting an neutral actor with the crosshair,
+				// or targeting an ally with a beneficial projectile
+				// or targeting an ally with the crosshair while friendly fire is on.
+				bool collisionAllowed = 
+				(
+					(isHostile) ||
+					(isNeutralActor && isCrosshairTargeted) ||
+					(
+						(isPartyFriendlyActor) && 
+						(
+							(isBeneficialProjectile) ||
+							(
+								isCrosshairTargeted &&
+								Settings::vbFriendlyFire[p->playerID]
+							)
+						)
+					)
+				);
+				if (!collisionAllowed)
+				{
+					SPDLOG_DEBUG("[Projectile Hooks] ProcessHit: Collision ignored.");
+					return false;
+				}
+			}
+
+			return 
+			(
+				_Projectile_ProcessHit
+				(
+					a_this,
+					a_hitRefr, 
+					a_location, 
+					a_unknown, 
+					a_collisionLayer,
+					a_materialID,
+					a_handled
+				)
+			);
 		}
 
 		bool ProjectileHooks::ShouldUseDesiredTarget(RE::Projectile* a_this)
@@ -8236,14 +8378,14 @@ namespace ALYSLC
 									auto collidable = worldObj->GetCollidableRW();
 									if (collidable)
 									{
-										uint32_t filter{ };
-										a_p->coopActor->GetCollisionFilterInfo(filter);
+										RE::CFilter cFilter{ };
+										a_p->coopActor->GetCollisionFilterInfo(cFilter);
 										auto& collFilterInfo = 
 										(
-											collidable->broadPhaseHandle.collisionFilterInfo
+											collidable->broadPhaseHandle.collisionFilterInfo.filter
 										);
 										collFilterInfo &= (0x0000FFFF);
-										collFilterInfo |= (filter << 16);
+										collFilterInfo |= (cFilter.filter << 16);
 									}
 								}
 							}
@@ -8326,6 +8468,12 @@ namespace ALYSLC
 							}
 
 							auto velToSet = info->GuideRefrAlongTrajectory(a_p);
+							// No need to set velocity if 0. Maintain velocity from the last frame.
+							if (velToSet.Length() == 0.0f)
+							{
+								return true;
+							}
+
 							// Cap speed to the release speed, as with other refrs.
 							info->ApplyVelocity(velToSet);
 							projectile->data.angle.x = Util::DirectionToGameAngPitch(velToSet);
@@ -9200,7 +9348,7 @@ namespace ALYSLC
 			{
 				return _Update(a_this);
 			}
-
+			
 			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
 			// Camera local position/rotation is modified when ragdolled 
 			// (bleedout camera position), inactive, staggered, sitting/sleeping, 
@@ -9328,9 +9476,9 @@ namespace ALYSLC
 			{
 				// Delete marker.
 				a_this->SetDelete(true);
-				// Set skybox only for interior cells to sometimes remove fog
+				// Set skybo mode to sometimes remove fog
 				// when zooming out beyond the traversable area.
-				Util::SetSkyboxOnlyForInteriorModeCell(a_this->parentCell);
+				Util::SetSkyboxModeForCell(a_this->parentCell);
 			}
 		}
 

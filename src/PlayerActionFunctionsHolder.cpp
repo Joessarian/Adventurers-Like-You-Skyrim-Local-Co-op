@@ -4692,73 +4692,7 @@ namespace ALYSLC
 
 			uint32_t lootedObjects = 0;
 			auto p1 = RE::PlayerCharacter::GetSingleton();
-			auto container = a_containerPtr->GetContainer();
-			// Check base container first.
-			container->ForEachContainerObject
-			(
-				[&a_p, &a_containerPtr, &lootedObjects, p1](RE::ContainerObject& a_object) 
-				{
-					if (a_object.obj && Util::IsLootableObject(*a_object.obj)) 
-					{
-						/*Util::ActivateRefr
-						(
-							nullptr, a_p->coopActor.get(), 0, a_object.obj, a_object.count, false
-						);*/
-						if (a_p->isPlayer1)
-						{
-							a_containerPtr->RemoveItem
-							(
-								a_object.obj,
-								a_object.count,
-								RE::ITEM_REMOVE_REASON::kStoreInContainer,
-								nullptr,
-								a_p->coopActor.get()
-							);
-						}
-						else
-						{
-							a_containerPtr->RemoveItem
-							(
-								a_object.obj,
-								a_object.count,
-								RE::ITEM_REMOVE_REASON::kRemove,
-								nullptr,
-								nullptr
-							);
-							a_p->coopActor->AddObjectToContainer
-							(
-								a_object.obj,
-								nullptr,
-								a_object.count,
-								a_p->coopActor.get()
-							);
-						}
-
-						lootedObjects += a_object.count;
-						// Show in TrueHUD recent loot widget 
-						// by adding and removing the object from P1.
-						if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1) 
-						{
-							p1->AddObjectToContainer
-							(
-								a_object.obj, nullptr, a_object.count, a_p->coopActor.get()
-							);
-							p1->RemoveItem
-							(
-								a_object.obj,
-								a_object.count, 
-								RE::ITEM_REMOVE_REASON::kRemove,
-								nullptr, 
-								nullptr
-							);
-						}
-					}
-
-					return RE::BSContainer::ForEachResult::kContinue;
-				}
-			);
-
-			// Check inventory next.
+			// Check inventory.
 			auto inventory = 
 			(
 				a_containerPtr ? 
@@ -4779,15 +4713,6 @@ namespace ALYSLC
 					continue;
 				}
 
-				/*Util::ActivateRefr
-				(
-					nullptr,
-					a_p->coopActor.get(),
-					0, 
-					boundObj,
-					countInvEntryDataPair.first,
-					false
-				);*/
 				if (a_p->isPlayer1)
 				{
 					a_containerPtr->RemoveItem
@@ -4824,7 +4749,7 @@ namespace ALYSLC
 				{
 					p1->AddObjectToContainer
 					(
-						boundObj, nullptr, countInvEntryDataPair.first, a_p->coopActor.get()
+						boundObj, nullptr, countInvEntryDataPair.first, p1
 					);
 					p1->RemoveItem
 					(
@@ -4872,15 +4797,6 @@ namespace ALYSLC
 						continue;
 					}
 						
-					/*Util::ActivateRefr
-					(
-						nullptr,
-						a_p->coopActor.get(),
-						0, 
-						boundObj,
-						countInvEntryDataPair.first,
-						false
-					);*/
 					if (a_p->isPlayer1)
 					{
 						asActor->RemoveItem
@@ -4918,7 +4834,7 @@ namespace ALYSLC
 					{
 						p1->AddObjectToContainer
 						(
-							boundObj, nullptr, countInvEntryDataPair.first, a_p->coopActor.get()
+							boundObj, nullptr, countInvEntryDataPair.first, p1
 						);
 						p1->RemoveItem
 						(
@@ -6177,11 +6093,11 @@ namespace ALYSLC
 				);
 				if (restartPackage)
 				{
-					SPDLOG_DEBUG
+					/*SPDLOG_DEBUG
 					(
 						"[PAFH] SetUpCastingPackage: {}: Restart package.",
 						a_p->coopActor->GetName()
-					);
+					);*/
 					if (a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01)
 					{
 						lhCaster->RequestCastImpl();
@@ -6231,11 +6147,18 @@ namespace ALYSLC
 					)
 				);
 				// Set target linked reference before setting and evaluating package.
+				//
+				// Special case (idk why this happens): 
+				// If trying to cast a LH spell with a staff equipped in the RH,
+				// setting the aim target linked refr to any actor but the player themselves
+				// causes the casting package to fail to cast the spell.
+				// So we have to set the aim target linked refr to the player themselves initially 
+				// to begin the cast.
 				bool aimTargetRefrChanged = a_p->tm->UpdateAimTargetLinkedRefr
 				(
-					a_lhCast ? EquipIndex::kLeftHand : EquipIndex::kRightHand
+					a_lhCast ? EquipIndex::kLeftHand : EquipIndex::kRightHand,
+					!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
 				);
-
 				float dualValue = dualCasting->value;
 				float dualPrevValue = dualCasting->value;
 				float casting2HValue = casting2H->value;
@@ -6319,7 +6242,7 @@ namespace ALYSLC
 				// Also evaluate package if the aim target linked reference changed mid-execution.
 				if (!casterNotPreppedYet || valueChanged)
 				{
-					SPDLOG_DEBUG
+					/*SPDLOG_DEBUG
 					(
 						"[PAFH] SetUpCastingPackage: {}: "
 						"glob var not set yet: {}, "
@@ -6337,7 +6260,7 @@ namespace ALYSLC
 						valueChanged,
 						lhCaster ? *lhCaster->state : RE::MagicCaster::State::kNone,
 						rhCaster ? *rhCaster->state : RE::MagicCaster::State::kNone
-					);
+					);*/
 
 					if (is2HSpellCast) 
 					{
@@ -6769,10 +6692,47 @@ namespace ALYSLC
 						);
 						if (hasActivationText)
 						{
-							activationMessage = fmt::format
+							// Special Case:
+							// Will pick up notes and books if they are activated 
+							// while not selected by the crosshair.
+							bool isBook = baseObj->IsBook();
+							bool isNote = baseObj->IsNote();
+							bool wouldPickupBookNote = 
 							(
-								"P{}: Sneak to {}", a_p->playerID + 1, activationString
+								(isBook || isNote) &&
+								(
+									a_p->tm->activationRefrHandle !=
+									a_p->tm->crosshairRefrHandle
+								)
 							);
+							if (wouldPickupBookNote)
+							{
+								if (offLimits)
+								{
+									activationMessage = fmt::format
+									(
+										"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
+										a_p->playerID + 1,
+										activationRefrPtr->GetName()
+									);
+								}
+								else
+								{
+									activationMessage = fmt::format
+									(
+										"P{}: Sneak to Take {}", 
+										a_p->playerID + 1,
+										activationRefrPtr->GetName()
+									);
+								}
+							}
+							else
+							{
+								activationMessage = fmt::format
+								(
+									"P{}: Sneak to {}", a_p->playerID + 1, activationString
+								);
+							}
 						}
 						else
 						{
@@ -6864,7 +6824,8 @@ namespace ALYSLC
 									crosshairTargetedHostileActor &&
 									!asActor->IsDead() &&
 									Util::IsGuard(asActor) &&
-									Util::HasBountyOnPlayer(asActor)
+									Util::HasBountyOnPlayer(asActor) &&
+									!a_p->coopActor->IsSneaking()
 								);
 								// Living, normally passive actor with no bounty on the player,
 								// or fleeing the player.
@@ -6873,7 +6834,8 @@ namespace ALYSLC
 									(
 										!showSurrenderMessage &&
 										crosshairTargetedHostileActor &&
-										!asActor->IsDead()
+										!asActor->IsDead() &&
+										!a_p->coopActor->IsSneaking()
 									) &&
 									(
 										Util::HasNoBountyButInCrimeFaction(asActor) || 
@@ -6910,10 +6872,47 @@ namespace ALYSLC
 									);
 									if (hasActivationText)
 									{
-										activationMessage = fmt::format
+										// Special Case:
+										// Pick up notes and books if they are activated 
+										// while not selected by the crosshair.
+										bool isBook = baseObj->IsBook();
+										bool isNote = baseObj->IsNote();
+										bool shouldPickupBookNote = 
 										(
-											"P{}: {}", a_p->playerID + 1, activationString
+											(isBook || isNote) &&
+											(
+												a_p->tm->activationRefrHandle !=
+												a_p->tm->crosshairRefrHandle
+											)
 										);
+										if (shouldPickupBookNote)
+										{
+											if (offLimits)
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: <font color=\"#FF0000\">Steal</font> {}", 
+													a_p->playerID + 1,
+													activationRefrPtr->GetName()
+												);
+											}
+											else
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: Take {}", 
+													a_p->playerID + 1,
+													activationRefrPtr->GetName()
+												);
+											}
+										}
+										else
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: {}", a_p->playerID + 1, activationString
+											);
+										}
 									}
 									else
 									{
@@ -6969,7 +6968,7 @@ namespace ALYSLC
 											", <font color=\"#{:X}\">Value: </font>"
 											"<font face=\"$EverywhereBoldFont\">{}</font>, "
 											"<font color=\"#{:X}\">Weight: </font>"
-											"<font face=\"$EverywhereBoldFont\">{}</font>, "
+											"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
 											"<font color=\"#{:X}\">Space: </font>"
 											"<font face=\"$EverywhereBoldFont\">"
 											"<font color=\"#{:X}\">{:.0f}</font>"
@@ -8263,7 +8262,7 @@ namespace ALYSLC
 							// since this player is about to grab it.
 							if (otherP->tm->rmm->IsManaged(handle, false))
 							{
-								return RE::BSContainer::ForEachResult::kContinue;
+								otherP->tm->rmm->ClearReleasedRefr(handle);
 							}
 						}
 
@@ -10151,7 +10150,7 @@ namespace ALYSLC
 				// Reset to default package first.
 				bool occupyingFurniture = 
 				(
-					(Util::HandleIsValid(a_p->coopActor->GetOccupiedFurniture()))
+					Util::HandleIsValid(a_p->coopActor->GetOccupiedFurniture())
 				);
 				if (occupyingFurniture)
 				{
@@ -11337,14 +11336,16 @@ namespace ALYSLC
 					crosshairTargetedHostileActor &&
 					!asActor->IsDead() &&
 					Util::IsGuard(asActor) &&
-					Util::HasBountyOnPlayer(asActor)
+					Util::HasBountyOnPlayer(asActor) &&
+					!a_p->coopActor->IsSneaking()
 				);
 				bool stopCombatWithNonHostiles = 
 				(
 					(
 						!startArrestDialogue &&
 						crosshairTargetedHostileActor &&
-						!asActor->IsDead()
+						!asActor->IsDead() &&
+						!a_p->coopActor->IsSneaking()
 					) &&
 					(
 						Util::HasNoBountyButInCrimeFaction(asActor) || 

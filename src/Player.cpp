@@ -66,7 +66,6 @@ namespace ALYSLC
 		lastRHCastChargeStartTP = SteadyClock::now();
 		lastRHCastStartTP = SteadyClock::now();
 		lastStaminaCooldownCheckTP = SteadyClock::now();
-		lastStealthStateCheckTP = SteadyClock::now();
 		crosshairRefrVisibilityCheckTP = SteadyClock::now();
 		outOfStaminaTP = SteadyClock::now();
 		shoutStartTP = SteadyClock::now();

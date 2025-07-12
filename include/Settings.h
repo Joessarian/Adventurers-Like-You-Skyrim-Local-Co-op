@@ -26,7 +26,9 @@ namespace ALYSLC
 		// will jump through obstacles regularly to keep as many players in frame as possible.
 		// The camera may also catch on a surface and stutter or cause the screen to flicker.
 		// Use if you can't stand seeing the skybox/void outside the traversable worldspace.
-		static inline bool bCamCollisions = true;
+		// Separate options for exterior and interior cells.
+		static inline bool bCamExteriorCollisions = true;
+		static inline bool bCamInteriorCollisions = true;
 		// Also fade larger statics, like houses and walls.
 		static inline bool bFadeLargerObstructions = false;
 		// Fade objects that are blocking the visibility of players.

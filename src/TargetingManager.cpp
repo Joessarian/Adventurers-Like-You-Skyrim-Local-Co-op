@@ -930,7 +930,7 @@ namespace ALYSLC
 		// when not in combat and if the player's HMS AVs have changed.
 		// Commented out for now.
 		// TrueHUD API to request addition/removal of actor info or boss bars for this player.
-		
+
 		auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; 
 		if (trueHUDAPI3)
 		{
@@ -1109,7 +1109,7 @@ namespace ALYSLC
 				RE::NiPoint3 topOfTheHeadPos = Util::GetHeadPosition(coopActor.get());
 				// Based on the head body part's radius.
 				auto headRadius = Util::GetHeadRadius(coopActor.get());
-				topOfTheHeadPos.z += headRadius + 10.0f;
+				topOfTheHeadPos.z += headRadius + 15.0f;
 				posScreenCoords = Util::WorldToScreenPoint3(topOfTheHeadPos);
 				// Origin and lower/upper shape offsets from this origin.
 				glm::vec2 origin
@@ -3327,8 +3327,8 @@ namespace ALYSLC
 				shouldOnlyTargetAllies = 
 				{
 					sourceHasSpell && 
-					!Util::HasHostileSpell(p->em->equippedForms[!EquipIndex::kLeftHand]) && 
-					!Util::HasHostileSpell(p->em->equippedForms[!EquipIndex::kRightHand])
+					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kLeftHand]) && 
+					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kRightHand])
 				};
 			}
 			else if (attackSource)
@@ -3345,7 +3345,7 @@ namespace ALYSLC
 
 				// Single attack source, so check if it has a hostile spell.
 				sourceHasSpell = asSpell;
-				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileSpell(attackSource);
+				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileEffect(attackSource);
 			}
 
 			/*SPDLOG_DEBUG
@@ -3356,7 +3356,7 @@ namespace ALYSLC
 				coopActor->GetName(),
 				attackSource ? attackSource->GetName() : "NONE",
 				attackSource ? (bool)attackSource->As<RE::SpellItem>() : false,
-				Util::HasHostileSpell(attackSource),
+				Util::HasHostileEffect(attackSource),
 				shouldOnlyTargetAllies
 			);*/
 		}
@@ -4174,13 +4174,16 @@ namespace ALYSLC
 		// No targeted actor or targeting self (not considered own ranged target).
 		return RE::ActorHandle();
 	}
+
 	void TargetingManager::HandleBonk
 	(
 		RE::ActorHandle a_hitActorHandle, 
 		RE::ObjectRefHandle a_releasedRefrHandle,
 		float a_collidingMass,
+		float a_fallHeight,
 		const RE::NiPoint3& a_collidingVelocity,
-		const RE::NiPoint3& a_contactPos
+		const RE::NiPoint3& a_contactPos,
+		bool a_shouldRagdoll
 	)
 	{
 		// Apply damage to the given hit actor based on the physical properties 
@@ -4212,48 +4215,8 @@ namespace ALYSLC
 
 		auto asActor = releasedRefrPtr->As<RE::Actor>();
 		float actorWeight = 0.0f;
-		float releasedRefrWeight = releasedRefrPtr->GetWeight();
+		float releasedRefrWeight = max(0.1f, releasedRefrPtr->GetWeight());
 		float inventoryWeight = releasedRefrPtr->GetWeightInContainer();
-		if (asActor) 
-		{
-			actorWeight = asActor->GetWeight();
-			const auto invChanges = asActor->GetInventoryChanges();
-			if (invChanges)
-			{
-				inventoryWeight = invChanges->totalWeight;
-			}
-
-			// Actor weight can be 0, and if the actor has nothing equipped,
-			// their total weight would come out to 0.
-			// This does not make physical sense since an actor should not weigh less than 
-			// a tomato, unless they are Mr. Burns or something, I dunno.
-			// Add 50 base weight.
-			releasedRefrWeight += inventoryWeight + 50.0f;
-		}
-
-		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
-		auto hitActorRigidBodyPtr = Util::GethkpRigidBody(hitActorPtr.get()); 
-		if (hitActorRigidBodyPtr)
-		{
-			// TODO: 
-			// Add impulse without knockdown setting for less-impactful collisions.
-			if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
-			{
-				precisionAPI4->ApplyHitImpulse2
-				(
-					a_hitActorHandle, 
-					coopActor->GetHandle(), 
-					hitActorRigidBodyPtr.get(), 
-					ToNiPoint3(a_collidingVelocity), 
-					TohkVector4(a_contactPos) * GAME_TO_HAVOK, 
-					1.0f
-				);
-			}
-
-			// Knockout!
-			Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
-		}
-
 		// Set power attack, bonk, and potentially the sneak attack flags
 		// before sending a hit event.
 		RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> hitFlags{ };
@@ -4287,10 +4250,17 @@ namespace ALYSLC
 			(
 				1.0f + 3.0f * max(coopActor->GetLevel() - 1.0f, 0.0f) / 99.0f
 			);
+			// Higher armor rating -> less damage taken.
+			// 1 / 10 the damage at an armor rating of 100.
+			float armorRatingFactor = std::clamp
+			(
+				-0.009f * hitActorPtr->CalcArmorRating() + 1.0f,
+				0.1f,
+				1.0f
+			);
 			// Scale up damage if the flopping actor is close to 
 			// or exceeding their base carryweight.
-			float inventoryWeightFactor = 1.0f;
-			float weightFactor = sqrtf(max(0.1f, releasedRefrWeight) / 12.0f);
+			float equipmentWeightFactor = 1.0f;
 			// Scale up actor-actor collision damage based on the released actor's base, 
 			// equipped, and potentially inventory weight.
 			if (asActor) 
@@ -4299,34 +4269,64 @@ namespace ALYSLC
 				// Scale up damage based on the player's inventory weight
 				// relative to their base carryweight. 
 				// The more over-encumbered the merrier.
+				// sqrtf(2)x damage at full encumberance.
 				float baseCarryWeight = coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight);
-				inventoryWeightFactor = 
+				equipmentWeightFactor = 
 				(
-					1.0f + 
+					1.0f +
 					(
-						inventoryWeight / 
-						max(baseCarryWeight, 1.0f)
+						(sqrtf(2.0f) - 1.0f) * 
+						(inventoryWeight / max(baseCarryWeight, 1.0f))
 					)
 				);
 
 				// 1x damage at 0 equip weight,
-				// 3x damage at 100 equip weight, 
-				// approaching 5x at infinite weight.
-				weightFactor = 
+				// ~sqrtf(2) damage at 100 equip weight, 
+				// approaching 2x at infinite weight.
+				// Multiplying the intentory and equipped weight factors together 
+				// gives 2 at full encumbrance and 100 equip weight.
+				equipmentWeightFactor *= 
 				(
 					1.0f + 
 					((actorWeight + 100.0f) / 50.0f) / 
-					(1 + expf((90.0f - equippedWeight) / 10.0f))
+					(1 + expf((103.465736f - equippedWeight) / 10.0f))
 				);
 			}
-		
-			// Subject to change, but this works for now.
+			
+			// Gravity considerations. Needs balancing and is subject to change.
+			const float weightFactor = 
+			(
+				asActor || releasedRefrPtr->As<RE::Projectile>() ?
+				1.0f: 
+				sqrtf(releasedRefrWeight / 100.0f)
+			);
+			const float fallHeightDiff = max
+			(
+				0.0f, a_fallHeight - Util::Get3DCenterPos(releasedRefrPtr.get()).z
+			);
+			float gravDamageMult = 
+			(
+				2.5f + 
+				(
+					(1.5f) *
+					(
+						expf(0.004f * fallHeightDiff - 4.0f) - 
+						expf(-0.004f * fallHeightDiff + 4.0f)
+					) / 
+					(
+						expf(0.004f * fallHeightDiff - 4.0f) + 
+						expf(-0.004f * fallHeightDiff + 4.0f)
+					)
+				)
+			);
 			float damage = 
 			(
+				gravDamageMult *
+				weightFactor * 
 				havokImpactSpeed *
-				inventoryWeightFactor * 
-				weightFactor *
 				levelDamageFactor *
+				armorRatingFactor *
+				equipmentWeightFactor *
 				sneakMult
 			);
 
@@ -4335,22 +4335,30 @@ namespace ALYSLC
 			(
 				"[TM] HandleBonk: {}: Hit actor {}. "
 				"Thrown object {}'s mass: {}, weight: {}, equipped weight: {}, "
-				"impact speed: {}, inventory weight factor: {}, "
-				"weight factor: {}, level damage factor: {} (player level: {}). "
-				"Sneak mult: {}. Base carryweight: {}. Final Damage: {}.", 
+				"impact speed: {}, equipped weight factor: {}, armor rating and factor: {}, {},"
+				"level damage factor: {} (player level: {}). "
+				"Sneak mult: {}. Base carryweight: {}. "
+				"Fall height: {}, current: {}, diff: {}, weight factor: {}, grav damage mult: {}, "
+				"FINAL base damage: {}.", 
 				coopActor->GetName(), 
 				hitActorPtr->GetName(),
 				releasedRefrPtr->GetName(),
 				a_collidingMass,
-				releasedRefrPtr->GetWeight(),
+				releasedRefrWeight,
 				asActor ? asActor->GetEquippedWeight() : -1.0f,
 				havokImpactSpeed,
-				inventoryWeightFactor,
-				weightFactor,
+				equipmentWeightFactor,
+				hitActorPtr->CalcArmorRating(),
+				armorRatingFactor,
 				levelDamageFactor, 
 				coopActor->GetLevel(),
 				sneakMult,
 				coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight),
+				a_fallHeight,
+				releasedRefrPtr->data.location.z,
+				fallHeightDiff,
+				weightFactor,
+				gravDamageMult,
 				damage
 			);
 
@@ -4377,58 +4385,45 @@ namespace ALYSLC
 				{
 					damage *= Settings::vfThrownObjectDamageMult[playerID];
 				}
-
-				// Apply non-zero damage.
-				// If hitting another player, apply the damage directly
-				// without dealing damage through a second hit event.
-				auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(hitActorPtr.get()); 
-				if (playerIndex != -1)
-				{
-					// No requested damage to deal in second hit event.
-					rmm->reqSpecialHitDamageAmount = 0.0f;
-					// Apply damage directly to the health AV.
-					// No attacker source will be reported in the HandleHealthDamage() hook,
-					// so our damage here is the final damage which will be applied on hit.
-					hitActorPtr->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage
-					);
-				}
-				else
-				{
-					// Divide by P1's damage dealt multiplier to nullify its application
-					// in the HandleHealthDamage() hook, which fires on the second hit event
-					// that is sent from our Hit Event Handler 
-					// The second hit event applies damage and attributes blame to P1, 
-					// while the first triggers any P1 OnHit events.
-					const auto& p1DamageDealtMult = 
-					(
-						Settings::vfDamageDealtMult[glob.coopPlayers[glob.player1CID]->playerID]	
-					);
-					damage = 
-					(
-						p1DamageDealtMult == 0.0f ?
-						0.0f :
-						damage / p1DamageDealtMult
-					);
-					
-					// Set the requested special hit damage to apply
-					// when sending the second hit event that triggers an alarm/bounty
-					// in the Hit Event Handler.
-					// No damage to directly apply here.
-					rmm->reqSpecialHitDamageAmount = damage;
-				}
 			}
 
-			// Send the hit event after caching or applying damage.
-			Util::SendHitEvent
+			Util::TriggerCombatAndDealDamage
 			(
-				coopActor.get(), 
-				hitActorPtr.get(), 
-				coopActor->formID,
+				coopActor.get(),
+				hitActorPtr.get(),
+				damage,
+				true,
+				true,
+				coopActor->GetHandle(),
 				releasedRefrPtr->formID,
 				hitFlags
 			);
+		}
+
+		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
+		if (a_shouldRagdoll)
+		{
+			auto hitActorRigidBodyPtr = Util::GethkpRigidBody(hitActorPtr.get()); 
+			if (hitActorRigidBodyPtr)
+			{
+				// TODO: 
+				// Add impulse without knockdown setting for less-impactful collisions.
+				if (auto precisionAPI4 = ALYSLC::PrecisionCompat::g_precisionAPI4; precisionAPI4)
+				{
+					precisionAPI4->ApplyHitImpulse2
+					(
+						a_hitActorHandle, 
+						coopActor->GetHandle(), 
+						hitActorRigidBodyPtr.get(), 
+						ToNiPoint3(a_collidingVelocity), 
+						TohkVector4(a_contactPos) * GAME_TO_HAVOK, 
+						1.0f
+					);
+				}
+
+				// Knockout!
+				Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
+			}
 		}
 
 		// Play sound.
@@ -4965,6 +4960,9 @@ namespace ALYSLC
 			// fails to detect collisions sometimes. Increases the likelihood of a hit.
 			// 2. Adjust the trajectory of the released refr if using homing projectiles.
 			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
+			// Flopped-on refrs to add as released to propagate the initial collision.
+			// Pairs of (refr handle, released angle factor).
+			std::vector<std::pair<RE::ObjectRefHandle, float>> flopRedirectedRefrs{ };
 			for (uint8_t i = 0; i < rmm->releasedRefrInfoList.size(); ++i)
 			{
 				auto& releasedRefrInfo = rmm->releasedRefrInfoList[i];
@@ -4983,6 +4981,7 @@ namespace ALYSLC
 				(
 					releasedRefrInfo->refrHandle
 				);
+
 				// Get active projectile, if the relased refr was demarcated as one.
 				// No collision handling, as the game already does it for us.
 				auto asActiveProjectile = 
@@ -5003,7 +5002,8 @@ namespace ALYSLC
 					--i;
 					continue;
 				}
-
+				
+				auto releasedActor = releasedRefrPtr->As<RE::Actor>();
 				float secsSinceRelease = Util::GetElapsedSeconds
 				(
 					releasedRefrInfo->releaseTP.value()
@@ -5018,16 +5018,19 @@ namespace ALYSLC
 				bool shouldNoLongerHandleCollisions =
 				(
 					(
-						!releasedRefrPtr->IsDead() &&
-						releasedRefrPtr->Is(RE::FormType::ActorCharacter) &&
-						releasedRefrPtr->As<RE::Actor>()->actorState1.knockState == 
-						RE::KNOCK_STATE_ENUM::kNormal
+						(releasedActor && !releasedActor->IsDead()) &&
+						(
+							releasedActor->actorState1.knockState == 
+							RE::KNOCK_STATE_ENUM::kNormal ||
+							releasedActor->actorState1.knockState == 
+							RE::KNOCK_STATE_ENUM::kGetUp
+						)
 					) ||
 					(
+						(!releasedActor || releasedActor->IsDead()) &&
 						(
 							releasedRefrInfo->firstHitTP.has_value()
 						) &&
-						(releasedRefrPtr != coopActor) &&
 						(
 							(releasedRefrInfo->trajType == ProjectileTrajType::kPrediction) ||
 							(
@@ -5074,7 +5077,69 @@ namespace ALYSLC
 					continue;
 				}
 
-				auto releasedActor = releasedRefrPtr->As<RE::Actor>();
+				// Adjust trajectory to reach the trajectory end position 
+				// or home in on the target if necessary.
+				if (releasedRefrInfo->isThrown)
+				{
+					auto velToSet = releasedRefrInfo->GuideRefrAlongTrajectory(p);
+					// Cap speed to the release speed, 
+					// which effectively caps bonk damage as well.
+					releasedRefrInfo->ApplyVelocity(velToSet);
+				} 
+				else if (!Settings::bPreventFallDamage)
+				{
+					// Set fall height at the apex of the trajectory to properly apply fall damage 
+					// once the dropped actor hits a surface.
+					auto asActor = releasedRefrPtr->As<RE::Actor>(); 
+					auto hkpRigidBodyPtr = Util::GethkpRigidBody(asActor);
+					auto charController = asActor ? asActor->GetCharController() : nullptr;
+					if (charController && hkpRigidBodyPtr)
+					{
+						auto currentVelocity = ToNiPoint3
+						(
+							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
+						);
+						float previousVelPitch = Util::GetPitchBetweenPositions
+						(
+							RE::NiPoint3(), releasedRefrInfo->lastSetVelocity
+						);
+						float currentVelPitch = Util::GetPitchBetweenPositions
+						(
+							RE::NiPoint3(), currentVelocity
+						);
+						// No collision recorded and angled downward at release,
+						// or now angled downward after previously angled upward 
+						// (reached or past apex).
+						bool firstHit = releasedRefrInfo->firstHitTP.has_value();
+						bool isAtOrPastTrajApex = 
+						(
+							(!firstHit) && 
+							(currentVelPitch >= 0.0f) &&
+							(
+								(previousVelPitch <= 0.0f) || 
+								(	
+										
+									releasedRefrInfo->releaseTP.has_value() &&
+									Util::GetElapsedSeconds
+									(
+										releasedRefrInfo->releaseTP.value()
+									) <= *g_deltaTimeRealTime
+								)
+							)
+						);
+						if (isAtOrPastTrajApex)
+						{
+							charController->lock.Lock();
+							Util::AdjustFallState(charController, true);
+							charController->lock.Unlock();
+						}
+
+						releasedRefrInfo->lastSetVelocity = currentVelocity;
+					}
+				}
+
+				// Raycast to check for potential collisions to handle
+				// now that we've updated the velocity of the released refr.
 				RE::ObjectRefHandle hitRefrHandle{ };
 				RE::NiPoint3 hitPos{ };
 				RE::NiPoint3 velDir{ };
@@ -5280,13 +5345,15 @@ namespace ALYSLC
 					hitRefrHandle = result.hitRefrHandle;
 					hitPos = ToNiPoint3(result.hitPos);
 				}
-						
+
 				auto hitRefrPtr = 
 				(
 					hit ? Util::GetRefrPtrFromHandle(hitRefrHandle) : nullptr
 				); 
 				// Do not continue setting the released refr's trajectory,
-				// or bonk or splat if the hit actor is a player that is dash dodging.
+				// or bonk or splat if the hit actor is a player that is dash dodging
+				// or flailing their arms in a crazed and/or defensive manner.
+				// Either method still requires timing using the dash dodge's I-Frame window.
 				if (hitRefrPtr)
 				{
 					auto hitPlayerIndex = GlobalCoopData::GetCoopPlayerIndex
@@ -5296,83 +5363,48 @@ namespace ALYSLC
 					if (hitPlayerIndex != -1)
 					{
 						const auto& hitP = glob.coopPlayers[hitPlayerIndex];
-						if (hitP->mm->isDashDodging)
+						// Number of seconds independent of framerate.
+						float secsEvadeWindow = 
+						(
+							(
+								Settings::uDashDodgeBaseAnimFrameCount + 
+								Settings::uDashDodgeSetupFrameCount
+							) *
+							(1.0f / (*g_deltaTimeRealTime * 60.0f))
+						);
+						bool canEvade = 
+						(
+							(hitP->mm->isDashDodging) || 
+							(
+								hitP->pam->IsPerforming(InputAction::kRotateLeftShoulder) &&
+								hitP->pam->GetSecondsSinceLastStart
+								(
+									InputAction::kRotateLeftShoulder
+								) <
+								secsEvadeWindow 
+							) ||
+							(
+								hitP->pam->IsPerforming(InputAction::kRotateRightShoulder) &&
+								hitP->pam->GetSecondsSinceLastStart
+								(
+									InputAction::kRotateRightShoulder
+								) < secsEvadeWindow 
+							)
+						);
+						if (canEvade)
 						{
 							// Clear the released refr, so we don't continue 
 							// setting its trajectory or listening for collisions.
 							// Otherwise, if it is homing in on the target,
 							// it'll go through the player, come back around,
-							// and hit the player once their dodge I-frames end.
+							// and hit the player once their dodge I-frames end
+							// (or once their arms grow heavy with fatigue and stop moving).
 							rmm->ClearRefr(handle);
 							continue;
 						}
 					}
-				}
-
-				// Adjust trajectory to reach the trajectory end position 
-				// or home in on the target if necessary.
-				if (releasedRefrInfo->isThrown)
-				{
-					auto velToSet = releasedRefrInfo->GuideRefrAlongTrajectory(p);
-					// Cap speed to the release speed, 
-					// which effectively caps bonk damage as well.
-					releasedRefrInfo->ApplyVelocity(velToSet);
-				}
-				else if (!Settings::bPreventFallDamage)
-				{
-					// Set fall height at the apex of the trajectory to properly apply fall damage 
-					// once the dropped actor hits a surface.
-					auto asActor = releasedRefrPtr->As<RE::Actor>(); 
-					auto hkpRigidBodyPtr = Util::GethkpRigidBody(asActor);
-					auto charController = asActor ? asActor->GetCharController() : nullptr;
-					if (charController && hkpRigidBodyPtr)
-					{
-						auto currentVelocity = ToNiPoint3
-						(
-							hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME
-						);
-						float previousVelPitch = Util::GetPitchBetweenPositions
-						(
-							RE::NiPoint3(), releasedRefrInfo->lastSetVelocity
-						);
-						float currentVelPitch = Util::GetPitchBetweenPositions
-						(
-							RE::NiPoint3(), currentVelocity
-						);
-						// No collision recorded and angled downward at release,
-						// or now angled downward after previously angled upward 
-						// (reached or past apex).
-						bool firstHit = releasedRefrInfo->firstHitTP.has_value();
-						bool isAtOrPastTrajApex = 
-						(
-							(!firstHit) && 
-							(currentVelPitch >= 0.0f) &&
-							(
-								(previousVelPitch <= 0.0f) || 
-								(	
-										
-									releasedRefrInfo->releaseTP.has_value() &&
-									Util::GetElapsedSeconds
-									(
-										releasedRefrInfo->releaseTP.value()
-									) <= *g_deltaTimeRealTime
-								)
-							)
-						);
-						if (isAtOrPastTrajApex)
-						{
-							charController->lock.Lock();
-							Util::AdjustFallState(charController, true);
-							charController->lock.Unlock();
-						}
-
-						releasedRefrInfo->lastSetVelocity = currentVelocity;
-					}
-				}
-
-				// Handle potential collisions.
-				if (hitRefrPtr)
-				{
+					
+					// Handle potential collisions.
 					bool hasAlreadyHitRefr = 
 					(
 						releasedRefrInfo->HasAlreadyHitRefr(hitRefrPtr.get())
@@ -5417,6 +5449,7 @@ namespace ALYSLC
 							hitActor->GetHandle(), 
 							releasedRefrPtr->GetHandle(), 
 							releasedRefrRigidBodyPtr->motion.GetMass(),
+							releasedRefrInfo->fallHeight,
 							ToNiPoint3
 							(
 								releasedRefrRigidBodyPtr->motion.linearVelocity *
@@ -5426,23 +5459,105 @@ namespace ALYSLC
 						);
 					}
 
-					// Thrown actor hit a new refr that isn't itself. Splat.
-					bool shouldSplat = 
+					// Heh.
+					// Works the same way as slapping the object to redirect it.
+					bool shouldRedirectWithFlop = 
 					(
-						releasedActor &&
-						releasedActor != hitRefrPtr.get() &&
-						!hasAlreadyHitRefr && 
-						!releasedRefrInfo->hitRefrFIDs.empty()
+						(
+							p->mm->reqFaceTarget && 
+							releasedRefrPtr == coopActor &&
+							hitRefrPtr != coopActor &&
+							hitRefrPtr->GetHandle() != crosshairRefrHandle
+						) &&
+						(hitActor || Util::IsLootableRefr(hitRefrPtr.get()))
 					);
-					if (shouldSplat)
+					if (shouldRedirectWithFlop) 
+					{
+						flopRedirectedRefrs.emplace_back
+						(
+							hitRefrHandle,
+							std::lerp
+							(
+								0.5f,
+								1.0f,
+								min
+								(
+									1.0f,
+									releasedRefrRigidBodyPtr->motion.linearVelocity.Length3() / 
+									15.0f
+								)
+							)
+						);
+					}
+
+					// Released actor hit a new refr that isn't itself. Splat.
+					// Ignore refrs we have already hit, 
+					// since we want to prioritize handling hits recorded
+					// through the havok contact listener and use the raycast collision check 
+					// as a fallback to catch anything that the contact listener fails to record.
+					bool canSplat = 
+					(
+						releasedActor && 
+						releasedActor != hitRefrPtr.get() &&
+						!hasAlreadyHitRefr &&
+						releasedRefrInfo->SetupPeriodElapsed()
+					);
+					if (canSplat)
 					{
 						HandleSplat
 						(
-							releasedActor->GetHandle(),
-							releasedRefrInfo->hitRefrFIDs.size()
+							releasedActor->GetHandle(), 
+							max(1, releasedRefrInfo->recordedHitsCount),
+							releasedRefrInfo->fallHeight,
+							releasedRefrInfo->isThrown
+						);
+					}
+
+					if (canSplat || shouldBonk)
+					{
+						// Update fall height to the refr's position after handling the collision.
+						releasedRefrInfo->fallHeight = 
+						(
+							Util::Get3DCenterPos
+							(
+								releasedRefrPtr.get()
+							).z
 						);
 					}
 				}
+			}
+
+			// Add any flop bonk'd refrs as released.
+			for (const auto& [handle, factor] : flopRedirectedRefrs)
+			{
+				if (!Util::HandleIsValid(handle))
+				{
+					continue;
+				}
+
+				for (const auto& otherP : glob.coopPlayers)
+				{
+					if (!otherP->isActive || otherP == p)
+					{
+						continue;
+					}
+
+					// Remove grabbed/released refr from the other player's managed lists.
+					if (otherP->tm->rmm->IsManaged(handle, true) || 
+						otherP->tm->rmm->IsManaged(handle, false))
+					{
+						otherP->tm->rmm->ClearRefr(handle);
+					}
+				}
+
+				rmm->AddGrabbedRefr(p, handle);
+				rmm->ClearGrabbedRefr(handle);
+				if (rmm->GetNumGrabbedRefrs() == 0)
+				{
+					SetIsGrabbing(false);
+				}
+
+				rmm->AddReleasedRefr(p, handle, 0.0f, factor);
 			}
 		}
 		else
@@ -5481,26 +5596,31 @@ namespace ALYSLC
 
 	void TargetingManager::HandleSplat
 	(
-		RE::ActorHandle a_thrownActorHandle, const uint32_t& a_hitCount
+		RE::ActorHandle a_releasedActorHandle, 
+		const uint32_t& a_hitCount,
+		const double& a_fallHeight,
+		bool a_wasThrown
 	)
 	{
-		// Apply impact damage to thrown/ragdolled actor.
+		// Apply impact damage to thrown/flopping actor.
 
-		auto thrownActorPtr = Util::GetActorPtrFromHandle(a_thrownActorHandle);
+		auto releasedActorPtr = Util::GetActorPtrFromHandle(a_releasedActorHandle);
 		// Invalid thrown actor.
-		if (!thrownActorPtr)
+		if (!releasedActorPtr)
 		{
 			return;
 		}
 		
-		auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(thrownActorPtr.get()); 
+		auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(releasedActorPtr.get()); 
 		float havokImpactSpeed = 0.0f;
 		float damage = 0.0f;
 		// Not a ghost or invulnerable.
 		bool damageable = 
-		{
-			(!thrownActorPtr->IsGhost() && !thrownActorPtr->IsInvulnerable())
-		};
+		(
+			!releasedActorPtr->IsGhost() &&
+			!releasedActorPtr->IsInvulnerable() && 
+			!releasedActorPtr->IsInWater()
+		);
 		if (damageable)
 		{
 			if (releasedRefrRigidBodyPtr) 
@@ -5509,68 +5629,79 @@ namespace ALYSLC
 				// Get refr linear speed if rigidbody speed is 0.
 				if (havokImpactSpeed == 0.0f)
 				{
-					RE::NiPoint3 linVel;
-					thrownActorPtr->GetLinearVelocity(linVel);
+					RE::NiPoint3 linVel{ };
+					releasedActorPtr->GetLinearVelocity(linVel);
 					havokImpactSpeed = linVel.Length() * GAME_TO_HAVOK;
 				}
 
 				// Higher armor rating -> less damage taken.
-				// 1 / 2 the damage at an armor rating of 100.
-				float armorRatingFactor = sqrtf
+				// 1 / 10 the damage at an armor rating of 100.
+				float armorRatingFactor = std::clamp
 				(
-					1.0f / 
-					(max(thrownActorPtr->CalcArmorRating() / 25.0f, 1.0f))
+					-0.009f * releasedActorPtr->CalcArmorRating() + 1.0f,
+					0.1f,
+					1.0f
 				);
 				// Take 1 / 2 the damage at level 100.
 				float levelDamageFactor = 
 				(
 					1.0f / 
-					(1.0f + max(thrownActorPtr->GetLevel() - 1.0f, 0.0f) / 99.0f)
+					(1.0f + max(releasedActorPtr->GetLevel() - 1.0f, 0.0f) / 99.0f)
 				);
-				float inventoryWeight = thrownActorPtr->GetWeightInContainer();
-				const auto invChanges = thrownActorPtr->GetInventoryChanges();
+				float inventoryWeight = releasedActorPtr->GetWeightInContainer();
+				const auto invChanges = releasedActorPtr->GetInventoryChanges();
 				if (invChanges)
 				{
 					inventoryWeight = invChanges->totalWeight;
 				}
 
-				float baseCarryWeight = coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight);
 				// Actors that are nearly or over-encumbered take more damage.
 				float inventoryWeightFactor = 
 				(
 					1.0f + 
 					(
 						inventoryWeight / 
-						max(baseCarryWeight, 1.0f)
+						max(coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight), 1.0f)
 					)
 				);
-				bool isFlop = thrownActorPtr == coopActor;
-				float flopSelfDamageMult = 1.0f;
-				if (isFlop)
-				{
-					// Players take more damage if they weigh less 
-					// and if they have higher equipped weight.
-					float actorWeight = thrownActorPtr->GetWeight();
-					float equippedWeight = thrownActorPtr->GetEquippedWeight();
-					flopSelfDamageMult = 
+				
+				// Gravity considerations. Needs balancing and is subject to change.
+				const float fallHeightDiff = max
+				(
+					0.0f, a_fallHeight - releasedActorPtr->data.location.z
+				);
+				float gravDamageMult = 
+				(
+					2.5f + 
 					(
-						Settings::vfFlopHealthCostMult[playerID] * 
+						(1.5f) *
 						(
-							1.0f + 
-							((-actorWeight + 200.0f) / 50.0f) / 
-							(1 + expf((50.0f - equippedWeight) / 10.0f))
+							expf(0.004f * fallHeightDiff - 4.0f) - 
+							expf(-0.004f * fallHeightDiff + 4.0f)
+						) / 
+						(
+							expf(0.004f * fallHeightDiff - 4.0f) + 
+							expf(-0.004f * fallHeightDiff + 4.0f)
 						)
-					);
-				}
-
+					)
+				);
+				float flopSelfDamageMult = 
+				(
+					releasedActorPtr == coopActor ? 
+					Settings::vfFlopHealthCostMult[playerID] :
+					1.0f
+				);
 				damage = 
 				(
-					levelDamageFactor * 
-					armorRatingFactor * 
-					inventoryWeightFactor *
-					sqrtf(havokImpactSpeed) * 
-					flopSelfDamageMult *
-					(1.0f / static_cast<float>(max(1, a_hitCount)))
+					(flopSelfDamageMult) * 
+					(
+						gravDamageMult * 
+						havokImpactSpeed * 
+						levelDamageFactor * 
+						armorRatingFactor * 
+						inventoryWeightFactor *
+						(1.0f / static_cast<float>(max(1, a_hitCount)))
+					) 
 				);
 
 				// REMOVE when done debugging.
@@ -5578,17 +5709,24 @@ namespace ALYSLC
 				(
 					"[TM] HandleSplat: {}: "
 					"Thrown actor: {}. Mass: {}, impact speed: {}, actor linear speed: {}, "
-					"armor rating factor: {}, inventory weight factor: {}, "
-					"level damage factor: {}, flop self-damage mult: {}, damage: {}. Hit #{}",
+					"armor rating and factor: {}, {}, inventory weight factor: {}, "
+					"level damage factor: {}, flop self-damage mult: {}, "
+					"fall height: {}, current: {}, diff: {}, grav damage mult: {}, "
+					"FINAL base damage: {}. Hit #{}",
 					coopActor->GetName(),
-					thrownActorPtr->GetName(),
+					releasedActorPtr->GetName(),
 					releasedRefrRigidBodyPtr->motion.GetMass(),
 					havokImpactSpeed,
-					Util::GetActorLinearVelocity(thrownActorPtr.get()).Length() * GAME_TO_HAVOK,
+					Util::GetActorLinearVelocity(releasedActorPtr.get()).Length() * GAME_TO_HAVOK,
+					releasedActorPtr->CalcArmorRating(),
 					armorRatingFactor,
 					inventoryWeightFactor,
 					levelDamageFactor,
 					flopSelfDamageMult,
+					a_fallHeight,
+					releasedActorPtr->data.location.z,
+					fallHeightDiff,
+					gravDamageMult,
 					damage, 
 					a_hitCount
 				);
@@ -5596,77 +5734,67 @@ namespace ALYSLC
 
 			// Handle health damage.
 			// Ignore damage to friendly actors if friendly fire is off.
-			bool shouldDamage = 
+			const bool isFlopping = releasedActorPtr == coopActor;
+			const bool shouldDamage = 
 			(
 				Settings::vbFriendlyFire[playerID] || 
-				thrownActorPtr == coopActor || 
-				!Util::IsPartyFriendlyActor(thrownActorPtr.get())
+				isFlopping || 
+				!Util::IsPartyFriendlyActor(releasedActorPtr.get())
 			);
 			if (damage != 0.0f && shouldDamage)
 			{
 				damage *= Settings::vfThrownObjectDamageMult[playerID];
-				// Apply non-zero damage.
-				// If hitting another player, apply the damage directly
-				// without dealing damage through a second hit event,
-				// which is used to attribute blame for the hit to P1 and trigger alarms/bounties. 
-				auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(thrownActorPtr.get());
-				if (playerIndex != -1)
-				{
-					// No requested damage to deal in second hit event.
-					rmm->reqSpecialHitDamageAmount = 0.0f;
-					// Apply damage directly to the health AV.
-					// No attacker source will be reported in the HandleHealthDamage() hook,
-					// so our damage here is the final damage which will be applied on hit.
-					thrownActorPtr->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -damage
-					);
-				}
-				else
-				{
-					// Divide by P1's damage dealt multiplier to nullify its application
-					// in the HandleHealthDamage() hook, which fires on the second hit event
-					// that is sent from our Hit Event Handler 
-					// The second hit event applies damage and attributes blame to P1, 
-					// while the first triggers any P1 OnHit events.
-					const auto& p1DamageDealtMult = 
-					(
-						Settings::vfDamageDealtMult[glob.coopPlayers[glob.player1CID]->playerID]	
-					);
-					damage = 
-					(
-						p1DamageDealtMult == 0.0f ?
-						0.0f :
-						damage / p1DamageDealtMult
-					);
-					// Set the requested special hit damage to apply
-					// when sending the second hit event that triggers an alarm/bounty
-					// in the Hit Event Handler.
-					// No damage to directly apply here.
-					rmm->reqSpecialHitDamageAmount = damage;
-				}
 			}
 
-			// Power attack flag to add compatibility with Maximum Carnage,
-			// which triggers gore effects on power attack kills.
-			// Set splat hit flag as well.
-			SKSE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> flags{ };
-			flags.set
-			(
-				RE::TESHitEvent::Flag::kPowerAttack, 
-				static_cast<RE::TESHitEvent::Flag>(AdditionalHitEventFlags::kSplat)
-			);
-			Util::SendHitEvent
-			(
-				coopActor.get(),
-				thrownActorPtr.get(),
-				coopActor->formID,
-				thrownActorPtr->formID,
-				flags
-			);
+			// Inflict damage for each hit if thrown or if flopping,
+			// but only on the first hit if dropped,
+			// since we'll allow the game to apply fall damage for subsequent hits,
+			// and we want to aggro the thrown actor, which is not possible with fall damage alone.
+			if (a_wasThrown || isFlopping || a_hitCount == 1)
+			{
+				// IMPORTANT:
+				// Calling DoDamage() will apply the given damage,
+				// but if it is called as the first hit that begins combat 
+				// between a companion player and an NPC, 
+				// grabbed and redirected projectiles do not inflict damage 
+				// when thrown back at the NPC.
+				releasedActorPtr->DoDamage(damage, coopActor.get(), true);
+			}
 		}
 
-		// Play sound.
+		// Only send a hit event and hit data on the first hit, since there can be hundreds
+		// of collisions and there is no need to signal a 'splat' hit or draw aggro more than once.
+		// Also, play sound and send detection event only on the first hit.
+		// Will prevent a barrage of sounds effects from playing at once, 
+		// overlapping and amplifying the sound to deep-fried audio levels.
+		if (a_hitCount > 1)
+		{
+			return;
+		}
+
+		// Power attack flag to add compatibility with Maximum Carnage,
+		// which triggers gore effects on power attack kills.
+		// Set splat hit flag as well.
+		SKSE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> hitFlags{ };
+		hitFlags.set
+		(
+			RE::TESHitEvent::Flag::kPowerAttack, 
+			static_cast<RE::TESHitEvent::Flag>(AdditionalHitEventFlags::kSplat)
+		);
+		
+		// Send hit data last to draw aggro (0 damage) towards the throwing player.
+		Util::TriggerCombatAndDealDamage
+		(
+			coopActor.get(),
+			releasedActorPtr.get(),
+			0.0f,
+			true,
+			true,
+			coopActor->GetHandle(),
+			releasedActorPtr->formID,
+			hitFlags
+		);
+
 		auto audioManager = RE::BSAudioManager::GetSingleton(); 
 		if (!audioManager)
 		{
@@ -5686,8 +5814,8 @@ namespace ALYSLC
 		bool succ = audioManager->BuildSoundDataFromDescriptor(handle, flopSFX);
 		if (succ)
 		{
-			handle.SetPosition(thrownActorPtr->data.location);
-			auto actor3DPtr = Util::GetRefr3D(thrownActorPtr.get());
+			handle.SetPosition(releasedActorPtr->data.location);
+			auto actor3DPtr = Util::GetRefr3D(releasedActorPtr.get());
 			if (actor3DPtr)
 			{
 				handle.SetObjectToFollow(actor3DPtr.get());
@@ -5700,11 +5828,11 @@ namespace ALYSLC
 		Util::SetActorsDetectionEvent
 		(
 			coopActor.get(), 
-			thrownActorPtr.get(), 
+			releasedActorPtr.get(), 
 			releasedRefrRigidBodyPtr ? 
 			releasedRefrRigidBodyPtr->motion.GetMass() : 
 			0.0f,
-			thrownActorPtr->data.location
+			releasedActorPtr->data.location
 		);
 	}
 
@@ -6244,13 +6372,6 @@ namespace ALYSLC
 								asActor->IsHostileToActor(glob.player1Actor.get())
 							)
 						);
-						// Do not target corpses (unless locked on to one) while in combat.
-						/*validType &= 
-						(
-							!asActor || 
-							!asActor->IsDead() ||
-							asActor->GetHandle() == glob.cam->camLockOnTargetHandle
-						);*/
 					}
 
 					// Not a valid type to use for selection,
@@ -7093,7 +7214,7 @@ namespace ALYSLC
 						", <font color=\"#{:X}\">Value: </font>"
 						"<font face=\"$EverywhereBoldFont\">{}</font>, "
 						"<font color=\"#{:X}\">Weight: </font>"
-						"<font face=\"$EverywhereBoldFont\">{}</font>, "
+						"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
 						"<font color=\"#{:X}\">Space: </font>"
 						"<font face=\"$EverywhereBoldFont\">"
 						"<font color=\"#{:X}\">{:.0f}</font>"
@@ -7470,11 +7591,20 @@ namespace ALYSLC
 		}
 	}
 
-	bool TargetingManager::UpdateAimTargetLinkedRefr(const EquipIndex& a_attackSlot)
+	bool TargetingManager::UpdateAimTargetLinkedRefr
+	(
+		const EquipIndex& a_attackSlot, bool a_findTarget
+	)
 	{
-		// Set the aim target linked reference for the player's ranged attack package
-		// based on what form is in the given equip slot.
-		// Then return true if a new one was set or the old one was cleared.
+		// Update the target refr used by the ranged attack package.
+		// The given equip index should hold the form triggering the ranged attack.
+		// E.g. Left hand slot when trying to cast a spell in the left hand.
+		// Can set to self to ensure the ranged attack package has a valid target.
+		// If requesting to find a target, 
+		// a new target refr will be computed and set based on the given attack slot.
+		// Otherwise, the aim target linked refr will be set to the player's character 
+		// to ensure the ranged target package has a valid target.
+		// Then return true if a new target was set or the old one was cleared.
 
 		// Requires the aim target keyword to set the aim target linked refr.
 		if (!p->aimTargetKeyword)
@@ -7504,9 +7634,14 @@ namespace ALYSLC
 		if (isRanged)
 		{
 			auto currentTargetRefrPtr = Util::GetRefrPtrFromHandle(aimTargetLinkedRefrHandle);
-			auto newTargetRefrPtr = Util::GetRefrPtrFromHandle
+			auto newTargetRefrPtr = 
 			(
-				GetRangedPackageTargetRefr(weapMagObj)
+				a_findTarget ? 
+				Util::GetRefrPtrFromHandle
+				(
+					GetRangedPackageTargetRefr(weapMagObj)
+				) :
+				coopActor
 			);
 			bool newTargetIsValid = 
 			(
@@ -9813,10 +9948,42 @@ namespace ALYSLC
 		}
 		
 		// Stop setting velocity to force the released refr along the predicted fixed trajectory
-		// if the released refr has hit something. Collisions are still active though.
+		// if the released refr has passed its time of flight,
+		// is submerged after reaching the apex of the initial trajectory, 
+		// or hit something or its target.
+		// Collisions are still active though.
+		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
+		const float t = Util::GetElapsedSeconds(releaseTP.value());
 		bool stopSettingPredictedTraj = 
 		(
-			trajType == ProjectileTrajType::kPrediction && firstHitTP.has_value()
+			(trajType == ProjectileTrajType::kPrediction) && 
+			(
+				(
+					(!isActiveProjectile) && 
+					(
+						(t > initialTimeToTarget) || 
+						(
+							t > 0.5f * initialTimeToTarget && 
+							objectPtr->GetSubmergeLevel
+							(
+								objectPtr->data.location.z, objectPtr->parentCell
+							) == 1.0f
+						)
+					)
+				) ||
+				(!objectPtr->As<RE::Actor>() && firstHitTP.has_value()) ||
+				(
+					(objectPtr->As<RE::Actor>()) && 
+					(
+						(
+							targetRefrPtr && hitRefrFIDs.contains(targetRefrPtr->formID)
+						) ||
+						(
+							!targetRefrPtr && firstHitTP.has_value()
+						)
+					)
+				)
+			)
 		);
 		if (stopSettingPredictedTraj)
 		{
@@ -9828,12 +9995,10 @@ namespace ALYSLC
 		bool shouldUseHomingTrajectory = trajType == ProjectileTrajType::kHoming;
 		// Set the target position. Default to crosshair world position first.
 		RE::NiPoint3 aimTargetPos = a_p->tm->crosshairWorldPos;
-		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 		auto asActorPtr = 
 		(
 			targetRefrPtr ? RE::ActorPtr(targetRefrPtr->As<RE::Actor>()) : nullptr
 		);
-		bool targetActorValidity = asActorPtr && Util::IsValidRefrForTargeting(asActorPtr.get());
 		if (shouldUseHomingTrajectory)
 		{
 			targetLocalPosOffset = 
@@ -9841,6 +10006,10 @@ namespace ALYSLC
 				targetRefrPtr ? 
 				a_p->tm->crosshairLocalPosOffset : 
 				RE::NiPoint3()
+			);
+			bool targetActorValidity = 
+			(
+				asActorPtr && Util::IsValidRefrForTargeting(asActorPtr.get())
 			);
 			if (targetActorValidity) 
 			{
@@ -9890,7 +10059,6 @@ namespace ALYSLC
 			currentVelocity = ToNiPoint3(hkpRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME);
 		}
 
-		const float t = Util::GetElapsedSeconds(releaseTP.value());
 		// Set speed to the corresponding speed along the fixed trajectory.
 		// Will cap speed later if necessary.
 		const float velXY = releaseSpeed * cosf(launchPitch);
@@ -9937,46 +10105,12 @@ namespace ALYSLC
 			// during the next frame.
 			velToSet = (targetPos - objectPos) / *g_deltaTimeRealTime;
 
-			// Set fall height at the apex of the trajectory to properly apply fall damage
-			// once the thrown actor hits a surface.
-			if (!Settings::bPreventFallDamage)
+			// Update fall height if the thrown actor is still rising,
+			// so that we can factor in this height to our bonk and splat damage calculations.
+			const auto centerPos = Util::Get3DCenterPos(objectPtr.get());
+			if (centerPos.z > fallHeight)
 			{
-				auto thrownActor = objectPtr->As<RE::Actor>();
-				auto charController = thrownActor ? thrownActor->GetCharController() : nullptr;
-				if (charController)
-				{
-					float previousVelPitch = Util::GetPitchBetweenPositions
-					(
-						RE::NiPoint3(), lastSetVelocity
-					);
-					float currentVelPitch = Util::GetPitchBetweenPositions
-					(
-						RE::NiPoint3(), currentVelocity
-					);
-					// No collision recorded and angled downward at release,
-					// or now angled downward after previously angled upward 
-					// (reached or past apex).
-					bool firstHit = firstHitTP.has_value();
-					bool isAtOrPastTrajApex = 
-					(
-						(!firstHit) && 
-						(currentVelPitch >= 0.0f) &&
-						(
-							(previousVelPitch <= 0.0f) || 
-							(	
-										
-								releaseTP.has_value() &&
-								Util::GetElapsedSeconds(releaseTP.value()) <= *g_deltaTimeRealTime
-							)
-						)
-					);
-					if (isAtOrPastTrajApex)
-					{
-						charController->lock.Lock();
-						Util::AdjustFallState(charController, true);
-						charController->lock.Unlock();
-					}
-				}
+				fallHeight = centerPos.z;
 			}
 
 			// Nothing to do now if not guiding a homing projectile.
@@ -10147,10 +10281,24 @@ namespace ALYSLC
 		}
 		
 		// If not trying to throw this refr, return early.
-		if ((!a_p->pam->IsPerforming(InputAction::kGrabObject) ||
-			!a_p->mm->reqFaceTarget) ||
-			objectPtr == a_p->coopActor ||
-			refrHandle == a_p->tm->crosshairRefrHandle)
+		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
+		bool notTryingToThrow = 
+		(
+			(
+				!a_p->pam->IsPerforming(InputAction::kGrabObject) ||
+				!a_p->mm->reqFaceTarget || 
+				objectPtr == a_p->coopActor ||
+				refrHandle == a_p->tm->crosshairRefrHandle
+			) ||
+			(
+				(objectPtr->As<RE::Actor>()) && 
+				(
+					(!objectIsPlayer && !Settings::bCanGrabActors) ||
+					(objectIsPlayer && !Settings::bCanGrabOtherPlayers)
+				)
+			)
+		);
+		if (notTryingToThrow)
 		{
 			return false;
 		}
@@ -10200,11 +10348,9 @@ namespace ALYSLC
 			Settings::vuProjectileTrajectoryType[a_p->playerID]
 		);
 	
-		// Adjust release speed based on how long the grab bind was held for
-		// if the bind was just released this frame.
-		// Otherwise, the released refr could have been slapped down,
-		// so we'll release it at the half the max speed.
-		float normHoldTime = a_p->tm->rmm->GetReleasedRefrBindHoldTimeFactor(a_p);
+		// Adjust release angle based on how long the grab bind was held for,
+		// as if the bind were just released this frame.
+		a_p->tm->rmm->UpdateThrownRefrReleaseAngleFactor(a_p);
 		// Get HMS AVs inc per level up.
 		uint32_t iAVDhmsLevelUp = 10;
 		auto valueOpt = Util::GetGameSettingInt("iAVDhmsLevelUp");
@@ -10267,7 +10413,7 @@ namespace ALYSLC
 				releaseSpeedMult * Settings::fBaseMaxThrownObjectReleaseSpeed,
 				Settings::fAbsoluteMaxThrownRefrReleaseSpeed 
 			), 
-			normHoldTime
+			a_p->tm->rmm->normReleaseAngleFactor
 		);
 
 		// Once the initial release speed is set, update the intercept position, 
@@ -10329,7 +10475,10 @@ namespace ALYSLC
 				steepestLaunchAng = minusSoln;
 			}
 
-			launchPitch = std::lerp(steepestLaunchAng, flattestLaunchAng, normHoldTime);
+			launchPitch = std::lerp
+			(
+				steepestLaunchAng, flattestLaunchAng, a_p->tm->rmm->normReleaseAngleFactor
+			);
 		}
 
 		// New squared velocity based on the new launch pitch.
@@ -10373,7 +10522,8 @@ namespace ALYSLC
 
 	void TargetingManager::ReleasedReferenceInfo::InitTrajectory
 	(
-		const std::shared_ptr<CoopPlayer>& a_p
+		const std::shared_ptr<CoopPlayer>& a_p,
+		const float& a_normReleaseAngleFactor
 	)
 	{
 		// Set initial release trajectory info for this released refr.
@@ -10450,12 +10600,26 @@ namespace ALYSLC
 		}
 		
 		// Throw the refr if facing the crosshair position,
-		// if it is not the player themselves, 
+		// if it is not the player themselves (flop), 
 		// and if it is not the target refr.
+		// Only can throw actors if the 'Can Grab Actors' setting is enabled,
+		// and only can throw players if 'Can Grab Other Players' setting is enabled.
 		// Drop the refr otherwise.
-		if (a_p->mm->reqFaceTarget && 
-			objectPtr != a_p->coopActor &&
-			refrHandle != a_p->tm->crosshairRefrHandle)
+		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
+		bool shouldThrow = 
+		(
+			(
+				a_p->mm->reqFaceTarget && 
+				objectPtr != a_p->coopActor &&
+				refrHandle != a_p->tm->crosshairRefrHandle
+			) &&
+			(
+				(!objectPtr->As<RE::Actor>()) || 
+				(!objectIsPlayer && Settings::bCanGrabActors) ||
+				(objectIsPlayer && Settings::bCanGrabOtherPlayers)
+			)
+		);
+		if (shouldThrow)
 		{
 			auto asActor = objectPtr->As<RE::Actor>();
 			// Throw refr telekinetically.
@@ -10468,11 +10632,6 @@ namespace ALYSLC
 				hkpRigidBodyPtr->motion.SetAngularVelocity({ 0 });
 			}
 			
-			// Adjust release speed based on how long the grab bind was held for
-			// if the bind was just released this frame.
-			// Otherwise, the released refr could have been slapped down,
-			// so we'll release it at the half the max speed.
-			float normHoldTime = a_p->tm->rmm->GetReleasedRefrBindHoldTimeFactor(a_p);
 			// Get HMS AVs inc per level up.
 			uint32_t iAVDhmsLevelUp = 10;
 			auto valueOpt = Util::GetGameSettingInt("iAVDhmsLevelUp");
@@ -10519,6 +10678,8 @@ namespace ALYSLC
 				1.5f * magickaOverflowSlowdownFactor : 
 				magickaOverflowSlowdownFactor
 			);
+			// Update normalized release angle factor.
+			a_p->tm->rmm->UpdateThrownRefrReleaseAngleFactor(a_p, a_normReleaseAngleFactor);
 			// Interpolate between the base throw speed and the max throw speed
 			// based on how long the bind was held for.
 			// Cap velocity at max refr release speed.
@@ -10534,7 +10695,7 @@ namespace ALYSLC
 					releaseSpeedMult * Settings::fBaseMaxThrownObjectReleaseSpeed,
 					Settings::fAbsoluteMaxThrownRefrReleaseSpeed 
 				), 
-				normHoldTime
+				a_p->tm->rmm->normReleaseAngleFactor
 			);
 			
 			// Once release speed is set, update the intercept position, if using aim prediction.
@@ -10586,7 +10747,10 @@ namespace ALYSLC
 					steepestLaunchAng = minusSoln;
 				}
 
-				launchPitch = std::lerp(steepestLaunchAng, flattestLaunchAng, normHoldTime);
+				launchPitch = std::lerp
+				(
+					steepestLaunchAng, flattestLaunchAng, a_p->tm->rmm->normReleaseAngleFactor
+				);
 			}
 			else
 			{
@@ -10658,6 +10822,9 @@ namespace ALYSLC
 		// Set as our release velocity.
 		lastSetVelocity = releaseVelocity;
 		lastSetTargetPosition = releasePos;
+		// Set release height, which will change when the refr 
+		// reaches the apex of the trajectory.
+		fallHeight = Util::Get3DCenterPos(objectPtr.get()).z;
 		// Released now.
 		releaseTP = SteadyClock::now();
 	}
@@ -10750,7 +10917,8 @@ namespace ALYSLC
 	(
 		const std::shared_ptr<CoopPlayer>& a_p, 
 		const RE::ObjectRefHandle& a_handle,
-		const float& a_magickaCost
+		float a_magickaCost,
+		float a_normReleaseAngleFactor
 	) 
 	{
 		// Add the given refr to the managed released refrs data set.
@@ -10797,7 +10965,7 @@ namespace ALYSLC
 			a_p, a_magickaCost * Settings::vfMagickaCostMult[a_p->playerID]
 		);
 		// Set initial homing/aim prediction trajectory info.
-		info->InitTrajectory(a_p);
+		info->InitTrajectory(a_p, a_normReleaseAngleFactor);
 
 		return nextOpenIndex;
 	}
@@ -11261,74 +11429,64 @@ namespace ALYSLC
 		releasedRefrHandlesToInfoIndices.clear();
 	}
 
-	float TargetingManager::RefrManipulationManager::GetReleasedRefrBindHoldTimeFactor
+	bool TargetingManager::RefrManipulationManager::GetRefrInfoIndex
 	(
-		const std::shared_ptr<CoopPlayer>& a_p
+		const RE::ObjectRefHandle& a_handle, bool a_grabbed, uint8_t& a_indexOut
 	)
 	{
-		// Normalize and return the grab bind hold time, 
-		// which directly influences the speed at which released refrs are thrown.
+		// Get the given refr handle's manipulable refr info index 
+		// that gives its position in the grabbed/released refrs list 
+		// and return it through the outparam.
+		// Return true if the refr corresponding to the given handle 
+		// is a managed grabbed/released object.
 
-		// Default to half the max release speed hold time 
-		// if not releasing refrs via holding the grab bind.
-		float cappedHoldTime = Settings::fSecsToReleaseObjectsAtMaxSpeed / 2.0f;
-		bool triggeredWithGrabBind = 
-		(
-			(
-				a_p->pam->GetPlayerActionInputJustReleased
-				(
-					InputAction::kGrabObject, false
-				) 
-			) ||
-			(
-				a_p->pam->IsPerforming(InputAction::kGrabObject) &&
-				a_p->pam->GetPlayerActionInputHoldTime
-				(
-					InputAction::kGrabObject
-				) > 0.0f
-			)
-		);
-		// Adjust release speed based on how long the grab bind was held for
-		// if the bind was just released this frame or is being held.
-		if (triggeredWithGrabBind)
+		if (!Util::HandleIsValid(a_handle))
 		{
-			const auto actionIndex = !InputAction::kGrabObject - !InputAction::kFirstAction;
-			cappedHoldTime = 
-			(
-				min
-				(
-					a_p->pam->paStatesList[actionIndex].secsPerformed,
-					max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
-				)
-			);
+			return false;
 		}
 
-		// Normalize and return it.
-		return 
-		(
-			std::lerp
-			(
-				0.0f, 
-				1.0f,
-				cappedHoldTime / max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
-			)
-		);
+		// Must have a mapped index that is within the bounds of the corresponding info list.
+		if (a_grabbed)
+		{
+			const auto iter = grabbedRefrHandlesToInfoIndices.find(a_handle);
+			if (iter != grabbedRefrHandlesToInfoIndices.end() && 
+				iter->second < grabbedRefrInfoList.size())
+			{
+				a_indexOut = iter->second;
+				return true;
+			}
+		}
+		else
+		{
+			const auto iter = releasedRefrHandlesToInfoIndices.find(a_handle);
+			if (iter != releasedRefrHandlesToInfoIndices.end() && 
+				iter->second < releasedRefrInfoList.size())
+			{
+				a_indexOut = iter->second;
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	float TargetingManager::RefrManipulationManager::GetThrownRefrMagickaCost
 	(
-		const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFR* a_refrToThrow
+		const std::shared_ptr<CoopPlayer>& a_p,
+		RE::TESObjectREFR* a_refrToThrow,
+		const float& a_normReleaseAngleFactor
 	)
 	{
-		// Return the base magicka cost for throwing the given refr,
-		// factoring in the grab bind held time to adjust the cost.
+		// Return the base magicka cost for throwing the given refr.
+		// If not specifying a release angle factor (or set to -1),
+		// calculate the release angle factor based on the 'Grab Object' bind's hold time.
 
 		if (a_p->isInGodMode || !a_refrToThrow)
 		{
 			return 0.0f;
 		}
 
-		float normHoldTime = GetReleasedRefrBindHoldTimeFactor(a_p);
+		UpdateThrownRefrReleaseAngleFactor(a_p, a_normReleaseAngleFactor);
 		float objectWeight = max(0.0f, a_refrToThrow->GetWeight()) + 0.1f;
 		auto asActor = a_refrToThrow->As<RE::Actor>();
 		if (asActor)
@@ -11344,7 +11502,8 @@ namespace ALYSLC
 			return
 			(
 				(4.0f * sqrtf(objectWeight)) * 
-				(0.5f * normHoldTime + 0.5f) *
+				(0.5f * normReleaseAngleFactor + 0.5f) *
+				(Settings::vfMagickaCostMult[a_p->playerID]) *
 				(Settings::vfObjectManipulationMagickaCostMult[a_p->playerID])
 			);
 		}
@@ -11354,7 +11513,8 @@ namespace ALYSLC
 			return
 			(
 				(4.0f * sqrtf(objectWeight)) * 
-				(0.5f * normHoldTime + 0.5f) *
+				(0.5f * normReleaseAngleFactor + 0.5f) *
+				(Settings::vfMagickaCostMult[a_p->playerID]) *
 				(Settings::vfObjectManipulationMagickaCostMult[a_p->playerID])
 			);
 		}
@@ -11432,6 +11592,9 @@ namespace ALYSLC
 			// Rigid bodies for the hit refr and released refr, if any.
 			RE::hkRefPtr<RE::hkpRigidBody> hitRigidBodyPtr{ nullptr };
 			RE::hkRefPtr<RE::hkpRigidBody> releasedRigidBodyPtr{ nullptr };
+			// Flopped-on refrs to add as released to propagate the initial collision.
+			// Pairs of (refr handle, released angle factor).
+			std::vector<std::pair<RE::ObjectRefHandle, float>> flopRedirectedRefrs{ };
 			// Movin' through the queue.
 			for (auto iter = queuedReleasedRefrContactEvents.begin(); 
 				 iter != queuedReleasedRefrContactEvents.end(); 
@@ -11480,23 +11643,35 @@ namespace ALYSLC
 
 					const auto index = iter->second;
 					const auto& releasedRefrInfo = a_p->tm->rmm->releasedRefrInfoList[index];
+
 					// Set first hit, if necessary.
-					// Ignore hits within 30 frames of release to allow the released refr
+					// Ignore hits within 30 frames/0.5s of release to allow the released refr
 					// to get off the ground and start on its trajectory if it hasn't already.
 					// This applies to heavy or not very aerodynamic objects/actors,
 					// such as fish, rabbits, crabs, and dragons.
 					// Can't set through the AddHitRefr() func,
 					// since terrain does not have an FID to store.
-					if (!releasedRefrInfo->firstHitTP.has_value() &&
-						releasedRefrInfo->releaseTP.has_value() &&
-						Util::GetElapsedSeconds(releasedRefrInfo->releaseTP.value()) > 
-						*g_deltaTimeRealTime * 30)
+					if (!releasedRefrInfo->SetupPeriodElapsed())
+					{
+						// Update fall height to the actor's position
+						// even when skipping the collision.
+						releasedRefrInfo->fallHeight = 
+						(
+							Util::Get3DCenterPos(releasedRefrPtr.get()).z
+						);
+						continue;
+					}
+					
+					// Set first hit TP if not set already.
+					if (!releasedRefrInfo->firstHitTP.has_value())
 					{
 						releasedRefrInfo->firstHitTP = SteadyClock::now();
 					}
 
-					// Now, check if the released refr was an actor,
-					// and if so, apply splat damage.
+					// Increment the collision count, since we're past the setup period.
+					releasedRefrInfo->recordedHitsCount++;
+					// Do not apply splat damage if this refr is not an actor 
+					// or is a not flopping player and is not a thrown.
 					auto releasedActor = releasedRefrPtr->As<RE::Actor>();
 					if (!releasedActor)
 					{
@@ -11508,9 +11683,13 @@ namespace ALYSLC
 					// eg. Navmesh or terrain block.
 					a_p->tm->HandleSplat
 					(
-						releasedActorHandle, releasedRefrInfo->hitRefrFIDs.size() + 1
+						releasedActorHandle, 
+						max(1, releasedRefrInfo->recordedHitsCount),
+						releasedRefrInfo->fallHeight,
+						releasedRefrInfo->isThrown
 					);
-
+					// Update fall height to the actor's position after handling the collision.
+					releasedRefrInfo->fallHeight = Util::Get3DCenterPos(releasedRefrPtr.get()).z;
 					// We're done here.
 					continue;
 				}
@@ -11570,18 +11749,46 @@ namespace ALYSLC
 					continue;
 				}
 
-				// Do not handle if the hit refr is a player that is dash dodging.
+				// Do not handle if the hit refr is a player that is dash dodging
+				// or flailing their arms in a crazed and/or defensive manner.
+				// Either method still requires timing using the dash dodge's I-Frame window.
 				auto hitPlayerIndex = GlobalCoopData::GetCoopPlayerIndex(collidedWithRefrPtr);
 				if (hitPlayerIndex != -1)
 				{
 					const auto& hitP = glob.coopPlayers[hitPlayerIndex];
-					if (hitP->mm->isDashDodging)
+					// Number of seconds independent of framerate.
+					float secsEvadeWindow = 
+					(
+						(
+							Settings::uDashDodgeBaseAnimFrameCount + 
+							Settings::uDashDodgeSetupFrameCount
+						) *
+						(1.0f / (*g_deltaTimeRealTime * 60.0f))
+					);
+					bool canEvade = 
+					(
+						(hitP->mm->isDashDodging) || 
+						(
+							hitP->pam->IsPerforming(InputAction::kRotateLeftShoulder) &&
+							hitP->pam->GetSecondsSinceLastStart(InputAction::kRotateLeftShoulder) <
+							secsEvadeWindow 
+						) ||
+						(
+							hitP->pam->IsPerforming(InputAction::kRotateRightShoulder) &&
+							hitP->pam->GetSecondsSinceLastStart
+							(
+								InputAction::kRotateRightShoulder
+							) < secsEvadeWindow 
+						)
+					);
+					if (canEvade)
 					{
-						/// Clear the released refr, so we don't continue 
+						// Clear the released refr, so we don't continue 
 						// setting its trajectory or listening for collisions.
 						// Otherwise, if it is homing in on the target,
 						// it'll go through the player, come back around,
-						// and hit the player once their dodge I-frames end.
+						// and hit the player once their dodge I-frames end
+						// (or once their arms grow heavy with fatigue and stop moving).
 						ClearRefr(collidedWithRefrPtr->GetHandle());
 						// NOTE:
 						// Unfortunately, at this stage, the collision has already occurred,
@@ -11620,7 +11827,7 @@ namespace ALYSLC
 				{
 					continue;
 				}
-
+				
 				// Add hit.
 				releasedRefrInfo->AddHitRefr(collidedWithRefrPtr.get());
 				auto hitActor = collidedWithRefrPtr->As<RE::Actor>(); 
@@ -11639,85 +11846,159 @@ namespace ALYSLC
 						hitActor->GetHandle(), 
 						releasedRefrPtr->GetHandle(),
 						releasedRigidBodyPtr->motion.GetMass(),
+						releasedRefrInfo->fallHeight,
 						ToNiPoint3(releasedRigidBodyPtr->motion.linearVelocity * HAVOK_TO_GAME),
 						ToNiPoint3(contactEvent->contactPosition * HAVOK_TO_GAME)
 					);
 				}
 
+				// Heh.
+				// Works the same way as slapping the object to redirect it.
+				bool shouldRedirectWithFlop = 
+				(
+					(
+						a_p->mm->reqFaceTarget && 
+						releasedRefrPtr == a_p->coopActor &&
+						collidedWithRefrPtr != a_p->coopActor &&
+						collidedWithRefrPtr->GetHandle() != a_p->tm->crosshairRefrHandle
+					) &&
+					(hitActor || Util::IsLootableRefr(collidedWithRefrPtr.get()))
+				);
+				if (shouldRedirectWithFlop) 
+				{
+					flopRedirectedRefrs.emplace_back
+					(
+						collidedWithRefrPtr->GetHandle(),
+						std::lerp
+						(
+							0.5f,
+							0.85f,
+							min
+							(
+								1.0f, releasedRigidBodyPtr->motion.linearVelocity.Length3() / 15.0f
+							)
+						)
+					);
+				}
+
 				// Thrown actor hit a new refr that isn't itself. Splat.
 				auto thrownActor = releasedRefrPtr->As<RE::Actor>(); 
-				bool shouldSplat = 
+				bool canSplat = 
 				(
 					thrownActor && 
 					thrownActor != collidedWithRefrPtr.get() &&
-					!hasAlreadyHitRefr && 
-					!releasedRefrInfo->hitRefrFIDs.empty()
+					releasedRefrInfo->SetupPeriodElapsed()
 				);
-				if (shouldSplat)
+				if (canSplat)
 				{
 					a_p->tm->HandleSplat
 					(
-						thrownActor->GetHandle(), releasedRefrInfo->hitRefrFIDs.size()
+						thrownActor->GetHandle(), 
+						max(1, releasedRefrInfo->recordedHitsCount),
+						releasedRefrInfo->fallHeight,
+						releasedRefrInfo->isThrown
 					);
 				}
 
-				// Get havok collision speed.
-				float havokHitSpeed = contactEvent->contactSpeed;
-				if (havokHitSpeed == 0.0f)
+				if (canSplat || shouldBonk)
 				{
-					auto refr3DPtr = Util::GetRefr3D(releasedRefrPtr.get());
-					if (refr3DPtr)
+					// Update fall height to the refr's position after handling the collision.
+					releasedRefrInfo->fallHeight = Util::Get3DCenterPos(releasedRefrPtr.get()).z;
+				}
+
+				// Only damage destructible objects on the first hit.
+				if (!hasAlreadyHitRefr)
+				{
+					// Get havok collision speed.
+					float havokHitSpeed = contactEvent->contactSpeed;
+					if (havokHitSpeed == 0.0f)
 					{
-						havokHitSpeed = Util::GetParentNodeHavokPointVelocity
-						(
-							refr3DPtr.get(), contactEvent->contactPosition
-						).Length3();
+						auto refr3DPtr = Util::GetRefr3D(releasedRefrPtr.get());
+						if (refr3DPtr)
+						{
+							havokHitSpeed = Util::GetParentNodeHavokPointVelocity
+							(
+								refr3DPtr.get(), contactEvent->contactPosition
+							).Length3();
+						}
+						else
+						{
+							havokHitSpeed = 
+							(
+								releasedRigidBodyPtr->motion.linearVelocity.Length3()
+							);
+						}
 					}
-					else
+
+					// Too slow to cause destructible object damage.
+					if (havokHitSpeed < 1E-5f)
 					{
-						havokHitSpeed = 
+						continue;
+					}
+				
+					// Damage destructible objects.
+					auto taskInterface = RE::TaskQueueInterface::GetSingleton(); 
+					if (!taskInterface)
+					{
+						continue;
+					}
+
+					if (!releasedRefrPtr->Is(RE::FormType::ActorCharacter))
+					{
+						taskInterface->QueueUpdateDestructibleObject
 						(
-							releasedRigidBodyPtr->motion.linearVelocity.Length3()
+							releasedRefrPtr.get(),
+							max(releasedRefrPtr->GetWeight(), 0.0f) * havokHitSpeed, 
+							false,
+							a_p->coopActor.get()
+						);
+					}
+						
+					if (!collidedWithRefrPtr->Is(RE::FormType::ActorCharacter))
+					{
+						taskInterface->QueueUpdateDestructibleObject
+						(
+							collidedWithRefrPtr.get(),
+							max(releasedRefrPtr->GetWeight(), 0.0f) * havokHitSpeed,
+							false, 
+							a_p->coopActor.get()
 						);
 					}
 				}
-
-				// Too slow to cause destructible object damage.
-				if (havokHitSpeed < 1E-5f)
-				{
-					continue;
-				}
-				
-				// Damage destructible objects.
-				auto taskInterface = RE::TaskQueueInterface::GetSingleton(); 
-				if (!taskInterface)
-				{
-					continue;
-				}
-
-				if (!releasedRefrPtr->Is(RE::FormType::ActorCharacter))
-				{
-					taskInterface->QueueUpdateDestructibleObject
-					(
-						releasedRefrPtr.get(),
-						max(releasedRefrPtr->GetWeight(), 0.0f) * havokHitSpeed, 
-						false,
-						a_p->coopActor.get()
-					);
-				}
-						
-				if (!collidedWithRefrPtr->Is(RE::FormType::ActorCharacter))
-				{
-					taskInterface->QueueUpdateDestructibleObject
-					(
-						collidedWithRefrPtr.get(),
-						max(releasedRefrPtr->GetWeight(), 0.0f) * havokHitSpeed,
-						false, 
-						a_p->coopActor.get()
-					);
-				}
 			}
 
+			// Add any flop bonk'd refrs as released.
+			for (const auto& [handle, factor] : flopRedirectedRefrs)
+			{
+				if (!Util::HandleIsValid(handle))
+				{
+					continue;
+				}
+
+				for (const auto& otherP : glob.coopPlayers)
+				{
+					if (!otherP->isActive || otherP == a_p)
+					{
+						continue;
+					}
+
+					// Remove grabbed/released refr from the other player's managed lists.
+					if (otherP->tm->rmm->IsManaged(handle, true) || 
+						otherP->tm->rmm->IsManaged(handle, false))
+					{
+						otherP->tm->rmm->ClearRefr(handle);
+					}
+				}
+
+				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+				a_p->tm->rmm->ClearGrabbedRefr(handle);
+				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
+				{
+					a_p->tm->SetIsGrabbing(false);
+				}
+
+				a_p->tm->rmm->AddReleasedRefr(a_p, handle, 0.0f, factor);
+			}
 			// No more events to handle.
 			queuedReleasedRefrContactEvents.clear();
 		}
@@ -11836,12 +12117,14 @@ namespace ALYSLC
 	void TargetingManager::RefrManipulationManager::SetTotalThrownRefrMagickaCost
 	(
 		const std::shared_ptr<CoopPlayer>& a_p,
-		bool&& a_checkGrabbedRefrsList
+		bool&& a_checkGrabbedRefrsList,
+		const float& a_normReleaseAngleFactor
 	)
 	{
-		// Cache the total base magicka cost for throwing all this player's grabbed refrs,
-		// factoring in the given grab hold time to adjust the cost.
+		// Cache the total base magicka cost for throwing all this player's grabbed refrs.
 		// Either calculate the cost from the grabbed refrs or released refrs list.
+		// If not specifying a release angle factor (or set to -1),
+		// calculate the release angle factor based on the 'Grab Object' bind's hold time.
 
 		// No cost when in god mode or if dropping refrs.
 		if (a_p->isInGodMode)
@@ -11850,8 +12133,8 @@ namespace ALYSLC
 			return;
 		}
 
+		UpdateThrownRefrReleaseAngleFactor(a_p, a_normReleaseAngleFactor);
 		float totalMagickaCost = 0.0f;
-		float normHoldTime = GetReleasedRefrBindHoldTimeFactor(a_p);
 		if (a_checkGrabbedRefrsList && !grabbedRefrInfoList.empty())
 		{
 			for (auto i = 0; i < grabbedRefrInfoList.size(); ++i)
@@ -11883,7 +12166,7 @@ namespace ALYSLC
 					totalMagickaCost += 
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f)
+						(0.5f * normReleaseAngleFactor + 0.5f)
 					);
 				}
 				else
@@ -11892,7 +12175,7 @@ namespace ALYSLC
 					totalMagickaCost +=
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f)
+						(0.5f * normReleaseAngleFactor + 0.5f)
 					);
 				}
 			}
@@ -11928,7 +12211,7 @@ namespace ALYSLC
 					totalMagickaCost += 
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f)
+						(0.5f * normReleaseAngleFactor + 0.5f)
 					);
 				}
 				else
@@ -11937,7 +12220,7 @@ namespace ALYSLC
 					totalMagickaCost +=
 					(
 						(4.0f * sqrtf(objectWeight)) * 
-						(0.5f * normHoldTime + 0.5f)
+						(0.5f * normReleaseAngleFactor + 0.5f)
 					);
 				}
 			}
@@ -11948,6 +12231,7 @@ namespace ALYSLC
 		totalThrownRefrMagickaCost = 
 		(
 			totalMagickaCost *
+			Settings::vfMagickaCostMult[a_p->playerID] *
 			Settings::vfObjectManipulationMagickaCostMult[a_p->playerID]
 		);
 	}
@@ -11972,6 +12256,91 @@ namespace ALYSLC
 
 			info->ToggleCollision();
 		}
+	}
+	
+	void TargetingManager::RefrManipulationManager::UpdateThrownRefrReleaseAngleFactor
+	(
+		const std::shared_ptr<CoopPlayer>& a_p, const float& a_factorToSet
+	)
+	{
+		// If the given factor is -1, clamp and return it.
+		// Otherwise, calculate a new one by normalizing and returning the grab bind hold time, 
+		// which directly influences the angle at which released refrs are thrown.
+
+		if (a_factorToSet != -1.0f)
+		{
+			normReleaseAngleFactor = std::clamp(a_factorToSet, 0.0f, 1.0f);
+			return;
+		}
+
+		float cappedHoldTime = 0.0f;
+		bool triggeredWithGrabBind = 
+		(
+			(
+				a_p->pam->GetPlayerActionInputJustReleased
+				(
+					InputAction::kGrabObject, false
+				) 
+			) ||
+			(
+				a_p->pam->IsPerforming(InputAction::kGrabObject) &&
+				a_p->pam->GetPlayerActionInputHoldTime
+				(
+					InputAction::kGrabObject
+				) > 0.0f
+			)
+		);
+		// Adjust release speed based on how long the grab bind was held for
+		// if the bind was just released this frame or is being held.
+		if (triggeredWithGrabBind)
+		{
+			const auto actionIndex = !InputAction::kGrabObject - !InputAction::kFirstAction;
+			cappedHoldTime = 
+			(
+				min
+				(
+					a_p->pam->paStatesList[actionIndex].secsPerformed,
+					max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
+				)
+			);
+		}
+
+		// Normalize and cache it.
+		normReleaseAngleFactor = std::lerp
+		(
+			0.0f, 
+			1.0f,
+			cappedHoldTime / max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
+		);
+	}
+
+	const bool TargetingManager::RefrManipulationManager::WasThrown
+	(
+		const RE::ObjectRefHandle& a_handle
+	)
+	{
+		// Was the given refr released as thrown?
+
+		// No valid handle, so couldn't have been thrown.
+		if (!Util::HandleIsValid(a_handle))
+		{
+			return false;
+		}
+
+		// Does not map to an index in the released refr info list.
+		const auto iter = releasedRefrHandlesToInfoIndices.find(a_handle);
+		if (iter == releasedRefrHandlesToInfoIndices.end())
+		{
+			return false;
+		}
+
+		// Mapped index lies outside the bounds of the released refr info list.
+		if (iter->second >= releasedRefrInfoList.size())
+		{
+			return false;
+		}
+
+		return releasedRefrInfoList[iter->second]->isThrown;
 	}
 
 	void TargetingManager::RefrTargetMotionState::UpdateMotionState

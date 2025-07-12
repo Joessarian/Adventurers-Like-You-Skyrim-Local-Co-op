@@ -449,13 +449,13 @@ See the mod's source for more detailed credits.
    - For [UIExtensions](https://www.nexusmods.com/skyrimspecialedition/mods/17561), which provides the backbone for co-op player customization and a number of co-op menus.
    - [Check out Expired6978's Skyrim mods](https://next.nexusmods.com/profile/expired6978/mods?gameId=1704)
 - `covey-j`
-  - For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to companion players.
+   - For their work on [Actor Copy Lib](https://github.com/covey-j/ActorCopyLib), a snippet of which is used to copy over actors’ appearances to companion players.
+- `digitalApple`
+   - For their [Explosion Collision Fix](https://www.nexusmods.com/skyrimspecialedition/mods/154076) mod, from which a hook was obtained for preventing friendly-fire damage from projectile explosions.
+   - [Check out digitalApple's Skyrim mods](https://next.nexusmods.com/profile/digitalApple/mods?gameId=1704)
 - `fenix31415`
 	- For the method used in allowing grabbed projectiles to hit their original shooters when thrown back at them and for their extensive work on projectile-related code.
 	- [Check out fenix31415's Skyrim Mods](https://next.nexusmods.com/profile/fenix31415/mods?gameId=1704)
-- `Sylennus`
-  - For a function used by their mod [Personalized Mannequins](https://www.nexusmods.com/skyrimspecialedition/mods/76386), which is used to set base actor flags.
-  - [Check out Sylennus's Skyrim mods](https://next.nexusmods.com/profile/Sylennus/mods?gameId=1704)
 - `VersuchDrei`
   - For a reversed actor movement function used to stop players from moving, found here: [OStim GitHub Source](https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h).
   - [Check out VersuchDrei's Skyrim mods](https://next.nexusmods.com/profile/VersuchDrei/mods?gameId=1704)

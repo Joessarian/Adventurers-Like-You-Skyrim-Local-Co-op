@@ -1813,7 +1813,12 @@ namespace ALYSLC
 				return ""sv;
 			}
 
-			const auto avInfo = avList->GetActorValue(a_av);
+			const auto avInfo = 
+			(
+				a_av != RE::ActorValue::kNone && a_av < RE::ActorValue::kTotal ? 
+				avList->actorValues[!a_av] :
+				nullptr
+			);
 			if (!avInfo)
 			{
 				return ""sv;
@@ -2105,24 +2110,24 @@ namespace ALYSLC
 			return crimeFaction && crimeFaction->GetCrimeGold() > 0.0f;
 		}
 
-		// Return true if the given form is either a hostile spell,
-		// or a weapon with a hostile spell enchantment.
-		inline bool HasHostileSpell(RE::TESForm* a_form)
+		// Return true if the given form is either a magic item with a hostile effect,
+		// or a weapon with a hostile enchantment.
+		inline bool HasHostileEffect(RE::TESForm* a_form)
 		{
 			if (!a_form)
 			{
 				return false;
 			}
 
-			if (auto spell = a_form->As<RE::SpellItem>(); spell) 
+			if (auto magicItem = a_form->As<RE::MagicItem>(); magicItem) 
 			{
 				return 
 				(
-					(spell->IsHostile()) || 
-					(spell->GetAVEffect() && spell->GetAVEffect()->IsHostile()) ||
+					(magicItem->IsHostile()) || 
+					(magicItem->GetAVEffect() && magicItem->GetAVEffect()->IsHostile()) ||
 					(
-						spell->GetCostliestEffectItem() && 
-						spell->GetCostliestEffectItem()->IsHostile()
+						magicItem->GetCostliestEffectItem() && 
+						magicItem->GetCostliestEffectItem()->IsHostile()
 					)
 				);
 			}
@@ -2771,9 +2776,9 @@ namespace ALYSLC
 		// since some interior cells still have camera proximity-based fog afterward.
 		// May remove later.
 		// Attempt to remove fog from interior cells by setting the cell sky mode to 'SkyDomeOnly'.
-		inline void SetSkyboxOnlyForInteriorModeCell(const RE::TESObjectCELL* a_cell)
+		inline void SetSkyboxModeForCell(const RE::TESObjectCELL* a_cell)
 		{
-			if (!a_cell || a_cell->formID == 0)
+			if (!a_cell)
 			{
 				return;
 			}
@@ -2781,23 +2786,38 @@ namespace ALYSLC
 			auto tes = RE::TES::GetSingleton(); 
 			if (!tes || !tes->sky || *tes->sky->mode == RE::Sky::Mode::kInterior)
 			{
+				SPDLOG_DEBUG
+				(
+					"[CAM] SetSkyboxModeForCell: {} ({}, 0x{:X}) has interior sky mode. Skipping.",
+					Util::GetEditorID(a_cell),
+					a_cell->IsExteriorCell() ? "EXT" : "INT",
+					a_cell->formID
+				);
 				return;
 			}
 
-			tes->sky->mode.reset
-			(
-				RE::Sky::Mode::kFull,
-				RE::Sky::Mode::kInterior, 
-				RE::Sky::Mode::kNone, 
-				RE::Sky::Mode::kSkyDomeOnly
-			);
 			if (a_cell->IsExteriorCell()) 
 			{
-				tes->sky->mode.set(RE::Sky::Mode::kFull);
+				SPDLOG_DEBUG
+				(
+					"[CAM] SetSkyboxModeForCell: Setting full sky mode for cell {} ({}, 0x{:X}).",
+					Util::GetEditorID(a_cell),
+					a_cell->IsExteriorCell() ? "EXT" : "INT",
+					a_cell->formID
+				);
+				tes->sky->mode = RE::Sky::Mode::kFull;
 			}
 			else
 			{
-				tes->sky->mode.set(RE::Sky::Mode::kSkyDomeOnly);
+				SPDLOG_DEBUG
+				(
+					"[CAM] SetSkyboxModeForCell: "
+					"Setting skybox-only sky mode for cell {} ({}, 0x{:X}).",
+					Util::GetEditorID(a_cell),
+					a_cell->IsExteriorCell() ? "EXT" : "INT",
+					a_cell->formID
+				);
+				tes->sky->mode = RE::Sky::Mode::kSkyDomeOnly;
 			}
 		}
 
@@ -2824,7 +2844,10 @@ namespace ALYSLC
 
 		// Add the given target actor as a combat target for the source actor.
 		// Return true if successfully added.
-		void AddAsCombatTarget(RE::Actor* a_sourceActor, RE::Actor* a_targetActor);
+		void AddAsCombatTarget
+		(
+			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
+		);
 
 		// Run task and wait until complete.
 		// Can choose to send a UI task instead.
@@ -3096,7 +3119,7 @@ namespace ALYSLC
 			const RE::NiPoint3& a_crosshairWorldPos,
 			bool a_showDebugInfo = false
 		);
-
+		
 		// Helper function which performs a series of raycasts
 		// from the given start position to the target's
 		// refr data position, 3D world position,
@@ -3295,10 +3318,12 @@ namespace ALYSLC
 		// Can set aggressor, target, source refr.
 		// Also total damage, flags, stagger, hit direction, and hit position,
 		// which are set to defaults unless given.
+		// NOTE:
+		// Can draw aggro and start combat, unlike SendHitEvent() or DoDamage().
 		void SendHitData
 		(
-			const RE::ActorHandle& a_aggressor, 
-			const RE::ActorHandle& a_target, 
+			RE::Actor* a_aggressor, 
+			RE::Actor* a_target, 
 			const RE::ObjectRefHandle& a_source, 
 			RE::InventoryEntryData* a_invEntryData = nullptr,
 			const float& a_damage = 0.0f, 
@@ -3499,6 +3524,23 @@ namespace ALYSLC
 			std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor
 		);
 
+		// First, make sure the source actor and the target actor are in combat 
+		// with each other both ways (aggroed by each other).
+		// Then, deal the given damage to the given target actor.
+		// Can also specify a handle for the damage source.
+		void TriggerCombatAndDealDamage
+		(
+			RE::Actor* a_sourceActor,
+			RE::Actor* a_targetActor,
+			const float& a_damage,
+			bool a_triggerCombat,
+			bool a_sendEvent = false,
+			const RE::ObjectRefHandle& a_sourceHandle = RE::ObjectRefHandle(),
+			const RE::FormID& a_projFID = 0,
+			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags = 
+			RE::TESHitEvent::Flag::kNone
+		);
+
 		// Trigger a skill level up message by spoofing a level up 
 		// to the given level for the given skill.
 		// Returns true if successful.
@@ -3508,6 +3550,12 @@ namespace ALYSLC
 			const Skill& a_skill,
 			const std::string& a_skillName, 
 			const float& a_newLevel
+		);
+		
+		// Set the given target actor as the given source actor's combat target and vice versa.
+		void UpdateCombatTargets
+		(
+			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
 		);
 
 		// Get the screen point (Z component used for the position's depth value)

@@ -41,47 +41,38 @@ namespace Raycast
 		}
 
 		// Clear out hit refr.
-		hit.hitRefrPtr = RE::TESObjectREFRPtr();
-		RE::NiPointer<RE::NiAVObject> hit3DPtr{ hit.GetAVObject() };
+		hit.hitRefr = nullptr;
+		hit.hitObject = ALYSLC::Util::NativeFunctions::hkpCdBody_GetUserData(hit.body);
 		// Get hit object refr.
 		// Precedence of checks:
 		// 1. Check the hit 3D's user data; fastest way to obtain if valid.
 		// 2. Attempt to obtain the hit refr from the collidable.
 		// 3. If the hit 3D was invalid, obtain 3D via second method and then check its user data.
 		// 4. As a last resort, walk up the node tree and look for a valid parent refr.
-		if (hit3DPtr && hit3DPtr->userData)
+		if (hit.hitObject && hit.hitObject->userData)
 		{
-			hit.hitRefrPtr = RE::TESObjectREFRPtr(hit3DPtr->userData);
+			hit.hitRefr = hit.hitObject->userData;
 		}
 		else
 		{
 			const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
-			hit.hitRefrPtr = RE::TESObjectREFRPtr
-			(
-				RE::TESHavokUtilities::FindCollidableRef(*collisionObj)
-			);
-			if (!hit.hitRefrPtr)
+			hit.hitRefr = RE::TESHavokUtilities::FindCollidableRef(*collisionObj);
+			if (!hit.hitRefr)
 			{
-				if (!hit3DPtr)
+				if (!hit.hitObject)
 				{
-					hit3DPtr = RE::NiPointer<RE::NiAVObject>
-					(
-						RE::TESHavokUtilities::FindCollidableObject(*collisionObj)
-					);
+					hit.hitObject = RE::TESHavokUtilities::FindCollidableObject(*collisionObj);
 				}
 
-				if (hit3DPtr)
+				if (hit.hitObject)
 				{
-					if (hit3DPtr->userData)
+					if (hit.hitObject->userData)
 					{
-						hit.hitRefrPtr = RE::TESObjectREFRPtr(hit3DPtr->userData);
+						hit.hitRefr = hit.hitObject->userData;
 					}
 					else
 					{
-						hit.hitRefrPtr = RE::TESObjectREFRPtr
-						(
-							ALYSLC::Util::GetRefrFrom3D(hit3DPtr.get())
-						);
+						hit.hitRefr = ALYSLC::Util::GetRefrFrom3D(hit.hitObject);
 					}
 				}
 			}
@@ -94,11 +85,11 @@ namespace Raycast
 			const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
 			const auto flags = collisionObj->broadPhaseHandle.collisionFilterInfo;
 
-			const uint64_t m = 1ULL << static_cast<uint64_t>(flags);
+			const uint64_t m = 1ULL << static_cast<uint64_t>(flags.filter);
 			constexpr uint64_t filter = 0x40122716;	 //@TODO
 			if ((m & filter) != 0)
 			{
-				if (!objectFilters.empty() && hit3DPtr)
+				if (!objectFilters.empty() && hit.hitObject)
 				{
 					for (const auto filteredObjPtr : objectFilters)
 					{
@@ -112,8 +103,8 @@ namespace Raycast
 						// so skip this hit.
 						bool shouldExclude = 
 						(
-							(isIncludeFilter && hit3DPtr != filteredObjPtr) ||
-							(!isIncludeFilter && hit3DPtr == filteredObjPtr)
+							(isIncludeFilter && hit.hitObject != filteredObjPtr.get()) ||
+							(!isIncludeFilter && hit.hitObject == filteredObjPtr.get())
 						);
 						if (shouldExclude)
 						{
@@ -135,13 +126,11 @@ namespace Raycast
 						(
 							(
 								isIncludeFilter && 
-								hit.hitRefrPtr &&
-								hit.hitRefrPtr.get() != filteredRefr
+								hit.hitRefr != filteredRefr
 							) ||
 							(
 								!isIncludeFilter && 
-								hit.hitRefrPtr &&
-								hit.hitRefrPtr.get() == filteredRefr
+								hit.hitRefr  == filteredRefr
 							)
 						);
 						if (shouldExclude)
@@ -151,7 +140,7 @@ namespace Raycast
 					}
 				}
 				
-				if (hit.hitRefrPtr && !refrFilters.empty())
+				if (hit.hitRefr && !refrFilters.empty())
 				{
 					for (const auto filteredRefrPtr : refrFilters)
 					{
@@ -162,8 +151,8 @@ namespace Raycast
 
 						// Hit a refr that is not in the included list 
 						// or hit a refr in the excluded list.
-						if ((isIncludeFilter && hit.hitRefrPtr != filteredRefrPtr) ||
-							(!isIncludeFilter && hit.hitRefrPtr == filteredRefrPtr))
+						if ((isIncludeFilter && hit.hitRefr != filteredRefrPtr.get()) ||
+							(!isIncludeFilter && hit.hitRefr == filteredRefrPtr.get()))
 						{
 							return;
 						}
@@ -178,15 +167,15 @@ namespace Raycast
 		{
 			// Consider all hits but filter with formtype or object 3D lists exclusively instead.
 			// Form type filters.
-			if (hit.hitRefrPtr && !formTypesToFilter.empty())
+			if (hit.hitRefr && !formTypesToFilter.empty())
 			{
-				auto baseObject = hit.hitRefrPtr ? hit.hitRefrPtr->GetBaseObject() : nullptr;
+				auto baseObject = hit.hitRefr ? hit.hitRefr->GetBaseObject() : nullptr;
 				for (const auto& filteredFormType : formTypesToFilter)
 				{
 					if (isIncludeFilter)
 					{
 						// Include this type, so skip over objects of a different form type.
-						if ((*hit.hitRefrPtr->formType != filteredFormType) || 
+						if ((*hit.hitRefr->formType != filteredFormType) || 
 							(baseObject && *baseObject->formType != filteredFormType)) 
 						{
 							return;
@@ -195,7 +184,7 @@ namespace Raycast
 					else
 					{
 						// Exclude this type, so skip over objects of the same form type.
-						if ((*hit.hitRefrPtr->formType == filteredFormType) || 
+						if ((*hit.hitRefr->formType == filteredFormType) || 
 							(baseObject && *baseObject->formType == filteredFormType))
 						{
 							return;
@@ -204,7 +193,7 @@ namespace Raycast
 				}
 			}
 
-			if (!objectFilters.empty() && hit3DPtr)
+			if (!objectFilters.empty() && hit.hitObject)
 			{
 				for (const auto filteredObjPtr : objectFilters)
 				{
@@ -218,8 +207,8 @@ namespace Raycast
 					// so skip this hit.
 					bool shouldExclude = 
 					(
-						(isIncludeFilter && hit3DPtr != filteredObjPtr) ||
-						(!isIncludeFilter && hit3DPtr == filteredObjPtr)
+						(isIncludeFilter && hit.hitObject != filteredObjPtr.get()) ||
+						(!isIncludeFilter && hit.hitObject == filteredObjPtr.get())
 					);
 					if (shouldExclude)
 					{
@@ -238,13 +227,11 @@ namespace Raycast
 					(
 						(
 							isIncludeFilter && 
-							hit.hitRefrPtr &&
-							hit.hitRefrPtr.get() != filteredRefr
+							hit.hitRefr != filteredRefr
 						) ||
 						(
 							!isIncludeFilter && 
-							hit.hitRefrPtr &&
-							hit.hitRefrPtr.get() == filteredRefr
+							hit.hitRefr == filteredRefr
 						)
 					);
 					if (shouldExclude)
@@ -254,7 +241,7 @@ namespace Raycast
 				}
 			}
 
-			if (hit.hitRefrPtr && !refrFilters.empty())
+			if (hit.hitRefr && !refrFilters.empty())
 			{
 				for (const auto filteredRefrPtr : refrFilters)
 				{
@@ -265,8 +252,8 @@ namespace Raycast
 
 					// Hit a refr that is not in the included list 
 					// or hit a refr in the excluded list.
-					if ((isIncludeFilter && hit.hitRefrPtr != filteredRefrPtr) ||
-						(!isIncludeFilter && hit.hitRefrPtr == filteredRefrPtr))
+					if ((isIncludeFilter && hit.hitRefr != filteredRefrPtr.get()) ||
+						(!isIncludeFilter && hit.hitRefr == filteredRefrPtr.get()))
 					{
 						return;
 					}
@@ -297,13 +284,6 @@ namespace Raycast
 		objectFilters.clear();
 		formTypesToFilter.clear();
 		refrFilters.clear();
-	}
-
-	RE::NiAVObject* RayCollector::HitResult::GetAVObject()
-	{
-		// Get object 3D from the collision detection body.
-
-		return body ? ALYSLC::Util::NativeFunctions::hkpCdBody_GetUserData(body) : nullptr;
 	}
 
 	RayCollector* GetCastCollector() noexcept
@@ -354,12 +334,6 @@ namespace Raycast
 
 		if (res.hit)
 		{
-			res.hitObjectPtr = 
-			(
-				hitCharacter ? 
-				ALYSLC::Util::GetRefr3D(hitCharacter) : 
-				nullptr
-			);
 			// Set hit position and distance cast before the hit.
 			res.hitPos = a_end;
 			res.rayLength = glm::length(res.hitPos - a_start);
@@ -441,7 +415,7 @@ namespace Raycast
 		// If not using the all-inclusive unidentified layer, set the filter info for the cast.
 		if (a_collisionLayer != RE::COL_LAYER::kUnidentified) 
 		{
-			pickData.rayInput.filterInfo = 
+			pickData.rayInput.filterInfo.filter = 
 			(
 				RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | 
 				std::to_underlying(a_collisionLayer)
@@ -485,7 +459,7 @@ namespace Raycast
 		// If not using the all-inclusive unidentified layer, set the filter info for the cast.
 		if (a_collisionLayer != RE::COL_LAYER::kUnidentified) 
 		{
-			pickData.rayInput.filterInfo = 
+			pickData.rayInput.filterInfo.filter = 
 			(
 				RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 |
 				std::to_underlying(a_collisionLayer)
@@ -576,7 +550,7 @@ namespace Raycast
 		pickData.rayInput.to = ALYSLC::TohkVector4(a_end) * havokWorldScale;
 		pickData.rayInput.enableShapeCollectionFilter = false;
 		// Set filter info to use our collision layer.
-		pickData.rayInput.filterInfo = 
+		pickData.rayInput.filterInfo.filter = 
 		(
 			RE::bhkCollisionFilter::GetSingleton()->GetNewSystemGroup() << 16 | 
 			std::to_underlying(a_collisionLayer)
@@ -807,12 +781,11 @@ namespace Raycast
 			result.rayNormal = { hit.normal.x, hit.normal.y, hit.normal.z, 0.0f };
 			if (hit.body)
 			{
-				auto av = hit.GetAVObject();
-				result.hit = av != nullptr;
-				result.hitObjectPtr = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
+				result.hit = true;
+				result.hitObjectPtr = RE::NiPointer<RE::NiAVObject>(hit.hitObject);
 				result.hitRefrHandle = 
 				(
-					hit.hitRefrPtr ? hit.hitRefrPtr->GetHandle() : RE::ObjectRefHandle()
+					hit.hitRefr ? hit.hitRefr->GetHandle() : RE::ObjectRefHandle()
 				);
 			}
 			else
@@ -907,18 +880,17 @@ namespace Raycast
 		result.rayNormal = normal;
 
 		// No hit body, so nothing to set below.
+		// There is no usable hit.
 		if (!best.body)
 		{
 			return result;
 		}
 
-		// Set as hit and get hit object and refr.
-		auto av = best.GetAVObject();
-		result.hit = av != nullptr;
-		result.hitObjectPtr = av ? RE::NiPointer<RE::NiAVObject>(av) : nullptr;
+		result.hit = true;
+		result.hitObjectPtr = RE::NiPointer<RE::NiAVObject>(best.hitObject);
 		result.hitRefrHandle = 
 		(
-			best.hitRefrPtr ? best.hitRefrPtr->GetHandle() : RE::ObjectRefHandle()
+			best.hitRefr ? best.hitRefr->GetHandle() : RE::ObjectRefHandle()
 		);
 
 		return result;

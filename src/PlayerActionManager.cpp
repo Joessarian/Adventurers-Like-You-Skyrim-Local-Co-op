@@ -2707,7 +2707,16 @@ namespace ALYSLC
 				iter->second : 
 				RE::ActorValue::kNone
 			);
-			const auto avInfo = actorValueList->GetActorValue(currentAV); 
+
+			// NOTE:
+			// ActorValueList::GetActorValueInfo() fails to retrieve the info the an in-range AV.
+			// Reverting to accessing the info directly via the singleton's array.
+			const auto avInfo = 
+			(
+				currentAV != RE::ActorValue::kNone && currentAV < RE::ActorValue::kTotal ? 
+				actorValueList->actorValues[!currentAV] :
+				nullptr
+			);
 			if (!avInfo || !avInfo->skill)
 			{
 				continue;
@@ -2804,8 +2813,6 @@ namespace ALYSLC
 		// Reset ranged attack package cast data if the player has released a FNF spell
 		// and the package is still executing.
 
-		/*auto lhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kLeftHand);
-		auto rhCaster = coopActor->GetMagicCaster(RE::MagicSystem::CastingSource::kRightHand);*/
 		auto lhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kLeftHand];
 		auto rhCaster = coopActor->magicCasters[RE::Actor::SlotTypes::kRightHand];
 		bool lhCasterInactive = !lhCaster || *lhCaster->state == RE::MagicCaster::State::kNone;
@@ -3562,7 +3569,11 @@ namespace ALYSLC
 		}
 
 		// Reset AI when trying to interrupt casting.
-		coopActor->EvaluatePackage(true, shouldInterruptCast);
+		// IMPORTANT NOTE: 
+		// Reset AI also clears the player's current combat group, 
+		// which can cause the next attack that hits an enemy to do 0 damage,
+		// so only reset AI outside of combat.
+		coopActor->EvaluatePackage(true, shouldInterruptCast && !isInCombat);
 
 		// NOTE:
 		// BUG with cast interruption: 
@@ -3580,11 +3591,6 @@ namespace ALYSLC
 		// Reduce the companion player's magicka based on what spell(s) they are casting.
 		
 		// Game already handles P1's magicka expenditure and regen.
-		/*if (p->isPlayer1)
-		{
-			return;
-		}*/
-
 		bool dualCasting = avcam->actionsInProgress.all(AVCostAction::kCastDual);
 		bool usingLHSpell = avcam->actionsInProgress.all(AVCostAction::kCastLeft);
 		bool usingRHSpell = avcam->actionsInProgress.all(AVCostAction::kCastRight);
@@ -5580,7 +5586,10 @@ namespace ALYSLC
 			// Stop the paired animation.
 			if (targetActorPtr->currentProcess)
 			{
-				targetActorPtr->currentProcess->StopCurrentIdle(targetActorPtr.get(), true);
+				targetActorPtr->currentProcess->StopCurrentIdle
+				(
+					targetActorPtr.get(), !targetActorPtr->IsWeaponDrawn()
+				);
 			}
 
 			targetActorPtr->NotifyAnimationGraph("IdleStop");
@@ -5981,7 +5990,6 @@ namespace ALYSLC
 		// or evaluate it regardless.
 		// If no package is given, set to the default package.
 
-		auto currentPackage = coopActor->GetCurrentPackage();
 		if (!a_package)
 		{
 			a_package = GetDefaultPackage();
@@ -5991,8 +5999,8 @@ namespace ALYSLC
 		{
 			SetCurrentPackage(a_package);
 		}
-
-		if (!a_evaluateOnlyIfDifferent || a_package != currentPackage)
+		
+		if (!a_evaluateOnlyIfDifferent || a_package != coopActor->GetCurrentPackage())
 		{
 			EvaluatePackage();
 		}
@@ -6315,7 +6323,7 @@ namespace ALYSLC
 		coopActor->NotifyAnimationGraph("attackStop");
 		coopActor->NotifyAnimationGraph("moveStart");
 	}
-
+	
 	void PlayerActionManager::UpdateLastAttackingHand()
 	{
 		// Update the hand the player last attacked with based on what actions they are performing.

@@ -1826,31 +1826,14 @@ namespace ALYSLC
 			RE::HitData hitData{ };
 			Util::NativeFunctions::HitData_Ctor(std::addressof(hitData));
 			hitData.Populate(glob.player1Actor.get(), hitActor, nullptr);
-
-			if (isBonkOrSplatHitEvent)
-			{
-				// Damage was not applied in the targeting manager, which sent this event,
-				// so apply it here for bonk or splat events.
-				hitData.bonusHealthDamageMult =
-				hitData.criticalDamageMult =
-				hitData.reflectedDamage =
-				hitData.resistedPhysicalDamage =
-				hitData.resistedTypedDamage =
-				hitData.targetedLimbDamage = 0.0f;
-				hitData.physicalDamage =
-				hitData.totalDamage = p->tm->rmm->reqSpecialHitDamageAmount;
-			}
-			else
-			{
-				hitData.bonusHealthDamageMult =
-				hitData.criticalDamageMult =
-				hitData.reflectedDamage =
-				hitData.resistedPhysicalDamage =
-				hitData.resistedTypedDamage =
-				hitData.targetedLimbDamage = 0.0f;
-				hitData.physicalDamage =
-				hitData.totalDamage = 0.0f;
-			}
+			hitData.bonusHealthDamageMult =
+			hitData.criticalDamageMult =
+			hitData.reflectedDamage =
+			hitData.resistedPhysicalDamage =
+			hitData.resistedTypedDamage =
+			hitData.targetedLimbDamage =
+			hitData.physicalDamage =
+			hitData.totalDamage = 0.0f;
 
 			// Remove sneak attack bonus, if any,
 			// to prevent the new P1 hit event from triggering
@@ -1879,13 +1862,6 @@ namespace ALYSLC
 			(
 				hitActor, std::addressof(hitData)
 			);
-			
-			if (hitActor && !hitActor->IsHostileToActor(p->coopActor.get()))
-			{
-				// Start combat with hit actor.
-				Util::Papyrus::StartCombat(hitActor, p->coopActor.get());
-				hitActor->currentCombatTarget = p->coopActor->GetHandle();
-			}
 		}
 		else if (!p->isPlayer1)
 		{

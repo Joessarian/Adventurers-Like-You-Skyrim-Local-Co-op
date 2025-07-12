@@ -1499,7 +1499,7 @@ namespace ALYSLC
 		}
 	}
 
-	void DebugAPI::ClampPointToScreen(glm::vec2 & a_point)
+	void DebugAPI::ClampPointToScreen(glm::vec2& a_point)
 	{
 		// Clamp the given screen point to the visible frame.
 

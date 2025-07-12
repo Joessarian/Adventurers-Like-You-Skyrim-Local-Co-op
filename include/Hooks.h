@@ -229,6 +229,8 @@ namespace ALYSLC
 				SPDLOG_INFO("[Character Hook] Installed CheckClampDamageModifier() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
 				SPDLOG_INFO("[Character Hook] Installed DrawWeaponMagicHands() hook.");
+				/*_GetCombatGroup = vtbl.write_vfunc(0xD4, GetCombatGroup);
+				SPDLOG_INFO("[Character Hook] Installed GetCombatGroup() hook.");*/
 				_HandleHealthDamage = vtbl.write_vfunc(0x104, HandleHealthDamage);
 				SPDLOG_INFO("[Character Hook] Installed HandleHealthDamage() hook.");
 				_ModifyAnimationUpdateData = vtbl.write_vfunc(0x79, ModifyAnimationUpdateData);
@@ -253,6 +255,7 @@ namespace ALYSLC
 				RE::Character* a_this, RE::ActorValue a_av, float a_delta
 			);
 			static void DrawWeaponMagicHands(RE::Character* a_this, bool a_draw);
+			static RE::CombatGroup* GetCombatGroup(RE::Character* a_this);
 			static void HandleHealthDamage
 			(
 				RE::Character* a_this, RE::Actor* a_attacker, float a_damage
@@ -280,6 +283,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
 			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
+			static inline REL::Relocation<decltype(GetCombatGroup)> _GetCombatGroup;
 			static inline REL::Relocation<decltype(HandleHealthDamage)> _HandleHealthDamage;
 			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
 			_ModifyAnimationUpdateData;
@@ -514,7 +518,10 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed ArrowProjectile GetLinearVelocity() hook."
 				);
-				_OnArrowCollision = arrowProjectileVtbl.write_vfunc(190, OnProjectileCollision);
+				_ArrowProjectile_OnArrowCollision = arrowProjectileVtbl.write_vfunc
+				(
+					0xBE, OnProjectileCollision
+				);
 				SPDLOG_INFO
 				(
 					"[Projectile Hook] Installed ArrowProjectile OnArrowCollision() hook."
@@ -577,9 +584,9 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed ConeProjectile GetLinearVelocity() hook."
 				);
-				_OnConeCollision = coneProjectileVtbl.write_vfunc
+				_ConeProjectile_OnConeCollision = coneProjectileVtbl.write_vfunc
 				(
-					190, OnProjectileCollision
+					0xBE, OnProjectileCollision
 				);
 				SPDLOG_INFO
 				(
@@ -643,9 +650,9 @@ namespace ALYSLC
 					"[Projectile Hook] " 
 					"Installed MissileProjectile GetLinearVelocity() hook."
 				);
-				_OnMissileCollision = missileProjectileVtbl.write_vfunc
+				_MissileProjectile_OnMissileCollision = missileProjectileVtbl.write_vfunc
 				(
-					190, OnProjectileCollision
+					0xBE, OnProjectileCollision
 				);
 				SPDLOG_INFO
 				(
@@ -658,15 +665,14 @@ namespace ALYSLC
 				SPDLOG_INFO("[Projectile Hook] Installed MissileProjectile UpdateImpl() hook.");
 
 				// Generic.
-				
 				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
 				SPDLOG_INFO("[Projectile Hook] Installed Projectile GetLinearVelocity() hook.");
-				_OnProjectileCollision = projectileVtbl.write_vfunc
+				_Projectile_OnProjectileCollision = projectileVtbl.write_vfunc
 				(
-					190, OnProjectileCollision
+					0xBE, OnProjectileCollision
 				);
 				SPDLOG_INFO
 				(
@@ -682,7 +688,14 @@ namespace ALYSLC
 				);
 				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
 				SPDLOG_INFO("[Projectile Hook] Installed Projectile UpdateImpl() hook.");
-
+				
+				auto& trampoline = SKSE::GetTrampoline();
+				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(43013, 44204) };
+				_Projectile_ProcessHit = trampoline.write_call<5>
+				(
+					hook.address() + OFFSET(0x251, 0x21F), ProcessHit
+				);
+				SPDLOG_INFO("[MainHook] Installed Projectile ProcessHit() hook");
 			}
 
 		private:
@@ -694,13 +707,26 @@ namespace ALYSLC
 			(
 				RE::Projectile* a_this, RE::hkpAllCdPointCollector* a_AllCdPointCollector
 			);
+			// All credits to digital-apple for the hook location:
+			// https://github.com/digital-apple/ExplosionCollisionFix/blob/main/source/Hooks.cpp#L7
+			static inline bool ProcessHit
+			(
+				RE::Projectile* a_this,
+				RE::TESObjectREFR* a_hitRefr,
+				RE::NiPoint3* a_location,
+				RE::hkVector4* a_unknown,
+				RE::COL_LAYER a_collisionLayer,
+				RE::MATERIAL_ID a_materialID,
+				bool* a_handled
+			);
 			static bool ShouldUseDesiredTarget(RE::Projectile* a_this); 
 			static void UpdateImpl(RE::Projectile* a_this, float a_delta);
 
 			// Arrow
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_ArrowProjectile_GetLinearVelocity;
-			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnArrowCollision;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> 
+			_ArrowProjectile_OnArrowCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ArrowProjectile_UpdateImpl;
 			
 			// Barrier
@@ -720,7 +746,8 @@ namespace ALYSLC
 			// Cone
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_ConeProjectile_GetLinearVelocity;
-			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnConeCollision;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> 
+			_ConeProjectile_OnConeCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _ConeProjectile_UpdateImpl;
 			
 			// Flame
@@ -740,13 +767,16 @@ namespace ALYSLC
 			// Missile
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_MissileProjectile_GetLinearVelocity;
-			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnMissileCollision;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> 
+			_MissileProjectile_OnMissileCollision;
 			static inline REL::Relocation<decltype(UpdateImpl)> _MissileProjectile_UpdateImpl;
 			
 			// Generic
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_Projectile_GetLinearVelocity;
-			static inline REL::Relocation<decltype(OnProjectileCollision)> _OnProjectileCollision;
+			static inline REL::Relocation<decltype(OnProjectileCollision)> 
+			_Projectile_OnProjectileCollision;
+			static inline REL::Relocation<decltype(ProcessHit)> _Projectile_ProcessHit;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
 			_Projectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;

@@ -29,10 +29,10 @@ namespace Raycast
 			float hitFraction;
 			// Hit body.
 			const RE::hkpCdBody* body;
+			// Hit 3D object associated with the hit body.
+			RE::NiAVObject* hitObject;
 			// Hit refr derived from hit body.
-			RE::TESObjectREFRPtr hitRefrPtr;
-			// Get hit 3D object.
-			RE::NiAVObject* GetAVObject();
+			RE::TESObjectREFR* hitRefr;
 		};
 
 	public:
@@ -146,7 +146,7 @@ namespace Raycast
 			};
 		};
 
-		// True if the trace hit something before reaching its end position.
+		// True if the trace hit a collision detection body before reaching its end position.
 		bool hit = false;
 		// If the ray hit an AV object, this will point to it.
 		RE::NiPointer<RE::NiAVObject> hitObjectPtr = nullptr;

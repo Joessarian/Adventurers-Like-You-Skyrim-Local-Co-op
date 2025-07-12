@@ -190,6 +190,7 @@ namespace ALYSLC
 		isParagliding = false;
 		isParaglidingTiltAngleReset = false;
 		isRequestingDashDodge = false;
+		isSubmerged = false;
 		isSwimming = false;
 		isSynced = false;
 		lsMoved = false;
@@ -205,6 +206,8 @@ namespace ALYSLC
 		shouldStopMoving = false;
 		turnToTarget = false;
 		wantsToMount = false;
+		wasSubmerged = false;
+		wasSwimming = false;
 		// Floats.
 		aimPitch = PI / 18.0f;
 		baseHeightMult = max(0.001f, static_cast<float>(coopActor->refScale) / 100.0f);
@@ -498,9 +501,9 @@ namespace ALYSLC
 				isParagliding ||
 				isSwimming ||
 				p->isTransformed ||
+				p->pam->isPlayingEmoteIdle ||
 				coopActor->NotifyAnimationGraph("SneakStart")
 			);
-
 			if (succ)
 			{
 				SPDLOG_DEBUG("[MM] PerformDashDodge: {}: Getting lock. (0x{:X})", 
@@ -2123,7 +2126,7 @@ namespace ALYSLC
 					!isTKDodging && 
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
-					!coopActor->IsSwimming() && 
+					!isSubmerged && 
 					!p->pam->isSprinting
 				) && 
 				(
@@ -2199,15 +2202,23 @@ namespace ALYSLC
 
 			// Check if the facing/movement angle target has changed
 			// from the LS angle to the angle-to-target or vice versa.
+			// Do not stop the player if their swim state just changed,
+			// or if they are no longer swimming and it has been 
+			// less than 2 seconds since they stopped.
+			// Will prevent some stuttering and stalling when entering/exiting the water.
 			movementYawTargetChanged =
 			(
+				(wasSubmerged == isSubmerged) &&
+				(wasSwimming == isSwimming) &&
 				(
-					(turnToTarget || faceTarget) && 
-					(!oldTurnToTarget && !oldFaceTarget)
-				) ||
-				(
-					(!turnToTarget && !faceTarget) && 
-					(oldTurnToTarget || oldFaceTarget)
+					(
+						(turnToTarget || faceTarget) && 
+						(!oldTurnToTarget && !oldFaceTarget)
+					) ||
+					(
+						(!turnToTarget && !faceTarget) && 
+						(oldTurnToTarget || oldFaceTarget)
+					)
 				)
 			);
 			if (turnToTarget || faceTarget) 
@@ -4030,10 +4041,20 @@ namespace ALYSLC
 					charController->lock.Unlock();
 				}
 			}
-				
+			
+			// Update submerged state.
+			wasSubmerged = isSubmerged;
+			isSubmerged = 
+			(
+				coopActor->GetSubmergeLevel
+				(
+					coopActor->data.location.z, coopActor->parentCell
+				) != 0.0f
+			);
 			// Check if the player has started/stopped swimming 
 			// and play the appropriate animation.
 			// Keep actor state and animation state in sync.
+			wasSwimming = isSwimming;
 			if (!isSwimming && coopActor->IsSwimming())
 			{
 				if (p->isPlayer1)
@@ -4050,6 +4071,13 @@ namespace ALYSLC
 				{
 					coopActor->NotifyAnimationGraph("swimStop");
 				}
+				
+				// Commented out for now if the current fix in place does not work.
+				// Stop facing the crosshair position if the crosshair position is underwater,
+				// since the player will stop and turn,
+				// which will nudge them slightly in the direction of the crosshair
+				// and they will start swimming again.
+				//reqFaceTarget = false;
 
 				isSwimming = false;
 			}
@@ -5260,6 +5288,9 @@ namespace ALYSLC
 			0.5f,
 			1.0f
 		);
+		// If the refr is hit hard enough to release it,
+		// apply this factor to the release angle.
+		float releaseAngleFactor = 0.5f;
 		// Raycast and get all hit results, so we can apply multiple impulses
 		// along the arm swing trajectory and create more of a 'push'
 		// instead of a one-off impulse.
@@ -5298,9 +5329,8 @@ namespace ALYSLC
 			Util::NativeFunctions::hkpEntity_Activate(hitHkpRigidBodyPtr.get());
 			// Get handle for the refr.
 			auto refrHandle = hitRefrPtr->GetHandle();
-			
-			// Ensure we do not slap something another player is grabbing.
-			bool grabbedByAnotherPlayer = false;
+			// First, ensure the slapped object is no longer managed by another player's RMM.
+			bool wasManagedByAnotherPlayer = false;
 			for (const auto& otherP : glob.coopPlayers)
 			{
 				if (!otherP->isActive || otherP == a_p)
@@ -5312,9 +5342,18 @@ namespace ALYSLC
 				if (otherP->tm->rmm->IsManaged(refrHandle, true) || 
 					otherP->tm->rmm->IsManaged(refrHandle, false))
 				{
+					wasManagedByAnotherPlayer = true;
 					otherP->tm->rmm->ClearRefr(refrHandle);
 				}
 			}
+			
+			// The player can slap this object without speed restrictions
+			// if they are already grabbing it or if it is grabbed/released by another player.
+			bool canFreelyManipulate = 
+			(
+				a_p->tm->rmm->IsManaged(refrHandle, true) ||
+				wasManagedByAnotherPlayer
+			);
 
 			// Hit position and velocity in game coordinates.
 			auto hitPosVec = TohkVector4(result.hitPos * GAME_TO_HAVOK);
@@ -5392,6 +5431,10 @@ namespace ALYSLC
 					(
 						(a_p->mm->reqFaceTarget ? 1100.0f : 1600.0f) * invArmForceFactor
 					);
+					/*knockdownMinSpeed = 
+					(
+						1600.0f * invArmForceFactor
+					);*/
 					knockdownMinSpeed *= Settings::fSlapKnockdownForearmSpeedThresholdMult;
 
 					break;
@@ -5403,6 +5446,10 @@ namespace ALYSLC
 					(
 						(a_p->mm->reqFaceTarget ? 1000.0f : 1500.0f) * invArmForceFactor
 					);
+					/*knockdownMinSpeed = 
+					(
+						1500.0f * invArmForceFactor
+					);*/
 					knockdownMinSpeed *= Settings::fSlapKnockdownHandSpeedThresholdMult;
 
 					break;
@@ -5413,6 +5460,10 @@ namespace ALYSLC
 					(
 						(a_p->mm->reqFaceTarget ? 700.0f : 1200.0f) * invArmForceFactor
 					);
+					/*knockdownMinSpeed = 
+					(
+						1200.0f * invArmForceFactor
+					);*/
 					knockdownMinSpeed *= Settings::fSlapKnockdownShoulderSpeedThresholdMult;
 
 					break;
@@ -5424,15 +5475,15 @@ namespace ALYSLC
 				// Set speed ratio and hit volume after setting the min knockdown speed.
 				float hitToKnockdownSpeedRatio = powf
 				(
-					min(1.0f, hitSpeed / knockdownMinSpeed), 2.0f
+					hitSpeed / knockdownMinSpeed, 2.0f
 				);
-				hitVolume = min(2.0f, 2.0f * hitToKnockdownSpeedRatio);
+				hitVolume = min(2.0f, 2.0f * min(1.0f, hitToKnockdownSpeedRatio));
 				auto handle = hitActor->GetHandle();
-				bool isAlreadyGrabbed = a_p->tm->rmm->IsManaged(handle, true);
-				if (isAlreadyGrabbed)
+				if (canFreelyManipulate)
 				{
-					// If already grabbed, the actor is already ragdolled
-					// and we can release it on hit.
+					// If already grabbed or was managed by another player, 
+					// the actor is already ragdolled
+					// and we can release it on hit, regardless of hit conditions.
 					slapKnockdown = true;
 				}
 				else
@@ -5540,10 +5591,9 @@ namespace ALYSLC
 				};
 				bool isReleasedActor = a_p->tm->rmm->IsManaged(handle, false);
 				// Ensure the actor is manipulable,
-				// and not already managed as a released refr 
-				// or grabbed by another player before releasing it.
+				// and not already managed as a released refr.
 				slapKnockdown &= Util::CanManipulateActor(hitActor) && !hitSkeleton;
-				if (slapKnockdown && !isReleasedActor && !grabbedByAnotherPlayer)
+				if (slapKnockdown && !isReleasedActor)
 				{
 					// Stop momentum before knocking down.
 					hitHkpRigidBodyPtr->motion.SetLinearVelocity(RE::hkVector4());
@@ -5555,11 +5605,28 @@ namespace ALYSLC
 						a_p->tm->SetIsGrabbing(false);
 					}
 					
+					// The harder the slap, the higher the release velocity of the redirected refr.
+					if (canFreelyManipulate) 
+					{
+						releaseAngleFactor = std::clamp
+						(
+							hitToKnockdownSpeedRatio, 0.5f, 1.0f
+						);
+					}
+					else
+					{
+						releaseAngleFactor = std::clamp
+						(
+							hitToKnockdownSpeedRatio * 0.5f, 0.5f, 1.0f
+						);
+					}
+
 					const float magickaCost = 
 					(
-						a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitActor)
+						a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitActor),
+						releaseAngleFactor
 					);
-					a_p->tm->rmm->AddReleasedRefr(a_p, handle, magickaCost);
+					a_p->tm->rmm->AddReleasedRefr(a_p, handle, magickaCost, releaseAngleFactor);
 					a_staminaCostOut = 
 					(
 						(2.0f * sqrtf(hitActor->GetWeight() + 100.0f)) *
@@ -5610,7 +5677,7 @@ namespace ALYSLC
 					hitFlags.set
 					(
 						RE::TESHitEvent::Flag::kPowerAttack, 
-						static_cast<RE::TESHitEvent::Flag>(AdditionalHitEventFlags::kBonk)
+						static_cast<RE::TESHitEvent::Flag>(AdditionalHitEventFlags::kSlap)
 					);
 					if (sneakMult > 1.0f)
 					{
@@ -5641,46 +5708,55 @@ namespace ALYSLC
 						float armWeightFactor = a_p->coopActor->CalcUnarmedDamage();
 						// Scale up damage with the total weight of the armor 
 						// making contact with the hit actor.
-						auto forearmArmor = 
-						(
-							a_p->coopActor->GetWornArmor
+						if (a_armNodeType == ArmNodeType::kForearm)
+						{
+							auto forearmArmor = 
 							(
-								RE::BGSBipedObjectForm::BipedObjectSlot::kForearms
-							)
-						);
-						if (forearmArmor)
-						{
-							armWeightFactor += forearmArmor->weight;
+								a_p->coopActor->GetWornArmor
+								(
+									RE::BGSBipedObjectForm::BipedObjectSlot::kForearms
+								)
+							);
+							if (forearmArmor)
+							{
+								armWeightFactor += forearmArmor->weight;
+							}
 						}
-
-						auto handArmor = 
-						(
-							a_p->coopActor->GetWornArmor
+						else if (a_armNodeType == ArmNodeType::kHand)
+						{
+							auto handArmor = 
 							(
-								RE::BGSBipedObjectForm::BipedObjectSlot::kHands
-							)
-						);
-						if (handArmor)
-						{
-							armWeightFactor += handArmor->weight;
+								a_p->coopActor->GetWornArmor
+								(
+									RE::BGSBipedObjectForm::BipedObjectSlot::kHands
+								)
+							);
+							if (handArmor)
+							{
+								armWeightFactor += handArmor->weight;
+							}
 						}
-
-						auto torsoArmor = 
-						(
-							a_p->coopActor->GetWornArmor
+						else if (a_armNodeType == ArmNodeType::kShoulder)
+						{
+							auto torsoArmor = 
 							(
-								RE::BGSBipedObjectForm::BipedObjectSlot::kBody
-							)
-						);
-						// Use a fraction of the torso armor's weight for the shoulder.
-						if (torsoArmor)
-						{
-							armWeightFactor += torsoArmor->weight / 5.0f;
+								a_p->coopActor->GetWornArmor
+								(
+									RE::BGSBipedObjectForm::BipedObjectSlot::kBody
+								)
+							);
+							// Use a fraction of the torso armor's weight for the shoulder.
+							if (torsoArmor)
+							{
+								armWeightFactor += torsoArmor->weight / 5.0f;
+							}
 						}
-
-						if (auto shield = a_p->em->GetShield(); shield && isLeftArmNode)
+						else if (a_armNodeType == ArmNodeType::kShield)
 						{
-							armWeightFactor += shield->weight * 2.0f;
+							if (auto shield = a_p->em->GetShield(); shield)
+							{
+								armWeightFactor += shield->GetWeight() * 1.5f;
+							}
 						}
 
 						armWeightFactor = 1.0f + powf(armWeightFactor, 1.4f) / 30.0f;
@@ -5700,83 +5776,32 @@ namespace ALYSLC
 								!Util::IsPartyFriendlyActor(hitActor)
 							))
 						{
-							// Damage will not be modified in either HandleHealthDamage() hook 
-							// because the damage will not be attributed to the player
-							// (attacker param is nullptr) 
-							// since we are directly modifying the health AV here.
-							// Therefore, to get the same damage modifications here, 
-							// we tack on the slap knockdown damage mult, 
-							// and multiply the result by the damage received mult 
-							// if the target is a player.
 							damage *= Settings::vfSlapKnockdownDamageMult[a_p->playerID];
-							// Apply non-zero damage.
-							// If hitting another player or Enderal is installed,
-							// apply the damage directly without dealing damage 
-							// through a second hit event,
-							// which is used to attribute blame for the hit to P1 
-							// and trigger alarms/bounties.
-							auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(hitActor); 
-							if (playerIndex != -1)
-							{
-								// No requested damage to deal in second hit event.
-								a_p->tm->rmm->reqSpecialHitDamageAmount = 0.0f;
-								// Apply damage directly to the health AV.
-								// No attacker source will be reported 
-								// in the HandleHealthDamage() hook,
-								// so our damage here is the final damage 
-								// which will be applied on hit.
-								hitActor->RestoreActorValue
-								(
-									RE::ACTOR_VALUE_MODIFIER::kDamage,
-									RE::ActorValue::kHealth,
-									-damage
-								);
-							}
-							else
-							{
-								// Divide by P1's damage dealt multiplier 
-								// to nullify its application
-								// in the HandleHealthDamage() hook, 
-								// which fires on the second hit event
-								// that is sent from our Hit Event Handler.
-								const auto& p1DamageDealtMult = 
-								(
-									Settings::vfDamageDealtMult
-									[glob.coopPlayers[glob.player1CID]->playerID]	
-								);
-								damage = 
-								(
-									p1DamageDealtMult == 0.0f ?
-									0.0f :
-									damage / p1DamageDealtMult
-								);
-								// Set the requested special hit damage to apply
-								// when sending the second hit event that triggers an alarm/bounty
-								// in the Hit Event Handler.
-								// No damage to directly apply here.
-								a_p->tm->rmm->reqSpecialHitDamageAmount = damage;
-							}
 						}
 
-						// Send the hit event after caching/apply damage.
-						Util::SendHitEvent
+						Util::TriggerCombatAndDealDamage
 						(
-							a_p->coopActor.get(), 
+							a_p->coopActor.get(),
 							hitActor, 
-							a_p->coopActor->formID,
-							a_p->coopActor->formID,
+							damage,
+							true,
+							true,
+							a_p->coopActor->GetHandle(),
+							0,
 							hitFlags
 						);
 
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						/*SPDLOG_DEBUG
 						(
 							"[MM] PerformArmCollision: {}: Hit actor {}. "
 							"Havok hit speed factor: {}, "
 							"level damage factor: {}, "
 							"armor rating factor: {}, "
-							"arm weight factor: {}, (unarmed damage: {}) "
+							"arm weight factor: {}, "
+							"(unarmed damage: {}, node type: {}, shield weight: {}) "
 							"sneak mult: {}. "
+							"Release speed mult: {}. Knockdown speed ratio: {}. "
 							"Final damage: {}.", 
 							a_p->coopActor->GetName(), 
 							hitActor->GetName(),
@@ -5785,9 +5810,13 @@ namespace ALYSLC
 							armorRatingFactor,
 							armWeightFactor,
 							a_p->coopActor->CalcUnarmedDamage(),
+							a_armNodeType,
+							a_p->em->GetShield() ? a_p->em->GetShield()->GetWeight() : -1.0f,
 							sneakMult,
+							releaseAngleFactor,
+							hitToKnockdownSpeedRatio,
 							damage
-						);
+						);*/
 					}
 				}
 				else
@@ -5820,7 +5849,8 @@ namespace ALYSLC
 						// Only sent on first hit as well.
 						if (hittable) 
 						{
-							// Send a hit event.
+							// Send a hit event, not data, since there is no damage 
+							// or need to start combat.
 							// No damage, power attack flag, or ragdoll for no-knockdown slaps.
 							Util::SendHitEvent
 							(
@@ -5881,7 +5911,8 @@ namespace ALYSLC
 					"[GLOB] PerformArmCollision: "
 					"{} hit {} (0x{:X}, {}, {}) with {} node, "
 					"Hit pos point vel: {}. Hit force: {} "
-					"{} Hits: {}. Stamina cost: {}.",
+					"{} Hits: {}. Stamina cost: {}. "
+					"Release angle factor: {}, hit knockdown ratio: {}.",
 					a_p->coopActor->GetName(),
 					hitRefrPtr->GetName(),
 					hitRefrPtr->formID,
@@ -5900,12 +5931,15 @@ namespace ALYSLC
 					hitForce.Length3(),
 					slapKnockdown ? "KO!" : "SLAPPED!",
 					raycastResults.size(),
-					a_staminaCostOut
+					a_staminaCostOut,
+					releaseAngleFactor,
+					hitToKnockdownSpeedRatio
 				);*/
 			}
 			else
 			{
 				const float mass = hitHkpRigidBodyPtr->motion.GetMass();
+				float hitToKnockdownSpeedRatio = powf(hitSpeed / 2000.0f, 0.5f);
 				if (mass != 0.0f && !isinf(mass) && !isnan(mass))
 				{
 					const float refrFactor = 
@@ -5918,7 +5952,6 @@ namespace ALYSLC
 						refrFactor *
 						Settings::fArmCollisionForceMult
 					);
-					float hitToKnockdownSpeedRatio = powf(min(1.0f, hitSpeed / 2000.0f), 2.0f);
 					hitVolume = min(1.0f, hitToKnockdownSpeedRatio);
 					hitHkpRigidBodyPtr->motion.ApplyForce(1.0f, hitForce);
 				}
@@ -5926,7 +5959,8 @@ namespace ALYSLC
 				if (a_noPreviousHit)
 				{
 					// Send a hit event on first-contact.
-					// No damage, power attack flag, or ragdoll for slapping objects.
+					// No damage to apply, no power attack flag,
+					// and no ragdoll to trigger when slapping objects.
 					Util::SendHitEvent
 					(
 						a_p->coopActor.get(),
@@ -5947,12 +5981,14 @@ namespace ALYSLC
 						// and has a supported motion type.
 						bool canGrabAndThrow = 
 						{ 
-							!isReleasedAlready &&
-							!grabbedByAnotherPlayer &&
-							hitHkpRigidBodyPtr->motion.type !=
-							RE::hkpMotion::MotionType::kFixed &&
-							hitHkpRigidBodyPtr->motion.type !=
-							RE::hkpMotion::MotionType::kInvalid
+							(
+								!isReleasedAlready &&
+								hitHkpRigidBodyPtr->motion.type !=
+								RE::hkpMotion::MotionType::kFixed &&
+								hitHkpRigidBodyPtr->motion.type !=
+								RE::hkpMotion::MotionType::kInvalid
+							) &&
+							(canFreelyManipulate || hitToKnockdownSpeedRatio > 0.5f)
 						};
 						float magickaCost = 0.0f;
 						if (canGrabAndThrow)
@@ -5963,12 +5999,55 @@ namespace ALYSLC
 							{
 								a_p->tm->SetIsGrabbing(false);
 							}
+							
+							// The harder the slap, the higher the release velocity 
+							// of the redirected refr.
+							releaseAngleFactor = min(1.0f, hitToKnockdownSpeedRatio);
+							if (canFreelyManipulate)
+							{
+								releaseAngleFactor = std::lerp
+								(
+									0.5f,
+									1.0f,
+									releaseAngleFactor
+								);
+							}
 
 							magickaCost = 
 							(
-								a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitRefrPtr.get())
+								a_p->tm->rmm->GetThrownRefrMagickaCost
+								(
+									a_p, hitRefrPtr.get(), releaseAngleFactor
+								)
 							);
-							a_p->tm->rmm->AddReleasedRefr(a_p, refrHandle, magickaCost);
+							a_p->tm->rmm->AddReleasedRefr
+							(
+								a_p, refrHandle, magickaCost, releaseAngleFactor
+							);
+
+							// REMOVE when done debugging.
+							/*DebugAPI::QueuePoint3D
+							(
+								result.hitPos, 
+								Settings::vuOverlayRGBAValues[a_p->playerID], 
+								hitVelocity.Length() / 400.0f,
+								1.0f
+							);
+				
+							SPDLOG_DEBUG
+							(
+								"[MM] PerformArmCollision: {}: {} has mass of {}, "
+								"inv mass of {}, hit velocity: {}, force applied: {} over 1s. "
+								"Hit to knockdown speed ratio: {}, release speed mult: {}.",
+								a_p->coopActor->GetName(),
+								hitRefrPtr->GetName(),
+								hitHkpRigidBodyPtr->motion.GetMass(),
+								hitHkpRigidBodyPtr->motion.inertiaAndMassInv.quad.m128_f32[3],
+								hitVelocity.Length(),
+								hitForce.Length3(),
+								hitToKnockdownSpeedRatio,
+								releaseAngleFactor
+							);*/
 						}
 
 						// Handle magicka cost as well.
@@ -5988,27 +6067,6 @@ namespace ALYSLC
 						}
 					}
 				}
-
-				// REMOVE when done debugging.
-				/*DebugAPI::QueuePoint3D
-				(
-					result.hitPos, 
-					Settings::vuOverlayRGBAValues[a_p->playerID], 
-					hitVelocity.Length() / 400.0f,
-					1.0f
-				);
-				
-				SPDLOG_DEBUG
-				(
-					"[MM] PerformArmCollision: {}: {} has mass of {}, "
-					"inv mass of {}, hit velocity: {}, force applied: {} over 1s.",
-					a_p->coopActor->GetName(),
-					hitRefrPtr->GetName(),
-					hitHkpRigidBodyPtr->motion.GetMass(),
-					hitHkpRigidBodyPtr->motion.inertiaAndMassInv.quad.m128_f32[3],
-					hitVelocity.Length(),
-					hitForce.Length3()
-				);*/
 			}
 			
 			hitRecorded = true;
@@ -6396,8 +6454,7 @@ namespace ALYSLC
 		{
 			a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 			a_p->IsAwaitingRefresh() ||
-			a_p->coopActor->IsWeaponDrawn() ||
-			a_p->coopActor->IsSwimming()
+			a_p->coopActor->IsWeaponDrawn()
 		};
 
 		if (rotatingHand)
@@ -7119,8 +7176,7 @@ namespace ALYSLC
 		{
 			a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 			a_p->IsAwaitingRefresh() ||
-			a_p->coopActor->IsWeaponDrawn() ||
-			a_p->coopActor->IsSwimming()
+			a_p->coopActor->IsWeaponDrawn()
 		};
 
 		bool rotatingShoulder = 

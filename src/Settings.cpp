@@ -174,6 +174,7 @@ namespace ALYSLC
 					{ 
 						p->SetCoopPlayerFlags();
 						p->RefreshPlayerManagersTask(); 
+						GlobalCoopData::RestartCoopCameraTask();
 					}
 				);
 			}
@@ -734,7 +735,8 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamPitch", bAutoRotateCamPitch);
 		ReadBoolSetting(a_ini, "Camera", "bAutoRotateCamYaw", bAutoRotateCamYaw);
 		ReadBoolSetting(a_ini, "Camera", "bAutoAdjustCamZoom", bAutoAdjustCamZoom);
-		ReadBoolSetting(a_ini, "Camera", "bCamCollisions", bCamCollisions);
+		ReadBoolSetting(a_ini, "Camera", "bCamExteriorCollisions", bCamExteriorCollisions);
+		ReadBoolSetting(a_ini, "Camera", "bCamInteriorCollisions", bCamInteriorCollisions);
 		ReadBoolSetting(a_ini, "Camera", "bFadeLargerObstructions", bFadeLargerObstructions);
 		ReadBoolSetting(a_ini, "Camera", "bFadeObstructions", bFadeObstructions);
 		ReadBoolSetting(a_ini, "Camera", "bFocalPlayerMode", bFocalPlayerMode);

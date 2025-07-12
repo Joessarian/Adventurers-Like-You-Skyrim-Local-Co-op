@@ -721,7 +721,7 @@ namespace ALYSLC
 	//[Player Action Management]
 	//==========================
 
-	// Additional hit flags for RE::HitData::Flag (32 bit integer with only 4 bits used).
+	// Additional hit flags for RE::TESHitEvent::Flag (32 bit integer with only 4 bits used).
 	enum class AdditionalHitEventFlags : std::uint8_t
 	{
 		// 1 << 0 through 1 << 3 are defined by the game,

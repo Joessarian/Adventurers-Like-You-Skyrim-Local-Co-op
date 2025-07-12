@@ -586,7 +586,7 @@ namespace ALYSLC
 		bool attemptDiscovery;
 		// Was DontMove() successfully called on this player?
 		bool dontMoveSet;
-		// Face the target directly at all times after toggled on by FaceTarget bind.
+		// Face the target directly at all times after toggled on by the 'FaceTarget' bind.
 		bool faceTarget;
 		// Nearby map marker is undiscovered and in range to discover.
 		bool inRangeOfUndiscoveredMarker;
@@ -615,6 +615,8 @@ namespace ALYSLC
 		bool isParaglidingTiltAngleReset;
 		// Is the player requesting to dash dodge?
 		bool isRequestingDashDodge;
+		// Is the player submerged in water (not necessarily swimming) this frame?
+		bool isSubmerged;
 		// Is the player swimming? Have to manually play swim start animation
 		// when in water, and swim stop animation when out of water.
 		bool isSwimming;
@@ -631,7 +633,7 @@ namespace ALYSLC
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
 		// Player has requested, via player action,
-		// to directly face and aim at the targeted position.
+		// to directly face and aim at the targeted position when possible.
 		bool reqFaceTarget;
 		// Player has requested, via player action, to reset aim pitch and body node rotations.
 		bool reqResetAimAndBody;
@@ -660,6 +662,10 @@ namespace ALYSLC
 		bool turnToTarget;
 		// Does the player want to mount a targeted mount?
 		bool wantsToMount;
+		// Was the player submerged in water (not necessarily swimming) last frame?
+		bool wasSubmerged;
+		// Was the player swimming last frame?
+		bool wasSwimming;
 		// Aim pitch for torso rotation and projectile calculations.
 		float aimPitch;
 		// Height factor relative to base height.

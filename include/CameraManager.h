@@ -839,8 +839,25 @@ namespace ALYSLC
 		// Enable or disable collision between the camera and character controllers.
 		void SetCamActorCollisions(bool&& a_set);
 		
-		// Set orientation (rotation and position) for the camera.
-		void SetCamOrientation(bool&& a_overrideLocalRotation);
+		// Set orientation (rotation and position) for the camera using the cached
+		// or provided orientation data.
+		// Automatically or manually specify whether the camera's local rotation 
+		// also needs modification.
+		void SetCamOrientation();
+		void SetCamOrientation(bool a_overrideLocalRotation);
+		void SetCamOrientation
+		(
+			const RE::NiPoint3& a_position,
+			const float& a_pitch, 
+			const float& a_yaw
+		);
+		void SetCamOrientation
+		(
+			const RE::NiPoint3& a_position,
+			const float& a_pitch, 
+			const float& a_yaw,
+			bool a_overrideLocalRotation
+		);
 
 		// Prevent/enable fading of players.
 		void SetPlayerFadePrevention(bool&& a_noFade);
@@ -947,6 +964,8 @@ namespace ALYSLC
 		std::vector<RE::TESObjectREFRPtr> cellMapMarkers;
 		// Is auto-rotation suspended (both pitch and yaw values are approaching 0)?
 		bool autoRotateSuspended;
+		// Should camera collisions be enabled in the current cell?
+		bool camCollisions;
 		// Should the camera zoom in temporarily if all players are under an exterior roof?
 		bool delayedZoomInUnderExteriorRoof;
 		// Should the camera zoom out after all players were under an exterior roof and

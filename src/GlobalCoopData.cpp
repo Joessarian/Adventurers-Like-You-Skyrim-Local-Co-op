@@ -735,7 +735,9 @@ namespace ALYSLC
 		}
 
 		auto actorValueList = RE::ActorValueList::GetSingleton(); 
-		if (!actorValueList)
+		if (!actorValueList || 
+			a_skillAV == RE::ActorValue::kNone ||
+			a_skillAV >= RE::ActorValue::kTotal)
 		{
 			return;
 		}
@@ -779,9 +781,12 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_cid]);
 			SPDLOG_DEBUG
 			(
-				"[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X})", 
+				"[GLOB] AddSkillXP: {}: Lock obtained. (0x{:X}). "
+				"Adding {} XP to {}.", 
 				p->coopActor->GetName(),
-				std::hash<std::jthread::id>()(std::this_thread::get_id())
+				std::hash<std::jthread::id>()(std::this_thread::get_id()),
+				xpInc,
+				Util::GetActorValueName(a_skillAV)
 			);
 			
 			const auto& skill = glob.AV_TO_SKILL_MAP.at(a_skillAV);
@@ -3867,10 +3872,13 @@ namespace ALYSLC
 		bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
 		bool isHostile = 
 		(
-			(hitActor->IsHostileToActor(p->coopActor.get())) || 
+			(!hitActorIsPlayer) &&
 			(
-				Util::HandleIsValid(hitActor->currentCombatTarget) &&
-				Util::IsPartyFriendlyActor(hitActor->currentCombatTarget.get().get())
+				(hitActor->IsHostileToActor(p->coopActor.get())) || 
+				(
+					Util::HandleIsValid(hitActor->currentCombatTarget) &&
+					Util::IsPartyFriendlyActor(hitActor->currentCombatTarget.get().get())
+				)
 			)
 		);
 		bool isPartyFriendlyActor = Util::IsPartyFriendlyActor(hitActor);
@@ -3883,49 +3891,42 @@ namespace ALYSLC
 		(
 			hitActorHandle == p->tm->aimCorrectionTargetHandle
 		);
+		// Only allow collisions through if targeting a hostile actor,
+		// directly targeting an neutral actor with the crosshair,
+		// or targeting an ally with a beneficial projectile
+		// or targeting an ally with the crosshair while friendly fire is on.
 		bool collisionAllowed = 
 		(
 			(isHostile) ||
 			(isNeutralActor && isCrosshairTargeted) ||
 			(
-				isPartyFriendlyActor && Settings::vbFriendlyFire[p->playerID]
+				isPartyFriendlyActor && 
+				isCrosshairTargeted && 
+				Settings::vbFriendlyFire[p->playerID]
 			)
 		);
-		SPDLOG_DEBUG("[GLOB] PrecisionPreHitCallback: Hit between {} and {}.",
-			p->coopActor->GetName(), hitActor->GetName());
 		if (collisionAllowed)
 		{
 			// Do not start combat with other players
 			// and do not need to start combat for P1.
 			if (!hitActorIsPlayer && !p->isPlayer1)
 			{
-				// Add as a combat target first, just in case the hit actor is hostile 
-				// but not part of the player's combat group target list, 
-				// which would prevent the player from damaging the hit actor.
-				Util::AddAsCombatTarget(p->coopActor.get(), hitActor);
-
 				// Actor is not hostile to this player yet.
-				// Actor must also not be a party-friendly actor or be below 25% health
-				// to trigger combat.
 				bool shouldTriggerCombat = 
 				(
+					!hitActor->IsHostileToActor
 					(
-						hitActor &&
-						!hitActor->IsDead() &&
-						!GlobalCoopData::IsCoopPlayer(hitActor)
-					) &&
+						p->coopActor.get()
+					) || 
+					!hitActor->IsCombatTarget
 					(
-						!hitActor->IsHostileToActor(p->coopActor.get()) || 
-						!hitActor->IsCombatTarget(p->coopActor.get()) ||
-						!p->coopActor->IsCombatTarget(hitActor)
-					) &&
-					(
-						(!isPartyFriendlyActor) || 
-						(
-							hitActor->GetActorValue(RE::ActorValue::kHealth) / 
-							Util::GetFullAVAmount(hitActor, RE::ActorValue::kHealth) <= 0.25f
-						)
-					)
+						p->coopActor.get()
+					) ||
+					!p->coopActor->IsCombatTarget(hitActor)
+				);
+				Util::TriggerCombatAndDealDamage
+				(
+					p->coopActor.get(), hitActor, 0.0f, shouldTriggerCombat
 				);
 				if (shouldTriggerCombat)
 				{
@@ -3934,30 +3935,6 @@ namespace ALYSLC
 						"[GLOB] PrecisionPreHitCallback: Trigger combat between {} and {}.",
 						p->coopActor->GetName(), hitActor->GetName()
 					);
-					// Send a 0 damage hit to trigger combat right away.
-					Util::SendHitData
-					(
-						p->coopActor->GetHandle(), 
-						hitActor->GetHandle(),
-						p->coopActor->GetHandle()
-					);
-					if (p->coopActor->IsOnMount())
-					{
-						// Applying a hit to the player forces the player to dismount,
-						// and since I have no clue why (probably AI package related),
-						// we'll start combat directly instead when mounted.
-						Util::Papyrus::StartCombat(p->coopActor.get(), hitActor);
-					}
-					else
-					{
-						// You hit me, I hit you, into combat we go.
-						Util::SendHitData
-						(
-							hitActor->GetHandle(),
-							p->coopActor->GetHandle(), 
-							hitActor->GetHandle()
-						);
-					}
 				}
 			}
 
@@ -10347,42 +10324,8 @@ namespace ALYSLC
 		{
 			handleB = refrB->GetHandle();
 		}
-
-		// Flags indicating that we've already negated fall damage for players,
-		// so we don't have to do it again later on.
-		bool refrAIsPlayer = false;
-		bool refrBIsPlayer = false;
+		
 		// Generic check for collisions between a player and any object.
-		// Clear fall timer and height just to be safe and ensure fall damage is not applied.
-		if (Settings::bPreventFallDamage)
-		{
-			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(refrA);
-			if (pIndex != -1)
-			{
-				refrAIsPlayer = true;
-				auto charController = glob.coopPlayers[pIndex]->coopActor->GetCharController(); 
-				if (charController)
-				{
-					charController->lock.Lock();
-					Util::AdjustFallState(charController, false);
-					charController->lock.Unlock();
-				}
-			}
-
-			pIndex = GlobalCoopData::GetCoopPlayerIndex(refrB);
-			if (pIndex != -1)
-			{
-				refrBIsPlayer = true;
-				auto charController = glob.coopPlayers[pIndex]->coopActor->GetCharController(); 
-				if (charController)
-				{
-					charController->lock.Lock();
-					Util::AdjustFallState(charController, false);
-					charController->lock.Unlock();
-				}
-			}
-		}
-
 		// At least one refr was released by a player.
 		bool oneRefrIsManaged = false;
 		for (const auto& p : glob.coopPlayers)
@@ -10434,12 +10377,6 @@ namespace ALYSLC
 						p->coopActor->GetName(), 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 
-					// Already collided, so do not queue this event for handling.
-					if (p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
-					{
-						continue;
-					}
-				
 					p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);			
 					p->tm->rmm->queuedReleasedRefrContactEvents.emplace_back
 					(
@@ -10496,13 +10433,6 @@ namespace ALYSLC
 						p->coopActor->GetName(), 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 
-					// Already collided with an object without an associated refr,
-					// so do not queue event.
-					if (p->tm->rmm->collidedRefrFIDPairs.contains(fidPair))
-					{
-						continue;
-					}
-					
 					p->tm->rmm->collidedRefrFIDPairs.emplace(fidPair);		
 					p->tm->rmm->queuedReleasedRefrContactEvents.emplace_back
 					(
@@ -10519,13 +10449,22 @@ namespace ALYSLC
 				}
 			}
 
-			if (Settings::bPreventFallDamage)
+			// Prevent fall damage when the MCM setting is set, when the actor is flopping,
+			// when the actor is grabbed, or when the actor is thrown or slapped at a target 
+			// (not dropped).
+			// We'll apply our own modifiable "splat" damage instead.
+			if (refrA)
 			{
-				// Prevent fall damage for non-player actors.
-				if (refrA && !refrAIsPlayer)
+				auto asActor = refrA->As<RE::Actor>();
+				if (asActor)
 				{
-					auto asActor = refrA->As<RE::Actor>();
-					if (asActor)
+					bool preventFallDamage = 
+					(
+						(Settings::bPreventFallDamage || p->tm->rmm->IsManaged(handleA, true)) ||
+						(asActor == p->coopActor.get() && p->tm->rmm->IsManaged(handleA, false)) ||
+						(p->tm->rmm->WasThrown(handleA))
+					);
+					if (preventFallDamage)
 					{
 						auto charController = asActor->GetCharController(); 
 						if (charController)
@@ -10535,12 +10474,21 @@ namespace ALYSLC
 							charController->lock.Unlock();
 						}
 					}
-				}	
+				}
+			}	
 					
-				if (refrB && !refrBIsPlayer)
+			if (refrB)
+			{
+				auto asActor = refrB->As<RE::Actor>();
+				if (asActor)
 				{
-					auto asActor = refrB->As<RE::Actor>();
-					if (asActor)
+					bool preventFallDamage = 
+					(
+						(Settings::bPreventFallDamage || p->tm->rmm->IsManaged(handleB, true)) ||
+						(asActor == p->coopActor.get() && p->tm->rmm->IsManaged(handleB, false)) ||
+						(p->tm->rmm->WasThrown(handleB))
+					);
+					if (preventFallDamage)
 					{
 						auto charController = asActor->GetCharController(); 
 						if (charController)
@@ -10550,7 +10498,7 @@ namespace ALYSLC
 							charController->lock.Unlock();
 						}
 					}
-				}	
+				}
 			}
 		}
 	}

@@ -274,7 +274,10 @@ namespace ALYSLC
 			}
 		}
 
-		void AddAsCombatTarget(RE::Actor* a_sourceActor, RE::Actor* a_targetActor)
+		void AddAsCombatTarget
+		(
+			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
+		)
 		{
 			// Add the given target actor as a combat target for the source actor.
 			// If called before a ranged/melee hit connects and damage is dealt,
@@ -289,7 +292,54 @@ namespace ALYSLC
 			// since the player's combat group does not seem to always add in targets 
 			// from another combat group before attacks connect.
 
+			if (!a_sourceActor || !a_targetActor || a_sourceActor->IsPlayerRef())
+			{
+				return;
+			}
+
+			// Set the two actors'current combat targets to each other, 
+			// since companion player's projectile/melee hits are ignored sometimes 
+			// if their current combat target is not set to the actor they are about to hit.
+			a_sourceActor->currentCombatTarget = a_targetActor->GetHandle();
+			a_targetActor->currentCombatTarget = a_sourceActor->GetHandle();
+			if (a_sourceActor->combatController)
+			{
+				a_sourceActor->combatController->cachedTarget = RE::ActorPtr(a_targetActor);
+				a_sourceActor->combatController->previousTargetHandle =
+				a_sourceActor->combatController->targetHandle = a_targetActor->GetHandle();
+			}
+
+			if (a_targetActor->combatController)
+			{
+				a_targetActor->combatController->cachedTarget = RE::ActorPtr(a_sourceActor);
+				a_targetActor->combatController->previousTargetHandle =
+				a_targetActor->combatController->targetHandle = a_sourceActor->GetHandle();
+			}
+
 			auto combatGroup = a_sourceActor->GetCombatGroup(); 
+			if (!combatGroup)
+			{
+				if (!a_triggerCombat)
+				{
+					return;
+				}
+				
+				// IMPORTANT BUG NOTE:
+				// For companion players, combat-initiating hits 
+				// sometimes have their damage ignored, 
+				// and a second registered hit is required to do damage.
+				// Having the 'kIgnoreCombat' and 'kNoCombatAlert' package flags set
+				// does not have any bearing on this.
+				// Only partial solution so far is to start combat for both actors
+				// through the papyrus func.
+				Papyrus::StartCombat(a_sourceActor, a_targetActor);
+				Papyrus::StartCombat(a_targetActor, a_sourceActor);
+				combatGroup = a_sourceActor->GetCombatGroup(); 
+				if (!combatGroup && a_sourceActor->combatController)
+				{
+					combatGroup = a_sourceActor->combatController->combatGroup;
+				}
+			}
 			if (!combatGroup)
 			{
 				return;
@@ -1062,11 +1112,13 @@ namespace ALYSLC
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 					
+					// NOTE:
+					// Commented out for now, just in case I revert things.
 					// We pick the smaller of distances to the two positions below 
 					// since for certain refrs, especially activators,
 					// the center position might be very far from the refr's reported location,
 					// and we only need one or the other to be in range.
-					const auto& refrPos = a_refr->data.location;
+					/*const auto& refrPos = a_refr->data.location;
 					const auto refrPosCenter = Get3DCenterPos(a_refr);
 					const auto distance = 
 					(
@@ -1083,6 +1135,18 @@ namespace ALYSLC
 								GetXYDistance(a_originPos, refrPos), 
 								GetXYDistance(a_originPos, refrPosCenter)
 							), 
+							2.0f
+						)
+					);*/
+
+					const auto refrPos = GetRefrPosition(a_refr);
+					const auto distance = 
+					(
+						a_use3DDist ? 
+						a_originPos.GetSquaredDistance(refrPos) : 
+						powf
+						(
+							GetXYDistance(a_originPos, refrPos), 
 							2.0f
 						)
 					);
@@ -2862,41 +2926,6 @@ namespace ALYSLC
 			}
 			else
 			{
-				/*
-				auto container = a_refrContainer->GetContainer();
-				// Check base container first.
-				container->ForEachContainerObject
-				(
-					[a_refrContainer, &a_weight, &a_value](RE::ContainerObject& a_object) 
-					{
-						if (a_object.obj && Util::IsLootableObject(*a_object.obj)) 
-						{
-							if (a_object.count > 0)
-							{
-								a_weight += a_object.obj->GetWeight() * a_object.count;
-								if (int32_t value = a_object.obj->GetGoldValue(); value > -1)
-								{
-									a_value += value * a_object.count;
-								}
-
-								SPDLOG_DEBUG
-								(
-									"[Util] GetWeightAndValueInRefr: "
-									"{}'s base container has {}, weight {}, value {} x{}.",
-									a_refrContainer->GetName(),
-									a_object.obj->GetName(),
-									a_object.obj->GetWeight(),
-									a_object.obj->GetGoldValue(),
-									a_object.count
-								);
-							}
-						}
-
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-				);
-				*/
-
 				// Check inventory next.
 				auto inventory = a_refrContainer->GetInventory();
 				for (const auto& [boundObj, countInvEntryDataPair] : inventory)
@@ -3008,7 +3037,7 @@ namespace ALYSLC
 			// This is because the camera is (hopefully) sitting in a valid,
 			// reachable position, so we don't have to make sure
 			// the targeted refr is reachable for interaction from the observer's current location.
-			if (a_forCrosshairSelection || Settings::bCamCollisions || !glob.cam->IsRunning())
+			if (a_forCrosshairSelection || glob.cam->camCollisions || !glob.cam->IsRunning())
 			{
 				// First, perform the less stringent P1 LOS check before raycasting.
 				bool inFrustum = false;
@@ -3663,11 +3692,13 @@ namespace ALYSLC
 			}
 			
 			Raycast::RayResult result{ };
-			glm::vec4 endPos = ToVec4(a_targetRefr->data.location);
+			glm::vec4 targetPos = ToVec4(a_targetRefr->data.location);
+			glm::vec4 endPos = targetPos;
 			// If requested, use the crosshair position as the raycast target point.
 			if (a_checkCrosshairPos)
 			{
-				endPos = ToVec4(a_crosshairWorldPos);
+				targetPos = ToVec4(a_crosshairWorldPos);
+				endPos = targetPos;
 			}
 
 			// Break up bounds interval into two sections:
@@ -3688,7 +3719,7 @@ namespace ALYSLC
 			for (auto i = 0; i < numCasts / 2; ++i)
 			{
 				// Extend ray through the target position.
-				endPos = startPos + (endPos - startPos) * 2.0f;
+				endPos = startPos + (targetPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
 					startPos, 
@@ -3779,7 +3810,7 @@ namespace ALYSLC
 			for (auto i = 0; i < numCasts / 2 - 1; ++i) 
 			{
 				// Extend ray through the target position.
-				endPos = startPos + (endPos - startPos) * 2.0f;
+				endPos = startPos + (targetPos - startPos) * 2.0f;
 				result = Raycast::hkpCastRay
 				(
 					startPos,
@@ -5141,7 +5172,10 @@ namespace ALYSLC
 			// Stop idling before ragdolling too.
 			a_actorToPush->NotifyAnimationGraph("IdleStop");
 			a_actorToPush->NotifyAnimationGraph("IdleStopOffset");
-			a_actorToPush->currentProcess->StopCurrentIdle(a_actorToPush, true);
+			a_actorToPush->currentProcess->StopCurrentIdle
+			(
+				a_actorToPush, !a_actorToPush->IsWeaponDrawn()
+			);
 
 			// Sheathe before downing to prevent an equip glitch
 			// that requires re-equipping the actor's hand forms
@@ -5164,7 +5198,6 @@ namespace ALYSLC
 
 			// Prevents (most of the time?) actors who are interacting with objects 
 			// from clipping through the ground upon ragdolling.
-			auto strings = RE::FixedStrings::GetSingleton(); 
 			bool result = false;
 			bool isInteracting = 
 			(
@@ -5172,7 +5205,7 @@ namespace ALYSLC
 				(
 					(a_actorToPush->IsOnMount()) ||
 					(HandleIsValid(a_actorToPush->GetOccupiedFurniture())) ||
-					(strings && a_actorToPush->IsAnimationDriven())
+					(a_actorToPush->IsAnimationDriven())
 				)
 			);
 			if (isInteracting)
@@ -5593,8 +5626,8 @@ namespace ALYSLC
 
 		void SendHitData
 		(
-			const RE::ActorHandle& a_aggressor, 
-			const RE::ActorHandle& a_target, 
+			RE::Actor* a_aggressor, 
+			RE::Actor* a_target, 
 			const RE::ObjectRefHandle& a_source,
 			RE::InventoryEntryData* a_invEntryData,
 			const float& a_damage, 
@@ -5607,14 +5640,14 @@ namespace ALYSLC
 		{
 			// Send a hit event with damage and characteristics based on all the given data.
 
-			if (!HandleIsValid(a_aggressor) || !HandleIsValid(a_target))
+			if (!a_aggressor || !a_target)
 			{
 				return;
 			}
 
 			RE::HitData hitData{ };
 			NativeFunctions::HitData_Ctor(std::addressof(hitData));
-			hitData.Populate(a_aggressor.get().get(), a_target.get().get(), a_invEntryData);
+			hitData.Populate(a_aggressor, a_target, a_invEntryData);
 
 			// Zero everything except physical and total damage.
 			hitData.bonusHealthDamageMult =
@@ -5659,7 +5692,7 @@ namespace ALYSLC
 			// Applies the hit and sends the event.
 			NativeFunctions::Actor_ApplyHitData
 			(
-				a_target.get().get(), std::addressof(hitData)
+				a_target, std::addressof(hitData)
 			);
 		};
 
@@ -6913,6 +6946,92 @@ namespace ALYSLC
 			}
 		}
 
+		void TriggerCombatAndDealDamage
+		(
+			RE::Actor* a_sourceActor,
+			RE::Actor* a_targetActor,
+			const float& a_damage,
+			bool a_triggerCombat, 
+			bool a_sendEvent, 
+			const RE::ObjectRefHandle& a_sourceHandle,
+			const RE::FormID& a_projFID, 
+			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags
+		)
+		{
+			// First, make sure the source actor and the target actor are in combat 
+			// with each other both ways (aggroed by each other).
+			// Then, deal the given damage to the given target actor.
+			// Can also specify a handle for the damage source.
+			
+			if (!a_sourceActor || !a_targetActor)
+			{
+				return;
+			}
+
+			// Add the target actor to the player's combat group, if it exists,
+			// and start combat if requested.
+			if (a_sourceActor->IsPlayerRef())
+			{
+				// For P1, just send the hit data to do damage.
+				SendHitData
+				(
+					a_sourceActor, 
+					a_targetActor,
+					HandleIsValid(a_sourceHandle) ? 
+					a_sourceHandle : 
+					a_sourceActor->GetHandle(),
+					nullptr,
+					a_damage
+				);
+			}
+			else
+			{
+				AddAsCombatTarget(a_sourceActor, a_targetActor, a_triggerCombat);
+				AddAsCombatTarget(a_targetActor, a_sourceActor, a_triggerCombat);
+				// Nothing further to do if not triggering combat.
+				if (!a_triggerCombat)
+				{
+					return;
+				}
+
+				if (a_sendEvent)
+				{
+					SendHitEvent
+					(
+						a_sourceActor, 
+						a_targetActor, 
+						HandleIsValid(a_sourceHandle) ? 
+						a_sourceHandle.get()->formID : 
+						a_sourceActor->formID,
+						a_projFID != 0 ? 
+						a_projFID : 
+						a_sourceActor->formID,
+						a_hitEventFlags
+					);
+				}
+
+				// Then send hit data to do damage.
+				SendHitData
+				(
+					a_sourceActor, 
+					a_targetActor,
+					HandleIsValid(a_sourceHandle) ? 
+					a_sourceHandle : 
+					a_sourceActor->GetHandle(),
+					nullptr,
+					a_damage
+				);
+				// Have the target 'hit' the player for 0 damage to ensure combat isn't one sided
+				// and is also directed as player 'aggroed by' target.
+				SendHitData
+				(
+					a_targetActor,
+					a_sourceActor,
+					a_targetActor->GetHandle()
+				);
+			}
+		}
+
 		bool TriggerFalseSkillLevelUp
 		(
 			const RE::ActorValue& a_avSkill, 
@@ -7003,6 +7122,22 @@ namespace ALYSLC
 			}
 
 			return false;
+		}
+
+		void UpdateCombatTargets
+		(
+			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
+		)
+		{
+			// Set the given target actor as the given source actor's combat target and vice versa.
+
+			if (!a_sourceActor || !a_targetActor)
+			{
+				return;
+			}
+		
+			AddAsCombatTarget(a_sourceActor, a_targetActor, a_triggerCombat);
+			AddAsCombatTarget(a_targetActor, a_sourceActor, a_triggerCombat);
 		}
 
 		RE::NiPoint3 WorldToScreenPoint3(const RE::NiPoint3& a_worldPos, bool&& a_shouldClamp)

@@ -380,11 +380,13 @@ namespace ALYSLC
 				isHoming(false),
 				isThrown(false),
 				startedHomingIn(false),
+				fallHeight(0.0f),
 				initialTimeToTarget(0.0f),
 				launchPitch(0.0f),
 				launchYaw(0.0f),
 				magickaOverflowSlowdownFactor(1.0f),
 				releaseSpeed(0.0),
+				recordedHitsCount(0),
 				targetedActorNode(),
 				targetRefrHandle(RE::ObjectRefHandle()),
 				lastSetTargetPosition(RE::NiPoint3()),
@@ -409,11 +411,13 @@ namespace ALYSLC
 				isHoming(false),
 				isThrown(false),
 				startedHomingIn(false),
+				fallHeight(0.0f),
 				initialTimeToTarget(0.0f),
 				launchPitch(0.0f),
 				launchYaw(0.0f),
 				magickaOverflowSlowdownFactor(0.0f),
 				releaseSpeed(0.0),
+				recordedHitsCount(0),
 				targetedActorNode(),
 				targetRefrHandle(RE::ObjectRefHandle()),
 				lastSetTargetPosition(RE::NiPoint3()),
@@ -436,11 +440,13 @@ namespace ALYSLC
 				isHoming = a_other.isHoming;
 				isThrown = a_other.isThrown;
 				startedHomingIn = a_other.startedHomingIn;
+				fallHeight = a_other.fallHeight;
 				initialTimeToTarget = a_other.initialTimeToTarget;
 				launchPitch = a_other.launchPitch;
 				launchYaw = a_other.launchYaw;
 				magickaOverflowSlowdownFactor = a_other.magickaOverflowSlowdownFactor;
 				releaseSpeed = a_other.releaseSpeed;
+				recordedHitsCount = a_other.recordedHitsCount;
 				targetedActorNode = a_other.targetedActorNode;
 				targetRefrHandle = a_other.targetRefrHandle;
 				lastSetTargetPosition = a_other.lastSetTargetPosition;
@@ -462,11 +468,13 @@ namespace ALYSLC
 				isHoming = std::move(a_other.isHoming);
 				isThrown = std::move(a_other.isThrown);
 				startedHomingIn = std::move(a_other.startedHomingIn);
+				fallHeight = std::move(a_other.fallHeight);
 				initialTimeToTarget = std::move(a_other.initialTimeToTarget);
 				launchPitch = std::move(a_other.launchPitch);
 				launchYaw = std::move(a_other.launchYaw);
 				magickaOverflowSlowdownFactor = std::move(a_other.magickaOverflowSlowdownFactor);
 				releaseSpeed = std::move(a_other.releaseSpeed);
+				recordedHitsCount = std::move(a_other.recordedHitsCount);
 				targetedActorNode = std::move(a_other.targetedActorNode);
 				targetRefrHandle = std::move(a_other.targetRefrHandle);
 				lastSetTargetPosition = std::move(a_other.lastSetTargetPosition);
@@ -488,11 +496,13 @@ namespace ALYSLC
 				isHoming = a_other.isHoming;
 				isThrown = a_other.isThrown;
 				startedHomingIn = a_other.startedHomingIn;
+				fallHeight = a_other.fallHeight;
 				initialTimeToTarget = a_other.initialTimeToTarget;
 				launchPitch = a_other.launchPitch;
 				launchYaw = a_other.launchYaw;
 				magickaOverflowSlowdownFactor = a_other.magickaOverflowSlowdownFactor;
 				releaseSpeed = a_other.releaseSpeed;
+				recordedHitsCount = a_other.recordedHitsCount;
 				targetedActorNode = a_other.targetedActorNode;
 				targetRefrHandle = a_other.targetRefrHandle;
 				lastSetTargetPosition = a_other.lastSetTargetPosition;
@@ -516,11 +526,13 @@ namespace ALYSLC
 				isHoming = std::move(a_other.isHoming);
 				isThrown = std::move(a_other.isThrown);
 				startedHomingIn = std::move(a_other.startedHomingIn);
+				fallHeight = std::move(a_other.fallHeight);
 				initialTimeToTarget = std::move(a_other.initialTimeToTarget);
 				launchPitch = std::move(a_other.launchPitch);
 				launchYaw = std::move(a_other.launchYaw);
 				magickaOverflowSlowdownFactor = std::move(a_other.magickaOverflowSlowdownFactor);
 				releaseSpeed = std::move(a_other.releaseSpeed);
+				recordedHitsCount = std::move(a_other.recordedHitsCount);
 				targetedActorNode = std::move(a_other.targetedActorNode);
 				targetRefrHandle = std::move(a_other.targetRefrHandle);
 				lastSetTargetPosition = std::move(a_other.lastSetTargetPosition);
@@ -540,16 +552,14 @@ namespace ALYSLC
 			// Add the given refr as hit by this released refr.
 			inline void AddHitRefr(RE::TESObjectREFR* a_refr)
 			{
-				// Set first hit TP if colliding with something for the first time.
-				// Ignore hits within 30 frames of release to allow the released refrs
-				// to get off the ground and start on its trajectory if it hasn't already.
-				// This applies to heavy or not very aerodynamic objects/actors,
-				// such as fish, king crabs, and dragons.
-				if (!firstHitTP.has_value() && 
-					releaseTP.has_value() &&
-					Util::GetElapsedSeconds(releaseTP.value()) > *g_deltaTimeRealTime * 30)
+				if (SetupPeriodElapsed())
 				{
-					firstHitTP = SteadyClock::now();
+					if (!firstHitTP.has_value())
+					{
+						firstHitTP = SteadyClock::now();
+					}
+
+					recordedHitsCount++;
 				}
 
 				hitRefrFIDs.insert(a_refr->formID);
@@ -564,8 +574,9 @@ namespace ALYSLC
 				isHoming = false;
 				isThrown = false;
 				startedHomingIn = false;
-				initialTimeToTarget = launchPitch = launchYaw = releaseSpeed = 0.0;
+				fallHeight = initialTimeToTarget = launchPitch = launchYaw = releaseSpeed = 0.0;
 				magickaOverflowSlowdownFactor = 1.0f;
+				recordedHitsCount = 0;
 				targetedActorNode.reset();
 				targetRefrHandle = RE::ObjectRefHandle();
 				lastSetTargetPosition = 
@@ -597,6 +608,22 @@ namespace ALYSLC
 				return false;
 			}
 
+			// Return true if the released refr should have its damaging collisions recorded 
+			// and can deal damage on impact.
+			inline bool SetupPeriodElapsed()
+			{
+				// Ignore hits within 30 frames/0.5s of release to allow the released refrs
+				// to get off the ground and start on its trajectory if it hasn't already.
+				// This applies to heavy or not very aerodynamic objects/actors,
+				// such as fish, king crabs, and dragons.
+				float setupInterval = max(*g_deltaTimeRealTime * 30.0f, 0.5f);
+				return 
+				(
+					releaseTP.has_value() && 
+					Util::GetElapsedSeconds(releaseTP.value()) > setupInterval
+				);
+			}
+
 			// Save the refr's current velocity, cap the given speed of this released refr 
 			// to the release speed, and then apply the capped velocity.
 			void ApplyVelocity(RE::NiPoint3& a_velocityToSet);
@@ -623,7 +650,11 @@ namespace ALYSLC
 			bool InitPreviewTrajectory(const std::shared_ptr<CoopPlayer>& a_p);
 
 			// Set this released refr's initial trajectory information.
-			void InitTrajectory(const std::shared_ptr<CoopPlayer>& a_p);
+			void InitTrajectory
+			(
+				const std::shared_ptr<CoopPlayer>& a_p,
+				const float& a_normReleaseAngleFactor
+			);
 
 			// Trajectory type.
 			ProjectileTrajType trajType;
@@ -664,6 +695,10 @@ namespace ALYSLC
 			// Slows down the release speed of this refr if the releasing player is low on magicka.
 			// [0.25, 1.0]
 			float magickaOverflowSlowdownFactor;
+			// Height (world Z coordinate) of the refr when it started falling.
+			// This is the release height for dropped refrs
+			// and the height at the apex of the refr's trajectory for thrown refrs.
+			double fallHeight;
 			// Time in seconds to reach the target at the time of the refr's release.
 			double initialTimeToTarget;
 			// Refr's pitch at launch ('up' is positive, 'down' is negative 
@@ -673,6 +708,8 @@ namespace ALYSLC
 			double launchYaw;
 			// Refr's speed at launch.
 			double releaseSpeed;
+			// Number of recorded objects this refr has collided with (post-immunity period).
+			uint32_t recordedHitsCount;
 		};
 
 		// Handles manipulation of and bookkeeping for grabbed and released refrs.
@@ -690,6 +727,7 @@ namespace ALYSLC
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
 				isGrabbing = a_other.isGrabbing;
 				isAutoGrabbing = a_other.isAutoGrabbing;
+				normReleaseAngleFactor = a_other.normReleaseAngleFactor;
 				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 				totalThrownRefrMagickaCost = a_other.totalThrownRefrMagickaCost;
 
@@ -756,6 +794,7 @@ namespace ALYSLC
 				);
 				isGrabbing = std::move(a_other.isGrabbing);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				normReleaseAngleFactor = std::move(a_other.normReleaseAngleFactor);
 				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 				totalThrownRefrMagickaCost = std::move(a_other.totalThrownRefrMagickaCost);
 				
@@ -770,6 +809,7 @@ namespace ALYSLC
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
 				isGrabbing = a_other.isGrabbing;
+				normReleaseAngleFactor = a_other.normReleaseAngleFactor;
 				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 				totalThrownRefrMagickaCost = a_other.totalThrownRefrMagickaCost;
 
@@ -838,6 +878,7 @@ namespace ALYSLC
 				);
 				isGrabbing = std::move(a_other.isGrabbing);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				normReleaseAngleFactor = std::move(a_other.normReleaseAngleFactor);
 				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 				totalThrownRefrMagickaCost = std::move(a_other.totalThrownRefrMagickaCost);
 				
@@ -890,11 +931,15 @@ namespace ALYSLC
 			// Returns the next open index in the released refr list
 			// at which the requested refr was inserted, 
 			// or -1 if the requested refr could not be released.
+			// Can also specify the release angle factor to use,
+			// or keep at -1 to have the release angle adjusted
+			// by the 'Grab Object' bind's hold time.
 			int32_t AddReleasedRefr
 			(
 				const std::shared_ptr<CoopPlayer>& a_p, 
 				const RE::ObjectRefHandle& a_handle,
-				const float& a_magickaCost
+				float a_magickaCost,
+				float a_normReleaseAngleFactor = -1.0f
 			);
 
 			// Returns true if there is room for another grabbed refr.
@@ -944,16 +989,26 @@ namespace ALYSLC
 			// Clear all managed released refrs.
 			void ClearReleasedRefrs() noexcept;
 			
-			// Normalize and return the grab bind hold time, 
-			// which directly influences the speed at which released refrs are thrown.
-			float GetReleasedRefrBindHoldTimeFactor(const std::shared_ptr<CoopPlayer>& a_p);
+			// Get the given refr handle's manipulable refr info index 
+			// that gives its position in the grabbed/released refrs list 
+			// and return it through the outparam.
+			// Return true if the refr corresponding to the given handle 
+			// is a managed grabbed/released object.
+			bool GetRefrInfoIndex
+			(
+				const RE::ObjectRefHandle& a_handle, bool a_grabbed, uint8_t& a_indexOut
+			);
 
 			// Return the base magicka cost for throwing the given refr.
+			// If not specifying a release angle factor (or set to -1),
+			// calculate the release angle factor based on the 'Grab Object' bind's hold time.
 			float GetThrownRefrMagickaCost
 			(
 				const std::shared_ptr<CoopPlayer>& a_p,
-				RE::TESObjectREFR* a_refrToThrow
+				RE::TESObjectREFR* a_refrToThrow,
+				const float& a_normReleaseAngleFactor = -1.0f
 			);
+
 			// Factor by which to slow down all thrown refrs' release speeds.
 			// The more magicka used up below a magicka level of 0, the slower the release speed.
 			// 'True' magicka cost means post-modification by the player's magicka cost multiplier.
@@ -982,14 +1037,28 @@ namespace ALYSLC
 			
 			// Cache the total base magicka cost for throwing all this player's grabbed refrs.
 			// Compute the total from the grabbed refrs or released refrs list.
+			// If not specifying a release angle factor (or set to -1),
+			// calculate the release angle factor based on the 'Grab Object' bind's hold time.
 			void SetTotalThrownRefrMagickaCost
 			(
 				const std::shared_ptr<CoopPlayer>& a_p,
-				bool&& a_checkGrabbedRefrsList
+				bool&& a_checkGrabbedRefrsList,
+				const float& a_normReleaseAngleFactor = -1.0f
 			);
 
 			// Toggle collision state for all grabbed refrs.
 			void ToggleGrabbedRefrCollisions();
+
+			// To have a factor calculated based on the player's 'Grab Object' bind hold time,
+			// do not specify a factor to directly set, or set as -1.
+			void UpdateThrownRefrReleaseAngleFactor
+			(
+				const std::shared_ptr<CoopPlayer>& a_p, const float& a_factorToSet = -1.0f
+			);
+			
+			// Was the given refr released as thrown?
+			const bool WasThrown(const RE::ObjectRefHandle& a_handle);
+
 
 			// List of havok contact events between released refrs and other objects.
 			// Enqueued by a havok contact listener, removed and handled by this manager.
@@ -1020,6 +1089,11 @@ namespace ALYSLC
 			// Should the manager handle grabbed refrs? 
 			// If false, all grabbed refrs have been released.
 			bool isGrabbing;
+
+			// Multiplier applied to the base release angle factor when throwing refrs. 
+			// Can set to [0, 1], or -1 to indicate the mult was auto-calculated
+			// based on the 'Grab Object' bind's hold time at release.
+			float normReleaseAngleFactor;
 
 			// Damage to apply in sent hit data when bonk, slap, or splat hit event
 			// is handled in the Hit Event Handler. 
@@ -1594,10 +1668,7 @@ namespace ALYSLC
 		inline void SetIsGrabbing(bool&& a_set) 
 		{ 
 			rmm->isGrabbing = a_set; 
-			if (a_set) 
-			{
-				rmm->isAutoGrabbing = false;
-			}
+			rmm->isAutoGrabbing = false;
 		}
 
 		// Set the player's last position and facing angle when cycling nearby activation refrs.
@@ -1742,8 +1813,10 @@ namespace ALYSLC
 			RE::ActorHandle a_hitActorHandle, 
 			RE::ObjectRefHandle a_releasedRefrHandle, 
 			float a_collidingMass,
+			float a_fallHeight,
 			const RE::NiPoint3& a_collidingVelocity,
-			const RE::NiPoint3& a_contactPos
+			const RE::NiPoint3& a_contactPos,
+			bool a_shouldRagdoll = true
 		);
 
 		// If the QuickLoot mod is installed, handle opening/closing of the QuickLoot menu
@@ -1754,7 +1827,13 @@ namespace ALYSLC
 		void HandleReferenceManipulation();
 
 		// Splat! Ooh, that's going to leave a mark!
-		void HandleSplat(RE::ActorHandle a_thrownActorHandle, const uint32_t& a_hitCount);
+		void HandleSplat
+		(
+			RE::ActorHandle a_releasedActorHandle, 
+			const uint32_t& a_hitCount, 
+			const double& a_fallHeight,
+			bool a_wasThrown
+		);
 
 		// Is the given refr valid for targeting with the player's crosshair:
 		// - Handle valid, visible, and not disabled/deleted.
@@ -1798,7 +1877,13 @@ namespace ALYSLC
 		// Update the target refr used by the ranged attack package.
 		// The given equip index should hold the form triggering the ranged attack.
 		// E.g. Left hand slot when trying to cast a spell in the left hand.
-		bool UpdateAimTargetLinkedRefr(const EquipIndex& a_attackSlot);
+		// Can set to self to ensure the ranged attack package has a valid target.
+		// If requesting to find a target, 
+		// a new target refr will be computed and set based on the given attack slot.
+		// Otherwise, the aim target linked refr will be set to the player's character 
+		// to ensure the ranged target package has a valid target.
+		// Then return true if a new target was set or the old one was cleared.
+		bool UpdateAimTargetLinkedRefr(const EquipIndex& a_attackSlot, bool a_findTarget = true);
 
 		// Update the interpolation data used to animate the crosshair's contraction/expansion.
 		void UpdateAnimatedCrosshairInterpData();
