@@ -2122,6 +2122,7 @@ namespace ALYSLC
 			{
 				(
 					reqFaceTarget && 
+					p->coopActor->IsWeaponDrawn() &&
 					!p->isRevivingPlayer && 
 					!isTKDodging && 
 					!isTDMDodging && 
@@ -2141,32 +2142,6 @@ namespace ALYSLC
 					)
 				)
 			};
-			// Check if the player is using their weapons/magic.
-			bool isUsingWeapMag = 
-			{ 
-				(p->pam->isAttacking || p->pam->isBlocking ||
-				 p->pam->isBashing || p->pam->isInCastingAnim) 
-			};
-			// Secondary check to see if the player is pressing 
-			// binds for combat-related player actions.
-			if (!isUsingWeapMag && coopActor->IsWeaponDrawn())
-			{
-				const auto& combatGroup = 
-				(
-					glob.paInfoHolder->DEF_ACTION_GROUPS_TO_INDICES.at(ActionGroup::kCombat)
-				);
-				for (auto actionIndex : combatGroup)
-				{
-					isUsingWeapMag |= 
-					(
-						p->pam->IsPerforming(static_cast<InputAction>(actionIndex))
-					);
-					if (isUsingWeapMag)
-					{
-						break;
-					}
-				}
-			}
 
 			// If not facing the target at all times,
 			// the player will still temporarily face the selected target 
@@ -2191,8 +2166,7 @@ namespace ALYSLC
 				(
 					(p->isRevivingPlayer) || 
 					(
-						coopActor->IsWeaponDrawn() &&
-						isUsingWeapMag && 
+						p->pam->TurnToTargetForCombatAction() &&
 						!p->pam->IsPerforming(InputAction::kSprint) &&
 						targetActorPtr &&
 						Util::IsValidRefrForTargeting(targetActorPtr.get())
@@ -3005,13 +2979,7 @@ namespace ALYSLC
 			aimCorrectionOrLinkedTargetPtr && 
 			Util::IsValidRefrForTargeting(aimCorrectionOrLinkedTargetPtr.get())
 		);
-		bool isUsingWeapMag = 
-		(
-			p->pam->isAttacking ||
-			p->pam->isBlocking ||
-			p->pam->isBashing ||
-			p->pam->isInCastingAnim
-		);
+		bool isUsingWeapMag = p->pam->TurnToTargetForCombatAction();
 		// Can adjust pitch to face either a crosshair-targeted refr or an aim correction target.
 		bool turningToCrosshairTarget = isUsingWeapMag && crosshairRefrValidity;
 		bool usingAimCorrectionOrLinkedTarget = 
@@ -3029,7 +2997,11 @@ namespace ALYSLC
 		adjustAimPitchToFaceTarget = 
 		{ 
 			(!p->isTransformed) && 
-			(reqFaceTarget || turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget) 
+			(
+				(reqFaceTarget && p->coopActor->IsWeaponDrawn()) || 
+				turningToCrosshairTarget || 
+				usingAimCorrectionOrLinkedTarget
+			) 
 		};
 		// Default to pitching towards the current crosshair position,
 		// but if an aim correction target is selected,

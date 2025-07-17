@@ -451,22 +451,54 @@ namespace ALYSLC
 			return (IsPerforming(a_actions) || ...);
 		}
 
+		// Is the player casting their quick slot spell?
+		// Since some spellcasts launch their projectiles on bind release,
+		// also return true if the cast bind's inputs were just released.
+		bool IsPerformingQuickSlotCast()
+		{
+			return 
+			(
+				(
+					IsPerforming(InputAction::kQuickSlotCast) ||
+					GetPlayerActionInputJustReleased(InputAction::kQuickSlotCast, false)
+				) ||
+				(
+					(reqSpecialAction == SpecialActionType::kQuickCast) &&
+					(
+						IsPerforming(InputAction::kSpecialAction) ||
+						GetPlayerActionInputJustReleased(InputAction::kSpecialAction, false)
+					)
+				)
+			);
+		}
+
 		// Is the player performing a spell cast action?
+		// Since some spellcasts launch their projectiles on bind release,
+		// also return true if the cast bind's inputs were just released.
 		bool IsPerformingSpellCastAction()
 		{
 			return 
 			(
 				(
+
 					IsPerformingOneOf
 					(
 						InputAction::kCastLH, InputAction::kCastRH, InputAction::kQuickSlotCast
-					)
+					) ||
+					GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
+					GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
+					GetPlayerActionInputJustReleased(InputAction::kQuickSlotCast, false)
+
 				) ||
 				(
-					(IsPerforming(InputAction::kSpecialAction)) &&
 					(
 						reqSpecialAction == SpecialActionType::kCastBothHands ||
-						reqSpecialAction == SpecialActionType::kDualCast
+						reqSpecialAction == SpecialActionType::kDualCast ||
+						reqSpecialAction == SpecialActionType::kQuickCast
+					) &&
+					(
+						IsPerforming(InputAction::kSpecialAction) ||
+						GetPlayerActionInputJustReleased(InputAction::kSpecialAction, false)
 					)
 				)
 			);
@@ -607,9 +639,6 @@ namespace ALYSLC
 		// Evaluate the current package atop the player's package stack.
 		void EvaluatePackage();
 
-		// For companion players, expend magicka when a magicka AV cost action is in progress.
-		void ExpendMagicka();
-
 		// Expend stamina when a stamina AV cost action is in progress or when sprinting.
 		void ExpendStamina();
 
@@ -641,17 +670,17 @@ namespace ALYSLC
 		// Return true if all inputs for the given action were just pressed
 		// and the action is now performable (check button ordering).
 		bool GetPlayerActionInputJustPressed(const InputAction& a_action);
-
-		// Return true if all/some inputs for the given action were just released
+		
+		// Return true if one or all (if requested) inputs for the given action were just released
 		// (order in which they were released does not matter).
 		bool GetPlayerActionInputJustReleased
 		(
 			const InputAction& a_action, bool&& a_checkIfAllReleased
 		);
-
-		// Modify magicka/stamina actor values as necessary 
-		// after the appropriate animation events trigger.
-		void HandleAVExpenditure();
+		
+		// For companion players, check if XP should be awarded 
+		// when a magicka AV cost action is in progress or completes.
+		void GrantSpellcastXP();
 
 		// Update the player's dialogue state, have the player and speaker look at one another,
 		// and close the DialogueMenu if the player is too far from the speaker.
@@ -660,6 +689,11 @@ namespace ALYSLC
 		// Handle killmove requests by ensuring the killmove victim dies after the killmove ends.
 		// Sounds kind of dark, but that's what it does. Most of the time.
 		void HandleKillmoveRequests();
+		
+		// Modify health, magicka, stamina actor values and grant XP
+		// based on the player's ongoing AV action requests
+		// and animation events that have triggered over the last frame.
+		void HandlePerformedAnimationEvents();
 
 		// Return true if the given player actor has enough magicka to cast the given spell.
 		// Accounts for player-specific magicka cost multiplier.
@@ -774,6 +808,15 @@ namespace ALYSLC
 
 		// Stop any ongoing idle animation or attack for this player.
 		void StopCurrentIdle();
+
+		// Return true if the player should turn to face a target 
+		// if attacking, bashing, blocking, casting, or shouting.
+		bool TurnToTargetForCombatAction();
+		
+		// Return true if the player should turn to face a target 
+		// if attacking, bashing, blocking, casting, or shouting.
+		// Also return whether or not a combat action has just started in the outparam.
+		bool TurnToTargetForCombatAction(bool& a_combatActionJustStarted);
 
 		// Update current HMS actor values, HMS regen multipliers, 
 		// stamina/shout cooldowns, and the player's carryweight actor value.

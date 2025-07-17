@@ -33,6 +33,20 @@ namespace ALYSLC
 			SPDLOG_INFO("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
+		
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (dataHandler && 
+			dataHandler->LookupLoadedLightModByName("ALYSLC Enderal.esp"sv) &&
+			dataHandler->LookupLoadedLightModByName("ALYSLC.esp"sv))
+		{
+			RE::DebugMessageBox
+			(
+				"[ALYSLC] ERROR: "
+				"More than one ALYSLC '.esp' file is currently loaded.\n"
+				"To avoid issues, please make sure only the '.esp' that matches your game "
+				"(Skyrim or Enderal) is enabled and then restart the game."
+			);
+		}
 	}
 	
 	void MCOCompat::CheckForMCO(const SKSE::LoadInterface* a_loadInterface)

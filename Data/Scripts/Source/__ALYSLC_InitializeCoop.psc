@@ -34,7 +34,7 @@ Function Init()
 	Float SecsWaited = 0.0
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[INIT SCRIPT] P1 invalid; attempting to get P1 again.")
-		PlayerRef = Game.GetPlayer() as Actor
+		PlayerRef = Game.GetPlayer()
 		Utility.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile

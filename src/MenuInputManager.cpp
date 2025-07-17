@@ -395,7 +395,7 @@ namespace ALYSLC
 			return currentState;
 		}
 
-		RE::GFxValue result;
+		RE::GFxValue result{ };
 		view->Invoke("_root.Menu_mc.isViewingContainer", std::addressof(result), nullptr, 0);
 		// Viewing a container, not P1's inventory.
 		if (bool isViewingContainer = result.GetBool(); isViewingContainer) 
@@ -445,7 +445,7 @@ namespace ALYSLC
 			return currentState;
 		}
 
-		RE::GFxValue result;
+		RE::GFxValue result{ };
 		view->Invoke("_root.Menu_mc.isViewingContainer", std::addressof(result), nullptr, 0);
 		bool isViewingContainer = result.GetBool(); 
 		// Viewing P1's inventory, so do not resume.
@@ -1109,6 +1109,20 @@ namespace ALYSLC
 		// Update interpolated value and direction change flag + interpolation direction.
 		// Use to set the overlay alpha value.
 		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpenForCoop);
+
+		// REMOVE when done debugging.
+		/*SPDLOG_DEBUG
+		(
+			"[MIM] DrawPlayerMenuControlOverlay: "
+			"Attempting to open setup menu: {}. Temp menu open: {}. "
+			"Interped value: {}. Interp to min/max: {}, {}.", 
+			attemptingToOpenSetupMenu,
+			tempMenuOpenForCoop,
+			interpValue,
+			pmcFadeInterpData->interpToMax,
+			pmcFadeInterpData->interpToMin
+		);*/
+
 		// Draw when a temporary menu is open or while still fading in/out.
 		if (tempMenuOpenForCoop || 
 			pmcFadeInterpData->interpToMax || 

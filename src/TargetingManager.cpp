@@ -7349,95 +7349,7 @@ namespace ALYSLC
 
 		// Player is trying to/is performing/just finished an action that requires having a target.
 		bool actionJustStarted = false;
-		bool rangedAttackOrBlockRequest = 
-		(
-			(p->pam->isAttacking) ||
-			(p->pam->isBlocking) ||
-			(p->pam->isBashing) ||
-			(p->pam->isInCastingAnim) ||
-			(p->pam->isCastingLH) ||
-			(p->pam->isCastingRH) ||
-			(p->pam->isCastingDual) ||
-			(p->pam->isShouting) ||
-			(p->pam->isVoiceCasting)
-		);
-		if (!rangedAttackOrBlockRequest)
-		{
-			if ((p->em->Has2HRangedWeapEquipped() || p->em->HasRHStaffEquipped()) &&
-				(
-					p->pam->GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
-					p->pam->AllInputsPressedForAction(InputAction::kAttackRH)
-				))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kAttackRH);
-			}
-			else if ((p->em->HasRHSpellEquipped()) &&
-					 (
-						 p->pam->GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
-						 p->pam->AllInputsPressedForAction(InputAction::kCastRH)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kCastRH);
-			}
-			else if ((p->em->HasLHSpellEquipped()) &&
-					 (
-						 p->pam->GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
-						 p->pam->AllInputsPressedForAction(InputAction::kCastLH)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kCastLH);
-			}
-			else if ((p->em->HasLHStaffEquipped()) &&
-					 (
-						 p->pam->GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
-						 p->pam->AllInputsPressedForAction(InputAction::kAttackLH)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kAttackLH);
-			}
-			else if ((p->em->quickSlotSpell) &&
-					 (
-						 p->pam->GetPlayerActionInputJustReleased
-						 (
-							InputAction::kQuickSlotCast, false
-						 ) ||
-						 p->pam->AllInputsPressedForAction(InputAction::kQuickSlotCast)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kQuickSlotCast);
-			}
-			else if ((p->em->voiceSpell) &&
-					 (
-						 p->pam->GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
-						 p->pam->AllInputsPressedForAction(InputAction::kShout)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kShout);
-			}
-			else if ((
-						p->pam->reqSpecialAction == SpecialActionType::kCastBothHands || 
-						p->pam->reqSpecialAction == SpecialActionType::kDualCast || 
-						p->pam->reqSpecialAction == SpecialActionType::kQuickCast
-					 ) &&
-					 (
-						p->pam->GetPlayerActionInputJustReleased
-						(
-							InputAction::kSpecialAction, false
-						) ||
-						p->pam->AllInputsPressedForAction(InputAction::kSpecialAction)
-					 ))
-			{
-				rangedAttackOrBlockRequest = true;
-				actionJustStarted = p->pam->JustStarted(InputAction::kSpecialAction);
-			}
-		}
-
+		bool rangedAttackOrBlockRequest = p->pam->TurnToTargetForCombatAction(actionJustStarted);
 		const auto& lsState = glob.cdh->GetAnalogStickState(controllerID, true);
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
 		// Can only check for a new target if the player is requesting a ranged attack, 
@@ -7648,20 +7560,35 @@ namespace ALYSLC
 				newTargetRefrPtr &&
 				Util::IsValidRefrForTargeting(newTargetRefrPtr.get())
 			);
-			if (newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr)
+
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG
+			(
+				"[TM] UpdateAimTargetLinkedRefr: {}: "
+				"index {}, weapMagObj: {}. Current: {}, new: {}. Find target: {}.",
+				coopActor->GetName(),
+				a_attackSlot,
+				weapMagObj ? weapMagObj->GetName() : "NONE",
+				currentTargetRefrPtr ? currentTargetRefrPtr->GetName() : "NONE",
+				newTargetRefrPtr ? newTargetRefrPtr->GetName() : "NONE",
+				a_findTarget
+			);*/
+
+			if ((newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr) &&
+				(!currentTargetRefrPtr || newTargetRefrPtr != coopActor))
 			{
 				// Set new valid linked refr.
 				coopActor->extraList.SetLinkedRef(newTargetRefrPtr.get(), p->aimTargetKeyword);
 				aimTargetLinkedRefrHandle = newTargetRefrPtr->GetHandle();
+				return true;
 			}
 			else if (!newTargetIsValid && currentTargetRefrPtr)
 			{
 				// Clear old linked refr if no new one was selected.
 				coopActor->extraList.SetLinkedRef(nullptr, p->aimTargetKeyword);
 				aimTargetLinkedRefrHandle.reset();
+				return true;
 			}
-
-			return currentTargetRefrPtr != newTargetRefrPtr;
 		}
 
 		return false;
@@ -9225,7 +9152,8 @@ namespace ALYSLC
 				ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
 				ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
 				ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
-				ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
+				ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) || 
+				ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME)
 			);
 			bool onlyAlwaysUnpaused = Util::MenusOnlyAlwaysUnpaused();
 			bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(controllerID);
@@ -12436,6 +12364,12 @@ namespace ALYSLC
 				RE::hkVector4 pos{ };
 				asActorPtr->GetCharController()->GetPosition(pos, false);
 				cPos = ToNiPoint3(pos) * HAVOK_TO_GAME;
+				cPos = pPos + RE::NiPoint3
+				(
+					std::lerp(0.0f, (cPos - pPos).x, 0.25f),
+					std::lerp(0.0f, (cPos - pPos).y, 0.25f),
+					std::lerp(0.0f, (cPos - pPos).z, 0.25f)
+				);
 				cVel = (cPos - pPos) / *g_deltaTimeRealTime;
 				cYaw = 
 				(
@@ -12447,6 +12381,12 @@ namespace ALYSLC
 			else
 			{
 				cPos = targetRefrPtr->data.location;
+				cPos = pPos + RE::NiPoint3
+				(
+					std::lerp(0.0f, (cPos - pPos).x, 0.25f),
+					std::lerp(0.0f, (cPos - pPos).y, 0.25f),
+					std::lerp(0.0f, (cPos - pPos).z, 0.25f)
+				);
 				cVel = (cPos - pPos) / *g_deltaTimeRealTime;
 				cYaw = 
 				(

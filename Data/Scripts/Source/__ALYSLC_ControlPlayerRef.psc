@@ -19,7 +19,7 @@ EndEvent
 Event OnPlayerLoadGame()
 	; Wait until player 1 loads in.
 	While (!PlayerRef)
-		PlayerRef = Game.GetPlayer() as Actor
+		PlayerRef = Game.GetPlayer()
 	EndWhile
 	
 	; Set teleport portal
@@ -29,7 +29,7 @@ Event OnPlayerLoadGame()
 	ALYSLC.Log("[CP1R SCRIPT] Loaded save. Starting cleanup process...")
 	; Quest script function called to perform intialization.
 	InitializeScript.Init()
-	PlayerRef = Game.GetPlayer() as Actor
+	PlayerRef = Game.GetPlayer()
 
 	; Unregister an previous menu registrations first.
 	UnregisterForAllMenus()
@@ -53,7 +53,7 @@ Event OnCoopStart()
 	Float SecsWaited = 0.0
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[CP1R SCRIPT] P1 invalid; attempting to get P1 again.")
-		PlayerRef = Game.GetPlayer() as Actor
+		PlayerRef = Game.GetPlayer()
 		Utility.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
@@ -78,24 +78,24 @@ EndEvent
 ; Triggered when any player dies or when only player 1 remains. Reset co-op state and end the co-op session if 
 ; all summoned players are dead or when player 1 dies. 
 Event OnCoopEnd(Form akCompanion, Int aiControllerID)
+	CanStartCoopGlobVar.SetValue(0.00)
     ControllerID = aiControllerID
 	ALYSLC.Log("[CP1R SCRIPT] OnCoopEnd: " + akCompanion)
 	; Remove companion from list
 	If (akCompanion as ObjectReference != PlayerRef)
-		ALYSLC.Log("[CP1R SCRIPT] " + (akCompanion as Actor).GetDisplayName() + " is being removed from companions list.")
-		ALYSLC.Log("[CP1R SCRIPT] Companions count before: " + CurrentCompanionsCount)
+		ALYSLC.Log("[CP1R SCRIPT] Companions count before: cached: " + CurrentCompanionsCount + ", current: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
 		If (StorageUtil.FormListPluck(None, "ALYSLC_CompanionsList", StorageUtil.FormListFind(None, "ALYSLC_CompanionsList", akCompanion), None))
+			ALYSLC.Log("[CP1R SCRIPT] " + (akCompanion as Actor).GetDisplayName() + " is being removed from companions list.")
 			CurrentCompanionsCount = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) - 1
 		EndIf
 		StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", CurrentCompanionsCount)
-		ALYSLC.Log("[CP1R SCRIPT] Companions count after: " + CurrentCompanionsCount)
+		ALYSLC.Log("[CP1R SCRIPT] Companions count after: cached: " + CurrentCompanionsCount + ", current: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
 	Else 
 		;============================================================================
     	;=============================[Co-op End Check]==============================
     	;============================================================================
 		ALYSLC.Log("[CP1R SCRIPT] Co-op session is about to end. Dismissing P1 and all other players.")
 		; If only player 1 remains, end the session.
-		CanStartCoopGlobVar.SetValue(0.00)
 		; Have player 1's listeners wait for start of next co-op session.
 		ALYSLC.RequestStateChange(ControllerID, 0)
 		If (CoopPlayerKeyword)
@@ -116,7 +116,6 @@ Event OnCoopEnd(Form akCompanion, Int aiControllerID)
 
 	; All companions dismissed and co-op has ended. Can start new co-op session.
 	If (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) == 0)
-		ALYSLC.ChangeCoopSessionState(False)
 		CanStartCoopGlobVar.SetValue(1.00)
 		ALYSLC.Log("[CP1R SCRIPT] Co-op session ended. Re-summon your companions when out of combat.")
 	EndIf

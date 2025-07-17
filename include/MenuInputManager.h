@@ -168,7 +168,19 @@ namespace ALYSLC
 		// Reset menu control overlay data.
 		inline void ResetPlayerMenuControlOverlay() 
 		{
-			pmcFadeInterpData->Reset();
+			SPDLOG_DEBUG
+			(
+				"[MIM] ResetPlayerMenuControlOverlay: Currently {}. Value: {}, at change: {}.", 
+				pmcFadeInterpData->interpToMin ? 
+				"Interp to MIN" :
+				pmcFadeInterpData->interpToMax ? 
+				"Interp to MAX" : 
+				"NO Interp",
+				pmcFadeInterpData->value,
+				pmcFadeInterpData->valueAtDirectionChange
+			);
+
+			pmcFadeInterpData->Reset(true, true);
 		}
 
 		// Draw outline around screen edges to indicate what player is controlling menus.

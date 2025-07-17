@@ -1761,7 +1761,7 @@ namespace ALYSLC
 				}
 			}
 		}
-		
+
 		// Nothing further to do if we hit another player.
 		bool hitPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
 		if (hitPlayer)
@@ -2109,9 +2109,10 @@ namespace ALYSLC
 			}
 		}
 
-		if (ui && glob.coopSessionActive && a_menuEvent)
-		{
+		
 #ifdef ALYSLC_DEBUG_MODE
+		if (ui)
+		{
 			SPDLOG_DEBUG("[Events] ===========[Menu Map BEGIN]===========");
 			for (auto& menu : ui->menuMap)
 			{
@@ -2176,8 +2177,11 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack END]===========");
 			}
+		}
 #endif
 
+		if (ui && glob.coopSessionActive && a_menuEvent)
+		{
 			// Open the ALYSLC overlay if it isn't open already.
 			if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 			{

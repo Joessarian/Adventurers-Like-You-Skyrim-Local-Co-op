@@ -156,13 +156,13 @@ Function HandleCharacterCustomization()
 
             String ResultStr = OpenUITextMenu()
 
-            If (ResultStr != "" && ResultStr != SelectedCharacter.GetDisplayName())
+            If (ResultStr != "" && ResultStr != SelectedCharacter.GetName())
                 StorageUtil.SetStringValue(SelectedCharacter, "ALYSLC_Name", ResultStr)
                 Base.SetName(ResultStr)
                 SelectedCharacter.SetName(ResultStr)
                 Bool Renamed = SelectedCharacter.SetDisplayName(ResultStr, True)
                 If (Renamed)
-                    ALYSLC.Log("[SUMMON SCRIPT] New name is '" + ResultStr + "'.")
+                    ALYSLC.Log("[SUMMON SCRIPT] Set name: '" + ResultStr + "'.")
                 Else
                     ALYSLC.Log("[SUMMON SCRIPT] Could not rename player.")
                 EndIf
@@ -697,6 +697,8 @@ Function ShowCoopSetupMenu()
         If (CoopCompanionControllersCount <= 0)
             ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
             Debug.MessageBox("[ALYLSC] Please ensure at least two XInput-recognizable controllers are plugged in before starting co-op.")
+        Else
+            ALYSLC.Log("[SUMMON SCRIPT] Exiting menu now. Current companions count: " + CurrentCompanionsCount + ", controller count: " + CoopCompanionControllersCount + ", should exit: " + ShouldExit + ".")
         EndIf
         Return
     EndIf
@@ -926,7 +928,7 @@ Event OnSummoningMenuRequest()
 	Float SecsWaited = 0.0
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
-		PlayerRef = Game.GetPlayer() as Actor
+		PlayerRef = Game.GetPlayer()
 		Utility.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
@@ -938,7 +940,7 @@ Event OnSummoningMenuRequest()
 	EndIf
 
     ; Ensure initialization is done.
-    If (CanStartCoopGlobVar.GetValue() == 0)
+    If (CanStartCoopGlobVar.GetValue() == 0.0)
         Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
         ALYSLC.Log("[SUMMON SCRIPT] Cannot start summoning until initialization is complete.")
         Return
@@ -966,8 +968,27 @@ Event OnSummoningMenuRequest()
     StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
     StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
     ; End any active co-op session, pause all listener threads, dismiss any companions.
-    ALYSLC.SignalWaitForUpdate(True)
+    Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
+    If (PrevNumCompanions > 0)
+        ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
+        ALYSLC.SignalWaitForUpdate(True)
+        ; Wait until done, or at most 5 seconds if any players are still not dismissed.
+        SecsWaited = 0.0
+        While ((SecsWaited < 5.0) && (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) != 0 || CanStartCoopGlobVar.GetValue() != 1.00))
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting for dismissal to complete. Num companions: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
+            Utility.Wait(0.1)
+            SecsWaited += 0.1
+        EndWhile
 
+        ; Flag co-op session as ended.
+        ALYSLC.ChangeCoopSessionState(False)
+        If (SecsWaited >= 5.0)
+		    Debug.MessageBox("[ALYSLC] Failed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
+            ALYSLC.Log("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
+            Return
+        EndIf
+    EndIf
+	
     ; Wait until all companions are unloaded from the cell 
     ; before opening the character selection menu.
     Form[] CompanionsList = StorageUtil.FormListToArray(None, "ALYSLC_CompanionsList")
@@ -1050,7 +1071,7 @@ Event OnSummoningMenuRequest()
     ; P1 is not always valid for some reason.
     Bool Success = CoopActors[0] == Game.GetPlayer()
     If (!Success)
-        CoopActors[0] = Game.GetPlayer() as Actor
+        CoopActors[0] = Game.GetPlayer()
         Success = CoopActors[0] == Game.GetPlayer()
         ALYSLC.Log("[SUMMON SCRIPT] ERR: P1 not valid. Attempting to set P1 again. Set as " + CoopActors[0])
     EndIf

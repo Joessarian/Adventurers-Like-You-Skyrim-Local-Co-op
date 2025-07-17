@@ -3907,6 +3907,11 @@ namespace ALYSLC
 		);
 		if (collisionAllowed)
 		{
+			SPDLOG_DEBUG
+			(
+				"[GLOB] PrecisionPreHitCallback: Collision between {} and {} ALLOWED.",
+				p->coopActor->GetName(), hitActor->GetName()
+			);
 			// Do not start combat with other players
 			// and do not need to start combat for P1.
 			if (!hitActorIsPlayer && !p->isPlayer1)
@@ -3943,7 +3948,7 @@ namespace ALYSLC
 		else
 		{
 			// No collision and no damage.
-			SPDLOG_DEBUG("[GLOB] PrecisionPreHitCallback: Ignore hit between {} and {}.",
+			SPDLOG_DEBUG("[GLOB] PrecisionPreHitCallback: Collision between {} and {} IGNORED.",
 				p->coopActor->GetName(), hitActor->GetName());
 			return PRECISION_API::PreHitCallbackReturn(true, { });
 		}
@@ -5507,7 +5512,7 @@ namespace ALYSLC
 					"[GLOB] TeardownCoopSession: Co-op session over. Dismissing P1 {}.", 
 					coopP1->coopActor->GetName()
 				);
-				glob.coopPlayers[glob.player1CID]->DismissPlayer();
+				coopP1->DismissPlayer();
 			}
 		}
 		else
@@ -6943,7 +6948,7 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
 		if (a_shouldImport)
 		{
 			if (a_name)
@@ -6955,10 +6960,10 @@ namespace ALYSLC
 				glob.p1ExchangeableData->name = p1Name;
 				glob.coopCompanionExchangeableData->name = coopCompanionName;
 				auto base = p1->GetObjectReference();
-				auto fullName = base ? base->As<RE::TESFullName>() : nullptr; 
+				auto fullName = base ? base->As<RE::TESFullName>() : nullptr;
 				if (fullName)
 				{
-					fullName->fullName = glob.coopCompanionExchangeableData->name;
+					fullName->SetFullName(glob.coopCompanionExchangeableData->name.c_str());
 				}
 			}
 
@@ -6972,7 +6977,7 @@ namespace ALYSLC
 				glob.coopCompanionExchangeableData->raceName = coopCompanionRaceName;
 				if (auto race = p1->GetRace(); race)
 				{
-					race->fullName = glob.coopCompanionExchangeableData->raceName;
+					race->SetFullName(glob.coopCompanionExchangeableData->raceName.c_str());
 				}
 			}
 
@@ -7046,9 +7051,39 @@ namespace ALYSLC
 					glob.p1ExchangeableData->carryWeightAVData[4]
 				);
 			}
+
+			SPDLOG_DEBUG
+			(
+				"[GLOB] CopyOverActorBaseData: IMPORT "
+				"name ({}, {}, {}), race name ({}, {}, {}), carryweight ({}, {}, {}).",
+				a_name,
+				a_name ? glob.p1ExchangeableData->name : "N/A",
+				a_name ? glob.coopCompanionExchangeableData->name : "N/A",
+				a_raceName,
+				a_raceName ? glob.p1ExchangeableData->raceName : "N/A",
+				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A",
+				a_carryWeight,
+				a_carryWeight ? glob.p1ExchangeableData->carryWeightAVData[0] : -1.0f,
+				a_carryWeight ? glob.coopCompanionExchangeableData->carryWeightAVData[0] : -1.0f
+			);
 		}
 		else
 		{
+			SPDLOG_DEBUG
+			(
+				"[GLOB] CopyOverActorBaseData: EXPORT "
+				"name ({}, {}, {}), race name ({}, {}, {}), carryweight ({}, {}, {}).",
+				a_name,
+				a_name ? glob.p1ExchangeableData->name : "N/A",
+				a_name ? glob.coopCompanionExchangeableData->name : "N/A",
+				a_raceName,
+				a_raceName ? glob.p1ExchangeableData->raceName : "N/A",
+				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A",
+				a_carryWeight,
+				a_carryWeight ? glob.p1ExchangeableData->carryWeightAVData[0] : -1.0f,
+				a_carryWeight ? glob.coopCompanionExchangeableData->carryWeightAVData[0] : -1.0f
+			);
+
 			// Restore full name and/or race name.
 			if (a_name)
 			{
@@ -7056,7 +7091,7 @@ namespace ALYSLC
 				auto fullName = base ? base->As<RE::TESFullName>() : nullptr; 
 				if (fullName)
 				{
-					fullName->fullName = glob.p1ExchangeableData->name;
+					fullName->SetFullName(glob.p1ExchangeableData->name.c_str());
 				}
 			}
 
@@ -7064,7 +7099,7 @@ namespace ALYSLC
 			{
 				if (auto race = p1->GetRace(); race)
 				{
-					race->fullName = glob.p1ExchangeableData->raceName;
+					race->SetFullName(glob.p1ExchangeableData->raceName.c_str());
 				}
 			}
 

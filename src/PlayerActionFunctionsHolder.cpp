@@ -1770,8 +1770,21 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Hand casting magicka cost already handled by the game.
+					// Hand casting magicka cost already handled by the game,
+					// but store base cost for to grant XP upon cast, as needed.
 					canPerform = true;
+					auto lhSpell = a_p->em->GetLHSpell();
+					auto rhSpell = a_p->em->GetRHSpell();
+					// Cost multiplier from here:
+					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
+					float baseCostLH = lhSpell->CalculateMagickaCost(a_p->coopActor.get());
+					float baseCostRH = rhSpell->CalculateMagickaCost(a_p->coopActor.get());
+					baseCost = baseCostLH + baseCostRH;
+					// Set individual costs for magicka consumption for each casting action.
+					a_p->pam->paStatesList
+					[!InputAction::kCastLH - !InputAction::kFirstAction].avBaseCost = baseCostLH;
+					a_p->pam->paStatesList
+					[!InputAction::kCastRH - !InputAction::kFirstAction].avBaseCost = baseCostRH;
 				}
 
 				break;
@@ -1827,9 +1840,18 @@ namespace ALYSLC
 			}
 			case SpecialActionType::kDualCast:
 			{
-				// Hand casting magicka cost already handled by the game.
-				avToCheck = RE::ActorValue::kMagicka;
+				// Hand casting magicka cost already handled by the game,
+				// but store base cost to grant XP upon casting the spells, as needed.
 				canPerform = true;
+				avToCheck = RE::ActorValue::kMagicka;
+				// Cost multiplier from here:
+				// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
+				// Same spells in both hands, same cost.
+				auto rhSpell = a_p->em->GetRHSpell();
+				// Save base cost.
+				baseCost = 2.8f * rhSpell->CalculateMagickaCost(a_p->coopActor.get());
+				a_p->pam->paStatesList
+				[!InputAction::kSpecialAction - !InputAction::kFirstAction].avBaseCost = baseCost;
 				break;
 			}
 			case SpecialActionType::kQuickCast:
@@ -2382,10 +2404,21 @@ namespace ALYSLC
 				// Must scale by the player's magicka cost mult here.
 				// This 'true' cost is applied later in the CheckClampDamageModifier() hook
 				// by rescaling the base cost by this modifier again.
-				costToPerform = baseCost * Settings::vfMagickaCostMult[a_p->playerID];
 				bool isQuickslotCastCheck =  
 				(
 					a_action == InputAction::kQuickSlotCast && a_p->em->quickSlotSpell
+				);
+				// Only check for adequate magicka if performing a quick slot cast,
+				// since the game does not charge magicka while the instant caster
+				// preps for the cast and we'll have to directly expend magicka later. 
+				// Also do not want to check for adequate magicka here for hand casts, 
+				// as the full cost of the spell would be deducted from the current magicka amount, 
+				// which is lowered by the game as the spell charges.
+				costToPerform = 	
+				(
+					isQuickslotCastCheck ? 
+					baseCost * Settings::vfMagickaCostMult[a_p->playerID] :
+					0.0f
 				);
 				bool isConcSpell = 
 				{
@@ -2471,6 +2504,7 @@ namespace ALYSLC
 			// Cache base cost so that it does not have to be recomputed later 
 			// when expending health/magicka/stamina 
 			// once the action's corresponding start animation triggers.
+			// Base cost is also used when determining the XP rewarded for a spellcast.
 			pam->paStatesList[!a_action - !InputAction::kFirstAction].avBaseCost = baseCost;
 			return canPerform;
 		}
@@ -3868,6 +3902,14 @@ namespace ALYSLC
 			// since they may have held the fully-charged spell as their magicka 
 			// dwindled below the original cost.
 			// Interrupt the cast if this is the case.
+			
+			// Also, directly place down runes since casting runes
+			// with any non-P1 magic caster does not work.
+			// The player's ranged package still plays casting animations but no spell is released
+			// and the caster never beings casting, 
+			// so we cannot handle magicka expenditure via animation event post-cast.
+			// As a result, directly deduct magicka here.
+
 			auto lhSpell = a_p->em->GetLHSpell();
 			auto rhSpell = a_p->em->GetRHSpell();
 			bool is2HSpell = 
@@ -3929,6 +3971,17 @@ namespace ALYSLC
 					if (chargedTime > baseChargeTime)
 					{
 						casterUsed->StartCastImpl();
+						if (Util::HasRuneProjectile(rhSpell))
+						{
+							if (a_p->isInGodMode ||
+								a_p->coopActor->GetActorValue(RE::ActorValue::kMagicka) >= 
+								Settings::vfMagickaCostMult[a_p->playerID] * 
+								rhSpell->CalculateMagickaCost(a_p->coopActor.get()))
+							{
+								a_p->pam->CastRuneProjectile(rhSpell);
+							}
+						}
+
 						return;
 					}
 					
@@ -3960,6 +4013,16 @@ namespace ALYSLC
 							lhSpell->GetChargeTime()) 
 						{
 							lhCaster->StartCastImpl();
+							if (Util::HasRuneProjectile(lhSpell)) 
+							{
+								if (a_p->isInGodMode ||
+									a_p->coopActor->GetActorValue(RE::ActorValue::kMagicka) >= 
+									Settings::vfMagickaCostMult[a_p->playerID] * 
+									lhSpell->CalculateMagickaCost(a_p->coopActor.get()))
+								{
+									a_p->pam->CastRuneProjectile(lhSpell);
+								}
+							}
 						}
 						else
 						{
@@ -3989,6 +4052,16 @@ namespace ALYSLC
 							rhSpell->GetChargeTime())
 						{
 							rhCaster->StartCastImpl();
+							if (Util::HasRuneProjectile(rhSpell))
+							{
+								if (a_p->isInGodMode ||
+									a_p->coopActor->GetActorValue(RE::ActorValue::kMagicka) >= 
+									Settings::vfMagickaCostMult[a_p->playerID] * 
+									rhSpell->CalculateMagickaCost(a_p->coopActor.get()))
+								{
+									a_p->pam->CastRuneProjectile(rhSpell);
+								}
+							}
 						}
 						else
 						{
@@ -4049,9 +4122,23 @@ namespace ALYSLC
 			switch (a_action)
 			{
 			case InputAction::kCastLH:
+			{
+				if (a_p->em->HasLHSpellEquipped())
+				{
+					auto lhSpell = a_p->em->GetLHSpell();
+					cost = lhSpell->CalculateMagickaCost(a_p->coopActor.get());
+				}
+
+				break;
+			}
 			case InputAction::kCastRH:
 			{
-				// Already handled automatically when casting.
+				if (a_p->em->HasRHSpellEquipped())
+				{
+					auto rhSpell = a_p->em->GetRHSpell();
+					cost = rhSpell->CalculateMagickaCost(a_p->coopActor.get());
+				}
+
 				break;
 			}
 			case InputAction::kQuickSlotCast:
@@ -5187,6 +5274,7 @@ namespace ALYSLC
 						) ||
 						(Util::IsGuard(asActor)) || 
 						(Util::HasNoBountyButInCrimeFaction(asActor)) ||
+						(Util::IsPartyFriendlyActor(asActor)) ||
 						(a_p->coopActor->IsSneaking())
 					);
 				}
@@ -5982,7 +6070,7 @@ namespace ALYSLC
 				// Potentially notify the player that they have insufficient magicka 
 				// to cast the spell when the bind is first pressed.
 				// Skip the cast if there is not enough magicka.
-				if (a_actionJustSterted)
+				if (a_actionJustSterted && !a_p->isInGodMode)
 				{
 					float cost = 0.0f;
 					if (is2HSpellCast)
@@ -6146,6 +6234,12 @@ namespace ALYSLC
 						)
 					)
 				);
+
+				// Since the targeting manager's update call runs 
+				// after the player action manager's main task,
+				// any selected aim correction target would get set 
+				// after we already start casting the spell, unless it is set here first.
+				a_p->tm->UpdateAimCorrectionTarget();
 				// Set target linked reference before setting and evaluating package.
 				//
 				// Special case (idk why this happens): 
@@ -6154,11 +6248,28 @@ namespace ALYSLC
 				// causes the casting package to fail to cast the spell.
 				// So we have to set the aim target linked refr to the player themselves initially 
 				// to begin the cast.
-				bool aimTargetRefrChanged = a_p->tm->UpdateAimTargetLinkedRefr
-				(
-					a_lhCast ? EquipIndex::kLeftHand : EquipIndex::kRightHand,
-					!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
-				);
+				bool aimTargetRefrChanged = false;
+				if (a_lhCast && a_rhCast)
+				{
+					a_p->tm->UpdateAimTargetLinkedRefr
+					(
+						EquipIndex::kLeftHand,
+						!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
+					);
+					a_p->tm->UpdateAimTargetLinkedRefr
+					(
+						EquipIndex::kRightHand,
+						!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
+					);
+				}
+				else 
+				{
+					a_p->tm->UpdateAimTargetLinkedRefr
+					(
+						a_lhCast ? EquipIndex::kLeftHand : EquipIndex::kRightHand,
+						!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
+					);
+				}
 				float dualValue = dualCasting->value;
 				float dualPrevValue = dualCasting->value;
 				float casting2HValue = casting2H->value;
@@ -6840,7 +6951,8 @@ namespace ALYSLC
 									(
 										Util::HasNoBountyButInCrimeFaction(asActor) || 
 										Util::IsFleeing(asActor) ||
-										asActor->IsAMount()
+										asActor->IsAMount() ||
+										Util::IsPartyFriendlyActor(asActor)
 									)
 								);
 								if (showSurrenderMessage)
@@ -11350,7 +11462,8 @@ namespace ALYSLC
 					(
 						Util::HasNoBountyButInCrimeFaction(asActor) || 
 						Util::IsFleeing(asActor) ||
-						asActor->IsAMount()
+						asActor->IsAMount() ||
+						Util::IsPartyFriendlyActor(asActor)
 					)
 				);
 				if (startArrestDialogue)

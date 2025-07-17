@@ -10,6 +10,7 @@
 
 
 
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
@@ -269,9 +270,6 @@ bool something =
 		- Removes almost every source of camera shake. Use if you're still experiencing camera shake while the co-op camera is active. ***Highly recommended***.
 	- [No Silly Physics Damage - Carts Pots Bones etc](https://www.nexusmods.com/skyrimspecialedition/mods/36132)
 		- Removes excessive physics damage when a havok-enabled object is squeezed against a character, such as when walking into a cart or cauldron. ***Highly recommended***.
-	- [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
-		- Companion players can further customize their characters to their liking through the NPC editor suite.
-		- Set a companion player's race through this mod's Summoning Menu first before modifying the player's appearance with Proteus.
 	- [Quick Loot RE/EE](https://www.nexusmods.com/skyrimspecialedition/mods/21085)
 		- Players can hover their crosshairs over a container to trigger and use the QuickLoot menu.
 	- [Skyrim Souls RE](https://www.nexusmods.com/skyrimspecialedition/mods/27859)
@@ -287,10 +285,10 @@ bool something =
 - ***Run Nemesis or Pandora***. Make sure the `Precision` checkbox is ticked at the minimum before running either engine.
 #### Example Mod Lists (AE/SE) In MO2
 ##### Anniversary Edition (1.6.1170)
-![](https://i.imgur.com/rtMfT7K.png)
+![](https://i.imgur.com/OhuoUgJ.png)
 ##### Special Edition (1.5.97)
 
-![](https://i.imgur.com/Jh3g8EF.png)
+![](https://i.imgur.com/cYwQo8m.png)
 ### Known Issues and Tips and Tricks
 Certain systems were built to work around player 1 exclusivity or around restrictions that the game places on NPCs. Using the ***debug binds (see the mod's MCM for details)*** and additional options in the ***Debug Menu*** (opened by holding the `Start` button and then pressing the `Back` button by default) is highly recommended for fixing issues that arise during gameplay.
 
@@ -386,6 +384,9 @@ Degrees of incompatibility:
    - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently targeted object properly and other issues can arise. 
 - `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
+- `[SE/AE] MEDIUM`: [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
+	- Can set player 1's name to the name of a previous player 1 character when reloading a save. Source of the bug is likely some incompatibility with how ALYSLC stores player names. Fix TBD and you may not encounter this bug, but if it does occur, disabling Proteus for now should resolve the issue.
+	- If editing a companion player's appearance, make sure to set their race through ALYSLC's Summoning Menu first before further modifying the player's appearance with Proteus's NPC editor options.
 - `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
    - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  

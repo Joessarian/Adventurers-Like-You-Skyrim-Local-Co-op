@@ -3430,6 +3430,12 @@ namespace ALYSLC
 		// Adapted from their papyrus extender code found here:
 		// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Papyrus/Util/Graphics.cpp#L42
 		
+		// Return true if the spell can grant XP on cast.
+		bool SpellCanGrantXPOnCast
+		(
+			RE::Actor* a_caster, RE::SpellItem* a_spell, RE::ActorHandle a_targetActorHandle
+		);
+
 		// Start playing the given effect shader on the given refr.
 		// Can set a duration to play the effect for (-1 to play indefinitely).
 		void StartEffectShader

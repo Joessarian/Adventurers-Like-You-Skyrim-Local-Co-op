@@ -1241,7 +1241,13 @@ namespace ALYSLC
 						}
 					}
 
-					a_this->currentSpellCost *= Settings::vfMagickaCostMult[p->playerID];
+					// No cost while in god mode.
+					a_this->currentSpellCost *= 
+					(
+						p->isInGodMode ? 
+						0.0f :
+						Settings::vfMagickaCostMult[p->playerID]
+					);
 					float cost = a_this->currentSpellCost;
 					if (a_this->currentSpell->GetCastingType() == 
 						RE::MagicSystem::CastingType::kConcentration)
@@ -1255,12 +1261,9 @@ namespace ALYSLC
 						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
 						_RequestCastImpl(a_this);
 						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
-						return;
 					}
-					else
-					{
-						return;
-					}
+
+					return;
 				}
 			}
 
@@ -4699,8 +4702,8 @@ namespace ALYSLC
 							{
 								RE::DebugMessageBox
 								(
-									"[ALYSLC] Summoning Menu was already triggered "
-									"or Player 1 is in combat. "
+									"[ALYSLC] Player 1 is currently in combat "
+									"or the Summoning Menu was already triggered. "
 									"Please ensure Player 1 is not in combat "
 									"before attempting to summon other players."
 								);
@@ -5358,7 +5361,7 @@ namespace ALYSLC
 						}
 						else if (auto view = containerMenu->uiMovie; view)
 						{
-							RE::GFxValue result;
+							RE::GFxValue result{ };
 							view->Invoke
 							(
 								"_root.Menu_mc.isViewingContainer",
@@ -5495,7 +5498,8 @@ namespace ALYSLC
 					ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
 					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
 					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
-					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
+					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)  || 
+					ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME)	
 				);
 				// Ignore this input if pad24 == 0xDEAD.
 				bool ignoreInput = (idEvent) && ((idEvent->pad24 & 0xFFFF) == 0xDEAD);

@@ -482,10 +482,10 @@ namespace ALYSLC
 			// fleeing actors, or friendly actors.
 			return
 			(
-				a_aggroedActor->IsAMount() ||
 				IsGuard(a_aggroedActor) || 
 				HasNoBountyButInCrimeFaction(a_aggroedActor) ||
 				IsFleeing(a_aggroedActor) ||
+				a_aggroedActor->IsAMount() ||
 				IsPartyFriendlyActor(a_aggroedActor)
 			);
 		}
@@ -6342,6 +6342,184 @@ namespace ALYSLC
 			}
 
 			return false;
+		}
+
+		bool SpellCanGrantXPOnCast
+		(
+			RE::Actor* a_caster, RE::SpellItem* a_spell, RE::ActorHandle a_targetActorHandle
+		)
+		{
+			// Return true if the spell can grant XP on cast.
+
+			if (!a_caster || !a_spell || !a_spell->avEffectSetting)
+			{
+				return false;
+			}
+			
+			const auto& skillAV = a_spell->avEffectSetting->data.associatedSkill;
+			// Does not map to a levelable skill.
+			if (!glob.AV_TO_SKILL_MAP.contains(skillAV))
+			{
+				return false;
+			}
+
+			// Return false if the spell only grants XP on hit.
+			// Such spells include healing and destruction spells.
+			if ((skillAV == RE::ActorValue::kDestruction) ||
+				(
+					(skillAV == RE::ActorValue::kRestoration) &&
+					(
+						a_spell->avEffectSetting->data.primaryAV ==
+						RE::ActorValue::kHealth ||
+						a_spell->avEffectSetting->data.secondaryAV == 
+						RE::ActorValue::kHealth
+					)
+				))
+			{
+				return false;
+			}
+
+			/*
+			// TODO:
+			// Since I haven't had the time to map out the XP-granting conditions and triggers
+			// for each spell in the game, and since there isn't an easily recognizable
+			// pattern that covers these conditions and triggers
+			// beyond the associated skill check above and the delivery type check below,
+			// there are no more restrictions placed on awarding companion players XP on spellcast.
+			// Will get around to categorizing spells later, but if anyone knows of 
+			// a generalizable pattern to fit the vanilla spells under, let me know. 
+			// For now, since XP gain is adjustable per player, 
+			// I would rather err on the side of caution 
+			// and reward XP (based on the spell's magicka cost) for spells on cast, 
+			// as opposed to preventing XP gain in situations where that shouldn't happen.
+
+			// NOT IMPLEMENTED YET:
+			// Some specific XP gain requirements and scaling from the UESP skill pages:
+			// 1. Magelight: 
+			// Scales with the distance the light orb travels before colliding with a surface.
+			// 2. Summoning an NPC or conjuring a bound weapon:
+			// No XP on cast if not in combat, but once entering combat, awards XP
+			// for the initial summoning/conjuring and then for damage inflicted 
+			by the summon/weapon.
+			// 3. Waterbreathing:
+			// Stand in water (duh).
+			// 4. Oak/Stone/Iron/Ebonyflesh:
+			// Only grants XP in combat.
+			// 5. Ward spells:
+			// Also grants XP based on damage absorption.
+			
+			// First, using the spell's archetype and the caster's combat state, 
+			// check if the caster can gain XP from the spellcast.
+			bool canGrantXP = false;
+			const bool isInCombat = a_caster->IsInCombat();
+			const auto& archetype = a_spell->avEffectSetting->GetArchetype();
+			switch (archetype)
+			{
+			case(RE::EffectArchetype::kValueModifier):
+			case(RE::EffectArchetype::kPeakValueModifier):
+			case(RE::EffectArchetype::kDualValueModifier):
+			case(RE::EffectArchetype::kDisarm):
+			case(RE::EffectArchetype::kAbsorb):
+			case(RE::EffectArchetype::kAccumulateMagnitude):
+			case(RE::EffectArchetype::kStagger):
+			case(RE::EffectArchetype::kBanish):
+			case(RE::EffectArchetype::kTurnUndead):
+			case(RE::EffectArchetype::kSpawnHazard):
+			{
+				// Requires that the caster is in combat.
+				canGrantXP = isInCombat;
+				break;
+			}
+			case(RE::EffectArchetype::kSummonCreature):
+			case(RE::EffectArchetype::kCommandSummoned):
+			case(RE::EffectArchetype::kDemoralize):
+			case(RE::EffectArchetype::kScript):
+			case(RE::EffectArchetype::kDispel):
+			case(RE::EffectArchetype::kCureDisease):
+			case(RE::EffectArchetype::kCalm):
+			case(RE::EffectArchetype::kFrenzy):
+			case(RE::EffectArchetype::kInvisibility):
+			case(RE::EffectArchetype::kLight):
+			case(RE::EffectArchetype::kDarkness):
+			case(RE::EffectArchetype::kNightEye):
+			case(RE::EffectArchetype::kLock):
+			case(RE::EffectArchetype::kOpen):
+			case(RE::EffectArchetype::kBoundWeapon):
+			case(RE::EffectArchetype::kDetectLife):
+			case(RE::EffectArchetype::kTelekinesis):
+			case(RE::EffectArchetype::kParalysis):
+			case(RE::EffectArchetype::kReanimate):
+			case(RE::EffectArchetype::kSoulTrap):
+			case(RE::EffectArchetype::kGuide):
+			case(RE::EffectArchetype::kWerewolfFeed):
+			case(RE::EffectArchetype::kCureParalysis):
+			case(RE::EffectArchetype::kCureAddiction):
+			case(RE::EffectArchetype::kCurePoison):
+			case(RE::EffectArchetype::kConcussion):
+			case(RE::EffectArchetype::kValueAndParts):
+			case(RE::EffectArchetype::kCloak):
+			case(RE::EffectArchetype::kWerewolf):
+			case(RE::EffectArchetype::kSlowTime):
+			case(RE::EffectArchetype::kRally):
+			case(RE::EffectArchetype::kEnhanceWeapon):
+			case(RE::EffectArchetype::kEtherealize):
+			case(RE::EffectArchetype::kSpawnScriptedRef):
+			case(RE::EffectArchetype::kDisguise):
+			case(RE::EffectArchetype::kGrabActor):
+			case(RE::EffectArchetype::kVampireLord):
+			{
+				// Not combat-state dependent.
+				canGrantXP = true;
+				break;
+			}
+			case(RE::EffectArchetype::kNone):
+			{
+				canGrantXP = true;
+				break;
+			}
+			default:
+			{
+				canGrantXP = true;
+				break;
+			}
+			}
+
+			// No need to check delivery type and actor target if the archetype 
+			// and combat state preclude receiving XP.
+			if (!canGrantXP)
+			{
+				return false;
+			}
+			*/
+
+			// If the spell's delivery type requires having a target actor
+			// (hostile for detrimental/hostile spells, or any actor target otherwise),
+			// do not grant XP if the caster doesn't have one.
+			const auto& delivery = a_spell->GetDelivery();
+			const auto targetActorPtr = GetActorPtrFromHandle(a_targetActorHandle);
+			bool hasValidTarget = 
+			(
+				(
+					delivery == RE::MagicSystem::Delivery::kSelf ||
+					delivery == RE::MagicSystem::Delivery::kTargetLocation
+				) ||
+				(
+					(targetActorPtr) &&
+					(
+						a_spell->avEffectSetting->data.flags.none
+						(
+							RE::EffectSetting::EffectSettingData::Flag::kHostile,
+							RE::EffectSetting::EffectSettingData::Flag::kDetrimental
+						) ||
+						targetActorPtr->IsHostileToActor(a_caster) ||
+						targetActorPtr->IsHostileToActor(RE::PlayerCharacter::GetSingleton())
+					)
+				)
+			);
+			if (hasValidTarget)
+			{
+				return true;
+			}
 		}
 
 		void StartEffectShader

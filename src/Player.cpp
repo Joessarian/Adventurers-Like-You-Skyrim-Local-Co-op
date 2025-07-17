@@ -204,7 +204,8 @@ namespace ALYSLC
 			ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
 			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
 			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
-			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
+			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) || 
+			ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME) 	
 		);
 		// Pause if P1 and co-op cam are disabled,
 		// or if the companion player should teleport to P1,
@@ -267,11 +268,41 @@ namespace ALYSLC
 				handledControllerInputError = true;
 			}
 		}
-
+		
+		auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Check if the player should teleport to P1 or remain paused.
 		auto ui = RE::UI::GetSingleton(); 
-		if (!ui)
+		if (!ui || !p1)
 		{
+			return ManagerState::kPaused;
+		}
+		
+		// Special Case:
+		// Keep companion players invisible and above P1 while the title sequence plays.
+		if (!isPlayer1 && ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME))
+		{
+			coopActor->SetAlpha(0.0f);
+			if (coopActor->parentCell != p1->parentCell)
+			{
+				taskInterface->AddTask
+				(
+					[this, p1]() 
+					{ 
+						// Have to sheathe weapon before teleporting, 
+						// otherwise the equip state gets bugged.
+						pam->ReadyWeapon(false);
+						coopActor->MoveTo(p1);
+					}
+				);
+			}
+			else 
+			{
+				coopActor->SetPosition
+				(
+					p1->data.location + RE::NiPoint3(0.0f, 0.0f, p1->GetHeight() * 2.0f), true
+				);
+			}
+
 			return ManagerState::kPaused;
 		}
 
@@ -285,7 +316,6 @@ namespace ALYSLC
 			if (secsSinceInvalidPlayerMoved >= Settings::fSecsBetweenInvalidPlayerMoveRequests)
 			{
 				// P1 must also be valid as the moveto target.
-				auto p1 = RE::PlayerCharacter::GetSingleton();
 				bool player1Valid = Util::ActorIsValid(p1);
 				if (player1Valid)
 				{
@@ -351,7 +381,7 @@ namespace ALYSLC
 			ui->IsMenuOpen(RE::BookMenu::MENU_NAME) || 
 			ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) || 
 			ui->IsMenuOpen(RE::MapMenu::MENU_NAME) || 
-			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME) 	
+			ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)
 		);
 		// Remain paused if temp menus are open, 
 		// if P1 and co-op camera are disabled, 
@@ -597,12 +627,30 @@ namespace ALYSLC
 		);
 
 		auto actorBase = coopActor->GetActorBase();
+		SPDLOG_DEBUG
+		(
+			"[P] CopyNPCAppearanceToPlayer: "
+			"Base is female: {}, current is female: {}, "
+			"current uses opposite gender anims: {}, req opposite gender anims: {}, "
+			"should change gender: {}, should set opposite gender anims: {}.",
+			a_baseToCopy->IsFemale(),
+			actorBase->IsFemale(),
+			actorBase->UsesOppositeGenderAnims(),
+			a_setOppositeGenderAnims,
+			(!a_baseToCopy->IsFemale() && actorBase->IsFemale()) || 
+			(a_baseToCopy->IsFemale() && !actorBase->IsFemale()),
+			(actorBase->UsesOppositeGenderAnims() && !a_setOppositeGenderAnims) || 
+			(!actorBase->UsesOppositeGenderAnims() && a_setOppositeGenderAnims)
+		);
 		// Set sex first before accessing preset NPCs array, which depends on the chosen sex.
 		const bool setFemale = a_baseToCopy->IsFemale();
 		const bool isFemale = actorBase->IsFemale();
 		if ((!setFemale && isFemale) || (setFemale && !isFemale))
 		{
-			Util::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale);
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale
+			);
 		}
 
 		// Set opposite gender animations flag if necessary.
@@ -616,6 +664,22 @@ namespace ALYSLC
 				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
 				a_setOppositeGenderAnims
 			);
+		}
+		
+		// Switch gender and back again to ensure gendered actor animations 
+		// match the new gender flags, if changed.
+		const auto scriptFactory = 
+		(
+			RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+		);
+		const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+		if (script)
+		{
+			script->SetCommand("sexchange"sv);
+			script->CompileAndRun(coopActor.get());
+			script->SetCommand("sexchange"sv);
+			script->CompileAndRun(coopActor.get());
+			delete script;
 		}
 
 		auto faceRelatedData = coopActor->race->faceRelatedData[actorBase->GetSex()]; 
@@ -1682,7 +1746,10 @@ namespace ALYSLC
 		const bool isFemale = actorBase->IsFemale();
 		if ((!a_setFemale && isFemale) || (a_setFemale && !isFemale))
 		{
-			Util::SetActorBaseDataFlag(actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale);
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale
+			);
 		}
 
 		// Set opposite gender animations flag if necessary.
@@ -1696,6 +1763,22 @@ namespace ALYSLC
 				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
 				a_setOppositeGenderAnims
 			);
+		}
+		
+		// Switch gender and back again to ensure gendered actor animations 
+		// match the new gender flags, if changed.
+		const auto scriptFactory = 
+		(
+			RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+		);
+		const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+		if (script)
+		{
+			script->SetCommand("sexchange"sv);
+			script->CompileAndRun(coopActor.get());
+			script->SetCommand("sexchange"sv);
+			script->CompileAndRun(coopActor.get());
+			delete script;
 		}
 
 		// Add default headparts for the sex choice.

@@ -42,7 +42,7 @@ EndFunction
 ; Refresh customization options on the co-op player's actor,
 ; since these changes do not persist between save games.
 Function SetCustomizationOptions()
-    ALYSLC.Log("[CCA SCRIPT] Set customization options for P" + (ControllerID + 1))
+    ALYSLC.Log("[CCA SCRIPT] Set customization options for " + Self.GetDisplayName())
     ALYSLC.SetInitialCustomizationOptions(Self)
 
     ActorBase Base = Self.GetActorBase()
@@ -50,7 +50,7 @@ Function SetCustomizationOptions()
     Float TimeoutSeconds = 2.0
     ; Name
     String NewName = StorageUtil.GetStringValue(Self, "ALYSLC_Name", Self.GetDisplayName())
-    If (NewName != Self.GetDisplayName())
+    If (NewName != Self.GetName())
         ALYSLC.Log("[CCA SCRIPT] Set name: " + NewName)
         Base.SetName(NewName)
         Self.SetName(NewName)

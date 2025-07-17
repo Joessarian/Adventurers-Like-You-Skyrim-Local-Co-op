@@ -1176,8 +1176,8 @@ namespace ALYSLC
 		UpdateTransformationState();
 		// Update the last hand used to perform an attack or cast.
 		UpdateLastAttackingHand();
-		// Expend stamina or magicka if the appropriate animation event triggers.
-		HandleAVExpenditure();
+		// Expend stamina or magicka, or grant XP if the appropriate animation event triggers.
+		HandlePerformedAnimationEvents();
 		// Make sure all players are set as essential if using the revive system.
 		// Game will sometimes reset the essential flag after it is set, so check each iteration.
 		SetEssentialForReviveSystem();
@@ -1583,7 +1583,7 @@ namespace ALYSLC
 			// Direct insertion based on requested special action type.
 			if (reqSpecialAction == SpecialActionType::kCastBothHands)
 			{
-				// P1 magicka expenditure handled by the game already.
+				// P1 magicka expenditure and XP increases handled by the game already.
 				if (!p->isPlayer1)
 				{
 					// Special case with double insertion of CastLH and CastRH requests. 
@@ -1912,17 +1912,18 @@ namespace ALYSLC
 							targetPtr->GetHandle() : 
 							glob.player1Actor->GetHandle()
 						);
-						float magickaCost = 
+						float baseCost = 
 						(
-							Settings::vfMagickaCostMult[playerID] * 
 							paStatesList
-							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost
+							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost	
 						);
+						float magickaCost = Settings::vfMagickaCostMult[playerID] * baseCost;
 						// Concentration spells' cost scales with cast time.
 						if (isConcSpell)
 						{
 							// Cost per second * number of seconds.
 							magickaCost *= secsSinceQSSCastStart;
+							baseCost *= secsSinceQSSCastStart;
 						}
 						
 						// Constantly cast or cast at an interval equal to
@@ -1940,6 +1941,23 @@ namespace ALYSLC
 									minRecastInterval
 								)
 							);
+						}
+
+						// Spells like 'Mayhem' will report 0 for charge time,
+						// and have no lifetime + relaunch interval,
+						// so to avoid casting the spell once per frame and blowing out
+						// everyone's eardrums in a 5 mile radius while deep-frying the screen,
+						// we'll set a minimum recast interval to keep it in line 
+						// with the other ritual spells.
+						if (spell->equipSlot == glob.bothHandsEquipSlot)
+						{
+							minRecastInterval = max(3.25f, minRecastInterval);
+						}
+						else if (minRecastInterval == 0.0f)
+						{
+							// For other spells with a recast interval of 0,
+							// set a minimum recast time of 1 second.
+							minRecastInterval = max(1.0f, minRecastInterval);
 						}
 
 						// Not enough magicka or cannot re-cast spell yet.
@@ -1960,39 +1978,26 @@ namespace ALYSLC
 						float deltaMagicka = max(-currentMagicka, -magickaCost);
 						ModifyAV(RE::ActorValue::kMagicka, deltaMagicka);
 
-						// Don't add XP if in god mode, no spell effect, or no target.
-						if (p->isInGodMode || 
-							!spell->avEffectSetting || 
-							!Util::HandleIsValid(p->tm->GetRangedTargetActor()))
-						{
-							return;
-						}
-
-						// No supported skill to level up for this spell's AV.
-						auto spellSkillAV = spell->avEffectSetting->data.associatedSkill;
-						if (!glob.AV_TO_SKILL_MAP.contains(spellSkillAV))
-						{
-							return;
-						}
-						
-						// Add skill XP for non-healing spells cast by P1 at a target actor 
-						// while not in god mode.
+						// Add skill XP for non-healing spells cast by P1,
+						// as long as the spell has no target 
+						// or the player has a selected target actor.
 						// Done here instead of in the HandleHealthDamage() hook 
 						// because the attacker would be listed as P1 instead of this player.
 						// Restoration skill, or a spell that modifies health.
-						bool notHealingSpell = 
-						{
-							(spellSkillAV != RE::ActorValue::kRestoration) ||
+						// Must target an actor if the delivery type demands it.
+						if (Util::SpellCanGrantXPOnCast
 							(
-								spell->avEffectSetting->data.primaryAV != 
-								RE::ActorValue::kHealth &&
-								spell->avEffectSetting->data.secondaryAV != 
-								RE::ActorValue::kHealth
-							)
-						};
-						if (notHealingSpell)
+								coopActor.get(),
+								spell,
+								p->tm->GetRangedTargetActor()
+							))
 						{
-							GlobalCoopData::AddSkillXP(controllerID, spellSkillAV, magickaCost);
+							GlobalCoopData::AddSkillXP
+							(
+								controllerID, 
+								spell->avEffectSetting->data.associatedSkill, 
+								baseCost
+							);
 						}
 					}
 				}
@@ -2036,15 +2041,16 @@ namespace ALYSLC
 						// the player's magicka when casting a non-concentration spell. Do it here.
 						// BAse cost for P1, since this cost will get modified 
 						// in the CheckClampDamageMultiplier() hook.
-						float magickaCost = 
+						float baseCost = 
 						(
-							Settings::vfMagickaCostMult[playerID] * 
 							paStatesList
-							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost
+							[!InputAction::kQuickSlotCast - !InputAction::kFirstAction].avBaseCost	
 						);
+						float magickaCost = Settings::vfMagickaCostMult[playerID] * baseCost;
 						if (isConcSpell)
 						{
 							magickaCost *= secsSinceQSSCastStart;
+							baseCost *= secsSinceQSSCastStart;
 						}
 						
 						// Constantly cast or cast at an interval equal to
@@ -2064,6 +2070,23 @@ namespace ALYSLC
 							);
 						}
 						
+						// Spells like 'Mayhem' will report 0 for charge time,
+						// and have no lifetime + relaunch interval,
+						// so to avoid casting the spell once per frame and blowing out
+						// everyone's eardrums in a 5 mile radius while deep-frying the screen,
+						// we'll set a minimum recast interval to keep it in line 
+						// with the other ritual spells.
+						if (spell->equipSlot == glob.bothHandsEquipSlot)
+						{
+							minRecastInterval = max(3.25f, minRecastInterval);
+						}
+						else if (minRecastInterval == 0.0f)
+						{
+							// For other spells with a recast interval of 0,
+							// set a minimum recast time of 1 second.
+							minRecastInterval = max(1.0f, minRecastInterval);
+						}
+
 						// Not enough magicka or cannot re-cast yet.
 						if ((!p->isInGodMode && magickaCost > currentMagicka) || 
 							(!isConcSpell && secsSinceQSSCastStart < minRecastInterval))
@@ -2096,35 +2119,24 @@ namespace ALYSLC
 						float deltaMagicka = -magickaCost;
 						ModifyAV(RE::ActorValue::kMagicka, deltaMagicka);
 								
-						// Add skill XP for non-healing spells cast at a target actor 
-						// while not in god mode.
-						if (!p->isInGodMode &&
-							spell->avEffectSetting && 
-							Util::HandleIsValid(p->tm->GetRangedTargetActor()))
+						// Add skill XP for non-healing spells,
+						// as long as the spell does not target an actor or the player 
+						// has selected a target actor.
+						// Ignore spells with an associated Restoration skill, 
+						// or spells that modify health.
+						if (Util::SpellCanGrantXPOnCast
+							(
+								coopActor.get(),
+								spell,
+								p->tm->GetRangedTargetActor()
+							))
 						{
-							auto spellSkillAV = spell->avEffectSetting->data.associatedSkill;
-							if (glob.AV_TO_SKILL_MAP.contains(spellSkillAV))
-							{
-								// Ignore spells with an associated Restoration skill, 
-								// or spells that modify health.
-								bool notHealingSpell = 
-								{
-									(spellSkillAV != RE::ActorValue::kRestoration) ||
-									(
-										spell->avEffectSetting->data.primaryAV != 
-										RE::ActorValue::kHealth &&
-										spell->avEffectSetting->data.secondaryAV != 
-										RE::ActorValue::kHealth
-									)
-								};
-								if (notHealingSpell)
-								{
-									GlobalCoopData::AddSkillXP
-									(
-										p->controllerID, spellSkillAV, magickaCost
-									);
-								}
-							}
+							GlobalCoopData::AddSkillXP
+							(
+								controllerID, 
+								spell->avEffectSetting->data.associatedSkill, 
+								baseCost
+							);
 						}
 
 						// Directly place down runes since casting runes 
@@ -2854,11 +2866,6 @@ namespace ALYSLC
 		// We can just stop the animation at this point.
 		if (stuckInCastingAnim)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {} is stuck in casting animation.", 
-				coopActor->GetName()
-			);
 			coopActor->NotifyAnimationGraph("CastStop");
 			coopActor->InterruptCast(false);
 		}
@@ -3586,356 +3593,6 @@ namespace ALYSLC
 		}
 	}
 
-	void PlayerActionManager::ExpendMagicka()
-	{
-		// Reduce the companion player's magicka based on what spell(s) they are casting.
-		
-		// Game already handles P1's magicka expenditure and regen.
-		bool dualCasting = avcam->actionsInProgress.all(AVCostAction::kCastDual);
-		bool usingLHSpell = avcam->actionsInProgress.all(AVCostAction::kCastLeft);
-		bool usingRHSpell = avcam->actionsInProgress.all(AVCostAction::kCastRight);
-		bool isCasting = dualCasting || usingLHSpell || usingRHSpell;
-		if (isCasting)
-		{
-			// Get LH and RH spells.
-			RE::SpellItem* lhSpell = p->em->GetLHSpell();
-			RE::SpellItem* rhSpell = p->em->GetRHSpell();
-			// LH/RH spell associated skills.
-			RE::ActorValue magicSkillLH = RE::ActorValue::kNone;
-			RE::ActorValue magicSkillRH = RE::ActorValue::kNone;
-
-			// Negative cost if expenditure conditions met.
-			float deltaMagCost = 0.0f;
-			float lhMagCostDelta = 0.0f;
-			float rhMagCostDelta = 0.0f;
-			// Requested AV cost actions.
-			auto& reqActionsSet = avcam->reqActionsSet;
-			if (dualCasting)
-			{
-				// TODO: 
-				// Dual Casting.
-				// Check if two spells are equipped.
-				if (lhSpell && rhSpell)
-				{
-					// Since both spells should be the same here, use the RH one.
-					auto castingType = rhSpell->GetCastingType();
-					// Check and update magicka every frame if casting a concentration spell,
-					// otherwise, update magicka once on spell cast.
-					// x2.8 mult when dual casting:
-					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
-					if (castingType == CastingType::kConcentration)
-					{
-						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastDual);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost and multiply by frametime.
-							deltaMagCost = -cachedCost.value() * *g_deltaTimeRealTime;
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							deltaMagCost = GetSpellDeltaMagickaCost(rhSpell) * 2.8f;
-						}
-
-						// Same duration for both hands since the spells are cast at the same time.
-						rhCastDuration = lhCastDuration = newCastDuration;
-					}
-					else
-					{
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastDual);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost.
-							deltaMagCost = -cachedCost.value();
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							deltaMagCost = GetSpellDeltaMagickaCost(rhSpell) * 2.8f;
-						}
-
-						// Done casting once spell is fired off.
-						avcam->RemoveStartedAction(AVCostAction::kCastDual);
-						rhCastDuration = lhCastDuration = 0.0f;
-
-						// Directly place down runes since casting runes
-						// with any non-P1 magic caster does not work.
-						// Player ranged package still plays casting animations 
-						// but no spell is released, 
-						// so we do it here since the begin cast animation event has fired.
-						if (Util::HasRuneProjectile(lhSpell)) 
-						{
-							CastRuneProjectile(lhSpell);
-						}
-
-						if (Util::HasRuneProjectile(rhSpell))
-						{
-							CastRuneProjectile(rhSpell);
-						}
-					}
-
-					// Same associated skill if dual casting.
-					if (rhSpell->avEffectSetting)
-					{
-						magicSkillLH =
-						magicSkillRH =
-						rhSpell->avEffectSetting->data.associatedSkill;
-					}
-				}
-			}
-			else
-			{
-				// One hand or both hands cast.
-				if (usingRHSpell && rhSpell)
-				{
-					auto castingType = rhSpell->GetCastingType();
-					// Check and update magicka every frame if casting a concentration spell,
-					// otherwise, update magicka once on spell cast.
-					if (castingType == CastingType::kConcentration)
-					{
-						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastRight);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost and multiply by frametime.
-							rhMagCostDelta = -cachedCost.value() * *g_deltaTimeRealTime;
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							rhMagCostDelta = 
-							(
-								GetSpellDeltaMagickaCost(rhSpell) * *g_deltaTimeRealTime
-							);
-						}
-
-						// Update cast duration.
-						rhCastDuration = newCastDuration;
-					}
-					else
-					{
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastRight);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost.
-							rhMagCostDelta = -cachedCost.value();
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							rhMagCostDelta = GetSpellDeltaMagickaCost(rhSpell);
-						}
-
-						// Done casting once FNF spell is fired off.
-						avcam->RemoveStartedAction(AVCostAction::kCastRight);
-						rhCastDuration = 0.0f;
-						
-						// Directly place down runes since casting runes 
-						// with any non-P1 magic caster does not work.
-						// Player ranged package still plays casting animations 
-						// but no spell is released, 
-						// so we do it here since the begin cast animation event has fired.
-						if (Util::HasRuneProjectile(rhSpell))
-						{
-							CastRuneProjectile(rhSpell);
-						}
-					}
-
-					// Get associated skill for the spell.
-					if (rhSpell->avEffectSetting)
-					{
-						magicSkillRH = rhSpell->avEffectSetting->data.associatedSkill;
-					}
-				}
-
-				if (usingLHSpell && lhSpell)
-				{
-					auto castingType = lhSpell->GetCastingType();
-					// Check and update magicka every frame if casting a concentration spell,
-					// otherwise, update magicka once on spell cast.
-					if (castingType == CastingType::kConcentration)
-					{
-						float newCastDuration = Util::GetElapsedSeconds(p->lastLHCastStartTP);
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastLeft);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost and multiply by frametime.
-							lhMagCostDelta = -cachedCost.value() * *g_deltaTimeRealTime;
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							lhMagCostDelta = 
-							(
-								GetSpellDeltaMagickaCost(lhSpell) * *g_deltaTimeRealTime
-							);
-						}
-
-						// Update cast duration.
-						lhCastDuration = newCastDuration;
-					}
-					else
-					{
-						auto cachedCost = avcam->GetCost(AVCostAction::kCastLeft);
-						if (cachedCost.has_value())
-						{
-							// Use cached cost.
-							lhMagCostDelta = -cachedCost.value();
-						}
-						else
-						{
-							// No cached cost, so recalculate.
-							lhMagCostDelta = GetSpellDeltaMagickaCost(lhSpell);
-						}
-
-						// Done casting once spell is fired off.
-						avcam->RemoveStartedAction(AVCostAction::kCastLeft);
-						lhCastDuration = 0.0f;
-
-						// Directly place down runes since casting runes 
-						// with any non-P1 magic caster does not work.
-						// Player ranged package still plays casting animations 
-						// but no spell is released, 
-						// so we do it here since the begin cast animation event has fired.
-						if (Util::HasRuneProjectile(lhSpell))
-						{
-							CastRuneProjectile(lhSpell);
-						}
-					}
-
-					// Get associated skill for the spell.
-					if (lhSpell->avEffectSetting)
-					{
-						magicSkillLH = lhSpell->avEffectSetting->data.associatedSkill;
-					}
-				}
-
-				// Add LH and RH costs together.
-				deltaMagCost = lhMagCostDelta + rhMagCostDelta;
-			}
-
-			// Only modify magicka if there was a computed delta
-			// and if the player is not in god mode.
-			if (deltaMagCost < 0.0f && !p->isInGodMode)
-			{
-				ModifyAV(RE::ActorValue::kMagicka, deltaMagCost);
-				// Player is out of magicka if, after subtracting the cost,
-				// the player is left with 0 or less magicka.
-				if (currentMagicka + deltaMagCost <= 0.0f)
-				{
-					// Remove requested casting actions,
-					// since the player will no longer be casting.
-					avcam->RemoveRequestedActions
-					(
-						AVCostAction::kCastDual, AVCostAction::kCastLeft, AVCostAction::kCastRight
-					);
-				}
-			}
-
-			// Add to player magic skill(s)' XP total(s) on cast.
-			// Restoration spells that heal actors and destruction spells are excluded, 
-			// as their base XP amount is determined by the amount of healed/damaged HP, 
-			// not by the spell's magicka cost.
-			// Only give XP if targeting a valid actor.
-			// https://en.uesp.net/wiki/Skyrim:Leveling#Skill_XP
-			if (!p->isPlayer1 && Util::HandleIsValid(p->tm->GetRangedTargetActor()))
-			{
-				// Separate deltas for XP calc.
-				if (dualCasting)
-				{
-					if (lhSpell && 
-						rhSpell && 
-						glob.AV_TO_SKILL_MAP.contains(magicSkillLH) &&
-						glob.AV_TO_SKILL_MAP.contains(magicSkillRH))
-					{
-						// Just check RH spell since both are the same.
-						// Ignore spells that do not grant XP on magicka expenditure.
-						bool grantsXPOnMagickaExpenditure = 
-						(
-							(magicSkillRH != RE::ActorValue::kDestruction) &&
-							(
-								(magicSkillRH != RE::ActorValue::kRestoration) ||
-								(
-									rhSpell->avEffectSetting->data.primaryAV !=
-									RE::ActorValue::kHealth &&
-									rhSpell->avEffectSetting->data.secondaryAV != 
-									RE::ActorValue::kHealth
-								)
-							)
-						);
-						if (grantsXPOnMagickaExpenditure)
-						{
-							GlobalCoopData::AddSkillXP(controllerID, magicSkillRH, -deltaMagCost);
-						}
-					}
-					
-				}
-				else
-				{
-					if (rhSpell && glob.AV_TO_SKILL_MAP.contains(magicSkillRH))
-					{
-						// Ignore spells that do not grant XP on magicka expenditure.
-						bool grantsXPOnMagickaExpenditure = 
-						(
-							(magicSkillRH != RE::ActorValue::kDestruction) &&
-							(
-								(magicSkillRH != RE::ActorValue::kRestoration) ||
-								(
-									rhSpell->avEffectSetting->data.primaryAV != 
-									RE::ActorValue::kHealth &&
-									rhSpell->avEffectSetting->data.secondaryAV != 
-									RE::ActorValue::kHealth
-								)
-							) 
-						);
-						if (grantsXPOnMagickaExpenditure)
-						{
-							GlobalCoopData::AddSkillXP
-							(
-								controllerID, magicSkillRH, -rhMagCostDelta
-							);
-						}
-					}
-
-					if (lhSpell && glob.AV_TO_SKILL_MAP.contains(magicSkillLH))
-					{
-						// Ignore spells that do not grant XP on magicka expenditure.
-						bool grantsXPOnMagickaExpenditure = 
-						(
-							(magicSkillLH != RE::ActorValue::kDestruction) &&
-							(
-								(magicSkillLH != RE::ActorValue::kRestoration) ||
-								(
-									lhSpell->avEffectSetting->data.primaryAV != 
-									RE::ActorValue::kHealth &&
-									lhSpell->avEffectSetting->data.secondaryAV != 
-									RE::ActorValue::kHealth
-								)
-							)
-						);
-						if (grantsXPOnMagickaExpenditure)
-						{
-							GlobalCoopData::AddSkillXP
-							(
-								controllerID, magicSkillLH, -lhMagCostDelta
-							);
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-			// Reset cast durations and remove casting AV actions when not casting.
-			rhCastDuration = lhCastDuration = 0.0f;
-			avcam->RemoveRequestedActions
-			(
-				AVCostAction::kCastDual, AVCostAction::kCastLeft, AVCostAction::kCastRight
-			);
-		}
-	}
-
 	void PlayerActionManager::ExpendStamina() 
 	{
 		// Reduce the player's stamina based on what AV cost actions they are performing.
@@ -4362,7 +4019,7 @@ namespace ALYSLC
 		const InputAction& a_action, bool&& a_checkIfAllReleased
 	)
 	{
-		// Return true if all inputs for the given action were just released 
+		// Return true if one or all (if requested) inputs for the given action were just released
 		// (order in which they were released does not matter).
 
 		// Invalid action.
@@ -4385,26 +4042,505 @@ namespace ALYSLC
 			return false;
 		}
 
-		// Check to see if any input was just released by iterating through the sequence.
-		bool atLeastOneJustReleased = false;
-		uint8_t numberOfInputsReleaed = 0;
+		// Check to see if each input was just released by iterating through the sequence.
+		// If checking if all inputs are released, 
+		// return true if an input was just released and all inputs are now released.
+		// Otherwise, only return true if one input was just released 
+		// and all other inputs are still held.
+		bool inputJustReleased = false;
+		uint8_t numberOfInputsReleased = 0;
 		for (auto input : composingInputs)
 		{
 			const auto& inputState = glob.cdh->GetInputState(controllerID, input);
 			if (inputState.justReleased)
 			{
-				return true;
+				inputJustReleased = true;
+			}
+
+			if (!inputState.isPressed)
+			{
+				numberOfInputsReleased++;
 			}
 		}
 
-		return false;
+		if (a_checkIfAllReleased)
+		{
+			return inputJustReleased && numberOfInputsReleased == composingInputs.size();
+		}
+		else
+		{
+			return inputJustReleased && numberOfInputsReleased == 1;
+		}
 	}
 
-	void PlayerActionManager::HandleAVExpenditure()
+	void PlayerActionManager::GrantSpellcastXP()
 	{
-		// Modify health, magicka, stamina actor values 
+		// For companion players, check if XP should be awarded 
+		// when a magicka AV cost action is in progress or completes.
+		
+		bool dualCasting = avcam->actionsInProgress.all(AVCostAction::kCastDual);
+		bool usingLHSpell = avcam->actionsInProgress.all(AVCostAction::kCastLeft);
+		bool usingRHSpell = avcam->actionsInProgress.all(AVCostAction::kCastRight);
+		bool isCasting = dualCasting || usingLHSpell || usingRHSpell;
+		if (isCasting)
+		{
+			// Get LH and RH spells.
+			RE::SpellItem* lhSpell = p->em->GetLHSpell();
+			RE::SpellItem* rhSpell = p->em->GetRHSpell();\
+			// Base cost (positive) for use in granting XP. 
+			// Accumulated from all hand casting sources.
+			float baseCost = 0.0f;
+			float baseLHCost = 0.0f;
+			float baseRHCost = 0.0f;
+			// Requested AV cost actions.
+			auto& reqActionsSet = avcam->reqActionsSet;
+			if (dualCasting)
+			{
+				// TODO: 
+				// Dual Casting.
+				// Check if two spells are equipped.
+				if (lhSpell && rhSpell)
+				{
+					// Update base cost first.
+					baseCost = -GetSpellDeltaMagickaCost(rhSpell) * 2.8f;
+					// Since both spells should be the same here, use the RH one.
+					auto castingType = rhSpell->GetCastingType();
+					// Check and update magicka every frame if casting a concentration spell,
+					// otherwise, update magicka once on spell cast.
+					// x2.8 mult when dual casting:
+					// https://en.uesp.net/wiki/Skyrim:Magic_Overview#Dual-Casting
+					if (castingType == CastingType::kConcentration)
+					{
+						// Per frame.
+						baseCost *= *g_deltaTimeRealTime;
+						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
+						// Same duration for both hands since the spells are cast at the same time.
+						rhCastDuration = lhCastDuration = newCastDuration;
+					}
+					else
+					{
+						// Done casting once spell is fired off.
+						avcam->RemoveStartedAction(AVCostAction::kCastDual);
+						rhCastDuration = lhCastDuration = 0.0f;
+					}
+				}
+			}
+			else
+			{
+				// One hand or both hands cast.
+				if (usingRHSpell && rhSpell)
+				{
+					auto castingType = rhSpell->GetCastingType();
+					// Check and update magicka every frame if casting a concentration spell,
+					// otherwise, update magicka once on spell cast.
+					if (castingType == CastingType::kConcentration)
+					{
+						// Accumulate base cost first.
+						baseRHCost += -GetSpellDeltaMagickaCost(rhSpell) * *g_deltaTimeRealTime;
+						float newCastDuration = Util::GetElapsedSeconds(p->lastRHCastStartTP);
+						// Update cast duration.
+						rhCastDuration = newCastDuration;
+					}
+					else
+					{
+						// Accumulate base cost first.
+						baseRHCost += -GetSpellDeltaMagickaCost(rhSpell);
+						// Done casting once FNF spell is fired off.
+						avcam->RemoveStartedAction(AVCostAction::kCastRight);
+						rhCastDuration = 0.0f;
+					}
+				}
+
+				if (usingLHSpell && lhSpell)
+				{
+					auto castingType = lhSpell->GetCastingType();
+					// Check and update magicka every frame if casting a concentration spell,
+					// otherwise, update magicka once on spell cast.
+					if (castingType == CastingType::kConcentration)
+					{
+						// Accumulate base cost first.
+						baseLHCost += -GetSpellDeltaMagickaCost(rhSpell) * *g_deltaTimeRealTime;
+						float newCastDuration = Util::GetElapsedSeconds(p->lastLHCastStartTP);
+						// Update cast duration.
+						lhCastDuration = newCastDuration;
+					}
+					else
+					{
+						// Accumulate base cost first.
+						baseLHCost += -GetSpellDeltaMagickaCost(rhSpell);
+						// Done casting once spell is fired off.
+						avcam->RemoveStartedAction(AVCostAction::kCastLeft);
+						lhCastDuration = 0.0f;
+					}
+				}
+
+				// Add LH and RH base costs together.
+				baseCost = baseLHCost + baseRHCost;
+			}
+
+			// Add to player magic skill(s)' XP total(s) on cast.
+			// Restoration spells that heal actors and destruction spells are excluded, 
+			// as their base XP amount is determined by the amount of healed/damaged HP, 
+			// not by the spell's magicka cost.
+			// Only give XP if targeting a valid actor.
+			// https://en.uesp.net/wiki/Skyrim:Leveling#Skill_XP
+			if (!p->isPlayer1)
+			{
+				// Separate deltas for XP calc.
+				if (dualCasting)
+				{
+					// Just check the RH spell since both are the same.
+					// Ignore spells that do not grant XP on magicka expenditure.
+					if (Util::SpellCanGrantXPOnCast
+						(
+							coopActor.get(),
+							rhSpell,
+							p->tm->GetRangedTargetActor()
+						))
+					{
+						GlobalCoopData::AddSkillXP
+						(
+							controllerID, 
+							rhSpell->avEffectSetting->data.associatedSkill,
+							baseCost
+						);
+					}
+				}
+				else
+				{
+					// Ignore spells that do not grant XP on magicka expenditure.
+					if (Util::SpellCanGrantXPOnCast
+						(
+							coopActor.get(),
+							rhSpell,
+							p->tm->GetRangedTargetActor()
+						))
+					{
+						GlobalCoopData::AddSkillXP
+						(
+							controllerID,
+							rhSpell->avEffectSetting->data.associatedSkill, 
+							baseRHCost
+						);
+					}
+
+					// Ignore spells that do not grant XP on magicka expenditure.
+					if (Util::SpellCanGrantXPOnCast
+						(
+							coopActor.get(),
+							lhSpell,
+							p->tm->GetRangedTargetActor()
+						))
+					{
+						GlobalCoopData::AddSkillXP
+						(
+							controllerID, 
+							lhSpell->avEffectSetting->data.associatedSkill,
+							baseLHCost
+						);
+					}
+				}
+			}
+		}
+		else
+		{
+			// Reset cast durations and remove casting AV actions when not casting.
+			rhCastDuration = lhCastDuration = 0.0f;
+			avcam->RemoveRequestedActions
+			(
+				AVCostAction::kCastDual, AVCostAction::kCastLeft, AVCostAction::kCastRight
+			);
+		}
+	}
+
+	void PlayerActionManager::HandleDialogue()
+	{
+		// Have the speaker NPC headtrack the dialogue-controlling player.
+		// Also auto-end dialogue when the player moves too far away from the speaker.
+
+		auto ui = RE::UI::GetSingleton();
+		if (!ui || !ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
+		{
+			if (isInDialogue || autoEndDialogue) 
+			{
+				isInDialogue = false;
+				autoEndDialogue = false;
+			}
+
+			return;
+		}
+
+		isInDialogue = isControllingUnpausedMenu;
+		if (!isInDialogue)
+		{
+			return;
+		}
+
+		auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
+		auto speakerHandle = menuTopicManager->speaker; 
+		if (!menuTopicManager || !speakerHandle || !speakerHandle.get())
+		{
+			if (autoEndDialogue)
+			{
+				autoEndDialogue = false;
+			}
+				
+			return;
+		}
+
+		auto speakerRefrPtr = speakerHandle.get();
+		bool closeEnoughToTalk = 
+		(
+			coopActor->data.location.GetDistance(speakerRefrPtr->data.location) <=
+			Settings::fAutoEndDialogueRadius
+		);
+		if (closeEnoughToTalk)
+		{
+			autoEndDialogue = false;
+			// Have the speaker look at the player.
+			if (auto actorSpeakingWith = speakerRefrPtr->As<RE::Actor>(); actorSpeakingWith)
+			{
+				if (auto currentProc = actorSpeakingWith->currentProcess; currentProc)
+				{
+					auto headTrackHandle = currentProc->GetHeadtrackTarget();
+					auto headTrackTarget = Util::GetRefrPtrFromHandle(headTrackHandle);
+					if (!headTrackTarget || headTrackTarget != coopActor)
+					{
+						auto lookAtActorPos = coopActor->GetLookingAtLocation();
+						currentProc->SetHeadtrackTarget(actorSpeakingWith, lookAtActorPos);
+					}
+				}
+			}
+		}
+		else if (!autoEndDialogue)
+		{
+			// Not close enough to the speaker NPC and dialogue still active.
+			autoEndDialogue = true;
+			auto ue = RE::UserEvents::GetSingleton(); 
+			auto controlMap = RE::ControlMap::GetSingleton();
+			if (ue && controlMap)
+			{
+				// Close the dialogue with the 'Cancel' bind.
+				auto cancelBind = controlMap->GetMappedKey
+				(
+					ue->cancel,
+					RE::INPUT_DEVICE::kKeyboard,
+					RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+				);
+				Util::SendButtonEvent
+				(
+					RE::INPUT_DEVICE::kKeyboard, ue->cancel, cancelBind, 1.0f, 0.0f, false
+				);
+			}
+		}
+	}
+
+	void PlayerActionManager::HandleKillmoveRequests()
+	{
+		// Handled here in a delayed fashion instead of in the player action functions holder 
+		// because some killmoves bug out and do not set the targeted actor's health to 0 
+		// or kill them after the paired animation ends.
+		// Also, both the targeted and targeting actors are flagged as not in a killmove 
+		// at different times, which leads to issues with executing killmoves.
+		// Here, we force the target's HP to 0 if the killmove animation 
+		// finishes playing for the killer actor.
+		
+		// Must have a valid target.
+		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
+		auto targetValidity = 
+		(
+			targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
+		);
+		if (!targetValidity) 
+		{
+			// Reset data if this player was performing a killmove,
+			// or if there was a target previously (valid or not).
+			if (isPerformingKillmove || Util::HandleIsValid(killmoveTargetActorHandle)) 
+			{
+				ResetAllKillmoveData(-1);
+			}
+
+			return;
+		}
+
+		int32_t pIndex = GlobalCoopData::GetCoopPlayerIndex(killmoveTargetActorHandle);
+		bool targetIsPlayer = pIndex != -1;
+		// Other players cannot be killmoved unless the setting is enabled,
+		// they are not in god mode, and they are damageable.
+		bool otherPlayerIsNotKillmoveable = 
+		{
+			(targetIsPlayer) && 
+			(
+				!Settings::bCanKillmoveOtherPlayers || 
+				glob.coopPlayers[pIndex]->isInGodMode ||
+				Settings::vfDamageReceivedMult[glob.coopPlayers[pIndex]->playerID] == 0.0f
+			)
+		};
+		if (otherPlayerIsNotKillmoveable) 
+		{
+			ResetAllKillmoveData(pIndex);
+			return;
+		}
+
+		float secsSinceKillmoveRequest = Util::GetElapsedSeconds(p->lastKillmoveCheckTP);
+		// Potential killmove must be performed for 2 seconds (or the target actor dies) 
+		// before this player is considered as in a killmove.
+		if (!isPerformingKillmove)
+		{
+			if (secsSinceKillmoveRequest <= 2.0f &&
+				coopActor->IsInKillMove() && 
+				targetActorPtr->IsInKillMove() && 
+				!targetActorPtr->IsDead()) 
+			{
+				isPerformingKillmove = true;
+			}
+			else if (secsSinceKillmoveRequest > 2.0f)
+			{
+				// Kllmove already done or never executed and the max wait time was reached.
+				ResetAllKillmoveData(pIndex);
+				return;
+			}
+		}
+		else
+		{
+			// The killmove target player sometimes stands back up 
+			// because they still have non-zero health.
+			// Also, the "kIsInKillmove" flag is set even though the animation has ended
+			// and the other player is no longer in a killmove.
+			// If changing the wait condition to either player being in a killmove, 
+			// the killmoved player will get up upon being revived and then enter bleedout,
+			// which also glitches movement and may lead to problems 
+			// if the game thinks the player is dead.
+			// Haven't found a way to fully remove bleedout yet, 
+			// so some killmoves won't terminate properly for now.
+			// If the bleedout glitch still occurs, reset the offending player.
+			
+			// If this player is not loaded in, end the killmove.
+			bool playerValidity = 
+			(
+				coopActor && coopActor->Is3DLoaded() && coopActor->IsHandleValid()
+			);
+			if (!playerValidity)
+			{
+				ResetAllKillmoveData(pIndex);
+				return;
+			}
+
+			// Set killmove flag which is used to prevent equip state changes
+			// during the killmove from being carried over post-revive.
+			if (targetIsPlayer)
+			{
+				const auto& targetP = glob.coopPlayers[pIndex];
+				targetP->pam->killerPlayerActorHandle = coopActor->GetHandle();
+				targetP->pam->isBeingKillmovedByAnotherPlayer = true;
+			}
+
+			// Aggressor and victim exit the killmove at different points.
+			// Reset data one at a time.
+			// Allow at most 30 seconds for the killmove to complete.
+			bool aggressorStillInKillmove = 
+			{
+				(secsSinceKillmoveRequest < 30.0f && !targetActorPtr->IsDead()) && 
+				(coopActor->IsInKillMove() || coopActor->IsAttacking())
+			};
+			bool victimStillInKillmove = 
+			{
+				secsSinceKillmoveRequest < 30.0f && 
+				!targetActorPtr->IsDead() && 
+				targetActorPtr->IsInKillMove()
+			};
+			// Killmove target is dead or done with the paired animation.
+			if (!victimStillInKillmove) 
+			{
+				// Set to below 0 health to trigger downed state.
+				// Otherwise the player will enter bleedout, since they are set as essential.
+				if (targetActorPtr->GetActorValue(RE::ActorValue::kHealth) > 0.0f)
+				{
+					if (targetIsPlayer)
+					{
+						// Nullify application of the target player's damage received mult
+						// in the CheckClampDamageMultiplier() hook.
+						glob.coopPlayers[pIndex]->pam->ModifyAV
+						(
+							RE::ActorValue::kHealth, 
+							(-targetActorPtr->GetActorValue(RE::ActorValue::kHealth)) * 
+							(
+								1.0f / 
+								Settings::vfDamageReceivedMult[glob.coopPlayers[pIndex]->playerID]
+							)
+						);
+					}
+					else if (auto avOwner = targetActorPtr->As<RE::ActorValueOwner>(); avOwner)
+					{
+						avOwner->RestoreActorValue
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -FLT_MAX
+						);
+						// Sometimes still doesn't die after setting health below 0,
+						// so directly call the kill func.
+						if (!targetActorPtr->IsDead())
+						{
+							// Knock down.
+							targetActorPtr->currentProcess->KnockExplosion
+							(
+								targetActorPtr.get(), targetActorPtr->data.location, -1.0f
+							);
+							targetActorPtr->KillImpl(coopActor.get(), FLT_MAX, true, true);
+							targetActorPtr->KillImmediate();
+						}
+					}
+				}
+
+				// Clear out victim's data.
+				ResetKillmoveVictimData(pIndex);
+			}
+
+			// This player is finished attacking and done with the killmove paired animation.
+			if (!aggressorStillInKillmove) 
+			{
+				// If still attacking, we can sheathe and unsheathe 
+				// if performing an unarmed spellcast killmove.
+				bool stillAttacking = coopActor->IsAttacking();
+				// Stop any ongoing killmove idle.
+				StopCurrentIdle();
+				// Sheathe/unsheathe if spellcasting unarmed killmove was performed.
+				// If we don't do this, spells remain visually equipped post-killmove
+				// but any subsequent spellcasting will trigger unarmed attacks.
+				bool performedSpellcastingUnarmedKillmove = 
+				(
+					Settings::bUseUnarmedKillmovesForSpellcasting && 
+					coopActor->IsWeaponDrawn() && 
+					reqMeleeSpellcastKillmove &&
+					!p->isTransformed
+				);
+				// If the killmove fails and the victim is still in the killmove,
+				// we do not want to continue sheathing and unsheathing until 30 seconds expires,
+				// so this block will only run once, since the player will have stopped attacking
+				// once their weapons are sheathed the first time the block runs.
+				if (performedSpellcastingUnarmedKillmove && stillAttacking)
+				{
+					ReadyWeapon(false);
+					ReadyWeapon(true);
+				}
+			}
+
+			// Both aggressor (this player) and victim are no longer in a killmove, 
+			// so reset flag and target handle.
+			if (!victimStillInKillmove && !aggressorStillInKillmove)
+			{
+				isPerformingKillmove = false;
+				reqMeleeSpellcastKillmove = false;
+				killmoveTargetActorHandle = RE::ActorHandle();
+			}
+		}
+	}
+	
+	void PlayerActionManager::HandlePerformedAnimationEvents()
+	{
+		// Modify health, magicka, stamina actor values and grant XP
 		// based on the player's ongoing AV action requests
 		// and animation events that have triggered over the last frame.
+
 		auto& actionsInProgress = avcam->actionsInProgress;
 		auto& reqActionsSet = avcam->reqActionsSet;
 
@@ -4423,7 +4559,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] HandleAVExpenditure: {}: Lock obtained. (0x{:X})", 
+							"[PAM] HandlePerformedAnimationEvents: {}: Lock obtained. (0x{:X})", 
 							coopActor->GetName(), 
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -4726,297 +4862,15 @@ namespace ALYSLC
 			ExpendStamina();
 		}
 
-		bool shouldExpendMagicka = actionsInProgress.any
+		bool shouldCheckForXPInc = actionsInProgress.any
 		(
 			AVCostAction::kCastDual,
 			AVCostAction::kCastLeft, 
 			AVCostAction::kCastRight
 		);
-		if (shouldExpendMagicka)
+		if (shouldCheckForXPInc)
 		{
-			//ExpendMagicka();
-		}
-	}
-
-	void PlayerActionManager::HandleDialogue()
-	{
-		// Have the speaker NPC headtrack the dialogue-controlling player.
-		// Also auto-end dialogue when the player moves too far away from the speaker.
-
-		auto ui = RE::UI::GetSingleton();
-		if (!ui || !ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
-		{
-			if (isInDialogue || autoEndDialogue) 
-			{
-				isInDialogue = false;
-				autoEndDialogue = false;
-			}
-
-			return;
-		}
-
-		isInDialogue = isControllingUnpausedMenu;
-		if (!isInDialogue)
-		{
-			return;
-		}
-
-		auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
-		auto speakerHandle = menuTopicManager->speaker; 
-		if (!menuTopicManager || !speakerHandle || !speakerHandle.get())
-		{
-			if (autoEndDialogue)
-			{
-				autoEndDialogue = false;
-			}
-				
-			return;
-		}
-
-		auto speakerRefrPtr = speakerHandle.get();
-		bool closeEnoughToTalk = 
-		(
-			coopActor->data.location.GetDistance(speakerRefrPtr->data.location) <=
-			Settings::fAutoEndDialogueRadius
-		);
-		if (closeEnoughToTalk)
-		{
-			autoEndDialogue = false;
-			// Have the speaker look at the player.
-			if (auto actorSpeakingWith = speakerRefrPtr->As<RE::Actor>(); actorSpeakingWith)
-			{
-				if (auto currentProc = actorSpeakingWith->currentProcess; currentProc)
-				{
-					auto headTrackHandle = currentProc->GetHeadtrackTarget();
-					auto headTrackTarget = Util::GetRefrPtrFromHandle(headTrackHandle);
-					if (!headTrackTarget || headTrackTarget != coopActor)
-					{
-						auto lookAtActorPos = coopActor->GetLookingAtLocation();
-						currentProc->SetHeadtrackTarget(actorSpeakingWith, lookAtActorPos);
-					}
-				}
-			}
-		}
-		else if (!autoEndDialogue)
-		{
-			// Not close enough to the speaker NPC and dialogue still active.
-			autoEndDialogue = true;
-			auto ue = RE::UserEvents::GetSingleton(); 
-			auto controlMap = RE::ControlMap::GetSingleton();
-			if (ue && controlMap)
-			{
-				// Close the dialogue with the 'Cancel' bind.
-				auto cancelBind = controlMap->GetMappedKey
-				(
-					ue->cancel,
-					RE::INPUT_DEVICE::kKeyboard,
-					RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-				);
-				Util::SendButtonEvent
-				(
-					RE::INPUT_DEVICE::kKeyboard, ue->cancel, cancelBind, 1.0f, 0.0f, false
-				);
-			}
-		}
-	}
-
-	void PlayerActionManager::HandleKillmoveRequests()
-	{
-		// Handled here in a delayed fashion instead of in the player action functions holder 
-		// because some killmoves bug out and do not set the targeted actor's health to 0 
-		// or kill them after the paired animation ends.
-		// Also, both the targeted and targeting actors are flagged as not in a killmove 
-		// at different times, which leads to issues with executing killmoves.
-		// Here, we force the target's HP to 0 if the killmove animation 
-		// finishes playing for the killer actor.
-		
-		// Must have a valid target.
-		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
-		auto targetValidity = 
-		(
-			targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
-		);
-		if (!targetValidity) 
-		{
-			// Reset data if this player was performing a killmove,
-			// or if there was a target previously (valid or not).
-			if (isPerformingKillmove || Util::HandleIsValid(killmoveTargetActorHandle)) 
-			{
-				ResetAllKillmoveData(-1);
-			}
-
-			return;
-		}
-
-		int32_t pIndex = GlobalCoopData::GetCoopPlayerIndex(killmoveTargetActorHandle);
-		bool targetIsPlayer = pIndex != -1;
-		// Other players cannot be killmoved unless the setting is enabled,
-		// they are not in god mode, and they are damageable.
-		bool otherPlayerIsNotKillmoveable = 
-		{
-			(targetIsPlayer) && 
-			(
-				!Settings::bCanKillmoveOtherPlayers || 
-				glob.coopPlayers[pIndex]->isInGodMode ||
-				Settings::vfDamageReceivedMult[glob.coopPlayers[pIndex]->playerID] == 0.0f
-			)
-		};
-		if (otherPlayerIsNotKillmoveable) 
-		{
-			ResetAllKillmoveData(pIndex);
-			return;
-		}
-
-		float secsSinceKillmoveRequest = Util::GetElapsedSeconds(p->lastKillmoveCheckTP);
-		// Potential killmove must be performed for 2 seconds (or the target actor dies) 
-		// before this player is considered as in a killmove.
-		if (!isPerformingKillmove)
-		{
-			if (secsSinceKillmoveRequest <= 2.0f &&
-				coopActor->IsInKillMove() && 
-				targetActorPtr->IsInKillMove() && 
-				!targetActorPtr->IsDead()) 
-			{
-				isPerformingKillmove = true;
-			}
-			else if (secsSinceKillmoveRequest > 2.0f)
-			{
-				// Kllmove already done or never executed and the max wait time was reached.
-				ResetAllKillmoveData(pIndex);
-				return;
-			}
-		}
-		else
-		{
-			// The killmove target player sometimes stands back up 
-			// because they still have non-zero health.
-			// Also, the "kIsInKillmove" flag is set even though the animation has ended
-			// and the other player is no longer in a killmove.
-			// If changing the wait condition to either player being in a killmove, 
-			// the killmoved player will get up upon being revived and then enter bleedout,
-			// which also glitches movement and may lead to problems 
-			// if the game thinks the player is dead.
-			// Haven't found a way to fully remove bleedout yet, 
-			// so some killmoves won't terminate properly for now.
-			// If the bleedout glitch still occurs, reset the offending player.
-			
-			// If this player is not loaded in, end the killmove.
-			bool playerValidity = 
-			(
-				coopActor && coopActor->Is3DLoaded() && coopActor->IsHandleValid()
-			);
-			if (!playerValidity)
-			{
-				ResetAllKillmoveData(pIndex);
-				return;
-			}
-
-			// Set killmove flag which is used to prevent equip state changes
-			// during the killmove from being carried over post-revive.
-			if (targetIsPlayer)
-			{
-				const auto& targetP = glob.coopPlayers[pIndex];
-				targetP->pam->killerPlayerActorHandle = coopActor->GetHandle();
-				targetP->pam->isBeingKillmovedByAnotherPlayer = true;
-			}
-
-			// Aggressor and victim exit the killmove at different points.
-			// Reset data one at a time.
-			// Allow at most 30 seconds for the killmove to complete.
-			bool aggressorStillInKillmove = 
-			{
-				(secsSinceKillmoveRequest < 30.0f && !targetActorPtr->IsDead()) && 
-				(coopActor->IsInKillMove() || coopActor->IsAttacking())
-			};
-			bool victimStillInKillmove = 
-			{
-				secsSinceKillmoveRequest < 30.0f && 
-				!targetActorPtr->IsDead() && 
-				targetActorPtr->IsInKillMove()
-			};
-			// Killmove target is dead or done with the paired animation.
-			if (!victimStillInKillmove) 
-			{
-				// Set to below 0 health to trigger downed state.
-				// Otherwise the player will enter bleedout, since they are set as essential.
-				if (targetActorPtr->GetActorValue(RE::ActorValue::kHealth) > 0.0f)
-				{
-					if (targetIsPlayer)
-					{
-						// Nullify application of the target player's damage received mult
-						// in the CheckClampDamageMultiplier() hook.
-						glob.coopPlayers[pIndex]->pam->ModifyAV
-						(
-							RE::ActorValue::kHealth, 
-							(-targetActorPtr->GetActorValue(RE::ActorValue::kHealth)) * 
-							(
-								1.0f / 
-								Settings::vfDamageReceivedMult[glob.coopPlayers[pIndex]->playerID]
-							)
-						);
-					}
-					else if (auto avOwner = targetActorPtr->As<RE::ActorValueOwner>(); avOwner)
-					{
-						avOwner->RestoreActorValue
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, -FLT_MAX
-						);
-						// Sometimes still doesn't die after setting health below 0,
-						// so directly call the kill func.
-						if (!targetActorPtr->IsDead())
-						{
-							// Knock down.
-							targetActorPtr->currentProcess->KnockExplosion
-							(
-								targetActorPtr.get(), targetActorPtr->data.location, -1.0f
-							);
-							targetActorPtr->KillImpl(coopActor.get(), FLT_MAX, true, true);
-							targetActorPtr->KillImmediate();
-						}
-					}
-				}
-
-				// Clear out victim's data.
-				ResetKillmoveVictimData(pIndex);
-			}
-
-			// This player is finished attacking and done with the killmove paired animation.
-			if (!aggressorStillInKillmove) 
-			{
-				// If still attacking, we can sheathe and unsheathe 
-				// if performing an unarmed spellcast killmove.
-				bool stillAttacking = coopActor->IsAttacking();
-				// Stop any ongoing killmove idle.
-				StopCurrentIdle();
-				// Sheathe/unsheathe if spellcasting unarmed killmove was performed.
-				// If we don't do this, spells remain visually equipped post-killmove
-				// but any subsequent spellcasting will trigger unarmed attacks.
-				bool performedSpellcastingUnarmedKillmove = 
-				(
-					Settings::bUseUnarmedKillmovesForSpellcasting && 
-					coopActor->IsWeaponDrawn() && 
-					reqMeleeSpellcastKillmove &&
-					!p->isTransformed
-				);
-				// If the killmove fails and the victim is still in the killmove,
-				// we do not want to continue sheathing and unsheathing until 30 seconds expires,
-				// so this block will only run once, since the player will have stopped attacking
-				// once their weapons are sheathed the first time the block runs.
-				if (performedSpellcastingUnarmedKillmove && stillAttacking)
-				{
-					ReadyWeapon(false);
-					ReadyWeapon(true);
-				}
-			}
-
-			// Both aggressor (this player) and victim are no longer in a killmove, 
-			// so reset flag and target handle.
-			if (!victimStillInKillmove && !aggressorStillInKillmove)
-			{
-				isPerformingKillmove = false;
-				reqMeleeSpellcastKillmove = false;
-				killmoveTargetActorHandle = RE::ActorHandle();
-			}
+			GrantSpellcastXP();
 		}
 	}
 
@@ -6323,6 +6177,330 @@ namespace ALYSLC
 		coopActor->NotifyAnimationGraph("attackStop");
 		coopActor->NotifyAnimationGraph("moveStart");
 	}
+
+	bool PlayerActionManager::TurnToTargetForCombatAction()
+	{
+		// Return true if the player should turn to face a target 
+		// if attacking, bashing, blocking, casting, or shouting.
+
+		bool turnToFaceForCombatAction = isAttacking || isBlocking || isBashing;
+		if (!turnToFaceForCombatAction)
+		{
+			const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
+			if ((isWeapMagDrawn) &&
+				(p->em->Has2HRangedWeapEquipped() || p->em->HasRHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackRH)
+				))
+			{
+				turnToFaceForCombatAction = true;
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasRHSpellEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
+					AllInputsPressedForAction(InputAction::kCastRH) ||
+					isInCastingAnimRH
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->GetRHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasLHSpellEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
+					AllInputsPressedForAction(InputAction::kCastLH) ||
+					isInCastingAnimLH
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->GetLHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasRHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackRH)
+				))
+			{
+				auto rhWeap = p->em->GetRHWeapon();
+				turnToFaceForCombatAction |= 
+				(
+					rhWeap &&
+					rhWeap->formEnchanting &&
+					rhWeap->formEnchanting->GetDelivery() != 
+					RE::MagicSystem::Delivery::kSelf
+				);
+			}
+
+			if ((isWeapMagDrawn) &&
+				(p->em->HasLHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackLH)
+				))
+			{
+				auto lhWeap = p->em->GetLHWeapon();
+				turnToFaceForCombatAction |= 
+				(
+					lhWeap &&
+					lhWeap->formEnchanting &&
+					lhWeap->formEnchanting->GetDelivery() != 
+					RE::MagicSystem::Delivery::kSelf
+				);
+			}
+			
+			if ((p->em->quickSlotSpell) &&
+				(
+					GetPlayerActionInputJustReleased
+					(
+						InputAction::kQuickSlotCast, false
+					) ||
+					AllInputsPressedForAction(InputAction::kQuickSlotCast)
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+			}
+			
+			if ((p->em->voiceSpell) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
+					AllInputsPressedForAction(InputAction::kShout)
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->voiceSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+			}
+			
+			bool specialActionSpellcast = 
+			(
+				(!IsPerforming(InputAction::kQuickSlotCast)) &&
+				(!IsPerforming(InputAction::kCastLH)) &&
+				(!IsPerforming(InputAction::kCastRH)) &&
+				(
+					reqSpecialAction == SpecialActionType::kCastBothHands || 
+					reqSpecialAction == SpecialActionType::kDualCast || 
+					reqSpecialAction == SpecialActionType::kQuickCast
+				) &&
+				(
+					(
+						GetPlayerActionInputJustReleased
+						(
+							InputAction::kSpecialAction, false
+						) ||
+						AllInputsPressedForAction(InputAction::kSpecialAction)
+					) ||
+					(
+						(reqSpecialAction != SpecialActionType::kQuickCast) &&
+						((isInCastingAnimLH && isInCastingAnimRH) || isInCastingAnimDual)
+					)
+				)
+			);
+			if (specialActionSpellcast)
+			{
+				if (reqSpecialAction == SpecialActionType::kQuickCast)
+				{
+					turnToFaceForCombatAction |= 
+					(
+						p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+					);
+				}
+				else if (isWeapMagDrawn)
+				{
+					auto lhSpell = p->em->GetLHSpell();
+					auto rhSpell = p->em->GetRHSpell();
+					turnToFaceForCombatAction |= 
+					(
+						(lhSpell && lhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) ||
+						(rhSpell && rhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
+					);
+				}
+			}
+		}
+
+		return turnToFaceForCombatAction;
+	}
+
+	bool PlayerActionManager::TurnToTargetForCombatAction(bool& a_combatActionJustStarted)
+	{
+		// Return true if the player should turn to face a target 
+		// if attacking, bashing, blocking, casting, or shouting.
+		// Return whether or not a combat action has just started in the outparam.
+
+		bool turnToFaceForCombatAction = isAttacking || isBlocking || isBashing;
+		if (!turnToFaceForCombatAction)
+		{
+			const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
+			if ((isWeapMagDrawn) &&
+				(p->em->Has2HRangedWeapEquipped() || p->em->HasRHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackRH)
+				))
+			{
+				turnToFaceForCombatAction = true;
+				a_combatActionJustStarted = JustStarted(InputAction::kAttackRH);
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasRHSpellEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
+					AllInputsPressedForAction(InputAction::kCastRH) ||
+					isInCastingAnimRH
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->GetRHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kCastRH);
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasLHSpellEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
+					AllInputsPressedForAction(InputAction::kCastLH) ||
+					isInCastingAnimLH
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->GetLHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kCastLH);
+			}
+			
+			if ((isWeapMagDrawn) &&
+				(p->em->HasRHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackRH)
+				))
+			{
+				auto rhWeap = p->em->GetRHWeapon();
+				turnToFaceForCombatAction |= 
+				(
+					rhWeap &&
+					rhWeap->formEnchanting &&
+					rhWeap->formEnchanting->GetDelivery() != 
+					RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kAttackRH);
+			}
+
+			if ((isWeapMagDrawn) &&
+				(p->em->HasLHStaffEquipped()) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
+					AllInputsPressedForAction(InputAction::kAttackLH)
+				))
+			{
+				auto lhWeap = p->em->GetLHWeapon();
+				turnToFaceForCombatAction |= 
+				(
+					lhWeap &&
+					lhWeap->formEnchanting &&
+					lhWeap->formEnchanting->GetDelivery() != 
+					RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kAttackLH);
+			}
+			
+			if ((p->em->quickSlotSpell) &&
+				(
+					GetPlayerActionInputJustReleased
+					(
+						InputAction::kQuickSlotCast, false
+					) ||
+					AllInputsPressedForAction(InputAction::kQuickSlotCast)
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kQuickSlotCast);
+			}
+			
+			if ((p->em->voiceSpell) &&
+				(
+					GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
+					AllInputsPressedForAction(InputAction::kShout)
+				))
+			{
+				turnToFaceForCombatAction |= 
+				(
+					p->em->voiceSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+				);
+				a_combatActionJustStarted = JustStarted(InputAction::kShout);
+			}
+			
+			bool specialActionSpellcast = 
+			(
+				(!IsPerforming(InputAction::kQuickSlotCast)) &&
+				(!IsPerforming(InputAction::kCastLH)) &&
+				(!IsPerforming(InputAction::kCastRH)) &&
+				(
+					reqSpecialAction == SpecialActionType::kCastBothHands || 
+					reqSpecialAction == SpecialActionType::kDualCast || 
+					reqSpecialAction == SpecialActionType::kQuickCast
+				) &&
+				(
+					(
+						GetPlayerActionInputJustReleased
+						(
+							InputAction::kSpecialAction, false
+						) ||
+						AllInputsPressedForAction(InputAction::kSpecialAction)
+					) ||
+					(
+						(reqSpecialAction != SpecialActionType::kQuickCast) &&
+						((isInCastingAnimLH && isInCastingAnimRH) || isInCastingAnimDual)
+					)
+				)
+			);
+			if (specialActionSpellcast)
+			{
+				if (reqSpecialAction == SpecialActionType::kQuickCast)
+				{
+					turnToFaceForCombatAction |= 
+					(
+						p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+					);
+				}
+				else if (isWeapMagDrawn)
+				{
+					auto lhSpell = p->em->GetLHSpell();
+					auto rhSpell = p->em->GetRHSpell();
+					turnToFaceForCombatAction |= 
+					(
+						(lhSpell && lhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) ||
+						(rhSpell && rhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
+					);
+				}
+
+				a_combatActionJustStarted = JustStarted(InputAction::kSpecialAction);
+			}
+		}
+
+		return turnToFaceForCombatAction;
+	}
 	
 	void PlayerActionManager::UpdateLastAttackingHand()
 	{
@@ -6958,11 +7136,24 @@ namespace ALYSLC
 		// Update cached graph variables and dependent variables.
 
 		bool wasAttacking = isAttacking || isBashing || isInCastingAnim;
+		// Reset all cached animation vars before refreshing.
+		isAttacking = false;
+		isBashing = false;
+		isBlocking = false;
+		isInCastingAnim = false;
+		isInCastingAnimDual = false;
+		isInCastingAnimLH = false;
+		isInCastingAnimRH = false;
+		isJumping = false;
+		isRiding = false;
+		isShouting = false;
+		isSneaking = false;
+
+		// Read in updated vars.
 		coopActor->GetGraphVariableBool("IsCastingDual", isInCastingAnimDual);
 		coopActor->GetGraphVariableBool("IsCastingLeft", isInCastingAnimLH);
 		coopActor->GetGraphVariableBool("IsCastingRight", isInCastingAnimRH);
 		isInCastingAnim = isInCastingAnimRH || isInCastingAnimLH || isInCastingAnimDual;
-		
 		coopActor->GetGraphVariableBool("IsAttacking", isAttacking);
 		coopActor->GetGraphVariableBool("IsBashing", isBashing);
 		coopActor->GetGraphVariableBool("IsBlocking", isBlocking);

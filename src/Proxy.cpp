@@ -90,6 +90,14 @@ namespace ALYSLC
 			GlobalCoopData::ImportUnlockedPerks(p1);
 		}
 
+		auto ui = RE::UI::GetSingleton();
+		if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
+		{
+			// Open the ALYSLC overlay if it isn't open already.
+			SPDLOG_DEBUG("[Proxy] InitializeGlobalData: ALYSLC overlay not open. Opening.");
+			DebugOverlayMenu::Load();
+		}
+
 		return firstTimeInit;
 	}
 
@@ -199,6 +207,26 @@ namespace ALYSLC
 					std::find(a_controllerIDs.begin(), a_controllerIDs.end(), i) - 
 					a_controllerIDs.begin()
 				);
+				if (!a_coopActors[coopActorIndex])
+				{
+					RE::DebugMessageBox
+					(
+						"[ALYSLC] ERROR: "
+						"Previously active character(s) were likely not fully dismissed yet "
+						"and a chosen character is not available.\n"
+						"Please wait a little before resummoning, but if the issue persists, "
+						"send the mod author a complaint about the absolute state of the mod."
+					);
+					SPDLOG_ERROR
+					(
+						"[Proxy] InitializeCoop: ERR: "
+						"[P{}] should be active at controller ID list index {}. "
+						"Aborting setup.",
+						i + 1, 
+						coopActorIndex
+					);
+					return false;
+				}
 
 				SPDLOG_DEBUG
 				(
@@ -224,7 +252,8 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
-							"[ALYSLC] ERROR: Failed to retrieve {}'s saved data.\n"
+							"[ALYSLC] ERROR: "
+							"Failed to retrieve {}'s saved data.\n"
 							"All saved player data has been fully reset prior to starting co-op.\n"
 							"Please re-customize and respec all characters.", 
 							a_coopActors[coopActorIndex] ? 
@@ -243,7 +272,9 @@ namespace ALYSLC
 					(
 						"[Proxy] InitializeCoop: Updating coop player '{}' "
 						"with package start index {}.",
-						a_coopActors[coopActorIndex]->GetName(), 
+						a_coopActors[coopActorIndex] ?
+						a_coopActors[coopActorIndex]->GetName() : 
+						"NONE", 
 						a_packageFormListIndicesList[coopActorIndex]
 					);
 
@@ -262,7 +293,9 @@ namespace ALYSLC
 					(
 						"[Proxy] InitializeCoop: Constructing new coop player '{}' "
 						"with package start index {}.", 
-						a_coopActors[coopActorIndex]->GetName(), 
+						a_coopActors[coopActorIndex] ?
+						a_coopActors[coopActorIndex]->GetName() : 
+						"NONE", 
 						a_packageFormListIndicesList[coopActorIndex]
 					);
 
@@ -1150,21 +1183,36 @@ namespace ALYSLC
 		{
 			return;
 		}
-
-		for (auto& coopPlayer : glob.coopPlayers)
+		
+		// Dismiss P1 last, as the P1 ref alias script performs the final cleanup measures 
+		// for the co-op session.
+		for (const auto& p : glob.coopPlayers)
 		{
-			if (!coopPlayer->isActive)
+			if (!p->isActive || p->isPlayer1)
 			{
 				continue;
 			}
 
 			if (a_shouldDismiss)
 			{
-				coopPlayer->DismissPlayer();
+				p->DismissPlayer();
 			}
 			else
 			{
-				coopPlayer->RequestStateChange(ManagerState::kAwaitingRefresh);
+				p->RequestStateChange(ManagerState::kAwaitingRefresh);
+			}
+		}
+		
+		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		if (coopP1 && coopP1->isActive) 
+		{
+			if (a_shouldDismiss)
+			{
+				coopP1->DismissPlayer();
+			}
+			else
+			{
+				coopP1->RequestStateChange(ManagerState::kAwaitingRefresh);
 			}
 		}
 
@@ -1251,6 +1299,19 @@ namespace ALYSLC
 			glob.mim->SetOpenedMenu(GlobalCoopData::SETUP_MENU_NAME, a_shouldEnter);
 			if (a_shouldEnter)
 			{
+				// Reset PMC overlay.
+				glob.mim->ResetPlayerMenuControlOverlay();
+				auto ui = RE::UI::GetSingleton();
+				if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
+				{
+					// Open the ALYSLC overlay if it isn't open already.
+					SPDLOG_DEBUG
+					(
+						"[Proxy] ToggleSetupMenuControl: ALYSLC overlay not open. Opening."
+					);
+					DebugOverlayMenu::Load();
+				}
+
 				// Set menu CID directly to the requesting player's.
 				GlobalCoopData::SetMenuCIDs(a_controllerID);
 				// Signal MIM to start running.

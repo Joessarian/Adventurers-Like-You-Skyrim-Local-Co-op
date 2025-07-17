@@ -545,6 +545,99 @@ namespace ALYSLC
 			1.0f, 1.0f, 1.0f, 1.0f 
 		};
 
+
+		// TODO:
+		// Potentially add per-skill multipliers for better fine-tuning (not implemented yet).
+		static inline std::vector<float> vfAlchemySkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfAlterationSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfArcherySkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfBlockSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfConjurationSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfDestructionSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfEnchantingSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+		
+		static inline std::vector<float> vfHeavyArmorSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfIllusionSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfLightArmorSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfLockpickingSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfOneHandedSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfPickpocketSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfRestorationSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfSmithingSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfSneakSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfSpeechSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
+		static inline std::vector<float> vfTwoHandedSkillXPMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f 
+		};
+
 		//------------
 		//[Targeting]:
 		//------------
