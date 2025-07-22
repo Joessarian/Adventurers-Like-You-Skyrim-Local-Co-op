@@ -54,14 +54,14 @@ namespace Raycast
 			hit.hitRefr = hit.hitObject->userData;
 		}
 		else
-		{
-			const auto collisionObj = static_cast<const RE::hkpCollidable*>(hit.body);
-			hit.hitRefr = RE::TESHavokUtilities::FindCollidableRef(*collisionObj);
+		{			
+			const auto asCollidable = static_cast<const RE::hkpCollidable*>(hit.body);
+			hit.hitRefr = RE::TESHavokUtilities::FindCollidableRef(*asCollidable);
 			if (!hit.hitRefr)
 			{
 				if (!hit.hitObject)
 				{
-					hit.hitObject = RE::TESHavokUtilities::FindCollidableObject(*collisionObj);
+					hit.hitObject = RE::TESHavokUtilities::FindCollidableObject(*asCollidable);
 				}
 
 				if (hit.hitObject)
@@ -193,7 +193,7 @@ namespace Raycast
 				}
 			}
 
-			if (!objectFilters.empty() && hit.hitObject)
+			if (hit.hitObject && !objectFilters.empty())
 			{
 				for (const auto filteredObjPtr : objectFilters)
 				{

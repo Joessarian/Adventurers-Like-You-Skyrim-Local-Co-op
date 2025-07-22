@@ -1046,6 +1046,8 @@ namespace ALYSLC
 		bool requestedToParaglide;
 		// Are all queued P1 input events that toggle animation driven to false being sent?
 		bool sendingP1MotionDrivenEvents;
+		// Was hand spellcasting cancelled via the sheathing weapons/magic?
+		bool spellcastingCancelled;
 		// Has the player started cycling through nearby objects for activation?
 		bool startedActivationCycling;
 		// Does the player want to drawn their weapons/magic?

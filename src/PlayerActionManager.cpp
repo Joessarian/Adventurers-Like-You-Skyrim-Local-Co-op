@@ -1469,6 +1469,7 @@ namespace ALYSLC
 		reqMeleeSpellcastKillmove = false;
 		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
+		spellcastingCancelled = false;
 		startedActivationCycling = false;
 		weapMagReadied = false;
 		// Ints.
@@ -5205,6 +5206,7 @@ namespace ALYSLC
 		
 		if (isCastingDual || isCastingLH || isCastingRH || isInCastingAnim)
 		{
+			spellcastingCancelled = true;
 			StopCastingHandSpells();
 			return;
 		}
@@ -6065,6 +6067,10 @@ namespace ALYSLC
 			// No self-conflict or infighting allowed, I guess.
 			if (GlobalCoopData::IsCoopPlayer(actor)) 
 			{
+				// Prevents aggroed ally actors from treating the player as a hostile actor
+				// even after ending combat with them.
+				actor->StopCombat();
+				actor->StopAlarmOnActor();
 				continue;
 			}
 
@@ -6092,13 +6098,25 @@ namespace ALYSLC
 			// Lacking a crime faction seems to be the best general indicator
 			// that an actor is hostile by default, 
 			// since performing crimes near them does not trigger a bounty.
-			bool hasNoBountyAndCrimeFaction = Util::HasNoBountyButInCrimeFaction(actor);
+			bool hasNoBountyButInCrimeFaction = Util::HasNoBountyButInCrimeFaction(actor);
 			bool hasBountyAndCrimeFaction = Util::HasBountyOnPlayer(actor);
 			bool isFriendly = Util::IsPartyFriendlyActor(actor);
 			bool isFleeing = Util::IsFleeing(actor);
 			bool isMount = actor->IsAMount();
-			if (hasNoBountyAndCrimeFaction || isFriendly || isFleeing || isMount)
+			if (hasNoBountyButInCrimeFaction || isFriendly || isFleeing || isMount)
 			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] StopCombatWithFriendlyActors: Stop combat between {} and {}. "
+					"Has no bounty and crime faction: {}, is friendly: {}, "
+					"is fleeing: {}, is mount: {}.",
+					coopActor->GetName(), 
+					actor->GetName(),
+					hasNoBountyButInCrimeFaction, 
+					isFriendly,
+					isFleeing,
+					isMount
+				);
 				// Have to still stop combat here after removing the alarm to prevent combat 
 				// from starting right back up again.
 				actor->NotifyAnimationGraph("attackStop");

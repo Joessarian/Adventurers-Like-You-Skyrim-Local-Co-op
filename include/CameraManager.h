@@ -225,7 +225,6 @@ namespace ALYSLC
 	struct ObjectFadeData
 	{
 		ObjectFadeData() :
-			objectPtr(RE::NiPointer<RE::NiAVObject>()),
 			fadeStateChangeTP(SteadyClock::now()),
 			shouldFadeOut(false),
 			currentFadeAmount(1.0f),
@@ -238,12 +237,11 @@ namespace ALYSLC
 
 		ObjectFadeData
 		(
-			RE::NiAVObject* a_object, 
+			const RE::NiPointer<RE::NiAVObject>& a_objectPtr, 
 			int32_t a_fadeIndex, 
 			float a_hitToCamDist,
 			bool a_shouldFadeOut
 		) :
-			objectPtr(a_object),
 			fadeStateChangeTP(SteadyClock::now()),
 			shouldFadeOut(a_shouldFadeOut),
 			currentFadeAmount(1.0f),
@@ -254,11 +252,10 @@ namespace ALYSLC
 			fadeIndex(a_fadeIndex)
 		{ 
 			// Begin fading in/out on construction.
-			SignalFadeStateChange(a_shouldFadeOut, fadeIndex);
+			SignalFadeStateChange(a_objectPtr, a_shouldFadeOut, fadeIndex);
 		}
 
 		ObjectFadeData(const ObjectFadeData& a_other) :
-			objectPtr(a_other.objectPtr),
 			fadeStateChangeTP(a_other.fadeStateChangeTP),
 			shouldFadeOut(a_other.shouldFadeOut),
 			currentFadeAmount(a_other.currentFadeAmount),
@@ -270,7 +267,6 @@ namespace ALYSLC
 		{ }
 
 		ObjectFadeData(ObjectFadeData&& a_other) :
-			objectPtr(std::move(a_other.objectPtr)),
 			fadeStateChangeTP(std::move(a_other.fadeStateChangeTP)),
 			shouldFadeOut(std::move(a_other.shouldFadeOut)),
 			currentFadeAmount(std::move(a_other.currentFadeAmount)),
@@ -283,7 +279,6 @@ namespace ALYSLC
 
 		ObjectFadeData& operator=(const ObjectFadeData& a_other)
 		{
-			objectPtr = a_other.objectPtr;
 			fadeStateChangeTP = a_other.fadeStateChangeTP;
 			shouldFadeOut = a_other.shouldFadeOut;
 			currentFadeAmount = a_other.currentFadeAmount;
@@ -298,7 +293,6 @@ namespace ALYSLC
 
 		ObjectFadeData& operator=(ObjectFadeData&& a_other)
 		{
-			objectPtr = std::move(a_other.objectPtr);
 			fadeStateChangeTP = std::move(a_other.fadeStateChangeTP);
 			shouldFadeOut = std::move(a_other.shouldFadeOut);
 			currentFadeAmount = std::move(a_other.currentFadeAmount);
@@ -312,8 +306,22 @@ namespace ALYSLC
 		}
 
 		// Reset fade to 1.0 right away if the object is still valid.
-		inline void InstantlyResetFade()
+		inline void InstantlyResetFade(const RE::NiPointer<RE::NiAVObject>& a_objectPtr)
 		{
+			if (a_objectPtr && a_objectPtr->GetRefCount() > 0)
+			{
+				auto fadeNode = a_objectPtr->AsFadeNode(); 
+				if (fadeNode && fadeNode->currentFade != 1.0f)
+				{
+					fadeNode->currentFade = 1.0f;
+				}
+
+				if (a_objectPtr->fadeAmount != 1.0f)
+				{
+					a_objectPtr->fadeAmount = 1.0f;
+				}
+			}
+
 			shouldFadeOut = false;
 			fadeStateChangeTP = SteadyClock::now();
 			currentFadeAmount = 
@@ -321,15 +329,6 @@ namespace ALYSLC
 			interpIntervalProportion = 
 			targetFadeAmount = 1.0f;
 			fadeIndex = -1;
-			if (objectPtr && objectPtr->GetRefCount() > 0)
-			{
-				if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
-				{
-					fadeNode->currentFade = 1.0;
-				}
-
-				objectPtr->fadeAmount = 1.0f;
-			}
 		}
 
 		// Start fading the object out/in. 
@@ -337,76 +336,80 @@ namespace ALYSLC
 		// (increases as the index does, meaning the object is further from the camera).
 		inline void SignalFadeStateChange
 		(
-			const bool& a_shouldFadeOut, const int32_t& a_objectFadeIndex
+			const RE::NiPointer<RE::NiAVObject>& a_objectPtr, 
+			const bool& a_shouldFadeOut, 
+			const int32_t& a_objectFadeIndex
 		) 
 		{
-			if (objectPtr && objectPtr->GetRefCount() > 0)
+			if (!a_objectPtr || a_objectPtr->GetRefCount() == 0)
 			{
-				shouldFadeOut = a_shouldFadeOut;
-				fadeStateChangeTP = SteadyClock::now();
-				fadeAmountAtStateChange = objectPtr->fadeAmount;
-				if (fadeIndex < a_objectFadeIndex) 
-				{
-					fadeIndex = a_objectFadeIndex;
-				}
+				return;
+			}
 
-				float lowerBoundFadeAmount = max(0.2f, 0.75f / pow(1.2f, fadeIndex));
-				// Fade for larger objects such as trees and interior structures.
-				if (Settings::bFadeLargerObstructions)
+			shouldFadeOut = a_shouldFadeOut;
+			fadeStateChangeTP = SteadyClock::now();
+			fadeAmountAtStateChange = a_objectPtr->fadeAmount;
+			if (a_objectFadeIndex > fadeIndex) 
+			{
+				fadeIndex = a_objectFadeIndex;
+			}
+
+			float lowerBoundFadeAmount = max(0.2f, 0.75f / pow(1.2f, fadeIndex));
+			// Fade for larger objects such as trees and interior structures.
+			if (Settings::bFadeLargerObstructions)
+			{
+				if (auto fadeNode = a_objectPtr->AsFadeNode(); fadeNode)
 				{
-					if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
+					// The NiAVObject's fade ranges from 0 to 1 for trees to make sure that
+					// the low definition model fades along with the full definition one.
+					// When fading in/out, we want to be as far from the fade endpoints 
+					// as possible so that we don't effectively set the fade value 
+					// directly to an endpoint value.
+					// So we use the last set fade value or the current reported fade amount,
+					// whichever is farther away from the endpoint.
+					if (a_shouldFadeOut)
 					{
-						// The NiAVObject's fade ranges from 0 to 1 for trees to make sure that
-						// the low definition model fades along with the full definition one.
-						// When fading in/out, we want to be as far from the fade endpoints 
-						// as possible so that we don't effectively set the fade value 
-						// directly to an endpoint value.
-						// So we use the last set fade value or the current reported fade amount,
-						// whichever is farther away from the endpoint.
-						if (a_shouldFadeOut)
-						{
-							fadeAmountAtStateChange = max
-							(
-								currentFadeAmount, objectPtr->fadeAmount
-							);
-						}
-						else
-						{
-							fadeAmountAtStateChange = min
-							(
-								currentFadeAmount, objectPtr->fadeAmount
-							);
-						}
+						fadeAmountAtStateChange = max
+						(
+							currentFadeAmount, a_objectPtr->fadeAmount
+						);
+					}
+					else
+					{
+						fadeAmountAtStateChange = min
+						(
+							currentFadeAmount, a_objectPtr->fadeAmount
+						);
+					}
 
-						if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
-						{
-							// Leaves and branches shimmer when not faded out fully.
-							lowerBoundFadeAmount = 0.0f;
-						}
-						else
-						{
-							lowerBoundFadeAmount = max(0.4, 0.75f / pow(1.15f, fadeIndex));
-						}
+					if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
+					{
+						// Leaves and branches shimmer when not faded out fully.
+						lowerBoundFadeAmount = 0.0f;
+					}
+					else
+					{
+						lowerBoundFadeAmount = max(0.4, 0.75f / pow(1.15f, fadeIndex));
 					}
 				}
-
-				if (a_shouldFadeOut) 
-				{
-					targetFadeAmount = lowerBoundFadeAmount;
-				}
-				else
-				{
-					targetFadeAmount = 1.0f;
-				}
-
-				interpIntervalProportion = std::clamp
-				(
-					fabsf(targetFadeAmount - fadeAmountAtStateChange) / 
-					(1.0f - lowerBoundFadeAmount), 
-					0.0f, 
-					1.0f
-				);
 			}
+
+			if (a_shouldFadeOut) 
+			{
+				targetFadeAmount = lowerBoundFadeAmount;
+			}
+			else
+			{
+				targetFadeAmount = 1.0f;
+			}
+
+			interpIntervalProportion = std::clamp
+			(
+				fabsf(targetFadeAmount - fadeAmountAtStateChange) / 
+				(1.0f - lowerBoundFadeAmount), 
+				0.0f, 
+				1.0f
+			);
 		}
 
 		// Returns true if the object's fade level was updated successfully 
@@ -416,114 +419,130 @@ namespace ALYSLC
 		// Fade index indicates the object's distance from the camera;
 		// higher indices mean the object is further from the camera
 		// when the fade raycast(s) were performed.
-		inline bool UpdateFade() 
+		inline bool UpdateFade(const RE::NiPointer<RE::NiAVObject>& a_objectPtr) 
 		{
-			if (objectPtr && objectPtr->GetRefCount() > 0)
+			if (!a_objectPtr || a_objectPtr->GetRefCount() == 0)
 			{
-				float secsSinceStateChange = Util::GetElapsedSeconds(fadeStateChangeTP);
-				float newFadeAmount = targetFadeAmount;
-				float tRatio = std::clamp
+				return false;
+			}
+
+			float secsSinceStateChange = Util::GetElapsedSeconds(fadeStateChangeTP);
+			float newFadeAmount = std::ceilf(targetFadeAmount * 100.0f) / 100.0f;
+			float tRatio = std::clamp
+			(
+				secsSinceStateChange / 
+				(interpIntervalProportion * Settings::fSecsObjectFadeInterval), 
+				0.0f, 
+				1.0f
+			);
+			if (interpIntervalProportion != 0.0f) 
+			{
+				newFadeAmount = std::ceilf
 				(
-					secsSinceStateChange / 
-					(interpIntervalProportion * Settings::fSecsObjectFadeInterval), 
-					0.0f, 
-					1.0f
-				);
-				if (interpIntervalProportion != 0.0f) 
-				{
-					newFadeAmount = Util::InterpolateSmootherStep
+					Util::InterpolateSmootherStep
 					(
 						fadeAmountAtStateChange, targetFadeAmount, tRatio
-					);
-				}
+					) * 100.0f
+				) / 100.0f;
+			}
 
-				currentFadeAmount = objectPtr->fadeAmount = newFadeAmount;
-				auto p1 = RE::PlayerCharacter::GetSingleton();
-				bool isInteriorCell = p1 && p1->parentCell && !p1->parentCell->IsExteriorCell();
-				if (shouldFadeOut)
+			currentFadeAmount = a_objectPtr->fadeAmount = newFadeAmount;
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			bool isInteriorCell = p1 && p1->parentCell && !p1->parentCell->IsExteriorCell();
+			if (shouldFadeOut)
+			{
+				// Fade for larger objects such as trees and buildings.
+				if (Settings::bFadeLargerObstructions)
 				{
-					// Fade for larger objects such as trees and buildings.
-					if (Settings::bFadeLargerObstructions)
+					if (auto fadeNode = a_objectPtr->AsFadeNode(); fadeNode)
 					{
-						if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
+						// For now:
+						// Decided having an ugly low detail model appear 
+						// and properly fade without shadow flickering was better than
+						// having flickering shadows and smoother fading 
+						// of the high detail model with the low detail model
+						// still fading in/out to a lesser degree.
+						if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
 						{
-							// For now:
-							// Decided having an ugly low detail model appear 
-							// and properly fade without shadow flickering was better than
-							// having flickering shadows and smoother fading 
-							// of the high detail model with the low detail model
-							// still fading in/out to a lesser degree.
-							if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
-							{
-								// Fade node's current fade controls shadow fade, 
-								// and the low detail model fades in/out as the high detail model 
-								// fades out/in once below half alpha,
-								// which is why we start reversing the fade direction 
-								// for the low detail model at this point.
-								currentFadeAmount = objectPtr->fadeAmount = newFadeAmount;
-								fadeNode->currentFade = 
-								(
-									newFadeAmount >= 0.5f ? 
-									newFadeAmount : 
-									1.0f - newFadeAmount
-								);
-							}
-							else
-							{
-								currentFadeAmount = 
-								fadeNode->currentFade =
-								objectPtr->fadeAmount = 
-								newFadeAmount;
-							}
+							// Fade node's current fade controls shadow fade, 
+							// and the low detail model fades in/out as the high detail model 
+							// fades out/in once below half alpha,
+							// which is why we start reversing the fade direction 
+							// for the low detail model at this point.
+							currentFadeAmount = a_objectPtr->fadeAmount = newFadeAmount;
+							fadeNode->currentFade = 
+							(
+								newFadeAmount >= 0.5f ? 
+								newFadeAmount : 
+								1.0f - newFadeAmount
+							);
+						}
+						else
+						{
+							currentFadeAmount = 
+							fadeNode->currentFade =
+							a_objectPtr->fadeAmount = 
+							newFadeAmount;
 						}
 					}
-				}
-				else
-				{
-					// Fade for larger objects such as trees and buildings.
-					if (Settings::bFadeLargerObstructions)
-					{
-						if (auto fadeNode = objectPtr->AsFadeNode(); fadeNode)
-						{
-							if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
-							{
-								// Same logic as when fading out.
-								objectPtr->fadeAmount = newFadeAmount;
-								fadeNode->currentFade = 
-								(
-									newFadeAmount >= 0.5f ? 
-									newFadeAmount : 
-									1.0f - newFadeAmount
-								);
-							}
-							else
-							{
-								fadeNode->currentFade = objectPtr->fadeAmount = newFadeAmount;
-							}
-						}
-					}
-				}
-
-				// Completely faded in. Can remove from handled list/set.
-				if (tRatio == 1.0f && !shouldFadeOut) 
-				{
-					// Clear faded flag.
-					return false;
-				}
-				else
-				{
-					// Set pad to indicate that the object is being faded in/out.
-					return true;
 				}
 			}
 			else
 			{
+				// Fade for larger objects such as trees and buildings.
+				if (Settings::bFadeLargerObstructions)
+				{
+					if (auto fadeNode = a_objectPtr->AsFadeNode(); fadeNode)
+					{
+						if (fadeNode->AsTreeNode() || fadeNode->AsLeafAnimNode())
+						{
+							// Same logic as when fading out.
+							a_objectPtr->fadeAmount = newFadeAmount;
+							fadeNode->currentFade = 
+							(
+								newFadeAmount >= 0.5f ? 
+								newFadeAmount : 
+								1.0f - newFadeAmount
+							);
+						}
+						else
+						{
+							fadeNode->currentFade = a_objectPtr->fadeAmount = newFadeAmount;
+						}
+					}
+				}
+			}
+
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG
+			(
+				"[CAM] UpdateFade: {} ({}, 0x{:X}): {}: {}, index {}. "
+				"Secs since fade change: {} / {}, interp interval prop: {}, "
+				"target fade amount: {}",
+				a_objectPtr->name, 
+				a_objectPtr->userData ? a_objectPtr->userData->GetName() : "NONE",
+				a_objectPtr->userData ? a_objectPtr->userData->formID : 0xDEAD,
+				shouldFadeOut ? "[Fade out]" : "[Fade in]", 
+				newFadeAmount,
+				fadeIndex,
+				secsSinceStateChange,
+				Settings::fSecsObjectFadeInterval,
+				interpIntervalProportion,
+				targetFadeAmount
+			);*/
+
+			// Completely faded in. Can remove from handled list/set.
+			if (tRatio == 1.0f && !shouldFadeOut) 
+			{
+				// Clear faded flag.
 				return false;
+			}
+			else
+			{
+				return true;
 			}
 		}
 
-		// Object which should have its fade level modified.
-		RE::NiPointer<RE::NiAVObject> objectPtr;
 		// Time point at which the fade direction last changed.
 		SteadyClock::time_point fadeStateChangeTP;
 		// True if the object should fade out, false if the object should fade in.
@@ -540,7 +559,7 @@ namespace ALYSLC
 		float targetFadeAmount;
 		// Raycast collision result index used to taper off the object's fade amount. 
 		// Larger indices mean that the object is further away from the camera.
-		uint32_t fadeIndex;
+		int32_t fadeIndex;
 	};
 
 	class CameraManager : public Manager
@@ -947,8 +966,9 @@ namespace ALYSLC
 		// Valid actor pointer: set to actor,
 		// Nullopt: no request.
 		std::optional<RE::ActorHandle> lockOnActorReq;
-		// Fade data for objects to fade between cam and players.
-		std::set<std::unique_ptr<ObjectFadeData>> obstructionFadeDataSet;
+		// Maps handled faded objects to their fade data.
+		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::unique_ptr<ObjectFadeData>> 
+		obstructionFadeDataMap;
 		// Linear interpolation data set for oscillating the lock on indicator.
 		std::unique_ptr<InterpolationData<float>> lockOnIndicatorOscillationInterpData;
 		// Linear interpolation data set for the party's aggregate movement pitch.
@@ -956,8 +976,6 @@ namespace ALYSLC
 		// Linear interpolation data set 
 		// for the party's aggregate movement yaw relative to the camera.
 		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
-		// Set of handled faded objects and their current fade indices.
-		std::unordered_map<RE::NiPointer<RE::NiAVObject>, int32_t> obstructionsToFadeIndicesMap;
 		// Interpolated multiplier for auto-rotation angles.
 		std::unique_ptr<TwoWayInterpData> movementAngleMultInterpData;
 		// List of all map marker refrs in the current cell.

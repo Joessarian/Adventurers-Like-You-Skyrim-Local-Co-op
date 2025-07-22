@@ -3993,6 +3993,12 @@ namespace ALYSLC
 						midHigh->deferredKillTimer = FLT_MAX;
 					}
 				}
+
+				// [TEMP WORKAROUND 1]:
+				// Temporary solution to players becoming "hostile" towards one another.
+				// Remove targeted players from this player's combat group.
+				a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+				Util::RemovePlayerCombatTargets(a_this);
 				
 				// Already performed the player update, so return.
 				return;
@@ -4070,36 +4076,7 @@ namespace ALYSLC
 					if (Util::IsPartyFriendlyActor(a_this))
 					{
 						a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
-						if (auto combatGroup = a_this->GetCombatGroup(); combatGroup)
-						{
-							combatGroup->lock.LockForWrite();
-							
-							// Stop attacking and combat.
-							for (auto iter = combatGroup->targets.begin();
-								iter >= combatGroup->targets.begin() &&
-								iter < combatGroup->targets.end();
-								++iter)
-							{
-								// Already a target, so we can exit.
-								auto pIndex = GlobalCoopData::GetCoopPlayerIndex
-								(
-									iter->targetHandle
-								);
-								if (pIndex != -1 &&
-									!Settings::vbFriendlyFire[glob.coopPlayers[pIndex]->playerID])
-								{
-									iter = combatGroup->targets.erase(iter);
-									if (iter > combatGroup->targets.begin())
-									{
-										--iter;
-									}
-
-									a_this->NotifyAnimationGraph("attackStop");
-								}
-							}
-
-							combatGroup->lock.UnlockForWrite();
-						}
+						Util::RemovePlayerCombatTargets(a_this);
 					}
 
 					// Let the game update this character first.
@@ -4908,13 +4885,32 @@ namespace ALYSLC
 			{
 				return false;
 			}
-
+			
 			auto idEvent = a_firstGamepadEvent->AsIDEvent();
 			auto buttonEvent = a_firstGamepadEvent->AsButtonEvent();
 			// Only handle button events with an ID.
 			if (!idEvent || !buttonEvent)
 			{
 				return false;
+			}
+
+			// Temp hacky workaround to override entry text changes without a hook:
+			// Update here since the previous changes are wiped shortly after opening the menu, 
+			// or when P1 has equipped something else.
+			// We have to re-apply those changes through the FavoritesMenu::ProcessEvent() hook.
+			// Send a menu update request to update the quick slot tags
+			// when P1 releases any input, since the equip state update occurs on press.
+			if (buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f)
+			{
+				if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
+				{
+					msgQ->AddMessage
+					(
+						RE::FavoritesMenu::MENU_NAME, 
+						RE::UI_MESSAGE_TYPE::kUpdate,
+						nullptr
+					);
+				}
 			}
 
 			// Only handle pause/journal bind presses.
@@ -6960,6 +6956,12 @@ namespace ALYSLC
 					midHigh->deferredKillTimer = FLT_MAX;
 				}
 			}
+
+			// [TEMP WORKAROUND 1]:
+			// Temporary solution to players becoming "hostile" towards one another.
+			// Remove targeted players from this player's combat group.
+			a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
+			Util::RemovePlayerCombatTargets(a_this);
 		}
 
 		void PlayerCharacterHooks::UseSkill
@@ -7398,15 +7400,20 @@ namespace ALYSLC
 								// while friendly fire is on.
 								bool collisionAllowed = 
 								(
-									(isHostile) ||
-									(isNeutralActor && isCrosshairTargeted) ||
 									(
-										(isPartyFriendlyActor) && 
+										!hitActor->IsGhost() && !hitActor->IsInvulnerable()
+									) &&
+									(
+										(isHostile) ||
+										(isNeutralActor && isCrosshairTargeted) ||
 										(
-											(isBeneficialProjectile) ||
+											(isPartyFriendlyActor) && 
 											(
-												isCrosshairTargeted &&
-												Settings::vbFriendlyFire[p->playerID]
+												(isBeneficialProjectile) ||
+												(
+													isCrosshairTargeted &&
+													Settings::vbFriendlyFire[p->playerID]
+												)
 											)
 										)
 									)
@@ -7559,28 +7566,13 @@ namespace ALYSLC
 					continue;
 				}
 				
-				Util::TriggerCombatAndDealDamage
+				Util::ApplyHit
 				(
 					actorStartCombatPair.first,
 					actorStartCombatPair.second,
 					0.0f,
 					true
-				);
-				SPDLOG_DEBUG
-				(
-					"[Projectile Hooks] OnProjectileCollision: Trigger combat between {} and {}. "
-					"Combat groups: 0x{:X}, 0x{:X}, are combat targets: {}, {}.",
-					actorStartCombatPair.first->GetName(),
-					actorStartCombatPair.second->GetName(),
-					actorStartCombatPair.first->GetCombatGroup() ? 
-					actorStartCombatPair.first->GetCombatGroup()->groupID :
-					0xDEAD,
-					actorStartCombatPair.second->GetCombatGroup() ? 
-					actorStartCombatPair.second->GetCombatGroup()->groupID :
-					0xDEAD,
-					actorStartCombatPair.first->IsCombatTarget(actorStartCombatPair.second),
-					actorStartCombatPair.second->IsCombatTarget(actorStartCombatPair.first)
-				);				
+				);			
 			}
 
 			// Now, let the game handle the projectile collision.
@@ -7704,7 +7696,7 @@ namespace ALYSLC
 					)
 				);
 			}
-
+			
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
 			if (pIndex != -1)
 			{
@@ -10229,7 +10221,7 @@ namespace ALYSLC
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
-
+			
 			// Only need to handle open/close messages.
 			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
 			bool closing = 
@@ -10248,7 +10240,12 @@ namespace ALYSLC
 				{
 					return _ProcessMessage(a_this, a_message);
 				}
-
+				
+				SPDLOG_DEBUG
+				(
+					"[FavoritesMenu Hooks] ProcessMessage. Update QS tags for CID {}.",
+					glob.menuCID
+				);
 				// Update quickslot tags for P1,
 				// since the game wipes the tag after hotkeying an item.
 				if (glob.menuCID == glob.player1CID) 
@@ -10287,9 +10284,9 @@ namespace ALYSLC
 								std::addressof(entryList), 
 								"_root.MenuHolder.Menu_mc.itemList.entryList"
 							);
-							RE::GFxValue entry;
-							RE::GFxValue entryIndex;
-							RE::GFxValue entryText;
+							RE::GFxValue entry{ };
+							RE::GFxValue entryIndex{ };
+							RE::GFxValue entryText{ };
 							std::string entryStr = "";
 							int32_t index = -1;
 							// Iterate through entries, find quick slotted spell/item
@@ -10331,19 +10328,9 @@ namespace ALYSLC
 										std::addressof(entry), 
 										1
 									);
-									SPDLOG_DEBUG
-									(
-										"[FavoritesMenu Hooks] ProcessMessage: "
-										"Refreshing quickslot tags for P1."
-									);
 								}
 							}
 							
-							SPDLOG_DEBUG
-							(
-								"[FavoritesMenu Hooks] ProcessMessage: "
-								"Updating favorites entries for P1."
-							);
 							// Update the favorites entry list.
 							view->InvokeNoReturn
 							(
@@ -10393,7 +10380,7 @@ namespace ALYSLC
 							(
 								"_root.MenuHolder.Menu_mc.itemList.entryList.length"
 							);
-							RE::GFxValue entryList;
+							RE::GFxValue entryList{ };
 							view->CreateArray(std::addressof(entryList));
 							view->GetVariable
 							(
@@ -10403,8 +10390,8 @@ namespace ALYSLC
 							// Iterate through and update all entries for the companion player.
 							for (uint32_t i = 0; i < numEntries; ++i)
 							{
-								RE::GFxValue entryIndex;
-								RE::GFxValue entry;
+								RE::GFxValue entryIndex{ };
+								RE::GFxValue entry{ };
 								view->GetVariableArray
 								(
 									"_root.MenuHolder.Menu_mc.itemList.entryList",
@@ -10425,7 +10412,7 @@ namespace ALYSLC
 								}
 
 								// Get the form ID of the entry.
-								RE::GFxValue entryFormId;
+								RE::GFxValue entryFormId{ };
 								entry.GetMember("formId", std::addressof(entryFormId));
 								uint32_t formID = 0;
 								// For SKYUI users (entries have member "formId").
@@ -10444,7 +10431,7 @@ namespace ALYSLC
 								// this player shares P1's favorites.
 								if (isVampireLord || p->em->favoritedFormIDs.contains(formID))
 								{
-									RE::GFxValue entryText;
+									RE::GFxValue entryText{ };
 									entry.GetMember("text", std::addressof(entryText));
 									std::string entryStr = entryText.GetString();
 
@@ -10497,7 +10484,7 @@ namespace ALYSLC
 									(
 										glob.mim->favEntryEquipStates[index]
 									);
-									RE::GFxValue equipState;
+									RE::GFxValue equipState{ };
 									equipState.SetNumber(static_cast<double>(equipStateNum));
 									entry.SetMember("equipState", equipState);
 

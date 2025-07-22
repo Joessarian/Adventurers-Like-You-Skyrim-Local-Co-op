@@ -1,16 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
@@ -24,7 +11,8 @@
 - ***Character customization options for companion players***. Includes options to change the player's name, gender, race, class, NPC preset appearance, weight, and height.
 - ***Crosshairs for each player*** to target and interact with objects and NPCs, complete with adjustable appearance, sensitivity, fade options, and more.
 - ***New expansive control scheme*** built with co-op in mind that features 70 different customizable binds, 4 assignable inputs or player actions per bind, and different trigger options (on press, on release, on press and release, on hold, and on consecutive tap). Enable/disable any bind or even assign recursive binds composed of other binds.
-- ***Any player can control menus***. Players can switch which player is in control of dialogue and have different inventories, favorited items, and hotkeys.
+- ***Any player can control menus***. All vanilla menus are supported and players can switch which player is in control of dialogue. Players can also freely trade items by switching tabs from a companion player's inventory or by using the Gift Menu bind.
+- ***Different inventories, favorited items, and hotkeys for each player.*** Quest items, books, notes, learned skillbooks, keys, gold, and lockpicks are shared and given to player 1 for ease of access, but all other items are lootable by companion players.
 - ***Independent skill leveling and perk selection***. While all players share the same character level, each player will level their skills separately using the same level-on-use system as the vanilla game. On character level-up, each player can increase their Health, Magicka, or Stamina, and select different perks.
 - ***Balancing/difficulty options*** featuring per-player damage dealt and received multipliers, per-player health/magicka/stamina regeneration and cost multipliers, per-player skill XP gain multipliers, a character level XP threshold multiplier for all players, and more.
 - ***Papyrus and SKSE APIs*** to facilitate mod compatibility efforts and allow for development of additional features in the future. More functions to come!
@@ -43,13 +31,13 @@
 - ***Quality of life features:***  
 	- Aim assist and projectile trajectory options per-player.
 	- Basic cheats for players who wish to use them.
-	- Crosshair stickiness options to allow for easier object selection.
+	- Crosshair sensitivity and stickiness options to allow for easier object selection.
 	- Customizable player movement and rotation speeds.
 	- Debug menu and dedicated debug binds to resolve issues on-the-fly.
 	- Equip favorited items/spells via cycling or through radial selection of hotkeyed items with the right stick.
 	- Exchange items between player 1 and companion players.
 	- Friendly fire toggleable per-player.
-	- Loot all grabbed items or all items from a targeted container or corpse.
+	- Loot all grabbed items, all items from a targeted container or corpse, or all nearby loose items or items in containers.
 	- Menu border overlay color-coded to show which player is in control of open menus.
 	- Special action bind with a varying effect based on what weapons/magic the player has equipped.
 	- Teleport to other players.
@@ -312,13 +300,23 @@ Certain systems were built to work around player 1 exclusivity or around restric
 	
 #### The following systems are not fully implemented or have some issues:
 - Crosshair magnetism:
-	- Certain objects' apparent widths/heights on the screen may not match the game's reported bounding box dimensions in some cases.
+	- Certain objects' apparent widths/heights on the screen may not match the game's reported bounding box dimensions.
 	- The in-place rudimentary bounding box approximation leads to situations where the object's true width/height is much lower or higher than its corresponding calculated dimension, and moving the crosshair across the object is a lot faster or slower than it should be.
 	- Will look to cover edge cases eventually, such as oddly shaped activators or objects rotated significantly with respect to their default orientation.
 - Crosshair selection:
-	- Certain objects are targetable with player crosshairs even though they probably shouldn't be.
-	- While the co-op camera is active, the game's line of sight check originates from the camera position, which can move into unreachable areas if camera collisions are off, and thus, on its own, can result in activation attempts of objects that should not be targetable.
-	- Example: Items inside a locked cage within reach distance.
+	- Certain objects are not targetable with the player crosshairs and will require player 1 to switch back to the default camera and select the object.
+		- Examples include tankards and some plates, or any small objects within the collision box of a larger object.
+	- Certain objects are targetable with player crosshairs even though they probably shouldn't be. While the co-op camera is active, the game's line of sight check originates from the camera position, which can move into unreachable areas if camera collisions are off, and thus, on its own, can result in activation attempts of objects that should not be targetable.
+		- Example: Items within reach distance but also visually blocked from access by a wall or another obstacle.
+- Player Progression:
+	- Some disparity in XP triggers between player 1 and other players.
+	- Player 1's progression system remains untouched.
+	- Companion players gain XP for a school of magic by expending magicka (even when magicka cost is adjusted or removed), healing an ally or themselves with Restoration magic, or by doing damage with Destruction magic. XP gain scales off the base magicka cost for spells, which is **not** the displayed cost in the Magic Menu.
+	- No additional XP gain for spells that have unique conditions in the vanilla game. Some examples (on the long term to-do list):
+		- Magelight awarding XP based on the distance the projectile travels before collision.
+		- Receiving XP when summons deal damage in combat.
+		- Detect Life scaling its granted XP based on the number of detected targets.
+	- Otherwise, XP gain should be nearly identical for player 1 and other players. Let me know if there are other discrepancies or special cases.
 - Projectile trajectory adjustments:
     - Predictive projectiles are not accurate when targeting fast-moving targets, such as dragons, because angular momentum is not taken into account as of now and NPC targets accelerate erratically. Consider switching to homing projectiles instead.
     - Certain enemies are difficult to hit, such as mudcrabs, because ~~they are the strongest beings in Tamriel~~ some of their model's targetable nodes protrude from their collision capsule and do not collide with projectiles.
@@ -331,7 +329,6 @@ Certain systems were built to work around player 1 exclusivity or around restric
     - Enchantment charging not implemented.
 - Torso and arm node adjustments:
     - Motion can spazz out at times.
-    - Nodes will sometimes snap back to their default orientations when the player resets their aim.
     - Node positions do not match their associated collision capsules when spinal rotation is modified, which can lead to inaccurate collisions. Looking into a fix on my end.
     - Attacking a target when looking straight up or down leads to some pretty odd looking animations at times.
     - Archery aim direction may not perfectly match the release direction of arrows/bolts.
@@ -365,7 +362,7 @@ Certain systems were built to work around player 1 exclusivity or around restric
 #### Important General Compatibility Note
 Mods which ***exclusively apply their changes to player 1 will NOT be fully compatible*** with this mod, since their changes will not apply to other summoned companion players.
 Examples of such mods include:
-- Mods that add new spells with attached scripts that check if the effect target is player 1 before applying the effect.
+- Mods that add new spells with attached scripts that check if the effect source or target is player 1 before applying the effect.
 - Mods that provide player 1-exclusive animations.
 - Mods that change the death system for player 1.
 - Mods that add new keybinds.
@@ -381,17 +378,17 @@ Degrees of incompatibility:
 3. `HEAVY`: Game will not run or a significant amount of ALYSLC's functionality becomes broken when it is installed.
 
 - `[SE/AE] MEDIUM`: [Better Third Person Selection - BTPS](https://www.nexusmods.com/skyrimspecialedition/mods/64339)
-   - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently targeted object properly and other issues can arise. 
+   - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently-targeted object properly and other issues can arise. 
 - `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
 - `[SE/AE] MEDIUM`: [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
 	- Can set player 1's name to the name of a previous player 1 character when reloading a save. Source of the bug is likely some incompatibility with how ALYSLC stores player names. Fix TBD and you may not encounter this bug, but if it does occur, disabling Proteus for now should resolve the issue.
 	- If editing a companion player's appearance, make sure to set their race through ALYSLC's Summoning Menu first before further modifying the player's appearance with Proteus's NPC editor options.
-- `[SE/AE] HEAVY`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
+- `[SE/AE] MEDIUM`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
    - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
 ## [Developer's Note]
-I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've clocked in over 10k hours and ***have decided to take a break from active development, primarily due to health issues***. So for the time being, I hope that the ample amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are definitely a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
+I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've clocked in over 10k hours and ***have decided to take a break from active development, primarily due to health issues***. So for the time being, I hope that the ample (excessive) amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are definitely a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
 
 And with that being said, I really hope you enjoy the mod and thanks for reading!
 
@@ -471,6 +468,6 @@ See the mod's source for more detailed credits.
 -  A ton of users on the Skyrim RE Discord: ***po3, meh321, Nukem, aers, KernalsEgg, CharmedBaryon, Loki, Parapets, fireundubh, Fenix31415, Ultra, Qudix, NoahBoddie, dTry, Shrimperator, Bingle, Atom, alandtse, MaxSu2019, Sylennus, and many more***.
    -   Thank you for helping a programming and C++ greenhorn get their bearings with CommonLibSSE.
 - **Everyone who open-sources their SKSE plugin code on GitHub.**  
-	- Thank you for lighting the way for all newbie plugin developers, such as myself, who wouldn't have been able to even code a single line without having such references to learn from.
+	- Thank you for providing a torch to light the way for all newbie plugin developers!
 ## [License]
 [GPL V3](https://github.com/Joessarian/Adventurers-Like-You-Skyrim-Local-Co-op/blob/main/LICENSE)

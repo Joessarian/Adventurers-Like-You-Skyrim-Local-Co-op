@@ -1915,15 +1915,9 @@ namespace ALYSLC
 		// preferably partially, especially for those objects without a fade node,
 		// would be the best solution here instead of fully fading each obstruction.
 		
-		// NOTE:
-		// Even if the fade setting is not active, 
-		// compile a set of obstructingn objects between the camera and each player
-		// for crosshair selection purposes.
-
 		// Maps objects to a triplet (fade index, hit distance from camera).
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::pair<int32_t, float>> 
 		obstructions;
-
 		// Check raycast hits from the camera to each player.
 		for (const auto& p : glob.coopPlayers)
 		{
@@ -2037,19 +2031,14 @@ namespace ALYSLC
 		// when constructed as NiPointers.
 		// And the naked NiAVObject ptrs in the handled set are kept valid while they are inserted
 		// into the fade data list, which also wraps them in NiPointers.
-
-		// Reset fade, and clear and re-add all obstructions if fading is disabled.
-		// Do not want to continue accumulating obstructions from frame to frame.
+		
+		// NOTE:
+		// Even if the fade setting is not active, 
+		// compile a set of obstructingn objects between the camera and each player
+		// for crosshair selection purposes.
 		if (!Settings::bFadeObstructions)
 		{
 			ResetFadeAndClearObstructions();
-		}
-		else
-		{
-			// Clear out obstructions-to-indices map and reconstruct if fading obstructions.
-			// Do not want lingering 3D objects to map to fade indices
-			// even though they are no longer considered as obstructions.
-			obstructionsToFadeIndicesMap.clear();
 		}
 
 		// Add new obstructions or update fade indices if already added.
@@ -2060,29 +2049,30 @@ namespace ALYSLC
 				continue;
 			}
 
-			if (obstructionsToFadeIndicesMap.empty() || 
-				!obstructionsToFadeIndicesMap.contains(object3DPtr))
+			const auto iter = obstructionFadeDataMap.find(object3DPtr);
+			if (iter == obstructionFadeDataMap.end())
 			{
 				// Insert new obstruction to fade.
-				obstructionFadeDataSet.insert
+				obstructionFadeDataMap.insert_or_assign
 				(
+					object3DPtr,
 					std::make_unique<ObjectFadeData>
 					(
-						object3DPtr.get(), 
+						object3DPtr,
 						fadeIndexDistPair.first,
 						fadeIndexDistPair.second,
 						true
 					)
 				);
-				obstructionsToFadeIndicesMap.insert
-				(
-					{ object3DPtr, fadeIndexDistPair.first }
-				);
 			}
-			else if (obstructionsToFadeIndicesMap.at(object3DPtr) < fadeIndexDistPair.first)
+			else if (const auto& fadeData = iter->second; 
+					 fadeData && fadeData->fadeIndex < fadeIndexDistPair.first)
 			{
-				// Update fade index.
-				obstructionsToFadeIndicesMap[object3DPtr] = fadeIndexDistPair.first;
+				// Updated fade index means we have to modify its fade amount.
+				fadeData->SignalFadeStateChange
+				(
+					object3DPtr, fadeData->shouldFadeOut, fadeIndexDistPair.first
+				);
 			}
 		}
 
@@ -2090,9 +2080,11 @@ namespace ALYSLC
 		if (Settings::bFadeObstructions)
 		{
 			// Update fade data for handled obstructions.
-			for (const auto& fadeData : obstructionFadeDataSet) 
+			for (auto iter = obstructionFadeDataMap.begin(); 
+				 iter != obstructionFadeDataMap.end(); ) 
 			{
-				const auto& handled3DPtr = fadeData->objectPtr;
+				const auto& handled3DPtr = iter->first;
+				const auto& fadeData = iter->second;
 				// Must be a valid object, 
 				// be within the radial distance of the camera if proximity fade is active,
 				// and must be a smaller object without a fade node 
@@ -2109,6 +2101,7 @@ namespace ALYSLC
 						!handled3DPtr->AsFadeNode()
 					)
 				);
+				bool shouldRemove = false;
 				if (canFade)
 				{
 					// Check if the object is not in the current obstructions set, 
@@ -2122,27 +2115,31 @@ namespace ALYSLC
 					};
 					if (shouldFadeIn)
 					{
-						fadeData->SignalFadeStateChange(false, fadeData->fadeIndex);
-					}
-
-					// Updated fade index means we have to modify its fade amount.
-					if (int32_t updatedFadeIndex = obstructionsToFadeIndicesMap[handled3DPtr]; 
-						updatedFadeIndex > fadeData->fadeIndex)
-					{
-						fadeData->SignalFadeStateChange(fadeData->shouldFadeOut, updatedFadeIndex);
+						fadeData->SignalFadeStateChange(handled3DPtr, false, fadeData->fadeIndex);
 					}
 
 					// Remove fully faded in/out or invalid obstructions.
-					bool shouldRemove = !fadeData->UpdateFade();
-					if (shouldRemove)
+					shouldRemove = !fadeData->UpdateFade(handled3DPtr);
+				}
+				else
+				{ 
+					// If the object ptr is still valid, fully fade in before removing.
+					if (handled3DPtr && handled3DPtr->GetRefCount() > 0)
 					{
-						obstructionsToFadeIndicesMap.erase(handled3DPtr);
-						obstructionFadeDataSet.erase(fadeData);
+						fadeData->InstantlyResetFade(handled3DPtr);
 					}
+
+					shouldRemove = true;
+				}
+
+				// Only increment the iter if data was removed from the map.
+				if (shouldRemove)
+				{
+					iter = obstructionFadeDataMap.erase(iter);
 				}
 				else
 				{
-					obstructionFadeDataSet.erase(fadeData);
+					iter++;
 				}
 			}
 		}
@@ -2803,25 +2800,21 @@ namespace ALYSLC
 	void CameraManager::ResetFadeAndClearObstructions()
 	{
 		// Reset fade on all handled obstructions and then clear them.
-
-		if (obstructionFadeDataSet.empty() && obstructionsToFadeIndicesMap.empty())
+		
+		if (obstructionFadeDataMap.empty())
 		{
 			return;
 		}
-
-		if (!Settings::bFadeObstructions)
+		
+		for (const auto& [objectPtr, objectData] : obstructionFadeDataMap)
 		{
-			for (const auto& objectData : obstructionFadeDataSet)
+			if (objectPtr && objectPtr->GetRefCount() > 0)
 			{
-				if (objectData->currentFadeAmount != 1.0f)
-				{
-					objectData->InstantlyResetFade();
-				}
+				objectData->InstantlyResetFade(objectPtr);
 			}
 		}
 
-		obstructionFadeDataSet.clear();
-		obstructionsToFadeIndicesMap.clear();
+		obstructionFadeDataMap.clear();
 	}
 
 	void CameraManager::SetCamActorCollisions(bool&& a_set)
@@ -4602,7 +4595,7 @@ namespace ALYSLC
 		currentCell = p1Cell;
 		exteriorCell = newIsExterior;
 		// Reset fade for all our handled objects.
-		ResetFadeAndClearObstructions();
+		//ResetFadeAndClearObstructions();
 		// For extra peace of mind, ensure all objects in the new cell are fully faded in.
 		Util::ResetFadeOnAllObjectsInCell(currentCell);
 		// Set new default orientation when the cell type changes.

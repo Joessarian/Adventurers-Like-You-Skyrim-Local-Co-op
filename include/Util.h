@@ -1243,6 +1243,43 @@ namespace ALYSLC
 				}
 			}
 
+			// Remove the given actor from combat.
+			inline void StopCombat(RE::Actor* a_actor) 
+			{
+				if (a_actor)
+				{
+					auto vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+					if (!vm)
+					{
+						return;
+					}
+					const auto policy = vm->GetObjectHandlePolicy();
+					if (policy)
+					{
+						auto handle = 
+						(
+							policy->GetHandleForObject(*a_actor->formType, a_actor)
+						);
+						if (handle)
+						{
+							auto callback = 
+							(
+								RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>()
+							);
+							auto args = RE::MakeFunctionArguments();
+							vm->DispatchMethodCall
+							(
+								handle, 
+								"Actor", 
+								"StopCombat", 
+								args,
+								callback
+							);
+						}
+					}
+				}
+			}
+
 			// Unequip all equipped forms for the given actor.
 			inline void UnequipAll(RE::Actor* a_actor) 
 			{
@@ -2221,6 +2258,26 @@ namespace ALYSLC
 			);
 		}
 
+		// If the given actor in dialogue with the player?
+		inline bool IsDialogueTarget(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return false;
+			}
+			
+			const auto targetActorHandle = a_actor->GetHandle();
+			auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+			return
+			(
+				(menuTopicManager && menuTopicManager->speaker) &&
+				(
+					targetActorHandle == menuTopicManager->speaker ||
+					targetActorHandle == menuTopicManager->lastSpeaker
+				)
+			);
+		}
+
 		// Is the given actor fleeing?
 		inline bool IsFleeing(RE::Actor* a_actor)
 		{
@@ -2843,7 +2900,6 @@ namespace ALYSLC
 		//====================
 
 		// Add the given target actor as a combat target for the source actor.
-		// Return true if successfully added.
 		void AddAsCombatTarget
 		(
 			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
@@ -2855,6 +2911,23 @@ namespace ALYSLC
 		// DO NOT run on a main thread or the game will lock up.
 		void AddSyncedTask(std::function<void()> a_func, bool a_isUITask = false);
 		
+		// First, make sure the source actor  and the target actor are in combat 
+		// with each other both ways (aggroed by each other).
+		// Then, deal the given damage to the given target actor.
+		// Can also specify a handle for the damage source.
+		void ApplyHit
+		(
+			RE::Actor* a_sourceActor,
+			RE::Actor* a_targetActor,
+			const float& a_damage,
+			bool a_triggerCombat,
+			bool a_sendEvent = false,
+			const RE::ObjectRefHandle& a_sourceHandle = RE::ObjectRefHandle(),
+			const RE::FormID& a_projFID = 0,
+			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags = 
+			RE::TESHitEvent::Flag::kNone
+		);
+
 		// Returns true if the given actor and rigid body supports manipulation of its velocity.
 		// Can use the supplied rigid body, or retrieve the rigid body from the actor's current 3D.
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody = nullptr);
@@ -3266,6 +3339,15 @@ namespace ALYSLC
 		// Return early if max recursion depth is reached.
 		RE::TESObjectREFR* RecurseForRefr(RE::NiNode* a_parentNode, uint8_t a_recursionDepth = 0);
 
+		// Remove the given target actor as a combat target for the source actor.
+		void RemoveAsCombatTarget
+		(
+			RE::Actor* a_sourceActor, RE::Actor* a_targetActor
+		);
+
+		// Remove any players from the given actor's combat group targets list.
+		void RemovePlayerCombatTargets(RE::Actor* a_sourceActor);
+
 		// Reset object fade value(s) for all refrs in the given cell.
 		void ResetFadeOnAllObjectsInCell(RE::TESObjectCELL* a_cell);
 
@@ -3528,23 +3610,6 @@ namespace ALYSLC
 			RE::BGSSkillPerkTreeNode* a_node,
 			RE::Actor* a_actor, 
 			std::function<void(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor)> a_visitor
-		);
-
-		// First, make sure the source actor and the target actor are in combat 
-		// with each other both ways (aggroed by each other).
-		// Then, deal the given damage to the given target actor.
-		// Can also specify a handle for the damage source.
-		void TriggerCombatAndDealDamage
-		(
-			RE::Actor* a_sourceActor,
-			RE::Actor* a_targetActor,
-			const float& a_damage,
-			bool a_triggerCombat,
-			bool a_sendEvent = false,
-			const RE::ObjectRefHandle& a_sourceHandle = RE::ObjectRefHandle(),
-			const RE::FormID& a_projFID = 0,
-			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags = 
-			RE::TESHitEvent::Flag::kNone
 		);
 
 		// Trigger a skill level up message by spoofing a level up 

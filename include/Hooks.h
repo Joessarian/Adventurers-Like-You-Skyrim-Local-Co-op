@@ -355,7 +355,6 @@ namespace ALYSLC
 			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
 			// Return true if the input was handled and should be invalidated.
 			static bool CheckForP1QSEquipReq(RE::InputEvent* a_firstGamepadEvent);
-
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.
@@ -1218,7 +1217,7 @@ namespace ALYSLC
 				SPDLOG_INFO("[FavoritesMenu Hooks] Installed ProcessMessage() hook.");
 			}
 
-		private:
+		private:                                     
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::FavoritesMenu* a_this, RE::UIMessage& a_message

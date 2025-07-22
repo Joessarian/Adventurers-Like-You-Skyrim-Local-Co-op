@@ -5399,14 +5399,14 @@ namespace ALYSLC
 				{
 				case ArmNodeType::kForearm:
 				{
-					knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 1100.0f : 1600.0f) * invArmForceFactor
-					);
 					/*knockdownMinSpeed = 
 					(
-						1600.0f * invArmForceFactor
+						(a_p->mm->reqFaceTarget ? 1100.0f : 1600.0f) * invArmForceFactor
 					);*/
+					knockdownMinSpeed = 
+					(
+						1600.0f * invArmForceFactor
+					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownForearmSpeedThresholdMult;
 
 					break;
@@ -5414,28 +5414,28 @@ namespace ALYSLC
 				case ArmNodeType::kHand:
 				case ArmNodeType::kShield:
 				{
-					knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 1000.0f : 1500.0f) * invArmForceFactor
-					);
 					/*knockdownMinSpeed = 
 					(
-						1500.0f * invArmForceFactor
+						(a_p->mm->reqFaceTarget ? 1000.0f : 1500.0f) * invArmForceFactor
 					);*/
+					knockdownMinSpeed = 
+					(
+						1500.0f * invArmForceFactor
+					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownHandSpeedThresholdMult;
 
 					break;
 				}
 				case ArmNodeType::kShoulder:
 				{
-					knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 700.0f : 1200.0f) * invArmForceFactor
-					);
 					/*knockdownMinSpeed = 
 					(
-						1200.0f * invArmForceFactor
+						(a_p->mm->reqFaceTarget ? 700.0f : 1200.0f) * invArmForceFactor
 					);*/
+					knockdownMinSpeed = 
+					(
+						1200.0f * invArmForceFactor
+					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownShoulderSpeedThresholdMult;
 
 					break;
@@ -5742,21 +5742,25 @@ namespace ALYSLC
 						);
 						// Handle health damage.
 						// Ignore damage to friendly actors if friendly fire is off.
-						if ((damage != 0.0f) && 
-							(
-								Settings::vbFriendlyFire[a_p->playerID] || 
-								!Util::IsPartyFriendlyActor(hitActor)
-							))
+						if (damage != 0.0f)
 						{
 							damage *= Settings::vfSlapKnockdownDamageMult[a_p->playerID];
 						}
-
-						Util::TriggerCombatAndDealDamage
+						
+						const bool triggerCombat = 
+						(
+							(!Util::IsDialogueTarget(hitActor)) &&
+							(
+								Settings::vbFriendlyFire[a_p->playerID] || 
+								!Util::IsPartyFriendlyActor(hitActor)
+							)	
+						);
+						Util::ApplyHit
 						(
 							a_p->coopActor.get(),
 							hitActor, 
 							damage,
-							true,
+							triggerCombat,
 							true,
 							a_p->coopActor->GetHandle(),
 							0,

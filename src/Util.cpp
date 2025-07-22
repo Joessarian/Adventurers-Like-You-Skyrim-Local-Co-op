@@ -315,15 +315,30 @@ namespace ALYSLC
 				a_targetActor->combatController->previousTargetHandle =
 				a_targetActor->combatController->targetHandle = a_sourceActor->GetHandle();
 			}
+			
+			if (!a_triggerCombat)
+			{
+				return;
+			}
+				
+			// Ignore requests to add a party-friendly actor 
+			// as another party-friendly actor's combat target.
+			// Do not want a player to have another player as a target in their combat group,
+			// which can happen if an ally starts combat with a companion player:
+			// P1 and the ally are members of their combat group 
+			// and designate the other player as a combat group target.
+			if (IsPartyFriendlyActor(a_sourceActor) && IsPartyFriendlyActor(a_targetActor))
+			{
+				return;
+			}
+			
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG("[Util] AddAsCombatTarget: {} -> {}, trigger combat: {}.",
+				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat);*/
 
 			auto combatGroup = a_sourceActor->GetCombatGroup(); 
 			if (!combatGroup)
 			{
-				if (!a_triggerCombat)
-				{
-					return;
-				}
-				
 				// IMPORTANT BUG NOTE:
 				// For companion players, combat-initiating hits 
 				// sometimes have their damage ignored, 
@@ -340,6 +355,7 @@ namespace ALYSLC
 					combatGroup = a_sourceActor->combatController->combatGroup;
 				}
 			}
+
 			if (!combatGroup)
 			{
 				return;
@@ -414,6 +430,111 @@ namespace ALYSLC
 				taskDone.wait(false);
 			}
 		}
+		
+		void ApplyHit
+		(
+			RE::Actor* a_sourceActor,
+			RE::Actor* a_targetActor,
+			const float& a_damage,
+			bool a_triggerCombat, 
+			bool a_sendEvent, 
+			const RE::ObjectRefHandle& a_sourceHandle,
+			const RE::FormID& a_projFID, 
+			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags
+		)
+		{
+			// First, if triggering combat, make sure the source actor 
+			// and the target actor are in combat with each other both ways 
+			// (aggroed by each other).
+			// Then, deal the given damage to the given target actor.
+			// Can also specify a handle for the damage source.
+			
+			if (!a_sourceActor || !a_targetActor)
+			{
+				return;
+			}
+
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG
+			(
+				"[Util] ApplyHit: {} -> {}, "
+				"damage: {}, trigger combat: {}, send event: {}, flags: 0x{:X}.",
+				a_sourceActor->GetName(),
+				a_targetActor->GetName(),
+				a_damage,
+				a_triggerCombat,
+				a_sendEvent,
+				*a_hitEventFlags
+			);*/
+
+			// Add the target actor to the player's combat group, if it exists,
+			// and start combat if requested.
+			if (bool isPlayer1 = a_sourceActor->IsPlayerRef(); isPlayer1 && a_triggerCombat)
+			{
+				// For P1, just send the hit data to do damage.
+				SendHitData
+				(
+					a_sourceActor, 
+					a_targetActor,
+					HandleIsValid(a_sourceHandle) ? 
+					a_sourceHandle : 
+					a_sourceActor->GetHandle(),
+					nullptr,
+					a_damage
+				);
+			}
+			else if (!isPlayer1)
+			{
+				// Don't have players add each other as combat targets.
+				if (!GlobalCoopData::IsCoopPlayer(a_targetActor))
+				{
+					AddAsCombatTarget(a_sourceActor, a_targetActor, a_triggerCombat);
+					AddAsCombatTarget(a_targetActor, a_sourceActor, a_triggerCombat);
+				}
+
+				// Nothing further to do if not triggering combat.
+				if (!a_triggerCombat)
+				{
+					return;
+				}
+
+				if (a_sendEvent)
+				{
+					SendHitEvent
+					(
+						a_sourceActor, 
+						a_targetActor, 
+						HandleIsValid(a_sourceHandle) ? 
+						a_sourceHandle.get()->formID : 
+						a_sourceActor->formID,
+						a_projFID != 0 ? 
+						a_projFID : 
+						a_sourceActor->formID,
+						a_hitEventFlags
+					);
+				}
+
+				// Then send hit data to do damage.
+				SendHitData
+				(
+					a_sourceActor, 
+					a_targetActor,
+					HandleIsValid(a_sourceHandle) ? 
+					a_sourceHandle : 
+					a_sourceActor->GetHandle(),
+					nullptr,
+					a_damage
+				);
+				// Have the target 'hit' the player for 0 damage to ensure combat isn't one sided
+				// and is also directed as player 'aggroed by' target.
+				SendHitData
+				(
+					a_targetActor,
+					a_sourceActor,
+					a_targetActor->GetHandle()
+				);
+			}
+		}
 
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody)
 		{
@@ -470,7 +591,7 @@ namespace ALYSLC
 			);	
 		}
 
-		bool CanStopCombatWithActor(RE::Actor * a_aggroedActor)
+		bool CanStopCombatWithActor(RE::Actor* a_aggroedActor)
 		{
 			// Can stop combat (surrender or just stop) between a player and the given actor.
 			if (!a_aggroedActor)
@@ -1908,6 +2029,11 @@ namespace ALYSLC
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D)
 		{
 			// Get the given 3D object's collision layer.
+
+			if (!a_refr3D)
+			{
+				return RE::COL_LAYER::kUnidentified;
+			}
 
 			auto collisionLayer = a_refr3D->GetCollisionLayer();
 			if (collisionLayer == RE::COL_LAYER::kUnidentified)
@@ -5358,6 +5484,141 @@ namespace ALYSLC
 			}
 		}
 
+		void RemoveAsCombatTarget(RE::Actor* a_sourceActor, RE::Actor* a_targetActor)
+		{
+			// Remove the given target actor as a combat target for the source actor.
+			if (!a_sourceActor || !a_targetActor)
+			{
+				return;
+			}
+
+			// Set the two actors'current combat targets to each other, 
+			// since companion player's projectile/melee hits are ignored sometimes 
+			// if their current combat target is not set to the actor they are about to hit.
+			a_sourceActor->currentCombatTarget = RE::ActorHandle();
+			a_targetActor->currentCombatTarget = RE::ActorHandle();
+			if (a_sourceActor->combatController)
+			{
+				a_sourceActor->combatController->cachedTarget = nullptr;
+				a_sourceActor->combatController->previousTargetHandle =
+				a_sourceActor->combatController->targetHandle = RE::ActorHandle();
+			}
+
+			if (a_targetActor->combatController)
+			{
+				a_targetActor->combatController->cachedTarget = nullptr;
+				a_targetActor->combatController->previousTargetHandle =
+				a_targetActor->combatController->targetHandle = RE::ActorHandle();
+			}
+
+			auto combatGroup = a_sourceActor->GetCombatGroup(); 
+			if (!combatGroup)
+			{
+				combatGroup = a_sourceActor->GetCombatGroup(); 
+				if (!combatGroup && a_sourceActor->combatController)
+				{
+					combatGroup = a_sourceActor->combatController->combatGroup;
+				}
+			}
+			if (!combatGroup)
+			{
+				return;
+			}
+
+			combatGroup->lock.LockForWrite();
+
+			bool isATarget = false;
+
+			auto iter = combatGroup->targets.begin();
+			for (auto iter = combatGroup->targets.begin(); 
+				iter < combatGroup->targets.end(); 
+				++iter)
+			{
+				if (!iter)
+				{
+					continue;
+				}
+
+				// Remove each instance of the target actor from the targets list.
+				if (iter->targetHandle == a_targetActor->GetHandle())
+				{
+					iter = combatGroup->targets.erase(iter);
+					// If removed, decrement to maintain the same position 
+					// during the next iteration.
+					if (iter > combatGroup->targets.begin())
+					{
+						--iter;
+					}
+				}
+			}
+
+			combatGroup->lock.UnlockForWrite();
+		}
+
+		void RemovePlayerCombatTargets(RE::Actor* a_sourceActor)
+		{
+			// Remove any players from the given actor's combat group targets list.
+			// Only do this when only 'always open' menus are showing.
+
+			if (!a_sourceActor || !MenusOnlyAlwaysOpen())
+			{
+				return;
+			}
+
+			auto combatGroup = a_sourceActor->GetCombatGroup(); 
+			if (!combatGroup)
+			{
+				combatGroup = a_sourceActor->GetCombatGroup(); 
+				if (!combatGroup && a_sourceActor->combatController)
+				{
+					combatGroup = a_sourceActor->combatController->combatGroup;
+				}
+			}
+
+			if (!combatGroup)
+			{
+				return;
+			}
+
+			combatGroup->lock.LockForWrite();
+				
+			const bool sourceIsCoopPlayer = GlobalCoopData::IsCoopPlayer(a_sourceActor);
+			for (auto iter = combatGroup->targets.begin();
+				iter >= combatGroup->targets.begin() &&
+				iter < combatGroup->targets.end();
+				++iter)
+			{
+				auto pIndex = GlobalCoopData::GetCoopPlayerIndex
+				(
+					iter->targetHandle
+				);
+				if (pIndex == -1)
+				{
+					continue;
+				}
+
+				// If removed, decrement to maintain the same position 
+				// during the next iteration.
+				if (sourceIsCoopPlayer ||
+					!Settings::vbFriendlyFire[glob.coopPlayers[pIndex]->playerID])
+				{
+					iter = combatGroup->targets.erase(iter);
+					if (iter > combatGroup->targets.begin())
+					{
+						--iter;
+					}
+
+					if (!sourceIsCoopPlayer)
+					{
+						// Calm down, bud.
+						a_sourceActor->NotifyAnimationGraph("attackStop");
+					}
+				}
+			}
+
+			combatGroup->lock.UnlockForWrite();
+		}
+
 		void ResetFadeOnAllObjectsInCell(RE::TESObjectCELL* a_cell)
 		{
 			// Iterate through all loaded objects in the cell 
@@ -6520,6 +6781,8 @@ namespace ALYSLC
 			{
 				return true;
 			}
+
+			return false;
 		}
 
 		void StartEffectShader
@@ -7121,92 +7384,6 @@ namespace ALYSLC
 					a_visitor(perkChildNode, a_actor);
 					TraversePerkTree(perkChildNode, a_actor, a_visitor);
 				}
-			}
-		}
-
-		void TriggerCombatAndDealDamage
-		(
-			RE::Actor* a_sourceActor,
-			RE::Actor* a_targetActor,
-			const float& a_damage,
-			bool a_triggerCombat, 
-			bool a_sendEvent, 
-			const RE::ObjectRefHandle& a_sourceHandle,
-			const RE::FormID& a_projFID, 
-			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags
-		)
-		{
-			// First, make sure the source actor and the target actor are in combat 
-			// with each other both ways (aggroed by each other).
-			// Then, deal the given damage to the given target actor.
-			// Can also specify a handle for the damage source.
-			
-			if (!a_sourceActor || !a_targetActor)
-			{
-				return;
-			}
-
-			// Add the target actor to the player's combat group, if it exists,
-			// and start combat if requested.
-			if (a_sourceActor->IsPlayerRef())
-			{
-				// For P1, just send the hit data to do damage.
-				SendHitData
-				(
-					a_sourceActor, 
-					a_targetActor,
-					HandleIsValid(a_sourceHandle) ? 
-					a_sourceHandle : 
-					a_sourceActor->GetHandle(),
-					nullptr,
-					a_damage
-				);
-			}
-			else
-			{
-				AddAsCombatTarget(a_sourceActor, a_targetActor, a_triggerCombat);
-				AddAsCombatTarget(a_targetActor, a_sourceActor, a_triggerCombat);
-				// Nothing further to do if not triggering combat.
-				if (!a_triggerCombat)
-				{
-					return;
-				}
-
-				if (a_sendEvent)
-				{
-					SendHitEvent
-					(
-						a_sourceActor, 
-						a_targetActor, 
-						HandleIsValid(a_sourceHandle) ? 
-						a_sourceHandle.get()->formID : 
-						a_sourceActor->formID,
-						a_projFID != 0 ? 
-						a_projFID : 
-						a_sourceActor->formID,
-						a_hitEventFlags
-					);
-				}
-
-				// Then send hit data to do damage.
-				SendHitData
-				(
-					a_sourceActor, 
-					a_targetActor,
-					HandleIsValid(a_sourceHandle) ? 
-					a_sourceHandle : 
-					a_sourceActor->GetHandle(),
-					nullptr,
-					a_damage
-				);
-				// Have the target 'hit' the player for 0 damage to ensure combat isn't one sided
-				// and is also directed as player 'aggroed by' target.
-				SendHitData
-				(
-					a_targetActor,
-					a_sourceActor,
-					a_targetActor->GetHandle()
-				);
 			}
 		}
 

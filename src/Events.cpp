@@ -423,7 +423,6 @@ namespace ALYSLC
 				}
 			)
 		);
-		bool toCoopPlayer = GlobalCoopData::IsCoopPlayer(a_containerChangedEvent->newContainer);
 		int32_t fromCoopPlayerIndex = 
 		(
 			GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer)
@@ -432,6 +431,7 @@ namespace ALYSLC
 		(
 			GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer)
 		);
+		bool toCoopPlayer = toCoopPlayerIndex != -1;
 
 		// Update player's encumbrance value when an item is moved to/from their inventory.
 		if ((fromCoopPlayerIndex != toCoopPlayerIndex) && 
@@ -523,14 +523,40 @@ namespace ALYSLC
 				auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
 				if (toP1)
 				{
+					// Add to companion player controlling menus if not a party-wide item.
 					const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
-					// Add to co-op player controlling menus if not a shared item.
-					if (baseObj && !Util::IsPartyWideItem(baseObj))
+					RE::TESBoundObject* boundObj = 
+					(
+						baseObj ? 
+						baseObj->As<RE::TESBoundObject>() :
+						refr ? 
+						refr->GetBaseObject() :
+						nullptr
+					);
+					// Not a party-wide item, so it is transferrable.
+					bool shouldSendToCompanionPlayer = !Util::IsPartyWideItem
+					(
+						baseObj ? 
+						baseObj :
+						refr.get()
+					);
+					// Check if a quest item that is not a party wide item,
+					// and if so, keep the item in P1's inventory.
+					if (shouldSendToCompanionPlayer && boundObj)
 					{
-						if (auto boundObj = baseObj->As<RE::TESBoundObject>(); boundObj)
+						// If the refr is available, check the its extra data first.
+						if (refr)
 						{
-							const int32_t count = a_containerChangedEvent->itemCount;
-							// Do not transfer quest objects.
+							shouldSendToCompanionPlayer = 
+							(
+								!refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) &&
+								!refr->extraList.HasType(RE::ExtraDataType::kFromAlias)	
+							);
+						}
+
+						// Check the inventory entry data next.
+						if (shouldSendToCompanionPlayer)
+						{							
 							auto inventory = p1->GetInventory();
 							const auto iter = inventory.find(boundObj); 
 							if (iter != inventory.end())
@@ -538,204 +564,171 @@ namespace ALYSLC
 								const auto& invEntryData = iter->second.second;
 								if (invEntryData && invEntryData->IsQuestObject())
 								{
-									SPDLOG_DEBUG
-									(
-										"[Events] Container Changed Event: "
-										"Not transfering quest item object {} (x{}) to {}.",
-										baseObj->GetName(),
-										count,
-										p->coopActor->GetName()
-									);
-									return EventResult::kContinue;
+									shouldSendToCompanionPlayer = false;
 								}
 							}
-
-							// Run on the main thread by running the removal/addition code
-							// through a synced task with the player's task runner thread.
-							// Could prevent threading issues from crashing the game here,
-							// since this event handler is not run by the main thread.
-							// Ugly, but fixes a RaceMenu crash 
-							// when transferring over a single torch. Needs more testing.
-							p->taskRunner->AddTask
-							(
-								[p, p1, boundObj, count]()
-								{
-									Util::AddSyncedTask
-									(
-										[p, p1, boundObj, count]()
-										{
-											SPDLOG_DEBUG
-											(
-												"[Events] Container Changed Event: "
-												"Removing base item {} (x{}) and giving to {}.", 
-												boundObj->GetName(),
-												count, 
-												p->coopActor->GetName()
-											);
-											p1->RemoveItem
-											(
-												boundObj, 
-												count,
-												RE::ITEM_REMOVE_REASON::kRemove, 
-												nullptr, 
-												nullptr
-											);
-											p->coopActor->AddObjectToContainer
-											(
-												boundObj, 
-												nullptr, 
-												count, 
-												p->coopActor.get()
-											);
-										}
-									);
-								}
-							);
 						}
 
-						return EventResult::kContinue;
-					}
-					else if (refr && !Util::IsPartyWideItem(refr.get()))
-					{
-						const int32_t count = a_containerChangedEvent->itemCount;
-						// Do not transfer quest objects.
-						bool isQuestItem = 
-						{
-							refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
-							refr->extraList.HasType(RE::ExtraDataType::kFromAlias)
-						};
-						if (isQuestItem)
+						if (!shouldSendToCompanionPlayer)
 						{
 							SPDLOG_DEBUG
 							(
 								"[Events] Container Changed Event: "
-								"Not moving quest item refr {} (x{}) to {}.",
-								refr->GetName(),
-								count,
+								"NOT transfering quest item {} (x{}) to {}.",
+								boundObj->GetName(),
+								a_containerChangedEvent->itemCount,
 								p->coopActor->GetName()
 							);
-							return EventResult::kContinue;
 						}
-
-						if (auto boundObj = refr->GetBaseObject(); boundObj)
-						{
-							p->taskRunner->AddTask
-							(
-								[p, p1, boundObj, count]()
-								{
-									Util::AddSyncedTask
-									(
-										[p, p1, boundObj, count]()
-										{
-											SPDLOG_DEBUG
-											(
-												"[Events] Container Changed Event: "
-												"Removing reference item {} (x{}) "
-												"and giving to {}.", 
-												boundObj->GetName(), 
-												count,
-												p->coopActor->GetName()
-											);
-											p1->RemoveItem
-											(
-												boundObj, 
-												count,
-												RE::ITEM_REMOVE_REASON::kRemove, 
-												nullptr, 
-												nullptr
-											);
-											p->coopActor->AddObjectToContainer
-											(
-												boundObj, 
-												nullptr, 
-												count, 
-												p->coopActor.get()
-											);
-										}
-									);
-								}
-							);
-						}
-
-						return EventResult::kContinue;
 					}
-				}
-				else if (toCoopPlayer)
-				{							
-					// Give any looted keys/regular books/notes to P1, 
-					// since these items can be tough to find 
-					// after being (un)intentionally looted by co-op companions.
-					if (baseObj && Util::IsPartyWideItem(baseObj))
+					else
 					{
-						if (fromCoopPlayerIndex != -1)
-						{
-							const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
-							RE::TESBoundObject* boundObj = nullptr;
-							if (refr)
-							{
-								boundObj = refr->GetBaseObject();
-							}
+						SPDLOG_DEBUG
+						(
+							"[Events] Container Changed Event: "
+							"NOT transfering party-wide item {} (x{}) to {}.",
+							boundObj ? boundObj->GetName() : "INVALID",
+							a_containerChangedEvent->itemCount,
+							p->coopActor->GetName()
+						);
+					}
 
-							if (baseObj && !boundObj)
+					// Run on the main thread by running the removal/addition code
+					// through a synced task with the player's task runner thread.
+					// Could prevent threading issues from crashing the game here,
+					// since this event handler is not run by the main thread.
+					// Ugly, but fixes a RaceMenu crash 
+					// when transferring over a single torch. Needs more testing.
+					if (shouldSendToCompanionPlayer && boundObj)
+					{
+						const int32_t count = a_containerChangedEvent->itemCount;
+						p->taskRunner->AddTask
+						(
+							[p, p1, boundObj, count]()
 							{
-								boundObj = baseObj->As<RE::TESBoundObject>();
-							}
-
-							if (boundObj)
-							{
-								const int32_t count = a_containerChangedEvent->itemCount;
-								// Do not transfer quest objects.
-								auto inventory = p->coopActor->GetInventory();
-								const auto iter = inventory.find(boundObj); 
-								if (iter != inventory.end())
-								{
-									SPDLOG_DEBUG
-									(
-										"[Events] Container Changed Event: "
-										"Moving quest item {} (x{}) from {} to P1.",
-										baseObj->GetName(),
-										count,
-										p->coopActor->GetName()
-									);
-									const auto& invEntryData = iter->second.second;
-									if (invEntryData && invEntryData->IsQuestObject())
-									{
-										return EventResult::kContinue;
-									}
-								}
-
-								p->taskRunner->AddTask
+								Util::AddSyncedTask
 								(
 									[p, p1, boundObj, count]()
 									{
-										Util::AddSyncedTask
+										SPDLOG_DEBUG
 										(
-											[p, p1, boundObj, count]()
-											{
-												SPDLOG_DEBUG
-												(
-													"[Events] Container Changed Event: "
-													"Moving party-wide item from {} (x{}) to P1.",
-													p->coopActor->GetName(), 
-													count
-												);
-												p->coopActor->RemoveItem
-												(
-													boundObj, 
-													count, 
-													RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-													nullptr, 
-													p1
-												);
-											}
+											"[Events] Container Changed Event: "
+											"Removing item {} (x{}) and giving to {}.", 
+											boundObj->GetName(), 
+											count,
+											p->coopActor->GetName()
+										);
+										p1->RemoveItem
+										(
+											boundObj, 
+											count,
+											RE::ITEM_REMOVE_REASON::kRemove, 
+											nullptr, 
+											nullptr
+										);
+										p->coopActor->AddObjectToContainer
+										(
+											boundObj, 
+											nullptr, 
+											count, 
+											p->coopActor.get()
 										);
 									}
 								);
 							}
+						);
+					}
 
-							return EventResult::kContinue;
+					return EventResult::kContinue;
+				}
+				else if (toCoopPlayer && toCoopPlayerIndex != -1)
+				{							
+					// Give any looted quest items or keys/regular books/notes to P1, 
+					// since these items can be tough to find 
+					// after being (un)intentionally looted by companion players.
+					const auto& p = glob.coopPlayers[toCoopPlayerIndex];
+					RE::TESBoundObject* boundObj = 
+					(
+						baseObj ? 
+						baseObj->As<RE::TESBoundObject>() :
+						refr ? 
+						refr->GetBaseObject() :
+						nullptr
+					);
+					bool shouldSendToP1 = Util::IsPartyWideItem(baseObj);
+					if (!shouldSendToP1 && boundObj)
+					{
+						if (refr)
+						{
+							shouldSendToP1 = 
+							(
+								refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
+								refr->extraList.HasType(RE::ExtraDataType::kFromAlias)
+							);
+						}
+
+						if (!shouldSendToP1)
+						{
+							auto inventory = p->coopActor->GetInventory();
+							const auto iter = inventory.find(boundObj); 
+							if (iter != inventory.end())
+							{
+								const auto& invEntryData = iter->second.second;
+								if (invEntryData && invEntryData->IsQuestObject())
+								{
+									shouldSendToP1 = true;
+								}
+							}
+						}
+
+						if (!shouldSendToP1)
+						{
+							SPDLOG_DEBUG
+							(
+								"[Events] Container Changed Event: "
+								"NOT moving item {} (x{}) from {} to P1.",
+								boundObj->GetName(),
+								a_containerChangedEvent->itemCount,
+								p->coopActor->GetName()
+							);
 						}
 					}
+						
+					// Skip transfer unless it is a party wide/quest item.
+					if (shouldSendToP1 && boundObj)
+					{
+						const int32_t count = a_containerChangedEvent->itemCount;
+						p->taskRunner->AddTask
+						(
+							[p, p1, boundObj, count]()
+							{
+								Util::AddSyncedTask
+								(
+									[p, p1, boundObj, count]()
+									{
+										SPDLOG_DEBUG
+										(
+											"[Events] Container Changed Event: "
+											"Moving item {} (x{}) from {} to P1.",
+											boundObj->GetName(),
+											count,
+											p->coopActor->GetName()
+										);
+										p->coopActor->RemoveItem
+										(
+											boundObj, 
+											count, 
+											RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+											nullptr, 
+											p1
+										);
+									}
+								);
+							}
+						);
+					}
+
+					return EventResult::kContinue;
 				}
 			}
 		}
@@ -2109,7 +2102,6 @@ namespace ALYSLC
 			}
 		}
 
-		
 #ifdef ALYSLC_DEBUG_MODE
 		if (ui)
 		{
@@ -2394,7 +2386,8 @@ namespace ALYSLC
 			}
 			else if (a_menuEvent->opening && a_menuEvent->menuName == RE::FavoritesMenu::MENU_NAME)
 			{
-				// Update Favorites Menu item entries with quick slot item/spell tags for P1.
+				// Update QS forms and Favorites Menu item entries
+				// with quick slot item/spell tags for P1.
 				glob.mim->InitP1QSFormEntries();
 			}
 
@@ -2623,6 +2616,9 @@ namespace ALYSLC
 					p->playerID + 1
 				);
 			}
+
+			// Reset fade on all handled objects.
+			glob.cam->ResetFadeAndClearObstructions();
 		}
 
 		bool postMove = 

@@ -102,7 +102,7 @@ namespace ALYSLC
 		// PR for TrueHUD to allow for continuous display of actor info/boss bars 
 		// for players even when not in combat.
 		// Commented out for now.
-		if (auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUDAPI3)
+		/*if (auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUDAPI3)
 		{
 			const auto handle = coopActor->GetHandle();
 			if (trueHUDAPI3->HasInfoBar(handle))
@@ -110,7 +110,7 @@ namespace ALYSLC
 				trueHUDAPI3->RemoveActorInfoBar(handle, TRUEHUD_API::WidgetRemovalMode::Normal);
 				trueHUDAPI3->RemoveBoss(handle, TRUEHUD_API::WidgetRemovalMode::Normal);
 			}
-		}
+		}*/
 	}
 
 	void TargetingManager::PreStartTask()
@@ -930,7 +930,7 @@ namespace ALYSLC
 		// when not in combat and if the player's HMS AVs have changed.
 		// Commented out for now.
 		// TrueHUD API to request addition/removal of actor info or boss bars for this player.
-
+		/*
 		auto trueHUDAPI3 = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; 
 		if (trueHUDAPI3)
 		{
@@ -1002,6 +1002,7 @@ namespace ALYSLC
 
 			hasTrueHUDInfoBar = trueHUDAPI3->HasInfoBar(handle, true);
 		}
+		*/
 
 		// If the player is not on screen, 
 		// draw the player indicator pointed at the player's position.
@@ -4364,11 +4365,7 @@ namespace ALYSLC
 
 			// Handle health damage.
 			// Ignore damage to friendly actors if friendly fire is off.
-			if ((damage != 0.0f) &&
-				(
-					Settings::vbFriendlyFire[playerID] || 
-					!Util::IsPartyFriendlyActor(hitActorPtr.get())
-				))
+			if (damage != 0.0f)
 			{
 				// Damage will not be modified in either HandleHealthDamage() hook 
 				// because the damage will not be attributed to the player
@@ -4387,12 +4384,21 @@ namespace ALYSLC
 				}
 			}
 
-			Util::TriggerCombatAndDealDamage
+			const bool triggerCombat = 
+			(
+				(!hitActorPtr->IsGhost() && !hitActorPtr->IsInvulnerable()) &&
+				(!Util::IsDialogueTarget(hitActorPtr.get())) &&
+				(
+					Settings::vbFriendlyFire[playerID] || 
+					!Util::IsPartyFriendlyActor(hitActorPtr.get())
+				)
+			);
+			Util::ApplyHit
 			(
 				coopActor.get(),
 				hitActorPtr.get(),
 				damage,
-				true,
+				triggerCombat,
 				true,
 				coopActor->GetHandle(),
 				releasedRefrPtr->formID,
@@ -5621,6 +5627,7 @@ namespace ALYSLC
 			!releasedActorPtr->IsInvulnerable() && 
 			!releasedActorPtr->IsInWater()
 		);
+		const bool isFlopping = releasedActorPtr == coopActor;
 		if (damageable)
 		{
 			if (releasedRefrRigidBodyPtr) 
@@ -5732,16 +5739,8 @@ namespace ALYSLC
 				);
 			}
 
-			// Handle health damage.
-			// Ignore damage to friendly actors if friendly fire is off.
-			const bool isFlopping = releasedActorPtr == coopActor;
-			const bool shouldDamage = 
-			(
-				Settings::vbFriendlyFire[playerID] || 
-				isFlopping || 
-				!Util::IsPartyFriendlyActor(releasedActorPtr.get())
-			);
-			if (damage != 0.0f && shouldDamage)
+			// Apply thrown object damage mult.
+			if (damage != 0.0f)
 			{
 				damage *= Settings::vfThrownObjectDamageMult[playerID];
 			}
@@ -5783,12 +5782,22 @@ namespace ALYSLC
 		);
 		
 		// Send hit data last to draw aggro (0 damage) towards the throwing player.
-		Util::TriggerCombatAndDealDamage
+		const bool triggerCombat = 
+		(
+			(!releasedActorPtr->IsGhost() && !releasedActorPtr->IsInvulnerable()) &&
+			(!Util::IsDialogueTarget(releasedActorPtr.get())) &&
+			(
+				Settings::vbFriendlyFire[playerID] || 
+				isFlopping || 
+				!Util::IsPartyFriendlyActor(releasedActorPtr.get())
+			) 
+		);
+		Util::ApplyHit
 		(
 			coopActor.get(),
 			releasedActorPtr.get(),
 			0.0f,
-			true,
+			triggerCombat,
 			true,
 			coopActor->GetHandle(),
 			releasedActorPtr->formID,
@@ -6158,7 +6167,7 @@ namespace ALYSLC
 					Util::IsInFrontOfCam(result.hitObjectPtr->worldBound.center) ||
 					RE::NiCamera::BoundInFrustum(result.hitObjectPtr->worldBound, niCamPtr.get())
 				};
-				isAnObstruction = glob.cam->obstructionsToFadeIndicesMap.contains
+				isAnObstruction = glob.cam->obstructionFadeDataMap.contains
 				(
 					result.hitObjectPtr
 				);
@@ -6283,7 +6292,7 @@ namespace ALYSLC
 				// by the crosshair raycast, which is not a surface visible to the players
 				// that are beyond the obstruction, so exclude such objects from determining
 				// the crosshair's world position and selected refr.
-				isAnObstruction = glob.cam->obstructionsToFadeIndicesMap.contains
+				isAnObstruction = glob.cam->obstructionFadeDataMap.contains
 				(
 					result.hitObjectPtr
 				);
@@ -7574,21 +7583,36 @@ namespace ALYSLC
 				a_findTarget
 			);*/
 
-			if ((newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr) &&
-				(!currentTargetRefrPtr || newTargetRefrPtr != coopActor))
+			//if ((newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr) &&
+			//	(!currentTargetRefrPtr || newTargetRefrPtr != coopActor))
+			//{
+			//	// Set new valid linked refr.
+			//	coopActor->extraList.SetLinkedRef(newTargetRefrPtr.get(), p->aimTargetKeyword);
+			//	aimTargetLinkedRefrHandle = newTargetRefrPtr->GetHandle();
+			//	return true;
+			//}
+			//else if (!newTargetIsValid && currentTargetRefrPtr)
+			//{
+			//	// Clear old linked refr if no new one was selected.
+			//	coopActor->extraList.SetLinkedRef(nullptr, p->aimTargetKeyword);
+			//	aimTargetLinkedRefrHandle.reset();
+			//	return true;
+			//}
+
+			if (newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr)
 			{
 				// Set new valid linked refr.
 				coopActor->extraList.SetLinkedRef(newTargetRefrPtr.get(), p->aimTargetKeyword);
 				aimTargetLinkedRefrHandle = newTargetRefrPtr->GetHandle();
-				return true;
 			}
 			else if (!newTargetIsValid && currentTargetRefrPtr)
 			{
 				// Clear old linked refr if no new one was selected.
 				coopActor->extraList.SetLinkedRef(nullptr, p->aimTargetKeyword);
 				aimTargetLinkedRefrHandle.reset();
-				return true;
 			}
+
+			return currentTargetRefrPtr != newTargetRefrPtr;
 		}
 
 		return false;

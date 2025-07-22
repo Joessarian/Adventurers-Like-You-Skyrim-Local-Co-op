@@ -3897,12 +3897,18 @@ namespace ALYSLC
 		// or targeting an ally with the crosshair while friendly fire is on.
 		bool collisionAllowed = 
 		(
-			(isHostile) ||
-			(isNeutralActor && isCrosshairTargeted) ||
 			(
-				isPartyFriendlyActor && 
-				isCrosshairTargeted && 
-				Settings::vbFriendlyFire[p->playerID]
+				!hitActor->IsGhost() && !hitActor->IsInvulnerable()
+			) &&
+			(
+
+				(isHostile) ||
+				(isNeutralActor && isCrosshairTargeted) ||
+				(
+					isPartyFriendlyActor && 
+					isCrosshairTargeted && 
+					Settings::vbFriendlyFire[p->playerID]
+				)
 			)
 		);
 		if (collisionAllowed)
@@ -3929,7 +3935,7 @@ namespace ALYSLC
 					) ||
 					!p->coopActor->IsCombatTarget(hitActor)
 				);
-				Util::TriggerCombatAndDealDamage
+				Util::ApplyHit
 				(
 					p->coopActor.get(), hitActor, 0.0f, shouldTriggerCombat
 				);

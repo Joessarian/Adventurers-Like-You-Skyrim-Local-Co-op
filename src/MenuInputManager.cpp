@@ -1401,7 +1401,7 @@ namespace ALYSLC
 							std::addressof(oldEntry), 
 							1
 						);
-						RE::GFxValue oldEntryText;
+						RE::GFxValue oldEntryText{ };
 						oldEntry.GetMember("text", std::addressof(oldEntryText));
 						std::string oldEntryStr = oldEntryText.GetString();
 						auto qsTagStartIndex = oldEntryStr.find("[*QS", 0);
@@ -2196,6 +2196,7 @@ namespace ALYSLC
 		// Set quick slot tags for any equipped quick slot items/spells 
 		// and update index-to-entry map.
 
+		SPDLOG_DEBUG("[MIM] InitP1QSFormEntries");
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto taskInterface = SKSE::GetTaskInterface();
@@ -2270,95 +2271,122 @@ namespace ALYSLC
 			em->quickSlotSpell = nullptr;
 			em->equippedQSSpellIndex = -1;
 		}
-
+		
+		// Temp hacky workaround to override entry text changes without a hook:
 		// Update the Favorites Menu UI entries to reflect the initial equip state 
-		// of quick slot items/spells and update index-to-entry map.
-		taskInterface->AddUITask
+		// of quick slot items/spells and update the index-to-entry map for use in (un)equipping
+		// spells or items on player demand.
+		// Delay the update a bit to make sure our entry changes stick, since, at least for P1,
+		// the entries are reset to default once the initial equip state is read in
+		// shortly after the menu opens.
+		glob.taskRunner->AddTask
 		(
-			[this, &em, favoritesList]() 
+			[this]()
 			{
-				auto ui = RE::UI::GetSingleton(); 
-				if (!ui)
-				{
-					return;
-				}
-
-				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
-				if (!favoritesMenu)
-				{
-					return;
-				}
-
-				auto view = favoritesMenu->uiMovie; 
-				if (!view)
-				{
-					return;
-				}
-
-				// Entry positions in the menu DO NOT correspond to 
-				// their indices in the favorites list. 
-				// Have to map out the entries for all indices.
-				RE::GFxValue entryList{ };
-				view->CreateArray(std::addressof(entryList));
-				view->GetVariable
+				// Tested in the framerate range (15-100+).
+				std::this_thread::sleep_for(0.5s);
+				Util::AddSyncedTask
 				(
-					std::addressof(entryList), "_root.MenuHolder.Menu_mc.itemList.entryList"
-				);
-				double numEntries = view->GetVariableDouble
-				(
-					"_root.MenuHolder.Menu_mc.itemList.entryList.length"
-				);
-				for (uint32_t i = 0; i < numEntries; ++i)
-				{
-					RE::GFxValue entryIndex{ };
-					RE::GFxValue entry;
-					view->GetVariableArray
-					(
-						"_root.MenuHolder.Menu_mc.itemList.entryList", i, std::addressof(entry), 1
-					);
-					entry.GetMember("index", std::addressof(entryIndex));
-
-					uint32_t index = static_cast<uint32_t>(entryIndex.GetNumber());
-					RE::GFxValue entryText{ };
-					entry.GetMember("text", std::addressof(entryText));
-					std::string entryStr = entryText.GetString();
-
-					// Update equip state for index.
-					// Normal items receive an update to the "caret" equipped icon,
-					// while quick slot items have their entry text modified.
-					// This tag gets wiped whenever the favorites menu is opened,
-					// so it must be re-applied each time.
-					if (index == em->equippedQSItemIndex || index == em->equippedQSSpellIndex)
+					[this]()
 					{
-						if (entryStr.find("[*QS", 0) == std::string::npos)
+						auto ui = RE::UI::GetSingleton(); 
+						if (!ui)
 						{
-							bool isConsumable = index == em->equippedQSItemIndex;
-							entryStr = fmt::format
-							(
-								"[*QS{}*] {}", isConsumable ? "I" : "S", entryStr
-							);
-							// Set entry text and apply modified entry.
-							entryText.SetString(entryStr);
-							entry.SetMember("text", entryText);
-							view->SetVariableArray
+							return;
+						}
+
+						favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
+						if (!favoritesMenu)
+						{
+							return;
+						}
+
+						auto view = favoritesMenu->uiMovie; 
+						if (!view)
+						{
+							return;
+						}
+
+						// Entry positions in the menu DO NOT correspond to 
+						// their indices in the favorites list. 
+						// Have to map out the entries for all indices.
+						RE::GFxValue entryList{ };
+						view->CreateArray(std::addressof(entryList));
+						view->GetVariable
+						(
+							std::addressof(entryList), 
+							"_root.MenuHolder.Menu_mc.itemList.entryList"
+						);
+						double numEntries = view->GetVariableDouble
+						(
+							"_root.MenuHolder.Menu_mc.itemList.entryList.length"
+						);
+						for (uint32_t i = 0; i < numEntries; ++i)
+						{
+							RE::GFxValue entryIndex{ };
+							RE::GFxValue entry;
+							view->GetVariableArray
 							(
 								"_root.MenuHolder.Menu_mc.itemList.entryList", 
-								i,
-								std::addressof(entry), 
+								i, 
+								std::addressof(entry),
 								1
 							);
-							// Update list to reflect changes.
-							view->InvokeNoReturn
-							(
-								"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
-							);
-						}
-					}
+							entry.GetMember("index", std::addressof(entryIndex));
 
-					// Insert pairs into the map.
-					// (key = favorites list index, value = UI entry number)
-					favMenuIndexToEntryMap.insert_or_assign(index, i);
-				}
+							uint32_t index = static_cast<uint32_t>(entryIndex.GetNumber());
+							RE::GFxValue entryText{ };
+							entry.GetMember("text", std::addressof(entryText));
+							std::string entryStr = entryText.GetString();
+
+							// Update equip state for index.
+							// Normal items receive an update to the "caret" equipped icon,
+							// while quick slot items have their entry text modified.
+							// This tag gets wiped whenever the favorites menu is opened,
+							// so it must be re-applied each time.
+							const auto& em = glob.coopPlayers[glob.player1CID]->em;
+							if (index == em->equippedQSItemIndex || 
+								index == em->equippedQSSpellIndex)
+							{
+								if (entryStr.find("[*QS", 0) == std::string::npos)
+								{
+									bool isConsumable = index == em->equippedQSItemIndex;
+									entryStr = fmt::format
+									(
+										"[*QS{}*] {}", isConsumable ? "I" : "S", entryStr
+									);
+									// Set entry text and apply modified entry.
+									entryText.SetString(entryStr);
+									entry.SetMember("text", entryText);
+									view->SetVariableArray
+									(
+										"_root.MenuHolder.Menu_mc.itemList.entryList", 
+										i,
+										std::addressof(entry), 
+										1
+									);
+									SPDLOG_DEBUG
+									(
+										"[MIM] InitP1QSFormEntries. Set {} entry as {}.",
+										isConsumable ? "QSI" : "QSS",
+										entryStr
+									);
+								}
+							}
+
+							// Insert pairs into the map.
+							// (key = favorites list index, value = UI entry number)
+							favMenuIndexToEntryMap.insert_or_assign(index, i);
+						}
+
+						// Update list to reflect changes.
+						view->InvokeNoReturn
+						(
+							"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
+						);
+					},
+					true
+				);
 			}	
 		);
 	}

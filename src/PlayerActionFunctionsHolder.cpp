@@ -4799,8 +4799,20 @@ namespace ALYSLC
 				{
 					continue;
 				}
-
-				if (a_p->isPlayer1)
+				
+				// Give to P1 if the object is a party-wide or quest item.
+				bool toP1 = 
+				(
+					(
+						a_p->isPlayer1 || 
+						Util::IsPartyWideItem(boundObj)
+					) || 
+					(
+						countInvEntryDataPair.second &&
+						countInvEntryDataPair.second->IsQuestObject()
+					)
+				);
+				if (toP1)
 				{
 					a_containerPtr->RemoveItem
 					(
@@ -4808,7 +4820,7 @@ namespace ALYSLC
 						countInvEntryDataPair.first,
 						RE::ITEM_REMOVE_REASON::kStoreInContainer,
 						nullptr,
-						a_p->coopActor.get()
+						p1
 					);
 				}
 				else
@@ -4832,7 +4844,7 @@ namespace ALYSLC
 
 				lootedObjects += countInvEntryDataPair.first;
 				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
-				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1)
+				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
 				{
 					p1->AddObjectToContainer
 					(
@@ -4883,8 +4895,20 @@ namespace ALYSLC
 					{
 						continue;
 					}
-						
-					if (a_p->isPlayer1)
+
+					// Give to P1 if the object is a party-wide or quest item.	
+					bool toP1 = 
+					(
+						(
+							a_p->isPlayer1 || 
+							Util::IsPartyWideItem(boundObj)
+						) || 
+						(
+							countInvEntryDataPair.second &&
+							countInvEntryDataPair.second->IsQuestObject()
+						)
+					);
+					if (toP1)
 					{
 						asActor->RemoveItem
 						(
@@ -4892,7 +4916,7 @@ namespace ALYSLC
 							countInvEntryDataPair.first,
 							RE::ITEM_REMOVE_REASON::kStoreInContainer,
 							nullptr,
-							a_p->coopActor.get()
+							p1
 						);
 					}
 					else
@@ -4917,7 +4941,7 @@ namespace ALYSLC
 					lootedObjects += countInvEntryDataPair.first;
 					// Show in TrueHUD recent loot widget 
 					// by adding and removing the object from P1.
-					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !a_p->isPlayer1)
+					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
 					{
 						p1->AddObjectToContainer
 						(
@@ -6051,6 +6075,17 @@ namespace ALYSLC
 			const auto& pam = a_p->pam;
 			if (a_p->coopActor->IsWeaponDrawn())
 			{
+				// Do not spellcast if canceled previously with the sheathe bind.
+				// Reset if a hand casting bind has just started.
+				if (a_actionJustSterted) 
+				{
+					a_p->pam->spellcastingCancelled = false;
+				}
+				else if (a_p->pam->spellcastingCancelled)
+				{
+					return;
+				}
+
 				auto lhSpell = em->GetLHSpell();
 				auto rhSpell = em->GetRHSpell();
 				auto& lhCasting = pam->castingGlobVars[!CastingGlobIndex::kLH];
