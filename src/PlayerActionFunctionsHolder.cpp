@@ -1030,13 +1030,12 @@ namespace ALYSLC
 					bool isGrabbed = std::any_of
 					(
 						glob.coopPlayers.begin(), glob.coopPlayers.end(),
-						[&a_p](const auto& p) 
+						[&a_p](const auto& a_p2) 
 						{
 							return
 							(
-								p->isActive && 
-								p->coopActor != a_p->coopActor && 
-								p->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+								a_p2->isActive && 
+								a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
 							);
 						}
 					);
@@ -1089,17 +1088,15 @@ namespace ALYSLC
 				bool isGrabbed = std::any_of
 				(
 					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[&a_p](const auto& p) 
+					[&a_p](const auto& a_p2) 
 					{
 						return 
 						(
-							p->isActive && 
-							p->coopActor != a_p->coopActor && 
-							p->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+							a_p2->isActive && 
+							a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
 						);
 					}
 				);
-
 				auto charController = a_p->coopActor->GetCharController();
 				bool shouldAttemptGetUp = 
 				{
@@ -1209,7 +1206,7 @@ namespace ALYSLC
 				// Must be moving without jumping/paragliding, 
 				// not attacking/bashing/blocking/casting,
 				// and cannot be dash dodging
-				// and not ragdolled or ragdolled while M.A.R.F-ing.
+				// and not ragdolled or in ragdoll flight.
 				canPerform =  
 				(
 					((a_p->mm->isParagliding) || (a_p->mm->lsMoved && !a_p->pam->isJumping)) &&
@@ -1218,7 +1215,11 @@ namespace ALYSLC
 						!a_p->pam->isBlocking && !a_p->pam->isInCastingAnim
 					) && 
 					(!a_p->mm->isDashDodging) &&
-					(!a_p->coopActor->IsInRagdollState() || a_p->tm->isMARFing)
+					(
+						!a_p->coopActor->IsInRagdollState() || 
+						a_p->tm->isMARFing ||
+						a_p->tm->isSMORFing
+					)
 				);
 			}
 
@@ -4242,9 +4243,9 @@ namespace ALYSLC
 					);
 					cost = a_p->pam->baseStamina * (min(0.9f, sqrtf(carryWeightRatio)) + 0.1f);
 				}
-				else if (!a_p->mm->isParagliding && !a_p->tm->isMARFing)
+				else if (!a_p->mm->isParagliding && !a_p->tm->isMARFing && !a_p->tm->isSMORFing)
 				{
-					// No cost for paragliding or M.A.R.F as of now.
+					// No cost for paragliding or ragdoll flight cost as of now.
 					
 					// https://en.uesp.net/wiki/Skyrim:Stamina
 					// Cost for sprinting and shield charging is the same.
@@ -5442,14 +5443,14 @@ namespace ALYSLC
 				auto downedPlayerIter = std::find_if
 				(
 					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[&targetRefrPtr](const auto& p) 
+					[&targetRefrPtr](const auto& a_p2) 
 					{
 						return 
 						(
-							p->isActive && 
-							p->coopActor == targetRefrPtr && 
-							p->isDowned && 
-							!p->isRevived
+							a_p2->isActive && 
+							a_p2->coopActor == targetRefrPtr && 
+							a_p2->isDowned && 
+							!a_p2->isRevived
 						);
 					}
 				);
@@ -8986,18 +8987,17 @@ namespace ALYSLC
 					Settings::fSecsDefMinHoldTime && 
 					a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp) 
 				{
-					// Stop other player from grabbing this player 
+					// Stop a player from grabbing this player 
 					// or get up if ragdolled on the ground.
 					auto isGrabbedIter = std::find_if
 					(
 						glob.coopPlayers.begin(), glob.coopPlayers.end(),
-						[&a_p](const auto& p) 
+						[&a_p](const auto& a_p2) 
 						{
 							return 
 							(
-								p->isActive &&
-								p->coopActor != a_p->coopActor && 
-								p->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+								a_p2->isActive &&
+								a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
 							);
 						}
 					);
@@ -10961,7 +10961,7 @@ namespace ALYSLC
 				return;
 			}
 
-			if (!a_p->mm->isParagliding && !a_p->tm->isMARFing) 
+			if (!a_p->mm->isParagliding && !a_p->tm->isMARFing && !a_p->tm->isSMORFing) 
 			{
 				if (a_p->coopActor->IsSneaking() || a_p->pam->IsPerforming(InputAction::kBlock)) 
 				{
@@ -13890,13 +13890,12 @@ namespace ALYSLC
 				auto isGrabbedIter = std::find_if
 				(
 					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[&a_p](const auto& otherP) 
+					[&a_p](const auto& a_p2) 
 					{
 						return 
 						(
-							otherP->isActive &&
-							otherP->coopActor != a_p->coopActor && 
-							otherP->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+							a_p2->isActive &&
+							a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
 						);
 					}
 				);
@@ -13930,7 +13929,6 @@ namespace ALYSLC
 				const auto handle = a_p->coopActor->GetHandle();
 				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
 				a_p->tm->rmm->ClearGrabbedRefr(handle);
-
 				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
 				{
 					a_p->tm->SetIsGrabbing(false);
@@ -13986,8 +13984,8 @@ namespace ALYSLC
 				return;
 			}
 
-			// Cannot stop sprinting if paragliding or M.A.R.F-ing.
-			if (a_p->mm->isParagliding || a_p->tm->isMARFing) 
+			// Cannot stop sprinting if paragliding or in ragdoll flight.
+			if (a_p->mm->isParagliding || a_p->tm->isMARFing || a_p->tm->isSMORFing) 
 			{
 				return;
 			}

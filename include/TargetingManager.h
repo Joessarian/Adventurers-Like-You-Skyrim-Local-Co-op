@@ -2010,6 +2010,8 @@ namespace ALYSLC
 		bool baseCanDrawOverlayElements;
 		// Can the player activate their chosen activation refr?
 		bool canActivateRefr;
+		// Nope. Not explaining this.
+		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
 		// Is the crosshair refr in range to open the QuickLoot menu?
@@ -2020,6 +2022,8 @@ namespace ALYSLC
 		// You grab me, I grab you, into the sky we go.
 		// It's not a bug, it's a feature.
 		bool isMARFing;
+		// No comment. It's neat, though.
+		bool isSMORFing;
 		// Is the player trying to interact with cycled, nearby refrs?
 		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?

@@ -221,6 +221,7 @@ namespace ALYSLC
 		crosshairRefrInRangeForQuickLoot = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
+		isSMORFing = false;
 		useProximityInteraction = false;
 		validCrosshairRefrHit = false;
 		// Floats.
@@ -3899,9 +3900,15 @@ namespace ALYSLC
 							(!a_refr->As<RE::Actor>() || a_refr->IsDead())
 						) ||
 						(
-							!a_containersOnly && 
-							Util::IsLootableRefr(a_refr) && 
-							!a_refr->HasContainer()
+							(
+								!a_containersOnly && 
+								Util::IsLootableRefr(a_refr) && 
+								!a_refr->HasContainer()
+							) &&
+							(
+								!Util::IsSMORFObject(a_refr->GetHandle()) ||
+								rmm->IsManaged(a_refr->GetHandle(), true)
+							)
 						)
 					)
 				);
@@ -3977,7 +3984,12 @@ namespace ALYSLC
 				auto baseObj = a_refr->GetBaseObject();
 				// Lootable and either the player is choosing to steal the object 
 				// or the object is not a crime to activate.
-				if ((canSteal || !a_refr->IsCrimeToActivate()) && (Util::IsLootableRefr(a_refr)))
+				if ((canSteal || !a_refr->IsCrimeToActivate()) &&
+					(Util::IsLootableRefr(a_refr))  &&
+					(
+						!Util::IsSMORFObject(a_refr->GetHandle()) ||
+						rmm->IsManaged(a_refr->GetHandle(), true)
+					))
 				{
 					bool sameType = false;
 					if (a_compType == RefrCompType::kSameBaseForm)
@@ -4430,6 +4442,33 @@ namespace ALYSLC
 				// Knockout!
 				Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
 			}
+		}
+
+		if (canSMORF && asActor == coopActor.get())
+		{
+			isSMORFing = true;
+			rmm->ClearReleasedRefr(coopActor->GetHandle());
+			SetIsGrabbing(true);
+			rmm->AddGrabbedRefr(p, coopActor->GetHandle());
+			SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kActivationInfo,
+				fmt::format
+				(
+					"P{}: <font color=\"#FFD766\">"
+					"Cheese for everyone!</font>",
+					playerID + 1
+				),
+				{
+					CrosshairMessageType::kNone,
+					CrosshairMessageType::kEquippedItem,
+					CrosshairMessageType::kStealthState,
+					CrosshairMessageType::kTargetSelection 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
+
+			p->mm->reqFaceTarget = false;
 		}
 
 		// Play sound.
@@ -4952,7 +4991,7 @@ namespace ALYSLC
 		//=================
 		//[Released Refrs]:
 		//=================
-
+		
 		if (!rmm->releasedRefrInfoList.empty()) 
 		{
 			// Clear all invalid/inactive released refrs before updating.
@@ -5008,7 +5047,7 @@ namespace ALYSLC
 					--i;
 					continue;
 				}
-				
+
 				auto releasedActor = releasedRefrPtr->As<RE::Actor>();
 				float secsSinceRelease = Util::GetElapsedSeconds
 				(
@@ -5470,12 +5509,18 @@ namespace ALYSLC
 					bool shouldRedirectWithFlop = 
 					(
 						(
-							p->mm->reqFaceTarget && 
 							releasedRefrPtr == coopActor &&
 							hitRefrPtr != coopActor &&
 							hitRefrPtr->GetHandle() != crosshairRefrHandle
 						) &&
-						(hitActor || Util::IsLootableRefr(hitRefrPtr.get()))
+						(
+							hitActor || 
+							Util::IsLootableRefr(hitRefrPtr.get())
+						) &&
+						(
+							!Util::IsSMORFObject(hitRefrPtr->GetHandle()) ||
+							!rmm->IsManaged(hitRefrPtr->GetHandle(), true)
+						)
 					);
 					if (shouldRedirectWithFlop) 
 					{
@@ -5597,6 +5642,51 @@ namespace ALYSLC
 			{
 				rmm->releasedRefrHandlesToInfoIndices.clear();
 			}
+		}
+		
+		bool hasSMORFObject = false;
+		if (rmm->isGrabbing)
+		{
+			for (uint8_t i = 0; i < rmm->grabbedRefrInfoList.size(); ++i)
+			{
+				const auto& grabbedRefrInfo = rmm->grabbedRefrInfoList[i];
+				auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrInfo->refrHandle); 
+				if (!grabbedRefrPtr) 
+				{
+					continue;
+				}
+
+				auto baseObj = grabbedRefrPtr->GetBaseObject(); 
+				if ((baseObj) && 
+					(baseObj->formID == 0x64B33 || baseObj->formID == 0x64B35))
+				{
+					hasSMORFObject = true;
+				}
+			}
+		}
+		else
+		{
+			hasSMORFObject = false;
+		}
+
+		bool wasSMORFing = isSMORFing;
+		if (!hasSMORFObject)
+		{
+			canSMORF = 
+			isSMORFing = false;
+		}
+		else if (!coopActor->IsInRagdollState())
+		{
+			isSMORFing = false;
+		}
+		else if (isSMORFing)
+		{
+			isSMORFing = canSMORF;
+		}
+
+		if (!isSMORFing && wasSMORFing)
+		{
+			rmm->ClearGrabbedRefr(coopActor->GetHandle());
 		}
 	}
 
@@ -5803,6 +5893,33 @@ namespace ALYSLC
 			releasedActorPtr->formID,
 			hitFlags
 		);
+
+		if (canSMORF && releasedActorPtr == coopActor)
+		{
+			isSMORFing = true;
+			rmm->ClearReleasedRefr(coopActor->GetHandle());
+			SetIsGrabbing(true);
+			rmm->AddGrabbedRefr(p, coopActor->GetHandle());
+			SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kActivationInfo,
+				fmt::format
+				(
+					"P{}: <font color=\"#FFD766\">"
+					"Cheese for everyone!</font>",
+					playerID + 1
+				),
+				{
+					CrosshairMessageType::kNone,
+					CrosshairMessageType::kEquippedItem,
+					CrosshairMessageType::kStealthState,
+					CrosshairMessageType::kTargetSelection 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs
+			);
+
+			p->mm->reqFaceTarget = false;
+		}
 
 		auto audioManager = RE::BSAudioManager::GetSingleton(); 
 		if (!audioManager)
@@ -6274,6 +6391,10 @@ namespace ALYSLC
 				(
 					(hitRefrPtr == coopActor) ||
 					(hitRefrPtr == p->GetCurrentMount()) ||
+					(
+						Util::IsSMORFObject(result.hitRefrHandle) &&
+						!rmm->IsManaged(result.hitRefrHandle, true)
+					) ||
 					(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
 					(!isCoopPlayer && glob.coopEntityBlacklistFIDSet.contains(hitRefrPtr->formID))
 				);
@@ -6803,12 +6924,16 @@ namespace ALYSLC
 					}
 
 					auto asActor = a_refr->As<RE::Actor>();
-					// Filter out blacklisted actors
+					// Filter out blacklisted actors and refrs.
 					const bool blacklisted =
 					{ 
 						(currentMount && a_refr == currentMount.get()) ||
 						(asActor && asActor->IsPlayerTeammate()) ||
-						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID)) 
+						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID)) ||
+						(
+							Util::IsSMORFObject(a_refr->GetHandle()) &&
+							!rmm->IsManaged(a_refr->GetHandle(), true)
+						)
 					};
 					// Useless to activate hostile actors in combat.
 					const bool activateHostileActor = 
@@ -9423,8 +9548,9 @@ namespace ALYSLC
 		float maxSpeedMult = 1.0f;
 		// Absolute max speed the grabbed object can reach.
 		float grabbedRefrMaxSpeed = Settings::fBaseGrabbedRefrMaxSpeed;
-		// Speedmult and suspension distance adjustments specifically for grabbing other players.
-		if (Settings::bCanGrabOtherPlayers && GlobalCoopData::IsCoopPlayer(objectPtr.get()))
+		// Speedmult and suspension distance adjustments specifically for grabbing players.
+		if ((a_p->tm->isSMORFing) || 
+			(Settings::bCanGrabOtherPlayers && GlobalCoopData::IsCoopPlayer(objectPtr.get())))
 		{
 			if (a_p->mm->isParagliding)
 			{
@@ -9433,10 +9559,10 @@ namespace ALYSLC
 				maxSpeedMult = 2.0f;
 				suspensionDistMult = 2.0f;
 			}
-			else if (a_p->tm->isMARFing)
+			else if (a_p->tm->isMARFing || a_p->tm->isSMORFing)
 			{
 				// Uhh, we have Skyrim's Paraglider at home, guys. Really!
-				// M.A.R.F is on.
+				// M.A.R.F/S.P.O.R.F is on.
 				if (ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled && 
 					glob.tarhielsGaleEffect && 
 					a_p->coopActor->HasMagicEffect(glob.tarhielsGaleEffect))
@@ -9469,7 +9595,7 @@ namespace ALYSLC
 		// but a bit better when based from the player's torso instead of from their head.
 		RE::NiPoint3 basePos =
 		(
-			a_p->tm->isMARFing ?
+			a_p->tm->isMARFing || a_p->tm->isSMORFing ?
 			a_p->mm->playerTorsoPosition :
 			RE::NiPoint3
 			(
@@ -9504,7 +9630,7 @@ namespace ALYSLC
 		};
 
 		// Can move the grabbed refr vertically in an arc around the player by adjusting aim pitch.
-		if (a_p->tm->isMARFing)
+		if (a_p->tm->isMARFing || a_p->tm->isSMORFing)
 		{
 			targetPosition.z += 
 			(
@@ -10552,8 +10678,8 @@ namespace ALYSLC
 		}
 		
 		// Throw the refr if facing the crosshair position,
-		// if it is not the player themselves (flop), 
-		// and if it is not the target refr.
+		// if the thrown object is not the target refr,
+		// and if it is not the player themselves (flop), unless thrown while SMORFing.
 		// Only can throw actors if the 'Can Grab Actors' setting is enabled,
 		// and only can throw players if 'Can Grab Other Players' setting is enabled.
 		// Drop the refr otherwise.
@@ -10561,9 +10687,17 @@ namespace ALYSLC
 		bool shouldThrow = 
 		(
 			(
-				a_p->mm->reqFaceTarget && 
-				objectPtr != a_p->coopActor &&
-				refrHandle != a_p->tm->crosshairRefrHandle
+				(
+					a_p->mm->reqFaceTarget && 
+					refrHandle != a_p->tm->crosshairRefrHandle
+				) &&
+				(
+					(objectPtr != a_p->coopActor) || 
+					(
+						a_p->tm->isSMORFing && 
+						a_p->pam->GetPlayerActionInputJustReleased(InputAction::kGrabObject, false)
+					)
+				)
 			) &&
 			(
 				(!objectPtr->As<RE::Actor>()) || 
@@ -10862,6 +10996,20 @@ namespace ALYSLC
 			asProjectile && !asProjectile->ShouldBeLimited()
 		);
 
+		// Hehe.
+		auto baseObj = objectPtr->GetBaseObject(); 
+		if ((baseObj) && 
+			(baseObj->formID == 0x64B33 || baseObj->formID == 0x64B35))
+		{
+			a_p->tm->canSMORF = true;
+		}
+
+		// Match collision state with the first grabbed refr.
+		if (nextOpenIndex != 0 && grabbedRefrInfoList[0] && !grabbedRefrInfoList[0]->hasCollision)
+		{
+			info->ToggleCollision();
+		}
+
 		return nextOpenIndex;
 	}
 
@@ -10893,7 +11041,7 @@ namespace ALYSLC
 		{
 			return -1;
 		}
-
+		
 		int32_t nextOpenIndex = releasedRefrInfoList.size();
 		// Store mapped index and then add to list.
 		releasedRefrHandlesToInfoIndices.insert({ a_handle, nextOpenIndex });
@@ -11809,12 +11957,18 @@ namespace ALYSLC
 				bool shouldRedirectWithFlop = 
 				(
 					(
-						a_p->mm->reqFaceTarget && 
 						releasedRefrPtr == a_p->coopActor &&
 						collidedWithRefrPtr != a_p->coopActor &&
 						collidedWithRefrPtr->GetHandle() != a_p->tm->crosshairRefrHandle
 					) &&
-					(hitActor || Util::IsLootableRefr(collidedWithRefrPtr.get()))
+					(
+						hitActor || 
+						Util::IsLootableRefr(collidedWithRefrPtr.get())
+					) &&
+					(
+						!Util::IsSMORFObject(collidedWithRefrPtr->GetHandle()) ||
+						!a_p->tm->rmm->IsManaged(collidedWithRefrPtr->GetHandle(), true)
+					)
 				);
 				if (shouldRedirectWithFlop) 
 				{

@@ -3000,7 +3000,9 @@ namespace ALYSLC
 			(
 				(reqFaceTarget && p->coopActor->IsWeaponDrawn()) || 
 				turningToCrosshairTarget || 
-				usingAimCorrectionOrLinkedTarget
+				usingAimCorrectionOrLinkedTarget ||
+				p->tm->isMARFing ||
+				p->tm->isSMORFing
 			) 
 		};
 		// Default to pitching towards the current crosshair position,

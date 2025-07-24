@@ -2466,7 +2466,7 @@ namespace ALYSLC
 				!a_race->GetPlayable()
 			);
 		}
-
+		
 		// Is the refr valid for targeting with the crosshair,
 		// as an aim correction target, or for activation?
 		// Baseline check for availability and handle + 3D validity. 
@@ -3260,6 +3260,9 @@ namespace ALYSLC
 
 		// Is the given refr usable for target selection or activation?
 		bool IsSelectableRefr(RE::TESObjectREFR* a_refr);
+		
+		// What's this SMORFing thing?
+		const bool IsSMORFObject(const RE::ObjectRefHandle& a_handle);
 
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
