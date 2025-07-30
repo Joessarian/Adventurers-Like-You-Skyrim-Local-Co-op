@@ -94,6 +94,10 @@ namespace ALYSLC
 		// and send dismissal event to script to handle cleanup.
 		void DismissPlayer();
 
+		// Get health/magicka/stamina stat notification text for this player.
+		// Empty string if health/magicka/stamina are all full or if the player is downed.
+		std::string GetHMSStatNotificationText();
+
 		// If the player's CID has changed since starting co-op, get all CIDs
 		// and re-assign them to all players.
 		void HandleControllerInputError();

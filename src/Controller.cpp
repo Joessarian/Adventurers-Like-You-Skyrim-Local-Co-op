@@ -330,7 +330,6 @@ namespace ALYSLC
 			(
 				i == !InputAction::kRS && GetAnalogStickState(a_controllerID, false).normMag > 0.0f
 			);
-				
 			// Button/trigger pressed or analog stick moved.
 			if (buttonPressed || ltPressed || rtPressed || lsMoved || rsMoved) 
 			{

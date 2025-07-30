@@ -349,6 +349,13 @@ namespace ALYSLC
 			// Check if the correct binds were pressed to open the summoning or debug menus.
 			// Return true if the input was handled and should be invalidated.
 			static bool CheckForMenuTriggeringInput(RE::InputEvent* a_firstGamepadEvent);
+			// 1. Check if P1 is in the Favorites Menu and is trying to hotkey an entry
+			// and update its hotkey state accordingly.
+			// 2. Check if P1 is in the Favorites Menu and is trying to equip 
+			// a quick slot spell/item and (un)equip this item as needed.
+			// 3. Check if P1 is in the Favorites Menu and toggle SMORF state if needed.
+			// Return true if the input was handled and should be invalidated.
+			static bool CheckForP1FavoritesMenuInput(RE::InputEvent* a_firstGamepadEvent);
 			// Check if P1 is in the Favorites Menu and is trying to hotkey an entry.
 			// Return true if the input was handled and should be invalidated.
 			static bool CheckForP1HotkeyReq(RE::InputEvent* a_firstGamepadEvent);

@@ -4633,7 +4633,7 @@ namespace ALYSLC
 					 actionsInProgress.none(AVCostAction::kDodge))
 			{
 				// Start dodging, if not already.
-				avcam->SetStartedAction(AVCostAction::kDodge);
+				avcam->SetStartedAction(AVCostAction::kDodge);	
 				startedNewAction = true;
 			}
 			else if (perfAnimEvent.first == PerfAnimEventTag::kPreHitFrame)
@@ -5191,10 +5191,11 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[PAM] ReadyWeapon: {}: drawn: {}, state: {}, req: {}.",
+			"[PAM] ReadyWeapon: {}: drawn: {}, state: {}, ignore state: {}, req: {}",
 			coopActor->GetName(),
 			coopActor->IsWeaponDrawn(), 
 			!coopActor->actorState2.weaponState, 
+			a_ignoreState,
 			a_shouldDraw
 		);
 

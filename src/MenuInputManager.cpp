@@ -2152,8 +2152,8 @@ namespace ALYSLC
 		// for forms equipped by the co-op companion player.
 
 		// Ensure cached favorited items are up to date.
-		const auto& em = glob.coopPlayers[managerMenuCID]->em;
-		em->RefreshEquipState(RefreshSlots::kAll);
+		const auto& p = glob.coopPlayers[managerMenuCID];
+		p->em->RefreshEquipState(RefreshSlots::kAll);
 		// Update menu equip state with the refreshed favorites data.
 		RefreshFavoritesMenuEquipState(true);
 	}
@@ -3057,6 +3057,8 @@ namespace ALYSLC
 			// Can't update QS tag if task interface is invalid.
 			if (!taskInterface)
 			{
+				// No event to handle.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 				return;
 			}
 
@@ -3090,9 +3092,13 @@ namespace ALYSLC
 					);
 					// Index in favorites list.
 					uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+					if (index >= favoritesMenu->favorites.size())
+					{
+						return;
+					}
+
 					uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
 					auto form = favoritesMenu->favorites[index].item;
-
 					if (!form)
 					{
 						return;
@@ -3246,6 +3252,86 @@ namespace ALYSLC
 		{
 			// Ignore equip attempts with the "A" button, 
 			// as emulating input here will equip this player's favorited item on P1.
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+		}
+		else if (a_xMask == XINPUT_GAMEPAD_X)
+		{
+			auto taskInterface = SKSE::GetTaskInterface();
+			if (!taskInterface)
+			{
+				// No event to handle.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				return;
+			}
+
+			taskInterface->AddUITask
+			(
+				[this]() 
+				{
+					auto ui = RE::UI::GetSingleton(); 
+					if (!ui)
+					{
+						return;
+					}
+
+					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
+					if (!favoritesMenu)
+					{
+						return;
+					}
+
+					auto view = favoritesMenu->uiMovie; 
+					if (!view)
+					{
+						return;
+					}
+
+					RE::GFxValue selectedIndex;
+					view->GetVariable
+					(
+						std::addressof(selectedIndex),
+						"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
+					);
+					// Index in favorites list.
+					uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+					if (index >= favoritesMenu->favorites.size())
+					{
+						return;
+					}
+
+					auto form = favoritesMenu->favorites[index].item;
+					if (!form)
+					{
+						return;
+					}
+
+					if (form->formID == 0x64B33)
+					{
+						if (glob.mim->managerMenuCID != -1)
+						{
+							const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
+							p->tm->canSMORF = !p->tm->canSMORF;
+							if (p->tm->canSMORF)
+							{
+								RE::DebugMessageBox
+								(
+									"A latent power suddenly compels you. Propels you?"
+								);
+							}
+							else
+							{
+								RE::DebugMessageBox
+								(
+									"The power ebbs away and you feel grounded again."
+								);
+							}
+						
+						}
+					}
+				}
+			);
+
+			// No event to handle.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 		else if (a_xMask == XINPUT_GAMEPAD_RIGHT_THUMB)

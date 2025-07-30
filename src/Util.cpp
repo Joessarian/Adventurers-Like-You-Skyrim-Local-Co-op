@@ -4977,39 +4977,6 @@ namespace ALYSLC
 			return true;
 		}
 
-		const bool IsSMORFObject(const RE::ObjectRefHandle& a_handle)
-		{
-			// Shh, it's a secret.
-
-			auto objectPtr = Util::GetRefrPtrFromHandle(a_handle);
-			if (!objectPtr)
-			{
-				return false;
-			}
-
-			auto baseObj = objectPtr->GetBaseObject(); 
-			if ((!baseObj) || (baseObj->formID != 0x64B33 && baseObj->formID != 0x64B35))
-			{
-				return false;
-			}
-
-			for (const auto& p : glob.coopPlayers)
-			{
-				if (!p->isActive)
-				{
-					continue;
-				}
-
-				// Must be grabbed.
-				if (p->tm->rmm->IsManaged(a_handle, true))
-				{
-					return true;
-				}
-			}
-
-			return false;
-		}
-
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle)
 		{
 			// Construct a rotation matrix given an axis 

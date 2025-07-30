@@ -988,7 +988,7 @@ namespace ALYSLC
 
 			// Clear all managed released refrs.
 			void ClearReleasedRefrs() noexcept;
-			
+
 			// Get the given refr handle's manipulable refr info index 
 			// that gives its position in the grabbed/released refrs list 
 			// and return it through the outparam.
@@ -1736,6 +1736,10 @@ namespace ALYSLC
 			bool&& a_capVelocity,
 			RE::ObjectRefHandle a_projHandle = RE::ObjectRefHandle()
 		);
+		
+		// Iterate through nearby refrs and get the closest selectable refr to the crosshair ray 
+		// (ray starting from the crosshair's screen position in the direction of the camera).
+		RE::ObjectRefHandle GetClosestSelectableRefrToCrosshairRay();
 
 		// Get the closest targetable actor to the source refr 
 		// (or player if no source refr handle is given)
@@ -2014,6 +2018,8 @@ namespace ALYSLC
 		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
+		// Was the selected crosshair refr chosen by raycast?
+		bool crosshairRefrFromRaycast;
 		// Is the crosshair refr in range to open the QuickLoot menu?
 		bool crosshairRefrInRangeForQuickLoot;
 		// Is the crosshair target refr in sight of the player?
@@ -2028,6 +2034,8 @@ namespace ALYSLC
 		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?
 		bool validCrosshairRefrHit;
+		// Nope. No description.
+		bool wantsToSMORF;
 		// Closest hostile actor's distance from the player.
 		float closestHostileActorDist;
 		// Difference in pitch between the last hit local position and the crosshair refr's center.

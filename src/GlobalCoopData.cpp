@@ -4664,12 +4664,27 @@ namespace ALYSLC
 			}
 
 			// Can't concatenate to fixed string, so use a temp string. P1 is always first.
+			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
 			std::string playerText = std::string
 			(
-				glob.coopPlayers[glob.player1CID]->tm->crosshairMessage->text
+				coopP1->tm->crosshairMessage->text
 			);
-			bool isEmpty = playerText == "";
+			// Strip newline characters, if any.
 			std::replace(playerText.begin(), playerText.end(), '\n', ' ');
+			// Add on HMS stat info afterward.
+			if (Settings::bShowHMSStats)
+			{
+				std::string hmsText = coopP1->GetHMSStatNotificationText();
+				if (!hmsText.empty())
+				{
+					// Keep current message from fading out while all HMS values are not full.
+					coopP1->tm->crosshairMessage->setTP = SteadyClock::now();
+				}
+
+				playerText += hmsText;
+			}
+
+			bool isEmpty = playerText.empty();
 			std::string tempCrosshairText = playerText + "\n";
 			// Concatenate the other active players' messages to P1's.
 			float longestLifetimeRemaining = -1.0f;
@@ -4680,14 +4695,40 @@ namespace ALYSLC
 				{
 					continue;
 				}
-
-				if (Settings::bCrosshairTextFade)
+				
+				// Already set P1's portion of the crosshair text message.
+				if (!p->isPlayer1)
 				{
-					if (isEmpty && Hash(p->tm->crosshairMessage->text) != Hash(""))
+					playerText = std::string(p->tm->crosshairMessage->text);
+					// Strip newline characters, if any.
+					std::replace(playerText.begin(), playerText.end(), '\n', ' ');
+					// Add on HMS stat info afterward.
+					if (Settings::bShowHMSStats)
+					{
+						std::string hmsText = p->GetHMSStatNotificationText();
+						if (!hmsText.empty())
+						{
+							// Keep current message from fading out while all HMS values
+							// are not full.
+							p->tm->crosshairMessage->setTP = SteadyClock::now();
+						}
+
+						playerText += hmsText;
+					}
+
+					if (isEmpty && !playerText.empty())
 					{
 						isEmpty = false;
 					}
 
+					if (!isEmpty)
+					{
+						tempCrosshairText += playerText + "\n";
+					}
+				}
+
+				if (Settings::bCrosshairTextFade)
+				{
 					auto timeSinceSet = Util::GetElapsedSeconds(p->tm->crosshairMessage->setTP);
 					if (timeSinceSet == 0.0f || timeSinceSet > longestLifetimeRemaining)
 					{
@@ -4734,19 +4775,6 @@ namespace ALYSLC
 							}
 						}
 					}
-				}
-
-				// Already set P1's portion of the crosshair text message.
-				if (p->isPlayer1)
-				{
-					continue;
-				}
-				
-				if (!isEmpty)
-				{
-					playerText = std::string(p->tm->crosshairMessage->text);
-					std::replace(playerText.begin(), playerText.end(), '\n', ' ');
-					tempCrosshairText += playerText + "\n";
 				}
 			}
 
@@ -9162,10 +9190,15 @@ namespace ALYSLC
 					}
 			
 					// Ragdoll first.
-					Util::PushActorAway
-					(
-						p->coopActor.get(), p->coopActor->data.location, -1.0f, true
-					);
+					// Can crash if the player's 3D is not loaded, 
+					// such as when the game is loading a save or when P1 is moving to a new cell.
+					if (p->selfValid)
+					{
+						Util::PushActorAway
+						(
+							p->coopActor.get(), p->coopActor->data.location, -1.0f, true
+						);
+					}
 
 					// Make sure god mode is disabled for each player first; 
 					// otherwise, they won't die below.

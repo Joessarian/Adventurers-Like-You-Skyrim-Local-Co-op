@@ -427,6 +427,7 @@ namespace ALYSLC
 		(
 			GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->oldContainer)
 		);
+		bool fromCoopPlayer = fromCoopPlayerIndex != -1;
 		int32_t toCoopPlayerIndex = 
 		(
 			GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer)
@@ -478,6 +479,30 @@ namespace ALYSLC
 						}
 					}
 				}
+			}
+		}
+
+		// Update SMORF-gating flag.
+		// Dropped/moved from a player.
+		if (fromCoopPlayer && 
+			toCoopPlayerIndex != fromCoopPlayerIndex &&
+			a_containerChangedEvent->baseObj == 0x64B33)
+		{
+			const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
+			auto inventory = p->coopActor->GetInventory();
+			auto obj = RE::TESForm::LookupByID<RE::TESBoundObject>(0x64B33);
+			const auto iter = obj ? inventory.find(obj) : inventory.end();
+			if (iter == inventory.end() || iter->second.first <= 0)
+			{
+				if (p->tm->canSMORF)
+				{
+					RE::DebugMessageBox
+					(
+						"The power ebbs away and you feel grounded again."
+					);
+				}
+
+				p->tm->canSMORF = false;
 			}
 		}
 

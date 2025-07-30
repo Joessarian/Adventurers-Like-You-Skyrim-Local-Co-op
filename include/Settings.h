@@ -56,6 +56,9 @@ namespace ALYSLC
 		static inline bool bRemoveInteriorOcclusion = false;
 		// Use interpolation to smooth the camera's target point path.
 		static inline bool bTargetPosSmoothing = true;
+		// Auto rotation rate multipliers for pitch and yaw.
+		static inline float fAutoRotateCamPitchRateMult = 1.0f;
+		static inline float fAutoRotateCamYawRateMult = 1.0f;
 		// Camera FOV to set for exterior and interior cells.
 		static inline float fCamExteriorFOV = 75.0f;
 		static inline float fCamInteriorFOV = 75.0f;
@@ -160,6 +163,10 @@ namespace ALYSLC
 		static inline bool bCanGrabActors = false;
 		// Can players grab other players?
 		static inline bool bCanGrabOtherPlayers = true;
+		// Can players throw actors (other players not included)?
+		static inline bool bCanThrowActors = false;
+		// Can players throw other players?
+		static inline bool bCanThrowOtherPlayers = true;
 		// Rotate arms when holding the corresponding bind(s) 
 		// and moving the right stick while weapons are sheathed.
 		static inline bool bEnableArmsRotation = true;
@@ -211,6 +218,11 @@ namespace ALYSLC
 		// Fade the crosshair text in when there is a message to display
 		// and fade out when the last message's duration expires.
 		static inline bool bCrosshairTextFade = true;
+		// Show health/magicka/stamina values for players when any stat is below 100 percent. 
+		// Color coded brackets (Red -> Health, Blue -> Magicka, Green -> Stamina) 
+		// surround each amount, which progressively greys out more and more 
+		// as the value approaches 0. Only necessary if not using 'Party Combat Parameters'.
+		static inline bool bShowHMSStats = false;
 		// Lockpicking is a team effort when enabled.
 		// The lock-activating companion player rotates the pick, and P1 rotates the lock.
 		static inline bool bTwoPlayerLockpicking = false;

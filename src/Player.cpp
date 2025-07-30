@@ -810,6 +810,112 @@ namespace ALYSLC
 		);
 	}
 
+	std::string CoopPlayer::GetHMSStatNotificationText()
+	{
+		// Get health/magicka/stamina stat notification text for this player.
+		// Empty string if health/magicka/stamina are all full or if the player is downed.
+
+		std::string hmsText = "";
+		if (isDowned)
+		{
+			return hmsText;
+		}
+
+		bool hmsFull = true;
+		const float currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		float healthPercent = 
+		(
+			100.0f * 
+			currentHealth /
+			Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kHealth)
+		);
+		if (isnan(healthPercent) || isinf(healthPercent))
+		{
+			healthPercent = 0.0f;
+			hmsFull = false;
+		}
+		else if (healthPercent < 100.0f && hmsFull)
+		{
+			hmsFull = false;
+		}
+		
+		const float currentMagicka = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		float magickaPercent = 
+		(
+			100.0f * 
+			currentMagicka /
+			Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kMagicka)
+		);
+		if (isnan(magickaPercent) || isinf(magickaPercent))
+		{
+			magickaPercent = 0.0f;
+			hmsFull = false;
+		}
+		else if (magickaPercent < 100.0f && hmsFull)
+		{
+			hmsFull = false;
+		}
+		
+		const float currentStamina = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		float staminaPercent = 
+		(
+			100.0f * 
+			currentStamina /
+			Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kStamina)
+		);
+		if (isnan(staminaPercent) || isinf(staminaPercent))
+		{
+			staminaPercent = 0.0f;
+			hmsFull = false;
+		}
+		else if (staminaPercent < 100.0f && hmsFull)
+		{
+			hmsFull = false;
+		}
+
+		// Nothing to show if full.
+		if (hmsFull)
+		{
+			return hmsText;
+		}
+
+		if (tm->crosshairMessage->text != "")
+		{
+			hmsText += "\n";
+		}
+		else
+		{
+			hmsText = fmt::format("P{}: ", playerID + 1);
+		}
+
+		hmsText += fmt::format
+		(
+			"<font color=\"#C41B1E\">[</font>"
+			"<font color=\"#{:X}\">{:.0f}</font>"
+			"<font color=\"#C41B1E\">]</font>", 
+			Util::GetGrayscalePercentRGB(healthPercent),
+			currentHealth
+		);
+		hmsText += fmt::format
+		(
+			" <font color=\"#243B9F\">[</font>"
+			"<font color=\"#{:X}\">{:.0f}</font>"
+			"<font color=\"#243B9F\">]</font>",
+			Util::GetGrayscalePercentRGB(magickaPercent),
+			currentMagicka
+		);
+		hmsText += fmt::format
+		(
+			" <font color=\"#1BBD4C\">[</font>"
+			"<font color=\"#{:X}\">{:.0f}</font>"
+			"<font color=\"#1BBD4C\">]</font>", 
+			Util::GetGrayscalePercentRGB(staminaPercent),
+			currentStamina
+		);
+
+		return hmsText;
+	}
+
 	void CoopPlayer::HandleControllerInputError()
 	{
 		// Re-assign controller ID(s) when disconnected during co-op 

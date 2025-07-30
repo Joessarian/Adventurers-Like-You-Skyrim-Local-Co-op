@@ -28,6 +28,8 @@ namespace ALYSLC
 				p ? p->controllerID : -1,
 				p.use_count()
 			);
+			// Set once per summoning.
+			canSMORF = false;
 			RefreshData();
 		}
 		else
@@ -218,12 +220,14 @@ namespace ALYSLC
 		baseCanDrawOverlayElements = true;
 		canActivateRefr = false;
 		choseClosestResult = false;
+		crosshairRefrFromRaycast = false;
 		crosshairRefrInRangeForQuickLoot = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
 		isSMORFing = false;
 		useProximityInteraction = false;
 		validCrosshairRefrHit = false;
+		wantsToSMORF = false;
 		// Floats.
 		closestHostileActorDist = FLT_MAX;
 		crosshairLocalPosPitchDiff = 0.0f;
@@ -437,26 +441,26 @@ namespace ALYSLC
 		RE::NiPoint3 eyePos = Util::GetEyePosition(coopActor.get());
 		RE::NiPoint3 eyePosScreenPoint = Util::WorldToScreenPoint3(eyePos);
 		RE::NiPoint3 arrowHeadScreenPoint = Util::WorldToScreenPoint3(p->mm->aimPitchPos);
-		RE::NiPoint3 deltaPos = (p->mm->aimPitchPos - eyePos);
-		deltaPos.Unitize();
 		if (rmm->isGrabbing)
 		{
+			RE::NiPoint3 deltaPos = (p->mm->aimPitchPos - eyePos);
+			deltaPos.Unitize();
 			// Add the grabbed refr offset to better show where grabbed objects will be suspended.
 			float grabSuspensionOffset = max
 			(
 				0.0f, (p->mm->aimPitchPos - eyePos).Length() + grabbedRefrDistanceOffset
 			);
+			if (grabSuspensionOffset == 0.0f)
+			{
+				deltaPos = RE::NiPoint3();
+			}
+
 			arrowHeadScreenPoint = Util::WorldToScreenPoint3
 			(
 				eyePos + 
 				deltaPos * 
 				grabSuspensionOffset
 			);
-
-			if (grabSuspensionOffset == 0.0f)
-			{
-				deltaPos = RE::NiPoint3();
-			}
 		}
 
 		// Base of the arrow.
@@ -3022,6 +3026,267 @@ namespace ALYSLC
 		}
 	}
 
+	RE::ObjectRefHandle TargetingManager::GetClosestSelectableRefrToCrosshairRay()
+	{
+		// Iterate through nearby refrs and get the closest selectable refr to the crosshair ray 
+		// (ray starting from the crosshair's screen position in the direction of the camera).
+
+		auto niCamPtr = Util::GetNiCamera();
+		if (!niCamPtr)
+		{
+			return RE::ObjectRefHandle();
+		}
+
+		RE::TESObjectREFRPtr closestSelectableRefr{ nullptr };
+		float closest2DDist = FLT_MAX;
+		RE::NiPoint3 crosshairScaleformPosition = ToNiPoint3(crosshairScaleformPos);
+
+		// Constrain to the current cell and allow a slightly larger range,
+		// since the check is for crosshair selection.
+		// We don't need to perform bounds checks on all loaded refrs, 
+		// which is way too intensive.
+		Util::ForEachReferenceInCellWithinRange
+		(
+			glob.player1Actor->GetParentCell(),
+			p->mm->playerTorsoPosition, 
+			GetMaxActivationDist() * 2.0f, 
+			true,
+			[
+				&closestSelectableRefr,
+				&crosshairScaleformPosition,
+				&closest2DDist, 
+				&niCamPtr
+			]
+			(RE::TESObjectREFR* a_refr)
+			{
+				// No issues with selecting actors with raycasting, so skip them.
+				if (!a_refr || a_refr->As<RE::Actor>())
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				if (!Util::IsSelectableRefr(a_refr))
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+				
+				auto refr3DPtr = Util::GetRefr3D(a_refr);
+				if (!refr3DPtr)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				float dist2D = crosshairScaleformPosition.GetDistance
+				(
+					Util::WorldToScreenPoint3(refr3DPtr->worldBound.center)
+				);
+				if (dist2D < closest2DDist)
+				{
+					// Obstructions are hit on their 'outward-facing' surface 
+					// by the crosshair raycast, which is not a surface 
+					// visible to the players that are beyond the obstruction,
+					// so exclude such objects from determining
+					// the crosshair's world position and selected refr.
+					bool isAnObstruction = 
+					(
+						glob.cam->obstructionFadeDataMap.contains
+						(
+							refr3DPtr
+						)
+					);
+					if (isAnObstruction)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					// Check three points on the hit refr to see
+					// if any of them are in front of the camera.
+					// Then if none of those points are in front, 
+					// perform a more expensive refr bounds check.
+					bool inFrontOfCam = 
+					{
+						Util::IsInFrontOfCam(a_refr->data.location) ||
+						Util::IsInFrontOfCam(refr3DPtr->world.translate) ||
+						Util::IsInFrontOfCam(refr3DPtr->worldBound.center) ||
+						RE::NiCamera::BoundInFrustum
+						(
+							refr3DPtr->worldBound, niCamPtr.get()
+						)
+					};
+					if (!inFrontOfCam)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					const RE::NiPoint3 boundCenter = refr3DPtr->worldBound.center;
+					const RE::NiMatrix3 rotMat = refr3DPtr->world.rotate;
+					auto halfExtent = 
+					(
+						(a_refr->GetBoundMax() - a_refr->GetBoundMin()) / 2.0f
+					);
+					float maxX = -FLT_MAX;
+					float maxY = -FLT_MAX;
+					float minX = FLT_MAX;
+					float minY = FLT_MAX;
+					// Get the minimum and maximum X and Y screen coordinates
+					// for the refr's bounding box.
+					auto setNewMinMaxXY = 
+					[&maxX, &maxY, &minX, &minY](const RE::NiPoint3& a_extentPos)
+					{
+						if (a_extentPos.x > maxX)
+						{
+							maxX = a_extentPos.x;
+						}
+
+						if (a_extentPos.x < minX)
+						{
+							minX = a_extentPos.x;
+						}
+
+						if (a_extentPos.y > maxY)
+						{
+							maxY = a_extentPos.y;
+						}
+
+						if (a_extentPos.y < minY)
+						{
+							minY = a_extentPos.y;
+						}
+					};
+
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + rotMat * halfExtent
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + rotMat * -halfExtent
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								-halfExtent.x,
+								halfExtent.y,
+								halfExtent.z
+							)
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								halfExtent.x,
+								-halfExtent.y,
+								halfExtent.z
+							)
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								-halfExtent.x,
+								-halfExtent.y,
+								halfExtent.z
+							)
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								-halfExtent.x,
+								halfExtent.y,
+								-halfExtent.z
+							)
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								halfExtent.x,
+								-halfExtent.y,
+								-halfExtent.z
+							)
+						)
+					);
+					setNewMinMaxXY
+					(
+						Util::WorldToScreenPoint3
+						(
+							boundCenter + 
+							rotMat * 
+							RE::NiPoint3
+							(
+								-halfExtent.x,
+								-halfExtent.y,
+								-halfExtent.z
+							)
+						)
+					);
+					// Must be within the refr's 2D bounds.
+					bool isInBounds = 
+					(
+						crosshairScaleformPosition.x <= maxX &&
+						crosshairScaleformPosition.x >= minX &&
+						crosshairScaleformPosition.y <= maxY &&
+						crosshairScaleformPosition.y >= minY
+					);
+					if (!isInBounds)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					closest2DDist = dist2D;
+					closestSelectableRefr = 
+					(
+						RE::TESObjectREFRPtr(a_refr)
+					);
+				}
+
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+		);
+
+		// Need to do an LOS check to make sure the object is visible,
+		// since it could be obscured by another object
+		// that is farther from the first raycast hit position.
+		if (closestSelectableRefr)
+		{
+			return closestSelectableRefr->GetHandle();
+		}
+
+		return RE::ObjectRefHandle();
+	}
+
 	RE::ActorHandle TargetingManager::GetClosestTargetableActorInFOV
 	(
 		const float& a_fovRads, 
@@ -3855,7 +4120,6 @@ namespace ALYSLC
 	
 		// Clear old nearby objects of the same type before refreshing.
 		nearbyObjectsOfSameType.clear();
-		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
 		// Player wants to steal objects when sneaking.
 		bool canSteal = coopActor->IsSneaking();
 		// Number of LOS checks performed.
@@ -3863,7 +4127,7 @@ namespace ALYSLC
 		// Check each refr in range.
 		Util::ForEachReferenceInRange
 		(
-			playerTorsoPos, GetMaxActivationDist(), true,
+			p->mm->playerTorsoPosition, GetMaxActivationDist(), true,
 			[&](RE::TESObjectREFR* a_refr) 
 			{
 				// Ensure that the object reference is an interactable object, 
@@ -3900,16 +4164,10 @@ namespace ALYSLC
 							(!a_refr->As<RE::Actor>() || a_refr->IsDead())
 						) ||
 						(
-							(
-								!a_containersOnly && 
-								Util::IsLootableRefr(a_refr) && 
-								!a_refr->HasContainer()
-							) &&
-							(
-								!Util::IsSMORFObject(a_refr->GetHandle()) ||
-								rmm->IsManaged(a_refr->GetHandle(), true)
-							)
-						)
+							!a_containersOnly && 
+							Util::IsLootableRefr(a_refr) && 
+							!a_refr->HasContainer()
+						) 
 					)
 				);
 				if (canLoot)
@@ -3947,7 +4205,6 @@ namespace ALYSLC
 			return nearbyObjectsOfSameType;
 		}
 		
-		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
 		auto refrBaseObject = refrPtr->GetBaseObject();
 		// Player wants to steal objects when sneaking.
 		bool canSteal = coopActor->IsSneaking();
@@ -3956,7 +4213,7 @@ namespace ALYSLC
 		// Check each refr in range.
 		Util::ForEachReferenceInRange
 		(
-			playerTorsoPos, GetMaxActivationDist(), true,
+			p->mm->playerTorsoPosition, GetMaxActivationDist(), true,
 			[&](RE::TESObjectREFR* a_refr) 
 			{
 				// Ensure that the object reference is an interactable object, 
@@ -3984,12 +4241,7 @@ namespace ALYSLC
 				auto baseObj = a_refr->GetBaseObject();
 				// Lootable and either the player is choosing to steal the object 
 				// or the object is not a crime to activate.
-				if ((canSteal || !a_refr->IsCrimeToActivate()) &&
-					(Util::IsLootableRefr(a_refr))  &&
-					(
-						!Util::IsSMORFObject(a_refr->GetHandle()) ||
-						rmm->IsManaged(a_refr->GetHandle(), true)
-					))
+				if ((canSteal || !a_refr->IsCrimeToActivate()) && (Util::IsLootableRefr(a_refr)))
 				{
 					bool sameType = false;
 					if (a_compType == RefrCompType::kSameBaseForm)
@@ -4444,9 +4696,10 @@ namespace ALYSLC
 			}
 		}
 
-		if (canSMORF && asActor == coopActor.get())
+		if (canSMORF && wantsToSMORF && asActor == coopActor.get())
 		{
 			isSMORFing = true;
+			wantsToSMORF = false;
 			rmm->ClearReleasedRefr(coopActor->GetHandle());
 			SetIsGrabbing(true);
 			rmm->AddGrabbedRefr(p, coopActor->GetHandle());
@@ -4963,8 +5216,10 @@ namespace ALYSLC
 
 					// Paralyze living actor to prevent the game from automatically
 					// signalling the actor to get up once the ragdoll timer hits 0.
-					// Only done if the actor getup removal setting is enabled.
-					if (Settings::bRemoveGrabbedActorAutoGetUp)
+					// Only done if the actor getup removal setting is enabled,
+					// or if the grabbed actor is a player.
+					if (Settings::bRemoveGrabbedActorAutoGetUp || 
+						GlobalCoopData::IsCoopPlayer(refrPtr))
 					{
 						auto asActor = refrPtr->As<RE::Actor>(); 
 						if (asActor &&
@@ -5516,10 +5771,6 @@ namespace ALYSLC
 						(
 							hitActor || 
 							Util::IsLootableRefr(hitRefrPtr.get())
-						) &&
-						(
-							!Util::IsSMORFObject(hitRefrPtr->GetHandle()) ||
-							!rmm->IsManaged(hitRefrPtr->GetHandle(), true)
 						)
 					);
 					if (shouldRedirectWithFlop) 
@@ -5643,47 +5894,12 @@ namespace ALYSLC
 				rmm->releasedRefrHandlesToInfoIndices.clear();
 			}
 		}
-		
-		bool hasSMORFObject = false;
-		if (rmm->isGrabbing)
-		{
-			for (uint8_t i = 0; i < rmm->grabbedRefrInfoList.size(); ++i)
-			{
-				const auto& grabbedRefrInfo = rmm->grabbedRefrInfoList[i];
-				auto grabbedRefrPtr = Util::GetRefrPtrFromHandle(grabbedRefrInfo->refrHandle); 
-				if (!grabbedRefrPtr) 
-				{
-					continue;
-				}
-
-				auto baseObj = grabbedRefrPtr->GetBaseObject(); 
-				if ((baseObj) && 
-					(baseObj->formID == 0x64B33 || baseObj->formID == 0x64B35))
-				{
-					hasSMORFObject = true;
-				}
-			}
-		}
-		else
-		{
-			hasSMORFObject = false;
-		}
 
 		bool wasSMORFing = isSMORFing;
-		if (!hasSMORFObject)
-		{
-			canSMORF = 
-			isSMORFing = false;
-		}
-		else if (!coopActor->IsInRagdollState())
-		{
-			isSMORFing = false;
-		}
-		else if (isSMORFing)
-		{
-			isSMORFing = canSMORF;
-		}
-
+		isSMORFing = 
+		(
+			isSMORFing && canSMORF && coopActor->IsInRagdollState() && rmm->isGrabbing
+		);
 		if (!isSMORFing && wasSMORFing)
 		{
 			rmm->ClearGrabbedRefr(coopActor->GetHandle());
@@ -5894,9 +6110,10 @@ namespace ALYSLC
 			hitFlags
 		);
 
-		if (canSMORF && releasedActorPtr == coopActor)
+		if (canSMORF && wantsToSMORF && releasedActorPtr == coopActor)
 		{
 			isSMORFing = true;
+			wantsToSMORF = false;
 			rmm->ClearReleasedRefr(coopActor->GetHandle());
 			SetIsGrabbing(true);
 			rmm->AddGrabbedRefr(p, coopActor->GetHandle());
@@ -5984,7 +6201,7 @@ namespace ALYSLC
 		bool isCoopPlayer = GlobalCoopData::IsCoopPlayer(refrPtr.get());
 		bool isNotSelectableCoopEntity = 
 		{ 
-			(isSelf) || 
+			(isSelf && !isSMORFing) || 
 			(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
 			(!isCoopPlayer && glob.coopEntityBlacklistFIDSet.contains(refrPtr->formID))
 		};
@@ -6202,12 +6419,14 @@ namespace ALYSLC
 			RE::NiPoint3 hitPoint = ToNiPoint3(result.hitPos);
 			if (a_showDebugPrints)
 			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
 				SPDLOG_DEBUG
 				(
 					"[TM] PickRaycastHitResult: {}: For target selection: {}. "
 					"Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, "
 					"base name: {}, 0x{:X}, type: {}). "
-					"Distance to camera: {}, distance to player: {}. Model: {}, hostile: {}.",
+					"Distance to camera: {}, distance to player: {}. Model: {}, hostile: {}. "
+					"P1 parent cell: {} (0x{:X}), refr parent cell: {} (0x{:X}).",
 					coopActor->GetName(),
 					a_crosshairActiveForSelection,
 					i,
@@ -6238,7 +6457,7 @@ namespace ALYSLC
 					hitPoint.GetDistance(coopActor->data.location),
 					Util::HandleIsValid(result.hitRefrHandle) && 
 					result.hitRefrHandle.get()->HasWorldModel() ? 
-					result.hitRefrHandle.get()->As<RE::TESModel>()->model: 
+					result.hitRefrHandle.get()->As<RE::TESModel>()->model : 
 					"GUH",
 					Util::HandleIsValid(result.hitRefrHandle) &&
 					result.hitRefrHandle.get()->As<RE::Actor>() ?
@@ -6250,7 +6469,17 @@ namespace ALYSLC
 					(
 						glob.player1Actor.get()
 					) :
-					false
+					false,
+					p1 && p1->parentCell ? p1->parentCell->GetName() : "NONE",
+					p1 && p1->parentCell ? p1->parentCell->formID : 0xDEAD,
+					Util::HandleIsValid(result.hitRefrHandle) &&
+					result.hitRefrHandle.get()->GetParentCell() ? 
+					result.hitRefrHandle.get()->GetParentCell()->GetName() : 
+					"NONE",
+					Util::HandleIsValid(result.hitRefrHandle) &&
+					result.hitRefrHandle.get()->GetParentCell() ? 
+					result.hitRefrHandle.get()->GetParentCell()->formID : 
+					0xDEAD
 				);
 			}
 			
@@ -6384,17 +6613,14 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Filter out self, current mount, non-targetable players, and blacklisted actors.
+				// Filter out self (if not SMORFing), current mount, non-targetable players,
+				// and blacklisted actors.
 				bool isCoopPlayer = glob.IsCoopPlayer(hitRefrPtr->formID);
 				isOtherPlayer = isCoopPlayer && hitRefrPtr != coopActor;
 				excluded =
 				(
-					(hitRefrPtr == coopActor) ||
+					(hitRefrPtr == coopActor && !isSMORFing) ||
 					(hitRefrPtr == p->GetCurrentMount()) ||
-					(
-						Util::IsSMORFObject(result.hitRefrHandle) &&
-						!rmm->IsManaged(result.hitRefrHandle, true)
-					) ||
 					(isCoopPlayer && !Settings::vbCanTargetOtherPlayers[playerID]) ||
 					(!isCoopPlayer && glob.coopEntityBlacklistFIDSet.contains(hitRefrPtr->formID))
 				);
@@ -6769,6 +6995,71 @@ namespace ALYSLC
 				canSelectOtherPlayers
 			);
 		}
+		
+		crosshairRefrFromRaycast = true;
+
+		// Failsafe that is commented out for now.
+		// Not optimized, obviously, and results in a 7-10+% FPS loss 
+		// with two players moving their crosshairs around objects.
+		// Only necessary until I get around to figuring out why 
+		// raycasts do not hit certain refrs, even when casting directly through them
+		// and not filtering out any hits.
+		// Examples of such objects include certain doors, such as the Mzinchaleft interior door,
+		// and tankards.
+		/*
+		auto closestSelectableRefrPtr = Util::GetRefrPtrFromHandle
+		(
+			GetClosestSelectableRefrToCrosshairRay()
+		);
+		if (closestSelectableRefrPtr)
+		{
+			const auto refrPos = Util::Get3DCenterPos(closestSelectableRefrPtr.get());
+			// Alternative choice if the raycast fails to find a selectable refr,
+			// or skips over a closer selectable refr.
+			bool doNotUseRaycastResult = 
+			(
+				(chosenHitResultIndex == -1) ||
+				(
+					chosenResult.hit && 
+					refrPos.GetDistance(glob.cam->camTargetPos) < 
+					ToNiPoint3(chosenResult.hitPos).GetDistance(glob.cam->camTargetPos)
+				)
+			);
+			if (doNotUseRaycastResult)
+			{
+				const auto refr3DPtr = Util::GetRefr3D(closestSelectableRefrPtr.get());
+				RE::NiPoint3 origin{ };
+				RE::NiPoint3 dir{ };
+				niCamPtr->WindowPointToRay
+				(
+					crosshairScaleformPos.x, 
+					crosshairScaleformPos.y, 
+					origin, 
+					dir, 
+					DebugAPI::screenResX, 
+					DebugAPI::screenResY
+				);
+				RE::NiPoint3 toRefrDir = 
+				(
+					refr3DPtr ? 
+					refr3DPtr->worldBound.center - origin :
+					closestSelectableRefrPtr->data.location - origin
+				);
+				float distToRefr = toRefrDir.Length();
+				toRefrDir.Unitize();
+				float distAlongRay = distToRefr * toRefrDir.Dot(dir);
+
+				chosenResult.hit = true;
+				chosenResult.hitObjectPtr = refr3DPtr;
+				// Not necessarily on or within the hit refr's bounds, 
+				// but close enough for our needs.
+				chosenResult.hitPos = ToVec4(origin + dir * distAlongRay);
+				chosenResult.hitRefrHandle = closestSelectableRefrPtr->GetHandle();
+				// Not using the raycast hit result.
+				crosshairRefrFromRaycast = false;
+			}
+		}
+		*/
 
 		return chosenResult;
 	}
@@ -6929,11 +7220,7 @@ namespace ALYSLC
 					{ 
 						(currentMount && a_refr == currentMount.get()) ||
 						(asActor && asActor->IsPlayerTeammate()) ||
-						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID)) ||
-						(
-							Util::IsSMORFObject(a_refr->GetHandle()) &&
-							!rmm->IsManaged(a_refr->GetHandle(), true)
-						)
+						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
 					};
 					// Useless to activate hostile actors in combat.
 					const bool activateHostileActor = 
@@ -10371,8 +10658,8 @@ namespace ALYSLC
 			(
 				(objectPtr->As<RE::Actor>()) && 
 				(
-					(!objectIsPlayer && !Settings::bCanGrabActors) ||
-					(objectIsPlayer && !Settings::bCanGrabOtherPlayers)
+					(!objectIsPlayer && !Settings::bCanThrowActors) ||
+					(objectIsPlayer && !Settings::bCanThrowOtherPlayers)
 				)
 			)
 		);
@@ -10701,9 +10988,29 @@ namespace ALYSLC
 			) &&
 			(
 				(!objectPtr->As<RE::Actor>()) || 
-				(!objectIsPlayer && Settings::bCanGrabActors) ||
-				(objectIsPlayer && Settings::bCanGrabOtherPlayers)
+				(!objectIsPlayer && Settings::bCanThrowActors) ||
+				(objectIsPlayer && Settings::bCanThrowOtherPlayers)
 			)
+		);
+
+		// REMOVE when done debugging.
+		SPDLOG_DEBUG
+		(
+			"[TM] InitTrajectory: {}: {}: "
+			"should throw: {}, face target: {}, is crosshair refr: {}, "
+			"is player: {}, is self: {}, is SMORFing: {}, grab just released: {}, "
+			"can SMORF: {}, wants to SMORF: {}.",
+			a_p->coopActor->GetName(),
+			objectPtr->GetName(),
+			shouldThrow,
+			a_p->mm->reqFaceTarget,
+			refrHandle == a_p->tm->crosshairRefrHandle,
+			objectIsPlayer,
+			objectPtr == a_p->coopActor,
+			a_p->tm->isSMORFing,
+			a_p->pam->GetPlayerActionInputJustReleased(InputAction::kGrabObject, false),
+			a_p->tm->canSMORF,
+			a_p->tm->wantsToSMORF
 		);
 		if (shouldThrow)
 		{
@@ -10995,14 +11302,6 @@ namespace ALYSLC
 		(
 			asProjectile && !asProjectile->ShouldBeLimited()
 		);
-
-		// Hehe.
-		auto baseObj = objectPtr->GetBaseObject(); 
-		if ((baseObj) && 
-			(baseObj->formID == 0x64B33 || baseObj->formID == 0x64B35))
-		{
-			a_p->tm->canSMORF = true;
-		}
 
 		// Match collision state with the first grabbed refr.
 		if (nextOpenIndex != 0 && grabbedRefrInfoList[0] && !grabbedRefrInfoList[0]->hasCollision)
@@ -11964,10 +12263,6 @@ namespace ALYSLC
 					(
 						hitActor || 
 						Util::IsLootableRefr(collidedWithRefrPtr.get())
-					) &&
-					(
-						!Util::IsSMORFObject(collidedWithRefrPtr->GetHandle()) ||
-						!a_p->tm->rmm->IsManaged(collidedWithRefrPtr->GetHandle(), true)
 					)
 				);
 				if (shouldRedirectWithFlop) 

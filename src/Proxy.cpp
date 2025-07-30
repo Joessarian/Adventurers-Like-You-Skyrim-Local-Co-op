@@ -1517,7 +1517,7 @@ namespace ALYSLC
 	{
 		// Re-equip the player's desired hand forms (weapons/magic/armor).
 
-		SPDLOG_DEBUG("[Proxy] RefreshAllPlayerManagers: CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("[Proxy] ReEquipHandForms: CID: {}.", a_controllerID);
 		if (!glob.allPlayersInit || 
 			!glob.coopSessionActive || 
 			a_controllerID <= -1 || 

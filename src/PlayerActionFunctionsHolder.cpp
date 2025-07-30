@@ -984,6 +984,12 @@ namespace ALYSLC
 			// - Ragdoll
 			// - Bash
 			// - Dodge
+			
+			// Nothing to do right now while transforming.
+			if (a_p->isTransforming)
+			{
+				return false;
+			}
 
 			const bool isRagdolled = a_p->coopActor->IsInRagdollState();
 			const bool doubleTapped = pam->PassesConsecTapsCheck(InputAction::kSpecialAction);
@@ -991,12 +997,6 @@ namespace ALYSLC
 			if (doubleTapped)
 			{
 				// 2+ consecutive taps.
-				// Nothing to do right now when transformed.
-				if (a_p->isTransforming)
-				{
-					return false;
-				}
-
 				// Actions to perform when not ragdolled or 
 				// transformed and the player has drawn their weapon/magic and is not paragliding.
 				if (!isRagdolled && 
@@ -1019,9 +1019,9 @@ namespace ALYSLC
 						// or if a 2H weapon is equipped.
 						pam->reqSpecialAction = SpecialActionType::kBash;
 					}
-					else
+					else if (Dodge(a_p))
 					{
-						// Dodge otherwise.
+						// Dodge otherwise if conditions are satisfied.
 						pam->reqSpecialAction = SpecialActionType::kDodge;
 					}
 				}
@@ -1055,122 +1055,108 @@ namespace ALYSLC
 						pam->reqSpecialAction = SpecialActionType::kFlop;
 					}
 				}
-
-				// No need to check single tap/on hold special actions 
-				// if a double tap action was selected and the AV check passes.
-				if (pam->reqSpecialAction != SpecialActionType::kNone && 
-					HelperFuncs::CanPerformSpecialAction(a_p, pam->reqSpecialAction))
+			}
+			else
+			{
+				// Check for single tap/hold actions if no double tap action request was set.
+				// Toggle grabbed refr collision if the setting is enabled 
+				// and the player has selected a grabbed refr.
+				if (a_p->tm->rmm->isGrabbing && 
+					a_p->tm->rmm->IsManaged(a_p->tm->crosshairRefrHandle, true) && 
+					Settings::bToggleGrabbedRefrCollisions)
 				{
-					return true;
-				} 
-			}
-
-			// Then check for single tap/hold actions if no double tap action request was set.
-			// Clear old requested action again in case it was set to a double tap action
-			// and conditions failed.+
-			pam->reqSpecialAction = SpecialActionType::kNone;
-			if (a_p->isTransforming)
-			{
-				return false;
-			}
-
-			// Toggle grabbed refr collision if the setting is enabled 
-			// and the player has selected a grabbed refr.
-			if (a_p->tm->rmm->isGrabbing && 
-				a_p->tm->rmm->IsManaged(a_p->tm->crosshairRefrHandle, true) && 
-				Settings::bToggleGrabbedRefrCollisions)
-			{
-				pam->reqSpecialAction = SpecialActionType::kToggleGrabbedRefrCollisions;
-			}
-			else if (isRagdolled)
-			{
-				// Hold to get up if grabbed or on the ground.
-				bool isGrabbed = std::any_of
-				(
-					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[&a_p](const auto& a_p2) 
-					{
-						return 
-						(
-							a_p2->isActive && 
-							a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
-						);
-					}
-				);
-				auto charController = a_p->coopActor->GetCharController();
-				bool shouldAttemptGetUp = 
+					pam->reqSpecialAction = SpecialActionType::kToggleGrabbedRefrCollisions;
+				}
+				else if (isRagdolled)
 				{
-					(isGrabbed) ||
+					// Hold to get up if grabbed or on the ground.
+					bool isGrabbed = std::any_of
 					(
-						charController &&
-						charController->context.currentState == 
-						RE::hkpCharacterStateType::kOnGround
-					)
-				};
-				if (shouldAttemptGetUp)
+						glob.coopPlayers.begin(), glob.coopPlayers.end(),
+						[&a_p](const auto& a_p2) 
+						{
+							return 
+							(
+								a_p2->isActive && 
+								a_p2->tm->rmm->IsManaged(a_p->coopActor->GetHandle(), true)
+							);
+						}
+					);
+					auto charController = a_p->coopActor->GetCharController();
+					bool shouldAttemptGetUp = 
+					{
+						(isGrabbed) ||
+						(
+							charController &&
+							charController->context.currentState == 
+							RE::hkpCharacterStateType::kOnGround
+						)
+					};
+					if (shouldAttemptGetUp)
+					{
+						pam->reqSpecialAction = SpecialActionType::kGetUp;
+					}
+				}
+				else if (a_p->isTransformed)
 				{
-					pam->reqSpecialAction = SpecialActionType::kGetUp;
+					// If transformed into a Werewolf, show transformation time remaining 
+					// or feed on a targeted corpse.
+					// Currently, nothing for Vampire Lords.
+					// Revert transformation if transformed into another non-playable race.
+					pam->reqSpecialAction = SpecialActionType::kTransformation;
+				}
+				else if (a_p->coopActor->IsWeaponDrawn())
+				{
+					if ((em->quickSlotSpell) && 
+						(a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
+					{
+						// Quick slot cast while paragliding or swimming.
+						pam->reqSpecialAction = SpecialActionType::kQuickCast;
+					}
+					else if ((em->HasRHMeleeWeapEquipped() || 
+							 em->IsUnarmed() || 
+							 em->Has2HMeleeWeapEquipped() ||
+							 em->Has2HRangedWeapEquipped() ||
+							 em->HasTorchEquipped()) ||
+							 (em->HasLHMeleeWeapEquipped() && em->HandIsEmpty(true)))
+					{
+						// Block if the RH has a weapon,
+						// if unarmed, 
+						// if there's a 2H weapon equipped, 
+						// if the LH has a torch,
+						// or if the player has a LH weapon and an empty RH.
+						pam->reqSpecialAction = SpecialActionType::kBlock;
+					}
+					/*
+					else if (HelperFuncs::CanDualCast(a_p))
+					{
+						// TODO: 
+						// Dual cast when LH and RH both have the same 1H spells equipped 
+						// and the player has the dual cast perk.
+						// Currently, the perks do not apply when casting with companion players, 
+						// so this is commented out.
+						pam->reqSpecialAction = SpecialActionType::kDualCast;
+					}
+					*/
+					else if ((em->HasLHSpellEquipped() && em->HasRHSpellEquipped()) ||
+							 (em->HasLHStaffEquipped() && em->HasRHStaffEquipped()))
+					{
+						// Cast simultaneously with both hands if both have a spell/staff equipped.
+						pam->reqSpecialAction = SpecialActionType::kCastBothHands;
+					}
+					else if (em->quickSlotSpell)
+					{
+						// Quick slot cast otherwise.
+						pam->reqSpecialAction = SpecialActionType::kQuickCast;
+					}
+				}
+				else if (a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
+				{
+					// Emote when weapons are sheathed and not getting up/ragdolling.
+					pam->reqSpecialAction = SpecialActionType::kCycleOrPlayEmoteIdle;
 				}
 			}
-			else if (a_p->isTransformed)
-			{
-				// If transformed into a Werewolf, show transformation time remaining 
-				// or feed on a targeted corpse.
-				// Currently, nothing for Vampire Lords.
-				// Revert transformation if transformed into another non-playable race.
-				pam->reqSpecialAction = SpecialActionType::kTransformation;
-			}
-			else if (a_p->coopActor->IsWeaponDrawn())
-			{
-				if ((em->quickSlotSpell) && 
-					(a_p->mm->isParagliding || a_p->coopActor->IsSwimming()))
-				{
-					// Quick slot cast while paragliding or swimming.
-					pam->reqSpecialAction = SpecialActionType::kQuickCast;
-				}
-				else if ((em->HasRHMeleeWeapEquipped() || 
-						 em->IsUnarmed() || 
-						 em->Has2HMeleeWeapEquipped() ||
-						 em->Has2HRangedWeapEquipped() ||
-						 em->HasTorchEquipped()) ||
-						 (em->HasLHMeleeWeapEquipped() && em->HandIsEmpty(true)))
-				{
-					// Block if the RH has a weapon,
-					// if unarmed, 
-					// if there's a 2H weapon equipped, 
-					// if the LH has a torch,
-					// or if the player has a LH weapon and an empty RH.
-					pam->reqSpecialAction = SpecialActionType::kBlock;
-				}
-				/*
-				else if (HelperFuncs::CanDualCast(a_p))
-				{
-					// TODO: 
-					// Dual cast when LH and RH both have the same 1H spells equipped 
-					// and the player has the dual cast perk.
-					// Currently, the perks do not apply when casting with companion players, 
-					// so this is commented out.
-					pam->reqSpecialAction = SpecialActionType::kDualCast;
-				}
-				*/
-				else if ((em->HasLHSpellEquipped() && em->HasRHSpellEquipped()) ||
-						 (em->HasLHStaffEquipped() && em->HasRHStaffEquipped()))
-				{
-					// Cast simultaneously with both hands if both have a spell/staff equipped.
-					pam->reqSpecialAction = SpecialActionType::kCastBothHands;
-				}
-				else if (em->quickSlotSpell)
-				{
-					// Quick slot cast otherwise.
-					pam->reqSpecialAction = SpecialActionType::kQuickCast;
-				}
-			}
-			else if (a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp)
-			{
-				// Emote when weapons are sheathed and not getting up/ragdolling.
-				pam->reqSpecialAction = SpecialActionType::kCycleOrPlayEmoteIdle;
-			}
-			
+
 			// If a new special action to perform was chosen, perform HMS AV checks.
 			return 
 			(
@@ -1577,8 +1563,8 @@ namespace ALYSLC
 		void BashInstant(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Play bash idle to bash instantly.
-
-			bool wasBlocking = a_p->coopActor->IsBlocking();
+			
+			bool wasBlocking = a_p->pam->IsPerforming(InputAction::kBlock);
 			a_p->coopActor->NotifyAnimationGraph("attackStop");
 			a_p->coopActor->NotifyAnimationGraph("blockStart");
 			// 'BowBash' triggers the normal bash animation,
@@ -1596,6 +1582,10 @@ namespace ALYSLC
 			if (wasBlocking)
 			{
 				a_p->coopActor->NotifyAnimationGraph("blockStart");
+			}
+			else
+			{
+				a_p->coopActor->NotifyAnimationGraph("blockStop");
 			}
 		}
 
@@ -6813,6 +6803,8 @@ namespace ALYSLC
 					// Something to do with usability.
 					bool isPlayable = activationRefrPtr->GetPlayable();
 					// Player has LOS on the refr.
+					// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
+					// since our raycasts do not hit such refrs right now.
 					bool passesLOSCheck =
 					(
 						activationRefrPtr &&
@@ -6820,7 +6812,8 @@ namespace ALYSLC
 						(
 							activationRefrPtr.get(), 
 							a_p->coopActor.get(), 
-							false, 
+							a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle &&
+							!a_p->tm->crosshairRefrFromRaycast, 
 							a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, 
 							a_p->tm->crosshairWorldPos
 						)
@@ -13927,6 +13920,7 @@ namespace ALYSLC
 				// Set self as grabbed refr to ragdoll the player, clear the grabbed refr, 
 				// and add as a released refr to listen for collisions afterward.
 				const auto handle = a_p->coopActor->GetHandle();
+				a_p->tm->wantsToSMORF = a_p->tm->canSMORF;
 				a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
 				a_p->tm->rmm->ClearGrabbedRefr(handle);
 				if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)

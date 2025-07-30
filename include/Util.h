@@ -1841,6 +1841,7 @@ namespace ALYSLC
 			return nullptr;
 		}
 
+
 		// Get the enumeration name for the given actor value.
 		inline RE::BSFixedString GetActorValueName(const RE::ActorValue& a_av) 
 		{
@@ -2053,6 +2054,58 @@ namespace ALYSLC
 			}
 
 			return std::nullopt;
+		}
+		
+		// Get an integer (RRGGBB) representing the grayscale color corresponding
+		// to the given percentage [0 - 100].
+		inline uint32_t GetGrayscalePercentRGB(const float& a_percent)
+		{
+			// Gradient RGB values generated using https://rgb.birdflop.com/
+
+			uint32_t rgb = 0xFFFFFF;
+			// From percent [0, 100].
+			if (a_percent <= 0.0f)
+			{
+				rgb = 0x474747;
+			}
+			else if (a_percent <= 10.0f)
+			{
+				rgb = 0x595959;
+			}
+			else if (a_percent <= 20.0f)
+			{
+				rgb = 0x6C6C6C;
+			}
+			else if (a_percent <= 30.0f)
+			{
+				rgb = 0x7E7E7E;
+			}
+			else if (a_percent <= 40.0f)
+			{
+				rgb = 0x919191;
+			}
+			else if (a_percent <= 50.0f)
+			{
+				rgb = 0xA3A3A3;
+			}
+			else if (a_percent <= 60.0f)
+			{
+				rgb = 0xB5B5B5;
+			}
+			else if (a_percent <= 70.0f)
+			{
+				rgb = 0xC8C8C8;
+			}
+			else if (a_percent <= 80.0f)
+			{
+				rgb = 0xDADADA;
+			}
+			else if (a_percent <= 90.0f)
+			{
+				rgb = 0xDADADA;
+			}
+
+			return rgb;
 		}
 
 		// Get the number of lockpicks the given actor possesses.
@@ -3261,9 +3314,6 @@ namespace ALYSLC
 		// Is the given refr usable for target selection or activation?
 		bool IsSelectableRefr(RE::TESObjectREFR* a_refr);
 		
-		// What's this SMORFing thing?
-		const bool IsSMORFObject(const RE::ObjectRefHandle& a_handle);
-
 		// Construct a rotation matrix from the given axis 
 		// and rotation angle about that axis.
 		RE::NiMatrix3 MatrixFromAxisAndAngle(RE::NiPoint3 a_axis, const float& a_angle);

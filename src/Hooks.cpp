@@ -4298,13 +4298,10 @@ namespace ALYSLC
 			auto firstGamepadEvent = GetFirstGamepadInputEvent(a_event);
 			if (p1InMenu)
 			{
-				// Check to see if P1 is in the Favorites Menu and is trying to hotkey an entry 
-				// or is trying equip a quickslot item or spell.
-				invalidateEvent = 
-				(
-					CheckForP1HotkeyReq(firstGamepadEvent) ||
-					CheckForP1QSEquipReq(firstGamepadEvent)
-				);
+				// Check to see if P1 is in the Favorites Menu and is trying to hotkey an entry, 
+				// trying equip a quickslot item or spell,
+				// or trying to toggle SMORF.
+				invalidateEvent = CheckForP1FavoritesMenuInput(firstGamepadEvent);
 			}
 			else if (p1ManagersInactive && Util::MenusOnlyAlwaysOpen())
 			{
@@ -4816,6 +4813,187 @@ namespace ALYSLC
 			}
 
 			return invalidateEvent;
+		}
+
+		bool MenuControlsHooks::CheckForP1FavoritesMenuInput(RE::InputEvent* a_firstGamepadEvent)
+		{
+			// 1. Check if P1 is in the Favorites Menu and is trying to hotkey an entry
+			// and update its hotkey state accordingly.
+			// 2. Check if P1 is in the Favorites Menu and is trying to equip 
+			// a quick slot spell/item and (un)equip this item as needed.
+			// 3. Check if P1 is in the Favorites Menu and toggle SMORF state if needed.
+			// Return true if the input was handled and should be invalidated.
+
+			// Check if P1 is trying to hotkey a FavoritesMenu entry.
+			// Return true if the event triggered a hotkey change and should be invalidated.
+
+			// Must have a valid gamepad event; do not invalidate otherwise.
+			bool handledInput = false;
+			if (!a_firstGamepadEvent)
+			{
+				return handledInput;
+			}
+
+			auto ue = RE::UserEvents::GetSingleton();
+			auto ui = RE::UI::GetSingleton();
+			auto controlMap = RE::ControlMap::GetSingleton();
+			// Must have a valid input event, access to the UI and user events singletons,
+			// and be displaying the Favorites Menu.
+			if (!ue || !ui || !ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) || !controlMap)
+			{
+				return handledInput;
+			}
+
+			auto idEvent = a_firstGamepadEvent->AsIDEvent();
+			auto buttonEvent = a_firstGamepadEvent->AsButtonEvent();
+			// Only handle button events with an ID.
+			if (!idEvent || !buttonEvent)
+			{
+				return handledInput;
+			}
+
+			//======================//
+			// Quick slot equip check:
+			//======================//
+
+			// Temp hacky workaround to override entry text changes without a hook:
+			// Update here since the previous changes are wiped shortly after opening the menu, 
+			// or when P1 has equipped something else.
+			// We have to re-apply those changes through the FavoritesMenu::ProcessEvent() hook.
+			// Send a menu update request to update the quick slot tags
+			// when P1 releases any input, since the equip state update occurs on press.
+			if (buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f)
+			{
+				if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
+				{
+					msgQ->AddMessage
+					(
+						RE::FavoritesMenu::MENU_NAME, 
+						RE::UI_MESSAGE_TYPE::kUpdate,
+						nullptr
+					);
+				}
+			}
+
+			// Only handle pause/journal bind presses and only if just pressed.
+			bool isPauseBind = 
+			{
+				(buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f) &&
+				(
+					(
+						buttonEvent->idCode == 
+						controlMap->GetMappedKey(ue->pause, RE::INPUT_DEVICE::kGamepad)
+					) ||
+					(
+						buttonEvent->idCode == 
+						controlMap->GetMappedKey(ue->journal, RE::INPUT_DEVICE::kGamepad)
+					)
+				)
+			};
+			if (isPauseBind && buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f)
+			{
+				handledInput = true;
+				glob.mim->EquipP1QSForm();
+			}
+
+			// To hotkey an entry,
+			// P1 must be clicking in the RS and it must be displaced from center.
+			bool isRThumbPressedAndRSMoved = 
+			{
+				buttonEvent->idCode == GAMEPAD_MASK_RIGHT_THUMB &&
+				glob.cdh->GetAnalogStickState(glob.player1CID, false).normMag > 0.0f
+			};
+			if (isRThumbPressedAndRSMoved)
+			{
+				handledInput = true;
+				// Set on release, preview on hold.
+				glob.mim->HotkeyFavoritedForm(buttonEvent->value == 0.0f);
+			}
+			
+			// Toggle SMORF if just pressed.
+			auto taskInterface = SKSE::GetTaskInterface();
+			const auto iter = glob.cdh->GAMEMASK_TO_XIMASK.find(buttonEvent->idCode);
+			bool shouldToggleSMORF = 
+			(
+				(taskInterface) &&
+				(buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f) &&
+				(
+					iter != glob.cdh->GAMEMASK_TO_XIMASK.end() &&
+					iter->second == XINPUT_GAMEPAD_X
+				)
+			);
+			if (shouldToggleSMORF)
+			{
+				handledInput = true;
+				taskInterface->AddUITask
+				(
+					[]() 
+					{
+						auto ui = RE::UI::GetSingleton(); 
+						if (!ui)
+						{
+							return;
+						}
+
+						auto favoritesMenu = ui->GetMenu<RE::FavoritesMenu>(); 
+						if (!favoritesMenu)
+						{
+							return;
+						}
+
+						auto view = favoritesMenu->uiMovie; 
+						if (!view)
+						{
+							return;
+						}
+
+						RE::GFxValue selectedIndex;
+						view->GetVariable
+						(
+							std::addressof(selectedIndex),
+							"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
+						);
+						// Index in favorites list.
+						uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+						if (index >= favoritesMenu->favorites.size())
+						{
+							return;
+						}
+
+						auto form = favoritesMenu->favorites[index].item;
+						if (!form)
+						{
+							return;
+						}
+
+						if (form->formID == 0x64B33)
+						{
+							if (glob.menuCID != -1 && glob.menuCID == glob.player1CID)
+							{
+								const auto& p = glob.coopPlayers[glob.menuCID];
+								p->tm->canSMORF = !p->tm->canSMORF;
+								if (p->tm->canSMORF)
+								{
+									RE::DebugMessageBox
+									(
+										"A latent power suddenly compels you. Propels you?"
+									);
+								}
+								else
+								{
+									RE::DebugMessageBox
+									(
+										"The power ebbs away and you feel grounded again."
+									);
+								}
+						
+							}
+						}
+					}
+				);
+			}
+
+			return handledInput;
 		}
 
 		bool MenuControlsHooks::CheckForP1HotkeyReq(RE::InputEvent* a_firstGamepadEvent)

@@ -3517,7 +3517,8 @@ namespace ALYSLC
 					// to average support surface/vertical velocity pitch.
 					movementPitch = 
 					(
-						1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f
+						(Settings::fAutoRotateCamPitchRateMult) *
+						(1.5f * tanf(0.4f * movementPitch - 0.1f) * cosf(movementPitch) + 0.15f)
 					);
 					// Pitch increments/decrements are smaller when approaching PI/2 
 					// in the direction of the average movement pitch. 
@@ -3585,8 +3586,11 @@ namespace ALYSLC
 					);
 					movementYaw = std::clamp
 					(
-						radialDistFactor * (movementYaw / (PI / 2.0f)) * 
-						camMaxAngRotRate * *g_deltaTimeRealTime, 
+						(movementYaw / (PI / 2.0f)) * 
+						Settings::fAutoRotateCamYawRateMult *
+						radialDistFactor *
+						camMaxAngRotRate * 
+						*g_deltaTimeRealTime, 
 						-fabsf(movementYaw), 
 						fabsf(movementYaw)
 					);

@@ -747,6 +747,24 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bTargetPosSmoothing", bTargetPosSmoothing);
 		ReadFloatSetting(a_ini, "Camera", "fCamExteriorFOV", fCamExteriorFOV, 0.0f, 180.0f);
 		ReadFloatSetting(a_ini, "Camera", "fCamInteriorFOV", fCamInteriorFOV, 0.0f, 180.0f);
+		ReadFloatSetting
+		(
+			a_ini,
+			"Camera",
+			"fAutoRotateCamPitchRateMult", 
+			fAutoRotateCamPitchRateMult,
+			0.0f, 
+			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Camera", 
+			"fAutoRotateCamYawRateMult", 
+			fAutoRotateCamYawRateMult,
+			0.0f,
+			5.0f
+		);
 		ReadUInt32Setting
 		(
 			a_ini, 
@@ -824,6 +842,8 @@ namespace ALYSLC
 		);
 		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanGrabActors", bCanGrabActors);
 		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanGrabOtherPlayers", bCanGrabOtherPlayers);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanThrowActors", bCanThrowActors);
+		ReadBoolSetting(a_ini, "ExtraMechanics", "bCanThrowOtherPlayers", bCanThrowOtherPlayers);
 		ReadBoolSetting(a_ini, "ExtraMechanics", "bEnableArmsRotation", bEnableArmsRotation);
 		ReadBoolSetting(a_ini, "ExtraMechanics", "bEnableFlopping", bEnableFlopping);
 		ReadBoolSetting
@@ -949,6 +969,7 @@ namespace ALYSLC
 
 		// Menus and UI
 		ReadBoolSetting(a_ini, "MenusAndUI", "bCrosshairTextFade", bCrosshairTextFade);
+		ReadBoolSetting(a_ini, "MenusAndUI", "bShowHMSStats", bShowHMSStats);
 		ReadBoolSetting(a_ini, "MenusAndUI", "bTwoPlayerLockpicking", bTwoPlayerLockpicking);
 		ReadBoolSetting
 		(
