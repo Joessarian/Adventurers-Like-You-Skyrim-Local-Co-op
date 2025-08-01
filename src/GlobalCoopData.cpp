@@ -3915,8 +3915,18 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[GLOB] PrecisionPreHitCallback: Collision between {} and {} ALLOWED.",
-				p->coopActor->GetName(), hitActor->GetName()
+				"[GLOB] PrecisionPreHitCallback: Collision between {} and {} ALLOWED. "
+				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
+				"crosshair targeted: {}, party friendly: {}, friendly fire: {}.",
+				p->coopActor->GetName(), 
+				hitActor->GetName(),
+				hitActor->IsGhost(),
+				hitActor->IsInvulnerable(),
+				isHostile,
+				isNeutralActor,
+				isCrosshairTargeted,
+				isPartyFriendlyActor,
+				(bool)Settings::vbFriendlyFire[p->playerID]
 			);
 			// Do not start combat with other players
 			// and do not need to start combat for P1.
@@ -3954,8 +3964,21 @@ namespace ALYSLC
 		else
 		{
 			// No collision and no damage.
-			SPDLOG_DEBUG("[GLOB] PrecisionPreHitCallback: Collision between {} and {} IGNORED.",
-				p->coopActor->GetName(), hitActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"[GLOB] PrecisionPreHitCallback: Collision between {} and {} IGNORED. "
+				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
+				"crosshair targeted: {}, party friendly: {}, friendly fire: {}.",
+				p->coopActor->GetName(), 
+				hitActor->GetName(),
+				hitActor->IsGhost(),
+				hitActor->IsInvulnerable(),
+				isHostile,
+				isNeutralActor,
+				isCrosshairTargeted,
+				isPartyFriendlyActor,
+				(bool)Settings::vbFriendlyFire[p->playerID]
+			);
 			return PRECISION_API::PreHitCallbackReturn(true, { });
 		}
 	}

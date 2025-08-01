@@ -336,19 +336,24 @@ namespace ALYSLC
 			/*SPDLOG_DEBUG("[Util] AddAsCombatTarget: {} -> {}, trigger combat: {}.",
 				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat);*/
 
+			// IMPORTANT BUG NOTE:
+			// For companion players, combat-initiating hits 
+			// sometimes have their damage ignored, 
+			// and a second registered hit is required to do damage.
+			// Having the 'kIgnoreCombat' and 'kNoCombatAlert' package flags set
+			// does not have any bearing on this.
+			// Only partial solution so far is to start combat for both actors
+			// through the papyrus func.
 			auto combatGroup = a_sourceActor->GetCombatGroup(); 
-			if (!combatGroup)
+			// If the target is not aggroed or in combat yet with the source, start combat now.
+			if (!combatGroup || !a_targetActor->IsHostileToActor(a_sourceActor))
 			{
-				// IMPORTANT BUG NOTE:
-				// For companion players, combat-initiating hits 
-				// sometimes have their damage ignored, 
-				// and a second registered hit is required to do damage.
-				// Having the 'kIgnoreCombat' and 'kNoCombatAlert' package flags set
-				// does not have any bearing on this.
-				// Only partial solution so far is to start combat for both actors
-				// through the papyrus func.
 				Papyrus::StartCombat(a_sourceActor, a_targetActor);
 				Papyrus::StartCombat(a_targetActor, a_sourceActor);
+			}
+
+			if (!combatGroup)
+			{
 				combatGroup = a_sourceActor->GetCombatGroup(); 
 				if (!combatGroup && a_sourceActor->combatController)
 				{

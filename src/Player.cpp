@@ -821,6 +821,7 @@ namespace ALYSLC
 			return hmsText;
 		}
 
+		// Is full if all 3 actor values are close enough to their full amounts.
 		bool hmsFull = true;
 		const float currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
 		float healthPercent = 
@@ -834,7 +835,7 @@ namespace ALYSLC
 			healthPercent = 0.0f;
 			hmsFull = false;
 		}
-		else if (healthPercent < 100.0f && hmsFull)
+		else if (healthPercent < 99.999f && hmsFull)
 		{
 			hmsFull = false;
 		}
@@ -851,7 +852,7 @@ namespace ALYSLC
 			magickaPercent = 0.0f;
 			hmsFull = false;
 		}
-		else if (magickaPercent < 100.0f && hmsFull)
+		else if (magickaPercent < 99.999f && hmsFull)
 		{
 			hmsFull = false;
 		}
@@ -868,7 +869,7 @@ namespace ALYSLC
 			staminaPercent = 0.0f;
 			hmsFull = false;
 		}
-		else if (staminaPercent < 100.0f && hmsFull)
+		else if (staminaPercent < 99.999f && hmsFull)
 		{
 			hmsFull = false;
 		}

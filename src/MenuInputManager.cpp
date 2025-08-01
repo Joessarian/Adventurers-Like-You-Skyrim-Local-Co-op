@@ -6839,11 +6839,15 @@ namespace ALYSLC
 		// give P1 control of menus.
 		if (resolvedCID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
 		{
-			// Always give P1 control of the Console Menu, 
-			// since companion players cannot control the keyboard anyways.
+			// Always give P1 control of the RaceSex/Console Menus, 
+			// since companion players should not customize P1 
+			// and cannot control the keyboard anyways.
 			bool givePreviousPlayerControl = 
 			(
-				(a_menuName != RE::Console::MENU_NAME) && 
+				(
+					a_menuName != RE::Console::MENU_NAME && 
+					a_menuName != RE::RaceSexMenu::MENU_NAME
+				) && 
 				(
 					(glob.coopPlayers[glob.player1CID]->IsRunning()) ||
 					(glob.supportedMenuOpen && glob.mim->IsRunning())

@@ -315,12 +315,14 @@ namespace ALYSLC
 		// of the previous cell's camera position, which is usually still applied
 		// when the game auto-saves and results in a nice shot of the unloaded void 
 		// in the generated savegame thumbnail.
+		// Pause in the race menu to allow P1 to see their character edits more easily.
 		auto ui = RE::UI::GetSingleton(); 
 		if ((ui) && 
 			(
 				ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 				ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
-				ui->IsMenuOpen(RE::MapMenu::MENU_NAME)
+				ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
+				ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME)
 			))
 		{
 			return ManagerState::kPaused;
@@ -407,12 +409,14 @@ namespace ALYSLC
 			// and to also enable fast travel while in the map menu.
 			// Remain paused until the loading menu closes 
 			// and P1 has been positioned in the new cell.
+			// Remain paused in the race menu while P1 edits their character.
 			auto ui = RE::UI::GetSingleton(); 
 			if ((ui) && 
 				(
 					ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
-					ui->IsMenuOpen(RE::MapMenu::MENU_NAME)
+					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
+					ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME)
 				))
 			{
 				return currentState;
