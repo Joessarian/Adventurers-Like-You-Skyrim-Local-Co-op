@@ -7266,10 +7266,48 @@ namespace ALYSLC
 			{
 				// Draw weapon if not out already.
 				// Send button event.
-				if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCastLH) && 
-					!a_p->coopActor->IsWeaponDrawn())
+				if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCastLH))
 				{
-					a_p->pam->ReadyWeapon(true);
+					if (!a_p->coopActor->IsWeaponDrawn())
+					{
+						a_p->pam->ReadyWeapon(true);
+					}
+					else
+					{
+						// Game does not play 'not enough magicka' sound effect 
+						// when P1 is AI driven, so we'll do it ourselves.
+						auto lhSpell = a_p->em->GetLHSpell();
+						float cost = 
+						(
+							lhSpell ?
+							lhSpell->CalculateMagickaCost(a_p->coopActor.get()) :
+							0.0f
+						);
+						if (lhSpell &&
+							lhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							cost *= *g_deltaTimeRealTime;
+						}
+
+						cost *= Settings::vfMagickaCostMult[a_p->playerID];
+						if (cost > a_p->pam->currentMagicka)
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+
+							RE::PlaySound("MAGFailSD");
+						}
+					}
 				}
 				
 				// Set target actor/refr directly before sending each cast button event.
@@ -7354,6 +7392,50 @@ namespace ALYSLC
 					!a_p->coopActor->IsWeaponDrawn())
 				{
 					a_p->pam->ReadyWeapon(true);
+				}
+
+				if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCastRH))
+				{
+					if (!a_p->coopActor->IsWeaponDrawn())
+					{
+						a_p->pam->ReadyWeapon(true);
+					}
+					else
+					{
+						// Game does not play 'not enough magicka' sound effect 
+						// when P1 is AI driven, so we'll do it ourselves.
+						auto rhSpell = a_p->em->GetRHSpell();
+						float cost = 
+						(
+							rhSpell ?
+							rhSpell->CalculateMagickaCost(a_p->coopActor.get()) :
+							0.0f
+						);
+						if (rhSpell &&
+							rhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							cost *= *g_deltaTimeRealTime;
+						}
+
+						cost *= Settings::vfMagickaCostMult[a_p->playerID];
+						if (cost > a_p->pam->currentMagicka)
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+
+							RE::PlaySound("MAGFailSD");
+						}
+					}
 				}
 				
 				// Set target actor/refr directly before sending each cast button event.
@@ -8854,6 +8936,55 @@ namespace ALYSLC
 					// Togging AI driven not requird.
 					if (justStarted)
 					{
+						// Game does not play 'not enough magicka' sound effect 
+						// when P1 is AI driven, so we'll do it ourselves.
+						auto lhSpell = a_p->em->GetLHSpell();
+						float cost = 0.0f;
+						float lhCost =
+						(
+							lhSpell ?
+							lhSpell->CalculateMagickaCost(a_p->coopActor.get()) :
+							0.0f
+						);
+						if (lhSpell &&
+							lhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							lhCost *= *g_deltaTimeRealTime;
+						}
+
+						auto rhSpell = a_p->em->GetRHSpell();
+						float rhCost = 
+						(
+							rhSpell ?
+							rhSpell->CalculateMagickaCost(a_p->coopActor.get()) :
+							0.0f
+						);
+						if (rhSpell &&
+							rhSpell->GetCastingType() == 
+							RE::MagicSystem::CastingType::kConcentration)
+						{
+							rhCost *= *g_deltaTimeRealTime;
+						}
+
+						cost = (lhCost + rhCost) * Settings::vfMagickaCostMult[a_p->playerID];
+						if (cost > a_p->pam->currentMagicka)
+						{
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format("P{}: Not enough magicka!", a_p->playerID + 1),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+
+							RE::PlaySound("MAGFailSD");
+						}
+
 						a_p->pam->SendButtonEvent
 						(
 							InputAction::kCastLH,

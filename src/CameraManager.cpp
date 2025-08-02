@@ -508,6 +508,18 @@ namespace ALYSLC
 
 				if (shouldResume)
 				{
+					// When toggled back on, make sure P1's managers also resume.
+					// P1 will only be able to move around otherwise 
+					// since none of their managers are active.
+					if (glob.allPlayersInit && glob.coopSessionActive && glob.player1CID != -1)
+					{
+						const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+						if (!coopP1->isDowned)
+						{
+							coopP1->RequestStateChange(ManagerState::kRunning);
+						}
+					}
+
 					return ManagerState::kRunning;
 				}
 				else

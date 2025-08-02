@@ -4261,7 +4261,7 @@ namespace ALYSLC
 			// Troubleshooting an inconsistent 'stuck key' issue
 			// that produces a lingering 'Tab' keyboard input
 			// which heads every input chain after alt-tabbing into another window
-			// and tabbibg back into Skyrim.
+			// and tabbing back into Skyrim.
 			// As a result, we have to skip over this keyboard device input event each time.
 			/*uint32_t i = 1;
 			auto event = *a_event;
@@ -5154,12 +5154,16 @@ namespace ALYSLC
 				static_cast<RE::ThumbstickEvent*>(inputEvent) : 
 				nullptr
 			);
-
+			
+			// No temporary menus open.
+			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 			// Non-P1 player controlling menus.
 			bool coopPlayerControllingMenus = 
 			(
 				glob.globalDataInit && glob.mim->managerMenuCID != -1
 			);
+			// P1 controlling menus.
+			bool p1ControllingMenus = !onlyAlwaysOpen && glob.menuCID == glob.player1CID;
 			// P1's co-op managers are active.
 			bool p1ManagersActive = 
 			(
@@ -5241,9 +5245,8 @@ namespace ALYSLC
 			// NOTE:
 			// There is guaranteed to be at least 1 gamepad input event now.
 
-			bool dialogueMenuOpen = ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
+			bool dialogueMenuOpen = ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME);
 			bool lootMenuOpen = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
-			bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 			// Start from the first gamepad input event and walk the chain.
 			inputEvent = a_firstGamepadEvent;
 			while (inputEvent)
@@ -5478,6 +5481,14 @@ namespace ALYSLC
 				);
 				// Attacking on foot.
 				bool isGroundedAttackInput = !p1->IsOnMount() && isAttackInput;
+				// Is trying to assign a hotkey to a favorited form.
+				bool isHotkeyAssignmentInput = 
+				(
+					ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME) && 
+					buttonEvent && 
+					glob.cdh->GAMEMASK_TO_XIMASK.at(buttonEvent->idCode) == 
+					XINPUT_GAMEPAD_RIGHT_THUMB
+				);
 				// Attempting to move the camera.
 				bool isLookInput = idEvent->userEvent == ue->look;
 				// Attempting to move the player's arms.
@@ -5581,19 +5592,23 @@ namespace ALYSLC
 								)
 							) ||
 							(idEvent->userEvent == ue->wait && !isValidContainerTabSwitch) ||
+							(isHotkeyAssignmentInput) ||
 							(
-								idEvent->userEvent == ue->activate ||
-								idEvent->userEvent == ue->favorites ||
-								idEvent->userEvent == ue->hotkey1 ||
-								idEvent->userEvent == ue->hotkey2 ||
-								idEvent->userEvent == ue->journal ||
-								idEvent->userEvent == ue->pause ||
-								idEvent->userEvent == ue->readyWeapon ||
-								idEvent->userEvent == ue->shout ||
-								idEvent->userEvent == ue->sneak ||
-								idEvent->userEvent == ue->sprint ||
-								idEvent->userEvent == ue->togglePOV ||
-								idEvent->userEvent == ue->tweenMenu
+								(!p1ControllingMenus) &&
+								(
+									idEvent->userEvent == ue->activate ||
+									idEvent->userEvent == ue->favorites ||
+									idEvent->userEvent == ue->hotkey1 ||
+									idEvent->userEvent == ue->hotkey2 ||
+									idEvent->userEvent == ue->journal ||
+									idEvent->userEvent == ue->pause ||
+									idEvent->userEvent == ue->readyWeapon ||
+									idEvent->userEvent == ue->shout ||
+									idEvent->userEvent == ue->sneak ||
+									idEvent->userEvent == ue->sprint ||
+									idEvent->userEvent == ue->togglePOV ||
+									idEvent->userEvent == ue->tweenMenu
+								)
 							)
 						)
 					);
@@ -5608,6 +5623,7 @@ namespace ALYSLC
 						isBlockedP1Event = 
 						(
 							isBlockedP1LootMenuEvent ||
+							isHotkeyAssignmentInput ||
 							idEvent->userEvent == ue->activate ||
 							idEvent->userEvent == ue->favorites ||
 							idEvent->userEvent == ue->journal ||
@@ -5903,7 +5919,7 @@ namespace ALYSLC
 			return shouldProcess;
 		}
 
-		RE::InputEvent * MenuControlsHooks::GetFirstGamepadInputEvent
+		RE::InputEvent* MenuControlsHooks::GetFirstGamepadInputEvent
 		(
 			RE::InputEvent* const* a_constEvent
 		)
