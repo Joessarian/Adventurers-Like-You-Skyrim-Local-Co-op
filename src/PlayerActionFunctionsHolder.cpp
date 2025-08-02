@@ -553,7 +553,7 @@ namespace ALYSLC
 			// Then check stamina requirement.
 			return 
 			(
-				a_p->pam->IsPerforming(InputAction::kBlock) &&
+				a_p->coopActor->IsBlocking()  &&
 				HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kBash)
 			);
 		}
@@ -763,7 +763,7 @@ namespace ALYSLC
 				(!a_p->coopActor->IsSneaking() || a_p->isTransformed) && 
 				(
 					!a_p->coopActor->IsOnMount() && 
-					!a_p->pam->IsPerforming(InputAction::kBlock) &&
+					!a_p->coopActor->IsBlocking() &&
 					!a_p->coopActor->IsFlying()
 				) &&
 				(HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kDodge))
@@ -1177,7 +1177,7 @@ namespace ALYSLC
 					a_p->coopActor->HasPerk(glob.sneakRollPerk)
 				);
 			}
-			else if (a_p->pam->IsPerforming(InputAction::kBlock))
+			else if (a_p->coopActor->IsBlocking())
 			{
 				// Moving and blocking with a shield equipped + have the shield charge perk.
 				canPerform =
@@ -1564,7 +1564,7 @@ namespace ALYSLC
 		{
 			// Play bash idle to bash instantly.
 			
-			bool wasBlocking = a_p->pam->IsPerforming(InputAction::kBlock);
+			bool wasBlocking = a_p->coopActor->IsBlocking();
 			a_p->coopActor->NotifyAnimationGraph("attackStop");
 			a_p->coopActor->NotifyAnimationGraph("blockStart");
 			// 'BowBash' triggers the normal bash animation,
@@ -7231,7 +7231,7 @@ namespace ALYSLC
 			}
 
 			// Continue blocking if the player was blocking before the bash; stop otherwise.
-			bool wasBlocking = a_p->pam->IsPerforming(InputAction::kBlock);
+			bool wasBlocking = a_p->coopActor->IsBlocking();
 			// Action command for both player types.
 			Util::RunPlayerActionCommand
 			(
@@ -11087,7 +11087,7 @@ namespace ALYSLC
 
 			if (!a_p->mm->isParagliding && !a_p->tm->isMARFing && !a_p->tm->isSMORFing) 
 			{
-				if (a_p->coopActor->IsSneaking() || a_p->pam->IsPerforming(InputAction::kBlock)) 
+				if (a_p->coopActor->IsSneaking() || a_p->coopActor->IsBlocking()) 
 				{
 					// Trigger silent roll or shield charge animation via action command.
 					Util::RunPlayerActionCommand
@@ -12344,8 +12344,25 @@ namespace ALYSLC
 			{
 				// Ensure that the player actor continues blocking afterward if they were already
 				// blocking before the bash request.
-				bool wasBlocking = a_p->pam->IsPerforming(InputAction::kBlock);
-				if (a_p->isPlayer1)
+				bool wasBlocking = a_p->coopActor->IsBlocking();
+				// For some reason, sending input events to trigger a regular bash for P1
+				// fails when there is a spell in the RH. 
+				// So we'll use action commands in that case.
+				// Only issue here is that there is a slight hitch before the bash starts
+				// when triggered this way for P1. Better than not being able to bash at all.
+				if (!a_p->isPlayer1 || a_p->em->GetRHSpell())
+				{
+					// Triggered via action command for companion players.
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
+					);
+					Util::RunPlayerActionCommand
+					(
+						RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+					);
+				}
+				else
 				{
 					// Hello Ed boys! Many input events, yes?
 					// Emulate when happens when the player bashes 
@@ -12406,54 +12423,26 @@ namespace ALYSLC
 					// Ensure P1 is AI driven again after.
 					a_p->pam->sendingP1MotionDrivenEvents = false;
 					Util::SetPlayerAIDriven(true);
-					// Redundancy since block start/stop requests fail at times.
-					if (wasBlocking)
-					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-						);
-						a_p->coopActor->NotifyAnimationGraph("blockStart");
-					}
-					else
-					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-						);
-						a_p->coopActor->NotifyAnimationGraph("attackStop");
-						a_p->coopActor->NotifyAnimationGraph("blockStop");
-					}
 				}
-				else
+
+				// Continue or stop blocking afterward.
+				// Redundancy since block start/stop requests fail at times.
+				if (wasBlocking)
 				{
-					// Triggered via action command for companion players.
 					Util::RunPlayerActionCommand
 					(
 						RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
 					);
+					a_p->coopActor->NotifyAnimationGraph("blockStart");
+				}
+				else
+				{
 					Util::RunPlayerActionCommand
 					(
-						RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+						RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
 					);
-					// Redundancy since block start/stop requests fail at times.
-					if (wasBlocking)
-					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
-						);
-						a_p->coopActor->NotifyAnimationGraph("blockStart");
-					}
-					else
-					{
-						Util::RunPlayerActionCommand
-						(
-							RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
-						);
-						a_p->coopActor->NotifyAnimationGraph("attackStop");
-						a_p->coopActor->NotifyAnimationGraph("blockStop");
-					}
+					a_p->coopActor->NotifyAnimationGraph("attackStop");
+					a_p->coopActor->NotifyAnimationGraph("blockStop");
 				}
 			}
 		}
@@ -14115,7 +14104,7 @@ namespace ALYSLC
 				return;
 			}
 
-			if (a_p->coopActor->IsSneaking() || a_p->pam->IsPerforming(InputAction::kBlock)) 
+			if (a_p->coopActor->IsSneaking() || a_p->coopActor->IsBlocking()) 
 			{
 				// Stop silent roll/shield charge animation with an action command.
 				// Sprint stop.

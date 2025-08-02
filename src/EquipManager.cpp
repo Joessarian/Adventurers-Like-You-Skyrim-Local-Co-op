@@ -5761,34 +5761,6 @@ namespace ALYSLC
 				RE::BGSEquipSlot* equipSlot = nullptr;
 				if (auto equipType = currentForm->As<RE::BGSEquipType>(); equipType)
 				{
-					//if (equipType->equipSlot == glob.eitherHandEquipSlot)
-					//{
-					//	// Unequipping from the "either hand" equip slot 
-					//	// causes a "lingering equip state" bug
-					//	// where the unequipped item still shows as equipped 
-					//	// in the inventory/container menu,
-					//	// and will require additional unequip requests to full unequip.
-					//	// So we force the equip slot for our unequip call 
-					//	// to match the passed-in equip index.
-					//	if (a_equipIndex == EquipIndex::kLeftHand)
-					//	{
-					//		equipSlot = glob.leftHandEquipSlot;
-					//	}
-					//	else if (a_equipIndex == EquipIndex::kRightHand)
-					//	{
-					//		equipSlot = glob.rightHandEquipSlot;
-					//	}
-					//	else
-					//	{
-					//		equipSlot = equipType->equipSlot;
-					//	}
-					//}
-					//else
-					//{
-					//	// Otherwise, use the weapon's default equip slot.
-					//	equipSlot = equipType->equipSlot;
-					//}
-
 					// Unequipping from the "either hand" equip slot 
 					// causes a "lingering equip state" bug
 					// where the unequipped item still shows as equipped 

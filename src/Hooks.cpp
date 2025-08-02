@@ -5830,7 +5830,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -5859,7 +5859,7 @@ namespace ALYSLC
 					allowP1RotateLock,
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput
-				);*/
+				);
 
 				if (!propagateUnmodifiedEvent)
 				{

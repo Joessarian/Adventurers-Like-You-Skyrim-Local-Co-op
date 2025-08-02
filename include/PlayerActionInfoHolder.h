@@ -376,6 +376,7 @@ namespace ALYSLC
 				},
 				// Bash
 				{ 
+					InputAction::kBlock,
 					InputAction::kAttackRH 
 				},
 				// Block
@@ -893,7 +894,7 @@ namespace ALYSLC
 			// Bash
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kDoNotBlockConflictingActions
 			),
 			// Block
 			TriggerFlags
