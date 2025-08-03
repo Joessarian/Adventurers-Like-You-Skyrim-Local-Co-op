@@ -2767,7 +2767,7 @@ namespace ALYSLC
 				(
 					(midHighProc) && 
 					(
-						(allowRotation && p->pam->isAttacking) ||
+						(allowRotation && p->pam->isAttacking && !p->pam->isInCastingAnim) ||
 						(isParagliding) ||
 						(p->pam->IsPerformingAllOf(InputAction::kSprint, InputAction::kBlock))
 					)

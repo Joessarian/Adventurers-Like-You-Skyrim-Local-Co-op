@@ -3518,7 +3518,7 @@ namespace ALYSLC
 						return RE::ActorHandle();
 					}
 				}
-
+				
 				attackSource = p->em->equippedForms[!EquipIndex::kRightHand];
 			}
 			else if ((p->pam->AllInputsPressedForAction(InputAction::kCastLH) && 
@@ -3535,7 +3535,7 @@ namespace ALYSLC
 						return RE::ActorHandle();
 					}
 				}
-
+				
 				attackSource = p->em->equippedForms[!EquipIndex::kLeftHand];
 			}
 			else if ((p->pam->AllInputsPressedForAction(InputAction::kQuickSlotCast) && 
@@ -3567,8 +3567,24 @@ namespace ALYSLC
 				attackSource = p->em->equippedForms[!EquipIndex::kVoice];
 			}
 
-			if (p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
-				p->pam->reqSpecialAction == SpecialActionType::kDualCast)
+			if (attackSource)
+			{
+				auto asSpell = attackSource->As<RE::SpellItem>();
+				if (asSpell)
+				{
+					// No need to select a target if casting at self.
+					if (asSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+					{
+						return RE::ActorHandle();
+					}
+				}
+
+				// Single attack source, so check if it has a hostile spell.
+				sourceHasSpell = asSpell;
+				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileEffect(attackSource);
+			}
+			else if (p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
+					 p->pam->reqSpecialAction == SpecialActionType::kDualCast)
 			{
 				RE::MagicItem* lhSpell = p->em->GetLHSpell();
 				auto lhWeap = p->em->GetLHWeapon();
@@ -3597,22 +3613,6 @@ namespace ALYSLC
 					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kLeftHand]) && 
 					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kRightHand])
 				};
-			}
-			else if (attackSource)
-			{
-				auto asSpell = attackSource->As<RE::SpellItem>();
-				if (asSpell)
-				{
-					// No need to select a target if casting at self.
-					if (asSpell->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
-					{
-						return RE::ActorHandle();
-					}
-				}
-
-				// Single attack source, so check if it has a hostile spell.
-				sourceHasSpell = asSpell;
-				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileEffect(attackSource);
 			}
 
 			/*SPDLOG_DEBUG
@@ -8011,7 +8011,7 @@ namespace ALYSLC
 			//	return true;
 			//}
 
-			if (newTargetIsValid && newTargetRefrPtr != currentTargetRefrPtr)
+			if (newTargetIsValid)
 			{
 				// Set new valid linked refr.
 				coopActor->extraList.SetLinkedRef(newTargetRefrPtr.get(), p->aimTargetKeyword);
@@ -10657,6 +10657,7 @@ namespace ALYSLC
 			) ||
 			(
 				(objectPtr->As<RE::Actor>()) && 
+				(!objectPtr->IsDead()) &&
 				(
 					(!objectIsPlayer && !Settings::bCanThrowActors) ||
 					(objectIsPlayer && !Settings::bCanThrowOtherPlayers)
@@ -10967,7 +10968,7 @@ namespace ALYSLC
 		// Throw the refr if facing the crosshair position,
 		// if the thrown object is not the target refr,
 		// and if it is not the player themselves (flop), unless thrown while SMORFing.
-		// Only can throw actors if the 'Can Grab Actors' setting is enabled,
+		// Only can throw living actors if the 'Can Grab Actors' setting is enabled,
 		// and only can throw players if 'Can Grab Other Players' setting is enabled.
 		// Drop the refr otherwise.
 		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
@@ -10988,6 +10989,7 @@ namespace ALYSLC
 			) &&
 			(
 				(!objectPtr->As<RE::Actor>()) || 
+				(objectPtr->IsDead()) ||
 				(!objectIsPlayer && Settings::bCanThrowActors) ||
 				(objectIsPlayer && Settings::bCanThrowOtherPlayers)
 			)
@@ -11090,7 +11092,6 @@ namespace ALYSLC
 				), 
 				a_p->tm->rmm->normReleaseAngleFactor
 			);
-			
 			// Once release speed is set, update the intercept position, if using aim prediction.
 			releaseSpeed = v;
 			if (trajType == ProjectileTrajType::kPrediction)
@@ -12664,7 +12665,7 @@ namespace ALYSLC
 		const std::shared_ptr<CoopPlayer>& a_p, const float& a_factorToSet
 	)
 	{
-		// If the given factor is -1, clamp and return it.
+		// If the given factor is not -1, clamp and return it.
 		// Otherwise, calculate a new one by normalizing and returning the grab bind hold time, 
 		// which directly influences the angle at which released refrs are thrown.
 
@@ -12674,37 +12675,16 @@ namespace ALYSLC
 			return;
 		}
 
-		float cappedHoldTime = 0.0f;
-		bool triggeredWithGrabBind = 
+		// Adjust release speed based on how long the grab bind was held.
+		const auto actionIndex = !InputAction::kGrabObject - !InputAction::kFirstAction;
+		float cappedHoldTime = 
 		(
+			min
 			(
-				a_p->pam->GetPlayerActionInputJustReleased
-				(
-					InputAction::kGrabObject, false
-				) 
-			) ||
-			(
-				a_p->pam->IsPerforming(InputAction::kGrabObject) &&
-				a_p->pam->GetPlayerActionInputHoldTime
-				(
-					InputAction::kGrabObject
-				) > 0.0f
+				a_p->pam->paStatesList[actionIndex].secsPerformed,
+				max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
 			)
 		);
-		// Adjust release speed based on how long the grab bind was held for
-		// if the bind was just released this frame or is being held.
-		if (triggeredWithGrabBind)
-		{
-			const auto actionIndex = !InputAction::kGrabObject - !InputAction::kFirstAction;
-			cappedHoldTime = 
-			(
-				min
-				(
-					a_p->pam->paStatesList[actionIndex].secsPerformed,
-					max(0.01f, Settings::fSecsToReleaseObjectsAtMaxSpeed)
-				)
-			);
-		}
 
 		// Normalize and cache it.
 		normReleaseAngleFactor = std::lerp

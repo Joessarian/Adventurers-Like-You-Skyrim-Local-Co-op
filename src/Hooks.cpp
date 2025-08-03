@@ -5353,8 +5353,15 @@ namespace ALYSLC
 						if (shouldGiveControlOfContainer)
 						{
 							// Send Container Menu request for the player controlling menus.
-							if (glob.menuCID != -1 &&
-								Util::HandleIsValid(glob.reqQuickLootContainerHandle))
+							bool shouldOpenContainer = 
+							(
+								(
+									glob.menuCID != -1 && 
+									Util::HandleIsValid(glob.reqQuickLootContainerHandle)
+								) &&
+								(glob.menuCID == glob.player1CID || coopPlayerMenuInput)
+							);
+							if (shouldOpenContainer)
 							{
 								glob.moarm->InsertRequest
 								(

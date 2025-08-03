@@ -433,7 +433,8 @@ namespace ALYSLC
 		{
 			return currentState;
 		}
-			containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
+
+		containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
 		if (!containerMenu)
 		{
 			return currentState;
@@ -469,7 +470,6 @@ namespace ALYSLC
 		managerMenuCID = pIndex;
 		managerMenuPlayerID = glob.coopPlayers[managerMenuCID]->playerID;
 		GlobalCoopData::SetMenuCIDs(managerMenuCID);
-
 		return ManagerState::kRunning;
 	}
 

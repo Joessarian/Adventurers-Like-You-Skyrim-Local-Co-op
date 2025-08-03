@@ -159,11 +159,11 @@ namespace ALYSLC
 		// Attract nearby lootable objects while holding grab 
 		// and not targeting any object with the crosshair.
 		static inline bool bAutoGrabNearbyLootableObjectsOnHold = true;
-		// Can players grab actors (other players not included)?
+		// Can players grab living actors (other players not included)?
 		static inline bool bCanGrabActors = false;
 		// Can players grab other players?
 		static inline bool bCanGrabOtherPlayers = true;
-		// Can players throw actors (other players not included)?
+		// Can players throw living actors (other players not included)?
 		static inline bool bCanThrowActors = false;
 		// Can players throw other players?
 		static inline bool bCanThrowOtherPlayers = true;

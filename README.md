@@ -221,7 +221,6 @@ bool something =
 ### Performance
 - Expect a ***loss of, on average, at least 7-15% of your base framerate with some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
 - ***Turning off camera collisions, obstruction fading, and not removing occlusion*** produces the best performance when using the co-op camera. ***See the MCM for other performance-impacting options.***
-- Highly recommend ***capping your framerate to 60 FPS if possible***, since some of the physics-related code in this mod can act up at higher framerates.
 - I realize that the code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in alpha, ***expect additional performance optimizations down the line once the mod becomes more stable***.
 
 ### Installation

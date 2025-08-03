@@ -6193,23 +6193,23 @@ namespace ALYSLC
 				(
 					RE::MagicSystem::CastingSource::kRightHand
 				);
-				
+
 				// Typically, if a caster is stuck at state 1 for multiple frames,
 				// the casting package is either not being executed or has stalled,
 				// preventing the cast from occurring.
 				// Request to cast again if this happens.
 				// Unfortunately, from what I can tell, this unresponsiveness 
 				// is tied to how often the package evaluates and is unavoidable.
-				bool restartPackage = 
+				bool restartCast = 
 				(
 					(a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01) || 
 					(a_rhCast && *rhCaster->state == RE::MagicCaster::State::kUnk01)
 				);
-				if (restartPackage)
+				if (restartCast)
 				{
 					/*SPDLOG_DEBUG
 					(
-						"[PAFH] SetUpCastingPackage: {}: Restart package.",
+						"[PAFH] SetUpCastingPackage: {}: Restart cast.",
 						a_p->coopActor->GetName()
 					);*/
 					if (a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01)
@@ -6221,7 +6221,7 @@ namespace ALYSLC
 						rhCaster->RequestCastImpl();
 					}
 				}
-				
+
 				// Extra flags for debug purposes.
 				// 
 				// Set casting global variables to match the requested hand/voice slots.
@@ -6238,28 +6238,37 @@ namespace ALYSLC
 						)
 					) 
 				};
-				// At least one hand caster is inactive or interrupted.
+				// Both hand casters are inactive or interrupted.
 				bool notHandCastingYet = 
 				(
+					(a_lhCast) && 
 					(
-						(a_lhCast) && 
-						(
-							(lhCaster->state == RE::MagicCaster::State::kNone) ||
-							(lhCaster->state == RE::MagicCaster::State::kUnk07) ||
-							(lhCaster->state == RE::MagicCaster::State::kUnk08) ||
-							(lhCaster->state == RE::MagicCaster::State::kUnk09)
-						)
-					) || 
+						(lhCaster->state == RE::MagicCaster::State::kNone) ||
+						(lhCaster->state == RE::MagicCaster::State::kUnk07) ||
+						(lhCaster->state == RE::MagicCaster::State::kUnk08) ||
+						(lhCaster->state == RE::MagicCaster::State::kUnk09)
+					) &&
+					(a_rhCast) && 
 					(
-						(a_rhCast) && 
-						(
-							(rhCaster->state == RE::MagicCaster::State::kNone) ||
-							(rhCaster->state == RE::MagicCaster::State::kUnk07) ||
-							(rhCaster->state == RE::MagicCaster::State::kUnk08) ||
-							(rhCaster->state == RE::MagicCaster::State::kUnk09)
-						)
+						(rhCaster->state == RE::MagicCaster::State::kNone) ||
+						(rhCaster->state == RE::MagicCaster::State::kUnk07) ||
+						(rhCaster->state == RE::MagicCaster::State::kUnk08) ||
+						(rhCaster->state == RE::MagicCaster::State::kUnk09)
 					)
 				);
+				// If not casting yet with either hand, clear the previous target
+				// and remove the player's ranged attack package, preventing issues that can occur 
+				// when changing package globals or the package spellcast target mid-cast.
+				if ((!pam->isInCastingAnim) || (notHandCastingYet))
+				{
+					/*SPDLOG_DEBUG
+					(
+						"[PAFH] SetUpCastingPackage: {}: Restart package.",
+						a_p->coopActor->GetName()
+					);*/
+					a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
+					pam->SetAndEveluatePackage();
+				}
 
 				// Since the targeting manager's update call runs 
 				// after the player action manager's main task,
@@ -6296,6 +6305,7 @@ namespace ALYSLC
 						!a_actionJustSterted || !a_lhCast || !a_p->em->HasRHStaffEquipped()
 					);
 				}
+				
 				float dualValue = dualCasting->value;
 				float dualPrevValue = dualCasting->value;
 				float casting2HValue = casting2H->value;
