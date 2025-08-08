@@ -704,7 +704,8 @@ namespace ALYSLC
 		kDoNotUseCompActionsOrdering = 1 << 2,
 		// Ignore condition failure and continue performing.
 		kIgnoreConditionFailure = 1 << 3,
-		// Ignore interrupts from conflicting actions.
+		// Ignore interrupts from conflicting actions 
+		// (only actions with the same or fewer composing inputs).
 		kIgnoreConflictingActions = 1 << 4,
 		// Only trigger if this is the only action whose composing inputs have been pressed.
 		// (IGNORING LS/RS movement).

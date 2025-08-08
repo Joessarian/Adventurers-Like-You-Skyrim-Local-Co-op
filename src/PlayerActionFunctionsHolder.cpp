@@ -1821,7 +1821,13 @@ namespace ALYSLC
 					std::clamp(lsMag, 0.5f, 1.0f)
 				);
 				costToPerform = 
-				baseCost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
+				baseCost = 
+				(
+					a_p->pam->baseStamina * 
+					carryWeightRatioMult * 
+					dashDodgeCommitmentMult *
+					Settings::vfDashDodgeStaminaCostMult[a_p->playerID]
+				);
 				// Set the Dodge action's cost.
 				a_p->pam->paStatesList
 				[!InputAction::kDodge - !InputAction::kFirstAction].avBaseCost = baseCost;
@@ -1957,13 +1963,14 @@ namespace ALYSLC
 			{
 				isOtherPlayer && 
 				Settings::bCanKillmoveOtherPlayers && 
+				Settings::vbFriendlyFire[a_p->playerID] &&
 				!glob.coopPlayers[otherPIndex]->isInGodMode && 
 				Settings::vfDamageReceivedMult[glob.coopPlayers[otherPIndex]->playerID] > 0.0f
 			};
 			// Only perform if targeting a valid actor 
 			// and is another killmove-able player or an NPC that isn't essential.
 			if ((!validState) || 
-				(!canKillmoveOtherPlayer && (isOtherPlayer || targetActorPtr->IsEssential()))) 
+				((!canKillmoveOtherPlayer) && (isOtherPlayer || targetActorPtr->IsEssential()))) 
 			{
 				return false;
 			}
@@ -2477,13 +2484,8 @@ namespace ALYSLC
 				if (baseCost != 0.0f) 
 				{
 					// Can perform if in god mode.
-					// Check for sufficient stamina, if P1,
-					// or 0 cooldown for companion players.
-					canPerform |= 
-					(
-						(a_p->isPlayer1 && pam->currentStamina > 0.0f) ||
-						(!a_p->isPlayer1 && pam->secsTotalStaminaRegenCooldown == 0.0f)
-					);
+					// Stamina must not be on cooldown.
+					canPerform |= pam->secsTotalStaminaRegenCooldown == 0.0f;
 				}
 				else
 				{
@@ -4090,7 +4092,8 @@ namespace ALYSLC
 					(resAVMult) * 
 					(
 						Util::GetFullAVAmount(a_p->coopActor.get(), RE::ActorValue::kHealth)
-					) / (max(1.0f, Settings::fSecsReviveTime))
+					) / 
+					(max(1.0f, Settings::fSecsReviveTime))
 				);
 
 				break;
@@ -4200,7 +4203,13 @@ namespace ALYSLC
 					1.0f : 
 					std::clamp(lsMag, 0.5f, 1.0f)
 				);
-				cost = a_p->pam->baseStamina * carryWeightRatioMult * dashDodgeCommitmentMult;
+				cost = 
+				(
+					a_p->pam->baseStamina * 
+					carryWeightRatioMult * 
+					dashDodgeCommitmentMult *
+					Settings::vfDashDodgeStaminaCostMult[a_p->playerID]
+				);
 
 				break;
 			}
@@ -4508,32 +4517,26 @@ namespace ALYSLC
 			}
 		}
 		
-		bool HandleDelayedHotkeyEquipRequest
+		bool HandleHotkeyEquipRequest
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
 			const InputAction & a_occurringAction, 
 			const PlayerActionManager::PlayerActionState& a_paState
 		)
 		{
-			// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
+			// Handle a ('HotkeyEquip' bind released) hotkey equip request.
 			// Return true if the current occurring action should skip executing its perf funcs,
 			// since it is being used to equip the chosen hotkeyed item.
 
 			// NOTE:
-			// Four actions' composing inputs are used to signal which slot 
-			// to equip the selected hotkeyed form into:
-			// Left Trigger -> LH
-			// Right Trigger -> RH
-			// Left Bumper -> Item Quick Slot
-			// Right Bumper -> Spell Quick Slot
-			// 
-			// If this occurring action is not a hotkey equip action,
-			// and if the player is attempting to equip a hotkeyed form,
-			// and the occurring PA includes one of the above composing inputs,
-			// we can't perform this action.
-
+			// Keeping commented out for now in case I want to revert the changes.
 			// Player has until the hotkey selection crosshair message is cleared
 			// to choose which hand to equip the hotkeyed item into.
+			// Issue with the delayed equip method is that the player might instead wish to attack
+			// with LT/RT right after equipping a hotkeyed item, 
+			// but will instead equip whatever hotkeyed item was selected
+			// once the hotkey equip bind was released.
+			/*
 			bool choseHotkeyedItem = 
 			{
 				a_p->tm->lastCrosshairMessage->type == 
@@ -4541,6 +4544,7 @@ namespace ALYSLC
 				Util::GetElapsedSeconds(a_p->tm->lastCrosshairMessage->setTP) < 
 				a_p->tm->lastCrosshairMessage->secsMaxDisplayTime
 			};
+
 			// Do not execute PA funcs for this occurring action if the player 
 			// has chosen a hotkeyed item and is now attempting
 			// to equip that hotkeyed item to a hand or the quick slot.
@@ -4599,6 +4603,39 @@ namespace ALYSLC
 			}
 
 			return isHotkeyEquipSlotSelectionBind;
+			*/
+			
+			// NOTE:
+			// Four actions' composing inputs are used to signal which slot 
+			// to equip the selected hotkeyed form into:
+			// Left Trigger -> LH
+			// Right Trigger -> RH
+			// Left Bumper -> Item Quick Slot
+			// Right Bumper -> Spell Quick Slot
+			// 
+			// If this occurring action is not a hotkey equip action,
+			// and if the player is attempting to equip a hotkeyed form,
+			// and the occurring PA includes one of the above composing inputs,
+			// we can't perform this action.
+			return 
+			(
+				(
+					a_occurringAction != InputAction::kHotkeyEquip
+				) &&
+				(
+					(a_p->pam->IsPerforming(InputAction::kHotkeyEquip)) &&
+					(
+						(a_paState.paParams.inputMask & (1 << !InputAction::kLT)) != 0 ||
+						(a_paState.paParams.inputMask & (1 << !InputAction::kRT)) != 0 ||
+						(
+							a_paState.paParams.inputMask & (1 << !InputAction::kLShoulder)
+						) != 0 ||
+						(
+							a_paState.paParams.inputMask & (1 << !InputAction::kRShoulder)
+						) != 0
+					)
+				)
+			);
 		}
 
 		bool InitiateSpecialInteractionPackage
@@ -5712,6 +5749,7 @@ namespace ALYSLC
 			// Allow both actors to move again post-killmove check.
 			Util::NativeFunctions::SetDontMove(a_targetActor, false);
 			Util::NativeFunctions::SetDontMove(a_p->coopActor.get(), false);
+
 			return performedKillmove;
 		}
 
@@ -7528,9 +7566,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled form and then cycle ammo.
-			a_p->em->lastCycledForm = a_p->em->currentCycledAmmo;
-			a_p->em->CycleAmmo();
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleAmmo))
+			{
+				a_p->em->CycleAmmo();
+				a_p->em->lastCycledForm = a_p->em->currentCycledAmmo;
+			}
+			else
+			{
+				a_p->em->lastCycledForm = a_p->em->currentCycledAmmo;
+				a_p->em->CycleAmmo();
+			}
+
 			if (RE::TESForm* ammo = a_p->em->currentCycledAmmo; ammo)
 			{
 				a_p->tm->SetCrosshairMessageRequest
@@ -7574,9 +7622,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled spell category and then cycle.
-			a_p->em->lastCycledSpellCategory = a_p->em->lhSpellCategory;
-			a_p->em->CycleHandSlotMagicCategory(false);
+			// If just started, cycle and then set last and current cycled categories.
+			// Otherwise, save the last cycled category and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellCategoryLH))
+			{
+				a_p->em->CycleHandSlotMagicCategory(false);
+				a_p->em->lastCycledSpellCategory = a_p->em->lhSpellCategory;
+			}
+			else
+			{
+				a_p->em->lastCycledSpellCategory = a_p->em->lhSpellCategory;
+				a_p->em->CycleHandSlotMagicCategory(false);
+			}
+
 			const std::string_view newCategory = a_p->em->FavMagCyclingCategoryToString
 			(
 				a_p->em->lhSpellCategory
@@ -7607,9 +7665,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled spell category and then cycle.
-			a_p->em->lastCycledSpellCategory = a_p->em->rhSpellCategory;
-			a_p->em->CycleHandSlotMagicCategory(true);
+			// If just started, cycle and then set last and current cycled categories.
+			// Otherwise, save the last cycled category and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellCategoryRH))
+			{
+				a_p->em->CycleHandSlotMagicCategory(true);
+				a_p->em->lastCycledSpellCategory = a_p->em->rhSpellCategory;
+			}
+			else
+			{
+				a_p->em->lastCycledSpellCategory = a_p->em->rhSpellCategory;
+				a_p->em->CycleHandSlotMagicCategory(true);
+			}
+
 			const std::string_view newCategory = a_p->em->FavMagCyclingCategoryToString
 			(
 				a_p->em->rhSpellCategory
@@ -7643,13 +7711,25 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled spell and then cycle.
-			a_p->em->lastCycledForm = 
-			(
-				a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]
-			);
-			// Update cycled spell from the current spell category.
-			a_p->em->CycleHandSlotMagic(false);
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellLH))
+			{
+				a_p->em->CycleHandSlotMagic(false);
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]
+				);
+			}
+			else
+			{
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]
+				);
+				a_p->em->CycleHandSlotMagic(false);
+			}
+
 			auto spellForm = a_p->em->currentCycledLHSpellsList[!a_p->em->lhSpellCategory]; 
 			if (spellForm)
 			{
@@ -7699,13 +7779,25 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled spell and then cycle.
-			a_p->em->lastCycledForm = 
-			(
-				a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]
-			);
-			// Update cycled spell from the current spell category.
-			a_p->em->CycleHandSlotMagic(true);
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleSpellRH))
+			{
+				a_p->em->CycleHandSlotMagic(true);
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]
+				);
+			}
+			else
+			{
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]
+				);
+				a_p->em->CycleHandSlotMagic(true);
+			}
+
 			auto spellForm = a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory]; 
 			if (spellForm)
 			{
@@ -7755,10 +7847,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled spell and then cycle.
-			a_p->em->lastCycledForm = a_p->em->currentCycledVoiceMagic;
-			// Update cycled spell from the current category.
-			a_p->em->CycleVoiceSlotMagic();
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleVoiceSlotMagic))
+			{
+				a_p->em->CycleVoiceSlotMagic();
+				a_p->em->lastCycledForm = a_p->em->currentCycledVoiceMagic;
+			}
+			else
+			{
+				a_p->em->lastCycledForm = a_p->em->currentCycledVoiceMagic;
+				a_p->em->CycleVoiceSlotMagic();
+			}
+
 			if (RE::TESForm* voiceForm = a_p->em->currentCycledVoiceMagic; voiceForm)
 			{
 				a_p->tm->SetCrosshairMessageRequest
@@ -7802,9 +7903,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled weapon category and then cycle.
-			a_p->em->lastCycledWeaponCategory = a_p->em->lhWeaponCategory;
-			a_p->em->CycleWeaponCategory(false);
+			// If just started, cycle and then set last and current cycled categories.
+			// Otherwise, save the last cycled category and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponCategoryLH))
+			{
+				a_p->em->CycleWeaponCategory(false);
+				a_p->em->lastCycledWeaponCategory = a_p->em->lhWeaponCategory;
+			}
+			else
+			{
+				a_p->em->lastCycledWeaponCategory = a_p->em->lhWeaponCategory;
+				a_p->em->CycleWeaponCategory(false);
+			}
+
 			const std::string_view newCategory = a_p->em->FavWeaponCyclingCategoryToString
 			(
 				a_p->em->lhWeaponCategory
@@ -7838,9 +7949,19 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled weapon category and then cycle.
-			a_p->em->lastCycledWeaponCategory = a_p->em->rhWeaponCategory;
-			a_p->em->CycleWeaponCategory(true);
+			// If just started, cycle and then set last and current cycled categories.
+			// Otherwise, save the last cycled category and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponCategoryRH))
+			{
+				a_p->em->CycleWeaponCategory(true);
+				a_p->em->lastCycledWeaponCategory = a_p->em->rhWeaponCategory;
+			}
+			else
+			{
+				a_p->em->lastCycledWeaponCategory = a_p->em->rhWeaponCategory;
+				a_p->em->CycleWeaponCategory(true);
+			}
+
 			const std::string_view newCategory = a_p->em->FavWeaponCyclingCategoryToString
 			(
 				a_p->em->rhWeaponCategory
@@ -7874,13 +7995,25 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled form and then cycle.
-			a_p->em->lastCycledForm = 
-			(
-				a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]
-			);
-			// Update cycled weapon from the current weapon category.
-			a_p->em->CycleWeapons(false);
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponLH))
+			{
+				a_p->em->CycleWeapons(false);
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]
+				);
+			}
+			else
+			{
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]
+				);
+				a_p->em->CycleWeapons(false);
+			}
+
 			auto form = a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]; 
 			if (form)
 			{
@@ -7951,13 +8084,25 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set last cycled form and then cycle.
-			a_p->em->lastCycledForm = 
-			(
-				a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory]
-			);
-			// Update cycled weapon from the current weapon category.
-			a_p->em->CycleWeapons(true);
+			// If just started, cycle and then set last and current cycled forms.
+			// Otherwise, save the last cycled form and then cycle.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kCycleWeaponRH))
+			{
+				a_p->em->CycleWeapons(true);
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory]
+				);
+			}
+			else
+			{
+				a_p->em->lastCycledForm = 
+				(
+					a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory]
+				);
+				a_p->em->CycleWeapons(true);
+			}
+
 			auto form = a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory];
 			if (form)
 			{
@@ -10989,48 +11134,83 @@ namespace ALYSLC
 			}
 			else
 			{
-				// Toggle with action command.
-				// Ensure package flags are in sync for co-op companions,
-				// and also update the actor state to keep everything in sync.
-				// Additional state sync corrections are made in the movement manager
-				// to ensure all three states are equivalent.
-				// Sneak state changes are still sometimes delayed
-				// for companion players unfortunately.
-				a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
-				if (a_p->pam->wantsToSneak)
+				if (a_p->isPlayer1)
 				{
-					// Ensure package flags are in sync for co-op companions.
-					if (!a_p->isPlayer1)
-					{
-						a_p->pam->SetPackageFlag
-						(
-							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
-						);
-					}
-
-					Util::RunPlayerActionCommand
+					// Toggling via action command and actor state causes the stealth meter
+					// to remain onscreen even after exiting sneak mode.
+					// So we'll just emulate pressing the sneak bind instead. 
+					// No problems there.
+					// Yet.
+					a_p->pam->SendButtonEvent
 					(
-						RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
+						InputAction::kSneak,
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kInstantTrigger
 					);
-					a_p->coopActor->actorState1.sneaking = 1;
-					a_p->coopActor->actorState2.forceSneak = 1;
+					a_p->pam->SendButtonEvent
+					(
+						InputAction::kSneak,
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kPressAndHold,
+						1.0f
+					);
+					a_p->pam->SendButtonEvent
+					(
+						InputAction::kSneak,
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kRelease,
+						1.0f
+					);
+					a_p->pam->wantsToSneak = static_cast<bool>
+					(
+						a_p->coopActor->actorState1.sneaking
+					);
 				}
 				else
 				{
-					if (!a_p->isPlayer1)
+					// Toggle with action command.
+					// Ensure package flags are in sync for companion players,
+					// and also update the actor state to keep everything in sync.
+					// Additional state sync corrections are made in the movement manager
+					// to ensure all three states are equivalent.
+					// Sneak state changes are still sometimes delayed
+					// for companion players unfortunately.
+					a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
+					if (a_p->pam->wantsToSneak)
 					{
-						a_p->pam->SetPackageFlag
-						(
-							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
-						);
-					}
+						// Ensure package flags are in sync for co-op companions.
+						if (!a_p->isPlayer1)
+						{
+							a_p->pam->SetPackageFlag
+							(
+								RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
+							);
+						}
 
-					Util::RunPlayerActionCommand
-					(
-						RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
-					);
-					a_p->coopActor->actorState1.sneaking = 0;
-					a_p->coopActor->actorState2.forceSneak = 0;
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
+						);
+						a_p->coopActor->actorState1.sneaking = 1;
+						a_p->coopActor->actorState2.forceSneak = 1;
+					}
+					else
+					{
+						if (!a_p->isPlayer1)
+						{
+							a_p->pam->SetPackageFlag
+							(
+								RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
+							);
+						}
+
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
+						);
+						a_p->coopActor->actorState1.sneaking = 0;
+						a_p->coopActor->actorState2.forceSneak = 0;
+					}
 				}
 				
 				// TODO:
@@ -12474,7 +12654,7 @@ namespace ALYSLC
 					false
 				);
 			}
-
+			
 			Util::RunPlayerActionCommand
 			(
 				RE::DEFAULT_OBJECT::kActionLeftRelease, a_p->coopActor.get()
@@ -12599,7 +12779,7 @@ namespace ALYSLC
 				// they'd likely expect the previous cycled item to be applied, 
 				// since the text would not have updated within a human-reactable interval.
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->currentCycledAmmo = a_p->em->lastCycledForm;
 				}
@@ -12654,7 +12834,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released 
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->lhSpellCategory = a_p->em->lastCycledSpellCategory;
 				}
@@ -12691,7 +12871,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->rhSpellCategory = a_p->em->lastCycledSpellCategory;
 				}
@@ -12731,7 +12911,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released 
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->currentCycledRHSpellsList[!a_p->em->lhSpellCategory] = 
 					(
@@ -12809,7 +12989,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->currentCycledRHSpellsList[!a_p->em->rhSpellCategory] = 
 					(
@@ -12887,7 +13067,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released 
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->currentCycledVoiceMagic = a_p->em->lastCycledForm;
 				}
@@ -12952,7 +13132,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->lhWeaponCategory = a_p->em->lastCycledWeaponCategory;
 				}
@@ -12992,7 +13172,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released 
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->rhWeaponCategory = a_p->em->lastCycledWeaponCategory;
 				}
@@ -13151,7 +13331,7 @@ namespace ALYSLC
 				// Set to previous cycled item if this bind is released
 				// during the cycling "grace period" described in CycleAmmo().
 				float secsSinceLastCycling = Util::GetElapsedSeconds(a_p->lastCyclingTP);
-				if (secsSinceLastCycling < min(Settings::fSecsCyclingInterval * 0.4f, 0.2f))
+				if (secsSinceLastCycling < max(Settings::fSecsCyclingInterval * 0.2f, 0.1f))
 				{
 					a_p->em->currentCycledRHWeaponsList[!a_p->em->rhWeaponCategory] = 
 					(
@@ -13506,7 +13686,7 @@ namespace ALYSLC
 		{
 			// Nothing to do on release.
 			// Hotkeyed form to equip was already set while the bind was held.
-
+			
 			return;
 		}
 
@@ -13820,10 +14000,10 @@ namespace ALYSLC
 									// and if so, the corpse has not been fed upon yet 
 									// and the player can gain health 
 									// and extend their transformation after feeding.
-									auto activeEffects = targetActorPtr->GetActiveEffectList(); 
-									if (activeEffects)
+									auto effectList = targetActorPtr->GetActiveEffectList(); 
+									if (effectList)
 									{
-										for (auto effect : *activeEffects)
+										for (auto effect : *effectList)
 										{
 											if (!effect)
 											{

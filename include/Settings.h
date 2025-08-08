@@ -517,6 +517,11 @@ namespace ALYSLC
 		//---------------------------------
 		//[Extra Mechanics Cost Modifiers]:
 		//---------------------------------
+		// Dash dodge stamina cost multiplier.
+		static inline std::vector<float> vfDashDodgeStaminaCostMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f
+		};
 		// Health cost multiplier applied to the self-damage inflicted on flop collision.
 		static inline std::vector<float> vfFlopHealthCostMult = 
 		{
@@ -525,6 +530,12 @@ namespace ALYSLC
 		// Magicka cost multiplier applied to the magicka expended 
 		// when the player throws objects or intercepts projectiles.
 		static inline std::vector<float> vfObjectManipulationMagickaCostMult = 
+		{
+			1.0f, 1.0f, 1.0f, 1.0f
+		};
+		// Health cost multiplier applied to the amount of health lost by players 
+		// reviving other players.
+		static inline std::vector<float> vfReviveHealthCostMult = 
 		{
 			1.0f, 1.0f, 1.0f, 1.0f
 		};

@@ -344,10 +344,25 @@ namespace ALYSLC
 						(
 							[this, p1]() 
 							{ 
+								// Since the player is ragdolled and paralyzed while downed,
+								// disable to increase the likelihood that the MoveTo() 
+								// call won't fail.
+								if (isDowned)
+								{
+									coopActor->Disable();
+									coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+									coopActor->PotentiallyFixRagdollState();
+									coopActor->NotifyAnimationGraph("GetUpBegin");
+								}
+
 								// Have to sheathe weapon before teleporting, 
 								// otherwise the equip state gets bugged.
 								pam->ReadyWeapon(false);
 								coopActor->MoveTo(p1);
+								if (isDowned)
+								{
+									coopActor->Enable(false);
+								}
 							}
 						);
 					}
@@ -1517,6 +1532,18 @@ namespace ALYSLC
 		// ragdoll and paralyze the player to keep them from getting up while downed,
 		// and set initial revive data.
 
+		SPDLOG_DEBUG
+		(
+			"[P] SetAsDowned: {}. "
+			"Is ragdolled: {}, is in killmove: {}, is dead: {}, is essential: {}, health: {}.",
+			coopActor->GetName(),
+			coopActor->IsInRagdollState(),
+			coopActor->IsInKillMove(),
+			coopActor->IsDead(),
+			coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential),
+			coopActor->GetActorValue(RE::ActorValue::kHealth)
+		);
+
 		isDowned = true;
 		isRevived = false;
 		isGettingUpAfterRevive = false;
@@ -1555,14 +1582,17 @@ namespace ALYSLC
 		// Remove all damaging active effects that could down the player again
 		// soon after they fully get up.
 		// Also ragdoll the player if they are not ragdolled already.
-		for (auto effect : *coopActor->GetActiveEffectList())
+		if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 		{
-			if (!effect || !effect->IsCausingHealthDamage())
+			for (auto effect : *effectList)
 			{
-				continue;
-			}
+				if (!effect || !effect->IsCausingHealthDamage())
+				{
+					continue;
+				}
 
-			effect->Dispel(true);
+				effect->Dispel(true);
+			}
 		}
 
 		// Put in an alive ragdoll state.
@@ -1962,14 +1992,17 @@ namespace ALYSLC
 		{
 			// Remove all new damaging active effects that could down the player again
 			// before the player fully gets up.
-			for (auto effect : *coopActor->GetActiveEffectList())
+			if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 			{
-				if (!effect || !effect->IsCausingHealthDamage())
+				for (auto effect : *effectList)
 				{
-					continue;
-				}
+					if (!effect || !effect->IsCausingHealthDamage())
+					{
+						continue;
+					}
 
-				effect->Dispel(true);
+					effect->Dispel(true);
+				}
 			}
 
 			// Post-revive success/fail tasks.
@@ -2124,6 +2157,15 @@ namespace ALYSLC
 						GlobalCoopData::ToggleGodModeForPlayer(controllerID, false);
 						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
 
+						// IMPORTANT:
+						// Need to re-equip the cached hand forms for P1
+						// because the game will sometimes unequip any equipped hand spells
+						// if P1 is downed by a killmove or by gravity.
+						// Can also prevents the player (P1 or not) 
+						// from executing an unarmed 'phantom' killmove on themselves 
+						// after getting up if the game has emptied their hands.
+						em->ReEquipHandForms();
+
 						// Restart managers.
 						RequestStateChange(ManagerState::kRunning);
 
@@ -2171,14 +2213,17 @@ namespace ALYSLC
 			secsDowned = Util::GetElapsedSeconds(lastDownedTP);
 			// Remove all damaging active effects that could down the player again
 			// soon after they fully get up.
-			for (auto effect : *coopActor->GetActiveEffectList())
+			if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 			{
-				if (!effect || !effect->IsCausingHealthDamage())
+				for (auto effect : *effectList)
 				{
-					continue;
-				}
+					if (!effect || !effect->IsCausingHealthDamage())
+					{
+						continue;
+					}
 
-				effect->Dispel(true);
+					effect->Dispel(true);
+				}
 			}
 			
 			// Also ragdoll and paralyze the player if they are not ragdolled already.

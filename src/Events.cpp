@@ -434,6 +434,30 @@ namespace ALYSLC
 		);
 		bool toCoopPlayer = toCoopPlayerIndex != -1;
 
+		// REMOVE when done debugging.
+		/*if (fromCoopPlayer || toCoopPlayer)
+		{
+			auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
+			auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
+			auto fromRefr = RE::TESForm::LookupByID(a_containerChangedEvent->oldContainer);
+			auto toRefr = RE::TESForm::LookupByID(a_containerChangedEvent->newContainer);
+			SPDLOG_DEBUG
+			(
+				"[Events] Container Changed Event: "
+				"{} (0x{:X}, refr: {}, x{}) is moving from {} (0x{:X}) to {} (0x{:X}). "
+				"Is favorited: {}.",
+				baseObj ? baseObj->GetName() : "NONE",
+				baseObj ? baseObj->formID : 0xDEAD,
+				refr ? refr->GetName() : "NONE",
+				a_containerChangedEvent->itemCount,
+				fromRefr ? fromRefr->GetName() : "NONE",
+				a_containerChangedEvent->oldContainer,
+				toRefr ? toRefr->GetName() : "NONE",
+				a_containerChangedEvent->newContainer,
+				fromRefr ? Util::IsFavorited(fromRefr->As<RE::Actor>(), baseObj) : false
+			);
+		}*/
+
 		// Update player's encumbrance value when an item is moved to/from their inventory.
 		if ((fromCoopPlayerIndex != toCoopPlayerIndex) && 
 			(fromCoopPlayerIndex != -1 || toCoopPlayerIndex != -1))
@@ -1310,12 +1334,15 @@ namespace ALYSLC
 				(glob.mim->managerMenuCID == p->controllerID)
 			)
 		};
+		// IMPORTANT:
 		// Game will sometimes unequip P1's weapons/magic during killmoves. 
 		// Don't refresh equip state in that case either.
+		// We want to save the pre-killmove equipped forms
+		// so that we can re-equip them after P1 is revived.
 		auto equipForm = RE::TESForm::LookupByID(a_equipEvent->baseObject);
 		bool shouldRefreshEquipState = 
 		(
-			(equipForm && !affectedByInventoryTransfer) && 
+			(equipForm && !affectedByInventoryTransfer && !p->coopActor->IsInRagdollState()) && 
 			(
 				(!p->isPlayer1) || 
 				(

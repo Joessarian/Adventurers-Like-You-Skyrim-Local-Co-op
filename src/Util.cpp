@@ -2336,6 +2336,12 @@ namespace ALYSLC
 				}
 
 				auto ammo = boundObj->As<RE::TESAmmo>();
+				// Do not return temporary (bound) ammo.
+				if (ammo && ammo->HasKeywordByEditorID("WeapTypeBoundArrow"))
+				{
+					continue;
+				}
+
 				bool forBows = a_forBows && !ammo->IsBolt();
 				bool forCrossbows = !a_forBows && ammo->IsBolt();
 				if ((forBows || forCrossbows) && (count > highestCount))
@@ -2368,6 +2374,12 @@ namespace ALYSLC
 				}
 
 				auto ammo = boundObj->As<RE::TESAmmo>();
+				// Do not return temporary (bound) ammo.
+				if (ammo && ammo->HasKeywordByEditorID("WeapTypeBoundArrow"))
+				{
+					continue;
+				}
+
 				bool forBows = a_forBows && !ammo->IsBolt();
 				bool forCrossbows = !a_forBows && ammo->IsBolt();
 				if ((forBows || forCrossbows) && (ammo->data.damage > highestDamage))

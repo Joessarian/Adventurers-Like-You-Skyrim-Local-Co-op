@@ -1404,6 +1404,15 @@ namespace ALYSLC
 			(
 				a_ini, 
 				sectionName.data(),
+				"fDashDodgeStaminaCostMult", 
+				(float&)vfDashDodgeStaminaCostMult[pIndex],
+				0.0f,
+				100.0f
+			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
 				"fFlopHealthCostMult", 
 				(float&)vfFlopHealthCostMult[pIndex],
 				0.0f,
@@ -1415,6 +1424,15 @@ namespace ALYSLC
 				sectionName.data(),
 				"fObjectManipulationMagickaCostMult", 
 				(float&)vfObjectManipulationMagickaCostMult[pIndex],
+				0.0f,
+				100.0f
+			);
+			ReadFloatSetting
+			(
+				a_ini, 
+				sectionName.data(),
+				"fReviveHealthCostMult", 
+				(float&)vfReviveHealthCostMult[pIndex],
 				0.0f,
 				100.0f
 			);

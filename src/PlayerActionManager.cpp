@@ -688,20 +688,35 @@ namespace ALYSLC
 					);
 					// Other perform stage to potentially modify.
 					auto& otherPerfStage = otherPAState.perfStage;
-					// Don't block/interrupt actions that have the ignore conflicting actions flag
-					// or more composing inputs than the current player action.
+					// Block/interrupt actions if:
+					// 1. The other action does not have the ignore conflicting actions flag
+					// and has more or the same number of composing inputs 
+					// as the current player action.
+					// 2. The other action has the ignore conflicting actions flag
+					// and the current player action has more inputs than the other action.
+					// 
 					// Actions with more composing inputs are never blocked by 
 					// ones with fewer composing inputs because pressing more inputs 
 					// indicates player intent to perform a more complicated action 
 					// instead of a simpler one.
 					const bool shouldBlockOrInterrupt = 
 					{
-						otherPAState.paParams.triggerFlags.none
 						(
-							TriggerFlag::kIgnoreConflictingActions
-						) &&
-						otherPAState.paParams.composingInputs.size() <=
-						checkedPAState.paParams.composingInputs.size() 
+							otherPAState.paParams.triggerFlags.none
+							(
+								TriggerFlag::kIgnoreConflictingActions
+							) &&
+							otherPAState.paParams.composingInputs.size() <=
+							checkedPAState.paParams.composingInputs.size() 
+						) ||
+						(
+							otherPAState.paParams.triggerFlags.all
+							(
+								TriggerFlag::kIgnoreConflictingActions
+							) &&
+							checkedPAState.paParams.composingInputs.size() >
+							otherPAState.paParams.composingInputs.size()
+						)
 					};
 					if (shouldBlockOrInterrupt)
 					{
@@ -917,7 +932,7 @@ namespace ALYSLC
 
 					bool isHotkeyEquipSlotSelectionBind = 
 					(
-						HelperFuncs::HandleDelayedHotkeyEquipRequest(p, action, paState)
+						HelperFuncs::HandleHotkeyEquipRequest(p, action, paState)
 					);
 					// If this action is used to equip a hotkeyed item, 
 					// skip running this action's perf func(s).
@@ -1486,7 +1501,33 @@ namespace ALYSLC
 
 		if (coopActor->IsSneaking())
 		{
-			Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSneak, coopActor.get());
+			if (p->isPlayer1)
+			{
+				SendButtonEvent
+				(
+					InputAction::kSneak,
+					RE::INPUT_DEVICE::kGamepad,
+					ButtonEventPressType::kInstantTrigger
+				);
+				SendButtonEvent
+				(
+					InputAction::kSneak,
+					RE::INPUT_DEVICE::kGamepad,
+					ButtonEventPressType::kPressAndHold,
+					1.0f
+				);
+				SendButtonEvent
+				(
+					InputAction::kSneak,
+					RE::INPUT_DEVICE::kGamepad,
+					ButtonEventPressType::kRelease,
+					1.0f
+				);
+			}
+			else
+			{
+				Util::RunPlayerActionCommand(RE::DEFAULT_OBJECT::kActionSneak, coopActor.get());
+			}
 		}
 
 		coopActor->actorState1.sneaking = 0;
@@ -3620,7 +3661,7 @@ namespace ALYSLC
 			(IsPerforming(InputAction::kSprint)) &&
 			(coopActor->IsOnMount() || coopActor->IsSwimming())
 		);
-		// For P1, only mount-sprint stamina expenditure.
+		// For P1, only need to handle mount or swimming sprint stamina expenditure.
 		if ((mountOrSwimmingSprint) ||
 			(!p->isPlayer1 && actionsInProgress.any(AVCostAction::kSprint)))
 		{
@@ -3719,67 +3760,55 @@ namespace ALYSLC
 			return;
 		}
 
-		if (p->isPlayer1) 
+		// NOTE:
+		// Scale by the player's cost mult here to account for the true amount 
+		// of remaining stamina after modification in the CheckClampDamageModifier() hook.
+		float newStamina = currentStamina - a_cost * Settings::vfStaminaCostMult[playerID];
+		// Handle companion player's stamina cooldown here.
+		if (newStamina < 0.0f)
 		{
-			if (currentStamina > 0.0f)
+			p->outOfStaminaTP = SteadyClock::now();
+			p->lastStaminaCooldownCheckTP = SteadyClock::now();
+
+			// Set total stamina regeneration cooldown.
+			// Player cannot use stamina until this duration elapses.
+			// Min of two seconds for sprint stamina cooldown,
+			// and a variable max regen delay otherwise
+			// (determined by game setting, default to 5) .
+			auto regenDelayGameSetting = Util::GetGameSettingFloat
+			(
+				"fStaminaRegenDelayMax"
+			);
+			float maxStaminaCooldownSecs = 
+			(
+				regenDelayGameSetting.has_value() ?
+				regenDelayGameSetting.value() :
+				5.0f
+			);
+			if (isSprinting)
 			{
-				ModifyAV(RE::ActorValue::kStamina, -a_cost);
+				secsTotalStaminaRegenCooldown = min
+				(
+					2.0f + 0.02f * coopActor->GetEquippedWeight(), maxStaminaCooldownSecs
+				);
+				// Stop the player from sprinting right after running out of stamina.
+				p->coopActor->NotifyAnimationGraph("sprintStop");
+			}
+			else
+			{
+				// Scales down as regeneration rate multiplier increases.
+				secsTotalStaminaRegenCooldown = min
+				(
+					(-newStamina) / (baseStaminaRegenRateMult / 100.0f),
+					maxStaminaCooldownSecs
+				);
 			}
 		}
-		else
+
+		// Set new stamina if changed and not at 0 stamina currently.
+		if (currentStamina > 0.0f)
 		{
-			// Factor in the player's stamina cost multiplier to get the amount of stamina
-			// remaining after the modification below.
-			float newStamina = currentStamina - a_cost * Settings::vfStaminaCostMult[playerID];
-			// Handle companion player's stamina cooldown here.
-			if (newStamina < 0.0f)
-			{
-				p->outOfStaminaTP = SteadyClock::now();
-				p->lastStaminaCooldownCheckTP = SteadyClock::now();
-
-				// Set total stamina regeneration cooldown.
-				// Player cannot use stamina until this duration elapses.
-				// Min of two seconds for sprint stamina cooldown,
-				// and a variable max regen delay otherwise
-				// (determined by game setting, default to 5) .
-				auto regenDelayGameSetting = Util::GetGameSettingFloat
-				(
-					"fStaminaRegenDelayMax"
-				);
-				float maxStaminaCooldownSecs = 
-				(
-					regenDelayGameSetting.has_value() ?
-					regenDelayGameSetting.value() :
-					5.0f
-				);
-				if (isSprinting)
-				{
-					secsTotalStaminaRegenCooldown = min
-					(
-						2.0f + 0.02f * coopActor->GetEquippedWeight(), maxStaminaCooldownSecs
-					);
-					// Stop the player from sprinting right after running out of stamina.
-					p->coopActor->NotifyAnimationGraph("sprintStop");
-				}
-				else
-				{
-					// NOTE:
-					// Scale by the player's cost mult here to account for the true amount 
-					// of stamina spent after modification in the CheckClampDamageModifier() hook.
-					// Scales down as regeneration rate multiplier increases.
-					secsTotalStaminaRegenCooldown = min
-					(
-						(-newStamina) / (baseStaminaRegenRateMult / 100.0f),
-						maxStaminaCooldownSecs
-					);
-				}
-			}
-
-			// Set new stamina if changed and not at 0 stamina currently.
-			if (currentStamina > 0.0f)
-			{
-				ModifyAV(RE::ActorValue::kStamina, -a_cost);
-			}
+			ModifyAV(RE::ActorValue::kStamina, -a_cost);
 		}
 	}
 
@@ -4383,6 +4412,9 @@ namespace ALYSLC
 			return;
 		}
 
+		const bool isDead = targetActorPtr->IsDead();
+		const bool isDowned = targetIsPlayer && glob.coopPlayers[pIndex]->isDowned;
+		const bool zeroHealth = isDead || isDowned;
 		float secsSinceKillmoveRequest = Util::GetElapsedSeconds(p->lastKillmoveCheckTP);
 		// Potential killmove must be performed for 2 seconds (or the target actor dies) 
 		// before this player is considered as in a killmove.
@@ -4391,13 +4423,33 @@ namespace ALYSLC
 			if (secsSinceKillmoveRequest <= 2.0f &&
 				coopActor->IsInKillMove() && 
 				targetActorPtr->IsInKillMove() && 
-				!targetActorPtr->IsDead()) 
+				!zeroHealth) 
 			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"Now performing a killmove after {}s.",
+					coopActor->GetName(), 
+					targetActorPtr->GetName(),
+					secsSinceKillmoveRequest
+				);
 				isPerformingKillmove = true;
 			}
 			else if (secsSinceKillmoveRequest > 2.0f)
 			{
 				// Kllmove already done or never executed and the max wait time was reached.
+				SPDLOG_DEBUG
+				(
+					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"Reset: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}, {}.",
+					coopActor->GetName(), 
+					targetActorPtr->GetName(),
+					secsSinceKillmoveRequest,
+					isDead,
+					isDowned,
+					coopActor->IsInKillMove(),
+					targetActorPtr->IsInKillMove()
+				);
 				ResetAllKillmoveData(pIndex);
 				return;
 			}
@@ -4441,18 +4493,29 @@ namespace ALYSLC
 			// Allow at most 30 seconds for the killmove to complete.
 			bool aggressorStillInKillmove = 
 			{
-				(secsSinceKillmoveRequest < 30.0f && !targetActorPtr->IsDead()) && 
+				(secsSinceKillmoveRequest < 30.0f && !zeroHealth) && 
 				(coopActor->IsInKillMove() || coopActor->IsAttacking())
 			};
 			bool victimStillInKillmove = 
 			{
 				secsSinceKillmoveRequest < 30.0f && 
-				!targetActorPtr->IsDead() && 
+				!zeroHealth && 
 				targetActorPtr->IsInKillMove()
 			};
 			// Killmove target is dead or done with the paired animation.
 			if (!victimStillInKillmove) 
 			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"Victim End: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}.",
+					coopActor->GetName(), 
+					targetActorPtr->GetName(),
+					secsSinceKillmoveRequest,
+					isDead,
+					isDowned,
+					targetActorPtr->IsInKillMove()
+				);
 				// Set to below 0 health to trigger downed state.
 				// Otherwise the player will enter bleedout, since they are set as essential.
 				if (targetActorPtr->GetActorValue(RE::ActorValue::kHealth) > 0.0f)
@@ -4479,7 +4542,7 @@ namespace ALYSLC
 						);
 						// Sometimes still doesn't die after setting health below 0,
 						// so directly call the kill func.
-						if (!targetActorPtr->IsDead())
+						if (!isDead)
 						{
 							// Knock down.
 							targetActorPtr->currentProcess->KnockExplosion
@@ -4499,6 +4562,24 @@ namespace ALYSLC
 			// This player is finished attacking and done with the killmove paired animation.
 			if (!aggressorStillInKillmove) 
 			{
+				SPDLOG_DEBUG
+				(
+					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"Aggressor End: secs since req: {}, is dead, is downed: {}, {}, "
+					"in killmove: {}, is attacking: {}, {}, "
+					"is bashing: {}, is blocking: {}, is casting: {}.",
+					coopActor->GetName(), 
+					targetActorPtr->GetName(),
+					secsSinceKillmoveRequest,
+					isDead,
+					isDowned,
+					coopActor->IsInKillMove(),
+					coopActor->IsAttacking(),
+					isAttacking,
+					isBashing,
+					isBlocking,
+					isInCastingAnim
+				);
 				// If still attacking, we can sheathe and unsheathe 
 				// if performing an unarmed spellcast killmove.
 				bool stillAttacking = coopActor->IsAttacking();
@@ -4518,10 +4599,20 @@ namespace ALYSLC
 				// we do not want to continue sheathing and unsheathing until 30 seconds expires,
 				// so this block will only run once, since the player will have stopped attacking
 				// once their weapons are sheathed the first time the block runs.
-				if (performedSpellcastingUnarmedKillmove && stillAttacking)
+				if (stillAttacking)
 				{
-					ReadyWeapon(false);
-					ReadyWeapon(true);
+					if (performedSpellcastingUnarmedKillmove)
+					{
+						ReadyWeapon(false);
+						ReadyWeapon(true);
+						StopCastingHandSpells();
+					}
+
+					// Sometimes, the aggressor's attack state does not reset to none 
+					// when the killmove finishes.
+					// Directly reset it here to ensure that the state will not linger
+					// and keep the player from sprinting and blocking, among other actions.
+					coopActor->actorState1.meleeAttackState = RE::ATTACK_STATE_ENUM::kNone;
 				}
 			}
 
@@ -5200,7 +5291,7 @@ namespace ALYSLC
 		);
 
 		// Stop attacking and casting first.
-		if (isWeaponAttack)
+		if (isAttacking)
 		{
 			coopActor->NotifyAnimationGraph("attackStop");
 		}
@@ -5434,7 +5525,7 @@ namespace ALYSLC
 		// Stop any ongoing killmove idle on the victim's side.
 		// If the victim is a player, clear out their killer player handle
 		// and reset the killmove victim flag.
-
+		
 		auto targetActorPtr = Util::GetActorPtrFromHandle(killmoveTargetActorHandle);
 		if (targetActorPtr)
 		{
@@ -5580,8 +5671,8 @@ namespace ALYSLC
 		// Ratio of the downed player's health after being fully revived
 		// to the health this player must give up to fully revive them.
 		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
-		// Don't reduce this player's health when in god mode.
-		if (!p->isInGodMode) 
+		// Don't reduce this player's health when in god mode or when the health cost mult is 0.
+		if (!p->isInGodMode || Settings::vfReviveHealthCostMult[playerID] == 0.0f) 
 		{
 			ModifyAV(RE::ActorValue::kHealth, -healthCost);
 		}
@@ -6207,7 +6298,7 @@ namespace ALYSLC
 		{
 			const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
 			if ((isWeapMagDrawn) &&
-				(p->em->Has2HRangedWeapEquipped() || p->em->HasRHStaffEquipped()) &&
+				(p->em->Has2HRangedWeapEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
 					AllInputsPressedForAction(InputAction::kAttackRH)
@@ -6248,7 +6339,8 @@ namespace ALYSLC
 				(p->em->HasRHStaffEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackRH)
+					AllInputsPressedForAction(InputAction::kAttackRH) ||
+					isInCastingAnimRH
 				))
 			{
 				auto rhWeap = p->em->GetRHWeapon();
@@ -6265,7 +6357,8 @@ namespace ALYSLC
 				(p->em->HasLHStaffEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackLH)
+					AllInputsPressedForAction(InputAction::kAttackLH)||
+					isInCastingAnimLH
 				))
 			{
 				auto lhWeap = p->em->GetLHWeapon();
@@ -6374,7 +6467,7 @@ namespace ALYSLC
 				turnToFaceForCombatAction = true;
 				a_combatActionJustStarted = JustStarted(InputAction::kAttackRH);
 			}
-			
+
 			if ((isWeapMagDrawn) &&
 				(p->em->HasRHSpellEquipped()) &&
 				(
@@ -6772,21 +6865,24 @@ namespace ALYSLC
 			if (p->isInGodMode)
 			{
 				// Dispel arcane fever-related effects.
-				for (auto effect : *coopActor->GetActiveEffectList())
+				if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 				{
-					auto baseObject = effect ? effect->GetBaseObject() : nullptr;
-					if (!baseObject)
+					for (auto effect : *effectList)
 					{
-						continue;
-					}
+						auto baseObject = effect ? effect->GetBaseObject() : nullptr;
+						if (!baseObject)
+						{
+							continue;
+						}
 
-					if (baseObject->data.primaryAV == RE::ActorValue::kLastFlattered ||
-						baseObject->data.secondaryAV == RE::ActorValue::kLastFlattered) 
-					{
-						effect->Dispel(true);
+						if (baseObject->data.primaryAV == RE::ActorValue::kLastFlattered ||
+							baseObject->data.secondaryAV == RE::ActorValue::kLastFlattered) 
+						{
+							effect->Dispel(true);
+						}
 					}
 				}
-
+				
 				// Reset arcane fever AVs to 0.
 				auto avOwner = coopActor->As<RE::ActorValueOwner>(); 
 				if (avOwner && coopActor->GetActorValue(RE::ActorValue::kLastFlattered) != 0.0f) 
@@ -6975,7 +7071,7 @@ namespace ALYSLC
 			avOwner->SetBaseActorValue(RE::ActorValue::kMagickaRateMult, baseMagickaRegenRateMult);
 		}
 
-		bool staminaOnCooldown = !p->isPlayer1 && secsTotalStaminaRegenCooldown != 0.0f;
+		bool staminaOnCooldown = secsTotalStaminaRegenCooldown != 0.0f;
 		const float currentBaseStaminaRegenRateMult = coopActor->GetBaseActorValue
 		(
 			RE::ActorValue::kStaminaRateMult

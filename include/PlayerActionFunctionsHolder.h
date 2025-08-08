@@ -303,10 +303,10 @@ namespace ALYSLC
 			const InputAction& a_action
 		);
 
-		// Handle a delayed ('HotkeyEquip' bind released) hotkey equip request.
+		// Handle a ('HotkeyEquip' bind released) hotkey equip request.
 		// Return true if the current occurring action should skip executing its perf funcs,
 		// since it is being used to equip the chosen hotkeyed item.
-		bool HandleDelayedHotkeyEquipRequest
+		bool HandleHotkeyEquipRequest
 		(
 			const std::shared_ptr<CoopPlayer>& a_p,
 			const InputAction& a_occurringAction,

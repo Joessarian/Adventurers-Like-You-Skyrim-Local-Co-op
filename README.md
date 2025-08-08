@@ -1,3 +1,4 @@
+
 # Adventurers Like You: Skyrim Local Co-op ALPHA
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
@@ -192,7 +193,7 @@ bool something =
 
 ## [For Users]
 ### Getting Started and Important Notes
-- First and foremost, ***expect jankiness/clunkiness***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply player 1 features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
+- First and foremost, ***expect jankiness/clunkiness and instability***, simply by virtue of having to hack in controllable NPCs to use as players and from attempting to apply player 1 features and player agency to these companion players. I've tried to make the mod's mechanics and features as modular as possible, with mod compatibility in mind, and will continue to offer additional customizability in the future, so check out the mod's MCM if there's a feature you'd like to adjust or disable entirely.
 - The mod is meant to be played locally and ***is NOT a fully-fledged multiplayer experience*** like the incredible [Skyrim Together Reborn](https://www.nexusmods.com/skyrimspecialedition/mods/69993) mod. Online play is still possible via leveraging Steam's [Remote Play Together](https://store.steampowered.com/remoteplay) with [Remote Play Whatever](https://github.com/m4dEngi/RemotePlayWhatever) or via streaming with [Parsec](https://parsec.app/). Your mileage may vary.
 - This mod requires plugging ***at least two XInput-compatible controllers*** into your computer before starting a co-op session.
 - Almost all of the mod's testing was done on ***Skyrim version 1.5.97, so for the most stable experience (and for the best mod compatibility), your best bet is to downgrade your Skyrim installation to this version***.
@@ -200,7 +201,7 @@ bool something =
 - If you are playing ***Skyrim***, enable 'ALYSLC.esp' and disable 'ALYSLC Enderal.esp' in your load order. Otherwise, if you are playing ***Enderal***, enable 'ALYSLC Enderal.esp' and disable 'ALYSLC.esp'.
 - After installing the mod for the first time, always ***start a new playthrough and dedicate the playthrough to co-op***. Minimize progressing player 1's character outside of co-op.
 - ***Important note on starting a new game***: If sticking with the ***vanilla start*** sequence, summoning other players right from the get-go causes a slew of bugs (and horrifying glitches) that must be fixed with debug options + console commands and is probably not worth the effort. ***Try waiting until player 1 has their shackles removed, before summoning other players***. Otherwise, have fun tipping over the carriage, getting player 1 stuck under the driver's seat, and feverishly trying out every console command and debug option available to remedy a hilarious situation that is quickly getting out of hand.
-- As of this time, ***removing the mod mid-playthrough is not supported*** and will lead to freezes when loading saves.
+- As of this time, ***removing the mod mid-playthrough is not supported*** and will lead to ***infinite loading screens when loading saves***.
 - To summon other players, after loading a save, first ***ensure player 1 is not in combat***. Then hold the `Back` button and press the `Start` button on ***player 1's*** controller. This will establish which player is recognized as player 1 by the mod and open the Summoning Menu.
 - A tri-colored border overlay will appear around any menu opened during co-op. This ***player menu control (PMC) border's colors identify which player is in control of menus*** and correspond to the player's chosen main UI overlay color, crosshair inner outline, and crosshair outer outline colors.
 - ***Save frequently*** while playing and ***disable any sources of autosaving or only load manual saves*** to minimize issues where a companion player's data might've been imported onto player 1 and saved.
@@ -219,9 +220,9 @@ bool something =
 ### Binds
 ![](https://i.imgur.com/wY1eL2I.png)
 ### Performance
-- Expect a ***loss of, on average, at least 7-15% of your base framerate with some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
+- Expect a ***loss of, on average, at least 7-15% of your base framerate (+5% or more per additional player) and some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
 - ***Turning off camera collisions, obstruction fading, and not removing occlusion*** produces the best performance when using the co-op camera. ***See the MCM for other performance-impacting options.***
-- I realize that the code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in alpha, ***expect additional performance optimizations down the line once the mod becomes more stable***.
+- I realize that my code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in alpha, ***anticipate additional performance optimizations down the line once the mod becomes more stable***.
 
 ### Installation
 
@@ -282,18 +283,18 @@ Certain systems were built to work around player 1 exclusivity or around restric
 #### The following features are more likely to bug out at times and require user intervention to fix:
 - Equipping/unequipping gear and companion player equipment selection.
     - Player can lock up or have the wrong gear equipped. The game will periodically force-equip what gear it thinks is best. Until a proper solution is found, the only recourse is to manually re-equip the unequipped items.
-    - The Favorites and Magic Menu selected entries reset when a companion player equips an item and must be refreshed by moving one category over and back again, which will reset the selected entry. Still looking for a seamless solution.
     - Ammo must be equipped 1 unit at a time for companion players to avoid creation of new inventory entries each time the ammo is equipped and to avoid issues with unequipping a large quantity of ammo at once.
 	- Equipped bound weapons will sometimes bug out, become invisible, or get unequipped by the game when picking up an object of the same type from the overworld. Must sheathe, draw, and cast the spell again to re-equip the weapon.
+	- Player 1 can have their weapons/spells unequipped after being revived.
 - Player revive system.
     - 'All or nothing' system to incentivize team play: if one player dies, all players die.
     - Refrain from saving while a player is downed.
     - The game may sometimes consider player 1 as dead after they are downed, which can bug out certain spells (such as Vigilant's weapon arts) or interactions (such as interacting with Myrad Keepers in Enderal). Must load a save made before the bug appeared to fix.
 - Menu control assignment.
     - Since the mod cannot always determine the triggering source of certain menus, such as Message Box menus triggered externally by scripts, the wrong player can gain control of menus at times. A colored border that matches the menu-controlling player's crosshair color is drawn around the screen to indicate which player is in charge of menus.
-    - Refrain from opening load doors, fast-traveling, or saving while menus are open, especially if a companion player is controlling menus. Data from the companion player (ex. name, race name, skill levels, or inventory) may still be copied to player 1 when the game saves, which can only be undone by reloading an older save.
+    - Refrain from opening load doors, fast-traveling, changing cells, or saving while menus are open, especially if a companion player is controlling menus. Data from the companion player (ex. name, race name, skill levels, or inventory) may still be copied to player 1 when the game saves, which can only be undone by reloading an older save.
 - Spellcasting for companion players:
-	- Left and right hand casting can feel 'sticky' or unresponsive at times. Will require sheathing and drawing the spells and potentially trying some of the debug options to reset the hand casters.
+	- Left and right hand casting can feel 'sticky' or unresponsive at times. Will require sheathing and drawing the spells and potentially trying some of the debug options to reset the hand magic casters.
 	- Moving further away from the camera can lead to a slower casting charge speed and less responsive casting overall. Haven't found the cause for this yet.
 	- Fire-and-forget spellcasts can fail if a bound weapon is equipped in the other hand.
 	
@@ -317,11 +318,11 @@ Certain systems were built to work around player 1 exclusivity or around restric
 		- Detect Life scaling its granted XP based on the number of detected targets.
 	- Otherwise, XP gain should be nearly identical for player 1 and other players. Let me know if there are other discrepancies or special cases.
 - Projectile trajectory adjustments:
-    - Predictive projectiles are not accurate when targeting fast-moving targets, such as dragons, because angular momentum is not taken into account as of now and NPC targets accelerate erratically. Consider switching to homing projectiles instead.
-    - Certain enemies are difficult to hit, such as mudcrabs, because ~~they are the strongest beings in Tamriel~~ some of their model's targetable nodes protrude from their collision capsule and do not collide with projectiles.
+    - Predictive projectiles are not accurate when targeting fast-moving targets, such as dragons, because angular velocity is not taken into account as of now and NPC targets accelerate erratically. Consider switching to homing projectiles instead.
+    - Certain enemies are difficult to hit, such as mudcrabs, because ~~they are the strongest beings in Tamriel~~ some of their model's targetable nodes protrude from their collision capsules and do not collide with projectiles.
     - Beam projectiles, such as Lightning Bolt, fail to hit targets at times, especially when fired along sloped terrain or pitched upward or downward too much.
 - Spellcasting for companion players:
-	- Not every spell will work properly for companion players as they do for player 1. Example: ```Raise Zombie``` glitches out upon re-animating the targeted corpse.
+	- Not every spell will work properly for companion players as they do for player 1. Example: ```Raise Zombie``` sometimes glitches out upon re-animating the targeted corpse.
 	- Some spells only apply effects if the target or caster is player 1. Example: ```Vigilant's weapon art powers```.
 - Staff usage for companion players:
     - No animations when casting.
@@ -345,7 +346,8 @@ Certain systems were built to work around player 1 exclusivity or around restric
 
 #### Common Troubleshooting Tips
 - The game forcibly equips the gear it views as best-in-slot onto NPCs at certain times (example: when an item is added or equipped). This mod has a workaround in place to validate the equip state for companion players, but sometimes, players may still have their desired items unequipped or their character may begin stuttering when moving/attacking. If this happens, try using the ***'Debug: Re-equip Items in Hands'***, ***'Debug: Refresh Player Managers'***, or ***'Debug: Reset Player'*** binds and see if it corrects the issue. If the issue persists, try the ***'Reset Player' Debug Menu player option***.
-- If the Summoning or Debug menus fail to open or if a player's inputs aren't recognized, ***try tabbing out and then tabbing back in***. This will sometimes happen when the game doesn't have focus. And if the Wait or Pause/Journal menus are opening instead, ALYSLC's .dll may not have been loaded properly by SKSE. A restart should fix the problem.
+- If the Summoning or Debug menus fail to open or if a player's inputs aren't recognized, ***try tabbing out and then tabbing back in***. This will sometimes happen when the game doesn't have focus. And if the Wait or Pause/Journal menus are opening instead, ALYSLC's .dll may not have been loaded properly by SKSE. Restarting the game should fix the problem.
+- If no menus are opening when pressing any of the menu binds with any player, ***try opening and closing the Pause/Journal Menu with the keyboard***. Menu control assignment should reset and players should be able to open menus again.
 - If the physics system has bugged out and the player is frozen, warped, or otherwise unresponsive, attempt to reset the player with either ***'Debug: Ragdoll Player'*** or ***'Debug: Reset Player'***. Or flop. Flopping solves a lot of problems from my experience.
 - If a companion player is controlling menus when they shouldn’t be, or the option to quicksave or save is greyed out even though no players are downed, opening the ***Debug Menu*** with any player and selecting ***'Stop Menu Input Manager'*** may resolve the issue.
 - If the player crosshairs or the menu control outline is not showing, ***pause and unpause the game***, which should force the mod's overlay menu to open and fix the problem.
@@ -362,12 +364,11 @@ Certain systems were built to work around player 1 exclusivity or around restric
 Mods which ***exclusively apply their changes to player 1 will NOT be fully compatible*** with this mod, since their changes will not apply to other summoned companion players.
 Examples of such mods include:
 - Mods that add new spells with attached scripts that check if the effect source or target is player 1 before applying the effect.
-- Mods that provide player 1-exclusive animations.
+- Mods that provide player 1-exclusive animations or perks.
 - Mods that change the death system for player 1.
 - Mods that add new keybinds.
 - Mods that modify the camera will have no effect at best or contribute to crashes at worst.
-- Mods that introduce new, player 1-centric mechanics.
-A compatibility patch would be required in the future if I have the time to deploy both a Papyrus scripting framework and an SKSE plugin interface.  
+- Mods that introduce new, player 1-centric mechanics. A compatibility patch would be required in the future.
 
 #### Shortlist of Tested Incompatible Mods
 Flagged as present in AE and/or SE.  
@@ -380,16 +381,17 @@ Degrees of incompatibility:
    - Since ALYSLC has its own object targeting system per player for interacting with objects, the BTPS widget will not highlight the currently-targeted object properly and other issues can arise. 
 - `[SE/AE] LIGHT`: [Dragon's Eye Minimap](https://www.nexusmods.com/skyrimspecialedition/mods/135489)
 	- Tween and Stats menus open and then immediately close ***sometimes*** when any player attempts to open them while in co-op. Looking into the issue, which is probably on my end.
-- `[SE/AE] MEDIUM`: [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
+- `[SE/AE] LIGHT`: [Proteus](https://www.nexusmods.com/skyrimspecialedition/mods/62934)
 	- Can set player 1's name to the name of a previous player 1 character when reloading a save. Source of the bug is likely some incompatibility with how ALYSLC stores player names. Fix TBD and you may not encounter this bug, but if it does occur, disabling Proteus for now should resolve the issue.
 	- If editing a companion player's appearance, make sure to set their race through ALYSLC's Summoning Menu first before further modifying the player's appearance with Proteus's NPC editor options.
 - `[SE/AE] MEDIUM`: [UltimateCombat](https://www.nexusmods.com/skyrimspecialedition/mods/17196)
    - An essential hook for preventing certain animations from playing on player 1 and companion players is not functioning while Ultimate Combat is enabled. Seems to be an issue involving Ultimate Combat's propagation of the original hooked function, as ALYSLC's hook never runs. Manifests as downed players immediately getting up and running in place instead of staying down. Likely other animation-event related issues as well, but haven't thoroughly tested yet. Disable Ultimate Combat if using ALYSLC's revive system until I find a workaround.
  
 ## [Developer's Note]
-I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've clocked in over 10k hours and ***have decided to take a break from active development, primarily due to health issues***. So for the time being, I hope that the ample (excessive) amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are definitely a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
+I started developing this mod in January of 2021 without ever making a mod or coding a personal project in C++ and with barely any programming knowledge at all. Over the intervening time period, I've clocked in over 10k hours and ***have decided to take a step away from routine, active development, primarily due to health issues***. So for the time being, I hope that the ample (excessive) amount of documentation spread throughout the codebase will provide you with my reasoning for certain design decisions and paint a clearer picture of what I was trying to achieve. There are definitely a lot of workarounds, hacky solutions, feature creep, and bugs, but that's to be expected (at least some of it) when implementing local multiplayer in a purely singleplayer game. I hope to someday come back and improve upon the code through a large scale refactor, but in the meantime, feel free to contribute and ask questions. I'll try to answer as many of them as I can. And please let me know if I've made any obvious oversights; I've re-implemented the core features of this mod in more ways than I can remember since early 2021, so there's bound to be some remnants of early, unpolished code that require removal.  
 
-And with that being said, I really hope you enjoy the mod and thanks for reading!
+
+With that being said, fellow adventurer, I really hope you enjoy the mod and thanks for reading!
 
 ## [Credits]
 See the mod's source for more detailed credits.

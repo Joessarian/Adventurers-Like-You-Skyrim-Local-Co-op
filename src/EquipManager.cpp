@@ -497,8 +497,34 @@ namespace ALYSLC
 		// Create list of favorited ammo with the requested type.
 		// Index of the current ammo in the new cyclable list.
 		int32_t currentCycledAmmoIndex = -1;
-		if (ammoTypeToCycle != kEither)
+		if (ammoTypeToCycle == kEither)
 		{
+			// Find the index of the currently cycled ammo.
+			for (uint32_t i = 0; i < cyclableAmmoList.size(); ++i)
+			{
+				const auto ammoForm = cyclableAmmoList[i];
+				if (!ammoForm)
+				{
+					continue;
+				}
+
+				auto ammo = ammoForm->As<RE::TESAmmo>(); 
+				if (!ammo)
+				{
+					continue;
+				}
+
+				// Set the index of the currently cycled ammo.
+				if (ammo == currentCycledAmmo)
+				{
+					currentCycledAmmoIndex = i;
+					break;
+				}
+			}
+		}
+		else
+		{
+			// Reconstruct cyclable ammo list, only populating it with ammo of the proper type.
 			cyclableAmmoList.clear();
 			for (uint32_t i = 0, j = 0; i < cyclableFormsMap[CyclableForms::kAmmo].size(); ++i)
 			{
@@ -528,13 +554,13 @@ namespace ALYSLC
 					++j;
 				}
 			}
-		}
 
-		// If the player does not have any favorited ammo of the correct type, return here.
-		if (cyclableAmmoList.empty())
-		{
-			currentCycledAmmo = nullptr;
-			return;
+			// If the player does not have any favorited ammo of the correct type, return here.
+			if (cyclableAmmoList.empty())
+			{
+				currentCycledAmmo = nullptr;
+				return;
+			}
 		}
 
 		// Find next ammo to cycle to.
@@ -564,10 +590,12 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleAmmo: {}: current cycled ammo: {} from index {}.",
+			"[EM] CycleAmmo: {}: current cycled ammo: {} from index {} (current: {}). Total: {}.",
 			coopActor->GetName(),
 			currentCycledAmmo ? currentCycledAmmo->GetName() : "NONE",
-			nextAmmoIndex
+			nextAmmoIndex,
+			currentCycledAmmoIndex,
+			cyclableFormsMap[CyclableForms::kAmmo].size()
 		);
 	}
 
@@ -3875,9 +3903,15 @@ namespace ALYSLC
 		auto equipSlot = glob.eitherHandEquipSlot;
 		auto lhEquipType = lhForm ? lhForm->As<RE::BGSEquipType>() : nullptr;
 		auto rhEquipType = rhForm ? rhForm->As<RE::BGSEquipType>() : nullptr;
+		SPDLOG_DEBUG
+		(
+			"[EM] ReEquipHandForms: {}. Forms to re-equip: {}, {}", 
+			coopActor->GetName(),
+			lhForm ? lhForm->GetName() : "NONE",
+			rhForm ? rhForm->GetName() : "NONE"
+		);
 		// Unequip to clear out hand slots before re-equipping.
 		UnequipHandForms(glob.bothHandsEquipSlot);
-
 		// Equip RH and then LH forms.
 		if (rhForm)
 		{
@@ -4457,6 +4491,7 @@ namespace ALYSLC
 							bool isCrossbow = weap->IsCrossbow();
 							// We already equip bound arrows elsewhere 
 							// when a bound bow is equipped.
+							// Only auto-equip ammo when equipping a non-bound ranged weapon.
 							if ((!isBound) && (isBow || isCrossbow))
 							{
 								auto desiredAmmo = 
@@ -4465,11 +4500,12 @@ namespace ALYSLC
 									desiredEquippedForms[!EquipIndex::kAmmo]->As<RE::TESAmmo>() : 
 									nullptr
 								);
-								// Only auto equip if no current ammo, mismatching current ammo, 
-								// or if equipping a bound bow.
+								// Also only auto-equip if no current ammo, 
+								// mismatching current ammo, or if bound ammo is equipped.
 								if ((!desiredAmmo) || 
 									((desiredAmmo->IsBolt() && isBow) || 
-									 (!desiredAmmo->IsBolt() && isCrossbow)))
+									 (!desiredAmmo->IsBolt() && isCrossbow)) ||
+									(desiredAmmo->HasKeywordByEditorID("WeapTypeBoundArrow")))
 								{
 									// First, unequip what the game has cached as the current ammo.
 									if (auto currentAmmo = coopActor->GetCurrentAmmo(); 
@@ -4477,7 +4513,7 @@ namespace ALYSLC
 									{
 										UnequipAmmo(currentAmmo);
 									}
-
+									
 									auto ammoAndCount = 
 									(
 										Settings::uAmmoAutoEquipMode == 
@@ -4493,6 +4529,18 @@ namespace ALYSLC
 
 									if (ammo)
 									{
+										SPDLOG_DEBUG
+										(
+											"[EM] RefreshEquipState: {}: "
+											"Equip highest {} ammo {}. Count: {}.",
+											coopActor->GetName(),
+											Settings::uAmmoAutoEquipMode == 
+											!AmmoAutoEquipMode::kHighestCount ?
+											"count" :
+											"damage",
+											ammo->GetName(),
+											ammoAndCount.second
+										);
 										EquipAmmo(ammo);
 									}
 								}
@@ -4653,7 +4701,7 @@ namespace ALYSLC
 						rhForm->As<RE::TESObjectWEAP>() && 
 						rhForm->As<RE::TESObjectWEAP>()->IsBound()
 					);
-					if (lhForm == glob.fists)
+					if (!lhForm || lhForm == glob.fists)
 					{
 						desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
 					}
@@ -4662,7 +4710,7 @@ namespace ALYSLC
 						desiredEquippedForms[!EquipIndex::kLeftHand] = lhForm;
 					}
 
-					if (rhForm == glob.fists)
+					if (!rhForm || rhForm == glob.fists)
 					{
 						desiredEquippedForms[!EquipIndex::kRightHand] = nullptr;
 					}
@@ -4673,10 +4721,13 @@ namespace ALYSLC
 
 					auto ammo = equippedForms[!EquipIndex::kAmmo];
 					bool ammoIsBound = ammo && ammo->HasKeywordByEditorID("WeapTypeBoundArrow");
-					if (!ammoIsBound)
+					if (!ammo)
 					{
-						desiredEquippedForms[!EquipIndex::kAmmo] = 
-						equippedForms[!EquipIndex::kAmmo];
+						desiredEquippedForms[!EquipIndex::kAmmo] = nullptr;
+					}
+					else if (!ammoIsBound)
+					{
+						desiredEquippedForms[!EquipIndex::kAmmo] = ammo;
 					}
 
 					// Copy over the rest.
@@ -4695,13 +4746,18 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"[EM] RefreshEquipState: {}: "
-								"MISMATCH at index {}: equipped {} vs. should have equipped {}.",
+								"MISMATCH at index {}: equipped {} (0x{:X}) "
+								"vs. should have equipped {} (0x{:X}).",
 								coopActor->GetName(),
 								i,
 								equippedForms[i] ? equippedForms[i]->GetName() : "NOTHING",
+								equippedForms[i] ? equippedForms[i]->formID : 0xDEAD,
 								desiredEquippedForms[i] ? 
 								desiredEquippedForms[i]->GetName() : 
-								"NOTHING"
+								"NOTHING",
+								desiredEquippedForms[i] ? 
+								desiredEquippedForms[i]->formID : 
+								0xDEAD
 							);
 							break;
 						}
@@ -4753,8 +4809,8 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"[EM] RefreshAllEquippedItems: "
-							"{} has a(n) {} in EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName()
+							"{} has a(n) {} (0x{:X}) in EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName(), item->formID
 						);
 					}
 				}
@@ -4766,8 +4822,8 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"[EM] RefreshAllEquippedItems: "
-							"{} has a(n) {} in DESIRED EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName()
+							"{} has a(n) {} (0x{:X}) in DESIRED EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName(), item->formID
 						);
 					}
 				}
@@ -4779,8 +4835,8 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"[EM] RefreshAllEquippedItems: "
-							"{} has a(n) {} in SERIALIZABLE EQUIPPED forms list.", 
-							coopActor->GetName(), item->GetName()
+							"{} has a(n) {} (0x{:X}) in SERIALIZABLE EQUIPPED forms list.", 
+							coopActor->GetName(), item->GetName(), item->formID
 						);
 					}
 				}
@@ -6158,10 +6214,19 @@ namespace ALYSLC
 				
 			for (auto exDataList : *exDataListList)
 			{
-				if (!exDataList || !exDataList->HasType(RE::ExtraDataType::kHotkey))
+				if (!exDataList)
 				{
 					continue;
 				}
+
+				auto exDataHotkey = exDataList->GetByType<RE::ExtraHotkey>(); 
+				if (!exDataHotkey)
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: {} is favorited.",
+					coopActor->GetName(), boundObj->GetName());
 
 				favoritedFormIDs.insert(boundObj->formID);
 				favoritedForms.emplace_back(boundObj);
@@ -6188,12 +6253,6 @@ namespace ALYSLC
 				else if (*boundObj->formType == RE::FormType::Ammo)
 				{
 					cyclableFormsMap[CyclableForms::kAmmo].push_back(boundObj);
-				}
-
-				auto exDataHotkey = exDataList->GetByType<RE::ExtraHotkey>(); 
-				if (!exDataHotkey)
-				{
-					continue;
 				}
 
 				// Item was hotkeyed.

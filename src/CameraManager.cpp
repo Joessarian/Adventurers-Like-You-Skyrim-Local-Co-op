@@ -388,7 +388,8 @@ namespace ALYSLC
 					p->coopActor->loadedData &&
 					p->coopActor->currentProcess &&
 					p->coopActor->GetCharController() &&
-					p->coopActor->parentCell && p->coopActor->parentCell->IsAttached()
+					p->coopActor->parentCell && 
+					p->coopActor->parentCell->IsAttached()
 				};
 
 				if (!allPlayersValid)
@@ -2358,7 +2359,7 @@ namespace ALYSLC
 			avgAutoRotateAngle *= signAdjustment;
 		}
 
-		return avgAutoRotateAngle;
+		return avgAutoRotateAngle * RE::BSTimer::QGlobalTimeMultiplier();
 	}
 
 	bool CameraManager::NoPlayersVisibleAtPoint
@@ -2583,7 +2584,15 @@ namespace ALYSLC
 		
 		// Reset controller IDs.
 		controlCamCID = -1;
-		focalPlayerCID = -1;
+		if ((focalPlayerCID != -1) && 
+			(
+				!glob.coopSessionActive ||
+				!glob.coopPlayers[focalPlayerCID]->isActive || 
+				!glob.coopPlayers[focalPlayerCID]->selfValid
+			))
+		{
+			focalPlayerCID = -1;
+		}
 		
 		// Starts with no adjustment mode active and in the autotrail state.
 		prevCamState = camState = CamState::kAutoTrail;

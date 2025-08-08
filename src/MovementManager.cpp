@@ -277,7 +277,7 @@ namespace ALYSLC
 		// is set to a very high value while the player is stuck in place 
 		// to lower their reported movement speed as quickly as possible,
 		// keeping a movement offset without the 'dontmove' flag set 
-		// will sometimes cause a glitch  where the player is stuck in place 
+		// will sometimes cause a glitch where the player is stuck in place 
 		// but the running animation plays at breakneck speed.
 				 
 		if (p->isPlayer1)
@@ -547,8 +547,11 @@ namespace ALYSLC
 			if (framesSinceRequestingDashDodge == 0) 
 			{
 				// Varying I-Frames/speed to maintain the same dodge distance 
-				// at different framerates. Set once at dodge start.
-				const float frameScalingFactor = 1.0f / (60.0f * *g_deltaTimeRealTime);
+				// at different framerates and time mults. Set once at dodge start.
+				const float frameScalingFactor = 
+				(
+					1.0f / (60.0f * *g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())
+				);
 				framesToCompleteDashDodge = 
 				(
 					frameScalingFactor * 
@@ -1013,7 +1016,10 @@ namespace ALYSLC
 		}
 		else if (isRequestingDashDodge)
 		{
-			const float frameScalingFactor = 1.0f / (60.0f * *g_deltaTimeRealTime);
+			const float frameScalingFactor = 
+			(
+				1.0f / (60.0f * *g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())
+			);
 			// Max number of seconds to wait until resetting data,
 			// if a request was made and the player did not start dodging
 			// or already completed their dodge.
@@ -1060,7 +1066,7 @@ namespace ALYSLC
 			static_cast<uint32_t>
 			(
 				Settings::fSecsAfterGatherToFall * 
-				(1.0f / *g_deltaTimeRealTime) + 0.5f
+				(1.0f / (*g_deltaTimeRealTime * RE::BSTimer::QGlobalTimeMultiplier())) + 0.5f
 			)
 		);
 		// Start jump. Play gather animation(s) and invert gravity for the player.
@@ -2358,7 +2364,8 @@ namespace ALYSLC
 			0.0f,
 			rotMult * yawDiff,
 			min(playerRotInterpFactor * interpFactorScalar, 1.0f) * 
-			max(1.0f, 60.0f * *g_deltaTimeRealTime)
+			max(1.0f, 60.0f * *g_deltaTimeRealTime) *
+			RE::BSTimer::QGlobalTimeMultiplier()
 		);
 		// P1 is not AI driven if attempting discovery or motion driven flag is set.
 		bool p1MotionDriven = 
@@ -2517,7 +2524,9 @@ namespace ALYSLC
 						(
 							movementOffsetParams[!MoveParams::kLSGameAng] - newYaw
 						),
-						playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
+						playerRotInterpFactor * 
+						max(1.0f, 60.0f * *g_deltaTimeRealTime) *
+						RE::BSTimer::QGlobalTimeMultiplier()
 					);
 					newYaw = Util::NormalizeAng0To2Pi
 					(
@@ -2525,7 +2534,7 @@ namespace ALYSLC
 					);
 				}
 				else
-				{;
+				{
 					// Turn to face the interaction entry position.
 					rawYawOffset = std::lerp
 					(
@@ -2538,7 +2547,9 @@ namespace ALYSLC
 							) - 
 							newYaw
 						),
-						playerRotInterpFactor * max(1.0f, 60.0f * *g_deltaTimeRealTime)
+						playerRotInterpFactor * 
+						max(1.0f, 60.0f * *g_deltaTimeRealTime) *
+						RE::BSTimer::QGlobalTimeMultiplier()
 					);
 					newYaw = Util::NormalizeAng0To2Pi
 					(
@@ -3019,6 +3030,7 @@ namespace ALYSLC
 			targetPos = Util::GetTorsoPosition(crosshairRefrPtr->As<RE::Actor>());
 		}
 
+		const float timeMult = RE::BSTimer::QGlobalTimeMultiplier();
 		float defaultPitchToTarget = Util::GetPitchBetweenPositions
 		(
 			playerDefaultAttackSourcePos, targetPos
@@ -3080,7 +3092,8 @@ namespace ALYSLC
 						rsData.normMag * 
 						rsY * 
 						Settings::vfMaxAimPitchAdjustmentRate[playerID] * 
-						*g_deltaTimeRealTime
+						*g_deltaTimeRealTime *
+						timeMult
 					), 
 					-PI / 6.0f, 
 					PI / 2.0f
@@ -3095,7 +3108,8 @@ namespace ALYSLC
 						rsData.normMag * 
 						rsY * 
 						Settings::vfMaxAimPitchAdjustmentRate[playerID] * 
-						*g_deltaTimeRealTime
+						*g_deltaTimeRealTime *
+						timeMult
 					), 
 					-PI / 2.0f, 
 					PI / 2.0f
@@ -3112,11 +3126,17 @@ namespace ALYSLC
 				auto pitchDiff = Util::NormalizeAngToPi(defaultPitchToTarget - aimPitch);
 				if (coopActor->IsSwimming())
 				{
-					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 6.0f, PI / 2.0f);
+					aimPitch = std::clamp
+					(
+						aimPitch + pitchDiff * rotMult * timeMult, -PI / 6.0f, PI / 2.0f
+					);
 				}
 				else
 				{
-					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 2.0f, PI / 2.0f);
+					aimPitch = std::clamp
+					(
+						aimPitch + pitchDiff * rotMult * timeMult, -PI / 2.0f, PI / 2.0f
+					);
 				}
 			}
 
@@ -3145,11 +3165,17 @@ namespace ALYSLC
 				auto pitchDiff = Util::NormalizeAngToPi(defaultPitchToTarget - aimPitch);
 				if (coopActor->IsSwimming())
 				{
-					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 6.0f, PI / 2.0f);
+					aimPitch = std::clamp
+					(
+						aimPitch + pitchDiff * rotMult * timeMult, -PI / 6.0f, PI / 2.0f
+					);
 				}
 				else
 				{
-					aimPitch = std::clamp(aimPitch + pitchDiff * rotMult, -PI / 2.0f, PI / 2.0f);
+					aimPitch = std::clamp
+					(
+						aimPitch + pitchDiff * rotMult * timeMult, -PI / 2.0f, PI / 2.0f
+					);
 				}
 			}
 			else
@@ -3825,7 +3851,8 @@ namespace ALYSLC
 		movementActorPtr = mountPtr ? mountPtr : coopActor;
 		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
 		// Ensure all sneak states sync up with the player's requested state.
-		if (!coopActor->IsOnMount() &&
+		if (!p->isPlayer1 &&
+			!coopActor->IsOnMount() &&
 			!coopActor->IsSwimming() && 
 			!coopActor->IsFlying() && 
 			!isRequestingDashDodge && 
@@ -5256,12 +5283,7 @@ namespace ALYSLC
 		
 		// Arm node hit something collidable.
 		bool hitRecorded = false;
-		const float framerateDepMult = std::clamp
-		(
-			(*g_deltaTimeRealTime / (1.0f / 60.0f)),
-			0.5f,
-			1.0f
-		);
+		const float framerateDepMult = std::clamp(60.0f * *g_deltaTimeRealTime, 0.0f, 1.0f);
 		// If the refr is hit hard enough to release it,
 		// apply this factor to the release angle.
 		float releaseAngleFactor = 0.5f;
@@ -5401,13 +5423,9 @@ namespace ALYSLC
 				{
 				case ArmNodeType::kForearm:
 				{
-					/*knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 1100.0f : 1600.0f) * invArmForceFactor
-					);*/
 					knockdownMinSpeed = 
 					(
-						1600.0f * invArmForceFactor
+						1500.0f * invArmForceFactor
 					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownForearmSpeedThresholdMult;
 
@@ -5416,13 +5434,9 @@ namespace ALYSLC
 				case ArmNodeType::kHand:
 				case ArmNodeType::kShield:
 				{
-					/*knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 1000.0f : 1500.0f) * invArmForceFactor
-					);*/
 					knockdownMinSpeed = 
 					(
-						1500.0f * invArmForceFactor
+						1400.0f * invArmForceFactor
 					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownHandSpeedThresholdMult;
 
@@ -5430,13 +5444,9 @@ namespace ALYSLC
 				}
 				case ArmNodeType::kShoulder:
 				{
-					/*knockdownMinSpeed = 
-					(
-						(a_p->mm->reqFaceTarget ? 700.0f : 1200.0f) * invArmForceFactor
-					);*/
 					knockdownMinSpeed = 
 					(
-						1200.0f * invArmForceFactor
+						1100.0f * invArmForceFactor
 					);
 					knockdownMinSpeed *= Settings::fSlapKnockdownShoulderSpeedThresholdMult;
 
@@ -5446,6 +5456,15 @@ namespace ALYSLC
 					break;
 				}
 
+				// NOTE:
+				// Needs tweaking until a proper solution is found.
+				// Reported havok node velocity appears to slightly decrease with framerate,
+				// so apply an estimated correction factor to better normalize
+				// the knockdown speed threshold across various framerates.
+				knockdownMinSpeed = max
+				(
+					100.0f, knockdownMinSpeed + (1.0f - (60.0f * *g_deltaTimeRealTime)) * 100.0f
+				); 
 				// Set speed ratio and hit volume after setting the min knockdown speed.
 				float hitToKnockdownSpeedRatio = powf
 				(
@@ -5857,7 +5876,7 @@ namespace ALYSLC
 					// and the force applied to them in total is greater at higher framerates,
 					// since more collisions occur over the same contact window.
 					// Temporary improvement to normalizing the force application
-					// using this factor  for now.
+					// using this factor for now.
 					const float actorFactor = 
 					(
 						framerateDepMult * framerateDepMult * (500.0f / 60.0f)
@@ -5912,7 +5931,8 @@ namespace ALYSLC
 					a_staminaCostOut,
 					releaseAngleFactor,
 					hitToKnockdownSpeedRatio
-				);*/
+				);
+				*/
 			}
 			else
 			{
@@ -6551,29 +6571,60 @@ namespace ALYSLC
 		const RE::NiPoint3 locXAxis{ 1.0f, 0.0f, 0.0f };
 		const RE::NiPoint3 locYAxis{ 0.0f, 1.0f, 0.0f };
 		const RE::NiPoint3 locZAxis{ 0.0f, 0.0f, 1.0f };
+		const float frameDepInterpFactor = min
+		(
+			1.0f, 
+			(interpFactor) * 
+			(60.0f * *g_deltaTimeRealTime) *
+			(RE::BSTimer::QGlobalTimeMultiplier())
+		);
+		// Gives a slightly more weighted feel to arm movement.
+		float stickSpeedFactor = 
+		(
+			Util::InterpolateEaseOut
+			(
+				0.85f,
+				1.0f, 
+				std::clamp
+				(
+					0.6f, 
+					1.0f, 
+					rsData.stickAngularSpeed / 20.0f
+				),
+				2.0f
+			)
+		);
+		// Slow down if low on stamina -> less likely to knock down NPCs with a slap.
+		const float staminaSlowdownFactor = a_p->mm->GetArmRotationFactor(true);
 		if (forearmData->rotationModified) 
 		{
 			if (oldForearmPitch != targetForearmPitch)
 			{
-				targetForearmPitch = Util::InterpolateSmootherStep
+				targetForearmPitch = std::lerp
 				(
-					oldForearmPitch, targetForearmPitch, min(1.0f, interpFactor)
+					oldForearmPitch, 
+					targetForearmPitch, 
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
 			if (oldForearmRoll != targetForearmRoll)
 			{
-				targetForearmRoll = Util::InterpolateSmootherStep
+				targetForearmRoll = std::lerp
 				(
-					oldForearmRoll, targetForearmRoll, min(1.0f, interpFactor)
+					oldForearmRoll,
+					targetForearmRoll, 
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
 			if (oldForearmYaw != targetForearmYaw)
 			{
-				targetForearmYaw = Util::InterpolateSmootherStep
+				targetForearmYaw = std::lerp
 				(
-					oldForearmYaw, targetForearmYaw, min(1.0f, interpFactor)
+					oldForearmYaw, 
+					targetForearmYaw,
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
@@ -6600,51 +6651,33 @@ namespace ALYSLC
 		
 		if (handData->rotationModified) 
 		{
-			// Gives a slightly more weighted feel to arm movement.
-			float stickSpeedFactor = 
-			(
-				Util::InterpolateEaseOut
-				(
-					0.85f,
-					1.0f, 
-					std::clamp
-					(
-						0.6f, 
-						1.0f, 
-						rsData.stickAngularSpeed / 20.0f
-					),
-					2.0f
-				)
-			);
-			// Slow down if low on stamina -> less likely to knock down NPCs with a slap.
-			const float staminaSlowdownFactor = a_p->mm->GetArmRotationFactor(true);
 			if (oldHandPitch != targetHandPitch)
 			{
-				targetHandPitch = Util::InterpolateSmootherStep
+				targetHandPitch = std::lerp
 				(
 					oldHandPitch, 
 					targetHandPitch, 
-					min(1.0f, interpFactor * stickSpeedFactor * staminaSlowdownFactor)
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
 			if (oldHandRoll != targetHandRoll)
 			{
-				targetHandRoll = Util::InterpolateSmootherStep
+				targetHandRoll = std::lerp
 				(
 					oldHandRoll, 
 					targetHandRoll, 
-					min(1.0f, interpFactor * stickSpeedFactor * staminaSlowdownFactor)
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
 			if (oldHandYaw != targetHandYaw)
 			{
-				targetHandYaw = Util::InterpolateSmootherStep
+				targetHandYaw = std::lerp
 				(
 					oldHandYaw, 
 					targetHandYaw, 
-					min(1.0f, interpFactor * stickSpeedFactor * staminaSlowdownFactor)
+					min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 				);
 			}
 
@@ -7948,17 +7981,24 @@ namespace ALYSLC
 			// Set rotation angle inputs used to construct the world rotation matrix below.
 			const float oldYaw = shoulderData->rotationInput[0];
 			const float oldPitch = shoulderData->rotationInput[1];
-			float yaw = Util::InterpolateSmootherStep
+			const float frameDepInterpFactor = min
+			(
+				1.0f, 
+				(interpFactor) * 
+				(60.0f * *g_deltaTimeRealTime) *
+				(RE::BSTimer::QGlobalTimeMultiplier())
+			);
+			float yaw = std::lerp
 			(
 				oldYaw, 
 				newRotationInput[0], 
-				min(1.0f, interpFactor * stickSpeedFactor * staminaSlowdownFactor)
+				min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 			);
-			float pitch = Util::InterpolateSmootherStep
+			float pitch = std::lerp
 			(
 				oldPitch,
 				newRotationInput[1], 
-				min(1.0f, interpFactor * stickSpeedFactor * staminaSlowdownFactor)
+				min(1.0f, frameDepInterpFactor * stickSpeedFactor * staminaSlowdownFactor)
 			);
 			shoulderData->rotationInput = std::array<float, 3>({ yaw, pitch, 0.0f });
 
@@ -8337,6 +8377,13 @@ namespace ALYSLC
 					frac = 1.0f;
 				}
 
+				const float frameDepInterpFactor = min
+				(
+					1.0f, 
+					(interpFactor) * 
+					(60.0f * *g_deltaTimeRealTime) *
+					(RE::BSTimer::QGlobalTimeMultiplier())
+				);
 				// For adjustment towards a target.
 				// Pitched/rolled with the aim pitch angle.
 				if (a_p->mm->aimPitchAdjusted) 
@@ -8407,11 +8454,11 @@ namespace ALYSLC
 							}
 						}
 
-						torsoData->rotationInput[0] = Util::InterpolateSmootherStep
+						torsoData->rotationInput[0] = std::lerp
 						(
 							prevYawOffset, 
 							yawOffset, 
-							min(1.0f, interpFactor)
+							min(1.0f, frameDepInterpFactor)
 						);
 
 						// Rotate the axes about the world 'up' axis with our yaw offset.

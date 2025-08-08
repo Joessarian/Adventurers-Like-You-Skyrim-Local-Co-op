@@ -2881,6 +2881,18 @@ namespace ALYSLC
 			return false;
 		}
 
+		// Set the global time multiplier to the given value.
+		inline void SetGlobalTimeMultiplier(const float& a_mult)
+		{
+			auto timer = RE::BSTimer::GetSingleton();
+			if (!timer)
+			{
+				return;
+			}
+
+			timer->SetGlobalTimeMultiplier(a_mult, true);
+		}
+
 		// NOTE: 
 		// Not sure if this sky mode change is necessary, 
 		// since some interior cells still have camera proximity-based fog afterward.

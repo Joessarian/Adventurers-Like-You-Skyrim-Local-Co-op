@@ -2,8 +2,12 @@
 
 // IMPORTANT DEV NOTE: 
 // Ensure 'ALYSLC_DEBUG_MODE' is not defined before submitting a PR 
-// or committing changes for release versions.
+// or committing changes for release versions. Mostly a note for myself.
 // Removes all debug-level prints, and all associated overhead, during compilation if not defined.
+
+// WARNING:
+// Enabling debug prints can balloon the mod's log file (ALYSLC.log) to over a million lines.
+// Remove whatever unnecessary prints first.
 //#define ALYSLC_DEBUG_MODE
 #ifdef ALYSLC_DEBUG_MODE
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG

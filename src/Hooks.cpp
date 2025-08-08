@@ -2245,6 +2245,17 @@ namespace ALYSLC
 						if (a_delta != -FLT_MAX)
 						{
 							a_delta *= Settings::vfDamageReceivedMult[p->playerID];
+							// Also apply health cost mult if reviving another player.
+							if (p->isRevivingPlayer)
+							{
+								// Ensure the player does not lose all their health.
+								a_delta = max
+								(
+									-a_this->GetActorValue(RE::ActorValue::kHealth) + 
+									Settings::fMinHealthWhileReviving,
+									a_delta * Settings::vfReviveHealthCostMult[p->playerID]
+								);
+							}
 						}
 					}
 					else if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
@@ -2269,9 +2280,9 @@ namespace ALYSLC
 						{
 							bool isHealing = false;
 							float healingDeltaTotal = 0.0f;
-							if (a_this->GetActiveEffectList())
+							if (auto effectList = a_this->GetActiveEffectList(); effectList)
 							{
-								for (auto effect : *a_this->GetActiveEffectList())
+								for (auto effect : *effectList)
 								{
 									if (!effect)
 									{
@@ -2858,8 +2869,9 @@ namespace ALYSLC
 				// since more steps are taken per second with the increased animation speed.
 				if (p->pam->isSprinting) 
 				{
-					a_data.deltaTime *= 
+					a_data.deltaTime *= max
 					(
+						0.1f,
 						(Settings::fBaseSpeed / 85.0f) * (Settings::fSprintingMovMult / 1.5f)
 					);
 				}
@@ -2886,7 +2898,7 @@ namespace ALYSLC
 			{
 				// Speed up swimming animation to match the increased speedmult
 				// while 'sprinting' in the water.
-				a_data.deltaTime *= Settings::fSprintingMovMult;
+				a_data.deltaTime *= max(0.1f, Settings::fSprintingMovMult);
 			}
 
 			_ModifyAnimationUpdateData(a_this, a_data);
@@ -2983,7 +2995,8 @@ namespace ALYSLC
 			}
 			else if (((p->isDowned && !p->isRevived) ||
 					 (p->coopActor->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) && 
-					  hash == "GetUpBegin"_h)
+					  hash == "GetUpBegin"_h &&
+					  p->selfValid)
 			{
 				// Ignore requests to get up when the player is downed and not revived.
 				return false;
@@ -6113,6 +6126,17 @@ namespace ALYSLC
 					if (a_delta != -FLT_MAX)
 					{
 						a_delta *= Settings::vfDamageReceivedMult[p->playerID];
+						// Also apply health cost mult if reviving another player.
+						if (p->isRevivingPlayer)
+						{
+							// Ensure the player does not lose all their health.
+							a_delta = max
+							(
+								-a_this->GetActorValue(RE::ActorValue::kHealth) + 
+								Settings::fMinHealthWhileReviving,
+								a_delta * Settings::vfReviveHealthCostMult[p->playerID]
+							);
+						}
 					}
 				}
 				else if (a_av == RE::ActorValue::kHealth && a_delta > 0.0f)
@@ -6506,10 +6530,11 @@ namespace ALYSLC
 				// Feels less floaty at higher sprint speed multipliers,
 				// since more steps are taken per second with the increased animation speed.
 				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
-				if (coopP1->pam->isSprinting)
+				if (coopP1->pam->isSprinting) 
 				{
-					a_data.deltaTime *= 
+					a_data.deltaTime *= max
 					(
+						0.1f,
 						(Settings::fBaseSpeed / 85.0f) * (Settings::fSprintingMovMult / 1.5f)
 					);
 				}
@@ -6537,7 +6562,7 @@ namespace ALYSLC
 			{
 				// Speed up swimming animation to match the increased speedmult
 				// while 'sprinting' in the water.
-				a_data.deltaTime *= Settings::fSprintingMovMult;
+				a_data.deltaTime *= max(0.1f, Settings::fSprintingMovMult);
 			}
 
 			_ModifyAnimationUpdateData(a_this, a_data);
@@ -6565,7 +6590,8 @@ namespace ALYSLC
 				}
 				else if (((p->isDowned && !p->isRevived) || 
 						 (p->coopActor->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) && 
-						 hash == "GetUpBegin"_h)
+						 hash == "GetUpBegin"_h && 
+						 p->selfValid)
 				{
 					// Ignore requests to get up when the player is downed and not revived.
 					return false;
@@ -6586,18 +6612,18 @@ namespace ALYSLC
 					// as far as I can tell.
 					return true;
 				}
-			}
-			else if ((hash == "staggerStart"_h) &&
-					 (
-						 p->isRevivingPlayer || 
-						 p->coopActor->IsOnMount() || 
-						 Util::HandleIsValid(p->coopActor->GetOccupiedFurniture())
-					 ))
-			{
-				// Prevent stagger when reviving, mounted, or using furniture,
-				// which will make the companion player exit the animation or dismount prematurely 
-				// and potentially glitch their equip state.
-				return _NotifyAnimationGraph(a_this, "staggerStop");
+				else if ((hash == "staggerStart"_h) &&
+						 (
+							 p->isRevivingPlayer || 
+							 p->coopActor->IsOnMount() || 
+							 Util::HandleIsValid(p->coopActor->GetOccupiedFurniture())
+						 ))
+				{
+					// Prevent stagger when reviving, mounted, or using furniture,
+					// which will make the player exit the animation or dismount prematurely 
+					// and potentially glitch their equip state.
+					return _NotifyAnimationGraph(a_this, "staggerStop");
+				}
 			}
 			// Failsafe to ensure that P1 does not get up when dead after co-op ends.
 			else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
@@ -7566,6 +7592,13 @@ namespace ALYSLC
 							);
 							if (hitByPlayer)
 							{
+								// Ignore if P1 is hitting a target 
+								// while their managers are not running (no co-op cam).
+								if (p->isPlayer1 && !p->IsRunning())
+								{
+									continue;
+								}
+
 								bool isHostile = 
 								(
 									(!hitActorIsPlayer) &&
@@ -7595,7 +7628,7 @@ namespace ALYSLC
 									!Util::HasHostileEffect(a_this->spell)
 								);
 								// Only allow collisions through if targeting a hostile actor,
-								// directly targeting an neutral actor with the crosshair,
+								// directly targeting a neutral actor with the crosshair,
 								// or targeting an ally with a beneficial projectile
 								// or targeting an ally with the crosshair 
 								// while friendly fire is on.

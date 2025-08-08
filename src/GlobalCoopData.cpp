@@ -3034,11 +3034,14 @@ namespace ALYSLC
 				if (!coopP1->isTransformed && 
 					glob.werewolfTransformationGlob->value == 1.0f) 
 				{
-					for (auto effect : *coopP1->coopActor->GetActiveEffectList())
+					if (auto effectList = coopP1->coopActor->GetActiveEffectList(); effectList)
 					{
-						if ((effect->GetBaseObject()->formID & 0x00FFFFFF) == 0x29BA4)
+						for (auto effect : *effectList)
 						{
-							coopP1->secsMaxTransformationTime = effect->duration;
+							if ((effect->GetBaseObject()->formID & 0x00FFFFFF) == 0x29BA4)
+							{
+								coopP1->secsMaxTransformationTime = effect->duration;
+							}
 						}
 					}
 
@@ -3866,7 +3869,13 @@ namespace ALYSLC
 		{
 			return PRECISION_API::PreHitCallbackReturn();
 		}
-		
+
+		// Ignore if P1 is hitting a target while their managers are not running (no co-op cam).
+		if (pIndex == glob.player1CID && !glob.coopPlayers[pIndex]->IsRunning())
+		{
+			return PRECISION_API::PreHitCallbackReturn();
+		}
+
 		const auto& p = glob.coopPlayers[pIndex];
 		auto hitActorHandle = hitActor ? hitActor->GetHandle() : RE::ActorHandle();
 		bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
@@ -5679,18 +5688,21 @@ namespace ALYSLC
 			// if the game is saved while at 100% arcane fever.
 			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && p->isInGodMode)
 			{
-				for (auto effect : *p->coopActor->GetActiveEffectList())
+				if (auto effectList = p->coopActor->GetActiveEffectList(); effectList)
 				{
-					if (!effect)
+					for (auto effect : *effectList)
 					{
-						continue;
-					}
+						if (!effect)
+						{
+							continue;
+						}
 
-					if (auto baseObj = effect->GetBaseObject(); (baseObj) && 
-						(baseObj->data.primaryAV == RE::ActorValue::kLastFlattered || 
-						baseObj->data.secondaryAV == RE::ActorValue::kLastFlattered))
-					{
-						effect->Dispel(true);
+						if (auto baseObj = effect->GetBaseObject(); (baseObj) && 
+							(baseObj->data.primaryAV == RE::ActorValue::kLastFlattered || 
+							baseObj->data.secondaryAV == RE::ActorValue::kLastFlattered))
+						{
+							effect->Dispel(true);
+						}
 					}
 				}
 
@@ -7806,13 +7818,10 @@ namespace ALYSLC
 		}
 
 		// IMPORTANT NOTE:
-		// Adding the object to a companion player after removing it from P1, 
-		// instead of removing the item from P1 directly to the companion player
-		// does not flag the companion player's inventory as changed 
-		// and does not trigger the game's equip calculations, 
-		// which normally clear out the player's currently equipped gear
-		// and force the equip manager to re-equip the companion player's hand forms.
-		// Always remove then add any transferred items.
+		// Unlike elsewhere, where we do not want the player to re-equip their hand forms
+		// when a weapon is directly added to their inventory,
+		// avoiding deleting the original item and adding a copy is more important here,
+		// so we just move items directly from one container to another.
 
 		int8_t pIndex = GetCoopPlayerIndex(a_coopActor->GetHandle());
 		const auto& p = glob.coopPlayers[pIndex];
@@ -7832,12 +7841,14 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", 
 					entry.first, boundObj->GetName(), a_toRefr->GetName());
-
 				p1->RemoveItem
 				(
-					boundObj, entry.first, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+					boundObj, 
+					entry.first,
+					RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+					nullptr,
+					a_toRefr
 				);
-				a_toRefr->AddObjectToContainer(boundObj, nullptr, entry.first, a_toRefr);
 			}
 
 			if (auto invChanges = p1->GetInventoryChanges(); invChanges && invChanges->entryList) 
@@ -7868,8 +7879,14 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG("[GLOB] CopyOverInventories: Moving x{} {} from P1 to {}.", 
 						count, obj->GetName(), a_toRefr->GetName());
-					p1->RemoveItem(obj, count, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
-					a_toRefr->AddObjectToContainer(obj, nullptr, count, a_toRefr);
+					p1->RemoveItem
+					(
+						obj, 
+						count,
+						RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+						nullptr,
+						a_toRefr
+					);
 				}
 			}
 		};
@@ -8008,6 +8025,38 @@ namespace ALYSLC
 				invChanges->armorWeight = invChanges->totalWeight;
 				invChanges->totalWeight = -1.0f;
 				p1->equippedWeight = -1.0f;
+			}
+
+			// Re-favorite all cached physical forms for both players on export.
+			for (const auto form : p->em->favoritedForms)
+			{
+				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"[GLOB] CopyOverInventories: EXPORT: Re-favoriting {} for {}.",
+					form->GetName(), p->coopActor->GetName()
+				);
+				Util::ChangeFormFavoritesStatus(p->coopActor.get(), form, true);
+			}
+
+			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+			for (const auto form : coopP1->em->favoritedForms)
+			{
+				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
+				{
+					continue;
+				}
+				
+				SPDLOG_DEBUG
+				(
+					"[GLOB] CopyOverInventories: EXPORT: Re-favoriting {} for {}.",
+					form->GetName(), p1->GetName()
+				);
+				Util::ChangeFormFavoritesStatus(coopP1->coopActor.get(), form, true);
 			}
 		}
 
