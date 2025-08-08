@@ -54,7 +54,7 @@ namespace ALYSLC
 		// Reset our handled menu data instantly:
 		// Stop MIM, reset menu controller IDs,
 		// set supported menus as closed.
-		return;
+
 		glob.mim->ToggleCoopPlayerMenuMode(-1);
 		GlobalCoopData::ResetMenuCIDs();
 		glob.supportedMenuOpen.store(false);
