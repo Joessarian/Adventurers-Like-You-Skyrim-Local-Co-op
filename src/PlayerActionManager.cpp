@@ -5677,8 +5677,6 @@ namespace ALYSLC
 			ModifyAV(RE::ActorValue::kHealth, -healthCost);
 		}
 
-		// Amount of health this player transfers away this check.
-		p->revivedHealth += healthCost;
 		// Amount of health the downed player target will gain from this check.
 		downedPlayerTarget->revivedHealth += healthTransferRatio * healthCost;
 		// Done reviving when the total health the downed player should receive
@@ -5688,7 +5686,277 @@ namespace ALYSLC
 			// Signal the other player that they are now revived,
 			// and reset revived health data.
 			downedPlayerTarget->isRevived = true;
-			p->revivedHealth = 0.0f;
+		}
+	}
+
+	void PlayerActionManager::RevivePlayerP1NoCoopCam
+	(
+		const int32_t& a_playerTargetIndex,
+		const float& a_revivePressState,
+		const float& a_reviveHeldTime
+	)
+	{
+		// Revive another player with P1 while the co-op camera is inactive.
+
+		// Not P1, should never happen.
+		if (!p->isPlayer1)
+		{
+			Util::SetPlayerAIDriven(false);
+			return;
+		}
+
+		// No co-op yet or co-op camera active.
+		if (!glob.globalDataInit ||
+			!glob.allPlayersInit ||
+			!glob.coopSessionActive ||
+			glob.cam->IsRunning())
+		{
+			Util::SetPlayerAIDriven(false);
+			return;
+		}
+		
+		auto reviveCleanup = [this]()
+		{
+			// NOTE: 
+			// Have to stop revive idle and draw weapons/magic to prevent bugged
+			// animation state where weapons are in hand but unusable.
+			if (p->isRevivingPlayer)
+			{
+				if (!coopActor->IsOnMount() &&
+					!coopActor->IsSwimming() && 
+					!coopActor->IsFlying())
+				{
+					coopActor->NotifyAnimationGraph("IdleStop");
+					coopActor->NotifyAnimationGraph("IdleForceDefaultState");
+					if (coopActor->IsWeaponDrawn()) 
+					{
+						ReadyWeapon(true);
+					}
+				}
+
+				Util::NativeFunctions::SetDontMove(p->coopActor.get(), false);
+			}
+			
+			// Stop all revive effects.
+			Util::StopEffectShader(coopActor.get(), glob.dragonHolesShader, 2.0f);
+
+			if (downedPlayerTarget)
+			{
+				Util::StopEffectShader
+				(
+					downedPlayerTarget->coopActor.get(), 
+					glob.dragonSoulAbsorbShader, 
+					2.0f
+				);
+				Util::StopHitArt
+				(
+					downedPlayerTarget->coopActor.get(),
+					glob.reviveDragonSoulEffect, 
+					2.0f
+				);
+				Util::StopHitArt
+				(
+					downedPlayerTarget->coopActor.get(), glob.reviveHealingEffect, 2.0f
+				);
+
+				// Set being revived to false, and then clear the downed player target. 
+				// Done to allow for a new downed target when the action is restarted.
+				downedPlayerTarget->isBeingRevived = false;
+				downedPlayerTarget = nullptr;
+			}
+			
+			// No longer reviving.
+			p->isRevivingPlayer = false;
+
+			// Remove AI driven.
+			auto p1 = RE::PlayerCharacter::GetSingleton(); 
+			if (p1 && p1->movementController && !p1->movementController->controlsDriven)
+			{
+				p1->SetAIDriven(false);
+			}
+			
+			if (p->mm->dontMoveSet)
+			{
+				Util::NativeFunctions::SetDontMove(p->coopActor.get(), false);
+			}
+		};
+		
+		// Let go of the revive bind.
+		if (a_revivePressState == 0.0f)
+		{
+			reviveCleanup();
+			return;
+		}
+
+		// Just started reviving, so set the downed player target.
+		bool justStarted = a_revivePressState == 1.0f && a_reviveHeldTime == 0.0f;
+		if (justStarted && 
+			a_playerTargetIndex != -1 &&
+			glob.coopPlayers[a_playerTargetIndex]->isDowned)
+		{
+			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: Revive bind just pressed. Target: {}.",
+				glob.coopPlayers[a_playerTargetIndex]->coopActor->GetName());
+			// Stop P1 from moving.
+			p->mm->dontMoveSet = true;
+			Util::NativeFunctions::SetDontMove(p->coopActor.get(), true);
+			downedPlayerTarget = glob.coopPlayers[a_playerTargetIndex];
+			downedPlayerTarget->isBeingRevived = true;
+			p->isRevivingPlayer = true;
+			p->lastReviveCheckTP = SteadyClock::now();
+		}
+
+		// No downed player target. Done.
+		if (!downedPlayerTarget)
+		{
+			reviveCleanup();
+			return;
+		}
+
+		// Update current health before performing AV amount check.
+		currentHealth = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		// Downed target must not be revived yet.
+		bool enoughHealth = ALYSLC::HelperFuncs::EnoughOfAVToPerformPA(p, InputAction::kActivate);
+		if (downedPlayerTarget->isRevived || !enoughHealth)
+		{
+			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: {} is revived: {}, P1 out of health: {}.",
+				downedPlayerTarget->coopActor->GetName(),
+				downedPlayerTarget->isRevived,
+				!enoughHealth);
+			if (!enoughHealth)
+			{
+				p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kReviveAlert,
+					fmt::format
+					(
+						"P1: <font color=\"#FF0000\">"
+						"Not enough health to revive another player!</font>"
+					),
+					{
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kActivationInfo,
+						CrosshairMessageType::kStealthState,
+						CrosshairMessageType::kTargetSelection
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				p->tm->UpdateCrosshairMessage();
+			}
+
+			reviveCleanup();
+			return;
+		}
+		
+		// P1 has enough health to revive another player.
+		if (justStarted)
+		{
+			// Play revive animation if grounded.
+			if (!coopActor->IsOnMount() &&
+				!coopActor->IsSwimming() && 
+				!coopActor->IsFlying())
+			{
+				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
+				coopActor->NotifyAnimationGraph("IdleKneeling");
+			}
+
+			// Play shaders and hit effects.
+			Util::StartEffectShader(coopActor.get(), glob.dragonHolesShader, -1.0f);
+			Util::StartEffectShader
+			(
+				downedPlayerTarget->coopActor.get(), glob.dragonSoulAbsorbShader, -1.0f
+			);
+			Util::StartHitArt
+			(
+				downedPlayerTarget->coopActor.get(), 
+				glob.reviveDragonSoulEffect, 
+				downedPlayerTarget->coopActor.get(),
+				-1.0f, 
+				false,
+				true
+			);
+			Util::StartHitArt
+			(
+				downedPlayerTarget->coopActor.get(), 
+				glob.reviveHealingEffect,
+				downedPlayerTarget->coopActor.get(),
+				-1.0f,
+				false,
+				false
+			);
+		}
+
+		// Set revive player message.
+		p->tm->SetCrosshairMessageRequest
+		(
+			CrosshairMessageType::kReviveAlert,
+			fmt::format
+			(
+				"P1: <font color=\"#1E88E5\">Reviving {}</font>", 
+				downedPlayerTarget->coopActor->GetName()
+			),
+			{ 
+				CrosshairMessageType::kNone,
+				CrosshairMessageType::kActivationInfo, 
+				CrosshairMessageType::kStealthState, 
+				CrosshairMessageType::kTargetSelection 
+			},
+			Settings::fSecsBetweenDiffCrosshairMsgs
+		);
+		p->tm->UpdateCrosshairMessage();
+
+		// Turn to face the target player.
+		// Continue reviving the cached downed player if they are not fully revived.
+		// Rotate to face downed player's torso.
+		float yawToTarget = Util::GetYawBetweenPositions
+		(
+			coopActor->data.location,
+			Util::GetTorsoPosition(downedPlayerTarget->coopActor.get())
+		);
+		float angDiff = Util::NormalizeAngToPi
+		(
+			yawToTarget - coopActor->data.angle.z
+		);
+		coopActor->SetHeading
+		(
+			Util::NormalizeAng0To2Pi(coopActor->data.angle.z + angDiff)
+		);
+
+		secsSinceReviveCheck = Util::GetElapsedSeconds(p->lastReviveCheckTP);
+		p->lastReviveCheckTP = SteadyClock::now();
+		const auto& baseCost = 
+		(
+			paStatesList[!InputAction::kActivate - !InputAction::kFirstAction].avBaseCost
+		);
+		// Can transfer health up until the minimum remaining health level.
+		float healthCost = min
+		(
+			baseCost * secsSinceReviveCheck, 
+			currentHealth - Settings::fMinHealthWhileReviving
+		);
+		// Total transferable health for a full revive.
+		float fullHealthCost = baseCost * Settings::fSecsReviveTime;
+		// Ratio of the downed player's health after being fully revived
+		// to the health this player must give up to fully revive them.
+		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
+		// Don't reduce this player's health when in god mode or when the health cost mult is 0.
+		if (!p->isInGodMode || Settings::vfReviveHealthCostMult[playerID] == 0.0f) 
+		{
+			ModifyAV(RE::ActorValue::kHealth, -healthCost);
+		}
+
+		// Amount of health the downed player target will gain from this check.
+		downedPlayerTarget->revivedHealth += healthTransferRatio * healthCost;
+		// Done reviving when the total health the downed player should receive
+		// is greater than or equal to their health after a full revive.
+		if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
+		{
+			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: {} is now revived.",
+				downedPlayerTarget->coopActor->GetName());
+			// Signal the other player that they are now revived,
+			// and reset revived health data.
+			downedPlayerTarget->isRevived = true;
+			reviveCleanup();
+			return;
 		}
 	}
 
@@ -6180,9 +6448,43 @@ namespace ALYSLC
 					break;
 				}
 			}
-
-			// Skip non-hostile actors since they don't need to be pacified.
+			
+			// Also check if this actor's combat target is a friendly actor
+			// if they are not directly hostile to a player.
+			// We also want to stop combat between party friendly actors and other NPCs;
+			// for example, Lydia whaling on some NPC that you accidently hit previously 
+			// and stopped combat with.
 			if (!isHostile)
+			{
+				auto currentCombatTargetPtr = Util::GetActorPtrFromHandle
+				(
+					actor->currentCombatTarget
+				);
+				if (currentCombatTargetPtr && 
+					Util::IsPartyFriendlyActor(currentCombatTargetPtr.get()))
+				{
+					isHostile = true;
+				}
+
+				if (!isHostile && actor->combatController)
+				{
+					currentCombatTargetPtr = Util::GetActorPtrFromHandle
+					(
+						actor->combatController->targetHandle
+					);
+					if (currentCombatTargetPtr && 
+						Util::IsPartyFriendlyActor(currentCombatTargetPtr.get()))
+					{
+						isHostile = true;
+					}
+				}
+			}
+
+			bool isFriendly = Util::IsPartyFriendlyActor(actor);
+			// Skip neutral actors since they don't need to be pacified.
+			// Have to pacify friendly actors too, since they may have sided with the player,
+			// and will re-initiate combat with hostile actors directly afterward.
+			if (!isHostile && !isFriendly)
 			{
 				continue;
 			}
@@ -6192,7 +6494,6 @@ namespace ALYSLC
 			// since performing crimes near them does not trigger a bounty.
 			bool hasNoBountyButInCrimeFaction = Util::HasNoBountyButInCrimeFaction(actor);
 			bool hasBountyAndCrimeFaction = Util::HasBountyOnPlayer(actor);
-			bool isFriendly = Util::IsPartyFriendlyActor(actor);
 			bool isFleeing = Util::IsFleeing(actor);
 			bool isMount = actor->IsAMount();
 			if (hasNoBountyButInCrimeFaction || isFriendly || isFleeing || isMount)

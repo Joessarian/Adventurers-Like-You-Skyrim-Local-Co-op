@@ -5442,6 +5442,7 @@ namespace ALYSLC
 				// now that we've updated the velocity of the released refr.
 				RE::ObjectRefHandle hitRefrHandle{ };
 				RE::NiPoint3 hitPos{ };
+				RE::NiPoint3 hitNormal{ };
 				RE::NiPoint3 velDir{ };
 				glm::vec4 start{ };
 				glm::vec4 end{ };
@@ -5475,6 +5476,7 @@ namespace ALYSLC
 							&hit,
 							&hitRefrHandle,
 							&hitPos, 
+							&hitNormal,
 							&velDir,
 							&velOffset,
 							&numNodesCastFrom
@@ -5576,6 +5578,7 @@ namespace ALYSLC
 								hit = true;
 								hitRefrHandle = result.hitRefrHandle;
 								hitPos = ToNiPoint3(result.hitPos);
+								hitNormal = ToNiPoint3(result.rayNormal);
 								return RE::BSVisit::BSVisitControl::kStop;
 							}
 
@@ -5644,6 +5647,7 @@ namespace ALYSLC
 					hit = result.hit;
 					hitRefrHandle = result.hitRefrHandle;
 					hitPos = ToNiPoint3(result.hitPos);
+					hitNormal = ToNiPoint3(result.rayNormal);
 				}
 
 				auto hitRefrPtr = 
@@ -5801,15 +5805,15 @@ namespace ALYSLC
 					(
 						releasedActor && 
 						releasedActor != hitRefrPtr.get() &&
-						!hasAlreadyHitRefr &&
-						releasedRefrInfo->SetupPeriodElapsed()
+						!hasAlreadyHitRefr
 					);
 					if (canSplat)
 					{
 						HandleSplat
 						(
 							releasedActor->GetHandle(), 
-							max(1, releasedRefrInfo->recordedHitsCount),
+							hitNormal,
+							max(1, releasedRefrInfo->totalHitsCount),
 							releasedRefrInfo->fallHeight,
 							releasedRefrInfo->isThrown
 						);
@@ -5909,6 +5913,7 @@ namespace ALYSLC
 	void TargetingManager::HandleSplat
 	(
 		RE::ActorHandle a_releasedActorHandle, 
+		const RE::NiPoint3& a_hitNormal,
 		const uint32_t& a_hitCount,
 		const double& a_fallHeight,
 		bool a_wasThrown
@@ -5926,6 +5931,8 @@ namespace ALYSLC
 		auto releasedRefrRigidBodyPtr = Util::GethkpRigidBody(releasedActorPtr.get()); 
 		float havokImpactSpeed = 0.0f;
 		float damage = 0.0f;
+		// More damage when the hit surface is oriented perpendicular to the actor's motion.
+		float normOpposingVelocityFactor = 1.0f;
 		// Not a ghost or invulnerable.
 		bool damageable = 
 		(
@@ -5938,6 +5945,8 @@ namespace ALYSLC
 		{
 			if (releasedRefrRigidBodyPtr) 
 			{
+				auto velDir = ToNiPoint3(releasedRefrRigidBodyPtr->motion.linearVelocity, true);
+				normOpposingVelocityFactor = 0.5f * (1.0f - velDir.Dot(a_hitNormal));
 				havokImpactSpeed = releasedRefrRigidBodyPtr->motion.linearVelocity.Length3();
 				// Get refr linear speed if rigidbody speed is 0.
 				if (havokImpactSpeed == 0.0f)
@@ -6008,6 +6017,7 @@ namespace ALYSLC
 				(
 					(flopSelfDamageMult) * 
 					(
+						normOpposingVelocityFactor * 
 						gravDamageMult * 
 						havokImpactSpeed * 
 						levelDamageFactor * 
@@ -6025,6 +6035,7 @@ namespace ALYSLC
 					"armor rating and factor: {}, {}, inventory weight factor: {}, "
 					"level damage factor: {}, flop self-damage mult: {}, "
 					"fall height: {}, current: {}, diff: {}, grav damage mult: {}, "
+					"normal opposing velocity factor: {}, knock state: {}. "
 					"FINAL base damage: {}. Hit #{}",
 					coopActor->GetName(),
 					releasedActorPtr->GetName(),
@@ -6040,6 +6051,8 @@ namespace ALYSLC
 					releasedActorPtr->data.location.z,
 					fallHeightDiff,
 					gravDamageMult,
+					normOpposingVelocityFactor,
+					releasedActorPtr->GetKnockState(),
 					damage, 
 					a_hitCount
 				);
@@ -7553,34 +7566,75 @@ namespace ALYSLC
 					 crosshairRefrPtr)
 			{
 				// Notify the player that they should sneak to activate.
-				bool shouldSneakToActivate = 
-				(
-					crosshairRefrPtr->IsCrimeToActivate() && !coopActor->IsSneaking()
-				);
+				bool isOffLimits = crosshairRefrPtr->IsCrimeToActivate();
+				bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
 				// Get activation text for the crosshair refr.
 				bool hasActivationText = false;
 				auto baseObj = crosshairRefrPtr->GetObjectReference();
 				text = Util::GetActivationText
 				(
+					coopActor.get(),
 					baseObj, 
 					crosshairRefrPtr.get(),
 					hasActivationText
 				);
-				if (hasActivationText)
+				if (hasActivationText && baseObj)
 				{
+					bool isBook = baseObj->IsBook();
+					bool isNote = baseObj->IsNote();
+					bool wouldPickupBookNote = 
+					(
+						(isBook || isNote) &&
+						(
+							!GlobalCoopData::CanControlMenus(controllerID)
+						)
+					);
 					if (shouldSneakToActivate)
 					{
-						text = fmt::format
-						(
-							"P{}: Sneak to {}", p->playerID + 1, text
-						);
+						if (wouldPickupBookNote)
+						{
+							text = fmt::format
+							(
+								"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
+								playerID + 1, crosshairRefrPtr->GetName()
+							);
+						}
+						else
+						{
+							text = fmt::format
+							(
+								"P{}: Sneak to {}", p->playerID + 1, text
+							);
+						}
 					}
 					else
 					{
-						text = fmt::format
-						(
-							"P{}: {}", p->playerID + 1, text
-						);
+						if (wouldPickupBookNote)
+						{
+							if (isOffLimits)
+							{
+								text = fmt::format
+								(
+									"P{}: <font color=\"#FF0000\">Steal</font> {}", 
+									playerID + 1,
+									crosshairRefrPtr->GetName()
+								);
+							}
+							else
+							{
+								text = fmt::format
+								(
+									"P{}: Take {}", playerID + 1, crosshairRefrPtr->GetName()
+								);
+							}
+						}
+						else
+						{
+							text = fmt::format
+							(
+								"P{}: {}", p->playerID + 1, text
+							);
+						}
 					}
 				}
 				else
@@ -7596,10 +7650,21 @@ namespace ALYSLC
 					}
 					else
 					{
-						text = fmt::format
-						(
-							"P{}: Interact with {}", p->playerID + 1, text
-						);
+						if (isOffLimits)
+						{
+							text = fmt::format
+							(
+								"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
+								p->playerID + 1, text
+							);
+						}
+						else
+						{
+							text = fmt::format
+							(
+								"P{}: Interact with {}", p->playerID + 1, text
+							);
+						}
 					}
 				}
 
@@ -8321,7 +8386,7 @@ namespace ALYSLC
 				(
 					hitActor ? 
 					Util::GetTorsoPosition(hitActor) : 
-					Util::Get3DCenterPos(crosshairRefrPtr.get())
+					Util::GetRefrPosition(crosshairRefrPtr.get())
 				);
 				// Get updated world position by adding the stored initial movement hit pos offset 
 				// to the refr's reported base position.
@@ -8443,7 +8508,7 @@ namespace ALYSLC
 						(
 							hitActor ? 
 							Util::GetTorsoPosition(hitActor) : 
-							Util::Get3DCenterPos(crosshairRefrPtr.get())
+							Util::GetRefrPosition(crosshairRefrPtr.get())
 						);
 						// The local position offset to apply is the same as 
 						// the movement offset when the crosshair is moved.
@@ -8498,7 +8563,7 @@ namespace ALYSLC
 				(
 					hitActor ? 
 					Util::GetTorsoPosition(hitActor) : 
-					Util::Get3DCenterPos(crosshairRefrPtr.get())
+					Util::GetRefrPosition(crosshairRefrPtr.get())
 				);
 
 				// Update local positional offset so that the crosshair stays attached
@@ -10382,7 +10447,7 @@ namespace ALYSLC
 			}
 			else if (targetRefrPtr)
 			{
-				aimTargetPos = Util::Get3DCenterPos(targetRefrPtr.get()) + targetLocalPosOffset;
+				aimTargetPos = Util::GetRefrPosition(targetRefrPtr.get()) + targetLocalPosOffset;
 			}
 		}
 		else
@@ -10447,7 +10512,6 @@ namespace ALYSLC
 		// but keep the fixed trajectory pitch until the refr starts homing in.
 		// Also check if the released refr should start homing in.
 		// Save previous homing state.
-		bool wasHoming = isHoming;
 		if (!startedHomingIn || !shouldUseHomingTrajectory)
 		{
 			// Maintain launch yaw and current pitch along the fixed trajectory portion
@@ -10513,39 +10577,68 @@ namespace ALYSLC
 				return velToSet;
 			}
 		}
-
-		bool justStartedHomingIn = !wasHoming && isHoming;
-		// Direction from the current position to the target.
-		auto dirToTarget = aimTargetPos - objectPos;
-		dirToTarget.Unitize();
-		// Last frame's velocity direction.
-		auto velDirLastFrame = lastSetVelocity;
-		velDirLastFrame.Unitize();
-		// Angle between last frame's velocity and the target.
-		float angBetweenVelAndToTarget = acosf
-		(
-			std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
-		);
-		// Went past the target if velocity direction and direction to target 
-		// diverge by >= 90 degrees and the distance to the target 
-		// is less than the max distance travelable per frame (will pass the target next frame).
-		bool passingTarget = 
-		(
-			angBetweenVelAndToTarget >= PI / 2.0f && 
-			objectPos.GetDistance(aimTargetPos) <= 
-			currentVelocity.Length() * *g_deltaTimeRealTime
-		);
-		isHoming = 
-		(
-			(justStartedHomingIn) || 
+		
+		// Only check if the projectile should stop homing once it starts.
+		if (isHoming)
+		{
+			// Home in until past the target, or the target is hit, 
+			// or if there is no target, until a hit is recorded.
+			// Direction from the current position to the target.
+			auto dirToTarget = aimTargetPos - objectPos;
+			dirToTarget.Unitize();
+			// Last frame's velocity direction.
+			auto velDirLastFrame = currentVelocity;
+			velDirLastFrame.Unitize();
+			// Angle between last frame's velocity and the target.
+			float angBetweenVelAndToTarget = acosf
+			(
+				std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
+			);
+			// Went past the target if velocity direction and direction to target 
+			// diverge by >= 90 degrees and the distance to the target 
+			// is less than the max distance travelable per frame (will pass the target next frame).
+			bool passingTarget = 
+			(
+				angBetweenVelAndToTarget >= PI / 2.0f &&
+				objectPos.GetDistance(aimTargetPos) <= 
+				currentVelocity.Length() * *g_deltaTimeRealTime
+			);
+			isHoming = 
 			(
 				(!passingTarget) && 
 				(
-					(hitRefrFIDs.empty()) ||
-					(targetRefrPtr && !hitRefrFIDs.contains(targetRefrPtr->formID))
+					(
+						targetRefrPtr && !hitRefrFIDs.contains(targetRefrPtr->formID)
+					) ||
+					(
+						!targetRefrPtr && !firstHitTP.has_value()
+					)
 				)
-			)
-		);
+			);
+
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG
+			(
+				"[TM] GuideRefrAlongTrajectory: {}: "
+				"{} is homing: {}, passing target: {}, ang between vel and target: {}, "
+				"dist to target: {}, hit target: {}, ttt: {}, t: {}. Hit refrs count: {}. "
+				"Dist from release pos: {}, z offset: {}.",
+				a_p->coopActor->GetName(),
+				objectPtr->GetName(),
+				isHoming,
+				passingTarget,
+				angBetweenVelAndToTarget * TO_DEGREES,
+				objectPos.GetDistance(aimTargetPos),
+				(targetRefrPtr && hitRefrFIDs.contains(targetRefrPtr->formID)),
+				initialTimeToTarget,
+				t,
+				hitRefrFIDs.size(),
+				objectPos.GetDistance(releasePos),
+				fabsf(objectPos.z - releasePos.z)
+			);*/
+		}
+
+		// If still homing in after updating the flag, set the new homing velocity.
 		if (isHoming)
 		{
 			//=================================
@@ -10693,7 +10786,7 @@ namespace ALYSLC
 		}
 		else if (targetRefrPtrValidity)
 		{
-			trajectoryEndPos = Util::Get3DCenterPos(targetRefrPtr.get()) + targetLocalPosOffset;
+			trajectoryEndPos = Util::GetRefrPosition(targetRefrPtr.get()) + targetLocalPosOffset;
 		}
 		
 		// Released from suspended position.
@@ -10929,7 +11022,7 @@ namespace ALYSLC
 		}
 		else if (targetRefrPtrValidity)
 		{
-			trajectoryEndPos = Util::Get3DCenterPos(targetRefrPtr.get()) + targetLocalPosOffset;
+			trajectoryEndPos = Util::GetRefrPosition(targetRefrPtr.get()) + targetLocalPosOffset;
 		}
 
 		// Released from suspended position.
@@ -12051,7 +12144,24 @@ namespace ALYSLC
 					// such as fish, rabbits, crabs, and dragons.
 					// Can't set through the AddHitRefr() func,
 					// since terrain does not have an FID to store.
-					if (!releasedRefrInfo->SetupPeriodElapsed())
+					if (releasedRefrInfo->SetupPeriodElapsed())
+					{
+						// Set first hit TP if not set already.
+						if (!releasedRefrInfo->firstHitTP.has_value())
+						{
+							releasedRefrInfo->firstHitTP = SteadyClock::now();
+						}
+
+						// Increment the collision count, since we're past the setup period.
+						releasedRefrInfo->postSetupHitsCount++;
+					}
+					
+					// Increment total hits count.
+					releasedRefrInfo->totalHitsCount++;
+					// Do not apply splat damage if this refr is not an actor 
+					// or is a not flopping player and is not a thrown.
+					auto releasedActor = releasedRefrPtr->As<RE::Actor>();
+					if (!releasedActor)
 					{
 						// Update fall height to the actor's position
 						// even when skipping the collision.
@@ -12061,35 +12171,24 @@ namespace ALYSLC
 						);
 						continue;
 					}
-					
-					// Set first hit TP if not set already.
-					if (!releasedRefrInfo->firstHitTP.has_value())
-					{
-						releasedRefrInfo->firstHitTP = SteadyClock::now();
-					}
-
-					// Increment the collision count, since we're past the setup period.
-					releasedRefrInfo->recordedHitsCount++;
-					// Do not apply splat damage if this refr is not an actor 
-					// or is a not flopping player and is not a thrown.
-					auto releasedActor = releasedRefrPtr->As<RE::Actor>();
-					if (!releasedActor)
-					{
-						continue;
-					}
-
+						
 					auto releasedActorHandle = releasedActor->GetHandle();
 					// Hit 3D object without an associated refr.
 					// eg. Navmesh or terrain block.
 					a_p->tm->HandleSplat
 					(
 						releasedActorHandle, 
-						max(1, releasedRefrInfo->recordedHitsCount),
+						ToNiPoint3(contactEvent->contactNormal),
+						max(1, releasedRefrInfo->totalHitsCount),
 						releasedRefrInfo->fallHeight,
 						releasedRefrInfo->isThrown
 					);
 					// Update fall height to the actor's position after handling the collision.
-					releasedRefrInfo->fallHeight = Util::Get3DCenterPos(releasedRefrPtr.get()).z;
+					releasedRefrInfo->fallHeight = Util::Get3DCenterPos
+					(
+						releasedRefrPtr.get()
+					).z;
+
 					// We're done here.
 					continue;
 				}
@@ -12288,15 +12387,15 @@ namespace ALYSLC
 				bool canSplat = 
 				(
 					thrownActor && 
-					thrownActor != collidedWithRefrPtr.get() &&
-					releasedRefrInfo->SetupPeriodElapsed()
+					thrownActor != collidedWithRefrPtr.get()
 				);
 				if (canSplat)
 				{
 					a_p->tm->HandleSplat
 					(
 						thrownActor->GetHandle(), 
-						max(1, releasedRefrInfo->recordedHitsCount),
+						ToNiPoint3(contactEvent->contactNormal),
+						max(1, releasedRefrInfo->totalHitsCount),
 						releasedRefrInfo->fallHeight,
 						releasedRefrInfo->isThrown
 					);
@@ -13521,7 +13620,7 @@ namespace ALYSLC
 			(
 				targetActorPtr ? 
 				Util::GetTorsoPosition(targetActorPtr.get()) :
-				Util::Get3DCenterPos(targetRefrPtr.get())
+				Util::GetRefrPosition(targetRefrPtr.get())
 			);
 			// Refr is selected by the crosshair and the player is facing it.
 			if (a_p->mm->reqFaceTarget && targetRefrHandle == a_p->tm->crosshairRefrHandle) 

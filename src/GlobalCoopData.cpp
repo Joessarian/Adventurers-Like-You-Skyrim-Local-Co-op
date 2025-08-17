@@ -4678,11 +4678,7 @@ namespace ALYSLC
 		RE::BSFixedString crosshairTextToSet = "";
 		auto& glob = GetSingleton(); 
 		// Do not set when the co-op camera is inactive.
-		if (!glob.cam->IsRunning())
-		{
-			return;
-		}
-
+		bool camActive = glob.cam->IsRunning();
 		// Get crosshair text to set.
 		float alpha = 100.0f;
 		if (!a_shouldReset)
@@ -4695,155 +4691,163 @@ namespace ALYSLC
 				return;
 			}
 
-			// Can't concatenate to fixed string, so use a temp string. P1 is always first.
-			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
-			std::string playerText = std::string
-			(
-				coopP1->tm->crosshairMessage->text
-			);
-			// Strip newline characters, if any.
-			std::replace(playerText.begin(), playerText.end(), '\n', ' ');
-			// Add on HMS stat info afterward.
-			if (Settings::bShowHMSStats)
+			// Replace the current crosshair text entirely 
+			// with a concatenation of each player's individual messages.
+			if (camActive)
 			{
-				std::string hmsText = coopP1->GetHMSStatNotificationText();
-				if (!hmsText.empty())
+				// Can't concatenate to fixed string, so use a temp string. P1 is always first.
+				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				std::string playerText = std::string
+				(
+					coopP1->tm->crosshairMessage->text
+				);
+				// Strip newline characters, if any.
+				std::replace(playerText.begin(), playerText.end(), '\n', ' ');
+				// Add on HMS stat info afterward.
+				if (Settings::bShowHMSStats)
 				{
-					// Keep current message from fading out while all HMS values are not full.
-					coopP1->tm->crosshairMessage->setTP = SteadyClock::now();
-				}
-
-				playerText += hmsText;
-			}
-
-			bool isEmpty = playerText.empty();
-			std::string tempCrosshairText = playerText + "\n";
-			// Concatenate the other active players' messages to P1's.
-			float longestLifetimeRemaining = -1.0f;
-			for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
-			{
-				const auto& p = glob.coopPlayers[i]; 
-				if (!p || !p->isActive) 
-				{
-					continue;
-				}
-				
-				// Already set P1's portion of the crosshair text message.
-				if (!p->isPlayer1)
-				{
-					playerText = std::string(p->tm->crosshairMessage->text);
-					// Strip newline characters, if any.
-					std::replace(playerText.begin(), playerText.end(), '\n', ' ');
-					// Add on HMS stat info afterward.
-					if (Settings::bShowHMSStats)
+					std::string hmsText = coopP1->GetHMSStatNotificationText();
+					if (!hmsText.empty())
 					{
-						std::string hmsText = p->GetHMSStatNotificationText();
-						if (!hmsText.empty())
+						// Keep current message from fading out while all HMS values are not full.
+						coopP1->tm->crosshairMessage->setTP = SteadyClock::now();
+					}
+
+					playerText += hmsText;
+				}
+
+				bool isEmpty = playerText.empty();
+				std::string tempCrosshairText = playerText + "\n";
+				// Concatenate the other active players' messages to P1's.
+				float longestLifetimeRemaining = -1.0f;
+				for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
+				{
+					const auto& p = glob.coopPlayers[i]; 
+					if (!p || !p->isActive) 
+					{
+						continue;
+					}
+				
+					// Already set P1's portion of the crosshair text message.
+					if (!p->isPlayer1)
+					{
+						playerText = std::string(p->tm->crosshairMessage->text);
+						// Strip newline characters, if any.
+						std::replace(playerText.begin(), playerText.end(), '\n', ' ');
+						// Add on HMS stat info afterward.
+						if (Settings::bShowHMSStats)
 						{
-							// Keep current message from fading out while all HMS values
-							// are not full.
-							p->tm->crosshairMessage->setTP = SteadyClock::now();
+							std::string hmsText = p->GetHMSStatNotificationText();
+							if (!hmsText.empty())
+							{
+								// Keep current message from fading out while all HMS values
+								// are not full.
+								p->tm->crosshairMessage->setTP = SteadyClock::now();
+							}
+
+							playerText += hmsText;
 						}
 
-						playerText += hmsText;
-					}
-
-					if (isEmpty && !playerText.empty())
-					{
-						isEmpty = false;
-					}
-
-					if (!isEmpty)
-					{
-						tempCrosshairText += playerText + "\n";
-					}
-				}
-
-				if (Settings::bCrosshairTextFade)
-				{
-					auto timeSinceSet = Util::GetElapsedSeconds(p->tm->crosshairMessage->setTP);
-					if (timeSinceSet == 0.0f || timeSinceSet > longestLifetimeRemaining)
-					{
-						float maxDisplayTime = 
-						(
-							p->tm->crosshairMessage->secsMaxDisplayTime == 0.0f ? 
-							Settings::fSecsBetweenDiffCrosshairMsgs : 
-							p->tm->crosshairMessage->secsMaxDisplayTime
-						);
-						if (timeSinceSet <= maxDisplayTime)
+						if (isEmpty && !playerText.empty())
 						{
-							longestLifetimeRemaining = 
+							isEmpty = false;
+						}
+
+						if (!isEmpty)
+						{
+							tempCrosshairText += playerText + "\n";
+						}
+					}
+
+					if (Settings::bCrosshairTextFade)
+					{
+						auto timeSinceSet = Util::GetElapsedSeconds
+						(
+							p->tm->crosshairMessage->setTP
+						);
+						if (timeSinceSet == 0.0f || timeSinceSet > longestLifetimeRemaining)
+						{
+							float maxDisplayTime = 
 							(
-								maxDisplayTime - timeSinceSet
+								p->tm->crosshairMessage->secsMaxDisplayTime == 0.0f ? 
+								Settings::fSecsBetweenDiffCrosshairMsgs : 
+								p->tm->crosshairMessage->secsMaxDisplayTime
 							);
-							if (timeSinceSet == 0.0f)
+							if (timeSinceSet <= maxDisplayTime)
 							{
-								float interpInterval = longestLifetimeRemaining / 3.0f;
-								// Ensure that the activation message is fully faded in
-								// and allows the player enough time to react to 
-								// what is being targeted for activation.
-								if (p->tm->crosshairMessage->type ==
-									CrosshairMessageType::kActivationInfo)
+								longestLifetimeRemaining = 
+								(
+									maxDisplayTime - timeSinceSet
+								);
+								if (timeSinceSet == 0.0f)
 								{
-									interpInterval = min
-									(
-										interpInterval,
-										min
+									float interpInterval = longestLifetimeRemaining / 3.0f;
+									// Ensure that the activation message is fully faded in
+									// and allows the player enough time to react to 
+									// what is being targeted for activation.
+									if (p->tm->crosshairMessage->type ==
+										CrosshairMessageType::kActivationInfo)
+									{
+										interpInterval = min
 										(
-											Settings::fSecsBetweenActivationChecks,
-											Settings::fSecsBeforeActivationCycling
-										) / 3.0f
+											interpInterval,
+											min
+											(
+												Settings::fSecsBetweenActivationChecks,
+												Settings::fSecsBeforeActivationCycling
+											) / 3.0f
+										);
+									}
+
+									glob.crosshairTextFadeInterpData->SetInterpInterval
+									(
+										interpInterval, false
+									);
+									glob.crosshairTextFadeInterpData->SetInterpInterval
+									(
+										interpInterval, true
 									);
 								}
-
-								glob.crosshairTextFadeInterpData->SetInterpInterval
-								(
-									interpInterval, false
-								);
-								glob.crosshairTextFadeInterpData->SetInterpInterval
-								(
-									interpInterval, true
-								);
 							}
 						}
 					}
 				}
-			}
 
-			// Copy over to fixed string and send a copy to the task.
-			crosshairTextToSet = fmt::format
-			(
-				"<font size=\"{}\">{}</font>",
-				Settings::uCrosshairTextFontSize,
-				tempCrosshairText
-			);
-			if (Settings::bCrosshairTextFade)
-			{
-				if (isEmpty)
+				// Copy over to fixed string and send a copy to the task.
+				crosshairTextToSet = fmt::format
+				(
+					"<font size=\"{}\">{}</font>",
+					Settings::uCrosshairTextFontSize,
+					tempCrosshairText
+				);
+				if (Settings::bCrosshairTextFade)
 				{
-					alpha = 0.0f;
-					glob.crosshairTextFadeInterpData->Reset(true, true);
-				}
-				else
-				{
-					bool fadeOut = 
-					(
-						longestLifetimeRemaining == -1.0f || 
-						longestLifetimeRemaining <= 
-						glob.crosshairTextFadeInterpData->secsInterpToMinInterval
-					);
-					alpha =
-					(
-						Settings::fCrosshairTextMaxAlpha *
-						glob.crosshairTextFadeInterpData->UpdateInterpolatedValue(!fadeOut)
-					);
+					if (isEmpty)
+					{
+						alpha = 0.0f;
+						glob.crosshairTextFadeInterpData->Reset(true, true);
+					}
+					else
+					{
+						bool fadeOut = 
+						(
+							longestLifetimeRemaining == -1.0f || 
+							longestLifetimeRemaining <= 
+							glob.crosshairTextFadeInterpData->secsInterpToMinInterval
+						);
+						alpha =
+						(
+							Settings::fCrosshairTextMaxAlpha *
+							glob.crosshairTextFadeInterpData->UpdateInterpolatedValue(!fadeOut)
+						);
+					}
 				}
 			}
 		}
 
 		SKSE::GetTaskInterface()->AddUITask
 		(
-			[&glob, crosshairTextToSet, alpha, a_shouldReset]() 
+			[&glob, crosshairTextToSet, alpha, camActive, a_shouldReset]() 
 			{
 				auto ui = RE::UI::GetSingleton(); 
 				if (!ui)
@@ -4869,13 +4873,12 @@ namespace ALYSLC
 				{
 					return;
 				}
-
+				
 				std::array<RE::GFxValue, HUDBaseArgs::kTotal> crosshairTextArgs;
 				crosshairTextArgs.fill(RE::GFxValue());
 				crosshairTextArgs[HUDBaseArgs::kActivate] = RE::GFxValue(false);
 				crosshairTextArgs[HUDBaseArgs::kShowButton] = RE::GFxValue(false);
 				crosshairTextArgs[HUDBaseArgs::kFavorMode] = RE::GFxValue(false);
-				crosshairTextArgs[HUDBaseArgs::kName] = RE::GFxValue(crosshairTextToSet);
 				if (a_shouldReset)
 				{
 					// Show more than just text and the crosshair itself if resetting.
@@ -4886,13 +4889,8 @@ namespace ALYSLC
 				{
 					// Only text and no crosshair if the co-op camera is active during co-op.
 					crosshairTextArgs[HUDBaseArgs::kTextOnly] = RE::GFxValue(true);
-					crosshairTextArgs[HUDBaseArgs::kShowCrosshair] = RE::GFxValue
-					(
-						!glob.cam->IsRunning()
-					);
+					crosshairTextArgs[HUDBaseArgs::kShowCrosshair] = RE::GFxValue(!camActive);
 				}
-					
-				hudBase.Invoke("SetCrosshairTarget", crosshairTextArgs);
 
 				RE::GFxValue rolloverText{ };
 				view->GetVariable(&rolloverText, "HUDMovieBaseInstance.RolloverText");
@@ -4902,6 +4900,114 @@ namespace ALYSLC
 				{
 					return;
 				}
+	
+				// Set the text for the message to display.
+				if (camActive)
+				{
+					crosshairTextArgs[HUDBaseArgs::kName] = RE::GFxValue(crosshairTextToSet);
+				}
+				else if (!a_shouldReset)
+				{
+					// Have to obtain the original crosshair text, add a separator,
+					// and then concatenate all the companion players' crosshair messages.
+					std::string tempCrosshairText{ "" };
+					const auto coopP1 = glob.coopPlayers[glob.player1CID];
+					// Show revive crosshair text message for P1 
+					// if they are downed, if they are reviving another player,
+					// or if a previously set crosshair message has not expired yet.
+					bool displayCoopCrosshairMessage =
+					(
+						(coopP1->isDowned || coopP1->pam->downedPlayerTarget) ||
+						(
+							coopP1->tm->crosshairMessage->type != CrosshairMessageType::kNone &&
+							Util::GetElapsedSeconds(coopP1->tm->crosshairMessage->setTP) <
+							coopP1->tm->crosshairMessage->secsMaxDisplayTime
+						)
+					);
+					if (displayCoopCrosshairMessage)
+					{
+						tempCrosshairText = std::string(coopP1->tm->crosshairMessage->text);
+					}
+					else
+					{
+						RE::GFxValue text{ };
+						bool succ = rolloverText.GetMember("text", std::addressof(text));
+						if (!succ)
+						{
+							return;
+						}
+
+						// Remove the separator and everything after it 
+						// before adding in the companion players' crosshair messages.
+						tempCrosshairText = text.GetString();
+						if (tempCrosshairText.size() > 1)
+						{
+							auto sepPos = tempCrosshairText.find_first_of
+							(
+								CROSSHAIR_TEXT_SEPARATOR, 0
+							); 
+							if (sepPos != std::string::npos)
+							{
+								tempCrosshairText = tempCrosshairText.substr(0, sepPos);
+							}
+						}
+					}
+
+					std::string companionPlayerText{ };
+					std::string playerText{ };
+					bool isEmpty = true;
+					for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i) 
+					{
+						const auto& p = glob.coopPlayers[i]; 
+						if (!p || !p->isActive || p->isPlayer1) 
+						{
+							continue;
+						}
+				
+						playerText = std::string(p->tm->crosshairMessage->text);
+						// Strip newline characters, if any.
+						std::replace(playerText.begin(), playerText.end(), '\n', ' ');
+						// Add on HMS stat info afterward.
+						if (Settings::bShowHMSStats)
+						{
+							std::string hmsText = p->GetHMSStatNotificationText();
+							if (!hmsText.empty())
+							{
+								// Keep current message from fading out while all HMS values
+								// are not full.
+								p->tm->crosshairMessage->setTP = SteadyClock::now();
+							}
+
+							playerText += hmsText;
+						}
+
+						if (isEmpty && !playerText.empty())
+						{
+							isEmpty = false;
+						}
+
+						if (!isEmpty)
+						{
+							companionPlayerText += playerText + "\n";
+						}
+					}
+
+					if (!isEmpty)
+					{
+						tempCrosshairText += CROSSHAIR_TEXT_SEPARATOR + companionPlayerText;
+					}
+
+					// Update size and then set as crosshair text.
+					RE::BSFixedString crosshairText = fmt::format
+					(
+						"<font size=\"{}\">{}</font>",
+						Settings::uCrosshairTextFontSize,
+						tempCrosshairText
+					);
+					crosshairTextArgs[HUDBaseArgs::kName] = RE::GFxValue(crosshairText);
+				}
+
+				hudBase.Invoke("SetCrosshairTarget", crosshairTextArgs);
 
 				// Save the original X, Y offsets the first time this function is called.
 				if (!glob.originalCrosshairTextOffsets.has_value())
@@ -10532,6 +10638,7 @@ namespace ALYSLC
 							handleB,
 							RE::hkRefPtr<RE::hkpRigidBody>(a_event.bodies[0]),
 							RE::hkRefPtr<RE::hkpRigidBody>(a_event.bodies[1]),
+							a_event.contactPoint->separatingNormal,
 							a_event.contactPoint->position,
 							a_event.separatingVelocity ? *a_event.separatingVelocity : 0.0f
 						)
@@ -10588,6 +10695,7 @@ namespace ALYSLC
 							handleB,
 							RE::hkRefPtr<RE::hkpRigidBody>(a_event.bodies[0]),
 							RE::hkRefPtr<RE::hkpRigidBody>(a_event.bodies[1]),
+							a_event.contactPoint->separatingNormal,
 							a_event.contactPoint->position,
 							a_event.separatingVelocity ? *a_event.separatingVelocity : 0.0f
 						)

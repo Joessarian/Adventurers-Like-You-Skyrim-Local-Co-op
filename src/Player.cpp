@@ -1535,9 +1535,11 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"[P] SetAsDowned: {}. "
-			"Is ragdolled: {}, is in killmove: {}, is dead: {}, is essential: {}, health: {}.",
+			"Is ragdolled: {} (knock state {}), "
+			"is in killmove: {}, is dead: {}, is essential: {}, health: {}.",
 			coopActor->GetName(),
 			coopActor->IsInRagdollState(),
+			coopActor->GetKnockState(),
 			coopActor->IsInKillMove(),
 			coopActor->IsDead(),
 			coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential),
@@ -2024,7 +2026,7 @@ namespace ALYSLC
 						"<font color=\"#00FF00\">[Revive]: {:.1f}%</font>",
 						playerID + 1,
 						100.0f * min(1.0f, revivedHealth / fullReviveHealth)
-					);;
+					);
 					tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kReviveAlert, 

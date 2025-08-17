@@ -5,6 +5,7 @@ namespace ALYSLC
 {
 	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4{ nullptr };
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3{ nullptr };
+	bool EldenSprintCompat::g_eldenSprintInstalled{ false };
 	bool EnderalCompat::g_enderalSSEInstalled{ false };
 	bool MCOCompat::g_mcoInstalled{ false };
 	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled{ false };
@@ -17,6 +18,24 @@ namespace ALYSLC
 	bool TKDodgeCompat::g_tkDodgeInstalled{ false };
 	bool TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled{ false };
 	bool TrueHUDCompat::g_trueHUDInstalled{ false };
+
+	void EldenSprintCompat::CheckForEldenSprint(const SKSE::LoadInterface* a_loadInterface)
+	{
+		g_eldenSprintInstalled = a_loadInterface->GetPluginInfo("EldenSprint");
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_eldenSprintInstalled && dataHandler) 
+		{
+			g_eldenSprintInstalled = static_cast<bool>
+			(
+				dataHandler->LookupModByName("EldenSprint.esl")
+			);
+		}
+
+		if (g_eldenSprintInstalled)
+		{
+			SPDLOG_INFO("[Compatibility] Elden Sprint installed!");
+		}
+	}
 
 	void EnderalCompat::CheckForEnderalSSE()
 	{

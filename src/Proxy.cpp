@@ -65,6 +65,8 @@ namespace ALYSLC
 		// Re-register for script events.
 		GlobalCoopData::UnregisterEvents();
 		GlobalCoopData::RegisterEvents();
+		// Reset crosshair text and position.
+		GlobalCoopData::SetCrosshairText(true);
 		// Reset supported menu open state because it won't reset
 		// properly if the previous co-op session ended while a supported menu was open.
 		Events::ResetMenuState();

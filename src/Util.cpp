@@ -1430,7 +1430,10 @@ namespace ALYSLC
 
 		RE::BSFixedString GetActivationText
 		(
-			RE::TESBoundObject* a_baseObj, RE::TESObjectREFR* a_refr, bool& a_hasActivationText
+			RE::Actor* a_playerActor,
+			RE::TESBoundObject* a_baseObj, 
+			RE::TESObjectREFR* a_refr, 
+			bool& a_hasActivationText
 		)
 		{
 			// Get modified activation text for the given refr.
@@ -1438,7 +1441,8 @@ namespace ALYSLC
 			// through the outparam.
 			
 			a_hasActivationText = false;
-			if (!a_baseObj || !a_refr)
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1 || !a_playerActor || !a_baseObj || !a_refr)
 			{
 				return ""sv;
 			}
@@ -1465,6 +1469,18 @@ namespace ALYSLC
 			//	a_hasActivationText = true;
 			//}
 
+			// Ensure P1's sneak state matches the player actor's
+			// before querying the activation text, which can depend on sneak state.
+			const auto cachedP1SneakState = p1->actorState1.sneaking;
+			bool modifyP1SneakState = 
+			(
+				a_playerActor != p1 && a_playerActor->actorState1.sneaking != cachedP1SneakState
+			);
+			if (modifyP1SneakState)
+			{
+				p1->actorState1.sneaking = a_playerActor->actorState1.sneaking;
+			}
+
 			RE::BSFixedString activationText = a_refr->GetName();
 			RE::BSString baseActivationText{ "" };
 			a_baseObj->GetActivateText(a_refr, baseActivationText);
@@ -1475,6 +1491,11 @@ namespace ALYSLC
 			{
 				activationText = activateStr;
 				a_hasActivationText = true;
+			}
+
+			if (modifyP1SneakState)
+			{
+				p1->actorState1.sneaking = cachedP1SneakState;
 			}
 
 			return activationText;

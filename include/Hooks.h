@@ -362,6 +362,11 @@ namespace ALYSLC
 			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
 			// Return true if the input was handled and should be invalidated.
 			static bool CheckForP1QSEquipReq(RE::InputEvent* a_firstGamepadEvent);
+			// Check if P1 is trying to revive another player while the co-op camera is inactive
+			// and revive the other player if so.
+			// Can revive with the 'Activate' input event from either keyboard or controller.
+			// Return true if the event should be processed by the MenuControls hook.
+			static bool CheckForP1ReviveReq(RE::InputEvent* const* a_eventHead);
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.

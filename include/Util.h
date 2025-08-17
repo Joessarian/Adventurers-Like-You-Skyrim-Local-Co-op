@@ -3081,12 +3081,15 @@ namespace ALYSLC
 		// Get all skill levels for the given actor.
 		SkillList GetActorSkillLevels(RE::Actor* a_actor);
 
-		// Get modified activation text for the given refr.
+		// Get modified activation text for the given refr, using the given player actor.
 		// Return whether or not the refr has valid activation text (is a selectable object)
 		// through the outparam.
 		RE::BSFixedString GetActivationText
 		(
-			RE::TESBoundObject* a_baseObj, RE::TESObjectREFR* a_refr, bool& a_hasActivationText
+			RE::Actor* a_playerActor,
+			RE::TESBoundObject* a_baseObj,
+			RE::TESObjectREFR* a_refr, 
+			bool& a_hasActivationText
 		);
 
 		// Get the maximum/minimum bound edge length in pixels for the given refr.

@@ -764,6 +764,14 @@ namespace ALYSLC
 		// until the downed player is fully revived.
 		void RevivePlayer();
 
+		// Revive another player with P1 while the co-op camera is inactive.
+		void RevivePlayerP1NoCoopCam
+		(
+			const int32_t& a_playerTargetIndex, 
+			const float& a_revivePressState,
+			const float& a_reviveHeldTime
+		);
+
 		// Instantly send a P1 button event directly without queuing/chaining
 		// based on the given input action, device, and press type.
 		// Can also set the held time for the input, 

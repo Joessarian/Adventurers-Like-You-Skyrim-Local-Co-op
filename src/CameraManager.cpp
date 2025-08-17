@@ -485,25 +485,17 @@ namespace ALYSLC
 						) :
 						GAMEPAD_MASK_RIGHT_THUMB
 					);
-					// Check if the toggle bind is pressed and released by P1.
-					XINPUT_STATE tempState{ };
-					ZeroMemory(&tempState, sizeof(XINPUT_STATE));
-					if (!(XInputGetState(glob.player1CID, &tempState)) == ERROR_SUCCESS)
+					InputAction toggleAction = InputAction::kRThumb;
+					const auto iter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find(camToggleXIMask);
+					if (iter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
 					{
-						// Could not read P1's controller state, so pause.
-						return ManagerState::kPaused;
+						toggleAction = iter->second;
 					}
 
-					toggleBindPressedWhileWaiting = 
-					(
-						(toggleBindPressedWhileWaiting) || 
-						((tempState.Gamepad.wButtons & camToggleXIMask) == camToggleXIMask)
-					);
-					// Previously pressed and now released the toggle bind.
+					// Double tap to resume.
 					shouldResume = 
 					(
-						(toggleBindPressedWhileWaiting) && 
-						((tempState.Gamepad.wButtons & camToggleXIMask) == 0)
+						glob.cdh->GetInputState(glob.player1CID, toggleAction).consecPresses > 1
 					);
 				}
 

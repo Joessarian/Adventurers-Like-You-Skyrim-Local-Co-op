@@ -290,6 +290,7 @@ namespace ALYSLC
 				handleB(RE::ObjectRefHandle()),
 				rigidBodyA(nullptr),
 				rigidBodyB(nullptr),
+				contactNormal(RE::hkVector4()),
 				contactPosition(RE::hkVector4()),
 				contactSpeed(0.0f)
 			{ }
@@ -300,6 +301,7 @@ namespace ALYSLC
 				const RE::ObjectRefHandle& a_handleB, 
 				const RE::hkRefPtr<RE::hkpRigidBody>& a_rigidBodyA,
 				const RE::hkRefPtr<RE::hkpRigidBody>& a_rigidBodyB,
+				const RE::hkVector4& a_contactNormal,
 				const RE::hkVector4& a_contactPosition,
 				const float& a_contactSpeed
 			)
@@ -308,6 +310,7 @@ namespace ALYSLC
 				handleB = a_handleB;
 				rigidBodyA = a_rigidBodyA;
 				rigidBodyB = a_rigidBodyB;
+				contactNormal = a_contactNormal;
 				contactPosition = a_contactPosition;
 				contactSpeed = a_contactSpeed;
 			}
@@ -318,6 +321,7 @@ namespace ALYSLC
 				handleB = a_other.handleB;
 				rigidBodyA = a_other.rigidBodyA;
 				rigidBodyB = a_other.rigidBodyB;
+				contactNormal = a_other.contactNormal;
 				contactPosition = a_other.contactPosition;
 				contactSpeed = a_other.contactSpeed;
 			}
@@ -328,6 +332,7 @@ namespace ALYSLC
 				handleB = std::move(a_other.handleB);
 				rigidBodyA = std::move(a_other.rigidBodyA);
 				rigidBodyB = std::move(a_other.rigidBodyB);
+				contactNormal = std::move(a_other.contactNormal);
 				contactPosition = std::move(a_other.contactPosition);
 				contactSpeed = std::move(a_other.contactSpeed);
 			}
@@ -338,6 +343,7 @@ namespace ALYSLC
 				handleB = a_other.handleB;
 				rigidBodyA = a_other.rigidBodyA;
 				rigidBodyB = a_other.rigidBodyB;
+				contactNormal = a_other.contactNormal;
 				contactPosition = a_other.contactPosition;
 				contactSpeed = a_other.contactSpeed;
 
@@ -350,6 +356,7 @@ namespace ALYSLC
 				handleB = std::move(a_other.handleB);
 				rigidBodyA = std::move(a_other.rigidBodyA);
 				rigidBodyB = std::move(a_other.rigidBodyB);
+				contactNormal = std::move(a_other.contactNormal);
 				contactPosition = std::move(a_other.contactPosition);
 				contactSpeed = std::move(a_other.contactSpeed);
 
@@ -362,6 +369,8 @@ namespace ALYSLC
 			// Colliding rigid bodies.
 			RE::hkRefPtr<RE::hkpRigidBody> rigidBodyA;
 			RE::hkRefPtr<RE::hkpRigidBody> rigidBodyB;
+			// Havok normal vector of the surface collided with.
+			RE::hkVector4 contactNormal;
 			// Havok position at which the two bodies collided.
 			RE::hkVector4 contactPosition;
 			// Relative speed at which the two bodies collided.
@@ -386,7 +395,8 @@ namespace ALYSLC
 				launchYaw(0.0f),
 				magickaOverflowSlowdownFactor(1.0f),
 				releaseSpeed(0.0),
-				recordedHitsCount(0),
+				postSetupHitsCount(0),
+				totalHitsCount(0),
 				targetedActorNode(),
 				targetRefrHandle(RE::ObjectRefHandle()),
 				lastSetTargetPosition(RE::NiPoint3()),
@@ -417,7 +427,8 @@ namespace ALYSLC
 				launchYaw(0.0f),
 				magickaOverflowSlowdownFactor(0.0f),
 				releaseSpeed(0.0),
-				recordedHitsCount(0),
+				postSetupHitsCount(0),
+				totalHitsCount(0),
 				targetedActorNode(),
 				targetRefrHandle(RE::ObjectRefHandle()),
 				lastSetTargetPosition(RE::NiPoint3()),
@@ -446,7 +457,8 @@ namespace ALYSLC
 				launchYaw = a_other.launchYaw;
 				magickaOverflowSlowdownFactor = a_other.magickaOverflowSlowdownFactor;
 				releaseSpeed = a_other.releaseSpeed;
-				recordedHitsCount = a_other.recordedHitsCount;
+				postSetupHitsCount = a_other.postSetupHitsCount;
+				totalHitsCount = a_other.totalHitsCount;
 				targetedActorNode = a_other.targetedActorNode;
 				targetRefrHandle = a_other.targetRefrHandle;
 				lastSetTargetPosition = a_other.lastSetTargetPosition;
@@ -474,7 +486,8 @@ namespace ALYSLC
 				launchYaw = std::move(a_other.launchYaw);
 				magickaOverflowSlowdownFactor = std::move(a_other.magickaOverflowSlowdownFactor);
 				releaseSpeed = std::move(a_other.releaseSpeed);
-				recordedHitsCount = std::move(a_other.recordedHitsCount);
+				postSetupHitsCount = std::move(a_other.postSetupHitsCount);
+				totalHitsCount = std::move(a_other.totalHitsCount);
 				targetedActorNode = std::move(a_other.targetedActorNode);
 				targetRefrHandle = std::move(a_other.targetRefrHandle);
 				lastSetTargetPosition = std::move(a_other.lastSetTargetPosition);
@@ -502,7 +515,8 @@ namespace ALYSLC
 				launchYaw = a_other.launchYaw;
 				magickaOverflowSlowdownFactor = a_other.magickaOverflowSlowdownFactor;
 				releaseSpeed = a_other.releaseSpeed;
-				recordedHitsCount = a_other.recordedHitsCount;
+				postSetupHitsCount = a_other.postSetupHitsCount;
+				totalHitsCount = a_other.totalHitsCount;
 				targetedActorNode = a_other.targetedActorNode;
 				targetRefrHandle = a_other.targetRefrHandle;
 				lastSetTargetPosition = a_other.lastSetTargetPosition;
@@ -532,7 +546,8 @@ namespace ALYSLC
 				launchYaw = std::move(a_other.launchYaw);
 				magickaOverflowSlowdownFactor = std::move(a_other.magickaOverflowSlowdownFactor);
 				releaseSpeed = std::move(a_other.releaseSpeed);
-				recordedHitsCount = std::move(a_other.recordedHitsCount);
+				postSetupHitsCount = std::move(a_other.postSetupHitsCount);
+				totalHitsCount = std::move(a_other.totalHitsCount);
 				targetedActorNode = std::move(a_other.targetedActorNode);
 				targetRefrHandle = std::move(a_other.targetRefrHandle);
 				lastSetTargetPosition = std::move(a_other.lastSetTargetPosition);
@@ -559,9 +574,10 @@ namespace ALYSLC
 						firstHitTP = SteadyClock::now();
 					}
 
-					recordedHitsCount++;
+					postSetupHitsCount++;
 				}
 
+				totalHitsCount++;
 				hitRefrFIDs.insert(a_refr->formID);
 			}
 
@@ -576,7 +592,7 @@ namespace ALYSLC
 				startedHomingIn = false;
 				fallHeight = initialTimeToTarget = launchPitch = launchYaw = releaseSpeed = 0.0;
 				magickaOverflowSlowdownFactor = 1.0f;
-				recordedHitsCount = 0;
+				postSetupHitsCount = totalHitsCount = 0;
 				targetedActorNode.reset();
 				targetRefrHandle = RE::ObjectRefHandle();
 				lastSetTargetPosition = 
@@ -612,11 +628,11 @@ namespace ALYSLC
 			// and can deal damage on impact.
 			inline bool SetupPeriodElapsed()
 			{
-				// Ignore hits within 30 frames/0.5s of release to allow the released refrs
+				// Ignore hits within 60 frames/1.0s of release to allow the released refrs
 				// to get off the ground and start on its trajectory if it hasn't already.
 				// This applies to heavy or not very aerodynamic objects/actors,
 				// such as fish, king crabs, and dragons.
-				float setupInterval = max(*g_deltaTimeRealTime * 30.0f, 0.5f);
+				float setupInterval = max(*g_deltaTimeRealTime * 60.0f, 1.0f);
 				return 
 				(
 					releaseTP.has_value() && 
@@ -680,6 +696,8 @@ namespace ALYSLC
 			// Time point when this refr was released.
 			std::optional<SteadyClock::time_point> releaseTP;
 			// Set of FIDs for the refrs that this refr has hit since release.
+			// NOTE: 
+			// Includes refrs hit during the setup period.
 			std::set<RE::FormID> hitRefrFIDs;
 			// Can the released refr reach the target intercept position
 			// if there are no collisions along the trajectory?
@@ -708,8 +726,10 @@ namespace ALYSLC
 			double launchYaw;
 			// Refr's speed at launch.
 			double releaseSpeed;
-			// Number of recorded objects this refr has collided with (post-immunity period).
-			uint32_t recordedHitsCount;
+			// Number of recorded objects this refr has collided with (post-setup period).
+			uint32_t postSetupHitsCount;
+			// Total number of recorded objects this refr has collided with after release.
+			uint32_t totalHitsCount;
 		};
 
 		// Handles manipulation of and bookkeeping for grabbed and released refrs.
@@ -725,8 +745,9 @@ namespace ALYSLC
 				collidedRefrFIDPairs = a_other.collidedRefrFIDPairs;
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
-				isGrabbing = a_other.isGrabbing;
 				isAutoGrabbing = a_other.isAutoGrabbing;
+				isGrabbing = a_other.isGrabbing;
+				lastGrabbedAProjectile = a_other.lastGrabbedAProjectile;
 				normReleaseAngleFactor = a_other.normReleaseAngleFactor;
 				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 				totalThrownRefrMagickaCost = a_other.totalThrownRefrMagickaCost;
@@ -792,8 +813,9 @@ namespace ALYSLC
 				(
 					a_other.releasedRefrHandlesToInfoIndices
 				);
-				isGrabbing = std::move(a_other.isGrabbing);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				isGrabbing = std::move(a_other.isGrabbing);
+				lastGrabbedAProjectile = std::move(a_other.lastGrabbedAProjectile);
 				normReleaseAngleFactor = std::move(a_other.normReleaseAngleFactor);
 				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 				totalThrownRefrMagickaCost = std::move(a_other.totalThrownRefrMagickaCost);
@@ -808,7 +830,9 @@ namespace ALYSLC
 				collidedRefrFIDPairs = a_other.collidedRefrFIDPairs;
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
+				isAutoGrabbing = a_other.isAutoGrabbing;
 				isGrabbing = a_other.isGrabbing;
+				lastGrabbedAProjectile = a_other.lastGrabbedAProjectile;
 				normReleaseAngleFactor = a_other.normReleaseAngleFactor;
 				reqSpecialHitDamageAmount = a_other.reqSpecialHitDamageAmount;
 				totalThrownRefrMagickaCost = a_other.totalThrownRefrMagickaCost;
@@ -876,8 +900,9 @@ namespace ALYSLC
 				(
 					a_other.releasedRefrHandlesToInfoIndices
 				);
-				isGrabbing = std::move(a_other.isGrabbing);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
+				isGrabbing = std::move(a_other.isGrabbing);
+				lastGrabbedAProjectile = std::move(a_other.lastGrabbedAProjectile);
 				normReleaseAngleFactor = std::move(a_other.normReleaseAngleFactor);
 				reqSpecialHitDamageAmount = std::move(a_other.reqSpecialHitDamageAmount);
 				totalThrownRefrMagickaCost = std::move(a_other.totalThrownRefrMagickaCost);
@@ -1089,6 +1114,9 @@ namespace ALYSLC
 			// Should the manager handle grabbed refrs? 
 			// If false, all grabbed refrs have been released.
 			bool isGrabbing;
+
+			// Has the player grab a projectile since the grab bind was last pressed?
+			bool lastGrabbedAProjectile;
 
 			// Multiplier applied to the base release angle factor when throwing refrs. 
 			// Can set to [0, 1], or -1 to indicate the mult was auto-calculated
@@ -1834,6 +1862,7 @@ namespace ALYSLC
 		void HandleSplat
 		(
 			RE::ActorHandle a_releasedActorHandle, 
+			const RE::NiPoint3& a_hitNormal,
 			const uint32_t& a_hitCount, 
 			const double& a_fallHeight,
 			bool a_wasThrown

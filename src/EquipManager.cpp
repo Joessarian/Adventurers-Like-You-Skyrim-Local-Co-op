@@ -6524,6 +6524,45 @@ namespace ALYSLC
 		// without equip slot mismatches and other issues.
 		// Exists to deal with the game's equip system or my own code's BS.
 
+		// First, check for mismatches in the biped armor slots.
+		for (auto i = !EquipIndex::kFirstBipedSlot; i < !EquipIndex::kTotal; ++i)
+		{
+			// Shield handled as a hand form instead.
+			if (i == !EquipIndex::kShield)
+			{
+				continue;
+			}
+
+			if (equippedForms[i] != desiredEquippedForms[i])
+			{
+				if (desiredEquippedForms[i])
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {} should have {} equipped in slot {}, "
+						"but has {} equipped. Re-equipping now.",
+						coopActor->GetName(),
+						desiredEquippedForms[i]->GetName(),
+						i,
+						equippedForms[i] ? equippedForms[i]->GetName() : "NONE"
+					);
+					EquipArmor(desiredEquippedForms[i]);
+				}
+				else 
+				{
+					SPDLOG_DEBUG
+					(
+						"[EM] ValidateEquipState: {} should have nothing equipped in slot {}, "
+						"but has {} equipped. Unequipping now.",
+						coopActor->GetName(),
+						i,
+						equippedForms[i]->GetName()
+					);
+					UnequipArmor(equippedForms[i]);
+				}
+			}
+		}
+
 		auto currentLHForm = coopActor->GetEquippedObject(true);
 		auto currentRHForm = coopActor->GetEquippedObject(false);
 		bool currentLHFormIsBound = 

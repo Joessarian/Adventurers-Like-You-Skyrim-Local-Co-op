@@ -456,7 +456,7 @@ namespace ALYSLC
 		}
 		
 		// Is viewing a container and not P1's inventory.
-		RE::NiPointer<RE::TESObjectREFR> containerRefr;
+		RE::NiPointer<RE::TESObjectREFR> containerRefr{ };
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
 		auto pIndex = GlobalCoopData::GetCoopPlayerIndex(containerRefr); 
 		// The container is not a companion player's inventory.
@@ -467,6 +467,7 @@ namespace ALYSLC
 		
 		// The container is a companion player's inventory, so we should resume here
 		// after giving the player control of menus.
+		isCoopInventory = true;
 		managerMenuCID = pIndex;
 		managerMenuPlayerID = glob.coopPlayers[managerMenuCID]->playerID;
 		GlobalCoopData::SetMenuCIDs(managerMenuCID);
@@ -2821,16 +2822,35 @@ namespace ALYSLC
 					p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), 
 					[boundObj](RE::TESForm* a_form) { return a_form == boundObj; }
 				);
-				if (foundIter != p->em->desiredEquippedForms.end())
+				EquipIndex index = 
+				(
+					foundIter != p->em->desiredEquippedForms.end() ?
+					static_cast<EquipIndex>(foundIter - p->em->desiredEquippedForms.begin()) : 
+					EquipIndex::kTotal
+				);
+				if (index != EquipIndex::kTotal)
 				{
-					auto index = foundIter - p->em->desiredEquippedForms.begin();
+					// Since the transfer occurs sometime 
+					// after the emulated input event is processed,
+					// we cannot re-equip it right away here,
+					// so notify the player to unequip the item manually first.
+					if (a_xMask == XINPUT_GAMEPAD_A)
+					{
+						RE::DebugMessageBox
+						(
+							"[ALYSLC] Please unequip the item before transferring it to player 1."
+						);
+						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+						return;
+					}
+
 					p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
 				}
 				else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
 				{
 					aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
 				}
-				
+
 				// Get the current number owned before dropping/transferring.
 				int32_t currentCount = 0;
 				auto inventory = menuCoopActorPtr->GetInventory();
@@ -2878,9 +2898,50 @@ namespace ALYSLC
 					);
 				}
 
-				// Refresh the menu since an entry was changed
-				// upon dropping or transferring the item.
-				shouldRefreshMenu = true;
+				if (index != EquipIndex::kTotal)
+				{
+					// Was equipped and had at least 2 before dropping 1, so re-equip.
+					if (currentCount > 1)
+					{
+						// Setup equip request.
+						currentMenuInputEventType = MenuInputEventType::kEquipReq;
+						fromContainerHandle = 
+						(
+							isCoopInventory ? menuCoopActorHandle : menuContainerHandle
+						);
+						reqEquipIndex = index;
+						selectedForm = boundObj;
+						placeholderMagicChanged = false;
+						// If the item will be equipped/unequipped from the player's own inventory,
+						// or if the item is looted from a container and is not already equipped,
+						// we want to wait until the equip event fires
+						// before refreshing the player's equip state.
+						if (isCoopInventory)
+						{
+							// Refresh equip state later once the item is (un)equipped.
+							delayedEquipStateRefresh = true;
+							lastEquipStateRefreshReqTP = SteadyClock::now();
+						}
+						else
+						{
+							// Refresh right away after item removal otherwise.
+							shouldRefreshMenu = true;
+						}
+					}
+					else
+					{
+						// None left after dropping/transfer, 
+						// so remove from desired list.
+						p->em->desiredEquippedForms[!index] = nullptr;
+						shouldRefreshMenu = true;
+					}
+				}
+				else
+				{
+					// Refresh the menu since an entry was changed
+					// upon dropping or transferring the item.
+					shouldRefreshMenu = true;
+				}
 			}
 			else if (isPickpocketing)
 			{

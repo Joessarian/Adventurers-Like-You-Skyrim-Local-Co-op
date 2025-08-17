@@ -875,6 +875,10 @@ namespace ALYSLC
 		// Populated with all perk tree node perks on global data initialization.
 		static inline std::set<RE::BGSPerk*> SELECTABLE_PERKS;
 
+		// Separates P1's crosshair text message from the other players' messages
+		// while the co-op camera is disabled.
+		static inline std::string CROSSHAIR_TEXT_SEPARATOR = "\n----------\n";
+
 		// Custom Menu name.
 		static constexpr inline std::string_view CUSTOM_MENU = "CustomMenu"sv;
 

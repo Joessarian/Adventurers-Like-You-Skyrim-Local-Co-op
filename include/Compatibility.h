@@ -6,6 +6,12 @@ namespace ALYSLC
 {
 	// Saved flags and other data that indicate if certain supported mods are installed.
 
+	struct EldenSprintCompat
+	{
+		static void CheckForEldenSprint(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_eldenSprintInstalled;
+	};
+
 	struct EnderalCompat
 	{
 		static void CheckForEnderalSSE();

@@ -5550,7 +5550,7 @@ namespace ALYSLC
 				float yawToTarget = Util::GetYawBetweenPositions
 				(
 					a_p->coopActor->data.location,
-					pam->downedPlayerTarget->mm->playerTorsoPosition
+					Util::GetTorsoPosition(pam->downedPlayerTarget->coopActor.get())
 				);
 				float angDiff = Util::NormalizeAngToPi
 				(
@@ -6876,13 +6876,17 @@ namespace ALYSLC
 						// Must sneak to interact with off-limits refrs.
 						activationString = Util::GetActivationText
 						(
-							baseObj, activationRefrPtr.get(), hasActivationText
+							a_p->coopActor.get(), 
+							baseObj, 
+							activationRefrPtr.get(),
+							hasActivationText
 						);
 						if (hasActivationText)
 						{
 							// Special Case:
 							// Will pick up notes and books if they are activated 
-							// while not selected by the crosshair.
+							// while not selected by the crosshair,
+							// or if another player is controlling menus.
 							bool isBook = baseObj->IsBook();
 							bool isNote = baseObj->IsNote();
 							bool wouldPickupBookNote = 
@@ -6890,29 +6894,18 @@ namespace ALYSLC
 								(isBook || isNote) &&
 								(
 									a_p->tm->activationRefrHandle !=
-									a_p->tm->crosshairRefrHandle
+									a_p->tm->crosshairRefrHandle ||
+									anotherPlayerControllingMenus
 								)
 							);
 							if (wouldPickupBookNote)
 							{
-								if (offLimits)
-								{
-									activationMessage = fmt::format
-									(
-										"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
-										a_p->playerID + 1,
-										activationRefrPtr->GetName()
-									);
-								}
-								else
-								{
-									activationMessage = fmt::format
-									(
-										"P{}: Sneak to Take {}", 
-										a_p->playerID + 1,
-										activationRefrPtr->GetName()
-									);
-								}
+								activationMessage = fmt::format
+								(
+									"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
+									a_p->playerID + 1,
+									activationRefrPtr->GetName()
+								);
 							}
 							else
 							{
@@ -7057,13 +7050,17 @@ namespace ALYSLC
 									// if no text is available.
 									activationString = Util::GetActivationText
 									(
-										baseObj, activationRefrPtr.get(), hasActivationText
+										a_p->coopActor.get(),
+										baseObj,
+										activationRefrPtr.get(),
+										hasActivationText
 									);
 									if (hasActivationText)
 									{
 										// Special Case:
 										// Pick up notes and books if they are activated 
-										// while not selected by the crosshair.
+										// while not selected by the crosshair,
+										// or if another player is controlling menus.
 										bool isBook = baseObj->IsBook();
 										bool isNote = baseObj->IsNote();
 										bool shouldPickupBookNote = 
@@ -7071,7 +7068,8 @@ namespace ALYSLC
 											(isBook || isNote) &&
 											(
 												a_p->tm->activationRefrHandle !=
-												a_p->tm->crosshairRefrHandle
+												a_p->tm->crosshairRefrHandle ||
+												anotherPlayerControllingMenus
 											)
 										);
 										if (shouldPickupBookNote)
@@ -7105,12 +7103,25 @@ namespace ALYSLC
 									}
 									else
 									{
-										activationMessage = fmt::format
-										(
-											"P{}: Interact with {}",
-											a_p->playerID + 1,
-											activationRefrPtr->GetName()
-										);
+										if (offLimits)
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: <font color=\"#FF0000\">Interact</font>"
+												"with {}",
+												a_p->playerID + 1,
+												activationRefrPtr->GetName()
+											);
+										}
+										else
+										{
+											activationMessage = fmt::format
+											(
+												"P{}: Interact with {}",
+												a_p->playerID + 1,
+												activationRefrPtr->GetName()
+											);
+										}
 									}
 
 									int32_t value = -1;
@@ -8182,6 +8193,8 @@ namespace ALYSLC
 			if (justStarted)
 			{
 				a_p->tm->rmm->isAutoGrabbing = false;
+				// Has not grabbed a projectile on this bind press yet.
+				a_p->tm->rmm->lastGrabbedAProjectile = false;
 				a_p->lastAutoGrabTP = SteadyClock::now();
 			}
 
@@ -8194,10 +8207,10 @@ namespace ALYSLC
 			// Cannot auto-grab on press/hold if facing a target (face a target to throw instead), 
 			// or if a refr is targeted by the crosshair (target for the throw), 
 			// or if another refr cannot be grabbed.
-			if (a_p->mm->reqFaceTarget || crosshairRefrValidity || !canGrabAnotherRefr)
+			if (a_p->mm->reqFaceTarget || !canGrabAnotherRefr)
 			{
 				// Trying to grab, but no more slots available.
-				if (!a_p->mm->reqFaceTarget && !crosshairRefrValidity && !canGrabAnotherRefr)
+				if (!a_p->mm->reqFaceTarget && !canGrabAnotherRefr)
 				{
 					// Notify the player that they've reached max capacity for grabbed objects.
 					a_p->tm->SetCrosshairMessageRequest
@@ -8492,8 +8505,10 @@ namespace ALYSLC
 							releasedRefrInfo->refrHandle
 						);
 
-						// Just has to be in range to grab.
-						if (isInGrabbingRange(releasedRefrPtr.get()))
+						// Has to be in range to grab.
+						// Also, do not intercept yourself. Don't do it.
+						if (isInGrabbingRange(releasedRefrPtr.get()) &&
+							releasedRefrPtr != a_p->coopActor)
 						{
 							const auto iter = playerLinkedGrabCandidates.find
 							(
@@ -8543,8 +8558,9 @@ namespace ALYSLC
 			
 			// Next up, auto-grab checks.
 			// Check for nearby lootable refrs within activation range 
-			// if no projectile was grabbed and if auto-grab is enabled.
-			if (!grabIncomingProjectiles)
+			// if no projectile was grabbed, if nothing is selected with the crosshair,
+			// and if auto-grab is enabled.
+			if (!grabIncomingProjectiles && !crosshairRefrValidity)
 			{
 				// Nothing to do if auto-grab is not enabled.
 				if (!Settings::bAutoGrabNearbyLootableObjectsOnHold)
@@ -8791,6 +8807,9 @@ namespace ALYSLC
 							Settings::fSecsBetweenDiffCrosshairMsgs
 						);
 					}
+
+					// The player has has now grabbed a projectile.
+					a_p->tm->rmm->lastGrabbedAProjectile = true;
 				}
 				else if (Util::HandleIsValid(autoGrabRefrHandle) && 
 						 a_p->tm->rmm->CanGrabRefr(autoGrabRefrHandle))
@@ -10515,6 +10534,23 @@ namespace ALYSLC
 			glob.cam->ClearLockOnData();
 			glob.cam->waitForToggle = true;
 			glob.cam->RequestStateChange(ManagerState::kPaused);
+			// Inform the players on how to switch back to the co-op camera.
+			a_p->tm->SetCrosshairMessageRequest
+			(
+				CrosshairMessageType::kGeneralNotification,
+				fmt::format
+				(
+					"P{}: <font color=\"#E66100\">"
+					"Double tap 'Toggle POV' with P1 to restart the co-op camera.</font>", 
+					a_p->playerID + 1
+				),
+				{ 
+					CrosshairMessageType::kNone,
+					CrosshairMessageType::kStealthState,
+					CrosshairMessageType::kTargetSelection 
+				},
+				Settings::fSecsBetweenDiffCrosshairMsgs * 2.0f
+			);
 		}
 
 		void Dismount(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11947,7 +11983,10 @@ namespace ALYSLC
 				(
 					(
 						(menusOnlyAlwaysOpen) &&
-						(a_p->tm->activationRefrHandle != a_p->tm->crosshairRefrHandle) &&
+						(
+							a_p->tm->activationRefrHandle != a_p->tm->crosshairRefrHandle ||
+							anotherPlayerControllingMenus
+						) &&
 						(!isQuestItem || a_p->isPlayer1) && 
 						(isBook || isNote)
 					) ||
@@ -13466,6 +13505,7 @@ namespace ALYSLC
 			{
 				targetRefrValidity &&
 				!a_p->mm->reqFaceTarget &&
+				!a_p->tm->rmm->lastGrabbedAProjectile &&
 				a_p->tm->rmm->CanGrabAnotherRefr() &&
 				a_p->tm->rmm->CanGrabRefr(a_p->tm->crosshairRefrHandle)
 			};
@@ -13632,9 +13672,15 @@ namespace ALYSLC
 			// Check if all grabbed objects should be released 
 			// now that it has been established that they cannot grab the targeted object.
 			
-			// If the player is already grabbing objects and is not auto-grabbing,
+			// If the player is already grabbing objects,
+			// did not just grab a projectile, and is not auto-grabbing,
 			// release all grabbed objects.
-			bool shouldRelease = a_p->tm->rmm->isGrabbing && !a_p->tm->rmm->isAutoGrabbing; 
+			bool shouldRelease = 
+			(
+				a_p->tm->rmm->isGrabbing && 
+				!a_p->tm->rmm->lastGrabbedAProjectile && 
+				!a_p->tm->rmm->isAutoGrabbing
+			); 
 			if (shouldRelease)
 			{
 				a_p->tm->SetIsGrabbing(false);
@@ -13659,7 +13705,7 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			} 
-			else if (!shouldGrab && targetRefrValidity)
+			else if (!shouldGrab && !a_p->tm->rmm->lastGrabbedAProjectile && targetRefrValidity)
 			{
 				// Notify the player that this refr is not grabbable/throwable.
 				a_p->tm->SetCrosshairMessageRequest

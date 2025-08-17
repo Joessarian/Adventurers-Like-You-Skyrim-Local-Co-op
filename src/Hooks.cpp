@@ -2183,8 +2183,28 @@ namespace ALYSLC
 			{
 				return _CheckClampDamageModifier(a_this, a_av, a_delta);
 			}
-
+			
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
+			// Ignore attempts to kill this character if they are in the process of getting up.
+			// Dying while getting up locks the character in place once they fully stand up.
+			// Forever running on an invisible treadmill while stuck between 
+			// this plane of existence and the afterlife.
+			if (a_av == RE::ActorValue::kHealth &&
+				a_this->GetActorValue(RE::ActorValue::kHealth) + a_delta <= 0.0f)
+			{
+				if (a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued)
+				{
+					return 0.0f;
+				}
+
+				// Ensure the actor does not die while paralyzed, 
+				// which can cause some issues with reanimation.
+				if (playerIndex == -1)
+				{
+					a_this->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				}
+			}
+
 			// Do not allow any AVs to change when downed 
 			// and do not allow health, magicka, or stamina
 			// to change while in god mode.
@@ -2375,6 +2395,14 @@ namespace ALYSLC
 					}
 					else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 					{
+						// If Elden Sprint is installed, 
+						// do not expend stamina while outside of combat.
+						if (ALYSLC::EldenSprintCompat::g_eldenSprintInstalled && 
+							!glob.isInCoopCombat)
+						{
+							return 0.0f;
+						}
+
 						// NOTE:
 						// This applies to all sources of stamina damage,
 						// whether the cost of a stamina-consuming action,
@@ -2954,7 +2982,7 @@ namespace ALYSLC
 
 				return true;
 			}
-
+			
 			// Prevent the game from forcing the co-op companion player 
 			// into/out of sneaking against their wishes.
 			// Dash dodges trigger the sneak animation briefly, 
@@ -4379,7 +4407,11 @@ namespace ALYSLC
 			{
 				// Filter out P1 inputs, gamepad or otherwise, that should be ignored 
 				// by this menu event handler while in co-op.
-				bool shouldProcessHere = FilterInputEvents(a_event, firstGamepadEvent);
+				bool shouldProcessHere = 
+				(
+					CheckForP1ReviveReq(a_event) && 
+					FilterInputEvents(a_event, firstGamepadEvent)
+				);
 				if (shouldProcessHere) 
 				{
 					return _ProcessEvent(a_this, a_event, a_eventSource);	
@@ -5127,6 +5159,93 @@ namespace ALYSLC
 			return true;
 		}
 
+		bool MenuControlsHooks::CheckForP1ReviveReq(RE::InputEvent* const* a_eventHead)
+		{
+			// Check if P1 is trying to revive another player while the co-op camera is inactive
+			// and revive the other player if so.
+			// Can revive with the 'Activate' input event from either keyboard or controller.
+			// Return true if the event should be processed by the MenuControls hook.
+			
+			if (!glob.globalDataInit || 
+				!glob.allPlayersInit ||
+				!glob.coopSessionActive ||
+				glob.player1CID == -1 ||
+				glob.cam->IsRunning())
+			{
+				return true;
+			}
+
+			const auto ui = RE::UI::GetSingleton();
+			const auto ue = RE::UserEvents::GetSingleton();
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!ui || !ue || !p1)
+			{
+				return true;
+			}
+			
+			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+			// Can't revive another player if downed.
+			if (coopP1->isDowned)
+			{
+				return true;
+			}
+
+			// Does not have to be a gamepad event.
+			auto inputEvent = *a_eventHead;
+			if (!inputEvent)
+			{
+				return true;
+			}
+
+			auto idEvent = inputEvent->AsIDEvent();
+			auto buttonEvent = inputEvent->AsButtonEvent();
+			while (inputEvent)
+			{
+				if (buttonEvent && idEvent && idEvent->userEvent == ue->activate)
+				{
+					auto pickData = RE::CrosshairPickData::GetSingleton();
+					if (pickData)
+					{
+						auto pIndex = GlobalCoopData::GetCoopPlayerIndex(pickData->targetActor);
+						if (pIndex != -1 || coopP1->isRevivingPlayer)
+						{
+							SPDLOG_DEBUG
+							(
+								"[MenuControls Hooks] CheckForP1ReviveReq: "
+								"Activate event: {}, {}s. Pick target: {}.",
+								buttonEvent->value,
+								buttonEvent->heldDownSecs,
+								Util::HandleIsValid(pickData->targetActor) ? 
+								pickData->targetActor.get()->GetName() : 
+								"NONE"
+							);
+							coopP1->pam->RevivePlayerP1NoCoopCam
+							(
+								pIndex,
+								buttonEvent->value,
+								buttonEvent->heldDownSecs
+							);
+							// Ignore this input while reviving.
+							return false;
+						}
+					}
+
+					// Failsafe:
+					// Make sure P1's don't move flag is unset on 'Activate' press and release.
+					if (buttonEvent->value == 0.0f || buttonEvent->heldDownSecs == 0.0f)
+					{
+						Util::NativeFunctions::SetDontMove(p1, false);
+					}
+				}
+
+				inputEvent = inputEvent->next;
+				idEvent = inputEvent ? inputEvent->AsIDEvent() : nullptr;
+				buttonEvent = inputEvent ? inputEvent->AsButtonEvent() : nullptr;
+			}
+				
+			return true;
+		}
+
 		bool MenuControlsHooks::FilterInputEvents
 		(
 			RE::InputEvent* const* a_eventHead,
@@ -5655,11 +5774,6 @@ namespace ALYSLC
 							idEvent->userEvent == ue->wait
 						);
 					}
-					else
-					{
-						// Prevent the camera from changing POV at all other times.
-						isBlockedP1Event = idEvent->userEvent == ue->togglePOV;
-					}
 				}
 
 				bool isLeftStickInput = idEvent->userEvent == ue->leftStick;
@@ -5850,7 +5964,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -5879,7 +5993,7 @@ namespace ALYSLC
 					allowP1RotateLock,
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput
-				);
+				);*/
 
 				if (!propagateUnmodifiedEvent)
 				{
@@ -6240,6 +6354,14 @@ namespace ALYSLC
 				}
 				else if (a_delta < 0.0f && a_av == RE::ActorValue::kStamina)
 				{
+					// If Elden Sprint is installed, 
+					// do not expend stamina while outside of combat.
+					if (ALYSLC::EldenSprintCompat::g_eldenSprintInstalled && 
+						!glob.isInCoopCombat)
+					{
+						return 0.0f;
+					}
+
 					// NOTE:
 					// This applies to all sources of stamina damage,
 					// whether the cost of a stamina-consuming action,
@@ -7299,20 +7421,6 @@ namespace ALYSLC
 // [PROJECTILE HOOKS]:
 		void ProjectileHooks::GetLinearVelocity(RE::Projectile* a_this, RE::NiPoint3& a_velocity)
 		{
-			auto projMgr = RE::Projectile::Manager::GetSingleton();
-			if (!projMgr)
-			{
-				return;
-			}
-
-			projMgr->projectileLock.Lock();
-
-			if (!a_this || !a_this->GetHandle())
-			{
-				projMgr->projectileLock.Unlock();
-				return;
-			}
-
 			// Not handled outside of co-op.
 			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
@@ -7350,9 +7458,23 @@ namespace ALYSLC
 					_Projectile_GetLinearVelocity(a_this, a_velocity);
 				}
 				
+				return;
+			}
+
+			auto projMgr = RE::Projectile::Manager::GetSingleton();
+			if (!projMgr)
+			{
+				return;
+			}
+
+			projMgr->projectileLock.Lock();
+
+			if (!a_this || !a_this->GetHandle())
+			{
 				projMgr->projectileLock.Unlock();
 				return;
 			}
+
 
 			// Ensure the projectile's handle is valid first.
 			const auto projectileHandle = a_this->GetHandle();
@@ -7460,7 +7582,7 @@ namespace ALYSLC
 			// Needs thorough testing for stability.
 
 			// Nothing to do if global data is not initialized or no co-op session is active.
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				if (a_this->As<RE::ArrowProjectile>())
 				{
@@ -7896,7 +8018,12 @@ namespace ALYSLC
 			// Check for projectile explosions that hit friendly actors
 			// and prevent damage if friendly fire conditions are not met.
 
-			if (!a_this || !a_hitRefr)
+			// Not handled if invalid or outside of co-op.
+			if (!a_this || 
+				!a_hitRefr || 
+				!glob.globalDataInit || 
+				!glob.allPlayersInit || 
+				!glob.coopSessionActive)
 			{
 				return 
 				(
@@ -7912,7 +8039,7 @@ namespace ALYSLC
 					)
 				);
 			}
-			
+
 			RE::Actor* hitActor = a_hitRefr->As<RE::Actor>();
 			if (!hitActor)
 			{
@@ -8011,6 +8138,31 @@ namespace ALYSLC
 			// ensure the chosen target is the player's current ranged target actor.
 			// Allows beam and flame projectiles to hit more consistently.
 
+			// Not handled outside of co-op.
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				if (a_this->As<RE::BarrierProjectile>())
+				{
+					return _BarrierProjectile_ShouldUseDesiredTarget(a_this);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					return _BeamProjectile_ShouldUseDesiredTarget(a_this);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					return _FlameProjectile_ShouldUseDesiredTarget(a_this);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					return _GrenadeProjectile_ShouldUseDesiredTarget(a_this);
+				}
+				else
+				{
+					return _Projectile_ShouldUseDesiredTarget(a_this);
+				}
+			}
+
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
 			if (pIndex != -1)
 			{
@@ -8044,21 +8196,7 @@ namespace ALYSLC
 
 		void ProjectileHooks::UpdateImpl(RE::Projectile* a_this, float a_delta)
 		{
-			auto projMgr = RE::Projectile::Manager::GetSingleton();
-			if (!projMgr)
-			{
-				return;
-			}
-
-			projMgr->projectileLock.Lock();
-
 			// Not handled outside of co-op.
-			if (!a_this || !a_this->GetHandle())
-			{
-				projMgr->projectileLock.Unlock();
-				return;
-			}
-
 			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				// Run the game's update function.
@@ -8095,6 +8233,19 @@ namespace ALYSLC
 					_Projectile_UpdateImpl(a_this, a_delta);
 				}
 				
+				return;
+			}
+
+			auto projMgr = RE::Projectile::Manager::GetSingleton();
+			if (!projMgr)
+			{
+				return;
+			}
+
+			projMgr->projectileLock.Lock();
+
+			if (!a_this || !a_this->GetHandle())
+			{
 				projMgr->projectileLock.Unlock();
 				return;
 			}
@@ -8818,7 +8969,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					aimTargetPos = Util::Get3DCenterPos(targetRefrPtr.get());
+					aimTargetPos = Util::GetRefrPosition(targetRefrPtr.get());
 				}
 				
 				// Choose the exact crosshair position locally offset from the target actor;
@@ -9088,11 +9239,11 @@ namespace ALYSLC
 				);
 
 				// Went past the target if velocity direction and direction to target 
-				// diverge by >= 90 degrees and the distance to the target 
+				// diverge by >= 90 degrees or the distance to the target 
 				// is less than the max distance travelable per frame.
 				bool wentPastTarget = 
 				(
-					angBetweenVelAndToTarget >= PI / 2.0f && distToTarget <= maxDistPerFrame
+					angBetweenVelAndToTarget >= PI / 2.0f || distToTarget <= maxDistPerFrame
 				);
 
 				float secsSinceStartedHoming = Util::GetElapsedSeconds
@@ -9569,7 +9720,6 @@ namespace ALYSLC
 		void TESCameraHooks::Update(RE::TESCamera* a_this)
 		{
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			//if (!glob.globalDataInit || !glob.cam->IsRunning() || !p1)
 			if (!glob.globalDataInit || 
 				!glob.allPlayersInit || 
 				!glob.coopSessionActive || 
@@ -9583,7 +9733,7 @@ namespace ALYSLC
 			// Camera local position/rotation is modified when ragdolled 
 			// (bleedout camera position), inactive, staggered, sitting/sleeping, 
 			// sprinting or when camera shake is applied (AnimatedCameraDelta), 
-			// and we want to discard these position/rotation changes, so return without updating.
+			// and we want to discard these position/rotation changes, so return without updating.			
 			bool orbitStateActive = a_this->currentState->id == RE::CameraState::kAutoVanity;
 			bool bleedoutStateActive = a_this->currentState->id == RE::CameraState::kBleedout;
 			bool furnitureStateActive = a_this->currentState->id == RE::CameraState::kFurniture;
