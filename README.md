@@ -1,5 +1,5 @@
 
-# Adventurers Like You: Skyrim Local Co-op ALPHA
+# Adventurers Like You: Skyrim Local Co-op
 
 ![Banner](https://i.imgur.com/VhQyyN0.png)
 
@@ -222,7 +222,7 @@ bool something =
 ### Performance
 - Expect a ***loss of, on average, at least 7-15% of your base framerate (+5% or more per additional player) and some framerate spikes***, especially when camera collisions are enabled or when opening menus, such as a large player inventory. The performance hit also depends on how many players are summoned, what actions players are performing, and what camera options are active.
 - ***Turning off camera collisions, obstruction fading, and not removing occlusion*** produces the best performance when using the co-op camera. ***See the MCM for other performance-impacting options.***
-- I realize that my code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in alpha, ***anticipate additional performance optimizations down the line once the mod becomes more stable***.
+- I realize that my code is inefficient and sub-optimal, especially with all the workarounds in place to make certain features work. However, as the project, and my programming skills, are still very much in development, ***anticipate additional performance optimizations down the line once the mod becomes more stable***.
 
 ### Installation
 
