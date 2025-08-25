@@ -1,6 +1,7 @@
 #include "PlayerActionFunctionsHolder.h"
 #include <Compatibility.h>
 #include <GlobalCoopData.h>
+#include <IPluginInterface.h>
 #include <Settings.h>
 
 #undef PlaySound
@@ -2515,10 +2516,13 @@ namespace ALYSLC
 			// either directly or by way of the provided bound weapon spell.
 			// Set bound weapon timer and request data.
 
-			SPDLOG_DEBUG("[PAFH] EquipBoundWeapon: {}: Equip {} to slot 0x{:X}.", 
+			SPDLOG_DEBUG
+			(
+				"{}: Equip {} to slot 0x{:X}.", 
 				a_p->coopActor->GetName(),
 				a_boundWeap ? a_boundWeap->GetName() : "NONE",
-				a_slot->formID);
+				a_slot->formID
+			);
 
 			if (!a_boundWeapSpell || !a_boundWeap || !a_slot)
 			{
@@ -2594,8 +2598,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[PAFH] EquipBoundWeapon: {}: 2H bound weap req.",
-										a_p->coopActor->GetName()
+										"{}: 2H bound weap req.", a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReq2H = true;
 									a_p->pam->boundWeapReqLH =
@@ -2608,8 +2611,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[PAFH] EquipBoundWeapon: {}: LH bound weap req.",
-										a_p->coopActor->GetName()
+										"{}: LH bound weap req.", a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqLH = true;
 									a_p->em->lastReqBoundWeapLH = a_boundWeap;
@@ -2619,8 +2621,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[PAFH] EquipBoundWeapon: {}: RH bound weap req.",
-										a_p->coopActor->GetName()
+										"{}: RH bound weap req.", a_p->coopActor->GetName()
 									);
 									a_p->pam->boundWeapReqRH = true;
 									a_p->em->lastReqBoundWeapRH = a_boundWeap;
@@ -2629,7 +2630,7 @@ namespace ALYSLC
 
 								SPDLOG_DEBUG
 								(
-									"[PAFH] EquipBoundWeapon: {}: Bound weap reqs: {}, {}, {}.",
+									"{}: Bound weap reqs: {}, {}, {}.",
 									a_p->coopActor->GetName(),
 									a_p->pam->boundWeapReq2H,
 									a_p->pam->boundWeapReqLH,
@@ -2830,6 +2831,21 @@ namespace ALYSLC
 								for (const auto& equipIndex : rhEquipIndices)
 								{
 									a_p->em->desiredEquippedForms[!equipIndex] = rhForm;
+								}
+
+								// Grant XP.
+								const float baseCost = 
+								(
+									a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get())
+								);
+								if (baseCost > 0.0f)
+								{
+									GlobalCoopData::AddSkillXP
+									(
+										a_p->controllerID,
+										a_boundWeapSpell->avEffectSetting->data.associatedSkill, 
+										baseCost
+									);
 								}
 							}
 						);
@@ -3877,8 +3893,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAFH] ERR: FinishCasting: {}: {} finished. "
-					"LH caster invalid: {}, RH caster invalid: {}.", 
+					"{}: {} finished. LH caster invalid: {}, RH caster invalid: {}.", 
 					a_p->coopActor->GetName(),
 					a_lhCast && a_rhCast ? "2H cast" : a_lhCast ? "LH cast" : "RH cast",
 					!lhCaster, !rhCaster
@@ -3930,8 +3945,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[PAFH] ERR: FinishCasting: {}: "
-						"Neither LH nor RH caster has started casting 2H spell {}.",
+						"{}: Neither LH nor RH caster has started casting 2H spell {}.",
 						a_p->coopActor->GetName(),
 						rhSpell->GetName()
 					);
@@ -3950,8 +3964,7 @@ namespace ALYSLC
 				}
 				SPDLOG_DEBUG
 				(
-					"[PAFH] FinishCasting: {}: 2H cast of {}. "
-					"Time since charge start: {}. Spell charge time: {}.", 
+					"{}: 2H cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 					a_p->coopActor->GetName(),
 					rhSpell->GetName(),
 					chargedTime,
@@ -3991,8 +4004,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[PAFH] FinishCasting: {}: LH cast of {}. "
-						"Time since charge start: {}. Spell charge time: {}.", 
+						"{}: LH cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 						a_p->coopActor->GetName(),
 						lhSpell->GetName(),
 						Util::GetElapsedSeconds(a_p->lastLHCastChargeStartTP),
@@ -4030,8 +4042,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[PAFH] FinishCasting: {}: RH cast of {}. "
-						"Time since charge start: {}. Spell charge time: {}.", 
+						"{}: RH cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 						a_p->coopActor->GetName(),
 						rhSpell->GetName(),
 						Util::GetElapsedSeconds(a_p->lastRHCastChargeStartTP),
@@ -6245,11 +6256,7 @@ namespace ALYSLC
 				);
 				if (restartCast)
 				{
-					/*SPDLOG_DEBUG
-					(
-						"[PAFH] SetUpCastingPackage: {}: Restart cast.",
-						a_p->coopActor->GetName()
-					);*/
+					//SPDLOG_DEBUG("{}: Restart cast.", a_p->coopActor->GetName());
 					if (a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01)
 					{
 						lhCaster->RequestCastImpl();
@@ -6299,11 +6306,7 @@ namespace ALYSLC
 				// when changing package globals or the package spellcast target mid-cast.
 				if ((!pam->isInCastingAnim) || (notHandCastingYet))
 				{
-					/*SPDLOG_DEBUG
-					(
-						"[PAFH] SetUpCastingPackage: {}: Restart package.",
-						a_p->coopActor->GetName()
-					);*/
+					//SPDLOG_DEBUG("{}: Restart package.", a_p->coopActor->GetName());
 					a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 					pam->SetAndEveluatePackage();
 				}
@@ -6429,8 +6432,7 @@ namespace ALYSLC
 				{
 					/*SPDLOG_DEBUG
 					(
-						"[PAFH] SetUpCastingPackage: {}: "
-						"glob var not set yet: {}, "
+						"{}: glob var not set yet: {}, "
 						"not hand casting yet: {}, "
 						"aim target refr changed: {}, "
 						"action just started: {}, "
@@ -8560,7 +8562,7 @@ namespace ALYSLC
 			// Check for nearby lootable refrs within activation range 
 			// if no projectile was grabbed, if nothing is selected with the crosshair,
 			// and if auto-grab is enabled.
-			if (!grabIncomingProjectiles && !crosshairRefrValidity)
+			if (!grabIncomingProjectiles) //&& !crosshairRefrValidity)
 			{
 				// Nothing to do if auto-grab is not enabled.
 				if (!Settings::bAutoGrabNearbyLootableObjectsOnHold)
@@ -10187,8 +10189,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[PAFH] ChangeDialoguePlayer: {}: "
-								"Dialogue req CID lock obtained. (0x{:X})",
+								"{}: Dialogue req CID lock obtained. (0x{:X})",
 								a_p->coopActor->GetName(),
 								std::hash<std::jthread::id>()(std::this_thread::get_id())
 							);
@@ -10310,8 +10311,7 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[PAFH] ChangeDialoguePlayer: {}: "
-							"Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
+							"{}: Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
 							a_p->coopActor->GetName(), 
 							std::hash<std::jthread::id>()(std::this_thread::get_id()), 
 							a_p->controllerID
@@ -12161,7 +12161,7 @@ namespace ALYSLC
 						// WOOO
 						SPDLOG_DEBUG
 						(
-							"[PAFH] {} is activating {} ({}, form type 0x{:X}, "
+							"{} is activating {} ({}, form type 0x{:X}, "
 							"base form type: 0x{:X}, count: {}). "
 							"Is activator: {}, is bed: {}, is party wide item: {}, "
 							"is quest item: {}, "
@@ -13504,6 +13504,7 @@ namespace ALYSLC
 			bool shouldGrab = 
 			{
 				targetRefrValidity &&
+				!a_p->tm->rmm->isAutoGrabbing &&
 				!a_p->mm->reqFaceTarget &&
 				!a_p->tm->rmm->lastGrabbedAProjectile &&
 				a_p->tm->rmm->CanGrabAnotherRefr() &&
@@ -13705,7 +13706,10 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			} 
-			else if (!shouldGrab && !a_p->tm->rmm->lastGrabbedAProjectile && targetRefrValidity)
+			else if (!shouldGrab && 
+					 !a_p->tm->rmm->lastGrabbedAProjectile &&
+					 !a_p->tm->rmm->isAutoGrabbing && 
+					 targetRefrValidity)
 			{
 				// Notify the player that this refr is not grabbable/throwable.
 				a_p->tm->SetCrosshairMessageRequest

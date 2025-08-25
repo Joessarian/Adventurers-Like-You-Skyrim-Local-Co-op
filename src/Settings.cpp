@@ -22,7 +22,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[Settings] ERR ({}): ImportAllSettings: "
+					"ERR ({}): ImportAllSettings: "
 					"Could not load default Enderal settings file '{}'. "
 					"Ensure the file exists at that location. "
 					"About to import the user's modifiable settings.", 
@@ -33,7 +33,6 @@ namespace ALYSLC
 			{
 				SPDLOG_INFO
 				(
-					"[Settings] ImportAllSettings: "
 					"Successfully opened default Enderal settings configuration file '{}'.",
 					defaultFilePathEnderal.string()
 				);
@@ -45,7 +44,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[Settings] ERR ({}): ImportAllSettings: "
+					"ERR ({}): ImportAllSettings: "
 					"Could not load default Skyrim SE settings file '{}'. "
 					"Ensure the file exists at that location. "
 					"About to import the user's modifiable settings.", 
@@ -56,7 +55,6 @@ namespace ALYSLC
 			{
 				SPDLOG_INFO
 				(
-					"[Settings] ImportAllSettings: "
 					"Successfully opened default Skyrim settings configuration file '{}'.", 
 					defaultFilePathSSE.string()
 				);
@@ -84,8 +82,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[Settings] ERR: ({}): ImportAllSettings: "
-					"Could not load Enderal player settings config file '{}'. "
+					"({}): Could not load Enderal player settings config file '{}'. "
 					"If you've made changes to the default settings, "
 					"ensure the file exists at that location. "
 					"Now using the plugin's hardcoded default settings.", 
@@ -96,7 +93,6 @@ namespace ALYSLC
 			{
 				SPDLOG_INFO
 				(
-					"[Settings] ImportAllSettings: "
 					"Successfully opened user-modified Enderal settings configuration file '{}'.",
 					userSettingsFilePathEnderal.string()
 				);
@@ -108,8 +104,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[Settings] ERR: ({}): ImportAllSettings: "
-					"Could not load Skyrim SE player settings config file '{}'. "
+					"({}): Could not load Skyrim SE player settings config file '{}'. "
 					"If you've made changes to the default settings, "
 					"ensure the file exists at that location. "
 					"Now using the plugin's hardcoded default settings.", 
@@ -120,7 +115,6 @@ namespace ALYSLC
 			{
 				SPDLOG_INFO
 				(
-					"[Settings] ImportAllSettings: "
 					"Successfully opened user-modified Skyrim settings configuration file '{}'.",
 					userSettingsFilePathSSE.string()
 				);
@@ -146,7 +140,7 @@ namespace ALYSLC
 			(
 				fmt::format
 				(
-					"[ALYSLC] Invalid binds found:\nDefault settings.ini: "
+					"[ALYSLC] ERROR: Invalid binds found:\nDefault settings.ini: "
 					"{}\n{}: {}\nTroubleshooting info messages are in the 'ALYSLC.log' file "
 					"and have the [BINDS] tag.\nAll invalid binds were disabled.", 
 					!defBindsSucc ? "[Invalid]" : "[Valid]", 
@@ -180,7 +174,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[Settings] ImportAllSettings: Done importing all settings.");
+		SPDLOG_DEBUG("Done importing all settings.");
 	}
 
 	bool Settings::ImportBinds(CSimpleIniA& a_ini)
@@ -303,7 +297,7 @@ namespace ALYSLC
 					actionsWithBindErrors.insert(action);
 					SPDLOG_ERROR
 					(
-						"[BINDS] ERR: P{}: [INVALID]: "
+						"P{}: [BIND INVALID]: "
 						"{} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. "
 						"Since these flags are mutually exclusive, the bind will be disabled.",
 						pIndex + 1, action
@@ -414,7 +408,7 @@ namespace ALYSLC
 						param.perfType = PerfType::kDisabled;
 						SPDLOG_DEBUG
 						(
-							"[BINDS] P{}: {}'s first composing action was disabled. "
+							"P{}: {}'s first composing action was disabled. "
 							"Disabling the bind. "
 							"Binds that depend on this bind will not be affected.",
 							pIndex + 1, actionName
@@ -478,7 +472,7 @@ namespace ALYSLC
 							{
 								SPDLOG_ERROR
 								(
-									"[BINDS] ERR: P{}: [INVALID]: "
+									"P{}: [BIND INVALID]: "
 									"{} -> composing action #{} is enabled "
 									"but was not assigned a valid input action ({}). "
 									"Disabling the bind.",
@@ -494,8 +488,7 @@ namespace ALYSLC
 
 							SPDLOG_DEBUG
 							(
-								"[Settings] ImportBinds: P{}: "
-								"Bind for action {}: slot: {}, enabled: {}, "
+								"P{}: Bind for action {}: slot: {}, enabled: {}, "
 								"already assigned: {}, assigned input action: {}.", 
 								pIndex + 1,
 								action, 
@@ -581,7 +574,7 @@ namespace ALYSLC
 							{
 								SPDLOG_ERROR
 								(
-									"[BINDS] ERR: P{}: [INVALID]: "
+									"P{}: [BIND INVALID]: "
 									"{} -> composing action #{} is enabled "
 									"but was not assigned a valid input action ({}). "
 									"Disabling the bind.",
@@ -646,7 +639,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[BINDS] ERR: P{}: [INVALID]: Action {}'s bind will be disabled. "
+						"P{}: [BIND INVALID]: Action {}'s bind will be disabled. "
 						"Please ensure the composing actions for this bind "
 						"were assigned valid values.", 
 						pIndex + 1, actionName
@@ -692,7 +685,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[BINDS] P{}: [INVALID] action {}'s bind may be circular "
+						"P{}: [BIND INVALID] action {}'s bind may be circular "
 						"(max of {} assigned inputs exceeded). "
 						"Please ensure the composing actions for this bind "
 						"are not themselves composed of this bind's actions. Disabling the bind.",
@@ -708,8 +701,7 @@ namespace ALYSLC
 				param.composingPlayerActionsCount = numComposingPlayerActions;
 				SPDLOG_DEBUG
 				(
-					"[Settings] ImportBinds: P{}: "
-					"Bind for action {} has {} composing inputs and {} composing actions.", 
+					"P{}: Bind for action {} has {} composing inputs and {} composing actions.", 
 					pIndex + 1,
 					action, 
 					param.composingInputs.size(),
@@ -723,7 +715,7 @@ namespace ALYSLC
 			actionsWithBindErrors.clear();
 		}
 
-		SPDLOG_DEBUG("[Settings] ImportBinds: All binds valid: {}.", allBindsValid);
+		SPDLOG_DEBUG("All binds valid: {}.", allBindsValid);
 		return allBindsValid;
 	}
 
@@ -1265,7 +1257,7 @@ namespace ALYSLC
 			10.0f
 		);
 
-		SPDLOG_DEBUG("[Settings] ImportGeneralSettings: Done importing.");
+		SPDLOG_DEBUG("Done importing.");
 	}
 
 	void Settings::ImportPlayerSpecificSettings(CSimpleIniA& a_ini)
@@ -1761,7 +1753,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG("[Settings] ImportPlayerSpecificSettings: Done importing.");
+		SPDLOG_DEBUG("Done importing.");
 	}
 
 	bool Settings::ReadBoolSetting
@@ -1779,11 +1771,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadBoolSetting: Invalid section::key '{}::{}'.", 
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1811,11 +1799,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_ERROR
-				(
-					"[Settings] ERR: ReadBoolSettingToIndex: Invalid section::key '{}::{}'.", 
-					a_section, a_settingKey
-				);
+				SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 				return false;
 			}
 		}
@@ -1823,7 +1807,6 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[Settings] ERR: ReadBoolSettingToIndex: "
 				"Settings list for ({}:{}) is not large enough for requested index ({}).", 
 				a_settingKey, a_section, a_index
 			);
@@ -1864,11 +1847,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadFloatSetting: Invalid section::key '{}::{}'.", 
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1895,11 +1874,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadInt32Setting: Invalid section::key '{}::{}'.", 
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1927,7 +1902,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[Settings] ERR: ReadRGBStringSetting: ({}:{}) has value '{}' "
+					"({}:{}) has value '{}' "
 					"but could not be converted to hex color format 'RRGGBB'.",
 					a_settingKey, a_section, a_settingOut
 				);
@@ -1937,11 +1912,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadRGBStringSetting: Invalid section::key '{}::{}'.", 
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1964,11 +1935,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadStringSetting: Invalid section::key '{}::{}'.",
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1995,11 +1962,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
-			(
-				"[Settings] ERR: ReadUInt32Setting: Invalid section::key '{}::{}'.",
-				a_section, a_settingKey
-			);
+			SPDLOG_ERROR("Invalid section::key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}

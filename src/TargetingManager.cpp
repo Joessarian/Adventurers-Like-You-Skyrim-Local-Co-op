@@ -23,7 +23,7 @@ namespace ALYSLC
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"[TM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count()
@@ -36,7 +36,7 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[TM] ERR: Initialize: Cannot construct Targeting Manager for controller ID {}.",
+				"Cannot construct Targeting Manager for controller ID {}.",
 				a_p ? a_p->controllerID : -1
 			);
 		}
@@ -73,7 +73,7 @@ namespace ALYSLC
 	{
 		SPDLOG_DEBUG
 		(
-			"[TM] PrePauseTask: P{}: Grabbed/released refr info list sizes: {}, {}.",
+			"P{}: Grabbed/released refr info list sizes: {}, {}.",
 			p->playerID + 1,
 			rmm->grabbedRefrInfoList.size(),
 			rmm->releasedRefrInfoList.size()
@@ -117,7 +117,7 @@ namespace ALYSLC
 
 	void TargetingManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("[TM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
 
 		// Reset TPs before starting.
 		ResetTPs();
@@ -252,7 +252,7 @@ namespace ALYSLC
 		// Reset all target handles, related data, and time points.
 		ResetTargeting();
 		ResetTPs();
-		SPDLOG_DEBUG("[TM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState TargetingManager::ShouldSelfPause()
@@ -277,7 +277,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[TM] ClearTarget: {}: Lock obtained. (0x{:X})",
+					"{}: Lock obtained. (0x{:X})",
 					coopActor->GetName(), std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 
@@ -304,7 +304,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[TM] ClearTarget: {}: Failed to obtain lock. (0x{:X})",
+					"{}: Failed to obtain lock. (0x{:X})",
 					coopActor->GetName(), std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 			}
@@ -3617,8 +3617,7 @@ namespace ALYSLC
 
 			/*SPDLOG_DEBUG
 			(
-				"[TM] GetClosestTargetableActorInFOV: {}: "
-				"Attack source: {}, has spell: {}, has hostile spell: {}. "
+				"{}: Attack source: {}, has spell: {}, has hostile spell: {}. "
 				"Should only target allies: {}.",
 				coopActor->GetName(),
 				attackSource ? attackSource->GetName() : "NONE",
@@ -4598,8 +4597,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			SPDLOG_DEBUG
 			(
-				"[TM] HandleBonk: {}: Hit actor {}. "
-				"Thrown object {}'s mass: {}, weight: {}, equipped weight: {}, "
+				"{}: Hit actor {}. Thrown object {}'s mass: {}, weight: {}, equipped weight: {}, "
 				"impact speed: {}, equipped weight factor: {}, armor rating and factor: {}, {},"
 				"level damage factor: {} (player level: {}). "
 				"Sneak mult: {}. Base carryweight: {}. "
@@ -5009,16 +5007,13 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[TM] HandleQuickLootMenu: "
-							"{} is closing LootMenu, if open.",
-							coopActor->GetName()
+							"{} is closing LootMenu, if open.", coopActor->GetName()
 						);
 						Util::SendCrosshairEvent(nullptr);
 					}
 					
 					SPDLOG_DEBUG
 					(
-						"[TM] HandleQuickLootMenu: "
 						"{} opening LootMenu -> {}.",
 						coopActor->GetName(),
 						crosshairRefrPtr->GetName()
@@ -5050,7 +5045,6 @@ namespace ALYSLC
 				// Closes the menu.
 				SPDLOG_DEBUG
 				(
-					"[TM] HandleQuickLootMenu: "
 					"{} is closing LootMenu after moving crosshair onto un-lootable refr.",
 					coopActor->GetName()
 				);
@@ -5062,7 +5056,6 @@ namespace ALYSLC
 			// Close the menu by clearing the crosshair pick refr on request.
 			SPDLOG_DEBUG
 			(
-				"[TM] HandleQuickLootMenu: "
 				"{} is closing LootMenu after no longer selecting a refr: {}, "
 				"moving too far away: {}.",
 				coopActor->GetName(),
@@ -6030,8 +6023,7 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				SPDLOG_DEBUG
 				(
-					"[TM] HandleSplat: {}: "
-					"Thrown actor: {}. Mass: {}, impact speed: {}, actor linear speed: {}, "
+					"{}: Thrown actor: {}. Mass: {}, impact speed: {}, actor linear speed: {}, "
 					"armor rating and factor: {}, {}, inventory weight factor: {}, "
 					"level damage factor: {}, flop self-damage mult: {}, "
 					"fall height: {}, current: {}, diff: {}, grav damage mult: {}, "
@@ -6435,7 +6427,7 @@ namespace ALYSLC
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				SPDLOG_DEBUG
 				(
-					"[TM] PickRaycastHitResult: {}: For target selection: {}. "
+					"{}: For target selection: {}. "
 					"Pre-parent recurse result {}: hit: {}, {} (refr name: {}, 0x{:X}, "
 					"base name: {}, 0x{:X}, type: {}). "
 					"Distance to camera: {}, distance to player: {}. Model: {}, hostile: {}. "
@@ -6542,8 +6534,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[TM] PickRaycastHitResult: {}: "
-							"Set object no refr with {}: {}.",
+							"{}: Set object no refr with {}: {}.",
 							coopActor->GetName(),
 							result.hitObjectPtr->name,
 							firstNonActivatorHitIndex
@@ -6568,8 +6559,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[TM] PickRaycastHitResult: {}: "
-								"Set hit pos with first hit object no refr {}, i: {}.",
+								"{}: Set hit pos with first hit object no refr {}, i: {}.",
 								coopActor->GetName(),
 								result.hitObjectPtr->name,
 								i
@@ -6590,8 +6580,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[TM] PickRaycastHitResult: {}: "
-									"Cannot select other players, no activator hit. "
+									"{}: Cannot select other players, no activator hit. "
 									"Choose {}, i: {}.",
 									coopActor->GetName(),
 									result.hitObjectPtr->name,
@@ -6604,8 +6593,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[TM] PickRaycastHitResult: {}: "
-								"Cannot select other players, break.",
+								"{}: Cannot select other players, break.",
 								coopActor->GetName(),
 								result.hitObjectPtr->name
 							);
@@ -6662,8 +6650,8 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[TM] PickRaycastHitResult: {}: "
-							"Skipping refr {}. Excluded: {}, in front of cam: {}, obstruction: {}.",
+							"{}: Skipping refr {}. Excluded: {}, "
+							"in front of cam: {}, obstruction: {}.",
 							coopActor->GetName(),
 							hitRefrPtr->GetName(),
 							excluded,
@@ -6709,8 +6697,8 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[TM] PickRaycastHitResult: {}: "
-								"Hit object with no refr and cannot select other players. Break.",
+								"{}: Hit object with no refr and cannot select other players. "
+								"Break.",
 								coopActor->GetName()
 							);
 						}
@@ -6768,8 +6756,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[TM] PickRaycastHitResult: {}: "
-								"{} is not valid, selectable: {}. "
+								"{}: {} is not valid, selectable: {}. "
 								"Continue. Set result: {}. Non activator index: {}",
 								coopActor->GetName(),
 								hitRefrPtr->GetName(),
@@ -6787,9 +6774,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[TM] PickRaycastHitResult: {}: "
-							"{} at index {}. Hostile: {}, "
-							"object with no refr hit: {}.",
+							"{}: {} at index {}. Hostile: {}, object with no refr hit: {}.",
 							coopActor->GetName(),
 							hitRefrPtr->GetName(),
 							i,
@@ -6842,8 +6827,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[TM] PickRaycastHitResult: {}: "
-									"Chose player {}. Continuing. i: {}.",
+									"{}: Chose player {}. Continuing. i: {}.",
 									coopActor->GetName(),
 									hitRefrPtr->GetName(),
 									i
@@ -6863,9 +6847,8 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[TM] PickRaycastHitResult: {}: "
-									"Chose hit refr {}, hostile: {}, player out of combat: {}. "
-									"Breaking. i: {}.",
+									"{}: Chose hit refr {}, hostile: {}, "
+									"player out of combat: {}. Breaking. i: {}.",
 									coopActor->GetName(),
 									hitRefrPtr->GetName(),
 									chooseHostileActorInCombat,
@@ -6900,7 +6883,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[TM] PickRaycastHitResult: {}: Hit and set result {}. i: {}.",
+								"{}: Hit and set result {}. i: {}.",
 								coopActor->GetName(),
 								hitRefrPtr->GetName(),
 								i
@@ -6925,8 +6908,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[TM] PickRaycastHitResult: {}: Chose {}. Breaking. "
-										"Cannot select other players.",
+										"{}: Chose {}. Breaking. Cannot select other players.",
 										coopActor->GetName(),
 										hitRefrPtr->GetName()
 									);
@@ -6939,8 +6921,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[TM] PickRaycastHitResult: {}: "
-									"Non-activator index with {} is now: {}.",
+									"{}: Non-activator index with {} is now: {}.",
 									coopActor->GetName(),
 									hitRefrPtr->GetName(),
 									firstNonActivatorHitIndex
@@ -6986,8 +6967,7 @@ namespace ALYSLC
 			auto hitRefrPtr = Util::GetRefrPtrFromHandle(chosenResult.hitRefrHandle);
 			SPDLOG_DEBUG
 			(
-				"[TM] PickRaycastHitResult: {}: chose result {}, for hit: {}. "
-				"{} (0x{:X}, type: {}). "
+				"{}: chose result {}, for hit: {}. {} (0x{:X}, type: {}). "
 				"For target selection: {}, is closest result: {} (first non-activator hit: {}). "
 				"Searching for player target: {}.",
 				coopActor->GetName(),
@@ -8050,8 +8030,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			/*SPDLOG_DEBUG
 			(
-				"[TM] UpdateAimTargetLinkedRefr: {}: "
-				"index {}, weapMagObj: {}. Current: {}, new: {}. Find target: {}.",
+				"{}: index {}, weapMagObj: {}. Current: {}, new: {}. Find target: {}.",
 				coopActor->GetName(),
 				a_attackSlot,
 				weapMagObj ? weapMagObj->GetName() : "NONE",
@@ -8974,7 +8953,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[TM] UpdateCrosshairSelectionBoundsInfo: {}: {}: has rigid body.",
+					"{}: {}: has rigid body.",
 					coopActor->GetName(),
 					a_chosenResult.hitObjectPtr->name
 				);
@@ -8990,7 +8969,7 @@ namespace ALYSLC
 					boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
 					SPDLOG_DEBUG
 					(
-						"[TM] UpdateCrosshairSelectionBoundsInfo: {}: {}: has shape type {}.",
+						"{}: {}: has shape type {}.",
 						coopActor->GetName(),
 						a_chosenResult.hitObjectPtr->name,
 						shape->type
@@ -9854,7 +9833,7 @@ namespace ALYSLC
 				(
 					rsData.xComp * 
 					rsData.normMag *
-					a_p->mm->playerScaledHeight *
+					a_p->coopActor->GetHeight() *
 					*g_deltaTimeRealTime
 				),
 				-baseSuspensionDist,
@@ -9953,7 +9932,7 @@ namespace ALYSLC
 			(
 				a_p->coopActor->data.location.x,
 				a_p->coopActor->data.location.y,
-				a_p->coopActor->data.location.z + a_p->mm->playerScaledHeight
+				a_p->coopActor->data.location.z + a_p->coopActor->GetHeight()
 			)
 		);
 		targetPosition = 
@@ -9995,7 +9974,7 @@ namespace ALYSLC
 		{
 			targetPosition.z += 
 			(
-				(a_p->mm->playerScaledHeight + a_p->tm->grabbedRefrDistanceOffset) * 
+				(a_p->coopActor->GetHeight() + a_p->tm->grabbedRefrDistanceOffset) * 
 				suspensionDistMult * 
 				-sinf(a_p->mm->aimPitch)
 			);
@@ -10566,7 +10545,14 @@ namespace ALYSLC
 				t - 0.5f * initialTimeToTarget >= -epsilon ||
 				xy > (0.5f * Util::GetXYDistance(releasePos, aimTargetPos))
 			);
-			if (tooLongToReach || passedHalfwayPoint || lessThanTwoFramesToReachTarget)
+			bool noTargetAndMovingCrosshair = 
+			(
+				!targetRefrPtr && a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
+			);
+			if (noTargetAndMovingCrosshair ||
+				tooLongToReach ||
+				passedHalfwayPoint ||
+				lessThanTwoFramesToReachTarget)
 			{
 				// Used to check if the projectile should switch to homing mode.
 				startedHomingIn = isHoming = true;
@@ -10619,8 +10605,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			/*SPDLOG_DEBUG
 			(
-				"[TM] GuideRefrAlongTrajectory: {}: "
-				"{} is homing: {}, passing target: {}, ang between vel and target: {}, "
+				"{}: {} is homing: {}, passing target: {}, ang between vel and target: {}, "
 				"dist to target: {}, hit target: {}, ttt: {}, t: {}. Hit refrs count: {}. "
 				"Dist from release pos: {}, z offset: {}.",
 				a_p->coopActor->GetName(),
@@ -11091,8 +11076,7 @@ namespace ALYSLC
 		// REMOVE when done debugging.
 		SPDLOG_DEBUG
 		(
-			"[TM] InitTrajectory: {}: {}: "
-			"should throw: {}, face target: {}, is crosshair refr: {}, "
+			"{}: {}: should throw: {}, face target: {}, is crosshair refr: {}, "
 			"is player: {}, is self: {}, is SMORFing: {}, grab just released: {}, "
 			"can SMORF: {}, wants to SMORF: {}.",
 			a_p->coopActor->GetName(),
@@ -11588,7 +11572,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[TM] RefrManipulationManager: ClearAll: Lock obtained. (0x{:X})", 
+					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 				collidedRefrFIDPairs.clear();
@@ -11598,7 +11582,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[TM] RefrManipulationManager: ClearAll: Failed to obtain lock. (0x{:X})", 
+					"Failed to obtain lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 			}

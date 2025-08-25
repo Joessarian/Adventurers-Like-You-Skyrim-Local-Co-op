@@ -221,7 +221,7 @@ namespace ALYSLC
 
 	void CameraManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("[CAM] PrePauseTask");
+		SPDLOG_DEBUG("PrePauseTask");
 
 		// Reset no fade flags for all players.
 		SetPlayerFadePrevention(false);
@@ -247,7 +247,7 @@ namespace ALYSLC
 
 	void CameraManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("[CAM] PreStartTask");
+		SPDLOG_DEBUG("PreStartTask");
 
 		// Prevent the game from fading all players while the camera is active.
 		SetPlayerFadePrevention(true);
@@ -263,7 +263,7 @@ namespace ALYSLC
 
 	void CameraManager::RefreshData()
 	{
-		SPDLOG_DEBUG("[CAM] RefreshData");
+		SPDLOG_DEBUG("RefreshData");
 
 		// Update parent cell.
 		UpdateParentCell();
@@ -879,7 +879,6 @@ namespace ALYSLC
 
 			/*SPDLOG_DEBUG
 			(
-				"[CAM] CalcNextOriginPoint: "
 				"Hit to base: {}, to coll pos: {}, bounds: ({}, {}), "
 				"collision origin point z: {}, original Z = {}.",
 				hitToBasePos,
@@ -2639,18 +2638,18 @@ namespace ALYSLC
 					); 
 					if (!tpState)
 					{
-						SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get third person state.");
+						SPDLOG_ERROR("Could not get third person state.");
 					}
 				}
 				else
 				{
-					SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get camera state.");
+					SPDLOG_ERROR("Could not get camera state.");
 				}
 			}
 		}
 		else
 		{
-			SPDLOG_ERROR("[CAM] ERR: ResetCamData: Could not get player cam.");
+			SPDLOG_ERROR("Could not get player cam.");
 		}
 
 		// Set rotation-related data.
@@ -2669,11 +2668,12 @@ namespace ALYSLC
 				continue;
 			}
 			
-			avgPlayerHeight += p->mm->playerScaledHeight;
+			avgPlayerHeight += p->coopActor->GetHeight();
 			camOriginPoint += p->coopActor->data.location;
 		}
 		
 		avgPlayerHeight /= glob.livingPlayers;
+		SPDLOG_DEBUG("Average player height: {}.", avgPlayerHeight);
 		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
 		camOriginPoint.z += avgPlayerHeight;
 
@@ -3133,7 +3133,7 @@ namespace ALYSLC
 				);
 				if (togglePOVLock)
 				{
-					SPDLOG_DEBUG("[CAM] ToThirdPersonState. Lock obtained. (0x{:X})", 
+					SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					isTogglingPOV = true;
 				}
@@ -3141,7 +3141,7 @@ namespace ALYSLC
 				{
 					// Could not obtain lock to toggle POV, 
 					// so return here without enqueueing any tasks.
-					SPDLOG_DEBUG("[CAM] ToThirdPersonState. Failed to obtain lock: (0x{:X})",
+					SPDLOG_DEBUG("Failed to obtain lock: (0x{:X})",
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					return;
 				}
@@ -3176,7 +3176,6 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[CAM] ToThirdPersonState. "
 						"Getting lock from global task runner. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
@@ -4529,8 +4528,7 @@ namespace ALYSLC
 					camTargetRadialDistance = radialDistanceRangeMid + camRadialDistanceOffset;
 					/*SPDLOG_DEBUG
 					(
-						"[CAM] UpdateCamZoom: ON SCREEN: "
-						"{} from ({}, {}, {}) and offset {}.",
+						"ON SCREEN: {} from ({}, {}, {}) and offset {}.",
 						camTargetRadialDistance, 
 						radialDistanceRangeMin,
 						radialDistanceRangeMid,
@@ -4545,7 +4543,7 @@ namespace ALYSLC
 					camTargetRadialDistance = lastOnScreenRadialDist + camRadialDistanceOffset;
 					/*SPDLOG_DEBUG
 					(
-						"[CAM] UpdateCamZoom: OFF SCREEN BELOW MAX: "
+						"OFF SCREEN BELOW MAX: "
 						"{} from ({}, {}, {}), las on screen {} and offset {}.",
 						camTargetRadialDistance, 
 						radialDistanceRangeMin,
@@ -4563,8 +4561,7 @@ namespace ALYSLC
 					camTargetRadialDistance = prevRadialDistance;
 					/*SPDLOG_DEBUG
 					(
-						"[CAM] UpdateCamZoom: OFF SCREEN ABOVE MAX: "
-						"{} from ({}, {}, {}) and prev {}.",
+						"OFF SCREEN ABOVE MAX: {} from ({}, {}, {}) and prev {}.",
 						camTargetRadialDistance, 
 						radialDistanceRangeMin,
 						radialDistanceRangeMid,

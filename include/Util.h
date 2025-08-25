@@ -25,6 +25,9 @@
 // Max number of players supported.
 static constexpr uint8_t ALYSLC_MAX_PLAYER_COUNT = 4;
 
+// Number of ALYSLC companion player characters.
+static constexpr uint8_t ALYSLC_COMPANION_CHARACTERS_COUNT = 9;
+
 // Max number of recursion calls to execute when traversing a node tree.
 static constexpr uint8_t MAX_NODE_RECURSION_DEPTH = 100;
 
@@ -2910,7 +2913,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[CAM] SetSkyboxModeForCell: {} ({}, 0x{:X}) has interior sky mode. Skipping.",
+					"{} ({}, 0x{:X}) has interior sky mode. Skipping.",
 					Util::GetEditorID(a_cell),
 					a_cell->IsExteriorCell() ? "EXT" : "INT",
 					a_cell->formID
@@ -2922,7 +2925,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[CAM] SetSkyboxModeForCell: Setting full sky mode for cell {} ({}, 0x{:X}).",
+					"Setting full sky mode for cell {} ({}, 0x{:X}).",
 					Util::GetEditorID(a_cell),
 					a_cell->IsExteriorCell() ? "EXT" : "INT",
 					a_cell->formID
@@ -2933,7 +2936,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[CAM] SetSkyboxModeForCell: "
 					"Setting skybox-only sky mode for cell {} ({}, 0x{:X}).",
 					Util::GetEditorID(a_cell),
 					a_cell->IsExteriorCell() ? "EXT" : "INT",

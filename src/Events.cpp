@@ -46,7 +46,7 @@ namespace ALYSLC
 		// Register death event handler.
 		//CoopDeathEventHandler::Register();
 
-		SPDLOG_INFO("[Events] RegisterEvents: event registration complete.");
+		SPDLOG_INFO("Event registration complete.");
 	}
 
 	void Events::ResetMenuState()
@@ -81,7 +81,7 @@ namespace ALYSLC
 		{
 			auto singleton = GetSingleton();
 			source->AddEventSink(singleton);
-			SPDLOG_INFO("[Events] Registered for actor kill events.");
+			SPDLOG_INFO("Registered for actor kill events.");
 
 			// Find our added sink.
 			int32_t sinkIndex = -1;
@@ -95,11 +95,11 @@ namespace ALYSLC
 
 			if (sinkIndex == -1)
 			{
-				SPDLOG_ERROR("[Events] ERR: Could not get registered actor kill event sink.");
+				SPDLOG_ERROR("Could not get registered actor kill event sink.");
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Events] Actor kill event sink found at index {}.", sinkIndex);
+				SPDLOG_DEBUG("Actor kill event sink found at index {}.", sinkIndex);
 				// Move our sink to the front so it processes events first.
 				for (auto i = 0; i < sinkIndex; ++i)
 				{
@@ -111,7 +111,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for actor kill events."); 
+			SPDLOG_ERROR("Could not register for actor kill events."); 
 		}
 	}
 
@@ -126,7 +126,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Events] Actor kill event: {} ({}) killed {}.",
+			"Actor kill event: {} ({}) killed {}.",
 			a_actorKillEvent->killer ? a_actorKillEvent->killer->GetName() : "NONE",
 			a_actorKillEvent->victim &&
 			a_actorKillEvent->victim->myKiller ? 
@@ -150,11 +150,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopBleedoutEventHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for bleedout events.");
+			SPDLOG_INFO("Registered for bleedout events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for bleedout events.");
+			SPDLOG_ERROR("Could not register for bleedout events.");
 		}
 	}
 
@@ -194,8 +194,7 @@ namespace ALYSLC
 			const auto& p = glob.coopPlayers[foundIndex];
 			if (p->coopActor->currentProcess && p->coopActor->currentProcess->middleHigh)
 			{
-				auto midHighProc = p->coopActor->currentProcess->middleHigh;
-				midHighProc->deferredKillTimer = FLT_MAX;
+				p->coopActor->currentProcess->middleHigh->deferredKillTimer = FLT_MAX;
 			}
 
 			return EventResult::kStop;
@@ -216,11 +215,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopCellChangeHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for cell change events.");
+			SPDLOG_INFO("Registered for cell change events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for cell change events.");
+			SPDLOG_ERROR("Could not register for cell change events.");
 		}
 	}
 
@@ -260,9 +259,12 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[Events] Cell change event: {} {}.",
+		SPDLOG_DEBUG
+		(
+			"Cell change event: {} {}.",
 			attachedRefrPtr->GetName(),
-			a_cellChangeEvent->isCellAttached ? "attached" : "detached");
+			a_cellChangeEvent->isCellAttached ? "attached" : "detached"
+		);
 		auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(attachedRefrPtr);
 		if (foundIndex != -1)
 		{
@@ -314,11 +316,11 @@ namespace ALYSLC
 
 			if (sinkIndex == -1)
 			{
-				SPDLOG_ERROR("[Events] ERR: Could not get registered combat event sink.");
+				SPDLOG_ERROR("Could not get registered combat event sink.");
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Events] Combat event sink found at index {}.", sinkIndex);
+				SPDLOG_DEBUG("Combat event sink found at index {}.", sinkIndex);
 				// Move our sink to the front so it processes events first.
 				for (auto i = 0; i < sinkIndex; ++i)
 				{
@@ -328,11 +330,11 @@ namespace ALYSLC
 				source->sinks[0] = singleton;
 			}
 
-			SPDLOG_INFO("[Events] Registered for combat events.");
+			SPDLOG_INFO("Registered for combat events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for combat events.");
+			SPDLOG_ERROR("Could not register for combat events.");
 		}
 	}
 
@@ -351,10 +353,13 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 		
-		SPDLOG_DEBUG("[Events] Combat Event: {} -> {}: {}.",
+		SPDLOG_DEBUG
+		(
+			"Combat Event: {} -> {}: {}.",
 			a_combatEvent->actor->GetName(),
 			a_combatEvent->targetActor->GetName(),
-			*a_combatEvent->newState);
+			*a_combatEvent->newState
+		);
 
 		return EventResult::kContinue;
 	}
@@ -371,11 +376,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopContainerChangedHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for container changed events.");
+			SPDLOG_INFO("Registered for container changed events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for container changed events.");
+			SPDLOG_ERROR("Could not register for container changed events.");
 		}
 	}
 
@@ -443,7 +448,6 @@ namespace ALYSLC
 			auto toRefr = RE::TESForm::LookupByID(a_containerChangedEvent->newContainer);
 			SPDLOG_DEBUG
 			(
-				"[Events] Container Changed Event: "
 				"{} (0x{:X}, refr: {}, x{}) is moving from {} (0x{:X}) to {} (0x{:X}). "
 				"Is favorited: {}.",
 				baseObj ? baseObj->GetName() : "NONE",
@@ -622,7 +626,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Container Changed Event: "
 								"NOT transfering quest item {} (x{}) to {}.",
 								boundObj->GetName(),
 								a_containerChangedEvent->itemCount,
@@ -634,7 +637,6 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Container Changed Event: "
 							"NOT transfering party-wide item {} (x{}) to {}.",
 							boundObj ? boundObj->GetName() : "INVALID",
 							a_containerChangedEvent->itemCount,
@@ -661,7 +663,6 @@ namespace ALYSLC
 									{
 										SPDLOG_DEBUG
 										(
-											"[Events] Container Changed Event: "
 											"Removing item {} (x{}) and giving to {}.", 
 											boundObj->GetName(), 
 											count,
@@ -734,7 +735,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Container Changed Event: "
 								"NOT moving item {} (x{}) from {} to P1.",
 								boundObj->GetName(),
 								a_containerChangedEvent->itemCount,
@@ -757,7 +757,6 @@ namespace ALYSLC
 									{
 										SPDLOG_DEBUG
 										(
-											"[Events] Container Changed Event: "
 											"Moving item {} (x{}) from {} to P1.",
 											boundObj->GetName(),
 											count,
@@ -827,7 +826,6 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[Events] Container Changed Event: "
 									"Removing {} (x{}) from P1 to {} (from gifting player {}).",
 									boundObj->GetName(), 
 									count,
@@ -1099,7 +1097,7 @@ namespace ALYSLC
 		{
 			auto singleton = GetSingleton();
 			source->AddEventSink(singleton);
-			SPDLOG_INFO("[Events] Registered for crosshair events.");
+			SPDLOG_INFO("Registered for crosshair events.");
 
 			// Find our added sink.
 			int32_t sinkIndex = -1;
@@ -1113,11 +1111,11 @@ namespace ALYSLC
 
 			if (sinkIndex == -1)
 			{
-				SPDLOG_ERROR("[Events] ERR: Could not get registered crosshair event sink.");
+				SPDLOG_ERROR("Could not get registered crosshair event sink.");
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Events] Crosshair event sink found at index {}.", sinkIndex);
+				SPDLOG_DEBUG("Crosshair event sink found at index {}.", sinkIndex);
 				// Move our sink to the front so it processes events first.
 				for (auto i = 0; i < sinkIndex; ++i)
 				{
@@ -1129,7 +1127,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for crosshair events."); 
+			SPDLOG_ERROR("Could not register for crosshair events."); 
 		}
 	}
 
@@ -1184,7 +1182,7 @@ namespace ALYSLC
 		{
 			auto singleton = GetSingleton();
 			scriptEventSourceHolder->AddEventSink(CoopDeathEventHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for death events.");
+			SPDLOG_INFO("Registered for death events.");
 
 			auto source = scriptEventSourceHolder->GetEventSource<RE::TESDeathEvent>();
 			if (!source)
@@ -1204,11 +1202,11 @@ namespace ALYSLC
 
 			if (sinkIndex == -1)
 			{
-				SPDLOG_ERROR("[Events] ERR: Could not get registered death event sink.");
+				SPDLOG_ERROR("Could not get registered death event sink.");
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Events] Death event sink found at index {}.", sinkIndex);
+				SPDLOG_DEBUG("Death event sink found at index {}.", sinkIndex);
 				// Move our sink to the front so it processes events first.
 				for (auto i = 0; i < sinkIndex; ++i)
 				{
@@ -1220,7 +1218,7 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			SPDLOG_ERROR("[Events] ERR: Could not register for death events."); 
+			SPDLOG_ERROR("Could not register for death events."); 
 		}
 	}
 
@@ -1233,8 +1231,7 @@ namespace ALYSLC
 		// Purely for debugging purposes right now.
 		SPDLOG_DEBUG
 		(
-			"[Events] Death Event: {}, "
-			"killed by death, I mean, erm... by {}. "
+			"Death Event: {}, killed by death, I mean, erm... by {}. "
 			"Is dead: {}, essential flag set: {}, {}",
 			a_deathEvent->actorDying ? a_deathEvent->actorDying->GetName() : "N/A",
 			a_deathEvent->actorKiller ? a_deathEvent->actorKiller->GetName() : "N/A",
@@ -1266,11 +1263,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopEquipEventHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for equip events.");
+			SPDLOG_INFO("Registered for equip events.");
 		}
 		else 
 		{ 
-			SPDLOG_ERROR("[Events] ERR: Could not register for equip events."); 
+			SPDLOG_ERROR("Could not register for equip events."); 
 		}
 	}
 
@@ -1292,8 +1289,8 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Events] Equip Event: {} -> {} (0x{:X}): "
-			"equipped: {} (type: 0x{:X}), original refr: 0x{:X}, unique id: 0x{:X}",
+			"{} -> {} (0x{:X}): equipped: {} (type: 0x{:X}), original refr: 0x{:X}, "
+			"unique id: 0x{:X}",
 			a_equipEvent ? (a_equipEvent->actor->GetName()) : "N/A",
 			a_equipEvent && 
 			a_equipEvent->baseObject && 
@@ -1372,7 +1369,7 @@ namespace ALYSLC
 		{
 			auto singleton = GetSingleton();
 			scriptEventSourceHolder->AddEventSink(singleton);
-			SPDLOG_INFO("[Events] Registered for hit events.");
+			SPDLOG_INFO("Registered for hit events.");
 			
 			auto source = scriptEventSourceHolder->GetEventSource<RE::TESHitEvent>();
 			if (!source)
@@ -1392,11 +1389,11 @@ namespace ALYSLC
 
 			if (sinkIndex == -1)
 			{
-				SPDLOG_ERROR("[Events] ERR: Could not get registered hit event sink.");
+				SPDLOG_ERROR("Could not get registered hit event sink.");
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Events] Hit event sink found at index {}.", sinkIndex);
+				SPDLOG_DEBUG("Hit event sink found at index {}.", sinkIndex);
 				// Move our sink to the front so it processes events first.
 				for (auto i = 0; i < sinkIndex; ++i)
 				{
@@ -1408,7 +1405,7 @@ namespace ALYSLC
 		}
 		else 
 		{ 
-			SPDLOG_ERROR("[Events] ERR: Could not register for onhit events.");
+			SPDLOG_ERROR("Could not register for onhit events.");
 		}
 	}
 
@@ -1500,8 +1497,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Hit Event: {} was hit by {}'s {}, "
-							"adding Light Armor Skill XP, base XP: {}.",
+							"{} was hit by {}'s {}, adding Light Armor Skill XP, base XP: {}.",
 							p->coopActor->GetName(),
 							aggressorRefr ? aggressorRefr->GetName() : "NONE",
 							attackingObj->GetName(),
@@ -1519,8 +1515,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Hit Event: {} was hit by {}'s {}, "
-							"adding Heavy Armor Skill XP, base XP: {}.",
+							"{} was hit by {}'s {}, adding Heavy Armor Skill XP, base XP: {}.",
 							p->coopActor->GetName(),
 							aggressorRefr ? aggressorRefr->GetName() : "NONE",
 							attackingObj->GetName(),
@@ -1633,12 +1628,19 @@ namespace ALYSLC
 					// Add XP to the attacking player.
 					if (weap)
 					{
+						SPDLOG_DEBUG
+						(
+							"Adding {}'s weapon {} has base damage {}, skills 0b{:B}.",
+							p->coopActor->GetName(),
+							weap->GetName(),
+							weap->GetAttackDamage(), 
+							*weap->weaponData.skill
+						);
 						if (weap->IsRanged() && !weap->IsStaff())
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Hit Event: Adding {} XP to {}, "
-								"base XP: {}, weapon: {}",
+								"Adding {} XP to {}, base XP: {}, weapon: {}",
 								RE::ActorValue::kArchery, 
 								p->coopActor->GetName(), 
 								weap->GetAttackDamage(),
@@ -1656,8 +1658,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Hit Event: Adding {} XP to {}, "
-								"base XP: {}, weapon: {}",
+								"Adding {} XP to {}, base XP: {}, weapon: {}",
 								RE::ActorValue::kOneHanded,
 								p->coopActor->GetName(),
 								weap->GetAttackDamage(),
@@ -1674,8 +1675,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Hit Event: Adding {} XP to {}, "
-								"base XP: {}, weapon: {}",
+								"Adding {} XP to {}, base XP: {}, weapon: {}",
 								RE::ActorValue::kTwoHanded, 
 								p->coopActor->GetName(),
 								weap->GetAttackDamage(), 
@@ -1688,6 +1688,24 @@ namespace ALYSLC
 								weap->GetAttackDamage()
 							);
 						}
+
+						if (weap->IsBound())
+						{
+							SPDLOG_DEBUG
+							(
+								"Adding {} XP to {}, base XP: {}, weapon: {}",
+								RE::ActorValue::kConjuration,
+								p->coopActor->GetName(),
+								weap->GetAttackDamage(), 
+								weap->GetName()
+							);
+							GlobalCoopData::AddSkillXP
+							(
+								p->controllerID,
+								RE::ActorValue::kConjuration, 
+								weap->GetAttackDamage()
+							);
+						}
 					}
 
 					// Block XP.
@@ -1695,8 +1713,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Hit Event: Adding 5 XP to {}'s Block Skill "
-							"for a successful shield bash",
+							"Adding 5 XP to {}'s Block Skill for a successful shield bash",
 							p->coopActor->GetName()
 						);
 						GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kBlock, 5.0f);
@@ -1732,7 +1749,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill "
+								"Adding 2.5 XP to {}'s Sneak Skill "
 								"for a successful ranged sneak attack with {} (0x{:X}, {})",
 								p->coopActor->GetName(),
 								weap ? weap->GetName() : magicItem ? magicItem->GetName() : "NONE",
@@ -1750,7 +1767,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[Events] Hit Event: Adding 30 XP to {}'s Sneak Skill "
+								"Adding 30 XP to {}'s Sneak Skill "
 								"for a successful melee sneak attack with {} (0x{:X}, {})",
 								p->coopActor->GetName(),
 								weap ? weap->GetName() : "fists",
@@ -1782,7 +1799,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Hit Event: Adding 2.5 XP to {}'s Sneak Skill "
+						"Adding 2.5 XP to {}'s Sneak Skill "
 						"for a successful thrown object sneak attack with {} (0x{:X}, {})",
 						p->coopActor->GetName(), 
 						projectileForm->GetName(), 
@@ -1967,11 +1984,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopLoadGameEventHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for load game events.");
+			SPDLOG_INFO("Registered for load game events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for load game events.");
+			SPDLOG_ERROR("Could not register for load game events.");
 		}
 	}
 
@@ -1981,6 +1998,8 @@ namespace ALYSLC
 	)
 	{
 		// Tear down any active co-op session when P1 loads a save.
+
+		SPDLOG_DEBUG("Load game event. Co-op session active: {}.", glob.coopSessionActive);
 		if (glob.coopSessionActive && a_loadGameEvent)
 		{
 			GlobalCoopData::TeardownCoopSession(false);
@@ -2001,11 +2020,11 @@ namespace ALYSLC
 		if (ui) 
 		{
 			ui->AddEventSink(CoopMenuOpenCloseHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for menu open/close events.");
+			SPDLOG_INFO("Registered for menu open/close events.");
 		}
 		else
 		{ 
-			SPDLOG_ERROR("[Events] ERR: Could not register for menu open/close events."); 
+			SPDLOG_ERROR("Could not register for menu open/close events."); 
 		}
 	}
 
@@ -2023,7 +2042,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Events] |MENU EVENT|: "
+			"|MENU EVENT|: "
 			"menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. "
 			"Only always open: {}. "
 			"Copied data types: 0x{:X}",
@@ -2077,7 +2096,7 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[Events] Menu Open/Close Event: BEFORE: {} menu {}. "
+					"BEFORE: {} menu {}. "
 					"P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
 					levelupMenuClosing ? "LevelUp" : "Stats",
 					a_menuEvent->opening ? "opening" : "closing",
@@ -2104,7 +2123,7 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[Events] Menu Open/Close Event: AFTER: {} menu {}. "
+					"AFTER: {} menu {}. "
 					"P1 XP: {}, XP threshold: {}, XP mult/base: {}, {}",
 					levelupMenuClosing ? "LevelUp" : "Stats",
 					a_menuEvent->opening ? "opening" : "closing", 
@@ -2126,20 +2145,6 @@ namespace ALYSLC
 			a_menuEvent->opening && 
 			a_menuEvent->menuName == RE::LoadingMenu::MENU_NAME)
 		{
-			// Close message box menu ('You died' message).
-			if (ui->IsMenuOpen(RE::MessageBoxMenu::MENU_NAME)) 
-			{
-				if (msgQ)
-				{
-					msgQ->AddMessage
-					(
-						RE::MessageBoxMenu::MENU_NAME,
-						RE::UI_MESSAGE_TYPE::kForceHide, 
-						nullptr
-					);
-				}
-			}
-
 			if (glob.coopSessionActive) 
 			{
 				// Helps prevent 2H weapon animation stuttering bug due to corrupted equip slots.
@@ -2157,14 +2162,14 @@ namespace ALYSLC
 #ifdef ALYSLC_DEBUG_MODE
 		if (ui)
 		{
-			SPDLOG_DEBUG("[Events] ===========[Menu Map BEGIN]===========");
+			SPDLOG_DEBUG("===========[Menu Map BEGIN]===========");
 			for (auto& menu : ui->menuMap)
 			{
 				if (ui->IsMenuOpen(menu.first))
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu {} is open. Pauses game: {}, always open: {}. "
+						"Menu {} is open. Pauses game: {}, always open: {}. "
 						"Flags: 0b{:B}.", 
 						menu.first,
 						menu.second.menu->PausesGame(),
@@ -2174,9 +2179,9 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG("[Events] ===========[Menu Map END]===========");
+			SPDLOG_DEBUG("===========[Menu Map END]===========");
 
-			SPDLOG_DEBUG("[Events] ===========[Menu Stack BEGIN]===========");
+			SPDLOG_DEBUG("===========[Menu Stack BEGIN]===========");
 
 			for (auto iter = ui->menuStack.begin(); iter != ui->menuStack.end(); ++iter)
 			{
@@ -2187,7 +2192,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Index {}: Menu {} is open. "
+							"Index {}: Menu {} is open. "
 							"Pauses game: {}, always open: {}. Flags: 0b{:B}. "
 							"Mouse/controller counts: {}, {}. Input context: 0b{:B}.",
 							iter - ui->menuStack.begin(),
@@ -2207,19 +2212,19 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG("[Events] ===========[Menu Stack END]===========");
+			SPDLOG_DEBUG("===========[Menu Stack END]===========");
 
 			if (auto controlMap = RE::ControlMap::GetSingleton(); controlMap) 
 			{
-				SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack BEGIN]===========");
+				SPDLOG_DEBUG("===========[Menu Priority Stack BEGIN]===========");
 
 				for (auto i = 0; i < controlMap->contextPriorityStack.size(); ++i)
 				{
 					const auto& context = controlMap->contextPriorityStack[i];
-					SPDLOG_DEBUG("[Events] Index {}: context: {}.", i, context);
+					SPDLOG_DEBUG("Index {}: context: {}.", i, context);
 				}
 
-				SPDLOG_DEBUG("[Events] ===========[Menu Priority Stack END]===========");
+				SPDLOG_DEBUG("===========[Menu Priority Stack END]===========");
 			}
 		}
 #endif
@@ -2229,7 +2234,7 @@ namespace ALYSLC
 			// Open the ALYSLC overlay if it isn't open already.
 			if (!ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 			{
-				SPDLOG_DEBUG("[Events] Menu Open/Close Event: ALYSLC overlay not open. Opening.");
+				SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
 				DebugOverlayMenu::Load();
 			}
 
@@ -2255,8 +2260,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Menu Open/Close Event: {}. Transfer menu control CID. "
-							"Lock obtained: (0x{:X}).", 
+							"{}. Transfer menu control CID. Lock obtained: (0x{:X}).", 
 							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -2266,8 +2270,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] Menu Open/Close Event: {}. Transfer menu control CID. "
-							"Failed to obtain lock: (0x{:X})", 
+							"{}. Transfer menu control CID. Failed to obtain lock: (0x{:X})", 
 							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -2303,7 +2306,7 @@ namespace ALYSLC
 					GlobalCoopData::SetMenuCIDs(glob.mim->managerMenuCID);
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: OPENING: Set menu CIDs. "
+						"OPENING: Set menu CIDs. "
 						"Menu input manager running. CIDs are now: {}, {}, {}.", 
 						glob.menuCID,
 						glob.prevMenuCID,
@@ -2316,7 +2319,7 @@ namespace ALYSLC
 					GlobalCoopData::SetMenuCIDs(glob.lastResolvedMenuCID);
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: OPENING: Set menu CIDs. "
+						"OPENING: Set menu CIDs. "
 						"Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
 						glob.menuCID,
 						glob.prevMenuCID,
@@ -2327,7 +2330,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: OPENING: Set menu CIDs. "
+						"OPENING: Set menu CIDs. "
 						"Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
 						glob.menuCID,
 						glob.prevMenuCID,
@@ -2368,7 +2371,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: Menu {} {} by CID {}, menus open: {}", 
+						"Menu {} {} by CID {}, menus open: {}", 
 						a_menuEvent->menuName, 
 						a_menuEvent->opening ? "opened" : "closed", 
 						glob.menuCID, 
@@ -2451,8 +2454,8 @@ namespace ALYSLC
 					GlobalCoopData::ResetMenuCIDs();
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: CLOSING: "
-						"MIM signalled to close. Reset menu CIDs. CIDs are now: {}, {}, {}.",
+						"CLOSING: MIM signalled to close. Reset menu CIDs. "
+						"CIDs are now: {}, {}, {}.",
 						glob.menuCID,
 						glob.prevMenuCID,
 						glob.mim->managerMenuCID
@@ -2467,8 +2470,7 @@ namespace ALYSLC
 					GlobalCoopData::ResetMenuCIDs();
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: CLOSING: "
-						"MIM signalled to close with controllable menus open. "
+						"CLOSING: MIM signalled to close with controllable menus open. "
 						"Give control to P1. CIDs are now: {}, {}, {}.",
 						glob.menuCID,
 						glob.prevMenuCID,
@@ -2479,8 +2481,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Menu Open/Close Event: CLOSING: "
-						"Fallthrough: only always open: {}, MIM managed menus count: {}. "
+						"CLOSING: Fallthrough: only always open: {}, MIM managed menus count: {}. "
 						"CIDs are now: {}, {}, {}.",
 						onlyAlwaysOpen,
 						glob.mim->managedCoopMenusCount,
@@ -2495,8 +2496,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Events] ERR: Menu Open/Close Event: CLOSING: "
-							"MIM managed menus count should be 0 here. "
+							"CLOSING: MIM managed menus count should be 0 here. "
 							"Pausing menu input manager and resetting menu CIDs."
 						);
 						glob.mim->ToggleCoopPlayerMenuMode(-1);
@@ -2532,11 +2532,11 @@ namespace ALYSLC
 		if (scriptEventSourceHolder)
 		{
 			scriptEventSourceHolder->AddEventSink(CoopCellFullyLoadedHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for cell fully loaded events.");
+			SPDLOG_INFO("Registered for cell fully loaded events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for cell fully loaded events.");
+			SPDLOG_ERROR("Could not register for cell fully loaded events.");
 		}
 	}
 
@@ -2553,7 +2553,7 @@ namespace ALYSLC
 		
 		SPDLOG_DEBUG
 		(
-			"[Events] Cell {} (0x{:X}) fully loaded. Resetting fade on all objects in cell. "
+			"Cell {} (0x{:X}) fully loaded. Resetting fade on all objects in cell. "
 			"Is loading a save: {}.",
 			a_cellFullyLoadedEvent->cell->GetName(),
 			a_cellFullyLoadedEvent->cell->formID,
@@ -2578,11 +2578,11 @@ namespace ALYSLC
 		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
 		{
 			p1->AddEventSink(CoopPositionPlayerEventHandler::GetSingleton());
-			SPDLOG_INFO("[Events] Registered for position player events.");
+			SPDLOG_INFO("Registered for position player events.");
 		}
 		else
 		{
-			SPDLOG_ERROR("[Events] ERR: Could not register for position player events.");
+			SPDLOG_ERROR("Could not register for position player events.");
 		}
 	}
 
@@ -2626,7 +2626,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Events] Position Player Event: {}. Should move players to P1: {}.",
+			"{}. Should move players to P1: {}.",
 			*a_positionPlayerEvent->type,
 			a_positionPlayerEvent->type == RE::PositionPlayerEvent::EVENT_TYPE::kFinish
 		);
@@ -2649,8 +2649,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Position Player Event: P{}'s managers are running. "
-						"Pausing now before P1 moves.", 
+						"P{}'s managers are running. Pausing now before P1 moves.", 
 						p->playerID + 1
 					);
 					p->RequestStateChange(ManagerState::kPaused);
@@ -2663,8 +2662,7 @@ namespace ALYSLC
 				p->tm->rmm->ClearGrabbedActors(p);
 				SPDLOG_DEBUG
 				(
-					"[Events] Position Player Event: Pre-move: "
-					"Cleared P{}'s managed grabbed and released refrs.", 
+					"Pre-move: Cleared P{}'s managed grabbed and released refrs.", 
 					p->playerID + 1
 				);
 			}
@@ -2685,7 +2683,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Events] ERR: Position Player Event: P1 is not valid after event finished."
+					"P1 is not valid after event finished."
 				);
 				return EventResult::kContinue;
 			}
@@ -2702,8 +2700,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Events] Position Player Event: P{}'s managers are running. "
-						"Pausing now after P1 moved.",
+						"P{}'s managers are running. Pausing now after P1 moved.",
 						p->playerID + 1
 					);
 					p->RequestStateChange(ManagerState::kPaused);
@@ -2711,8 +2708,7 @@ namespace ALYSLC
 
 				if (!p->isPlayer1) 
 				{
-					SPDLOG_DEBUG("[Events] Position Player Event: About to move player {} to P1.", 
-						p->coopActor->GetName());
+					SPDLOG_DEBUG("About to move player {} to P1.", p->coopActor->GetName());
 					// Sheathe before moving to minimize incidence of equip state bugs.
 					p->pam->ReadyWeapon(false);
 					auto taskInterface = SKSE::GetTaskInterface();
@@ -2724,8 +2720,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[Events] Position Player Event: Now moving player {} to P1.", 
-									p->coopActor->GetName()
+									"Now moving player {} to P1.", p->coopActor->GetName()
 								);
 								p->coopActor->MoveTo(p1); 
 							}
@@ -2739,16 +2734,14 @@ namespace ALYSLC
 				
 				SPDLOG_DEBUG
 				(
-					"[Events] Position Player Event: Post-move: "
-					"Should clear P{}'s managed grabbed and released refrs.", 
+					"Post-move: Should clear P{}'s managed grabbed and released refrs.", 
 					p->playerID + 1
 				);
 				// For now, clear all managed refrs.
 				p->tm->rmm->ClearAll();
 				SPDLOG_DEBUG
 				(
-					"[Events] Position Player Event: Post-move: "
-					"Cleared P{}'s managed grabbed and released refrs.", 
+					"Post-move: Cleared P{}'s managed grabbed and released refrs.", 
 					p->playerID + 1
 				);
 			}

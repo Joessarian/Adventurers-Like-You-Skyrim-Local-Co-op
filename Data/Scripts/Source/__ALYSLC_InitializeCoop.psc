@@ -1,7 +1,7 @@
 ; Handles initialization of co-op entities and co-op state variables each time a save is loaded.
 Scriptname __ALYSLC_InitializeCoop extends Quest  
 Actor Property PlayerRef Auto
-Actor[] Property DefCoopCompanionsList Auto
+Actor[] Property CompanionPlayerCharactersList Auto
 Actor[] Property SelectionBlacklist Auto
 EffectShader Property AbsorbCompanionShader Auto
 EffectShader Property UsePortalShader Auto
@@ -58,17 +58,6 @@ Function Init()
 	PlayerRef.SetActorValue("attackDamageMult", 1.0)
 	PlayerRef.GetActorBase().SetEssential(False)
 
-	; Set package stacks/formlists (default, combat override) for each default companion
-	; since these package stacks are coupled to the companions in the CK.
-	; Player 1's packages always start at index 0.
-
-	StorageUtil.SetIntValue(None, "ALYSLC_PackageFormListStartIndex" + PO3_SKSEFunctions.IntToString(PlayerRef.GetFormID(), False), 0)
-	Int Iter = 0
-	While (Iter < DefCoopCompanionsList.Length)
-		StorageUtil.SetIntValue(None, "ALYSLC_PackageFormListStartIndex" + PO3_SKSEFunctions.IntToString(DefCoopCompanionsList[Iter].GetFormID(), False), 2 * (Iter + 1))
-		Iter += 1
-	EndWhile
-	
 	; Ensure that the camera is reset to default.
 	; If cam target was somehow set to another actor when saving,
 	; and that actor is not loaded when this script fires,
@@ -101,10 +90,12 @@ Function Init()
 	; Remove straggling co-op companions and their COSs and force resummoning when out of combat.
 	; Done to prevent save scumming during difficult combat encounters.
 	Float WaitTimeElapsed = 0.0
-	Iter = 0
-	While (Iter < DefCoopCompanionsList.Length)
-		If (DefCoopCompanionsList[Iter])
-			ObjectReference CompanionTemp = DefCoopCompanionsList[Iter] as ObjectReference
+	Int Iter = 0
+	ALYSLC.Log("[INIT SCRIPT] " + CompanionPlayerCharactersList.Length + " default companion player characters.")
+	While (Iter < CompanionPlayerCharactersList.Length)
+		If (CompanionPlayerCharactersList[Iter])
+			ObjectReference CompanionTemp = CompanionPlayerCharactersList[Iter] as ObjectReference
+			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": at index " + Iter)
 			KIter = 0
 			While (KIter < 4)
 				If (CompanionTemp.HasKeyword(CoopPlayerKeywords[KIter]))
@@ -144,22 +135,14 @@ Function Init()
 	StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
 	StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
 	
-	StorageUtil.SetFormValue(None, "ALYSLC_AimTargetLinkedRef1", PlayerRef)
-	StorageUtil.SetFormValue(None, "ALYSLC_AimTargetLinkedRef2", DefCoopCompanionsList[0])
-	StorageUtil.SetFormValue(None, "ALYSLC_AimTargetLinkedRef3", DefCoopCompanionsList[1])
-	StorageUtil.SetFormValue(None, "ALYSLC_AimTargetLinkedRef4", DefCoopCompanionsList[2])
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer1Keyword", CoopPlayerKeywords[0])
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer2Keyword", CoopPlayerKeywords[1])
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer3Keyword", CoopPlayerKeywords[2])
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer4Keyword", CoopPlayerKeywords[3])
 
-	StorageUtil.SetIntValue(None, "ALYSLC_ActivatingController", -1)
-	StorageUtil.SetIntValue(None, "ALYSLC_CoopCamEnabled", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_CoopControllerCount", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
-	StorageUtil.SetFormValue(None, "ALYSLC_TargetActivated", None)
-	StorageUtil.SetFormValue(None, "ALYSLC_PlayerActivatingObject", None)
 
 	Utility.Wait(0.25)
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")

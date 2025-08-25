@@ -93,7 +93,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[MIM] MainTask: Lock acquired and data updated (0x{:X}). "
+						"Lock acquired and data updated (0x{:X}). "
 						"Setting new menu opened flag to false.", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
@@ -103,7 +103,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[MIM] MainTask: Could not acquire lock after updating data (0x{:X}). "
+						"Could not acquire lock after updating data (0x{:X}). "
 						"Better luck next time.", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
@@ -145,7 +145,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] MainTask: Lock acquired and data updated (0x{:X}). "
+							"Lock acquired and data updated (0x{:X}). "
 							"Resetting refresh equip state flags from {}, {} to false.",
 							std::hash<std::jthread::id>()(std::this_thread::get_id()), 
 							equipEventRefreshReq, 
@@ -161,7 +161,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] MainTask: Could not acquire lock after updating data (0x{:X}). "
+							"Could not acquire lock after updating data (0x{:X}). "
 							"Better luck next time.",
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -189,7 +189,7 @@ namespace ALYSLC
 
 	void MenuInputManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("[MIM] PrePauseTask.");
+		SPDLOG_DEBUG("PrePauseTask.");
 		// Release all inputs if menus closed when input(s) were being held.
 		for (auto& [xMask, info] : menuControlMap)
 		{
@@ -251,7 +251,7 @@ namespace ALYSLC
 
 		if (managerMenuCID == -1) 
 		{
-			SPDLOG_DEBUG("[MIM] ERR: RefreshData: Got invalid controller ID (-1).");
+			SPDLOG_DEBUG("Got invalid controller ID (-1).");
 			return;
 		}
 
@@ -363,8 +363,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MIM] ERR: ShouldSelfPause: Could not get XINPUT state for controller ID {}. "
-					"Pausing menu input manager.", 
+					"Could not get XINPUT state for controller ID {}. Pausing menu input manager.", 
 					managerMenuCID
 				);
 			}
@@ -1114,7 +1113,6 @@ namespace ALYSLC
 		// REMOVE when done debugging.
 		/*SPDLOG_DEBUG
 		(
-			"[MIM] DrawPlayerMenuControlOverlay: "
 			"Attempting to open setup menu: {}. Temp menu open: {}. "
 			"Interped value: {}. Interp to min/max: {}, {}.", 
 			attemptingToOpenSetupMenu,
@@ -1328,8 +1326,7 @@ namespace ALYSLC
 				
 				SPDLOG_DEBUG
 				(
-					"[MIM] EquipP1QSForm: {} at index {} is mapped to {}. "
-					"Entries to indices map size: {} (empty: {}).", 
+					"{} at index {} is mapped to {}. Entries to indices map size: {} (empty: {}).", 
 					index < favoritesMenu->favorites.size() && 
 					favoritesMenu->favorites[index].item ? 
 					favoritesMenu->favorites[index].item->GetName() :
@@ -1435,10 +1432,7 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG
-				(
-					"[MIM] EquipP1QSForm: {} {}.", equipped ? "Equipped" : "Unequipped", entryStr
-				);
+				SPDLOG_DEBUG("{} {}.", equipped ? "Equipped" : "Unequipped", entryStr);
 
 				// Set entry text and then insert back into the list.
 				entryText.SetString(entryStr);
@@ -1637,8 +1631,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[MIM] HotkeyFavoritedForm: {}: Hotkeying {} into slot {}, "
-						"is now hotkeyed by P1: {}.",
+						"{}: Hotkeying {} into slot {}, is now hotkeyed by P1: {}.",
 						p->coopActor->GetName(),
 						form->GetName(), 
 						hotkeySlotToChange, 
@@ -1656,8 +1649,10 @@ namespace ALYSLC
 							isP1Hotkeyed ? hotkeySlotToChange : -1
 						);
 
-						SPDLOG_DEBUG("[MIM] HotkeyFavoritedForm: {} is now hotkeyed by P1: {}.",
-							form->GetName(), isP1Hotkeyed);
+						SPDLOG_DEBUG
+						(
+							"{} is now hotkeyed by P1: {}.", form->GetName(), isP1Hotkeyed
+						);
 						// Signal manager to refresh the menu.
 						shouldRefreshMenu = true;
 					}
@@ -1753,7 +1748,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] HotkeyFavoritedForm: {}'s favorited form {} "
+							"{}'s favorited form {} "
 							"does not have an entry number corresponding to an index of {}.",
 							p->coopActor->GetName(), form->GetName(), index
 						);
@@ -1797,8 +1792,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] HotkeyFavoritedForm: {}: {} will be hotkeyed in slot {} "
-							"on release.",
+							"{}: {} will be hotkeyed in slot {} on release.",
 							p->coopActor->GetName(), form->GetName(), hotkeySlotToChange
 						);
 						// Signal manager to refresh the menu.
@@ -2097,7 +2091,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[MIM] HandleMenuEvent: Equip Request Event: from container: {}, "
+				"Equip Request Event: from container: {}, "
 				"form: {}, equip index: {}, placeholder spell changed: {}.",
 				(Util::HandleIsValid(fromContainerHandle)) ? 
 				fromContainerHandle.get()->GetName() : 
@@ -2147,7 +2141,7 @@ namespace ALYSLC
 
 	void MenuInputManager::InitFavoritesEntries()
 	{
-		SPDLOG_DEBUG("[MIM] InitFavoritesEntries.");
+		SPDLOG_DEBUG("InitFavoritesEntries.");
 
 		// Update equip states in the Favorites Menu 
 		// for forms equipped by the co-op companion player.
@@ -2197,7 +2191,7 @@ namespace ALYSLC
 		// Set quick slot tags for any equipped quick slot items/spells 
 		// and update index-to-entry map.
 
-		SPDLOG_DEBUG("[MIM] InitP1QSFormEntries");
+		SPDLOG_DEBUG("InitP1QSFormEntries");
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto taskInterface = SKSE::GetTaskInterface();
@@ -2368,7 +2362,7 @@ namespace ALYSLC
 									);
 									SPDLOG_DEBUG
 									(
-										"[MIM] InitP1QSFormEntries. Set {} entry as {}.",
+										"Set {} entry as {}.",
 										isConsumable ? "QSI" : "QSS",
 										entryStr
 									);
@@ -2402,6 +2396,11 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr || !a_skillbook)
 		{
+			SPDLOG_DEBUG
+			(
+				"FAIL: No player in menu: {}, no skillbook: {}.",
+				!menuCoopActorPtr, !a_skillbook
+			);
 			return false;
 		}
 
@@ -2410,6 +2409,7 @@ namespace ALYSLC
 		auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
 		if (!containerRefrPtr) 
 		{
+			SPDLOG_DEBUG("FAIL: No container refr.");
 			return false;
 		}
 
@@ -2505,6 +2505,7 @@ namespace ALYSLC
 			// No index for the linked skill.
 			if (skillAVIndex == -1)
 			{
+				SPDLOG_DEBUG("FAIL: No skill AV for {}.", a_skillbook->GetName());
 				return false;
 			}
 
@@ -2514,6 +2515,12 @@ namespace ALYSLC
 			const auto iter = glob.serializablePlayerData.find(menuCoopActorPtr->formID);
 			if (iter == glob.serializablePlayerData.end())
 			{
+				SPDLOG_DEBUG
+				(
+					"FAIL: Could not get serializable data for {} (0x{:X}).",
+					menuCoopActorPtr->GetName(),
+					menuCoopActorPtr->formID
+				);
 				return false;
 			}
 
@@ -2566,6 +2573,7 @@ namespace ALYSLC
 			// and aren't handled here.
 			if (a_skillbook->formID == 0xCE135 && a_skillbook->formID == 0x12E1FC)
 			{
+				SPDLOG_DEBUG("FAIL: Is +2 learning or +1 memory point book.");
 				return false;
 			}
 
@@ -2609,7 +2617,14 @@ namespace ALYSLC
 					);
 				}
 			}
-
+			
+			SPDLOG_DEBUG
+			(
+				"FAIL: No points available: {}, not correct tier: {}, not valid to level: {}.",
+				!pointsAvailable,
+				pointsAvailable && skillAV != RE::ActorValue::kNone,
+				pointsAvailable && skillAV == RE::ActorValue::kNone
+			);
 			return false;
 		}
 
@@ -3553,7 +3568,9 @@ namespace ALYSLC
 			// Exit menu and relinquish control when cancel bind is pressed.
 			if (auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); crosshairPickData)
 			{
-				SPDLOG_DEBUG("[MIM] ProcessLootMenuButtonInput: {} is closing LootMenu.",
+				SPDLOG_DEBUG
+				(
+					"{} is closing LootMenu.",
 					Util::HandleIsValid(menuCoopActorHandle) ?
 					menuCoopActorHandle.get()->GetName() :
 					"NONE"
@@ -3669,16 +3686,18 @@ namespace ALYSLC
 				auto item = obj->As<RE::AlchemyItem>();
 				// Level up with Enderal skillbook.
 				bool succ = PerformEnderalSkillLevelUp(item);
-				if (succ)
+				if (!succ)
 				{
-					// No event and we do not want P1 to use the book.
-					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+					// Notify the player to open their inventory and try again.
+					SPDLOG_DEBUG
+					(
+						"Failed to use Enderal skillbook '{}'.",
+						item->GetName()
+					);
 				}
-				else
-				{
-					// Have P1 use the book on failure.
-					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-				}
+				
+				// No event and we do not want P1 to use the book.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 			}
 			else
 			{
@@ -4240,24 +4259,30 @@ namespace ALYSLC
 		if (menuNamesStack.size() > 0)
 		{
 			menuName = menuNamesStack.front();
-			SPDLOG_DEBUG("[MIM] SetOpenedMenu: New menu on top of the stack: {}", menuName);
+			SPDLOG_DEBUG("New menu on top of the stack: {}", menuName);
 		}
 		else
 		{
 			menuName = "";
-			SPDLOG_DEBUG("[MIM] SetOpenedMenu: Menu stack is now empty.");
+			SPDLOG_DEBUG("Menu stack is now empty.");
 		}
 
 		newHash = Hash(menuName);
 		// Only update menu type if a new menu is atop the stack.
 		if (newHash != oldHash) 
 		{
-			SPDLOG_DEBUG("[MIM] SetOpenedMenu: Getting lock. (0x{:X})", 
-				std::hash<std::jthread::id>()(std::this_thread::get_id()));
+			SPDLOG_DEBUG
+			(
+				"Getting lock. (0x{:X})", 
+				std::hash<std::jthread::id>()(std::this_thread::get_id())
+			);
 			{
 				std::unique_lock<std::mutex> lock(openedMenuMutex);
-				SPDLOG_DEBUG("[MIM] SetOpenedMenu: Lock obtained. (0x{:X})", 
-					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				SPDLOG_DEBUG
+				(
+					"Lock obtained. (0x{:X})", 
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 				newMenuAtopStack = true;
 			}
 
@@ -4386,9 +4411,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in both hands.", 
-									favForm->GetName()
+									"{} equipped in both hands.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
 							}
@@ -4397,9 +4420,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in left hand.", 
-									favForm->GetName()
+									"{} equipped in left hand.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = 
 								(
@@ -4425,9 +4446,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in both hands.",
-									favForm->GetName()
+									"{} equipped in both hands.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
 							}
@@ -4436,9 +4455,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in right hand.", 
-									favForm->GetName()
+									"{} equipped in right hand.", favForm->GetName()
 								);
 								favEntryEquipStates[i]= 
 								(
@@ -4536,7 +4553,6 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
 									"{} equipped in both hands.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kBothHands;
@@ -4547,9 +4563,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in left hand.", 
-									favForm->GetName()
+									"{} equipped in left hand.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kLH;
 								favItemsEquippedIndices.insert(i);
@@ -4559,9 +4573,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in right hand.", 
-									favForm->GetName()
+									"{} equipped in right hand.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kRH;
 								favItemsEquippedIndices.insert(i);
@@ -4578,9 +4590,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} equipped in voice slot.", 
-									favForm->GetName()
+									"{} equipped in voice slot.", favForm->GetName()
 								);
 								favEntryEquipStates[i] = EntryEquipState::kDefault;
 								favItemsEquippedIndices.insert(i);
@@ -4591,11 +4601,7 @@ namespace ALYSLC
 						auto quickSlotSpell = em->quickSlotSpell; 
 						if (quickSlotSpell && quickSlotSpell == favForm)
 						{
-							SPDLOG_DEBUG
-							(
-								"[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.",
-								favForm->GetName()
-							);
+							SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
 							em->equippedQSSpellIndex = i;
 							spellStillEquipped = true;
 						}
@@ -4611,7 +4617,6 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
 									"{} with highest var index {} equipped in voice slot",
 									asShout->GetName(), em->highestShoutVarIndex
 								);
@@ -4631,9 +4636,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MIM] RefreshFavoritesMenuEquipState: "
-									"{} (0x{:X}) armor equipped.",
-									form->GetName(), form->formID
+									"{} (0x{:X}) armor equipped.", form->GetName(), form->formID
 								);
 								favEntryEquipStates[i] = EntryEquipState::kDefault;
 								favItemsEquippedIndices.insert(i);
@@ -4650,7 +4653,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[MIM] RefreshFavoritesMenuEquipState: {} (0x{:X}) ammo equipped.",
+								"{} (0x{:X}) ammo equipped.",
 								currentAmmo->GetName(), currentAmmo->formID
 							);
 							favEntryEquipStates[i] = EntryEquipState::kDefault;
@@ -4664,11 +4667,7 @@ namespace ALYSLC
 						auto quickSlotItem = em->quickSlotItem;
 						if (quickSlotItem && quickSlotItem == favForm)
 						{
-							SPDLOG_DEBUG
-							(
-								"[MIM] RefreshFavoritesMenuEquipState: {} equipped in quick slot.",
-								favForm->GetName()
-							);
+							SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
 							em->equippedQSItemIndex = i;
 							itemStillEquipped = true;
 						}
@@ -4832,41 +4831,25 @@ namespace ALYSLC
 					// Both hands.
 					if (magEquippedBothH)
 					{
-						SPDLOG_DEBUG
-						(
-							"[MIM] RefreshMagicMenuEquipState: {} equipped in both hands.", 
-							magForm->GetName()
-						);
+						SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kBothHands;
 					}
 					// LH
 					else if (magEquippedLH)
 					{
-						SPDLOG_DEBUG
-						(
-							"[MIM] RefreshMagicMenuEquipState: {} equipped in left hand.",
-							magForm->GetName()
-						);
+						SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kLH;
 					}
 					// RH
 					else if (magEquippedRH)
 					{
-						SPDLOG_DEBUG
-						(
-							"[MIM] RefreshMagicMenuEquipState: {} equipped in right hand.", 
-							magForm->GetName()
-						);
+						SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kRH;
 					}
 					// Voice
 					else if (magEquippedVoice)
 					{
-						SPDLOG_DEBUG
-						(
-							"[MIM] RefreshMagicMenuEquipState: {} equipped in voice slot.",
-							magForm->GetName()
-						);
+						SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
 						magEntryEquipStates[i] = EntryEquipState::kDefault;
 					}
 					// No match or invalid
@@ -4885,7 +4868,7 @@ namespace ALYSLC
 	{
 		// Refresh the currently opened menu.
 
-		SPDLOG_DEBUG("[MIM] RefreshMenu");
+		SPDLOG_DEBUG("RefreshMenu");
 		if (containerMenu)
 		{
 			containerMenu->itemList->Update();
@@ -4998,8 +4981,7 @@ namespace ALYSLC
 		const auto& currentMenu = ui->GetMenu(menuName); 
 		if (currentMenu && *currentMenu->inputContext != RE::UserEvents::INPUT_CONTEXT_ID::kNone) 
 		{
-			SPDLOG_DEBUG("[MIM] SetEmulatedEventInfo: Current menu {} has context {}.",
-				menuName, *currentMenu->inputContext);
+			SPDLOG_DEBUG("Current menu {} has context {}.", menuName, *currentMenu->inputContext);
 			context = static_cast<RE::UserEvents::INPUT_CONTEXT_ID>
 			(
 				min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*currentMenu->inputContext))
@@ -5066,7 +5048,6 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[MIM] ERR: SetEmulatedInputEventInfo: "
 				"Could not get event name for XInput button mask 0x{:X} and current menu '{}'.", 
 				a_xMask, menuName
 			);
@@ -5076,7 +5057,7 @@ namespace ALYSLC
 		// Set valid context here.
 		SPDLOG_DEBUG
 		(
-			"[MIM] SetEmulatedInputEventInfo: Chose context {}, event name {} for xMask 0x{:X}. "
+			"Chose context {}, event name {} for xMask 0x{:X}. "
 			"Value, held time: {}, {}. Current event type: {}.",
 			context, a_bindInfoOut.eventName, a_xMask,
 			a_bindInfoOut.value,
@@ -5275,12 +5256,7 @@ namespace ALYSLC
 			ZeroMemory(&buttonState, sizeof(buttonState));
 			if (XInputGetState(a_controllerIDToSet, &buttonState) != ERROR_SUCCESS)
 			{
-				SPDLOG_DEBUG
-				(
-					"[MIM] ERR: ToggleCoopPlayerMenuMode: "
-					"Got invalid menu controller ID ({}). Exiting.",
-					a_controllerIDToSet
-				);
+				SPDLOG_DEBUG("Got invalid menu controller ID ({}). Exiting.", a_controllerIDToSet);
 				return;
 			}
 
@@ -5310,8 +5286,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[MIM] ToggleCoopPlayerMenuMode: Performed state change request. "
-			"MIM is now set to {}.", 
+			"Performed state change request. MIM is now set to {}.", 
 			shouldEnter ? "running" : "paused"
 		);
 	}
@@ -5434,7 +5409,7 @@ namespace ALYSLC
 		// Also get and save a pointer to the menu.
 		// Return true if the new opened menu type differs from the previous one.
 
-		SPDLOG_DEBUG("[MIM] UpdateMenuType: Menu name: {}", menuName);
+		SPDLOG_DEBUG("Menu name: {}", menuName);
 		auto oldMenuType = openedMenuType;
 		auto menuNameHash = Hash(menuName);
 
@@ -5660,7 +5635,6 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[MIM] MenuOpeningActionRequestsManager: InsertRequest: "
 					"Adding menu opening action request for CID {}: input action: {}, "
 					"menu name: {}, associated form: {}",
 					a_controllerID,
@@ -5680,7 +5654,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MIM] MenuOpeningActionRequestsManager: InsertRequest: "
 					"Failed to obtain lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
@@ -5700,12 +5673,7 @@ namespace ALYSLC
 		// Optionally, modify the menu requests queue for this player to re-order 
 		// or clear out requests during the resolution process.
 
-		SPDLOG_DEBUG
-		(
-			"[MIM] MenuOpeningActionRequestsManager: "
-			"ResolveMenuControllerID: Menu: {}, modify requests queue: {}.", 
-			a_menuName, a_modifyReqQueue
-		);
+		SPDLOG_DEBUG("Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
 
 		// Default to none.
 		int32_t resolvedCID = -1;
@@ -5825,7 +5793,6 @@ namespace ALYSLC
 					float secsSinceReq = Util::GetElapsedSeconds(currentReq.timestamp);
 					SPDLOG_DEBUG
 					(
-						"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
 						"Got request for {}. Menu: {}, from action: {}, assoc refr: {} (0x{:X}), "
 						"ext req: {}. Seconds since request inserted: {}. "
 						"Chosen req type: {}, seconds since chosen request inserted: {}. "
@@ -5876,8 +5843,7 @@ namespace ALYSLC
 							resolvedCID = p->controllerID;
 							SPDLOG_DEBUG
 							(
-								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: External request: "
+								"External request: "
 								"{} is in control of {}. Should maintain control: {}.",
 								p->coopActor->GetName(), a_menuName, isMaintainControlRequest
 							);
@@ -5989,9 +5955,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: BarterMenu: "
-									"{} is in control of bartering with {}.",
+									"BarterMenu: {} is in control of bartering with {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
 								);
 							}
@@ -6039,9 +6003,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: BookMenu: "
-									"{} is in control of reading {}.",
+									"BookMenu: {} is in control of reading {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
 								);
 							}
@@ -6089,9 +6051,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: ContainerMenu: "
-									"{} is in control of their inventory.", 
+									"ContainerMenu: {} is in control of their inventory.", 
 									p->coopActor->GetName()
 								);
 							}
@@ -6133,9 +6093,7 @@ namespace ALYSLC
 									setAsChosen = true;
 									SPDLOG_DEBUG
 									(
-										"[MIM] MenuOpeningActionRequestsManager: "
-										"ResolveMenuControllerID: ContainerMenu: "
-										"{} is in control of {}'s container menu.",
+										"ContainerMenu: {} is in control of {}'s container menu.",
 										p->coopActor->GetName(), assocRefrPtr->GetName()
 									);
 								}
@@ -6195,8 +6153,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: CraftingMenu: "
+									"CraftingMenu: "
 									"{} is in control of crafting menu by activating {} "
 									"with workbench data type {}.",
 									p->coopActor->GetName(), 
@@ -6266,9 +6223,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: DialogueMenu: "
-									"{} is in control of dialogue with {}.",
+									"DialogueMenu: {} is in control of dialogue with {}.",
 									p->coopActor->GetName(), 
 									speakerPtr ? 
 									speakerPtr->GetName() : 
@@ -6293,9 +6248,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: FavoritesMenu: "
-									"{} is in control of menu.",
+									"FavoritesMenu: {} is in control of menu.",
 									p->coopActor->GetName()
 								);
 							}
@@ -6310,9 +6263,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: GiftMenu: {} is in control of menu.",
-									p->coopActor->GetName()
+									"GiftMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
 							}
 
@@ -6329,9 +6280,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: JournalMenu: "
-									"{} is in control of menu.", 
+									"JournalMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
 								);
 							}
@@ -6352,9 +6301,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: InventoryMenu: "
-									"{} is in control of menu.",
+									"InventoryMenu: {} is in control of menu.",
 									p->coopActor->GetName()
 								);
 							}
@@ -6374,9 +6321,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: LevelUpMenu: "
-									"{} is in control of menu.", 
+									"LevelUpMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
 								);
 							}
@@ -6429,9 +6374,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: LockpickingMenu: "
-									"{} is in control of unlocking {}.",
+									"LockpickingMenu: {} is in control of unlocking {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
 								);
 							}
@@ -6450,10 +6393,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: MagicMenu: "
-									"{} is in control of menu.", 
-									p->coopActor->GetName()
+									"MagicMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
 							}
 
@@ -6467,9 +6407,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: MapMenu: {} is in control of menu.", 
-									p->coopActor->GetName()
+									"MapMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
 							}
 
@@ -6487,9 +6425,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: WaitMenu: {} is in control of menu.", 
-									p->coopActor->GetName()
+									"WaitMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
 							}
 							else if (currentReq.fromAction == InputAction::kActivate)
@@ -6518,8 +6454,7 @@ namespace ALYSLC
 									setAsChosen = true;
 									SPDLOG_DEBUG
 									(
-										"[MIM] MenuOpeningActionRequestsManager: "
-										"ResolveMenuControllerID: WaitMenu: "
+										"WaitMenu: "
 										"{} is in control of menu by activating {} "
 										"with furniture flags 0x{:X}.",
 										p->coopActor->GetName(), 
@@ -6544,10 +6479,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: StatsMenu: "
-									"{} is in control of menu.", 
-									p->coopActor->GetName()
+									"StatsMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
 							}
 
@@ -6594,9 +6526,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: TrainingMenu: "
-									"{} is receiving training from {}.",
+									"TrainingMenu: {} is receiving training from {}.",
 									p->coopActor->GetName(), 
 									assocRefrPtr->GetName()
 								);
@@ -6616,9 +6546,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: TweenMenu: "
-									"{} is in control of menu.", 
+									"TweenMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
 								);
 							}
@@ -6654,9 +6582,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: {} (UIExtensions): "
-									"{} is in control of menu.", 
+									"{} (UIExtensions): {} is in control of menu.", 
 									GlobalCoopData::CUSTOM_MENU, p->coopActor->GetName()
 								);
 							}
@@ -6723,9 +6649,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: {}: "
-									"{} is in control of {}'s quick loot menu.",
+									"{} is in control of {}'s QuickLoot menu.",
 									GlobalCoopData::LOOT_MENU, 
 									p->coopActor->GetName(), 
 									assocRefrPtr->GetName()
@@ -6750,8 +6674,7 @@ namespace ALYSLC
 								setAsChosen = true;
 								SPDLOG_DEBUG
 								(
-									"[MIM] MenuOpeningActionRequestsManager: "
-									"ResolveMenuControllerID: {}: {} is in control of menu.", 
+									"{}: {} is in control of menu.", 
 									GlobalCoopData::ENHANCED_HERO_MENU, p->coopActor->GetName()
 								);
 							}
@@ -6762,9 +6685,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: FALLTHROUGH for {}.",
-								a_menuName
+								"FALLTHROUGH for {}.", a_menuName
 							);
 							break;
 						}
@@ -6806,11 +6727,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] MenuOpeningActionRequestsManager: "
-							"ResolveMenuControllerID: {}: "
-							"Check for newest req for {}.",
-							a_menuName,
-							p->coopActor->GetName()
+							"{}: Check for newest req for {}.", a_menuName, p->coopActor->GetName()
 						);
 						// Direct requests can considered up to 5 seconds after enqueueing.
 						bool directlyRequested = isRequestedMenu && secsSinceReq < 5.0f;
@@ -6832,9 +6749,7 @@ namespace ALYSLC
 							chosenReqType = directlyRequested ? kNewestDirect : kNewestIndirect;
 							SPDLOG_DEBUG
 							(
-								"[MIM] MenuOpeningActionRequestsManager: "
-								"ResolveMenuControllerID: {}: "
-								"{} is in control of menu by {}.",
+								"{}: {} is in control of menu by {}.",
 								a_menuName,
 								p->coopActor->GetName(), 
 								directlyRequested ? "direct request" : "indirect activation"
@@ -6859,9 +6774,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[MIM] MenuOpeningActionRequestsManager: "
-							"ResolveMenuControllerID: {}: "
-							"Removed handled request (menu: {}, action: {}, refr: {}) for {}.",
+							"{}: Removed handled request (menu: {}, action: {}, refr: {}) for {}.",
 							a_menuName,
 							currentReq.reqMenuName,
 							currentReq.fromAction,
@@ -6879,21 +6792,14 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[MIM] MenuOpeningActionRequestsManager: "
-					"ResolveMenuControllerID: Active request queue size is now {} "
-					"for {} after processing.", 
+					"Active request queue size is now {} for {} after processing.", 
 					menuOpeningActionRequests[cid].size(),
 					p->coopActor->GetName()
 				);
 			}
 		}
 
-		SPDLOG_DEBUG
-		(
-			"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
-			"Resolved CID from requests: {}", 
-			resolvedCID
-		);
+		SPDLOG_DEBUG("Resolved CID from requests: {}", resolvedCID);
 		// If there are no valid requests to open/close the current supported menu,
 		// give control to the last player who controlled open menus.
 		// Or if P1's managers are not active, such as when the co-op camera is disabled,
@@ -6918,7 +6824,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
 					"No valid requests to open supported menu {}, set to last menu CID: {}. "
 					"Supported menus open: {}, data copied over: 0x{:X}.", 
 					a_menuName,
@@ -6932,7 +6837,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
 					"No valid requests to open supported menu {} "
 					"and P1's managers are inactive or the Console Menu is opening/closing, "
 					"set to P1 CID: {}. " 
@@ -6947,13 +6851,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
-		(
-			"[MIM] MenuOpeningActionRequestsManager: ResolveMenuControllerID: "
-			"Final resolved CID: {}, for menu {}.",
-			resolvedCID,
-			a_menuName
-		);
+		SPDLOG_DEBUG("Final resolved CID: {}, for menu {}.", resolvedCID, a_menuName);
 
 		return resolvedCID;
 	}

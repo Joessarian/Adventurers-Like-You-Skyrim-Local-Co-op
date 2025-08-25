@@ -1682,6 +1682,102 @@ namespace ALYSLC
 			{ RE::WEAPON_TYPE::kTwoHandSword, RE::WEAPON_TYPE::kOneHandSword }
 		};
 
+		// Starting with player 1, raw (last 3 nibbles) FIDs for each selectable player character.
+		static inline const std::vector<RE::FormID> PLAYER_CHARACTER_FIDS = 
+		{
+			0x14,
+			0x802,
+			0x803,
+			0x804,
+			0x8A4,
+			0x8A5,
+			0x8A6,
+			0x8A7,
+			0x8A8,
+			0x8A9
+		};
+
+		// Maps raw character FIDs to their associated default package formlist's raw FID.
+		static inline const std::unordered_map<RE::FormID, RE::FormID>
+		CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID = 
+		{
+			{ 0x14, 0x81B },
+			{ 0x802, 0x82B },
+			{ 0x803, 0x83E },
+			{ 0x804, 0x842 },
+			{ 0x8A4, 0x898 },
+			{ 0x8A5, 0x899 },
+			{ 0x8A6, 0x89A },
+			{ 0x8A7, 0x89B },
+			{ 0x8A8, 0x89C },
+			{ 0x8A9, 0x89D }
+		};
+
+		// Maps raw character FIDs to their associated combat override package formlist's raw FID.
+		static inline const std::unordered_map<RE::FormID, RE::FormID>
+		CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID = 
+		{
+			{ 0x14, 0x81A },
+			{ 0x802, 0x82A },
+			{ 0x803, 0x83F },
+			{ 0x804, 0x841 },
+			{ 0x8A4, 0x89E },
+			{ 0x8A5, 0x89F },
+			{ 0x8A6, 0x8A0 },
+			{ 0x8A7, 0x8A1 },
+			{ 0x8A8, 0x8A2 },
+			{ 0x8A9, 0x8A3 }
+		};
+
+		/*
+		// Starting with player 1, raw (last 3 nibbles) FIDs for each selectable player character.
+		static inline const std::vector<RE::FormID> PLAYER_CHARACTER_FIDS = 
+		{
+			0x14,
+			0x802,
+			0x803,
+			0x804,
+			0xE32,
+			0xE33,
+			0xE34,
+			0xE35,
+			0xE36,
+			0xE37
+		};
+
+		// Maps raw character FIDs to their associated default package formlist's raw FID.
+		static inline const std::unordered_map<RE::FormID, RE::FormID>
+		CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID = 
+		{
+			{ 0x14, 0x81B },
+			{ 0x802, 0x82B },
+			{ 0x803, 0x83E },
+			{ 0x804, 0x842 },
+			{ 0xE32, 0xE25 },
+			{ 0xE33, 0xE26 },
+			{ 0xE34, 0xE27 },
+			{ 0xE35, 0xE28 },
+			{ 0xE36, 0xE29 },
+			{ 0xE37, 0xE2A }
+		};
+
+		// Maps raw character FIDs to their associated combat override package formlist's raw FID.
+		static inline const std::unordered_map<RE::FormID, RE::FormID>
+		CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID = 
+		{
+			{ 0x14, 0x81A },
+			{ 0x802, 0x82A },
+			{ 0x803, 0x83F },
+			{ 0x804, 0x841 },
+			{ 0xE32, 0xE2C },
+			{ 0xE33, 0xE2D },
+			{ 0xE34, 0xE2E },
+			{ 0xE35, 0xE2F },
+			{ 0xE36, 0xE30 },
+			{ 0xE37, 0xE31 }
+		};
+		*/
+
 		//
 		// Members
 		//
@@ -1866,6 +1962,10 @@ namespace ALYSLC
 		std::vector<RE::TESPackage*> coopPackages;
 		// Base factions that all co-op players should be a member of.
 		std::vector<RE::TESFaction*> coopPlayerFactions;
+		// List of co-op player keywords.
+		// Used in companion players' ranged attack packages for casting spells
+		// and for identifying if the character is an active player and at what index.
+		std::vector<RE::BGSKeyword*> coopPlayerKeywords;
 		// General killmoves applicable to humanoid and any other unaccounted-for races.
 		// Categorized by weapon type.
 		std::vector<std::vector<RE::TESIdleForm*>> genericKillmoveIdles;

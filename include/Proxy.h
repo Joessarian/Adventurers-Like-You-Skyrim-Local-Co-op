@@ -38,8 +38,7 @@ namespace ALYSLC
 			RE::StaticFunctionTag*, 
 			uint32_t a_numCompanions, 
 			std::vector<uint32_t> a_controllerIDs, 
-			std::vector<RE::Actor*> a_coopActors,
-			std::vector<uint32_t> a_packageFormListIndicesList
+			std::vector<RE::Actor*> a_coopActors
 		);
 
 		//=========================================================================================

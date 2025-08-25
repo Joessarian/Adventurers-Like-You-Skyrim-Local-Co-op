@@ -281,10 +281,10 @@ namespace ALYSLC
 		inline void ClearTasks()
 		{
 			{
-				SPDLOG_DEBUG("[Manager] TaskRunner: ClearTasks: Getting lock. (0x{:X})", 
+				SPDLOG_DEBUG("Getting lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				std::unique_lock<std::mutex> lock(queueMutex);
-				SPDLOG_DEBUG("[Manager] TaskRunner: ClearTasks: Lock obtained. (0x{:X})", 
+				SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				while (!queue.empty())
 				{
@@ -299,7 +299,7 @@ namespace ALYSLC
 			while (!a_stoken.stop_requested())
 			{
 				{
-					SPDLOG_DEBUG("[Manager] RunTasks: Getting lock. (0x{:X})", 
+					SPDLOG_DEBUG("Getting lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex);
 					queueCV.wait
@@ -307,14 +307,14 @@ namespace ALYSLC
 						lock,
 						[&]() 
 						{
-							SPDLOG_DEBUG("[Manager] TaskRunner: Waiting for a task.");
+							SPDLOG_DEBUG("Waiting for a task.");
 							return (queue.size() > 0 || a_stoken.stop_requested());
 						}
 					);
 
 					while (queue.size() > 0)
 					{
-						SPDLOG_DEBUG("[Manager] TaskRunner: Got a task.");
+						SPDLOG_DEBUG("Got a task.");
 						queue.front()();
 						queue.pop();
 					}
@@ -322,7 +322,7 @@ namespace ALYSLC
 			}
 
 			// Clear out all remaining tasks when done.
-			SPDLOG_DEBUG("[Manager] TaskRunner: Requested to stop runner thread.");
+			SPDLOG_DEBUG("Requested to stop runner thread.");
 			ClearTasks();
 		}
 	};

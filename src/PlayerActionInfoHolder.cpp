@@ -43,8 +43,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[PAIH] ERR: PlayerActionInfoHolder: Default {} bind is invalid. "
-					"Possibly a circular bind. Disabling.", 
+					"Default {} bind is invalid. Possibly a circular bind. Disabling.", 
 					static_cast<InputAction>(i)
 				);
 				inputsList.clear();
@@ -66,7 +65,7 @@ namespace ALYSLC
 
 		// Set to defaults initially and then import custom binds later with the other settings.
 		playerPAParamsLists.fill(defPAParamsList);
-		SPDLOG_DEBUG("[PAIH] Finished initializing.");
+		SPDLOG_DEBUG("Finished initializing.");
 	}
 
 	const uint32_t PlayerActionInfoHolder::GetInputMask
@@ -86,7 +85,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAIH] ERR: GetInputMask: Composing input action {} is a player action "
+					"Composing input action {} is a player action "
 					"and was not broken down. Mask set to 0.", 
 					a_composingInputs[i]
 				);
@@ -138,7 +137,7 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[PAIH] ERR: GetComposingInputs. Invalid bind for {}: "
+				"Invalid bind for {}: "
 				"max recursion depth reached when attempting to break down player action bind "
 				"into composing inputs. Possibly a circular bind. Bind will be disabled.",
 				a_playerAction

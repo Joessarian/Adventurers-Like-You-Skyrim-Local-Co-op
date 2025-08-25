@@ -701,8 +701,6 @@ namespace ALYSLC
 		float oldLSAngle;
 		// Pitch to set for this player.
 		float playerPitch;
-		// Player's height adjusted by ref scale.
-		float playerScaledHeight;
 		// Yaw to set for this player.
 		float playerYaw;
 

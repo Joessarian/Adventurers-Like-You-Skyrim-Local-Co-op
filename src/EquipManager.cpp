@@ -21,8 +21,9 @@ namespace ALYSLC
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"[EM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {} (0x{:X}), CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
+				p && p->coopActor ? p->coopActor->formID : 0xDEAD,
 				p ? p->controllerID : -1,
 				p.use_count()
 			);
@@ -49,7 +50,6 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[EM] ERR: Initialize: "
 				"Cannot construct Equip Manager for controller ID {}.", 
 				a_p ? a_p->controllerID : -1
 			);
@@ -129,7 +129,7 @@ namespace ALYSLC
 
 	void EquipManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("[EM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
 
 		// Update our cached equip state.
 		RefreshEquipState(RefreshSlots::kAll);
@@ -286,7 +286,7 @@ namespace ALYSLC
 		// Pull in our serialized favorited forms lists for items and magic.
 		UpdateFavoritedFormsLists(true);
 
-		SPDLOG_DEBUG("[EM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState EquipManager::ShouldSelfPause()
@@ -351,7 +351,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[EM] Shout variation spell {} {} "
+									"Shout variation spell {} {} "
 									"has archetype: {}",
 									variation.spell->GetName(),
 									i, 
@@ -368,8 +368,11 @@ namespace ALYSLC
 			}
 
 			copiedShoutToEquip->SetAltered(true);
-			SPDLOG_DEBUG("[EM] Copied shout data to placeholder shout {}.", 
-				copiedShoutToEquip->GetName());
+			SPDLOG_DEBUG
+			(
+				"Copied shout data to placeholder shout {}.", 
+				copiedShoutToEquip->GetName()
+			);
 			SetCopiedMagicAndFID(a_shoutToCopy, PlaceholderMagicIndex::kVoice);
 			// Make sure the cached placeholder magic form is set to the newly copied shout.
 			placeholderMagic[!PlaceholderMagicIndex::kVoice] = copiedShoutToEquip;
@@ -457,7 +460,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CopyToPlaceholderSpell: {}: spell: {} -> {}, index: {}.",
+			"{}: spell: {} -> {}, index: {}.",
 			coopActor->GetName(), 
 			a_spellToCopy ? a_spellToCopy->GetName() : "NONE", 
 			copiedSpellToEquip ? copiedSpellToEquip->GetName() : "NONE",
@@ -590,7 +593,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleAmmo: {}: current cycled ammo: {} from index {} (current: {}). Total: {}.",
+			"{}: current cycled ammo: {} from index {} (current: {}). Total: {}.",
 			coopActor->GetName(),
 			currentCycledAmmo ? currentCycledAmmo->GetName() : "NONE",
 			nextAmmoIndex,
@@ -624,7 +627,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleEmoteIdles: {}: current idle: {}, index: {}.",
+			"{}: current idle: {}, index: {}.",
 			coopActor->GetName(),
 			currentCycledIdleIndexPair.first,
 			currentCycledIdleIndexPair.second
@@ -861,8 +864,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleHandSlotMagic: {}: right hand: {}, spell category {} "
-			"and currently cycled spell {} from index {}.",
+			"{}: right hand: {}, spell category {} and currently cycled spell {} from index {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhSpellCategory : lhSpellCategory,
@@ -915,8 +917,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleHandSlotMagicCategory: {}: right hand: {}, "
-			"spell category is now: {}.",
+			"{}: right hand: {}, spell category is now: {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhSpellCategory : lhSpellCategory
@@ -969,8 +970,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleVoiceSlotMagic: {}: currently cycled voice magic: "
-			"{} from index {}.",
+			"{}: currently cycled voice magic: {} from index {}.",
 			coopActor->GetName(),
 			currentCycledVoiceMagic ? currentCycledVoiceMagic->GetName() : "NONE",
 			nextVoiceMagicIndex
@@ -1023,7 +1023,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleWeaponCategory: {}: right hand: {}, weapon category is now: {}.",
+			"{}: right hand: {}, weapon category is now: {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhWeaponCategory : lhWeaponCategory
@@ -1325,8 +1325,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] CycleWeapons: {}: right hand: {}, category is now {}, "
-			"cycled weapon {} from index {}.",
+			"{}: right hand: {}, category is now {}, cycled weapon {} from index {}.",
 			coopActor->GetName(),
 			a_rightHand,
 			a_rightHand ? rhWeaponCategory : lhWeaponCategory,
@@ -1350,7 +1349,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] EquipAmmo: {}: equip {}.", 
+			"{}: equip {}.", 
 			coopActor->GetName(),
 			a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
@@ -1502,7 +1501,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] EquipArmor: {}: equip {}.",
+			"{}: equip {}.",
 			coopActor->GetName(),
 			a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
@@ -1618,7 +1617,7 @@ namespace ALYSLC
 		// NOTE: 
 		// Does not clear the desired hand slot form in the same slot.
 
-		SPDLOG_DEBUG("[EM] EquipDummy1H: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		auto aem = RE::ActorEquipManager::GetSingleton();
 		if (!aem)
@@ -1671,7 +1670,7 @@ namespace ALYSLC
 	{
 		// Clear out both hand slots by equipping the 'fists' item.
 
-		SPDLOG_DEBUG("[EM] EquipFists: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		auto aem = RE::ActorEquipManager::GetSingleton();
 		if (!aem)
@@ -1737,9 +1736,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] EquipForm: {}: equip {}.",
-			coopActor->GetName(),
-			a_toEquip ? a_toEquip->GetName() : "NONE"
+			"{}: equip {}.", coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
 
 		auto boundObj = a_toEquip ? a_toEquip->As<RE::TESBoundObject>() : nullptr; 
@@ -1922,9 +1919,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] EquipShout: {}: equip {}.",
-			coopActor->GetName(),
-			a_toEquip ? a_toEquip->GetName() : "NONE"
+			"{}: equip {}.", coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
 
 		auto shout = a_toEquip ? a_toEquip->As<RE::TESShout>() : nullptr;
@@ -1971,9 +1966,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] EquipSpell: {}: equip {}.",
-			coopActor->GetName(),
-			a_toEquip ? a_toEquip->GetName() : "NONE"
+			"{}: equip {}.", coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
 
 		auto spell = a_toEquip ? a_toEquip->As<RE::SpellItem>() : nullptr; 
@@ -2127,9 +2120,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] GetEquipableSpells: {}: in hand slot: {}.", 
-			coopActor->GetName(),
-			a_inHandSlot
+			"{}: in hand slot: {}.", coopActor->GetName(), a_inHandSlot
 		);
 
 		std::vector<RE::TESForm*> equipableSpells{};
@@ -2271,7 +2262,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] GetEquipSlotForForm: {}: form: {}, index: {}.", 
+			"{}: form: {}, index: {}.", 
 			coopActor->GetName(),
 			a_form ? a_form->GetName() : "NONE",
 			a_index
@@ -2468,7 +2459,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] HandleEquipRequest: {}: form: {}, index: {}, should equip: {}.", 
+			"{}: form: {}, index: {}, should equip: {}.", 
 			coopActor->GetName(),
 			a_form ? a_form->GetName() : "NONE",
 			a_index, 
@@ -2706,7 +2697,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] HandleMenuEquipRequest: {}: container: {}, form: {}, index: {}, "
+			"{}: container: {}, form: {}, index: {}, "
 			"placeholder spell changed: {}.", 
 			coopActor->GetName(),
 			Util::HandleIsValid(a_fromContainerHandle) ? 
@@ -2778,8 +2769,10 @@ namespace ALYSLC
 			// Do nothing for now.
 
 			RE::DebugNotification("Scrolls usage not yet implemented for players 2-4.");
-			SPDLOG_DEBUG("[EM] HandleMenuEquipRequest: {}: Attempting to equip a scroll: {}.",
-				coopActor->GetName(), a_form->GetName());
+			SPDLOG_DEBUG
+			(
+				"{}: Attempting to equip a scroll: {}.", coopActor->GetName(), a_form->GetName()
+			);
 
 			break;
 		}
@@ -3283,8 +3276,10 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("[EM] ImportCoopFavorites: {}. Only magic favorites: {}.", 
-			coopActor->GetName(), a_onlyMagicFavorites);
+		SPDLOG_DEBUG
+		(
+			"{}. Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites
+		);
 
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (!p1)
@@ -3306,8 +3301,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[EM] ERR: ImportCoopFavorites: {}: "
-				"Could not get magic favorites singleton.", 
+				"ImportCoopFavorites: {}: Could not get magic favorites singleton.", 
 				coopActor->GetName()
 			);
 			return;
@@ -3348,8 +3342,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[EM] ImportCoopFavorites: {}: Remove P1 favorited magic {} at index {}. "
-				"List size: {}.", 
+				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
 				coopActor->GetName(),
 				magForm ? magForm->GetName() : "NONE",
 				removalIndex,
@@ -3378,8 +3371,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ImportCoopFavorites: {}: Removing P1 favorite {}.",
-						coopActor->GetName(), form->GetName()
+						"{}: Removing P1 favorite {}.", coopActor->GetName(), form->GetName()
 					);
 					Util::ChangeFormFavoritesStatus(p1, form, false);
 				}
@@ -3390,7 +3382,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ImportCoopFavorites: {}: Removing P1 hotkey {} for {}.",
+						"{}: Removing P1 hotkey {} for {}.",
 						coopActor->GetName(), 
 						iter->second + 1, 
 						form->GetName()
@@ -3413,8 +3405,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] ImportCoopFavorites: {}: Add favorited magic {}.", 
-					coopActor->GetName(), form->GetName()
+					"{}: Add favorited magic {}.", coopActor->GetName(), form->GetName()
 				);
 				magicFavorites->SetFavorite(form);
 			}
@@ -3427,8 +3418,7 @@ namespace ALYSLC
 					favoritesIndicesInCommon[i] = true;
 					SPDLOG_DEBUG
 					(
-						"[EM] ImportCoopFavorites: {}: P1 has also favorited {}. "
-						"Not favoriting.",
+						"{}: P1 has also favorited {}. Not favoriting.",
 						coopActor->GetName(), form->GetName()
 					);
 				}
@@ -3450,8 +3440,7 @@ namespace ALYSLC
 					Util::ChangeFormFavoritesStatus(p1, form, true);
 					SPDLOG_DEBUG
 					(
-						"[EM] ImportCoopFavorites: {}: P1 has NOT favorited {}. "
-						"Favoriting.",
+						"{}: P1 has NOT favorited {}. Favoriting.",
 						coopActor->GetName(), form->GetName()
 					);
 				}
@@ -3464,7 +3453,7 @@ namespace ALYSLC
 				auto slot = iter->second;
 				SPDLOG_DEBUG
 				(
-					"[EM] ImportCoopFavorites: {}: Adding hotkey {} for {}.",
+					"{}: Adding hotkey {} for {}.",
 					coopActor->GetName(), slot == -1 ? -1 : slot + 1, form->GetName()
 				);
 				Util::ChangeFormHotkeyStatus(p1, form, slot);
@@ -3491,7 +3480,7 @@ namespace ALYSLC
 		// Re-equip all this player's desired forms.
 		// Can also refresh the cached equip state before re-equipping.
 
-		SPDLOG_DEBUG("[EM] ReEquipAll: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		// Refresh all equipped forms before re-equipping.
 		if (a_refreshBeforeEquipping)
@@ -3773,11 +3762,7 @@ namespace ALYSLC
 	{
 		// Re-equip desired forms in this player's hands.
 
-		SPDLOG_DEBUG
-		(
-			"[EM] ReEquipHandForm: {}: {}.", 
-			coopActor->GetName(), a_rhSlot ? "RH" : "LH"
-		);
+		SPDLOG_DEBUG("{}: {}.", coopActor->GetName(), a_rhSlot ? "RH" : "LH");
 
 		// Interrupts Vampire Lord levitation, 
 		// and Werewolves have no equipped items, so return here.
@@ -3889,7 +3874,7 @@ namespace ALYSLC
 	{
 		// Re-equip desired forms in this player's hands.
 
-		SPDLOG_DEBUG("[EM] ReEquipHandForms: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		// Interrupts Vampire Lord levitation, 
 		// and Werewolves have no equipped items, so return here.
@@ -3905,7 +3890,7 @@ namespace ALYSLC
 		auto rhEquipType = rhForm ? rhForm->As<RE::BGSEquipType>() : nullptr;
 		SPDLOG_DEBUG
 		(
-			"[EM] ReEquipHandForms: {}. Forms to re-equip: {}, {}", 
+			"{}. Forms to re-equip: {}, {}", 
 			coopActor->GetName(),
 			lhForm ? lhForm->GetName() : "NONE",
 			rhForm ? rhForm->GetName() : "NONE"
@@ -4086,7 +4071,7 @@ namespace ALYSLC
 	{
 		// Re-equip the player's desired voice magic form.
 
-		SPDLOG_DEBUG("[EM] ReEquipVoiceForm: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 		UnequipFormAtIndex(EquipIndex::kVoice);
 
 		auto toEquip = desiredEquippedForms[!EquipIndex::kVoice]; 
@@ -4118,8 +4103,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] RestoreP1Favorites: {}. Only magic favorites: {}.", 
-			coopActor->GetName(), a_onlyMagicFavorites
+			"{}: Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites
 		);
 
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -4163,8 +4147,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[EM] RestoreP1Favorites: {}: Remove P1 favorited magic {} at index {}. "
-				"List size: {}.", 
+				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
 				coopActor->GetName(),
 				magForm ? magForm->GetName() : "NONE",
 				removalIndex,
@@ -4193,8 +4176,7 @@ namespace ALYSLC
 					Util::ChangeFormFavoritesStatus(p1, form, false);
 					SPDLOG_DEBUG
 					(
-						"[EM] RestoreP1Favorites: {}: "
-						"Unfavoriting not-in-common favorite {} for P1.",
+						"{}: Unfavoriting not-in-common favorite {} for P1.",
 						coopActor->GetName(), form->GetName()
 					);
 
@@ -4204,8 +4186,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[EM] RestoreP1Favorites: {}: Removing {} (x1) from P1.",
-							coopActor->GetName(), form->GetName()
+							"{}: Removing {} (x1) from P1.", coopActor->GetName(), form->GetName()
 						);
 						p1->RemoveItem
 						(
@@ -4252,8 +4233,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.", 
-					coopActor->GetName(), form->GetName()
+					"{}: Refavoriting {} for P1.", coopActor->GetName(), form->GetName()
 				);
 				magicFavorites->SetFavorite(form);
 			}
@@ -4261,8 +4241,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] RestoreP1Favorites: {}: Refavoriting {} for P1.",
-					coopActor->GetName(), form->GetName()
+					"{}: Refavoriting {} for P1.", coopActor->GetName(), form->GetName()
 				);
 				Util::ChangeFormFavoritesStatus(p1, form, true);
 			}
@@ -4273,7 +4252,7 @@ namespace ALYSLC
 				const auto slot = iter->second;
 				SPDLOG_DEBUG
 				(
-					"[EM] RestoreP1Favorites: {}: Reapplying P1 hotkey {} for {}.",
+					"{}: Reapplying P1 hotkey {} for {}.",
 					coopActor->GetName(), slot + 1, form->GetName()
 				);
 				Util::ChangeFormHotkeyStatus(p1, form, slot);
@@ -4292,8 +4271,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] RefreshEquipState: {}: "
-			"slots to refresh: {}, form: {}, is equipped: {}.", 
+			"{}: slots to refresh: {}, form: {}, is equipped: {}.", 
 			coopActor->GetName(),
 			a_slots,
 			a_formEquipped ? a_formEquipped->GetName() : "NONE",
@@ -4306,7 +4284,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] RefreshEquipState: {}: Lock obtained. (0x{:X})", 
+					"{}: Lock obtained. (0x{:X})", 
 					coopActor->GetName(), 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
@@ -4324,14 +4302,14 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: LH: {}, RH: {}",
+						"{}: LH: {}, RH: {}",
 						coopActor->GetName(),
 						(lhObj) ? lhObj->GetName() : "NONE",
 						(rhObj) ? rhObj->GetName() : "NONE"
 					);
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: Current ammo: {}.", 
+						"{}: Current ammo: {}.", 
 						coopActor->GetName(), ammo ? ammo->GetName() : "NONE"
 					);
 
@@ -4361,7 +4339,7 @@ namespace ALYSLC
 					{
 						SPDLOG_ERROR
 						(
-							"[EM] RefreshEquipState: {}: 2H stuttering equip state bug "
+							"{}: 2H stuttering equip state bug "
 							"is likely since the 2H weapon {} is only in the {}. " 
 							"Fix the bug temporarily by using "
 							"the Debug Menu's 'Reset Player' option "
@@ -4531,8 +4509,7 @@ namespace ALYSLC
 									{
 										SPDLOG_DEBUG
 										(
-											"[EM] RefreshEquipState: {}: "
-											"Equip highest {} ammo {}. Count: {}.",
+											"{}: Equip highest {} ammo {}. Count: {}.",
 											coopActor->GetName(),
 											Settings::uAmmoAutoEquipMode == 
 											!AmmoAutoEquipMode::kHighestCount ?
@@ -4550,8 +4527,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: "
-						"Voice magic: {} (formType: 0x{:X}), Ammo: {}",
+						"{}: Voice magic: {} (formType: 0x{:X}), Ammo: {}",
 						coopActor->GetName(),
 						voiceForm ? voiceForm->GetName() : "NONE",
 						voiceForm ? *voiceForm->formType : RE::FormType::None,
@@ -4574,7 +4550,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: Quick slot spell, item: {}, {}",
+						"{}: Quick slot spell, item: {}, {}",
 						coopActor->GetName(),
 						(quickSlotSpell) ? quickSlotSpell->GetName() : "NONE",
 						(quickSlotItem) ? quickSlotItem->GetName() : "NONE"
@@ -4672,8 +4648,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: "
-						"New armor ratings for light/heavy armor are: {}, {}",
+						"{}: New armor ratings for light/heavy armor are: {}, {}",
 						coopActor->GetName(), armorRatings.first, armorRatings.second
 					);
 				}
@@ -4745,8 +4720,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[EM] RefreshEquipState: {}: "
-								"MISMATCH at index {}: equipped {} (0x{:X}) "
+								"{}: MISMATCH at index {}: equipped {} (0x{:X}) "
 								"vs. should have equipped {} (0x{:X}).",
 								coopActor->GetName(),
 								i,
@@ -4791,8 +4765,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[EM] RefreshEquipState: {}: "
-						"Copying list to serializable equipped forms list. "
+						"{}: Copying list to serializable equipped forms list. "
 						"LISTS MATCH. New equipped forms size: {}",
 						coopActor->GetName(), 
 						serializableEquippedForms.size()
@@ -4808,7 +4781,6 @@ namespace ALYSLC
 						equippedFormFIDs.insert(item->formID);
 						SPDLOG_DEBUG
 						(
-							"[EM] RefreshAllEquippedItems: "
 							"{} has a(n) {} (0x{:X}) in EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
 						);
@@ -4821,7 +4793,6 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[EM] RefreshAllEquippedItems: "
 							"{} has a(n) {} (0x{:X}) in DESIRED EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
 						);
@@ -4834,7 +4805,6 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[EM] RefreshAllEquippedItems: "
 							"{} has a(n) {} (0x{:X}) in SERIALIZABLE EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
 						);
@@ -4846,7 +4816,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] RefreshEquipState: "
 					"{}: Failed to obtain lock. (0x{:X})", 
 					coopActor->GetName(), 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -4865,7 +4834,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] SetCopiedMagicAndFID: {}: Form: {}, index: {}.", 
+			"{}: Form: {}, index: {}.", 
 			coopActor->GetName(),
 			a_formToCopy ? a_formToCopy->GetName() : "NONE",
 			a_index
@@ -4884,7 +4853,7 @@ namespace ALYSLC
 	{
 		// Set the player's list of cyclable emote idles to the given list.
 
-		SPDLOG_DEBUG("[EM] SetFavoritedEmoteIdles: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		favoritedEmoteIdles = GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS;
 		for (auto i = 0; i < a_emoteIdlesList.size() && i < favoritedEmoteIdles.size(); ++i) 
@@ -4913,7 +4882,7 @@ namespace ALYSLC
 		// Update initial equip state after refreshing data and before the equip manager starts.
 		// Set and equip all the serialized desired forms.
 
-		SPDLOG_DEBUG("[EM] SetInitialEquipState: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		auto& savedEquippedForms = 
 		(
@@ -4925,7 +4894,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[EM] ERR: SetInitialEquipState: "
+				"SetInitialEquipState: "
 				"{}: saved equipped forms list is {} ({}).",
 				coopActor->GetName(),
 				savedEquippedForms.empty() || savedEquippedForms.size() == 0 ? 
@@ -5102,7 +5071,7 @@ namespace ALYSLC
 		// Set cyclable lists of favorited forms 
 		// (ammo, hand spells, voice powers/shouts, and weapons) of the given type.
 
-		SPDLOG_DEBUG("[EM] SetCyclableFavForms: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		// Clear out before updating.
 		cyclableFormsMap.insert_or_assign(a_favFormType, std::vector<RE::TESForm*>());
@@ -5277,8 +5246,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] SetCurrentVoiceSpell: {}: voice form: {}, voice spell: {}, "
-			"highest shout var index: {}.", 
+			"{}: voice form: {}, voice spell: {}, highest shout var index: {}.", 
 			coopActor->GetName(),
 			voiceForm ? voiceForm->GetName() : "NONE",
 			voiceSpell ? voiceSpell->GetName() : "NONE",
@@ -5364,8 +5332,7 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[EM] SwitchWeaponGrip: {}: "
-					"Switched {}'s weapon animations from type {} to {}",
+					"{}: Switched {}'s weapon animations from type {} to {}",
 					coopActor->GetName(), a_weapon->GetName(), currentType, newType
 				);
 			}
@@ -5387,7 +5354,7 @@ namespace ALYSLC
 		// Unequip all equipped gear after re-assigning saved equipped forms 
 		// to the desired forms list.
 
-		SPDLOG_DEBUG("[EM] UnequipAll: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		// Re-assign saved serialized forms.
 		desiredEquippedForms.fill(nullptr);
@@ -5466,9 +5433,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipAmmo: {}: unequip {}.",
-			coopActor->GetName(),
-			a_toUnequip ? a_toUnequip->GetName() : "NONE"
+			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
 
 		auto ammo = a_toUnequip ? a_toUnequip->As<RE::TESAmmo>() : nullptr; 
@@ -5568,9 +5533,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipArmor: {}: unequip {}.",
-			coopActor->GetName(),
-			a_toUnequip ? a_toUnequip->GetName() : "NONE"
+			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
 
 		auto boundObj = a_toUnequip ? a_toUnequip->As<RE::TESBoundObject>() : nullptr; 
@@ -5689,9 +5652,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipForm: {}: unequip {}.",
-			coopActor->GetName(),
-			a_toUnequip ? a_toUnequip->GetName() : "NONE"
+			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
 
 		auto boundObj = a_toUnequip ? a_toUnequip->As<RE::TESBoundObject>() : nullptr;
@@ -5784,9 +5745,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipFormAtIndex: {}: index: {}.", 
-			coopActor->GetName(), 
-			a_equipIndex
+			"{}: index: {}.", coopActor->GetName(), a_equipIndex
 		);
 
 		// Handle special cases first. Make sure torch and shield are unequipped,
@@ -5885,7 +5844,7 @@ namespace ALYSLC
 				
 				SPDLOG_DEBUG
 				(
-					"[EM] UnequipFormAtIndex: {}: {} from equip slot {}.", 
+					"{}: {} from equip slot {}.", 
 					coopActor->GetName(), 
 					currentForm->GetName(),
 					equipSlot ? Util::GetEditorID(equipSlot) : "NONE"
@@ -5901,9 +5860,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipHandForms: {}: slot: 0x{:X}.", 
-			coopActor->GetName(),
-			a_slot ? a_slot->formID : 0xDEAD
+			"{}: slot: 0x{:X}.", coopActor->GetName(), a_slot ? a_slot->formID : 0xDEAD
 		);
 
 		if (p->isPlayer1) 
@@ -6019,7 +5976,7 @@ namespace ALYSLC
 	{
 		// Unequip any equipped shield.
 
-		SPDLOG_DEBUG("[EM] UnequipShield: {}.", coopActor->GetName());
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		auto shield = GetShield(); 
 		auto aem = RE::ActorEquipManager::GetSingleton();
@@ -6088,9 +6045,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UnequipShout: {}: unequip {}.",
-			coopActor->GetName(),
-			a_toUnequip ? a_toUnequip->GetName() : "NONE"
+			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
 
 		auto shout = a_toUnequip ? a_toUnequip->As<RE::TESShout>() : nullptr;
@@ -6111,10 +6066,13 @@ namespace ALYSLC
 	{
 		// Unequip the given spell from the given equip index.
 
-		SPDLOG_DEBUG("[EM] UnequipSpell: {}: unequip {}, index: {}.",
+		SPDLOG_DEBUG
+		(
+			"{}: unequip {}, index: {}.",
 			coopActor->GetName(),
 			a_toUnequip ? a_toUnequip->GetName() : "NONE",
-			a_equipIndex);
+			a_equipIndex
+		);
 
 		auto spell = a_toUnequip ? a_toUnequip->As<RE::SpellItem>() : nullptr; 
 		if (!spell)
@@ -6181,8 +6139,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[EM] UpdateFavoritedFormsLists: {}. Use cached magic favorites: {}.", 
-			coopActor->GetName(), a_useCachedMagicFavorites
+			"{}. Use cached magic favorites: {}.", coopActor->GetName(), a_useCachedMagicFavorites
 		);
 
 		favoritedForms.clear();
@@ -6225,8 +6182,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}: {} is favorited.",
-					coopActor->GetName(), boundObj->GetName());
+				SPDLOG_DEBUG("{}: {} is favorited.", coopActor->GetName(), boundObj->GetName());
 
 				favoritedFormIDs.insert(boundObj->formID);
 				favoritedForms.emplace_back(boundObj);
@@ -6270,8 +6226,7 @@ namespace ALYSLC
 							// so remove the previously linked hotkey.
 							SPDLOG_DEBUG
 							(
-								"[EM] UpdateFavoritedFormsLists: {}: "
-								"FORM {} was already hotkeyed in slot {}. "
+								"{}: FORM {} was already hotkeyed in slot {}. "
 								"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
 								coopActor->GetName(),
 								oldHotkeyedForm->GetName(), 
@@ -6294,8 +6249,7 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[EM] UpdateFavoritedFormsLists: {}: "
-							"PHYS FORM {} is hotkeyed in slot {}.",
+							"{}: PHYS FORM {} is hotkeyed in slot {}.",
 							coopActor->GetName(),
 							boundObj->GetName(), 
 							slot == -1 ? -1 : slot + 1
@@ -6303,8 +6257,10 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG("[EM] UpdateFavoritedFormsLists: {}. ITEM {} is favorited.",
-					coopActor->GetName(), boundObj->GetName());
+				SPDLOG_DEBUG
+				(
+					"{}. ITEM {} is favorited.", coopActor->GetName(), boundObj->GetName()
+				);
 				++numFavoritedItems;
 			}
 		}
@@ -6314,7 +6270,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[EM] ERR: UpdateFavoritedFormsLists: {}: "
+				"UpdateFavoritedFormsLists: {}: "
 				"No serialized data found. Cannot update or modify cached magic favorites.", 
 				coopActor->GetName()
 			);
@@ -6327,8 +6283,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[EM] ERR: UpdateFavoritedFormsLists: {}: "
-				"Could not get magic favorites singleton.", 
+				"UpdateFavoritedFormsLists: {}: Could not get magic favorites singleton.", 
 				coopActor->GetName()
 			);
 			return;
@@ -6365,8 +6320,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] UpdateFavoritedFormsLists: {}: "
-						"SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
+						"{}: SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
 						coopActor->GetName(),
 						oldHotkeyedForm->GetName(),
 						i + 1,
@@ -6379,8 +6333,7 @@ namespace ALYSLC
 				hotkeyedFormsToSlotsMap.insert_or_assign(hotkeyedForm->formID, i);
 				SPDLOG_DEBUG
 				(
-					"[EM] UpdateFavoritedFormsLists: {}: "
-					"SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
+					"{}: SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
 					coopActor->GetName(), hotkeyedForm->GetName(), i + 1
 				);
 			}
@@ -6426,8 +6379,7 @@ namespace ALYSLC
 						// since it is not a cached magic form and is more up to date.
 						SPDLOG_DEBUG
 						(
-							"[EM] UpdateFavoritedFormsLists: {}: "
-							"FORM {} was already hotkeyed in slot {}. "
+							"{}: FORM {} was already hotkeyed in slot {}. "
 							"Not saving {} as hotkeyed and now removing its duplicate hotkey.",
 							coopActor->GetName(), 
 							oldHotkeyedForm->GetName(), 
@@ -6448,8 +6400,7 @@ namespace ALYSLC
 					hotkeyedFormsToSlotsMap.insert_or_assign(magForm->formID, i);
 					SPDLOG_DEBUG
 					(
-						"[EM] UpdateFavoritedFormsLists: {}: "
-						"MAGIC FORM {} is hotkeyed in slot {}.",
+						"{}: MAGIC FORM {} is hotkeyed in slot {}.",
 						coopActor->GetName(), magForm->GetName(), i + 1
 					);
 				}
@@ -6489,8 +6440,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[EM] UpdateFavoritedFormsLists: {}. SPELL {} is favorited.",
-				coopActor->GetName(), magForm->GetName()
+				"{}. SPELL {} is favorited.", coopActor->GetName(), magForm->GetName()
 			);
 			++numFavoritedItems;
 		}
@@ -6539,7 +6489,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {} should have {} equipped in slot {}, "
+						"{} should have {} equipped in slot {}, "
 						"but has {} equipped. Re-equipping now.",
 						coopActor->GetName(),
 						desiredEquippedForms[i]->GetName(),
@@ -6552,7 +6502,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {} should have nothing equipped in slot {}, "
+						"{} should have nothing equipped in slot {}, "
 						"but has {} equipped. Unequipping now.",
 						coopActor->GetName(),
 						i,
@@ -6606,8 +6556,7 @@ namespace ALYSLC
 					// RH empty and LH form should also be in the RH slot.
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"2H form {} should be in both LH and RH desired form slots. "
+						"{}: 2H form {} should be in both LH and RH desired form slots. "
 						"Adding to RH slot now.",
 						coopActor->GetName(), 
 						desiredLHForm->GetName()
@@ -6623,8 +6572,8 @@ namespace ALYSLC
 					// Move LH form into RH slot.
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"2H form {} is not also in the RH slot and RH form {} is not a 2H form. "
+						"{}: 2H form {} is not also in the RH slot "
+						"and RH form {} is not a 2H form. "
 						"Moving 2H form to RH.",
 						coopActor->GetName(), 
 						desiredLHForm->GetName(), 
@@ -6643,8 +6592,7 @@ namespace ALYSLC
 					// LH empty and RH form should also be in the LH slot.
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"2H form {} should be in both LH and RH desired form slots. "
+						"{}: 2H form {} should be in both LH and RH desired form slots. "
 						"Adding to LH slot now.",
 						coopActor->GetName(), 
 						desiredRHForm->GetName()
@@ -6660,8 +6608,8 @@ namespace ALYSLC
 					// Move RH form into LH slot.
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"2H form {} is not also in the LH slot and LH form {} is not a 2H form. "
+						"{}: 2H form {} is not also in the LH slot "
+						"and LH form {} is not a 2H form. "
 						"Moving 2H form to LH.",
 						coopActor->GetName(), 
 						desiredRHForm->GetName(), 
@@ -6681,8 +6629,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] ValidateEquipState: {}: "
-					"LH form {} has RH equip slot. Moving to RH.",
+					"{}: LH form {} has RH equip slot. Moving to RH.",
 					coopActor->GetName(), desiredLHForm->GetName()
 				);
 				desiredEquippedForms[!EquipIndex::kRightHand] = desiredLHForm;
@@ -6696,8 +6643,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[EM] ValidateEquipState: {}: " 
-					"RH form {} has LH equip slot. Moving to LH.",
+					"{}: RH form {} has LH equip slot. Moving to LH.",
 					coopActor->GetName(), desiredRHForm->GetName()
 				);
 				desiredEquippedForms[!EquipIndex::kLeftHand] = desiredRHForm;
@@ -6723,8 +6669,7 @@ namespace ALYSLC
 					// Unequip from LH, keep in RH.
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"1H form {} with count 1 is in both LH and RH desired form slots. "
+						"{}: 1H form {} with count 1 is in both LH and RH desired form slots. "
 						"Unequipping from the LH slot now.",
 						coopActor->GetName(), currentLHForm->GetName()
 					);
@@ -6764,9 +6709,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"Re-equipping requested 2H bound weapon {} "
-						"in place of {}.",
+						"{}: Re-equipping requested 2H bound weapon {} in place of {}.",
 						coopActor->GetName(),
 						lastReqBoundWeapRH->GetName(),
 						lhObj != p->em->lastReqBoundWeapRH ? 
@@ -6810,9 +6753,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"Re-equipping requested LH bound weapon {} "
-						"in place of {}.",
+						"{}: Re-equipping requested LH bound weapon {} in place of {}.",
 						coopActor->GetName(),
 						lastReqBoundWeapLH->GetName(),
 						lhObj ? lhObj->GetName() : "NONE"
@@ -6837,9 +6778,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"Re-equipping requested RH bound weapon {} "
-						"in place of {}.",
+						"{}: Re-equipping requested RH bound weapon {} in place of {}.",
 						coopActor->GetName(),
 						lastReqBoundWeapRH->GetName(),
 						rhObj ? rhObj->GetName() : "NONE"
@@ -6888,8 +6827,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[EM] ValidateEquipState: {}: "
-						"Current LH form ({}, is bound weap req active: {}, {}) "
+						"{}: Current LH form ({}, is bound weap req active: {}, {}) "
 						"does not match desired form ({}): {}, "
 						"current RH form ({}, is bound weap req active: {}, {}) "
 						"does not match desired form ({}): {}, "

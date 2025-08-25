@@ -55,7 +55,7 @@ namespace ALYSLC
 				);
 				if (perfAnimQueueLock)
 				{
-					SPDLOG_DEBUG("[PAM] AVCostManager: Clear: Lock obtained. (0x{:X})", 
+					SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					while (!perfAnimEventsQueue.empty())
 					{
@@ -64,7 +64,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("[PAM] AVCostManager: Clear: Failed to obtain lock. (0x{:X})", 
+					SPDLOG_DEBUG("Failed to obtain lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				}
 			}
@@ -656,6 +656,9 @@ namespace ALYSLC
 		// Get the co-op package corresponding to the given index.
 		RE::TESPackage* GetCoopPackage(const PackageIndex& a_index);
 
+		// Get the co-op character's player keyword, which is based on their CID.
+		RE::BGSKeyword* GetCoopPlayerKeyword();
+
 		// Get current package atop the player's package stack.
 		RE::TESPackage* GetCurrentPackage();
 
@@ -833,6 +836,9 @@ namespace ALYSLC
 		// Update bound weapon lifetime data.
 		// Unequip bound weapon(s) when their lifetime expires and reset cached bound weapon data.
 		void UpdateBoundWeaponTimers();
+
+		// Set/remove the co-op character's player keyword based on their CID.
+		void UpdateCoopPlayerKeyword(bool a_set);
 
 		// Update animation graph variables and other variables dependent on them.
 		void UpdateGraphVariableStates();

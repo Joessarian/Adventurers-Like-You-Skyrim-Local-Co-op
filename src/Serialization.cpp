@@ -27,8 +27,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: {}.",
-						a_fid, form ? form->GetName() : "NONE"
+						"Found form with FID 0x{:X}: {}.", a_fid, form ? form->GetName() : "NONE"
 					);
 					return form;
 				}
@@ -58,8 +57,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] GetFormFromRetrievedFID: Found form with FID 0x{:X}: "
-							"{} in mod file {}.", 
+							"Found form with FID 0x{:X}: {} in mod file {}.", 
 							a_fid, form ? form->GetName() : "NONE",  file->fileName
 						);
 						return form;
@@ -70,9 +68,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: GetFormFromRetrievedFID: "
-					"Could not resolve new form ID from retrieved form ID (0x{:X}).", 
-					a_fid
+					"Could not resolve new form ID from retrieved form ID (0x{:X}).", a_fid
 				);
 				return nullptr;
 			}
@@ -81,9 +77,7 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: GetFormFromRetrievedFID: "
-					"Could not find form for retrieved form ID (0x{:X}).", 
-					a_fid
+					"Could not find form for retrieved form ID (0x{:X}).", a_fid
 				);
 			}
 
@@ -94,12 +88,12 @@ namespace ALYSLC
 		{
 			// Load all serialized data into our global serialized data structure.
 
-			SPDLOG_DEBUG("[SERIAL] Load: Read all serialized data from SKSE co-save.");
+			SPDLOG_DEBUG("Read all serialized data from SKSE co-save.");
 			{
 				std::unique_lock<std::mutex> lock(serializationMutex);
 				SPDLOG_DEBUG
 				(
-					"[SERIAL] Load: Lock obtained. (0x{:X})", 
+					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 
@@ -108,10 +102,9 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Load: Could not get serialization interface. "
+						"Could not get serialization interface. "
 						"Setting default data for all players."
 					);
-					SetDefaultRetrievedData();
 					return;
 				}
 
@@ -126,8 +119,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Load: Could not get data handler. "
-						"Cannot load serialized data."
+						"Could not get data handler. Cannot load serialized data."
 					);
 					return;
 				}
@@ -145,7 +137,6 @@ namespace ALYSLC
 					{
 						SPDLOG_ERROR
 						(
-							"[SERIAL] ERR: Load: "
 							"Serialized data version ({}) does not match current version ({}) "
 							"for entry of type {}, length {}.",
 							version, 
@@ -179,21 +170,45 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Load: "
 							"Skipping invalid data type {} for player with FID 0x{:X}.",
 							type, fid
 						);
 						continue;
 					}
 
-					// Per-player data.
-					for (auto i = 0; i < ALYSLC_MAX_PLAYER_COUNT; ++i)
+					// Per-character data.
+					for (auto i = 0; i < ALYSLC_COMPANION_CHARACTERS_COUNT + 1; ++i)
 					{
 						if (!a_intfc->ReadRecordData(fid) || !a_intfc->ResolveFormID(fid, fid))
 						{
+							// P1 is always inserted first and has an FID of 0x14.
+							if (i == 0)
+							{
+								fid = 0x14;
+							}
+							else
+							{
+								// Get the FID for the missing companion player character.
+								fid = dataHandler->LookupFormID
+								(
+									GlobalCoopData::PLAYER_CHARACTER_FIDS[i], 
+									GlobalCoopData::PLUGIN_NAME
+								);
+							}
+
+							if (fid == 0)
+							{
+								SPDLOG_ERROR
+								(
+									"Could not get companion character {}'s FID. '{}'",
+									i + 1,
+									GlobalCoopData::PLUGIN_NAME
+								);
+								continue;
+							}
+							
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Load: "
 								"Could not read player form ID ({}, 0x{:X}) "
 								"or resolve form ID ({}) for record of type {}, version {}, "
 								"length {} when attempting to load serialized data. "
@@ -205,12 +220,33 @@ namespace ALYSLC
 								version, 
 								length
 							);
+
+							// If not inserted into the global co-op data map already,
+							// insert the default data now.
+							// This will happen if the number of selectable 
+							// companion player characters changes 
+							// or if there is a new serializable data type.
+							// Done to avoid clearing all serialized data for all players
+							// when either of these things change.
+							// Other players with a serialized FID record 
+							// will retain their saved data for this record type.
+							const auto iter = glob.serializablePlayerData.find(fid);
+							if (iter == glob.serializablePlayerData.end())
+							{
+								glob.serializablePlayerData.insert
+								(
+									{ 
+										fid,
+										std::make_unique<SerializablePlayerData>()
+									}
+								);
+							}
+
 							continue;
 						}
 
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Load: "
 							"About to retrieve serialized data for player with FID 0x{:X}.", 
 							fid
 						);
@@ -220,7 +256,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: "
 								"Added new serialized data set for player with FID 0x{:X}.",
 								fid
 							);
@@ -242,7 +277,7 @@ namespace ALYSLC
 							data->SetPlayerCharacterID(playerCharacterID);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X}'s "
+								"Player with FID 0x{:X}'s "
 								"character ID is {}.", fid, data->GetPlayerCharacterID()
 							);
 						}
@@ -251,7 +286,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->availablePerkPoints, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
+								"Player with FID 0x{:X} "
 								"has {} available perk points to use still.",
 								fid, data->availablePerkPoints
 							);
@@ -261,8 +296,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->usedPerkPoints, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has used {} perk points.",
+								"Player with FID 0x{:X} has used {} perk points.",
 								fid, data->usedPerkPoints
 							);
 						}
@@ -271,8 +305,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has unlocked {} shared perks.",
+								"Player with FID 0x{:X} has unlocked {} shared perks.",
 								fid, data->sharedPerksUnlocked
 							);
 						}
@@ -281,8 +314,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has {} extra perks.",
+								"Player with FID 0x{:X} has {} extra perks.",
 								fid, data->extraPerkPoints
 							);
 						}
@@ -291,7 +323,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->firstSavedLevel, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
+								"Player with FID 0x{:X} "
 								"was level {} when their data was first serialized.",
 								fid, data->firstSavedLevel
 							);
@@ -301,9 +333,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, data->level, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has saved level: {}.",
-								fid, data->level
+								"Player with FID 0x{:X} has saved level: {}.", fid, data->level
 							);
 						}
 						else if (type == !SerializableDataType::kPlayerLevelXP)
@@ -311,8 +341,7 @@ namespace ALYSLC
 							RetrieveFloatData(a_intfc, data->levelXP, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has saved level XP: {}.",
+								"Player with FID 0x{:X} has saved level XP: {}.",
 								fid, data->levelXP
 							);
 						}
@@ -323,7 +352,7 @@ namespace ALYSLC
 								RetrieveFloatData(a_intfc, data->hmsBasePointsList[j], type);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
+									"Player with FID 0x{:X} "
 									"has a base {} level of {} at first-saved level {}.",
 									fid, 
 									j == 0 ? "health" : j == 1 ? "magicka" : "stamina",
@@ -342,8 +371,7 @@ namespace ALYSLC
 								);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has increased {} by {}.",
+									"Player with FID 0x{:X} has increased {} by {}.",
 									fid, 
 									j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina",
 									data->hmsPointIncreasesList[j]
@@ -357,8 +385,7 @@ namespace ALYSLC
 								RetrieveFloatData(a_intfc, data->skillBaseLevelsList[j], type);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has base skill {} of {}.",
+									"Player with FID 0x{:X} has base skill {} of {}.",
 									fid, 
 									Util::GetActorValueName
 									(
@@ -378,8 +405,7 @@ namespace ALYSLC
 								);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has increased skill {} by {}.",
+									"Player with FID 0x{:X} has increased skill {} by {}.",
 									fid, 
 									Util::GetActorValueName
 									(
@@ -396,8 +422,7 @@ namespace ALYSLC
 								RetrieveFloatData(a_intfc, data->skillXPList[j], type);
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has gained {} XP for skill {}.",
+									"Player with FID 0x{:X} has gained {} XP for skill {}.",
 									fid,
 									data->skillXPList[j], 
 									Util::GetActorValueName
@@ -414,7 +439,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, numEquippedForms, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} has {} equipped forms.",
+								"Player with FID 0x{:X} has {} equipped forms.",
 								fid, numEquippedForms
 							);
 
@@ -436,8 +461,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, numMagForms, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} "
-								"has {} favorited magical forms.", 
+								"Player with FID 0x{:X} has {} favorited magical forms.", 
 								fid, numMagForms
 							);
 
@@ -476,8 +500,7 @@ namespace ALYSLC
 								data->hotkeyedForms[j] = hotkeyedForm;
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
-									"has {} hotkeyed in slot {}.", 
+									"Player with FID 0x{:X} has {} hotkeyed in slot {}.", 
 									fid, 
 									hotkeyedForm ? hotkeyedForm->GetName() : "NONE", 
 									j + 1
@@ -508,7 +531,7 @@ namespace ALYSLC
 
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X} "
+									"Player with FID 0x{:X} "
 									"has copied magic form {} (0x{:X}) in slot {}.",
 									fid, 
 									data->copiedMagic[i] ?
@@ -539,7 +562,7 @@ namespace ALYSLC
 								data->cyclableEmoteIdleEvents[i] = eventName;
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Load: Player with FID 0x{:X}'s "
+									"Player with FID 0x{:X}'s "
 									"saved cyclable emote idle event {} is {}. "
 									"String length: {}.", 
 									fid, i, eventName, size
@@ -553,7 +576,7 @@ namespace ALYSLC
 							RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Load: Player with FID 0x{:X} has {} unlocked perks.",
+								"Player with FID 0x{:X} has {} unlocked perks.",
 								fid, numUnlockedPerks
 							);
 
@@ -579,20 +602,16 @@ namespace ALYSLC
 				// Set default data if no data was retrieved successfully.
 				if (glob.serializablePlayerData.size() == 0)
 				{
-					SPDLOG_DEBUG
-					(
-						"[SERIAL] Load: First time retrieval. "
-						"Setting default data for all players."
-					);
+					SPDLOG_DEBUG("First time retrieval. Setting default data for all players.");
 					SetDefaultRetrievedData();
 				}
 				else
 				{
 					SPDLOG_DEBUG
 					(
-						"[SERIAL] Load: Successfully retrieved serialized data for {} players "
-						"from SKSE co-save.",
-						ALYSLC_MAX_PLAYER_COUNT
+						"Successfully retrieved serialized data for {} "
+						"player characters from SKSE co-save.",
+						ALYSLC_COMPANION_CHARACTERS_COUNT + 1
 					);
 				}
 			}
@@ -609,7 +628,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: RetrieveFloatData: "
 					"Could not read FLOAT record data ({}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -633,7 +651,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: RetrieveStringData: "
 					"Could not read STRING record data ({}, given size {}), record type: {}.",
 					a_data, a_size, TypeToString(a_recordType)
 				);
@@ -657,7 +674,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: RetrieveUInt8Data: "
 					"Could not read UINT8 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -675,7 +691,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: RetrieveUInt16Data: "
 					"Could not read UINT16 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -693,7 +708,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: RetrieveUInt32Data: "
 					"Could not read UINT32 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -706,7 +720,7 @@ namespace ALYSLC
 
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
-				SPDLOG_DEBUG("[SERIAL] Revert: Stopping active co-op session.");
+				SPDLOG_DEBUG("Stopping active co-op session.");
 				GlobalCoopData::TeardownCoopSession(true);
 			}
 		}
@@ -714,12 +728,12 @@ namespace ALYSLC
 		void Save(SKSE::SerializationInterface* a_intfc)
 		{
 			// Save all our co-op serializable data to the SKSE co-save.
-			SPDLOG_DEBUG("[SERIAL] Save: Writing all serializable data to SKSE co-save.");
+			SPDLOG_DEBUG("Writing all serializable data to SKSE co-save.");
 			if (!a_intfc)
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: Save: Could not get serialization interface ({}), "
+					"Could not get serialization interface ({}), "
 					"co-op session active ({}). Cannot serialize co-op data.",
 					(bool)!a_intfc, glob.coopSessionActive
 				);
@@ -730,7 +744,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(serializationMutex);
 				SPDLOG_DEBUG
 				(
-					"[SERIAL] Save: Lock obtained. (0x{:X})", 
+					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 
@@ -752,8 +766,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize PLAYER CHARACTER CO-OP ID "
-							"for player with FID 0x{:X}: {}.",
+							"Serialize PLAYER CHARACTER CO-OP ID for player with FID 0x{:X}: {}.",
 							fid, data->GetPlayerCharacterID()
 						);
 						SerializePlayerUInt32Data
@@ -781,8 +794,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize AVAIL PERK POINTS "
-							"for player with FID 0x{:X}: {}.",
+							"Serialize AVAIL PERK POINTS for player with FID 0x{:X}: {}.",
 							fid, data->availablePerkPoints
 						);
 						SerializePlayerUInt32Data
@@ -801,7 +813,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerAvailablePerkPoints)
 					);
 				}
@@ -817,8 +829,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize USED PERK POINTS "
-							"for player with FID 0x{:X}: {}.", 
+							"Serialize USED PERK POINTS for player with FID 0x{:X}: {}.", 
 							fid, data->usedPerkPoints
 						);
 						SerializePlayerUInt32Data
@@ -837,7 +848,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerUsedPerkPoints)
 					);
 				}
@@ -853,8 +864,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize SHARED PERKS UNLOCKED "
-							"for player with FID 0x{:X}: {}.", 
+							"Serialize SHARED PERKS UNLOCKED for player with FID 0x{:X}: {}.", 
 							fid, data->sharedPerksUnlocked
 						);
 						SerializePlayerUInt32Data
@@ -873,7 +883,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerSharedPerksUnlocked)
 					);
 				}
@@ -889,8 +899,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize EXTRA PERK POINTS "
-							"for player with FID 0x{:X}: {}.",
+							"Serialize EXTRA PERK POINTS for player with FID 0x{:X}: {}.",
 							fid, data->extraPerkPoints
 						);
 						SerializePlayerUInt32Data
@@ -909,7 +918,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerExtraPerkPoints)
 					);
 				}
@@ -925,7 +934,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize BASE LVL for player with FID 0x{:X}: {}.", 
+							"Serialize BASE LVL for player with FID 0x{:X}: {}.", 
 							fid, data->firstSavedLevel
 						);
 						SerializePlayerUInt32Data
@@ -944,7 +953,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerFirstSavedLevel)
 					);
 				}
@@ -960,8 +969,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize LVL for player with FID 0x{:X}: {}.",
-							fid, data->level
+							"Serialize LVL for player with FID 0x{:X}: {}.", fid, data->level
 						);
 						SerializePlayerUInt32Data
 						(
@@ -977,7 +985,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerLevel)
 					);
 				}
@@ -993,8 +1001,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize LVL XP for player with FID 0x{:X}: {}.",
-							fid, data->levelXP
+							"Serialize LVL XP for player with FID 0x{:X}: {}.", fid, data->levelXP
 						);
 						SerializePlayerUInt32Data
 						(
@@ -1010,7 +1017,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerLevelXP)
 					);
 				}
@@ -1035,7 +1042,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize HMS BASE POINTS LIST "
+									"Serialize HMS BASE POINTS LIST "
 									"for player with FID 0x{:X}: Base {} is {}.", 
 									fid,
 									j == 0 ? "health" : j == 1 ? "magicka" : "stamina", 
@@ -1053,7 +1060,7 @@ namespace ALYSLC
 						{
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Save: HMS BASE POINTS LIST is empty "
+								"HMS BASE POINTS LIST is empty "
 								"for player with FID 0x{:X}. Saving 100 as base value "
 								"for health, magicka, and stamina.", 
 								fid
@@ -1074,7 +1081,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerBaseHMSPointsList)
 					);
 				}
@@ -1099,7 +1106,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize HMS INC LIST "
+									"Serialize HMS INC LIST "
 									"for player with FID 0x{:X}: {} increment is {}.", 
 									fid, 
 									j == 0 ? "Health" : j == 1 ? "Magicka" : "Stamina", 
@@ -1117,7 +1124,7 @@ namespace ALYSLC
 						{
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Save: HMS INC LIST is empty "
+								"HMS INC LIST is empty "
 								"for player with FID 0x{:X}. Saving 0 point increases "
 								"for health, magicka, and stamina.",
 								fid
@@ -1136,7 +1143,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerHMSPointsIncList)
 					);
 				}
@@ -1164,7 +1171,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize BASE SKILL LVL LIST "
+									"Serialize BASE SKILL LVL LIST "
 									"for player with FID 0x{:X}: Skill {} has base value {}.", 
 									fid, 
 									Util::GetActorValueName
@@ -1185,7 +1192,7 @@ namespace ALYSLC
 						{
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Save: BASE SKILL LVL LIST list is empty "
+								"BASE SKILL LVL LIST list is empty "
 								"for player 0x{:X}. Getting and setting each skill again "
 								"for the player.",
 								fid
@@ -1202,7 +1209,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[SERIAL] Save: Serialize BASE SKILL LVL LIST "
+										"Serialize BASE SKILL LVL LIST "
 										"for player with FID 0x{:X}: "
 										"Skill {} has base value {}.",
 										fid, 
@@ -1224,7 +1231,7 @@ namespace ALYSLC
 							{
 								SPDLOG_ERROR
 								(
-									"[SERIAL] ERR: Save: Could not get player actor "
+									"Could not get player actor "
 									"for FID 0x{:X}. "
 									"Setting each skill level to a base level of 15 "
 									"for the player.",
@@ -1248,7 +1255,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerBaseSkillLevelsList)
 					);
 				}
@@ -1276,7 +1283,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize SKILL LVL INC LIST "
+									"Serialize SKILL LVL INC LIST "
 									"for player with FID 0x{:X}: Skill {} has increment {}.",
 									fid,
 									Util::GetActorValueName
@@ -1297,7 +1304,7 @@ namespace ALYSLC
 						{
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Save: SKILL LVL INC LIST is empty "
+								"SKILL LVL INC LIST is empty "
 								"for player 0x{:X}. Saving 0 level increase for each skill.",
 								fid
 							);
@@ -1316,7 +1323,7 @@ namespace ALYSLC
 							{
 								SPDLOG_ERROR
 								(
-									"[SERIAL] ERR: Save: Re-serializing BASE LVL as 0 "
+									"Re-serializing BASE LVL as 0 "
 									"for player with FID 0x{:X} to force auto-scaling "
 									"for all skill AVs until next level up "
 									"during a co-op session.", 
@@ -1336,7 +1343,7 @@ namespace ALYSLC
 										{
 											SPDLOG_DEBUG
 											(
-												"[SERIAL] Save: Re-serialize BASE LVL "
+												"Re-serialize BASE LVL "
 												"for player with FID 0x{:X}: {}.",
 												fid2, data2->firstSavedLevel
 											);
@@ -1357,7 +1364,7 @@ namespace ALYSLC
 
 										SPDLOG_DEBUG
 										(
-											"[SERIAL] Save: Serialize BASE LVL "
+											"Serialize BASE LVL "
 											"for player with FID 0x{:X} as 0 "
 											"to force AV auto-scaling.", 
 											fid2
@@ -1380,7 +1387,7 @@ namespace ALYSLC
 								{
 									SPDLOG_ERROR
 									(
-										"[SERIAL] ERR: Save: Could not open record of type {}.",
+										"Could not open record of type {}.",
 										TypeToString(!SerializableDataType::kPlayerFirstSavedLevel)
 									);
 								}
@@ -1392,7 +1399,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerSkillIncreasesList)
 					);
 					
@@ -1421,7 +1428,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize SKILL XP LIST "
+									"Serialize SKILL XP LIST "
 									"for player with FID 0x{:X}: Skill {} has {} XP.",
 									fid, 
 									Util::GetActorValueName
@@ -1442,7 +1449,7 @@ namespace ALYSLC
 						{
 							SPDLOG_ERROR
 							(
-								"[SERIAL] ERR: Save: SKILL XP LIST is empty "
+								"SKILL XP LIST is empty "
 								"for player with FID 0x{:X}. Saving 0 XP for each skill, "
 								"which will reset skill XP levels to P1's corresponding skill XPs "
 								"on load.",
@@ -1462,7 +1469,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerSkillXPList)
 					);
 				}
@@ -1491,7 +1498,7 @@ namespace ALYSLC
 						);
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize EQUIPPED OBJECTS LIST "
+							"Serialize EQUIPPED OBJECTS LIST "
 							"for 0x{:X}. Num equipped forms: {}.", 
 							fid, numEquippedForms
 						);
@@ -1506,7 +1513,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[SERIAL] Save: Serialize EQUIPPED OBJECT {} (0x{:X}) "
+										"Serialize EQUIPPED OBJECT {} (0x{:X}) "
 										"for player with FID 0x{:X}.",
 										form->GetName(), form->formID, fid
 									);
@@ -1535,7 +1542,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerEquippedObjectsList)
 					);
 					
@@ -1563,7 +1570,7 @@ namespace ALYSLC
 						);
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize MAGICAL FAVORITES LIST "
+							"Serialize MAGICAL FAVORITES LIST "
 							"for 0x{:X}. Num magical forms: {}.",
 							fid, numMagForms
 						);
@@ -1578,7 +1585,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[SERIAL] Save: Serialize MAGICAL FORM {} (0x{:X}) "
+										"Serialize MAGICAL FORM {} (0x{:X}) "
 										"for player with FID 0x{:X}.",
 										form->GetName(), form->formID, fid
 									);
@@ -1607,7 +1614,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerMagFavoritesList)
 					);
 					
@@ -1634,7 +1641,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize HOTKEYED FORM {} (0x{:X}) "
+									"Serialize HOTKEYED FORM {} (0x{:X}) "
 									"in slot {} for player with FID 0x{:X}.",
 									form->GetName(),
 									form->formID,
@@ -1665,7 +1672,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerHotkeyedFormsList)
 					);
 				}
@@ -1702,7 +1709,7 @@ namespace ALYSLC
 							);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Save: Player with FID 0x{:X} "
+								"Player with FID 0x{:X} "
 								"has COPIED SPELL form {} (0x{:X}) in slot {}.",
 								fid,
 								copiedMagic[i] ? copiedMagic[i]->GetName() : "NONE",
@@ -1716,7 +1723,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerCopiedMagicList)
 					);
 				}
@@ -1754,7 +1761,7 @@ namespace ALYSLC
 							);
 							SPDLOG_DEBUG
 							(
-								"[SERIAL] Save: Player with FID 0x{:X} "
+								"Player with FID 0x{:X} "
 								"has cyclable emote idle event {} (size {}) in slot {}.",
 								fid, cyclableEmoteIdleEvents[i], size, i
 							);
@@ -1765,7 +1772,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerEmoteIdleEvents)
 					);
 				}
@@ -1788,7 +1795,7 @@ namespace ALYSLC
 						uint32_t numUnlockedPerks = unlockedPerksList.size();
 						SPDLOG_DEBUG
 						(
-							"[SERIAL] Save: Serialize UNLOCKED PERKS LIST "
+							"Serialize UNLOCKED PERKS LIST "
 							"for 0x{:X}. Number of unlocked perks: {}.", 
 							fid, numUnlockedPerks
 						);
@@ -1806,7 +1813,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[SERIAL] Save: Serialize UNLOCKED PERK {} (0x{:X}) "
+									"Serialize UNLOCKED PERK {} (0x{:X}) "
 									"for player with FID 0x{:X}.",
 									unlockedPerksList[j] ? 
 									unlockedPerksList[j]->GetName() :
@@ -1828,7 +1835,7 @@ namespace ALYSLC
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: Save: Could not open record of type {}.",
+						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerUnlockedPerksList)
 					);
 				}
@@ -1848,7 +1855,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: SerializePlayerFloatData: "
 					"Could not write FLOAT record data ({}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -1869,7 +1875,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: SerializePlayerStringData: "
 					"Could not write STRING record data ({}, size: {}), record type: {}.",
 					a_data.data(), a_data.length() * sizeof(char), TypeToString(a_recordType)
 				);
@@ -1889,7 +1894,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: SerializePlayerUInt8Data: "
 					"Could not write UINT8 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -1909,7 +1913,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: SerializePlayerUInt16Data: "
 					"Could not write UINT16 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -1929,7 +1932,6 @@ namespace ALYSLC
 			{
 				SPDLOG_ERROR
 				(
-					"[SERIAL] ERR: SerializePlayerUInt32Data: "
 					"Could not write UINT32 record data (0x{:X}), record type: {}.",
 					a_data, TypeToString(a_recordType)
 				);
@@ -1942,7 +1944,7 @@ namespace ALYSLC
 			// Done when no data has been serialized yet 
 			// or when the serialization interface is unavailable.
 
-			SPDLOG_DEBUG("[SERIAL] SetDefaultRetrievedData.");
+			SPDLOG_DEBUG("SetDefaultRetrievedData.");
 			RE::PlayerCharacter* p1 = RE::PlayerCharacter::GetSingleton();
 			RE::TESDataHandler* dataHandler = RE::TESDataHandler::GetSingleton();
 			if (!dataHandler || !p1)
@@ -1991,7 +1993,7 @@ namespace ALYSLC
 					auto currentAV = iter->second;
 					SPDLOG_DEBUG
 					(
-						"[SERIAL] SetDefaultRetrievedData: P1's {} skill base level: {}.", 
+						"P1's {} skill base level: {}.", 
 						Util::GetActorValueName(currentAV), skillBaseLvlList[i]
 					);
 				}
@@ -2055,28 +2057,48 @@ namespace ALYSLC
 			);
 
 			// Insert co-op companions.
-			std::array<RE::Actor*, (size_t)(ALYSLC_MAX_PLAYER_COUNT - 1)> coopPlayers
+			std::array<RE::Actor*, (size_t)(ALYSLC_COMPANION_CHARACTERS_COUNT)> coopPlayers
 			{
-				nullptr, nullptr, nullptr 
+				nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr
 			};
 			// Inserted in order of actor base's editor ID trailing index:
 			// 1. NPC with '__CoopCharacter1' as its actor base editor ID.
 			// 2. NPC with '__CoopCharacter2' as its actor base editor ID.
-			// 3. NPC with '__CoopCharacter3'  as its actor base editor ID.
-			coopPlayers[0] = dataHandler->LookupForm<RE::Actor>
-			(
-				0x802, GlobalCoopData::PLUGIN_NAME
-			);
-			coopPlayers[1] = dataHandler->LookupForm<RE::Actor>
-			(
-				0x803, GlobalCoopData::PLUGIN_NAME
-			);
-			coopPlayers[2] = dataHandler->LookupForm<RE::Actor>
-			(
-				0x804, GlobalCoopData::PLUGIN_NAME
-			);
+			// 3. NPC with '__CoopCharacter3' as its actor base editor ID.
+			// 4. NPC with '__CoopCharacter4' as its actor base editor ID.
+			// 5. NPC with '__CoopCharacter5' as its actor base editor ID.
+			// 6. NPC with '__CoopCharacter6' as its actor base editor ID.
+			// 7. NPC with '__CoopCharacter7' as its actor base editor ID.
+			// 8. NPC with '__CoopCharacter8' as its actor base editor ID.
+			// 9. NPC with '__CoopCharacter9' as its actor base editor ID.
+			for (const auto actor : dataHandler->GetFormArray<RE::Actor>())
+			{
+				SPDLOG_DEBUG
+				(
+					"Actor {} (0x{:X}",
+					actor ? actor->GetName() : "NONE", actor ? actor->formID : 0xDEAD
+				); 
+			}
+
 			for (auto i = 0; i < coopPlayers.size(); ++i) 
 			{
+				auto fid = dataHandler->LookupFormID
+				(
+					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
+					GlobalCoopData::PLUGIN_NAME
+				);
+				SPDLOG_DEBUG
+				(
+					"Co-op character {}: 0x{:X} -> 0x{:X}.",
+					i + 1,
+					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
+					fid
+				); 
+				coopPlayers[i] = dataHandler->LookupForm<RE::Actor>
+				(
+					GlobalCoopData::PLAYER_CHARACTER_FIDS[i + 1],
+					GlobalCoopData::PLUGIN_NAME
+				);
 				if (coopPlayers[i]) 
 				{
 					auto fid = coopPlayers[i]->formID;
@@ -2131,19 +2153,13 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_ERROR
-						(
-							"[SERIAL] ERR: SetDefaultRetrievedData: "
-							"Could not get __CoopCharacter{}'s form ID.", 
-							i + 1
-						);
+						SPDLOG_ERROR("Could not get __CoopCharacter{}'s form ID.", i + 1);
 					}
 				}
 				else
 				{
 					SPDLOG_ERROR
 					(
-						"[SERIAL] ERR: SetDefaultRetrievedData: "
 						"Could not get __CoopCharacter{}. "
 						"Game will likely crash when summoning other players.",
 						i + 1
@@ -2151,10 +2167,7 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG
-			(
-				"[SERIAL] SetDefaultRetrievedData: Default data set and ready to serialize!"
-			);
+			SPDLOG_DEBUG("Default data set and ready to serialize!");
 		}
 
 		// Credits to po3 for the decode function from here:

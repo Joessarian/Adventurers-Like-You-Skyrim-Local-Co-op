@@ -1,7 +1,7 @@
 Scriptname __ALYSLC_SummoningMenu extends ReferenceAlias  
 Actor Property PlayerRef Auto
 Actor Property SelectedCharacter Auto
-; Current co-op actors to summon and control.
+; Current co-op actors to summon and control. Includes P1.
 Actor[] Property CoopActors Auto
 ; Co-op classes.
 Form[] Property CoopClasses Auto
@@ -117,22 +117,6 @@ Function EndCoopForPlayer(ObjectReference akCompanion)
         ModEvent.PushForm(Handle, akCompanion)
         ModEvent.Send(Handle)
     EndIf
-EndFunction
-
-; Gives a list of the array indices of the packages array (sent to the plugin)
-; for the first of each player's packages (4 each: default/combat override/ranged/interaction).
-Int[] Function GetPackageFormListIndicesList(Actor[] CoopCompanions)
-    Int Iter = 0
-    Int[] PackageFormListIndicesList = new Int[4]
-    ; Set player 1's package start index first.
-    While (Iter < CoopCompanions.Length)
-        If (CoopCompanions[Iter])
-            PackageFormListIndicesList[Iter] = StorageUtil.GetIntValue(None, "ALYSLC_PackageFormListStartIndex" + PO3_SKSEFunctions.IntToString(CoopCompanions[Iter].GetFormID(), False), -1)
-        EndIf
-        Iter += 1
-    EndWhile
-
-    Return PackageFormListIndicesList
 EndFunction
 
 ; Precondition: A character has already been selected and is valid.
@@ -522,6 +506,7 @@ EndFunction
 ; Set list of active player actors to send to plugin.
 Function SetActiveCoopPlayers()
     Int NumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
+    ; Max of 4 players.
     CoopActors = new Actor[4]
     ; Add player 1 first.
     ALYSLC.Log("[SUMMON SCRIPT] Player 1 is " + PlayerRef + ". CID: " + ControllerIDs[0])
@@ -713,6 +698,7 @@ Function ShowCoopSetupMenu()
 
     ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
     Int ChosenOptionIndex = CoopSetupMenu.Show(CurrentCompanionsCount + 2)
+    ALYSLC.Log("[SUMMON SCRIPT] Option " + ChosenOptionIndex + " chosen. Giving menu control back to P" + (CurrentMenuControllerID + 1) + ". Current companion players count: " + CurrentCompanionsCount)
     ; Select a character.
     If (ChosenOptionIndex == 0)
         ; Show character list.
@@ -1067,7 +1053,6 @@ Event OnSummoningMenuRequest()
 
     ; Get active players and package start indices before initializing co-op session data in the plugin.
     SetActiveCoopPlayers()
-    Int[] PackageFormListIndicesList = GetPackageFormListIndicesList(CoopActors)
     ; P1 is not always valid for some reason.
     Bool Success = CoopActors[0] == Game.GetPlayer()
     If (!Success)
@@ -1077,7 +1062,7 @@ Event OnSummoningMenuRequest()
     EndIf
 
     If (Success)
-        Success = ALYSLC.InitializeCoop(CurrentCompanionsCount, ControllerIDs, CoopActors, PackageFormListIndicesList)
+        Success = ALYSLC.InitializeCoop(CurrentCompanionsCount, ControllerIDs, CoopActors)
     EndIf
 
     ; Initialization failed. Do not continue.

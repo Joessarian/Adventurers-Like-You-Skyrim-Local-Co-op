@@ -44,6 +44,12 @@ namespace ALYSLC
 		static bool g_isQuickLootIE;
 	};
 
+	struct RaceMenuCompat
+	{
+		static void CheckForRaceMenu(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_raceMenuInstalled;
+	};
+
 	struct RequiemCompat
 	{
 		static void CheckForRequiem(const SKSE::LoadInterface* a_loadInterface);

@@ -79,8 +79,6 @@ namespace ALYSLC
 		secsDowned =
 		secsMaxTransformationTime =
 		secsSinceInvalidPlayerMoved = 0.0f;
-		// Ints.
-		packageFormListStartIndex = 0;
 		// Keywords.
 		aimTargetKeyword = nullptr;
 		// Pre-transformation race.
@@ -90,14 +88,12 @@ namespace ALYSLC
 	CoopPlayer::CoopPlayer
 	(
 		int32_t a_controllerID, 
-		RE::Actor* a_coopActor, 
-		uint32_t a_packageFormListStartIndex
+		RE::Actor* a_coopActor
 	) : 
 		Manager(ManagerType::kP), 
 		controllerID(a_controllerID), 
 		playerID(-1),
 		coopActor(a_coopActor),
-		packageFormListStartIndex(a_packageFormListStartIndex),
 		taskInterface(SKSE::GetTaskInterface())
 	{
 		InitializeCoopPlayer();
@@ -151,8 +147,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ShouldSelfPause: {}: controller input error for CID {}. "
-				"About to pause all managers.",
+				"{}: controller input error for CID {}. About to pause all managers.",
 				coopActor->GetName(), controllerID
 			);
 			// Signal to handle once the manager is awaiting refresh.
@@ -180,7 +175,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ShouldSelfPause: Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, "
+				"Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, "
 				"NO loaded data: {}, NO current proc: {}, NO char controller: {}, "
 				"parent cell NOT attached: {}",
 				coopActor->IsDisabled(),
@@ -220,7 +215,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ShouldSelfPause: {}: P1 wait for cam: {}, "
+				"{}: P1 wait for cam: {}, "
 				"should teleport to P1: {}, game is paused: {}, "
 				"saving not allowed: {}, lockpicking menu open: {}.",
 				coopActor->GetName(),
@@ -261,8 +256,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[P] ShouldSelfResume: {}'s controller input error has been resolved. "
-					"CID is now {}.",
+					"{}'s controller input error has been resolved. CID is now {}.",
 					coopActor->GetName(), controllerID
 				);
 				handledControllerInputError = true;
@@ -322,11 +316,7 @@ namespace ALYSLC
 					if (coopActor->IsHandleValid() && 
 						Util::HandleIsValid(coopActor->GetHandle())) 
 					{
-						SPDLOG_DEBUG
-						(
-							"[P] ShouldSelfResume: Moving player {} to P1.", 
-							coopActor->GetName()
-						);
+						SPDLOG_DEBUG("Moving player {} to P1.", coopActor->GetName());
 						// Temporary solution until I figure out what triggers 
 						// the 'character controller and 3D desync warp glitch',
 						// which occurs ~0.5 seconds after unpausing
@@ -421,11 +411,7 @@ namespace ALYSLC
 			selfWasInvalid = false;
 		}
 
-		SPDLOG_DEBUG
-		(
-			"[P] ShouldSelfResume: {}: Resuming all co-op player manager threads.", 
-			coopActor->GetName()
-		);
+		SPDLOG_DEBUG("{}: Resuming all co-op player manager threads.", coopActor->GetName());
 		return ManagerState::kRunning;
 	}
 
@@ -437,10 +423,7 @@ namespace ALYSLC
 		// Controller ID, player actor, and package form start index 
 		// are already set through the constructor or UpdateCoopPlayer function at this point.
 
-		SPDLOG_DEBUG
-		(
-			"[P] InitializeCoopPlayer: Init player with controller ID: {}.", controllerID
-		);
+		SPDLOG_DEBUG("Init player with controller ID: {}.", controllerID);
 
 		// Active if the player has an assigned controller ID.
 		isActive = controllerID != -1;
@@ -565,29 +548,24 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopPlayer::UpdateCoopPlayer
-	(
-		int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex
-	)
+	void CoopPlayer::UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor)
 	{
 		// Update an already-constructed co-op player by setting the given data 
 		// and refreshing all other members.
 
 		SPDLOG_DEBUG
 		(
-			"[P] UpdateCoopPlayer: Updating co-op player: {}, CID: {}", 
+			"Updating co-op player: {}, CID: {}", 
 			a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID
 		);
 
-		if ((a_packageFormListStartIndex != -1) &&
-			(a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT))
+		if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			controllerID = a_controllerID;
 			// Player ID is dependent on the player construction order.
 			// Set to -1 until after all players are constructed.
 			playerID = -1;
 			coopActor = RE::ActorPtr(a_coopActor);
-			packageFormListStartIndex = a_packageFormListStartIndex;
 			taskInterface = SKSE::GetTaskInterface();
 			InitializeCoopPlayer();
 		}
@@ -595,11 +573,9 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[P] ERR: UpdateCoopPlayer: {}: controller ID is not between 0 and 3: {}, "
-				"package start index not found: {}.",
+				"{}: controller ID is not between 0 and 3: {}.",
 				coopActor ? coopActor->GetName() : "NONE",
-				a_controllerID <= -1 || a_controllerID >= 4,
-				a_packageFormListStartIndex == -1
+				a_controllerID <= -1 || a_controllerID >= 4
 			);
 
 			// Invalid CID/package start index. Set as inactive.
@@ -630,7 +606,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[P] CopyNPCAppearanceToPlayer: Copying {}'s appearance to {}, "
+			"Copying {}'s appearance to {}, "
 			"set opposite gender animations: {}, "
 			"current race, race to set: {}, {}, equal: {}.",
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
@@ -644,7 +620,6 @@ namespace ALYSLC
 		auto actorBase = coopActor->GetActorBase();
 		SPDLOG_DEBUG
 		(
-			"[P] CopyNPCAppearanceToPlayer: "
 			"Base is female: {}, current is female: {}, "
 			"current uses opposite gender anims: {}, req opposite gender anims: {}, "
 			"should change gender: {}, should set opposite gender anims: {}.",
@@ -720,8 +695,11 @@ namespace ALYSLC
 			{
 				if (actorBase->headParts[0])
 				{
-					SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: Removing head part #{}: {}.", 
-						headPartIndex, actorBase->headParts[0]->GetName());
+					SPDLOG_DEBUG
+					(
+						"Removing head part #{}: {}.", 
+						headPartIndex, actorBase->headParts[0]->GetName()
+					);
 					Util::NativeFunctions::RemoveHeadPart
 					(
 						actorBase, *actorBase->headParts[0]->type
@@ -734,7 +712,6 @@ namespace ALYSLC
 					// the actual head parts array's size.
 					SPDLOG_ERROR
 					(
-						"[P] ERR: CopyNPCAppearanceToPlayer: "
 						"Num head parts not in sync with actual head parts array. "
 						"No head part at index {}. Number of current head parts reported: {}. "
 						"Copying preset head parts over directly: {} parts. "
@@ -767,8 +744,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG("[P] CopyNPCAppearanceToPlayer: Adding head part #{}: {}.", 
-					i, headPart->GetName());
+				SPDLOG_DEBUG("Adding head part #{}: {}.", i, headPart->GetName());
 				actorBase->ChangeHeadPart(headPart);
 			}
 		}
@@ -793,8 +769,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[P] CopyNPCAppearanceToPlayer: Imported {}'s appearance to {}",
-			a_baseToCopy->GetName(), coopActor->GetName()
+			"Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName()
 		);
 	}
 
@@ -820,7 +795,7 @@ namespace ALYSLC
 		onCoopEndReg.SendEvent(coopActor.get(), controllerID);
 		SPDLOG_DEBUG
 		(
-			"[P] DismissPlayer: Handled dismissal of {}. Script is now completing cleanup.", 
+			"Handled dismissal of {}. Script is now completing cleanup.", 
 			coopActor->GetName()
 		);
 	}
@@ -942,8 +917,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ERR: HandleControllerInputError: Failed to get XInput state for CID {}, "
-				"player {}.",
+				"Failed to get XInput state for CID {}, player {}.",
 				controllerID, coopActor->GetName()
 			);
 			// Get controller "rank" or index in the list of active controllers 
@@ -992,8 +966,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[P] HandleControllerInputError: Swapping {} with {}. "
-						"Swapped player {}'s new CID is now {}.",
+						"Swapping {} with {}. Swapped player {}'s new CID is now {}.",
 						coopActor->GetName(), 
 						swappedPlayer->coopActor->GetName(),
 						swappedPlayer->coopActor->GetName(), 
@@ -1015,8 +988,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[P] HandleControllerInputError: Recalculating player IDs. "
-						"{}'s ID was {} and is now {}.",
+						"Recalculating player IDs. {}'s ID was {} and is now {}.",
 						p->coopActor->GetName(), 
 						p->playerID, 
 						p->isPlayer1 ? 0 : currentID
@@ -1070,7 +1042,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", 
+					"RegisterEvents: Failed to register {} for dismissal event.", 
 					coopActor->GetName()
 				);
 			}
@@ -1080,8 +1052,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ERR: RegisterEvents: Failed to register {} for dismissal event.", 
-				coopActor->GetName()
+				"RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName()
 			);
 		}
 	}
@@ -1534,8 +1505,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[P] SetAsDowned: {}. "
-			"Is ragdolled: {} (knock state {}), "
+			"{}. Is ragdolled: {} (knock state {}), "
 			"is in killmove: {}, is dead: {}, is essential: {}, health: {}.",
 			coopActor->GetName(),
 			coopActor->IsInRagdollState(),
@@ -1748,7 +1718,7 @@ namespace ALYSLC
 			coopActor->AddToFaction(coopFaction, 0);
 			SPDLOG_DEBUG
 			(
-				"[P] SyncPlayerFactions: {} added to co-op faction {} (0x{:X}): {}.",
+				"{} added to co-op faction {} (0x{:X}): {}.",
 				coopActor->GetName(),
 				coopFaction->GetName(),
 				coopFaction->formID,
@@ -1769,7 +1739,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[P] SyncPlayerFactions: {} now is in faction {} (0x{:X}): {}.",
+						"{} now is in faction {} (0x{:X}): {}.",
 						coopActor->GetName(),
 						a_faction->GetName(),
 						a_faction->formID,
@@ -1803,7 +1773,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.",
+					"UnregisterEvents: Could not unregister {} for dismissal event.",
 					coopActor->GetName()
 				);
 			}
@@ -1813,7 +1783,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[P] ERR: UnregisterEvents: Could not unregister {} for dismissal event.", 
+				"UnregisterEvents: Could not unregister {} for dismissal event.", 
 				coopActor->GetName()
 			);
 		}
@@ -1836,8 +1806,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[P] UpdateGenderAndBody: {}: set female: {}, "
-			"set opposite gender animations: {}, current race: {}",
+			"{}: set female: {}, set opposite gender animations: {}, current race: {}",
 			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName()
 		);
 
@@ -1864,7 +1833,6 @@ namespace ALYSLC
 					// the actual head parts array's size.
 					SPDLOG_ERROR
 					(
-						"[P] ERR: UpdateGenderAndBody: "
 						"Num head parts not in sync with actual head parts array. "
 						"No head part at index 0. Number of current head parts reported: {}. "
 						"Address of invalid head parts list: 0x{:p}.",
@@ -1957,8 +1925,7 @@ namespace ALYSLC
 			// All data will be re-initialized once the save loads, so nothing to clean up here.
 			SPDLOG_DEBUG
 			(
-				"[P] UpdateWhenDowned: Stopped downed countdown for {}. "
-				"Game is loading a save file. Skipping cleanup.",
+				"Stopped downed countdown for {}. Game is loading a save file. Skipping cleanup.",
 				coopActor->GetName()
 			);
 			return;
@@ -2038,8 +2005,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[P] UpdateWhenDowned: {} was NOT revived. "
-						"About to teardown co-op session.", 
+						"{} was NOT revived. About to teardown co-op session.", 
 						coopActor->GetName()
 					);
 
@@ -2088,9 +2054,7 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"[P] UpdateWhenDowned: {} was revived. "
-						"Toggle god mode until fully up.", 
-						coopActor->GetName()
+						"{} was revived. Toggle god mode until fully up.", coopActor->GetName()
 					);
 					
 					// Invulnerable while getting up after revive.
@@ -2173,7 +2137,6 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[P] UpdateWhenDowned: "
 							"{} was revived and is no longer downed. Success!", 
 							coopActor->GetName()
 						);
@@ -2186,7 +2149,7 @@ namespace ALYSLC
 				// so make sure the co-op session ends.
 				SPDLOG_DEBUG
 				(
-					"[P] UpdateWhenDowned: {} was not revived: {}. "
+					"{} was not revived: {}. "
 					"Revive interval not over: {}, co-op session ended: {}, "
 					"loading a save: {}, loading menu opened: {}, dead: {}. "
 					"Dismissing all players.",
@@ -2500,8 +2463,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[P] MountTask: {} waited {}s before attempting mount. "
-				"Draw state: {}, (un)equipping: {}, {}",
+				"{} waited {}s before attempting mount. Draw state: {}, (un)equipping: {}, {}",
 				coopActor->GetName(), 
 				secsWaited,
 				!coopActor->actorState2.weaponState,
@@ -2569,7 +2531,7 @@ namespace ALYSLC
 			coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			SPDLOG_DEBUG
 			(
-				"[P] MountTask: {} failed mount. Draw state: {}, (un)equipping: {}, {}.",
+				"{} failed mount. Draw state: {}, (un)equipping: {}, {}.",
 				coopActor->GetName(), 
 				!coopActor->actorState2.weaponState,
 				isEquipping,

@@ -18,17 +18,20 @@ namespace ALYSLC
 		if (a_p && a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			SPDLOG_DEBUG("[MM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+			SPDLOG_DEBUG
+			(
+				"Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
-				p.use_count());
+				p.use_count()
+			);
 			RefreshData();
 		}
 		else
 		{
 			SPDLOG_ERROR
 			(
-				"[MM] ERR: Initialize: Cannot construct Movement Manager for controller ID {}.", 
+				"Cannot construct Movement Manager for controller ID {}.", 
 				a_p ? a_p->controllerID : -1
 			);
 		}
@@ -47,7 +50,7 @@ namespace ALYSLC
 
 	void MovementManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("[MM] PrePauseTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
 
 		// Set P1 as motion driven when the manager is not active
 		// to restore normal movement.
@@ -100,7 +103,7 @@ namespace ALYSLC
 
 	void MovementManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("[MM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
 		ResetTPs();
 
 		// Set P1 as AI driven to allow for movement manipulation with this manager.
@@ -220,7 +223,6 @@ namespace ALYSLC
 		dashDodgeTorsoRollOffset = 0.0f;
 		lastLSAngMovingFromCenter = lastRSAngMovingFromCenter = 0.0f;
 		oldLSAngle = 0.0f;
-		playerScaledHeight = coopActor->GetHeight();
 		playerPitch = 0.0f;
 		playerYaw = coopActor->GetHeading(false);
 		magicParaglideEndZVel = magicParaglideStartZVel = magicParaglideVelInterpFactor = 0.0f;
@@ -234,7 +236,7 @@ namespace ALYSLC
 		ResetTPs();
 		// Update encumbrance factor.
 		UpdateEncumbranceFactor();
-		SPDLOG_DEBUG("[MM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState MovementManager::ShouldSelfPause()
@@ -506,17 +508,23 @@ namespace ALYSLC
 			);
 			if (succ)
 			{
-				SPDLOG_DEBUG("[MM] PerformDashDodge: {}: Getting lock. (0x{:X})", 
+				SPDLOG_DEBUG
+				(
+					"{}: Getting lock. (0x{:X})", 
 					coopActor->GetName(),
-					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					std::hash<std::jthread::id>()(std::this_thread::get_id())
+				);
 				{
 					std::unique_lock<std::mutex> perfAnimQueueLock
 					(
 						p->pam->avcam->perfAnimQueueMutex
 					);
-					SPDLOG_DEBUG("[MM] PerformDashDodge: {}: Lock obtained. (0x{:X})", 
+					SPDLOG_DEBUG
+					(
+						"{}: Lock obtained. (0x{:X})", 
 						coopActor->GetName(), 
-						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+						std::hash<std::jthread::id>()(std::this_thread::get_id())
+					);
 
 					// Queue dodge anim event tag so that this player's player action manager 
 					// can handle stamina expenditure.
@@ -2594,7 +2602,7 @@ namespace ALYSLC
 				auto playerCam = RE::PlayerCamera::GetSingleton();
 				SPDLOG_DEBUG
 				(
-					"[MM] SetPlayerOrientation: {} is animation driven with idle: {}. "
+					"{} is animation driven with idle: {}. "
 					"Cam state: {}. Occupied furniture: {}.",
 					coopActor->GetName(),
 					Util::GetEditorID(coopActor->currentProcess->middleHigh->furnitureIdle),
@@ -3194,7 +3202,7 @@ namespace ALYSLC
 		// if the player is not transformed.
 		if (!p->isTransforming) 
 		{
-			float radialDist = playerScaledHeight / 2.0f;
+			float radialDist = coopActor->GetHeight() / 2.0f;
 			auto eyePos = Util::GetEyePosition(coopActor.get());
 			const float headingAng = Util::ConvertAngle(coopActor->GetHeading(false));
 			aimPitchPos = RE::NiPoint3
@@ -4088,6 +4096,11 @@ namespace ALYSLC
 			{
 				PerformDashDodge();
 			}
+			else if (coopActor->IsSneaking() && !p->pam->wantsToSneak)
+			{
+				// Stop sneaking if no longer dodging and still crouched down.
+				coopActor->NotifyAnimationGraph("SneakStop");
+			}
 				
 			// Perform a magical-paraglide alternative which looks like trash.
 			if (isParagliding || shouldParaglide || !isParaglidingTiltAngleReset) 
@@ -4190,7 +4203,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MM] UpdateMovementState: "
 					"{} is anim driven: {}, mounted: {}, "
 					"ragdolled: {}, synced: {}, paragliding: {}. "
 					"Sending motion driven events: {}, "
@@ -4209,18 +4221,13 @@ namespace ALYSLC
 				bool changed = Util::SetPlayerAIDriven(false);
 				if (changed)
 				{
-					SPDLOG_DEBUG
-					(
-						"[MM] UpdateMovementState: {} AI driven state changed to false.",
-						coopActor->GetName()
-					);
+					SPDLOG_DEBUG("{} AI driven state changed to false.", coopActor->GetName());
 				}
 			}
 			else if (!isAIDriven && !shouldRemoveAIDriven)
 			{
 				SPDLOG_DEBUG
 				(
-					"[MM] UpdateMovementState: "
 					"{} is anim driven: {}, mounted: {}, "
 					"ragdolled: {}, synced: {}, paragliding: {}. "
 					"Sending motion driven events: {}, "
@@ -4239,11 +4246,7 @@ namespace ALYSLC
 				bool changed = Util::SetPlayerAIDriven(true);
 				if (changed)
 				{
-					SPDLOG_DEBUG
-					(
-						"[MM] UpdateMovementState: {} AI driven state changed to true.", 
-						coopActor->GetName()
-					);
+					SPDLOG_DEBUG("{} AI driven state changed to true.", coopActor->GetName());
 				}
 			}
 		}
@@ -5791,7 +5794,7 @@ namespace ALYSLC
 						// REMOVE when done debugging.
 						/*SPDLOG_DEBUG
 						(
-							"[MM] PerformArmCollision: {}: Hit actor {}. "
+							"{}: Hit actor {}. "
 							"Havok hit speed factor: {}, "
 							"level damage factor: {}, "
 							"armor rating factor: {}, "
@@ -5905,7 +5908,6 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[GLOB] PerformArmCollision: "
 					"{} hit {} (0x{:X}, {}, {}) with {} node, "
 					"Hit pos point vel: {}. Hit force: {} "
 					"{} Hits: {}. Stamina cost: {}. "
@@ -6034,7 +6036,7 @@ namespace ALYSLC
 				
 							SPDLOG_DEBUG
 							(
-								"[MM] PerformArmCollision: {}: {} has mass of {}, "
+								"{}: {} has mass of {}, "
 								"inv mass of {}, hit velocity: {}, force applied: {} over 1s. "
 								"Hit to knockdown speed ratio: {}, release speed mult: {}.",
 								a_p->coopActor->GetName(),
@@ -6769,9 +6771,10 @@ namespace ALYSLC
 				1.0f
 			);
 			
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
-				a_p->coopActor->GetName(),
-				a_forearmNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_forearmNodePtr->name
+			);
 			forearmData->precisionColliderAdded = true;
 		}
 		else if (shouldStop)
@@ -6783,9 +6786,10 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
-				a_p->coopActor->GetName(),
-				a_forearmNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_forearmNodePtr->name
+			);
 			forearmData->precisionColliderAdded = false;
 		}
 		
@@ -6855,9 +6859,10 @@ namespace ALYSLC
 				1.75f
 			);
 
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
-				a_p->coopActor->GetName(),
-				a_handNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_handNodePtr->name
+			);
 			handData->precisionColliderAdded = true;
 		}
 		else if (shouldStop)
@@ -6869,9 +6874,10 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
-				a_p->coopActor->GetName(),
-				a_handNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_handNodePtr->name
+			);
 			handData->precisionColliderAdded = false;
 		}
 		
@@ -8094,9 +8100,10 @@ namespace ALYSLC
 				1.0f
 			);
 			
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: ADD collision for {}.",
-				a_p->coopActor->GetName(),
-				a_shoulderNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_shoulderNodePtr->name
+			);
 			shoulderData->precisionColliderAdded = true;
 		}
 		else if (shouldStop)
@@ -8108,9 +8115,10 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG("[MM] UpdateArmNodeRotationData: {}: REMOVE collision for {}.",
-				a_p->coopActor->GetName(),
-				a_shoulderNodePtr->name);
+			SPDLOG_DEBUG
+			(
+				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_shoulderNodePtr->name
+			);
 			shoulderData->precisionColliderAdded = false;
 		}
 		

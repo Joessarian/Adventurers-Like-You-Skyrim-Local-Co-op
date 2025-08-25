@@ -516,7 +516,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			/*SPDLOG_DEBUG
 			(
-				"[CAM] UpdateFade: {} ({}, 0x{:X}): {}: {}, index {}. "
+				"{} ({}, 0x{:X}): {}: {}, index {}. "
 				"Secs since fade change: {} / {}, interp interval prop: {}, "
 				"target fade amount: {}",
 				a_objectPtr->name, 

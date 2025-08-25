@@ -58,7 +58,7 @@ namespace ALYSLC
 			ValueModifierEffectHooks::InstallHooks();
 			VampireLordEffectHooks::InstallHooks();
 			WerewolfEffectHooks::InstallHooks();
-			SPDLOG_INFO("[Hooks] Installed all hooks");
+			SPDLOG_INFO("Installed all hooks");
 		}
 
 //=============
@@ -77,7 +77,7 @@ namespace ALYSLC
 			// Run the game's update next.
 			_Update(a_this, a_a2);
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
-			SPDLOG_DEBUG("[Main Hooks] Update: Game update took {}ms.", funcMS);
+			SPDLOG_DEBUG("Game update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 			SteadyClock::time_point tpStart = SteadyClock::now();
 
@@ -101,7 +101,7 @@ namespace ALYSLC
 
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("[Main Hooks] Update: Enderal progression update took {}ms.", funcMS);
+			SPDLOG_DEBUG("Enderal progression update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Update all connected controllers' button and analog states, in or out of co-op,
@@ -109,20 +109,20 @@ namespace ALYSLC
 			glob.cdh->UpdatePlayerControllerStates();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("[Main Hooks] Update: Controller state update took {}ms.", funcMS);
+			SPDLOG_DEBUG("Controller state update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Cam/menu input managers run their update funcs next.
 			glob.cam->Update();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("[Main Hooks] Update: Camera update took {}ms.", funcMS);
+			SPDLOG_DEBUG("Camera update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			glob.mim->Update();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("[Main Hooks] Update: MIM update took {}ms.", funcMS);
+			SPDLOG_DEBUG("MIM update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Draw the menu control overlay if a player is controlling menus 
@@ -130,7 +130,7 @@ namespace ALYSLC
 			glob.mim->DrawPlayerMenuControlOverlay();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("[Main Hooks] Update: PMC update took {}ms.", funcMS);
+			SPDLOG_DEBUG("PMC update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			if (glob.allPlayersInit)
@@ -139,7 +139,7 @@ namespace ALYSLC
 				GlobalCoopData::UpdatePlayerCoopCombatState();
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("[Main Hooks] Update: Combat state update took {}ms.", funcMS);
+				SPDLOG_DEBUG("Combat state update took {}ms.", funcMS);
 				tp = SteadyClock::now();
 
 				for (const auto& p : glob.coopPlayers)
@@ -151,35 +151,35 @@ namespace ALYSLC
 						p->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s P Update took {}ms.", 
+						SPDLOG_DEBUG("{}'s P Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->em->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s EM Update took {}ms.",
+						SPDLOG_DEBUG("{}'s EM Update took {}ms.",
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->pam->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s PAM Update took {}ms.",
+						SPDLOG_DEBUG("{}'s PAM Update took {}ms.",
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->mm->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s M Update took {}ms.", 
+						SPDLOG_DEBUG("{}'s M Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->tm->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s TM Update took {}ms.", 
+						SPDLOG_DEBUG("{}'s TM Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
@@ -190,7 +190,7 @@ namespace ALYSLC
 
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("[Main Hooks] Update: {}'s downed update took {}ms.", 
+						SPDLOG_DEBUG("{}'s downed update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 					}
@@ -205,7 +205,7 @@ namespace ALYSLC
 				GlobalCoopData::HandlePlayerArmCollisions();
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("[Main Hooks] Update: Player arm collisions took {}ms.", funcMS);
+				SPDLOG_DEBUG("Player arm collisions took {}ms.", funcMS);
 				tp = SteadyClock::now();
 
 				// Clear if a fullscreen menu is open.
@@ -220,33 +220,33 @@ namespace ALYSLC
 				);
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("[Main Hooks] Update: Crosshair text update took {}ms.", funcMS);
+				SPDLOG_DEBUG("Crosshair text update took {}ms.", funcMS);
 			}
 
 			modUpdateMS = Util::GetElapsedSeconds(tpStart, true) * 1000.0f;
 			SPDLOG_DEBUG
 			(
-				"[Main Hooks] Update: Game global time delta: {}ms, "
-				"ALYSLC update time delta: {}ms, {}ms.", 
+				"Game global time delta: {}ms, ALYSLC update time delta: {}ms, {}ms.", 
 				*g_deltaTimeRealTime * 1000.0f,
 				modUpdateMS,
 				modUpdateMS2
 			);
 #else 
-			// Update allow-saving flag before running the main update.
-			GlobalCoopData::UpdateAllowSavingFlag();
-			// Run the game's update next.
-			_Update(a_this, a_a2);
 			// Skip if global data isn't set yet.
 			if (!glob.globalDataInit)
 			{
-				return;
+				return _Update(a_this, a_a2);;
 			}
 
 			if (glob.loadingASave)
 			{
-				return;
+				return _Update(a_this, a_a2);;
 			}
+
+			// Update allow-saving flag before running the main update.
+			GlobalCoopData::UpdateAllowSavingFlag();
+			// Run the game's update next.
+			_Update(a_this, a_a2);
 
 			// Handle any changes to Enderal progression.
 			// Eg. P1 level ups, or changes to crafting, memory, or learning points.
@@ -394,7 +394,7 @@ namespace ALYSLC
 					
 			SPDLOG_DEBUG
 			(
-				"[ActorEquipManager Hooks] EquipObject: {}: {} (0x{:X}, type: 0x{:X}).", 
+				"{}: {} (0x{:X}, type: 0x{:X}).", 
 				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType
 			);
 
@@ -456,8 +456,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[ActorEquipManager Hooks] EquipObject: {}: "
-						"trying to equip ammo {}. Ignoring.", 
+						"{}: trying to equip ammo {}. Ignoring.", 
 						a_actor->GetName(), a_object->GetName()
 					);
 					return;
@@ -471,8 +470,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[ActorEquipManager Hooks] EquipObject: {}: "
-								"trying to equip shield {}. Ignoring.", 
+								"{}: trying to equip shield {}. Ignoring.", 
 								a_actor->GetName(), a_object->GetName()
 							);
 							return;
@@ -501,8 +499,7 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[ActorEquipManager Hooks] EquipObject: {}: "
-									"trying to equip armor {}. Ignoring.", 
+									"{}: trying to equip armor {}. Ignoring.", 
 									a_actor->GetName(), a_object->GetName()
 								);
 								return;
@@ -532,8 +529,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] EquipObject: {}: "
-							"trying to equip weapon {}. Ignoring.",
+							"{}: trying to equip weapon {}. Ignoring.",
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -545,8 +541,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] EquipObject: {}: "
-							"trying to equip shout {}. Ignoring.", 
+							"{}: trying to equip shout {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -574,8 +569,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] EquipObject: {}: "
-							"trying to equip scroll {}. Ignoring.",
+							"{}: trying to equip scroll {}. Ignoring.",
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -617,8 +611,7 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] EquipObject: {}: "
-							"trying to equip bound weapon {} with equip slot 0x{:X}. "
+							"{}: trying to equip bound weapon {} with equip slot 0x{:X}. "
 							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
 							"Already equipped: {}. Ammo: {}, {}.", 
 							a_actor->GetName(),
@@ -719,7 +712,7 @@ namespace ALYSLC
 				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 
-			SPDLOG_DEBUG("[ActorEquipManager Hooks] UnequipObject: {}: {} (0x{:X}, type: 0x{:X}).", 
+			SPDLOG_DEBUG("{}: {} (0x{:X}, type: 0x{:X}).", 
 				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
 
 			bool isBound = 
@@ -749,8 +742,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[ActorEquipManager Hooks] UnequipObject: {}: "
-								"trying to unequip shield/torch {}. Ignoring.", 
+								"{}: trying to unequip shield/torch {}. Ignoring.", 
 								a_actor->GetName(), a_object->GetName()
 							);
 							return;
@@ -779,8 +771,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[ActorEquipManager Hooks] UnequipObject: {}: "
-								"trying to unequip armor {}. Ignoring.", 
+								"{}: trying to unequip armor {}. Ignoring.", 
 								a_actor->GetName(), a_object->GetName()
 							);
 							return;
@@ -808,8 +799,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip weapon {}. Ignoring.", 
+							"{}: trying to unequip weapon {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -821,8 +811,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip shout {}. Ignoring.", 
+							"{}: trying to unequip shout {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -849,8 +838,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip scroll {}. Ignoring.", 
+							"{}: trying to unequip scroll {}. Ignoring.", 
 							a_actor->GetName(), a_object->GetName()
 						);
 						return;
@@ -861,8 +849,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[ActorEquipManager Hooks] UnequipObject: {}: "
-					"trying to unequip bound weapon {}. Equip slot: {}.", 
+					"{}: trying to unequip bound weapon {}. Equip slot: {}.", 
 					a_actor->GetName(),
 					a_object->GetName(), 
 					Util::GetEditorID(a_objectEquipParams.equipSlot)
@@ -883,8 +870,8 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip bound 2H weapon/ammo {}. Time left: {}. Ignoring.", 
+							"{}: trying to unequip bound 2H weapon/ammo {}. "
+							"Time left: {}. Ignoring.", 
 							a_actor->GetName(),
 							a_object->GetName(), 
 							p->pam->secsBoundWeapon2HDuration - p->pam->secsSinceBoundWeap2HReq
@@ -905,8 +892,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
+							"{}: trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
 							a_object->GetName(), 
 							p->pam->secsBoundWeaponLHDuration - p->pam->secsSinceBoundWeapLHReq
@@ -927,8 +913,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[ActorEquipManager Hooks] UnequipObject: {}: "
-							"trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
+							"{}: trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
 							a_object->GetName(), 
 							p->pam->secsBoundWeaponRHDuration - p->pam->secsSinceBoundWeapRHReq
@@ -944,57 +929,58 @@ namespace ALYSLC
 // [ACTOR MAGIC CASTER HOOKS]:
 		void ActorMagicCasterHooks::DeselectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _DeselectSpellImpl(a_this);
-					}
+				return _DeselectSpellImpl(a_this);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] DeselectSpellImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _DeselectSpellImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_DeselectSpellImpl(a_this);
@@ -1002,57 +988,58 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::FinishCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _FinishCastImpl(a_this);
-					}
+				return _FinishCastImpl(a_this);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] FinishCastImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _FinishCastImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_FinishCastImpl(a_this);
@@ -1063,83 +1050,84 @@ namespace ALYSLC
 			RE::ActorMagicCaster* a_this, bool a_depleteEnergy
 		)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
+				return _InterruptCastImpl(a_this, a_depleteEnergy);
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
 				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _InterruptCastImpl(a_this, a_depleteEnergy);
-					}
-
-					auto source = a_this->GetCastingSource();
-					if (source != RE::MagicSystem::CastingSource::kLeftHand &&
-						source != RE::MagicSystem::CastingSource::kRightHand)
-					{
-						return _InterruptCastImpl(a_this, a_depleteEnergy);
-					}
-
-					// Can restore magicka when the spell is fully charged,
-					// even when the call is trying to deplete magicka.
-					// Pre-cast state only.
-					if (*a_this->state <= RE::MagicCaster::State::kUnk04)
-					{
-						// Think the 'deplete magicka' arg might actually be 'refund magicka'.
-						_InterruptCastImpl(a_this, true);
-						// Magicka gets depleted/refunded in another function run after this call,
-						// so if we set the magicka charged to 0, 
-						// it will be refunded to the pre-cast level.
-						a_this->costCharged = 0.0f;
-					}
-					else
-					{
-						_InterruptCastImpl(a_this, a_depleteEnergy);
-					}
-
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] InterruptCastImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}, cost charged: {}. State: {}, deplete energy: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						a_this->costCharged,
-						*a_this->state,
-						a_depleteEnergy
-					);
-					return;
+					return _InterruptCastImpl(a_this, a_depleteEnergy);
 				}
+
+				auto source = a_this->GetCastingSource();
+				if (source != RE::MagicSystem::CastingSource::kLeftHand &&
+					source != RE::MagicSystem::CastingSource::kRightHand)
+				{
+					return _InterruptCastImpl(a_this, a_depleteEnergy);
+				}
+
+				// Can restore magicka when the spell is fully charged,
+				// even when the call is trying to deplete magicka.
+				// Pre-cast state only.
+				if (*a_this->state <= RE::MagicCaster::State::kUnk04)
+				{
+					// Think the 'deplete magicka' arg might actually be 'refund magicka'.
+					_InterruptCastImpl(a_this, true);
+					// Magicka gets depleted/refunded in another function run after this call,
+					// so if we set the magicka charged to 0, 
+					// it will be refunded to the pre-cast level.
+					a_this->costCharged = 0.0f;
+				}
+				else
+				{
+					_InterruptCastImpl(a_this, a_depleteEnergy);
+				}
+
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}, cost charged: {}. State: {}, deplete energy: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					a_this->costCharged,
+					*a_this->state,
+					a_depleteEnergy
+				);
+				return;
 			}
 
 			return _InterruptCastImpl(a_this, a_depleteEnergy);
@@ -1147,124 +1135,124 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::RequestCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && a_this->currentSpell)
+				return _RequestCastImpl(a_this);
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && a_this->currentSpell)
+			{
+				// Apply player-specific magicka multiplier,
+				// check if the new cost is less than the player's current magicka level,
+				// and if it is, force-allow the cast by disabling the cast check 
+				// before running the original request func,
+				// which would normally reject the cast due to the unmodified cost 
+				// being larger than the player's current magicka level.
+				// Restore the original cast checks afterward.
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
 				{
-					// Apply player-specific magicka multiplier,
-					// check if the new cost is less than the player's current magicka level,
-					// and if it is, force-allow the cast by disabling the cast check 
-					// before running the original request func,
-					// which would normally reject the cast due to the unmodified cost 
-					// being larger than the player's current magicka level.
-					// Restore the original cast checks afterward.
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _RequestCastImpl(a_this);
-					}
-
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] RequestCastImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
-					// Ignore requests to cast when the companion player 
-					// has not started performing the corresponding cast input action.
-					if (!p->isPlayer1)
-					{
-						bool notRequested = 
-						(
-							(
-								source == RE::MagicSystem::CastingSource::kLeftHand &&
-								p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
-								p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
-							) ||
-							(
-								source == RE::MagicSystem::CastingSource::kRightHand &&
-								p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f&&
-								p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
-							)
-						);
-						if (notRequested)
-						{
-							SPDLOG_DEBUG
-							(
-								"[ActorMagicCasterHooks] RequestCastImpl: {}: "
-								"{} cast of {} not requested.",
-								p->coopActor->GetName(),
-								source == RE::MagicSystem::CastingSource::kLeftHand ?
-								"LH" :
-								"RH",
-								a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
-							);
-							a_this->currentSpell = nullptr;
-							a_this->state = RE::MagicCaster::State::kNone;
-							/*a_this->InterruptCast(false);
-							a_this->NotifyAnimationGraph("CastStop");*/
-							return;
-						}
-					}
-
-					// No cost while in god mode.
-					a_this->currentSpellCost *= 
-					(
-						p->isInGodMode ? 
-						0.0f :
-						Settings::vfMagickaCostMult[p->playerID]
-					);
-					float cost = a_this->currentSpellCost;
-					if (a_this->currentSpell->GetCastingType() == 
-						RE::MagicSystem::CastingType::kConcentration)
-					{
-						cost *= *g_deltaTimeRealTime;
-					}
-
-					if (p->isInGodMode || 
-						cost <= p->coopActor->GetActorValue(RE::ActorValue::kMagicka))
-					{
-						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
-						_RequestCastImpl(a_this);
-						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
-					}
-
-					return;
+					return _RequestCastImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
+				// Ignore requests to cast when the companion player 
+				// has not started performing the corresponding cast input action.
+				if (!p->isPlayer1)
+				{
+					bool notRequested = 
+					(
+						(
+							source == RE::MagicSystem::CastingSource::kLeftHand &&
+							p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value == 0.0f &&
+							p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
+						) ||
+						(
+							source == RE::MagicSystem::CastingSource::kRightHand &&
+							p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value == 0.0f&&
+							p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value == 0.0f
+						)
+					);
+					if (notRequested)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}: {} cast of {} not requested.",
+							p->coopActor->GetName(),
+							source == RE::MagicSystem::CastingSource::kLeftHand ?
+							"LH" :
+							"RH",
+							a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE"
+						);
+						a_this->currentSpell = nullptr;
+						a_this->state = RE::MagicCaster::State::kNone;
+						/*a_this->InterruptCast(false);
+						a_this->NotifyAnimationGraph("CastStop");*/
+						return;
+					}
+				}
+
+				// No cost while in god mode.
+				a_this->currentSpellCost *= 
+				(
+					p->isInGodMode ? 
+					0.0f :
+					Settings::vfMagickaCostMult[p->playerID]
+				);
+				float cost = a_this->currentSpellCost;
+				if (a_this->currentSpell->GetCastingType() == 
+					RE::MagicSystem::CastingType::kConcentration)
+				{
+					cost *= *g_deltaTimeRealTime;
+				}
+
+				if (p->isInGodMode || 
+					cost <= p->coopActor->GetActorValue(RE::ActorValue::kMagicka))
+				{
+					a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+					_RequestCastImpl(a_this);
+					a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+				}
+
+				return;
 			}
 
 			_RequestCastImpl(a_this);
@@ -1272,57 +1260,58 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::SelectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _SelectSpellImpl(a_this);
-					}
+				return _SelectSpellImpl(a_this);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] SelectSpellImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _SelectSpellImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_SelectSpellImpl(a_this);
@@ -1333,57 +1322,59 @@ namespace ALYSLC
 			RE::ActorMagicCaster* a_this, RE::MagicItem* a_spell
 		)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _SetCurrentSpellImpl(a_this, a_spell);
-					}
+				return _SetCurrentSpellImpl(a_this, a_spell);
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] SetCurrentSpellImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _SetCurrentSpellImpl(a_this, a_spell);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_SetCurrentSpellImpl(a_this, a_spell);
@@ -1397,61 +1388,62 @@ namespace ALYSLC
 			RE::MagicItem* a_spell
 		)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
-					}
+				return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] SpellCast: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}. "
-						"Casting globs: LH: {}, RH: {}, 2H: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state,
-						p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value,
-						p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value,
-						p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}. "
+					"Casting globs: LH: {}, RH: {}, 2H: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state,
+					p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value,
+					p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value,
+					p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value
+				);
 			}
 
 			_SpellCast(a_this, a_doCast, a_arg2, a_spell);
@@ -1459,57 +1451,58 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::StartCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _StartCastImpl(a_this);
-					}
+				return _StartCastImpl(a_this);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] StartCastImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _StartCastImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_StartCastImpl(a_this);
@@ -1517,38 +1510,39 @@ namespace ALYSLC
 
 		bool ActorMagicCasterHooks::StartChargeImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _StartChargeImpl(a_this);
-					}
+				return _StartChargeImpl(a_this);
+			}
 
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] StartChargeImpl: "
-						"{}, caster {}, spell {}, cost {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _StartChargeImpl(a_this);
+				}
+
+				SPDLOG_DEBUG
+				(
+					"{}, caster {}, spell {}, cost {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 					
-					auto source = a_this->GetCastingSource();
-					// Set cast start TPs.
-					if (source == RE::MagicSystem::CastingSource::kLeftHand)
-					{
-						p->lastLHCastChargeStartTP = SteadyClock::now();
-					}
-					else if (source == RE::MagicSystem::CastingSource::kRightHand)
-					{
-						p->lastRHCastChargeStartTP = SteadyClock::now();
-					}
+				auto source = a_this->GetCastingSource();
+				// Set cast start TPs.
+				if (source == RE::MagicSystem::CastingSource::kLeftHand)
+				{
+					p->lastLHCastChargeStartTP = SteadyClock::now();
+				}
+				else if (source == RE::MagicSystem::CastingSource::kRightHand)
+				{
+					p->lastRHCastChargeStartTP = SteadyClock::now();
 				}
 			}
 
@@ -1557,57 +1551,58 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::StartReadyImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _StartReadyImpl(a_this);
-					}
+				return _StartReadyImpl(a_this);
+			}
 
-					auto source = a_this->GetCastingSource();
-					SPDLOG_DEBUG
-					(
-						"[ActorMagicCasterHooks] StartReadyImpl: "
-						"{}, caster {} (performing: {}, just started: {}, type: {}), "
-						"spell {}, cost: {}. State: {}.",
-						a_this->actor->GetName(),
-						!a_this->castingSource,
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand && 
-							p->pam->IsPerforming(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand && 
-							p->pam->IsPerforming(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->JustStarted(InputAction::kCastLH)
-						) ||
-						(
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->JustStarted(InputAction::kCastRH)
-						),
-						(
-							source == RE::MagicSystem::CastingSource::kLeftHand &&
-							p->pam->IsPerforming(InputAction::kCastLH) &&
-							p->em->GetLHSpell() ?
-							!p->em->GetLHSpell()->GetCastingType() :
-							source == RE::MagicSystem::CastingSource::kRightHand &&
-							p->pam->IsPerforming(InputAction::kCastRH) && 
-							p->em->GetRHSpell() ?
-							!p->em->GetRHSpell()->GetCastingType() :
-							!RE::MagicSystem::CastingType::kConstantEffect
-						),
-						a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
-						a_this->currentSpellCost,
-						*a_this->state
-					);
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _StartReadyImpl(a_this);
 				}
+
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
 			}
 
 			_StartReadyImpl(a_this);
@@ -1615,156 +1610,156 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::Update(RE::ActorMagicCaster* a_this, float a_delta)
 		{
-			// NOTE:
-			// Unused for now until I figure out a way to stall the FNF spellcast animation 
-			// when the spell is fully charged and the player is still holding the cast bind.
+			// Stall companion players' hand cast if casting a fire and forget (FNF) spell.
 
-			if (glob.globalDataInit && glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
-				auto source = a_this->GetCastingSource();
-				auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-				if (pIndex != -1 && pIndex != glob.player1CID)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!p->IsRunning())
-					{
-						return _Update(a_this, a_delta);
-					}
+				return _Update(a_this, a_delta);
+			}
 
-					auto lhSpell = p->em->GetLHSpell();
-					auto rhSpell = p->em->GetRHSpell();
-					bool isCasting = 
-					(
-						(p->pam->IsPerforming(InputAction::kCastLH)) ||
-						(p->pam->IsPerforming(InputAction::kCastRH)) ||
-						(  
-							(
-								p->pam->IsPerforming(InputAction::kSpecialAction)
-							) &&
-							(
-								p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
-								p->pam->reqSpecialAction == SpecialActionType::kDualCast
-							)
+			auto source = a_this->GetCastingSource();
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex != -1 && pIndex != glob.player1CID)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!p->IsRunning())
+				{
+					return _Update(a_this, a_delta);
+				}
+
+				auto lhSpell = p->em->GetLHSpell();
+				auto rhSpell = p->em->GetRHSpell();
+				bool isCasting = 
+				(
+					(p->pam->IsPerforming(InputAction::kCastLH)) ||
+					(p->pam->IsPerforming(InputAction::kCastRH)) ||
+					(  
+						(
+							p->pam->IsPerforming(InputAction::kSpecialAction)
+						) &&
+						(
+							p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
+							p->pam->reqSpecialAction == SpecialActionType::kDualCast
 						)
-					);
-					bool is2HCast = 
+					)
+				);
+				bool is2HCast = 
+				(
+					isCasting &&
+					lhSpell &&
+					rhSpell &&
+					lhSpell == rhSpell &&
+					rhSpell->equipSlot == glob.bothHandsEquipSlot
+				);
+				bool stallCastUntilBindReleased = false;
+				// NOTE:
+				// 
+				// 2H spellcasts seem to use only one hand caster (usually the RH caster).
+				// We do not want to link the player's pressed cast bind 
+				// to the act of casting itself, since the 2H cast can be triggered 
+				// through the opposite hand's cast bind, 
+				// but that caster isn't guaranteed to have the 2H spell equipped and active.
+				// For example, we can cast 'Blizzard' with the 'CastLH' bind,
+				// but the player's LH caster will remain inactive,
+				// while its RH caster equips and charges the spell.
+				if (is2HCast)
+				{
+					stallCastUntilBindReleased = 
 					(
-						isCasting &&
-						lhSpell &&
-						rhSpell &&
-						lhSpell == rhSpell &&
-						rhSpell->equipSlot == glob.bothHandsEquipSlot
+						a_this->currentSpell == rhSpell &&
+						rhSpell->GetCastingType() == 
+						RE::MagicSystem::CastingType::kFireAndForget &&
+						a_this->state == RE::MagicCaster::State::kReady 
 					);
-					bool stallCastUntilBindReleased = false;
-					// NOTE:
-					// 
-					// 2H spellcasts seem to use only one hand caster (usually the RH caster).
-					// We do not want to link the player's pressed cast bind 
-					// to the act of casting itself, since the 2H cast can be triggered 
-					// through the opposite hand's cast bind, 
-					// but that caster isn't guaranteed to have the 2H spell equipped and active.
-					// For example, we can cast 'Blizzard' with the 'CastLH' bind,
-					// but the player's LH caster will remain inactive,
-					// while its RH caster equips and charges the spell.
-					if (is2HCast)
+				}
+				else
+				{
+					if (source == RE::MagicSystem::CastingSource::kLeftHand)
 					{
 						stallCastUntilBindReleased = 
 						(
-							a_this->currentSpell == rhSpell &&
-							rhSpell->GetCastingType() == 
-							RE::MagicSystem::CastingType::kFireAndForget &&
-							a_this->state == RE::MagicCaster::State::kReady 
+							(
+								lhSpell &&
+								lhSpell->GetCastingType() == 
+								RE::MagicSystem::CastingType::kFireAndForget &&
+								a_this->state == RE::MagicCaster::State::kReady 
+							) &&
+							(
+								(p->pam->AllButtonsPressedForAction(InputAction::kCastLH)) ||
+								(
+									p->pam->AllButtonsPressedForAction
+									(
+										InputAction::kSpecialAction
+									) &&
+									p->pam->reqSpecialAction ==
+									SpecialActionType::kCastBothHands
+								)
+							)
 						);
 					}
-					else
+					else if (source == RE::MagicSystem::CastingSource::kRightHand)
 					{
-						if (source == RE::MagicSystem::CastingSource::kLeftHand)
-						{
-							stallCastUntilBindReleased = 
-							(
-								(
-									lhSpell &&
-									lhSpell->GetCastingType() == 
-									RE::MagicSystem::CastingType::kFireAndForget &&
-									a_this->state == RE::MagicCaster::State::kReady 
-								) &&
-								(
-									(p->pam->AllButtonsPressedForAction(InputAction::kCastLH)) ||
-									(
-										p->pam->AllButtonsPressedForAction
-										(
-											InputAction::kSpecialAction
-										) &&
-										p->pam->reqSpecialAction ==
-										SpecialActionType::kCastBothHands
-									)
-								)
-							);
-						}
-						else if (source == RE::MagicSystem::CastingSource::kRightHand)
-						{
-							stallCastUntilBindReleased = 
-							(
-								(
-									rhSpell &&
-									rhSpell->GetCastingType() == 
-									RE::MagicSystem::CastingType::kFireAndForget &&
-									a_this->state == RE::MagicCaster::State::kReady 
-								) &&
-								(
-									(p->pam->AllButtonsPressedForAction(InputAction::kCastRH)) ||
-									(
-										p->pam->AllButtonsPressedForAction
-										(
-											InputAction::kSpecialAction
-										) &&
-										p->pam->reqSpecialAction == 
-										SpecialActionType::kCastBothHands
-									)
-								)
-							);
-						}
-					}
-					
-					// Modify caster state to loop the charge animation 
-					// just when the caster reaches the ready state.
-					// Returning directly afterward without performing the update 
-					// seems to do the trick.
-					// NOTE:
-					// Does not work for spell animations that do not reach the ready state (3).
-					if (stallCastUntilBindReleased)
-					{
-						// Looping ready animation.
-						a_this->state = RE::ActorMagicCaster::State::kUnk04;
-						// Skip this update.
-						return;
-					}
-
-					if (a_this->currentSpell)
-					{
-						const float baseCost = a_this->currentSpell->CalculateMagickaCost
+						stallCastUntilBindReleased = 
 						(
-							p->coopActor.get()
+							(
+								rhSpell &&
+								rhSpell->GetCastingType() == 
+								RE::MagicSystem::CastingType::kFireAndForget &&
+								a_this->state == RE::MagicCaster::State::kReady 
+							) &&
+							(
+								(p->pam->AllButtonsPressedForAction(InputAction::kCastRH)) ||
+								(
+									p->pam->AllButtonsPressedForAction
+									(
+										InputAction::kSpecialAction
+									) &&
+									p->pam->reqSpecialAction == 
+									SpecialActionType::kCastBothHands
+								)
+							)
 						);
-						float cost = baseCost;
-						if (a_this->currentSpell->GetCastingType() == 
-							RE::MagicSystem::CastingType::kConcentration)
-						{
-							cost *= *g_deltaTimeRealTime;
-						}
 					}
+				}
+					
+				// Modify caster state to loop the charge animation 
+				// just when the caster reaches the ready state.
+				// Returning directly afterward without performing the update 
+				// seems to do the trick.
+				// NOTE:
+				// Does not work for spell animations that do not reach the ready state (3).
+				if (stallCastUntilBindReleased)
+				{
+					// Looping ready animation.
+					a_this->state = RE::ActorMagicCaster::State::kUnk04;
+					// Skip this update.
+					return;
+				}
 
-					// Setting the 'skip check' flag only during the 'start' state
-					// suddenly re-enables the game's caster magicka expenditure?
-					// It just works.
-					if (*a_this->state == RE::MagicCaster::State::kUnk01)
-					{	
-						a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
-					}
-					else
+				if (a_this->currentSpell)
+				{
+					const float baseCost = a_this->currentSpell->CalculateMagickaCost
+					(
+						p->coopActor.get()
+					);
+					float cost = baseCost;
+					if (a_this->currentSpell->GetCastingType() == 
+						RE::MagicSystem::CastingType::kConcentration)
 					{
-						a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+						cost *= *g_deltaTimeRealTime;
 					}
+				}
+
+				// Setting the 'skip check' flag only during the 'start' state
+				// suddenly re-enables the game's caster magicka expenditure?
+				// It just works.
+				if (*a_this->state == RE::MagicCaster::State::kUnk01)
+				{	
+					a_this->flags.set(RE::ActorMagicCaster::Flags::kSkipCheckCast);
+				}
+				else
+				{
+					a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
 				}
 			}
 
@@ -2096,14 +2091,13 @@ namespace ALYSLC
 				}
 			}
 			
-			SPDLOG_DEBUG("[AnimationGraphManager Hook] ProcessEvent: {}: {}", 
-				p->coopActor->GetName(), a_event->tag);
+			SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
 
 			p->lastAnimEventTag = a_event->tag;
 
 			SPDLOG_DEBUG
 			(
-				"[AnimationGraphManager Hook] ProcessEvent: {}: Getting Lock. (0x{:X})",
+				"{}: Getting Lock. (0x{:X})",
 				p->coopActor->GetName(),
 				std::hash<std::jthread::id>()(std::this_thread::get_id())
 			);
@@ -2111,7 +2105,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
 				SPDLOG_DEBUG
 				(
-					"[AnimationGraphManager Hook] ProcessEvent: {}: Lock obtained. (0x{:X})", 
+					"{}: Lock obtained. (0x{:X})", 
 					p->coopActor->GetName(), 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
@@ -2525,27 +2519,6 @@ namespace ALYSLC
 			}
 		}
 
-		RE::CombatGroup* CharacterHooks::GetCombatGroup(RE::Character* a_this)
-		{
-			if (glob.globalDataInit && 
-				glob.allPlayersInit && 
-				GlobalCoopData::IsCoopPlayer(a_this))
-			{
-				auto group = _GetCombatGroup(a_this);
-				SPDLOG_DEBUG
-				(
-					"[Character Hooks] GetCombatGroup: "
-					"Set {}'s group to ID 0x{:X}, index: 0x{:X}.",
-					a_this->GetName(),
-					group ? group->groupID : 0xDEAD,
-					group ? group->groupIndex : 0xDEAD
-				);
-				return group;
-			}
-
-			return _GetCombatGroup(a_this);
-		}
-
 		void CharacterHooks::HandleHealthDamage
 		(
 			RE::Character* a_this, RE::Actor* a_attacker, float a_damage
@@ -2727,7 +2700,6 @@ namespace ALYSLC
 				// or attacking a target that is not party-friendly.
 				const auto& p = glob.coopPlayers[playerAttackerIndex];
 				// Do not give attacking player XP if attacking another player that is in god mode.
-				const auto playerVictimIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
 				bool victimPlayerInGodMode = 
 				(
 					playerVictimIndex != -1 && glob.coopPlayers[playerVictimIndex]->isInGodMode
@@ -3053,110 +3025,109 @@ namespace ALYSLC
 			// Prevent the game force-running packages that can play idles 
 			// or equip gear on the companion player's character.
 
-			if (glob.globalDataInit && glob.allPlayersInit)
+			if (!glob.globalDataInit || !glob.allPlayersInit)
 			{
-				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					if (!a_package)
-					{
-						SPDLOG_DEBUG
-						(
-							"[Character Hooks] PutCreatedPackage: "
-							"{}: RUNNING NONE (temp: {}, created: {}).",
-							a_this->GetName(), 
-							a_tempPackage,
-							a_createdPackage
-						);
-						return _PutCreatedPackage
-						(
-							a_this, a_package, a_tempPackage, a_createdPackage
-						);
-					}
-					// Only allow getting up from furniture 
-					// while the interaction package is NOT running,
-					// and allow attempts to dismount only if the player 
-					// is no longer requesting to mount.
-					// Also allow a choice selection of procedures 
-					// if the current package is the interaction package.
-					// Choice. Needs testing. Boo.
-					bool allow = 
-					(
-						(
-							!p->mm->interactionPackageRunning &&
-							*a_package->procedureType == 
-							RE::PACKAGE_PROCEDURE_TYPE::kGetUpFromChairBed
-						) ||
-						(
-							!p->mm->wantsToMount &&
-							*a_package->procedureType == 
-							RE::PACKAGE_PROCEDURE_TYPE::kDismountActor
-						) ||
-						(
-							p->mm->wantsToMount &&
-							*a_package->procedureType == 
-							RE::PACKAGE_PROCEDURE_TYPE::kMountActor
-						) ||
-						(
-							*a_package->procedureType == 
-							RE::PACKAGE_PROCEDURE_TYPE::kDoNothing ||
-							*a_package->procedureType == 
-							RE::PACKAGE_PROCEDURE_TYPE::kPackage
-						)
-						/*||
-						(
-							(p->mm->interactionPackageRunning) &&
-							(
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kActivate ||
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kCannibal ||
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kEat ||
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kSleep ||
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kUseItemAt ||
-								*a_package->procedureType ==
-								RE::PACKAGE_PROCEDURE_TYPE::kVampireFeed
-							)
-						)*/
-					);
-					if (!allow)
-					{
-						auto currentCoopPackage = p->pam->GetCurrentPackage();
-						SPDLOG_DEBUG
-						(
-							"[Character Hooks] PutCreatedPackage: "
-							"{}: IGNORE {} (0x{:X}, temp: {}, created: {}, procedure type: {}. "
-							"Run {} (0x{:X}, type {}) instead.",
-							a_this->GetName(), 
-							a_package->GetName(),
-							a_package->formID,
-							a_tempPackage,
-							a_createdPackage,
-							*a_package->procedureType,
-							currentCoopPackage ? Util::GetEditorID(currentCoopPackage) : "NONE",
-							currentCoopPackage ? currentCoopPackage->formID : 0xDEAD,
-							currentCoopPackage ? 
-							*currentCoopPackage->procedureType :
-							RE::PACKAGE_PROCEDURE_TYPE::kNone
-						);
-						return;
-					}
+				return _PutCreatedPackage(a_this, a_package, a_tempPackage, a_createdPackage);
+			}
 
+			if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				if (!a_package)
+				{
 					SPDLOG_DEBUG
 					(
-						"[Character Hooks] PutCreatedPackage: "
-						"{}: RUNNING {} (0x{:X}, temp: {}, created: {}, procedure type: {}.",
+						"{}: RUNNING NONE (temp: {}, created: {}).",
+						a_this->GetName(), 
+						a_tempPackage,
+						a_createdPackage
+					);
+					return _PutCreatedPackage
+					(
+						a_this, a_package, a_tempPackage, a_createdPackage
+					);
+				}
+				// Only allow getting up from furniture 
+				// while the interaction package is NOT running,
+				// and allow attempts to dismount only if the player 
+				// is no longer requesting to mount.
+				// Also allow a choice selection of procedures 
+				// if the current package is the interaction package.
+				// Choice. Needs testing. Boo.
+				bool allow = 
+				(
+					(
+						!p->mm->interactionPackageRunning &&
+						*a_package->procedureType == 
+						RE::PACKAGE_PROCEDURE_TYPE::kGetUpFromChairBed
+					) ||
+					(
+						!p->mm->wantsToMount &&
+						*a_package->procedureType == 
+						RE::PACKAGE_PROCEDURE_TYPE::kDismountActor
+					) ||
+					(
+						p->mm->wantsToMount &&
+						*a_package->procedureType == 
+						RE::PACKAGE_PROCEDURE_TYPE::kMountActor
+					) ||
+					(
+						*a_package->procedureType == 
+						RE::PACKAGE_PROCEDURE_TYPE::kDoNothing ||
+						*a_package->procedureType == 
+						RE::PACKAGE_PROCEDURE_TYPE::kPackage
+					)
+					/*||
+					(
+						(p->mm->interactionPackageRunning) &&
+						(
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kActivate ||
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kCannibal ||
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kEat ||
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kSleep ||
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kUseItemAt ||
+							*a_package->procedureType ==
+							RE::PACKAGE_PROCEDURE_TYPE::kVampireFeed
+						)
+					)*/
+				);
+				if (!allow)
+				{
+					auto currentCoopPackage = p->pam->GetCurrentPackage();
+					SPDLOG_DEBUG
+					(
+						"{}: IGNORE {} (0x{:X}, temp: {}, created: {}, procedure type: {}. "
+						"Run {} (0x{:X}, type {}) instead.",
 						a_this->GetName(), 
 						a_package->GetName(),
 						a_package->formID,
 						a_tempPackage,
 						a_createdPackage,
-						*a_package->procedureType
+						*a_package->procedureType,
+						currentCoopPackage ? Util::GetEditorID(currentCoopPackage) : "NONE",
+						currentCoopPackage ? currentCoopPackage->formID : 0xDEAD,
+						currentCoopPackage ? 
+						*currentCoopPackage->procedureType :
+						RE::PACKAGE_PROCEDURE_TYPE::kNone
 					);
+					return;
 				}
+
+				SPDLOG_DEBUG
+				(
+					"{}: RUNNING {} (0x{:X}, temp: {}, created: {}, procedure type: {}.",
+					a_this->GetName(), 
+					a_package->GetName(),
+					a_package->formID,
+					a_tempPackage,
+					a_createdPackage,
+					*a_package->procedureType
+				);
 			}
 
 			_PutCreatedPackage(a_this, a_package, a_tempPackage, a_createdPackage);
@@ -3169,198 +3140,201 @@ namespace ALYSLC
 			// Catch such instances before they occur and prevent removal of the bound weapon/ammo
 			// if their duration has not expired.
 
-			if (glob.globalDataInit && glob.allPlayersInit)
+			if (!glob.globalDataInit ||
+				!glob.allPlayersInit ||
+				!glob.coopSessionActive ||
+				glob.loadingASave)
 			{
-				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
-				{
-					const auto& p = glob.coopPlayers[pIndex];
-					const auto biped = p->coopActor->GetBiped();
-					SPDLOG_DEBUG
+				return _RemoveWeapon(a_this, a_equipIndex);	
+			}
+
+			// Not a player.
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); 
+			if (pIndex == -1)
+			{
+				return _RemoveWeapon(a_this, a_equipIndex);	
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
+			const auto biped = p->coopActor->GetBiped();
+			SPDLOG_DEBUG
+			(
+				"{}: Equip index {}.", p->coopActor->GetName(), !a_equipIndex
+			);
+			if (!biped)
+			{
+				return _RemoveWeapon(a_this, a_equipIndex);
+			}
+
+			const auto& bipedObj = biped->objects[a_equipIndex];
+			bool shouldPreventRemovel = false;
+			if (bipedObj.item)
+			{
+				auto weap = bipedObj.item->As<RE::TESObjectWEAP>();
+				bool is1HEquipType = weap->equipSlot != glob.bothHandsEquipSlot;
+				bool isBoundWeap = weap && weap->IsBound();
+				bool isBoundAmmo = 
+				(
+					bipedObj.item->As<RE::TESAmmo>() && 
+								bipedObj.item->As<RE::TESAmmo>()->HasKeywordByEditorID
 					(
-						"[Character Hooks] RemoveWeapon: {}: Equip index {}.",
-						p->coopActor->GetName(), 
-						!a_equipIndex
-					);
-					if (!biped)
+						"WeapTypeBoundArrow"
+					)
+				);
+				if (isBoundWeap)
+				{
+					uint8_t active1HBoundWeapReqs = 0;
+					uint8_t active2HBoundWeapReqs = 0;
+					if (p->em->lastReqBoundWeapRH && 
+						p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>())
 					{
-						return _RemoveWeapon(a_this, a_equipIndex);
+						auto rhBoundWeap = 
+						(
+							p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()
+						);
+						if (rhBoundWeap->equipSlot == glob.bothHandsEquipSlot &&
+							p->pam->boundWeapReq2H &&
+							p->pam->secsBoundWeapon2HDuration - 
+							p->pam->secsSinceBoundWeap2HReq > 0.0f)
+						{
+							active2HBoundWeapReqs++;
+						}
+						else if (rhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
+									p->pam->boundWeapReqRH &&
+									p->pam->secsBoundWeaponRHDuration - 
+									p->pam->secsSinceBoundWeapRHReq > 0.0f)
+						{
+							active1HBoundWeapReqs++;
+						}
+					}
+							
+					if (p->em->lastReqBoundWeapLH && 
+						p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>())
+					{
+						auto lhBoundWeap = 
+						(
+							p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>()
+						);
+						if (lhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
+							p->pam->boundWeapReqLH &&
+							p->pam->secsBoundWeaponLHDuration - 
+							p->pam->secsSinceBoundWeapLHReq > 0.0f)
+						{
+							active1HBoundWeapReqs++;
+						}
 					}
 
-					const auto& bipedObj = biped->objects[a_equipIndex];
-					bool shouldPreventRemovel = false;
-					if (bipedObj.item)
+					uint8_t equipped1HBoundWeaps = 0;
+					auto lhObj = p->coopActor->GetEquippedObject(true);
+					auto lhWeap = lhObj ? lhObj->As<RE::TESObjectWEAP>() : nullptr; 
+					auto rhObj = p->coopActor->GetEquippedObject(false);
+					auto rhWeap = rhObj ? rhObj->As<RE::TESObjectWEAP>() : nullptr; 
+					if (lhWeap && 
+						lhWeap->IsBound() && 
+						lhWeap->equipSlot != glob.bothHandsEquipSlot)
 					{
-						auto weap = bipedObj.item->As<RE::TESObjectWEAP>();
-						bool is1HEquipType = weap->equipSlot != glob.bothHandsEquipSlot;
-						bool isBoundWeap = weap && weap->IsBound();
-						bool isBoundAmmo = 
+						equipped1HBoundWeaps++;
+					}
+
+					if (rhWeap && 
+						rhWeap->IsBound() &&
+						rhWeap->equipSlot != glob.bothHandsEquipSlot)
+					{
+						equipped1HBoundWeaps++;
+					}
+
+					bool reqRemovalOf2HWeap = weap->equipSlot == glob.bothHandsEquipSlot;
+					shouldPreventRemovel = 
+					(
 						(
-							bipedObj.item->As<RE::TESAmmo>() && 
-							bipedObj.item->As<RE::TESAmmo>()->HasKeywordByEditorID
-							(
-								"WeapTypeBoundArrow"
-							)
-						);
-						if (isBoundWeap)
-						{
-							uint8_t active1HBoundWeapReqs = 0;
-							uint8_t active2HBoundWeapReqs = 0;
-							if (p->em->lastReqBoundWeapRH && 
-								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>())
-							{
-								auto rhBoundWeap = 
-								(
-									p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()
-								);
-								if (rhBoundWeap->equipSlot == glob.bothHandsEquipSlot &&
-									p->pam->boundWeapReq2H &&
-									p->pam->secsBoundWeapon2HDuration - 
-									p->pam->secsSinceBoundWeap2HReq > 0.0f)
-								{
-									active2HBoundWeapReqs++;
-								}
-								else if (rhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
-										 p->pam->boundWeapReqRH &&
-										 p->pam->secsBoundWeaponRHDuration - 
-										 p->pam->secsSinceBoundWeapRHReq > 0.0f)
-								{
-									active1HBoundWeapReqs++;
-								}
-							}
-							
-							if (p->em->lastReqBoundWeapLH && 
-								p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>())
-							{
-								auto lhBoundWeap = 
-								(
-									p->em->lastReqBoundWeapLH->As<RE::TESObjectWEAP>()
-								);
-								if (lhBoundWeap->equipSlot != glob.bothHandsEquipSlot &&
-									p->pam->boundWeapReqLH &&
-									p->pam->secsBoundWeaponLHDuration - 
-									p->pam->secsSinceBoundWeapLHReq > 0.0f)
-								{
-									active1HBoundWeapReqs++;
-								}
-							}
-
-							uint8_t equipped1HBoundWeaps = 0;
-							auto lhObj = p->coopActor->GetEquippedObject(true);
-							auto lhWeap = lhObj ? lhObj->As<RE::TESObjectWEAP>() : nullptr; 
-							auto rhObj = p->coopActor->GetEquippedObject(false);
-							auto rhWeap = rhObj ? rhObj->As<RE::TESObjectWEAP>() : nullptr; 
-							if (lhWeap && 
-								lhWeap->IsBound() && 
-								lhWeap->equipSlot != glob.bothHandsEquipSlot)
-							{
-								equipped1HBoundWeaps++;
-							}
-
-							if (rhWeap && 
-								rhWeap->IsBound() &&
-								rhWeap->equipSlot != glob.bothHandsEquipSlot)
-							{
-								equipped1HBoundWeaps++;
-							}
-
-							bool reqRemovalOf2HWeap = weap->equipSlot == glob.bothHandsEquipSlot;
-							shouldPreventRemovel = 
-							(
-								(
-									reqRemovalOf2HWeap &&
-									active2HBoundWeapReqs != 0
-								) ||
-								(
-									!reqRemovalOf2HWeap &&
-									active1HBoundWeapReqs > 0 &&
-									equipped1HBoundWeaps == active1HBoundWeapReqs
-								)
-							);
-
-							SPDLOG_DEBUG
-							(
-								"[Character Hooks] RemoveWeapon: {}: "
-								"Active 1H/2H requests: {}, {}, "
-								"equipped 1H bound weaps: {}, "
-								"Removal request is for {} ({}, index: {}). {}.",
-								p->coopActor->GetName(), 
-								active1HBoundWeapReqs,
-								active2HBoundWeapReqs,
-								equipped1HBoundWeaps,
-								weap->GetName(),
-								weap->equipSlot == glob.bothHandsEquipSlot ? "2H" : "1H",
-								a_equipIndex,
-								shouldPreventRemovel ? "IGNORE" : "ALLOW"
-							);
-						}
-						else if (isBoundAmmo)
-						{
-							if (p->pam->boundWeapReq2H &&
-								p->em->lastReqBoundWeapRH &&
-								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>() &&
-								p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()->IsRanged() &&
-								p->pam->secsBoundWeapon2HDuration - 
-								p->pam->secsSinceBoundWeap2HReq > 0.0f)
-							{
-								SPDLOG_DEBUG
-								(
-									"[Character Hooks] RemoveWeapon: {}: "
-									"Ignore removal of bound ammo {}.",
-									p->coopActor->GetName(), 
-									bipedObj.item->GetName()
-								);
-								shouldPreventRemovel = true;
-							}
-						}
-						else
-						{
-							// If the weapon biped object to remove is not in preparation 
-							// for a bound weapon equip, 
-							// prevent the game from removing the biped object.
-							shouldPreventRemovel = 
-							(
-								(
-									a_equipIndex == RE::BIPED_OBJECT::kShield &&
-									bipedObj.item == 
-									p->em->desiredEquippedForms[!EquipIndex::kLeftHand]
-								) ||
-								(
-									a_equipIndex != RE::BIPED_OBJECT::kShield &&
-									bipedObj.item == 
-									p->em->desiredEquippedForms[!EquipIndex::kRightHand]
-								)
-							);
-							SPDLOG_DEBUG
-							(
-								"[Character Hooks] RemoveWeapon: {}: {} at equip index {}. "
-								"Desired form in the same slot is {}.",
-								p->coopActor->GetName(), 
-								bipedObj.item ? bipedObj.item->GetName() : "NONE",
-								!a_equipIndex,
-								a_equipIndex == RE::BIPED_OBJECT::kShield ?
-								p->em->desiredEquippedForms[!EquipIndex::kLeftHand] ?
-								p->em->desiredEquippedForms[!EquipIndex::kLeftHand]->GetName() :
-								"NONE" :
-								p->em->desiredEquippedForms[!EquipIndex::kRightHand] ?
-								p->em->desiredEquippedForms[!EquipIndex::kRightHand]->GetName() : 
-								"NONE"
-							);
-						}
-					}	
+							reqRemovalOf2HWeap &&
+							active2HBoundWeapReqs != 0
+						) ||
+						(
+							!reqRemovalOf2HWeap &&
+							active1HBoundWeapReqs > 0 &&
+							equipped1HBoundWeaps == active1HBoundWeapReqs
+						)
+					);
 
 					SPDLOG_DEBUG
 					(
-						"[Character Hooks] RemoveWeapon: {}: {} at equip index {}. {}.",
+						"{}: Active 1H/2H requests: {}, {}, equipped 1H bound weaps: {}, "
+						"Removal request is for {} ({}, index: {}). {}.",
+						p->coopActor->GetName(), 
+						active1HBoundWeapReqs,
+						active2HBoundWeapReqs,
+						equipped1HBoundWeaps,
+						weap->GetName(),
+						weap->equipSlot == glob.bothHandsEquipSlot ? "2H" : "1H",
+						a_equipIndex,
+						shouldPreventRemovel ? "IGNORE" : "ALLOW"
+					);
+				}
+				else if (isBoundAmmo)
+				{
+					if (p->pam->boundWeapReq2H &&
+						p->em->lastReqBoundWeapRH &&
+						p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>() &&
+						p->em->lastReqBoundWeapRH->As<RE::TESObjectWEAP>()->IsRanged() &&
+						p->pam->secsBoundWeapon2HDuration - 
+						p->pam->secsSinceBoundWeap2HReq > 0.0f)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}: Ignore removal of bound ammo {}.",
+							p->coopActor->GetName(), 
+							bipedObj.item->GetName()
+						);
+						shouldPreventRemovel = true;
+					}
+				}
+				else
+				{
+					// If the weapon biped object to remove is not in preparation 
+					// for a bound weapon equip, 
+					// prevent the game from removing the biped object.
+					shouldPreventRemovel = 
+					(
+						(
+							a_equipIndex == RE::BIPED_OBJECT::kShield &&
+							bipedObj.item == 
+							p->em->desiredEquippedForms[!EquipIndex::kLeftHand]
+						) ||
+						(
+							a_equipIndex != RE::BIPED_OBJECT::kShield &&
+							bipedObj.item == 
+							p->em->desiredEquippedForms[!EquipIndex::kRightHand]
+						)
+					);
+					SPDLOG_DEBUG
+					(
+						"{}: {} at equip index {}. Desired form in the same slot is {}.",
 						p->coopActor->GetName(), 
 						bipedObj.item ? bipedObj.item->GetName() : "NONE",
 						!a_equipIndex,
-						shouldPreventRemovel ? "IGNORE" : "ALLOW"
+						a_equipIndex == RE::BIPED_OBJECT::kShield ?
+						p->em->desiredEquippedForms[!EquipIndex::kLeftHand] ?
+						p->em->desiredEquippedForms[!EquipIndex::kLeftHand]->GetName() :
+						"NONE" :
+						p->em->desiredEquippedForms[!EquipIndex::kRightHand] ?
+						p->em->desiredEquippedForms[!EquipIndex::kRightHand]->GetName() : 
+						"NONE"
 					);
-					if (shouldPreventRemovel)
-					{
-						return;
-					}
 				}
+			}	
+
+			SPDLOG_DEBUG
+			(
+				"{}: {} at equip index {}. {}.",
+				p->coopActor->GetName(), 
+				bipedObj.item ? bipedObj.item->GetName() : "NONE",
+				!a_equipIndex,
+				shouldPreventRemovel ? "IGNORE" : "ALLOW"
+			);
+			if (shouldPreventRemovel)
+			{
+				return;
 			}
 
 			return _RemoveWeapon(a_this, a_equipIndex);	
@@ -3387,7 +3361,7 @@ namespace ALYSLC
 			// which can force-play idles on the companion player's character
 			// and lock them in place, despite player attempts to move the character.
 
-			if (glob.globalDataInit && glob.allPlayersInit && a_scene)
+			if (glob.globalDataInit && glob.allPlayersInit && glob.coopSessionActive && a_scene)
 			{
 				if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex != -1)
 				{
@@ -3460,8 +3434,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Character Hooks] Update: {}: "
-							"Stop current package: idle: {}, running: {}, scene: {}.", 
+							"{}: Stop current package: idle: {}, running: {}, scene: {}.", 
 							p->coopActor->GetName(),
 							p->coopActor->currentProcess->middleHigh->unk210 ?
 							Util::GetEditorID(p->coopActor->currentProcess->middleHigh->unk210) :
@@ -4310,8 +4283,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MenuControls Hooks] ProcessEvent: Event #{}: "
-					"{} (0x{:X}, type: {}, device: {}).",
+					"Event #{}: {} (0x{:X}, type: {}, device: {}).",
 					i,
 					event->AsIDEvent() ? event->AsIDEvent()->QUserEvent() : "NONE",
 					event->AsButtonEvent() ? event->AsButtonEvent()->idCode : 0xFF,
@@ -4561,8 +4533,7 @@ namespace ALYSLC
 						);
 						SPDLOG_DEBUG
 						(
-							"[MenuControls Hook] CheckForMenuTriggeringInput: "
-							"Checking for P1 CID: {}, {}. "
+							"Checking for P1 CID: debug menu: {}, summoning menu: {}. "
 							"Reported gamepad user index: {}.",
 							shouldTriggerDebugMenu, shouldTriggerSummoningMenu,
 							gamepad ? gamepad->userIndex : -1337
@@ -4618,21 +4589,40 @@ namespace ALYSLC
 										glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask)
 									)
 								);
+								const auto& firstPressTP1 = 
+								(
+									glob.cdh->firstPressTPsList[i]
+									[
+										shouldTriggerDebugMenu ?
+										!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask) :
+										!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask)
+									]
+								);
+								const auto& firstPressTP2 = 
+								(
+									glob.cdh->firstPressTPsList[i]
+									[
+										shouldTriggerDebugMenu ?
+										!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(waitMask) :
+										!glob.cdh->GAMEMASK_TO_INPUT_ACTION.at(pauseMask)
+									]
+								);
 
 								float heldTimeDiffTotal = FLT_MAX;
 								if (shouldTriggerDebugMenu)
 								{
+									// If not held at all
 									heldTimeDiffTotal = 
 									(
 										fabsf
 										(
 											eventReportedPauseHoldTime -
-											inputState1.heldTimeSecs
+											Util::GetElapsedSeconds(firstPressTP1)
 										) + 
 										fabsf
 										(
 											eventReportedWaitHoldTime -
-											inputState2.heldTimeSecs
+											Util::GetElapsedSeconds(firstPressTP2)
 										)
 									);
 								}
@@ -4643,31 +4633,50 @@ namespace ALYSLC
 										fabsf
 										(
 											eventReportedWaitHoldTime - 
-											inputState1.heldTimeSecs
+											Util::GetElapsedSeconds(firstPressTP1)
 										) + 
 										fabsf
 										(
 											eventReportedPauseHoldTime - 
-											inputState2.heldTimeSecs
+											Util::GetElapsedSeconds(firstPressTP2)
 										)
 									);
 								}
-
+								
+								SPDLOG_DEBUG
+								(
+									"CID {}'s diff total: {}. Current min diff total: {}. "
+									"Last recorded input state held times: {}, {}. "
+									"Time since last press: {}, {}. "
+									"Pressed/just released: {}, {} / {}, {}.",
+									i,
+									heldTimeDiffTotal,
+									smallestHeldTimeDiffTotal,
+									inputState1.heldTimeSecs,
+									inputState2.heldTimeSecs,
+									Util::GetElapsedSeconds(firstPressTP1),
+									Util::GetElapsedSeconds(firstPressTP2),
+									inputState1.isPressed,
+									inputState2.isPressed,
+									inputState1.justReleased,
+									inputState2.justReleased
+								);
 								if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
 								{
 									smallestHeldTimeDiffTotal = heldTimeDiffTotal;
 									newCID = i;
+									SPDLOG_DEBUG
+									(
+										"P1 CID set to {}. Min diff total is now: {}.",
+										newCID,
+										smallestHeldTimeDiffTotal
+									);
 								}
 							}
 
 							if (newCID != -1)
 							{
-								SPDLOG_DEBUG
-								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
-									"P1 CID set to {};",
-									newCID
-								);
+								SPDLOG_DEBUG("P1 CID set to {};", newCID);
 								glob.player1CID = newCID;
 							}
 						}
@@ -4682,7 +4691,6 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
 									"Debug menu binds pressed but not triggered. "
 									"Opening menu now."
 								);
@@ -4710,7 +4718,6 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
 									"Summoning menu binds pressed but not triggered. "
 									"Opening menu now."
 								);
@@ -4728,7 +4735,6 @@ namespace ALYSLC
 								);
 								SPDLOG_DEBUG
 								(
-									"[MenuControls Hook] CheckForMenuTriggeringInput: "
 									"Summoning glob: {}, P1 valid: {}, P1 in combat: {}.",
 									glob.summoningMenuOpenGlob->value,
 									(bool)glob.player1Actor,
@@ -4759,7 +4765,6 @@ namespace ALYSLC
 							ignoringPauseWaitEvent = !Util::MenusOnlyAlwaysOpen();
 							SPDLOG_DEBUG
 							(
-								"[MenuControls Hook] CheckForMenuTriggeringInput: "
 								"{} menu bind is now pressed. "
 								"Ignore ({}) and trigger on release "
 								"if no co-op menus are triggered by then.",
@@ -4787,7 +4792,6 @@ namespace ALYSLC
 							// and trigger either the Pause or Wait menu as usual.
 							SPDLOG_DEBUG
 							(
-								"[MenuControls Hook] CheckForMenuTriggeringInput: "
 								"{} bind released on its own. "
 								"Simulating press to trigger {} menu.",
 								pauseBindEvent ? "Pause" : "Wait", 
@@ -4803,7 +4807,6 @@ namespace ALYSLC
 							// so ignore the button event on release.
 							SPDLOG_DEBUG
 							(
-								"[MenuControls Hook] CheckForMenuTriggeringInput: "
 								"{} bind released on its own after {} menu triggered. "
 								"Ignoring.",
 								pauseBindEvent ? "Pause" : "Wait", 
@@ -4841,8 +4844,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[MenuControls Hook] CheckForMenuTriggeringInput: Buttons released. "
-					"Reset flags to false. Pause bind pressed first: {}, "
+					"Buttons released. Reset flags to false. Pause bind pressed first: {}, "
 					"summoning menu triggered: {}, debug menu triggered: {}, "
 					"ignoring Pause/Wait event: {}",
 					pauseBindPressedFirst, 
@@ -5211,7 +5213,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[MenuControls Hooks] CheckForP1ReviveReq: "
 								"Activate event: {}, {}s. Pick target: {}.",
 								buttonEvent->value,
 								buttonEvent->heldDownSecs,
@@ -5527,12 +5528,7 @@ namespace ALYSLC
 							{
 								// Clears crosshair refr data.
 								Util::SendCrosshairEvent(nullptr);
-								SPDLOG_DEBUG
-								(
-									"[MenuControls Hooks] FilterInputEvents: "
-									"{} is closing LootMenu.",
-									p1->GetName()
-								);
+								SPDLOG_DEBUG("{} is closing LootMenu.", p1->GetName());
 							}
 						}
 
@@ -5964,9 +5960,9 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
-					"[MenuControls Hook] FilterInputEvents: Menu, MIM CID: {}, {}, "
+					"Menu, MIM CID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
 					"p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, "
 					"proxied P1 input: {}, coop player menu input: {}, "
@@ -5993,7 +5989,7 @@ namespace ALYSLC
 					allowP1RotateLock,
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput
-				);*/
+				);
 
 				if (!propagateUnmodifiedEvent)
 				{
@@ -7334,8 +7330,11 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG("[PlayerCharacter Hooks] UseSkill: Lock obtained. (0x{:X})", 
-						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					SPDLOG_DEBUG
+					(
+						"Lock obtained. (0x{:X})", 
+						std::hash<std::jthread::id>()(std::this_thread::get_id())
+					);
 
 					// For melee skills, cache and delay if cached data does not match call args.
 					if (a_av == RE::ActorValue::kOneHanded || a_av == RE::ActorValue::kTwoHanded ||
@@ -7407,7 +7406,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[PlayerCharacter Hooks] UseSkill: "
 						"Failed to obtain lock (0x{:X}). Will not use skill.", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
@@ -7776,10 +7774,7 @@ namespace ALYSLC
 								);
 								if (collisionAllowed)
 								{
-									SPDLOG_DEBUG
-									(
-										"[Projectile Hooks] OnProjectileCollision: ALLOWED"
-									);
+									SPDLOG_DEBUG("ALLOWED");
 									// Do not start combat with other players
 									// and do not need to start combat for P1.
 									if (!hitActorIsPlayer && !p->isPlayer1)
@@ -7828,10 +7823,7 @@ namespace ALYSLC
 								}
 								else
 								{
-									SPDLOG_DEBUG
-									(
-										"[Projectile Hooks] OnProjectileCollision: IGNORED"
-									);	
+									SPDLOG_DEBUG("IGNORED");	
 									return true;
 								}
 							}
@@ -8112,7 +8104,7 @@ namespace ALYSLC
 				);
 				if (!collisionAllowed)
 				{
-					SPDLOG_DEBUG("[Projectile Hooks] ProcessHit: Collision ignored.");
+					SPDLOG_DEBUG("Collision ignored.");
 					return false;
 				}
 			}
@@ -8997,7 +8989,22 @@ namespace ALYSLC
 				projectile->data.location, aimTargetPos
 			);
 			// Predicted time to target along the initial fixed trajectory.
-			const float& initialTimeToTargetSecs = managedProjInfo->initialTrajTimeToTarget;
+			const float initialTimeToTargetSecs = managedProjInfo->initialTrajTimeToTarget;
+			// Get the expected lifetime for the projectile before it potentially despawns.
+			float expectedLifetime = FLT_MAX;
+			auto base = projectile->GetProjectileBase();
+			if (base)
+			{
+				if (base->data.lifetime > 0.0f)
+				{
+					expectedLifetime = base->data.lifetime;
+				}
+				else
+				{
+					expectedLifetime = base->data.range / base->data.speed;
+				}
+			}
+
 			if (projectile->livingTime == 0.0f)
 			{
 				// Set launch angles on release.
@@ -9078,7 +9085,10 @@ namespace ALYSLC
 			const bool tooLongToReach = 
 			(
 				initialTimeToTargetSecs == 0.0f ||
-				initialTimeToTargetSecs >= Settings::fMaxProjAirborneSecsToTarget
+				initialTimeToTargetSecs >= min
+				(
+					expectedLifetime, Settings::fMaxProjAirborneSecsToTarget
+				)
 			);
 			// Cannot split the trajectory into two parts 
 			// if the projectile reaches the target in under two frames,
@@ -9101,7 +9111,7 @@ namespace ALYSLC
 			auto fixedTrajVel = RE::NiPoint3(velX, velY, velZ);
 			// Speed to set below.
 			float speedToSet = fixedTrajVel.Length();
-
+			
 			if (!managedProjInfo->startedHomingIn)
 			{
 				// With air resistance.
@@ -9156,12 +9166,17 @@ namespace ALYSLC
 					projectile->livingTime - 0.5f * initialTimeToTargetSecs >= -epsilon ||
 					xy > Util::GetXYDistance(releasePos, managedProjInfo->trajectoryEndPos)
 				);
+				bool noTargetAndMovingCrosshair = false;
+				(
+					!targetRefrValidity && a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
+				);
 				// Set as homing if not already set 
 				// and one of the above conditions is true.
 				bool shouldSetAsHoming =
 				(
 					(!managedProjInfo->startedHomingIn) && 
 					(
+						noTargetAndMovingCrosshair || 
 						passedHalfwayPoint || 
 						tooLongToReach ||
 						lessThanTwoFramesToReachTarget
@@ -9222,30 +9237,31 @@ namespace ALYSLC
 				powf(distToTarget / (maxDistPerFrame + 0.01f), 5.0f), 0.1f, 1.0f
 			);
 			// Projectile is now homing in, smooth out pitch and yaw to follow the target.
+			// Direction from the current position to the target.
+			auto dirToTarget = aimTargetPos - projectile->data.location;
+			dirToTarget.Unitize();
+			// Last frame's velocity direction.
+			auto velDirLastFrame = a_resultingVelocityOut;
+			velDirLastFrame.Unitize();
+			// Angle between last frame's velocity and the target.
+			float angBetweenVelAndToTarget = acosf
+			(
+				std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
+			);
+
+			// Went past the target if velocity direction and direction to target 
+			// diverge by >= 90 degrees or the distance to the target 
+			// is less than the max distance travelable per frame.
+			bool wentPastTarget = 
+			(
+				angBetweenVelAndToTarget >= PI / 2.0f && distToTarget <= maxDistPerFrame
+			);
+
 			if (managedProjInfo->startedHomingIn)
 			{
 				// First, check if the projectile has moved past the target.
 
-				// Direction from the current position to the target.
-				auto dirToTarget = aimTargetPos - projectile->data.location;
-				dirToTarget.Unitize();
-				// Last frame's velocity direction.
-				auto velDirLastFrame = a_resultingVelocityOut;
-				velDirLastFrame.Unitize();
-				// Angle between last frame's velocity and the target.
-				float angBetweenVelAndToTarget = acosf
-				(
-					std::clamp(dirToTarget.Dot(velDirLastFrame), -1.0f, 1.0f)
-				);
-
-				// Went past the target if velocity direction and direction to target 
-				// diverge by >= 90 degrees or the distance to the target 
-				// is less than the max distance travelable per frame.
-				bool wentPastTarget = 
-				(
-					angBetweenVelAndToTarget >= PI / 2.0f || distToTarget <= maxDistPerFrame
-				);
-
+				
 				float secsSinceStartedHoming = Util::GetElapsedSeconds
 				(
 					managedProjInfo->startedHomingTP.value(), true
@@ -9254,9 +9270,6 @@ namespace ALYSLC
 				// so set pitch and yaw directly to target right away.
 				if (tooLongToReach || lessThanTwoFramesToReachTarget)
 				{
-					pitchToSet = pitchToTarget;
-					yawToSet = yawToTarget;
-
 					// Turn directly to face the target once homing starts, 
 					// so the target is no longer behind the projectile.
 					// If the projectile eventually goes past the target again, 
@@ -9266,9 +9279,25 @@ namespace ALYSLC
 						wentPastTarget = false;
 					}
 				}
-				else
+
+				if (lessThanTwoFramesToReachTarget)
 				{
-					// Slowly turn to face.
+					pitchToSet = pitchToTarget;
+					yawToSet = yawToTarget;
+				}
+				else 
+				{
+					float timeToFullyHomeIn = initialTimeToTargetSecs;
+					if (tooLongToReach)
+					{
+						// Home in completely at most 3 seconds post-launch.
+						timeToFullyHomeIn = min
+						(
+							3.0f, min(initialTimeToTargetSecs, expectedLifetime) * 0.75f
+						);
+					}
+					
+					// Turn gradually to face.
 					float pitchDiff = Util::NormalizeAngToPi(pitchToTarget - currentPitch);
 					pitchToSet = Util::NormalizeAngToPi
 					(
@@ -9277,7 +9306,7 @@ namespace ALYSLC
 						(
 							0.0f, 
 							pitchDiff,
-							min(1.0f, projectile->livingTime / (initialTimeToTargetSecs))
+							min(1.0f, projectile->livingTime / timeToFullyHomeIn)
 						)
 					);
 					float yawDiff = Util::NormalizeAngToPi(yawToTarget - currentYaw);
@@ -9288,7 +9317,7 @@ namespace ALYSLC
 						(
 							0.0f, 
 							yawDiff,
-							min(1.0f, projectile->livingTime / (initialTimeToTargetSecs))
+							min(1.0f, projectile->livingTime / timeToFullyHomeIn)
 						)
 					);
 				}
@@ -9316,7 +9345,7 @@ namespace ALYSLC
 				// Continue homing in only if the projectile has not gone past the target.
 				continueSettingTrajectory = !wentPastTarget;
 			}
-
+			
 			if (continueSettingTrajectory)
 			{
 				// Set refr data angles.
@@ -9856,7 +9885,7 @@ namespace ALYSLC
 			{
 				// Delete marker.
 				a_this->SetDelete(true);
-				// Set skybo mode to sometimes remove fog
+				// Set skybox mode to sometimes remove fog
 				// when zooming out beyond the traversable area.
 				Util::SetSkyboxModeForCell(a_this->parentCell);
 			}
@@ -10198,7 +10227,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[BarterMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. "
+				"Current menu CID: {}, resolved menu CID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
@@ -10232,7 +10261,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[BarterMenu Hooks] ERR: ProcessMessage. Restoring P1's inventory, "
+						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.", 
 						result
 					);
@@ -10286,7 +10315,7 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[BookMenu Hooks] ProcessMessage. Current menu CID: {}, resolved menu CID: {}. "
+				"Current menu CID: {}, resolved menu CID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
@@ -10359,8 +10388,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[ContainerMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -10449,8 +10478,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[CraftingMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -10489,7 +10518,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[CraftingMenu Hooks] ERR: ProcessMessage: "
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
 						result
@@ -10544,8 +10572,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[DialogueMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -10625,11 +10653,7 @@ namespace ALYSLC
 					return _ProcessMessage(a_this, a_message);
 				}
 				
-				SPDLOG_DEBUG
-				(
-					"[FavoritesMenu Hooks] ProcessMessage. Update QS tags for CID {}.",
-					glob.menuCID
-				);
+				SPDLOG_DEBUG("Update QS tags for CID {}.", glob.menuCID);
 				// Update quickslot tags for P1,
 				// since the game wipes the tag after hotkeying an item.
 				if (glob.menuCID == glob.player1CID) 
@@ -10937,8 +10961,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[FavoritesMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -11037,7 +11061,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[FavoritesMenu Hooks] ERR: ProcessMessage. "
 								"Restoring P1's favorites, "
 								"since the message to open the FavoritesMenu was not handled. "
 								"RESULT: {}.", 
@@ -11122,7 +11145,6 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[InventoryMenu Hooks] ProcessMessage: "
 							"Opening {}'s inventory instead of P1's.", 
 							reqP->coopActor->GetName()
 						);
@@ -11176,7 +11198,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[LoadingMenu Hooks] ProcessMessage. "
 					"Loading menu opened with data copied (types: 0x{:X}) over to P1. "
 					"Restoring P1 data. Co-op session active: {}. RESULT: {}.",
 					*glob.copiedPlayerDataTypes, glob.coopSessionActive, result
@@ -11300,8 +11321,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[MagicMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -11364,7 +11385,6 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[MagicMenu Hooks] ERR: ProcessMessage. "
 								"Restoring P1's magic favorites, "
 								"since the message to open the MagicMenu was not handled. "
 								"RESULT: {}.",
@@ -11441,8 +11461,8 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[StatsMenu Hooks] ProcessMessage. Current menu CID: {}, "
-					"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+					"Current menu CID: {}, resolved menu CID: {}. "
+					"Opening: {}, closing: {}, has copied data: {}.",
 					glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 				);
 
@@ -11519,8 +11539,8 @@ namespace ALYSLC
 
 			SPDLOG_DEBUG
 			(
-				"[TrainingMenu Hooks] ProcessMessage. Current menu CID: {}, "
-				"resolved menu CID: {}. Opening: {}, closing: {}, has copied data: {}.",
+				"Current menu CID: {}, resolved menu CID: {}. "
+				"Opening: {}, closing: {}, has copied data: {}.",
 				glob.menuCID, glob.lastResolvedMenuCID, opening, closing, hasCopiedData
 			);
 
@@ -11565,7 +11585,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[TrainingMenu Hooks] ERR: ProcessMessage. "
 						"Restoring AVs for {} and P1, "
 						"since the message to open the menu was ignored. RESULT: {}.", 
 						p->coopActor->GetName(), result

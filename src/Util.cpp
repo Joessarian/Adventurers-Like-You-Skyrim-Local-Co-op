@@ -333,8 +333,11 @@ namespace ALYSLC
 			}
 			
 			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG("[Util] AddAsCombatTarget: {} -> {}, trigger combat: {}.",
-				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat);*/
+			/*SPDLOG_DEBUG
+			(
+				"{} -> {}, trigger combat: {}.",
+				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat
+			);*/
 
 			// IMPORTANT BUG NOTE:
 			// For companion players, combat-initiating hits 
@@ -462,8 +465,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			/*SPDLOG_DEBUG
 			(
-				"[Util] ApplyHit: {} -> {}, "
-				"damage: {}, trigger combat: {}, send event: {}, flags: 0x{:X}.",
+				"{} -> {}, damage: {}, trigger combat: {}, send event: {}, flags: 0x{:X}.",
 				a_sourceActor->GetName(),
 				a_targetActor->GetName(),
 				a_damage,
@@ -787,7 +789,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] ChangeFormHotkeyStatus: {}: Removed MAG {} from hotkey slot {}.",
+						"{}: Removed MAG {} from hotkey slot {}.",
 						a_actor->GetName(), a_form->GetName(), i + 1
 					);
 					magicFavorites->hotkeys[i] = nullptr;
@@ -800,7 +802,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[Util] ChangeFormHotkeyStatus: {}: Added MAG {} to hotkey slot {}.",
+							"{}: Added MAG {} to hotkey slot {}.",
 							a_actor->GetName(), a_form->GetName(), i + 1
 						);
 						magicFavorites->hotkeys[i] = a_form;
@@ -811,8 +813,7 @@ namespace ALYSLC
 						// Still have to look for the form among the actor's physical favorites.
 						SPDLOG_DEBUG
 						(
-							"[Util] ChangeFormHotkeyStatus: {}: "
-							"Removed MAG {} from hotkey slot {}, "
+							"{}: Removed MAG {} from hotkey slot {}, "
 							"since we want to set PHYS {} as the new hotkeyed form.",
 							a_actor->GetName(),
 							magicFavorites->hotkeys[i]->GetName(), 
@@ -870,8 +871,7 @@ namespace ALYSLC
 						exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
 						SPDLOG_DEBUG
 						(
-							"[Util] ChangeFormHotkeyStatus: {}: "
-							"Removed PHYS {} from hotkey slot {}.",
+							"{}: Removed PHYS {} from hotkey slot {}.",
 							a_actor->GetName(), a_form->GetName(), hotkeySlot + 1
 						);
 
@@ -897,8 +897,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[Util] ChangeFormHotkeyStatus: {}: "
-										"Removed PHYS {} from hotkey slot {}, "
+										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set MAG {} as the new hotkeyed form.",
 										a_actor->GetName(), 
 										boundObj->GetName(), 
@@ -910,8 +909,7 @@ namespace ALYSLC
 								{
 									SPDLOG_DEBUG
 									(
-										"[Util] ChangeFormHotkeyStatus: {}: "
-										"Removed PHYS {} from hotkey slot {}, "
+										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set PHYS {} as the new hotkeyed form.",
 										a_actor->GetName(),
 										boundObj->GetName(),
@@ -929,8 +927,7 @@ namespace ALYSLC
 							// so we can directly set its hotkey slot to the requested one.
 							SPDLOG_DEBUG
 							(
-								"[Util] ChangeFormHotkeyStatus: {}: "
-								"Added PHYS {} to hotkey slot {}.",
+								"{}: Added PHYS {} to hotkey slot {}.",
 								a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1
 							);
 							exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>
@@ -2403,7 +2400,7 @@ namespace ALYSLC
 
 				bool forBows = a_forBows && !ammo->IsBolt();
 				bool forCrossbows = !a_forBows && ammo->IsBolt();
-				if ((forBows || forCrossbows) && (ammo->data.damage > highestDamage))
+				if ((forBows || forCrossbows) && (ammo && ammo->data.damage > highestDamage))
 				{
 					ammoAndCount.first = ammo;
 					ammoAndCount.second = count;
@@ -3209,7 +3206,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("[Util] HasLOS: P1 LOS check.");
+						SPDLOG_DEBUG("P1 LOS check.");
 					}
 
 					hasLOS = p1->HasLineOfSight(a_targetRefr, inFrustum);
@@ -3221,7 +3218,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("[Util] HasLOS: From camera node pos.");
+						SPDLOG_DEBUG("From camera node pos.");
 					}
 					
 					// Raycast from the camera node's position.
@@ -3239,7 +3236,7 @@ namespace ALYSLC
 						// Then check from the observer's eye position.
 						if (a_showDebugInfo)
 						{
-							SPDLOG_DEBUG("[Util] HasLOS: From observer focus pos.");
+							SPDLOG_DEBUG("From observer focus pos.");
 						}
 
 						if (observer3DPtr)
@@ -3268,7 +3265,7 @@ namespace ALYSLC
 
 				if (a_showDebugInfo)
 				{
-					SPDLOG_DEBUG("[Util] HasLOS: From camera collision pos.");
+					SPDLOG_DEBUG("From camera collision pos.");
 				}
 				
 				// First from the camera's node position.
@@ -3321,7 +3318,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("[Util] HasLOS: From observer focus pos.");
+						SPDLOG_DEBUG("From observer focus pos.");
 					}
 
 					hasLOS = HasRaycastLOSFromPos
@@ -3355,10 +3352,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasLOS: {} has LOS on {}: {}.",
-					a_observer->GetName(),
-					a_targetRefr->GetName(),
-					hasLOS
+					"{} has LOS on {}: {}.", a_observer->GetName(), a_targetRefr->GetName(), hasLOS
 				);
 			}
 
@@ -3417,7 +3411,6 @@ namespace ALYSLC
 					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOS: "
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
@@ -3486,7 +3479,6 @@ namespace ALYSLC
 					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOS: "
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to refr pos: [{}] ({}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
@@ -3561,7 +3553,6 @@ namespace ALYSLC
 						auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 						SPDLOG_DEBUG
 						(
-							"[Util] HasRaycastLOS: "
 							"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 							"Raycast to refr center pos: [{}] ({}, 0x{:X}, type: {:X}).",
 							a_targetRefr->GetName(),
@@ -3661,7 +3652,6 @@ namespace ALYSLC
 									auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 									SPDLOG_DEBUG
 									(
-										"[Util] HasRaycastLOS: "
 										"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 										"Raycast to {} node: [{}] ({}, 0x{:X}, type: {:X}).",
 										a_targetRefr->GetName(),
@@ -3897,7 +3887,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOSAlongObserverAxis: "
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast along upper observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
@@ -3988,7 +3977,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOSAlongObserverAxis: "
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast along lower observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
@@ -4129,7 +4117,6 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] HasRaycastLOSFromPos: "
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X}).",
 						a_targetRefr->GetName(),
@@ -4209,7 +4196,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: "
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to data location pos: [{}] ({}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
@@ -4285,7 +4271,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: "
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to world translate pos: [{}] ({}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
@@ -4361,7 +4346,6 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[Util] HasRaycastLOSFromPos: "
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to 3D center pos: [{}] ({}, 0x{:X}, type: {:X}).",
 					a_targetRefr->GetName(),
@@ -5916,7 +5900,7 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[Util] SendCrosshairEvent: Set to {}, CID: {}.",
+					"Set to {}, CID: {}.",
 					a_crosshairRefrToSet ? a_crosshairRefrToSet->GetName() : "NONE",
 					a_requestingCID
 				);
@@ -7461,7 +7445,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] TriggerFalseSkillLevelUp: Lock obtained. (0x{:X})",
+						"Lock obtained. (0x{:X})",
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
 
@@ -7508,7 +7492,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Util] TriggerFalseSkillLevelUp: Failed to obtain lock. (0x{:X})", 
+						"Failed to obtain lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
 				}

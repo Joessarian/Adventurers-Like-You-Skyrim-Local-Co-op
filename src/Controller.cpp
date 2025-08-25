@@ -67,9 +67,7 @@ namespace ALYSLC
 				{
 					SPDLOG_INFO
 					(
-						"[CDH] SetupConnectedCoopControllers: Co-op player controller {} " 
-						"has been registered.",
-						controllerIndex
+						"Co-op player controller {} has been registered.", controllerIndex
 					);
 					controllerIDs.push_back(controllerIndex);
 				}
@@ -77,8 +75,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[CDH] SetupConnectedCoopControllers: No controller connected at index {}."
-						" Error #{}.", 
+						"No controller connected at index {}. Error #{}.", 
 						controllerIndex, errorNum
 					);
 				}
@@ -115,9 +112,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[CDH] ERR: UpdateAnalogStickState: "
-					"Could not get input state for active controller {}",
-					a_controllerID
+					"Could not get input state for active controller {}", a_controllerID
 				);
 			}
 
@@ -255,9 +250,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[CDH] ERR: UpdateInputStatesAndMask: " 
-					"Could not get input state for active controller {}", 	
-					a_controllerID
+					"Could not get input state for active controller {}", a_controllerID
 				);
 			}
 

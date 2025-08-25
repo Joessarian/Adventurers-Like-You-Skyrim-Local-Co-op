@@ -26,7 +26,7 @@ namespace ALYSLC
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"[PAM] Initialize: Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {}, CID: {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p ? p->controllerID : -1,
 				p.use_count()
@@ -41,7 +41,6 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[PAM] ERR: Initialize: "
 				"Cannot construct Player Action Manager for controller ID {}.",
 				a_p ? a_p->controllerID : -1
 			);
@@ -107,23 +106,22 @@ namespace ALYSLC
 		{
 			packageStackMap.insert_or_assign
 			(
-				PackageIndex::kDefault, glob.coopPackageFormlists[p->packageFormListStartIndex]
+				PackageIndex::kDefault, glob.coopPackageFormlists[2 * p->playerID]
 			);
 			packageStackMap.insert_or_assign
 			(
 				PackageIndex::kCombatOverride, 
-				glob.coopPackageFormlists[p->packageFormListStartIndex + 1]
+				glob.coopPackageFormlists[2 * p->playerID + 1]
 			);
-			if (!glob.coopPackageFormlists[p->packageFormListStartIndex] || 
-				!glob.coopPackageFormlists[p->packageFormListStartIndex + 1]) 
+			if (!glob.coopPackageFormlists[2 * p->playerID] || 
+				!glob.coopPackageFormlists[2 * p->playerID + 1]) 
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAM] ERR: MainTask: "
 					"Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
 					coopActor->GetName(),
-					(bool)!glob.coopPackageFormlists[p->packageFormListStartIndex],
-					(bool)!glob.coopPackageFormlists[p->packageFormListStartIndex + 1]
+					(bool)!glob.coopPackageFormlists[2 * p->playerID],
+					(bool)!glob.coopPackageFormlists[2 * p->playerID + 1]
 				);
 			}
 		}
@@ -725,7 +723,7 @@ namespace ALYSLC
 							// Interrupted if started already.
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 2: candidate PA {} ({}): "
+								"{}: PASS 2: candidate PA {} ({}): "
 								"conflicting STARTED action {} ({}) is now interrupted.",
 								coopActor->GetName(),
 								candidatePA, 
@@ -743,7 +741,7 @@ namespace ALYSLC
 							// that has not started and is not blocked yet.
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 2: "
+								"{}: PASS 2: "
 								"candidate PA {}'s ({}) "
 								"conflicting CANDIDATE/INTERRUPTED PA {} ({}) "
 								"(with perf stage {}) is now blocked from performing.",
@@ -842,7 +840,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 3: "
+								"{}: PASS 3: "
 								"performing cleanup on interrupted occurring action {}"
 								"with perf stage {}.",
 								coopActor->GetName(), a_action, perfStage
@@ -853,7 +851,7 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[PAM] MainTask: {}: PASS 3: "
+							"{}: PASS 3: "
 							"Interrupted action {} should be removed (perf stage {}), "
 							"removing from occurring PAs list.",
 							coopActor->GetName(), a_action, perfStage
@@ -954,8 +952,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] MainTask: {}: PASS 4: "
-							"{} just started with action perf type {}.",
+							"{}: PASS 4: {} just started with action perf type {}.",
 							coopActor->GetName(), action, perfType
 						);
 
@@ -994,7 +991,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 4: {}, perf type {}, "
+								"{}: PASS 4: {}, perf type {}, "
 								"is about to be performed ON RELEASE. Perf stage: {}",
 								coopActor->GetName(), action, perfType, perfStage
 							);
@@ -1007,7 +1004,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 4: {}, perf type {}, "
+								"{}: PASS 4: {}, perf type {}, "
 								"is about to clean up ON RELEASE. Perf stage: {}",
 								coopActor->GetName(), action, perfType, perfStage
 							);
@@ -1026,8 +1023,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] MainTask: {}: PASS 4: {} failed conditions. "
-							"Set to blocked. Perf stage: {}",
+							"{}: PASS 4: {} failed conditions. Set to blocked. Perf stage: {}",
 							coopActor->GetName(), action, perfStage
 						);
 
@@ -1041,8 +1037,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] MainTask: {}: PASS 4: {} failed conditions. "
-							"Set to interrupted. Perf stage: {}",
+							"{}: PASS 4: {} failed conditions. Set to interrupted. Perf stage: {}",
 							coopActor->GetName(), action, perfStage
 						);
 
@@ -1055,8 +1050,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[PAM] MainTask: {}: PASS 4: "
-						"{} is already interrupted with perf stage {}.",
+						"{}: PASS 4: {} is already interrupted with perf stage {}.",
 						coopActor->GetName(), action, perfStage
 					);
 				}
@@ -1112,7 +1106,7 @@ namespace ALYSLC
 						{
 							SPDLOG_DEBUG
 							(
-								"[PAM] MainTask: {}: PASS 5: "
+								"{}: PASS 5: "
 								"performing cleanup on interrupted occurring action {} "
 								"with perf stage {}.",
 								coopActor->GetName(), a_action, perfStage
@@ -1123,7 +1117,7 @@ namespace ALYSLC
 
 						SPDLOG_DEBUG
 						(
-							"[PAM] MainTask: {}: PASS 5: {} should be removed (perf stage {}), "
+							"{}: PASS 5: {} should be removed (perf stage {}), "
 							"removing from occurring PAs list.",
 							coopActor->GetName(), a_action, perfStage
 						);
@@ -1209,7 +1203,10 @@ namespace ALYSLC
 
 	void PlayerActionManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("[PAM] PrePauseTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
+		
+		// Remove player keyword first.
+		UpdateCoopPlayerKeyword(false);
 
 		// Reset AVs, clear delayed AV cost actions, reset AV mults, 
 		// and change packages to default.
@@ -1275,7 +1272,10 @@ namespace ALYSLC
 
 	void PlayerActionManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("[PAM] PreStartTask: P{}", playerID + 1);
+		SPDLOG_DEBUG("P{}", playerID + 1);
+
+		// Add player keyword first.
+		UpdateCoopPlayerKeyword(true);
 
 		if (p->isPlayer1) 
 		{
@@ -1356,17 +1356,132 @@ namespace ALYSLC
 		{
 			player1RefAlias->fillData.uniqueActor.uniqueActor->aiPackages.packages.clear();
 		}
-
+		
+		SPDLOG_DEBUG
+		(
+			"{} (0x{:X}), raw FID to lookup: 0x{:X}.",
+			coopActor->GetName(),
+			coopActor->formID,
+			coopActor->formID & 0x00000FFF
+		);
 		// Setup initial default and combat override package formlists and packages.
-		packageStackMap.insert_or_assign
+		// P1 always has the first two formlists in the list.
+		if (p->isPlayer1)
+		{
+			packageStackMap.insert_or_assign
+			(
+				PackageIndex::kDefault, 
+				glob.coopPackageFormlists[0]
+			);
+			packageStackMap.insert_or_assign
+			(
+				PackageIndex::kCombatOverride, 
+				glob.coopPackageFormlists[1]
+			);
+		}
+		else
+		{
+			auto dataHandler = RE::TESDataHandler::GetSingleton();
+			if (dataHandler)
+			{
+				SPDLOG_DEBUG
+				(
+					"{} (0x{:X}), contains: {}, {}, lookup: {}, {}, raw FID to lookup: 0x{:X}.",
+					coopActor->GetName(),
+					coopActor->formID,
+					GlobalCoopData::CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID.contains
+					(
+						coopActor->formID & 0x00000FFF
+					),
+					GlobalCoopData::CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID.contains
+					(
+						coopActor->formID & 0x00000FFF
+					),
+					(bool)dataHandler->LookupForm<RE::BGSListForm>
+					(
+						GlobalCoopData::CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID.at
+						(
+							coopActor->formID & 0x00000FFF
+						),
+						GlobalCoopData::PLUGIN_NAME
+					),
+					(bool)dataHandler->LookupForm<RE::BGSListForm>
+					(
+						GlobalCoopData::CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID.at
+						(
+							coopActor->formID & 0x00000FFF
+						),
+						GlobalCoopData::PLUGIN_NAME
+					),
+					coopActor->formID & 0x00000FFF
+				);
+				// Ew. Hardcoded mapping from character FID to formlist FID.
+				// Neither of these IDs should ever change.
+				packageStackMap.insert_or_assign
+				(
+					PackageIndex::kDefault, 
+					dataHandler->LookupForm<RE::BGSListForm>
+					(
+						GlobalCoopData::CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID.at
+						(
+							coopActor->formID & 0x00000FFF
+						),
+						GlobalCoopData::PLUGIN_NAME
+					)
+				);
+				packageStackMap.insert_or_assign
+				(
+					PackageIndex::kCombatOverride, 
+					dataHandler->LookupForm<RE::BGSListForm>
+					(
+						GlobalCoopData::CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID.at
+						(
+							coopActor->formID & 0x00000FFF
+						),
+						GlobalCoopData::PLUGIN_NAME
+					)
+				);
+			}
+			else
+			{
+				// Fallback:
+				// Get associated formlists based on the player character's index,
+				// which is the number at the end of their editor ID.
+				const auto editorID = RE::BSFixedString(coopActor->GetFormEditorID());
+				const auto characterIndex = editorID.back() - '0';
+				packageStackMap.insert_or_assign
+				(
+					PackageIndex::kDefault, 
+					glob.coopPackageFormlists[2 * characterIndex]
+				);
+				packageStackMap.insert_or_assign
+				(
+					PackageIndex::kCombatOverride, 
+					glob.coopPackageFormlists[2 * characterIndex + 1]
+				);
+			}
+		}
+		
+		SPDLOG_DEBUG
 		(
-			PackageIndex::kDefault, glob.coopPackageFormlists[p->packageFormListStartIndex]
+			"{}: PID: {}, CID: {}, Assigned package formlists: {} (0x{:X}) and {} (0x{:X}).",
+			coopActor->GetName(),
+			playerID,
+			controllerID,
+			packageStackMap.at(PackageIndex::kDefault) ?
+			packageStackMap.at(PackageIndex::kDefault)->GetName() :
+			"NONE",
+			packageStackMap.at(PackageIndex::kDefault) ? 
+			packageStackMap.at(PackageIndex::kDefault)->formID : 
+			0xDEAD,
+			packageStackMap.at(PackageIndex::kCombatOverride) ?
+			packageStackMap.at(PackageIndex::kCombatOverride)->GetName() :
+			"NONE",
+			packageStackMap.at(PackageIndex::kCombatOverride) ? 
+			packageStackMap.at(PackageIndex::kCombatOverride)->formID : 
+			0xDEAD
 		);
-		packageStackMap.insert_or_assign
-		(
-			PackageIndex::kCombatOverride, 
-			glob.coopPackageFormlists[p->packageFormListStartIndex + 1]
-		);
+
 		// Attacking hand.
 		lastAttackingHand = HandIndex::kNone;
 		// Player action (PA) bookkeeping.
@@ -1411,6 +1526,19 @@ namespace ALYSLC
 				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]
 			);
 			castingGlobVars[i]->value = 0.0f;
+			SPDLOG_DEBUG
+			(
+				"{}: PID: {}, CID: {}, Assigned casting glob {} (0x{:X}).",
+				coopActor->GetName(),
+				playerID,
+				controllerID,
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i] ?
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]->GetName() :
+				"NONE",
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i] ? 
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]->formID : 
+				0xDEAD
+			);
 		}
 
 		// Currently performed combat skills that give XP.
@@ -1541,7 +1669,7 @@ namespace ALYSLC
 		// Reset time points.
 		ResetTPs();
 
-		SPDLOG_DEBUG("[PAM] RefreshData: {}.", coopActor ? coopActor->GetName() : "NONE");
+		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState PlayerActionManager::ShouldSelfPause()
@@ -3036,8 +3164,7 @@ namespace ALYSLC
 		// REMOVE when done debugging.
 		SPDLOG_DEBUG
 		(
-			"[PAM] CheckForDelayedCastCompletion: {}: "
-			"LH/RH spells: {} (FNF: {}), {} (FNF: {}). "
+			"{}: LH/RH spells: {} (FNF: {}), {} (FNF: {}). "
 			"Casting glob vars: LH: {}, RH: {}, 2H: {}. "
 			"Is performing cast actions: LH: {}, RH: {}, 2H: {}, Both: {}. "
 			"Caster spells/state: LH: {}, {}, RH: {}, {}. "
@@ -3075,22 +3202,14 @@ namespace ALYSLC
 
 		if (shouldResetAllCastingData)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: RESET ALL.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: RESET ALL.", coopActor->GetName());
 			StopCastingHandSpells();
 			return;
 		}
 
 		if (shouldResetLHCastData)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: RESET LH.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: RESET LH.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			lhCasting->value = 0.0f;
@@ -3099,11 +3218,7 @@ namespace ALYSLC
 
 		if (shouldResetRHCastData)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: RESET RH.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: RESET RH.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			rhCasting->value = 0.0f;
@@ -3112,11 +3227,7 @@ namespace ALYSLC
 
 		if (shouldReset2HCastData)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: RESET 2H.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: RESET 2H.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			lhCasting->value = 0.0f;
@@ -3127,11 +3238,7 @@ namespace ALYSLC
 
 		if (shouldResetVoiceCastData)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: RESET VOICE.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: RESET VOICE.", coopActor->GetName());
 			shouting->value = 0.0f;
 			voiceCasting->value = 0.0f;
 			if (voiceCaster)
@@ -3145,11 +3252,7 @@ namespace ALYSLC
 		{
 			if (casting2H->value == 0.0f && lhCasting->value == 0.0f && rhCasting->value == 0.0f) 
 			{
-				SPDLOG_DEBUG
-				(
-					"[PAM] CheckForDelayedCastCompletion: {}: RESET HAND CASTERS.",
-					coopActor->GetName()
-				);
+				SPDLOG_DEBUG("{}: RESET HAND CASTERS.", coopActor->GetName());
 				// Reset to default package as well if both hands are no longer casting.
 				ResetPackageCastingState();
 				// Clear out linked refr target used by the casting package.
@@ -3157,11 +3260,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
-				(
-					"[PAM] CheckForDelayedCastCompletion: {}: RESET AND EVALUATE.",
-					coopActor->GetName()
-				);
+				SPDLOG_DEBUG("{}: RESET AND EVALUATE.", coopActor->GetName());
 				// Evaluate if any caster is active or casting global is still set.
 				SetAndEveluatePackage(GetCoopPackage(PackageIndex::kRangedAttack));
 			}
@@ -3181,11 +3280,7 @@ namespace ALYSLC
 		);
 		if (shouldInterruptCaster)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: CLEAR LH MAG NODE AND CASTER.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: CLEAR LH MAG NODE AND CASTER.", coopActor->GetName());
 			lhCaster->InterruptCast(false);
 			lhCaster->NotifyAnimationGraph("CastStop");
 		}
@@ -3202,11 +3297,7 @@ namespace ALYSLC
 		);
 		if (shouldInterruptCaster)
 		{
-			SPDLOG_DEBUG
-			(
-				"[PAM] CheckForDelayedCastCompletion: {}: CLEAR RH MAG NODE AND CASTER.",
-				coopActor->GetName()
-			);
+			SPDLOG_DEBUG("{}: CLEAR RH MAG NODE AND CASTER.", coopActor->GetName());
 			rhCaster->InterruptCast(false);
 			rhCaster->NotifyAnimationGraph("CastStop");
 		}
@@ -3900,7 +3991,7 @@ namespace ALYSLC
 		return priority;
 	}
 
-	RE::TESPackage * PlayerActionManager::GetCoopPackage(const PackageIndex& a_index)
+	RE::TESPackage* PlayerActionManager::GetCoopPackage(const PackageIndex& a_index)
 	{
 		// Get the co-op package corresponding to the given index.
 
@@ -3908,6 +3999,22 @@ namespace ALYSLC
 		(
 			glob.coopPackages[!PackageIndex::kTotal * controllerID + !a_index]
 		);
+	}
+
+	RE::BGSKeyword* PlayerActionManager::GetCoopPlayerKeyword()
+	{
+		// Get the co-op character's player keyword, which is based on their CID.
+
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit ||
+			!glob.coopSessionActive ||
+			!p->isActive ||
+			controllerID == -1)
+		{
+			return nullptr;
+		}
+
+		return glob.coopPlayerKeywords[controllerID];
 	}
 
 	RE::TESPackage* PlayerActionManager::GetCurrentPackage()
@@ -4427,8 +4534,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAM] HandleKillmoveRequests: {} -> {}. "
-					"Now performing a killmove after {}s.",
+					"{} -> {}. Now performing a killmove after {}s.",
 					coopActor->GetName(), 
 					targetActorPtr->GetName(),
 					secsSinceKillmoveRequest
@@ -4440,7 +4546,7 @@ namespace ALYSLC
 				// Kllmove already done or never executed and the max wait time was reached.
 				SPDLOG_DEBUG
 				(
-					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"{} -> {}. "
 					"Reset: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}, {}.",
 					coopActor->GetName(), 
 					targetActorPtr->GetName(),
@@ -4507,7 +4613,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"{} -> {}. "
 					"Victim End: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}.",
 					coopActor->GetName(), 
 					targetActorPtr->GetName(),
@@ -4564,7 +4670,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAM] HandleKillmoveRequests: {} -> {}. "
+					"{} -> {}. "
 					"Aggressor End: secs since req: {}, is dead, is downed: {}, {}, "
 					"in killmove: {}, is attacking: {}, {}, "
 					"is bashing: {}, is blocking: {}, is casting: {}.",
@@ -4651,7 +4757,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] HandlePerformedAnimationEvents: {}: Lock obtained. (0x{:X})", 
+							"{}: Lock obtained. (0x{:X})", 
 							coopActor->GetName(), 
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -5282,7 +5388,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[PAM] ReadyWeapon: {}: drawn: {}, state: {}, ignore state: {}, req: {}",
+			"{}: drawn: {}, state: {}, ignore state: {}, req: {}",
 			coopActor->GetName(),
 			coopActor->IsWeaponDrawn(), 
 			!coopActor->actorState2.weaponState, 
@@ -5303,27 +5409,14 @@ namespace ALYSLC
 			return;
 		}
 
+		bool isEquipping = false;
+		coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
+		bool isUnequipping = false;
+		coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 		// Allow draw/sheathe request if ignoring the current weapon state
 		// and the player's weapons are fully sheathed when requesting to draw,
 		// or fully drawn when requesting to sheathe.
-		const auto weaponState = coopActor->actorState2.weaponState;
-		bool allowRequest = 
-		(
-			(a_ignoreState) ||
-			(
-				(a_shouldDraw) && 
-				(
-					weaponState == RE::WEAPON_STATE::kSheathed
-				)	
-			) ||
-			(
-				(!a_shouldDraw) && 
-				(
-					weaponState == RE::WEAPON_STATE::kDrawn
-				)	
-			)
-		);
-
+		bool allowRequest = (a_ignoreState) || (!isEquipping && !isUnequipping);
 		if (!allowRequest)
 		{
 			return;
@@ -5794,8 +5887,11 @@ namespace ALYSLC
 			a_playerTargetIndex != -1 &&
 			glob.coopPlayers[a_playerTargetIndex]->isDowned)
 		{
-			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: Revive bind just pressed. Target: {}.",
-				glob.coopPlayers[a_playerTargetIndex]->coopActor->GetName());
+			SPDLOG_DEBUG
+			(
+				"Revive bind just pressed. Target: {}.",
+				glob.coopPlayers[a_playerTargetIndex]->coopActor->GetName()
+			);
 			// Stop P1 from moving.
 			p->mm->dontMoveSet = true;
 			Util::NativeFunctions::SetDontMove(p->coopActor.get(), true);
@@ -5818,10 +5914,13 @@ namespace ALYSLC
 		bool enoughHealth = ALYSLC::HelperFuncs::EnoughOfAVToPerformPA(p, InputAction::kActivate);
 		if (downedPlayerTarget->isRevived || !enoughHealth)
 		{
-			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: {} is revived: {}, P1 out of health: {}.",
+			SPDLOG_DEBUG
+			(
+				"{} is revived: {}, P1 out of health: {}.",
 				downedPlayerTarget->coopActor->GetName(),
 				downedPlayerTarget->isRevived,
-				!enoughHealth);
+				!enoughHealth
+			);
 			if (!enoughHealth)
 			{
 				p->tm->SetCrosshairMessageRequest
@@ -5950,8 +6049,7 @@ namespace ALYSLC
 		// is greater than or equal to their health after a full revive.
 		if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
 		{
-			SPDLOG_DEBUG("[PAM] RevivePlayerP1NoCoopCam: {} is now revived.",
-				downedPlayerTarget->coopActor->GetName());
+			SPDLOG_DEBUG("{} is now revived.", downedPlayerTarget->coopActor->GetName());
 			// Signal the other player that they are now revived,
 			// and reset revived health data.
 			downedPlayerTarget->isRevived = true;
@@ -6316,11 +6414,7 @@ namespace ALYSLC
 	{
 		// Stop the player from casting hand spells instantly.
 		
-		SPDLOG_DEBUG
-		(
-			"[PAM] StopCastingHandSpells: {}.",
-			coopActor->GetName()
-		);
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
 		if (p->isPlayer1)
 		{
@@ -6500,7 +6594,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"[PAM] StopCombatWithFriendlyActors: Stop combat between {} and {}. "
+					"Stop combat between {} and {}. "
 					"Has no bounty and crime faction: {}, is friendly: {}, "
 					"is fleeing: {}, is mount: {}.",
 					coopActor->GetName(), 
@@ -7423,8 +7517,7 @@ namespace ALYSLC
 					// Unequip two hand weapon.
 					SPDLOG_DEBUG
 					(
-						"[PAM] UpdateBoundWeaponTimers: {}: Successful request. "
-						"Unequipping 2H bound weapon.", 
+						"{}: Successful request. Unequipping 2H bound weapon.", 
 						coopActor->GetName()
 					);
 					aem->UnequipObject(coopActor.get(), rhWeap);
@@ -7461,8 +7554,7 @@ namespace ALYSLC
 					// Unequip left hand weapon.
 					SPDLOG_DEBUG
 					(
-						"[PAM] UpdateBoundWeaponTimers: {}: Successful request. "
-						"Unequipping LH bound weapon.",
+						"{}: Successful request. Unequipping LH bound weapon.",
 						coopActor->GetName()
 					);
 					// Reset flag, duration, and requested form.
@@ -7485,8 +7577,7 @@ namespace ALYSLC
 					// Unequip right hand weapon.
 					SPDLOG_DEBUG
 					(
-						"[PAM] UpdateBoundWeaponTimers: {}: Successful request. "
-						"Unequipping RH bound weapon.",
+						"{}: Successful request. Unequipping RH bound weapon.",
 						coopActor->GetName()
 					);
 					// Reset flag, duration, and requested form.
@@ -7506,8 +7597,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[PAM] UpdateBoundWeaponTimers: {}: Failed request. Unequipping 2H bound weapon.", 
-				coopActor->GetName()
+				"{}: Failed request. Unequipping 2H bound weapon.", coopActor->GetName()
 			);
 			// Clear out all requests, since we are clearing both hands.
 			boundWeapReq2H = false;
@@ -7525,8 +7615,7 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[PAM] UpdateBoundWeaponTimers: {}: Failed request. Unequipping RH bound weapon.", 
-				coopActor->GetName()
+				"{}: Failed request. Unequipping RH bound weapon.", coopActor->GetName()
 			);
 			boundWeapReqRH = false;
 			secsSinceBoundWeapRHReq = 0.0f;
@@ -7538,12 +7627,72 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"[PAM] UpdateBoundWeaponTimers: {}: Failed request. Unequipping LH bound weapon.", 
-				coopActor->GetName()
+				"{}: Failed request. Unequipping LH bound weapon.", coopActor->GetName()
 			);
 			boundWeapReqLH = false;
 			secsSinceBoundWeapLHReq = 0.0f;
 			p->em->lastReqBoundWeapLH = nullptr;
+		}
+	}
+
+	void PlayerActionManager::UpdateCoopPlayerKeyword(bool a_set)
+	{
+		// Update the player keyword linked to this character.
+		// Having a player keyword signals that this player is active, gives their index, 
+		// and enables magic casting via the ranged attack package.
+		// Can set or remove all player keywords.
+
+		SPDLOG_DEBUG("UpdateCoopPlayerKeyword");
+		if (!glob.globalDataInit || !coopActor)
+		{
+			return;
+		}
+		
+		auto baseObj = coopActor->GetObjectReference();
+		if (!baseObj)
+		{
+			return;
+		}
+
+		auto keywordForm = baseObj->As<RE::BGSKeywordForm>();
+		if (!keywordForm)
+		{
+			return;
+		}
+
+		// Remove all co-op player keywords first, just in case there are lingering ones.
+		/*for (const auto keyword : glob.coopPlayerKeywords)
+		{
+			if (keyword)
+			{
+				if (coopActor->HasKeyword(keyword))
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: has player keyword {}.",
+						coopActor->GetName(), Util::GetEditorID(keyword)
+					);
+				}
+
+				keywordForm->RemoveKeyword(keyword);
+			}
+		}*/
+
+		keywordForm->RemoveKeywords(glob.coopPlayerKeywords);
+		SPDLOG_DEBUG("{}: Removed all player keywords.", coopActor->GetName());
+
+		// Only set if requested.
+		if (a_set)
+		{
+			auto keywordToSet = GetCoopPlayerKeyword();
+			if (keywordToSet)
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: Added keyword {}.", coopActor->GetName(), Util::GetEditorID(keywordToSet)
+				);
+				keywordForm->AddKeyword(keywordToSet);
+			}
 		}
 	}
 
@@ -7723,7 +7872,7 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"[PAM] UpdatePlayerBinds: {} is blocked by conflicting action {}.",
+							"{} is blocked by conflicting action {}.",
 							static_cast<InputAction>(i + !InputAction::kFirstAction),
 							static_cast<InputAction>(j + !InputAction::kFirstAction)
 						);

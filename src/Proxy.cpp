@@ -23,7 +23,7 @@ namespace ALYSLC
 		// Initialize or re-assign global co-op data.
 		// Called each time a save is loaded.
 
-		SPDLOG_DEBUG("[Proxy] InitializeGlobalData.");
+		SPDLOG_DEBUG("InitializeGlobalData.");
 		// First time initialization.
 		bool firstTimeInit = !glob.globalDataInit;
 		if (glob.globalDataInit) 
@@ -96,7 +96,7 @@ namespace ALYSLC
 		if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 		{
 			// Open the ALYSLC overlay if it isn't open already.
-			SPDLOG_DEBUG("[Proxy] InitializeGlobalData: ALYSLC overlay not open. Opening.");
+			SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
 			DebugOverlayMenu::Load();
 		}
 
@@ -108,7 +108,7 @@ namespace ALYSLC
 		// Setup controller data for all connected controllers and return a list of controller IDs
 		// for all active controllers. P1's CID is always first.
 
-		SPDLOG_DEBUG("[Proxy] GetConnectedCoopControllerIDs.");
+		SPDLOG_DEBUG("GetConnectedCoopControllerIDs.");
 		if (glob.globalDataInit) 
 		{
 			return glob.cdh->SetupConnectedCoopControllers();
@@ -124,14 +124,13 @@ namespace ALYSLC
 		RE::StaticFunctionTag*, 
 		uint32_t a_numCompanions,
 		std::vector<uint32_t> a_controllerIDs, 
-		std::vector<RE::Actor*> a_coopActors, 
-		std::vector<uint32_t> a_packageFormListIndicesList
+		std::vector<RE::Actor*> a_coopActors
 	)
 	{
 		// Initializes/updates all co-op players with the given data.
 		// Returns true if a co-op session was initialized successfully.
 
-		SPDLOG_DEBUG("[Proxy] InitializeCoop.");
+		SPDLOG_DEBUG("InitializeCoop.");
 		// No global co-op data assigned, so we can't start co-op.
 		if (!glob.globalDataInit) 
 		{
@@ -170,20 +169,25 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] InitializeCoop: Controller IDs vector length: {}, "
-			"number of companion players: {}.", 
+			"Controller IDs vector length: {}, number of companion players: {}.", 
 			a_controllerIDs.size(), a_numCompanions
 		);
-		SPDLOG_DEBUG("[Proxy] InitializeCoop: Controller IDs: {}, {}, {}, {}",
+		SPDLOG_DEBUG
+		(
+			"Controller IDs: {}, {}, {}, {}",
 			a_controllerIDs.size() > 0 ? a_controllerIDs[0] : -1, 
 			a_controllerIDs.size() > 1 ? a_controllerIDs[1] : -1,
 			a_controllerIDs.size() > 2 ? a_controllerIDs[2] : -1, 
-			a_controllerIDs.size() > 3 ? a_controllerIDs[3] : -1);
-		SPDLOG_DEBUG("[Proxy] InitializeCoop: Co-op actors: {}, {}, {}, {}",
+			a_controllerIDs.size() > 3 ? a_controllerIDs[3] : -1
+		);
+		SPDLOG_DEBUG
+		(
+			"Co-op actors: {}, {}, {}, {}",
 			(a_coopActors[0]) ? a_coopActors[0]->GetName() : "None",
 			(a_coopActors[1]) ? a_coopActors[1]->GetName() : "None",
 			(a_coopActors[2]) ? a_coopActors[2]->GetName() : "None",
-			(a_coopActors[3]) ? a_coopActors[3]->GetName() : "None");
+			(a_coopActors[3]) ? a_coopActors[3]->GetName() : "None"
+		);
 
 		// Create 4 co-op players.
 		// Subsequent calls to initialize will reuse the co-op player objects
@@ -221,9 +225,7 @@ namespace ALYSLC
 					);
 					SPDLOG_ERROR
 					(
-						"[Proxy] InitializeCoop: ERR: "
-						"[P{}] should be active at controller ID list index {}. "
-						"Aborting setup.",
+						"[P{}] should be active at controller ID list index {}. Aborting setup.",
 						i + 1, 
 						coopActorIndex
 					);
@@ -232,7 +234,7 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"[Proxy] InitializeCoop: [P{}] active at controller ID list index {}: {}.",
+					"[P{}] active at controller ID list index {}: {}.",
 					i + 1, 
 					coopActorIndex, 
 					a_coopActors[coopActorIndex] ?
@@ -253,7 +255,7 @@ namespace ALYSLC
 					RE::DebugMessageBox
 					(
 						fmt::format
-						(
+						(						
 							"[ALYSLC] ERROR: "
 							"Failed to retrieve {}'s saved data.\n"
 							"All saved player data has been fully reset prior to starting co-op.\n"
@@ -272,12 +274,10 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"[Proxy] InitializeCoop: Updating coop player '{}' "
-						"with package start index {}.",
+						"Updating coop player '{}'.",
 						a_coopActors[coopActorIndex] ?
 						a_coopActors[coopActorIndex]->GetName() : 
-						"NONE", 
-						a_packageFormListIndicesList[coopActorIndex]
+						"NONE"
 					);
 
 					// Simply update the current co-op player
@@ -285,28 +285,24 @@ namespace ALYSLC
 					glob.coopPlayers[i]->UpdateCoopPlayer
 					(
 						a_controllerIDs[coopActorIndex], 
-						a_coopActors[coopActorIndex], 
-						a_packageFormListIndicesList[coopActorIndex]
+						a_coopActors[coopActorIndex]
 					);
 				}
 				else
 				{
 					SPDLOG_DEBUG
 					(
-						"[Proxy] InitializeCoop: Constructing new coop player '{}' "
-						"with package start index {}.", 
+						"Constructing new coop player '{}'.", 
 						a_coopActors[coopActorIndex] ?
 						a_coopActors[coopActorIndex]->GetName() : 
-						"NONE", 
-						a_packageFormListIndicesList[coopActorIndex]
+						"NONE"
 					);
 
 					// Construct active player at index given by controller ID.
 					glob.coopPlayers[i] = std::make_shared<CoopPlayer>
 					(
 						a_controllerIDs[coopActorIndex], 
-						a_coopActors[coopActorIndex], 
-						a_packageFormListIndicesList[coopActorIndex]
+						a_coopActors[coopActorIndex]
 					);
 				}
 
@@ -316,9 +312,9 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("[Proxy] InitializeCoop: [P{}] inactive", i + 1);
+				SPDLOG_DEBUG("[P{}] inactive", i + 1);
 				// Construct inactive player to clear out all previous data.
-				glob.coopPlayers[i] = std::make_shared<CoopPlayer>(-1, nullptr, -1);
+				glob.coopPlayers[i] = std::make_shared<CoopPlayer>(-1, nullptr);
 			}
 		}
 
@@ -353,7 +349,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("[Proxy] InitializeCoop: Players this session: {}", glob.activePlayers);
+		SPDLOG_DEBUG("Players this session: {}", glob.activePlayers);
 
 		// All players have now been initialized for the first time.
 		glob.allPlayersInit = true;
@@ -369,11 +365,7 @@ namespace ALYSLC
 		// Start or stop a co-op session by starting/pausing all active players' managers 
 		// and synchronizing actor values, perks, and items.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] ChangeCoopSessionState. {} session.",
-			a_shouldStart ? "Starting" : "Ending"
-		);
+		SPDLOG_DEBUG("{} session.",a_shouldStart ? "Starting" : "Ending");
 		if (glob.globalDataInit && glob.allPlayersInit) 
 		{
 			// Enable P1's controls and saving just to be safe.
@@ -449,17 +441,13 @@ namespace ALYSLC
 			// Load debug overlay menu to show crosshairs/other UI elements.
 			DebugOverlayMenu::Load();
 
-			SPDLOG_DEBUG
-			(
-				"[Proxy] ChangeCoopSessionState: Co-op session has now {}.",
-				a_shouldStart ? "started" : "ended"
-			);
+			SPDLOG_DEBUG("Co-op session has now {}.", a_shouldStart ? "started" : "ended");
 		}
 		else
 		{ 
 			SPDLOG_ERROR
 			(
-				"[Proxy] ERR: ChangeCoopSessionState: Cannot start or stop co-op session. "
+				"Cannot start or stop co-op session. "
 				"Global data not initialized: {}, all players not initialized: {}", 
 				!glob.globalDataInit, !glob.allPlayersInit
 			);
@@ -491,8 +479,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] CopyNPCAppearanceToPlayer: CID: {}, NPC base: {}, "
-			"set opposite gender animations: {}.",
+			"CID: {}, NPC base: {}, set opposite gender animations: {}.",
 			a_controllerID,
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
 			a_setOppositeGenderAnims
@@ -515,7 +502,7 @@ namespace ALYSLC
 	{
 		// Toggle collision on or off for all loaded active players.
 
-		SPDLOG_DEBUG("[Proxy] EnableCoopEntityCollision.");
+		SPDLOG_DEBUG("EnableCoopEntityCollision.");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -528,7 +515,7 @@ namespace ALYSLC
 				continue;
 			}
 				
-			SPDLOG_DEBUG("[Proxy] EnableCoopEntityCollision: {}.", playerActor->GetName());
+			SPDLOG_DEBUG("{}.", playerActor->GetName());
 			Util::EnableCollisionForActor(playerActor.get());
 		}
 	}
@@ -579,7 +566,6 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] GetAllAppearancePresets: "
 			"{} playable NPC forms with race {} (0x{:X}) and {} sex.", 
 			npcList.size(),
 			a_race->GetName(),
@@ -629,7 +615,7 @@ namespace ALYSLC
 			classList.emplace_back(classForm);
 		}
 
-		SPDLOG_DEBUG("[Proxy] GetAllClasses: {} playable class forms.", classList.size());
+		SPDLOG_DEBUG("{} playable class forms.", classList.size());
 		// Sort by name (A-Z).
 		std::sort
 		(
@@ -659,7 +645,7 @@ namespace ALYSLC
 	{
 		// Get all assignable cyclable emote idle event names.
 
-		SPDLOG_DEBUG("[Proxy] GetAllCyclableEmoteIdleEvents.");
+		SPDLOG_DEBUG("GetAllCyclableEmoteIdleEvents.");
 		return ALYSLC::Settings::sEmoteIdlesList;
 	}
 
@@ -795,10 +781,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] GetAllSelectableRaces: {} playable race forms.", raceList.size()
-		);
+		SPDLOG_DEBUG("{} playable race forms.", raceList.size());
 		// Sort by name (A-Z).
 		std::sort
 		(
@@ -855,9 +838,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] GetAllVoiceTypes: {} usable {} voice type forms.", 
-			voiceTypeList.size(),
-			a_female ? "female" : "male"
+			"{} usable {} voice type forms.", voiceTypeList.size(), a_female ? "female" : "male"
 		);
 		// Sort by name (A-Z).
 		std::sort
@@ -887,7 +868,7 @@ namespace ALYSLC
 	{
 		// Get list of cyclable emote idle event names assigned by the given player.
 
-		SPDLOG_DEBUG("[Proxy] GetFavoritedEmoteIdles: CID {}.", a_controllerID);
+		SPDLOG_DEBUG("CID {}.", a_controllerID);
 		std::vector<RE::BSFixedString> favoritedEmoteIdles{ };
 		if (glob.allPlayersInit && 
 			a_controllerID > -1 &&
@@ -942,7 +923,7 @@ namespace ALYSLC
 			);
 			SPDLOG_DEBUG
 			(
-				"[Proxy] RequestMenuControl: req CID {}: menu CID: {}, "
+				"Req CID {}: menu CID: {}, "
 				"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}. "
 				"SUCC: {}",
 				a_controllerID, 
@@ -960,7 +941,7 @@ namespace ALYSLC
 			GlobalCoopData::ResetMenuCIDs();
 			SPDLOG_DEBUG
 			(
-				"[Proxy] RequestMenuControl: After resetting menu CIDs: menu CID: {}, "
+				"After resetting menu CIDs: menu CID: {}, "
 				"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}.",
 				glob.menuCID,
 				glob.prevMenuCID,
@@ -978,11 +959,7 @@ namespace ALYSLC
 	{
 		// Signal all of the given player's managers to change state to the given state.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] RequestStateChange: CID {}'s managers -> state {}.",
-			a_controllerID, a_newState
-		);
+		SPDLOG_DEBUG("CID {}'s managers -> state {}.", a_controllerID, a_newState);
 		if (!glob.allPlayersInit ||
 			a_controllerID <= -1 ||
 			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT || 
@@ -1005,11 +982,7 @@ namespace ALYSLC
 		// Rescale the given player's actor values when their base skill AVs change.
 		// Usually occurs on class or race change.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] RescaleAVsOnBaseSkillAVChange: {}.",
-			a_playerActor ? a_playerActor->GetName() : "NONE"
-		);
+		SPDLOG_DEBUG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
 		if (!a_playerActor)
 		{
 			return;
@@ -1028,7 +1001,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] SetCoopPlayerClass: player {} -> class {}.", 
+			"Player {} -> class {}.", 
 			a_playerActor ? a_playerActor->GetName() : "NONE", 
 			a_class ? a_class->GetName() : "NONE"
 		);
@@ -1067,7 +1040,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] SetCoopPlayerRace: player {} -> race {}.", 
+			"Player {} -> race {}.", 
 			a_playerActor ? a_playerActor->GetName() : "NONE", 
 			a_race ? a_race->GetName() : "NONE"
 		);
@@ -1097,7 +1070,7 @@ namespace ALYSLC
 	{
 		// Update the given player's list of cyclable emote idle event names to the given list.
 
-		SPDLOG_DEBUG("[Proxy] SetFavoritedEmoteIdles: CID {}.", a_controllerID);
+		SPDLOG_DEBUG("CID {}.", a_controllerID);
 		if (!glob.coopSessionActive ||
 			a_controllerID <= -1 ||
 			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT ||
@@ -1114,10 +1087,7 @@ namespace ALYSLC
 		// When opening the Gift Menu, set the given player actor as the recipient.
 		// Setting to None/nullptr clears the giftee player.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] SetGifteePlayerActor: {}.", a_playerActor ? a_playerActor->GetName() : "NONE"
-		);
+		SPDLOG_DEBUG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1134,11 +1104,7 @@ namespace ALYSLC
 		// Enable/disable invincibility for all active players.
 		// Play an FX shader while invulnerable.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] SetPartyInvincibility: Toggle {} for all players.",
-			a_shouldSet ? "on" : "off"
-		);
+		SPDLOG_DEBUG("Toggle {} for all players.", a_shouldSet ? "on" : "off");
 		if (!glob.allPlayersInit) 
 		{
 			return;
@@ -1177,10 +1143,7 @@ namespace ALYSLC
 		// Either dismiss all active players or just request their managers to wait for refresh.
 		// Any active co-op session is also flagged as ended.
 
-		SPDLOG_DEBUG
-		(
-			"[Proxy] SignalWaitForUpdate: Should dismiss all active players: {}.", a_shouldDismiss
-		);
+		SPDLOG_DEBUG("Should dismiss all active players: {}.", a_shouldDismiss);
 		if (!glob.globalDataInit || !glob.allPlayersInit)
 		{
 			return;
@@ -1234,7 +1197,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] TeleportToPlayerToActor: CID {} -> {}.",
+			"CID {} -> {}.",
 			a_controllerID,
 			a_teleportTarget ? a_teleportTarget->GetName() : "NONE"
 		);
@@ -1271,7 +1234,7 @@ namespace ALYSLC
 	{
 		// Toggle the co-op camera on or off.
 
-		SPDLOG_DEBUG("[Proxy] ToggleCoopCamera: {}.", a_enable ? "ON" : "OFF");
+		SPDLOG_DEBUG("{}.", a_enable ? "ON" : "OFF");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -1290,8 +1253,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] ToggleSetupMenuControl: CID: {}, PID: {}, should enter: {}.",
-			a_controllerID, a_playerID, a_shouldEnter
+			"CID: {}, PID: {}, should enter: {}.", a_controllerID, a_playerID, a_shouldEnter
 		);
 		if ((glob.globalDataInit && glob.mim) && 
 			(a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT) && 
@@ -1307,10 +1269,7 @@ namespace ALYSLC
 				if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 				{
 					// Open the ALYSLC overlay if it isn't open already.
-					SPDLOG_DEBUG
-					(
-						"[Proxy] ToggleSetupMenuControl: ALYSLC overlay not open. Opening."
-					);
+					SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
 					DebugOverlayMenu::Load();
 				}
 
@@ -1331,7 +1290,7 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[Proxy] ERR: ToggleSetupMenuControl: Global co-op data not initialized: {}, "
+				"Global co-op data not initialized: {}, "
 				"MIM invalid: {}, CID invalid: {}, player ID invalid: {}.",
 				!glob.globalDataInit,
 				!glob.mim,
@@ -1346,7 +1305,7 @@ namespace ALYSLC
 		// Update all serialized player FID keys.
 		// Used to access each player's serialized data.
 
-		SPDLOG_DEBUG("[Proxy] UpdateAllCompanionPlayerSerializationIDs.");
+		SPDLOG_DEBUG("UpdateAllCompanionPlayerSerializationIDs.");
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -1369,7 +1328,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] UpdateGenderAndBody: CID: {}, set female: {}, set opposite gender anims: {}.",
+			"CID: {}, set female: {}, set opposite gender anims: {}.",
 			a_controllerID, a_setFemale, a_setOppositeGenderAnims
 		);
 		if (!glob.allPlayersInit ||
@@ -1402,7 +1361,7 @@ namespace ALYSLC
 		// Open a prompt which asks P1 to press a certain button on their controller
 		// to assign their controller as P1's.
 
-		SPDLOG_DEBUG("[Proxy] AssignPlayer1CID.");
+		SPDLOG_DEBUG("AssignPlayer1CID.");
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -1415,7 +1374,7 @@ namespace ALYSLC
 	{
 		// Disable god mode for all players.
 
-		SPDLOG_DEBUG("[Proxy] DisableGodModeForAllCoopPlayers.");
+		SPDLOG_DEBUG("DisableGodModeForAllCoopPlayers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1428,7 +1387,7 @@ namespace ALYSLC
 	{
 		// Disable god mode for a specific player.
 
-		SPDLOG_DEBUG("[Proxy] DisableGodModeForPlayer: CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("CID: {}.", a_controllerID);
 		if (!glob.globalDataInit || 
 			!glob.coopSessionActive || 
 			a_controllerID <= -1 || 
@@ -1444,7 +1403,7 @@ namespace ALYSLC
 	{
 		// Enable god mode for all active players.
 
-		SPDLOG_DEBUG("[Proxy] EnableGodModeForAllCoopPlayers.");
+		SPDLOG_DEBUG("EnableGodModeForAllCoopPlayers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1457,7 +1416,7 @@ namespace ALYSLC
 	{
 		// Enable god mode for a specific player.
 
-		SPDLOG_DEBUG("[Proxy] EnableGodModeForPlayer: CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("CID: {}.", a_controllerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
 			a_controllerID <= -1 ||
@@ -1473,8 +1432,7 @@ namespace ALYSLC
 	{
 		// Move all other players to the given player.
 
-		SPDLOG_DEBUG("[Proxy] MoveAllCoopActorsToPlayer: {}",
-			a_playerActor ? a_playerActor->GetName() : "P1");
+		SPDLOG_DEBUG("{}", a_playerActor ? a_playerActor->GetName() : "P1");
 		if (!glob.globalDataInit || !glob.coopSessionActive) 
 		{
 			return;
@@ -1519,7 +1477,7 @@ namespace ALYSLC
 	{
 		// Re-equip the player's desired hand forms (weapons/magic/armor).
 
-		SPDLOG_DEBUG("[Proxy] ReEquipHandForms: CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("CID: {}.", a_controllerID);
 		if (!glob.allPlayersInit || 
 			!glob.coopSessionActive || 
 			a_controllerID <= -1 || 
@@ -1539,7 +1497,7 @@ namespace ALYSLC
 	{
 		// Refresh data for all active players' managers.
 
-		SPDLOG_DEBUG("[Proxy] RefreshAllPlayerManagers.");
+		SPDLOG_DEBUG("RefreshAllPlayerManagers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1560,7 +1518,7 @@ namespace ALYSLC
 	{
 		// Refresh data for all of the given player's managers.
 
-		SPDLOG_DEBUG("[Proxy] RefreshPlayerManagers: CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("CID: {}.", a_controllerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
 			a_controllerID <= -1 ||
@@ -1591,7 +1549,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] ResetCoopCompanion: CID: {}, unequip all: {}, re-attach havok: {}.",
+			"CID: {}, unequip all: {}, re-attach havok: {}.",
 			a_controllerID, a_unequipAll, a_reattachHavok
 		);
 		if (!glob.globalDataInit || 
@@ -1622,7 +1580,7 @@ namespace ALYSLC
 		// Stop P1's managers, disable the co-op camera, stop the menu input manager,
 		// and re-enable movement for P1.
 
-		SPDLOG_DEBUG("[Proxy] ResetPlayer1AndCamera.");
+		SPDLOG_DEBUG("ResetPlayer1AndCamera.");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -1651,7 +1609,7 @@ namespace ALYSLC
 		// Resurrect P1, re-attach havok, remove paralysis and fix ragdoll, sheathe weapons/magic,
 		// revert any active transformation, re-equip hand forms, and reset I-frames flag.
 
-		SPDLOG_DEBUG("[Proxy] ResetPlayer1State.");
+		SPDLOG_DEBUG("ResetPlayer1State.");
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit ||
 			glob.player1CID <= -1 ||
@@ -1690,7 +1648,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("[Proxy] RespecPlayer: {}.", p->coopActor->GetName());
+		SPDLOG_DEBUG("{}.", p->coopActor->GetName());
 		glob.taskRunner->AddTask
 		(
 			[a_controllerID]() { GlobalCoopData::RespecPlayerTask(a_controllerID); }
@@ -1701,7 +1659,7 @@ namespace ALYSLC
 	{
 		// Toggle the co-op camera off and then on again.
 
-		SPDLOG_DEBUG("[Proxy] RestartCoopCamera.");
+		SPDLOG_DEBUG("RestartCoopCamera.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1715,10 +1673,7 @@ namespace ALYSLC
 		// Stop combat on all active players,
 		// optionally clearing all bounties to get off scot-free.
 		
-		SPDLOG_DEBUG
-		(
-			"[Proxy] StopAllCombatOnCoopPlayers: Clear bounties too: {}", a_clearBounties
-		);
+		SPDLOG_DEBUG("Clear bounties too: {}", a_clearBounties);
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -1738,8 +1693,7 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"[Proxy] StopMenuInputManager. Current menu-related CIDs: menu: {}, "
-			"last menu: {}, manager: {}.",
+			"Current menu-related CIDs: menu: {}, last menu: {}, manager: {}.",
 			glob.menuCID, glob.prevMenuCID, glob.mim->managerMenuCID
 		);
 		GlobalCoopData::StopMenuInputManager();

@@ -38,7 +38,7 @@ namespace ALYSLC
 		CoopPlayer();
 		CoopPlayer
 		(
-			int32_t a_controllerID, RE::Actor* a_coopActor,  uint32_t a_packageFormListStartIndex
+			int32_t a_controllerID, RE::Actor* a_coopActor
 		);
 
 		// Implements ALYSLC::Manager:
@@ -60,7 +60,7 @@ namespace ALYSLC
 			return nullptr;
 		}
 
-		// Set the co-op actor's race to the given race.
+		// Set the co-op character's race to the given race.
 		inline void SetCoopPlayerRace(RE::TESRace* a_race)
 		{
 			if (coopActor && coopActor->race && a_race) 
@@ -93,7 +93,7 @@ namespace ALYSLC
 		// Set as dismissed, pause all managers, reset revive/downed/transformation state,
 		// and send dismissal event to script to handle cleanup.
 		void DismissPlayer();
-
+		
 		// Get health/magicka/stamina stat notification text for this player.
 		// Empty string if health/magicka/stamina are all full or if the player is downed.
 		std::string GetHMSStatNotificationText();
@@ -143,7 +143,7 @@ namespace ALYSLC
 		// Refresh all player data for this player, post-initialization.
 		void UpdateCoopPlayer
 		(
-			int32_t a_controllerID, RE::Actor* a_coopActor, uint32_t a_packageFormListStartIndex
+			int32_t a_controllerID, RE::Actor* a_coopActor
 		);
 
 		// Update gender, animations, skin tone, headparts, 
@@ -386,7 +386,5 @@ namespace ALYSLC
 		// Other players have their IDs assigned based on their CID,
 		// incrementing by 1 for each player with a higher CID.
 		int32_t playerID;
-		// Index in global packages list at which this player's first package is found.
-		uint32_t packageFormListStartIndex;
 	};
 }

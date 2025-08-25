@@ -306,7 +306,7 @@ namespace ALYSLC
 		if (!hud || !hud->uiMovie)
 		{
 			DebugOverlayMenu::Load();
-			SPDLOG_DEBUG("[DebugAPI] ERR: could not get HUD.");
+			SPDLOG_DEBUG("Could not get HUD.");
 			return;
 		}
 
@@ -315,7 +315,7 @@ namespace ALYSLC
 		
 		if (drawRequests.size() > MAX_DRAW_REQUESTS)
 		{
-			SPDLOG_DEBUG("[DebugAPI] Max draw requests per frame reached. Clearing all now.");
+			SPDLOG_DEBUG("Max draw requests per frame reached. Clearing all now.");
 			drawRequests.clear();
 		}
 		else
@@ -1129,8 +1129,7 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"[DebugAPI] ERR: Failed to initialize DebugOverlayMenu. "
-				"ScaleformManager not found."
+				"Failed to initialize DebugOverlayMenu. ScaleformManager not found."
 			);
 			return;
 		}
@@ -1167,7 +1166,7 @@ namespace ALYSLC
 	{
 		// Register the debug overlay menu with the UI and then load it.
 
-		SPDLOG_INFO("[DebugAPI] Registering DebugOverlayMenu.");
+		SPDLOG_INFO("Registering DebugOverlayMenu.");
 		auto ui = RE::UI::GetSingleton(); 
 		if (!ui)
 		{
@@ -1176,7 +1175,7 @@ namespace ALYSLC
 
 		ui->Register(MENU_NAME, Creator);
 		DebugOverlayMenu::Load();
-		SPDLOG_INFO("[DebugAPI] Successfully registered DebugOverlayMenu.");
+		SPDLOG_INFO("Successfully registered DebugOverlayMenu.");
 	}
 
 	void DebugOverlayMenu::Load()

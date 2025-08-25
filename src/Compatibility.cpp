@@ -12,6 +12,7 @@ namespace ALYSLC
 	bool PrecisionCompat::g_precisionInstalled{ false };
 	bool QuickLootCompat::g_quickLootInstalled{ false };
 	bool QuickLootCompat::g_isQuickLootIE{ false };
+	bool RaceMenuCompat::g_raceMenuInstalled{ false };
 	bool RequiemCompat::g_requiemInstalled{ false };
 	bool SkyrimsParagliderCompat::g_paragliderInstalled{ false };
 	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
@@ -33,7 +34,7 @@ namespace ALYSLC
 
 		if (g_eldenSprintInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] Elden Sprint installed!");
+			SPDLOG_INFO("Elden Sprint installed!");
 		}
 	}
 
@@ -43,13 +44,13 @@ namespace ALYSLC
 		if (g_enderalSSEInstalled)
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
-			SPDLOG_INFO("[Compatibility] Enderal SSE installed! Plugin name to use: '{}'.",
+			SPDLOG_INFO("Enderal SSE installed! Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		else
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC.esp"sv;
-			SPDLOG_INFO("[Compatibility] Enderal SSE is not installed. Plugin name to use: '{}'.",
+			SPDLOG_INFO("Enderal SSE is not installed. Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		
@@ -87,7 +88,7 @@ namespace ALYSLC
 
 		if (g_mcoInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] MCO installed!");
+			SPDLOG_INFO("MCO installed!");
 		}
 	}
 
@@ -99,7 +100,7 @@ namespace ALYSLC
 		);
 		if (g_persistentFavoritesInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] PersistentFavorites installed!");
+			SPDLOG_INFO("PersistentFavorites installed!");
 		}
 	}
 
@@ -110,7 +111,7 @@ namespace ALYSLC
 		if (pluginInfo)
 		{
 			g_precisionInstalled = true;
-			SPDLOG_INFO("[Compatibility] Prerequisite mod {} is installed!", 
+			SPDLOG_INFO("Prerequisite mod {} is installed!", 
 				PRECISION_API::PrecisionPluginName);
 
 			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>
@@ -119,7 +120,7 @@ namespace ALYSLC
 			);
 			if (g_precisionAPI4)
 			{
-				SPDLOG_INFO("[Compatibility] Received access to Precision API V4.");
+				SPDLOG_INFO("Received access to Precision API V4.");
 
 				// Register havok callback after obtaining the API.
 				g_precisionAPI4->AddPrePhysicsStepCallback
@@ -130,7 +131,7 @@ namespace ALYSLC
 						GlobalCoopData::PrecisionPrePhysicsStepCallback(a_world); 
 					}
 				);
-				SPDLOG_INFO("[Compatibility] Registered Precision pre-physics step callback.");
+				SPDLOG_INFO("Registered Precision pre-physics step callback.");
 
 				g_precisionAPI4->AddPreHitCallback
 				(
@@ -140,23 +141,22 @@ namespace ALYSLC
 						return GlobalCoopData::PrecisionPreHitCallback(a_data);
 					}
 				);
-				SPDLOG_INFO("[Compatibility] Registered Precision pre-hit callback.");
+				SPDLOG_INFO("Registered Precision pre-hit callback.");
 			}
 			else
 			{
-				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to Precision API V4.");
+				SPDLOG_ERROR("Could not get access to Precision API V4.");
 				return;
 			}
 
-			SPDLOG_INFO("[Compatibility] Gained access to all required Precision APIs.");
+			SPDLOG_INFO("Gained access to all required Precision APIs.");
 		}
 		else
 		{
 			g_precisionInstalled = false;
 			SPDLOG_ERROR
 			(
-				"[Compatibility] ERR: Could not find prerequisite mod 'Precision'. "
-				"Please ensure it is installed."
+				"Could not find prerequisite mod 'Precision'. Please ensure it is installed."
 			);
 		}
 	}
@@ -185,11 +185,30 @@ namespace ALYSLC
 
 		if (g_quickLootInstalled) 
 		{
-			SPDLOG_INFO
+			SPDLOG_INFO("{} installed!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
+		}
+	}
+
+	void RaceMenuCompat::CheckForRaceMenu(const SKSE::LoadInterface * a_loadInterface)
+	{
+		g_raceMenuInstalled = 
+		{
+			a_loadInterface->GetPluginInfo("RaceMenu") || 
+			static_cast<bool>(GetModuleHandleA("skee64.dll"))
+		};
+
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_raceMenuInstalled && dataHandler)
+		{
+			g_raceMenuInstalled = 
 			(
-				"[Compatibility] {} installed!", 
-				g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE"
+				dataHandler->LookupModByName("RaceMenu.esp") != nullptr
 			);
+		}
+
+		if (g_raceMenuInstalled)
+		{
+			SPDLOG_INFO("RaceMenu installed!");
 		}
 	}
 
@@ -204,7 +223,7 @@ namespace ALYSLC
 
 		if (g_requiemInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] Requiem - The Roleplaying Overhaul installed!");
+			SPDLOG_INFO("Requiem - The Roleplaying Overhaul installed!");
 		}
 	}
 
@@ -216,7 +235,7 @@ namespace ALYSLC
 		g_paragliderInstalled = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
 		if (g_paragliderInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] Skyrim's Paraglider installed!");
+			SPDLOG_INFO("Skyrim's Paraglider installed!");
 		}
 	}
 
@@ -229,7 +248,7 @@ namespace ALYSLC
 		};
 		if (g_tkDodgeInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] TKDodge installed!");
+			SPDLOG_INFO("TKDodge installed!");
 		}
 	}
 
@@ -255,7 +274,7 @@ namespace ALYSLC
 
 		if (g_trueDirectionalMovementInstalled)
 		{
-			SPDLOG_INFO("[Compatibility] True Directional Movement installed!");
+			SPDLOG_INFO("True Directional Movement installed!");
 		}
 	}
 
@@ -266,7 +285,7 @@ namespace ALYSLC
 		if (pluginInfo) 
 		{
 			g_trueHUDInstalled = true;
-			SPDLOG_INFO("[Compatibility] {} is installed!", TRUEHUD_API::TrueHUDPluginName);
+			SPDLOG_INFO("{} is installed!", TRUEHUD_API::TrueHUDPluginName);
 
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>
 			(
@@ -274,15 +293,15 @@ namespace ALYSLC
 			);
 			if (g_trueHUDAPI3)
 			{
-				SPDLOG_INFO("[Compatibility] Received access to TrueHUD API V3.");
+				SPDLOG_INFO("Received access to TrueHUD API V3.");
 			}
 			else
 			{
-				SPDLOG_ERROR("[Compatibility] ERR: Could not get access to TrueHUD API V3.");
+				SPDLOG_ERROR("Could not get access to TrueHUD API V3.");
 				return;
 			}
 
-			SPDLOG_INFO("[Compatibility] Gained access to all required TrueHUD APIs.");
+			SPDLOG_INFO("Gained access to all required TrueHUD APIs.");
 		}
 	}
 };

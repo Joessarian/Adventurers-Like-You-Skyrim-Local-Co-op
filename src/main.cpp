@@ -17,7 +17,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	switch (msg->type) {
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
-		SPDLOG_INFO("[MAIN] Data loaded.");
+		SPDLOG_INFO("Data loaded.");
 		// Install all hooks.
 		ALYSLC::Hooks::Install();
 		// Add event sinks for all necessary events.
@@ -30,6 +30,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
 		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
+		ALYSLC::RaceMenuCompat::CheckForRaceMenu(g_loadInterface);
 		ALYSLC::RequiemCompat::CheckForRequiem(g_loadInterface);
 		ALYSLC::SkyrimsParagliderCompat::CheckForParaglider();
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
@@ -43,7 +44,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kNewGame:
 	{
-		SPDLOG_INFO("[MAIN] New game.");
+		SPDLOG_INFO("New game.");
 		// Set default serialization data through the Load() function.
 		SKSE::SerializationInterface* intfc = 
 		(
@@ -51,7 +52,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		); 
 		if (intfc)
 		{
-			SPDLOG_INFO("[MAIN] New game. Setting default serialization data on load.");
+			SPDLOG_INFO("New game. Setting default serialization data on load.");
 			ALYSLC::Serialization::Load(intfc);
 		}
 
@@ -61,12 +62,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostLoad:
 	{
-		SPDLOG_INFO("[MAIN] Post load.");
+		SPDLOG_INFO("Post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoadGame:
 	{
-		SPDLOG_INFO("[MAIN] Post load game.");
+		SPDLOG_INFO("Post load game.");
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
 
@@ -77,12 +78,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
 	{
-		SPDLOG_INFO("[MAIN] Post-post load.");
+		SPDLOG_INFO("Post-post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPreLoadGame:
 	{
-		SPDLOG_INFO("[MAIN] Pre load game.");
+		SPDLOG_INFO("Pre load game.");
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
 		// Stop any active co-op session and indicate that the game is loading.
@@ -104,7 +105,7 @@ void InitializeLog()
 #else
 	auto path = logger::log_directory();
 	if (!path) {
-		util::report_and_fail("[MAIN] Failed to find standard logging directory"sv);
+		util::report_and_fail("Failed to find standard logging directory"sv);
 	}
 
 	*path /= fmt::format("{}.log"sv, Version::PROJECT);
@@ -124,9 +125,10 @@ void InitializeLog()
 	spdlog::set_default_logger(std::move(log));
 	// spdlog::set_pattern("[%l] %v"s);
 	// spdlog::set_pattern("[%H:%M:%S:%e] %v"s);
-	spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
+	// Changed to not include the directory.
+	spdlog::set_pattern("| %^%l%$ | %c | %s (%#) | [%!] | >> %v"s);
 
-	SPDLOG_INFO("[MAIN] Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
+	SPDLOG_INFO("Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
 }
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
@@ -145,25 +147,25 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	auto messaging = SKSE::GetMessagingInterface(); 
 	if (!messaging->RegisterListener("SKSE", SKSEMessageHandler))
 	{
-		SPDLOG_ERROR("[MAIN] ERR: Could not register messaging interface listener.");
+		SPDLOG_ERROR("Could not register messaging interface listener.");
 		return false;
 	}
 
 	auto papyrus = SKSE::GetPapyrusInterface(); 
 	if (!papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
 	{
-		SPDLOG_ERROR("[MAIN] ERR: Could not get Papyrus interface or register Papyrus functions.");
+		SPDLOG_ERROR("Could not get Papyrus interface or register Papyrus functions.");
 		return false;
 	}
 
 	if (auto serialization = SKSE::GetSerializationInterface(); !serialization) 
 	{
-		SPDLOG_ERROR("[MAIN] ERR: Could not get serialization interface.");
+		SPDLOG_ERROR("Could not get serialization interface.");
 		return false;
 	}
 	else
 	{
-		SPDLOG_INFO("[MAIN] Setting serialization callbacks.");
+		SPDLOG_INFO("Setting serialization callbacks.");
 		// Set serialization ID and callbacks.
 		serialization->SetUniqueID(Hash("ALYSLC"));
 		serialization->SetLoadCallback(ALYSLC::Serialization::Load);
@@ -171,7 +173,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 		serialization->SetSaveCallback(ALYSLC::Serialization::Save);
 	}
 	
-	SPDLOG_INFO("[MAIN] Adventurers Like You: Skyrim Local Co-op Mod loaded!");
+	SPDLOG_INFO("Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	return true;
 }
 
@@ -199,7 +201,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
 
 	if (a_skse->IsEditor())
 	{
-		SPDLOG_ERROR("[MAIN] Loaded in editor, marking as incompatible."sv);
+		SPDLOG_ERROR("Loaded in editor, marking as incompatible."sv);
 		return false;
 	}
 
@@ -212,7 +214,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
 #endif
 	)
 	{
-		SPDLOG_ERROR(FMT_STRING("[MAIN] Unsupported runtime version {}."sv), ver.string());
+		SPDLOG_ERROR(FMT_STRING("Unsupported runtime version {}."sv), ver.string());
 		return false;
 	}
 
@@ -228,7 +230,7 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
 	auto api = ALYSLC_API::ALYSLCInterface::GetSingleton();
 	SPDLOG_INFO
 	(
-		"[MAIN] RequestPluginAPI called, InterfaceVersion {}.", 
+		"RequestPluginAPI called, InterfaceVersion {}.", 
 		static_cast<uint8_t>(a_interfaceVersion)
 	);
 
@@ -236,10 +238,10 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
 	{
 	case ALYSLC_API::InterfaceVersion::V1:
 	case ALYSLC_API::InterfaceVersion::V2:
-		SPDLOG_INFO("[MAIN] RequestPluginAPI returned the API singleton.");
+		SPDLOG_INFO("RequestPluginAPI returned the API singleton.");
 		return static_cast<void*>(api);
 	}
 
-	SPDLOG_INFO("[MAIN] RequestPluginAPI requested the wrong interface version.");
+	SPDLOG_INFO("RequestPluginAPI requested the wrong interface version.");
 	return nullptr;
 }
