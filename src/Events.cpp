@@ -8,6 +8,7 @@
 #include <Player.h>
 #include <Proxy.h>
 #include <Settings.h>
+#include <IPluginInterface.h>
 
 namespace ALYSLC
 {
@@ -1594,6 +1595,53 @@ namespace ALYSLC
 						return hitActor->IsHostileToActor(p->coopActor.get());
 					}
 				) != glob.coopPlayers.end();
+				
+				// Secret race-swap on projectile hit.
+				auto taskInterface = SKSE::GetTaskInterface();
+				if (taskInterface && 
+					projectileForm && 
+					projectileForm->formID == 0x41F0A &&
+					p->coopActor->race && 
+					!p->coopActor->race->HasKeyword(glob.npcKeyword))
+				{
+					auto actorBase = hitActor->GetActorBase();
+					if (actorBase && hitActor->race)
+					{
+						RE::TESRace* newRace = nullptr;
+						if (hitActor->race != p->coopActor->race)
+						{
+							actorBase->originalRace = hitActor->race;
+							newRace = p->coopActor->race;
+						}
+						else if (actorBase->originalRace)
+						{
+							newRace = actorBase->originalRace;
+						}
+
+						if (newRace)
+						{
+							RE::ActorPtr hitActorPtr{ hitActor };
+							taskInterface->AddTask
+							(
+								[hitActorPtr, newRace]()
+								{
+									Util::SetActorRace(hitActorPtr.get(), newRace);
+									auto hitEffect = RE::TESForm::LookupByID<RE::BGSArtObject>
+									(
+										0x4E223
+									);
+									if (hitEffect)
+									{
+										Util::StartHitArt
+										(
+											hitActorPtr.get(), hitEffect, nullptr, 3.0f
+										);
+									}
+								}
+							);
+						}
+					}
+				}
 			}
 
 			// XP and damage modifications.
@@ -2158,7 +2206,7 @@ namespace ALYSLC
 				}
 			}
 		}
-
+		
 #ifdef ALYSLC_DEBUG_MODE
 		if (ui)
 		{

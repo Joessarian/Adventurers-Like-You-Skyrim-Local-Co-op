@@ -73,7 +73,7 @@ namespace ALYSLC
 			Util::NativeFunctions::SetDontMove(coopActor.get(), true);
 			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 		}
-		
+
 		// Reset pitch angle, speedmult.
 		coopActor->data.angle.x = 0.0f;
 		coopActor->SetActorValue(RE::ActorValue::kSpeedMult, 100.0f);
@@ -104,8 +104,8 @@ namespace ALYSLC
 	void MovementManager::PreStartTask()
 	{
 		SPDLOG_DEBUG("P{}", playerID + 1);
-		ResetTPs();
 
+		ResetTPs();
 		// Set P1 as AI driven to allow for movement manipulation with this manager.
 		if (p->isPlayer1)
 		{
@@ -150,7 +150,16 @@ namespace ALYSLC
 	{
 		// Player and actors.
 		coopActor = p->coopActor;
-		movementActorPtr = coopActor;
+		// Set mount as movement actor and cache it if the player is mounted.
+		if (coopActor->GetMount(movementActorPtr))
+		{
+			p->currentMountHandle = movementActorPtr->GetHandle();
+		}
+		else
+		{
+			movementActorPtr = coopActor;
+		}
+
 		// CID.
 		controllerID = p->controllerID;
 		// Player ID.

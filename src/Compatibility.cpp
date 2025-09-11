@@ -61,7 +61,7 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] ERROR: "
+				"[ALYSLC]\nERROR: "
 				"More than one ALYSLC '.esp' file is currently loaded.\n"
 				"To avoid issues, please make sure only the '.esp' that matches your game "
 				"(Skyrim or Enderal) is enabled and then restart the game."

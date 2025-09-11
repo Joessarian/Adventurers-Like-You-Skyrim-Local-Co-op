@@ -11,7 +11,6 @@ Bool Function InitializeCoop(Int a_numCompanions, Int[] a_controllerIDs, Actor[]
 
 Function AssignPlayer1CID() Global Native
 Function ChangeCoopSessionState(Bool a_start) Global Native
-Function CopyNPCAppearanceToPlayer(Int a_controllerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
 Function EnableCoopEntityCollision() Global Native
 Form[] Function GetAllAppearancePresets(Race a_race, Bool a_female) Global Native
 Form[] Function GetAllClasses() Global Native
@@ -27,16 +26,25 @@ Function SetCoopPlayerRace(Actor a_playerActor, Race a_race) Global Native
 Function SetFavoritedEmoteIdles(Int a_controllerID, String[] a_emoteIdlesList) Global Native
 Function SetGifteePlayerActor(Actor a_playerActor) Global Native
 Function SetPartyInvincibility(Bool a_shouldSet) Global Native
-Function SignalCamEventHandled() Global Native
 Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
 Function StartPlayerManagers() Global Native
 Function TeleportToPlayerToActor(Int a_controllerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_controllerID, int a_playerID, Bool a_shouldEnter) Global Native
 Function UpdateAllCompanionPlayerSerializationIDs() Global Native
-Function UpdateGenderAndBody(Int a_controllerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 Function Log(String a_messsage) Global Native
+
+;================================================================
+;==================[Character Customization]=====================
+;================================================================
+Function CopyNPCAppearanceToPlayer(Int a_controllerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
+Function ExportP1ActorBaseAppearanceData(Actor a_actor) Global Native
+Bool Function IsRaceMenuInstalled() Global Native
+Function LoadPlayerCharacterPreset(Actor a_fromPresetCharacter) Global Native
+Function OnPreRaceMenu(Race a_newRace, Bool a_setFemale) Global Native
+Function SavePlayerCharacterPreset(Actor a_toPresetCharacter) Global Native
+Function SetDefaultRacialAppearance(Int a_controllerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 ;==============================================
 ;==================[Debug]=====================
@@ -163,6 +171,8 @@ Function SetInitialCustomizationOptions(Actor akPlayerActor) Global
     If (!CurrentPreset)
         ALYSLC.Log("[ALYSLC SCRIPT] SetInitialCustomizationOptions: Setting default preset to " + Base)
         StorageUtil.SetFormValue(akPlayerActor, "ALYSLC_AppearancePreset", Base)
+        ; ALYSLC.Log("[ALYSLC SCRIPT] SetInitialCustomizationOptions: Clearing default preset.")
+        ; StorageUtil.SetFormValue(akPlayerActor, "ALYSLC_AppearancePreset", None)
     EndIf
 
     VoiceType CurrentVoiceType = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_VoiceType", None) as VoiceType

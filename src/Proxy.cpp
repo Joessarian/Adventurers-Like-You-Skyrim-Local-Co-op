@@ -7,6 +7,7 @@
 #include <ModAPI.h>
 #include <Player.h>
 #include <Serialization.h>
+#include <IPluginInterface.h>
 
 namespace ALYSLC
 {
@@ -147,7 +148,7 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] Player 1's controller ID has not been assigned "
+				"[ALYSLC]\nPlayer 1's controller ID has not been assigned "
 				"before starting co-op.\n"
 				"Please try summoning again or assign Player 1's controller ID "
 				"through the Debug Menu before summoning:\n"
@@ -217,7 +218,7 @@ namespace ALYSLC
 				{
 					RE::DebugMessageBox
 					(
-						"[ALYSLC] ERROR: "
+						"[ALYSLC]\nERROR: "
 						"Previously active character(s) were likely not fully dismissed yet "
 						"and a chosen character is not available.\n"
 						"Please wait a little before resummoning, but if the issue persists, "
@@ -256,7 +257,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(						
-							"[ALYSLC] ERROR: "
+							"[ALYSLC]\nERROR: "
 							"Failed to retrieve {}'s saved data.\n"
 							"All saved player data has been fully reset prior to starting co-op.\n"
 							"Please re-customize and respec all characters.", 
@@ -407,7 +408,6 @@ namespace ALYSLC
 					Util::ChangeEssentialStatus(p->coopActor.get(), false);
 					// Make sure the player is not paralyzed either (from being downed).
 					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-
 					// Register the player for script events 
 					// and then signal all their managers to resume.
 					p->RegisterEvents();
@@ -467,37 +467,6 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopLib::CopyNPCAppearanceToPlayer
-	(
-		RE::StaticFunctionTag*,
-		int32_t a_controllerID,
-		RE::TESNPC* a_baseToCopy, 
-		bool a_setOppositeGenderAnims
-	)
-	{
-		// Copy base NPC's appearance to the player. Set opposite gender animations if necessary.
-
-		SPDLOG_DEBUG
-		(
-			"CID: {}, NPC base: {}, set opposite gender animations: {}.",
-			a_controllerID,
-			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
-			a_setOppositeGenderAnims
-		);
-		if (!glob.allPlayersInit || 
-			a_controllerID <= -1 || 
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT ||
-			!a_baseToCopy)
-		{
-			return;
-		}
-
-		glob.coopPlayers[a_controllerID]->CopyNPCAppearanceToPlayer
-		(
-			a_baseToCopy, a_setOppositeGenderAnims
-		);
-	}
-	
 	void CoopLib::EnableCoopEntityCollision(RE::StaticFunctionTag*) 
 	{
 		// Toggle collision on or off for all loaded active players.
@@ -558,7 +527,9 @@ namespace ALYSLC
 					)
 				)
 			);
-			if (sameRaceAndSex)
+			// Ignore actorbases with the player keyword, ex. P1 and companion player actorbases.
+			bool isPlayerBase = npc->HasKeywordByEditorID("PlayerKeyword");
+			if (sameRaceAndSex && !isPlayerBase)
 			{
 				npcList.emplace_back(npcForm);
 			}
@@ -912,33 +883,47 @@ namespace ALYSLC
 
 		if (a_controllerID > -1) 
 		{
-			bool succ = glob.moarm->InsertRequest
-			(
-				a_controllerID,
-				InputAction::kNone, 
-				SteadyClock::now(), 
-				a_menuName, 
-				RE::ObjectRefHandle(),
-				true
-			);
-			SPDLOG_DEBUG
-			(
-				"Req CID {}: menu CID: {}, "
-				"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}. "
-				"SUCC: {}",
-				a_controllerID, 
-				glob.menuCID, 
-				glob.prevMenuCID, 
-				a_menuName, 
-				glob.mim->IsRunning(), 
-				glob.mim->managerMenuCID, 
-				succ
-			);
+			// Send a request to resolve later if during co-op session.
+			// Set directly and stop/start menu input manager when out of co-op.
+			if (glob.coopSessionActive)
+			{
+				bool succ = glob.moarm->InsertRequest
+				(
+					a_controllerID,
+					InputAction::kNone, 
+					SteadyClock::now(), 
+					a_menuName, 
+					RE::ObjectRefHandle(),
+					true
+				);
+				SPDLOG_DEBUG
+				(
+					"Req CID {}: menu CID: {}, "
+					"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}. "
+					"SUCC: {}",
+					a_controllerID, 
+					glob.menuCID, 
+					glob.prevMenuCID, 
+					a_menuName, 
+					glob.mim->IsRunning(), 
+					glob.mim->managerMenuCID, 
+					succ
+				);
+			}
+			else
+			{
+				GlobalCoopData::SetMenuCIDs(a_controllerID);
+				if (a_controllerID != glob.player1CID && !glob.mim->IsRunning())
+				{
+					glob.mim->ToggleCoopPlayerMenuMode(a_controllerID);
+				}
+			}
 		}
 		else
 		{
 			// Reset directly if CID is -1.
 			GlobalCoopData::ResetMenuCIDs();
+			glob.mim->ToggleCoopPlayerMenuMode(-1);
 			SPDLOG_DEBUG
 			(
 				"After resetting menu CIDs: menu CID: {}, "
@@ -1049,14 +1034,7 @@ namespace ALYSLC
 			return;
 		}
 
-		a_playerActor->SwitchRace(a_race, false);
-		a_playerActor->race = a_race;
-		if (auto actorBase = a_playerActor->GetActorBase(); actorBase) 
-		{
-			actorBase->originalRace = a_race;
-			actorBase->race = a_race;
-		}
-
+		Util::SetActorRace(a_playerActor, a_race);
 		// Rescale skill AVs when done, since a race change can modify the base skill levels.
 		GlobalCoopData::RescaleAVsOnBaseSkillAVChange(a_playerActor);
 	}
@@ -1314,7 +1292,262 @@ namespace ALYSLC
 		GlobalCoopData::UpdateAllCompanionPlayerSerializationIDs();
 	}
 
-	void CoopLib::UpdateGenderAndBody
+	void CoopLib::Log(RE::StaticFunctionTag*, RE::BSFixedString a_message)
+	{
+		// Script request to log a message to this mod's log file:
+		// 'ALYSLC.log'.
+
+		SPDLOG_DEBUG("{}", a_message.c_str());
+	}
+
+	//=============================================================================================
+	//[Character Customization Functions]
+	//=============================================================================================
+	
+	void CoopLib::CharacterCustomization::CopyNPCAppearanceToPlayer
+	(
+		RE::StaticFunctionTag*,
+		int32_t a_controllerID,
+		RE::TESNPC* a_baseToCopy,
+		bool a_setOppositeGenderAnims
+	)
+	{
+		// Copy base NPC's appearance to the player. Set opposite gender animations if necessary.
+
+		SPDLOG_DEBUG
+		(
+			"CID: {}, NPC base: {}, set opposite gender animations: {}.",
+			a_controllerID,
+			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
+			a_setOppositeGenderAnims
+		);
+		if (!glob.allPlayersInit || 
+			a_controllerID <= -1 || 
+			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT ||
+			!a_baseToCopy)
+		{
+			return;
+		}
+
+		glob.coopPlayers[a_controllerID]->CopyNPCAppearanceToPlayer
+		(
+			a_baseToCopy, a_setOppositeGenderAnims
+		);
+	}
+	
+	void CoopLib::CharacterCustomization::ExportP1ActorBaseAppearanceData
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_presetCharacter
+	)
+	{
+		// Either import the given actor's appearance data onto P1's actorbase,
+		// or export P1's appearance data to the given actor's actorbase.
+		// Makes use of the face swap mannequin as a third actor 
+		// to temporarily hold importable appearance data.
+		// 
+		// TODO: Save P1's appearance on import 
+		// and automatically copy the saved appearance back to P1 on export.
+
+		SPDLOG_DEBUG("ExportP1ActorBaseAppearanceData");
+		if (!glob.globalDataInit || !a_presetCharacter)
+		{
+			return;
+		}
+
+		RE::ActorHandle actorHandle = a_presetCharacter->GetHandle();
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddTask
+		(
+			[actorHandle]()
+			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (!p1)
+				{
+					return;
+				}
+
+				auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+				if (!actorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = actorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+						
+				SPDLOG_DEBUG
+				(
+					"Exporting {}'s appearance to {}.",
+					p1->GetName(), Util::GetEditorID(actorBase)
+				);
+				
+				Util::ImportActorBaseAppearanceData(p1, actorPtr.get());
+				// Maintain the changes when the game saves.
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kFace);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kGender);
+				actorBase->AddChange(RE::TESNPC::ChangeFlags::kRace);
+			}
+		);
+	}
+
+	bool CoopLib::CharacterCustomization::IsRaceMenuInstalled(RE::StaticFunctionTag*)
+	{
+		// Return true if RaceMenu by expired6978 is installed.
+		
+		SPDLOG_DEBUG("IsRaceMenuInstalled");
+		return ALYSLC::RaceMenuCompat::g_raceMenuInstalled;
+	}
+
+	void CoopLib::CharacterCustomization::LoadPlayerCharacterPreset
+	(
+		RE::StaticFunctionTag*, 
+		RE::Actor* a_fromPresetCharacter
+	)
+	{
+		// Load the exported character preset for the given player character.
+		
+		SPDLOG_DEBUG("LoadPlayerCharacterPreset");
+		if (!a_fromPresetCharacter)
+		{
+			return;
+		}
+		
+		// Update skin color and player model.
+		RE::ActorHandle actorHandle = a_fromPresetCharacter->GetHandle();
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddTask
+		(
+			[actorHandle]()
+			{
+				auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+				if (!actorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = actorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+
+				Util::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
+			}
+		);
+	}
+	
+	void CoopLib::CharacterCustomization::OnPreRaceMenu
+	(
+		RE::StaticFunctionTag*, RE::TESRace* a_newRace, bool a_setFemale
+	)
+	{
+		// Set P1's gender and race, and save skill levels and perks
+		// in preparation for opening the Race Menu.
+		// 
+		// NOTE: Unused for now until I can figure out how to seamlessly 
+		// and automatically re-import P1's character preset 
+		// after another player customizes their character.
+		
+		SPDLOG_DEBUG("OnPreRaceMenu");
+		if (!a_newRace)
+		{
+			return;
+		}
+
+		// Update skin color and player model.
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddTask
+		(
+			[a_newRace, a_setFemale]()
+			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (!p1 || 
+					!p1->race || 
+					!p1->race->faceRelatedData ||
+					!p1->GetActorBase() || 
+					!p1->GetActorBase()->race)
+				{
+					return;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"{}: set female: {}, current race: {}",
+					p1->GetName(), a_setFemale, p1->race->GetName()
+				);
+
+				auto actorBase = p1->GetActorBase();
+				Util::RemoveAllHeadParts(p1);
+				Util::SetActorRaceAndGender(p1, a_newRace, a_setFemale);
+				// Import the default race-given headparts after.
+				Util::RemoveAllHeadParts(p1);
+				Util::ImportDefaultRacialHeadParts(a_newRace, a_setFemale, actorBase);
+				// Load default preset.
+				Util::LoadDefaultBasePreset();
+			}
+		);
+	}
+
+	void CoopLib::CharacterCustomization::SavePlayerCharacterPreset
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_toPresetCharacter
+	)
+	{
+		// Save P1's name, race, and appearance as the given player character's preset.
+		
+		SPDLOG_DEBUG("SavePlayerCharacterPreset");
+		if (!glob.globalDataInit || !a_toPresetCharacter)
+		{
+			return;
+		}
+
+		RE::ActorHandle actorHandle = a_toPresetCharacter->GetHandle();
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddTask
+		(
+			[actorHandle]()
+			{
+				auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+				if (!actorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = actorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+
+				Util::LoadOrSaveRaceMenuPreset(actorPtr.get(), false);
+			}
+		);
+	}
+	
+	void CoopLib::CharacterCustomization::SetDefaultRacialAppearance
 	(
 		RE::StaticFunctionTag*,
 		int32_t a_controllerID,
@@ -1322,7 +1555,9 @@ namespace ALYSLC
 		bool a_setOppositeGenderAnims
 	)
 	{
-		// Update the given player's sex and gendered animations.
+		// Import default racial headparts, update gender, animations, skin tone,
+		// and refresh the player actor's 3D model when done.
+		// Does not update appearance preset or change the player's race.
 		// NOTE:
 		// Any race swap must be fully completed first to update properly.
 
@@ -1338,18 +1573,10 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.coopPlayers[a_controllerID]->UpdateGenderAndBody
+		glob.coopPlayers[a_controllerID]->SetDefaultRacialAppearance
 		(
 			a_setFemale, a_setOppositeGenderAnims
 		);
-	}
-
-	void CoopLib::Log(RE::StaticFunctionTag*, RE::BSFixedString a_message)
-	{
-		// Script request to log a message to this mod's log file:
-		// 'ALYSLC.log'.
-
-		SPDLOG_DEBUG("{}", a_message.c_str());
 	}
 
 	//=============================================================================================
@@ -1851,7 +2078,6 @@ namespace ALYSLC
 	{
 		// Registered functions for ALYSLC's scripts.
 		a_vm->RegisterFunction("ChangeCoopSessionState"s, "ALYSLC"s, ChangeCoopSessionState);
-		a_vm->RegisterFunction("CopyNPCAppearanceToPlayer"s, "ALYSLC"s, CopyNPCAppearanceToPlayer);
 		a_vm->RegisterFunction("EnableCoopEntityCollision"s, "ALYSLC"s, EnableCoopEntityCollision);
 		a_vm->RegisterFunction("GetAllAppearancePresets"s, "ALYSLC"s, GetAllAppearancePresets);
 		a_vm->RegisterFunction("GetAllClasses"s, "ALYSLC"s, GetAllClasses);
@@ -1889,8 +2115,51 @@ namespace ALYSLC
 			"ALYSLC"s, 
 			UpdateAllCompanionPlayerSerializationIDs
 		);
-		a_vm->RegisterFunction("UpdateGenderAndBody"s, "ALYSLC"s, UpdateGenderAndBody);
 		a_vm->RegisterFunction("Log"s, "ALYSLC"s, Log);
+
+		// Character customization functions.
+		a_vm->RegisterFunction
+		(
+			"CopyNPCAppearanceToPlayer"s,
+			"ALYSLC"s,
+			CharacterCustomization::CopyNPCAppearanceToPlayer
+		);
+		a_vm->RegisterFunction
+		(
+			"ExportP1ActorBaseAppearanceData",
+			"ALYSLC"s, 
+			CharacterCustomization::ExportP1ActorBaseAppearanceData
+		);
+		a_vm->RegisterFunction
+		(
+			"IsRaceMenuInstalled"s,
+			"ALYSLC"s,
+			CharacterCustomization::IsRaceMenuInstalled
+		);
+		a_vm->RegisterFunction
+		(
+			"LoadPlayerCharacterPreset",
+			"ALYSLC"s, 
+			CharacterCustomization::LoadPlayerCharacterPreset
+		);
+		a_vm->RegisterFunction
+		(
+			"OnPreRaceMenu"s,
+			"ALYSLC"s,
+			CharacterCustomization::OnPreRaceMenu
+		);
+		a_vm->RegisterFunction
+		(
+			"SavePlayerCharacterPreset",
+			"ALYSLC"s, 
+			CharacterCustomization::SavePlayerCharacterPreset
+		);
+		a_vm->RegisterFunction
+		(
+			"SetDefaultRacialAppearance"s,
+			"ALYSLC"s, 
+			CharacterCustomization::SetDefaultRacialAppearance
+		);
 
 		// Debug menu functions.
 		a_vm->RegisterFunction("AssignPlayer1CID"s, "ALYSLC"s, Debug::AssignPlayer1CID);

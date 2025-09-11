@@ -28,12 +28,20 @@ Function SendCoopPlayerHome()
     UsePortalShader.Play(Self, 1.0)
     Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
     Utility.Wait(1.0)
+    Self.Disable()
     ; Move player away first.
     While (Self.Is3DLoaded())
         Self.MoveToMyEditorLocation()
         Utility.Wait(0.1)
     EndWhile
     
+    Self.Enable()
+    Float SecsWaited = 0.0
+    While (!Self.IsEnabled() && SecsWaited < 1.0)
+        Utility.Wait(0.1)
+        SecsWaited += 0.1
+    EndWhile
+
     Self.Resurrect()
     ALYSLC.Log("[CCA SCRIPT] Sent " + Self.GetDisplayName() + " home.")
     Self.ResetHealthAndLimbs()
@@ -77,7 +85,7 @@ Function SetCustomizationOptions()
                 
         ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ALYSLC.RequestMenuControl(ControllerID, "MessageBoxMenu")
-        Debug.MessageBox("[ALYSLC] " + Self.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
+        Debug.MessageBox("[ALYSLC]\n" + Self.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ; Have to wait for message box prompt to open.
         SecondsWaited = 0.0
         While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
@@ -112,7 +120,7 @@ Function SetCustomizationOptions()
 
         ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ALYSLC.RequestMenuControl(ControllerID, "MessageBoxMenu")
-        Debug.MessageBox("[ALYSLC] " + Self.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
+        Debug.MessageBox(" [ALYSLC]\n" + Self.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ; Have to wait for message box prompt to open.
         SecondsWaited = 0.0
         While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
@@ -139,20 +147,30 @@ Function SetCustomizationOptions()
         EndIf
     EndIf
 
-    ; Gender option
+    ; Appearance preset and gender option
     Int GenderOption = StorageUtil.GetIntValue(Self, "ALYSLC_GenderOption", -1)
     Bool SetUseOppositeGenderAnims = GenderOption >= 2
     Bool SetFemale = (GenderOption == 0 || GenderOption == 2) || (GenderOption == -1 && Base.GetSex() == 1)
-
-    ; Appearance Preset
     ActorBase Preset = StorageUtil.GetFormValue(Self, "ALYSLC_AppearancePreset", None) as ActorBase
-    If (Preset && Preset != Base)
-        ALYSLC.Log("[CCA SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims)
+    ALYSLC.Log("[CCA SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + Base.GetSex() + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
+    ALYSLC.Log("[CCA SCRIPT] Saved preset is " + Preset.GetName() + " (" + Preset + "), current base is " + Base.GetName() + " (" + Base + ").")
+    If (!Preset)
+        ; No preset to set, so set to the default racial preset, change gender, anims, and update face/body skin tone.
+        ALYSLC.Log("[CCA SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
+        ALYSLC.SetDefaultRacialAppearance(ControllerID, SetFemale, SetUseOppositeGenderAnims)
+    ElseIf ((Preset && Preset != Base) || ((Base.GetSex() == -1) || (Base.GetSex() == 0 && SetFemale) || (Base.GetSex() == 1 && !SetFemale)))
+        If (Preset && Preset != Base)
+            ALYSLC.Log("[CCA SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
+        Else
+            ALYSLC.Log("[CCA SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
+        EndIf
+
         ALYSLC.CopyNPCAppearanceToPlayer(ControllerID, Preset, SetUseOppositeGenderAnims)
-    Else
-        ; No preset to set, so change gender, anims, and face/body skin tone.
-        ALYSLC.Log("[CCA SCRIPT] Set sex to female: " + SetFemale + " and update body to race default, no valid preset. Gender option: " + GenderOption)
-        ALYSLC.UpdateGenderAndBody(ControllerID, SetFemale, SetUseOppositeGenderAnims)
+    EndIf
+
+	; Apply custom appearance preset afterward, if any.
+    If (Preset == Base)
+		ALYSLC.LoadPlayerCharacterPreset(Self)
     EndIf
 
     ; Voice Type
@@ -289,7 +307,7 @@ Event OnCoopStart(Form akCoopPlayer)
         ; Clear target.
         Self.ClearLookAt()
         ; Stop combat.
-         Self.StopCombat()
+        Self.StopCombat()
         ; Ensure that the player actor will not cower when threatened.
         Self.SetActorValue("Aggression", 0.0)
         Self.SetActorValue("Confidence", 4.0)

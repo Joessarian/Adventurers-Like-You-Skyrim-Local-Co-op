@@ -58,6 +58,7 @@ Int[] Property ControllerIDs Auto
 String Property SelectedString = "" Auto
 
 ; Entry indices in Customization menu.
+Int Property SHOW_RACE_MENU_ENTRY_INDEX = -1 Auto
 Int Property CHARACTER_NAME_ENTRY_INDEX = 0 Auto
 Int Property CLASS_ENTRY_INDEX = 1 Auto
 Int Property APPEARANCE_ENTRY_INDEX = 2 Auto
@@ -129,8 +130,142 @@ Function HandleCharacterCustomization()
     ShowCustomizationOptionsMenu()
     While (SelectedOptionIndex != -1)
         ALYSLC.Log("[SUMMON SCRIPT] Selected option index from customization menu: " + SelectedOptionIndex + ", string: " + SelectedString)
+        ; Open the Race Menu for full customization.
+        If (SelectedOptionIndex == SHOW_RACE_MENU_ENTRY_INDEX && SHOW_RACE_MENU_ENTRY_INDEX != -1)
+            ActorBase P1ActorBase = PlayerRef.GetActorBase()
+            Race CurrentRace = StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace()) as Race
+            Int CurrentGenderOption = StorageUtil.GetIntValue(SelectedCharacter, "ALYSLC_GenderOption", 1 - Base.GetSex())
+            Bool IsCurrentlyFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
+
+            ; Modifying this character's actor base directly.
+            ; Indicates that we are using a custom appearance for this character and not just copying over another NPC's appearance.
+            StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+            ; Save P1's appearance, name, and race first.
+            String SavedP1Name = PlayerRef.GetDisplayName()
+            Race SavedP1Race = PlayerRef.GetRace()
+            Float SavedP1Height = P1ActorBase.GetHeight()
+            Float SavedP1Weight = P1ActorBase.GetWeight()
+            Bool P1IsFemale = P1ActorBase.GetSex() == 1
+
+            ; Encourage companion player to save their appearance as a preset,
+            ; just in case their appearance isn't imported properly later on.
+            Int PlayerID = (CurrentCompanionsCount + 2)
+            If (PlayerID <= 1)
+                PlayerID = 2
+            EndIf                
+            
+            Debug.MessageBox("[ALYSLC]\nPlayer " + PlayerID + ", please save your appearance as a preset before exiting.\nThe preset will be loaded automatically onto your character, \nbut if the preset fails to apply at any time, \nplease re-enter the Race Menu and reload this saved preset,\nor save and restart the game to fix mismatching overlays.")
+            ; Open the Race Menu.
+            ALYSLC.RequestMenuControl(CurrentMenuControllerID, "RaceSex Menu")
+            Game.ShowRaceMenu()
+            
+            ; Wait until the menu opens.
+            While (!UI.IsMenuOpen("RaceSex Menu"))
+                Utility.Wait(0.1)
+            EndWhile
+
+            ; Wait until the menu closes.
+            While (UI.IsMenuOpen("RaceSex Menu"))
+                Utility.WaitMenuMode(0.1)
+            EndWhile
+
+            ; Save new RaceSex Menu data for this character.
+            ; The player character's own actor base is modified, so we save the appearance preset NPC as the character's base.
+            ; Name
+            String NewName = P1ActorBase.GetName()
+            ALYSLC.Log("[SUMMON SCRIPT] P1's name is now: '" + NewName + "'. Base name: " + P1ActorBase.GetName())
+            StorageUtil.SetStringValue(SelectedCharacter, "ALYSLC_Name", NewName)
+            Base.SetName(NewName)
+            SelectedCharacter.SetName(NewName)
+            Bool Renamed = SelectedCharacter.SetDisplayName(NewName, True)
+            If (Renamed)
+                ALYSLC.Log("[SUMMON SCRIPT] Set name: '" + NewName + "'.")
+            Else
+                ALYSLC.Log("[SUMMON SCRIPT] Could not rename player.")
+            EndIf
+
+            Race NewRace = PlayerRef.GetRace()
+            If (NewRace)
+                ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + NewRace)
+                StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_Race", NewRace)
+                If (NewRace != CurrentRace)
+                    ; Show stats menu with new race-dependent base skill values.
+                    ShowCharacterStatsMenu()
+                    ALYSLC.Log("[SUMMON SCRIPT] Race changed from " + CurrentRace.GetName() + " to " + NewRace.GetName() + ".")
+                EndIf
+            EndIf
+
+            Int NewGenderOption = 1 - P1ActorBase.GetSex()
+            Bool IsFemale = (NewGenderOption == 0 || NewGenderOption == 2)
+            ALYSLC.Log("[SUMMON SCRIPT] Gender option chosen: " + SelectedString + ", index " + SelectedOptionIndex)
+            If (NewGenderOption != -1)
+                ALYSLC.Log("[SUMMON SCRIPT] Gender option chosen: " + NewGenderOption)
+                StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
+                If (NewGenderOption != CurrentGenderOption)
+                    ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ".")
+                EndIf
+            EndIf
+
+            ; Save the appearance changes to this character's preset file.
+            Utility.Wait(0.5)
+            ALYSLC.SavePlayerCharacterPreset(SelectedCharacter)
+            Utility.Wait(0.5)
+            ; Export P1's appearance onto this character.
+            ALYSLC.ExportP1ActorBaseAppearanceData(SelectedCharacter)
+            Utility.Wait(0.5)
+
+            ; Restore P1's appearance, height, weight, and name.
+            P1ActorBase.SetName(SavedP1Name)
+            PlayerRef.SetName(SavedP1Name)
+            Renamed = PlayerRef.SetDisplayName(SavedP1Name, True)
+            If (Renamed)
+                ALYSLC.Log("[SUMMON SCRIPT] Restored name: '" + SavedP1Name + "'.")
+            Else
+                ALYSLC.Log("[SUMMON SCRIPT] Could not restore P1's name.")
+            EndIf
+
+            ALYSLC.Log("[SUMMON SCRIPT] P1 old/new height, weight: " + SavedP1Height + "/" + P1ActorBase.GetHeight() + ", " + SavedP1Weight + "/" + P1ActorBase.GetHeight())
+            P1ActorBase.SetHeight(SavedP1Height)
+            P1ActorBase.SetWeight(SavedP1Weight)
+
+            ; Open up the RaceMenu for P1 and prompt them to restore their character's preset, which they have hopefully saved when making their character previously.
+            String RaceName = "'" + SavedP1Race.GetName() + "'"
+            String GenderName = "'Male'"
+            If (P1IsFemale)
+                GenderName = "'Female'"
+            EndIf
+
+            ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
+            Debug.MessageBox("[ALYSLC]\nPlayer 1, please reload your character's preset, since their appearance has been overridden by another player character's appearance.\nSet your character's race to " + RaceName + " and gender to " + GenderName + " before loading your preset.")
+            Float SecsWaited = 0.0
+            While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
+                Utility.Wait(0.1)
+                SecsWaited += 0.1
+            EndWhile
+
+            ; Once open, wait until closed.
+            While (UI.IsMenuOpen("MessageBoxMenu"))
+                Utility.WaitMenuMode(0.1)
+            EndWhile
+            
+            ; Open the RaceMenu now.
+            ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
+            Game.ShowRaceMenu()
+            
+            ; Wait until the menu opens.
+            While (!UI.IsMenuOpen("RaceSex Menu"))
+                Utility.Wait(0.1)
+            EndWhile
+
+            ; Wait until the menu closes.
+            While (UI.IsMenuOpen("RaceSex Menu"))
+                Utility.WaitMenuMode(0.1)
+            EndWhile
+
+            ; Give menu control back to the companion player.
+            ALYSLC.ToggleSetupMenuControl(CurrentMenuControllerID, CurrentCompanionsCount + 1, True)
         ; Name
-        If (SelectedOptionIndex == 0)
+        ElseIf (SelectedOptionIndex == CHARACTER_NAME_ENTRY_INDEX)
             Debug.MessageBox("Please input a new name. In order to have your naming changes reflected in some UI components, " + \
             "such as Party Combat Parameter's character cards, you must save the game after changing the player's name and reload.")
 
@@ -152,7 +287,7 @@ Function HandleCharacterCustomization()
                 EndIf
             EndIf
         ; Class
-        ElseIf (SelectedOptionIndex == 1)
+        ElseIf (SelectedOptionIndex == CLASS_ENTRY_INDEX)
             Class NewClass = ShowClassSelectionMenu()
             ALYSLC.Log("[SUMMON SCRIPT] Class chosen: " + SelectedString + ", index " + SelectedOptionIndex)
             If (NewClass)
@@ -162,7 +297,8 @@ Function HandleCharacterCustomization()
                 ShowCharacterStatsMenu()
             EndIf
         ; Appearance
-        ElseIf (SelectedOptionIndex == 2)
+        ElseIf (SelectedOptionIndex == APPEARANCE_ENTRY_INDEX)
+            ActorBase P1ActorBase = PlayerRef.GetActorBase()
             Race CurrentRace = None
             Int CurrentGenderOption = -1
             Bool IsCurrentlyFemale = False
@@ -199,8 +335,10 @@ Function HandleCharacterCustomization()
                                         ALYSLC.Log("[SUMMON SCRIPT] Race change, set appearance preset to first one: " + Preset.GetName())
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
                                     Else
-                                        ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Set preset as current base: " + Base.GetName())
-                                        StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+                                        ; ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Set preset as current base: " + Base.GetName())
+                                        ; StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+                                        ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
+                                        StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                                     EndIf
                                 EndIf
                              EndIf
@@ -234,8 +372,10 @@ Function HandleCharacterCustomization()
                                 ALYSLC.Log("[SUMMON SCRIPT] Gender change, set appearance preset to first one: " + Preset.GetName())
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
                             Else
-                                ALYSLC.Log("[SUMMON SCRIPT] Gender change, but there are no presets. Set preset as current base: " + Base.GetName())
-                                StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+                                ; ALYSLC.Log("[SUMMON SCRIPT] Gender change, but there are no presets. Set preset as current base: " + Base.GetName())
+                                ; StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
+                                ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
+                                StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                             EndIf
                         EndIf
                     EndIf
@@ -243,10 +383,15 @@ Function HandleCharacterCustomization()
                 ; Appearance Preset
                 ElseIf (SelectedOptionIndex == 2)
                     ActorBase NewPreset = ShowAppearancePresetSelectionMenu()
-                    If (NewPreset || SelectedString == "NONE")
+                    ; If (NewPreset || SelectedString == "NONE")
+                    If (NewPreset)
                         ALYSLC.Log("[SUMMON SCRIPT] NPC appearance preset chosen: " + NewPreset.GetName())
                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", NewPreset)
+                    Else
+                        ALYSLC.Log("[SUMMON SCRIPT] No preset chosen. Clear current preset.")
+                        StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                     EndIf
+                    
                     ALYSLC.Log("[SUMMON SCRIPT] NPC appearance preset chosen: " + SelectedString + ", index " + SelectedOptionIndex)
                 Else
                     ALYSLC.Log("[SUMMON SCRIPT] ERR: Invalid option chosen from appearance customization menu.")
@@ -255,7 +400,7 @@ Function HandleCharacterCustomization()
                 ShowAppearanceCustomizationOptionsMenu()
             EndWhile
         ; Voice Type
-        ElseIf (SelectedOptionIndex == 3)
+        ElseIf (SelectedOptionIndex == VOICE_TYPE_ENTRY_INDEX)
             VoiceType NewVoiceType = ShowVoiceTypeSelectionMenu()
             If (NewVoiceType)
                 ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + NewVoiceType.GetName())
@@ -263,7 +408,7 @@ Function HandleCharacterCustomization()
             EndIf
             ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + SelectedString + ", selected option index " + SelectedOptionIndex)
         ; Height
-        ElseIf (SelectedOptionIndex == 4)
+        ElseIf (SelectedOptionIndex == HEIGHT_ENTRY_INDEX)
             Int ResultHeight = -1
             Float CurrentHeightMult = StorageUtil.GetFloatValue(SelectedCharacter, "ALYSLC_HeightMultiplier", 1.0)
             While (ResultHeight < 0 || ResultHeight > 1000)
@@ -280,7 +425,7 @@ Function HandleCharacterCustomization()
             ALYSLC.Log("[SUMMON SCRIPT] New height multiplier is " + NewHeightMult)
             StorageUtil.SetFloatValue(SelectedCharacter, "ALYSLC_HeightMultiplier", NewHeightMult)
         ; Weight
-        ElseIf (SelectedOptionIndex == 5)
+        ElseIf (SelectedOptionIndex == WEIGHT_ENTRY_INDEX)
             Int ResultWeight = -1
             Float CurrentWeight = StorageUtil.GetFloatValue(SelectedCharacter, "ALYSLC_Weight", Base.GetWeight())
             While (ResultWeight < 0 || ResultWeight > 100)
@@ -530,7 +675,6 @@ Function ShowAppearanceCustomizationOptionsMenu()
     ; Setup list menu with nested lists for each customization option.
     ; Max number of items per list menu = 128
     UIListMenu AppearanceCustomizationMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
-    ; Add Name, Class, Appearance, Voice, Height, and Weight options.
     ; Customization options:
     ; 0
     AppearanceCustomizationMenu.AddEntryItem("Race", -1, -1, False)
@@ -576,7 +720,13 @@ ActorBase Function ShowAppearancePresetSelectionMenu()
     CoopNPCAppearancePresets = ALYSLC.GetAllAppearancePresets(SavedRace, IsFemale)
     If (CoopNPCAppearancePresets.Length > 0)
         PopulateAndShowListMenu("Preset", OPTION_NPC_APPEARANCE_PRESET, CoopNPCAppearancePresets, 0)
-        Return (CoopNPCAppearancePresets[SelectedOptionIndex]) as ActorBase
+        If (SelectedOptionIndex < 0)
+            SelectedOptionIndex = -1
+            SelectedString = "NONE"
+            Return None
+        Else
+            Return (CoopNPCAppearancePresets[SelectedOptionIndex]) as ActorBase
+        EndIf
     Else
         ALYSLC.Log("[SUMMON SCRIPT] ERR: no appearance preset forms were found. Should still set preset to None.")
         SelectedOptionIndex = 0
@@ -611,7 +761,7 @@ Function ShowCharacterStatsMenu()
                 
                 ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
                 ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
-                Debug.MessageBox("[ALYSLC] " + SelectedCharacter.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
+                Debug.MessageBox("[ALYSLC]\n" + SelectedCharacter.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
@@ -632,7 +782,7 @@ Function ShowCharacterStatsMenu()
 
                 ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
                 ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
-                Debug.MessageBox("[ALYSLC] " + SelectedCharacter.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
+                Debug.MessageBox("[ALYSLC]\n" + SelectedCharacter.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
@@ -665,7 +815,12 @@ Class Function ShowClassSelectionMenu()
     CoopClasses = ALYSLC.GetAllClasses()
     If (CoopClasses.Length > 0)
         PopulateAndShowListMenu("Class", OPTION_CLASS, CoopClasses, 0)
-        Return (CoopClasses[SelectedOptionIndex]) as Class
+        If (SelectedOptionIndex < 0)
+            SelectedOptionIndex = -1
+            Return None
+        Else
+            Return (CoopClasses[SelectedOptionIndex]) as Class
+        EndIf
     Else
         ALYSLC.Log("[SUMMON SCRIPT] ERR: no class forms were found.")
     EndIf
@@ -681,7 +836,7 @@ Function ShowCoopSetupMenu()
     If (CurrentCompanionsCount >= CoopCompanionControllersCount || ShouldExit)
         If (CoopCompanionControllersCount <= 0)
             ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-            Debug.MessageBox("[ALYLSC] Please ensure at least two XInput-recognizable controllers are plugged in before starting co-op.")
+            Debug.MessageBox("[ALYSLC]\nPlease ensure at least two XInput-recognizable controllers are plugged in before starting co-op.")
         Else
             ALYSLC.Log("[SUMMON SCRIPT] Exiting menu now. Current companions count: " + CurrentCompanionsCount + ", controller count: " + CoopCompanionControllersCount + ", should exit: " + ShouldExit + ".")
         EndIf
@@ -714,7 +869,7 @@ Function ShowCoopSetupMenu()
                 ALYSLC.Log("[SUMMON SCRIPT] Added " + SelectedCharacter.GetDisplayName() + " to the companion players list.")
             Else
                 ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
-                Debug.MessageBox("[ALYSLC] Cannot select the same co-op character as another player.")
+                Debug.MessageBox("[ALYSLC]\nCannot select the same co-op character as another player.")
             EndIf
 
             ; Allow next co-op player to choose their character, so shut down listener thread for the current player.
@@ -763,18 +918,29 @@ Function ShowCustomizationOptionsMenu()
     UIListMenu CustomizationMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
     ; Add Name, Class, Appearance, Voice, Height, and Weight options.
     ; Customization options:
-    ; 0
+    ; Can only edit companion characters through the Race Menu if RaceMenu is installed.
+    ; Temporary measure until I can figure out why the face skintone and overlays 
+    ; aren't copied over to companion players properly after customization.
+    If (ALYSLC.IsRaceMenuInstalled())
+        CustomizationMenu.AddEntryItem("Show Race Menu", -1, -1, False)
+        SHOW_RACE_MENU_ENTRY_INDEX = 0
+    Else
+        SHOW_RACE_MENU_ENTRY_INDEX = -1
+    EndIf
     CustomizationMenu.AddEntryItem("Character Name", -1, -1, False)
-    ; 1
     CustomizationMenu.AddEntryItem("Class", -1, -1, False)
-    ; 2
     CustomizationMenu.AddEntryItem("Appearance", -1, -1, False)
-    ; 3
     CustomizationMenu.AddEntryItem("Voice Type", -1, -1, False)
-    ; 4
     CustomizationMenu.AddEntryItem("Height", -1, -1, False)
-    ; 5
     CustomizationMenu.AddEntryItem("Weight", -1, -1, False)
+
+    ; Set entry indices so we can keep track of what option the player has chosen.
+    CHARACTER_NAME_ENTRY_INDEX = SHOW_RACE_MENU_ENTRY_INDEX + 1
+    CLASS_ENTRY_INDEX = CHARACTER_NAME_ENTRY_INDEX + 1
+    APPEARANCE_ENTRY_INDEX = CLASS_ENTRY_INDEX + 1
+    VOICE_TYPE_ENTRY_INDEX = APPEARANCE_ENTRY_INDEX + 1
+    HEIGHT_ENTRY_INDEX = VOICE_TYPE_ENTRY_INDEX + 1
+    WEIGHT_ENTRY_INDEX = HEIGHT_ENTRY_INDEX + 1
 
     ALYSLC.RequestMenuControl(CurrentMenuControllerID, CustomizationMenu.ROOT_MENU)
     CustomizationMenu.OpenMenu()
@@ -833,7 +999,12 @@ Race Function ShowRaceSelectionMenu()
     CoopRaces = ALYSLC.GetAllSelectableRaces(CurrentSelectableRaceType)
     If (CoopRaces.Length > 0)
         PopulateAndShowListMenu("Race", OPTION_RACE, CoopRaces, 0)
-        Return (CoopRaces[SelectedOptionIndex]) as Race
+        If (SelectedOptionIndex < 0)
+            SelectedOptionIndex = -1
+            Return None
+        Else
+            Return (CoopRaces[SelectedOptionIndex]) as Race
+        EndIf
     Else
         ALYSLC.Log("[SUMMON SCRIPT] ERR: no race forms were found.")
     EndIf
@@ -870,7 +1041,12 @@ VoiceType Function ShowVoiceTypeSelectionMenu()
     CoopVoiceTypes = ALYSLC.GetAllVoiceTypes(IsFemale)
     If (CoopVoiceTypes.Length > 0)
         PopulateAndShowListMenu("Voice Type", OPTION_VOICE_TYPE, CoopVoiceTypes, 0)
-        Return (CoopVoiceTypes[SelectedOptionIndex]) as VoiceType
+        If (SelectedOptionIndex < 0)
+            SelectedOptionIndex = -1
+            Return None
+        Else
+            Return (CoopVoiceTypes[SelectedOptionIndex]) as VoiceType
+        EndIf
     Else
         ALYSLC.Log("[SUMMON SCRIPT] ERR: no voice type forms were found.")
     EndIf
@@ -920,7 +1096,7 @@ Event OnSummoningMenuRequest()
 	EndWhile
 	
 	If (PlayerRef != Game.GetPlayer())
-		Debug.MessageBox("[ALYSLC] Critical Error: P1's actor is invalid. Cannot summon players.")
+		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
 		ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
 		Return
 	EndIf
@@ -969,7 +1145,7 @@ Event OnSummoningMenuRequest()
         ; Flag co-op session as ended.
         ALYSLC.ChangeCoopSessionState(False)
         If (SecsWaited >= 5.0)
-		    Debug.MessageBox("[ALYSLC] Failed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
+		    Debug.MessageBox("[ALYSLC]\nFailed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
             ALYSLC.Log("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
             Return
         EndIf
@@ -1048,6 +1224,7 @@ Event OnSummoningMenuRequest()
         EndCoopForPlayer(PlayerRef)
         ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
         CoopIsSummoningPlayers.SetValue(0)
+	    PlayerRef.SetDontMove(False)
         Return
     EndIf
 
@@ -1073,6 +1250,7 @@ Event OnSummoningMenuRequest()
         EndCoopForPlayer(PlayerRef)
         ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
         CoopIsSummoningPlayers.SetValue(0)
+	    PlayerRef.SetDontMove(False)
         Return
     EndIf
 

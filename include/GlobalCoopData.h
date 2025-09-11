@@ -1985,6 +1985,17 @@ namespace ALYSLC
 		// Interpolation data for fading the crosshair text in/out.
 		std::unique_ptr<TwoWayInterpData> crosshairTextFadeInterpData;
 
+		// Saved data for P1 before entering the RaceMenu.
+		// Cached to restore once the menu closes.
+		// List of spells that applied active effects present before entering the menu.
+		RE::BSSimpleList<RE::MagicItem*> charGenActiveEffectsSpellsList; 
+		// P1's race before entering the menu.
+		RE::TESRace* charGenRace;
+		// The list of equipped forms before entering the menu.
+		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> charGenEquippedForms;
+		// Base skill levels, XP, and threshold for each actor value.
+		std::vector<RE::PlayerCharacter::PlayerSkills::Data::SkillData> charGenSkillDataList;
+
 		// All players constructed.
 		bool allPlayersInit = false;
 		// Co-op session started (all players summoned and session cleanup

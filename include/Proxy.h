@@ -48,15 +48,6 @@ namespace ALYSLC
 		// Start a new co-op session or stop an active co-op session.
 		void ChangeCoopSessionState(RE::StaticFunctionTag*, bool a_start);
 		
-		// Copy base NPC's appearance to the player. Set opposite gender animations if necessary.
-		void CopyNPCAppearanceToPlayer
-		(
-			RE::StaticFunctionTag*, 
-			int32_t a_controllerID,
-			RE::TESNPC* a_baseToCopy, 
-			bool a_setOppositeGenderAnims
-		);
-
 		// Toggle collisions on for all active players.
 		void EnableCoopEntityCollision(RE::StaticFunctionTag*);
 
@@ -86,7 +77,7 @@ namespace ALYSLC
 		(
 			RE::StaticFunctionTag*, int32_t a_controllerID
 		);
-
+		
 		// Request control of the given menu for the given player.
 		void RequestMenuControl
 		(
@@ -159,16 +150,7 @@ namespace ALYSLC
 		// Serialized data should contain all players' FID keys 
 		// before the Summoning Menu is opened.
 		void UpdateAllCompanionPlayerSerializationIDs(RE::StaticFunctionTag*);
-
-		// Update the given player's sex and gendered animations.
-		void UpdateGenderAndBody
-		(
-			RE::StaticFunctionTag*,
-			int32_t a_controllerID,
-			bool a_setFemale,
-			bool a_setOppositeGenderAnims
-		);
-
+		
 		//=========================================================================================
 
 		// Debug function for scripts to write log messages to ALYSLC.log.
@@ -176,6 +158,56 @@ namespace ALYSLC
 
 		// Register all papyrus functions.
 		bool RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm);
+
+		// Functions for importing/exporting player appearances/presets 
+		// created directly from the RaceMenu.
+		namespace CharacterCustomization
+		{
+			// Copy base NPC's appearance to the player. 
+			// Set opposite gender animations if necessary.
+			void CopyNPCAppearanceToPlayer
+			(
+				RE::StaticFunctionTag*, 
+				int32_t a_controllerID,
+				RE::TESNPC* a_baseToCopy, 
+				bool a_setOppositeGenderAnims
+			);
+
+			// Export P1's appearance data to the given actor's actorbase.
+			void ExportP1ActorBaseAppearanceData
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_presetCharacter
+			);
+
+			// Return true if RaceMenu mod by expired6978 is installed.
+			bool IsRaceMenuInstalled(RE::StaticFunctionTag*);
+
+			// Load the exported character preset for the given player character.
+			void LoadPlayerCharacterPreset
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_fromPresetCharacter
+			);
+			
+			// NOTE: Unused for now until I can figure out how to seamlessly 
+			// and automatically re-import P1's character preset 
+			// after another player customizes their character.
+			// Set P1's gender and race, and save skill levels and perks
+			// in preparation for opening the Race Menu.
+			void OnPreRaceMenu(RE::StaticFunctionTag*, RE::TESRace* a_newRace, bool a_setFemale);
+			
+			// Save P1's name, race, and appearance as the given player's preset.
+			void SavePlayerCharacterPreset(RE::StaticFunctionTag*, RE::Actor* a_toPresetCharacter);
+
+			// Import default racial headparts, update gender, animations, skin tone,
+			// and refresh the player actor's 3D model when done.
+			void SetDefaultRacialAppearance
+			(
+				RE::StaticFunctionTag*,
+				int32_t a_controllerID,
+				bool a_setFemale,
+				bool a_setOppositeGenderAnims
+			);
+		};
 
 		// Debug-related functions called from a UIExtensions menu.
 		namespace Debug

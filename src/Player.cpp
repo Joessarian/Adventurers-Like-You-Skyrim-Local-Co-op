@@ -621,7 +621,8 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"Base is female: {}, current is female: {}, "
-			"current uses opposite gender anims: {}, req opposite gender anims: {}, "
+			"current uses opposite gender anims: {}, "
+			"req opposite gender anims: {}, "
 			"should change gender: {}, should set opposite gender anims: {}.",
 			a_baseToCopy->IsFemale(),
 			actorBase->IsFemale(),
@@ -632,141 +633,18 @@ namespace ALYSLC
 			(actorBase->UsesOppositeGenderAnims() && !a_setOppositeGenderAnims) || 
 			(!actorBase->UsesOppositeGenderAnims() && a_setOppositeGenderAnims)
 		);
-		// Set sex first before accessing preset NPCs array, which depends on the chosen sex.
-		const bool setFemale = a_baseToCopy->IsFemale();
-		const bool isFemale = actorBase->IsFemale();
-		if ((!setFemale && isFemale) || (setFemale && !isFemale))
-		{
-			Util::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, setFemale
-			);
-		}
-
-		// Set opposite gender animations flag if necessary.
-		bool usesOppositeGenderAnims = actorBase->UsesOppositeGenderAnims();
-		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || 
-			(!usesOppositeGenderAnims && a_setOppositeGenderAnims))
-		{
-			Util::SetActorBaseDataFlag
-			(
-				actorBase, 
-				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
-				a_setOppositeGenderAnims
-			);
-		}
-		
-		// Switch gender and back again to ensure gendered actor animations 
-		// match the new gender flags, if changed.
-		const auto scriptFactory = 
+		// Update race and gender before importing headparts from the new actor base.
+		Util::SetActorRaceAndGender
 		(
-			RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			coopActor.get(),
+			a_baseToCopy->race,
+			a_baseToCopy->GetSex() == RE::SEX::kFemale, 
+			a_setOppositeGenderAnims
 		);
-		const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-		if (script)
-		{
-			script->SetCommand("sexchange"sv);
-			script->CompileAndRun(coopActor.get());
-			script->SetCommand("sexchange"sv);
-			script->CompileAndRun(coopActor.get());
-			delete script;
-		}
-
-		auto faceRelatedData = coopActor->race->faceRelatedData[actorBase->GetSex()]; 
-		if (!faceRelatedData)
-		{
-			return;
-		}
-
-		// Update race.
-		if (actorBase->race != a_baseToCopy->race)
-		{
-			coopActor->SwitchRace(a_baseToCopy->race, false);
-			actorBase->race = a_baseToCopy->race;
-			actorBase->originalRace = a_baseToCopy->race;
-		}
-
 		// Remove all the player's current headparts.
-		if (actorBase->headParts)
-		{
-			uint32_t headPartIndex = 0;
-			// List shrinks down upon removal.
-			while (actorBase->numHeadParts > 0)
-			{
-				if (actorBase->headParts[0])
-				{
-					SPDLOG_DEBUG
-					(
-						"Removing head part #{}: {}.", 
-						headPartIndex, actorBase->headParts[0]->GetName()
-					);
-					Util::NativeFunctions::RemoveHeadPart
-					(
-						actorBase, *actorBase->headParts[0]->type
-					);
-				}
-				else
-				{
-					// Something went wrong if the head part is invalid, 
-					// since the head parts count does not match 
-					// the actual head parts array's size.
-					SPDLOG_ERROR
-					(
-						"Num head parts not in sync with actual head parts array. "
-						"No head part at index {}. Number of current head parts reported: {}. "
-						"Copying preset head parts over directly: {} parts. "
-						"Address of invalid head parts list: 0x{:p}.",
-						headPartIndex, 
-						actorBase->numHeadParts,
-						a_baseToCopy->numHeadParts, 
-						fmt::ptr(actorBase->headParts)
-					);
-					actorBase->numHeadParts = 0;
-					// Freeing the invalid array pointer causes the game to hang on save load.
-					// Since the array pointer changes once a new head part is added below 
-					// in ChangeHeadPart(), I'm hoping that the game frees this pointer first, 
-					// since we can't do it here.
-					break;
-				}
-
-				++headPartIndex;
-			}
-		}
-
+		Util::RemoveAllHeadParts(coopActor.get());
 		// Add new headparts from NPC to the player.
-		if (a_baseToCopy->headParts)
-		{
-			for (auto i = 0; i < a_baseToCopy->numHeadParts; ++i)
-			{
-				auto headPart = a_baseToCopy->headParts[i];
-				if (!headPart)
-				{
-					continue;
-				}
-				
-				SPDLOG_DEBUG("Adding head part #{}: {}.", i, headPart->GetName());
-				actorBase->ChangeHeadPart(headPart);
-			}
-		}
-
-		// Copy over everything else related to appearance.
-		if (a_baseToCopy->headRelatedData)
-		{
-			actorBase->SetFaceTexture(a_baseToCopy->headRelatedData->faceDetails);
-			actorBase->SetHairColor(a_baseToCopy->headRelatedData->hairColor);
-		}
-
-		actorBase->faceNPC = a_baseToCopy->faceNPC;
-		actorBase->faceData = a_baseToCopy->faceData;
-		actorBase->farSkin = a_baseToCopy->farSkin;
-		actorBase->skin = a_baseToCopy->skin;
-		actorBase->tintLayers = a_baseToCopy->tintLayers;
-		actorBase->bodyTintColor = a_baseToCopy->bodyTintColor;
-		coopActor->UpdateSkinColor();
-		actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
-		coopActor->Update3DModel();
-		coopActor->DoReset3D(true);
-
+		Util::ImportHeadPartsFromBase(a_baseToCopy, actorBase);
 		SPDLOG_DEBUG
 		(
 			"Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName()
@@ -1016,7 +894,7 @@ namespace ALYSLC
 				(
 					fmt::format
 					(
-						"[ALYSLC] ERROR: Could not get input from controller {}.\n"
+						"[ALYSLC]\nERROR: Could not get input from controller {}.\n"
 						"Ending co-op session.\n"
 						"Please ensure at least two controllers are plugged in.", 
 						controllerID
@@ -1454,9 +1332,7 @@ namespace ALYSLC
 			}
 
 			bool wasWerewolf = Util::IsWerewolf(coopActor.get());
-			script->SetCommand(fmt::format("setrace {}", originalRace->formEditorID));
-			script->CompileAndRun(coopActor.get());
-
+			Util::SetActorRace(coopActor.get(), originalRace);
 			if (isPlayer1 && wasWerewolf)
 			{
 				// Doesn't auto-unequip the werewolf FX armor for P1 
@@ -1621,6 +1497,36 @@ namespace ALYSLC
 			// No talking while downed.
 			coopActor->AllowBleedoutDialogue(false);
 		}
+	}
+	
+	void CoopPlayer::SetDefaultRacialAppearance(bool a_setFemale, bool a_setOppositeGenderAnims)
+	{
+		// Import default racial headparts, update gender, animations, skin tone,
+		// and refresh the player actor's 3D model when done.
+		// Does not update appearance preset or change the player's race.
+
+		if (!coopActor || 
+			!coopActor->race || 
+			!coopActor->race->faceRelatedData ||
+			!coopActor->GetActorBase() || 
+			!coopActor->GetActorBase()->race)
+		{
+			return;
+		}
+
+		SPDLOG_DEBUG
+		(
+			"{}: set female: {}, set opposite gender animations: {}, current race: {}",
+			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName()
+		);
+		auto actorBase = coopActor->GetActorBase();
+		// Remove all headparts from the player.
+		// The game will then supply the defaults.
+		Util::RemoveAllHeadParts(coopActor.get());
+		// Switch gender before applying new head parts.
+		Util::SetActorGender(coopActor.get(), a_setFemale, a_setOppositeGenderAnims);
+		// Import the default race-given headparts after.
+		Util::ImportDefaultRacialHeadParts(coopActor->race, a_setFemale, actorBase);
 	}
 
 	bool CoopPlayer::ShouldTeleportToP1(bool&& a_selfPauseCheck)
@@ -1787,126 +1693,6 @@ namespace ALYSLC
 				coopActor->GetName()
 			);
 		}
-	}
-
-
-	void CoopPlayer::UpdateGenderAndBody(bool a_setFemale, bool a_setOppositeGenderAnims)
-	{
-		// Update gender and body-related data. 
-		// Does not update appearance preset or change the player's race.
-
-		if (!coopActor || 
-			!coopActor->race || 
-			!coopActor->race->faceRelatedData ||
-			!coopActor->GetActorBase() || 
-			!coopActor->GetActorBase()->race)
-		{
-			return;
-		}
-
-		SPDLOG_DEBUG
-		(
-			"{}: set female: {}, set opposite gender animations: {}, current race: {}",
-			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName()
-		);
-
-		auto actorBase = coopActor->GetActorBase();
-		coopActor->Update3DModel();
-		coopActor->DoReset3D(true);
-		// Remove all headparts from the player.
-		// The game will then supply the defaults.
-		if (actorBase->headParts)
-		{
-			while (actorBase->numHeadParts > 0)
-			{
-				if (actorBase->headParts[0])
-				{
-					Util::NativeFunctions::RemoveHeadPart
-					(
-						actorBase, *actorBase->headParts[0]->type
-					);
-				}
-				else
-				{
-					// Something went wrong if the head part is invalid, 
-					// since the head parts count does not match 
-					// the actual head parts array's size.
-					SPDLOG_ERROR
-					(
-						"Num head parts not in sync with actual head parts array. "
-						"No head part at index 0. Number of current head parts reported: {}. "
-						"Address of invalid head parts list: 0x{:p}.",
-						actorBase->numHeadParts, 
-						fmt::ptr(actorBase->headParts)
-					);
-					actorBase->numHeadParts = 0;
-					// Freeing the invalid array pointer causes the game to hang on save load.
-					// Since the array pointer changes once a new head part is added below 
-					// in ChangeHeadPart(), I'm hoping that the game frees this pointer first, 
-					// since we can't do it here.
-					break;
-				}
-			}
-		}
-
-		// Set sex first before accessing face-related data, which depends on the chosen sex.
-		const bool isFemale = actorBase->IsFemale();
-		if ((!a_setFemale && isFemale) || (a_setFemale && !isFemale))
-		{
-			Util::SetActorBaseDataFlag
-			(
-				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale
-			);
-		}
-
-		// Set opposite gender animations flag if necessary.
-		bool usesOppositeGenderAnims = actorBase->UsesOppositeGenderAnims();
-		if ((usesOppositeGenderAnims && !a_setOppositeGenderAnims) || 
-			(!usesOppositeGenderAnims && a_setOppositeGenderAnims))
-		{
-			Util::SetActorBaseDataFlag
-			(
-				actorBase, 
-				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
-				a_setOppositeGenderAnims
-			);
-		}
-		
-		// Switch gender and back again to ensure gendered actor animations 
-		// match the new gender flags, if changed.
-		const auto scriptFactory = 
-		(
-			RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-		);
-		const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-		if (script)
-		{
-			script->SetCommand("sexchange"sv);
-			script->CompileAndRun(coopActor.get());
-			script->SetCommand("sexchange"sv);
-			script->CompileAndRun(coopActor.get());
-			delete script;
-		}
-
-		// Add default headparts for the sex choice.
-		auto faceRelatedData = coopActor->race->faceRelatedData[actorBase->GetSex()]; 
-		if (faceRelatedData && faceRelatedData->headParts)
-		{
-			const auto headParts = faceRelatedData->headParts;
-			for (auto headPart : *headParts)
-			{
-				if (headPart)
-				{
-					actorBase->ChangeHeadPart(headPart);
-				}
-			}
-		}
-
-		// Update skin color and player model.
-		coopActor->UpdateSkinColor();
-		actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
-		coopActor->Update3DModel();
-		coopActor->DoReset3D(true);
 	}
 
 	void CoopPlayer::UpdateWhenDowned()

@@ -40,7 +40,7 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] Player 1's controller ID has not been assigned "
+				"[ALYSLC]\nPlayer 1's controller ID has not been assigned "
 				"before setting all connected controllers.\n"
 				"Try summoning again or assign Player 1's controller ID "
 				"through the Debug Menu before summoning:\n"

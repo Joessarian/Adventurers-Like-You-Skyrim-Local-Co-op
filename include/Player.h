@@ -65,10 +65,7 @@ namespace ALYSLC
 		{
 			if (coopActor && coopActor->race && a_race) 
 			{
-				coopActor->SwitchRace(a_race, false);
-				coopActor->race = a_race;
-				coopActor->GetActorBase()->originalRace = a_race;
-				coopActor->GetActorBase()->race = a_race;
+				Util::SetActorRace(coopActor.get(), a_race);
 			}
 		}
 
@@ -86,9 +83,12 @@ namespace ALYSLC
 		// Member funcs
 		//
 
-		// Copy base NPC's headparts, skin tone, gender, and more to the player.
-		// Set opposite gender animations, if needed.
-		void CopyNPCAppearanceToPlayer(RE::TESNPC* a_baseToCopy, bool a_setOppositeGenderAnims);
+		// Copy base NPC's headparts, skin tone, and more to the player.
+		// Set gender and opposite gender animations, if needed.
+		void CopyNPCAppearanceToPlayer
+		(
+			RE::TESNPC* a_baseToCopy, bool a_setOppositeGenderAnims
+		);
 
 		// Set as dismissed, pause all managers, reset revive/downed/transformation state,
 		// and send dismissal event to script to handle cleanup.
@@ -128,6 +128,10 @@ namespace ALYSLC
 		// Set up player for co-op by changing various actorbase data and form flags.
 		void SetCoopPlayerFlags();
 
+		// Import default racial headparts, update gender, animations, skin tone,
+		// and refresh the player actor's 3D model when done.
+		void SetDefaultRacialAppearance(bool a_setFemale, bool a_setOppositeGenderAnims);
+
 		// Checks if a fader menu is opened following player activation of a 
 		// refr with teleport extra data. Teleport the co-op companion player
 		// to P1 when P1 is repositioned to the teleport endpoint.
@@ -145,10 +149,6 @@ namespace ALYSLC
 		(
 			int32_t a_controllerID, RE::Actor* a_coopActor
 		);
-
-		// Update gender, animations, skin tone, headparts, 
-		// and refresh the player actor's 3D model when done.
-		void UpdateGenderAndBody(bool a_setFemale, bool a_setOppositeGenderAnims);
 
 		// Update player crosshair text, actor state, and more when downed.
 		// NOTE:

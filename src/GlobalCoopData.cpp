@@ -48,6 +48,10 @@ namespace ALYSLC
 		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
 		glob.player1RefAlias = a_player1RefAlias;
 		glob.castingGlobVars.clear();
+		glob.charGenRace = nullptr;
+		glob.charGenActiveEffectsSpellsList.clear();
+		glob.charGenEquippedForms.fill(nullptr);
+		glob.charGenSkillDataList.clear();
 		glob.coopEntityBlacklist.clear();
 		glob.coopEntityBlacklistFIDSet.clear();
 		glob.coopInventoryChests.clear();
@@ -7174,7 +7178,7 @@ namespace ALYSLC
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
 						SPDLOG_DEBUG("Import AVs.");
-						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
+						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
 				}
@@ -7184,7 +7188,7 @@ namespace ALYSLC
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 					{
 						SPDLOG_DEBUG("Export AVs.");
-						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
+						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 					}
 				}
@@ -7950,7 +7954,7 @@ namespace ALYSLC
 				if (a_shouldCopyChanges)
 				{
 					float newAV = p1->GetBaseActorValue(currentAV);
-					if (newAV == glob.coopCompanionExchangeableData->skillAVs[i])
+					if (newAV != glob.coopCompanionExchangeableData->skillAVs[i])
 					{
 						a_coopActor->SetBaseActorValue(currentAV, newAV);
 						const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
@@ -8957,7 +8961,7 @@ namespace ALYSLC
 				{ 
 					RE::DebugMessageBox
 					(
-						"[ALYSLC] Please connect at least 2 controllers before starting co-op."
+						"[ALYSLC]\nPlease connect at least 2 controllers before starting co-op."
 					); 
 				}
 			);
@@ -9073,7 +9077,7 @@ namespace ALYSLC
 							(
 								fmt::format
 								(
-									"[ALYSLC] Player 1 has been assigned controller ID {}.", cid
+									"[ALYSLC]\nPlayer 1 has been assigned controller ID {}.", cid
 								).c_str()
 							); 
 						}
@@ -9308,7 +9312,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
-							"[ALYSLC] Respec successful!\n"
+							"[ALYSLC]\nRespec successful!\n"
 							"Open up the perk tree to level up again and choose perks."
 						).c_str()
 					); 

@@ -789,7 +789,6 @@ namespace ALYSLC
 				(
 					(
 						a_p->coopActor->race && 
-						a_p->coopActor->race->HasKeyword(glob.npcKeyword) &&
 						!isEquipping && 
 						!isUnequipping
 					) || 
@@ -1105,6 +1104,22 @@ namespace ALYSLC
 					// Currently, nothing for Vampire Lords.
 					// Revert transformation if transformed into another non-playable race.
 					pam->reqSpecialAction = SpecialActionType::kTransformation;
+				}
+				else if (a_p->coopActor->race && 
+						 !a_p->coopActor->race->HasKeyword(glob.npcKeyword))
+				{
+					// Quick spell cast when using a non-humanoid character
+					// and holding the bind for longer than the minimum hold interval
+					// (to keep the cast from occurring before flopping).
+					// Do nothing otherwise.
+					float holdTime = a_p->pam->GetPlayerActionInputHoldTime
+					(
+						InputAction::kSpecialAction
+					);
+					if (em->quickSlotSpell && holdTime > Settings::fSecsDefMinHoldTime)
+					{
+						pam->reqSpecialAction = SpecialActionType::kQuickCast;
+					}
 				}
 				else if (a_p->coopActor->IsWeaponDrawn())
 				{
@@ -1510,7 +1525,6 @@ namespace ALYSLC
 					GlobalCoopData::CanControlMenus(a_p->controllerID)
 				) &&
 				a_p->coopActor->race && 
-				a_p->coopActor->race->HasKeyword(glob.npcKeyword) &&
 				!isEquipping && 
 				!isUnequipping
 			);
@@ -5774,7 +5788,7 @@ namespace ALYSLC
 			// Both handle stamina expenditure automatically.
 			// Any animation event-triggered attacks require manual stamina expenditure 
 			// through the player's AV cost manager.
-
+			
 			auto& pam = a_p->pam;
 			auto& em = a_p->em;
 			bool isOnMount = a_p->coopActor->IsOnMount();
@@ -10381,7 +10395,7 @@ namespace ALYSLC
 			{
 				RE::DebugMessageBox
 				(
-					"[ALYSLC] A player is in combat. "
+					"[ALYSLC]\nA player is in combat. "
 					"Please ensure that all players are not in combat "
 					"before attempting to open the Summoning Menu."
 				);
@@ -10918,6 +10932,30 @@ namespace ALYSLC
 		{
 			// Play dual-wield power attack animation.
 
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->mm->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+
 			// Attempt to perform a power attack if the player's weapon is drawn 
 			// and they are not in a killmove.
 			// Otherwise, draw weapons/magic if arms rotation is disabled.
@@ -10944,7 +10982,31 @@ namespace ALYSLC
 		void PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Play LH power attack animation.
-			
+
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->mm->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+
 			// Attempt to perform power attack if the player's weapon is drawn 
 			// and they are not in a killmove.
 			// Otherwise, draw weapons/magic if arms rotation is disabled.
@@ -10971,7 +11033,31 @@ namespace ALYSLC
 		void PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Play RH power attack animation.
-			
+	
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					if (a_p->mm->lsMoved)
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
+					}
+					else
+					{
+						a_p->coopActor->NotifyAnimationGraph("attackStart_StandingPower");
+					}
+
+					return;
+				}
+			}
+
 			// Attempt to perform power attack if the player's weapon is drawn 
 			// and they are not in a killmove.
 			// Otherwise, draw weapons/magic if arms rotation is disabled.
@@ -12356,6 +12442,23 @@ namespace ALYSLC
 		void AttackLH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Attack cleanup for LH weapon/fists.
+				
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					a_p->coopActor->NotifyAnimationGraph("attackStart_Attack1");
+				}
+
+				return;
+			}
 
 			if (!a_p->coopActor->IsWeaponDrawn())
 			{
@@ -12448,6 +12551,23 @@ namespace ALYSLC
 		void AttackRH(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Attack cleanup for RH weapon/fists.
+			
+			// Creature race support-ish. 
+			// Directly send the attack animation event (no stamina cost).
+			if (a_p->coopActor->race && 
+				!a_p->coopActor->HasKeyword(glob.npcKeyword) &&
+				!Util::IsWerewolf(a_p->coopActor.get()) &&
+				!Util::IsVampireLord(a_p->coopActor.get()))
+			{
+				std::string skeleName{ "" };
+				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
+				if (Hash(skeleName) == "bear"_h)
+				{
+					a_p->coopActor->NotifyAnimationGraph("attackStart_Attack2");
+				}
+
+				return;
+			}
 
 			if (!a_p->coopActor->IsWeaponDrawn())
 			{

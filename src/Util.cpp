@@ -97,6 +97,10 @@ namespace ALYSLC
 				}
 			}
 		}
+		else
+		{
+			directionChangeTP = SteadyClock::now();
+		}
 
 		return value;
 	}
@@ -297,7 +301,7 @@ namespace ALYSLC
 				return;
 			}
 
-			// Set the two actors'current combat targets to each other, 
+			// Set the two actors' current combat targets to each other, 
 			// since companion player's projectile/melee hits are ignored sometimes 
 			// if their current combat target is not set to the actor they are about to hit.
 			a_sourceActor->currentCombatTarget = a_targetActor->GetHandle();
@@ -4389,6 +4393,52 @@ namespace ALYSLC
 			}
 
 			return hasLOS;
+		}
+
+		void ImportActorBaseAppearanceData(RE::Actor* a_fromActor, RE::Actor* a_toActor)
+		{
+			// Import actor base appearance data from one actor to the other.
+			
+			SPDLOG_DEBUG("ImportActorBaseAppearanceData");
+			if (!a_fromActor ||
+				!a_toActor ||
+				!a_fromActor->race ||
+				!a_fromActor->race->faceRelatedData ||
+				!a_toActor->race ||
+				!a_toActor->race->faceRelatedData)
+			{
+				return;
+			}
+
+			auto fromActorBase = a_fromActor->GetActorBase();
+			if (!fromActorBase || !fromActorBase->race)
+			{
+				return;
+			}
+
+			auto toActorBase = a_toActor->GetActorBase();
+			if (!toActorBase || !toActorBase->race)
+			{
+				return;
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return;
+			}
+
+			Util::RemoveAllHeadParts(toActorBase);
+			// Add new headparts from NPC to the player.
+			Util::ImportHeadPartsFromBase(fromActorBase, toActorBase);
+			// Finally, update race and gender.
+			SetActorRaceAndGender
+			(
+				a_toActor, 
+				fromActorBase->race, 
+				fromActorBase->IsFemale(),
+				fromActorBase->UsesOppositeGenderAnims()
+			);
 		}
 
 		float InterpolateEaseIn

@@ -449,6 +449,8 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
 				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
+				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
+				SPDLOG_INFO("Installed ResetInventory() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
 				SPDLOG_INFO("Installed Update() hook.");
 				_UseSkill = vtbl.write_vfunc(0xF7, UseSkill);
@@ -473,6 +475,7 @@ namespace ALYSLC
 			(
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
 			);
+			static void ResetInventory(RE::PlayerCharacter* a_this, bool a_leveledOnly);
 			static void Update(RE::PlayerCharacter* a_this, float a_delta);													
 			static void UseSkill
 			(
@@ -489,6 +492,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
 			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
+			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(Update)> _Update;
 			static inline REL::Relocation<decltype(UseSkill)> _UseSkill;
 		};
@@ -1177,6 +1181,25 @@ namespace ALYSLC
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::MagicMenu* a_this, RE::UIMessage& a_message
+			);
+			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
+		};
+
+		// [RaceSex Menu Hooks]
+		class RaceSexMenuHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_RaceSexMenu[0] };
+				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
+				SPDLOG_INFO("Installed ProcessMessage() hook.");
+			}
+
+		private:
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::RaceSexMenu* a_this, RE::UIMessage& a_message
 			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};

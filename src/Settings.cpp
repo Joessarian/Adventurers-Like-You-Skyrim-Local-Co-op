@@ -140,7 +140,7 @@ namespace ALYSLC
 			(
 				fmt::format
 				(
-					"[ALYSLC] ERROR: Invalid binds found:\nDefault settings.ini: "
+					"[ALYSLC]\nERROR: Invalid binds found:\nDefault settings.ini: "
 					"{}\n{}: {}\nTroubleshooting info messages are in the 'ALYSLC.log' file "
 					"and have the [BINDS] tag.\nAll invalid binds were disabled.", 
 					!defBindsSucc ? "[Invalid]" : "[Valid]", 

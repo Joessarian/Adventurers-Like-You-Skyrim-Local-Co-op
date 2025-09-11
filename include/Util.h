@@ -2,6 +2,7 @@
 #include <Compatibility.h>
 #include <DebugAPI.h>
 #include <Enums.h>
+#include <IPluginInterface.h>
 #include <Raycast.h>
 #include <chrono>
 #include <complex>
@@ -971,7 +972,7 @@ namespace ALYSLC
 					)
 				);
 			}
-
+			
 			// Credits to adamhynek for the VR offset from his awesome mod PLANCK:
 			// https://github.com/adamhynek/activeragdoll/blob/master/src/RE/offsets.cpp#L304
 			// and to alandtse for Skyrim VR Address Library:
@@ -1054,7 +1055,7 @@ namespace ALYSLC
 				REL::Relocation<func_t> func{ RELOCATION_ID(24247, 24751) };
 				return func(a_npc, a_type);
 			}
-
+			
 			// All credits for the following function go to VersuchDrei:
 			// https://github.com/VersuchDrei/OStimNG/blob/main/skse/src/GameAPI/GameActor.h#L90
 
@@ -2300,6 +2301,206 @@ namespace ALYSLC
 			);
 		}
 		
+		// Import all of the given race's default headparts to the given actorbase.
+		inline void ImportDefaultRacialHeadParts
+		(
+			RE::TESRace* a_race, bool a_isFemale, RE::TESNPC* a_actorBase
+		)
+		{
+			if (!a_race || !a_actorBase)
+			{
+				return;
+			}
+
+			// Add default headparts for the sex choice.
+			auto faceRelatedData = a_race->faceRelatedData
+			[
+				a_isFemale ? RE::SEX::kFemale : RE::SEX::kMale
+			]; 
+			if (faceRelatedData)
+			{
+				bool importFromPreset = false;
+				// Prioritize adding headparts from the first preset NPC
+				// for the given race and sex.
+				if (faceRelatedData->presetNPCs && !(*faceRelatedData->presetNPCs).empty())
+				{
+					auto baseToCopy = (*faceRelatedData->presetNPCs)[0];
+					if (baseToCopy && baseToCopy->headParts)
+					{
+						importFromPreset = true;
+						SPDLOG_DEBUG("{} headparts.", baseToCopy->numHeadParts);
+						RE::BGSHeadPart** newHeadParts = RE::malloc<RE::BGSHeadPart*>
+						(
+							baseToCopy->numHeadParts * sizeof(RE::BGSHeadPart*)
+						);
+						for (auto i = 0; i < baseToCopy->numHeadParts; ++i)
+						{
+							auto headPart = baseToCopy->headParts[i];
+							if (!headPart)
+							{
+								continue;
+							}
+
+							newHeadParts[i] = headPart;
+							SPDLOG_DEBUG
+							(
+								"Adding race face preset 0's head part #{}: "
+								"{} (0x{:X}), type: {}.", 
+								i, headPart->GetName(), headPart->formID, *headPart->type
+							);
+						}
+						
+						RE::free(a_actorBase->headParts);
+						a_actorBase->headParts = newHeadParts;
+						a_actorBase->numHeadParts = baseToCopy->numHeadParts;
+						// Copy over everything else related to appearance.
+						if (baseToCopy->headRelatedData)
+						{
+							a_actorBase->SetFaceTexture(baseToCopy->headRelatedData->faceDetails);
+							a_actorBase->SetHairColor(baseToCopy->headRelatedData->hairColor);
+						}
+						else
+						{
+							a_actorBase->SetFaceTexture
+							(
+								faceRelatedData->defaultFaceDetailsTextureSet
+							);
+							a_actorBase->SetHairColor(faceRelatedData->defaultHairColor);
+						}
+
+						a_actorBase->faceNPC = 
+						(
+							baseToCopy->faceNPC == a_actorBase ?
+							nullptr :
+							baseToCopy->faceNPC
+						);
+						a_actorBase->faceData = baseToCopy->faceData;
+						a_actorBase->farSkin = baseToCopy->farSkin;
+						a_actorBase->skin = baseToCopy->skin;
+						a_actorBase->tintLayers = baseToCopy->tintLayers;
+						a_actorBase->bodyTintColor = baseToCopy->bodyTintColor;
+					}
+				}
+
+				if (!importFromPreset && faceRelatedData->headParts)
+				{
+					const auto headParts = faceRelatedData->headParts;
+					const auto numHeadParts = (*headParts).size();
+					SPDLOG_DEBUG("{} headparts.", (*headParts).size());
+					RE::BGSHeadPart** newHeadParts = RE::malloc<RE::BGSHeadPart*>
+					(
+						numHeadParts * sizeof(RE::BGSHeadPart*)
+					);
+					uint32_t numHeadPartsImported = 0;
+					for (auto i = 0; i < numHeadParts; ++i)
+					{
+						auto headPart = (*headParts)[i];
+						if (!headPart)
+						{
+							continue;
+						}
+				
+						newHeadParts[i] = headPart;
+						SPDLOG_DEBUG("Adding head part #{}: {} (0x{:X}), type: {}.", 
+							i, headPart->GetName(), headPart->formID, *headPart->type);
+					}
+
+					RE::free(a_actorBase->headParts);
+					a_actorBase->headParts = newHeadParts;
+					a_actorBase->numHeadParts = numHeadParts;
+					// Copy over everything else related to face data.
+					a_actorBase->SetFaceTexture(faceRelatedData->defaultFaceDetailsTextureSet);
+					a_actorBase->SetHairColor(faceRelatedData->defaultHairColor);
+				}
+			}
+		}
+
+		// Import all of the first actor base's headparts to the second actorbase.
+		inline void ImportHeadPartsFromBase(RE::TESNPC* a_fromBase, RE::TESNPC* a_toBase)
+		{
+			if (!a_fromBase || !a_toBase)
+			{
+				return;
+			}
+
+			// Free and re-allocate headparts to ensure all are cleared.
+			// Simply adding headparts one-by-one with ChangeHeadPart()
+			// after removing all with RemoveHeadPart() would sometimes fail to remove certain
+			// headparts and subsequently botch importing the desired headpart of the same type.
+			// Credits to expired6978:
+			// https://github.com/expired6978/SKSE64Plugins/blob/master/skee64/PresetInterface.cpp#L134
+			RE::BGSHeadPart** newHeadParts = RE::malloc<RE::BGSHeadPart*>
+			(
+				a_fromBase->numHeadParts * sizeof(RE::BGSHeadPart*)
+			);
+			if (a_fromBase->headParts)
+			{
+				uint32_t numHeadPartsImported = 0;
+				SPDLOG_DEBUG("{} headparts.", a_fromBase->numHeadParts);
+				for (auto i = 0; i < a_fromBase->numHeadParts; ++i)
+				{
+					auto headPart = a_fromBase->headParts[i];
+					if (!headPart)
+					{
+						continue;
+					}
+				
+					newHeadParts[i] = headPart;
+					SPDLOG_DEBUG("Adding head part #{}: {} (0x{:X}), type: {}.", 
+						i, headPart->GetName(), headPart->formID, *headPart->type);
+				}
+
+				RE::free(a_toBase->headParts);
+				a_toBase->headParts = newHeadParts;
+				a_toBase->numHeadParts = a_fromBase->numHeadParts;
+			}
+			
+			// Copy over everything else related to appearance.
+			auto sex = a_fromBase->GetSex();
+			if (a_fromBase->headRelatedData)
+			{
+				a_toBase->SetFaceTexture(a_fromBase->headRelatedData->faceDetails);
+				a_toBase->SetHairColor(a_fromBase->headRelatedData->hairColor);
+			}
+			else if (a_fromBase->race && 
+					 sex != RE::SEX::kNone &&
+					 a_fromBase->race->faceRelatedData[!sex])
+			{
+				a_toBase->SetFaceTexture
+				(
+					a_fromBase->race->faceRelatedData[!sex]->defaultFaceDetailsTextureSet
+				);
+				a_toBase->SetHairColor(a_fromBase->race->faceRelatedData[!sex]->defaultHairColor);
+			}
+			
+			// Direct pointer copies.
+			a_toBase->bodyTintColor = a_fromBase->bodyTintColor;
+			a_toBase->faceNPC = 
+			(
+				a_fromBase->faceNPC == a_toBase ?
+				nullptr :
+				a_fromBase->faceNPC
+			);
+			a_toBase->farSkin = a_fromBase->farSkin;
+			a_toBase->skin = a_fromBase->skin;
+			a_toBase->tintLayers = a_fromBase->tintLayers;
+
+			// Face data.
+			for (auto i = 0; i < RE::TESNPC::FaceData::Morphs::kTotal; ++i)
+			{
+				SPDLOG_DEBUG("Set morph {}: {}.", i, a_fromBase->faceData->morphs[i]);
+				const auto morph = a_fromBase->faceData->morphs[i];
+				a_toBase->faceData->morphs[i] = morph;
+			}
+
+			for (auto i = 0; i < RE::TESNPC::FaceData::Parts::kTotal; ++i)
+			{
+				SPDLOG_DEBUG("Set part {}: {}.", i, a_fromBase->faceData->parts[i]);
+				const auto part = a_fromBase->faceData->parts[i];
+				a_toBase->faceData->parts[i] = part;
+			}
+		}
+
 		// Smoother step interpolation implementation: https://en.wikipedia.org/wiki/Smoothstep
 		inline float InterpolateSmootherStep
 		(
@@ -2576,6 +2777,244 @@ namespace ALYSLC
 				return a_actor->race->formEditorID == "WerewolfBeastRace"sv;
 			}
 		}
+		
+		// Load a RaceMenu preset with default morphs and no headparts or tints.
+		inline void LoadDefaultBasePreset()
+		{
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
+			if (!p1 || !p1ActorBase)
+			{
+				return;
+			}
+
+			if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
+			{
+				InterfaceExchangeMessage msg{ };
+				auto type = InterfaceExchangeMessage::kMessage_ExchangeInterface;
+				msgIntfc->Dispatch
+				(
+					type, std::addressof(msg), sizeof(InterfaceExchangeMessage*), "SKEE"
+				);
+				if (msg.interfaceMap)
+				{
+					auto overlayInterface = static_cast<IOverlayInterface*>
+					(
+						msg.interfaceMap->QueryInterface("Overlay")
+					);
+					if (overlayInterface)
+					{
+						SPDLOG_DEBUG("Erase overlays.");
+						overlayInterface->EraseOverlays(p1);
+					}
+				}
+			}
+
+			if (p1->overlayTintMasks)
+			{
+				RE::free(p1->overlayTintMasks);
+				p1->overlayTintMasks = nullptr;
+			}
+
+			p1->tintMasks.clear();
+
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (!script)
+			{
+				return;
+			}
+			SPDLOG_DEBUG
+			(
+				"Load default preset ALYSLC_Default onto {}.", 
+				p1->GetName()
+			);
+			script->SetCommand("skee preset-load ALYSLC_Default");
+			script->CompileAndRun(p1);
+		}
+
+		// Load/save a RaceMenu player character preset for the given player character.
+		inline void LoadOrSaveRaceMenuPreset(RE::Actor* a_playerActor, bool&& a_shouldLoad)
+		{
+			SPDLOG_DEBUG
+			(
+				"{}: {}", a_playerActor ? a_playerActor->GetName() : "NONE", 
+				a_shouldLoad ? "LOAD" : "SAVE"
+			);
+			if (!a_playerActor || !ALYSLC::RaceMenuCompat::g_raceMenuInstalled)
+			{
+				return;
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
+			if (!p1 || !p1ActorBase)
+			{
+				return;
+			}
+
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (!script)
+			{
+				return;
+			}
+
+			auto saveMgr = RE::BGSSaveLoadManager::GetSingleton();
+			if (!saveMgr)
+			{
+				return;
+			}
+			
+			// Clear out overlays before applying the preset,
+			// since previously applied overlays sometimes stack 
+			// and interfere with the preset-defined ones.
+			if (a_shouldLoad)
+			{
+				if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
+				{
+					InterfaceExchangeMessage msg{ };
+					auto type = InterfaceExchangeMessage::kMessage_ExchangeInterface;
+					msgIntfc->Dispatch
+					(
+						type, std::addressof(msg), sizeof(InterfaceExchangeMessage*), "SKEE"
+					);
+					if (msg.interfaceMap)
+					{
+						auto overlayInterface = static_cast<IOverlayInterface*>
+						(
+							msg.interfaceMap->QueryInterface("Overlay")
+						);
+						if (overlayInterface)
+						{
+							SPDLOG_DEBUG("Erase overlays.");
+							overlayInterface->EraseOverlays(a_playerActor);
+						}
+					}
+				}
+				
+				if (a_playerActor->IsPlayerRef())
+				{
+					SPDLOG_DEBUG
+					(
+						"Load {}'s preset as ALYSLC_P1_Preset_{}.", 
+						a_playerActor->GetName(), 
+						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+					);
+					script->SetCommand("skee preset-load ALYSLC_P1_Preset");
+					script->CompileAndRun(a_playerActor);
+
+					// Prevents skin tone mismatch between body and face for P1.
+					script->SetCommand
+					(
+						fmt::format
+						(
+							"setnpcweight {}", 
+							static_cast<uint32_t>(a_playerActor->GetWeight())
+						).c_str()
+					);
+					script->CompileAndRun(a_playerActor);
+				}
+				else
+				{
+					auto actorBase = a_playerActor->GetActorBase();
+					if (!actorBase)
+					{
+						return;
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Load {}'s preset as ALYSLC_{}_Preset_{}.", 
+						a_playerActor->GetName(), 
+						Util::GetEditorID(actorBase),
+						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+					);
+					script->SetCommand
+					(
+						fmt::format
+						(
+							"skee preset-load ALYSLC_{}_Preset_{}", 
+							Util::GetEditorID(actorBase),
+							saveMgr->currentCharacterID
+						).c_str()
+					);
+					script->CompileAndRun(a_playerActor);
+
+					// Prevents skin tone mismatch between body and face.
+					script->SetCommand
+					(
+						fmt::format
+						(
+							"setnpcweight {}", static_cast<uint32_t>(p1->GetWeight())
+						).c_str()
+					);
+					script->CompileAndRun(p1);
+
+					script->SetCommand
+					(
+						fmt::format
+						(
+							"setnpcweight {}", 
+							static_cast<uint32_t>(a_playerActor->GetWeight())
+						).c_str()
+					);
+					script->CompileAndRun(a_playerActor);
+				}
+			}
+			else
+			{
+				if (a_playerActor->IsPlayerRef())
+				{
+					SPDLOG_DEBUG
+					(
+						"Save {}'s preset as ALYSLC_P1_Preset_{}.", 
+						a_playerActor->GetName(), 
+						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+					);
+					script->SetCommand("skee preset-save ALYSLC_P1_Preset");
+					script->CompileAndRun(p1);
+				}
+				else
+				{
+					auto actorBase = a_playerActor->GetActorBase();
+					if (!actorBase)
+					{
+						return;
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Save {}'s preset as ALYSLC_{}_Preset_{}.", 
+						a_playerActor->GetName(), 
+						Util::GetEditorID(actorBase),
+						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+					);
+					script->SetCommand
+					(
+						fmt::format
+						(
+							"skee preset-save ALYSLC_{}_Preset_{}", 
+							Util::GetEditorID(actorBase),
+							saveMgr->currentCharacterID
+						).c_str()
+					);
+					// Must run on P1, since if on AE and run on a companion player character,
+					// the companion player's character appearance is saved as a preset instead.
+					// RaceMenu SE always seems to use P1 as the actor 
+					// from which to save the preset no matter what.
+					script->CompileAndRun(p1);
+				}
+			}
+
+			delete script;
+		}
 
 		// Return true if a menu is open that stops or should stop the player from moving.
 		inline bool OpenMenuStopsMovement()
@@ -2642,6 +3081,77 @@ namespace ALYSLC
 		{
 			auto idle = RE::TESForm::LookupByEditorID<RE::TESIdleForm>(a_idleName);
 			return PlayIdle(idle, a_sourceActor, a_targetActor);
+		}
+
+		// Print the name and FID of all headparts from the given actorbase.
+		inline void PrintHeadParts(RE::TESNPC* a_actorBase)
+		{
+			SPDLOG_DEBUG
+			(
+				"======================================================="
+			);
+			if (!a_actorBase || !a_actorBase->headParts)
+			{
+				return;
+			}
+
+			for (auto i = 0; i < a_actorBase->numHeadParts; ++i)
+			{
+				const auto headPart = a_actorBase->headParts[i];
+				if (!headPart)
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"{} ({}) has head part #{}: {} (0x{:X}), type: {}.", 
+					a_actorBase->GetName(),
+					Util::GetEditorID(a_actorBase),
+					i, 
+					headPart->GetName(),
+					headPart->formID,
+					*headPart->type
+				);
+			}
+		}
+
+		// Remove all headparts from the given actorbase.
+		inline void RemoveAllHeadParts(RE::TESNPC* a_actorBase)
+		{
+			if (!a_actorBase)
+			{
+				return;
+			}
+			
+			if (a_actorBase->headParts)
+			{
+				RE::free(a_actorBase->headParts);
+				a_actorBase->headParts = nullptr;
+				a_actorBase->numHeadParts = 0;
+			}
+		}
+		
+		// Remove all headparts from the given actor.
+		inline void RemoveAllHeadParts(RE::Actor* a_actor)
+		{
+			if (!a_actor)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (!actorBase)
+			{
+				return;
+			}
+
+			if (actorBase->headParts)
+			{
+				RE::free(actorBase->headParts);
+				actorBase->headParts = nullptr;
+				actorBase->numHeadParts = 0;
+			}
 		}
 
 		// Convert the given pitch and yaw angles (Cartesian convention) to a 3D direction vector.
@@ -2752,6 +3262,158 @@ namespace ALYSLC
 			}
 
 			hitEvent.reset();
+		}
+
+		// Set the gender of the given actor to the given gender.
+		inline void SetActorGender
+		(
+			RE::Actor* a_actor, bool a_setFemale, bool a_setOppositeGenderAnims = false
+		)
+		{
+			SPDLOG_DEBUG("SetActorGender");
+			if (!a_actor)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (!actorBase)
+			{
+				return;
+			}
+			
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale
+			);
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, 
+				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
+				a_setOppositeGenderAnims
+			);
+			
+			// Switch gender and back again to ensure gendered actor animations 
+			// match the new gender flags, if changed.
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (script)
+			{
+				script->SetCommand("sexchange"sv);
+				script->CompileAndRun(a_actor);
+				script->SetCommand("sexchange"sv);
+				script->CompileAndRun(a_actor);
+				delete script;
+			}
+		}
+		
+		inline void SetActorRaceAndGender
+		(
+			RE::Actor* a_actor, 
+			RE::TESRace* a_race, 
+			bool a_setFemale, 
+			bool a_setOppositeGenderAnims = false
+		)
+		{
+			SPDLOG_DEBUG("SetActorRaceAndGender");
+			if (!a_actor || !a_race || !a_actor->race)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (!actorBase)
+			{
+				return;
+			}
+			
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, RE::ACTOR_BASE_DATA::Flag::kFemale, a_setFemale
+			);
+			Util::SetActorBaseDataFlag
+			(
+				actorBase, 
+				RE::ACTOR_BASE_DATA::Flag::kOppositeGenderAnims, 
+				a_setOppositeGenderAnims
+			);
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (script)
+			{
+				// Update race.
+				if (a_actor->race != a_race)
+				{
+					a_actor->race = a_race;
+					actorBase->originalRace = a_race;
+					actorBase->race = a_race;
+					if (a_actor->IsPlayerRef())
+					{
+						auto p1 = RE::PlayerCharacter::GetSingleton();
+						if (p1)
+						{
+							p1->charGenRace = p1->race2 = p1->race = a_race;
+						}
+					}
+				}
+
+				// Switch gender and back again to ensure gendered actor animations 
+				// match the new gender flags, if changed.
+				script->SetCommand("sexchange"sv);
+				script->CompileAndRun(a_actor);
+				script->SetCommand("sexchange"sv);
+				script->CompileAndRun(a_actor);
+
+				delete script;
+			}
+		}
+
+		// Set the race of the given actor to the given race.
+		inline void SetActorRace(RE::Actor* a_actor, RE::TESRace* a_race)
+		{
+			SPDLOG_DEBUG("SetActorRace");
+			if (!a_actor || !a_race || !a_actor->race)
+			{
+				return;
+			}
+
+			auto actorBase = a_actor->GetActorBase();
+			if (!actorBase)
+			{
+				return;
+			}
+			
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (script)
+			{
+				// Update race.
+				if (a_actor->race != a_race)
+				{
+					a_actor->race = a_race;
+					actorBase->originalRace = a_race;
+					actorBase->race = a_race;
+					if (a_actor->IsPlayerRef())
+					{
+						auto p1 = RE::PlayerCharacter::GetSingleton();
+						if (p1)
+						{
+							p1->charGenRace = p1->race2 = p1->race = a_race;
+						}
+					}
+				}
+
+				delete script;
+			}
 		}
 
 		// Set the boolean game setting, given by the setting name, to the given value.
@@ -3278,6 +3940,9 @@ namespace ALYSLC
 			const RE::NiPoint3& a_crosshairWorldPos, 
 			bool a_showDebugInfo = false
 		);
+
+		// Import actor base appearance data from one actor to the other.
+		void ImportActorBaseAppearanceData(RE::Actor* a_fromActor, RE::Actor* a_toActor);
 
 		// Get interpolated values using various interpolation functions.
 		// - Previous and next set the interpolation bounds.

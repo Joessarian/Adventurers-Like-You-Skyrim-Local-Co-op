@@ -1102,24 +1102,35 @@ namespace ALYSLC
 			!menuNamesHashSet.empty() &&
 			menuNamesHashSet.contains(Hash(GlobalCoopData::SETUP_MENU_NAME))
 		};
-		bool tempMenuOpenForCoop = 
-		{ 
-			(glob.coopSessionActive || attemptingToOpenSetupMenu) && (!Util::MenusOnlyAlwaysOpen())
-		};
+		bool tempMenuOpenForCoop = !Util::MenusOnlyAlwaysOpen();
 		// Update interpolated value and direction change flag + interpolation direction.
 		// Use to set the overlay alpha value.
+		auto dirChangeTPBefore = pmcFadeInterpData->directionChangeTP;
+		bool valAtDirChangeBefore = pmcFadeInterpData->valueAtDirectionChange;
+		bool dirBefore = pmcFadeInterpData->directionChangeFlag;
+		bool interpToMaxBefore = pmcFadeInterpData->interpToMax;
+		bool interpToMinBefore = pmcFadeInterpData->interpToMin;
+		float valueBefore = pmcFadeInterpData->value;
 		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpenForCoop);
 
 		// REMOVE when done debugging.
 		/*SPDLOG_DEBUG
 		(
 			"Attempting to open setup menu: {}. Temp menu open: {}. "
-			"Interped value: {}. Interp to min/max: {}, {}.", 
+			"Interped value: {}. Interp to min/max: {}, {}. Time since direction change: {}. "
+			"Before: val at dir: {}, dir flag: {}, max: {}, min: {}, val: {}, secs: {}.", 
 			attemptingToOpenSetupMenu,
 			tempMenuOpenForCoop,
 			interpValue,
 			pmcFadeInterpData->interpToMax,
-			pmcFadeInterpData->interpToMin
+			pmcFadeInterpData->interpToMin,
+			Util::GetElapsedSeconds(pmcFadeInterpData->directionChangeTP),
+			valAtDirChangeBefore,
+			dirBefore,
+			interpToMaxBefore,
+			interpToMinBefore,
+			valueBefore,
+			Util::GetElapsedSeconds(dirChangeTPBefore)
 		);*/
 
 		// Draw when a temporary menu is open or while still fading in/out.
@@ -1144,6 +1155,11 @@ namespace ALYSLC
 				// so set to the player ID of the player requesting control of this menu.
 				// Set to P1's PID (0) if there is no valid manager menu PID.
 				pmcPlayerID = managerMenuPlayerID != -1 ? managerMenuPlayerID : 0;
+			}
+			else
+			{
+				// P1 is in control.
+				pmcPlayerID = 0;
 			}
 
 			// Should never happen, but if not a valid player ID, return.
@@ -2089,25 +2105,41 @@ namespace ALYSLC
 		{
 		case MenuInputEventType::kEquipReq:
 		{
-			SPDLOG_DEBUG
+			const auto& p = glob.coopPlayers[managerMenuCID];
+			// Do not equip if the player character's race is a creature race
+			// and the item to equip is a weapon or spell, since they are not usable
+			// and can cause equip looping.
+			bool canEquip = 
 			(
-				"Equip Request Event: from container: {}, "
-				"form: {}, equip index: {}, placeholder spell changed: {}.",
-				(Util::HandleIsValid(fromContainerHandle)) ? 
-				fromContainerHandle.get()->GetName() : 
-				"NONE",
-				(selectedForm) ? selectedForm->GetName() : "NONE",
-				reqEquipIndex,
-				placeholderMagicChanged
+				!p->coopActor->race ||
+				p->coopActor->race->HasKeyword(glob.npcKeyword) ||
+				selectedForm->As<RE::TESObjectARMO>() ||
+				selectedForm->As<RE::AlchemyItem>() ||
+				selectedForm->As<RE::IngredientItem>()
 			);
-			// Equip/unequip the selected form.
-			glob.coopPlayers[managerMenuCID]->em->HandleMenuEquipRequest
-			(
-				fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
-			);
-			// Reset placeholder magic changed flag and equip index.
-			placeholderMagicChanged = false;
-			reqEquipIndex = EquipIndex::kRightHand;
+			if (canEquip)
+			{
+				SPDLOG_DEBUG
+				(
+					"Equip Request Event: from container: {}, "
+					"form: {}, equip index: {}, placeholder spell changed: {}.",
+					(Util::HandleIsValid(fromContainerHandle)) ? 
+					fromContainerHandle.get()->GetName() : 
+					"NONE",
+					(selectedForm) ? selectedForm->GetName() : "NONE",
+					reqEquipIndex,
+					placeholderMagicChanged
+				);
+				// Equip/unequip the selected form.
+				p->em->HandleMenuEquipRequest
+				(
+					fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
+				);
+				// Reset placeholder magic changed flag and equip index.
+				placeholderMagicChanged = false;
+				reqEquipIndex = EquipIndex::kRightHand;
+			}
+
 			break;
 		}
 		case MenuInputEventType::kEmulateInput:
@@ -2548,7 +2580,7 @@ namespace ALYSLC
 			(
 				fmt::format
 				(
-					"[ALYSLC] {} increased to {}! {} Points left: {}",
+					"[ALYSLC]\n{} increased to {}! {} Points left: {}",
 					skillName,
 					avLvl + 1,
 					isShared ? "Crafting" : "Learning",
@@ -2584,7 +2616,7 @@ namespace ALYSLC
 				(
 					fmt::format
 					(
-						"[ALYSLC] You do not have enough {} Points!", 
+						"[ALYSLC]\nYou do not have enough {} Points!", 
 						isShared ? "Crafting" : "Learning"
 					).c_str()
 				);
@@ -2598,7 +2630,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
-							"[ALYSLC] You already have developed this skill too well "
+							"[ALYSLC]\nYou already have developed this skill too well "
 							"to benefit from this learning/crafting book!", 
 							a_skillbook->GetName()
 						).c_str()
@@ -2611,7 +2643,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
-							"[ALYSLC] Cannot use {} to level up a skill.",
+							"[ALYSLC]\nCannot use {} to level up a skill.",
 							a_skillbook->GetName()
 						).c_str()
 					);
@@ -2655,7 +2687,7 @@ namespace ALYSLC
 			{
 				RE::DebugMessageBox
 				(
-					"[ALYSLC] Cannot sell an item currently equipped by Player 1!"
+					"[ALYSLC]\nCannot sell an item currently equipped by Player 1!"
 				);
 				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 			}
@@ -2803,7 +2835,7 @@ namespace ALYSLC
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC] P1's inventory is not accessible to other players while looting."
+				"[ALYSLC]\nP1's inventory is not accessible to other players while looting."
 			);
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
@@ -2853,7 +2885,7 @@ namespace ALYSLC
 					{
 						RE::DebugMessageBox
 						(
-							"[ALYSLC] Please unequip the item before transferring it to player 1."
+							"[ALYSLC]\nPlease unequip the item before transferring it to player 1."
 						);
 						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 						return;
@@ -2966,7 +2998,7 @@ namespace ALYSLC
 				{
 					RE::DebugMessageBox
 					(
-						"[ALYSLC] Cannot plant an item currently equipped by Player 1!"
+						"[ALYSLC]\nCannot plant an item currently equipped by Player 1!"
 					);
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 				}

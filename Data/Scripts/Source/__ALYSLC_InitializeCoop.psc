@@ -25,7 +25,7 @@ Function Init()
 	StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", -1)
 	ALYSLC.Log("[INIT SCRIPT] Starting cleanup...")
 	If (!Player1ReferenceAlias)
-		Debug.MessageBox("[ALYSLC] P1 reference alias is invalid. Aborting. Please notify the mod author of his incompetence.")
+		Debug.MessageBox("[ALYSLC]\nP1 reference alias is invalid. Aborting. Please notify the mod author of his incompetence.")
 		ALYSLC.Log("[INIT SCRIPT] P1 ref alias is invalid. Cannot start co-op. Aborting.")
 		Return
 	EndIf
@@ -40,7 +40,7 @@ Function Init()
 	EndWhile
 	
 	If (PlayerRef != Game.GetPlayer())
-		Debug.MessageBox("[ALYSLC] Critical Error: P1's actor is invalid. Cannot initialize co-op data.")
+		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot initialize co-op data.")
 		ALYSLC.Log("[INIT SCRIPT] Critical Error: P1's actor is invalid. Cannot initialize co-op data.")
 		Return
 	EndIf
@@ -148,15 +148,16 @@ Function Init()
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")
 	CanStartCoopGlobVar.SetValue(1.00)
 	ALYSLC.Log("[INIT SCRIPT] Initialization complete.")
-		
+	
 	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
 	If (FirstTimeInit)
-		Debug.MessageBox("[ALYSLC] Done initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
+		Debug.MessageBox("[ALYSLC]\nDone initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
 	EndIf
 EndFunction
 
 ; Run Init().
 Event OnInit()
+	ALYSLC.Log("[INIT SCRIPT] ONINIT. Run Init()")
 	Init()
 EndEvent
 

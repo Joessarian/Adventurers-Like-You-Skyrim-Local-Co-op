@@ -43,6 +43,7 @@ namespace ALYSLC
 			PlayerCameraTransitionStateHooks::InstallHooks();
 			PlayerCharacterHooks::InstallHooks();
 			ProjectileHooks::InstallHooks();
+			RaceSexMenuHooks::InstallHooks();
 			ReadyWeaponHandlerHooks::InstallHooks();
 			ShoutHandlerHooks::InstallHooks();
 			SneakHandlerHooks::InstallHooks();
@@ -929,7 +930,7 @@ namespace ALYSLC
 // [ACTOR MAGIC CASTER HOOKS]:
 		void ActorMagicCasterHooks::DeselectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _DeselectSpellImpl(a_this);
 			}
@@ -988,7 +989,7 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::FinishCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _FinishCastImpl(a_this);
 			}
@@ -1050,7 +1051,7 @@ namespace ALYSLC
 			RE::ActorMagicCaster* a_this, bool a_depleteEnergy
 		)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _InterruptCastImpl(a_this, a_depleteEnergy);
 			}
@@ -1135,7 +1136,7 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::RequestCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _RequestCastImpl(a_this);
 			}
@@ -1260,7 +1261,7 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::SelectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _SelectSpellImpl(a_this);
 			}
@@ -1322,7 +1323,7 @@ namespace ALYSLC
 			RE::ActorMagicCaster* a_this, RE::MagicItem* a_spell
 		)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _SetCurrentSpellImpl(a_this, a_spell);
 
@@ -1388,7 +1389,7 @@ namespace ALYSLC
 			RE::MagicItem* a_spell
 		)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
 			}
@@ -1451,7 +1452,7 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::StartCastImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _StartCastImpl(a_this);
 			}
@@ -1510,7 +1511,7 @@ namespace ALYSLC
 
 		bool ActorMagicCasterHooks::StartChargeImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _StartChargeImpl(a_this);
 			}
@@ -1551,7 +1552,7 @@ namespace ALYSLC
 
 		void ActorMagicCasterHooks::StartReadyImpl(RE::ActorMagicCaster* a_this)
 		{
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _StartReadyImpl(a_this);
 			}
@@ -1612,7 +1613,7 @@ namespace ALYSLC
 		{
 			// Stall companion players' hand cast if casting a fire and forget (FNF) spell.
 
-			if (!glob.globalDataInit || !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
 			{
 				return _Update(a_this, a_delta);
 			}
@@ -2876,6 +2877,15 @@ namespace ALYSLC
 					);
 				}
 			}
+			else 
+			{
+				// Get up faster when not a humanoid.
+				if (p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
+					p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp)
+				{
+					a_data.deltaTime *= 5.0f;
+				}
+			}
 
 			if (p->mm->isDashDodging)
 			{
@@ -3392,11 +3402,6 @@ namespace ALYSLC
 				// or even have their character rotate automatically
 				// towards a targeted actor when spellcasting.
 				// 
-				// If doing the following below, the only downsides are having to keep track
-				// of combat state ourselves and have the IsInCombat() func always return false,
-				// so any other plugins making this call to determine if they should do something
-				// to this player character or not will not receive the proper combat state.
-				// 
 				// Doing the following will stop players' characters
 				// from aggro-ing NPCs or other players
 				// and is proven to prevent the game from auto-equipping gear
@@ -3406,7 +3411,7 @@ namespace ALYSLC
 				// for example, TrueHUD will not display actor info bars for companion players
 				// even if other NPCs are attacking them.
 				
-				/*if (a_this->combatController)
+				if (a_this->combatController)
 				{
 					a_this->combatController->inactive = true;
 					a_this->combatController->ignoringCombat = true;
@@ -3415,7 +3420,7 @@ namespace ALYSLC
 					a_this->combatController->targetHandle = 
 					a_this->combatController->previousTargetHandle = RE::ActorHandle();
 					a_this->combatController->cachedTarget = nullptr;
-				}*/
+				}
 
 				// Stop idles and any executing scene packages, but not run-once packages, 
 				// which are generated at runtime and have the 'FF' mod index.
@@ -3451,8 +3456,7 @@ namespace ALYSLC
 						// Package idle playing currently.
 						if (p->coopActor->currentProcess->middleHigh->unk210)
 						{
-							// Only way to stop package
-							// xidles from playing
+							// Only way to stop package idles from playing
 							// and from continuing to evaluate the package originating the idle.
 							// The game will continue to set the radiant package 
 							// as the current package in subsequent frames otherwise.
@@ -4728,7 +4732,7 @@ namespace ALYSLC
 							{
 								RE::DebugMessageBox
 								(
-									"[ALYSLC] Player 1 is currently in combat "
+									"[ALYSLC]\nPlayer 1 is currently in combat "
 									"or the Summoning Menu was already triggered. "
 									"Please ensure Player 1 is not in combat "
 									"before attempting to summon other players."
@@ -5343,7 +5347,7 @@ namespace ALYSLC
 						{
 							RE::DebugMessageBox
 							(
-								"[ALYSLC] Cannot save while another player's data "
+								"[ALYSLC]\nCannot save while another player's data "
 								"is copied over to P1.\n"
 								"Please ensure all menus are closed or reload an older save."
 							);
@@ -5352,7 +5356,7 @@ namespace ALYSLC
 						{
 							RE::DebugMessageBox
 							(
-								"[ALYSLC] Cannot quicksave while another player is downed!"
+								"[ALYSLC]\nCannot quicksave while another player is downed!"
 							);
 						}
 					}
@@ -5960,12 +5964,13 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"Menu, MIM CID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
 					"p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, "
 					"proxied P1 input: {}, coop player menu input: {}, "
+					"ignored: {}, processable P1 input: {}, "
 					"dialogue menu open: {}, is blocked event: {}, "
 					"valid co-op companion input: {}, valid p1 input: {}, "
 					"two-player P1 lockpicking "
@@ -5982,6 +5987,8 @@ namespace ALYSLC
 					shouldProcess,
 					proxiedP1Input,
 					coopPlayerMenuInput,
+					ignoreInput,
+					processableP1Event,
 					dialogueMenuOpen,
 					isBlockedP1Event,
 					validCoopCompanionInput,
@@ -5989,7 +5996,7 @@ namespace ALYSLC
 					allowP1RotateLock,
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput
-				);
+				);*/
 
 				if (!propagateUnmodifiedEvent)
 				{
@@ -6620,7 +6627,7 @@ namespace ALYSLC
 			{
 				return _ModifyAnimationUpdateData(a_this, a_data);
 			}
-
+			
 			if (a_this->HasKeyword(glob.npcKeyword))
 			{
 				// Speed up (un)equip/dodging anims.
@@ -6779,6 +6786,23 @@ namespace ALYSLC
 			}
 
 			return _NotifyAnimationGraph(a_this, a_eventName);
+		}
+
+		void PlayerCharacterHooks::ResetInventory(RE::PlayerCharacter* a_this, bool a_leveledOnly)
+		{
+			auto ui = RE::UI::GetSingleton();
+			if (!ui)
+			{
+				return _ResetInventory(a_this, a_leveledOnly);	
+			}
+
+			SPDLOG_DEBUG("Resetting P1 ({})'s inventory. RaceMenu open: {}.", 
+				a_this->GetName(),
+				ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME));
+			if (!ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME))
+			{
+				return _ResetInventory(a_this, a_leveledOnly);	
+			}
 		}
 
 		void PlayerCharacterHooks::Update(RE::PlayerCharacter* a_this, float a_delta)
@@ -11410,6 +11434,457 @@ namespace ALYSLC
 			return _ProcessMessage(a_this, a_message);
 		}
 		
+		RE::UI_MESSAGE_RESULTS RaceSexMenuHooks::ProcessMessage
+		(
+			RE::RaceSexMenu* a_this, RE::UIMessage& a_message
+		)
+		{
+			// Save and restore P1's skill levels, XP, and thresholds,
+			// and re-equip all gear.
+
+			if (a_message.menu != a_this->MENU_NAME)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			auto saveMgr = RE::BGSSaveLoadManager::GetSingleton();
+			if (!p1 || !saveMgr)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			auto p1ActorBase = p1->GetActorBase();
+			if (!p1ActorBase)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			// Only need to handle open/close messages.
+			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+			bool closing = 
+			(
+				*a_message.type == RE::UI_MESSAGE_TYPE::kHide || 
+				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
+			);
+			if (!opening && !closing)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			if (opening && glob.globalDataInit)
+			{
+				SPDLOG_DEBUG
+				(
+					"RaceMenu opening. "
+					"Menu CIDs: {}, {}, {}. P1 races: 1: {}, 2: {}, charGen: {}. "
+					"P1 character ID: 0x{:X}",
+					glob.menuCID, 
+					glob.prevMenuCID, 
+					glob.mim->managerMenuCID,
+					p1->race ? p1->race->formEditorID : "NONE",
+					p1->race2 ? p1->race2->formEditorID : "NONE",
+					p1->charGenRace ? p1->charGenRace->formEditorID : "NONE",
+					saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+				);
+
+				// Save race.
+				glob.charGenRace = p1->race;
+
+				glob.charGenSkillDataList.clear();
+				auto currentAV = RE::ActorValue::kNone;
+				for (auto i = 0; i < Skill::kTotal; ++i)
+				{
+					currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
+					// Save P1's current XP, level, and level threshold for each skill.
+					glob.charGenSkillDataList.emplace_back
+					(
+						RE::PlayerCharacter::PlayerSkills::Data::SkillData
+						(
+							p1->skills->data->skills[i].level,
+							p1->skills->data->skills[i].xp,
+							p1->skills->data->skills[i].levelThreshold
+						)
+					);
+					SPDLOG_DEBUG
+					(
+						"Saving {}'s level as {}, threshold as {}, XP as {}.",
+						Util::GetActorValueName(currentAV),
+						glob.charGenSkillDataList[i].level,
+						glob.charGenSkillDataList[i].levelThreshold,
+						glob.charGenSkillDataList[i].xp
+					);
+				}
+
+				// Save the active effects.
+				const auto currentActiveEffects = p1->GetActiveEffectList();
+				glob.charGenActiveEffectsSpellsList.clear();
+				if (currentActiveEffects)
+				{
+					for (const auto activeEffect : *p1->GetActiveEffectList())
+					{
+						if (!activeEffect)
+						{
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"On entry: has active effect {}. Spell: {}.",
+							activeEffect->effect && activeEffect->effect->baseEffect ?
+							activeEffect->effect->baseEffect->GetName() :
+							"NONE",
+							activeEffect->spell ? activeEffect->spell->GetName() : "NONE"
+						);
+
+						if (activeEffect->spell)
+						{
+							glob.charGenActiveEffectsSpellsList.emplace_front(activeEffect->spell);
+						}
+					}
+				}
+
+				// Clear all equipped forms.
+				glob.charGenEquippedForms.fill(nullptr);
+				// Set weapon/magic slot forms.
+				glob.charGenEquippedForms[!EquipIndex::kLeftHand] = p1->GetEquippedObject(true);
+				glob.charGenEquippedForms[!EquipIndex::kRightHand] = p1->GetEquippedObject(false);
+				glob.charGenEquippedForms[!EquipIndex::kAmmo] = p1->GetCurrentAmmo();
+				auto currentShout = p1->GetCurrentShout();
+				glob.charGenEquippedForms[!EquipIndex::kVoice] = currentShout;
+				if (!currentShout)
+				{
+					glob.charGenEquippedForms[!EquipIndex::kVoice] = p1->selectedPower;
+				}
+				// Armor.
+				uint32_t i = !EquipIndex::kFirstBipedSlot; 
+				for (; i <= !EquipIndex::kLastBipedSlot; ++i)
+				{
+					auto armorInSlot = 
+					(
+						p1->GetWornArmor
+						(
+							static_cast<RE::BGSBipedObjectForm::BipedObjectSlot>
+							(
+								1 << (i - !EquipIndex::kFirstBipedSlot)
+							)
+						)
+					);
+					glob.charGenEquippedForms[i] = armorInSlot;
+				}
+
+				Util::Papyrus::UnequipAll(p1);
+				if (ALYSLC::RaceMenuCompat::g_raceMenuInstalled)
+				{
+					if (!p1->race2 || glob.coopSessionActive)
+					{
+						// Tell P1 to save their appearance as a preset to restore later
+						// after a companion player changes their character's appearance.
+						// Only show the first time the RaceMenu opens,
+						// or while in co-op.
+						RE::DebugMessageBox
+						(
+							"[ALYSLC]\nPlayer 1, "
+							"please save your appearance as a preset before exiting.\n"
+							"You will be prompted to reload this preset onto your character "
+							"after other players have customized their characters."
+						);
+					}
+				}
+			}
+
+			if (closing)
+			{
+				// A player has just finished customizing their character, 
+				// so save their appearance preset.
+				if (glob.globalDataInit)
+				{
+					SPDLOG_DEBUG
+					(
+						"RaceMenu closing. "
+						"Menu CIDs: {}, {}, {}. P1 races: 1: {}, 2: {}, charGen: {}. "
+						"P1 character ID: 0x{:X}",
+						glob.menuCID, 
+						glob.prevMenuCID, 
+						glob.mim->managerMenuCID,
+						p1->race ? p1->race->formEditorID : "NONE",
+						p1->race2 ? p1->race2->formEditorID : "NONE",
+						p1->charGenRace ? p1->charGenRace->formEditorID : "NONE",
+						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
+					);
+					// Restore skill levels, XP, level threshold, and active effects.
+					// Also re-equip all gear.
+					auto currentAV = RE::ActorValue::kNone;
+					for (auto i = 0; i < Skill::kTotal; ++i)
+					{
+						currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
+						p1->SetBaseActorValue(currentAV, glob.charGenSkillDataList[i].level);
+						p1->skills->data->skills[i] = glob.charGenSkillDataList[i];
+						SPDLOG_DEBUG
+						(
+							"Restoring {}'s level to {}, threshold to {}, XP to {}.",
+							Util::GetActorValueName(currentAV),
+							glob.charGenSkillDataList[i].level,
+							glob.charGenSkillDataList[i].levelThreshold,
+							glob.charGenSkillDataList[i].xp
+						);
+					}
+
+					auto currentEffectsList = p1->GetActiveEffectList();
+					if (currentEffectsList)
+					{
+						for (const auto activeEffect : *currentEffectsList)
+						{
+							if (!activeEffect)
+							{
+								continue;
+							}
+
+							SPDLOG_DEBUG
+							(
+								"On exit: has active effect {}.",
+								activeEffect->effect && activeEffect->effect->baseEffect ?
+								activeEffect->effect->baseEffect->GetName() :
+								"NONE"
+							);
+						}
+					}
+					else
+					{
+						SPDLOG_DEBUG("No active effects list.");
+					}
+
+					// TODO: Restore active effects.
+
+					// Re-equip saved gear.
+					RE::TESForm* form{ nullptr };
+					auto aem = RE::ActorEquipManager::GetSingleton(); 
+					auto taskInterface = SKSE::GetTaskInterface();
+					if (aem && taskInterface)
+					{
+						for (auto i = 0; i < glob.charGenEquippedForms.size(); ++i)
+						{
+							form = glob.charGenEquippedForms[i];
+							// Do not include items without a loaded name,
+							// such as the "SkinNaked" armor. 
+							if (!form || strlen(form->GetName()) == 0)
+							{
+								continue;
+							}
+
+							EquipIndex currentSlot = EquipIndex::kTotal;
+							if (i < !EquipIndex::kWeapMagTotal)
+							{
+								currentSlot = static_cast<EquipIndex>(i);
+							}
+
+							// Do not equip two handed weapons/spells twice,
+							// so skip over the RH item if it is the same 2H item
+							// as the earlier-equipped LH item.
+							if (currentSlot == EquipIndex::kRightHand)
+							{
+								auto lhObj = glob.charGenEquippedForms[!EquipIndex::kLeftHand];
+								if (lhObj == form && 
+									form->As<RE::BGSEquipType>()->equipSlot == 
+									glob.bothHandsEquipSlot)
+								{
+									continue;
+								}
+							}
+								
+							SPDLOG_DEBUG("Re-equip {}.", form->GetName());
+							// Equip the cached item based on type.
+							auto boundObj = form->As<RE::TESBoundObject>();
+							switch (*form->formType)
+							{
+							case RE::FormType::Ammo:
+							{
+								if (boundObj)
+								{
+									const auto invCounts = p1->GetInventoryCounts();
+									auto iter = invCounts.find(boundObj); 
+									if (iter != invCounts.end() && iter->second > 0)
+									{
+										auto count = iter->second;
+										taskInterface->AddTask
+										(
+											[aem, p1, boundObj, count]()
+											{
+												aem->EquipObject
+												(
+													p1, boundObj, nullptr, count
+												);
+											}
+										);
+									}
+								}
+
+								break;
+							}
+							case RE::FormType::Shout:
+							{
+								taskInterface->AddTask
+								(
+									[aem, p1, form]()
+									{
+										aem->EquipShout(p1, form->As<RE::TESShout>());
+									}
+								);
+
+								break;
+							}
+							case RE::FormType::Spell:
+							{
+								auto spell = form->As<RE::SpellItem>();
+								RE::BGSEquipSlot* equipSlot = glob.eitherHandEquipSlot;
+								if (i != !EquipIndex::kVoice)
+								{
+									if (spell->equipSlot == glob.bothHandsEquipSlot)
+									{
+										equipSlot = glob.bothHandsEquipSlot;
+									}
+									else
+									{
+										equipSlot = 
+										(
+											(i == !EquipIndex::kLeftHand) ? 
+											glob.leftHandEquipSlot : 
+											glob.rightHandEquipSlot
+										);
+									}
+								}
+								else
+								{
+									equipSlot = glob.voiceEquipSlot;
+								}
+									
+								taskInterface->AddTask
+								(
+									[aem, p1, spell, equipSlot]()
+									{
+										aem->EquipSpell(p1, spell, equipSlot);
+									}
+								);
+
+								break;
+							}
+							case RE::FormType::Weapon:
+							{
+								auto lhObj = p1->GetEquippedObject(true);
+								auto rhObj = p1->GetEquippedObject(false);
+								// Do not equip 2H weapons twice.
+								if ((i == !EquipIndex::kLeftHand && form != lhObj) || 
+									(i == !EquipIndex::kRightHand && form != rhObj))
+								{
+									auto equipSlot = glob.eitherHandEquipSlot;
+									if (form->As<RE::TESObjectWEAP>()->equipSlot ==
+										glob.bothHandsEquipSlot)
+									{
+										equipSlot = glob.bothHandsEquipSlot;
+									}
+									else if (i == !EquipIndex::kLeftHand)
+									{
+										equipSlot = glob.leftHandEquipSlot;
+									}
+									else if (i == !EquipIndex::kRightHand)
+									{
+										equipSlot = glob.rightHandEquipSlot;
+									}
+
+									if (boundObj)
+									{
+										taskInterface->AddTask
+										(
+											[aem, p1, boundObj, equipSlot]()
+											{
+												aem->EquipObject
+												(
+													p1, boundObj, nullptr, 1, equipSlot
+												);
+											}
+										);
+									}
+								}
+
+								break;
+							}
+							default:
+							{
+								// Equip all other types of forms if they are bound objects.
+								if (boundObj)
+								{
+									taskInterface->AddTask
+									(
+										[aem, p1, boundObj]()
+										{
+											aem->EquipObject(p1, boundObj);
+										}
+									);
+								}
+
+								break;
+							}
+							}
+						}
+					}
+				}
+
+				// P1 is editing their appearance.
+				if (!glob.globalDataInit || 
+					glob.menuCID == -1 ||
+					glob.menuCID == glob.player1CID)
+				{
+					// Set vampiric race.
+					if (p1->race)
+					{
+						bool isVampire = false;
+						auto defObjMgr = RE::BGSDefaultObjectManager::GetSingleton();
+						if (defObjMgr)
+						{
+							auto obj = defObjMgr->objects
+							[
+								RE::DEFAULT_OBJECTS::kPlayerIsVampireVariable
+							];
+							if (obj)
+							{
+								auto p1VampireGlob = obj->As<RE::TESGlobal>();
+								isVampire = p1VampireGlob && p1VampireGlob->value == 1.0f;
+							}
+						}
+
+						if (isVampire && !p1->race->HasKeywordByEditorID("Vampire"))
+						{
+							auto vampiricRace = RE::TESForm::LookupByEditorID<RE::TESRace>
+							(
+								fmt::format
+								(
+									"{}Vampire", p1->race->GetFormEditorID()
+								).c_str()
+							);
+							if (vampiricRace)
+							{
+								SPDLOG_DEBUG
+								(
+									"Restoring vampiric race {}.", vampiricRace->GetFormEditorID()
+								);
+							
+								p1->race = 
+								p1->race2 = 
+								p1->charGenRace = 
+								p1ActorBase->originalRace = 
+								p1ActorBase->race = vampiricRace;
+							}
+						}
+					}
+					
+					// Save P1's appearance to the cached co-op preset.
+					Util::LoadOrSaveRaceMenuPreset(p1, false);
+				}
+			}
+
+			return _ProcessMessage(a_this, a_message);
+		}
+
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
 		(
 			RE::StatsMenu* a_this, RE::UIMessage& a_message

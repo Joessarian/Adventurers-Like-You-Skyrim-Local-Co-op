@@ -1204,7 +1204,7 @@ namespace ALYSLC
 	void PlayerActionManager::PrePauseTask()
 	{
 		SPDLOG_DEBUG("P{}", playerID + 1);
-		
+
 		// Remove player keyword first.
 		UpdateCoopPlayerKeyword(false);
 
