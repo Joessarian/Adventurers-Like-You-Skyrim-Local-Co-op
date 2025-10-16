@@ -53,11 +53,19 @@ namespace ALYSLC
 	void Events::ResetMenuState()
 	{
 		// Reset our handled menu data instantly:
-		// Stop MIM, reset menu controller IDs,
+		// Stop MIM, reset menu device IDs,
 		// set supported menus as closed.
 
-		glob.mim->ToggleCoopPlayerMenuMode(-1);
-		GlobalCoopData::ResetMenuCIDs();
+		SPDLOG_DEBUG
+		(
+			"Old DID/PID: {}, {}.", 
+			glob.menuPID > -1 && glob.menuPID < ALYSLC_MAX_PLAYER_COUNT ?
+			glob.coopPlayers[glob.menuPID]->deviceID :
+			-1,
+			glob.menuPID
+		);
+		glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
+		GlobalCoopData::ResetMenuPlayerIDs();
 		glob.supportedMenuOpen.store(false);
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -441,7 +449,7 @@ namespace ALYSLC
 		bool toCoopPlayer = toCoopPlayerIndex != -1;
 
 		// REMOVE when done debugging.
-		/*if (fromCoopPlayer || toCoopPlayer)
+		if (fromCoopPlayer || toCoopPlayer)
 		{
 			auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
 			auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
@@ -461,7 +469,7 @@ namespace ALYSLC
 				a_containerChangedEvent->newContainer,
 				fromRefr ? Util::IsFavorited(fromRefr->As<RE::Actor>(), baseObj) : false
 			);
-		}*/
+		}
 
 		// Update player's encumbrance value when an item is moved to/from their inventory.
 		if ((fromCoopPlayerIndex != toCoopPlayerIndex) && 
@@ -541,7 +549,7 @@ namespace ALYSLC
 		const auto ui = RE::UI::GetSingleton(); 
 		// A companion player controlling menus
 		// and an item was transferred to a player from a non-coop entity.
-		if (ui && glob.mim->managerMenuCID != -1 && !fromCoopEntity && toCoopPlayer)
+		if (ui && glob.mim->managerMenuPID != -1 && !fromCoopEntity && toCoopPlayer)
 		{
 			bool fromCraftingMenu = ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME);
 			bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
@@ -578,7 +586,7 @@ namespace ALYSLC
 				if (toP1)
 				{
 					// Add to companion player controlling menus if not a party-wide item.
-					const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
+					const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
 					RE::TESBoundObject* boundObj = 
 					(
 						baseObj ? 
@@ -791,7 +799,7 @@ namespace ALYSLC
 			fromCoopCompanionPlayer && 
 			toP1 && 
 			glob.mim->IsRunning() && 
-			glob.mim->managerMenuCID != -1 && 
+			glob.mim->managerMenuPID != -1 && 
 			Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
 		{
 			const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
@@ -1328,8 +1336,8 @@ namespace ALYSLC
 		{
 			(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
 			(
-				(glob.mim->managerMenuCID != -1 && p->coopActor == glob.player1Actor) ||
-				(glob.mim->managerMenuCID == p->controllerID)
+				(glob.mim->managerMenuPID != -1 && p->coopActor == glob.player1Actor) ||
+				(glob.mim->managerMenuPID == p->playerID)
 			)
 		};
 		// IMPORTANT:
@@ -1506,7 +1514,7 @@ namespace ALYSLC
 						);
 						GlobalCoopData::AddSkillXP
 						(
-							p->controllerID, 
+							p->playerID, 
 							RE::ActorValue::kLightArmor, 
 							lightArmorBaseXP
 						);
@@ -1524,7 +1532,7 @@ namespace ALYSLC
 						);
 						GlobalCoopData::AddSkillXP
 						(
-							p->controllerID,
+							p->playerID,
 							RE::ActorValue::kHeavyArmor, 
 							heavyArmorBaseXP
 						);
@@ -1664,7 +1672,7 @@ namespace ALYSLC
 				(
 					(!victimPlayerInGodMode) && 
 					(
-						Settings::vbFriendlyFire[p->controllerID] || 
+						Settings::vbFriendlyFire[p->playerID] || 
 						!Util::IsPartyFriendlyActor(hitActor)
 					)
 				);
@@ -1696,7 +1704,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID, 
+								p->playerID, 
 								RE::ActorValue::kArchery, 
 								weap->GetAttackDamage()
 							);
@@ -1714,7 +1722,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID,
+								p->playerID,
 								RE::ActorValue::kOneHanded,
 								weap->GetAttackDamage()
 							);
@@ -1731,7 +1739,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID,
+								p->playerID,
 								RE::ActorValue::kTwoHanded, 
 								weap->GetAttackDamage()
 							);
@@ -1749,7 +1757,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID,
+								p->playerID,
 								RE::ActorValue::kConjuration, 
 								weap->GetAttackDamage()
 							);
@@ -1764,7 +1772,7 @@ namespace ALYSLC
 							"Adding 5 XP to {}'s Block Skill for a successful shield bash",
 							p->coopActor->GetName()
 						);
-						GlobalCoopData::AddSkillXP(p->controllerID, RE::ActorValue::kBlock, 5.0f);
+						GlobalCoopData::AddSkillXP(p->playerID, RE::ActorValue::kBlock, 5.0f);
 					}
 
 					// Display sneak attack message for companion player if needed.
@@ -1806,7 +1814,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID, 
+								p->playerID, 
 								RE::ActorValue::kSneak, 
 								2.5f
 							);
@@ -1828,7 +1836,7 @@ namespace ALYSLC
 							);
 							GlobalCoopData::AddSkillXP
 							(
-								p->controllerID, 
+								p->playerID, 
 								RE::ActorValue::kSneak, 
 								30.0f
 							);
@@ -1856,7 +1864,7 @@ namespace ALYSLC
 					);
 					GlobalCoopData::AddSkillXP
 					(
-						p->controllerID, 
+						p->playerID, 
 						RE::ActorValue::kSneak, 
 						2.5f
 					);
@@ -2091,14 +2099,14 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"|MENU EVENT|: "
-			"menu name {}, {}, menu CIDs: current {}, prev: {}, manager: {}, empty data: {}. "
+			"menu name {}, {}, menu PIDs: current {}, prev: {}, manager: {}, empty data: {}. "
 			"Only always open: {}. "
 			"Copied data types: 0x{:X}",
 			a_menuEvent->menuName, 
 			a_menuEvent->opening ? "OPENING" : "CLOSING",
-			glob.menuCID,
-			glob.prevMenuCID,
-			glob.mim->managerMenuCID,
+			glob.menuPID,
+			glob.prevMenuPID,
+			glob.mim->managerMenuPID,
 			glob.serializablePlayerData.empty(),
 			onlyAlwaysOpen,
 			*glob.copiedPlayerDataTypes
@@ -2193,12 +2201,23 @@ namespace ALYSLC
 			a_menuEvent->opening && 
 			a_menuEvent->menuName == RE::LoadingMenu::MENU_NAME)
 		{
-			if (glob.coopSessionActive) 
+			// Reset wiped flag, so it does not carry over effects after loading in.
+			glob.partyWiped = false;
+			for (const auto& p : glob.coopPlayers)
 			{
-				// Helps prevent 2H weapon animation stuttering bug due to corrupted equip slots.
-				for (const auto& p : glob.coopPlayers)
+				if (p->isActive)
 				{
-					if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
+					// Make sure the player is not still paralyzed 
+					// if the loading menu was prompted by a party wipe.
+					if (p->coopActor)
+					{
+						SPDLOG_DEBUG("Making sure {} is not paralyzed.", p->coopActor->GetName());
+						p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					}
+
+					// Helps prevent 2H weapon animation stuttering bug 
+					// due to corrupted equip slots.
+					if (glob.coopSessionActive && !p->isPlayer1 && p->coopActor->currentProcess)
 					{
 						p->pam->ReadyWeapon(false);
 						p->em->ReEquipHandForms();
@@ -2296,7 +2315,7 @@ namespace ALYSLC
 				GlobalCoopData::SyncSharedPerks();
 			}
 
-			// Reset dialogue control CID when dialogue menu opens and closes.
+			// Reset dialogue control PID when dialogue menu opens and closes.
 			if (GlobalCoopData::TRANSFERABLE_CONTROL_MENU_NAMES.contains(a_menuEvent->menuName))
 			{
 				{
@@ -2308,17 +2327,17 @@ namespace ALYSLC
 					{
 						SPDLOG_DEBUG
 						(
-							"{}. Transfer menu control CID. Lock obtained: (0x{:X}).", 
+							"{}. Transfer menu control PID. Lock obtained: (0x{:X}).", 
 							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
-						glob.moarm->reqTransferMenuControlPlayerCID = -1;
+						glob.moarm->reqTransferMenuControlPlayerPID = -1;
 					}
 					else
 					{
 						SPDLOG_DEBUG
 						(
-							"{}. Transfer menu control CID. Failed to obtain lock: (0x{:X})", 
+							"{}. Transfer menu control PID. Failed to obtain lock: (0x{:X})", 
 							a_menuEvent->menuName,
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
@@ -2341,56 +2360,56 @@ namespace ALYSLC
 
 			if (a_menuEvent->opening)
 			{
-				// Resolve the CID which will modify the requests queue 
+				// Resolve the PID which will modify the requests queue 
 				// and clear out fulfilled requests even if we don't need to 
-				// set the menu CID to the resolved CID.
-				glob.lastResolvedMenuCID = glob.moarm->ResolveMenuControllerID
+				// set the menu PID to the resolved PID.
+				glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
 				(
 					a_menuEvent->menuName
 				);
-				if (glob.mim->IsRunning() && glob.mim->managerMenuCID != -1)
+				if (glob.mim->IsRunning() && glob.mim->managerMenuPID != -1)
 				{
 					// Give the companion player continued control of menus.
-					GlobalCoopData::SetMenuCIDs(glob.mim->managerMenuCID);
+					GlobalCoopData::SetMenuPlayerIDs(glob.mim->managerMenuPID);
 					SPDLOG_DEBUG
 					(
-						"OPENING: Set menu CIDs. "
-						"Menu input manager running. CIDs are now: {}, {}, {}.", 
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						"OPENING: Set menu PIDs. "
+						"Menu input manager running. PIDs are now: {}, {}, {}.", 
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 				}
-				else if (glob.menuCID == -1)
+				else if (glob.menuPID == -1)
 				{
-					// Give the player with the resolved CID control of menus.
-					GlobalCoopData::SetMenuCIDs(glob.lastResolvedMenuCID);
+					// Give the player with the resolved PID control of menus.
+					GlobalCoopData::SetMenuPlayerIDs(glob.lastResolvedMenuPID);
 					SPDLOG_DEBUG
 					(
-						"OPENING: Set menu CIDs. "
-						"Resolve CID from requests. MIM not running. CIDs are now: {}, {}, {}.",
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						"OPENING: Set menu PIDs. "
+						"Resolve PID from requests. MIM not running. PIDs are now: {}, {}, {}.",
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 				}
 				else
 				{
 					SPDLOG_DEBUG
 					(
-						"OPENING: Set menu CIDs. "
-						"Menu CID is already set. MIM not running. CIDs are now: {}, {}, {}.",
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						"OPENING: Set menu PIDs. "
+						"Menu PID is already set. MIM not running. PIDs are now: {}, {}, {}.",
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 				}
 			}
 
 			// Co-op player requesting menu control.
-			if (glob.menuCID != -1 && glob.menuCID != glob.player1CID)
+			if (glob.menuPID > 0)
 			{
-				const auto& p = glob.coopPlayers[glob.menuCID];
+				const auto& p = glob.coopPlayers[glob.menuPID];
 				const auto menuName = std::string_view(a_menuEvent->menuName.c_str());
 				bool isSupportedMenu = glob.SUPPORTED_MENU_NAMES.contains(menuName); 
 				if (isSupportedMenu)
@@ -2419,10 +2438,10 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"Menu {} {} by CID {}, menus open: {}", 
+						"Menu {} {} by PID {}, menus open: {}", 
 						a_menuEvent->menuName, 
 						a_menuEvent->opening ? "opened" : "closed", 
-						glob.menuCID, 
+						glob.menuPID, 
 						glob.mim->managedCoopMenusCount
 					);
 
@@ -2451,12 +2470,15 @@ namespace ALYSLC
 					if (a_menuEvent->opening)
 					{
 						// Give co-op companion player menu control.
-						glob.mim->ToggleCoopPlayerMenuMode(glob.menuCID);
+						glob.mim->ToggleCoopPlayerMenuMode
+						(
+							glob.coopPlayers[glob.menuPID]->deviceID, glob.menuPID
+						);
 					}
 					else if (glob.mim->managedCoopMenusCount == 0 && glob.mim->IsRunning())
 					{
 						// Stop the MIM and relinquish menu control.
-						glob.mim->ToggleCoopPlayerMenuMode(-1);
+						glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 					}
 				}
 				else if (a_menuEvent->menuName == RE::LockpickingMenu::MENU_NAME)
@@ -2496,33 +2518,33 @@ namespace ALYSLC
 
 			if (!a_menuEvent->opening)
 			{
-				if (onlyAlwaysOpen && glob.menuCID != -1)
+				if (onlyAlwaysOpen && glob.menuPID != -1)
 				{
-					// Reset menu controller IDs once all menus are closed.
-					GlobalCoopData::ResetMenuCIDs();
+					// Reset menu player IDs once all menus are closed.
+					GlobalCoopData::ResetMenuPlayerIDs();
 					SPDLOG_DEBUG
 					(
-						"CLOSING: MIM signalled to close. Reset menu CIDs. "
-						"CIDs are now: {}, {}, {}.",
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						"CLOSING: MIM signalled to close. Reset menu PIDs. "
+						"PIDs are now: {}, {}, {}.",
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 				}
 				else if (!onlyAlwaysOpen && 
 						 glob.mim->managedCoopMenusCount == 0 && 
-						 glob.menuCID != glob.player1CID)
+						 glob.menuPID > 0)
 				{
 					// Co-op companion player relinquishes control of their menus
 					// but at least one is still open, so give control to P1.
-					GlobalCoopData::ResetMenuCIDs();
+					GlobalCoopData::ResetMenuPlayerIDs();
 					SPDLOG_DEBUG
 					(
 						"CLOSING: MIM signalled to close with controllable menus open. "
-						"Give control to P1. CIDs are now: {}, {}, {}.",
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						"Give control to P1. PIDs are now: {}, {}, {}.",
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 				}
 				else
@@ -2530,25 +2552,25 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"CLOSING: Fallthrough: only always open: {}, MIM managed menus count: {}. "
-						"CIDs are now: {}, {}, {}.",
+						"PIDs are now: {}, {}, {}.",
 						onlyAlwaysOpen,
 						glob.mim->managedCoopMenusCount,
-						glob.menuCID,
-						glob.prevMenuCID,
-						glob.mim->managerMenuCID
+						glob.menuPID,
+						glob.prevMenuPID,
+						glob.mim->managerMenuPID
 					);
 
 					// If no menus are open, the managed menus count should be 0.
-					// Stop the MIM and reset menu controller IDs if not.
+					// Stop the MIM and reset menu player IDs if not.
 					if (onlyAlwaysOpen && glob.mim->managedCoopMenusCount > 0) 
 					{
 						SPDLOG_DEBUG
 						(
 							"CLOSING: MIM managed menus count should be 0 here. "
-							"Pausing menu input manager and resetting menu CIDs."
+							"Pausing menu input manager and resetting menu PIDs."
 						);
-						glob.mim->ToggleCoopPlayerMenuMode(-1);
-						GlobalCoopData::ResetMenuCIDs();
+						glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
+						GlobalCoopData::ResetMenuPlayerIDs();
 					}
 				}
 			}
@@ -2564,7 +2586,7 @@ namespace ALYSLC
 			// Give P1 control here.
 			Events::ResetMenuState();
 		}
-
+		
 		return EventResult::kContinue;
 	}
 

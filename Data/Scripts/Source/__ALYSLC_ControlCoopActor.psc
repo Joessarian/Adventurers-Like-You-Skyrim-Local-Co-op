@@ -10,7 +10,12 @@ ObjectReference Property CoopSummonPortal Auto
 ObjectReference Property InventoryChest Auto
 String Property FormID Auto
 Bool Property CompletedLoad = False Auto
-Int Property ControllerID = -1 Auto
+; ID for the input device controlling this player character.
+; [0, 3] for controllers, 4+ for keyboards + mice.
+Int Property DeviceID = -1 Auto
+; Player ID for this player (never 0 since not P1).
+; Always in the range [0, 3].
+Int Property PlayerID = -1 Auto
 
 ; Move the co-op companion back to its editor location
 ; and reset its state (clear shaders/movement targets and reset inventory).
@@ -84,7 +89,7 @@ Function SetCustomizationOptions()
         ALYSLC.SetCoopPlayerClass(Self, NewClass)
                 
         ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
-        ALYSLC.RequestMenuControl(ControllerID, "MessageBoxMenu")
+        ALYSLC.RequestMenuControl(DeviceID, PlayerID, "MessageBoxMenu")
         Debug.MessageBox("[ALYSLC]\n" + Self.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ; Have to wait for message box prompt to open.
         SecondsWaited = 0.0
@@ -115,36 +120,8 @@ Function SetCustomizationOptions()
     Race NewRace = StorageUtil.GetFormValue(Self, "ALYSLC_Race", None) as Race
     Bool ShouldChangeRace = NewRace && NewRace != Base.GetRace()
     If (ShouldChangeRace)
-        ALYSLC.Log("[CCA SCRIPT] Set race to " + NewRace)
-        ALYSLC.SetCoopPlayerRace(Self, NewRace)
-
-        ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
-        ALYSLC.RequestMenuControl(ControllerID, "MessageBoxMenu")
-        Debug.MessageBox(" [ALYSLC]\n" + Self.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
-        ; Have to wait for message box prompt to open.
-        SecondsWaited = 0.0
-        While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
-            Utility.Wait(0.1)
-            SecondsWaited += 0.1
-        EndWhile
-
-        ; Once open, wait until closed.
-        While (UI.IsMenuOpen("MessageBoxMenu"))
-            Utility.WaitMenuMode(0.1)
-        EndWhile
-
-        ; NOTE: must wait until race fully changes and the new actor base data is transferred over.
-        ; Will cause issues with setting gender or appearance related data below if race swap is not complete.
-        SecondsWaited = 0.0
-        While (Base.GetRace() != NewRace && SecondsWaited < TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] Waiting on race change to " + NewRace + " for " + Self.GetName() + ".")
-            Utility.Wait(0.1)
-            SecondsWaited += 0.1
-        EndWhile
-        
-        If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] ERR: Check for change timed out.")
-        EndIf
+        ALYSLC.Log("[CCA SCRIPT] Set race to " + NewRace + " from base race " + Base.GetRace() + ".")
+        ALYSLC.SetCoopPlayerRace(Self, NewRace, False)
     EndIf
 
     ; Appearance preset and gender option
@@ -157,7 +134,7 @@ Function SetCustomizationOptions()
     If (!Preset)
         ; No preset to set, so set to the default racial preset, change gender, anims, and update face/body skin tone.
         ALYSLC.Log("[CCA SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
-        ALYSLC.SetDefaultRacialAppearance(ControllerID, SetFemale, SetUseOppositeGenderAnims)
+        ALYSLC.SetDefaultRacialAppearance(PlayerID, SetFemale, SetUseOppositeGenderAnims)
     ElseIf ((Preset && Preset != Base) || ((Base.GetSex() == -1) || (Base.GetSex() == 0 && SetFemale) || (Base.GetSex() == 1 && !SetFemale)))
         If (Preset && Preset != Base)
             ALYSLC.Log("[CCA SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
@@ -165,7 +142,7 @@ Function SetCustomizationOptions()
             ALYSLC.Log("[CCA SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
         EndIf
 
-        ALYSLC.CopyNPCAppearanceToPlayer(ControllerID, Preset, SetUseOppositeGenderAnims)
+        ALYSLC.CopyNPCAppearanceToPlayer(PlayerID, Preset, SetUseOppositeGenderAnims)
     EndIf
 
 	; Apply custom appearance preset afterward, if any.
@@ -215,9 +192,9 @@ EndFunction
 
 ; Event sent to all co-op players when a co-op player is dismissed
 ; or when player 1 dies.
-Event OnCoopEnd(Form akCompanion, Int aiControllerID)
-    ControllerID = aiControllerID
-    ALYSLC.Log("[CCA SCRIPT] OnCoopEnd for " + Self.GetDisplayName() + " controller ID " + ControllerID)
+Event OnCoopEnd(Form akCompanion, Int aiPlayerID)
+    PlayerID = aiPlayerID
+    ALYSLC.Log("[CCA SCRIPT] OnCoopEnd for " + Self.GetDisplayName() + " player ID " + PlayerID)
     ; Make sure the companion being dismissed is self.
     If (akCompanion as ObjectReference == Self)
         CompletedLoad = False
@@ -236,8 +213,17 @@ Event OnCoopStart(Form akCoopPlayer)
         StorageUtil.FormListAdd(None, "ALYSLC_CompanionScripts", Self)
         CompletedLoad = False
         ; Get co-op session specific data for the player.
-        ControllerID = StorageUtil.GetIntValue(Self, "ALYSLC_PlayerControllerID")
-        CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(ControllerID + 1, False) + "Keyword") as Keyword
+        DeviceID = StorageUtil.GetIntValue(Self, "ALYSLC_DeviceID",  -1)
+        PlayerID = StorageUtil.GetIntValue(Self, "ALYSLC_PlayerID",  -1)
+        If (DeviceID == -1)
+            ALYSLC.Log("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s device ID is invalid or not found. Please inform the mod author of his stupidity.")
+        EndIf
+
+        If (PlayerID == -1)
+            ALYSLC.Log("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s player ID is invalid or not found. Please inform the mod author of his stupidity.")
+        EndIf
+
+        CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(PlayerID + 1, False) + "Keyword") as Keyword
         FormID = PO3_SKSEFunctions.IntToString(Self.GetFormID(), True)
 
         ; Spawn in portal.

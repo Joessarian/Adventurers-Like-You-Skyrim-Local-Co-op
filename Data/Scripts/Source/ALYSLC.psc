@@ -5,8 +5,8 @@ Scriptname ALYSLC Hidden
 
 ;========================================================================================================================================================================================================================
 Bool Function InitializeGlobalData(ReferenceAlias a_player1Ref) Global Native
-Int[] Function GetConnectedCoopControllerIDs() Global Native
-Bool Function InitializeCoop(Int a_numCompanions, Int[] a_controllerIDs, Actor[] a_coopActors) Global Native
+Int[] Function GetConnectedInputDeviceIDs() Global Native
+Bool Function InitializeCoopPlayers(Int a_numCompanions, Int[] a_deviceIDs, Actor[] a_coopActors) Global Native
 ;========================================================================================================================================================================================================================
 
 Function AssignPlayer1CID() Global Native
@@ -17,20 +17,21 @@ Form[] Function GetAllClasses() Global Native
 String[] Function GetAllCyclableEmoteIdleEvents() Global Native
 Form[] Function GetAllSelectableRaces(Int a_selectableRaceTypeFilter) Global Native
 Form[] Function GetAllVoiceTypes(Bool a_female) Global Native
-String[] Function GetFavoritedEmoteIdles(Int a_controllerID) Global Native
-Function RequestMenuControl(Int a_controllerID, String a_menuName) Global Native
-Function RequestStateChange(Int a_controllerID, Int a_newState) Global Native
+String[] Function GetFavoritedEmoteIdles(Int a_playerID) Global Native
+Function RequestMenuControl(Int a_deviceID, Int a_playerID, String a_menuName) Global Native
+Function RequestStateChange(Int a_playerID, Int a_newState) Global Native
 Function RescaleAVsOnBaseSkillAVChange(Actor a_playerActor) Global Native
 Function SetCoopPlayerClass(Actor a_playerActor, Class a_class) Global Native
-Function SetCoopPlayerRace(Actor a_playerActor, Race a_race) Global Native
-Function SetFavoritedEmoteIdles(Int a_controllerID, String[] a_emoteIdlesList) Global Native
+Function SetCoopPlayerRace(Actor a_playerActor, Race a_race, Bool a_rescaleActorValues) Global Native
+Function SetFavoritedEmoteIdles(Int a_playerID, String[] a_emoteIdlesList) Global Native
 Function SetGifteePlayerActor(Actor a_playerActor) Global Native
+Function SetIsSummoningFlag(Bool a_set) Global Native
 Function SetPartyInvincibility(Bool a_shouldSet) Global Native
 Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
 Function StartPlayerManagers() Global Native
-Function TeleportToPlayerToActor(Int a_controllerID, Actor a_teleportTarget) Global Native
+Function TeleportToPlayerToActor(Int a_playerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
-Function ToggleSetupMenuControl(Int a_controllerID, int a_playerID, Bool a_shouldEnter) Global Native
+Function ToggleSetupMenuControl(Int a_deviceID, int a_playerID, Bool a_shouldEnter) Global Native
 Function UpdateAllCompanionPlayerSerializationIDs() Global Native
 
 Function Log(String a_messsage) Global Native
@@ -38,29 +39,29 @@ Function Log(String a_messsage) Global Native
 ;================================================================
 ;==================[Character Customization]=====================
 ;================================================================
-Function CopyNPCAppearanceToPlayer(Int a_controllerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
+Function CopyNPCAppearanceToPlayer(Int a_playerID, ActorBase a_baseToCopy, Bool a_setUseOppositeGenderAnims) Global Native
 Function ExportP1ActorBaseAppearanceData(Actor a_actor) Global Native
 Bool Function IsRaceMenuInstalled() Global Native
 Function LoadPlayerCharacterPreset(Actor a_fromPresetCharacter) Global Native
 Function OnPreRaceMenu(Race a_newRace, Bool a_setFemale) Global Native
 Function SavePlayerCharacterPreset(Actor a_toPresetCharacter) Global Native
-Function SetDefaultRacialAppearance(Int a_controllerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
+Function SetDefaultRacialAppearance(Int a_playerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 ;==============================================
 ;==================[Debug]=====================
 ;==============================================
 Function DisableGodModeForAllCoopPlayers() Global Native
-Function DisableGodModeForPlayer(Int a_controllerID) Global Native
+Function DisableGodModeForPlayer(Int a_playerID) Global Native
 Function EnableGodModeForAllCoopPlayers() Global Native
-Function EnableGodModeForPlayer(Int a_controllerID) Global Native
+Function EnableGodModeForPlayer(Int a_playerID) Global Native
 Function MoveAllPlayersToPlayer(Actor a_playerActor) GLobal Native
-Function ReEquipHandForms(Int a_controllerID) Global Native
+Function ReEquipHandForms(Int a_playerID) Global Native
 Function RefreshAllPlayerManagers() Global Native
-Function RefreshPlayerManagers(Int a_controllerID) Global Native
-Function ResetCoopCompanion(Int a_controllerID, Bool a_unequipAll, Bool a_reattachHavok) Global Native
+Function RefreshPlayerManagers(Int a_playerID) Global Native
+Function ResetCoopCompanion(Int a_playerID, Bool a_unequipAll, Bool a_reattachHavok) Global Native
 Function ResetPlayer1AndCamera() Global Native
 Function ResetPlayer1State() Global Native
-Function RespecPlayer(Int a_controllerID) Global Native
+Function RespecPlayer(Int a_playerID) Global Native
 Function RestartCoopCamera() Global Native
 Function StopAllCombatOnCoopPlayers(Bool a_clearBounties) Global Native
 Function StopMenuInputManager() Global Native

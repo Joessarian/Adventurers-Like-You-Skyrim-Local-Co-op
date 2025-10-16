@@ -23,6 +23,9 @@
 //==============
 //[Global Data]:
 //==============
+// Max number of controllers supported.
+static constexpr uint8_t ALYSLC_MAX_CONTROLLER_COUNT = 4;
+
 // Max number of players supported.
 static constexpr uint8_t ALYSLC_MAX_PLAYER_COUNT = 4;
 
@@ -36,6 +39,8 @@ static constexpr uint8_t MAX_NODE_RECURSION_DEPTH = 100;
 // https://github.com/ersh1/Precision/blob/main/src/Offsets.h
 // 2F6B94C, 30064CC
 static float* g_deltaTimeRealTime = (float*)RELOCATION_ID(523661, 410200).address();
+// 2F6B948, 30064C8
+static float* g_deltaTime = (float*)RELOCATION_ID(523660, 410199).address();
 
 //==========
 //[Hashing]:
@@ -1560,12 +1565,24 @@ namespace ALYSLC
 		// Get the game pitch angle for the given direction.
 		inline float DirectionToGameAngPitch(const RE::NiPoint3& a_dir)
 		{
+			// No direction, return pitch of 0.
+			if (a_dir.Length() == 0.0f)
+			{
+				return 0.0f;
+			}
+
 			return atan2f(-a_dir.z, sqrtf(a_dir.x * a_dir.x + a_dir.y * a_dir.y));
 		}
 
 		// Get the game yaw angle for the given direction.
 		inline float DirectionToGameAngYaw(const RE::NiPoint3& a_dir)
 		{
+			// No direction or vertical direction, face absolute north.
+			if (a_dir.y == 0.0f && a_dir.x == 0.0f)
+			{
+				return 0.0f;
+			}
+
 			return 
 			(
 				Util::ConvertAngle
@@ -2573,6 +2590,31 @@ namespace ALYSLC
 						RE::TESForm::LookupByEditorID<RE::TESFaction>("IsGuardFaction")
 					)
 				)
+			);
+		}
+
+		inline bool IsKeyPressed(RE::BSKeyboardDevice::Keys::Key a_keyCode)
+		{
+			// Return true if the given key is pressed.
+			// NOTE:
+			// Calling 'IsPressed()' produces linker errors,
+			// so for now, just repro the code in BSWin32KeyboardDevice.cpp.
+			auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+			if (!devMgr)
+			{
+				return false;
+			}
+
+			auto keyboard = devMgr->GetKeyboard(); 
+			if (!keyboard)
+			{
+				return false;
+			}
+			
+			return
+			(
+				(a_keyCode < sizeof(keyboard->curState)) && 
+				((keyboard->curState[a_keyCode] & 0x80) != 0)
 			);
 		}
 
@@ -3607,6 +3649,60 @@ namespace ALYSLC
 			}
 		}
 
+		// Show a tutorial hint message with the given text, 
+		// or hide the current tutorial hint message.
+		inline void ShowTutorialHintMessage(const RE::BSFixedString& a_message, bool a_show)
+		{
+			auto taskInterface = SKSE::GetTaskInterface();
+			if (!taskInterface)
+			{
+				return;
+			}
+
+			taskInterface->AddUITask
+			(
+				[a_message, a_show]() 
+				{
+					auto ui = RE::UI::GetSingleton(); 
+					if (!ui)
+					{
+						return;
+					}
+
+					auto hudMenu = ui->GetMenu<RE::HUDMenu>(); 
+					if (!hudMenu)
+					{
+						return;
+					}
+
+					auto view = hudMenu->uiMovie; 
+					if (!view)
+					{
+						return;
+					}
+
+					RE::GFxValue hudBase{ };
+					view->GetVariable
+					(
+						std::addressof(hudBase), "_root.HUDMovieBaseInstance"
+					);
+					if (hudBase.IsNull() || 
+						hudBase.IsUndefined() || 
+						!hudBase.IsObject())
+					{
+						return;
+					}
+					
+					std::array<RE::GFxValue, 2> showTutArgs;
+					showTutArgs.fill(RE::GFxValue());
+					showTutArgs[0] = RE::GFxValue(a_message);
+					showTutArgs[1] = RE::GFxValue(a_show);
+					hudBase.Invoke("ShowTutorialHintText", showTutArgs);
+				}
+			);
+		}
+
+
 		// Set all the characters in the given string to lowercase.
 		inline void ToLowercase(std::string& a_stringOut) 
 		{
@@ -3651,6 +3747,8 @@ namespace ALYSLC
 			const float& a_damage,
 			bool a_triggerCombat,
 			bool a_sendEvent = false,
+			float a_stagger = 0.0f,
+			float a_pushBack = 0.0f,
 			const RE::ObjectRefHandle& a_sourceHandle = RE::ObjectRefHandle(),
 			const RE::FormID& a_projFID = 0,
 			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags = 
@@ -4123,12 +4221,12 @@ namespace ALYSLC
 		// Send a crosshair event with the given crosshair refr to set.
 		// Can be used to open/close the QuickLoot LootMenu.
 		// IMPORTANT:
-		// Specify a CID for any player trying to set the crosshair refr (non-nullptr).
+		// Specify a PID for any player trying to set the crosshair refr (non-nullptr).
 		// To clear the crosshair refr, pass in nullptr as the crosshair refr to set 
-		// and do not provide a requesting CID.
+		// and do not provide a requesting PID.
 		void SendCrosshairEvent
 		(
-			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingCID = -1
+			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingPID = -1
 		);
 
 		// Apply and send hit data which triggers a hit event.
@@ -4144,10 +4242,10 @@ namespace ALYSLC
 			const RE::ObjectRefHandle& a_source, 
 			RE::InventoryEntryData* a_invEntryData = nullptr,
 			const float& a_damage = 0.0f, 
-			const SKSE::stl::enumeration<RE::HitData::Flag, std::uint32_t>& a_flags = 
-			RE::HitData::Flag::kMeleeAttack,
 			const float& a_stagger = 0.0f,
 			const float& a_pushBack = 0.0f,
+			const SKSE::stl::enumeration<RE::HitData::Flag, std::uint32_t>& a_flags = 
+			RE::HitData::Flag::kMeleeAttack,
 			const RE::NiPoint3& a_hitPos = RE::NiPoint3(),
 			const RE::NiPoint3& a_hitDir = RE::NiPoint3()
 		);

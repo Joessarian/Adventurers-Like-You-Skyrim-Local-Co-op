@@ -6,7 +6,12 @@ GlobalVariable Property CanStartCoopGlobVar Auto
 Keyword Property CoopPlayerKeyword Auto
 ObjectReference Property CoopSummonPortal Auto
 Bool Property CompletedLoad = False Auto
-Int Property ControllerID = 0 Auto
+; ID for the input device controlling this player character.
+; [0, 3] for controllers, 4+ for keyboards + mice.
+Int Property DeviceID = -1 Auto
+; Player ID for this player (never 0 since not P1).
+; Always in the range [0, 3].
+Int Property PlayerID = -1 Auto
 Int Property CurrentCompanionsCount = 0 Auto
 
 ; Redirect to intialization event below.
@@ -65,10 +70,18 @@ Event OnCoopStart()
 	EndIf
 
 	CompletedLoad = False
-	ControllerID = StorageUtil.GetIntValue(PlayerRef, "ALYSLC_PlayerControllerID",  0)
+	DeviceID = StorageUtil.GetIntValue(PlayerRef, "ALYSLC_DeviceID",  -1)
+	PlayerID = StorageUtil.GetIntValue(PlayerRef, "ALYSLC_PlayerID",  -1)
+	If (DeviceID == -1)
+		ALYSLC.Log("[CP1R SCRIPT] ERR: Player 1's device ID is invalid or not found. Please inform the mod author of his stupidity.")
+	EndIf
+
+	If (PlayerID == -1)
+		ALYSLC.Log("[CP1R SCRIPT] ERR: Player 1's player ID is invalid or not found. Please inform the mod author of his stupidity.")
+	EndIf
 
 	; Add co-op player keyword to player 1.
-	CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(ControllerID + 1, False) + "Keyword") as Keyword
+	CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(PlayerID + 1, False) + "Keyword") as Keyword
 	PO3_SKSEFunctions.AddKeywordToRef(PlayerRef, CoopPlayerKeyword)
 	Utility.Wait(0.1)
 	CompletedLoad = True
@@ -77,9 +90,9 @@ EndEvent
 
 ; Triggered when any player dies or when only player 1 remains. Reset co-op state and end the co-op session if 
 ; all summoned players are dead or when player 1 dies. 
-Event OnCoopEnd(Form akCompanion, Int aiControllerID)
+Event OnCoopEnd(Form akCompanion, Int aiPlayerID)
 	CanStartCoopGlobVar.SetValue(0.00)
-    ControllerID = aiControllerID
+    PlayerID = aiPlayerID
 	ALYSLC.Log("[CP1R SCRIPT] OnCoopEnd: " + akCompanion)
 	; Remove companion from list
 	If (akCompanion as ObjectReference != PlayerRef)
@@ -97,7 +110,7 @@ Event OnCoopEnd(Form akCompanion, Int aiControllerID)
 		ALYSLC.Log("[CP1R SCRIPT] Co-op session is about to end. Dismissing P1 and all other players.")
 		; If only player 1 remains, end the session.
 		; Have player 1's listeners wait for start of next co-op session.
-		ALYSLC.RequestStateChange(ControllerID, 0)
+		ALYSLC.RequestStateChange(PlayerID, 0)
 		If (CoopPlayerKeyword)
 			PO3_SKSEFunctions.RemoveKeywordFromRef(PlayerRef, CoopPlayerKeyword)
 		EndIf

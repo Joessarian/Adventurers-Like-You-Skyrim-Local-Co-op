@@ -38,7 +38,7 @@ namespace ALYSLC
 		CoopPlayer();
 		CoopPlayer
 		(
-			int32_t a_controllerID, RE::Actor* a_coopActor
+			int32_t a_deviceID, int32_t a_playerID, RE::Actor* a_coopActor
 		);
 
 		// Implements ALYSLC::Manager:
@@ -97,10 +97,6 @@ namespace ALYSLC
 		// Get health/magicka/stamina stat notification text for this player.
 		// Empty string if health/magicka/stamina are all full or if the player is downed.
 		std::string GetHMSStatNotificationText();
-
-		// If the player's CID has changed since starting co-op, get all CIDs
-		// and re-assign them to all players.
-		void HandleControllerInputError();
 		
 		// Check if this player is active, and if so, initialize all player data.
 		void InitializeCoopPlayer();
@@ -147,7 +143,7 @@ namespace ALYSLC
 		// Refresh all player data for this player, post-initialization.
 		void UpdateCoopPlayer
 		(
-			int32_t a_controllerID, RE::Actor* a_coopActor
+			int32_t a_deviceID, int32_t a_playerID, RE::Actor* a_coopActor
 		);
 
 		// Update player crosshair text, actor state, and more when downed.
@@ -298,6 +294,7 @@ namespace ALYSLC
 		// Task interface for queueing tasks.
 		const SKSE::TaskInterface* taskInterface;
 		// Registration for player dismissal script event.
+		// Args: player character form, player ID.
 		SKSE::Impl::RegistrationSet<void, RE::TESForm*, int32_t> onCoopEndReg =
 			SKSE::Impl::RegistrationSet<std::enable_if_t<std::conjunction_v<
 			RE::BSScript::is_return_convertible<RE::TESForm*>,
@@ -323,14 +320,12 @@ namespace ALYSLC
 		RE::BGSKeyword* aimTargetKeyword;
 		// Saved player race prior to transforming.
 		RE::TESRace* preTransformationRace;
-		// Has this manager handled the present controller input error yet?
-		bool handledControllerInputError;
 		// Has this player been dismissed (DismissPlayer() called) 
 		// during the current co-op session?
 		// Set to true BEFORE the current co-op session ends 
 		// (before session cleanup is finished for all players).
 		bool hasBeenDismissed;
-		// Has this player been initialized and assigned an active controller 
+		// Has this player been initialized and assigned an active input device 
 		// for the current/next co-op session?
 		bool isActive;
 		// Is another player transferring their health to this downed player?
@@ -380,11 +375,12 @@ namespace ALYSLC
 		float secsMaxTransformationTime;
 		// Seconds since the player was invalid and moved to P1.
 		float secsSinceInvalidPlayerMoved;
-		// Controller ID (CID = XInput index) for this player.
-		int32_t controllerID;
+		// Input device ID for this player.
+		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+		int32_t deviceID;
 		// P1 always has an ID of 0. 
-		// Other players have their IDs assigned based on their CID,
-		// incrementing by 1 for each player with a higher CID.
+		// Other players have their IDs assigned based on their DID,
+		// incrementing by 1 for each player with a higher DID.
 		int32_t playerID;
 	};
 }

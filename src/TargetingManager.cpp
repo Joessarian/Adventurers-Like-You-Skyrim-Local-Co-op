@@ -18,14 +18,19 @@ namespace ALYSLC
 
 	void TargetingManager::Initialize(std::shared_ptr<CoopPlayer> a_p) 
 	{
-		if (a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
+		if (a_p && 
+			a_p->deviceID > -1 && 
+			a_p->playerID > -1 &&
+			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
-				p ? p->controllerID : -1,
+				p && p->coopActor ? p->coopActor->formID : 0xDEAD,
+				p ? p->playerID : -1,
+				p ? p->deviceID : -1,
 				p.use_count()
 			);
 			// Set once per summoning.
@@ -36,8 +41,9 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"Cannot construct Targeting Manager for controller ID {}.",
-				a_p ? a_p->controllerID : -1
+				"Cannot construct Targeting Manager for device ID {}, player ID {}.", 
+				a_p ? a_p->deviceID : -1,
+				a_p ? a_p->playerID : -1
 			);
 		}
 	}
@@ -162,7 +168,7 @@ namespace ALYSLC
 	void TargetingManager::RefreshData()
 	{
 		// Player data.
-		controllerID = p->controllerID;
+		deviceID = p->deviceID;
 		playerID = p->playerID;
 		coopActor = p->coopActor;
 
@@ -173,9 +179,9 @@ namespace ALYSLC
 		// Motion state.
 		targetMotionState = std::make_unique<RefrTargetMotionState>();
 		// Crosshair text messages.
-		crosshairMessage = std::make_unique<CrosshairMessage>(p->controllerID);
-		extCrosshairMessage = std::make_unique<CrosshairMessage>(p->controllerID);
-		lastCrosshairMessage = std::make_unique<CrosshairMessage>(p->controllerID);
+		crosshairMessage = std::make_unique<CrosshairMessage>();
+		extCrosshairMessage = std::make_unique<CrosshairMessage>();
+		lastCrosshairMessage = std::make_unique<CrosshairMessage>();
 		// UI element fade data.
 		aimPitchIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
 		aimPitchIndicatorFadeInterpData->SetInterpInterval(0.25f, true);
@@ -2087,10 +2093,7 @@ namespace ALYSLC
 
 			std::unique_ptr<ReleasedReferenceInfo> firstRefrInfo = 
 			(
-				std::make_unique<ReleasedReferenceInfo>
-				(
-					controllerID, firstRefrHandle
-				)
+				std::make_unique<ReleasedReferenceInfo>(firstRefrHandle)
 			);
 			if (!firstRefrInfo)
 			{
@@ -3656,7 +3659,7 @@ namespace ALYSLC
 			if (p->mm->lsMoved)
 			{
 				// Flip LS Y comp sign to conform with Scaleform convention.
-				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 				targetingAngle = Util::NormalizeAng0To2Pi
 				(
 					atan2f(-lsData.yComp, lsData.xComp)
@@ -3874,7 +3877,7 @@ namespace ALYSLC
 			if (!a_combatDependentSelection || shouldOnlyTargetAllies)
 			{
 				// Perform new closest actor in FOV check on P1.
-				auto actorTorsoPos = glob.coopPlayers[glob.player1CID]->mm->playerTorsoPosition;
+				auto actorTorsoPos = glob.coopPlayers[0]->mm->playerTorsoPosition;
 				if (a_useScreenPositions)
 				{
 					actorTorsoPos = Util::WorldToScreenPoint3(actorTorsoPos, false);
@@ -4655,6 +4658,7 @@ namespace ALYSLC
 					!Util::IsPartyFriendlyActor(hitActorPtr.get())
 				)
 			);
+			// First, apply stagger to actors that do not ragdoll while alive.
 			Util::ApplyHit
 			(
 				coopActor.get(),
@@ -4662,12 +4666,14 @@ namespace ALYSLC
 				damage,
 				triggerCombat,
 				true,
+				damage, 
+				damage,
 				coopActor->GetHandle(),
 				releasedRefrPtr->formID,
 				hitFlags
 			);
 		}
-
+		
 		// Ragdoll the hit actor with a force dependent on the colliding body's impact speed.
 		if (a_shouldRagdoll)
 		{
@@ -4693,6 +4699,7 @@ namespace ALYSLC
 				Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
 			}
 		}
+
 
 		if (canSMORF && wantsToSMORF && asActor == coopActor.get())
 		{
@@ -4816,20 +4823,20 @@ namespace ALYSLC
 		);
 		bool newCrosshairRefr = prevCrosshairRefrPtr != crosshairRefrPtr;
 		// Check if this player was last in control of the LootMenu.
-		bool wasInControl = glob.quickLootControlCID == controllerID;
+		bool wasInControl = glob.quickLootControlPID == playerID;
 		// Grace period of 1/8 of a second first.
 		// Then also make sure there is no active request from a player.
 		bool anyPlayerCanSet =
 		(
 			!glob.supportedMenuOpen.load() &&
 			secsSinceAllSupportedMenusClosed > 0.125f &&
-			glob.quickLootReqCID == -1
+			glob.quickLootReqPID == -1
 		);
 
 		// Is this player controlling menus?
 		bool controllingMenus = 
 		(
-			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(controllerID)
+			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
 		);
 		// Send a new crosshair event to open the QuickLoot menu 
 		// if the player's crosshair refr is valid,
@@ -4872,14 +4879,14 @@ namespace ALYSLC
 				(
 					(
 						!glob.supportedMenuOpen &&
-						controllerID == glob.quickLootControlCID &&
+						playerID == glob.quickLootControlPID &&
 						glob.reqQuickLootContainerHandle != RE::ObjectRefHandle()
 					) &&
 					(!crosshairRefrPtr || !crosshairRefrInRangeForQuickLoot)
 				) &&
 				(
-					controllerID == glob.quickLootReqCID ||
-					glob.quickLootReqCID == -1
+					playerID == glob.quickLootReqPID ||
+					glob.quickLootReqPID == -1
 				)
 			)
 		};
@@ -4995,7 +5002,7 @@ namespace ALYSLC
 				{
 					glob.moarm->InsertRequest
 					(
-						controllerID, 
+						playerID, 
 						InputAction::kMoveCrosshair, 
 						SteadyClock::now(),
 						GlobalCoopData::LOOT_MENU,
@@ -5018,7 +5025,7 @@ namespace ALYSLC
 						coopActor->GetName(),
 						crosshairRefrPtr->GetName()
 					);
-					Util::SendCrosshairEvent(crosshairRefrPtr.get(), controllerID);
+					Util::SendCrosshairEvent(crosshairRefrPtr.get(), playerID);
 
 					// After sending a crosshair event to open the LootMenu for a corpse,
 					// clear out the exData pad so other players can freely loot the corpse.
@@ -6110,6 +6117,8 @@ namespace ALYSLC
 			0.0f,
 			triggerCombat,
 			true,
+			0.0f,
+			0.0f,
 			coopActor->GetHandle(),
 			releasedActorPtr->formID,
 			hitFlags
@@ -7566,7 +7575,7 @@ namespace ALYSLC
 					(
 						(isBook || isNote) &&
 						(
-							!GlobalCoopData::CanControlMenus(controllerID)
+							!GlobalCoopData::CanControlMenus(playerID)
 						)
 					);
 					if (shouldSneakToActivate)
@@ -7816,7 +7825,7 @@ namespace ALYSLC
 		// Player is trying to/is performing/just finished an action that requires having a target.
 		bool actionJustStarted = false;
 		bool rangedAttackOrBlockRequest = p->pam->TurnToTargetForCombatAction(actionJustStarted);
-		const auto& lsState = glob.cdh->GetAnalogStickState(controllerID, true);
+		const auto& lsState = glob.cdh->GetAnalogStickState(deviceID, true);
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
 		// Can only check for a new target if the player is requesting a ranged attack, 
 		// is not facing the crosshair position,
@@ -8309,7 +8318,7 @@ namespace ALYSLC
 		if (isMovingCrosshair)
 		{
 			// Get RS data.
-			const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
+			const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 			const auto& rsX = rsData.xComp;
 			// Scaleform Y is inverted with respect to the analog stick's Y axis.
 			const auto& rsY = -rsData.yComp;
@@ -8698,8 +8707,8 @@ namespace ALYSLC
 			(glob.cam->IsRunning()) ?
 			(
 				glob.cam->camAdjMode == CamAdjustmentMode::kRotate && 
-				glob.cam->controlCamCID != -1 && 
-				glob.coopPlayers[glob.cam->controlCamCID]->pam->IsPerforming
+				glob.cam->controlCamPID != -1 && 
+				glob.coopPlayers[glob.cam->controlCamPID]->pam->IsPerforming
 				(
 					InputAction::kRotateCam
 				)
@@ -9271,7 +9280,7 @@ namespace ALYSLC
 		// along the line of the crosshair's movement direction on screen.
 		//
 
-		const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 		const auto& rsX = rsData.xComp;
 		// Scaleform Y is inverted with respect to the analog stick's Y axis.
 		const auto& rsY = -rsData.yComp;
@@ -9492,7 +9501,7 @@ namespace ALYSLC
 						{
 							GlobalCoopData::AddSkillXP
 							(
-								controllerID,
+								playerID,
 								RE::ActorValue::kSneak, 
 								0.625f * secsSinceLastStealthStateCheck
 							);
@@ -9511,7 +9520,7 @@ namespace ALYSLC
 						closestHostileActorPtr &&
 						closestHostileActorDist <= Settings::fHostileTargetStealthRadius)
 					{
-						GlobalCoopData::AddSkillXP(controllerID, RE::ActorValue::kSneak, 2.5f);
+						GlobalCoopData::AddSkillXP(playerID, RE::ActorValue::kSneak, 2.5f);
 					}
 				}
 			}
@@ -9636,7 +9645,7 @@ namespace ALYSLC
 				ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME)
 			);
 			bool onlyAlwaysUnpaused = Util::MenusOnlyAlwaysUnpaused();
-			bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(controllerID);
+			bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(playerID);
 			baseCanDrawOverlayElements = 
 			(
 				(onlyAlwaysUnpaused || anotherPlayerControllingMenus) &&
@@ -9823,7 +9832,7 @@ namespace ALYSLC
 		float xySuspensionDist = max(objectHeight, baseSuspensionDist);
 		// Can move the grabbed object(s) closer or farther from the player
 		// by displacing the RS right (farther) and left (closer).
-		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 		if (a_p->pam->IsPerforming(InputAction::kAdjustAimPitch) && 
 			fabsf(rsData.xComp) > fabsf(rsData.yComp))
 		{
@@ -10838,7 +10847,7 @@ namespace ALYSLC
 		// Additional release speed multiplier if moving.
 		float releaseSpeedMult = 
 		(
-			glob.cdh->GetInputState(a_p->controllerID, InputAction::kLS).isPressed ? 
+			glob.cdh->GetInputState(a_p->deviceID, InputAction::kLS).isPressed ? 
 			1.5f * magickaOverflowSlowdownFactor : 
 			magickaOverflowSlowdownFactor
 		);
@@ -11146,7 +11155,7 @@ namespace ALYSLC
 			// Additional release speed multiplier if moving.
 			float releaseSpeedMult = 
 			(
-				glob.cdh->GetInputState(a_p->controllerID, InputAction::kLS).isPressed ? 
+				glob.cdh->GetInputState(a_p->deviceID, InputAction::kLS).isPressed ? 
 				1.5f * magickaOverflowSlowdownFactor : 
 				magickaOverflowSlowdownFactor
 			);
@@ -11424,7 +11433,7 @@ namespace ALYSLC
 		releasedRefrHandlesToInfoIndices.insert({ a_handle, nextOpenIndex });
 		releasedRefrInfoList.emplace_back
 		(
-			std::make_unique<ReleasedReferenceInfo>(a_p->controllerID, a_handle)
+			std::make_unique<ReleasedReferenceInfo>(a_handle)
 		);
 		const auto& info = releasedRefrInfoList[nextOpenIndex];
 		// Set active projectile flag.
@@ -11619,11 +11628,17 @@ namespace ALYSLC
 				auto asActor = refrPtr->As<RE::Actor>();
 				if (asActor)
 				{
-					// No longer paralyzed + signal to get up.
-					asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-					if (!asActor->IsDead()) 
+					// Ensure actors are no longer paralyzed, unless the actor is a downed player.
+					const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+					if ((pIndex == -1) || 
+						(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
 					{
-						asActor->NotifyAnimationGraph("GetUpBegin");
+						// No longer paralyzed + signal to get up.
+						asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+						if (!asActor->IsDead()) 
+						{
+							asActor->NotifyAnimationGraph("GetUpBegin");
+						}
 					}
 				}
 
@@ -11670,8 +11685,16 @@ namespace ALYSLC
 		{
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
-				// Ensure actors are no longer paralyzed.
-				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				// Ensure actors are no longer paralyzed, unless the actor is a downed player.
+				if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
+				{
+					const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+					if ((pIndex == -1) || 
+						(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+					{
+						asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					}
+				}
 			}
 		}
 	}
@@ -11687,10 +11710,15 @@ namespace ALYSLC
 			const auto& handle = info->refrHandle;
 			if (auto refrPtr = Util::GetRefrPtrFromHandle(handle); refrPtr)
 			{
-				// Ensure actors are no longer paralyzed.
+				// Ensure actors are no longer paralyzed, unless the actor is a downed player.
 				if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 				{
-					asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+					if ((pIndex == -1) || 
+						(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+					{
+						asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					}
 				}
 			}
 		}
@@ -11715,10 +11743,16 @@ namespace ALYSLC
 					auto refrPtr = Util::GetRefrPtrFromHandle(handle); 
 					if (refrPtr)
 					{
-						// Ensure actors are no longer paralyzed.
+						// Ensure actors are no longer paralyzed, 
+						// unless the actor is a downed player.
 						if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 						{
-							asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+							const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+							if ((pIndex == -1) || 
+								(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+							{
+								asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+							}
 						}
 					}
 				}
@@ -11793,8 +11827,13 @@ namespace ALYSLC
 			if (otherP->tm->rmm->IsManaged(handle, true))
 			{
 				otherP->tm->rmm->ClearRefr(handle);
-				a_p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-				a_p->coopActor->NotifyAnimationGraph("GetUpBegin");
+				// Ensure the player is no longer paralyzed, unless they are downed.
+				if (!a_p->isDowned && !glob.partyWiped)
+				{
+					a_p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					a_p->coopActor->NotifyAnimationGraph("GetUpBegin");
+				}
+
 				break;
 			}
 		}
@@ -11842,10 +11881,15 @@ namespace ALYSLC
 
 		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
 		{
+			// Ensure actors are no longer paralyzed, unless the actor is a downed player.
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
-				// Ensure actors are no longer paralyzed.
-				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+				if ((pIndex == -1) || 
+					(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+				{
+					asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				}
 			}
 		}
 	}
@@ -11874,10 +11918,15 @@ namespace ALYSLC
 
 		if (auto refrPtr = Util::GetRefrPtrFromHandle(a_handle); refrPtr)
 		{
+			// Ensure actors are no longer paralyzed, unless the actor is a downed player.
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
-				// Ensure actors are no longer paralyzed.
-				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+				if ((pIndex == -1) || 
+					(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+				{
+					asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				}
 			}
 		}
 	}
@@ -11895,10 +11944,15 @@ namespace ALYSLC
 				continue;
 			}
 
-			// Ensure all released actors are not paralyzed before clearing.
+			// Ensure actors are no longer paralyzed, unless the actor is a downed player.
 			if (auto asActor = refrPtr->As<RE::Actor>(); asActor)
 			{
-				asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+				if ((pIndex == -1) || 
+					(!glob.coopPlayers[pIndex]->isDowned && !glob.partyWiped))
+				{
+					asActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+				}
 			}
 		}
 

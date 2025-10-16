@@ -35,14 +35,13 @@ namespace ALYSLC
 		isTogglingLevitationState =
 		isTogglingLevitationStateTaskRunning = 
 		isTransformed =
-		isTransforming = 
-		selfValid =
-		selfWasInvalid =
+		isTransforming = false;
+		selfValid = true;
+		selfWasInvalid = false;
 		shouldTeleportToP1 = false;
-		handledControllerInputError =
 		isRevived = true;
 		// IDs.
-		controllerID = -1;
+		deviceID = -1;
 		playerID = -1;
 		// Actors.
 		coopActor = nullptr;
@@ -87,12 +86,13 @@ namespace ALYSLC
 
 	CoopPlayer::CoopPlayer
 	(
-		int32_t a_controllerID, 
+		int32_t a_deviceID, 
+		int32_t a_playerID,
 		RE::Actor* a_coopActor
 	) : 
 		Manager(ManagerType::kP), 
-		controllerID(a_controllerID), 
-		playerID(-1),
+		deviceID(a_deviceID), 
+		playerID(a_playerID),
 		coopActor(a_coopActor),
 		taskInterface(SKSE::GetTaskInterface())
 	{
@@ -140,18 +140,41 @@ namespace ALYSLC
 			return ManagerState::kAwaitingRefresh;		
 		}
 
+		// For now until keyboard + mouse support is implemented,
+		// managers do not run when the player's input device is the keyboard + mouse.
+		if (deviceID >= ALYSLC_MAX_CONTROLLER_COUNT)
+		{
+			return ManagerState::kPaused;
+		}
+
 		// Controller error check.
 		XINPUT_STATE tempState{ };
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
-		if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
+		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
 		{
 			SPDLOG_DEBUG
 			(
-				"{}: controller input error for CID {}. About to pause all managers.",
-				coopActor->GetName(), controllerID
+				"{}: controller input error for DID {}. "
+				"About to pause all managers and end the co-op session.",
+				coopActor->GetName(), deviceID
 			);
-			// Signal to handle once the manager is awaiting refresh.
-			handledControllerInputError = false;
+
+			// Controller was unplugged during a co-op session.
+			// Tear down the session and have players choose their characters again.
+			RE::DebugMessageBox
+			(
+				fmt::format
+				(
+					"[ALYSLC]\nERROR: Could not get input from controller {}.\n"
+					"Ending co-op session.\n"
+					"Please ensure all desired controllers are plugged in.", 
+					deviceID
+				).data()
+			);
+			GlobalCoopData::TeardownCoopSession(true);
+
+			// Must re-assign P1 device ID upon re-summoning.
+			glob.player1DID = -1;
 			return ManagerState::kAwaitingRefresh;
 		}
 
@@ -240,29 +263,13 @@ namespace ALYSLC
 			return currentState;
 		}
 
-		// Controller input error check and resolution attempt.
-		if (!handledControllerInputError)
+		// For now until keyboard + mouse support is implemented,
+		// managers remain paused when the player's input device is the keyboard + mouse.
+		if (deviceID >= ALYSLC_MAX_CONTROLLER_COUNT)
 		{
-			HandleControllerInputError();
-			XINPUT_STATE tempState{ };
-			ZeroMemory(&tempState, sizeof(XINPUT_STATE));
-			if (XInputGetState(controllerID, &tempState) != ERROR_SUCCESS)
-			{
-				handledControllerInputError = false;
-				// Try again on the next iteration.
-				return ManagerState::kAwaitingRefresh;
-			}
-			else
-			{
-				SPDLOG_DEBUG
-				(
-					"{}'s controller input error has been resolved. CID is now {}.",
-					coopActor->GetName(), controllerID
-				);
-				handledControllerInputError = true;
-			}
+			return currentState;
 		}
-		
+
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Check if the player should teleport to P1 or remain paused.
 		auto ui = RE::UI::GetSingleton(); 
@@ -420,17 +427,16 @@ namespace ALYSLC
 		// Refresh/set all members for this co-op player.
 		
 		// NOTE:
-		// Controller ID, player actor, and package form start index 
+		// Device ID, player actor, and package form start index 
 		// are already set through the constructor or UpdateCoopPlayer function at this point.
 
-		SPDLOG_DEBUG("Init player with controller ID: {}.", controllerID);
+		SPDLOG_DEBUG("Init player with device/player IDs: {}, {}.", deviceID, playerID);
 
-		// Active if the player has an assigned controller ID.
-		isActive = controllerID != -1;
+		// Active if the player has an assigned device ID.
+		isActive = playerID != -1;
 		if (isActive)
 		{
 			// Player-specific data.
-			handledControllerInputError = true;
 			isPlayer1 = coopActor->IsPlayerRef();
 			currentMountHandle = targetedMountHandle = RE::ActorHandle();
 			hasBeenDismissed =
@@ -442,11 +448,10 @@ namespace ALYSLC
 			isTogglingLevitationState =
 			isTogglingLevitationStateTaskRunning =
 			isTransformed =
-			isTransforming =
-			selfValid =
-			selfWasInvalid = 
+			isTransforming = false;
+			selfValid = true;
+			selfWasInvalid = false;
 			shouldTeleportToP1 = false;
-			handledControllerInputError =
 			isRevived = true;
 			// Time points.
 			expendSprintStaminaTP = SteadyClock::now();
@@ -482,7 +487,7 @@ namespace ALYSLC
 			// Aim target keyword
 			auto keywordForm = RE::TESForm::LookupByEditorID
 			(
-				fmt::format("__CoopAimTarget{}", controllerID + 1)
+				fmt::format("__CoopAimTarget{}", playerID + 1)
 			);
 			aimTargetKeyword = keywordForm ? keywordForm->As<RE::BGSKeyword>() : nullptr;
 			// Pre-transformation race.
@@ -548,39 +553,40 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopPlayer::UpdateCoopPlayer(int32_t a_controllerID, RE::Actor* a_coopActor)
+	void CoopPlayer::UpdateCoopPlayer
+	(
+		int32_t a_deviceID, int32_t a_playerID, RE::Actor* a_coopActor
+	)
 	{
 		// Update an already-constructed co-op player by setting the given data 
 		// and refreshing all other members.
 
 		SPDLOG_DEBUG
 		(
-			"Updating co-op player: {}, CID: {}", 
-			a_coopActor ? a_coopActor->GetName() : "NONE", a_controllerID
+			"Updating co-op player: {}, DID: {}, PID: {}.", 
+			a_coopActor ? a_coopActor->GetName() : "NONE", 
+			a_deviceID,
+			a_playerID
 		);
 
-		if (a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT)
-		{
-			controllerID = a_controllerID;
-			// Player ID is dependent on the player construction order.
-			// Set to -1 until after all players are constructed.
-			playerID = -1;
-			coopActor = RE::ActorPtr(a_coopActor);
-			taskInterface = SKSE::GetTaskInterface();
-			InitializeCoopPlayer();
-		}
-		else
+		if (a_deviceID < 0 || a_playerID < 0 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			SPDLOG_ERROR
 			(
-				"{}: controller ID is not between 0 and 3: {}.",
-				coopActor ? coopActor->GetName() : "NONE",
-				a_controllerID <= -1 || a_controllerID >= 4
+				"{}: invalid DID or PID: {}, {}.",
+				coopActor ? coopActor->GetName() : "NONE", a_deviceID, a_playerID
 			);
 
-			// Invalid CID/package start index. Set as inactive.
+			// Set as inactive.
 			isActive = false;
+			return;
 		}
+		
+		deviceID = a_deviceID;
+		playerID = a_playerID;
+		coopActor = RE::ActorPtr(a_coopActor);
+		taskInterface = SKSE::GetTaskInterface();
+		InitializeCoopPlayer();
 	}
 
 	void CoopPlayer::CopyNPCAppearanceToPlayer
@@ -670,7 +676,7 @@ namespace ALYSLC
 		hasBeenDismissed = true;
 
 		// Have player Papyrus script run its cleanup.
-		onCoopEndReg.SendEvent(coopActor.get(), controllerID);
+		onCoopEndReg.SendEvent(coopActor.get(), playerID);
 		SPDLOG_DEBUG
 		(
 			"Handled dismissal of {}. Script is now completing cleanup.", 
@@ -783,126 +789,6 @@ namespace ALYSLC
 		);
 
 		return hmsText;
-	}
-
-	void CoopPlayer::HandleControllerInputError()
-	{
-		// Re-assign controller ID(s) when disconnected during co-op 
-		// or when their XInput state(s) cannot be obtained.
-
-		if (currentState == ManagerState::kPaused || 
-			currentState == ManagerState::kAwaitingRefresh)
-		{
-			SPDLOG_DEBUG
-			(
-				"Failed to get XInput state for CID {}, player {}.",
-				controllerID, coopActor->GetName()
-			);
-			// Get controller "rank" or index in the list of active controllers 
-			// ordered by controller ID.
-			// Will use this list to shift the last CID into a lower ranked slot,
-			// if Windows has decided to change its rank when plugged back in.
-			// For example: CIDs: {0, 1, 3} -> {0, 1, 2}.
-			// NOTE:
-			// Will not do anything if two controllers swap indices.
-			uint8_t controllerRank = 0;
-			// Players array is indexed with CIDs.
-			for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i)
-			{
-				const auto& p = glob.coopPlayers[i];
-				if (!p->isActive)
-				{
-					// Skip inactive controllers.
-					continue;
-				}
-				else
-				{
-					if (p->coopActor != coopActor)
-					{
-						// Another active controller, but not the one we want.
-						++controllerRank;
-					}
-					else
-					{
-						// Found, so break.
-						break;
-					}
-				}
-			}
-
-			// Update connected controllers list.
-			const auto newControllerIDsList = glob.cdh->SetupConnectedCoopControllers();
-			// Ensure controller rank does not extend past the end of the new list.
-			if (controllerRank < newControllerIDsList.size())
-			{
-				const auto oldCID = controllerID;
-				controllerID = newControllerIDsList[controllerRank];
-				// Shift player into new controller ID slot.
-				const auto& swappedPlayer = glob.coopPlayers[controllerID];
-				// Only want to swap an active player's CID (inactive players have a CID of -1).
-				if (swappedPlayer->isActive) 
-				{
-					SPDLOG_DEBUG
-					(
-						"Swapping {} with {}. Swapped player {}'s new CID is now {}.",
-						coopActor->GetName(), 
-						swappedPlayer->coopActor->GetName(),
-						swappedPlayer->coopActor->GetName(), 
-						oldCID
-					);
-					swappedPlayer->controllerID = oldCID;
-				}
-
-				// Have to also recalculate player IDs, 
-				// which are dependent on ordering in the player list.
-				uint8_t currentID = 1;
-				for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i)
-				{
-					const auto& p = glob.coopPlayers[i];
-					if (!p->isActive)
-					{
-						continue;
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Recalculating player IDs. {}'s ID was {} and is now {}.",
-						p->coopActor->GetName(), 
-						p->playerID, 
-						p->isPlayer1 ? 0 : currentID
-					);
-					if (!p->isPlayer1)
-					{
-						p->playerID = currentID;
-						++currentID;
-					}
-					else
-					{
-						// P1 always has a PID of 0.
-						p->playerID = 0;
-					}
-				}
-
-				// Swap pointers after setting new controller/player IDs.
-				glob.coopPlayers[oldCID].swap(glob.coopPlayers[controllerID]);
-			}
-			else
-			{
-				// Controller was unplugged during a co-op session.
-				// Tear down the session and have players choose their characters again.
-				RE::DebugMessageBox
-				(
-					fmt::format
-					(
-						"[ALYSLC]\nERROR: Could not get input from controller {}.\n"
-						"Ending co-op session.\n"
-						"Please ensure at least two controllers are plugged in.", 
-						controllerID
-					).data()
-				);
-				GlobalCoopData::TeardownCoopSession(true);
-			}
-		}
 	}
 
 	void CoopPlayer::RegisterEvents()
@@ -1033,11 +919,18 @@ namespace ALYSLC
 	{
 		// Only revert form if transformed.
 		// Return true if successful.
-
-		if (!isTransformed)
-		{
-			return false;
-		}
+		
+		SPDLOG_DEBUG
+		(
+			"Pre-transform race: {}, original: {}, current: {}, "
+			"is transformed: {}.",
+			preTransformationRace ? preTransformationRace->GetName() : "NONE",
+			coopActor->GetActorBase() && coopActor->GetActorBase()->originalRace ?
+			coopActor->GetActorBase()->originalRace->GetName() : 
+			"NONE",
+			coopActor->race ? coopActor->race->GetName() : "NONE",
+			isTransformed
+		);
 
 		if (!coopActor || !coopActor->race || !coopActor->GetActorBase())
 		{
@@ -1049,7 +942,7 @@ namespace ALYSLC
 		// to one with a transformation (ex. Nord to Werewolf).
 		auto originalRace = 
 		(
-			isTransformed && preTransformationRace ? 
+			preTransformationRace ? 
 			preTransformationRace : 
 			coopActor->GetActorBase()->originalRace
 		);
@@ -1063,10 +956,6 @@ namespace ALYSLC
 			return false;
 		}
 		
-		// The transformation reversion will remove at least half of the player's health,
-		// so ensure their health is full before transforming back to prevent the player
-		// from instantly dying/entering a downed state.
-		pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
 		// Unequip transformation-specific spells that were equipped
 		// when the companion player transformed.
 		if (!isPlayer1)
@@ -1330,9 +1219,36 @@ namespace ALYSLC
 			{
 				return false;
 			}
+			
+			if (auto effectList = coopActor->GetActiveEffectList(); effectList)
+			{
+				for (auto effect : *effectList)
+				{
+					bool ignore = 
+					(
+						(!effect || !effect->effect || !effect->effect->baseEffect) ||
+						(
+							!effect->effect->baseEffect->HasArchetype
+							(
+								RE::EffectSetting::Archetype::kVampireLord
+							) &&
+							!effect->effect->baseEffect->HasArchetype
+							(
+								RE::EffectSetting::Archetype::kWerewolf
+							)
+						)
+					);
+					if (ignore)
+					{
+						continue;
+					}
 
+					effect->Dispel(true);
+				}
+			}
+			
 			bool wasWerewolf = Util::IsWerewolf(coopActor.get());
-			Util::SetActorRace(coopActor.get(), originalRace);
+			bool wasVampireLord = Util::IsVampireLord(coopActor.get());
 			if (isPlayer1 && wasWerewolf)
 			{
 				// Doesn't auto-unequip the werewolf FX armor for P1 
@@ -1346,12 +1262,34 @@ namespace ALYSLC
 					werewolfFXArmor, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 				);
 			}
-
-			// Clear out pre-transformation race, since we've already reverted to it.
-			preTransformationRace = nullptr;
+			else if (!isPlayer1 && wasVampireLord)
+			{
+				// Unequip any vampire spells.
+				em->UnequipHandForms(glob.bothHandsEquipSlot);
+			}
+			
+			script->SetCommand(fmt::format("setrace {}", originalRace->formEditorID));
+			script->CompileAndRun(coopActor.get());
+			Util::SetActorRace(coopActor.get(), originalRace);
 			// Cleanup.
 			delete script;
+			
+			// Clear out pre-transformation race, since we've already reverted to it.
+			preTransformationRace = nullptr;
+			// Rescale health, magicka, and stamina to stored values.
+			float firstLevel = 1.0f;
+			auto iter = glob.serializablePlayerData.find(coopActor->formID); 
+			if (iter != glob.serializablePlayerData.end())
+			{
+				firstLevel = iter->second->firstSavedLevel;
+			}
 
+			GlobalCoopData::RescaleHMS(coopActor.get(), firstLevel);
+
+			// The transformation reversion will remove at least half of the player's health,
+			// so ensure their health is full before transforming back to prevent the player
+			// from instantly dying/entering a downed state.
+			pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
 			return true;
 		}
 	
@@ -1796,7 +1734,6 @@ namespace ALYSLC
 					);
 
 					// Uh-oh!
-					//GlobalCoopData::YouDied(coopActor.get()); 
 					auto handle = coopActor->GetHandle();
 					glob.taskRunner->AddTask
 					(
@@ -1844,7 +1781,7 @@ namespace ALYSLC
 					);
 					
 					// Invulnerable while getting up after revive.
-					GlobalCoopData::ToggleGodModeForPlayer(controllerID, true);
+					GlobalCoopData::ToggleGodModeForPlayer(playerID, true);
 					// Indicates the player is temporarily invulnerable.
 					Util::StartEffectShader(coopActor.get(), glob.ghostFXShader);
 
@@ -1906,7 +1843,7 @@ namespace ALYSLC
 						isGettingUpAfterRevive = false;
 
 						// Toggle off god mode and remove god mode indicator shader.
-						GlobalCoopData::ToggleGodModeForPlayer(controllerID, false);
+						GlobalCoopData::ToggleGodModeForPlayer(playerID, false);
 						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
 
 						// IMPORTANT:
@@ -1948,12 +1885,12 @@ namespace ALYSLC
 					coopActor->IsDead()
 				);
 
-				// Always reset the paralysis flag.
-				coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 				// Not revived or downed anymore.
 				isRevived = isDowned = isGettingUpAfterRevive = false;
 				// Reset revive data.
 				revivedHealth = secsDowned = 0.0f;
+				// Party was wiped. RIP.
+				glob.partyWiped = true;
 				// End co-op session.
 				GlobalCoopData::TeardownCoopSession(true);
 			}
@@ -2023,6 +1960,7 @@ namespace ALYSLC
 
 	void CoopPlayer::LockpickingTask(bool a_fullControl)
 	{
+		// Never run with P1.
 		// NOTE: 
 		// Menu input manager crashes the game when the Lockpicking menu is opened twice 
 		// by the same co-op player.
@@ -2032,15 +1970,17 @@ namespace ALYSLC
 
 		auto ui = RE::UI::GetSingleton();
 		auto controlMap = RE::ControlMap::GetSingleton();
-		if (!ui || !controlMap)
+		if (!ui || !controlMap || isPlayer1)
 		{
 			return;
 		}
 
-		// Set CIDs, as the MIM would normally.
+		SPDLOG_DEBUG("{}.", coopActor->GetName());
+
+		// Set PIDs, as the MIM would normally.
 		if (a_fullControl)
 		{
-			glob.mim->managerMenuCID = glob.prevMenuCID = controllerID;
+			glob.mim->managerMenuPID = glob.prevMenuPID = playerID;
 		}
 
 		// Flags indicating whether either analog stick was moved.
@@ -2055,9 +1995,9 @@ namespace ALYSLC
 		while (ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME))
 		{
 			// Make sure this player has control throughout.
-			if ((a_fullControl) && (glob.mim->managerMenuCID == -1 || glob.prevMenuCID == -1))
+			if ((a_fullControl) && (glob.mim->managerMenuPID == -1 || glob.prevMenuPID == -1))
 			{
-				glob.mim->managerMenuCID = glob.prevMenuCID = controllerID;
+				glob.mim->managerMenuPID = glob.prevMenuPID = playerID;
 			}
 
 			// Wait an additional amount of time to sync with the global time delta.
@@ -2069,7 +2009,7 @@ namespace ALYSLC
 			if (a_fullControl)
 			{
 				// Rotate pick with the LS.
-				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 				const auto& lsX = lsData.xComp;
 				const auto& lsY = lsData.yComp;
 				const auto& lsMag = lsData.normMag;
@@ -2100,7 +2040,7 @@ namespace ALYSLC
 			if (!Settings::bTwoPlayerLockpicking || glob.activePlayers > 2 || !a_fullControl)
 			{
 				// Rotate lock with the RS.
-				const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
+				const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 				const auto& rsX = rsData.xComp;
 				const auto& rsY = rsData.yComp;
 				const auto& rsMag = rsData.normMag;
@@ -2130,7 +2070,7 @@ namespace ALYSLC
 			{
 				XINPUT_STATE buttonState{ };
 				ZeroMemory(&buttonState, sizeof(buttonState));
-				if (XInputGetState(controllerID, &buttonState) == ERROR_SUCCESS)
+				if (XInputGetState(deviceID, &buttonState) == ERROR_SUCCESS)
 				{
 					// Get XInput and game mask for the 'Cancel' bind.
 					// Default to the 'B' button.
@@ -2191,8 +2131,9 @@ namespace ALYSLC
 			}
 		}
 
-		// Reset MIM CID to -1 once the LockpickingMenu closes.
-		glob.mim->managerMenuCID = -1;
+		// Reset MIM DID/PID to -1 once the LockpickingMenu closes.
+		glob.mim->managerMenuDID = -1;
+		glob.mim->managerMenuPID = -1;
 	}
 
 	void CoopPlayer::MountTask()

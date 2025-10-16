@@ -8,7 +8,7 @@ namespace ALYSLC
 	{
 		// Register all event handlers to receive events.
 		void RegisterEvents();
-		// Close MIM, reset menu CIDs, and reset open supported menus flag and time point.
+		// Close MIM, reset menu PIDs, and reset open supported menus flag and time point.
 		void ResetMenuState();
 	}
 

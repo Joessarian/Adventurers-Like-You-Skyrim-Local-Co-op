@@ -646,8 +646,14 @@ namespace ALYSLC
 			}
 			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 			{
-				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
-				return eulerAngles.x;
+				// Player cam's pitch does not always correspond to 
+				// the actual camera up direction angle in certain camera states, 
+				// such as the bleedout camera state, so get that info from the NiCamera.
+				const auto camUp = 
+				(
+					playerCam->cameraRoot->world.rotate * RE::NiPoint3(0.0f, 0.0f, 1.0f)
+				);
+				return Util::DirectionToGameAngPitch(camUp);
 			}
 
 			return RE::PlayerCharacter::GetSingleton()->data.angle.x;
@@ -694,8 +700,22 @@ namespace ALYSLC
 			}
 			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
 			{
-				auto eulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
-				return eulerAngles.z;
+				// Player cam's yaw does not always correspond to 
+				// the actual camera forward direction angle in certain camera states, 
+				// such as the bleedout camera state, so get that info from the NiCamera.
+				const auto camForward = 
+				(
+					playerCam->cameraRoot->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)
+				);
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if ((p1) && (camForward.z >= 1.0f - 1E-5f || camForward.z <= -1.0f + 1E-5f))
+				{
+					return p1->data.angle.z;
+				}
+				else
+				{
+					return Util::DirectionToGameAngYaw(camForward);
+				}
 			}
 
 			return RE::PlayerCamera::GetSingleton()->yaw;
@@ -744,13 +764,6 @@ namespace ALYSLC
 			}
 		}
 
-		// Used externally. Signal the camera manager to wait for toggle 
-		// (co-op camera is only re-enabled by P1).
-		inline void SetWaitForToggle(bool a_set)
-		{
-			waitForToggle = a_set;
-		}
-
 		// Return true if the current lock on target should be considered as a player
 		// for camera origin point, target position, and auto-zoom calculations.
 		// Since rotation assistance does not auto-zoom to keep the lock on target in frame, 
@@ -771,6 +784,7 @@ namespace ALYSLC
 		{
 			autoRotateJustResumedTP = SteadyClock::now();
 			autoRotateJustSuspendedTP = SteadyClock::now();
+			deathCameraTP = SteadyClock::now();
 			lockOnLOSCheckTP = SteadyClock::now();
 			lockOnLOSLostTP = SteadyClock::now();
 			noPlayersUnderExteriorRoofTP = SteadyClock::now();
@@ -881,6 +895,10 @@ namespace ALYSLC
 		// Prevent/enable fading of players.
 		void SetPlayerFadePrevention(bool&& a_noFade);
 		
+		// Signal the camera manager to wait for toggle 
+		// (co-op camera is only re-enabled by P1 and if at least two controllers are connected).
+		void SetWaitForToggle(bool a_set);
+
 		// Toggle the co-op camera on or off.
 		void ToggleCoopCamera(bool a_enable);
 		
@@ -902,6 +920,9 @@ namespace ALYSLC
 		// Update camera zoom data.
 		void UpdateCamZoom();
 		
+		// Set the death camera position and rotation.
+		void UpdateDeathCameraOrientation();
+
 		// Update data related to the current cell (P1's parent cell).
 		void UpdateParentCell();
 		
@@ -951,6 +972,8 @@ namespace ALYSLC
 		// Last time the movement pitch/yaw running totals started to approach 0 
 		// outside of updating.
 		SteadyClock::time_point autoRotateJustSuspendedTP;
+		// Last time the co-op death camera state was toggled on.
+		SteadyClock::time_point deathCameraTP;
 		// Last time an LOS check for the cam lock on target was made.
 		SteadyClock::time_point lockOnLOSCheckTP;
 		// Last time at which LOS was lost on the cam lock on target.
@@ -1090,11 +1113,11 @@ namespace ALYSLC
 		float secsSinceLockOnTargetLOSChecked;
 		// Seconds since LOS to lock on target was lost.
 		float secsSinceLockOnTargetLOSLost;
-		// ID of the player controller adjusting the camera.
-		int32_t controlCamCID;
-		// Controller ID for the player given direct focus of the camera.
+		// Player ID of the player device adjusting the camera.
+		int32_t controlCamPID;
+		// Player ID for the player given direct focus of the camera.
 		// -1 if none or if focal player mode is not enabled.
-		int32_t focalPlayerCID;
+		int32_t focalPlayerPID;
 		// Number of movement pitch angle readings made since the last update.
 		uint32_t numMovementPitchReadings;
 		// Number of movement yaw angle readings made since the last update.

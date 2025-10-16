@@ -395,13 +395,13 @@ namespace ALYSLC
 		// Change the co-op camera's adjustment mode (None, Rotate, or Zoom).
 		void SetCameraAdjustmentMode
 		(
-			const int32_t& a_reqCID, const InputAction& a_action, bool&& a_set
+			const int32_t& a_reqPID, const InputAction& a_action, bool&& a_set
 		);
 
 		// Change the co-op camera's state to the requested state 
 		// or back to default if already set to that state.
 		// Valid states are (Auto-Trail (default), Lock On, or Manual Positioning).
-		void SetCameraState(const int32_t& a_reqCID, const InputAction& a_action);
+		void SetCameraState(const int32_t& a_reqPID, const InputAction& a_action);
 
 		// Set up casting package to have a companion player cast a spell in the LH/RH.
 		void SetUpCastingPackage

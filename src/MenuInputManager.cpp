@@ -15,11 +15,12 @@ namespace ALYSLC
 	MenuInputManager::MenuInputManager() 
 		: Manager(ManagerType::kMIM)
 	{
-		// Menu-controlling player IDs.
-		managerMenuCID = -1;
-		managerMenuPlayerID = 0;
-		// Default to P1's PID.
-		pmcPlayerID = 0;
+		// Device and player IDs.
+		managerMenuDID = -1;
+		managerMenuPID = -1;
+		// Default to P1's PID because P1 is given control of menus
+		// as a fallback if no companion player requested control.
+		pmcPID = 0;
 
 		// Handles for open container, source container, and co-op player actors.
 		fromContainerHandle = RE::ObjectRefHandle();
@@ -110,7 +111,7 @@ namespace ALYSLC
 				}
 			}
 		}
-
+		
 		// Update controller state and event type to handle, if any.
 		CheckControllerInput();
 
@@ -124,17 +125,19 @@ namespace ALYSLC
 		{
 			if (delayedReq) 
 			{
-				const auto& p = glob.coopPlayers[managerMenuCID];
+				const auto& p = glob.coopPlayers[managerMenuPID];
 				p->em->RefreshEquipState(RefreshSlots::kAll);
 			}
 
 			if (openedMenuType == SupportedMenu::kMagic)
 			{
-				RefreshMagicMenuEquipState(true);
+				RefreshMagicMenuEquipState();
+				shouldRefreshMenu = true;
 			}
 			else if (openedMenuType == SupportedMenu::kFavorites)
 			{
-				RefreshFavoritesMenuEquipState(true);
+				RefreshFavoritesMenuEquipState();
+				shouldRefreshMenu = true;
 			}
 
 			if (equipEventRefreshReq) 
@@ -235,9 +238,9 @@ namespace ALYSLC
 		menuNamesHashSet.clear();
 		menuNamesStack.clear();
 
-		// Reset menu control CID before pausing.
-		managerMenuCID = -1;
-		managerMenuPlayerID = 0;
+		// Reset menu control DID/PID before pausing.
+		managerMenuDID = -1;
+		managerMenuPID = -1;
 	}
 
 	void MenuInputManager::PreStartTask()
@@ -249,16 +252,16 @@ namespace ALYSLC
 	{
 		// Refresh all menu-related data.
 
-		if (managerMenuCID == -1) 
+		if (managerMenuDID < 0) 
 		{
-			SPDLOG_DEBUG("Got invalid controller ID (-1).");
+			SPDLOG_DEBUG("Got invalid device ID ({}).", managerMenuDID);
 			return;
 		}
 
 		// Get companion player's handle if in co-op.
 		if (glob.coopSessionActive)
 		{
-			menuCoopActorHandle = glob.coopPlayers[managerMenuCID]->coopActor->GetHandle();
+			menuCoopActorHandle = glob.coopPlayers[managerMenuPID]->coopActor->GetHandle();
 		}
 
 		// Reset general menu data.
@@ -274,13 +277,6 @@ namespace ALYSLC
 		menuContainerHandle = RE::ObjectRefHandle();
 		selectedForm = nullptr;
 		lastEquipStateRefreshReqTP = SteadyClock::now();
-
-		// Clear any lingering queued input events.
-		for (auto& ptr : queuedInputEvents)
-		{
-			ptr.release();
-		}
-		queuedInputEvents.clear();
 
 		// Initialize menu-specific data.
 		if (containerMenu)
@@ -329,7 +325,8 @@ namespace ALYSLC
 		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
 		// First, check for input presses as given by the menu control map above
-		if (XInputGetState(managerMenuCID, &buttonState) == ERROR_SUCCESS)
+		if (XInputGetState(glob.coopPlayers[managerMenuPID]->deviceID, &buttonState) == 
+			ERROR_SUCCESS)
 		{
 			for (auto iter = menuControlMap.begin(); iter != menuControlMap.end(); ++iter)
 			{
@@ -355,16 +352,16 @@ namespace ALYSLC
 		// Pause self if the menu controller's state is inaccessible.
 		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
-		auto err = XInputGetState(managerMenuCID, &buttonState);
-		if (managerMenuCID == -1 || err != ERROR_SUCCESS)
+		auto err = XInputGetState(managerMenuDID, &buttonState);
+		if (managerMenuDID < 0 || err != ERROR_SUCCESS)
 		{
 			// Leave error message before returning.
-			if (err != ERROR_SUCCESS && managerMenuCID != -1)
+			if (err != ERROR_SUCCESS && managerMenuDID != -1)
 			{
 				SPDLOG_DEBUG
 				(
-					"Could not get XINPUT state for controller ID {}. Pausing menu input manager.", 
-					managerMenuCID
+					"Could not get XINPUT state for device ID {}. Pausing menu input manager.", 
+					managerMenuDID
 				);
 			}
 
@@ -411,9 +408,14 @@ namespace ALYSLC
 			return currentState;
 		}
 		
+		// Restore P1's data first.
+		GlobalCoopData::CopyOverCoopPlayerData
+		(
+			false, RE::ContainerMenu::MENU_NAME, menuCoopActorHandle
+		);
 		// The container is a co-op companion's inventory and the tab has been switched
-		// to display P1's inventory, so we pause here.
-		GlobalCoopData::SetMenuCIDs(glob.player1CID);
+		// to display P1's inventory, so we pause here and given P1 control.
+		GlobalCoopData::SetMenuPlayerIDs(0);
 		return ManagerState::kPaused;
 	}
 
@@ -467,9 +469,17 @@ namespace ALYSLC
 		// The container is a companion player's inventory, so we should resume here
 		// after giving the player control of menus.
 		isCoopInventory = true;
-		managerMenuCID = pIndex;
-		managerMenuPlayerID = glob.coopPlayers[managerMenuCID]->playerID;
-		GlobalCoopData::SetMenuCIDs(managerMenuCID);
+		managerMenuPID = pIndex;
+		managerMenuDID = glob.coopPlayers[managerMenuPID]->deviceID;
+		// Import companion player's data first.
+		GlobalCoopData::CopyOverCoopPlayerData
+		(
+			true, RE::ContainerMenu::MENU_NAME,  menuCoopActorHandle
+		);
+		GlobalCoopData::SetMenuPlayerIDs(managerMenuPID);
+		// Add the Container Menu back to the stack of handled menus, 
+		// since it was removed when the MIM paused earlier.
+		SetOpenedMenu(RE::ContainerMenu::MENU_NAME, true);
 		return ManagerState::kRunning;
 	}
 
@@ -477,7 +487,7 @@ namespace ALYSLC
 	{
 		// Update controller input state and set menu event type to handle.
 		
-		if (managerMenuCID < 0 || managerMenuCID >= ALYSLC_MAX_PLAYER_COUNT) 
+		if (managerMenuDID < 0 || managerMenuDID >= ALYSLC_MAX_CONTROLLER_COUNT)
 		{
 			return;
 		}
@@ -485,7 +495,7 @@ namespace ALYSLC
 		auto& paInfo = glob.paInfoHolder;
 		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
-		auto err = XInputGetState(managerMenuCID, &buttonState);
+		auto err = XInputGetState(managerMenuDID, &buttonState);
 		if (err != ERROR_SUCCESS)
 		{
 			return;
@@ -512,7 +522,7 @@ namespace ALYSLC
 			{
 				handleAnalogStickMovement = 
 				(
-					glob.cdh->GetAnalogStickState(managerMenuCID, xMask == XMASK_LS).normMag > 0.0f
+					glob.cdh->GetAnalogStickState(managerMenuDID, xMask == XMASK_LS).normMag > 0.0f
 				);
 			}
 
@@ -633,7 +643,7 @@ namespace ALYSLC
 					{
 						const auto& stickData = glob.cdh->GetAnalogStickState
 						(
-							managerMenuCID, xMask == XMASK_LS
+							managerMenuDID, xMask == XMASK_LS
 						);
 						const auto& xComp = stickData.xComp;
 						const auto& yComp = stickData.yComp;
@@ -1143,10 +1153,10 @@ namespace ALYSLC
 			{
 				// Co-op session active.
 				// Set to the player ID of the player who last controlled opened menus,
-				// or P1's PID (0) if there is no recorded previous menu CID.
-				pmcPlayerID = 
+				// or P1's PID (0) if there is no recorded previous menu PID.
+				pmcPID = 
 				(
-					glob.prevMenuCID != -1 ? glob.coopPlayers[glob.prevMenuCID]->playerID : 0
+					glob.prevMenuPID != -1 ? glob.coopPlayers[glob.prevMenuPID]->playerID : 0
 				);
 			}
 			else if (IsRunning()) 
@@ -1154,21 +1164,21 @@ namespace ALYSLC
 				// Co-op session not active and a player is in the co-op setup menu, 
 				// so set to the player ID of the player requesting control of this menu.
 				// Set to P1's PID (0) if there is no valid manager menu PID.
-				pmcPlayerID = managerMenuPlayerID != -1 ? managerMenuPlayerID : 0;
+				pmcPID = managerMenuPID != -1 ? managerMenuPID : 0;
 			}
 			else
 			{
 				// P1 is in control.
-				pmcPlayerID = 0;
+				pmcPID = 0;
 			}
 
 			// Should never happen, but if not a valid player ID, return.
-			if (pmcPlayerID == -1)
+			if (pmcPID == -1)
 			{
 				return;
 			}
 
-			uint32_t uiRGBA = (Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha;
+			uint32_t uiRGBA = (Settings::vuOverlayRGBAValues[pmcPID] & 0xFFFFFF00) + alpha;
 			const auto& thickness = Settings::fPlayerMenuControlOverlayOutlineThickness;
 			const float rectWidth = DebugAPI::screenResX;
 			const float rectHeight = DebugAPI::screenResY;
@@ -1181,21 +1191,21 @@ namespace ALYSLC
 			(
 				glm::vec2(0.25f * thickness, 0.5f * thickness), 
 				glm::vec2(0.25f * thickness, rectHeight - 0.5f * thickness), 
-				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuOverlayRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.625f * thickness, 0.75f * thickness), 
 				glm::vec2(0.625f * thickness, rectHeight - 0.75f * thickness), 
-				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.875f * thickness, thickness), 
 				glm::vec2(0.875f * thickness, rectHeight - thickness), 
-				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 
@@ -1204,21 +1214,21 @@ namespace ALYSLC
 			(
 				glm::vec2(rectWidth - 0.25f * thickness, 0.5f * thickness), 
 				glm::vec2(rectWidth - 0.25f * thickness, rectHeight - 0.5f * thickness), 
-				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuOverlayRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(rectWidth - 0.625f * thickness, 0.75f * thickness), 
 				glm::vec2(rectWidth - 0.625f * thickness, rectHeight - 0.75f * thickness), 
-				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(rectWidth - 0.875f * thickness, thickness), 
 				glm::vec2(rectWidth - 0.875f * thickness, rectHeight - thickness), 
-				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 
@@ -1227,21 +1237,21 @@ namespace ALYSLC
 			(
 				glm::vec2(0.0f, 0.25f * thickness), 
 				glm::vec2(rectWidth, 0.25f * thickness),
-				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuOverlayRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.5f * thickness, 0.625f * thickness), 
 				glm::vec2(rectWidth - 0.5f * thickness, 0.625f * thickness),
-				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha,
 				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.75f * thickness, 0.875f * thickness), 
 				glm::vec2(rectWidth - 0.75f * thickness, 0.875f * thickness),
-				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 
@@ -1250,21 +1260,21 @@ namespace ALYSLC
 			(
 				glm::vec2(0.0f, rectHeight - 0.25f * thickness), 
 				glm::vec2(rectWidth, rectHeight - 0.25f * thickness), 
-				(Settings::vuOverlayRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuOverlayRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.5f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.5f * thickness, rectHeight - 0.625f * thickness), 
 				glm::vec2(rectWidth - 0.5f * thickness, rectHeight - 0.625f * thickness), 
-				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha,
+				(Settings::vuCrosshairInnerOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha,
 				0.25f * thickness
 			);
 			DebugAPI::QueueLine2D
 			(
 				glm::vec2(0.75f * thickness, rectHeight - 0.875f * thickness), 
 				glm::vec2(rectWidth - 0.75f * thickness, rectHeight - 0.875f * thickness), 
-				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPlayerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairOuterOutlineRGBAValues[pmcPID] & 0xFFFFFF00) + alpha, 
 				0.25f * thickness
 			);
 		}
@@ -1323,7 +1333,7 @@ namespace ALYSLC
 					return;
 				}
 
-				const auto& em = glob.coopPlayers[glob.player1CID]->em;
+				const auto& em = glob.coopPlayers[0]->em;
 				// Index allows us to get the selected form.
 				RE::GFxValue selectedIndex;
 				view->GetVariable
@@ -1472,7 +1482,7 @@ namespace ALYSLC
 				}
 
 				// Refresh equip state after equip.
-				glob.coopPlayers[glob.player1CID]->em->RefreshEquipState(RefreshSlots::kAll);
+				glob.coopPlayers[0]->em->RefreshEquipState(RefreshSlots::kAll);
 				// Update the list to reflect our changes.
 				view->InvokeNoReturn("_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0);
 			}
@@ -1508,13 +1518,17 @@ namespace ALYSLC
 			return;
 		}
 
-		int32_t menuCID = glob.menuCID;
-		if (menuCID == -1) 
+		int32_t menuPID = glob.menuPID;
+		// Give P1 control if no player is in menus.
+		if (menuPID == -1) 
 		{
-			menuCID = glob.player1CID;
+			menuPID = 0;
 		}
 
-		const auto& rsData = glob.cdh->GetAnalogStickState(menuCID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState
+		(
+			glob.coopPlayers[menuPID]->deviceID, false
+		);
 		if (rsData.normMag == 0.0f)
 		{
 			return;
@@ -1582,7 +1596,7 @@ namespace ALYSLC
 
 			taskInterface->AddUITask
 			(
-				[this, hotkeyEvent, hotkeyCode, hotkeySlotToChange, menuCID]() 
+				[this, hotkeyEvent, hotkeyCode, hotkeySlotToChange, menuPID]() 
 				{
 					auto ui = RE::UI::GetSingleton(); 
 					if (!ui)
@@ -1618,7 +1632,7 @@ namespace ALYSLC
 						return;
 					}
 
-					const auto& p = glob.coopPlayers[menuCID];
+					const auto& p = glob.coopPlayers[menuPID];
 					// Press and release.
 					Util::SendButtonEvent
 					(
@@ -1697,7 +1711,7 @@ namespace ALYSLC
 
 			taskInterface->AddUITask
 			(
-				[this, hotkeySlotToChange, menuCID]() 
+				[this, hotkeySlotToChange, menuPID]() 
 				{
 					auto ui = RE::UI::GetSingleton(); 
 					if (!ui)
@@ -1750,7 +1764,7 @@ namespace ALYSLC
 						return;
 					}
 					
-					const auto& p = glob.coopPlayers[menuCID];
+					const auto& p = glob.coopPlayers[menuPID];
 					auto form = favoritesMenu->favorites[index].item;
 					// Must have a valid selected form.
 					if (!form)
@@ -1910,7 +1924,7 @@ namespace ALYSLC
 		//=========================================================================================
 
 		// Ensure placeholder spells/shout are not added to P1.
-		const auto& p = glob.coopPlayers[managerMenuCID];
+		const auto& p = glob.coopPlayers[managerMenuPID];
 		auto placeholderSpell2H = p->em->placeholderMagic[!PlaceholderMagicIndex::k2H];
 		auto placeholderSpellLH = p->em->placeholderMagic[!PlaceholderMagicIndex::kLH];
 		auto placeholderSpellRH = p->em->placeholderMagic[!PlaceholderMagicIndex::kRH];
@@ -2105,46 +2119,58 @@ namespace ALYSLC
 		{
 		case MenuInputEventType::kEquipReq:
 		{
-			const auto& p = glob.coopPlayers[managerMenuCID];
-			// Do not equip if the player character's race is a creature race
-			// and the item to equip is a weapon or spell, since they are not usable
-			// and can cause equip looping.
-			bool canEquip = 
-			(
-				!p->coopActor->race ||
-				p->coopActor->race->HasKeyword(glob.npcKeyword) ||
-				selectedForm->As<RE::TESObjectARMO>() ||
-				selectedForm->As<RE::AlchemyItem>() ||
-				selectedForm->As<RE::IngredientItem>()
-			);
-			if (canEquip)
+			if (managerMenuPID > -1 && managerMenuPID < ALYSLC_MAX_PLAYER_COUNT)
 			{
-				SPDLOG_DEBUG
+				const auto& p = glob.coopPlayers[managerMenuPID];
+				// Do not equip if not a humanoid and not a vampire lord
+				// and the item to equip is a weapon or spell, since they are not usable
+				// and can cause equip looping.
+				bool canEquip = 
 				(
-					"Equip Request Event: from container: {}, "
-					"form: {}, equip index: {}, placeholder spell changed: {}.",
-					(Util::HandleIsValid(fromContainerHandle)) ? 
-					fromContainerHandle.get()->GetName() : 
-					"NONE",
-					(selectedForm) ? selectedForm->GetName() : "NONE",
-					reqEquipIndex,
-					placeholderMagicChanged
+					(!p->coopActor->race) ||
+					(p->coopActor->race->HasKeyword(glob.npcKeyword)) ||
+					(Util::IsVampireLord(p->coopActor.get())) ||
+					(
+						selectedForm->As<RE::TESObjectARMO>() ||
+						selectedForm->As<RE::AlchemyItem>() ||
+						selectedForm->As<RE::IngredientItem>()
+					)
 				);
-				// Equip/unequip the selected form.
-				p->em->HandleMenuEquipRequest
-				(
-					fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
-				);
-				// Reset placeholder magic changed flag and equip index.
-				placeholderMagicChanged = false;
-				reqEquipIndex = EquipIndex::kRightHand;
+				if (canEquip)
+				{
+					SPDLOG_DEBUG
+					(
+						"Equip Request Event: from container: {}, "
+						"form: {}, equip index: {}, placeholder spell changed: {}.",
+						(Util::HandleIsValid(fromContainerHandle)) ? 
+						fromContainerHandle.get()->GetName() : 
+						"NONE",
+						(selectedForm) ? selectedForm->GetName() : "NONE",
+						reqEquipIndex,
+						placeholderMagicChanged
+					);
+					// Equip/unequip the selected form.
+					p->em->HandleMenuEquipRequest
+					(
+						fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
+					);
+					// Reset placeholder magic changed flag and equip index.
+					placeholderMagicChanged = false;
+					reqEquipIndex = EquipIndex::kRightHand;
+				}
 			}
 
 			break;
 		}
 		case MenuInputEventType::kEmulateInput:
 		{
-			SendQueuedInputEvents();
+			// String together any queued emulated input events after checking device input.
+			// Link individual input events into a chain.
+			for (uint32_t i = 0; i < queuedInputEvents.size() - 1; ++i)
+			{
+				(*(queuedInputEvents[i].get()))->next = *(queuedInputEvents[i + 1].get());
+			}
+
 			if (magicMenu)
 			{
 				if (spellFavoriteStatusChanged)
@@ -2154,7 +2180,8 @@ namespace ALYSLC
 					RefreshCyclableSpells();
 					// Equip "carets" get cleared, 
 					// so we have to update the equip state when (un)favoriting.
-					RefreshMagicMenuEquipState(true);
+					RefreshMagicMenuEquipState();
+					shouldRefreshMenu = true;
 					spellFavoriteStatusChanged = false;
 				}
 			}
@@ -2178,11 +2205,17 @@ namespace ALYSLC
 		// Update equip states in the Favorites Menu 
 		// for forms equipped by the co-op companion player.
 
+		if (managerMenuPID <= -1 || managerMenuPID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+
 		// Ensure cached favorited items are up to date.
-		const auto& p = glob.coopPlayers[managerMenuCID];
+		const auto& p = glob.coopPlayers[managerMenuPID];
 		p->em->RefreshEquipState(RefreshSlots::kAll);
 		// Update menu equip state with the refreshed favorites data.
-		RefreshFavoritesMenuEquipState(true);
+		RefreshFavoritesMenuEquipState();
+		shouldRefreshMenu = true;
 	}
 
 	void MenuInputManager::InitMagicMenuEquippedStates()
@@ -2191,9 +2224,9 @@ namespace ALYSLC
 		// for spells/shouts equipped by the co-op companion player.
 
 		// Ensure companio player placeholder spell/shouts are NOT learned by P1.
-		if (managerMenuCID != -1) 
+		if (managerMenuPID != -1) 
 		{
-			const auto& p = glob.coopPlayers[managerMenuCID];
+			const auto& p = glob.coopPlayers[managerMenuPID];
 			for (auto placeholderSpellForm : p->em->placeholderMagic)
 			{
 				if (!placeholderSpellForm)
@@ -2215,7 +2248,8 @@ namespace ALYSLC
 		// Set selectable magic forms list first.
 		SetMagicMenuFormsList();
 		// Update magic menu equip state after.
-		RefreshMagicMenuEquipState(true);
+		RefreshMagicMenuEquipState();
+		shouldRefreshMenu = true;
 	}
 	
 	void MenuInputManager::InitP1QSFormEntries()
@@ -2244,7 +2278,7 @@ namespace ALYSLC
 		}
 
 		menuCoopActorHandle = p1->GetHandle();
-		const auto& em = glob.coopPlayers[glob.player1CID]->em;
+		const auto& em = glob.coopPlayers[0]->em;
 		const auto& favoritesList = favoritesMenu->favorites;
 		// Clear the menu entry to list index map before reconstructing it below.
 		favMenuIndexToEntryMap.clear();
@@ -2371,7 +2405,7 @@ namespace ALYSLC
 							// while quick slot items have their entry text modified.
 							// This tag gets wiped whenever the favorites menu is opened,
 							// so it must be re-applied each time.
-							const auto& em = glob.coopPlayers[glob.player1CID]->em;
+							const auto& em = glob.coopPlayers[0]->em;
 							if (index == em->equippedQSItemIndex || 
 								index == em->equippedQSSpellIndex)
 							{
@@ -2770,7 +2804,8 @@ namespace ALYSLC
 			(
 				RE::ButtonEvent::Create
 				(
-					RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 0.0f, 1.0f)
+					RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 0.0f, 1.0f
+				)
 			)
 		);
 		// Sent by a companion player.
@@ -2862,7 +2897,7 @@ namespace ALYSLC
 					return;
 				}
 
-				const auto& p = glob.coopPlayers[managerMenuCID];
+				const auto& p = glob.coopPlayers[managerMenuPID];
 				// Unequip before dropping/transferring to avoid crash.
 				auto foundIter = std::find_if
 				(
@@ -2929,7 +2964,7 @@ namespace ALYSLC
 					// Place in front of the player at torso height.
 					auto dropPos = 
 					(
-						glob.coopPlayers[managerMenuCID]->mm->playerTorsoPosition + 
+						glob.coopPlayers[managerMenuPID]->mm->playerTorsoPosition + 
 						Util::RotationToDirectionVect
 						(
 							0.0f, 
@@ -3086,19 +3121,24 @@ namespace ALYSLC
 						);
 					}
 
-					const auto& em = glob.coopPlayers[managerMenuCID]->em;
 					// Since the player's favorited physical forms have changed, 
 					// update the co-op player's corresponding list of cyclable forms.
 					switch (*selectedForm->formType)
 					{
 					case RE::FormType::Ammo:
 					{
-						em->SetCyclableFavForms(CyclableForms::kAmmo);
+						glob.coopPlayers[managerMenuPID]->em->SetCyclableFavForms
+						(
+							CyclableForms::kAmmo
+						);
 						break;
 					}
 					case RE::FormType::Weapon:
 					{
-						em->SetCyclableFavForms(CyclableForms::kWeapon);
+						glob.coopPlayers[managerMenuPID]->em->SetCyclableFavForms
+						(
+							CyclableForms::kWeapon
+						);
 						break;
 					}
 					default:
@@ -3205,7 +3245,13 @@ namespace ALYSLC
 						return;
 					}
 
-					uint32_t selectedEntryNum = favMenuIndexToEntryMap.at(index);
+					const auto iter = favMenuIndexToEntryMap.find(index);
+					if (iter == favMenuIndexToEntryMap.end())
+					{
+						return;
+					}
+
+					uint32_t selectedEntryNum = iter->second;
 					auto form = favoritesMenu->favorites[index].item;
 					if (!form)
 					{
@@ -3223,7 +3269,7 @@ namespace ALYSLC
 						return;
 					}
 					
-					const auto& em = glob.coopPlayers[managerMenuCID]->em;
+					const auto& em = glob.coopPlayers[managerMenuPID]->em;
 					bool shouldEquip = false;
 					// Check if the selected item is the player's current quick slot item/spell,
 					// and if it is, remove the equipped tag. 
@@ -3340,7 +3386,7 @@ namespace ALYSLC
 					}
 
 					// Refresh equip state after (un)equipping quick slot item/spell.
-					glob.coopPlayers[managerMenuCID]->em->RefreshEquipState(RefreshSlots::kAll);
+					glob.coopPlayers[managerMenuPID]->em->RefreshEquipState(RefreshSlots::kAll);
 				}
 			);
 
@@ -3354,7 +3400,7 @@ namespace ALYSLC
 			// and imports P1's item equip state. 
 			// Have to reimport the companion player's equip state, 
 			// but no need to refresh the cached equipped data, which has not changed.
-			RefreshFavoritesMenuEquipState(false);
+			shouldRefreshMenu = true;
 		}
 		else if (a_xMask == XINPUT_GAMEPAD_A)
 		{
@@ -3415,9 +3461,9 @@ namespace ALYSLC
 
 					if (form->formID == 0x64B33)
 					{
-						if (glob.mim->managerMenuCID != -1)
+						if (glob.mim->managerMenuPID != -1)
 						{
-							const auto& p = glob.coopPlayers[glob.mim->managerMenuCID];
+							const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
 							p->tm->canSMORF = !p->tm->canSMORF;
 							if (p->tm->canSMORF)
 							{
@@ -3479,7 +3525,7 @@ namespace ALYSLC
 				return;
 			}
 
-			const auto& p = glob.coopPlayers[managerMenuCID];
+			const auto& p = glob.coopPlayers[managerMenuPID];
 			// Unequip before gifting to avoid crash.
 			auto foundIter = std::find_if
 			(
@@ -3627,6 +3673,7 @@ namespace ALYSLC
 		if (a_xMask == XINPUT_GAMEPAD_A)
 		{
 			shouldRefreshMenu = true;
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 		else if (a_xMask == XINPUT_GAMEPAD_Y)
 		{
@@ -3652,7 +3699,7 @@ namespace ALYSLC
 			// and imports P1's spell equip state. 
 			// Have to reimport the co-op companion player's equip state,
 			// but no need to refresh the cached equipped data, which has not changed.
-			RefreshMagicMenuEquipState(false);
+			shouldRefreshMenu = true;
 		}
 	}
 
@@ -3779,7 +3826,7 @@ namespace ALYSLC
 					reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
 					selectedForm = obj;
 					placeholderMagicChanged = false;
-					bool isEquipped = glob.coopPlayers[managerMenuCID]->em->IsEquipped
+					bool isEquipped = glob.coopPlayers[managerMenuPID]->em->IsEquipped
 					(
 						selectedForm
 					);
@@ -3866,57 +3913,12 @@ namespace ALYSLC
 					auto msgQ = RE::UIMessageQueue::GetSingleton(); 
 					if (msgQ)
 					{
-						const auto& reqP = glob.coopPlayers[glob.menuCID];
 						msgQ->AddMessage
 						(
 							RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr
 						);
 						return;
 					}
-
-					/*
-					auto ue = RE::UserEvents::GetSingleton();
-					if (!ue)
-					{
-						return;
-					}
-
-					// Need to send a 'Cancel' input event to close the menu.
-					auto cancelIDCode = controlMap->GetMappedKey
-					(
-						ue->cancel,
-						RE::INPUT_DEVICE::kGamepad, 
-						RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-					);
-					// Press the bind.
-					std::unique_ptr<RE::InputEvent* const> buttonEvent = 
-					(
-						std::make_unique<RE::InputEvent* const>
-						(
-							RE::ButtonEvent::Create
-							(
-								RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 1.0f, 0.0f
-							)
-						)
-					);
-					// Sent by a companion player.
-					(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
-					// Release the bind.
-					std::unique_ptr<RE::InputEvent* const> buttonEvent2 = 
-					(
-						std::make_unique<RE::InputEvent* const>
-						(
-							RE::ButtonEvent::Create
-							(
-								RE::INPUT_DEVICE::kGamepad, ue->cancel, cancelIDCode, 0.0f, 1.0f)
-						)
-					);
-					// Sent by a companion player.
-					(*buttonEvent2.get())->AsIDEvent()->pad24 = 0xCA11;
-
-					Util::SendInputEvent(buttonEvent);
-					Util::SendInputEvent(buttonEvent2);
-					*/
 				}
 			}
 
@@ -3972,6 +3974,7 @@ namespace ALYSLC
 					iter->second.first > 0
 				);
 			}
+
 			if (equipable)
 			{
 				currentMenuInputEventType = MenuInputEventType::kEquipReq;
@@ -4008,7 +4011,7 @@ namespace ALYSLC
 							(
 								Util::IsVampireLord
 								(
-									glob.coopPlayers[managerMenuCID]->coopActor.get()
+									glob.coopPlayers[managerMenuPID]->coopActor.get()
 								)
 							);
 							newEquipState = 
@@ -4071,14 +4074,14 @@ namespace ALYSLC
 				{
 					UpdateFavoritedConsumableCount(selectedForm, index);
 				}
-
+				
 				auto spellToEquip = selectedForm->As<RE::SpellItem>();
 				bool isHandSlotSpell = 
 				(
 					spellToEquip && 
 					spellToEquip->GetSpellType() == RE::MagicSystem::SpellType::kSpell
 				);
-				const auto& em = glob.coopPlayers[managerMenuCID]->em;
+				const auto& em = glob.coopPlayers[managerMenuPID]->em;
 				if (isHandSlotSpell)
 				{
 					// Check if a hand placeholder magic form is about to be changed.
@@ -4112,6 +4115,17 @@ namespace ALYSLC
 					// Is a voice spell, no copying to perform.
 					placeholderMagicChanged = false;
 				}
+
+				SPDLOG_DEBUG
+				(
+					"Selected form {} (type 0x{:X}) is equipable: {}. "
+					"Delayed equip state refresh: {}, placeholder magic changed: {}.",
+					selectedForm->GetName(), 
+					*selectedForm->formType,
+					equipable,
+					delayedEquipStateRefresh,
+					placeholderMagicChanged
+				);
 			}
 			else
 			{
@@ -4175,7 +4189,7 @@ namespace ALYSLC
 					}
 
 					// Check if the placeholder spell is about to be changed.
-					const auto& em = glob.coopPlayers[managerMenuCID]->em;
+					const auto& em = glob.coopPlayers[managerMenuPID]->em;
 					if (newEquipState == EntryEquipState::kRH)
 					{
 						placeholderMagicChanged = 
@@ -4335,7 +4349,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& em = glob.coopPlayers[managerMenuCID]->em;
+		const auto& em = glob.coopPlayers[managerMenuPID]->em;
 		if (selectedForm->Is(RE::FormType::Shout))
 		{
 			em->SetCyclableFavForms(CyclableForms::kVoice);
@@ -4357,7 +4371,7 @@ namespace ALYSLC
 		}
 	}
 
-	void MenuInputManager::RefreshFavoritesMenuEquipState(bool&& a_updateCachedEquipState)
+	void MenuInputManager::RefreshFavoritesMenuEquipState()
 	{
 		// Refresh displayed and/or cached equip state while in the FavoritesMenu.
 
@@ -4380,366 +4394,362 @@ namespace ALYSLC
 		// Set favorites list and set favorites' equip states 
 		// for the player controlling the menu.
 		const auto& favoritesList = favoritesMenu->favorites;
-		const auto& em = glob.coopPlayers[managerMenuCID]->em;
+		const auto& em = glob.coopPlayers[managerMenuPID]->em;
 		auto favoritedFormIDsSet = em->favoritedFormIDs;
 		// Maintain P1's favorites list if transformed into a Vampire Lord.
 		bool isVampireLord = Util::IsVampireLord
 		(
-			glob.coopPlayers[managerMenuCID]->coopActor.get()
+			glob.coopPlayers[managerMenuPID]->coopActor.get()
 		);
 		// Update cached equip states for all favorited items.
-		if (a_updateCachedEquipState) 
+
+		const auto& equippedForms = em->equippedForms;
+		// Clear before reconstructing below.
+		favMenuIndexToEntryMap.clear();
+		// Clear both because the favorites list and/or equip states of favorites 
+		// may have changed significantly since the Favorites Menu was last opened.
+		favEntryEquipStates.clear();
+		favEntryEquipStates = std::vector<EntryEquipState>
+		(
+			favoritesList.size(), EntryEquipState::kNone
+		);
+		auto& favItemsEquippedIndices = em->favItemsEquippedIndices;
+		favItemsEquippedIndices.clear();
+
+		// Iterate through the favorites list in order, 
+		// set the equipped state for each form equipped by the co-op player,
+		// and get the indices of all equipped favorited forms.
+		// Equip state ids:
+		// 0 - unequipped
+		// 1 - equipped in non-hand slot
+		// 2 - equipped in LH slot
+		// 3 - equipped in RH slot
+		// 4 - equipped in 2H slot
+		bool itemStillEquipped = false;
+		bool spellStillEquipped = false;
+		bool isFavoritedByCoopPlayer = false;
+		for (auto i = 0; i < favoritesList.size(); ++i)
 		{
-			const auto& equippedForms = em->equippedForms;
-			// Clear before reconstructing below.
-			favMenuIndexToEntryMap.clear();
-			// Clear both because the favorites list and/or equip states of favorites 
-			// may have changed significantly since the Favorites Menu was last opened.
-			favEntryEquipStates.clear();
-			favEntryEquipStates = std::vector<EntryEquipState>
+			auto favForm = favoritesList[i].item;
+			// Companion player shares favorites with P1 when they are transformed
+			// into a vampire lord.
+			isFavoritedByCoopPlayer = 
 			(
-				favoritesList.size(), EntryEquipState::kNone
+				isVampireLord || favoritedFormIDsSet.contains(favForm->formID)
 			);
-			auto& favItemsEquippedIndices = em->favItemsEquippedIndices;
-			favItemsEquippedIndices.clear();
-
-			// Iterate through the favorites list in order, 
-			// set the equipped state for each form equipped by the co-op player,
-			// and get the indices of all equipped favorited forms.
-			// Equip state ids:
-			// 0 - unequipped
-			// 1 - equipped in non-hand slot
-			// 2 - equipped in LH slot
-			// 3 - equipped in RH slot
-			// 4 - equipped in 2H slot
-			bool itemStillEquipped = false;
-			bool spellStillEquipped = false;
-			bool isFavoritedByCoopPlayer = false;
-			for (auto i = 0; i < favoritesList.size(); ++i)
+			if (favForm && isFavoritedByCoopPlayer)
 			{
-				auto favForm = favoritesList[i].item;
-				// Companion player shares favorites with P1 when they are transformed
-				// into a vampire lord.
-				isFavoritedByCoopPlayer = 
-				(
-					isVampireLord || favoritedFormIDsSet.contains(favForm->formID)
-				);
-				if (favForm && isFavoritedByCoopPlayer)
+				// Weapons
+				if (auto asWeap = favForm->As<RE::TESObjectWEAP>(); asWeap)
 				{
-					// Weapons
-					if (auto asWeap = favForm->As<RE::TESObjectWEAP>(); asWeap)
+					// Check LH and RH for the same weapon.
+					// LH
+					if (equippedForms[!EquipIndex::kLeftHand] && 
+						equippedForms[!EquipIndex::kLeftHand] == favForm)
 					{
-						// Check LH and RH for the same weapon.
-						// LH
-						if (equippedForms[!EquipIndex::kLeftHand] && 
-							equippedForms[!EquipIndex::kLeftHand] == favForm)
-						{
-							// Is two-handed weapon.
-							if (asWeap && 
-								asWeap->equipSlot->flags.any
-								(
-									RE::BGSEquipSlot::Flag::kUseAllParents
-								))
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in both hands.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kBothHands;
-							}
-							// One-handed.
-							else
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in left hand.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = 
-								(
-									favEntryEquipStates[i] == EntryEquipState::kRH ? 
-									EntryEquipState::kBothHands : 
-									EntryEquipState::kLH
-								);
-							}
-
-							favItemsEquippedIndices.insert(i);
-						}
-						
-						// RH
-						if (equippedForms[!EquipIndex::kRightHand] && 
-							equippedForms[!EquipIndex::kRightHand] == favForm)
-						{
-							// Is two-handed weapon.
-							if (asWeap && 
-								asWeap->equipSlot->flags.any
-								(
-									RE::BGSEquipSlot::Flag::kUseAllParents
-								))
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in both hands.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kBothHands;
-							}
-							// One-handed.
-							else
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in right hand.", favForm->GetName()
-								);
-								favEntryEquipStates[i]= 
-								(
-									favEntryEquipStates[i] == EntryEquipState::kLH ? 
-									EntryEquipState::kBothHands : 
-									EntryEquipState::kRH
-								);
-							}
-
-							favItemsEquippedIndices.insert(i);
-						}
-					}
-					// Spells
-					else if (auto asSpell = favForm->As<RE::SpellItem>(); asSpell)
-					{
-						auto spellType = asSpell->GetSpellType();
-						// Check left, right, and voice equip slots for matching spells.
-						if (spellType == RE::MagicSystem::SpellType::kSpell)
-						{
-							auto lhObj = em->equippedForms[!EquipIndex::kLeftHand];
-							auto rhObj = em->equippedForms[!EquipIndex::kRightHand];
-							bool is2HSpell = 
+						// Is two-handed weapon.
+						if (asWeap && 
+							asWeap->equipSlot->flags.any
 							(
-								lhObj && 
-								lhObj->As<RE::SpellItem>() && 
-								lhObj->As<RE::SpellItem>()->equipSlot == glob.bothHandsEquipSlot
-							);
-							// Set hand spells to copied spells 
-							// if they are currently placeholder spells.
-							if (is2HSpell)
-							{
-								auto copied2HSpell = 
-								(
-									em->GetCopiedMagic(PlaceholderMagicIndex::k2H)
-								);
-								lhObj = 
-								(
-									lhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
-									copied2HSpell : 
-									lhObj
-								);
-								rhObj = 
-								(
-									rhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
-									copied2HSpell : 
-									rhObj
-								);
-							}
-							else
-							{
-								if (lhObj) 
-								{
-									lhObj = 
-									(
-										lhObj == 
-										em->placeholderMagic[!PlaceholderMagicIndex::kLH] ?
-										em->GetCopiedMagic(PlaceholderMagicIndex::kLH) : 
-										lhObj
-									);
-								}
-
-								if (rhObj) 
-								{
-									rhObj = 
-									(
-										rhObj == 
-										em->placeholderMagic[!PlaceholderMagicIndex::kRH] ? 
-										em->GetCopiedMagic(PlaceholderMagicIndex::kRH) : 
-										rhObj
-									);
-								}
-							}
-
-							bool favEquippedLH = favForm == lhObj;
-							bool favEquippedRH = favForm == rhObj;
-							bool favEquippedBothH = 
-							{
-								(favEquippedLH && favEquippedRH) ||
-								(
-									favEquippedLH && 
-									lhObj && 
-									lhObj->As<RE::BGSEquipType>()->equipSlot == 
-									glob.bothHandsEquipSlot
-								) ||
-								(
-									favEquippedRH &&
-									rhObj &&
-									rhObj->As<RE::BGSEquipType>()->equipSlot == 
-									glob.bothHandsEquipSlot
-								)
-							};
-
-							// Both hands spell.
-							if (favEquippedBothH)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in both hands.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kBothHands;
-								favItemsEquippedIndices.insert(i);
-							}
-							// LH spell only
-							else if (favEquippedLH)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in left hand.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kLH;
-								favItemsEquippedIndices.insert(i);
-							}
-							// RH spell only
-							else if (favEquippedRH)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in right hand.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kRH;
-								favItemsEquippedIndices.insert(i);
-							}
-						}
-						// Voice/power spells.
-						else if (spellType == RE::MagicSystem::SpellType::kAbility ||
-								 spellType == RE::MagicSystem::SpellType::kLesserPower ||
-								 spellType == RE::MagicSystem::SpellType::kPower ||
-								 spellType == RE::MagicSystem::SpellType::kVoicePower)
-						{
-							auto voiceForm = em->equippedForms[!EquipIndex::kVoice]; 
-							if (favForm == voiceForm)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} equipped in voice slot.", favForm->GetName()
-								);
-								favEntryEquipStates[i] = EntryEquipState::kDefault;
-								favItemsEquippedIndices.insert(i);
-							}
-						}
-
-						// Check if quick slot spell is equipped.
-						auto quickSlotSpell = em->quickSlotSpell; 
-						if (quickSlotSpell && quickSlotSpell == favForm)
-						{
-							SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
-							em->equippedQSSpellIndex = i;
-							spellStillEquipped = true;
-						}
-					}
-					// Shouts
-					else if (favForm->Is(RE::FormType::Shout))
-					{
-						if (em->highestShoutVarIndex != -1)
-						{
-							auto asShout = favForm->As<RE::TESShout>();
-							auto shoutVariation = asShout->variations[em->highestShoutVarIndex];
-							if (shoutVariation.spell && shoutVariation.spell == em->voiceSpell)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} with highest var index {} equipped in voice slot",
-									asShout->GetName(), em->highestShoutVarIndex
-								);
-								favEntryEquipStates[i] = EntryEquipState::kDefault;
-								favItemsEquippedIndices.insert(i);
-							}
-						}
-					}
-					// Armor
-					else if (favForm->Is(RE::FormType::Armature, RE::FormType::Armor))
-					{
-						for (auto form : equippedForms)
-						{
-							if (form && 
-								form->Is(RE::FormType::Armature, RE::FormType::Armor) && 
-								form == favForm)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} (0x{:X}) armor equipped.", form->GetName(), form->formID
-								);
-								favEntryEquipStates[i] = EntryEquipState::kDefault;
-								favItemsEquippedIndices.insert(i);
-
-								break;
-							}
-						}
-					}
-					// Ammo
-					else if (favForm->Is(RE::FormType::Ammo))
-					{
-						auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; 
-						if (currentAmmo && currentAmmo == favForm)
+								RE::BGSEquipSlot::Flag::kUseAllParents
+							))
 						{
 							SPDLOG_DEBUG
 							(
-								"{} (0x{:X}) ammo equipped.",
-								currentAmmo->GetName(), currentAmmo->formID
+								"{} equipped in both hands.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = EntryEquipState::kBothHands;
+						}
+						// One-handed.
+						else
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in left hand.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = 
+							(
+								favEntryEquipStates[i] == EntryEquipState::kRH ? 
+								EntryEquipState::kBothHands : 
+								EntryEquipState::kLH
+							);
+						}
+
+						favItemsEquippedIndices.insert(i);
+					}
+						
+					// RH
+					if (equippedForms[!EquipIndex::kRightHand] && 
+						equippedForms[!EquipIndex::kRightHand] == favForm)
+					{
+						// Is two-handed weapon.
+						if (asWeap && 
+							asWeap->equipSlot->flags.any
+							(
+								RE::BGSEquipSlot::Flag::kUseAllParents
+							))
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in both hands.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = EntryEquipState::kBothHands;
+						}
+						// One-handed.
+						else
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in right hand.", favForm->GetName()
+							);
+							favEntryEquipStates[i]= 
+							(
+								favEntryEquipStates[i] == EntryEquipState::kLH ? 
+								EntryEquipState::kBothHands : 
+								EntryEquipState::kRH
+							);
+						}
+
+						favItemsEquippedIndices.insert(i);
+					}
+				}
+				// Spells
+				else if (auto asSpell = favForm->As<RE::SpellItem>(); asSpell)
+				{
+					auto spellType = asSpell->GetSpellType();
+					// Check left, right, and voice equip slots for matching spells.
+					if (spellType == RE::MagicSystem::SpellType::kSpell)
+					{
+						auto lhObj = em->equippedForms[!EquipIndex::kLeftHand];
+						auto rhObj = em->equippedForms[!EquipIndex::kRightHand];
+						bool is2HSpell = 
+						(
+							lhObj && 
+							lhObj->As<RE::SpellItem>() && 
+							lhObj->As<RE::SpellItem>()->equipSlot == glob.bothHandsEquipSlot
+						);
+						// Set hand spells to copied spells 
+						// if they are currently placeholder spells.
+						if (is2HSpell)
+						{
+							auto copied2HSpell = 
+							(
+								em->GetCopiedMagic(PlaceholderMagicIndex::k2H)
+							);
+							lhObj = 
+							(
+								lhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+								copied2HSpell : 
+								lhObj
+							);
+							rhObj = 
+							(
+								rhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+								copied2HSpell : 
+								rhObj
+							);
+						}
+						else
+						{
+							if (lhObj) 
+							{
+								lhObj = 
+								(
+									lhObj == 
+									em->placeholderMagic[!PlaceholderMagicIndex::kLH] ?
+									em->GetCopiedMagic(PlaceholderMagicIndex::kLH) : 
+									lhObj
+								);
+							}
+
+							if (rhObj) 
+							{
+								rhObj = 
+								(
+									rhObj == 
+									em->placeholderMagic[!PlaceholderMagicIndex::kRH] ? 
+									em->GetCopiedMagic(PlaceholderMagicIndex::kRH) : 
+									rhObj
+								);
+							}
+						}
+
+						bool favEquippedLH = favForm == lhObj;
+						bool favEquippedRH = favForm == rhObj;
+						bool favEquippedBothH = 
+						{
+							(favEquippedLH && favEquippedRH) ||
+							(
+								favEquippedLH && 
+								lhObj && 
+								lhObj->As<RE::BGSEquipType>()->equipSlot == 
+								glob.bothHandsEquipSlot
+							) ||
+							(
+								favEquippedRH &&
+								rhObj &&
+								rhObj->As<RE::BGSEquipType>()->equipSlot == 
+								glob.bothHandsEquipSlot
+							)
+						};
+
+						// Both hands spell.
+						if (favEquippedBothH)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in both hands.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = EntryEquipState::kBothHands;
+							favItemsEquippedIndices.insert(i);
+						}
+						// LH spell only
+						else if (favEquippedLH)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in left hand.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = EntryEquipState::kLH;
+							favItemsEquippedIndices.insert(i);
+						}
+						// RH spell only
+						else if (favEquippedRH)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in right hand.", favForm->GetName()
+							);
+							favEntryEquipStates[i] = EntryEquipState::kRH;
+							favItemsEquippedIndices.insert(i);
+						}
+					}
+					// Voice/power spells.
+					else if (spellType == RE::MagicSystem::SpellType::kAbility ||
+								spellType == RE::MagicSystem::SpellType::kLesserPower ||
+								spellType == RE::MagicSystem::SpellType::kPower ||
+								spellType == RE::MagicSystem::SpellType::kVoicePower)
+					{
+						auto voiceForm = em->equippedForms[!EquipIndex::kVoice]; 
+						if (favForm == voiceForm)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} equipped in voice slot.", favForm->GetName()
 							);
 							favEntryEquipStates[i] = EntryEquipState::kDefault;
 							favItemsEquippedIndices.insert(i);
 						}
 					}
-					// Quick slot items: consumables.
-					else if (favForm->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
+
+					// Check if quick slot spell is equipped.
+					auto quickSlotSpell = em->quickSlotSpell; 
+					if (quickSlotSpell && quickSlotSpell == favForm)
 					{
-						// Check if quick slot item is equipped.
-						auto quickSlotItem = em->quickSlotItem;
-						if (quickSlotItem && quickSlotItem == favForm)
+						SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
+						em->equippedQSSpellIndex = i;
+						spellStillEquipped = true;
+					}
+				}
+				// Shouts
+				else if (favForm->Is(RE::FormType::Shout))
+				{
+					if (em->highestShoutVarIndex != -1)
+					{
+						auto asShout = favForm->As<RE::TESShout>();
+						auto shoutVariation = asShout->variations[em->highestShoutVarIndex];
+						if (shoutVariation.spell && shoutVariation.spell == em->voiceSpell)
 						{
-							SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
-							em->equippedQSItemIndex = i;
-							itemStillEquipped = true;
+							SPDLOG_DEBUG
+							(
+								"{} with highest var index {} equipped in voice slot",
+								asShout->GetName(), em->highestShoutVarIndex
+							);
+							favEntryEquipStates[i] = EntryEquipState::kDefault;
+							favItemsEquippedIndices.insert(i);
 						}
 					}
-					else
+				}
+				// Armor
+				else if (favForm->Is(RE::FormType::Armature, RE::FormType::Armor))
+				{
+					for (auto form : equippedForms)
 					{
-						// Everything else -- do not treat as an equipable form.
-						favEntryEquipStates[i] = EntryEquipState::kNone;
-						favItemsEquippedIndices.erase(i);
+						if (form && 
+							form->Is(RE::FormType::Armature, RE::FormType::Armor) && 
+							form == favForm)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} (0x{:X}) armor equipped.", form->GetName(), form->formID
+							);
+							favEntryEquipStates[i] = EntryEquipState::kDefault;
+							favItemsEquippedIndices.insert(i);
+
+							break;
+						}
+					}
+				}
+				// Ammo
+				else if (favForm->Is(RE::FormType::Ammo))
+				{
+					auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; 
+					if (currentAmmo && currentAmmo == favForm)
+					{
+						SPDLOG_DEBUG
+						(
+							"{} (0x{:X}) ammo equipped.",
+							currentAmmo->GetName(), currentAmmo->formID
+						);
+						favEntryEquipStates[i] = EntryEquipState::kDefault;
+						favItemsEquippedIndices.insert(i);
+					}
+				}
+				// Quick slot items: consumables.
+				else if (favForm->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
+				{
+					// Check if quick slot item is equipped.
+					auto quickSlotItem = em->quickSlotItem;
+					if (quickSlotItem && quickSlotItem == favForm)
+					{
+						SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
+						em->equippedQSItemIndex = i;
+						itemStillEquipped = true;
 					}
 				}
 				else
 				{
-					// Favorited form invalid or was not favorited by the co-op player.
-					// Set equip state to 0.
+					// Everything else -- do not treat as an equipable form.
 					favEntryEquipStates[i] = EntryEquipState::kNone;
 					favItemsEquippedIndices.erase(i);
 				}
 			}
-
-			// Cached quick slot item or spell is no longer favorited
-			// and therefore not equipped, so clear as needed.
-			if (!itemStillEquipped)
+			else
 			{
-				em->quickSlotItem = nullptr;
-				em->equippedQSItemIndex = -1;
-			}
-
-			if (!spellStillEquipped)
-			{
-				em->quickSlotSpell = nullptr;
-				em->equippedQSSpellIndex = -1;
+				// Favorited form invalid or was not favorited by the co-op player.
+				// Set equip state to 0.
+				favEntryEquipStates[i] = EntryEquipState::kNone;
+				favItemsEquippedIndices.erase(i);
 			}
 		}
 
-		shouldRefreshMenu = true;
+		// Cached quick slot item or spell is no longer favorited
+		// and therefore not equipped, so clear as needed.
+		if (!itemStillEquipped)
+		{
+			em->quickSlotItem = nullptr;
+			em->equippedQSItemIndex = -1;
+		}
+
+		if (!spellStillEquipped)
+		{
+			em->quickSlotSpell = nullptr;
+			em->equippedQSSpellIndex = -1;
+		}
 	}
 
 
-	void MenuInputManager::RefreshMagicMenuEquipState(bool&& a_updateCachedEquipState)
+	void MenuInputManager::RefreshMagicMenuEquipState()
 	{
 		// Refresh displayed and/or cached equip state while in the MagicMenu.
 
@@ -4753,147 +4763,141 @@ namespace ALYSLC
 			return;
 		}
 
-		// Update cached equip states for each magic item.
-		if (a_updateCachedEquipState) 
+		// Set list containing all magic forms if it is empty.
+		if (magFormsList.empty())
 		{
-			// Set list containing all magic forms if it is empty.
-			if (magFormsList.empty())
-			{
-				SetMagicMenuFormsList();
-			}
+			SetMagicMenuFormsList();
+		}
 
-			auto numMagItems = magFormsList.size();
-			// If still empty, return early.
-			if (numMagItems == 0)
-			{
-				return;
-			}
+		auto numMagItems = magFormsList.size();
+		// If still empty, return early.
+		if (numMagItems == 0)
+		{
+			return;
+		}
 
-			// Clear out cached data before repopulating.
-			magEntryEquipStates.clear();
-			magEntryEquipStates = 
+		// Clear out cached data before repopulating.
+		magEntryEquipStates.clear();
+		magEntryEquipStates = 
+		(
+			std::vector<EntryEquipState>(numMagItems, EntryEquipState::kNone)
+		);
+
+		const auto& em = glob.coopPlayers[managerMenuPID]->em;
+		// Get copied spells in place of equipped placeholder spells.
+		auto lhObj = em->equippedForms[!EquipIndex::kLeftHand];
+		auto rhObj = em->equippedForms[!EquipIndex::kRightHand];
+		bool is2HSpell = 
+		(
+			lhObj && 
+			lhObj->As<RE::SpellItem>() && 
+			lhObj->As<RE::SpellItem>()->equipSlot == glob.bothHandsEquipSlot
+		);
+		// Set hand spells to copied spells if they are currently placeholder spells.
+		if (is2HSpell)
+		{
+			auto copied2HSpell = em->GetCopiedMagic(PlaceholderMagicIndex::k2H);
+			lhObj = 
 			(
-				std::vector<EntryEquipState>(numMagItems, EntryEquipState::kNone)
+				lhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+				copied2HSpell : 
+				lhObj
 			);
-
-			const auto& em = glob.coopPlayers[managerMenuCID]->em;
-			// Get copied spells in place of equipped placeholder spells.
-			auto lhObj = em->equippedForms[!EquipIndex::kLeftHand];
-			auto rhObj = em->equippedForms[!EquipIndex::kRightHand];
-			bool is2HSpell = 
+			rhObj = 
 			(
-				lhObj && 
-				lhObj->As<RE::SpellItem>() && 
-				lhObj->As<RE::SpellItem>()->equipSlot == glob.bothHandsEquipSlot
+				rhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+				copied2HSpell : 
+				rhObj
 			);
-			// Set hand spells to copied spells if they are currently placeholder spells.
-			if (is2HSpell)
+		}
+		else
+		{
+			if (lhObj)
 			{
-				auto copied2HSpell = em->GetCopiedMagic(PlaceholderMagicIndex::k2H);
 				lhObj = 
 				(
-					lhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
-					copied2HSpell : 
+					lhObj == em->placeholderMagic[!PlaceholderMagicIndex::kLH] ?
+					em->GetCopiedMagic(PlaceholderMagicIndex::kLH) :
 					lhObj
 				);
+			}
+
+			if (rhObj)
+			{
 				rhObj = 
 				(
-					rhObj == em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
-					copied2HSpell : 
+					rhObj == em->placeholderMagic[!PlaceholderMagicIndex::kRH] ?
+					em->GetCopiedMagic(PlaceholderMagicIndex::kRH) : 
 					rhObj
 				);
 			}
-			else
-			{
-				if (lhObj)
-				{
-					lhObj = 
-					(
-						lhObj == em->placeholderMagic[!PlaceholderMagicIndex::kLH] ?
-						em->GetCopiedMagic(PlaceholderMagicIndex::kLH) :
-						lhObj
-					);
-				}
+		}
 
-				if (rhObj)
-				{
-					rhObj = 
-					(
-						rhObj == em->placeholderMagic[!PlaceholderMagicIndex::kRH] ?
-						em->GetCopiedMagic(PlaceholderMagicIndex::kRH) : 
-						rhObj
-					);
-				}
-			}
+		auto voiceForm = em->equippedForms[!EquipIndex::kVoice];
+		// Set voice spell to copied spell if it is currently a placeholder spell.
+		if (voiceForm && voiceForm->Is(RE::FormType::Spell))
+		{
+			voiceForm = 
+			(
+				voiceForm == em->GetPlaceholderMagic(PlaceholderMagicIndex::kVoice) ?
+				em->GetCopiedMagic(PlaceholderMagicIndex::kVoice) : 
+				voiceForm
+			);
+		}
 
-			auto voiceForm = em->equippedForms[!EquipIndex::kVoice];
-			// Set voice spell to copied spell if it is currently a placeholder spell.
-			if (voiceForm && voiceForm->Is(RE::FormType::Spell))
+		for (uint32_t i = 0; i < magFormsList.size(); ++i)
+		{
+			if (auto magForm = magFormsList[i]; magForm)
 			{
-				voiceForm = 
+				bool magEquippedLH = magForm == lhObj;
+				bool magEquippedRH = magForm == rhObj;
+				bool magEquippedBothH = 
 				(
-					voiceForm == em->GetPlaceholderMagic(PlaceholderMagicIndex::kVoice) ?
-					em->GetCopiedMagic(PlaceholderMagicIndex::kVoice) : 
-					voiceForm
-				);
-			}
-
-			for (uint32_t i = 0; i < magFormsList.size(); ++i)
-			{
-				if (auto magForm = magFormsList[i]; magForm)
-				{
-					bool magEquippedLH = magForm == lhObj;
-					bool magEquippedRH = magForm == rhObj;
-					bool magEquippedBothH = 
+					(magEquippedLH && magEquippedRH) ||
 					(
-						(magEquippedLH && magEquippedRH) ||
-						(
-							magEquippedLH && 
-							lhObj && 
-							lhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
-						) ||
-						(
-							magEquippedRH &&
-							rhObj && 
-							rhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
-						)
-					);
-					bool magEquippedVoice = magForm == voiceForm;
+						magEquippedLH && 
+						lhObj && 
+						lhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
+					) ||
+					(
+						magEquippedRH &&
+						rhObj && 
+						rhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
+					)
+				);
+				bool magEquippedVoice = magForm == voiceForm;
 
-					// Both hands.
-					if (magEquippedBothH)
-					{
-						SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
-						magEntryEquipStates[i] = EntryEquipState::kBothHands;
-					}
-					// LH
-					else if (magEquippedLH)
-					{
-						SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
-						magEntryEquipStates[i] = EntryEquipState::kLH;
-					}
-					// RH
-					else if (magEquippedRH)
-					{
-						SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
-						magEntryEquipStates[i] = EntryEquipState::kRH;
-					}
-					// Voice
-					else if (magEquippedVoice)
-					{
-						SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
-						magEntryEquipStates[i] = EntryEquipState::kDefault;
-					}
-					// No match or invalid
-					else
-					{
-						magEntryEquipStates[i] = EntryEquipState::kNone;
-					}
+				// Both hands.
+				if (magEquippedBothH)
+				{
+					SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
+					magEntryEquipStates[i] = EntryEquipState::kBothHands;
+				}
+				// LH
+				else if (magEquippedLH)
+				{
+					SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
+					magEntryEquipStates[i] = EntryEquipState::kLH;
+				}
+				// RH
+				else if (magEquippedRH)
+				{
+					SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
+					magEntryEquipStates[i] = EntryEquipState::kRH;
+				}
+				// Voice
+				else if (magEquippedVoice)
+				{
+					SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
+					magEntryEquipStates[i] = EntryEquipState::kDefault;
+				}
+				// No match or invalid
+				else
+				{
+					magEntryEquipStates[i] = EntryEquipState::kNone;
 				}
 			}
 		}
-
-		shouldRefreshMenu = true;
 	}
 
 	void MenuInputManager::RefreshMenu() 
@@ -5064,7 +5068,7 @@ namespace ALYSLC
 		}
 
 		// Fall-back to gameplay, which is a catch-all context 
-		// with valid event names for all controller inputs.
+		// with valid event names for all device inputs.
 		if (!validEventNameFound) 
 		{
 			context = RE::UserEvents::INPUT_CONTEXT_ID::kGameplay;
@@ -5275,36 +5279,26 @@ namespace ALYSLC
 
 	void MenuInputManager::ToggleCoopPlayerMenuMode
 	(
-		const int32_t& a_controllerIDToSet, const int32_t& a_playerIDToSet
+		const int32_t& a_reqDeviceID, const int32_t& a_reqPlayerID
 	)
 	{
-		// Toggle menu mode for the given player CID and PID.
+		// Toggle menu mode for the given player DID and PID.
 
-		bool shouldEnter = a_controllerIDToSet != -1;
+		bool shouldEnter = a_reqDeviceID != -1 && a_reqPlayerID != -1;
 		if (shouldEnter) 
 		{
 			// Ensure that menu controller is available before starting/resuming the manager.
 			XINPUT_STATE buttonState{ };
 			ZeroMemory(&buttonState, sizeof(buttonState));
-			if (XInputGetState(a_controllerIDToSet, &buttonState) != ERROR_SUCCESS)
+			if (XInputGetState(a_reqDeviceID, &buttonState) != ERROR_SUCCESS)
 			{
-				SPDLOG_DEBUG("Got invalid menu controller ID ({}). Exiting.", a_controllerIDToSet);
+				SPDLOG_DEBUG("Got invalid menu device ID ({}). Exiting.", a_reqDeviceID);
 				return;
 			}
 
-			// Set menu controlling player CID and PID.
-			managerMenuCID = a_controllerIDToSet;
-			if (a_playerIDToSet != -1) 
-			{
-				// If provided, such as when co-op session is inactive, set directly.
-				managerMenuPlayerID = a_playerIDToSet;
-			}
-			else
-			{
-				// If not provided, get from the menu-controlling player.
-				managerMenuPlayerID = glob.coopPlayers[managerMenuCID]->playerID;
-			}
-
+			// Set menu controlling player DID and PID.
+			managerMenuDID = a_reqDeviceID;
+			managerMenuPID = a_reqPlayerID;
 			// Signal to run.
 			RequestStateChange(ManagerState::kRunning);
 		}
@@ -5312,14 +5306,16 @@ namespace ALYSLC
 		{
 			// Signal to pause and clear out IDs.
 			RequestStateChange(ManagerState::kPaused);
-			managerMenuCID = -1;
-			managerMenuPlayerID = 0;
+			managerMenuDID = -1;
+			managerMenuPID = -1;
 		}
 
 		SPDLOG_DEBUG
 		(
-			"Performed state change request. MIM is now set to {}.", 
-			shouldEnter ? "running" : "paused"
+			"Performed state change request. MIM is now set to {}. PID/DID: {}, {}.", 
+			shouldEnter ? "running" : "paused",
+			managerMenuPID,
+			managerMenuDID
 		);
 	}
 
@@ -5618,25 +5614,25 @@ namespace ALYSLC
 				continue;
 			}
 
-			ClearRequests(p->controllerID);
+			ClearRequests(p->playerID);
 		}
 	}
 
-	void MenuOpeningActionRequestsManager::ClearRequests(const int32_t& a_controllerID)
+	void MenuOpeningActionRequestsManager::ClearRequests(const int32_t& a_playerID)
 	{
-		// Clear all menu opening action requests for the given player CID.
+		// Clear all menu opening action requests for the given player PID.
 
-		if (a_controllerID <= -1 || a_controllerID >= menuOpeningActionRequests.size())
+		if (a_playerID <= -1 || a_playerID >= menuOpeningActionRequests.size())
 		{
 			return;
 		}
 
-		menuOpeningActionRequests[a_controllerID].clear();
+		menuOpeningActionRequests[a_playerID].clear();
 	}
 
 	bool MenuOpeningActionRequestsManager::InsertRequest
 	(
-		const int32_t& a_controllerID, 
+		const int32_t& a_playerID, 
 		InputAction a_fromAction, 
 		SteadyClock::time_point a_timestamp,
 		RE::BSFixedString a_reqMenuName,
@@ -5644,21 +5640,21 @@ namespace ALYSLC
 		bool a_isExtRequest
 	)
 	{
-		// Insert a menu opening action request for the given CID, 
+		// Insert a menu opening action request for the given PID, 
 		// associated action, menu, and form. 
 		// Tag with timestamp.
 		// Return true if successfullly inserted.
 
-		if (a_controllerID <= -1 || a_controllerID >= menuOpeningActionRequests.size())
+		if (a_playerID <= -1 || a_playerID >= menuOpeningActionRequests.size())
 		{
 			return false;
 		}
 
 		{
-			std::unique_lock<std::mutex> lock(reqQueueMutexList[a_controllerID], std::try_to_lock);
+			std::unique_lock<std::mutex> lock(reqQueueMutexList[a_playerID], std::try_to_lock);
 			if (lock) 
 			{
-				auto& reqQueue = menuOpeningActionRequests[a_controllerID];
+				auto& reqQueue = menuOpeningActionRequests[a_playerID];
 				// Remove oldest request if currently full.
 				if (reqQueue.size() == maxCachedRequests)
 				{
@@ -5667,9 +5663,9 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"Adding menu opening action request for CID {}: input action: {}, "
+					"Adding menu opening action request for PID {}: input action: {}, "
 					"menu name: {}, associated form: {}",
-					a_controllerID,
+					a_playerID,
 					a_fromAction,
 					Hash(a_reqMenuName) == Hash("") ? "NONE" : a_reqMenuName,
 					Util::HandleIsValid(a_assocRefrHandle) ?
@@ -5696,23 +5692,23 @@ namespace ALYSLC
 		return false;
 	}
 
-	int32_t MenuOpeningActionRequestsManager::ResolveMenuControllerID
+	int32_t MenuOpeningActionRequestsManager::ResolveMenuPlayerID
 	(
 		const RE::BSFixedString& a_menuName, bool&& a_modifyReqQueue
 	)
 	{
-		// Get controller ID for player that should control the given menu when it opens/closes.
+		// Get the player ID for player that should control the given menu when it opens/closes.
 		// Optionally, modify the menu requests queue for this player to re-order 
 		// or clear out requests during the resolution process.
 
 		SPDLOG_DEBUG("Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
 
 		// Default to none.
-		int32_t resolvedCID = -1;
+		int32_t resolvedPID = -1;
 		auto ui = RE::UI::GetSingleton();
 		if (!ui) 
 		{
-			return resolvedCID;
+			return resolvedPID;
 		}
 
 		// Must be a supported menu or the Lockpicking Menu, 
@@ -5725,12 +5721,13 @@ namespace ALYSLC
 			// If the dialogue menu is open and no player is already controlling menus,
 			// the player closest to the speaker is given control of the menu.
 			// Overriden by valid requests below.
-			if (Settings::bUninitializedDialogueWithClosestPlayer && 
+			if (glob.cam->IsRunning() && 
+				Settings::bUninitializedDialogueWithClosestPlayer && 
 				a_menuName == RE::DialogueMenu::MENU_NAME)
 			{
-				if (glob.menuCID != -1)
+				if (glob.menuPID != -1)
 				{
-					resolvedCID = glob.menuCID;
+					resolvedPID = glob.menuPID;
 				}
 				else if (auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
 						 menuTopicManager)
@@ -5757,7 +5754,7 @@ namespace ALYSLC
 							); 
 							if (dist < closestDistToSpeaker) 
 							{
-								resolvedCID = p->controllerID;
+								resolvedPID = p->playerID;
 								closestDistToSpeaker = dist;
 							}
 						}
@@ -5803,13 +5800,13 @@ namespace ALYSLC
 					break;
 				}
 
-				const auto& cid = p->controllerID;
+				const auto& pid = p->playerID;
 				// Iterate through copy, even if not modifying the request queue.
-				std::list<MenuOpeningActionRequests> reqQueue{ menuOpeningActionRequests[cid] };
+				std::list<MenuOpeningActionRequests> reqQueue{ menuOpeningActionRequests[pid] };
 				// Clear before adding back unfulfilled requests later.
-				if (a_modifyReqQueue && !menuOpeningActionRequests[cid].empty()) 
+				if (a_modifyReqQueue && !menuOpeningActionRequests[pid].empty()) 
 				{
-					ClearRequests(cid);
+					ClearRequests(pid);
 				}
 
 				while (!reqQueue.empty()) 
@@ -5819,7 +5816,7 @@ namespace ALYSLC
 					// Insert for now. Will remove later after handling.
 					if (a_modifyReqQueue) 
 					{
-						menuOpeningActionRequests[cid].emplace_front(currentReq);
+						menuOpeningActionRequests[pid].emplace_front(currentReq);
 					}
 
 					float secsSinceReq = Util::GetElapsedSeconds(currentReq.timestamp);
@@ -5872,7 +5869,7 @@ namespace ALYSLC
 						if (isMaintainControlRequest || isValidExtRequest)
 						{
 							secsSinceChosenReq = secsSinceReq;
-							resolvedCID = p->controllerID;
+							resolvedPID = p->playerID;
 							SPDLOG_DEBUG
 							(
 								"External request: "
@@ -5886,7 +5883,7 @@ namespace ALYSLC
 								chosenReqType = kMaintainControl;
 								if (a_modifyReqQueue) 
 								{
-									menuOpeningActionRequests[cid].pop_front();
+									menuOpeningActionRequests[pid].pop_front();
 								}
 
 								reqQueue.pop_back();
@@ -6159,8 +6156,8 @@ namespace ALYSLC
 							// but can't figure out a way to get the crafting menu's 
 							// submenu furniture without already having P1's 
 							// inventory data loaded into the menu.
-							// Need the menu CID to figure out which player's inventory 
-							// to copy to P1 and need the sub menu furniture to get the menu CID, 
+							// Need the menu PID to figure out which player's inventory 
+							// to copy to P1 and need the sub menu furniture to get the menu PID, 
 							// but the copied inventory does not display
 							// if done after the submenu data is set, 
 							// and sending "Reshow" messages fail.
@@ -6593,7 +6590,7 @@ namespace ALYSLC
 							// Could be any menu triggered by script using SKSE's CustomMenu.
 							// Support all actions that trigger UIExtensions menus here.
 							// For the most part, however, the mod's scripts directly set 
-							// the requesting menu control CID, 
+							// the requesting menu control PID, 
 							// which bypasses queued request checks done here. 
 							// Serves more as a failsafe.
 							bool isDirectRequest = 
@@ -6688,7 +6685,7 @@ namespace ALYSLC
 								);
 
 								// Store which player will receive control of the LootMenu.
-								glob.quickLootControlCID = p->controllerID;
+								glob.quickLootControlPID = p->playerID;
 							}
 
 							break;
@@ -6726,7 +6723,7 @@ namespace ALYSLC
 						if (setAsChosen)
 						{
 							secsSinceChosenReq = secsSinceReq;
-							resolvedCID = p->controllerID;
+							resolvedPID = p->playerID;
 							chosenReqType = kOldest;
 						}
 					} 
@@ -6777,7 +6774,7 @@ namespace ALYSLC
 						{
 							// Update seconds since most recent request.
 							secsSinceChosenReq = secsSinceReq;
-							resolvedCID = p->controllerID;
+							resolvedPID = p->playerID;
 							chosenReqType = directlyRequested ? kNewestDirect : kNewestIndirect;
 							SPDLOG_DEBUG
 							(
@@ -6815,7 +6812,7 @@ namespace ALYSLC
 							"NONE",
 							p->coopActor->GetName()
 						);
-						menuOpeningActionRequests[cid].pop_front();
+						menuOpeningActionRequests[pid].pop_front();
 					}
 
 					// Move on to the next request.
@@ -6825,20 +6822,20 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"Active request queue size is now {} for {} after processing.", 
-					menuOpeningActionRequests[cid].size(),
+					menuOpeningActionRequests[pid].size(),
 					p->coopActor->GetName()
 				);
 			}
 		}
 
-		SPDLOG_DEBUG("Resolved CID from requests: {}", resolvedCID);
+		SPDLOG_DEBUG("Resolved PID from requests: {}", resolvedPID);
 		// If there are no valid requests to open/close the current supported menu,
 		// give control to the last player who controlled open menus.
 		// Or if P1's managers are not active, such as when the co-op camera is disabled,
 		// give P1 control of menus.
-		if (resolvedCID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
+		if (resolvedPID == -1 && GlobalCoopData::SUPPORTED_MENU_NAMES.contains(a_menuName)) 
 		{
-			// Always give P1 control of the RaceSex/Console Menus, 
+			// Always give P1 control of the RaceSex/Console Menus when opened in co-op, 
 			// since companion players should not customize P1 
 			// and cannot control the keyboard anyways.
 			bool givePreviousPlayerControl = 
@@ -6848,7 +6845,7 @@ namespace ALYSLC
 					a_menuName != RE::RaceSexMenu::MENU_NAME
 				) && 
 				(
-					(glob.coopPlayers[glob.player1CID]->IsRunning()) ||
+					(glob.coopPlayers[0]->IsRunning()) ||
 					(glob.supportedMenuOpen && glob.mim->IsRunning())
 				)
 			);
@@ -6856,14 +6853,14 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"No valid requests to open supported menu {}, set to last menu CID: {}. "
+					"No valid requests to open supported menu {}, set to last menu PID: {}. "
 					"Supported menus open: {}, data copied over: 0x{:X}.", 
 					a_menuName,
-					glob.prevMenuCID,
+					glob.prevMenuPID,
 					glob.supportedMenuOpen.load(),
 					*glob.copiedPlayerDataTypes
 				);
-				resolvedCID = glob.prevMenuCID;
+				resolvedPID = glob.prevMenuPID;
 			}
 			else
 			{
@@ -6871,20 +6868,19 @@ namespace ALYSLC
 				(
 					"No valid requests to open supported menu {} "
 					"and P1's managers are inactive or the Console Menu is opening/closing, "
-					"set to P1 CID: {}. " 
+					"set to P1 PID. " 
 					"Supported menus open: {}, data copied over: 0x{:X}.", 
 					a_menuName,
-					glob.player1CID, 
 					glob.supportedMenuOpen.load(),
 					*glob.copiedPlayerDataTypes
 
 				);
-				resolvedCID = glob.player1CID;
+				resolvedPID = 0;
 			}
 		}
 
-		SPDLOG_DEBUG("Final resolved CID: {}, for menu {}.", resolvedCID, a_menuName);
+		SPDLOG_DEBUG("Final resolved PID: {}, for menu {}.", resolvedPID, a_menuName);
 
-		return resolvedCID;
+		return resolvedPID;
 	}
 }

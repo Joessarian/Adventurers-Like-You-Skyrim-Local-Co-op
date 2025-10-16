@@ -450,6 +450,8 @@ namespace ALYSLC
 			const float& a_damage,
 			bool a_triggerCombat, 
 			bool a_sendEvent, 
+			float a_stagger,
+			float a_pushBack,
 			const RE::ObjectRefHandle& a_sourceHandle,
 			const RE::FormID& a_projFID, 
 			const REX::EnumSet<RE::TESHitEvent::Flag>& a_hitEventFlags
@@ -491,7 +493,9 @@ namespace ALYSLC
 					a_sourceHandle : 
 					a_sourceActor->GetHandle(),
 					nullptr,
-					a_damage
+					a_damage,
+					a_stagger,
+					a_pushBack
 				);
 			}
 			else if (!isPlayer1)
@@ -534,7 +538,9 @@ namespace ALYSLC
 					a_sourceHandle : 
 					a_sourceActor->GetHandle(),
 					nullptr,
-					a_damage
+					a_damage,
+					a_stagger,
+					a_pushBack
 				);
 				// Have the target 'hit' the player for 0 damage to ensure combat isn't one sided
 				// and is also directed as player 'aggroed by' target.
@@ -2440,11 +2446,11 @@ namespace ALYSLC
 					(
 						(
 							(a_playerActor->IsPlayerRef()) && 
-							(glob.menuCID == glob.player1CID || glob.menuCID == -1)
+							(glob.menuPID == 0 || glob.menuPID == -1)
 						) ||
 						(
-							glob.menuCID != -1 && 
-							GlobalCoopData::GetCoopPlayerIndex(a_playerActor) == glob.menuCID
+							glob.menuPID != -1 && 
+							GlobalCoopData::GetCoopPlayerIndex(a_playerActor) == glob.menuPID
 						)
 					)
 				);
@@ -5854,8 +5860,8 @@ namespace ALYSLC
 			// and shouldn't be discarded later when filtering input events for P1.
 
 			// Cannot send an input event without the input device manager.
-			auto bsInputMgr = RE::BSInputDeviceManager::GetSingleton();
-			if (!bsInputMgr)
+			auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+			if (!devMgr)
 			{
 				return;
 			}
@@ -5885,9 +5891,9 @@ namespace ALYSLC
 			{
 				// Toggle AI driven to false before sending/processing the button event.
 				SetPlayerAIDriven(false);
-				bsInputMgr->lock.Lock();
-				bsInputMgr->SendEvent(inputEvent.get());
-				bsInputMgr->lock.Unlock();
+				devMgr->lock.Lock();
+				devMgr->SendEvent(inputEvent.get());
+				devMgr->lock.Unlock();
 				// Clear input event pad and free.
 				(*inputEvent.get())->AsButtonEvent()->pad24 = 0x0;
 				RE::free(*inputEvent.get());
@@ -5896,9 +5902,9 @@ namespace ALYSLC
 			}
 			else
 			{
-				bsInputMgr->lock.Lock();
-				bsInputMgr->SendEvent(inputEvent.get());
-				bsInputMgr->lock.Unlock();
+				devMgr->lock.Lock();
+				devMgr->SendEvent(inputEvent.get());
+				devMgr->lock.Unlock();
 				// Clear input event pad and free.
 				(*inputEvent.get())->AsButtonEvent()->pad24 = 0x0;
 				RE::free(*inputEvent.get());
@@ -5907,7 +5913,7 @@ namespace ALYSLC
 
 		void SendCrosshairEvent
 		(
-			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingCID
+			RE::TESObjectREFR* a_crosshairRefrToSet, const int32_t& a_requestingPID
 		)
 		{
 			// Send a crosshair refr event after setting the crosshair refr.
@@ -5915,9 +5921,9 @@ namespace ALYSLC
 			// or close the open QuickLoot menu if the refr is nullptr.
 			// Free the event pointer when done.
 			// // IMPORTANT:
-			// Specify a CID for any player trying to set the crosshair refr (non-nullptr).
+			// Specify a PID for any player trying to set the crosshair refr (non-nullptr).
 			// To clear the crosshair refr, pass in nullptr as the crosshair refr to set 
-			// and do not provide a requesting CID.
+			// and do not provide a requesting PID.
 
 			const auto eventSource = SKSE::GetCrosshairRefEventSource();
 			if (!eventSource)
@@ -5933,14 +5939,14 @@ namespace ALYSLC
 			if (crosshairEvent) 
 			{
 				// Save container handle to match against in the crosshair event handler
-				// and for menu CID resolution later.
+				// and for menu PID resolution later.
 				glob.reqQuickLootContainerHandle = 
 				(
 					a_crosshairRefrToSet ? 
 					a_crosshairRefrToSet->GetHandle() :
 					RE::ObjectRefHandle()
 				);
-				glob.quickLootReqCID = a_requestingCID;
+				glob.quickLootReqPID = a_requestingPID;
 				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>
 				(
 					a_crosshairRefrToSet
@@ -5950,9 +5956,9 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"Set to {}, CID: {}.",
+					"Set to {}, PID: {}.",
 					a_crosshairRefrToSet ? a_crosshairRefrToSet->GetName() : "NONE",
-					a_requestingCID
+					a_requestingPID
 				);
 			}
 		}
@@ -5964,9 +5970,9 @@ namespace ALYSLC
 			const RE::ObjectRefHandle& a_source,
 			RE::InventoryEntryData* a_invEntryData,
 			const float& a_damage, 
-			const SKSE::stl::enumeration<RE::HitData::Flag,std::uint32_t>& a_flags, 
 			const float& a_stagger,
 			const float& a_pushBack,
+			const SKSE::stl::enumeration<RE::HitData::Flag,std::uint32_t>& a_flags, 
 			const RE::NiPoint3& a_hitPos, 
 			const RE::NiPoint3& a_hitDir
 		)
@@ -6033,15 +6039,15 @@ namespace ALYSLC
 		{
 			// Send the already-constructed input event and free it after handling.
 
-			auto bsInputMgr = RE::BSInputDeviceManager::GetSingleton();
-			if (!bsInputMgr) 
+			auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+			if (!devMgr) 
 			{
 				return;
 			}
 
-			bsInputMgr->lock.Lock();
-			bsInputMgr->SendEvent(a_inputEvent.get());
-			bsInputMgr->lock.Unlock();
+			devMgr->lock.Lock();
+			devMgr->SendEvent(a_inputEvent.get());
+			devMgr->lock.Unlock();
 			RE::free(*a_inputEvent.get());
 		}
 
@@ -6054,8 +6060,8 @@ namespace ALYSLC
 			// using the provided X, Y displacements and user event name.
 			// Free the input event pointer after handling.
 
-			auto bsInputMgr = RE::BSInputDeviceManager::GetSingleton();
-			if (!bsInputMgr)
+			auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+			if (!devMgr)
 			{
 				return;
 			}
@@ -6069,9 +6075,9 @@ namespace ALYSLC
 			);
 			// Set proxied bypass flag for all thumbstick events.
 			(*inputEvent.get())->AsIDEvent()->pad24 = 0xC0DA;
-			bsInputMgr->lock.Lock();
-			bsInputMgr->SendEvent(inputEvent.get());
-			bsInputMgr->lock.Unlock();
+			devMgr->lock.Lock();
+			devMgr->SendEvent(inputEvent.get());
+			devMgr->lock.Unlock();
 			// Clear the pad and then free after sending.
 			(*inputEvent.get())->AsIDEvent()->pad24 = 0x0;
 			RE::free(*inputEvent.get());
@@ -6486,7 +6492,7 @@ namespace ALYSLC
 			bool shouldResetAIDriven = 
 			{
 				!glob.coopSessionActive || 
-				!glob.coopPlayers[glob.player1CID]->IsRunning()
+				!glob.coopPlayers[0]->IsRunning()
 			};
 			if (shouldResetAIDriven)
 			{

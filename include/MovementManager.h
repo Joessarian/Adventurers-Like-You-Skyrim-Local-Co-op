@@ -524,7 +524,7 @@ namespace ALYSLC
 		// Update the player's encumbrance factor (inventory weight / current carryweight).
 		void UpdateEncumbranceFactor();
 
-		// Update movement parameters based on controller input.
+		// Update movement parameters based on device input.
 		void UpdateMovementParameters();
 		
 		// Check if the player should stop/start moving, 
@@ -711,11 +711,12 @@ namespace ALYSLC
 		const float havokInitialJumpZVelocity = 5.0f;
 		// Interpolation factor for rotating the player.
 		const float playerRotInterpFactor = 0.15f;
-
+		
+		// Input device ID for this player.
+		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+		int32_t deviceID;
 		// Player ID for this player.
 		int32_t playerID;
-		// The player's assigned controller ID determined by XInput.
-		int32_t controllerID;
 		// Frames since attempting to discover a new location.
 		uint8_t framesSinceAttemptingDiscovery;
 		// Frames since requesting dash dodge/performing dash dodge animation.

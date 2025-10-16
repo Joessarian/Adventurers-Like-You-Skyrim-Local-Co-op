@@ -24,7 +24,6 @@ namespace ALYSLC
 		// Time point at which the input source was first pressed.
 		SteadyClock::time_point firstPressTP;
 		// Device linked with this bind.
-		// Should always be set to controller when sending emulated input events.
 		RE::INPUT_DEVICE device;
 		// Event name associated with this bind.
 		// For examples, see the RE::UserEvents singleton.
@@ -90,12 +89,12 @@ namespace ALYSLC
 		void ClearAllRequests();
 
 		// Clear out all requests for the given player.
-		void ClearRequests(const int32_t& a_controllerID);
+		void ClearRequests(const int32_t& a_playerID);
 
 		// Returns true if request was successfully inserted.
 		bool InsertRequest
 		(
-			const int32_t& a_controllerID, 
+			const int32_t& a_playerID, 
 			InputAction a_fromAction, 
 			SteadyClock::time_point a_timestamp,
 			RE::BSFixedString a_reqMenuName, 
@@ -104,12 +103,12 @@ namespace ALYSLC
 		);
 
 		// Determine which player should receive control of the opening menu 
-		// and return that player's controller ID
+		// and return that player's player ID
 		// or -1 if no valid player was found.
 		// Can also keep the requests queue for each player intact 
-		// and only compute the menu controller ID.
+		// and only compute the menu player ID.
 		// Request queues are traversed and cleared by default.
-		int32_t ResolveMenuControllerID
+		int32_t ResolveMenuPlayerID
 		(
 			const RE::BSFixedString& a_menuName, bool&& a_modifyReqQueue = true
 		);
@@ -118,9 +117,9 @@ namespace ALYSLC
 		// The oldest request is discarded if a new request comes in 
 		// while the queue is at capacity.
 		static inline const uint8_t maxCachedRequests = 5;
-		// CID of the player requesting control of the current control-transferable menu
+		// PID of the player requesting control of the current control-transferable menu
 		// while another player currently has control.
-		static inline int32_t reqTransferMenuControlPlayerCID = -1;
+		static inline int32_t reqTransferMenuControlPlayerPID = -1;
 		// Queued requests for each player. Inserted from newest to oldest, front to back.
 		std::array<std::list<MenuOpeningActionRequests>, (size_t)ALYSLC_MAX_PLAYER_COUNT> 
 		menuOpeningActionRequests;
@@ -201,7 +200,7 @@ namespace ALYSLC
 		// Start or stop the menu input manager for the given player.
 		void ToggleCoopPlayerMenuMode
 		(
-			const int32_t& a_controllerIDToSet, const int32_t& a_playerIDToSet = -1
+			 const int32_t& a_reqDeviceID, const int32_t& a_reqPlayerID
 		);
 
 		//
@@ -236,20 +235,22 @@ namespace ALYSLC
 		// Equip states for each form in the cached magic forms list above.
 		// Indexed by entry position in the magic forms list.
 		std::vector<EntryEquipState> magEntryEquipStates;
+		// Queued emulated P1 InputEvents to send once chained.
+		std::vector<std::unique_ptr<RE::InputEvent* const>> queuedInputEvents;
 		// Is the Container Menu opened and showing the player's inventory or not?
 		bool isCoopInventory;
-		// Controller ID for the co-op companion player controlling menus.
+		// Device ID for the co-op companion player controlling menus.
 		// -1 when the manager is not active.
 		// NOTE: 
-		// Should never equal P1's CID.
-		int32_t managerMenuCID;
+		// Should never equal P1's DID.
+		int32_t managerMenuDID;
 		// Player ID for the co-op companion player controlling menus.
 		// NOTE: 
 		// Should never equal P1's player ID (0).
-		int32_t managerMenuPlayerID;
+		int32_t managerMenuPID;
 		// Player ID to use when drawing the player menu control overlay.
 		// Updated in DrawPlayerMenuControlOverlay().
-		int32_t pmcPlayerID;
+		int32_t pmcPID;
 		// Number of menus currently handled by this manager.
 		uint32_t managedCoopMenusCount;
 
@@ -333,8 +334,8 @@ namespace ALYSLC
 		// Supported actions are:
 		// 1. (Un)equip the requested form.
 		// 2. Emulate P1 input event by sending an input event that gets processed
-		// by the MenuControls hook, as if P1 had pressed the same button 
-		// or moved the same analog stick on their controller.
+		// by the MenuControls hook, as if P1 had pressed the same button/key
+		// or moved mouse or the same analog stick on their controller.
 		// 3. Take item(s) from the Container Menu.
 		void HandleMenuEvent();
 
@@ -401,15 +402,15 @@ namespace ALYSLC
 
 		// Update cached equip state and Favorites Menu item entries based on 
 		// what items the player has equipped.
-		void RefreshFavoritesMenuEquipState(bool&& a_updateCachedEquipState);
+		void RefreshFavoritesMenuEquipState();
 
 		// Update cached equip state and Magic Menu item entries based on 
 		// what magic the player has equipped.
-		void RefreshMagicMenuEquipState(bool&& a_updateCachedEquipState);
+		void RefreshMagicMenuEquipState();
 
 		// Refresh visible elements for the topmost supported menu.
 		void RefreshMenu();
-
+		
 		// Send any queued emulated input events strung together when checking controller input.
 		void SendQueuedInputEvents();
 
@@ -482,7 +483,7 @@ namespace ALYSLC
 		std::mutex openedMenuMutex;
 		// Player menu control overlay interp data for fading the overlay.
 		std::unique_ptr<TwoWayInterpData> pmcFadeInterpData;
-		// Menu-dependent control map which maps the XInput masks of each controller input
+		// Menu-dependent control map which maps the XInput masks of each device input
 		// to menu bind information.
 		std::unordered_map<uint32_t, MenuBindInfo> menuControlMap;
 		// List of (usually) all magic forms displayed in the Magic Menu.
@@ -490,8 +491,6 @@ namespace ALYSLC
 		// If a magic form is not found within the Magic Menu's own forms list 
 		// or P1's known spells/shouts lists, it will not be added to this list.
 		std::vector<RE::TESForm*> magFormsList;
-		// Queued emulated P1 InputEvents to send once chained.
-		std::vector<std::unique_ptr<RE::InputEvent* const>> queuedInputEvents;
 
 		// Equip index to (un)equip selected item to.
 		EquipIndex reqEquipIndex;
@@ -508,6 +507,8 @@ namespace ALYSLC
 		// Should refresh Favorites/Magic Menu equip state 
 		// and cached equip data following an equip event.
 		bool equipEventRefreshReq;
+		// Should refresh the cached favorites equip state.
+		bool favoritesEquipStateRefreshReq;
 		// Is a new menu now on top of the menu stack?
 		// Update control map and refresh data if so.
 		bool newMenuAtopStack;

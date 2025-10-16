@@ -23,20 +23,23 @@ namespace ALYSLC
 		// Global primitive data type members.
 		glob.allPlayersInit = false;
 		glob.coopSessionActive = false;
+		glob.hybridModeActive = false;
 		glob.isCameraShakeActive = false;
 		glob.isInCoopCombat = false;
+		glob.isSummoningPlayers = false;
+		glob.partyWiped = false;
 		glob.activePlayers = 0;
 		glob.exportUnlockedSharedPerksCount = 0;
 		glob.importUnlockedSharedPerksCount = 0;
 		glob.livingPlayers = 0;
-		glob.copiedDataPlayerCID = -1;
-		glob.lastResolvedMenuCID = -1;
-		glob.menuCID = -1;
-		glob.prevMenuCID = -1;
+		glob.copiedDataPlayerPID = -1;
+		glob.lastResolvedMenuPID = -1;
+		glob.menuPID = -1;
+		glob.prevMenuPID = -1;
 		glob.p1SavedPerkCount = 0;
-		glob.player1CID = -1;
-		glob.quickLootControlCID = -1;
-		glob.quickLootReqCID = -1;
+		glob.player1DID = -1;
+		glob.quickLootControlPID = -1;
+		glob.quickLootReqPID = -1;
 		glob.supportedMenuOpen.store(false);
 		// Handles.
 		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
@@ -61,6 +64,7 @@ namespace ALYSLC
 		glob.coopPlayerKeywords.clear();
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
+		glob.reqInputEvents.clear();
 		// Crosshair text offsets.
 		glob.originalCrosshairTextOffsets = std::nullopt;
 
@@ -113,7 +117,10 @@ namespace ALYSLC
 				SPDLOG_DEBUG
 				(
 					"Entity  #{}: {}.",
-					i, glob.coopEntityBlacklist[i] ? glob.coopEntityBlacklist[i]->GetName() : "NONE"
+					i, 
+					glob.coopEntityBlacklist[i] ?
+					glob.coopEntityBlacklist[i]->GetName() :
+					"NONE"
 				);
 			}
 
@@ -848,7 +855,7 @@ namespace ALYSLC
 
 	void GlobalCoopData::AddSkillXP
 	(
-		const int32_t& a_cid, RE::ActorValue a_skillAV, const float& a_baseXP
+		const int32_t& a_playerID, RE::ActorValue a_skillAV, const float& a_baseXP
 	)
 	{
 		// Add skill XP for the co-op actor.
@@ -863,14 +870,15 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 
 		// Don't add skill XP for P1.
-		if (a_cid == glob.player1CID)
+		if (a_playerID == 0)
 		{
 			return;
 		}
 
 		// Enderal has no usage-based skill levelling.
 		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
-			a_cid <= -1 || a_cid >= ALYSLC_MAX_PLAYER_COUNT) 
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT) 
 		{
 			return;
 		}
@@ -883,7 +891,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_cid];
+		const auto& p = glob.coopPlayers[a_playerID];
 		// Do not add XP for shared skills here,
 		// since all such skills are progressed via P1.
 		if (!p->coopActor || glob.SHARED_SKILL_AVS_SET.contains(a_skillAV))
@@ -919,7 +927,7 @@ namespace ALYSLC
 			std::hash<std::jthread::id>()(std::this_thread::get_id())
 		);
 		{
-			std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_cid]);
+			std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_playerID]);
 			SPDLOG_DEBUG
 			(
 				"{}: Lock obtained. (0x{:X}). "
@@ -1741,7 +1749,10 @@ namespace ALYSLC
 				SPDLOG_DEBUG("Import AVs.");
 				CopyOverAVs
 				(
-					a_playerActor, a_enteringMenu, ALYSLC::RequiemCompat::g_requiemInstalled
+					a_playerActor, 
+					a_enteringMenu, 
+					ALYSLC::RequiemCompat::g_requiemInstalled,
+					false
 				);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
@@ -1775,7 +1786,10 @@ namespace ALYSLC
 				SPDLOG_DEBUG("Restore AVs.");
 				CopyOverAVs
 				(
-					a_playerActor, a_enteringMenu, ALYSLC::RequiemCompat::g_requiemInstalled
+					a_playerActor,
+					a_enteringMenu,
+					ALYSLC::RequiemCompat::g_requiemInstalled,
+					false
 				);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
@@ -2466,26 +2480,26 @@ namespace ALYSLC
 		}
 	}
 
-	bool GlobalCoopData::CanControlMenus(const int32_t& a_controllerID)
+	bool GlobalCoopData::CanControlMenus(const int32_t& a_playerID)
 	{
 		// Return true if the current player controlling menus 
-		// has the same CID as the given one,
+		// has the same PID as the given one,
 		// or if no player is currently controlling menus.
 
 		auto& glob = GetSingleton();
 
-		if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		if (a_playerID <= -1 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return false;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		if (!p->isActive) 
 		{
 			return false;
 		}
 
-		return glob.menuCID == a_controllerID || glob.menuCID == -1;;
+		return glob.menuPID == a_playerID || glob.menuPID == -1;;
 	}
 
 	void GlobalCoopData::EnableRagdollToActorCollisions()
@@ -2607,7 +2621,7 @@ namespace ALYSLC
 	{
 		// Given the actor smart ptr, 
 		// get the corresponding player index in co-op players array 
-		// (equivalent to the player's CID).
+		// (equivalent to the player's PID).
 		// -1 if there is no corresponding index.
 
 		if (!a_actorPtr)
@@ -2622,7 +2636,7 @@ namespace ALYSLC
 	{
 		// Given the object refr, 
 		// get the corresponding player index in co-op players array
-		// (equivalent to the player's CID).
+		// (equivalent to the player's PID).
 		// -1 if there is no corresponding index.
 
 		if (!a_refr)
@@ -2652,7 +2666,7 @@ namespace ALYSLC
 	{
 		// Given the object refr smart ptr,
 		// get the corresponding player index in co-op players array
-		// (equivalent to the player's CID).
+		// (equivalent to the player's PID).
 		// -1 if there is no corresponding index.
 
 		if (!a_refrPtr)
@@ -2667,7 +2681,7 @@ namespace ALYSLC
 	{
 		// Given the FID, 
 		// get the corresponding player index in co-op players array
-		// (equivalent to the player's CID).
+		// (equivalent to the player's PID).
 		// -1 if there is no corresponding index.
 
 		auto& glob = GetSingleton();
@@ -2692,7 +2706,7 @@ namespace ALYSLC
 	{
 		// Given the refr handle, 
 		// get the corresponding player index in co-op players array
-		// (equivalent to the player's CID).
+		// (equivalent to the player's PID).
 		// -1 if there is no corresponding index.
 
 		auto& glob = GetSingleton();
@@ -3037,7 +3051,7 @@ namespace ALYSLC
 					// that opens post-levelup.
 					glob.moarm->InsertRequest
 					(
-						glob.player1CID, 
+						0, 
 						InputAction::kActivate, 
 						SteadyClock::now(), 
 						RE::MessageBoxMenu::MENU_NAME
@@ -3139,9 +3153,9 @@ namespace ALYSLC
 
 			// Werewolf transformation.
 			// Global variable keeps track of any P1 transformations.
-			if (glob.coopSessionActive && glob.player1CID != -1) 
+			if (glob.coopSessionActive) 
 			{
-				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				const auto& coopP1 = glob.coopPlayers[0];
 				if (!coopP1->isTransformed && 
 					glob.werewolfTransformationGlob->value == 1.0f) 
 				{
@@ -3159,7 +3173,7 @@ namespace ALYSLC
 					coopP1->transformationTP = SteadyClock::now();
 					coopP1->isTransformed = true;
 				}
-				else if (glob.coopPlayers[glob.player1CID]->isTransformed &&
+				else if (glob.coopPlayers[0]->isTransformed &&
 						 glob.werewolfTransformationGlob->value == 0.0f)
 				{
 					coopP1->isTransformed = false;
@@ -3444,24 +3458,24 @@ namespace ALYSLC
 #endif
 	}
 
-	bool GlobalCoopData::IsControllingMenus(const int32_t& a_controllerID)
+	bool GlobalCoopData::IsControllingMenus(const int32_t& a_playerID)
 	{
-		// Return true if the player with the given controller ID
+		// Return true if the player with the given player ID
 		// is controlling open temporary menus.
 
 		auto& glob = GetSingleton();
-		if (a_controllerID <= -1 && a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		if (a_playerID <= -1 && a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return false;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		if (!p->isActive)
 		{
 			return false;
 		}
 
-		return glob.menuCID == p->controllerID;
+		return glob.menuPID == p->playerID;
 	}
 
 	bool GlobalCoopData::IsCoopCharacter(const RE::ActorPtr& a_actorPtr)
@@ -3657,24 +3671,24 @@ namespace ALYSLC
 		);
 	}
 
-	bool GlobalCoopData::IsNotControllingMenus(const int32_t& a_controllerID)
+	bool GlobalCoopData::IsNotControllingMenus(const int32_t& a_playerID)
 	{
-		// Return true if the player with the given CID 
+		// Return true if the player with the given PID 
 		// is not controlling any open temporary menus.
 
 		auto& glob = GetSingleton();
-		if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		if (a_playerID <= -1 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return true;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		if (!p->isActive)
 		{
 			return true;
 		}
 
-		return glob.menuCID != p->controllerID;
+		return glob.menuPID != p->playerID;
 	}
 
 	bool GlobalCoopData::IsSupportedMenuOpen()
@@ -3974,7 +3988,7 @@ namespace ALYSLC
 		}
 
 		// Ignore if P1 is hitting a target while their managers are not running (no co-op cam).
-		if (pIndex == glob.player1CID && !glob.coopPlayers[pIndex]->IsRunning())
+		if (pIndex == 0 && !glob.coopPlayers[0]->IsRunning())
 		{
 			return PRECISION_API::PreHitCallbackReturn();
 		}
@@ -4394,30 +4408,175 @@ namespace ALYSLC
 			RescaleHMS(a_playerActor, data->firstSavedLevel);
 		}
 	}
-
-	void GlobalCoopData::ResetMenuCIDs()
+	
+	void GlobalCoopData::RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel)
 	{
-		// Update previous menu CID to the current one and clear the current menu CID 
-		// or set to P1's CID if menus are open still.
+		// Rescale the player's health, magicka, and stamina AVs
+		// to the serialized base values + increments.
+		
+		auto& glob = GetSingleton();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1 || !a_playerActor)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+
+		SPDLOG_DEBUG
+		(
+			"{}: base level: {}.", a_playerActor->GetName(), a_baseLevel
+		);
+
+		const auto& data = iter->second;
+		// Has recorded level up.
+		if (a_baseLevel != 0) 
+		{
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kHealth, 
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[0],
+				data->hmsPointIncreasesList[0],
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+			);
+
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, 
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[1],
+				data->hmsPointIncreasesList[1],
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
+
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, 
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[2],
+				data->hmsPointIncreasesList[2],
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
+		}
+		else if (a_playerActor->GetRace() && a_playerActor->GetActorBase())
+		{
+			// Before first level up, use sum of the race's starting HMS AVs 
+			// and the actor base's HMS offsets.
+			data->hmsBasePointsList[0] = 
+			(
+				a_playerActor->race->data.startingHealth + 
+				a_playerActor->GetActorBase()->actorData.healthOffset
+			);
+			data->hmsBasePointsList[1] =
+			(
+				a_playerActor->race->data.startingMagicka + 
+				a_playerActor->GetActorBase()->actorData.magickaOffset
+			);
+			data->hmsBasePointsList[2] = 
+			(
+				a_playerActor->race->data.startingStamina +
+				a_playerActor->GetActorBase()->actorData.staminaOffset
+			);
+			SPDLOG_DEBUG
+			(
+				"{} has not leveled up in co-op yet. "
+				"Scaling HMS AVs down to their base values: {}, {}, {}.",
+				a_playerActor->GetName(),
+				data->hmsBasePointsList[0],
+				data->hmsBasePointsList[1],
+				data->hmsBasePointsList[2]
+			);
+
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kHealth, data->hmsBasePointsList[0]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[0],
+				data->hmsPointIncreasesList[0],
+				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
+			);
+
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[1],
+				data->hmsPointIncreasesList[1],
+				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
+			);
+
+			a_playerActor->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, data->hmsBasePointsList[2]
+			);
+			SPDLOG_DEBUG
+			(
+				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
+				a_playerActor->GetName(),
+				a_baseLevel,
+				data->hmsBasePointsList[2],
+				data->hmsPointIncreasesList[2],
+				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+			);
+		}
+	}
+
+	void GlobalCoopData::ResetMenuPlayerIDs()
+	{
+		// Update previous menu PID to the current one and clear the current menu PID 
+		// or set to P1's PID if menus are open still.
 
 		auto& glob = GetSingleton();
 		// With no menus open, no player is in control of menus.
 		// Otherwise, give P1 control.
-		int32_t newCID = Util::MenusOnlyAlwaysOpen() ? -1 : glob.player1CID;
-		// Previous menu CID is NEVER -1 after it is first set.
-		int32_t newPrevCID = newCID != -1 ? newCID : glob.prevMenuCID;
+		int32_t newPID = Util::MenusOnlyAlwaysOpen() ? -1 : 0;
+		// Previous menu PID is NEVER -1 after it is first set.
+		int32_t newPrevPID = newPID != -1 ? newPID : glob.prevMenuPID;
 
 		SPDLOG_DEBUG
 		(
-			"Reset menu CID from {} to {}, last menu CID from {} to {}.",
-			glob.menuCID, 
-			newCID,
-			glob.prevMenuCID,
-			newPrevCID
+			"Reset menu PID from {} to {}, last menu PID from {} to {}.",
+			glob.menuPID, 
+			newPID,
+			glob.prevMenuPID,
+			newPrevPID
 		);
 
 		{
-			std::unique_lock<std::mutex> lock(glob.menuCIDMutex, std::try_to_lock);
+			std::unique_lock<std::mutex> lock(glob.menuPIDMutex, std::try_to_lock);
 			if (lock)
 			{
 				SPDLOG_DEBUG
@@ -4425,8 +4584,8 @@ namespace ALYSLC
 					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
-				glob.prevMenuCID = newPrevCID;
-				glob.menuCID = newCID;
+				glob.prevMenuPID = newPrevPID;
+				glob.menuPID = newPID;
 			}
 			else
 			{
@@ -4461,13 +4620,13 @@ namespace ALYSLC
 		} 
 		else
 		{
-			if (glob.copiedDataPlayerCID != -1)
+			if (glob.copiedDataPlayerPID != -1)
 			{
 				a_menuControllingPlayer = 
 				(
-					glob.coopPlayers[glob.copiedDataPlayerCID]->coopActor.get()
+					glob.coopPlayers[glob.copiedDataPlayerPID]->coopActor.get()
 				);
-				pIndex = glob.copiedDataPlayerCID;
+				pIndex = glob.copiedDataPlayerPID;
 			}
 		}
 
@@ -4476,9 +4635,9 @@ namespace ALYSLC
 			SPDLOG_ERROR
 			(
 				"Could not retrieve companion player with data copied over to P1. "
-				"Copied player data CID is {}. Retrieved player index is {}. "
+				"Copied player data PID is {}. Retrieved player index is {}. "
 				"Copied data types which could not be restored are 0x{:X}.",
-				glob.copiedDataPlayerCID,
+				glob.copiedDataPlayerPID,
 				pIndex,
 				*glob.copiedPlayerDataTypes
 			);
@@ -4487,7 +4646,7 @@ namespace ALYSLC
 		
 		SPDLOG_DEBUG
 		(
-			"Remove {}'s (CID {}) data (0x{:X}) and restore P1's.",
+			"Remove {}'s (PID {}) data (0x{:X}) and restore P1's.",
 			a_menuControllingPlayer->GetName(),
 			pIndex,
 			*glob.copiedPlayerDataTypes
@@ -4560,10 +4719,29 @@ namespace ALYSLC
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
 			}
 
+			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
+			{
+				SPDLOG_DEBUG("Restore P1 Skill AVs.");
+				CopyOverAVs
+				(
+					a_menuControllingPlayer,
+					false, 
+					ALYSLC::RequiemCompat::g_requiemInstalled,
+					true
+				);
+				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkills);
+			}
+
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
 				SPDLOG_DEBUG("Restore P1 AVs.");
-				CopyOverAVs(a_menuControllingPlayer, false);
+				CopyOverAVs
+				(
+					a_menuControllingPlayer,
+					false,
+					ALYSLC::RequiemCompat::g_requiemInstalled,
+					false
+				);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 			}
 		}
@@ -4775,8 +4953,8 @@ namespace ALYSLC
 		{
 			// No co-op session active or P1 is invalid, so do not set.
 			if (!glob.coopSessionActive ||
-				glob.player1CID == -1 ||
-				!glob.coopPlayers[glob.player1CID]) 
+				glob.player1DID == -1 ||
+				!glob.coopPlayers[0]) 
 			{
 				return;
 			}
@@ -4786,7 +4964,7 @@ namespace ALYSLC
 			if (camActive)
 			{
 				// Can't concatenate to fixed string, so use a temp string. P1 is always first.
-				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				const auto& coopP1 = glob.coopPlayers[0];
 				std::string playerText = std::string
 				(
 					coopP1->tm->crosshairMessage->text
@@ -5001,7 +5179,7 @@ namespace ALYSLC
 					// Have to obtain the original crosshair text, add a separator,
 					// and then concatenate all the companion players' crosshair messages.
 					std::string tempCrosshairText{ "" };
-					const auto coopP1 = glob.coopPlayers[glob.player1CID];
+					const auto coopP1 = glob.coopPlayers[0];
 					// Show revive crosshair text message for P1 
 					// if they are downed, if they are reviving another player,
 					// or if a previously set crosshair message has not expired yet.
@@ -5241,62 +5419,6 @@ namespace ALYSLC
 						RE::GFxValue::DisplayInfo loc{ };
 						loc.SetPosition(x, y);
 						rolloverText.SetDisplayInfo(loc);
-
-						/*RE::GFxValue hudOffset{ };
-						view->GetVariable
-						(
-							std::addressof(hudOffset), 
-							"HUDMovieBaseInstance.TopLeftRefX"
-						);
-						double xOffBase = hudOffset.GetNumber();
-						view->GetVariable
-						(
-							std::addressof(hudOffset), 
-							"HUDMovieBaseInstance.TopLeftRefY"
-						);
-						double yOffBase = hudOffset.GetNumber();
-
-						view->GetVariable
-						(
-							std::addressof(hudOffset), 
-							"HUDMovieBaseInstance.BottomRightRefX"
-						);
-						double xOffBase2 = hudOffset.GetNumber();
-						view->GetVariable
-						(
-							std::addressof(hudOffset), 
-							"HUDMovieBaseInstance.BottomRightRefY"
-						);
-						double yOffBase2 = hudOffset.GetNumber();
-						SPDLOG_DEBUG
-						(
-							"HUD center: {}, {}, height, width: {}, {}, "
-							"crosshair offset: {}, {}, Game resolution: {}, {}, ratios: {}, {}, "
-							"top left/bottom right offsets: ({}, {}), ({}, {}), "
-							"hud base offset: {}, {} and {}, {}. View scale/align types: {}, {}. "
-							"Rect: ({}, {}, {}, {}). Movie def height, width: {}, {}.",
-							frameCenterX, frameCenterY, frameHeight, frameWidth, xOff, yOff,
-							RE::BSGraphics::State::GetSingleton()->screenHeight, 
-							RE::BSGraphics::State::GetSingleton()->screenWidth,
-							RE::BSGraphics::State::GetSingleton()->dynamicResolutionHeightRatio,
-							RE::BSGraphics::State::GetSingleton()->dynamicResolutionWidthRatio,
-							topLeftOffsetX,
-							topLeftOffsetY,
-							bottomRightOffsetX,
-							bottomRightOffsetY,
-							xOffBase,
-							yOffBase,
-							xOffBase2,
-							yOffBase2,
-							view->GetViewScaleMode(),
-							view->GetViewAlignment(),
-							rect.left,
-							rect.right,
-							rect.top,
-							rect.bottom,
-							view->GetMovieDef()->GetHeight(),
-							view->GetMovieDef()->GetWidth()
-						);*/
 					}
 				}
 				
@@ -5339,24 +5461,25 @@ namespace ALYSLC
 		);
 	}
 
-	void GlobalCoopData::SetMenuCIDs(const int32_t a_controllerID)
+	void GlobalCoopData::SetMenuPlayerIDs(const int32_t a_playerID)
 	{
-		// Set previous and current menu CIDs directly to the given CID.
+		// Set previous and current menu PIDs directly to the given PID.
 
 		auto& glob = GetSingleton();
-		if (a_controllerID == -1) 
+		if (a_playerID == -1) 
 		{
-			ResetMenuCIDs();
+			SPDLOG_DEBUG("Reset menu player IDs.");
+			ResetMenuPlayerIDs();
 		}
 		else
 		{
 			SPDLOG_DEBUG
 			(
-				"Set current/last menu CIDs from {}/{} to {}.",
-				glob.menuCID, glob.prevMenuCID, a_controllerID
+				"Set current/last menu PIDs from {}/{} to {}.",
+				glob.menuPID, glob.prevMenuPID, a_playerID
 			);
 			{
-				std::unique_lock<std::mutex> lock(glob.menuCIDMutex, std::try_to_lock);
+				std::unique_lock<std::mutex> lock(glob.menuPIDMutex, std::try_to_lock);
 				if (lock)
 				{
 					SPDLOG_DEBUG
@@ -5364,7 +5487,7 @@ namespace ALYSLC
 						"Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
-					glob.prevMenuCID = glob.menuCID = a_controllerID;
+					glob.prevMenuPID = glob.menuPID = a_playerID;
 				}
 				else
 				{
@@ -5596,13 +5719,13 @@ namespace ALYSLC
 			GlobalCoopData::RestoreP1CopyablePlayerData();
 			if (glob.mim->IsRunning())
 			{
-				glob.mim->ToggleCoopPlayerMenuMode(-1);
+				glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 				glob.mim->ResetPlayerMenuControlOverlay();
 			}
 
-			ResetMenuCIDs();
-			glob.quickLootControlCID = -1;
-			glob.quickLootReqCID = -1;
+			ResetMenuPlayerIDs();
+			glob.quickLootControlPID = -1;
+			glob.quickLootReqPID = -1;
 			Util::SendCrosshairEvent(nullptr);
 		}
 
@@ -5748,15 +5871,16 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		// No global data or players, so bail.
 		if (!glob.globalDataInit || 
-			!glob.allPlayersInit ||
-			glob.player1CID < 0 || 
-			glob.player1CID >= ALYSLC_MAX_PLAYER_COUNT) 
+			!glob.allPlayersInit)
 		{
 			return;
 		}
 
 		// Set the co-op session as ended.
 		glob.coopSessionActive = false;
+		// Reset crosshair text and position.
+		SetCrosshairText(true);
+
 		if (a_shouldDismiss)
 		{
 			// Dismiss P1 last, as the P1 ref alias script performs final cleanup measures 
@@ -5768,6 +5892,17 @@ namespace ALYSLC
 					continue;
 				}
 
+				if (p->isDowned && !p->coopActor->IsDead())
+				{
+					SPDLOG_DEBUG
+					(
+						"Co-op session over. RIP downed companion {}.", p->coopActor->GetName()
+					);
+					p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
+					p->coopActor->KillImmediate();
+					p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+				}
+
 				SPDLOG_DEBUG
 				(
 					"Co-op session over. Dismissing companion {}.", p->coopActor->GetName()
@@ -5775,9 +5910,21 @@ namespace ALYSLC
 				p->DismissPlayer();
 			}
 
-			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+			const auto& coopP1 = glob.coopPlayers[0];
 			if (coopP1 && coopP1->isActive) 
 			{
+				if (coopP1->isDowned && !coopP1->coopActor->IsDead())
+				{
+					SPDLOG_DEBUG
+					(
+						"Co-op session over. RIP downed P1 {}.",
+						coopP1->coopActor->GetName()
+					);
+					coopP1->coopActor->KillImpl(coopP1->coopActor.get(), FLT_MAX, true, false);
+					coopP1->coopActor->KillImmediate();
+					coopP1->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+				}
+
 				SPDLOG_DEBUG
 				(
 					"Co-op session over. Dismissing P1 {}.", coopP1->coopActor->GetName()
@@ -5838,24 +5985,24 @@ namespace ALYSLC
 				continue;
 			}
 
-			ToggleGodModeForPlayer(p->controllerID, a_enable);
+			ToggleGodModeForPlayer(p->playerID, a_enable);
 		}
 	}
 
 	void GlobalCoopData::ToggleGodModeForPlayer
 	(
-		const int32_t& a_controllerID, const bool& a_enable
+		const int32_t& a_playerID, const bool& a_enable
 	)
 	{
-		// Enable or disable god mode for the player associated with the given CID.
+		// Enable or disable god mode for the player associated with the given PID.
 
-		if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		if (a_playerID <= -1 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
 		auto& glob = GetSingleton();
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		if (!p->isActive) 
 		{
 			return;
@@ -6167,7 +6314,15 @@ namespace ALYSLC
 			return true;
 		}
 	
-		if (glob.allPlayersInit)
+		// Do not allow saving while choosing and summoning player characters
+		// before the co-op session starts.
+		bool shouldDisable = false;
+		if (glob.isSummoningPlayers)
+		{
+			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kDisableSaving;
+			shouldDisable = true;
+		}
+		else if (glob.allPlayersInit)
 		{
 			bool playerIsDowned = 
 			(
@@ -6185,13 +6340,29 @@ namespace ALYSLC
 			if (playerIsDowned || *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 			{
 				p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kDisableSaving;
-			}
-			else if (p1->byCharGenFlag != RE::PlayerCharacter::ByCharGenFlag::kNone)
-			{
-				p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
+				shouldDisable = true;
 			}
 		}
-
+		
+		// Allow saving once more if not disabled here, if no menus are open,
+		// and if P1 is not controlled by a package.
+		bool shouldEnable = 
+		(
+			(
+				!shouldDisable &&
+				p1->byCharGenFlag != RE::PlayerCharacter::ByCharGenFlag::kNone && 
+				Util::MenusOnlyAlwaysOpen()
+			) &&
+			(
+				(glob.coopSessionActive && !glob.coopPlayers[0]->mm->p1ExtPackageRunning) || 
+				(!glob.coopSessionActive && p1->GetPlayerControls())
+			)
+		);
+		if (shouldEnable)
+		{
+			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
+		}
+		
 		return p1->byCharGenFlag != RE::PlayerCharacter::ByCharGenFlag::kDisableSaving;
 	}
 
@@ -6307,9 +6478,7 @@ namespace ALYSLC
 		}
 
 		// Character ID for the given companion player actor.
-		// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
-		// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
-		// 3 = NPC with '__CoopCharacter3'  as its actor base editor ID.
+		// ID # = NPC with '__CoopCharacter#' as its actor base editor ID.
 		// Kinda gross.
 		uint32_t characterID = Util::GetEditorID(actorBase).back() - '0';
 
@@ -6427,368 +6596,6 @@ namespace ALYSLC
 		return updateSuccessful;
 	}
 
-	void GlobalCoopData::YouDied(RE::ActorHandle a_deadPlayerHandle)
-	{
-		// All players downed or dead. Perform cleanup and end the co-op session.
-		// NOTE: 
-		// P1 kill calls still fail at times.
-		// One example being when all other players die 
-		// while P1 is getting up after being revived.
-		// Use the 'player.kill' console command 
-		// or use the Debug Menu's 'Reset Equip State' option on P1
-		// to properly end the co-op session, 
-		// since P1 will remain paralyzed on the ground otherwise.
-
-		auto& glob = GetSingleton();
-		// Make sure the session is flagged as ended first.
-		if (glob.coopSessionActive)
-		{
-			glob.coopSessionActive = false;
-		}
-
-		// Ignore if there are no living players or if the dead player is valid and not a player.
-		if ((glob.livingPlayers == 0) || 
-			(Util::HandleIsValid(a_deadPlayerHandle) && !IsCoopPlayer(a_deadPlayerHandle)))
-		{
-			return;
-		}
-
-		// No more living players now, sorry.
-		glob.livingPlayers = 0;
-
-		RE::BSFixedString messageText =
-		(
-			"Your party was bested this time.\n"
-			"One thread of fate severed, another thread spun."
-		);
-		RE::BSFixedString buttonText = "Ok";
-		std::mt19937 generator{ };
-		generator.seed(SteadyClock::now().time_since_epoch().count());
-		float rand = 
-		(
-			(generator() / (float)((std::mt19937::max)()))
-		);
-		if (rand <= 0.1f)
-		{
-			auto index = 
-			(
-				static_cast<size_t>
-				(
-					GlobalCoopData::YOU_DIED_SPECIAL_MESSAGE_OPTIONS.size() * 
-					(generator() / (float)((std::mt19937::max)()))
-				)
-			);
-			messageText = GlobalCoopData::YOU_DIED_SPECIAL_MESSAGE_OPTIONS[index];
-		}
-
-		auto taskInterface = SKSE::GetTaskInterface();
-		if (taskInterface)
-		{
-			taskInterface->AddUITask
-			(
-				[messageText]()
-				{
-					auto ui = RE::UI::GetSingleton();
-					// Prioritize notifying the players through the quest message text field.
-					// Fall back to displaying a message box instead.
-					bool questMessageDisplayed = false;
-					if (ui)
-					{
-						if (auto hudMenu = ui->GetMenu<RE::HUDMenu>(); hudMenu)
-						{
-							if (auto view = hudMenu->uiMovie; view)
-							{
-								auto p1 = RE::PlayerCharacter::GetSingleton();
-								RE::GFxValue hudBase{ };
-								view->GetVariable
-								(
-									std::addressof(hudBase), "_root.HUDMovieBaseInstance"
-								);
-								RE::GFxValue questUpdateBaseInstance{ };
-								hudBase.GetMember
-								(
-									"QuestUpdateBaseInstance",
-									std::addressof(questUpdateBaseInstance)
-								);
-								if (!questUpdateBaseInstance.IsNull() &&
-									!questUpdateBaseInstance.IsUndefined() &&
-									questUpdateBaseInstance.HasMember("AnimatedLetter_mc"))
-								{
-									RE::GFxValue args[2];
-									args[0] = RE::GFxValue(messageText);
-									args[1] = RE::GFxValue("");
-									view->InvokeNoReturn
-									(
-										"_root.HUDMovieBaseInstance.QuestUpdateBaseInstance."
-										"AnimatedLetter_mc.ShowQuestUpdate",
-										args,
-										2
-									);
-									questMessageDisplayed = true;
-								}
-							}
-						}
-					}
-
-					if (!questMessageDisplayed)
-					{
-						RE::CreateMessage
-						(
-							messageText.c_str(), 
-							nullptr, 
-							0, 
-							4, 
-							10, 
-							nullptr,
-							nullptr
-						);
-					}
-				}
-			);
-		}
-
-		SPDLOG_DEBUG("All players downed or dead. Ending co-op session.");
-
-		for (const auto& p : glob.coopPlayers)
-		{
-			if (!p->isActive)
-			{
-				continue;
-			}
-			
-			// Ragdoll first.
-			Util::PushActorAway(p->coopActor.get(), p->coopActor->data.location, -1.0f, true);
-
-			// Make sure god mode is disabled for each player first; 
-			// otherwise, they won't die below.
-			if (p->isInGodMode) 
-			{
-				GlobalCoopData::ToggleGodModeForPlayer(p->controllerID, false);
-				Util::StopEffectShader(p->coopActor.get(), glob.ghostFXShader);
-			}
-
-			// Revert any active transformation.
-			if (p->isTransforming || p->isTransformed)
-			{
-				p->RevertTransformation();
-			}
-
-			// Reset essential flags before killing actor.
-			Util::ChangeEssentialStatus(p->coopActor.get(), false);
-
-			// Kill calls fail on P1 at times, especially when the player dies in water,
-			// and the game will not reload.
-			// The kill console command appears to work more often when this happens, 
-			// so as an extra layer of insurance,
-			// run that command here.
-			const auto scriptFactory = 
-			(
-				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-			);
-			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-			if (script)
-			{
-				script->SetCommand("kill");
-				script->CompileAndRun(p->coopActor.get());
-				// Cleanup.
-				delete script;
-			}
-
-			// Also run the other kill functions and set life state to dead.
-			p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
-			p->coopActor->KillImmediate();
-			p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
-			
-			auto currentHealth = p->coopActor->GetActorValue(RE::ActorValue::kHealth);
-			// Set health to 0.
-			// NOTE:
-			// For negative health deltas, nullify the player's damage received mult
-			// applied in the CheckClampDamageMultiplier() hook.
-			if (currentHealth > 0.0f)
-			{
-				p->pam->ModifyAV
-				(
-					RE::ActorValue::kHealth,
-					Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
-					-FLT_MAX :
-					(-currentHealth) * (1.0f / Settings::vfDamageReceivedMult[p->playerID])
-				);
-			}
-			else
-			{
-				// Sometimes when the player's health is negative, 
-				// the game does not consider them as dead and won't reload.
-				// Set to 1 health and then reduce to 0 again to simulate the player dying again.
-				p->pam->ModifyAV
-				(
-					RE::ActorValue::kHealth, 1.0f - currentHealth
-				);
-				p->pam->ModifyAV
-				(
-					RE::ActorValue::kHealth, 
-					Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
-					-FLT_MAX :
-					(-1.0f / Settings::vfDamageReceivedMult[p->playerID])
-				);
-			}
-
-			// And through all that... P1 is usually still not dead.
-			SPDLOG_DEBUG
-			(
-				"{}: is dead: {}, health: {}. Essential flag: {}, {}.",
-				p->coopActor->GetName(),
-				p->coopActor->IsDead(),
-				p->coopActor->GetActorValue(RE::ActorValue::kHealth),
-				p->coopActor->GetActorBase() ? 
-				p->coopActor->GetActorBase()->actorData.actorBaseFlags.all
-				(
-					RE::ACTOR_BASE_DATA::Flag::kEssential
-				) :
-				false,
-				p->coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential)
-			);
-		}
-
-		// Reset skill gain multiplier since there are no living players in the party now.
-		ModifyXPPerSkillLevelMult(false);
-		// Teardown the session afterward.
-		TeardownCoopSession(true);
-
-		// If all else STILL fails, and it usually does, as a final failsafe, 
-		// reload the most recent save after a short period of time.
-		// This is making me go insane.
-		if (auto saveLoadManager = RE::BGSSaveLoadManager::GetSingleton(); saveLoadManager) 
-		{
-			std::jthread reloadTask
-			(
-				[]() 
-				{
-					const auto& glob = GlobalCoopData::GetSingleton();
-					auto ui = RE::UI::GetSingleton();
-					auto p1 = RE::PlayerCharacter::GetSingleton();
-					auto saveLoadManager = RE::BGSSaveLoadManager::GetSingleton(); 
-					// If players are still alive or any singletons are invalid, return early.
-					if (glob.livingPlayers > 0 || !ui || !p1 || !saveLoadManager)
-					{
-						return;
-					}
-					
-					const float maxSecsToWait = 5.0f;
-					float secsWaited = 0.0f;
-					float secsSinceKillTask = 1.0f;
-					SteadyClock::time_point loadWaitTP = SteadyClock::now();
-					SteadyClock::time_point killTaskWaitTP = SteadyClock::now();
-					// Wait at most 5 seconds without a loading screen opening
-					// before loading the most recent save.
-					// Does not matter if P1 is flagged as dead or not.
-					while ((secsWaited < maxSecsToWait) && 
-						   (!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) && 
-						   (!glob.loadingASave))
-					{
-						// Attempt to kill P1 and force a reload every second.
-						if (secsSinceKillTask >= 1.0f)
-						{
-							killTaskWaitTP = SteadyClock::now();
-							// Set health to 1 and then to 0 to trigger death.
-							p1->RestoreActorValue
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage, 
-								RE::ActorValue::kHealth,
-								1.0f - p1->GetActorValue(RE::ActorValue::kHealth)
-							);
-							p1->RestoreActorValue
-							(
-								RE::ACTOR_VALUE_MODIFIER::kDamage,
-								RE::ActorValue::kHealth, 
-								-1.0f
-							);
-						}
-						
-						secsWaited = Util::GetElapsedSeconds(loadWaitTP);
-						secsSinceKillTask = Util::GetElapsedSeconds(killTaskWaitTP);
-					}
-
-					// Force a reload if P1 is still not dead and the Loading Menu has not opened.
-					bool succ = false;
-					if (secsWaited >= maxSecsToWait) 
-					{
-						SPDLOG_DEBUG
-						(
-							"ReloadTask: Loading most recent save game after {} seconds.", 
-							secsWaited
-						);
-						succ = saveLoadManager->LoadMostRecentSaveGame();
-					}
-
-					SPDLOG_DEBUG
-					(
-						"ReloadTask: Now waiting for the game to reload the last save. "
-						"Co-op session active: {}, p1 dead: {}, loading a save: {}. "
-						"Success: {}. Full reset: {}, reset game: {}, reload content: {}.",
-						glob.coopSessionActive,
-						p1->IsDead(),
-						glob.loadingASave, 
-						succ,
-						RE::Main::GetSingleton()->fullReset, 
-						RE::Main::GetSingleton()->resetGame,
-						RE::Main::GetSingleton()->reloadContent
-					);
-				}
-			);
-
-			reloadTask.detach();
-		}
-		else
-		{
-			// Delayed async check to make sure P1 dies to trigger the LoadingMenu,
-			// since the game still fails to reload at times.
-			// P1 is set as killed above, but then is sometimes alive 
-			// when checked later via console command (?).
-			// Last ditch attempt to force a reload if the save manager isn't available.
-
-			std::jthread killTask
-			(
-				[]() 
-				{
-					const auto& glob = GlobalCoopData::GetSingleton();
-					auto ui = RE::UI::GetSingleton();
-					auto p1 = RE::PlayerCharacter::GetSingleton();
-					if (!ui || !p1 || glob.livingPlayers > 0)
-					{
-						return;
-					}
-
-					while ((!glob.coopSessionActive) && 
-						   (!glob.loadingASave) && 
-						   (!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)))
-					{
-						// Our NotifyAnimationGraph() hook for P1 will attempt to kill P1 
-						// once no other players are alive.
-						p1->NotifyAnimationGraph("GetUpBegin");
-						std::this_thread::sleep_for
-						(
-							std::chrono::seconds(static_cast<long long>(*g_deltaTimeRealTime))
-						);
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Waiting for P1 to die. "
-						"Co-op session active: {}, loading a save: {}. "
-						"Full reset: {}, reset game: {}, reload content: {}.",
-						glob.coopSessionActive,
-						glob.loadingASave,
-						RE::Main::GetSingleton()->fullReset, 
-						RE::Main::GetSingleton()->resetGame,
-						RE::Main::GetSingleton()->reloadContent
-					);
-				}
-			);
-
-			killTask.detach();
-		}
-	}
-
 	void GlobalCoopData::CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info)
 	{
 		// Copy over player data from co-op player to P1.
@@ -6816,18 +6623,18 @@ namespace ALYSLC
 		}
 
 		auto& glob = GetSingleton();
-		// Set CID for the player who is having their data imported onto P1.
+		// Set PID for the player who is having their data imported onto P1.
 		if (a_info->shouldImport)
 		{
-			glob.copiedDataPlayerCID = playerIndex;
+			glob.copiedDataPlayerPID = playerIndex;
 		}
 
 		SPDLOG_DEBUG
 		(
-			"Request to copy player data for {} (CID: {}, cached: {}) on {} of {}.",
+			"Request to copy player data for {} (PID: {}, cached: {}) on {} of {}.",
 			requestingPlayer->GetName(),
 			playerIndex,
-			glob.copiedDataPlayerCID,
+			glob.copiedDataPlayerPID,
 			a_info->shouldImport ? "opening" : "closing",
 			a_info->menuName
 		);
@@ -6857,7 +6664,13 @@ namespace ALYSLC
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 				{
 					SPDLOG_DEBUG("Import AVs.");
-					CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
+					CopyOverAVs
+					(
+						requestingPlayer.get(), 
+						a_info->shouldImport,
+						ALYSLC::RequiemCompat::g_requiemInstalled,
+						false
+					);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
 				}
 			}
@@ -6880,7 +6693,13 @@ namespace ALYSLC
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 				{
 					SPDLOG_DEBUG("Export AVs.");
-					CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
+					CopyOverAVs
+					(
+						requestingPlayer.get(), 
+						a_info->shouldImport,
+						ALYSLC::RequiemCompat::g_requiemInstalled,
+						false
+					);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
 				}
 			}
@@ -6969,11 +6788,17 @@ namespace ALYSLC
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkList);
 				}
 
-				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 				{
-					SPDLOG_DEBUG("Import AVs.");
-					CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
-					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
+					SPDLOG_DEBUG("Import Skill AVs.");
+					CopyOverAVs
+					(
+						requestingPlayer.get(), 
+						a_info->shouldImport,
+						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true
+					);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkills);
 				}
 			}
 			else
@@ -7013,11 +6838,17 @@ namespace ALYSLC
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkList);
 				}
 
-				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 				{
-					SPDLOG_DEBUG("Export AVs.");
-					CopyOverAVs(requestingPlayer.get(), a_info->shouldImport);
-					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
+					SPDLOG_DEBUG("Export Skill AVs.");
+					CopyOverAVs
+					(
+						requestingPlayer.get(), 
+						a_info->shouldImport,
+						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true
+					);
+					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkills);
 				}
 			}
 		}
@@ -7174,22 +7005,34 @@ namespace ALYSLC
 				// Copy over AVs.
 				if (a_info->shouldImport)
 				{
-					SPDLOG_DEBUG("Trainer: Should copy over AVs on import.");
-					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+					SPDLOG_DEBUG("Trainer: Should copy over Skill AVs on import.");
+					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 					{
-						SPDLOG_DEBUG("Import AVs.");
-						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport, true);
-						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
+						SPDLOG_DEBUG("Import Skill AVs.");
+						CopyOverAVs
+						(
+							requestingPlayer.get(), 
+							a_info->shouldImport,
+							true,
+							true
+						);
+						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkills);
 					}
 				}
 				else
 				{
-					SPDLOG_DEBUG("Trainer: Should copy back AVs on export.");
-					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+					SPDLOG_DEBUG("Trainer: Should copy back Skill AVs on export.");
+					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 					{
-						SPDLOG_DEBUG("Export AVs.");
-						CopyOverAVs(requestingPlayer.get(), a_info->shouldImport, true);
-						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
+						SPDLOG_DEBUG("Export Skill AVs.");
+						CopyOverAVs
+						(
+							requestingPlayer.get(), 
+							a_info->shouldImport,
+							true,
+							true
+						);
+						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkills);
 					}
 				}
 			}
@@ -7444,7 +7287,10 @@ namespace ALYSLC
 
 	void GlobalCoopData::CopyOverAVs
 	(
-		RE::Actor* a_coopActor, const bool& a_shouldImport, const bool& a_shouldCopyChanges
+		RE::Actor* a_coopActor,
+		const bool& a_shouldImport,
+		const bool& a_shouldCopyChanges,
+		bool&& a_onlySkills
 	)
 	{
 		// Copy over actor values (HMS and skills) between the companion player and P1.
@@ -7460,256 +7306,7 @@ namespace ALYSLC
 
 		if (a_shouldImport)
 		{
-			// Save P1 AV and AV mods on entry.
-			glob.p1ExchangeableData->hmsBaseAVs =
-			{
-				p1->GetBaseActorValue(RE::ActorValue::kHealth),
-				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
-				p1->GetBaseActorValue(RE::ActorValue::kStamina)
-			};
-
-			glob.p1ExchangeableData->hmsAVs = 
-			{
-				p1->GetActorValue(RE::ActorValue::kHealth),
-				p1->GetActorValue(RE::ActorValue::kMagicka),
-				p1->GetActorValue(RE::ActorValue::kStamina)
-			};
-
-			std::array<float, 3> tempHealthMods
-			{
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				)
-			};
-			std::array<float, 3> tempMagickaMods = 
-			{
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
-				)
-			};
-			std::array<float, 3> tempStaminaMods = 
-			{
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
-				)
-			};
-
-			// Temporary (buff/debuff) and permanent (ex. modav) changes to the HMS actor values.
-			glob.p1ExchangeableData->hmsAVMods = 
-			{
-				tempHealthMods, tempMagickaMods, tempStaminaMods
-			};
-
-			glob.coopCompanionExchangeableData->hmsBaseAVs = 
-			{
-				a_coopActor->GetBaseActorValue(RE::ActorValue::kHealth),
-				a_coopActor->GetBaseActorValue(RE::ActorValue::kMagicka),
-				a_coopActor->GetBaseActorValue(RE::ActorValue::kStamina)
-			};
-
-			glob.coopCompanionExchangeableData->hmsAVs = 
-			{
-				a_coopActor->GetActorValue(RE::ActorValue::kHealth),
-				a_coopActor->GetActorValue(RE::ActorValue::kMagicka),
-				a_coopActor->GetActorValue(RE::ActorValue::kStamina)
-			};
-
-			tempHealthMods =
-			{
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				)
-			};
-			tempMagickaMods = 
-			{
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
-				)
-			};
-			tempStaminaMods = 
-			{
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
-				),
-				a_coopActor->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
-				)
-			};
-
-			glob.coopCompanionExchangeableData->hmsAVMods = 
-			{
-				tempHealthMods, tempMagickaMods, tempStaminaMods
-			};
-
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Health base/normal AV to {}, {}.",
-				glob.coopCompanionExchangeableData->hmsBaseAVs[0], 
-				glob.coopCompanionExchangeableData->hmsAVs[0]
-			);
-
-			p1->SetActorValue
-			(
-				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVs[0]
-			);
-			p1->SetBaseActorValue
-			(
-				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsBaseAVs[0]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][1] - 
-				glob.p1ExchangeableData->hmsAVMods[0][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][2] - 
-				glob.p1ExchangeableData->hmsAVMods[0][2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][0] - 
-				glob.p1ExchangeableData->hmsAVMods[0][0]
-			);
-
-			SPDLOG_DEBUG
-			(
-				"P1's Health base/normal AVs are now {}, {}.",
-				p1->GetBaseActorValue(RE::ActorValue::kHealth), 
-				p1->GetActorValue(RE::ActorValue::kHealth)
-			);
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Magicka base/normal AV to {}, {}.",
-				glob.coopCompanionExchangeableData->hmsBaseAVs[1], 
-				glob.coopCompanionExchangeableData->hmsAVs[1]
-			);
-
-			p1->SetActorValue
-			(
-				RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVs[1]
-			);
-			p1->SetBaseActorValue
-			(
-				RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsBaseAVs[1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kMagicka,
-				glob.coopCompanionExchangeableData->hmsAVMods[1][1] - 
-				glob.p1ExchangeableData->hmsAVMods[1][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-				RE::ActorValue::kMagicka, 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][2] - 
-				glob.p1ExchangeableData->hmsAVMods[1][2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kMagicka, 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][0] - 
-				glob.p1ExchangeableData->hmsAVMods[1][0]
-			);
-			
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Stamina base/normal AV to {}, {}.",
-				glob.coopCompanionExchangeableData->hmsBaseAVs[2],
-				glob.coopCompanionExchangeableData->hmsAVs[2]
-			);
-
-			p1->SetActorValue
-			(
-				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsAVs[2]
-			);
-			p1->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsBaseAVs[2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary,
-				RE::ActorValue::kStamina,
-				glob.coopCompanionExchangeableData->hmsAVMods[2][1] - 
-				glob.p1ExchangeableData->hmsAVMods[2][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-				RE::ActorValue::kStamina, 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][2] - 
-				glob.p1ExchangeableData->hmsAVMods[2][2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kStamina,
-				glob.coopCompanionExchangeableData->hmsAVMods[2][0] -
-				glob.p1ExchangeableData->hmsAVMods[2][0]
-			);
-
-			// Skills next.
+			// Skills first.
 			auto currentAV = RE::ActorValue::kNone;
 			for (auto i = 0; i < Skill::kTotal; ++i)
 			{
@@ -7804,143 +7401,347 @@ namespace ALYSLC
 					glob.p1ExchangeableData->skillAVMods[0][i]
 				);
 			}
-		}
-		else
-		{
-			std::vector<float> newExportedBaseAVs = 
+
+			// Do not import HMS if not requested.
+			if (a_onlySkills)
+			{
+				return;
+			}
+
+			// Save P1 AV and AV mods on entry.
+			glob.p1ExchangeableData->hmsBaseAVs =
 			{
 				p1->GetBaseActorValue(RE::ActorValue::kHealth),
 				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
 				p1->GetBaseActorValue(RE::ActorValue::kStamina)
 			};
 
-			std::vector<float> newExportedAVs = 
+			glob.p1ExchangeableData->hmsAVs = 
 			{
 				p1->GetActorValue(RE::ActorValue::kHealth),
 				p1->GetActorValue(RE::ActorValue::kMagicka),
 				p1->GetActorValue(RE::ActorValue::kStamina)
 			};
 
-			// Restore saved P1 AVs, AV mods.
-			SPDLOG_DEBUG
-			(
-				"Resetting P1's Health base/normal AV to {}, {}, "
-				"{}'s base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[0], 
-				glob.p1ExchangeableData->hmsAVs[0],
-				a_coopActor->GetName(), 
-				newExportedBaseAVs[0], 
-				newExportedAVs[0]
+			std::array<float, 3> tempHealthMods
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			};
+			std::array<float, 3> tempMagickaMods = 
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			};
+			std::array<float, 3> tempStaminaMods = 
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			};
+
+			SPDLOG_DEBUG("IMPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
 			);
 
-			p1->SetActorValue(RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVs[0]);
-			p1->SetBaseActorValue(RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsBaseAVs[0]);
-			p1->RestoreActorValue
+			// Temporary (buff/debuff) and permanent (ex. modav) changes to the HMS actor values.
+			glob.p1ExchangeableData->hmsAVMods = 
+			{
+				tempHealthMods, tempMagickaMods, tempStaminaMods
+			};
+
+			glob.coopCompanionExchangeableData->hmsBaseAVs = 
+			{
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kMagicka),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kStamina)
+			};
+
+			glob.coopCompanionExchangeableData->hmsAVs = 
+			{
+				a_coopActor->GetActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetActorValue(RE::ActorValue::kMagicka),
+				a_coopActor->GetActorValue(RE::ActorValue::kStamina)
+			};
+
+			tempHealthMods =
+			{
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			};
+			tempMagickaMods = 
+			{
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			};
+			tempStaminaMods = 
+			{
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			};
+
+			glob.coopCompanionExchangeableData->hmsAVMods = 
+			{
+				tempHealthMods, tempMagickaMods, tempStaminaMods
+			};
+
+			SPDLOG_DEBUG
 			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary,
-				RE::ActorValue::kHealth, 
-				glob.p1ExchangeableData->hmsAVMods[0][1] - 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][1]
+				"Setting P1's Health base/normal AV to {}, {}.",
+				glob.coopCompanionExchangeableData->hmsBaseAVs[0], 
+				glob.coopCompanionExchangeableData->hmsAVs[0]
 			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-				RE::ActorValue::kHealth,
-				glob.p1ExchangeableData->hmsAVMods[0][2] -
-				glob.coopCompanionExchangeableData->hmsAVMods[0][2]
-			);
+
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kDamage,
 				RE::ActorValue::kHealth, 
-				glob.p1ExchangeableData->hmsAVMods[0][0] -
-				glob.coopCompanionExchangeableData->hmsAVMods[0][0]
-			);
-
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);	
 			SPDLOG_DEBUG
 			(
-				"P1's Health base/normal AVs are now {}, {}.",
-				p1->GetBaseActorValue(RE::ActorValue::kHealth), 
-				p1->GetActorValue(RE::ActorValue::kHealth)
+				"1. P1 damage mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
 			);
-
-			SPDLOG_DEBUG
-			(
-				"Resetting P1's Magicka base/normal AV to {}, {}, "
-				"{}'s base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[1],
-				glob.p1ExchangeableData->hmsAVs[1],
-				a_coopActor->GetName(), 
-				newExportedBaseAVs[1],
-				newExportedAVs[1]
-			);
-
-			p1->SetActorValue(RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVs[1]);
 			p1->SetBaseActorValue
 			(
-				RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsBaseAVs[1]
+				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsBaseAVs[0]
+			);
+			SPDLOG_DEBUG
+			(
+				"2. P1 base: {}", p1->GetBaseActorValue(RE::ActorValue::kHealth)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kHealth, 
+				glob.coopCompanionExchangeableData->hmsAVMods[0][1] - 
+				glob.p1ExchangeableData->hmsAVMods[0][1]
+			);
+			SPDLOG_DEBUG
+			(
+				"3. P1 temp mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ActorValue::kHealth, 
+				glob.coopCompanionExchangeableData->hmsAVMods[0][2] - 
+				glob.p1ExchangeableData->hmsAVMods[0][2]
+			);
+			SPDLOG_DEBUG
+			(
+				"4. P1 perm mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
+				RE::ActorValue::kHealth, 
+				glob.coopCompanionExchangeableData->hmsAVMods[0][0]
+			);
+			SPDLOG_DEBUG
+			(
+				"6. P1 damage mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);
+			SPDLOG_DEBUG
+			(
+				"7. P1 current: {}", p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"Setting P1's Magicka base/normal AV to {}, {}.",
+				glob.coopCompanionExchangeableData->hmsBaseAVs[1], 
+				glob.coopCompanionExchangeableData->hmsAVs[1]
+			);
+
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ActorValue::kMagicka, 
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				)
+			);	
+			p1->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsBaseAVs[1]
 			);
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
 				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][1] - 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][1]
+				glob.coopCompanionExchangeableData->hmsAVMods[1][1] - 
+				glob.p1ExchangeableData->hmsAVMods[1][1]
 			);
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kPermanent,
 				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][2] - 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][2]
+				glob.coopCompanionExchangeableData->hmsAVMods[1][2] - 
+				glob.p1ExchangeableData->hmsAVMods[1][2]
 			);
 			p1->RestoreActorValue
 			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
 				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][0] - 
 				glob.coopCompanionExchangeableData->hmsAVMods[1][0]
 			);
-
+			
 			SPDLOG_DEBUG
 			(
-				"Resetting P1's Stamina base/normal AV to {}, {}, "
-				"{}'s base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[2],
-				glob.p1ExchangeableData->hmsAVs[2],
-				a_coopActor->GetName(), 
-				newExportedBaseAVs[2], 
-				newExportedAVs[2]
+				"Setting P1's Stamina base/normal AV to {}, {}.",
+				glob.coopCompanionExchangeableData->hmsBaseAVs[2],
+				glob.coopCompanionExchangeableData->hmsAVs[2]
 			);
 
-			p1->SetActorValue(RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsAVs[2]);
-			p1->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsBaseAVs[2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary,
-				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][1] - 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][2] - 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][2]
-			);
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kDamage,
 				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][0] - 
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				)
+			);	
+			p1->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsBaseAVs[2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kStamina, 
+				glob.coopCompanionExchangeableData->hmsAVMods[2][1] - 
+				glob.p1ExchangeableData->hmsAVMods[2][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ActorValue::kStamina, 
+				glob.coopCompanionExchangeableData->hmsAVMods[2][2] - 
+				glob.p1ExchangeableData->hmsAVMods[2][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
+				RE::ActorValue::kStamina, 
 				glob.coopCompanionExchangeableData->hmsAVMods[2][0]
 			);
 			
-			// Skills next.
+			SPDLOG_DEBUG
+			(
+				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+		}
+		else
+		{
+			// Skills first.
 			auto currentAV = RE::ActorValue::kNone;
 			for (auto i = 0; i < Skill::kTotal; ++i)
 			{
@@ -8043,6 +7844,256 @@ namespace ALYSLC
 					glob.coopCompanionExchangeableData->skillAVMods[0][i]
 				);
 			}
+
+			// Do not import HMS if not requested.
+			if (a_onlySkills)
+			{
+				return;
+			}
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+
+			/*
+			std::vector<float> newExportedBaseAVs = 
+			{
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina)
+			};
+
+			std::vector<float> newExportedAVs = 
+			{
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValue(RE::ActorValue::kStamina)
+			};
+
+			// Restore saved P1 AVs, AV mods.
+			SPDLOG_DEBUG
+			(
+				"Resetting P1's Health base/normal AV to {}, {}, "
+				"{}'s base/normal AV to {}, {}.",
+				glob.p1ExchangeableData->hmsBaseAVs[0], 
+				glob.p1ExchangeableData->hmsAVs[0],
+				a_coopActor->GetName(), 
+				newExportedBaseAVs[0], 
+				newExportedAVs[0]
+			);
+			*/
+
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ActorValue::kHealth, 
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);	
+			SPDLOG_DEBUG
+			(
+				"1. P1 damage mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);
+			p1->SetBaseActorValue
+			(
+				RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsBaseAVs[0]
+			);
+			SPDLOG_DEBUG
+			(
+				"2. P1 base: {}", p1->GetBaseActorValue(RE::ActorValue::kHealth)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kHealth, 
+				glob.p1ExchangeableData->hmsAVMods[0][1] -
+				glob.coopCompanionExchangeableData->hmsAVMods[0][1]
+			);
+			SPDLOG_DEBUG
+			(
+				"3. P1 temp mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ActorValue::kHealth, 
+				glob.p1ExchangeableData->hmsAVMods[0][2] -
+				glob.coopCompanionExchangeableData->hmsAVMods[0][2]
+			);
+			SPDLOG_DEBUG
+			(
+				"4. P1 perm mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
+				RE::ActorValue::kHealth, 
+				glob.p1ExchangeableData->hmsAVMods[0][0]
+			);
+			SPDLOG_DEBUG
+			(
+				"6. P1 damage mod: {}", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);
+			SPDLOG_DEBUG
+			(
+				"7. P1 current: {}", p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"Setting P1's Magicka base/normal AV to {}, {}.",
+				glob.p1ExchangeableData->hmsBaseAVs[1], 
+				glob.p1ExchangeableData->hmsAVs[1]
+			);
+
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ActorValue::kMagicka, 
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				)
+			);	
+			p1->SetBaseActorValue
+			(
+				RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsBaseAVs[1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kMagicka, 
+				glob.p1ExchangeableData->hmsAVMods[1][1] -
+				glob.coopCompanionExchangeableData->hmsAVMods[1][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ActorValue::kMagicka, 
+				glob.p1ExchangeableData->hmsAVMods[1][2] -
+				glob.coopCompanionExchangeableData->hmsAVMods[1][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
+				RE::ActorValue::kMagicka, 
+				glob.p1ExchangeableData->hmsAVMods[1][0]
+			);
+			
+			SPDLOG_DEBUG
+			(
+				"Setting P1's Stamina base/normal AV to {}, {}.",
+				glob.p1ExchangeableData->hmsBaseAVs[2],
+				glob.p1ExchangeableData->hmsAVs[2]
+			);
+
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage,
+				RE::ActorValue::kStamina, 
+				-p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				)
+			);	
+			p1->SetBaseActorValue
+			(
+				RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsBaseAVs[2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kStamina, 
+				glob.p1ExchangeableData->hmsAVMods[2][1] -
+				glob.coopCompanionExchangeableData->hmsAVMods[2][1] 
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ActorValue::kStamina, 
+				glob.p1ExchangeableData->hmsAVMods[2][2] -
+				glob.coopCompanionExchangeableData->hmsAVMods[2][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, 
+				RE::ActorValue::kStamina, 
+				glob.p1ExchangeableData->hmsAVMods[2][0]
+			);
+			
+			SPDLOG_DEBUG
+			(
+				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}. "
+				"Heal rates: {}, {}.",
+				a_coopActor->GetActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValue(RE::ActorValue::kHealRate),
+				a_coopActor->GetActorValue(RE::ActorValue::kHealRateMult)
+			);
 		}
 	}
 
@@ -8200,7 +8251,7 @@ namespace ALYSLC
 			}
 		};
 
-		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		const auto& coopP1 = glob.coopPlayers[0];
 		auto p1StorageChestRefrPtr = glob.coopInventoryChests[coopP1->playerID];
 		if (!p1StorageChestRefrPtr) 
 		{
@@ -8281,7 +8332,7 @@ namespace ALYSLC
 				Util::ChangeFormFavoritesStatus(p->coopActor.get(), form, true);
 			}
 
-			const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+			const auto& coopP1 = glob.coopPlayers[0];
 			for (const auto form : coopP1->em->favoritedForms)
 			{
 				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
@@ -8933,6 +8984,10 @@ namespace ALYSLC
 			return;
 		}
 
+		// Wait a second before displaying, allowing the player to release the 'Accept' bind,
+		// which would close the MessageBox Menu if held as it opens.
+		std::this_thread::sleep_for(1s);
+
 		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		uint8_t cid = 0;
@@ -8953,7 +9008,7 @@ namespace ALYSLC
 			false, false, false, false 
 		};
 
-		if (activeControllers <= 1) 
+		if (activeControllers < 1) 
 		{
 			Util::AddSyncedTask
 			(
@@ -8961,7 +9016,7 @@ namespace ALYSLC
 				{ 
 					RE::DebugMessageBox
 					(
-						"[ALYSLC]\nPlease connect at least 2 controllers before starting co-op."
+						"[ALYSLC]\nPlease connect at least 1 controller before starting co-op."
 					); 
 				}
 			);
@@ -9082,7 +9137,17 @@ namespace ALYSLC
 							); 
 						}
 					);
-					glob.player1CID = cid;
+
+					if (glob.cdh->activeControllerCount > 1)
+					{
+						// Only assign a CID if more than 1 is plugged in.
+						glob.player1DID = cid;
+					}
+					else
+					{
+						// First keyboard + mouse index.
+						glob.player1DID = ALYSLC_MAX_CONTROLLER_COUNT;
+					}
 				}
 			}
 			else
@@ -9111,7 +9176,7 @@ namespace ALYSLC
 		// reverting back to the default TP camera.
 
 		auto& glob = GetSingleton();
-		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		const auto& coopP1 = glob.coopPlayers[0];
 		if (!coopP1->isActive)
 		{
 			return;
@@ -9146,7 +9211,7 @@ namespace ALYSLC
 		}
 
 		// Stop menu input manager.
-		glob.mim->ToggleCoopPlayerMenuMode(-1);
+		glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 		waitStartTP = SteadyClock::now();
 		secsWaited = 0.0f;
 		while (glob.cam->currentState != ManagerState::kPaused && secsWaited < 1.0f)
@@ -9162,20 +9227,20 @@ namespace ALYSLC
 		Util::ToggleAllControls(true);
 	}
 
-	void GlobalCoopData::RespecPlayerTask(const int32_t a_controllerID)
+	void GlobalCoopData::RespecPlayerTask(const int32_t a_playerID)
 	{
-		// Prompt the player given by the CID to press the 'Start' button on their controller
+		// Prompt the player given by the DID to press the 'Start' button on their controller
 		// to confirm their intentions to respec their character.
 		// Then, reset their HMS AVs and perk data 
 		// and remove all shared perks from all active players.
 
-		if (a_controllerID <= -1 || a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+		if (a_playerID <= -1 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
 		auto& glob = GetSingleton();
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		SPDLOG_DEBUG("{}.", p->coopActor->GetName());
 
 		auto ui = RE::UI::GetSingleton();
@@ -9184,12 +9249,20 @@ namespace ALYSLC
 			return;
 		}
 
+		// Wait a second before displaying, allowing the player to release the 'Accept' bind,
+		// which would close the MessageBox Menu if held as it opens.
+		std::this_thread::sleep_for(1s);
+
 		XINPUT_STATE inputState{ };
 		bool confirmedRespec = false;
 		bool listeningForPauseBindPress = true;
 		bool messageBoxOpen = false;
 		bool pauseBindPressed = false;
 		bool requestToOpenMessagePrompt = false;
+		bool usingController =
+		(
+			glob.coopPlayers[a_playerID]->deviceID < ALYSLC_MAX_CONTROLLER_COUNT
+		);
 		float waitTime = 0.0f;
 		while (!confirmedRespec && ui)
 		{
@@ -9198,21 +9271,29 @@ namespace ALYSLC
 				requestToOpenMessagePrompt = true;
 				Util::AddSyncedTask
 				(
-					[]() 
+					[usingController]() 
 					{ 
 						auto gSettings = RE::GameSettingCollection::GetSingleton();
 						if (!gSettings)
 						{
 							return;
 						}
+
 						RE::CreateMessage
 						(
-							"[ALYSLC] Are you sure that you'd like to respec your character?\n\n"
-							"Health, magicka, and stamina will be reset to their default values,\n"
-							"and all unlocked perks will be removed from this player, "
-							"along with all shared perks from all players.\n"
-							"Any removed perks will have their perk points refunded.\n\n"
-							"Please press the 'Pause' or 'Journal Menu' button to confirm.", 
+							fmt::format
+							(
+								"[ALYSLC]\n"
+								"Are you sure that you'd like to respec your character?\n\n"
+								"Health, magicka, and stamina will be reset,\n"
+								"and all unlocked perks will be removed from this player, "
+								"along with all shared perks from all players.\n"
+								"Any removed perks will have their perk points refunded.\n\n"
+								"Please press the {} to confirm.",
+								usingController ? 
+								"'Pause' or 'Journal Menu' button" :
+								"'E' key"
+							).c_str(), 
 							nullptr,
 							0, 
 							4, 
@@ -9228,30 +9309,34 @@ namespace ALYSLC
 				messageBoxOpen = true;
 				auto userEvents = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
-				uint32_t pauseMask = GAMEPAD_MASK_START;
-				if (userEvents && controlMap) 
+				// Using a controller.
+				if (usingController)
 				{
-					pauseMask = controlMap->GetMappedKey
-					(
-						userEvents->journal, RE::INPUT_DEVICE::kGamepad
-					);
-				}
+					uint32_t pauseMask = GAMEPAD_MASK_START;
+					if (userEvents && controlMap) 
+					{
+						pauseMask = controlMap->GetMappedKey
+						(
+							userEvents->journal, RE::INPUT_DEVICE::kGamepad
+						);
+					}
 
-				ZeroMemory(&inputState, sizeof(XINPUT_STATE));
-				if (XInputGetState(a_controllerID, &inputState) == ERROR_SUCCESS)
+					ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+					if (XInputGetState(glob.coopPlayers[a_playerID]->deviceID, &inputState) ==
+						ERROR_SUCCESS)
+					{
+						// Should set once pause bind is pressed.
+						if ((inputState.Gamepad.wButtons & pauseMask) == pauseMask)
+						{
+							confirmedRespec = true;
+							break;
+						}
+					}
+				}
+				else if (Util::IsKeyPressed(RE::BSKeyboardDevice::Keys::Key::kE))
 				{
-					// Should set once pause bind is released.
-					if ((inputState.Gamepad.wButtons & pauseMask) == pauseMask)
-					{
-						// Is pressed but not released yet.
-						pauseBindPressed = true;
-					}
-					else if ((inputState.Gamepad.wButtons & pauseMask) == 0 && pauseBindPressed)
-					{
-						// Set now since the bind is released.
-						confirmedRespec = true;
-						break;
-					}
+					// P1 using keyboard + mouse in hybrid mode.
+					confirmedRespec = true;
 				}
 			}
 			else
@@ -9365,6 +9450,9 @@ namespace ALYSLC
 		if (glob.coopSessionActive)
 		{
 			glob.coopSessionActive = false;
+			// Party wiped, start death cam.
+			glob.partyWiped = true;
+			glob.cam->deathCameraTP = SteadyClock::now();
 		}
 
 		bool shouldSkip = false;
@@ -9507,7 +9595,7 @@ namespace ALYSLC
 					// otherwise, they won't die below.
 					if (p->isInGodMode) 
 					{
-						GlobalCoopData::ToggleGodModeForPlayer(p->controllerID, false);
+						GlobalCoopData::ToggleGodModeForPlayer(p->playerID, false);
 						Util::StopEffectShader(p->coopActor.get(), glob.ghostFXShader);
 					}
 
@@ -9616,7 +9704,7 @@ namespace ALYSLC
 					(
 						[]() 
 						{
-							const auto& glob = GlobalCoopData::GetSingleton();
+							auto& glob = GlobalCoopData::GetSingleton();
 							auto ui = RE::UI::GetSingleton();
 							auto p1 = RE::PlayerCharacter::GetSingleton();
 							auto saveLoadManager = RE::BGSSaveLoadManager::GetSingleton(); 
@@ -9627,7 +9715,7 @@ namespace ALYSLC
 								return;
 							}
 					
-							const float maxSecsToWait = 5.0f;
+							const float maxSecsToWait = 10.0f;
 							float secsWaited = 0.0f;
 							float secsSinceKillTask = 1.0f;
 							SteadyClock::time_point loadWaitTP = SteadyClock::now();
@@ -9667,7 +9755,7 @@ namespace ALYSLC
 
 							// Force a reload if P1 is still not dead 
 							// and the Loading Menu has not opened.
-							bool succ = false;
+							bool succ = true;
 							if (secsWaited >= maxSecsToWait) 
 							{
 								SPDLOG_DEBUG
@@ -9675,23 +9763,48 @@ namespace ALYSLC
 									"ReloadTask: Loading most recent save game after {} seconds.", 
 									secsWaited
 								);
-								succ = saveLoadManager->LoadMostRecentSaveGame();
+								succ = !saveLoadManager->LoadMostRecentSaveGame();
 							}
 
-							SPDLOG_DEBUG
-							(
-								"ReloadTask: Now waiting for the game to reload the last save. "
-								"Co-op session active: {}, p1 dead: {}, "
-								"loading a save: {}. Success: {}. Full reset: {}, "
-								"reset game: {}, reload content: {}.",
-								glob.coopSessionActive,
-								p1->IsDead(),
-								glob.loadingASave, 
-								succ,
-								RE::Main::GetSingleton()->fullReset, 
-								RE::Main::GetSingleton()->resetGame,
-								RE::Main::GetSingleton()->reloadContent
-							);
+							if (succ)
+							{
+								SPDLOG_DEBUG
+								(
+									"ReloadTask: SUCCEEDED after {} seconds. "
+									"Now waiting for the game to load the last save. "
+									"Co-op session active: {}, p1 dead: {}, "
+									"loading a save: {}. Full reset: {}, "
+									"reset game: {}, reload content: {}.",
+									secsWaited,
+									glob.coopSessionActive,
+									p1->IsDead(),
+									glob.loadingASave, 
+									RE::Main::GetSingleton()->fullReset, 
+									RE::Main::GetSingleton()->resetGame,
+									RE::Main::GetSingleton()->reloadContent
+								);
+							}
+							else
+							{
+								RE::Main::GetSingleton()->resetGame = true;
+								SPDLOG_DEBUG
+								(
+									"ReloadTask: FAILED to load most recent save. "
+									"Now waiting for the game to reset. "
+									"Co-op session active: {}, p1 dead: {}, "
+									"loading a save: {}. Full reset: {}, "
+									"reset game: {}, reload content: {}.",
+									glob.coopSessionActive,
+									p1->IsDead(),
+									glob.loadingASave, 
+									RE::Main::GetSingleton()->fullReset, 
+									RE::Main::GetSingleton()->resetGame,
+									RE::Main::GetSingleton()->reloadContent
+								);
+							}
+								
+							// Reset wiped flag, because the game is loading the last save.
+							glob.partyWiped = false;
 						}
 					);
 
@@ -9710,7 +9823,7 @@ namespace ALYSLC
 					(
 						[]() 
 						{
-							const auto& glob = GlobalCoopData::GetSingleton();
+							auto& glob = GlobalCoopData::GetSingleton();
 							auto ui = RE::UI::GetSingleton();
 							auto p1 = RE::PlayerCharacter::GetSingleton();
 							if (!ui || !p1 || glob.livingPlayers > 0)
@@ -9745,6 +9858,9 @@ namespace ALYSLC
 								RE::Main::GetSingleton()->resetGame,
 								RE::Main::GetSingleton()->reloadContent
 							);
+							
+							// Reset wiped flag, because the game is loading the last save.
+							glob.partyWiped = false;
 						}
 					);
 
@@ -9752,151 +9868,6 @@ namespace ALYSLC
 				}
 			}
 		);
-	}
-
-	void GlobalCoopData::RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel)
-	{
-		// Rescale the player's health, magicka, and stamina AVs
-		// to the serialized base values + increments.
-		
-		auto& glob = GetSingleton();
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!p1 || !a_playerActor)
-		{
-			return;
-		}
-
-		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
-		if (iter == glob.serializablePlayerData.end())
-		{
-			return;
-		}
-
-		SPDLOG_DEBUG
-		(
-			"{}: base level: {}.", a_playerActor->GetName(), a_baseLevel
-		);
-
-		const auto& data = iter->second;
-		// Has recorded level up.
-		if (a_baseLevel != 0) 
-		{
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kHealth, 
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[0],
-				data->hmsPointIncreasesList[0],
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kMagicka, 
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[1],
-				data->hmsPointIncreasesList[1],
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, 
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[2],
-				data->hmsPointIncreasesList[2],
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-		}
-		else if (a_playerActor->GetRace() && a_playerActor->GetActorBase())
-		{
-			// Before first level up, use sum of the race's starting HMS AVs 
-			// and the actor base's HMS offsets.
-			data->hmsBasePointsList[0] = 
-			(
-				a_playerActor->race->data.startingHealth + 
-				a_playerActor->GetActorBase()->actorData.healthOffset
-			);
-			data->hmsBasePointsList[1] =
-			(
-				a_playerActor->race->data.startingMagicka + 
-				a_playerActor->GetActorBase()->actorData.magickaOffset
-			);
-			data->hmsBasePointsList[2] = 
-			(
-				a_playerActor->race->data.startingStamina +
-				a_playerActor->GetActorBase()->actorData.staminaOffset
-			);
-			SPDLOG_DEBUG
-			(
-				"{} has not leveled up in co-op yet. "
-				"Scaling HMS AVs down to their base values: {}, {}, {}.",
-				a_playerActor->GetName(),
-				data->hmsBasePointsList[0],
-				data->hmsBasePointsList[1],
-				data->hmsBasePointsList[2]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kHealth, data->hmsBasePointsList[0]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[0],
-				data->hmsPointIncreasesList[0],
-				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[1],
-				data->hmsPointIncreasesList[1],
-				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
-			);
-
-			a_playerActor->SetBaseActorValue
-			(
-				RE::ActorValue::kStamina, data->hmsBasePointsList[2]
-			);
-			SPDLOG_DEBUG
-			(
-				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
-				a_playerActor->GetName(),
-				a_baseLevel,
-				data->hmsBasePointsList[2],
-				data->hmsPointIncreasesList[2],
-				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
-			);
-		}
 	}
 
 	void GlobalCoopData::RescaleSkillAVs(RE::Actor* a_playerActor)

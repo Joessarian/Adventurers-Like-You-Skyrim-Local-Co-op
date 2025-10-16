@@ -293,6 +293,35 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(Update)> _Update;
 		};
 
+		// [Input Event Hooks]
+		// Cedits to SlavicPotato and dTry:
+		// https://github.com/SlavicPotato/ied-dev/blob/master/ImmersiveEquipmentDisplays/Drivers/Input.h#L79
+		// https://github.com/D7ry/wheeler/blob/main/src/bin/Hooks.cpp#L176
+		class InputEventHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(67315, 68617) };
+				auto& trampoline = SKSE::GetTrampoline();
+				_DispatchInputEvents = trampoline.write_call<5>
+				(
+					hook.address() + 
+					OFFSET(0x7B, 0x7B), 
+					DispatchInputEvents
+				);
+				SPDLOG_INFO("Installed DispatchInputEvents() hook.");
+			}
+
+		private:
+			static void DispatchInputEvents
+			(
+				RE::BSTEventSource<RE::InputEvent*>* a_this, 
+				RE::InputEvent** a_inputEvents
+			);
+			static inline REL::Relocation<decltype(DispatchInputEvents)> _DispatchInputEvents;
+		};
+
 		// [Melee Hooks]
 		// Credits to dTry:
 		// https://github.com/D7ry/valhallaCombat/blob/Master/src/include/Hooks.h#L61
@@ -327,44 +356,68 @@ namespace ALYSLC
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
 				SPDLOG_INFO("Installed ProcessEvent() hook.");
 				debugMenuTriggered = 
-				ignoringPauseWaitEvent =
-				pauseBindPressedFirst = 
+				pauseAndWaitPressed = 
 				summoningMenuTriggered = false;
+				pauseBindHeldTime =
+				waitBindHeldTime = -1.0f;
 			}
+			
+			// Was an attempt made to open the co-op debug menu?
+			static inline bool debugMenuTriggered = false;
+			// Were both the Pause and Wait binds pressed and held at the same time.
+			static inline bool pauseAndWaitPressed;
+			// Was an attempt made to open the co-op summoning menu?
+			static inline bool summoningMenuTriggered = false;
+			// Hold times for the 'Pause' and 'Wait' binds.
+			// -1 if not held.
+			static inline float pauseBindHeldTime = -1.0f;
+			static inline float waitBindHeldTime = -1.0f;
 
 		private:
 			static EventResult ProcessEvent
 			(
 				RE::MenuControls* a_this, 
-				RE::InputEvent* const* a_event,
+				RE::InputEvent** a_inputEvents,
 				RE::BSTEventSource<RE::InputEvent*>* a_eventSource
 			);
 			static inline REL::Relocation<decltype(ProcessEvent)> _ProcessEvent;
 
-			// NOTE:
-			// The following three checks only process gamepad events.
-			
+
+			// Block the given input event from being processed.
+			static void BlockInputEvent(RE::InputEvent* a_event);
 			// Check if the correct binds were pressed to open the summoning or debug menus.
-			// Return true if the input was handled and should be invalidated.
-			static bool CheckForMenuTriggeringInput(RE::InputEvent* a_firstGamepadEvent);
+			// Store whether or not an additional input event was chained to trigger a menu
+			// in the outparam.
+			// Return trye if the event should be blocked.
+			static bool CheckForMenuTriggeringInput
+			(
+				RE::InputEvent* a_inputEvent, bool& a_newEventChained
+			);
+			// Check if P1 is requesting control of dialogue
+			// or is transferring control to another player.
+			// Return true if the event should be blocked.
+			static bool CheckForP1DialogueControlInput(RE::InputEvent* a_inputEvent);
 			// 1. Check if P1 is in the Favorites Menu and is trying to hotkey an entry
 			// and update its hotkey state accordingly.
 			// 2. Check if P1 is in the Favorites Menu and is trying to equip 
 			// a quick slot spell/item and (un)equip this item as needed.
 			// 3. Check if P1 is in the Favorites Menu and toggle SMORF state if needed.
-			// Return true if the input was handled and should be invalidated.
-			static bool CheckForP1FavoritesMenuInput(RE::InputEvent* a_firstGamepadEvent);
-			// Check if P1 is in the Favorites Menu and is trying to hotkey an entry.
-			// Return true if the input was handled and should be invalidated.
-			static bool CheckForP1HotkeyReq(RE::InputEvent* a_firstGamepadEvent);
-			// Check if P1 is in the Favorites Menu and is trying to equip a quick slot spell/item.
-			// Return true if the input was handled and should be invalidated.
-			static bool CheckForP1QSEquipReq(RE::InputEvent* a_firstGamepadEvent);
+			// Return true if the event should be blocked.
+			static bool CheckForP1FavoritesMenuInput(RE::InputEvent* a_inputEvent);
+			// Check if P1 is requesting to teleport to another player with a keypress
+			// and teleport to the closest player in the direction of P1's crosshair ray.
+			// Return true if the event should be blocked.
+			static bool CheckForP1KeyboardTeleportReq(RE::InputEvent* a_inputEvent);
+			// Check if P1 is trying to save the game via the Quicksave bind.
+			// Block the event if a companion player is currently controlling menus 
+			// with player data copied over to P1.
+			// Return true if the event should be blocked.
+			static bool CheckForP1QuickSaveReq(RE::InputEvent* a_inputEvent);
 			// Check if P1 is trying to revive another player while the co-op camera is inactive
 			// and revive the other player if so.
 			// Can revive with the 'Activate' input event from either keyboard or controller.
-			// Return true if the event should be processed by the MenuControls hook.
-			static bool CheckForP1ReviveReq(RE::InputEvent* const* a_eventHead);
+			// Return true if the event should be blocked.
+			static bool CheckForP1ReviveReq(RE::InputEvent* a_inputEvent);
 			// Filter out and discard P1 input events that should be ignored while in co-op,
 			// and allow other player's emulated P1 input events to pass through if they
 			// are in control of menus.
@@ -375,25 +428,21 @@ namespace ALYSLC
 			// 0xXXXXCA11: emulated P1 input sent by another player from the MIM.
 			// 0xXXXXDEAD: ignore this input event.
 			// 
-			// Return true if the event should be processed by the MenuControls hook.
-			static bool FilterInputEvents
+			// Return a list of all blocked events that should be propagated 
+			// in their original states to all following input handlers 
+			// registered to receive input events.
+			// Allows for certain events to skip menu context processing
+			// and still affect P1's character.
+			// Ex. Moving the left stick while in the Favorites Menu 
+			// will not change the selected favorites entry, 
+			// but will allow P1 to move while another player is controlling menus,
+			// since the event is forwarded unmodified to P1's MovementHandler.
+			static std::vector<RE::InputEvent*> FilterInputEvents
 			(
-				RE::InputEvent* const* a_eventHead,
-				RE::InputEvent* a_firstGamepadEvent
+				RE::InputEvent** a_inputEvents
 			);
-			// Return a pointer to the first gamepad device input event in the given chain.
-			static RE::InputEvent* GetFirstGamepadInputEvent(RE::InputEvent* const* a_eventHead);
-
-			// Was an attempt made to open the co-op debug menu?
-			static inline bool debugMenuTriggered;
-			// Should the Pause/Wait menu-triggering input event be ignored 
-			// while another menu is opened?
-			static inline bool ignoringPauseWaitEvent;
-			// 'Pause'/'Jornal' bind was pressed before 'Wait' bind 
-			// when attempting to open the co-op summoning menu.
-			static inline bool pauseBindPressedFirst;
-			// Was an attempt made to open the co-op summoning menu?
-			static inline bool summoningMenuTriggered;
+			// Restore the input event's original typr.
+			static void RestoreInputEventType(RE::InputEvent* a_event);
 		};
 
 		// [NiNode Hooks]
@@ -749,21 +798,21 @@ namespace ALYSLC
 				RE::NiPoint3& a_resultingVelocityOut, 
 				const bool& a_justReleased
 			);
-			// Store the firing player's CID in one outparam (-1 if not by a player), 
+			// Store the firing player's PID in one outparam (-1 if not by a player), 
 			// and true in the other outparam if the projectile was fired at a player.
 			static void GetFiredAtOrByPlayer
 			(
 				const RE::ObjectRefHandle& a_projectileHandle, 
-				int32_t& a_firingPlayerCIDOut,
+				int32_t& a_firingPlayerPIDOut,
 				bool& a_firedAtPlayerOut
 			);
-			// Store the player CID for the player grabbing/releasing the given projectile 
+			// Store the player PID for the player grabbing/releasing the given projectile 
 			// in the outparams (-1 if not by a player).
 			static void GetManipulatingPlayer
 			(
 				const RE::ObjectRefHandle& a_projHandle,
-				int32_t& a_grabbedByPlayerCID, 
-				int32_t& a_releasedByPlayerCID
+				int32_t& a_grabbedByPlayerPID, 
+				int32_t& a_releasedByPlayerPID
 			);
 			// Position a grabbed hostile projectile or guide a released projectile
 			// along the trajectory set by the grabbing/releasing player's 

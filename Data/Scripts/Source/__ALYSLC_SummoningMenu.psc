@@ -36,12 +36,14 @@ Bool Property WasSelectingCharacter = False Auto
 ; Distance from player 1 at which to place
 ; co-op companions when summoned.
 Float Property SummonDistance = 150.0 Auto
-; Number of connected controllers for non-P1 players.
-Int Property CoopCompanionControllersCount = 0 Auto
+; Number of connected devices for non-P1 players.
+Int Property CoopCompanionDevicesCount = 0 Auto
 ; Current number of companions.
 Int Property CurrentCompanionsCount = 0 Auto
-; Current controller ID for the player controlling menus.
-Int Property CurrentMenuControllerID = 0 Auto
+; Current device ID for the player controlling menus.
+Int Property CurrentMenuDeviceID = 0 Auto
+; Current player ID for the player controlling menus.
+Int Property CurrentMenuPlayerID = 0 Auto
 ; Current selectable race type filter:
 ; -1: None selected.
 ; 0: Only races with the 'Playable' flag.
@@ -52,8 +54,8 @@ Int Property CurrentMenuControllerID = 0 Auto
 Int Property CurrentSelectableRaceType = 0 Auto
 ; Selected customization menu entry index.
 Int Property SelectedOptionIndex = -1 Auto
-; Current controller IDs list.
-Int[] Property ControllerIDs Auto
+; Current device IDs list.
+Int[] Property DeviceIDs Auto
 ; Selected customization menu entry name.
 String Property SelectedString = "" Auto
 
@@ -91,6 +93,18 @@ EndFunction
 Event OnInit()
     Initialize()
 EndEvent
+
+; Reset data and stop current summoning attempt.
+Function AbortSummoningAttempt()
+    ALYSLC.Log("[SUMMON SCRIPT] AbortSummoningAttempt")
+    StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
+    StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
+    EndCoopForPlayer(PlayerRef)
+    ALYSLC.RequestMenuControl(-1, -1, "MessageBoxMenu")
+    CoopIsSummoningPlayers.SetValue(0)
+    PlayerRef.SetDontMove(False)
+    ALYSLC.SetIsSummoningFlag(False)
+EndFunction
 
 ; Send co-op start event to co-op NPC scripts.
 ; NOTE: Not for P1.
@@ -149,14 +163,14 @@ Function HandleCharacterCustomization()
 
             ; Encourage companion player to save their appearance as a preset,
             ; just in case their appearance isn't imported properly later on.
-            Int PlayerID = (CurrentCompanionsCount + 2)
-            If (PlayerID <= 1)
-                PlayerID = 2
+            Int PlayerNumber = (CurrentCompanionsCount + 2)
+            If (PlayerNumber <= 1)
+                PlayerNumber = 2
             EndIf                
             
-            Debug.MessageBox("[ALYSLC]\nPlayer " + PlayerID + ", please save your appearance as a preset before exiting.\nThe preset will be loaded automatically onto your character, \nbut if the preset fails to apply at any time, \nplease re-enter the Race Menu and reload this saved preset,\nor save and restart the game to fix mismatching overlays.")
+            Debug.MessageBox("[ALYSLC]\nPlayer " + PlayerNumber + ", please save your appearance as a preset before exiting.\nThe preset will be loaded automatically onto your character, \nbut if the preset fails to apply at any time, \nplease re-enter the Race Menu and reload this saved preset,\nor save and restart the game to fix mismatching overlays.")
             ; Open the Race Menu.
-            ALYSLC.RequestMenuControl(CurrentMenuControllerID, "RaceSex Menu")
+            ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "RaceSex Menu")
             Game.ShowRaceMenu()
             
             ; Wait until the menu opens.
@@ -235,7 +249,7 @@ Function HandleCharacterCustomization()
                 GenderName = "'Female'"
             EndIf
 
-            ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
+            ALYSLC.RequestMenuControl(-1, -1, "MessageBoxMenu")
             Debug.MessageBox("[ALYSLC]\nPlayer 1, please reload your character's preset, since their appearance has been overridden by another player character's appearance.\nSet your character's race to " + RaceName + " and gender to " + GenderName + " before loading your preset.")
             Float SecsWaited = 0.0
             While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
@@ -249,7 +263,7 @@ Function HandleCharacterCustomization()
             EndWhile
             
             ; Open the RaceMenu now.
-            ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
+            ALYSLC.RequestMenuControl(-1, -1, "MessageBoxMenu")
             Game.ShowRaceMenu()
             
             ; Wait until the menu opens.
@@ -263,7 +277,7 @@ Function HandleCharacterCustomization()
             EndWhile
 
             ; Give menu control back to the companion player.
-            ALYSLC.ToggleSetupMenuControl(CurrentMenuControllerID, CurrentCompanionsCount + 1, True)
+            ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, True)
         ; Name
         ElseIf (SelectedOptionIndex == CHARACTER_NAME_ENTRY_INDEX)
             Debug.MessageBox("Please input a new name. In order to have your naming changes reflected in some UI components, " + \
@@ -335,8 +349,6 @@ Function HandleCharacterCustomization()
                                         ALYSLC.Log("[SUMMON SCRIPT] Race change, set appearance preset to first one: " + Preset.GetName())
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
                                     Else
-                                        ; ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Set preset as current base: " + Base.GetName())
-                                        ; StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
                                         ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                                     EndIf
@@ -372,8 +384,6 @@ Function HandleCharacterCustomization()
                                 ALYSLC.Log("[SUMMON SCRIPT] Gender change, set appearance preset to first one: " + Preset.GetName())
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Preset)
                             Else
-                                ; ALYSLC.Log("[SUMMON SCRIPT] Gender change, but there are no presets. Set preset as current base: " + Base.GetName())
-                                ; StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", Base)
                                 ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                             EndIf
@@ -451,7 +461,7 @@ EndFunction
 ; Open a UIExtensions text entry menu for the current player controlling menus and return the input result.
 String Function OpenUITextMenu()
     UITextEntryMenu TextMenu = UIExtensions.GetMenu("UITextEntryMenu") as UITextEntryMenu
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, TextMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, TextMenu.ROOT_MENU)
     TextMenu.OpenMenu()
     String ResultString = TextMenu.GetResultString()
 
@@ -593,7 +603,7 @@ Function PopulateAndShowListMenu(String PrefixTag, Int CustomizationOptionIndex,
         EndIf
     EndIf
 
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, ListMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, ListMenu.ROOT_MENU)
     ListMenu.OpenMenu()
     SelectedString = ListMenu.GetResultString()
     ; Want to use this result integer to index into the forms array, so subtract 1 (should ignore the current form top entry)
@@ -654,16 +664,18 @@ Function SetActiveCoopPlayers()
     ; Max of 4 players.
     CoopActors = new Actor[4]
     ; Add player 1 first.
-    ALYSLC.Log("[SUMMON SCRIPT] Player 1 is " + PlayerRef + ". CID: " + ControllerIDs[0])
+    ALYSLC.Log("[SUMMON SCRIPT] Player 1 is " + PlayerRef + ". DID: " + DeviceIDs[0])
     CoopActors[0] = PlayerRef
-    StorageUtil.SetIntValue(PlayerRef, "ALYSLC_PlayerControllerID",  ControllerIDs[0])
+    StorageUtil.SetIntValue(PlayerRef, "ALYSLC_DeviceID",  DeviceIDs[0])
+    StorageUtil.SetIntValue(PlayerRef, "ALYSLC_PlayerID",  0)
 
     Int CompanionIndex = 0
     While (CompanionIndex < NumCompanions)
-        ; Get co-op player NPC and add to actors list.
+        ; Get co-op player character and add to actors list.
         Actor CoopPlayerToSummon = (StorageUtil.FormListGet(None, "ALYSLC_CompanionsList", CompanionIndex)) as Actor
-        StorageUtil.SetIntValue(CoopPlayerToSummon, "ALYSLC_PlayerControllerID",  ControllerIDs[CompanionIndex + 1])
-        ALYSLC.Log("[SUMMON SCRIPT] Co-op Companion Player " + CoopPlayerToSummon.GetDisplayName() + " is " + CoopPlayerToSummon + ". CID: " + ControllerIDs[CompanionIndex + 1])
+        StorageUtil.SetIntValue(CoopPlayerToSummon, "ALYSLC_DeviceID",  DeviceIDs[CompanionIndex + 1])
+        StorageUtil.SetIntValue(CoopPlayerToSummon, "ALYSLC_PlayerID",  CompanionIndex + 1)
+        ALYSLC.Log("[SUMMON SCRIPT] Co-op Companion Player " + CoopPlayerToSummon.GetDisplayName() + " is " + CoopPlayerToSummon + ". DID: " + DeviceIDs[CompanionIndex + 1])
         ; Add co-op actor to list of actors.
         CoopActors[CompanionIndex + 1] = CoopPlayerToSummon
         CompanionIndex += 1 
@@ -683,7 +695,7 @@ Function ShowAppearanceCustomizationOptionsMenu()
     ; 2
     AppearanceCustomizationMenu.AddEntryItem("Appearance Presets", -1, -1, False)
 
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, AppearanceCustomizationMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, AppearanceCustomizationMenu.ROOT_MENU)
     AppearanceCustomizationMenu.OpenMenu()
     SelectedString = AppearanceCustomizationMenu.GetResultString()
     SelectedOptionIndex = AppearanceCustomizationMenu.GetResultInt()
@@ -739,7 +751,7 @@ EndFunction
 ; Show selectable characters list.
 Function ShowCharactersListMenu()
     UISelectionMenu CharSelectionMenu = UIExtensions.GetMenu("UISelectionMenu") as UISelectionMenu
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, CharSelectionMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, CharSelectionMenu.ROOT_MENU)
     CharSelectionMenu.OpenMenu(CoopCharactersFormList)
     SelectedCharacter = CharSelectionMenu.GetResultForm() as Actor
 EndFunction
@@ -760,7 +772,7 @@ Function ShowCharacterStatsMenu()
                 ALYSLC.SetCoopPlayerClass(SelectedCharacter, NewClass)
                 
                 ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
-                ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
+                ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "MessageBoxMenu")
                 Debug.MessageBox("[ALYSLC]\n" + SelectedCharacter.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
@@ -778,10 +790,10 @@ Function ShowCharacterStatsMenu()
             Race NewRace = StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace()) as Race
             If (NewRace && NewRace != Base.GetRace())
                 ALYSLC.Log("[SUMMON SCRIPT] About to show stats menu for " + SelectedCharacter.GetDisplayName() + ". Set race to " + NewRace.GetName() + " first.")
-                ALYSLC.SetCoopPlayerRace(SelectedCharacter, NewRace)
+                ALYSLC.SetCoopPlayerRace(SelectedCharacter, NewRace, True)
 
                 ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
-                ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
+                ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "MessageBoxMenu")
                 Debug.MessageBox("[ALYSLC]\n" + SelectedCharacter.GetDisplayName() + "'s base stats were modified on race change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players.")
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
@@ -803,7 +815,7 @@ Function ShowCharacterStatsMenu()
     EndIf
 
     UIStatsMenu CharacterStatsMenu = UIExtensions.GetMenu("UIStatsMenu") as UIStatsMenu
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, CharacterStatsMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, CharacterStatsMenu.ROOT_MENU)
     CharacterStatsMenu.OpenMenu(SelectedCharacter)
     While (UI.IsMenuOpen("CustomMenu"))
         Utility.WaitMenuMode(0.5)
@@ -831,29 +843,31 @@ EndFunction
 ; Allow co-op players to choose their characters.
 Function ShowCoopSetupMenu()
     CurrentCompanionsCount = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
-    ALYSLC.Log("[SUMMON SCRIPT] Current companions: " + CurrentCompanionsCount + ", current active controllers: " + (CoopCompanionControllersCount + 1) + ", should exit: " + ShouldExit)    
-    ; Exit when each active controller has chosen a character or if the exit button is pressed.
-    If (CurrentCompanionsCount >= CoopCompanionControllersCount || ShouldExit)
-        If (CoopCompanionControllersCount <= 0)
-            ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-            Debug.MessageBox("[ALYSLC]\nPlease ensure at least two XInput-recognizable controllers are plugged in before starting co-op.")
+    ALYSLC.Log("[SUMMON SCRIPT] Current companions: " + CurrentCompanionsCount + ", current active devices: " + (CoopCompanionDevicesCount + 1) + ", should exit: " + ShouldExit)    
+    ; Exit when each active input device has chosen a character or if the exit button is pressed.
+    If (CurrentCompanionsCount >= CoopCompanionDevicesCount || ShouldExit)
+        ; Must have at least one controller plugged in.
+        If (CoopCompanionDevicesCount <= 0)
+            ALYSLC.RequestMenuControl(-1, -1, "MessageBoxMenu")
+            Debug.MessageBox("[ALYSLC]\nPlease ensure at least one XInput-recognizable controller is plugged in before starting co-op.")
         Else
-            ALYSLC.Log("[SUMMON SCRIPT] Exiting menu now. Current companions count: " + CurrentCompanionsCount + ", controller count: " + CoopCompanionControllersCount + ", should exit: " + ShouldExit + ".")
+            ALYSLC.Log("[SUMMON SCRIPT] Exiting menu now. Current companions count: " + CurrentCompanionsCount + ", input device count: " + CoopCompanionDevicesCount + ", should exit: " + ShouldExit + ".")
         EndIf
         Return
     EndIf
 
-    CurrentMenuControllerID = ControllerIDs[CurrentCompanionsCount + 1]
+    CurrentMenuDeviceID = DeviceIDs[CurrentCompanionsCount + 1]
+    CurrentMenuPlayerID = CurrentCompanionsCount + 1
     If (!WasSelectingCharacter)
         ; Allow co-op player to choose by giving them control over the menu.
         StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", CurrentCompanionsCount + 1)
-        ALYSLC.ToggleSetupMenuControl(ControllerIDs[CurrentCompanionsCount + 1], CurrentCompanionsCount + 1, True)
+        ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, True)
         WasSelectingCharacter = True
     EndIf
 
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "MessageBoxMenu")
     Int ChosenOptionIndex = CoopSetupMenu.Show(CurrentCompanionsCount + 2)
-    ALYSLC.Log("[SUMMON SCRIPT] Option " + ChosenOptionIndex + " chosen. Giving menu control back to P" + (CurrentMenuControllerID + 1) + ". Current companion players count: " + CurrentCompanionsCount)
+    ALYSLC.Log("[SUMMON SCRIPT] Option " + ChosenOptionIndex + " chosen. Giving menu control back to P" + (CurrentMenuPlayerID + 1) + ". Current companion players count: " + CurrentCompanionsCount)
     ; Select a character.
     If (ChosenOptionIndex == 0)
         ; Show character list.
@@ -868,12 +882,12 @@ Function ShowCoopSetupMenu()
                 StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", StorageUtil.FormListCount(None, "ALYSLC_CompanionsList"))
                 ALYSLC.Log("[SUMMON SCRIPT] Added " + SelectedCharacter.GetDisplayName() + " to the companion players list.")
             Else
-                ALYSLC.RequestMenuControl(CurrentMenuControllerID, "MessageBoxMenu")
+                ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "MessageBoxMenu")
                 Debug.MessageBox("[ALYSLC]\nCannot select the same co-op character as another player.")
             EndIf
 
-            ; Allow next co-op player to choose their character, so shut down listener thread for the current player.
-            ALYSLC.ToggleSetupMenuControl(CurrentMenuControllerID, CurrentCompanionsCount + 1, False)
+            ; Allow next co-op player to choose their character, so remove menu control for the current player.
+            ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, False)
             ; Let the next player select their character.
             WasSelectingCharacter = False
         EndIf
@@ -904,8 +918,8 @@ Function ShowCoopSetupMenu()
     Else
         ShouldExit = True
         ; Remove menu control for the co-op player.
-        ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-        ALYSLC.ToggleSetupMenuControl(CurrentMenuControllerID, CurrentCompanionsCount + 1, False)
+        ALYSLC.RequestMenuControl(-1, -1, "MessageBoxMenu")
+        ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, False)
     EndIf
 EndFunction
 
@@ -942,7 +956,7 @@ Function ShowCustomizationOptionsMenu()
     HEIGHT_ENTRY_INDEX = VOICE_TYPE_ENTRY_INDEX + 1
     WEIGHT_ENTRY_INDEX = HEIGHT_ENTRY_INDEX + 1
 
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, CustomizationMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, CustomizationMenu.ROOT_MENU)
     CustomizationMenu.OpenMenu()
     SelectedString = CustomizationMenu.GetResultString()
     SelectedOptionIndex = CustomizationMenu.GetResultInt()
@@ -980,7 +994,7 @@ Int Function ShowGenderSelectionMenu()
     GenderSelectionMenu.AddEntryItem("[Gender] Female + Male Animations", -1, -1, False)
     GenderSelectionMenu.AddEntryItem("[Gender] Male + Female Animations", -1, -1, False)
 
-    ALYSLC.RequestMenuControl(CurrentMenuControllerID, GenderSelectionMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, GenderSelectionMenu.ROOT_MENU)
     GenderSelectionMenu.OpenMenu()
     SelectedString = GenderSelectionMenu.GetResultString()
     SelectedOptionIndex = GenderSelectionMenu.GetResultInt()
@@ -1027,7 +1041,7 @@ Int Function ShowSelectableRaceTypeFilterMenu()
    ; 4: Include all races.
    SelectableRaceTypeFilterMenu.AddEntryItem("All Races", -1, -1, False)
 
-   ALYSLC.RequestMenuControl(CurrentMenuControllerID, SelectableRaceTypeFilterMenu.ROOT_MENU)
+   ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, SelectableRaceTypeFilterMenu.ROOT_MENU)
    SelectableRaceTypeFilterMenu.OpenMenu()
    SelectedString = SelectableRaceTypeFilterMenu.GetResultString()
    SelectedOptionIndex = SelectableRaceTypeFilterMenu.GetResultInt()
@@ -1085,19 +1099,26 @@ EndFunction
 ; A request to summon companion players drives the teardown and startup of co-op sessions.
 Event OnSummoningMenuRequest()
     ALYSLC.Log("[SUMMON SCRIPT] OnSummoningMenuRequest() Event Received.")
+    ALYSLC.SetIsSummoningFlag(True)
     ; PlayerRef not always valid.
 	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
 	Float SecsWaited = 0.0
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		Utility.Wait(0.1)
+		If (Utility.IsInMenuMode())
+            Utility.WaitMenuMode(0.1)
+        Else
+            Utility.Wait(0.1)
+        EndIf
+
 		SecsWaited += 0.1
 	EndWhile
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
 		ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+        ALYSLC.SetIsSummoningFlag(False)
 		Return
 	EndIf
 
@@ -1105,6 +1126,7 @@ Event OnSummoningMenuRequest()
     If (CanStartCoopGlobVar.GetValue() == 0.0)
         Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
         ALYSLC.Log("[SUMMON SCRIPT] Cannot start summoning until initialization is complete.")
+        ALYSLC.SetIsSummoningFlag(False)
         Return
     EndIf
 
@@ -1125,11 +1147,11 @@ Event OnSummoningMenuRequest()
 
     Initialize()
 
-    ; Clear out old data from previous sessions and stop any listener threads.
+    ; Clear out old data from previous sessions and stop any player managers.
     StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 0)
     StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
     StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
-    ; End any active co-op session, pause all listener threads, dismiss any companions.
+    ; End any active co-op session, pause all player managers, dismiss any companions.
     Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
     If (PrevNumCompanions > 0)
         ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
@@ -1138,7 +1160,12 @@ Event OnSummoningMenuRequest()
         SecsWaited = 0.0
         While ((SecsWaited < 5.0) && (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) != 0 || CanStartCoopGlobVar.GetValue() != 1.00))
             ALYSLC.Log("[SUMMON SCRIPT] Waiting for dismissal to complete. Num companions: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
-            Utility.Wait(0.1)
+            If (Utility.IsInMenuMode())
+                Utility.WaitMenuMode(0.1)
+            Else
+                Utility.Wait(0.1)
+            EndIf
+
             SecsWaited += 0.1
         EndWhile
 
@@ -1147,6 +1174,7 @@ Event OnSummoningMenuRequest()
         If (SecsWaited >= 5.0)
 		    Debug.MessageBox("[ALYSLC]\nFailed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
             ALYSLC.Log("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
+            ALYSLC.SetIsSummoningFlag(False)
             Return
         EndIf
     EndIf
@@ -1182,7 +1210,11 @@ Event OnSummoningMenuRequest()
                     CoopActor.SendCoopPlayerHome()
                 EndIf
 
-                Utility.Wait(1.0)
+                If (Utility.IsInMenuMode())
+                    Utility.WaitMenuMode(1.0)
+                Else
+                    Utility.Wait(1.0)
+                EndIf
             Else
                 Index += 1
             EndIf
@@ -1208,23 +1240,20 @@ Event OnSummoningMenuRequest()
     ; Select companion(s).
     WasSelectingCharacter = False
     ShouldExit = False
-    ; First, get a list of active controllers; then show the character selection menu.
-    ControllerIDs = ALYSLC.GetConnectedCoopControllerIDs()
-    StorageUtil.SetIntValue(None, "ALYSLC_CoopControllerCount", ControllerIDs.Length - 1)
+    ; First, get a list of active input devices; then show the character selection menu.
+    DeviceIDs = ALYSLC.GetConnectedInputDeviceIDs()
+    StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", DeviceIDs.Length - 1)
     StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
-    CoopCompanionControllersCount = ControllerIDs.Length - 1
+    CoopCompanionDevicesCount = DeviceIDs.Length - 1
     RegisterPlayersForCoopEvents()
     ShowCoopSetupMenu()
     
-    ; If the number of selected companions is zero, end the co-op session.
+    ; If the number of selected companions is zero, stop the summoning attempt.
     ; Otherwise, summon the characters and signal player 1's reference
     ; alias scripts to initialize.
     If (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) == 0)
-        ; End co-op for player 1.
-        EndCoopForPlayer(PlayerRef)
-        ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-        CoopIsSummoningPlayers.SetValue(0)
-	    PlayerRef.SetDontMove(False)
+        ALYSLC.Log("[SUMMON SCRIPT] No companions chosen, so stopping summoning attempt.")
+        AbortSummoningAttempt()
         Return
     EndIf
 
@@ -1239,56 +1268,43 @@ Event OnSummoningMenuRequest()
     EndIf
 
     If (Success)
-        Success = ALYSLC.InitializeCoop(CurrentCompanionsCount, ControllerIDs, CoopActors)
+        Success = ALYSLC.InitializeCoopPlayers(CurrentCompanionsCount, DeviceIDs, CoopActors)
     EndIf
 
     ; Initialization failed. Do not continue.
     If (!Success)
         ALYSLC.Log("[SUMMON SCRIPT] ERR: Initialization failed. Stopping summoning process.")
-        StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
-        StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
-        EndCoopForPlayer(PlayerRef)
-        ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-        CoopIsSummoningPlayers.SetValue(0)
-	    PlayerRef.SetDontMove(False)
+        AbortSummoningAttempt()
         Return
     EndIf
 
     ; Teleport co-op companions to P1.
     SummonCoopPlayers()
-
-    ALYSLC.Log("[SUMMON SCRIPT] About to wait for all players to load in.")
-    ; Wait until all players load in.
-    While (Iter < CoopActors.Length)
-        If (CoopActors[Iter] && !CoopActors[Iter].Is3DLoaded())
-            ALYSLC.Log("[SUMMON SCRIPT] Waiting for " + CoopActors[Iter].GetDisplayName() + " to load in.")
-            Utility.Wait(0.1)
-        EndIf
-        Iter += 1
-    EndWhile
-
     ALYSLC.Log("[SUMMON SCRIPT] Send summoning requests to active players.")
     Player1CoopStart()
     CompanionCoopStart()
 
     Form[] CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
-    ; Failure if no scripts queued themselves.
-    If (CoopActorScripts.Length == 0)
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: Failed to send co-op start event to co-op companion players(s). Please try re-summoning.")
-        StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
-        StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
-        EndCoopForPlayer(PlayerRef)
-        ALYSLC.RequestMenuControl(-1, "MessageBoxMenu")
-        CoopIsSummoningPlayers.SetValue(0)
-        Return
-    EndIf
-    
     ; Ensure all co-op companion scripts have checked in by adding themselves to the script list (1 per player but this could change).
-    While (CoopActorScripts.Length < (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)))
+    SecsWaited = 0.0
+    While (CoopActorScripts.Length < (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)) && SecsWaited < 5.0)
         CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
         ALYSLC.Log("[SUMMON SCRIPT] Waiting for scripts to check in. " + CoopActorScripts.Length + " loaded out of " + (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)))
-        Utility.Wait(0.1)
+		If (Utility.IsInMenuMode())
+            Utility.WaitMenuMode(0.1)
+        Else
+            Utility.Wait(0.1)
+        EndIf
+
+        SecsWaited += 0.1
     EndWhile
+
+    If (SecsWaited >= 5.0)
+        AbortSummoningAttempt()
+        Debug.MessageBox("[ALYSLC]\nScripts failed to check in before setting up co-op session. Please try re-summoning after a few seconds.")
+        ALYSLC.Log("[SUMMON SCRIPT] ERR: Script(s) failed to check in after 5 seconds. Stopping summoning attempt.")
+        Return
+    EndIf
 
     ; Prevent players from taking damage until summoning is complete.
     ALYSLC.SetPartyInvincibility(True)
@@ -1296,7 +1312,8 @@ Event OnSummoningMenuRequest()
     ; Loop until all scripts notify this script that they have finished initialization.
     Bool CheckLoadStatus = True
     Int Iter = 0
-    While (CheckLoadStatus)
+    SecsWaited = 0.0
+    While (CheckLoadStatus && SecsWaited < 5.0)
         Iter = 0
         CheckLoadStatus = False
         While (Iter < CoopActorScripts.Length && !CheckLoadStatus)
@@ -1317,22 +1334,46 @@ Event OnSummoningMenuRequest()
             ALYSLC.Log("[SUMMON SCRIPT] Waiting for CP1R.")
             CheckLoadStatus = True
         EndIf
+
+        If (Utility.IsInMenuMode())
+            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
+            Utility.WaitMenuMode(0.1)
+        Else
+            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
+            Utility.Wait(0.1)
+        EndIf
+        
+        SecsWaited += 0.1
+        ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
     EndWhile
+
+    If (SecsWaited >= 5.0)
+        AbortSummoningAttempt()
+        ALYSLC.Log("[SUMMON SCRIPT] ERR: Script(s) failed to finish setting up after 5 seconds. Stopping summoning attempt.")
+        Debug.MessageBox("[ALYSLC]\nScripts failed to setup the co-op session. Please try re-summoning after a few seconds.")
+        Return
+    EndIf
 
     ; Signal that the co-op session has started.
     StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
-    
     ALYSLC.ChangeCoopSessionState(True)
+    
     ; Enable the co-op camera.
     ALYSLC.ToggleCoopCamera(True)
     ALYSLC.Log("[SUMMON SCRIPT] ALYSLC co-op session has started.")
     ; Pause for a bit to ensure the camera and plugin have
     ; finished setting up the session. Then remove invincibility.
-    Utility.Wait(5.0)
+    If (Utility.IsInMenuMode())
+        Utility.WaitMenuMode(5.0)
+    Else
+        Utility.Wait(5.0)
+    EndIf
+    
     ALYSLC.SetPartyInvincibility(False)
     ALYSLC.Log("[SUMMON SCRIPT] Party invincibility grace period over.")
 
     ; Done summoning.
     CoopIsSummoningPlayers.SetValue(0)
+    ALYSLC.SetIsSummoningFlag(False)
     ALYSLC.Log("[SUMMON SCRIPT] Fulfilled summoning request. Have fun!")
 EndEvent

@@ -21,14 +21,19 @@ namespace ALYSLC
 
 	void PlayerActionManager::Initialize(std::shared_ptr<CoopPlayer> a_p) 
 	{
-		if (a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
+		if (a_p && 
+			a_p->deviceID > -1 && 
+			a_p->playerID > -1 &&
+			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
-				p ? p->controllerID : -1,
+				p && p->coopActor ? p->coopActor->formID : 0xDEAD,
+				p ? p->playerID : -1,
+				p ? p->deviceID : -1,
 				p.use_count()
 			);
 			RefreshData();
@@ -41,8 +46,9 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"Cannot construct Player Action Manager for controller ID {}.",
-				a_p ? a_p->controllerID : -1
+				"Cannot construct Player Action Manager for device ID {}, player ID {}.", 
+				a_p ? a_p->deviceID : -1,
+				a_p ? a_p->playerID : -1
 			);
 		}
 	}
@@ -66,7 +72,7 @@ namespace ALYSLC
 		bool passesConditions = false;
 		// Some of the current action's required inputs are pressed.
 		bool someReqPressed = false;
-		// Modified from the input action bit mask for this player's controller
+		// Modified from the input action bit mask for this player's input device
 		// set by the controller data holder.
 		uint32_t modifiedInputBitMask = 0;
 
@@ -96,7 +102,7 @@ namespace ALYSLC
 		// Since this manager pauses when the game pauses, the game must be unpaused here.
 		isControllingUnpausedMenu = 
 		(
-			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(p->controllerID)
+			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
 		);
 		// Make sure package stacks contain our co-op package form lists.
 		// Seems to clear when going through load doors at times.
@@ -106,22 +112,22 @@ namespace ALYSLC
 		{
 			packageStackMap.insert_or_assign
 			(
-				PackageIndex::kDefault, glob.coopPackageFormlists[2 * p->playerID]
+				PackageIndex::kDefault, glob.coopPackageFormlists[2 * playerID]
 			);
 			packageStackMap.insert_or_assign
 			(
 				PackageIndex::kCombatOverride, 
-				glob.coopPackageFormlists[2 * p->playerID + 1]
+				glob.coopPackageFormlists[2 * playerID + 1]
 			);
-			if (!glob.coopPackageFormlists[2 * p->playerID] || 
-				!glob.coopPackageFormlists[2 * p->playerID + 1]) 
+			if (!glob.coopPackageFormlists[2 * playerID] || 
+				!glob.coopPackageFormlists[2 * playerID + 1]) 
 			{
 				SPDLOG_DEBUG
 				(
 					"Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
 					coopActor->GetName(),
-					(bool)!glob.coopPackageFormlists[2 * p->playerID],
-					(bool)!glob.coopPackageFormlists[2 * p->playerID + 1]
+					(bool)!glob.coopPackageFormlists[2 * playerID],
+					(bool)!glob.coopPackageFormlists[2 * playerID + 1]
 				);
 			}
 		}
@@ -172,8 +178,8 @@ namespace ALYSLC
 		// Player Action Check Loop.
 		//==========================
 		
-		// Current input action mask from controller state.
-		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		// Current input action mask.
+		inputBitMask = glob.cdh->inputMasksList[deviceID];
 		if (blockAllInputActions)
 		{
 			// Continue blocking input actions.
@@ -181,10 +187,10 @@ namespace ALYSLC
 		}
 		else
 		{
-			//==========================================================
+			//===============================================
 			// [Pass 1]: 
-			// Check Controller Input State and Select Candidate Actions
-			//==========================================================
+			// Check Input State and Select Candidate Actions
+			//===============================================
 			
 			// Update PA perform states to reflect the input states of their composing inputs.
 			// Add any new/resumable player actions to the candidate player actions list.
@@ -197,9 +203,9 @@ namespace ALYSLC
 				auto& checkedPAState = paStatesList[i];
 				const auto& checkedPAInputMask = checkedPAState.paParams.inputMask;
 
-				//=============================================
-				// [Set Controller Input Mask For This Action]:
-				//=============================================
+				//==================================
+				// [Set Input Mask For This Action]:
+				//==================================
 				
 				// Copy of input bit mask that may be specifically modified below 
 				// for the current action.
@@ -509,7 +515,7 @@ namespace ALYSLC
 						// The 'Sprint' bind (if bound to 'B') triggering 
 						// after exiting a menu with the 'B' button.
 						// Unblocked once released and pressed again while no menus are open.
-						bool wasControllingMenus = glob.prevMenuCID == controllerID; 
+						bool wasControllingMenus = glob.prevMenuPID == playerID; 
 						if (wasControllingMenus && buttonsPressedWhileMenusClosed)
 						{
 							InputAction button = InputAction::kNone;
@@ -526,7 +532,7 @@ namespace ALYSLC
 								button = static_cast<InputAction>(i);
 								const auto& buttonState = glob.cdh->GetInputState
 								(
-									controllerID, button
+									deviceID, button
 								);
 								// Button was first pressed while supported menus were still open.
 								if (buttonState.isPressed && 
@@ -1229,23 +1235,23 @@ namespace ALYSLC
 
 			// Reset packages to default.
 			if (packageStackMap[PackageIndex::kDefault] && 
-				glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]) 
+				glob.coopPackages[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]) 
 			{
 				packageStackMap[PackageIndex::kDefault]->forms[0] = 
 				(
 					glob.coopPackages
-					[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+					[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]
 				);
 			}
 
 			if (packageStackMap[PackageIndex::kCombatOverride] && 
 				glob.coopPackages
-				[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]) 
+				[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]) 
 			{
 				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
 				(
 					glob.coopPackages
-					[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
+					[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]
 				);
 			}
 		}
@@ -1261,10 +1267,10 @@ namespace ALYSLC
 		// If necessary, relinquish control of the camera before pausing.
 		if (glob.cam->IsRunning()) 
 		{
-			auto& controllingCID = glob.cam->controlCamCID;
-			if (controllingCID == controllerID && glob.cam->camAdjMode != CamAdjustmentMode::kNone)
+			auto& controllingPID = glob.cam->controlCamPID;
+			if (controllingPID == playerID && glob.cam->camAdjMode != CamAdjustmentMode::kNone)
 			{
-				controllingCID = -1;
+				controllingPID = -1;
 				glob.cam->camAdjMode = CamAdjustmentMode::kNone;
 			}
 		}
@@ -1292,27 +1298,25 @@ namespace ALYSLC
 
 			// Reset packages to default, since players may have changed their
 			// character assignment order 
-			// (ie. P2 chooses P3's character and P3 chooses P2's character) 
-			// and the current package atop the stack may no longer be assigned to them
-			// because it depends on the controller ID of the player.
+			// (ie. P2 chooses P3's character and P3 chooses P2's character).
 			if (packageStackMap[PackageIndex::kDefault] && 
-				glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]) 
+				glob.coopPackages[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]) 
 			{
 				packageStackMap[PackageIndex::kDefault]->forms[0] = 
 				(
 					glob.coopPackages
-					[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+					[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]
 				);
 			}
 
 			if (packageStackMap[PackageIndex::kCombatOverride] && 
 				glob.coopPackages
-				[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]) 
+				[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]) 
 			{
 				packageStackMap[PackageIndex::kCombatOverride]->forms[0] = 
 				(
 					glob.coopPackages
-					[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
+					[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]
 				);
 			}
 			
@@ -1345,9 +1349,9 @@ namespace ALYSLC
 	{
 		// Player/actor data.
 		coopActor = p->coopActor;
-		controllerID = p->controllerID;
-		downedPlayerTarget = nullptr;
+		deviceID = p->deviceID;
 		playerID = p->playerID;
+		downedPlayerTarget = nullptr;
 		player1RefAlias = glob.player1RefAlias;
 		killerPlayerActorHandle = killmoveTargetActorHandle = RE::ActorHandle();
 
@@ -1464,10 +1468,10 @@ namespace ALYSLC
 		
 		SPDLOG_DEBUG
 		(
-			"{}: PID: {}, CID: {}, Assigned package formlists: {} (0x{:X}) and {} (0x{:X}).",
+			"{}: PID: {}, DID: {}, Assigned package formlists: {} (0x{:X}) and {} (0x{:X}).",
 			coopActor->GetName(),
 			playerID,
-			controllerID,
+			deviceID,
 			packageStackMap.at(PackageIndex::kDefault) ?
 			packageStackMap.at(PackageIndex::kDefault)->GetName() :
 			"NONE",
@@ -1508,12 +1512,12 @@ namespace ALYSLC
 		// Staff usage global variables for the ranged attack package.
 		RE::TESForm* globForm = RE::TESForm::LookupByEditorID
 		(
-			std::string("__CoopPlayerUseLHStaff") + std::to_string(controllerID + 1)
+			std::string("__CoopPlayerUseLHStaff") + std::to_string(playerID + 1)
 		);
 		usingLHStaff = globForm ? globForm->As<RE::TESGlobal>() : nullptr;
 		globForm = RE::TESForm::LookupByEditorID
 		(
-			std::string("__CoopPlayerUseRHStaff") + std::to_string(controllerID + 1)
+			std::string("__CoopPlayerUseRHStaff") + std::to_string(playerID + 1)
 		);
 		usingRHStaff = globForm ? globForm->As<RE::TESGlobal>() : nullptr;
 		castingGlobVars.fill(nullptr);
@@ -1523,20 +1527,20 @@ namespace ALYSLC
 		{
 			castingGlobVars[i] = 
 			(
-				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i]
 			);
 			castingGlobVars[i]->value = 0.0f;
 			SPDLOG_DEBUG
 			(
-				"{}: PID: {}, CID: {}, Assigned casting glob {} (0x{:X}).",
+				"{}: PID: {}, DID: {}, Assigned casting glob {} (0x{:X}).",
 				coopActor->GetName(),
 				playerID,
-				controllerID,
-				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i] ?
-				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]->GetName() :
+				deviceID,
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i] ?
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i]->GetName() :
 				"NONE",
-				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i] ? 
-				glob.castingGlobVars[!CastingGlobIndex::kTotal * controllerID + i]->formID : 
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i] ? 
+				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i]->formID : 
 				0xDEAD
 			);
 		}
@@ -1821,7 +1825,7 @@ namespace ALYSLC
 	{
 		// Are all button inputs (ignoring analog stick movement) pressed for the given action?
 
-		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		inputBitMask = glob.cdh->inputMasksList[deviceID];
 		auto buttonsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
 		buttonsMask &= (1 << !InputAction::kButtonTotal) - 1;
 		return (inputBitMask & buttonsMask) == buttonsMask;
@@ -1831,7 +1835,7 @@ namespace ALYSLC
 	{
 		// Are all inputs, including analog stick movement, pressed/moved for the given action?
 
-		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		inputBitMask = glob.cdh->inputMasksList[deviceID];
 		auto inputsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
 		return (inputBitMask & inputsMask) == inputsMask;
 	}
@@ -2164,7 +2168,7 @@ namespace ALYSLC
 						{
 							GlobalCoopData::AddSkillXP
 							(
-								controllerID, 
+								playerID, 
 								spell->avEffectSetting->data.associatedSkill, 
 								baseCost
 							);
@@ -2197,7 +2201,6 @@ namespace ALYSLC
 					// into their Vampire Lord form.
 					if (isCoopVampireRevertFormSpell) 
 					{
-						ReadyWeapon(false);
 						p->RevertTransformation();
 						return;
 					}
@@ -2303,7 +2306,7 @@ namespace ALYSLC
 						{
 							GlobalCoopData::AddSkillXP
 							(
-								controllerID, 
+								playerID, 
 								spell->avEffectSetting->data.associatedSkill, 
 								baseCost
 							);
@@ -2760,8 +2763,8 @@ namespace ALYSLC
 		// Chain queued P1 input events before sending them.
 		// Toggle AI driven as needed.
 
-		auto bsInputMgr = RE::BSInputDeviceManager::GetSingleton();
-		if (!bsInputMgr)
+		auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+		if (!devMgr)
 		{
 			return;
 		}
@@ -2796,15 +2799,15 @@ namespace ALYSLC
 				// P1 is motion driven here until all events are processed.
 				sendingP1MotionDrivenEvents = true;
 				Util::SetPlayerAIDriven(false);
-				bsInputMgr->lock.Lock();
-				bsInputMgr->SendEvent(queuedP1ButtonEvents[0].get());
-				bsInputMgr->lock.Unlock();
+				devMgr->lock.Lock();
+				devMgr->SendEvent(queuedP1ButtonEvents[0].get());
+				devMgr->lock.Unlock();
 			}
 			else
 			{
-				bsInputMgr->lock.Lock();
-				bsInputMgr->SendEvent(queuedP1ButtonEvents[0].get());
-				bsInputMgr->lock.Unlock();
+				devMgr->lock.Lock();
+				devMgr->SendEvent(queuedP1ButtonEvents[0].get());
+				devMgr->lock.Unlock();
 			}
 		}
 
@@ -3997,24 +4000,24 @@ namespace ALYSLC
 
 		return 
 		(
-			glob.coopPackages[!PackageIndex::kTotal * controllerID + !a_index]
+			glob.coopPackages[!PackageIndex::kTotal * playerID + !a_index]
 		);
 	}
 
 	RE::BGSKeyword* PlayerActionManager::GetCoopPlayerKeyword()
 	{
-		// Get the co-op character's player keyword, which is based on their CID.
+		// Get the co-op character's player keyword, which is based on their PID.
 
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit ||
 			!glob.coopSessionActive ||
 			!p->isActive ||
-			controllerID == -1)
+			playerID == -1)
 		{
 			return nullptr;
 		}
 
-		return glob.coopPlayerKeywords[controllerID];
+		return glob.coopPlayerKeywords[playerID];
 	}
 
 	RE::TESPackage* PlayerActionManager::GetCurrentPackage()
@@ -4040,14 +4043,14 @@ namespace ALYSLC
 			return 
 			(
 				glob.coopPackages
-				[!PackageIndex::kTotal * controllerID + !PackageIndex::kCombatOverride]
+				[!PackageIndex::kTotal * playerID + !PackageIndex::kCombatOverride]
 			);
 		}
 		else
 		{
 			return 
 			(
-				glob.coopPackages[!PackageIndex::kTotal * controllerID + !PackageIndex::kDefault]
+				glob.coopPackages[!PackageIndex::kTotal * playerID + !PackageIndex::kDefault]
 			);
 		}
 	}
@@ -4079,7 +4082,7 @@ namespace ALYSLC
 		{
 			// In sequence.
 			auto& lastInputIndex = composingInputs[composingInputs.size() - 1];
-			const auto& inputState = glob.cdh->GetInputState(controllerID, lastInputIndex);
+			const auto& inputState = glob.cdh->GetInputState(deviceID, lastInputIndex);
 
 			return inputState.heldTimeSecs;
 		}
@@ -4089,7 +4092,7 @@ namespace ALYSLC
 			float minHoldTime = FLT_MAX;
 			for (auto input : composingInputs)
 			{
-				const auto& inputState = glob.cdh->GetInputState(controllerID, input);
+				const auto& inputState = glob.cdh->GetInputState(deviceID, input);
 				if (inputState.heldTimeSecs < minHoldTime)
 				{
 					minHoldTime = inputState.heldTimeSecs;
@@ -4132,7 +4135,7 @@ namespace ALYSLC
 		{
 			// In sequence.
 			auto& lastInputIndex = composingInputs[composingInputs.size() - 1];
-			const auto& inputState = glob.cdh->GetInputState(controllerID, lastInputIndex);
+			const auto& inputState = glob.cdh->GetInputState(deviceID, lastInputIndex);
 
 			return inputState.justPressed;
 		}
@@ -4140,7 +4143,7 @@ namespace ALYSLC
 		{
 			for (auto input : composingInputs)
 			{
-				const auto& inputState = glob.cdh->GetInputState(controllerID, input);
+				const auto& inputState = glob.cdh->GetInputState(deviceID, input);
 				if (inputState.justPressed)
 				{
 					return true;
@@ -4188,7 +4191,7 @@ namespace ALYSLC
 		uint8_t numberOfInputsReleased = 0;
 		for (auto input : composingInputs)
 		{
-			const auto& inputState = glob.cdh->GetInputState(controllerID, input);
+			const auto& inputState = glob.cdh->GetInputState(deviceID, input);
 			if (inputState.justReleased)
 			{
 				inputJustReleased = true;
@@ -4223,7 +4226,7 @@ namespace ALYSLC
 		{
 			// Get LH and RH spells.
 			RE::SpellItem* lhSpell = p->em->GetLHSpell();
-			RE::SpellItem* rhSpell = p->em->GetRHSpell();\
+			RE::SpellItem* rhSpell = p->em->GetRHSpell();
 			// Base cost (positive) for use in granting XP. 
 			// Accumulated from all hand casting sources.
 			float baseCost = 0.0f;
@@ -4324,7 +4327,7 @@ namespace ALYSLC
 			if (!p->isPlayer1)
 			{
 				// Separate deltas for XP calc.
-				if (dualCasting)
+				if (dualCasting && rhSpell)
 				{
 					// Just check the RH spell since both are the same.
 					// Ignore spells that do not grant XP on magicka expenditure.
@@ -4337,13 +4340,13 @@ namespace ALYSLC
 					{
 						GlobalCoopData::AddSkillXP
 						(
-							controllerID, 
+							playerID, 
 							rhSpell->avEffectSetting->data.associatedSkill,
 							baseCost
 						);
 					}
 				}
-				else
+				else if (lhSpell && rhSpell)
 				{
 					// Ignore spells that do not grant XP on magicka expenditure.
 					if (Util::SpellCanGrantXPOnCast
@@ -4355,7 +4358,7 @@ namespace ALYSLC
 					{
 						GlobalCoopData::AddSkillXP
 						(
-							controllerID,
+							playerID,
 							rhSpell->avEffectSetting->data.associatedSkill, 
 							baseRHCost
 						);
@@ -4371,7 +4374,7 @@ namespace ALYSLC
 					{
 						GlobalCoopData::AddSkillXP
 						(
-							controllerID, 
+							playerID, 
 							lhSpell->avEffectSetting->data.associatedSkill,
 							baseLHCost
 						);
@@ -5154,7 +5157,7 @@ namespace ALYSLC
 	{
 		// Returns true if none of the action's buttons are pressed (excludes analog sticks).
 
-		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		inputBitMask = glob.cdh->inputMasksList[deviceID];
 		auto buttonsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
 		buttonsMask &= (1 << !InputAction::kButtonTotal) - 1;
 		return (inputBitMask & buttonsMask) == 0;
@@ -5164,7 +5167,7 @@ namespace ALYSLC
 	{
 		// Returns true if none of the action's inputs are pressed.
 
-		inputBitMask = glob.cdh->inputMasksList[controllerID];
+		inputBitMask = glob.cdh->inputMasksList[deviceID];
 		auto inputsMask = paParamsList[!a_action - !InputAction::kFirstAction].inputMask;
 		return (inputBitMask & inputsMask) == 0;
 	}
@@ -5199,7 +5202,7 @@ namespace ALYSLC
 					inputComp.begin(), inputComp.end(), 
 					[this](const InputAction& a_action) 
 					{ 
-						return glob.cdh->GetInputState(controllerID, a_action).consecPresses > 1; 
+						return glob.cdh->GetInputState(deviceID, a_action).consecPresses > 1; 
 					}
 				)
 			);
@@ -5207,7 +5210,7 @@ namespace ALYSLC
 		else
 		{
 			// Check if the last input in the composing inputs list is tapped at least twice.
-			return glob.cdh->GetInputState(controllerID, inputComp.back()).consecPresses > 1;	
+			return glob.cdh->GetInputState(deviceID, inputComp.back()).consecPresses > 1;	
 		}
 	}
 
@@ -5234,7 +5237,7 @@ namespace ALYSLC
 			for (auto inputIndex : inputComp)
 			{
 				// One input not pressed -> instantly fails the press check.
-				if (!glob.cdh->GetInputState(controllerID, inputIndex).isPressed)
+				if (!glob.cdh->GetInputState(deviceID, inputIndex).isPressed)
 				{
 					return false;
 				}
@@ -5258,11 +5261,11 @@ namespace ALYSLC
 				{
 					auto currentInputState = glob.cdh->GetInputState
 					(
-						controllerID, inputComp[actionIndex]
+						deviceID, inputComp[actionIndex]
 					);
 					auto prevInputState = glob.cdh->GetInputState
 					(
-						controllerID, inputComp[actionIndex - 1]
+						deviceID, inputComp[actionIndex - 1]
 					);
 					// Order does not matter for assigned analog stick inputs.
 					if (inputComp[actionIndex - 1] == InputAction::kLS || 
@@ -5291,7 +5294,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				auto singularInputState = glob.cdh->GetInputState(controllerID, inputComp[0]);
+				auto singularInputState = glob.cdh->GetInputState(deviceID, inputComp[0]);
 				// Check that the singular composing input is pressed.
 				passedPressCheck = singularInputState.isPressed;
 			}
@@ -5442,6 +5445,7 @@ namespace ALYSLC
 			// water-walking, or just casually strolling into the sky.
 			if (a_shouldDraw && 
 				!p->mm->isMounting &&
+				!p->isTransformed &&
 				!coopActor->IsOnMount() &&
 				!coopActor->IsSwimming() && 
 				!coopActor->IsFlying() &&
@@ -5534,6 +5538,7 @@ namespace ALYSLC
 				{
 					// See above for an explanation.
 					if (!p->mm->isMounting && 
+						!p->isTransformed &&
 						!coopActor->IsOnMount() &&
 						!coopActor->IsSwimming() && 
 						!coopActor->IsFlying() && 
@@ -5716,7 +5721,6 @@ namespace ALYSLC
 			return;
 		}
 
-		const float baseAV = coopActor->GetBaseActorValue(a_av);
 		// Get the amount to increase the current value by.
 		float deltaAmount = 
 		{ 
@@ -6393,7 +6397,7 @@ namespace ALYSLC
 
 		for (uint32_t i = 0; i < !PackageIndex::kTotal; i++)
 		{
-			auto package = glob.coopPackages[!PackageIndex::kTotal * controllerID + i]; 
+			auto package = glob.coopPackages[!PackageIndex::kTotal * playerID + i]; 
 			if (!package)
 			{
 				continue;
@@ -8223,8 +8227,6 @@ namespace ALYSLC
 				// Now transformed.
 				p->isTransforming = false;
 				p->isTransformed = true;
-				// Unsheathe when done.
-				ReadyWeapon(true);
 			}
 			else if (Util::IsRaceWithTransformation(coopActor->race))
 			{

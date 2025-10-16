@@ -12,6 +12,7 @@ namespace ALYSLC
 
 	ControllerDataHolder::ControllerDataHolder()
 	{
+		activeControllerCount = 0;
 		// Set up LS, RS, and button state data structures.
 		lsStatesList.fill(AnalogStickState());
 		rsStatesList.fill(AnalogStickState());
@@ -27,21 +28,21 @@ namespace ALYSLC
 		);
 	}
 
-	std::vector<uint32_t> ControllerDataHolder::SetupConnectedCoopControllers()
+	std::vector<uint32_t> ControllerDataHolder::SetupConnectedInputDevices()
 	{
-		// Get and return a list of all connected XInput-compatible controllers' IDs.
+		// Get and return a list of all co-op usable input devices' IDs.
 		// NOTE: 
 		// Called in papyrus script before summoning players.
-
-		std::vector<uint32_t> controllerIDs{ };
-		// If P1's CID is not set yet, return an empty list to end co-op.
-		// P1's CID must be set before other players' CIDs are checked.
-		if (glob.player1CID == -1)
+		
+		std::vector<uint32_t> inputDeviceIDs{ };
+		// If P1's DID is not set yet, return an empty list to end co-op.
+		// P1's DID must be set before other players' DIDs are checked.
+		if (glob.player1DID == -1)
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC]\nPlayer 1's controller ID has not been assigned "
-				"before setting all connected controllers.\n"
+				"[ALYSLC]\nPlayer 1's device ID has not been assigned "
+				"before setting all co-op input devices.\n"
 				"Try summoning again or assign Player 1's controller ID "
 				"through the Debug Menu before summoning:\n"
 				"1. Hold the 'Pause/Journal' bind.\n"
@@ -49,18 +50,31 @@ namespace ALYSLC
 				"3. Select 'Miscellaneous Options'.\n"
 				"4. Select 'Assign Player 1 Controller ID'."
 			);
-			return controllerIDs;
+			return inputDeviceIDs;
 		}
 
+		// NOTE:
+		// P1's DID is always first.
+		// Either a controller or keyboard + mouse.
+		inputDeviceIDs.push_back(glob.player1DID);
+		SPDLOG_DEBUG
+		(
+			"P1 is using {}. DID: {}.", 
+			glob.player1DID == -1 ? 
+			"NONE" :
+			glob.player1DID >= ALYSLC_MAX_CONTROLLER_COUNT ?
+			"the keyboard + mouse" :
+			"a controller",
+			glob.player1DID
+		);
+
+		// Check for controllers first.
 		XINPUT_STATE inputState{ };
 		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
 		uint32_t controllerIndex = 0;
-		// NOTE:
-		// P1's CID must always be first.
-		controllerIDs.push_back(glob.player1CID);
-		while (controllerIndex < Settings::fMaxNumControllers)
+		while (controllerIndex < ALYSLC_MAX_CONTROLLER_COUNT)
 		{
-			if (controllerIndex != glob.player1CID)
+			if (controllerIndex != glob.player1DID)
 			{
 				auto errorNum = XInputGetState(controllerIndex, &inputState);
 				if (errorNum == ERROR_SUCCESS)
@@ -69,7 +83,7 @@ namespace ALYSLC
 					(
 						"Co-op player controller {} has been registered.", controllerIndex
 					);
-					controllerIDs.push_back(controllerIndex);
+					inputDeviceIDs.push_back(controllerIndex);
 				}
 				else
 				{
@@ -83,8 +97,36 @@ namespace ALYSLC
 
 			controllerIndex++;
 		}
+		
+		// 0 controllers plugged in.
+		if (auto numInputDevices = inputDeviceIDs.size(); numInputDevices <= 1)
+		{
+			// TODO: 
+			// Via RawInput, check for multiple keyboards and mice and assign their device IDs here
+			// if no controllers are plugged in.
+			if (numInputDevices == 1 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
+			{
+				SPDLOG_DEBUG("Only the keyboard and mouse is connected. Cannot start co-op.");
+			}
 
-		return controllerIDs;
+			// For now, return an empty list since at least two input devices must be connected.
+			return std::vector<uint32_t>();
+		}
+		else if (numInputDevices == 2 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
+		{
+			// Hybrid mode active when only 1 controller is plugged in.
+			SPDLOG_DEBUG("Hybrid mode active. Device IDs are {} and {}.",
+				inputDeviceIDs[0], inputDeviceIDs[1]);
+			glob.hybridModeActive = true;
+		}
+		else
+		{
+			SPDLOG_DEBUG("Hybrid mode inactive. {} input devices. First CID: {}", 
+				inputDeviceIDs.size(), inputDeviceIDs[0]);
+			glob.hybridModeActive = false;
+		}
+
+		return inputDeviceIDs;
 	}
 
 	void ControllerDataHolder::UpdateAnalogStickState
@@ -423,13 +465,61 @@ namespace ALYSLC
 			return;
 		}
 
+		auto oldControllerCount = activeControllerCount;
+		uint8_t controllerCount = 0;
+		XINPUT_STATE inputState{ };
+		ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+		for (auto i = 0; i < Settings::fMaxNumControllers; ++i)
+		{
+			auto errorNum = XInputGetState(i, &inputState);
+			if (errorNum == ERROR_SUCCESS)
+			{
+				controllerCount++;
+			}
+		}
+
+		activeControllerCount = controllerCount;
+		// Check if a controller was plugged in or unplugged, 
+		// and end any active co-op session if so.
+		// Must set P1's DID again just in case the input device ordering changed,
+		// otherwise, triggering the summoning menu while in co-op and re-summoning players
+		// will cause P1 to control multiple players if P1 was using the keyboard previously.
+		if (glob.coopSessionActive && activeControllerCount != oldControllerCount)
+		{
+			SPDLOG_DEBUG
+			(
+				"Controller count changed: {} -> {}. "
+				"Tear down co-op session and prompt for P1 DID again.",
+				oldControllerCount, activeControllerCount
+			);
+
+			// Controller was unplugged during a co-op session.
+			// Tear down the session and have players choose their characters again.
+			RE::DebugMessageBox
+			(
+				fmt::format
+				(
+					"[ALYSLC]\nA controller was {}. "
+					"Please open the Summoning Menu again with Player 1's controller "
+					"to re-assign Player 1's input device ID.",
+					activeControllerCount > oldControllerCount ? 
+					"connected" :
+					"disconnected"
+				).data()
+			);
+			GlobalCoopData::TeardownCoopSession(true);
+			// Must re-assign P1 device ID upon re-summoning.
+			glob.player1DID = -1;
+			return;
+		}
+
 		if (glob.coopSessionActive) 
 		{
 			auto ui = RE::UI::GetSingleton();
 			bool isControllingMenus = false;
 			for (const auto& p : glob.coopPlayers) 
 			{
-				if (!p->isActive) 
+				if (!p->isActive || p->deviceID >= ALYSLC_MAX_CONTROLLER_COUNT) 
 				{
 					continue;
 				}
@@ -439,9 +529,9 @@ namespace ALYSLC
 					(p->pam->isControllingUnpausedMenu) || 
 					(ui && ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME))
 				);
-				UpdateAnalogStickState(p->controllerID, p->playerID, true, isControllingMenus);
-				UpdateAnalogStickState(p->controllerID, p->playerID, false, isControllingMenus);
-				UpdateInputStatesAndMask(p->controllerID, p->playerID);
+				UpdateAnalogStickState(p->deviceID, p->playerID, true, isControllingMenus);
+				UpdateAnalogStickState(p->deviceID, p->playerID, false, isControllingMenus);
+				UpdateInputStatesAndMask(p->deviceID, p->playerID);
 			}
 		}
 		else

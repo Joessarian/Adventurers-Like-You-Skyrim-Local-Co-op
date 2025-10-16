@@ -886,12 +886,12 @@ namespace Raycast
 			return result;
 		}
 
-		result.hit = true;
 		result.hitObjectPtr = RE::NiPointer<RE::NiAVObject>(best.hitObject);
 		result.hitRefrHandle = 
 		(
 			best.hitRefr ? best.hitRefr->GetHandle() : RE::ObjectRefHandle()
 		);
+		result.hit = best.hitObject || best.hitRefr;
 
 		return result;
 	}

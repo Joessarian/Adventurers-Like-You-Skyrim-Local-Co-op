@@ -430,7 +430,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 			// Must be moving the RS.
 			return rsState.normMag > 0.0f;
 		}
@@ -688,13 +688,13 @@ namespace ALYSLC
 		bool DebugRagdollPlayer(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Can ragdoll if not controlling menus.
-			return GlobalCoopData::IsNotControllingMenus(a_p->controllerID);
+			return GlobalCoopData::IsNotControllingMenus(a_p->playerID);
 		}
 
 		bool DebugRefreshPlayerManagers(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Can refresh player managers if not controlling menus.
-			return GlobalCoopData::IsNotControllingMenus(a_p->controllerID);
+			return GlobalCoopData::IsNotControllingMenus(a_p->playerID);
 		}
 
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p)
@@ -784,7 +784,7 @@ namespace ALYSLC
 			{
 				(
 					!glob.supportedMenuOpen.load() ||
-					GlobalCoopData::CanControlMenus(a_p->controllerID)
+					GlobalCoopData::CanControlMenus(a_p->playerID)
 				) &&
 				(
 					(
@@ -800,7 +800,7 @@ namespace ALYSLC
 		bool GrabRotateYZ(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Must be moving the RS and grabbing at least 1 object.
-			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 			return 
 			(
 				rsState.normMag > 0.0f &&
@@ -1025,7 +1025,7 @@ namespace ALYSLC
 						pam->reqSpecialAction = SpecialActionType::kDodge;
 					}
 				}
-				else if (Settings::bEnableFlopping && !a_p->coopActor->IsWeaponDrawn())
+				else if (Settings::bEnableFlopping)
 				{
 					bool isGrabbed = std::any_of
 					(
@@ -1047,7 +1047,11 @@ namespace ALYSLC
 						(isGrabbed) || 
 						(
 							(!isRagdolled) && 
-							(!a_p->coopActor->IsWeaponDrawn() || a_p->mm->isParagliding)
+							(
+								!a_p->coopActor->IsWeaponDrawn() || 
+								Util::IsWerewolf(a_p->coopActor.get()) || 
+								a_p->mm->isParagliding
+							)
 						)
 					);
 					if (canFlop)
@@ -1206,21 +1210,25 @@ namespace ALYSLC
 			else
 			{
 				// Must be moving without jumping/paragliding, 
-				// not attacking/bashing/blocking/casting,
+				// (may remove) not attacking/bashing/blocking/casting,
 				// and cannot be dash dodging
 				// and not ragdolled or in ragdoll flight.
 				canPerform =  
 				(
 					((a_p->mm->isParagliding) || (a_p->mm->lsMoved && !a_p->pam->isJumping)) &&
-					(
-						!a_p->pam->isAttacking && !a_p->pam->isBashing && 
-						!a_p->pam->isBlocking && !a_p->pam->isInCastingAnim
-					) && 
+					/*(
+						!a_p->pam->isAttacking && 
+						!a_p->pam->isBashing && 
+						!a_p->pam->isBlocking && 
+						!a_p->pam->isInCastingAnim
+					) && */
 					(!a_p->mm->isDashDodging) &&
 					(
-						!a_p->coopActor->IsInRagdollState() || 
-						a_p->tm->isMARFing ||
-						a_p->tm->isSMORFing
+						(a_p->tm->isMARFing || a_p->tm->isSMORFing) ||
+						(
+							!a_p->coopActor->IsInRagdollState() && 
+							a_p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal
+						)
 					)
 				);
 			}
@@ -1243,7 +1251,7 @@ namespace ALYSLC
 			return 
 			(
 				!Util::OpenMenuStopsMovement() && 
-				GlobalCoopData::IsNotControllingMenus(a_p->controllerID)
+				GlobalCoopData::IsNotControllingMenus(a_p->playerID)
 			);
 		}
 
@@ -1267,7 +1275,7 @@ namespace ALYSLC
 
 			// If there is a focal player and this player is not the focal player,
 			// ignore requests to adjust the camera's rotation or zoom.
-			if (glob.cam->focalPlayerCID != -1 && a_p->controllerID != glob.cam->focalPlayerCID)
+			if (glob.cam->focalPlayerPID != -1 && a_p->playerID != glob.cam->focalPlayerPID)
 			{
 				return false;
 			}
@@ -1288,7 +1296,7 @@ namespace ALYSLC
 				)
 			};
 
-			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 			// Must move the RS while not adjusting arm rotation.
 			return rsState.normMag > 0.0f && !isTryingToRotateArms;
 		}
@@ -1425,7 +1433,7 @@ namespace ALYSLC
 
 			bool inDialogueOrNotControllingMenus = 
 			{
-				(glob.menuCID != a_p->controllerID) ||
+				(glob.menuPID != a_p->playerID) ||
 				(ui && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
 			};
 			return 
@@ -1470,7 +1478,7 @@ namespace ALYSLC
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->controllerID);
+			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->playerID);
 			// No supported menus open or can obtain menu control,
 			// and either a non-playable race, or not (un)equipping as a playable race.
 			// Non-playable races can still access menus which do not allow them to equip items.
@@ -1493,7 +1501,7 @@ namespace ALYSLC
 			bool isUnequipping = false;
 			a_p->coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			a_p->coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->controllerID);
+			bool canControlMenus = GlobalCoopData::CanControlMenus(a_p->playerID);
 			// No supported menus open or can obtain menu control,
 			// and either a non-playable race, or not (un)equipping as a playable race.
 			// Non-playable races can still access menus which do not allow them to equip items.
@@ -1522,7 +1530,7 @@ namespace ALYSLC
 			(
 				(
 					!glob.supportedMenuOpen.load() || 
-					GlobalCoopData::CanControlMenus(a_p->controllerID)
+					GlobalCoopData::CanControlMenus(a_p->playerID)
 				) &&
 				a_p->coopActor->race && 
 				!isEquipping && 
@@ -1549,7 +1557,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+				const auto& coopP1 = glob.coopPlayers[0];
 				// Only open if P1 is transformed or if this companion player 
 				// is not transformed.
 				// Don't want to modify default skill tree perks/HMS AVs 
@@ -1822,7 +1830,7 @@ namespace ALYSLC
 				// (longer dodge).
 				const float& lsMag = 
 				(
-					glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag
+					glob.cdh->GetAnalogStickState(a_p->deviceID, true).normMag
 				);
 				// Minimum dodge cost is half the max cost to prevent spamming of short dodges.
 				float dashDodgeCommitmentMult = 
@@ -2856,7 +2864,7 @@ namespace ALYSLC
 								{
 									GlobalCoopData::AddSkillXP
 									(
-										a_p->controllerID,
+										a_p->playerID,
 										a_boundWeapSpell->avEffectSetting->data.associatedSkill, 
 										baseCost
 									);
@@ -4216,7 +4224,7 @@ namespace ALYSLC
 				// Minimum dodge cost is half the max cost to prevent spamming of short dodges.
 				const float& lsMag = 
 				(
-					glob.cdh->GetAnalogStickState(a_p->controllerID, true).normMag
+					glob.cdh->GetAnalogStickState(a_p->deviceID, true).normMag
 				);
 				float dashDodgeCommitmentMult = 
 				(
@@ -4291,7 +4299,7 @@ namespace ALYSLC
 			// Eight different slots starting from an RS orientation of 'up'
 			// and moving clockwise.
 
-			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+			const auto& rsData = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 			// Must be moving RS.
 			if (rsData.normMag == 0.0f)
 			{
@@ -5248,42 +5256,42 @@ namespace ALYSLC
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::MagicMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::MagicMenu::MENU_NAME
 				);
 			}
 			else if (a_action == InputAction::kMapMenu)
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::MapMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::MapMenu::MENU_NAME
 				);
 			}
 			else if (a_action == InputAction::kPause)
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::JournalMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::JournalMenu::MENU_NAME
 				);
 			}
 			else if (a_action == InputAction::kStatsMenu)
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::StatsMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::StatsMenu::MENU_NAME
 				);
 			}
 			else if (a_action == InputAction::kTweenMenu)
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::TweenMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::TweenMenu::MENU_NAME
 				);
 			}
 			else if (a_action == InputAction::kWaitMenu)
 			{
 				succ = glob.moarm->InsertRequest
 				(
-					a_p->controllerID, a_action, SteadyClock::now(), RE::SleepWaitMenu::MENU_NAME
+					a_p->playerID, a_action, SteadyClock::now(), RE::SleepWaitMenu::MENU_NAME
 				);
 			}
 
@@ -5992,7 +6000,7 @@ namespace ALYSLC
 
 		void SetCameraAdjustmentMode
 		(
-			const int32_t& a_reqCID, const InputAction& a_action, bool&& a_set
+			const int32_t& a_reqPID, const InputAction& a_action, bool&& a_set
 		)
 		{
 			// Set or reset the co-op camera's adjustment mode (Rotate, Zoom, or None).
@@ -6003,16 +6011,16 @@ namespace ALYSLC
 				CamAdjustmentMode::kRotate : 
 				CamAdjustmentMode::kZoom
 			);
-			auto& controllingCID = glob.cam->controlCamCID;
+			auto& controllingPID = glob.cam->controlCamPID;
 			// Can only set if no other mode is set, 
 			// meaning no other player is controlling the cam.
-			if (controllingCID != a_reqCID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			if (controllingPID != a_reqPID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingCID = a_reqCID;
+				controllingPID = a_reqPID;
 			}
 
-			// Controller with control over the camera can adjust the cam mode freely.
-			if (controllingCID == a_reqCID)
+			// Player with control over the camera can adjust the cam mode freely.
+			if (controllingPID == a_reqPID)
 			{
 				// Set if not already set, reset to none otherwise.
 				if (a_set)
@@ -6026,7 +6034,7 @@ namespace ALYSLC
 			}
 		}
 
-		void SetCameraState(const int32_t& a_reqCID, const InputAction& a_action)
+		void SetCameraState(const int32_t& a_reqPID, const InputAction& a_action)
 		{
 			// Set camera state to 'LockOn' or 'ManualPositioning' or reset to 'AutoTrail'.
 
@@ -6036,15 +6044,15 @@ namespace ALYSLC
 				CamState::kLockOn : 
 				CamState::kManualPositioning
 			);
-			auto& controllingCID = glob.cam->controlCamCID;
-			// Set new cam control CID if no players are adjusting the camera.
-			if (controllingCID != a_reqCID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
+			auto& controllingPID = glob.cam->controlCamPID;
+			// Set new cam control PID if no players are adjusting the camera.
+			if (controllingPID != a_reqPID && glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingCID = a_reqCID;
+				controllingPID = a_reqPID;
 			}
 
-			// Controller with control over the camera can adjust the cam state freely.
-			if (controllingCID == a_reqCID)
+			// Player with control over the camera can adjust the cam state freely.
+			if (controllingPID == a_reqPID)
 			{
 				if (glob.cam->camState != newCamState)
 				{
@@ -6057,17 +6065,13 @@ namespace ALYSLC
 				}
 
 				// Notify the player of the cam state change.
-				const auto& p = glob.coopPlayers[a_reqCID];
+				const auto& p = glob.coopPlayers[a_reqPID];
 				if (glob.cam->camState == CamState::kAutoTrail) 
 				{
 					p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Camera auto-trail mode", 
-							glob.coopPlayers[a_reqCID]->playerID + 1
-						),
+						fmt::format("P{}: Camera auto-trail mode", a_reqPID + 1),
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
@@ -6081,11 +6085,7 @@ namespace ALYSLC
 					p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Camera lock-on mode", 
-							glob.coopPlayers[a_reqCID]->playerID + 1
-						),
+						fmt::format("P{}: Camera lock-on mode", a_reqPID + 1),
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState,
@@ -6099,11 +6099,7 @@ namespace ALYSLC
 					p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
-						fmt::format
-						(
-							"P{}: Camera manual positioning mode",
-							glob.coopPlayers[a_reqCID]->playerID + 1
-						),
+						fmt::format("P{}: Camera manual positioning mode", a_reqPID + 1),
 						{ 
 							CrosshairMessageType::kNone, 
 							CrosshairMessageType::kStealthState, 
@@ -6788,7 +6784,7 @@ namespace ALYSLC
 					// (nothing that will open a menu if another player is controlling menus).
 					bool anotherPlayerControllingMenus = 
 					(
-						!GlobalCoopData::CanControlMenus(a_p->controllerID)
+						!GlobalCoopData::CanControlMenus(a_p->playerID)
 					);
 					// Activation will teleport P1.
 					bool tryingToUseTeleportRefr = 
@@ -8496,7 +8492,7 @@ namespace ALYSLC
 				}
 
 				// Check for refrs released by other players next.
-				// Temporary mapping of an attacking player's CID 
+				// Temporary mapping of an attacking player's PID 
 				// to a list of grabbable released refr candidates.
 				// Done to avoid modifying the released refr info list until after looping through.
 				std::unordered_map<int32_t, std::vector<RE::ObjectRefHandle>> 
@@ -8528,7 +8524,7 @@ namespace ALYSLC
 						{
 							const auto iter = playerLinkedGrabCandidates.find
 							(
-								otherP->controllerID
+								otherP->playerID
 							);
 							if (iter != playerLinkedGrabCandidates.end())
 							{
@@ -8541,7 +8537,7 @@ namespace ALYSLC
 							{
 								playerLinkedGrabCandidates.insert
 								(
-									{ otherP->controllerID, { releasedRefrInfo->refrHandle} }
+									{ otherP->playerID, { releasedRefrInfo->refrHandle} }
 								);
 							}
 						}
@@ -8549,17 +8545,17 @@ namespace ALYSLC
 				}
 
 				// Remove all candidates from the attacking player's managed released refrs list.
-				for (const auto& [cid, candidateHandles] : playerLinkedGrabCandidates)
+				for (const auto& [pid, candidateHandles] : playerLinkedGrabCandidates)
 				{
 					// Should never happen. But who knows.
-					if (cid == -1)
+					if (pid == -1)
 					{
 						continue;
 					}
 
 					for (const auto& handle : candidateHandles)
 					{
-						glob.coopPlayers[cid]->tm->rmm->ClearRefr(handle);
+						glob.coopPlayers[pid]->tm->rmm->ClearRefr(handle);
 						// Add to list of handles for refrs to grab.
 						projectilesToGrabHandlesList.emplace_back(handle);
 						// Signal as trying to grab and grabbing an incoming 'projectile'.
@@ -8777,10 +8773,7 @@ namespace ALYSLC
 
 						// Is now grabbing the refr.
 						a_p->tm->SetIsGrabbing(true);
-						auto index = a_p->tm->rmm->AddGrabbedRefr
-						(
-							glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
-						);
+						auto index = a_p->tm->rmm->AddGrabbedRefr(a_p, targetRefrPtr->GetHandle());
 						a_p->tm->rmm->isAutoGrabbing = true;
 						if (index > -1 && index < a_p->tm->rmm->grabbedRefrInfoList.size())
 						{
@@ -8849,10 +8842,7 @@ namespace ALYSLC
 						Settings::fSecsBetweenDiffCrosshairMsgs
 					);
 					a_p->tm->SetIsGrabbing(true);
-					a_p->tm->rmm->AddGrabbedRefr
-					(
-						glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
-					);
+					a_p->tm->rmm->AddGrabbedRefr(a_p, targetRefrPtr->GetHandle());
 					a_p->tm->rmm->isAutoGrabbing = true;
 				}
 			}
@@ -8935,14 +8925,14 @@ namespace ALYSLC
 			// which indicates that the player wishes to 
 			// equip the selected hotkeyed form into the LH/RH/QS Item/QS Spell slots.
 			// Then, equip into the requested slot.
-			if (glob.cdh->GetInputState(a_p->controllerID, InputAction::kLT).justReleased)
+			if (glob.cdh->GetInputState(a_p->deviceID, InputAction::kLT).justReleased)
 			{
 				HelperFuncs::EquipHotkeyedForm
 				(
 					a_p, a_p->em->lastChosenHotkeyedForm, EquipIndex::kLeftHand
 				);
 			}
-			else if (glob.cdh->GetInputState(a_p->controllerID, InputAction::kRT).justReleased)
+			else if (glob.cdh->GetInputState(a_p->deviceID, InputAction::kRT).justReleased)
 			{
 				HelperFuncs::EquipHotkeyedForm
 				(
@@ -8951,7 +8941,7 @@ namespace ALYSLC
 			}
 			else if (glob.cdh->GetInputState
 					 (
-						 a_p->controllerID, InputAction::kLShoulder
+						 a_p->deviceID, InputAction::kLShoulder
 					 ).justReleased)
 			{
 				HelperFuncs::EquipHotkeyedForm
@@ -8961,7 +8951,7 @@ namespace ALYSLC
 			}
 			else if (glob.cdh->GetInputState
 					 (
-						 a_p->controllerID, InputAction::kRShoulder
+						 a_p->deviceID, InputAction::kRShoulder
 					 ).justReleased)
 			{
 				HelperFuncs::EquipHotkeyedForm
@@ -9928,16 +9918,16 @@ namespace ALYSLC
 			// Reset to auto-trail otherwise.
 
 			// Give this player control of the camera.
-			auto& controllingCID = glob.cam->controlCamCID;
-			if (controllingCID != a_p->controllerID && 
+			auto& controllingPID = glob.cam->controlCamPID;
+			if (controllingPID != a_p->playerID && 
 				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingCID = a_p->controllerID;
+				controllingPID = a_p->playerID;
 			}
 
-			// Same controller as the one with control over camera can adjust the cam state freely.
+			// Same player as the one with control over camera can adjust the cam state freely.
 			// Nothing to do otherwise.
-			if (controllingCID != a_p->controllerID)
+			if (controllingPID != a_p->playerID)
 			{
 				return;
 			}
@@ -9949,9 +9939,9 @@ namespace ALYSLC
 			(
 				targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
 			);
-			// CID of the targeted player.
-			// If no player is targeted, the CID is -1.
-			int32_t targetPlayerCID = 
+			// PID of the targeted player.
+			// If no player is targeted, the PID is -1.
+			int32_t targetPlayerPID = 
 			(
 				targetActorValidity ? 
 				GlobalCoopData::GetCoopPlayerIndex(targetActorPtr.get()) :
@@ -9959,8 +9949,8 @@ namespace ALYSLC
 			);
 			auto currentFocalPlayerPtr = 
 			(
-				Settings::bFocalPlayerMode && glob.cam->focalPlayerCID != -1 ?
-				glob.coopPlayers[glob.cam->focalPlayerCID]->coopActor :
+				Settings::bFocalPlayerMode && glob.cam->focalPlayerPID != -1 ?
+				glob.coopPlayers[glob.cam->focalPlayerPID]->coopActor :
 				nullptr
 			);
 			auto currentLockOnTargetPtr = 
@@ -9974,8 +9964,8 @@ namespace ALYSLC
 			(
 				targetActorValidity && 
 				Settings::bFocalPlayerMode &&
-				targetPlayerCID != -1 &&
-				!glob.coopPlayers[targetPlayerCID]->isDowned &&
+				targetPlayerPID != -1 &&
+				!glob.coopPlayers[targetPlayerPID]->isDowned &&
 				targetActorPtr != currentFocalPlayerPtr
 			);
 			// Can set a new lock-on target if not the focal player or the current target,
@@ -9986,7 +9976,7 @@ namespace ALYSLC
 				(!newFocalPlayerTarget) &&
 				(targetActorPtr != currentFocalPlayerPtr) &&
 				(targetActorPtr != currentLockOnTargetPtr) &&
-				(targetPlayerCID == -1 || !glob.coopPlayers[targetPlayerCID]->isDowned)
+				(targetPlayerPID == -1 || !glob.coopPlayers[targetPlayerPID]->isDowned)
 			);
 			if (newFocalPlayerTarget || newLockOnTarget)
 			{
@@ -10014,7 +10004,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					glob.cam->focalPlayerCID = targetPlayerCID;
+					glob.cam->focalPlayerPID = targetPlayerPID;
 					// Inform the player.
 					a_p->tm->SetCrosshairMessageRequest
 					(
@@ -10023,7 +10013,7 @@ namespace ALYSLC
 						(
 							"P{}: Gave P{} camera focus", 
 							a_p->playerID + 1,
-							glob.coopPlayers[targetPlayerCID]->playerID + 1
+							glob.coopPlayers[targetPlayerPID]->playerID + 1
 						),
 						{ 
 							CrosshairMessageType::kNone,
@@ -10058,7 +10048,7 @@ namespace ALYSLC
 				}
 				else if (targetActorPtr == currentFocalPlayerPtr)
 				{
-					glob.cam->focalPlayerCID = -1;
+					glob.cam->focalPlayerPID = -1;
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kCamera,
@@ -10078,7 +10068,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (glob.cam->focalPlayerCID != -1)
+				if (glob.cam->focalPlayerPID != -1)
 				{
 					// Inform the player of the removal of camera focus
 					// and the switch back to auto-trail mode.
@@ -10115,7 +10105,7 @@ namespace ALYSLC
 				}
 
 				// Clear focal player and current lock-on target if not targeting anything.
-				glob.cam->focalPlayerCID = -1;
+				glob.cam->focalPlayerPID = -1;
 				// Send a request to clear the cam lock-on target
 				// and reset the cam state to auto-trail.
 				glob.cam->lockOnActorReq = RE::ActorHandle();
@@ -10128,16 +10118,16 @@ namespace ALYSLC
 			// Toggle camera state between auto-trail and manual positioning if the player can
 			// obtain control of the camera.
 
-			auto& controllingCID = glob.cam->controlCamCID;
-			if (controllingCID != a_p->controllerID &&
+			auto& controllingPID = glob.cam->controlCamPID;
+			if (controllingPID != a_p->playerID &&
 				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingCID = a_p->controllerID;
+				controllingPID = a_p->playerID;
 			}
 
-			// Same controller as one with control over camera can adjust the cam state freely.
+			// Same player as one with control over camera can adjust the cam state freely.
 			// Nothing to do otherwise.
-			if (controllingCID != a_p->controllerID)
+			if (controllingPID != a_p->playerID)
 			{
 				return;
 			}
@@ -10146,9 +10136,9 @@ namespace ALYSLC
 			if (glob.cam->camState != CamState::kManualPositioning)
 			{
 				// Clear focal player if switching to manual positioning.
-				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPlayerCID != -1)
+				if (glob.cam->camState == CamState::kLockOn && glob.cam->focalPlayerPID != -1)
 				{
-					glob.cam->focalPlayerCID = -1;
+					glob.cam->focalPlayerPID = -1;
 				}
 
 				a_p->tm->SetCrosshairMessageRequest
@@ -10188,7 +10178,7 @@ namespace ALYSLC
 			// to another player who has most recently made a request.
 			// If this player is not controlling dialogue, send a request for dialogue control.
 
-			if (bool controllingDialogue = glob.menuCID == a_p->controllerID; controllingDialogue)
+			if (bool controllingDialogue = glob.menuPID == a_p->playerID; controllingDialogue)
 			{
 				// Check for dialogue control request and relinquish menu control 
 				// to the requesting player.
@@ -10199,17 +10189,17 @@ namespace ALYSLC
 					);
 					if (lock)
 					{
-						if (glob.moarm->reqTransferMenuControlPlayerCID != -1)
+						if (glob.moarm->reqTransferMenuControlPlayerPID != -1)
 						{
 							SPDLOG_DEBUG
 							(
-								"{}: Dialogue req CID lock obtained. (0x{:X})",
+								"{}: Dialogue req PID lock obtained. (0x{:X})",
 								a_p->coopActor->GetName(),
 								std::hash<std::jthread::id>()(std::this_thread::get_id())
 							);
 							const auto& reqP = 
 							(
-								glob.coopPlayers[glob.moarm->reqTransferMenuControlPlayerCID]
+								glob.coopPlayers[glob.moarm->reqTransferMenuControlPlayerPID]
 							);
 							// Teleport the other player to the speaker/this player 
 							// before handing over dialogue control if the requesting player 
@@ -10265,43 +10255,67 @@ namespace ALYSLC
 								}
 							}
 
-							// Assign req control CID and stop/start menu input manager, as needed.
+							// Assign req control PID and stop/start menu input manager, as needed.
 							bool isP1Req = reqP->coopActor->IsPlayerRef();
 							glob.mim->SetOpenedMenu(RE::DialogueMenu::MENU_NAME, !isP1Req);
 							if (isP1Req)
 							{
-								// Modify menu CID and signal MIM to pause.
-								GlobalCoopData::SetMenuCIDs(reqP->controllerID);
-								glob.mim->ToggleCoopPlayerMenuMode(-1);
+								// Modify menu PID and signal MIM to pause.
+								GlobalCoopData::SetMenuPlayerIDs(reqP->playerID);
+								glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 							}
 							else
 							{
 								// Set directly and request MIM to start.
-								GlobalCoopData::SetMenuCIDs(reqP->controllerID);
-								glob.mim->ToggleCoopPlayerMenuMode(reqP->controllerID);
+								GlobalCoopData::SetMenuPlayerIDs(reqP->playerID);
+								glob.mim->ToggleCoopPlayerMenuMode(reqP->deviceID, reqP->playerID);
 							}
 
 							// Notify the requesting player 
 							// that they are now in control of dialogue.
-							reqP->tm->SetCrosshairMessageRequest
-							(
-								CrosshairMessageType::kGeneralNotification,
-								fmt::format
+							if (glob.cam->IsRunning() || !reqP->isPlayer1)
+							{
+								reqP->tm->SetCrosshairMessageRequest
 								(
-									"P{}: <font color=\"#E66100\">Now controlling dialogue</font>", 
-									reqP->playerID + 1
-								),
-								{
-									CrosshairMessageType::kNone,
-									CrosshairMessageType::kStealthState,
-									CrosshairMessageType::kTargetSelection 
-								},
-								Settings::fSecsBetweenDiffCrosshairMsgs
-							);
+									CrosshairMessageType::kGeneralNotification,
+									fmt::format
+									(
+										"P{}: <font color=\"#E66100\">"
+										"Now controlling dialogue</font>", 
+										reqP->playerID + 1
+									),
+									{
+										CrosshairMessageType::kNone,
+										CrosshairMessageType::kStealthState,
+										CrosshairMessageType::kTargetSelection 
+									},
+									Settings::fSecsBetweenDiffCrosshairMsgs
+								);
+							}
+							else
+							{
+								a_p->tm->SetCrosshairMessageRequest
+								(
+									CrosshairMessageType::kGeneralNotification,
+									fmt::format
+									(
+										"P{}: <font color=\"#E66100\">"
+										"Gave dialogue control to P1</font>", 
+										a_p->playerID + 1
+									),
+									{
+										CrosshairMessageType::kNone,
+										CrosshairMessageType::kStealthState,
+										CrosshairMessageType::kTargetSelection 
+									},
+									Settings::fSecsBetweenDiffCrosshairMsgs
+								);
+							}
+							
 
-							// Reset req dialogue menu CID to -1 
+							// Reset req dialogue menu PID to -1 
 							// because request was handled (fulfilled or not).
-							glob.moarm->reqTransferMenuControlPlayerCID = -1;
+							glob.moarm->reqTransferMenuControlPlayerPID = -1;
 						}
 					}
 				}
@@ -10318,37 +10332,60 @@ namespace ALYSLC
 					{
 						// Another player already requested dialogue control before this player,
 						// so their request must be handled first.
-						if (glob.moarm->reqTransferMenuControlPlayerCID != -1)
+						if (glob.moarm->reqTransferMenuControlPlayerPID != -1)
 						{
 							return;
 						}
 
 						SPDLOG_DEBUG
 						(
-							"{}: Req CID NOT set and lock obtained (0x{:X}). Set to {}.",
+							"{}: Req PID NOT set and lock obtained (0x{:X}). Set to {}.",
 							a_p->coopActor->GetName(), 
 							std::hash<std::jthread::id>()(std::this_thread::get_id()), 
-							a_p->controllerID
+							a_p->playerID
 						);
 
-						// Set requesting player CID.
-						glob.moarm->reqTransferMenuControlPlayerCID = a_p->controllerID;
+						// Set requesting player PID.
+						glob.moarm->reqTransferMenuControlPlayerPID = a_p->playerID;
 						// Notify player.
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format
+						if (glob.cam->IsRunning() || !a_p->isPlayer1)
+						{
+							a_p->tm->SetCrosshairMessageRequest
 							(
-								"P{}: <font color=\"#E66100\">Requesting dialogue control</font>", 
-								a_p->playerID + 1
-							),
-							{ 
-								CrosshairMessageType::kNone, 
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format
+								(
+									"P{}: <font color=\"#E66100\">"
+									"Requesting dialogue control</font>", 
+									a_p->playerID + 1
+								),
+								{ 
+									CrosshairMessageType::kNone, 
+									CrosshairMessageType::kStealthState, 
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+						}
+						else if (glob.menuPID != -1)
+						{
+							glob.coopPlayers[glob.menuPID]->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format
+								(
+									"P{}: <font color=\"#E66100\">"
+									"P1 is requesting dialogue control</font>", 
+									glob.menuPID + 1
+								),
+								{
+									CrosshairMessageType::kNone,
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+						}
 					}
 				}
 			}
@@ -10356,34 +10393,34 @@ namespace ALYSLC
 
 		void CoopDebugMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open the co-op debug menu via script event, which will also set the menu CID.
+			// Open the co-op debug menu via script event, which will also set the menu PID.
 
-			glob.onDebugMenuRequest.SendEvent(a_p->coopActor.get(), a_p->controllerID);
+			glob.onDebugMenuRequest.SendEvent(a_p->coopActor.get(), a_p->deviceID, a_p->playerID);
 		}
 
 		void CoopIdlesMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open the co-op idles menu via script event, which will also set the menu CID.
+			// Open the co-op idles menu via script event, which will also set the menu PID.
 
 			glob.onCoopHelperMenuRequest.SendEvent
 			(
-				a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kIdles
+				a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kIdles
 			);
 		}
 
 		void CoopMiniGamesMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open the co-op mini games menu via script event, which will also set the menu CID.
+			// Open the co-op mini games menu via script event, which will also set the menu PID.
 
 			glob.onCoopHelperMenuRequest.SendEvent
 			(
-				a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kMiniGames
+				a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kMiniGames
 			);
 		}
 
 		void CoopSummoningMenu(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Open the co-op summoning menu via script event, which will also set the menu CID.
+			// Open the co-op summoning menu via script event, which will also set the menu PID.
 			// Don't open if already open or a player is in combat.
 
 			if (glob.summoningMenuOpenGlob->value != 0.0f)
@@ -10393,12 +10430,20 @@ namespace ALYSLC
 
 			if (glob.isInCoopCombat)
 			{
+				glob.moarm->InsertRequest
+				(
+					a_p->playerID, 
+					InputAction::kCoopSummoningMenu, 
+					SteadyClock::now(), 
+					RE::MessageBoxMenu::MENU_NAME
+				);
 				RE::DebugMessageBox
 				(
 					"[ALYSLC]\nA player is in combat. "
 					"Please ensure that all players are not in combat "
 					"before attempting to open the Summoning Menu."
 				);
+
 				return;
 			}
 
@@ -10411,20 +10456,18 @@ namespace ALYSLC
 
 				if (p->isDowned)
 				{
-					a_p->tm->SetCrosshairMessageRequest
+					glob.moarm->InsertRequest
 					(
-						CrosshairMessageType::kReviveAlert,
-						fmt::format
-						(
-							"P{}: Cannot summon while a player is downed", a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
+						a_p->playerID, 
+						InputAction::kCoopSummoningMenu, 
+						SteadyClock::now(), 
+						RE::MessageBoxMenu::MENU_NAME
 					);
+					RE::DebugMessageBox
+					(
+						"[ALYSLC]\nCannot summon players while a player is downed!"
+					);
+
 					return;
 				}
 			}
@@ -10546,7 +10589,7 @@ namespace ALYSLC
 			// Clear lock-on target and reset adjustment mode before waiting for toggle.
 			glob.cam->camAdjMode = CamAdjustmentMode::kNone;
 			glob.cam->ClearLockOnData();
-			glob.cam->waitForToggle = true;
+			glob.cam->SetWaitForToggle(true);
 			glob.cam->RequestStateChange(ManagerState::kPaused);
 			// Inform the players on how to switch back to the co-op camera.
 			a_p->tm->SetCrosshairMessageRequest
@@ -10773,7 +10816,7 @@ namespace ALYSLC
 
 			bool succ = glob.moarm->InsertRequest
 			(
-				a_p->controllerID, 
+				a_p->playerID, 
 				InputAction::kFavorites, 
 				SteadyClock::now(), 
 				RE::FavoritesMenu::MENU_NAME
@@ -10821,7 +10864,7 @@ namespace ALYSLC
 			
 			bool succ = glob.moarm->InsertRequest
 			(
-				a_p->controllerID, 
+				a_p->playerID, 
 				InputAction::kInventory, 
 				SteadyClock::now(), 
 				RE::ContainerMenu::MENU_NAME, 
@@ -10881,7 +10924,7 @@ namespace ALYSLC
 			// open the Magic Menu via the message queue.
 
 			// This player is transformed, or P1 is not, so no need to use the message queue.
-			if (a_p->isTransformed || !glob.coopPlayers[glob.player1CID]->isTransformed)
+			if (a_p->isTransformed || !glob.coopPlayers[0]->isTransformed)
 			{
 				return;
 			}
@@ -10907,7 +10950,7 @@ namespace ALYSLC
 			// but if this player is not transformed, open the Map Menu via the message queue.
 
 			// This player is transformed, or P1 is not, so no need to use the message queue.
-			if (a_p->isTransformed || !glob.coopPlayers[glob.player1CID]->isTransformed)
+			if (a_p->isTransformed || !glob.coopPlayers[0]->isTransformed)
 			{
 				return;
 			}
@@ -11191,16 +11234,16 @@ namespace ALYSLC
 			// Reset camera orientation by resetting radial distance and height offsets.
 
 			// Give this player control of the camera.
-			auto& controllingCID = glob.cam->controlCamCID;
-			if (controllingCID != a_p->controllerID && 
+			auto& controllingPID = glob.cam->controlCamPID;
+			if (controllingPID != a_p->playerID && 
 				glob.cam->camAdjMode == CamAdjustmentMode::kNone)
 			{
-				controllingCID = a_p->controllerID;
+				controllingPID = a_p->playerID;
 			}
 
-			// Same controller as the one with control over camera can adjust the cam state freely.
+			// Same player as the one with control over camera can adjust the cam state freely.
 			// Nothing to do otherwise.
-			if (controllingCID != a_p->controllerID)
+			if (controllingPID != a_p->playerID)
 			{
 				return;
 			}
@@ -11226,14 +11269,17 @@ namespace ALYSLC
 		{
 			// Set cam adjustment mode to rotate if this player can obtain control of the camera.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->controllerID, InputAction::kRotateCam, true);
+			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kRotateCam, true);
 		}
 
 		void Sheathe(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Sheathe if weapons/magic is out, draw otherwise.
+			// Sheathe if weapons/magic is out or if not a werewolf, draw otherwise.
 
-			a_p->pam->ReadyWeapon(!a_p->coopActor->IsWeaponDrawn(), false);
+			a_p->pam->ReadyWeapon
+			(
+				!a_p->coopActor->IsWeaponDrawn() || Util::IsWerewolf(a_p->coopActor.get()), false
+			);
 		}
 
 		void Sneak(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11510,7 +11556,7 @@ namespace ALYSLC
 						// Stats Menu-opening bind found, insert request.
 						bool succ = glob.moarm->InsertRequest
 						(
-							a_p->controllerID,
+							a_p->playerID,
 							InputAction::kStatsMenu, 
 							SteadyClock::now(), 
 							GlobalCoopData::ENHANCED_HERO_MENU
@@ -11533,7 +11579,7 @@ namespace ALYSLC
 						// Quick Stats not bound -> open UIExtensions stats menu instead.
 						glob.onCoopHelperMenuRequest.SendEvent
 						(
-							a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kStats
+							a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kStats
 						);
 					}
 				}
@@ -11627,7 +11673,7 @@ namespace ALYSLC
 					{
 						glob.onCoopHelperMenuRequest.SendEvent
 						(
-							a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kStats
+							a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kStats
 						);
 					}
 					*/
@@ -11635,7 +11681,7 @@ namespace ALYSLC
 					// Signal script to open UIExtensions stats menu.
 					glob.onCoopHelperMenuRequest.SendEvent
 					(
-						a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kStats
+						a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kStats
 					);
 				}
 			}
@@ -11643,7 +11689,7 @@ namespace ALYSLC
 			{
 				// Open the StatsMenu.
 				// Tween Menu bind opens the Stats Menu directly when P1 is transformed.
-				if (glob.coopPlayers[glob.player1CID]->isTransformed) 
+				if (glob.coopPlayers[0]->isTransformed) 
 				{
 					HelperFuncs::OpenMenuWithKeyboard(a_p, InputAction::kTweenMenu);
 				}
@@ -11668,7 +11714,7 @@ namespace ALYSLC
 				{
 					glob.onCoopHelperMenuRequest.SendEvent
 					(
-						a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kTeleport
+						a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kTeleport
 					);
 				}
 				else
@@ -11752,7 +11798,7 @@ namespace ALYSLC
 
 			glob.onCoopHelperMenuRequest.SendEvent
 			(
-				a_p->coopActor.get(), a_p->controllerID, !HelperMenu::kTrade
+				a_p->coopActor.get(), a_p->deviceID, a_p->playerID, !HelperMenu::kTrade
 			);
 		}
 
@@ -11774,7 +11820,7 @@ namespace ALYSLC
 		{
 			// Adjust camera zoom if camera control is given.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->controllerID, InputAction::kZoomCam, true);
+			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kZoomCam, true);
 		}
 	};
 
@@ -11953,7 +11999,7 @@ namespace ALYSLC
 						// Only works for some guards, though.
 						bool succ = glob.moarm->InsertRequest
 						(
-							a_p->controllerID, 
+							a_p->playerID, 
 							InputAction::kActivate, 
 							SteadyClock::now(), 
 							RE::DialogueMenu::MENU_NAME,
@@ -11996,7 +12042,7 @@ namespace ALYSLC
 						{
 							bool succ = glob.moarm->InsertRequest
 							(
-								a_p->controllerID, 
+								a_p->playerID, 
 								InputAction::kActivate, 
 								SteadyClock::now(), 
 								RE::DialogueMenu::MENU_NAME,
@@ -12043,7 +12089,7 @@ namespace ALYSLC
 				bool menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 				bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus
 				(
-					a_p->controllerID
+					a_p->playerID
 				);
 
 				bool isBook = baseObj->IsBook();
@@ -12100,7 +12146,7 @@ namespace ALYSLC
 								a_p->SetTargetedMount(asActor->GetHandle());
 								glob.moarm->InsertRequest
 								(
-									a_p->controllerID, 
+									a_p->playerID, 
 									InputAction::kActivate,
 									SteadyClock::now(), 
 									"", 
@@ -12117,7 +12163,7 @@ namespace ALYSLC
 							Util::SetPlayerAIDriven(false);
 							glob.moarm->InsertRequest
 							(
-								a_p->controllerID, 
+								a_p->playerID, 
 								InputAction::kActivate, 
 								SteadyClock::now(),
 								"", 
@@ -12233,7 +12279,7 @@ namespace ALYSLC
 							a_p->SetTargetedMount(asActor->GetHandle());
 							glob.moarm->InsertRequest
 							(
-								a_p->controllerID, 
+								a_p->playerID, 
 								InputAction::kActivate,
 								SteadyClock::now(),
 								"",
@@ -12370,7 +12416,7 @@ namespace ALYSLC
 								// open afterward.
 								glob.moarm->InsertRequest
 								(
-									a_p->controllerID, 
+									a_p->playerID, 
 									InputAction::kActivate, 
 									SteadyClock::now(),
 									"", 
@@ -12404,7 +12450,7 @@ namespace ALYSLC
 							// open afterward.
 							glob.moarm->InsertRequest
 							(
-								a_p->controllerID, 
+								a_p->playerID, 
 								InputAction::kActivate, 
 								SteadyClock::now(), 
 								"", 
@@ -13755,10 +13801,7 @@ namespace ALYSLC
 						"P{}: Grabbing {}", a_p->playerID + 1, targetRefrPtr->GetName()
 					);
 					a_p->tm->SetIsGrabbing(true);
-					a_p->tm->rmm->AddGrabbedRefr
-					(
-						glob.coopPlayers[a_p->controllerID], targetRefrPtr->GetHandle()
-					);
+					a_p->tm->rmm->AddGrabbedRefr(a_p, targetRefrPtr->GetHandle());
 				}
 				else
 				{
@@ -13893,10 +13936,7 @@ namespace ALYSLC
 		{
 			// Reset cam adjustment mode to None, and relinquish control of the camera.
 
-			HelperFuncs::SetCameraAdjustmentMode
-			(
-				a_p->controllerID, InputAction::kRotateCam, false
-			);
+			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kRotateCam, false);
 		}
 
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p)
@@ -14486,7 +14526,7 @@ namespace ALYSLC
 		{
 			// Reset adjustment mode to none and relinquish camera control.
 
-			HelperFuncs::SetCameraAdjustmentMode(a_p->controllerID, InputAction::kZoomCam, false);
+			HelperFuncs::SetCameraAdjustmentMode(a_p->playerID, InputAction::kZoomCam, false);
 		}
 	};
 };

@@ -287,9 +287,11 @@ namespace ALYSLC
 		{
 			return inputStatesList[a_controllerID][!a_index].pressedMag;
 		}
-
-		// Sets up controller data for connected controllers and returns a list of their IDs.
-		std::vector<uint32_t> SetupConnectedCoopControllers();
+		
+		// Get and return a list of all co-op usable input devices' IDs.
+		// NOTE:
+		// P1's DID is always first.
+		std::vector<uint32_t> SetupConnectedInputDevices();
 		
 		// Update analog stick state data for the given controller's LS/RS.
 		void UpdateAnalogStickState
@@ -459,6 +461,8 @@ namespace ALYSLC
 			{ XMASK_RS, GAMEPAD_MASK_RS }
 		};
 
+		// Number of XInput controllers plugged in.
+		uint32_t activeControllerCount;
 		// Analog stick states for the left and right sticks.
 		std::array<AnalogStickState, Settings::fMaxNumControllers> lsStatesList;
 		std::array<AnalogStickState, Settings::fMaxNumControllers> rsStatesList;

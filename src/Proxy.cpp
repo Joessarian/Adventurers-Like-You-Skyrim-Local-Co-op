@@ -32,11 +32,11 @@ namespace ALYSLC
 			// P1 data may change on loading a save (if another player character's save is loaded).
 			// Must also ensure the camera manager is not running on save load.
 
-			// Reset P1's CID.
+			// Reset P1's DID.
 			// Will be automatically re-assigned on the first summoning after save load.
-			glob.player1CID = -1;
-			// Reset controller ID requesting control of menus.
-			glob.moarm->reqTransferMenuControlPlayerCID = -1;
+			glob.player1DID = -1;
+			// Reset player ID requesting control of menus.
+			glob.moarm->reqTransferMenuControlPlayerPID = -1;
 			// Set player ref alias, which may have changed.
 			glob.player1RefAlias = a_player1Ref;
 			// Get P1, which may be a different character.
@@ -45,15 +45,19 @@ namespace ALYSLC
 			// Set living and active players to 0 when not in co-op.
 			glob.livingPlayers = glob.activePlayers = 0;
 			// Reset QuickLoot menu-opening data.
-			glob.quickLootControlCID = -1;
-			glob.quickLootReqCID = -1;
+			glob.quickLootControlPID = -1;
+			glob.quickLootReqPID = -1;
 			glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
 			// Co-op camera set to paused and not waiting for toggle.
-			glob.cam->waitForToggle = false;
+			glob.cam->SetWaitForToggle(false);
 			glob.cam->ToggleCoopCamera(false);
 			// Reset combat and camera shake state.
 			glob.isCameraShakeActive = false;
 			glob.isInCoopCombat = false;
+			// Set as not summoning yet.
+			glob.isSummoningPlayers = false;
+			// Make sure the party is not flagged as wiped.
+			glob.partyWiped = false;
 		}
 		else 
 		{
@@ -73,6 +77,13 @@ namespace ALYSLC
 		Events::ResetMenuState();
 		// Re-enable any controls for P1 that might have been disabled.
 		Util::ToggleAllControls(true);
+		// Clear any lingering queued input events.
+		for (auto& ptr : glob.reqInputEvents)
+		{
+			ptr.release();
+		}
+
+		glob.reqInputEvents.clear();
 		// Reset to the default third person camera orientation, 
 		// just in case the game was saved while the co-op cam was active.
 		Util::ResetTPCamOrientation();
@@ -104,15 +115,15 @@ namespace ALYSLC
 		return firstTimeInit;
 	}
 
-	std::vector<std::uint32_t> CoopLib::GetConnectedCoopControllerIDs(RE::StaticFunctionTag*)
+	std::vector<std::uint32_t> CoopLib::GetConnectedInputDeviceIDs(RE::StaticFunctionTag*)
 	{
-		// Setup controller data for all connected controllers and return a list of controller IDs
-		// for all active controllers. P1's CID is always first.
+		// Setup input device data for all connected devices and return a list of device IDs
+		// for all active devices. P1's DID is always first.
 
-		SPDLOG_DEBUG("GetConnectedCoopControllerIDs.");
+		SPDLOG_DEBUG("GetConnectedInputDeviceIDs");
 		if (glob.globalDataInit) 
 		{
-			return glob.cdh->SetupConnectedCoopControllers();
+			return glob.cdh->SetupConnectedInputDevices();
 		}
 		else
 		{
@@ -120,18 +131,25 @@ namespace ALYSLC
 		}
 	}
 
-	bool CoopLib::InitializeCoop
+	bool CoopLib::InitializeCoopPlayers
 	(
 		RE::StaticFunctionTag*, 
 		uint32_t a_numCompanions,
-		std::vector<uint32_t> a_controllerIDs, 
+		std::vector<uint32_t> a_deviceIDs, 
 		std::vector<RE::Actor*> a_coopActors
 	)
 	{
+		// Preconditions:
+		// Player 1 is always determined by the first index's elements in both lists.
+		// Device ID and actor lists are contiguously populated (all null elements at the end)
+		// and elements at the same indices are linked to one another
+		// (Ex. If list index 1 has a device ID of 2 and an actor 'Player', 
+		// then the actor 'Player' is controlled by the input device with ID 2.)
+		// 
 		// Initializes/updates all co-op players with the given data.
 		// Returns true if a co-op session was initialized successfully.
 
-		SPDLOG_DEBUG("InitializeCoop.");
+		SPDLOG_DEBUG("InitializeCoop");
 		// No global co-op data assigned, so we can't start co-op.
 		if (!glob.globalDataInit) 
 		{
@@ -141,14 +159,12 @@ namespace ALYSLC
 		// Reset living and active players count before constructing/updating co-op players.
 		glob.livingPlayers = glob.activePlayers = 0;
 
-		// Set P1's controller ID.
-		// Is always the first index in the controller IDs list.
-		// P1's CID must be set before starting co-op.
-		if (glob.player1CID == -1) 
+		// P1's DID must be set before starting co-op.
+		if (glob.player1DID == -1) 
 		{
 			RE::DebugMessageBox
 			(
-				"[ALYSLC]\nPlayer 1's controller ID has not been assigned "
+				"[ALYSLC]\nPlayer 1's device ID has not been assigned "
 				"before starting co-op.\n"
 				"Please try summoning again or assign Player 1's controller ID "
 				"through the Debug Menu before summoning:\n"
@@ -160,26 +176,18 @@ namespace ALYSLC
 			return false;
 		}
 
-		// Attempting to account for discontinuities in which controller ports are active.
-		// E.g. port 1 and port 3 are active,
-		// so port 2 must remain inactive with no co-op player assigned.
-		std::array<bool, ALYSLC::Settings::fMaxNumControllers> isActiveControllerIDList = 
-		{
-			false, false, false, false 
-		};
-
 		SPDLOG_DEBUG
 		(
-			"Controller IDs vector length: {}, number of companion players: {}.", 
-			a_controllerIDs.size(), a_numCompanions
+			"Device IDs vector length: {}, number of companion players: {}.", 
+			a_deviceIDs.size(), a_numCompanions
 		);
 		SPDLOG_DEBUG
 		(
-			"Controller IDs: {}, {}, {}, {}",
-			a_controllerIDs.size() > 0 ? a_controllerIDs[0] : -1, 
-			a_controllerIDs.size() > 1 ? a_controllerIDs[1] : -1,
-			a_controllerIDs.size() > 2 ? a_controllerIDs[2] : -1, 
-			a_controllerIDs.size() > 3 ? a_controllerIDs[3] : -1
+			"Device IDs: {}, {}, {}, {}",
+			a_deviceIDs.size() > 0 ? a_deviceIDs[0] : -1, 
+			a_deviceIDs.size() > 1 ? a_deviceIDs[1] : -1,
+			a_deviceIDs.size() > 2 ? a_deviceIDs[2] : -1, 
+			a_deviceIDs.size() > 3 ? a_deviceIDs[3] : -1
 		);
 		SPDLOG_DEBUG
 		(
@@ -192,29 +200,17 @@ namespace ALYSLC
 
 		// Create 4 co-op players.
 		// Subsequent calls to initialize will reuse the co-op player objects
-		// by simply updating the co-op actor, controller ID,
+		// by simply updating the co-op actor, device ID,
 		// and refreshing data that should be updated on re-summoning.
-		for (auto i = 0; i < a_numCompanions + 1; ++i)
+		// Assign co-op players based on their player IDs [0, 3].
+		// NOTE:
+		// Player 1 always has a player ID of 0.
+		for (uint32_t playerID = 0; playerID < ALYSLC_MAX_PLAYER_COUNT; ++playerID)
 		{
-			// This controller is active.
-			isActiveControllerIDList[a_controllerIDs[i]] = true;
-		}
-
-		// Assign co-op players based on their controller IDs.
-		for (uint32_t i = 0; i < isActiveControllerIDList.size(); ++i)
-		{
-			// Instantiate co-op player if their controller is active.
-			if (isActiveControllerIDList[i])
+			// Instantiate co-op player if their input device is active.
+			if (playerID < a_deviceIDs.size() && a_deviceIDs[playerID] != -1)
 			{
-				// Get controller ID list index for the active controller ID.
-				// Used to index into the co-op actors list
-				// and retrieve the co-op actor paired with this active controller ID.
-				auto coopActorIndex = 
-				(
-					std::find(a_controllerIDs.begin(), a_controllerIDs.end(), i) - 
-					a_controllerIDs.begin()
-				);
-				if (!a_coopActors[coopActorIndex])
+				if (!a_coopActors[playerID])
 				{
 					RE::DebugMessageBox
 					(
@@ -226,28 +222,29 @@ namespace ALYSLC
 					);
 					SPDLOG_ERROR
 					(
-						"[P{}] should be active at controller ID list index {}. Aborting setup.",
-						i + 1, 
-						coopActorIndex
+						"[P{}] should be active at device ID list index {}. Aborting setup.",
+						playerID + 1, 
+						playerID
 					);
 					return false;
 				}
 
 				SPDLOG_DEBUG
 				(
-					"[P{}] active at controller ID list index {}: {}.",
-					i + 1, 
-					coopActorIndex, 
-					a_coopActors[coopActorIndex] ?
-					a_coopActors[coopActorIndex]->GetName() : 
-					"NONE"
+					"[P{}] active at device ID list index {}: {}. Device ID: {}.",
+					playerID + 1, 
+					playerID, 
+					a_coopActors[playerID] ?
+					a_coopActors[playerID]->GetName() : 
+					"NONE",
+					a_deviceIDs[playerID]
 				);
 
 				// Update serialization key for this player, which may have changed
 				// if the mod load order has been modified since the last save.
 				bool succ = GlobalCoopData::UpdatePlayerSerializationIDs
 				(
-					a_coopActors[coopActorIndex]
+					a_coopActors[playerID]
 				);
 				// If not successful, we could not get and update this player's serialized data, 
 				// so stop initializing co-op.
@@ -261,8 +258,8 @@ namespace ALYSLC
 							"Failed to retrieve {}'s saved data.\n"
 							"All saved player data has been fully reset prior to starting co-op.\n"
 							"Please re-customize and respec all characters.", 
-							a_coopActors[coopActorIndex] ? 
-							a_coopActors[coopActorIndex]->GetName() :
+							a_coopActors[playerID] ? 
+							a_coopActors[playerID]->GetName() :
 							"NONE"
 						).c_str()
 					);
@@ -276,17 +273,18 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"Updating coop player '{}'.",
-						a_coopActors[coopActorIndex] ?
-						a_coopActors[coopActorIndex]->GetName() : 
+						a_coopActors[playerID] ?
+						a_coopActors[playerID]->GetName() : 
 						"NONE"
 					);
 
 					// Simply update the current co-op player
 					// to reflect the new data received.
-					glob.coopPlayers[i]->UpdateCoopPlayer
+					glob.coopPlayers[playerID]->UpdateCoopPlayer
 					(
-						a_controllerIDs[coopActorIndex], 
-						a_coopActors[coopActorIndex]
+						a_deviceIDs[playerID], 
+						playerID,
+						a_coopActors[playerID]
 					);
 				}
 				else
@@ -294,16 +292,17 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"Constructing new coop player '{}'.", 
-						a_coopActors[coopActorIndex] ?
-						a_coopActors[coopActorIndex]->GetName() : 
+						a_coopActors[playerID] ?
+						a_coopActors[playerID]->GetName() : 
 						"NONE"
 					);
 
-					// Construct active player at index given by controller ID.
-					glob.coopPlayers[i] = std::make_shared<CoopPlayer>
+					// Construct active player at index given by player ID.
+					glob.coopPlayers[playerID] = std::make_shared<CoopPlayer>
 					(
-						a_controllerIDs[coopActorIndex], 
-						a_coopActors[coopActorIndex]
+						a_deviceIDs[playerID],
+						playerID,
+						a_coopActors[playerID]
 					);
 				}
 
@@ -313,31 +312,18 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("[P{}] inactive", i + 1);
+				SPDLOG_DEBUG("[P{}] inactive", playerID + 1);
 				// Construct inactive player to clear out all previous data.
-				glob.coopPlayers[i] = std::make_shared<CoopPlayer>(-1, nullptr);
+				glob.coopPlayers[playerID] = std::make_shared<CoopPlayer>(-1, -1, nullptr);
 			}
 		}
 
-		// Set player IDs and initialize all sub-managers after construction.
-		uint8_t currentID = 1;
+		// Initialize all sub-managers after construction.
 		for (uint8_t i = 0; i < glob.coopPlayers.size(); ++i)
 		{
 			const auto& p = glob.coopPlayers[i];
 			if (p->isActive) 
 			{
-				if (p->isPlayer1) 
-				{
-					// P1 is always at index 0.
-					p->playerID = 0;
-				}
-				else
-				{
-					// After P1, companion players are ordered based on their controller IDs.
-					p->playerID = currentID;
-					++currentID;
-				}
-
 				// Since the player manager is itself a member of each sub-manager 
 				// for ease of access to all other player sub-managers,
 				// initialize all sub-managers after full construction of the player manager.
@@ -351,6 +337,25 @@ namespace ALYSLC
 		}
 
 		SPDLOG_DEBUG("Players this session: {}", glob.activePlayers);
+		// First initialization.
+		if (!glob.allPlayersInit)
+		{
+			// Notify P1 of how they can obtain menu input control with the keyboard + mouse
+			// while the co-op camera is inactive and another player is controlling menus.
+			// Implemented as a failsafe to prevent getting locked out 
+			// of interacting with menus, while also not interrupting
+			// the companion player's menu control with keypresses or mouse movement.
+			GlobalCoopData::SetMenuPlayerIDs(0);
+			RE::DebugMessageBox
+			(
+				"[ALYSLC]\n"
+				"While the co-op camera is inactive and Player 1 is not controlling menus, "
+				"keep 'Left Control' held before pressing any other keys or moving the mouse "
+				"to enable keyboard and mouse controls in the menu. " 
+				"'Right Control' will perform the same action as 'Left Control' "
+				"while Player 1 is not controlling menus."
+			);
+		}
 
 		// All players have now been initialized for the first time.
 		glob.allPlayersInit = true;
@@ -454,14 +459,15 @@ namespace ALYSLC
 			glob.coopSessionActive = false;
 		}
 
-		// Lastly, reset menu CIDs/PIDs.
+		// Lastly, reset menu DIDs/PIDs.
 		if (glob.globalDataInit) 
 		{
-			glob.lastResolvedMenuCID = 
-			glob.menuCID = 
-			glob.prevMenuCID = 
-			glob.mim->managerMenuCID = -1;
-			glob.mim->managerMenuPlayerID = glob.mim->pmcPlayerID = 0;
+			glob.lastResolvedMenuPID = 
+			glob.menuPID = 
+			glob.prevMenuPID = 
+			glob.mim->managerMenuDID = -1;
+			glob.mim->managerMenuPID = -1;
+			glob.mim->pmcPID = 0;
 			// Clear all menu opening requests.
 			glob.moarm->ClearAllRequests();
 		}
@@ -834,19 +840,19 @@ namespace ALYSLC
 
 	std::vector<RE::BSFixedString> CoopLib::GetFavoritedEmoteIdles
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID
+		RE::StaticFunctionTag*, int32_t a_playerID
 	)
 	{
 		// Get list of cyclable emote idle event names assigned by the given player.
 
-		SPDLOG_DEBUG("CID {}.", a_controllerID);
+		SPDLOG_DEBUG("PID {}.", a_playerID);
 		std::vector<RE::BSFixedString> favoritedEmoteIdles{ };
 		if (glob.allPlayersInit && 
-			a_controllerID > -1 &&
-			a_controllerID < ALYSLC_MAX_PLAYER_COUNT && 
-			glob.coopPlayers[a_controllerID]->isActive)
+			a_playerID > -1 &&
+			a_playerID < ALYSLC_MAX_PLAYER_COUNT && 
+			glob.coopPlayers[a_playerID]->isActive)
 		{
-			const auto& p = glob.coopPlayers[a_controllerID];
+			const auto& p = glob.coopPlayers[a_playerID];
 			for (auto i = 0; i < p->em->favoritedEmoteIdles.size(); ++i)
 			{
 				favoritedEmoteIdles.emplace_back(p->em->favoritedEmoteIdles[i]);
@@ -854,7 +860,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Return the default list if the player CID is invalid.
+			// Return the default list if the player PID is invalid.
 			for (auto i = 0; i < GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS.size(); ++i)
 			{
 				favoritedEmoteIdles.emplace_back
@@ -869,19 +875,23 @@ namespace ALYSLC
 	
 	void CoopLib::RequestMenuControl
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID, RE::BSFixedString a_menuName
+		RE::StaticFunctionTag*,
+		int32_t a_deviceID,
+		int32_t a_playerID, 
+		RE::BSFixedString a_menuName
 	)
 	{
 		// Request control of the given menu for the given player.
-		// Reset menu CIDs if the given CID is -1.
+		// Reset menu PIDs if the given PID is -1.
 
 		if (!glob.globalDataInit ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT) 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT) 
 		{
 			return;
 		}
 
-		if (a_controllerID > -1) 
+		// Must both be valid assigned IDs.
+		if (a_deviceID > -1 && a_playerID > -1) 
 		{
 			// Send a request to resolve later if during co-op session.
 			// Set directly and stop/start menu input manager when out of co-op.
@@ -889,7 +899,7 @@ namespace ALYSLC
 			{
 				bool succ = glob.moarm->InsertRequest
 				(
-					a_controllerID,
+					a_playerID,
 					InputAction::kNone, 
 					SteadyClock::now(), 
 					a_menuName, 
@@ -898,62 +908,62 @@ namespace ALYSLC
 				);
 				SPDLOG_DEBUG
 				(
-					"Req CID {}: menu CID: {}, "
-					"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}. "
+					"Req PID {}: menu PID: {}, "
+					"last menu PID: {}, menu name: {}, MIM running: {}, MIM player ID: {}. "
 					"SUCC: {}",
-					a_controllerID, 
-					glob.menuCID, 
-					glob.prevMenuCID, 
+					a_playerID, 
+					glob.menuPID, 
+					glob.prevMenuPID, 
 					a_menuName, 
 					glob.mim->IsRunning(), 
-					glob.mim->managerMenuCID, 
+					glob.mim->managerMenuPID, 
 					succ
 				);
 			}
 			else
 			{
-				GlobalCoopData::SetMenuCIDs(a_controllerID);
-				if (a_controllerID != glob.player1CID && !glob.mim->IsRunning())
+				GlobalCoopData::SetMenuPlayerIDs(a_playerID);
+				if (a_playerID != 0 && !glob.mim->IsRunning())
 				{
-					glob.mim->ToggleCoopPlayerMenuMode(a_controllerID);
+					glob.mim->ToggleCoopPlayerMenuMode(a_deviceID, a_playerID);
 				}
 			}
 		}
 		else
 		{
-			// Reset directly if CID is -1.
-			GlobalCoopData::ResetMenuCIDs();
-			glob.mim->ToggleCoopPlayerMenuMode(-1);
+			// Reset directly if PID is -1.
+			GlobalCoopData::ResetMenuPlayerIDs();
+			glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 			SPDLOG_DEBUG
 			(
-				"After resetting menu CIDs: menu CID: {}, "
-				"last menu CID: {}, menu name: {}, MIM running: {}, MIM controller ID: {}.",
-				glob.menuCID,
-				glob.prevMenuCID,
+				"After resetting menu PIDs: menu PID: {}, "
+				"last menu PID: {}, menu name: {}, MIM running: {}, MIM player ID: {}.",
+				glob.menuPID,
+				glob.prevMenuPID,
 				a_menuName, 
 				glob.mim->IsRunning(), 
-				glob.mim->managerMenuCID
+				glob.mim->managerMenuPID
 			);
 		}
 	}
 
 	void CoopLib::RequestStateChange
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID, uint32_t a_newState
+		RE::StaticFunctionTag*, int32_t a_playerID, uint32_t a_newState
 	)
 	{
 		// Signal all of the given player's managers to change state to the given state.
 
-		SPDLOG_DEBUG("CID {}'s managers -> state {}.", a_controllerID, a_newState);
+		SPDLOG_DEBUG("PID {}'s managers -> state {}.", a_playerID, a_newState);
 		if (!glob.allPlayersInit ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT || 
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT || 
 			a_newState >= !ManagerState::kTotal)
 		{
 			return;
 		}
 
-		glob.coopPlayers[a_controllerID]->RequestStateChange
+		glob.coopPlayers[a_playerID]->RequestStateChange
 		(
 			static_cast<ManagerState>(a_newState)
 		);
@@ -978,10 +988,14 @@ namespace ALYSLC
 
 	void CoopLib::SetCoopPlayerClass
 	(
-		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESClass* a_class
+		RE::StaticFunctionTag*, 
+		RE::Actor* a_playerActor, 
+		RE::TESClass* a_class,
+		bool a_rescaleActorValues
 	)
 	{
-		// Set the given player's class to the given class and update base skill actor values.
+		// Set the given player's class to the given class 
+		// and optionally update base skill actor values.
 		// The player and co-op session do not have to be active.
 
 		SPDLOG_DEBUG
@@ -1010,17 +1024,23 @@ namespace ALYSLC
 			delete script;
 		}
 
-		// Rescale skill AVs when done, since their base values have changed.
-		GlobalCoopData::RescaleAVsOnBaseSkillAVChange(a_playerActor);
+		if (a_rescaleActorValues)
+		{
+			// Rescale skill AVs when done, since their base values have changed.
+			GlobalCoopData::RescaleAVsOnBaseSkillAVChange(a_playerActor);
+		}
 	}
 
 	void CoopLib::SetCoopPlayerRace
 	(
-		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
+		RE::StaticFunctionTag*,
+		RE::Actor* a_playerActor, 
+		RE::TESRace* a_race,
+		bool a_rescaleActorValues
 	)
 	{
 		// Set the given companion player's race to the given race 
-		// and update base skill actor values.
+		// and optionally update base skill actor values.
 		// The player and co-op session do not have to be active.
 
 		SPDLOG_DEBUG
@@ -1035,29 +1055,32 @@ namespace ALYSLC
 		}
 
 		Util::SetActorRace(a_playerActor, a_race);
-		// Rescale skill AVs when done, since a race change can modify the base skill levels.
-		GlobalCoopData::RescaleAVsOnBaseSkillAVChange(a_playerActor);
+		if (a_rescaleActorValues)
+		{
+			// Rescale skill AVs when done, since a race change can modify the base skill levels.
+			GlobalCoopData::RescaleAVsOnBaseSkillAVChange(a_playerActor);
+		}
 	}
 
 	void CoopLib::SetFavoritedEmoteIdles
 	(
 		RE::StaticFunctionTag*, 
-		int32_t a_controllerID,
+		int32_t a_playerID,
 		std::vector<RE::BSFixedString> a_emoteIdlesList
 	)
 	{
 		// Update the given player's list of cyclable emote idle event names to the given list.
 
-		SPDLOG_DEBUG("CID {}.", a_controllerID);
+		SPDLOG_DEBUG("PID {}.", a_playerID);
 		if (!glob.coopSessionActive ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT ||
-			!glob.coopPlayers[a_controllerID]->isActive) 
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT ||
+			!glob.coopPlayers[a_playerID]->isActive) 
 		{
 			return;
 		}
 
-		glob.coopPlayers[a_controllerID]->em->SetFavoritedEmoteIdles(a_emoteIdlesList);
+		glob.coopPlayers[a_playerID]->em->SetFavoritedEmoteIdles(a_emoteIdlesList);
 	}
 
 	void CoopLib::SetGifteePlayerActor(RE::StaticFunctionTag*, RE::Actor* a_playerActor)
@@ -1075,6 +1098,21 @@ namespace ALYSLC
 		(
 			a_playerActor ? a_playerActor->GetHandle() : RE::ActorHandle()
 		);
+	}
+	
+	void CoopLib::SetIsSummoningFlag(RE::StaticFunctionTag*, bool a_set)
+	{
+		// Set the 'is summoning' flag, which indicates whether players 
+		// are summoning their characters for co-op.
+
+		if (!glob.globalDataInit)
+		{
+			glob.isSummoningPlayers = false;
+			return;
+		}
+
+		SPDLOG_DEBUG("Set 'is summoning' to {}.", a_set);
+		glob.isSummoningPlayers = a_set;
 	}
 
 	void CoopLib::SetPartyInvincibility(RE::StaticFunctionTag*, bool a_shouldSet)
@@ -1146,7 +1184,7 @@ namespace ALYSLC
 			}
 		}
 		
-		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		const auto& coopP1 = glob.coopPlayers[0];
 		if (coopP1 && coopP1->isActive) 
 		{
 			if (a_shouldDismiss)
@@ -1168,26 +1206,26 @@ namespace ALYSLC
 
 	void CoopLib::TeleportToPlayerToActor
 	(
-		RE::StaticFunctionTag*, const int32_t a_controllerID, RE::Actor* a_teleportTarget
+		RE::StaticFunctionTag*, const int32_t a_playerID, RE::Actor* a_teleportTarget
 	)
 	{
-		// Teleport the player with the given CID to the given actor.
+		// Teleport the player with the given PID to the given actor.
 
 		SPDLOG_DEBUG
 		(
-			"CID {} -> {}.",
-			a_controllerID,
+			"PID {} -> {}.",
+			a_playerID,
 			a_teleportTarget ? a_teleportTarget->GetName() : "NONE"
 		);
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit || 
-			a_controllerID <= -1 || 
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID]; 
+		const auto& p = glob.coopPlayers[a_playerID]; 
 		if (!p || !p->isActive)
 		{
 			return;
@@ -1223,7 +1261,7 @@ namespace ALYSLC
 
 	void CoopLib::ToggleSetupMenuControl
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID, int32_t a_playerID, bool a_shouldEnter
+		RE::StaticFunctionTag*, int32_t a_deviceID, int32_t a_playerID, bool a_shouldEnter
 	)
 	{ 
 		// Toggle menu control on or off for the given player 
@@ -1231,10 +1269,10 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"CID: {}, PID: {}, should enter: {}.", a_controllerID, a_playerID, a_shouldEnter
+			"DID: {}, PID: {}, should enter: {}.", a_deviceID, a_playerID, a_shouldEnter
 		);
 		if ((glob.globalDataInit && glob.mim) && 
-			(a_controllerID > -1 && a_controllerID < ALYSLC_MAX_PLAYER_COUNT) && 
+			(a_deviceID > -1) && 
 			(a_playerID > -1 && a_playerID < ALYSLC_MAX_PLAYER_COUNT)) 
 		{
 			// Set the opened menu name and type.
@@ -1251,16 +1289,16 @@ namespace ALYSLC
 					DebugOverlayMenu::Load();
 				}
 
-				// Set menu CID directly to the requesting player's.
-				GlobalCoopData::SetMenuCIDs(a_controllerID);
+				// Set menu PID directly to the requesting player's.
+				GlobalCoopData::SetMenuPlayerIDs(a_playerID);
 				// Signal MIM to start running.
-				glob.mim->ToggleCoopPlayerMenuMode(a_controllerID, a_playerID);
+				glob.mim->ToggleCoopPlayerMenuMode(a_deviceID, a_playerID);
 			}
 			else
 			{
-				// Reset menu CIDs.
-				GlobalCoopData::ResetMenuCIDs();
-				// Signal MIM to pause and reset both CID and PID.
+				// Reset menu PIDs.
+				GlobalCoopData::ResetMenuPlayerIDs();
+				// Signal MIM to pause and reset both DID and PID.
 				glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 			}
 		}
@@ -1269,10 +1307,10 @@ namespace ALYSLC
 			SPDLOG_ERROR
 			(
 				"Global co-op data not initialized: {}, "
-				"MIM invalid: {}, CID invalid: {}, player ID invalid: {}.",
+				"MIM invalid: {}, DID invalid: {}, PID invalid: {}.",
 				!glob.globalDataInit,
 				!glob.mim,
-				(a_controllerID <= -1 && a_controllerID >= ALYSLC_MAX_PLAYER_COUNT),
+				(a_deviceID <= -1),
 				(a_playerID <= -1 && a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 			);
 		}
@@ -1307,7 +1345,7 @@ namespace ALYSLC
 	void CoopLib::CharacterCustomization::CopyNPCAppearanceToPlayer
 	(
 		RE::StaticFunctionTag*,
-		int32_t a_controllerID,
+		int32_t a_playerID,
 		RE::TESNPC* a_baseToCopy,
 		bool a_setOppositeGenderAnims
 	)
@@ -1316,20 +1354,20 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"CID: {}, NPC base: {}, set opposite gender animations: {}.",
-			a_controllerID,
+			"PID: {}, NPC base: {}, set opposite gender animations: {}.",
+			a_playerID,
 			a_baseToCopy ? a_baseToCopy->GetName() : "NONE", 
 			a_setOppositeGenderAnims
 		);
 		if (!glob.allPlayersInit || 
-			a_controllerID <= -1 || 
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT ||
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT ||
 			!a_baseToCopy)
 		{
 			return;
 		}
 
-		glob.coopPlayers[a_controllerID]->CopyNPCAppearanceToPlayer
+		glob.coopPlayers[a_playerID]->CopyNPCAppearanceToPlayer
 		(
 			a_baseToCopy, a_setOppositeGenderAnims
 		);
@@ -1550,7 +1588,7 @@ namespace ALYSLC
 	void CoopLib::CharacterCustomization::SetDefaultRacialAppearance
 	(
 		RE::StaticFunctionTag*,
-		int32_t a_controllerID,
+		int32_t a_playerID,
 		bool a_setFemale, 
 		bool a_setOppositeGenderAnims
 	)
@@ -1563,17 +1601,17 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"CID: {}, set female: {}, set opposite gender anims: {}.",
-			a_controllerID, a_setFemale, a_setOppositeGenderAnims
+			"PID: {}, set female: {}, set opposite gender anims: {}.",
+			a_playerID, a_setFemale, a_setOppositeGenderAnims
 		);
 		if (!glob.allPlayersInit ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
-		glob.coopPlayers[a_controllerID]->SetDefaultRacialAppearance
+		glob.coopPlayers[a_playerID]->SetDefaultRacialAppearance
 		(
 			a_setFemale, a_setOppositeGenderAnims
 		);
@@ -1610,20 +1648,20 @@ namespace ALYSLC
 		glob.ToggleGodModeForAllPlayers(false);
 	}
 
-	void CoopLib::Debug::DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
+	void CoopLib::Debug::DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID)
 	{
 		// Disable god mode for a specific player.
 
-		SPDLOG_DEBUG("CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit || 
 			!glob.coopSessionActive || 
-			a_controllerID <= -1 || 
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 			
-		glob.ToggleGodModeForPlayer(a_controllerID, false);
+		glob.ToggleGodModeForPlayer(a_playerID, false);
 	}
 
 	void CoopLib::Debug::EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
@@ -1639,20 +1677,20 @@ namespace ALYSLC
 		glob.ToggleGodModeForAllPlayers(true);
 	}
 
-	void CoopLib::Debug::EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
+	void CoopLib::Debug::EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID)
 	{
 		// Enable god mode for a specific player.
 
-		SPDLOG_DEBUG("CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 		
-		glob.ToggleGodModeForPlayer(a_controllerID, true);
+		glob.ToggleGodModeForPlayer(a_playerID, true);
 	}
 
 	void CoopLib::Debug::MoveAllPlayersToPlayer(RE::StaticFunctionTag*, RE::Actor* a_playerActor)
@@ -1700,20 +1738,20 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopLib::Debug::ReEquipHandForms(RE::StaticFunctionTag*, int32_t a_controllerID)
+	void CoopLib::Debug::ReEquipHandForms(RE::StaticFunctionTag*, int32_t a_playerID)
 	{
 		// Re-equip the player's desired hand forms (weapons/magic/armor).
 
-		SPDLOG_DEBUG("CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("PID: {}.", a_playerID);
 		if (!glob.allPlayersInit || 
 			!glob.coopSessionActive || 
-			a_controllerID <= -1 || 
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 || 
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID];
+		const auto& p = glob.coopPlayers[a_playerID];
 		// Sheathe, re-equip, then unsheathe for best results.
 		p->pam->ReadyWeapon(false);
 		p->em->ReEquipHandForms();
@@ -1741,20 +1779,20 @@ namespace ALYSLC
 		}
 	}
 
-	void CoopLib::Debug::RefreshPlayerManagers(RE::StaticFunctionTag*, int32_t a_controllerID)
+	void CoopLib::Debug::RefreshPlayerManagers(RE::StaticFunctionTag*, int32_t a_playerID)
 	{
 		// Refresh data for all of the given player's managers.
 
-		SPDLOG_DEBUG("CID: {}.", a_controllerID);
+		SPDLOG_DEBUG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID]; 
+		const auto& p = glob.coopPlayers[a_playerID]; 
 		if (!p || !p->isActive)
 		{
 			return;
@@ -1765,7 +1803,7 @@ namespace ALYSLC
 
 	void CoopLib::Debug::ResetCoopCompanion
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID, bool a_unequipAll, bool a_reattachHavok
+		RE::StaticFunctionTag*, int32_t a_playerID, bool a_unequipAll, bool a_reattachHavok
 	)
 	{
 		// Hard reset a companion player:
@@ -1776,18 +1814,18 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"CID: {}, unequip all: {}, re-attach havok: {}.",
-			a_controllerID, a_unequipAll, a_reattachHavok
+			"PID: {}, unequip all: {}, re-attach havok: {}.",
+			a_playerID, a_unequipAll, a_reattachHavok
 		);
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit || 
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT)
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID]; 
+		const auto& p = glob.coopPlayers[a_playerID]; 
 		if (!p || !p->isActive)
 		{
 			return;
@@ -1837,19 +1875,18 @@ namespace ALYSLC
 		// revert any active transformation, re-equip hand forms, and reset I-frames flag.
 
 		SPDLOG_DEBUG("ResetPlayer1State.");
-		if (!glob.globalDataInit || 
-			!glob.allPlayersInit ||
-			glob.player1CID <= -1 ||
-			glob.player1CID >= ALYSLC_MAX_PLAYER_COUNT) 
+		if (!glob.globalDataInit || !glob.allPlayersInit) 
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[glob.player1CID];
-		p->ResetPlayer1();
+		glob.coopPlayers[0]->ResetPlayer1();
 	}
 
-	void CoopLib::Debug::RespecPlayer(RE::StaticFunctionTag*, int32_t a_controllerID)
+	void CoopLib::Debug::RespecPlayer
+	(
+		RE::StaticFunctionTag*, int32_t a_playerID
+	)
 	{
 		// NOTE:
 		// Not for Enderal.
@@ -1862,14 +1899,15 @@ namespace ALYSLC
 
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit ||
+			!glob.coopSessionActive ||
 			ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
-			a_controllerID <= -1 ||
-			a_controllerID >= ALYSLC_MAX_PLAYER_COUNT) 
+			a_playerID <= -1 ||
+			a_playerID >= ALYSLC_MAX_CONTROLLER_COUNT) 
 		{
 			return;
 		}
 
-		const auto& p = glob.coopPlayers[a_controllerID]; 
+		const auto& p = glob.coopPlayers[a_playerID]; 
 		if (!p || !p->isActive)
 		{
 			return;
@@ -1878,7 +1916,10 @@ namespace ALYSLC
 		SPDLOG_DEBUG("{}.", p->coopActor->GetName());
 		glob.taskRunner->AddTask
 		(
-			[a_controllerID]() { GlobalCoopData::RespecPlayerTask(a_controllerID); }
+			[a_playerID]() 
+			{
+				GlobalCoopData::RespecPlayerTask(a_playerID);
+			}
 		);
 	}
 
@@ -1920,8 +1961,8 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"Current menu-related CIDs: menu: {}, last menu: {}, manager: {}.",
-			glob.menuCID, glob.prevMenuCID, glob.mim->managerMenuCID
+			"Current menu-related PIDs: menu: {}, last menu: {}, manager: {}.",
+			glob.menuPID, glob.prevMenuPID, glob.mim->managerMenuPID
 		);
 		GlobalCoopData::StopMenuInputManager();
 	}
@@ -1941,15 +1982,18 @@ namespace ALYSLC
 	//[Papyrus API Functions]
 	//=============================================================================================
 	
-	RE::Actor* CoopLib::API::GetALYSLCPlayerByCID
+	//=============================================================================================
+	// [V1]
+	//=============================================================================================
+	RE::Actor* CoopLib::API::GetALYSLCPlayerByDID
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID
+		RE::StaticFunctionTag*, int32_t a_deviceID
 	)
 	{
-		// Return the player character corresponding to the player with the given controller ID.
+		// Return the player character corresponding to the player with the given device ID.
 
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
-		auto playerHandle = modAPI->GetALYSLCPlayerByCID(a_controllerID);
+		auto playerHandle = modAPI->GetALYSLCPlayerByDID(a_deviceID);
 		return
 		(
 			playerHandle && playerHandle.get() ? 
@@ -1975,9 +2019,9 @@ namespace ALYSLC
 		);
 	}
 
-	int32_t CoopLib::API::GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor)
+	int32_t CoopLib::API::GetALYSLCPlayerDID(RE::StaticFunctionTag*, RE::Actor* a_actor)
 	{
-		// Return the controller ID for the controller controlling the given player character.
+		// Return the device ID for the input device controlling the given player character.
 
 		if (!a_actor)
 		{
@@ -1985,7 +2029,7 @@ namespace ALYSLC
 		}
 
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
-		return modAPI->GetALYSLCPlayerCID(a_actor->GetHandle());
+		return modAPI->GetALYSLCPlayerDID(a_actor->GetHandle());
 	}
 
 	int32_t CoopLib::API::GetALYSLCPlayerPID(RE::StaticFunctionTag*, RE::Actor* a_actor)
@@ -2029,8 +2073,20 @@ namespace ALYSLC
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
 		return modAPI->IsALYSLCPlayer(a_actor->GetHandle());
 	}
+	
+	bool CoopLib::API::IsSessionActive(RE::StaticFunctionTag*)
+	{
+		// Return true if a co-op session is active.
 
-	bool CoopLib::API::IsPlayerActorPerformingAction
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->IsSessionActive();
+	}
+	
+	//=============================================================================================
+	// [V2]
+	//=============================================================================================
+
+	bool CoopLib::API::IsPlayerPerformingAction
 	(
 		RE::StaticFunctionTag*, RE::Actor* a_playerActor, uint32_t a_playerActionIndex
 	)
@@ -2048,27 +2104,98 @@ namespace ALYSLC
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
 		return modAPI->IsPerformingAction(a_playerActor->GetHandle(), a_playerActionIndex);
 	}
-	
-	bool CoopLib::API::IsPlayerCIDPerformingAction
+
+	bool CoopLib::API::IsPlayerPressingInput
 	(
-		RE::StaticFunctionTag*, int32_t a_controllerID, uint32_t a_playerActionIndex
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, uint32_t a_inputIndex
 	)
 	{
-		// Return true if the player with the given controller ID
-		// is performing the player action corresponding to the given player action index.
+		// Return true if the player controlling the given character
+		// is pressing the input that corresponds to the given index.
 		// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
-		// for the supported action indices.
+		// for the supported input indices.
 
+		if (!a_playerActor)
+		{
+			return false;
+		}
+		
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
-		return modAPI->IsPerformingAction(a_controllerID, a_playerActionIndex);
+		return modAPI->IsPressingInput(a_playerActor->GetHandle(), a_inputIndex);
 	}
 
-	bool CoopLib::API::IsSessionActive(RE::StaticFunctionTag*)
+	//=============================================================================================
+	// [V3]
+	//=============================================================================================
+
+	void CoopLib::API::AddSkillXP
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, int32_t a_skillAVIndex, float a_baseXP
+	)
 	{
-		// Return true if a co-op session is active.
+		// Increment the given player's serialized XP total for the given skill.
+		// Factors in the player's specific XP modifier.
+		// Shared skills are leveled up directly through P1 
+		// and nothing is saved to the serialized data.
+
+		if (!a_playerActor || 
+			a_skillAVIndex <= !RE::ActorValue::kNone ||
+			a_skillAVIndex >= !RE::ActorValue::kTotal)
+		{
+			return;
+		}
 
 		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
-		return modAPI->IsSessionActive();
+		return modAPI->AddSkillXP
+		(
+			a_playerActor->GetHandle(), static_cast<RE::ActorValue>(a_skillAVIndex), a_baseXP
+		);
+	}
+
+	int32_t CoopLib::API::GetMenuControlPID(RE::StaticFunctionTag*)
+	{
+		// Return the player ID for the player currently controlling menus.
+		// NOTE:
+		// Works even before a co-op session starts.
+		
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->GetMenuControlPID();
+	}
+
+	RE::Actor* CoopLib::API::GetMenuControlPlayer(RE::StaticFunctionTag*)
+	{
+		// Return the actor handle for the player currently controlling menus.
+		// NOTE:
+		// If the player currently controlling menus does not have an active character,
+		// such as before the co-op session starts, this call will return an empty handle.
+		
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		auto playerHandle = modAPI->GetMenuControlPlayer();
+		return
+		(
+			playerHandle && playerHandle.get() ? 
+			playerHandle.get().get() : 
+			nullptr
+		);
+	}
+
+	void CoopLib::API::RequestMenuControl
+	(
+		RE::StaticFunctionTag*, 
+		int32_t a_playerID,
+		RE::BSFixedString a_menuName,
+		RE::TESObjectREFR* a_assocRefr
+	)
+	{
+		// Insert a request from the given player to control the given menu.
+		// NOTE: 
+		// Call before the desired menu opens and while a co-op session is active.
+
+		const auto& modAPI = ALYSLC_API::ALYSLCInterface::GetSingleton();
+		return modAPI->RequestMenuControl
+		(
+			a_playerID, a_menuName, a_assocRefr ? a_assocRefr->GetHandle() : RE::ObjectRefHandle()
+		);
 	}
 
 	//=============================================================================================
@@ -2089,10 +2216,10 @@ namespace ALYSLC
 		a_vm->RegisterFunction("GetAllVoiceTypes"s, "ALYSLC"s, GetAllVoiceTypes);
 		a_vm->RegisterFunction
 		(
-			"GetConnectedCoopControllerIDs"s, "ALYSLC"s, GetConnectedCoopControllerIDs
+			"GetConnectedInputDeviceIDs"s, "ALYSLC"s, GetConnectedInputDeviceIDs
 		);
 		a_vm->RegisterFunction("GetFavoritedEmoteIdles"s, "ALYSLC"s, GetFavoritedEmoteIdles);
-		a_vm->RegisterFunction("InitializeCoop"s, "ALYSLC"s, InitializeCoop);
+		a_vm->RegisterFunction("InitializeCoopPlayers"s, "ALYSLC"s, InitializeCoopPlayers);
 		a_vm->RegisterFunction("InitializeGlobalData"s, "ALYSLC"s, InitializeGlobalData);
 		a_vm->RegisterFunction("RequestMenuControl"s, "ALYSLC"s, RequestMenuControl);
 		a_vm->RegisterFunction("RequestStateChange"s, "ALYSLC"s, RequestStateChange);
@@ -2104,6 +2231,7 @@ namespace ALYSLC
 		a_vm->RegisterFunction("SetCoopPlayerRace"s, "ALYSLC"s, SetCoopPlayerRace);
 		a_vm->RegisterFunction("SetFavoritedEmoteIdles"s, "ALYSLC"s, SetFavoritedEmoteIdles);
 		a_vm->RegisterFunction("SetGifteePlayerActor"s, "ALYSLC"s, SetGifteePlayerActor);
+		a_vm->RegisterFunction("SetIsSummoningFlag"s, "ALYSLC"s, SetIsSummoningFlag);
 		a_vm->RegisterFunction("SetPartyInvincibility"s, "ALYSLC"s, SetPartyInvincibility);
 		a_vm->RegisterFunction("SignalWaitForUpdate"s, "ALYSLC"s, SignalWaitForUpdate);
 		a_vm->RegisterFunction("TeleportToPlayerToActor"s, "ALYSLC"s, TeleportToPlayerToActor);
@@ -2209,21 +2337,31 @@ namespace ALYSLC
 		// Papyrus API functions.
 		// TODO:
 		// More framework functions for any scripts wishing to access/modify ALYSLC data.
-		a_vm->RegisterFunction("GetALYSLCPlayerByCID"s, "ALYSLC_API"s, API::GetALYSLCPlayerByCID);
+
+		// [V1]
+		a_vm->RegisterFunction("GetALYSLCPlayerByDID"s, "ALYSLC_API"s, API::GetALYSLCPlayerByDID);
 		a_vm->RegisterFunction("GetALYSLCPlayerByPID"s, "ALYSLC_API"s, API::GetALYSLCPlayerByPID);
-		a_vm->RegisterFunction("GetALYSLCPlayerCID"s, "ALYSLC_API"s, API::GetALYSLCPlayerCID);
+		a_vm->RegisterFunction("GetALYSLCPlayerDID"s, "ALYSLC_API"s, API::GetALYSLCPlayerDID);
 		a_vm->RegisterFunction("GetALYSLCPlayerPID"s, "ALYSLC_API"s, API::GetALYSLCPlayerPID);
 		a_vm->RegisterFunction("IsALYSLCCharacter"s, "ALYSLC_API"s, API::IsALYSLCCharacter);
 		a_vm->RegisterFunction("IsALYSLCPlayer"s, "ALYSLC_API"s, API::IsALYSLCPlayer);
-		a_vm->RegisterFunction
-		(
-			"IsPlayerActorPerformingAction"s, "ALYSLC_API"s, API::IsPlayerActorPerformingAction
-		);
-		a_vm->RegisterFunction
-		(
-			"IsPlayerCIDPerformingAction"s, "ALYSLC_API"s, API::IsPlayerCIDPerformingAction
-		);
 		a_vm->RegisterFunction("IsSessionActive"s, "ALYSLC_API"s, API::IsSessionActive);
+
+		// [V2]
+		a_vm->RegisterFunction
+		(
+			"IsPlayerPerformingAction"s, "ALYSLC_API"s, API::IsPlayerPerformingAction
+		);
+		a_vm->RegisterFunction
+		(
+			"IsPlayerPressingInput"s, "ALYSLC_API"s, API::IsPlayerPressingInput
+		);
+
+		// [V3]
+		a_vm->RegisterFunction("AddSkillXP"s, "ALYSLC_API"s, API::AddSkillXP);
+		a_vm->RegisterFunction("GetMenuControlPID"s, "ALYSLC_API"s, API::GetMenuControlPID);
+		a_vm->RegisterFunction("GetMenuControlPlayer"s, "ALYSLC_API"s, API::GetMenuControlPlayer);
+		a_vm->RegisterFunction("RequestMenuControl"s, "ALYSLC_API"s, API::RequestMenuControl);
 
 		return true;
 	}

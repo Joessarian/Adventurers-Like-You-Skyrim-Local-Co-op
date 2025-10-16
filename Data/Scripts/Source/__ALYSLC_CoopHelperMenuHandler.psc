@@ -8,7 +8,9 @@ UISelectionMenu Property PlayerSelectionMenu Auto
 UIStatsMenu Property CoopStatsMenu Auto
 UIWheelMenu Property CoopIdlesAssignmentMenu Auto
 UIWheelMenu Property CoopMiniGamesMenu Auto
-Int Property PlayerInMenuCID Auto
+; Device and player IDs for the player controlling menus.
+Int Property PlayerInMenuDID Auto
+Int Property PlayerInMenuPID Auto
 Int Property IDLES_ASSIGNMENT_MENU = 0 AutoReadOnly
 Int Property MINI_GAMES_MENU = 1 AutoReadOnly
 Int Property STATS_MENU = 2 AutoReadOnly
@@ -19,8 +21,7 @@ Function SetupMenus(Int aiMenuType)
     ; Set up menus.
     If (aiMenuType == IDLES_ASSIGNMENT_MENU)
         CoopIdlesAssignmentMenu = UIExtensions.GetMenu("UIWheelMenu") as UIWheelMenu
-        String ControllerIDStr = PO3_SKSEFunctions.IntToString(PlayerInMenuCID, False)
-        String[] SavedEmoteIdles = ALYSLC.GetFavoritedEmoteIdles(PlayerInMenuCID)
+        String[] SavedEmoteIdles = ALYSLC.GetFavoritedEmoteIdles(PlayerInMenuPID)
         Int Iter = 0
         While (Iter < SavedEmoteIdles.Length)
             CoopIdlesAssignmentMenu.SetPropertyIndexString("optionText", Iter, "Assign Emote Idle")
@@ -104,7 +105,7 @@ EndFunction
 ; 2 -> Stats
 ; 3 -> Teleport to Player
 ; 4 -> Trade with Player
-Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int aiMenuType)
+Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenuPID, Int aiMenuType)
     ALYSLC.Log("[CHMH SCRIPT] OnCoopHelperMenuRequest() Event Received. Type " + aiMenuType + ".")
 	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
 	Float SecsWaited = 0.0
@@ -122,22 +123,22 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
 	EndIf
 
     ; Set player controlling menu's info.
-    PlayerInMenuCID = aiMenuCID
+    PlayerInMenuDID = aiMenuDID
+    PlayerInMenuPID = aiMenuPID
     PlayerInMenu = akActorControllingMenu
     ; Populate helper menu(s) with options.
     SetupMenus(aiMenuType)
     Bool IsP1 = PlayerInMenu == PlayerRef
     ; Idles
     If (aiMenuType == IDLES_ASSIGNMENT_MENU)
-        String ControllerIDStr = PO3_SKSEFunctions.IntToString(PlayerInMenuCID, False)
         ; Set player menu control.
-        ALYSLC.RequestMenuControl(PlayerInMenuCID, CoopIdlesAssignmentMenu.ROOT_MENU)
-        String[] SavedEmoteIdles = ALYSLC.GetFavoritedEmoteIdles(PlayerInMenuCID)
+        ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, CoopIdlesAssignmentMenu.ROOT_MENU)
+        String[] SavedEmoteIdles = ALYSLC.GetFavoritedEmoteIdles(PlayerInMenuPID)
         Int FavoritesSlot = CoopIdlesAssignmentMenu.OpenMenu()
         ; Selected a valid slot, so open list of idles to place in the slot.
         While (FavoritesSlot != -1)
             ; Set player menu control.
-            ALYSLC.RequestMenuControl(PlayerInMenuCID, IdlesListMenu.ROOT_MENU)
+            ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, IdlesListMenu.ROOT_MENU)
             IdlesListMenu.OpenMenu()
             String ChosenIdle = IdlesListMenu.GetResultString()
             ; Valid replacement event name chosen.
@@ -146,19 +147,19 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
                 CoopIdlesAssignmentMenu.SetPropertyIndexString("optionLabelText", FavoritesSlot, ChosenIdle)
                 SavedEmoteIdles[FavoritesSlot] = ChosenIdle
                 ; Send updated emote idles list.
-                ALYSLC.SetFavoritedEmoteIdles(PlayerInMenuCID, SavedEmoteIdles)
+                ALYSLC.SetFavoritedEmoteIdles(PlayerInMenuPID, SavedEmoteIdles)
             EndIf
             ; Re-open idles assignment menu.
             ; Set player menu control.
-            ALYSLC.RequestMenuControl(PlayerInMenuCID, "ALYSLC Retain Menu Control")
+            ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "ALYSLC Retain Menu Control")
             FavoritesSlot = CoopIdlesAssignmentMenu.OpenMenu()
         EndWhile
     ; !!!TODO!!! Mini Games
     ElseIf (aiMenuType == MINI_GAMES_MENU)
         ; Set player menu control.
-        ALYSLC.RequestMenuControl(PlayerInMenuCID, CoopMiniGamesMenu.ROOT_MENU)
+        ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, CoopMiniGamesMenu.ROOT_MENU)
         Int OptionChosen = CoopMiniGamesMenu.OpenMenu(PlayerInMenu)
-        ALYSLC.Log("[CHMH SCRIPT] TODO: " + PlayerInMenu.GetDisplayName() + " (CID " + PlayerInMenuCID + "): option chosen in mini games menu: " + OptionChosen)
+        ALYSLC.Log("[CHMH SCRIPT] TODO: " + PlayerInMenu.GetDisplayName() + " (PID " + PlayerInMenuPID + "): option chosen in mini games menu: " + OptionChosen)
 
         ; Stewrim Ball.
         ; Spawn a 'ball' and 'hoop' for now.
@@ -186,7 +187,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
         If (PlayerInMenu)
             ALYSLC.Log("[CHMH SCRIPT] Opening stats menu for " + PlayerInMenu.GetDisplayName() + ".")
             ; Set player menu control.
-            ALYSLC.RequestMenuControl(PlayerInMenuCID, CoopStatsMenu.ROOT_MENU)
+            ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, CoopStatsMenu.ROOT_MENU)
             CoopStatsMenu.OpenMenu(PlayerInMenu)
         EndIf
     ; Teleport to Player -or-
@@ -199,7 +200,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
                 Actor TeleportTarget = None
                 If (DisplaySelectionMenu)
                     ; Set player menu control.
-                    ALYSLC.RequestMenuControl(PlayerInMenuCID, PlayerSelectionMenu.ROOT_MENU)
+                    ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, PlayerSelectionMenu.ROOT_MENU)
                     PlayerSelectionMenu.OpenMenu(OtherActivePlayersList)
                     TeleportTarget = PlayerSelectionMenu.GetResultForm() as Actor
                 Else
@@ -208,29 +209,18 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
 
                 If (TeleportTarget)
                     ALYSLC.Log("[CHMH SCRIPT] Teleporting " + PlayerInMenu.GetDisplayName() + " to " + TeleportTarget.GetDisplayName())
-                    ; Form Teleportal = StorageUtil.GetFormValue(None, "Teleportal")
-                    ; PlayerInMenu.ClearKeepOffsetFromActor()
-                    ; PlayerInMenu.SetDontMove(True)
-                    ; PlayerInMenu.PlaceAtMe(Teleportal)
-                    ; Utility.Wait(0.25)
-                    ; TeleportTarget.PlaceAtMe(Teleportal)
-                    ; Utility.Wait(0.25)
-                    ; PlayerInMenu.MoveTo(TeleportTarget)
-                    ; Utility.Wait(0.25)
-                    ; PlayerInMenu.SetDontMove(False)
-
-                    ALYSLC.TeleportToPlayerToActor(PlayerInMenuCID, TeleportTarget)
+                    ALYSLC.TeleportToPlayerToActor(PlayerInMenuPID, TeleportTarget)
                 EndIf
             ElseIf (aiMenuType == TRADE_PLAYER_SELECTION_MENU)
                 If (DisplaySelectionMenu)
                     ; Set player menu control.
-                    ALYSLC.RequestMenuControl(PlayerInMenuCID, PlayerSelectionMenu.ROOT_MENU)
+                    ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, PlayerSelectionMenu.ROOT_MENU)
                     PlayerSelectionMenu.OpenMenu(OtherActivePlayersList)
                     Actor GifteePlayer = PlayerSelectionMenu.GetResultForm() as Actor
                     
                     If (GifteePlayer)
                         ; Set player menu control.
-                        ALYSLC.RequestMenuControl(PlayerInMenuCID, "GiftMenu")
+                        ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
                         If (IsP1)
                             ALYSLC.Log("[CHMH SCRIPT] Gifting items from P1 " + PlayerRef.GetDisplayName() + " to " + GifteePlayer.GetDisplayName())
                             ; Gifts given directly to the giftee player from P1.
@@ -251,13 +241,13 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuCID, Int a
                         If (GifteePlayer)
                             ALYSLC.Log("[CHMH SCRIPT] Gifting items from P1 " + PlayerRef.GetDisplayName() + " to " + GifteePlayer.GetDisplayName())
                             ; Set player menu control.
-                            ALYSLC.RequestMenuControl(PlayerInMenuCID, "GiftMenu")
+                            ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
                             GifteePlayer.ShowGiftMenu(True, None, True, False)
                         EndIf
                     Else
                         ALYSLC.Log("[CHMH SCRIPT] Gifting items from " + PlayerInMenu.GetDisplayName() + " to P1 " + PlayerRef.GetDisplayName())
                         ; Set player menu control.
-                        ALYSLC.RequestMenuControl(PlayerInMenuCID, "GiftMenu")
+                        ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
                         PlayerInMenu.ShowGiftMenu(False, None, True, False)
                     EndIf
                 EndIf

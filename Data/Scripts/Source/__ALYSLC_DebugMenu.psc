@@ -2,9 +2,11 @@ Scriptname __ALYSLC_DebugMenu extends ReferenceAlias
 Actor Property PlayerRef Auto
 Actor Property PlayerInMenu Auto
 UIListMenu Property DebugMenu Auto
-Int Property PlayerInMenuCID Auto
+; Device and player IDs for the player controlling menus.
+Int Property PlayerInMenuDID Auto
+Int Property PlayerInMenuPID Auto
     
-Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
+Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenuPID)
     ALYSLC.Log("[CDM SCRIPT] OnDebugMenuRequest() Event Received.")
 	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
 	Float SecsWaited = 0.0
@@ -23,8 +25,9 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
 
     ; Set player controlling menu's info.
     PlayerInMenu = akActorControllingMenu
-    PlayerInMenuCID = aiMenuCID
-    ALYSLC.Log("[CDM SCRIPT] DEBUG: Actor in menu: " + PlayerInMenu.GetDisplayName() + ", menu CID: " + PlayerInMenuCID + ", player 1: " + PlayerRef.GetDisplayName())
+    PlayerInMenuDID = aiMenuDID
+    PlayerInMenuPID = aiMenuPID
+    ALYSLC.Log("[CDM SCRIPT] DEBUG: Actor in menu: " + PlayerInMenu.GetDisplayName() + ", menu PID: " + PlayerInMenuPID + ", player 1: " + PlayerRef.GetDisplayName())
 
     DebugMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
 
@@ -109,7 +112,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
     ; or has data copied over to P1 when they should not.
     DebugMenu.AddEntryItem("Stop Menu Input Manager", 2, -1, False)
 
-    ALYSLC.RequestMenuControl(PlayerInMenuCID, DebugMenu.ROOT_MENU)
+    ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, DebugMenu.ROOT_MENU)
     DebugMenu.OpenMenu()
     Int SelectedIndex = DebugMenu.GetResultInt()
     ; Re-open until exit menu bind is pressed.
@@ -135,17 +138,17 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
         ElseIf (SelectedIndex == 9)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: disable god mode for "+ PlayerInMenu.GetDisplayName() + ".")
             If (PlayerInMenu)
-                ALYSLC.DisableGodModeForPlayer(PlayerInMenuCID)
+                ALYSLC.DisableGodModeForPlayer(PlayerInMenuPID)
             EndIf
         ElseIf (SelectedIndex == 10)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: enable god mode for "+ PlayerInMenu.GetDisplayName() + ".")
             If (PlayerInMenu)
-                ALYSLC.EnableGodModeForPlayer(PlayerInMenuCID)
+                ALYSLC.EnableGodModeForPlayer(PlayerInMenuPID)
             EndIf
         ElseIf (SelectedIndex == 11)
-            If (PlayerInMenu && PlayerInMenu != PlayerRef && PlayerInMenuCID > -1)
+            If (PlayerInMenu && PlayerInMenu != PlayerRef && PlayerInMenuPID > -1)
                 ALYSLC.Log("[CDM SCRIPT] DEBUG: resetting equip state for " + PlayerInMenu.GetDisplayName() + ".")
-                ALYSLC.ResetCoopCompanion(PlayerInMenuCID, True, True)
+                ALYSLC.ResetCoopCompanion(PlayerInMenuPID, True, True)
             Else
                 ALYSLC.Log("[CDM SCRIPT] DEBUG: resetting bugged equip state for P1 " + PlayerInMenu.GetDisplayName() + ".")
                 ALYSLC.ResetPlayer1State()
@@ -153,17 +156,18 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
         ElseIf (SelectedIndex == 12)
             If (PlayerInMenu)
                 ALYSLC.Log("[CDM SCRIPT] DEBUG: re-equipping forms in " + PlayerInMenu.GetDisplayName() + "'s hands.")
-                ALYSLC.ReEquipHandForms(PlayerInMenuCID)
+                ALYSLC.ReEquipHandForms(PlayerInMenuPID)
             EndIf
         ElseIf (SelectedIndex == 13)
             If (PlayerInMenu)
                 ALYSLC.Log("[CDM SCRIPT] DEBUG: stop, refresh, and restart player managers for " + PlayerInMenu.GetDisplayName() + ".")
-                ALYSLC.RefreshPlayerManagers(PlayerInMenuCID)
+                ALYSLC.RefreshPlayerManagers(PlayerInMenuPID)
             EndIf
         ElseIf (SelectedIndex == 14)
             If (PlayerInMenu)
                 ALYSLC.Log("[CDM SCRIPT] DEBUG: respec " + PlayerInMenu.GetDisplayName() + " and remove all unlocked shared perks from all players.")
-                ALYSLC.RespecPlayer(PlayerInMenuCID)
+                ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "MessageBoxMenu")
+                ALYSLC.RespecPlayer(PlayerInMenuPID)
                 ; Have to wait for message box prompt to open.
                 SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
@@ -178,6 +182,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
             EndIf
         ElseIf (SelectedIndex == 15)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: assign player 1 CID.")
+            ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "MessageBoxMenu")
             ALYSLC.AssignPlayer1CID()
             ; Have to wait for message box prompt to open.
             SecsWaited = 0.0
@@ -212,7 +217,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuCID)
         EndIf
 
         ; Re-open.
-        ALYSLC.RequestMenuControl(PlayerInMenuCID, "ALYSLC Retain Menu Control")
+        ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "ALYSLC Retain Menu Control")
         DebugMenu.OpenMenu()
         SelectedIndex = DebugMenu.GetResultInt()
     EndWhile

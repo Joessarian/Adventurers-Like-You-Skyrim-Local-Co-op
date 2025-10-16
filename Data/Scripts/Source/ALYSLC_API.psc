@@ -121,30 +121,35 @@ String Property RETAIN_MENU_CONTROL = "ALYSLC Retain Menu Control" AutoReadOnly
 ;=====[General Player And Co-op Session State Functions]=================================================================================================================================================================
 ;========================================================================================================================================================================================================================
 
-; Get the actor for the player with the given controller ID [0, 3].
-; If the controller given by the ID is controlling a player, 
+; Get the actor for the player with the given device ID.
+; Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+; If the device given by the ID is controlling a player, 
 ; return that player's character.
 ; Otherwise, return None.
-Actor Function GetALYSLCPlayerByCID(Int a_controllerID) Global Native
+Actor Function GetALYSLCPlayerByDID(Int a_deviceID) Global Native
 
 ; Get the controllable actor for the player with the given player ID.
 ; Player 1 always has a player ID of 0, and all active companion players' IDs 
-; are assigned sequentially in the order of their XInput controller IDs (CIDs).
-; Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
+; are assigned sequentially in the order of their device IDs (DIDs).
+; The player ID is used to index active players,
+; keep track of player-specific settings,
+; and retrieve information on a specific player.
+; It ignores gaps in assigned DIDs.
 ; 0 -> Player 1
 ; 1 -> Player 2
 ; 2 -> Player 3
 ; 3 -> Player 4
 ; If the player ID is in the range [0, 3] and the corresponding player is active,
 ; return that player's actor.
-; Otherwise, return NONE
-Actor Function GetALYSLCPlayerByPID(Int a_controllerID) Global Native
+; Otherwise, return None.
+Actor Function GetALYSLCPlayerByPID(Int a_playerID) Global Native
 
-; Get the ID for the controller controlling the given actor.
+; Get the ID for the input device controlling the given actor.
+; Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
 ; If the given actor is controlled by an active player (co-op session started), 
-; return the ID [0, 3] of the controller controlling the actor.
+; return the ID of the device controlling the actor.
 ; Otherwise, return -1.
-Int Function GetALYSLCPlayerCID(Actor a_actor) Global Native
+Int Function GetALYSLCPlayerDID(Actor a_actor) Global Native
 
 ; Get the ID for the player controlling the given actor.
 ; If the given actor is controlled by an active player (co-op session started), 
@@ -154,11 +159,11 @@ Int Function GetALYSLCPlayerPID(Actor a_actor) Global Native
 
 ; Check if the given actor corresponds to a actor that is controllable by a co-op player.
 ; A co-op session does not have to be active.
-; True if a co-op character (P1 or companion player NPC), false otherwise.
+; True if a co-op character (P1 or companion player), false otherwise.
 Bool Function IsALYSLCCharacter(Actor a_actor) Global Native
 
 ; Check if the given actor corresponds to an active co-op player.
-; True if an active co-op player actor (P1 or companion player NPC), false otherwise.
+; True if an active co-op player actor (P1 or companion player), false otherwise.
 Bool Function IsALYSLCPlayer(Actor a_actor) Global Native
 
 ; Check if there is an active local co-op session.
@@ -167,21 +172,50 @@ Bool Function IsALYSLCPlayer(Actor a_actor) Global Native
 Bool Function IsSessionActive() Global Native
 
 ;========================================================================================================================================================================================================================
-;=====[Get Equip, Movement, Player Action, and Targeting State Info]=================================================================================================================================================================
+;=====[Get Equip, Movement, Player Action, and Targeting State Info]=====================================================================================================================================================
 ;========================================================================================================================================================================================================================
 
-; Check if the player controlling the given player actor 
+; Check if the player controlling the given character
 ; is performing the player action corresponding to the given action index.
 ; True if the player's actor is valid and active, 
 ; the index is valid and corresponds to a player action, 
 ; and the player is performing the action.
 ; See above for all supported player action indices.
-Bool Function IsPlayerActorPerformingAction(Actor a_playerActor, Int a_playerActionIndex) Global Native
+Bool Function IsPlayerPerformingAction(Actor a_playerActor, Int a_playerActionIndex) Global Native
 
-; Check if the player with the given controller ID 
-; is performing the player action corresponding to the given action index.
-; True if the player's CID is between 0 and 3 and is controlling an active player, 
-; the index is valid and corresponds to a player action, 
-; and the player is performing the action.
-; See above for all supported player action indices.
-Bool Function IsPlayerCIDPerformingAction(Int a_controllerID, Int a_playerActionIndex) Global Native
+; Check if the player controlling the given character
+; is pressing the button/key or moving the analog stick/mouse 
+; that corresponds to the given input action index.
+; True if the player is pressing the input.
+; False if the player is not pressing the input.
+; See above for all supported input indices.
+Bool Function IsPlayerPressingInput(Actor a_playerActor, Int a_inputIndex) Global Native
+
+;========================================================================================================================================================================================================================
+;=====[Skill Progression And Menu Control]===============================================================================================================================================================================
+;========================================================================================================================================================================================================================
+
+; Add experience points to the given skill for the given player.
+; Shared skills (Alchemy, Enchanting, Lockpicking, Pickpocket, Speech, Smithing) progress directly through player 1.
+; The new skill XP amount for the skill is serialized and saved.
+; Then, any skill level ups are performed for the given player.
+; Skill actor value IDs are found under the 'Actor Value IDs' section on the following UESP page:
+; https://ck.uesp.net/wiki/ActorValueInfo_Script
+Function AddSkillXP(Actor a_playerActor, Int a_skillAV, Float a_baseXP) Global Native
+
+; Gets the player ID for the player currently controlling any open menus.
+; Returns the player ID of the player currently controlling menus, or -1 if no controllable menu is open.
+; Can call even before a co-op session begins.
+Int Function GetMenuControlPID() Global Native
+
+; Gets the character for the player currently controlling any open menus.
+; Returns the player character for the player currently controlling menus,
+; or an None if no controllable menu is open.
+Actor Function GetMenuControlPlayer() Global Native
+
+; IMPORTANT: Call before the desired menu opens and while a co-op session is active.
+; Request menu control for the given player and menu.
+; Specify '-1' as the player ID to relinquish control.
+; Can optionally specify an object that triggered the menu to better link the request to the player.
+; (ex. a 'pull chain' as the object that triggers a message box)
+Function RequestMenuControl(Int a_playerID, String a_menuName, ObjectReference a_assocRefr) Global Native

@@ -140,7 +140,7 @@ Function Init()
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer3Keyword", CoopPlayerKeywords[2])
 	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer4Keyword", CoopPlayerKeywords[3])
 
-	StorageUtil.SetIntValue(None, "ALYSLC_CoopControllerCount", 0)
+	StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
 
@@ -151,7 +151,7 @@ Function Init()
 	
 	; If a save was loaded for the first time, notify the players of how to trigger the Summoning Menu to start co-op.
 	If (FirstTimeInit)
-		Debug.MessageBox("[ALYSLC]\nDone initializing!\nTo summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
+		Debug.MessageBox("[ALYSLC]\nDone initializing!\nTo assign Player 1's controller and summon other players:\n1. Ensure Player 1 is not in combat.\n2. Hold the 'Wait' bind on Player 1's controller.\n3. Press and release the 'Pause/Journal' bind on Player 1's controller.\n\nThe summoning menu will open and a tri-colored border overlay will indicate which player has control of the menu.\nSee the mod's MCM for additional information and to customize settings.\nHave fun!")
 	EndIf
 EndFunction
 

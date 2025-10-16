@@ -18,6 +18,59 @@ namespace ALYSLC
 	{
 	public:
 
+		// All clearable (used to block the event in the ProcessEvent() hook)
+		// cached member data for an input event.
+		// Types supported: ButtonEvent, MouseEvent, ThumbstickEvent.
+		struct CachedInputEventData
+		{
+			CachedInputEventData() :
+				device(RE::INPUT_DEVICE::kGamepad),
+				eventType(RE::INPUT_EVENT_TYPE::kButton),
+				userEvent(""sv),
+				idCode(0xFF),
+				heldDownSecs(0.0f),
+				value(0.0f)
+			{ }
+
+			CachedInputEventData
+			(
+				RE::INPUT_DEVICE a_device,
+				RE::INPUT_EVENT_TYPE a_eventType,
+				RE::BSFixedString a_userEvent
+			) :
+				device(a_device),
+				eventType(a_eventType),
+				userEvent(a_userEvent),
+				idCode(0xFF),
+				heldDownSecs(0.0f),
+				value(0.0f)
+			{ }
+
+			CachedInputEventData
+			(
+				RE::INPUT_DEVICE a_device,
+				RE::INPUT_EVENT_TYPE a_eventType,
+				RE::BSFixedString a_userEvent,
+				uint32_t a_idCode,
+				float a_heldDownSecs,
+				float a_value
+			) :
+				device(a_device),
+				eventType(a_eventType),
+				userEvent(a_userEvent),
+				idCode(a_idCode),
+				heldDownSecs(a_heldDownSecs),
+				value(a_value)
+			{ }
+
+			RE::INPUT_DEVICE device;
+			RE::INPUT_EVENT_TYPE eventType;
+			RE::BSFixedString userEvent;
+			uint32_t idCode;
+			float heldDownSecs;
+			float value;
+		};
+
 		// Collision data from thrown objects.
 		struct ContactEventData
 		{
@@ -80,10 +133,6 @@ namespace ALYSLC
 		struct ContactListener : public RE::hkpContactListener
 		{
 			ContactListener() :
-				world(nullptr)
-			{ }
-
-			ContactListener(const int32_t& a_playerCID) :
 				world(nullptr)
 			{ }
 
@@ -197,6 +246,37 @@ namespace ALYSLC
 			RE::TESForm* assocForm;
 			// Should copy data to P1 (true) or restore P1's original data (false).
 			bool shouldImport;
+		};
+
+		// Holds a singleton input event and data related to the player who requested to send it.
+		// Chained and sent an input event hook.
+		struct EmulatedInputEventData
+		{
+			EmulatedInputEventData() :
+				reqPID(-1),
+				flag(EmulatedInputEventInfo::kNone),
+				event(nullptr)
+			{ }
+
+			EmulatedInputEventData
+			(
+				const int32_t& a_reqPID, 
+				EmulatedInputEventInfo a_flag,
+				RE::InputEvent* a_event
+			) : 
+				reqPID(a_reqPID),
+				flag(a_flag),
+				event(a_event)
+			{ }
+
+			inline void SetFlag(EmulatedInputEventInfo&& a_flag)
+			{
+				flag = a_flag;
+			}
+
+			int32_t reqPID;
+			EmulatedInputEventInfo flag;
+			RE::InputEvent* event;
 		};
 
 		// Exchangeable player data with P1 when a co-op companion player is controlling menus. 
@@ -533,7 +613,7 @@ namespace ALYSLC
 		// provided the base XP amount for that skill.
 		static void AddSkillXP
 		(
-			const int32_t& a_cid, RE::ActorValue a_skillAV, const float& a_baseXP
+			const int32_t& a_playerID, RE::ActorValue a_skillAV, const float& a_baseXP
 		);
 
 		// Adjust perk point counts for all active players 
@@ -571,8 +651,8 @@ namespace ALYSLC
 		// based on skeleton name and then weapon type.
 		static void AssignSkeletonSpecificKillmoves();
 		
-		// Checks if this controller can control menus.
-		static bool CanControlMenus(const int32_t& a_controllerID);
+		// Checks if the player given by the player ID can control menus.
+		static bool CanControlMenus(const int32_t& a_playerID);
 
 		// Enable collisions among the biped, biped no char controller,
 		// dead biped, and char controller layers for all actors in the current cell.
@@ -582,8 +662,8 @@ namespace ALYSLC
 		// so all ragdolling actors pass through P1 without colliding.
 		static void EnableRagdollToActorCollisions();
 
-		// If the given argument is a co-op player, get the player's index 
-		// in the co-op companions list (controller ID).
+		// If the given argument is a co-op player, get the player's index
+		// in the co-op companions list (player ID).
 		// Return -1 otherwise.
 		static int8_t GetCoopPlayerIndex(const RE::ActorPtr& a_actorPtr);
 		static int8_t GetCoopPlayerIndex(RE::TESObjectREFR* a_refr);
@@ -620,8 +700,8 @@ namespace ALYSLC
 		// Ref alias passed in through script.
 		static void InitializeGlobalCoopData(RE::BGSRefAlias* a_player1RefAlias);
 
-		// Checks if this controller is controlling menus.
-		static bool IsControllingMenus(const int32_t& a_controllerID);
+		// Checks if the player given by the player ID is controlling menus.
+		static bool IsControllingMenus(const int32_t& a_playerID);
 		
 		// Is the given argument a character controllable by a player?
 		// Co-op session does not have to be active.
@@ -638,8 +718,8 @@ namespace ALYSLC
 		static bool IsCoopPlayer(const RE::ObjectRefHandle& a_refrHandle);
 		static bool IsCoopPlayer(const RE::FormID& a_formID);
 		
-		// Checks if this controller is not controlling menus.
-		static bool IsNotControllingMenus(const int32_t& a_controllerID);
+		// Checks if the player given by the player ID is not controlling menus.
+		static bool IsNotControllingMenus(const int32_t& a_playerID);
 
 		// Is a co-op player-controllable menu open?
 		static bool IsSupportedMenuOpen();
@@ -687,10 +767,15 @@ namespace ALYSLC
 		// Rescale on summoning, player level up, and on class change, or
 		// in any other scenario where the game's NPC AV auto-scaling kicks in.
 		static void RescaleAVsOnBaseSkillAVChange(RE::Actor* a_playerActor);
+		
+		// Rescale health, magicka, and stamina AVs to their serialized values for this player.
+		// Use the passed-in base level to determine 
+		// if the player has leveled up in co-op before rescaling.
+		static void RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel = 1.0f);
 
-		// Set last menu controller ID to the current one and then
-		// reset the current menu controller ID.
-		static void ResetMenuCIDs();
+		// Set last menu player ID to the current one and then
+		// reset the current menu player ID.
+		static void ResetMenuPlayerIDs();
 
 		// Restore any P1 data that was overwritten by a companion player's data 
 		// when they gained control of menus.
@@ -719,9 +804,9 @@ namespace ALYSLC
 		// Or reset the crosshair if requested.
 		static void SetCrosshairText(bool&& a_shouldReset = false);
 
-		// Set menu controller IDs (current and previous).
+		// Set menu player IDs (current and previous).
 		// -1 to reset.
-		static void SetMenuCIDs(const int32_t a_controllerID);
+		static void SetMenuPlayerIDs(const int32_t a_playerID);
 
 		// DEBUG OPTION: Stop combat between all actors and players.
 		// Only among party means that only combat between player teammates and players is stopped.
@@ -729,7 +814,7 @@ namespace ALYSLC
 		static void StopAllCombatOnCoopPlayers(bool&& a_onlyAmongParty, bool&& a_removeCrimeGold);
 
 		// DEBUG OPTION: Force stop the menu input manager, 
-		// resetting menu CID/overlay data as well.
+		// resetting menu PID/overlay data as well.
 		static void StopMenuInputManager();
 
 		// Sync co-op companions' shared perks to P1's so that all players have the same 
@@ -747,7 +832,7 @@ namespace ALYSLC
 		static void ToggleGodModeForAllPlayers(const bool& a_enable);
 
 		// DEBUG OPTION: Toggle god mode for the given player.
-		static void ToggleGodModeForPlayer(const int32_t& a_controllerID, const bool& a_enable);
+		static void ToggleGodModeForPlayer(const int32_t& a_playerID, const bool& a_enable);
 
 		// Unregister global script event registrations (with player ref alias).
 		static void UnregisterEvents();
@@ -775,9 +860,6 @@ namespace ALYSLC
 		// to their serialized data, even if the form ID changes.
 		static bool UpdatePlayerSerializationIDs(RE::Actor* a_playerActor);
 
-		// Try again? The entire party gets wiped.
-		static void YouDied(RE::ActorHandle a_deadPlayerHandle = RE::ActorHandle());
-
 		// Co-op player data copying on menu open/close events.
 		static void CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info);
 
@@ -798,7 +880,8 @@ namespace ALYSLC
 		(
 			RE::Actor* a_coopActor,
 			const bool& a_shouldImport, 
-			const bool& a_shouldCopyChanges = false
+			const bool& a_shouldCopyChanges,
+			bool&& a_onlySkills
 		);
 
 		// WIP: Needs more testing for long term side effects, and may need a rework if a better 
@@ -848,16 +931,16 @@ namespace ALYSLC
 		// Stop P1's managers, disable the co-op camera, and close the menu input manager.
 		static void ResetPlayer1AndCameraTask();
 
-		// Prompt the player given by the CID to press the 'Start' button on their controller
+		// Prompt the player given by the PID to press the 'Start' button on their device
 		// to confirm their intentions to respec their character.
 		// Then, reset their HMS AVs and perk data 
 		// and remove all shared perks from all active players.
-		static void RespecPlayerTask(const int32_t a_controllerID);
+		static void RespecPlayerTask(const int32_t a_playerID);
 
 		// Pause and then restart the co-op camera manager.
 		static void RestartCoopCameraTask();
-
-		// Task version of the party-wipe cleanup function.
+		
+		// Try again? The entire party gets wiped.
 		static void YouDiedTask(RE::ActorHandle a_deadPlayerHandle = RE::ActorHandle());
 
 		//
@@ -896,6 +979,18 @@ namespace ALYSLC
 		// regardless of what menu opens next.
 		static constexpr inline std::string_view RETAIN_MENU_CONTROL = 
 		"ALYSLC Retain Menu Control"sv;
+
+		// Keyboard key allowing P1 to override companion player menu input when held
+		// in tandem with other keypresses.
+		static constexpr inline RE::BSKeyboardDevice::Keys::Key P1_OVERRIDE_KEY = 
+		RE::BSKeyboardDevice::Keys::Key::kLeftControl;
+
+		// Key that will substitute for the overrided key in menus 
+		// when a companion player is in control.
+		// Ex. 'RCtrl' substituting 'LCtrl' means that sneak will trigger when releasing 'RCtrl'
+		// instead of 'LCtrl' when a companion player is in menus.
+		static constexpr inline RE::BSKeyboardDevice::Keys::Key P1_OVERRIDE_SUBSTITUTED_KEY = 
+		RE::BSKeyboardDevice::Keys::Key::kRightControl;
 
 		// Maps actor values to their corresponding player skills.
 		static inline const std::unordered_map<RE::ActorValue, Skill> AV_TO_SKILL_MAP = 
@@ -1729,55 +1824,6 @@ namespace ALYSLC
 			{ 0x8A9, 0x8A3 }
 		};
 
-		/*
-		// Starting with player 1, raw (last 3 nibbles) FIDs for each selectable player character.
-		static inline const std::vector<RE::FormID> PLAYER_CHARACTER_FIDS = 
-		{
-			0x14,
-			0x802,
-			0x803,
-			0x804,
-			0xE32,
-			0xE33,
-			0xE34,
-			0xE35,
-			0xE36,
-			0xE37
-		};
-
-		// Maps raw character FIDs to their associated default package formlist's raw FID.
-		static inline const std::unordered_map<RE::FormID, RE::FormID>
-		CHARACTER_FID_TO_DEFAULT_PACKAGE_FORMLIST_FID = 
-		{
-			{ 0x14, 0x81B },
-			{ 0x802, 0x82B },
-			{ 0x803, 0x83E },
-			{ 0x804, 0x842 },
-			{ 0xE32, 0xE25 },
-			{ 0xE33, 0xE26 },
-			{ 0xE34, 0xE27 },
-			{ 0xE35, 0xE28 },
-			{ 0xE36, 0xE29 },
-			{ 0xE37, 0xE2A }
-		};
-
-		// Maps raw character FIDs to their associated combat override package formlist's raw FID.
-		static inline const std::unordered_map<RE::FormID, RE::FormID>
-		CHARACTER_FID_TO_COMBAT_OVERRIDE_PACKAGE_FORMLIST_FID = 
-		{
-			{ 0x14, 0x81A },
-			{ 0x802, 0x82A },
-			{ 0x803, 0x83F },
-			{ 0x804, 0x841 },
-			{ 0xE32, 0xE2C },
-			{ 0xE33, 0xE2D },
-			{ 0xE34, 0xE2E },
-			{ 0xE35, 0xE2F },
-			{ 0xE36, 0xE30 },
-			{ 0xE37, 0xE31 }
-		};
-		*/
-
 		//
 		// Members
 		//
@@ -1793,7 +1839,7 @@ namespace ALYSLC
 		// with some limitations, of course.
 		std::unique_ptr<MenuInputManager> mim;
 		// Menu Opening Action Requests Manager.
-		// Keeps track of requests to open menus, and from that info, determines which controller
+		// Keeps track of requests to open menus, and from that info, determines which device
 		// should be awarded control of menus when they open.
 		std::unique_ptr<MenuOpeningActionRequestsManager> moarm;
 		// Contact listener for thrown object collisions.
@@ -1897,16 +1943,21 @@ namespace ALYSLC
 		RE::TESGlobal* werewolfTransformationGlob;
 
 		// Menu opening requests' event registrations.
-		SKSE::Impl::RegistrationSet<void, RE::Actor*, uint32_t, uint32_t> onCoopHelperMenuRequest =
+		// Args:
+		// Player actor, device ID, player ID, menu type.
+		SKSE::Impl::RegistrationSet<void, RE::Actor*, uint32_t, uint32_t, uint32_t> 
+			onCoopHelperMenuRequest =
 			SKSE::Impl::RegistrationSet<std::enable_if_t<std::conjunction_v<
 				RE::BSScript::is_return_convertible<RE::Actor*>, 
 				RE::BSScript::is_return_convertible<uint32_t>>>,
-				RE::Actor*, uint32_t, uint32_t>("OnCoopHelperMenuRequest"sv);
-		SKSE::Impl::RegistrationSet<void, RE::Actor*, uint32_t> onDebugMenuRequest =
+				RE::Actor*, uint32_t, uint32_t, uint32_t>("OnCoopHelperMenuRequest"sv);
+		// Args:
+		// Player actor, device ID, player ID.
+		SKSE::Impl::RegistrationSet<void, RE::Actor*, uint32_t, uint32_t> onDebugMenuRequest =
 			SKSE::Impl::RegistrationSet<std::enable_if_t<std::conjunction_v<
 				RE::BSScript::is_return_convertible<RE::Actor*>, 
 				RE::BSScript::is_return_convertible<uint32_t>>>,
-				RE::Actor*, uint32_t>("OnDebugMenuRequest"sv);
+				RE::Actor*, uint32_t, uint32_t>("OnDebugMenuRequest"sv);
 		SKSE::Impl::RegistrationSet<void> onSummoningMenuRequest =
 			SKSE::Impl::RegistrationSet<void>("OnSummoningMenuRequest"sv);
 		
@@ -1995,6 +2046,8 @@ namespace ALYSLC
 		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> charGenEquippedForms;
 		// Base skill levels, XP, and threshold for each actor value.
 		std::vector<RE::PlayerCharacter::PlayerSkills::Data::SkillData> charGenSkillDataList;
+		// List of requested emulated P1 InputEvents to send this frame once chained.
+		std::vector<std::unique_ptr<EmulatedInputEventInfo>> reqInputEvents;
 
 		// All players constructed.
 		bool allPlayersInit = false;
@@ -2003,6 +2056,9 @@ namespace ALYSLC
 		bool coopSessionActive = false;
 		// Finished setting global co-op data.
 		bool globalDataInit = false;
+		// Only one controller plugged in, and P1 is using the keyboard + mouse 
+		// while P2 uses the controller.
+		bool hybridModeActive = false;
 		// Is camera shake applied?
 		// True when the 'StartAnimatedCameraDelta' animation event plays on P1,
 		// False when the 'EndAnimatedCamera' animation event players on P1.
@@ -2012,8 +2068,14 @@ namespace ALYSLC
 		// from initiating combat with other actors in order to prevent the game's combat AI
 		// from overriding player inputs and equipment choices.
 		bool isInCoopCombat = false;
+		// Are players choosing their characters or waiting for them to spawn in?
+		bool isSummoningPlayers = false;
 		// Is the game loading a save?
 		bool loadingASave = false;
+		// Did all players die while in co-op?
+		// Also acts as a failsafe measure to ensure the 'dead' player stays 'dead' 
+		// and doesn't get up as if the revive mechanic were some kind of cheap joke (it is).
+		bool partyWiped = false;
 		// Default crosshair activation pick range.
 		// Saved once when first loading a save 
 		// and then restored after a player releases the 'Activate' bind
@@ -2032,30 +2094,31 @@ namespace ALYSLC
 		float savedMemoryPoints;
 		// At least one supported menu is open.
 		std::atomic_bool supportedMenuOpen;
-		// Menu controller ID mutex when setting/resetting menu controller IDs.
-		std::mutex menuCIDMutex;
+		// Menu player ID mutex when setting/resetting menu player IDs.
+		std::mutex menuPIDMutex;
 		// P1 skill XP modification mutex.
 		std::mutex p1SkillXPMutex;
-		// CID of the player who last had data copied over to P1 when controlling menus.
+		// Player ID of the player who last had data copied over to P1 when controlling menus.
 		// NOT reset when all data is copied back to P1. Only -1 on initialization.
-		int32_t copiedDataPlayerCID;
-		// The last menu CID resolved (computed during the ProcessMessage() hook)
+		int32_t copiedDataPlayerPID;
+		// The last menu player ID resolved (computed during the ProcessMessage() hook)
 		// and before the menu opens/closes/updates.
-		int32_t lastResolvedMenuCID;
-		// Controller ID for the player currently controlling menus.
+		int32_t lastResolvedMenuPID;
+		// Player ID for the player currently controlling menus.
 		// -1 if only "always open menus" are open.
-		int32_t menuCID;
-		// Controller ID for P1 (typically, but not always, 0)
-		int32_t player1CID;
-		// Last set menu controller ID for the player that was in control of menus.
+		int32_t menuPID;
+		// Device ID for P1 (typically, but not always, 0).
+		// Can also be 4 (first keyboard + mouse index) if in hybrid mode.
+		int32_t player1DID;
+		// Last set menu player ID for the player that was in control of menus.
 		// Should never be -1 if a controllable menu is open, 
 		// unless no player has opened the Summoning Menu after loading a save.
-		int32_t prevMenuCID;
+		int32_t prevMenuPID;
 		// For QuickLoot compatibility:
-		// CID of the player who last received control of the LootMenu.
-		int32_t quickLootControlCID;
-		// CID of the player who last requested to open the LootMenu.
-		int32_t quickLootReqCID;
+		// Player ID of the player who last received control of the LootMenu.
+		int32_t quickLootControlPID;
+		// Player ID of the player who last requested to open the LootMenu.
+		int32_t quickLootReqPID;
 		// Number of active, summoned co-op players.
 		uint32_t activePlayers;
 		// Last unlocked shared perks count on perk tree export.
@@ -2086,11 +2149,6 @@ namespace ALYSLC
 		//
 		// Helpers
 		//
-				
-		// Rescale health, magicka, and stamina AVs to their serialized values for this player.
-		// Use the passed-in base level to determine 
-		// if the player has leveled up in co-op before rescaling.
-		static void RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel = 1.0f);
 		
 		// Rescale all skill AVs for this player.
 		// Set skill levels equal to the serialized base AV level + skill increment amount.

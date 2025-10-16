@@ -15,14 +15,19 @@ namespace ALYSLC
 
 	void MovementManager::Initialize(std::shared_ptr<CoopPlayer> a_p) 
 	{
-		if (a_p && a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
+		if (a_p && 
+			a_p->deviceID > -1 && 
+			a_p->playerID > -1 &&
+			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"Constructor for {}, CID: {}, shared ptr count: {}.",
+				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
-				p ? p->controllerID : -1,
+				p && p->coopActor ? p->coopActor->formID : 0xDEAD,
+				p ? p->playerID : -1,
+				p ? p->deviceID : -1,
 				p.use_count()
 			);
 			RefreshData();
@@ -31,8 +36,9 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"Cannot construct Movement Manager for controller ID {}.", 
-				a_p ? a_p->controllerID : -1
+				"Cannot construct Movement Manager for device ID {}, player ID {}.", 
+				a_p ? a_p->deviceID : -1,
+				a_p ? a_p->playerID : -1
 			);
 		}
 	}
@@ -160,9 +166,8 @@ namespace ALYSLC
 			movementActorPtr = coopActor;
 		}
 
-		// CID.
-		controllerID = p->controllerID;
-		// Player ID.
+		// IDs.
+		deviceID = p->deviceID;
 		playerID = p->playerID;
 		// Positions.
 		aimPitchPos = coopActor->data.location;
@@ -585,7 +590,7 @@ namespace ALYSLC
 				(
 					isBackStepDodge ? 
 					1.0f : 
-					glob.cdh->GetAnalogStickState(controllerID, true).normMag
+					glob.cdh->GetAnalogStickState(deviceID, true).normMag
 				);
 				dashDodgeEquippedWeight = coopActor->GetEquippedWeight();
 			}
@@ -1107,7 +1112,7 @@ namespace ALYSLC
 			{
 				charController->flags.set(RE::CHARACTER_FLAGS::kJumping);
 				charController->context.currentState = RE::hkpCharacterStateType::kInAir;
-				const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 				velBeforeJumpVect = RE::hkVector4
 				(
 					velBeforeJumpVect.quad.m128_f32[0] + 
@@ -2069,7 +2074,10 @@ namespace ALYSLC
 		// not mounting, not in a killmove, and not staggered.
 		bool canModifyRotation = 
 		(
-			((!p->isPlayer1 && !interactionPackageRunning) || (p->isPlayer1 && !isAnimDriven)) && 
+			(
+				(!p->isPlayer1 && !interactionPackageRunning) || 
+				(p->isPlayer1 && !p1ExtPackageRunning)
+			) && 
 			(
 				!menuStopsMovement && 
 				!isSynced && 
@@ -2327,7 +2335,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
+		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 		const auto& lsMag = lsData.normMag;
 		// X axis is to the right of the player's facing direction.
 		// Y axis is in the player's facing direction.
@@ -2609,20 +2617,6 @@ namespace ALYSLC
 			if (p->isPlayer1 && lsMoved)
 			{
 				auto playerCam = RE::PlayerCamera::GetSingleton();
-				SPDLOG_DEBUG
-				(
-					"{} is animation driven with idle: {}. "
-					"Cam state: {}. Occupied furniture: {}.",
-					coopActor->GetName(),
-					Util::GetEditorID(coopActor->currentProcess->middleHigh->furnitureIdle),
-					playerCam && 
-					playerCam->currentState ?
-					playerCam->currentState->id :
-					RE::CameraState::kTotal,
-					Util::HandleIsValid(coopActor->GetOccupiedFurniture()) ? 
-					coopActor->GetOccupiedFurniture().get()->GetName() : 
-					"NONE"
-				);
 				if (playerCam && 
 					playerCam->currentState &&
 					playerCam->currentState->id != RE::CameraState::kFurniture)
@@ -3081,8 +3075,7 @@ namespace ALYSLC
 			rotMult = 0.0f;
 		}
 
-		// Controller data.
-		const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 		const auto& rsX = rsData.xComp;
 		const auto& rsY = rsData.yComp;
 		const auto& rsMag = rsData.normMag;
@@ -3613,8 +3606,8 @@ namespace ALYSLC
 		// Update player movement parameters derived from controller analog stick movement
 		// in both in-game coordinates and absolute coordinates.
 
-		const auto& lsData = glob.cdh->GetAnalogStickState(controllerID, true);
-		const auto& rsData = glob.cdh->GetAnalogStickState(controllerID, false);
+		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
+		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 		// Analog stick components and normalized displacement magnitudes.
 		const float& lsX = lsData.xComp;
 		const float& lsY = lsData.yComp;
@@ -3634,24 +3627,7 @@ namespace ALYSLC
 
 		// Get camera yaw angle.
 		auto playerCam = RE::PlayerCamera::GetSingleton();
-		float playerCamYaw = Util::NormalizeAng0To2Pi(playerCam->yaw);
-		float camYaw = playerCamYaw;
-		// Use co-op cam-reported yaw when it's active; otherwise, use the NiCamera reported value.
-		if (glob.cam->IsRunning() && 
-			playerCam->currentState && 
-			playerCam->currentState->id == RE::CameraState::kThirdPerson) 
-		{
-			camYaw = glob.cam->GetCurrentYaw();
-		}
-		else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr) 
-		{
-			// Player cam's yaw does not always correspond to 
-			// the actual camera forward direction angle in certain camera states, 
-			// such as the bleedout camera state, so get that info from the NiCamera.
-			RE::NiPoint3 niEulerAngles = Util::GetEulerAnglesFromRotMatrix(niCamPtr->world.rotate);
-			camYaw = niEulerAngles.z;
-		}
-
+		float camYaw = glob.cam->GetCurrentYaw();
 		// Game yaw angle for the LS.
 		float lsAng = 0.0f;
 		// Game yaw angle for the RS.
@@ -3806,7 +3782,7 @@ namespace ALYSLC
 		// LS/RS stopped when centered for two frames (norm mag is 0 this frame and last frame).
 		bool prevMoved = 
 		(
-			glob.cdh->GetAnalogStickState(controllerID, true).prevNormMag != 0.0f
+			glob.cdh->GetAnalogStickState(deviceID, true).prevNormMag != 0.0f
 		);
 		lsMoved = 
 		(
@@ -3818,7 +3794,7 @@ namespace ALYSLC
 		);
 		prevMoved = 
 		(
-			glob.cdh->GetAnalogStickState(controllerID, false).prevNormMag != 0.0f
+			glob.cdh->GetAnalogStickState(deviceID, false).prevNormMag != 0.0f
 		);
 		rsMoved =
 		(
@@ -4283,7 +4259,7 @@ namespace ALYSLC
 		auto interactionPackage = 
 		(
 			glob.coopPackages
-			[!PackageIndex::kTotal * controllerID + !PackageIndex::kSpecialInteraction]
+			[!PackageIndex::kTotal * playerID + !PackageIndex::kSpecialInteraction]
 		);
 		bool wasInteractionPackageRunning = interactionPackageRunning;
 		if (!wasInteractionPackageRunning)
@@ -4401,7 +4377,7 @@ namespace ALYSLC
 		// Not moving the right stick, so no need to check for collisions.
 		const auto& rsLinSpeed = 
 		(
-			glob.cdh->GetAnalogStickState(a_p->controllerID, false).stickLinearSpeed
+			glob.cdh->GetAnalogStickState(a_p->deviceID, false).stickLinearSpeed
 		);
 		if (rsLinSpeed == 0.0f)
 		{
@@ -5595,76 +5571,90 @@ namespace ALYSLC
 					(!hitActor->IsGhost() && !hitActor->IsInvulnerable())
 				};
 				bool isReleasedActor = a_p->tm->rmm->IsManaged(handle, false);
+				// Can this hit actor ragdoll once the slap hits?
+				bool canKnockDown = Util::CanManipulateActor(hitActor);
 				// Ensure the actor is manipulable,
 				// and not already managed as a released refr.
-				slapKnockdown &= Util::CanManipulateActor(hitActor) && !hitSkeleton;
+				slapKnockdown &= !hitSkeleton;
 				if (slapKnockdown && !isReleasedActor)
 				{
-					// Stop momentum before knocking down.
-					hitHkpRigidBodyPtr->motion.SetLinearVelocity(RE::hkVector4());
-					// Slap knockdown damage scales with thrown object damage.
-					a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
-					a_p->tm->rmm->ClearGrabbedRefr(handle);
-					if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
-					{
-						a_p->tm->SetIsGrabbing(false);
-					}
-					
-					// The harder the slap, the higher the release velocity of the redirected refr.
-					if (canFreelyManipulate) 
-					{
-						releaseAngleFactor = std::clamp
-						(
-							hitToKnockdownSpeedRatio, 0.5f, 1.0f
-						);
-					}
-					else
-					{
-						releaseAngleFactor = std::clamp
-						(
-							hitToKnockdownSpeedRatio * 0.5f, 0.5f, 1.0f
-						);
-					}
-
-					const float magickaCost = 
-					(
-						a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitActor),
-						releaseAngleFactor
-					);
-					a_p->tm->rmm->AddReleasedRefr(a_p, handle, magickaCost, releaseAngleFactor);
 					a_staminaCostOut = 
 					(
 						(2.0f * sqrtf(hitActor->GetWeight() + 100.0f)) *
 						(Settings::vfSlapStaminaCostMult[a_p->playerID])
 					);
-					// Sneaky mechanic that may or may not have been intentional:
-					// Knocking down an actor while facing the crosshair will throw them,
-					// double the stamina cost, since throwing the actor has the potential
-					// for more damage dealt.
-					if (a_p->mm->reqFaceTarget)
+					// Only grab and release to ragdoll the hit actor if they can be ragdolled.
+					if (canKnockDown)
 					{
-						a_staminaCostOut *= 2.0f;
-
-						// Handle magicka cost as well.
-						// Must have been successfully released.
-						bool insertedAsReleasedRefr = 
-						(
-							a_p->tm->rmm->releasedRefrInfoList.empty() ?
-							false :
-							a_p->tm->rmm->releasedRefrInfoList[0]->refrHandle == handle
-						);
-						// Expend magicka.
-						// Actor is thrown as if the grab bind were held and released
-						// after half the max thrown window.
-						if (insertedAsReleasedRefr && magickaCost > 0.0f)
+						// Stop momentum before knocking down.
+						hitHkpRigidBodyPtr->motion.SetLinearVelocity(RE::hkVector4());
+						// Slap knockdown damage scales with thrown object damage.
+						a_p->tm->rmm->AddGrabbedRefr(a_p, handle);
+						a_p->tm->rmm->ClearGrabbedRefr(handle);
+						if (a_p->tm->rmm->GetNumGrabbedRefrs() == 0)
 						{
-							a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
+							a_p->tm->SetIsGrabbing(false);
+						}
+
+						// The harder the slap, the higher the release velocity 
+						// of the redirected refr.
+						if (canFreelyManipulate) 
+						{
+							releaseAngleFactor = std::clamp
+							(
+								hitToKnockdownSpeedRatio, 0.5f, 1.0f
+							);
+						}
+						else
+						{
+							releaseAngleFactor = std::clamp
+							(
+								hitToKnockdownSpeedRatio * 0.5f, 0.5f, 1.0f
+							);
+						}
+
+						const float magickaCost = 
+						(
+							a_p->tm->rmm->GetThrownRefrMagickaCost(a_p, hitActor),
+							releaseAngleFactor
+						);
+						a_p->tm->rmm->AddReleasedRefr
+						(
+							a_p, handle, magickaCost, releaseAngleFactor
+						);
+						// Sneaky mechanic that may or may not have been intentional:
+						// Knocking down an actor while facing the crosshair will throw them,
+						// double the stamina cost, since throwing the actor has the potential
+						// for more damage dealt.
+						if (a_p->mm->reqFaceTarget)
+						{
+							a_staminaCostOut *= 2.0f;
+
+							// Handle magicka cost as well.
+							// Must have been successfully released.
+							bool insertedAsReleasedRefr = 
+							(
+								a_p->tm->rmm->releasedRefrInfoList.empty() ?
+								false :
+								a_p->tm->rmm->releasedRefrInfoList[0]->refrHandle == handle
+							);
+							// Expend magicka.
+							// Actor is thrown as if the grab bind were held and released
+							// after half the max thrown window.
+							if (insertedAsReleasedRefr && magickaCost > 0.0f)
+							{
+								a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
+							}
 						}
 					}
 					
 					//================
 					// [Apply Damage]:
 					//================
+
+					// NOTE:
+					// We want to apply damage and stagger/pushback
+					// even if the hit actor is not ragdoll-able.
 
 					// Set power attack, slap, and potentially the sneak attack flag 
 					// before sending a hit event.
@@ -5689,7 +5679,10 @@ namespace ALYSLC
 						hitFlags.set(RE::TESHitEvent::Flag::kSneakAttack);
 					}
 
-					if (hittable) 
+					// Do not apply damage to actors that cannot ragdoll 
+					// after the first hit connects or if the actor is staggered.
+					// Damaging hits will stack too quickly otherwise.
+					if (hittable)
 					{
 						bool isLeftArmNode = GlobalCoopData::ADJUSTABLE_LEFT_ARM_NODES.contains
 						(
@@ -5709,6 +5702,29 @@ namespace ALYSLC
 							1.0f / 
 							(max(hitActor->CalcArmorRating() / 25.0f, 1.0f))
 						);
+						// Since large actors that cannot be knocked down,
+						// such as Dragons or Atronachs, typically do not have an armor rating 
+						// and sometimes even have a reported weight of 1 (lol),
+						// we'll scale down damage as the hit actor's mass increases
+						// to prevent dealing absurd amounts of damage with slap hits.
+						float massFactor = 1.0f;
+						if (!canKnockDown)
+						{
+							auto rigidBodyPtr = Util::GethkpRigidBody(hitActor);
+							if (rigidBodyPtr)
+							{
+								massFactor = min
+								(
+									1.0f, 
+									10.0f / 
+									(
+										1.0f + 
+										max(hitActor->GetWeight(), rigidBodyPtr->motion.GetMass())
+									)
+								);
+							}
+						}
+
 						// Base damage depends on the actor's unarmed damage.
 						float armWeightFactor = a_p->coopActor->CalcUnarmedDamage();
 						// Scale up damage with the total weight of the armor 
@@ -5771,6 +5787,7 @@ namespace ALYSLC
 							levelDamageFactor *
 							armorRatingFactor * 
 							armWeightFactor * 
+							massFactor *
 							sneakMult
 						);
 						// Handle health damage.
@@ -5788,22 +5805,56 @@ namespace ALYSLC
 								!Util::IsPartyFriendlyActor(hitActor)
 							)	
 						);
-						Util::ApplyHit
-						(
-							a_p->coopActor.get(),
-							hitActor, 
-							damage,
-							triggerCombat,
-							true,
-							a_p->coopActor->GetHandle(),
-							0,
-							hitFlags
-						);
+
+						if (canKnockDown)
+						{
+							Util::ApplyHit
+							(
+								a_p->coopActor.get(),
+								hitActor, 
+								damage,
+								triggerCombat,
+								true,
+								damage,
+								damage,
+								a_p->coopActor->GetHandle(),
+								0,
+								hitFlags
+							);
+						}
+						else if (a_noPreviousHit && 
+								 !hitActor->IsStaggered() && 
+								 !hitActor->IsStaggering())
+						{
+							// We use the staggered flag to check 
+							// if the actor has been hit previously before applying damage.
+							// Cannot set the flag directly after applying a slap hit
+							// since the hit application does not guarantee 
+							// that the actor will stagger after the hit,
+							// meaning the flag will remain set even though 
+							// the actor is not staggered and prevent any subsequent slap hits
+							// until the actor staggers again.
+							Util::ApplyHit
+							(
+								a_p->coopActor.get(),
+								hitActor, 
+								damage,
+								triggerCombat,
+								true,
+								damage,
+								damage,
+								a_p->coopActor->GetHandle(),
+								0,
+								hitFlags
+							);
+						}
 
 						// REMOVE when done debugging.
 						/*SPDLOG_DEBUG
 						(
-							"{}: Hit actor {}. "
+							"{}: Hit actor {}. Previously hit: {}. "
+							"Total hits from this raycast: {}. "
+							"Can knock down: {}, weight: {}, mass: {}, mass factor: {}. "
 							"Havok hit speed factor: {}, "
 							"level damage factor: {}, "
 							"armor rating factor: {}, "
@@ -5811,9 +5862,17 @@ namespace ALYSLC
 							"(unarmed damage: {}, node type: {}, shield weight: {}) "
 							"sneak mult: {}. "
 							"Release speed mult: {}. Knockdown speed ratio: {}. "
-							"Final damage: {}.", 
+							"Knock state: {}, staggered: {}. Final damage: {}.", 
 							a_p->coopActor->GetName(), 
 							hitActor->GetName(),
+							!a_noPreviousHit,
+							raycastResults.size(),
+							canKnockDown,
+							hitActor->GetWeight(),
+							Util::GethkpRigidBody(hitActor) ?
+							Util::GethkpRigidBody(hitActor)->motion.GetMass() :
+							-1.0f,
+							massFactor,
 							havokHitSpeedFactor,
 							levelDamageFactor,
 							armorRatingFactor,
@@ -5824,6 +5883,8 @@ namespace ALYSLC
 							sneakMult,
 							releaseAngleFactor,
 							hitToKnockdownSpeedRatio,
+							hitActor->GetKnockState(),
+							hitActor->IsStaggered(),
 							damage
 						);*/
 					}
@@ -6429,7 +6490,7 @@ namespace ALYSLC
 		float targetHandRoll = oldHandRoll;
 		float targetHandYaw = oldHandYaw;
 
-		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 		float xDisp = std::clamp(rsData.xComp * rsData.normMag, -1.0f, 1.0f);
 		float yDisp = std::clamp(rsData.yComp * rsData.normMag, -1.0f, 1.0f);
 
@@ -7214,7 +7275,7 @@ namespace ALYSLC
 
 		// New rotation inputs to construct target rotation matrix with (if adjusted below).
 		std::array<float, 3> newRotationInput = shoulderData->rotationInput;
-		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->controllerID, false);
+		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 		if (rotatingShoulder) 
 		{
 			// Set shoulder target rotation as modified.

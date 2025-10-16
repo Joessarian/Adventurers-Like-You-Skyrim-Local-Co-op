@@ -16,15 +16,19 @@ namespace ALYSLC
 
 	void EquipManager::Initialize(std::shared_ptr<CoopPlayer> a_p) 
 	{
-		if (a_p && a_p->controllerID > -1 && a_p->controllerID < ALYSLC_MAX_PLAYER_COUNT)
+		if (a_p && 
+			a_p->deviceID > -1 && 
+			a_p->playerID > -1 &&
+			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
 			SPDLOG_DEBUG
 			(
-				"Constructor for {} (0x{:X}), CID: {}, shared ptr count: {}.",
+				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
 				p && p->coopActor ? p->coopActor->formID : 0xDEAD,
-				p ? p->controllerID : -1,
+				p ? p->playerID : -1,
+				p ? p->deviceID : -1,
 				p.use_count()
 			);
 			// Init once.
@@ -50,8 +54,9 @@ namespace ALYSLC
 		{
 			SPDLOG_ERROR
 			(
-				"Cannot construct Equip Manager for controller ID {}.", 
-				a_p ? a_p->controllerID : -1
+				"Cannot construct Equip Manager for device ID {}, player ID {}.", 
+				a_p ? a_p->deviceID : -1,
+				a_p ? a_p->playerID : -1
 			);
 		}
 	}
@@ -228,7 +233,7 @@ namespace ALYSLC
 	{
 		// Player data.
 		coopActor = RE::ActorPtr{ p->coopActor };
-		controllerID = p->controllerID;
+		deviceID = p->deviceID;
 		playerID = p->playerID;
 
 		// Get serialized data to initialize some data members.
@@ -262,7 +267,7 @@ namespace ALYSLC
 		{
 			placeholderMagic[i] = 
 			(
-				glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * controllerID + i]
+				glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * playerID + i]
 			);
 		}
 
@@ -328,7 +333,7 @@ namespace ALYSLC
 				return a_shoutToCopy;
 			}
 
-			copiedShoutToEquip = glob.placeholderShouts[controllerID];
+			copiedShoutToEquip = glob.placeholderShouts[playerID];
 			copiedShoutToEquip->Copy(a_shoutToCopy);
 			copiedShoutToEquip->variations[0] = a_shoutToCopy->variations[0];
 			copiedShoutToEquip->variations[1] = a_shoutToCopy->variations[1];
@@ -423,7 +428,7 @@ namespace ALYSLC
 		// Instead, we copy over the magic item data, spell data, and effects + effect setting.
 		RE::SpellItem* copiedSpellToEquip = 
 		(
-			glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * controllerID + !a_index]
+			glob.placeholderSpells[!PlaceholderMagicIndex::kTotal * playerID + !a_index]
 		);
 		copiedSpellToEquip->CopyMagicItemData(a_spellToCopy);
 		copiedSpellToEquip->avEffectSetting = a_spellToCopy->avEffectSetting;
@@ -3297,7 +3302,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		const auto& coopP1 = glob.coopPlayers[0];
 		// Update P1's favorites and check for new favorited spells, 
 		// instead of using serialized data.
 		coopP1->em->UpdateFavoritedFormsLists(false);
@@ -4141,7 +4146,7 @@ namespace ALYSLC
 			magicFavorites->hotkeys[i] = nullptr;
 		}
 
-		const auto& coopP1 = glob.coopPlayers[glob.player1CID];
+		const auto& coopP1 = glob.coopPlayers[0];
 		// RemoveFavorite() modifies and shifts elements of the magical favorites list.
 		// Remove the first element until the list is empty.
 		uint32_t removalIndex = 0;

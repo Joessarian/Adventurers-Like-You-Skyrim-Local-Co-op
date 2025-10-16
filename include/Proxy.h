@@ -26,18 +26,18 @@ namespace ALYSLC
 		// Set global co-op data after the player loads a save.
 		// Return true if global data was initialized for the first time.
 		bool InitializeGlobalData(RE::StaticFunctionTag*, RE::BGSRefAlias* a_player1Ref);
-
-		// Setup controller data for all connected controllers and return a list of controller IDs
-		// for all active controllers. P1's CID is always first.
-		std::vector<std::uint32_t> GetConnectedCoopControllerIDs(RE::StaticFunctionTag*);
+		
+		// Setup input device data for all connected devices and return a list of device IDs
+		// for all active devices. P1's DID is always first.
+		std::vector<std::uint32_t> GetConnectedInputDeviceIDs(RE::StaticFunctionTag*);
 
 		// Initializes/updates all co-op players with the given data.
 		// Returns true if the co-op session was initialized successfully.
-		bool InitializeCoop
+		bool InitializeCoopPlayers
 		(
 			RE::StaticFunctionTag*, 
 			uint32_t a_numCompanions, 
-			std::vector<uint32_t> a_controllerIDs, 
+			std::vector<uint32_t> a_deviceIDs, 
 			std::vector<RE::Actor*> a_coopActors
 		);
 
@@ -75,19 +75,22 @@ namespace ALYSLC
 		// Get the given player's assigned list of cyclable emote idle event names.
 		std::vector<RE::BSFixedString> GetFavoritedEmoteIdles
 		(
-			RE::StaticFunctionTag*, int32_t a_controllerID
+			RE::StaticFunctionTag*, int32_t a_playerID
 		);
 		
 		// Request control of the given menu for the given player.
 		void RequestMenuControl
 		(
-			RE::StaticFunctionTag*, int32_t a_controllerID, RE::BSFixedString a_menuName
+			RE::StaticFunctionTag*,
+			int32_t a_deviceID, 
+			int32_t a_playerID, 
+			RE::BSFixedString a_menuName
 		);
 
 		// Signal all player managers for the given player to change state to the given state.
 		void RequestStateChange
 		(
-			RE::StaticFunctionTag*, int32_t a_controllerID, uint32_t a_newState
+			RE::StaticFunctionTag*, int32_t a_playerID, uint32_t a_newState
 		);
 
 		// Rescale the given player's actor values when their base skill actor values change:
@@ -100,27 +103,37 @@ namespace ALYSLC
 		// Player and co-op session do not have to be active.
 		void SetCoopPlayerClass
 		(
-			RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESClass* a_class
+			RE::StaticFunctionTag*,
+			RE::Actor* a_playerActor, 
+			RE::TESClass* a_class,
+			bool a_rescaleActorValues
 		);
 
 		// Set the given player's race to the given race and update base skill actor values.
 		// Player and co-op session do not have to be active.
 		void SetCoopPlayerRace
 		(
-			RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
+			RE::StaticFunctionTag*,
+			RE::Actor* a_playerActor,
+			RE::TESRace* a_race,
+			bool a_rescaleActorValues
 		);
 		
 		// Update the given player's list of cyclable emote idle event names to the given list.
 		void SetFavoritedEmoteIdles
 		(
 			RE::StaticFunctionTag*,
-			int32_t a_controllerID,
+			int32_t a_playerID,
 			std::vector<RE::BSFixedString> a_emoteIdlesList
 		);
 
 		// When opening the Gift Menu, set the given player actor as the recipient.
 		// Setting to None/nullptr clears the giftee player.
 		void SetGifteePlayerActor(RE::StaticFunctionTag*, RE::Actor* a_playerActor);
+
+		// Set the 'is summoning' flag, which indicates whether players 
+		// are summoning their characters for co-op.
+		void SetIsSummoningFlag(RE::StaticFunctionTag*, bool a_set);
 
 		// Enable/disable invincibility for all active players.
 		void SetPartyInvincibility(RE::StaticFunctionTag*, bool a_shouldSet);
@@ -129,10 +142,10 @@ namespace ALYSLC
 		// Any active co-op session is flagged as ended.
 		void SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss);
 		
-		// Teleport the player with the given CID to an actor.
+		// Teleport the player with the given PID to an actor.
 		void TeleportToPlayerToActor
 		(
-			RE::StaticFunctionTag*, const int32_t a_controllerID, RE::Actor* a_teleportTarget
+			RE::StaticFunctionTag*, const int32_t a_playerID, RE::Actor* a_teleportTarget
 		);
 
 		// Toggle the co-op camera on or off.
@@ -142,7 +155,7 @@ namespace ALYSLC
 		// when entering/exiting the Summoning Menu.
 		void ToggleSetupMenuControl
 		(
-			RE::StaticFunctionTag*, int32_t a_controllerID, int32_t a_playerID, bool a_shouldEnter
+			RE::StaticFunctionTag*, int32_t a_deviceID, int32_t a_playerID, bool a_shouldEnter
 		);
 
 		// Update all serialized player FID keys.
@@ -168,7 +181,7 @@ namespace ALYSLC
 			void CopyNPCAppearanceToPlayer
 			(
 				RE::StaticFunctionTag*, 
-				int32_t a_controllerID,
+				int32_t a_playerID,
 				RE::TESNPC* a_baseToCopy, 
 				bool a_setOppositeGenderAnims
 			);
@@ -203,7 +216,7 @@ namespace ALYSLC
 			void SetDefaultRacialAppearance
 			(
 				RE::StaticFunctionTag*,
-				int32_t a_controllerID,
+				int32_t a_playerID,
 				bool a_setFemale,
 				bool a_setOppositeGenderAnims
 			);
@@ -220,25 +233,25 @@ namespace ALYSLC
 			void DisableGodModeForAllCoopPlayers(RE::StaticFunctionTag*);
 
 			// Disable god mode for a specific player.
-			void DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
+			void DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID);
 
 			// Enable god mode for all active players.
 			void EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*);
 
 			// Enable god mode for a specific player.
-			void EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
+			void EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID);
 
 			// Move all other players to the given player.
 			void MoveAllPlayersToPlayer(RE::StaticFunctionTag*, RE::Actor* a_playerActor);
 
 			// Re-equip the player's desired hand forms (weapons/magic/armor).
-			void ReEquipHandForms(RE::StaticFunctionTag*, int32_t a_controllerID);
+			void ReEquipHandForms(RE::StaticFunctionTag*, int32_t a_playerID);
 
 			// Refresh data for all active players' managers.
 			void RefreshAllPlayerManagers(RE::StaticFunctionTag*);
 
 			// Refresh data for all of the given player's managers.
-			void RefreshPlayerManagers(RE::StaticFunctionTag*, int32_t a_controllerID);
+			void RefreshPlayerManagers(RE::StaticFunctionTag*, int32_t a_playerID);
 
 			// Hard reset a companion player:
 			// Stop movement,
@@ -256,7 +269,7 @@ namespace ALYSLC
 			void ResetCoopCompanion
 			(
 				RE::StaticFunctionTag*,
-				int32_t a_controllerID, 
+				int32_t a_playerID, 
 				bool a_unequipAll,
 				bool a_reattachHavok
 			);
@@ -281,7 +294,7 @@ namespace ALYSLC
 			// Since all shared perks are removed, all other active players are also
 			// refunded any shared perk points and can re-use them as they see fit.
 			// Skill and HMS levels remain unchanged.
-			void RespecPlayer(RE::StaticFunctionTag*, int32_t a_controllerID);
+			void RespecPlayer(RE::StaticFunctionTag*, int32_t a_playerID);
 
 			// Toggle the co-op camera off and then on again.
 			void RestartCoopCamera(RE::StaticFunctionTag*);
@@ -308,16 +321,20 @@ namespace ALYSLC
 			// [V1]
 			//
 
-			// Get the actor for the player with the given controller ID.
-			// If the controller given by the ID is controlling a player, 
+			// Get the actor for the player with the given device ID.
+			// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+			// If the device given by the ID is controlling a player, 
 			// return a pointer to that player actor.
 			// Otherwise, return nullptr.
-			RE::Actor* GetALYSLCPlayerByCID(RE::StaticFunctionTag*, int32_t a_controllerID);
-
+			RE::Actor* GetALYSLCPlayerByDID(RE::StaticFunctionTag*, int32_t a_deviceID);
+			
 			// Get the actor for the player with the given player ID.
 			// Player 1 always has a player ID of 0, and all active companion players' IDs 
-			// are assigned sequentially in the order of their XInput controller IDs (CIDs).
-			// Player IDs keep track of player-specific settings and ignore gaps in assigned CIDs.
+			// are assigned sequentially in the order of their device IDs (DIDs).
+			// The player ID is used to index active players,
+			// keep track of player-specific settings,
+			// and retrieve information on a specific player.
+			// It ignores gaps in assigned DIDs.
 			// 0 -> Player 1
 			// 1 -> Player 2
 			// 2 -> Player 3
@@ -327,11 +344,12 @@ namespace ALYSLC
 			// Otherwise, return nullptr.
 			RE::Actor* GetALYSLCPlayerByPID(RE::StaticFunctionTag*, int32_t a_playerID);
 
-			// Get the ID for the controller controlling the given player actor.
+			// Get the ID for the device controlling the given player actor.
+			// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
 			// If the given actor handle corresponds to an active (co-op session started) player, 
-			// return the ID [0, 3] of the controller controlling the actor.
+			// return the ID of the device controlling the actor.
 			// Otherwise, return -1.
-			int32_t GetALYSLCPlayerCID(RE::StaticFunctionTag*, RE::Actor* a_actor);
+			int32_t GetALYSLCPlayerDID(RE::StaticFunctionTag*, RE::Actor* a_actor);
 
 			// Get the ID for the player controlling the given player actor.
 			// If the given actor corresponds to an active (co-op session started) player, 
@@ -342,44 +360,91 @@ namespace ALYSLC
 			// Check if the given actor corresponds to a actor 
 			// that is controllable by a co-op player.
 			// A co-op session does not have to be active.
-			// True if a co-op character (P1 or companion player NPC), false otherwise.
+			// True if a co-op character (P1 or companion player), false otherwise.
 			bool IsALYSLCCharacter(RE::StaticFunctionTag*, RE::Actor* a_actor);
 
 			// Check if the given actor corresponds to an active co-op player.
-			// True if an active co-op player actor (P1 or companion player NPC), 
+			// True if an active co-op player actor (P1 or companion player), 
 			// false otherwise.
 			bool IsALYSLCPlayer(RE::StaticFunctionTag*, RE::Actor* a_actor);
+
+			// Check if there is an active local co-op session.
+			// True if companion players have been summoned.
+			// False if no players have been summoned yet or all players were dismissed.
+			bool IsSessionActive(RE::StaticFunctionTag*);
 			
+			// 
+			// [V2]
+			//
+
 			// Check if the player controlling the given actor
 			// is performing the action that corresponds to the given index.
 			// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
 			// for the supported action indices.
 			// True if the player is performing the action,
 			// false otherwise.
-			bool IsPlayerActorPerformingAction
+			bool IsPlayerPerformingAction
 			(
 				RE::StaticFunctionTag*, 
 				RE::Actor* a_playerActor,
 				uint32_t a_playerActionIndex
 			);
-
-			// Check if the player with the given controller ID 
-			// is performing the action that corresponds to the given index.
+			
+			// Check if the player controlling the given character
+			// is pressing the button/key or moving the analog stick/mouse 
+			// that corresponds to the given input action index.
 			// See the 'ALYSLC::InputAction' enum in the 'Enums.h' file
-			// for the supported action indices.
-			// True if the player is performing the action,
-			// false otherwise.
-			bool IsPlayerCIDPerformingAction
+			// for the supported input indices.
+			// True if the player is pressing the input.
+			// False if the player is not pressing the input.
+			bool IsPlayerPressingInput
 			(
 				RE::StaticFunctionTag*, 
-				int32_t a_controllerID,
-				uint32_t a_playerActionIndex
+				RE::Actor* a_playerActor,
+				uint32_t a_inputIndex
 			);
 
-			// Check if there is an active local co-op session.
-			// True if companion players have been summoned.
-			// False if no players have been summoned yet or all players were dismissed.
-			bool IsSessionActive(RE::StaticFunctionTag*);
+
+			//
+			// [V3]
+			//
+
+			/// Add experience points to the given skill for the given player.
+			/// Shared skills (Alchemy, Enchanting, Lockpicking, Pickpocket, Speech, Smithing)
+			/// progress directly through player 1.
+			/// The new skill XP amount for the skill is serialized and saved.
+			void AddSkillXP
+			(
+				RE::StaticFunctionTag*, 
+				RE::Actor* a_playerActor,
+				int32_t a_skillAVIndex, 
+				float a_baseXP
+			);
+		
+			/// Gets the player ID for the player currently controlling any open menus.
+			/// Returns the player ID of the player currently controlling menus,
+			/// or -1 if no controllable menu is open.
+			int32_t GetMenuControlPID(RE::StaticFunctionTag*);
+
+			/// Gets the character for the player currently controlling any open menus.
+			/// Returns the player character for the player currently controlling menus,
+			/// or an None if no controllable menu is open.
+			RE::Actor* GetMenuControlPlayer(RE::StaticFunctionTag*);
+
+			/// IMPORTANT: Call before the desired menu opens and while a co-op session is active.
+			/// While a co-op session is active, request menu control for the given menu
+			/// be granted to the player corresponding to the given player ID.
+			/// Specify '-1' as the player ID to relinquish control.
+			/// Can optionally specify an object that triggered the menu 
+			/// to better link the request to the player.
+			/// (ex. a 'pull chain' as the object that triggers a message box)
+			void RequestMenuControl
+			(
+				RE::StaticFunctionTag*,
+				int32_t a_playerID,
+				RE::BSFixedString a_menuName,
+				RE::TESObjectREFR* a_assocRefr
+			);
 		}
 	};
 }

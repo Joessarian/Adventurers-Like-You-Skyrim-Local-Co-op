@@ -872,8 +872,9 @@ namespace ALYSLC
 		// List of flags indicating whether this co-op player's favorited item at each index
 		// was added to P1 on import.
 		std::vector<bool> favoritedItemWasAdded;
-		// Controller ID for this player.
-		int32_t controllerID;
+		// Input device ID for this player.
+		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+		int32_t deviceID;
 		// Player ID for this player.
 		int32_t playerID;
 		// Favorites list indices for equipped quick slot forms 

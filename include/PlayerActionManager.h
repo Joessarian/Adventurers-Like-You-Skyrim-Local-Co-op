@@ -656,7 +656,7 @@ namespace ALYSLC
 		// Get the co-op package corresponding to the given index.
 		RE::TESPackage* GetCoopPackage(const PackageIndex& a_index);
 
-		// Get the co-op character's player keyword, which is based on their CID.
+		// Get the co-op character's player keyword, which is based on their PID.
 		RE::BGSKeyword* GetCoopPlayerKeyword();
 
 		// Get current package atop the player's package stack.
@@ -837,7 +837,7 @@ namespace ALYSLC
 		// Unequip bound weapon(s) when their lifetime expires and reset cached bound weapon data.
 		void UpdateBoundWeaponTimers();
 
-		// Set/remove the co-op character's player keyword based on their CID.
+		// Set/remove the co-op character's player keyword based on their PID.
 		void UpdateCoopPlayerKeyword(bool a_set);
 
 		// Update animation graph variables and other variables dependent on them.
@@ -1074,8 +1074,9 @@ namespace ALYSLC
 		uint16_t lastAnimEventID;
 		// Bit mask for all pressed buttons/moved analog sticks.
 		uint32_t inputBitMask;
-		// Player controller ID.
-		int32_t controllerID;
+		// Input device ID for this player.
+		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+		int32_t deviceID;
 		// Player ID.
 		int32_t playerID;
 	};

@@ -19,7 +19,7 @@ namespace ALYSLC
 		// that is displayable using the game HUD's crosshair text member.
 		struct CrosshairMessage
 		{
-			CrosshairMessage(int32_t a_playerCID) :
+			CrosshairMessage() :
 				type(CrosshairMessageType::kNone),
 				setTP(SteadyClock::now()),
 				text(""sv),
@@ -413,7 +413,6 @@ namespace ALYSLC
 
 			ReleasedReferenceInfo
 			(
-				const int32_t& a_controllerID, 
 				const RE::ObjectRefHandle& a_handle
 			) :
 				trajType(ProjectileTrajType::kAimDirection),
@@ -2095,8 +2094,9 @@ namespace ALYSLC
 		float secsSinceTargetVisibilityLost;
 		// Seconds since last visibility check.
 		float secsSinceVisibleOnScreenCheck;
-		// Controller ID for this player.
-		int32_t controllerID;
+		// Input device ID for this player.
+		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
+		int32_t deviceID;
 		// Player ID for this player.
 		int32_t playerID;
 		// Detection percent RGB value (RRGGBB in hex)
