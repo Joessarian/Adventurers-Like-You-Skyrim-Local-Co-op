@@ -320,11 +320,29 @@ namespace ALYSLC
 		// Prints all menu event name/DXScancode combos 
 		// for each menu input context and device type.
 		void DebugPrintMenuBinds();
+		
+		// Using the MIM's previously cached input mappings list, 
+		// get the ID code corresponding to the given user event name, device, and context.
+		uint32_t GetMappedKey
+		(
+			std::string_view a_eventID,
+			RE::INPUT_DEVICE a_device, 
+			RE::ControlMap::InputContextID a_context = RE::ControlMap::InputContextID::kGameplay
+		);
 
 		// Ensure all players have the same known spells/shouts
 		// and then find a matching spell for the currently selected item in the Magic Menu.
 		RE::TESForm* GetSelectedMagicMenuSpell();
 		
+		// Using the MIM's previously cached input mappings list,
+		// get the user event name corresponding to the given button ID, device, and context.
+		std::string_view GetUserEventName
+		(
+			uint32_t a_buttonID,
+			RE::INPUT_DEVICE a_device,
+			RE::ControlMap::InputContextID a_context = RE::ControlMap::InputContextID::kGameplay
+		);
+
 		// Transfer selected or all objects from the currently displayed container to P1.
 		// A second transfer from P1 to the co-op companion player is performed in
 		// CoopContainerChangedHandler::ProcessEvent(), since additional processing is required.
@@ -354,48 +372,46 @@ namespace ALYSLC
 		bool PerformEnderalSkillLevelUp(RE::AlchemyItem* a_skillbook);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Barter Menu.
-		void ProcessBarterMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Barter Menu.
+		void ProcessBarterMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Book Menu.
-		void ProcessBookMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Book Menu.
+		void ProcessBookMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Container Menu.
-		void ProcessContainerMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Container Menu.
+		void ProcessContainerMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Dialogue Menu.
-		void ProcessDialogueMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Dialogue Menu.
+		void ProcessDialogueMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Favorites Menu.
-		void ProcessFavoritesMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Favorites Menu.
+		void ProcessFavoritesMenuButtonInput
+		(
+			const uint32_t a_xMask, const RE::BSFixedString& a_userEvent
+		);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Gift Menu.
-		void ProcessGiftMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Gift Menu.
+		void ProcessGiftMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Inventory Menu.
-		void ProcessInventoryMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Inventory Menu.
+		void ProcessInventoryMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Loot Menu.
-		void ProcessLootMenuButtonInput(const uint32_t& a_xMask);
+		// the given user event name in the Loot Menu.
+		void ProcessLootMenuButtonInput
+		(
+			const uint32_t a_xMask, const RE::BSFixedString& a_userEvent
+		);
 
 		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Magic Menu.
-		void ProcessMagicMenuButtonInput(const uint32_t& a_xMask);
-
-		// Set menu input event type and accompanying event data based on 
-		// the given player button input in the Map Menu.
-		void ProcessMapMenuButtonInput(const uint32_t& a_xMask);
-
-		// Set menu input event type and accompanying event data for the currently opened menu 
-		// based on left or right trigger input.
-		void ProcessTriggerInput(const bool& a_isLT);
+		// the given user event name in the Magic Menu.
+		void ProcessMagicMenuButtonInput(const RE::BSFixedString& a_userEvent);
 
 		// Refresh favorited cyclable spells list(s) for the player.
 		void RefreshCyclableSpells() const;
@@ -426,6 +442,9 @@ namespace ALYSLC
 
 		// Initialize the menu-dependent control map.
 		void SetMenuControlMap();
+		
+		// Initialize menu input mappings.
+		void SetMenuInputMappings();
 
 		// Based on the given selected consumable form and its index 
 		// in the Favorites Menu's item list, append its count to the end of its entry.
@@ -486,6 +505,26 @@ namespace ALYSLC
 		// Menu-dependent control map which maps the XInput masks of each device input
 		// to menu bind information.
 		std::unordered_map<uint32_t, MenuBindInfo> menuControlMap;
+		// Saved input mappings when the MIM starts.
+		// The reason we have to save all mappings is because RE::ControlMap's GetUserEventName()
+		// fails to find valid user event names mapped to id codes
+		// if looking within a context that does not match current the topmost menu's context.
+		// For example, trying to get the user event name for the 'Back' button from the gameplay
+		// context while the Favorites Menu is open will return the empty string,
+		// instead of the 'Wait' user event.
+		// AGH. LOOK AWAY.
+		// Lists, per context, of lists, per input device type, 
+		// of vectors of pairs (user event name, game key/button ID code).
+		std::array
+		<
+			std::array
+			<
+				std::vector<std::pair<RE::BSFixedString, uint32_t>>, 
+				RE::INPUT_DEVICE::kTotal
+			>, 
+			RE::UserEvents::INPUT_CONTEXT_ID::kTotal
+		> inputMappings;
+
 		// List of (usually) all magic forms displayed in the Magic Menu.
 		// NOTE: 
 		// If a magic form is not found within the Magic Menu's own forms list 

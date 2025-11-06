@@ -27,10 +27,9 @@ namespace ALYSLC
 		glob.isCameraShakeActive = false;
 		glob.isInCoopCombat = false;
 		glob.isSummoningPlayers = false;
+		glob.p1IsEssential = false;
 		glob.partyWiped = false;
 		glob.activePlayers = 0;
-		glob.exportUnlockedSharedPerksCount = 0;
-		glob.importUnlockedSharedPerksCount = 0;
 		glob.livingPlayers = 0;
 		glob.copiedDataPlayerPID = -1;
 		glob.lastResolvedMenuPID = -1;
@@ -62,6 +61,8 @@ namespace ALYSLC
 		glob.coopPackageFormlists.clear();
 		glob.coopPlayerFactions.clear();
 		glob.coopPlayerKeywords.clear();
+		glob.perksAdded.clear();
+		glob.perksRemoved.clear();
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
 		glob.reqInputEvents.clear();
@@ -795,15 +796,28 @@ namespace ALYSLC
 
 		// Get all selectable level up perks.
 		SELECTABLE_PERKS.clear();
+		SELECTABLE_SHARED_PERKS.clear();
 		if (const auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
 		{
 			auto getSelectablePerks =
-			[](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+			[&glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 			{
 				auto perk = a_node->perk;
 				while (perk)
 				{
 					SELECTABLE_PERKS.insert(perk);
+					if (a_node->associatedSkill)
+					{
+						bool shared = SHARED_SKILL_NAMES_SET.contains
+						(
+							a_node->associatedSkill->enumName
+						);
+						if (shared)
+						{
+							SELECTABLE_SHARED_PERKS.insert(perk);
+						}
+					}
+
 					perk = perk->nextPerk;
 				}
 			};
@@ -1036,29 +1050,6 @@ namespace ALYSLC
 					totalUnlockedPerks
 				);
 
-				// Ensure glob perk list matches the serialized one.
-				for (auto i = 0; i < unlockedPerksList.size(); ++i)
-				{
-					auto perkToAdd = unlockedPerksList[i];
-					bool alreadyAdded = std::any_of
-					(
-						p1->perks.begin(), p1->perks.end(),
-						[p1, perkToAdd](RE::BGSPerk* a_perk) 
-						{
-							return a_perk == perkToAdd;
-						}
-					);
-					if (!alreadyAdded)
-					{
-						Util::Player1AddPerk(perkToAdd, -1);
-						SPDLOG_DEBUG
-						(
-							"Re-adding {} to p1's perks list. New perk count: {}",
-							perkToAdd->GetName(), p1->perks.size()
-						);
-					}
-				}
-
 				// Get total unlocked perks count from singleton list.
 				totalUnlockedPerks = 0;
 				for (auto perk : p1->perks)
@@ -1089,52 +1080,6 @@ namespace ALYSLC
 			if (playerActor)
 			{
 				const auto totalSharedPerksUnlocked = GetUnlockedSharedPerksCount();
-				// Get unlocked shared perks count for P1 by adding
-				// all shared perk counts for each non-P1 player and then
-				// subtracting this total from the total number of shared perks.
-				auto coopCompanionSharedPerksUnlocked = 0;
-				for (auto& [fid, data] : glob.serializablePlayerData)
-				{
-					if (fid == p1->formID)
-					{
-						continue;
-					}
-
-					if (data->sharedPerksUnlocked <= totalSharedPerksUnlocked) 
-					{
-						coopCompanionSharedPerksUnlocked += data->sharedPerksUnlocked;
-					}
-					else
-					{
-						// Error: this player has unlocked more shared perks than the saved total.
-						// Clamp to total shared perks.
-						SPDLOG_DEBUG
-						(
-							"Player with FID 0x{:X} has {} unlocked shared perks on record, "
-							"resetting to {}.",
-							fid, 
-							data->sharedPerksUnlocked, 
-							totalSharedPerksUnlocked
-						);
-						data->sharedPerksUnlocked = totalSharedPerksUnlocked;
-					}
-				}
-
-				// Set number of shared perks unlocked for P1 here.
-				// Co-op companions' shared perk counts are updated 
-				// after P1's perk tree is restored on menu exit.
-				if (isP1)
-				{
-					data->sharedPerksUnlocked = max
-					(
-						0, 
-						static_cast<int32_t>
-						(
-							totalSharedPerksUnlocked - coopCompanionSharedPerksUnlocked
-						)
-					);
-				}
-
 				// Extra perk points are points in excess with respect to 
 				// how many points the player should have received from leveling
 				// and from the shared perk points count:
@@ -1151,7 +1096,7 @@ namespace ALYSLC
 				(
 					totalUnlockedPerks - 
 					totalSharedPerksUnlocked + 
-					data->sharedPerksUnlocked - 
+					data->sharedPerksTaken - 
 					maxPerkPointsFromLevel
 				); 
 				if (extraPerkPoints >= 0)
@@ -1204,27 +1149,28 @@ namespace ALYSLC
 					totalUnlockedPerks - 
 					data->extraPerkPoints - 
 					totalSharedPerksUnlocked +
-					data->sharedPerksUnlocked
+					data->sharedPerksTaken
 				);
 				// Clamp to [0, max total at level]
 				data->usedPerkPoints = min(max(0, rawUsedPerkPoints), maxPerkPointsFromLevel);
 				// Available = Max total for the current level - used total
 				data->availablePerkPoints = max(0, maxPerkPointsFromLevel - data->usedPerkPoints);
 
+				// REMOVE when done debugging.
 				SPDLOG_DEBUG
 				(
-					"{} has {}/{} unlocked perks, "
-					"{} unlocked shared perks out of {} total unlocked ({} by co-op companions), "
+					"{} has cached unlocked perk counts {}/{}/{} , "
+					"{} unlocked shared perks out of {} total unlocked, "
 					"max perk points from leveling: {}, "
 					"extra perks: {}, for a total of {} used perk points. "
 					"Result: {} available perk points. "
 					"Expected level after level up, current: {}, {}.",
 					playerActor->GetName(),
 					unlockedPerksList.size(),
+					data->GetUnlockedPerksSet().size(),
 					totalUnlockedPerks,
-					data->sharedPerksUnlocked,
+					data->sharedPerksTaken,
 					totalSharedPerksUnlocked,
-					coopCompanionSharedPerksUnlocked,
 					maxPerkPointsFromLevel,
 					data->extraPerkPoints,
 					data->usedPerkPoints,
@@ -1232,6 +1178,15 @@ namespace ALYSLC
 					expectedLevelAfterLevelUp,
 					currentLevel
 				);
+
+				for (const auto perk : unlockedPerksList)
+				{
+					SPDLOG_DEBUG
+					(
+						"{} has cached unlocked perk {} 0x{:X}.", 
+						playerActor->GetName(), perk->GetName(), perk->formID
+					);
+				}
 			}
 			else
 			{
@@ -1243,7 +1198,7 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::AdjustBaseHMSData(RE::Actor* a_playerActor, const bool& a_shouldImport)
+	void GlobalCoopData::AdjustBaseHMSData(RE::Actor* a_playerActor, const bool a_shouldImport)
 	{
 		// Save the player's HMS base AVs on entering the Stats Menu 
 		// and then record any increases to these values on exit.
@@ -1264,25 +1219,25 @@ namespace ALYSLC
 			// Co-op player AVs are not imported to P1 yet.
 			data->hmsBaseAVsOnMenuEntry[0] = 
 			(
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth)
+				p1->GetBaseActorValue(RE::ActorValue::kHealth)
 			);
 			data->hmsBaseAVsOnMenuEntry[1] = 
 			(
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka)
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka)
 			);
 			data->hmsBaseAVsOnMenuEntry[2] = 
 			(
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina)
+				p1->GetBaseActorValue(RE::ActorValue::kStamina)
 			);
 
 			SPDLOG_DEBUG
 			(
-				"{}'s base HMS values saved as {}, {}, {} ON ENTRY. "
+				"For {}, base HMS values (P1's) saved as {}, {}, {} ON ENTRY. "
 				"First saved level: {}.",
 				a_playerActor->GetName(),
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka),
-				a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
 				data->firstSavedLevel
 			);
 		}
@@ -1426,7 +1381,7 @@ namespace ALYSLC
 		// Will also cause issues if modifying perks or HMS AVs while in the Stats Menu.
 		// Get the number of level ups used by dividing the sum of HMS increases 
 		// by the number of points granted per level up.
-		uint32_t hmsLevelUpsCount = 0;
+		uint16_t hmsLevelUpsCount = 0;
 		hmsLevelUpsCount = 
 		(
 			std::accumulate
@@ -1436,7 +1391,10 @@ namespace ALYSLC
 				hmsLevelUpsCount
 			) / iAVDhmsLevelUp
 		);
-		int32_t availableHMSLevelUps = max(0.0f, a_playerActor->GetLevel() - 1 - hmsLevelUpsCount);
+		uint16_t availableHMSLevelUps = max
+		(
+			0, a_playerActor->GetLevel() - 1 - hmsLevelUpsCount
+		);
 		
 		SPDLOG_DEBUG
 		(
@@ -1585,26 +1543,411 @@ namespace ALYSLC
 		return dipP1Level;
 	}
 
-	void GlobalCoopData::AdjustPerkDataForPlayer1(const bool& a_enteringMenu)
+	void GlobalCoopData::AdjustLegendaryLeveling
+	(
+		RE::Actor* a_playerActor, const bool a_shouldImport
+	)
 	{
-		// Adjust P1's HMS AVs, perks, perk count, 
+		// Update the number of times each skill was made Legendary by the given player
+		// before entering or closing the Stats Menu.
+		// Also update the serialized base level(s) and increment(s) 
+		// for any skills just made Legendary.
+
+		auto& glob = GetSingleton();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1 || !a_playerActor)
+		{
+			return;
+		}
+
+		bool p1InMenus = a_playerActor == p1;
+		auto iter = glob.serializablePlayerData.find(p1->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+
+		const auto& p1SerializedData = iter->second;
+		if (!p1InMenus)
+		{
+			iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		}
+
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+
+		const auto& coopPlayerSerializedData = iter->second;
+		bool skillMadeLegendary = false;
+		for (auto i = 0; i < Skill::kTotal; ++i)
+		{
+			if (p1InMenus)
+			{
+				skillMadeLegendary = 
+				(
+					!a_shouldImport && 
+					p1SerializedData->skillLegendaryList[i] < 
+					p1->skills->data->legendaryLevels[i]
+				);
+				if (p1SerializedData->skillLegendaryList[i] != 
+					p1->skills->data->legendaryLevels[i])
+				{
+					p1SerializedData->skillLegendaryList[i] = 
+					p1->skills->data->legendaryLevels[i];
+					SPDLOG_DEBUG
+					(
+						"{}: Store P1's {} Legendary leveling count as {}.",
+						a_shouldImport ? "IMPORT" : "EXPORT",
+						Util::GetActorValueName
+						(
+							glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
+						),
+						p1SerializedData->skillLegendaryList[i]
+					);
+				}
+			}
+			else
+			{
+				if (a_shouldImport)
+				{
+					if (p1->skills->data->legendaryLevels[i] != 
+						coopPlayerSerializedData->skillLegendaryList[i])
+					{
+						SPDLOG_DEBUG
+						(
+							"{}: Set P1's {} Legendary leveling count to {}.",
+							a_shouldImport ? "IMPORT" : "EXPORT",
+							Util::GetActorValueName
+							(
+								glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
+							),
+							coopPlayerSerializedData->skillLegendaryList[i]
+						);
+						p1->skills->data->legendaryLevels[i] =
+						coopPlayerSerializedData->skillLegendaryList[i];
+					}
+				}
+				else
+				{
+					skillMadeLegendary = 
+					(
+						coopPlayerSerializedData->skillLegendaryList[i] < 
+						p1->skills->data->legendaryLevels[i]
+					);
+					// Set XP for the skill to 0 if it was made Legendary.
+					if (skillMadeLegendary)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}: Companion player's Legendary leveling count for {} "
+							"was changed from {} to {}. Clear XP (was {}).",
+							a_shouldImport ? "IMPORT" : "EXPORT",
+							Util::GetActorValueName
+							(
+								glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
+							),
+							coopPlayerSerializedData->skillLegendaryList[i],
+							p1->skills->data->legendaryLevels[i],
+							coopPlayerSerializedData->skillXPList[i]
+						);
+					
+						// Update companion player's Legendary leveling count. 
+						coopPlayerSerializedData->skillLegendaryList[i] = 
+						p1->skills->data->legendaryLevels[i];
+					}
+
+					const auto iter = glob.SKILL_TO_AV_MAP.find(static_cast<Skill>(i));
+					if (iter != glob.SKILL_TO_AV_MAP.end())
+					{
+						// Restore P1's count if the skill is not shared
+						// and the level differs from the serialized value.
+						if (!glob.SHARED_SKILL_AVS_SET.contains(iter->second) && 
+							p1->skills->data->legendaryLevels[i] != 
+							p1SerializedData->skillLegendaryList[i])
+						{
+							SPDLOG_DEBUG
+							(
+								"{}: Set P1's {} Legendary leveling count to {}.",
+								a_shouldImport ? "IMPORT" : "EXPORT",
+								Util::GetActorValueName
+								(
+									glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
+								),
+								p1SerializedData->skillLegendaryList[i]
+							);
+							p1->skills->data->legendaryLevels[i] =
+							p1SerializedData->skillLegendaryList[i];
+						}
+					}
+				}
+			}
+
+			// For shared skills:
+			// Reset all active players' skill levels to the current one if it was made Legendary.
+			// Will ensure the previous skill level is not copied back over to all active players
+			// once shared skill levels are synced up again later.
+			if (skillMadeLegendary)
+			{
+				const auto av = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
+				const auto level = p1->skills->data->skills[i].level;
+				// Reset skill base and increment values for the player in menus.
+				// Also make sure the original level recorded when entering the Stats Menu
+				// is set to the current one so that the measured change in level is 0
+				// and not negative, which would set this player's skill level to below 0
+				// and break leveling.
+				if (p1InMenus)
+				{
+					glob.p1ExchangeableData->skillAVs[i] = level;
+					p1SerializedData->skillBaseLevelsList[i] = level;
+					p1SerializedData->skillLevelIncreasesList[i] = 0.0f;
+				}
+				else
+				{
+					glob.coopCompanionExchangeableData->skillAVs[i] = level;
+					coopPlayerSerializedData->skillBaseLevelsList[i] = level;
+					coopPlayerSerializedData->skillLevelIncreasesList[i] = 0.0f;
+				}
+
+				// Make sure shared skills that are made Legendary 
+				// are reset to their default base values and increments of 0.
+				bool isShared = glob.SHARED_SKILL_AVS_SET.contains(av);
+				if (isShared)
+				{
+					for (const auto& p : glob.coopPlayers)
+					{
+						if (!p->isActive)
+						{
+							continue;
+						}
+					
+						SPDLOG_DEBUG
+						(
+							"{} was made Legendary. Reset {}'s level from {} to {}.",
+							Util::GetActorValueName(av), 
+							p->coopActor->GetName(),
+							p->coopActor->GetBaseActorValue(av),
+							level
+						);
+						p->coopActor->SetBaseActorValue(av, level);
+					}
+
+					// Also reset serialized data base level and level increments for all players.
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						if (!data)
+						{
+							continue;
+						}
+					
+						SPDLOG_DEBUG
+						(
+							"{} was made Legendary. "
+							"Reset player with FID 0x{:X}'s level from {} to {}. "
+							"And level increments from {} to 0.",
+							Util::GetActorValueName(av), 
+							fid,
+							data->skillBaseLevelsList[i],
+							level,
+							data->skillLevelIncreasesList[i]
+						);
+						data->skillBaseLevelsList[i] = level;
+						data->skillLevelIncreasesList[i] = 0.0f;
+					}
+				}
+			}
+		}	
+	}
+	
+	void GlobalCoopData::AdjustPerkDataForCompanionPlayer
+	(
+		RE::Actor* a_playerActor, const bool& a_enteringMenu
+	)
+	{
+		// Adjust companion player's HMS AVs, perks, perk count, 
 		// and skill AVs when entering/exiting the Stats Menu.
 
 		auto& glob = GetSingleton();
 
 		const auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!p1 || glob.serializablePlayerData.empty()) 
+		if (!glob.globalDataInit || !p1 || !a_playerActor || glob.serializablePlayerData.empty())
 		{
 			return;
 		}
 
-		SPDLOG_DEBUG("{} menu.",a_enteringMenu ? "Entering" : "Exiting");
-		
-		SaveUnlockedPerksForPlayer(p1);
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			SPDLOG_ERROR
+			(
+				"ERR: Could not retrieve serialized player data for {}.", a_playerActor->GetName()
+			);
+			return;
+		}
+
+		auto& data = iter->second;
+		SPDLOG_DEBUG("{} menu.", a_enteringMenu ? "Entering" : "Exiting");
 		if (a_enteringMenu)
 		{
+			// Sync changes to shared perks before adjusting perk counts.
+			// Modifies unlocked perks list and set.
+			SyncSharedPerks();
+			// Adjust Legendary leveling data.
+			AdjustLegendaryLeveling(a_playerActor, a_enteringMenu);
+			// Sync changes to Legendary leveling counts.
+			SyncSharedLegendaryLevelingCounts();
+			// Ensure all serialized perks are added to the singleton list before counting.
+			ApplyP1SerializedUnlockedPerks();
 			// Adjust perk counts before potentially copying data to P1.
 			AdjustAllPlayerPerkCounts();
+			// Trigger auto scaling first to update base actor values 
+			// to their first-saved level equivalents.
+			TriggerAVAutoScaling(nullptr, true);
+			// Rescale from new base actor values before copying 
+			// and checking base actor value data.
+			RescaleActivePlayerAVs();
+
+			// Dip P1's level, as necessary, 
+			// to open the required number of LevelUp menus.
+			bool rescaleSkillAVsOnP1LevelDip = AdjustInitialPlayer1PerkPoints(a_playerActor);
+			// Rescale player AVs back to their saved values if P1's level was dipped, 
+			// since all co-op companions have their AVs auto-scaled
+			// by the game when P1's level changes.
+			// Copy the co-op companions AVs over to P1 
+			// only after we've rescaled.
+			if (rescaleSkillAVsOnP1LevelDip)
+			{
+				SPDLOG_DEBUG
+				(
+					"About to rescale all companions' AVs "
+					"after dipping P1's level to spawn level up menus."
+				);
+				RescaleActivePlayerAVs();
+			}
+
+			// Copy perk tree and then skill AVs.
+			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
+			{
+				SPDLOG_DEBUG("Import perk tree.");
+				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
+				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkTree);
+			}
+
+			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+			{
+				SPDLOG_DEBUG("Import AVs.");
+				CopyOverAVs
+				(
+					a_playerActor, 
+					a_enteringMenu, 
+					true,
+					true
+				);
+				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
+			}
+
+			// Save HMS AVs on menu entry.
+			AdjustBaseHMSData(a_playerActor, a_enteringMenu);
+		}
+		else
+		{
+			// Save HMS AVs on exit.
+			AdjustBaseHMSData(a_playerActor, a_enteringMenu);
+			// Restore skill AVs and then perk tree.
+			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
+			{
+				SPDLOG_DEBUG("Restore AVs.");
+				CopyOverAVs
+				(
+					a_playerActor,
+					a_enteringMenu,
+					true,
+					true
+				);
+				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
+			}
+			
+			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
+			{
+				SPDLOG_DEBUG("Restore perk tree.");
+				// Save the previous unlocked perks set to diff.
+				auto oldUnlockedPerksSet = data->GetUnlockedPerksSet();
+				// NOTE:
+				// Unlocked perks set and list modified here.
+				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
+				// Update the perks added or removed after we've updated the unlocked perks set.
+				UpdatePerkUnlockDiffLists(oldUnlockedPerksSet, data->GetUnlockedPerksSet());
+				// Update added shared perks for this player 
+				// and removed shared perks for all players.
+				UpdateTakenSharedPerksData(a_playerActor);
+				// No longer copied over to P1.
+				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
+			}
+
+			// Trigger auto scaling first to update base actor values 
+			// to their first-saved level equivalents.
+			TriggerAVAutoScaling(nullptr, true);
+			// Rescale HMS and skill AVs up 
+			// from the new base actor values for all active players.
+			RescaleActivePlayerAVs();
+			// Sync changes to shared perks on menu exit.
+			SyncSharedPerks();
+			// Adjust Legendary leveling data.
+			AdjustLegendaryLeveling(a_playerActor, a_enteringMenu);
+			// Sync changes to Legendary leveling counts.
+			SyncSharedLegendaryLevelingCounts();
+			// Ensure all serialized perks are added to the singleton list before counting.
+			ApplyP1SerializedUnlockedPerks();
+			// Lastly, adjust perk counts once shared perk data is updated.
+			AdjustAllPlayerPerkCounts();
+		}
+	}
+
+	void GlobalCoopData::AdjustPerkDataForPlayer1(const bool& a_enteringMenu)
+	{
+		// Adjust P1's HMS AVs, perks, perk count, 
+		// and skill AVs when entering/exiting the Stats Menu.
+
+		// NOTE:
+		// I'm not going to pretend to understand how this works. If it even does work. Sometimes.
+
+		auto& glob = GetSingleton();
+
+		const auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!glob.globalDataInit || !p1 || glob.serializablePlayerData.empty()) 
+		{
+			return;
+		}
+		
+		const auto iter = glob.serializablePlayerData.find(p1->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			SPDLOG_ERROR
+			(
+				"ERR: Could not retrieve serialized player data for {}.", p1->GetName()
+			);
+			return;
+		}
+
+		auto& data = iter->second;
+		SPDLOG_DEBUG("{} menu.",a_enteringMenu ? "Entering" : "Exiting");
+		if (a_enteringMenu)
+		{
+			// Sync changes to shared perks before adjusting perk counts.
+			// Modifies unlocked perks list and set.
+			SyncSharedPerks();
+			// Adjust Legendary leveling data.
+			AdjustLegendaryLeveling(p1, a_enteringMenu);
+			// Sync changes to Legendary leveling counts.
+			SyncSharedLegendaryLevelingCounts();
+			// Ensure all serialized perks are added to the singleton list before counting.
+			ApplyP1SerializedUnlockedPerks();
+			// Save unlocked perks before entering the menu, but after establishing perk counts
+			// and syncing the singleton perk list with the serialized one.
+			SaveUnlockedPerksForP1(a_enteringMenu);
+			// Adjust perk counts before potentially copying data to P1.
+			AdjustAllPlayerPerkCounts();
+			// Cache HMS actor values and modifiers.
 			AdjustBaseHMSData(p1, a_enteringMenu);
 
 			// If P1's level was lowered to trigger LevelUp menus,
@@ -1631,9 +1974,24 @@ namespace ALYSLC
 			// Rescale HMS and skill AVs up 
 			// from the new base actor values for all active players.
 			RescaleActivePlayerAVs();
-			// Sync changes to shared perks on menu exit.
+			// Save the previous unlocked perks set to diff.
+			auto oldUnlockedPerksSet = data->GetUnlockedPerksSet();
+			// Save all unlocked perks afterward. This updates the unlocked perks set and list.
+			SaveUnlockedPerksForP1(a_enteringMenu);
+			// Update the perks added or removed after we've updated the unlocked perks set.
+			UpdatePerkUnlockDiffLists(oldUnlockedPerksSet, data->GetUnlockedPerksSet());
+			// Update added shared perks for this player and removed shared perks for all players.
+			UpdateTakenSharedPerksData(p1);
+			// Sync changes to shared perks before adjusting perk counts.
+			// Modifies unlocked perks list and set.
 			SyncSharedPerks();
-			// Lastly, adjust perk counts.
+			// Adjust Legendary leveling data.
+			AdjustLegendaryLeveling(p1, a_enteringMenu);
+			// Sync changes to Legendary leveling counts.
+			SyncSharedLegendaryLevelingCounts();
+			// Ensure all serialized perks are added to the singleton list before counting.
+			ApplyP1SerializedUnlockedPerks();
+			// Lastly, adjust perk counts once all the shared perk counts are updated.
 			AdjustAllPlayerPerkCounts();
 
 			// REMOVE when done debugging.
@@ -1643,174 +2001,77 @@ namespace ALYSLC
 				return;
 			}
 
-			const auto iter = glob.serializablePlayerData.find(p1->formID);
-			if (iter != glob.serializablePlayerData.end())
-			{
-				const auto& data = iter->second;
-				const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
-				SPDLOG_DEBUG
+			const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
+			SPDLOG_DEBUG
+			(
+				"P1 has unlocked {} perks "
+				"and has {} remaining perk points for {} total perk points available "
+				"(default max is {}).",
+				unlockedPerksSet.size(),
+				p1->perkCount,
+				unlockedPerksSet.size() + p1->perkCount,
+				static_cast<uint32_t>
 				(
-					"P1 has unlocked {} perks "
-					"and has {} remaining perk points for {} total perk points available "
-					"(default max is {}).",
-					unlockedPerksSet.size(),
-					p1->perkCount,
-					unlockedPerksSet.size() + p1->perkCount,
-					static_cast<uint32_t>
 					(
-						(
-							ALYSLC::RequiemCompat::g_requiemInstalled ? 
-							p1->GetLevel() + 2 :
-							p1->GetLevel() - 1
-						) * 
-						Settings::fPerkPointsPerLevelUp + 
-						Settings::uFlatPerkPointsIncrease
-					)
-				);
-			}
+						ALYSLC::RequiemCompat::g_requiemInstalled ? 
+						p1->GetLevel() + 2 :
+						p1->GetLevel() - 1
+					) * 
+					Settings::fPerkPointsPerLevelUp + 
+					Settings::uFlatPerkPointsIncrease
+				)
+			);
 #endif
 		}
 	}
 
-	void GlobalCoopData::AdjustPerkDataForCompanionPlayer
-	(
-		RE::Actor* a_playerActor, const bool& a_enteringMenu
-	)
+	void GlobalCoopData::ApplyP1SerializedUnlockedPerks()
 	{
-		// Adjust companion player's HMS AVs, perks, perk count, 
-		// and skill AVs when entering/exiting the Stats Menu.
+		// Copy over all of P1's serialized unlocked perks
+		// to the player character singleton's perk list.
+		// Ensures the singleton perks set is a superset of the serialized perks set,
+		// allowing unlocked perk nodes to glow properly in the Stats Menu.
 
 		auto& glob = GetSingleton();
-
-		const auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!p1 || !a_playerActor || glob.serializablePlayerData.empty())
+		if (!glob.globalDataInit)
 		{
 			return;
 		}
 
-		SPDLOG_DEBUG("{} menu.", a_enteringMenu ? "Entering" : "Exiting");
-		if (a_enteringMenu)
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
 		{
-			// Adjust perk counts before potentially copying data to P1.
-			AdjustAllPlayerPerkCounts();
-			// Trigger auto scaling first to update base actor values 
-			// to their first-saved level equivalents.
-			TriggerAVAutoScaling(nullptr, true);
-			// Rescale from new base actor values before copying 
-			// and checking base actor value data.
-			RescaleActivePlayerAVs();
-			// Sync changes to shared perks before copying over co-op player's perk tree.
-			SyncSharedPerks();
+			return;
+		}
 
-			// Dip P1's level, as necessary, 
-			// to open the required number of LevelUp menus.
-			bool rescaleSkillAVsOnP1LevelDip = AdjustInitialPlayer1PerkPoints(a_playerActor);
-			// Rescale player AVs back to their saved values if P1's level was dipped, 
-			// since all co-op companions have their AVs auto-scaled
-			// by the game when P1's level changes.
-			// Copy the co-op companions AVs over to P1 
-			// only after we've rescaled.
-			if (rescaleSkillAVsOnP1LevelDip)
+		const auto iter = glob.serializablePlayerData.find(p1->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+
+		// Ensure glob perk list matches the serialized one.
+		const auto& unlockedPerksList = iter->second->GetUnlockedPerksList();
+		for (auto i = 0; i < unlockedPerksList.size(); ++i)
+		{
+			auto perkToAdd = unlockedPerksList[i];
+			bool alreadyAdded = std::any_of
+			(
+				p1->perks.begin(), p1->perks.end(),
+				[p1, perkToAdd](RE::BGSPerk* a_perk) 
+				{
+					return a_perk == perkToAdd;
+				}
+			);
+			if (!alreadyAdded)
 			{
+				Util::Player1AddPerk(perkToAdd, -1);
 				SPDLOG_DEBUG
 				(
-					"About to rescale all companions' AVs "
-					"after dipping P1's level to spawn level up menus."
+					"Re-adding {} to p1's perks list. New perk count: {}",
+					perkToAdd->GetName(), p1->perks.size()
 				);
-				RescaleActivePlayerAVs();
 			}
-
-			// Copy perk tree, 
-			// then name and race name, 
-			// and then skill AVs.
-			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
-			{
-				SPDLOG_DEBUG("Import perk tree.");
-				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
-				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkTree);
-			}
-
-			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
-			{
-				SPDLOG_DEBUG("Import name.");
-				CopyOverActorBaseData(a_playerActor, a_enteringMenu, true, false, false);
-				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
-			}
-
-			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
-			{
-				SPDLOG_DEBUG("Import race name.");
-				CopyOverActorBaseData(a_playerActor, a_enteringMenu, false, true, false);
-				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kRaceName);
-			}
-
-			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
-			{
-				SPDLOG_DEBUG("Import AVs.");
-				CopyOverAVs
-				(
-					a_playerActor, 
-					a_enteringMenu, 
-					ALYSLC::RequiemCompat::g_requiemInstalled,
-					false
-				);
-				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
-			}
-
-			// Save HMS AVs on menu entry.
-			AdjustBaseHMSData(a_playerActor, a_enteringMenu);
-		}
-		else
-		{
-			// Save HMS AVs on exit.
-			AdjustBaseHMSData(a_playerActor, a_enteringMenu);
-			// Restore name and race name, 
-			// then skill AVs, 
-			// and then perk tree.
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
-			{
-				SPDLOG_DEBUG("Restore name.");
-				CopyOverActorBaseData(a_playerActor, a_enteringMenu, true, false, false);
-				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
-			}
-
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
-			{
-				SPDLOG_DEBUG("Restore race name.");
-				CopyOverActorBaseData(a_playerActor, a_enteringMenu, false, true, false);
-				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
-			}
-
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
-			{
-				SPDLOG_DEBUG("Restore AVs.");
-				CopyOverAVs
-				(
-					a_playerActor,
-					a_enteringMenu,
-					ALYSLC::RequiemCompat::g_requiemInstalled,
-					false
-				);
-				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
-			}
-
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
-			{
-				SPDLOG_DEBUG("Restore perk tree.");
-				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
-				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
-			}
-
-			// Trigger auto scaling first to update base actor values 
-			// to their first-saved level equivalents.
-			TriggerAVAutoScaling(nullptr, true);
-			// Rescale HMS and skill AVs up 
-			// from the new base actor values for all active players.
-			RescaleActivePlayerAVs();
-			// Sync changes to shared perks on menu exit.
-			SyncSharedPerks();
-			// Lastly, adjust perk counts.
-			AdjustAllPlayerPerkCounts();
 		}
 	}
 
@@ -3083,6 +3344,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
+							"[ALYSLC]\n"
 							"Gained {} Crafting Point(s) after party scaling.\nNew total: {}",
 							newCraftingPointsDelta, glob.craftingPointsGlob->value
 						).c_str()
@@ -3113,6 +3375,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
+							"[ALYSLC]\n"
 							"Gained {} Learning Point(s) after party scaling.\nNew total: {}",
 							newLearningPointsDelta, glob.learningPointsGlob->value
 						).c_str()
@@ -3140,6 +3403,7 @@ namespace ALYSLC
 					(
 						fmt::format
 						(
+							"[ALYSLC]\n"
 							"Gained {} Memory Point(s) after party scaling.\nNew total: {}",
 							newMemoryPointsDelta, glob.memoryPointsGlob->value
 						).c_str()
@@ -3689,6 +3953,16 @@ namespace ALYSLC
 		}
 
 		return glob.menuPID != p->playerID;
+	}
+
+	bool GlobalCoopData::IsP1UsingSingleplayerControlsInCoop()
+	{
+		auto& glob = GetSingleton();
+		return 
+		(
+			(glob.globalDataInit && glob.coopSessionActive && !glob.cam->IsRunning()) && 
+			(glob.cam->waitForToggle || glob.hybridModeActive)
+		);
 	}
 
 	bool GlobalCoopData::IsSupportedMenuOpen()
@@ -4726,7 +5000,7 @@ namespace ALYSLC
 				(
 					a_menuControllingPlayer,
 					false, 
-					ALYSLC::RequiemCompat::g_requiemInstalled,
+					true,
 					true
 				);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkills);
@@ -4739,7 +5013,7 @@ namespace ALYSLC
 				(
 					a_menuControllingPlayer,
 					false,
-					ALYSLC::RequiemCompat::g_requiemInstalled,
+					true,
 					false
 				);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
@@ -4790,15 +5064,224 @@ namespace ALYSLC
 				continue;
 			}
 
-			SaveUnlockedPerksForPlayer(p->coopActor.get());
+			const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				continue;
+			}
+
+			// Save the previous unlocked perks set to diff.
+			auto& data = iter->second;
+			auto oldUnlockedPerksSet = data->GetUnlockedPerksSet();
+			if (p->isPlayer1)
+			{
+				SaveUnlockedPerksForP1(true);
+			}
+			else
+			{
+				SaveUnlockedPerksForPlayer(p->coopActor.get());
+			}
+
+			// Update the perks added or removed after we've updated the unlocked perks set.
+			UpdatePerkUnlockDiffLists(oldUnlockedPerksSet, data->GetUnlockedPerksSet());
+			// Update added shared perks for this player and removed shared perks for all players.
+			UpdateTakenSharedPerksData(p->coopActor.get());
 		}
+	}
+
+	void GlobalCoopData::SaveUnlockedPerksForP1(bool a_onImport)
+	{
+		// Save all unlocked perks to serialized data for the given player actor.
+		
+		// NOTE: 
+		// The game randomly clears P1's perks sometimes.
+		// I have yet to find a reason why it does this or find a direct solution,
+		// so the current workaround is to import P1's serialized perks
+		// when opening the Stats Menu and only save P1's perks 
+		// on exiting the Stats Menu, even outside of co-op.
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+
+		SPDLOG_DEBUG("{}", p1->GetName());
+		auto& glob = GetSingleton();
+		const auto iter = glob.serializablePlayerData.find(p1->formID);
+		if (iter == glob.serializablePlayerData.end()) 
+		{
+			SPDLOG_DEBUG
+			(
+				"{}: Could not get serializable data for player with form ID 0x{:X}.",
+				p1->GetName(), p1->formID
+			);
+			return;
+		}
+		
+		auto& data = iter->second;
+		// Save P1's perks to their serializable unlocked perks list.
+		auto savePlayerPerksVisitor = 
+		[&data, &glob, a_onImport]
+		(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_playerActor) 
+		{
+			if (!a_node)
+			{
+				return;
+			}
+
+			auto perk = a_node->perk;
+			std::stack<RE::BGSPerk*> perkStack;
+			// Save p1's perks to serializable data.
+			while (perk)
+			{
+				bool shared = SHARED_SKILL_NAMES_SET.contains
+				(
+					a_node->associatedSkill->enumName
+				);
+				bool nativeFuncHasPerk = a_playerActor->HasPerk(perk);
+				bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
+				// OLD NOTE (needs verification):
+				// When not in co-op, the native func perk check either does not recognize 
+				// that a perk was added (when first loading a save after starting the game),
+				// or captures changes made in a newer save
+				// (if loading an older save after choosing new perks). 
+				// Reference the glob perk list when out of co-op for these reasons.
+
+				// If either check indicates that the player has the current perk, 
+				// add it to the list.
+				bool shouldInsert = 
+				(
+					((a_onImport) && (nativeFuncHasPerk || singletonListHasPerk)) ||
+					((!a_onImport) && (singletonListHasPerk))
+				);
+				if (glob.coopSessionActive) 
+				{
+					// NOTE:
+					// P1's singleton list sometimes reports 0 perks on import,
+					// and P1's actor list is not up-to-date on export,
+					// so we'll refer to the actor list on import and the singleton list on export.
+					if (a_onImport)
+					{
+						if (shouldInsert)
+						{
+							SPDLOG_DEBUG
+							(
+								"{}: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
+								a_onImport ? "IMPORT" : "EXPORT",
+								a_playerActor->GetName(), 
+								perk->GetName(), 
+								perk->formID,
+								nativeFuncHasPerk,
+								singletonListHasPerk
+							);
+							data->InsertUnlockedPerk(perk);
+							if (nativeFuncHasPerk != singletonListHasPerk)
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: {} has perk check inconsistency. Adding {} (0x{:X}).",
+									a_onImport ? "IMPORT" : "EXPORT",
+									a_playerActor->GetName(), 
+									perk->GetName(), 
+									perk->formID
+								);
+								Util::Player1AddPerk(perk, -1);
+							}
+						}
+					}
+					else
+					{
+						if (shouldInsert)
+						{
+							data->InsertUnlockedPerk(perk);
+						}
+
+						if (nativeFuncHasPerk != singletonListHasPerk)
+						{
+							SPDLOG_DEBUG
+							(
+								"{}: {} has perk check inconsistency. {} {} (0x{:X}).",
+								a_onImport ? "IMPORT" : "EXPORT",
+								a_playerActor->GetName(), 
+								singletonListHasPerk ? "Adding" : "Removing",
+								perk->GetName(), 
+								perk->formID
+							);
+							if (singletonListHasPerk)
+							{
+								Util::Player1AddPerk(perk, -1);
+							}
+							else
+							{
+								perkStack.push(perk);
+							}
+						}
+					}
+				}
+				else
+				{
+					// Singleton list has been synchoronized with the serialized list already.
+					// Now we'll synchronize it with the actor perk list.
+					if (singletonListHasPerk)
+					{
+						SPDLOG_DEBUG
+						(
+							"NO CO-OP: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
+							a_playerActor->GetName(), 
+							perk->GetName(), 
+							perk->formID, 
+							nativeFuncHasPerk, 
+							singletonListHasPerk
+						);
+						Util::Player1AddPerk(perk, -1);
+						data->InsertUnlockedPerk(perk);
+					}
+					else
+					{
+						perkStack.push(perk);
+					}
+				}
+
+				perk = perk->nextPerk;
+			}
+
+			// Remove perks in the proper order.
+			while (!perkStack.empty())
+			{
+				if (auto perkToRemove = perkStack.top(); perkToRemove)
+				{
+					Util::Player1RemovePerk(perkToRemove);
+				}
+
+				perkStack.pop();
+			}
+		};
+
+		SPDLOG_DEBUG
+		(
+			"BEFORE: {} has {} unlocked perks, {} unlocked shared perks.",
+			p1->GetName(),
+			data->GetUnlockedPerksList().size(),
+			GetUnlockedSharedPerksCount()
+		);
+		// Clear out old unlocked perks list for the companion player before updating.
+		data->ClearUnlockedPerks();
+		// Update unlocked perks list and set.
+		Util::TraverseAllPerks(p1, savePlayerPerksVisitor);
+		SPDLOG_DEBUG
+		(
+			"AFTER: {} has {} unlocked perks, {} unlocked shared perks.",
+			p1->GetName(),
+			data->GetUnlockedPerksList().size(),
+			GetUnlockedSharedPerksCount()
+		);
 	}
 
 	void GlobalCoopData::SaveUnlockedPerksForPlayer(RE::Actor* a_coopActor)
 	{
 		// Save all unlocked perks to serialized data for the given player actor.
 		
-
 		// NOTE: 
 		// The game randomly clears P1's perks sometimes.
 		// I have yet to find a reason why it does this or find a direct solution,
@@ -4807,12 +5290,6 @@ namespace ALYSLC
 		// on exiting the Stats Menu, even outside of co-op.
 
 		if (!a_coopActor)
-		{
-			return;
-		}
-
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!p1)
 		{
 			return;
 		}
@@ -4831,10 +5308,10 @@ namespace ALYSLC
 			return;
 		}
 		
-		auto& serializedData = iter->second;
+		auto& data = iter->second;
 		// Save each player's perks to their serializable unlocked perks list.
 		auto savePlayerPerksVisitor = 
-		[p1, &serializedData, &glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		[&data, &glob](RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
 		{
 			if (!a_node)
 			{
@@ -4842,7 +5319,7 @@ namespace ALYSLC
 			}
 
 			auto perk = a_node->perk;
-			// Save p1's perks to serializable data.
+			// Save the player actor's perks to serializable data.
 			while (perk)
 			{
 				bool shared = SHARED_SKILL_NAMES_SET.contains
@@ -4850,88 +5327,37 @@ namespace ALYSLC
 					a_node->associatedSkill->enumName
 				);
 				bool nativeFuncHasPerk = a_actor->HasPerk(perk);
-				if (a_actor == p1) 
-				{
-					bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
-					// When not in co-op, the native func perk check either does not recognize 
-					// that a perk was added (when first loading a save after starting the game),
-					// or captures changes made in a newer save
-					// (if loading an older save after choosing new perks). 
-					// Reference the glob perk list when out of co-op for these reasons.
-					if (nativeFuncHasPerk || singletonListHasPerk)
-					{
-						// If either check indicates that the player has the current perk, 
-						// add it to the list.
-						if (glob.coopSessionActive) 
-						{
-							SPDLOG_DEBUG
-							(
-								"{} has perk {} (0x{:X}) (native func: {}, glob list: {})",
-								a_actor->GetName(), 
-								perk->GetName(), 
-								perk->formID,
-								nativeFuncHasPerk,
-								singletonListHasPerk
-							);
-							if (nativeFuncHasPerk != singletonListHasPerk)
-							{
-								SPDLOG_DEBUG
-								(
-									"{} has perk check inconsistency. Adding {} (0x{:X}).",
-									a_actor->GetName(), perk->GetName(), perk->formID
-								);
-								Util::Player1AddPerk(perk, -1);
-							}
-
-							serializedData->InsertUnlockedPerk(perk);
-						}
-						else if (nativeFuncHasPerk)
-						{
-							SPDLOG_DEBUG
-							(
-								"NO CO-OP: {} has perk {} (0x{:X}) (native func: {}, "
-								"glob list: {})",
-								a_actor->GetName(), 
-								perk->GetName(), 
-								perk->formID, 
-								nativeFuncHasPerk, 
-								singletonListHasPerk
-							);
-							// When out of co-op, only add the current perk 
-							// if it is in the glob list.
-							Util::Player1AddPerk(perk, -1);
-							serializedData->InsertUnlockedPerk(perk);
-						}
-					}
-				}
-				else if (nativeFuncHasPerk)
+				if (nativeFuncHasPerk)
 				{
 					SPDLOG_DEBUG
 					(
 						"{} has perk {} (0x{:X}), is shared: {}", 
 						a_actor->GetName(), perk->GetName(), perk->formID, shared
 					);
-					serializedData->InsertUnlockedPerk(perk);
+					data->InsertUnlockedPerk(perk);
 				}
 
 				perk = perk->nextPerk;
 			}
 		};
-
+		
 		SPDLOG_DEBUG
 		(
-			"BEFORE: {} has {} unlocked perks.",
-			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size()
+			"BEFORE: {} has {} unlocked perks, {} unlocked shared perks.",
+			a_coopActor->GetName(),
+			data->GetUnlockedPerksList().size(),
+			GetUnlockedSharedPerksCount()
 		);
-
-		// Clear and re-add.
-		serializedData->ClearUnlockedPerks();
+		// Clear out old unlocked perks list for the companion player before updating.
+		data->ClearUnlockedPerks();
+		// Update unlocked perks list and set.
 		Util::TraverseAllPerks(a_coopActor, savePlayerPerksVisitor);
-
 		SPDLOG_DEBUG
 		(
-			"AFTER: {} has {} unlocked perks.",
-			a_coopActor->GetName(), serializedData->GetUnlockedPerksList().size()
+			"AFTER: {} has {} unlocked perks, {} unlocked shared perks.",
+			a_coopActor->GetName(),
+			data->GetUnlockedPerksList().size(),
+			GetUnlockedSharedPerksCount()
 		);
 	}
 
@@ -5737,6 +6163,55 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::SyncSharedLegendaryLevelingCounts()
+	{
+		// Ensure all players share the same Legendary leveling counts for shared skills.
+
+		auto& glob = GetSingleton();
+		Skill sharedSkill = Skill::kTotal;
+		for (auto sharedAV : glob.SHARED_SKILL_AVS_SET)
+		{
+			auto iter = glob.AV_TO_SKILL_MAP.find(sharedAV);
+			if (iter == glob.AV_TO_SKILL_MAP.end())
+			{
+				continue;
+			}
+			// Get the highest number of legendary levelings.
+			uint32_t maxLevelings = 0;
+			sharedSkill = iter->second;
+			for (const auto& [fid, data] : glob.serializablePlayerData)
+			{
+				if (!data || data->skillLegendaryList[!sharedSkill] <= maxLevelings)
+				{
+					continue;
+				}
+
+				maxLevelings = data->skillLegendaryList[!sharedSkill];
+			}
+
+			// Set the new Legendary levelings count for each serialized data set.
+			SPDLOG_DEBUG
+			(
+				"Shared skill {} has a max Legendary levelings count of {}.",
+				Util::GetActorValueName(sharedAV), maxLevelings
+			);
+			for (const auto& [fid, data] : glob.serializablePlayerData)
+			{
+				if (!data)
+				{
+					continue;
+				}
+
+				data->skillLegendaryList[!sharedSkill] = maxLevelings;
+				SPDLOG_DEBUG
+				(
+					"Set player with FID 0x{:X}'s Legendary leveling count for {} to {}.",
+					fid, Util::GetActorValueName(sharedAV), maxLevelings
+				);
+			}
+		}
+	}
+
 	void GlobalCoopData::SyncSharedPerks()
 	{
 		// Ensure all players have the same set of unlocked shared perks.
@@ -5761,7 +6236,7 @@ namespace ALYSLC
 				// Add any shared perks that P1 has but this player does not have.
 				for (auto perk : p1->perks)
 				{
-					// Already has the perk, so on to the next one.
+					// Invalid perk or already has the perk, so on to the next one.
 					if (!perk || p->coopActor->HasPerk(perk)) 
 					{
 						continue;
@@ -5788,46 +6263,85 @@ namespace ALYSLC
 					return;
 				}
 
+				// Need valid serializable data.
+				const auto iter = glob.serializablePlayerData.find(a_actor->formID);
+				if (iter == glob.serializablePlayerData.end())
+				{
+					return;
+				}
+
+				auto& data = iter->second;
 				auto perk = a_node->perk;
+				// Generate a stack of shared perks to remove if P1 does not have the perk
+				// but the companion player does.
+				// Using a stack to remove them in the proper order 
+				// (highest level requirement to lowest).
+				std::stack<RE::BGSPerk*> perksToRemoveStack{ };
 				while (perk)
 				{
 					bool shared = SHARED_SKILL_NAMES_SET.contains
 					(
 						a_node->associatedSkill->enumName
 					);
-					// P1 has the shared perk, so all other player should as well.
-					if ((shared) && 
-						(p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk)))
+					// P1 has the shared perk, so all other players should as well.
+					if (shared)
 					{
-						bool hadSharedPerk = true;
-						// Add unlocked shared perk to serialized data
-						// if it's not already present.
-						const auto iter = glob.serializablePlayerData.find(a_actor->formID);
-						if (iter != glob.serializablePlayerData.end())
+						if (p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk))
 						{
-							auto& data = iter->second;
-							if (!data->HasUnlockedPerk(perk))
-							{
-								data->InsertUnlockedPerk(perk);
-								hadSharedPerk = false;
-							}
+							// Add unlocked shared perk to serialized data
+							// if it's not already present.
+							bool hadSharedPerk = !data->InsertUnlockedPerk(perk);
+							// Add the perk.
+							bool succ = Util::ChangePerk(a_actor, perk, true);
+							SPDLOG_DEBUG
+							(
+								"Adding shared perk {} (0x{:X}) to {}: {}. "
+								"Had unlocked shared perk in list: {}. "
+								"In singleton list: {}, in actor list: {}.",
+								perk->GetName(), 
+								perk->formID,
+								a_actor->GetName(), 
+								succ ? "SUCC" : "FAIL",
+								hadSharedPerk,
+								Util::Player1PerkListHasPerk(perk),
+								p1->HasPerk(perk)
+							);
 						}
-
-						// Add the perk.
-						bool succ = Util::ChangePerk(a_actor, perk, true);
-						SPDLOG_DEBUG
-						(
-							"Adding shared perk {} (0x{:X}) to {}: {}. "
-							"Had unlocked shared perk in list: {}",
-							perk->GetName(), 
-							perk->formID,
-							a_actor->GetName(), 
-							succ ? "SUCC" : "FAIL",
-							hadSharedPerk
-						);
+						else
+						{
+							// Add to stack of shared perks to remove.
+							perksToRemoveStack.push(perk);
+						}
 					}
 
 					perk = perk->nextPerk;
+				}
+
+				// Guaranteed to only contain shared perks.
+				// Use created stack to remove perks from highest rank to lowest.
+				while (!perksToRemoveStack.empty())
+				{
+					// For both players, remove any perks that weren't saved as unlocked.
+					auto perkToRemove = perksToRemoveStack.top(); 
+					if (perkToRemove)
+					{
+						// Remove the perk if P1 does not have it but this player does.
+						bool hadSharedPerk = data->RemoveUnlockedPerk(perkToRemove);
+						bool succ = Util::ChangePerk(a_actor, perkToRemove, false);
+						if (hadSharedPerk)
+						{
+							SPDLOG_DEBUG
+							(
+								"Removing shared perk {} (0x{:X}) from {}: {}.",
+								perkToRemove->GetName(), 
+								perkToRemove->formID,
+								a_actor->GetName(), 
+								succ ? "SUCC" : "FAIL"
+							);
+						}
+					}
+
+					perksToRemoveStack.pop();
 				}
 			};
 
@@ -5840,6 +6354,29 @@ namespace ALYSLC
 
 				// Sync all shared skill tree perks for companion players.
 				Util::TraverseAllPerks(p->coopActor.get(), addSharedSkillPerks);
+				// Also add all non-selectable perks to companion players.
+				for (auto perk : p1->perks)
+				{
+					// Invalid perk, already has the perk, or is a selectable perk,
+					// so on to the next one.
+					if (!perk ||
+						p->coopActor->HasPerk(perk) ||
+						glob.SELECTABLE_PERKS.contains(perk)) 
+					{
+						continue;
+					}
+					
+					bool succ = perk->perkConditions.IsTrue
+					(
+						p->coopActor.get(), p->coopActor.get()
+					);
+					SPDLOG_DEBUG
+					(
+						"P1 {} has perk {} 0x{:X}). Adding to {}. Conditions hold: {}.",
+						p1->GetName(), perk->GetName(), perk->formID, p->coopActor->GetName(), succ
+					);
+					Util::ChangePerk(p->coopActor.get(), perk, true);
+				}
 			}
 		}
 	}
@@ -6366,6 +6903,43 @@ namespace ALYSLC
 		return p1->byCharGenFlag != RE::PlayerCharacter::ByCharGenFlag::kDisableSaving;
 	}
 
+	void GlobalCoopData::UpdatePerkUnlockDiffLists
+	(
+		const std::set<RE::BGSPerk*>& a_prevUnlockedPerks,
+		const std::set<RE::BGSPerk*>& a_currentUnlockedPerks
+	)
+	{
+		// Update the lists of added and removed perks on Stats Menu exit.
+		// Pass in the previous set of unlocked perks to diff.
+
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		// Update taken shared perks.
+		glob.perksAdded.clear();
+		glob.perksRemoved.clear();
+		for (const auto perk : a_currentUnlockedPerks)
+		{
+			if (perk && !a_prevUnlockedPerks.contains(perk))
+			{
+				SPDLOG_DEBUG("Perk {} (0x{:X}) was added.", perk->GetName(), perk->formID);
+				glob.perksAdded.emplace_back(perk);
+			}
+		}
+
+		for (const auto perk : a_prevUnlockedPerks)
+		{
+			if (perk && !a_currentUnlockedPerks.contains(perk))
+			{
+				SPDLOG_DEBUG("Perk {} (0x{:X}) was removed.", perk->GetName(), perk->formID);
+				glob.perksRemoved.emplace_back(perk);
+			}
+		}
+	}
+
 	void GlobalCoopData::UpdatePlayerCoopCombatState()
 	{
 		// Update the global co-op combat state flag for all active players.
@@ -6596,6 +7170,97 @@ namespace ALYSLC
 		return updateSuccessful;
 	}
 
+	void GlobalCoopData::UpdateTakenSharedPerksData(RE::Actor* a_playerActor)
+	{
+		// Update the sets of taken shared perks and unlocked shared perks counts 
+		// for all players on Stats Menu exit.
+
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			return;
+		}
+		
+		// NOTE:
+		// Any added perks go to the player in control of menus,
+		// but if shared perks are removed,
+		// we could be removing perks that were taken by another player
+		// who is not in control of menus, so we must update their taken perks set 
+		// and shared perks unlocked count as well.
+
+		auto& data = iter->second;
+		// If shared and added, add to the taken shared perks set.
+		// If shared and removed, remove from the taken shared perks set.
+		for (const auto perk : glob.perksAdded)
+		{
+			if (!glob.SELECTABLE_SHARED_PERKS.contains(perk))
+			{
+				continue;
+			}
+
+			bool succ = data->InsertTakenSharedPerk(perk);
+			if (succ)
+			{
+				SPDLOG_DEBUG
+				(
+					"Shared perk {} (0x{:X}) was added to taken set.", 
+					perk->GetName(), perk->formID
+				);
+			}
+		}
+
+		// Have to see if any removed shared perks were taken by player(s) not in control of menus.
+		for (const auto& [fid, data2] : glob.serializablePlayerData)
+		{
+			if (!data2)
+			{
+				continue;
+			}
+
+			for (const auto perk : glob.perksRemoved)
+			{
+				if (!glob.SELECTABLE_SHARED_PERKS.contains(perk))
+				{
+					continue;
+				}
+
+				bool succ = data2->RemoveTakenSharedPerk(perk);
+				if (succ)
+				{
+					SPDLOG_DEBUG
+					(
+						"Shared perk {} (0x{:X}) was removed "
+						"from player with FID 0x{:X}'s taken set.", 
+						perk->GetName(), 
+						perk->formID,
+						fid
+					);
+				}
+			}
+	
+			data2->sharedPerksTaken = 
+			(
+				data2->GetTakenSharedPerksSet().size()
+			);
+		
+			SPDLOG_DEBUG
+			(
+				"Player with FID 0x{:X} has {} unlocked perks, "
+				"{} unlocked shared perks, {} taken personally.",
+				fid,
+				data2->GetUnlockedPerksList().size(),
+				GetUnlockedSharedPerksCount(),
+				data2->sharedPerksTaken
+			);
+		}
+	}
+
 	void GlobalCoopData::CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info)
 	{
 		// Copy over player data from co-op player to P1.
@@ -6668,7 +7333,7 @@ namespace ALYSLC
 					(
 						requestingPlayer.get(), 
 						a_info->shouldImport,
-						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true,
 						false
 					);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkillsAndHMS);
@@ -6697,7 +7362,7 @@ namespace ALYSLC
 					(
 						requestingPlayer.get(), 
 						a_info->shouldImport,
-						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true,
 						false
 					);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkillsAndHMS);
@@ -6738,6 +7403,7 @@ namespace ALYSLC
 			// Sync shared perks/skills before copying over/restoring both.
 			SyncSharedPerks();
 			SyncSharedSkillAVs();
+			SyncSharedLegendaryLevelingCounts();
 			
 			bool isPickpocketing = false;
 			auto containerMenuPtr = ui->GetMenu<RE::ContainerMenu>();
@@ -6769,17 +7435,8 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"Container Menu: Should copy over AVs, name, carryweight, and perk list."
+					"Container Menu: Should copy over AVs and perk list."
 				);
-				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
-				{
-					SPDLOG_DEBUG("Import Carryweight.");
-					CopyOverActorBaseData
-					(
-						requestingPlayer.get(), a_info->shouldImport, false, false, true
-					);
-					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kCarryWeight);
-				}
 
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 				{
@@ -6795,7 +7452,7 @@ namespace ALYSLC
 					(
 						requestingPlayer.get(), 
 						a_info->shouldImport,
-						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true,
 						true
 					);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kSkills);
@@ -6819,18 +7476,8 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"Container Menu: Should restore AVs, name, carryweight, and perk list."
+					"Container Menu: Should restore AVs and perk list."
 				);
-				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
-				{
-					SPDLOG_DEBUG("Export Carryweight.");
-					CopyOverActorBaseData
-					(
-						requestingPlayer.get(), a_info->shouldImport, false, false, true
-					);
-					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kCarryWeight);
-				}
-
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 				{
 					SPDLOG_DEBUG("Export Perk List.");
@@ -6845,7 +7492,7 @@ namespace ALYSLC
 					(
 						requestingPlayer.get(), 
 						a_info->shouldImport,
-						ALYSLC::RequiemCompat::g_requiemInstalled,
+						true,
 						true
 					);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kSkills);
@@ -7096,10 +7743,33 @@ namespace ALYSLC
 				// before setting P1's full name to the companion player's.
 				RE::BSFixedString p1Name = p1->GetDisplayFullName();
 				RE::BSFixedString coopCompanionName = a_coopActor->GetDisplayFullName();
-				glob.p1ExchangeableData->name = p1Name;
-				glob.coopCompanionExchangeableData->name = coopCompanionName;
+				if (p1Name == ""sv)
+				{
+					p1Name = p1->GetName();
+					SPDLOG_DEBUG("P1 has no display name. Set to refr name '{}'", p1Name);
+				}
+
+				if (coopCompanionName == ""sv)
+				{
+					coopCompanionName = a_coopActor->GetName();
+					SPDLOG_DEBUG
+					(
+						"Companion layer has no display name. Set to refr name '{}'", 
+						coopCompanionName
+					);
+				}
+
 				auto base = p1->GetObjectReference();
 				auto fullName = base ? base->As<RE::TESFullName>() : nullptr;
+				if (p1Name == ""sv)
+				{
+					p1Name = fullName ? fullName->fullName : "";
+					SPDLOG_DEBUG("P1 has no refr name. Set to base fullname '{}'", p1Name);
+				}
+				
+				SPDLOG_DEBUG("Swapping '{}' with '{}'.", p1Name, coopCompanionName);
+				glob.p1ExchangeableData->name = p1Name;
+				glob.coopCompanionExchangeableData->name = coopCompanionName;
 				if (fullName)
 				{
 					fullName->SetFullName(glob.coopCompanionExchangeableData->name.c_str());
@@ -7304,6 +7974,7 @@ namespace ALYSLC
 			return;
 		}
 
+		const auto& coopP1 = glob.coopPlayers[0];
 		if (a_shouldImport)
 		{
 			// Skills first.
@@ -7402,7 +8073,10 @@ namespace ALYSLC
 				);
 			}
 
+			// NOTE:
+			// Unused for now since we update the health/magicka/stamina bars directly instead.
 			// Do not import HMS if not requested.
+			/*
 			if (a_onlySkills)
 			{
 				return;
@@ -7469,23 +8143,6 @@ namespace ALYSLC
 				)
 			};
 
-			SPDLOG_DEBUG("IMPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
-				p1->GetActorValue(RE::ActorValue::kHealth),
-				p1->GetBaseActorValue(RE::ActorValue::kHealth),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-				),
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				)
-			);
-
 			// Temporary (buff/debuff) and permanent (ex. modav) changes to the HMS actor values.
 			glob.p1ExchangeableData->hmsAVMods = 
 			{
@@ -7551,6 +8208,123 @@ namespace ALYSLC
 					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
 				)
 			};
+			
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kHealth),
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				a_coopActor->GetName(),
+				a_coopActor->GetActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kHealth),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				a_coopActor->GetName(),
+				a_coopActor->GetActorValue(RE::ActorValue::kMagicka),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kMagicka),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				a_coopActor->GetName(),
+				a_coopActor->GetActorValue(RE::ActorValue::kStamina),
+				a_coopActor->GetBaseActorValue(RE::ActorValue::kStamina),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				a_coopActor->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			);
 
 			glob.coopCompanionExchangeableData->hmsAVMods = 
 			{
@@ -7563,163 +8337,239 @@ namespace ALYSLC
 				glob.coopCompanionExchangeableData->hmsBaseAVs[0], 
 				glob.coopCompanionExchangeableData->hmsAVs[0]
 			);
+			
+			//
+			// Set all modifiers to 0 first.
+			//
 
-			p1->RestoreActorValue
+			// Restore HMS to full by setting the damage mods to 0.
+
+			coopP1->pam->ModifyAV
 			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kHealth, 
-				-p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
-			);	
+				RE::ActorValue::kHealth, -glob.p1ExchangeableData->hmsAVMods[0][0], true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kMagicka, -glob.p1ExchangeableData->hmsAVMods[1][0], true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kStamina, -glob.p1ExchangeableData->hmsAVMods[2][0], true
+			);
+
 			SPDLOG_DEBUG
 			(
-				"1. P1 damage mod: {}", 
+				"0. P1's health damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
+
+			
+			//
+			// Next, set all the temporary/permanent modifiers to 0.
+			//
+
+			// Temp.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kHealth, 
+				-glob.p1ExchangeableData->hmsAVMods[0][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kMagicka, 
+				-glob.p1ExchangeableData->hmsAVMods[1][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kStamina, 
+				-glob.p1ExchangeableData->hmsAVMods[2][1]
+			);
+			// Perm.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kHealth, 
+				-glob.p1ExchangeableData->hmsAVMods[0][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kMagicka, 
+				-glob.p1ExchangeableData->hmsAVMods[1][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kStamina, 
+				-glob.p1ExchangeableData->hmsAVMods[2][2]
+			);
+			
+			SPDLOG_DEBUG
+			(
+				"1. P1's temp/perm health mods: {}, {}. Health level: {}.", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
+			//
+			// Next, import the companion player's base HMS actor values.
+			//
+
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsBaseAVs[0]
 			);
 			SPDLOG_DEBUG
 			(
-				"2. P1 base: {}", p1->GetBaseActorValue(RE::ActorValue::kHealth)
+				"2. New base health: {}. Health level: {}.", 
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][1] - 
-				glob.p1ExchangeableData->hmsAVMods[0][1]
-			);
-			SPDLOG_DEBUG
-			(
-				"3. P1 temp mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-				)
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][2] - 
-				glob.p1ExchangeableData->hmsAVMods[0][2]
-			);
-			SPDLOG_DEBUG
-			(
-				"4. P1 perm mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				)
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kHealth, 
-				glob.coopCompanionExchangeableData->hmsAVMods[0][0]
-			);
-			SPDLOG_DEBUG
-			(
-				"6. P1 damage mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
-			);
-			SPDLOG_DEBUG
-			(
-				"7. P1 current: {}", p1->GetActorValue(RE::ActorValue::kHealth)
-			);
-
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Magicka base/normal AV to {}, {}.",
-				glob.coopCompanionExchangeableData->hmsBaseAVs[1], 
-				glob.coopCompanionExchangeableData->hmsAVs[1]
-			);
-
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kMagicka, 
-				-p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				)
-			);	
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsBaseAVs[1]
 			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kMagicka, 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][1] - 
-				glob.p1ExchangeableData->hmsAVMods[1][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
-				RE::ActorValue::kMagicka, 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][2] - 
-				glob.p1ExchangeableData->hmsAVMods[1][2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kMagicka, 
-				glob.coopCompanionExchangeableData->hmsAVMods[1][0]
-			);
-			
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Stamina base/normal AV to {}, {}.",
-				glob.coopCompanionExchangeableData->hmsBaseAVs[2],
-				glob.coopCompanionExchangeableData->hmsAVs[2]
-			);
-
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kStamina, 
-				-p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				)
-			);	
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsBaseAVs[2]
 			);
+
+			//
+			// Finally, set all modifiers directly to the companion player's.
+			//
+
+			// Larger modifier first to prevent the health level from dropping below 0.
+			if (glob.coopCompanionExchangeableData->hmsAVMods[0][1] >= 
+				glob.coopCompanionExchangeableData->hmsAVMods[0][2])
+			{
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+					RE::ActorValue::kHealth, 
+					glob.coopCompanionExchangeableData->hmsAVMods[0][1]
+				);
+				SPDLOG_DEBUG
+				(
+					"3. P1 temp mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				);
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth, 
+					glob.coopCompanionExchangeableData->hmsAVMods[0][2]
+				);
+				SPDLOG_DEBUG
+				(
+					"4. P1 perm mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					)
+				);
+			}
+			else
+			{
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth, 
+					glob.coopCompanionExchangeableData->hmsAVMods[0][2]
+				);
+				SPDLOG_DEBUG
+				(
+					"3. P1 perm mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					)
+				);
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+					RE::ActorValue::kHealth, 
+					glob.coopCompanionExchangeableData->hmsAVMods[0][1]
+				);
+				SPDLOG_DEBUG
+				(
+					"4. P1 temp mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				);
+			}
+
+			// Magicka and stamina can drop temporarily below 0.
+			// Temp.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kMagicka, 
+				glob.coopCompanionExchangeableData->hmsAVMods[1][1]
+			);
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
 				RE::ActorValue::kStamina, 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][1] - 
-				glob.p1ExchangeableData->hmsAVMods[2][1]
+				glob.coopCompanionExchangeableData->hmsAVMods[2][1]
+			);
+			// Perm.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kMagicka, 
+				glob.coopCompanionExchangeableData->hmsAVMods[1][2]
 			);
 			p1->RestoreActorValue
 			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
 				RE::ActorValue::kStamina, 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][2] - 
-				glob.p1ExchangeableData->hmsAVMods[2][2]
+				glob.coopCompanionExchangeableData->hmsAVMods[2][2]
 			);
-			p1->RestoreActorValue
+
+			// Apply damage last once the correct full AV amounts are imported.
+
+			coopP1->pam->ModifyAV
 			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kStamina, 
-				glob.coopCompanionExchangeableData->hmsAVMods[2][0]
+				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsAVMods[0][0], true
 			);
-			
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kMagicka, glob.coopCompanionExchangeableData->hmsAVMods[1][0], true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsAVMods[2][0], true
+			);
+
+			SPDLOG_DEBUG
+			(
+				"5. P1 damage mod: {}. Health level: {}.", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
 			SPDLOG_DEBUG
 			(
 				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
@@ -7738,6 +8588,45 @@ namespace ALYSLC
 					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
 				)
 			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			);
+			*/
 		}
 		else
 		{
@@ -7789,9 +8678,15 @@ namespace ALYSLC
 									glob.coopCompanionExchangeableData->skillAVs[i]
 								);
 								// Only update the increment otherwise.
-								data->skillLevelIncreasesList[i] += 
+								// Make sure the increment is never below 0,
+								// such as when the player makes the skill Legendary
+								// and its level reverts to 15.
+								data->skillLevelIncreasesList[i] = max
 								(
-									newAV - glob.coopCompanionExchangeableData->skillAVs[i]
+									0.0f, 
+									data->skillLevelIncreasesList[i] + 
+									newAV -
+									glob.coopCompanionExchangeableData->skillAVs[i]
 								);
 							}
 						}
@@ -7844,12 +8739,68 @@ namespace ALYSLC
 					glob.coopCompanionExchangeableData->skillAVMods[0][i]
 				);
 			}
-
+			
+			// NOTE:
+			// Unused for now since we update the health/magicka/stamina bars directly instead.
 			// Do not import HMS if not requested.
+			/*
 			if (a_onlySkills)
 			{
 				return;
 			}
+			
+			// Update P1 AV and AV mods as the companion player's on exit.
+			std::array<float, 3> tempHealthMods
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				)
+			};
+			std::array<float, 3> tempMagickaMods = 
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+				)
+			};
+			std::array<float, 3> tempStaminaMods = 
+			{
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			};
+
+			// Temporary (buff/debuff) and permanent (ex. modav) changes to the HMS actor values.
+			glob.coopCompanionExchangeableData->hmsAVMods = 
+			{
+				tempHealthMods, tempMagickaMods, tempStaminaMods
+			};
 
 			SPDLOG_DEBUG
 			(
@@ -7870,193 +8821,292 @@ namespace ALYSLC
 				)
 			);
 
-			/*
-			std::vector<float> newExportedBaseAVs = 
-			{
-				p1->GetBaseActorValue(RE::ActorValue::kHealth),
-				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
-				p1->GetBaseActorValue(RE::ActorValue::kStamina)
-			};
-
-			std::vector<float> newExportedAVs = 
-			{
-				p1->GetActorValue(RE::ActorValue::kHealth),
+			SPDLOG_DEBUG
+			(
+				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kMagicka),
-				p1->GetActorValue(RE::ActorValue::kStamina)
-			};
-
-			// Restore saved P1 AVs, AV mods.
-			SPDLOG_DEBUG
-			(
-				"Resetting P1's Health base/normal AV to {}, {}, "
-				"{}'s base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[0], 
-				glob.p1ExchangeableData->hmsAVs[0],
-				a_coopActor->GetName(), 
-				newExportedBaseAVs[0], 
-				newExportedAVs[0]
-			);
-			*/
-
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kHealth, 
-				-p1->GetActorValueModifier
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValueModifier
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
 				)
-			);	
+			);
+
 			SPDLOG_DEBUG
 			(
-				"1. P1 damage mod: {}", 
+				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"Setting P1's Health base/normal AV to {}, {}.",
+				glob.p1ExchangeableData->hmsBaseAVs[0], 
+				glob.p1ExchangeableData->hmsAVs[0]
+			);
+
+			//
+			// Set all modifiers to 0 first.
+			//
+
+			// Restore HMS to full by setting the damage mods to 0.
+
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kHealth,
+				-glob.coopCompanionExchangeableData->hmsAVMods[0][0], 
+				true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kMagicka,
+				-glob.coopCompanionExchangeableData->hmsAVMods[1][0], 
+				true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kStamina,
+				-glob.coopCompanionExchangeableData->hmsAVMods[2][0],
+				true
+			);
+
+			SPDLOG_DEBUG
+			(
+				"0. P1's health damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
 				(
 					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
+
+			//
+			// Next, set all the temporary/permanent modifiers to 0.
+			//
+
+			// Temp.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kHealth, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[0][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kMagicka, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[1][1]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kStamina, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[2][1]
+			);
+			// Perm.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kHealth, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[0][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kMagicka, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[1][2]
+			);
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kStamina, 
+				-glob.coopCompanionExchangeableData->hmsAVMods[2][2]
+			);
+			
+			SPDLOG_DEBUG
+			(
+				"1. P1's temp/perm health mods: {}, {}. Health level: {}.", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
+			//
+			// Next, import the P1's original base HMS actor values.
+			//
+
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsBaseAVs[0]
 			);
 			SPDLOG_DEBUG
 			(
-				"2. P1 base: {}", p1->GetBaseActorValue(RE::ActorValue::kHealth)
+				"2. New base health: {}. Health level: {}.", 
+				p1->GetBaseActorValue(RE::ActorValue::kHealth),
+				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kHealth, 
-				glob.p1ExchangeableData->hmsAVMods[0][1] -
-				glob.coopCompanionExchangeableData->hmsAVMods[0][1]
-			);
-			SPDLOG_DEBUG
-			(
-				"3. P1 temp mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
-				)
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
-				RE::ActorValue::kHealth, 
-				glob.p1ExchangeableData->hmsAVMods[0][2] -
-				glob.coopCompanionExchangeableData->hmsAVMods[0][2]
-			);
-			SPDLOG_DEBUG
-			(
-				"4. P1 perm mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				)
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kHealth, 
-				glob.p1ExchangeableData->hmsAVMods[0][0]
-			);
-			SPDLOG_DEBUG
-			(
-				"6. P1 damage mod: {}", 
-				p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
-			);
-			SPDLOG_DEBUG
-			(
-				"7. P1 current: {}", p1->GetActorValue(RE::ActorValue::kHealth)
-			);
-
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Magicka base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[1], 
-				glob.p1ExchangeableData->hmsAVs[1]
-			);
-
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kMagicka, 
-				-p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				)
-			);	
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsBaseAVs[1]
 			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][1] -
-				glob.coopCompanionExchangeableData->hmsAVMods[1][1]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
-				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][2] -
-				glob.coopCompanionExchangeableData->hmsAVMods[1][2]
-			);
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kMagicka, 
-				glob.p1ExchangeableData->hmsAVMods[1][0]
-			);
-			
-			SPDLOG_DEBUG
-			(
-				"Setting P1's Stamina base/normal AV to {}, {}.",
-				glob.p1ExchangeableData->hmsBaseAVs[2],
-				glob.p1ExchangeableData->hmsAVs[2]
-			);
-
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kStamina, 
-				-p1->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				)
-			);	
 			p1->SetBaseActorValue
 			(
 				RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsBaseAVs[2]
 			);
+
+			//
+			// Finally, set all modifiers directly to P1's originals.
+			//
+
+			// Larger modifier first to prevent the health level from dropping below 0.
+			if (glob.p1ExchangeableData->hmsAVMods[0][1] >= 
+				glob.p1ExchangeableData->hmsAVMods[0][2])
+			{
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+					RE::ActorValue::kHealth, 
+					glob.p1ExchangeableData->hmsAVMods[0][1]
+				);
+				SPDLOG_DEBUG
+				(
+					"3. P1 temp mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				);
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth, 
+					glob.p1ExchangeableData->hmsAVMods[0][2]
+				);
+				SPDLOG_DEBUG
+				(
+					"4. P1 perm mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					)
+				);
+			}
+			else
+			{
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth, 
+					glob.p1ExchangeableData->hmsAVMods[0][2]
+				);
+				SPDLOG_DEBUG
+				(
+					"3. P1 perm mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					)
+				);
+				p1->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+					RE::ActorValue::kHealth, 
+					glob.p1ExchangeableData->hmsAVMods[0][1]
+				);
+				SPDLOG_DEBUG
+				(
+					"4. P1 temp mod: {}", 
+					p1->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				);
+			}
+
+			// Magicka and stamina can drop temporarily below 0.
+			// Temp.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
+				RE::ActorValue::kMagicka, 
+				glob.p1ExchangeableData->hmsAVMods[1][1]
+			);
 			p1->RestoreActorValue
 			(
 				RE::ACTOR_VALUE_MODIFIER::kTemporary, 
 				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][1] -
-				glob.coopCompanionExchangeableData->hmsAVMods[2][1] 
+				glob.p1ExchangeableData->hmsAVMods[2][1]
+			);
+			// Perm.
+			p1->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kMagicka, 
+				glob.p1ExchangeableData->hmsAVMods[1][2]
 			);
 			p1->RestoreActorValue
 			(
-				RE::ACTOR_VALUE_MODIFIER::kPermanent,
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
 				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][2] -
-				glob.coopCompanionExchangeableData->hmsAVMods[2][2]
+				glob.p1ExchangeableData->hmsAVMods[2][2]
 			);
-			p1->RestoreActorValue
+
+			// Apply damage last once the correct full AV amounts are restored.
+
+			coopP1->pam->ModifyAV
 			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage, 
-				RE::ActorValue::kStamina, 
-				glob.p1ExchangeableData->hmsAVMods[2][0]
+				RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsAVMods[0][0], true
 			);
-			
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kMagicka, glob.p1ExchangeableData->hmsAVMods[1][0], true
+			);
+			coopP1->pam->ModifyAV
+			(
+				RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsAVMods[2][0], true
+			);
+
 			SPDLOG_DEBUG
 			(
-				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				"5. P1 damage mod: {}. Health level: {}.", 
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				),
+				p1->GetActorValue(RE::ActorValue::kHealth)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}. "
+				"Heal rates: {}, {}.",
 				p1->GetActorValue(RE::ActorValue::kHealth),
 				p1->GetBaseActorValue(RE::ActorValue::kHealth),
 				p1->GetActorValueModifier
@@ -8070,30 +9120,49 @@ namespace ALYSLC
 				p1->GetActorValueModifier
 				(
 					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+				),
+				p1->GetActorValue(RE::ActorValue::kHealRate),
+				p1->GetActorValue(RE::ActorValue::kHealRateMult)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kMagicka),
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+				),
+				p1->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
 				)
 			);
 
 			SPDLOG_DEBUG
 			(
-				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}. "
-				"Heal rates: {}, {}.",
-				a_coopActor->GetActorValue(RE::ActorValue::kHealth),
-				a_coopActor->GetBaseActorValue(RE::ActorValue::kHealth),
-				a_coopActor->GetActorValueModifier
+				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
+				p1->GetActorValue(RE::ActorValue::kStamina),
+				p1->GetBaseActorValue(RE::ActorValue::kStamina),
+				p1->GetActorValueModifier
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
 				),
-				a_coopActor->GetActorValueModifier
+				p1->GetActorValueModifier
 				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
 				),
-				a_coopActor->GetActorValueModifier
+				p1->GetActorValueModifier
 				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
-				),
-				a_coopActor->GetActorValue(RE::ActorValue::kHealRate),
-				a_coopActor->GetActorValue(RE::ActorValue::kHealRateMult)
+					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+				)
 			);
+			*/
 		}
 	}
 
@@ -8564,16 +9633,36 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"Export: AdjustSkillXP: Getting lock. (0x{:X})", 
+						"Export: Getting lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
 					{
 						std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex);
 						SPDLOG_DEBUG
 						(
-							"Export: AdjustSkillXP: Lock obtained. (0x{:X})", 
+							"Export: Lock obtained. (0x{:X})", 
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
 						);
+
+						// Save XP levels to the companion player's serialized data,
+						// since they may have changed while the menu was open
+						// (ex. a skill was made Legendary).
+						if (coopPlayerSerializedData->skillXPList[i] != 
+							p1->skills->data->skills[i].xp)
+						{
+							SPDLOG_DEBUG
+							(
+								"Export: XP for {} changed from {} to {}.",
+								Util::GetActorValueName
+								(
+									glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i))
+								), 
+								coopPlayerSerializedData->skillXPList[i],
+								p1->skills->data->skills[i].xp
+							);
+							coopPlayerSerializedData->skillXPList[i] = 
+							p1->skills->data->skills[i].xp;
+						}
 
 						// Restore the serializable XP value, level, and level threshold, 
 						// all of which we cached on import.
@@ -8617,6 +9706,7 @@ namespace ALYSLC
 
 			auto perk = a_node->perk;
 			uint32_t perkIndex = 0;
+			std::stack<RE::BGSPerk*> perkStack{ };
 			while (perk)
 			{
 				// Selected perks do not get added to the P1 glob list 
@@ -8627,32 +9717,42 @@ namespace ALYSLC
 				bool nativeFuncP1HasPerk = p1->HasPerk(perk);
 				bool nativeFuncCoopPlayerHasPerk = a_coopPlayer->HasPerk(perk);
 				bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
-				if (nativeFuncP1HasPerk || singletonListHasPerk)
+				bool shouldInsert = 
+				(
+					((a_shouldImport) && (nativeFuncP1HasPerk || singletonListHasPerk)) ||
+					(!a_shouldImport && singletonListHasPerk)
+				);
+				if (a_shouldImport)
 				{
-					if (a_shouldImport) 
+					if (shouldInsert)
 					{
 						succ = p1SerializedData->InsertUnlockedPerk(perk);
 						// Ensure P1 singleton perk list and actor perk list are in sync on import.
 						if (nativeFuncP1HasPerk != singletonListHasPerk)
 						{
+							bool succ2 = Util::Player1AddPerk(perk, -1);
 							// I think I'm going insane, but sometimes the has-perk booleans 
 							// are not equal in the comparison above 
 							// but both print as 'true' below (???).
 							SPDLOG_DEBUG
 							(
 								"{}: {}: SetUnlockedPerks: "
-								"Perk check inconsistency ({} != {}). Adding {} (0x{:X}).",
+								"Perk check inconsistency ({} != {}). Adding {} (0x{:X}). "
+								"SUCC: {}.",
 								a_shouldImport ? "Import" : "Export",
 								p1->GetName(), 
 								nativeFuncP1HasPerk,
 								singletonListHasPerk,
 								perk->GetName(), 
-								perk->formID
+								perk->formID,
+								succ2
 							);
-							Util::Player1AddPerk(perk, -1);
 						}
 					}
-					else
+				}
+				else
+				{
+					if (shouldInsert)
 					{
 						// Save all unlocked perks 
 						// to companion player's unlocked perks list on export.
@@ -8667,41 +9767,76 @@ namespace ALYSLC
 							p1SerializedData->InsertUnlockedPerk(perk);
 						}
 					}
-
-					SPDLOG_DEBUG
-					(
-						"{}: {}: SetUnlockedPerks: "
-						"P1 has perk #{} {} (0x{:X}) "
-						"(assigned: {}, in singleton list: {}). SUCC: {}.",
-						a_shouldImport ? "Import" : "Export", 
-						p1->GetName(),
-						perkIndex, 
-						perk->GetName(), 
-						perk->formID,
-						p1->HasPerk(perk), 
-						Util::Player1PerkListHasPerk(perk),
-						succ
-					);
-
-					// No duplicates!
-					if (shared && succ)
+					else if (shared)
 					{
-						// Increment on-import shared perks count if P1 has the perk.
-						if (a_shouldImport)
+						// Shared perks may have been removed by the companion player,
+						// so remove them from P1's unlocked list/set if so.
+						bool succ = p1SerializedData->RemoveUnlockedPerk(perk);
+						if (succ)
 						{
-							++glob.importUnlockedSharedPerksCount;
+							SPDLOG_DEBUG
+							(
+								"{}: {}: SetUnlockedPerks: "
+								"Remove shared perk {} (0x{:X}) "
+								"(in lists: {}, {}) from unlocked list.",
+								a_shouldImport ? "Import" : "Export",
+								p1->GetName(), 
+								perk->GetName(), 
+								perk->formID,
+								nativeFuncP1HasPerk,
+								singletonListHasPerk
+							);
+						}
+					}
+
+					// Ensure actor perk list is in sync with the singleton list on export.
+					// If perks were removed, such as when making a skill Legendary,
+					// the singleton list will not have the removed perk, 
+					// but P1's actor perk list will still contain the perk.
+					if (nativeFuncP1HasPerk != singletonListHasPerk)
+					{
+						if (singletonListHasPerk)
+						{
+							Util::Player1AddPerk(perk, -1);
 						}
 						else
 						{
-							// Increment on-export shared perks count 
-							// if the perk is unlocked on menu exit.
-							++glob.exportUnlockedSharedPerksCount;
+							perkStack.push(perk);
 						}
+
+						// I think I'm going insane, but sometimes the has-perk booleans 
+						// are not equal in the comparison above 
+						// but both print as 'true' below (???).
+						SPDLOG_DEBUG
+						(
+							"{}: {}: SetUnlockedPerks: "
+							"Perk check inconsistency ({} != {}). {} {} (0x{:X}).",
+							a_shouldImport ? "Import" : "Export",
+							p1->GetName(), 
+							nativeFuncP1HasPerk,
+							singletonListHasPerk,
+							singletonListHasPerk ? "Adding" : "Removing",
+							perk->GetName(), 
+							perk->formID
+						);
 					}
 				}
 					
 				// Add unlocked perk to companion player's unlocked perks list on entry.
-				if (a_shouldImport && nativeFuncCoopPlayerHasPerk) 
+				// If a shared perk, only add if P1 has the perk, 
+				// since P1 can make a shared skill Legendary, 
+				// which would remove all shared perks of that skill from P1, 
+				// but the companion player would still have the perks.
+				// Otherwise, add if the companion player has the perk already.
+				shouldInsert = 
+				(
+					(a_shouldImport) &&
+					(
+						(!shared && nativeFuncCoopPlayerHasPerk) || 
+						((shared) && (nativeFuncP1HasPerk || singletonListHasPerk))
+					)
+				);
+				if (shouldInsert) 
 				{
 					SPDLOG_DEBUG
 					(
@@ -8719,6 +9854,17 @@ namespace ALYSLC
 
 				perk = perk->nextPerk;
 				++perkIndex;
+			}
+
+			// Remove perks in the proper order.
+			while (!perkStack.empty())
+			{
+				if (auto perkToRemove = perkStack.top(); perkToRemove)
+				{
+					Util::Player1RemovePerk(perkToRemove);
+				}
+
+				perkStack.pop();
 			}
 		};
 
@@ -8876,23 +10022,18 @@ namespace ALYSLC
 			// Clear unlocked perks list before updating.
 			p1SerializedData->ClearUnlockedPerks();
 			coopPlayerSerializedData->ClearUnlockedPerks();
-			// Reset on-import unlocked shared perks count.
-			glob.importUnlockedSharedPerksCount = 0;
 			// Set unlocked perks for both players 
 			// and construct set of companion perks to import to P1.
 			Util::TraverseAllPerks(a_coopActor, setUnlockedPerks);
 			// Add companion player's perks to P1 and remove all other perks from P1.
 			Util::TraverseAllPerks(a_coopActor, addCompanionPlayerPerksOnImport);
-
 			SPDLOG_DEBUG
 			(
-				"Import: {} has {} unlocked perks, {} has {} unlocked perks. "
-				"Shared perks count: {}.",
+				"Import: {} has {} unlocked perks, {} has {} unlocked perks.",
 				p1->GetName(),
 				p1SerializedData->GetUnlockedPerksList().size(),
 				a_coopActor->GetName(),
-				coopPlayerSerializedData->GetUnlockedPerksList().size(),
-				glob.importUnlockedSharedPerksCount
+				coopPlayerSerializedData->GetUnlockedPerksList().size()
 			);
 
 #ifdef ALYSLC_DEBUG_MODE
@@ -8909,35 +10050,17 @@ namespace ALYSLC
 			adjustSkillXP();
 			// Clear out old unlocked perks list for the companion player before updating.
 			coopPlayerSerializedData->ClearUnlockedPerks();
-			// Reset on-export unlocked shared perks count.
-			glob.exportUnlockedSharedPerksCount = 0;
 			// Set new unlocked perks list for the companion player.
 			Util::TraverseAllPerks(a_coopActor, setUnlockedPerks);
 			// Add back all P1's original perks cached when entering.
 			Util::TraverseAllPerks(a_coopActor, updatePlayerPerksOnExport);
-
 			SPDLOG_DEBUG
 			(
-				"Export: {} has {} unlocked perks, {} has {} unlocked perks. "
-				"Shared perks count: {}.", 
+				"Export: {} has {} unlocked perks, {} has {} unlocked perks.",
 				p1->GetName(),
 				p1SerializedData->GetUnlockedPerksList().size(),
 				a_coopActor->GetName(),
-				coopPlayerSerializedData->GetUnlockedPerksList().size(),
-				glob.exportUnlockedSharedPerksCount
-			);
-
-			// Update unlocked shared perks count for this player.
-			coopPlayerSerializedData->sharedPerksUnlocked += max
-			(
-				0, 
-				glob.exportUnlockedSharedPerksCount - glob.importUnlockedSharedPerksCount
-			);
-
-			SPDLOG_DEBUG
-			(
-				"Export: {} has personally unlocked {} shared perks.",
-				a_coopActor->GetName(), coopPlayerSerializedData->sharedPerksUnlocked
+				coopPlayerSerializedData->GetUnlockedPerksList().size()
 			);
 		}
 	}
@@ -9529,21 +10652,23 @@ namespace ALYSLC
 								std::addressof(questUpdateBaseInstance)
 							);
 							if (!questUpdateBaseInstance.IsNull() &&
-								!questUpdateBaseInstance.IsUndefined() &&
-								questUpdateBaseInstance.HasMember("AnimatedLetter_mc"))
-							{
-								RE::GFxValue args[2];
-								args[0] = RE::GFxValue(messageText);
-								args[1] = RE::GFxValue("");
-								view->InvokeNoReturn
-								(
-									"_root.HUDMovieBaseInstance."
-									"QuestUpdateBaseInstance."
-									"AnimatedLetter_mc.ShowQuestUpdate",
-									args,
-									2
-								);
-								questMessageDisplayed = true;
+								!questUpdateBaseInstance.IsUndefined())
+							{	
+								if (questUpdateBaseInstance.HasMember("AnimatedLetter_mc"))
+								{
+									RE::GFxValue args[2];
+									args[0] = RE::GFxValue(messageText);
+									args[1] = RE::GFxValue("");
+									view->InvokeNoReturn
+									(
+										"_root.HUDMovieBaseInstance."
+										"QuestUpdateBaseInstance."
+										"AnimatedLetter_mc.ShowQuestUpdate",
+										args,
+										2
+									);
+									questMessageDisplayed = true;
+								}
 							}
 						}
 					}
@@ -9551,6 +10676,10 @@ namespace ALYSLC
 
 				if (!questMessageDisplayed)
 				{
+					SPDLOG_DEBUG
+					(
+						"No quest update message to display. Paulie, get the message box."
+					);
 					RE::CreateMessage
 					(
 						messageText.c_str(), 
@@ -9558,7 +10687,7 @@ namespace ALYSLC
 						0, 
 						4, 
 						10, 
-						"Whoa, that's a corny line",
+						"Ok",
 						nullptr
 					);
 				}
@@ -9605,33 +10734,38 @@ namespace ALYSLC
 						p->RevertTransformation();
 					}
 
-					// Reset essential flags before killing actor.
-					Util::ChangeEssentialStatus(p->coopActor.get(), false);
-
-					// Kill calls fail on P1 at times,
-					// especially when the player dies in water,
-					// and the game will not reload.
-					// The kill console command appears to work more often 
-					// when this happens,  so as an extra layer of insurance,
-					// run that command here.
-					const auto scriptFactory = 
-					(
-						RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-					);
-					const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-					if (script)
+					// Prep to send the player to the plane of oblivion 
+					// known as the loading screen if they are a companion player or not essential.
+					if (!p->isPlayer1 || !glob.p1IsEssential)
 					{
-						script->SetCommand("kill");
-						script->CompileAndRun(p->coopActor.get());
-						// Cleanup.
-						delete script;
-					}
+						// Reset essential flags before killing actor.
+						Util::ChangeEssentialStatus(p->coopActor.get(), false);
 
-					// Also run the other kill functions and set life state to dead.
-					p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
-					p->coopActor->KillImmediate();
-					p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
-			
+						// Kill calls fail on P1 at times,
+						// especially when the player dies in water,
+						// and the game will not reload.
+						// The kill console command appears to work more often 
+						// when this happens,  so as an extra layer of insurance,
+						// run that command here.
+						const auto scriptFactory = 
+						(
+							RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+						);
+						const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+						if (script)
+						{
+							script->SetCommand("kill");
+							script->CompileAndRun(p->coopActor.get());
+							// Cleanup.
+							delete script;
+						}
+
+						// Also run the other kill functions and set life state to dead.
+						p->coopActor->KillImpl(p->coopActor.get(), FLT_MAX, true, false);
+						p->coopActor->KillImmediate();
+						p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+					}
+					
 					auto currentHealth = p->coopActor->GetActorValue
 					(
 						RE::ActorValue::kHealth
@@ -9646,10 +10780,8 @@ namespace ALYSLC
 						p->pam->ModifyAV
 						(
 							RE::ActorValue::kHealth,
-							Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
-							-FLT_MAX :
-							(-currentHealth) *
-							(1.0f / Settings::vfDamageReceivedMult[p->playerID])
+							-currentHealth,
+							true
 						);
 					}
 					else
@@ -9665,16 +10797,24 @@ namespace ALYSLC
 						p->pam->ModifyAV
 						(
 							RE::ActorValue::kHealth, 
-							Settings::vfDamageReceivedMult[p->playerID] == 0.0f ? 
-							-FLT_MAX :
-							(-1.0f / Settings::vfDamageReceivedMult[p->playerID])
+							-1.0f,
+							true
 						);
 					}
+					
+					// If P1 is designated as essential, enter bleedout.
+					if (p->isPlayer1 && glob.p1IsEssential && !p->coopActor->IsBleedingOut())
+					{
+						// Start bleeding out.
+						p->coopActor->NotifyAnimationGraph("BleedoutStart");
+						p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kBleedout);
+					}
 
-					// And through all that... P1 is usually still not dead.
+					// And through all that... P1 is usually still not dead. Sometimes.
 					SPDLOG_DEBUG
 					(
-						"{}: is dead: {}, health: {}. Essential flag: {}, {}.",
+						"{}: is dead: {}, health: {}. Essential flag: {}, {}. "
+						"P1 designated as essential: {}.",
 						p->coopActor->GetName(),
 						p->coopActor->IsDead(),
 						p->coopActor->GetActorValue(RE::ActorValue::kHealth),
@@ -9684,7 +10824,8 @@ namespace ALYSLC
 							RE::ACTOR_BASE_DATA::Flag::kEssential
 						) :
 						false,
-						p->coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential)
+						p->coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kEssential),
+						glob.p1IsEssential
 					);
 				}
 
@@ -9725,24 +10866,52 @@ namespace ALYSLC
 							// Does not matter if P1 is flagged as dead or not.
 							while ((secsWaited < maxSecsToWait) && 
 									(!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) && 
+									(!ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)) && 
 									(!glob.loadingASave))
 							{
 								// Attempt to kill P1 and force a reload every second.
 								if (secsSinceKillTask >= 1.0f)
 								{
-									killTaskWaitTP = SteadyClock::now();
-									// Set health to 1 and then to 0 to trigger death.
-									p1->RestoreActorValue
+									Util::AddSyncedTask
 									(
-										RE::ACTOR_VALUE_MODIFIER::kDamage, 
-										RE::ActorValue::kHealth,
-										1.0f - p1->GetActorValue(RE::ActorValue::kHealth)
-									);
-									p1->RestoreActorValue
-									(
-										RE::ACTOR_VALUE_MODIFIER::kDamage,
-										RE::ActorValue::kHealth, 
-										-1.0f
+										[p1, &killTaskWaitTP, &glob]()
+										{
+											killTaskWaitTP = SteadyClock::now();
+											// Set health to 1 and then to 0 to trigger death.
+											if (glob.p1IsEssential)
+											{
+												// Ensure P1 is not paralyzed
+												// so that they can bleed out.
+												/*p1->boolBits.reset
+												(
+													RE::Actor::BOOL_BITS::kParalyzed
+												);*/
+												p1->SetLifeState
+												(
+													RE::ACTOR_LIFE_STATE::kBleedout
+												);
+											}
+											else
+											{
+												// Set to 1 health and then to 0,
+												// which hopefully will trigger the dead state.
+												p1->RestoreActorValue
+												(
+													RE::ACTOR_VALUE_MODIFIER::kDamage, 
+													RE::ActorValue::kHealth,
+													1.0f - 
+													p1->GetActorValue(RE::ActorValue::kHealth)
+												);
+												p1->RestoreActorValue
+												(
+													RE::ACTOR_VALUE_MODIFIER::kDamage,
+													RE::ActorValue::kHealth, 
+													-1.0f
+												);
+											}
+											
+											SPDLOG_DEBUG("Dead attempt.");
+										}
 									);
 								}
 						
@@ -9752,11 +10921,16 @@ namespace ALYSLC
 									killTaskWaitTP
 								);
 							}
-
-							// Force a reload if P1 is still not dead 
+							
+							// Force a reload if P1 is still not dead (not essential)
 							// and the Loading Menu has not opened.
-							bool succ = true;
-							if (secsWaited >= maxSecsToWait) 
+							bool succ = 
+							(
+								glob.loadingASave ||
+								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
+							);
+							if (secsWaited >= maxSecsToWait && !glob.p1IsEssential) 
 							{
 								SPDLOG_DEBUG
 								(
@@ -9773,12 +10947,14 @@ namespace ALYSLC
 									"ReloadTask: SUCCEEDED after {} seconds. "
 									"Now waiting for the game to load the last save. "
 									"Co-op session active: {}, p1 dead: {}, "
-									"loading a save: {}. Full reset: {}, "
-									"reset game: {}, reload content: {}.",
+									"loading a save: {}, loading/fader menu open: {}, {}. "
+									"Full reset: {}, reset game: {}, reload content: {}.",
 									secsWaited,
 									glob.coopSessionActive,
 									p1->IsDead(),
 									glob.loadingASave, 
+									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
+									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
 									RE::Main::GetSingleton()->fullReset, 
 									RE::Main::GetSingleton()->resetGame,
 									RE::Main::GetSingleton()->reloadContent
@@ -9786,23 +10962,137 @@ namespace ALYSLC
 							}
 							else
 							{
-								RE::Main::GetSingleton()->resetGame = true;
+								if (!glob.p1IsEssential)
+								{
+									RE::Main::GetSingleton()->resetGame = true;
+								}
+								else
+								{
+									Util::AddSyncedTask
+									(
+										[p1]()
+										{
+											// Requires a force kill 
+											// to call some death alternative mods into action,
+											// such as 'Respawn Soulslike Edition'.
+											const auto scriptFactory = 
+											(
+												RE::IFormFactory::GetConcreteFormFactoryByType
+												<RE::Script>()
+											);
+											const auto script = 
+											(
+												scriptFactory ? 
+												scriptFactory->Create() : 
+												nullptr
+											);
+											if (script)
+											{
+												script->SetCommand("kill");
+												script->CompileAndRun(p1);
+												// Cleanup.
+												delete script;
+											}
+										}
+									);
+								}
+
 								SPDLOG_DEBUG
 								(
-									"ReloadTask: FAILED to load most recent save. "
+									"ReloadTask: FAILED after {} seconds. "
 									"Now waiting for the game to reset. "
 									"Co-op session active: {}, p1 dead: {}, "
-									"loading a save: {}. Full reset: {}, "
-									"reset game: {}, reload content: {}.",
+									"loading a save: {}, loading/fader menu open: {}, {}. "
+									"Full reset: {}, reset game: {}, reload content: {}.",
+									secsWaited,
 									glob.coopSessionActive,
 									p1->IsDead(),
 									glob.loadingASave, 
+									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
+									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
 									RE::Main::GetSingleton()->fullReset, 
 									RE::Main::GetSingleton()->resetGame,
 									RE::Main::GetSingleton()->reloadContent
 								);
 							}
-								
+
+							if (!succ)
+							{
+								// Wait at most another 10 seconds before forcing a reload,
+								// in case any installed death-alternative mods 
+								// fail to respawn the player and exit bleedout.
+								secsWaited = 0.0f;
+								loadWaitTP = SteadyClock::now();
+								while ((secsWaited < maxSecsToWait) && 
+										(!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) &&
+										(!ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)) && 
+										(!glob.loadingASave))
+								{
+									std::this_thread::sleep_for(0.1s);
+									secsWaited = Util::GetElapsedSeconds(loadWaitTP);
+								}
+
+								succ = 
+								(
+									glob.loadingASave || 
+									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
+								);
+								if (secsWaited >= maxSecsToWait) 
+								{
+									SPDLOG_DEBUG
+									(
+										"ReloadTask: "
+										"Loading most recent save game after {} seconds.", 
+										secsWaited
+									);
+									succ = !saveLoadManager->LoadMostRecentSaveGame();
+								}
+
+								if (succ)
+								{
+									SPDLOG_DEBUG
+									(
+										"ReloadTask: SUCCEEDED after another {} seconds. "
+										"Now waiting for the game to load the last save. "
+										"Co-op session active: {}, p1 dead: {}, "
+										"loading a save: {}, loading/fader menu open: {}, {}. "
+										"Full reset: {}, reset game: {}, reload content: {}.",
+										secsWaited,
+										glob.coopSessionActive,
+										p1->IsDead(),
+										glob.loadingASave, 
+										ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
+										ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
+										RE::Main::GetSingleton()->fullReset, 
+										RE::Main::GetSingleton()->resetGame,
+										RE::Main::GetSingleton()->reloadContent
+									);
+								}
+								else
+								{
+									RE::Main::GetSingleton()->resetGame = true;
+									SPDLOG_DEBUG
+									(
+										"ReloadTask: FAILED AGAIN after {} seconds. "
+										"Now waiting for the game to reset. "
+										"Co-op session active: {}, p1 dead: {}, "
+										"loading a save: {}, loading/fader menu open: {}, {}. "
+										"Full reset: {}, reset game: {}, reload content: {}.",
+										secsWaited,
+										glob.coopSessionActive,
+										p1->IsDead(),
+										glob.loadingASave, 
+										ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
+										ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
+										RE::Main::GetSingleton()->fullReset, 
+										RE::Main::GetSingleton()->resetGame,
+										RE::Main::GetSingleton()->reloadContent
+									);
+								}
+
+							}
+
 							// Reset wiped flag, because the game is loading the last save.
 							glob.partyWiped = false;
 						}
@@ -9833,11 +11123,19 @@ namespace ALYSLC
 
 							while ((!glob.coopSessionActive) && 
 									(!glob.loadingASave) && 
-									(!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)))
+									(!ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME)) &&
+									(!ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)))
 							{
 								// Our NotifyAnimationGraph() hook for P1 
 								// will attempt to kill P1 once no other players are alive.
-								p1->NotifyAnimationGraph("GetUpBegin");
+								Util::AddSyncedTask
+								(
+									[p1]()
+									{
+										p1->NotifyAnimationGraph("GetUpBegin");
+										SPDLOG_DEBUG("Dead attempt.");
+									}
+								);
 								std::this_thread::sleep_for
 								(
 									std::chrono::seconds
@@ -9850,10 +11148,13 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"Waiting for P1 to die. "
-								"Co-op session active: {}, loading a save: {}. "
+								"Co-op session active: {}, "
+								"loading a save: {}, loading/fader menu open: {}, {}. "
 								"Full reset: {}, reset game: {}, reload content: {}.",
 								glob.coopSessionActive,
 								glob.loadingASave,
+								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
+								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
 								RE::Main::GetSingleton()->fullReset, 
 								RE::Main::GetSingleton()->resetGame,
 								RE::Main::GetSingleton()->reloadContent
@@ -10130,6 +11431,9 @@ namespace ALYSLC
 					// No unlocked perks, so nothing to remove.
 					if (unlockedPerks.size() == 0) 
 					{
+						// Clear just in case the shared perks set
+						// is not a subset of the unlocked perks set.
+						data->ClearTakenSharedPerks();
 						continue;
 					}
 				
@@ -10148,7 +11452,7 @@ namespace ALYSLC
 				// Set the new perks list after removal of all or all shared perks.
 				data->SetUnlockedPerks(newUnlockedPerks);
 				// No player will have any shared perks.
-				data->sharedPerksUnlocked = 0;
+				data->ClearTakenSharedPerks();
 				SPDLOG_DEBUG
 				(
 					"{} now has {} unlocked perks after perk removal.", 

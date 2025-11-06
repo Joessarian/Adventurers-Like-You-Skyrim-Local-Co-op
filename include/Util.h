@@ -241,6 +241,8 @@ namespace ALYSLC
 	using Skill = RE::PlayerCharacter::PlayerSkills::Data::Skill;
 	using SkillList = 
 	std::array<float, (size_t)RE::PlayerCharacter::PlayerSkills::Data::Skill::kTotal>;
+	using LegendaryCountList = 
+	std::array<uint32_t, (size_t)RE::PlayerCharacter::PlayerSkills::Data::Skill::kTotal>;
 	using SteadyClock = std::chrono::steady_clock;
 
 	//========

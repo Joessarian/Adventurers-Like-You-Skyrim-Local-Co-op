@@ -184,16 +184,15 @@ namespace ALYSLC
 		if (glob.livingPlayers == 0 && a_bleedoutEvent->actor->IsPlayerRef())
 		{
 			// All companion players are dead and P1 has just been downed.
-			// Unset essential flag to allow for player death.
 			auto p1 = a_bleedoutEvent->actor->As<RE::Actor>();
-			Util::ChangeEssentialStatus(p1, false);
-			// Set to zero health, which somtimes triggers a death event.
-			p1->RestoreActorValue
-			(
-				RE::ACTOR_VALUE_MODIFIER::kDamage,
-				RE::ActorValue::kHealth,
-				-p1->GetActorValue(RE::ActorValue::kHealth)
-			);
+			// Unset essential flag to allow for player death
+			// or remain in bleedout if already essential.
+			if (!glob.p1IsEssential)
+			{
+				Util::ChangeEssentialStatus(p1, false);			
+			}
+
+			SPDLOG_DEBUG("Begin bleedout.");
 		}
 		else if (auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_bleedoutEvent->actor); 
 				 foundIndex != -1)
@@ -1446,9 +1445,9 @@ namespace ALYSLC
 			if (foundVictimIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[foundVictimIndex];
-				if (!p->coopActor->IsEssential())
+				if ((!p->isPlayer1) || (!glob.p1IsEssential && !p->coopActor->IsEssential()))
 				{
-					p->pam->SetEssentialForReviveSystem();
+					p->SetEssentialForReviveSystem();
 				}
 			}
 		}
@@ -2411,6 +2410,7 @@ namespace ALYSLC
 			{
 				const auto& p = glob.coopPlayers[glob.menuPID];
 				const auto menuName = std::string_view(a_menuEvent->menuName.c_str());
+				const auto menu = ui->GetMenu(a_menuEvent->menuName);
 				bool isSupportedMenu = glob.SUPPORTED_MENU_NAMES.contains(menuName); 
 				if (isSupportedMenu)
 				{

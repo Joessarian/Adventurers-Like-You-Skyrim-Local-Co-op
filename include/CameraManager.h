@@ -644,7 +644,7 @@ namespace ALYSLC
 					return camPitch;
 				}
 			}
-			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
+			else if (playerCam && playerCam->cameraRoot)
 			{
 				// Player cam's pitch does not always correspond to 
 				// the actual camera up direction angle in certain camera states, 
@@ -698,7 +698,7 @@ namespace ALYSLC
 					return camYaw;
 				}
 			}
-			else if (auto niCamPtr = Util::GetNiCamera(); niCamPtr)
+			else if (playerCam && playerCam->cameraRoot)
 			{
 				// Player cam's yaw does not always correspond to 
 				// the actual camera forward direction angle in certain camera states, 

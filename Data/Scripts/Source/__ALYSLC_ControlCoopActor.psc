@@ -30,7 +30,7 @@ Function SendCoopPlayerHome()
 
     ; Spawn portal and set shaders.
     AbsorbCompanionShader.Play(PlayerRef, 1.0)
-    UsePortalShader.Play(Self, 1.0)
+    ;UsePortalShader.Play(Self, 1.0)
     Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
     Utility.Wait(1.0)
     Self.Disable()
@@ -263,8 +263,8 @@ Event OnCoopStart(Form akCoopPlayer)
             Utility.Wait(0.1)
         EndWhile
 
-        ReEquipShader.Play(Self)
-        Self.SetAlpha(0.35, True)
+        ;ReEquipShader.Play(Self)
+        ;Self.SetAlpha(0.35, True)
 
         Utility.Wait(0.1)
         If (HasLHObjEquipped)
@@ -298,12 +298,15 @@ Event OnCoopStart(Form akCoopPlayer)
         Self.SetActorValue("Aggression", 0.0)
         Self.SetActorValue("Confidence", 4.0)
         Self.SetHeadTracking(True)
+        ReEquipShader.Stop(Self)
+        Self.SetAlpha(1.0, True)
 
         StorageUtil.SetFormValue(None, "ALYSLC_CCAScript" + FormID, Self)
         ALYSLC.Log("[CCA SCRIPT] Done initializing")
         ; Set customization options.
         SetCustomizationOptions()
-        PO3_SKSEFunctions.StopAllShaders(Self)
+        ;PO3_SKSEFunctions.StopAllShaders(Self)
+        Self.Resurrect()
         CompletedLoad = True
         ALYSLC.Log("[CCA SCRIPT] Completed load for " + Self.GetDisplayName())
     Else

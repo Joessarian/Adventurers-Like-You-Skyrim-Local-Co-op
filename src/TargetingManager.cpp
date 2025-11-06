@@ -6332,6 +6332,470 @@ namespace ALYSLC
 		}
 	}
 
+	Raycast::RayResult TargetingManager::PickCrosshairRefr
+	(
+		bool a_inCombat,
+		bool a_crosshairActiveForSelection,
+		bool a_showDebugPrints
+	)
+	{
+		// EXPERIMENTAL. Unused for now.
+		// Check if a selectable refr is highlighted by the crosshair
+		// and pick it as the crosshair refr.
+
+		Raycast::RayResult result{ }; 
+		const auto niCamPtr = Util::GetNiCamera();
+		if (!niCamPtr)
+		{
+			return result;
+		}
+
+		Util::ForEachReferenceInRange
+		(
+			glob.cam->GetCurrentPosition(),
+			Settings::fMaxRaycastAndZoomOutDistance,
+			true,
+			[this, niCamPtr](RE::TESObjectREFR* a_refr)
+			{
+				if (!a_refr)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				auto baseObject = a_refr->GetBaseObject();
+				if (!baseObject)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				auto handle = a_refr->GetHandle();
+				const auto refr3DPtr = Util::GetRefr3D(a_refr);
+				if (!refr3DPtr)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				bool valid = Util::IsValidRefrForTargeting(a_refr);
+				bool selectable = Util::IsSelectableRefr(a_refr);
+				if (!valid || !selectable)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				bool inFrontOfCam = 
+				{
+					(
+						Util::IsInFrontOfCam(refr3DPtr->worldBound.center) ||
+						RE::NiCamera::BoundInFrustum(refr3DPtr->worldBound, niCamPtr.get())
+					) ||
+					(
+						refr3DPtr->worldBound.center.Length() == 0.0f &&
+						Util::IsInFrontOfCam(refr3DPtr->world.translate)
+					)
+				};
+				if (!inFrontOfCam)
+				{
+					SPDLOG_DEBUG
+					(
+						"{} (0x{:X}, 0x{:X}) is not in front of cam.", 
+						a_refr->GetName(),
+						a_refr->formID,
+						*baseObject->formType
+					);
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				RE::NiPoint3 boundMax{ };
+				RE::NiPoint3 boundMin{ };
+				RE::NiPoint3 boundCenter{ };
+				RE::NiMatrix3 rotMat{ }; 
+				float radius = 0.0f;
+				auto asActor = a_refr->As<RE::Actor>();
+				boundMax = a_refr->GetBoundMax();
+				boundMin = a_refr->GetBoundMin();
+				boundCenter = a_refr->data.location;
+				bool isDead = a_refr->IsDead();
+				bool isKnocked = 
+				(
+					asActor && asActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal
+				);
+				bool isRagdolled = asActor && asActor->IsInRagdollState();
+				bool isUprightActor = asActor && !isDead && !isKnocked && !isRagdolled;
+				if (isUprightActor)
+				{
+					// Offset halfway up the actor if upright.
+					boundCenter = 
+					(
+						asActor->data.location + 
+						RE::NiPoint3(0.0f, 0.0f, 0.5f * asActor->GetHeight())
+					);
+				}
+				else if (auto refrHkpRigidBodyPtr = Util::GethkpRigidBody(a_refr); 
+						 refrHkpRigidBodyPtr)
+				{
+					if ((asActor) && (isDead || isKnocked || isRagdolled))
+					{
+						// Centered at the rigid body's position when ragdolled.
+						// The 3D center position is still upright, so we can't use it.
+						boundCenter = ToNiPoint3
+						(
+							refrHkpRigidBodyPtr->motion.motionState.transform.translation *
+							HAVOK_TO_GAME
+						);
+					}
+					else
+					{
+						// 3D center pos otherwise.
+						boundCenter = Util::Get3DCenterPos(a_refr);
+					}
+
+					// Grab bounds from collidable shape.
+					if (refrHkpRigidBodyPtr->collidable.GetShape() &&
+						refrHkpRigidBodyPtr->collidable.GetShape()->type == 
+						RE::hkpShapeType::kBox)
+					{
+						auto shape = refrHkpRigidBodyPtr->collidable.GetShape();
+						RE::hkTransform hkTrans{ };
+						hkTrans.rotation.col0 = { 1.0f, 0.0f, 0.0f, 0.0f };
+						hkTrans.rotation.col1 = { 0.0f, 1.0f, 0.0f, 0.0f };
+						hkTrans.rotation.col2 = { 0.0f, 0.0f, 1.0f, 0.0f };
+						RE::hkAabb aabb{ };
+						shape->GetAabbImpl(hkTrans, 0.0f, aabb);
+						boundMax = ToNiPoint3(aabb.max) * HAVOK_TO_GAME;
+						boundMin = ToNiPoint3(aabb.min) * HAVOK_TO_GAME;
+					}
+				}
+			
+				// Rotation from the refr's 3D.
+				rotMat = refr3DPtr->world.rotate;
+				if (boundMin == boundMax && boundMax.Length() == 0.0f)
+				{
+					// Fall back to the radius for the bounds.
+					boundMax = 
+					(
+						RE::NiPoint3(0.0f, 1.0f, 0.0f) * refr3DPtr->worldBound.radius
+					);
+					boundMin = -boundMax;
+				}
+					
+				radius = refr3DPtr->worldBound.radius;
+				if (radius == 0.0f)
+				{
+					radius = a_refr->GetHeight() * 0.5f;
+					if (radius == 0.0f)
+					{
+						radius = (boundMax - boundMin).Length() * 0.5f;
+						if (radius == 0.0f)
+						{
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+					}
+				}
+
+				// Next fallback: halfway up the refr as the center position.
+				if (boundCenter.Length() == 0.0f)
+				{
+					boundCenter = 
+					(
+						a_refr->data.location + 
+						RE::NiPoint3(0.0f, 0.0f, 0.5f * a_refr->GetHeight())
+					);
+				}
+
+				// Last fallback: bounds determined by half the refr's height.
+				if (boundMin == boundMax && boundMax.Length() == 0.0f)
+				{
+					boundMax = 
+					(
+						RE::NiPoint3(0.0f, 1.0f, 0.0f) * 0.5f * a_refr->GetHeight()
+					);
+					boundMin = -boundMax;
+				}
+		
+				// Offset from the bounding box's center to one of the corners 
+				// along the positive X and Y axes.
+				auto halfExtent = (boundMax - boundMin) / 2.0f;
+
+				//
+				// Compute the minimum and maximum X or Y screen coordinates from all the edges.
+				//
+			
+				float maxCoord = -FLT_MAX;
+				float minCoord = FLT_MAX;
+
+				RE::NiPoint3 center2DPos{ };
+				bool onScreen = Util::PointIsOnScreen(boundCenter, center2DPos, 0.0f, false);
+				if (!onScreen)
+				{
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+
+				RE::NiPoint3 camUp = Util::RotationToDirectionVect
+				(
+					-(glob.cam->GetCurrentPitch() - PI / 2.0f), 
+					Util::ConvertAngle(glob.cam->GetCurrentYaw())
+				);
+				float radius2D = 
+				(
+					Util::WorldToScreenPoint3(boundCenter + camUp * radius, false) -
+					center2DPos
+				).Length();
+				const float currentCrosshairGap = 
+				(
+					Settings::vfCrosshairGapRadius[playerID] + crosshairOscillationData->current
+				);
+				if (glm::distance(crosshairScaleformPos, ToVec3(center2DPos)) > 
+					radius2D + currentCrosshairGap)
+				{
+					SPDLOG_DEBUG
+					(
+						"{} (0x{:X}, 0x{:X}) is more than {} ({} + {}) pixels "
+						"({} game units) from the crosshair ({}).", 
+						a_refr->GetName(),
+						a_refr->formID,
+						*baseObject->formType,
+						radius2D + currentCrosshairGap,
+						radius2D,
+						currentCrosshairGap,
+						radius,
+						glm::distance(crosshairScaleformPos, ToVec3(center2DPos))
+					);
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+				
+				DebugAPI::QueueCircle2D
+				(
+					glm::vec2(center2DPos.x, center2DPos.y),
+					Settings::vuOverlayRGBAValues[playerID],
+					16,
+					radius2D, 
+					3.0f
+				);
+
+				//
+				// Get the endpoints of the bounding box.
+				//
+		
+				// Top face.
+				RE::NiPoint3 start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				RE::NiPoint3 end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				// Bottom face.
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter +
+					rotMat * 
+					RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + 
+					rotMat * 
+					RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				// Connecting the faces.
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(-halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + 
+					rotMat * 
+					RE::NiPoint3(-halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				start = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, halfExtent.z)
+				);
+				end = 
+				(
+					boundCenter + rotMat * RE::NiPoint3(halfExtent.x, -halfExtent.y, -halfExtent.z)
+				);
+				DebugAPI::QueueLine3D
+				(
+					ToVec3(start),
+					ToVec3(end),
+					Settings::vuOverlayRGBAValues[playerID],
+					3.0f,
+					0.0f
+				);
+
+				return RE::BSContainer::ForEachResult::kContinue;
+			}
+		);	
+
+		return result;
+	}
+
 	Raycast::RayResult TargetingManager::PickRaycastHitResult
 	(
 		const std::vector<Raycast::RayResult>& a_raycastResults,

@@ -559,14 +559,76 @@ namespace ALYSLC
 		
 		
 		// Modify the current value of the given actor value by the given amount.
-		inline void ModifyAV(const RE::ActorValue& a_av, float a_deltaAmount)
+		inline void ModifyAV
+		(
+			const RE::ActorValue& a_av, float a_deltaAmount, bool a_ignoreCostMult = false
+		)
 		{
 			if (auto avValueOwner = coopActor->As<RE::ActorValueOwner>(); avValueOwner)
 			{
-				avValueOwner->RestoreActorValue
+				/*SPDLOG_DEBUG
 				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
-				);
+					"Modify {}'s {} by {}.",
+					coopActor->GetName(), 
+					Util::GetActorValueName(a_av), 
+					a_deltaAmount
+				);*/
+				// Save the old cost multiplier, set to 1.0 so that the CheckClampDamageModifier() 
+				// hook does not modify the delta amount,
+				// and then restore the cost multiplier afterward.
+				bool cancelOutCostMod = 
+				{
+					(a_ignoreCostMult && a_deltaAmount < 0.0f) && 
+					(
+						a_av == RE::ActorValue::kHealth ||
+						a_av == RE::ActorValue::kMagicka ||
+						a_av == RE::ActorValue::kStamina
+					)
+				};
+				if (cancelOutCostMod)
+				{
+					float originalMult = 1.0f;
+					if (a_av == RE::ActorValue::kHealth)
+					{
+						originalMult = Settings::vfDamageReceivedMult[playerID];
+						Settings::vfDamageReceivedMult[playerID] = 1.0f;
+					}
+					else if (a_av == RE::ActorValue::kMagicka)
+					{
+						originalMult = Settings::vfMagickaCostMult[playerID];
+						Settings::vfMagickaCostMult[playerID] = 1.0f;
+					}
+					else if (a_av == RE::ActorValue::kStamina)
+					{
+						originalMult = Settings::vfStaminaCostMult[playerID];
+						Settings::vfStaminaCostMult[playerID] = 1.0f;
+					}
+
+					avValueOwner->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
+					);
+
+					if (a_av == RE::ActorValue::kHealth)
+					{
+						Settings::vfDamageReceivedMult[playerID] = originalMult;
+					}
+					else if (a_av == RE::ActorValue::kMagicka)
+					{
+						Settings::vfMagickaCostMult[playerID] = originalMult;
+					}
+					else if (a_av == RE::ActorValue::kStamina)
+					{
+						Settings::vfStaminaCostMult[playerID] = originalMult;
+					}
+				}
+				else
+				{
+					avValueOwner->RestoreActorValue
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
+					);
+				}
 			}
 		}
 
@@ -803,9 +865,6 @@ namespace ALYSLC
 
 		// Set the package atop the player's package stack to the given package.
 		void SetCurrentPackage(RE::TESPackage* a_package);
-
-		// Set the player as essential if using the revive system.
-		void SetEssentialForReviveSystem();
 
 		// Set/unset the given package flag for all of a companion player's packages.
 		void SetPackageFlag(RE::PACKAGE_DATA::GeneralFlag&& a_flag, bool&& a_set);

@@ -8770,6 +8770,10 @@ namespace ALYSLC
 								false
 							);
 						}
+						else
+						{
+							SPDLOG_DEBUG("So, no ward?"); 
+						}
 
 						// Is now grabbing the refr.
 						a_p->tm->SetIsGrabbing(true);

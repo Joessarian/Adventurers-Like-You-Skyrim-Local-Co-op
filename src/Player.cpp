@@ -65,6 +65,8 @@ namespace ALYSLC
 		lastRHCastChargeStartTP = SteadyClock::now();
 		lastRHCastStartTP = SteadyClock::now();
 		lastStaminaCooldownCheckTP = SteadyClock::now();
+		lastSubManagerPauseTP = SteadyClock::now();
+		lastSubManagerStartTP = SteadyClock::now();
 		crosshairRefrVisibilityCheckTP = SteadyClock::now();
 		outOfStaminaTP = SteadyClock::now();
 		shoutStartTP = SteadyClock::now();
@@ -107,6 +109,8 @@ namespace ALYSLC
 
 	void CoopPlayer::PrePauseTask()
 	{
+		// Set TP.
+		lastSubManagerPauseTP = SteadyClock::now();
 		// Pause all sub-managers at the same time.
 		em->RequestStateChange(nextState);
 		mm->RequestStateChange(nextState);
@@ -116,6 +120,8 @@ namespace ALYSLC
 
 	void CoopPlayer::PreStartTask()
 	{
+		// Set TP.
+		lastSubManagerStartTP = SteadyClock::now();
 		// Start all sub-managers at the same time.
 		em->RequestStateChange(nextState);
 		mm->RequestStateChange(nextState);
@@ -469,6 +475,8 @@ namespace ALYSLC
 			lastRHCastStartTP = SteadyClock::now();
 			lastStaminaCooldownCheckTP = SteadyClock::now();
 			lastStealthStateCheckTP = SteadyClock::now();
+			lastSubManagerPauseTP = SteadyClock::now();
+			lastSubManagerStartTP = SteadyClock::now();
 			crosshairRefrVisibilityCheckTP = SteadyClock::now();
 			outOfStaminaTP = SteadyClock::now();
 			shoutStartTP = SteadyClock::now();
@@ -665,7 +673,11 @@ namespace ALYSLC
 		// Stop managers first.
 		RequestStateChange(ManagerState::kAwaitingRefresh);
 		// Remove essential flag on dismissal.
-		Util::ChangeEssentialStatus(coopActor.get(), false);
+		if (!isPlayer1 || !glob.p1IsEssential)
+		{
+			Util::ChangeEssentialStatus(coopActor.get(), false);
+		}
+
 		// Revert to original race if transformed.
 		RevertTransformation();
 
@@ -877,15 +889,267 @@ namespace ALYSLC
 			ButtonEventPressType::kInstantTrigger
 		);
 
-		// Save health and restore after resurrection.
+		// Save health and active effects to restore after resurrection.
 		float healthBefore = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		float magickaBefore = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		float staminaBefore = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		auto effectList = coopActor->GetActiveEffectList();
+		std::set<RE::MagicItem*> activeEffectSpells{ };
+		std::unordered_map<RE::MagicItem*, float> effectToElapsedMap{ };
+		if (effectList)
+		{
+			for (const auto effect : *effectList)
+			{
+				if (!effect)
+				{
+					continue;
+				}
+				
+				// REMOVE when done debugging.
+				SPDLOG_DEBUG
+				(
+					"BEFORE {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+					"elapsed time: {}, duration: {}.",
+					fmt::ptr(effectList),
+					coopActor->GetName(),
+					effect->effect && effect->effect->baseEffect ? 
+					effect->effect->baseEffect->GetName() :
+					"NONE",
+					effect->effect && effect->effect->baseEffect ?
+					effect->effect->baseEffect->formID :
+					0xDEAD,
+					effect->spell ? 
+					effect->spell->GetName() :
+					"NONE",
+					effect->elapsedSeconds,
+					effect->duration
+				);
+				if (effect->spell)
+				{
+					activeEffectSpells.insert(effect->spell);
+					effectToElapsedMap.insert_or_assign(effect->spell, effect->elapsedSeconds);
+				}
+			}
+		}
+
+		// Resetting 3D can cause crashes.
 		coopActor->Resurrect(false, false);
-		float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		coopActor->CastPermanentMagic(true, true, true, true);
+		effectList = coopActor->GetActiveEffectList();
+		if (effectList)
+		{
+			for (const auto effect : *effectList)
+			{
+				if (!effect)
+				{
+					continue;
+				}
+
+				// REMOVE when done debugging.
+				SPDLOG_DEBUG
+				(
+					"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+					"elapsed time: {}, duration: {}.",
+					fmt::ptr(effectList),
+					coopActor->GetName(),
+					effect->effect && effect->effect->baseEffect ? 
+					effect->effect->baseEffect->GetName() :
+					"NONE",
+					effect->effect && effect->effect->baseEffect ?
+					effect->effect->baseEffect->formID :
+					0xDEAD,
+					effect->spell ? 
+					effect->spell->GetName() :
+					"NONE",
+					effect->elapsedSeconds,
+					effect->duration
+				);
+			}
+
+			effectList->clear();
+		}
+		else
+		{
+			SPDLOG_DEBUG("No active effects list after resurrection.");
+		}
+				
+		auto instantCaster = coopActor->GetMagicCaster
+		(
+			RE::MagicSystem::CastingSource::kInstant
+		);
+		if (instantCaster)
+		{
+			for (const auto spell : activeEffectSpells)
+			{
+				if (!spell)
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
+				);
+				instantCaster->CastSpellImmediate
+				(
+					spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
+				);
+			}
+		}
+
+		effectList = coopActor->GetActiveEffectList();
+		if (effectList)
+		{
+			for (const auto effect : *effectList)
+			{
+				if (!effect)
+				{
+					continue;
+				}
+
+				// Restore elapsed time.
+				if (effect->spell)
+				{
+					auto iter = effectToElapsedMap.find(effect->spell); 
+					if (iter != effectToElapsedMap.end())
+					{
+						effect->elapsedSeconds = iter->second;
+					}
+				}
+				
+				// REMOVE when done debugging.
+				SPDLOG_DEBUG
+				(
+					"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+					"elapsed time: {}, duration: {}.",
+					fmt::ptr(effectList),
+					coopActor->GetName(),
+					effect->effect && effect->effect->baseEffect ? 
+					effect->effect->baseEffect->GetName() :
+					"NONE",
+					effect->effect && effect->effect->baseEffect ?
+					effect->effect->baseEffect->formID :
+					0xDEAD,
+					effect->spell ? 
+					effect->spell->GetName() :
+					"NONE",
+					effect->elapsedSeconds,
+					effect->duration
+				);
+			}
+		}
+
+		// Restore the original values when done.
+		const float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
 		if (healthAfter != healthBefore)
 		{
-			// Always a positive delta, so no need to undo damage received mult.
-			pam->ModifyAV(RE::ActorValue::kHealth, healthBefore - healthAfter);
+			pam->ModifyAV
+			(
+				RE::ActorValue::kHealth,
+				healthBefore - healthAfter,
+				healthBefore - healthAfter < 0.0f
+			);
 		}
+
+		const float magickaAfter = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		if (magickaAfter != magickaBefore)
+		{
+			pam->ModifyAV
+			(
+				RE::ActorValue::kMagicka,
+				magickaBefore - magickaAfter,
+				magickaBefore - magickaAfter < 0.0f
+			);
+		}
+
+		const float staminaAfter = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		if (staminaAfter != staminaBefore)
+		{
+			pam->ModifyAV
+			(
+				RE::ActorValue::kStamina,
+				staminaBefore - staminaAfter,
+				staminaBefore - staminaAfter < 0.0f
+			);
+		}
+
+		// NOTE on the apparent jank (likely from a modded game):
+		// Ok, sooo... after a few days of banging my head against the wall,
+		// here's a bandaid solution to failing to restore P1's HMS on menu exit.
+		// Some active effects, such as those applied by perks,
+		// will latently modify P1's HMS modifiers after the menu closes
+		// and apply the changes after we've properly restored P1's HMS.
+		// Since this smells like script lag, we'll wait until P1's managers resume + 1 second 
+		// before restoring the correct HMS values once again.
+		taskRunner->AddTask
+		(
+			[this, healthBefore, magickaBefore, staminaBefore]()
+			{
+				float secsWaited = 0.0f;
+				while (!IsRunning() && secsWaited < 2.0f)
+				{
+					std::this_thread::sleep_for(0.1s);
+				}
+					
+				std::this_thread::sleep_for(1.0s);
+				Util::AddSyncedTask
+				(
+					[this, &healthBefore, magickaBefore, staminaBefore]()
+					{
+						float change = 
+						(
+							healthBefore - 
+							coopActor->GetActorValue(RE::ActorValue::kHealth)
+						);
+						if (change != 0.0f)
+						{
+							pam->ModifyAV
+							(
+								RE::ActorValue::kHealth, change, change < 0.0f
+							);
+						}
+
+						change = 
+						(
+							magickaBefore - 
+							coopActor->GetActorValue(RE::ActorValue::kMagicka)
+						);
+						if (change != 0.0f)
+						{
+							pam->ModifyAV
+							(
+								RE::ActorValue::kMagicka, change, change < 0.0f
+							);
+						}
+
+						change = 
+						(
+							staminaBefore - 
+							coopActor->GetActorValue(RE::ActorValue::kStamina)
+						);
+						if (change != 0.0f)
+						{
+							pam->ModifyAV
+							(
+								RE::ActorValue::kStamina, change, change < 0.0f
+							);
+						}
+							
+						SPDLOG_DEBUG
+						(
+							"{}: HMS before, after: ({}, {}, {}), ({}, {}, {}).",
+							coopActor->GetName(),
+							healthBefore,
+							magickaBefore,
+							staminaBefore,
+							coopActor->GetActorValue(RE::ActorValue::kHealth),
+							coopActor->GetActorValue(RE::ActorValue::kMagicka),
+							coopActor->GetActorValue(RE::ActorValue::kStamina)
+						);
+					}
+				);
+			}
+		);
 
 		// Re-attach havok.
 		coopActor->DetachHavok(coopActor->GetCurrent3D());
@@ -946,12 +1210,14 @@ namespace ALYSLC
 			preTransformationRace : 
 			coopActor->GetActorBase()->originalRace
 		);
-		bool changingToRaceWithTransformation = 
+		bool currentRaceHasTransformation = Util::IsRaceWithTransformation(coopActor->race);
+		bool originalRaceHasTransformation = Util::IsRaceWithTransformation(originalRace);
+		bool skipTransformation = 
 		(
-			!Util::IsRaceWithTransformation(coopActor->race) && 
-			Util::IsRaceWithTransformation(originalRace)
+			(!originalRace || originalRace == coopActor->race) ||
+			(!currentRaceHasTransformation)
 		);
-		if (!originalRace || originalRace == coopActor->race || changingToRaceWithTransformation) 
+		if (skipTransformation)
 		{
 			return false;
 		}
@@ -1340,7 +1606,7 @@ namespace ALYSLC
 		auto resAV = coopActor->GetActorValue(RE::ActorValue::kRestoration);
 		// Health post-revive scales with the player's restoration skill level.
 		// Half-to-full health from levels 15-100.
-		float resAVMult = std::lerp(0.5f, 1.0f, (resAV - 15.0f) / (85.0f));
+		float resAVMult = std::lerp(0.5f, 1.0f, std::clamp((resAV - 15.0f) / (85.0f), 0.0f, 1.0f));
 		fullReviveHealth = 
 		(
 			resAVMult * Util::GetFullAVAmount(coopActor.get(), RE::ActorValue::kHealth)
@@ -1353,7 +1619,7 @@ namespace ALYSLC
 		// and no death events trigger during the downed state countdown.
 		// Certain attacks, such as spider venom, that occur while co-op data 
 		// is copied onto P1 seem to reset the essential flag.
-		pam->SetEssentialForReviveSystem();
+		SetEssentialForReviveSystem();
 
 		// Set health/health regen to 0 to prevent player 
 		// from getting up prematurely when being revived.
@@ -1401,19 +1667,46 @@ namespace ALYSLC
 			{
 				if (!isPlayer1 || Settings::bCanRevivePlayer1)
 				{
+					SPDLOG_DEBUG("{} is now set as essential.", coopActor->GetName());
 					// Not P1 or can revive P1, so set as essential.
-					Util::ChangeEssentialStatus(coopActor.get(), true, true);
+					Util::ChangeEssentialStatus(coopActor.get(), true, !glob.p1IsEssential);
 				}
 				else
 				{
-					// Is P1 and cannot revive P1, so clear essential flags.
-					Util::ChangeEssentialStatus(coopActor.get(), false, true);
+					SPDLOG_DEBUG
+					(
+						"Cannot revive P1. P1 essential designation: {}.", glob.p1IsEssential
+					);
+					// Is P1 and cannot revive P1, so defer to previous essential designation.
+					Util::ChangeEssentialStatus
+					(
+						coopActor.get(), glob.p1IsEssential, !glob.p1IsEssential
+					);
 				}
 			}
 			else
 			{
-				// Player revive disabled, so clear essential flags.
-				Util::ChangeEssentialStatus(coopActor.get(), false, true);
+				if (isPlayer1)
+				{
+					SPDLOG_DEBUG
+					(
+						"Cannot revive players. P1 essential designation: {}.", glob.p1IsEssential
+					);
+					// Defer to previous essential designation for P1.
+					Util::ChangeEssentialStatus
+					(
+						coopActor.get(), glob.p1IsEssential, glob.p1IsEssential
+					);
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"Cannot revive players {} unset as essential.", coopActor->GetName()
+					);
+					// Player revive disabled, so clear essential flags.
+					Util::ChangeEssentialStatus(coopActor.get(), false, true);
+				}
 			}
 		}
 		
@@ -1465,6 +1758,64 @@ namespace ALYSLC
 		Util::SetActorGender(coopActor.get(), a_setFemale, a_setOppositeGenderAnims);
 		// Import the default race-given headparts after.
 		Util::ImportDefaultRacialHeadParts(coopActor->race, a_setFemale, actorBase);
+	}
+
+	void CoopPlayer::SetEssentialForReviveSystem()
+	{
+		// Set essential if using the revive system, 
+		// since players do not 'die' right away and instead enter a suspended animation
+		// 'downed' state where they can be revived.
+
+		// If global data or players are not initialized or not in co-op or all players are dead,
+		// we've got nothing to do.
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit || 
+			!glob.coopSessionActive || 
+			glob.livingPlayers == 0)
+		{
+			return;
+		}
+
+		// Set essential if:
+		// 1. The revive system is enabled -AND-
+		// 2. Saving is allowed -AND-
+		// 3. The player is not in a killmove -AND-
+		// 4. Either the actor base or actor essential flags are not set -AND-
+		// 5. The player is not P1, or P1 revival is enabled 
+		// and P1 was not designated as essential.
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		bool canSetAsEssential = 
+		(
+			(
+				Settings::bUseReviveSystem && 
+				!coopActor->IsInKillMove() && 
+				coopActor->GetActorBase()
+			) &&
+			(!p1 || p1->byCharGenFlag != RE::PlayerCharacter::ByCharGenFlag::kDisableSaving) &&
+			(
+				(
+					!isPlayer1 && 
+					coopActor->GetActorBase()->actorData.actorBaseFlags.none
+					(
+						RE::ACTOR_BASE_DATA::Flag::kEssential
+					)
+				) || 
+				coopActor->boolFlags.none(RE::Actor::BOOL_FLAGS::kEssential)
+			) &&
+			(
+				(!isPlayer1) || 
+				(
+					(Settings::bCanRevivePlayer1) && 
+					((!glob.p1IsEssential) || (isDowned && !coopActor->IsDead()))
+				)
+			)
+		);
+
+		if (canSetAsEssential)
+		{
+			// Set both actor base and actor flags.
+			Util::ChangeEssentialStatus(coopActor.get(), !isPlayer1 || !glob.p1IsEssential);
+		}
 	}
 
 	bool CoopPlayer::ShouldTeleportToP1(bool&& a_selfPauseCheck)
@@ -1915,13 +2266,14 @@ namespace ALYSLC
 			}
 			
 			// Also ragdoll and paralyze the player if they are not ragdolled already.
-			if (!coopActor->IsInRagdollState())
+			if ((!isPlayer1 || !glob.p1IsEssential) && !coopActor->IsInRagdollState())
 			{
 				Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
 				Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f, true);
 			}
 		
-			// Set as unconscious to prevent enemies from aggro-ing this downed player.
+			// Set as unconscious when ragdolled 
+			// to prevent enemies from aggro-ing this downed player.
 			coopActor->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kUnconcious;
 			// Draw indicator at all times while the player is downed.
 			tm->DrawPlayerIndicator();
@@ -2401,7 +2753,104 @@ namespace ALYSLC
 				// Resurrect without resetting or attaching 3D.
 				// NOTE:
 				// This resets the player's health to full.
+
+				auto effectList = coopActor->GetActiveEffectList();
+				std::vector<RE::MagicItem*> activeEffectSpells{ };
+				if (effectList)
+				{
+					for (const auto effect : *effectList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"BEFORE {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+							"elapsed time: {}, duration: {}.",
+							fmt::ptr(effectList),
+							coopActor->GetName(),
+							effect->effect && effect->effect->baseEffect ? 
+							effect->effect->baseEffect->GetName() :
+							"NONE",
+							effect->effect && effect->effect->baseEffect ?
+							effect->effect->baseEffect->formID :
+							0xDEAD,
+							effect->spell ? 
+							effect->spell->GetName() :
+							"NONE",
+							effect->elapsedSeconds,
+							effect->duration
+						);
+						if (effect->spell)
+						{
+							activeEffectSpells.emplace_back(effect->spell);
+						}
+					}
+				}
+				
+				// Resetting 3D can cause crashes.
 				coopActor->Resurrect(false, false);
+				coopActor->CastPermanentMagic(true, true, true, true);
+				
+				// REMOVE if unnecessary.
+				/*auto instantCaster = coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kInstant
+				);
+				if (instantCaster)
+				{
+					for (const auto spell : activeEffectSpells)
+					{
+						if (!spell)
+						{
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
+						);
+						instantCaster->CastSpellImmediate
+						(
+							spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
+						);
+					}
+				}*/
+
+				effectList = coopActor->GetActiveEffectList();
+				if (effectList)
+				{
+					for (const auto effect : *effectList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+						
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+							"elapsed time: {}, duration: {}.",
+							fmt::ptr(effectList),
+							coopActor->GetName(),
+							effect->effect && effect->effect->baseEffect ? 
+							effect->effect->baseEffect->GetName() :
+							"NONE",
+							effect->effect && effect->effect->baseEffect ?
+							effect->effect->baseEffect->formID :
+							0xDEAD,
+							effect->spell ? 
+							effect->spell->GetName() :
+							"NONE",
+							effect->elapsedSeconds,
+							effect->duration
+						);
+					}
+				}
 			}
 		);
 
@@ -2444,7 +2893,8 @@ namespace ALYSLC
 
 		secsWaited = 0.0f;
 		waitStartTP = SteadyClock::now();
-		while (secsWaited < secsMaxWait && coopActor->IsDisabled())
+		while ((secsWaited < secsMaxWait) && 
+			   (coopActor->IsDisabled() || !Util::GetRefr3D(coopActor.get())))
 		{
 			std::this_thread::sleep_for(0.1s);
 			secsWaited = Util::GetElapsedSeconds(waitStartTP);
@@ -2466,12 +2916,33 @@ namespace ALYSLC
 						coopActor->InitHavok();
 						coopActor->MoveHavok(true);
 					}
-
-					Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f);
 				}
 			);
 
+			secsWaited = 0.0f;
+			waitStartTP = SteadyClock::now();
+			while ((secsWaited < secsMaxWait) && 
+				   (
+					   !coopActor->currentProcess ||
+					   !coopActor->GetCharController() ||
+					   !Util::GetRefr3D(coopActor.get())
+				   ))
+			{
+				std::this_thread::sleep_for(0.1s);
+				secsWaited = Util::GetElapsedSeconds(waitStartTP);
+			}
+
 			std::this_thread::sleep_for(0.1s);
+			// Do not ragdoll until 3D is fully loaded, char controller is present,
+			// and the player's current process is active.
+			// May crash otherwise.
+			Util::AddSyncedTask
+			(
+				[this]() 
+				{
+					Util::PushActorAway(coopActor.get(), coopActor->data.location, -1.0f);
+				}
+			);
 		}
 
 		// Restore previously equipped hand forms.

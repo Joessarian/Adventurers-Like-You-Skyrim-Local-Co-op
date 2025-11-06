@@ -638,6 +638,14 @@ namespace ALYSLC
 				return;
 			}
 
+			SPDLOG_DEBUG
+			(
+				"{} {} as essential. Adjust bleedout: {}.",
+				a_shouldSet ? "SET" : "UNSET",
+				a_actor->GetName(),
+				a_adjustBleedout
+			);
+
 			auto actorBase = a_actor->GetActorBase();
 			if (actorBase)
 			{
@@ -2514,6 +2522,11 @@ namespace ALYSLC
 
 					for (auto exData : *extraLists)
 					{
+						if (!exData)
+						{
+							continue;
+						}
+
 						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
 						if (!exHotkeyData)
 						{
@@ -4610,7 +4623,7 @@ namespace ALYSLC
 					for (auto& exData : *extraLists)
 					{
 						// Is favorited since the hotkey extra data exists.
-						if (exData->HasType(RE::ExtraDataType::kHotkey))
+						if (exData && exData->HasType(RE::ExtraDataType::kHotkey))
 						{
 							return true;
 						}
@@ -4674,6 +4687,11 @@ namespace ALYSLC
 
 					for (auto& exData : *extraLists)
 					{
+						if (!exData)
+						{
+							continue;
+						}
+
 						// Only consider favorited entries,
 						// since only favorited items can be hotkeyed.
 						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
@@ -5349,7 +5367,9 @@ namespace ALYSLC
 
 			if (!a_actorToPush ||
 				!a_actorToPush->currentProcess || 
-				a_actorToPush->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued)
+				a_actorToPush->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
+				a_actorToPush->IsDisabled() ||
+				!Util::GetRefr3D(a_actorToPush))
 			{
 				return;
 			}

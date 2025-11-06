@@ -58,7 +58,6 @@ namespace ALYSLC
 		magFormsList.clear();
 		menuNamesHashSet.clear();
 		menuControlMap.clear();
-
 		// Current bind info.
 		currentBindInfo = MenuBindInfo();
 
@@ -86,6 +85,7 @@ namespace ALYSLC
 		{
 			// Set menu control map and refresh data when a new menu is opened.
 			SetMenuControlMap();
+			SetMenuInputMappings();
 			RefreshData();
 
 			{
@@ -180,7 +180,7 @@ namespace ALYSLC
 			// Menu has been signalled to refresh, clear delayed req flag.
 			delayedEquipStateRefresh = false;
 		}
-
+		
 		// Refresh menu after sending event.
 		if (shouldRefreshMenu)
 		{
@@ -539,91 +539,6 @@ namespace ALYSLC
 
 				// Update held time.
 				bindInfo.heldTimeSecs = Util::GetElapsedSeconds(bindInfo.firstPressTP);
-					
-				// Update menu event to send if just pressed.
-				if (justPressed) 
-				{
-					// Default to no event.
-					currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
-					if (handleButtonPress)
-					{
-						switch (openedMenuType)
-						{
-						case SupportedMenu::kBarter:
-						{
-							ProcessBarterMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kBook:
-						{
-							ProcessBookMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kContainer:
-						{
-							ProcessContainerMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kDialogue:
-						{
-							ProcessDialogueMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kFavorites:
-						{
-							ProcessFavoritesMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kGift:
-						{
-							ProcessGiftMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kInventory:
-						{
-							ProcessInventoryMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kLoot:
-						{
-							ProcessLootMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kMagic:
-						{
-							ProcessMagicMenuButtonInput(xMask);
-							break;
-						}
-						case SupportedMenu::kMap:
-						{
-							ProcessMapMenuButtonInput(xMask);
-							break;
-						}
-						default:
-						{
-							break;
-						}
-						}
-					}
-					else if (handleTriggerPress)
-					{
-						// Trigger presses handled here for all menus.
-						ProcessTriggerInput(xMask == XMASK_LT);
-					}
-
-					// Event type to send was not changed while processing above, so emulate input.
-					if (currentMenuInputEventType == MenuInputEventType::kReleasedNoEvent) 
-					{
-						currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-					}
-				}
-				else if (bindInfo.eventType == MenuInputEventType::kEmulateInput)
-				{
-					// Continue to send input events while the button/trigger is held
-					// or the analog stick is not centered.
-					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-				}
-					
 				// Special case (on hold):
 				// Preview the hotkey to set for the selected Favorites Menu entry.
 				if (openedMenuType == SupportedMenu::kFavorites && 
@@ -632,12 +547,90 @@ namespace ALYSLC
 					HotkeyFavoritedForm(false);
 				}
 
-				// If unable to set bind info, set event type to none.
-				if (!SetEmulatedInputEventInfo(xMask, bindInfo))
+				if (SetEmulatedInputEventInfo(xMask, bindInfo))
 				{
+					// Update menu event to send if just pressed.
+					if (justPressed) 
+					{
+						// Default to no event.
+						currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
+						if (handleButtonPress || handleTriggerPress)
+						{
+							switch (openedMenuType)
+							{
+							case SupportedMenu::kBarter:
+							{
+								ProcessBarterMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kBook:
+							{
+								ProcessBookMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kContainer:
+							{
+								ProcessContainerMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kDialogue:
+							{
+								ProcessDialogueMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kFavorites:
+							{
+								ProcessFavoritesMenuButtonInput(xMask, bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kGift:
+							{
+								ProcessGiftMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kInventory:
+							{
+								ProcessInventoryMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kLoot:
+							{
+								ProcessLootMenuButtonInput(xMask, bindInfo.eventName);
+								break;
+							}
+							case SupportedMenu::kMagic:
+							{
+								ProcessMagicMenuButtonInput(bindInfo.eventName);
+								break;
+							}
+							default:
+							{
+								break;
+							}
+							}
+						}
+
+						// Event type to send was not changed while processing above, 
+						// so emulate input.
+						if (currentMenuInputEventType == MenuInputEventType::kReleasedNoEvent) 
+						{
+							currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+						}
+					}
+					else if (bindInfo.eventType == MenuInputEventType::kEmulateInput)
+					{
+						// Continue to send input events while the button/trigger is held
+						// or the analog stick is not centered.
+						currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+					}
+				}
+				else 
+				{
+					// If unable to set bind info, set event type to none.
 					currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
 				}
-				else if (currentMenuInputEventType == MenuInputEventType::kEmulateInput)
+
+				if (currentMenuInputEventType == MenuInputEventType::kEmulateInput)
 				{
 					if (handleAnalogStickMovement) 
 					{
@@ -1489,6 +1482,259 @@ namespace ALYSLC
 		);
 	}
 
+	uint32_t MenuInputManager::GetMappedKey
+	(
+		std::string_view a_eventID,
+		RE::INPUT_DEVICE a_device, 
+		RE::ControlMap::InputContextID a_context
+	)
+	{
+		// Using the MIM's previously cached input mappings list, 
+		// get the ID code corresponding to the given user event name, device, and context.
+
+		assert(a_device < RE::INPUT_DEVICE::kTotal);
+		assert(a_context < RE::ControlMap::InputContextID::kTotal);
+
+		if (!glob.globalDataInit)
+		{
+			return -1;
+		}
+
+		const auto& mappings = inputMappings[a_context][a_device];
+		RE::BSFixedString eventID(a_eventID);
+		for (auto& mapping : mappings)
+		{
+			if (mapping.first == eventID)
+			{
+				return mapping.second;
+			}
+		}
+
+		return -1;
+	}
+
+	RE::TESForm* MenuInputManager::GetSelectedMagicMenuSpell()
+	{
+		// Get the spell/shout that the player has selected in the Magic Menu.
+
+		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
+		if (!menuCoopActorPtr)
+		{
+			return nullptr;
+		}
+
+		// Form for spell to equip.
+		RE::TESForm* formToEquip = nullptr;
+		// Not actually an ItemList but likely inherits from it.
+		// At the very least, the cast allows us to identify the selected item.
+		auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30);
+		RE::ItemList::Item* selectedItem = GetSelectedItem(magicItemList);
+		if (!selectedItem)
+		{
+			return nullptr;
+		}
+
+		// First, if SKYUI is installed (it should be), 
+		// this will grab the selected form based on its form ID,
+		// which is the most accurate way of getting the selected magic item.
+
+		// Get the selected spell's index first.
+		int32_t index = -1;
+		if (!magicItemList->unk50)
+		{
+			RE::GFxValue selectedIndex;
+			auto success = magicItemList->root.GetMember("selectedIndex", &selectedIndex);
+			if (success && selectedIndex.IsNumber())
+			{
+				index = static_cast<std::int32_t>(selectedIndex.GetNumber());
+			}
+		}
+
+		if (index >= 0 && index < magicItemList->items.size())
+		{
+			RE::GFxValue entry{ };
+			magicItemList->entryList.GetElement(index, std::addressof(entry));
+			RE::GFxValue entryFormId;
+			entry.GetMember("formId", std::addressof(entryFormId));
+
+			uint32_t formID = 0;
+			if (entryFormId.GetNumber() != 0)
+			{
+				formID = static_cast<uint32_t>(entryFormId.GetNumber());
+			}
+			else
+			{
+				entry.GetMember("formID", std::addressof(entryFormId));
+				if (entryFormId.GetNumber() != 0)
+				{
+					formID = static_cast<uint32_t>(entryFormId.GetNumber());
+				}
+			}
+
+			if (formID != 0) 
+			{
+				// Got the form, so nothing more to do below.
+				if (RE::TESForm* magicForm = RE::TESForm::LookupByID(formID); magicForm)
+				{
+					return magicForm;
+				}
+			}
+		}
+
+		// If the above method fails, we have to compare the selected item's name 
+		// with known spells/shouts, which will sometimes fail to match 
+		// with the correct spell/shout if the player knows multiple spells/shouts 
+		// with the same name.
+
+		//=========================================================================================
+		// First ensure both the player in the menu and P1 have the same known spells and shouts.
+		//=========================================================================================
+
+		// Ensure placeholder spells/shout are not added to P1.
+		const auto& p = glob.coopPlayers[managerMenuPID];
+		auto placeholderSpell2H = p->em->placeholderMagic[!PlaceholderMagicIndex::k2H];
+		auto placeholderSpellLH = p->em->placeholderMagic[!PlaceholderMagicIndex::kLH];
+		auto placeholderSpellRH = p->em->placeholderMagic[!PlaceholderMagicIndex::kRH];
+
+		// Add spells that the co-op companion player learned.
+		for (auto spellItem : menuCoopActorPtr->addedSpells)
+		{
+			if (!glob.player1Actor->HasSpell(spellItem) && 
+				!glob.placeholderSpellsSet.contains(spellItem))
+			{
+				glob.player1Actor->AddSpell(spellItem);
+				break;
+			}
+		}
+		
+		auto companionActorBase = menuCoopActorPtr->GetActorBase();
+		if (companionActorBase)
+		{
+			// Add spells that the co-op companion player has by virtue of their actor base.
+			auto spellList = companionActorBase->actorEffects->spells;
+			if (spellList)
+			{
+				uint32_t spellListSize = companionActorBase->actorEffects->numSpells;
+				for (uint32_t i = 0; i < spellListSize; ++i)
+				{
+					auto spellItem = spellList[i];
+					if (!glob.player1Actor->HasSpell(spellItem) && 
+						!glob.placeholderSpellsSet.contains(spellItem))
+					{
+						glob.player1Actor->AddSpell(spellItem);
+						break;
+					}
+				}
+			}
+
+			auto shoutList = companionActorBase->actorEffects->shouts;
+			if (shoutList)
+			{
+				uint32_t shoutListSize = companionActorBase->actorEffects->numShouts;
+				// Add shouts that the co-op companion player has by virtue of their actor base.
+				for (uint32_t i = 0; i < shoutListSize; ++i)
+				{
+					auto shout = shoutList[i];
+					if (!glob.player1Actor->HasShout(shout))
+					{
+						glob.player1Actor->AddShout(shout);
+						break;
+					}
+				}
+			}
+		}
+
+		auto chosenMagicItemName = selectedItem->data.GetName();
+		// Match spell name with one of P1's learned spells.
+		for (auto spellItem : glob.player1Actor->addedSpells)
+		{
+			if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
+			{
+				formToEquip = spellItem;
+				break;
+			}
+		}
+
+		auto p1ActorBase = glob.player1Actor->GetActorBase();
+		if (p1ActorBase)
+		{
+			auto spellList = p1ActorBase->actorEffects->spells; 
+			if (spellList)
+			{
+				uint32_t spellListSize = p1ActorBase->actorEffects->numSpells;
+				// Match spell name with one of P1's actorbase spells.
+				for (uint32_t i = 0; i < spellListSize; ++i)
+				{
+					auto spellItem = spellList[i];
+					if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
+					{
+						formToEquip = spellItem;
+						break;
+					}
+				}
+			}
+
+			auto shoutList = p1ActorBase->actorEffects->shouts; 
+			if (shoutList)
+			{
+				uint32_t shoutListSize = p1ActorBase->actorEffects->numShouts;
+				// Match with shouts that P1 has by virtue of their actor base.
+				for (uint32_t i = 0; i < shoutListSize; ++i)
+				{
+					// Some unused shouts exist.
+					// All have one-character names.
+					if (shoutList[i] && 
+						strlen(shoutList[i]->GetName()) > 1 && 
+						strcmp(shoutList[i]->GetName(), chosenMagicItemName) == 0)
+					{
+						formToEquip = shoutList[i];
+					}
+				}
+			}
+		}
+
+		// Failsafe: Ensure placeholder spell/shout is not selected.
+		if ((formToEquip) &&
+			(formToEquip == placeholderSpell2H ||
+			formToEquip == placeholderSpellLH ||
+			formToEquip == placeholderSpellRH)) 
+		{
+			formToEquip = nullptr;
+		}
+
+		return formToEquip;
+	}
+
+	std::string_view MenuInputManager::GetUserEventName
+	(
+		uint32_t a_buttonID, 
+		RE::INPUT_DEVICE a_device, 
+		RE::ControlMap::InputContextID a_context
+	)
+	{
+		// Using the MIM's previously cached input mappings list,
+		// get the user event name corresponding to the given button ID, device, and context.
+
+		assert(a_device < RE::INPUT_DEVICE::kTotal);
+		assert(a_context < RE::InputContextID::kTotal);
+
+		if (!glob.globalDataInit)
+		{
+			return ""sv;
+		}
+
+		const auto& mappings = inputMappings[a_context][a_device];
+		for (const auto& [eventName, inputKey] : inputMappings[a_context][a_device])
+		{
+			if (inputKey == a_buttonID)
+			{
+				return eventName;
+			}
+		}
+
+		return ""sv;
+	}
+
 	void MenuInputManager::HotkeyFavoritedForm(bool&& a_setHotkey)
 	{
 		// Preview or set a hotkey to the currently selected favorited item entry.
@@ -1588,7 +1834,7 @@ namespace ALYSLC
 			}
 
 			// Hotkey the entry through an emulated keyboard input.
-			auto hotkeyCode = controlMap->GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
+			auto hotkeyCode = GetMappedKey(hotkeyEvent, RE::INPUT_DEVICE::kKeyboard);
 			if (hotkeyCode == 0xFF)
 			{
 				return;
@@ -1844,198 +2090,6 @@ namespace ALYSLC
 				}
 			);
 		}
-	}
-
-	RE::TESForm* MenuInputManager::GetSelectedMagicMenuSpell()
-	{
-		// Get the spell/shout that the player has selected in the Magic Menu.
-
-		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr)
-		{
-			return nullptr;
-		}
-
-		// Form for spell to equip.
-		RE::TESForm* formToEquip = nullptr;
-		// Not actually an ItemList but likely inherits from it.
-		// At the very least, the cast allows us to identify the selected item.
-		auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30);
-		RE::ItemList::Item* selectedItem = GetSelectedItem(magicItemList);
-		if (!selectedItem)
-		{
-			return nullptr;
-		}
-
-		// First, if SKYUI is installed (it should be), 
-		// this will grab the selected form based on its form ID,
-		// which is the most accurate way of getting the selected magic item.
-
-		// Get the selected spell's index first.
-		int32_t index = -1;
-		if (!magicItemList->unk50)
-		{
-			RE::GFxValue selectedIndex;
-			auto success = magicItemList->root.GetMember("selectedIndex", &selectedIndex);
-			if (success && selectedIndex.IsNumber())
-			{
-				index = static_cast<std::int32_t>(selectedIndex.GetNumber());
-			}
-		}
-
-		if (index >= 0 && index < magicItemList->items.size())
-		{
-			RE::GFxValue entry;
-			magicItemList->entryList.GetElement(index, std::addressof(entry));
-			RE::GFxValue entryFormId;
-			entry.GetMember("formId", std::addressof(entryFormId));
-
-			uint32_t formID = 0;
-			if (entryFormId.GetNumber() != 0)
-			{
-				formID = static_cast<uint32_t>(entryFormId.GetNumber());
-			}
-			else
-			{
-				entry.GetMember("formID", std::addressof(entryFormId));
-				if (entryFormId.GetNumber() != 0)
-				{
-					formID = static_cast<uint32_t>(entryFormId.GetNumber());
-				}
-			}
-
-			if (formID != 0) 
-			{
-				// Got the form, so nothing more to do below.
-				if (RE::TESForm* magicForm = RE::TESForm::LookupByID(formID); magicForm)
-				{
-					return magicForm;
-				}
-			}
-		}
-
-		// If the above method fails, we have to compare the selected item's name 
-		// with known spells/shouts, which will sometimes fail to match 
-		// with the correct spell/shout if the player knows multiple spells/shouts 
-		// with the same name.
-
-		//=========================================================================================
-		// First ensure both the player in the menu and P1 have the same known spells and shouts.
-		//=========================================================================================
-
-		// Ensure placeholder spells/shout are not added to P1.
-		const auto& p = glob.coopPlayers[managerMenuPID];
-		auto placeholderSpell2H = p->em->placeholderMagic[!PlaceholderMagicIndex::k2H];
-		auto placeholderSpellLH = p->em->placeholderMagic[!PlaceholderMagicIndex::kLH];
-		auto placeholderSpellRH = p->em->placeholderMagic[!PlaceholderMagicIndex::kRH];
-
-		// Add spells that the co-op companion player learned.
-		for (auto spellItem : menuCoopActorPtr->addedSpells)
-		{
-			if (!glob.player1Actor->HasSpell(spellItem) && 
-				!glob.placeholderSpellsSet.contains(spellItem))
-			{
-				glob.player1Actor->AddSpell(spellItem);
-				break;
-			}
-		}
-		
-		auto companionActorBase = menuCoopActorPtr->GetActorBase();
-		if (companionActorBase)
-		{
-			// Add spells that the co-op companion player has by virtue of their actor base.
-			auto spellList = companionActorBase->actorEffects->spells;
-			if (spellList)
-			{
-				uint32_t spellListSize = companionActorBase->actorEffects->numSpells;
-				for (uint32_t i = 0; i < spellListSize; ++i)
-				{
-					auto spellItem = spellList[i];
-					if (!glob.player1Actor->HasSpell(spellItem) && 
-						!glob.placeholderSpellsSet.contains(spellItem))
-					{
-						glob.player1Actor->AddSpell(spellItem);
-						break;
-					}
-				}
-			}
-
-			auto shoutList = companionActorBase->actorEffects->shouts;
-			if (shoutList)
-			{
-				uint32_t shoutListSize = companionActorBase->actorEffects->numShouts;
-				// Add shouts that the co-op companion player has by virtue of their actor base.
-				for (uint32_t i = 0; i < shoutListSize; ++i)
-				{
-					auto shout = shoutList[i];
-					if (!glob.player1Actor->HasShout(shout))
-					{
-						glob.player1Actor->AddShout(shout);
-						break;
-					}
-				}
-			}
-		}
-
-		auto chosenMagicItemName = selectedItem->data.GetName();
-		// Match spell name with one of P1's learned spells.
-		for (auto spellItem : glob.player1Actor->addedSpells)
-		{
-			if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
-			{
-				formToEquip = spellItem;
-				break;
-			}
-		}
-
-		auto p1ActorBase = glob.player1Actor->GetActorBase();
-		if (p1ActorBase)
-		{
-			auto spellList = p1ActorBase->actorEffects->spells; 
-			if (spellList)
-			{
-				uint32_t spellListSize = p1ActorBase->actorEffects->numSpells;
-				// Match spell name with one of P1's actorbase spells.
-				for (uint32_t i = 0; i < spellListSize; ++i)
-				{
-					auto spellItem = spellList[i];
-					if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
-					{
-						formToEquip = spellItem;
-						break;
-					}
-				}
-			}
-
-			auto shoutList = p1ActorBase->actorEffects->shouts; 
-			if (shoutList)
-			{
-				uint32_t shoutListSize = p1ActorBase->actorEffects->numShouts;
-				// Match with shouts that P1 has by virtue of their actor base.
-				for (uint32_t i = 0; i < shoutListSize; ++i)
-				{
-					// Some unused shouts exist.
-					// All have one-character names.
-					if (shoutList[i] && 
-						strlen(shoutList[i]->GetName()) > 1 && 
-						strcmp(shoutList[i]->GetName(), chosenMagicItemName) == 0)
-					{
-						formToEquip = shoutList[i];
-					}
-				}
-			}
-		}
-
-		// Failsafe: Ensure placeholder spell/shout is not selected.
-		if ((formToEquip) &&
-			(formToEquip == placeholderSpell2H ||
-			formToEquip == placeholderSpellLH ||
-			formToEquip == placeholderSpellRH)) 
-		{
-			formToEquip = nullptr;
-		}
-
-		return formToEquip;
 	}
 
 	void MenuInputManager::HandleLootRequest(bool&& a_takeAll)
@@ -2697,7 +2751,7 @@ namespace ALYSLC
 		return false;
 	}
 
-	void MenuInputManager::ProcessBarterMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessBarterMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle BarterMenu input.
 
@@ -2708,11 +2762,7 @@ namespace ALYSLC
 		}
 
 		// Default: 'A' button to sell item.
-		auto acceptIDCode = controlMap->GetMappedKey
-		(
-			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-		);
-		if (a_xMask == glob.cdh->GAMEMASK_TO_XIMASK.at(acceptIDCode))
+		if (a_userEvent == ue->accept)
 		{
 			// Ensure that the co-op companion cannot sell any object 
 			// that is currently equipped by P1.
@@ -2746,7 +2796,7 @@ namespace ALYSLC
 		shouldRefreshMenu = true;
 	}
 
-	void MenuInputManager::ProcessBookMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessBookMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle BookMenu input.
 
@@ -2756,13 +2806,9 @@ namespace ALYSLC
 			return;
 		}
 
-		auto acceptIDCode = controlMap->GetMappedKey
-		(
-			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-		); 
 		// Take book with the 'Accept' bind.
 		// Ignore other inputs.
-		if (a_xMask != glob.cdh->GAMEMASK_TO_XIMASK.at(acceptIDCode))
+		if (a_userEvent != ue->accept)
 		{
 			return;
 		}
@@ -2780,7 +2826,7 @@ namespace ALYSLC
 		// then loot the book with P1.
 		// The container changed event handler will then move the book from P1
 		// to the companion player controlling menus.
-		auto cancelIDCode = controlMap->GetMappedKey
+		auto cancelIDCode = GetMappedKey
 		(
 			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 		);
@@ -2824,7 +2870,7 @@ namespace ALYSLC
 		currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 	}
 
-	void MenuInputManager::ProcessContainerMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessContainerMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle ContainerMenu input.
 
@@ -2863,10 +2909,7 @@ namespace ALYSLC
 
 		// Don't allow switching to P1's inventory when looting a container 
 		// (not another player's inventory).
-		if (!isCoopInventory && 
-			!isPickpocketing &&
-			glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask) == 
-			controlMap->GetMappedKey(ue->wait, RE::INPUT_DEVICE::kGamepad))
+		if (!isCoopInventory && !isPickpocketing && a_userEvent == ue->wait)
 		{
 			RE::DebugMessageBox
 			(
@@ -2887,7 +2930,7 @@ namespace ALYSLC
 			return;
 		}
 
-		if (a_xMask == XINPUT_GAMEPAD_A || a_xMask == XINPUT_GAMEPAD_X)
+		if (a_userEvent == ue->accept || a_userEvent == ue->xButton)
 		{
 			if (isCoopInventory)
 			{
@@ -2916,7 +2959,7 @@ namespace ALYSLC
 					// after the emulated input event is processed,
 					// we cannot re-equip it right away here,
 					// so notify the player to unequip the item manually first.
-					if (a_xMask == XINPUT_GAMEPAD_A)
+					if (a_userEvent == ue->accept)
 					{
 						RE::DebugMessageBox
 						(
@@ -2950,7 +2993,7 @@ namespace ALYSLC
 				}
 
 				// Drop the item.
-				if (a_xMask == XINPUT_GAMEPAD_X)
+				if (a_userEvent == ue->xButton)
 				{
 					// Handled here; no event to send.
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
@@ -3040,7 +3083,7 @@ namespace ALYSLC
 			}
 		}
 		// Favorite the selected item.
-		else if (a_xMask == XINPUT_GAMEPAD_Y)
+		else if (a_userEvent == ue->yButton)
 		{
 			// Handled here; no event to send.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
@@ -3162,9 +3205,209 @@ namespace ALYSLC
 			// Refresh menu to display the changed favorites status indicator.
 			shouldRefreshMenu = true;
 		}
+		else
+		{
+			bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
+			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
+			if (isLeftEquip || isRightEquip)
+			{
+				// No events to send by default. 
+				// Do not want to equip selected items onto P1 through trigger presses.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				RE::ItemList::Item* selectedItem = GetSelectedItem(containerMenu->itemList);
+				if (!selectedItem)
+				{
+					return;
+				}
+
+				auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
+				if (!obj)
+				{
+					return;
+				}
+
+				const auto p1 = RE::PlayerCharacter::GetSingleton(); 
+				auto asBook = obj->As<RE::TESObjectBOOK>(); 
+				if (asBook && p1)
+				{
+					// If this is a skillbook, co-op companions will level up 
+					// the accompanying skill in the activation hook after P1 uses the book.
+					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+				}
+				else if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
+						 obj->As<RE::AlchemyItem>() && 
+						 obj->As<RE::AlchemyItem>()->HasKeywordString("Lehrbuch"))
+				{
+					auto item = obj->As<RE::AlchemyItem>();
+					// Level up with Enderal skillbook.
+					bool succ = PerformEnderalSkillLevelUp(item);
+					if (!succ)
+					{
+						// Notify the player to open their inventory and try again.
+						SPDLOG_DEBUG
+						(
+							"Failed to use Enderal skillbook '{}'.",
+							item->GetName()
+						);
+					}
+				
+					// No event and we do not want P1 to use the book.
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				}
+				else
+				{
+					const auto mode = containerMenu->GetContainerMode();
+					// Only transfer if the player is not pickpocketing the item,
+					// or if the pickpocket attempt was successful.
+					// Can't simply emulate a trigger press for P1 
+					// because even though this will attempt the pickpocket for us,
+					// it will equip the item on P1, instead of the companion player, 
+					// if successful.
+					bool canTransfer = true;
+					if (mode == RE::ContainerMenu::ContainerMode::kPickpocket)
+					{
+						auto refrPtr = menuContainerHandle.get();
+						if (refrPtr)
+						{
+							canTransfer = p1->AttemptPickpocket
+							(
+								menuContainerHandle.get().get(), selectedItem->data.objDesc, 1
+							);
+
+							// Pickpocketing was a success! 
+							// Add skill XP for P1,
+							// since the above function does not do it automatically.
+							if (canTransfer)
+							{
+								SPDLOG_DEBUG("{}'s gold value: {}.", 
+									obj->GetName(), 
+									obj->GetGoldValue());
+								p1->UseSkill
+								(
+									RE::ActorValue::kPickpocket, 
+									obj->GetGoldValue(),
+									obj
+								);
+							}
+						}
+					}
+
+					if (canTransfer)
+					{
+						// Setup equip request.
+						currentMenuInputEventType = MenuInputEventType::kEquipReq;
+						fromContainerHandle = 
+						(
+							isCoopInventory ? menuCoopActorHandle : menuContainerHandle
+						);
+						reqEquipIndex = 
+						(
+							isLeftEquip ? EquipIndex::kLeftHand : EquipIndex::kRightHand
+						);
+						selectedForm = obj;
+						placeholderMagicChanged = false;
+						bool isEquipped = glob.coopPlayers[managerMenuPID]->em->IsEquipped
+						(
+							selectedForm
+						);
+						// If the item will be equipped/unequipped from the player's own inventory,
+						// or if the item is looted from a container and is not already equipped,
+						// we want to wait until the equip event fires
+						// before refreshing the player's equip state.
+						if (isCoopInventory || !isEquipped)
+						{
+							// Refresh equip state later once the item is (un)equipped.
+							delayedEquipStateRefresh = true;
+							lastEquipStateRefreshReqTP = SteadyClock::now();
+						}
+						else
+						{
+							// Refresh right away after item removal otherwise.
+							shouldRefreshMenu = true;
+						}
+
+						// If container reference is the player,
+						// or the item is not valid, do not remove it from its container.
+						if (isCoopInventory || !obj)
+						{
+							return;
+						}
+
+						auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
+						if (!containerRefrPtr) 
+						{
+							return;
+						}
+
+						auto droppedInventory = containerRefrPtr->GetDroppedInventory();
+						const auto iter = droppedInventory.find(obj);
+						// Loot dropped inventory items from the overworld,
+						// since they cannot be removed from the container directly.
+						if (iter != droppedInventory.end())
+						{
+							const auto& countHandlePair = iter->second;
+							if (countHandlePair.first > 0)
+							{
+								for (const auto& handle : countHandlePair.second)
+								{
+									if (!Util::HandleIsValid(handle))
+									{
+										continue;
+									}
+
+									menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
+								}
+							}
+						}
+						else
+						{
+							auto counts = containerRefrPtr->GetInventoryCounts();
+							const auto iter2 = counts.find(obj);
+							if (iter2 != counts.end())
+							{
+								auto count = iter2->second;
+								if (count > 0)
+								{
+									// NOTE: 
+									// Directly to the menu-controlling companion player
+									// to be equipped immediately. 
+									// Delaying the transfer may cause the equip call to execute
+									// before the item is transfered and the equip will fail.
+									containerRefrPtr->RemoveItem
+									(	
+										obj,
+										count, 
+										RE::ITEM_REMOVE_REASON::kStoreInContainer,
+										nullptr,
+										menuCoopActorPtr.get()
+									);
+								}
+							}
+						}
+					}
+					else
+					{
+						// Exit the menu if caught pickpocketing.
+						// No event to handle.
+						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+						auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+						if (msgQ)
+						{
+							msgQ->AddMessage
+							(
+								RE::ContainerMenu::MENU_NAME,
+								RE::UI_MESSAGE_TYPE::kForceHide, 
+								nullptr
+							);
+							return;
+						}
+					}
+				}
+			}
+		}
 	}
 
-	void MenuInputManager::ProcessDialogueMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessDialogueMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle DialogueMenu input.
 
@@ -3174,32 +3417,40 @@ namespace ALYSLC
 			return;
 		}
 
-		auto buttonGroup = glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask);
-		const auto gameMask = glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask);
-		auto acceptIDCode = controlMap->GetMappedKey
-		(
-			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-		);
-		auto cancelIDCode = controlMap->GetMappedKey
-		(
-			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-		);
 		// Can only use the DPad to navigate and either close the menu or choose dialogue options.
 		// Block all other controls from being emulated.
-		if (buttonGroup != InputGroup::kDPad && 
-			gameMask != cancelIDCode && 
-			gameMask != acceptIDCode)
+		if (a_userEvent != ue->up &&
+			a_userEvent != ue->down &&
+			a_userEvent != ue->left &&
+			a_userEvent != ue->right &&
+			a_userEvent != ue->cancel && 
+			a_userEvent != ue->accept)
 		{
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 	}
 
-	void MenuInputManager::ProcessFavoritesMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessFavoritesMenuButtonInput
+	(
+		const uint32_t a_xMask, const RE::BSFixedString& a_userEvent
+	)
 	{
 		// Handle FavoritesMenu input.
+		
+		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
+		if (!menuCoopActorPtr)
+		{
+			return;
+		}
+
+		auto ue = RE::UserEvents::GetSingleton();
+		if (!ue)
+		{
+			return;
+		}
 
 		// Attempt to equip item in the quick slot.
-		if (a_xMask == XINPUT_GAMEPAD_START)
+		if (a_userEvent == ue->pause || a_userEvent == ue->journal)
 		{
 			auto taskInterface = SKSE::GetTaskInterface();
 			// Can't update QS tag if task interface is invalid.
@@ -3393,7 +3644,7 @@ namespace ALYSLC
 			// No event to handle.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
-		else if (a_xMask == XINPUT_GAMEPAD_DPAD_LEFT || a_xMask == XINPUT_GAMEPAD_DPAD_RIGHT)
+		else if (a_userEvent == ue->left || a_userEvent == ue->right)
 		{
 			// Changing categories clears our changes to the equip "carets", 
 			// (the empty/LH/RH arrow to the left of each equipped menu entry),
@@ -3402,13 +3653,13 @@ namespace ALYSLC
 			// but no need to refresh the cached equipped data, which has not changed.
 			shouldRefreshMenu = true;
 		}
-		else if (a_xMask == XINPUT_GAMEPAD_A)
+		else if (a_userEvent == ue->accept)
 		{
 			// Ignore equip attempts with the "A" button, 
 			// as emulating input here will equip this player's favorited item on P1.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
-		else if (a_xMask == XINPUT_GAMEPAD_X)
+		else if (a_userEvent == ue->xButton || a_userEvent == ue->readyWeapon)
 		{
 			auto taskInterface = SKSE::GetTaskInterface();
 			if (!taskInterface)
@@ -3493,9 +3744,216 @@ namespace ALYSLC
 			// Hotkey the selected form, if any.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
+		else 
+		{
+			bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
+			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
+			if (isLeftEquip || isRightEquip)
+			{
+				auto view = favoritesMenu->uiMovie; 
+				if (!view)
+				{
+					return;
+				}
+
+				// Get the selected form from the selected entry's index.
+				RE::GFxValue selectedIndex{ };
+				RE::GFxValue selectedFID{ };
+				view->GetVariable
+				(
+					std::addressof(selectedIndex), 
+					"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
+				);
+				uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
+				selectedForm = favoritesMenu->favorites[index].item;
+				if (!selectedForm)
+				{
+					return;
+				}
+
+				auto boundObj = selectedForm->As<RE::TESBoundObject>();
+				// If the favorited item is a spell/shout or a physical item that exists
+				// in the co-op player's inventory, then attempt to equip and update the menu.
+				bool equipable = 
+				{
+					(selectedForm->Is(RE::FormType::Shout, RE::FormType::Spell))
+				};
+				if (!equipable && boundObj)
+				{
+					auto inventory = menuCoopActorPtr->GetInventory();
+					const auto iter = inventory.find(boundObj);
+					equipable = 
+					(
+						iter != inventory.end() && 
+						iter->second.first > 0
+					);
+				}
+
+				if (equipable)
+				{
+					currentMenuInputEventType = MenuInputEventType::kEquipReq;
+					fromContainerHandle = menuCoopActorHandle;
+					reqEquipIndex = EquipIndex::kRightHand;
+					EntryEquipState newEquipState = EntryEquipState::kNone;
+					if (selectedForm->Is(RE::FormType::Spell, RE::FormType::Weapon))
+					{
+						auto asSpell = selectedForm->As<RE::SpellItem>();
+						auto asWeapon = selectedForm->As<RE::TESObjectWEAP>();
+						// Weapon or hand spell.
+						if ((asWeapon) || 
+							(
+								asSpell && 
+								asSpell->GetSpellType() == RE::MagicSystem::SpellType::kSpell
+							))
+						{
+							auto equipType = selectedForm->As<RE::BGSEquipType>();
+							if (equipType && 
+								equipType->equipSlot->flags.any
+								(
+									RE::BGSEquipSlot::Flag::kUseAllParents
+								))
+							{
+								// Two handed spell/weapon equip request.
+								newEquipState = EntryEquipState::kBothHands;
+								// Use RH equip index for 2H equip requests.
+								reqEquipIndex = EquipIndex::kRightHand;
+							}
+							else
+							{
+								// One handed spell/weapon equip request.
+								// Vampire Lords can only swap out their LH spell.
+								// The RH life drain spell is pre-determined 
+								// by player level and stays equipped.
+								bool isVampireLord = 
+								(
+									Util::IsVampireLord
+									(
+										glob.coopPlayers[managerMenuPID]->coopActor.get()
+									)
+								);
+								newEquipState = 
+								(
+									isLeftEquip || isVampireLord ? 
+									EntryEquipState::kLH : 
+									EntryEquipState::kRH
+								);
+								reqEquipIndex = 
+								(
+									isLeftEquip || isVampireLord ? 
+									EquipIndex::kLeftHand : 
+									EquipIndex::kRightHand
+								);
+							}
+						}
+						// Voice/power/abilities etc.
+						else
+						{
+							// Non-hand slot equipable item.
+							newEquipState = EntryEquipState::kDefault;
+							reqEquipIndex = EquipIndex::kVoice;
+						}
+					}
+					else if (selectedForm->Is
+								(
+								RE::FormType::Ammo, 
+								RE::FormType::Armor,
+								RE::FormType::Armature,
+								RE::FormType::Shout
+								))
+					{
+						// NOTE: 
+						// Shield is equipped to left hand slot 
+						// but uses the default entry equip caret.
+						newEquipState = EntryEquipState::kDefault;
+						if (selectedForm->Is(RE::FormType::Ammo)) 
+						{
+							reqEquipIndex = EquipIndex::kAmmo;
+						}
+						else if (selectedForm->Is(RE::FormType::Shout))
+						{
+							reqEquipIndex = EquipIndex::kVoice;
+						}
+						else
+						{
+							// Default to RH equip index (won't be used for armor equips anyways).
+							reqEquipIndex = EquipIndex::kRightHand;
+						}
+					}
+
+					// Signal to update equip state if not a consumable;
+					// otherwise update consumable count right away.
+					if (newEquipState != EntryEquipState::kNone)
+					{
+						delayedEquipStateRefresh = true;
+						lastEquipStateRefreshReqTP = SteadyClock::now();
+					}
+					else if (selectedForm->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
+					{
+						UpdateFavoritedConsumableCount(selectedForm, index);
+					}
+				
+					auto spellToEquip = selectedForm->As<RE::SpellItem>();
+					bool isHandSlotSpell = 
+					(
+						spellToEquip && 
+						spellToEquip->GetSpellType() == RE::MagicSystem::SpellType::kSpell
+					);
+					const auto& em = glob.coopPlayers[managerMenuPID]->em;
+					if (isHandSlotSpell)
+					{
+						// Check if a hand placeholder magic form is about to be changed.
+						if (newEquipState == EntryEquipState::kRH)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID !=
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH]
+							);
+						}
+						else if (newEquipState == EntryEquipState::kLH)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID !=
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH]
+							);
+						}
+						else if (newEquipState == EntryEquipState::kBothHands)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID != 
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H]
+							);
+						}
+					}
+					else if (spellToEquip)
+					{
+						// Is a voice spell, no copying to perform.
+						placeholderMagicChanged = false;
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Selected form {} (type 0x{:X}) is equipable: {}. "
+						"Delayed equip state refresh: {}, placeholder magic changed: {}.",
+						selectedForm->GetName(), 
+						*selectedForm->formType,
+						equipable,
+						delayedEquipStateRefresh,
+						placeholderMagicChanged
+					);
+				}
+				else
+				{
+					// Not equipable.
+					selectedForm = nullptr;
+				}
+			}
+		}
 	}
 
-	void MenuInputManager::ProcessGiftMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessGiftMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle GiftMenu input.
 
@@ -3511,7 +3969,7 @@ namespace ALYSLC
 			return;
 		}
 
-		if (a_xMask == XINPUT_GAMEPAD_A)
+		if (a_userEvent == ue->accept)
 		{
 			RE::ItemList::Item* selectedItem = GetSelectedItem(giftMenu->itemList); 
 			if (!selectedItem)
@@ -3560,7 +4018,7 @@ namespace ALYSLC
 		}
 	}
 
-	void MenuInputManager::ProcessInventoryMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessInventoryMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle InventoryMenu input.
 
@@ -3570,21 +4028,22 @@ namespace ALYSLC
 			return;
 		}
 
-		auto buttonGroup = glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask);
 		// Companion players can only move through P1's inventory or exit.
 		// Ignore all other input events.
-		auto cancelIDCode = controlMap->GetMappedKey
-		(
-			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-		);
-		if (buttonGroup != InputGroup::kDPad && 
-			glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask) != cancelIDCode)
+		if (a_userEvent != ue->up &&
+			a_userEvent != ue->down &&
+			a_userEvent != ue->left &&
+			a_userEvent != ue->right &&
+			a_userEvent != ue->cancel)
 		{
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 	}
 
-	void MenuInputManager::ProcessLootMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessLootMenuButtonInput
+	(
+		const uint32_t a_xMask, const RE::BSFixedString& a_userEvent
+	)
 	{
 		// Handle LootMenu input.
 
@@ -3596,18 +4055,16 @@ namespace ALYSLC
 		
 		// Button codes for QuickLootMenu binds.
 		std::set<uint32_t> allowedButtonIDCodes{ };
-		auto buttonGroup = glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask);
-		const auto gameMask = glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask);
 		// Add all default QuickLootEE button codes.
-		auto acceptIDCode = controlMap->GetMappedKey
+		auto acceptIDCode = GetMappedKey
 		(
 			ue->accept, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 		);
-		auto cancelIDCode = controlMap->GetMappedKey
+		auto cancelIDCode = GetMappedKey
 		(
 			ue->cancel, RE::INPUT_DEVICE::kGamepad, RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
 		);
-		auto readyWeaponIDCode = controlMap->GetMappedKey
+		auto readyWeaponIDCode = GetMappedKey
 		(
 			ue->readyWeapon,
 			RE::INPUT_DEVICE::kGamepad, 
@@ -3641,7 +4098,7 @@ namespace ALYSLC
 		}
 
 		// Close the LootMenu with the 'Cancel' bind.
-		if (gameMask == cancelIDCode)
+		if (a_userEvent == ue->cancel)
 		{
 			// Exit menu and relinquish control when cancel bind is pressed.
 			if (auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); crosshairPickData)
@@ -3658,7 +4115,8 @@ namespace ALYSLC
 
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
-		else if (buttonGroup != InputGroup::kDPad && !allowedButtonIDCodes.contains(gameMask))
+		else if (glob.paInfoHolder->XIMASKS_TO_INPUT_GROUPS.at(a_xMask) != InputGroup::kDPad && 
+				 !allowedButtonIDCodes.contains(glob.cdh->XIMASK_TO_GAMEMASK.at(a_xMask)))
 		{
 			// Ignore all button presses (do not send emulated input event)
 			// that are not the DPad or the 'Cancel', 'Accept', or 'Ready Weapon' binds.
@@ -3666,16 +4124,28 @@ namespace ALYSLC
 		}
 	}
 
-	void MenuInputManager::ProcessMagicMenuButtonInput(const uint32_t& a_xMask)
+	void MenuInputManager::ProcessMagicMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle MagicMenu input.
+		
+		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
+		if (!menuCoopActorPtr)
+		{
+			return;
+		}
 
-		if (a_xMask == XINPUT_GAMEPAD_A)
+		auto ue = RE::UserEvents::GetSingleton();
+		if (!ue)
+		{
+			return;
+		}
+
+		if (a_userEvent == ue->accept)
 		{
 			shouldRefreshMenu = true;
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
-		else if (a_xMask == XINPUT_GAMEPAD_Y)
+		else if (a_userEvent == ue->yButton)
 		{
 			// Save selected form to add to cyclable spells list later 
 			// after the spell is favorited.
@@ -3692,7 +4162,7 @@ namespace ALYSLC
 				shouldRefreshMenu = true;
 			}
 		}
-		else if (a_xMask == XINPUT_GAMEPAD_DPAD_LEFT || a_xMask == XINPUT_GAMEPAD_DPAD_RIGHT)
+		else if (a_userEvent == ue->left || a_userEvent == ue->right)
 		{
 			// Changing categories clears our changes to the equip "carets", 
 			// (the empty/LH/RH arrow to the left of each equipped menu entry),
@@ -3701,556 +4171,106 @@ namespace ALYSLC
 			// but no need to refresh the cached equipped data, which has not changed.
 			shouldRefreshMenu = true;
 		}
-	}
-
-	void MenuInputManager::ProcessMapMenuButtonInput(const uint32_t& a_xMask)
-	{
-		// Handle MapMenu input.
-
-		// All inputs forwarded as emulated P1 inputs.
-		currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-	}
-
-	void MenuInputManager::ProcessTriggerInput(const bool& a_isLT)
-	{
-		// Perform menu-dependent actions based on trigger press.
-
-		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr)
+		else
 		{
-			return;
-		}
-
-		switch (openedMenuType)
-		{
-		case SupportedMenu::kContainer:
-		{
-			if (!containerMenu) 
+			bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
+			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
+			if (isLeftEquip || isRightEquip)
 			{
-				if (auto ui = RE::UI::GetSingleton(); ui) 
+				selectedForm = GetSelectedMagicMenuSpell(); 
+				if (selectedForm)
 				{
-					containerMenu = ui->GetMenu<RE::ContainerMenu>();
-				}
-
-				return;
-			}
-
-			// No events to send by default. 
-			// Do not want to equip selected items onto P1 through trigger presses.
-			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-			RE::ItemList::Item* selectedItem = GetSelectedItem(containerMenu->itemList);
-			if (!selectedItem)
-			{
-				return;
-			}
-
-			auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
-			if (!obj)
-			{
-				return;
-			}
-
-			const auto p1 = RE::PlayerCharacter::GetSingleton(); 
-			auto asBook = obj->As<RE::TESObjectBOOK>(); 
-			if (asBook && p1)
-			{
-				// If this is a skillbook, co-op companions will level up 
-				// the accompanying skill in the activation hook after P1 uses the book.
-				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-			}
-			else if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
-					 obj->As<RE::AlchemyItem>() && 
-					 obj->As<RE::AlchemyItem>()->HasKeywordString("Lehrbuch"))
-			{
-				auto item = obj->As<RE::AlchemyItem>();
-				// Level up with Enderal skillbook.
-				bool succ = PerformEnderalSkillLevelUp(item);
-				if (!succ)
-				{
-					// Notify the player to open their inventory and try again.
-					SPDLOG_DEBUG
-					(
-						"Failed to use Enderal skillbook '{}'.",
-						item->GetName()
-					);
-				}
-				
-				// No event and we do not want P1 to use the book.
-				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-			}
-			else
-			{
-				const auto mode = containerMenu->GetContainerMode();
-				// Only transfer if the player is not pickpocketing the item,
-				// or if the pickpocket attempt was successful.
-				// Can't simply emulate a trigger press for P1 
-				// because even though this will attempt the pickpocket for us,
-				// it will equip the item on P1, instead of the companion player, if successful.
-				bool canTransfer = true;
-				if (mode == RE::ContainerMenu::ContainerMode::kPickpocket)
-				{
-					auto refrPtr = menuContainerHandle.get();
-					if (refrPtr)
+					auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30); 
+					if (!magicItemList)
 					{
-						canTransfer = p1->AttemptPickpocket
-						(
-							menuContainerHandle.get().get(), selectedItem->data.objDesc, 1
-						);
-
-						// Pickpocketing was a success! 
-						// Add skill XP for P1,
-						// since the above function does not do it automatically.
-						if (canTransfer)
-						{
-							SPDLOG_DEBUG("{}'s Gold value: {}.", 
-								obj->GetName(), 
-								obj->GetGoldValue());
-							p1->UseSkill
-							(
-								RE::ActorValue::kPickpocket, 
-								obj->GetGoldValue(),
-								obj
-							);
-						}
+						return;
 					}
-				}
 
-				if (canTransfer)
-				{
-					// Setup equip request.
 					currentMenuInputEventType = MenuInputEventType::kEquipReq;
-					fromContainerHandle = 
+					fromContainerHandle = menuCoopActorHandle;
+					reqEquipIndex = EquipIndex::kRightHand;
+					EntryEquipState newEquipState = EntryEquipState::kNone;
+
+					auto spellToEquip = selectedForm->As<RE::SpellItem>();
+					bool isHandSlotSpell = 
 					(
-						isCoopInventory ? menuCoopActorHandle : menuContainerHandle
+						spellToEquip && 
+						spellToEquip->GetSpellType() == RE::MagicSystem::SpellType::kSpell
 					);
-					reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
-					selectedForm = obj;
-					placeholderMagicChanged = false;
-					bool isEquipped = glob.coopPlayers[managerMenuPID]->em->IsEquipped
-					(
-						selectedForm
-					);
-					// If the item will be equipped/unequipped from the player's own inventory,
-					// or if the item is looted from a container and is not already equipped,
-					// we want to wait until the equip event fires
-					// before refreshing the player's equip state.
-					if (isCoopInventory || !isEquipped)
+					if (isHandSlotSpell)
 					{
-						// Refresh equip state later once the item is (un)equipped.
-						delayedEquipStateRefresh = true;
-						lastEquipStateRefreshReqTP = SteadyClock::now();
-					}
-					else
-					{
-						// Refresh right away after item removal otherwise.
-						shouldRefreshMenu = true;
-					}
-
-					// If container reference is the player,
-					// or the item is not valid, do not remove it from its container.
-					if (isCoopInventory || !obj)
-					{
-						return;
-					}
-
-					auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
-					if (!containerRefrPtr) 
-					{
-						return;
-					}
-
-					auto droppedInventory = containerRefrPtr->GetDroppedInventory();
-					const auto iter = droppedInventory.find(obj);
-					// Loot dropped inventory items from the overworld,
-					// since they cannot be removed from the container directly.
-					if (iter != droppedInventory.end())
-					{
-						const auto& countHandlePair = iter->second;
-						if (countHandlePair.first > 0)
-						{
-							for (const auto& handle : countHandlePair.second)
-							{
-								if (!Util::HandleIsValid(handle))
-								{
-									continue;
-								}
-
-								menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
-							}
-						}
-					}
-					else
-					{
-						auto counts = containerRefrPtr->GetInventoryCounts();
-						const auto iter2 = counts.find(obj);
-						if (iter2 != counts.end())
-						{
-							auto count = iter2->second;
-							if (count > 0)
-							{
-								// NOTE: 
-								// Directly to the menu-controlling companion player
-								// to be equipped immediately. 
-								// Delaying the transfer may cause the equip call to execute
-								// before the item is transfered and the equip will fail.
-								containerRefrPtr->RemoveItem
-								(	
-									obj,
-									count, 
-									RE::ITEM_REMOVE_REASON::kStoreInContainer,
-									nullptr,
-									menuCoopActorPtr.get()
-								);
-							}
-						}
-					}
-				}
-				else
-				{
-					// Exit the menu if caught pickpocketing.
-					// No event to handle.
-					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-					auto msgQ = RE::UIMessageQueue::GetSingleton(); 
-					if (msgQ)
-					{
-						msgQ->AddMessage
-						(
-							RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kForceHide, nullptr
-						);
-						return;
-					}
-				}
-			}
-
-			break;
-		}
-		case SupportedMenu::kFavorites:
-		{
-			if (!favoritesMenu)
-			{
-				if (auto ui = RE::UI::GetSingleton(); ui)
-				{
-					favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
-				}
-
-				return;
-			}
-
-			auto view = favoritesMenu->uiMovie; 
-			if (!view)
-			{
-				return;
-			}
-
-			// Get the selected form from the selected entry's index.
-			RE::GFxValue selectedIndex{ };
-			RE::GFxValue selectedFID{ };
-			view->GetVariable
-			(
-				std::addressof(selectedIndex), 
-				"_root.MenuHolder.Menu_mc.itemList.selectedEntry.index"
-			);
-			uint32_t index = static_cast<uint32_t>(selectedIndex.GetNumber());
-			selectedForm = favoritesMenu->favorites[index].item;
-			if (!selectedForm)
-			{
-				return;
-			}
-
-			auto boundObj = selectedForm->As<RE::TESBoundObject>();
-			// If the favorited item is a spell/shout or a physical item that exists
-			// in the co-op player's inventory, then attempt to equip and update the menu.
-			bool equipable = 
-			{
-				(selectedForm->Is(RE::FormType::Shout, RE::FormType::Spell))
-			};
-			if (!equipable && boundObj)
-			{
-				auto inventory = menuCoopActorPtr->GetInventory();
-				const auto iter = inventory.find(boundObj);
-				equipable = 
-				(
-					iter != inventory.end() && 
-					iter->second.first > 0
-				);
-			}
-
-			if (equipable)
-			{
-				currentMenuInputEventType = MenuInputEventType::kEquipReq;
-				fromContainerHandle = menuCoopActorHandle;
-				reqEquipIndex = EquipIndex::kRightHand;
-				EntryEquipState newEquipState = EntryEquipState::kNone;
-				if (selectedForm->Is(RE::FormType::Spell, RE::FormType::Weapon))
-				{
-					auto asSpell = selectedForm->As<RE::SpellItem>();
-					auto asWeapon = selectedForm->As<RE::TESObjectWEAP>();
-					// Weapon or hand spell.
-					if ((asWeapon) || 
-						(asSpell && asSpell->GetSpellType() == RE::MagicSystem::SpellType::kSpell))
-					{
-						auto equipType = selectedForm->As<RE::BGSEquipType>();
-						if (equipType && 
-							equipType->equipSlot->flags.any
+						if (spellToEquip->equipSlot->flags.any
 							(
 								RE::BGSEquipSlot::Flag::kUseAllParents
 							))
 						{
-							// Two handed spell/weapon equip request.
 							newEquipState = EntryEquipState::kBothHands;
-							// Use RH equip index for 2H equip requests.
+							// Right hand index for 2H equip req.
 							reqEquipIndex = EquipIndex::kRightHand;
 						}
 						else
 						{
-							// One handed spell/weapon equip request.
-							// Vampire Lords can only swap out their LH spell.
-							// The RH life drain spell is pre-determined 
-							// by player level and stays equipped.
-							bool isVampireLord = 
-							(
-								Util::IsVampireLord
-								(
-									glob.coopPlayers[managerMenuPID]->coopActor.get()
-								)
-							);
 							newEquipState = 
 							(
-								a_isLT || isVampireLord ? 
-								EntryEquipState::kLH : 
-								EntryEquipState::kRH
+								isLeftEquip ? EntryEquipState::kLH : EntryEquipState::kRH
 							);
 							reqEquipIndex = 
 							(
-								a_isLT || isVampireLord ? 
-								EquipIndex::kLeftHand : 
-								EquipIndex::kRightHand
+								isLeftEquip ? EquipIndex::kLeftHand : EquipIndex::kRightHand
+							);
+						}
+
+						// Check if the placeholder spell is about to be changed.
+						const auto& em = glob.coopPlayers[managerMenuPID]->em;
+						if (newEquipState == EntryEquipState::kRH)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID != 
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH]
+							);
+						}
+						else if (newEquipState == EntryEquipState::kLH)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID != 
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH]
+							);
+						}
+						else if (newEquipState == EntryEquipState::kBothHands)
+						{
+							placeholderMagicChanged = 
+							(
+								selectedForm->formID != 
+								em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H]
 							);
 						}
 					}
-					// Voice/power/abilities etc.
 					else
 					{
-						// Non-hand slot equipable item.
 						newEquipState = EntryEquipState::kDefault;
+						// Voice slot for power/shout/any other magic.
 						reqEquipIndex = EquipIndex::kVoice;
 					}
-				}
-				else if (selectedForm->Is
-						 (
-							RE::FormType::Ammo, 
-							RE::FormType::Armor,
-							RE::FormType::Armature,
-							RE::FormType::Shout
-						 ))
-				{
-					// NOTE: 
-					// Shield is equipped to left hand slot 
-					// but uses the default entry equip caret.
-					newEquipState = EntryEquipState::kDefault;
-					if (selectedForm->Is(RE::FormType::Ammo)) 
-					{
-						reqEquipIndex = EquipIndex::kAmmo;
-					}
-					else if (selectedForm->Is(RE::FormType::Shout))
-					{
-						reqEquipIndex = EquipIndex::kVoice;
-					}
-					else
-					{
-						// Default to RH equip index (won't be used for armor equips anyways).
-						reqEquipIndex = EquipIndex::kRightHand;
-					}
-				}
 
-				// Signal to update equip state if not a consumable;
-				// otherwise update consumable count right away.
-				if (newEquipState != EntryEquipState::kNone)
-				{
+					// Signal to update equip states for spells.
 					delayedEquipStateRefresh = true;
 					lastEquipStateRefreshReqTP = SteadyClock::now();
 				}
-				else if (selectedForm->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
-				{
-					UpdateFavoritedConsumableCount(selectedForm, index);
-				}
-				
-				auto spellToEquip = selectedForm->As<RE::SpellItem>();
-				bool isHandSlotSpell = 
-				(
-					spellToEquip && 
-					spellToEquip->GetSpellType() == RE::MagicSystem::SpellType::kSpell
-				);
-				const auto& em = glob.coopPlayers[managerMenuPID]->em;
-				if (isHandSlotSpell)
-				{
-					// Check if a hand placeholder magic form is about to be changed.
-					if (newEquipState == EntryEquipState::kRH)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID !=
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH]
-						);
-					}
-					else if (newEquipState == EntryEquipState::kLH)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID !=
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH]
-						);
-					}
-					else if (newEquipState == EntryEquipState::kBothHands)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID != 
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H]
-						);
-					}
-				}
-				else if (spellToEquip)
-				{
-					// Is a voice spell, no copying to perform.
-					placeholderMagicChanged = false;
-				}
-
-				SPDLOG_DEBUG
-				(
-					"Selected form {} (type 0x{:X}) is equipable: {}. "
-					"Delayed equip state refresh: {}, placeholder magic changed: {}.",
-					selectedForm->GetName(), 
-					*selectedForm->formType,
-					equipable,
-					delayedEquipStateRefresh,
-					placeholderMagicChanged
-				);
-			}
-			else
-			{
-				// Not equipable.
-				selectedForm = nullptr;
-			}
-
-			break;
-		}
-		case SupportedMenu::kInventory:
-		{
-			// Do not send emulated trigger input because this qill
-			// equip the selected item onto P1, not the player controlling menus.
-			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-			break;
-		}
-		case SupportedMenu::kMagic:
-		{
-			if (!magicMenu)
-			{
-				if (auto ui = RE::UI::GetSingleton(); ui)
-				{
-					magicMenu = ui->GetMenu<RE::MagicMenu>();
-				}
-
-				return;
-			}
-
-			selectedForm = GetSelectedMagicMenuSpell(); 
-			if (selectedForm)
-			{
-				auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30); 
-				if (!magicItemList)
-				{
-					return;
-				}
-
-				currentMenuInputEventType = MenuInputEventType::kEquipReq;
-				fromContainerHandle = menuCoopActorHandle;
-				reqEquipIndex = EquipIndex::kRightHand;
-				EntryEquipState newEquipState = EntryEquipState::kNone;
-
-				auto spellToEquip = selectedForm->As<RE::SpellItem>();
-				bool isHandSlotSpell = 
-				(
-					spellToEquip && 
-					spellToEquip->GetSpellType() == RE::MagicSystem::SpellType::kSpell
-				);
-				if (isHandSlotSpell)
-				{
-					if (spellToEquip->equipSlot->flags.any(RE::BGSEquipSlot::Flag::kUseAllParents))
-					{
-						newEquipState = EntryEquipState::kBothHands;
-						// Right hand index for 2H equip req.
-						reqEquipIndex = EquipIndex::kRightHand;
-					}
-					else
-					{
-						newEquipState = a_isLT ? EntryEquipState::kLH : EntryEquipState::kRH;
-						reqEquipIndex = a_isLT ? EquipIndex::kLeftHand : EquipIndex::kRightHand;
-					}
-
-					// Check if the placeholder spell is about to be changed.
-					const auto& em = glob.coopPlayers[managerMenuPID]->em;
-					if (newEquipState == EntryEquipState::kRH)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID != 
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::kRH]
-						);
-					}
-					else if (newEquipState == EntryEquipState::kLH)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID != 
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::kLH]
-						);
-					}
-					else if (newEquipState == EntryEquipState::kBothHands)
-					{
-						placeholderMagicChanged = 
-						(
-							selectedForm->formID != 
-							em->copiedMagicFormIDs[!PlaceholderMagicIndex::k2H]
-						);
-					}
-				}
 				else
 				{
-					newEquipState = EntryEquipState::kDefault;
-					// Voice slot for power/shout/any other magic.
-					reqEquipIndex = EquipIndex::kVoice;
-				}
-
-				// Signal to update equip states for spells.
-				delayedEquipStateRefresh = true;
-				lastEquipStateRefreshReqTP = SteadyClock::now();
-			}
-			else
-			{
-				RE::DebugNotification
-				(
-					fmt::format
+					RE::DebugNotification
 					(
-						"Cannot equip this spell for {}", 
-						menuCoopActorPtr->GetName()
-					).c_str()
-				);
-				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+						fmt::format
+						(
+							"Cannot equip this spell for {}", 
+							menuCoopActorPtr->GetName()
+						).c_str()
+					);
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				}
 			}
-
-			break;
-		}
-		case SupportedMenu::kLoot:
-		{
-			// No event to send in the Loot Menu.
-			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-			break;
-		}
-		default:
-		{
-			break;
-		}
 		}
 	}
 
@@ -5017,14 +5037,19 @@ namespace ALYSLC
 		const auto& currentMenu = ui->GetMenu(menuName); 
 		if (currentMenu && *currentMenu->inputContext != RE::UserEvents::INPUT_CONTEXT_ID::kNone) 
 		{
-			SPDLOG_DEBUG("Current menu {} has context {}.", menuName, *currentMenu->inputContext);
 			context = static_cast<RE::UserEvents::INPUT_CONTEXT_ID>
 			(
 				min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*currentMenu->inputContext))
 			);
+			SPDLOG_DEBUG("Current menu {} has context {}.", menuName, context);
+			if (context == RE::UserEvents::INPUT_CONTEXT_ID::kTotal)
+			{
+				context = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
+			}
+
 			if (context != RE::UserEvents::INPUT_CONTEXT_ID::kNone)
 			{
-				a_bindInfoOut.eventName = controlMap->GetUserEventName
+				a_bindInfoOut.eventName = GetUserEventName
 				(
 					a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 				);
@@ -5032,11 +5057,23 @@ namespace ALYSLC
 			}
 		}
 
-		// Fall back to menu mode context.
+		// Fall back to menu mode or item menu mode context.
 		if (!validEventNameFound) 
 		{
-			context = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
-			a_bindInfoOut.eventName = controlMap->GetUserEventName
+			// 'X' is not mapped by default in the menu context 
+			// and 'Y' maps to 'DownloadAll' which does not trigger the correct menu response
+			// unless in the Creations Menu (won't ever happen in co-op).
+			if (a_bindInfoOut.idCode == GAMEPAD_MASK_X ||
+				a_bindInfoOut.idCode == GAMEPAD_MASK_Y)
+			{
+				context = RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu;
+			}
+			else
+			{
+				context = RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode;
+			}
+			
+			a_bindInfoOut.eventName = GetUserEventName
 			(
 				a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 			);
@@ -5052,9 +5089,14 @@ namespace ALYSLC
 				(
 					min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*menu->inputContext))
 				);
+				if (context == RE::UserEvents::INPUT_CONTEXT_ID::kTotal)
+				{
+					context = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
+				}
+
 				if (context != RE::UserEvents::INPUT_CONTEXT_ID::kNone)
 				{
-					a_bindInfoOut.eventName = controlMap->GetUserEventName
+					a_bindInfoOut.eventName = GetUserEventName
 					(
 						a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 					);
@@ -5072,10 +5114,12 @@ namespace ALYSLC
 		if (!validEventNameFound) 
 		{
 			context = RE::UserEvents::INPUT_CONTEXT_ID::kGameplay;
-			a_bindInfoOut.eventName = controlMap->GetUserEventName
+			a_bindInfoOut.eventName = GetUserEventName
 			(
 				a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 			);
+			SPDLOG_DEBUG("Gameplay context has event name {} from id code 0x{:X}.",
+				a_bindInfoOut.eventName, a_bindInfoOut.idCode);
 			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
 		}
 
@@ -5084,8 +5128,9 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG
 			(
-				"Could not get event name for XInput button mask 0x{:X} and current menu '{}'.", 
-				a_xMask, menuName
+				"Could not get event name for XInput button mask 0x{:X} "
+				"(id code: 0x{:X}) and current menu '{}'.", 
+				a_xMask, a_bindInfoOut.idCode, menuName
 			);
 			return false;
 		}
@@ -5274,6 +5319,42 @@ namespace ALYSLC
 			}
 
 			iter->second = menuBindInfo;
+		}
+	}
+
+	void MenuInputManager::SetMenuInputMappings()
+	{
+		// Initialize the menu input mappings to check for user event and input ID code pairings.
+		if (controlMap)
+		{
+			for (auto i = 0; i < RE::UserEvents::INPUT_CONTEXT_ID::kTotal; ++i)
+			{
+				const auto map = controlMap->controlMap[i];
+				if (!map)
+				{
+					continue;
+				}
+
+				for (auto j = 0; j < RE::INPUT_DEVICE::kTotal; ++j)
+				{
+					inputMappings[i][j].clear();
+					for (auto k = 0; k < map->deviceMappings[j].size(); ++k)
+					{
+						const auto& ueMapping = map->deviceMappings[j][k];
+						inputMappings[i][j].emplace_back
+						(
+							std::pair<RE::BSFixedString, uint32_t>
+							(
+								ueMapping.eventID, ueMapping.inputKey
+							)
+						);
+					}
+				}
+			}
+		}
+		else
+		{
+			SPDLOG_DEBUG("ERR: No control map. Cannot set input mappings.");
 		}
 	}
 

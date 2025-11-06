@@ -127,6 +127,9 @@ namespace ALYSLC
 		// Import default racial headparts, update gender, animations, skin tone,
 		// and refresh the player actor's 3D model when done.
 		void SetDefaultRacialAppearance(bool a_setFemale, bool a_setOppositeGenderAnims);
+		
+		// Set the player as essential if using the revive system.
+		void SetEssentialForReviveSystem();
 
 		// Checks if a fader menu is opened following player activation of a 
 		// refr with teleport extra data. Teleport the co-op companion player
@@ -283,6 +286,9 @@ namespace ALYSLC
 		SteadyClock::time_point lastStaminaCooldownCheckTP;
 		// Time point indicating when the player's stealth state was last checked.
 		SteadyClock::time_point lastStealthStateCheckTP;
+		// Time points indicating when the player's submanagers were last started/paused.
+		SteadyClock::time_point lastSubManagerPauseTP;
+		SteadyClock::time_point lastSubManagerStartTP;
 		// Time point indicating when the player last ran out of stamina (companion players only).
 		SteadyClock::time_point outOfStaminaTP;
 		// Time point indicating when the player last started shouting.

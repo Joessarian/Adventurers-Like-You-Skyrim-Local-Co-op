@@ -34,6 +34,7 @@ namespace ALYSLC
 			JumpHandlerHooks::InstallHooks();
 			InputEventHooks::InstallHooks();
 			InventoryMenuHooks::InstallHooks();
+			LegendarySkillResetConfirmCallbackHooks::InstallHooks();
 			LoadingMenuHooks::InstallHooks();
 			LookHandlerHooks::InstallHooks();
 			MagicMenuHooks::InstallHooks();
@@ -285,6 +286,12 @@ namespace ALYSLC
 						{
 							p->UpdateWhenDowned();
 						}
+
+						// Make sure all players are set as essential if using the revive system.
+						// Game will sometimes reset the essential flag after it is set,
+						// so check each iteration.
+						// Can still update even when the player submanagers are paused.
+						p->SetEssentialForReviveSystem();
 					}
 				}
 			}
@@ -946,7 +953,7 @@ namespace ALYSLC
 					return _DeselectSpellImpl(a_this);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -983,7 +990,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_DeselectSpellImpl(a_this);
@@ -1006,7 +1013,7 @@ namespace ALYSLC
 					return _FinishCastImpl(a_this);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1043,7 +1050,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_FinishCastImpl(a_this);
@@ -1093,7 +1100,7 @@ namespace ALYSLC
 					_InterruptCastImpl(a_this, a_depleteEnergy);
 				}
 
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}, cost charged: {}. State: {}, deplete energy: {}.",
@@ -1131,7 +1138,7 @@ namespace ALYSLC
 					a_this->costCharged,
 					*a_this->state,
 					a_depleteEnergy
-				);
+				);*/
 				return;
 			}
 
@@ -1162,7 +1169,7 @@ namespace ALYSLC
 				}
 
 				auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1198,7 +1205,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 				// Ignore requests to cast when the companion player 
 				// has not started performing the corresponding cast input action.
 				if (!p->isPlayer1)
@@ -1278,7 +1285,7 @@ namespace ALYSLC
 					return _SelectSpellImpl(a_this);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1315,7 +1322,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_SelectSpellImpl(a_this);
@@ -1342,7 +1349,7 @@ namespace ALYSLC
 					return _SetCurrentSpellImpl(a_this, a_spell);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1379,7 +1386,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_SetCurrentSpellImpl(a_this, a_spell);
@@ -1408,7 +1415,7 @@ namespace ALYSLC
 					return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1449,7 +1456,7 @@ namespace ALYSLC
 					p->pam->castingGlobVars[!CastingGlobIndex::kLH]->value,
 					p->pam->castingGlobVars[!CastingGlobIndex::kRH]->value,
 					p->pam->castingGlobVars[!CastingGlobIndex::k2H]->value
-				);
+				);*/
 			}
 
 			_SpellCast(a_this, a_doCast, a_arg2, a_spell);
@@ -1472,7 +1479,7 @@ namespace ALYSLC
 					return _StartCastImpl(a_this);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1509,7 +1516,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_StartCastImpl(a_this);
@@ -1532,7 +1539,7 @@ namespace ALYSLC
 					return _StartChargeImpl(a_this);
 				}
 
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"{}, caster {}, spell {}, cost {}. State: {}.",
 					a_this->actor->GetName(),
@@ -1540,7 +1547,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 					
 				auto source = a_this->GetCastingSource();
 				// Set cast start TPs.
@@ -1574,7 +1581,7 @@ namespace ALYSLC
 					return _StartReadyImpl(a_this);
 				}
 
-				auto source = a_this->GetCastingSource();
+				/*auto source = a_this->GetCastingSource();
 				SPDLOG_DEBUG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
@@ -1611,7 +1618,7 @@ namespace ALYSLC
 					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
 					a_this->currentSpellCost,
 					*a_this->state
-				);
+				);*/
 			}
 
 			_StartReadyImpl(a_this);
@@ -2825,6 +2832,25 @@ namespace ALYSLC
 			{
 				return _ModifyAnimationUpdateData(a_this, a_data);
 			}
+			
+			// Only speed up the getup animation when any of the three extra mechanics 
+			// are enabled while in co-op.
+			bool speedupGetup = 
+			(
+				(
+					Settings::bEnableArmsRotation ||
+					Settings::bEnableFlopping ||
+					Settings::bEnableObjectManipulation
+				) &&
+				(
+					a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
+					a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp
+				)
+			);
+			if (speedupGetup)
+			{
+				a_data.deltaTime *= 3.0f;
+			}
 
 			const auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); 
 			if (playerIndex == -1)
@@ -2996,7 +3022,7 @@ namespace ALYSLC
 			{
 				// Skip bleedout animations when using the co-op revive system.
 				// Players will ragdoll and become unresponsive when reaching 0 health instead.
-				return _NotifyAnimationGraph(a_this, "BleedOutStop");
+				return _NotifyAnimationGraph(a_this, "bleedOutStop");
 			}
 			else if (((p->isDowned && !p->isRevived) ||
 					 (p->coopActor->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) && 
@@ -4130,9 +4156,9 @@ namespace ALYSLC
 			// No input events this frame, so reset all menu controls-related data.
 			if (!(*a_inputEvents))
 			{
-				MenuControlsHooks::summoningMenuTriggered = 
-				MenuControlsHooks::pauseAndWaitPressed =
-				MenuControlsHooks::debugMenuTriggered = false;
+				MenuControlsHooks::summoningMenuBindPressed = 
+				MenuControlsHooks::pauseAndWaitWerePressed =
+				MenuControlsHooks::debugMenuBindPressed = false;
 				MenuControlsHooks::pauseBindHeldTime =
 				MenuControlsHooks::waitBindHeldTime = -1.0f;
 			}
@@ -4188,6 +4214,250 @@ namespace ALYSLC
 
 			return _DispatchInputEvents(a_this, a_inputEvents);
 		}
+
+// [LEGENDARY SKILL CALLBACK HOOKS]:
+	void LegendarySkillResetConfirmCallbackHooks::Run
+	(
+		RE::LegendarySkillResetConfirmCallback* a_this, RE::IMessageBoxCallback::Message a_msg
+	)
+	{
+		// NOTE:
+		// Unsatisfied with the hacky approach below.
+		// Need to figure out how to register a callback instead of hooking here,
+		// since multiple callbacks can run each time the player confirms 
+		// a Legendary leveling skill reset and we only want to refund perk points once.
+		// Also, if a UI mod removes the confirmation message box, well,
+		// we can't refund the correct number of perks.
+		// Also also, may remove eventually if shared perks are done away with.
+
+		if (!glob.globalDataInit)
+		{
+			return _Run(a_this, a_msg);
+		}
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return _Run(a_this, a_msg);
+		}
+
+		// 'kUnk1' indicates that the 'Yes' button was pressed to confirm the skill reset.
+		// Skip any other messages.
+		if (a_msg != RE::IMessageBoxCallback::Message::kUnk1)
+		{
+			return _Run(a_this, a_msg);
+		}
+
+		int8_t perkCountBefore = p1->perkCount;
+		// Get the set of perks to refund.
+		// Avoid inserting duplicates.
+		// Overriding the game's attempt at refunding which seems to not refund 
+		// the proper number of perks sometimes.
+		std::set<RE::BGSPerk*> unlockedPerks{ };
+		bool isShared = glob.SHARED_SKILL_AVS_SET.contains(a_this->skill);
+		const auto skillName = Util::GetActorValueName(a_this->skill);
+		auto lookForUnlockedPerks = 
+		[p1, &unlockedPerks, &skillName]
+		(RE::BGSSkillPerkTreeNode* a_node, RE::Actor* a_actor) 
+		{
+			if (!a_node || 
+				!a_node->associatedSkill || 
+				a_node->associatedSkill->enumName != skillName)
+			{
+				return;
+			}
+				
+			auto perk = a_node->perk;
+			while (perk)
+			{
+				if (Util::Player1PerkListHasPerk(perk))
+				{
+					unlockedPerks.emplace(perk);
+				}
+
+				perk = perk->nextPerk;
+			}
+		};
+
+		Util::TraverseAllPerks(p1, lookForUnlockedPerks);
+		SPDLOG_DEBUG
+		(
+			"{} perks unlocked in {}'s skill tree. Skill level is {}.", 
+			unlockedPerks.size(),
+			Util::GetActorValueName(a_this->skill),
+			p1->GetActorValue(a_this->skill)
+		);
+
+		// Let the game clear out the tree and set the perk count, which we will override after.
+		_Run(a_this, a_msg);
+
+		if (!unlockedPerks.empty() && isShared)
+		{
+			const auto fid = 
+			(
+				glob.coopSessionActive && 
+				glob.menuPID != -1 && 
+				glob.coopPlayers[glob.menuPID]->coopActor ? 
+				glob.coopPlayers[glob.menuPID]->coopActor->formID : 
+				p1->formID
+			);
+			const auto iter = glob.serializablePlayerData.find(fid);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				return;
+			}
+			
+			auto& data = iter->second;
+			const auto iter2 = glob.AV_TO_SKILL_MAP.find(a_this->skill);
+			if (iter2 == glob.AV_TO_SKILL_MAP.end())
+			{
+				return;
+			}
+			
+			// With just SKYUI and no Stats Menu modifications, two callbacks appear to fire.
+			// P1's legendary leveling count for the skill is incremented between the first 
+			// and the second callback, so we skip refunding perk points 
+			// when the first callback fires.
+			auto sharedSkill = iter2->second;
+			SPDLOG_DEBUG
+			(
+				"Player with FID 0x{:X} has already leveled {} {} times. "
+				"P1 has Legendary leveling count {}.", 
+				fid,
+				Util::GetActorValueName(a_this->skill),
+				data->skillLegendaryList[sharedSkill], 
+				p1->skills->data->legendaryLevels[sharedSkill]
+			);
+			if (data->skillLegendaryList[sharedSkill] ==
+				p1->skills->data->legendaryLevels[sharedSkill])
+			{
+				return;
+			}
+
+			// Number of perk points to give back to this player [0, number of perks in the tree].
+			uint32_t refundCount = 0;
+			auto& takenSharedPerksSet = data->GetTakenSharedPerksSet();
+			for (const auto perk : unlockedPerks)
+			{
+				// Already saved as taken by the menu-controlling player.
+				if (takenSharedPerksSet.contains(perk))
+				{
+					SPDLOG_DEBUG
+					(
+						"{}'s perk {} (0x{:X} was saved as taken by {}. "
+						"Add to refund count.",
+						skillName,
+						perk->GetName(),
+						perk->formID,
+						glob.coopSessionActive && glob.menuPID != -1 ? 
+						glob.coopPlayers[glob.menuPID]->coopActor->GetName() :
+						p1->GetName()
+					);
+					++refundCount;
+				}
+				else
+				{
+					// Check to see if no other players have unlocked the perk,
+					// meaning it hasn't been saved as unlocked yet and this player has taken it
+					// while the Stats Menu is open.
+					bool savedAsUnlocked = false;
+					for (const auto& [_, data2] : glob.serializablePlayerData)
+					{
+						if (!data2)
+						{
+							continue;
+						}
+
+						if (data2->GetTakenSharedPerksSet().contains(perk))
+						{
+							savedAsUnlocked = true;
+							break;
+						}
+					}
+
+					if (!savedAsUnlocked)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}'s perk {} (0x{:X} was just taken by {} while in the Stats Menu. "
+							"Add to refund count.",
+							skillName,
+							perk->GetName(),
+							perk->formID,
+							glob.coopSessionActive && glob.menuPID != -1 ? 
+							glob.coopPlayers[glob.menuPID]->coopActor->GetName() :
+							p1->GetName()
+						);
+						++refundCount;
+					}
+				}
+			}
+			
+			SPDLOG_DEBUG
+			(
+				"Perk count for {} (msg: {}, unks: 0x{:X}, 0x{:X}, 0x{:X}), went from {} to {}. "
+				"Shared perk points to refund: {}. Perk count is now {}.", 
+				Util::GetActorValueName(a_this->skill), 
+				a_msg,
+				a_this->unk0C,
+				a_this->unk10,
+				a_this->unk18,
+				perkCountBefore, 
+				p1->perkCount,
+				refundCount,
+				perkCountBefore + refundCount
+			);
+			p1->perkCount = perkCountBefore + refundCount;
+		}
+		else if (isShared)
+		{
+			p1->perkCount = 0;
+			SPDLOG_DEBUG
+			(
+				"No shared perks unlocked for skill {} (msg: {}). Set perk count to 0.", 
+				Util::GetActorValueName(a_this->skill), 
+				a_msg
+			);
+		}
+		else
+		{
+			// Game sometimes removes perk points instead of refunding them (? lol).
+			// Use our own calculated unlocked perks count instead if this happens.
+			if (perkCountBefore > p1->perkCount)
+			{
+				SPDLOG_DEBUG
+				(
+					"CALLBACK: {} ({}). Perk count decreased from {} to {}, "
+					"setting to {} instead.",
+					Util::GetActorValueName(a_this->skill), 
+					a_msg,
+					perkCountBefore,
+					p1->perkCount,
+					perkCountBefore + unlockedPerks.size()
+					//perkCountBefore + (perkCountBefore - p1->perkCount)
+				);
+				p1->perkCount = perkCountBefore + unlockedPerks.size(); 
+				//perkCountBefore + (perkCountBefore - p1->perkCount);
+				// Also, notify the player that the perk count may still be incorrect
+				// and that the issue can be remedied by closing and re-opening the perk tree.
+				RE::DebugMessageBox
+				(
+					"[ALYSLC]\nIf the number of refunded perk points is incorrect, "
+					"please re-open the perk tree to set the proper amount."
+				);
+			}
+			else
+			{
+				SPDLOG_DEBUG
+				(
+					"Nothing to adjust for skill {} (msg: {}). Retain perk count of {}.", 
+					Util::GetActorValueName(a_this->skill), 
+					a_msg,
+					p1->perkCount
+				);
+			}
+		}
+	}
 
 // [MELEE HIT HOOKS]:
 		void MeleeHitHooks::ProcessHit(RE::Actor* a_victim, RE::HitData& a_hitData)
@@ -4399,12 +4669,13 @@ namespace ALYSLC
 			(
 				(allReleased) && 
 				(
-					summoningMenuTriggered ||
-					debugMenuTriggered ||
+					summoningMenuBindPressed ||
+					debugMenuBindPressed ||
 					pauseBindHeldTime != -1.0f ||
 					waitBindHeldTime != -1.0f
 				)
 			);
+
 			// REMOVE when done debugging.
 			// Troubleshooting an inconsistent 'stuck key' issue
 			// that produces a lingering 'Tab' keyboard input
@@ -4486,8 +4757,8 @@ namespace ALYSLC
 					"Buttons released. Reset flags to false. "
 					"Summoning menu triggered: {}, debug menu triggered: {}. "
 					"Hold times: {}, {}. Single event: {}, is button event: {}, is pressed: {}.",
-					summoningMenuTriggered, 
-					debugMenuTriggered, 
+					summoningMenuBindPressed, 
+					debugMenuBindPressed, 
 					pauseBindHeldTime,
 					waitBindHeldTime,
 					(*a_inputEvents)->QUserEvent(),
@@ -4496,9 +4767,9 @@ namespace ALYSLC
 					((*a_inputEvents)->AsButtonEvent()->IsPressed()) :
 					false
 				);*/
-				summoningMenuTriggered = 
-				pauseAndWaitPressed =
-				debugMenuTriggered = false;
+				summoningMenuBindPressed = 
+				pauseAndWaitWerePressed =
+				debugMenuBindPressed = false;
 				pauseBindHeldTime =
 				waitBindHeldTime = -1.0f;
 			}
@@ -4549,7 +4820,7 @@ namespace ALYSLC
 					*a_event->eventType, a_event->QUserEvent()
 				);*/
 				// JANK ALERT:
-				// Must also set this event type flag
+				// Must also set an invalid event type flag
 				// to stop analog stick events from being processed by action handlers.
 				a_event->eventType.set
 				(
@@ -4584,18 +4855,6 @@ namespace ALYSLC
 			}
 
 			auto ui = RE::UI::GetSingleton();
-			bool p1ManagersActive =
-			(
-				(glob.coopSessionActive && glob.cam->IsRunning()) &&
-				(glob.coopPlayers[0]->IsRunning() || !ui  || ui->GameIsPaused())
-			);
-
-			// Skip if P1's managers are active.
-			if (p1ManagersActive)
-			{
-				return false;
-			}
-
 			bool blockEvent = false;
 			auto buttonEvent = a_inputEvent->AsButtonEvent();
 			const auto& device = a_inputEvent->GetDevice();
@@ -4614,6 +4873,17 @@ namespace ALYSLC
 			auto ue = RE::UserEvents::GetSingleton();
 			auto controlMap = RE::ControlMap::GetSingleton();
 			if (!ue || !controlMap)
+			{
+				return false;
+			}
+			
+			// Skip potentially triggering menus here if sent by a companion player.
+			bool emulatedKeyInput = 
+			(
+				((buttonEvent->pad24 & 0xFFFF) == 0xCA11) || 
+				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA)
+			);
+			if (emulatedKeyInput)
 			{
 				return false;
 			}
@@ -4673,428 +4943,108 @@ namespace ALYSLC
 			// in any order to trigger co-op debug/summoning menus.
 			bool pauseBindEvent = buttonEvent->idCode == pauseMask;
 			bool waitBindEvent = buttonEvent->idCode == waitMask;
-			if (pauseBindEvent || waitBindEvent)
+			// Only handling pause or wait bind events.
+			if (!pauseBindEvent && !waitBindEvent)
 			{
-				if (pauseBindEvent)
-				{
-					pauseBindHeldTime = buttonEvent->heldDownSecs;
-				}
-				else if (waitBindEvent)
-				{
-					waitBindHeldTime = buttonEvent->heldDownSecs;
-				}
+				return false;
+			}
 
-				if (pauseBindHeldTime != -1.0f && waitBindHeldTime != -1.0f)
-				{
-					pauseAndWaitPressed = true;
-				}
+			// Update held time and state first.
+			if (pauseBindEvent)
+			{
+				pauseBindHeldTime = buttonEvent->heldDownSecs;
+			}
+			else if (waitBindEvent)
+			{
+				waitBindHeldTime = buttonEvent->heldDownSecs;
+			}
+
+			if (pauseBindHeldTime != -1.0f && waitBindHeldTime != -1.0f)
+			{
+				pauseAndWaitWerePressed = true;
+			}
 				
-				// Skip potentially triggering menus here if sent by a companion player.
-				bool emulatedKeyInput = 
+			// Block if P1's managers are active and not sent by a companion player
+			// or proxied through by P1.
+			if (buttonEvent->IsDown() || buttonEvent->IsHeld())
+			{
+				SPDLOG_DEBUG
 				(
-					((buttonEvent->pad24 & 0xFFFF) == 0xCA11) || 
-					((buttonEvent->pad24 & 0xFFFF) == 0xC0DA)
+					"Should block input '{}' while pressed or held.",
+					buttonEvent->QUserEvent()
 				);
-				// Will not trigger any menus if sent by P2 in hybrid mode (P1's controller).
-				bool isHybridModeControllerInput = 
+				return true;
+			}
+			
+			// Do not trigger menus if P1's managers are active.
+			bool p1ManagersActive =
+			(
+				(glob.coopSessionActive && glob.cam->IsRunning()) &&
+				(glob.coopPlayers[0]->IsRunning() || !ui  || ui->GameIsPaused())
+			);
+			// Will not trigger any menus if sent by P2 in hybrid mode (P1's controller).
+			bool isHybridModeControllerInput = 
+			(
+				glob.hybridModeActive &&
+				glob.coopSessionActive &&
+				isGamepadEvent
+			);
+			// Both held and one just released.
+			if (pauseBindHeldTime != -1.0f && 
+				waitBindHeldTime != -1.0f && 
+				buttonEvent->IsUp())
+			{
+				SPDLOG_DEBUG
 				(
-					glob.hybridModeActive &&
-					glob.coopSessionActive &&
-					isGamepadEvent &&
-					!emulatedKeyInput
+					"Pause/wait binds held for {}s, {}s and {} released.", 
+					pauseBindHeldTime, 
+					waitBindHeldTime,
+					pauseBindEvent ? "Pause" : "Wait"
 				);
-				// Both held and one just released.
-				if (pauseBindHeldTime != -1.0f && 
-					waitBindHeldTime != -1.0f && 
-					buttonEvent->IsUp())
+				bool isDebugMenuBind = 
+				(
+					pauseBindHeldTime >= waitBindHeldTime
+				);
+				bool isSummoningMenuBind = 
+				(
+					pauseBindHeldTime < waitBindHeldTime
+				);
+				// Check if either menu is triggerable,
+				// but do not attempt to open either just yet.
+				// NOTE: 
+				// The keyboard + mouse can always trigger either menu,
+				// aside from the Summoning Menu when outside of co-op.
+				// P1's controller will not trigger either menu here when in co-op.
+				// Triggering them here would attempt to open each menu twice,
+				// since the co-op bind also opens the menu.
+				bool shouldTriggerDebugMenu = 
+				(
+					(!isHybridModeControllerInput) &&
+					(!glob.coopSessionActive || !isGamepadEvent) &&
+					(isDebugMenuBind && !debugMenuBindPressed)
+				);
+				bool shouldTriggerSummoningMenu = 
+				(
+					(!isHybridModeControllerInput) &&
+					(!glob.coopSessionActive || !isGamepadEvent) &&
+					(isSummoningMenuBind && !summoningMenuBindPressed)
+				);
+
+				// Cannot trigger summoning menu with the keyboard to start co-op.
+				if (!glob.coopSessionActive && 
+					!isGamepadEvent && 
+					isSummoningMenuBind)
 				{
 					SPDLOG_DEBUG
 					(
-						"Pause/wait binds held for {}s, {}s and {} released.", 
-						pauseBindHeldTime, 
-						waitBindHeldTime,
-						pauseBindEvent ? "Pause" : "Wait"
+						"Cannot trigger Summoning Menu with keyboard outside of co-op."
 					);
-					bool debugMenuBindPressedAndReleased = 
+					RE::DebugMessageBox
 					(
-						pauseBindHeldTime >= waitBindHeldTime
+						"[ALYSLC]\nPlease use player 1's controller "
+						"to open the Summoning Menu when outside of co-op."
 					);
-					bool summoningMenuBindPressedAndReleased = 
-					(
-						pauseBindHeldTime < waitBindHeldTime
-					);
-					// Check if either menu is triggerable,
-					// but do not attempt to open either just yet.
-					// NOTE: 
-					// The keyboard + mouse can always trigger either menu,
-					// aside from the Summoning Menu when outside of co-op.
-					// P1's controller will not trigger either menu here when in co-op.
-					// Triggering them here would attempt to open each menu twice,
-					// since the co-op bind also opens the menu.
-					bool shouldTriggerDebugMenu = 
-					(
-						(!isHybridModeControllerInput) &&
-						(!glob.coopSessionActive || !isGamepadEvent) &&
-						(debugMenuBindPressedAndReleased && !debugMenuTriggered)
-					);
-					bool shouldTriggerSummoningMenu = 
-					(
-						(!isHybridModeControllerInput) &&
-						(!glob.coopSessionActive || !isGamepadEvent) &&
-						(summoningMenuBindPressedAndReleased && !summoningMenuTriggered)
-					);
-
-					// Cannot trigger summoning menu with the keyboard to start co-op.
-					if (!glob.coopSessionActive && 
-						!isGamepadEvent && 
-						summoningMenuBindPressedAndReleased)
-					{
-						SPDLOG_DEBUG
-						(
-							"Cannot trigger Summoning Menu with keyboard outside of co-op."
-						);
-						RE::DebugMessageBox
-						(
-							"[ALYSLC]\nPlease use player 1's controller "
-							"to open the Summoning Menu when outside of co-op."
-						);
 							
-						// Reset hold time of released bind.
-						if (pauseBindEvent)
-						{
-							pauseBindHeldTime = -1.0f;
-						}
-						else
-						{
-							waitBindHeldTime = -1.0f;
-						}
-						
-						summoningMenuTriggered = 
-						debugMenuTriggered = false;
-						pauseBindHeldTime =
-						waitBindHeldTime = -1.0f;
-						return true;
-					}
-
-					// BEFORE sending events to open any menus.
-					// Temp solution (not failproof), 
-					// since I can't find a direct way of getting the XInput
-					// controller index for the controller Skyrim recognizes as P1's.
-					// NOTE: 
-					// The BSPCGamepadDeviceDelegate's 'userIndex' member seems to 
-					// always equal 0, even if the XInput-reported controller index 
-					// for P1 is not 0, so we can't use that member to set P1's DID.
-					// 
-					// Check to see which controller is requesting to open either co-op menu
-					// and assign its ID as P1's DID.
-					// Heuristic checks the two buttons' event-reported held times 
-					// against the XInput controller state held times.
-					// Will sometimes fail if two players press the same binds 
-					// at nearly the exact same time (within a couple frames),
-					// as the wrong player's DID may be assigned as P1's DID.
-					// Fix by manually assigning the P1 DID through the Debug Menu.
-					auto devMgr = RE::BSInputDeviceManager::GetSingleton();
-					auto gamepad = devMgr ? devMgr->GetGamepad() : nullptr;
-					const auto pauseIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
-					(
-						pauseMask
-					);
-					const auto waitIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
-					(
-						waitMask
-					);
-					// If at least one of the bind masks are not accounted for, 
-					// do not check for the DID below.
-					// Right now, P1's DID is set to a CID unless in hybrid mode (1 controller).
-					bool checkForP1DID = 
-					(
-						(glob.cdh && glob.player1DID == -1) && 
-						(shouldTriggerSummoningMenu || shouldTriggerDebugMenu) &&
-						(pauseIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end()) &&
-						(waitIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
-					);
-					SPDLOG_DEBUG
-					(
-						"Checking for P1 DID: debug menu: {}, summoning menu: {}. "
-						"Reported gamepad user index: {}.",
-						shouldTriggerDebugMenu, shouldTriggerSummoningMenu,
-						gamepad ? gamepad->userIndex : -1337
-					);
-					if (checkForP1DID)
-					{
-						int32_t newDID = -1;
-						if (glob.cdh->activeControllerCount > 1)
-						{
-							// Choose the controller with the smallest held time difference.
-							float smallestHeldTimeDiffTotal = FLT_MAX;
-							for (uint32_t i = 0; i < ALYSLC_MAX_CONTROLLER_COUNT; ++i)
-							{
-								XINPUT_STATE inputState{ };
-								ZeroMemory(&inputState, sizeof(XINPUT_STATE));
-								bool succ = 
-								(
-									XInputGetState(i, std::addressof(inputState)) == 
-									ERROR_SUCCESS
-								);
-								if (!succ)
-								{
-									continue;
-								}
-
-								const auto& inputState1 = 
-								(
-									glob.cdh->GetInputState
-									(
-										i, 
-										shouldTriggerDebugMenu ?
-										pauseIter->second :
-										waitIter->second
-									)
-								);
-								const auto& inputState2 = 
-								(
-									glob.cdh->GetInputState
-									(
-										i, 
-										shouldTriggerDebugMenu ? 
-										waitIter->second : 
-										pauseIter->second
-									)
-								);
-								const auto& firstPressTP1 = 
-								(
-									glob.cdh->firstPressTPsList[i]
-									[
-										shouldTriggerDebugMenu ?
-										!pauseIter->second :
-										!waitIter->second
-									]
-								);
-								const auto& firstPressTP2 = 
-								(
-									glob.cdh->firstPressTPsList[i]
-									[
-										shouldTriggerDebugMenu ?
-										!waitIter->second :
-										!pauseIter->second
-									]
-								);
-
-								float heldTimeDiffTotal = FLT_MAX;
-								if (shouldTriggerDebugMenu)
-								{
-									// If not held at all
-									heldTimeDiffTotal = 
-									(
-										fabsf
-										(
-											pauseBindHeldTime -
-											Util::GetElapsedSeconds(firstPressTP1)
-										) + 
-										fabsf
-										(
-											waitBindHeldTime -
-											Util::GetElapsedSeconds(firstPressTP2)
-										)
-									);
-								}
-								else
-								{
-									heldTimeDiffTotal = 
-									(
-										fabsf
-										(
-											waitBindHeldTime - 
-											Util::GetElapsedSeconds(firstPressTP1)
-										) + 
-										fabsf
-										(
-											pauseBindHeldTime - 
-											Util::GetElapsedSeconds(firstPressTP2)
-										)
-									);
-								}
-								
-								SPDLOG_DEBUG
-								(
-									"DID {}'s diff total: {}. Current min diff total: {}. "
-									"Last recorded input state held times: {}, {}. "
-									"Time since last press: {}, {}. "
-									"Pressed/just released: {}, {} / {}, {}.",
-									i,
-									heldTimeDiffTotal,
-									smallestHeldTimeDiffTotal,
-									inputState1.heldTimeSecs,
-									inputState2.heldTimeSecs,
-									Util::GetElapsedSeconds(firstPressTP1),
-									Util::GetElapsedSeconds(firstPressTP2),
-									inputState1.isPressed,
-									inputState2.isPressed,
-									inputState1.justReleased,
-									inputState2.justReleased
-								);
-								if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
-								{
-									smallestHeldTimeDiffTotal = heldTimeDiffTotal;
-									newDID = i;
-									SPDLOG_DEBUG
-									(
-										"P1 DID set to {}. Min diff total is now: {}.",
-										newDID,
-										smallestHeldTimeDiffTotal
-									);
-								}
-							}
-
-						}
-						else
-						{
-							// First keyboard + mouse index if there's 
-							// 0 or only 1 controller plugged in.
-							newDID = ALYSLC_MAX_CONTROLLER_COUNT;
-						}
-							
-						if (newDID != -1)
-						{
-							SPDLOG_DEBUG("P1 DID set to {}.", newDID);
-							glob.player1DID = newDID;
-						}
-						else
-						{
-							SPDLOG_DEBUG("Did not assign P1 DID. Currently {}.", 
-								glob.player1DID);
-						}
-					}
-
-					// After performing P1 DID check,
-					// we can now open either menu.
-					if (shouldTriggerDebugMenu)
-					{
-						// Can trigger the debug menu at any time, 
-						// even if the camera/P1 manager threads are inactive.
-						if (glob.player1Actor)
-						{
-							SPDLOG_DEBUG
-							(
-								"Debug menu binds pressed but not triggered. "
-								"Opening menu now."
-							);
-							glob.onDebugMenuRequest.SendEvent
-							(
-								glob.player1Actor.get(), 
-								glob.coopSessionActive ? glob.player1DID : -1,
-								0
-							);
-							blockEvent = true;
-						}
-
-						debugMenuTriggered = true;
-					}
-							
-					if (shouldTriggerSummoningMenu)
-					{
-						// NOTE: 
-						// Have to wait until P1 is out of combat to summon other players.
-						// Summoning global variable is set to 1 
-						// in the summoning menu script, and set to 0 
-						// if summoning failed or is complete.
-						if (glob.summoningMenuOpenGlob->value == 0.0f)
-						{
-							bool preventedFromSummoning = 
-							(
-								(glob.isInCoopCombat) ||
-								(glob.player1Actor && glob.player1Actor->IsInCombat())
-							);
-							if (preventedFromSummoning)
-							{
-								if (glob.globalDataInit && glob.coopSessionActive)
-								{
-									glob.moarm->InsertRequest
-									(
-										0, 
-										InputAction::kCoopSummoningMenu, 
-										SteadyClock::now(), 
-										RE::MessageBoxMenu::MENU_NAME
-									);
-								}
-
-								RE::DebugMessageBox
-								(
-									"[ALYSLC]\nA player is in combat. "
-									"Please ensure that all players are not in combat "
-									"before attempting to open the Summoning Menu."
-								);
-							}
-							else if (glob.globalDataInit && glob.allPlayersInit)
-							{
-								for (const auto& p : glob.coopPlayers)
-								{
-									if (!p->isActive)
-									{
-										continue;
-									}
-
-									if (p->isDowned)
-									{
-										if (glob.coopSessionActive)
-										{
-											glob.moarm->InsertRequest
-											(
-												0, 
-												InputAction::kCoopSummoningMenu, 
-												SteadyClock::now(), 
-												RE::MessageBoxMenu::MENU_NAME
-											);
-										}
-
-										RE::DebugMessageBox
-										(
-											"[ALYSLC]\n"
-											"Cannot summon players while a player is downed!"
-										);
-										preventedFromSummoning = true;
-
-										break;
-									}
-								}
-							}
-
-						
-							if (!preventedFromSummoning)
-							{
-								SPDLOG_DEBUG
-								(
-									"Summoning menu binds pressed but not triggered. "
-									"Opening menu now."
-								);
-								glob.onSummoningMenuRequest.SendEvent();
-								blockEvent = true;
-							}
-						}
-						else
-						{
-							RE::DebugMessageBox
-							(
-								"[ALYSLC]\n"
-								"The summoning process is still active. "
-								"Please wait a few seconds before attempting "
-								"to summon other players."
-							);
-						}
-
-						summoningMenuTriggered = true;
-					}
-
-					// After processing, ignore the released button event entirely, 
-					// since we do not want either the pause or wait menus to trigger 
-					// once both the pause and wait binds are pressed at the same time.
-					if (buttonEvent->IsDown() ||
-						buttonEvent->IsHeld() || 
-						buttonEvent->IsUp())
-					{
-						blockEvent = true;
-					}
-
 					// Reset hold time of released bind.
 					if (pauseBindEvent)
 					{
@@ -5104,132 +5054,463 @@ namespace ALYSLC
 					{
 						waitBindHeldTime = -1.0f;
 					}
+						
+					summoningMenuBindPressed = 
+					debugMenuBindPressed = false;
+					pauseBindHeldTime =
+					waitBindHeldTime = -1.0f;
+					return true;
 				}
-				else if ((!emulatedKeyInput) && (buttonEvent->IsDown() || buttonEvent->IsHeld()))
+
+				// BEFORE sending events to open any menus.
+				// Temp solution (not failproof), 
+				// since I can't find a direct way of getting the XInput
+				// controller index for the controller Skyrim recognizes as P1's.
+				// NOTE: 
+				// The BSPCGamepadDeviceDelegate's 'userIndex' member seems to 
+				// always equal 0, even if the XInput-reported controller index 
+				// for P1 is not 0, so we can't use that member to set P1's DID.
+				// 
+				// Check to see which controller is requesting to open either co-op menu
+				// and assign its ID as P1's DID.
+				// Heuristic checks the two buttons' event-reported held times 
+				// against the XInput controller state held times.
+				// Will sometimes fail if two players press the same binds 
+				// at nearly the exact same time (within a couple frames),
+				// as the wrong player's DID may be assigned as P1's DID.
+				// Fix by manually assigning the P1 DID through the Debug Menu.
+				auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+				auto gamepad = devMgr ? devMgr->GetGamepad() : nullptr;
+				const auto pauseIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
+				(
+					pauseMask
+				);
+				const auto waitIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find
+				(
+					waitMask
+				);
+				// If at least one of the bind masks are not accounted for, 
+				// do not check for the DID below.
+				// Right now, P1's DID is set to a CID unless in hybrid mode (1 controller).
+				bool checkForP1DID = 
+				(
+					(glob.cdh && glob.player1DID == -1) && 
+					(shouldTriggerSummoningMenu || shouldTriggerDebugMenu) &&
+					(pauseIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end()) &&
+					(waitIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+				);
+				SPDLOG_DEBUG
+				(
+					"Checking for P1 DID: debug menu: {}, summoning menu: {}. "
+					"Reported gamepad user index: {}.",
+					shouldTriggerDebugMenu, shouldTriggerSummoningMenu,
+					gamepad ? gamepad->userIndex : -1337
+				);
+				if (checkForP1DID)
 				{
-					if (buttonEvent->IsDown())
+					int32_t newDID = -1;
+					if (glob.cdh->activeControllerCount > 1)
 					{
-						SPDLOG_DEBUG
-						(
-							"{} pressed/held on its own. Blocking.", buttonEvent->userEvent
-						);	
-					}
-
-					// Clear out first button event to prevent it 
-					// from triggering the Pause or Wait menus
-					// while the button is still pressed.
-					blockEvent = true;
-				}
-				else if ((!emulatedKeyInput) && (buttonEvent->IsUp()))
-				{
-					// No co-op menus triggered and both binds were pressed and held previously.
-					// Also, either no menus are open, P1 is in control,
-					// the input is from the keyboard when not in hybrid mode,
-					// or the P1 override key is pressed.
-					// Do not want to trigger the Pause/Wait menu 
-					// after already opening either the summoning or debug menus.
-					bool allowThrough = 
-					(
-						(
-							!isHybridModeControllerInput &&
-							!summoningMenuTriggered && 
-							!debugMenuTriggered && 
-							!pauseAndWaitPressed
-						) &&
-						(
-							(emulatedKeyInput) ||
-							(Util::MenusOnlyAlwaysOpen() || glob.menuPID <= 0) ||
-							(
-								(glob.cam->IsRunning() && !isGamepadEvent) ||
-								Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY)
-							)
-						)	
-					);
-					SPDLOG_DEBUG
-					(
-						"Is NOT hybrid mode controller input: {}, "
-						"summoning/debug menu NOT triggered: {}, {}, "
-						"pause and wait NOT pressed: {}, "
-						"emulated input: {}, "
-						"menus always open: {}, menu PID: {}, "
-						"keyboard input and cam active: {}, "
-						"override key pressed: {}.",
-						!isHybridModeControllerInput,
-						!summoningMenuTriggered,
-						!debugMenuTriggered,
-						!pauseAndWaitPressed,
-						emulatedKeyInput,
-						Util::MenusOnlyAlwaysOpen(),
-						glob.menuPID,
-						glob.cam->IsRunning() && !isGamepadEvent,
-						Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY)
-					);
-					if (allowThrough)
-					{
-						SPDLOG_DEBUG
-						(
-							"{} bind released on its own. Event name: {}. Allow through.",
-							pauseBindEvent ? "Pause" : "Wait",
-							buttonEvent->userEvent
-						);
-
-						buttonEvent->heldDownSecs = 0.0f;
-						buttonEvent->value = 1.0f;
-
-						float releaseTime = pauseBindEvent ? pauseBindHeldTime : waitBindHeldTime;
-						if (releaseTime <= 0.0f)
+						// Choose the controller with the smallest held time difference.
+						float smallestHeldTimeDiffTotal = FLT_MAX;
+						for (uint32_t i = 0; i < ALYSLC_MAX_CONTROLLER_COUNT; ++i)
 						{
-							releaseTime = 1.0f;
+							XINPUT_STATE inputState{ };
+							ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+							bool succ = 
+							(
+								XInputGetState(i, std::addressof(inputState)) == 
+								ERROR_SUCCESS
+							);
+							if (!succ)
+							{
+								continue;
+							}
+
+							const auto& inputState1 = 
+							(
+								glob.cdh->GetInputState
+								(
+									i, 
+									shouldTriggerDebugMenu ?
+									pauseIter->second :
+									waitIter->second
+								)
+							);
+							const auto& inputState2 = 
+							(
+								glob.cdh->GetInputState
+								(
+									i, 
+									shouldTriggerDebugMenu ? 
+									waitIter->second : 
+									pauseIter->second
+								)
+							);
+							const auto& firstPressTP1 = 
+							(
+								glob.cdh->firstPressTPsList[i]
+								[
+									shouldTriggerDebugMenu ?
+									!pauseIter->second :
+									!waitIter->second
+								]
+							);
+							const auto& firstPressTP2 = 
+							(
+								glob.cdh->firstPressTPsList[i]
+								[
+									shouldTriggerDebugMenu ?
+									!waitIter->second :
+									!pauseIter->second
+								]
+							);
+
+							float heldTimeDiffTotal = FLT_MAX;
+							if (shouldTriggerDebugMenu)
+							{
+								// If not held at all
+								heldTimeDiffTotal = 
+								(
+									fabsf
+									(
+										pauseBindHeldTime -
+										Util::GetElapsedSeconds(firstPressTP1)
+									) + 
+									fabsf
+									(
+										waitBindHeldTime -
+										Util::GetElapsedSeconds(firstPressTP2)
+									)
+								);
+							}
+							else
+							{
+								heldTimeDiffTotal = 
+								(
+									fabsf
+									(
+										waitBindHeldTime - 
+										Util::GetElapsedSeconds(firstPressTP1)
+									) + 
+									fabsf
+									(
+										pauseBindHeldTime - 
+										Util::GetElapsedSeconds(firstPressTP2)
+									)
+								);
+							}
+								
+							SPDLOG_DEBUG
+							(
+								"DID {}'s diff total: {}. Current min diff total: {}. "
+								"Last recorded input state held times: {}, {}. "
+								"Time since last press: {}, {}. "
+								"Pressed/just released: {}, {} / {}, {}.",
+								i,
+								heldTimeDiffTotal,
+								smallestHeldTimeDiffTotal,
+								inputState1.heldTimeSecs,
+								inputState2.heldTimeSecs,
+								Util::GetElapsedSeconds(firstPressTP1),
+								Util::GetElapsedSeconds(firstPressTP2),
+								inputState1.isPressed,
+								inputState2.isPressed,
+								inputState1.justReleased,
+								inputState2.justReleased
+							);
+							if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
+							{
+								smallestHeldTimeDiffTotal = heldTimeDiffTotal;
+								newDID = i;
+								SPDLOG_DEBUG
+								(
+									"P1 DID set to {}. Min diff total is now: {}.",
+									newDID,
+									smallestHeldTimeDiffTotal
+								);
+							}
 						}
 
-						// NOTE:
-						// Necessary to also send a button-released event,
-						// otherwise pressing and releasing this bind in the future
-						// may fail to trigger the desired effect.
-						RE::InputEvent* buttonEvent2 = 
-						(
-							RE::ButtonEvent::Create
-							(
-								*buttonEvent->device, 
-								buttonEvent->userEvent, 
-								buttonEvent->idCode, 
-								0.0f, 
-								releaseTime
-							)
-						);
-						
-						// Insert after the current event.
-						buttonEvent2->next = buttonEvent->next;
-						buttonEvent->next = buttonEvent2;
-						a_newEventChained = true;
 					}
 					else
 					{
-						// A co-op menu was triggered, 
-						// so ignore the button event on release.
-						SPDLOG_DEBUG
-						(
-							"{} bind released on its own. Event name: {}. Ignoring.",
-							pauseBindEvent ? "Pause" : "Wait", 
-							buttonEvent->userEvent
-						);
-						
-						blockEvent = true;
+						// First keyboard + mouse index if there's 
+						// 0 or only 1 controller plugged in.
+						newDID = ALYSLC_MAX_CONTROLLER_COUNT;
 					}
-
-					// Reset hold times on release.
-					if (pauseBindEvent)
+							
+					if (newDID != -1)
 					{
-						pauseBindHeldTime = -1.0f;
+						SPDLOG_DEBUG("P1 DID set to {}.", newDID);
+						glob.player1DID = newDID;
 					}
-
-					if (waitBindEvent)
+					else
 					{
-						waitBindHeldTime = -1.0f;
+						SPDLOG_DEBUG("Did not assign P1 DID. Currently {}.", 
+							glob.player1DID);
 					}
 				}
+
+				// After performing P1 DID check,
+				// we can now open either menu.
+				if (shouldTriggerDebugMenu)
+				{
+					// Can trigger the debug menu at any time, 
+					// even if the camera/P1 manager threads are inactive.
+					if (glob.player1Actor && !p1ManagersActive)
+					{
+						SPDLOG_DEBUG
+						(
+							"Debug menu binds pressed but not triggered. "
+							"Opening menu now."
+						);
+						glob.onDebugMenuRequest.SendEvent
+						(
+							glob.player1Actor.get(), 
+							glob.coopSessionActive ? glob.player1DID : -1,
+							0
+						);
+					}
+					
+					debugMenuBindPressed = true;
+				}
+							
+				if (shouldTriggerSummoningMenu)
+				{
+					// NOTE: 
+					// Have to wait until P1 is out of combat to summon other players.
+					// Summoning global variable is set to 1 
+					// in the summoning menu script, and set to 0 
+					// if summoning failed or is complete.
+					if (glob.summoningMenuOpenGlob->value == 0.0f)
+					{
+						bool preventedFromSummoning = 
+						(
+							(glob.isInCoopCombat) ||
+							(glob.player1Actor && glob.player1Actor->IsInCombat())
+						);
+						if (preventedFromSummoning)
+						{
+							if (glob.globalDataInit && glob.coopSessionActive)
+							{
+								glob.moarm->InsertRequest
+								(
+									0, 
+									InputAction::kCoopSummoningMenu, 
+									SteadyClock::now(), 
+									RE::MessageBoxMenu::MENU_NAME
+								);
+							}
+
+							RE::DebugMessageBox
+							(
+								"[ALYSLC]\nA player is in combat. "
+								"Please ensure that all players are not in combat "
+								"before attempting to open the Summoning Menu."
+							);
+						}
+						else if (glob.globalDataInit && glob.allPlayersInit)
+						{
+							for (const auto& p : glob.coopPlayers)
+							{
+								if (!p->isActive)
+								{
+									continue;
+								}
+
+								if (p->isDowned)
+								{
+									if (glob.coopSessionActive)
+									{
+										glob.moarm->InsertRequest
+										(
+											0, 
+											InputAction::kCoopSummoningMenu, 
+											SteadyClock::now(), 
+											RE::MessageBoxMenu::MENU_NAME
+										);
+									}
+
+									RE::DebugMessageBox
+									(
+										"[ALYSLC]\n"
+										"Cannot summon players while a player is downed!"
+									);
+									preventedFromSummoning = true;
+
+									break;
+								}
+							}
+						}
+						
+						if (!preventedFromSummoning && !p1ManagersActive)
+						{
+							SPDLOG_DEBUG
+							(
+								"Summoning menu binds pressed but not triggered. "
+								"Opening menu now."
+							);
+							glob.onSummoningMenuRequest.SendEvent();
+						}
+					}
+					else
+					{
+						RE::DebugMessageBox
+						(
+							"[ALYSLC]\n"
+							"The summoning process is still active. "
+							"Please wait a few seconds before attempting "
+							"to summon other players."
+						);
+					}
+					
+					summoningMenuBindPressed = true;
+				}
+
+				// After processing, ignore the button event entirely, 
+				// since we do not want either the pause or wait menus to trigger 
+				// once both the pause and wait binds are pressed at the same time.
+				blockEvent = true;
+
+				// Reset hold time of released bind.
+				if (pauseBindEvent)
+				{
+					pauseBindHeldTime = -1.0f;
+				}
+				else
+				{
+					waitBindHeldTime = -1.0f;
+				}
 			}
-			
+			else if (buttonEvent->IsDown() || buttonEvent->IsHeld())
+			{
+				if (buttonEvent->IsDown())
+				{
+					SPDLOG_DEBUG
+					(
+						"{} pressed/held on its own. Blocking.", buttonEvent->userEvent
+					);	
+				}
+
+				// Clear out first button event to prevent it 
+				// from triggering the Pause or Wait menus
+				// while the button is still pressed.
+				blockEvent = true;
+			}
+			else if (buttonEvent->IsUp())
+			{
+				// No co-op menus triggered and both binds were pressed and held previously.
+				// Also, either no menus are open, P1 is in control,
+				// the input is from the keyboard when not in hybrid mode,
+				// or the P1 override key is pressed.
+				// Do not want to trigger the Pause/Wait menu 
+				// after already opening either the summoning or debug menus.
+				bool allowThrough = 
+				(
+					(!p1ManagersActive || !isGamepadEvent) &&
+					(
+						!isHybridModeControllerInput &&
+						!summoningMenuBindPressed && 
+						!debugMenuBindPressed && 
+						!pauseAndWaitWerePressed
+					) &&
+					(
+						(Util::MenusOnlyAlwaysOpen() || glob.menuPID <= 0) ||
+						(
+							(
+								!glob.cam->IsRunning() &&
+								glob.cam->waitForToggle && 
+								!isGamepadEvent
+							) ||
+							(Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY))
+						)
+					)	
+				);
+				SPDLOG_DEBUG
+				(
+					"Is NOT hybrid mode controller input: {}, "
+					"summoning/debug menu bind NOT pressed: {}, {}, "
+					"pause and wait NOT pressed: {}, "
+					"emulated input: {}, "
+					"menus always open: {}, menu PID: {}, "
+					"keyboard input and cam active: {}, "
+					"override key pressed: {}.",
+					!isHybridModeControllerInput,
+					!summoningMenuBindPressed,
+					!debugMenuBindPressed,
+					!pauseAndWaitWerePressed,
+					emulatedKeyInput,
+					Util::MenusOnlyAlwaysOpen(),
+					glob.menuPID,
+					glob.cam->IsRunning() && !isGamepadEvent,
+					Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY)
+				);
+				if (allowThrough)
+				{
+					SPDLOG_DEBUG
+					(
+						"{} bind released on its own. Event name: {}. Allow through.",
+						pauseBindEvent ? "Pause" : "Wait",
+						buttonEvent->userEvent
+					);
+
+					buttonEvent->heldDownSecs = 0.0f;
+					buttonEvent->value = 1.0f;
+
+					float releaseTime = pauseBindEvent ? pauseBindHeldTime : waitBindHeldTime;
+					if (releaseTime <= 0.0f)
+					{
+						releaseTime = 1.0f;
+					}
+
+					// NOTE:
+					// Necessary to also send a button-released event,
+					// otherwise pressing and releasing this bind in the future
+					// may fail to trigger the desired effect.
+					RE::InputEvent* buttonEvent2 = 
+					(
+						RE::ButtonEvent::Create
+						(
+							*buttonEvent->device, 
+							buttonEvent->userEvent, 
+							buttonEvent->idCode, 
+							0.0f, 
+							releaseTime
+						)
+					);
+						
+					// Insert after the current event.
+					buttonEvent2->next = buttonEvent->next;
+					buttonEvent->next = buttonEvent2;
+					a_newEventChained = true;
+				}
+				else
+				{
+					// A co-op menu was triggered, 
+					// so ignore the button event on release.
+					SPDLOG_DEBUG
+					(
+						"{} bind released on its own. Event name: {}. Ignoring.",
+						pauseBindEvent ? "Pause" : "Wait", 
+						buttonEvent->userEvent
+					);
+						
+					blockEvent = true;
+				}
+
+				// Reset hold times on release.
+				if (pauseBindEvent)
+				{
+					pauseBindHeldTime = -1.0f;
+				}
+
+				if (waitBindEvent)
+				{
+					waitBindHeldTime = -1.0f;
+				}
+			}
+
 			return blockEvent;
 		}
 		
@@ -5385,9 +5666,9 @@ namespace ALYSLC
 			}
 
 			// Only handle pause/journal bind presses and only if just pressed.
-			bool isPauseBind = 
+			bool releasedPauseBind = 
 			{
-				(buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f) &&
+				(buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f) &&
 				(
 					(
 						buttonEvent->idCode == 
@@ -5399,7 +5680,7 @@ namespace ALYSLC
 					)
 				)
 			};
-			if (isPauseBind && buttonEvent->value == 1.0f && buttonEvent->heldDownSecs == 0.0f)
+			if (releasedPauseBind)
 			{
 				glob.mim->EquipP1QSForm();
 			}
@@ -5798,7 +6079,10 @@ namespace ALYSLC
 				glob.globalDataInit && !onlyAlwaysOpen && glob.mim->managerMenuPID != -1
 			);
 			// P1 controlling menus.
-			bool p1ControllingMenus = !onlyAlwaysOpen && glob.menuPID <= 0;
+			bool p1ControllingMenus = 
+			(
+				(!onlyAlwaysOpen) && (glob.menuPID <= 0 || !companionPlayerControllingMenus)
+			);
 			// P1's co-op managers are active.
 			bool p1ManagersActive = 
 			(
@@ -5859,18 +6143,19 @@ namespace ALYSLC
 				bool newEventChained = false;
 				bool shouldBlock = 
 				(
-					CheckForMenuTriggeringInput(inputEvent, newEventChained) ||
 					CheckForP1FavoritesMenuInput(inputEvent) ||
+					CheckForP1DialogueControlInput(inputEvent) ||
 					CheckForP1KeyboardTeleportReq(inputEvent) ||
 					CheckForP1ReviveReq(inputEvent) ||
-					CheckForP1DialogueControlInput(inputEvent) ||
-					CheckForP1QuickSaveReq(inputEvent)
+					CheckForP1QuickSaveReq(inputEvent) ||
+					CheckForMenuTriggeringInput(inputEvent, newEventChained)
 				);
 				if (shouldBlock)
 				{
 					BlockInputEvent(inputEvent);
 				}
 
+				// Skip over the newly chained event.
 				if (newEventChained && inputEvent->next)
 				{
 					prevInputEvent = inputEvent->next;
@@ -5950,26 +6235,12 @@ namespace ALYSLC
 					)
 				);
 
-				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
-				(
-					"Event {} (event type: {}, id code 0x{:X}, pad: 0x{:X}, "
-					"device: {}, companion player controlling menus: {}, from: {}).",
-					eventName,
-					*inputEvent->eventType,
-					buttonEvent ? buttonEvent->idCode : 0xFF,
-					idEvent->pad24,
-					*inputEvent->device,
-					companionPlayerControllingMenus,
-					coopPlayerMenuInput
-				);*/
-
 				// [Hybrid Mode Or No Co-op Camera]
 				// We want to ignore all keyboard inputs when P2 is controlling menus,
 				// except for the 'Esc' key as a failsafe.
 				// We also want to ignore all controller inputs that are not flagged as processable
 				// when no menus are open or when P1 is controlling menus.
-				if (glob.coopSessionActive && !glob.cam->IsRunning())
+				if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop())
 				{
 					// P1 can override other players' menu control while holding down 'LCtrl'.
 					bool p1Override = 
@@ -6587,7 +6858,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"Menu, MIM PID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -6619,7 +6890,7 @@ namespace ALYSLC
 					allowP1RotateLock,
 					allowP2RotateLock,
 					isBlockedP1RotateLockInput
-				);*/
+				);
 				
 				if (!propagateUnmodifiedEvent || !shouldProcess)
 				{
@@ -6683,13 +6954,13 @@ namespace ALYSLC
 			// when preventing analog stick inputs from propagating unmodified.
 			if (*a_event->eventType > RE::INPUT_EVENT_TYPE::kKinect)
 			{
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"Restore input event type {} from {} for {}.",
 					!(*a_event->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1,
 					*a_event->eventType,
 					a_event->QUserEvent()
-				);*/
+				);
 				a_event->eventType = static_cast<RE::INPUT_EVENT_TYPE>
 				(
 					!(*a_event->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1
@@ -6804,7 +7075,7 @@ namespace ALYSLC
 				a_av == RE::ActorValue::kMagicka || 
 				a_av == RE::ActorValue::kStamina
 			);
-
+			
 			// Flash the H/M/S bar as needed.
 			if (auto trueHUD = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUD && hmsActorValue)
 			{
@@ -7196,7 +7467,7 @@ namespace ALYSLC
 
 			// Check if the player must be set as downed when at or below 0 health.
 			// Ignore duplicate calls if the player is already downed 
-			// or if there are no living players..
+			// or if there are no living players.
 			if (a_this->GetActorValue(RE::ActorValue::kHealth) <= 0.0f && 
 				glob.livingPlayers > 0 &&
 				!coopP1->isDowned)
@@ -7285,6 +7556,26 @@ namespace ALYSLC
 						(Settings::fBaseSpeed / 85.0f) * (Settings::fSprintingMovMult / 1.5f)
 					);
 				}
+
+				// Only speed up the getup animation when any of the three extra mechanics 
+				// are enabled while in co-op.
+				bool speedupGetup = 
+				(
+					(glob.coopSessionActive) &&
+					(
+						Settings::bEnableArmsRotation ||
+						Settings::bEnableFlopping ||
+						Settings::bEnableObjectManipulation
+					) &&
+					(
+						coopP1->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
+						coopP1->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp
+					)
+				);
+				if (speedupGetup)
+				{
+					a_data.deltaTime *= 3.0f;
+				}
 			}
 
 			if (coopP1->mm->isDashDodging)
@@ -7326,28 +7617,39 @@ namespace ALYSLC
 
 			const auto& coopP1 = glob.coopPlayers[0];
 			auto hash = Hash(a_eventName);
-			if (glob.partyWiped)
+			if (glob.partyWiped || coopP1->isDowned)
 			{
 				SPDLOG_DEBUG
 				(
-					"Party wiped. Co-op session active: {}, living players: {}, "
+					"Party wiped: {}. P1 state: {}. Co-op session active: {}, living players: {}, "
 					"is dead: {}, is paralyzed: {}, is downed: {}, P1 anim: {}.", 
+					glob.partyWiped,
+					coopP1->coopActor->GetLifeState(),
 					glob.coopSessionActive,
 					glob.livingPlayers,
 					coopP1->coopActor->IsDead(),
 					coopP1->coopActor->boolBits.all(RE::Actor::BOOL_BITS::kParalyzed),
 					coopP1->isDowned,
-					a_eventName
+					a_eventName,
+					glob.p1IsEssential,
+					coopP1->coopActor->GetActorValue(RE::ActorValue::kHealth)
 				);
+				
+				if (Util::MenusOnlyAlwaysOpen() && hash == "bleedOutStop"_h)
+				{
+					// If P1 is downed or all other players are dead,
+					// Prevent P1 from exiting the bleedout state.
+					return false;
+				}
 			}
 
 			if (glob.coopSessionActive)
 			{
-				if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h)
+				if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h && !glob.p1IsEssential)
 				{
 					// Skip bleedout animations when using the co-op revive system.
 					// Players will ragdoll and become unresponsive when reaching 0 health instead.
-					return _NotifyAnimationGraph(a_this, "BleedOutStop");
+					return _NotifyAnimationGraph(a_this, "bleedOutStop");
 				}
 				else if (((coopP1->isDowned && !coopP1->isRevived) || 
 						 (coopP1->coopActor->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) && 
@@ -7394,30 +7696,39 @@ namespace ALYSLC
 				// Also attempt to force the issue by killing P1 if a get up is requested.
 				if (glob.livingPlayers == 0 && hash == "GetUpBegin"_h)
 				{
-					// First, make sure the essential flag is unset.
-					Util::ChangeEssentialStatus(p1, false);
-					p1->KillImpl(p1, FLT_MAX, false, false);
-					p1->KillImmediate();
-					p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
-
-					// Kill calls fail on P1 at times, especially when the player dies in water, 
-					// and the game will not reload.
-					// The kill console command appears to work when this happens, 
-					// so as an extra layer of insurance, run that command here.
-					const auto scriptFactory = 
-					(
-						RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-					);
-					const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-					if (script)
+					if (glob.p1IsEssential)
 					{
-						script->SetCommand("kill");
-						script->CompileAndRun(p1);
-						// Cleanup.
-						delete script;
+						// Make sure P1 can get up if set as essential.
+						p1->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+						return _NotifyAnimationGraph(a_this, a_eventName);
 					}
+					else
+					{
+						// First, make sure the essential flag is unset.
+						Util::ChangeEssentialStatus(p1, false);
+						p1->KillImpl(p1, FLT_MAX, false, false);
+						p1->KillImmediate();
+						p1->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
+						// Kill calls fail on P1 at times, 
+						// especially when the player dies in water, 
+						// and the game will not reload.
+						// The kill console command appears to work when this happens, 
+						// so as an extra layer of insurance, run that command here.
+						const auto scriptFactory = 
+						(
+							RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+						);
+						const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+						if (script)
+						{
+							script->SetCommand("kill");
+							script->CompileAndRun(p1);
+							// Cleanup.
+							delete script;
+						}
 
-					return false;
+						return false;
+					}
 				}
 			}
 
@@ -7454,10 +7765,10 @@ namespace ALYSLC
 				return _Update(a_this, a_delta);
 			}
 			
+			const auto& coopP1 = glob.coopPlayers[0];
 			// Run game's update first.
 			_Update(a_this, a_delta);
 			
-			const auto& coopP1 = glob.coopPlayers[0];
 			//===================
 			// Node Orientations.
 			//===================
@@ -7493,6 +7804,10 @@ namespace ALYSLC
 			{
 				a_this->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kAlive;
 			}
+			/*else if (glob.partyWiped || coopP1->isDowned)
+			{
+				a_this->actorState1.lifeState = RE::ACTOR_LIFE_STATE::kBleedout;
+			}*/
 
 			// Need a valid current process to continue.
 			auto currentProc = a_this->currentProcess; 
@@ -10409,13 +10724,22 @@ namespace ALYSLC
 			// Switch to third person when dead, which will keep the HUD and its messages visible.
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
 			auto playerCam = RE::PlayerCamera::GetSingleton();
-			if (p1 &&
-				playerCam &&
-				glob.globalDataInit && 
-				glob.allPlayersInit &&
-				!glob.cam->IsRunning() &&
-				p1->IsDead() &&
-				glob.partyWiped)
+			bool switchToDeathCam = 
+			{
+				(
+					p1 &&
+					playerCam &&
+					glob.globalDataInit && 
+					glob.allPlayersInit &&
+					!glob.cam->IsRunning() &&
+					glob.partyWiped	
+				) &&
+				(
+					(glob.p1IsEssential && p1->IsBleedingOut()) || 
+					(!glob.p1IsEssential && p1->IsDead())
+				)
+			};
+			if (switchToDeathCam)
 			{
 				if (a_this->currentState->id == RE::CameraState::kBleedout)
 				{
@@ -11090,6 +11414,282 @@ namespace ALYSLC
 			);
 
 			return result;
+		}
+
+		void ContainerMenuHooks::AdvanceMovie
+		(
+			RE::ContainerMenu* a_this, float a_interval, uint32_t a_currentTime
+		)
+		{
+			// Display a companion player's carryweight in the Container Menu 
+			// while they are in control.
+
+			_AdvanceMovie(a_this, a_interval, a_currentTime);
+			auto ui = RE::UI::GetSingleton();
+			if (!ui)
+			{
+				return;
+			}
+
+			if (!ui->IsMenuOpen(a_this->MENU_NAME))
+			{
+				return;
+			}
+
+			if (!glob.globalDataInit || 
+				!glob.coopSessionActive ||
+				!glob.mim->IsRunning() || 
+				glob.menuPID <= 0)
+			{
+				return;
+			}
+
+			auto playerInMenusPtr = Util::GetActorPtrFromHandle(glob.mim->menuCoopActorHandle);
+			if (!playerInMenusPtr)
+			{
+				return;
+			}
+
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return;
+			}
+
+			auto view = a_this->uiMovie;
+			if (!view)
+			{
+				return;
+			}
+
+			RE::GFxValue base{ };
+			view->GetVariable
+			(
+				std::addressof(base), "_root.Menu_mc"
+			);
+			if (base.IsNull() || base.IsUndefined())
+			{
+				SPDLOG_DEBUG("BUH");
+				return;
+			}
+			
+			RE::GFxValue bottomBar{ };
+			base.GetMember("bottomBar", std::addressof(bottomBar));
+			if (bottomBar.IsNull() || bottomBar.IsUndefined())
+			{
+				return;
+			}
+			
+			RE::GFxValue playerCardInfo{ };
+			bottomBar.GetMember("playerInfoCard", std::addressof(playerCardInfo));
+			if (playerCardInfo.IsNull() || playerCardInfo.IsUndefined())
+			{
+				return;
+			}
+			
+			RE::GFxValue carryweightValue{ };
+			playerCardInfo.GetMember("CarryWeightValue", std::addressof(carryweightValue));
+			if (!carryweightValue.IsNull() && !carryweightValue.IsUndefined())
+			{
+				float inventoryWeight = playerInMenusPtr->GetWeightInContainer();
+				const auto invChanges = playerInMenusPtr->GetInventoryChanges();
+				if (invChanges)
+				{
+					inventoryWeight = invChanges->totalWeight;
+				}
+
+				carryweightValue.SetTextHTML
+				(
+					fmt::format
+					(
+						"{} / {}", 
+						std::roundf(inventoryWeight),
+						max(1.0f, playerInMenusPtr->GetActorValue(RE::ActorValue::kCarryWeight))
+					).c_str()
+				);
+			}
+
+			// TODO (maybe):
+			/*
+			const auto& p = glob.coopPlayers
+			[
+				GlobalCoopData::GetCoopPlayerIndex(playerInMenusPtr)
+			];
+			RE::GFxValue armorRatingValue{ };
+			playerCardInfo.GetMember("ArmorRatingValue", std::addressof(armorRatingValue));
+			if (!armorRatingValue.IsNull() && !armorRatingValue.IsUndefined())
+			{
+				armorRatingValue.SetTextHTML
+				(
+					fmt::format
+					(
+						"{}", 
+						static_cast<int32_t>
+						(
+							p->em->armorRatings.first + p->em->armorRatings.second
+						)
+					).c_str()
+				);
+			}
+
+			RE::GFxValue damageValue{ };
+			playerCardInfo.GetMember("DamageValue", std::addressof(damageValue));
+			if (!damageValue.IsNull() && !damageValue.IsUndefined())
+			{
+				float baseDamage = 0.0f;
+				float lhDamage = 0.0f;
+				float rhDamage = 0.0f;
+				if (p->em->IsUnarmed())
+				{
+					baseDamage = p->coopActor->CalcUnarmedDamage();
+				}
+				else
+				{
+					auto lhWeapEntry = p->coopActor->GetEquippedEntryData(true);
+					auto rhWeapEntry = p->coopActor->GetEquippedEntryData(false);
+					bool is2H = 
+					(
+						p->em->Has2HRangedWeapEquipped() || p->em->Has2HMeleeWeapEquipped()
+					);
+					if (rhWeapEntry)
+					{
+						auto hitData = RE::HitData();
+						hitData.Populate(playerInMenusPtr.get(), nullptr, rhWeapEntry);
+						rhDamage = hitData.totalDamage;
+						baseDamage += rhDamage;
+					}
+
+					// Don't double-count 2H weapons.
+					if (lhWeapEntry && !is2H)
+					{
+						auto hitData = RE::HitData();
+						hitData.Populate(playerInMenusPtr.get(), nullptr, lhWeapEntry);
+						lhDamage = hitData.totalDamage;
+						baseDamage += lhDamage;
+					}
+				}
+
+				bool usingRangedWeap = p->em->Has2HRangedWeapEquipped();
+				float ammoDamage = 0.0f;
+				if (usingRangedWeap && p->em->equippedForms[!EquipIndex::kAmmo])
+				{
+					auto inventory = p->coopActor->GetInventory();
+					auto ammo = p->em->equippedForms[!EquipIndex::kAmmo]->As<RE::TESBoundObject>();
+					if (ammo)
+					{
+						auto iter = inventory.find(ammo);
+						if (iter != inventory.end())
+						{
+							auto hitData = RE::HitData();
+							hitData.Populate
+							(
+								playerInMenusPtr.get(), nullptr, iter->second.second.get()
+							);
+							ammoDamage = hitData.totalDamage;
+							baseDamage += ammoDamage;
+						}
+					}
+				}
+				
+				damageValue.SetTextHTML
+				(
+					fmt::format("{}", static_cast<int32_t>(baseDamage + 0.5f)).c_str()
+				);
+
+				float damageDelta = 0.0f;
+				if (a_this->itemList)
+				{
+					auto item = a_this->itemList->GetSelectedItem(); 
+					if (item && item->data.objDesc && item->data.objDesc->object)
+					{
+						auto weap = item->data.objDesc->object->As<RE::TESObjectWEAP>();
+						float selectedItemDamage = 0.0f;
+						if (weap)
+						{
+							auto hitData = RE::HitData();
+							hitData.Populate(playerInMenusPtr.get(), nullptr, item->data.objDesc);
+							selectedItemDamage = hitData.totalDamage;
+							bool is2H = weap->equipSlot == glob.bothHandsEquipSlot;
+							if (is2H)
+							{
+								damageDelta = selectedItemDamage - (lhDamage + rhDamage);
+							}
+							else 
+							{
+								auto rhWeap = p->em->GetRHWeapon();
+								if (rhWeap)
+								{
+									damageDelta = selectedItemDamage - rhDamage;
+								}
+								else
+								{
+									damageDelta = selectedItemDamage;
+								}
+							}
+						}
+						else if (auto ammo = item->data.objDesc->object->As<RE::TESObjectWEAP>(); 
+								 ammo && usingRangedWeap)
+						{
+							auto inventory = p->coopActor->GetInventory();
+							auto iter = inventory.find(ammo);
+							if (iter != inventory.end())
+							{
+								auto hitData = RE::HitData();
+								hitData.Populate
+								(
+									playerInMenusPtr.get(), nullptr, iter->second.second.get()
+								);
+								selectedItemDamage = hitData.totalDamage;
+								damageDelta = selectedItemDamage - ammoDamage;
+							}
+						}
+
+						SPDLOG_DEBUG
+						(
+							"{}: {} has damage {}, damage delta {} from total base damage {}.",
+							playerInMenusPtr->GetName(),
+							item->data.objDesc->object->GetName(),
+							selectedItemDamage,
+							damageDelta,
+							baseDamage
+						);
+					}
+				}
+
+				damageValue.SetMember("textAutoSize", "shrink");
+				if (damageDelta == 0.0f)
+				{
+					damageValue.SetTextHTML
+					(
+						fmt::format("{}", static_cast<int32_t>(baseDamage)).c_str()
+					);
+				}
+				else if (damageDelta < 0.0f)
+				{
+					damageValue.SetTextHTML
+					(
+						fmt::format
+						(
+							"{} <font color=\'#FF0000\'>({})</font>", 
+							static_cast<int32_t>(baseDamage + damageDelta),
+							static_cast<int32_t>(damageDelta)
+						).c_str()
+					);
+				}
+				else
+				{
+					damageValue.SetTextHTML
+					(
+						fmt::format
+						(
+							"{} <font color=\'#189515\'>(+{})</font>", 
+							static_cast<int32_t>(baseDamage + damageDelta),
+							static_cast<int32_t>(damageDelta)
+						).c_str()
+					);
+				}
+			}
+			*/
 		}
 
 		RE::UI_MESSAGE_RESULTS ContainerMenuHooks::ProcessMessage
@@ -12702,6 +13302,243 @@ namespace ALYSLC
 			return _ProcessMessage(a_this, a_message);
 		}
 
+		void StatsMenuHooks::AdvanceMovie
+		(
+			RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
+		)
+		{
+			// Display a companion player's health/magicka/stamina and name + race name
+			// in the Stats Menu while they are in control.
+
+			_AdvanceMovie(a_this, a_interval, a_currentTime);
+
+			auto ui = RE::UI::GetSingleton();
+			if (!ui)
+			{
+				return;
+			}
+
+			if (!ui->IsMenuOpen(a_this->MENU_NAME))
+			{
+				return;
+			}
+			
+			if (!glob.globalDataInit || 
+				!glob.coopSessionActive ||
+				!glob.mim->IsRunning() || 
+				glob.menuPID <= 0)
+			{
+				return;
+			}
+
+			auto playerInMenusPtr = Util::GetActorPtrFromHandle(glob.mim->menuCoopActorHandle);
+			if (!playerInMenusPtr)
+			{
+				return;
+			}
+
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return;
+			}
+
+			auto view = a_this->uiMovie;
+			if (!view)
+			{
+				return;
+			}
+
+			RE::GFxValue base{ };
+			view->GetVariable
+			(
+				std::addressof(base), "_root.StatsMenuBaseInstance"
+			);
+			if (base.IsNull() || base.IsUndefined())
+			{
+				return;
+			}
+			
+			const auto iter = glob.serializablePlayerData.find(playerInMenusPtr->formID);
+			if (iter == glob.serializablePlayerData.end())
+			{
+				return;
+			}
+
+			const auto& data = iter->second;
+			RE::GFxValue firstLastLabel{ };
+			view->GetVariable
+			(
+				std::addressof(firstLastLabel), 
+				"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
+			);
+			if (!firstLastLabel.IsNull() && !firstLastLabel.IsUndefined())
+			{
+				firstLastLabel.SetTextHTML(playerInMenusPtr->GetName());
+			}
+
+			RE::GFxValue raceValueLabel{ };
+			view->GetVariable
+			(
+				std::addressof(raceValueLabel), 
+				"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
+			);
+			if (!raceValueLabel.IsNull() && !raceValueLabel.IsUndefined())
+			{
+				raceValueLabel.SetTextHTML(playerInMenusPtr->race->GetName());
+			}
+
+			// NOTE:
+			// Since we may level up while the Stats Menu is open, 
+			// which will rescale the companion player's HMS values,
+			// we have to obtain the difference in HMS levels from P1's stats, 
+			// which are what changes from leveling up, 
+			// and apply those changes to our serialized HMS levels for the companion player.
+
+			// NOTE 2:
+			// Couldn't figure out why calling the ActionScript function 'SetPlayerInfo()'
+			// caused the Stats Menu UI to go haywire in a heavily modded setup, 
+			// so stuck with calling SetMeter() 3 times instead.
+
+			RE::GFxValue args[4];
+			// Magicka (current, full, color).
+			float tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kMagicka
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kMagicka
+				) 	
+			);
+			// FULL:
+			// Companion player's recorded base amount + their recorded increase so far +
+			// the current change while in the Stats Menu + 
+			// any temporary and permanent modifiers from gear, perks, etc.
+			// (applied to P1 until export when the menu closes).
+			float fullValue = 
+			(
+				data->hmsBasePointsList[1] + 
+				data->hmsPointIncreasesList[1] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+					data->hmsBaseAVsOnMenuEntry[1]
+				) + 
+				tempAndPermMod
+			);
+			// CURRENT:
+			// The max value above modified by the companion player's current damage AV modifier.
+			float currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+				)
+			);
+			
+			args[0] = RE::GFxValue(0);
+			args[1] = RE::GFxValue(std::roundf(currentValue));
+			args[2] = RE::GFxValue(std::roundf(fullValue));
+			args[3] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+			base.Invoke("SetMeter", nullptr, args, 4);
+
+			// Health (current, full, color).
+			tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kHealth
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth
+				) 	
+			);
+			fullValue = 
+			(
+				data->hmsBasePointsList[0] + 
+				data->hmsPointIncreasesList[0] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+					data->hmsBaseAVsOnMenuEntry[0]
+				) + 
+				tempAndPermMod
+			);
+			currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+				)
+			);
+			args[0] = RE::GFxValue(1);
+			args[1] = RE::GFxValue(std::roundf(currentValue));
+			args[2] = RE::GFxValue(std::roundf(fullValue));
+			args[3] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+			base.Invoke("SetMeter", nullptr, args, 4);
+
+			// Stamina (current, max, color).
+			tempAndPermMod = 
+			(
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kStamina
+				) + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kStamina
+				) 	
+			);
+			fullValue = 
+			(
+				data->hmsBasePointsList[2] + 
+				data->hmsPointIncreasesList[2] +
+				(
+					p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+					data->hmsBaseAVsOnMenuEntry[2]
+				) + 
+				tempAndPermMod
+			);
+			currentValue = 
+			(
+				fullValue + 
+				playerInMenusPtr->GetActorValueModifier
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+				)
+			);
+			args[0] = RE::GFxValue(2);
+			args[1] = RE::GFxValue(std::roundf(currentValue));
+			args[2] = RE::GFxValue(std::roundf(fullValue));
+			args[3] = RE::GFxValue
+			(
+				tempAndPermMod == 0.0f ? 0xFFFFFF : 
+				tempAndPermMod < 0.0f ? 0xFF0000 :
+				0x00FF00
+			);
+			base.Invoke("SetMeter", nullptr, args, 4);
+		}
+
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
 		(
 			RE::StatsMenu* a_this, RE::UIMessage& a_message
@@ -12972,11 +13809,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -12996,7 +13831,6 @@ namespace ALYSLC
 						p1GameplayContextEvent == ue->leftAttack)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13045,11 +13879,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
-				glob.menuPID > 0  &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
+				glob.menuPID > 0 &&
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -13068,7 +13900,6 @@ namespace ALYSLC
 					if (p1GameplayContextEvent == ue->jump)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13112,11 +13943,9 @@ namespace ALYSLC
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
 			bool p1OverrideHeld = Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY);
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0  &&
 				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning() &&
 				!Util::OpenMenuStopsMovement())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
@@ -13138,7 +13967,6 @@ namespace ALYSLC
 						p1GameplayContextEvent == ue->zoomOut)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13221,11 +14049,9 @@ namespace ALYSLC
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
 			bool p1OverrideHeld = Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY);
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
 				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning() &&
 				!Util::OpenMenuStopsMovement())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
@@ -13249,74 +14075,10 @@ namespace ALYSLC
 						p1GameplayContextEvent == ue->readyWeapon)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
 			}
-			
-			/*
-			auto thumbstickEvent = 
-			(
-				a_event->device == RE::INPUT_DEVICE::kGamepad && 
-				*a_event->eventType == RE::INPUT_EVENT_TYPE::kThumbstick ? 
-				skyrim_cast<RE::ThumbstickEvent*>(a_event) :
-				nullptr
-			);
-
-			// Thumbstick event that is not from a companion player.
-			auto ue = RE::UserEvents::GetSingleton(); 
-			if (ue && 
-				glob.globalDataInit && 
-				glob.coopSessionActive &&
-				glob.cam->IsRunning() && 
-				thumbstickEvent)
-			{
-				// Allow LS movement processing when motion driven. 
-				// Otherwise, do not handle this movement event.
-				bool menuStopsMovement = Util::OpenMenuStopsMovement();
-				auto p1 = RE::PlayerCharacter::GetSingleton(); 
-				if (p1 && 
-					p1->movementController && 
-					p1->movementController->controlsDriven && 
-					thumbstickEvent->IsLeft() && 
-					!menuStopsMovement)
-				{
-					const auto& coopP1 = glob.coopPlayers[0];
-					// NOTE: 
-					// Completely unnecessary if TDM is installed.
-					if (!ALYSLC::TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled) 
-					{
-						// Adjust the thumbstick event stick displacements
-						// so that P1 moves relative to the co-op camera 
-						// instead of their own facing direction while motion driven.
-						if (thumbstickEvent->xValue != 0.0f && thumbstickEvent->yValue != 0.0f)
-						{
-							float p1FacingToCamYawDiff = -Util::NormalizeAngToPi
-							(
-								glob.cam->camYaw - p1->data.angle.z
-							);
-							float thumbstickAngle = Util::NormalizeAng0To2Pi
-							(
-								atan2f(thumbstickEvent->yValue, thumbstickEvent->xValue)
-							);
-							thumbstickAngle = Util::NormalizeAng0To2Pi
-							(
-								thumbstickAngle + p1FacingToCamYawDiff
-							);
-							thumbstickEvent->xValue = cosf(thumbstickAngle);
-							thumbstickEvent->yValue = sinf(thumbstickAngle);
-						}
-					}
-
-					return true;
-				}
-				else
-				{
-					return false;
-				}
-			}
-			*/
 
 			auto thumbstickEvent = 
 			(
@@ -13421,11 +14183,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -13444,7 +14204,6 @@ namespace ALYSLC
 					if (p1GameplayContextEvent == ue->readyWeapon)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13494,11 +14253,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -13517,7 +14274,6 @@ namespace ALYSLC
 					if (p1GameplayContextEvent == ue->shout)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13567,11 +14323,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -13590,7 +14344,6 @@ namespace ALYSLC
 					if (p1GameplayContextEvent == ue->sneak)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13608,9 +14361,7 @@ namespace ALYSLC
 
 			// 'Sneak' event and has P1 proxied bypass flag.
 			auto buttonEvent = a_event->AsButtonEvent();
-			if ((buttonEvent) && 
-				(a_event->QUserEvent() == ue->sneak)) /*&& 
-				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA))*/
+			if ((buttonEvent) && (a_event->QUserEvent() == ue->sneak))
 			{
 				return true;
 			}
@@ -13640,11 +14391,9 @@ namespace ALYSLC
 
 			// Switch event name to match the corresponding event name in the gameplay context
 			// to allow P1 to perform gameplay actions while another player is controlling menus.
-			if (glob.globalDataInit && 
-				glob.coopSessionActive &&
+			if (GlobalCoopData::IsP1UsingSingleplayerControlsInCoop() &&
 				glob.menuPID > 0 &&
-				!Util::MenusOnlyAlwaysOpen() &&
-				!glob.cam->IsRunning())
+				!Util::MenusOnlyAlwaysOpen())
 			{
 				auto ue = RE::UserEvents::GetSingleton();
 				auto controlMap = RE::ControlMap::GetSingleton();
@@ -13663,7 +14412,6 @@ namespace ALYSLC
 					if (p1GameplayContextEvent == ue->sprint)
 					{
 						idEvent->userEvent = p1GameplayContextEvent;
-						SPDLOG_DEBUG("Allow {}", p1GameplayContextEvent);
 						return true;
 					}
 				}
@@ -13681,9 +14429,7 @@ namespace ALYSLC
 
 			// 'Sprint' event and has P1 proxied bypass flag
 			auto buttonEvent = a_event->AsButtonEvent();
-			if ((buttonEvent) && 
-				(a_event->QUserEvent() == ue->sprint)) /*&& 
-				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA))*/
+			if ((buttonEvent) && (a_event->QUserEvent() == ue->sprint))
 			{
 				return true;
 			}

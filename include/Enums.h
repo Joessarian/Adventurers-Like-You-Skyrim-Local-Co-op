@@ -920,6 +920,8 @@ namespace ALYSLC
 
 		kPlayerBaseSkillLevelsList = 'PBSL',	// List of base skill AV levels.
 		kPlayerSkillIncreasesList = 'PSIL',		// List of increases to the base skill AV levels.
+		kPlayerSkillLegendaryList = 'PSLL',		// List of the number of times each skill
+												// was made Legendary.
 		kPlayerSkillXPList = 'PSXL',			// List of XP earned 
 												// towards each progressing skill AV.
 
@@ -937,11 +939,9 @@ namespace ALYSLC
 
 		kPlayerAvailablePerkPoints = 'PAPP',	// List of perk points availiable 
 												// for this player when leveling up.
-
+		kPlayerTakenSharedPerks = 'PTSP',		// List of all the shared perks this player 
+												// personally allocated perk points to.
 		kPlayerUnlockedPerksList = 'PUPL',		// List of perks that this player has unlocked.
-		kPlayerSharedPerksUnlocked = 'PSPU',	// List of shared perks 
-												// that are unlocked for all players.
-
 		kPlayerUsedPerkPoints = 'PUPP',			// Number of perk points this player has used.
 		kPlayerExtraPerkPoints = 'PEPP',		// Number of additional points 
 												// gained outside of leveling up.

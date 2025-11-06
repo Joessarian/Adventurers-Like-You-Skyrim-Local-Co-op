@@ -391,7 +391,7 @@ namespace ALYSLC
 				firstSavedLevel(0),
 				level(1),
 				levelXP(0.0f),
-				sharedPerksUnlocked(0),
+				sharedPerksTaken(0),
 				usedPerkPoints(0),
 				extraPerkPoints(0),
 				prevTotalUnlockedPerks(0)
@@ -399,6 +399,7 @@ namespace ALYSLC
 				equippedForms.clear();
 				equippedForms = std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr);
 				favoritedMagForms.clear();
+				takenSharedPerksSet.clear();
 				unlockedPerksList.clear();
 				unlockedPerksSet.clear();
 				copiedMagic.fill(nullptr);
@@ -407,6 +408,7 @@ namespace ALYSLC
 				hmsBasePointsList.fill(100.0f);
 				hmsPointIncreasesList.fill(0.0f);
 				hotkeyedForms.fill(nullptr);
+				skillLegendaryList.fill(0);
 				skillBaseLevelsList.fill(0.0f);
 				skillLevelIncreasesList.fill(0.0f);
 				skillLevelsOnMenuEntry.fill(15.0f);
@@ -425,15 +427,17 @@ namespace ALYSLC
 				uint32_t a_availablePerkPoints, 
 				uint32_t a_firstSavedLevel,
 				uint32_t a_level, 
-				uint32_t a_sharedPerksUnlocked, 
+				uint32_t a_sharedPerksTaken, 
 				uint32_t a_usedPerkPoints, 
 				uint32_t a_extraPerkPoints,
 				std::array<float, 3> a_hmsBasePointsList,
 				std::array<float, 3> a_hmsPointIncreasesList,
 				std::array<RE::TESForm*, 8> a_hotkeyedForms,
+				LegendaryCountList a_skillLegendaryList,
 				SkillList a_skillBaseLevelsList,
 				SkillList a_skillLevelIncreasesList,
 				SkillList a_skillXPList,
+				std::vector<RE::BGSPerk*> a_takenSharedPerksList,
 				std::vector<RE::BGSPerk*> a_unlockedPerksList
 			) :
 				copiedMagic(a_copiedMagic),
@@ -445,12 +449,13 @@ namespace ALYSLC
 				availablePerkPoints(a_availablePerkPoints),
 				firstSavedLevel(a_firstSavedLevel),
 				level(a_level),
-				sharedPerksUnlocked(a_sharedPerksUnlocked),
+				sharedPerksTaken(a_sharedPerksTaken),
 				usedPerkPoints(a_usedPerkPoints),
 				extraPerkPoints(a_extraPerkPoints),
 				hmsBasePointsList(a_hmsBasePointsList),
 				hmsPointIncreasesList(a_hmsPointIncreasesList),
 				hotkeyedForms(a_hotkeyedForms),
+				skillLegendaryList(a_skillLegendaryList),
 				skillBaseLevelsList(a_skillBaseLevelsList),
 				skillLevelIncreasesList(a_skillLevelIncreasesList),
 				skillXPList(a_skillXPList),
@@ -459,11 +464,21 @@ namespace ALYSLC
 				hmsBaseAVsOnMenuEntry.fill(0.0f);
 				skillLevelsOnMenuEntry.fill(15.0f);
 				skillLevelThresholdsOnMenuEntry.fill(0.0f);
+				takenSharedPerksSet = std::set<RE::BGSPerk*>
+				(
+					a_takenSharedPerksList.begin(), a_takenSharedPerksList.end()
+				);
 				unlockedPerksSet = std::set<RE::BGSPerk*>
 				(
 					unlockedPerksList.begin(), unlockedPerksList.end()
 				);
 				prevTotalUnlockedPerks = 0;
+			}
+
+			inline void ClearTakenSharedPerks()
+			{
+				takenSharedPerksSet.clear(); 
+				sharedPerksTaken = 0;
 			}
 
 			// Clear cached unlocked perks list, set, and count.
@@ -477,6 +492,12 @@ namespace ALYSLC
 			// Get the serializable player character ID.
 			inline uint32_t GetPlayerCharacterID(){ return playerCharacterID; }
 
+			// Get set of all shared perks this player has personally unlocked.
+			inline const std::set<RE::BGSPerk*>& GetTakenSharedPerksSet() 
+			{
+				return takenSharedPerksSet; 
+			};
+
 			// Get list of all unlocked perks.
 			inline const std::vector<RE::BGSPerk*>& GetUnlockedPerksList() 
 			{ 
@@ -486,15 +507,34 @@ namespace ALYSLC
 			// Get set of all unlocked perks.
 			inline const std::set<RE::BGSPerk*>& GetUnlockedPerksSet() { return unlockedPerksSet; }
 
+			// Check if the player has personally unlocked the given perk.
+			inline bool HasTakenSharedPerk(RE::BGSPerk* a_perk)
+			{
+				return !takenSharedPerksSet.empty() && takenSharedPerksSet.contains(a_perk);
+			}
+
 			// Check if the player has unlocked the given perk.
 			inline bool HasUnlockedPerk(RE::BGSPerk* a_perk) 
 			{
 				return !unlockedPerksSet.empty() && unlockedPerksSet.contains(a_perk);
 			}
+			
+			// Prevent insertion/serialization of duplicate perks.
+			// Return true if successfully inserted, false if duplicate.
+			inline bool InsertTakenSharedPerk(RE::BGSPerk* a_perk) noexcept
+			{
+				if (!takenSharedPerksSet.contains(a_perk))
+				{
+					takenSharedPerksSet.emplace(a_perk);
+					return true;
+				}
+
+				return false;
+			}
 
 			// Prevent insertion/serialization of duplicate perks.
 			// Return true if successfully inserted, false if duplicate.
-			bool InsertUnlockedPerk(RE::BGSPerk* a_perk) noexcept
+			inline bool InsertUnlockedPerk(RE::BGSPerk* a_perk) noexcept
 			{
 				if (unlockedPerksSet.empty() || !unlockedPerksSet.contains(a_perk))
 				{
@@ -507,13 +547,56 @@ namespace ALYSLC
 				return false;
 			}
 
+			// Remove the given perk from the serializable taken perk set.
+			// Return true if successfully removed, false if already removed.
+			inline bool RemoveTakenSharedPerk(RE::BGSPerk* a_perk) noexcept
+			{
+				if (takenSharedPerksSet.empty())
+				{
+					return false;
+				}
+
+				return takenSharedPerksSet.erase(a_perk) > 0;
+			}
+
+			// Remove the given perk from the serializable perk list and set.
+			// Return true if successfully removed, false if already removed.
+			inline bool RemoveUnlockedPerk(RE::BGSPerk* a_perk) noexcept
+			{
+				if (unlockedPerksSet.empty())
+				{
+					return false;
+				}
+
+				auto removedCount = unlockedPerksSet.erase(a_perk);
+				// Eck. Rebuild list.
+				unlockedPerksList = std::vector<RE::BGSPerk*>
+				(
+					unlockedPerksSet.begin(), unlockedPerksSet.end()
+				);
+				return removedCount > 0;
+			}
+
 			// Set the serializable player character ID to the given one.
 			inline void SetPlayerCharacterID(const uint32_t& a_playerCharacterID)
 			{
 				playerCharacterID = a_playerCharacterID;
 			}
+			
+			// Set taken shared perks set directly.
+			inline void SetTakenSharedPerks
+			(
+				const std::vector<RE::BGSPerk*> a_perksList
+			) noexcept
+			{
+				takenSharedPerksSet.clear();
+				takenSharedPerksSet = std::set<RE::BGSPerk*>
+				(
+					a_perksList.begin(), a_perksList.end()
+				);
+			}
 
-			// Set unlocked perks list and set directly.
+			// Set unlocked perks list directly.
 			inline void SetUnlockedPerks(const std::vector<RE::BGSPerk*> a_perksList) noexcept
 			{
 				unlockedPerksList = a_perksList;
@@ -542,6 +625,8 @@ namespace ALYSLC
 			// and can be saved on NPCs, we only serialize the magical favorited forms, 
 			// which are normally saved as a single, P1-only list in MagicFavorites.
 			std::vector<RE::TESForm*> favoritedMagForms;
+			// Number of times this player has made each skill Legendary.
+			LegendaryCountList skillLegendaryList;
 			// Base skill levels for this player.
 			SkillList skillBaseLevelsList;
 			// Increases on the base skill levels for this player.
@@ -558,14 +643,14 @@ namespace ALYSLC
 			uint32_t firstSavedLevel;
 			// Player level.
 			uint32_t level;
-			// Shared perks unlocked by this player.
-			uint32_t sharedPerksUnlocked;
 			// Used levelup perk points.
 			uint32_t usedPerkPoints;
 
 			// [Helper data: NOT Serialized]:
 			// Previous total unlocked perks count.
 			uint32_t prevTotalUnlockedPerks;
+			// Shared perks personally unlocked by this player.
+			uint32_t sharedPerksTaken;
 			// Previous HMS base actor values when opening the Stats Menu.
 			// NOTE: 
 			// The difference in HMS between opening and closing the menu
@@ -588,6 +673,8 @@ namespace ALYSLC
 			uint32_t playerCharacterID;
 			// List of perks that the player has unlocked.
 			std::vector<RE::BGSPerk*> unlockedPerksList;
+			// Set of shared perks that the player has personally spent perk points on.
+			std::set<RE::BGSPerk*> takenSharedPerksSet;
 			// Set of perks that the player has unlocked.
 			std::set<RE::BGSPerk*> unlockedPerksSet;
 		};
@@ -625,12 +712,21 @@ namespace ALYSLC
 		// Then adjust the player's base HMS actor value increases 
 		// when exiting the menu to keep track of how many
 		// times the player leveled up.
-		static void AdjustBaseHMSData(RE::Actor* a_playerActor, const bool& a_shouldImport);
+		static void AdjustBaseHMSData(RE::Actor* a_playerActor, const bool a_shouldImport);
 
 		// Adjust the amount of perk points for P1 
 		// when the given co-op player enters the Stats Menu.
 		// Returns true if P1's level was decreased (dipped) to allow for HMS levelup(s).
 		static bool AdjustInitialPlayer1PerkPoints(RE::Actor* a_playerActor);
+
+		// Update the number of times each skill was made Legendary by the given player
+		// before entering or closing the Stats Menu.
+		// Also update the serialized base level(s) and increment(s) 
+		// for any skills just made Legendary.
+		static void AdjustLegendaryLeveling
+		(
+			RE::Actor* a_playerActor, const bool a_shouldImport
+		);
 
 		// Adjust the number of available perk points for the given actor when they enter/exit
 		// the Stats Menu. For co-op companion players.
@@ -642,6 +738,10 @@ namespace ALYSLC
 		// Same idea as above but specifically for P1.
 		static void AdjustPerkDataForPlayer1(const bool& a_enteringMenu);
 		
+		// Copy over all of P1's serialized unlocked perks
+		// to the player character singleton's perk list.
+		static void ApplyP1SerializedUnlockedPerks();
+
 		// Assign generic killmoves by getting killmove idles 
 		// that aren't explicitly linked to a skeleton type
 		// and grouping them based on weapon type.
@@ -721,6 +821,10 @@ namespace ALYSLC
 		// Checks if the player given by the player ID is not controlling menus.
 		static bool IsNotControllingMenus(const int32_t& a_playerID);
 
+		// Is player 1 using their singleplayer controls?
+		// (co-op camera toggled off or in hybrid mode)
+		static bool IsP1UsingSingleplayerControlsInCoop();
+
 		// Is a co-op player-controllable menu open?
 		static bool IsSupportedMenuOpen();
 
@@ -793,8 +897,14 @@ namespace ALYSLC
 		// Save the default game settings values to revert to for player XP calculations.
 		static void SaveDefaultXPBaseAndMultFromGameSettings();
 
+		// NOTE:
+		// Unused for now.
 		// Save current unlocked perks for all active players to their serializable data sets.
 		static void SaveUnlockedPerksForAllPlayers();
+		
+		// Save current unlocked perks for the P1 to their serializable data set.
+		// Specify if saving before the Stats Menu opens or before it closes.
+		static void SaveUnlockedPerksForP1(bool a_onImport);
 
 		// Save current unlocked perks for the given player to their serializable data set.
 		static void SaveUnlockedPerksForPlayer(RE::Actor* a_coopActor);
@@ -817,6 +927,9 @@ namespace ALYSLC
 		// resetting menu PID/overlay data as well.
 		static void StopMenuInputManager();
 
+		// Sync Legendary leveling counts for shared skills.
+		static void SyncSharedLegendaryLevelingCounts();
+
 		// Sync co-op companions' shared perks to P1's so that all players have the same 
 		// set of perks from the shared skill trees.
 		static void SyncSharedPerks();
@@ -837,7 +950,6 @@ namespace ALYSLC
 		// Unregister global script event registrations (with player ref alias).
 		static void UnregisterEvents();
 
-
 		// Update serlializable data form ID keys/character IDs for all players.
 		// NOTE: 
 		// Serialized data should contain all players' FID keys 
@@ -849,6 +961,14 @@ namespace ALYSLC
 		// Return true if saving is enabled and false if it is disabled.
 		static bool UpdateAllowSavingFlag();
 		
+		// Update the lists of added and removed perks on Stats Menu exit.
+		// Pass in the previous/current sets of unlocked perks to diff.
+		static void UpdatePerkUnlockDiffLists
+		(
+			const std::set<RE::BGSPerk*>& a_prevUnlockedPerks,
+			const std::set<RE::BGSPerk*>& a_currentUnlockedPerks
+		);
+
 		// Update the global co-op combat state flag for all active players.
 		// If one player is in combat, all players are in combat.
 		static void UpdatePlayerCoopCombatState();
@@ -859,6 +979,10 @@ namespace ALYSLC
 		// The given actor's character ID is used as a failsafe to link the given actor 
 		// to their serialized data, even if the form ID changes.
 		static bool UpdatePlayerSerializationIDs(RE::Actor* a_playerActor);
+
+		// Update the sets of taken shared perks and unlocked shared perks counts 
+		// for all players on Stats Menu exit.
+		static void UpdateTakenSharedPerksData(RE::Actor* a_playerActor);
 
 		// Co-op player data copying on menu open/close events.
 		static void CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info);
@@ -954,13 +1078,17 @@ namespace ALYSLC
 		// Defaults to skyrim plugin name.
 		static inline std::string_view PLUGIN_NAME = "ALYSLC.esp"sv;
 
-		// Set of selectable perks through the Stats Menu.
+		// Set of selectable perks and shared perks through the Stats Menu.
 		// Populated with all perk tree node perks on global data initialization.
 		static inline std::set<RE::BGSPerk*> SELECTABLE_PERKS;
+		static inline std::set<RE::BGSPerk*> SELECTABLE_SHARED_PERKS;
 
 		// Separates P1's crosshair text message from the other players' messages
 		// while the co-op camera is disabled.
 		static inline std::string CROSSHAIR_TEXT_SEPARATOR = "\n----------\n";
+
+		// Bestiary Menu name.
+		static constexpr inline std::string_view BESTIARY_MENU = "BestiaryMenu"sv;
 
 		// Custom Menu name.
 		static constexpr inline std::string_view CUSTOM_MENU = "CustomMenu"sv;
@@ -1580,8 +1708,9 @@ namespace ALYSLC
 			RE::StatsMenu::MENU_NAME, 
 			RE::TrainingMenu::MENU_NAME,
 			RE::TweenMenu::MENU_NAME, 
-			ENHANCED_HERO_MENU,
+			BESTIARY_MENU,
 			CUSTOM_MENU,
+			ENHANCED_HERO_MENU,
 			LOOT_MENU
 		};
 
@@ -1890,7 +2019,7 @@ namespace ALYSLC
 		// Unused as of now:
 		// Default formlist containing base game shouts' variation spells.
 		RE::BGSListForm* shoutVarSpellsFormList;
-		// Perks that add new tecniques/skills linked with a specific anim event.
+		// Perks that add new techniques/skills linked with a specific anim event.
 		RE::BGSPerk* criticalChargePerk;
 		RE::BGSPerk* dualCastingAlterationPerk;
 		RE::BGSPerk* dualCastingConjurationPerk;
@@ -2049,6 +2178,10 @@ namespace ALYSLC
 		// List of requested emulated P1 InputEvents to send this frame once chained.
 		std::vector<std::unique_ptr<EmulatedInputEventInfo>> reqInputEvents;
 
+		// Perks added/removed before exiting the Stats Menu.
+		std::vector<RE::BGSPerk*> perksAdded;
+		std::vector<RE::BGSPerk*> perksRemoved;
+
 		// All players constructed.
 		bool allPlayersInit = false;
 		// Co-op session started (all players summoned and session cleanup
@@ -2072,6 +2205,9 @@ namespace ALYSLC
 		bool isSummoningPlayers = false;
 		// Is the game loading a save?
 		bool loadingASave = false;
+		// For compatibility with death-alternative mods that set P1 as essential.
+		// Is P1 essential before being downed?
+		bool p1IsEssential;
 		// Did all players die while in co-op?
 		// Also acts as a failsafe measure to ensure the 'dead' player stays 'dead' 
 		// and doesn't get up as if the revive mechanic were some kind of cheap joke (it is).
@@ -2121,10 +2257,6 @@ namespace ALYSLC
 		int32_t quickLootReqPID;
 		// Number of active, summoned co-op players.
 		uint32_t activePlayers;
-		// Last unlocked shared perks count on perk tree export.
-		uint32_t exportUnlockedSharedPerksCount;
-		// Last unlocked shared perks count on perk tree import.
-		uint32_t importUnlockedSharedPerksCount;
 		// Number of living co-op players.
 		uint32_t livingPlayers;
 		// Hash for the previously set crosshair text.

@@ -91,6 +91,24 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		glob.loadingASave = true;
 		break;
 	}
+	case SKSE::MessagingInterface::kSaveGame:
+	{
+		SPDLOG_INFO("Save game.");
+		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		// Ensure P1 is not essential before the game saves, since this state will carry over
+		// when the save is loaded and become problematic 
+		// if P1 is not in co-op and falls below 0 health.
+		// Guarantees a clean slate upon loading a save and allows death alternative mods
+		// to re-apply their changes to P1's essential status.
+		if (glob.coopSessionActive && !glob.p1IsEssential && p1 && p1->IsEssential())
+		{
+			SPDLOG_INFO("Clear essential flag for P1 before the game saves.");
+			ALYSLC::Util::ChangeEssentialStatus(p1, false);
+		}
+
+		break;
+	}
 	default:
 	{
 		break;

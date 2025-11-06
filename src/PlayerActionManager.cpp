@@ -1193,9 +1193,6 @@ namespace ALYSLC
 		UpdateLastAttackingHand();
 		// Expend stamina or magicka, or grant XP if the appropriate animation event triggers.
 		HandlePerformedAnimationEvents();
-		// Make sure all players are set as essential if using the revive system.
-		// Game will sometimes reset the essential flag after it is set, so check each iteration.
-		SetEssentialForReviveSystem();
 
 		// NOTE: 
 		// Failsafe for killmoves.
@@ -2911,6 +2908,18 @@ namespace ALYSLC
 			// Saved player XP for this skill.
 			float& skillXP = skillXPList[i];
 			const float avLvl = coopActor->GetBaseActorValue(currentAV);
+			if (avLvl < 0.0f)
+			{
+				SPDLOG_DEBUG
+				(
+					"ERR: {} is leveled below 0 ({}). Setting back to original base value {}.",
+					Util::GetActorValueName(currentAV),
+					avLvl,
+					data->skillBaseLevelsList[i]
+				);
+				coopActor->SetBaseActorValue(currentAV, data->skillBaseLevelsList[i]);
+			}
+
 			// XP required to level up this skill.
 			levelUpThreshold = 
 			(
@@ -2922,6 +2931,12 @@ namespace ALYSLC
 				continue;
 			}
 
+			SPDLOG_DEBUG("{}: {} should be leveled up. XP: {}, threshold: {}. Level: {}.",
+				coopActor->GetName(),
+				Util::GetActorValueName(currentAV),
+				skillXP,
+				levelUpThreshold,
+				avLvl);
 			// Trigger skill level up message.
 			bool succ = Util::TriggerFalseSkillLevelUp
 			(
@@ -5768,6 +5783,15 @@ namespace ALYSLC
 		// Ratio of the downed player's health after being fully revived
 		// to the health this player must give up to fully revive them.
 		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
+		SPDLOG_DEBUG
+		(
+			"Revived health: {}, health cost: {}, "
+			"full health cost: {}, health transfer ratio: {}.",
+			downedPlayerTarget->revivedHealth,
+			healthCost,
+			fullHealthCost,
+			healthTransferRatio
+		);
 		// Don't reduce this player's health when in god mode or when the health cost mult is 0.
 		if (!p->isInGodMode || Settings::vfReviveHealthCostMult[playerID] == 0.0f) 
 		{
@@ -6345,49 +6369,6 @@ namespace ALYSLC
 			// Scene packages override run-once and package stack packages,
 			// so it's best to clear the current scene here too, just in case one is set.
 			coopActor->SetCurrentScene(nullptr);
-		}
-	}
-
-	void PlayerActionManager::SetEssentialForReviveSystem()
-	{
-		// Set essential if using the revive system, 
-		// since players do not 'die' right away and instead enter a suspended animation
-		// 'downed' state where they can be revived.
-
-		if (glob.livingPlayers == 0)
-		{
-			return;
-		}
-
-		// Set essential if:
-		// 1. Co-op is active -AND-
-		// 2. The revive system is enabled -AND-
-		// 3. Either the actor base or actor essential flags are not set -AND-
-		// 4. The player is not P1, or P1 revival is enabled.
-		bool canSetAsEssential = 
-		(
-			(
-				glob.coopSessionActive && 
-				Settings::bUseReviveSystem && 
-				!p->coopActor->IsInKillMove() && 
-				coopActor->GetActorBase()
-			) &&
-			(
-				(
-					!p->isPlayer1 && 
-					coopActor->GetActorBase()->actorData.actorBaseFlags.none
-					(
-						RE::ACTOR_BASE_DATA::Flag::kEssential
-					)
-				) || 
-				coopActor->boolFlags.none(RE::Actor::BOOL_FLAGS::kEssential)
-			) &&
-			(!p->isPlayer1 || Settings::bCanRevivePlayer1)
-		);
-		if (canSetAsEssential)
-		{
-			// Set both actor base and actor flags.
-			Util::ChangeEssentialStatus(coopActor.get(), true);
 		}
 	}
 

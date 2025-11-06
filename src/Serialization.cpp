@@ -162,9 +162,10 @@ namespace ALYSLC
 						type != !SerializableDataType::kPlayerHMSPointsIncList &&
 						type != !SerializableDataType::kPlayerLevel &&
 						type != !SerializableDataType::kPlayerLevelXP &&
-						type != !SerializableDataType::kPlayerSharedPerksUnlocked &&
 						type != !SerializableDataType::kPlayerSkillIncreasesList &&
+						type != !SerializableDataType::kPlayerSkillLegendaryList &&
 						type != !SerializableDataType::kPlayerSkillXPList &&
+						type != !SerializableDataType::kPlayerTakenSharedPerks &&
 						type != !SerializableDataType::kPlayerUnlockedPerksList &&
 						type != !SerializableDataType::kPlayerUsedPerkPoints)
 					{
@@ -300,15 +301,6 @@ namespace ALYSLC
 								fid, data->usedPerkPoints
 							);
 						}
-						else if (type == !SerializableDataType::kPlayerSharedPerksUnlocked)
-						{
-							RetrieveUInt32Data(a_intfc, data->sharedPerksUnlocked, type);
-							SPDLOG_DEBUG
-							(
-								"Player with FID 0x{:X} has unlocked {} shared perks.",
-								fid, data->sharedPerksUnlocked
-							);
-						}
 						else if (type == !SerializableDataType::kPlayerExtraPerkPoints)
 						{
 							RetrieveUInt32Data(a_intfc, data->extraPerkPoints, type);
@@ -412,6 +404,23 @@ namespace ALYSLC
 										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
 									), 
 									data->skillLevelIncreasesList[j]
+								);
+							}
+						}
+						else if (type == !SerializableDataType::kPlayerSkillLegendaryList)
+						{
+							for (auto j = 0; j < Skill::kTotal; ++j)
+							{
+								RetrieveUInt32Data(a_intfc, data->skillLegendaryList[j], type);
+								SPDLOG_DEBUG
+								(
+									"Player with FID 0x{:X} has made {} Legendary {} times.",
+									fid, 
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									), 
+									data->skillLegendaryList[j]
 								);
 							}
 						}
@@ -569,6 +578,36 @@ namespace ALYSLC
 								);
 							}
 						}
+						else if (type == !SerializableDataType::kPlayerTakenSharedPerks)
+						{
+							// Read in all unlocked shared perks.
+							uint32_t numUnlockedPerks = 0;
+							RetrieveUInt32Data(a_intfc, numUnlockedPerks, type);
+							SPDLOG_DEBUG
+							(
+								"Player with FID 0x{:X} has personally unlocked {} shared perks.",
+								fid, numUnlockedPerks
+							);
+
+							// Clear and assign.
+							data->ClearTakenSharedPerks();
+							RE::TESForm* perkForm = nullptr;
+							RE::BGSPerk* perk = nullptr;
+							RE::FormID perkFID = 0;
+							for (auto j = 0; j < numUnlockedPerks; ++j)
+							{
+								RetrieveUInt32Data(a_intfc, perkFID, type);
+								perkForm = GetFormFromRetrievedFID
+								(
+									a_intfc, perkFID, dataHandler
+								);
+								perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
+								data->InsertTakenSharedPerk(perk);
+							}
+
+							// Set total.
+							data->sharedPerksTaken = numUnlockedPerks;
+						}
 						else if (type == !SerializableDataType::kPlayerUnlockedPerksList)
 						{
 							// Read in all unlocked perks.
@@ -595,6 +634,9 @@ namespace ALYSLC
 								perk = perkForm ? perkForm->As<RE::BGSPerk>() : nullptr;
 								data->InsertUnlockedPerk(perk);
 							}
+
+							// Set total.
+							data->prevTotalUnlockedPerks = numUnlockedPerks;
 						}
 					}
 				}
@@ -850,41 +892,6 @@ namespace ALYSLC
 					(
 						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerUsedPerkPoints)
-					);
-				}
-
-				// SHARED PERKS UNLOCKED
-				if (a_intfc->OpenRecord
-				(
-					!SerializableDataType::kPlayerSharedPerksUnlocked, 
-					!SerializableDataType::kSerializationVersion
-				))
-				{
-					for (auto& [fid, data] : glob.serializablePlayerData)
-					{
-						SPDLOG_DEBUG
-						(
-							"Serialize SHARED PERKS UNLOCKED for player with FID 0x{:X}: {}.", 
-							fid, data->sharedPerksUnlocked
-						);
-						SerializePlayerUInt32Data
-						(
-							a_intfc, fid, !SerializableDataType::kPlayerSharedPerksUnlocked
-						);
-						SerializePlayerUInt32Data
-						(
-							a_intfc,
-							data->sharedPerksUnlocked, 
-							!SerializableDataType::kPlayerSharedPerksUnlocked
-						);
-					}
-				}
-				else
-				{
-					SPDLOG_ERROR
-					(
-						"Could not open record of type {}.",
-						TypeToString(!SerializableDataType::kPlayerSharedPerksUnlocked)
 					);
 				}
 
@@ -1405,6 +1412,75 @@ namespace ALYSLC
 					
 				}
 
+				// SKILL LEGENDARY COUNT LIST
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerSkillLegendaryList, 
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerSkillLegendaryList
+						);
+						// Do not need to write the number of legendary count entries first,
+						// since this corresponds to the number of skill schools 
+						// and is constant from save to save.
+						uint32_t numLegendaryCountEntries = data->skillLegendaryList.size();
+						if (numLegendaryCountEntries > 0)
+						{
+							for (uint8_t j = 0; j < numLegendaryCountEntries; ++j)
+							{
+								SPDLOG_DEBUG
+								(
+									"Serialize SKILL LEGENDARY COUNT LIST "
+									"for player with FID 0x{:X}: "
+									"Skill {} has been made Legendary {} times.",
+									fid, 
+									Util::GetActorValueName
+									(
+										glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(j))
+									),
+									data->skillLegendaryList[j]
+								);
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 
+									data->skillLegendaryList[j], 
+									!SerializableDataType::kPlayerSkillLegendaryList
+								);
+							}
+						}
+						else
+						{
+							SPDLOG_ERROR
+							(
+								"SKILL LEGENDARY COUNT LIST is empty "
+								"for player with FID 0x{:X}."
+								"Saving 0 Legendary levels for each skill.",
+								fid
+							);
+							for (uint8_t j = 0; j < numLegendaryCountEntries; ++j)
+							{
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 0, !SerializableDataType::kPlayerSkillLegendaryList
+								);
+							}
+						}
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerSkillLegendaryList)
+					);
+				}
+
 				// SKILL XP LIST
 				if (a_intfc->OpenRecord
 				(
@@ -1776,6 +1852,72 @@ namespace ALYSLC
 						TypeToString(!SerializableDataType::kPlayerEmoteIdleEvents)
 					);
 				}
+				
+				// TAKEN SHARED PERKS SET
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerTakenSharedPerks,
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerTakenSharedPerks
+						);
+						// Write number of unlocked perks first, as this varies from save to save.
+						const auto& takenSharedPerksSet = data->GetTakenSharedPerksSet();
+						uint32_t numUnlockedPerks = takenSharedPerksSet.size();
+						SPDLOG_DEBUG
+						(
+							"Serialize TAKEN SHARED PERKS SET "
+							"for 0x{:X}. Number of unlocked perks: {}.", 
+							fid, numUnlockedPerks
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							numUnlockedPerks, 
+							!SerializableDataType::kPlayerTakenSharedPerks
+						);
+
+						// Serialize the FID of each unlocked shared perk next.
+						if (numUnlockedPerks > 0)
+						{
+							for (auto iter = takenSharedPerksSet.begin(); 
+								iter != takenSharedPerksSet.end(); 
+								++iter)
+							{
+								const auto perk = *iter;
+								SPDLOG_DEBUG
+								(
+									"Serialize TAKEN SHARED PERK {} (0x{:X}) "
+									"for player with FID 0x{:X}.",
+									perk ? 
+									perk->GetName() :
+									"NONE", 
+									perk ? perk->formID : 0, 
+									fid
+								);
+								SerializePlayerUInt32Data
+								(
+									a_intfc, 
+									perk ? perk->formID : 0,
+									!SerializableDataType::kPlayerTakenSharedPerks
+								);
+							}
+						}
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerTakenSharedPerks)
+					);
+				}
 
 				// UNLOCKED PERKS LIST
 				if (a_intfc->OpenRecord
@@ -1966,18 +2108,20 @@ namespace ALYSLC
 			std::array<RE::TESForm*, 8> hotkeyedFormsList{ };
 			std::array<float, numSkills> skillBaseLvlList{ };
 			std::array<float, numSkills> skillIncList{ };
+			std::array<uint32_t, numSkills> skillLegendaryCountList{ };
 			std::array<float, numSkills> skillXPList{ };
 
 			// Default filled arrays.
 			// Serialize the co-op player's current level as their base level.
 			// Co-op actors start with 100.0 base HMS points, level 15 skills, 
-			// and 0 skill XP and level/HMS point increases across the board.
+			// and 0 skill XP, Legendary levels, and level/HMS point increases across the board.
 			copiedMagic.fill(nullptr);
 			hmsBasePointsList.fill(100.0f);
 			hmsIncList.fill(0.0f);
 			hotkeyedFormsList.fill(nullptr);
 			skillBaseLvlList.fill(15.0f);
 			skillIncList.fill(0.0f);
+			skillLegendaryCountList.fill(0);
 			skillXPList.fill(0.0f);
 
 			// Set skill base AVs.
@@ -2048,9 +2192,11 @@ namespace ALYSLC
 						hmsBasePointsList,
 						hmsIncList,
 						hotkeyedFormsList,
+						skillLegendaryCountList,
 						skillBaseLvlList,
 						skillIncList,
 						skillXPList, 
+						std::vector<RE::BGSPerk*>(),
 						std::vector<RE::BGSPerk*>()
 					) 
 				}
@@ -2108,11 +2254,11 @@ namespace ALYSLC
 						hmsBasePointsList.fill(100.0f);
 						hmsIncList.fill(0.0f);
 						hotkeyedFormsList.fill(nullptr);
+						skillLegendaryCountList.fill(0);
 						skillBaseLvlList.fill(15.0f);
 						skillIncList.fill(0.0f);
 						// No skill XP to start, unlike for P1.
 						skillXPList.fill(0.0f);
-						uint32_t sharedPerksUnlocked = 0;
 							
 						// Set initial skill base AVs.
 						auto skillBaseLvlList = Util::GetActorSkillLevels(coopPlayers[i]);
@@ -2143,9 +2289,11 @@ namespace ALYSLC
 									hmsBasePointsList,
 									hmsIncList,
 									hotkeyedFormsList,
+									skillLegendaryCountList,
 									skillBaseLvlList,
 									skillIncList,
 									skillXPList,
+									std::vector<RE::BGSPerk*>(),
 									std::vector<RE::BGSPerk*>()
 								) 
 							}

@@ -1874,6 +1874,17 @@ namespace ALYSLC
 		// - Player has LOS or has not lost LOS for too long.
 		bool IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle);
 
+		// EXPERIMENTAL. Unused for now since there is a huge performance hit.
+		// Check if a selectable refr is highlighted by the crosshair
+		// and pick it as the crosshair refr.
+		// No raycasting, iterates over nearby refrs.
+		Raycast::RayResult PickCrosshairRefr
+		(
+			bool a_inCombat,
+			bool a_crosshairActiveForSelection,
+			bool a_showDebugPrints = false
+		);
+
 		// Choose a raycast hit result to use as the crosshair's selected refr.
 		// The chosen result is influenced by whether or not the player is in combat
 		// and whether or not their crosshair is active for target selection.

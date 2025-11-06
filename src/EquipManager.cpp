@@ -169,23 +169,7 @@ namespace ALYSLC
 				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight, -tempMod
 			);
 		}
-
-		coopActor->UpdateHairColor();
-		coopActor->UpdateSkinColor();
-		if (auto actorBase = coopActor->GetActorBase(); actorBase)
-		{
-			actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
-		}
-
-		coopActor->Update3DModel();
-		// Fixes skin glow/tone mismatches.
-		// IMPORTANT:
-		// Resetting while on horseback causes horse warp glitch upon resumption.
-		if (!coopActor->IsOnMount())
-		{
-			coopActor->DoReset3D(true);
-		}
-
+		
 		// Don't re-equip items when transformed or when just unpausing without a data refresh.
 		if (!p->isTransformed && currentState != ManagerState::kPaused) 
 		{
@@ -218,6 +202,22 @@ namespace ALYSLC
 				// in case there was some lingering glitched equip state.
 				EquipFists();
 				ReEquipAll(false);
+			}
+			
+			coopActor->UpdateHairColor();
+			coopActor->UpdateSkinColor();
+			if (auto actorBase = coopActor->GetActorBase(); actorBase)
+			{
+				actorBase->UpdateNeck(coopActor->GetFaceNodeSkinned());
+			}
+
+			coopActor->Update3DModel();
+			// Fixes skin glow/tone mismatches.
+			// IMPORTANT:
+			// Resetting while on horseback causes horse warp glitch upon resumption.
+			if (!coopActor->IsOnMount())
+			{
+				coopActor->DoReset3D(true);
 			}
 		}
 

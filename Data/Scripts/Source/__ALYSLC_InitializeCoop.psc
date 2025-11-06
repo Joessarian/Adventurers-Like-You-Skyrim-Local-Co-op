@@ -48,15 +48,16 @@ Function Init()
 	; Ensure that player 1 can move because this call persists through save games.
 	; If summoning companions and then saving before the co-op session begins,
 	; loading the save will result in player 1 still being stuck in the "don't move" state.
-	; Also remove the essential flag, just in case it was set during co-op if the revive
-	; system is enabled.
 	PlayerRef.SetDontMove(False)
 	PlayerRef.SetActorValue("SpeedMult" , 100.0)
 	PlayerRef.ModActorValue("CarryWeight" , -0.01)
 	PlayerRef.ModActorValue("CarryWeight" , 0.01)
 	PlayerRef.SetActorValue("WeaponSpeedMult", 0.0)
 	PlayerRef.SetActorValue("attackDamageMult", 1.0)
-	PlayerRef.GetActorBase().SetEssential(False)
+	
+	; Also remove the essential flag, just in case it was set during co-op if the revive
+	; system is enabled.
+	;PlayerRef.GetActorBase().SetEssential(False)
 
 	; Ensure that the camera is reset to default.
 	; If cam target was somehow set to another actor when saving,
@@ -111,7 +112,6 @@ Function Init()
 
 			If (CompanionTemp.Is3DLoaded())
 				CompanionTemp.PlaceAtMe(CoopSummonExitPortal.GetBaseObject())
-				UsePortalShader.Play(CompanionTemp, 3.0)
 				Utility.Wait(0.25)
 				AbsorbCompanionShader.Play(PlayerRef, 1.0)
 				CompanionTemp.MoveToMyEditorLocation()

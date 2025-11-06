@@ -4733,7 +4733,6 @@ namespace ALYSLC
 		(
 			playerCam->cameraRoot->world.rotate * RE::NiPoint3(0.0f, 1.0f, 0.0f)
 		);
-		const float pitchToTargetPos = PI / 2.0f; 
 		const float yawToTargetPos = Util::GetYawBetweenPositions(currentPos, startPos);
 		const float currentPitch = Util::DirectionToGameAngPitch(camForward);
 		const float currentYaw = Util::DirectionToGameAngYaw(camForward);
@@ -4741,31 +4740,16 @@ namespace ALYSLC
 		(
 			currentPitch + Util::InterpolateSmootherStep
 			(
-				0.0f, Util::NormalizeAngToPi(pitchToTargetPos - currentPitch), tRatio
+				0.0f, Util::NormalizeAngToPi(PI / 2.0f - currentPitch), tRatio
 			)
 		);
-		bool approachingTargetYaw = fabsf(PI / 2.0f - fabsf(pitchToTargetPos)) > PI / 180.0f;
-		if (approachingTargetYaw)
-		{
-			camYaw = Util::NormalizeAng0To2Pi
+		camYaw = Util::NormalizeAng0To2Pi
+		(
+			camYaw - Util::InterpolateSmootherStep
 			(
-				currentYaw + Util::InterpolateEaseOut
-				(
-					0.0f, Util::NormalizeAngToPi(yawToTargetPos - currentYaw), tRatio, 3.0f
-				)
-			);
-		}
-		else
-		{
-			camYaw = Util::NormalizeAng0To2Pi
-			(
-				currentYaw - Util::InterpolateSmootherStep
-				(
-					0.0f, PI / 720.0f, tRatio
-				)
-			);
-		}
-		
+				0.0f, PI / 720.0f, tRatio
+			)
+		);
 		SetCamOrientation(true);
 	}
 

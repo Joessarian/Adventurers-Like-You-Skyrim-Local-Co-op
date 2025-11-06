@@ -22,13 +22,18 @@ namespace ALYSLC
 
 	void EldenSprintCompat::CheckForEldenSprint(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_eldenSprintInstalled = a_loadInterface->GetPluginInfo("EldenSprint");
+		g_eldenSprintInstalled = 
+		(
+			a_loadInterface->GetPluginInfo("EldenSprint") ||
+			a_loadInterface->GetPluginInfo("LoreRim - Inifinte Stamina Out of Combat")
+		);
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
 		if (!g_eldenSprintInstalled && dataHandler) 
 		{
 			g_eldenSprintInstalled = static_cast<bool>
 			(
-				dataHandler->LookupModByName("EldenSprint.esl")
+				dataHandler->LookupModByName("EldenSprint.esl") ||
+				dataHandler->LookupModByName("LoreRim - Inifinte Stamina Out of Combat.esp")
 			);
 		}
 

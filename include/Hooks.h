@@ -322,6 +322,30 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(DispatchInputEvents)> _DispatchInputEvents;
 		};
 
+		// [Legendary Skills]
+		class LegendarySkillResetConfirmCallbackHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl
+				{
+					RE::VTABLE___LegendarySkillResetConfirmCallback[0] 
+				};
+
+				_Run = vtbl.write_vfunc(0x1, Run);
+				SPDLOG_INFO("Installed Run() hook.");
+			}
+
+		private:
+			static void Run
+			(
+				RE::LegendarySkillResetConfirmCallback* a_this, 
+				RE::IMessageBoxCallback::Message a_msg			
+			);
+			static inline REL::Relocation<decltype(Run)> _Run;
+		};
+
 		// [Melee Hooks]
 		// Credits to dTry:
 		// https://github.com/D7ry/valhallaCombat/blob/Master/src/include/Hooks.h#L61
@@ -355,19 +379,19 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MenuControls[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
 				SPDLOG_INFO("Installed ProcessEvent() hook.");
-				debugMenuTriggered = 
-				pauseAndWaitPressed = 
-				summoningMenuTriggered = false;
+				debugMenuBindPressed = 
+				pauseAndWaitWerePressed = 
+				summoningMenuBindPressed = false;
 				pauseBindHeldTime =
 				waitBindHeldTime = -1.0f;
 			}
 			
-			// Was an attempt made to open the co-op debug menu?
-			static inline bool debugMenuTriggered = false;
+			// Was the bind for the co-op debug menu pressed and released?
+			static inline bool debugMenuBindPressed = false;
 			// Were both the Pause and Wait binds pressed and held at the same time.
-			static inline bool pauseAndWaitPressed;
-			// Was an attempt made to open the co-op summoning menu?
-			static inline bool summoningMenuTriggered = false;
+			static inline bool pauseAndWaitWerePressed;
+			// Was the bind for the co-op summoning menu pressed and released?
+			static inline bool summoningMenuBindPressed = false;
 			// Hold times for the 'Pause' and 'Wait' binds.
 			// -1 if not held.
 			static inline float pauseBindHeldTime = -1.0f;
@@ -388,7 +412,7 @@ namespace ALYSLC
 			// Check if the correct binds were pressed to open the summoning or debug menus.
 			// Store whether or not an additional input event was chained to trigger a menu
 			// in the outparam.
-			// Return trye if the event should be blocked.
+			// Return true if the event should be blocked.
 			static bool CheckForMenuTriggeringInput
 			(
 				RE::InputEvent* a_inputEvent, bool& a_newEventChained
@@ -1108,15 +1132,22 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ContainerMenu[0] };
+				_AdvanceMovie = vtbl.write_vfunc(0x05, AdvanceMovie);
+				SPDLOG_INFO("Installed AdvanceMovie() hook.");
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
 				SPDLOG_INFO("Installed ProcessMessage() hook.");
 			}
 
 		private:
+			static void AdvanceMovie
+			(
+				RE::ContainerMenu* a_this, float a_interval, uint32_t a_currentTime
+			);
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::ContainerMenu* a_this, RE::UIMessage& a_message
 			);
+			static inline REL::Relocation<decltype(AdvanceMovie)> _AdvanceMovie;
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 
@@ -1260,15 +1291,22 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_StatsMenu[0] };
+				_AdvanceMovie = vtbl.write_vfunc(0x05, AdvanceMovie);
+				SPDLOG_INFO("Installed AdvanceMovie() hook.");
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
 				SPDLOG_INFO("Installed ProcessMessage() hook.");
 			}
 
 		private:
+			static void AdvanceMovie
+			(
+				RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
+			);
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::StatsMenu* a_this, RE::UIMessage& a_message
 			);
+			static inline REL::Relocation<decltype(AdvanceMovie)> _AdvanceMovie;
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 

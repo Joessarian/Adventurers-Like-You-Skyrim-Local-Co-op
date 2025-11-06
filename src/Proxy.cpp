@@ -27,6 +27,7 @@ namespace ALYSLC
 		SPDLOG_DEBUG("InitializeGlobalData.");
 		// First time initialization.
 		bool firstTimeInit = !glob.globalDataInit;
+		auto p1 = RE::PlayerCharacter::GetSingleton(); 
 		if (glob.globalDataInit) 
 		{
 			// P1 data may change on loading a save (if another player character's save is loaded).
@@ -87,10 +88,8 @@ namespace ALYSLC
 		// Reset to the default third person camera orientation, 
 		// just in case the game was saved while the co-op cam was active.
 		Util::ResetTPCamOrientation();
-		// Reset essential flag for P1, which may have been set if using the revive system.
-		if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
+		if (p1) 
 		{
-			Util::ChangeEssentialStatus(p1, false);
 			// NOTE: 
 			// The game fails to save P1's perks properly at times,
 			// either clearing all of them, or only saving the perks unlocked by P1 
@@ -156,6 +155,20 @@ namespace ALYSLC
 			return false;
 		}
 		
+		// Set P1 essential designation only once before initializing any player managers.
+		if (!glob.allPlayersInit)
+		{
+			auto p1 = RE::PlayerCharacter::GetSingleton(); 
+			if (p1)
+			{
+				glob.p1IsEssential = p1->IsEssential();
+				SPDLOG_DEBUG
+				(
+					"P1 is essential before initializing all players: {}.", p1->IsEssential()
+				);
+			}
+		}
+
 		// Reset living and active players count before constructing/updating co-op players.
 		glob.livingPlayers = glob.activePlayers = 0;
 
@@ -409,8 +422,6 @@ namespace ALYSLC
 
 				if (a_shouldStart)
 				{
-					// Make sure P1 and companion players are not set to essential before starting.
-					Util::ChangeEssentialStatus(p->coopActor.get(), false);
 					// Make sure the player is not paralyzed either (from being downed).
 					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 					// Register the player for script events 
@@ -434,9 +445,10 @@ namespace ALYSLC
 			GlobalCoopData::ModifyXPPerSkillLevelMult(a_shouldStart);
 			// Turn off god mode for everyone.
 			GlobalCoopData::ToggleGodModeForAllPlayers(false);
-			// Sync shared AVs, perks, and scale companion player's skill AVs.
+			// Sync shared AVs, perks, Legendary levelings, and scale companion player's skill AVs.
 			GlobalCoopData::SyncSharedSkillAVs();
 			GlobalCoopData::SyncSharedPerks();
+			GlobalCoopData::SyncSharedLegendaryLevelingCounts();
 			GlobalCoopData::PerformInitialAVAutoScaling();
 			GlobalCoopData::RescaleActivePlayerAVs();
 			// Set or restore XP threshold.
@@ -1150,6 +1162,7 @@ namespace ALYSLC
 			{
 				baseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
 				Util::StopAllEffectShaders(p->coopActor.get());
+				Util::StopAllHitArtEffects(p->coopActor.get());
 			}
 		}
 	}
