@@ -28,6 +28,8 @@ namespace ALYSLC
 		CoopContainerChangedHandler::Register();
 		// Register crosshair event handler.
 		CoopCrosshairEventHandler::Register();
+		// Register disarm event handler.
+		CoopDisarmEventHandler::Register();
 		// Register equip event handler.
 		CoopEquipEventHandler::Register();
 		// Register hit event handler.
@@ -1259,6 +1261,60 @@ namespace ALYSLC
 		return EventResult::kContinue;
 	}
 
+	CoopDisarmEventHandler* CoopDisarmEventHandler::GetSingleton()
+	{
+		static CoopDisarmEventHandler singleton;
+		return std::addressof(singleton);
+	}
+
+	void CoopDisarmEventHandler::Register()
+	{
+		auto eventSource = RE::DisarmedEvent::GetEventSource();
+		if (eventSource)
+		{
+			eventSource->AddEventSink(CoopDisarmEventHandler::GetSingleton());
+			SPDLOG_INFO("Registered for disarm actor events.");
+		}
+		else
+		{
+			SPDLOG_ERROR("Could not register for disarm actor events.");
+		}
+	}
+
+	EventResult CoopDisarmEventHandler::ProcessEvent
+	(
+		const RE::DisarmedEvent::Event* a_disarmEvent, 
+		RE::BSTEventSource<RE::DisarmedEvent::Event>* a_source
+	)
+	{
+		if (!a_disarmEvent ||
+			!glob.globalDataInit ||
+			!glob.allPlayersInit ||
+			!glob.coopSessionActive)
+		{
+			return EventResult::kContinue;
+		}
+		
+		if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_disarmEvent->target); pIndex != -1)
+		{
+			const auto& p = glob.coopPlayers[pIndex];
+			// Do not need to clear out desired hand forms for P1.
+			if (p->isPlayer1)
+			{
+				return EventResult::kContinue;
+			}
+
+			// If a companion player, clear out desired forms in both hands when disarmed.
+			// Otherwise, the game will continually attempt to disarm the player
+			// and our UnequipObject hook will prevent it from happening each time,
+			// eventually leading to a freeze-crash.
+			SPDLOG_DEBUG("{} was disarmed. Unequip hand forms.", p->coopActor->GetName());
+			p->em->UnequipHandForms(glob.bothHandsEquipSlot);
+		}
+
+		return EventResult::kContinue;
+	}
+
 	CoopEquipEventHandler* CoopEquipEventHandler::GetSingleton()
 	{
 		static CoopEquipEventHandler singleton;
@@ -1433,6 +1489,14 @@ namespace ALYSLC
 		{
 			return EventResult::kContinue;
 		}
+
+		/*SPDLOG_DEBUG
+		(
+			"{} was hit by {}. Flags: 0b{:B}.", 
+			hitRefr ? hitRefr->GetName() : "NONE",
+			aggressorRefr ? aggressorRefr->GetName() : "NONE",
+			*a_hitEvent->flags
+		);*/
 
 		// Essential flag sometimes gets toggled off 
 		// when the game is about to killmove the hit actor.

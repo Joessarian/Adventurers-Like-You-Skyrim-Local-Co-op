@@ -3535,6 +3535,7 @@ namespace ALYSLC
 			}
 
 			// Add item back to co-op player's inventory if missing.
+			/*
 			auto boundObj = item->IsBoundObject() ? item->As<RE::TESBoundObject>() : nullptr; 
 			if (boundObj)
 			{
@@ -3550,6 +3551,7 @@ namespace ALYSLC
 					);
 				}
 			}
+			*/
 
 			// Equip the cached item based on type.
 			switch (*item->formType)
@@ -6490,6 +6492,7 @@ namespace ALYSLC
 		// Exists to deal with the game's equip system or my own code's BS.
 
 		// First, check for mismatches in the biped armor slots.
+		const auto invCounts = coopActor->GetInventoryCounts();
 		for (auto i = !EquipIndex::kFirstBipedSlot; i < !EquipIndex::kTotal; ++i)
 		{
 			// Shield handled as a hand form instead.
@@ -6500,7 +6503,23 @@ namespace ALYSLC
 
 			if (equippedForms[i] != desiredEquippedForms[i])
 			{
-				if (desiredEquippedForms[i])
+				const auto boundObj = 
+				(
+					desiredEquippedForms[i] ?
+					desiredEquippedForms[i]->As<RE::TESBoundObject>() :
+					nullptr
+				);
+				// Can re-equip non-bound objects right away.
+				bool canReEquip = (bool)desiredEquippedForms[i];
+				if (boundObj)
+				{
+					// Only re-equip if the player still has at least one
+					// of the bound object in their inventory.
+					const auto iter = invCounts.find(boundObj);
+					canReEquip = iter != invCounts.end() && iter->second > 0;
+				}
+				
+				if (canReEquip)
 				{
 					SPDLOG_DEBUG
 					(
@@ -6527,7 +6546,7 @@ namespace ALYSLC
 				}
 			}
 		}
-
+		
 		auto currentLHForm = coopActor->GetEquippedObject(true);
 		auto currentRHForm = coopActor->GetEquippedObject(false);
 		bool currentLHFormIsBound = 
@@ -6545,8 +6564,36 @@ namespace ALYSLC
 		auto currentVoiceForm = equippedForms[!EquipIndex::kVoice];
 		auto currentLHEquipType = currentLHForm ? currentLHForm->As<RE::BGSEquipType>() : nullptr;
 		auto currentRHEquipType = currentRHForm ? currentRHForm->As<RE::BGSEquipType>() : nullptr;
+
+		// Get the desired form in both hands.
+		// If the form is a bound object, clear out the form if the player no longer has one 
+		// in their inventory.
 		auto desiredLHForm = desiredEquippedForms[!EquipIndex::kLeftHand];
+		auto boundObj = desiredLHForm ? desiredLHForm->As<RE::TESBoundObject>() : nullptr;
+		if (boundObj)
+		{
+			const auto iter = invCounts.find(boundObj);
+			if (iter == invCounts.end() || iter->second <= 0)
+			{
+				// Will unequip as needed.
+				desiredLHForm = nullptr;
+				desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
+			}
+		}
+			
 		auto desiredRHForm = desiredEquippedForms[!EquipIndex::kRightHand];
+		boundObj = desiredRHForm ? desiredRHForm->As<RE::TESBoundObject>() : nullptr;
+		if (boundObj)
+		{
+			const auto iter = invCounts.find(boundObj);
+			if (iter == invCounts.end() || iter->second <= 0)
+			{
+				// Will unequip as needed.
+				desiredRHForm = nullptr;
+				desiredEquippedForms[!EquipIndex::kRightHand] = nullptr;
+			}
+		}
+
 		auto desiredVoiceForm = desiredEquippedForms[!EquipIndex::kVoice];
 		auto desiredLHEquipType = desiredLHForm ? desiredLHForm->As<RE::BGSEquipType>() : nullptr;
 		auto desiredRHEquipType = desiredRHForm ? desiredRHForm->As<RE::BGSEquipType>() : nullptr;
@@ -6677,7 +6724,6 @@ namespace ALYSLC
 				currentLHForm == currentRHForm)
 			{
 				auto weap = currentLHForm->As<RE::TESObjectWEAP>();
-				const auto invCounts = coopActor->GetInventoryCounts();
 				const auto iter = invCounts.find(weap);
 				if (iter != invCounts.end() && iter->second == 1)
 				{
@@ -6818,6 +6864,8 @@ namespace ALYSLC
 				// and the other hand does not contain a bound weapon, 
 				// or the desired equip slot for the LH/RH weapon is not the 2H slot, 
 				// which would unequip the other hand's bound weapon when equipped.
+				// If the desired form is bound, the player must have at least one of the object 
+				// remaining in their inventory.
 				bool shouldReEquipLH = 
 				(
 					(!p->pam->boundWeapReqLH) && 

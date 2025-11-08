@@ -3214,12 +3214,6 @@ namespace ALYSLC
 				// No events to send by default. 
 				// Do not want to equip selected items onto P1 through trigger presses.
 				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-				RE::ItemList::Item* selectedItem = GetSelectedItem(containerMenu->itemList);
-				if (!selectedItem)
-				{
-					return;
-				}
-
 				auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
 				if (!obj)
 				{

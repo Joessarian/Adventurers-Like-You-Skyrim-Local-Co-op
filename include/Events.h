@@ -204,6 +204,30 @@ namespace ALYSLC
 		CoopDeathEventHandler& operator=(CoopDeathEventHandler&& a_cdeh) = delete;
 	};
 
+	class CoopDisarmEventHandler : public RE::BSTEventSink<RE::DisarmedEvent::Event>
+	{
+	public:
+		using EventResult = RE::BSEventNotifyControl;
+		
+		static CoopDisarmEventHandler* GetSingleton();
+		
+		static void Register();
+		
+		EventResult ProcessEvent
+		(
+			const RE::DisarmedEvent::Event* a_disarmEvent,
+			RE::BSTEventSource<RE::DisarmedEvent::Event>* a_source
+		) override;
+	
+	private:
+		CoopDisarmEventHandler() = default;
+		CoopDisarmEventHandler(const CoopDisarmEventHandler& a_cdeh) = delete;
+		CoopDisarmEventHandler(CoopDisarmEventHandler&& a_cdeh) = delete;
+		~CoopDisarmEventHandler() = default;
+		CoopDisarmEventHandler& operator=(const CoopDisarmEventHandler& a_cdeh) = delete;
+		CoopDisarmEventHandler& operator=(CoopDisarmEventHandler&& a_cdeh) = delete;
+	};
+
 	class CoopEquipEventHandler : public RE::BSTEventSink<RE::TESEquipEvent>
 	{
 	public:

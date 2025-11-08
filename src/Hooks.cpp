@@ -721,8 +721,17 @@ namespace ALYSLC
 				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 
-			SPDLOG_DEBUG("{}: {} (0x{:X}, type: 0x{:X}).", 
-				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType);
+			SPDLOG_DEBUG
+			(
+				"{}: {} (0x{:X}, type: 0x{:X}). Force equip: {}, Unks: {}, {}.", 
+				a_actor->GetName(), 
+				a_object->GetName(),
+				a_object->formID, 
+				*a_object->formType,
+				a_objectEquipParams.forceEquip,
+				a_objectEquipParams.unk23,
+				a_objectEquipParams.unk24
+			);
 
 			bool isBound = 
 			(
@@ -740,6 +749,7 @@ namespace ALYSLC
 				auto armor = a_object->As<RE::TESObjectARMO>(); 
 				if ((armor && armor->IsShield()) || a_object->As<RE::TESObjectLIGH>())
 				{
+					/*
 					// Ignore if the game is trying to unequip the desired shield/torch.
 					if (a_object == p->em->desiredEquippedForms[!EquipIndex::kLeftHand])
 					{
@@ -757,6 +767,7 @@ namespace ALYSLC
 							return;
 						}
 					}
+					*/
 				}
 				else if (armor)
 				{
@@ -789,6 +800,7 @@ namespace ALYSLC
 				}
 				else if (a_object->IsWeapon())
 				{
+					/*
 					uint8_t indexToCheck = !EquipIndex::kRightHand;
 					bool isLHEquip = 
 					{
@@ -813,6 +825,7 @@ namespace ALYSLC
 						);
 						return;
 					}
+					*/
 				}
 				else if (a_object->As<RE::TESShout>())
 				{
@@ -3198,7 +3211,7 @@ namespace ALYSLC
 			}
 
 			const auto& bipedObj = biped->objects[a_equipIndex];
-			bool shouldPreventRemovel = false;
+			bool shouldPreventRemoval = false;
 			if (bipedObj.item)
 			{
 				auto weap = bipedObj.item->As<RE::TESObjectWEAP>();
@@ -3275,7 +3288,7 @@ namespace ALYSLC
 					}
 
 					bool reqRemovalOf2HWeap = weap->equipSlot == glob.bothHandsEquipSlot;
-					shouldPreventRemovel = 
+					shouldPreventRemoval = 
 					(
 						(
 							reqRemovalOf2HWeap &&
@@ -3299,7 +3312,7 @@ namespace ALYSLC
 						weap->GetName(),
 						weap->equipSlot == glob.bothHandsEquipSlot ? "2H" : "1H",
 						a_equipIndex,
-						shouldPreventRemovel ? "IGNORE" : "ALLOW"
+						shouldPreventRemoval ? "IGNORE" : "ALLOW"
 					);
 				}
 				else if (isBoundAmmo)
@@ -3317,15 +3330,16 @@ namespace ALYSLC
 							p->coopActor->GetName(), 
 							bipedObj.item->GetName()
 						);
-						shouldPreventRemovel = true;
+						shouldPreventRemoval = true;
 					}
 				}
+				/*
 				else
 				{
 					// If the weapon biped object to remove is not in preparation 
 					// for a bound weapon equip, 
 					// prevent the game from removing the biped object.
-					shouldPreventRemovel = 
+					shouldPreventRemoval = 
 					(
 						(
 							a_equipIndex == RE::BIPED_OBJECT::kShield &&
@@ -3353,6 +3367,7 @@ namespace ALYSLC
 						"NONE"
 					);
 				}
+				*/
 			}	
 
 			SPDLOG_DEBUG
@@ -3361,9 +3376,9 @@ namespace ALYSLC
 				p->coopActor->GetName(), 
 				bipedObj.item ? bipedObj.item->GetName() : "NONE",
 				!a_equipIndex,
-				shouldPreventRemovel ? "IGNORE" : "ALLOW"
+				shouldPreventRemoval ? "IGNORE" : "ALLOW"
 			);
-			if (shouldPreventRemovel)
+			if (shouldPreventRemoval)
 			{
 				return;
 			}
@@ -4466,8 +4481,15 @@ namespace ALYSLC
 			{
 				return _ProcessHit(a_victim, a_hitData);
 			}
-
+			
 			const auto attackerPtr = Util::GetActorPtrFromHandle(a_hitData.aggressor); 
+			SPDLOG_DEBUG
+			(
+				"{} was hit by {}. Flags: 0b{:B}.", 
+				a_victim ? a_victim->GetName() : "NONE",
+				attackerPtr ? attackerPtr->GetName() : "NONE",
+				*a_hitData.flags
+			);
 			if (!attackerPtr)
 			{
 				return _ProcessHit(a_victim, a_hitData);;
@@ -4582,6 +4604,19 @@ namespace ALYSLC
 							p->playerID, RE::ActorValue::kHeavyArmor, heavyArmorBaseXP
 						);
 					}
+				}
+
+				if (a_hitData.flags.any
+				(
+					RE::HitData::Flag::kDisableWeapon, RE::HitData::Flag::kDisarm
+				))
+				{
+					SPDLOG_DEBUG
+					(
+						"{} was disarmed by {}. Unequip hand forms.", 
+						p->coopActor->GetName(), attackerPtr->GetName()
+					);
+					p->em->UnequipHandForms(glob.bothHandsEquipSlot);
 				}
 			}
 

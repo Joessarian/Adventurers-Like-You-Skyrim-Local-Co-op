@@ -5888,39 +5888,41 @@ namespace ALYSLC
 				}
 				else
 				{
+					// Have to trigger a normal RH attack before the H2H power attack idle;
+					// otherwise, the power attack idle will fail to play.
+					if (!ALYSLC::MCOCompat::g_mcoInstalled) 
+					{
+						Util::RunPlayerActionCommand
+						(
+							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+						);
+					}
+					
 					// The default unarmed right power attack fails to trigger 
 					// via action command at times if using MCO.
 					// Play the corresponding MCO idle instead.
-					if (ALYSLC::MCOCompat::g_mcoInstalled) 
+					if (a_p->em->RHEmpty())
 					{
-						if (a_p->em->RHEmpty()) 
+						if (ALYSLC::MCOCompat::g_mcoInstalled) 
 						{
 							Util::PlayIdle("ADXP_NPCPowerAttack_H2H", a_p->coopActor.get());
 						}
 						else
 						{
-							Util::PlayIdle("ADXP_NPCPowerAttack", a_p->coopActor.get());
+							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
 						}
 					}
 					else
 					{
-						// Have to trigger a normal RH attack before the H2H power attack idle;
-						// otherwise, the power attack idle will fail to play.
+						if (ALYSLC::MCOCompat::g_mcoInstalled) 
+						{
+							Util::PlayIdle("ADXP_NPCPowerAttack", a_p->coopActor.get());
+						}
+
 						Util::RunPlayerActionCommand
 						(
-							RE::DEFAULT_OBJECT::kActionRightAttack, a_p->coopActor.get()
+							RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get()
 						);
-						if (a_p->em->RHEmpty())
-						{
-							Util::PlayIdle("H2HRightHandPowerAttack", a_p->coopActor.get());
-						}
-						else
-						{
-							Util::RunPlayerActionCommand
-							(
-								RE::DEFAULT_OBJECT::kActionRightPowerAttack, a_p->coopActor.get()
-							);
-						}
 					}
 				}
 			}
@@ -9894,11 +9896,13 @@ namespace ALYSLC
 					false
 				);
 			}
-
+			
+			// Redundancy since block start/stop requests fail at times.
 			Util::RunPlayerActionCommand
 			(
 				RE::DEFAULT_OBJECT::kActionLeftAttack, a_p->coopActor.get()
 			);
+			a_p->coopActor->NotifyAnimationGraph("blockStart");
 			bool canShieldChargeAfter = 
 			{
 				a_p->mm->lsMoved &&
