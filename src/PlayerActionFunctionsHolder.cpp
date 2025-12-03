@@ -2583,6 +2583,14 @@ namespace ALYSLC
 						// Keep the original desired LH and RH forms.
 						auto lhForm = a_p->em->desiredEquippedForms[!EquipIndex::kLeftHand];
 						auto rhForm = a_p->em->desiredEquippedForms[!EquipIndex::kRightHand];
+						auto lhUniqueID = 
+						(
+							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand]
+						);
+						auto rhUniqueID = 
+						(
+							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand]
+						);
 						Util::AddSyncedTask
 						(
 							[
@@ -2602,12 +2610,14 @@ namespace ALYSLC
 									if (lhForm && form == lhForm)
 									{
 										a_p->em->desiredEquippedForms[i] = nullptr;
+										a_p->em->desiredEquippedUniqueIDs[i] = 0;
 										lhEquipIndices.emplace_back(static_cast<EquipIndex>(i));
 									}
 
 									if (rhForm && form == rhForm)
 									{
 										a_p->em->desiredEquippedForms[i] = nullptr;
+										a_p->em->desiredEquippedUniqueIDs[i] = 0;
 										rhEquipIndices.emplace_back(static_cast<EquipIndex>(i));
 									}
 								}
@@ -2816,6 +2826,8 @@ namespace ALYSLC
 								a_boundWeap,
 								lhForm, 
 								rhForm,
+								lhUniqueID,
+								rhUniqueID,
 								&lhEquipIndices,
 								&rhEquipIndices,
 								originalEquipSlot
@@ -2848,11 +2860,13 @@ namespace ALYSLC
 								for (const auto& equipIndex : lhEquipIndices)
 								{
 									a_p->em->desiredEquippedForms[!equipIndex] = lhForm;
+									a_p->em->desiredEquippedUniqueIDs[!equipIndex] = lhUniqueID;
 								}
 
 								for (const auto& equipIndex : rhEquipIndices)
 								{
 									a_p->em->desiredEquippedForms[!equipIndex] = rhForm;
+									a_p->em->desiredEquippedUniqueIDs[!equipIndex] = rhUniqueID;
 								}
 
 								// Grant XP.

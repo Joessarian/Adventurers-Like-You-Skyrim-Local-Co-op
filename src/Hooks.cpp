@@ -732,7 +732,7 @@ namespace ALYSLC
 				a_objectEquipParams.unk23,
 				a_objectEquipParams.unk24
 			);
-
+			
 			bool isBound = 
 			(
 				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
@@ -745,11 +745,10 @@ namespace ALYSLC
 				//===================================================
 				// Cases in which the unequip call should be skipped.
 				//===================================================
-
+				
 				auto armor = a_object->As<RE::TESObjectARMO>(); 
 				if ((armor && armor->IsShield()) || a_object->As<RE::TESObjectLIGH>())
 				{
-					/*
 					// Ignore if the game is trying to unequip the desired shield/torch.
 					if (a_object == p->em->desiredEquippedForms[!EquipIndex::kLeftHand])
 					{
@@ -767,7 +766,6 @@ namespace ALYSLC
 							return;
 						}
 					}
-					*/
 				}
 				else if (armor)
 				{
@@ -800,7 +798,6 @@ namespace ALYSLC
 				}
 				else if (a_object->IsWeapon())
 				{
-					/*
 					uint8_t indexToCheck = !EquipIndex::kRightHand;
 					bool isLHEquip = 
 					{
@@ -825,7 +822,6 @@ namespace ALYSLC
 						);
 						return;
 					}
-					*/
 				}
 				else if (a_object->As<RE::TESShout>())
 				{
@@ -2534,7 +2530,7 @@ namespace ALYSLC
 				return _DrawWeaponMagicHands(a_this, a_draw);;
 			}
 		}
-
+		
 		void CharacterHooks::HandleHealthDamage
 		(
 			RE::Character* a_this, RE::Actor* a_attacker, float a_damage
@@ -2542,7 +2538,7 @@ namespace ALYSLC
 		{
 			// NOTE: 
 			// The given damage is negative.
-			if (!glob.globalDataInit && !glob.coopSessionActive)
+			if (!glob.globalDataInit || !glob.coopSessionActive)
 			{
 				return _HandleHealthDamage(a_this, a_attacker, a_damage);;
 			}
@@ -3177,6 +3173,89 @@ namespace ALYSLC
 			_PutCreatedPackage(a_this, a_package, a_tempPackage, a_createdPackage);
 		}
 
+		RE::ObjectRefHandle* CharacterHooks::RemoveItem
+		(
+			RE::Character* a_this,
+			RE::ObjectRefHandle& a_handleOut,
+			RE::TESBoundObject* a_item,
+			std::int32_t a_count, 
+			RE::ITEM_REMOVE_REASON a_reason, 
+			RE::ExtraDataList* a_extraList,
+			RE::TESObjectREFR* a_moveToRef, 
+			const RE::NiPoint3* a_dropLoc,
+			const RE::NiPoint3* a_rotate
+		)
+		{
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive || !a_item)
+			{
+				return _RemoveItem
+				(
+					a_this, 
+					a_handleOut,
+					a_item, 
+					a_count,
+					a_reason, 
+					a_extraList, 
+					a_moveToRef,
+					a_dropLoc, 
+					a_rotate
+				);
+			}
+
+			// Unequip form before removal.
+			if (const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex > 0)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				SPDLOG_DEBUG
+				(
+					"{} is removing {} of {} from their inventory.",
+					p->coopActor->GetName(),
+					a_count,
+					a_item->GetName()
+				);
+				// Refresh equip state first.
+				p->em->RefreshEquipState(RefreshSlots::kAll);
+				for (EquipIndex index = EquipIndex::kLeftHand;
+					index < EquipIndex::kTotal;
+					index = static_cast<EquipIndex>(!index + 1))
+				{
+					const auto form = p->em->equippedForms[!index];
+					if (!form || form != a_item)
+					{
+						continue;
+					}
+					
+					// For now, ignore checking for matching extra data list
+					// because if the object's extra data list is not found 
+					// in any of the player's inventory entries for some reason, 
+					// our UnequipObject() hook will treat the removed object 
+					// as the desired in-slot form and prevent the object 
+					// from being unequipped, freezing the game.
+					SPDLOG_DEBUG
+					(
+						"Unequip {} from equip index {} on {} before removal.",
+						a_item->GetName(),
+						index,
+						p->coopActor->GetName()
+					);
+					p->em->UnequipFormAtIndex(index);
+				}
+			}
+
+			return _RemoveItem
+			(
+				a_this, 
+				a_handleOut,
+				a_item, 
+				a_count,
+				a_reason, 
+				a_extraList, 
+				a_moveToRef,
+				a_dropLoc, 
+				a_rotate
+			);
+		}
+
 		void CharacterHooks::RemoveWeapon(RE::Character* a_this, RE::BIPED_OBJECT a_equipIndex)
 		{
 			// Sometimes, the game removes bound weapons before or without an equip event 
@@ -3333,7 +3412,6 @@ namespace ALYSLC
 						shouldPreventRemoval = true;
 					}
 				}
-				/*
 				else
 				{
 					// If the weapon biped object to remove is not in preparation 
@@ -3367,7 +3445,6 @@ namespace ALYSLC
 						"NONE"
 					);
 				}
-				*/
 			}	
 
 			SPDLOG_DEBUG
@@ -4226,7 +4303,6 @@ namespace ALYSLC
 				glob.mim->queuedInputEvents.clear();
 			}
 			
-
 			return _DispatchInputEvents(a_this, a_inputEvents);
 		}
 
@@ -5443,7 +5519,6 @@ namespace ALYSLC
 				// after already opening either the summoning or debug menus.
 				bool allowThrough = 
 				(
-					(!p1ManagersActive || !isGamepadEvent) &&
 					(
 						!isHybridModeControllerInput &&
 						!summoningMenuBindPressed && 
@@ -5454,9 +5529,11 @@ namespace ALYSLC
 						(Util::MenusOnlyAlwaysOpen() || glob.menuPID <= 0) ||
 						(
 							(
-								!glob.cam->IsRunning() &&
-								glob.cam->waitForToggle && 
-								!isGamepadEvent
+								(!isGamepadEvent) &&
+								(
+									(glob.cam->IsRunning()) || 
+									(!glob.cam->waitForToggle && !glob.hybridModeActive)
+								)
 							) ||
 							(Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY))
 						)
@@ -5469,7 +5546,7 @@ namespace ALYSLC
 					"pause and wait NOT pressed: {}, "
 					"emulated input: {}, "
 					"menus always open: {}, menu PID: {}, "
-					"keyboard input and cam active: {}, "
+					"keyboard input and cam active with 2+ players: {}, "
 					"override key pressed: {}.",
 					!isHybridModeControllerInput,
 					!summoningMenuBindPressed,
@@ -5478,7 +5555,11 @@ namespace ALYSLC
 					emulatedKeyInput,
 					Util::MenusOnlyAlwaysOpen(),
 					glob.menuPID,
-					glob.cam->IsRunning() && !isGamepadEvent,
+					(!isGamepadEvent) &&
+					(
+						(glob.cam->IsRunning()) || 
+						(!glob.cam->waitForToggle && !glob.hybridModeActive)
+					),
 					Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY)
 				);
 				if (allowThrough)
@@ -6339,20 +6420,21 @@ namespace ALYSLC
 							)
 						)
 					);
+					// REMOVE when done debugging.
+					SPDLOG_DEBUG
+					(
+						"Event {} (id code 0x{:X}, device: {}). "
+						"Ignore P1 input: {}, ignore P2 input: {}. "
+						"Override substitute key released: {}.",
+						idEvent->userEvent,
+						buttonEvent ? buttonEvent->idCode : 0xFF,
+						*inputEvent->device,
+						ignoreP1Input,
+						ignoreP2Input,
+						overrideSubstituteKeyReleased
+					);
 					if (ignoreP1Input || ignoreP2Input)
 					{
-						// REMOVE when done debugging.
-						/*SPDLOG_DEBUG
-						(
-							"Event {} (id code 0x{:X}, device: {}). "
-							"Ignore P1 input: {}, ignore P2 input: {}.",
-							idEvent->userEvent,
-							buttonEvent ? buttonEvent->idCode : 0xFF,
-							*inputEvent->device,
-							ignoreP1Input,
-							ignoreP2Input
-						);*/
-
 						// Block the event from being processed by the MenuControls handler,
 						// but allow other handlers to process the event afterward.
 						BlockInputEvent(inputEvent);
@@ -10987,9 +11069,13 @@ namespace ALYSLC
 			{
 				_BeginBCS(a_this);
 			}
-			else
+			else if (skyrim_cast<RE::HorseCameraState*>(a_this))
 			{
 				_BeginHCS(a_this);
+			}
+			else
+			{
+				_BeginTPCS(a_this);
 			}
 		}
 
@@ -11103,7 +11189,8 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (Util::OpenMenuStopsMovement())
+				auto ui = RE::UI::GetSingleton();
+				if (ui && ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME))
 				{
 					return;
 				}
@@ -13337,268 +13424,101 @@ namespace ALYSLC
 			return _ProcessMessage(a_this, a_message);
 		}
 
-		void StatsMenuHooks::AdvanceMovie
-		(
-			RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
-		)
-		{
-			// Display a companion player's health/magicka/stamina and name + race name
-			// in the Stats Menu while they are in control.
-
-			_AdvanceMovie(a_this, a_interval, a_currentTime);
-
-			auto ui = RE::UI::GetSingleton();
-			if (!ui)
-			{
-				return;
-			}
-
-			if (!ui->IsMenuOpen(a_this->MENU_NAME))
-			{
-				return;
-			}
-			
-			if (!glob.globalDataInit || 
-				!glob.coopSessionActive ||
-				!glob.mim->IsRunning() || 
-				glob.menuPID <= 0)
-			{
-				return;
-			}
-
-			auto playerInMenusPtr = Util::GetActorPtrFromHandle(glob.mim->menuCoopActorHandle);
-			if (!playerInMenusPtr)
-			{
-				return;
-			}
-
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!p1)
-			{
-				return;
-			}
-
-			auto view = a_this->uiMovie;
-			if (!view)
-			{
-				return;
-			}
-
-			RE::GFxValue base{ };
-			view->GetVariable
-			(
-				std::addressof(base), "_root.StatsMenuBaseInstance"
-			);
-			if (base.IsNull() || base.IsUndefined())
-			{
-				return;
-			}
-			
-			const auto iter = glob.serializablePlayerData.find(playerInMenusPtr->formID);
-			if (iter == glob.serializablePlayerData.end())
-			{
-				return;
-			}
-
-			const auto& data = iter->second;
-			RE::GFxValue firstLastLabel{ };
-			view->GetVariable
-			(
-				std::addressof(firstLastLabel), 
-				"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
-			);
-			if (!firstLastLabel.IsNull() && !firstLastLabel.IsUndefined())
-			{
-				firstLastLabel.SetTextHTML(playerInMenusPtr->GetName());
-			}
-
-			RE::GFxValue raceValueLabel{ };
-			view->GetVariable
-			(
-				std::addressof(raceValueLabel), 
-				"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
-			);
-			if (!raceValueLabel.IsNull() && !raceValueLabel.IsUndefined())
-			{
-				raceValueLabel.SetTextHTML(playerInMenusPtr->race->GetName());
-			}
-
-			// NOTE:
-			// Since we may level up while the Stats Menu is open, 
-			// which will rescale the companion player's HMS values,
-			// we have to obtain the difference in HMS levels from P1's stats, 
-			// which are what changes from leveling up, 
-			// and apply those changes to our serialized HMS levels for the companion player.
-
-			// NOTE 2:
-			// Couldn't figure out why calling the ActionScript function 'SetPlayerInfo()'
-			// caused the Stats Menu UI to go haywire in a heavily modded setup, 
-			// so stuck with calling SetMeter() 3 times instead.
-
-			RE::GFxValue args[4];
-			// Magicka (current, full, color).
-			float tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kMagicka
-				) + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kMagicka
-				) 	
-			);
-			// FULL:
-			// Companion player's recorded base amount + their recorded increase so far +
-			// the current change while in the Stats Menu + 
-			// any temporary and permanent modifiers from gear, perks, etc.
-			// (applied to P1 until export when the menu closes).
-			float fullValue = 
-			(
-				data->hmsBasePointsList[1] + 
-				data->hmsPointIncreasesList[1] +
-				(
-					p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-					data->hmsBaseAVsOnMenuEntry[1]
-				) + 
-				tempAndPermMod
-			);
-			// CURRENT:
-			// The max value above modified by the companion player's current damage AV modifier.
-			float currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-				)
-			);
-			
-			args[0] = RE::GFxValue(0);
-			args[1] = RE::GFxValue(std::roundf(currentValue));
-			args[2] = RE::GFxValue(std::roundf(fullValue));
-			args[3] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
-			base.Invoke("SetMeter", nullptr, args, 4);
-
-			// Health (current, full, color).
-			tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kHealth
-				) + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kHealth
-				) 	
-			);
-			fullValue = 
-			(
-				data->hmsBasePointsList[0] + 
-				data->hmsPointIncreasesList[0] +
-				(
-					p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-					data->hmsBaseAVsOnMenuEntry[0]
-				) + 
-				tempAndPermMod
-			);
-			currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-				)
-			);
-			args[0] = RE::GFxValue(1);
-			args[1] = RE::GFxValue(std::roundf(currentValue));
-			args[2] = RE::GFxValue(std::roundf(fullValue));
-			args[3] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
-			base.Invoke("SetMeter", nullptr, args, 4);
-
-			// Stamina (current, max, color).
-			tempAndPermMod = 
-			(
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kStamina
-				) + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent,
-					RE::ActorValue::kStamina
-				) 	
-			);
-			fullValue = 
-			(
-				data->hmsBasePointsList[2] + 
-				data->hmsPointIncreasesList[2] +
-				(
-					p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-					data->hmsBaseAVsOnMenuEntry[2]
-				) + 
-				tempAndPermMod
-			);
-			currentValue = 
-			(
-				fullValue + 
-				playerInMenusPtr->GetActorValueModifier
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-				)
-			);
-			args[0] = RE::GFxValue(2);
-			args[1] = RE::GFxValue(std::roundf(currentValue));
-			args[2] = RE::GFxValue(std::roundf(fullValue));
-			args[3] = RE::GFxValue
-			(
-				tempAndPermMod == 0.0f ? 0xFFFFFF : 
-				tempAndPermMod < 0.0f ? 0xFF0000 :
-				0x00FF00
-			);
-			base.Invoke("SetMeter", nullptr, args, 4);
-		}
-
 		RE::UI_MESSAGE_RESULTS StatsMenuHooks::ProcessMessage
 		(
 			RE::StatsMenu* a_this, RE::UIMessage& a_message
 		)
 		{
-			auto result = _ProcessMessage(a_this, a_message);
+			auto view = a_this->uiMovie;
+			RE::UI_MESSAGE_RESULTS result = RE::UI_MESSAGE_RESULTS::kPassOn;
+			// True if this update modifies P1's name, race name, and HMS meters.
+			// Want to undo this update's changes while a companion player is controlling menus
+			// and should have their data imported onto P1.
+			bool modifiedNames = false;
+			if (view)
+			{
+				RE::GFxValue base{ };
+				view->GetVariable
+				(
+					std::addressof(base), "_root.StatsMenuBaseInstance"
+				);
+				if (base.IsNull() || base.IsUndefined())
+				{
+					return _ProcessMessage(a_this, a_message);;
+				}
+			
+				RE::BSFixedString nameBefore{ };
+				RE::BSFixedString raceNameBefore{ };
+				RE::GFxValue firstLastLabel{ };
+				view->GetVariable
+				(
+					std::addressof(firstLastLabel), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
+				);
+				if (!firstLastLabel.IsNull() && !firstLastLabel.IsUndefined())
+				{
+					RE::GFxValue text{ };
+					firstLastLabel.GetMember("htmlText", std::addressof(text));
+					nameBefore = text.GetString();
+				}
+
+				RE::GFxValue raceValueLabel{ };
+				view->GetVariable
+				(
+					std::addressof(raceValueLabel), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
+				);
+				if (!raceValueLabel.IsNull() && !raceValueLabel.IsUndefined())
+				{
+					RE::GFxValue text{ };
+					raceValueLabel.GetMember("htmlText", std::addressof(text));
+					raceNameBefore = text.GetString();
+				}
+
+				// Let the other handlers process the message first 
+				// before we potentially modify the UI or import another player's data.
+				result = _ProcessMessage(a_this, a_message);
+			
+				view->GetVariable
+				(
+					std::addressof(firstLastLabel), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
+				);
+				if (!firstLastLabel.IsNull() && !firstLastLabel.IsUndefined())
+				{
+					RE::GFxValue text{ };
+					firstLastLabel.GetMember("htmlText", std::addressof(text));
+					modifiedNames = nameBefore != text.GetString();
+				}
+
+				view->GetVariable
+				(
+					std::addressof(raceValueLabel), 
+					"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
+				);
+				if (!raceValueLabel.IsNull() && !raceValueLabel.IsUndefined())
+				{
+					RE::GFxValue text{ };
+					raceValueLabel.GetMember("htmlText", std::addressof(text));
+					modifiedNames |= nameBefore != text.GetString();
+				}
+			}
+			else
+			{
+				result = _ProcessMessage(a_this, a_message);
+			}
+
 			bool ignored = result == RE::UI_MESSAGE_RESULTS::kIgnore;
 			// Nothing to do here, since the message is ignored, global data is not initialized, 
-			// serializable data is not available, or this menu is not the target of the message. 
-			if (ignored || 
-				!glob.globalDataInit || 
-				glob.serializablePlayerData.empty() || 
-				a_message.menu != a_this->MENU_NAME)
+			// or serializable data is not available. 
+			if (ignored || !glob.globalDataInit || glob.serializablePlayerData.empty())
 			{
 				return result;
 			}
 
-			// Only need to handle open/close messages.
-			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
-			bool closing = 
-			(
-				*a_message.type == RE::UI_MESSAGE_TYPE::kHide || 
-				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
-			);
-			if (!opening && !closing)
+			// P1 must be valid below.
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
 			{
 				return result;
 			}
@@ -13606,29 +13526,400 @@ namespace ALYSLC
 			// TODO: 
 			// Implement Vampire Lord and Werewolf perk sync when co-op players are transformed.
 			// So for now, do not modify perk data if P1 is transformed.
-			auto p1 = RE::PlayerCharacter::GetSingleton();
 			bool p1IsTransformed = Util::IsWerewolf(p1) || Util::IsVampireLord(p1);
 
 			// Is P1 requesting to open the StatsMenu?
 			// Have to also adjust perk data for P1 when outside of co-op.
 			bool p1Req = !glob.coopSessionActive;
+			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
+			bool closing = 
+			(
+				*a_message.type == RE::UI_MESSAGE_TYPE::kHide || 
+				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
+			);
 			if (glob.coopSessionActive)
 			{
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				// Do not modify the requests queue, 
-				// since the menu input manager still needs this info
-				// when setting the request and menu player IDs when this menu opens/closes.
-				glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
-				(
-					a_this->MENU_NAME, false
-				);
+				RE::ActorPtr playerInMenusPtr{ nullptr };
+				if (opening || closing)
+				{
+					// Do not modify the requests queue, 
+					// since the menu input manager still needs this info
+					// when setting the request and menu player IDs when this menu opens/closes.
+					glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
+					(
+						a_this->MENU_NAME, false
+					);
 
-				SPDLOG_DEBUG
-				(
-					"Current menu PID: {}, resolved menu PID: {}. "
-					"Opening: {}, closing: {}, has copied data: {}.",
-					glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
-				);
+					SPDLOG_DEBUG
+					(
+						"Current menu PID: {}, resolved menu PID: {}. "
+						"Opening: {}, closing: {}, has copied data: {}.",
+						glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
+					);
+					if (glob.lastResolvedMenuPID > -1)
+					{
+						playerInMenusPtr = glob.coopPlayers[glob.lastResolvedMenuPID]->coopActor;
+					}
+				}
+				else if (glob.mim->IsRunning() && glob.mim->managerMenuPID > 0)
+				{
+					// Set to companion player controlling menus.
+					playerInMenusPtr = glob.coopPlayers[glob.mim->managerMenuPID]->coopActor;
+				}
+
+				if (playerInMenusPtr && view)
+				{
+					RE::GFxValue base{ };
+					RE::GFxValue firstLastLabel{ };
+					RE::GFxValue raceValueLabel{ };
+					view->GetVariable
+					(
+						std::addressof(base), "_root.StatsMenuBaseInstance"
+					);
+					if (base.IsNull() || base.IsUndefined())
+					{
+						return result;
+					}
+			
+					const auto iter = glob.serializablePlayerData.find(playerInMenusPtr->formID);
+					if (iter == glob.serializablePlayerData.end())
+					{
+						return result;
+					}
+
+					const auto& data = iter->second;
+					view->GetVariable
+					(
+						std::addressof(firstLastLabel), 
+						"_root.StatsMenuBaseInstance.TopPlayerInfo.FirstLastLabel"
+					);
+					if (!firstLastLabel.IsNull() && !firstLastLabel.IsUndefined())
+					{
+						firstLastLabel.SetTextHTML(playerInMenusPtr->GetName());
+					}
+
+					view->GetVariable
+					(
+						std::addressof(raceValueLabel), 
+						"_root.StatsMenuBaseInstance.TopPlayerInfo.RacevalueLabel"
+					);
+					if (!raceValueLabel.IsNull() && !raceValueLabel.IsUndefined())
+					{
+						raceValueLabel.SetTextHTML(playerInMenusPtr->race->GetName());
+					}
+
+					// NOTE:
+					// Since we may level up while the Stats Menu is open, 
+					// which will rescale the companion player's HMS values,
+					// we have to obtain the difference in HMS levels from P1's stats, 
+					// which are what changes from leveling up, 
+					// and apply those changes to our serialized HMS levels
+					// for the companion player.
+
+					// NOTE 2:
+					// Couldn't figure out why calling the ActionScript function 'SetPlayerInfo()'
+					// caused the Stats Menu UI to go haywire in a heavily modded setup, 
+					// so stuck with calling SetMeter() 3 times instead.
+
+					/*
+					RE::GFxValue argsArr[13];
+					argsArr[0] = RE::GFxValue(playerInMenusPtr->GetName());
+					argsArr[1] = RE::GFxValue(playerInMenusPtr->GetLevel());
+					argsArr[2] = RE::GFxValue
+					(
+						100.0f * p1->skills->data->xp / p1->skills->data->levelThreshold
+					);
+					argsArr[3] = RE::GFxValue
+					(
+						playerInMenusPtr->race->GetName()
+					);
+
+					float tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kMagicka
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kMagicka
+						) 	
+					);
+					// FULL:
+					// Companion player's recorded base amount + their recorded increase so far +
+					// the current change while in the Stats Menu + 
+					// any temporary and permanent modifiers from gear, perks, etc.
+					// (applied to P1 until export when the menu closes).
+					float fullValue = 
+					(
+						data->hmsBasePointsList[1] + 
+						data->hmsPointIncreasesList[1] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+							data->hmsBaseAVsOnMenuEntry[1]
+						) + 
+						tempAndPermMod
+					);
+					// CURRENT:
+					// The max value above modified by the companion player's 
+					// current damage AV modifier.
+					float currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+						)
+					);
+					argsArr[4] = RE::GFxValue(std::roundf(currentValue));
+					argsArr[5] = RE::GFxValue(std::roundf(fullValue));
+					argsArr[6] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+
+					tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kHealth
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kHealth
+						) 	
+					);
+					fullValue = 
+					(
+						data->hmsBasePointsList[0] + 
+						data->hmsPointIncreasesList[0] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+							data->hmsBaseAVsOnMenuEntry[0]
+						) + 
+						tempAndPermMod
+					);
+					currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+						)
+					);
+					argsArr[7] = RE::GFxValue(std::roundf(currentValue));
+					argsArr[8] = RE::GFxValue(std::roundf(fullValue));
+					argsArr[9] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+
+					tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kStamina
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kStamina
+						) 	
+					);
+					fullValue = 
+					(
+						data->hmsBasePointsList[2] + 
+						data->hmsPointIncreasesList[2] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+							data->hmsBaseAVsOnMenuEntry[2]
+						) + 
+						tempAndPermMod
+					);
+					currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+						)
+					);
+					argsArr[10] = RE::GFxValue(std::roundf(currentValue));
+					argsArr[11] = RE::GFxValue(std::roundf(fullValue));
+					argsArr[12] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+					base.Invoke("SetPlayerInfo", nullptr, argsArr, 13);
+					*/
+
+					RE::GFxValue args[4];
+					// Magicka (current, full, color).
+					float tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kMagicka
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kMagicka
+						) 	
+					);
+					// FULL:
+					// Companion player's recorded base amount + their recorded increase so far +
+					// the current change while in the Stats Menu + 
+					// any temporary and permanent modifiers from gear, perks, etc.
+					// (applied to P1 until export when the menu closes).
+					float fullValue = 
+					(
+						data->hmsBasePointsList[1] + 
+						data->hmsPointIncreasesList[1] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+							data->hmsBaseAVsOnMenuEntry[1]
+						) + 
+						tempAndPermMod
+					);
+					// CURRENT:
+					// The max value above modified by the companion player's 
+					// current damage AV modifier.
+					float currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+						)
+					);
+			
+					args[0] = RE::GFxValue(0);
+					args[1] = RE::GFxValue(std::roundf(currentValue));
+					args[2] = RE::GFxValue(std::roundf(fullValue));
+					args[3] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+					base.Invoke("SetMeter", nullptr, args, 4);
+
+					// Health (current, full, color).
+					tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kHealth
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kHealth
+						) 	
+					);
+					fullValue = 
+					(
+						data->hmsBasePointsList[0] + 
+						data->hmsPointIncreasesList[0] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+							data->hmsBaseAVsOnMenuEntry[0]
+						) + 
+						tempAndPermMod
+					);
+					currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+						)
+					);
+					args[0] = RE::GFxValue(1);
+					args[1] = RE::GFxValue(std::roundf(currentValue));
+					args[2] = RE::GFxValue(std::roundf(fullValue));
+					args[3] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+					base.Invoke("SetMeter", nullptr, args, 4);
+
+					// Stamina (current, max, color).
+					tempAndPermMod = 
+					(
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary,
+							RE::ActorValue::kStamina
+						) + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent,
+							RE::ActorValue::kStamina
+						) 	
+					);
+					fullValue = 
+					(
+						data->hmsBasePointsList[2] + 
+						data->hmsPointIncreasesList[2] +
+						(
+							p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+							data->hmsBaseAVsOnMenuEntry[2]
+						) + 
+						tempAndPermMod
+					);
+					currentValue = 
+					(
+						fullValue + 
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+						)
+					);
+					args[0] = RE::GFxValue(2);
+					args[1] = RE::GFxValue(std::roundf(currentValue));
+					args[2] = RE::GFxValue(std::roundf(fullValue));
+					args[3] = RE::GFxValue
+					(
+						tempAndPermMod == 0.0f ? 0xFFFFFF : 
+						tempAndPermMod < 0.0f ? 0xFF0000 :
+						0x00FF00
+					);
+					base.Invoke("SetMeter", nullptr, args, 4);
+				}
+
+				// No need to handle cases where the menu is opening or closing below here.
+				if (!opening && !closing)
+				{
+					// Set as handled if the player's name or race name were modified back to P1's.
+					// Do not want any other handlers to re-apply P1's data 
+					// over the companion player's.
+					if (modifiedNames)
+					{
+						return RE::UI_MESSAGE_RESULTS::kHandled;
+					}
+					else
+					{
+						return result;
+					}
+				}
 
 				// Control is/was requested by a companion player.
 				if (glob.lastResolvedMenuPID != -1 && 

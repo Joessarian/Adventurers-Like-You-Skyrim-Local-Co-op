@@ -1184,23 +1184,12 @@ namespace ALYSLC
 		// Only revert form if transformed.
 		// Return true if successful.
 		
-		SPDLOG_DEBUG
-		(
-			"Pre-transform race: {}, original: {}, current: {}, "
-			"is transformed: {}.",
-			preTransformationRace ? preTransformationRace->GetName() : "NONE",
-			coopActor->GetActorBase() && coopActor->GetActorBase()->originalRace ?
-			coopActor->GetActorBase()->originalRace->GetName() : 
-			"NONE",
-			coopActor->race ? coopActor->race->GetName() : "NONE",
-			isTransformed
-		);
-
 		if (!coopActor || !coopActor->race || !coopActor->GetActorBase())
 		{
 			return false;
 		}
 		
+		const auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Do not revert if the pre-transformation race is the same as the player's current race 
 		// or the player is going from a race without a transformation 
 		// to one with a transformation (ex. Nord to Werewolf).
@@ -1208,6 +1197,8 @@ namespace ALYSLC
 		(
 			preTransformationRace ? 
 			preTransformationRace : 
+			isPlayer1 && p1 ? 
+			p1->charGenRace :
 			coopActor->GetActorBase()->originalRace
 		);
 		bool currentRaceHasTransformation = Util::IsRaceWithTransformation(coopActor->race);
@@ -1216,6 +1207,17 @@ namespace ALYSLC
 		(
 			(!originalRace || originalRace == coopActor->race) ||
 			(!currentRaceHasTransformation)
+		);
+		SPDLOG_DEBUG
+		(
+			"{}: Pre-transform race: {}, original: {}, current: {}, "
+			"is transformed: {}. Skip: {}.",
+			coopActor->GetName(),
+			preTransformationRace ? preTransformationRace->GetName() : "NONE",
+			originalRace ? originalRace->GetName() : "NONE",
+			coopActor->race ? coopActor->race->GetName() : "NONE",
+			isTransformed,
+			skipTransformation
 		);
 		if (skipTransformation)
 		{
@@ -2715,6 +2717,8 @@ namespace ALYSLC
 		// Save desired equip forms to re-equip later.
 		auto savedLHForm = em->desiredEquippedForms[!EquipIndex::kLeftHand];
 		auto savedRHForm = em->desiredEquippedForms[!EquipIndex::kRightHand];
+		auto savedLHUniqueID = em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand];
+		auto savedRHUniqueID = em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand];
 		// Make sure the player is not moving during the reset.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), true);
 
@@ -2950,6 +2954,8 @@ namespace ALYSLC
 		{
 			em->desiredEquippedForms[!EquipIndex::kLeftHand] = savedLHForm;
 			em->desiredEquippedForms[!EquipIndex::kRightHand] = savedRHForm;
+			em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand] = savedLHUniqueID;
+			em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand] = savedRHUniqueID;
 		}
 
 		// Ensure health is set to previous pre-resurrection value.

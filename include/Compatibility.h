@@ -56,6 +56,12 @@ namespace ALYSLC
 		static bool g_requiemInstalled;
 	};
 
+	struct SkyrimSoulsCompat
+	{
+		static void CheckForSkyrimSouls();
+		static bool g_skyrimSoulsInstalled;
+	};
+
 	struct SkyrimsParagliderCompat
 	{
 		static void CheckForParaglider();

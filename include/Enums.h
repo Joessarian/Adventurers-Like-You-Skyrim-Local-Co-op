@@ -320,6 +320,7 @@ namespace ALYSLC
 	// and ensure gear stays equipped in the correct slots.
 	enum class EquipIndex : std::uint8_t
 	{
+		kNone = static_cast<std::underlying_type_t<EquipIndex>>(-1),
 		kLeftHand = 0,
 		kRightHand,
 		kAmmo,

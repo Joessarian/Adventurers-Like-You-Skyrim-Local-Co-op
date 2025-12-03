@@ -14,6 +14,7 @@ namespace ALYSLC
 	bool QuickLootCompat::g_isQuickLootIE{ false };
 	bool RaceMenuCompat::g_raceMenuInstalled{ false };
 	bool RequiemCompat::g_requiemInstalled{ false };
+	bool SkyrimSoulsCompat::g_skyrimSoulsInstalled{ false };
 	bool SkyrimsParagliderCompat::g_paragliderInstalled{ false };
 	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
 	bool TKDodgeCompat::g_tkDodgeInstalled{ false };
@@ -229,6 +230,18 @@ namespace ALYSLC
 		if (g_requiemInstalled)
 		{
 			SPDLOG_INFO("Requiem - The Roleplaying Overhaul installed!");
+		}
+	}
+
+	void SkyrimSoulsCompat::CheckForSkyrimSouls()
+	{
+		g_skyrimSoulsInstalled = 
+		{
+			static_cast<bool>(GetModuleHandleA("SkyrimSoulsRE.dll"))
+		};
+		if (g_skyrimSoulsInstalled)
+		{
+			SPDLOG_INFO("SkyrimSoulsRE installed!");
 		}
 	}
 

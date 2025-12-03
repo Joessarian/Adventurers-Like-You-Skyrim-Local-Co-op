@@ -6551,6 +6551,13 @@ namespace ALYSLC
 			if ((a_enable && !p->isInGodMode) || (!a_enable && p->isInGodMode))
 			{
 				SPDLOG_DEBUG("Should {} god mode for P1.", a_enable ? "set" : "unset");
+				// Set to full health/magicka/stamina as well.
+				if (a_enable && !p->isInGodMode)
+				{
+					p->pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
+					p->pam->RestoreAVToMaxValue(RE::ActorValue::kMagicka);
+					p->pam->RestoreAVToMaxValue(RE::ActorValue::kStamina);
+				}
 
 				const auto scriptFactory = 
 				(
@@ -6663,6 +6670,10 @@ namespace ALYSLC
 			// Set god mode flag to prevent AV expenditure.
 			if (a_enable && !p->isInGodMode)
 			{
+				// Set to full health/magicka/stamina as well.
+				p->pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
+				p->pam->RestoreAVToMaxValue(RE::ActorValue::kMagicka);
+				p->pam->RestoreAVToMaxValue(RE::ActorValue::kStamina);
 				SPDLOG_DEBUG
 				(
 					"Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName()
@@ -8073,10 +8084,7 @@ namespace ALYSLC
 				);
 			}
 
-			// NOTE:
-			// Unused for now since we update the health/magicka/stamina bars directly instead.
 			// Do not import HMS if not requested.
-			/*
 			if (a_onlySkills)
 			{
 				return;
@@ -8626,7 +8634,6 @@ namespace ALYSLC
 					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
 				)
 			);
-			*/
 		}
 		else
 		{
@@ -8740,10 +8747,7 @@ namespace ALYSLC
 				);
 			}
 			
-			// NOTE:
-			// Unused for now since we update the health/magicka/stamina bars directly instead.
 			// Do not import HMS if not requested.
-			/*
 			if (a_onlySkills)
 			{
 				return;
@@ -9162,7 +9166,6 @@ namespace ALYSLC
 					RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
 				)
 			);
-			*/
 		}
 	}
 

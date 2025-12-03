@@ -27,6 +27,8 @@ namespace ALYSLC
 		menuContainerHandle = RE::ObjectRefHandle();
 		menuCoopActorHandle = RE::ActorHandle();
 		gifteePlayerHandle = RE::ActorHandle();
+		// Extra data for selected entry in menu.
+		selectedExDataList = nullptr;
 		// Form selected in menu.
 		selectedForm = nullptr;
 		// Equip index. Defaults to right hand.
@@ -275,6 +277,7 @@ namespace ALYSLC
 		spellFavoriteStatusChanged = false;
 		fromContainerHandle = RE::ObjectRefHandle();
 		menuContainerHandle = RE::ObjectRefHandle();
+		selectedExDataList = nullptr;
 		selectedForm = nullptr;
 		lastEquipStateRefreshReqTP = SteadyClock::now();
 
@@ -2206,7 +2209,11 @@ namespace ALYSLC
 					// Equip/unequip the selected form.
 					p->em->HandleMenuEquipRequest
 					(
-						fromContainerHandle, selectedForm, reqEquipIndex, placeholderMagicChanged
+						fromContainerHandle,
+						selectedForm, 
+						selectedExDataList,
+						reqEquipIndex, 
+						placeholderMagicChanged
 					);
 					// Reset placeholder magic changed flag and equip index.
 					placeholderMagicChanged = false;
@@ -2940,6 +2947,9 @@ namespace ALYSLC
 					return;
 				}
 
+				// Set extra data to use for dropping the object.
+				selectedForm = boundObj;
+				selectedExDataList = Util::GetEntryFrontExtraDataList(selectedItem->data.objDesc);
 				const auto& p = glob.coopPlayers[managerMenuPID];
 				// Unequip before dropping/transferring to avoid crash.
 				auto foundIter = std::find_if
@@ -2973,7 +2983,7 @@ namespace ALYSLC
 				}
 				else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
 				{
-					aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
+					aem->UnequipObject(menuCoopActorPtr.get(), boundObj, selectedExDataList);
 				}
 
 				// Get the current number owned before dropping/transferring.
@@ -3019,7 +3029,12 @@ namespace ALYSLC
 					);
 					menuCoopActorPtr->RemoveItem
 					(
-						boundObj, 1, RE::ITEM_REMOVE_REASON::kDropping, nullptr, nullptr, &dropPos
+						boundObj, 
+						1, 
+						RE::ITEM_REMOVE_REASON::kDropping,
+						selectedExDataList,
+						nullptr,
+						&dropPos
 					);
 				}
 
@@ -3035,7 +3050,6 @@ namespace ALYSLC
 							isCoopInventory ? menuCoopActorHandle : menuContainerHandle
 						);
 						reqEquipIndex = index;
-						selectedForm = boundObj;
 						placeholderMagicChanged = false;
 						// If the item will be equipped/unequipped from the player's own inventory,
 						// or if the item is looted from a container and is not already equipped,
@@ -3058,6 +3072,7 @@ namespace ALYSLC
 						// None left after dropping/transfer, 
 						// so remove from desired list.
 						p->em->desiredEquippedForms[!index] = nullptr;
+						p->em->desiredEquippedUniqueIDs[!index] = 0;
 						shouldRefreshMenu = true;
 					}
 				}
@@ -3107,27 +3122,18 @@ namespace ALYSLC
 			{
 				return;
 			}
-
+			
+			const auto& p = glob.coopPlayers[managerMenuPID];
 			// Favorite the item when in the player's inventory.
 			// Credit to po3 for the code to check if the item has been favorited.
 			// From an older version of:
 			// https://github.com/powerof3/PapyrusExtenderSSE/
 			bool shouldFavorite = true;
 			auto inventory = menuCoopActorPtr->GetInventory();
-			RE::InventoryEntryData* entryData = nullptr;
-			for (const auto& inventoryEntry : inventory)
+			RE::InventoryEntryData* entryData = selectedItem->data.objDesc;
+			selectedExDataList = Util::GetEntryFrontExtraDataList(entryData);
+			if (entryData)
 			{
-				if (!inventoryEntry.first || inventoryEntry.first != selectedForm)
-				{
-					continue;
-				}
-
-				auto& entryData = inventoryEntry.second.second;
-				if (!entryData)
-				{
-					continue;
-				}
-
 				if (entryData->extraLists && !entryData->extraLists->empty())
 				{
 					RE::ExtraDataList* exDataList = nullptr;
@@ -3150,17 +3156,17 @@ namespace ALYSLC
 
 					if (shouldFavorite)
 					{
-						exDataList = entryData->extraLists->front();
+						exDataList = selectedExDataList;
 						Util::NativeFunctions::Favorite
 						(
-							inventoryChanges, entryData.get(), exDataList
+							inventoryChanges, entryData, exDataList
 						);
 					}
 					else
 					{
 						Util::NativeFunctions::Unfavorite
 						(
-							inventoryChanges, entryData.get(), exDataList
+							inventoryChanges, entryData, exDataList
 						);
 					}
 
@@ -3189,16 +3195,15 @@ namespace ALYSLC
 						break;
 					}
 					}
-
-					// Found and (un)favorited our selected item, 
-					// so no need to continue looking for it.
-					break;
 				}
 				else
 				{
 					// Entry data may not have a list of extra data, 
 					// but we can still favorite the item.
-					Util::NativeFunctions::Favorite(inventoryChanges, entryData.get(), nullptr);
+					Util::NativeFunctions::Favorite
+					(
+						inventoryChanges, entryData, selectedExDataList
+					);
 				}
 			}
 
@@ -3219,7 +3224,7 @@ namespace ALYSLC
 				{
 					return;
 				}
-
+				
 				const auto p1 = RE::PlayerCharacter::GetSingleton(); 
 				auto asBook = obj->As<RE::TESObjectBOOK>(); 
 				if (asBook && p1)
@@ -3300,10 +3305,122 @@ namespace ALYSLC
 						);
 						selectedForm = obj;
 						placeholderMagicChanged = false;
+						selectedExDataList = Util::GetEntryFrontExtraDataList
+						(
+							selectedItem->data.objDesc
+						);
 						bool isEquipped = glob.coopPlayers[managerMenuPID]->em->IsEquipped
 						(
-							selectedForm
+							selectedForm, selectedExDataList
 						);
+						SPDLOG_DEBUG
+						(
+							"Selected form {}, selected inv entry: {:p}, selected exData: {:p}.",
+							selectedForm ? selectedForm->GetName() : "NONE",
+							fmt::ptr(selectedItem->data.objDesc),
+							fmt::ptr(selectedExDataList)
+						);
+						RE::ExtraDataList* selectedList{ nullptr };
+						if (selectedItem->data.objDesc->extraLists &&
+							!selectedItem->data.objDesc->extraLists->empty())
+						{
+							auto listSize = std::distance
+							(
+								selectedItem->data.objDesc->extraLists->begin(), 
+								selectedItem->data.objDesc->extraLists->end()
+							);
+							for (const auto list : *selectedItem->data.objDesc->extraLists)
+							{
+								if (!list)
+								{
+									continue;
+								}
+								
+								selectedList = list;
+								for (auto type = RE::ExtraDataType::kNone; 
+									 type <= RE::ExtraDataType::kUnkBF; 
+									 type = static_cast<RE::ExtraDataType>(!type + 1))
+								{
+									if (auto data = list->GetByType(type); data)
+									{
+										SPDLOG_DEBUG
+										(
+											"Selected form {} has exData list {:p} ({}) "
+											"with data {:p} of type 0x{:X}.",
+											selectedForm->GetName(),
+											fmt::ptr(list),
+											listSize,
+											fmt::ptr(data),
+											type
+										);
+									}
+								}
+							}
+						}
+						
+						const auto& p = glob.coopPlayers[managerMenuPID];
+						const auto inventory = p->coopActor->GetInventory();
+						for (const auto& [boundObj, countInvEntryData] : inventory)
+						{
+							if (!boundObj || boundObj != selectedForm)
+							{
+								continue;
+							}
+
+							SPDLOG_DEBUG
+							(
+								"{}: Inv entry data {:p} with count {}, "
+								"exData front {:p}",
+								boundObj->GetName(),
+								fmt::ptr(countInvEntryData.second.get()),
+								countInvEntryData.first,
+								countInvEntryData.second && 
+								countInvEntryData.second->extraLists &&
+								!countInvEntryData.second->extraLists->empty() ?
+								fmt::ptr(countInvEntryData.second->extraLists->front()) : 
+								nullptr
+							);
+
+							if (countInvEntryData.second->extraLists &&
+								!countInvEntryData.second->extraLists->empty())
+							{
+								auto listSize = std::distance
+								(
+									countInvEntryData.second->extraLists->begin(), 
+									countInvEntryData.second->extraLists->end()
+								);
+								for (const auto list : *countInvEntryData.second->extraLists)
+								{
+									if (!list)
+									{
+										continue;
+									}
+									
+									for (auto type = RE::ExtraDataType::kNone; 
+										type <= RE::ExtraDataType::kUnkBF; 
+										type = static_cast<RE::ExtraDataType>(!type + 1))
+									{
+										if (auto data = list->GetByType(type); data)
+										{
+											SPDLOG_DEBUG
+											(
+												"{} has exData list {:p} ({}) "
+												"with data {:p} of type 0x{:X}. "
+												"Same as selected: {}, {}",
+												boundObj->GetName(),
+												fmt::ptr(list),
+												listSize,
+												fmt::ptr(data),
+												type,
+												list == selectedList,
+												list == selectedExDataList
+											);
+										}
+									}
+								}
+							}
+						}
+
 						// If the item will be equipped/unequipped from the player's own inventory,
 						// or if the item is looted from a container and is not already equipped,
 						// we want to wait until the equip event fires
@@ -3764,7 +3881,11 @@ namespace ALYSLC
 				{
 					return;
 				}
-
+				
+				selectedExDataList = Util::GetEntryFrontExtraDataList
+				(
+					favoritesMenu->favorites[index].entryData
+				);
 				auto boundObj = selectedForm->As<RE::TESBoundObject>();
 				// If the favorited item is a spell/shout or a physical item that exists
 				// in the co-op player's inventory, then attempt to equip and update the menu.
@@ -3941,6 +4062,7 @@ namespace ALYSLC
 				else
 				{
 					// Not equipable.
+					selectedExDataList = nullptr;
 					selectedForm = nullptr;
 				}
 			}
@@ -4144,6 +4266,7 @@ namespace ALYSLC
 			// Save selected form to add to cyclable spells list later 
 			// after the spell is favorited.
 			selectedForm = GetSelectedMagicMenuSpell();
+			selectedExDataList = nullptr;
 			if (selectedForm) 
 			{
 				// Remove any assigned hotkey when (un)favoriting 
@@ -4172,6 +4295,7 @@ namespace ALYSLC
 			if (isLeftEquip || isRightEquip)
 			{
 				selectedForm = GetSelectedMagicMenuSpell(); 
+				selectedExDataList = nullptr;
 				if (selectedForm)
 				{
 					auto magicItemList = reinterpret_cast<RE::ItemList*>(magicMenu->unk30); 

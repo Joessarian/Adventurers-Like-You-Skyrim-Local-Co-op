@@ -467,6 +467,8 @@ namespace ALYSLC
 
 		// Control map for P1.
 		RE::ControlMap* controlMap;
+		// Selected item's inventory entry front extra data.
+		RE::ExtraDataList* selectedExDataList;
 		// Barter menu.
 		RE::GPtr<RE::BarterMenu> barterMenu;
 		// Book menu.

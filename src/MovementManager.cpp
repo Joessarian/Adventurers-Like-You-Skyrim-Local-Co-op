@@ -2931,6 +2931,15 @@ namespace ALYSLC
 				if (inRangeOfUndiscoveredMarker)
 				{
 					// No need to continue searching if in range of one undiscovered marker.
+					SPDLOG_DEBUG
+					(
+						"P1 is in range ({} < {}) of map marker {} ({}, flags: 0b{:B}).",
+						markerRefrPtr->data.location.GetDistance(origin),
+						thisRadius,
+						markerRefrPtr->GetName(),
+						Util::GetEditorID(markerRefrPtr.get()),
+						*extraMarker->mapData->flags
+					);
 					break;
 				}
 			}
@@ -2942,20 +2951,20 @@ namespace ALYSLC
 				if (!prevInRange)
 				{
 					// Do not attempt discovery yet.
-					// We'll wait 10 frames, since the player may move
+					// We'll wait 60 frames, since the player may move
 					// in and out of range quickly and we do not want to 
 					// perform this check too frequently.
 					attemptDiscovery = false;
 					framesSinceAttemptingDiscovery = 0;
 				}
-				else if (framesSinceAttemptingDiscovery < 10)
+				else if (framesSinceAttemptingDiscovery < 60)
 				{
 					// Wait 10 frames.
 					framesSinceAttemptingDiscovery++;
 				}
 				else
 				{
-					// 10 frames have passed, so signal to attempt discovery
+					// 60 frames have passed, so signal to attempt discovery
 					// and reset the discovery attempt frame count.
 					attemptDiscovery = true;
 					framesSinceAttemptingDiscovery = 0;

@@ -35,6 +35,7 @@ namespace ALYSLC
 				return;
 			}
 
+			SPDLOG_DEBUG("Unequip {}, index {}.", a_toUnequip->GetName(), a_listIndex);
 			// If the requested form to unequip is not the same as 
 			// the one already in this slot, do not clear the slot.
 			bool diffFormAlreadyInSlot = 
@@ -45,6 +46,7 @@ namespace ALYSLC
 			if (!diffFormAlreadyInSlot)
 			{
 				desiredEquippedForms[a_listIndex] = nullptr;
+				desiredEquippedUniqueIDs[a_listIndex] = 0;
 			}
 		}
 
@@ -404,29 +406,65 @@ namespace ALYSLC
 		}
 
 		// Check if the given form is equipped 
-		// (in the player's equipped forms list or has ExtraWorn data in its inventory entry).
-		inline bool IsEquipped(RE::TESForm* a_form) 
+		// (in the player's equipped forms list, if not a bound object,
+		// or has ExtraWorn(Left) data.
+		inline bool IsEquipped
+		(
+			RE::TESForm* a_form, 
+			RE::ExtraDataList* a_exDataList, 
+			bool a_leftHand = false
+		) 
 		{
 			if (!a_form)
 			{
 				return false;
 			}
 
-			if (equippedFormFIDs.contains(a_form->formID))
+			if (!a_form->As<RE::TESBoundObject>() && equippedFormFIDs.contains(a_form->formID))
 			{
 				return true;
 			}
 
-			auto invChanges = coopActor->GetInventoryChanges(); 
-			if (invChanges && invChanges->entryList)
+			if (a_exDataList)
 			{
-				for (auto invChangesEntry : *invChanges->entryList)
+				return 
+				(
+					(!a_leftHand && a_exDataList->HasType(RE::ExtraDataType::kWorn)) ||
+					(a_leftHand && a_exDataList->HasType(RE::ExtraDataType::kWornLeft))
+				);
+			}
+			else
+			{
+				auto invChanges = coopActor->GetInventoryChanges(); 
+				if (invChanges && invChanges->entryList)
 				{
-					if (invChangesEntry && 
-						invChangesEntry->object && 
-						invChangesEntry->object == a_form)
+					for (auto invEntryData : *invChanges->entryList)
 					{
-						return invChangesEntry->IsWorn();
+						if (invEntryData && 
+							invEntryData->object && 
+							invEntryData->object == a_form &&
+							invEntryData->extraLists)
+						{
+							for (const auto& exDataList : *invEntryData->extraLists)
+							{
+								if (!exDataList)
+								{
+									continue;
+								}
+								
+								return 
+								(
+									(
+										!a_leftHand && 
+										exDataList->HasType(RE::ExtraDataType::kWorn)
+									) ||
+									(
+										a_leftHand &&
+										exDataList->HasType(RE::ExtraDataType::kWornLeft)
+									)
+								);
+							}
+						}
 					}
 				}
 			}
@@ -474,6 +512,7 @@ namespace ALYSLC
 		inline void UnequipAllAndResetEquipState() 
 		{
 			desiredEquippedForms.fill(nullptr);
+			desiredEquippedForms.fill(0);
 			Util::Papyrus::UnequipAll(coopActor.get());
 		}
 		
@@ -616,6 +655,7 @@ namespace ALYSLC
 		(
 			RE::ObjectRefHandle a_fromContainerHandle,
 			RE::TESForm* a_form,
+			RE::ExtraDataList* a_exData,
 			const EquipIndex& a_index, 
 			bool a_placeholderMagicChanged
 		);
@@ -710,7 +750,6 @@ namespace ALYSLC
 		void UnequipAmmo
 		(
 			RE::TESForm* a_toUnequip, 
-			RE::ExtraDataList* a_exData = (RE::ExtraDataList*)nullptr, 
 			const RE::BGSEquipSlot* a_slot = (const RE::BGSEquipSlot*)nullptr,
 			bool a_queueEquip = true,
 			bool a_forceEquip = true,
@@ -723,7 +762,6 @@ namespace ALYSLC
 		void UnequipArmor
 		(
 			RE::TESForm* a_toUnequip,
-			RE::ExtraDataList* a_exData = (RE::ExtraDataList*)nullptr,
 			uint32_t a_count = 1,
 			const RE::BGSEquipSlot* a_slot = (const RE::BGSEquipSlot*)nullptr, 
 			bool a_queueEquip = true, 
@@ -738,7 +776,6 @@ namespace ALYSLC
 		(
 			RE::TESForm* a_toUnequip,
 			const EquipIndex& a_equipIndex, 
-			RE::ExtraDataList* a_exData = (RE::ExtraDataList*)nullptr,
 			uint32_t a_count = 1,
 			const RE::BGSEquipSlot* a_slot = (const RE::BGSEquipSlot*)nullptr, 
 			bool a_queueEquip = true, 
@@ -835,6 +872,9 @@ namespace ALYSLC
 		// The list of currently equipped forms is adjusted to match this list.
 		// Slots: hands, quick slots, ammo slot, voice slot, and biped slots.
 		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> desiredEquippedForms;
+		// Unique IDs for all equipped items.
+		// Used to distinguish between items of the same type when (un)equipping them.
+		std::array<uint32_t, (size_t)EquipIndex::kTotal> desiredEquippedUniqueIDs;
 		// List of currently equipped forms in: 
 		// hands, quick slots, ammo slot, voice slot, and biped slots.
 		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> equippedForms;

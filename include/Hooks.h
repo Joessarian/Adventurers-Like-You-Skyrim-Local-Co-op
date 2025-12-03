@@ -237,6 +237,8 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
 				_PutCreatedPackage = vtbl.write_vfunc(0xDF, PutCreatedPackage);
 				SPDLOG_INFO("Installed PutCreatedPackage() hook.");
+				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
+				SPDLOG_DEBUG("Installed RemoveItem() hook.");
 				_RemoveWeapon = vtbl.write_vfunc(0x82, RemoveWeapon);
 				SPDLOG_INFO("Installed RemoveWeapon() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
@@ -273,6 +275,18 @@ namespace ALYSLC
 				bool a_tempPackage,
 				bool a_createdPackage
 			);
+			static RE::ObjectRefHandle* RemoveItem
+			(
+				RE::Character* a_this,
+				RE::ObjectRefHandle& a_handleOut,
+				RE::TESBoundObject* a_item, 
+				std::int32_t a_count,
+				RE::ITEM_REMOVE_REASON a_reason, 
+				RE::ExtraDataList* a_extraList,
+				RE::TESObjectREFR* a_moveToRef, 
+				const RE::NiPoint3* a_dropLoc, 
+				const RE::NiPoint3* a_rotate
+			);
 			static void RemoveWeapon(RE::Character* a_this, RE::BIPED_OBJECT a_equipIndex);
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
 			static void SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene);
@@ -287,6 +301,7 @@ namespace ALYSLC
 			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
 			static inline REL::Relocation<decltype(PutCreatedPackage)> _PutCreatedPackage;
+			static inline REL::Relocation<decltype(RemoveItem)> _RemoveItem;
 			static inline REL::Relocation<decltype(RemoveWeapon)> _RemoveWeapon;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(SetCurrentScene)> _SetCurrentScene;
@@ -1291,22 +1306,15 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_StatsMenu[0] };
-				_AdvanceMovie = vtbl.write_vfunc(0x05, AdvanceMovie);
-				SPDLOG_INFO("Installed AdvanceMovie() hook.");
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
 				SPDLOG_INFO("Installed ProcessMessage() hook.");
 			}
 
 		private:
-			static void AdvanceMovie
-			(
-				RE::StatsMenu* a_this, float a_interval, uint32_t a_currentTime
-			);
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::StatsMenu* a_this, RE::UIMessage& a_message
 			);
-			static inline REL::Relocation<decltype(AdvanceMovie)> _AdvanceMovie;
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
 

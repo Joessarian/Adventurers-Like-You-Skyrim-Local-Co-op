@@ -680,10 +680,16 @@ namespace ALYSLC
 
 		void ChangeFormFavoritesStatus
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite
+			RE::Actor* a_actor,
+			RE::TESForm* a_form,
+			const bool& a_shouldFavorite,
+			RE::ExtraDataList* a_exDataList
 		)
 		{
 			// Change the form in the actor's inventory to favorited/unfavorited.
+			// Specify an extra data list to change the favorites status
+			// for a unique/modified item, or nullptr to change the favorites status 
+			// for the first matching form.
 
 			if (!a_actor || !a_form)
 			{
@@ -725,49 +731,72 @@ namespace ALYSLC
 						continue;
 					}
 
-					// Exists and has a non-zero count.
-					if (ied->extraLists)
+					if (a_exDataList)
 					{
-						for (auto exDataList : *ied->extraLists)
+						bool hasHotkeyExData = a_exDataList->HasType(RE::ExtraDataType::kHotkey);
+						if (hasHotkeyExData && !a_shouldFavorite)
 						{
-							if (!exDataList || !exDataList->HasType(RE::ExtraDataType::kHotkey))
-							{
-								continue;
-							}
-
-							// Unfavorite only if extra hotkey data is present.
-							if (!a_shouldFavorite)
-							{
-								NativeFunctions::Unfavorite
-								(
-									inventoryChanges, ied.get(), exDataList
-								);
-							}
-
-							// Return once extra hotkey data found,
-							// since this is the condition indicating
-							// that the item is already favorited or is now unfavorited.
+							NativeFunctions::Unfavorite(inventoryChanges, ied.get(), a_exDataList);
 							return;
 						}
-
-						// Favorite only if not previously favorited.
-						if (a_shouldFavorite)
+						else if (!hasHotkeyExData && a_shouldFavorite)
 						{
 							NativeFunctions::Favorite
 							(
 								inventoryChanges,
 								ied.get(),
-								!ied->extraLists->empty() ?
-								ied->extraLists->front() :
-								nullptr
+								a_exDataList
 							);
+							return;
 						}
 					}
-					else if (a_shouldFavorite)
+					else
 					{
-						// Favorite the form right away because
-						// there is no extra data at all for this item.
-						NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
+						// Exists and has a non-zero count.
+						if (ied->extraLists)
+						{
+							for (auto exDataList : *ied->extraLists)
+							{
+								if (!exDataList || 
+									!exDataList->HasType(RE::ExtraDataType::kHotkey))
+								{
+									continue;
+								}
+
+								// Unfavorite only if extra hotkey data is present.
+								if (!a_shouldFavorite)
+								{
+									NativeFunctions::Unfavorite
+									(
+										inventoryChanges, ied.get(), exDataList
+									);
+								}
+
+								// Return once extra hotkey data found,
+								// since this is the condition indicating
+								// that the item is already favorited or is now unfavorited.
+								return;
+							}
+
+							// Favorite only if not previously favorited.
+							if (a_shouldFavorite)
+							{
+								NativeFunctions::Favorite
+								(
+									inventoryChanges,
+									ied.get(),
+									!ied->extraLists->empty() ?
+									ied->extraLists->front() :
+									nullptr
+								);
+							}
+						}
+						else if (a_shouldFavorite)
+						{
+							// Favorite the form right away because
+							// there is no extra data at all for this item.
+							NativeFunctions::Favorite(inventoryChanges, ied.get(), nullptr);
+						}
 					}
 
 					// Item found.
@@ -780,10 +809,15 @@ namespace ALYSLC
 
 		void ChangeFormHotkeyStatus
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet
+			RE::Actor* a_actor,
+			RE::TESForm* a_form,
+			const int8_t& a_hotkeySlotToSet,
+			RE::ExtraDataList* a_exDataList
 		)
 		{
 			// Add/remove hotkey to the given form for the given actor.
+			// Specify an extra data list to change the hotkey status for a unique/modified item,
+			// or nullptr to change the hotkey status for the first matching form.
 			// Set -1 as the hotkey index to remove the hotkey.
 
 			if (!a_actor || !a_form || a_hotkeySlotToSet < -1 || a_hotkeySlotToSet > 7)
@@ -939,7 +973,8 @@ namespace ALYSLC
 								exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
 							}
 						}
-						else if (boundObj == a_form)
+						else if ((boundObj == a_form) &&
+								 (!a_exDataList || exDataList == a_exDataList))
 						{
 							// This requested form is not hotkeyed in the same slot as requested,
 							// so we can directly set its hotkey slot to the requested one.
@@ -2128,6 +2163,114 @@ namespace ALYSLC
 			}
 		}
 
+		RE::ExtraDataList* GetEntryFrontExtraDataList
+		(
+			RE::InventoryEntryData* a_invEntryData
+		)
+		{
+			// Get the front extra data list to use when equipping/favoriting
+			// the item given by the inventory entry.
+
+			if (!a_invEntryData)
+			{
+				return nullptr;
+			}
+
+			if (!a_invEntryData->extraLists ||
+				a_invEntryData->extraLists->empty())
+			{
+				return nullptr;
+			}
+
+			if (a_invEntryData->extraLists->front())
+			{
+				return a_invEntryData->extraLists->front();
+			}
+
+			return nullptr;
+		}
+
+		RE::ExtraDataList* GetEquippedExtraData
+		(
+			RE::Actor* a_actor, RE::TESForm* a_form, bool a_leftHand
+		)
+		{
+			// Get the extra data for given equipped form on the given actor.
+
+			if (!a_actor || !a_form)
+			{
+				return nullptr;
+			}
+			
+			// No exData for forms that are not bound objects.
+			const auto asBoundObj = a_form->As<RE::TESBoundObject>();
+			if (!asBoundObj)
+			{
+				return nullptr;
+			}
+
+			const auto inventory = a_actor->GetInventory();
+			for (const auto& [boundObj, countInvEntryPair] : inventory)
+			{
+				if (!boundObj || countInvEntryPair.first <= 0)
+				{
+					continue;
+				}
+
+				if (boundObj == asBoundObj)
+				{
+					if (countInvEntryPair.second)
+					{
+						if (countInvEntryPair.second->extraLists &&
+							!countInvEntryPair.second->extraLists->empty())
+						{
+							for (const auto list : *countInvEntryPair.second->extraLists)
+							{
+								if (!list)
+								{
+									continue;
+								}
+
+								// Only provide an extra data list if the item is marked
+								// as enchanted, tempered, or has a unique ID.
+								if (list->HasType(RE::ExtraDataType::kEnchantment) ||
+									list->HasType(RE::ExtraDataType::kHealth) ||
+									list->HasType(RE::ExtraDataType::kUniqueID))
+								{
+								}
+
+								if ((!a_leftHand && list->HasType(RE::ExtraDataType::kWorn)) ||
+									(a_leftHand && list->HasType(RE::ExtraDataType::kWornLeft)))
+								{
+									SPDLOG_DEBUG
+									(
+										"Inventory item {} is equipped. Left hand: {}. "
+										"Has enchantment ({}), health ({}), or unique ID ({}).",
+										asBoundObj->GetName(),
+										a_leftHand,
+										list->HasType(RE::ExtraDataType::kEnchantment),
+										list->HasType(RE::ExtraDataType::kHealth),
+										list->HasType(RE::ExtraDataType::kUniqueID)
+									);
+									return list;
+								}
+							}
+						}
+						else
+						{
+							return nullptr;
+						}
+					}
+					else
+					{
+						return nullptr;
+					}
+				}
+			}
+
+			return nullptr;
+		}
+
 		RE::NiPoint3 GetEulerAnglesFromRotMatrix(const RE::NiMatrix3& a_matrix)
 		{
 			// Get the rotation matrix's Euler angles 
@@ -2900,6 +3043,63 @@ namespace ALYSLC
 			}
 
 			return targetTorsoPos;
+		}
+
+		RE::ExtraDataList* GetUniqueIDExtraDataList
+		(
+			RE::Actor* a_actor, RE::TESBoundObject* a_item, uint32_t a_id
+		)
+		{
+			// Get the actor inventory extra data list that contains the given unique ID.
+			// Nullptr if not found or if the unique ID is 0.
+
+			if (!a_actor || !a_item || a_id == 0)
+			{
+				return nullptr;
+			}
+
+			const auto inventory = a_actor->GetInventory();
+			const auto iter = inventory.find(a_item);
+			if (iter == inventory.end())
+			{
+				return nullptr;
+			}
+
+			if (!iter->second.second)
+			{
+				return nullptr;
+			}
+
+			const auto& invEntryData = iter->second.second;
+			if (!invEntryData->extraLists)
+			{
+				return nullptr;
+			}
+
+			for (const auto exDataList : *invEntryData->extraLists)
+			{
+				if (!exDataList)
+				{
+					continue;
+				}
+
+				auto uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
+				if (!uniqueIDType)
+				{
+					continue;
+				}
+
+				if (uniqueIDType->uniqueID == a_id)
+				{
+					SPDLOG_DEBUG("{}: Found unique ID exData with ID {} on item {}.",
+						a_actor->GetName(), a_id, a_item->GetName());
+					return exDataList;
+				}
+			}
+
+			SPDLOG_DEBUG("{}: Could not find unique ID exData for {}.",
+				a_actor->GetName(), a_item->GetName());
+			return nullptr;
 		}
 
 		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point)
@@ -6645,6 +6845,208 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][0] = resultMat.entry[2][0];
 			a_rotMatrix.entry[2][1] = -resultMat.entry[2][1];
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
+		}
+
+		RE::ExtraDataList* SetUniqueIDExtraDataList
+		(
+			RE::Actor* a_actor, 
+			RE::TESBoundObject* a_item,
+			uint32_t& a_uniqueIDOut,
+			RE::ExtraDataList* a_listToChange
+		)
+		{
+			// Add unique ID to the given list, if not nullptr.
+			// Otherwise, add unique ID extra data to the first extra data list for the given item.
+			// Return 0 when failing to find/add a unique ID.
+			// NOTE:
+			// Uhhh, no idea where newly constructed exData(Lists) get free'd,
+			// but the same approach is taken to create and add new exData 
+			// or create a list of ex data lists in the CLib source.
+
+			if (!a_actor || !a_item || a_item->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				a_uniqueIDOut = 0;
+				return a_listToChange;
+			}
+
+			const auto inventory = a_actor->GetInventory();
+			const auto iter = inventory.find(a_item);
+			if (iter == inventory.end())
+			{
+				a_uniqueIDOut = 0;
+				return a_listToChange;
+			}
+
+			if (!iter->second.second)
+			{
+				a_uniqueIDOut = 0;
+				return a_listToChange;
+			}
+
+			const auto& invEntryData = iter->second.second;
+			if (!invEntryData->extraLists)
+			{
+				invEntryData->extraLists = new RE::BSSimpleList<RE::ExtraDataList*>();
+			}
+
+			for (const auto exDataList : *invEntryData->extraLists)
+			{
+				if (!exDataList)
+				{
+					continue;
+				}
+
+				auto uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
+				if (exDataList == a_listToChange)
+				{
+					// Already exists in the specified ex data list, so return the ID.
+					if (uniqueIDType)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}: Unique ID ({}) already exists for list {:p} on item {}.",
+							a_actor->GetName(),
+							uniqueIDType->uniqueID, 
+							fmt::ptr(uniqueIDType),
+							a_item->GetName()
+						);
+						a_uniqueIDOut = uniqueIDType->uniqueID;
+						return a_listToChange;
+					}
+					else
+					{
+						// Add to the specified list.
+						auto invChanges = a_actor->GetInventoryChanges();
+						if (invChanges)
+						{
+							invChanges->SetUniqueID(exDataList, a_item, a_item);
+							uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
+							if (uniqueIDType)
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: Unique ID ({}) added for list {:p} on item {}.",
+									a_actor->GetName(),
+									uniqueIDType->uniqueID, 
+									fmt::ptr(uniqueIDType),
+									a_item->GetName()
+								);
+								a_uniqueIDOut = uniqueIDType->uniqueID;
+								return exDataList;
+							}
+							else
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: Failed to add unique ID for list {:p} on item {}.",
+									a_actor->GetName(),
+									fmt::ptr(uniqueIDType),
+									a_item->GetName()
+								);
+								a_uniqueIDOut = 0;
+								return a_listToChange;
+							}
+						}
+						else
+						{
+							SPDLOG_DEBUG
+							(
+								"{}: Failed to get inventory changes.",
+								a_actor->GetName()
+							);
+							a_uniqueIDOut = 0;
+							return a_listToChange;
+						}
+					}
+					
+				}
+				else if (!a_listToChange && uniqueIDType)
+				{
+					// Already exists and no specific ex data list to check,
+					// so return the already-present ID.
+					SPDLOG_DEBUG
+					(
+						"{}: Unique ID ({}) exists with no exDataList specified for {}.",
+						a_actor->GetName(),
+						uniqueIDType->uniqueID,
+						a_item->GetName()
+					);
+					a_uniqueIDOut = uniqueIDType->uniqueID;
+					return exDataList;
+				}
+			}
+
+			// Failed to add to the specified list, so return 0.
+			if (a_listToChange)
+			{
+				a_uniqueIDOut = 0;
+				return a_listToChange;
+			}
+
+			// Create new extra data list if it is empty.
+			if (invEntryData->extraLists->empty())
+			{
+				// Add to front of first list if no list was specified.
+				SPDLOG_DEBUG
+				(
+					"{}: Adding front exDataList for {}.",
+					a_actor->GetName(), a_item->GetName()
+				);
+				RE::ExtraDataList* list = RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList));
+				if (!list)
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: Failed to add create new front exDataList for {}.",
+						a_actor->GetName(), a_item->GetName()
+					);
+					a_uniqueIDOut = 0;
+					return a_listToChange;
+				}
+
+				invEntryData->AddExtraList(list);
+			}
+
+			if (const auto frontDataList = invEntryData->extraLists->front(); frontDataList)
+			{
+				auto invChanges = a_actor->GetInventoryChanges();
+				if (!invChanges)
+				{
+					a_uniqueIDOut = 0;
+					return a_listToChange;
+				}
+
+				invChanges->SetUniqueID(frontDataList, a_item, a_item);
+				auto uniqueIDType = frontDataList->GetByType<RE::ExtraUniqueID>();
+				if (uniqueIDType)
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: Added unique ID {} to front exDataList for {}.",
+						a_actor->GetName(), uniqueIDType->uniqueID, a_item->GetName()
+					);
+					a_uniqueIDOut = uniqueIDType->uniqueID;
+					return frontDataList;
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: Failed to add unique ID for {} to front exDataList.",
+						a_actor->GetName(), a_item->GetName()
+					);
+					a_uniqueIDOut = 0;
+					return nullptr;
+				}
+			}
+			
+			SPDLOG_DEBUG
+			(
+				"{}: Failed to add unique ID for {} to any exDataList.",
+				a_actor->GetName(), a_item->GetName()
+			);
+			a_uniqueIDOut = 0;
+			return nullptr;
 		}
 
 		bool ShouldCastWithP1(RE::SpellItem* a_spell)

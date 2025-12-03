@@ -618,6 +618,9 @@ namespace ALYSLC
 			std::array<RE::TESForm*, 8> hotkeyedForms;
 			// All forms that were saved as equipped for this player.
 			std::vector<RE::TESForm*> equippedForms;
+			// Unique IDs for all equipped items.
+			// Used to distinguish between items of the same type when (un)equipping them.
+			std::vector<uint32_t> equippedUniqueIDs;
 			// Favorited magical (spells/shouts) forms for this player.
 			// NOTE: 
 			// Having the game store physical and magical favorites separately is a PITA.

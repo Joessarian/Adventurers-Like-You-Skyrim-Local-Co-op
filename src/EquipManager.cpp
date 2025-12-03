@@ -89,10 +89,14 @@ namespace ALYSLC
 			(
 				desiredEquippedForms[!EquipIndex::kAmmo]->As<RE::TESBoundObject>()
 			);
+			auto exDataList = Util::GetUniqueIDExtraDataList
+			(
+				coopActor.get(), ammoToReEquip, desiredEquippedUniqueIDs[!EquipIndex::kAmmo]
+			);
 			// Also add 1 ammo unit when in god mode to maintain the same ammo count.
 			if (p->isInGodMode)
 			{
-				coopActor->AddObjectToContainer(ammoToReEquip, nullptr, 1, coopActor.get());
+				coopActor->AddObjectToContainer(ammoToReEquip, exDataList, 1, coopActor.get());
 			}
 
 			// Make sure the player still has at least 1 of the ammo before equipping.
@@ -100,7 +104,7 @@ namespace ALYSLC
 			const auto iter = invCounts.find(ammoToReEquip);
 			if (iter != invCounts.end() && iter->second > 0)
 			{
-				EquipAmmo(ammoToReEquip);
+				EquipAmmo(ammoToReEquip, exDataList);
 			}
 		}
 
@@ -177,6 +181,7 @@ namespace ALYSLC
 			if (!coopActor->HasKeyword(glob.npcKeyword))
 			{
 				desiredEquippedForms.fill(nullptr);
+				desiredEquippedUniqueIDs.fill(0);
 				equippedForms.fill(nullptr);
 				UnequipAll();
 
@@ -287,6 +292,7 @@ namespace ALYSLC
 		// Favorited/equipped forms maps and lists.
 		cyclableFormsMap.clear();
 		desiredEquippedForms.fill(nullptr);
+		desiredEquippedUniqueIDs.fill(0);
 		equippedForms.fill(nullptr);
 
 		// Favorites list indices for equipped quick slot forms
@@ -1407,7 +1413,7 @@ namespace ALYSLC
 						ammo,
 						newAmmoCount,
 						RE::ITEM_REMOVE_REASON::kRemove,
-						nullptr, 
+						a_exData, 
 						coopActor.get()
 					);
 
@@ -1462,7 +1468,7 @@ namespace ALYSLC
 						ammo, 
 						newAmmoCount, 
 						RE::ITEM_REMOVE_REASON::kRemove,
-						nullptr, 
+						a_exData, 
 						coopActor.get()
 					);
 
@@ -1814,7 +1820,7 @@ namespace ALYSLC
 					boundObj, 
 					1, 
 					RE::ITEM_REMOVE_REASON::kRemove,
-					nullptr, 
+					a_exData, 
 					coopActor.get()
 				);
 			}
@@ -1877,7 +1883,7 @@ namespace ALYSLC
 							boundObj,
 							1, 
 							RE::ITEM_REMOVE_REASON::kRemove, 
-							nullptr, 
+							a_exData, 
 							coopActor.get()
 						);
 					}
@@ -2548,10 +2554,11 @@ namespace ALYSLC
 					if (weapInvData)
 					{
 						weapInvData->PoisonObject(asAlchemyItem, 1);
+						const auto exData = Util::GetEntryFrontExtraDataList(weapInvData);
 						// Remove after applying the poison.
 						coopActor->RemoveItem
 						(
-							asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+							asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, exData, nullptr
 						);
 					}
 				}
@@ -2611,7 +2618,7 @@ namespace ALYSLC
 			{
 			case RE::FormType::Weapon:
 			{
-				UnequipForm(a_form, a_index, nullptr, 1, GetEquipSlotForForm(a_form, a_index));
+				UnequipForm(a_form, a_index, 1, GetEquipSlotForForm(a_form, a_index));
 				break;
 			}
 			case RE::FormType::Armor:
@@ -2658,7 +2665,7 @@ namespace ALYSLC
 					return;
 				}
 
-				UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+				UnequipForm(a_form, EquipIndex::kLeftHand, 1, asLight->equipSlot);
 
 				break;
 			}
@@ -2696,6 +2703,7 @@ namespace ALYSLC
 	(
 		RE::ObjectRefHandle a_fromContainerHandle, 
 		RE::TESForm* a_form, 
+		RE::ExtraDataList* a_exData,
 		const EquipIndex& a_index, 
 		bool a_placeholderMagicChanged
 	)
@@ -2732,7 +2740,8 @@ namespace ALYSLC
 		}
 
 		// Do not attempt to unequip an item from a non-player container if it is already equipped.
-		if (fromContainerPtr != coopActor && IsEquipped(a_form))
+		if (fromContainerPtr != coopActor &&
+			IsEquipped(a_form, a_exData, a_index == EquipIndex::kLeftHand))
 		{
 			return;
 		}
@@ -2745,11 +2754,11 @@ namespace ALYSLC
 			auto equipSlot = GetEquipSlotForForm(a_form, a_index);
 			if (auto currentFormInHand = equippedForms[!a_index]; a_form != currentFormInHand)
 			{
-				EquipForm(a_form, a_index, nullptr, 1, equipSlot);
+				EquipForm(a_form, a_index, a_exData, 1, equipSlot);
 			}
 			else
 			{
-				UnequipForm(a_form, a_index, nullptr, 1, equipSlot);
+				UnequipForm(a_form, a_index, 1, equipSlot);
 			}
 
 			break;
@@ -2767,7 +2776,7 @@ namespace ALYSLC
 			currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
 			if (a_form != currentArmorInSlot)
 			{
-				EquipArmor(a_form);
+				EquipArmor(a_form, a_exData);
 			}
 			else
 			{
@@ -2855,7 +2864,7 @@ namespace ALYSLC
 		{
 			if (auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; a_form != currentAmmo)
 			{
-				EquipAmmo(a_form);
+				EquipAmmo(a_form, a_exData);
 			}
 			else
 			{
@@ -2890,11 +2899,11 @@ namespace ALYSLC
 			auto currentLHForm = equippedForms[!EquipIndex::kLeftHand]; 
 			if (a_form != currentLHForm)
 			{
-				EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, asLight->equipSlot);
 			}
 			else
 			{
-				UnequipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+				UnequipForm(a_form, EquipIndex::kLeftHand, 1, asLight->equipSlot);
 			}
 			
 			break;
@@ -2921,7 +2930,7 @@ namespace ALYSLC
 					// Remove after applying the poison.
 					coopActor->RemoveItem
 					(
-						asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+						asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, a_exData, nullptr
 					);
 				}
 			}
@@ -2934,7 +2943,7 @@ namespace ALYSLC
 				(
 					coopActor.get(),
 					asAlchemyItem, 
-					nullptr, 
+					a_exData, 
 					1, 
 					nullptr, 
 					false, 
@@ -2960,13 +2969,13 @@ namespace ALYSLC
 
 			// NOTE: 
 			// Revert to always equipping if issues arise.
-			if (!IsEquipped(a_form)) 
+			if (!IsEquipped(a_form, a_exData, a_index == EquipIndex::kLeftHand)) 
 			{
 				aem->EquipObject
 				(
 					coopActor.get(), 
 					boundObj, 
-					nullptr, 
+					a_exData, 
 					1,
 					nullptr,
 					false,
@@ -2981,7 +2990,7 @@ namespace ALYSLC
 				(
 					coopActor.get(), 
 					boundObj, 
-					nullptr, 
+					a_exData, 
 					1, 
 					nullptr, 
 					false, 
@@ -4932,6 +4941,37 @@ namespace ALYSLC
 			);
 		}
 
+		auto& savedEquippedUniqueIDs = 
+		(
+			glob.serializablePlayerData.at(coopActor->formID)->equippedUniqueIDs
+		);
+		if (savedEquippedUniqueIDs.empty() || 
+			savedEquippedUniqueIDs.size() == 0 || 
+			savedEquippedUniqueIDs.size() != desiredEquippedUniqueIDs.size())
+		{
+			SPDLOG_DEBUG
+			(
+				"SetInitialEquipState: "
+				"{}: saved equipped unique IDs list is {} ({}).",
+				coopActor->GetName(),
+				savedEquippedUniqueIDs.empty() || savedEquippedUniqueIDs.size() == 0 ? 
+				"empty" : 
+				"not the right size", 
+				savedEquippedUniqueIDs.size()
+			);
+		}
+		else
+		{
+			desiredEquippedUniqueIDs.fill(0);
+			// Explicitly copy the saved equipped unique IDs list into the desired unique IDs list.
+			std::copy
+			(
+				savedEquippedUniqueIDs.begin(),
+				savedEquippedUniqueIDs.end(), 
+				desiredEquippedUniqueIDs.begin()
+			);
+		}
+
 		// Ensure the placeholder spells hold a valid copied spell
 		// before adding back to desired equipped forms.
 		copiedMagic = glob.serializablePlayerData.at(coopActor->formID)->copiedMagic;
@@ -5289,81 +5329,86 @@ namespace ALYSLC
 				*a_weapon->weaponData.animationType == RE::WEAPON_TYPE::kCrossbow
 			)
 		);
-		if (a_weapon && !usesAmmo)
+		if (!a_weapon || usesAmmo)
 		{
-			// 1H to 2H.
-			if (a_weapon->equipSlot != glob.bothHandsEquipSlot)
-			{
-				UnequipForm
-				(
-					a_weapon, 
-					a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand, 
-					(RE::ExtraDataList*)nullptr, 
-					1, 
-					a_weapon->equipSlot, 
-					true, 
-					true, 
-					false,
-					true,
-					glob.bothHandsEquipSlot
-				);
-				a_weapon->SetEquipSlot(glob.bothHandsEquipSlot);
-			}
-			// 2H to 1H
-			else
-			{
-				auto equipSlot1H = a_equipRH ? glob.rightHandEquipSlot : glob.leftHandEquipSlot;
-				UnequipForm
-				(
-					a_weapon, 
-					a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand, 
-					(RE::ExtraDataList*)nullptr, 
-					1, 
-					glob.bothHandsEquipSlot,
-					true,
-					true,
-					false,
-					true,
-					equipSlot1H
-				);
-				a_weapon->SetEquipSlot(equipSlot1H);
-			}
-
-			// Switch weapon animation type with grip change.
-			auto currentType = *a_weapon->weaponData.animationType;
-			const auto iter = GlobalCoopData::WEAP_ANIM_SWITCH_MAP.find(currentType);
-			if (iter != GlobalCoopData::WEAP_ANIM_SWITCH_MAP.end())
-			{
-				auto newType = iter->second;
-				// Special case with staves switching back to 1H ranged cast animations 
-				// from 2H melee animations.
-				if (a_weapon->HasKeyword(glob.weapTypeKeywordsList[!RE::WEAPON_TYPE::kStaff]) &&
-					currentType != RE::WEAPON_TYPE::kStaff)
-				{
-					newType = RE::WEAPON_TYPE::kStaff;
-				}
-				
-				a_weapon->weaponData.animationType.reset(currentType);
-				a_weapon->weaponData.animationType.set(newType);
-				a_weapon->SetAltered(true);
-
-				SPDLOG_DEBUG
-				(
-					"{}: Switched {}'s weapon animations from type {} to {}",
-					coopActor->GetName(), a_weapon->GetName(), currentType, newType
-				);
-			}
-
-			// Equip once grip and animation type have been changed.
-			EquipForm
+			return;
+		}
+		
+		// Save extra data to re-equip later.
+		const auto exDataList = Util::GetEquippedExtraData
+		(
+			coopActor.get(), a_weapon, !a_equipRH
+		);
+		// 1H to 2H.
+		if (a_weapon->equipSlot != glob.bothHandsEquipSlot)
+		{
+			UnequipForm
 			(
 				a_weapon, 
-				a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand, 
-				(RE::ExtraDataList*)nullptr, 
+				a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand,
 				1, 
-				a_weapon->GetEquipSlot()
+				a_weapon->equipSlot, 
+				true, 
+				true, 
+				false,
+				true,
+				glob.bothHandsEquipSlot
+			);
+			a_weapon->SetEquipSlot(glob.bothHandsEquipSlot);
+		}
+		// 2H to 1H
+		else
+		{
+			auto equipSlot1H = a_equipRH ? glob.rightHandEquipSlot : glob.leftHandEquipSlot;
+			UnequipForm
+			(
+				a_weapon, 
+				a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand,
+				1, 
+				glob.bothHandsEquipSlot,
+				true,
+				true,
+				false,
+				true,
+				equipSlot1H
+			);
+			a_weapon->SetEquipSlot(equipSlot1H);
+		}
+
+		// Switch weapon animation type with grip change.
+		auto currentType = *a_weapon->weaponData.animationType;
+		const auto iter = GlobalCoopData::WEAP_ANIM_SWITCH_MAP.find(currentType);
+		if (iter != GlobalCoopData::WEAP_ANIM_SWITCH_MAP.end())
+		{
+			auto newType = iter->second;
+			// Special case with staves switching back to 1H ranged cast animations 
+			// from 2H melee animations.
+			if (a_weapon->HasKeyword(glob.weapTypeKeywordsList[!RE::WEAPON_TYPE::kStaff]) &&
+				currentType != RE::WEAPON_TYPE::kStaff)
+			{
+				newType = RE::WEAPON_TYPE::kStaff;
+			}
+				
+			a_weapon->weaponData.animationType.reset(currentType);
+			a_weapon->weaponData.animationType.set(newType);
+			a_weapon->SetAltered(true);
+
+			SPDLOG_DEBUG
+			(
+				"{}: Switched {}'s weapon animations from type {} to {}",
+				coopActor->GetName(), a_weapon->GetName(), currentType, newType
 			);
 		}
+		
+		// Equip once grip and animation type have been changed.
+		EquipForm
+		(
+			a_weapon, 
+			a_equipRH ? EquipIndex::kRightHand : EquipIndex::kLeftHand, 
+			exDataList, 
+			1, 
+			a_weapon->GetEquipSlot()
+		);
 	}
 
 	void EquipManager::UnequipAll()
@@ -5437,7 +5482,6 @@ namespace ALYSLC
 	void EquipManager::UnequipAmmo
 	(
 		RE::TESForm* a_toUnequip,
-		RE::ExtraDataList* a_exData,
 		const RE::BGSEquipSlot* a_slot, 
 		bool a_queueEquip, 
 		bool a_forceEquip,
@@ -5481,15 +5525,16 @@ namespace ALYSLC
 		// The game has issues un/equipping ammo when count is large (e.g. 100000), 
 		// so remove and re-add as a failsafe after unequipping.
 		// Ugly but seems to work.
+		const auto exDataList = Util::GetEquippedExtraData(coopActor.get(), a_toUnequip);
 		if (p->isPlayer1)
 		{
-			aem->UnequipObject(coopActor.get(), ammo); 
+			aem->UnequipObject(coopActor.get(), ammo, exDataList); 
 			coopActor->RemoveItem
 			(
 				ammo, 
 				currentAmmoCount,
 				RE::ITEM_REMOVE_REASON::kRemove,
-				nullptr,
+				exDataList,
 				coopActor.get()
 			);
 		}
@@ -5501,7 +5546,7 @@ namespace ALYSLC
 			(
 				coopActor.get(), 
 				ammo, 
-				a_exData,
+				exDataList,
 				currentAmmoCount, 
 				a_slot, 
 				a_queueEquip,
@@ -5515,7 +5560,7 @@ namespace ALYSLC
 				ammo, 
 				currentAmmoCount,
 				RE::ITEM_REMOVE_REASON::kRemove,
-				nullptr,
+				exDataList,
 				coopActor.get()
 			);
 		}
@@ -5535,8 +5580,7 @@ namespace ALYSLC
 
 	void EquipManager::UnequipArmor
 	(
-		RE::TESForm* a_toUnequip, 
-		RE::ExtraDataList* a_exData,
+		RE::TESForm* a_toUnequip,
 		uint32_t a_count, 
 		const RE::BGSEquipSlot* a_slot,
 		bool a_queueEquip,
@@ -5559,7 +5603,17 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		const auto exDataList = Util::GetEquippedExtraData
+		(
+			coopActor.get(), 
+			a_toUnequip, 
+			(a_toUnequip->As<RE::BGSEquipType>()) &&
+			(
+				a_toUnequip->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot ||
+				a_toUnequip->As<RE::BGSEquipType>()->equipSlot == glob.shieldEquipSlot
+			)
+		);
 		if (p->isPlayer1)
 		{
 			// Nothing special to do for P1.
@@ -5567,7 +5621,7 @@ namespace ALYSLC
 			(
 				coopActor.get(), 
 				boundObj,
-				a_exData,
+				exDataList,
 				a_count, 
 				a_slot, 
 				a_queueEquip, 
@@ -5621,7 +5675,7 @@ namespace ALYSLC
 				(
 					coopActor.get(),
 					boundObj,
-					a_exData, 
+					exDataList, 
 					a_count,
 					slot,
 					a_queueEquip, 
@@ -5638,7 +5692,7 @@ namespace ALYSLC
 				(
 					coopActor.get(), 
 					boundObj, 
-					a_exData,
+					exDataList,
 					a_count, 
 					a_slot,
 					a_queueEquip, 
@@ -5655,7 +5709,6 @@ namespace ALYSLC
 	(
 		RE::TESForm* a_toUnequip, 
 		const EquipIndex& a_equipIndex,
-		RE::ExtraDataList* a_exData,
 		uint32_t a_count,
 		const RE::BGSEquipSlot* a_slot,
 		bool a_queueEquip,
@@ -5678,7 +5731,11 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		const auto exDataList = Util::GetEquippedExtraData
+		(
+			coopActor.get(), a_toUnequip, a_equipIndex == EquipIndex::kLeftHand
+		);
 		// Special case if trying to unequip dummy1H/fists here.
 		// Do not clear desired equipped forms entry.
 		if (a_toUnequip == glob.fists || a_toUnequip == glob.dummy1H) 
@@ -5687,7 +5744,7 @@ namespace ALYSLC
 			(
 				coopActor.get(), 
 				a_toUnequip->As<RE::TESBoundObject>(), 
-				nullptr, 
+				exDataList, 
 				1, 
 				a_slot,
 				false, 
@@ -5705,7 +5762,7 @@ namespace ALYSLC
 			(
 				coopActor.get(), 
 				boundObj, 
-				a_exData,
+				exDataList,
 				a_count,
 				a_slot,
 				a_queueEquip,
@@ -5744,7 +5801,7 @@ namespace ALYSLC
 			(
 				coopActor.get(),
 				boundObj, 
-				a_exData, 
+				exDataList, 
 				a_count,
 				a_slot, 
 				a_queueEquip,
@@ -5773,101 +5830,104 @@ namespace ALYSLC
 		{
 			UnequipShield();
 		}
-
-		if (auto currentForm = equippedForms[!a_equipIndex]; currentForm)
+		
+		auto currentForm = equippedForms[!a_equipIndex]; 
+		if (!currentForm)
 		{
-			if (currentForm->Is(RE::FormType::Spell))
+			return;
+		}
+		
+		if (currentForm->Is(RE::FormType::Spell))
+		{
+			UnequipSpell(currentForm, a_equipIndex);
+		}
+		else if (currentForm->Is(RE::FormType::Armor))
+		{
+			UnequipArmor(currentForm);
+		}
+		else if (currentForm->Is(RE::FormType::Shout))
+		{
+			UnequipShout(currentForm);
+		}
+		else
+		{
+			RE::BGSEquipSlot* equipSlot = nullptr;
+			if (auto equipType = currentForm->As<RE::BGSEquipType>(); equipType)
 			{
-				UnequipSpell(currentForm, a_equipIndex);
-			}
-			else if (currentForm->Is(RE::FormType::Armor))
-			{
-				UnequipArmor(currentForm);
-			}
-			else if (currentForm->Is(RE::FormType::Shout))
-			{
-				UnequipShout(currentForm);
-			}
-			else
-			{
-				RE::BGSEquipSlot* equipSlot = nullptr;
-				if (auto equipType = currentForm->As<RE::BGSEquipType>(); equipType)
+				// Unequipping from the "either hand" equip slot 
+				// causes a "lingering equip state" bug
+				// where the unequipped item still shows as equipped 
+				// in the inventory/container menu,
+				// and will require additional unequip requests to full unequip.
+				// So we force the equip slot for our unequip call 
+				// to match the passed-in equip index.
+				if (equipType->equipSlot == glob.bothHandsEquipSlot)
 				{
-					// Unequipping from the "either hand" equip slot 
-					// causes a "lingering equip state" bug
-					// where the unequipped item still shows as equipped 
-					// in the inventory/container menu,
-					// and will require additional unequip requests to full unequip.
-					// So we force the equip slot for our unequip call 
-					// to match the passed-in equip index.
-					if (equipType->equipSlot == glob.bothHandsEquipSlot)
+					equipSlot = glob.bothHandsEquipSlot;
+				}
+				else if (a_equipIndex == EquipIndex::kLeftHand)
+				{
+					equipSlot = glob.leftHandEquipSlot;
+				}
+				else if (a_equipIndex == EquipIndex::kRightHand)
+				{
+					equipSlot = glob.rightHandEquipSlot;
+				}
+				else
+				{
+					equipSlot = equipType->equipSlot;
+				}
+			}
+
+			// Reset bound weapon equip intervals for co-op companions.
+			if (!p->isPlayer1) 
+			{
+				if (auto weap = currentForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
+				{
+					// Special case when unequipping bound bow: also unequip bound arrows.
+					if (weap->IsBow())
 					{
-						equipSlot = glob.bothHandsEquipSlot;
+						if (auto boundArrow = equippedForms[!EquipIndex::kAmmo]; 
+							boundArrow && 
+							boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
+						{
+							UnequipForm(boundArrow->As<RE::TESAmmo>(), EquipIndex::kAmmo);
+						}
+					}
+						
+					auto aem = RE::ActorEquipManager::GetSingleton();
+					if (equipSlot == glob.bothHandsEquipSlot)
+					{
+						// Clearing out both hands means all bound weapons will be unequipped,
+						// so clear out the 1H requests as well.
+						p->pam->boundWeapReq2H = false;
+						p->pam->boundWeapReqLH = false;
+						p->pam->boundWeapReqRH = false;
+						p->pam->secsSinceBoundWeap2HReq = 0.0f;
+						p->pam->secsSinceBoundWeapLHReq = 0.0f;
+						p->pam->secsSinceBoundWeapRHReq = 0.0f;
 					}
 					else if (a_equipIndex == EquipIndex::kLeftHand)
 					{
-						equipSlot = glob.leftHandEquipSlot;
+						p->pam->boundWeapReqLH = false;
+						p->pam->secsSinceBoundWeapLHReq = 0.0f;
 					}
 					else if (a_equipIndex == EquipIndex::kRightHand)
 					{
-						equipSlot = glob.rightHandEquipSlot;
-					}
-					else
-					{
-						equipSlot = equipType->equipSlot;
+						p->pam->boundWeapReqRH = false;
+						p->pam->secsSinceBoundWeapRHReq = 0.0f;
 					}
 				}
-
-				// Reset bound weapon equip intervals for co-op companions.
-				if (!p->isPlayer1) 
-				{
-					if (auto weap = currentForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
-					{
-						// Special case when unequipping bound bow: also unequip bound arrows.
-						if (weap->IsBow())
-						{
-							if (auto boundArrow = equippedForms[!EquipIndex::kAmmo]; 
-								boundArrow && 
-								boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
-							{
-								UnequipForm(boundArrow->As<RE::TESAmmo>(), EquipIndex::kAmmo);
-							}
-						}
-						
-						auto aem = RE::ActorEquipManager::GetSingleton();
-						if (equipSlot == glob.bothHandsEquipSlot)
-						{
-							// Clearing out both hands means all bound weapons will be unequipped,
-							// so clear out the 1H requests as well.
-							p->pam->boundWeapReq2H = false;
-							p->pam->boundWeapReqLH = false;
-							p->pam->boundWeapReqRH = false;
-							p->pam->secsSinceBoundWeap2HReq = 0.0f;
-							p->pam->secsSinceBoundWeapLHReq = 0.0f;
-							p->pam->secsSinceBoundWeapRHReq = 0.0f;
-						}
-						else if (a_equipIndex == EquipIndex::kLeftHand)
-						{
-							p->pam->boundWeapReqLH = false;
-							p->pam->secsSinceBoundWeapLHReq = 0.0f;
-						}
-						else if (a_equipIndex == EquipIndex::kRightHand)
-						{
-							p->pam->boundWeapReqRH = false;
-							p->pam->secsSinceBoundWeapRHReq = 0.0f;
-						}
-					}
-				}
-				
-				SPDLOG_DEBUG
-				(
-					"{}: {} from equip slot {}.", 
-					coopActor->GetName(), 
-					currentForm->GetName(),
-					equipSlot ? Util::GetEditorID(equipSlot) : "NONE"
-				);
-				UnequipForm(currentForm, a_equipIndex, nullptr, 1, equipSlot);
 			}
+				
+			SPDLOG_DEBUG
+			(
+				"{}: {} from equip slot {}.", 
+				coopActor->GetName(), 
+				currentForm->GetName(),
+				equipSlot ? Util::GetEditorID(equipSlot) : "NONE"
+			);
+			UnequipForm(currentForm, a_equipIndex, 1, equipSlot);
 		}
 	}
 
@@ -5905,7 +5965,12 @@ namespace ALYSLC
 					}
 					else if (auto lhBoundObj = lhForm->As<RE::TESBoundObject>(); lhBoundObj)
 					{
-						aem->UnequipObject(coopActor.get(), lhBoundObj);
+						aem->UnequipObject
+						(
+							coopActor.get(),
+							lhBoundObj, 
+							Util::GetEquippedExtraData(coopActor.get(), lhBoundObj, true)
+						);
 					}
 				}
 
@@ -5922,7 +5987,12 @@ namespace ALYSLC
 					}
 					else if (auto rhBoundObj = rhForm->As<RE::TESBoundObject>(); rhBoundObj)
 					{
-						aem->UnequipObject(coopActor.get(), rhBoundObj);
+						aem->UnequipObject
+						(
+							coopActor.get(),
+							rhBoundObj, 
+							Util::GetEquippedExtraData(coopActor.get(), rhBoundObj, false)
+						);
 					}
 				}
 			}
@@ -5941,7 +6011,12 @@ namespace ALYSLC
 					}
 					else if (auto lhBoundObj = lhForm->As<RE::TESBoundObject>(); lhBoundObj)
 					{
-						aem->UnequipObject(coopActor.get(), lhBoundObj);
+						aem->UnequipObject
+						(
+							coopActor.get(),
+							lhBoundObj, 
+							Util::GetEquippedExtraData(coopActor.get(), lhBoundObj, true)
+						);
 					}
 				}
 			}
@@ -5960,7 +6035,12 @@ namespace ALYSLC
 					}
 					else if (auto rhBoundObj = rhForm->As<RE::TESBoundObject>(); rhBoundObj)
 					{
-						aem->UnequipObject(coopActor.get(), rhBoundObj);
+						aem->UnequipObject
+						(
+							coopActor.get(),
+							rhBoundObj, 
+							Util::GetEquippedExtraData(coopActor.get(), rhBoundObj, false)
+						);
 					}
 				}
 			}
@@ -6002,13 +6082,14 @@ namespace ALYSLC
 			return;
 		}
 
+		const auto exDataList = Util::GetEquippedExtraData(coopActor.get(), shield, true);
 		if (p->isPlayer1)
 		{
 			aem->UnequipObject
 			(
 				coopActor.get(), 
 				shield,
-				nullptr, 
+				exDataList, 
 				1, 
 				shield->equipSlot, 
 				false,
@@ -6045,7 +6126,7 @@ namespace ALYSLC
 			(
 				coopActor.get(), 
 				shield,
-				nullptr, 
+				exDataList, 
 				1, 
 				shield->equipSlot, 
 				false, 
@@ -6570,12 +6651,14 @@ namespace ALYSLC
 		// in their inventory.
 		auto desiredLHForm = desiredEquippedForms[!EquipIndex::kLeftHand];
 		auto boundObj = desiredLHForm ? desiredLHForm->As<RE::TESBoundObject>() : nullptr;
-		if (boundObj)
+		if (boundObj && desiredLHForm->IsNot(RE::FormType::Spell, RE::FormType::Shout))
 		{
 			const auto iter = invCounts.find(boundObj);
 			if (iter == invCounts.end() || iter->second <= 0)
 			{
 				// Will unequip as needed.
+				SPDLOG_DEBUG("{} no longer has 1 of LH form {}. Clearing from desired list.",
+					coopActor->GetName(), boundObj->GetName());
 				desiredLHForm = nullptr;
 				desiredEquippedForms[!EquipIndex::kLeftHand] = nullptr;
 			}
@@ -6583,12 +6666,14 @@ namespace ALYSLC
 			
 		auto desiredRHForm = desiredEquippedForms[!EquipIndex::kRightHand];
 		boundObj = desiredRHForm ? desiredRHForm->As<RE::TESBoundObject>() : nullptr;
-		if (boundObj)
+		if (boundObj && desiredRHForm->IsNot(RE::FormType::Spell, RE::FormType::Shout))
 		{
 			const auto iter = invCounts.find(boundObj);
 			if (iter == invCounts.end() || iter->second <= 0)
 			{
 				// Will unequip as needed.
+				SPDLOG_DEBUG("{} no longer has 1 of RH form {}. Clearing from desired list.",
+					coopActor->GetName(), boundObj->GetName());
 				desiredRHForm = nullptr;
 				desiredEquippedForms[!EquipIndex::kRightHand] = nullptr;
 			}

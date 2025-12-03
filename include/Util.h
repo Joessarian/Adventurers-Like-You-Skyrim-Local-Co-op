@@ -3069,7 +3069,6 @@ namespace ALYSLC
 				ui &&
 				(
 					ui->GameIsPaused() ||
-					ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::LevelUpMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::LockpickingMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
@@ -3421,7 +3420,6 @@ namespace ALYSLC
 		// Set the race of the given actor to the given race.
 		inline void SetActorRace(RE::Actor* a_actor, RE::TESRace* a_race)
 		{
-			SPDLOG_DEBUG("SetActorRace");
 			if (!a_actor || !a_race || !a_actor->race)
 			{
 				return;
@@ -3433,6 +3431,13 @@ namespace ALYSLC
 				return;
 			}
 			
+			SPDLOG_DEBUG
+			(
+				"{}: {} -> {}.",
+				a_actor->GetName(), 
+				a_actor->race->GetName(),
+				a_race->GetName()
+			);
 			const auto scriptFactory = 
 			(
 				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
@@ -3772,16 +3777,24 @@ namespace ALYSLC
 		);
 
 		// Favorite/unfavorite the given form for the given actor.
+		// Specify an extra data list to (un)favorite a modified version of the base form.
 		void ChangeFormFavoritesStatus
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, const bool& a_shouldFavorite
+			RE::Actor* a_actor,
+			RE::TESForm* a_form, 
+			const bool& a_shouldFavorite,
+			RE::ExtraDataList* a_exDataList = nullptr
 		);
 
 		// Add/remove hotkey to/from the given form for the given actor.
+		// Specify an extra data list to (un)hotkey a modified version of the base form.
 		// Set -1 as the hotkey index to remove the hotkey.
 		void ChangeFormHotkeyStatus
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, const int8_t& a_hotkeySlotToSet
+			RE::Actor* a_actor,
+			RE::TESForm* a_form,
+			const int8_t& a_hotkeySlotToSet,
+			RE::ExtraDataList* a_exDataList = nullptr
 		);
 		
 		// Add/remove collision via Precision's attack colliders
@@ -3876,6 +3889,16 @@ namespace ALYSLC
 
 		// Get the detection percent of the requesting actor by the detecting actor [0.0, 100.0].
 		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor);
+		
+		// Get the front extra data list to use when equipping/favoriting
+		// the item given by the inventory entry.
+		RE::ExtraDataList* GetEntryFrontExtraDataList(RE::InventoryEntryData* a_invEntryData);
+
+		// Get the extra data list for given equipped form on the given actor.
+		RE::ExtraDataList* GetEquippedExtraData
+		(
+			RE::Actor* a_actor, RE::TESForm* a_form, bool a_leftHand = false
+		);
 
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
 		// Pitch and yaw angles returned in the NiPoint follow the game's conventions for both.
@@ -3959,6 +3982,13 @@ namespace ALYSLC
 		// Credits to ersh1 for the method of getting the body part data:
 		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Utils.cpp
 		RE::NiPoint3 GetTorsoPosition(RE::Actor* a_actor);
+
+		// Get the actor inventory extra data list that contains the given unique ID.
+		// Nullptr if not found or if the unique ID is 0.
+		RE::ExtraDataList* GetUniqueIDExtraDataList
+		(
+			RE::Actor* a_actor, RE::TESBoundObject* a_item, uint32_t a_id
+		);
 
 		// Using a couple raycasts, get collidable points (above, below) the given point.
 		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point);
@@ -4335,6 +4365,17 @@ namespace ALYSLC
 			const float& a_pitch,
 			const float& a_yaw, 
 			const float& a_roll
+		);
+
+		// Add unique ID to the given list, if not nullptr.
+		// Otherwise, add unique ID extra data to the first extra data list for the given item.
+		// Return nullptr and 0 through the outparam when failing to find/add a unique ID.
+		RE::ExtraDataList* SetUniqueIDExtraDataList
+		(
+			RE::Actor* a_actor,
+			RE::TESBoundObject* a_item, 
+			uint32_t& a_uniqueIDOut,
+			RE::ExtraDataList* a_listToChange = nullptr
 		);
 
 		// If the spell has an image space modifier 

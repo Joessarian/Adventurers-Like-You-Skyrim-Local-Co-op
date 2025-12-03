@@ -3496,6 +3496,8 @@ namespace ALYSLC
 		// Should only target allies if casting a non-hostile spell.
 		// Don't want to go around healing enemies, do we?
 		bool shouldOnlyTargetAllies = false;
+		// Should only target corpses to resurrect if casting a reanimate spell.
+		bool shouldOnlyTargetCorpses = false;
 		// Attack source triggering the call.
 		RE::TESForm* attackSource = nullptr;
 		// Does the attack source chosen based on the player's current combat action
@@ -3585,6 +3587,16 @@ namespace ALYSLC
 				// Single attack source, so check if it has a hostile spell.
 				sourceHasSpell = asSpell;
 				shouldOnlyTargetAllies = sourceHasSpell && !Util::HasHostileEffect(attackSource);
+				// Check if the base effect has the reanimate archetype.
+				shouldOnlyTargetCorpses = 
+				(
+					sourceHasSpell && 
+					asSpell->avEffectSetting && 
+					asSpell->avEffectSetting->HasArchetype
+					(
+						RE::EffectSetting::Archetype::kReanimate
+					)
+				);
 			}
 			else if (p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
 					 p->pam->reqSpecialAction == SpecialActionType::kDualCast)
@@ -3616,17 +3628,33 @@ namespace ALYSLC
 					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kLeftHand]) && 
 					!Util::HasHostileEffect(p->em->equippedForms[!EquipIndex::kRightHand])
 				};
+				// Check if the base effect for both spells has the reanimate archetype.
+				shouldOnlyTargetCorpses = 
+				(
+					sourceHasSpell && 
+					lhSpell->avEffectSetting && 
+					lhSpell->avEffectSetting->HasArchetype
+					(
+						RE::EffectSetting::Archetype::kReanimate
+					) && 
+					rhSpell->avEffectSetting && 
+					rhSpell->avEffectSetting->HasArchetype
+					(
+						RE::EffectSetting::Archetype::kReanimate
+					)
+				);
 			}
 
 			/*SPDLOG_DEBUG
 			(
 				"{}: Attack source: {}, has spell: {}, has hostile spell: {}. "
-				"Should only target allies: {}.",
+				"Should only target allies: {}, should only target corpses: {}.",
 				coopActor->GetName(),
 				attackSource ? attackSource->GetName() : "NONE",
 				attackSource ? (bool)attackSource->As<RE::SpellItem>() : false,
 				Util::HasHostileEffect(attackSource),
-				shouldOnlyTargetAllies
+				shouldOnlyTargetAllies,
+				shouldOnlyTargetCorpses
 			);*/
 		}
 
@@ -3728,7 +3756,8 @@ namespace ALYSLC
 		for (const auto& closeActorHandle : procLists->highActorHandles)
 		{
 			auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
-			if (!actorPtr || !Util::IsValidRefrForTargeting(actorPtr.get()) || actorPtr->IsDead())
+			if (!actorPtr || !Util::IsValidRefrForTargeting(actorPtr.get()) || 
+				shouldOnlyTargetCorpses != actorPtr->IsDead())
 			{
 				continue;
 			}
@@ -3795,11 +3824,13 @@ namespace ALYSLC
 				inCombat = true;
 			}
 
-			// Next, filter out targets based on friendliness
-			// and the player's current combat state.
-			// Filter out hostile actors when selecting allies and vice versa.
+			// Next, filter out targets based on spell target type, 
+			// friendliness, and the player's current combat state.
+			// Filter out living actors when attempting to reanimate, 
+			// or hostile actors when selecting allies and vice versa.
 			filteredOut = 
 			(
+				(!shouldOnlyTargetCorpses) &&
 				(a_combatDependentSelection) && 
 				(
 					(
@@ -3874,7 +3905,8 @@ namespace ALYSLC
 		if (!p->isPlayer1) 
 		{
 			// No combat-dependent filter or if trying to heal P1.
-			if (!a_combatDependentSelection || shouldOnlyTargetAllies)
+			if ((!shouldOnlyTargetCorpses) &&
+				(!a_combatDependentSelection || shouldOnlyTargetAllies))
 			{
 				// Perform new closest actor in FOV check on P1.
 				auto actorTorsoPos = glob.coopPlayers[0]->mm->playerTorsoPosition;
@@ -8276,8 +8308,8 @@ namespace ALYSLC
 		(
 			(currentTargetPtr) &&
 			(
-				!Util::IsValidRefrForTargeting(currentTargetPtr.get()) || 
-				currentTargetPtr->IsDead()
+				!Util::IsValidRefrForTargeting(currentTargetPtr.get()) /*|| 
+				currentTargetPtr->IsDead()*/
 			)
 		);
 		if (isNoLongerTargetable)
@@ -9389,6 +9421,13 @@ namespace ALYSLC
 		// we can return early.
 		if ((asActor && !Settings::vbCrosshairMagnetismForActors[playerID]) ||
 			(!asActor && !Settings::vbCrosshairMagnetismForObjRefs[playerID]))
+		{
+			return;
+		}
+
+		// Experimental (may add as MCM option eventually):
+		// No crosshair magnetism for non-hostile actors and objects when in combat.
+		if ((glob.isInCoopCombat) && (!asActor || Util::IsPartyFriendlyActor(asActor)))
 		{
 			return;
 		}
