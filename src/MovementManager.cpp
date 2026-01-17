@@ -2959,7 +2959,7 @@ namespace ALYSLC
 				}
 				else if (framesSinceAttemptingDiscovery < 60)
 				{
-					// Wait 10 frames.
+					// Wait 60 frames.
 					framesSinceAttemptingDiscovery++;
 				}
 				else

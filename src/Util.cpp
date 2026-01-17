@@ -3045,6 +3045,23 @@ namespace ALYSLC
 			return targetTorsoPos;
 		}
 
+		uint32_t GetUniqueID(RE::ExtraDataList* a_list)
+		{
+			// Get the unique ID (0 if none) from the given extra data list.
+
+			if (!a_list)
+			{
+				return 0;
+			}
+
+			if (auto type = a_list->GetByType<RE::ExtraUniqueID>(); type)
+			{
+				return type->uniqueID;
+			}
+
+			return 0;
+		}
+
 		RE::ExtraDataList* GetUniqueIDExtraDataList
 		(
 			RE::Actor* a_actor, RE::TESBoundObject* a_item, uint32_t a_id

@@ -24,6 +24,8 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
+		inline void AssignUniqueID();
+
 		// Remove form from desired forms list when it is unequipped.
 		inline void ClearDesiredEquippedFormOnUnequip
 		(
@@ -646,7 +648,10 @@ namespace ALYSLC
 		// Not currently used and should never be called on P1.
 		void HandleEquipRequest
 		(
-			RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip
+			RE::TESForm* a_form, 
+			RE::ExtraDataList* a_exData,
+			const EquipIndex& a_index, 
+			bool a_shouldEquip
 		);
 		
 		// Un/equip the desired form from the given container at the given index.

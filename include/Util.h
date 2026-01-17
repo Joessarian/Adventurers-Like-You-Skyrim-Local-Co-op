@@ -3983,6 +3983,9 @@ namespace ALYSLC
 		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Utils.cpp
 		RE::NiPoint3 GetTorsoPosition(RE::Actor* a_actor);
 
+		// Get the unique ID (0 if none) from the given extra data list.
+		uint32_t GetUniqueID(RE::ExtraDataList* a_list);
+
 		// Get the actor inventory extra data list that contains the given unique ID.
 		// Nullptr if not found or if the unique ID is 0.
 		RE::ExtraDataList* GetUniqueIDExtraDataList

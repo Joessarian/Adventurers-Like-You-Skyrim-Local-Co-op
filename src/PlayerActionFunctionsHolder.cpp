@@ -2583,11 +2583,11 @@ namespace ALYSLC
 						// Keep the original desired LH and RH forms.
 						auto lhForm = a_p->em->desiredEquippedForms[!EquipIndex::kLeftHand];
 						auto rhForm = a_p->em->desiredEquippedForms[!EquipIndex::kRightHand];
-						auto lhUniqueID = 
+						auto lhUniqueID =
 						(
 							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand]
 						);
-						auto rhUniqueID = 
+						auto rhUniqueID =
 						(
 							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand]
 						);

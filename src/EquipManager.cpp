@@ -1488,6 +1488,7 @@ namespace ALYSLC
 
 			// Add to desired equipped forms list.
 			desiredEquippedForms[!EquipIndex::kAmmo] = a_toEquip;
+			desiredEquippedUniqueIDs[!EquipIndex::kAmmo] = Util::GetUniqueID(a_exData);
 			// NOTE: 
 			// The game has issues un/equipping ammo when count is large (e.g. 100000), 
 			// so only un/equip 1 at a time.
@@ -1588,9 +1589,11 @@ namespace ALYSLC
 				}
 
 				// Add to desired equipped forms list at each biped slot index.
+				const auto uniqueID = Util::GetUniqueID(a_exData);
 				for (auto index : equipIndices)
 				{
 					desiredEquippedForms[index] = a_toEquip;
+					desiredEquippedUniqueIDs[index] = uniqueID;
 				}
 
 				// Special shield case: also update LH slot in desired equipped forms list.
@@ -1598,6 +1601,7 @@ namespace ALYSLC
 				{
 					UnequipFormAtIndex(EquipIndex::kLeftHand);
 					desiredEquippedForms[!EquipIndex::kLeftHand] = a_toEquip;
+					desiredEquippedUniqueIDs[!EquipIndex::kLeftHand] = uniqueID;
 				}
 
 				aem->EquipObject
@@ -1685,6 +1689,11 @@ namespace ALYSLC
 				true
 			);
 		}
+
+		desiredEquippedUniqueIDs
+		[
+			a_slot == glob.rightHandEquipSlot ? !EquipIndex::kLeftHand : !EquipIndex::kRightHand
+		] = 0;
 	}
 
 	void EquipManager::EquipFists()
@@ -1738,6 +1747,9 @@ namespace ALYSLC
 				true
 			);
 		}
+
+		desiredEquippedUniqueIDs[!EquipIndex::kLeftHand] =
+		desiredEquippedUniqueIDs[!EquipIndex::kRightHand] = 0;
 	}
 
 	void EquipManager::EquipForm
@@ -2471,7 +2483,10 @@ namespace ALYSLC
 
 	void EquipManager::HandleEquipRequest
 	(
-		RE::TESForm* a_form, const EquipIndex& a_index, bool a_shouldEquip
+		RE::TESForm* a_form, 
+		RE::ExtraDataList* a_exData,
+		const EquipIndex& a_index,
+		bool a_shouldEquip
 	)
 	{
 		// Handle companion player (un)equip request for the given form at the given index.
@@ -2499,7 +2514,7 @@ namespace ALYSLC
 			{
 			case RE::FormType::Weapon:
 			{
-				EquipForm(a_form, a_index, nullptr, 1, GetEquipSlotForForm(a_form, a_index));
+				EquipForm(a_form, a_index, a_exData, 1, GetEquipSlotForForm(a_form, a_index));
 				break;
 			}
 			case RE::FormType::Armor:
@@ -2515,7 +2530,7 @@ namespace ALYSLC
 			}
 			case RE::FormType::Ammo:
 			{
-				EquipAmmo(a_form);
+				EquipAmmo(a_form, a_exData);
 				break;
 			}
 			case RE::FormType::Shout:
@@ -2531,7 +2546,7 @@ namespace ALYSLC
 					return;
 				}
 				
-				EquipForm(a_form, EquipIndex::kLeftHand, nullptr, 1, asLight->equipSlot);
+				EquipForm(a_form, EquipIndex::kLeftHand, a_exData, 1, asLight->equipSlot);
 
 				break;
 			}
@@ -2554,11 +2569,10 @@ namespace ALYSLC
 					if (weapInvData)
 					{
 						weapInvData->PoisonObject(asAlchemyItem, 1);
-						const auto exData = Util::GetEntryFrontExtraDataList(weapInvData);
 						// Remove after applying the poison.
 						coopActor->RemoveItem
 						(
-							asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, exData, nullptr
+							asAlchemyItem, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 						);
 					}
 				}
@@ -2571,7 +2585,7 @@ namespace ALYSLC
 					(
 						coopActor.get(),
 						asAlchemyItem, 
-						nullptr, 
+						a_exData, 
 						1, 
 						nullptr, 
 						false, 
@@ -2598,7 +2612,7 @@ namespace ALYSLC
 				(
 					coopActor.get(),
 					boundObj, 
-					nullptr, 
+					a_exData, 
 					1, 
 					nullptr, 
 					false, 
@@ -2684,7 +2698,7 @@ namespace ALYSLC
 				(
 					coopActor.get(), 
 					boundObj, 
-					nullptr, 
+					a_exData, 
 					1, 
 					nullptr, 
 					false, 
@@ -2864,6 +2878,7 @@ namespace ALYSLC
 		{
 			if (auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; a_form != currentAmmo)
 			{
+
 				EquipAmmo(a_form, a_exData);
 			}
 			else

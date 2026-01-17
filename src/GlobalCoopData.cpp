@@ -1382,19 +1382,31 @@ namespace ALYSLC
 		// Get the number of level ups used by dividing the sum of HMS increases 
 		// by the number of points granted per level up.
 		uint16_t hmsLevelUpsCount = 0;
-		hmsLevelUpsCount = 
-		(
-			std::accumulate
+		uint16_t availableHMSLevelUps = 0; 
+		if (iAVDhmsLevelUp == 0)
+		{
+			SPDLOG_ERROR
 			(
-				data->hmsPointIncreasesList.begin(), 
-				data->hmsPointIncreasesList.end(), 
-				hmsLevelUpsCount
-			) / iAVDhmsLevelUp
-		);
-		uint16_t availableHMSLevelUps = max
-		(
-			0, a_playerActor->GetLevel() - 1 - hmsLevelUpsCount
-		);
+				"No increase to health/magicka/stamina when leveling up an attribute. "
+				"No adjustment to perk points count."
+			);
+		}
+		else
+		{
+			hmsLevelUpsCount = 
+			(
+				std::accumulate
+				(
+					data->hmsPointIncreasesList.begin(), 
+					data->hmsPointIncreasesList.end(), 
+					hmsLevelUpsCount
+				) / iAVDhmsLevelUp
+			);
+			availableHMSLevelUps = max
+			(
+				0, a_playerActor->GetLevel() - 1 - hmsLevelUpsCount
+			);
+		}
 		
 		SPDLOG_DEBUG
 		(
@@ -1428,7 +1440,6 @@ namespace ALYSLC
 			// count total, so we must anticipate and factor out these extra perks
 			// when figuring out how many perk points to set.
 			p1->perkCount = data->availablePerkPoints - expectedLevelUps;
-
 			SPDLOG_DEBUG
 			(
 				"No available HMS level ups, but there are {} perk points available for use. "

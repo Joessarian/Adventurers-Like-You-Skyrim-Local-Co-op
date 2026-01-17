@@ -616,6 +616,8 @@ namespace ALYSLC
 			// Up to 8 hotkeyed favorited forms.
 			// Nullptr if the slot has no hotkeyed form.
 			std::array<RE::TESForm*, 8> hotkeyedForms;
+			// 0 if the slot's form has no unique ID.
+			std::array<uint32_t, 8> hotkeyedUniqueIDs;
 			// All forms that were saved as equipped for this player.
 			std::vector<RE::TESForm*> equippedForms;
 			// Unique IDs for all equipped items.
