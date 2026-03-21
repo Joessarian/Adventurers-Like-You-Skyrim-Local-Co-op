@@ -1440,6 +1440,7 @@ namespace ALYSLC
 			(
 				Settings::bEnableArmsRotation &&
 				inDialogueOrNotControllingMenus &&
+				!a_p->pam->IsPerforming(InputAction::kHotkeyEquip) &&
 				a_p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
 				!a_p->coopActor->IsWeaponDrawn()
 			);
@@ -1466,7 +1467,7 @@ namespace ALYSLC
 			(
 				CopyablePlayerDataTypes::kInventory
 			);
-			return !isAttacking && !isCasting && !inventoryCopiedToP1;
+			return !isAttacking && !isCasting && !inventoryCopiedToP1 && !a_p->isTransformed;
 		}
 
 		bool PlayerCanOpenMenu(const std::shared_ptr<CoopPlayer>& a_p)
@@ -2507,8 +2508,15 @@ namespace ALYSLC
 				if (baseCost != 0.0f) 
 				{
 					// Can perform if in god mode.
-					// Stamina must not be on cooldown.
-					canPerform |= pam->secsTotalStaminaRegenCooldown == 0.0f;
+					// Stamina must not be on cooldown, or zero if P1.
+					if (a_p->isPlayer1)
+					{
+						canPerform |= a_p->coopActor->GetActorValue(RE::ActorValue::kStamina) > 0;
+					}
+					else
+					{
+						canPerform |= pam->secsTotalStaminaRegenCooldown == 0.0f;
+					}
 				}
 				else
 				{
@@ -2581,15 +2589,29 @@ namespace ALYSLC
 						std::vector<EquipIndex> lhEquipIndices{ };
 						std::vector<EquipIndex> rhEquipIndices{ };
 						// Keep the original desired LH and RH forms.
-						auto lhForm = a_p->em->desiredEquippedForms[!EquipIndex::kLeftHand];
-						auto rhForm = a_p->em->desiredEquippedForms[!EquipIndex::kRightHand];
-						auto lhUniqueID =
+						auto lhForm = a_p->em->desiredForms[!EquipIndex::kLeftHand];
+						auto rhForm = a_p->em->desiredForms[!EquipIndex::kRightHand];
+						auto lhExtraDataList = 
 						(
-							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand]
+							lhForm ? 
+							Util::GetWornRankExtraDataList
+							(
+								a_p->em->inventoryChest.get(), 
+								lhForm->As<RE::TESBoundObject>(),
+								true
+							) : 
+							nullptr
 						);
-						auto rhUniqueID =
+						auto rhExtraDataList = 
 						(
-							a_p->em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand]
+							rhForm ? 
+							Util::GetWornRankExtraDataList
+							(
+								a_p->em->inventoryChest.get(),
+								rhForm->As<RE::TESBoundObject>(),
+								false
+							) : 
+							nullptr
 						);
 						Util::AddSyncedTask
 						(
@@ -2599,31 +2621,82 @@ namespace ALYSLC
 								a_boundWeap,
 								lhForm, 
 								rhForm,
+								lhExtraDataList,
+								rhExtraDataList,
 								&lhEquipIndices,
 								&rhEquipIndices
 							]() 
 							{
-								// Get equip indices and clear out both hands' desired forms.
-								for (auto i = 0; i < a_p->em->desiredEquippedForms.size(); ++i)
+								// Get equip indices to restore desired hand forms later.
+								for (auto i = 0; i < a_p->em->desiredForms.size(); ++i)
 								{
-									auto form = a_p->em->desiredEquippedForms[i];
+									auto form = a_p->em->desiredForms[i];
 									if (lhForm && form == lhForm)
 									{
-										a_p->em->desiredEquippedForms[i] = nullptr;
-										a_p->em->desiredEquippedUniqueIDs[i] = 0;
 										lhEquipIndices.emplace_back(static_cast<EquipIndex>(i));
 									}
 
 									if (rhForm && form == rhForm)
 									{
-										a_p->em->desiredEquippedForms[i] = nullptr;
-										a_p->em->desiredEquippedUniqueIDs[i] = 0;
 										rhEquipIndices.emplace_back(static_cast<EquipIndex>(i));
 									}
 								}
 
-								// Clear hands.
+								// Clear hand(s).
 								a_p->em->UnequipHandForms(a_slot);
+
+								// Restore LH and RH desired forms to their previous indices.
+								// Will be re-equipped later on when the bound weapon's lifetime
+								// expires, when the player sheathes and unsheathes their weapons,
+								// or when the player re-equips their hand forms.
+								for (const auto& equipIndex : lhEquipIndices)
+								{
+									SPDLOG_DEBUG("Add LH form {} back at index {} as desired.",
+										lhForm ? lhForm->GetName() : "NONE", equipIndex);
+									a_p->em->desiredForms[!equipIndex] = lhForm;
+									a_p->em->desiredExtraDataLists[!equipIndex] = lhExtraDataList;
+								}
+								
+								for (const auto& equipIndex : rhEquipIndices)
+								{
+									SPDLOG_DEBUG("Add RH form {} back at index {} as desired.",
+										rhForm ? rhForm->GetName() : "NONE", equipIndex);
+									a_p->em->desiredForms[!equipIndex] = rhForm;
+									a_p->em->desiredExtraDataLists[!equipIndex] = rhExtraDataList;
+								}
+								
+								// Need to add worn data back as well 
+								// so that the items can be re-equipped later.
+								if (lhForm && lhForm->As<RE::TESBoundObject>())
+								{
+									Util::AddWornRankExtraData
+									(
+										Util::GetInventoryEntryDataForObject
+										(
+											a_p->em->inventoryChest.get(), 
+											lhForm->As<RE::TESBoundObject>(), 
+											lhExtraDataList
+										),
+										lhExtraDataList, 
+										true
+									);
+								}
+
+								if (rhForm && rhForm->As<RE::TESBoundObject>())
+								{
+									Util::AddWornRankExtraData
+									(
+										Util::GetInventoryEntryDataForObject
+										(
+											a_p->em->inventoryChest.get(), 
+											rhForm->As<RE::TESBoundObject>(), 
+											rhExtraDataList
+										),
+										rhExtraDataList, 
+										false
+									);
+								}
+
 								// Set request flags and timers here after unequipping.
 								// Also potentially a threading issue.
 								if (a_slot == glob.bothHandsEquipSlot) 
@@ -2760,7 +2833,7 @@ namespace ALYSLC
 							{
 								boundBowForm = 
 								(
-									a_p->em->desiredEquippedForms[!EquipIndex::kQuickSlotSpell]
+									a_p->em->desiredForms[!EquipIndex::kQuickSlotSpell]
 								);
 							}
 
@@ -2826,8 +2899,8 @@ namespace ALYSLC
 								a_boundWeap,
 								lhForm, 
 								rhForm,
-								lhUniqueID,
-								rhUniqueID,
+								lhExtraDataList,
+								rhExtraDataList,
 								&lhEquipIndices,
 								&rhEquipIndices,
 								originalEquipSlot
@@ -2854,20 +2927,6 @@ namespace ALYSLC
 									-a_boundWeapSpell->CalculateMagickaCost(a_p->coopActor.get()) *
 									Settings::vfMagickaCostMult[a_p->playerID]
 								);
-
-								// Restore LH and RH desired forms to their previous indices.
-								// Will be re-equipped by the equip manager's main task.
-								for (const auto& equipIndex : lhEquipIndices)
-								{
-									a_p->em->desiredEquippedForms[!equipIndex] = lhForm;
-									a_p->em->desiredEquippedUniqueIDs[!equipIndex] = lhUniqueID;
-								}
-
-								for (const auto& equipIndex : rhEquipIndices)
-								{
-									a_p->em->desiredEquippedForms[!equipIndex] = rhForm;
-									a_p->em->desiredEquippedUniqueIDs[!equipIndex] = rhUniqueID;
-								}
 
 								// Grant XP.
 								const float baseCost = 
@@ -2911,6 +2970,38 @@ namespace ALYSLC
 			// Right Trigger -> RH
 			// Left Bumper -> Item Quick Slot
 			// Right Bumper -> Spell Quick Slot
+			
+
+			// Notify the player that the hotkeyed form 
+			// is already equipped, or the slot is already empty 
+			// at the requested equip index and return.
+			if (!a_hotkeyedForm && a_hotkeyedForm == a_p->em->equippedForms[!a_equipIndex])
+			{
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format
+					(
+						"P{}: {} is already empty",
+						a_p->playerID + 1,
+						a_equipIndex == EquipIndex::kRightHand ? 
+						"Right hand" :
+						a_equipIndex == EquipIndex::kLeftHand ?
+						"Left hand" : 
+						a_equipIndex == EquipIndex::kQuickSlotItem ?
+						"Item quick slot" :
+						"Spell quick slot"
+					),
+					{ 
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kHotkeySelection, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+				);
+				return;
+			}
 
 			// Refresh favorited forms, if necessary.
 			// Refresh for P1 if the hotkey form is not favorited anymore.
@@ -2926,12 +3017,99 @@ namespace ALYSLC
 					(
 						!a_p->isPlayer1 &&
 						a_hotkeyedForm->IsNot(RE::FormType::Spell, RE::FormType::Shout) &&
-						!Util::IsFavorited(a_p->coopActor.get(), a_hotkeyedForm)
+						!Util::IsFavorited(a_p->em->inventoryChest.get(), a_hotkeyedForm)
 					)
 				)
 			);
 			if (refreshFavorites) 
 			{
+				SPDLOG_DEBUG("{} not favorited. Refresh.", a_hotkeyedForm->GetName());
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kEquippedItem,
+					fmt::format
+					(
+						"P{}: {} is no longer favorited. Refreshing hotkeys.", 
+						a_p->playerID + 1, a_hotkeyedForm->GetName()
+					),
+					{
+						CrosshairMessageType::kNone, 
+						CrosshairMessageType::kHotkeySelection, 
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
+				);
+
+				// Do not update magical favorites for a companion player
+				// because P1's magical favorites are active during regular gameplay.
+				a_p->em->UpdateFavoritedFormsLists(!a_p->isPlayer1);
+				return;
+			}
+			
+			// Get the extra data list to use for the hotkey equip.
+			bool shouldUnequip = false;
+			auto extraDataList = a_p->em->GetNextFavoritedExDataList
+			(
+				a_hotkeyedForm, a_equipIndex == EquipIndex::kLeftHand, shouldUnequip
+			);
+			// Should unequip spell if trying to equip the same one already in the hand.
+			// Must checked copied magic since the hotkeyed form is not a placeholder spell.
+			if ((!shouldUnequip) && 
+				(a_hotkeyedForm->Is(RE::FormType::Spell, RE::FormType::Shout)) && 
+				(
+					a_equipIndex == EquipIndex::kRightHand || 
+					a_equipIndex == EquipIndex::kLeftHand || 
+					a_equipIndex == EquipIndex::kVoice
+				))
+			{
+				auto currentlyEquippedSpell = 
+				(
+					a_p->em->equippedForms[!a_equipIndex] ?
+					a_p->em->equippedForms[!a_equipIndex]->As<RE::SpellItem>() : 
+					nullptr
+				);
+				RE::TESForm* currentlyEquippedSpellForm = nullptr;
+				if (currentlyEquippedSpell)
+				{
+					bool is2HSpell = currentlyEquippedSpell->equipSlot == glob.bothHandsEquipSlot;
+					if (is2HSpell)
+					{
+						currentlyEquippedSpellForm = 
+						(
+							a_p->em->copiedMagic[!PlaceholderMagicIndex::k2H]
+						);
+					}
+					else if (a_equipIndex == EquipIndex::kRightHand)
+					{
+						currentlyEquippedSpellForm = 
+						(
+							a_p->em->copiedMagic[!PlaceholderMagicIndex::kRH]
+						);
+					}
+					else
+					{
+						currentlyEquippedSpellForm = 
+						(
+							a_p->em->copiedMagic[!PlaceholderMagicIndex::kLH]
+						);
+					}
+
+					shouldUnequip |= a_hotkeyedForm == currentlyEquippedSpellForm;
+				}
+			}
+
+			// Refresh if a bound object and there is no extra data list to use.
+			refreshFavorites = 
+			(
+				!extraDataList && 
+				a_hotkeyedForm &&
+				a_hotkeyedForm->IsNot(RE::FormType::Spell, RE::FormType::Shout)	
+			);
+			if (refreshFavorites)
+			{
+				SPDLOG_DEBUG("{} has no favorited exData list. Refresh.",
+					a_hotkeyedForm->GetName());
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
@@ -2955,65 +3133,22 @@ namespace ALYSLC
 				return;
 			}
 
-			// Notify the player that the hotkeyed form 
-			// is already equipped, or the slot is already empty 
-			// at the requested equip index and return.
-			if (a_hotkeyedForm == a_p->em->equippedForms[!a_equipIndex])
-			{
-				if (a_hotkeyedForm)
-				{
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kEquippedItem,
-						fmt::format
-						(
-							"P{}: {} is already equipped",
-							a_p->playerID + 1,
-							a_hotkeyedForm->GetName()
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kHotkeySelection, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
-					);
-				}
-				else
-				{
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kEquippedItem,
-						fmt::format
-						(
-							"P{}: {} is already empty",
-							a_p->playerID + 1,
-							a_equipIndex == EquipIndex::kRightHand ? 
-							"Right hand" :
-							a_equipIndex == EquipIndex::kLeftHand ?
-							"Left hand" : 
-							a_equipIndex == EquipIndex::kQuickSlotItem ?
-							"Item quick slot" :
-							"Spell quick slot"
-						),
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kHotkeySelection, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
-						},
-						max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.5f)
-					);
-				}
-
-				return;
-			}
-
-			auto aem = RE::ActorEquipManager::GetSingleton(); 
+			auto aem = RE::ActorEquipManager::GetSingleton();
+			// More descriptive for tempered/unique items.
+			RE::BSFixedString name = Util::GetDescriptiveName(a_hotkeyedForm, extraDataList);
+			SPDLOG_DEBUG
+			(
+				"{}'s exDataList {:p} has extra name ({}) {}.",
+				a_hotkeyedForm ? a_hotkeyedForm->GetName() : "NONE",
+				fmt::ptr(extraDataList),
+				extraDataList && extraDataList->GetByType<RE::ExtraTextDisplayData>() ?
+				extraDataList->GetByType<RE::ExtraTextDisplayData>()->displayName : 
+				"NONE",
+				name
+			);
 			if (a_equipIndex == EquipIndex::kRightHand) 
 			{
-				if (a_hotkeyedForm)
+				if (a_hotkeyedForm && !shouldUnequip)
 				{
 					// Equip the form in the appropriate slot.
 					RE::BGSEquipSlot* slot = glob.rightHandEquipSlot;
@@ -3026,8 +3161,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in both hands",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
 								{
 									CrosshairMessageType::kNone, 
@@ -3046,8 +3180,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in the right hand",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in the right hand", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3061,7 +3194,7 @@ namespace ALYSLC
 
 						a_p->em->EquipForm
 						(
-							a_hotkeyedForm, EquipIndex::kRightHand, nullptr, 1, slot
+							a_hotkeyedForm, EquipIndex::kRightHand, extraDataList, 1, slot
 						);
 					}
 					else if (auto spell = a_hotkeyedForm->As<RE::SpellItem>(); spell)
@@ -3073,8 +3206,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} to the voice slot",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3093,8 +3225,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in both hands", 
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3113,8 +3244,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in the right hand", 
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in the right hand", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3135,8 +3265,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} to the voice slot", 
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 							),
 							{
 								CrosshairMessageType::kNone, 
@@ -3158,8 +3287,8 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Cannot equip {} in the right hand",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Cannot equip {} in the right hand", 
+									a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3177,8 +3306,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} to an armor slot", 
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} to an armor slot", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3188,7 +3316,7 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						a_p->em->EquipArmor(a_hotkeyedForm);
+						a_p->em->EquipArmor(a_hotkeyedForm, extraDataList);
 					}
 					else if (a_hotkeyedForm->As<RE::TESObjectLIGH>())
 					{
@@ -3198,8 +3326,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Cannot equip {} in the right hand",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Cannot equip {} in the right hand", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone,
@@ -3222,14 +3349,28 @@ namespace ALYSLC
 							{
 								weapInvData->PoisonObject(alchemyItem, 1);
 								// Remove after applying the poison.
-								a_p->coopActor->RemoveItem
-								(
-									alchemyItem, 
-									1, 
-									RE::ITEM_REMOVE_REASON::kRemove, 
-									nullptr, 
-									nullptr
-								);
+								if (a_p->isPlayer1)
+								{
+									a_p->coopActor->RemoveItem
+									(
+										alchemyItem, 
+										1, 
+										RE::ITEM_REMOVE_REASON::kRemove, 
+										nullptr, 
+										nullptr
+									);
+								}
+								else
+								{
+									a_p->em->inventoryChest->RemoveItem
+									(
+										alchemyItem, 
+										1, 
+										RE::ITEM_REMOVE_REASON::kRemove, 
+										nullptr, 
+										nullptr
+									);
+								}
 
 								a_p->tm->SetCrosshairMessageRequest
 								(
@@ -3238,7 +3379,7 @@ namespace ALYSLC
 									(
 										"P{}: Applying {} to {}", 
 										a_p->playerID + 1, 
-										a_hotkeyedForm->GetName(),
+										name,
 										weapInvData->object ?
 										weapInvData->object->GetName() :
 										"right hand weapon"
@@ -3261,8 +3402,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Consuming {}",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Consuming {}", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3272,7 +3412,7 @@ namespace ALYSLC
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
-							aem->EquipObject(a_p->coopActor.get(), alchemyItem, nullptr, 1);
+							Util::EquipObject(a_p->coopActor.get(), alchemyItem, extraDataList, 1);
 						}
 					}
 					else if (a_hotkeyedForm->IsAmmo())
@@ -3282,8 +3422,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} as ammo",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} as ammo", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3293,7 +3432,7 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						a_p->em->EquipAmmo(a_hotkeyedForm);
+						a_p->em->EquipAmmo(a_hotkeyedForm, extraDataList);
 					}
 					else if (aem && a_hotkeyedForm->As<RE::TESBoundObject>())
 					{
@@ -3303,7 +3442,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {}", a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {}", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3313,7 +3452,7 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						aem->EquipObject
+						Util::EquipObject
 						(
 							a_p->coopActor.get(), a_hotkeyedForm->As<RE::TESBoundObject>()
 						);
@@ -3359,7 +3498,7 @@ namespace ALYSLC
 			}
 			else if (a_equipIndex == EquipIndex::kLeftHand)
 			{
-				if (a_hotkeyedForm)
+				if (a_hotkeyedForm && !shouldUnequip)
 				{
 					// Equip the form in the appropriate slot.
 					RE::BGSEquipSlot* slot = glob.leftHandEquipSlot;
@@ -3372,8 +3511,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in both hands", 
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3392,8 +3530,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in the left hand", 
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3407,7 +3544,7 @@ namespace ALYSLC
 
 						a_p->em->EquipForm
 						(
-							a_hotkeyedForm, EquipIndex::kLeftHand, nullptr, 1, slot
+							a_hotkeyedForm, EquipIndex::kLeftHand, extraDataList, 1, slot
 						);
 					}
 					else if (auto spell = a_hotkeyedForm->As<RE::SpellItem>(); spell)
@@ -3419,8 +3556,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} to the voice slot", 
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3439,8 +3575,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in both hands",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in both hands", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone,
@@ -3459,8 +3594,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in the left hand",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3481,8 +3615,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} to the voice slot",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} to the voice slot", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3503,8 +3636,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} in the left hand",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3522,8 +3654,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Equipping {} to an armor slot",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Equipping {} to an armor slot", a_p->playerID + 1, name
 								),
 								{
 									CrosshairMessageType::kNone, 
@@ -3535,7 +3666,7 @@ namespace ALYSLC
 							);
 						}
 
-						a_p->em->EquipArmor(a_hotkeyedForm);
+						a_p->em->EquipArmor(a_hotkeyedForm, extraDataList);
 					}
 					else if (a_hotkeyedForm->As<RE::TESObjectLIGH>())
 					{
@@ -3544,8 +3675,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} in the left hand",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} in the left hand", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3555,7 +3685,7 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, nullptr, 1);
+						a_p->em->EquipForm(a_hotkeyedForm, EquipIndex::kLeftHand, extraDataList, 1);
 					}
 					else if (auto alchemyItem = a_hotkeyedForm->As<RE::AlchemyItem>(); alchemyItem)
 					{
@@ -3568,14 +3698,29 @@ namespace ALYSLC
 							{
 								weapInvData->PoisonObject(alchemyItem, 1);
 								// Remove after applying the poison.
-								a_p->coopActor->RemoveItem
-								(
-									alchemyItem, 
-									1, 
-									RE::ITEM_REMOVE_REASON::kRemove, 
-									nullptr, 
-									nullptr
-								);
+								if (a_p->isPlayer1)
+								{
+									a_p->coopActor->RemoveItem
+									(
+										alchemyItem, 
+										1, 
+										RE::ITEM_REMOVE_REASON::kRemove, 
+										nullptr, 
+										nullptr
+									);
+								}
+								else
+								{
+									a_p->em->inventoryChest->RemoveItem
+									(
+										alchemyItem, 
+										1, 
+										RE::ITEM_REMOVE_REASON::kRemove, 
+										nullptr, 
+										nullptr
+									);
+								}
+
 								a_p->tm->SetCrosshairMessageRequest
 								(
 									CrosshairMessageType::kEquippedItem,
@@ -3583,7 +3728,7 @@ namespace ALYSLC
 									(
 										"P{}: Applying {} to {}", 
 										a_p->playerID + 1, 
-										a_hotkeyedForm->GetName(),
+										name,
 										weapInvData->object ?
 										weapInvData->object->GetName() :
 										"left hand weapon"
@@ -3605,8 +3750,7 @@ namespace ALYSLC
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Consuming {}",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									"P{}: Consuming {}", a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3616,7 +3760,7 @@ namespace ALYSLC
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
-							aem->EquipObject(a_p->coopActor.get(), alchemyItem, nullptr, 1);
+							Util::EquipObject(a_p->coopActor.get(), alchemyItem, extraDataList, 1);
 						}
 					}
 					else if (a_hotkeyedForm->IsAmmo())
@@ -3626,8 +3770,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} as ammo", 
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} as ammo", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3637,7 +3780,7 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						a_p->em->EquipAmmo(a_hotkeyedForm);
+						a_p->em->EquipAmmo(a_hotkeyedForm, extraDataList);
 					}
 					else if (aem && a_hotkeyedForm->As<RE::TESBoundObject>())
 					{
@@ -3647,7 +3790,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {}", a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {}", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3657,9 +3800,11 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						aem->EquipObject
+						Util::EquipObject
 						(
-							a_p->coopActor.get(), a_hotkeyedForm->As<RE::TESBoundObject>()
+							a_p->coopActor.get(), 
+							a_hotkeyedForm->As<RE::TESBoundObject>(),
+							extraDataList
 						);
 					}
 				}
@@ -3715,8 +3860,7 @@ namespace ALYSLC
 								fmt::format
 								(
 									"P{}: Equipping poison {} to the item quick slot", 
-									a_p->playerID + 1, 
-									a_hotkeyedForm->GetName()
+									a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3735,7 +3879,7 @@ namespace ALYSLC
 								fmt::format
 								(
 									"P{}: Equipping {} to the item quick slot",
-									a_p->playerID + 1, a_hotkeyedForm->GetName()
+									a_p->playerID + 1, name
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3760,7 +3904,7 @@ namespace ALYSLC
 							fmt::format
 							(
 								"P{}: Cannot equip {} to the item quick slot",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3824,8 +3968,7 @@ namespace ALYSLC
 							CrosshairMessageType::kEquippedItem,
 							fmt::format
 							(
-								"P{}: Equipping {} to the spell quick slot",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								"P{}: Equipping {} to the spell quick slot", a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -3848,7 +3991,7 @@ namespace ALYSLC
 							fmt::format
 							(
 								"P{}: Cannot equip {} to the spell quick slot",
-								a_p->playerID + 1, a_hotkeyedForm->GetName()
+								a_p->playerID + 1, name
 							),
 							{ 
 								CrosshairMessageType::kNone, 
@@ -4257,7 +4400,6 @@ namespace ALYSLC
 					dashDodgeCommitmentMult *
 					Settings::vfDashDodgeStaminaCostMult[a_p->playerID]
 				);
-
 				break;
 			}
 			case InputAction::kBash:
@@ -4726,22 +4868,27 @@ namespace ALYSLC
 			); 
 			if (asFurniture)
 			{
-				// If there is no marker and no workbench type,
+				// If there is no marker and or a workbench type,
 				// there is no interaction animation to trigger,
 				// so we don't need to run the interaction package
 				// and can skip to just activating the object.
-				bool noInteractionAnimation = 
+				// Do not want to play interaction animation for workbenches
+				// since P1 is the only player that must play the animation
+				// before the Crafting Menu opens.
+				// Would be useless to lock companion players in that animation, 
+				// except maybe for immersion.
+				bool doNotPlayInteractionAnimation = 
 				(
 					asFurniture->furnFlags ==
 					(
 						RE::TESFurniture::ActiveMarker::kNone
-					) &&
-					asFurniture->workBenchData.benchType ==
+					) ||
+					asFurniture->workBenchData.benchType !=
 					(
 						RE::TESFurniture::WorkBenchData::BenchType::kNone
 					)	
 				);
-				if (noInteractionAnimation)
+				if (doNotPlayInteractionAnimation)
 				{
 					return false;
 				}
@@ -4887,6 +5034,24 @@ namespace ALYSLC
 						countInvEntryDataPair.second->IsQuestObject()
 					)
 				);
+				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
+				// Do this before item removal, which will change the entry data's count.
+				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
+				{
+					p1->AddObjectToContainer
+					(
+						boundObj, nullptr, countInvEntryDataPair.first, nullptr
+					);
+					p1->RemoveItem
+					(
+						boundObj,
+						countInvEntryDataPair.first, 
+						RE::ITEM_REMOVE_REASON::kRemove,
+						nullptr, 
+						nullptr
+					);
+				}
+
 				if (toP1)
 				{
 					a_containerPtr->RemoveItem
@@ -4900,40 +5065,26 @@ namespace ALYSLC
 				}
 				else
 				{
-					a_containerPtr->RemoveItem
+					Util::MoveAllOfItem
+					(
+						a_containerPtr.get(), 
+						a_p->em->inventoryChest.get(),
+						boundObj,
+						false,
+						countInvEntryDataPair.second->extraLists,
+						countInvEntryDataPair.first
+					);
+					/*a_containerPtr->RemoveItem
 					(
 						boundObj,
 						countInvEntryDataPair.first,
-						RE::ITEM_REMOVE_REASON::kRemove,
+						RE::ITEM_REMOVE_REASON::kStoreInContainer,
 						nullptr,
-						nullptr
-					);
-					a_p->coopActor->AddObjectToContainer
-					(
-						boundObj,
-						nullptr,
-						countInvEntryDataPair.first,
-						a_p->coopActor.get()
-					);
+						a_p->em->inventoryChest.get()
+					);*/
 				}
 
 				lootedObjects += countInvEntryDataPair.first;
-				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
-				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
-				{
-					p1->AddObjectToContainer
-					(
-						boundObj, nullptr, countInvEntryDataPair.first, p1
-					);
-					p1->RemoveItem
-					(
-						boundObj,
-						countInvEntryDataPair.first, 
-						RE::ITEM_REMOVE_REASON::kRemove,
-						nullptr, 
-						nullptr
-					);
-				}
 			}
 
 			return lootedObjects;
@@ -4983,6 +5134,24 @@ namespace ALYSLC
 							countInvEntryDataPair.second->IsQuestObject()
 						)
 					);
+					// Show in TrueHUD recent loot widget by adding and removing the object from P1.
+					// Do this before item removal, which will change the entry data's count.
+					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
+					{
+						p1->AddObjectToContainer
+						(
+							boundObj, nullptr, countInvEntryDataPair.first, nullptr
+						);
+						p1->RemoveItem
+						(
+							boundObj,
+							countInvEntryDataPair.first, 
+							RE::ITEM_REMOVE_REASON::kRemove,
+							nullptr, 
+							nullptr
+						);
+					}
+
 					if (toP1)
 					{
 						asActor->RemoveItem
@@ -4996,41 +5165,26 @@ namespace ALYSLC
 					}
 					else
 					{
-						asActor->RemoveItem
+						Util::MoveAllOfItem
+						(
+							asActor, 
+							a_p->em->inventoryChest.get(), 
+							boundObj, 
+							false,
+							countInvEntryDataPair.second->extraLists,
+							countInvEntryDataPair.first
+						);
+						/*asActor->RemoveItem
 						(
 							boundObj,
 							countInvEntryDataPair.first,
 							RE::ITEM_REMOVE_REASON::kRemove,
 							nullptr,
-							nullptr
-						);
-						a_p->coopActor->AddObjectToContainer
-						(
-							boundObj,
-							nullptr,
-							countInvEntryDataPair.first,
-							a_p->coopActor.get()
-						);
+							a_p->em->inventoryChest.get()
+						);*/
 					}
 
 					lootedObjects += countInvEntryDataPair.first;
-					// Show in TrueHUD recent loot widget 
-					// by adding and removing the object from P1.
-					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
-					{
-						p1->AddObjectToContainer
-						(
-							boundObj, nullptr, countInvEntryDataPair.first, p1
-						);
-						p1->RemoveItem
-						(
-							boundObj,
-							countInvEntryDataPair.first, 
-							RE::ITEM_REMOVE_REASON::kRemove,
-							nullptr, 
-							nullptr
-						);
-					}
 				}
 			}
 
@@ -5128,14 +5282,14 @@ namespace ALYSLC
 					// especially if they are quest items.
 					shouldLootWithP1 = isQuestItem || Util::IsPartyWideItem(baseObj);
 					// Show in TrueHUD recent loot widget if P1 is not looting the item themselves.
-					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !shouldLootWithP1)
+					/*if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !shouldLootWithP1)
 					{
-						p1->AddObjectToContainer(baseObj, nullptr, count, p1);
+						p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 						p1->RemoveItem
 						(
 							baseObj, count, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 						);
-					}
+					}*/
 				}
 
 				if (p1 && shouldLootWithP1)
@@ -6591,23 +6745,75 @@ namespace ALYSLC
 					if (ActionJustStarted(a_p, a_action))
 					{
 						auto currentAmmo = a_p->coopActor->GetCurrentAmmo();
-						auto invCounts = a_p->coopActor->GetInventoryCounts();
-						const auto iter = invCounts.find(currentAmmo);
-						const int32_t ammoCount = iter != invCounts.end() ? iter->second : -1;
+						auto inv = 
+						(
+							a_p->isPlayer1 ? 
+							a_p->coopActor->GetInventory() :
+							a_p->em->inventoryChest->GetInventory()
+						);
+						const auto iter = inv.find(currentAmmo);
+						const int32_t ammoCount = iter != inv.end() ? iter->second.first : -1;
 						if (!currentAmmo || ammoCount <= 0)
 						{
-							// Notify the player that they do not have ammo equipped.
-							a_p->tm->SetCrosshairMessageRequest
-							(
-								CrosshairMessageType::kGeneralNotification,
-								fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
+							if (Settings::uAmmoAutoEquipMode == !AmmoAutoEquipMode::kNone)
+							{
+								// Notify the player that they do not have ammo equipped.
+								a_p->tm->SetCrosshairMessageRequest
+								(
+									CrosshairMessageType::kGeneralNotification,
+									fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
+									{ 
+										CrosshairMessageType::kNone,
+										CrosshairMessageType::kStealthState,
+										CrosshairMessageType::kTargetSelection 
+									},
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+								);
+							}
+							else
+							{
+								a_p->em->AutoEquipAmmo(em->GetRHWeapon());
+								auto newAmmo = a_p->coopActor->GetCurrentAmmo();
+								auto exDataList = Util::GetEquippedExtraData
+								(
+									a_p->coopActor.get(), newAmmo, false
+								);
+								// Notify the player that they do not have ammo equipped,
+								// and if new ammo was equipped, let them know what type.
+								if (newAmmo)
 								{
-									CrosshairMessageType::kNone, 
-									CrosshairMessageType::kStealthState, 
-									CrosshairMessageType::kTargetSelection 
-								},
-								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
-							);
+									a_p->tm->SetCrosshairMessageRequest
+									(
+										CrosshairMessageType::kGeneralNotification,
+										fmt::format
+										(
+											"P{}: No equipped ammo! Equipped {}", 
+											a_p->playerID + 1,
+											Util::GetDescriptiveName(newAmmo, exDataList)
+										),
+										{ 
+											CrosshairMessageType::kNone,
+											CrosshairMessageType::kStealthState,
+											CrosshairMessageType::kTargetSelection 
+										},
+										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+								}
+								else
+								{
+									a_p->tm->SetCrosshairMessageRequest
+									(
+										CrosshairMessageType::kGeneralNotification,
+										fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
+										{ 
+											CrosshairMessageType::kNone,
+											CrosshairMessageType::kStealthState,
+											CrosshairMessageType::kTargetSelection 
+										},
+										0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+								}
+							}
 						}
 						else
 						{
@@ -6664,23 +6870,70 @@ namespace ALYSLC
 					em->Has2HRangedWeapEquipped())
 				{
 					auto currentAmmo = a_p->coopActor->GetCurrentAmmo();
-					auto invCounts = a_p->coopActor->GetInventoryCounts();
-					const auto iter = invCounts.find(currentAmmo);
-					const int32_t ammoCount = iter != invCounts.end() ? iter->second : -1;
+					auto inv = a_p->em->inventoryChest->GetInventory();
+					const auto iter = inv.find(currentAmmo);
+					const int32_t ammoCount = iter != inv.end() ? iter->second.first : -1;
 					if (!currentAmmo || ammoCount <= 0)
 					{
-						// Notify the player that they do not have ammo equipped.
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState,
-								CrosshairMessageType::kTargetSelection 
-							},
-							0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
-						);
+						if (Settings::uAmmoAutoEquipMode == !AmmoAutoEquipMode::kNone)
+						{
+							// Notify the player that they do not have ammo equipped.
+							a_p->tm->SetCrosshairMessageRequest
+							(
+								CrosshairMessageType::kGeneralNotification,
+								fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
+								{ 
+									CrosshairMessageType::kNone,
+									CrosshairMessageType::kStealthState,
+									CrosshairMessageType::kTargetSelection 
+								},
+								0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+							);
+						}
+						else
+						{
+							a_p->em->AutoEquipAmmo(em->GetRHWeapon());
+							auto newAmmo = a_p->coopActor->GetCurrentAmmo();
+							auto exDataList = Util::GetEquippedExtraData
+							(
+								a_p->coopActor.get(), newAmmo, false
+							);
+							// Notify the player that they do not have ammo equipped,
+							// and if new ammo was equipped, let them know what type.
+							if (newAmmo)
+							{
+								a_p->tm->SetCrosshairMessageRequest
+								(
+									CrosshairMessageType::kGeneralNotification,
+									fmt::format
+									(
+										"P{}: No equipped ammo! Equipped {}", 
+										a_p->playerID + 1,
+										Util::GetDescriptiveName(newAmmo, exDataList)
+									),
+									{ 
+										CrosshairMessageType::kNone,
+										CrosshairMessageType::kStealthState,
+										CrosshairMessageType::kTargetSelection 
+									},
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+								);
+							}
+							else
+							{
+								a_p->tm->SetCrosshairMessageRequest
+								(
+									CrosshairMessageType::kGeneralNotification,
+									fmt::format("P{}: No equipped ammo!", a_p->playerID + 1),
+									{ 
+										CrosshairMessageType::kNone,
+										CrosshairMessageType::kStealthState,
+										CrosshairMessageType::kTargetSelection 
+									},
+									0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+								);
+							}
+						}
 					}
 					else
 					{
@@ -7175,11 +7428,15 @@ namespace ALYSLC
 									{
 										float inventoryWeight = 
 										(
-											a_p->coopActor->GetWeightInContainer()
+											a_p->isPlayer1 ? 
+											a_p->coopActor->GetWeightInContainer() :
+											a_p->em->inventoryChest->GetWeightInContainer()
 										);
 										const auto invChanges = 
 										(
-											a_p->coopActor->GetInventoryChanges()
+											a_p->isPlayer1 ? 
+											a_p->coopActor->GetInventoryChanges() :
+											a_p->em->inventoryChest->GetInventoryChanges()
 										);
 										if (invChanges)
 										{
@@ -8979,6 +9236,37 @@ namespace ALYSLC
 					a_p, a_p->em->lastChosenHotkeyedForm, EquipIndex::kQuickSlotSpell
 				);
 			}
+			// Experimental switch to clicking RThumb. Not in use right now.
+			/*else if (glob.cdh->GetInputState
+					 (
+						 a_p->deviceID, InputAction::kRThumb
+					 ).justReleased)
+			{
+				
+				if (a_p->em->lastChosenHotkeyedForm)
+				{
+					if (a_p->em->lastChosenHotkeyedForm->Is
+						(
+							RE::FormType::Spell, RE::FormType::Shout
+						))
+					{
+						HelperFuncs::EquipHotkeyedForm
+						(
+							a_p, a_p->em->lastChosenHotkeyedForm, EquipIndex::kQuickSlotSpell
+						);
+					}
+					else if (a_p->em->lastChosenHotkeyedForm->Is
+							(
+								RE::FormType::AlchemyItem, RE::FormType::Ingredient
+							))
+					{
+						HelperFuncs::EquipHotkeyedForm
+						(
+							a_p, a_p->em->lastChosenHotkeyedForm, EquipIndex::kQuickSlotItem
+						);
+					}
+				}
+			}*/
 		}
 
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
@@ -10450,25 +10738,6 @@ namespace ALYSLC
 				return;
 			}
 
-			if (glob.isInCoopCombat)
-			{
-				glob.moarm->InsertRequest
-				(
-					a_p->playerID, 
-					InputAction::kCoopSummoningMenu, 
-					SteadyClock::now(), 
-					RE::MessageBoxMenu::MENU_NAME
-				);
-				RE::DebugMessageBox
-				(
-					"[ALYSLC]\nA player is in combat. "
-					"Please ensure that all players are not in combat "
-					"before attempting to open the Summoning Menu."
-				);
-
-				return;
-			}
-
 			for (const auto& p : glob.coopPlayers)
 			{
 				if (!p->isActive)
@@ -10502,9 +10771,9 @@ namespace ALYSLC
 			// Re-equip items in the player's hands.
 			// Useful when those items are bugged out in some way.
 			
-			a_p->pam->ReadyWeapon(false);
+			//a_p->pam->ReadyWeapon(false);
 			a_p->em->ReEquipHandForms();
-			a_p->pam->ReadyWeapon(true);
+			//a_p->pam->ReadyWeapon(true);
 			a_p->tm->SetCrosshairMessageRequest
 			(
 				CrosshairMessageType::kGeneralNotification,
@@ -10911,7 +11180,15 @@ namespace ALYSLC
 				// Reset P1 damage multiplier so that the co-op player's inventory 
 				// reports the correct damage for weapons, if perks are also imported.
 				glob.player1Actor->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
-				a_p->coopActor->OpenContainer(!RE::ContainerMenu::ContainerMode::kNPCMode);
+				a_p->em->inventoryChest->SetDisplayName
+				(
+					fmt::format("{}'s Inventory", a_p->coopActor->GetName()).c_str(),
+					true
+				);
+				a_p->em->inventoryChest->OpenContainer
+				(
+					!RE::ContainerMenu::ContainerMode::kNPCMode
+				);
 			}
 		}
 
@@ -11177,9 +11454,9 @@ namespace ALYSLC
 			// Allow usage of a QS item only if the player HAD at least 1 in their inventory,
 			// as indicated by presence of an entry in the player's inventory counts.
 			// Otherwise, clear out the slot and notify the player.
-			const auto invCounts = a_p->coopActor->GetInventoryCounts();				
-			const auto iter = invCounts.find(qsBoundObj);
-			const int32_t count = iter != invCounts.end() ? iter->second : -1;
+			auto inv = a_p->em->inventoryChest->GetInventory();
+			const auto iter = inv.find(qsBoundObj);
+			const int32_t count = iter != inv.end() ? iter->second.first : -1;
 			if (count > 0)
 			{
 				// Has at least 1, so use the item via equip.
@@ -11189,17 +11466,13 @@ namespace ALYSLC
 					return;
 				}
 
-				aem->EquipObject
+				Util::EquipObject
 				(
 					a_p->coopActor.get(),
 					qsItem->As<RE::TESBoundObject>(), 
-					nullptr, 
-					1,
 					nullptr,
-					false,
-					true, 
-					true, 
-					true
+					1,
+					nullptr
 				);
 				// Notify the player of quick item use and how many remain.
 				a_p->tm->SetCrosshairMessageRequest
@@ -11324,6 +11597,7 @@ namespace ALYSLC
 			}
 			else
 			{
+				a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
 				if (a_p->isPlayer1)
 				{
 					// Toggling via action command and actor state causes the stealth meter
@@ -11351,10 +11625,6 @@ namespace ALYSLC
 						ButtonEventPressType::kRelease,
 						1.0f
 					);
-					a_p->pam->wantsToSneak = static_cast<bool>
-					(
-						a_p->coopActor->actorState1.sneaking
-					);
 				}
 				else
 				{
@@ -11365,17 +11635,13 @@ namespace ALYSLC
 					// to ensure all three states are equivalent.
 					// Sneak state changes are still sometimes delayed
 					// for companion players unfortunately.
-					a_p->pam->wantsToSneak = !a_p->pam->wantsToSneak;
 					if (a_p->pam->wantsToSneak)
 					{
 						// Ensure package flags are in sync for co-op companions.
-						if (!a_p->isPlayer1)
-						{
-							a_p->pam->SetPackageFlag
-							(
-								RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
-							);
-						}
+						a_p->pam->SetPackageFlag
+						(
+							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
+						);
 
 						Util::RunPlayerActionCommand
 						(
@@ -11386,14 +11652,10 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (!a_p->isPlayer1)
-						{
-							a_p->pam->SetPackageFlag
-							(
-								RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
-							);
-						}
-
+						a_p->pam->SetPackageFlag
+						(
+							RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, false
+						);
 						Util::RunPlayerActionCommand
 						(
 							RE::DEFAULT_OBJECT::kActionSneak, a_p->coopActor.get()
@@ -11437,8 +11699,18 @@ namespace ALYSLC
 			// Inform the player that they are overencumbered before returning.
 			if (overencumbered)
 			{
-				float inventoryWeight = a_p->coopActor->GetWeightInContainer();
-				const auto invChanges = a_p->coopActor->GetInventoryChanges();
+				float inventoryWeight = 
+				(
+					a_p->isPlayer1 ? 
+					a_p->coopActor->GetWeightInContainer() :
+					a_p->em->inventoryChest->GetWeightInContainer()
+				);
+				const auto invChanges = 
+				(
+					a_p->isPlayer1 ? 
+					a_p->coopActor->GetInventoryChanges() :
+					a_p->em->inventoryChest->GetInventoryChanges()
+				);
 				if (invChanges)
 				{
 					inventoryWeight = invChanges->totalWeight;
@@ -11452,7 +11724,7 @@ namespace ALYSLC
 						"P{}: <font color=\"#FF0000\">Over-encumbered! ({:.0f} / {:.0f})</font>", 
 						a_p->playerID + 1,
 						inventoryWeight,
-						max(1.0f, a_p->coopActor->GetActorValue(RE::ActorValue::kCarryWeight))
+						max(1.0f, a_p->coopActor->GetTotalCarryWeight())
 					),
 					{ 
 						CrosshairMessageType::kNone, 
@@ -12428,6 +12700,13 @@ namespace ALYSLC
 									},
 									Settings::fSecsBetweenDiffCrosshairMsgs
 								);
+								// Reset to default package and stop any interaction idles.
+								if (!a_p->coopActor->IsOnMount())
+								{
+									a_p->pam->SetAndEveluatePackage();
+									// Quickly exit any interaction.
+									a_p->coopActor->StopInteractingQuick(true);
+								}
 							}
 							else
 							{
@@ -12479,9 +12758,9 @@ namespace ALYSLC
 								a_p->tm->activationRefrHandle
 							);
 							// Show in TrueHUD recent loot widget.
-							if (lootable && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
+							/*if (lootable && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
 							{
-								p1->AddObjectToContainer(baseObj, nullptr, count, p1);
+								p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 								p1->RemoveItem
 								(
 									baseObj, 
@@ -12490,7 +12769,7 @@ namespace ALYSLC
 									nullptr,
 									nullptr
 								);
-							}
+							}*/
 
 							Util::ActivateRefr
 							(
@@ -13021,12 +13300,22 @@ namespace ALYSLC
 
 			if (auto ammoForm = a_p->em->currentCycledAmmo; ammoForm)
 			{
+				bool shouldUnequip = false;
+				auto extraDataList = a_p->em->GetNextFavoritedExDataList
+				(
+					ammoForm, false, shouldUnequip
+				);
 				// Equip on release.
-				a_p->em->EquipAmmo(ammoForm);
+				a_p->em->EquipAmmo(ammoForm, extraDataList);
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, ammoForm->GetName()),
+					fmt::format
+					(
+						"P{}: Equip '{}'", 
+						a_p->playerID + 1, 
+						Util::GetDescriptiveName(ammoForm, extraDataList)
+					),
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
@@ -13458,11 +13747,16 @@ namespace ALYSLC
 			// Get cycled spell from current category.
 			if (auto form = a_p->em->currentCycledLHWeaponsList[!a_p->em->lhWeaponCategory]; form)
 			{
+				bool shouldUnequip = false;
+				auto extraDataList = a_p->em->GetNextFavoritedExDataList
+				(
+					form, true, shouldUnequip
+				);
 				// Equip on release.
 				// Shield and torch go in the left hand.
 				if (auto armor = form->As<RE::TESObjectARMO>(); armor && armor->IsShield()) 
 				{
-					a_p->em->EquipArmor(form);
+					a_p->em->EquipArmor(form, extraDataList);
 				}
 				else if (auto light = form->As<RE::TESObjectLIGH>(); 
 						 light && light->data.flags.all(RE::TES_LIGHT_FLAGS::kCanCarry))
@@ -13470,7 +13764,7 @@ namespace ALYSLC
 					a_p->em->EquipForm
 					(
 						form, EquipIndex::kLeftHand,
-						(RE::ExtraDataList*)nullptr, 
+						extraDataList, 
 						1, 
 						glob.leftHandEquipSlot
 					);
@@ -13488,7 +13782,7 @@ namespace ALYSLC
 					(
 						form, 
 						EquipIndex::kLeftHand, 
-						(RE::ExtraDataList*)nullptr, 
+						extraDataList, 
 						1, 
 						is2HWeap ? glob.bothHandsEquipSlot : glob.leftHandEquipSlot
 					);
@@ -13498,7 +13792,12 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
-					fmt::format("P{}: Equip '{}'", a_p->playerID + 1, form->GetName()),
+					fmt::format
+					(
+						"P{}: Equip '{}'", 
+						a_p->playerID + 1, 
+						Util::GetDescriptiveName(form, extraDataList)
+					),
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
@@ -13579,6 +13878,11 @@ namespace ALYSLC
 			{
 				if (auto weap = form->As<RE::TESObjectWEAP>(); weap) 
 				{
+					bool shouldUnequip = false;
+					auto extraDataList = a_p->em->GetNextFavoritedExDataList
+					(
+						form, false, shouldUnequip
+					);
 					// Equip on release.
 					// Shield and torch cannot be cycled in right hand,
 					// so no need to handle those cases here.
@@ -13587,7 +13891,7 @@ namespace ALYSLC
 					(
 						form, 
 						EquipIndex::kRightHand,
-						(RE::ExtraDataList*)nullptr, 
+						extraDataList, 
 						1, 
 						is2HWeap ? glob.bothHandsEquipSlot : glob.rightHandEquipSlot
 					);
@@ -13595,7 +13899,12 @@ namespace ALYSLC
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kEquippedItem,
-						fmt::format("P{}: Equip '{}'", a_p->playerID + 1, form->GetName()),
+						fmt::format
+						(
+							"P{}: Equip '{}'", 
+							a_p->playerID + 1, 
+							Util::GetDescriptiveName(form, extraDataList)
+						),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 

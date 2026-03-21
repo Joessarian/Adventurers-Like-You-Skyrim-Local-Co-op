@@ -480,7 +480,6 @@ namespace ALYSLC
 			return 
 			(
 				(
-
 					IsPerformingOneOf
 					(
 						InputAction::kCastLH, InputAction::kCastRH, InputAction::kQuickSlotCast
@@ -820,9 +819,6 @@ namespace ALYSLC
 
 		// Reset all time points to the current time.
 		void ResetTPs();
-
-		// Restore the given actor value to its full, maximum value (base + temp modifier).
-		void RestoreAVToMaxValue(RE::ActorValue a_av);
 
 		// Revive the targeted downed player.
 		// Remove and transfer health from the reviving player 

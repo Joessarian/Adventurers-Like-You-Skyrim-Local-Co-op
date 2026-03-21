@@ -17,11 +17,12 @@ Form[] Function GetAllClasses() Global Native
 String[] Function GetAllCyclableEmoteIdleEvents() Global Native
 Form[] Function GetAllSelectableRaces(Int a_selectableRaceTypeFilter) Global Native
 Form[] Function GetAllVoiceTypes(Bool a_female) Global Native
+Actor[] Function GetCompanionPlayerCharacters() Global Native
 String[] Function GetFavoritedEmoteIdles(Int a_playerID) Global Native
 Function RequestMenuControl(Int a_deviceID, Int a_playerID, String a_menuName) Global Native
 Function RequestStateChange(Int a_playerID, Int a_newState) Global Native
 Function RescaleAVsOnBaseSkillAVChange(Actor a_playerActor) Global Native
-Function SetCoopPlayerClass(Actor a_playerActor, Class a_class) Global Native
+Function SetCoopPlayerClass(Actor a_playerActor, Class a_class, Bool a_rescaleActorValues) Global Native
 Function SetCoopPlayerRace(Actor a_playerActor, Race a_race, Bool a_rescaleActorValues) Global Native
 Function SetFavoritedEmoteIdles(Int a_playerID, String[] a_emoteIdlesList) Global Native
 Function SetGifteePlayerActor(Actor a_playerActor) Global Native
@@ -35,6 +36,7 @@ Function ToggleSetupMenuControl(Int a_deviceID, int a_playerID, Bool a_shouldEnt
 Function UpdateAllCompanionPlayerSerializationIDs() Global Native
 
 Function Log(String a_messsage) Global Native
+Function LogError(String a_message) Global Native
 
 ;================================================================
 ;==================[Character Customization]=====================
@@ -91,7 +93,7 @@ Function FixStutterAnimsAfterEquipBug(Actor akActor) Global
 		Else
 			akActor.UnequipItemEx(LHObj, 2, False)
 		EndIf
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 	EndIf
 
 	If (HasRHObjEquipped)
@@ -100,35 +102,35 @@ Function FixStutterAnimsAfterEquipBug(Actor akActor) Global
 		Else
 			akActor.UnequipItemEx(RHObj, 1, False)
 		EndIf
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 	EndIf
 
 	While (akActor.IsEnabled())
 		akActor.Disable()
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 	EndWhile
-	Utility.Wait(0.5)
+	ALYSLC.Wait(0.5)
 
 	While (!akActor.IsEnabled())
 		akActor.Enable(True)
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 	EndWhile
 
-	Utility.Wait(0.1)
+	ALYSLC.Wait(0.1)
 	If (HasLHObjEquipped)
 		If (LHObj as Spell)
 			akActor.EquipSpell(LHObj as Spell, 0)
 		Else
-			akActor.EquipItemEx(LHObj, 2, True, False)
+			akActor.EquipItemEx(LHObj, 2, False, False)
 		EndIf
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 	EndIf
 
 	If (HasRHObjEquipped)
 		If (RHObj as Spell)
 			akActor.EquipSpell(RHObj as Spell, 1)
 		Else
-			akActor.EquipItemEx(RHObj, 1, True, False)
+			akActor.EquipItemEx(RHObj, 1, False, False)
 		EndIf
 	EndIf
 
@@ -192,5 +194,14 @@ Function SetInitialCustomizationOptions(Actor akPlayerActor) Global
     If (CurrentWeight == -1.0)
         ALYSLC.Log("[ALYSLC SCRIPT] SetInitialCustomizationOptions: Setting default weight to 50.0")
         StorageUtil.SetFloatValue(akPlayerActor, "ALYSLC_Weight", 50.0)
+    EndIf
+EndFunction
+
+; Wait the specified number of seconds. Account for open menus.
+Function Wait(Float afSeconds) Global
+    If (Utility.IsInMenuMode())
+        Utility.WaitMenuMode(0.1)
+    Else
+        Utility.Wait(0.1)
     EndIf
 EndFunction

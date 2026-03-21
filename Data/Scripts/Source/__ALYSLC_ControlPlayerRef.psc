@@ -59,7 +59,7 @@ Event OnCoopStart()
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[CP1R SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
 	
@@ -73,17 +73,17 @@ Event OnCoopStart()
 	DeviceID = StorageUtil.GetIntValue(PlayerRef, "ALYSLC_DeviceID",  -1)
 	PlayerID = StorageUtil.GetIntValue(PlayerRef, "ALYSLC_PlayerID",  -1)
 	If (DeviceID == -1)
-		ALYSLC.Log("[CP1R SCRIPT] ERR: Player 1's device ID is invalid or not found. Please inform the mod author of his stupidity.")
+		ALYSLC.LogError("[CP1R SCRIPT] ERR: Player 1's device ID is invalid or not found. Please inform the mod author of his stupidity.")
 	EndIf
 
 	If (PlayerID == -1)
-		ALYSLC.Log("[CP1R SCRIPT] ERR: Player 1's player ID is invalid or not found. Please inform the mod author of his stupidity.")
+		ALYSLC.LogError("[CP1R SCRIPT] ERR: Player 1's player ID is invalid or not found. Please inform the mod author of his stupidity.")
 	EndIf
 
 	; Add co-op player keyword to player 1.
 	CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(PlayerID + 1, False) + "Keyword") as Keyword
 	PO3_SKSEFunctions.AddKeywordToRef(PlayerRef, CoopPlayerKeyword)
-	Utility.Wait(0.1)
+	ALYSLC.Wait(0.1)
 	CompletedLoad = True
 	ALYSLC.Log("[CP1R SCRIPT] CP1R script is done with initialization")
 EndEvent

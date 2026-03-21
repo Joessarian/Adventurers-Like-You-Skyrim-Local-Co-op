@@ -38,6 +38,7 @@ namespace ALYSLC
 			LoadingMenuHooks::InstallHooks();
 			LookHandlerHooks::InstallHooks();
 			MagicMenuHooks::InstallHooks();
+			MagicStaggerHooks::InstallHooks();
 			MeleeHitHooks::InstallHooks();
 			MenuControlsHooks::InstallHooks();
 			MovementHandlerHooks::InstallHooks();
@@ -235,6 +236,9 @@ namespace ALYSLC
 				modUpdateMS2
 			);
 #else 
+			// Update allow-saving flag before running the main update.
+			GlobalCoopData::UpdateAllowSavingFlag();
+
 			// Skip if global data isn't set yet.
 			if (!glob.globalDataInit)
 			{
@@ -246,8 +250,6 @@ namespace ALYSLC
 				return _Update(a_this, a_a2);;
 			}
 
-			// Update allow-saving flag before running the main update.
-			GlobalCoopData::UpdateAllowSavingFlag();
 			// Run the game's update next.
 			_Update(a_this, a_a2);
 
@@ -375,6 +377,11 @@ namespace ALYSLC
 		}
 
 // [ACTOR EQUIP MANAGER HOOKS]:
+
+		// IMPORTANT:
+		// This hook will not fire if the original EquipObject call's passed in extra data list
+		// has 'ExtraWorn/ExtraWornLeft' data to match the slot the item is being equipped to.
+		// This is why the item must be added to the inventory chest first.
 		void ActorEquipManagerHooks::EquipObject
 		(
 			RE::ActorEquipManager* a_this, 
@@ -393,19 +400,34 @@ namespace ALYSLC
 			{
 				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
-
-			// Ignore if P1 or transform(ing/ed).
-			const auto& p = glob.coopPlayers[playerIndex];
-			if (p->isPlayer1 || p->isTransforming || p->isTransformed)
-			{
-				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
-			}
-					
+			
 			SPDLOG_DEBUG
 			(
-				"{}: {} (0x{:X}, type: 0x{:X}).", 
-				a_actor->GetName(), a_object->GetName(), a_object->formID, *a_object->formType
+				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
+				a_actor->GetName(),
+				a_object->GetName(),
+				a_object->formID,
+				*a_object->formType,
+				fmt::ptr(a_objectEquipParams.extraDataList),
+				a_objectEquipParams.forceEquip,
+				a_objectEquipParams.unk23,
+				a_objectEquipParams.unk24
 			);
+			// Ignore if P1, transform(ing/ed), or skipping equip processing.
+			const auto& p = glob.coopPlayers[playerIndex];
+			if (p->isPlayer1 || p->isTransforming || p->isTransformed || p->em->skipEquipProcessing)
+			{
+				// Still can auto-equip ammo with ALYSLC's system if this actor is P1.
+				if (p->isPlayer1)
+				{
+					p->em->AutoEquipAmmo(a_object);
+				}
+
+				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
+			}
+				
+			bool inInventory = p->coopActor->GetInventory().contains(a_object);
+			SPDLOG_DEBUG("In inventory: {}.", inInventory);
 
 			RE::BGSEquipSlot* equipSlotToRestore = nullptr;
 			if (auto reqEquipSlot = a_objectEquipParams.equipSlot; reqEquipSlot)
@@ -455,137 +477,15 @@ namespace ALYSLC
 			);
 			if (!isBound && a_object != glob.fists && a_object != glob.dummy1H)
 			{
-				//=================================================
-				// Cases in which the equip call should be skipped.
-				//=================================================
-
-				// Game tries to equip another ammo that was not requested.
-				if (a_object->IsAmmo() && 
-					a_object != p->em->desiredEquippedForms[!EquipIndex::kAmmo])
+				// Ignore calls to force equip the item, as this can lead 
+				// to the weapon's model remaining equipped while not tagged as equipped 
+				// in the inventory.
+				if (a_objectEquipParams.forceEquip)
 				{
-					SPDLOG_DEBUG
-					(
-						"{}: trying to equip ammo {}. Ignoring.", 
-						a_actor->GetName(), a_object->GetName()
-					);
 					return;
 				}
-				else if (a_object->IsArmor())
-				{
-					if (auto armor = a_object->As<RE::TESObjectARMO>(); armor->IsShield())
-					{
-						// Game tries to equip a shield that was not requested in the left hand.
-						if (armor != p->em->desiredEquippedForms[!EquipIndex::kLeftHand])
-						{
-							SPDLOG_DEBUG
-							(
-								"{}: trying to equip shield {}. Ignoring.", 
-								a_actor->GetName(), a_object->GetName()
-							);
-							return;
-						}
-					}
-					else
-					{
-						auto bipedSlotMask = !armor->GetSlotMask();
-						int8_t indexOffset = -1;
-						// Get equip index offset (from first biped slot index) 
-						// by shifting biped slot index right until equal to 0.
-						// Number of shifts = index offset.
-						while (bipedSlotMask != 0)
-						{
-							bipedSlotMask = bipedSlotMask >> 1;
-							indexOffset++;
-						}
-
-						// Only if biped slot is valid.
-						if (indexOffset != -1)
-						{
-							uint8_t equipIndex = !EquipIndex::kFirstBipedSlot + indexOffset;
-							// Game is trying to equip armor that the player 
-							// did not request to have equipped.
-							if (armor != p->em->desiredEquippedForms[equipIndex])
-							{
-								SPDLOG_DEBUG
-								(
-									"{}: trying to equip armor {}. Ignoring.", 
-									a_actor->GetName(), a_object->GetName()
-								);
-								return;
-							}
-						}
-					}
-				}
-				else if (a_object->IsWeapon())
-				{
-					uint8_t indexToCheck = !EquipIndex::kRightHand;
-					bool isLHEquip = 
-					(
-						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
-						(
-							a_object->As<RE::BGSEquipType>() && 
-							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
-						)
-					);
-					if (isLHEquip)
-					{
-						indexToCheck = !EquipIndex::kLeftHand;
-					}
-
-					// Game is trying to equip a weapon that the player 
-					// did not request to have equipped.
-					if (a_object != p->em->desiredEquippedForms[indexToCheck])
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to equip weapon {}. Ignoring.",
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
-				else if (a_object->As<RE::TESShout>())
-				{
-					if (a_object != p->em->desiredEquippedForms[!EquipIndex::kVoice]) 
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to equip shout {}. Ignoring.", 
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
-				else if (a_object->As<RE::ScrollItem>())
-				{
-					uint8_t indexToCheck = !EquipIndex::kRightHand;
-					bool isLHEquip = 
-					(
-						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
-						(
-							a_object->As<RE::BGSEquipType>() && 
-							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
-						)
-					);
-					if (isLHEquip)
-					{
-						indexToCheck = !EquipIndex::kLeftHand;
-					}
-
-					// Game is trying to equip a scroll that the player 
-					// did not request to have equipped.
-					if (a_object != p->em->desiredEquippedForms[indexToCheck])
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to equip scroll {}. Ignoring.",
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
 			}
-			else
+			else 
 			{
 				// Special bound weapon handling for co-op companions.
 				if (isBound)
@@ -658,7 +558,7 @@ namespace ALYSLC
 								(cachedAmmo->HasKeywordByEditorID("WeapTypeBoundArrow")) && 
 								(weap->IsBow() || weap->IsCrossbow()))
 							{
-								aem->EquipObject
+								Util::EquipObject
 								(
 									p->coopActor.get(), cachedAmmo->As<RE::TESAmmo>()
 								);
@@ -672,11 +572,13 @@ namespace ALYSLC
 						}
 					}
 				}
-				else
+				else if (a_object == glob.fists || a_object == glob.dummy1H)
 				{
 					// Unlike for P1, fists do not automatically get unequipped 
 					// for companion players, so do it here.
+					_EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
 					UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
+					return;
 				}
 			}
 
@@ -712,158 +614,32 @@ namespace ALYSLC
 				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 			
-			// Ignore if P1, not a supported race, or transform(ing/ed).
-			const auto& p = glob.coopPlayers[playerIndex];
-			if (p->isPlayer1 ||
-				p->isTransforming || 
-				p->isTransformed)
-			{
-				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
-			}
-
 			SPDLOG_DEBUG
 			(
-				"{}: {} (0x{:X}, type: 0x{:X}). Force equip: {}, Unks: {}, {}.", 
+				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(), 
 				a_object->GetName(),
 				a_object->formID, 
 				*a_object->formType,
+				fmt::ptr(a_objectEquipParams.extraDataList),
 				a_objectEquipParams.forceEquip,
 				a_objectEquipParams.unk23,
 				a_objectEquipParams.unk24
 			);
-			
+
+			// Ignore if P1, transform(ing/ed), or skipping equip processing.
+			const auto& p = glob.coopPlayers[playerIndex];
+			if (p->isPlayer1 || p->isTransforming || p->isTransformed || p->em->skipEquipProcessing)
+			{
+				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
+			}
+
 			bool isBound = 
 			(
 				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
 				(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
 			);
-			// Ignore instances where the game unequips bound weapons 
-			// and unequips the "fists" weapon after clearing hand slots.
-			if (!isBound && a_object != glob.fists && a_object != glob.dummy1H)
-			{
-				//===================================================
-				// Cases in which the unequip call should be skipped.
-				//===================================================
-				
-				auto armor = a_object->As<RE::TESObjectARMO>(); 
-				if ((armor && armor->IsShield()) || a_object->As<RE::TESObjectLIGH>())
-				{
-					// Ignore if the game is trying to unequip the desired shield/torch.
-					if (a_object == p->em->desiredEquippedForms[!EquipIndex::kLeftHand])
-					{
-						// Previous equip calls to equip a bound weapon to the LH slot only unequip
-						// the shield/torch from the LH slot and not from its biped armor slots, 
-						// so if we currently have a bound weapon equipped in the LH, 
-						// do not ignore the unequip call.
-						if (auto lhWeap = p->em->GetLHWeapon(); !lhWeap || !lhWeap->IsBound())
-						{
-							SPDLOG_DEBUG
-							(
-								"{}: trying to unequip shield/torch {}. Ignoring.", 
-								a_actor->GetName(), a_object->GetName()
-							);
-							return;
-						}
-					}
-				}
-				else if (armor)
-				{
-					auto bipedSlotMask = !armor->GetSlotMask();
-					int8_t indexOffset = -1;
-					// Get equip index offset (from first biped slot index) 
-					// by shifting biped slot index right until equal to 0.
-					// Number of shifts = index offset.
-					while (bipedSlotMask != 0)
-					{
-						bipedSlotMask = bipedSlotMask >> 1;
-						indexOffset++;
-					}
-
-					// Only if biped slot is valid.
-					if (indexOffset != -1)
-					{
-						uint8_t equipIndex = !EquipIndex::kFirstBipedSlot + indexOffset;
-						// Ignore if the game is trying to unequip desired armor.
-						if (armor == p->em->desiredEquippedForms[equipIndex])
-						{
-							SPDLOG_DEBUG
-							(
-								"{}: trying to unequip armor {}. Ignoring.", 
-								a_actor->GetName(), a_object->GetName()
-							);
-							return;
-						}
-					}
-				}
-				else if (a_object->IsWeapon())
-				{
-					uint8_t indexToCheck = !EquipIndex::kRightHand;
-					bool isLHEquip = 
-					{
-						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
-						(
-							a_object->As<RE::BGSEquipType>() && 
-							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
-						)
-					};
-					if (isLHEquip)
-					{
-						indexToCheck = !EquipIndex::kLeftHand;
-					}
-
-					// Ignore if the game is trying to equip the desired weapon.
-					if (a_object == p->em->desiredEquippedForms[indexToCheck])
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to unequip weapon {}. Ignoring.", 
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
-				else if (a_object->As<RE::TESShout>())
-				{
-					if (a_object == p->em->desiredEquippedForms[!EquipIndex::kVoice])
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to unequip shout {}. Ignoring.", 
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
-				else if (a_object->As<RE::ScrollItem>())
-				{
-					uint8_t indexToCheck = !EquipIndex::kRightHand;
-					bool isLHEquip = 
-					{
-						(a_objectEquipParams.equipSlot == glob.leftHandEquipSlot) || 
-						(
-							a_object->As<RE::BGSEquipType>() && 
-							a_object->As<RE::BGSEquipType>()->equipSlot == glob.leftHandEquipSlot
-						)
-					};
-					if (isLHEquip)
-					{
-						indexToCheck = !EquipIndex::kLeftHand;
-					}
-
-					// Ignore if the game is trying to equip the desired scroll item.
-					if (a_object == p->em->desiredEquippedForms[indexToCheck])
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: trying to unequip scroll {}. Ignoring.", 
-							a_actor->GetName(), a_object->GetName()
-						);
-						return;
-					}
-				}
-			}
-			else if (isBound && p->coopActor->IsWeaponDrawn())
+			if (isBound && p->coopActor->IsWeaponDrawn())
 			{
 				SPDLOG_DEBUG
 				(
@@ -941,7 +717,7 @@ namespace ALYSLC
 				}
 			}
 
-			_UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
+			return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 		}
 
 // [ACTOR MAGIC CASTER HOOKS]:
@@ -1972,7 +1748,7 @@ namespace ALYSLC
 					}
 				}
 			}
-			
+
 			// Match supported animation event tags with the event's tag.
 			const auto tagHash = Hash(a_event->tag);
 			// Update camera shake state.
@@ -2118,7 +1894,7 @@ namespace ALYSLC
 			}
 			
 			SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
-
+			
 			p->lastAnimEventTag = a_event->tag;
 
 			SPDLOG_DEBUG
@@ -2178,7 +1954,12 @@ namespace ALYSLC
 				return _QWithinPoint(a_this, a_pos);
 			}
 
-			for (auto refrMB : cell->loadedData->multiboundRefMap)
+			if (!cell->loadedData || cell->loadedData->multiboundRefMap.empty())
+			{
+				return _QWithinPoint(a_this, a_pos);
+			}
+
+			for (const auto& refrMB : cell->loadedData->multiboundRefMap)
 			{
 				// Treat as within multibound if this multibound is within the current cell.
 				// Prevents occlusion of refrs inside the multibound.
@@ -2194,6 +1975,134 @@ namespace ALYSLC
 		}
 
 // [CHARACTER HOOKS]:
+		void CharacterHooks::AddObjectToContainer
+		(
+			RE::Character* a_this, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraList, 
+			std::int32_t a_count, 
+			RE::TESObjectREFR* a_fromRefr
+		)
+		{
+
+			if (!a_object || !glob.globalDataInit || !glob.allPlayersInit)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+
+			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
+			if (playerIndex == -1)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+			
+			// Moving an object back to self in this way has led to a ton of crashes 
+			// and weird bugs from my experience.
+			// Change as sent/received from none.
+			if (a_fromRefr == a_this)
+			{
+				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					a_this->GetName(), a_object->GetName());
+				a_fromRefr = nullptr;
+			}
+			
+			// Allow addition of bound objects.
+			bool isBound = 
+			(
+				(a_object->IsWeapon() && a_object->As<RE::TESObjectWEAP>()->IsBound()) ||
+				(a_object->IsAmmo() && a_object->HasKeywordByEditorID("WeapTypeBoundArrow"))
+			);
+			if (isBound)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+
+			const auto& p = glob.coopPlayers[playerIndex];
+			// Remove any items that are not equipped first.
+			p->em->RemoveUndesiredItems();
+
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			const auto ui = RE::UI::GetSingleton(); 
+			if (!ui || !p1)
+			{
+				p->em->inventoryChest->AddObjectToContainer
+				(
+					a_object, a_extraList, a_count, a_fromRefr
+				);
+				return;
+			}
+
+			/* NOTE: 
+			 * Unused alternative to moving items from ContainerChangedEvent handler.
+			// Move party-wide items to P1 if a companion player received the item.
+			// Also move Enderal skillbooks to P1 so that P1's AddObjectToContainer() hook 
+			// can give all players another skillbook of the same tier.
+			bool shouldSendToP1 = 
+			(
+				(Util::IsPartyWideItem(a_object)) || 
+				(
+					ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+					Settings::bEveryoneGetsALootedEnderalSkillbook &&
+					GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains
+					(
+						a_object->formID
+					)
+				)
+			);
+			if (!shouldSendToP1)
+			{
+				auto inventory = p->coopActor->GetInventory();
+				const auto iter = inventory.find(a_object); 
+				if (iter != inventory.end())
+				{
+					const auto& invEntryData = iter->second.second;
+					if (invEntryData && invEntryData->IsQuestObject())
+					{
+						shouldSendToP1 = true;
+					}
+				}
+			}
+						
+			// Skip transfer unless it is a party wide/quest item.
+			if (shouldSendToP1)
+			{
+				SPDLOG_DEBUG
+				(
+					"NOT adding party-wide/quest item/Enderal skillbook {} (x{}) to {}. "
+					"Giving to P1.",
+					a_object->GetName(),
+					a_count,
+					p->coopActor->GetName()
+				);
+				// Not from co-op entity, so can distribute skillbooks/give additional gold
+				// if these items are added to P1.
+				p1->AddObjectToContainer(a_object, a_extraList, a_count, nullptr);
+				// Nothing more to do here since the item should not reach this player.
+				return;
+			}
+			*/
+
+			if (a_fromRefr != p->em->inventoryChest.get())
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: Add {} of {} to inventory chest instead. From {}.",
+					p->coopActor->GetName(),
+					a_count, 
+					a_object->GetName(),
+					a_fromRefr ? a_fromRefr->GetName() : "NONE"
+				);
+				p->em->inventoryChest->AddObjectToContainer
+				(
+					a_object, a_extraList, a_count, a_fromRefr
+				);
+			}
+			else
+			{
+				_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+		}
+
 		float CharacterHooks::CheckClampDamageModifier
 		(
 			RE::Character* a_this, RE::ActorValue a_av, float a_delta
@@ -2806,25 +2715,28 @@ namespace ALYSLC
 
 						// Pad14 is set to the killer player's FID and set to 0 
 						// once the player has opened the QuickLoot menu for the corpse.
-						if (!a_this->extraList.HasType<RE::ExtraForcedTarget>())
-						{
-							// I guess Add() manages the lifetime 
-							// of the newly allocated extra data pointer?
-							// No explicit free call after calling Add() 
-							// in two other places within the CommonLibSSE source.
-							RE::ExtraForcedTarget* exData
-							{
-								RE::BSExtraData::Create<RE::ExtraForcedTarget>()
-							};
-							exData->target = RE::ObjectRefHandle();
-							exData->pad14 = p->coopActor->formID;
-							a_this->extraList.Add(exData);
-						}
-						else
-						{
-							auto exData = a_this->extraList.GetByType<RE::ExtraForcedTarget>();
-							exData->pad14 = p->coopActor->formID;
-						}
+						//if (!a_this->extraList.HasType<RE::ExtraForcedTarget>())
+						//{
+						//	// I guess Add() manages the lifetime 
+						//	// of the newly allocated extra data pointer?
+						//	// No explicit free call after calling Add() 
+						//	// in two other places within the CommonLibSSE source.
+						//	RE::ExtraForcedTarget* exData = new RE::ExtraForcedTarget();
+						//	if (exData)
+						//	{
+						//		exData->target = RE::ObjectRefHandle();
+						//		exData->pad14 = p->coopActor->formID;
+						//		a_this->extraList.Add(exData);
+						//	}
+						//}
+						//else
+						//{
+						//	auto exData = a_this->extraList.GetByType<RE::ExtraForcedTarget>();
+						//	exData->pad14 = p->coopActor->formID;
+						//}
+
+						// Use owner exData to keep track of killer.
+						a_this->extraList.SetOwner(p->coopActor.get());
 					}
 				}
 			}
@@ -2974,10 +2886,8 @@ namespace ALYSLC
 				{
 					return false;
 				}
-
-				SPDLOG_DEBUG("{}", a_eventName);
 			}
-
+			
 			// Stop any scene package idle from playing.
 			if (p->coopActor->currentProcess && 
 				p->coopActor->currentProcess->middleHigh && 
@@ -3052,6 +2962,197 @@ namespace ALYSLC
 			}
 			
 			return _NotifyAnimationGraph(a_this, a_eventName);
+		}
+
+		void CharacterHooks::PickUpObject
+		(
+			RE::Character* a_this, 
+			RE::TESObjectREFR* a_object, 
+			std::int32_t a_count, 
+			bool a_arg3, 
+			bool a_playSound
+		)
+		{
+			if (!glob.globalDataInit || !glob.allPlayersInit || !a_object)
+			{
+				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
+			}
+
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}. List: {:p}, Arg3: {}",
+				a_this->GetName(),
+				a_count, 
+				a_object ? a_object->GetName() : "NONE",
+				fmt::ptr(a_object ? std::addressof(a_object->extraList) : nullptr),
+				a_arg3
+			);
+
+			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
+			if (playerIndex == -1)
+			{
+				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
+			}
+			
+			const auto& p = glob.coopPlayers[playerIndex];
+			SPDLOG_DEBUG
+			(
+				"{}: Add {} of {} to inventory chest instead via P1.",
+				p->coopActor->GetName(),
+				a_count, 
+				a_object->GetName()
+			);
+
+			auto owner = a_object->extraList.GetByType<RE::ExtraOwnership>(); 
+			RE::TESForm* oldOwner = a_object->extraList.GetOwner();
+			a_object->extraList.SetOwner(p->coopActor.get());
+			SPDLOG_DEBUG
+			(
+				"Adding ownerhip exData to list {:p}: {}. ExCount: {}.",
+				fmt::ptr(std::addressof(a_object->extraList)),
+				a_object->extraList.GetOwner() == p->coopActor.get() ?
+				"SUCC" :
+				"FAIL",
+				a_object->extraList.GetCount()
+			);
+
+			p1->PickUpObject(a_object, a_count, false, true);
+
+			const auto inventory = p1->GetInventory();
+			const auto iter = inventory.find(a_object->GetBaseObject());
+			// Not in P1's inventory after pickup.
+			if (iter == inventory.end() || !iter->second.second)
+			{
+				SPDLOG_DEBUG
+				(
+					"ERR: {}: Failed to find {} of {} in P1's inventory after pickup.",
+					p->coopActor->GetName(),
+					a_count, 
+					a_object->GetName()
+				);
+				return;
+			}
+
+			// Can add a copy to the inventory chest if not a quest, party-wide, 
+			// or added Enderal skillbook item.
+			// Otherwise, the item will remain in P1's inventory after pickup above.
+			bool shouldAddToChest = 
+			(
+				!iter->second.second->IsQuestObject() &&
+				!Util::IsPartyWideItem(a_object)
+				/*(!iter->second.second->IsQuestObject()) &&
+				(!Util::IsPartyWideItem(a_object)) &&
+				(
+					!ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
+					!Settings::bEveryoneGetsALootedEnderalSkillbook ||
+					!GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains
+					(
+						a_object->GetBaseObject()->formID
+					)
+				)*/
+			);
+			if (!shouldAddToChest)
+			{
+				SPDLOG_DEBUG
+				(
+					"Item {} is a quest/party-wide/added Enderal skillbook object. "
+					"Keeping in P1's inventory.", 
+					a_object->GetName(),
+					a_this->GetName()
+				);
+				return;
+			}
+			
+			// No extra lists, so the item was not added on pickup.
+			if (!iter->second.second->extraLists || iter->second.second->extraLists->empty())
+			{
+				SPDLOG_DEBUG
+				(
+					"ERR: {}: No extra data lists for {} in P1's inventory after pickup.",
+					p->coopActor->GetName(),
+					a_object->GetName()
+				);
+				return;
+			}
+
+			uint32_t i = 0;
+			for (auto extraDataList : *iter->second.second->extraLists)
+			{
+				SPDLOG_DEBUG
+				(
+					"Item {} (list #{}) is extra list {:p}.",
+					a_object->GetName(),
+					i,
+					fmt::ptr(extraDataList)
+				);
+				++i;
+				if (!extraDataList)
+				{
+					continue;
+				}
+
+				for (auto type = RE::ExtraDataType::kNone; 
+					type <= RE::ExtraDataType::kUnkBF; 
+					type = static_cast<RE::ExtraDataType>(!type + 1))
+				{
+					if (auto data = a_object->extraList.GetByType(type); data)
+					{
+						SPDLOG_DEBUG
+						(
+							"Item {} in {}'s inventory has exData list {:p} "
+							"with data {:p} of type 0x{:X}.",
+							a_object->GetName(),
+							p1->GetName(),
+							fmt::ptr(extraDataList),
+							fmt::ptr(data),
+							type
+						);
+					}
+				}
+
+				auto owner = extraDataList->GetByType<RE::ExtraOwnership>();
+				// Found our added owner exData from earlier, so this is the picked-up object.
+				if (owner && owner->owner == p->coopActor.get())
+				{
+					// Restore old owner before transferring, if not a quest item.
+					extraDataList->SetOwner(oldOwner);
+					// Crashes when the newly transferred item 
+					// is dropped from the companion player's inventory chest
+					// if directly transfered over with the current extra data list.
+					p->em->inventoryChest->AddObjectToContainer
+					(
+						a_object->GetBaseObject(),
+						Util::CopyExtraDataList(extraDataList),
+						a_count,
+						nullptr
+					);
+					p1->RemoveItem
+					(
+						a_object->GetBaseObject(),
+						a_count, 
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						extraDataList,
+						nullptr
+					);
+					/*p1->RemoveItem
+					(
+						a_object->GetBaseObject(),
+						a_count, 
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						extraDataList,
+						p->em->inventoryChest.get()
+					);*/
+				}
+
+				// Continue looping just in case there are other picked up items from before
+				// that should be transferred to the player's chest.
+			}
 		}
 
 		void CharacterHooks::PutCreatedPackage
@@ -3202,43 +3303,144 @@ namespace ALYSLC
 				);
 			}
 
-			// Unequip form before removal.
 			if (const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this); pIndex > 0)
 			{
+				// Moving an object back to self in this way has led to a ton of crashes 
+				// and weird bugs from my experience.
+				// Change as sent/received from none.
+				if (a_moveToRef == a_this)
+				{
+					SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+						a_this->GetName(), a_item->GetName());
+					a_moveToRef = nullptr;
+				}
+
 				const auto& p = glob.coopPlayers[pIndex];
 				SPDLOG_DEBUG
 				(
-					"{} is removing {} of {} from their inventory.",
+					"{} is removing {} of {} from their inventory. "
+					"Reason: {}. To refr: {}. Drop loc: ({}, {}, {}).",
 					p->coopActor->GetName(),
 					a_count,
-					a_item->GetName()
+					a_item->GetName(),
+					a_reason,
+					a_moveToRef ? a_moveToRef->GetName() : "NONE",
+					a_dropLoc ? a_dropLoc->x : 0.0f,
+					a_dropLoc ? a_dropLoc->y : 0.0f,
+					a_dropLoc ? a_dropLoc->z : 0.0f
 				);
-				// Refresh equip state first.
-				p->em->RefreshEquipState(RefreshSlots::kAll);
-				for (EquipIndex index = EquipIndex::kLeftHand;
-					index < EquipIndex::kTotal;
-					index = static_cast<EquipIndex>(!index + 1))
+
+				// Remove from the player's inventory as usual if moving to the inventory chest,
+				// removing completely, or moving to another player.
+				if ((a_moveToRef == p->em->inventoryChest.get()) ||
+					(a_reason == RE::ITEM_REMOVE_REASON::kRemove && !a_moveToRef) ||
+					(
+						(
+							a_reason == RE::ITEM_REMOVE_REASON::kStoreInTeammate || 
+							a_reason == RE::ITEM_REMOVE_REASON::kStoreInContainer
+						) &&
+						(GlobalCoopData::IsCoopPlayer(a_moveToRef))
+					))
 				{
-					const auto form = p->em->equippedForms[!index];
-					if (!form || form != a_item)
+					return _RemoveItem
+					(
+						a_this, 
+						a_handleOut,
+						a_item, 
+						a_count,
+						a_reason, 
+						a_extraList, 
+						a_moveToRef,
+						a_dropLoc, 
+						a_rotate
+					);
+				}
+				else if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+				{
+					// Otherwise, drop or remove the corresponding item from the inventory chest.
+					auto chestExData = Util::FindMatchingExtraDataList
+					(
+						p->em->inventoryChest.get(),
+						a_item,
+						a_extraList
+					);
+					// Drop by moving the matching item to P1 from the inventory chest 
+					// since dropping directly from the chest fails.
+					if (a_reason == RE::ITEM_REMOVE_REASON::kDropping)
 					{
-						continue;
+						SPDLOG_DEBUG
+						(
+							"Moving {} (x{}, list {:p}) from {}'s inventory chest to P1 "
+							"and dropping at ({}, {}, {})",
+							a_item->GetName(),
+							a_count,
+							fmt::ptr(chestExData),
+							p->coopActor->GetName(),
+							a_dropLoc ? a_dropLoc->x : 0.0f,
+							a_dropLoc ? a_dropLoc->y : 0.0f,
+							a_dropLoc ? a_dropLoc->z : 0.0f
+						);
+						p->em->inventoryChest->RemoveItem
+						(
+							a_item, 
+							a_count, 
+							RE::ITEM_REMOVE_REASON::kRemove,
+							chestExData,
+							p1
+						);
+						p1->DropObject
+						(
+							a_item,
+							chestExData,
+							a_count,
+							a_dropLoc
+						);
 					}
-					
-					// For now, ignore checking for matching extra data list
-					// because if the object's extra data list is not found 
-					// in any of the player's inventory entries for some reason, 
-					// our UnequipObject() hook will treat the removed object 
-					// as the desired in-slot form and prevent the object 
-					// from being unequipped, freezing the game.
+					else
+					{
+						SPDLOG_DEBUG
+						(
+							"Removing {} (x{}, list {:p}) from {}'s inventory chest.",
+							a_item->GetName(),
+							a_count,
+							fmt::ptr(chestExData),
+							p->coopActor->GetName()
+						);
+						// Remove matching item directly from chest.
+						p->em->inventoryChest->RemoveItem
+						(
+							a_item, 
+							a_count, 
+							a_reason,
+							chestExData,
+							a_moveToRef
+						);
+					}
+
+					// Remove the item from the player's inventory too.
 					SPDLOG_DEBUG
 					(
-						"Unequip {} from equip index {} on {} before removal.",
+						"Removing {} (x{}, list {:p}) from {}'s inventory.",
 						a_item->GetName(),
-						index,
+						a_count,
+						fmt::ptr(a_extraList),
 						p->coopActor->GetName()
 					);
-					p->em->UnequipFormAtIndex(index);
+					_RemoveItem
+					(
+						a_this, 
+						a_handleOut,
+						a_item, 
+						a_count,
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						a_extraList, 
+						nullptr,
+						a_dropLoc, 
+						a_rotate
+					);
+					
+					//GlobalCoopData::OnPostItemTransfer(p->playerID, a_item, false);
+					return nullptr;
 				}
 			}
 
@@ -3280,16 +3482,19 @@ namespace ALYSLC
 
 			const auto& p = glob.coopPlayers[pIndex];
 			const auto biped = p->coopActor->GetBiped();
-			SPDLOG_DEBUG
-			(
-				"{}: Equip index {}.", p->coopActor->GetName(), !a_equipIndex
-			);
 			if (!biped)
 			{
 				return _RemoveWeapon(a_this, a_equipIndex);
 			}
 
 			const auto& bipedObj = biped->objects[a_equipIndex];
+			SPDLOG_DEBUG
+			(
+				"{}: {} at equip index {}.",
+				p->coopActor->GetName(), 
+				bipedObj.item ? bipedObj.item->GetName() : "NONE", 
+				!a_equipIndex
+			);
 			bool shouldPreventRemoval = false;
 			if (bipedObj.item)
 			{
@@ -3299,7 +3504,7 @@ namespace ALYSLC
 				bool isBoundAmmo = 
 				(
 					bipedObj.item->As<RE::TESAmmo>() && 
-								bipedObj.item->As<RE::TESAmmo>()->HasKeywordByEditorID
+					bipedObj.item->As<RE::TESAmmo>()->HasKeywordByEditorID
 					(
 						"WeapTypeBoundArrow"
 					)
@@ -3412,39 +3617,6 @@ namespace ALYSLC
 						shouldPreventRemoval = true;
 					}
 				}
-				else
-				{
-					// If the weapon biped object to remove is not in preparation 
-					// for a bound weapon equip, 
-					// prevent the game from removing the biped object.
-					shouldPreventRemoval = 
-					(
-						(
-							a_equipIndex == RE::BIPED_OBJECT::kShield &&
-							bipedObj.item == 
-							p->em->desiredEquippedForms[!EquipIndex::kLeftHand]
-						) ||
-						(
-							a_equipIndex != RE::BIPED_OBJECT::kShield &&
-							bipedObj.item == 
-							p->em->desiredEquippedForms[!EquipIndex::kRightHand]
-						)
-					);
-					SPDLOG_DEBUG
-					(
-						"{}: {} at equip index {}. Desired form in the same slot is {}.",
-						p->coopActor->GetName(), 
-						bipedObj.item ? bipedObj.item->GetName() : "NONE",
-						!a_equipIndex,
-						a_equipIndex == RE::BIPED_OBJECT::kShield ?
-						p->em->desiredEquippedForms[!EquipIndex::kLeftHand] ?
-						p->em->desiredEquippedForms[!EquipIndex::kLeftHand]->GetName() :
-						"NONE" :
-						p->em->desiredEquippedForms[!EquipIndex::kRightHand] ?
-						p->em->desiredEquippedForms[!EquipIndex::kRightHand]->GetName() : 
-						"NONE"
-					);
-				}
 			}	
 
 			SPDLOG_DEBUG
@@ -3470,12 +3642,24 @@ namespace ALYSLC
 
 			// Allow inventory resets if no players are initialized
 			// or if this character is not a player.
-			if (!glob.globalDataInit || 
-				!glob.allPlayersInit || 
-				!GlobalCoopData::IsCoopPlayer(a_this))
+			if (!glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _ResetInventory(a_this, a_leveledOnly);	
 			}
+
+			// Reset if not a player or if there is no request to reset.
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
+			if (pIndex == -1 || glob.coopPlayers[pIndex]->em->skipEquipProcessing)
+			{
+				if (pIndex != -1)
+				{
+					SPDLOG_DEBUG("ALLOW: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
+				}
+
+				return _ResetInventory(a_this, a_leveledOnly);
+			}
+
+			SPDLOG_DEBUG("SKIP: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
 		}
 
 		void CharacterHooks::SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene)
@@ -4233,6 +4417,124 @@ namespace ALYSLC
 			_Update(a_this, a_delta);
 		}
 
+		std::uint32_t CharacterHooks::UseAmmo(RE::Character* a_this, std::uint32_t a_shotCount)
+		{
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				return _UseAmmo(a_this, a_shotCount);
+			}
+			
+			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
+			if (playerIndex == -1)
+			{
+				return _UseAmmo(a_this, a_shotCount);
+			}
+
+			const auto& p = glob.coopPlayers[playerIndex];
+
+			// Do not remove ammo when in god mode.
+			if (p->isInGodMode)
+			{
+				return _UseAmmo(a_this, 0);
+			}
+
+			auto currentAmmo = p->coopActor->GetCurrentAmmo();
+			if (!currentAmmo)
+			{
+				return _UseAmmo(a_this, a_shotCount);
+			}
+
+			auto inv = p->em->inventoryChest->GetInventory();
+			auto iter = inv.find(currentAmmo);
+			const auto oldCount = iter != inv.end() ? iter->second.first : 0;
+			// Remove worn extra data from the list if we're removing the last unit of ammo.
+			// Will crash on removal otherwise.
+			if (oldCount == 1)
+			{
+				Util::RemoveWornRankExtraData
+				(
+					Util::GetWornRankExtraDataList
+					(
+						p->em->inventoryChest.get(), currentAmmo, false
+					), 
+					false
+				);
+			}
+				
+			SPDLOG_DEBUG
+			(
+				"{}: About to remove {} of {}.",
+				p->coopActor->GetName(),
+				a_shotCount,
+				currentAmmo->GetName()
+			);
+			
+			// Have to re-favorite and re-hotkey once re-added. Ree.
+			int8_t oldHotkey = -1;
+			auto hotkeyData = Util::GetHotkeyExData
+			(
+				p->em->inventoryChest.get(), currentAmmo, nullptr
+			);
+			bool wasFavorited = (bool)hotkeyData;
+			if (hotkeyData)
+			{
+				oldHotkey = !*hotkeyData->hotkey;
+			}
+				
+			// 'Use' the ammo from the chest.
+			p->em->inventoryChest->RemoveItem
+			(
+				currentAmmo, 
+				a_shotCount,
+				RE::ITEM_REMOVE_REASON::kRemove,
+				nullptr, 
+				nullptr
+			);
+
+			if (wasFavorited)
+			{
+				Util::ChangeFormFavoritesStatus
+				(
+					p->em->inventoryChest.get(), currentAmmo, true, nullptr
+				);
+				if (oldHotkey != -1)
+				{
+					Util::ChangeFormHotkeyStatus
+					(
+						p->em->inventoryChest.get(), currentAmmo, oldHotkey, nullptr
+					);
+				}
+			}
+
+			inv = p->em->inventoryChest->GetInventory();
+			iter = inv.find(currentAmmo);
+			SPDLOG_DEBUG
+			(
+				"{}: Removing {} of {} from their inventory chest. {} -> {}",
+				p->coopActor->GetName(),
+				a_shotCount,
+				currentAmmo->GetName(),
+				oldCount,
+				iter != inv.end() ? iter->second.first : 0
+			);
+			// Only use remaining ammo if there is none left in the inventory chest.
+			if (iter == inv.end() || iter->second.first <= 0)
+			{
+				inv = p->coopActor->GetInventory();
+				iter = inv.find(currentAmmo);
+				if (iter != inv.end() && iter->second.first > 0)
+				{
+					return _UseAmmo(a_this, iter->second.first);
+				}
+				else
+				{
+					return _UseAmmo(a_this, a_shotCount);
+				}
+			}
+
+			return 0;
+		}
+
 // [INPUT EVENT HOOKS]:
 		void InputEventHooks::DispatchInputEvents
 		(
@@ -4286,8 +4588,8 @@ namespace ALYSLC
 			{
 				if (!glob.mim->queuedInputEvents.empty())
 				{
-					SPDLOG_DEBUG("{} queued input events to tack onto list of {} events.",
-						glob.mim->queuedInputEvents.size(), i);
+					/*SPDLOG_DEBUG("{} queued input events to tack onto list of {} events.",
+						glob.mim->queuedInputEvents.size(), i);*/
 					const auto& lastQueuedEvent = 
 					(
 						*glob.mim->queuedInputEvents[glob.mim->queuedInputEvents.size() - 1]
@@ -4550,6 +4852,36 @@ namespace ALYSLC
 		}
 	}
 
+// [MAGIC STAGGER HOOKS]:
+	
+		void MagicStaggerHooks::ProcessStagger
+		(
+			RE::Actor* a_target, float a_staggerMult, RE::Actor* a_aggressor
+		)
+		{
+			if (!glob.globalDataInit || !glob.coopSessionActive)
+			{
+				return _ProcessStagger(a_target, a_staggerMult, a_aggressor);
+			}
+
+			if (const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_target); pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				// Remove stagger if reviving or playing an animation.
+				if (p->isRevivingPlayer || p->coopActor->IsAnimationDriven())
+				{
+					SPDLOG_DEBUG
+					(
+						"Removing stagger from magic hit while {} is reviving another player.",
+						p->coopActor->GetName()
+					);
+					return;
+				}
+			}
+
+			return _ProcessStagger(a_target, a_staggerMult, a_aggressor);
+		}
+
 // [MELEE HIT HOOKS]:
 		void MeleeHitHooks::ProcessHit(RE::Actor* a_victim, RE::HitData& a_hitData)
 		{
@@ -4617,6 +4949,22 @@ namespace ALYSLC
 			if (playerVictimIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[playerVictimIndex];
+				// Remove stagger if reviving or playing an animation.
+				if (p->isRevivingPlayer || p->coopActor->IsAnimationDriven())
+				{
+					SPDLOG_DEBUG
+					(
+						"Removing stagger from melee hit while {} is reviving another player.",
+						p->coopActor->GetName()
+					);
+					a_hitData.stagger = 0.0f;
+					if (a_hitData.attackData)
+					{
+						a_hitData.attackData->data.knockDown = 0.0f;
+						a_hitData.attackData->data.staggerOffset = 0.0f;
+					}
+				}
+
 				// Not P1 and not attacked by another player 
 				// or not in god mode and friendly fire is enabled.
 				const bool canAddXP = 
@@ -4863,7 +5211,7 @@ namespace ALYSLC
 			if (shouldReset)
 			{
 				// REMOVE when done debugging.
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"Buttons released. Reset flags to false. "
 					"Summoning menu triggered: {}, debug menu triggered: {}. "
@@ -4877,7 +5225,7 @@ namespace ALYSLC
 					((*a_inputEvents)->AsButtonEvent()) ? 
 					((*a_inputEvents)->AsButtonEvent()->IsPressed()) :
 					false
-				);*/
+				);
 				summoningMenuBindPressed = 
 				pauseAndWaitWerePressed =
 				debugMenuBindPressed = false;
@@ -4917,7 +5265,7 @@ namespace ALYSLC
 			auto buttonEvent = a_event->AsButtonEvent();
 			if (buttonEvent)
 			{
-				//SPDLOG_DEBUG("Block button event {}.", buttonEvent->userEvent);
+				// SPDLOG_DEBUG("Block button event {}.", buttonEvent->userEvent);
 				buttonEvent->idCode = 0xFF;
 				buttonEvent->heldDownSecs = 0.0f;
 				buttonEvent->value = 0.0f;
@@ -4944,7 +5292,7 @@ namespace ALYSLC
 		bool MenuControlsHooks::CheckForMenuTriggeringInput
 		(
 			RE::InputEvent* a_inputEvent,
-			bool& a_newEventChained
+			bool& a_newEventChainedOut
 		)
 		{
 			// Check if P1 is trying to open the Summoning/Debug menus 
@@ -4966,7 +5314,6 @@ namespace ALYSLC
 			}
 
 			auto ui = RE::UI::GetSingleton();
-			bool blockEvent = false;
 			auto buttonEvent = a_inputEvent->AsButtonEvent();
 			const auto& device = a_inputEvent->GetDevice();
 			// Ignore any events that are not button events,
@@ -4988,16 +5335,9 @@ namespace ALYSLC
 				return false;
 			}
 			
-			// Skip potentially triggering menus here if sent by a companion player.
-			bool emulatedKeyInput = 
-			(
-				((buttonEvent->pad24 & 0xFFFF) == 0xCA11) || 
-				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA)
-			);
-			if (emulatedKeyInput)
-			{
-				return false;
-			}
+			//===============================
+			// [Pause/Wait Bind Event Check]:
+			// ==============================
 
 			bool isGamepadEvent = device == RE::INPUT_DEVICES::kGamepad;
 			// For controllers:
@@ -5048,10 +5388,6 @@ namespace ALYSLC
 				);
 			}
 			
-			// Button events seem to be chained in a manner 
-			// that does not depend on when their buttons were pressed.
-			// Check for buttons/keys being pressed/held 
-			// in any order to trigger co-op debug/summoning menus.
 			bool pauseBindEvent = buttonEvent->idCode == pauseMask;
 			bool waitBindEvent = buttonEvent->idCode == waitMask;
 			// Only handling pause or wait bind events.
@@ -5059,7 +5395,85 @@ namespace ALYSLC
 			{
 				return false;
 			}
+			
+			//=========================
+			// [Emulated Input Checks]:
+			// ========================
+			
+			// Skip potentially triggering ALYSLC menus here if sent by a companion player.
+			// Only delay the original bind function until release.
+			bool emulatedKeyInput = 
+			(
+				((buttonEvent->pad24 & 0xFFFF) == 0xCA11) || 
+				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA)
+			);
+			if (emulatedKeyInput)
+			{
+				// ButtonEventPressType::kInstantTrigger events are sent with value of 2.0
+				// to differentiate them with regular 'IsDown' events, which have value 1.0.
+				if (//(Util::MenusOnlyAlwaysOpen()) && 
+					((buttonEvent->IsHeld()) || 
+					(buttonEvent->IsDown() && buttonEvent->value == 1.0f)))
+				{
+					SPDLOG_DEBUG("EMU: event {}, down/held. Blocking.", buttonEvent->userEvent);
+					return true;
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"EMU: event {}, {}. Allow.",
+						buttonEvent->userEvent, 
+						buttonEvent->value == 0.0f ? 
+						"up" : 
+						buttonEvent->value <= 1.0f ?
+						"down" : 
+						"instant trigger"
+					);
 
+					// Up/Instant trigger.
+					if (buttonEvent->value == 0.0f || buttonEvent->value == 2.0f)
+					{
+						// Change to pressed (down) event.
+						buttonEvent->heldDownSecs = 0.0f;
+						buttonEvent->value = 1.0f;
+
+						float releaseTime = pauseBindEvent ? pauseBindHeldTime : waitBindHeldTime;
+						if (releaseTime <= 0.0f)
+						{
+							releaseTime = 1.0f;
+						}
+
+						// NOTE:
+						// Necessary to also pair with a button-released event,
+						// otherwise the event may not trigger the desired effect here 
+						// or later when pressing and releasing the bind again.
+						RE::InputEvent* buttonEvent2 = 
+						(
+							RE::ButtonEvent::Create
+							(
+								*buttonEvent->device, 
+								buttonEvent->userEvent, 
+								buttonEvent->idCode, 
+								0.0f, 
+								releaseTime
+							)
+						);
+						
+						// Insert after the current event.
+						buttonEvent2->next = buttonEvent->next;
+						buttonEvent->next = buttonEvent2;
+						a_newEventChainedOut = true;
+					}
+
+					return false;
+				}
+			}
+			
+			//====================================
+			// [Update Held Time And Press State]:
+			// ===================================
+			
 			// Update held time and state first.
 			if (pauseBindEvent)
 			{
@@ -5074,32 +5488,81 @@ namespace ALYSLC
 			{
 				pauseAndWaitWerePressed = true;
 			}
-				
-			// Block if P1's managers are active and not sent by a companion player
-			// or proxied through by P1.
-			if (buttonEvent->IsDown() || buttonEvent->IsHeld())
-			{
-				SPDLOG_DEBUG
-				(
-					"Should block input '{}' while pressed or held.",
-					buttonEvent->QUserEvent()
-				);
-				return true;
-			}
 			
-			// Do not trigger menus if P1's managers are active.
+			//=========================
+			// [Co-op P1 Input Checks]:
+			// ========================
+			
+			// Do not trigger menus if P1's managers are active and this is a gamepad event.
+			// Allow through without blocking since we've updated held time and state flags above.
 			bool p1ManagersActive =
 			(
 				(glob.coopSessionActive && glob.cam->IsRunning()) &&
 				(glob.coopPlayers[0]->IsRunning() || !ui  || ui->GameIsPaused())
 			);
-			// Will not trigger any menus if sent by P2 in hybrid mode (P1's controller).
+			// Will not trigger any menus or perform its original function
+			// if sent by P2 in hybrid mode (P1's controller).
+			// Allow the held time and state flags to update to ensure a smooth transition of state
+			// if the co-op session ends while the Pause/Wait binds are still pressed.
+			// But block the event regardless of press state.
 			bool isHybridModeControllerInput = 
 			(
 				glob.hybridModeActive &&
 				glob.coopSessionActive &&
-				isGamepadEvent
+				isGamepadEvent &&
+				!emulatedKeyInput
 			);
+			if ((p1ManagersActive && device == RE::INPUT_DEVICES::kGamepad) || 
+				(isHybridModeControllerInput))
+			{
+				if (buttonEvent->IsUp())
+				{
+					// Reset hold times on release.
+					if (pauseBindEvent)
+					{
+						pauseBindHeldTime = -1.0f;
+					}
+
+					if (waitBindEvent)
+					{
+						waitBindHeldTime = -1.0f;
+					}
+				}
+
+				if (isHybridModeControllerInput)
+				{
+					SPDLOG_DEBUG
+					(
+						"HYBRID: event {}, val: {}, held time: {}. Blocking.", 
+						buttonEvent->userEvent,
+						buttonEvent->value,
+						buttonEvent->heldDownSecs
+					);
+					// Block. Block. Block.
+					return true;
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"CO-OP P1 Controller: managers active, "
+						"skip processing button event {} (allow through). "
+						"Is emulated input: {}.",
+						a_inputEvent->QUserEvent(),
+						emulatedKeyInput
+					);
+					// Allow through without performing Debug/Summoning menu checks.
+					return false;
+				}
+			}
+			
+			//=================================
+			// [Debug/Summoning Menu Handling]:
+			// ================================
+			
+			// Should this input be blocked and not processed by the MenuControls ProcessMessage()
+			// hook? Check if button release should open the Debug/Summoning Menu.
+			bool blockEvent = false;
 			// Both held and one just released.
 			if (pauseBindHeldTime != -1.0f && 
 				waitBindHeldTime != -1.0f && 
@@ -5112,6 +5575,10 @@ namespace ALYSLC
 					waitBindHeldTime,
 					pauseBindEvent ? "Pause" : "Wait"
 				);
+				// Button events seem to be chained in a manner 
+				// that does not depend on when their buttons were pressed.
+				// Check for buttons/keys being pressed/held 
+				// in any order to trigger co-op debug/summoning menus.
 				bool isDebugMenuBind = 
 				(
 					pauseBindHeldTime >= waitBindHeldTime
@@ -5131,14 +5598,28 @@ namespace ALYSLC
 				bool shouldTriggerDebugMenu = 
 				(
 					(!isHybridModeControllerInput) &&
-					(!glob.coopSessionActive || !isGamepadEvent) &&
+					((!isGamepadEvent) || (!p1ManagersActive && !glob.coopSessionActive)) &&
 					(isDebugMenuBind && !debugMenuBindPressed)
 				);
 				bool shouldTriggerSummoningMenu = 
 				(
 					(!isHybridModeControllerInput) &&
-					(!glob.coopSessionActive || !isGamepadEvent) &&
+					((!isGamepadEvent) || (!p1ManagersActive && !glob.coopSessionActive)) &&
 					(isSummoningMenuBind && !summoningMenuBindPressed)
+				);
+
+				SPDLOG_DEBUG
+				(
+					"Hybrid controller input: {}, gamepad event: {}, P1 managers active: {}, "
+					"co-op session active: {}, debug/summoning menu bind: {}, {}, pressed: {}, {}.",
+					isHybridModeControllerInput,
+					isGamepadEvent,
+					p1ManagersActive,
+					glob.coopSessionActive,
+					isDebugMenuBind, 
+					isSummoningMenuBind,
+					debugMenuBindPressed,
+					summoningMenuBindPressed
 				);
 
 				// Cannot trigger summoning menu with the keyboard to start co-op.
@@ -5367,9 +5848,9 @@ namespace ALYSLC
 				// we can now open either menu.
 				if (shouldTriggerDebugMenu)
 				{
-					// Can trigger the debug menu at any time, 
-					// even if the camera/P1 manager threads are inactive.
-					if (glob.player1Actor && !p1ManagersActive)
+					// Can trigger the debug menu when P1's managers are inactive 
+					// or when opening it via keyboard.
+					if ((glob.player1Actor) && (!p1ManagersActive || !isGamepadEvent))
 					{
 						SPDLOG_DEBUG
 						(
@@ -5390,38 +5871,14 @@ namespace ALYSLC
 				if (shouldTriggerSummoningMenu)
 				{
 					// NOTE: 
-					// Have to wait until P1 is out of combat to summon other players.
+					// Have to wait until there are no downed players to open the Summoning Menu.
 					// Summoning global variable is set to 1 
-					// in the summoning menu script, and set to 0 
-					// if summoning failed or is complete.
+					// in the summoning menu script, 
+					// and set to 0 if summoning failed or is complete.
 					if (glob.summoningMenuOpenGlob->value == 0.0f)
 					{
-						bool preventedFromSummoning = 
-						(
-							(glob.isInCoopCombat) ||
-							(glob.player1Actor && glob.player1Actor->IsInCombat())
-						);
-						if (preventedFromSummoning)
-						{
-							if (glob.globalDataInit && glob.coopSessionActive)
-							{
-								glob.moarm->InsertRequest
-								(
-									0, 
-									InputAction::kCoopSummoningMenu, 
-									SteadyClock::now(), 
-									RE::MessageBoxMenu::MENU_NAME
-								);
-							}
-
-							RE::DebugMessageBox
-							(
-								"[ALYSLC]\nA player is in combat. "
-								"Please ensure that all players are not in combat "
-								"before attempting to open the Summoning Menu."
-							);
-						}
-						else if (glob.globalDataInit && glob.allPlayersInit)
+						bool preventedFromSummoning = false;
+						if (glob.globalDataInit && glob.allPlayersInit)
 						{
 							for (const auto& p : glob.coopPlayers)
 							{
@@ -5455,7 +5912,8 @@ namespace ALYSLC
 							}
 						}
 						
-						if (!preventedFromSummoning && !p1ManagersActive)
+						if ((!preventedFromSummoning) && 
+							(!p1ManagersActive || !isGamepadEvent))
 						{
 							SPDLOG_DEBUG
 							(
@@ -5479,11 +5937,6 @@ namespace ALYSLC
 					summoningMenuBindPressed = true;
 				}
 
-				// After processing, ignore the button event entirely, 
-				// since we do not want either the pause or wait menus to trigger 
-				// once both the pause and wait binds are pressed at the same time.
-				blockEvent = true;
-
 				// Reset hold time of released bind.
 				if (pauseBindEvent)
 				{
@@ -5493,6 +5946,11 @@ namespace ALYSLC
 				{
 					waitBindHeldTime = -1.0f;
 				}
+
+				// After processing, ignore the button event entirely, 
+				// since we do not want either the pause or wait menus to trigger 
+				// once both the pause and wait binds are pressed at the same time.
+				blockEvent = true;
 			}
 			else if (buttonEvent->IsDown() || buttonEvent->IsHeld())
 			{
@@ -5571,6 +6029,7 @@ namespace ALYSLC
 						buttonEvent->userEvent
 					);
 
+					// Change to pressed (down) event.
 					buttonEvent->heldDownSecs = 0.0f;
 					buttonEvent->value = 1.0f;
 
@@ -5581,9 +6040,9 @@ namespace ALYSLC
 					}
 
 					// NOTE:
-					// Necessary to also send a button-released event,
-					// otherwise pressing and releasing this bind in the future
-					// may fail to trigger the desired effect.
+					// Necessary to also pair with a button-released event,
+					// otherwise the event may not trigger the desired effect here 
+					// or later when pressing and releasing the bind again.
 					RE::InputEvent* buttonEvent2 = 
 					(
 						RE::ButtonEvent::Create
@@ -5599,7 +6058,7 @@ namespace ALYSLC
 					// Insert after the current event.
 					buttonEvent2->next = buttonEvent->next;
 					buttonEvent->next = buttonEvent2;
-					a_newEventChained = true;
+					a_newEventChainedOut = true;
 				}
 				else
 				{
@@ -6291,7 +6750,8 @@ namespace ALYSLC
 					inputEvent = inputEvent->next;
 					continue;
 				}
-
+				
+				// SPDLOG_DEBUG("Not blocking {}.", idEvent->userEvent);
 				// Has a bypass flag indicating that the event was sent by another player.
 				// Co-op companion players: 0xCA11
 				bool fromCompanionPlayer = 
@@ -6755,16 +7215,16 @@ namespace ALYSLC
 					auto containerMenu = ui->GetMenu<RE::ContainerMenu>(); 
 					if (containerMenu)
 					{
-						RE::NiPointer<RE::TESObjectREFR> containerRefr;
+						RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
 						RE::TESObjectREFR::LookupByHandle
 						(
-							RE::ContainerMenu::GetTargetRefHandle(), containerRefr
+							RE::ContainerMenu::GetTargetRefHandle(), containerRefrPtr
 						);
-						// If the container is not a companion player's inventory,
+						// If the container is not a companion player's inventory chest,
 						// or if P1 is attempting to switch back 
-						// to the companion player's inventory,
+						// to the companion player's inventory chest,
 						// the tab switch request is valid.
-						if (!GlobalCoopData::IsCoopPlayer(containerRefr)) 
+						if (!GlobalCoopData::IsCoopPlayerInventoryChest(containerRefrPtr))
 						{
 							isValidContainerTabSwitch = true;
 						}
@@ -7071,13 +7531,13 @@ namespace ALYSLC
 			// when preventing analog stick inputs from propagating unmodified.
 			if (*a_event->eventType > RE::INPUT_EVENT_TYPE::kKinect)
 			{
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"Restore input event type {} from {} for {}.",
 					!(*a_event->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1,
 					*a_event->eventType,
 					a_event->QUserEvent()
-				);
+				);*/
 				a_event->eventType = static_cast<RE::INPUT_EVENT_TYPE>
 				(
 					!(*a_event->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1
@@ -7175,6 +7635,267 @@ namespace ALYSLC
 		}
 
 // [PLAYER CHARACTER HOOKS]:
+		void PlayerCharacterHooks::AddObjectToContainer
+		(
+			RE::PlayerCharacter* a_this, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraList, 
+			std::int32_t a_count, 
+			RE::TESObjectREFR* a_fromRefr
+		)
+		{
+			// For logging purposes only right now.
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}, from {}. List: {:p}.",
+				a_this->GetName(),
+				a_count, 
+				a_object ? a_object->GetName() : "NONE",
+				a_fromRefr ? a_fromRefr->GetName() : "NONE",
+				fmt::ptr(a_extraList)
+			);
+
+			if (!glob.globalDataInit || 
+				!glob.allPlayersInit ||
+				!glob.coopSessionActive || 
+				!a_object)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+			
+			// Moving an object back to self in this way has led to a ton of crashes 
+			// and weird bugs from my experience.
+			// Change as sent/received from none.
+			if (a_fromRefr == a_this)
+			{
+				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					a_this->GetName(), a_object->GetName());
+				a_fromRefr = nullptr;
+			}
+			
+			const auto& coopP1 = glob.coopPlayers[0];
+			const auto ui = RE::UI::GetSingleton(); 
+			if (!ui)
+			{
+				_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+				//GlobalCoopData::OnPostItemTransfer(0, a_object, true);
+				return;
+			}
+
+			bool fromCoopEntity = GlobalCoopData::IsCoopEntity(a_fromRefr);
+			// Another player is controlling menus.
+			if (glob.mim->IsRunning() && glob.mim->managerMenuPID > 0)
+			{
+				//==================================================================================
+				// Handle item drop requests from the companion player controlling menus first.
+				//==================================================================================
+				if (glob.mim->shouldDropItem.load())
+				{
+					_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+					SPDLOG_DEBUG
+					(
+						"Dropping item {} ({:p}, x{})",
+						a_object->GetName(), fmt::ptr(a_extraList), a_count
+					);
+					const auto& reqP = glob.coopPlayers[glob.mim->managerMenuPID];
+					auto dropPos = 
+					(
+						reqP->mm->playerTorsoPosition + 
+						Util::RotationToDirectionVect
+						(
+							0.0f, 
+							Util::ConvertAngle
+							(
+								reqP->coopActor->GetHeading(false)
+							)
+						) * 0.5f * reqP->coopActor->GetHeight()
+					);
+					a_this->DropObject
+					(
+						a_object,
+						a_extraList,
+						a_count,
+						std::addressof(dropPos),
+						nullptr
+					);
+
+					//GlobalCoopData::OnPostItemTransfer(0, a_object, true);
+					return;
+				}
+				
+				/*
+				 * NOTE: 
+				 * Unused alternative to moving items from ContainerChangedEvent handler.
+				//==================================================================================
+				// A companion player controlling menus
+				// and an item was transferred to a player from a non-coop entity.
+				//==================================================================================
+				if (!fromCoopEntity)
+				{
+					bool fromCraftingMenu = ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME);
+					bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
+					bool fromLootMenu = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
+					// Should move the item from the container to the player.
+					bool transferFromContainer = false;
+					if (fromCraftingMenu || fromContainerMenu || fromLootMenu)
+					{
+						if (fromContainerMenu)
+						{
+							auto mode = ui->GetMenu<RE::ContainerMenu>()->GetContainerMode();
+							// Must be looting, pickpocketing, or stealing.
+							transferFromContainer = 
+							{ 
+								mode == RE::ContainerMenu::ContainerMode::kLoot || 
+								mode == RE::ContainerMenu::ContainerMode::kPickpocket ||
+								mode == RE::ContainerMenu::ContainerMode::kSteal 
+							};
+						}
+						else
+						{
+							// Always transfer from Crafting or Loot menus.
+							transferFromContainer = true;
+						}
+					}
+
+					// Move from P1 to the companion player 
+					// if crafting, looting, stealing, or pickpocketing,
+					// or move party-wide items to P1 if a companion player received the item.
+					if (transferFromContainer)
+					{
+						// Add to companion player controlling menus if not a party-wide item.
+						const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
+						// Check if a quest item that is not a party wide item,
+						// and if so, keep the item in P1's inventory.
+						
+						// Not a party-wide item, so it is transferrable.
+						bool shouldSendToCompanionPlayer = !Util::IsPartyWideItem(a_object);
+						if (shouldSendToCompanionPlayer)
+						{							
+							auto inventory = a_this->GetInventory();
+							const auto iter = inventory.find(a_object); 
+							if (iter != inventory.end())
+							{
+								const auto& invEntryData = iter->second.second;
+								if (invEntryData && invEntryData->IsQuestObject())
+								{
+									shouldSendToCompanionPlayer = false;
+								}
+							}
+
+							if (!shouldSendToCompanionPlayer)
+							{
+								SPDLOG_DEBUG
+								(
+									"NOT transfering quest item {} (x{}) to {}.",
+									a_object->GetName(),
+									a_count,
+									p->coopActor->GetName()
+								);
+							}
+						}
+						else
+						{
+							SPDLOG_DEBUG
+							(
+								"NOT transfering party-wide item {} (x{}) to {}.",
+								a_object->GetName(),
+								a_count,
+								p->coopActor->GetName()
+							);
+						}
+
+						// Run on the main thread by running the removal/addition code
+						// through a synced task with the player's task runner thread.
+						// Could prevent threading issues from crashing the game here,
+						// since this event handler is not run by the main thread.
+						// Ugly, but fixes a RaceMenu crash 
+						// when transferring over a single torch. Needs more testing.
+						if (shouldSendToCompanionPlayer)
+						{
+							SPDLOG_DEBUG
+							(
+								"Adding item {} (x{}) to {} instead.", 
+								a_object->GetName(), 
+								a_count,
+								p->coopActor->GetName()
+							);
+							p->em->inventoryChest->AddObjectToContainer
+							(
+								a_object, 
+								a_extraList,
+								a_count,
+								nullptr
+							);
+							return;
+						}
+					}
+				}
+
+				//==================================================================================
+				// A co-op companion player is attempting to gift items 
+				// to another co-op companion player by way of the GiftMenu through P1. 
+				// Transfer any items added to P1 to the giftee companion player instead.
+				//==================================================================================
+				auto fromPlayerIndex = 
+				(
+					a_fromRefr ? 
+					GlobalCoopData::GetCoopPlayerIndex(a_fromRefr->formID) : 
+					-1
+				);
+				bool fromCoopCompanionPlayer = 
+				(
+					a_fromRefr != a_this && fromPlayerIndex != -1
+				);
+				bool giftMenuOpen = ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
+				if (giftMenuOpen && 
+					fromCoopCompanionPlayer && 
+					Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
+				{
+					const auto& gifterP = glob.coopPlayers[fromPlayerIndex];
+					const auto gifteeIndex = GlobalCoopData::GetCoopPlayerIndex
+					(
+						glob.mim->gifteePlayerHandle
+					);
+					if (gifteeIndex != -1) 
+					{
+						const auto& gifteeP = glob.coopPlayers[gifteeIndex];
+						SPDLOG_DEBUG
+						(
+							"Adding {} (x{}) to {} (from gifting player {}).",
+							a_object->GetName(), 
+							a_count,
+							gifteeP->coopActor->GetName(),
+							gifterP->coopActor->GetName()
+						);
+						gifteeP->em->inventoryChest->AddObjectToContainer
+						(
+							a_object,
+							a_extraList,
+							a_count, 
+							nullptr
+						);
+						return;
+					}
+				}
+				*/
+			}
+			
+			/*
+			//======================================================================================
+			// Enderal-specific gold scaling and skillbook loot.
+			// To a player but not from another player, and not from a transaction 
+			// (Barter Menu open).
+			//======================================================================================
+			GlobalCoopData::HandleEnderalSpecificLoot
+			(
+				a_fromRefr, 0, a_object, a_count
+			);
+			*/
+
+			_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			//GlobalCoopData::OnPostItemTransfer(0, a_object, true);
+		}
+
 		float PlayerCharacterHooks::CheckClampDamageModifier
 		(
 			RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta
@@ -7192,7 +7913,7 @@ namespace ALYSLC
 				a_av == RE::ActorValue::kMagicka || 
 				a_av == RE::ActorValue::kStamina
 			);
-			
+
 			// Flash the H/M/S bar as needed.
 			if (auto trueHUD = ALYSLC::TrueHUDCompat::g_trueHUDAPI3; trueHUD && hmsActorValue)
 			{
@@ -7546,7 +8267,7 @@ namespace ALYSLC
 				// our CheckClampDamageModifier() hook
 				// and will apply the damage received mult again to any negative health delta.
 				// We can cancel out the second application in this way.
-				if (Settings::vfDamageReceivedMult[coopP1->playerID] > 0.0f)
+				if (Settings::vfDamageReceivedMult[0] > 0.0f)
 				{
 					// If additional damage is required,
 					// damage to apply for this second call is not modified.
@@ -7561,7 +8282,7 @@ namespace ALYSLC
 						// and received mults, as required.
 						deltaHealth *= 
 						(
-							1.0f / Settings::vfDamageReceivedMult[coopP1->playerID]
+							1.0f / Settings::vfDamageReceivedMult[0]
 						);
 					}
 					else
@@ -7852,6 +8573,115 @@ namespace ALYSLC
 			return _NotifyAnimationGraph(a_this, a_eventName);
 		}
 
+		void PlayerCharacterHooks::PickUpObject
+		(
+			RE::PlayerCharacter* a_this,
+			RE::TESObjectREFR* a_object,
+			std::int32_t a_count, 
+			bool a_arg3, 
+			bool a_playSound
+		)
+		{
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}. List: {:p}. Arg3: {}.",
+				a_this->GetName(),
+				a_count, 
+				a_object ? a_object->GetName() : "NONE",
+				fmt::ptr(a_object ? std::addressof(a_object->extraList) : nullptr),
+				a_arg3
+			);
+
+			if (!glob.globalDataInit ||
+				!glob.allPlayersInit ||
+				!glob.coopSessionActive || 
+				!a_object)
+			{
+				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
+			}
+			
+			/* NOTE: 
+			 * Unused alternative to moving items from ContainerChangedEvent handler.*/
+			//======================================================================================
+			// Enderal-specific gold scaling and skillbook loot.
+			// To a player but not from another player, and not from a transaction 
+			// (Barter Menu open).
+			//======================================================================================
+			/*const auto& coopP1 = glob.coopPlayers[0];
+			GlobalCoopData::HandleEnderalSpecificLoot
+			(
+				nullptr, 0, a_object->GetBaseObject(), a_count
+			);*/
+
+			_PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
+			//GlobalCoopData::OnPostItemTransfer(0, a_object->GetBaseObject(), true);
+		}
+
+		RE::ObjectRefHandle* PlayerCharacterHooks::RemoveItem
+		(
+			RE::PlayerCharacter* a_this, 
+			RE::ObjectRefHandle& a_handleOut, 
+			RE::TESBoundObject* a_item, 
+			std::int32_t a_count, 
+			RE::ITEM_REMOVE_REASON a_reason, 
+			RE::ExtraDataList* a_extraList, 
+			RE::TESObjectREFR* a_moveToRef, 
+			const RE::NiPoint3* a_dropLoc, 
+			const RE::NiPoint3* a_rotate
+		)
+		{
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}, to {}. List: {:p}.",
+				a_this->GetName(),
+				a_count, 
+				a_item ? a_item->GetName() : "NONE",
+				a_moveToRef ? a_moveToRef->GetName() : "NONE",
+				fmt::ptr(a_extraList)
+			);
+
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive || !a_item)
+			{
+				return _RemoveItem
+				(
+					a_this, 
+					a_handleOut,
+					a_item, 
+					a_count,
+					a_reason,
+					a_extraList, 
+					a_moveToRef, 
+					a_dropLoc, 
+					a_rotate
+				);
+			}
+
+			// Moving an object back to self in this way has led to a ton of crashes 
+			// and weird bugs from my experience.
+			// Change as sent/received from none.
+			if (a_moveToRef == a_this)
+			{
+				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					a_this->GetName(), a_item->GetName());
+				a_moveToRef = nullptr;
+			}
+
+			auto refrHandlePtr = _RemoveItem
+			(
+				a_this, 
+				a_handleOut,
+				a_item, 
+				a_count,
+				a_reason,
+				a_extraList, 
+				a_moveToRef, 
+				a_dropLoc, 
+				a_rotate
+			);
+			//GlobalCoopData::OnPostItemTransfer(0, a_item, false);
+			return refrHandlePtr;
+		}
+
 		void PlayerCharacterHooks::ResetInventory(RE::PlayerCharacter* a_this, bool a_leveledOnly)
 		{
 			auto ui = RE::UI::GetSingleton();
@@ -7882,9 +8712,25 @@ namespace ALYSLC
 				return _Update(a_this, a_delta);
 			}
 			
-			const auto& coopP1 = glob.coopPlayers[0];
 			// Run game's update first.
+			const auto& coopP1 = glob.coopPlayers[0];
+			// Remove and then restore AI driven after the player update
+			// so that we can clear out fog-of-war, 
+			// which is only removed if the player is controls driven.
+			// Side effect(s):
+			// Resets some P1 player state, so toggling interrupts sprinting, 
+			// possibly among other things that I've yet to discover and yet to care about.
+			bool wasSet = Util::SetPlayerAIDriven(false);
 			_Update(a_this, a_delta);
+			if (wasSet)
+			{
+				Util::SetPlayerAIDriven(true);
+			}
+			
+			// Sync player character sprint state with ALYSLC's sprint player action state.
+			// Otherwise, P1 will stop sprinting after the AI driven toggle.
+			// Ensures the game handles stamina expenditure.
+			a_this->playerFlags.isSprinting = coopP1->pam->IsPerforming(InputAction::kSprint);
 			
 			//===================
 			// Node Orientations.
@@ -8400,6 +9246,74 @@ namespace ALYSLC
 			// Remove targeted players from this player's combat group.
 			a_this->formFlags |= RE::TESObjectREFR::RecordFlags::kIgnoreFriendlyHits;
 			Util::RemovePlayerCombatTargets(a_this);
+		}
+
+		std::uint32_t PlayerCharacterHooks::UseAmmo
+		(
+			RE::PlayerCharacter* a_this, std::uint32_t a_shotCount
+		)
+		{
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				return _UseAmmo(a_this, a_shotCount);
+			}
+
+			auto invCounts = a_this->GetInventoryCounts();
+			const auto iter = invCounts.find(a_this->GetCurrentAmmo());
+			if (iter != invCounts.end() && iter->second <= a_shotCount)
+			{
+				const auto& p = glob.coopPlayers[0];
+				auto currentAmmo = p->coopActor->GetCurrentAmmo();
+				const auto ammoUsed = _UseAmmo(a_this, a_shotCount);
+				currentAmmo = p->coopActor->GetCurrentAmmo();
+				p->em->UnequipAmmo(currentAmmo);
+				p->em->AutoEquipAmmo(p->em->GetRHWeapon());
+				
+				// Notify the player that they do not have ammo equipped,
+				// and if new ammo was equipped, let them know what type.
+				currentAmmo = p->coopActor->GetCurrentAmmo();
+				auto exDataList = Util::GetEquippedExtraData
+				(
+					p->coopActor.get(), currentAmmo, false
+				);
+				if (currentAmmo)
+				{
+					p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: No equipped ammo! Equipped {}", 
+							p->playerID + 1,
+							Util::GetDescriptiveName(currentAmmo, exDataList)
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
+				{
+					p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format("P{}: No equipped ammo!", p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						0.5f * Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+
+				return ammoUsed;
+			}
+
+			return _UseAmmo(a_this, a_shotCount);
 		}
 
 		void PlayerCharacterHooks::UseSkill
@@ -11010,6 +11924,310 @@ namespace ALYSLC
 		}
 
 // [TESOBJECTREFR HOOKS]:
+		void TESObjectREFRHooks::AddObjectToContainer
+		(
+			RE::TESObjectREFR* a_this,
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_extraList, 
+			std::int32_t a_count, 
+			RE::TESObjectREFR* a_fromRefr
+		)
+		{
+			if (!a_object || a_count == 0)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+
+			const auto pIndex = GlobalCoopData::GetCoopPlayerIndexFromChest(a_this);
+			if (pIndex <= 0)
+			{
+				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+			}
+			
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}, from {}. List: {:p}.",
+				a_this->GetName(),
+				a_count, 
+				a_object ? a_object->GetName() : "NONE",
+				a_fromRefr ? a_fromRefr->GetName() : "NONE",
+				fmt::ptr(a_extraList)
+			);
+
+			// Moving an object back to self in this way has led to a ton of crashes 
+			// and weird bugs from my experience.
+			// Change as sent/received from none.
+			if (a_fromRefr == a_this)
+			{
+				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					a_this->GetName(), a_object->GetName());
+				a_fromRefr = nullptr;
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
+			// Credits to ahzaab:
+			// https://github.com/ahzaab/iEquipUtil/blob/master/src/Hooks.cpp#L54
+			// Ensure not more than the amount of the item specified is added
+			// because the extra data list's exCount can be larger than the requested count.
+			auto countLeft = a_count;
+			// Add a number equal to the exData list's exCount first.
+            if (a_extraList) 
+			{
+                auto count = a_extraList->GetCount();
+                countLeft -= count;
+				SPDLOG_DEBUG("{}: Adding {} of {} from list {:p} exCount.",
+					p->coopActor->GetName(), count, a_object->GetName(), fmt::ptr(a_extraList));
+                _AddObjectToContainer(a_this, a_object, a_extraList, count, a_fromRefr);
+            }
+
+			// Then add default versions of the same object to make up the difference.
+			if (countLeft > 0)
+			{
+				SPDLOG_DEBUG("{}: Adding {} of unmodified {} to make up the difference.",
+					p->coopActor->GetName(), countLeft, a_object->GetName());
+			}
+
+            while (countLeft-- > 0) 
+			{
+                _AddObjectToContainer(a_this, a_object, nullptr, 1, a_fromRefr);
+            }
+
+			auto invChanges = a_this->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				//GlobalCoopData::OnPostItemTransfer(pIndex, a_object, true);
+				return;	
+			}
+
+			// Fix up counts in the chest's inventory afterward.
+			for (auto& entry : *invChanges->entryList) 
+			{
+				// Having an allocated extra lists list that is empty will cause crashes
+				// if anyone tries to access any element of the list, ex. with front().
+				// Since there are no extra lists (all unmodified items) and the countDelta member 
+				// of the entry determines the count, there's no reason to have an empty list 
+				// of extra lists that pose a crash threat, 
+				// so RE::free the memory and assign nullptr to prevent access 
+				// as long as a null check is performed.
+				// Will remove this if it is ill-advised and causes issues elsewhere, 
+				// such as after adding an extra list to this item later via crafting.
+				if (entry && entry->extraLists && entry->extraLists->empty())
+				{
+					SPDLOG_ERROR("{}. TAHTS GON BE BUG.", entry->object->GetName());
+					delete entry->extraLists;
+					entry->extraLists = nullptr;
+				}
+
+				int32_t exListsCount = 0;
+				if (!entry || !entry->object || entry->object != a_object)
+				{
+					continue;
+				}
+				
+				// Should be >= 1.
+				SPDLOG_DEBUG("{}: {}'s entry count after potential addition: {}.", 
+					p->coopActor->GetName(), a_object->GetName(), entry->countDelta);
+				if (entry->extraLists)
+				{
+					for (auto exDataList : *entry->extraLists)
+					{
+						if (!exDataList)
+						{
+							continue;
+						}
+
+						exListsCount += exDataList->GetCount();
+					}
+				}
+				
+				int32_t countsDelta = entry->countDelta - exListsCount;
+				entry->countDelta = max(entry->countDelta, exListsCount);
+				if (countsDelta < 0)
+				{
+					SPDLOG_ERROR
+					(
+						"{}: Item {}'s entry countDelta is less than "
+						"the accumulated extra data list item count (diff of {}). "
+						"Setting entry countDelta to {}.",
+						p->coopActor->GetName(),
+						a_object->GetName(), 
+						countsDelta,
+						exListsCount
+					);
+				}
+			}
+
+			//GlobalCoopData::OnPostItemTransfer(pIndex, a_object, true);
+		}
+
+		RE::ObjectRefHandle* TESObjectREFRHooks::RemoveItem
+		(
+			RE::TESObjectREFR* a_this,
+			RE::ObjectRefHandle& a_handleOut, 
+			RE::TESBoundObject* a_item, 
+			std::int32_t a_count, 
+			RE::ITEM_REMOVE_REASON a_reason, 
+			RE::ExtraDataList* a_extraList, 
+			RE::TESObjectREFR* a_moveToRef, 
+			const RE::NiPoint3* a_dropLoc,
+			const RE::NiPoint3* a_rotate
+		)
+		{
+			if (!a_item || a_count == 0)
+			{
+				return _RemoveItem
+				(
+					a_this, 
+					a_handleOut,
+					a_item, 
+					a_count,
+					a_reason,
+					a_extraList, 
+					a_moveToRef, 
+					a_dropLoc, 
+					a_rotate
+				);
+			}
+
+			const auto pIndex = GlobalCoopData::GetCoopPlayerIndexFromChest(a_this);
+			if (pIndex <= 0)
+			{
+				return _RemoveItem
+				(
+					a_this, 
+					a_handleOut,
+					a_item, 
+					a_count,
+					a_reason,
+					a_extraList, 
+					a_moveToRef, 
+					a_dropLoc, 
+					a_rotate
+				);
+			}
+			
+			SPDLOG_DEBUG
+			(
+				"{}: {} of {}, to {}. List: {:p}.",
+				a_this->GetName(),
+				a_count, 
+				a_item ? a_item->GetName() : "NONE",
+				a_moveToRef ? a_moveToRef->GetName() : "NONE",
+				fmt::ptr(a_extraList)
+			);
+			
+			// Moving an object back to self in this way has led to a ton of crashes 
+			// and weird bugs from my experience.
+			// Change as sent/received from none.
+			if (a_moveToRef == a_this)
+			{
+				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					a_this->GetName(), a_item->GetName());
+				a_moveToRef = nullptr;
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
+			auto invChanges = a_this->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				//GlobalCoopData::OnPostItemTransfer(pIndex, a_item, false);
+				return _RemoveItem
+				(
+					a_this, 
+					a_handleOut,
+					a_item, 
+					a_count,
+					a_reason,
+					a_extraList, 
+					a_moveToRef, 
+					a_dropLoc, 
+					a_rotate
+				);
+			}
+			
+
+			auto refHandlePtr = _RemoveItem
+			(
+				a_this, 
+				a_handleOut,
+				a_item, 
+				a_count,
+				a_reason,
+				a_extraList, 
+				a_moveToRef, 
+				a_dropLoc, 
+				a_rotate
+			);
+			// Fix up counts in the chest's inventory afterward.
+			for (auto& entry : *invChanges->entryList) 
+			{
+				if (entry && entry->extraLists && entry->extraLists->empty())
+				{
+					SPDLOG_ERROR("{}. TAHTS GON BE BUG.", entry->object->GetName());
+					delete entry->extraLists;
+					entry->extraLists = nullptr;
+				}
+
+				int32_t exListsCount = 0;
+				if (!entry || !entry->object || entry->object != a_item)
+				{
+					continue;
+				}
+				
+				SPDLOG_DEBUG("{}: {}'s entry count after potential removal: {}.", 
+					p->coopActor->GetName(), a_item->GetName(), entry->countDelta);
+				if (entry->extraLists)
+				{
+					for (auto exDataList : *entry->extraLists)
+					{
+						if (!exDataList)
+						{
+							continue;
+						}
+
+						exListsCount += exDataList->GetCount();
+					}
+				}
+				
+				int32_t countsDelta = entry->countDelta - exListsCount;
+				entry->countDelta = max(entry->countDelta, exListsCount);
+				if (countsDelta < 0)
+				{
+					SPDLOG_ERROR
+					(
+						"{}: Item {}'s entry countDelta is less than "
+						"the accumulated extra data list item count (diff of {}). "
+						"Setting entry countDelta to {}.",
+						p->coopActor->GetName(),
+						a_item->GetName(), 
+						countsDelta,
+						exListsCount
+					);
+				}
+			}
+			
+			//GlobalCoopData::OnPostItemTransfer(pIndex, a_item, false);
+			return refHandlePtr;
+		}
+
+		void TESObjectREFRHooks::ResetInventory(RE::TESObjectREFR* a_this, bool a_leveledOnly)
+		{
+			// Prevent inventory chests from resetting their contents,
+			// since a full inventory reset removes items added during the co-op session.
+
+			// Allow inventory resets if global co-op data has not been initialized
+			// or if this refr is not an inventory chest.
+			if (!glob.globalDataInit || GlobalCoopData::GetCoopPlayerIndexFromChest(a_this) == -1)
+			{
+				return _ResetInventory(a_this, a_leveledOnly);	
+			}
+
+			SPDLOG_DEBUG
+			(
+				"Not resetting {} (0x{:X})'s inventory.", a_this->GetName(), a_this->formID
+			);
+		}
+
 		void TESObjectREFRHooks::SetParentCell
 		(
 			RE::TESObjectREFR* a_this, RE::TESObjectCELL* a_cell
@@ -11613,12 +12831,26 @@ namespace ALYSLC
 			playerCardInfo.GetMember("CarryWeightValue", std::addressof(carryweightValue));
 			if (!carryweightValue.IsNull() && !carryweightValue.IsUndefined())
 			{
-				float inventoryWeight = playerInMenusPtr->GetWeightInContainer();
-				const auto invChanges = playerInMenusPtr->GetInventoryChanges();
+				const auto invChest = glob.coopPlayers[glob.menuPID]->em->inventoryChest;
+				if (!invChest)
+				{
+					return;
+				}
+
+				float inventoryWeight = invChest->GetWeightInContainer();
+				const auto invChanges = invChest->GetInventoryChanges();
 				if (invChanges)
 				{
 					inventoryWeight = invChanges->totalWeight;
 				}
+
+				/*const auto& p = glob.coopPlayers[glob.menuPID];
+				float inventoryWeight = p->coopActor->GetWeightInContainer();
+				const auto invChanges = p->coopActor->GetInventoryChanges();
+				if (invChanges)
+				{
+					inventoryWeight = invChanges->totalWeight;
+				}*/
 
 				carryweightValue.SetTextHTML
 				(
@@ -11819,17 +13051,34 @@ namespace ALYSLC
 			RE::ContainerMenu* a_this, RE::UIMessage& a_message
 		)
 		{
-			auto result = _ProcessMessage(a_this, a_message);
-			bool ignored = result == RE::UI_MESSAGE_RESULTS::kIgnore;
-			// Nothing to do here, since the message is ignored, co-op is not active, 
-			// serializable data is not available, or this menu is not the target of the message. 
-			if (ignored || 
-				!glob.globalDataInit ||
+			SPDLOG_DEBUG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
+			auto strings = RE::InterfaceStrings::GetSingleton();
+			auto ui = RE::UI::GetSingleton();
+
+			if (glob.globalDataInit &&
+				glob.coopSessionActive &&
+				glob.menuPID > 0 &&
+				glob.mim->isCoopInventory &&
+				ui &&
+				ui->IsMenuOpen(a_this->MENU_NAME) &&
+				strings &&
+				a_message.menu == strings->topMenu && 
+				*a_message.type == RE::UI_MESSAGE_TYPE::kInventoryUpdate)
+			{
+				// Re-apply equip state after the top menu is updated, which resets equip state.
+				auto result = _ProcessMessage(a_this, a_message);
+				glob.mim->UpdateContainerInventoryEquipState(false, false);
+				return result;
+			}
+			
+			// Nothing to do here, co-op is not active, serializable data is not available, 
+			// or this menu is not the target of the message. 	
+			if (!glob.globalDataInit ||
 				!glob.coopSessionActive || 
 				glob.serializablePlayerData.empty() || 
 				a_message.menu != a_this->MENU_NAME)
 			{
-				return result;
+				return _ProcessMessage(a_this, a_message);
 			}
 
 			// Only need to handle open/close messages.
@@ -11840,6 +13089,14 @@ namespace ALYSLC
 				*a_message.type == RE::UI_MESSAGE_TYPE::kForceHide
 			);
 			if (!opening && !closing)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+
+			auto result = _ProcessMessage(a_this, a_message);
+			bool ignored = result == RE::UI_MESSAGE_RESULTS::kIgnore;
+			// Nothing to do here, since the message is ignored.
+			if (ignored)
 			{
 				return result;
 			}
@@ -11891,7 +13148,7 @@ namespace ALYSLC
 			);
 			// Check if the opened container is a companion player's inventory.
 			const auto containerMode = a_this->GetContainerMode();
-			if (closing && containerMode == RE::ContainerMenu::ContainerMode::kNPCMode) 
+			if (containerMode == RE::ContainerMenu::ContainerMode::kNPCMode) 
 			{
 				RE::NiPointer<RE::TESObjectREFR> containerRefrPtr{ };
 				bool succ = RE::TESObjectREFR::LookupByHandle
@@ -11908,11 +13165,14 @@ namespace ALYSLC
 				// they are accessing their inventory.
 				if (GlobalCoopData::GetCoopPlayerIndex(menuContainerHandle) == p->playerID)
 				{
-					// Since the player may have (un)favorited new forms, 
-					// update favorited form data.
-					// No need to update magic favorites because there's no way 
-					// of modifying them through the container menu.
-					p->em->UpdateFavoritedFormsLists(true);
+					if (closing)
+					{
+						// Since the player may have (un)favorited new forms, 
+						// update favorited form data.
+						// No need to update magic favorites because there's no way 
+						// of modifying them through the container menu.
+						p->em->UpdateFavoritedFormsLists(true);
+					}
 				}
 			}
 
@@ -12136,7 +13396,6 @@ namespace ALYSLC
 				return _ProcessMessage(a_this, a_message);
 			}
 			
-			// Only need to handle open/close messages.
 			bool opening = *a_message.type == RE::UI_MESSAGE_TYPE::kShow;
 			bool closing = 
 			(
@@ -12155,9 +13414,11 @@ namespace ALYSLC
 					return _ProcessMessage(a_this, a_message);
 				}
 				
-				SPDLOG_DEBUG("Update Favorites Menu for P{}.", glob.menuPID);
+				SPDLOG_DEBUG("Update Favorites Menu for P{}.", glob.menuPID + 1);
 				// Update quickslot tags for P1,
 				// since the game wipes the tag after hotkeying an item.
+				// Run update first before updating entry text.
+				auto result = _ProcessMessage(a_this, a_message);
 				if (glob.menuPID <= 0) 
 				{
 					taskInterface->AddUITask
@@ -12216,15 +13477,21 @@ namespace ALYSLC
 								entryStr = entryText.GetString();
 
 								// Add quick slot item/spell tag.
-								if (index == p->em->equippedQSItemIndex || 
-									index == p->em->equippedQSSpellIndex)
+								bool matching = 
+								(
+									favoritesMenu->favorites[index].item == 
+									p->em->quickSlotItem ||
+									favoritesMenu->favorites[index].item == 
+									p->em->quickSlotSpell
+								);
+								if (matching)
 								{
 									bool isConsumable = index == p->em->equippedQSItemIndex;
-									if (entryStr.find("[*QS", 0) == std::string::npos)
+									if (entryStr.find("(*QS", 0) == std::string::npos)
 									{
 										entryStr = fmt::format
 										(
-											"[*QS{}*] {}", isConsumable ? "I" : "S", entryStr
+											"(*QS{}*) {}", isConsumable ? "I" : "S", entryStr
 										);
 										entryText.SetString(entryStr);
 										entry.SetMember("text", entryText);
@@ -12322,13 +13589,11 @@ namespace ALYSLC
 								);
 								if (entry.IsNull() || entry.IsUndefined())
 								{
-									SPDLOG_DEBUG("GUH: {}", numEntries);
 									continue;
 								}
 
 								if (!entry.HasMember("index"))
 								{
-									SPDLOG_DEBUG("GUH 2: {}", numEntries);
 									continue;
 								}
 
@@ -12377,43 +13642,47 @@ namespace ALYSLC
 									// Update item count to reflect the number of that item 
 									// in the co-op player's inventory, not P1's.
 									// Ignore spells and shouts, which always have count 1.
-									auto invCounts = menuCoopActorPtr->GetInventoryCounts();
-									if (!favoritedItem->Is
+									auto boundObj = favoritedItem->As<RE::TESBoundObject>();
+									if (boundObj && !favoritedItem->Is
 										(
 											RE::FormType::Spell, RE::FormType::Shout
 										))
 									{
-										auto boundObj = favoritedItem->As<RE::TESBoundObject>();
-										const auto iter = invCounts.find(boundObj);
-										uint32_t count = 
+										auto exDataList = 
 										(
-											iter != invCounts.end() ? 
-											iter->second :
-											0
+											favoritesList[index].entryData && 
+											favoritesList[index].entryData->extraLists ? 
+											favoritesList[index].entryData->extraLists->front() :
+											nullptr
 										);
-										if (count > 1)
-										{
-											auto parenPos1 = entryStr.find("(");
-											auto parenPos2 = entryStr.find(")");
-											if (parenPos1 != std::string::npos &&
-												parenPos2 != std::string::npos)
-											{
-												entryStr = 
-												(
-													entryStr.substr(0, parenPos1) + 
-													"(" + 
-													std::to_string(count) + 
-													entryStr.substr(parenPos2)
-												);
-											}
-											else
-											{
-												entryStr += " (" + std::to_string(count) + ")";
-											}
+										
+										// Why does Skyrim not use the extra display data 
+										// for the entry nameby default? Why?
+										entryStr = Util::GetDescriptiveName(boundObj, exDataList);
+										// Eww. Gross.
+										// Get the matching ex data list for the favorited item's
+										// list which is in P1's inventory.
+										// Then get the count from the chest.
+										uint32_t count = Util::GetCountForInventoryItem
+										(
+											p->em->inventoryChest.get(),
+											boundObj,
+											Util::FindMatchingExtraDataList
+											(
+												p->em->inventoryChest.get(),
+												boundObj,
+												exDataList
+											)
+										);
 
-											entryText.SetString(entryStr);
-											entry.SetMember("text", entryText);
-										}
+										SPDLOG_DEBUG
+										(
+											"Setting {}'s count to {}.",
+											favoritedItem->GetName(), count
+										);
+										entryStr += " (" + std::to_string(count) + ")";
+										entryText.SetString(entryStr);
+										entry.SetMember("text", entryText);
 									}
 									
 									// Update equip state for the entry.
@@ -12428,15 +13697,29 @@ namespace ALYSLC
 									entry.SetMember("equipState", equipState);
 
 									// Add quick slot item/spell tag.
-									if (index == p->em->equippedQSItemIndex ||
-										index == p->em->equippedQSSpellIndex)
+									bool matching = 
+									(
+										favoritesMenu->favorites[index].item == 
+										p->em->quickSlotItem ||
+										favoritesMenu->favorites[index].item == 
+										p->em->quickSlotSpell
+									);
+									if (matching)
 									{
+										SPDLOG_DEBUG
+										(
+											"Index {} ({}) equals one of {}, {}", 
+											index,
+											favoritedItem->GetName(),
+											p->em->equippedQSItemIndex,
+											p->em->equippedQSSpellIndex
+										);
 										bool isConsumable = index == p->em->equippedQSItemIndex;
-										if (entryStr.find("[*QS", 0) == std::string::npos)
+										if (entryStr.find("(*QS", 0) == std::string::npos)
 										{
 											entryStr = fmt::format
 											(
-												"[*QS{}*] {}", isConsumable ? "I" : "S", entryStr
+												"(*QS{}*) {}", isConsumable ? "I" : "S", entryStr
 											);
 											entryText.SetString(entryStr);
 											entry.SetMember("text", entryText);
@@ -12469,6 +13752,12 @@ namespace ALYSLC
 								}
 							}
 							
+							// Clears out entries for favorited items 
+							// that no longer exist in the entry list.
+							view->InvokeNoReturn
+							(
+								"_root.MenuHolder.Menu_mc.itemList.InvalidateData", nullptr, 0
+							);
 							// Update the favorites entry list.
 							view->InvokeNoReturn
 							(
@@ -12481,7 +13770,7 @@ namespace ALYSLC
 				}
 
 				// No more processing to do for this event.
-				return _ProcessMessage(a_this, a_message);
+				return result;
 			}
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
@@ -12681,7 +13970,7 @@ namespace ALYSLC
 							"Opening {}'s inventory instead of P1's.", 
 							reqP->coopActor->GetName()
 						);
-						reqP->coopActor->OpenContainer
+						reqP->em->inventoryChest->OpenContainer
 						(
 							!RE::ContainerMenu::ContainerMode::kNPCMode
 						);
@@ -13085,12 +14374,29 @@ namespace ALYSLC
 
 				// Clear all equipped forms.
 				glob.charGenEquippedForms.fill(nullptr);
-				// Set weapon/magic slot forms.
+				glob.charGenEquippedExDataLists.fill(nullptr);
+				// Set weapon/magic slot forms/exData lists.
 				glob.charGenEquippedForms[!EquipIndex::kLeftHand] = p1->GetEquippedObject(true);
 				glob.charGenEquippedForms[!EquipIndex::kRightHand] = p1->GetEquippedObject(false);
 				glob.charGenEquippedForms[!EquipIndex::kAmmo] = p1->GetCurrentAmmo();
+				glob.charGenEquippedExDataLists[!EquipIndex::kLeftHand] =
+				Util::GetEquippedExtraData
+				(
+					p1, glob.charGenEquippedForms[!EquipIndex::kLeftHand], true
+				);
+				glob.charGenEquippedExDataLists[!EquipIndex::kRightHand] = 
+				Util::GetEquippedExtraData
+				(
+					p1, glob.charGenEquippedForms[!EquipIndex::kRightHand], false
+				);
+				glob.charGenEquippedExDataLists[!EquipIndex::kAmmo] = Util::GetEquippedExtraData
+				(
+					p1, glob.charGenEquippedForms[!EquipIndex::kAmmo], false
+				);
+
 				auto currentShout = p1->GetCurrentShout();
 				glob.charGenEquippedForms[!EquipIndex::kVoice] = currentShout;
+				glob.charGenEquippedExDataLists[!EquipIndex::kVoice] = nullptr;
 				if (!currentShout)
 				{
 					glob.charGenEquippedForms[!EquipIndex::kVoice] = p1->selectedPower;
@@ -13110,6 +14416,10 @@ namespace ALYSLC
 						)
 					);
 					glob.charGenEquippedForms[i] = armorInSlot;
+					glob.charGenEquippedExDataLists[i] = Util::GetEquippedExtraData
+					(
+						p1, glob.charGenEquippedForms[i], false
+					);
 				}
 
 				Util::Papyrus::UnequipAll(p1);
@@ -13194,9 +14504,10 @@ namespace ALYSLC
 					}
 
 					// TODO: Restore active effects.
-
+					// NEEDS TESTING AFTER EXTRADATALIST SUPPORT ADDED:
 					// Re-equip saved gear.
 					RE::TESForm* form{ nullptr };
+					RE::ExtraDataList* exDataList{ nullptr };
 					auto aem = RE::ActorEquipManager::GetSingleton(); 
 					auto taskInterface = SKSE::GetTaskInterface();
 					if (aem && taskInterface)
@@ -13204,6 +14515,7 @@ namespace ALYSLC
 						for (auto i = 0; i < glob.charGenEquippedForms.size(); ++i)
 						{
 							form = glob.charGenEquippedForms[i];
+							exDataList = glob.charGenEquippedExDataLists[i];
 							// Do not include items without a loaded name,
 							// such as the "SkinNaked" armor. 
 							if (!form || strlen(form->GetName()) == 0)
@@ -13231,7 +14543,8 @@ namespace ALYSLC
 								}
 							}
 								
-							SPDLOG_DEBUG("Re-equip {}.", form->GetName());
+							SPDLOG_DEBUG("Re-equip {} ({:p}).",
+								form->GetName(), fmt::ptr(exDataList));
 							// Equip the cached item based on type.
 							auto boundObj = form->As<RE::TESBoundObject>();
 							switch (*form->formType)
@@ -13247,11 +14560,11 @@ namespace ALYSLC
 										auto count = iter->second;
 										taskInterface->AddTask
 										(
-											[aem, p1, boundObj, count]()
+											[aem, p1, boundObj, exDataList, count]()
 											{
-												aem->EquipObject
+												Util::EquipObject
 												(
-													p1, boundObj, nullptr, count
+													p1, boundObj, exDataList, count
 												);
 											}
 										);
@@ -13334,11 +14647,11 @@ namespace ALYSLC
 									{
 										taskInterface->AddTask
 										(
-											[aem, p1, boundObj, equipSlot]()
+											[aem, p1, boundObj, exDataList, equipSlot]()
 											{
-												aem->EquipObject
+												Util::EquipObject
 												(
-													p1, boundObj, nullptr, 1, equipSlot
+													p1, boundObj, exDataList, 1, equipSlot
 												);
 											}
 										);
@@ -13354,9 +14667,9 @@ namespace ALYSLC
 								{
 									taskInterface->AddTask
 									(
-										[aem, p1, boundObj]()
+										[aem, p1, boundObj, exDataList]()
 										{
-											aem->EquipObject(p1, boundObj);
+											Util::EquipObject(p1, boundObj, exDataList);
 										}
 									);
 								}
@@ -13366,6 +14679,10 @@ namespace ALYSLC
 							}
 						}
 					}
+
+					// Clear equipped forms and extra data list lists.
+					glob.charGenEquippedForms.fill(nullptr);
+					glob.charGenEquippedExDataLists.fill(nullptr);
 				}
 
 				// P1 is editing their appearance.
@@ -13608,162 +14925,6 @@ namespace ALYSLC
 					{
 						raceValueLabel.SetTextHTML(playerInMenusPtr->race->GetName());
 					}
-
-					// NOTE:
-					// Since we may level up while the Stats Menu is open, 
-					// which will rescale the companion player's HMS values,
-					// we have to obtain the difference in HMS levels from P1's stats, 
-					// which are what changes from leveling up, 
-					// and apply those changes to our serialized HMS levels
-					// for the companion player.
-
-					// NOTE 2:
-					// Couldn't figure out why calling the ActionScript function 'SetPlayerInfo()'
-					// caused the Stats Menu UI to go haywire in a heavily modded setup, 
-					// so stuck with calling SetMeter() 3 times instead.
-
-					/*
-					RE::GFxValue argsArr[13];
-					argsArr[0] = RE::GFxValue(playerInMenusPtr->GetName());
-					argsArr[1] = RE::GFxValue(playerInMenusPtr->GetLevel());
-					argsArr[2] = RE::GFxValue
-					(
-						100.0f * p1->skills->data->xp / p1->skills->data->levelThreshold
-					);
-					argsArr[3] = RE::GFxValue
-					(
-						playerInMenusPtr->race->GetName()
-					);
-
-					float tempAndPermMod = 
-					(
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary,
-							RE::ActorValue::kMagicka
-						) + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent,
-							RE::ActorValue::kMagicka
-						) 	
-					);
-					// FULL:
-					// Companion player's recorded base amount + their recorded increase so far +
-					// the current change while in the Stats Menu + 
-					// any temporary and permanent modifiers from gear, perks, etc.
-					// (applied to P1 until export when the menu closes).
-					float fullValue = 
-					(
-						data->hmsBasePointsList[1] + 
-						data->hmsPointIncreasesList[1] +
-						(
-							p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-							data->hmsBaseAVsOnMenuEntry[1]
-						) + 
-						tempAndPermMod
-					);
-					// CURRENT:
-					// The max value above modified by the companion player's 
-					// current damage AV modifier.
-					float currentValue = 
-					(
-						fullValue + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
-						)
-					);
-					argsArr[4] = RE::GFxValue(std::roundf(currentValue));
-					argsArr[5] = RE::GFxValue(std::roundf(fullValue));
-					argsArr[6] = RE::GFxValue
-					(
-						tempAndPermMod == 0.0f ? 0xFFFFFF : 
-						tempAndPermMod < 0.0f ? 0xFF0000 :
-						0x00FF00
-					);
-
-					tempAndPermMod = 
-					(
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary,
-							RE::ActorValue::kHealth
-						) + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent,
-							RE::ActorValue::kHealth
-						) 	
-					);
-					fullValue = 
-					(
-						data->hmsBasePointsList[0] + 
-						data->hmsPointIncreasesList[0] +
-						(
-							p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-							data->hmsBaseAVsOnMenuEntry[0]
-						) + 
-						tempAndPermMod
-					);
-					currentValue = 
-					(
-						fullValue + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
-						)
-					);
-					argsArr[7] = RE::GFxValue(std::roundf(currentValue));
-					argsArr[8] = RE::GFxValue(std::roundf(fullValue));
-					argsArr[9] = RE::GFxValue
-					(
-						tempAndPermMod == 0.0f ? 0xFFFFFF : 
-						tempAndPermMod < 0.0f ? 0xFF0000 :
-						0x00FF00
-					);
-
-					tempAndPermMod = 
-					(
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kTemporary,
-							RE::ActorValue::kStamina
-						) + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent,
-							RE::ActorValue::kStamina
-						) 	
-					);
-					fullValue = 
-					(
-						data->hmsBasePointsList[2] + 
-						data->hmsPointIncreasesList[2] +
-						(
-							p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-							data->hmsBaseAVsOnMenuEntry[2]
-						) + 
-						tempAndPermMod
-					);
-					currentValue = 
-					(
-						fullValue + 
-						playerInMenusPtr->GetActorValueModifier
-						(
-							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
-						)
-					);
-					argsArr[10] = RE::GFxValue(std::roundf(currentValue));
-					argsArr[11] = RE::GFxValue(std::roundf(fullValue));
-					argsArr[12] = RE::GFxValue
-					(
-						tempAndPermMod == 0.0f ? 0xFFFFFF : 
-						tempAndPermMod < 0.0f ? 0xFF0000 :
-						0x00FF00
-					);
-					base.Invoke("SetPlayerInfo", nullptr, argsArr, 13);
-					*/
 
 					RE::GFxValue args[4];
 					// Magicka (current, full, color).
@@ -14299,7 +15460,7 @@ namespace ALYSLC
 			}
 
 			auto ue = RE::UserEvents::GetSingleton(); 
-			if (ue && glob.globalDataInit && glob.menuPID > 0)
+			if (ue && glob.globalDataInit && glob.coopSessionActive && glob.menuPID > 0)
 			{
 				// Allow mouse or RS camera adjustment processing when motion driven. 
 				// Otherwise, do not handle this look event.
@@ -14416,7 +15577,7 @@ namespace ALYSLC
 
 			// Thumbstick event that is not from a companion player.
 			auto ue = RE::UserEvents::GetSingleton(); 
-			if (ue && glob.globalDataInit)
+			if (ue && glob.globalDataInit && glob.coopSessionActive && glob.cam->IsRunning())
 			{
 				// Allow WASD or LS movement processing when motion driven. 
 				// Otherwise, do not handle this movement event.
@@ -14548,8 +15709,7 @@ namespace ALYSLC
 			// 'Ready Weapon' event and has P1 proxied bypass flag.
 			auto buttonEvent = a_event->AsButtonEvent();
 			if ((buttonEvent) && 
-				(a_event->QUserEvent() == ue->readyWeapon)) /*&& 
-				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA))*/
+				(a_event->QUserEvent() == ue->readyWeapon))
 			{
 				return true;
 			}
@@ -14618,8 +15778,7 @@ namespace ALYSLC
 			// 'Shout' event and has P1 proxied bypass flag.
 			auto buttonEvent = a_event->AsButtonEvent();
 			if ((buttonEvent) && 
-				(a_event->QUserEvent() == ue->shout)) /*&& 
-				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA))*/
+				(a_event->QUserEvent() == ue->shout))
 			{
 				return true;
 			}

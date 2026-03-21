@@ -118,7 +118,7 @@ Function CompanionCoopStart()
             ALYSLC.Log("[SUMMON SCRIPT] Sending co-op start event to player " + Companion.GetDisplayName() + ".")
             (Companion as __ALYSLC_ControlCoopActor).OnCoopStart(Companion)
         Else 
-            ALYSLC.Log("[SUMMON SCRIPT] ERR: Could not cast companion to actor.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Could not cast companion to actor.")
         EndIf
 
         Iter += 1
@@ -175,12 +175,12 @@ Function HandleCharacterCustomization()
             
             ; Wait until the menu opens.
             While (!UI.IsMenuOpen("RaceSex Menu"))
-                Utility.Wait(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
 
             ; Wait until the menu closes.
             While (UI.IsMenuOpen("RaceSex Menu"))
-                Utility.WaitMenuMode(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
 
             ; Save new RaceSex Menu data for this character.
@@ -221,12 +221,12 @@ Function HandleCharacterCustomization()
             EndIf
 
             ; Save the appearance changes to this character's preset file.
-            Utility.Wait(0.5)
+            ALYSLC.Wait(0.5)
             ALYSLC.SavePlayerCharacterPreset(SelectedCharacter)
-            Utility.Wait(0.5)
+            ALYSLC.Wait(0.5)
             ; Export P1's appearance onto this character.
             ALYSLC.ExportP1ActorBaseAppearanceData(SelectedCharacter)
-            Utility.Wait(0.5)
+            ALYSLC.Wait(0.5)
 
             ; Restore P1's appearance, height, weight, and name.
             P1ActorBase.SetName(SavedP1Name)
@@ -253,13 +253,13 @@ Function HandleCharacterCustomization()
             Debug.MessageBox("[ALYSLC]\nPlayer 1, please reload your character's preset, since their appearance has been overridden by another player character's appearance.\nSet your character's race to " + RaceName + " and gender to " + GenderName + " before loading your preset.")
             Float SecsWaited = 0.0
             While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
-                Utility.Wait(0.1)
+                ALYSLC.Wait(0.1)
                 SecsWaited += 0.1
             EndWhile
 
             ; Once open, wait until closed.
             While (UI.IsMenuOpen("MessageBoxMenu"))
-                Utility.WaitMenuMode(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
             
             ; Open the RaceMenu now.
@@ -268,12 +268,12 @@ Function HandleCharacterCustomization()
             
             ; Wait until the menu opens.
             While (!UI.IsMenuOpen("RaceSex Menu"))
-                Utility.Wait(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
 
             ; Wait until the menu closes.
             While (UI.IsMenuOpen("RaceSex Menu"))
-                Utility.WaitMenuMode(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
 
             ; Give menu control back to the companion player.
@@ -284,7 +284,7 @@ Function HandleCharacterCustomization()
             "such as Party Combat Parameter's character cards, you must save the game after changing the player's name and reload.")
 
             While (UI.IsMenuOpen("MessageBoxMenu"))
-                Utility.WaitMenuMode(0.5)
+                ALYSLC.Wait(0.5)
             EndWhile
 
             String ResultStr = OpenUITextMenu()
@@ -404,7 +404,7 @@ Function HandleCharacterCustomization()
                     
                     ALYSLC.Log("[SUMMON SCRIPT] NPC appearance preset chosen: " + SelectedString + ", index " + SelectedOptionIndex)
                 Else
-                    ALYSLC.Log("[SUMMON SCRIPT] ERR: Invalid option chosen from appearance customization menu.")
+                    ALYSLC.LogError("[SUMMON SCRIPT] ERR: Invalid option chosen from appearance customization menu.")
                 EndIf
 
                 ShowAppearanceCustomizationOptionsMenu()
@@ -426,7 +426,7 @@ Function HandleCharacterCustomization()
                 ((100 * CurrentHeightMult) as Int) + ". Please input a new height (0-1000, without a decimal point).")
                 
                 While (UI.IsMenuOpen("MessageBoxMenu"))
-                    Utility.WaitMenuMode(0.5)
+                    ALYSLC.Wait(0.5)
                 EndWhile
                 ResultHeight = PO3_SKSEFunctions.StringToInt(OpenUITextMenu())
             EndWhile
@@ -442,7 +442,7 @@ Function HandleCharacterCustomization()
                 Debug.MessageBox("Current weight is " + CurrentWeight + ". Please input a new weight (0-100, without a decimal point).")
                 
                 While (UI.IsMenuOpen("MessageBoxMenu"))
-                    Utility.WaitMenuMode(0.5)
+                    ALYSLC.Wait(0.5)
                 EndWhile
                 ResultWeight = PO3_SKSEFunctions.StringToInt(OpenUITextMenu())
             EndWhile
@@ -651,7 +651,7 @@ Function RegisterPlayersForCoopEvents()
             Companion.RegisterForModEvent("ALYSLC_CoopEndEvent", "OnCoopEnd")
             Companion.RegisterForModEvent("ALYSLC_CoopStartEvent", "OnCoopStart")
         Else 
-            ALYSLC.Log("[SUMMON SCRIPT] ERR: Could not cast companion " + Companion.GetDisplayName() + " to co-op start script type. Cannot summon this player character.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Could not cast companion player character " + (CompanionsList[Iter] as Actor).GetDisplayName() + " to co-op start script type. Cannot summon this player character.")
         EndIf
 
         Iter += 1
@@ -740,7 +740,7 @@ ActorBase Function ShowAppearancePresetSelectionMenu()
             Return (CoopNPCAppearancePresets[SelectedOptionIndex]) as ActorBase
         EndIf
     Else
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: no appearance preset forms were found. Should still set preset to None.")
+        ALYSLC.LogError("[SUMMON SCRIPT] ERR: no appearance preset forms were found. Should still set preset to None.")
         SelectedOptionIndex = 0
         SelectedString = "NONE"
     EndIf
@@ -769,7 +769,7 @@ Function ShowCharacterStatsMenu()
             If (NewClass && NewClass != Base.GetClass())
                 ALYSLC.Log("[SUMMON SCRIPT] About to show stats menu for " + SelectedCharacter.GetDisplayName() + ". Set class to " + NewClass.GetName() + " first.")
                 Base.SetClass(NewClass)
-                ALYSLC.SetCoopPlayerClass(SelectedCharacter, NewClass)
+                ALYSLC.SetCoopPlayerClass(SelectedCharacter, NewClass, True)
                 
                 ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
                 ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, "MessageBoxMenu")
@@ -777,13 +777,13 @@ Function ShowCharacterStatsMenu()
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
-                    Utility.Wait(0.1)
+                    ALYSLC.Wait(0.1)
                     SecsWaited += 0.1
                 EndWhile
 
                 ; Once open, wait until closed.
                 While (UI.IsMenuOpen("MessageBoxMenu"))
-                    Utility.WaitMenuMode(0.1)
+                    ALYSLC.Wait(0.1)
                 EndWhile
             EndIf
 
@@ -798,19 +798,19 @@ Function ShowCharacterStatsMenu()
                 ; Have to wait for message box prompt to open.
                 Float SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
-                    Utility.Wait(0.1)
+                    ALYSLC.Wait(0.1)
                     SecsWaited += 0.1
                 EndWhile
 
                 ; Once open, wait until closed.
                 While (UI.IsMenuOpen("MessageBoxMenu"))
-                    Utility.WaitMenuMode(0.1)
+                    ALYSLC.Wait(0.1)
                 EndWhile
             EndIf
 
             ALYSLC.RescaleAVsOnBaseSkillAVChange(SelectedCharacter)
         Else
-            ALYSLC.Log("[SUMMON SCRIPT] ERR: Could not get actor base for " + SelectedCharacter.GetDisplayName() + " before showing stats menu.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Could not get actor base for " + SelectedCharacter.GetDisplayName() + " before showing stats menu.")
         EndIf
     EndIf
 
@@ -818,7 +818,7 @@ Function ShowCharacterStatsMenu()
     ALYSLC.RequestMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, CharacterStatsMenu.ROOT_MENU)
     CharacterStatsMenu.OpenMenu(SelectedCharacter)
     While (UI.IsMenuOpen("CustomMenu"))
-        Utility.WaitMenuMode(0.5)
+        ALYSLC.Wait(0.5)
     EndWhile
 EndFunction
 
@@ -834,7 +834,7 @@ Class Function ShowClassSelectionMenu()
             Return (CoopClasses[SelectedOptionIndex]) as Class
         EndIf
     Else
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: no class forms were found.")
+        ALYSLC.LogError("[SUMMON SCRIPT] ERR: no class forms were found.")
     EndIf
 
     Return None
@@ -890,6 +890,8 @@ Function ShowCoopSetupMenu()
             ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, False)
             ; Let the next player select their character.
             WasSelectingCharacter = False
+        Else 
+            ALYSLC.Log("[SUMMON SCRIPT] No character selected. Going back to co-op setup menu.")
         EndIf
 
         ; Go back to the setup menu.
@@ -1020,7 +1022,7 @@ Race Function ShowRaceSelectionMenu()
             Return (CoopRaces[SelectedOptionIndex]) as Race
         EndIf
     Else
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: no race forms were found.")
+        ALYSLC.LogError("[SUMMON SCRIPT] ERR: no race forms were found.")
     EndIf
 
     Return None
@@ -1062,7 +1064,7 @@ VoiceType Function ShowVoiceTypeSelectionMenu()
             Return (CoopVoiceTypes[SelectedOptionIndex]) as VoiceType
         EndIf
     Else
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: no voice type forms were found.")
+        ALYSLC.LogError("[SUMMON SCRIPT] ERR: no voice type forms were found.")
     EndIf
 
     Return None
@@ -1078,17 +1080,25 @@ Function SummonCoopPlayers()
             ; Get co-op player NPC and add to actors list.
             Actor CoopPlayerToSummon = CoopActors[CompanionIndex] as Actor
             ; Ensure they're alive before teleporting over.
-            While (CoopPlayerToSummon.IsDead())
-                ALYSLC.Log("[SUMMON SCRIPT] Resurrecting dead companion " + CoopPlayerToSummon + " before summoning.")
+            ; Or wait 2 seconds max if they refuse to resurrect.
+            Float SecsWaited = 0.0
+            While (CoopPlayerToSummon.IsDead() && SecsWaited < 2.0)
+                Float PreviousHP = CoopPlayerToSummon.GetActorValue("Health")
                 CoopPlayerToSummon.Resurrect()
-                Utility.Wait(0.1)
+                ; Set to 1 HP.
+                CoopPlayerToSummon.DamageActorValue("Health", CoopPlayerToSummon.GetActorValue("Health") - 1.0)
+                ALYSLC.Log("[SUMMON SCRIPT] Resurrecting dead companion " + CoopPlayerToSummon + " before summoning. HP is now " + CoopPlayerToSummon.GetActorValue("Health"))
+                SecsWaited += 0.5
+                ALYSLC.Wait(0.5)
             EndWhile
+
             ALYSLC.Log("[SUMMON SCRIPT] Summoning companion " + CoopPlayerToSummon + ".")
             ; Set invisible before moving.
             CoopPlayerToSummon.Disable()
             While (!CoopPlayerToSummon.IsNearPlayer())
                 CoopPlayerToSummon.MoveTo(PlayerRef, 0.0, 100.0, 0.0, True)
-                Utility.Wait(0.1)
+                ALYSLC.Log("[SUMMON SCRIPT] Moving companion " + CoopPlayerToSummon + " under the cover of darkness.")
+                ALYSLC.Wait(0.25)
             EndWhile
         EndIf
 
@@ -1097,283 +1107,286 @@ Function SummonCoopPlayers()
 EndFunction
 
 ; A request to summon companion players drives the teardown and startup of co-op sessions.
-Event OnSummoningMenuRequest()
-    ALYSLC.Log("[SUMMON SCRIPT] OnSummoningMenuRequest() Event Received.")
-    ALYSLC.SetIsSummoningFlag(True)
-    ; PlayerRef not always valid.
-	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
-	Float SecsWaited = 0.0
-	While (!PlayerRef && SecsWaited < 2.0)
-		ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
-		PlayerRef = Game.GetPlayer()
-		If (Utility.IsInMenuMode())
-            Utility.WaitMenuMode(0.1)
-        Else
-            Utility.Wait(0.1)
+State SummonState
+    Function SummoningMenuRequest()
+        ALYSLC.Log("[SUMMON SCRIPT] " + Self + " OnSummoningMenuRequest() Event Received.")
+        GotoState("SkipSummonState")
+        ALYSLC.SetIsSummoningFlag(True)
+        ; PlayerRef not always valid.
+        ; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
+        Float SecsWaited = 0.0
+        While (!PlayerRef && SecsWaited < 2.0)
+            ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
+            PlayerRef = Game.GetPlayer()
+            ALYSLC.Wait(0.1)
+            SecsWaited += 0.1
+        EndWhile
+        
+        If (PlayerRef != Game.GetPlayer())
+            Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
+            ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+            ALYSLC.SetIsSummoningFlag(False)
+            ALYSLC.ChangeCoopSessionState(False)
+            GotoState("")
+            Return
         EndIf
 
-		SecsWaited += 0.1
-	EndWhile
-	
-	If (PlayerRef != Game.GetPlayer())
-		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
-		ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
-        ALYSLC.SetIsSummoningFlag(False)
-		Return
-	EndIf
+        ; Ensure initialization is done.
+        If (CanStartCoopGlobVar.GetValue() == 0.0)
+            Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
+            ALYSLC.Log("[SUMMON SCRIPT] Cannot start summoning until initialization is complete.")
+            ALYSLC.SetIsSummoningFlag(False)
+            ALYSLC.ChangeCoopSessionState(False)
+            GotoState("")
+            Return
+        EndIf
 
-    ; Ensure initialization is done.
-    If (CanStartCoopGlobVar.GetValue() == 0.0)
-        Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
-        ALYSLC.Log("[SUMMON SCRIPT] Cannot start summoning until initialization is complete.")
-        ALYSLC.SetIsSummoningFlag(False)
-        Return
-    EndIf
+        If (CoopIsSummoningPlayers.GetValue() == 1.0)
+            Debug.Notification("[ALYSLC] Summoning menu already open.")
+            ALYSLC.Log("[SUMMON SCRIPT] Summoning menu already open.")
+            GotoState("")
+            Return
+        EndIf
 
-    If (CoopIsSummoningPlayers.GetValue() == 1.0)
-        Debug.Notification("[ALYSLC] Summoning menu already open.")
-        ALYSLC.Log("[SUMMON SCRIPT] Summoning menu already open.")
-        Return
-    EndIf
+        ; Can handle request.
+        ; Set as summoning, so the plugin doesn't attempt to open another summoning menu.
+        CoopIsSummoningPlayers.SetValue(1.0)
+        ; Putting the clean-up code here because
+        ; the VM runs the effect finish and effect start event
+        ; code concurrently and the interweaved code that
+        ; results is difficult to impose any kind of 
+        ; sequential ordering on.
 
-    ; Can handle request.
-    ; Set as summoning, so the plugin doesn't attempt to open another summoning menu.
-    CoopIsSummoningPlayers.SetValue(1.0)
-    ; Putting the clean-up code here because
-    ; the VM runs the effect finish and effect start event
-    ; code concurrently and the interweaved code that
-    ; results is difficult to impose any kind of 
-    ; sequential ordering on.
+        Initialize()
 
-    Initialize()
+        ; Clear out old data from previous sessions and stop any player managers.
+        StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 0)
+        StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
+        StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
+        ; End any active co-op session, pause all player managers, dismiss any companions.
+        Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
+        If (PrevNumCompanions > 0)
+            ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
+            ALYSLC.SignalWaitForUpdate(True)
+            ; Wait until done, or at most 5 seconds if any players are still not dismissed.
+            SecsWaited = 0.0
+            While ((SecsWaited < 5.0) && (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) != 0 || CanStartCoopGlobVar.GetValue() != 1.00))
+                ALYSLC.Log("[SUMMON SCRIPT] Waiting for dismissal to complete. Num companions: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
+                ALYSLC.Wait(0.1)
+                SecsWaited += 0.1
+            EndWhile
 
-    ; Clear out old data from previous sessions and stop any player managers.
-    StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 0)
-    StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
-    StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
-    ; End any active co-op session, pause all player managers, dismiss any companions.
-    Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
-    If (PrevNumCompanions > 0)
-        ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
-        ALYSLC.SignalWaitForUpdate(True)
-        ; Wait until done, or at most 5 seconds if any players are still not dismissed.
-        SecsWaited = 0.0
-        While ((SecsWaited < 5.0) && (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) != 0 || CanStartCoopGlobVar.GetValue() != 1.00))
-            ALYSLC.Log("[SUMMON SCRIPT] Waiting for dismissal to complete. Num companions: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
-            If (Utility.IsInMenuMode())
-                Utility.WaitMenuMode(0.1)
-            Else
-                Utility.Wait(0.1)
+            ; Flag co-op session as ended.
+            ALYSLC.ChangeCoopSessionState(False)
+            If (SecsWaited >= 5.0)
+                Debug.MessageBox("[ALYSLC]\nFailed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
+                ALYSLC.LogError("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
+                ALYSLC.SetIsSummoningFlag(False)
+                GotoState("")
+                Return
             EndIf
+        EndIf
+        
+        ; Wait until all companions are unloaded from the cell 
+        ; before opening the character selection menu.
+        Form[] CompanionsList = StorageUtil.FormListToArray(None, "ALYSLC_CompanionsList")
+        Int Index = 0
+        Bool Player3DLoaded = False
+        Bool PlayerIsDead = False
+        While (Index < CompanionsList.Length)
+            ; Check that any previously summoned players do not have their 3D loaded
+            ; and are not dead. Otherwise, wait until all companions are unloaded and resurrected.
+            If (!CompanionsList[Index])
+                Index += 1
+            Else 
+                Actor PlayerActor = (CompanionsList[Index] as Actor)
+                Player3DLoaded = PlayerActor.Is3DLoaded()
+                PlayerIsDead = PlayerActor.IsDead()
+                If (Player3DLoaded || PlayerIsDead)
+                    ALYSLC.Log("[SUMMON SCRIPT] Waiting for " + PlayerActor.GetDisplayName() + " to be dismissed before summoning players. Is loaded: " + Player3DLoaded + ", is dead: " + PlayerIsDead + ".")
+                    ; Ensure player is alive.
+                    If (PlayerIsDead)
+                        Float PreviousHP = PlayerActor.GetActorValue("Health")
+                        PlayerActor.Resurrect()
+                        ; Set to 1 HP.
+                        PlayerActor.DamageActorValue("Health", PlayerActor.GetActorValue("Health") - 1.0)
+                    EndIf
 
+                    ; Call dismissal function.
+                    ; May already be running here, but acts as a layer of redundancy to ensure the player is dismissed.
+                    __ALYSLC_ControlCoopActor CoopActor = PlayerActor as __ALYSLC_ControlCoopActor
+                    If (CoopActor)
+                        ALYSLC.Log("[SUMMON SCRIPT] Sending " + CoopActor.GetDisplayName() + " home.")
+                        CoopActor.CompletedLoad = False
+                        CoopActor.SendCoopPlayerHome()
+                    EndIf
+
+                    ALYSLC.Wait(1.0)
+                Else
+                    Index += 1
+                EndIf
+            EndIf
+        EndWhile
+
+        ; Game settings to change for co-op.
+        ; Set the minimum jump fall height for NPCs (default 450.0)
+        ; to be the same as player 1's
+        Game.SetGameSettingFloat("fJumpFallHeightMinNPC", 600.000000)
+        ; Prevent co-op companion player actors from healing faster than the player outside of combat.
+        Game.SetGameSettingFloat("fEssentialNonCombatHealRateBonus", 0.000000)
+        ; The following seems to speed up recognition of changes
+        ; to package swaps and procedure data changes made via plugin.
+        ; Default 15.000000 (ms?).
+        Game.SetGameSettingFloat("fEvaluatePackageTimer", 1.000000)
+        ; Default 3.000000 (ms?)
+        Game.SetGameSettingFloat("fEvaluateProcedureTimer", 1.000000)
+        
+        ; Update serialized companion player FIDs/character IDs before showing the summoning menu.
+        ALYSLC.UpdateAllCompanionPlayerSerializationIDs()
+
+        ; Select companion(s).
+        WasSelectingCharacter = False
+        ShouldExit = False
+        ; First, get a list of active input devices; then show the character selection menu.
+        DeviceIDs = ALYSLC.GetConnectedInputDeviceIDs()
+        StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", DeviceIDs.Length - 1)
+        StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
+        CoopCompanionDevicesCount = DeviceIDs.Length - 1
+        RegisterPlayersForCoopEvents()
+        ShowCoopSetupMenu()
+        
+        ; If the number of selected companions is zero, stop the summoning attempt.
+        ; Otherwise, summon the characters and signal player 1's reference
+        ; alias scripts to initialize.
+        If (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) == 0)
+            ALYSLC.Log("[SUMMON SCRIPT] No companions chosen, so stopping summoning attempt.")
+            AbortSummoningAttempt()
+            GotoState("")
+            Return
+        EndIf
+
+        ; Get active players and package start indices before initializing co-op session data in the plugin.
+        SetActiveCoopPlayers()
+        ; P1 is not always valid for some reason.
+        Bool Success = CoopActors[0] == Game.GetPlayer()
+        If (!Success)
+            CoopActors[0] = Game.GetPlayer()
+            Success = CoopActors[0] == Game.GetPlayer()
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: P1 not valid. Attempting to set P1 again. Set as " + CoopActors[0])
+        EndIf
+
+        If (Success)
+            Success = ALYSLC.InitializeCoopPlayers(CurrentCompanionsCount, DeviceIDs, CoopActors)
+        EndIf
+
+        ; Initialization failed. Do not continue.
+        If (!Success)
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Initialization failed. Stopping summoning process.")
+            AbortSummoningAttempt()
+            GotoState("")
+            Return
+        EndIf
+
+        ; Teleport co-op companions to P1.
+        SummonCoopPlayers()
+        ALYSLC.Log("[SUMMON SCRIPT] Send summoning requests to active players.")
+        Player1CoopStart()
+        CompanionCoopStart()
+
+        Form[] CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
+        ; Ensure all co-op companion scripts have checked in by adding themselves to the script list (1 per player but this could change).
+        SecsWaited = 0.0
+        While (CoopActorScripts.Length < (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)) && SecsWaited < 5.0)
+            CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting for scripts to check in. " + CoopActorScripts.Length + " loaded out of " + (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)))
+            ALYSLC.Wait(0.1)
             SecsWaited += 0.1
         EndWhile
 
-        ; Flag co-op session as ended.
-        ALYSLC.ChangeCoopSessionState(False)
         If (SecsWaited >= 5.0)
-		    Debug.MessageBox("[ALYSLC]\nFailed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
-            ALYSLC.Log("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
-            ALYSLC.SetIsSummoningFlag(False)
+            AbortSummoningAttempt()
+            Debug.MessageBox("[ALYSLC]\nScripts failed to check in before setting up co-op session. Please try re-summoning after a few seconds or reload the save.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Script(s) failed to check in after 5 seconds. Stopping summoning attempt.")
+            GotoState("")
             Return
         EndIf
-    EndIf
-	
-    ; Wait until all companions are unloaded from the cell 
-    ; before opening the character selection menu.
-    Form[] CompanionsList = StorageUtil.FormListToArray(None, "ALYSLC_CompanionsList")
-    Int Index = 0
-    Bool Player3DLoaded = False
-    Bool PlayerIsDead = False
-    While (Index < CompanionsList.Length)
-        ; Check that any previously summoned players do not have their 3D loaded
-        ; and are not dead. Otherwise, wait until all companions are unloaded and resurrected.
-        If (!CompanionsList[Index])
-            Index += 1
-        Else 
-            Actor PlayerActor = (CompanionsList[Index] as Actor)
-            Player3DLoaded = PlayerActor.Is3DLoaded()
-            PlayerIsDead = PlayerActor.IsDead()
-            If (Player3DLoaded || PlayerIsDead)
-                ALYSLC.Log("[SUMMON SCRIPT] Waiting for " + PlayerActor.GetDisplayName() + " to be dismissed before summoning players. Is loaded: " + Player3DLoaded + ", is dead: " + PlayerIsDead + ".")
-                ; Ensure player is alive.
-                If (PlayerIsDead)
-                    PlayerActor.Resurrect()
+
+        ; Prevent players from taking damage until summoning is complete.
+        ALYSLC.SetPartyInvincibility(True)
+        
+        ; Loop until all scripts notify this script that they have finished initialization.
+        Bool CheckLoadStatus = True
+        Int Iter = 0
+        SecsWaited = 0.0
+        While (CheckLoadStatus && SecsWaited < 5.0)
+            Iter = 0
+            CheckLoadStatus = False
+            While (Iter < CoopActorScripts.Length && !CheckLoadStatus)
+                Form Script = CoopActorScripts[Iter]
+                If (Script as __ALYSLC_ControlCoopActor)
+                    If (!(Script as __ALYSLC_ControlCoopActor).CompletedLoad)
+                        ALYSLC.Log("[SUMMON SCRIPT] Waiting for CCA.")
+                        CheckLoadStatus = True
+                    EndIf
                 EndIf
 
-                ; Call dismissal function.
-                ; May already be running here, but acts as a layer of redundancy to ensure the player is dismissed.
-                __ALYSLC_ControlCoopActor CoopActor = PlayerActor as __ALYSLC_ControlCoopActor
-                If (CoopActor)
-                    ALYSLC.Log("[SUMMON SCRIPT] Sending " + CoopActor.GetDisplayName() + " home.")
-                    CoopActor.CompletedLoad = False
-                    CoopActor.SendCoopPlayerHome()
-                EndIf
+                Iter += 1
+            EndWhile
 
-                If (Utility.IsInMenuMode())
-                    Utility.WaitMenuMode(1.0)
-                Else
-                    Utility.Wait(1.0)
-                EndIf
-            Else
-                Index += 1
-            EndIf
-        EndIf
-    EndWhile
-
-    ; Game settings to change for co-op.
-    ; Set the minimum jump fall height for NPCs (default 450.0)
-    ; to be the same as player 1's
-    Game.SetGameSettingFloat("fJumpFallHeightMinNPC", 600.000000)
-    ; Prevent co-op companion player actors from healing faster than the player outside of combat.
-    Game.SetGameSettingFloat("fEssentialNonCombatHealRateBonus", 0.000000)
-    ; The following seems to speed up recognition of changes
-    ; to package swaps and procedure data changes made via plugin.
-    ; Default 15.000000 (ms?).
-    Game.SetGameSettingFloat("fEvaluatePackageTimer", 1.000000)
-    ; Default 3.000000 (ms?)
-    Game.SetGameSettingFloat("fEvaluateProcedureTimer", 1.000000)
-    
-    ; Update serialized companion player FIDs/character IDs before showing the summoning menu.
-    ALYSLC.UpdateAllCompanionPlayerSerializationIDs()
-
-    ; Select companion(s).
-    WasSelectingCharacter = False
-    ShouldExit = False
-    ; First, get a list of active input devices; then show the character selection menu.
-    DeviceIDs = ALYSLC.GetConnectedInputDeviceIDs()
-    StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", DeviceIDs.Length - 1)
-    StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
-    CoopCompanionDevicesCount = DeviceIDs.Length - 1
-    RegisterPlayersForCoopEvents()
-    ShowCoopSetupMenu()
-    
-    ; If the number of selected companions is zero, stop the summoning attempt.
-    ; Otherwise, summon the characters and signal player 1's reference
-    ; alias scripts to initialize.
-    If (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) == 0)
-        ALYSLC.Log("[SUMMON SCRIPT] No companions chosen, so stopping summoning attempt.")
-        AbortSummoningAttempt()
-        Return
-    EndIf
-
-    ; Get active players and package start indices before initializing co-op session data in the plugin.
-    SetActiveCoopPlayers()
-    ; P1 is not always valid for some reason.
-    Bool Success = CoopActors[0] == Game.GetPlayer()
-    If (!Success)
-        CoopActors[0] = Game.GetPlayer()
-        Success = CoopActors[0] == Game.GetPlayer()
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: P1 not valid. Attempting to set P1 again. Set as " + CoopActors[0])
-    EndIf
-
-    If (Success)
-        Success = ALYSLC.InitializeCoopPlayers(CurrentCompanionsCount, DeviceIDs, CoopActors)
-    EndIf
-
-    ; Initialization failed. Do not continue.
-    If (!Success)
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: Initialization failed. Stopping summoning process.")
-        AbortSummoningAttempt()
-        Return
-    EndIf
-
-    ; Teleport co-op companions to P1.
-    SummonCoopPlayers()
-    ALYSLC.Log("[SUMMON SCRIPT] Send summoning requests to active players.")
-    Player1CoopStart()
-    CompanionCoopStart()
-
-    Form[] CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
-    ; Ensure all co-op companion scripts have checked in by adding themselves to the script list (1 per player but this could change).
-    SecsWaited = 0.0
-    While (CoopActorScripts.Length < (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)) && SecsWaited < 5.0)
-        CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
-        ALYSLC.Log("[SUMMON SCRIPT] Waiting for scripts to check in. " + CoopActorScripts.Length + " loaded out of " + (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)))
-		If (Utility.IsInMenuMode())
-            Utility.WaitMenuMode(0.1)
-        Else
-            Utility.Wait(0.1)
-        EndIf
-
-        SecsWaited += 0.1
-    EndWhile
-
-    If (SecsWaited >= 5.0)
-        AbortSummoningAttempt()
-        Debug.MessageBox("[ALYSLC]\nScripts failed to check in before setting up co-op session. Please try re-summoning after a few seconds.")
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: Script(s) failed to check in after 5 seconds. Stopping summoning attempt.")
-        Return
-    EndIf
-
-    ; Prevent players from taking damage until summoning is complete.
-    ALYSLC.SetPartyInvincibility(True)
-    
-    ; Loop until all scripts notify this script that they have finished initialization.
-    Bool CheckLoadStatus = True
-    Int Iter = 0
-    SecsWaited = 0.0
-    While (CheckLoadStatus && SecsWaited < 5.0)
-        Iter = 0
-        CheckLoadStatus = False
-        While (Iter < CoopActorScripts.Length && !CheckLoadStatus)
-            Form Script = CoopActorScripts[Iter]
-            If (Script as __ALYSLC_ControlCoopActor)
-                If (!(Script as __ALYSLC_ControlCoopActor).CompletedLoad)
-                    ALYSLC.Log("[SUMMON SCRIPT] Waiting for CCA.")
-                    CheckLoadStatus = True
-                EndIf
+            ; Check player 1 load script separately since it is attached
+            ; to a ReferenceAlias and cannot be added as a form to the scripts list.
+            If (!(Player1RefrAlias as __ALYSLC_ControlPlayerRef).CompletedLoad)
+                ALYSLC.Log("[SUMMON SCRIPT] Waiting for CP1R.")
+                CheckLoadStatus = True
             EndIf
 
-            Iter += 1
+            ALYSLC.Wait(0.1)
+            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
+            SecsWaited += 0.1
+            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
         EndWhile
 
-        ; Check player 1 load script separately since it is attached
-        ; to a ReferenceAlias and cannot be added as a form to the scripts list.
-        If (!(Player1RefrAlias as __ALYSLC_ControlPlayerRef).CompletedLoad)
-            ALYSLC.Log("[SUMMON SCRIPT] Waiting for CP1R.")
-            CheckLoadStatus = True
+        If (SecsWaited >= 5.0)
+            AbortSummoningAttempt()
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Script(s) failed to finish setting up after 5 seconds. Stopping summoning attempt.")
+            Debug.MessageBox("[ALYSLC]\nScripts failed to setup the co-op session. Please try re-summoning after a few seconds.")
+            GotoState("")
+            Return
         EndIf
 
-        If (Utility.IsInMenuMode())
-            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
-            Utility.WaitMenuMode(0.1)
-        Else
-            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
-            Utility.Wait(0.1)
-        EndIf
+        ; Signal that the co-op session has started.
+        StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
+        ALYSLC.ChangeCoopSessionState(True)
         
-        SecsWaited += 0.1
-        ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
-    EndWhile
+        ; Enable the co-op camera.
+        ALYSLC.ToggleCoopCamera(True)
+        ALYSLC.Log("[SUMMON SCRIPT] ALYSLC co-op session has started.")
+        ; Pause for a bit to ensure the camera and plugin have
+        ; finished setting up the session. Then remove invincibility.
+        ALYSLC.Wait(5.0)
+        ALYSLC.SetPartyInvincibility(False)
+        ALYSLC.Log("[SUMMON SCRIPT] Party invincibility grace period over.")
 
-    If (SecsWaited >= 5.0)
-        AbortSummoningAttempt()
-        ALYSLC.Log("[SUMMON SCRIPT] ERR: Script(s) failed to finish setting up after 5 seconds. Stopping summoning attempt.")
-        Debug.MessageBox("[ALYSLC]\nScripts failed to setup the co-op session. Please try re-summoning after a few seconds.")
-        Return
-    EndIf
+        ; Done summoning.
+        CoopIsSummoningPlayers.SetValue(0)
+        ALYSLC.SetIsSummoningFlag(False)
+        ALYSLC.Log("[SUMMON SCRIPT] Fulfilled summoning request. Have fun!")
+        GotoState("")
+    EndFunction
+EndState
 
-    ; Signal that the co-op session has started.
-    StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
-    ALYSLC.ChangeCoopSessionState(True)
-    
-    ; Enable the co-op camera.
-    ALYSLC.ToggleCoopCamera(True)
-    ALYSLC.Log("[SUMMON SCRIPT] ALYSLC co-op session has started.")
-    ; Pause for a bit to ensure the camera and plugin have
-    ; finished setting up the session. Then remove invincibility.
-    If (Utility.IsInMenuMode())
-        Utility.WaitMenuMode(5.0)
-    Else
-        Utility.Wait(5.0)
-    EndIf
-    
-    ALYSLC.SetPartyInvincibility(False)
-    ALYSLC.Log("[SUMMON SCRIPT] Party invincibility grace period over.")
+State SkipSummonState
+    Function SummoningMenuRequest()
+        ALYSLC.Log("[SUMMON SCRIPT] " + Self + " skipping summon request in skip state.")
+    EndFunction
+EndState
 
-    ; Done summoning.
-    CoopIsSummoningPlayers.SetValue(0)
-    ALYSLC.SetIsSummoningFlag(False)
-    ALYSLC.Log("[SUMMON SCRIPT] Fulfilled summoning request. Have fun!")
+Function SummoningMenuRequest()
+    ALYSLC.Log("[SUMMON SCRIPT] " + Self + " skipping summon request in empty state.")
+EndFunction
+
+Event OnSummoningMenuRequest()
+    ALYSLC.Log("[SUMMON SCRIPT] " + Self + " requesting to open summoning menu.")
+    GotoState("SummonState")
+    SummoningMenuRequest()
 EndEvent

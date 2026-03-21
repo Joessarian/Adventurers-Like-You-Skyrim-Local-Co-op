@@ -5,6 +5,7 @@
 namespace ALYSLC
 {
 	class CoopPlayer;
+
 	// Maintains an up-to-date view of all equipped forms and offers
 	// cycling of equippable forms when pressing different hotkeys.
 	struct EquipManager : public Manager
@@ -24,8 +25,6 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
-		inline void AssignUniqueID();
-
 		// Remove form from desired forms list when it is unequipped.
 		inline void ClearDesiredEquippedFormOnUnequip
 		(
@@ -42,19 +41,19 @@ namespace ALYSLC
 			// the one already in this slot, do not clear the slot.
 			bool diffFormAlreadyInSlot = 
 			(
-				desiredEquippedForms[a_listIndex] && 
-				desiredEquippedForms[a_listIndex] != a_toUnequip
+				desiredForms[a_listIndex] && 
+				desiredForms[a_listIndex] != a_toUnequip
 			);
 			if (!diffFormAlreadyInSlot)
 			{
-				desiredEquippedForms[a_listIndex] = nullptr;
-				desiredEquippedUniqueIDs[a_listIndex] = 0;
+				desiredForms[a_listIndex] = nullptr;
+				desiredExtraDataLists[a_listIndex] = nullptr;
 			}
 		}
 
 		// Get all currently equipped forms for this player.
-		inline const std::array<RE::TESForm*, (size_t)EquipIndex::kTotal>& GetAllEquippedForms
-		( ) const
+		inline const std::array<RE::TESForm*, (size_t)EquipIndex::kTotal>& GetAllEquippedForms() 
+		const
 		{
 			return equippedForms;
 		}
@@ -85,7 +84,7 @@ namespace ALYSLC
 		{
 			return voiceSpell;
 		}
-		
+
 		// Get the spell equipped in the left hand, if any.
 		inline RE::SpellItem* GetLHSpell() const
 		{
@@ -407,73 +406,6 @@ namespace ALYSLC
 			);
 		}
 
-		// Check if the given form is equipped 
-		// (in the player's equipped forms list, if not a bound object,
-		// or has ExtraWorn(Left) data.
-		inline bool IsEquipped
-		(
-			RE::TESForm* a_form, 
-			RE::ExtraDataList* a_exDataList, 
-			bool a_leftHand = false
-		) 
-		{
-			if (!a_form)
-			{
-				return false;
-			}
-
-			if (!a_form->As<RE::TESBoundObject>() && equippedFormFIDs.contains(a_form->formID))
-			{
-				return true;
-			}
-
-			if (a_exDataList)
-			{
-				return 
-				(
-					(!a_leftHand && a_exDataList->HasType(RE::ExtraDataType::kWorn)) ||
-					(a_leftHand && a_exDataList->HasType(RE::ExtraDataType::kWornLeft))
-				);
-			}
-			else
-			{
-				auto invChanges = coopActor->GetInventoryChanges(); 
-				if (invChanges && invChanges->entryList)
-				{
-					for (auto invEntryData : *invChanges->entryList)
-					{
-						if (invEntryData && 
-							invEntryData->object && 
-							invEntryData->object == a_form &&
-							invEntryData->extraLists)
-						{
-							for (const auto& exDataList : *invEntryData->extraLists)
-							{
-								if (!exDataList)
-								{
-									continue;
-								}
-								
-								return 
-								(
-									(
-										!a_leftHand && 
-										exDataList->HasType(RE::ExtraDataType::kWorn)
-									) ||
-									(
-										a_leftHand &&
-										exDataList->HasType(RE::ExtraDataType::kWornLeft)
-									)
-								);
-							}
-						}
-					}
-				}
-			}
-
-			return false;
-		}
-
 		// Check if the player is dual wielding weapons.
 		inline bool IsDualWielding() const
 		{
@@ -490,6 +422,61 @@ namespace ALYSLC
 					!rhObj->As<RE::TESObjectWEAP>()->IsTwoHandedSword()
 				)
 			);
+		}
+
+		// Return true if the item given by the bound object and extra data list 
+		// is in the inventory chest.
+		// Can also match the given list with an equivalent one that has the same worn data.
+		inline bool IsInInventoryChest
+		(
+			RE::TESBoundObject* a_object, RE::ExtraDataList* a_exDatalist, bool a_inLeftHand
+		)
+		{
+			auto invChanges = inventoryChest->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return false;
+			}
+
+			for (const auto entry : *invChanges->entryList)
+			{
+				if (!entry)
+				{
+					continue;
+				}
+
+				if (!a_exDatalist && entry->object == a_object)
+				{
+					SPDLOG_DEBUG
+					(
+						"No specified extra data list for {}, which exists in the chest.", 
+						a_object->GetName()
+					);
+					return true;
+				}
+
+				if (entry->object != a_object || !entry->extraLists)
+				{
+					continue;
+				}
+
+				for (const auto list : *entry->extraLists)
+				{
+					if (list == a_exDatalist)
+					{
+						SPDLOG_DEBUG
+						(
+							"{}. {:p} matches {:p}.", 
+							a_object->GetName(),
+							fmt::ptr(list),
+							fmt::ptr(a_exDatalist)
+						);
+						return true;
+					}
+				}
+			}
+
+			return false;
 		}
 
 		// Check if the player's left hand is empty.
@@ -513,14 +500,42 @@ namespace ALYSLC
 		// Clear the player's desired forms list and then unequip all forms.
 		inline void UnequipAllAndResetEquipState() 
 		{
-			desiredEquippedForms.fill(nullptr);
-			desiredEquippedForms.fill(0);
+			desiredForms.fill(nullptr);
+			desiredForms.fill(0);
 			Util::Papyrus::UnequipAll(coopActor.get());
 		}
 		
 		//
 		// Member funcs
 		//
+
+		RE::ExtraDataList* AddItemFromInventoryChest
+		(
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_extraDataList,
+			uint32_t a_count,
+			bool a_leftHand,
+			bool a_keepInChest = true
+		);
+
+		// Equip matching highest count/damage ammo if the setting is enabled 
+		// and the given bound object is a ranged weapon.
+		void AutoEquipAmmo(RE::TESBoundObject* a_equippedObject);
+
+		// Add to specified list or remove all worn exRank data from chest extra data lists
+		// for the given item.
+		// 
+		// Will only add/remove if the item is equipped/unequipped in the given hand.
+		// If no chest exData list is provided when trying to add exRank data on equip,
+		// attempt to find a matching chest exData list for the equipped exData list 
+		// in the same hand before adding worn exRank data.
+		void ChangeChestWornRankExData
+		(
+			RE::TESBoundObject* a_boundObj,
+			bool a_checkLH,
+			bool a_add,
+			RE::ExtraDataList* a_chestListToChange = nullptr
+		);
 
 		// NOTE:
 		// Currently unused since I can't seem to trigger the 'Shout' package procedure 
@@ -533,7 +548,7 @@ namespace ALYSLC
 		(
 			RE::SpellItem* a_spellToCopy, const PlaceholderMagicIndex& a_index
 		);
-		
+
 		// Cycle to the next favorited ammo choice 
 		// that matches the currently equipped ranged weapon.
 		void CycleAmmo();
@@ -643,9 +658,53 @@ namespace ALYSLC
 			RE::TESForm* a_form, const EquipIndex& a_index
 		) const;
 		
+		// Get the next favorited item extra data list for the given item.
+		// Skip unfavorited lists.
+		// Skip lists with the ExtraWorn/ExtraWornLeft extra data types and return the next
+		// unequipped list following the equipped one, if it exists.
+		// Set the outparam flag if the returned list is the last one in the entry's list of lists,
+		// is currently equipped, and should be unequipped.
+		// Return nullptr if there is no favorited item extra data list.
+		// Signal to unequip if no form is given.
+		// Used to cycle/hotkey equip favorited items that have multiple favorited extra data lists.
+		RE::ExtraDataList* GetNextFavoritedExDataList
+		(
+			RE::TESForm* a_form, 
+			bool a_checkWornLeft, 
+			bool& a_shouldUnequip
+		);
+		
+		// Setup equip request by adding the item from the companion player's chest
+		// and providing the proper extra data list.
+		void HandleCompanionPlayerEquip
+		(
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraData = nullptr, 
+			uint32_t a_count = 1, 
+			const RE::BGSEquipSlot* a_slot = nullptr,
+			bool a_queueEquip = true, 
+			bool a_forceEquip = false, 
+			bool a_playSounds = true, 
+			bool a_applyNow = false
+		);
+
+		// Remove items, extra data lists, inventory entries, and clean up after unequipping.
+		void HandleCompanionPlayerUnequip
+		(
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_exDataList = nullptr, 
+			uint32_t a_count = 1, 
+			const RE::BGSEquipSlot* a_slot = nullptr,
+			bool a_queueEquip = true, 
+			bool a_forceEquip = false, 
+			bool a_playSounds = true, 
+			bool a_applyNow = false,
+			const RE::BGSEquipSlot* a_slotToReplace = nullptr
+		);
+
 		// Un/equip the desired form at the given index.
 		// NOTE: 
-		// Not currently used and should never be called on P1.
+		// Should never be called on P1.
 		void HandleEquipRequest
 		(
 			RE::TESForm* a_form, 
@@ -681,6 +740,17 @@ namespace ALYSLC
 		// Should not be called on P1 
 		// since there's no need to re-import P1's favorites onto themselves.
 		void ImportCoopFavorites(bool&& a_onlyMagicFavorites);
+		
+		// Check if the given form is equipped 
+		// (in the player's equipped forms list, if not a bound object,
+		// or has ExtraWorn(Left) data.
+		bool IsEquipped
+		(
+			RE::TESForm* a_form, 
+			RE::ExtraDataList* a_exDataList, 
+			bool a_leftHand = false,
+			bool a_eitherHand = false
+		);
 
 		// Check if the player is unarmed.
 		bool IsUnarmed() const;
@@ -697,7 +767,7 @@ namespace ALYSLC
 
 		// Unequip and re-equip voice form (power/shout).
 		void ReEquipVoiceForm();
-		
+
 		// Unfavorite this player's favorited items/spells and restore P1's favorited items/spells.
 		// NOTE: 
 		// Also should not be called on P1.
@@ -716,6 +786,10 @@ namespace ALYSLC
 			bool a_isEquipped = true
 		);
 		
+		// Remove all items that were not equipped by the player
+		// from the player character's inventory.
+		void RemoveUndesiredItems();
+
 		// Set cached copied magic form and form ID 
 		// with the given copied magic form at the given placeholder spell index.
 		void SetCopiedMagicAndFID
@@ -816,7 +890,7 @@ namespace ALYSLC
 		// Attempts to rectify mismatches and equip state issues 
 		// with the player's equipped forms, and then re-equip the desired forms.
 		// NOTE:
-		// Not called on P1 as of now.
+		// Unused and not called on P1 as of now.
 		void ValidateEquipState();
 		
 		//
@@ -841,6 +915,8 @@ namespace ALYSLC
 		RE::TESForm* currentCycledVoiceMagic;
 		// Last selected hotkeyed form.
 		RE::TESForm* lastChosenHotkeyedForm;
+		// Inventory for the player (a chest in a galaxy far, far away).
+		RE::TESObjectREFRPtr inventoryChest;
 		// Last cycled emote idle event name and index 
 		// recorded while pressing the emote idle cycling bind.
 		std::pair<RE::BSFixedString, int8_t> lastCycledIdleIndexPair;
@@ -876,10 +952,10 @@ namespace ALYSLC
 			currentCycledRHWeaponsList;
 		// The list of currently equipped forms is adjusted to match this list.
 		// Slots: hands, quick slots, ammo slot, voice slot, and biped slots.
-		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> desiredEquippedForms;
+		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> desiredForms;
 		// Unique IDs for all equipped items.
 		// Used to distinguish between items of the same type when (un)equipping them.
-		std::array<uint32_t, (size_t)EquipIndex::kTotal> desiredEquippedUniqueIDs;
+		std::array<RE::ExtraDataList*, (size_t)EquipIndex::kTotal> desiredExtraDataLists;
 		// List of currently equipped forms in: 
 		// hands, quick slots, ammo slot, voice slot, and biped slots.
 		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> equippedForms;
@@ -901,22 +977,24 @@ namespace ALYSLC
 		std::pair<RE::BSFixedString, int8_t> currentCycledIdleIndexPair;
 		// Set of equipped items' form IDs for the co-op player.
 		std::set<RE::FormID> equippedFormFIDs;
-		// Indices of currently equipped favorited items.
-		std::set<uint32_t> favItemsEquippedIndices;
 		// Set of favorited items' form IDs for the co-op player.
 		std::set<RE::FormID> favoritedFormIDs;
 		// Favorited items separated into lists based on form type.
 		std::unordered_map<CyclableForms, std::vector<RE::TESForm*>> cyclableFormsMap;
-		// Maps hotkeyed forms' FIDs to their hotkey indices.
-		std::unordered_map<RE::FormID, int8_t> hotkeyedFormsToSlotsMap;
+		// Maps hotkeyed forms' FIDs to a set of their hotkey indices.
+		// The same form ID, but different exData list, can be favorited to multiple hotkeys.
+		std::unordered_map<RE::FormID, std::set<int8_t>> hotkeyedFormsToSlotsSetMap;
 		// List of bound object and spell forms favorited by the co-op player.
 		std::vector<RE::TESForm*> favoritedForms;
-		// List of flags indicating whether this co-op player's favorited item at each index
-		// is also favorited by P1.
-		std::vector<bool> favoritesIndicesInCommon;
-		// List of flags indicating whether this co-op player's favorited item at each index
-		// was added to P1 on import.
-		std::vector<bool> favoritedItemWasAdded;
+		// (Un)equipObject hooks should not perform their normal functions when this is set;
+		// also prevents changes to worn rank data for companion players when set to true.
+		// Bracket function calls/blocks of code with this flag set to true and then false afterward
+		// to prevent companion players from equipping the item from the chest or removing the item
+		// and invalidating extra data lists once unequipped, 
+		// which can prevent item transfer from succeeding.
+		// Can also bookend blocks of code to prevent changes to worn rank data, 
+		// streamlining re-equipping of items without first caching their worn rank data to restore.
+		bool skipEquipProcessing;
 		// Input device ID for this player.
 		// Controller IDs fall in the range [0, 3] and keyboard + mouse IDs are >= 4.
 		int32_t deviceID;

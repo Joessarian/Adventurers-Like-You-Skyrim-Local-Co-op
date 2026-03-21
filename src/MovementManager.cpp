@@ -118,6 +118,41 @@ namespace ALYSLC
 			Util::SetPlayerAIDriven(true);
 		}
 
+		// "Infinite" carryweight.
+		// NOTE: 
+		// Adjusts the permanent modifier by a fixed amount 
+		// that should not be exceeded beforehand under normal circumstances.
+		float permMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
+		);
+		float tempMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
+		);
+		float damageMod = coopActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
+		);
+		if (Settings::bInfiniteCarryweight && permMod < Settings::fInfiniteCarryweightBump)
+		{
+			coopActor->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kCarryWeight, 
+				Settings::fInfiniteCarryweightBump
+			);
+		}
+		else if (!Settings::bInfiniteCarryweight && permMod >= Settings::fInfiniteCarryweightBump)
+		{
+			coopActor->RestoreActorValue
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, 
+				RE::ActorValue::kCarryWeight, 
+				-Settings::fInfiniteCarryweightBump
+			);
+		}
+
 		// Ensure the player/mount is not set to stationary.
 		if (auto mountPtr = p->GetCurrentMount(); mountPtr)
 		{
@@ -649,7 +684,18 @@ namespace ALYSLC
 					// Stop sneak animation which played for the duration of the dodge.
 					if (!p->isTransformed)
 					{
-						coopActor->NotifyAnimationGraph("SneakStop");
+						p->pam->wantsToSneak = false;
+						bool succ = coopActor->NotifyAnimationGraph("SneakStop");
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"{}, started attack: {}, expired: {}, transformed: {}, succ: {}",
+							coopActor->GetName(), 
+							startedAttackDuringDodge,
+							dodgeDurationExpired, 
+							p->isTransformed, 
+							succ
+						);
 					}
 
 					// Set the state back to swimming to avoid dropping like a rock in the water
@@ -3596,8 +3642,9 @@ namespace ALYSLC
 		// divided by their carryweight. Any number greater or equal to 1
 		// means that the player is over-encumbered.
 
-		float inventoryWeight = coopActor->GetWeightInContainer();
-		const auto invChanges = coopActor->GetInventoryChanges();
+		const auto& container = p->isPlayer1 ? coopActor : p->em->inventoryChest;
+		float inventoryWeight = container->GetWeightInContainer();
+		const auto invChanges = container->GetInventoryChanges();
 		if (invChanges)
 		{
 			inventoryWeight = invChanges->totalWeight;
@@ -3738,7 +3785,10 @@ namespace ALYSLC
 
 		// Over-encumbered.
 		// Slow down companion players only, as the game already slows down P1 when encumbered.
-		if (!p->isPlayer1 && !p->isInGodMode && encumbranceFactor >= 1.0f)
+		if (!p->isPlayer1 &&
+			!p->isInGodMode && 
+			!Settings::bInfiniteCarryweight &&
+			encumbranceFactor >= 1.0f)
 		{
 			// Just an estimate, similar enough to P1's speed when encumbered.
 			speedMult *= 0.45f;
@@ -3781,9 +3831,11 @@ namespace ALYSLC
 			return;
 		}
 
+		// NOTE:
+		// Unused for now unless the new method for enabling discovery proves to be broken.
 		// Check if P1 should have their AI driven flag cleared, 
 		// which re-enables location discovery.
-		SetShouldPerformLocationDiscovery();
+		// SetShouldPerformLocationDiscovery();
 
 		// Update analog stick state and menu movement flag.
 		menuStopsMovement = Util::OpenMenuStopsMovement();
@@ -3853,8 +3905,7 @@ namespace ALYSLC
 		movementActorPtr = mountPtr ? mountPtr : coopActor;
 		const float movementSpeed = movementActorPtr->DoGetMovementSpeed();
 		// Ensure all sneak states sync up with the player's requested state.
-		if (!p->isPlayer1 &&
-			!coopActor->IsOnMount() &&
+		if (!coopActor->IsOnMount() &&
 			!coopActor->IsSwimming() && 
 			!coopActor->IsFlying() && 
 			!isRequestingDashDodge && 
@@ -3870,7 +3921,7 @@ namespace ALYSLC
 						RE::PACKAGE_DATA::GeneralFlag::kAlwaysSneak, true
 					);
 				}
-
+				
 				Util::RunPlayerActionCommand
 				(
 					RE::DEFAULT_OBJECT::kActionSneak, p->coopActor.get()

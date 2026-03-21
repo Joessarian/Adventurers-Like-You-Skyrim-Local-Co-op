@@ -52,33 +52,6 @@ namespace ALYSLC
 		SPDLOG_INFO("Event registration complete.");
 	}
 
-	void Events::ResetMenuState()
-	{
-		// Reset our handled menu data instantly:
-		// Stop MIM, reset menu device IDs,
-		// set supported menus as closed.
-
-		SPDLOG_DEBUG
-		(
-			"Old DID/PID: {}, {}.", 
-			glob.menuPID > -1 && glob.menuPID < ALYSLC_MAX_PLAYER_COUNT ?
-			glob.coopPlayers[glob.menuPID]->deviceID :
-			-1,
-			glob.menuPID
-		);
-		glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
-		GlobalCoopData::ResetMenuPlayerIDs();
-		glob.supportedMenuOpen.store(false);
-		glob.lastSupportedMenusClosedTP = SteadyClock::now();
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		// Ensure the allow saving flag is set for the HUD Menu,
-		// since we may have unset it previously, preventing all saving.
-		if (p1 && *glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
-		{
-			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
-		}
-	}
-
 	CoopActorKillEventHandler* CoopActorKillEventHandler::GetSingleton()
 	{
 		static CoopActorKillEventHandler singleton;
@@ -402,10 +375,14 @@ namespace ALYSLC
 	{
 		const auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!glob.globalDataInit || 
-			!glob.coopSessionActive ||
 			!p1 ||
 			!a_containerChangedEvent || 
 			!a_containerChangedEvent->baseObj)
+		{
+			return EventResult::kContinue;
+		}
+
+		if (!glob.coopSessionActive)
 		{
 			return EventResult::kContinue;
 		}
@@ -422,21 +399,30 @@ namespace ALYSLC
 		bool fromP1 = a_containerChangedEvent->oldContainer == p1->formID;
 		bool toP1 = a_containerChangedEvent->newContainer == p1->formID;
 		// From a player or a co-op chest.
+		int32_t fromChestIndex = -1;
+		int32_t toChestIndex = -1;
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive || !p->em->inventoryChest)
+			{
+				continue;
+			}
+
+			if (p->em->inventoryChest->formID == a_containerChangedEvent->oldContainer)
+			{
+				fromChestIndex = p->playerID;
+			}
+
+			if (p->em->inventoryChest->formID == a_containerChangedEvent->newContainer)
+			{
+				toChestIndex = p->playerID;
+			}
+		}
+
 		bool fromCoopEntity = 
 		(
 			glob.coopEntityBlacklistFIDSet.contains(a_containerChangedEvent->oldContainer) || 
-			std::any_of
-			(
-				glob.coopInventoryChests.begin(), glob.coopInventoryChests.end(),
-				[a_containerChangedEvent](const auto& a_chestRefrPtr)
-				{
-					return 
-					(
-						a_chestRefrPtr &&
-						a_chestRefrPtr->formID == a_containerChangedEvent->oldContainer
-					);
-				}
-			)
+			fromChestIndex != -1
 		);
 		int32_t fromCoopPlayerIndex = 
 		(
@@ -527,7 +513,10 @@ namespace ALYSLC
 			a_containerChangedEvent->baseObj == 0x64B33)
 		{
 			const auto& p = glob.coopPlayers[fromCoopPlayerIndex];
-			auto inventory = p->coopActor->GetInventory();
+			auto inventory = 
+			(
+				p->isPlayer1 ? p->coopActor->GetInventory() : p->em->inventoryChest->GetInventory()
+			);
 			auto obj = RE::TESForm::LookupByID<RE::TESBoundObject>(0x64B33);
 			const auto iter = obj ? inventory.find(obj) : inventory.end();
 			if (iter == inventory.end() || iter->second.first <= 0)
@@ -542,6 +531,13 @@ namespace ALYSLC
 
 				p->tm->canSMORF = false;
 			}
+		}
+
+		// Skip processing when added from a companion player to themselves.
+		// We want these items to remain in the player's inventory because they must be equipped.
+		if (fromCoopPlayerIndex == toCoopPlayerIndex)
+		{
+			return EventResult::kContinue;
 		}
 
 		// Added to P1 or added to co-op player.
@@ -584,7 +580,19 @@ namespace ALYSLC
 			{
 				auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
 				auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-				if (toP1)
+				// Allow movement of items from chest to player inventory.
+				if (fromChestIndex == toCoopPlayerIndex)
+				{
+					const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
+					SPDLOG_DEBUG
+					(
+						"Transferring {} from {}'s inventory chest to their inventory.",
+						baseObj ? baseObj->GetName() : "NONE",
+						p->coopActor->GetName()
+					);
+					return EventResult::kContinue;
+				}
+				else if (toP1)
 				{
 					// Add to companion player controlling menus if not a party-wide item.
 					const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
@@ -684,14 +692,7 @@ namespace ALYSLC
 											count,
 											RE::ITEM_REMOVE_REASON::kRemove, 
 											nullptr, 
-											nullptr
-										);
-										p->coopActor->AddObjectToContainer
-										(
-											boundObj, 
-											nullptr, 
-											count, 
-											p->coopActor.get()
+											p->em->inventoryChest.get()
 										);
 									}
 								);
@@ -759,11 +760,11 @@ namespace ALYSLC
 						const int32_t count = a_containerChangedEvent->itemCount;
 						p->taskRunner->AddTask
 						(
-							[p, p1, boundObj, count]()
+							[p, p1, toChestIndex, boundObj, count]()
 							{
 								Util::AddSyncedTask
 								(
-									[p, p1, boundObj, count]()
+									[p, p1, toChestIndex, boundObj, count]()
 									{
 										SPDLOG_DEBUG
 										(
@@ -772,14 +773,29 @@ namespace ALYSLC
 											count,
 											p->coopActor->GetName()
 										);
-										p->coopActor->RemoveItem
-										(
-											boundObj, 
-											count, 
-											RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-											nullptr, 
-											p1
-										);
+										if (toChestIndex != -1)
+										{
+											p->em->inventoryChest->RemoveItem
+											(
+												boundObj, 
+												count, 
+												RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+												nullptr, 
+												p1
+											);
+										}
+										else
+										{
+											p->coopActor->RemoveItem
+											(
+												boundObj, 
+												count, 
+												RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
+												nullptr, 
+												p1
+											);
+										}
+										
 									}
 								);
 							}
@@ -803,7 +819,7 @@ namespace ALYSLC
 			glob.mim->managerMenuPID != -1 && 
 			Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
 		{
-			const auto& giftingP = glob.coopPlayers[fromCoopPlayerIndex];
+			const auto& gifterP = glob.coopPlayers[fromCoopPlayerIndex];
 			auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
 			if (!gifteePtr) 
 			{
@@ -826,21 +842,25 @@ namespace ALYSLC
 			if (boundObj) 
 			{
 				const int32_t count = a_containerChangedEvent->itemCount;
-				giftingP->taskRunner->AddTask
+				const auto& gifteeP = glob.coopPlayers
+				[
+					GlobalCoopData::GetCoopPlayerIndex(gifteePtr)
+				];
+				gifterP->taskRunner->AddTask
 				(
-					[giftingP, gifteePtr, p1, boundObj, count]()
+					[gifterP, gifteeP, p1, boundObj, count]()
 					{
 						Util::AddSyncedTask
 						(
-							[giftingP, gifteePtr, p1, boundObj, count]()
+							[gifterP, gifteeP, p1, boundObj, count]()
 							{
 								SPDLOG_DEBUG
 								(
 									"Removing {} (x{}) from P1 to {} (from gifting player {}).",
 									boundObj->GetName(), 
 									count,
-									gifteePtr->GetName(),
-									giftingP->coopActor->GetName()
+									gifteeP->coopActor->GetName(),
+									gifterP->coopActor->GetName()
 								);
 								p1->RemoveItem
 								(
@@ -848,14 +868,7 @@ namespace ALYSLC
 									count,
 									RE::ITEM_REMOVE_REASON::kRemove, 
 									nullptr, 
-									nullptr
-								);
-								gifteePtr->AddObjectToContainer
-								(
-									boundObj, 
-									nullptr, 
-									count, 
-									gifteePtr.get()
+									gifteeP->em->inventoryChest.get()
 								);
 							}
 						);
@@ -893,18 +906,18 @@ namespace ALYSLC
 					const auto gold = form->As<RE::TESObjectMISC>();
 					toP->taskRunner->AddTask
 					(
-						[toP, p1, gold, additionalGold]()
+						[p1, gold, additionalGold]()
 						{
 							Util::AddSyncedTask
 							(
-								[toP, p1, gold, additionalGold]()
+								[p1, gold, additionalGold]()
 								{
 									p1->AddObjectToContainer
 									(
 										gold, 
 										nullptr, 
 										additionalGold, 
-										p1
+										nullptr
 									);
 								}
 							);
@@ -975,22 +988,12 @@ namespace ALYSLC
 				const auto& skill = tierAndSkill.second;
 				std::mt19937 generator{ };
 				generator.seed(SteadyClock::now().time_since_epoch().count());
-
-				const auto& toP = 
-				(
-					glob.coopPlayers
-					[
-						GlobalCoopData::GetCoopPlayerIndex
-						(
-							a_containerChangedEvent->newContainer
-						)
-					]
-				);
+				
+				const auto& toP = glob.coopPlayers[toCoopPlayerIndex];
 				for (const auto& p : glob.coopPlayers)
 				{
 					// Not the looting player.
-					if (p->isActive && 
-						p->coopActor->formID != a_containerChangedEvent->newContainer)
+					if (p->isActive && toCoopPlayerIndex != p->playerID)
 					{
 						// To each player, add the same number as the number looted.
 						uint32_t numAdded = 0;
@@ -1027,13 +1030,12 @@ namespace ALYSLC
 										(
 											[p, p1, newSkillbook]()
 											{
-
-												p->coopActor->AddObjectToContainer
+												p->em->inventoryChest->AddObjectToContainer
 												(
 													newSkillbook,
 													nullptr, 
 													1, 
-													p->coopActor.get()
+													nullptr
 												);
 											}
 										);
@@ -1057,7 +1059,7 @@ namespace ALYSLC
 														newSkillbook->As<RE::AlchemyItem>(),
 														nullptr, 
 														1, 
-														p1
+														nullptr
 													);
 													p1->RemoveItem
 													(
@@ -1340,14 +1342,8 @@ namespace ALYSLC
 		const RE::TESEquipEvent* a_equipEvent, RE::BSTEventSource<RE::TESEquipEvent>*
 	)
 	{
-		if (!glob.coopSessionActive || !a_equipEvent || !a_equipEvent->baseObject)
+		if (!a_equipEvent || !a_equipEvent->baseObject)
 		{
-			return EventResult::kContinue;
-		}
-
-		auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_equipEvent->actor); 
-		if (foundIndex == -1) 
-		{	
 			return EventResult::kContinue;
 		}
 
@@ -1376,6 +1372,17 @@ namespace ALYSLC
 			a_equipEvent->uniqueID
 		);
 
+		if (!glob.coopSessionActive)
+		{
+			return EventResult::kContinue;
+		}
+
+		auto foundIndex = GlobalCoopData::GetCoopPlayerIndex(a_equipEvent->actor); 
+		if (foundIndex == -1) 
+		{	
+			return EventResult::kContinue;
+		}
+
 		const auto& p = glob.coopPlayers[foundIndex];
 		// Don't handle equip event if the player is not loaded, downed, or dead.
 		if (!p->coopActor->Is3DLoaded() || p->isDowned || p->coopActor->IsDead())
@@ -1386,35 +1393,56 @@ namespace ALYSLC
 		// Check if equipped while bartering 
 		// (with a co-op companion player's inventory copied over to P1).
 		// Ignore these equip events and do not refresh equip state.
-		auto ui = RE::UI::GetSingleton();
-		bool affectedByInventoryTransfer = 
-		{
-			(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
-			(
-				(glob.mim->managerMenuPID != -1 && p->coopActor == glob.player1Actor) ||
-				(glob.mim->managerMenuPID == p->playerID)
-			)
-		};
 		// IMPORTANT:
 		// Game will sometimes unequip P1's weapons/magic during killmoves. 
 		// Don't refresh equip state in that case either.
 		// We want to save the pre-killmove equipped forms
 		// so that we can re-equip them after P1 is revived.
-		auto equipForm = RE::TESForm::LookupByID(a_equipEvent->baseObject);
-		bool shouldRefreshEquipState = 
-		(
-			(equipForm && !affectedByInventoryTransfer && !p->coopActor->IsInRagdollState()) && 
-			(
-				(!p->isPlayer1) || 
-				(
-					!p->coopActor->IsInKillMove() && 
-					!p->pam->isBeingKillmovedByAnotherPlayer
-				)
-			)
-		);
-		if (shouldRefreshEquipState)
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (taskInterface)
 		{
-			p->em->RefreshEquipState(RefreshSlots::kAll, equipForm, a_equipEvent->equipped);
+			auto formID = a_equipEvent->baseObject;
+			bool equipped = a_equipEvent->equipped;
+			taskInterface->AddTask
+			(
+				[p, formID, equipped]()
+				{
+					if (!glob.coopSessionActive)
+					{
+						return;
+					}
+
+					auto ui = RE::UI::GetSingleton();
+					bool affectedByInventoryTransfer = 
+					{
+						(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
+						(
+							(glob.mim->managerMenuPID != -1 && p->coopActor == glob.player1Actor) ||
+							(glob.mim->managerMenuPID == p->playerID)
+						)
+					};
+					auto equipForm = RE::TESForm::LookupByID(formID);
+					bool shouldRefreshEquipState = 
+					(
+						(
+							equipForm && 
+							!affectedByInventoryTransfer && 
+							!p->coopActor->IsInRagdollState()
+						) && 
+						(
+							(!p->isPlayer1) || 
+							(
+								!p->coopActor->IsInKillMove() && 
+								!p->pam->isBeingKillmovedByAnotherPlayer
+							)
+						)
+					);
+					if (shouldRefreshEquipState)
+					{
+						p->em->RefreshEquipState(RefreshSlots::kAll, equipForm, equipped);
+					}
+				}
+			);
 		}
 
 		return EventResult::kContinue;
@@ -2121,7 +2149,7 @@ namespace ALYSLC
 		SPDLOG_DEBUG("Load game event. Co-op session active: {}.", glob.coopSessionActive);
 		if (glob.coopSessionActive && a_loadGameEvent)
 		{
-			GlobalCoopData::TeardownCoopSession(false);
+			GlobalCoopData::TearDownCoopSession(false);
 		}
 
 		return EventResult::kContinue;
@@ -2639,16 +2667,22 @@ namespace ALYSLC
 				}
 			}
 		}
-		else if (glob.mim->IsRunning() && glob.mim->managedCoopMenusCount > 0)
+		else if ((glob.supportedMenuOpen.load()) || 
+				 (glob.mim->IsRunning() && glob.mim->managedCoopMenusCount > 0))
 		{
-			// Prevents open menus count from being positive once the session ends,
+			// 1. If a co-op session ends with supported menus open,
+			// clearing the flag here will prevent the flag from lingering around 
+			// once a new co-op session starts, which results in all players 
+			// having their menu-triggering binds blocked until the MIM is paused.
+			// 
+			// 2. Prevents open menus count from being positive once the session ends,
 			// a bug which can be produced by opening the Summoning Menu
 			// with a companion player-controlled menu open (e.g. Dialogue menu).
 			// This bug will keep the MIM running 
 			// even without any co-op player-controlled menus open 
 			// and lead to co-op player inputs affecting P1 due to emulated keypresses.
 			// Give P1 control here.
-			Events::ResetMenuState();
+			GlobalCoopData::ResetMenuState();
 		}
 		
 		return EventResult::kContinue;

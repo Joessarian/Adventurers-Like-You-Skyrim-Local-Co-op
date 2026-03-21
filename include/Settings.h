@@ -931,6 +931,9 @@ namespace ALYSLC
 		// 10.0 seems to rarely cause crashes, if ever. Can set lower just to be safe.
 		// 5.0 seems to be completely stable.
 		static inline const float fEquipAnimSpeedFactor = 5.0f;
+		// Amount to increase the player's permanent carryweight AV modifier by 
+		// when the infinite carryweight cheat is active.
+		static inline const float fInfiniteCarryweightBump = 1000000000.0f;
 
 		//--------
 		//[Debug]:

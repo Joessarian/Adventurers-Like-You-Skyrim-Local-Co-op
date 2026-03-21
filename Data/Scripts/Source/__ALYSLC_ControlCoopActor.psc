@@ -32,24 +32,10 @@ Function SendCoopPlayerHome()
     AbsorbCompanionShader.Play(PlayerRef, 1.0)
     ;UsePortalShader.Play(Self, 1.0)
     Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
-    Utility.Wait(1.0)
-    Self.Disable()
-    ; Move player away first.
-    While (Self.Is3DLoaded())
-        Self.MoveToMyEditorLocation()
-        Utility.Wait(0.1)
-    EndWhile
-    
-    Self.Enable()
-    Float SecsWaited = 0.0
-    While (!Self.IsEnabled() && SecsWaited < 1.0)
-        Utility.Wait(0.1)
-        SecsWaited += 0.1
-    EndWhile
-
-    Self.Resurrect()
+    Self.MoveToMyEditorLocation()
+    ; Self.Resurrect()
+    ; Self.ResetHealthAndLimbs()
     ALYSLC.Log("[CCA SCRIPT] Sent " + Self.GetDisplayName() + " home.")
-    Self.ResetHealthAndLimbs()
 EndFunction
 
 ; Refresh customization options on the co-op player's actor,
@@ -72,12 +58,12 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Self.GetDisplayName() != NewName && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on name change to " + NewName + " for " + Self.GetName() + ".")
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
             SecondsWaited += 0.1
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
@@ -86,7 +72,7 @@ Function SetCustomizationOptions()
     If (NewClass && NewClass != Base.GetClass())
         ALYSLC.Log("[CCA SCRIPT] Set class to " + NewClass)
         Base.SetClass(NewClass)
-        ALYSLC.SetCoopPlayerClass(Self, NewClass)
+        ALYSLC.SetCoopPlayerClass(Self, NewClass, False)
                 
         ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
         ALYSLC.RequestMenuControl(DeviceID, PlayerID, "MessageBoxMenu")
@@ -94,25 +80,25 @@ Function SetCustomizationOptions()
         ; Have to wait for message box prompt to open.
         SecondsWaited = 0.0
         While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
             SecondsWaited += 0.1
         EndWhile
 
         ; Once open, wait until closed.
         While (UI.IsMenuOpen("MessageBoxMenu"))
-            Utility.WaitMenuMode(0.1)
+            ALYSLC.Wait(0.1)
         EndWhile
 
         ; Wait for the class to change, or until the max wait time elapses.
         SecondsWaited = 0.0
         While (Base.GetClass() != NewClass && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on class change to " + NewClass + " for " + Self.GetName() + ".")
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
             SecondsWaited += 0.1
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
@@ -159,12 +145,12 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Base.GetVoiceType() != NewVoiceType && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on voice type change to " + NewVoiceType + " for " + Self.GetName() + ".")
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
             SecondsWaited += 0.1
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
@@ -176,12 +162,12 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Base.GetWeight() != NewWeight && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on weight change to " + NewWeight + " for " + Self.GetName() + ".")
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
             SecondsWaited += 0.1
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
     
@@ -216,19 +202,21 @@ Event OnCoopStart(Form akCoopPlayer)
         DeviceID = StorageUtil.GetIntValue(Self, "ALYSLC_DeviceID",  -1)
         PlayerID = StorageUtil.GetIntValue(Self, "ALYSLC_PlayerID",  -1)
         If (DeviceID == -1)
-            ALYSLC.Log("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s device ID is invalid or not found. Please inform the mod author of his stupidity.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s device ID is invalid or not found. Please inform the mod author of his stupidity.")
         EndIf
 
         If (PlayerID == -1)
-            ALYSLC.Log("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s player ID is invalid or not found. Please inform the mod author of his stupidity.")
+            ALYSLC.LogError("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s player ID is invalid or not found. Please inform the mod author of his stupidity.")
         EndIf
 
         CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(PlayerID + 1, False) + "Keyword") as Keyword
         FormID = PO3_SKSEFunctions.IntToString(Self.GetFormID(), True)
 
+        Float PreviousHP = Self.GetActorValue("Health")
         ; Spawn in portal.
         Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
         Self.Enable(True)
+        
         ; Reset equip state before performing the reset of the initialization.
         Form LHObj = Self.GetEquippedObject(0)
         Form RHObj = Self.GetEquippedObject(1)
@@ -240,7 +228,7 @@ Event OnCoopStart(Form akCoopPlayer)
             Else
                 Self.UnequipItemEx(LHObj, 2, False)
             EndIf
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
         EndIf
 
         If (HasRHObjEquipped)
@@ -249,38 +237,35 @@ Event OnCoopStart(Form akCoopPlayer)
             Else
                 Self.UnequipItemEx(RHObj, 1, False)
             EndIf
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
         EndIf
 
         Self.Disable()
         While (Self.IsEnabled())
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
         EndWhile
-        Utility.Wait(0.1)
+        ALYSLC.Wait(0.1)
 
         Self.Enable(True)
         While (!Self.IsEnabled())
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
         EndWhile
-
-        ;ReEquipShader.Play(Self)
-        ;Self.SetAlpha(0.35, True)
-
-        Utility.Wait(0.1)
+        
+        ALYSLC.Wait(0.1)
         If (HasLHObjEquipped)
             If (LHObj as Spell)
                 Self.EquipSpell(LHObj as Spell, 0)
             Else
-                Self.EquipItemEx(LHObj, 2, True, False)
+                Self.EquipItemEx(LHObj, 2, False, False)
             EndIf
-            Utility.Wait(0.1)
+            ALYSLC.Wait(0.1)
         EndIf
 
         If (HasRHObjEquipped)
             If (RHObj as Spell)
                 Self.EquipSpell(RHObj as Spell, 1)
             Else
-                Self.EquipItemEx(RHObj, 1, True, False)
+                Self.EquipItemEx(RHObj, 1, False, False)
             EndIf
         EndIf
 
@@ -306,10 +291,10 @@ Event OnCoopStart(Form akCoopPlayer)
         ; Set customization options.
         SetCustomizationOptions()
         ;PO3_SKSEFunctions.StopAllShaders(Self)
-        Self.Resurrect()
+        ;Self.Resurrect()
         CompletedLoad = True
         ALYSLC.Log("[CCA SCRIPT] Completed load for " + Self.GetDisplayName())
     Else
-      ALYSLC.Log("[CCA SCRIPT] ERR: Co-op not started or not the target co-op player for this event.")
+      ALYSLC.LogError("[CCA SCRIPT] ERR: Co-op not started or not the target co-op player for this event.")
     EndIf
 EndEvent

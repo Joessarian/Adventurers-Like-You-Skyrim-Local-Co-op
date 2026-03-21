@@ -1,10 +1,7 @@
 ; Handles initialization of co-op entities and co-op state variables each time a save is loaded.
 Scriptname __ALYSLC_InitializeCoop extends Quest  
 Actor Property PlayerRef Auto
-Actor[] Property CompanionPlayerCharactersList Auto
-Actor[] Property SelectionBlacklist Auto
 EffectShader Property AbsorbCompanionShader Auto
-EffectShader Property UsePortalShader Auto
 GlobalVariable Property CanStartCoopGlobVar Auto
 GlobalVariable Property CoopIsSummoningPlayers Auto
 Keyword[] Property CoopPlayerKeywords Auto
@@ -35,7 +32,7 @@ Function Init()
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[INIT SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
 	
@@ -68,7 +65,7 @@ Function Init()
 	Game.SetPlayerAIDriven(False)
 	Game.SetCameraTarget(PlayerRef)
 	Game.EnablePlayerControls()
-	Utility.Wait(0.5)
+	ALYSLC.Wait(0.5)
 
 	; Weird crashes sometimes occur if any loaded co-op entity does not have collision enabled 
 	; when the the game loads in.
@@ -90,13 +87,18 @@ Function Init()
 	Game.SetCameraTarget(PlayerRef)
 	; Remove straggling co-op companions and their COSs and force resummoning when out of combat.
 	; Done to prevent save scumming during difficult combat encounters.
+	Actor[] CompanionPlayerCharactersList = ALYSLC.GetCompanionPlayerCharacters()
 	Float WaitTimeElapsed = 0.0
 	Int Iter = 0
 	ALYSLC.Log("[INIT SCRIPT] " + CompanionPlayerCharactersList.Length + " default companion player characters.")
 	While (Iter < CompanionPlayerCharactersList.Length)
 		If (CompanionPlayerCharactersList[Iter])
 			ObjectReference CompanionTemp = CompanionPlayerCharactersList[Iter] as ObjectReference
-			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": at index " + Iter)
+			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + " (" + CompanionPlayerCharactersList[Iter].GetDisplayName() + ", " +PO3_SKSEFunctions.IntToString(CompanionTemp.GetFormID(), True) + "): at index " + Iter)
+			If (!CompanionTemp)
+				ALYSLC.LogError("[INIT SCRIPT] ERR: Companion at index " + Iter + " is invalid.")
+			EndIf
+
 			KIter = 0
 			While (KIter < 4)
 				If (CompanionTemp.HasKeyword(CoopPlayerKeywords[KIter]))
@@ -107,12 +109,12 @@ Function Init()
 			EndWhile
 
 			While (!CoopSummonExitPortal)
-				Utility.Wait(0.5)
+				ALYSLC.Wait(0.5)
 			EndWhile
 
 			If (CompanionTemp.Is3DLoaded())
 				CompanionTemp.PlaceAtMe(CoopSummonExitPortal.GetBaseObject())
-				Utility.Wait(0.25)
+				ALYSLC.Wait(0.25)
 				AbsorbCompanionShader.Play(PlayerRef, 1.0)
 				CompanionTemp.MoveToMyEditorLocation()
 			EndIf
@@ -122,10 +124,12 @@ Function Init()
 			While (CompanionTemp.Is3DLoaded() && WaitTimeElapsed < MAX_WAIT_TIME_SECS)
 				ALYSLC.Log("[INIT SCRIPT] I AM A PATIENT BOY. I WAIT. I WAIT. I WAIT. I WAIT.")
 				CompanionTemp.MoveToMyEditorLocation()
-				Utility.Wait(0.25)
+				ALYSLC.Wait(0.25)
 				WaitTimeElapsed += 0.25
 			EndWhile
 			ALYSLC.Log("[INIT SCRIPT] Sent " + CompanionTemp.GetDisplayName() + " to editor location.")
+		Else
+			ALYSLC.LogError("[INIT SCRIPT] ERR: No companion player character at index " + Iter + ": " + CompanionPlayerCharactersList[Iter].GetDisplayName())
 		EndIf
 
 		Iter += 1
@@ -144,7 +148,7 @@ Function Init()
 	StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
 	StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
 
-	Utility.Wait(0.25)
+	ALYSLC.Wait(0.25)
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")
 	CanStartCoopGlobVar.SetValue(1.00)
 	ALYSLC.Log("[INIT SCRIPT] Initialization complete.")

@@ -13,7 +13,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[CDM SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
 	
@@ -171,13 +171,13 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
                 ; Have to wait for message box prompt to open.
                 SecsWaited = 0.0
                 While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
-                    Utility.Wait(0.1)
+                    ALYSLC.Wait(0.1)
                     SecsWaited += 0.1
                 EndWhile
     
                 ; Once open, wait until closed.
                 While (UI.IsMenuOpen("MessageBoxMenu"))
-                    Utility.WaitMenuMode(0.1)
+                    ALYSLC.Wait(0.1)
                 EndWhile
             EndIf
         ElseIf (SelectedIndex == 15)
@@ -187,25 +187,25 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
             ; Have to wait for message box prompt to open.
             SecsWaited = 0.0
             While (!UI.IsMenuOpen("MessageBoxMenu") && SecsWaited < 2.0)
-                Utility.Wait(0.1)
+                ALYSLC.Wait(0.1)
                 SecsWaited += 0.1
             EndWhile
 
             ; Once open, wait until closed.
             While (UI.IsMenuOpen("MessageBoxMenu"))
-                Utility.WaitMenuMode(0.1)
+                ALYSLC.Wait(0.1)
             EndWhile
         ElseIf (SelectedIndex == 16)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: reset cam, player 1 controls, and state.")
             ALYSLC.ResetPlayer1AndCamera()
-            Utility.Wait(1.0)
+            ALYSLC.Wait(1.0)
             Game.SetPlayerAIDriven(False)
             Game.EnablePlayerControls()
             PlayerRef.SetHeadTracking(False)
             PlayerRef.ClearLookAt()
             PlayerRef.ClearKeepOffsetFromActor()
             Game.ForceFirstPerson()
-            Utility.Wait(1.0)
+            ALYSLC.Wait(1.0)
             Game.ForceThirdPerson()
             Game.SetCameraTarget(PlayerRef)
         ElseIf (SelectedIndex == 17)

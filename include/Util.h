@@ -7,6 +7,12 @@
 #include <chrono>
 #include <complex>
 
+using InventoryItemMap = std::map
+<
+	RE::TESBoundObject*, 
+	std::pair<RE::TESObjectREFR::Count, std::unique_ptr<RE::InventoryEntryData>>
+>;
+
 //==============
 //[Conversions]:
 //==============
@@ -993,6 +999,16 @@ namespace ALYSLC
 				return func(a_actor);
 			}
 
+			// Credits to Quantumyilmaz and digitalApple:
+			// https://github.com/QTR-Modding/Containerize/blob/main/include/Utils.h#L407
+			// https://github.com/digital-apple/ArcaneDisenchanterNG/blob/main/source/System.cpp#L137
+			inline RE::ExtraDataList* ConstructExtraDataList(RE::ExtraDataList* a_this) 
+			{
+				using func_t = decltype(&ConstructExtraDataList);
+				REL::Relocation<func_t> func{ RELOCATION_ID(11437, 11583) };
+				return func(a_this);
+			}
+
 			// Credit to po3 for the Favorite/Unfavorite functions below.
 			// The functions here are called without the restriction of the target form having
 			// to be in P1's inventory, since I needed a way to un/favorite forms 
@@ -1359,6 +1375,67 @@ namespace ALYSLC
 				}
 			}
 		};
+		
+		//=============================
+		//[External Utility Functions]:
+		//=============================
+
+		// Major thanks to po3 for this exported function:
+		// https://github.com/powerof3/CLibUtil/blob/master/include/CLIBUtil/editorID.hpp
+		inline std::string GetEditorID(const RE::TESForm* a_form)
+		{
+			if (!a_form)
+			{
+				return { };
+			}
+
+			switch (a_form->GetFormType()) 
+			{
+			case RE::FormType::Keyword:
+			case RE::FormType::LocationRefType:
+			case RE::FormType::Action:
+			case RE::FormType::MenuIcon:
+			case RE::FormType::Global:
+			case RE::FormType::HeadPart:
+			case RE::FormType::Race:
+			case RE::FormType::Sound:
+			case RE::FormType::Script:
+			case RE::FormType::Navigation:
+			case RE::FormType::Cell:
+			case RE::FormType::WorldSpace:
+			case RE::FormType::Land:
+			case RE::FormType::NavMesh:
+			case RE::FormType::Dialogue:
+			case RE::FormType::Quest:
+			case RE::FormType::Idle:
+			case RE::FormType::AnimatedObject:
+			case RE::FormType::ImageAdapter:
+			case RE::FormType::VoiceType:
+			case RE::FormType::Ragdoll:
+			case RE::FormType::DefaultObject:
+			case RE::FormType::MusicType:
+			case RE::FormType::StoryManagerBranchNode:
+			case RE::FormType::StoryManagerQuestNode:
+			case RE::FormType::StoryManagerEventNode:
+			case RE::FormType::SoundRecord:
+				return a_form->GetFormEditorID();
+			default:
+			{
+				using _GetFormEditorID = const char* (*)(uint32_t);
+				static auto tweaks = GetModuleHandle(L"po3_Tweaks");
+				static auto func = reinterpret_cast<_GetFormEditorID>
+				(
+					GetProcAddress(tweaks, "GetFormEditorID")
+				);
+				if (func) 
+				{
+					return func(a_form->formID);
+				}
+
+				return { };
+			}
+			}
+		}
 
 		//===========================
 		//[Inline Utility Functions]:
@@ -1421,68 +1498,7 @@ namespace ALYSLC
 				a_actorBase->actorData.actorBaseFlags.reset(a_flag);
 			}
 		}
-
-		//=============================
-		//[External Utility Functions]:
-		//=============================
-
-		// Major thanks to po3 for this exported function:
-		// https://github.com/powerof3/CLibUtil/blob/master/include/CLIBUtil/editorID.hpp
-		inline std::string GetEditorID(const RE::TESForm* a_form)
-		{
-			if (!a_form)
-			{
-				return { };
-			}
-
-			switch (a_form->GetFormType()) 
-			{
-			case RE::FormType::Keyword:
-			case RE::FormType::LocationRefType:
-			case RE::FormType::Action:
-			case RE::FormType::MenuIcon:
-			case RE::FormType::Global:
-			case RE::FormType::HeadPart:
-			case RE::FormType::Race:
-			case RE::FormType::Sound:
-			case RE::FormType::Script:
-			case RE::FormType::Navigation:
-			case RE::FormType::Cell:
-			case RE::FormType::WorldSpace:
-			case RE::FormType::Land:
-			case RE::FormType::NavMesh:
-			case RE::FormType::Dialogue:
-			case RE::FormType::Quest:
-			case RE::FormType::Idle:
-			case RE::FormType::AnimatedObject:
-			case RE::FormType::ImageAdapter:
-			case RE::FormType::VoiceType:
-			case RE::FormType::Ragdoll:
-			case RE::FormType::DefaultObject:
-			case RE::FormType::MusicType:
-			case RE::FormType::StoryManagerBranchNode:
-			case RE::FormType::StoryManagerQuestNode:
-			case RE::FormType::StoryManagerEventNode:
-			case RE::FormType::SoundRecord:
-				return a_form->GetFormEditorID();
-			default:
-			{
-				using _GetFormEditorID = const char* (*)(uint32_t);
-				static auto tweaks = GetModuleHandle(L"po3_Tweaks");
-				static auto func = reinterpret_cast<_GetFormEditorID>
-				(
-					GetProcAddress(tweaks, "GetFormEditorID")
-				);
-				if (func) 
-				{
-					return func(a_form->formID);
-				}
-
-				return { };
-			}
-			}
-		}
-
+		
 		//=========================================================================================
 		//=======================
 		// [Angles and Distance]:
@@ -1709,6 +1725,161 @@ namespace ALYSLC
 			);
 		}
 
+		// Add rank extra data to the given extra data list to indicate the item 
+		// as equipped in the left or right hands (0xFF000000 for left, 0x00FF0000 for right,
+		// and 0xFFFF0000 for both hands).
+		// If no extra data list is given, Construct a new extra data list 
+		// and insert it into the given inventory entry data, if provided.
+		inline RE::ExtraDataList* AddWornRankExtraData
+		(
+			RE::InventoryEntryData* a_invEntryData,
+			RE::ExtraDataList* a_list,
+			bool a_leftHand
+		)
+		{
+			if (!a_list)
+			{
+				if (a_invEntryData)
+				{
+					auto extraListsCount = 
+					(
+						!a_invEntryData->extraLists ?
+						0 :
+						std::distance
+						(
+							a_invEntryData->extraLists->begin(), a_invEntryData->extraLists->end()
+						)
+					);
+					uint32_t rawCount = 0;
+					if (extraListsCount != 0)
+					{
+						for (auto list : *a_invEntryData->extraLists)
+						{
+							if (!list)
+							{
+								continue;
+							}
+
+							rawCount += list->GetCount();
+						}
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Inventory entry {:p} has count delta of {}, "
+						"raw count {} from {} extra data lists.",
+						fmt::ptr(a_invEntryData),
+						a_invEntryData->countDelta,
+						rawCount, 
+						extraListsCount
+					);
+
+					if (extraListsCount == 0)
+					{
+						a_list = Util::NativeFunctions::ConstructExtraDataList	
+						(
+							RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
+						);
+						if (!a_list)
+						{
+							SPDLOG_ERROR("Failed to allocate extra data list.");
+							return nullptr;
+						}
+					
+						SPDLOG_INFO
+						(
+							"Malloc extra data list {:p} to inventory entry data {:p}. "
+							"No lists previously.",
+							fmt::ptr(a_list), fmt::ptr(a_invEntryData)
+						);
+						a_invEntryData->AddExtraList(a_list);
+						if (a_invEntryData->countDelta <= 0)
+						{
+							SPDLOG_DEBUG
+							(
+								"Count delta ({}) was <= 0. "
+								"Set to one after adding extra data list.",
+								a_invEntryData->countDelta
+							);
+							a_invEntryData->countDelta = 1;
+						}
+					}
+					else
+					{
+						a_list = a_invEntryData->extraLists->front();
+						SPDLOG_DEBUG
+						(
+							"Set extra data list to front list in absence of given list: {:p}",
+							fmt::ptr(a_list)
+						);
+					}
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"No provided extra data list or inventory entry data. "
+						"No addition possible."
+					);
+					return nullptr;
+				}
+			}
+			
+			// Crash can occur when calling GetByType() on an empty list.
+			const auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			SPDLOG_DEBUG("List {:p} has size {}.", fmt::ptr(a_list), listSize);
+			if (listSize > 0)
+			{
+				if (auto exRank = a_list->GetByType<RE::ExtraRank>(); exRank)
+				{
+					SPDLOG_DEBUG
+					(
+						"Rank ex data already present in list {:p}: 0x{:X}. "
+						"Set to 0x{:X}.",
+						fmt::ptr(a_list),
+						static_cast<uint32_t>(exRank->rank),
+						a_leftHand ? 
+						static_cast<uint32_t>(exRank->rank | 0xFF000000) :
+						static_cast<uint32_t>(exRank->rank | 0x00FF0000)
+					);
+					exRank->rank = 
+					(
+						a_leftHand ? 
+						exRank->rank | 0xFF000000 :
+						exRank->rank | 0x00FF0000
+					);
+
+					return a_list;
+				}
+			}
+
+			RE::ExtraRank* rank = new RE::ExtraRank(0);
+			if (rank)
+			{
+				a_list->Add(rank);
+				auto succ = a_list->GetByType<RE::ExtraRank>();
+				// Have to adjust the rank after adding, since it is cleared.
+				if (succ)
+				{
+					succ->rank = a_leftHand ? 0xFF000000 : 0x00FF0000;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"Adding rank (0x{:X}) exData to list {:p}: {}. Data: orig: {:p}, add: {:p}.",
+					static_cast<uint32_t>(a_leftHand ? 0xFF000000 : 0x00FF0000),
+					fmt::ptr(a_list),
+					succ ?
+					"SUCC" :
+					"FAIL",
+					fmt::ptr(rank),
+					fmt::ptr(succ)
+				);
+			}
+
+			return a_list;
+		}
+
 		// Adjust character controller fall start height and time if starting to fall,
 		// or reset to zero if not falling.
 		inline void AdjustFallState
@@ -1929,6 +2100,47 @@ namespace ALYSLC
 			return nullptr;
 		}
 		
+		// Get a more descriptive name for the given form and extra data.
+		// Accounts for extra text display data and extra enchantments.
+		inline std::string GetDescriptiveName
+		(
+			RE::TESForm* a_form, RE::ExtraDataList* a_extraDataList
+		)
+		{
+			if (!a_form)
+			{
+				return "";
+			}
+
+			auto boundObj = a_form->As<RE::TESBoundObject>();
+			if (!boundObj || !a_extraDataList)
+			{
+				return a_form->GetName();
+			}
+
+			std::string name = a_form->GetName();
+			auto exText = a_extraDataList->GetByType<RE::ExtraTextDisplayData>();
+			if (exText)
+			{
+				// Generate the name since the GetExtraTextDisplayData() function 
+				// returns the empty string sometimes.
+				name = exText->GetDisplayName(boundObj, exText->temperFactor);
+			}
+				
+			auto exEnchant = a_extraDataList->GetByType<RE::ExtraEnchantment>();
+			// Append custom enchantment name (not the enchantment on the weapon form itself).
+			if (exEnchant)
+			{
+				auto enchantName = exEnchant->enchantment->GetFullName();
+				if (std::strlen(enchantName) > 0)
+				{
+					name = fmt::format("{} - {}", name, enchantName);
+				}
+			}
+
+			return name;
+		}
+
 		// Get number of seconds that have elapsed since the given time point.
 		// 3 extra decimal places of precision if requested.
 		inline float GetElapsedSeconds
@@ -1957,6 +2169,23 @@ namespace ALYSLC
 					).count() / 1000.0f
 				);
 			}
+		}
+		
+		// Get the front extra data list to use when equipping/favoriting
+		// the item given by the inventory entry.
+		inline RE::ExtraDataList* GetEntryFrontExtraDataList
+		(
+			RE::InventoryEntryData* a_invEntryData
+		)
+		{
+			if (!a_invEntryData || 
+				!a_invEntryData->extraLists ||
+				a_invEntryData->extraLists->empty())
+			{
+				return nullptr;
+			}
+
+			return a_invEntryData->extraLists->front();
 		}
 
 		// Get the max AV amount for the given AV.
@@ -2129,6 +2358,184 @@ namespace ALYSLC
 			}
 
 			return rgb;
+		};
+		
+		// Unused debug func.
+		// All sorts of crashes running through the CLib implementation,
+		// so copying it over here to better identify crashes via the mod's .pdb.
+		inline InventoryItemMap GetInventory2(RE::TESObjectREFR* a_refr)
+		{
+			InventoryItemMap results{ };
+					
+			auto invChanges = a_refr->GetInventoryChanges();
+			std::set<RE::TESBoundObject*> added{ };
+			if (invChanges && invChanges->entryList)
+			{
+				for (auto& entry : *invChanges->entryList) 
+				{
+					if (entry && entry->object) 
+					{
+						bool inserted = added.insert(entry->object).second;
+						/*SPDLOG_DEBUG
+						(
+							"{}: INV CHANGES: Adding item {}. Entry: {:p}. Inserted already: {}. "
+							"Count delta: {}, lists: {}, lists count: {}.",
+							a_refr->GetName(),
+							entry->object->GetName(),
+							fmt::ptr(entry), 
+							!inserted,
+							entry->countDelta,
+							(bool)entry->extraLists,
+							entry->extraLists ?
+							std::distance(entry->extraLists->begin(), entry->extraLists->end()) :
+							0
+						);*/
+						auto invEntryPtr = std::make_unique<RE::InventoryEntryData>(*entry);
+						[[maybe_unused]] auto it = results.emplace
+						(
+							entry->object,
+							std::make_pair
+							(
+								entry->countDelta,
+								std::move(invEntryPtr)
+							)
+						);
+						if (!it.second)
+						{
+							SPDLOG_ERROR
+							(
+								"Could not insert {} (entry {:p}, x{}, {} lists) "
+								"into map from inv changes.",
+								entry->object->GetName(),
+								fmt::ptr(entry),
+								entry->countDelta,
+								entry->extraLists ? 
+								std::distance
+								(
+									entry->extraLists->begin(), entry->extraLists->end()
+								) :
+								0
+							);
+						}
+					}
+				}
+			}
+
+			auto container = a_refr->GetContainer();
+			if (container) 
+			{
+				const auto ignore = [&](RE::TESBoundObject* a_object)
+				{
+					const auto it = results.find(a_object);
+					const auto entryData =
+					(
+						it != results.end() ?
+						it->second.second.get() :
+						nullptr
+					);
+					return entryData ? entryData->IsLeveled() : false;
+				};
+
+				container->ForEachContainerObject
+				(
+					[&](RE::ContainerObject& a_entry) 
+					{
+						auto obj = a_entry.obj;
+						if (obj && !ignore(obj))
+						{
+							auto it = results.find(obj);
+							if (it == results.end()) 
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: CONT: Adding item {}. Count delta: {}",
+									a_refr->GetName(), obj->GetName(), a_entry.count
+								);
+								[[maybe_unused]] auto insIt = results.emplace
+								(
+									obj,
+									std::make_pair
+									(
+										a_entry.count,
+										std::make_unique<RE::InventoryEntryData>(obj, 0)
+									)
+								);
+								if (!insIt.second)
+								{
+									SPDLOG_ERROR("Could not insert {} into map from container.",
+										obj->GetName());
+								}
+							} 
+							else 
+							{
+								it->second.first += a_entry.count;
+							}
+						}
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+				);
+			}
+
+			return results;
+		}
+		
+		// Get the inventory chest inventory entry data for the given bound object.
+		// If no valid object, return none.
+		inline RE::InventoryEntryData* GetInventoryEntryDataForObject
+		(
+			RE::TESObjectREFR* a_inventoryRefr,
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_exDataList
+		)
+		{
+			if (!a_object || !a_inventoryRefr)
+			{
+				return nullptr;
+			}
+
+			auto invChanges = a_inventoryRefr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return nullptr;
+			}
+
+			// If no extra data list is specified to search for, return the front inventory entry.
+			if (!a_exDataList)
+			{
+				if (!invChanges->entryList->empty())
+				{
+					SPDLOG_DEBUG
+					(
+						"No specified exData list for item {}. Return front inventory entry {:p}.",
+						a_object->GetName(), fmt::ptr(invChanges->entryList->front())
+					);
+					return invChanges->entryList->front();
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"No specified exData list for item {} and no inventory entries.",
+						a_object->GetName(), fmt::ptr(invChanges->entryList->front())
+					);
+					return nullptr;
+				}
+			}
+
+			for (auto entry : *invChanges->entryList)
+			{
+				if (!entry)
+				{
+					continue;
+				}
+
+				if (entry->object == a_object)
+				{
+					return entry;
+				}
+			}
+			
+			return nullptr;
 		}
 
 		// Get the number of lockpicks the given actor possesses.
@@ -2197,6 +2604,76 @@ namespace ALYSLC
 			return nullptr;
 		}
 		
+		// Get the (left/right) worn rank extra data list from the given refr's inventory
+		// corresponding to the given item.
+		inline RE::ExtraDataList* GetWornRankExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_item, 
+			bool a_leftHand
+		)
+		{
+			if (!a_refr || !a_item)
+			{
+				return nullptr;
+			}
+
+			const auto invChanges = a_refr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return nullptr;
+			}
+
+			RE::InventoryEntryData* invEntryData = nullptr;
+			for (const auto entry : *invChanges->entryList)
+			{
+				if (!entry)
+				{
+					continue;
+				}
+
+				if (entry->object == a_item)
+				{
+					invEntryData = entry;
+					break;
+				}
+			}
+
+			if (!invEntryData)
+			{
+				SPDLOG_DEBUG("{} not found in {}'s inventory.",
+					a_item->GetName(), a_refr->GetName());
+				return nullptr;
+			}
+
+			if (!invEntryData->extraLists)
+			{
+				SPDLOG_DEBUG("No extra lists found for {} in {}'s inventory.",
+					a_item->GetName(), a_refr->GetName());
+				return nullptr;
+			}
+		
+			for (const auto exDataList : *invEntryData->extraLists)
+			{
+				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
+				{
+					continue;
+				}
+				
+				auto exRank = exDataList->GetByType<RE::ExtraRank>();
+				if (exRank)
+				{
+					if (((a_leftHand) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
+						((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
+					{
+						return exDataList;
+					}
+				}
+			}
+
+			return nullptr;
+		}
+
 		// Return true if the given actor handle and its managed
 		// smart and raw pointers are all valid.
 		inline bool HandleIsValid(const RE::ActorHandle& a_handle)
@@ -2320,6 +2797,50 @@ namespace ALYSLC
 			);
 		}
 		
+		// Return true if the inventory entry contains ExRank data with a rank mask
+		// that indicates the item is in either the left hand, right hand, or both.
+		inline bool HasWornRankExtraDataList
+		(
+			RE::InventoryEntryData* a_invEntry, bool a_leftHand, bool a_eitherHand
+		)
+		{
+			if (!a_invEntry || !a_invEntry->extraLists)
+			{
+				return false;	
+			}
+
+			for (const auto exDataList : *a_invEntry->extraLists)
+			{
+				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
+				{
+					continue;
+				}
+				
+				auto exRank = exDataList->GetByType<RE::ExtraRank>();
+				if (exRank)
+				{
+					bool hasMatchingRankData = 
+					(
+						(
+							(a_eitherHand) && 
+							(
+								(exRank->rank & 0xFF000000) == 0xFF000000 ||
+								(exRank->rank & 0x00FF0000) == 0x00FF0000
+							)
+						) ||
+						((a_leftHand) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
+						((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0x00FF0000))	
+					);
+					if (hasMatchingRankData)
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
 		// Import all of the given race's default headparts to the given actorbase.
 		inline void ImportDefaultRacialHeadParts
 		(
@@ -2552,6 +3073,27 @@ namespace ALYSLC
 					targetActorHandle == menuTopicManager->lastSpeaker
 				)
 			);
+		}
+		
+		// Return true if the form is a bound object that is equipable to a biped slot.
+		// Not sure if there's a quick way to tell if an item can have an inventory entry 
+		// and be equipped to a slot in menus.
+		inline bool IsEquipableInventoryObject(RE::TESBoundObject* a_boundObj)
+		{
+			// Skip invalid and non-inventory objects.
+			if (!a_boundObj || !a_boundObj->IsInventoryObject())
+			{
+				return false;
+			}
+			
+			// Skip items without an equip slot, except for ammo.
+			auto equipType = a_boundObj->As<RE::BGSEquipType>();
+			if (!equipType && !a_boundObj->Is(RE::FormType::Ammo))
+			{
+				return false;
+			}
+
+			return true;
 		}
 
 		// Is the given actor fleeing?
@@ -3196,6 +3738,164 @@ namespace ALYSLC
 				actorBase->numHeadParts = 0;
 			}
 		}
+		
+		// Remove rank extra data from the given extra data list.
+		inline void RemoveWornRankExtraData(RE::ExtraDataList* a_list)
+		{
+			// Must provide an extra data list.
+			if (!a_list)
+			{
+				return;
+			}
+			
+			// Crash when calling GetByType() on an empty list.
+			auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			if (listSize == 0)
+			{
+				return;
+			}
+
+			auto exRank = a_list->GetByType<RE::ExtraRank>();
+			if (!exRank)
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing rank exData from list {:p}. Does not exist.",
+					fmt::ptr(a_list)
+				);
+				return;
+			}
+			
+			if ((exRank->rank & 0x0000FFFF) != 0)
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing rank exData from list {:p}. "
+					"Setting to original lower 2 bytes: 0x{:X}.",
+					fmt::ptr(a_list),
+					(exRank->rank & 0x0000FFFF)
+				);
+				exRank->rank &= 0x0000FFFF;
+				return;
+			}
+
+			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
+			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			SPDLOG_DEBUG
+			(
+				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
+				static_cast<uint32_t>(exRank->rank),
+				fmt::ptr(a_list),
+				succ ?
+				"SUCC" :
+				"FAIL",
+				listSize
+			);
+		}
+
+		// Remove left (0xFF000000) or right (0x00FF0000) rank extra data masks 
+		// from the given extra data list. If neither mask is present afterward, 
+		// remove the rank extra data entirely.
+		inline void RemoveWornRankExtraData(RE::ExtraDataList* a_list, bool a_leftHand)
+		{
+			// Must provide an extra data list.
+			if (!a_list)
+			{
+				return;
+			}
+			
+			// Crash when calling GetByType() on an empty list.
+			auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			if (listSize == 0)
+			{
+				return;
+			}
+
+			auto exRank = a_list->GetByType<RE::ExtraRank>();
+			if (!exRank)
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing rank exData from list {:p}. Does not exist.",
+					fmt::ptr(a_list)
+				);
+				return;
+			}
+			else if (((a_leftHand) && ((exRank->rank & 0xFF000000) == 0)) || 
+					 ((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0)))
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing different rank exData from list {:p}: "
+					"0x{:X} does not mask into 0x{:X}.",
+					fmt::ptr(a_list), 
+					static_cast<uint32_t>(exRank->rank),
+					a_leftHand ? 0xFF000000 : 0x00FF0000
+				);
+				return;
+			}
+			else if ((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
+			{
+				SPDLOG_DEBUG
+				(
+					"Removing hand mask rank from list {:p}: "
+					"0x{:X} -> 0x{:X}.",
+					fmt::ptr(a_list), 
+					static_cast<uint32_t>(exRank->rank),
+					static_cast<uint32_t>
+					(
+						a_leftHand ? 
+						exRank->rank & 0x00FFFFFF : 
+						exRank->rank & 0xFF00FFFF
+					)
+				);
+				exRank->rank = 
+				(
+					a_leftHand ? 
+					exRank->rank & 0x00FFFFFF : 
+					exRank->rank & 0xFF00FFFF
+				);
+				return;
+			}
+			
+			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
+			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			SPDLOG_DEBUG
+			(
+				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
+				static_cast<uint32_t>(exRank->rank),
+				fmt::ptr(a_list),
+				succ ?
+				"SUCC" :
+				"FAIL",
+				listSize
+			);
+		}
+
+		// Restore the given actor value to its full, maximum value (base + temp modifier).
+		inline void RestoreAVToMaxValue(RE::Actor* a_actor, RE::ActorValue a_av)
+		{
+			auto avValueOwner = a_actor->As<RE::ActorValueOwner>(); 
+			if (!avValueOwner) 
+			{
+				return;
+			}
+
+			// Get the amount to increase the current value by.
+			float deltaAmount = 
+			{ 
+				Util::GetFullAVAmount(a_actor, a_av) -
+				a_actor->GetActorValue(a_av) 
+			};
+
+			if (deltaAmount > 0.0f)
+			{
+				avValueOwner->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, deltaAmount
+				);
+			}
+		}
 
 		// Convert the given pitch and yaw angles (Cartesian convention) to a 3D direction vector.
 		// https://stackoverflow.com/questions/1568568/how-to-convert-euler-angles-to-directional-vector
@@ -3709,7 +4409,6 @@ namespace ALYSLC
 			);
 		}
 
-
 		// Set all the characters in the given string to lowercase.
 		inline void ToLowercase(std::string& a_stringOut) 
 		{
@@ -3762,6 +4461,17 @@ namespace ALYSLC
 			RE::TESHitEvent::Flag::kNone
 		);
 
+		// Return true if the given extra data lists have the same 'intrinsic' data types
+		// in the same order.
+		// 'Intrinsic' as properties that are not derived from external factors,
+		// see examples in GlobalCoopData's ITEM_INTRINSIC_EXTRA_DATA_TYPES set.
+		// If two lists have no intrinsic data types, regardless of what other types they possess, 
+		// they are deemed equal.
+		bool AreIntrinsicallyEquivalentExDataLists
+		(
+			RE::ExtraDataList* a_list1, RE::ExtraDataList* a_list2
+		);
+
 		// Returns true if the given actor and rigid body supports manipulation of its velocity.
 		// Can use the supplied rigid body, or retrieve the rigid body from the actor's current 3D.
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody = nullptr);
@@ -3776,11 +4486,11 @@ namespace ALYSLC
 			RE::Actor* a_actor, bool a_shouldSet, bool a_adjustBleedout = false
 		);
 
-		// Favorite/unfavorite the given form for the given actor.
+		// Favorite/unfavorite the given form for the given refr.
 		// Specify an extra data list to (un)favorite a modified version of the base form.
 		void ChangeFormFavoritesStatus
 		(
-			RE::Actor* a_actor,
+			RE::TESObjectREFR* a_refr,
 			RE::TESForm* a_form, 
 			const bool& a_shouldFavorite,
 			RE::ExtraDataList* a_exDataList = nullptr
@@ -3791,7 +4501,7 @@ namespace ALYSLC
 		// Set -1 as the hotkey index to remove the hotkey.
 		void ChangeFormHotkeyStatus
 		(
-			RE::Actor* a_actor,
+			RE::TESObjectREFR* a_refr,
 			RE::TESForm* a_form,
 			const int8_t& a_hotkeySlotToSet,
 			RE::ExtraDataList* a_exDataList = nullptr
@@ -3814,6 +4524,10 @@ namespace ALYSLC
 			RE::Actor* a_actor, RE::BGSPerk* a_perk, bool&& a_add, int32_t a_rank = -1
 		);
 		
+
+		// Allocate, construct, and return a deep copy of the given extra data list.
+		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy);
+
 		// Creates a LS/RS thumbstick event using the provided user event name
 		// and stick X, Y displacement values. 
 		// Based on the Create() function for ButtonEvents.
@@ -3827,6 +4541,39 @@ namespace ALYSLC
 		// Enable collisions for the given actor.
 		void EnableCollisionForActor(RE::Actor* a_actor);
 
+		// Not strictly necessary for now, but will change later on if needed.
+		// Wrapper for ActorEquipManager equip that ensures any associated enchantment
+		// from the given bound object is equipped too.
+		// Because for some awful reason, this isn't always the case
+		// when re-equipping certain enchanted items.
+		void EquipObject
+		(
+			RE::Actor* a_actor, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraData = nullptr, 
+			uint32_t a_count = 1, 
+			const RE::BGSEquipSlot* a_slot = nullptr,
+			bool a_queueEquip = true, 
+			bool a_forceEquip = false, 
+			bool a_playSounds = true, 
+			bool a_applyNow = false
+		);
+
+		// Get the extra data list from within the refr's inventory
+		// that matches the given extra data list. 
+		// Construct a new list if there are no extra data lists 
+		// for the given item in the refr's inventory.
+		// Return nullptr if there is no match.
+		// The pointers themselves do not have to be equal, 
+		// but all types that are not related to the item's intrinsic properties
+		// should be equivalent.
+		// Intrinsic here meaning types that are not changed or removed
+		// when moved to another container.
+		RE::ExtraDataList* FindMatchingExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object, RE::ExtraDataList* a_exDataList
+		);
+		
 		// Helper function that iterates through all refrs in the given cell
 		// that are within the given radius from the provided origin position.
 		// Can treat the given radius as a 3D or XY distance limit.
@@ -3886,6 +4633,18 @@ namespace ALYSLC
 
 		// Return the refr 3D's havok collision layer.
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D);
+		
+		// Return the count of the given item with the given extra data 
+		// that is present in the given refr's inventory.
+		// Intrinsic data types must match if the list pointers themselves do not match.
+		// Intrinsic here meaning types that are not changed or removed
+		// when moved to another container.
+		RE::TESObjectREFR::Count GetCountForInventoryItem
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_exDataList
+		);
 
 		// Get the detection percent of the requesting actor by the detecting actor [0.0, 100.0].
 		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor);
@@ -3893,11 +4652,14 @@ namespace ALYSLC
 		// Get the front extra data list to use when equipping/favoriting
 		// the item given by the inventory entry.
 		RE::ExtraDataList* GetEntryFrontExtraDataList(RE::InventoryEntryData* a_invEntryData);
-
-		// Get the extra data list for given equipped form on the given actor.
+		
+		// Get the extra data for given equipped form on the given actor
+		// in the given hand.
+		// If the given item uses ExtraWorn instead of ExtraWornLeft and is equipable in the LH,
+		// will return found ExtraWorn data even if the left hand is given as the hand to check.
 		RE::ExtraDataList* GetEquippedExtraData
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, bool a_leftHand = false
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_leftHand = false
 		);
 
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
@@ -3924,23 +4686,34 @@ namespace ALYSLC
 		// Get the radiusfor the given actor's head body part.
 		float GetHeadRadius(RE::Actor* a_actor);
 
-		// Get the highest count ammo and its count in the given actor's inventory.
+		// Get the highest count ammo and its count in the given refr's inventory.
 		// Can exclusively check arrows or check bolts.
 		std::pair<RE::TESAmmo*, int32_t> GetHighestCountAmmo
 		(
-			RE::Actor* a_actor, const bool& a_forBows
+			RE::TESObjectREFR* a_refr, const bool& a_forBows
 		);
 
-		// Get the highest damage ammo and its count in the given actor's inventory.
+		// Get the highest damage ammo and its count in the given refr's inventory.
 		// Can exclusively check arrows or check bolts.
 		std::pair<RE::TESAmmo*, int32_t> GetHighestDamageAmmo
 		(
-			RE::Actor* a_actor, const bool& a_forBows
+			RE::TESObjectREFR* a_actor, const bool& a_forBows
+		);
+		
+		// Check if the given extra data list has ExtraHotkey extra data
+		// and return the data if so.
+		// If no extra data list is specified, the extra data lists for the given bound object
+		// are searched for the first extra hotkey data type.
+		// Nullptr if not hotkeyed.
+		RE::ExtraHotkey* GetHotkeyExData
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object, RE::ExtraDataList* a_exDataList
 		);
 
-		// For the given player, get the hotkey index, if any (-1 otherwise), for the given form.
-		int32_t GetHotkeyForForm(RE::Actor* a_playerActor, RE::TESForm* a_form);
-
+		// For the given actor, get the hotkey index, if any (-1 otherwise), 
+		// for the given magical form (shout/spell).
+		int8_t GetHotkeyForMagic(RE::Actor* a_actor, RE::TESForm* a_magForm);
+		
 		// Get a smart pointer to the game's NiCamera.
 		RE::NiPointer<RE::NiCamera> GetNiCamera();
 
@@ -3983,16 +4756,6 @@ namespace ALYSLC
 		// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/Utils.cpp
 		RE::NiPoint3 GetTorsoPosition(RE::Actor* a_actor);
 
-		// Get the unique ID (0 if none) from the given extra data list.
-		uint32_t GetUniqueID(RE::ExtraDataList* a_list);
-
-		// Get the actor inventory extra data list that contains the given unique ID.
-		// Nullptr if not found or if the unique ID is 0.
-		RE::ExtraDataList* GetUniqueIDExtraDataList
-		(
-			RE::Actor* a_actor, RE::TESBoundObject* a_item, uint32_t a_id
-		);
-
 		// Using a couple raycasts, get collidable points (above, below) the given point.
 		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point);
 
@@ -4013,6 +4776,13 @@ namespace ALYSLC
 			RE::TESObjectREFR* a_refrContainer,
 			float& a_weight,
 			int32_t& a_value
+		);
+		
+		// Return true if the refr has the given form 
+		// with the given extra data list in their inventory.
+		bool HasExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, RE::ExtraDataList* a_exDataList
 		);
 
 		// Check if the given observer has an LOS to the target refr.
@@ -4108,10 +4878,15 @@ namespace ALYSLC
 		);
 
 		// Is the given form favorited by the given actor?
-		bool IsFavorited(RE::Actor* a_actor, RE::TESForm* a_form);
+		bool IsFavorited(RE::TESObjectREFR* a_refr, RE::TESForm* a_form);
 
 		// Is the given form hotkeyed in the given slot for the given actor?
-		bool IsHotkeyed(RE::Actor* a_actor, RE::TESForm* a_form);
+		bool IsHotkeyed
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESForm* a_form,
+			RE::ExtraDataList* a_extraDataList
+		);
 
 		// Is the given point in front of the camera's collision position?
 		bool IsInFrontOfCam(const RE::NiPoint3& a_point);
@@ -4142,6 +4917,22 @@ namespace ALYSLC
 		// the Dialogue Menu, or the LootMenu are open.
 		// All such menus are unpaused.
 		bool MenusOnlyAlwaysUnpaused();
+
+		// Move all items given by one refr's item's list of extra data lists
+		// to the other given refr's inventory.
+		// Account for extra data lists. Can skip transferring equipped items.
+		// Total count should be the total number of the object 
+		// as given by the from refr's inventory counts 
+		// or the originating inventory entry's count delta.
+		void MoveAllOfItem
+		(
+			RE::TESObjectREFR* a_fromRefr,
+			RE::TESObjectREFR* a_toRefr,
+			RE::TESBoundObject* a_object,
+			bool a_skipEquippedItems,
+			RE::BSSimpleList<RE::ExtraDataList*>* a_fromLists = nullptr, 
+			uint32_t a_totalCount = 0
+		);
 
 		// Add the given perk to P1.
 		// Return true if successful.
@@ -4370,21 +5161,23 @@ namespace ALYSLC
 			const float& a_roll
 		);
 
-		// Add unique ID to the given list, if not nullptr.
-		// Otherwise, add unique ID extra data to the first extra data list for the given item.
-		// Return nullptr and 0 through the outparam when failing to find/add a unique ID.
-		RE::ExtraDataList* SetUniqueIDExtraDataList
-		(
-			RE::Actor* a_actor,
-			RE::TESBoundObject* a_item, 
-			uint32_t& a_uniqueIDOut,
-			RE::ExtraDataList* a_listToChange = nullptr
-		);
-
 		// If the spell has an image space modifier 
 		// and is a self-targeted concentration spell, return true.
 		// The spell should then be cast by one of P1's magic casters.
 		bool ShouldCastWithP1(RE::SpellItem* a_spell);
+
+		// UNUSED UNTIL I HAVE THE TIME TO FIX.
+		// Causing freezes I think due to access of the extra data lists list 
+		// at the wrong time.
+		// Hacky stack.
+		// Show the all of items given by the bound object and extra data list 
+		// in TrueHUD's recent loot widget.
+		void ShowItemStackInTrueHUDRecentLootWidget
+		(
+			RE::TESBoundObject* a_object,
+			RE::BSSimpleList<RE::ExtraDataList*>* a_fromLists,
+			RE::TESObjectREFR::Count a_totalCount
+		);
 
 		// Effect shader and hit art code:
 		// Credits to po3:
@@ -4423,6 +5216,13 @@ namespace ALYSLC
 
 		// Stop all hit art effects currently playing on the given refr.
 		void StopAllHitArtEffects(RE::TESObjectREFR* a_refr);
+
+		// Stop combat for all players, player allies, 
+		// and aggro'd high process enemies targeting a player or an ally.
+		// Does NOT clear bounties and prevent triggering arrest dialogues,
+		// but does remove the combat alarm, meaning guards will not continue attacking 
+		// the player or their allies.
+		void StopCombatOnPlayerAndAllies();
 
 		// Stop the given effect shader playing on the given refr.
 		// Can delay removal of the effect by a certain number of seconds 
@@ -4501,7 +5301,26 @@ namespace ALYSLC
 			const std::string& a_skillName, 
 			const float& a_newLevel
 		);
-		
+
+		// Not super necessary to have a wrapper for now.
+		// Wrapper for ActorEquipManager equip that ensures any associated enchantment
+		// from the given bound object is unequipped too.
+		// Because for some awful reason, this isn't always the case
+		// when un-equipping certain enchanted items.
+		void UnequipObject
+		(
+			RE::Actor* a_actor, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraData = nullptr, 
+			uint32_t a_count = 1, 
+			const RE::BGSEquipSlot* a_slot = nullptr, 
+			bool a_queueEquip = true, 
+			bool a_forceEquip = false, 
+			bool a_playSounds = true, 
+			bool a_applyNow = false,
+			const RE::BGSEquipSlot* a_slotToReplace = nullptr
+		);
+
 		// Set the given target actor as the given source actor's combat target and vice versa.
 		void UpdateCombatTargets
 		(

@@ -89,7 +89,7 @@ namespace ALYSLC
 				{
 					SPDLOG_DEBUG
 					(
-						"No controller connected at index {}. Error #{}.", 
+						"No controller connected at index {}. Result #{}.", 
 						controllerIndex, errorNum
 					);
 				}
@@ -507,7 +507,7 @@ namespace ALYSLC
 					"disconnected"
 				).data()
 			);
-			GlobalCoopData::TeardownCoopSession(true);
+			GlobalCoopData::TearDownCoopSession(true);
 			// Must re-assign P1 device ID upon re-summoning.
 			glob.player1DID = -1;
 			return;
