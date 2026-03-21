@@ -75,7 +75,7 @@ namespace ALYSLC
 		GlobalCoopData::SetCrosshairText(true);
 		// Reset supported menu open state because it won't reset
 		// properly if the previous co-op session ended while a supported menu was open.
-		Events::ResetMenuState();
+		GlobalCoopData::ResetMenuState();
 		// Re-enable any controls for P1 that might have been disabled.
 		Util::ToggleAllControls(true);
 		// Clear any lingering queued input events.
@@ -110,6 +110,10 @@ namespace ALYSLC
 			SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
 			DebugOverlayMenu::Load();
 		}
+
+		// Stop combat without removing bounties to prevent aggro on load 
+		// from previously pacified neutral factions.
+		Util::StopCombatOnPlayerAndAllies();
 
 		return firstTimeInit;
 	}
@@ -410,8 +414,7 @@ namespace ALYSLC
 					}
 				}
 			);
-			
-			// Set global co-op session flag.
+
 			glob.coopSessionActive = a_shouldStart;
 			for (const auto& p : glob.coopPlayers) 
 			{
@@ -444,7 +447,7 @@ namespace ALYSLC
 			// with the number of active players.
 			GlobalCoopData::ModifyXPPerSkillLevelMult(a_shouldStart);
 			// Turn off god mode for everyone.
-			GlobalCoopData::ToggleGodModeForAllPlayers(false);
+			GlobalCoopData::ToggleGodModeForAllPlayers(false, false);
 			// Sync shared AVs, perks, Legendary levelings, and scale companion player's skill AVs.
 			GlobalCoopData::SyncSharedSkillAVs();
 			GlobalCoopData::SyncSharedPerks();
@@ -850,6 +853,86 @@ namespace ALYSLC
 		return voiceTypeList;
 	}
 
+	std::vector<RE::Actor*> CoopLib::GetCompanionPlayerCharacters(RE::StaticFunctionTag *)
+	{
+		// Get a list of all playable companion players' characters.
+		// Sent to script because the actor/objectrefr pointers got invalidated 
+		// when stored in a FormList/Array property sometimes. I don't even know anymore.
+
+		SPDLOG_DEBUG("");
+		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
+		if (glob.globalDataInit && !glob.coopEntityBlacklist.empty())
+		{
+			// Co-op companion player actors.
+			// Skip index 0 which is P1.
+			return std::vector<RE::Actor*>
+			(
+				{
+					glob.coopEntityBlacklist[1].get(),
+					glob.coopEntityBlacklist[2].get(),
+					glob.coopEntityBlacklist[3].get(),
+					glob.coopEntityBlacklist[4].get(),
+					glob.coopEntityBlacklist[5].get(),
+					glob.coopEntityBlacklist[6].get(),
+					glob.coopEntityBlacklist[7].get(),
+					glob.coopEntityBlacklist[8].get(),
+					glob.coopEntityBlacklist[9].get()
+				}
+			);
+		}
+		else if (dataHandler)
+		{
+			// Actors that are blacklisted from selection via targeting.
+			return std::vector<RE::Actor*>
+			(
+				{
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[1], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[2], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[3], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[4], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[5], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[6], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[7], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[8], GlobalCoopData::PLUGIN_NAME
+					),
+					dataHandler->LookupForm<RE::Actor>
+					(
+						GlobalCoopData::PLAYER_CHARACTER_FIDS[9], GlobalCoopData::PLUGIN_NAME
+					)
+				}
+			);
+		}
+		else
+		{
+			SPDLOG_ERROR("ERR: Could not get data handler to look up player characters.");
+		}
+
+		return{ };
+	}
+
 	std::vector<RE::BSFixedString> CoopLib::GetFavoritedEmoteIdles
 	(
 		RE::StaticFunctionTag*, int32_t a_playerID
@@ -1210,8 +1293,9 @@ namespace ALYSLC
 			}
 		}
 
-		// Stop co-op camera manager and flag session as ended.
+		// Stop menu and camera managers and flag session as ended.
 		glob.cam->ToggleCoopCamera(false);
+		glob.mim->RequestStateChange(ManagerState::kAwaitingRefresh);
 		// Restore XP threshold.
 		GlobalCoopData::ModifyLevelUpXPThreshold(false);
 		glob.coopSessionActive = false;
@@ -1345,10 +1429,18 @@ namespace ALYSLC
 
 	void CoopLib::Log(RE::StaticFunctionTag*, RE::BSFixedString a_message)
 	{
-		// Script request to log a message to this mod's log file:
+		// Script request to log a debug message to this mod's log file:
 		// 'ALYSLC.log'.
 
 		SPDLOG_DEBUG("{}", a_message.c_str());
+	}
+
+	void CoopLib::LogError(RE::StaticFunctionTag*, RE::BSFixedString a_message)
+	{
+		// Script request to log an error message to this mod's log file:
+		// 'ALYSLC.log'.
+
+		SPDLOG_ERROR("{}", a_message.c_str());
 	}
 
 	//=============================================================================================
@@ -1658,7 +1750,7 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.ToggleGodModeForAllPlayers(false);
+		glob.ToggleGodModeForAllPlayers(false, true);
 	}
 
 	void CoopLib::Debug::DisableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID)
@@ -1674,7 +1766,7 @@ namespace ALYSLC
 			return;
 		}
 			
-		glob.ToggleGodModeForPlayer(a_playerID, false);
+		glob.ToggleGodModeForPlayer(a_playerID, false, true);
 	}
 
 	void CoopLib::Debug::EnableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
@@ -1687,7 +1779,7 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.ToggleGodModeForAllPlayers(true);
+		glob.ToggleGodModeForAllPlayers(true, true);
 	}
 
 	void CoopLib::Debug::EnableGodModeForPlayer(RE::StaticFunctionTag*, int32_t a_playerID)
@@ -1703,7 +1795,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		glob.ToggleGodModeForPlayer(a_playerID, true);
+		glob.ToggleGodModeForPlayer(a_playerID, true, true);
 	}
 
 	void CoopLib::Debug::MoveAllPlayersToPlayer(RE::StaticFunctionTag*, RE::Actor* a_playerActor)
@@ -1960,7 +2052,13 @@ namespace ALYSLC
 			return;
 		}
 
+		// Stops combat for all actors from each process level (low, mid low, mid high, and high).
 		GlobalCoopData::StopAllCombatOnCoopPlayers(false, std::move(a_clearBounties));
+		// Yes, I know, some redundancy. 
+		// Will ensure players and allies are not in combat if the above call fails.
+		// Only checks the high process actors.
+		// Iterating through magic effects for all process' actors is too demanding.
+		Util::StopCombatOnPlayerAndAllies();
 	}
 
 	void CoopLib::Debug::StopMenuInputManager(RE::StaticFunctionTag*)
@@ -2229,6 +2327,10 @@ namespace ALYSLC
 		a_vm->RegisterFunction("GetAllVoiceTypes"s, "ALYSLC"s, GetAllVoiceTypes);
 		a_vm->RegisterFunction
 		(
+			"GetCompanionPlayerCharacters"s, "ALYSLC"s, GetCompanionPlayerCharacters
+		);
+		a_vm->RegisterFunction
+		(
 			"GetConnectedInputDeviceIDs"s, "ALYSLC"s, GetConnectedInputDeviceIDs
 		);
 		a_vm->RegisterFunction("GetFavoritedEmoteIdles"s, "ALYSLC"s, GetFavoritedEmoteIdles);
@@ -2256,7 +2358,10 @@ namespace ALYSLC
 			"ALYSLC"s, 
 			UpdateAllCompanionPlayerSerializationIDs
 		);
+
+		// Logging
 		a_vm->RegisterFunction("Log"s, "ALYSLC"s, Log);
+		a_vm->RegisterFunction("LogError"s, "ALYSLC"s, LogError);
 
 		// Character customization functions.
 		a_vm->RegisterFunction

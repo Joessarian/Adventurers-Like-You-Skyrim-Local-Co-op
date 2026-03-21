@@ -224,7 +224,9 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_Character[0] };
 				REL::Relocation<uintptr_t> vtbl3{ RE::VTABLE_Character[3] };
-
+				
+				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
+				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
 				_CheckClampDamageModifier = vtbl.write_vfunc(0x127, CheckClampDamageModifier);
 				SPDLOG_INFO("Installed CheckClampDamageModifier() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
@@ -235,6 +237,8 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
 				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
+				_PickUpObject = vtbl.write_vfunc(0xCC, PickUpObject);
+				SPDLOG_INFO("Installed _PickUpObject() hook.");
 				_PutCreatedPackage = vtbl.write_vfunc(0xDF, PutCreatedPackage);
 				SPDLOG_INFO("Installed PutCreatedPackage() hook.");
 				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
@@ -247,9 +251,19 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed SetCurrentScene() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
 				SPDLOG_INFO("Installed Update() hook.");
+				_UseAmmo = vtbl.write_vfunc(0xD2, UseAmmo);
+				SPDLOG_INFO("Installed UseAmmo() hook.");
 			}
 
 		private:
+			static void AddObjectToContainer
+			(
+				RE::Character* a_this,
+				RE::TESBoundObject* a_object, 
+				RE::ExtraDataList* a_extraList, 
+				std::int32_t a_count, 
+				RE::TESObjectREFR* a_fromRefr
+			);
 			static float CheckClampDamageModifier
 			(
 				RE::Character* a_this, RE::ActorValue a_av, float a_delta
@@ -267,6 +281,14 @@ namespace ALYSLC
 			static bool NotifyAnimationGraph
 			(
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
+			);
+			static void PickUpObject
+			(
+				RE::Character* a_this, 
+				RE::TESObjectREFR* a_object,
+				std::int32_t a_count, 
+				bool a_arg3 = false, 
+				bool a_playSound = true
 			);
 			static void PutCreatedPackage
 			(
@@ -291,7 +313,9 @@ namespace ALYSLC
 			static void ResetInventory(RE::Character* a_this, bool a_leveledOnly);
 			static void SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene);
 			static void Update(RE::Character* a_this, float a_delta);
-
+			static std::uint32_t UseAmmo(RE::Character* a_this, std::uint32_t a_shotCount);
+			
+			static inline REL::Relocation<decltype(AddObjectToContainer)> _AddObjectToContainer;
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
 			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
@@ -300,12 +324,14 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
 			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
+			static inline REL::Relocation<decltype(PickUpObject)> _PickUpObject;
 			static inline REL::Relocation<decltype(PutCreatedPackage)> _PutCreatedPackage;
 			static inline REL::Relocation<decltype(RemoveItem)> _RemoveItem;
 			static inline REL::Relocation<decltype(RemoveWeapon)> _RemoveWeapon;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(SetCurrentScene)> _SetCurrentScene;
 			static inline REL::Relocation<decltype(Update)> _Update;
+			static inline REL::Relocation<decltype(UseAmmo)> _UseAmmo;
 		};
 
 		// [Input Event Hooks]
@@ -360,6 +386,34 @@ namespace ALYSLC
 			);
 			static inline REL::Relocation<decltype(Run)> _Run;
 		};
+
+		// [Magic Stagger Hooks]
+		// Credits to max-su-2019:
+		// https://github.com/max-su-2019/MaxsuPoise/blob/master/src/Hooks/MagicStaggerHook.h
+		class MagicStaggerHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(34188, 34982) };
+				auto& trampoline = SKSE::GetTrampoline();
+				_ProcessStagger = trampoline.write_call<5>
+				(
+					hook.address() + 
+					OFFSET(0x6F, 0x6F), 
+					ProcessStagger
+				);
+				SPDLOG_INFO("Installed ProcessStagger() hook.");
+			}
+
+		private:
+			static void ProcessStagger
+			(
+				RE::Actor* a_target, float a_staggerMult, RE::Actor* a_aggressor
+			);
+			static inline REL::Relocation<decltype(ProcessStagger)> _ProcessStagger;
+		};
+
 
 		// [Melee Hooks]
 		// Credits to dTry:
@@ -430,7 +484,7 @@ namespace ALYSLC
 			// Return true if the event should be blocked.
 			static bool CheckForMenuTriggeringInput
 			(
-				RE::InputEvent* a_inputEvent, bool& a_newEventChained
+				RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
 			);
 			// Check if P1 is requesting control of dialogue
 			// or is transferring control to another player.
@@ -527,6 +581,8 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_PlayerCharacter[0] };
 				REL::Relocation<uintptr_t> vtbl3{ RE::VTABLE_PlayerCharacter[3] };
+				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
+				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
 				SPDLOG_INFO("Installed DrawWeaponMagicHands() hook.");
 				_CheckClampDamageModifier = vtbl.write_vfunc(0x127, CheckClampDamageModifier);
@@ -537,15 +593,29 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
 				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
+				_PickUpObject = vtbl.write_vfunc(0xCC, PickUpObject);
+				SPDLOG_INFO("Installed PickupObject() hook.");
+				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
+				SPDLOG_INFO("Installed RemoveItem() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
 				SPDLOG_INFO("Installed ResetInventory() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
 				SPDLOG_INFO("Installed Update() hook.");
+				_UseAmmo = vtbl.write_vfunc(0xD2, UseAmmo);
+				SPDLOG_INFO("Installed UseAmmo() hook.");	
 				_UseSkill = vtbl.write_vfunc(0xF7, UseSkill);
 				SPDLOG_INFO("Installed UseSkill() hook.");
 			}
 
 		private:
+			static void AddObjectToContainer
+			(
+				RE::PlayerCharacter* a_this,
+				RE::TESBoundObject* a_object, 
+				RE::ExtraDataList* a_extraList, 
+				std::int32_t a_count, 
+				RE::TESObjectREFR* a_fromRefr
+			);
 			static float CheckClampDamageModifier
 			(
 				RE::PlayerCharacter* a_this, RE::ActorValue a_av, float a_delta
@@ -563,8 +633,29 @@ namespace ALYSLC
 			(
 				RE::IAnimationGraphManagerHolder* a_this, const RE::BSFixedString& a_eventName
 			);
+			static void PickUpObject
+			(
+				RE::PlayerCharacter* a_this, 
+				RE::TESObjectREFR* a_object,
+				std::int32_t a_count, 
+				bool a_arg3 = false, 
+				bool a_playSound = true
+			);
+			static RE::ObjectRefHandle* RemoveItem
+			(
+				RE::PlayerCharacter* a_this,
+				RE::ObjectRefHandle& a_handleOut,
+				RE::TESBoundObject* a_item, 
+				std::int32_t a_count,
+				RE::ITEM_REMOVE_REASON a_reason, 
+				RE::ExtraDataList* a_extraList,
+				RE::TESObjectREFR* a_moveToRef, 
+				const RE::NiPoint3* a_dropLoc, 
+				const RE::NiPoint3* a_rotate
+			);
 			static void ResetInventory(RE::PlayerCharacter* a_this, bool a_leveledOnly);
-			static void Update(RE::PlayerCharacter* a_this, float a_delta);													
+			static void Update(RE::PlayerCharacter* a_this, float a_delta);		
+			static std::uint32_t UseAmmo(RE::PlayerCharacter* a_this, std::uint32_t a_shotCount);							
 			static void UseSkill
 			(
 				RE::PlayerCharacter* a_this, 
@@ -572,7 +663,8 @@ namespace ALYSLC
 				float a_points, 
 				RE::TESForm* a_arg3
 			);
-
+			
+			static inline REL::Relocation<decltype(AddObjectToContainer)> _AddObjectToContainer;
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
 			_CheckClampDamageModifier;
 			static inline REL::Relocation<decltype(DrawWeaponMagicHands)> _DrawWeaponMagicHands;
@@ -580,8 +672,11 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(ModifyAnimationUpdateData)> 
 			_ModifyAnimationUpdateData;
 			static inline REL::Relocation<decltype(NotifyAnimationGraph)> _NotifyAnimationGraph;
+			static inline REL::Relocation<decltype(PickUpObject)> _PickUpObject;
+			static inline REL::Relocation<decltype(RemoveItem)> _RemoveItem;
 			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(Update)> _Update;
+			static inline REL::Relocation<decltype(UseAmmo)> _UseAmmo;
 			static inline REL::Relocation<decltype(UseSkill)> _UseSkill;
 		};
 
@@ -963,12 +1058,42 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_TESObjectREFR[0] };
+				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
+				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
+				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
+				SPDLOG_INFO("Installed RemoveItem() hook.");
+				/*_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
+				SPDLOG_INFO("Installed ResetInventory() hook.");*/
 				_SetParentCell = vtbl.write_vfunc(0x98, SetParentCell);
 				SPDLOG_INFO("Installed SetParentCell() hook.");
 			}
 
 		private:
+			static void AddObjectToContainer
+			(
+				RE::TESObjectREFR* a_this,
+				RE::TESBoundObject* a_object, 
+				RE::ExtraDataList* a_extraList, 
+				std::int32_t a_count, 
+				RE::TESObjectREFR* a_fromRefr
+			);
+			static RE::ObjectRefHandle* RemoveItem
+			(
+				RE::TESObjectREFR* a_this,
+				RE::ObjectRefHandle& a_handleOut,
+				RE::TESBoundObject* a_item, 
+				std::int32_t a_count,
+				RE::ITEM_REMOVE_REASON a_reason, 
+				RE::ExtraDataList* a_extraList,
+				RE::TESObjectREFR* a_moveToRef, 
+				const RE::NiPoint3* a_dropLoc, 
+				const RE::NiPoint3* a_rotate
+			);
+			static void ResetInventory(RE::TESObjectREFR* a_this, bool a_leveledOnly);
 			static void SetParentCell(RE::TESObjectREFR* a_this, RE::TESObjectCELL* a_cell);
+			static inline REL::Relocation<decltype(AddObjectToContainer)> _AddObjectToContainer;
+			static inline REL::Relocation<decltype(RemoveItem)> _RemoveItem;
+			static inline REL::Relocation<decltype(ResetInventory)> _ResetInventory;
 			static inline REL::Relocation<decltype(SetParentCell)> _SetParentCell;
 		};
 

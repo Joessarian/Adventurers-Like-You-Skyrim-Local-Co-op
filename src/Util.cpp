@@ -553,6 +553,105 @@ namespace ALYSLC
 			}
 		}
 
+		bool AreIntrinsicallyEquivalentExDataLists
+		(
+			RE::ExtraDataList* a_list1, RE::ExtraDataList* a_list2
+		)
+		{
+			// Don't feel great about this way of finding 'equivalent' extra data lists
+			// that share the same intrinsic data type makeup and ordering,
+			// but may have different addresses.
+			// It'll have to do.
+			// 
+			// Get the extra data list from within the inventory chest 
+			// that matches the given extra data list.
+			// Return nullptr if there is no match.
+			// The pointers themselves do not have to be equal, 
+			// but all types that are not related to the item's intrinsic properties
+			// should be equivalent. 
+			// Intrinsic here meaning types that are not changed or removed
+			// when moved to another container.
+
+			if (a_list1 == a_list2)
+			{
+				return true;
+			}
+
+			ptrdiff_t size1 = 0;
+			if (a_list1)
+			{
+				for (const auto& data : *a_list1)
+				{
+					const auto type = data.GetType();
+					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						size1++;
+					}
+				}
+			}
+			
+			ptrdiff_t size2 = 0;
+			if (a_list2)
+			{
+				for (const auto& data : *a_list2)
+				{
+					const auto type = data.GetType();
+					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						size2++;
+					}
+				}
+			}
+
+			if (size1 != size2)
+			{
+				// Different number of intrinsic data types, so cannot be equal.
+				return false;
+			}
+			else if (size1 == 0)
+			{
+				// Same if intrinsic data type counts are both 0.
+				return true;
+			}
+
+			bool isEqual = true;
+			for (const auto& baseData : *a_list1)
+			{
+				const auto type = baseData.GetType();
+				if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+				{
+					continue;
+				}
+						
+				for (const auto& baseData2 : *a_list2)
+				{
+					const auto type = baseData2.GetType();
+					if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						continue;
+					}
+						
+					//const auto data = a_list1->GetByType(type);
+					//if (!data || data->IsNotEqual(std::addressof(baseData2)))
+					//{
+					//	//SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+					//	isEqual = false;
+					//	break;
+					//}
+
+					if (baseData2.IsNotEqual(std::addressof(baseData)))
+					{
+						SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+						isEqual = false;
+						break;
+					}
+				}
+			}
+			
+			SPDLOG_DEBUG("Lists {:p} and {:p} are equal.", fmt::ptr(a_list1), fmt::ptr(a_list2));
+			return isEqual;
+		}
+
 		bool CanManipulateActor(RE::Actor* a_actor, RE::hkpRigidBody* a_rigidBody)
 		{
 			// Returns true if the given actor and rigid body
@@ -680,7 +779,7 @@ namespace ALYSLC
 
 		void ChangeFormFavoritesStatus
 		(
-			RE::Actor* a_actor,
+			RE::TESObjectREFR* a_refr,
 			RE::TESForm* a_form,
 			const bool& a_shouldFavorite,
 			RE::ExtraDataList* a_exDataList
@@ -691,7 +790,7 @@ namespace ALYSLC
 			// for a unique/modified item, or nullptr to change the favorites status 
 			// for the first matching form.
 
-			if (!a_actor || !a_form)
+			if (!a_refr || !a_form)
 			{
 				return;
 			}
@@ -715,14 +814,14 @@ namespace ALYSLC
 			}
 			else
 			{
-				auto inventoryChanges = a_actor->GetInventoryChanges();
+				auto inventoryChanges = a_refr->GetInventoryChanges();
 				if (!inventoryChanges)
 				{
 					return;
 				}
 
 				// Look for the form in the actor's inventory.
-				auto inventory = a_actor->GetInventory();
+				auto inventory = a_refr->GetInventory();
 				for (auto& [boundObj, entryDataPair] : inventory)
 				{
 					const auto& [count, ied] = entryDataPair;
@@ -809,7 +908,7 @@ namespace ALYSLC
 
 		void ChangeFormHotkeyStatus
 		(
-			RE::Actor* a_actor,
+			RE::TESObjectREFR* a_refr,
 			RE::TESForm* a_form,
 			const int8_t& a_hotkeySlotToSet,
 			RE::ExtraDataList* a_exDataList
@@ -820,7 +919,7 @@ namespace ALYSLC
 			// or nullptr to change the hotkey status for the first matching form.
 			// Set -1 as the hotkey index to remove the hotkey.
 
-			if (!a_actor || !a_form || a_hotkeySlotToSet < -1 || a_hotkeySlotToSet > 7)
+			if (!a_refr || !a_form || a_hotkeySlotToSet < -1 || a_hotkeySlotToSet > 7)
 			{
 				return;
 			}
@@ -842,7 +941,7 @@ namespace ALYSLC
 					SPDLOG_DEBUG
 					(
 						"{}: Removed MAG {} from hotkey slot {}.",
-						a_actor->GetName(), a_form->GetName(), i + 1
+						a_refr->GetName(), a_form->GetName(), i + 1
 					);
 					magicFavorites->hotkeys[i] = nullptr;
 				}
@@ -855,7 +954,7 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"{}: Added MAG {} to hotkey slot {}.",
-							a_actor->GetName(), a_form->GetName(), i + 1
+							a_refr->GetName(), a_form->GetName(), i + 1
 						);
 						magicFavorites->hotkeys[i] = a_form;
 					}
@@ -867,7 +966,7 @@ namespace ALYSLC
 						(
 							"{}: Removed MAG {} from hotkey slot {}, "
 							"since we want to set PHYS {} as the new hotkeyed form.",
-							a_actor->GetName(),
+							a_refr->GetName(),
 							magicFavorites->hotkeys[i]->GetName(), 
 							i + 1,
 							a_form->GetName()
@@ -877,14 +976,8 @@ namespace ALYSLC
 				}
 			}
 
-			auto inventoryChanges = a_actor->GetInventoryChanges();
-			if (!inventoryChanges)
-			{
-				return;
-			}
-
 			// Look for the form in the actor's inventory.
-			auto inventory = a_actor->GetInventory();
+			auto inventory = a_refr->GetInventory();
 			for (auto& [boundObj, entryDataPair] : inventory)
 			{
 				const auto& [count, ied] = entryDataPair;
@@ -924,7 +1017,7 @@ namespace ALYSLC
 						SPDLOG_DEBUG
 						(
 							"{}: Removed PHYS {} from hotkey slot {}.",
-							a_actor->GetName(), a_form->GetName(), hotkeySlot + 1
+							a_refr->GetName(), a_form->GetName(), hotkeySlot + 1
 						);
 
 						// Already removed the hotkey from the requested form,
@@ -951,7 +1044,7 @@ namespace ALYSLC
 									(
 										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set MAG {} as the new hotkeyed form.",
-										a_actor->GetName(), 
+										a_refr->GetName(), 
 										boundObj->GetName(), 
 										hotkeySlot + 1,
 										a_form->GetName()
@@ -963,7 +1056,7 @@ namespace ALYSLC
 									(
 										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set PHYS {} as the new hotkeyed form.",
-										a_actor->GetName(),
+										a_refr->GetName(),
 										boundObj->GetName(),
 										hotkeySlot + 1, 
 										a_form->GetName()
@@ -981,7 +1074,7 @@ namespace ALYSLC
 							SPDLOG_DEBUG
 							(
 								"{}: Added PHYS {} to hotkey slot {}.",
-								a_actor->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1
+								a_refr->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1
 							);
 							exHotkeyData->hotkey = static_cast<RE::ExtraHotkey::Hotkey>
 							(
@@ -1172,7 +1265,7 @@ namespace ALYSLC
 				}
 
 				// Armor AV changed + reset weights.
-				if (succ)
+				/*if (succ)
 				{
 					a_actor->OnArmorActorValueChanged();
 					if (auto invChanges = a_actor->GetInventoryChanges(); invChanges)
@@ -1181,7 +1274,7 @@ namespace ALYSLC
 						invChanges->totalWeight = -1.0f;
 						a_actor->equippedWeight = -1.0f;
 					}
-				}
+				}*/
 			}
 
 			if (a_actor->IsPlayerRef()) 
@@ -1209,6 +1302,750 @@ namespace ALYSLC
 				a_actor->HasPerk(a_perk) :
 				!a_actor->HasPerk(a_perk)
 			);
+		}
+
+		RE::ExtraDataList* CopyExtraDataList(RE::ExtraDataList* a_toCopy)
+		{
+			// Allocate, construct, and return a deep copy of the given extra data list.
+
+			// Nothing to copy if non-existent or empty.
+			if (!a_toCopy || std::distance(a_toCopy->begin(), a_toCopy->end()) == 0)
+			{
+				SPDLOG_DEBUG
+				(
+					"Nothing to copy: {:p}, size: {}.", 
+					fmt::ptr(a_toCopy),
+					a_toCopy ? std::distance(a_toCopy->begin(), a_toCopy->end()) : 0
+				);
+				return nullptr;
+			}
+
+			RE::ExtraDataList* list = Util::NativeFunctions::ConstructExtraDataList
+			(
+				RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
+			);
+			if (!list)
+			{
+				SPDLOG_DEBUG("ERR: Failed to allocate extra data list.");
+				return nullptr;
+			}
+
+			for (auto iter = a_toCopy->begin(); iter != a_toCopy->end(); ++iter)
+			{
+				SPDLOG_DEBUG("Attempting to add type 0x{:X}.", (*iter).GetType());
+				// SKEEEP A BAUNCH of ones that likely won't appear on equipable items.
+				switch((*iter).GetType())
+				{
+				//==================================================================================
+				// Constructed with 'new' (TES_HEAP_REDEFINE_NEW, has CLib-defined ctor).
+				//==================================================================================
+				case RE::ExtraDataType::kAliasInstanceArray:
+				{
+					auto toCopy = static_cast<RE::ExtraAliasInstanceArray*>(std::addressof(*iter));
+					auto* data = new RE::ExtraAliasInstanceArray();
+					data->aliases = toCopy->aliases;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kAshPileRef:
+				{
+					auto toCopy = static_cast<RE::ExtraAshPileRef*>(std::addressof(*iter));
+					auto* data = new RE::ExtraAshPileRef(toCopy->ashPileRef);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kCannotWear:
+				{
+					auto toCopy = static_cast<RE::ExtraCannotWear*>(std::addressof(*iter));
+					auto* data = new RE::ExtraCannotWear();
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kCharge:
+				{
+					auto toCopy = static_cast<RE::ExtraCharge*>(std::addressof(*iter));
+					auto* data = new RE::ExtraCharge();
+					data->charge = toCopy->charge;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kContainerChanges:
+				{
+					auto toCopy = static_cast<RE::ExtraContainerChanges*>(std::addressof(*iter));
+					auto* data = new RE::ExtraContainerChanges(toCopy->changes);
+					list->Add(data);
+
+					break;
+				}
+				// DO NOT copy over count, as this will be set by the game
+				// when added to a refr's inventory.
+				/*case RE::ExtraDataType::kCount:
+				{
+					auto toCopy = static_cast<RE::ExtraCount*>(std::addressof(*iter));
+					auto* data = new RE::ExtraCount(toCopy->count);
+					list->Add(data);
+
+					break;
+				}*/
+				case RE::ExtraDataType::kEnchantment:
+				{
+					auto toCopy = static_cast<RE::ExtraEnchantment*>(std::addressof(*iter));
+					auto* data = new RE::ExtraEnchantment
+					(
+						toCopy->enchantment, toCopy->charge, toCopy->removeOnUnequip
+					);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kEncounterZone:
+				{
+					auto toCopy = static_cast<RE::ExtraEncounterZone*>(std::addressof(*iter));
+					auto* data = new RE::ExtraEncounterZone(toCopy->zone);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kHealth:
+				{
+					auto toCopy = static_cast<RE::ExtraHealth*>(std::addressof(*iter));
+					auto* data = new RE::ExtraHealth(toCopy->health);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kHotkey:
+				{
+					auto toCopy = static_cast<RE::ExtraHotkey*>(std::addressof(*iter));
+					auto* data = new RE::ExtraHotkey(*toCopy->hotkey);
+					data->unk11 = toCopy->unk11;
+					data->unk12 = toCopy->unk12;
+					data->unk14 = toCopy->unk14;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLevCreaModifier:
+				{
+					auto toCopy = static_cast<RE::ExtraLevCreaModifier*>(std::addressof(*iter));
+					auto* data = new RE::ExtraLevCreaModifier(*toCopy->modifier);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLightData:
+				{
+					auto toCopy = static_cast<RE::ExtraLightData*>(std::addressof(*iter));
+					auto* data = new RE::ExtraLightData();
+					data->data = toCopy->data;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLinkedRef:
+				{
+					auto toCopy = static_cast<RE::ExtraLinkedRef*>(std::addressof(*iter));
+					auto* data = new RE::ExtraLinkedRef();
+					data->linkedRefs = toCopy->linkedRefs;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kNorthRotation:
+				{
+					auto toCopy = static_cast<RE::ExtraNorthRotation*>(std::addressof(*iter));
+					auto* data = new RE::ExtraNorthRotation();
+					data->northRot = toCopy->northRot;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kOwnership:
+				{
+					auto toCopy = static_cast<RE::ExtraOwnership*>(std::addressof(*iter));
+					auto* data = new RE::ExtraOwnership(toCopy->owner);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kPoison:
+				{
+					auto toCopy = static_cast<RE::ExtraPoison*>(std::addressof(*iter));
+					auto* data = new RE::ExtraPoison(toCopy->poison, toCopy->count);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kRank:
+				{
+					auto toCopy = static_cast<RE::ExtraRank*>(std::addressof(*iter));
+					auto* data = new RE::ExtraRank(toCopy->rank);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kTextDisplayData:
+				{
+					auto toCopy = static_cast<RE::ExtraTextDisplayData*>(std::addressof(*iter));
+					auto* data = new RE::ExtraTextDisplayData();
+					data->customNameLength = toCopy->customNameLength;
+					data->displayName = toCopy->displayName;
+					data->displayNameText = toCopy->displayNameText;
+					data->ownerInstance = toCopy->ownerInstance;
+					data->ownerQuest = toCopy->ownerQuest;
+					data->temperFactor = toCopy->temperFactor;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kSoul:
+				{
+					auto toCopy = static_cast<RE::ExtraSoul*>(std::addressof(*iter));
+					auto* data = new RE::ExtraSoul(*toCopy->soul);
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kUniqueID:
+				{
+					auto toCopy = static_cast<RE::ExtraUniqueID*>(std::addressof(*iter));
+					auto* data = new RE::ExtraUniqueID(toCopy->baseID, toCopy->uniqueID);
+					list->Add(data);
+
+					break;
+				}
+				//==================================================================================
+				// Constructed with RE::BSExtraData::Create() (no CLib-defined ctor).
+				//==================================================================================
+				case RE::ExtraDataType::kAction:
+				{
+					auto toCopy = static_cast<RE::ExtraAction*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraAction>();
+					data->action = toCopy->action;
+					data->actionRef = toCopy->actionRef;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kActivateLoopSound:
+				{
+					auto toCopy = static_cast<RE::ExtraActivateLoopSound*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraActivateLoopSound>();
+					data->handle = toCopy->handle;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kActivateRef:
+				{
+					auto toCopy = static_cast<RE::ExtraActivateRef*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraActivateRef>();
+					data->activateFlags = toCopy->activateFlags;
+					data->parents = toCopy->parents;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kActivateRefChildren:
+				{
+					auto toCopy = static_cast<RE::ExtraActivateRefChildren*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraActivateRefChildren>();
+					data->activateChildrenTimer = toCopy->activateChildrenTimer;
+					data->children = toCopy->children;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kActorCause:
+				{
+					auto toCopy = static_cast<RE::ExtraActorCause*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraActorCause>();
+					data->actorCause = toCopy->actorCause;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kAmmo:
+				{
+					auto toCopy = static_cast<RE::ExtraAmmo*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraAmmo>();
+					data->unk10 = toCopy->unk10;
+					data->unk18 = toCopy->unk18;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kBiped:
+				{
+					auto toCopy = static_cast<RE::ExtraBiped*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraBiped>();
+					data->biped = toCopy->biped;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kCachedScale:
+				{
+					auto toCopy = static_cast<RE::ExtraCachedScale*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraCachedScale>();
+					data->refScale = toCopy->refScale;
+					data->scale3D = toCopy->scale3D;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kCollisionData:
+				{
+					auto toCopy = static_cast<RE::ExtraCollisionData*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraCollisionData>();
+					data->collisionData = toCopy->collisionData;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kDecalGroup:
+				{
+					auto toCopy = static_cast<RE::ExtraDecalGroup*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraDecalGroup>();
+					data->decalGroup = toCopy->decalGroup;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kDetachTime:
+				{
+					auto toCopy = static_cast<RE::ExtraDetachTime*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraDetachTime>();
+					data->time = toCopy->time;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kDistantData:
+				{
+					auto toCopy = static_cast<RE::ExtraDistantData*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraDistantData>();
+					data->landNormal = toCopy->landNormal;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kDroppedItemList:
+				{
+					auto toCopy = static_cast<RE::ExtraDroppedItemList*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraDroppedItemList>();
+					data->droppedItemList = toCopy->droppedItemList;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kEditorID:
+				{
+					auto toCopy = static_cast<RE::ExtraEditorID*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraEditorID>();
+					data->editorID = toCopy->editorID;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kEditorRefMoveData:
+				{
+					auto toCopy = static_cast<RE::ExtraEditorRefMoveData*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraEditorRefMoveData>();
+					data->oldLocation = toCopy->oldLocation;
+					data->realAngle = toCopy->realAngle;
+					data->realLocation = toCopy->realLocation;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kEmittanceSource:
+				{
+					auto toCopy = static_cast<RE::ExtraEmittanceSource*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraEmittanceSource>();
+					data->source = toCopy->source;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kFactionChanges:
+				{
+					auto toCopy = static_cast<RE::ExtraFactionChanges*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraFactionChanges>();
+					data->crimeFaction = toCopy->crimeFaction;
+					data->factionChanges = toCopy->factionChanges;
+					data->removeCrimeFaction = toCopy->removeCrimeFaction;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kFavorCost:
+				{
+					auto toCopy = static_cast<RE::ExtraFavorCost*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraFavorCost>();
+					data->cost = toCopy->cost;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kFlags:
+				{
+					auto toCopy = static_cast<RE::ExtraFlags*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraFlags>();
+					data->flags = toCopy->flags;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kFromAlias:
+				{
+					auto toCopy = static_cast<RE::ExtraFromAlias*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraFromAlias>();
+					data->aliasID = toCopy->aliasID;
+					data->quest = toCopy->quest;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kGlobal:
+				{
+					auto toCopy = static_cast<RE::ExtraGlobal*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraGlobal>();
+					data->global = toCopy->global;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kGroupConstraint:
+				{
+					auto toCopy = static_cast<RE::ExtraGroupConstraint*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraGroupConstraint>();
+					data->attachNodeNameA = toCopy->attachNodeNameA;
+					data->attachNodeNameB = toCopy->attachNodeNameB;
+					data->constraintOffsetA = toCopy->constraintOffsetA;
+					data->constraintOffsetB = toCopy->constraintOffsetB;
+					data->constraintType = toCopy->constraintType;
+					data->dynamicMassScaleB = toCopy->dynamicMassScaleB;
+					data->entityB = toCopy->entityB;
+					data->originalCollisionGroupB = toCopy->originalCollisionGroupB;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kGuardedRefData:
+				{
+					auto toCopy = static_cast<RE::ExtraGuardedRefData*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraGuardedRefData>();
+					data->guards = toCopy->guards;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kHealthPerc:
+				{
+					auto toCopy = static_cast<RE::ExtraHealthPerc*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraHealthPerc>();
+					data->unk10 = toCopy->unk10;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kHorse:
+				{
+					auto toCopy = static_cast<RE::ExtraHorse*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraHorse>();
+					data->horseRef = toCopy->horseRef;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kIgnoredBySandbox:
+				{
+					auto toCopy = static_cast<RE::ExtraIgnoredBySandbox*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraIgnoredBySandbox>();
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kInteraction:
+				{
+					auto toCopy = static_cast<RE::ExtraInteraction*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraInteraction>();
+					data->interaction = toCopy->interaction;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kItemDropper:
+				{
+					auto toCopy = static_cast<RE::ExtraItemDropper*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraItemDropper>();
+					data->dropper = toCopy->dropper;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLeveledItem:
+				{
+					auto toCopy = static_cast<RE::ExtraLeveledItem*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLeveledItem>();
+					data->levItem = toCopy->levItem;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLeveledItemBase:
+				{
+					auto toCopy = static_cast<RE::ExtraLeveledItemBase*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLeveledItemBase>();
+					data->levItem = toCopy->levItem;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLight:
+				{
+					auto toCopy = static_cast<RE::ExtraLight*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLight>();
+					data->lightData = toCopy->lightData;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLinkedRefChildren:
+				{
+					auto toCopy = static_cast<RE::ExtraLinkedRefChildren*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLinkedRefChildren>();
+					data->linkedChildren = toCopy->linkedChildren;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLocation:
+				{
+					auto toCopy = static_cast<RE::ExtraLocation*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLocation>();
+					data->location = toCopy->location;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLocationRefType:
+				{
+					auto toCopy = static_cast<RE::ExtraLocationRefType*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLocationRefType>();
+					data->locRefType = toCopy->locRefType;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLock:
+				{
+					auto toCopy = static_cast<RE::ExtraLock*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLock>();
+					data->lock = toCopy->lock;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kLockList:
+				{
+					auto toCopy = static_cast<RE::ExtraLockList*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraLockList>();
+					data->list = toCopy->list;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMagicCaster:
+				{
+					auto toCopy = static_cast<RE::ExtraMagicCaster*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMagicCaster>();
+					data->castingTimer = toCopy->castingTimer;
+					data->currentSpell = toCopy->currentSpell;
+					data->currentSpellCost = toCopy->currentSpellCost;
+					data->desiredTarget = toCopy->desiredTarget;
+					data->magnitudeOverride = toCopy->magnitudeOverride;
+					data->nextTargetUpdate = toCopy->nextTargetUpdate;
+					data->projectileTimer = toCopy->projectileTimer;
+					data->sounds = toCopy->sounds;
+					data->state = toCopy->state;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMagicLight:
+				{
+					auto toCopy = static_cast<RE::ExtraMagicLight*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMagicLight>();
+					data->lightData = toCopy->lightData;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMapMarker:
+				{
+					auto toCopy = static_cast<RE::ExtraMapMarker*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMapMarker>();
+					data->mapData = toCopy->mapData;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMissingLinkedRefIDs:
+				{
+					auto toCopy = static_cast<RE::ExtraMissingLinkedRefIDs*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMissingLinkedRefIDs>();
+					data->entries = toCopy->entries;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMissingRefIDs:
+				{
+					auto toCopy = static_cast<RE::ExtraMissingRefIDs*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMissingRefIDs>();
+					data->IDs = toCopy->IDs;
+					data->numIDs = toCopy->numIDs;
+					data->unk1C = toCopy->unk1C;
+					data->unk20 = toCopy->unk20;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kModelSwap:
+				{
+					auto toCopy = static_cast<RE::ExtraModelSwap*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraModelSwap>();
+					data->modelSwap = toCopy->modelSwap;
+					data->modelSwapForm = toCopy->modelSwapForm;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMultiBound:
+				{
+					auto toCopy = static_cast<RE::ExtraMultiBound*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMultiBound>();
+					data->bound = toCopy->bound;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMultiBoundMarkerData:
+				{
+					auto toCopy = static_cast<RE::MultiBoundMarkerData*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::MultiBoundMarkerData>();
+					data->halfExtents = toCopy->halfExtents;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kMultiBoundRef:
+				{
+					auto toCopy = static_cast<RE::ExtraMultiBoundRef*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraMultiBoundRef>();
+					data->boundRef = toCopy->boundRef;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kNonActorMagicTarget:
+				{
+					auto toCopy = static_cast<RE::NonActorMagicTarget*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::NonActorMagicTarget>();
+					data->activeEffects = toCopy->activeEffects;
+					data->flags = toCopy->flags;
+					data->postUpdateDispelList = toCopy->postUpdateDispelList;
+					data->targetObject = toCopy->targetObject;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kObjectHealth:
+				{
+					auto toCopy = static_cast<RE::ExtraObjectHealth*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraObjectHealth>();
+					data->health = toCopy->health;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kOriginalReference:
+				{
+					auto toCopy = static_cast<RE::ExtraOriginalReference*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraOriginalReference>();
+					data->reference = toCopy->reference;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kOutfitItem:
+				{
+					auto toCopy = static_cast<RE::ExtraOutfitItem*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraOutfitItem>();
+					data->id = toCopy->id;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kRadius:
+				{
+					auto toCopy = static_cast<RE::ExtraRadius*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraRadius>();
+					data->radius = toCopy->radius;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kScale:
+				{
+					auto toCopy = static_cast<RE::ExtraScale*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraScale>();
+					data->scale = toCopy->scale;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kTimeLeft:
+				{
+					auto toCopy = static_cast<RE::ExtraTimeLeft*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraTimeLeft>();
+					data->time = toCopy->time;
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kWorn:
+				{
+					auto toCopy = static_cast<RE::ExtraWorn*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraWorn>();
+					list->Add(data);
+
+					break;
+				}
+				case RE::ExtraDataType::kWornLeft:
+				{
+					auto toCopy = static_cast<RE::ExtraWornLeft*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraWornLeft>();
+					list->Add(data);
+
+					break;
+				}
+				default:
+				{
+					SPDLOG_DEBUG("Nothing for type 0x{:X}.", (*iter).GetType());
+					break;
+				}
+				}
+			}
+
+			SPDLOG_DEBUG("After additions: {:p}.", fmt::ptr(list));
+			return list;
 		}
 
 		RE::ThumbstickEvent* CreateThumbstickEvent
@@ -1265,7 +2102,208 @@ namespace ALYSLC
 			// Change collision layer back to 'Biped'.
 			actor3DPtr->SetCollisionLayer(RE::COL_LAYER::kBiped);
 		}
+
+		void EquipObject
+		(
+			RE::Actor* a_actor, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_extraData,
+			uint32_t a_count,
+			const RE::BGSEquipSlot* a_slot, 
+			bool a_queueEquip,
+			bool a_forceEquip, 
+			bool a_playSounds, 
+			bool a_applyNow
+		)
+		{
+			const auto aem = RE::ActorEquipManager::GetSingleton();
+			if (!aem)
+			{
+				return;
+			}
+			
+			// IMPORTANT:
+			// Instantly (un)equip fists.
+			// Essential for ensuring hands are cleared and fists don't (un)equip again 
+			// after the desired forms are equipped.
+			// Without instantaneously forcing this equip on companion players, 
+			// spells can fail to equip after this call.
+			if (a_object == glob.fists || a_object == glob.dummy1H)
+			{
+				aem->EquipObject
+				(
+					a_actor,
+					a_object,
+					a_extraData, 
+					a_count, 
+					a_slot,
+					false, 
+					!a_actor->IsPlayerRef(), 
+					false,
+					true
+				);
+			}
+			else
+			{
+				// IMPORTANT:
+				// Appears flagging the equip as queued causes player hand casters 
+				// to inconsistently cast at targets after equipping a spell in the same hand 
+				// as this item.
+				aem->EquipObject
+				(
+					a_actor,
+					a_object,
+					a_extraData, 
+					a_count, 
+					a_slot,
+					false, 
+					false, 
+					true,
+					true
+				);
+			}
+		}
 	
+		RE::ExtraDataList* FindMatchingExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object, RE::ExtraDataList* a_exDataList
+		)
+		{
+			// Don't feel great about this way of finding 'equivalent' extra data lists
+			// that share the same intrinsic data type makeup and ordering,
+			// but may have different addresses.
+			// It'll have to do.
+			// 
+			// Get the extra data list from within the inventory chest 
+			// that matches the given extra data list.
+			// Return nullptr if there is no match.
+			// The pointers themselves do not have to be equal, 
+			// but all types that are not related to the item's intrinsic properties
+			// should be equivalent. 
+			// Intrinsic here meaning types that are not changed or removed
+			// when moved to another container.
+
+			if (!a_object)
+			{
+				return nullptr;
+			}
+
+			auto invChanges = a_refr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return nullptr;
+			}
+
+			ptrdiff_t compSize = 0;
+			if (a_exDataList)
+			{
+				for (const auto& data : *a_exDataList)
+				{
+					const auto type = data.GetType();
+					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						//SPDLOG_DEBUG("Given item intrinsic type 0x{:X}.", type);
+						compSize++;
+					}
+				}
+			}
+
+			RE::ExtraDataList* matchingList = nullptr;
+			for (auto invEntry : *invChanges->entryList)
+			{
+				if (!invEntry || invEntry->object != a_object || !invEntry->extraLists)
+				{
+					continue;
+				}
+
+				for (auto exDataList : *invEntry->extraLists)
+				{
+					if (!exDataList)
+					{
+						continue;
+					}
+					
+					// Is directly from the refr's inventory, so return it straight away.
+					if (exDataList == a_exDataList)
+					{
+						return a_exDataList;
+					}
+
+					bool isEqual = true;
+					ptrdiff_t otherSize = 0;
+					for (const auto& otherData : *exDataList)
+					{
+						const auto type = otherData.GetType();
+						if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+						{
+							//SPDLOG_DEBUG("Comp item intrinsic type 0x{:X}.", type);
+							otherSize++;
+						}
+					}
+
+					if (otherSize == compSize)
+					{
+						// Equal if both have no intrinsic data types,
+						// so only check for exData equality otherwise.
+						if (compSize != 0)
+						{
+							//SPDLOG_DEBUG("Same size: {}.", otherSize);
+							for (const auto& otherData : *exDataList)
+							{
+								const auto type = otherData.GetType();
+								if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+								{
+									continue;
+								}
+							
+								//SPDLOG_DEBUG("Intrinsic type 0x{:X}.", type);
+								const auto data = a_exDataList->GetByType(type);
+								if (!data || data->IsNotEqual(std::addressof(otherData)))
+								{
+									//SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+									isEqual = false;
+									break;
+								}
+							}
+						}
+					}
+					else
+					{
+						isEqual = false;
+					}
+
+					// First matched list.
+					// Continue iterating just in case the exact given list is found,
+					// since it may exist further down the chain.
+					if (isEqual && !matchingList)
+					{
+						/*SPDLOG_DEBUG
+						(
+							"{}: SUCCEEDED in matching {} list for {:p}: {:p}", 
+							a_refr->GetName(),
+							a_object->GetName(), 
+							fmt::ptr(a_exDataList),
+							fmt::ptr(exDataList)
+						);*/
+						matchingList = exDataList;
+					}
+				}
+
+				// Found the matching bound object in the refr's inventory,
+				// so no need to continue iterating.
+				break;
+			}
+			
+			/*SPDLOG_DEBUG
+			(
+				"{}: FAILED to match {} list for {:p}", 
+				a_refr->GetName(),
+				a_object->GetName(), 
+				fmt::ptr(a_exDataList)
+			);*/
+			return matchingList;
+		}
+
 		void ForEachReferenceInCellWithinRange
 		(
 			RE::TESObjectCELL* a_cell,
@@ -2130,6 +3168,137 @@ namespace ALYSLC
 			return collisionLayer;
 		}
 
+		RE::TESObjectREFR::Count GetCountForInventoryItem
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_exDataList
+		)
+		{
+			// Return the count of the given item with the given extra data 
+			// that is present in the given refr's inventory.
+			// Intrinsic data types must match if the list pointers themselves do not match.
+			// Intrinsic here meaning types that are not changed or removed
+			// when moved to another container.
+
+			if (!a_refr || !a_object)
+			{
+				return 0;
+			}
+
+			auto inv = a_refr->GetInventory();
+			const auto iter = inv.find(a_object);
+			auto numberOwned = 
+			(
+				iter != inv.end() ? 
+				iter->second.first : 
+				0
+			);
+			if (numberOwned == 0)
+			{
+				return 0;
+			}
+
+			if (a_exDataList && iter->second.second && iter->second.second->extraLists) 
+			{
+				// Calculate the count based on the number of lists and their own extra counts.
+				// Only increment the count if the extra lists have the same exact extra data.
+				// For some reason, there can be multiple extra data lists with the same extra data
+				// for the same item, instead of having one list with extra count data 
+				// that accounts for copies of the same item.
+				// Makes it more difficult to determine how many of a specific item 
+				// there is in the player's inventory.
+				// What a mess.
+
+				// Ignore 'worn' data in either lists since we do not want to account 
+				// for equip state when determining equality.
+				ptrdiff_t compSize = 0;
+				numberOwned = 0;
+				for (const auto& data : *a_exDataList)
+				{
+					const auto type = data.GetType();
+					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						compSize++;
+					}
+				}
+
+				// No special intrinsic data types,
+				// so use the inventory entry count delta for the count.
+				if (compSize == 0)
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: {} ({:p}) has no defining extra data types. "
+						"Using inventory entry data count delta of {}.",
+						a_refr->GetName(),
+						a_object->GetName(), 
+						fmt::ptr(a_exDataList),
+						max(0, iter->second.second->countDelta) 
+					);
+					return max(0, iter->second.second->countDelta);
+				}
+
+				for (auto list : *iter->second.second->extraLists)
+				{
+					if (!list)
+					{
+						continue;
+					}
+					
+					bool isEqual = true;
+					ptrdiff_t otherSize = 0;
+					for (const auto& otherData : *list)
+					{
+						const auto type = otherData.GetType();
+						if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+						{
+							otherSize++;
+						}
+					}
+					
+					if (otherSize == compSize)
+					{
+						for (const auto& otherData : *list)
+						{
+							const auto type = otherData.GetType();
+							if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+							{
+								continue;
+							}
+
+							const auto data = a_exDataList->GetByType(type);
+							if (!data || data->IsNotEqual(std::addressof(otherData)))
+							{
+								isEqual = false;
+								break;
+							}
+						}
+					}
+					else
+					{
+						isEqual = false;
+					}
+
+					if (isEqual)
+					{
+						const auto count = list->GetCount();
+						numberOwned += count > 0 ? count : 0;
+						SPDLOG_DEBUG
+						(
+							"{} of {} in {}. Inv entry count delta: {}.", 
+							numberOwned,
+							a_object->GetName(),
+							a_refr->GetName(),
+							iter->second.second->countDelta
+						);
+					}
+				}
+			}
+
+			return numberOwned;
+		}
+
 		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor)
 		{
 			// Get the detection percent of the requesting actor by the detecting actor 
@@ -2163,41 +3332,17 @@ namespace ALYSLC
 			}
 		}
 
-		RE::ExtraDataList* GetEntryFrontExtraDataList
-		(
-			RE::InventoryEntryData* a_invEntryData
-		)
-		{
-			// Get the front extra data list to use when equipping/favoriting
-			// the item given by the inventory entry.
-
-			if (!a_invEntryData)
-			{
-				return nullptr;
-			}
-
-			if (!a_invEntryData->extraLists ||
-				a_invEntryData->extraLists->empty())
-			{
-				return nullptr;
-			}
-
-			if (a_invEntryData->extraLists->front())
-			{
-				return a_invEntryData->extraLists->front();
-			}
-
-			return nullptr;
-		}
-
 		RE::ExtraDataList* GetEquippedExtraData
 		(
-			RE::Actor* a_actor, RE::TESForm* a_form, bool a_leftHand
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_leftHand
 		)
 		{
-			// Get the extra data for given equipped form on the given actor.
+			// Get the extra data for given equipped form on the given actor
+			// in the given hand.
+			// If the given item uses ExtraWorn instead of ExtraWornLeft and is equipable in the LH,
+			// will return found ExtraWorn data even if the left hand is given as the hand to check.
 
-			if (!a_actor || !a_form)
+			if (!a_refr || !a_form)
 			{
 				return nullptr;
 			}
@@ -2209,65 +3354,62 @@ namespace ALYSLC
 				return nullptr;
 			}
 
-			const auto inventory = a_actor->GetInventory();
-			for (const auto& [boundObj, countInvEntryPair] : inventory)
+			const auto invChanges = a_refr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList || invChanges->entryList->empty())
 			{
-				if (!boundObj || countInvEntryPair.first <= 0)
+				return nullptr;
+			}
+
+
+			auto equipType = a_form->As<RE::BGSEquipType>();
+			auto equipSlot = equipType ? equipType->equipSlot : nullptr;
+			// Two handed weapons and shields can visually occupy the left hand slot,
+			// but have ExtraWorn data, not ExtraWornLeft data, when equipped.
+			bool checkWornLH = 
+			(
+				a_leftHand && 
+				equipSlot && 
+				equipSlot != glob.bothHandsEquipSlot &&
+				equipSlot != glob.shieldEquipSlot
+			);
+			for (auto entry : *invChanges->entryList)
+			{
+				if (!entry)
 				{
 					continue;
 				}
 
-				if (boundObj == asBoundObj)
+				if (entry->object == a_form && entry->extraLists)
 				{
-					if (countInvEntryPair.second)
+					for (const auto list : *entry->extraLists)
 					{
-						if (countInvEntryPair.second->extraLists &&
-							!countInvEntryPair.second->extraLists->empty())
+						if (!list)
 						{
-							for (const auto list : *countInvEntryPair.second->extraLists)
-							{
-								if (!list)
-								{
-									continue;
-								}
-
-								// Only provide an extra data list if the item is marked
-								// as enchanted, tempered, or has a unique ID.
-								if (list->HasType(RE::ExtraDataType::kEnchantment) ||
-									list->HasType(RE::ExtraDataType::kHealth) ||
-									list->HasType(RE::ExtraDataType::kUniqueID))
-								{
-								}
-
-								if ((!a_leftHand && list->HasType(RE::ExtraDataType::kWorn)) ||
-									(a_leftHand && list->HasType(RE::ExtraDataType::kWornLeft)))
-								{
-									SPDLOG_DEBUG
-									(
-										"Inventory item {} is equipped. Left hand: {}. "
-										"Has enchantment ({}), health ({}), or unique ID ({}).",
-										asBoundObj->GetName(),
-										a_leftHand,
-										list->HasType(RE::ExtraDataType::kEnchantment),
-										list->HasType(RE::ExtraDataType::kHealth),
-										list->HasType(RE::ExtraDataType::kUniqueID)
-									);
-									return list;
-								}
-							}
+							continue;
 						}
-						else
+
+						if ((!checkWornLH && list->HasType(RE::ExtraDataType::kWorn)) ||
+							(checkWornLH && list->HasType(RE::ExtraDataType::kWornLeft)))
 						{
-							return nullptr;
+							SPDLOG_DEBUG
+							(
+								"Inventory item {} ({:p}) is equipped. "
+								"Check for ExtraWornLeft: {}. "
+								"Has enchantment ({}), health ({}), or unique ID ({}).",
+								asBoundObj->GetName(),
+								fmt::ptr(list),
+								checkWornLH,
+								list->HasType(RE::ExtraDataType::kEnchantment),
+								list->HasType(RE::ExtraDataType::kHealth),
+								list->HasType(RE::ExtraDataType::kUniqueID)
+							);
+							return list;
 						}
-					}
-					else
-					{
-						return nullptr;
 					}
 				}
 			}
 
+			// Not found.
 			return nullptr;
 		}
 
@@ -2498,13 +3640,13 @@ namespace ALYSLC
 
 		std::pair<RE::TESAmmo*, int32_t> GetHighestCountAmmo
 		(
-			RE::Actor* a_actor, const bool& a_forBows
+			RE::TESObjectREFR* a_refr, const bool& a_forBows
 		)
 		{
-			// Search the actor's inventory and return a pair 
+			// Search the refr's inventory and return a pair 
 			// giving the weapon-matching ammo with the highest count and its count.
 
-			const auto inventoryCounts = a_actor->GetInventoryCounts();
+			const auto inventoryCounts = a_refr->GetInventoryCounts();
 			int32_t highestCount = 0;
 			std::pair<RE::TESAmmo*, int32_t> ammoAndCount{ nullptr, 0 };
 			for (const auto& [boundObj, count] : inventoryCounts) 
@@ -2536,13 +3678,13 @@ namespace ALYSLC
 
 		std::pair<RE::TESAmmo*, int32_t> GetHighestDamageAmmo
 		(
-			RE::Actor* a_actor, const bool& a_forBows
+			RE::TESObjectREFR* a_refr, const bool& a_forBows
 		)
 		{
 			// Search the actor's inventory and return a pair
 			// giving the weapon-matching ammo with the highest base damage and its count.
 
-			const auto inventoryCounts = a_actor->GetInventoryCounts();
+			const auto inventoryCounts = a_refr->GetInventoryCounts();
 			float highestDamage = 0.0f;
 			std::pair<RE::TESAmmo*, int32_t> ammoAndCount{ nullptr, 0 };
 			for (const auto& [boundObj, count] : inventoryCounts)
@@ -2572,113 +3714,120 @@ namespace ALYSLC
 			return ammoAndCount;
 		}
 
-		int32_t GetHotkeyForForm(RE::Actor* a_playerActor, RE::TESForm* a_form)
+		RE::ExtraHotkey* GetHotkeyExData
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object, RE::ExtraDataList* a_exDataList
+		)
 		{
-			// Check if the given form is hotkeyed for the given player and return its slot index.
-			// -1 if not hotkeyed, [0, 7] otherwise.
-			// NOTE:
-			// Should be called after importing any magic hotkeys for companion players.
+			// Check if the given extra data list has ExtraHotkey extra data
+			// and return the data if so.
+			// If no extra data list is specified, the extra data lists for the given bound object
+			// are searched for the first extra hotkey data type.
+			// Nullptr if not hotkeyed.
 
-			if (!a_playerActor || !a_form)
+			if (!a_refr)
 			{
-				return -1;
+				return nullptr;
 			}
 
-			if (a_form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			if (a_exDataList)
 			{
-				// If in control of the FavoritesMenu, check P1's current magic favorites,
-				// which will account for realtime hotkey changes made in the menu.
-				// Since the serialized hotkeyed forms list is only updated when the menu closes,
-				// we'll only fall back to it when not in the FavoritesMenu.
-				auto ui = RE::UI::GetSingleton();
-				bool controllingFavoritesMenu = 
-				(
-					(ui && ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME)) && 
-					(
-						(
-							(a_playerActor->IsPlayerRef()) && 
-							(glob.menuPID == 0 || glob.menuPID == -1)
-						) ||
-						(
-							glob.menuPID != -1 && 
-							GlobalCoopData::GetCoopPlayerIndex(a_playerActor) == glob.menuPID
-						)
-					)
-				);
-				if (controllingFavoritesMenu)
-				{
-					auto magicFavorites = RE::MagicFavorites::GetSingleton();
-					if (!magicFavorites)
-					{
-						return -1;
-					}
-
-					for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
-					{
-						if (magicFavorites->hotkeys[i] == a_form)
-						{
-							return i;
-						}
-					}
-				}
-				else if (glob.globalDataInit)
-				{
-					const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
-					if (iter != glob.serializablePlayerData.end())
-					{
-						const auto& data = iter->second;
-						for (auto i = 0; i < data->hotkeyedForms.size(); ++i)
-						{
-							auto savedHotkeyedForm = data->hotkeyedForms[i];
-							if (savedHotkeyedForm == a_form)
-							{
-								return i;
-							}
-						}
-					}
-				}
+				return a_exDataList->GetByType<RE::ExtraHotkey>();
 			}
-			else
+			else if (a_object)
 			{
-				auto inventory = a_playerActor->GetInventory();
-				RE::InventoryEntryData* entryData = nullptr;
+				auto inventory = a_refr->GetInventory();
 				// Iterate through the actor's inventory entries.
-				for (const auto& inventoryEntry : inventory)
+				for (const auto& [boundObj, countInvEntryPair] : inventory)
 				{
-					if (!inventoryEntry.first || inventoryEntry.first != a_form)
+					if (!boundObj || boundObj != a_object)
 					{
 						continue;
 					}
 
-					// Found the form.
-					const auto& entryExtraLists = inventoryEntry.second.second;
-					if (!entryExtraLists)
+					// Not in the inventory or no extra data so can't be hotkeyed.
+					if (countInvEntryPair.first <= 0 || !countInvEntryPair.second->extraLists)
 					{
-						continue;
+						return nullptr;
 					}
 
-					auto extraLists = entryExtraLists->extraLists;
-					if (!extraLists)
+					for (auto exDataList : *countInvEntryPair.second->extraLists)
 					{
-						continue;
-					}
-
-					for (auto exData : *extraLists)
-					{
-						if (!exData)
+						if (!exDataList)
 						{
 							continue;
 						}
 
-						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
+						auto exHotkeyData = exDataList->GetByType<RE::ExtraHotkey>();
 						if (!exHotkeyData)
 						{
 							continue;
 						}
 
-						// Is favorited since the hotkey extra data exists,
-						// so we can now grab the hotkey index.
-						return (int8_t)(*exHotkeyData->hotkey);
+						// Is favorited since the hotkey extra data exists.
+						return exHotkeyData;
+					}
+				}
+			}
+
+			return nullptr;
+		}
+
+		int8_t GetHotkeyForMagic(RE::Actor* a_actor, RE::TESForm* a_magForm)
+		{
+			if (a_magForm->IsNot(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				return -1;
+			}
+
+			// If in control of the FavoritesMenu, check P1's current magic favorites,
+			// which will account for realtime hotkey changes made in the menu.
+			// Since the serialized hotkeyed forms list is only updated when the menu closes,
+			// we'll only fall back to it when not in the FavoritesMenu.
+			auto ui = RE::UI::GetSingleton();
+			bool controllingFavoritesMenu = 
+			(
+				(ui && ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME)) && 
+				(
+					(
+						(a_actor->IsPlayerRef()) && 
+						(glob.menuPID == 0 || glob.menuPID == -1)
+					) ||
+					(
+						glob.menuPID != -1 && 
+						GlobalCoopData::GetCoopPlayerIndex(a_actor) == glob.menuPID
+					)
+				)
+			);
+			if (controllingFavoritesMenu)
+			{
+				auto magicFavorites = RE::MagicFavorites::GetSingleton();
+				if (!magicFavorites)
+				{
+					return -1;
+				}
+
+				for (auto i = 0; i < magicFavorites->hotkeys.size(); ++i)
+				{
+					if (magicFavorites->hotkeys[i] == a_magForm)
+					{
+						return i;
+					}
+				}
+			}
+			else if (glob.globalDataInit)
+			{
+				const auto iter = glob.serializablePlayerData.find(a_actor->formID);
+				if (iter != glob.serializablePlayerData.end())
+				{
+					const auto& data = iter->second;
+					for (auto i = 0; i < data->hotkeyedForms.size(); ++i)
+					{
+						auto savedHotkeyedForm = data->hotkeyedForms[i];
+						if (savedHotkeyedForm == a_magForm)
+						{
+							return i;
+						}
 					}
 				}
 			}
@@ -3045,80 +4194,6 @@ namespace ALYSLC
 			return targetTorsoPos;
 		}
 
-		uint32_t GetUniqueID(RE::ExtraDataList* a_list)
-		{
-			// Get the unique ID (0 if none) from the given extra data list.
-
-			if (!a_list)
-			{
-				return 0;
-			}
-
-			if (auto type = a_list->GetByType<RE::ExtraUniqueID>(); type)
-			{
-				return type->uniqueID;
-			}
-
-			return 0;
-		}
-
-		RE::ExtraDataList* GetUniqueIDExtraDataList
-		(
-			RE::Actor* a_actor, RE::TESBoundObject* a_item, uint32_t a_id
-		)
-		{
-			// Get the actor inventory extra data list that contains the given unique ID.
-			// Nullptr if not found or if the unique ID is 0.
-
-			if (!a_actor || !a_item || a_id == 0)
-			{
-				return nullptr;
-			}
-
-			const auto inventory = a_actor->GetInventory();
-			const auto iter = inventory.find(a_item);
-			if (iter == inventory.end())
-			{
-				return nullptr;
-			}
-
-			if (!iter->second.second)
-			{
-				return nullptr;
-			}
-
-			const auto& invEntryData = iter->second.second;
-			if (!invEntryData->extraLists)
-			{
-				return nullptr;
-			}
-
-			for (const auto exDataList : *invEntryData->extraLists)
-			{
-				if (!exDataList)
-				{
-					continue;
-				}
-
-				auto uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
-				if (!uniqueIDType)
-				{
-					continue;
-				}
-
-				if (uniqueIDType->uniqueID == a_id)
-				{
-					SPDLOG_DEBUG("{}: Found unique ID exData with ID {} on item {}.",
-						a_actor->GetName(), a_id, a_item->GetName());
-					return exDataList;
-				}
-			}
-
-			SPDLOG_DEBUG("{}: Could not find unique ID exData for {}.",
-				a_actor->GetName(), a_item->GetName());
-			return nullptr;
-		}
-
 		std::pair<float, float> GetVertCollPoints(const RE::NiPoint3& a_point)
 		{
 			// Get the raycast hit Z coordinates above and below the given points.
@@ -3345,6 +4420,55 @@ namespace ALYSLC
 					}
 				}
 			}
+		}
+
+		bool HasExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, RE::ExtraDataList* a_exDataList
+		)
+		{
+			// Return true if the refr has the given form 
+			// with the given extra data list in their inventory.
+
+			if (!a_refr || !a_form)
+			{
+				return false;
+			}
+
+			auto inventory = a_refr->GetInventory();
+			for (const auto& [boundObj, countInvEntryDataPair] : inventory)
+			{
+				if (!boundObj || 
+					boundObj != a_form ||
+					countInvEntryDataPair.first <= 0 ||
+					!countInvEntryDataPair.second)
+				{
+					continue;
+				}
+
+				// If no list is given, treat the request as checking if any extra data list exists.
+				if (!a_exDataList && countInvEntryDataPair.second->extraLists)
+				{
+					return true;
+				}
+
+				if (!countInvEntryDataPair.second->extraLists)
+				{
+					return false;
+				}
+
+				for (const auto exDataList : *countInvEntryDataPair.second->extraLists)
+				{
+					if (exDataList == a_exDataList)
+					{
+						return true;
+					}
+				}
+
+				break;
+			}
+
+			return false;
 		}
 
 		bool HasLOS
@@ -4785,12 +5909,12 @@ namespace ALYSLC
 			return QuaternionToRotationMatrix(QuaternionSlerp(qA, qB, a_ratio));
 		}
 
-		bool IsFavorited(RE::Actor* a_actor, RE::TESForm* a_form)
+		bool IsFavorited(RE::TESObjectREFR* a_refr, RE::TESForm* a_form)
 		{
 			// Check if the form is favorited by the actor.
 			// Return true if favorited, false if not.
 
-			if (!a_actor || !a_form)
+			if (!a_refr || !a_form)
 			{
 				return false;
 			}
@@ -4813,7 +5937,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				auto inventory = a_actor->GetInventory();
+				auto inventory = a_refr->GetInventory();
 				// Iterate through the actor's inventory entries.
 				for (auto& inventoryEntry : inventory)
 				{
@@ -4851,11 +5975,14 @@ namespace ALYSLC
 			return false;
 		}
 		
-		bool IsHotkeyed(RE::Actor* a_actor, RE::TESForm* a_form)
+		bool IsHotkeyed
+		(
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, RE::ExtraDataList* a_extraDataList
+		)
 		{
 			// Check if the given form is hotkeyed for the given player.
 
-			if (!a_actor || !a_form)
+			if (!a_refr || !a_form)
 			{
 				return false;
 			}
@@ -4878,7 +6005,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				auto inventory = a_actor->GetInventory();
+				auto inventory = a_refr->GetInventory();
 				// Iterate through the actor's inventory entries.
 				for (auto& inventoryEntry : inventory)
 				{
@@ -4902,18 +6029,30 @@ namespace ALYSLC
 						continue;
 					}
 
-					for (auto& exData : *extraLists)
+					for (auto& exDataList : *extraLists)
 					{
-						if (!exData)
+						if (!exDataList)
+						{
+							continue;
+						}
+						
+						if (a_extraDataList && exDataList != a_extraDataList)
 						{
 							continue;
 						}
 
 						// Only consider favorited entries,
 						// since only favorited items can be hotkeyed.
-						auto exHotkeyData = exData->GetByType<RE::ExtraHotkey>();
+						auto exHotkeyData = exDataList->GetByType<RE::ExtraHotkey>();
 						if (!exHotkeyData)
 						{
+							// Do not need to continue if the matching list 
+							// does not have hotkey data.
+							if (a_extraDataList)
+							{
+								return false;
+							}
+
 							continue;
 						}
 
@@ -5366,6 +6505,218 @@ namespace ALYSLC
 				ui->IsMenuOpen(GlobalCoopData::LOOT_MENU) || 
 				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
 			);
+		}
+
+		void MoveAllOfItem
+		(
+			RE::TESObjectREFR* a_fromRefr, 
+			RE::TESObjectREFR* a_toRefr,
+			RE::TESBoundObject* a_object, 
+			bool a_skipEquippedItems,
+			RE::BSSimpleList<RE::ExtraDataList*>* a_fromLists,
+			uint32_t a_totalCount
+		)
+		{
+			// Move all items given by one refr's item's list of extra data lists
+			// to the other given refr's inventory.
+			// Account for extra data lists. Can skip transferring equipped items.
+			// Total count should be the total number of the object 
+			// as given by the from refr's inventory counts 
+			// or the originating inventory entry's count delta.
+
+			if (!a_fromRefr || !a_toRefr || !a_object)
+			{
+				return;
+			}
+			
+			bool fromCompanionPlayerInvChest = 
+			(
+				GlobalCoopData::GetCoopPlayerIndexFromChest(a_fromRefr) > 0
+			);
+			bool toCompanionPlayerInvChest = 
+			(
+				GlobalCoopData::GetCoopPlayerIndexFromChest(a_fromRefr) > 0
+			);
+			if (a_fromLists)
+			{
+				int32_t exDataCountHandled = 0;
+				for (auto exDataList : *a_fromLists)
+				{
+					if (!exDataList)
+					{
+						continue;
+					}
+					
+					bool skipMove = false;
+					if (a_skipEquippedItems)
+					{
+						if (fromCompanionPlayerInvChest)
+						{
+							auto exRank = exDataList->GetByType<RE::ExtraRank>(); 
+							// For companion player inventory chests, equipped is indicated
+							// by having the top 4 bytes of the rank set to 0xFF, 0xFF00, or 0xFFFF.
+							if ((exRank) && 
+								(
+									((exRank->rank & 0x00FF0000) == 0x00FF0000) ||
+									((exRank->rank & 0xFF000000) == 0xFF000000) ||
+									((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
+								))
+							{
+								SPDLOG_DEBUG
+								(
+									"Skipping {}'s worn item {} ({:p}).",
+									a_fromRefr->GetName(), a_object->GetName(), fmt::ptr(exDataList)
+								);
+								skipMove = true;
+							}
+						}
+						else
+						{
+							if (exDataList->HasType<RE::ExtraWorn>() ||
+								exDataList->HasType<RE::ExtraWornLeft>())
+							{
+								SPDLOG_DEBUG
+								(
+									"Skipping {}'s worn item {} ({:p}).",
+									a_fromRefr->GetName(), a_object->GetName(), fmt::ptr(exDataList)
+								);
+								skipMove = true;
+							}
+						}
+					}
+
+					auto count = exDataList->GetCount();
+					// Only move if not flagged to skip.
+					if (!skipMove)
+					{
+						SPDLOG_DEBUG
+						(
+							"Moving special x{} {} from {} to {}.", 
+							count,
+							a_object->GetName(),
+							a_fromRefr->GetName(),
+							a_toRefr->GetName()
+						);
+						if (fromCompanionPlayerInvChest)
+						{
+							a_toRefr->AddObjectToContainer
+							(
+								a_object, 
+								Util::CopyExtraDataList(exDataList),
+								count,
+								nullptr
+							);
+						}
+						else if (toCompanionPlayerInvChest)
+						{
+							a_fromRefr->RemoveItem
+							(
+								a_object, 
+								count,
+								RE::ITEM_REMOVE_REASON::kRemove, 
+								exDataList,
+								nullptr
+							);
+						}
+						else
+						{
+							a_fromRefr->RemoveItem
+							(
+								a_object, 
+								count,
+								RE::ITEM_REMOVE_REASON::kRemove, 
+								exDataList,
+								a_toRefr
+							);
+						}
+					}
+
+					exDataCountHandled += count;
+				}
+
+				int32_t unmodifiedToMove = a_totalCount - exDataCountHandled;
+				if (unmodifiedToMove > 0)
+				{
+					SPDLOG_DEBUG("Handled {}, need to move {} more.",
+						exDataCountHandled, unmodifiedToMove);
+					if (fromCompanionPlayerInvChest)
+					{
+						a_toRefr->AddObjectToContainer
+						(
+							a_object, 
+							nullptr,
+							unmodifiedToMove,
+							nullptr
+						);
+					}
+					else if (toCompanionPlayerInvChest)
+					{
+						a_fromRefr->RemoveItem
+						(
+							a_object, 
+							unmodifiedToMove,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							nullptr
+						);
+					}
+					else
+					{
+						a_fromRefr->RemoveItem
+						(
+							a_object, 
+							unmodifiedToMove,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							a_toRefr
+						);
+					}
+
+				}
+			}
+			else if (a_totalCount != 0)
+			{
+				SPDLOG_DEBUG
+				(
+					"Moving x{} {} from {} to {}.", 
+					a_totalCount,
+					a_object->GetName(),
+					a_fromRefr->GetName(),
+					a_toRefr->GetName()
+				);
+				if (fromCompanionPlayerInvChest)
+				{
+					a_toRefr->AddObjectToContainer
+					(
+						a_object,
+						nullptr,
+						a_totalCount,
+						nullptr
+					);
+				}
+				else if (toCompanionPlayerInvChest)
+				{
+					a_fromRefr->RemoveItem
+					(
+						a_object, 
+						a_totalCount,
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						nullptr,
+						nullptr
+					);
+				}
+				else
+				{
+					a_fromRefr->RemoveItem
+					(
+						a_object, 
+						a_totalCount,
+						RE::ITEM_REMOVE_REASON::kRemove, 
+						nullptr,
+						a_toRefr
+					);
+				}
+			}
 		}
 
 		bool Player1AddPerk(RE::BGSPerk* a_perk, int32_t a_rank)
@@ -6864,208 +8215,6 @@ namespace ALYSLC
 			a_rotMatrix.entry[2][2] = resultMat.entry[2][2];
 		}
 
-		RE::ExtraDataList* SetUniqueIDExtraDataList
-		(
-			RE::Actor* a_actor, 
-			RE::TESBoundObject* a_item,
-			uint32_t& a_uniqueIDOut,
-			RE::ExtraDataList* a_listToChange
-		)
-		{
-			// Add unique ID to the given list, if not nullptr.
-			// Otherwise, add unique ID extra data to the first extra data list for the given item.
-			// Return 0 when failing to find/add a unique ID.
-			// NOTE:
-			// Uhhh, no idea where newly constructed exData(Lists) get free'd,
-			// but the same approach is taken to create and add new exData 
-			// or create a list of ex data lists in the CLib source.
-
-			if (!a_actor || !a_item || a_item->Is(RE::FormType::Spell, RE::FormType::Shout))
-			{
-				a_uniqueIDOut = 0;
-				return a_listToChange;
-			}
-
-			const auto inventory = a_actor->GetInventory();
-			const auto iter = inventory.find(a_item);
-			if (iter == inventory.end())
-			{
-				a_uniqueIDOut = 0;
-				return a_listToChange;
-			}
-
-			if (!iter->second.second)
-			{
-				a_uniqueIDOut = 0;
-				return a_listToChange;
-			}
-
-			const auto& invEntryData = iter->second.second;
-			if (!invEntryData->extraLists)
-			{
-				invEntryData->extraLists = new RE::BSSimpleList<RE::ExtraDataList*>();
-			}
-
-			for (const auto exDataList : *invEntryData->extraLists)
-			{
-				if (!exDataList)
-				{
-					continue;
-				}
-
-				auto uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
-				if (exDataList == a_listToChange)
-				{
-					// Already exists in the specified ex data list, so return the ID.
-					if (uniqueIDType)
-					{
-						SPDLOG_DEBUG
-						(
-							"{}: Unique ID ({}) already exists for list {:p} on item {}.",
-							a_actor->GetName(),
-							uniqueIDType->uniqueID, 
-							fmt::ptr(uniqueIDType),
-							a_item->GetName()
-						);
-						a_uniqueIDOut = uniqueIDType->uniqueID;
-						return a_listToChange;
-					}
-					else
-					{
-						// Add to the specified list.
-						auto invChanges = a_actor->GetInventoryChanges();
-						if (invChanges)
-						{
-							invChanges->SetUniqueID(exDataList, a_item, a_item);
-							uniqueIDType = exDataList->GetByType<RE::ExtraUniqueID>();
-							if (uniqueIDType)
-							{
-								SPDLOG_DEBUG
-								(
-									"{}: Unique ID ({}) added for list {:p} on item {}.",
-									a_actor->GetName(),
-									uniqueIDType->uniqueID, 
-									fmt::ptr(uniqueIDType),
-									a_item->GetName()
-								);
-								a_uniqueIDOut = uniqueIDType->uniqueID;
-								return exDataList;
-							}
-							else
-							{
-								SPDLOG_DEBUG
-								(
-									"{}: Failed to add unique ID for list {:p} on item {}.",
-									a_actor->GetName(),
-									fmt::ptr(uniqueIDType),
-									a_item->GetName()
-								);
-								a_uniqueIDOut = 0;
-								return a_listToChange;
-							}
-						}
-						else
-						{
-							SPDLOG_DEBUG
-							(
-								"{}: Failed to get inventory changes.",
-								a_actor->GetName()
-							);
-							a_uniqueIDOut = 0;
-							return a_listToChange;
-						}
-					}
-					
-				}
-				else if (!a_listToChange && uniqueIDType)
-				{
-					// Already exists and no specific ex data list to check,
-					// so return the already-present ID.
-					SPDLOG_DEBUG
-					(
-						"{}: Unique ID ({}) exists with no exDataList specified for {}.",
-						a_actor->GetName(),
-						uniqueIDType->uniqueID,
-						a_item->GetName()
-					);
-					a_uniqueIDOut = uniqueIDType->uniqueID;
-					return exDataList;
-				}
-			}
-
-			// Failed to add to the specified list, so return 0.
-			if (a_listToChange)
-			{
-				a_uniqueIDOut = 0;
-				return a_listToChange;
-			}
-
-			// Create new extra data list if it is empty.
-			if (invEntryData->extraLists->empty())
-			{
-				// Add to front of first list if no list was specified.
-				SPDLOG_DEBUG
-				(
-					"{}: Adding front exDataList for {}.",
-					a_actor->GetName(), a_item->GetName()
-				);
-				RE::ExtraDataList* list = RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList));
-				if (!list)
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Failed to add create new front exDataList for {}.",
-						a_actor->GetName(), a_item->GetName()
-					);
-					a_uniqueIDOut = 0;
-					return a_listToChange;
-				}
-
-				invEntryData->AddExtraList(list);
-			}
-
-			if (const auto frontDataList = invEntryData->extraLists->front(); frontDataList)
-			{
-				auto invChanges = a_actor->GetInventoryChanges();
-				if (!invChanges)
-				{
-					a_uniqueIDOut = 0;
-					return a_listToChange;
-				}
-
-				invChanges->SetUniqueID(frontDataList, a_item, a_item);
-				auto uniqueIDType = frontDataList->GetByType<RE::ExtraUniqueID>();
-				if (uniqueIDType)
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Added unique ID {} to front exDataList for {}.",
-						a_actor->GetName(), uniqueIDType->uniqueID, a_item->GetName()
-					);
-					a_uniqueIDOut = uniqueIDType->uniqueID;
-					return frontDataList;
-				}
-				else
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Failed to add unique ID for {} to front exDataList.",
-						a_actor->GetName(), a_item->GetName()
-					);
-					a_uniqueIDOut = 0;
-					return nullptr;
-				}
-			}
-			
-			SPDLOG_DEBUG
-			(
-				"{}: Failed to add unique ID for {} to any exDataList.",
-				a_actor->GetName(), a_item->GetName()
-			);
-			a_uniqueIDOut = 0;
-			return nullptr;
-		}
-
 		bool ShouldCastWithP1(RE::SpellItem* a_spell)
 		{
 			// Return true if the spell should be cast by one of P1's magic casters.
@@ -7120,6 +8269,99 @@ namespace ALYSLC
 			}
 
 			return false;
+		}
+
+		void ShowItemStackInTrueHUDRecentLootWidget
+		(
+			RE::TESBoundObject* a_object,
+			RE::BSSimpleList<RE::ExtraDataList*>* a_fromLists,
+			RE::TESObjectREFR::Count a_totalCount
+		)
+		{
+			// Hacky stack.
+			// Show the all of items given by the bound object and extra data list 
+			// in TrueHUD's recent loot widget.
+			// Done by adding the item and removing it immediately.
+
+			SPDLOG_DEBUG("{}: Total count: {}.",
+				a_object ? a_object->GetName() : "NONE", a_totalCount);
+
+			if (!a_object || a_totalCount <= 0)
+			{
+				return;
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return;
+			}
+
+			if (a_fromLists)
+			{
+				int32_t exDataCountMoved = 0;
+				for (auto exDataList : *a_fromLists)
+				{
+					if (!exDataList)
+					{
+						continue;
+					}
+									
+					auto count = exDataList->GetCount();
+					SPDLOG_DEBUG("{}: ExtraDataList Count: {}.", 
+						a_object ? a_object->GetName() : "NONE", a_totalCount);
+					if (count <= 0)
+					{
+						continue;
+					}
+
+					p1->AddObjectToContainer
+					(
+						a_object, exDataList, count, nullptr
+					);
+					p1->RemoveItem
+					(
+						a_object,
+						count, 
+						RE::ITEM_REMOVE_REASON::kRemove,
+						exDataList, 
+						nullptr
+					);
+					exDataCountMoved += count;
+				}
+
+				int32_t unmodifiedToMove = a_totalCount - exDataCountMoved;
+				if (unmodifiedToMove > 0)
+				{
+					p1->AddObjectToContainer
+					(
+						a_object, nullptr, unmodifiedToMove, nullptr
+					);
+					p1->RemoveItem
+					(
+						a_object,
+						unmodifiedToMove, 
+						RE::ITEM_REMOVE_REASON::kRemove,
+						nullptr, 
+						nullptr
+					);
+				}
+			}
+			else if (a_totalCount != 0)
+			{
+				p1->AddObjectToContainer
+				(
+					a_object, nullptr, a_totalCount, nullptr
+				);
+				p1->RemoveItem
+				(
+					a_object,
+					a_totalCount, 
+					RE::ITEM_REMOVE_REASON::kRemove,
+					nullptr, 
+					nullptr
+				);
+			}
 		}
 
 		bool SpellCanGrantXPOnCast
@@ -7506,6 +8748,85 @@ namespace ALYSLC
 				}
 			}
 			processLists->magicEffectsLock.Unlock();
+		}
+
+		void StopCombatOnPlayerAndAllies()
+		{
+			// Stop combat for all players, player allies, 
+			// and aggro'd high process enemies targeting a player or an ally.
+
+			auto procLists = RE::ProcessLists::GetSingleton();
+			if (procLists)
+			{
+				// Players.
+				for (const auto& playerActor : glob.coopEntityBlacklist)
+				{
+					if (!playerActor)
+					{
+						continue;
+					}
+				
+					procLists->StopCombatAndAlarmOnActor(playerActor.get(), false);
+				}
+
+				for (const auto& actorHandle : procLists->highActorHandles)
+				{
+					const auto& actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+					if (!actorPtr)
+					{
+						continue;
+					}
+
+					// Hostile enemies targeting a player or ally.
+					const auto combatTargetPtr = Util::GetActorPtrFromHandle
+					(
+						actorPtr->currentCombatTarget
+					);
+					if (combatTargetPtr && Util::IsPartyFriendlyActor(combatTargetPtr.get()))
+					{
+						// Remove damaging effects, such as DOTs,
+						// which will trigger combat again the next frame unless removed.
+						if (const auto effectList = actorPtr->GetActiveEffectList(); effectList)
+						{
+							for (auto effect : *effectList)
+							{
+								if (!effect || !effect->IsCausingHealthDamage())
+								{
+									continue;
+								}
+
+								effect->Dispel(true);
+							}
+						}
+
+						procLists->StopCombatAndAlarmOnActor(actorPtr.get(), false);
+						continue;
+					}
+
+					// Skip over hostile enemies not targeting a player or ally.
+					bool isFriendly = Util::IsPartyFriendlyActor(actorPtr.get());
+					if (!isFriendly)
+					{
+						continue;
+					}
+
+					// Remove damaging effects on player ally.
+					if (const auto effectList = actorPtr->GetActiveEffectList(); effectList)
+					{
+						for (auto effect : *effectList)
+						{
+							if (!effect || !effect->IsCausingHealthDamage())
+							{
+								continue;
+							}
+						
+							effect->Dispel(true);
+						}
+					}
+
+					procLists->StopCombatAndAlarmOnActor(actorPtr.get(), false);
+				}
+			}
 		}
 
 		void StopEffectShader
@@ -7994,6 +9315,70 @@ namespace ALYSLC
 			}
 
 			return false;
+		}
+
+		void UnequipObject
+		(
+			RE::Actor* a_actor, 
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_extraData, 
+			uint32_t a_count, 
+			const RE::BGSEquipSlot* a_slot,
+			bool a_queueEquip, 
+			bool a_forceEquip, 
+			bool a_playSounds, 
+			bool a_applyNow, 
+			const RE::BGSEquipSlot* a_slotToReplace
+		)
+		{
+			const auto aem = RE::ActorEquipManager::GetSingleton();
+			if (!aem)
+			{
+				return;
+			}
+			
+			// IMPORTANT:
+			// Instantly (un)equip fists.
+			// Essential for ensuring hands are cleared and fists don't (un)equip again 
+			// after the desired forms are equipped.
+			// Without instantaneously forcing this unequip on companion players, 
+			// spells can fail to equip after this call.
+			if (a_object == glob.fists || a_object == glob.dummy1H)
+			{
+				aem->UnequipObject
+				(
+					a_actor,
+					a_object,
+					a_extraData, 
+					a_count, 
+					a_slot,
+					false, 
+					!a_actor->IsPlayerRef(), 
+					false,
+					true,
+					a_slotToReplace
+				);
+			}
+			else
+			{
+				// IMPORTANT:
+				// Appears flagging the unequip as queued causes player hand casters 
+				// to inconsistently cast at targets after equipping a spell in the same hand 
+				// as this item.
+				aem->UnequipObject
+				(
+					a_actor,
+					a_object,
+					a_extraData, 
+					a_count, 
+					a_slot,
+					false, 
+					false, 
+					true,
+					true,
+					a_slotToReplace
+				);
+			}
 		}
 
 		void UpdateCombatTargets

@@ -177,7 +177,7 @@ namespace ALYSLC
 					deviceID
 				).data()
 			);
-			GlobalCoopData::TeardownCoopSession(true);
+			GlobalCoopData::TearDownCoopSession(true);
 
 			// Must re-assign P1 device ID upon re-summoning.
 			glob.player1DID = -1;
@@ -420,7 +420,7 @@ namespace ALYSLC
 		// Re-equip hand forms if invalid earlier and not P1.
 		if ((!isPlayer1) && (selfWasInvalid || !selfValid))
 		{
-			em->EquipFists();
+			em->ReEquipHandForms();
 			selfWasInvalid = false;
 		}
 
@@ -436,7 +436,14 @@ namespace ALYSLC
 		// Device ID, player actor, and package form start index 
 		// are already set through the constructor or UpdateCoopPlayer function at this point.
 
-		SPDLOG_DEBUG("Init player with device/player IDs: {}, {}.", deviceID, playerID);
+		SPDLOG_DEBUG
+		(
+			"Init player with device/player IDs: {}, {}. {}: FID: 0x{:X}.", 
+			deviceID,
+			playerID, 
+			isActive ? "ACTIVE" : "INACTIVE", 
+			coopActor ? coopActor->formID : 0x0
+		);
 
 		// Active if the player has an assigned device ID.
 		isActive = playerID != -1;
@@ -691,8 +698,8 @@ namespace ALYSLC
 		onCoopEndReg.SendEvent(coopActor.get(), playerID);
 		SPDLOG_DEBUG
 		(
-			"Handled dismissal of {}. Script is now completing cleanup.", 
-			coopActor->GetName()
+			"Handled dismissal of {} (0x{:X}). Script is now completing cleanup.", 
+			coopActor->GetName(), coopActor->formID
 		);
 	}
 
@@ -850,7 +857,12 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		auto lhForm = em->desiredForms[!EquipIndex::kLeftHand];
+		auto rhForm = em->desiredForms[!EquipIndex::kRightHand];
+		auto equipSlot = glob.eitherHandEquipSlot;
+		auto lhEquipType = lhForm ? lhForm->As<RE::BGSEquipType>() : nullptr;
+		auto rhEquipType = rhForm ? rhForm->As<RE::BGSEquipType>() : nullptr;
 		if (coopActor->IsOnMount())
 		{
 			// Activate to dismount for P1.
@@ -973,7 +985,7 @@ namespace ALYSLC
 			SPDLOG_DEBUG("No active effects list after resurrection.");
 		}
 				
-		auto instantCaster = coopActor->GetMagicCaster
+		/*auto instantCaster = coopActor->GetMagicCaster
 		(
 			RE::MagicSystem::CastingSource::kInstant
 		);
@@ -995,7 +1007,7 @@ namespace ALYSLC
 					spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
 				);
 			}
-		}
+		}*/
 
 		effectList = coopActor->GetActiveEffectList();
 		if (effectList)
@@ -1172,6 +1184,7 @@ namespace ALYSLC
 
 		// Re-equip hand forms.
 		em->ReEquipHandForms();
+		pam->ReadyWeapon(true);
 		// Reset 'ghost' flag used for I-frames.
 		if (auto actorBase = coopActor->GetActorBase(); actorBase)
 		{
@@ -1557,7 +1570,8 @@ namespace ALYSLC
 			// The transformation reversion will remove at least half of the player's health,
 			// so ensure their health is full before transforming back to prevent the player
 			// from instantly dying/entering a downed state.
-			pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
+			SPDLOG_DEBUG("{}: Restore health.", coopActor->GetName());
+			Util::RestoreAVToMaxValue(coopActor.get(), RE::ActorValue::kHealth);
 			return true;
 		}
 	
@@ -2134,7 +2148,7 @@ namespace ALYSLC
 					);
 					
 					// Invulnerable while getting up after revive.
-					GlobalCoopData::ToggleGodModeForPlayer(playerID, true);
+					GlobalCoopData::ToggleGodModeForPlayer(playerID, true, false);
 					// Indicates the player is temporarily invulnerable.
 					Util::StartEffectShader(coopActor.get(), glob.ghostFXShader);
 
@@ -2196,7 +2210,7 @@ namespace ALYSLC
 						isGettingUpAfterRevive = false;
 
 						// Toggle off god mode and remove god mode indicator shader.
-						GlobalCoopData::ToggleGodModeForPlayer(playerID, false);
+						GlobalCoopData::ToggleGodModeForPlayer(playerID, false, false);
 						Util::StopEffectShader(coopActor.get(), glob.ghostFXShader);
 
 						// IMPORTANT:
@@ -2245,7 +2259,7 @@ namespace ALYSLC
 				// Party was wiped. RIP.
 				glob.partyWiped = true;
 				// End co-op session.
-				GlobalCoopData::TeardownCoopSession(true);
+				GlobalCoopData::TearDownCoopSession(true);
 			}
 		}
 		else
@@ -2710,22 +2724,89 @@ namespace ALYSLC
 		// Acts as a catch-all debug option for whatever bugginess 
 		// my bad code may inflict on this player.
 		// Godspeed, my friend!
-
+		
+		em->skipEquipProcessing = true;
 		bool wasTransformed = isTransforming || isTransformed;
 		// Ensure the player maintains their original health.
 		float healthBefore = coopActor->GetActorValue(RE::ActorValue::kHealth);
+		float magickaBefore = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+		float staminaBefore = coopActor->GetActorValue(RE::ActorValue::kStamina);
+		std::array<std::array<float, 3>, 3> hmsModsBefore{ };
+		hmsModsBefore[0] = 
+		{
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+			)
+		};
+		hmsModsBefore[1] = 
+		{
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+			)
+		};
+		hmsModsBefore[2] = 
+		{
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+			),
+			coopActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+			)
+		};
 		// Save desired equip forms to re-equip later.
-		auto savedLHForm = em->desiredEquippedForms[!EquipIndex::kLeftHand];
-		auto savedRHForm = em->desiredEquippedForms[!EquipIndex::kRightHand];
-		auto savedLHUniqueID = em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand];
-		auto savedRHUniqueID = em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand];
+		auto savedLHForm = em->desiredForms[!EquipIndex::kLeftHand];
+		auto savedRHForm = em->desiredForms[!EquipIndex::kRightHand];
+		auto savedLHExtraDataList = Util::GetWornRankExtraDataList
+		(
+			em->inventoryChest.get(),
+			savedLHForm ? savedLHForm->As<RE::TESBoundObject>() : nullptr,
+			true
+		);
+		auto savedRHExtraDataList = Util::GetWornRankExtraDataList
+		(
+			em->inventoryChest.get(),
+			savedRHForm ? savedRHForm->As<RE::TESBoundObject>() : nullptr,
+			false
+		);
 		// Make sure the player is not moving during the reset.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), true);
 
 		std::this_thread::sleep_for(0.1s);
 		Util::AddSyncedTask
 		(
-			[this, a_unequipAll, wasTransformed]() 
+			[
+				this, 
+				a_unequipAll, 
+				wasTransformed, 
+				&hmsModsBefore, 
+				&healthBefore,
+				&magickaBefore, 
+				&staminaBefore
+			]() 
 			{
 				// Reset to default package first.
 				pam->SetAndEveluatePackage();
@@ -2796,8 +2877,97 @@ namespace ALYSLC
 				}
 				
 				// Resetting 3D can cause crashes.
-				coopActor->Resurrect(false, false);
+				// ReEquipAll() call down below will double apply the gear HMS bonuses
+				// because ResetInventory() on its own does not clear out gear enchantments.
+				// Resetting here with Resurrect does, though, preventing double applicatoin.
+
+				SPDLOG_DEBUG
+				(
+					"Vals before: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
+					hmsModsBefore[0][0],
+					hmsModsBefore[0][1],
+					hmsModsBefore[0][2],
+					hmsModsBefore[1][0],
+					hmsModsBefore[1][1],
+					hmsModsBefore[1][2],
+					hmsModsBefore[2][0],
+					hmsModsBefore[2][1],
+					hmsModsBefore[2][2],
+					healthBefore,
+					magickaBefore,
+					staminaBefore
+				);
+
+				// BUG (?):
+				// Resurrect does health damage when certain objects are equipped? Why?
+				// Seems to always deduct 30 HP if The Gauldur Amulet was equipped.
+				coopActor->Resurrect(true, false);
 				coopActor->CastPermanentMagic(true, true, true, true);
+				
+				std::array<std::array<float, 3>, 3> hmsModsAfter{ };
+				hmsModsAfter[0] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				};
+				hmsModsAfter[1] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+					)
+				};
+				hmsModsAfter[2] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+					)
+				};
+				
+				SPDLOG_DEBUG
+				(
+					"Vals after: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
+					hmsModsAfter[0][0],
+					hmsModsAfter[0][1],
+					hmsModsAfter[0][2],
+					hmsModsAfter[1][0],
+					hmsModsAfter[1][1],
+					hmsModsAfter[1][2],
+					hmsModsAfter[2][0],
+					hmsModsAfter[2][1],
+					hmsModsAfter[2][2],
+					coopActor->GetActorValue(RE::ActorValue::kHealth),
+					coopActor->GetActorValue(RE::ActorValue::kMagicka),
+					coopActor->GetActorValue(RE::ActorValue::kStamina)
+				);
+
 				
 				// REMOVE if unnecessary.
 				/*auto instantCaster = coopActor->GetMagicCaster
@@ -2823,38 +2993,6 @@ namespace ALYSLC
 						);
 					}
 				}*/
-
-				effectList = coopActor->GetActiveEffectList();
-				if (effectList)
-				{
-					for (const auto effect : *effectList)
-					{
-						if (!effect)
-						{
-							continue;
-						}
-						
-						// REMOVE when done debugging.
-						SPDLOG_DEBUG
-						(
-							"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
-							"elapsed time: {}, duration: {}.",
-							fmt::ptr(effectList),
-							coopActor->GetName(),
-							effect->effect && effect->effect->baseEffect ? 
-							effect->effect->baseEffect->GetName() :
-							"NONE",
-							effect->effect && effect->effect->baseEffect ?
-							effect->effect->baseEffect->formID :
-							0xDEAD,
-							effect->spell ? 
-							effect->spell->GetName() :
-							"NONE",
-							effect->elapsedSeconds,
-							effect->duration
-						);
-					}
-				}
 			}
 		);
 
@@ -2952,37 +3090,264 @@ namespace ALYSLC
 		// Restore previously equipped hand forms.
 		if (!a_unequipAll || wasTransformed)
 		{
-			em->desiredEquippedForms[!EquipIndex::kLeftHand] = savedLHForm;
-			em->desiredEquippedForms[!EquipIndex::kRightHand] = savedRHForm;
-			em->desiredEquippedUniqueIDs[!EquipIndex::kLeftHand] = savedLHUniqueID;
-			em->desiredEquippedUniqueIDs[!EquipIndex::kRightHand] = savedRHUniqueID;
+			em->desiredForms[!EquipIndex::kLeftHand] = savedLHForm;
+			em->desiredForms[!EquipIndex::kRightHand] = savedRHForm;
+			em->desiredExtraDataLists[!EquipIndex::kLeftHand] = savedLHExtraDataList;
+			em->desiredExtraDataLists[!EquipIndex::kRightHand] = savedRHExtraDataList;
 		}
 
-		// Ensure health is set to previous pre-resurrection value.
 		Util::AddSyncedTask
 		(
-			[this, &healthBefore]() 
+			[
+				this,
+				&healthBefore, 
+				&magickaBefore,
+				&staminaBefore,
+				&hmsModsBefore,
+				savedLHForm,
+				savedLHExtraDataList, 
+				savedRHForm, 
+				savedRHExtraDataList
+			]() 
 			{
-				float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
-				if (healthAfter != healthBefore)
-				{
-					// Always a positive delta, so no need to undo damage received mult.
-					pam->ModifyAV
-					(
-						RE::ActorValue::kHealth, healthBefore - healthAfter
-					);
-				}
-
 				// Reset 'ghost' flag used for I-frames.
 				if (auto actorBase = coopActor->GetActorBase(); actorBase)
 				{
 					actorBase->actorData.actorBaseFlags.reset(RE::ACTOR_BASE_DATA::Flag::kIsGhost);
+				}
+
+				// Re-equip everything. Clean inventory slate.
+				em->ReEquipAll(false);
+				
+				// IMPORTANT:
+				// Resetting while on horseback causes horse warp glitch upon resumption.
+				// Re-loads weapon BIPED_OBJECTS, so if the weapon models themselves are missing,
+				// this should fix it.
+				if (!coopActor->IsOnMount())
+				{
+					coopActor->DoReset3D(true);
+				}
+
+				// Refresh equip state when done.
+				em->RefreshEquipState(RefreshSlots::kAll);
+			}
+		);
+		
+		// Ensure health/magicka/stamina is set to previous pre-resurrection value.
+		// Issue is, the bonuses from gear do not kick in for a while 
+		// after everything is re-equipped, so if we restore the original HMS values too early,
+		// the gear bonuses will modify the values and adjust them away from the restored values.
+		// Potential workaround for now:
+		// Wait. Wait some more and hope.
+		std::this_thread::sleep_for(1s);
+		Util::AddSyncedTask
+		(
+			[
+				this,
+				&healthBefore, 
+				&magickaBefore,
+				&staminaBefore,
+				&hmsModsBefore,
+				savedLHForm,
+				savedLHExtraDataList, 
+				savedRHForm, 
+				savedRHExtraDataList
+			]() 
+			{
+				std::array<std::array<float, 3>, 3> hmsModsAfter{ };
+				hmsModsAfter[0] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+					)
+				};
+				hmsModsAfter[1] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+					)
+				};
+				hmsModsAfter[2] = 
+				{
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+					),
+					coopActor->GetActorValueModifier
+					(
+						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+					)
+				};
+
+				/*coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kHealth,
+					hmsModsBefore[0][2] - hmsModsAfter[0][2]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kHealth,
+					hmsModsBefore[0][1] - hmsModsAfter[0][1]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage,
+					RE::ActorValue::kHealth,
+					hmsModsBefore[0][0] - hmsModsAfter[0][0]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kMagicka,
+					hmsModsBefore[1][2] - hmsModsAfter[1][2]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kMagicka,
+					hmsModsBefore[1][1] - hmsModsAfter[1][1]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage,
+					RE::ActorValue::kMagicka,
+					hmsModsBefore[1][0] - hmsModsAfter[1][0]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kTemporary,
+					RE::ActorValue::kStamina,
+					hmsModsBefore[2][2] - hmsModsAfter[2][2]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kPermanent,
+					RE::ActorValue::kStamina,
+					hmsModsBefore[2][1] - hmsModsAfter[2][1]
+				);
+				coopActor->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage,
+					RE::ActorValue::kStamina,
+					hmsModsBefore[2][0] - hmsModsAfter[2][0]
+				);*/
+
+				// Restore the original values when done.
+				const float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
+				if (healthAfter != healthBefore)
+				{
+					SPDLOG_DEBUG("Mod health: {}", healthBefore - healthAfter);
+					// Always a positive delta, so no need to undo damage received mult.
+					pam->ModifyAV
+					(
+						RE::ActorValue::kHealth,
+						healthBefore - healthAfter,
+						healthBefore - healthAfter < 0.0f
+					);
+				}
+
+				const float magickaAfter = coopActor->GetActorValue(RE::ActorValue::kMagicka);
+				if (magickaAfter != magickaBefore)
+				{
+					SPDLOG_DEBUG("Mod magicka: {}", healthBefore - healthAfter);
+					pam->ModifyAV
+					(
+						RE::ActorValue::kMagicka,
+						magickaBefore - magickaAfter,
+						magickaBefore - magickaAfter < 0.0f
+					);
+				}
+
+				const float staminaAfter = coopActor->GetActorValue(RE::ActorValue::kStamina);
+				if (staminaAfter != staminaBefore)
+				{
+					SPDLOG_DEBUG("Mod stamina: {}", healthBefore - healthAfter);
+					pam->ModifyAV
+					(
+						RE::ActorValue::kStamina,
+						staminaBefore - staminaAfter,
+						staminaBefore - staminaAfter < 0.0f
+					);
+				}
+				
+				SPDLOG_DEBUG
+				(
+					"Diffs: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. Values after: {}, {}, {}",
+					hmsModsBefore[0][0] - hmsModsAfter[0][0],
+					hmsModsBefore[0][1] - hmsModsAfter[0][1],
+					hmsModsBefore[0][2] - hmsModsAfter[0][2],
+					hmsModsBefore[1][0] - hmsModsAfter[1][0],
+					hmsModsBefore[1][1] - hmsModsAfter[1][1],
+					hmsModsBefore[1][2] - hmsModsAfter[1][2],
+					hmsModsBefore[2][0] - hmsModsAfter[2][0],
+					hmsModsBefore[2][1] - hmsModsAfter[2][1],
+					hmsModsBefore[2][2] - hmsModsAfter[2][2],
+					coopActor->GetActorValue(RE::ActorValue::kHealth),
+					coopActor->GetActorValue(RE::ActorValue::kMagicka),
+					coopActor->GetActorValue(RE::ActorValue::kStamina)
+				);
+
+				auto effectList = coopActor->GetActiveEffectList();
+				if (effectList)
+				{
+					for (const auto effect : *effectList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+						
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+							"elapsed time: {}, duration: {}.",
+							fmt::ptr(effectList),
+							coopActor->GetName(),
+							effect->effect && effect->effect->baseEffect ? 
+							effect->effect->baseEffect->GetName() :
+							"NONE",
+							effect->effect && effect->effect->baseEffect ?
+							effect->effect->baseEffect->formID :
+							0xDEAD,
+							effect->spell ? 
+							effect->spell->GetName() :
+							"NONE",
+							effect->elapsedSeconds,
+							effect->duration
+						);
+					}
 				}
 			}
 		);
 
 		// Enable movement again.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), false);
+		em->skipEquipProcessing = false;
 	}
 
 	void CoopPlayer::ShoutTask()

@@ -4515,7 +4515,13 @@ namespace ALYSLC
 		auto asActor = releasedRefrPtr->As<RE::Actor>();
 		float actorWeight = 0.0f;
 		float releasedRefrWeight = max(0.1f, releasedRefrPtr->GetWeight());
-		float inventoryWeight = releasedRefrPtr->GetWeightInContainer();
+		const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(releasedRefrPtr);
+		float inventoryWeight = 
+		(
+			releasedPIndex <= 0 ?
+			releasedRefrPtr->GetWeightInContainer() :
+			glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+		);
 		// Set power attack, bonk, and potentially the sneak attack flags
 		// before sending a hit event.
 		RE::stl::enumeration<RE::TESHitEvent::Flag, std::uint8_t> hitFlags{ };
@@ -4925,12 +4931,22 @@ namespace ALYSLC
 		// Can potentially open the QuickLoot menu.
 		if (shouldSendNewSetCrosshairEvent || shouldValidateNewCrosshairEvent)
 		{
-			// Crosshair refr must be lootable.
-			bool hasLoot = crosshairRefrPtr->HasContainer();
+			// Crosshair refr must be have an inventory and not be a player.
+			bool hasLoot = 
+			(
+				crosshairRefrPtr->HasContainer() && 
+				!GlobalCoopData::IsCoopPlayer(crosshairRefrPtr.get())
+			);
 			if (hasLoot)
 			{
 				// Check inventory first.
 				hasLoot = false;
+				// REMOVE when crash during inventory access is fixed.
+				SPDLOG_DEBUG
+				(
+					"{}: Check inventory of {} to see if it contains lootable objects.",
+					coopActor->GetName(), crosshairRefrPtr->GetName()
+				);
 				auto inventory = crosshairRefrPtr->GetInventory(Util::IsLootableObject);
 				for (const auto& [boundObj, invEntryData] : inventory)
 				{
@@ -4981,6 +4997,7 @@ namespace ALYSLC
 				// Is corpse.
 				if (auto corpse = crosshairRefrPtr->As<RE::Actor>(); corpse)
 				{
+					/*
 					// Saved killing player's FID in the 'ExtraForcedTarget' exData 
 					// when the HandleHealthDamage() hook fired before this actor died.
 					const auto targetExData = corpse->extraList.GetByType<RE::ExtraForcedTarget>();
@@ -5010,6 +5027,26 @@ namespace ALYSLC
 					canOpenLootMenu &= 
 					(
 						firstTimeLootingKilledActor || !killedByAPlayer || corpseLootedByKiller
+					);
+					*/
+
+					// Saved killing player as the actor's owner
+					// when the HandleHealthDamage() hook fired before this actor died.
+					const auto owner = corpse->extraList.GetOwner();
+					const auto ownerActor = owner ? owner->As<RE::Actor>() : nullptr;
+					bool killedByAPlayer = GlobalCoopData::IsCoopPlayer(ownerActor);
+					// Small file compile index can differ, depending on the load order,
+					// but not the raw FID and ESL bits portion.
+					firstTimeLootingKilledActor = 
+					{
+						(killedByAPlayer && ownerActor) && (ownerActor == coopActor.get())
+					};
+					// Can loot now if this player is looting the actor 
+					// they killed for the first time,
+					// or if the actor was not killed by a player.
+					canOpenLootMenu &= 
+					(
+						firstTimeLootingKilledActor || !killedByAPlayer
 					);
 				}
 			}
@@ -5063,17 +5100,26 @@ namespace ALYSLC
 					// clear out the exData pad so other players can freely loot the corpse.
 					if (firstTimeLootingKilledActor)
 					{
-						auto selectedTargetActor = Util::GetActorPtrFromHandle
+						auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
 						(
 							selectedTargetActorHandle
 						); 
-						if (selectedTargetActor)
+						if (selectedTargetActorPtr)
 						{
-							auto exForcedTarget = 
+							/*auto exForcedTarget = 
 							(
 								selectedTargetActor->extraList.GetByType<RE::ExtraForcedTarget>()	
 							);
-							exForcedTarget->pad14 = 0;
+							exForcedTarget->pad14 = 0;*/
+							
+							const auto owner = selectedTargetActorPtr->extraList.GetOwner();
+							const auto ownerActor = owner ? owner->As<RE::Actor>() : nullptr;
+							bool killedByAPlayer = GlobalCoopData::IsCoopPlayer(ownerActor);
+							if (killedByAPlayer)
+							{
+								// Remove owner.
+								selectedTargetActorPtr->SetOwner(nullptr);
+							}
 						}
 					}
 				}
@@ -6002,8 +6048,19 @@ namespace ALYSLC
 					1.0f / 
 					(1.0f + max(releasedActorPtr->GetLevel() - 1.0f, 0.0f) / 99.0f)
 				);
-				float inventoryWeight = releasedActorPtr->GetWeightInContainer();
-				const auto invChanges = releasedActorPtr->GetInventoryChanges();
+				const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(releasedActorPtr);
+				float inventoryWeight = 
+				(
+					releasedPIndex <= 0 ?
+					releasedActorPtr->GetWeightInContainer() :
+					glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+				);
+				const auto invChanges = 
+				(
+					releasedPIndex <= 0 ?
+					releasedActorPtr->GetInventoryChanges() :
+					glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetInventoryChanges()
+				);
 				if (invChanges)
 				{
 					inventoryWeight = invChanges->totalWeight;
@@ -7738,17 +7795,32 @@ namespace ALYSLC
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 
+					auto refr3DPtr = Util::GetRefr3D(a_refr); 
+					const auto niCamPtr = Util::GetNiCamera();
 					// Skip refrs that are not within a 180 degree FOV cone 
-					// in the player's facing direction.
+					// in the player's facing direction and not on screen.
 					// Do not want to select a door or furniture, for example,
-					// that is behind the player.
+					// that is behind the player or the camera.
 					bool allPositionsBehindPlayer = true;
+					bool onePositionBehindCamera = 
+					(
+						!Util::PointIsOnScreen(Util::Get3DCenterPos(a_refr))
+					);
+					(
+						refr3DPtr && 
+						niCamPtr &&
+						!RE::NiCamera::BoundInFrustum
+						(
+							refr3DPtr->worldBound, niCamPtr.get()
+						)
+					);
 					float facingToRefrDot = 0.0f;
 
 					// Check three points on the refr for the best measurement 
 					// of where the refr is located relative to the player.
 					// Start with the reported refr location.
 					RE::NiPoint3 refrLoc1 = a_refr->data.location;
+					//onePositionBehindCamera |= !Util::PointIsOnScreen(refrLoc1);
 					RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
 					toRefrDirXY.z = 0.0f;
 					toRefrDirXY.Unitize();
@@ -7777,7 +7849,7 @@ namespace ALYSLC
 					// Next two positions only exist if the refr's 3D is available.
 					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
 					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
-					if (auto refr3DPtr = Util::GetRefr3D(a_refr); refr3DPtr)
+					if (refr3DPtr)
 					{
 						refrLoc2 = refr3DPtr->world.translate;
 						refrLoc3 = refr3DPtr->worldBound.center;
@@ -7831,7 +7903,7 @@ namespace ALYSLC
 					
 					// Player is not turned towards the object if its refr data, 3D,
 					// and 3D center positions are behind the player.
-					if (allPositionsBehindPlayer)
+					if (allPositionsBehindPlayer || onePositionBehindCamera)
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
@@ -8171,8 +8243,18 @@ namespace ALYSLC
 
 				if (value >= 0)
 				{
-					float inventoryWeight = coopActor->GetWeightInContainer();
-					const auto invChanges = coopActor->GetInventoryChanges();
+					float inventoryWeight = 
+					(
+						p->isPlayer1 ? 
+						coopActor->GetWeightInContainer() :
+						p->em->inventoryChest->GetWeightInContainer()
+					);
+					const auto invChanges = 
+					(
+						p->isPlayer1 ? 
+						coopActor->GetInventoryChanges() :
+						p->em->inventoryChest->GetInventoryChanges()
+					);
 					if (invChanges)
 					{
 						inventoryWeight = invChanges->totalWeight;
@@ -12526,12 +12608,25 @@ namespace ALYSLC
 		if (asActor)
 		{
 			// Weights can sometimes be -1, so ensure the weight is at least 0.
-			float inventoryWeight = max(0.0f, asActor->GetWeightInContainer());
-			const auto invChanges = asActor->GetInventoryChanges();
+			const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
+			float inventoryWeight = max
+			( 
+				0.0f,
+				releasedPIndex <= 0 ?
+				asActor->GetWeightInContainer() :
+				glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+			);
+			const auto invChanges = 
+			(
+				releasedPIndex <= 0 ?
+				asActor->GetInventoryChanges() :
+				glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetInventoryChanges()
+			);
 			if (invChanges)
 			{
 				inventoryWeight = invChanges->totalWeight;
 			}
+
 			objectWeight = objectWeight + inventoryWeight;
 			return
 			(
@@ -13197,13 +13292,26 @@ namespace ALYSLC
 				auto asActor = objectPtr->As<RE::Actor>();
 				if (asActor)
 				{
+					const auto grabbedPIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
 					// Weights can sometimes be -1, so ensure the weight is at least 0.
-					float inventoryWeight = max(0.0f, asActor->GetWeightInContainer());
-					const auto invChanges = asActor->GetInventoryChanges();
+					float inventoryWeight = max
+					( 
+						0.0f,
+						grabbedPIndex <= 0 ?
+						asActor->GetWeightInContainer() :
+						glob.coopPlayers[grabbedPIndex]->em->inventoryChest->GetWeightInContainer()
+					);
+					const auto invChanges = 
+					(
+						grabbedPIndex <= 0 ?
+						asActor->GetInventoryChanges() :
+						glob.coopPlayers[grabbedPIndex]->em->inventoryChest->GetInventoryChanges()
+					);
 					if (invChanges)
 					{
 						inventoryWeight = invChanges->totalWeight;
 					}
+
 					objectWeight = objectWeight + inventoryWeight;
 					totalMagickaCost += 
 					(
@@ -13242,9 +13350,21 @@ namespace ALYSLC
 				auto asActor = objectPtr->As<RE::Actor>();
 				if (asActor)
 				{
+					const auto releasedPIndex = GlobalCoopData::GetCoopPlayerIndex(asActor);
 					// Weights can sometimes be -1, so ensure the weight is at least 0.
-					float inventoryWeight = max(0.0f, asActor->GetWeightInContainer());
-					const auto invChanges = asActor->GetInventoryChanges();
+					float inventoryWeight = max
+					( 
+						0.0f,
+						releasedPIndex <= 0 ?
+						asActor->GetWeightInContainer() :
+						glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetWeightInContainer()
+					);
+					const auto invChanges = 
+					(
+						releasedPIndex <= 0 ?
+						asActor->GetInventoryChanges() :
+						glob.coopPlayers[releasedPIndex]->em->inventoryChest->GetInventoryChanges()
+					);
 					if (invChanges)
 					{
 						inventoryWeight = invChanges->totalWeight;

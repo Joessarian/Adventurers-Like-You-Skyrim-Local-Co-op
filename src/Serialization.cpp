@@ -763,7 +763,7 @@ namespace ALYSLC
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
 				SPDLOG_DEBUG("Stopping active co-op session.");
-				GlobalCoopData::TeardownCoopSession(true);
+				GlobalCoopData::TearDownCoopSession(true);
 			}
 		}
 

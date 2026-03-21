@@ -8,8 +8,6 @@ namespace ALYSLC
 	{
 		// Register all event handlers to receive events.
 		void RegisterEvents();
-		// Close MIM, reset menu PIDs, and reset open supported menus flag and time point.
-		void ResetMenuState();
 	}
 
 	class CoopActorKillEventHandler : public RE::BSTEventSink<RE::ActorKill::Event>

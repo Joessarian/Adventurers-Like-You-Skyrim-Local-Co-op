@@ -202,6 +202,13 @@ namespace ALYSLC
 		(
 			 const int32_t& a_reqDeviceID, const int32_t& a_reqPlayerID
 		);
+		// Update the player's inventory chest item lists (Container Menu entries)
+		// to reflect the items that the player has equipped.
+		// Also, if requested, manually restore P1's equip state for each entry when tab-switched 
+		// over to view P1's inventory.
+		// Eww, gross. If I find a more efficient way than calling ItemList::Update(),
+		// I can do away with this function call.
+		void UpdateContainerInventoryEquipState(bool a_reloadEntries, bool a_forPlayer1);
 
 		//
 		// Members
@@ -221,6 +228,8 @@ namespace ALYSLC
 		RE::BSFixedString menuName;
 		// Handle for the container refr currently open in the Container Menu.
 		RE::ObjectRefHandle menuContainerHandle;
+		// Should drop the selected item via P1.
+		std::atomic_bool shouldDropItem;
 		// Most recent opened menu is atop the stack.
 		// Using a list to remove closing menus that may not be the most recently opened menu.
 		std::list<RE::BSFixedString> menuNamesStack;
@@ -239,6 +248,8 @@ namespace ALYSLC
 		std::vector<std::unique_ptr<RE::InputEvent* const>> queuedInputEvents;
 		// Is the Container Menu opened and showing the player's inventory or not?
 		bool isCoopInventory;
+		// Refresh player inventory item lists when an item is added/removed.
+		bool shouldReloadPlayerInventoryLists;
 		// Device ID for the co-op companion player controlling menus.
 		// -1 when the manager is not active.
 		// NOTE: 
@@ -460,10 +471,10 @@ namespace ALYSLC
 		// Members
 		//
 
-		// Length of quick slot item/spell prefix tag ('[*QSS*] ' or '[*QSI*] ').
+		// Length of quick slot item/spell prefix tag ('(*QSS*) ' or '(*QSI*) ').
 		// Used when setting new prefix to denote a favorited item/spell 
 		// as equipped in the quick slot.
-		const uint8_t qsPrefixTagLength = std::string("[*QS_*] ").length();
+		const uint8_t qsPrefixTagLength = std::string("(*QS_*) ").length();
 
 		// Control map for P1.
 		RE::ControlMap* controlMap;
@@ -497,7 +508,7 @@ namespace ALYSLC
 		RE::ObjectRefHandle fromContainerHandle;
 		// Form selected from current menu item list.
 		RE::TESForm* selectedForm;
-
+		
 		// Refresh equip state on equip event mutex.
 		std::mutex equipEventMutex;
 		// Update opened menu data mutex.
@@ -555,7 +566,7 @@ namespace ALYSLC
 		bool newMenuAtopStack;
 		// Has either placeholder spell been changed?
 		bool placeholderMagicChanged;
-		// Should refresh menus.
+		// Refresh menu entries.
 		bool shouldRefreshMenu;
 		// Spell was (un)favorited.
 		bool spellFavoriteStatusChanged;

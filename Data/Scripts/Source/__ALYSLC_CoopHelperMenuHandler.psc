@@ -112,7 +112,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
 	While (!PlayerRef && SecsWaited < 2.0)
 		ALYSLC.Log("[CHMH SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		Utility.Wait(0.1)
+		ALYSLC.Wait(0.1)
 		SecsWaited += 0.1
 	EndWhile
 	
@@ -169,7 +169,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
             ObjectReference Ball = None
             If (HoopForm)
                 Hoop = PlayerInMenu.PlaceAtMe(HoopForm, 1, False, True)
-                Utility.Wait(0.5)
+                ALYSLC.Wait(0.5)
                 Hoop.MoveTo(PlayerInMenu, 0.0, 100.0, 0.0, False)
                 Hoop.Enable()
             EndIf
@@ -177,7 +177,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
             Form BallForm = Game.GetFormFromFile(0x64B3F, "Skyrim.esm")
             If (BallForm)
                 Ball = PlayerInMenu.PlaceAtMe(BallForm, 1, False, True)
-                Utility.Wait(0.5)
+                ALYSLC.Wait(0.5)
                 Ball.MoveTo(Hoop, 0.0, 0.0, 100.0)
                 Ball.Enable()
             EndIf
@@ -255,7 +255,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
         EndIf
     ; Invalid type
     Else
-        ALYSLC.Log("[CHMH SCRIPT] ERR: Helper menu type " + aiMenuType + " is invalid. Returning.")
+        ALYSLC.LogError("[CHMH SCRIPT] ERR: Helper menu type " + aiMenuType + " is invalid. Returning.")
         Return
     EndIf
 EndEvent

@@ -71,6 +71,9 @@ namespace ALYSLC
 
 		// Get all voice types narrowed down by sex.
 		std::vector<RE::TESForm*> GetAllVoiceTypes(RE::StaticFunctionTag*, bool a_female);
+
+		// Get a list of all playable companion players' characters.
+		std::vector<RE::Actor*> GetCompanionPlayerCharacters(RE::StaticFunctionTag*);
 		
 		// Get the given player's assigned list of cyclable emote idle event names.
 		std::vector<RE::BSFixedString> GetFavoritedEmoteIdles
@@ -166,8 +169,9 @@ namespace ALYSLC
 		
 		//=========================================================================================
 
-		// Debug function for scripts to write log messages to ALYSLC.log.
+		// Debug functions for scripts to write debug/error log messages to ALYSLC.log.
 		void Log(RE::StaticFunctionTag*, RE::BSFixedString a_message);
+		void LogError(RE::StaticFunctionTag*, RE::BSFixedString a_message);
 
 		// Register all papyrus functions.
 		bool RegisterFuncs(RE::BSScript::IVirtualMachine* a_vm);

@@ -61,6 +61,7 @@ namespace ALYSLC
 		glob.coopPackageFormlists.clear();
 		glob.coopPlayerFactions.clear();
 		glob.coopPlayerKeywords.clear();
+		glob.p1FavoritedFormsMap.clear();
 		glob.perksAdded.clear();
 		glob.perksRemoved.clear();
 		glob.placeholderSpells.clear();
@@ -681,6 +682,11 @@ namespace ALYSLC
 					glob.boundArrowAmmoList.emplace_back(ammo);
 				}
 			}
+
+			// Forms from other mods.
+
+			// Paraglider.
+			glob.paraglider = dataHandler->LookupForm<RE::TESObjectMISC>(0x802, "Paragliding.esp");
 		}
 
 		// Get all hand equip slots by ID.
@@ -793,6 +799,10 @@ namespace ALYSLC
 			glob.memoryPointsGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("TalentPoints"sv);
 			glob.playerLevelGlob = RE::TESForm::LookupByEditorID<RE::TESGlobal>("PlayerLevel"sv);
 		}
+
+		// Carryweight-related forms.
+		glob.extraPocketsMagSpell = RE::TESForm::LookupByID<RE::SpellItem>(0x96592);
+		glob.extraPocketsPerk = RE::TESForm::LookupByID<RE::BGSPerk>(0x96590);
 
 		// Get all selectable level up perks.
 		SELECTABLE_PERKS.clear();
@@ -3007,6 +3017,48 @@ namespace ALYSLC
 
 		return std::distance(glob.coopPlayers.begin(), foundIter);
 	}
+	
+	int8_t GlobalCoopData::GetCoopPlayerIndexFromChest(RE::TESObjectREFR* a_refr)
+	{
+		// Return the player index for the player whose inventory is stored 
+		// in the given inventory chest.
+		// -1 if not an active player's inventory chest.
+
+		if (!a_refr)
+		{
+			return -1;
+		}
+		
+		auto& glob = GetSingleton();
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+
+			if (a_refr == p->em->inventoryChest.get())
+			{
+				return p->playerID;
+			}
+		}
+
+		return -1;
+	}
+
+	int8_t GlobalCoopData::GetCoopPlayerIndexFromChest(const RE::TESObjectREFRPtr& a_refrPtr)
+	{
+		// Return the player index for the player whose inventory is stored 
+		// in the given inventory chest.
+		// -1 if not an active player's inventory chest.
+		
+		if (!a_refrPtr)
+		{
+			return -1;
+		}
+
+		return GetCoopPlayerIndexFromChest(a_refrPtr.get());
+	}
 
 	float GlobalCoopData::GetHighestSharedAVLevel(const RE::ActorValue& a_av)
 	{
@@ -3243,6 +3295,236 @@ namespace ALYSLC
 					nullptr, 
 					p1
 				);
+			}
+		}
+	}
+
+	void GlobalCoopData::HandleEnderalSpecificLoot
+	(
+		RE::TESObjectREFR* a_fromRefr,
+		int32_t a_lootingPID, 
+		RE::TESBoundObject* a_lootedObject,
+		RE::TESObjectREFR::Count& a_countOut
+	)
+	{
+		// Give additional Enderal gold based on the number of active players 
+		// (modify count through outparam).
+		// Give one Enderal skillbook to every other active player
+		// when one is looted by the player given by the player ID.
+		//
+		// NOTE:
+		// Nothing is looted by the given player.
+		// The gold count is modified and skillbooks are given to all other players.
+		// This allows the caller to handle the original looting logic after the adjustments here.
+
+		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+		{
+			return;
+		}
+
+		auto& glob = GetSingleton();
+		auto ui = RE::UI::GetSingleton();
+		// Adding skillbooks to other players when this player loots one.
+		// Ignore if the setting is disabled or if the PID/skillbook are invalid.
+		if (!ui ||
+			!glob.globalDataInit ||
+			!glob.allPlayersInit ||
+			!glob.coopSessionActive ||
+			!a_lootedObject ||
+			a_lootingPID < 0 ||
+			a_lootingPID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+
+		const auto& lootingP = glob.coopPlayers[a_lootingPID];
+		if (!lootingP->isActive)
+		{
+			return;
+		}
+
+		bool barterMenuOpen = ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
+		bool fromCoopEntity = GlobalCoopData::IsCoopEntity(a_fromRefr);
+		// Ignore if sent from a co-op entity (player/inventory chest),
+		// or if the Barter Menu is open.
+		if (fromCoopEntity || barterMenuOpen)
+		{
+			return;
+		}
+
+		if (a_lootedObject->IsGold())
+		{
+			// Scale added gold with party size.
+			// NOTE: 
+			// Gold always goes to P1, 
+			// as P1's gold acts as a shared pool for all players.
+			if (Settings::fAdditionalGoldPerPlayerMult <= 0.0f)
+			{
+				return;
+			}
+
+			const int32_t additionalGold =
+			(
+				a_countOut * 
+				(glob.activePlayers - 1) * 
+				Settings::fAdditionalGoldPerPlayerMult
+			);
+			a_countOut += additionalGold;
+						
+			bool inMenu = !Util::MenusOnlyAlwaysOpen();
+			// If not in a menu and activating all gold in activation range, 
+			// each individual gold piece added triggers a container changed event, 
+			// so the total amount looted is unknown until all events fire
+			// and we cannot print a single notification with that total here.
+			if (inMenu) 
+			{
+				RE::DebugNotification
+				(
+					fmt::format
+					(
+						"Received an additional {} gold from party size scaling.", 
+						additionalGold
+					).c_str()
+				);
+			}
+			else
+			{
+				RE::DebugNotification
+				(
+					fmt::format
+					(
+						"Received additional gold from party size scaling (x{}).", 
+						glob.activePlayers * Settings::fAdditionalGoldPerPlayerMult
+					).c_str()
+				);
+			}
+		}
+		else
+		{
+			if (!Settings::bEveryoneGetsALootedEnderalSkillbook)
+			{
+				return;
+			} 
+			const auto iter = 
+			(
+				GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.find
+				(
+					a_lootedObject->formID
+				)
+			);
+			if (iter == GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.end())
+			{
+				return;
+			}
+		
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			// Give each active player, aside from P1, 
+			// who is receiving the current skillbook, 
+			// a random skillbook of the same tier.
+			const auto totalSkillBooksCount = 
+			(
+				GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size()
+			);
+			const auto& tierAndSkill = iter->second;
+			const auto& tier = tierAndSkill.first;
+			const auto& skill = tierAndSkill.second;
+			std::mt19937 generator{ };
+			generator.seed(SteadyClock::now().time_since_epoch().count());
+			for (const auto& p : glob.coopPlayers)
+			{
+				// Not the looting player.
+				if (p->isActive && p->playerID != a_lootingPID)
+				{
+					// To each player, add the same number as the number looted.
+					uint32_t numAdded = 0;
+					while (numAdded < a_countOut)
+					{
+						// Random skillbook index.
+						float rand = 
+						(
+							static_cast<uint8_t>
+							(
+								totalSkillBooksCount * 
+								(generator() / (float)((std::mt19937::max)()))
+							)
+						);
+						const auto newSkillbookFID = 
+						(
+							GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at
+							(
+								tier
+							)[rand]
+						);
+						auto newSkillbook = RE::TESForm::LookupByID<RE::AlchemyItem>
+						(
+							newSkillbookFID
+						);
+						// IMPORTANT:
+						// Make sure it's sent by a co-op entity 
+						// so we don't create a loop and end up back here again,
+						// since we do not add additional skillbooks 
+						// if they originate from a co-op entity.
+						if (newSkillbook)
+						{
+							SPDLOG_DEBUG("Adding skillbook {} to {}.",
+								newSkillbook->GetName(), p->coopActor->GetName());
+							if (p->isPlayer1)
+							{
+								p->coopActor->AddObjectToContainer
+								(
+									newSkillbook,
+									nullptr, 
+									1, 
+									p->em->inventoryChest.get()
+								);
+							}
+							else
+							{
+								p->em->inventoryChest->AddObjectToContainer
+								(
+									newSkillbook,
+									nullptr, 
+									1, 
+									nullptr
+								);
+							}
+
+							// Show in TrueHUD recent loot widget 
+							// by adding and removing the skillbook from P1.
+							if (!p->isPlayer1 && p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
+							{
+								SPDLOG_DEBUG("SHOW {}.", newSkillbook->GetName());
+								p1->AddObjectToContainer
+								(
+									newSkillbook->As<RE::AlchemyItem>(),
+									nullptr, 
+									1, 
+									p->em->inventoryChest.get()
+								);
+								p1->RemoveItem
+								(
+									newSkillbook->As<RE::AlchemyItem>(),
+									1, 
+									RE::ITEM_REMOVE_REASON::kRemove, 
+									nullptr, 
+									nullptr
+								);
+							}
+
+							RE::DebugNotification
+							(
+								fmt::format
+								(
+									"{} received 1 {}.", 
+									p->coopActor->GetName(), 
+									newSkillbook->GetName()
+								).c_str()
+							);
+						}
+
+						++numAdded;
+					}
+				}
 			}
 		}
 	}
@@ -3851,6 +4133,43 @@ namespace ALYSLC
 		return IsCoopCharacter(actor);
 	}
 
+	bool GlobalCoopData::IsCoopEntity(RE::TESObjectREFR* a_refr)
+	{
+		// Is the given refr a co-op player or inventory chest?
+		if (!a_refr)
+		{
+			return false;
+		}
+
+		auto& glob = GetSingleton();
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive || !p->em->inventoryChest)
+			{
+				continue;
+			}
+
+			if (p->em->inventoryChest.get() == a_refr)
+			{
+				return true;
+			}
+		}
+
+		return glob.coopEntityBlacklistFIDSet.contains(a_refr->formID);
+	}
+
+	bool GlobalCoopData::IsCoopEntity(const RE::TESObjectREFRPtr& a_refrPtr)
+	{
+		// Is the given refr smart ptr a co-op player or inventory chest?
+
+		if (!a_refrPtr)
+		{
+			return false;
+		}
+
+		return IsCoopEntity(a_refrPtr.get());
+	}
+
 	bool GlobalCoopData::IsCoopPlayer(const RE::ActorPtr& a_actorPtr)
 	{
 		// Return true if the given actor smart pointer is a player.
@@ -3944,6 +4263,44 @@ namespace ALYSLC
 				}
 			)
 		);
+	}
+
+	bool GlobalCoopData::IsCoopPlayerInventoryChest(RE::TESObjectREFR* a_refr)
+	{
+		// Return true if the given refr is an active player's inventory chest.
+
+		if (!a_refr)
+		{
+			return false;
+		}
+		
+		auto& glob = GetSingleton();
+		for (const auto& p : glob.coopPlayers)
+		{
+			if (!p->isActive)
+			{
+				continue;
+			}
+
+			if (a_refr == p->em->inventoryChest.get())
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	bool GlobalCoopData::IsCoopPlayerInventoryChest(const RE::TESObjectREFRPtr& a_refrPtr)
+	{
+		// Return true if the refr given by the refr ptr is an active player's inventory chest.
+
+		if (!a_refrPtr)
+		{
+			return false;
+		}
+
+		return IsCoopPlayerInventoryChest(a_refrPtr.get());
 	}
 
 	bool GlobalCoopData::IsNotControllingMenus(const int32_t& a_playerID)
@@ -4117,6 +4474,80 @@ namespace ALYSLC
 				currentXPMult, newXPMult, succ ? "SUCCESS" : "FAILURE", a_setForCoop
 			);
 		}
+	}
+
+	void GlobalCoopData::OnPostItemTransfer
+	(
+		const int32_t& a_playerID, RE::TESBoundObject* a_transferredObj, bool a_added
+	)
+	{
+		// Tasks to perform for the given player after an item was transferred to/from the player.
+		// Update Paraglider status for P1 on item transfer.
+		// Update player encumbrance factor.
+		// Update SMORF-ing status.
+
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+		{
+			return;
+		}
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1 || !a_transferredObj || a_playerID < 0 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
+		{
+			return;
+		}
+			
+		const auto& p = glob.coopPlayers[a_playerID];
+		if (p->isPlayer1 &&
+			ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled &&
+			glob.paraglider &&
+			a_transferredObj == glob.paraglider)
+		{
+			auto invCounts = p1->GetInventoryCounts();
+			const auto iter = invCounts.find(glob.paraglider);
+			ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider = 
+			(
+				iter != invCounts.end() && iter->second > 0
+			);
+
+			// Add gale spell if not known already.
+			// Enderal only, since the quest to obtain the paraglider
+			// and learn Tarhiel's Gale is not present in Enderal.
+			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+				ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
+				!p1->HasSpell(glob.tarhielsGaleSpell))
+			{
+				p1->AddSpell(glob.tarhielsGaleSpell);
+			}
+		}
+
+		// Update SMORF-gating flag.
+		// Dropped/moved from a player.
+		if (a_transferredObj->formID == 0x64B33 && !a_added)
+		{
+			auto inventory = 
+			(
+				p->isPlayer1 ? p->coopActor->GetInventory() : p->em->inventoryChest->GetInventory()
+			);
+			auto obj = RE::TESForm::LookupByID<RE::TESBoundObject>(0x64B33);
+			const auto iter = obj ? inventory.find(obj) : inventory.end();
+			if (iter == inventory.end() || iter->second.first <= 0)
+			{
+				if (p->tm->canSMORF)
+				{
+					RE::DebugMessageBox
+					(
+						"The power ebbs away and you feel grounded again."
+					);
+				}
+
+				p->tm->canSMORF = false;
+			}
+		}
+
+		// Update encumbrance factor since the player's inventory has changed.
+		p->mm->UpdateEncumbranceFactor();
 	}
 
 	void GlobalCoopData::PerformInitialAVAutoScaling()
@@ -4716,6 +5147,25 @@ namespace ALYSLC
 		(
 			"{}: base level: {}.", a_playerActor->GetName(), a_baseLevel
 		);
+		
+		// Save old damage mod and restore to full value before adjusting base value
+		// so that the player character does not die if the base value + the old damage mod
+		// reduces their HP below 0.
+		const float oldHealthDamage = a_playerActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+		);
+		const float oldMagickaDamage = a_playerActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+		);
+		const float oldStaminaDamage = a_playerActor->GetActorValueModifier
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+		);
+		Util::RestoreAVToMaxValue(a_playerActor, RE::ActorValue::kHealth);
+		Util::RestoreAVToMaxValue(a_playerActor, RE::ActorValue::kMagicka);
+		Util::RestoreAVToMaxValue(a_playerActor, RE::ActorValue::kStamina);
 
 		const auto& data = iter->second;
 		// Has recorded level up.
@@ -4837,6 +5287,20 @@ namespace ALYSLC
 				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
 			);
 		}
+
+		// Restore old HMS values by re-applying the old damage modifiers.
+		a_playerActor->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth, oldHealthDamage
+		);
+		a_playerActor->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka, oldMagickaDamage
+		);
+		a_playerActor->RestoreActorValue
+		(
+			RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina, oldStaminaDamage
+		);
 	}
 
 	void GlobalCoopData::ResetMenuPlayerIDs()
@@ -4882,6 +5346,34 @@ namespace ALYSLC
 			}
 		}
 	}
+
+	void GlobalCoopData::ResetMenuState()
+	{
+		// Reset our handled menu data instantly.
+		// Stop MIM, reset menu device IDs,
+		// set supported menus as closed.
+		
+		auto& glob = GetSingleton();
+		SPDLOG_DEBUG
+		(
+			"Old DID/PID: {}, {}.", 
+			glob.menuPID > -1 && glob.menuPID < ALYSLC_MAX_PLAYER_COUNT ?
+			glob.coopPlayers[glob.menuPID]->deviceID :
+			-1,
+			glob.menuPID
+		);
+		glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
+		GlobalCoopData::ResetMenuPlayerIDs();
+		glob.supportedMenuOpen.store(false);
+		glob.lastSupportedMenusClosedTP = SteadyClock::now();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		// Restore ability to save if no data is copied over to P1.
+		if (p1 && *glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
+		{
+			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
+		}
+	}
+
 		
 	void GlobalCoopData::RestoreP1CopyablePlayerData(RE::Actor* a_menuControllingPlayer)
 	{
@@ -4917,15 +5409,19 @@ namespace ALYSLC
 
 		if (!a_menuControllingPlayer || pIndex == -1)
 		{
-			SPDLOG_ERROR
-			(
-				"Could not retrieve companion player with data copied over to P1. "
-				"Copied player data PID is {}. Retrieved player index is {}. "
-				"Copied data types which could not be restored are 0x{:X}.",
-				glob.copiedDataPlayerPID,
-				pIndex,
-				*glob.copiedPlayerDataTypes
-			);
+			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
+			{
+				SPDLOG_ERROR
+				(
+					"Could not retrieve companion player with data copied over to P1. "
+					"Copied player data PID is {}. Retrieved player index is {}. "
+					"Copied data types which could not be restored are 0x{:X}.",
+					glob.copiedDataPlayerPID,
+					pIndex,
+					*glob.copiedPlayerDataTypes
+				);
+			}
+			
 			return;
 		}
 		
@@ -4939,13 +5435,6 @@ namespace ALYSLC
 		const auto& p = glob.coopPlayers[pIndex];
 		if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 		{
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kCarryWeight))
-			{
-				SPDLOG_DEBUG("Restore P1 Carryweight.");
-				CopyOverActorBaseData(a_menuControllingPlayer, false, false, false, true);
-				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kCarryWeight);
-			}
-
 			if (glob.copiedPlayerDataTypes.all
 				(
 					CopyablePlayerDataTypes::kFavoritesMagic,
@@ -4979,7 +5468,7 @@ namespace ALYSLC
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 			{
 				SPDLOG_DEBUG("Restore P1 Name.");
-				CopyOverActorBaseData(a_menuControllingPlayer, false, true, false, false);
+				CopyOverActorBaseData(a_menuControllingPlayer, false, true, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 			}
 
@@ -5000,7 +5489,7 @@ namespace ALYSLC
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
 			{
 				SPDLOG_DEBUG("Restore P1 Race Name.");
-				CopyOverActorBaseData(a_menuControllingPlayer, false, false, true, false);
+				CopyOverActorBaseData(a_menuControllingPlayer, false, false, true);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
 			}
 
@@ -6006,7 +6495,7 @@ namespace ALYSLC
 
 						p1->AddObjectToContainer
 						(
-							goldObj->As<RE::TESBoundObject>(), nullptr, crimeGold, p1
+							goldObj->As<RE::TESBoundObject>(), nullptr, crimeGold, nullptr
 						);
 						faction->PlayerPayCrimeGold(false, false);
 					}
@@ -6031,7 +6520,7 @@ namespace ALYSLC
 							
 							p1->AddObjectToContainer
 							(
-								goldObj->As<RE::TESBoundObject>(), nullptr, crimeGold, p1
+								goldObj->As<RE::TESBoundObject>(), nullptr, crimeGold, nullptr
 							);
 							faction->PlayerPayCrimeGold(false, false);
 						}
@@ -6136,7 +6625,7 @@ namespace ALYSLC
 				// Quick reimbursement.
 				p1->AddObjectToContainer
 				(
-					goldObj->As<RE::TESBoundObject>(), nullptr, faction->GetCrimeGold(), p1
+					goldObj->As<RE::TESBoundObject>(), nullptr, faction->GetCrimeGold(), nullptr
 				);
 				faction->PlayerPayCrimeGold(false, false);
 			}
@@ -6168,7 +6657,7 @@ namespace ALYSLC
 
 		// Re-enabled saving, since we may have disabled it previously.
 		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (p1)
+		if (p1 && *glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
 		{
 			p1->byCharGenFlag = RE::PlayerCharacter::ByCharGenFlag::kNone;
 		}
@@ -6411,7 +6900,7 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::TeardownCoopSession(bool a_shouldDismiss)
+	void GlobalCoopData::TearDownCoopSession(bool a_shouldDismiss)
 	{
 		// End the current co-op session by signalling all managers to await refresh, 
 		// and optionally dismiss all companion players.
@@ -6495,6 +6984,7 @@ namespace ALYSLC
 					p->coopActor->GetName()
 				);
 				p->RequestStateChange(ManagerState::kAwaitingRefresh);
+				p->UnregisterEvents();
 			}
 		}
 
@@ -6516,12 +7006,13 @@ namespace ALYSLC
 		SPDLOG_DEBUG
 		(
 			"Co-op session over. "
-			"Pausing camera manager and awaiting the start of a new co-op session."
+			"Pausing camera and menu input managers and awaiting the start of a new co-op session."
 		);
 		glob.cam->RequestStateChange(ManagerState::kPaused);
+		GlobalCoopData::ResetMenuState();
 	}
 
-	void GlobalCoopData::ToggleGodModeForAllPlayers(const bool& a_enable)
+	void GlobalCoopData::ToggleGodModeForAllPlayers(const bool& a_enable, bool a_enableWithFullHMS)
 	{
 		// Enable or disable god mode for all players.
 
@@ -6533,13 +7024,13 @@ namespace ALYSLC
 				continue;
 			}
 
-			ToggleGodModeForPlayer(p->playerID, a_enable);
+			ToggleGodModeForPlayer(p->playerID, a_enable, a_enableWithFullHMS);
 		}
 	}
 
 	void GlobalCoopData::ToggleGodModeForPlayer
 	(
-		const int32_t& a_playerID, const bool& a_enable
+		const int32_t& a_playerID, bool a_enable, bool a_enableWithFullHMS
 	)
 	{
 		// Enable or disable god mode for the player associated with the given PID.
@@ -6563,11 +7054,11 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG("Should {} god mode for P1.", a_enable ? "set" : "unset");
 				// Set to full health/magicka/stamina as well.
-				if (a_enable && !p->isInGodMode)
+				if (a_enable && !p->isInGodMode && a_enableWithFullHMS)
 				{
-					p->pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
-					p->pam->RestoreAVToMaxValue(RE::ActorValue::kMagicka);
-					p->pam->RestoreAVToMaxValue(RE::ActorValue::kStamina);
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kHealth);
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kMagicka);
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kStamina);
 				}
 
 				const auto scriptFactory = 
@@ -6682,9 +7173,13 @@ namespace ALYSLC
 			if (a_enable && !p->isInGodMode)
 			{
 				// Set to full health/magicka/stamina as well.
-				p->pam->RestoreAVToMaxValue(RE::ActorValue::kHealth);
-				p->pam->RestoreAVToMaxValue(RE::ActorValue::kMagicka);
-				p->pam->RestoreAVToMaxValue(RE::ActorValue::kStamina);
+				if (a_enableWithFullHMS)
+				{
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kHealth);
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kMagicka);
+					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kStamina);
+				}
+
 				SPDLOG_DEBUG
 				(
 					"Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName()
@@ -7077,6 +7572,8 @@ namespace ALYSLC
 		// ID # = NPC with '__CoopCharacter#' as its actor base editor ID.
 		// Kinda gross.
 		uint32_t characterID = Util::GetEditorID(actorBase).back() - '0';
+		SPDLOG_DEBUG("Character ID for {} is {}. Serialized data size: {}.",
+			a_playerActor->GetName(), characterID, glob.serializablePlayerData.size());
 
 		// Serializable data:
 		// Ensure that the actor's updated FID is used 
@@ -7099,6 +7596,18 @@ namespace ALYSLC
 			bool newModLoadIndex = 
 			(
 				(fidKey != a_playerActor->formID) && !diffRawFID
+			);
+			SPDLOG_DEBUG
+			(
+				"FID key: 0x{:X}, {}'s FID: 0x{:X}, character IDs: saved: {}, current: {}. "
+				"Different raw ID: {}, new load index: {}",
+				fidKey,
+				a_playerActor->GetName(),
+				a_playerActor->formID, 
+				data->GetPlayerCharacterID(),
+				characterID,
+				diffRawFID,
+				newModLoadIndex
 			);
 
 			// First, check to see if a companion player has been assigned P1's character ID (0),
@@ -7343,7 +7852,7 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Import Name.");
 					CopyOverActorBaseData
 					(
-						requestingPlayer.get(), a_info->shouldImport, true, false, false
+						requestingPlayer.get(), a_info->shouldImport, true, false
 					);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kName);
 				}
@@ -7372,7 +7881,7 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Export Name.");
 					CopyOverActorBaseData
 					(
-						requestingPlayer.get(), a_info->shouldImport, true, false, false
+						requestingPlayer.get(), a_info->shouldImport, true, false
 					);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 				}
@@ -7437,7 +7946,7 @@ namespace ALYSLC
 					RE::ContainerMenu::ContainerMode::kPickpocket
 				);
 			}
-
+			
 			// Copy AVs, name, and perk list.
 			if (a_info->shouldImport) 
 			{
@@ -7459,7 +7968,6 @@ namespace ALYSLC
 				(
 					"Container Menu: Should copy over AVs and perk list."
 				);
-
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 				{
 					SPDLOG_DEBUG("Import Perk list.");
@@ -7743,11 +8251,10 @@ namespace ALYSLC
 		RE::Actor* a_coopActor,
 		const bool& a_shouldImport,
 		bool&& a_name,
-		bool&& a_raceName, 
-		bool&& a_carryWeight
+		bool&& a_raceName
 	)
 	{
-		// Import the give player's name/race name/carryweight to P1 
+		// Import the give player's name/race name to P1 
 		// or restore previously saved values to P1.
 
 		auto& glob = GetSingleton();
@@ -7812,105 +8319,28 @@ namespace ALYSLC
 				}
 			}
 
-			if (a_carryWeight) 
-			{
-				// Save carryweight AV and AV mods before swapping the two.
-				glob.coopCompanionExchangeableData->carryWeightAVData = 
-				{ 
-					a_coopActor->GetActorValue(RE::ActorValue::kCarryWeight),
-					a_coopActor->GetBaseActorValue(RE::ActorValue::kCarryWeight),
-					a_coopActor->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
-					),
-					a_coopActor->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
-					),
-					a_coopActor->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
-					)
-				};
-				glob.p1ExchangeableData->carryWeightAVData = 
-				{
-					p1->GetActorValue(RE::ActorValue::kCarryWeight),
-					p1->GetBaseActorValue(RE::ActorValue::kCarryWeight),
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
-					),
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
-					),
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
-					)
-				};
-
-				p1->SetActorValue
-				(
-					RE::ActorValue::kCarryWeight, 
-					glob.coopCompanionExchangeableData->carryWeightAVData[0]
-				);
-				p1->SetBaseActorValue
-				(
-					RE::ActorValue::kCarryWeight, 
-					glob.coopCompanionExchangeableData->carryWeightAVData[1]
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, 
-					RE::ActorValue::kCarryWeight, 
-					glob.coopCompanionExchangeableData->carryWeightAVData[2] - 
-					glob.p1ExchangeableData->carryWeightAVData[2]
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-					RE::ActorValue::kCarryWeight, 
-					glob.coopCompanionExchangeableData->carryWeightAVData[3] - 
-					glob.p1ExchangeableData->carryWeightAVData[3]
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary, 
-					RE::ActorValue::kCarryWeight, 
-					glob.coopCompanionExchangeableData->carryWeightAVData[4] - 
-					glob.p1ExchangeableData->carryWeightAVData[4]
-				);
-			}
-
 			SPDLOG_DEBUG
 			(
-				"IMPORT: Name ({}, {}, {}), race name ({}, {}, {}), carryweight ({}, {}, {}).",
+				"IMPORT: Name ({}, {}, {}), race name ({}, {}, {})",
 				a_name,
 				a_name ? glob.p1ExchangeableData->name : "N/A",
 				a_name ? glob.coopCompanionExchangeableData->name : "N/A",
 				a_raceName,
 				a_raceName ? glob.p1ExchangeableData->raceName : "N/A",
-				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A",
-				a_carryWeight,
-				a_carryWeight ? glob.p1ExchangeableData->carryWeightAVData[0] : -1.0f,
-				a_carryWeight ? glob.coopCompanionExchangeableData->carryWeightAVData[0] : -1.0f
+				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A"
 			);
 		}
 		else
 		{
 			SPDLOG_DEBUG
 			(
-				"EXPORT: Name ({}, {}, {}), race name ({}, {}, {}), carryweight ({}, {}, {}).",
+				"EXPORT: Name ({}, {}, {}), race name ({}, {}, {})",
 				a_name,
 				a_name ? glob.p1ExchangeableData->name : "N/A",
 				a_name ? glob.coopCompanionExchangeableData->name : "N/A",
 				a_raceName,
 				a_raceName ? glob.p1ExchangeableData->raceName : "N/A",
-				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A",
-				a_carryWeight,
-				a_carryWeight ? glob.p1ExchangeableData->carryWeightAVData[0] : -1.0f,
-				a_carryWeight ? glob.coopCompanionExchangeableData->carryWeightAVData[0] : -1.0f
+				a_raceName ? glob.coopCompanionExchangeableData->raceName : "N/A"
 			);
 
 			// Restore full name and/or race name.
@@ -7930,49 +8360,6 @@ namespace ALYSLC
 				{
 					race->SetFullName(glob.p1ExchangeableData->raceName.c_str());
 				}
-			}
-
-			if (a_carryWeight)
-			{
-				// Swap saved carryweight AV and AV mods.
-				p1->SetActorValue
-				(
-					RE::ActorValue::kCarryWeight, glob.p1ExchangeableData->carryWeightAVData[0]
-				);
-				p1->SetBaseActorValue
-				(
-					RE::ActorValue::kCarryWeight, glob.p1ExchangeableData->carryWeightAVData[1]
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kDamage, 
-					RE::ActorValue::kCarryWeight, 
-					glob.p1ExchangeableData->carryWeightAVData[2] - 
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kCarryWeight
-					)
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-					RE::ActorValue::kCarryWeight, 
-					glob.p1ExchangeableData->carryWeightAVData[3] - 
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
-					)
-				);
-				p1->RestoreActorValue
-				(
-					RE::ACTOR_VALUE_MODIFIER::kTemporary,
-					RE::ActorValue::kCarryWeight, 
-					glob.p1ExchangeableData->carryWeightAVData[4] - 
-					p1->GetActorValueModifier
-					(
-						RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kCarryWeight
-					)
-				);
 			}
 		}
 	}
@@ -9191,17 +9578,17 @@ namespace ALYSLC
 			return;
 		}
 
-		// IMPORTANT NOTE:
-		// Unlike elsewhere, where we do not want the player to re-equip their hand forms
-		// when a weapon is directly added to their inventory,
-		// avoiding deleting the original item and adding a copy is more important here,
-		// so we just move items directly from one container to another.
-
 		int8_t pIndex = GetCoopPlayerIndex(a_coopActor->GetHandle());
 		const auto& p = glob.coopPlayers[pIndex];
+
+		// Unused for now.
+		// Old method found to cause frame lag spikes and bad script lag
+		// after entering/exiting the Crafting Menu multiple times, especially while in combat.
+		/*
 		auto transferP1InventoryToRefr = 
 		[p1](RE::TESObjectREFR* a_toRefr) 
 		{
+			bool isCompanionChest = GlobalCoopData::GetCoopPlayerIndexFromChest(a_toRefr) > 0;
 			auto inventory = p1->GetInventory();
 			for (const auto& [boundObj, entry] : inventory)
 			{
@@ -9273,6 +9660,7 @@ namespace ALYSLC
 		auto transferRefrInventoryToP1 =
 		[p1](RE::TESObjectREFR* a_fromRefr)
 		{
+			bool isCompanionChest = GlobalCoopData::GetCoopPlayerIndexFromChest(a_fromRefr) > 0;
 			auto inventory = a_fromRefr->GetInventory();
 			for (auto& [boundObj, entry] : inventory)
 			{
@@ -9307,7 +9695,7 @@ namespace ALYSLC
 
 					auto obj = invChangesEntry->object;
 					// Do not transfer the companion player's equipped items to P1.
-					if (invChangesEntry->IsWorn())
+					if (Util::HasWornRankExtraDataList(invChangesEntry, false, true))
 					{
 						continue;
 					}
@@ -9319,7 +9707,6 @@ namespace ALYSLC
 					{
 						continue;
 					}
-					
 					
 					SPDLOG_DEBUG
 					(
@@ -9333,6 +9720,7 @@ namespace ALYSLC
 				}
 			}
 		};
+		*/
 
 		const auto& coopP1 = glob.coopPlayers[0];
 		auto p1StorageChestRefrPtr = glob.coopInventoryChests[coopP1->playerID];
@@ -9343,26 +9731,65 @@ namespace ALYSLC
 
 		if (a_shouldImport)
 		{
+			// Init, if needed, is a private func, but retrieving the changes 
+			// will also init if needed, so get the inventory changes for each container we need.
+			auto p1InvChanges = p1->GetInventoryChanges();
+			auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+			auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
+
 			// Use chest inventory as temporary storage for P1's inventory items. 
 			// Clear it out first.
-			auto chestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
-			if (chestInvChanges)
+			if (p1ChestInvChanges)
 			{
-				chestInvChanges->RemoveAllItems
+				p1ChestInvChanges->RemoveAllItems
 				(
 					p1StorageChestRefrPtr.get(), nullptr, false, false, false
 				);
 			}
-
-			SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
 			
+			// Get the container changes to use in swapping inventory changes via assignment.
+			auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+			auto p1ChestExChanges = 
+			(
+				p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+			);
+			auto companionChestExChanges = 
+			(
+				p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+			);
+			if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+			{
+				SPDLOG_ERROR
+				(
+					"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+					"chest ({}), {}'s chest ({}).",
+					!p1ExChanges,
+					!p1ChestExChanges,
+					p->coopActor->GetName(),
+					!companionChestExChanges
+				);
+				return;
+			}
+			
+			SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
+			p1ChestExChanges->changes = p1ExChanges->changes;
+			SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+			p1ExChanges->changes = companionChestExChanges->changes;
+
+			// Set P1 as the owner of the newly imported inventory changes.
+			if (p1InvChanges)
+			{
+				p1InvChanges->owner = p1;
+			}
+
+			/* Old unused code.
 			// From P1 to storage chest.
 			transferP1InventoryToRefr(p1StorageChestRefrPtr.get());
 
 			SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
 
-			// From co-op player to P1.
-			transferRefrInventoryToP1(a_coopActor);
+			// From companion player's inventory chest to P1.
+			transferRefrInventoryToP1(p->em->inventoryChest.get());
 
 			p1->OnArmorActorValueChanged();
 			auto invChanges = p1->GetInventoryChanges();
@@ -9378,13 +9805,71 @@ namespace ALYSLC
 			{
 				ui->GetMenu<RE::BarterMenu>()->itemList->Update();
 			}
+			*/
 		}
 		else
 		{
+			// Init, if needed, is a private func, but retrieving the changes 
+			// will also init if needed, so get the inventory changes for each container we need.
+			auto p1InvChanges = p1->GetInventoryChanges();
+			auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+			auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
+			
+			// Get the container changes to use in swapping inventory changes via assignment.
+			auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+			auto p1ChestExChanges = 
+			(
+				p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+			);
+			auto companionChestExChanges = 
+			(
+				p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+			);
+			if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+			{
+				SPDLOG_ERROR
+				(
+					"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+					"chest ({}), {}'s chest ({}).",
+					!p1ExChanges,
+					!p1ChestExChanges,
+					p->coopActor->GetName(),
+					!companionChestExChanges
+				);
+				return;
+			}
+			
+			SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
+			companionChestExChanges->changes = p1ExChanges->changes;
+			SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
+			p1ExChanges->changes = p1ChestExChanges->changes;
+
+			// Clear, remove, and re-init P1 chest inventory changes 
+			// after we've moved everything back.
+			p1ChestExChanges->changes = nullptr;
+			p1StorageChestRefrPtr->extraList.Remove
+			(
+				RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+			);
+			p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+
+			// Restore P1 as the owner of their inventory changes.
+			if (p1InvChanges)
+			{
+				p1InvChanges->owner = p1;
+			}
+			
+			// Restore the companion player's chest as the owner of their inventory changes.
+			if (companionChestInvChanges)
+			{
+				companionChestInvChanges->owner = p->em->inventoryChest.get();
+			}
+
+			/* Old unused code.
 			SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
 
-			// Transfer P1's current items back to the companion player.
-			transferP1InventoryToRefr(a_coopActor);
+			// Transfer P1's current items back to the companion player's inventory chest.
+			transferP1InventoryToRefr(p->em->inventoryChest.get());
 
 			SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
 
@@ -9399,39 +9884,10 @@ namespace ALYSLC
 				invChanges->totalWeight = -1.0f;
 				p1->equippedWeight = -1.0f;
 			}
-
-			// Re-favorite all cached physical forms for both players on export.
-			for (const auto form : p->em->favoritedForms)
-			{
-				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
-				{
-					continue;
-				}
-
-				SPDLOG_DEBUG
-				(
-					"EXPORT: Re-favoriting {} for {}.", form->GetName(), p->coopActor->GetName()
-				);
-				Util::ChangeFormFavoritesStatus(p->coopActor.get(), form, true);
-			}
-
-			const auto& coopP1 = glob.coopPlayers[0];
-			for (const auto form : coopP1->em->favoritedForms)
-			{
-				if (!form || form->Is(RE::FormType::Spell, RE::FormType::Shout))
-				{
-					continue;
-				}
-				
-				SPDLOG_DEBUG
-				(
-					"EXPORT: Re-favoriting {} for {}.", form->GetName(), p1->GetName()
-				);
-				Util::ChangeFormFavoritesStatus(coopP1->coopActor.get(), form, true);
-			}
+			*/
 		}
 
-		p->em->EquipFists();
+		p->em->ReEquipHandForms();
 	}
 
 	void GlobalCoopData::CopyOverPerkLists(RE::Actor* a_coopActor, const bool& a_shouldImport)
@@ -10738,7 +11194,7 @@ namespace ALYSLC
 					// otherwise, they won't die below.
 					if (p->isInGodMode) 
 					{
-						GlobalCoopData::ToggleGodModeForPlayer(p->playerID, false);
+						GlobalCoopData::ToggleGodModeForPlayer(p->playerID, false, false);
 						Util::StopEffectShader(p->coopActor.get(), glob.ghostFXShader);
 					}
 
@@ -10847,7 +11303,7 @@ namespace ALYSLC
 				// in the party now.
 				ModifyXPPerSkillLevelMult(false);
 				// Teardown the session afterward.
-				TeardownCoopSession(true);
+				TearDownCoopSession(true);
 
 				// If all else STILL fails, and it usually does, as a final failsafe, 
 				// reload the most recent save after a short period of time.
@@ -10894,12 +11350,6 @@ namespace ALYSLC
 											// Set health to 1 and then to 0 to trigger death.
 											if (glob.p1IsEssential)
 											{
-												// Ensure P1 is not paralyzed
-												// so that they can bleed out.
-												/*p1->boolBits.reset
-												(
-													RE::Actor::BOOL_BITS::kParalyzed
-												);*/
 												p1->SetLifeState
 												(
 													RE::ACTOR_LIFE_STATE::kBleedout
@@ -11104,7 +11554,6 @@ namespace ALYSLC
 										RE::Main::GetSingleton()->reloadContent
 									);
 								}
-
 							}
 
 							// Reset wiped flag, because the game is loading the last save.

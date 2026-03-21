@@ -37,10 +37,6 @@ namespace ALYSLC
 				p.use_count()
 			);
 			RefreshData();
-			// Reset health, magicka, and stamina.
-			RestoreAVToMaxValue(RE::ActorValue::kHealth);
-			RestoreAVToMaxValue(RE::ActorValue::kMagicka);
-			RestoreAVToMaxValue(RE::ActorValue::kStamina);
 		}
 		else
 		{
@@ -1287,7 +1283,8 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Activate self with P1 to display this character in Party Combat Parameter's UI.
+			// Activate self with P1 to display this character 
+			// in Skyrim Party Sheet/Party Combat Parameter's UI.
 			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 			{
 				Util::ActivateRefr(coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false);
@@ -1662,6 +1659,7 @@ namespace ALYSLC
 		coopActor->actorState1.sneaking = 0;
 		coopActor->actorState2.forceSneak = 0;
 		ReadyWeapon(false);
+		ReadyWeapon(true);
 
 		// Set player binds.
 		UpdatePlayerBinds();
@@ -4216,6 +4214,12 @@ namespace ALYSLC
 			{
 				numberOfInputsReleased++;
 			}
+
+			// Exit early once one input is released if we're not checking all inputs.
+			if (!a_checkIfAllReleased && inputJustReleased && numberOfInputsReleased == 1)
+			{
+				return true;
+			}
 		}
 
 		if (a_checkIfAllReleased)
@@ -4224,7 +4228,9 @@ namespace ALYSLC
 		}
 		else
 		{
-			return inputJustReleased && numberOfInputsReleased == 1;
+			// Returned true above if only one input was just released, so if we reach here,
+			// we can return false.
+			return false;
 		}
 	}
 
@@ -5361,8 +5367,15 @@ namespace ALYSLC
 		
 		// Get event name to send.
 		const std::string_view& ueString = iter->second;
-		// Value indicates if the button is pressed (1.0) or not (0.0).
-		const float value = a_buttonStateToTrigger == ButtonEventPressType::kRelease ? 0.0f : 1.0f;
+		// Value indicates if the button is pressed (1.0 or 2.0 for instant trigger) or not (0.0).
+		const float value = 
+		(
+			a_buttonStateToTrigger == ButtonEventPressType::kInstantTrigger ?
+			2.0f :
+			a_buttonStateToTrigger == ButtonEventPressType::kRelease ? 
+			0.0f : 
+			1.0f
+		);
 		float heldTimeSecs = 0.0f;
 		// If using a default of 0 held time, use the given action's held time,
 		// unless the button press type is 'Instant Trigger' 
@@ -5496,52 +5509,74 @@ namespace ALYSLC
 			// Unequip bound weapons when sheathing weapons.
 			if (!a_shouldDraw) 
 			{
-				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-				{
-					// Reset bound weapon state.
-					boundWeapReq2H = false;
-					boundWeapReqLH = false;
-					boundWeapReqRH = false;
-					secsSinceBoundWeap2HReq = 
-					secsSinceBoundWeapLHReq =
-					secsSinceBoundWeapRHReq = 0.0f;
-					p->em->lastReqBoundWeapLH =
-					p->em->lastReqBoundWeapRH = nullptr;
+				// Reset bound weapon state.
+				boundWeapReq2H = false;
+				boundWeapReqLH = false;
+				boundWeapReqRH = false;
+				secsSinceBoundWeap2HReq = 
+				secsSinceBoundWeapLHReq =
+				secsSinceBoundWeapRHReq = 0.0f;
+				p->em->lastReqBoundWeapLH =
+				p->em->lastReqBoundWeapRH = nullptr;
 
-					// Right hand.
-					if (auto rhForm = coopActor->GetEquippedObject(false); rhForm)
+				// Right hand.
+				bool clearedHandSlot = false;
+				if (auto rhForm = coopActor->GetEquippedObject(false); rhForm)
+				{
+					if (auto weap = rhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
 					{
-						if (auto weap = rhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
+						// Remove the bound weapon.
+						coopActor->RemoveItem
+						(
+							weap->As<RE::TESBoundObject>(),
+							1,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							nullptr
+						);
+						clearedHandSlot = true;
+						if (weap->IsBow())
 						{
-							aem->UnequipObject(coopActor.get(), weap);
-							// Clear out both slots.
-							p->em->EquipFists();
-							if (weap->IsBow())
+							// Unequip bound ammunition too.
+							auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
+							if (boundArrow && 
+								boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
 							{
-								// Unequip bound ammunition too.
-								auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
-								if (boundArrow && 
-									boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
-								{
-									aem->UnequipObject
-									(
-										coopActor.get(), boundArrow->As<RE::TESAmmo>()
-									);
-								}
+								// Remove the bound arrows.
+								coopActor->RemoveItem
+								(
+									boundArrow->As<RE::TESBoundObject>(),
+									1,
+									RE::ITEM_REMOVE_REASON::kRemove, 
+									nullptr,
+									nullptr
+								);
 							}
 						}
 					}
+				}
 
-					// Left hand.
-					if (auto lhForm = coopActor->GetEquippedObject(true); lhForm)
+				// Left hand.
+				if (auto lhForm = coopActor->GetEquippedObject(true); lhForm)
+				{
+					if (auto weap = lhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
 					{
-						if (auto weap = lhForm->As<RE::TESObjectWEAP>(); weap && weap->IsBound())
-						{
-							aem->UnequipObject(coopActor.get(), weap);
-							// Clear out both slots.
-							p->em->EquipFists();
-						}
+						// Remove the bound weapon.
+						coopActor->RemoveItem
+						(
+							weap->As<RE::TESBoundObject>(),
+							1,
+							RE::ITEM_REMOVE_REASON::kRemove, 
+							nullptr,
+							nullptr
+						);
+						clearedHandSlot = true;
 					}
+				}
+
+				if (clearedHandSlot)
+				{
+					p->em->ReEquipHandForms();
 				}
 			}
 
@@ -5724,29 +5759,6 @@ namespace ALYSLC
 		p->lastStaminaCooldownCheckTP	=
 		p->outOfStaminaTP				=
 		p->shoutStartTP					= SteadyClock::now();
-	}
-
-	void PlayerActionManager::RestoreAVToMaxValue(RE::ActorValue a_av)
-	{
-		// Restore the given actor value to its max value (base + temporary mod).
-
-		auto avValueOwner = coopActor->As<RE::ActorValueOwner>(); 
-		if (!avValueOwner) 
-		{
-			return;
-		}
-
-		// Get the amount to increase the current value by.
-		float deltaAmount = 
-		{ 
-			Util::GetFullAVAmount(coopActor.get(), a_av) -
-			coopActor->GetActorValue(a_av) 
-		};
-
-		if (deltaAmount > 0.0f)
-		{
-			avValueOwner->RestoreActorValue(RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, deltaAmount);
-		}
 	}
 
 	void PlayerActionManager::RevivePlayer()
@@ -6109,10 +6121,17 @@ namespace ALYSLC
 		
 		// Get event name to send.
 		const std::string_view& ueString = iter->second;
-		// Pressed == 1.0, released == 0.0.
+		// Instant trigger = 2.0, pressed == 1.0, released == 0.0.
 		// Instant trigger means just pressed and does not need a paired 'released' button event
 		// (value == 0.0).
-		const float value = a_buttonStateToTrigger == ButtonEventPressType::kRelease ? 0.0f : 1.0f;
+		const float value = 
+		(
+			a_buttonStateToTrigger == ButtonEventPressType::kInstantTrigger ?
+			2.0f :
+			a_buttonStateToTrigger == ButtonEventPressType::kRelease ? 
+			0.0f : 
+			1.0f
+		);
 		float heldTimeSecs = 0.0f;
 		if (a_heldDownSecs == 0.0f)
 		{
@@ -6672,6 +6691,38 @@ namespace ALYSLC
 	{
 		// Return true if the player should turn to face a target 
 		// if attacking, bashing, blocking, casting, or shouting.
+		
+		// Do not turn if cycling any item/spell/category.
+		bool isCycling = 
+		(
+			IsPerformingOneOf
+			(
+				InputAction::kCycleWeaponRH,
+				InputAction::kCycleSpellRH,
+				InputAction::kCycleWeaponLH,
+				InputAction::kCycleSpellLH,
+				InputAction::kCycleVoiceSlotMagic,
+				InputAction::kCycleAmmo,
+				InputAction::kCycleWeaponCategoryRH,
+				InputAction::kCycleSpellCategoryRH,
+				InputAction::kCycleWeaponCategoryLH,
+				InputAction::kCycleSpellCategoryLH
+			) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleVoiceSlotMagic, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleAmmo, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponCategoryRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellCategoryRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponCategoryLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellCategoryLH, false)
+		);
+		if (isCycling)
+		{
+			return false;
+		}
 
 		bool turnToFaceForCombatAction = isAttacking || isBlocking || isBashing;
 		if (!turnToFaceForCombatAction)
@@ -6832,6 +6883,38 @@ namespace ALYSLC
 		// Return true if the player should turn to face a target 
 		// if attacking, bashing, blocking, casting, or shouting.
 		// Return whether or not a combat action has just started in the outparam.
+		
+		// Do not turn if cycling any item/spell/category.
+		bool isCycling = 
+		(
+			IsPerformingOneOf
+			(
+				InputAction::kCycleWeaponRH,
+				InputAction::kCycleSpellRH,
+				InputAction::kCycleWeaponLH,
+				InputAction::kCycleSpellLH,
+				InputAction::kCycleVoiceSlotMagic,
+				InputAction::kCycleAmmo,
+				InputAction::kCycleWeaponCategoryRH,
+				InputAction::kCycleSpellCategoryRH,
+				InputAction::kCycleWeaponCategoryLH,
+				InputAction::kCycleSpellCategoryLH
+			) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleVoiceSlotMagic, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleAmmo, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponCategoryRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellCategoryRH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleWeaponCategoryLH, false) ||
+			GetPlayerActionInputJustReleased(InputAction::kCycleSpellCategoryLH, false)
+		);
+		if (isCycling)
+		{
+			return false;
+		}
 
 		bool turnToFaceForCombatAction = isAttacking || isBlocking || isBashing;
 		if (!turnToFaceForCombatAction)
@@ -7143,8 +7226,7 @@ namespace ALYSLC
 
 		// Update player carryweights if not using the infinite carryweight setting 
 		// and another player's carryweight is not imported onto P1.
-		if (!Settings::bInfiniteCarryweight && 
-			glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kCarryWeight))
+		if (!Settings::bInfiniteCarryweight)
 		{
 			float permCarryWeightInc = coopActor->GetActorValueModifier
 			(
@@ -7168,7 +7250,7 @@ namespace ALYSLC
 					);
 				}
 			}
-			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled && !p->isPlayer1)
 			{
 				const auto iter = glob.serializablePlayerData.find(coopActor->formID);
 				if (iter != glob.serializablePlayerData.end())
@@ -7196,15 +7278,96 @@ namespace ALYSLC
 						iter->second->hmsPointIncreasesList[2] / iAVDhmsLevelUp
 					);
 					float newPermCarryWeightInc = staminaLevelInc * carryWeightIncPerLevel;
-					// Update if not already set.
-					if (permCarryWeightInc != newPermCarryWeightInc)
+					// Repurpose 'Extra Pockets' perk's magic effect
+					// to apply our additional carryweight increment from leveling Stamina.
+					if (!glob.extraPocketsMagSpell || !glob.extraPocketsPerk)
 					{
-						coopActor->RestoreActorValue
-						(
-							RE::ACTOR_VALUE_MODIFIER::kPermanent, 
-							RE::ActorValue::kCarryWeight, 
-							newPermCarryWeightInc - permCarryWeightInc
-						);
+						SPDLOG_DEBUG("Could not get extra pockets mag eff or spell.");
+					}
+					else
+					{
+						bool hasExtraPocketsPerk = coopActor->HasPerk(glob.extraPocketsPerk);
+						float magOverride = 1.0f;
+						bool alreadyHasEffect = false;
+						if (Settings::bInfiniteCarryweight)
+						{
+							const auto baseCarryweight = coopActor->GetBaseActorValue
+							(
+								RE::ActorValue::kCarryWeight
+							);
+							if (hasExtraPocketsPerk)
+							{
+								magOverride = 
+								(
+									Settings::fInfiniteCarryweightBump - (baseCarryweight + 100.0f)
+								);
+							}
+							else
+							{
+								magOverride = Settings::fInfiniteCarryweightBump - baseCarryweight;
+							}
+						}
+						else
+						{
+							if (hasExtraPocketsPerk)
+							{
+								magOverride = 100.0f + newPermCarryWeightInc;
+							}
+							else
+							{
+								magOverride = newPermCarryWeightInc;
+							}
+						}
+						
+						const auto effectsList = coopActor->GetActiveEffectList();
+						if (effectsList && !effectsList->empty())
+						{
+							for (const auto effect : *effectsList)
+							{
+								if (!effect)
+								{
+									continue;
+								}
+
+								alreadyHasEffect = effect->spell == glob.extraPocketsMagSpell;
+								if (alreadyHasEffect)
+								{
+									if (effect->magnitude != magOverride)
+									{
+										effect->magnitude = magOverride;
+										alreadyHasEffect = false;
+										effect->Dispel(true);
+									}
+
+									break;
+								}
+							}
+						}
+
+						if (!alreadyHasEffect && magOverride != 0.0f)
+						{
+							auto instantCaster = coopActor->GetMagicCaster
+							(
+								RE::MagicSystem::CastingSource::kInstant
+							);
+							if (instantCaster)
+							{
+								SPDLOG_DEBUG
+								(
+									"{} cast with mag {}.", coopActor->GetName(), magOverride
+								);
+								instantCaster->CastSpellImmediate
+								(
+									glob.extraPocketsMagSpell,
+									true,
+									coopActor.get(), 
+									1.0f,
+									false,
+									magOverride,
+									nullptr
+								); 
+							}
+						}
 					}
 				}
 			}
@@ -7497,35 +7660,32 @@ namespace ALYSLC
 			if (secsSinceBoundWeap2HReq > secsBoundWeapon2HDuration)
 			{
 				// Time's up.
-				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+				// Unequip two hand weapon.
+				SPDLOG_DEBUG
+				(
+					"{}: Successful request. Unequipping 2H bound weapon.", 
+					coopActor->GetName()
+				);
+				Util::UnequipObject(coopActor.get(), rhWeap);
+				if (rhWeap->IsBow()) 
 				{
-					// Unequip two hand weapon.
-					SPDLOG_DEBUG
-					(
-						"{}: Successful request. Unequipping 2H bound weapon.", 
-						coopActor->GetName()
-					);
-					aem->UnequipObject(coopActor.get(), rhWeap);
-					if (rhWeap->IsBow()) 
+					// Also unequip the bound arrows.
+					auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
+					if (boundArrow && boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
 					{
-						// Also unequip the bound arrows.
-						auto boundArrow = p->em->equippedForms[!EquipIndex::kAmmo]; 
-						if (boundArrow && boundArrow->HasKeywordByEditorID("WeapTypeBoundArrow"))
-						{
-							aem->UnequipObject(coopActor.get(), boundArrow->As<RE::TESAmmo>());
-						}
+						Util::UnequipObject(coopActor.get(), boundArrow->As<RE::TESAmmo>());
 					}
-					
-					// Reset flags, durations, and requested forms.
-					boundWeapReq2H =
-					boundWeapReqLH = 
-					boundWeapReqRH = false;
-					secsSinceBoundWeap2HReq = 0.0f;
-					p->em->lastReqBoundWeapLH =
-					p->em->lastReqBoundWeapRH = nullptr;
-					// Clear out hand slots.
-					p->em->EquipFists();
 				}
+					
+				// Reset flags, durations, and requested forms.
+				boundWeapReq2H =
+				boundWeapReqLH = 
+				boundWeapReqRH = false;
+				secsSinceBoundWeap2HReq = 0.0f;
+				p->em->lastReqBoundWeapLH =
+				p->em->lastReqBoundWeapRH = nullptr;
+				// Clear out hand slots.
+				p->em->EquipFists();
 			}
 		}
 		else if (boundWeapLH)
@@ -7534,21 +7694,18 @@ namespace ALYSLC
 			if (secsSinceBoundWeapLHReq > secsBoundWeaponLHDuration)
 			{
 				// Time's up.
-				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-				{
-					// Unequip left hand weapon.
-					SPDLOG_DEBUG
-					(
-						"{}: Successful request. Unequipping LH bound weapon.",
-						coopActor->GetName()
-					);
-					// Reset flag, duration, and requested form.
-					boundWeapReqLH = false;
-					secsSinceBoundWeapLHReq = 0.0f;
-					p->em->lastReqBoundWeapLH = nullptr;
-					// Clear out hand slot.
-					aem->UnequipObject(coopActor.get(), lhWeap);
-				}
+				// Unequip left hand weapon.
+				SPDLOG_DEBUG
+				(
+					"{}: Successful request. Unequipping LH bound weapon.",
+					coopActor->GetName()
+				);
+				// Reset flag, duration, and requested form.
+				boundWeapReqLH = false;
+				secsSinceBoundWeapLHReq = 0.0f;
+				p->em->lastReqBoundWeapLH = nullptr;
+				// Clear out hand slot.
+				Util::UnequipObject(coopActor.get(), lhWeap);
 			}
 		}
 		else if (boundWeapRH)
@@ -7557,21 +7714,18 @@ namespace ALYSLC
 			if (secsSinceBoundWeapRHReq > secsBoundWeaponRHDuration)
 			{
 				// Time's up.
-				if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
-				{
-					// Unequip right hand weapon.
-					SPDLOG_DEBUG
-					(
-						"{}: Successful request. Unequipping RH bound weapon.",
-						coopActor->GetName()
-					);
-					// Reset flag, duration, and requested form.
-					boundWeapReqRH = false;
-					secsSinceBoundWeapRHReq = 0.0f;
-					p->em->lastReqBoundWeapRH = nullptr;
-					// Clear out hand slot.
-					aem->UnequipObject(coopActor.get(), rhWeap);
-				}
+				// Unequip right hand weapon.
+				SPDLOG_DEBUG
+				(
+					"{}: Successful request. Unequipping RH bound weapon.",
+					coopActor->GetName()
+				);
+				// Reset flag, duration, and requested form.
+				boundWeapReqRH = false;
+				secsSinceBoundWeapRHReq = 0.0f;
+				p->em->lastReqBoundWeapRH = nullptr;
+				// Clear out hand slot.
+				Util::UnequipObject(coopActor.get(), rhWeap);
 			}
 		}
 
@@ -7646,23 +7800,6 @@ namespace ALYSLC
 		}
 
 		// Remove all co-op player keywords first, just in case there are lingering ones.
-		/*for (const auto keyword : glob.coopPlayerKeywords)
-		{
-			if (keyword)
-			{
-				if (coopActor->HasKeyword(keyword))
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: has player keyword {}.",
-						coopActor->GetName(), Util::GetEditorID(keyword)
-					);
-				}
-
-				keywordForm->RemoveKeyword(keyword);
-			}
-		}*/
-
 		keywordForm->RemoveKeywords(glob.coopPlayerKeywords);
 		SPDLOG_DEBUG("{}: Removed all player keywords.", coopActor->GetName());
 
@@ -7729,6 +7866,7 @@ namespace ALYSLC
 		if ((!wasAttacking) && (isAttacking || isBashing || isInCastingAnim)) 
 		{
 			// Set attack start TP if a new attack just started.
+			SPDLOG_DEBUG("{} started attack.", coopActor->GetName());
 			p->lastAttackStartTP = SteadyClock::now();
 		}
 
@@ -7752,7 +7890,7 @@ namespace ALYSLC
 		wasSprinting = isSprinting;
 		isSprinting = 
 		(
-			(coopActor->IsSprinting()) ||
+			//(coopActor->IsSprinting()) ||
 			(avcam->actionsInProgress.all(AVCostAction::kSprint)) ||
 			(
 				(IsPerforming(InputAction::kSprint)) &&
@@ -8073,6 +8211,7 @@ namespace ALYSLC
 									delete script;
 								}
 
+								SPDLOG_DEBUG("Gird me loins, please.");
 								aem->EquipObject
 								(
 									coopActor.get(), 

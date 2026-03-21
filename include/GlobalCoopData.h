@@ -294,7 +294,8 @@ namespace ALYSLC
 				unlockedPerks.clear();
 			}
 
-			ExchangeablePlayerData(
+			ExchangeablePlayerData
+			(
 				const RE::BSFixedString& a_name,
 				const RE::BSFixedString& a_raceName,
 				std::array<float, 5> a_carryWeightAVData,
@@ -306,7 +307,7 @@ namespace ALYSLC
 				std::vector<RE::BGSPerk*> a_unlockedPerks,
 				float a_carryWeight,
 				int32_t a_gold
-				) :
+			) :
 				name(a_name),
 				raceName(a_raceName),
 				carryWeightAVData(a_carryWeightAVData),
@@ -675,6 +676,7 @@ namespace ALYSLC
 			// 1 = NPC with '__CoopCharacter1' as its actor base editor ID.
 			// 2 = NPC with '__CoopCharacter2' as its actor base editor ID.
 			// 3 = NPC with '__CoopCharacter3' as its actor base editor ID.
+			// ... etc.
 			uint32_t playerCharacterID;
 			// List of perks that the player has unlocked.
 			std::vector<RE::BGSPerk*> unlockedPerksList;
@@ -775,6 +777,8 @@ namespace ALYSLC
 		static int8_t GetCoopPlayerIndex(const RE::TESObjectREFRPtr& a_refrPtr);
 		static int8_t GetCoopPlayerIndex(const RE::ObjectRefHandle& a_refrHandle);
 		static int8_t GetCoopPlayerIndex(const RE::FormID& a_formID);
+		static int8_t GetCoopPlayerIndexFromChest(RE::TESObjectREFR* a_refr);
+		static int8_t GetCoopPlayerIndexFromChest(const RE::TESObjectREFRPtr& a_refrPtr);
 
 		// Get the current highest level for the shared AV among all active players.
 		// Return -1 if there is no active co-op session.
@@ -782,11 +786,24 @@ namespace ALYSLC
 		
 		// Returns the total number of unlocked perks in all shared skill trees.
 		static uint32_t GetUnlockedSharedPerksCount();
-		
+
 		// Transfer party-wide items (usable by any player through P1, 
 		// or trigger quests) from all players to P1.
 		// Items include: gold, lockpicks, keys, non-skill/spell teaching books, and notes.
 		static void GivePartyWideItemsToP1();
+		
+		// Unused for now.
+		// Give additional Enderal gold based on the number of active players 
+		// (modify count through outparam).
+		// Give one Enderal skillbook to every other active player
+		// when one is looted by the player given by the player ID.
+		static void HandleEnderalSpecificLoot
+		(
+			RE::TESObjectREFR* a_fromRefr,
+			int32_t a_lootingPID, 
+			RE::TESBoundObject* a_lootedObject,
+			RE::TESObjectREFR::Count& a_countOut
+		);
 
 		// Check for arm node collisions with raycasts along each player's moving arms.
 		static void HandlePlayerArmCollisions();
@@ -816,12 +833,18 @@ namespace ALYSLC
 		static bool IsCoopCharacter(const RE::ObjectRefHandle& a_refrHandle);
 		static bool IsCoopCharacter(const RE::FormID& a_formID);
 
+		// Is the given argument a co-op player or inventory chest?
+		static bool IsCoopEntity(RE::TESObjectREFR* a_refr);
+		static bool IsCoopEntity(const RE::TESObjectREFRPtr& a_refrPtr);
+
 		// Is the given argument a co-op player?
 		static bool IsCoopPlayer(const RE::ActorPtr& a_actorPtr);
 		static bool IsCoopPlayer(RE::TESObjectREFR* a_refr);
 		static bool IsCoopPlayer(const RE::TESObjectREFRPtr& a_refrPtr);
 		static bool IsCoopPlayer(const RE::ObjectRefHandle& a_refrHandle);
 		static bool IsCoopPlayer(const RE::FormID& a_formID);
+		static bool IsCoopPlayerInventoryChest(RE::TESObjectREFR* a_refr);
+		static bool IsCoopPlayerInventoryChest(const RE::TESObjectREFRPtr& a_refrPtr);
 		
 		// Checks if the player given by the player ID is not controlling menus.
 		static bool IsNotControllingMenus(const int32_t& a_playerID);
@@ -841,6 +864,16 @@ namespace ALYSLC
 		// to account for the additional companion players.
 		// Restore default when not setting for co-op.
 		static void ModifyXPPerSkillLevelMult(const bool& a_setForCoop);
+		
+		// Unused for now.
+		// Tasks to perform for the given player after an item was transferred to/from the player.
+		// Update Paraglider status for P1 on item transfer.
+		// Update player encumbrance factor.
+		// Update SMORF-ing status.
+		static void OnPostItemTransfer
+		(
+			const int32_t& a_playerID, RE::TESBoundObject* a_transferredObj, bool a_added
+		);
 
 		// Check if any player has not recorded a co-op level up 
 		// (never summoned or first saved level is 0) 
@@ -885,6 +918,11 @@ namespace ALYSLC
 		// Set last menu player ID to the current one and then
 		// reset the current menu player ID.
 		static void ResetMenuPlayerIDs();
+		
+		// Reset our handled menu data instantly.
+		// Stop MIM, reset menu device IDs,
+		// set supported menus as closed.
+		static void ResetMenuState();
 
 		// Restore any P1 data that was overwritten by a companion player's data 
 		// when they gained control of menus.
@@ -944,13 +982,18 @@ namespace ALYSLC
 		static void SyncSharedSkillAVs();
 
 		// End co-op session, optionally dismissing all co-op companions.
-		static void TeardownCoopSession(bool a_shouldDismiss);
+		static void TearDownCoopSession(bool a_shouldDismiss);
 
 		// DEBUG OPTION: Toggle god mode for all players.
-		static void ToggleGodModeForAllPlayers(const bool& a_enable);
+		// Can also choose to restore full health, magicka, and stamina when toggled on.
+		static void ToggleGodModeForAllPlayers(const bool& a_enable, bool a_enableWithFullHMS);
 
 		// DEBUG OPTION: Toggle god mode for the given player.
-		static void ToggleGodModeForPlayer(const int32_t& a_playerID, const bool& a_enable);
+		// Can also choose to restore full health, magicka, and stamina when toggled on.
+		static void ToggleGodModeForPlayer
+		(
+			const int32_t& a_playerID, bool a_enable, bool a_enableWithFullHMS
+		);
 
 		// Unregister global script event registrations (with player ref alias).
 		static void UnregisterEvents();
@@ -992,14 +1035,13 @@ namespace ALYSLC
 		// Co-op player data copying on menu open/close events.
 		static void CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info);
 
-		// Base data such as player name, race name, gold, and carryweight.
+		// Base data such as player name and race name.
 		static void CopyOverActorBaseData
 		(
 			RE::Actor* a_coopActor,
 			const bool& a_shouldImport,
 			bool&& a_name, 
-			bool&& a_raceName, 
-			bool&& a_carryWeight
+			bool&& a_raceName
 		);
 
 		// Exchanges/restores HMS and skill AVs. 
@@ -1868,6 +1910,28 @@ namespace ALYSLC
 		// Default length of the player indicator in pixels.
 		static inline const float PLAYER_INDICATOR_DEF_LENGTH = 47.0f;
 
+		// Item extra data types that should not change 
+		// when the item is moved from container to container.
+		// This will need a lot of verification and modifications. I can feel it.
+		static inline const std::unordered_set<RE::ExtraDataType> ITEM_INTRINSIC_EXTRA_DATA_TYPES = 
+		{
+			RE::ExtraDataType::kAmmo,
+			RE::ExtraDataType::kCachedScale,
+			RE::ExtraDataType::kCharge,
+			RE::ExtraDataType::kEditorID,
+			RE::ExtraDataType::kEnchantment,
+			RE::ExtraDataType::kFlags,
+			RE::ExtraDataType::kHealth,
+			RE::ExtraDataType::kHealthPerc,
+			RE::ExtraDataType::kLeveledItem,
+			RE::ExtraDataType::kLeveledItemBase,
+			RE::ExtraDataType::kPoison,
+			RE::ExtraDataType::kSoul,
+			RE::ExtraDataType::kTextDisplayData,
+			RE::ExtraDataType::kWeaponAttackSound,
+			RE::ExtraDataType::kWeaponIdleSound
+		};
+
 		// Adjustable player left arm nodes when rotating that arm.
 		static inline const std::unordered_set<RE::BSFixedString>
 		ADJUSTABLE_LEFT_ARM_NODES = 
@@ -2031,6 +2095,7 @@ namespace ALYSLC
 		RE::BGSPerk* dualCastingDestructionPerk;
 		RE::BGSPerk* dualCastingIllusionPerk;
 		RE::BGSPerk* dualCastingRestorationPerk;
+		RE::BGSPerk* extraPocketsPerk;
 		RE::BGSPerk* greatCriticalChargePerk;
 		RE::BGSPerk* powerBashPerk;
 		RE::BGSPerk* shieldChargePerk;
@@ -2047,6 +2112,9 @@ namespace ALYSLC
 		// For QuickLoot compatibility:
 		// Last set container refr's handle.
 		RE::ObjectRefHandle reqQuickLootContainerHandle;
+		// Repurposed spell for giving companion players more carryweight
+		// so our changes can stack on top of all other modifiers.
+		RE::SpellItem* extraPocketsMagSpell;
 		// Paraglide updraft spell.
 		RE::SpellItem* tarhielsGaleSpell;
 		// Current copied menu data types (co-op companion onto P1).
@@ -2055,6 +2123,8 @@ namespace ALYSLC
 		RE::TESBoundObject* dummy1H;
 		// Bound object for fists used to clear out both hand slots.
 		RE::TESBoundObject* fists;
+		// Paraglider bound object. Only set if Skyrim's Paraglider is installed.
+		RE::TESObjectMISC* paraglider;
 		// Shaders.
 		RE::TESEffectShader* activateHighlightShader;
 		RE::TESEffectShader* dragonHolesShader;
@@ -2118,6 +2188,12 @@ namespace ALYSLC
 		// spell that then has the requested spell's data copied into it.
 		// Holds all placeholder spells for all players.
 		std::set<RE::SpellItem*> placeholderSpellsSet;
+		// Used on import of companion player's favorites and restoration of P1's favorites. 
+		// Maps P1's favorited forms to a set of pairs of the corresponding extra data lists 
+		// that were favorited and their associated hotkeys.
+		std::unordered_map
+		<RE::TESForm*, std::set<std::pair<RE::ExtraDataList*, int8_t>>> p1FavoritedFormsMap;
+		std::set<RE::InventoryEntryData*> favMenuEntriesSet;
 		// Serializable data to write to/read from the SKSE co-save for each player, 
 		// indexed by the players' form IDs.
 		std::unordered_map<RE::FormID, std::unique_ptr<SerializablePlayerData>> 
@@ -2176,8 +2252,9 @@ namespace ALYSLC
 		RE::BSSimpleList<RE::MagicItem*> charGenActiveEffectsSpellsList; 
 		// P1's race before entering the menu.
 		RE::TESRace* charGenRace;
-		// The list of equipped forms before entering the menu.
+		// The list of equipped forms and their extra data lists before entering the menu.
 		std::array<RE::TESForm*, (size_t)EquipIndex::kTotal> charGenEquippedForms;
+		std::array<RE::ExtraDataList*, (size_t)EquipIndex::kTotal> charGenEquippedExDataLists;
 		// Base skill levels, XP, and threshold for each actor value.
 		std::vector<RE::PlayerCharacter::PlayerSkills::Data::SkillData> charGenSkillDataList;
 		// List of requested emulated P1 InputEvents to send this frame once chained.

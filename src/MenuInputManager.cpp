@@ -45,7 +45,9 @@ namespace ALYSLC
 		// Bools
 		isCoopInventory = false;
 		placeholderMagicChanged = false;
+		shouldDropItem.store(false);
 		shouldRefreshMenu = false;
+		shouldReloadPlayerInventoryLists = false;
 		spellFavoriteStatusChanged = false;
 
 		// Player menu control outline overlay alpha value.
@@ -117,20 +119,9 @@ namespace ALYSLC
 		// Update controller state and event type to handle, if any.
 		CheckControllerInput();
 
-		bool delayedReq = 
-		(
-			delayedEquipStateRefresh && 
-			Util::GetElapsedSeconds(lastEquipStateRefreshReqTP) > 1.0f
-		);
-		// Update equip state when signalled to externally or when there is a delayed request.
-		if (equipEventRefreshReq || delayedReq) 
+		// Update equip state when signalled to externally.
+		if (equipEventRefreshReq) 
 		{
-			if (delayedReq) 
-			{
-				const auto& p = glob.coopPlayers[managerMenuPID];
-				p->em->RefreshEquipState(RefreshSlots::kAll);
-			}
-
 			if (openedMenuType == SupportedMenu::kMagic)
 			{
 				RefreshMagicMenuEquipState();
@@ -187,8 +178,6 @@ namespace ALYSLC
 		if (shouldRefreshMenu)
 		{
 			RefreshMenu();
-			// Clear flag after refresh.
-			shouldRefreshMenu = false;
 		}
 	}
 
@@ -274,6 +263,7 @@ namespace ALYSLC
 		isCoopInventory = false;
 		placeholderMagicChanged = false;
 		shouldRefreshMenu = false;
+		shouldReloadPlayerInventoryLists = false;
 		spellFavoriteStatusChanged = false;
 		fromContainerHandle = RE::ObjectRefHandle();
 		menuContainerHandle = RE::ObjectRefHandle();
@@ -299,14 +289,19 @@ namespace ALYSLC
 				containerRefrPtr->GetHandle() :
 				RE::ObjectRefHandle()
 			);
-			// If the container is the co-op companion player themselves, 
-			// they are accessing their inventory.
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(menuCoopActorHandle);
 			isCoopInventory =
 			{ 
+				glob.coopSessionActive &&
 				containerMenu->GetContainerMode() == RE::ContainerMenu::ContainerMode::kNPCMode && 
-				Util::HandleIsValid(menuContainerHandle) && 
-				menuContainerHandle == menuCoopActorHandle
+				pIndex != -1 && 
+				Util::HandleIsValid(menuContainerHandle) &&
+				containerRefrPtr == glob.coopPlayers[pIndex]->em->inventoryChest
 			};
+			if (isCoopInventory)
+			{
+				RefreshMenu();
+			}
 		}
 		else if (magicMenu)
 		{
@@ -405,12 +400,13 @@ namespace ALYSLC
 		// Is viewing P1's inventory from container.
 		RE::NiPointer<RE::TESObjectREFR> containerRefr{ };
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-		// Container is not a companion player's inventory.
-		if (!GlobalCoopData::IsCoopPlayer(containerRefr)) 
+		// Container is not a companion player's inventory chest.
+		if (!GlobalCoopData::IsCoopPlayerInventoryChest(containerRefr)) 
 		{
 			return currentState;
 		}
 		
+		isCoopInventory = false;
 		// Restore P1's data first.
 		GlobalCoopData::CopyOverCoopPlayerData
 		(
@@ -419,6 +415,10 @@ namespace ALYSLC
 		// The container is a co-op companion's inventory and the tab has been switched
 		// to display P1's inventory, so we pause here and given P1 control.
 		GlobalCoopData::SetMenuPlayerIDs(0);
+		// Have to find out how the game reloads entries
+		// (not you 'ItemList::Update()', you're too laggy).
+		// Until then, manually set when switching over.
+		UpdateContainerInventoryEquipState(false, true);
 		return ManagerState::kPaused;
 	}
 
@@ -462,8 +462,8 @@ namespace ALYSLC
 		// Is viewing a container and not P1's inventory.
 		RE::NiPointer<RE::TESObjectREFR> containerRefr{ };
 		RE::TESObjectREFR::LookupByHandle(RE::ContainerMenu::GetTargetRefHandle(), containerRefr);
-		auto pIndex = GlobalCoopData::GetCoopPlayerIndex(containerRefr); 
-		// The container is not a companion player's inventory.
+		auto pIndex = GlobalCoopData::GetCoopPlayerIndexFromChest(containerRefr); 
+		// The container is not a companion player's inventory chest.
 		if (pIndex == -1) 
 		{
 			return currentState;
@@ -483,6 +483,8 @@ namespace ALYSLC
 		// Add the Container Menu back to the stack of handled menus, 
 		// since it was removed when the MIM paused earlier.
 		SetOpenedMenu(RE::ContainerMenu::MENU_NAME, true);
+		// Re-apply companion player's equip state with an entry list refresh.
+		UpdateContainerInventoryEquipState(false, false);
 		return ManagerState::kRunning;
 	}
 
@@ -1403,7 +1405,7 @@ namespace ALYSLC
 				// Update entry text with the quick slot tag.
 				if (equipped)
 				{
-					entryStr = fmt::format("[*QS{}*] {}", isConsumable ? "I" : "S", entryStr);
+					entryStr = fmt::format("(*QS{}*) {}", isConsumable ? "I" : "S", entryStr);
 					// Index corresponding to the previously equipped QS item/spell.
 					uint32_t equippedQSIndex = 
 					(
@@ -1424,7 +1426,7 @@ namespace ALYSLC
 						RE::GFxValue oldEntryText{ };
 						oldEntry.GetMember("text", std::addressof(oldEntryText));
 						std::string oldEntryStr = oldEntryText.GetString();
-						auto qsTagStartIndex = oldEntryStr.find("[*QS", 0);
+						auto qsTagStartIndex = oldEntryStr.find("(*QS", 0);
 						// Tag found and item name has a non-zero length.
 						if (qsTagStartIndex != std::string::npos && 
 							qsTagStartIndex + qsPrefixTagLength <= oldEntryStr.length())
@@ -1446,7 +1448,7 @@ namespace ALYSLC
 				else
 				{
 					// Remove QS tag from the current entry.
-					auto qsTagStartIndex = entryStr.find("[*QS", 0);
+					auto qsTagStartIndex = entryStr.find("(*QS", 0);
 					if (qsTagStartIndex != std::string::npos && 
 						qsTagStartIndex + qsPrefixTagLength <= entryStr.length())
 					{
@@ -1903,16 +1905,25 @@ namespace ALYSLC
 						false, 
 						true
 					);
+
+					auto extraDataList = 
+					(
+						favoritesMenu->favorites[index].entryData &&
+						favoritesMenu->favorites[index].entryData->extraLists ? 
+						favoritesMenu->favorites[index].entryData->extraLists->front() :
+						nullptr
+					);
 					bool isP1Hotkeyed = Util::IsHotkeyed
 					(
-						RE::PlayerCharacter::GetSingleton(), form
+						RE::PlayerCharacter::GetSingleton(), form, extraDataList
 					);
 
 					SPDLOG_DEBUG
 					(
-						"{}: Hotkeying {} into slot {}, is now hotkeyed by P1: {}.",
+						"{}: Hotkeying {} (list {:p}) into slot {}, is now hotkeyed by P1: {}.",
 						p->coopActor->GetName(),
 						form->GetName(), 
+						fmt::ptr(extraDataList),
 						hotkeySlotToChange, 
 						isP1Hotkeyed
 					);
@@ -1921,16 +1932,29 @@ namespace ALYSLC
 					{
 						// Ensure the companion player has the same hotkey state
 						// as P1 for the form.
+						auto chestExtraDataList = Util::FindMatchingExtraDataList
+						(
+							p->em->inventoryChest.get(),
+							form->As<RE::TESBoundObject>(),
+							extraDataList
+						);
 						Util::ChangeFormHotkeyStatus
 						(
-							p->coopActor.get(), 
+							p->em->inventoryChest.get(), 
 							form, 
-							isP1Hotkeyed ? hotkeySlotToChange : -1
+							isP1Hotkeyed ? hotkeySlotToChange : -1,
+							chestExtraDataList
 						);
 
 						SPDLOG_DEBUG
 						(
-							"{} is now hotkeyed by P1: {}.", form->GetName(), isP1Hotkeyed
+							"{} (list {:p}) is now hotkeyed in inventory chest: {}.", 
+							form->GetName(), 
+							fmt::ptr(extraDataList),
+							Util::IsHotkeyed
+							(
+								p->em->inventoryChest.get(), form, chestExtraDataList
+							)
 						);
 						// Signal manager to refresh the menu.
 						shouldRefreshMenu = true;
@@ -2467,15 +2491,21 @@ namespace ALYSLC
 							// This tag gets wiped whenever the favorites menu is opened,
 							// so it must be re-applied each time.
 							const auto& em = glob.coopPlayers[0]->em;
-							if (index == em->equippedQSItemIndex || 
-								index == em->equippedQSSpellIndex)
+							bool matching = 
+							(
+								favoritesMenu->favorites[index].item == 
+								em->quickSlotItem ||
+								favoritesMenu->favorites[index].item == 
+								em->quickSlotSpell
+							);
+							if (matching)
 							{
-								if (entryStr.find("[*QS", 0) == std::string::npos)
+								if (entryStr.find("(*QS", 0) == std::string::npos)
 								{
 									bool isConsumable = index == em->equippedQSItemIndex;
 									entryStr = fmt::format
 									(
-										"[*QS{}*] {}", isConsumable ? "I" : "S", entryStr
+										"(*QS{}*) {}", isConsumable ? "I" : "S", entryStr
 									);
 									// Set entry text and apply modified entry.
 									entryText.SetString(entryStr);
@@ -2880,13 +2910,13 @@ namespace ALYSLC
 	void MenuInputManager::ProcessContainerMenuButtonInput(const RE::BSFixedString& a_userEvent)
 	{
 		// Handle ContainerMenu input.
-
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr)
 		{
 			return;
 		}
 
+		const auto& p = glob.coopPlayers[GlobalCoopData::GetCoopPlayerIndex(menuCoopActorHandle)];
 		auto ue = RE::UserEvents::GetSingleton();
 		if (!containerMenu || !ue)
 		{
@@ -2933,12 +2963,58 @@ namespace ALYSLC
 				// Will still show P1's inventory on tab switch if the list isn't force-refreshed.
 				shouldRefreshMenu = true;
 			}
+			
+			// Prevent equipping items on P1 when spamming the left/right equip + 
+			// drop or accept binds.
+			if (a_userEvent == ue->rightEquip ||
+				a_userEvent == ue->leftEquip ||
+				a_userEvent == ue->leftAttack ||
+				a_userEvent == ue->rightAttack)
+			{
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+			}
 
 			return;
+		}
+		
+		bool quantityMenuOpen = false;
+		auto view = containerMenu->uiMovie;
+		if (view && !containerMenu->root.IsNull() && !containerMenu->root.IsUndefined())
+		{
+			RE::GFxValue alpha{ };
+			containerMenu->uiMovie->GetVariable
+			(
+				std::addressof(alpha), "_root.Menu_mc.itemCard.QuantitySlider_mc._alpha"
+			);
+			if (!alpha.IsNull() && !alpha.IsUndefined())
+			{
+				SPDLOG_DEBUG("Alpha is {}.", alpha.GetUInt());
+				quantityMenuOpen = alpha.GetUInt() > 0;
+			}
+		}
+		
+		// Haven't figured out a Scaleform event for item transfers through menus,
+		// so this will have to do.
+		// Drop if the bind is pressed, or if already requested a drop with the bind
+		// and now accepting the amount given by the quantity slider menu.
+		// Clear the drop flag if the quantity menu is closed or if cancelling the drop request
+		// while the quantity menu is open.
+		bool dropReq = a_userEvent == ue->xButton;
+		if ((dropReq) || (shouldDropItem.load() && quantityMenuOpen && a_userEvent == ue->accept))
+		{
+			SPDLOG_DEBUG("DROP. Input: {}. Drop req: {}, quan menu open: {}", 
+				a_userEvent, dropReq, quantityMenuOpen);
+			shouldDropItem.store(true);
+		}
+		else if (!quantityMenuOpen || a_userEvent == ue->cancel)
+		{
+			SPDLOG_DEBUG("Do NOT drop. Input: {}.", a_userEvent);
+			shouldDropItem.store(false);
 		}
 
 		if (a_userEvent == ue->accept || a_userEvent == ue->xButton)
 		{
+			// Default to no event to prevent the original function of the button.
 			if (isCoopInventory)
 			{
 				auto boundObj = selectedItem->data.objDesc->object;
@@ -2946,49 +3022,38 @@ namespace ALYSLC
 				{
 					return;
 				}
-
+				
+				const auto& p = glob.coopPlayers[managerMenuPID];
 				// Set extra data to use for dropping the object.
 				selectedForm = boundObj;
 				selectedExDataList = Util::GetEntryFrontExtraDataList(selectedItem->data.objDesc);
-				const auto& p = glob.coopPlayers[managerMenuPID];
 				// Unequip before dropping/transferring to avoid crash.
 				auto foundIter = std::find_if
 				(
-					p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), 
-					[boundObj](RE::TESForm* a_form) { return a_form == boundObj; }
+					p->em->desiredForms.begin(), p->em->desiredForms.end(), 
+					[boundObj](RE::TESForm* a_form) 
+					{
+						return a_form == boundObj; 
+					}
 				);
 				EquipIndex index = 
 				(
-					foundIter != p->em->desiredEquippedForms.end() ?
-					static_cast<EquipIndex>(foundIter - p->em->desiredEquippedForms.begin()) : 
+					foundIter != p->em->desiredForms.end() ?
+					static_cast<EquipIndex>(foundIter - p->em->desiredForms.begin()) : 
 					EquipIndex::kTotal
 				);
 				if (index != EquipIndex::kTotal)
 				{
-					// Since the transfer occurs sometime 
-					// after the emulated input event is processed,
-					// we cannot re-equip it right away here,
-					// so notify the player to unequip the item manually first.
-					if (a_userEvent == ue->accept)
-					{
-						RE::DebugMessageBox
-						(
-							"[ALYSLC]\nPlease unequip the item before transferring it to player 1."
-						);
-						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-						return;
-					}
-
 					p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
 				}
-				else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+				else
 				{
-					aem->UnequipObject(menuCoopActorPtr.get(), boundObj, selectedExDataList);
+					Util::UnequipObject(menuCoopActorPtr.get(), boundObj, selectedExDataList);
 				}
 
 				// Get the current number owned before dropping/transferring.
 				int32_t currentCount = 0;
-				auto inventory = menuCoopActorPtr->GetInventory();
+				auto inventory = containerRefr->GetInventory();
 				const auto iter = inventory.find(boundObj);
 				if (iter != inventory.end())
 				{
@@ -2999,88 +3064,79 @@ namespace ALYSLC
 				// after dropping/transferring one.
 				if (currentCount <= 1)
 				{
-					Util::ChangeFormFavoritesStatus(menuCoopActorPtr.get(), boundObj, false);
+					Util::ChangeFormFavoritesStatus(containerRefr.get(), boundObj, false);
 				}
-
-				// Drop the item.
-				if (a_userEvent == ue->xButton)
-				{
-					// Handled here; no event to send.
+				
+				SPDLOG_DEBUG
+				(
+					"Transfer/drop: {}/{}. Input event type: {}",
+					a_userEvent == ue->accept, a_userEvent == ue->xButton, currentMenuInputEventType
+				);
+				if (dropReq)
+				{	
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-					RE::DebugNotification
-					(
-						fmt::format
-						(
-							"{} is dropping 1 {}", menuCoopActorPtr->GetName(), boundObj->GetName()
-						).c_str()
-					);
-					// Place in front of the player at torso height.
-					auto dropPos = 
-					(
-						glob.coopPlayers[managerMenuPID]->mm->playerTorsoPosition + 
-						Util::RotationToDirectionVect
-						(
-							0.0f, 
-							Util::ConvertAngle
-							(
-								menuCoopActorPtr->GetHeading(false)
-							)
-						) * 0.5f * menuCoopActorPtr->GetHeight()
-					);
-					menuCoopActorPtr->RemoveItem
-					(
-						boundObj, 
-						1, 
-						RE::ITEM_REMOVE_REASON::kDropping,
-						selectedExDataList,
-						nullptr,
-						&dropPos
-					);
-				}
+					shouldRefreshMenu = false;
+					shouldReloadPlayerInventoryLists = false;
 
-				if (index != EquipIndex::kTotal)
-				{
-					// Was equipped and had at least 2 before dropping 1, so re-equip.
-					if (currentCount > 1)
-					{
-						// Setup equip request.
-						currentMenuInputEventType = MenuInputEventType::kEquipReq;
-						fromContainerHandle = 
+					// Send an 'accept' input event to move the item to P1.
+					// Save the add object call params to match against later
+					// in the PlayerCharacter::AddObjectToContainer() hook 
+					// and then drop the item there.
+					// All this because removing the item directly here 
+					// and then updating the menu's entry list 
+					// does not always happen fast enough to prevent equipping 
+					// the dropped item's invalid extra data list, 
+					// which leads to a crash.
+					auto acceptIDCode = GetMappedKey
+					(
+						ue->accept, 
+						RE::INPUT_DEVICE::kGamepad,
+						RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+					);
+					// Press the bind.
+					std::unique_ptr<RE::InputEvent* const> buttonEvent = 
+					(
+						std::make_unique<RE::InputEvent* const>
 						(
-							isCoopInventory ? menuCoopActorHandle : menuContainerHandle
-						);
-						reqEquipIndex = index;
-						placeholderMagicChanged = false;
-						// If the item will be equipped/unequipped from the player's own inventory,
-						// or if the item is looted from a container and is not already equipped,
-						// we want to wait until the equip event fires
-						// before refreshing the player's equip state.
-						if (isCoopInventory)
-						{
-							// Refresh equip state later once the item is (un)equipped.
-							delayedEquipStateRefresh = true;
-							lastEquipStateRefreshReqTP = SteadyClock::now();
-						}
-						else
-						{
-							// Refresh right away after item removal otherwise.
-							shouldRefreshMenu = true;
-						}
-					}
-					else
-					{
-						// None left after dropping/transfer, 
-						// so remove from desired list.
-						p->em->desiredEquippedForms[!index] = nullptr;
-						p->em->desiredEquippedUniqueIDs[!index] = 0;
-						shouldRefreshMenu = true;
-					}
+							RE::ButtonEvent::Create
+							(
+								RE::INPUT_DEVICE::kGamepad,
+								ue->accept, 
+								acceptIDCode, 
+								1.0f,
+								0.0f
+							)
+						)
+					);
+					// Sent by a companion player.
+					(*buttonEvent.get())->AsIDEvent()->pad24 = 0xCA11;
+					// Release the bind.
+					std::unique_ptr<RE::InputEvent* const> buttonEvent2 = 
+					(
+						std::make_unique<RE::InputEvent* const>
+						(
+							RE::ButtonEvent::Create
+							(
+								RE::INPUT_DEVICE::kGamepad, 
+								ue->accept, 
+								acceptIDCode, 
+								0.0f,
+								1.0f
+							)
+						)
+					);
+					// Sent by a companion player.
+					(*buttonEvent2.get())->AsIDEvent()->pad24 = 0xCA11;
+					Util::SendInputEvent(buttonEvent);
+					Util::SendInputEvent(buttonEvent2);
 				}
 				else
 				{
-					// Refresh the menu since an entry was changed
-					// upon dropping or transferring the item.
+					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+					// Refreshing the menu blocks the emulated input event from being processed.
+					// Huh.
 					shouldRefreshMenu = true;
+					shouldReloadPlayerInventoryLists = false;
 				}
 			}
 			else if (isPickpocketing)
@@ -3103,19 +3159,19 @@ namespace ALYSLC
 			// Handled here; no event to send.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 
-			// Need inventory changes to (un)favorite any selected form.
-			auto inventoryChanges = menuCoopActorPtr->GetInventoryChanges();
-			if (!inventoryChanges)
-			{
-				return;
-			}
-
 			// Companion player's inventory must be open.
 			if (!isCoopInventory)
 			{
 				return;
 			}
-				
+
+			// Need inventory changes to (un)favorite any selected form.
+			auto inventoryChanges = containerRefr->GetInventoryChanges();
+			if (!inventoryChanges)
+			{
+				return;
+			}
+
 			selectedForm = selectedItem->data.objDesc->object;
 			// Must have a selected form to (un)favorite.
 			if (!selectedForm)
@@ -3129,7 +3185,6 @@ namespace ALYSLC
 			// From an older version of:
 			// https://github.com/powerof3/PapyrusExtenderSSE/
 			bool shouldFavorite = true;
-			auto inventory = menuCoopActorPtr->GetInventory();
 			RE::InventoryEntryData* entryData = selectedItem->data.objDesc;
 			selectedExDataList = Util::GetEntryFrontExtraDataList(entryData);
 			if (entryData)
@@ -3209,6 +3264,7 @@ namespace ALYSLC
 
 			// Refresh menu to display the changed favorites status indicator.
 			shouldRefreshMenu = true;
+			shouldReloadPlayerInventoryLists = true;
 		}
 		else
 		{
@@ -3216,7 +3272,7 @@ namespace ALYSLC
 			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
 			if (isLeftEquip || isRightEquip)
 			{
-				// No events to send by default. 
+				// No event to send by default. 
 				// Do not want to equip selected items onto P1 through trigger presses.
 				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 				auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
@@ -3225,6 +3281,7 @@ namespace ALYSLC
 					return;
 				}
 				
+				const auto& p = glob.coopPlayers[managerMenuPID];
 				const auto p1 = RE::PlayerCharacter::GetSingleton(); 
 				auto asBook = obj->As<RE::TESObjectBOOK>(); 
 				if (asBook && p1)
@@ -3295,10 +3352,7 @@ namespace ALYSLC
 					{
 						// Setup equip request.
 						currentMenuInputEventType = MenuInputEventType::kEquipReq;
-						fromContainerHandle = 
-						(
-							isCoopInventory ? menuCoopActorHandle : menuContainerHandle
-						);
+						fromContainerHandle = menuContainerHandle;
 						reqEquipIndex = 
 						(
 							isLeftEquip ? EquipIndex::kLeftHand : EquipIndex::kRightHand
@@ -3309,10 +3363,7 @@ namespace ALYSLC
 						(
 							selectedItem->data.objDesc
 						);
-						bool isEquipped = glob.coopPlayers[managerMenuPID]->em->IsEquipped
-						(
-							selectedForm, selectedExDataList
-						);
+
 						SPDLOG_DEBUG
 						(
 							"Selected form {}, selected inv entry: {:p}, selected exData: {:p}.",
@@ -3353,93 +3404,65 @@ namespace ALYSLC
 											fmt::ptr(data),
 											type
 										);
-									}
-								}
-							}
-						}
-						
-						const auto& p = glob.coopPlayers[managerMenuPID];
-						const auto inventory = p->coopActor->GetInventory();
-						for (const auto& [boundObj, countInvEntryData] : inventory)
-						{
-							if (!boundObj || boundObj != selectedForm)
-							{
-								continue;
-							}
-
-							SPDLOG_DEBUG
-							(
-								"{}: Inv entry data {:p} with count {}, "
-								"exData front {:p}",
-								boundObj->GetName(),
-								fmt::ptr(countInvEntryData.second.get()),
-								countInvEntryData.first,
-								countInvEntryData.second && 
-								countInvEntryData.second->extraLists &&
-								!countInvEntryData.second->extraLists->empty() ?
-								fmt::ptr(countInvEntryData.second->extraLists->front()) : 
-								nullptr
-							);
-
-							if (countInvEntryData.second->extraLists &&
-								!countInvEntryData.second->extraLists->empty())
-							{
-								auto listSize = std::distance
-								(
-									countInvEntryData.second->extraLists->begin(), 
-									countInvEntryData.second->extraLists->end()
-								);
-								for (const auto list : *countInvEntryData.second->extraLists)
-								{
-									if (!list)
-									{
-										continue;
-									}
-									
-									for (auto type = RE::ExtraDataType::kNone; 
-										type <= RE::ExtraDataType::kUnkBF; 
-										type = static_cast<RE::ExtraDataType>(!type + 1))
-									{
-										if (auto data = list->GetByType(type); data)
+										if (type == RE::ExtraDataType::kOwnership)
 										{
+											auto exOwner = static_cast<RE::ExtraOwnership*>(data);
 											SPDLOG_DEBUG
 											(
-												"{} has exData list {:p} ({}) "
-												"with data {:p} of type 0x{:X}. "
-												"Same as selected: {}, {}",
-												boundObj->GetName(),
-												fmt::ptr(list),
-												listSize,
-												fmt::ptr(data),
-												type,
-												list == selectedList,
-												list == selectedExDataList
+												"Owner: {}.",
+												exOwner ? 
+												exOwner->owner->GetName() :
+												"NONE"
 											);
 										}
 									}
 								}
 							}
 						}
-
+						
 						// If the item will be equipped/unequipped from the player's own inventory,
 						// or if the item is looted from a container and is not already equipped,
 						// we want to wait until the equip event fires
 						// before refreshing the player's equip state.
-						if (isCoopInventory || !isEquipped)
+						if (isCoopInventory || 
+							!glob.coopPlayers[managerMenuPID]->em->IsEquipped
+							(
+								selectedForm, nullptr
+							))
 						{
 							// Refresh equip state later once the item is (un)equipped.
 							delayedEquipStateRefresh = true;
 							lastEquipStateRefreshReqTP = SteadyClock::now();
+							// Entry list size will change when equipping from an external container
+							// or when using a consumable, so make sure the list is updated.
+							shouldReloadPlayerInventoryLists = 
+							(
+								(!isCoopInventory) ||
+								(
+									selectedForm->IsNot
+									(
+										RE::FormType::Weapon, 
+										RE::FormType::Armor,
+										RE::FormType::Ammo
+									)
+								)
+							);
+							SPDLOG_DEBUG
+							(
+								"Should reload player inventory lists: {}", 
+								shouldReloadPlayerInventoryLists
+							);
 						}
 						else
 						{
 							// Refresh right away after item removal otherwise.
 							shouldRefreshMenu = true;
+							shouldReloadPlayerInventoryLists = true;
 						}
 
 						// If container reference is the player,
 						// or the item is not valid, do not remove it from its container.
-						if (isCoopInventory || !obj)
+						if (!obj)
 						{
 							return;
 						}
@@ -3465,12 +3488,20 @@ namespace ALYSLC
 									{
 										continue;
 									}
-
-									menuCoopActorPtr->PickUpObject(handle.get().get(), 1);
+									
+									SPDLOG_DEBUG
+									(
+										"Picking up {} from {}'s dropped inventory "
+										"and transferring from P1 to {}.",
+										obj ? obj->GetName() : "NONE", 
+										containerRefrPtr->GetName(), 
+										glob.coopPlayers[managerMenuPID]->coopActor->GetName()
+									);
+									p1->PickUpObject(handle.get().get(), 1);
 								}
 							}
 						}
-						else
+						else if (!isCoopInventory)
 						{
 							auto counts = containerRefrPtr->GetInventoryCounts();
 							const auto iter2 = counts.find(obj);
@@ -3480,17 +3511,26 @@ namespace ALYSLC
 								if (count > 0)
 								{
 									// NOTE: 
-									// Directly to the menu-controlling companion player
-									// to be equipped immediately. 
+									// Move ALL directly to the menu-controlling companion player's
+									// inventory chest to be equipped immediately. 
 									// Delaying the transfer may cause the equip call to execute
 									// before the item is transfered and the equip will fail.
+									const auto& menuP = glob.coopPlayers[managerMenuPID]; 
+									SPDLOG_DEBUG
+									(
+										"Moving {} {} from {} to {}'s inventory.",
+										count, 
+										obj ? obj->GetName() : "NONE", 
+										containerRefrPtr->GetName(), 
+										menuP->coopActor->GetName()
+									);
 									containerRefrPtr->RemoveItem
 									(	
 										obj,
 										count, 
 										RE::ITEM_REMOVE_REASON::kStoreInContainer,
 										nullptr,
-										menuCoopActorPtr.get()
+										menuP->em->inventoryChest.get()
 									);
 								}
 							}
@@ -3667,7 +3707,7 @@ namespace ALYSLC
 
 					if (shouldEquip)
 					{
-						entryStr = fmt::format("[*QS{}*] {}", isConsumable ? "I" : "S", entryStr);
+						entryStr = fmt::format("(*QS{}*) {}", isConsumable ? "I" : "S", entryStr);
 						// Previously equipped item/spell's index.
 						uint32_t equippedQSIndex = 
 						(
@@ -3689,7 +3729,7 @@ namespace ALYSLC
 							oldEntry.GetMember("text", std::addressof(oldEntryText));
 							std::string oldEntryStr = oldEntryText.GetString();
 
-							auto qsTagStartIndex = oldEntryStr.find("[*QS", 0);
+							auto qsTagStartIndex = oldEntryStr.find("(*QS", 0);
 							// If there is a QS tag applied,
 							// restore the old entry text.
 							if (qsTagStartIndex != std::string::npos &&
@@ -3714,7 +3754,7 @@ namespace ALYSLC
 					else
 					{
 						// 'Unequipping': remove the equipped tag from the current entry.
-						auto qsTagStartIndex = entryStr.find("[*QS", 0);
+						auto qsTagStartIndex = entryStr.find("(*QS", 0);
 						if (qsTagStartIndex != std::string::npos && 
 							qsTagStartIndex + qsPrefixTagLength <= entryStr.length())
 						{
@@ -3853,12 +3893,14 @@ namespace ALYSLC
 		else if (a_xMask == XINPUT_GAMEPAD_RIGHT_THUMB)
 		{
 			// Hotkey the selected form, if any.
+			// No emulated input to send.
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 		else 
 		{
 			bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
 			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
+			const auto& p = glob.coopPlayers[glob.menuPID];
 			if (isLeftEquip || isRightEquip)
 			{
 				auto view = favoritesMenu->uiMovie; 
@@ -3895,7 +3937,7 @@ namespace ALYSLC
 				};
 				if (!equipable && boundObj)
 				{
-					auto inventory = menuCoopActorPtr->GetInventory();
+					auto inventory = p->em->inventoryChest->GetInventory();
 					const auto iter = inventory.find(boundObj);
 					equipable = 
 					(
@@ -4004,7 +4046,7 @@ namespace ALYSLC
 					}
 					else if (selectedForm->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
 					{
-						UpdateFavoritedConsumableCount(selectedForm, index);
+						shouldRefreshMenu = true;
 					}
 				
 					auto spellToEquip = selectedForm->As<RE::SpellItem>();
@@ -4048,6 +4090,51 @@ namespace ALYSLC
 						placeholderMagicChanged = false;
 					}
 
+					if (selectedForm && selectedForm->Is
+						(
+							RE::FormType::Ingredient,
+							RE::FormType::AlchemyItem,
+							RE::FormType::Scroll
+						))
+					{
+						auto p1 = RE::PlayerCharacter::GetSingleton();
+						if (p1)
+						{
+							auto invCounts = p1->GetInventoryCounts();
+							auto iter = invCounts.find
+							(
+								selectedForm->As<RE::TESBoundObject>()
+							);
+							uint32_t p1Count = 0;
+							if (iter != invCounts.end())
+							{
+								SPDLOG_DEBUG
+								(
+									"P1 has {} of {}.", iter->second, selectedForm->GetName()
+								);
+								p1Count = iter->second;
+							}
+
+							invCounts = p->em->inventoryChest->GetInventoryCounts();
+							iter = invCounts.find
+							(
+								selectedForm->As<RE::TESBoundObject>()
+							);
+							if (iter != invCounts.end())
+							{
+								SPDLOG_DEBUG
+								(
+									"Chest has {} of {}.", iter->second, selectedForm->GetName()
+								);
+								if (iter->second == 1 && p1Count > 0)
+								{
+									SPDLOG_DEBUG("TIME TO REMOVE {} MUHAHAHHAHAHHAHAHAH", 
+										selectedForm->GetName());
+								}
+							}
+						}
+					}
+
 					SPDLOG_DEBUG
 					(
 						"Selected form {} (type 0x{:X}) is equipable: {}. "
@@ -4062,6 +4149,8 @@ namespace ALYSLC
 				else
 				{
 					// Not equipable.
+					// Do not attempt to equip on P1.
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 					selectedExDataList = nullptr;
 					selectedForm = nullptr;
 				}
@@ -4103,17 +4192,17 @@ namespace ALYSLC
 			// Unequip before gifting to avoid crash.
 			auto foundIter = std::find_if
 			(
-				p->em->desiredEquippedForms.begin(), p->em->desiredEquippedForms.end(), 
+				p->em->desiredForms.begin(), p->em->desiredForms.end(), 
 				[boundObj](RE::TESForm* a_form) { return a_form == boundObj; }
 			);
-			if (foundIter != p->em->desiredEquippedForms.end())
+			if (foundIter != p->em->desiredForms.end())
 			{
-				auto index = foundIter - p->em->desiredEquippedForms.begin();
+				auto index = foundIter - p->em->desiredForms.begin();
 				p->em->UnequipFormAtIndex(static_cast<EquipIndex>(index));
 			}
-			else if (auto aem = RE::ActorEquipManager::GetSingleton(); aem)
+			else
 			{
-				aem->UnequipObject(menuCoopActorPtr.get(), boundObj);
+				Util::UnequipObject(menuCoopActorPtr.get(), boundObj);
 			}
 
 			int32_t currentCount = 0;
@@ -4551,8 +4640,6 @@ namespace ALYSLC
 		(
 			favoritesList.size(), EntryEquipState::kNone
 		);
-		auto& favItemsEquippedIndices = em->favItemsEquippedIndices;
-		favItemsEquippedIndices.clear();
 
 		// Iterate through the favorites list in order, 
 		// set the equipped state for each form equipped by the co-op player,
@@ -4568,7 +4655,8 @@ namespace ALYSLC
 		bool isFavoritedByCoopPlayer = false;
 		for (auto i = 0; i < favoritesList.size(); ++i)
 		{
-			auto favForm = favoritesList[i].item;
+			const auto favForm = favoritesList[i].item;
+			const auto favInvEntry = favoritesList[i].entryData;
 			// Companion player shares favorites with P1 when they are transformed
 			// into a vampire lord.
 			isFavoritedByCoopPlayer = 
@@ -4580,10 +4668,34 @@ namespace ALYSLC
 				// Weapons
 				if (auto asWeap = favForm->As<RE::TESObjectWEAP>(); asWeap)
 				{
+					// Chest must contain the worn extra data on a list 
+					// that matches the favorited list.
+					auto wornList = Util::GetWornRankExtraDataList
+					(
+						em->inventoryChest.get(), favForm->As<RE::TESBoundObject>(), true
+					);
+					bool equipped = 
+					(
+						(
+							equippedForms[!EquipIndex::kLeftHand] && 
+							equippedForms[!EquipIndex::kLeftHand] == favForm
+						) &&
+						(
+							wornList && 
+							wornList ==
+							Util::FindMatchingExtraDataList
+							(
+								em->inventoryChest.get(),
+								favForm->As<RE::TESBoundObject>(), 
+								favInvEntry->extraLists ? 
+								favInvEntry->extraLists->front():
+								nullptr
+							)
+						)
+					);
 					// Check LH and RH for the same weapon.
 					// LH
-					if (equippedForms[!EquipIndex::kLeftHand] && 
-						equippedForms[!EquipIndex::kLeftHand] == favForm)
+					if (equipped)
 					{
 						// Is two-handed weapon.
 						if (asWeap && 
@@ -4612,13 +4724,33 @@ namespace ALYSLC
 								EntryEquipState::kLH
 							);
 						}
-
-						favItemsEquippedIndices.insert(i);
 					}
 						
+					wornList = Util::GetWornRankExtraDataList
+					(
+						em->inventoryChest.get(), favForm->As<RE::TESBoundObject>(), false
+					);
+					equipped = 
+					(
+						(
+							equippedForms[!EquipIndex::kRightHand] && 
+							equippedForms[!EquipIndex::kRightHand] == favForm
+						) &&
+						(
+							wornList && 
+							wornList ==
+							Util::FindMatchingExtraDataList
+							(
+								em->inventoryChest.get(),
+								favForm->As<RE::TESBoundObject>(), 
+								favInvEntry->extraLists ? 
+								favInvEntry->extraLists->front():
+								nullptr
+							)
+						)
+					);
 					// RH
-					if (equippedForms[!EquipIndex::kRightHand] && 
-						equippedForms[!EquipIndex::kRightHand] == favForm)
+					if (equipped)
 					{
 						// Is two-handed weapon.
 						if (asWeap && 
@@ -4647,8 +4779,6 @@ namespace ALYSLC
 								EntryEquipState::kRH
 							);
 						}
-
-						favItemsEquippedIndices.insert(i);
 					}
 				}
 				// Spells
@@ -4739,7 +4869,6 @@ namespace ALYSLC
 								"{} equipped in both hands.", favForm->GetName()
 							);
 							favEntryEquipStates[i] = EntryEquipState::kBothHands;
-							favItemsEquippedIndices.insert(i);
 						}
 						// LH spell only
 						else if (favEquippedLH)
@@ -4749,7 +4878,6 @@ namespace ALYSLC
 								"{} equipped in left hand.", favForm->GetName()
 							);
 							favEntryEquipStates[i] = EntryEquipState::kLH;
-							favItemsEquippedIndices.insert(i);
 						}
 						// RH spell only
 						else if (favEquippedRH)
@@ -4759,7 +4887,6 @@ namespace ALYSLC
 								"{} equipped in right hand.", favForm->GetName()
 							);
 							favEntryEquipStates[i] = EntryEquipState::kRH;
-							favItemsEquippedIndices.insert(i);
 						}
 					}
 					// Voice/power spells.
@@ -4776,7 +4903,6 @@ namespace ALYSLC
 								"{} equipped in voice slot.", favForm->GetName()
 							);
 							favEntryEquipStates[i] = EntryEquipState::kDefault;
-							favItemsEquippedIndices.insert(i);
 						}
 					}
 
@@ -4804,28 +4930,38 @@ namespace ALYSLC
 								asShout->GetName(), em->highestShoutVarIndex
 							);
 							favEntryEquipStates[i] = EntryEquipState::kDefault;
-							favItemsEquippedIndices.insert(i);
 						}
 					}
 				}
 				// Armor
 				else if (favForm->Is(RE::FormType::Armature, RE::FormType::Armor))
 				{
-					for (auto form : equippedForms)
+					// Chest must contain the worn extra data on a list 
+					// that matches the favorited list.
+					auto wornList = Util::GetWornRankExtraDataList
+					(
+						em->inventoryChest.get(), favForm->As<RE::TESBoundObject>(), false
+					);
+					bool equipped = 
+					(
+						wornList && 
+						wornList ==
+						Util::FindMatchingExtraDataList
+						(
+							em->inventoryChest.get(),
+							favForm->As<RE::TESBoundObject>(), 
+							favInvEntry->extraLists ? 
+							favInvEntry->extraLists->front():
+							nullptr
+						)
+					);
+					if (equipped)
 					{
-						if (form && 
-							form->Is(RE::FormType::Armature, RE::FormType::Armor) && 
-							form == favForm)
-						{
-							SPDLOG_DEBUG
-							(
-								"{} (0x{:X}) armor equipped.", form->GetName(), form->formID
-							);
-							favEntryEquipStates[i] = EntryEquipState::kDefault;
-							favItemsEquippedIndices.insert(i);
-
-							break;
-						}
+						SPDLOG_DEBUG
+						(
+							"{} (0x{:X}) armor equipped.", favForm->GetName(), favForm->formID
+						);
+						favEntryEquipStates[i] = EntryEquipState::kDefault;
 					}
 				}
 				// Ammo
@@ -4834,13 +4970,32 @@ namespace ALYSLC
 					auto currentAmmo = equippedForms[!EquipIndex::kAmmo]; 
 					if (currentAmmo && currentAmmo == favForm)
 					{
-						SPDLOG_DEBUG
+						auto wornList = Util::GetWornRankExtraDataList
 						(
-							"{} (0x{:X}) ammo equipped.",
-							currentAmmo->GetName(), currentAmmo->formID
+							em->inventoryChest.get(), favForm->As<RE::TESBoundObject>(), false
 						);
-						favEntryEquipStates[i] = EntryEquipState::kDefault;
-						favItemsEquippedIndices.insert(i);
+						bool equipped = 
+						(
+							wornList && 
+							wornList ==
+							Util::FindMatchingExtraDataList
+							(
+								em->inventoryChest.get(),
+								favForm->As<RE::TESBoundObject>(), 
+								favInvEntry->extraLists ? 
+								favInvEntry->extraLists->front():
+								nullptr
+							)
+						);
+						if (equipped)
+						{
+							SPDLOG_DEBUG
+							(
+								"{} (0x{:X}) ammo equipped.",
+								currentAmmo->GetName(), currentAmmo->formID
+							);
+							favEntryEquipStates[i] = EntryEquipState::kDefault;
+						}
 					}
 				}
 				// Quick slot items: consumables.
@@ -4859,7 +5014,6 @@ namespace ALYSLC
 				{
 					// Everything else -- do not treat as an equipable form.
 					favEntryEquipStates[i] = EntryEquipState::kNone;
-					favItemsEquippedIndices.erase(i);
 				}
 			}
 			else
@@ -4867,7 +5021,6 @@ namespace ALYSLC
 				// Favorited form invalid or was not favorited by the co-op player.
 				// Set equip state to 0.
 				favEntryEquipStates[i] = EntryEquipState::kNone;
-				favItemsEquippedIndices.erase(i);
 			}
 		}
 
@@ -4885,7 +5038,6 @@ namespace ALYSLC
 			em->equippedQSSpellIndex = -1;
 		}
 	}
-
 
 	void MenuInputManager::RefreshMagicMenuEquipState()
 	{
@@ -5041,15 +5193,55 @@ namespace ALYSLC
 	void MenuInputManager::RefreshMenu() 
 	{
 		// Refresh the currently opened menu.
-
+		
 		SPDLOG_DEBUG("RefreshMenu");
-		if (containerMenu)
+		
+		// NOTE:
+		// Update the menu's item list since its size will change
+		// on the addition/removal of an item.
+		// Does cause lag spikes with larger item lists.
+		// TBD: Figure out a more efficient way to update item lists.
+
+		auto taskInterface = SKSE::GetTaskInterface(); 
+		if (containerMenu && isCoopInventory)
 		{
-			containerMenu->itemList->Update();
+			// Special case: can force entry list to update or drop the selected item.
+			UpdateContainerInventoryEquipState(shouldReloadPlayerInventoryLists, false);
 		}
-		else if (barterMenu)
+		else if ((taskInterface) && (containerMenu || barterMenu))
 		{
-			barterMenu->itemList->Update();
+			taskInterface->AddUITask
+			(
+				[this]() 
+				{
+					auto ui = RE::UI::GetSingleton();
+					if (!ui)
+					{
+						return;
+					}
+
+					if (openedMenuType == SupportedMenu::kContainer && !isCoopInventory)
+					{
+						const auto& containerMenu = ui->GetMenu<RE::ContainerMenu>();
+						if (!containerMenu)
+						{
+							return;
+						}
+
+						containerMenu->itemList->Update();
+					}
+					else if (openedMenuType == SupportedMenu::kBarter)
+					{
+						const auto& barterMenu = ui->GetMenu<RE::BarterMenu>();
+						if (!barterMenu)
+						{
+							return;
+						}
+
+						barterMenu->itemList->Update();
+					}
+				}
+			);
 		}
 
 		// Send update request to have the corresponding menu's ProcessMessage() hook 
@@ -5068,19 +5260,10 @@ namespace ALYSLC
 				}
 			}
 		}
-
-		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
-		if (!menuCoopActorPtr)
-		{
-			return;
-		}
-
-		auto invChanges = menuCoopActorPtr->GetInventoryChanges();
-		if (invChanges && invChanges->changed)
-		{
-			// Queue NiNode update for the player if their inventory changed.
-			menuCoopActorPtr->Update3DModel();
-		}
+		
+		// Clear flags after refresh.
+		shouldRefreshMenu = false;
+		shouldReloadPlayerInventoryLists = false;
 	}
 
 	void MenuInputManager::SendQueuedInputEvents()
@@ -5159,7 +5342,7 @@ namespace ALYSLC
 			(
 				min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*currentMenu->inputContext))
 			);
-			SPDLOG_DEBUG("Current menu {} has context {}.", menuName, context);
+			//SPDLOG_DEBUG("Current menu {} has context {}.", menuName, context);
 			if (context == RE::UserEvents::INPUT_CONTEXT_ID::kTotal)
 			{
 				context = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
@@ -5236,8 +5419,8 @@ namespace ALYSLC
 			(
 				a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 			);
-			SPDLOG_DEBUG("Gameplay context has event name {} from id code 0x{:X}.",
-				a_bindInfoOut.eventName, a_bindInfoOut.idCode);
+			/*SPDLOG_DEBUG("Gameplay context has event name {} from id code 0x{:X}.",
+				a_bindInfoOut.eventName, a_bindInfoOut.idCode);*/
 			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
 		}
 
@@ -5254,7 +5437,7 @@ namespace ALYSLC
 		}
 
 		// Set valid context here.
-		SPDLOG_DEBUG
+		/*SPDLOG_DEBUG
 		(
 			"Chose context {}, event name {} for xMask 0x{:X}. "
 			"Value, held time: {}, {}. Current event type: {}.",
@@ -5262,7 +5445,7 @@ namespace ALYSLC
 			a_bindInfoOut.value,
 			a_bindInfoOut.heldTimeSecs,
 			currentMenuInputEventType
-		);
+		);*/
 		a_bindInfoOut.context = context;
 
 		return true;
@@ -5518,6 +5701,773 @@ namespace ALYSLC
 		);
 	}
 
+	void MenuInputManager::UpdateContainerInventoryEquipState
+	(
+		bool a_reloadEntries, bool a_forPlayer1
+	)
+	{
+		// Update the player's inventory chest item lists (Container Menu entries)
+		// to reflect the items that the player has equipped.
+
+		if ((!containerMenu) || 
+			(!a_forPlayer1 && !isCoopInventory) || 
+			(a_forPlayer1 && isCoopInventory))
+		{
+			return;
+		}
+
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddUITask
+		(
+			[this, a_reloadEntries, a_forPlayer1]()
+			{
+				auto ui = RE::UI::GetSingleton();
+				if (!ui)
+				{
+					return;
+				}
+
+				auto containerMenu = ui->GetMenu<RE::ContainerMenu>();
+				if (!containerMenu)
+				{
+					return;
+				}
+
+				auto view = containerMenu->uiMovie;
+				if (!view)
+				{
+					return;
+				}
+
+				if (!containerMenu->itemList)
+				{
+					return;
+				}
+
+				const auto& p = a_forPlayer1 ? glob.coopPlayers[0] : glob.coopPlayers[glob.menuPID];
+				if (containerMenu->itemList->entryList.IsArray())
+				{
+					SPDLOG_DEBUG
+					(
+						"Entry list size: {}. Item list size: {}. "
+						"Reload entries: {}, for P1 : {}.",
+						containerMenu->itemList->entryList.GetArraySize(), 
+						containerMenu->itemList->items.size(),
+						a_reloadEntries,
+						a_forPlayer1
+					);
+				}
+				else
+				{
+					return;
+				}
+				
+				if (!a_forPlayer1 && a_reloadEntries)
+				{
+					SPDLOG_DEBUG("Reloading list entries.");
+					containerMenu->itemList->Update();
+				}
+				
+				const auto playerInventory = p->coopActor->GetInventory();
+				// Maps chest extra data lists to the equip state we should set for them.
+				std::unordered_map<RE::ExtraDataList*, EntryEquipState> 
+				exListToEquipStateMap{ };
+				// Since unmodified items have no extra data lists, 
+				// we cannot map entry equip state to their extra data lists 
+				// and will instead use the corresponding chest bound object.
+				std::unordered_map<RE::TESBoundObject*, EntryEquipState> 
+				unmodifiedObjToEquipStateMap{ };
+				for (const auto& [boundObj, countInvEntryPair] : playerInventory)
+				{
+					if (!boundObj ||
+						countInvEntryPair.first <= 0 || 
+						!countInvEntryPair.second ||
+						!countInvEntryPair.second->extraLists)
+					{
+						continue;
+					}
+
+					// GAH! below.
+					const auto equipType = boundObj->As<RE::BGSEquipType>();
+					for (auto exDataList : *countInvEntryPair.second->extraLists)
+					{
+						if (!exDataList)
+						{
+							continue;
+						}
+
+						auto worn = exDataList->HasType<RE::ExtraWorn>();
+						auto wornLeft = exDataList->HasType<RE::ExtraWornLeft>();
+						if (!worn && !wornLeft)
+						{
+							continue;
+						}
+
+						// Functionally equivalent to a nullptr exDataList (0 intrinsic types),
+						// indicating an unmodified item.
+						bool equivToUnmodifiedList = Util::AreIntrinsicallyEquivalentExDataLists
+						(
+							exDataList, nullptr
+						);
+						RE::ExtraDataList* matchingChestList = nullptr;
+						if (worn && wornLeft)
+						{
+							if (a_forPlayer1)
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: P1 list {:p} equipped in LH/RH.",
+									boundObj->GetName(),
+									equivToUnmodifiedList ? "unmodified" : "modified",
+									fmt::ptr(exDataList)
+								);
+								exListToEquipStateMap.insert
+								(
+									{ exDataList, EntryEquipState::kBothHands }
+								);
+							}
+							else
+							{
+								// Prioritize matching with a list that has the corresponding 
+								// worn exRank data.
+								auto matchingChestList = Util::FindMatchingExtraDataList
+								(
+									p->em->inventoryChest.get(), boundObj, exDataList
+								);
+								if (!matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: No worn exRank matching chest list for {} "
+										"player list {:p} equipped in LH/RH. "
+										"Checking for a matching list without worn exRank data.",
+										boundObj->GetName(),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									matchingChestList = Util::FindMatchingExtraDataList
+									(
+										p->em->inventoryChest.get(), boundObj, exDataList
+									);
+								}
+
+								// Matching data, cache straight away.
+								if (matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: Matching chest list {:p} for {} player list {:p} "
+										"equipped in LH/RH.",
+										boundObj->GetName(),
+										fmt::ptr(matchingChestList),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									exListToEquipStateMap.insert
+									(
+										{ matchingChestList, EntryEquipState::kBothHands }
+									);
+								}
+								else
+								{
+									// Save the bound object if the same as an unmodified list.
+									if (equivToUnmodifiedList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: No chest list for unmodified player list {:p} "
+											"equipped in LH/RH.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+										unmodifiedObjToEquipStateMap.insert
+										(
+											{ boundObj, EntryEquipState::kBothHands }
+										);
+									}
+									else
+									{
+										// Uh-oh, my cruddy matching game has failed.
+										// Will not show as equipped.
+										SPDLOG_DEBUG
+										(
+											"{}: MATCH FAILURE: "
+											"No chest list for modified player list {:p} "
+											"equipped in LH/RH.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+									}
+								}
+							}
+						}
+						else if (worn)
+						{
+							if (a_forPlayer1)
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: P1 list {:p} equipped in RH/default slot.",
+									boundObj->GetName(),
+									equivToUnmodifiedList ? "unmodified" : "modified",
+									fmt::ptr(exDataList)
+								);
+								if (!equipType)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								} 
+								else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kBothHands }
+									);
+								}
+								else if (equipType->equipSlot == glob.shieldEquipSlot)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								}
+								else if (boundObj->As<RE::TESObjectARMO>() ||
+										 boundObj->As<RE::TESObjectARMA>())
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								}
+								else
+								{
+									auto iter = exListToEquipStateMap.find(exDataList);
+									// Already present in another hand, so change to both hands.
+									if (iter != exListToEquipStateMap.end() &&
+										iter->second == EntryEquipState::kLH)
+									{
+										iter->second = EntryEquipState::kBothHands;
+									}
+									else
+									{
+										exListToEquipStateMap.insert
+										(
+											{ exDataList, EntryEquipState::kRH }
+										);
+									}
+								}
+							}
+							else
+							{
+								// Prioritize matching with a list that has the corresponding 
+								// worn exRank data.
+								auto matchingChestList = Util::GetWornRankExtraDataList
+								(
+									p->em->inventoryChest.get(), boundObj, false
+								);
+								if (!matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: No worn exRank matching chest list for {} "
+										"player list {:p} equipped in RH/default slot. "
+										"Checking for a matching list without worn exRank data.",
+										boundObj->GetName(),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									matchingChestList = Util::FindMatchingExtraDataList
+									(
+										p->em->inventoryChest.get(), boundObj, exDataList
+									);
+								}
+								
+								// Matching data, cache straight away.
+								if (matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: Matching chest list {:p} for {} player list {:p} "
+										"equipped in RH/default slot.",
+										boundObj->GetName(),
+										fmt::ptr(matchingChestList),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									if (!equipType)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									} 
+									else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kBothHands }
+										);
+									}
+									else if (equipType->equipSlot == glob.shieldEquipSlot)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									}
+									else if (boundObj->As<RE::TESObjectARMO>() ||
+											 boundObj->As<RE::TESObjectARMA>())
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									}
+									else
+									{
+										auto iter = exListToEquipStateMap.find(matchingChestList);
+										// Already present in another hand, so change to both hands.
+										if (iter != exListToEquipStateMap.end() &&
+											iter->second == EntryEquipState::kLH)
+										{
+											iter->second = EntryEquipState::kBothHands;
+										}
+										else
+										{
+											exListToEquipStateMap.insert
+											(
+												{ matchingChestList, EntryEquipState::kRH }
+											);
+										}
+									}
+								}
+								else
+								{
+									// Save the bound object if the same as an unmodified list.
+									if (equivToUnmodifiedList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: No chest list for unmodified player list {:p} "
+											"equipped in RH/default slot.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+										if (!equipType)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										} 
+										else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kBothHands }
+											);
+										}
+										else if (equipType->equipSlot == glob.shieldEquipSlot)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										}
+										else if (boundObj->As<RE::TESObjectARMO>() ||
+												 boundObj->As<RE::TESObjectARMA>())
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										}
+										else
+										{
+											auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+											// Already present in another hand, 
+											// so change to both hands.
+											if (iter != unmodifiedObjToEquipStateMap.end() &&
+												iter->second == EntryEquipState::kLH)
+											{
+												iter->second = EntryEquipState::kBothHands;
+											}
+											else
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kRH }
+												);
+											}
+										}
+									}
+									else
+									{
+										// Uh-oh, my cruddy matching game has failed.
+										// Will not show as equipped.
+										SPDLOG_DEBUG
+										(
+											"{}: MATCH FAILURE: "
+											"No chest list for modified player list {:p} "
+											"equipped in RH/default slot.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+									}
+								}
+							}
+						}
+						else
+						{
+							if (a_forPlayer1)
+							{
+								SPDLOG_DEBUG
+								(
+									"{}: P1 list {:p} equipped in LH slot.",
+									boundObj->GetName(),
+									equivToUnmodifiedList ? "unmodified" : "modified",
+									fmt::ptr(exDataList)
+								);
+								if (!equipType)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								} 
+								else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kBothHands }
+									);
+								}
+								else if (equipType->equipSlot == glob.shieldEquipSlot)
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								}
+								else if (boundObj->As<RE::TESObjectLIGH>())
+								{
+									exListToEquipStateMap.insert
+									(
+										{ exDataList, EntryEquipState::kDefault }
+									);
+								}
+								else
+								{
+									auto iter = exListToEquipStateMap.find(exDataList);
+									// Already present in another hand, so change to both hands.
+									if (iter != exListToEquipStateMap.end() &&
+										iter->second == EntryEquipState::kRH)
+									{
+										iter->second = EntryEquipState::kBothHands;
+									}
+									else
+									{
+										exListToEquipStateMap.insert
+										(
+											{ exDataList, EntryEquipState::kLH }
+										);
+									}
+								}
+							}
+							else
+							{
+								// Prioritize matching with a list that has the corresponding 
+								// worn exRank data.
+								auto matchingChestList = Util::GetWornRankExtraDataList
+								(
+									p->em->inventoryChest.get(), boundObj, true
+								);
+								if (!matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: No worn exRank matching chest list for {} "
+										"player list {:p} equipped in LH. "
+										"Checking for a matching list without worn exRank data.",
+										boundObj->GetName(),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									matchingChestList = Util::FindMatchingExtraDataList
+									(
+										p->em->inventoryChest.get(), boundObj, exDataList
+									);
+								}
+								
+								// Matching data, cache straight away.
+								if (matchingChestList)
+								{
+									SPDLOG_DEBUG
+									(
+										"{}: Matching chest list {:p} for {} player list {:p} "
+										"equipped in LH.",
+										boundObj->GetName(),
+										fmt::ptr(matchingChestList),
+										equivToUnmodifiedList ? "unmodified" : "modified",
+										fmt::ptr(exDataList)
+									);
+									if (!equipType)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									} 
+									else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kBothHands }
+										);
+									}
+									else if (equipType->equipSlot == glob.shieldEquipSlot)
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									}
+									else if (boundObj->As<RE::TESObjectLIGH>())
+									{
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kDefault }
+										);
+									}
+									else
+									{
+										auto iter = exListToEquipStateMap.find(matchingChestList);
+										// Already present in another hand, so change to both hands.
+										if (iter != exListToEquipStateMap.end() &&
+											iter->second == EntryEquipState::kRH)
+										{
+											iter->second = EntryEquipState::kBothHands;
+										}
+										else
+										{
+											exListToEquipStateMap.insert
+											(
+												{ matchingChestList, EntryEquipState::kLH }
+											);
+										}
+									}
+								}
+								else
+								{
+									// Save the bound object if the same as an unmodified list.
+									if (equivToUnmodifiedList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: No chest list for unmodified player list {:p} "
+											"equipped in LH.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+										if (!equipType)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										} 
+										else if (equipType->equipSlot == glob.bothHandsEquipSlot)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kBothHands }
+											);
+										}
+										else if (equipType->equipSlot == glob.shieldEquipSlot)
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										}
+										else if (boundObj->As<RE::TESObjectLIGH>())
+										{
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kDefault }
+											);
+										}
+										else
+										{
+											auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+											// Already present in another hand, 
+											// so change to both hands.
+											if (iter != unmodifiedObjToEquipStateMap.end() &&
+												iter->second == EntryEquipState::kRH)
+											{
+												iter->second = EntryEquipState::kBothHands;
+											}
+											else
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kLH }
+												);
+											}
+										}
+									}
+									else
+									{
+										// Uh-oh, my cruddy matching game has failed.
+										// Will not show as equipped.
+										SPDLOG_DEBUG
+										(
+											"{}: MATCH FAILURE: "
+											"No chest list for modified player list {:p} "
+											"equipped in RH/default slot.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList)
+										);
+									}
+								}
+							}
+						}
+					}
+				}
+
+				for (auto i = 0; i < containerMenu->itemList->items.size(); ++i)
+				{
+					const auto item = containerMenu->itemList->items[i];
+					if (!item || !item->data.objDesc || !item->data.objDesc->object)
+					{
+						continue;
+					}
+					
+					const auto boundObj = item->data.objDesc->object;
+					// Not equipable (no caret to left of entry), skiiip.
+					if (!Util::IsEquipableInventoryObject(boundObj))
+					{
+						continue;
+					}
+	
+					// Continue early if we can't get the entry for some reason.
+					RE::GFxValue entry{ };
+					containerMenu->itemList->entryList.GetElement(i, std::addressof(entry));
+					if (entry.IsNull() || entry.IsUndefined())
+					{
+						continue;
+					}
+
+					EntryEquipState equipState = EntryEquipState::kNone;
+					if (item->data.objDesc->extraLists && 
+						!item->data.objDesc->extraLists->empty())
+					{
+						for (auto exDataList : *item->data.objDesc->extraLists)
+						{
+							if (!exDataList)
+							{
+								continue;
+							}
+
+							const auto iter = exListToEquipStateMap.find(exDataList);
+							if (iter != exListToEquipStateMap.end())
+							{
+								equipState = iter->second;
+								SPDLOG_DEBUG
+								(
+									"{} (#{}): MODIFIED version {:p} equipped. Equip state: {}.",
+									boundObj->GetName(), i, fmt::ptr(exDataList), !equipState
+								);
+							}
+						}
+					}
+					else
+					{
+						const auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+						if (iter != unmodifiedObjToEquipStateMap.end())
+						{
+							equipState = iter->second;
+							SPDLOG_DEBUG("{} (#{}): UNMODIFIED version equipped. Equip state: {}.",
+								boundObj->GetName(), i, !equipState);
+						}
+					}
+					
+					if (equipState != EntryEquipState::kNone)
+					{
+						RE::GFxValue index{ };
+						entry.GetMember("itemIndex", std::addressof(index));
+						SPDLOG_DEBUG
+						(
+							"{} (#{}), (list index {}) in item list. "
+							"Set equip state to {}.",
+							boundObj->GetName(),
+							i,
+							index.GetUInt(),
+							!equipState
+						);
+					}
+								
+					entry.SetMember("equipState", equipState);
+					// Apply updated entry to the list.
+					containerMenu->itemList->entryList.SetElement(i, entry);
+
+					// Diagnostics below, not for you, P1.
+					if (a_forPlayer1 || !p->em->IsEquipped(boundObj, nullptr, false, true))
+					{
+						continue;
+					}
+			
+					if (item->data.objDesc->extraLists)
+					{
+						for (auto exDataList : *item->data.objDesc->extraLists)
+						{
+							if (!exDataList)
+							{
+								continue;
+							}
+					
+							SPDLOG_DEBUG
+							(
+								"{} has exData list {:p}.",
+								boundObj->GetName(),
+								fmt::ptr(exDataList)
+							);
+							for (auto type = RE::ExtraDataType::kNone; 
+								type <= RE::ExtraDataType::kUnkBF; 
+								type = static_cast<RE::ExtraDataType>(!type + 1))
+							{
+								if (auto data = exDataList->GetByType(type); data)
+								{
+									SPDLOG_DEBUG
+									(
+										"{} has exData list {:p} "
+										"with data {:p} of type 0x{:X}.",
+										boundObj->GetName(),
+										fmt::ptr(exDataList),
+										fmt::ptr(data),
+										type
+									);
+								}
+							}
+						}
+					}
+				}
+
+				// Update the container entry list.
+				// Applies our equip state changes but does NOT change the entries
+				// or item counts.
+				containerMenu->itemList->root.Invoke("UpdateList");
+			}
+		);
+	}
+
 	void MenuInputManager::UpdateFavoritedConsumableCount
 	(
 		RE::TESForm* a_selectedForm, uint32_t a_selectedIndex
@@ -5569,7 +6519,11 @@ namespace ALYSLC
 				}
 
 				uint32_t selectedEntry = iter->second;
-				auto invCounts = menuCoopActorPtr->GetInventoryCounts();
+				const auto& p = glob.coopPlayers
+				[
+					GlobalCoopData::GetCoopPlayerIndex(menuCoopActorHandle)
+				];
+				auto invCounts = p->em->inventoryChest->GetInventoryCounts();
 				int32_t newCount = -1;
 				auto boundObj = a_selectedForm->As<RE::TESBoundObject>();
 				if (boundObj)
@@ -5657,114 +6611,81 @@ namespace ALYSLC
 		auto ui = RE::UI::GetSingleton();
 		if (ui)
 		{
+			// Will only be one of the following.
 			if (menuNameHash == Hash(RE::BarterMenu::MENU_NAME))
 			{
 				barterMenu = ui->GetMenu<RE::BarterMenu>();
+				openedMenuType = SupportedMenu::kBarter;
 			}
 			else if (menuNameHash == Hash(RE::BookMenu::MENU_NAME))
 			{
 				bookMenu = ui->GetMenu<RE::BookMenu>();
+				openedMenuType = SupportedMenu::kBook;
 			}
 			else if (menuNameHash == Hash(RE::ContainerMenu::MENU_NAME))
 			{
 				containerMenu = ui->GetMenu<RE::ContainerMenu>();
+				openedMenuType = SupportedMenu::kContainer;
 			}
 			else if (menuNameHash == Hash(RE::DialogueMenu::MENU_NAME))
 			{
 				dialogueMenu = ui->GetMenu<RE::DialogueMenu>();
+				openedMenuType = SupportedMenu::kDialogue;
 			}
 			else if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
 			{
 				favoritesMenu = ui->GetMenu<RE::FavoritesMenu>();
+				openedMenuType = SupportedMenu::kFavorites;
 			}
 			else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
 			{
 				giftMenu = ui->GetMenu<RE::GiftMenu>();
+				openedMenuType = SupportedMenu::kGift;
 			}
 			else if (menuNameHash == Hash(RE::InventoryMenu::MENU_NAME))
 			{
 				inventoryMenu = ui->GetMenu<RE::InventoryMenu>();
+				openedMenuType = SupportedMenu::kInventory;
 			}
 			else if (menuNameHash == Hash(RE::JournalMenu::MENU_NAME))
 			{
 				journalMenu = ui->GetMenu<RE::JournalMenu>();
+				openedMenuType = SupportedMenu::kJournal;
 			}
 			else if (menuNameHash == Hash(RE::LockpickingMenu::MENU_NAME))
 			{
 				lockpickingMenu = ui->GetMenu<RE::LockpickingMenu>();
+				openedMenuType = SupportedMenu::kLockpicking;
 			}
 			else if (menuNameHash == Hash(RE::MagicMenu::MENU_NAME))
 			{
 				magicMenu = ui->GetMenu<RE::MagicMenu>();
+				openedMenuType = SupportedMenu::kMagic;
 			}
 			else if (menuNameHash == Hash(RE::MapMenu::MENU_NAME))
 			{
 				mapMenu = ui->GetMenu<RE::MapMenu>();
+				openedMenuType = SupportedMenu::kMap;
 			}
 			else if (menuNameHash == Hash(RE::SleepWaitMenu::MENU_NAME))
 			{
 				sleepWaitMenu = ui->GetMenu<RE::SleepWaitMenu>();
+				openedMenuType = SupportedMenu::kSleepWaitMenu;
 			}
-		}
-
-		// Will only be one of the following.
-		if (barterMenu)
-		{
-			openedMenuType = SupportedMenu::kBarter;
-		}
-		else if (bookMenu)
-		{
-			openedMenuType = SupportedMenu::kBook;
-		}
-		else if (containerMenu)
-		{
-			openedMenuType = SupportedMenu::kContainer;
-		}
-		else if (dialogueMenu)
-		{
-			openedMenuType = SupportedMenu::kDialogue;
-		}
-		else if (favoritesMenu)
-		{
-			openedMenuType = SupportedMenu::kFavorites;
-		}
-		else if (giftMenu)
-		{
-			openedMenuType = SupportedMenu::kGift;
-		}
-		else if (inventoryMenu)
-		{
-			openedMenuType = SupportedMenu::kInventory;
-		}
-		else if (journalMenu)
-		{
-			openedMenuType = SupportedMenu::kJournal;
-		}
-		else if (lockpickingMenu)
-		{
-			openedMenuType = SupportedMenu::kLockpicking;
-		}
-		else if (magicMenu)
-		{
-			openedMenuType = SupportedMenu::kMagic;
-		}
-		else if (mapMenu)
-		{
-			openedMenuType = SupportedMenu::kMap;
-		}
-		else if (sleepWaitMenu)
-		{
-			openedMenuType = SupportedMenu::kSleepWaitMenu;
-		}
-		else if (ui && 
-				 ui->GetMenu(GlobalCoopData::LOOT_MENU) &&
-				 menuNameHash == Hash(GlobalCoopData::LOOT_MENU))
-		{
-			openedMenuType = SupportedMenu::kLoot;
+			else if (menuNameHash == Hash(GlobalCoopData::LOOT_MENU) && 
+					 ui->GetMenu(GlobalCoopData::LOOT_MENU) )
+			{
+				openedMenuType = SupportedMenu::kLoot;
+			}
+			else
+			{
+				// Use default menu control binds in all other cases.
+				openedMenuType = SupportedMenu::kDefault;
+			}
 		}
 		else
 		{
-			// Use default menu control binds in all other cases.
+			// Default if UI was unobtainable.
 			openedMenuType = SupportedMenu::kDefault;
 		}
 
@@ -5970,7 +6891,7 @@ namespace ALYSLC
 			// Then, if there are any menu requests triggered by activation,
 			// consider the newest of these requests as well.
 			bool isCustomMenu = a_menuName == GlobalCoopData::CUSTOM_MENU;
-			// Ignore max 3 second request lifetime for the LootMenu.
+			// Ignore max 5 second request lifetime for the LootMenu.
 			bool ignoreReqExpiration = a_menuName == GlobalCoopData::LOOT_MENU;
 			// Type for the currently chosen request determining 
 			// which player should obtain control of the given menu.
@@ -6058,7 +6979,7 @@ namespace ALYSLC
 						bool isValidExtRequest = 
 						(
 							(isRequestedMenu) &&
-							(ignoreReqExpiration || secsSinceReq < 3.0f) && 
+							(ignoreReqExpiration || secsSinceReq < 5.0f) && 
 							(
 								chosenReqType != kExternal ||
 								!secsSinceChosenReq.has_value() || 
@@ -6099,7 +7020,7 @@ namespace ALYSLC
 					// if two players activate the same NPC and a menu opens 
 					// to interact with that NPC, the player that activated the NPC first 
 					// (oldest request) should control the menu.
-					// Ignore requests that are older than 3 seconds.
+					// Ignore requests that are older than 5 seconds.
 					// Also look for a direct request if an indirect one is currently chosen.
 					bool checkForOldestReq = 
 					(
@@ -6109,7 +7030,7 @@ namespace ALYSLC
 							chosenReqType == kNewestIndirect
 						) &&
 						(!isMessageBoxMenu) &&
-						(ignoreReqExpiration || secsSinceReq < 3.0f) && 
+						(ignoreReqExpiration || secsSinceReq < 5.0f) && 
 						(
 							chosenReqType == kNewestIndirect ||
 							!secsSinceChosenReq.has_value() || 
@@ -6265,7 +7186,7 @@ namespace ALYSLC
 								succ && 
 								containerMenu->GetContainerMode() == 
 								RE::ContainerMenu::ContainerMode::kNPCMode && 
-								refrPtr == p->coopActor
+								refrPtr == p->em->inventoryChest
 							);
 							// Container is this player's inventory 
 							// and the player pressed their inventory bind 
