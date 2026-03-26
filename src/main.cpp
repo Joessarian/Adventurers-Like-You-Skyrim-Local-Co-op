@@ -25,6 +25,10 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// Register debug overlay menu.
 		ALYSLC::DebugOverlayMenu::Register();
 		// Run compatibility checks and initialization.
+		ALYSLC::AlternateConversationCameraCompat::CheckForAlternateConversationCamera
+		(
+			g_loadInterface
+		);
 		ALYSLC::EldenSprintCompat::CheckForEldenSprint(g_loadInterface);
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();

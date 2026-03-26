@@ -118,7 +118,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot open helper menu.")
-		ALYSLC.Log("[CHMH SCRIPT] Critical Error: P1's actor is invalid. Cannot open helper menu.")
+		ALYSLC.LogError("[CHMH SCRIPT] Critical Error: P1's actor is invalid. Cannot open helper menu.")
 		Return
 	EndIf
 

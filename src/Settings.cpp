@@ -16,7 +16,7 @@ namespace ALYSLC
 
 		// Import defaults.
 		SI_Error err = SI_OK;
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+		if (ALYSLC::EnderalCompat::g_installed) 
 		{
 			if (err = ini.LoadFile(defaultFilePathEnderal.c_str()); err != SI_OK) 
 			{
@@ -76,7 +76,7 @@ namespace ALYSLC
 		// Import player-modified settings.
 		CSimpleIniA ini2{ };
 		ini2.SetUnicode();
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+		if (ALYSLC::EnderalCompat::g_installed)
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathEnderal.c_str()); err != SI_OK)
 			{
@@ -144,7 +144,7 @@ namespace ALYSLC
 					"{}\n{}: {}\nTroubleshooting info messages are in the 'ALYSLC.log' file "
 					"and have the [BINDS] tag.\nAll invalid binds were disabled.", 
 					!defBindsSucc ? "[Invalid]" : "[Valid]", 
-					ALYSLC::EnderalCompat::g_enderalSSEInstalled ? 
+					ALYSLC::EnderalCompat::g_installed ? 
 					"ALYSLC Enderal.ini" : 
 					"ALYSLC.ini",
 					!customBindsSucc ? "[Invalid]" : "[Valid]"

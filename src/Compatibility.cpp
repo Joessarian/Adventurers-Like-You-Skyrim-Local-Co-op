@@ -5,40 +5,56 @@ namespace ALYSLC
 {
 	PRECISION_API::IVPrecision4* PrecisionCompat::g_precisionAPI4{ nullptr };
 	TRUEHUD_API::IVTrueHUD3* TrueHUDCompat::g_trueHUDAPI3{ nullptr };
-	bool EldenSprintCompat::g_eldenSprintInstalled{ false };
-	bool EnderalCompat::g_enderalSSEInstalled{ false };
-	bool MCOCompat::g_mcoInstalled{ false };
-	bool PersistentFavoritesCompat::g_persistentFavoritesInstalled{ false };
-	bool PrecisionCompat::g_precisionInstalled{ false };
-	bool QuickLootCompat::g_quickLootInstalled{ false };
+	bool AlternateConversationCameraCompat::g_installed{ false };
+	bool EldenSprintCompat::g_installed{ false };
+	bool EnderalCompat::g_installed{ false };
+	bool MCOCompat::g_installed{ false };
+	bool PersistentFavoritesCompat::g_installed{ false };
+	bool PrecisionCompat::g_installed{ false };
+	bool QuickLootCompat::g_installed{ false };
 	bool QuickLootCompat::g_isQuickLootIE{ false };
-	bool RaceMenuCompat::g_raceMenuInstalled{ false };
-	bool RequiemCompat::g_requiemInstalled{ false };
-	bool SkyrimSoulsCompat::g_skyrimSoulsInstalled{ false };
-	bool SkyrimsParagliderCompat::g_paragliderInstalled{ false };
+	bool RaceMenuCompat::g_installed{ false };
+	bool RequiemCompat::g_installed{ false };
+	bool SkyrimSoulsCompat::g_installed{ false };
+	bool SkyrimsParagliderCompat::g_installed{ false };
 	bool SkyrimsParagliderCompat::g_p1HasParaglider{ false };
-	bool TKDodgeCompat::g_tkDodgeInstalled{ false };
-	bool TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled{ false };
-	bool TrueHUDCompat::g_trueHUDInstalled{ false };
+	bool TKDodgeCompat::g_installed{ false };
+	bool TrueDirectionalMovementCompat::g_installed{ false };
+	bool TrueHUDCompat::g_installed{ false };
+	
+	void AlternateConversationCameraCompat::CheckForAlternateConversationCamera
+	(
+		const SKSE::LoadInterface* a_loadInterface
+	)
+	{
+		g_installed = 
+		(
+			static_cast<bool>(GetModuleHandleA("AlternateConversationCamera.dll"))
+		);
+		if (g_installed)
+		{
+			SPDLOG_INFO("AlternateConversationCamera installed!");
+		}
+	}
 
 	void EldenSprintCompat::CheckForEldenSprint(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_eldenSprintInstalled = 
+		g_installed = 
 		(
 			a_loadInterface->GetPluginInfo("EldenSprint") ||
 			a_loadInterface->GetPluginInfo("LoreRim - Inifinte Stamina Out of Combat")
 		);
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_eldenSprintInstalled && dataHandler) 
+		if (!g_installed && dataHandler) 
 		{
-			g_eldenSprintInstalled = static_cast<bool>
+			g_installed = static_cast<bool>
 			(
 				dataHandler->LookupModByName("EldenSprint.esl") ||
 				dataHandler->LookupModByName("LoreRim - Inifinte Stamina Out of Combat.esp")
 			);
 		}
 
-		if (g_eldenSprintInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("Elden Sprint installed!");
 		}
@@ -46,8 +62,8 @@ namespace ALYSLC
 
 	void EnderalCompat::CheckForEnderalSSE()
 	{
-		g_enderalSSEInstalled = static_cast<bool>(GetModuleHandleA("EnderalSE.dll"));
-		if (g_enderalSSEInstalled)
+		g_installed = static_cast<bool>(GetModuleHandleA("EnderalSE.dll"));
+		if (g_installed)
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
 			SPDLOG_INFO("Enderal SSE installed! Plugin name to use: '{}'.",
@@ -77,22 +93,22 @@ namespace ALYSLC
 	
 	void MCOCompat::CheckForMCO(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_mcoInstalled = 
+		g_installed = 
 		(
 			a_loadInterface->GetPluginInfo("Attack_DXP") || 
 			static_cast<bool>(GetModuleHandleA("MCO.dll"))
 		);
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_mcoInstalled && dataHandler) 
+		if (!g_installed && dataHandler) 
 		{
-			g_mcoInstalled = dataHandler->LookupModByName("Attack_DXP.esp") != nullptr;
-			if (!g_mcoInstalled) 
+			g_installed = dataHandler->LookupModByName("Attack_DXP.esp") != nullptr;
+			if (!g_installed) 
 			{
-				g_mcoInstalled = dataHandler->LookupModByName("Attack_MCO.esp") != nullptr;
+				g_installed = dataHandler->LookupModByName("Attack_MCO.esp") != nullptr;
 			}
 		}
 
-		if (g_mcoInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("MCO installed!");
 		}
@@ -100,11 +116,11 @@ namespace ALYSLC
 
 	void PersistentFavoritesCompat::CheckForPersistentFavorites()
 	{
-		g_persistentFavoritesInstalled = 
+		g_installed = 
 		(
 			static_cast<bool>(GetModuleHandleA("PersistentFavorites.dll"))
 		);
-		if (g_persistentFavoritesInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("PersistentFavorites installed!");
 		}
@@ -116,7 +132,7 @@ namespace ALYSLC
 		const auto pluginInfo = a_loadInterface->GetPluginInfo(PRECISION_API::PrecisionPluginName); 
 		if (pluginInfo)
 		{
-			g_precisionInstalled = true;
+			g_installed = true;
 			SPDLOG_INFO("Prerequisite mod {} is installed!", 
 				PRECISION_API::PrecisionPluginName);
 
@@ -159,7 +175,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			g_precisionInstalled = false;
+			g_installed = false;
 			SPDLOG_ERROR
 			(
 				"Could not find prerequisite mod 'Precision'. Please ensure it is installed."
@@ -170,7 +186,7 @@ namespace ALYSLC
 	void QuickLootCompat::CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface)
 	{
 		g_isQuickLootIE = a_loadInterface->GetPluginInfo("QuickLootIE");
-		g_quickLootInstalled = 
+		g_installed = 
 		{
 			a_loadInterface->GetPluginInfo("QuickLootRE") ||
 			a_loadInterface->GetPluginInfo("QuickLootEE") ||
@@ -178,10 +194,10 @@ namespace ALYSLC
 		};
 
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_quickLootInstalled && dataHandler)
+		if (!g_installed && dataHandler)
 		{
 			g_isQuickLootIE = dataHandler->LookupModByName("QuickLootIE.esp") != nullptr;
-			g_quickLootInstalled = 
+			g_installed = 
 			{
 				dataHandler->LookupModByName("QuickLootRE.esp") != nullptr ||
 				dataHandler->LookupModByName("QuickLootEE.esp") != nullptr ||
@@ -189,7 +205,7 @@ namespace ALYSLC
 			};
 		}
 
-		if (g_quickLootInstalled) 
+		if (g_installed) 
 		{
 			SPDLOG_INFO("{} installed!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
 		}
@@ -197,22 +213,22 @@ namespace ALYSLC
 
 	void RaceMenuCompat::CheckForRaceMenu(const SKSE::LoadInterface * a_loadInterface)
 	{
-		g_raceMenuInstalled = 
+		g_installed = 
 		{
 			a_loadInterface->GetPluginInfo("RaceMenu") || 
 			static_cast<bool>(GetModuleHandleA("skee64.dll"))
 		};
 
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_raceMenuInstalled && dataHandler)
+		if (!g_installed && dataHandler)
 		{
-			g_raceMenuInstalled = 
+			g_installed = 
 			(
 				dataHandler->LookupModByName("RaceMenu.esp") != nullptr
 			);
 		}
 
-		if (g_raceMenuInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("RaceMenu installed!");
 		}
@@ -220,14 +236,14 @@ namespace ALYSLC
 
 	void RequiemCompat::CheckForRequiem(const SKSE::LoadInterface* a_loadInterface)
 	{
-		g_requiemInstalled = a_loadInterface->GetPluginInfo("Requiem");
+		g_installed = a_loadInterface->GetPluginInfo("Requiem");
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_requiemInstalled && dataHandler)
+		if (!g_installed && dataHandler)
 		{
-			g_requiemInstalled = dataHandler->LookupModByName("Requiem.esp") != nullptr;
+			g_installed = dataHandler->LookupModByName("Requiem.esp") != nullptr;
 		}
 
-		if (g_requiemInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("Requiem - The Roleplaying Overhaul installed!");
 		}
@@ -235,11 +251,11 @@ namespace ALYSLC
 
 	void SkyrimSoulsCompat::CheckForSkyrimSouls()
 	{
-		g_skyrimSoulsInstalled = 
+		g_installed = 
 		{
 			static_cast<bool>(GetModuleHandleA("SkyrimSoulsRE.dll"))
 		};
-		if (g_skyrimSoulsInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("SkyrimSoulsRE installed!");
 		}
@@ -250,8 +266,8 @@ namespace ALYSLC
 		// Paraglider ownership check is done before P1 manager construction; 
 		// init to false for now.
 		g_p1HasParaglider = false;
-		g_paragliderInstalled = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
-		if (g_paragliderInstalled)
+		g_installed = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
+		if (g_installed)
 		{
 			SPDLOG_INFO("Skyrim's Paraglider installed!");
 		}
@@ -259,12 +275,12 @@ namespace ALYSLC
 
 	void TKDodgeCompat::CheckForTKDodge()
 	{
-		g_tkDodgeInstalled = 
+		g_installed = 
 		{
 			static_cast<bool>(GetModuleHandleA("TKPlugin.dll")) ||
 			static_cast<bool>(GetModuleHandleA("TK_Dodge_RE.dll"))
 		};
-		if (g_tkDodgeInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("TKDodge installed!");
 		}
@@ -275,22 +291,22 @@ namespace ALYSLC
 		const SKSE::LoadInterface* a_loadInterface
 	)
 	{
-		g_trueDirectionalMovementInstalled = 
+		g_installed = 
 		{
 			a_loadInterface->GetPluginInfo("TrueDirectionalMovement") || 
 			static_cast<bool>(GetModuleHandleA("TrueDirectionalMovement.dll"))
 		};
 
 		auto dataHandler = RE::TESDataHandler::GetSingleton();
-		if (!g_trueDirectionalMovementInstalled && dataHandler)
+		if (!g_installed && dataHandler)
 		{
-			g_trueDirectionalMovementInstalled = 
+			g_installed = 
 			(
 				dataHandler->LookupModByName("TrueDirectionalMovement.esp") != nullptr
 			);
 		}
 
-		if (g_trueDirectionalMovementInstalled)
+		if (g_installed)
 		{
 			SPDLOG_INFO("True Directional Movement installed!");
 		}
@@ -302,7 +318,7 @@ namespace ALYSLC
 		const auto pluginInfo = a_loadInterface->GetPluginInfo(TRUEHUD_API::TrueHUDPluginName); 
 		if (pluginInfo) 
 		{
-			g_trueHUDInstalled = true;
+			g_installed = true;
 			SPDLOG_INFO("{} is installed!", TRUEHUD_API::TrueHUDPluginName);
 
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>

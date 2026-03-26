@@ -1546,7 +1546,7 @@ namespace ALYSLC
 		// Return true if RaceMenu by expired6978 is installed.
 		
 		SPDLOG_DEBUG("IsRaceMenuInstalled");
-		return ALYSLC::RaceMenuCompat::g_raceMenuInstalled;
+		return ALYSLC::RaceMenuCompat::g_installed;
 	}
 
 	void CoopLib::CharacterCustomization::LoadPlayerCharacterPreset
@@ -2005,7 +2005,7 @@ namespace ALYSLC
 		if (!glob.globalDataInit || 
 			!glob.allPlayersInit ||
 			!glob.coopSessionActive ||
-			ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
+			ALYSLC::EnderalCompat::g_installed ||
 			a_playerID <= -1 ||
 			a_playerID >= ALYSLC_MAX_CONTROLLER_COUNT) 
 		{

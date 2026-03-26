@@ -1152,7 +1152,7 @@ namespace ALYSLC
 			ChainAndSendP1ButtonEvents();
 
 			// No level up threshold to modify for Enderal since it has its own progression system.
-			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (!ALYSLC::EnderalCompat::g_installed)
 			{
 				// Modify level up threshold if needed 
 				// (player's level changed and no menus are open).
@@ -1658,8 +1658,12 @@ namespace ALYSLC
 
 		coopActor->actorState1.sneaking = 0;
 		coopActor->actorState2.forceSneak = 0;
-		ReadyWeapon(false);
-		ReadyWeapon(true);
+		if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal &&
+			!coopActor->IsInRagdollState())
+		{
+			ReadyWeapon(false);
+			ReadyWeapon(true);
+		}
 
 		// Set player binds.
 		UpdatePlayerBinds();
@@ -2831,7 +2835,7 @@ namespace ALYSLC
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto actorValueList = RE::ActorValueList::GetSingleton();
 		// Enderal does not make use of skill curve data for leveling.
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled || !p1 || !actorValueList || p->isPlayer1) 
+		if (ALYSLC::EnderalCompat::g_installed || !p1 || !actorValueList || p->isPlayer1) 
 		{
 			return;
 		}
@@ -4200,37 +4204,44 @@ namespace ALYSLC
 		// return true if an input was just released and all inputs are now released.
 		// Otherwise, only return true if one input was just released 
 		// and all other inputs are still held.
+		const auto inputsCount = composingInputs.size();
 		bool inputJustReleased = false;
+		bool releasedLastInput = false;
 		uint8_t numberOfInputsReleased = 0;
-		for (auto input : composingInputs)
+		for (auto i = 0; i < inputsCount; ++i)
 		{
+			const auto& input = composingInputs[i];
 			const auto& inputState = glob.cdh->GetInputState(deviceID, input);
 			if (inputState.justReleased)
 			{
 				inputJustReleased = true;
+				releasedLastInput = i == inputsCount - 1;
 			}
 
 			if (!inputState.isPressed)
 			{
 				numberOfInputsReleased++;
 			}
-
-			// Exit early once one input is released if we're not checking all inputs.
-			if (!a_checkIfAllReleased && inputJustReleased && numberOfInputsReleased == 1)
-			{
-				return true;
-			}
 		}
 
 		if (a_checkIfAllReleased)
 		{
-			return inputJustReleased && numberOfInputsReleased == composingInputs.size();
+			return inputJustReleased && numberOfInputsReleased == inputsCount;
 		}
 		else
 		{
-			// Returned true above if only one input was just released, so if we reach here,
-			// we can return false.
-			return false;
+			bool doNotUseCompButtonOrdering = paState.paParams.triggerFlags.all
+			(
+				TriggerFlag::kDoNotUseCompActionsOrdering
+			);
+			// If ordering does not matter, return true if one input was just released at any index
+			// in the composing inputs array. 
+			// Otherwise, the last input must have just been released.
+			return
+			(
+				(inputJustReleased && numberOfInputsReleased == 1) &&
+				(!doNotUseCompButtonOrdering || releasedLastInput)
+			);
 		}
 	}
 
@@ -6874,7 +6885,7 @@ namespace ALYSLC
 				}
 			}
 		}
-
+		
 		return turnToFaceForCombatAction;
 	}
 
@@ -7232,7 +7243,7 @@ namespace ALYSLC
 			(
 				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kCarryWeight
 			);
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && !p->isPlayer1)
+			if (ALYSLC::EnderalCompat::g_installed && !p->isPlayer1)
 			{
 				float p1PermCarryWeightInc = glob.player1Actor->GetActorValueModifier
 				(
@@ -7250,7 +7261,7 @@ namespace ALYSLC
 					);
 				}
 			}
-			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled && !p->isPlayer1)
+			else if (!ALYSLC::EnderalCompat::g_installed && !p->isPlayer1)
 			{
 				const auto iter = glob.serializablePlayerData.find(coopActor->formID);
 				if (iter != glob.serializablePlayerData.end())
@@ -7398,7 +7409,7 @@ namespace ALYSLC
 				canShout = true;
 			}
 		}
-		else if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+		else if (ALYSLC::EnderalCompat::g_installed)
 		{
 			// Enderal only: 
 			// Remove arcane fever related effects when in god mode,
@@ -7685,7 +7696,8 @@ namespace ALYSLC
 				p->em->lastReqBoundWeapLH =
 				p->em->lastReqBoundWeapRH = nullptr;
 				// Clear out hand slots.
-				p->em->EquipFists();
+				// Maintain desired forms.
+				p->em->EquipFists(false);
 			}
 		}
 		else if (boundWeapLH)
@@ -8053,7 +8065,7 @@ namespace ALYSLC
 			// True fix TBD, so signal to revert here manually.
 			bool enderalP1TheriantrophistFormReversion = 
 			{
-				ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+				ALYSLC::EnderalCompat::g_installed &&
 				p->isPlayer1 &&
 				coopActor->race->formEditorID == "_00E_Theriantrophist_PlayerWerewolfRace"sv
 			};
@@ -8086,6 +8098,22 @@ namespace ALYSLC
 			p->isTransformed = 
 			(
 				!revertedForm && coopActor->race && Util::IsRaceWithTransformation(coopActor->race)
+			);
+
+			SPDLOG_DEBUG
+			(
+				"{} is transformed: {}, reverted form: {}, race: {}, "
+				"with trans: {}, form editor: {}, is werewolf: {}, is vampire lord: {}, "
+				"playable: {}.",
+				coopActor->GetName(),
+				p->isTransformed, 
+				revertedForm,
+				coopActor->race ? coopActor->race->GetName() : "NONE",
+				Util::IsRaceWithTransformation(coopActor->race),
+				coopActor->race ? coopActor->race->formEditorID : "NONE",
+				coopActor->race ? coopActor->race->formEditorID == "WerewolfBeastRace"sv : false,
+				coopActor->race ? coopActor->race->formEditorID == "DLC1VampireBeastRace"sv : false,
+				coopActor->race ? coopActor->race->GetPlayable() : false
 			);
 		}
 		else if (p->isTransforming)

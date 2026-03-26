@@ -99,8 +99,24 @@ namespace ALYSLC
 			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
 			// Force the player to get up out of ragdoll state.
-			if (glob.coopSessionActive && !p->isDowned && !coopActor->IsDead())
+			auto charController = coopActor->GetCharController();
+			bool shouldForceGetUp = 
+			(
+				(
+					glob.coopSessionActive &&
+					!p->isDowned &&
+					!coopActor->IsDead() &&
+					coopActor->IsInRagdollState()
+				) &&
+				(
+					(charController) &&
+					(charController->context.currentState == RE::hkpCharacterStateType::kOnGround)
+				)
+			); 
+			if (shouldForceGetUp)
 			{
+				SPDLOG_DEBUG("{}: Get up lazy bones.", 
+					coopActor->GetName(), coopActor->IsInRagdollState());
 				coopActor->NotifyAnimationGraph("GetUpBegin");
 				coopActor->PotentiallyFixRagdollState();
 			}
@@ -176,11 +192,38 @@ namespace ALYSLC
 			// Reset node rotations.
 			nom->InstantlyResetAllNodeData(p);
 			// Force the player to get up out of ragdoll state.
-			if (glob.coopSessionActive && !p->isDowned && !coopActor->IsDead())
+			auto charController = coopActor->GetCharController();
+			bool shouldForceGetUp = 
+			(
+				(
+					glob.coopSessionActive &&
+					!p->isDowned &&
+					!coopActor->IsDead() &&
+					coopActor->IsInRagdollState()
+				) &&
+				(
+					(charController) && (charController->fallTime == 0.0f)
+				)
+			); 
+			if (shouldForceGetUp)
 			{
+				SPDLOG_DEBUG("{}: Get up lazy bones.", 
+					coopActor->GetName(), coopActor->IsInRagdollState());
 				coopActor->NotifyAnimationGraph("GetUpBegin");
 				coopActor->PotentiallyFixRagdollState();
 			}
+		}
+
+		// If starting in the queued knock state,
+		// the actor is likely stuck ragdolled or in place.
+		// One way to fix is to fully reset the player character.
+		if (glob.isSummoningPlayers &&
+			coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
+			coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp)
+		{
+			SPDLOG_DEBUG("{}: Fix stuck in queued/getup knock state. Ragdolled: {}.", 
+				coopActor->GetName(), coopActor->IsInRagdollState());
+			StartFuncs::DebugResetPlayer(p);
 		}
 		
 		// Make sure collision is enabled for the player.
@@ -1395,7 +1438,7 @@ namespace ALYSLC
 		
 		// Nothing else to do for P1.
 		if (p->isPlayer1 ||
-			!ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled || 
+			!ALYSLC::SkyrimsParagliderCompat::g_installed || 
 			!ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider)
 		{
 			return;
@@ -2488,7 +2531,7 @@ namespace ALYSLC
 			{
 				(isParagliding) || 
 				(
-					(!ALYSLC::TrueDirectionalMovementCompat::g_trueDirectionalMovementInstalled) && 
+					(!ALYSLC::TrueDirectionalMovementCompat::g_installed) && 
 					(isEquipping || isUnequipping || coopActor->IsOnMount())
 				)
 			};

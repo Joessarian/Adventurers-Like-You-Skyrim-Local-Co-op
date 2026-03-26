@@ -19,7 +19,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot open debug menu.")
-		ALYSLC.Log("[CDM SCRIPT] Critical Error: P1's actor is invalid. Cannot open debug menu.")
+		ALYSLC.LogError("[CDM SCRIPT] Critical Error: P1's actor is invalid. Cannot open debug menu.")
 		Return
 	EndIf
 

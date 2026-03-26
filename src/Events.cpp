@@ -260,7 +260,7 @@ namespace ALYSLC
 				if (p->isActive && !p->isPlayer1 && p->coopActor->currentProcess)
 				{
 					p->pam->ReadyWeapon(false);
-					p->em->ReEquipHandForms();
+					//p->em->ReEquipHandForms();
 				}
 			}
 		}
@@ -473,7 +473,7 @@ namespace ALYSLC
 		}
 
 		// Update P1's has-paraglider state before doing anything else.
-		if ((ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled) && (toP1 || fromP1))
+		if ((ALYSLC::SkyrimsParagliderCompat::g_installed) && (toP1 || fromP1))
 		{
 			if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
 			{
@@ -495,7 +495,7 @@ namespace ALYSLC
 						// Add gale spell if not known already.
 						// Enderal only, since the quest to obtain the paraglider
 						// and learn Tarhiel's Gale is not present in Enderal.
-						if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+						if (ALYSLC::EnderalCompat::g_installed &&
 							ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
 							!p1->HasSpell(glob.tarhielsGaleSpell))
 						{
@@ -882,7 +882,7 @@ namespace ALYSLC
 		bool barterMenuOpen = ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
 		// Enderal-specific gold scaling and skillbook loot.
 		// To a player but not from another player, and not from a transaction (Barter Menu open).
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
+		if (ALYSLC::EnderalCompat::g_installed && 
 			!fromCoopEntity && 
 			toCoopPlayer && 
 			!barterMenuOpen)
@@ -1043,7 +1043,7 @@ namespace ALYSLC
 								);
 								// Show in TrueHUD recent loot widget 
 								// by adding and removing the skillbook from P1.
-								if (ALYSLC::TrueHUDCompat::g_trueHUDInstalled && 
+								if (ALYSLC::TrueHUDCompat::g_installed && 
 									toP->coopActor.get() == p1)
 								{
 									toP->taskRunner->AddTask
@@ -1413,14 +1413,14 @@ namespace ALYSLC
 					}
 
 					auto ui = RE::UI::GetSingleton();
-					bool affectedByInventoryTransfer = 
-					{
+					bool affectedByInventoryTransfer = false;
+					/*{
 						(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
 						(
 							(glob.mim->managerMenuPID != -1 && p->coopActor == glob.player1Actor) ||
 							(glob.mim->managerMenuPID == p->playerID)
 						)
-					};
+					};*/
 					auto equipForm = RE::TESForm::LookupByID(formID);
 					bool shouldRefreshEquipState = 
 					(
@@ -2211,7 +2211,7 @@ namespace ALYSLC
 		// even after P1's current level increases by 1,
 		// so we have to do it after the menu closes 
 		// and the game is fully done leveling up P1.
-		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+		if (!ALYSLC::EnderalCompat::g_installed &&
 			Settings::fLevelUpXPThresholdMult != 1.0f) 
 		{
 			bool statsMenuOpening = 
@@ -2311,7 +2311,7 @@ namespace ALYSLC
 					if (glob.coopSessionActive && !p->isPlayer1 && p->coopActor->currentProcess)
 					{
 						p->pam->ReadyWeapon(false);
-						p->em->ReEquipHandForms();
+						//p->em->ReEquipHandForms();
 					}
 				}
 			}
@@ -2400,7 +2400,7 @@ namespace ALYSLC
 			// Keep perks synced among all players whenever a MessageBox menu opens/closes.
 			// Can't differentiate between a regular MessageBox and Enderal's level up MessageBox,
 			// so we've got to sync whenever a MessageBox opens.
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+			if (ALYSLC::EnderalCompat::g_installed &&
 				a_menuEvent->menuName == RE::MessageBoxMenu::MENU_NAME)
 			{
 				GlobalCoopData::SyncSharedPerks();

@@ -1839,7 +1839,7 @@ namespace ALYSLC
 					(lsMag == 0.0f) || 
 					(
 						!Settings::bUseDashDodgeSystem && 
-						ALYSLC::TKDodgeCompat::g_tkDodgeInstalled
+						ALYSLC::TKDodgeCompat::g_installed
 					) ?
 					1.0f : 
 					std::clamp(lsMag, 0.5f, 1.0f)
@@ -3372,17 +3372,25 @@ namespace ALYSLC
 									);
 								}
 
+								const int32_t count = Util::GetInventoryItemCount
+								(
+									a_p->isPlayer1 ?
+									a_p->coopActor.get() :
+									a_p->em->inventoryChest.get(),
+									alchemyItem
+								);
 								a_p->tm->SetCrosshairMessageRequest
 								(
 									CrosshairMessageType::kEquippedItem,
 									fmt::format
 									(
-										"P{}: Applying {} to {}", 
+										"P{}: Applying {} to {}. {} remain.", 
 										a_p->playerID + 1, 
 										name,
 										weapInvData->object ?
 										weapInvData->object->GetName() :
-										"right hand weapon"
+										"right hand weapon",
+										count
 									),
 									{ 
 										CrosshairMessageType::kNone, 
@@ -3397,12 +3405,19 @@ namespace ALYSLC
 						else if (aem)
 						{
 							// Eat it. Yum.
+							const int32_t count = Util::GetInventoryItemCount
+							(
+								a_p->isPlayer1 ?
+								a_p->coopActor.get() :
+								a_p->em->inventoryChest.get(),
+								a_hotkeyedForm->As<RE::TESBoundObject>()
+							);
 							a_p->tm->SetCrosshairMessageRequest
 							(
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Consuming {}", a_p->playerID + 1, name
+									"P{}: Consuming {}. {} remain.", a_p->playerID + 1, name, count
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3412,7 +3427,7 @@ namespace ALYSLC
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
-							Util::EquipObject(a_p->coopActor.get(), alchemyItem, extraDataList, 1);
+							a_p->em->EquipForm(alchemyItem, EquipIndex::kNone, extraDataList);
 						}
 					}
 					else if (a_hotkeyedForm->IsAmmo())
@@ -3452,9 +3467,11 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						Util::EquipObject
+						a_p->em->EquipForm
 						(
-							a_p->coopActor.get(), a_hotkeyedForm->As<RE::TESBoundObject>()
+							a_hotkeyedForm->As<RE::TESBoundObject>(), 
+							EquipIndex::kNone,
+							extraDataList
 						);
 					}
 				} 
@@ -3721,17 +3738,25 @@ namespace ALYSLC
 									);
 								}
 
+								const int32_t count = Util::GetInventoryItemCount
+								(
+									a_p->isPlayer1 ?
+									a_p->coopActor.get() :
+									a_p->em->inventoryChest.get(),
+									alchemyItem
+								);
 								a_p->tm->SetCrosshairMessageRequest
 								(
 									CrosshairMessageType::kEquippedItem,
 									fmt::format
 									(
-										"P{}: Applying {} to {}", 
+										"P{}: Applying {} to {}. {} remain.", 
 										a_p->playerID + 1, 
 										name,
 										weapInvData->object ?
 										weapInvData->object->GetName() :
-										"left hand weapon"
+										"left hand weapon",
+										count
 									),
 									{ 
 										CrosshairMessageType::kNone, 
@@ -3745,12 +3770,19 @@ namespace ALYSLC
 						}
 						else if (aem)
 						{
+							const int32_t count = Util::GetInventoryItemCount
+							(
+								a_p->isPlayer1 ?
+								a_p->coopActor.get() :
+								a_p->em->inventoryChest.get(),
+								a_hotkeyedForm->As<RE::TESBoundObject>()
+							);
 							a_p->tm->SetCrosshairMessageRequest
 							(
 								CrosshairMessageType::kEquippedItem,
 								fmt::format
 								(
-									"P{}: Consuming {}", a_p->playerID + 1, name
+									"P{}: Consuming {}. {} remain.", a_p->playerID + 1, name, count
 								),
 								{ 
 									CrosshairMessageType::kNone, 
@@ -3760,7 +3792,7 @@ namespace ALYSLC
 								},
 								max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 							);
-							Util::EquipObject(a_p->coopActor.get(), alchemyItem, extraDataList, 1);
+							a_p->em->EquipForm(alchemyItem, EquipIndex::kNone, extraDataList);
 						}
 					}
 					else if (a_hotkeyedForm->IsAmmo())
@@ -3800,10 +3832,10 @@ namespace ALYSLC
 							},
 							max(0.5f, Settings::fSecsBetweenDiffCrosshairMsgs * 0.25f)
 						);
-						Util::EquipObject
+						a_p->em->EquipForm
 						(
-							a_p->coopActor.get(), 
 							a_hotkeyedForm->As<RE::TESBoundObject>(),
+							EquipIndex::kNone, 
 							extraDataList
 						);
 					}
@@ -4388,7 +4420,7 @@ namespace ALYSLC
 					(lsMag == 0.0f) || 
 					(
 						!Settings::bUseDashDodgeSystem && 
-						ALYSLC::TKDodgeCompat::g_tkDodgeInstalled
+						ALYSLC::TKDodgeCompat::g_installed
 					) ? 
 					1.0f : 
 					std::clamp(lsMag, 0.5f, 1.0f)
@@ -5036,7 +5068,7 @@ namespace ALYSLC
 				);
 				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
 				// Do this before item removal, which will change the entry data's count.
-				if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
+				if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1)
 				{
 					p1->AddObjectToContainer
 					(
@@ -5136,7 +5168,7 @@ namespace ALYSLC
 					);
 					// Show in TrueHUD recent loot widget by adding and removing the object from P1.
 					// Do this before item removal, which will change the entry data's count.
-					if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !toP1)
+					if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1)
 					{
 						p1->AddObjectToContainer
 						(
@@ -5282,7 +5314,7 @@ namespace ALYSLC
 					// especially if they are quest items.
 					shouldLootWithP1 = isQuestItem || Util::IsPartyWideItem(baseObj);
 					// Show in TrueHUD recent loot widget if P1 is not looting the item themselves.
-					/*if (p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled && !shouldLootWithP1)
+					/*if (p1 && ALYSLC::TrueHUDCompat::g_installed && !shouldLootWithP1)
 					{
 						p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 						p1->RemoveItem
@@ -6058,7 +6090,7 @@ namespace ALYSLC
 				{
 					// Have to trigger a normal RH attack before the H2H power attack idle;
 					// otherwise, the power attack idle will fail to play.
-					if (!ALYSLC::MCOCompat::g_mcoInstalled) 
+					if (!ALYSLC::MCOCompat::g_installed) 
 					{
 						Util::RunPlayerActionCommand
 						(
@@ -6071,7 +6103,7 @@ namespace ALYSLC
 					// Play the corresponding MCO idle instead.
 					if (a_p->em->RHEmpty())
 					{
-						if (ALYSLC::MCOCompat::g_mcoInstalled) 
+						if (ALYSLC::MCOCompat::g_installed) 
 						{
 							Util::PlayIdle("ADXP_NPCPowerAttack_H2H", a_p->coopActor.get());
 						}
@@ -6082,7 +6114,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						if (ALYSLC::MCOCompat::g_mcoInstalled) 
+						if (ALYSLC::MCOCompat::g_installed) 
 						{
 							Util::PlayIdle("ADXP_NPCPowerAttack", a_p->coopActor.get());
 						}
@@ -6125,7 +6157,7 @@ namespace ALYSLC
 			// for the slick paraglide animations. Sadge.
 			// Return true if the request was successful.
 
-			if (!ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled)
+			if (!ALYSLC::SkyrimsParagliderCompat::g_installed)
 			{
 				return false;
 			}
@@ -10798,7 +10830,13 @@ namespace ALYSLC
 				GlobalCoopData::StopMenuInputManager();
 			}
 
-			a_p->taskRunner->AddTask([a_p]() { a_p->RefreshPlayerManagersTask(); });
+			a_p->taskRunner->AddTask
+			(
+				[a_p]() 
+				{
+					a_p->RefreshPlayerManagersTask();
+				}
+			);
 		}
 
 		void DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p)
@@ -11001,7 +11039,7 @@ namespace ALYSLC
 				// Signal movement manager to dash dodge.
 				a_p->mm->isRequestingDashDodge = true;
 			}
-			else if (ALYSLC::TKDodgeCompat::g_tkDodgeInstalled) 
+			else if (ALYSLC::TKDodgeCompat::g_installed) 
 			{
 				// Stop sprinting before dodging.
 				Util::RunPlayerActionCommand
@@ -11165,7 +11203,8 @@ namespace ALYSLC
 			{
 				return;
 			}
-
+			
+			a_p->em->FixInventory();
 			if (a_p->isPlayer1)
 			{
 				a_p->pam->SendButtonEvent
@@ -11454,9 +11493,13 @@ namespace ALYSLC
 			// Allow usage of a QS item only if the player HAD at least 1 in their inventory,
 			// as indicated by presence of an entry in the player's inventory counts.
 			// Otherwise, clear out the slot and notify the player.
-			auto inv = a_p->em->inventoryChest->GetInventory();
-			const auto iter = inv.find(qsBoundObj);
-			const int32_t count = iter != inv.end() ? iter->second.first : -1;
+			int32_t count = Util::GetInventoryItemCount
+			(
+				a_p->isPlayer1 ?
+				a_p->coopActor.get() :
+				a_p->em->inventoryChest.get(),
+				qsBoundObj
+			);
 			if (count > 0)
 			{
 				// Has at least 1, so use the item via equip.
@@ -11466,30 +11509,140 @@ namespace ALYSLC
 					return;
 				}
 
-				Util::EquipObject
+				// Apply poisons to the right hand item first.
+				bool isPoison = 
 				(
-					a_p->coopActor.get(),
-					qsItem->As<RE::TESBoundObject>(), 
-					nullptr,
-					1,
-					nullptr
+					qsBoundObj->As<RE::AlchemyItem>() &&
+					qsBoundObj->As<RE::AlchemyItem>()->IsPoison()
 				);
-				// Notify the player of quick item use and how many remain.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kEquippedItem,
-					fmt::format
+				bool appliedToRH = false;
+				RE::InventoryEntryData* objectEntryToPoison = nullptr;
+				if (isPoison)
+				{
+					auto entry = a_p->coopActor->GetEquippedEntryData(false);
+					if (entry && entry->object)
+					{
+						// Default to RH here since even if the item is already poisoned,
+						// we'll apply the new quick slot poison later.
+						objectEntryToPoison = entry;
+						if (!entry->IsPoisoned())
+						{
+							appliedToRH = true;
+						}
+					}
+
+					// Fall back to LH object if poison was not applied to the right hand object.
+					if (!appliedToRH)
+					{
+						entry = a_p->coopActor->GetEquippedEntryData(true);
+						if (entry && entry->object)
+						{
+							if (!entry->IsPoisoned())
+							{
+								objectEntryToPoison = entry;
+							}
+						}
+					}
+
+					if (objectEntryToPoison && objectEntryToPoison->object)
+					{
+						objectEntryToPoison->PoisonObject(qsBoundObj->As<RE::AlchemyItem>(), 1);
+						if (a_p->isPlayer1)
+						{
+							a_p->coopActor->RemoveItem
+							(
+								qsBoundObj, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+							);
+						}
+						else
+						{
+							a_p->em->inventoryChest->RemoveItem
+							(
+								qsBoundObj, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+							);
+						}
+
+						count = Util::GetInventoryItemCount
+						(
+							a_p->isPlayer1 ?
+							a_p->coopActor.get() :
+							a_p->em->inventoryChest.get(),
+							qsBoundObj
+						);
+						// Notify the player of quick item use and how many remain.
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format
+							(
+								"P{}: Applying poison '{}' to {} ({} remaining)",
+								a_p->playerID + 1,
+								qsItem->GetName(),
+								objectEntryToPoison->GetDisplayName(),
+								count
+							),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else
+					{
+						count = Util::GetInventoryItemCount
+						(
+							a_p->isPlayer1 ?
+							a_p->coopActor.get() :
+							a_p->em->inventoryChest.get(),
+							qsBoundObj
+						);
+						// Notify the player of quick item use and how many remain.
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kEquippedItem,
+							fmt::format
+							(
+								"P{}: Failed to apply poison '{}' ({} remaining)",
+								a_p->playerID + 1, qsItem->GetName(), count
+							),
+							{ 
+								CrosshairMessageType::kNone, 
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+				}
+				else
+				{
+					a_p->em->EquipForm(qsBoundObj, EquipIndex::kNone, nullptr, 1, nullptr);
+					count = Util::GetInventoryItemCount
 					(
-						"P{}: Using item '{}' ({} remaining)",
-						a_p->playerID + 1, qsItem->GetName(), count - 1
-					),
-					{ 
-						CrosshairMessageType::kNone, 
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
+						a_p->isPlayer1 ?
+						a_p->coopActor.get() :
+						a_p->em->inventoryChest.get(),
+						qsBoundObj
+					);
+					// Notify the player of quick item use and how many remain.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kEquippedItem,
+						fmt::format
+						(
+							"P{}: Using item '{}' ({} remaining)",
+							a_p->playerID + 1, qsItem->GetName(), count
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
 			}
 			else
 			{
@@ -11823,7 +11976,7 @@ namespace ALYSLC
 			// Open the StatsMenu if playing Skyrim.
 			// Otherwise, open the Hero Menu or a UIExtensions stats menu if playing Enderal.
 
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+			if (ALYSLC::EnderalCompat::g_installed) 
 			{
 				// Check if Maxsu2017's 'Hero Menu Enhanced' mod is installed, 
 				// and trigger the StatsMenu as usual to open the enhanced Hero Menu.
@@ -12279,7 +12432,7 @@ namespace ALYSLC
 				);
 				if (startArrestDialogue)
 				{
-					if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+					if (ALYSLC::EnderalCompat::g_installed)
 					{
 						// Tried the following topic, but it's probably not the right one.
 						// For reference:
@@ -12563,7 +12716,6 @@ namespace ALYSLC
 					(
 						a_p, activationRefrPtr.get(), baseObj
 					);
-
 					if (asActor && asActor->IsAMount() && !asActor->IsDead())
 					{
 						// Ignore if already attempting to mount or mounted.
@@ -12682,26 +12834,51 @@ namespace ALYSLC
 								p1->data.location.GetDistance(a_p->coopActor->data.location) >
 								a_p->tm->GetMaxActivationDist()
 							);
-							if (inInteractionPackage && requiresP1ToOpenMenu && p1TooFarAway)
+							bool p1WeaponDrawn = p1->IsWeaponDrawn();
+							if ((requiresP1ToOpenMenu) && (p1TooFarAway || p1WeaponDrawn))
 							{
-								a_p->tm->SetCrosshairMessageRequest
-								(
-									CrosshairMessageType::kGeneralNotification,
-									fmt::format
+								if (p1TooFarAway)
+								{
+									a_p->tm->SetCrosshairMessageRequest
 									(
-										"P{}: P1 is too far away to interact with {}.",
-										a_p->playerID + 1,
-										activationRefrPtr->GetName()
-									),
-									{ 
-										CrosshairMessageType::kNone, 
-										CrosshairMessageType::kStealthState, 
-										CrosshairMessageType::kTargetSelection 
-									},
-									Settings::fSecsBetweenDiffCrosshairMsgs
-								);
+										CrosshairMessageType::kGeneralNotification,
+										fmt::format
+										(
+											"P{}: P1 is too far away to interact with {}.",
+											a_p->playerID + 1,
+											activationRefrPtr->GetName()
+										),
+										{ 
+											CrosshairMessageType::kNone, 
+											CrosshairMessageType::kStealthState, 
+											CrosshairMessageType::kTargetSelection 
+										},
+										Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+								}
+								else
+								{
+									a_p->tm->SetCrosshairMessageRequest
+									(
+										CrosshairMessageType::kGeneralNotification,
+										fmt::format
+										(
+											"P{}: P1 must sheathe their weapons "
+											"to interact with {}.",
+											a_p->playerID + 1,
+											activationRefrPtr->GetName()
+										),
+										{ 
+											CrosshairMessageType::kNone, 
+											CrosshairMessageType::kStealthState, 
+											CrosshairMessageType::kTargetSelection 
+										},
+										Settings::fSecsBetweenDiffCrosshairMsgs
+									);
+								}
+
 								// Reset to default package and stop any interaction idles.
-								if (!a_p->coopActor->IsOnMount())
+								if (inInteractionPackage && !a_p->coopActor->IsOnMount())
 								{
 									a_p->pam->SetAndEveluatePackage();
 									// Quickly exit any interaction.
@@ -12758,7 +12935,7 @@ namespace ALYSLC
 								a_p->tm->activationRefrHandle
 							);
 							// Show in TrueHUD recent loot widget.
-							/*if (lootable && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
+							/*if (lootable && ALYSLC::TrueHUDCompat::g_installed)
 							{
 								p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 								p1->RemoveItem
@@ -14115,8 +14292,27 @@ namespace ALYSLC
 									RE::hkpMotion::MotionType::kInvalid
 								)
 							);
+							SPDLOG_DEBUG("{} has motion type {}.",
+								targetRefrPtr->GetName(), *hkpRigidBodyPtr->motion.type);
+						}
+						else
+						{
+							SPDLOG_DEBUG("{} has no rigid body.", targetRefrPtr->GetName());
 						}
 					}
+					else
+					{
+						SPDLOG_DEBUG("{} has no valid 3D.", targetRefrPtr->GetName());
+					}
+				}
+				else
+				{
+					SPDLOG_DEBUG("{} is dead: {}. Knock state: {}. Is ragdolled: {}.", 
+						targetRefrPtr->GetName(),
+						targetRefrPtr->IsDead(),
+						targetActor ? targetActor->GetKnockState() : RE::KNOCK_STATE_ENUM::kNormal,
+						targetActor ? targetActor->IsInRagdollState() : false
+					);
 				}
 			}
 
@@ -14205,6 +14401,7 @@ namespace ALYSLC
 					 !a_p->tm->rmm->isAutoGrabbing && 
 					 targetRefrValidity)
 			{
+				SPDLOG_DEBUG("CANNOT GRAB {}.", targetRefrPtr->GetName());
 				// Notify the player that this refr is not grabbable/throwable.
 				a_p->tm->SetCrosshairMessageRequest
 				(

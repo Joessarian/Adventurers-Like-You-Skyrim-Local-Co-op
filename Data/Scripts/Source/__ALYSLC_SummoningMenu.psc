@@ -1116,15 +1116,15 @@ State SummonState
         ; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
         Float SecsWaited = 0.0
         While (!PlayerRef && SecsWaited < 2.0)
-            ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: P1 invalid; attempting to get P1 again.")
             PlayerRef = Game.GetPlayer()
             ALYSLC.Wait(0.1)
             SecsWaited += 0.1
         EndWhile
-        
+
         If (PlayerRef != Game.GetPlayer())
             Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
-            ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
             ALYSLC.SetIsSummoningFlag(False)
             ALYSLC.ChangeCoopSessionState(False)
             GotoState("")

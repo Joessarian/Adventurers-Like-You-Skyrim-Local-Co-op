@@ -171,60 +171,8 @@ namespace ALYSLC
 			}
 		}
 
-		auto invChanges = 
-		(
-			p->isPlayer1 ? coopActor->GetInventoryChanges() : inventoryChest->GetInventoryChanges()
-		);
-		if (invChanges && invChanges->entryList)
-		{
-			// Fix up counts in the chest's inventory afterward.
-			for (auto& entry : *invChanges->entryList) 
-			{
-				int32_t exListsCount = 0;
-				if (!entry || !entry->object)
-				{
-					continue;
-				}
-				
-				if (entry->extraLists)
-				{
-					for (auto exDataList : *entry->extraLists)
-					{
-						if (!exDataList)
-						{
-							continue;
-						}
-
-						exListsCount += exDataList->GetCount();
-					}
-				}
-				
-				// Both register as not in the player's inventory, so nothing to correct.
-				if (entry->countDelta <= 0 && exListsCount == 0)
-				{
-					continue;
-				}
-
-				int32_t countsDelta = entry->countDelta - exListsCount;
-				if (countsDelta < 0)
-				{
-					SPDLOG_ERROR
-					(
-						"{}: Item {}'s entry countDelta is less than "
-						"the accumulated extra data list item count (diff of {}). "
-						"Setting entry countDelta to {}.",
-						coopActor->GetName(),
-						entry->object->GetName(), 
-						countsDelta,
-						exListsCount
-					);
-				}
-
-				entry->countDelta = max(entry->countDelta, exListsCount);
-			}
-		}
-
-
+		// Make sure the player's inventory is ready for co-op.
+		FixInventory();
 		// Update our cached equip state.
 		RefreshEquipState(RefreshSlots::kAll);
 		// "Infinite" carryweight for coop players.
@@ -271,10 +219,11 @@ namespace ALYSLC
 			}
 			else
 			{
-
 				// Re-equip all saved forms for companion players
 				// in case there was some lingering glitched equip state.
+				p->pam->ReadyWeapon(false);
 				ReEquipAll(false);
+				p->pam->ReadyWeapon(true);
 			}
 			
 			coopActor->UpdateHairColor();
@@ -865,9 +814,20 @@ namespace ALYSLC
 
 						if (entry->object == desiredAmmo)
 						{
-							if (entry->extraLists && entry->extraLists->front())
+							if (entry->extraLists)
 							{
-								frontList = entry->extraLists->front();
+								if (entry->extraLists->empty())
+								{
+									SPDLOG_ERROR("{}. TAHTS GON BE BUG.", entry->object->GetName());
+									delete entry->extraLists;
+									entry->extraLists = nullptr;
+									continue;
+								}
+								else if (entry->extraLists->front())
+								{
+									frontList = entry->extraLists->front();
+								}
+								
 							}
 
 							break;
@@ -884,7 +844,7 @@ namespace ALYSLC
 	void EquipManager::ChangeChestWornRankExData
 	(
 		RE::TESBoundObject* a_boundObj, 
-		bool a_checkLH, 
+		bool a_leftHand, 
 		bool a_add,
 		RE::ExtraDataList* a_chestListToChange
 	)
@@ -896,8 +856,17 @@ namespace ALYSLC
 		// If no chest exData list is provided when trying to add exRank data on equip,
 		// attempt to find a matching chest exData list for the equipped exData list 
 		// in the same hand before adding worn exRank data.
+		
+		SPDLOG_DEBUG
+		(
+			"{}, LH: {}, add: {}, list to change: {:p}.",
+			a_boundObj ? a_boundObj->GetName() : "NONE", 
+			a_leftHand,
+			a_add, 
+			fmt::ptr(a_chestListToChange)
+		);
 
-		if (!a_boundObj)
+		if (!a_boundObj || !Util::IsEquipableInventoryObject(a_boundObj))
 		{
 			return;
 		}
@@ -907,14 +876,28 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		const auto equipSlot = 
+		(
+			a_boundObj->As<RE::BGSEquipType>() ?
+			a_boundObj->As<RE::BGSEquipType>()->equipSlot :
+			nullptr
+		);
+		// Should check for right hand worn rank data for certain items in the left hand.
+		bool checkLH = 
+		(
+			a_leftHand && 
+			equipSlot && 
+			equipSlot != glob.bothHandsEquipSlot &&
+			equipSlot != glob.shieldEquipSlot
+		);
 		// Add if attempted to equip.
 		if (a_add)
 		{
 			// Retrieve matching chest list if none was given.
 			auto equippedExData = Util::GetEquippedExtraData
 			(
-				coopActor.get(), a_boundObj, a_checkLH
+				coopActor.get(), a_boundObj, checkLH
 			);
 			if (!a_chestListToChange)
 			{
@@ -944,7 +927,7 @@ namespace ALYSLC
 				a_boundObj->GetName(), 
 				fmt::ptr(a_chestListToChange),
 				fmt::ptr(equippedExData),
-				a_checkLH
+				checkLH
 			);
 			// Add extra rank mask for the same hand.
 			Util::AddWornRankExtraData
@@ -956,7 +939,7 @@ namespace ALYSLC
 					a_chestListToChange
 				),
 				a_chestListToChange, 
-				a_checkLH
+				checkLH
 			);
 		}
 
@@ -1013,7 +996,7 @@ namespace ALYSLC
 				continue;
 			}
 			
-			Util::RemoveWornRankExtraData(extraDataList, a_checkLH);
+			Util::RemoveWornRankExtraData(extraDataList, checkLH);
 		}
 	}
 
@@ -2034,25 +2017,13 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Unequip current ammo before equipping new one.
-			if (RE::TESForm* currentAmmoForm = equippedForms[!EquipIndex::kAmmo]; currentAmmoForm)
-			{
-				UnequipAmmo(currentAmmoForm);
-			}
-
-			// Add to desired equipped forms list.
-			desiredForms[!EquipIndex::kAmmo] = a_toEquip;
-			desiredExtraDataLists[!EquipIndex::kAmmo] = a_exData;
 			// NOTE: 
 			// The game has issues un/equipping ammo when count is large (e.g. 100000), 
 			// so only un/equip 1 at a time.
-			const auto boundObj = a_toEquip->As<RE::TESBoundObject>();
-			const auto inv = inventoryChest->GetInventory();
-			const auto iter = inv.find(boundObj);
-			const auto count = iter == inv.end() ? 1 : iter->second.first;
 			HandleCompanionPlayerEquip
 			(
-				boundObj,
+				ammo,
+				EquipIndex::kAmmo,
 				a_exData,
 				1, 
 				a_slot, 
@@ -2086,9 +2057,10 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"{}: equip {}.",
+			"{}: equip {} (0x{:X}).",
 			coopActor->GetName(),
-			a_toEquip ? a_toEquip->GetName() : "NONE"
+			a_toEquip ? a_toEquip->GetName() : "NONE",
+			a_toEquip ? a_toEquip->formID : 0xDEAD
 		);
 
 		auto boundObj = a_toEquip ? a_toEquip->As<RE::TESBoundObject>() : nullptr; 
@@ -2101,27 +2073,12 @@ namespace ALYSLC
 		if (p->isPlayer1)
 		{
 			// Directly equip on P1 without forcing the equip.
-			auto ench = boundObj->As<RE::TESEnchantableForm>();
-			Util::EquipObject
-			(
-				coopActor.get(), 
-				boundObj, 
-				a_exData, 
-				a_count, 
-				a_slot, 
-				a_queueEquip, 
-				false, 
-				a_playSounds, 
-				a_applyNow
-			);
-		}
-		else
-		{
-			// Must add all armor indices that correspond to the requested item to equip,
-			// since armor pieces can fit into multiple biped slots.
-			if (auto asBipedObjForm = a_toEquip->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+
+			// Unequip current form first.
+			const auto& biped = coopActor->GetBiped2();
+			auto asBipedObjForm = a_toEquip->As<RE::BGSBipedObjectForm>();
+			if (biped && biped->objects && asBipedObjForm)
 			{
-				std::vector<uint8_t> equipIndices;
 				auto slotMask = asBipedObjForm->bipedModelData.bipedObjectSlots;
 				bool isShield = asBipedObjForm->IsShield();
 				const RE::BGSEquipSlot* slot = 
@@ -2150,62 +2107,62 @@ namespace ALYSLC
 					);
 					if (slotMask.all(bitMask))
 					{
-						equipIndices.emplace_back(i);
 						// Unequip armor in same slot first.
-						if (auto currentArmorForm = equippedForms[i]; currentArmorForm)
+						// Check our cached equipped armor in the same slot first.
+						auto currentArmorForm = equippedForms[i];
+						if (currentArmorForm)
 						{
 							UnequipArmor(currentArmorForm);
 						}
+						else
+						{
+							// If nothing is cached, check the current biped object's item.
+							// This does not always match the equipped item unfortunately
+							// and is sometimes an armature item, which will not unequip.
+							currentArmorForm = 
+							(
+								biped->objects[i - !EquipIndex::kFirstBipedSlot].item
+							);
+							if (currentArmorForm)
+							{
+								UnequipArmor(currentArmorForm);
+							}
+						}
 					}
 				}
-
-				// Add to desired equipped forms list at each biped slot index.
-				for (auto index : equipIndices)
-				{
-					desiredForms[index] = a_toEquip;
-					desiredExtraDataLists[index] = a_exData;
-				}
-
-				// Special shield case: also update LH slot in desired equipped forms list.
-				if (isShield)
-				{
-					UnequipFormAtIndex(EquipIndex::kLeftHand);
-					desiredForms[!EquipIndex::kLeftHand] = a_toEquip;
-					desiredExtraDataLists[!EquipIndex::kLeftHand] = a_exData;
-				}
-				
-				HandleCompanionPlayerEquip
-				(
-					boundObj,
-					a_exData,
-					a_count, 
-					a_slot, 
-					a_queueEquip, 
-					a_forceEquip, 
-					a_playSounds, 
-					a_applyNow
-				);
 			}
-			else
-			{
-				// Any other form that does not fit in a biped slot.
-				Util::EquipObject
-				(
-					coopActor.get(),
-					boundObj,
-					a_exData, 
-					a_count, 
-					a_slot,
-					a_queueEquip, 
-					a_forceEquip, 
-					a_playSounds,
-					a_applyNow
-				);
-			}
+
+			Util::EquipObject
+			(
+				coopActor.get(), 
+				boundObj, 
+				a_exData, 
+				a_count, 
+				a_slot, 
+				a_queueEquip, 
+				false, 
+				a_playSounds, 
+				a_applyNow
+			);
+		}
+		else
+		{
+			HandleCompanionPlayerEquip
+			(
+				boundObj,
+				EquipIndex::kNone,
+				a_exData,
+				a_count, 
+				a_slot, 
+				a_queueEquip, 
+				a_forceEquip, 
+				a_playSounds, 
+				a_applyNow
+			);
 		}
 	}
 
-	void EquipManager::EquipDummy1H(RE::BGSEquipSlot* a_slot)
+	void EquipManager::EquipDummy1H(const RE::BGSEquipSlot* a_slot, bool a_clearDesiredSlots)
 	{
 		// Equip dummy 1H weapon to clear out the given hand slot.
 		// NOTE: 
@@ -2227,43 +2184,57 @@ namespace ALYSLC
 		// NEVER force equip with P1.
 		// 
 		// Also do not queue the equip here, we want it to happen ASAP.
-		Util::EquipObject
-		(
-			coopActor.get(), 
-			glob.dummy1H,
-			nullptr, 
-			1, 
-			a_slot, 
-			false, 
-			!p->isPlayer1, 
-			false, 
-			true
-		);
-		if (!p->isPlayer1) 
+		if (p->isPlayer1)
 		{
-			// NOTE: 
-			// Can cause the game to stutter if unequipping right after equipping.
-			// Also, the game only unequips dummy wewapons automatically for P1. 
-			// Must be done here for other players.
-			Util::UnequipObject
+			Util::EquipObject
 			(
-				coopActor.get(),
+				coopActor.get(), 
 				glob.dummy1H,
-				nullptr,
-				1,
+				nullptr, 
+				1, 
 				a_slot
 			);
 		}
-
+		else
+		{
+			// Equip index arg determines if requesting to clear desired array slots or not.
+			if (a_clearDesiredSlots)
+			{
+				HandleCompanionPlayerEquip
+				(
+					glob.dummy1H, 
+					a_slot == glob.leftHandEquipSlot ? 
+					EquipIndex::kLeftHand : 
+					EquipIndex::kRightHand,
+					nullptr,
+					1,
+					a_slot
+				);
+			}
+			else
+			{
+				HandleCompanionPlayerEquip
+				(
+					glob.dummy1H, 
+					EquipIndex::kNone,
+					nullptr,
+					1,
+					a_slot
+				);
+			}
+			
+		}
+		
 		desiredExtraDataLists
 		[
 			a_slot == glob.rightHandEquipSlot ? !EquipIndex::kLeftHand : !EquipIndex::kRightHand
 		] = nullptr;
 	}
 
-	void EquipManager::EquipFists()
+	void EquipManager::EquipFists(bool a_clearDesiredSlots)
 	{
 		// Clear out both hand slots by equipping the 'fists' item.
+		// Can choose to also clear out desired forms/exData list slots.
 
 		SPDLOG_DEBUG("{}.", coopActor->GetName());
 		auto aem = RE::ActorEquipManager::GetSingleton();
@@ -2281,29 +2252,29 @@ namespace ALYSLC
 		// 
 		// Also do not queue the equip here, we want it to happen ASAP.
 
-		auto lhObj = coopActor->GetEquippedObject(true);
-		if (lhObj && lhObj->As<RE::TESBoundObject>())
+		if (p->isPlayer1)
 		{
-			ChangeChestWornRankExData(lhObj->As<RE::TESBoundObject>(), true, false);
+			Util::EquipObject
+			(
+				coopActor.get(), 
+				glob.fists,
+				nullptr, 
+				1, 
+				glob.bothHandsEquipSlot
+			);
 		}
-
-		auto rhObj = coopActor->GetEquippedObject(false);
-		if (rhObj && rhObj->As<RE::TESBoundObject>())
+		else
 		{
-			ChangeChestWornRankExData(rhObj->As<RE::TESBoundObject>(), false, false);
+			// Equip index arg determines if requesting to clear desired array slots or not.
+			HandleCompanionPlayerEquip
+			(
+				glob.fists,
+				a_clearDesiredSlots ? EquipIndex::kHands : EquipIndex::kNone,
+				nullptr, 
+				1,
+				glob.bothHandsEquipSlot
+			);
 		}
-
-		Util::EquipObject
-		(
-			coopActor.get(), 
-			glob.fists,
-			nullptr, 
-			1, 
-			glob.bothHandsEquipSlot
-		);
-
-		desiredExtraDataLists[!EquipIndex::kLeftHand] =
-		desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;
 	}
 
 	void EquipManager::EquipForm
@@ -2346,18 +2317,15 @@ namespace ALYSLC
 		// Desired form NOT cleared first.
 		if (a_toEquip == glob.fists || a_toEquip == glob.dummy1H) 
 		{
-			Util::EquipObject
-			(
-				coopActor.get(), 
-				a_toEquip->As<RE::TESBoundObject>(), 
-				nullptr, 
-				1, 
-				a_slot, 
-				false, 
-				!p->isPlayer1, 
-				false, 
-				true
-			);
+			if (a_toEquip == glob.fists )
+			{
+				EquipFists(false);
+			}
+			else
+			{
+				EquipDummy1H(a_slot, false);
+			}
+
 			return;
 		}
 
@@ -2377,13 +2345,15 @@ namespace ALYSLC
 			(
 				coopActor.get(), oppositeHandForm, oppositeEquipIndex == EquipIndex::kLeftHand
 			);
-			auto numberOwned = Util::GetCountForInventoryItem
+			auto numberOwned = 
 			(
-				coopActor.get(), boundObj, a_exData
+				Util::GetIntrinsicallyEqualCount
+				(
+					coopActor.get(), boundObj, a_exData
+				)
 			);
 			bool alreadyEquippedInOtherHand = 
 			(
-				numberOwned == 1 && 
 				oppositeHandForm == a_toEquip && 
 				oppositeHandExData == a_exData &&
 				a_toEquip->As<RE::BGSEquipType>() && 
@@ -2408,16 +2378,45 @@ namespace ALYSLC
 			if (alreadyEquippedInOtherHand)
 			{
 				UnequipHandForms(glob.bothHandsEquipSlot);
-				/*coopActor->RemoveItem
-				(
-					boundObj, 
-					1, 
-					RE::ITEM_REMOVE_REASON::kRemove,
-					a_exData, 
-					coopActor.get()
-				);*/
+				// Re-equip other hand item if the player has more than one of the item.
+				if (numberOwned > 1)
+				{
+					const auto oppositeSlot = 
+					(
+						a_slot == glob.rightHandEquipSlot ? 
+						glob.leftHandEquipSlot :
+						glob.rightHandEquipSlot
+					);
+					SPDLOG_DEBUG
+					(
+						"Re-equip {} in the other hand with the {} equip slot.",
+						oppositeHandForm->GetName(), 
+						Util::GetEditorID(oppositeSlot)
+					);
+					EquipForm
+					(
+						oppositeHandForm, 
+						oppositeEquipIndex,
+						a_exData,
+						a_count, 
+						oppositeSlot
+					);
+				}
+			}
+			else
+			{
+				// Unequip current form(s) first.
+				if (a_slot == glob.bothHandsEquipSlot)
+				{
+					UnequipHandForms(glob.bothHandsEquipSlot);
+				}
+				else
+				{
+					UnequipFormAtIndex(a_equipIndex);
+				}
 			}
 
+			
 			// Once again, do not force equip for P1.
 			Util::EquipObject
 			(
@@ -2434,126 +2433,18 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Grab equivalent chest extra data to equip.
-			auto chestExData = Util::FindMatchingExtraDataList
+			HandleCompanionPlayerEquip
 			(
-				inventoryChest.get(), boundObj, a_exData
+				boundObj,
+				a_equipIndex,
+				a_exData,
+				a_count, 
+				a_slot, 
+				a_queueEquip, 
+				a_forceEquip, 
+				a_playSounds, 
+				a_applyNow
 			);
-			if (a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kRightHand)
-			{
-				if (a_slot != glob.bothHandsEquipSlot)
-				{
-					// Unequip form in the opposite hand if equipping a two-handed weapon, 
-					// or unequip the same weapon if equipped in the other hand 
-					// and if the co-op actor only owns one.
-					// Done to prevent the equip function from duplicating the weapon 
-					// and equipping it in both hands.
-					auto oppositeEquipIndex = 
-					(
-						a_equipIndex == EquipIndex::kLeftHand ?
-						EquipIndex::kRightHand : 
-						EquipIndex::kLeftHand
-					);
-					auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
-					auto oppositeHandExData = Util::FindMatchingExtraDataList
-					(
-						inventoryChest.get(),
-						oppositeHandForm ? oppositeHandForm->As<RE::TESBoundObject>() : nullptr,
-						Util::GetEquippedExtraData
-						(
-							coopActor.get(),
-							oppositeHandForm, 
-							oppositeEquipIndex == EquipIndex::kLeftHand
-						)
-					);
-					auto numberOwned = Util::GetCountForInventoryItem
-					(
-						inventoryChest.get(), boundObj, chestExData
-					);
-					bool alreadyEquippedInOtherHand = 
-					(
-						numberOwned == 1 && 
-						oppositeHandForm == a_toEquip && 
-						oppositeHandExData == chestExData &&
-						a_toEquip->As<RE::BGSEquipType>() && 
-						a_toEquip->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
-					);
-					SPDLOG_DEBUG
-					(
-						"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
-						"Unequip first: {}.",
-						coopActor->GetName(), 
-						a_toEquip->GetName(), 
-						numberOwned, 
-						oppositeHandForm ? oppositeHandForm->GetName() : "NONE", 
-						oppositeHandForm == a_toEquip, 
-						oppositeHandExData == chestExData,
-						fmt::ptr(oppositeHandExData),
-						fmt::ptr(chestExData),
-						alreadyEquippedInOtherHand
-					);
-					if (alreadyEquippedInOtherHand)
-					{
-						// Unequip both before re-equipping in this hand.
-						UnequipHandForms(glob.bothHandsEquipSlot);
-					}
-					else
-					{
-						// Unequip LH/RH form first.
-						UnequipFormAtIndex(a_equipIndex);
-					}
-
-					// Set desired equipped form at the given index.
-					desiredForms[!a_equipIndex] = a_toEquip;
-					desiredExtraDataLists[!a_equipIndex] = chestExData;
-					// Equip enchantment as well if equipping a staff.
-					auto weap = boundObj->As<RE::TESObjectWEAP>(); 
-					if (weap && weap->IsStaff() && weap->formEnchanting) 
-					{
-						Util::EquipObject(coopActor.get(), weap->formEnchanting);
-					}
-				}
-				else
-				{
-					// Clear both hands first.
-					UnequipHandForms(glob.bothHandsEquipSlot);
-					// Set both LH and RH indices if this form is 2H.
-					desiredForms[!EquipIndex::kLeftHand] = a_toEquip;
-					desiredForms[!EquipIndex::kRightHand] = a_toEquip;
-					desiredExtraDataLists[!EquipIndex::kLeftHand] = chestExData;
-					desiredExtraDataLists[!EquipIndex::kRightHand] = chestExData;
-				}
-			
-				HandleCompanionPlayerEquip
-				(
-					boundObj,
-					a_exData,
-					a_count, 
-					a_slot, 
-					a_queueEquip, 
-					a_forceEquip, 
-					a_playSounds, 
-					a_applyNow
-				);
-			}
-			else
-			{
-				// Quick slot, consumables, etc.
-				// Just update the index, no need to unequip, or clear out.
-				desiredForms[!a_equipIndex] = a_toEquip;
-				desiredExtraDataLists[!a_equipIndex] = nullptr;
-				HandleCompanionPlayerEquip
-				(
-					boundObj,
-					a_exData,
-					a_count, 
-					a_slot, 
-					a_queueEquip, 
-					a_forceEquip, 
-					a_playSounds, 
-					a_applyNow
-				);
-			}
 		}
 
 		// Auto equip matching ammo, if necessary.
@@ -2915,12 +2806,12 @@ namespace ALYSLC
 			a_index
 		);
 
-		auto equipSlot = glob.eitherHandEquipSlot;
 		if (!a_form || !a_form->As<RE::BGSEquipType>()) 
 		{
-			return equipSlot;
+			return nullptr;
 		}
-
+		
+		auto equipSlot = glob.eitherHandEquipSlot;
 		auto asEquipType = a_form->As<RE::BGSEquipType>();
 		if ((asEquipType->equipSlot == glob.bothHandsEquipSlot) && 
 			(a_index == EquipIndex::kLeftHand || a_index == EquipIndex::kRightHand))
@@ -2963,7 +2854,7 @@ namespace ALYSLC
 		}
 		case FavMagicCyclingCategory::kAlteration:
 		{
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return "Mentalism"sv;
 			}
@@ -2974,7 +2865,7 @@ namespace ALYSLC
 		}
 		case FavMagicCyclingCategory::kConjuration:
 		{
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return "Entropy"sv;
 			}
@@ -2985,7 +2876,7 @@ namespace ALYSLC
 		}
 		case FavMagicCyclingCategory::kDestruction:
 		{
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return "Elementalism"sv;
 			}
@@ -2996,7 +2887,7 @@ namespace ALYSLC
 		}
 		case FavMagicCyclingCategory::kIllusion:
 		{
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return "Psionics"sv;
 			}
@@ -3007,7 +2898,7 @@ namespace ALYSLC
 		}
 		case FavMagicCyclingCategory::kRestoration:
 		{
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return "Light Magic"sv;
 			}
@@ -3095,6 +2986,175 @@ namespace ALYSLC
 		}
 	}
 
+	void EquipManager::FixInventory()
+	{
+		// Add extra ownership data to all equipable items in the player's inventory
+		// and then fix counts for all the inventory's items.
+		// Inventory here means P1's on-player inventory 
+		// and the player inventory chest for companion players.
+
+		SPDLOG_DEBUG("{}", coopActor->GetName());
+
+		auto invChanges = 
+		(
+			p->isPlayer1 ? coopActor->GetInventoryChanges() : inventoryChest->GetInventoryChanges()
+		);
+		if (!invChanges || !invChanges->entryList)
+		{
+			return;
+		}
+
+		// For companion players:
+		// Add ownership data to all equipable items to ensure all their inventory entries 
+		// have at least one extra data list.
+		// Required to make sure we can check the equip status of items
+		// and match chest extra data lists to player inventory extra data lists.
+		// 
+		// For both types of players:
+		// Fix up counts in the player/chest's inventory afterward.
+		// Prevents certain crashes from occurring when transferring items around.
+		bool addExtraOwnershipData = false;
+		for (auto& entry : *invChanges->entryList) 
+		{
+			int32_t exListsCount = 0;
+			if (!entry || !entry->object)
+			{
+				continue;
+			}
+				
+			addExtraOwnershipData = 
+			(
+				!p->isPlayer1 && Util::IsEquipableInventoryObject(entry->object)
+			);
+			if (entry->extraLists)
+			{
+				for (auto exDataList : *entry->extraLists)
+				{
+					if (!exDataList)
+					{
+						continue;
+					}
+
+					exListsCount += exDataList->GetCount();
+
+					if (addExtraOwnershipData)
+					{
+						auto exOwnership = exDataList->GetByType<RE::ExtraOwnership>();
+						if (!exOwnership)
+						{
+							auto data = static_cast<RE::ExtraOwnership*>
+							(
+								exDataList->Add(new RE::ExtraOwnership())
+							);
+							if (data)
+							{
+								SPDLOG_DEBUG
+								(
+									"MALLOC: Added ownership exData to {} ({:p}): {}.",
+									entry->object->GetName(), 
+									fmt::ptr(exDataList),
+									data->owner ? data->owner->GetName() : "NONE"
+								);
+							}
+							else
+							{
+								SPDLOG_DEBUG
+								(
+									"ERR: MALLOC: Failed to add ownership exData to {} ({:p}):",
+									entry->object->GetName(), fmt::ptr(exDataList)
+								);
+							}
+						}
+					}
+				}
+			}
+			else if (addExtraOwnershipData)
+			{
+				entry->AddExtraList
+				(
+					Util::CreateExtraDataListWithOwnership()
+				);
+				if (entry->extraLists && !entry->extraLists->empty())
+				{
+					const auto addedList = entry->extraLists->front();
+					SPDLOG_DEBUG("Added ownership exData list to {}: {:p}.",
+						entry->object->GetName(), fmt::ptr(addedList));
+					if (entry->countDelta > 0)
+					{
+						SPDLOG_DEBUG
+						(
+							"Set new exData list for {} {:p}'s count to {}.",
+							entry->object->GetName(), 
+							fmt::ptr(addedList),
+							entry->countDelta
+						);
+						addedList->SetCount(entry->countDelta);
+					}
+
+					exListsCount += addedList->GetCount();
+				}
+				else
+				{
+					SPDLOG_DEBUG("ERR: Failed to add ownership exData list to {}:",
+						entry->object->GetName());
+				}
+			}
+				
+			// Both register as not in the player's inventory, so nothing to correct.
+			if (entry->countDelta <= 0 && exListsCount == 0)
+			{
+				continue;
+			}
+
+			int32_t countsDelta = entry->countDelta - exListsCount;
+			if (countsDelta < 0)
+			{
+				SPDLOG_ERROR
+				(
+					"{}: Item {}'s entry countDelta is less than "
+					"the accumulated extra data list item count (diff of {}). "
+					"Setting entry countDelta to {}.",
+					coopActor->GetName(),
+					entry->object->GetName(), 
+					countsDelta,
+					exListsCount
+				);
+			}
+			else if (countsDelta > 0 && addExtraOwnershipData)
+			{
+				entry->AddExtraList
+				(
+					Util::CreateExtraDataListWithOwnership()
+				);
+				if (entry->extraLists && !entry->extraLists->empty())
+				{
+					const auto addedList = entry->extraLists->front();
+					SPDLOG_DEBUG
+					(
+						"To account for {} unmodified items: "
+						"added ownership exData list to {}: {:p}.",
+						countsDelta, entry->object->GetName(), fmt::ptr(addedList)
+					);
+					SPDLOG_DEBUG
+					(
+						"Set new exData list for {} {:p}'s count to {}.",
+						entry->object->GetName(), 
+						fmt::ptr(addedList),
+						countsDelta
+					);
+					addedList->SetCount(countsDelta);
+				}
+				else
+				{
+					SPDLOG_DEBUG("ERR: Failed to add ownership exData list to {}:",
+						entry->object->GetName());
+				}
+			}
+
+			entry->countDelta = max(entry->countDelta, exListsCount);
+		}
+	}
+
 	RE::ExtraDataList* EquipManager::GetNextFavoritedExDataList
 	(
 		RE::TESForm* a_form, bool a_checkWornLeft, bool& a_shouldUnequip
@@ -3173,6 +3233,8 @@ namespace ALYSLC
 
 				// Equipped already in the requested hand, so skip.
 				// The next list without worn data will be returned.
+				bool wornLH = false;
+				bool wornRH = false;
 				if (p->isPlayer1)
 				{
 					SPDLOG_DEBUG
@@ -3184,8 +3246,9 @@ namespace ALYSLC
 						extraDataList->HasType<RE::ExtraWornLeft>(),
 						extraDataList->HasType<RE::ExtraWorn>()
 					);
-					if ((a_checkWornLeft && extraDataList->GetByType<RE::ExtraWornLeft>()) || 
-						(!a_checkWornLeft && extraDataList->GetByType<RE::ExtraWorn>()))
+					wornLH = extraDataList->GetByType<RE::ExtraWornLeft>();
+					wornRH = extraDataList->GetByType<RE::ExtraWorn>();
+					if ((a_checkWornLeft && wornLH) || (!a_checkWornLeft && wornRH))
 					{
 						SPDLOG_DEBUG("{}: {}: EQUIPPED: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
@@ -3205,8 +3268,9 @@ namespace ALYSLC
 						((exRank->rank & 0x00FF0000) == 0x00FF0000),
 						static_cast<uint32_t>(exRank->rank)
 					);
-					if (((a_checkWornLeft) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
-					    ((!a_checkWornLeft) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
+					wornLH = ((exRank->rank & 0xFF000000) == 0xFF000000);
+					wornRH = ((exRank->rank & 0x00FF0000) == 0x00FF0000);
+					if ((a_checkWornLeft && wornLH) || (!a_checkWornLeft && wornRH))
 					{
 						SPDLOG_DEBUG("{}: {}: EQUIPPED: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
@@ -3225,7 +3289,10 @@ namespace ALYSLC
 				}
 
 				// Set the first unequipped list once.
-				if (!firstUnequippedFavList)
+				// Can set if not equipped in either hand or if equipped in the opposite hand
+				// but possessing more than onw.
+				if ((!firstUnequippedFavList) && 
+					((!wornLH && !wornRH) || (extraDataList->GetCount() > 1)))
 				{
 					SPDLOG_DEBUG("{}: {}: FIRST UNEQUIPPED: {:p}.", 
 						coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
@@ -3265,6 +3332,7 @@ namespace ALYSLC
 	void EquipManager::HandleCompanionPlayerEquip
 	(
 		RE::TESBoundObject* a_object,
+		const EquipIndex& a_equipIndex,
 		RE::ExtraDataList* a_exDataList,
 		uint32_t a_count, 
 		const RE::BGSEquipSlot* a_slot,
@@ -3274,25 +3342,400 @@ namespace ALYSLC
 		bool a_applyNow
 	)
 	{
-		if (p->isPlayer1)
+		// Setup equip request by adding the item from the companion player's chest
+		// and providing the proper extra data list.
+		// Can specify a specific equip index to set in the desired forms/exData arrays.
+		// 'kNone' to have the function compute it based on the item type or to not fill any slot.
+
+		if (p->isPlayer1 || !a_object)
 		{
 			return;
 		}
 		
-		bool checkLeftHand = a_slot == glob.leftHandEquipSlot;
-		// Get matching extra data list from chest.
-		auto chestExData = Util::FindMatchingExtraDataList
+		SPDLOG_DEBUG
+		(
+			"{}: {}, index: {}, exData {:p}, count: {}, slot: {}.",
+			coopActor->GetName(),
+			a_object->GetName(),
+			a_equipIndex,
+			fmt::ptr(a_exDataList),
+			a_count,
+			Util::GetEditorID(a_object)
+		);
+
+		// Special case for fists.
+		// If equip index 'kHands' is specified, 
+		// remove worn rank exData and clear desired array slots.
+		if (a_object == glob.fists)
+		{
+			if (a_equipIndex == EquipIndex::kHands)
+			{
+				auto lhObj = coopActor->GetEquippedObject(true);
+				if (lhObj)
+				{
+					ChangeChestWornRankExData(lhObj->As<RE::TESBoundObject>(), true, false);
+				}
+
+				auto rhObj = coopActor->GetEquippedObject(false);
+				if (rhObj)
+				{
+					ChangeChestWornRankExData(rhObj->As<RE::TESBoundObject>(), false, false);
+				}
+				
+				auto lhObj2 = equippedForms[!EquipIndex::kLeftHand];
+				if (lhObj2 && lhObj2 != lhObj)
+				{
+					ChangeChestWornRankExData(lhObj2->As<RE::TESBoundObject>(), true, false);
+				}
+				
+				auto rhObj2 = equippedForms[!EquipIndex::kRightHand];
+				if (rhObj2 && rhObj2 != rhObj)
+				{
+					ChangeChestWornRankExData(rhObj2->As<RE::TESBoundObject>(), false, false);
+				}
+
+				desiredForms[!EquipIndex::kLeftHand] = 
+				desiredForms[!EquipIndex::kRightHand] = nullptr;
+				desiredExtraDataLists[!EquipIndex::kLeftHand] = 
+				desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;
+			}
+
+			Util::EquipObject
+			(
+				coopActor.get(), 
+				glob.fists,
+				nullptr, 
+				1, 
+				glob.bothHandsEquipSlot
+			);
+
+			return;
+		}
+
+		// Special case for dummy 1H.
+		// If equip index 'kRightHand' or 'kLeftHand' is specified, 
+		// remove worn rank exData and clear desired array slots.
+		if (a_object == glob.dummy1H)
+		{
+			if (a_equipIndex == EquipIndex::kLeftHand || 
+				a_equipIndex == EquipIndex::kRightHand)
+			{
+				auto obj = coopActor->GetEquippedObject(a_equipIndex == EquipIndex::kLeftHand);
+				if (obj)
+				{
+					ChangeChestWornRankExData
+					(
+						obj->As<RE::TESBoundObject>(), true, a_equipIndex == EquipIndex::kLeftHand
+					);
+				}
+
+				auto obj2 = equippedForms[!a_equipIndex];
+				if (obj2 && obj2 != obj)
+				{
+					ChangeChestWornRankExData
+					(
+						obj2->As<RE::TESBoundObject>(), true, a_equipIndex == EquipIndex::kLeftHand
+					);
+				}
+
+				if (a_equipIndex == EquipIndex::kLeftHand)
+				{
+					desiredForms[!EquipIndex::kLeftHand] = nullptr;
+					desiredExtraDataLists[!EquipIndex::kLeftHand] = nullptr;
+				}
+				else
+				{
+					desiredForms[!EquipIndex::kRightHand] = nullptr;
+					desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;
+				}
+			}
+
+			Util::EquipObject
+			(
+				coopActor.get(), 
+				glob.dummy1H,
+				nullptr, 
+				1, 
+				a_slot
+			);
+			return;
+		}
+		
+		// Grab equivalent chest extra data to equip.
+		auto chestExDataList = Util::FindMatchingExtraDataList
 		(
 			inventoryChest.get(), a_object, a_exDataList
 		);
+		if (!a_exDataList || !chestExDataList)
+		{
+			SPDLOG_DEBUG("ERR: Given extra data list is nullptr: {}, chest list is nullptr: {}.",
+				!a_exDataList, !chestExDataList);	
+			if (!chestExDataList)
+			{
+				SPDLOG_ERROR
+				(
+					"ERR: {}: Could not get matching inventory chest list for {} (given {:p}), "
+					"equipped to index {}, with equip slot {}, and count {}.",
+					coopActor->GetName(),
+					a_object->GetName(),
+					fmt::ptr(a_exDataList),
+					a_equipIndex,
+					a_slot ? Util::GetEditorID(a_slot) : "NONE",
+					a_count
+				);
+			}
+		}
+
+		if (a_object->As<RE::TESObjectARMO>())
+		{
+			// Must add all armor indices that correspond to the requested item to equip,
+			// since armor pieces can fit into multiple biped slots.
+			const auto& biped = coopActor->GetBiped2();
+			auto asBipedObjForm = a_object->As<RE::BGSBipedObjectForm>();
+			if (biped && biped->objects && asBipedObjForm)
+			{
+				std::vector<uint8_t> equipIndices;
+				auto slotMask = asBipedObjForm->bipedModelData.bipedObjectSlots;
+				bool isShield = asBipedObjForm->IsShield();
+				const RE::BGSEquipSlot* slot = 
+				(
+					isShield ? 
+					a_object->As<RE::TESObjectARMO>()->equipSlot :
+					a_slot
+				);
+				SPDLOG_DEBUG
+				(
+					"{}: {} slot mask 0b{:B}.",
+					coopActor->GetName(),
+					a_object ? a_object->GetName() : "NONE",
+					*slotMask
+				);
+				for (uint8_t i = !EquipIndex::kFirstBipedSlot; 
+					 i <= !EquipIndex::kLastBipedSlot; 
+					 ++i)
+				{
+					auto bitMask = 
+					(
+						static_cast<RE::BIPED_MODEL::BipedObjectSlot>
+						(
+							1 << (i - !EquipIndex::kFirstBipedSlot)
+						)
+					);
+					if (slotMask.all(bitMask))
+					{
+						equipIndices.emplace_back(i);
+						// Unequip armor in same slot first.
+						// Check our cached equipped armor in the same slot first.
+						auto currentArmorForm = equippedForms[i];
+						if (currentArmorForm)
+						{
+							UnequipArmor(currentArmorForm);
+						}
+						else
+						{
+							// If nothing is cached, check the current biped object's item.
+							// This does not always match the equipped item unfortunately
+							// and is sometimes an armature item, which will not unequip.
+							currentArmorForm = 
+							(
+								biped->objects[i - !EquipIndex::kFirstBipedSlot].item
+							);
+							if (currentArmorForm)
+							{
+								SPDLOG_DEBUG
+								(
+									"Comp {} (0x{:X}, type {}) to {} (0x{:X}, type: {}).",
+									Util::GetEditorID(currentArmorForm),
+									currentArmorForm->formID,
+									*currentArmorForm->formType,
+									equippedForms[i] ? Util::GetEditorID(equippedForms[i]) : "NONE",
+									equippedForms[i] ? equippedForms[i]->formID : 0xDEAD,
+									equippedForms[i] ? 
+									*equippedForms[i]->formType : 
+									RE::FormType::None
+								);
+								UnequipArmor(currentArmorForm);
+							}
+						}
+					}
+				}
+
+				// Add to desired equipped forms list at each biped slot index.
+				for (auto index : equipIndices)
+				{
+					desiredForms[index] = a_object;
+					desiredExtraDataLists[index] = a_exDataList;
+				}
+
+				// Special shield case: also update LH slot in desired equipped forms list.
+				if (isShield)
+				{
+					UnequipFormAtIndex(EquipIndex::kLeftHand);
+					desiredForms[!EquipIndex::kLeftHand] = a_object;
+					desiredExtraDataLists[!EquipIndex::kLeftHand] = a_exDataList;
+				}
+			}
+			else
+			{
+				// Any other form that does not fit in a biped slot.
+				// No desired slots to fill, just equip and get outta here.
+				Util::EquipObject
+				(
+					coopActor.get(),
+					a_object,
+					a_exDataList, 
+					a_count, 
+					a_slot,
+					a_queueEquip, 
+					a_forceEquip, 
+					a_playSounds,
+					a_applyNow
+				);
+				return;
+			}
+		}
+		else if (a_object->As<RE::TESAmmo>())
+		{
+			// Unequip current ammo before equipping new one.
+			if (RE::TESForm* currentAmmoForm = equippedForms[!EquipIndex::kAmmo]; currentAmmoForm)
+			{
+				UnequipAmmo(currentAmmoForm);
+			}
+
+			// Add to desired equipped forms list.
+			desiredForms[!EquipIndex::kAmmo] = a_object;
+			desiredExtraDataLists[!EquipIndex::kAmmo] = a_exDataList;
+		}
+		else
+		{
+			if (a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kRightHand)
+			{
+				if (a_slot != glob.bothHandsEquipSlot)
+				{
+					// Unequip form in the opposite hand if equipping a two-handed weapon, 
+					// or unequip the same weapon if equipped in the other hand 
+					// and if the co-op actor only owns one.
+					// Done to prevent the equip function from duplicating the weapon 
+					// and equipping it in both hands.
+					auto oppositeEquipIndex = 
+					(
+						a_equipIndex == EquipIndex::kLeftHand ?
+						EquipIndex::kRightHand : 
+						EquipIndex::kLeftHand
+					);
+					auto oppositeHandForm = equippedForms[!oppositeEquipIndex];
+					auto oppositeHandExData = Util::FindMatchingExtraDataList
+					(
+						inventoryChest.get(),
+						oppositeHandForm ? oppositeHandForm->As<RE::TESBoundObject>() : nullptr,
+						Util::GetEquippedExtraData
+						(
+							coopActor.get(),
+							oppositeHandForm, 
+							oppositeEquipIndex == EquipIndex::kLeftHand
+						)
+					);
+					auto numberOwned = 
+					(
+						Util::GetIntrinsicallyEqualCount
+						(
+							inventoryChest.get(), a_object, chestExDataList
+						)
+					);
+					bool alreadyEquippedInOtherHand = 
+					(
+						oppositeHandForm == a_object && 
+						oppositeHandExData == chestExDataList &&
+						a_object->As<RE::BGSEquipType>() && 
+						a_object->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
+					);
+					SPDLOG_DEBUG
+					(
+						"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
+						"Unequip first: {}.",
+						coopActor->GetName(), 
+						a_object->GetName(), 
+						numberOwned, 
+						oppositeHandForm ? oppositeHandForm->GetName() : "NONE", 
+						oppositeHandForm == a_object, 
+						oppositeHandExData == chestExDataList,
+						fmt::ptr(oppositeHandExData),
+						fmt::ptr(chestExDataList),
+						alreadyEquippedInOtherHand
+					);
+					if (alreadyEquippedInOtherHand)
+					{
+						// Unequip both before re-equipping in this hand.
+						UnequipHandForms(glob.bothHandsEquipSlot);
+						if (numberOwned > 1)
+						{
+							const auto oppositeSlot = 
+							(
+								a_slot == glob.rightHandEquipSlot ? 
+								glob.leftHandEquipSlot :
+								glob.rightHandEquipSlot
+							);
+							SPDLOG_DEBUG
+							(
+								"Re-equip {} in the other hand with the {} equip slot.",
+								oppositeHandForm->GetName(), 
+								Util::GetEditorID(oppositeSlot)
+							);
+							EquipForm
+							(
+								oppositeHandForm, 
+								oppositeEquipIndex,
+								oppositeHandExData,
+								a_count, 
+								oppositeSlot
+							);
+						}
+					}
+					else
+					{
+						// Unequip current form(s) first.
+						UnequipFormAtIndex(a_equipIndex);
+					}
+
+					// Set desired equipped form at the given index.
+					desiredForms[!a_equipIndex] = a_object;
+					desiredExtraDataLists[!a_equipIndex] = chestExDataList;
+					// Equip enchantment as well if equipping a staff.
+					auto weap = a_object->As<RE::TESObjectWEAP>(); 
+					if (weap && weap->IsStaff() && weap->formEnchanting) 
+					{
+						Util::EquipObject(coopActor.get(), weap->formEnchanting);
+					}
+				}
+				else
+				{
+					// Clear both hands first.
+					UnequipHandForms(glob.bothHandsEquipSlot);
+					// Set both LH and RH indices if this form is 2H.
+					desiredForms[!EquipIndex::kLeftHand] =
+					desiredForms[!EquipIndex::kRightHand] = a_object;
+					desiredExtraDataLists[!EquipIndex::kLeftHand] = 
+					desiredExtraDataLists[!EquipIndex::kRightHand] = chestExDataList;
+				}
+			}
+			else if (a_equipIndex != EquipIndex::kNone)
+			{
+				// Quick slot, consumables, etc.
+				// Just update the index, no need to unequip, or clear out.
+				desiredForms[!a_equipIndex] = a_object;
+				desiredExtraDataLists[!a_equipIndex] = chestExDataList;
+			}
+		}
+
+		bool checkLeftHand = a_slot == glob.leftHandEquipSlot;
 		// Move consumables from the chest to the player before equipping.
-		bool shouldTransferItem = a_object->Is
+		bool isConsumable = a_object->Is
 		(
 			RE::FormType::Ingredient,
 			RE::FormType::AlchemyItem,
 			RE::FormType::Scroll
 		);
-		if (shouldTransferItem)
+		if (isConsumable)
 		{
 			const auto invCounts = coopActor->GetInventoryCounts();
 			const auto iter = invCounts.find(a_object);
@@ -3303,7 +3746,7 @@ namespace ALYSLC
 					a_object,
 					a_count,
 					RE::ITEM_REMOVE_REASON::kStoreInContainer,
-					chestExData, 
+					chestExDataList, 
 					coopActor.get()
 				);
 			}
@@ -3314,7 +3757,7 @@ namespace ALYSLC
 			(
 				coopActor.get(),
 				a_object,
-				chestExData,
+				chestExDataList,
 				a_count,
 				a_slot,
 				a_queueEquip,
@@ -3346,7 +3789,7 @@ namespace ALYSLC
 			// Make sure the extra data list is from the chest,
 			// as we don't want to equip any external items,
 			// which are definitely not requested by the player.
-			if (!chestExData)
+			if (!chestExDataList)
 			{
 				SPDLOG_DEBUG
 				(
@@ -3355,7 +3798,7 @@ namespace ALYSLC
 					coopActor->GetName(), 
 					a_object->GetName(), 
 					fmt::ptr(a_exDataList),
-					fmt::ptr(chestExData)
+					fmt::ptr(chestExDataList)
 				);
 			}
 			else
@@ -3364,7 +3807,7 @@ namespace ALYSLC
 				(
 					"{}: Got chest exData list {:p} for {}'s list {:p}. ",
 					coopActor->GetName(), 
-					fmt::ptr(chestExData),
+					fmt::ptr(chestExDataList),
 					a_object->GetName(), 
 					fmt::ptr(a_exDataList)
 				);
@@ -3380,7 +3823,7 @@ namespace ALYSLC
 				a_exDataList :
 				AddItemFromInventoryChest
 				(
-					a_object, chestExData, a_count, checkLeftHand
+					a_object, chestExDataList, a_count, checkLeftHand
 				)
 			);
 			// Equip with new extra data list.
@@ -3399,12 +3842,13 @@ namespace ALYSLC
 		}
 
 		// Add worn data to the chest's extra data list once the equip completes.
-		ChangeChestWornRankExData(a_object, checkLeftHand, true, chestExData);
+		ChangeChestWornRankExData(a_object, checkLeftHand, true, chestExDataList);
 	}
 
 	void EquipManager::HandleCompanionPlayerUnequip
 	(
 		RE::TESBoundObject* a_object,
+		const EquipIndex& a_equipIndex,
 		RE::ExtraDataList* a_exDataList, 
 		uint32_t a_count,
 		const RE::BGSEquipSlot* a_slot, 
@@ -3415,11 +3859,106 @@ namespace ALYSLC
 		const RE::BGSEquipSlot* a_slotToReplace
 	)
 	{
-		if (p->isPlayer1)
+		// Remove items, extra data lists, inventory entries, and clean up after unequipping.
+		// Can specify a specific equip index to clear out in the desired forms/exData arrays.
+		// 'kNone' to have the function compute it based on the item type or to not clear any slot.
+
+		if (p->isPlayer1 || !a_object)
 		{
 			return;
 		}
 		
+		if (a_object->As<RE::TESObjectARMO>())
+		{
+			// Must remove all armor entries that correspond to the requested armor to unequip,
+			// since armor pieces can fit into multiple biped slots.
+			if (auto asBipedObjForm = a_object->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
+			{
+				// Remove from desired equipped forms list.
+				auto slotMask = asBipedObjForm->bipedModelData.bipedObjectSlots;
+				bool isShield = asBipedObjForm->IsShield();
+				// Make sure the shield equip slot is used for shields.
+				a_slot = 
+				(
+					isShield ? 
+					a_object->As<RE::TESObjectARMO>()->equipSlot :
+					a_slot
+				);
+				for (uint8_t i = !EquipIndex::kFirstBipedSlot; 
+					 i <= !EquipIndex::kLastBipedSlot; 
+					 ++i)
+				{
+					auto bitMask = 
+					(
+						static_cast<RE::BIPED_MODEL::BipedObjectSlot>
+						(
+							1 << (i - !EquipIndex::kFirstBipedSlot)
+						)
+					);
+					// Form mask contains the bit, 
+					// so clear the corresponding desired equipped forms entry.
+					if (slotMask.all(bitMask))
+					{
+						ClearDesiredEquippedFormOnUnequip(a_object, i);
+					}
+				}
+
+				// Special shield case: also clear LH slot in desired equipped forms list.
+				if (isShield)
+				{
+					ClearDesiredEquippedFormOnUnequip(a_object, !EquipIndex::kLeftHand);
+				}
+			}
+			else
+			{
+				// All other forms. Just unequip and nothing more.
+				Util::UnequipObject
+				(
+					coopActor.get(), 
+					a_object, 
+					a_exDataList,
+					a_count, 
+					a_slot,
+					a_queueEquip, 
+					a_forceEquip,
+					a_playSounds, 
+					a_applyNow,
+					a_slotToReplace
+				);
+				return;
+			}
+		}
+		else if (a_object->As<RE::TESAmmo>())
+		{
+			// Clear from desired list first.
+			ClearDesiredEquippedFormOnUnequip(a_object, !EquipIndex::kAmmo);
+		}
+		else
+		{
+			// Everything else.
+			// Remove from desired equipped forms list before unequipping.
+			bool isHandForm = 
+			(
+				a_equipIndex == EquipIndex::kLeftHand ||
+				a_equipIndex == EquipIndex::kRightHand
+			);
+			if (isHandForm)
+			{
+				if (a_slot != glob.bothHandsEquipSlot)
+				{
+					ClearDesiredEquippedFormOnUnequip(a_object, !a_equipIndex);
+				}
+				else
+				{
+					ClearDesiredEquippedFormOnUnequip(a_object, !EquipIndex::kLeftHand);
+					ClearDesiredEquippedFormOnUnequip(a_object, !EquipIndex::kRightHand);
+				}
+			}
+			else
+			{
+				ClearDesiredEquippedFormOnUnequip(a_object, !a_equipIndex);
+			}
+		}
 
 		bool checkLeftHand = a_slot == glob.leftHandEquipSlot;
 		bool wasEquipped = p->em->IsEquipped(a_object, a_exDataList, checkLeftHand);
@@ -3866,6 +4405,7 @@ namespace ALYSLC
 						HandleCompanionPlayerEquip
 						(
 							asAlchemyItem,
+							EquipIndex::kNone,
 							a_exData,
 							1,
 							nullptr
@@ -3903,6 +4443,7 @@ namespace ALYSLC
 						HandleCompanionPlayerEquip
 						(
 							asIngredientItem,
+							EquipIndex::kNone,
 							a_exData,
 							1,
 							nullptr
@@ -3939,6 +4480,7 @@ namespace ALYSLC
 					HandleCompanionPlayerEquip
 					(
 						boundObj,
+						EquipIndex::kNone,
 						a_exData,
 						1,
 						nullptr
@@ -4037,6 +4579,7 @@ namespace ALYSLC
 					HandleCompanionPlayerUnequip
 					(
 						boundObj, 
+						EquipIndex::kNone,
 						a_exData, 
 						1, 
 						nullptr
@@ -4316,6 +4859,7 @@ namespace ALYSLC
 					HandleCompanionPlayerEquip
 					(
 						asAlchemyItem,
+						EquipIndex::kNone,
 						a_exData,
 						1,
 						nullptr
@@ -4354,6 +4898,7 @@ namespace ALYSLC
 					HandleCompanionPlayerEquip
 					(
 						asIngredientItem,
+						EquipIndex::kNone,
 						a_exData,
 						1,
 						nullptr
@@ -4395,6 +4940,7 @@ namespace ALYSLC
 					HandleCompanionPlayerEquip
 					(
 						a_form->As<RE::TESBoundObject>(),
+						EquipIndex::kNone,
 						a_exData,
 						1,
 						nullptr
@@ -4419,6 +4965,7 @@ namespace ALYSLC
 					HandleCompanionPlayerUnequip
 					(
 						a_form->As<RE::TESBoundObject>(),
+						EquipIndex::kNone,
 						a_exData,
 						1,
 						nullptr
@@ -5169,13 +5716,16 @@ namespace ALYSLC
 			RefreshEquipState(RefreshSlots::kAll);
 		}
 
-		// Remove all items from the player's inventory first.
-		// Using this as a failsafe to remove any corrupted inventory items
-		// before re-equipping all the player's desired items.
-		// Signal ResetInventory() hook to allow request.
-		skipEquipProcessing = true;
-		coopActor->ResetInventory(false);
-		skipEquipProcessing = false;
+		if (!p->isPlayer1)
+		{
+			// Remove all items from the player's inventory first.
+			// Using this as a failsafe to remove any corrupted inventory items
+			// before re-equipping all the player's desired items.
+			// Signal ResetInventory() hook to allow request.
+			skipEquipProcessing = true;
+			coopActor->ResetInventory(false);
+			skipEquipProcessing = false;
+		}
 
 		RE::TESForm* item{ nullptr };
 		for (auto i = 0; i < desiredForms.size(); ++i)
@@ -5236,45 +5786,41 @@ namespace ALYSLC
 			{
 			case RE::FormType::Ammo:
 			{
-				if (auto currentAmmo = coopActor->GetCurrentAmmo(); item != currentAmmo)
-				{
-					auto exDataList = Util::GetWornRankExtraDataList
+				auto exDataList = 
+				(
+					p->isPlayer1 ? 
+					Util::GetEquippedExtraData(coopActor.get(), item, false) : 
+					Util::GetWornRankExtraDataList
 					(
 						inventoryChest.get(), 
 						item->As<RE::TESBoundObject>(), 
 						false
-					);
-					SPDLOG_DEBUG("{}: Ammo: {} ({:p}).", 
-						coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
-					EquipAmmo(item, exDataList);
-				}
+					)
+				);
+				SPDLOG_DEBUG("{}: Ammo: {} ({:p}).", 
+					coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
+				EquipAmmo(item, exDataList);
 
 				break;
 			}
 			case RE::FormType::Armature:
 			case RE::FormType::Armor:
 			{
-				// Get the armor in the same slot.
-				// Only equip if different.
-				RE::TESObjectARMO* currentArmorInSlot = nullptr;
-				if (auto asBipedObjForm = item->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
-				{
-					currentArmorInSlot = coopActor->GetWornArmor(asBipedObjForm->GetSlotMask());
-				}
-
-				if (item != currentArmorInSlot)
-				{
-					auto exDataList = Util::GetWornRankExtraDataList
+				auto exDataList = 
+				(
+					p->isPlayer1 ? 
+					Util::GetEquippedExtraData(coopActor.get(), item, false) : 
+					Util::GetWornRankExtraDataList
 					(
 						inventoryChest.get(), 
 						item->As<RE::TESBoundObject>(), 
 						item->As<RE::TESObjectARMO>() && 
 						item->As<RE::TESObjectARMO>()->equipSlot == glob.leftHandEquipSlot
-					);
-					SPDLOG_DEBUG("{}: Armor: {} ({:p}).", 
-						coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
-					EquipArmor(item, exDataList);
-				}
+					)
+				);
+				SPDLOG_DEBUG("{}: Armor: {} ({:p}).", 
+					coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
+				EquipArmor(item, exDataList);
 
 				break;
 			}
@@ -5397,10 +5943,13 @@ namespace ALYSLC
 					auto equipSlot = glob.voiceEquipSlot;
 					EquipSpell
 					(
+						p->isPlayer1 ? 
+						spell :
 						CopyToPlaceholderSpell(spell, PlaceholderMagicIndex::kVoice),
 						EquipIndex::kVoice, 
 						equipSlot
 					);
+
 				}
 
 				break;
@@ -5427,11 +5976,21 @@ namespace ALYSLC
 						equipSlot = glob.rightHandEquipSlot;
 					}
 					
-					auto exDataList = Util::GetWornRankExtraDataList
+					auto exDataList = 
 					(
-						inventoryChest.get(),
-						item->As<RE::TESBoundObject>(),
-						i == !EquipIndex::kLeftHand && equipSlot != glob.bothHandsEquipSlot
+						p->isPlayer1 ? 
+						Util::GetEquippedExtraData
+						(
+							coopActor.get(), 
+							item, 
+							i == !EquipIndex::kLeftHand && equipSlot != glob.bothHandsEquipSlot
+						) : 
+						Util::GetWornRankExtraDataList
+						(
+							inventoryChest.get(),
+							item->As<RE::TESBoundObject>(),
+							i == !EquipIndex::kLeftHand && equipSlot != glob.bothHandsEquipSlot
+						)
 					);
 					SPDLOG_DEBUG("{}: Weapon: {} ({:p}).", 
 						coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
@@ -5465,9 +6024,17 @@ namespace ALYSLC
 							if (ammoAndCount.first)
 							{
 								// Valid ammo.
-								auto exDataList = Util::GetWornRankExtraDataList
+								auto exDataList = 
 								(
-									inventoryChest.get(), ammoAndCount.first, false
+									p->isPlayer1 ? 
+									Util::GetEquippedExtraData
+									(
+										coopActor.get(), ammoAndCount.first, false
+									) : 
+									Util::GetWornRankExtraDataList
+									(
+										inventoryChest.get(), ammoAndCount.first, false
+									)
 								);
 								SPDLOG_DEBUG
 								(
@@ -6751,7 +7318,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG("{} (0x{:X}) at index {}.", boundObj->GetName(), boundObj->formID, i);
+			// SPDLOG_DEBUG("{} (0x{:X}) at index {}.", boundObj->GetName(), boundObj->formID, i);
 			desiredFIDs.insert(form->formID);
 		}
 
@@ -6760,14 +7327,13 @@ namespace ALYSLC
 			// Not very expensive per-frame as the player's inventory
 			// will only contain equipped items and any unequipped items will be removed here.
 			std::unordered_map<RE::TESBoundObject*, HandIndex> equippedBoundObjMap{ };
-			std::vector<RE::ExtraDataList*> equippedExtraDataLists{ };
-			std::vector<RE::ExtraDataList*> unequippedExtraDataLists{ };
+			// Extra data lists to use when removing the current bound object from the inventory.
+			std::unordered_map<RE::TESBoundObject*, std::vector<RE::ExtraDataList*>> itemsToRemove
+			{ };
 			if (invChanges && invChanges->entryList)
 			{
 				for (auto invEntry : *invChanges->entryList)
 				{
-					equippedExtraDataLists.clear();
-					unequippedExtraDataLists.clear();
 					if (!invEntry)
 					{
 						continue;
@@ -6803,10 +7369,46 @@ namespace ALYSLC
 							nullptr,
 							nullptr
 						);
+						continue;
 					}
 
 					if (invEntry->extraLists)
 					{
+						if (invEntry->extraLists->empty())
+						{
+							SPDLOG_DEBUG
+							(
+								"Item {}'s extra lists list is empty.", boundObj->GetName()
+							);
+							// Having an allocated extra lists list that is empty will cause crashes
+							// if anyone tries to access any element of the list, ex. with front().
+							// Since there are no extra lists (all unmodified items) 
+							// and the countDelta member of the entry determines the count,
+							// there's no reason to have an empty list of extra lists 
+							// that pose a crash threat, so RE::free the memory 
+							// and assign nullptr to prevent access 
+							// as long as a null check is performed.
+							// Will remove this if it is ill-advised and causes issues elsewhere, 
+							// such as after adding an extra list to this item later via crafting.
+							SPDLOG_ERROR("{}. TAHTS GON BE BUG.", invEntry->object->GetName());
+							delete invEntry->extraLists;
+							invEntry->extraLists = nullptr;
+							continue;
+						}
+						else
+						{
+							SPDLOG_DEBUG
+							(
+								"Item {}'s extra lists list has {} element(s).",
+								boundObj->GetName(),
+								std::distance
+								(
+									invEntry->extraLists->begin(), 
+									invEntry->extraLists->end()
+								)
+							);
+						}
+						
 						for (auto extraDataList : *invEntry->extraLists)
 						{
 							if (!extraDataList)
@@ -6814,24 +7416,8 @@ namespace ALYSLC
 								continue;
 							}
 				
-							SPDLOG_DEBUG
-							(
-								"{}'s exData list {:p} has {} elements.",
-								boundObj->GetName(), 
-								fmt::ptr(extraDataList), 
-								std::distance(extraDataList->begin(), extraDataList->end())
-							);
 							auto isWorn = extraDataList->HasType<RE::ExtraWorn>();
 							auto isWornLeft = extraDataList->HasType<RE::ExtraWornLeft>();
-							auto equipType = boundObj->As<RE::BGSEquipType>();
-							auto exRankLHList = Util::GetWornRankExtraDataList
-							(
-								inventoryChest.get(), boundObj, true
-							);
-							auto exRankRHList = Util::GetWornRankExtraDataList
-							(
-								inventoryChest.get(), boundObj, false
-							);
 							if (isWorn || isWornLeft)
 							{
 								equippedBoundObjMap.insert
@@ -6845,28 +7431,173 @@ namespace ALYSLC
 										HandIndex::kLH 
 									}
 								);
-								equippedExtraDataLists.emplace_back(extraDataList);
 							}
 							else
 							{
-								SPDLOG_DEBUG
-								(
-									"In inventory but not worn: "
-									"REMOVING {} ({}, {:p}) from {}'s inventory.",
-									boundObj->GetName(),
-									extraDataList->GetCount(), 
-									fmt::ptr(extraDataList),
-									coopActor->GetName()
-								);
-								coopActor->RemoveItem
-								(
-									boundObj,
-									extraDataList->GetCount(),
-									RE::ITEM_REMOVE_REASON::kRemove,
-									extraDataList,
-									nullptr
-								);
+								const auto iter = itemsToRemove.find(boundObj);
+								if (iter == itemsToRemove.end())
+								{
+									itemsToRemove.insert
+									(
+										{ boundObj, { extraDataList } }
+									);
+								}
+								else
+								{
+									iter->second.emplace_back(extraDataList);
+								}
 							}
+						}
+					}
+				}
+			}
+
+			// IMPORTANT:
+			// Do not be dumb like me and call RemoveItem()/AddObjectToContainer 
+			// while iterating through the inventory changes entries
+			// since the next inventory entry or extra data list pointer 
+			// can become invalidated and cause crashes when accessed.
+			// This is why we gathered all the extra data lists for items to remove
+			// so we can do it afterward.
+			// 
+			// Remove and then re-equip if marked as worn in the chest.
+			for (const auto& [boundObj, extraDataLists] : itemsToRemove)
+			{
+				if (!boundObj || extraDataLists.empty())
+				{
+					continue;
+				}
+				
+				for (auto extraDataList : extraDataLists)
+				{
+					if (!extraDataList)
+					{
+						continue;
+					}
+
+					auto wornRankRH = Util::GetWornRankExtraDataList
+					(
+						inventoryChest.get(), boundObj, false
+					);
+					auto wornRankLH = Util::GetWornRankExtraDataList
+					(
+						inventoryChest.get(), boundObj, true
+					);
+					if (!wornRankLH && !wornRankRH)
+					{
+						SPDLOG_DEBUG
+						(
+							"In inventory and not worn AND not designated as worn "
+							"in the inventory chest. "
+							"REMOVING {} ({}, {:p}) from {}'s inventory "
+							"and NOT re-equipping.",
+							boundObj->GetName(),
+							extraDataList->GetCount(), 
+							fmt::ptr(extraDataList),
+							coopActor->GetName()
+						);
+						coopActor->RemoveItem
+						(
+							boundObj,
+							extraDataList->GetCount(),
+							RE::ITEM_REMOVE_REASON::kRemove,
+							extraDataList,
+							nullptr
+						);
+					}
+					else
+					{	
+						SPDLOG_DEBUG
+						(
+							"In inventory and not worn BUT designated as worn {} "
+							"in the inventory chest. "
+							"Re-equipping {} ({}, {:p}) from {}'s inventory.",
+							wornRankLH && wornRankRH ? 
+							"LH/RH" :
+							wornRankRH ? 
+							"RH" :
+							"LH",
+							boundObj->GetName(),
+							extraDataList->GetCount(), 
+							fmt::ptr(extraDataList),
+							coopActor->GetName()
+						);
+						/*coopActor->RemoveItem
+						(
+							boundObj,
+							extraDataList->GetCount(),
+							RE::ITEM_REMOVE_REASON::kRemove,
+							extraDataList,
+							nullptr
+						);*/
+
+						auto equipType = boundObj->As<RE::BGSEquipType>();
+						auto equipSlot = 
+						(
+							wornRankLH ? 
+							glob.leftHandEquipSlot : 
+							equipType && 
+							equipType->equipSlot == glob.bothHandsEquipSlot ?
+							glob.bothHandsEquipSlot : 
+							equipType ? 
+							glob.rightHandEquipSlot :
+							nullptr
+						);
+
+						// The game auto-unequipped the item.
+						// FUUUUUUUUUU.
+						// Should re-equip straight away.
+						if (wornRankRH)
+						{
+							Util::EquipObject
+							(
+								coopActor.get(), boundObj, extraDataList, 1, equipSlot
+							);
+						}
+
+						if (wornRankLH)
+						{
+							Util::EquipObject
+							(
+								coopActor.get(), boundObj, extraDataList, 1, equipSlot
+							);
+						}
+									
+						// NOTE:
+						// Didn't call HandleCompanionPlayerEquip() above, 
+						// because it will unequip current, re-add, 
+						// which will loop back to this function 
+						// via AddObjectToContaienr, and then equip.
+						// The item is already in the player's inventory
+						// and likely in the desired forms list too (need to verify),
+						// so no need to go through the whole song and dance again.
+						// REMOVE when done debugging.
+						bool found = false;
+						for (auto i = 0; i < desiredForms.size(); ++i)
+						{
+							const auto form = desiredForms[i];
+							if (!form || form != boundObj)
+							{
+								continue;
+							}
+
+							SPDLOG_DEBUG
+							(
+								"Found re-equipped item {} (0x{:X}) at index {} "
+								"in desired forms list.",
+								boundObj->GetName(), boundObj->formID, i
+							);
+							found = true;
+						}
+
+						if (!found)
+						{
+							SPDLOG_ERROR
+							(
+								"ERR: {} not found in desired forms list "
+								"after re-equipping.",
+								boundObj->GetName()
+							);
 						}
 					}
 				}
@@ -6895,11 +7626,11 @@ namespace ALYSLC
 						continue;
 					}
 				
-					auto exRank = extraDataList->GetByType<RE::ExtraRank>();
 					// Not equipped by the player, 
 					// so ensure no straggling worn rank data is present.
-					if (exRank)
+					if (Util::HasWornRankMask(extraDataList, true, true))
 					{
+						auto exRank = extraDataList->GetByType<RE::ExtraRank>();
 						SPDLOG_DEBUG
 						(
 							"{}: Remove all worn rank data for {} on chest list {:p}. "
@@ -7549,11 +8280,10 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Clear from desired list first.
-			ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kAmmo);
 			HandleCompanionPlayerUnequip
 			(
 				ammo, 
+				EquipIndex::kAmmo,
 				exDataList,
 				currentAmmoCount, 
 				a_slot, 
@@ -7582,7 +8312,10 @@ namespace ALYSLC
 
 		SPDLOG_DEBUG
 		(
-			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
+			"{}: unequip {} (0x{:X}).", 
+			coopActor->GetName(), 
+			a_toUnequip ? Util::GetEditorID(a_toUnequip) : "NONE",
+			a_toUnequip ? a_toUnequip->formID : 0xDEAD
 		);
 
 		auto boundObj = a_toUnequip ? a_toUnequip->As<RE::TESBoundObject>() : nullptr; 
@@ -7620,74 +8353,19 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Must remove all armor entries that correspond to the requested armor to unequip,
-			// since armor pieces can fit into multiple biped slots.
-			if (auto asBipedObjForm = a_toUnequip->As<RE::BGSBipedObjectForm>(); asBipedObjForm)
-			{
-				// Remove from desired equipped forms list.
-				auto slotMask = asBipedObjForm->bipedModelData.bipedObjectSlots;
-				bool isShield = asBipedObjForm->IsShield();
-				const RE::BGSEquipSlot* slot = 
-				(
-					isShield ? 
-					a_toUnequip->As<RE::TESObjectARMO>()->equipSlot :
-					a_slot
-				);
-				for (uint8_t i = !EquipIndex::kFirstBipedSlot; 
-					 i <= !EquipIndex::kLastBipedSlot; 
-					 ++i)
-				{
-					auto bitMask = 
-					(
-						static_cast<RE::BIPED_MODEL::BipedObjectSlot>
-						(
-							1 << (i - !EquipIndex::kFirstBipedSlot)
-						)
-					);
-					// Form mask contains the bit, 
-					// so clear the corresponding desired equipped forms entry.
-					if (slotMask.all(bitMask))
-					{
-						ClearDesiredEquippedFormOnUnequip(a_toUnequip, i);
-					}
-				}
-
-				// Special shield case: also clear LH slot in desired equipped forms list.
-				if (isShield)
-				{
-					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand);
-				}
-
-				HandleCompanionPlayerUnequip
-				(
-					boundObj,
-					exDataList, 
-					a_count,
-					slot,
-					a_queueEquip, 
-					a_forceEquip,
-					a_playSounds,
-					a_applyNow,
-					a_slotToReplace
-				);
-			}
-			else
-			{
-				// All other forms.
-				Util::UnequipObject
-				(
-					coopActor.get(), 
-					boundObj, 
-					exDataList,
-					a_count, 
-					a_slot,
-					a_queueEquip, 
-					true,
-					a_playSounds, 
-					a_applyNow,
-					a_slotToReplace
-				);
-			}
+			HandleCompanionPlayerUnequip
+			(
+				boundObj,
+				EquipIndex::kNone,
+				exDataList, 
+				a_count,
+				a_slot,
+				a_queueEquip, 
+				a_forceEquip,
+				a_playSounds,
+				a_applyNow,
+				a_slotToReplace
+			);
 		}
 	}
 
@@ -7756,33 +8434,10 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Remove from desired equipped forms list before unequipping.
-			bool isHandForm = 
-			(
-				a_equipIndex == EquipIndex::kLeftHand ||
-				a_equipIndex == EquipIndex::kRightHand
-			);
-			if (isHandForm)
-			{
-				if (a_slot != glob.bothHandsEquipSlot)
-				{
-					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex);
-				}
-				else
-				{
-					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kLeftHand);
-					ClearDesiredEquippedFormOnUnequip(a_toUnequip, !EquipIndex::kRightHand);
-				}
-			}
-			else
-			{
-				ClearDesiredEquippedFormOnUnequip(a_toUnequip, !a_equipIndex);
-			}
-			
-
 			HandleCompanionPlayerUnequip
 			(
 				boundObj, 
+				a_equipIndex,
 				exDataList, 
 				a_count,
 				a_slot, 
@@ -7803,21 +8458,39 @@ namespace ALYSLC
 		(
 			"{}: index: {}.", coopActor->GetName(), a_equipIndex
 		);
-
+		
+		auto currentForm = coopActor->GetEquippedObject
+		(
+			a_equipIndex == EquipIndex::kLeftHand
+		); 
+		if (!currentForm)
+		{
+			currentForm = equippedForms[!a_equipIndex];
+			if (!currentForm)
+			{
+				return;
+			}
+		}
+		
 		// Handle special cases first. Make sure torch and shield are unequipped,
 		// since they may have a lingering entry in the biped slots section 
 		// of the equipped forms list that can cause problems.
-		if ((a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kShield) && 
-			(HasShieldEquipped()))
+		/*bool hasShieldInHand = 
+		(
+			(
+				(a_equipIndex == EquipIndex::kLeftHand || a_equipIndex == EquipIndex::kShield) ||
+				(
+					a_equipIndex == EquipIndex::kRightHand &&
+					currentForm->As<RE::BGSEquipType>() &&
+					currentForm->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
+				)
+			) && 
+			(HasShieldEquipped())	
+		);
+		if (hasShieldInHand)
 		{
 			UnequipShield();
-		}
-		
-		auto currentForm = equippedForms[!a_equipIndex]; 
-		if (!currentForm)
-		{
-			return;
-		}
+		}*/
 		
 		if (currentForm->Is(RE::FormType::Spell))
 		{
@@ -8050,7 +8723,7 @@ namespace ALYSLC
 				}
 
 				// Fists to ensure slots are cleared out. Fists!
-				EquipFists();
+				EquipFists(false);
 			}
 			else if (a_slot == glob.leftHandEquipSlot)
 			{
@@ -8106,23 +8779,19 @@ namespace ALYSLC
 		{
 			if (a_slot == glob.bothHandsEquipSlot)
 			{
-				desiredForms[!EquipIndex::kLeftHand] = 
-				desiredForms[!EquipIndex::kRightHand] = nullptr;
-				desiredExtraDataLists[!EquipIndex::kLeftHand] = 
-				desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;
 				// Fists to ensure slots are cleared out. Fists!
-				EquipFists();
+				EquipFists(true);
 			}
 			else if (a_slot == glob.leftHandEquipSlot)
 			{
-				desiredForms[!EquipIndex::kLeftHand] = nullptr;
-				desiredExtraDataLists[!EquipIndex::kLeftHand] = nullptr;
+				/*desiredForms[!EquipIndex::kLeftHand] = nullptr;
+				desiredExtraDataLists[!EquipIndex::kLeftHand] = nullptr;*/
 				UnequipFormAtIndex(EquipIndex::kLeftHand);
 			}
 			else if (a_slot == glob.rightHandEquipSlot)
 			{
-				desiredForms[!EquipIndex::kRightHand] = nullptr;
-				desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;
+				/*desiredForms[!EquipIndex::kRightHand] = nullptr;
+				desiredExtraDataLists[!EquipIndex::kRightHand] = nullptr;*/
 				UnequipFormAtIndex(EquipIndex::kRightHand);
 			}
 		}
@@ -8155,32 +8824,10 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Clear out LH slot first.
-			desiredForms[!EquipIndex::kLeftHand] = nullptr;
-			desiredExtraDataLists[!EquipIndex::kLeftHand] = nullptr;
-
-			// Clear out biped slots.
-			// Looping through just in case this shield has other biped slots
-			// in addition to the shield biped slot.
-			auto slotMask = shield->bipedModelData.bipedObjectSlots;
-			for (uint8_t i = !EquipIndex::kFirstBipedSlot; i <= !EquipIndex::kLastBipedSlot; ++i)
-			{
-				auto bitMask = 
-				(
-					static_cast<RE::BIPED_MODEL::BipedObjectSlot>
-					(
-						1 << (i - !EquipIndex::kFirstBipedSlot)
-					)
-				);
-				if (slotMask.all(bitMask))
-				{
-					ClearDesiredEquippedFormOnUnequip(shield, i);
-				}
-			}
-
 			HandleCompanionPlayerUnequip
 			( 
 				shield,
+				EquipIndex::kNone,
 				exDataList, 
 				1, 
 				shield->equipSlot
@@ -8272,9 +8919,7 @@ namespace ALYSLC
 			else
 			{
 				// Equip "fists" to clear out spell slots.
-				ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kLeftHand);
-				ClearDesiredEquippedFormOnUnequip(spell, !EquipIndex::kRightHand);
-				EquipFists();
+				EquipFists(true);
 			}
 		}
 	}
@@ -8708,458 +9353,6 @@ namespace ALYSLC
 			{
 				uint32_t prevSize = favFormsList.size();
 				favFormsList.erase(newEnd, favFormsList.end());
-			}
-		}
-	}
-
-	void EquipManager::ValidateEquipState()
-	{
-		// Try to force the game to re-equip the player's desired forms
-		// without equip slot mismatches and other issues.
-		// Exists to deal with the game's equip system or my own code's BS.
-
-		// First, check for mismatches in the biped armor slots.
-		const auto invCounts = coopActor->GetInventoryCounts();
-		for (auto i = !EquipIndex::kFirstBipedSlot; i < !EquipIndex::kTotal; ++i)
-		{
-			// Shield handled as a hand form instead.
-			if (i == !EquipIndex::kShield)
-			{
-				continue;
-			}
-
-			if (equippedForms[i] != desiredForms[i])
-			{
-				const auto boundObj = 
-				(
-					desiredForms[i] ?
-					desiredForms[i]->As<RE::TESBoundObject>() :
-					nullptr
-				);
-				// Can re-equip non-bound objects right away.
-				bool canReEquip = (bool)desiredForms[i];
-				if (boundObj)
-				{
-					// Only re-equip if the player still has at least one
-					// of the bound object in their inventory.
-					const auto iter = invCounts.find(boundObj);
-					canReEquip = iter != invCounts.end() && iter->second > 0;
-				}
-				
-				if (canReEquip)
-				{
-					SPDLOG_DEBUG
-					(
-						"{} should have {} equipped in slot {}, "
-						"but has {} equipped. Re-equipping now.",
-						coopActor->GetName(),
-						desiredForms[i]->GetName(),
-						i,
-						equippedForms[i] ? equippedForms[i]->GetName() : "NONE"
-					);
-					EquipArmor(desiredForms[i]);
-				}
-				else 
-				{
-					SPDLOG_DEBUG
-					(
-						"{} should have nothing equipped in slot {}, "
-						"but has {} equipped. Unequipping now.",
-						coopActor->GetName(),
-						i,
-						equippedForms[i]->GetName()
-					);
-					UnequipArmor(equippedForms[i]);
-				}
-			}
-		}
-		
-		auto currentLHForm = coopActor->GetEquippedObject(true);
-		auto currentRHForm = coopActor->GetEquippedObject(false);
-		bool currentLHFormIsBound = 
-		(
-			currentLHForm && 
-			currentLHForm->As<RE::TESObjectWEAP>() && 
-			currentLHForm->As<RE::TESObjectWEAP>()->IsBound()
-		);
-		bool currentRHFormIsBound = 
-		(
-			currentRHForm && 
-			currentRHForm->As<RE::TESObjectWEAP>() && 
-			currentRHForm->As<RE::TESObjectWEAP>()->IsBound()
-		);
-		auto currentVoiceForm = equippedForms[!EquipIndex::kVoice];
-		auto currentLHEquipType = currentLHForm ? currentLHForm->As<RE::BGSEquipType>() : nullptr;
-		auto currentRHEquipType = currentRHForm ? currentRHForm->As<RE::BGSEquipType>() : nullptr;
-
-		// Get the desired form in both hands.
-		// If the form is a bound object, clear out the form if the player no longer has one 
-		// in their inventory.
-		auto desiredLHForm = desiredForms[!EquipIndex::kLeftHand];
-		auto boundObj = desiredLHForm ? desiredLHForm->As<RE::TESBoundObject>() : nullptr;
-		if (boundObj && desiredLHForm->IsNot(RE::FormType::Spell, RE::FormType::Shout))
-		{
-			const auto iter = invCounts.find(boundObj);
-			if (iter == invCounts.end() || iter->second <= 0)
-			{
-				// Will unequip as needed.
-				SPDLOG_DEBUG("{} no longer has 1 of LH form {}. Clearing from desired list.",
-					coopActor->GetName(), boundObj->GetName());
-				desiredLHForm = nullptr;
-				desiredForms[!EquipIndex::kLeftHand] = nullptr;
-			}
-		}
-			
-		auto desiredRHForm = desiredForms[!EquipIndex::kRightHand];
-		boundObj = desiredRHForm ? desiredRHForm->As<RE::TESBoundObject>() : nullptr;
-		if (boundObj && desiredRHForm->IsNot(RE::FormType::Spell, RE::FormType::Shout))
-		{
-			const auto iter = invCounts.find(boundObj);
-			if (iter == invCounts.end() || iter->second <= 0)
-			{
-				// Will unequip as needed.
-				SPDLOG_DEBUG("{} no longer has 1 of RH form {}. Clearing from desired list.",
-					coopActor->GetName(), boundObj->GetName());
-				desiredRHForm = nullptr;
-				desiredForms[!EquipIndex::kRightHand] = nullptr;
-			}
-		}
-
-		auto desiredVoiceForm = desiredForms[!EquipIndex::kVoice];
-		auto desiredLHEquipType = desiredLHForm ? desiredLHForm->As<RE::BGSEquipType>() : nullptr;
-		auto desiredRHEquipType = desiredRHForm ? desiredRHForm->As<RE::BGSEquipType>() : nullptr;
-		// Check if desired LH/RH form is not in the corresponding hand
-		// or if fists are equipped when there is a desired LH or RH form.
-		bool shouldCheckHandForms =
-		(
-			(!currentLHForm && !currentLHFormIsBound && desiredLHForm) ||
-			(!currentRHForm && !currentRHFormIsBound && desiredRHForm) ||
-			((currentLHForm == glob.fists) && (desiredLHForm || desiredRHForm))
-		);
-		bool shouldReEquip = false;
-
-		// Fix and modify desired equipped forms entries.
-		if (shouldCheckHandForms) 
-		{
-			// 2H not in both slots. Rectifiable.
-			if (desiredLHEquipType && desiredLHEquipType->equipSlot == glob.bothHandsEquipSlot)
-			{
-				if (!desiredRHForm)
-				{
-					// RH empty and LH form should also be in the RH slot.
-					SPDLOG_DEBUG
-					(
-						"{}: 2H form {} should be in both LH and RH desired form slots. "
-						"Adding to RH slot now.",
-						coopActor->GetName(), 
-						desiredLHForm->GetName()
-					);
-
-					desiredForms[!EquipIndex::kRightHand] = desiredLHForm;
-					shouldReEquip = true;
-				}
-				else if (!desiredRHEquipType || 
-						 desiredRHEquipType->equipSlot != glob.bothHandsEquipSlot)
-				{
-					// RH form invalid or RH form is not a 2H form.
-					// Move LH form into RH slot.
-					SPDLOG_DEBUG
-					(
-						"{}: 2H form {} is not also in the RH slot "
-						"and RH form {} is not a 2H form. "
-						"Moving 2H form to RH.",
-						coopActor->GetName(), 
-						desiredLHForm->GetName(), 
-						desiredRHForm ? desiredRHForm->GetName() : "INVALID"
-					);
-
-					desiredForms[!EquipIndex::kRightHand] = desiredLHForm;
-					shouldReEquip = true;
-				}
-			}
-			else if (desiredRHEquipType && 
-					 desiredRHEquipType->equipSlot == glob.bothHandsEquipSlot)
-			{
-				if (!desiredLHForm)
-				{
-					// LH empty and RH form should also be in the LH slot.
-					SPDLOG_DEBUG
-					(
-						"{}: 2H form {} should be in both LH and RH desired form slots. "
-						"Adding to LH slot now.",
-						coopActor->GetName(), 
-						desiredRHForm->GetName()
-					);
-
-					desiredForms[!EquipIndex::kLeftHand] = desiredRHForm;
-					shouldReEquip = true;
-				}
-				else if (!desiredLHEquipType || 
-						 desiredLHEquipType->equipSlot != glob.bothHandsEquipSlot)
-				{
-					// LH form invalid or LH form is not a 2H form.
-					// Move RH form into LH slot.
-					SPDLOG_DEBUG
-					(
-						"{}: 2H form {} is not also in the LH slot "
-						"and LH form {} is not a 2H form. "
-						"Moving 2H form to LH.",
-						coopActor->GetName(), 
-						desiredRHForm->GetName(), 
-						desiredLHForm ? desiredLHForm->GetName() : "INVALID"
-					);
-
-					desiredForms[!EquipIndex::kLeftHand] = desiredRHForm;
-					shouldReEquip = true;
-				}
-			}
-
-			// Mismatching equip slots. Rectifiable.
-			// NOTE:
-			// Most items with the RH equip slot can be equipped in the LH equip slot, 
-			// so I'm commenting this out for now.
-			/*if (desiredLHEquipType && desiredLHEquipType->equipSlot == glob.rightHandEquipSlot)
-			{
-				SPDLOG_DEBUG
-				(
-					"{}: LH form {} has RH equip slot. Moving to RH.",
-					coopActor->GetName(), desiredLHForm->GetName()
-				);
-				desiredForms[!EquipIndex::kRightHand] = desiredLHForm;
-				desiredForms[!EquipIndex::kLeftHand] = nullptr;
-				shouldReEquip = true;
-			}*/
-
-			// RH form with a LH equipslot is in the desired RH slot,
-			// so move it to the desired LH slot and clear the desired RH slot.
-			if (desiredRHEquipType && desiredRHEquipType->equipSlot == glob.leftHandEquipSlot)
-			{
-				SPDLOG_DEBUG
-				(
-					"{}: RH form {} has LH equip slot. Moving to LH.",
-					coopActor->GetName(), desiredRHForm->GetName()
-				);
-				desiredForms[!EquipIndex::kLeftHand] = desiredRHForm;
-				desiredForms[!EquipIndex::kRightHand] = nullptr;
-				shouldReEquip = true;
-			}
-		}
-		else
-		{
-			// 1H weapon that the player only owns 1 of, is in both LH and RH slots. Rectifiable.
-			if (currentLHForm &&
-				currentLHForm->As<RE::TESObjectWEAP>() &&
-				!currentLHFormIsBound &&
-				currentLHEquipType->equipSlot != glob.bothHandsEquipSlot &&
-				currentLHForm != glob.fists &&
-				currentLHForm == currentRHForm)
-			{
-				auto weap = currentLHForm->As<RE::TESObjectWEAP>();
-				const auto iter = invCounts.find(weap);
-				if (iter != invCounts.end() && iter->second == 1)
-				{
-					// Unequip from LH, keep in RH.
-					SPDLOG_DEBUG
-					(
-						"{}: 1H form {} with count 1 is in both LH and RH desired form slots. "
-						"Unequipping from the LH slot now.",
-						coopActor->GetName(), currentLHForm->GetName()
-					);
-
-					desiredForms[!EquipIndex::kLeftHand] = nullptr;
-					desiredForms[!EquipIndex::kRightHand] = weap;
-					shouldReEquip = true;
-				}
-			}
-		}
-
-		// If there were no corrections made to the desired forms list,
-		// check if there are equip mismatches between the current and desired hand/voice forms,
-		// and re-equip the desired forms.
-		if (!shouldReEquip) 
-		{
-			// Ugh.
-			// Game might have silently unequipped a bound weapon,
-			// with no equip object call firing here
-			// or without propagating an equip event.
-			// Re-equip the requested bound weapon(s) here.
-			auto lhObj = coopActor->GetEquippedObject(true);
-			auto rhObj = coopActor->GetEquippedObject(false);
-			auto aem = RE::ActorEquipManager::GetSingleton();
-			bool hasBoundWeapToReEquip = false;
-			if (aem)
-			{
-				if ((p->pam->boundWeapReq2H && 
-					lastReqBoundWeapRH && 
-					lastReqBoundWeapRH->As<RE::BGSEquipType>() &&
-					lastReqBoundWeapRH->As<RE::BGSEquipType>()->equipSlot == 
-					glob.bothHandsEquipSlot) &&
-					(
-						lhObj != lastReqBoundWeapRH ||
-						rhObj != lastReqBoundWeapRH
-					))
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Re-equipping requested 2H bound weapon {} in place of {}.",
-						coopActor->GetName(),
-						lastReqBoundWeapRH->GetName(),
-						lhObj != lastReqBoundWeapRH ? 
-						lhObj ? 
-						lhObj->GetName() : 
-						"NONE" :
-						rhObj ? 
-						rhObj->GetName() :
-						"NONE"
-					);
-					hasBoundWeapToReEquip = true;
-
-					// Re-equip bound ammo, if re-equipping a bound bow/crossbow.
-					auto weap = lastReqBoundWeapRH->As<RE::TESObjectWEAP>();
-					auto cachedAmmo = equippedForms[!EquipIndex::kAmmo];
-					if ((cachedAmmo && weap) && 
-						(cachedAmmo->HasKeywordByEditorID("WeapTypeBoundArrow")) && 
-						(weap->IsBow() || weap->IsCrossbow()))
-					{
-						Util::EquipObject
-						(
-							coopActor.get(), cachedAmmo->As<RE::TESAmmo>()
-						);
-					}
-
-					Util::EquipObject
-					(
-						coopActor.get(), 
-						lastReqBoundWeapRH->As<RE::TESObjectWEAP>(), 
-						nullptr,
-						1, 
-						glob.rightHandEquipSlot
-					);
-				}
-				else if (p->pam->boundWeapReqLH && 
-						 lastReqBoundWeapLH && 
-						 lastReqBoundWeapLH->As<RE::BGSEquipType>() &&
-						 lastReqBoundWeapLH->As<RE::BGSEquipType>()->equipSlot == 
-						 glob.leftHandEquipSlot &&
-						 lhObj != lastReqBoundWeapLH)
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Re-equipping requested LH bound weapon {} in place of {}.",
-						coopActor->GetName(),
-						lastReqBoundWeapLH->GetName(),
-						lhObj ? lhObj->GetName() : "NONE"
-					);
-					hasBoundWeapToReEquip = true;
-					
-					Util::EquipObject
-					(
-						coopActor.get(), 
-						lastReqBoundWeapLH->As<RE::TESObjectWEAP>(), 
-						nullptr,
-						1, 
-						glob.leftHandEquipSlot
-					);
-				}
-				else if (p->pam->boundWeapReqRH && 
-						lastReqBoundWeapRH && 
-						lastReqBoundWeapRH->As<RE::BGSEquipType>() &&
-						lastReqBoundWeapRH->As<RE::BGSEquipType>()->equipSlot == 
-						glob.rightHandEquipSlot &&
-						rhObj != lastReqBoundWeapRH)
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Re-equipping requested RH bound weapon {} in place of {}.",
-						coopActor->GetName(),
-						lastReqBoundWeapRH->GetName(),
-						rhObj ? rhObj->GetName() : "NONE"
-					);
-					hasBoundWeapToReEquip = true;
-
-					Util::EquipObject
-					(
-						coopActor.get(), 
-						lastReqBoundWeapRH->As<RE::TESObjectWEAP>(), 
-						nullptr,
-						1, 
-						glob.rightHandEquipSlot
-					);
-				}
-			}
-
-			if (!p->pam->boundWeapReq2H && !hasBoundWeapToReEquip)
-			{
-				// No bound weapon request in the LH/RH,
-				// LH/RH desired form does not match the current form,
-				// and the other hand does not contain a bound weapon, 
-				// or the desired equip slot for the LH/RH weapon is not the 2H slot, 
-				// which would unequip the other hand's bound weapon when equipped.
-				// If the desired form is bound, the player must have at least one of the object 
-				// remaining in their inventory.
-				bool shouldReEquipLH = 
-				(
-					(!p->pam->boundWeapReqLH) && 
-					(currentLHForm != desiredLHForm) &&
-					(
-						!currentRHFormIsBound ||
-						!desiredLHEquipType ||
-						desiredLHEquipType->equipSlot != glob.bothHandsEquipSlot
-					)
-				);
-				bool shouldReEquipRH = 
-				(
-					(!p->pam->boundWeapReqRH) && 
-					(currentRHForm != desiredRHForm) &&
-					(
-						!currentLHFormIsBound ||
-						!desiredRHEquipType ||
-						desiredRHEquipType->equipSlot != glob.bothHandsEquipSlot
-					)
-				);
-				if (shouldReEquipLH || shouldReEquipRH) 
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: Current LH form ({}, is bound weap req active: {}, {}) "
-						"does not match desired form ({}): {}, "
-						"current RH form ({}, is bound weap req active: {}, {}) "
-						"does not match desired form ({}): {}, "
-						"current Voice form ({}) "
-						"does not match desired form ({}): {}. "
-						"Should RE-EQUIP: Both: {}, LH: {}, RH: {}.",
-						coopActor->GetName(), 
-						currentLHForm ? currentLHForm->GetName() : "EMPTY",
-						p->pam->boundWeapReqLH,
-						p->pam->boundWeapReq2H,
-						desiredLHForm ? desiredLHForm->GetName() : "EMPTY",
-						currentLHForm != desiredLHForm,
-						currentRHForm ? currentRHForm->GetName() : "EMPTY",
-						p->pam->boundWeapReqRH,
-						p->pam->boundWeapReq2H,
-						desiredRHForm ? desiredRHForm->GetName() : "EMPTY",
-						currentRHForm != desiredRHForm,
-						currentVoiceForm ? currentVoiceForm->GetName() : "NONE",
-						desiredVoiceForm ? desiredVoiceForm->GetName() : "NONE",
-						currentVoiceForm != desiredVoiceForm,
-						shouldReEquipLH && shouldReEquipRH,
-						shouldReEquipLH,
-						shouldReEquipRH
-					);
-
-					if (shouldReEquipLH && shouldReEquipRH)
-					{
-						ReEquipHandForms();
-					}
-					else if (shouldReEquipRH)
-					{
-						ReEquipHandForm(true);
-					}
-					else if (shouldReEquipLH)
-					{
-						ReEquipHandForm(false);
-					}
-				}
 			}
 		}
 	}

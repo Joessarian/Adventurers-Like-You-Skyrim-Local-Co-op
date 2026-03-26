@@ -1907,6 +1907,49 @@ namespace ALYSLC
 			a_charController->fallTime = 0.0f;
 		}
 
+		// Malloc, construct and return a new extra data list.
+		inline RE::ExtraDataList* CreateExtraDataList()
+		{
+			RE::ExtraDataList* list = Util::NativeFunctions::ConstructExtraDataList
+			(
+				RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
+			);
+			if (!list)
+			{
+				SPDLOG_ERROR("ERR: MALLOC: Failed to allocate extra data list.");
+			}
+
+			return list;
+		}
+
+		// Malloc, construct and return a new extra data list with ExOwnership data.
+		// NOTE:
+		// Using this extra data because it persists across save games 
+		// and does not split a stack when added to an extra data list that is part of that stack.
+		// Needed an extra data type to add to every item in the inventory chest
+		// to make sure that there is an extra data list whenever an item is selected in a menu
+		// through the player's inventory chest.
+		// We can then check these lists for ExRank data and thereby check equip state.
+		inline RE::ExtraDataList* CreateExtraDataListWithOwnership()
+		{
+			RE::ExtraDataList* list = CreateExtraDataList();
+			if (!list)
+			{
+				return nullptr;
+			}
+
+			auto data = static_cast<RE::ExtraOwnership*>
+			(
+				list->Add(new RE::ExtraOwnership())
+			);
+			if (!data)
+			{
+				SPDLOG_DEBUG("ERR: Failed to add exOwnership data to list.");
+			}
+			
+			return list;
+		}
+
 		// Get the given refr's 3D center world position.
 		// If the current 3D is unavailable, return a position 
 		// halfway up the reference, given by its current position.
@@ -2479,6 +2522,22 @@ namespace ALYSLC
 			return results;
 		}
 		
+		// Get the total count for the given item from the given refr's inventory.
+		inline int32_t GetInventoryItemCount
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object
+		)
+		{
+			if (!a_refr || !a_object)
+			{
+				return 0;
+			}
+
+			const auto invCounts = a_refr->GetInventoryCounts();
+			const auto iter = invCounts.find(a_object);
+			return (iter != invCounts.end() ? max(0, iter->second) : 0);
+		}
+
 		// Get the inventory chest inventory entry data for the given bound object.
 		// If no valid object, return none.
 		inline RE::InventoryEntryData* GetInventoryEntryDataForObject
@@ -2499,29 +2558,6 @@ namespace ALYSLC
 				return nullptr;
 			}
 
-			// If no extra data list is specified to search for, return the front inventory entry.
-			if (!a_exDataList)
-			{
-				if (!invChanges->entryList->empty())
-				{
-					SPDLOG_DEBUG
-					(
-						"No specified exData list for item {}. Return front inventory entry {:p}.",
-						a_object->GetName(), fmt::ptr(invChanges->entryList->front())
-					);
-					return invChanges->entryList->front();
-				}
-				else
-				{
-					SPDLOG_DEBUG
-					(
-						"No specified exData list for item {} and no inventory entries.",
-						a_object->GetName(), fmt::ptr(invChanges->entryList->front())
-					);
-					return nullptr;
-				}
-			}
-
 			for (auto entry : *invChanges->entryList)
 			{
 				if (!entry)
@@ -2531,10 +2567,46 @@ namespace ALYSLC
 
 				if (entry->object == a_object)
 				{
-					return entry;
+					// Make sure the given extra data list is present, if specified.
+					// Otherwise, just return the entry since the bound objects match.
+					if (a_exDataList)
+					{
+						if (entry->extraLists)
+						{
+							for (auto exDataList : *entry->extraLists)
+							{
+								if (exDataList == a_exDataList)
+								{
+									SPDLOG_DEBUG
+									(
+										"Found matching exData list {:p} for item. "
+										"Return inventory entry {:p}.",
+										fmt::ptr(exDataList),
+										a_object->GetName(), 
+										fmt::ptr(entry)
+									);
+									return entry;
+								}
+							}
+						}
+					}
+					else
+					{
+						SPDLOG_DEBUG
+						(
+							"No specified exData list for item {}. Return inventory entry {:p}.",
+							a_object->GetName(), fmt::ptr(entry)
+						);
+						return entry;
+					}
 				}
 			}
 			
+			SPDLOG_DEBUG
+			(
+				"No inventory entry found for item {} ({:p}) in {}'s inventory.",
+				a_object->GetName(), fmt::ptr(a_exDataList), a_inventoryRefr->GetName()
+			);
 			return nullptr;
 		}
 
@@ -2797,9 +2869,79 @@ namespace ALYSLC
 			);
 		}
 		
+		// Return true if the extra data list contains ExWorn/ExWornLeft data
+		// that indicates the item is in either the left hand, right hand, or both.
+		inline bool HasWornExData
+		(
+			RE::ExtraDataList* a_extraDataList, bool a_leftHand, bool a_eitherHand
+		)
+		{
+			if (!a_extraDataList || 
+				std::distance(a_extraDataList->begin(), a_extraDataList->end()) == 0)
+			{
+				return false;	
+			}
+
+			bool hasMatchingWornData = 
+			(
+				(
+					(a_eitherHand) && 
+					(
+						a_extraDataList->HasType<RE::ExtraWorn>() ||
+						a_extraDataList->HasType<RE::ExtraWornLeft>()
+					)
+				) ||
+				((a_leftHand) && (a_extraDataList->HasType<RE::ExtraWornLeft>())) || 
+				((!a_leftHand) && (a_extraDataList->HasType<RE::ExtraWorn>()))	
+			);
+			if (hasMatchingWornData)
+			{
+				return true;
+			}
+
+			return false;
+		}
+
+		// Return true if the extra data list contains ExRank data with a rank mask
+		// that indicates the item is in either the left hand, right hand, or both.
+		inline bool HasWornRankMask
+		(
+			RE::ExtraDataList* a_extraDataList, bool a_leftHand, bool a_eitherHand
+		)
+		{
+			if (!a_extraDataList || 
+				std::distance(a_extraDataList->begin(), a_extraDataList->end()) == 0)
+			{
+				return false;	
+			}
+
+			auto exRank = a_extraDataList->GetByType<RE::ExtraRank>();
+			if (exRank)
+			{
+				bool hasMatchingRankData = 
+				(
+					(
+						(a_eitherHand) && 
+						(
+							(exRank->rank & 0xFF000000) == 0xFF000000 ||
+							(exRank->rank & 0x00FF0000) == 0x00FF0000
+						)
+					) ||
+					((a_leftHand) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
+					((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0x00FF0000))	
+				);
+				if (hasMatchingRankData)
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		// Return true if the inventory entry contains ExRank data with a rank mask
 		// that indicates the item is in either the left hand, right hand, or both.
-		inline bool HasWornRankExtraDataList
+		inline bool HasWornRankMask
 		(
 			RE::InventoryEntryData* a_invEntry, bool a_leftHand, bool a_eitherHand
 		)
@@ -2811,35 +2953,15 @@ namespace ALYSLC
 
 			for (const auto exDataList : *a_invEntry->extraLists)
 			{
-				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
+				if (HasWornRankMask(exDataList, a_leftHand, a_eitherHand))
 				{
-					continue;
-				}
-				
-				auto exRank = exDataList->GetByType<RE::ExtraRank>();
-				if (exRank)
-				{
-					bool hasMatchingRankData = 
-					(
-						(
-							(a_eitherHand) && 
-							(
-								(exRank->rank & 0xFF000000) == 0xFF000000 ||
-								(exRank->rank & 0x00FF0000) == 0x00FF0000
-							)
-						) ||
-						((a_leftHand) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
-						((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0x00FF0000))	
-					);
-					if (hasMatchingRankData)
-					{
-						return true;
-					}
+					return true;
 				}
 			}
 
 			return false;
 		}
+
 
 		// Import all of the given race's default headparts to the given actorbase.
 		inline void ImportDefaultRacialHeadParts
@@ -3086,10 +3208,15 @@ namespace ALYSLC
 				return false;
 			}
 			
-			// Skip items without an equip slot, except for ammo.
 			auto equipType = a_boundObj->As<RE::BGSEquipType>();
 			if (!equipType && !a_boundObj->Is(RE::FormType::Ammo))
 			{
+				// Skip items without an equip slot, except for ammo.
+				return false;
+			}
+			else if (a_boundObj->Is(RE::FormType::AlchemyItem, RE::FormType::Ingredient))
+			{
+				// No equip markers for consumables.
 				return false;
 			}
 
@@ -3128,7 +3255,7 @@ namespace ALYSLC
 			(
 				(a_actor->IsGuard()) || 
 				(
-					ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+					ALYSLC::EnderalCompat::g_installed &&
 					a_actor->IsInFaction
 					(
 						RE::TESForm::LookupByEditorID<RE::TESFaction>("IsGuardFaction")
@@ -3293,23 +3420,6 @@ namespace ALYSLC
 			);
 		}
 
-		// Is the given race one that has an accompanying transformation?
-		// Werewolf, vampire, and unplayable races.
-		inline bool IsRaceWithTransformation(RE::TESRace* a_race)
-		{
-			if (!a_race)
-			{
-				return false;
-			}
-
-			return 
-			(
-				a_race->formEditorID == "WerewolfBeastRace"sv || 
-				a_race->formEditorID == "DLC1VampireBeastRace"sv || 
-				!a_race->GetPlayable()
-			);
-		}
-		
 		// Is the refr valid for targeting with the crosshair,
 		// as an aim correction target, or for activation?
 		// Baseline check for availability and handle + 3D validity. 
@@ -3350,7 +3460,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+			if (ALYSLC::EnderalCompat::g_installed) 
 			{
 				return 
 				(
@@ -3430,7 +3540,7 @@ namespace ALYSLC
 				"{}: {}", a_playerActor ? a_playerActor->GetName() : "NONE", 
 				a_shouldLoad ? "LOAD" : "SAVE"
 			);
-			if (!a_playerActor || !ALYSLC::RaceMenuCompat::g_raceMenuInstalled)
+			if (!a_playerActor || !ALYSLC::RaceMenuCompat::g_installed)
 			{
 				return;
 			}
@@ -4634,18 +4744,6 @@ namespace ALYSLC
 		// Return the refr 3D's havok collision layer.
 		RE::COL_LAYER GetCollisionLayer(RE::NiAVObject* a_refr3D);
 		
-		// Return the count of the given item with the given extra data 
-		// that is present in the given refr's inventory.
-		// Intrinsic data types must match if the list pointers themselves do not match.
-		// Intrinsic here meaning types that are not changed or removed
-		// when moved to another container.
-		RE::TESObjectREFR::Count GetCountForInventoryItem
-		(
-			RE::TESObjectREFR* a_refr, 
-			RE::TESBoundObject* a_object,
-			RE::ExtraDataList* a_exDataList
-		);
-
 		// Get the detection percent of the requesting actor by the detecting actor [0.0, 100.0].
 		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor);
 		
@@ -4714,6 +4812,18 @@ namespace ALYSLC
 		// for the given magical form (shout/spell).
 		int8_t GetHotkeyForMagic(RE::Actor* a_actor, RE::TESForm* a_magForm);
 		
+		// Return the count of the given item with the given extra data 
+		// that is present in the given refr's inventory.
+		// Intrinsic data types must match if the list pointers themselves do not match.
+		// Intrinsic here meaning types that are not changed or removed
+		// when moved to another container.
+		RE::TESObjectREFR::Count GetIntrinsicallyEqualCount
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object,
+			RE::ExtraDataList* a_exDataList
+		);
+
 		// Get a smart pointer to the game's NiCamera.
 		RE::NiPointer<RE::NiCamera> GetNiCamera();
 
@@ -4894,6 +5004,10 @@ namespace ALYSLC
 		// Is the given refr lootable by co-op players
 		// (can be moved into a player's inventory directly through activation)?
 		bool IsLootableRefr(RE::TESObjectREFR* a_refr);
+		
+		// Is the given race one that has an accompanying transformation?
+		// Werewolf, vampire, or non-playable, non-humanoid races.
+		bool IsRaceWithTransformation(RE::TESRace* a_race);
 
 		// Checks if the given refr's center is within the bound extents of the given 3D object.
 		// Return true if so.

@@ -226,7 +226,7 @@ namespace ALYSLC_API
 		// and nothing is saved to the serialized data.
 
 		// Enderal has no usage-based skill levelling.
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+		if (ALYSLC::EnderalCompat::g_installed) 
 		{
 			return;
 		}

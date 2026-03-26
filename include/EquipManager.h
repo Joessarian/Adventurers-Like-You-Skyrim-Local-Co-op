@@ -31,7 +31,11 @@ namespace ALYSLC
 			RE::TESForm* a_toUnequip, const uint32_t& a_listIndex
 		) 
 		{
-			if (!a_toUnequip)
+			// Must have a valid item to unequip and an index within the bounds
+			// of the desired forms/exData lists arrays.
+			if (!a_toUnequip || 
+				a_listIndex == !EquipIndex::kNone ||
+				a_listIndex >= !EquipIndex::kTotal)
 			{
 				return;
 			}
@@ -532,7 +536,7 @@ namespace ALYSLC
 		void ChangeChestWornRankExData
 		(
 			RE::TESBoundObject* a_boundObj,
-			bool a_checkLH,
+			bool a_leftHand,
 			bool a_add,
 			RE::ExtraDataList* a_chestListToChange = nullptr
 		);
@@ -600,13 +604,12 @@ namespace ALYSLC
 		
 		// Equip dummy 1H weapon to clear out the given hand slot.
 		// NOTE: 
-		// Does not clear the desired hand slot form in the same slot.
-		void EquipDummy1H(RE::BGSEquipSlot* a_slot);
+		// Can choose to also clear out desired forms/exData list slots.
+		void EquipDummy1H(const RE::BGSEquipSlot* a_slot, bool a_clearDesiredSlots);
 
 		// Equip fists to clear out hand slots.
-		// NOTE: 
-		// Does not clear desired hand slot forms.
-		void EquipFists();
+		// Can choose to also clear out desired forms/exData list slots.
+		void EquipFists(bool a_clearDesiredSlots);
 		
 		// Equip form and update desired forms for co-op companion players.
 		void EquipForm
@@ -645,6 +648,12 @@ namespace ALYSLC
 			const FavWeaponCyclingCategory& a_category
 		) const;
 		
+		// Add extra ownership data to all equipable items in the player's inventory
+		// and then fix counts for all the inventory's items.
+		// Inventory here means P1's on-player inventory 
+		// and the player inventory chest for companion players.
+		void FixInventory();
+
 		// NOTE: 
 		// Unused for now, but keeping for reference or if needed again in the future.
 		// Get equipable spells in the hand slots or powers/shouts in voice slot.
@@ -676,9 +685,12 @@ namespace ALYSLC
 		
 		// Setup equip request by adding the item from the companion player's chest
 		// and providing the proper extra data list.
+		// Can specify a specific equip index to set in the desired forms/exData arrays.
+		// 'kNone' to have the function compute it based on the item type or to not fill any slot.
 		void HandleCompanionPlayerEquip
 		(
 			RE::TESBoundObject* a_object, 
+			const EquipIndex& a_equipIndex = EquipIndex::kNone,
 			RE::ExtraDataList* a_extraData = nullptr, 
 			uint32_t a_count = 1, 
 			const RE::BGSEquipSlot* a_slot = nullptr,
@@ -689,9 +701,12 @@ namespace ALYSLC
 		);
 
 		// Remove items, extra data lists, inventory entries, and clean up after unequipping.
+		// Can specify a specific equip index to clear out in the desired forms/exData arrays.
+		// 'kNone' to have the function compute it based on the item type or to not clear any slot.
 		void HandleCompanionPlayerUnequip
 		(
 			RE::TESBoundObject* a_object, 
+			const EquipIndex& a_equipIndex = EquipIndex::kNone,
 			RE::ExtraDataList* a_exDataList = nullptr, 
 			uint32_t a_count = 1, 
 			const RE::BGSEquipSlot* a_slot = nullptr,
@@ -887,12 +902,6 @@ namespace ALYSLC
 		// to the current magic favorites list.
 		void UpdateFavoritedFormsLists(bool&& a_useCachedMagicFavorites);
 
-		// Attempts to rectify mismatches and equip state issues 
-		// with the player's equipped forms, and then re-equip the desired forms.
-		// NOTE:
-		// Unused and not called on P1 as of now.
-		void ValidateEquipState();
-		
 		//
 		// Members
 		//

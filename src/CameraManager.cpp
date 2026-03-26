@@ -325,6 +325,10 @@ namespace ALYSLC
 		auto ui = RE::UI::GetSingleton(); 
 		if ((ui) && 
 			(
+				(
+					ALYSLC::AlternateConversationCameraCompat::g_installed &&
+					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) 
+				) ||
 				ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 				ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
 				ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
@@ -426,6 +430,10 @@ namespace ALYSLC
 			auto ui = RE::UI::GetSingleton(); 
 			if ((ui) && 
 				(
+					(
+						ALYSLC::AlternateConversationCameraCompat::g_installed &&
+						ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) 
+					) ||
 					ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||

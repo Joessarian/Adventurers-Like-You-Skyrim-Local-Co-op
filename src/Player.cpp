@@ -517,7 +517,7 @@ namespace ALYSLC
 			// Skyrim's Paraglider compat: check if P1 has a paraglider.
 			if (isPlayer1 && 
 				coopActor.get() && 
-				ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled)
+				ALYSLC::SkyrimsParagliderCompat::g_installed)
 			{
 				if (auto dataHandler = RE::TESDataHandler::GetSingleton(); dataHandler)
 				{
@@ -536,7 +536,7 @@ namespace ALYSLC
 						);
 						// Add gale spell if not known already.
 						// Enderal only, since the quest to obtain it is not compatible.
-						if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+						if (ALYSLC::EnderalCompat::g_installed &&
 							ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
 							!coopActor->HasSpell(glob.tarhielsGaleSpell))
 						{
@@ -946,7 +946,8 @@ namespace ALYSLC
 
 		// Resetting 3D can cause crashes.
 		coopActor->Resurrect(false, false);
-		coopActor->CastPermanentMagic(true, true, true, true);
+
+		// Clear out all active effects before re-applying to ensure no duplicates are proc'd.
 		effectList = coopActor->GetActiveEffectList();
 		if (effectList)
 		{
@@ -960,7 +961,7 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				SPDLOG_DEBUG
 				(
-					"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+					"AFTER1 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 					"elapsed time: {}, duration: {}.",
 					fmt::ptr(effectList),
 					coopActor->GetName(),
@@ -984,8 +985,10 @@ namespace ALYSLC
 		{
 			SPDLOG_DEBUG("No active effects list after resurrection.");
 		}
-				
-		/*auto instantCaster = coopActor->GetMagicCaster
+		
+		//coopActor->CastPermanentMagic(true, true, true, true);
+		// Proc all the previous active effects.	
+		auto instantCaster = coopActor->GetMagicCaster
 		(
 			RE::MagicSystem::CastingSource::kInstant
 		);
@@ -1007,7 +1010,10 @@ namespace ALYSLC
 					spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
 				);
 			}
-		}*/
+		}
+
+		// Re-equip all items to add their active effects to the mix.
+		em->ReEquipAll(false);
 
 		effectList = coopActor->GetActiveEffectList();
 		if (effectList)
@@ -1032,7 +1038,7 @@ namespace ALYSLC
 				// REMOVE when done debugging.
 				SPDLOG_DEBUG
 				(
-					"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+					"AFTER2 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 					"elapsed time: {}, duration: {}.",
 					fmt::ptr(effectList),
 					coopActor->GetName(),
@@ -1457,7 +1463,7 @@ namespace ALYSLC
 		}
 
 		// Let Enderal's revert spell script handle everything for Theriantrophist transformations.
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && 
+		if (ALYSLC::EnderalCompat::g_installed && 
 			isPlayer1 && 
 			Util::IsWerewolf(coopActor.get()))
 		{
@@ -2777,6 +2783,24 @@ namespace ALYSLC
 				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
 			)
 		};
+
+		SPDLOG_DEBUG
+		(
+			"Vals before: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
+			hmsModsBefore[0][0],
+			hmsModsBefore[0][1],
+			hmsModsBefore[0][2],
+			hmsModsBefore[1][0],
+			hmsModsBefore[1][1],
+			hmsModsBefore[1][2],
+			hmsModsBefore[2][0],
+			hmsModsBefore[2][1],
+			hmsModsBefore[2][2],
+			healthBefore,
+			magickaBefore,
+			staminaBefore
+		);
+
 		// Save desired equip forms to re-equip later.
 		auto savedLHForm = em->desiredForms[!EquipIndex::kLeftHand];
 		auto savedRHForm = em->desiredForms[!EquipIndex::kRightHand];
@@ -2792,6 +2816,7 @@ namespace ALYSLC
 			savedRHForm ? savedRHForm->As<RE::TESBoundObject>() : nullptr,
 			false
 		);
+		std::unordered_map<RE::MagicItem*, float> effectToElapsedMap{ };
 		// Make sure the player is not moving during the reset.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), true);
 
@@ -2805,7 +2830,8 @@ namespace ALYSLC
 				&hmsModsBefore, 
 				&healthBefore,
 				&magickaBefore, 
-				&staminaBefore
+				&staminaBefore,
+				&effectToElapsedMap
 			]() 
 			{
 				// Reset to default package first.
@@ -2872,6 +2898,10 @@ namespace ALYSLC
 						if (effect->spell)
 						{
 							activeEffectSpells.emplace_back(effect->spell);
+							effectToElapsedMap.insert_or_assign
+							(
+								effect->spell, effect->elapsedSeconds
+							);
 						}
 					}
 				}
@@ -2880,30 +2910,82 @@ namespace ALYSLC
 				// ReEquipAll() call down below will double apply the gear HMS bonuses
 				// because ResetInventory() on its own does not clear out gear enchantments.
 				// Resetting here with Resurrect does, though, preventing double applicatoin.
-
-				SPDLOG_DEBUG
-				(
-					"Vals before: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
-					hmsModsBefore[0][0],
-					hmsModsBefore[0][1],
-					hmsModsBefore[0][2],
-					hmsModsBefore[1][0],
-					hmsModsBefore[1][1],
-					hmsModsBefore[1][2],
-					hmsModsBefore[2][0],
-					hmsModsBefore[2][1],
-					hmsModsBefore[2][2],
-					healthBefore,
-					magickaBefore,
-					staminaBefore
-				);
-
 				// BUG (?):
 				// Resurrect does health damage when certain objects are equipped? Why?
 				// Seems to always deduct 30 HP if The Gauldur Amulet was equipped.
 				coopActor->Resurrect(true, false);
-				coopActor->CastPermanentMagic(true, true, true, true);
+
+				// NOTE:
+				// For some reason, clearing the active effects list 
+				// causes the active effects to double once all gear is re-equipped, 
+				// even without casting all the saved active effects' spells.
+				/*
+				effectList = coopActor->GetActiveEffectList();
+				if (effectList)
+				{
+					for (const auto effect : *effectList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"AFTER1 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+							"elapsed time: {}, duration: {}.",
+							fmt::ptr(effectList),
+							coopActor->GetName(),
+							effect->effect && effect->effect->baseEffect ? 
+							effect->effect->baseEffect->GetName() :
+							"NONE",
+							effect->effect && effect->effect->baseEffect ?
+							effect->effect->baseEffect->formID :
+							0xDEAD,
+							effect->spell ? 
+							effect->spell->GetName() :
+							"NONE",
+							effect->elapsedSeconds,
+							effect->duration
+						);
+					}
+
+					effectList->clear();
+				}
+				else
+				{
+					SPDLOG_DEBUG("No active effects list after resurrection.");
+				}
+				*/
 				
+				// REMOVE if unnecessary.
+				//coopActor->CastPermanentMagic(true, true, true, true);
+				// Proc all the previous active effects.	
+				/*auto instantCaster = coopActor->GetMagicCaster
+				(
+					RE::MagicSystem::CastingSource::kInstant
+				);
+				if (instantCaster)
+				{
+					for (const auto spell : activeEffectSpells)
+					{
+						if (!spell)
+						{
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
+						);
+						instantCaster->CastSpellImmediate
+						(
+							spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
+						);
+					}
+				}*/
+
 				std::array<std::array<float, 3>, 3> hmsModsAfter{ };
 				hmsModsAfter[0] = 
 				{
@@ -2967,32 +3049,6 @@ namespace ALYSLC
 					coopActor->GetActorValue(RE::ActorValue::kMagicka),
 					coopActor->GetActorValue(RE::ActorValue::kStamina)
 				);
-
-				
-				// REMOVE if unnecessary.
-				/*auto instantCaster = coopActor->GetMagicCaster
-				(
-					RE::MagicSystem::CastingSource::kInstant
-				);
-				if (instantCaster)
-				{
-					for (const auto spell : activeEffectSpells)
-					{
-						if (!spell)
-						{
-							continue;
-						}
-
-						SPDLOG_DEBUG
-						(
-							"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
-						);
-						instantCaster->CastSpellImmediate
-						(
-							spell, true, coopActor.get(), 1.0f, false, 0.0f, nullptr
-						);
-					}
-				}*/
 			}
 		);
 
@@ -3104,10 +3160,7 @@ namespace ALYSLC
 				&magickaBefore,
 				&staminaBefore,
 				&hmsModsBefore,
-				savedLHForm,
-				savedLHExtraDataList, 
-				savedRHForm, 
-				savedRHExtraDataList
+				&effectToElapsedMap
 			]() 
 			{
 				// Reset 'ghost' flag used for I-frames.
@@ -3118,6 +3171,48 @@ namespace ALYSLC
 
 				// Re-equip everything. Clean inventory slate.
 				em->ReEquipAll(false);
+
+				auto effectList = coopActor->GetActiveEffectList();
+				if (effectList)
+				{
+					for (const auto effect : *effectList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						// Restore elapsed time.
+						if (effect->spell)
+						{
+							auto iter = effectToElapsedMap.find(effect->spell); 
+							if (iter != effectToElapsedMap.end())
+							{
+								effect->elapsedSeconds = iter->second;
+							}
+						}
+				
+						// REMOVE when done debugging.
+						SPDLOG_DEBUG
+						(
+							"AFTER2 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
+							"elapsed time: {}, duration: {}.",
+							fmt::ptr(effectList),
+							coopActor->GetName(),
+							effect->effect && effect->effect->baseEffect ? 
+							effect->effect->baseEffect->GetName() :
+							"NONE",
+							effect->effect && effect->effect->baseEffect ?
+							effect->effect->baseEffect->formID :
+							0xDEAD,
+							effect->spell ? 
+							effect->spell->GetName() :
+							"NONE",
+							effect->elapsedSeconds,
+							effect->duration
+						);
+					}
+				}
 				
 				// IMPORTANT:
 				// Resetting while on horseback causes horse warp glitch upon resumption.

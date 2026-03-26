@@ -1099,7 +1099,7 @@ namespace ALYSLC
 			// via sending an animation event with annotations derived from the given type.
 			// Can also modify the damage applied on hit and the length of the collider.
 
-			if (!a_actor || !PrecisionCompat::g_precisionInstalled)
+			if (!a_actor || !PrecisionCompat::g_installed)
 			{
 				return;
 			}
@@ -2102,7 +2102,10 @@ namespace ALYSLC
 			// Change collision layer back to 'Biped'.
 			actor3DPtr->SetCollisionLayer(RE::COL_LAYER::kBiped);
 		}
-
+		
+		// IMPORTANT 1:
+		// Never equip an inventory chest item's extra data list onto a companion player, 
+		// unless the item is a consumable. Will crash otherwise.
 		void EquipObject
 		(
 			RE::Actor* a_actor, 
@@ -2122,7 +2125,7 @@ namespace ALYSLC
 				return;
 			}
 			
-			// IMPORTANT:
+			// IMPORTANT 2:
 			// Instantly (un)equip fists.
 			// Essential for ensuring hands are cleared and fists don't (un)equip again 
 			// after the desired forms are equipped.
@@ -2503,7 +2506,7 @@ namespace ALYSLC
 				// when scaled with P1.
 				// Make sure that the base values are at the minimum 15, 
 				// just like P1's skills when starting the game.
-				if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+				if (ALYSLC::EnderalCompat::g_installed) 
 				{
 					skillsArr[i] = 15.0f;  
 				}
@@ -3168,137 +3171,6 @@ namespace ALYSLC
 			return collisionLayer;
 		}
 
-		RE::TESObjectREFR::Count GetCountForInventoryItem
-		(
-			RE::TESObjectREFR* a_refr, 
-			RE::TESBoundObject* a_object, 
-			RE::ExtraDataList* a_exDataList
-		)
-		{
-			// Return the count of the given item with the given extra data 
-			// that is present in the given refr's inventory.
-			// Intrinsic data types must match if the list pointers themselves do not match.
-			// Intrinsic here meaning types that are not changed or removed
-			// when moved to another container.
-
-			if (!a_refr || !a_object)
-			{
-				return 0;
-			}
-
-			auto inv = a_refr->GetInventory();
-			const auto iter = inv.find(a_object);
-			auto numberOwned = 
-			(
-				iter != inv.end() ? 
-				iter->second.first : 
-				0
-			);
-			if (numberOwned == 0)
-			{
-				return 0;
-			}
-
-			if (a_exDataList && iter->second.second && iter->second.second->extraLists) 
-			{
-				// Calculate the count based on the number of lists and their own extra counts.
-				// Only increment the count if the extra lists have the same exact extra data.
-				// For some reason, there can be multiple extra data lists with the same extra data
-				// for the same item, instead of having one list with extra count data 
-				// that accounts for copies of the same item.
-				// Makes it more difficult to determine how many of a specific item 
-				// there is in the player's inventory.
-				// What a mess.
-
-				// Ignore 'worn' data in either lists since we do not want to account 
-				// for equip state when determining equality.
-				ptrdiff_t compSize = 0;
-				numberOwned = 0;
-				for (const auto& data : *a_exDataList)
-				{
-					const auto type = data.GetType();
-					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
-					{
-						compSize++;
-					}
-				}
-
-				// No special intrinsic data types,
-				// so use the inventory entry count delta for the count.
-				if (compSize == 0)
-				{
-					SPDLOG_DEBUG
-					(
-						"{}: {} ({:p}) has no defining extra data types. "
-						"Using inventory entry data count delta of {}.",
-						a_refr->GetName(),
-						a_object->GetName(), 
-						fmt::ptr(a_exDataList),
-						max(0, iter->second.second->countDelta) 
-					);
-					return max(0, iter->second.second->countDelta);
-				}
-
-				for (auto list : *iter->second.second->extraLists)
-				{
-					if (!list)
-					{
-						continue;
-					}
-					
-					bool isEqual = true;
-					ptrdiff_t otherSize = 0;
-					for (const auto& otherData : *list)
-					{
-						const auto type = otherData.GetType();
-						if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
-						{
-							otherSize++;
-						}
-					}
-					
-					if (otherSize == compSize)
-					{
-						for (const auto& otherData : *list)
-						{
-							const auto type = otherData.GetType();
-							if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
-							{
-								continue;
-							}
-
-							const auto data = a_exDataList->GetByType(type);
-							if (!data || data->IsNotEqual(std::addressof(otherData)))
-							{
-								isEqual = false;
-								break;
-							}
-						}
-					}
-					else
-					{
-						isEqual = false;
-					}
-
-					if (isEqual)
-					{
-						const auto count = list->GetCount();
-						numberOwned += count > 0 ? count : 0;
-						SPDLOG_DEBUG
-						(
-							"{} of {} in {}. Inv entry count delta: {}.", 
-							numberOwned,
-							a_object->GetName(),
-							a_refr->GetName(),
-							iter->second.second->countDelta
-						);
-					}
-				}
-			}
-
-			return numberOwned;
-		}
-
 		float GetDetectionPercent(RE::Actor* a_reqActor, RE::Actor* a_detectingActor)
 		{
 			// Get the detection percent of the requesting actor by the detecting actor 
@@ -3359,7 +3231,6 @@ namespace ALYSLC
 			{
 				return nullptr;
 			}
-
 
 			auto equipType = a_form->As<RE::BGSEquipType>();
 			auto equipSlot = equipType ? equipType->equipSlot : nullptr;
@@ -3833,6 +3704,173 @@ namespace ALYSLC
 			}
 
 			return -1;
+		}
+		
+		RE::TESObjectREFR::Count GetIntrinsicallyEqualCount
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object, 
+			RE::ExtraDataList* a_exDataList
+		)
+		{
+			// Return the count of the given item with the given extra data 
+			// that is present in the given refr's inventory.
+			// Intrinsic data types must match if the list pointers themselves do not match.
+			// Intrinsic here meaning types that are not changed or removed
+			// when moved to another container.
+
+			if (!a_refr || !a_object)
+			{
+				return 0;
+			}
+
+			auto inv = a_refr->GetInventory();
+			const auto iter = inv.find(a_object);
+			auto numberOwned = 
+			(
+				iter != inv.end() ? 
+				iter->second.first : 
+				0
+			);
+			if (numberOwned == 0)
+			{
+				return 0;
+			}
+
+			// If no list was given, we use the inventory entry count.
+			// If there are no extra lists we return 0 
+			// if the given list has intrinsic data types,
+			// or the inventory entry count otherwise,
+			// since the given list is functionally equivalent to an unmodified item.
+			if (!a_exDataList) 
+			{
+				SPDLOG_DEBUG
+				(
+					"No extra data list given. Return as count of {} of {} in {}.", 
+					numberOwned,
+					a_object->GetName(),
+					a_refr->GetName()
+				);
+				return numberOwned;
+			}
+
+			// Calculate the count based on the number of lists and their own extra counts.
+			// Only increment the count if the extra lists have the same exact extra data.
+			// For some reason, there can be multiple extra data lists with the same extra data
+			// for the same item, instead of having one list with extra count data 
+			// that accounts for copies of the same item.
+			// Makes it more difficult to determine how many of a specific item 
+			// there is in the player's inventory.
+			// What a mess.
+
+			// Ignore 'worn' data in either lists since we do not want to account 
+			// for equip state when determining equality.
+			ptrdiff_t compSize = 0;
+			numberOwned = 0;
+			for (const auto& data : *a_exDataList)
+			{
+				const auto type = data.GetType();
+				if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+				{
+					compSize++;
+				}
+			}
+
+			// No special intrinsic data types,
+			// so use the inventory entry count delta for the count.
+			if (compSize == 0)
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: {} ({:p}) has no defining extra data types. "
+					"Using inventory entry data count delta of {}.",
+					a_refr->GetName(),
+					a_object->GetName(), 
+					fmt::ptr(a_exDataList),
+					iter->second.second ?
+					max(0, iter->second.second->countDelta) :
+					0
+				);
+				return 
+				(
+					iter->second.second ?
+					max(0, iter->second.second->countDelta) :
+					0	
+				);
+			}
+			
+			if (!iter->second.second || !iter->second.second->extraLists)
+			{
+				SPDLOG_DEBUG
+				(
+					"List {:p} has {} intrinsic data types "
+					"and there is no inventory entry/extra lists for {} in {}'s inventory, "
+					"so return a count of 0.", 
+					fmt::ptr(a_exDataList),
+					compSize,
+					a_object->GetName(),
+					a_refr->GetName()
+				);
+				return 0;
+			}
+
+			for (auto list : *iter->second.second->extraLists)
+			{
+				if (!list)
+				{
+					continue;
+				}
+					
+				bool isEqual = true;
+				ptrdiff_t otherSize = 0;
+				for (const auto& otherData : *list)
+				{
+					const auto type = otherData.GetType();
+					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+					{
+						otherSize++;
+					}
+				}
+					
+				if (otherSize == compSize)
+				{
+					for (const auto& otherData : *list)
+					{
+						const auto type = otherData.GetType();
+						if (!GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
+						{
+							continue;
+						}
+
+						const auto data = a_exDataList->GetByType(type);
+						if (!data || data->IsNotEqual(std::addressof(otherData)))
+						{
+							isEqual = false;
+							break;
+						}
+					}
+				}
+				else
+				{
+					isEqual = false;
+				}
+
+				if (isEqual)
+				{
+					const auto count = list->GetCount();
+					numberOwned += count > 0 ? count : 0;
+					SPDLOG_DEBUG
+					(
+						"{} of {} in {}. Inv entry count delta: {}.", 
+						numberOwned,
+						a_object->GetName(),
+						a_refr->GetName(),
+						iter->second.second->countDelta
+					);
+				}
+			}
+
+			return numberOwned;
 		}
 
 		RE::NiPointer<RE::NiCamera> GetNiCamera()
@@ -6153,6 +6191,41 @@ namespace ALYSLC
 			);
 		}
 
+		bool IsRaceWithTransformation(RE::TESRace * a_race)
+		{
+			// Is the given race one that has an accompanying transformation?
+			// Werewolf, vampire, or non-playable, non-humanoid races.
+			if (!a_race)
+			{
+				return false;
+			}
+
+			bool hasTransformation = 
+			(
+				(
+					a_race->formEditorID == "WerewolfBeastRace"sv || 
+					a_race->formEditorID == "DLC1VampireBeastRace"sv
+				) || 
+				(
+					!a_race->HasKeyword(glob.npcKeyword) &&
+					!a_race->GetPlayable()
+				)
+			);
+			SPDLOG_DEBUG
+			(
+				"{} has transformation: {}, form editor ID: {}, "
+				"is werewolf: {}, is vampire lord: {}, has NPC keyword: {}, is playable: {}.",
+				a_race->GetName(), 
+				hasTransformation,
+				a_race->formEditorID,
+				a_race->formEditorID == "WerewolfBeastRace"sv,
+				a_race->formEditorID == "DLC1VampireBeastRace"sv, 
+				a_race->HasKeyword(glob.npcKeyword),
+				a_race->GetPlayable()
+			);
+			return hasTransformation;
+		}
+
 		bool IsRefrAccessibleInside3DObject(RE::TESObjectREFR* a_refr, RE::NiAVObject* a_object3D)
 		{
 			// Checks if the given refr's center is within the bound extents 
@@ -6461,7 +6534,7 @@ namespace ALYSLC
 			// introduces a non-gameplay/TFC context onto the menu context stack
 			// or if the QuickLoot menu is open.
 
-			if (ALYSLC::QuickLootCompat::g_quickLootInstalled)
+			if (ALYSLC::QuickLootCompat::g_installed)
 			{
 				auto ui = RE::UI::GetSingleton(); 
 				if (ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU))
@@ -9316,7 +9389,10 @@ namespace ALYSLC
 
 			return false;
 		}
-
+		
+		// IMPORTANT 1:
+		// Never unequip an inventory chest item's extra data list from a companion player, 
+		// unless the item is a consumable. Will crash otherwise.
 		void UnequipObject
 		(
 			RE::Actor* a_actor, 
@@ -9337,7 +9413,7 @@ namespace ALYSLC
 				return;
 			}
 			
-			// IMPORTANT:
+			// IMPORTANT 2:
 			// Instantly (un)equip fists.
 			// Essential for ensuring hands are cleared and fists don't (un)equip again 
 			// after the desired forms are equipped.

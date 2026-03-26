@@ -4816,7 +4816,7 @@ namespace ALYSLC
 		// Only run if QuickLoot is loaded,
 		// no temporary menus are open, 
 		// and the player is not transformed or transforming.
-		if (!ALYSLC::QuickLootCompat::g_quickLootInstalled)
+		if (!ALYSLC::QuickLootCompat::g_installed)
 		{
 			return;
 		}
@@ -10488,7 +10488,7 @@ namespace ALYSLC
 			{
 				// Uhh, we have Skyrim's Paraglider at home, guys. Really!
 				// M.A.R.F/S.P.O.R.F is on.
-				if (ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled && 
+				if (ALYSLC::SkyrimsParagliderCompat::g_installed && 
 					glob.tarhielsGaleEffect && 
 					a_p->coopActor->HasMagicEffect(glob.tarhielsGaleEffect))
 				{

@@ -2082,8 +2082,9 @@ namespace ALYSLC
 		RE::BGSEquipSlot* voiceEquipSlot;
 		// Keyword only assigned to companion players (P2 - P4's characters).
 		RE::BGSKeyword* companionPlayerKeyword;
-		// NPC keyword (used when filtering playable races).
+		// NPC/vampire keywords (used when filtering playable races).
 		RE::BGSKeyword* npcKeyword;
+		RE::BGSKeyword* vampireKeyword;
 		// NOTE: 
 		// Unused as of now:
 		// Default formlist containing base game shouts' variation spells.

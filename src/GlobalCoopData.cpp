@@ -596,7 +596,7 @@ namespace ALYSLC
 			);
 			
 			// [Enderal Only]
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				// PlayerAlliesFaction:
 				glob.coopPlayerFactions.emplace_back
@@ -638,7 +638,7 @@ namespace ALYSLC
 			// Magic effects.
 			glob.tarhielsGaleEffect = 
 			(
-				ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled ? 
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
 				dataHandler->LookupForm<RE::EffectSetting>(0x10C68, "Paragliding.esp") : 
 				nullptr
 			);
@@ -646,7 +646,7 @@ namespace ALYSLC
 			// Movement types.
 			glob.paraglidingMT = 
 			(
-				ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled ? 
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
 				dataHandler->LookupForm<RE::BGSMovementType>(0x33D1, "Paragliding.esp") : 
 				nullptr
 			);
@@ -663,7 +663,7 @@ namespace ALYSLC
 			// Spells.
 			glob.tarhielsGaleSpell = 
 			(
-				ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled ? 
+				ALYSLC::SkyrimsParagliderCompat::g_installed ? 
 				dataHandler->LookupForm<RE::SpellItem>(0x10C67, "Paragliding.esp") :
 				nullptr
 			);
@@ -699,6 +699,8 @@ namespace ALYSLC
 
 		// NPC keyword.
 		glob.npcKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0x13794);
+		// Vampire keyword.
+		glob.vampireKeyword = RE::TESForm::LookupByID<RE::BGSKeyword>(0xA82BB);
 		// Get all weapon type (aside from Bound Arrow) keywords by ID.
 		// Cannot insert by RE::WEAPON_TYPE since warhammer is not included as its own type.
 		glob.weapTypeKeywordsList.clear();
@@ -742,7 +744,7 @@ namespace ALYSLC
 		glob.dummy1H = RE::TESForm::LookupByID<RE::TESBoundObject>(0x6B95F);
 		// 2H slot clearer.
 		glob.fists = RE::TESForm::LookupByID<RE::TESBoundObject>(0x1F4);
-		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+		if (!ALYSLC::EnderalCompat::g_installed)
 		{
 			// Formlists:
 			glob.shoutVarSpellsFormList = RE::TESForm::LookupByID<RE::BGSListForm>(0x167D9);
@@ -900,7 +902,7 @@ namespace ALYSLC
 		}
 
 		// Enderal has no usage-based skill levelling.
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled ||
+		if (ALYSLC::EnderalCompat::g_installed ||
 			a_playerID <= -1 || 
 			a_playerID >= ALYSLC_MAX_PLAYER_COUNT) 
 		{
@@ -1035,7 +1037,7 @@ namespace ALYSLC
 			uint32_t maxPerkPointsFromLevel = static_cast<uint32_t>
 			(
 				(
-					ALYSLC::RequiemCompat::g_requiemInstalled ? 
+					ALYSLC::RequiemCompat::g_installed ? 
 					expectedLevelAfterLevelUp + 2 :
 					expectedLevelAfterLevelUp - 1
 				) * 
@@ -2034,7 +2036,7 @@ namespace ALYSLC
 				static_cast<uint32_t>
 				(
 					(
-						ALYSLC::RequiemCompat::g_requiemInstalled ? 
+						ALYSLC::RequiemCompat::g_installed ? 
 						p1->GetLevel() + 2 :
 						p1->GetLevel() - 1
 					) * 
@@ -3225,7 +3227,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			auto inventory = p->coopActor->GetInventory();
+			auto inventory = p->em->inventoryChest->GetInventory();
 			for (auto& [boundObj, entry] : inventory)
 			{
 				if (!Util::IsPartyWideItem(boundObj))
@@ -3239,58 +3241,12 @@ namespace ALYSLC
 				}
 
 				// Transfer to P1.
-				p->coopActor->RemoveItem
+				SPDLOG_DEBUG("Moving {} of {} from {}'s inventory chest to P1.",
+					entry.first, boundObj->GetName(), p->coopActor->GetName());
+				p->em->inventoryChest->RemoveItem
 				(
 					boundObj,
 					entry.first,
-					RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-					nullptr, 
-					p1
-				);
-			}
-
-			auto invChanges = p1->GetInventoryChanges(); 
-			if (!invChanges || !invChanges->entryList)
-			{
-				continue;
-			}
-
-			auto invCounts = p1->GetInventoryCounts();
-			for (auto invChangesEntry : *invChanges->entryList)
-			{
-				if (!invChangesEntry || !invChangesEntry->object)
-				{
-					continue;
-				}
-
-				auto boundObj = invChangesEntry->object;
-				if (!boundObj)
-				{
-					continue;
-				}
-
-				if (!Util::IsPartyWideItem(boundObj))
-				{
-					continue;
-				}
-				
-				const auto iter = invCounts.find(boundObj);
-				auto count = 
-				(
-					iter != invCounts.end() ? 
-					iter->second : 
-					0
-				);
-				if (count <= 0)
-				{
-					continue;
-				}
-
-				// Transfer to P1.
-				p->coopActor->RemoveItem
-				(
-					boundObj, 
-					count, 
 					RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
 					nullptr, 
 					p1
@@ -3317,7 +3273,7 @@ namespace ALYSLC
 		// The gold count is modified and skillbooks are given to all other players.
 		// This allows the caller to handle the original looting logic after the adjustments here.
 
-		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+		if (!ALYSLC::EnderalCompat::g_installed)
 		{
 			return;
 		}
@@ -3491,7 +3447,7 @@ namespace ALYSLC
 
 							// Show in TrueHUD recent loot widget 
 							// by adding and removing the skillbook from P1.
-							if (!p->isPlayer1 && p1 && ALYSLC::TrueHUDCompat::g_trueHUDInstalled)
+							if (!p->isPlayer1 && p1 && ALYSLC::TrueHUDCompat::g_installed)
 							{
 								SPDLOG_DEBUG("SHOW {}.", newSkillbook->GetName());
 								p1->AddObjectToContainer
@@ -3861,7 +3817,7 @@ namespace ALYSLC
 		);
 
 		// Add any new animation event-based perks, if needed.
-		if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled && Settings::bAddAnimEventSkillPerks)
+		if (!ALYSLC::EnderalCompat::g_installed && Settings::bAddAnimEventSkillPerks)
 		{
 			// Need to get perks if global data has not been initialized yet.
 			if (!glob.globalDataInit) 
@@ -4500,7 +4456,7 @@ namespace ALYSLC
 			
 		const auto& p = glob.coopPlayers[a_playerID];
 		if (p->isPlayer1 &&
-			ALYSLC::SkyrimsParagliderCompat::g_paragliderInstalled &&
+			ALYSLC::SkyrimsParagliderCompat::g_installed &&
 			glob.paraglider &&
 			a_transferredObj == glob.paraglider)
 		{
@@ -4514,7 +4470,7 @@ namespace ALYSLC
 			// Add gale spell if not known already.
 			// Enderal only, since the quest to obtain the paraglider
 			// and learn Tarhiel's Gale is not present in Enderal.
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled &&
+			if (ALYSLC::EnderalCompat::g_installed &&
 				ALYSLC::SkyrimsParagliderCompat::g_p1HasParaglider &&
 				!p1->HasSpell(glob.tarhielsGaleSpell))
 			{
@@ -5064,13 +5020,13 @@ namespace ALYSLC
 				SPDLOG_DEBUG("About to rescale HMS for {}.", p->coopActor->GetName());
 				// Skill AVs first.
 				RescaleSkillAVs(p->coopActor.get());
-				if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+				if (!ALYSLC::EnderalCompat::g_installed)
 				{
 					const auto& data = iter->second;
 					RescaleHMS(p->coopActor.get(), data->firstSavedLevel);
 				}
 			}
-			else if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			else if (!ALYSLC::EnderalCompat::g_installed)
 			{
 				SPDLOG_DEBUG("About to rescale HMS for P1.");
 				RescaleHMS(p->coopActor.get());
@@ -5115,7 +5071,7 @@ namespace ALYSLC
 			// NOTE for Enderal:
 			// Health, magicka, and stamina are only modified 
 			// by auto-scaling based on your chosen class.
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (ALYSLC::EnderalCompat::g_installed)
 			{
 				return;
 			}
@@ -6723,7 +6679,7 @@ namespace ALYSLC
 			return;
 		}
 
-		if (ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+		if (ALYSLC::EnderalCompat::g_installed) 
 		{
 			// For Enderal, just sync shared perks with P1.
 			for (const auto& p : glob.coopPlayers)
@@ -7081,7 +7037,7 @@ namespace ALYSLC
 			// since reaching 100% arcane fever will not kill P1 while in god mode, 
 			// and will also completely prevent leveling up in the future
 			// if the game is saved while at 100% arcane fever.
-			if (ALYSLC::EnderalCompat::g_enderalSSEInstalled && p->isInGodMode)
+			if (ALYSLC::EnderalCompat::g_installed && p->isInGodMode)
 			{
 				if (auto effectList = p->coopActor->GetActiveEffectList(); effectList)
 				{
@@ -8150,7 +8106,7 @@ namespace ALYSLC
 			// Adjust perk data and prepare for import/export on opening/closing of LevelUp menu.
 			// Copying done in this subroutine.
 			// Don't adjust perk data if Enderal is installed.
-			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+			if (!ALYSLC::EnderalCompat::g_installed)
 			{
 				SPDLOG_DEBUG
 				(
@@ -9580,157 +9536,63 @@ namespace ALYSLC
 
 		int8_t pIndex = GetCoopPlayerIndex(a_coopActor->GetHandle());
 		const auto& p = glob.coopPlayers[pIndex];
-
-		// Unused for now.
-		// Old method found to cause frame lag spikes and bad script lag
-		// after entering/exiting the Crafting Menu multiple times, especially while in combat.
-		/*
-		auto transferP1InventoryToRefr = 
-		[p1](RE::TESObjectREFR* a_toRefr) 
-		{
-			bool isCompanionChest = GlobalCoopData::GetCoopPlayerIndexFromChest(a_toRefr) > 0;
-			auto inventory = p1->GetInventory();
-			for (const auto& [boundObj, entry] : inventory)
-			{
-				// Do not transfer equipped or party-wide items, such as gold.
-				// Don't want to allow other players to sell P1's equipped items while bartering.
-				if ((!boundObj || entry.first <= 0 || Util::IsPartyWideItem(boundObj)) || 
-					(entry.second && entry.second->IsWorn()))
-				{
-					continue;
-				}
-
-				SPDLOG_DEBUG
-				(
-					"Moving x{} {} from P1 to {}.", 
-					entry.first, boundObj->GetName(), a_toRefr->GetName()
-				);
-				p1->RemoveItem
-				(
-					boundObj, 
-					entry.first,
-					RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-					nullptr,
-					a_toRefr
-				);
-			}
-
-			if (auto invChanges = p1->GetInventoryChanges(); invChanges && invChanges->entryList) 
-			{
-				auto invCounts = p1->GetInventoryCounts();
-				for (auto invChangesEntry : *invChanges->entryList) 
-				{
-					// Invalid entry.
-					if (!invChangesEntry || !invChangesEntry->object) 
-					{
-						continue;
-					}
-
-					auto obj = invChangesEntry->object;
-					// Equipped by P1 or a party-wide item, so skip.
-					if (Util::IsPartyWideItem(obj) || invChangesEntry->IsWorn()) 
-					{
-						continue;
-					}
-
-					const auto iter = invCounts.find(obj);
-					auto count = iter != invCounts.end() ? iter->second : 0;
-					// Does not have one.
-					if (count <= 0) 
-					{
-						continue;
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Moving x{} {} from P1 to {}.", count, obj->GetName(), a_toRefr->GetName()
-					);
-					p1->RemoveItem
-					(
-						obj, 
-						count,
-						RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-						nullptr,
-						a_toRefr
-					);
-				}
-			}
-		};
-
-		auto transferRefrInventoryToP1 =
-		[p1](RE::TESObjectREFR* a_fromRefr)
-		{
-			bool isCompanionChest = GlobalCoopData::GetCoopPlayerIndexFromChest(a_fromRefr) > 0;
-			auto inventory = a_fromRefr->GetInventory();
-			for (auto& [boundObj, entry] : inventory)
-			{
-				// Do not transfer the companion player's equipped items to P1.
-				if ((!boundObj || entry.first <= 0) || (entry.second && entry.second->IsWorn()))
-				{
-					continue;
-				}
-				
-				SPDLOG_DEBUG
-				(
-					"Moving x{} {} from {} to P1.", 
-					entry.first, boundObj->GetName(), a_fromRefr->GetName()
-				);	
-				a_fromRefr->RemoveItem
-				(
-					boundObj, entry.first, RE::ITEM_REMOVE_REASON::kStoreInTeammate, nullptr, p1
-				);
-			}
-
-			auto invChanges = a_fromRefr->GetInventoryChanges(); 
-			if (invChanges && invChanges->entryList)
-			{
-				auto invCounts = a_fromRefr->GetInventoryCounts();
-				for (auto invChangesEntry : *invChanges->entryList)
-				{
-					// Invalid entry.
-					if (!invChangesEntry || !invChangesEntry->object)
-					{
-						continue;
-					}
-
-					auto obj = invChangesEntry->object;
-					// Do not transfer the companion player's equipped items to P1.
-					if (Util::HasWornRankExtraDataList(invChangesEntry, false, true))
-					{
-						continue;
-					}
-
-					const auto iter = invCounts.find(obj);
-					auto count = iter != invCounts.end() ? iter->second : 0;
-					// Does not have one.
-					if (count <= 0)
-					{
-						continue;
-					}
-					
-					SPDLOG_DEBUG
-					(
-						"Moving x{} {} from {} to P1.", 
-						count, obj->GetName(), a_fromRefr->GetName()
-					);
-					a_fromRefr->RemoveItem
-					(
-						obj, count, RE::ITEM_REMOVE_REASON::kStoreInTeammate, nullptr, p1
-					);
-				}
-			}
-		};
-		*/
-
 		const auto& coopP1 = glob.coopPlayers[0];
 		auto p1StorageChestRefrPtr = glob.coopInventoryChests[coopP1->playerID];
 		if (!p1StorageChestRefrPtr) 
 		{
 			return;
 		}
+		
+		// Get gold count from P1's base container, which was not earned by the player
+		// and purely exists to make modifying gold amounts hell.
+		auto baseContainer = p1->GetContainer();
+		auto defObjMgr = RE::BGSDefaultObjectManager::GetSingleton();
+		auto goldForm = 
+		(
+			defObjMgr ? 
+			defObjMgr->objects[RE::DEFAULT_OBJECT::kGold] :
+			nullptr
+		);
+		auto goldObj = goldForm ? goldForm->As<RE::TESBoundObject>() : nullptr;
+		int32_t p1ContainerGoldAmount = 0;
+		if (goldObj &&
+			baseContainer && 
+			baseContainer->containerObjects &&
+			baseContainer->numContainerObjects > 0)
+		{
+			uint32_t index = 0;
+			while (index < baseContainer->numContainerObjects)
+			{
+				auto containerObj = baseContainer->containerObjects[index];
+				if (containerObj->obj == goldObj)
+				{
+					p1ContainerGoldAmount += containerObj->count;
+				}
+				
+				++index;
+			}
+		}
 
+		// IMPORTANT:
+		// Save the gold amount before importing and the amount remaining on exit.
+		// Will set P1's gold to this amount.
+		// Base container + inventory changes total.
+		const int32_t p1GoldCount = p1->GetGoldAmount();
+		// Only inventory changes total. 
+		const int32_t p1InventoryGoldAmount = p1GoldCount - p1ContainerGoldAmount;
+		SPDLOG_DEBUG
+		(
+			"{}: P1 has {} gold, {} from base container, {} from inv changes.",
+			a_shouldImport ? "IMPORT" : "EXPORT",
+			p1GoldCount, 
+			p1ContainerGoldAmount, 
+			p1InventoryGoldAmount
+		);
 		if (a_shouldImport)
 		{
+			// First, give all accumulated party-wide shared items, such as gold, to P1.
+			GlobalCoopData::GivePartyWideItemsToP1();
+
 			// Init, if needed, is a private func, but retrieving the changes 
 			// will also init if needed, so get the inventory changes for each container we need.
 			auto p1InvChanges = p1->GetInventoryChanges();
@@ -9746,7 +9608,7 @@ namespace ALYSLC
 					p1StorageChestRefrPtr.get(), nullptr, false, false, false
 				);
 			}
-			
+
 			// Get the container changes to use in swapping inventory changes via assignment.
 			auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
 			auto p1ChestExChanges = 
@@ -9773,39 +9635,61 @@ namespace ALYSLC
 			
 			SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
 			p1ChestExChanges->changes = p1ExChanges->changes;
+
 			SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+			/*p1->extraList.Remove
+			(
+				RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+			);
+			p1->GetInventoryChanges();
+			p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
 			p1ExChanges->changes = companionChestExChanges->changes;
 
+			if (p1ExChanges->changes && p1ExChanges->changes->entryList)
+			{
+				// Import P1 gold.
+				bool setFromEntry = false;
+				for (auto invEntry : *p1ExChanges->changes->entryList)
+				{
+					if (invEntry && 
+						invEntry->object->IsGold() &&
+						goldObj && 
+						p1InventoryGoldAmount > 0)
+					{
+						SPDLOG_DEBUG
+						(
+							"IMPORT: Set P1 inventory changes gold amount to {} "
+							"from {} total and {} from base container. Was {}.",
+							p1InventoryGoldAmount,
+							p1GoldCount,
+							p1ContainerGoldAmount,
+							invEntry->countDelta
+						);
+						invEntry->countDelta = p1InventoryGoldAmount;
+						setFromEntry = true;
+						break;
+					}
+				}
+
+				if (!setFromEntry && goldObj && p1InventoryGoldAmount > 0)
+				{
+					SPDLOG_DEBUG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
+						p1GoldCount);
+					p1->AddObjectToContainer(goldObj, nullptr, p1InventoryGoldAmount, nullptr);
+				}
+			}
+			
+			// Set P1's chest as temp owner of P1's inventory changes.
+			if (p1ChestExChanges->changes)
+			{
+				p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+			}
+
 			// Set P1 as the owner of the newly imported inventory changes.
-			if (p1InvChanges)
+			if (p1ExChanges->changes)
 			{
-				p1InvChanges->owner = p1;
+				p1ExChanges->changes ->owner = p1;
 			}
-
-			/* Old unused code.
-			// From P1 to storage chest.
-			transferP1InventoryToRefr(p1StorageChestRefrPtr.get());
-
-			SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
-
-			// From companion player's inventory chest to P1.
-			transferRefrInventoryToP1(p->em->inventoryChest.get());
-
-			p1->OnArmorActorValueChanged();
-			auto invChanges = p1->GetInventoryChanges();
-			if (invChanges)
-			{
-				invChanges->armorWeight = invChanges->totalWeight;
-				invChanges->totalWeight = -1.0f;
-				p1->equippedWeight = -1.0f;
-			}
-
-			// Update Barter Menu list after swapping inventories.
-			if (auto ui = RE::UI::GetSingleton(); ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME))
-			{
-				ui->GetMenu<RE::BarterMenu>()->itemList->Update();
-			}
-			*/
 		}
 		else
 		{
@@ -9839,10 +9723,34 @@ namespace ALYSLC
 				return;
 			}
 			
+			// Remove all the gold from P1 first before moving items 
+			// back to companion player's inventory chest.
+			SPDLOG_DEBUG("EXPORT: Remove {} gold on exit.", p1GoldCount);
+			p1->RemoveItem(goldObj, p1GoldCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+
 			SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
 			companionChestExChanges->changes = p1ExChanges->changes;
+
 			SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
 			p1ExChanges->changes = p1ChestExChanges->changes;
+
+			// Remove all gold again before adding the gold total on menu closing.
+			SPDLOG_DEBUG
+			(
+				"EXPORT: Remove {} gold after importing back from chest.", p1->GetGoldAmount()
+			);
+			p1->RemoveItem
+			(
+				goldObj, p1->GetGoldAmount(), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+			);
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT: Add {} gold after clearing out all gold.", p1GoldCount
+			);
+			p1->AddObjectToContainer(goldObj, nullptr, p1GoldCount, nullptr);
+
+			SPDLOG_DEBUG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
 
 			// Clear, remove, and re-init P1 chest inventory changes 
 			// after we've moved everything back.
@@ -9851,43 +9759,24 @@ namespace ALYSLC
 			(
 				RE::ExtraDataType::kContainerChanges, p1ChestExChanges
 			);
-			p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
-
-			// Restore P1 as the owner of their inventory changes.
-			if (p1InvChanges)
-			{
-				p1InvChanges->owner = p1;
-			}
+			p1StorageChestRefrPtr->GetInventoryChanges(); 
 			
-			// Restore the companion player's chest as the owner of their inventory changes.
-			if (companionChestInvChanges)
+			// Restore each refr as owner of their own inventory changes.
+			if (p1ExChanges->changes)
 			{
-				companionChestInvChanges->owner = p->em->inventoryChest.get();
+				p1ExChanges->changes ->owner = p1;
 			}
 
-			/* Old unused code.
-			SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
-
-			// Transfer P1's current items back to the companion player's inventory chest.
-			transferP1InventoryToRefr(p->em->inventoryChest.get());
-
-			SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
-
-			// Transfer P1's original items back to P1 via the storage chest.
-			transferRefrInventoryToP1(p1StorageChestRefrPtr.get());
-
-			p1->OnArmorActorValueChanged();
-			auto invChanges = p1->GetInventoryChanges();
-			if (invChanges)
+			if (companionChestExChanges->changes)
 			{
-				invChanges->armorWeight = invChanges->totalWeight;
-				invChanges->totalWeight = -1.0f;
-				p1->equippedWeight = -1.0f;
+				companionChestExChanges->changes->owner = p->em->inventoryChest.get();
 			}
-			*/
+
+			if (p1ChestExChanges->changes)
+			{
+				p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+			}
 		}
-
-		p->em->ReEquipHandForms();
 	}
 
 	void GlobalCoopData::CopyOverPerkLists(RE::Actor* a_coopActor, const bool& a_shouldImport)
@@ -11759,7 +11648,7 @@ namespace ALYSLC
 		data->availablePerkPoints = static_cast<uint32_t>
 		(
 			(
-				ALYSLC::RequiemCompat::g_requiemInstalled ? 
+				ALYSLC::RequiemCompat::g_installed ? 
 				p1->GetLevel() + 2 :
 				p1->GetLevel() - 1
 			) * 
@@ -12049,12 +11938,12 @@ namespace ALYSLC
 			// Update base AVs when playing Enderal,
 			// since companion players' base AVs start at 5, instead of 15.
 			if (Settings::bStackCoopPlayerSkillAVAutoScaling || 
-				ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+				ALYSLC::EnderalCompat::g_installed) 
 			{
 				SPDLOG_DEBUG
 				(
 					"Update base AVs for all players. Enderal: {}, STACKED scaling: {}.",
-					ALYSLC::EnderalCompat::g_enderalSSEInstalled, 
+					ALYSLC::EnderalCompat::g_installed, 
 					Settings::bStackCoopPlayerSkillAVAutoScaling
 				);
 
@@ -12339,7 +12228,7 @@ namespace ALYSLC
 				}
 
 				// Reset all perks if the player's base AVs have changed.
-				if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled)
+				if (!ALYSLC::EnderalCompat::g_installed)
 				{
 					// On class/race change, the player's base AVs have changed
 					// and therefore their shared skill AV levels may not be high enough

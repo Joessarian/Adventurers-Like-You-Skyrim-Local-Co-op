@@ -202,14 +202,14 @@ namespace ALYSLC
 		(
 			 const int32_t& a_reqDeviceID, const int32_t& a_reqPlayerID
 		);
-		// Update the player's inventory chest item lists (Container Menu entries)
+		// Update the player's inventory item list (Barter/Container Menu entries)
 		// to reflect the items that the player has equipped.
 		// Also, if requested, manually restore P1's equip state for each entry when tab-switched 
-		// over to view P1's inventory.
+		// over to view P1's inventory (ContainerMenu only).
 		// Eww, gross. If I find a more efficient way than calling ItemList::Update(),
 		// I can do away with this function call.
-		void UpdateContainerInventoryEquipState(bool a_reloadEntries, bool a_forPlayer1);
-
+		void UpdateMenuEntryEquipStates(bool a_reloadEntries, bool a_forPlayer1);
+		
 		//
 		// Members
 		//
@@ -248,8 +248,8 @@ namespace ALYSLC
 		std::vector<std::unique_ptr<RE::InputEvent* const>> queuedInputEvents;
 		// Is the Container Menu opened and showing the player's inventory or not?
 		bool isCoopInventory;
-		// Refresh player inventory item lists when an item is added/removed.
-		bool shouldReloadPlayerInventoryLists;
+		// Refresh the current menu's entries when an item is added/removed.
+		bool shouldReloadMenuEntries;
 		// Device ID for the co-op companion player controlling menus.
 		// -1 when the manager is not active.
 		// NOTE: 
@@ -552,10 +552,6 @@ namespace ALYSLC
 		// Time point at which the last equip state delayed refresh request was made.
 		SteadyClock::time_point lastEquipStateRefreshReqTP;
 
-		// Delayed request to refresh equip state after attempting to equip an object.
-		// Delayed so that failed equip requests can be reflected in the UI,
-		// instead of updating the equip state before the item actually gets (un)equipped.
-		bool delayedEquipStateRefresh;
 		// Should refresh Favorites/Magic Menu equip state 
 		// and cached equip data following an equip event.
 		bool equipEventRefreshReq;

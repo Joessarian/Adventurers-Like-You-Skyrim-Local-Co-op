@@ -2152,7 +2152,7 @@ namespace ALYSLC
 				skillXPList[i] = p1->skills->data->skills[i].xp;
 			}
 
-			if (!ALYSLC::EnderalCompat::g_enderalSSEInstalled) 
+			if (!ALYSLC::EnderalCompat::g_installed) 
 			{
 				// Set base P1 HMS values to their starting values if Enderal is not installed.
 				// All perks are also cleared, meaning HMS values must be re-assigned 
