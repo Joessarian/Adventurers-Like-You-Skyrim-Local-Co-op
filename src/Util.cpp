@@ -443,6 +443,182 @@ namespace ALYSLC
 			}
 		}
 		
+		// Add rank extra data to the given extra data list to indicate the item 
+		// as equipped in the left or right hands (0xFF000000 for left, 0x00FF0000 for right,
+		// and 0xFFFF0000 for both hands).
+		// If no extra data list is given, Construct a new extra data list 
+		// and insert it into the given inventory entry data, if provided.
+		RE::ExtraDataList* AddWornRankExtraData
+		(
+			RE::InventoryEntryData* a_invEntryData,
+			RE::ExtraDataList* a_list,
+			bool a_equipsToLH
+		)
+		{
+			if (!a_list)
+			{
+				if (a_invEntryData)
+				{
+					auto extraListsCount = 
+					(
+						!a_invEntryData->extraLists ?
+						0 :
+						std::distance
+						(
+							a_invEntryData->extraLists->begin(), a_invEntryData->extraLists->end()
+						)
+					);
+					uint32_t rawCount = 0;
+					if (extraListsCount != 0)
+					{
+						for (auto list : *a_invEntryData->extraLists)
+						{
+							if (!list)
+							{
+								continue;
+							}
+
+							rawCount += list->GetCount();
+						}
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Inventory entry {:p} has count delta of {}, "
+						"raw count {} from {} extra data lists.",
+						fmt::ptr(a_invEntryData),
+						a_invEntryData->countDelta,
+						rawCount, 
+						extraListsCount
+					);
+
+					if (extraListsCount == 0)
+					{
+						a_list = Util::NativeFunctions::ConstructExtraDataList	
+						(
+							RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
+						);
+						if (!a_list)
+						{
+							SPDLOG_ERROR("Failed to allocate extra data list.");
+							return nullptr;
+						}
+					
+						SPDLOG_INFO
+						(
+							"Malloc extra data list {:p} to inventory entry data {:p}. "
+							"No lists previously.",
+							fmt::ptr(a_list), fmt::ptr(a_invEntryData)
+						);
+						a_invEntryData->AddExtraList(a_list);
+						if (a_invEntryData->countDelta <= 0)
+						{
+							SPDLOG_DEBUG
+							(
+								"Count delta ({}) was <= 0. "
+								"Set to one after adding extra data list.",
+								a_invEntryData->countDelta
+							);
+							a_invEntryData->countDelta = 1;
+						}
+					}
+					else
+					{
+						a_list = a_invEntryData->extraLists->front();
+						SPDLOG_DEBUG
+						(
+							"Set extra data list to front list in absence of given list: {:p}",
+							fmt::ptr(a_list)
+						);
+					}
+				}
+				else
+				{
+					SPDLOG_DEBUG
+					(
+						"ERR: No provided extra data list or inventory entry data. "
+						"No addition possible."
+					);
+					return nullptr;
+				}
+			}
+			
+			// Should add right hand worn rank data for certain items in the left hand,
+			// eg. shields and two handed weapons.
+			bool addLHMask = a_equipsToLH;
+			const auto boundObj = a_invEntryData ? a_invEntryData->object : nullptr;
+			if (boundObj)
+			{
+				const auto equipSlot = 
+				(
+					boundObj->As<RE::BGSEquipType>() ?
+					boundObj->As<RE::BGSEquipType>()->equipSlot :
+					nullptr
+				);
+				addLHMask = 
+				(
+					a_equipsToLH && 
+					equipSlot && 
+					equipSlot != glob.bothHandsEquipSlot &&
+					equipSlot != glob.shieldEquipSlot
+				);
+			}
+
+			// Crash can occur when calling GetByType() on an empty list.
+			const auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			SPDLOG_DEBUG("List {:p} has size {}.", fmt::ptr(a_list), listSize);
+			if (listSize > 0)
+			{
+				if (auto exRank = a_list->GetByType<RE::ExtraRank>(); exRank)
+				{
+					SPDLOG_DEBUG
+					(
+						"Rank ex data already present in list {:p}: 0x{:X}. "
+						"Set to 0x{:X}.",
+						fmt::ptr(a_list),
+						static_cast<uint32_t>(exRank->rank),
+						addLHMask ? 
+						static_cast<uint32_t>(exRank->rank | 0xFF000000) :
+						static_cast<uint32_t>(exRank->rank | 0x00FF0000)
+					);
+					exRank->rank = 
+					(
+						addLHMask ? 
+						exRank->rank | 0xFF000000 :
+						exRank->rank | 0x00FF0000
+					);
+
+					return a_list;
+				}
+			}
+
+			RE::ExtraRank* rank = new RE::ExtraRank(0);
+			if (rank)
+			{
+				a_list->Add(rank);
+				auto succ = a_list->GetByType<RE::ExtraRank>();
+				// Have to adjust the rank after adding, since it is cleared.
+				if (succ)
+				{
+					succ->rank = addLHMask ? 0xFF000000 : 0x00FF0000;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"Adding rank (0x{:X}) exData to list {:p}: {}. Data: orig: {:p}, add: {:p}.",
+					static_cast<uint32_t>(addLHMask ? 0xFF000000 : 0x00FF0000),
+					fmt::ptr(a_list),
+					succ ?
+					"SUCC" :
+					"FAIL",
+					fmt::ptr(rank),
+					fmt::ptr(succ)
+				);
+			}
+
+			return a_list;
+		}
+
 		void ApplyHit
 		(
 			RE::Actor* a_sourceActor,
@@ -2011,6 +2187,15 @@ namespace ALYSLC
 
 					break;
 				}
+				case RE::ExtraDataType::kShouldWear:
+				{
+					auto toCopy = static_cast<RE::ExtraShouldWear*>(std::addressof(*iter));
+					auto* data = RE::BSExtraData::Create<RE::ExtraShouldWear>();
+					data->unk10 = toCopy->unk10;
+					list->Add(data);
+
+					break;
+				}
 				case RE::ExtraDataType::kTimeLeft:
 				{
 					auto toCopy = static_cast<RE::ExtraTimeLeft*>(std::addressof(*iter));
@@ -3206,7 +3391,7 @@ namespace ALYSLC
 
 		RE::ExtraDataList* GetEquippedExtraData
 		(
-			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_leftHand
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_equipsToLH
 		)
 		{
 			// Get the extra data for given equipped form on the given actor
@@ -3238,7 +3423,7 @@ namespace ALYSLC
 			// but have ExtraWorn data, not ExtraWornLeft data, when equipped.
 			bool checkWornLH = 
 			(
-				a_leftHand && 
+				a_equipsToLH && 
 				equipSlot && 
 				equipSlot != glob.bothHandsEquipSlot &&
 				equipSlot != glob.shieldEquipSlot
@@ -4458,6 +4643,91 @@ namespace ALYSLC
 					}
 				}
 			}
+		}
+		
+		// Get the (left/right) worn rank extra data list from the given refr's inventory
+		// corresponding to the given item.
+		RE::ExtraDataList* GetWornRankExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object, 
+			bool a_equipsToLH
+		)
+		{
+			if (!a_refr || !a_object)
+			{
+				return nullptr;
+			}
+
+			const auto invChanges = a_refr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return nullptr;
+			}
+
+			RE::InventoryEntryData* invEntryData = nullptr;
+			for (const auto entry : *invChanges->entryList)
+			{
+				if (!entry)
+				{
+					continue;
+				}
+
+				if (entry->object == a_object)
+				{
+					invEntryData = entry;
+					break;
+				}
+			}
+
+			if (!invEntryData)
+			{
+				SPDLOG_DEBUG("{} not found in {}'s inventory.",
+					a_object->GetName(), a_refr->GetName());
+				return nullptr;
+			}
+
+			if (!invEntryData->extraLists)
+			{
+				SPDLOG_DEBUG("No extra lists found for {} in {}'s inventory.",
+					a_object->GetName(), a_refr->GetName());
+				return nullptr;
+			}
+		
+			const auto equipSlot = 
+			(
+				a_object->As<RE::BGSEquipType>() ?
+				a_object->As<RE::BGSEquipType>()->equipSlot :
+				nullptr
+			);
+			// Should check for right hand worn rank data for certain items in the left hand,
+			// eg. shields and two handed weapons.
+			bool checkForLHMask = 
+			(
+				a_equipsToLH && 
+				equipSlot && 
+				equipSlot != glob.bothHandsEquipSlot &&
+				equipSlot != glob.shieldEquipSlot
+			);
+			for (const auto exDataList : *invEntryData->extraLists)
+			{
+				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
+				{
+					continue;
+				}
+				
+				auto exRank = exDataList->GetByType<RE::ExtraRank>();
+				if (exRank)
+				{
+					if (((checkForLHMask) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
+						((!checkForLHMask) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
+					{
+						return exDataList;
+					}
+				}
+			}
+
+			return nullptr;
 		}
 
 		bool HasExtraDataList
@@ -6211,7 +6481,7 @@ namespace ALYSLC
 					!a_race->GetPlayable()
 				)
 			);
-			SPDLOG_DEBUG
+			/*SPDLOG_DEBUG
 			(
 				"{} has transformation: {}, form editor ID: {}, "
 				"is werewolf: {}, is vampire lord: {}, has NPC keyword: {}, is playable: {}.",
@@ -6222,7 +6492,7 @@ namespace ALYSLC
 				a_race->formEditorID == "DLC1VampireBeastRace"sv, 
 				a_race->HasKeyword(glob.npcKeyword),
 				a_race->GetPlayable()
-			);
+			);*/
 			return hasTransformation;
 		}
 
@@ -7356,6 +7626,103 @@ namespace ALYSLC
 			}
 
 			combatGroup->lock.UnlockForWrite();
+		}
+
+		// Remove left (0xFF000000) or right (0x00FF0000) rank extra data masks 
+		// from the given object's extra data list. If neither mask is present afterward, 
+		// remove the rank extra data entirely.
+		void RemoveWornRankExtraData
+		(
+			RE::TESBoundObject* a_object, RE::ExtraDataList* a_list, bool a_equipsToLH
+		)
+		{
+			// Must provide an extra data list.
+			if (!a_object || !a_list)
+			{
+				return;
+			}
+			
+			// Crash when calling GetByType() on an empty list.
+			auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			if (listSize == 0)
+			{
+				return;
+			}
+
+			const auto equipSlot = 
+			(
+				a_object->As<RE::BGSEquipType>() ?
+				a_object->As<RE::BGSEquipType>()->equipSlot :
+				nullptr
+			);
+			// Should check for right hand worn rank data for certain items in the left hand,
+			// eg. shields and two handed weapons.
+			bool checkForLHMask = 
+			(
+				a_equipsToLH && 
+				equipSlot && 
+				equipSlot != glob.bothHandsEquipSlot &&
+				equipSlot != glob.shieldEquipSlot
+			);
+			auto exRank = a_list->GetByType<RE::ExtraRank>();
+			if (!exRank)
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing rank exData from list {:p}. Does not exist.",
+					fmt::ptr(a_list)
+				);
+				return;
+			}
+			else if (((checkForLHMask) && ((exRank->rank & 0xFF000000) == 0)) || 
+					 ((!checkForLHMask) && ((exRank->rank & 0x00FF0000) == 0)))
+			{
+				SPDLOG_DEBUG
+				(
+					"Not removing different rank exData from list {:p}: "
+					"0x{:X} does not mask into 0x{:X}.",
+					fmt::ptr(a_list), 
+					static_cast<uint32_t>(exRank->rank),
+					checkForLHMask ? 0xFF000000 : 0x00FF0000
+				);
+				return;
+			}
+			else if ((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
+			{
+				SPDLOG_DEBUG
+				(
+					"Removing hand mask rank from list {:p}: "
+					"0x{:X} -> 0x{:X}.",
+					fmt::ptr(a_list), 
+					static_cast<uint32_t>(exRank->rank),
+					static_cast<uint32_t>
+					(
+						checkForLHMask ? 
+						exRank->rank & 0x00FFFFFF : 
+						exRank->rank & 0xFF00FFFF
+					)
+				);
+				exRank->rank = 
+				(
+					checkForLHMask ? 
+					exRank->rank & 0x00FFFFFF : 
+					exRank->rank & 0xFF00FFFF
+				);
+				return;
+			}
+			
+			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
+			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
+			SPDLOG_DEBUG
+			(
+				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
+				static_cast<uint32_t>(exRank->rank),
+				fmt::ptr(a_list),
+				succ ?
+				"SUCC" :
+				"FAIL",
+				listSize
+			);
 		}
 
 		void ResetFadeOnAllObjectsInCell(RE::TESObjectCELL* a_cell)

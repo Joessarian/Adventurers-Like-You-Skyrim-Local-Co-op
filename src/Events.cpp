@@ -434,18 +434,17 @@ namespace ALYSLC
 			GlobalCoopData::GetCoopPlayerIndex(a_containerChangedEvent->newContainer)
 		);
 		bool toCoopPlayer = toCoopPlayerIndex != -1;
-
+		
+		auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
+		auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
+		auto fromRefr = RE::TESForm::LookupByID(a_containerChangedEvent->oldContainer);
+		auto toRefr = RE::TESForm::LookupByID(a_containerChangedEvent->newContainer);
 		// REMOVE when done debugging.
 		if (fromCoopPlayer || toCoopPlayer)
 		{
-			auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
-			auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-			auto fromRefr = RE::TESForm::LookupByID(a_containerChangedEvent->oldContainer);
-			auto toRefr = RE::TESForm::LookupByID(a_containerChangedEvent->newContainer);
 			SPDLOG_DEBUG
 			(
-				"{} (0x{:X}, refr: {}, x{}) is moving from {} (0x{:X}) to {} (0x{:X}). "
-				"Is favorited: {}.",
+				"{} (0x{:X}, refr: {}, x{}) is moving from {} (0x{:X}) to {} (0x{:X}). ",
 				baseObj ? baseObj->GetName() : "NONE",
 				baseObj ? baseObj->formID : 0xDEAD,
 				refr ? refr->GetName() : "NONE",
@@ -453,8 +452,7 @@ namespace ALYSLC
 				fromRefr ? fromRefr->GetName() : "NONE",
 				a_containerChangedEvent->oldContainer,
 				toRefr ? toRefr->GetName() : "NONE",
-				a_containerChangedEvent->newContainer,
-				fromRefr ? Util::IsFavorited(fromRefr->As<RE::Actor>(), baseObj) : false
+				a_containerChangedEvent->newContainer
 			);
 		}
 
@@ -532,7 +530,13 @@ namespace ALYSLC
 				p->tm->canSMORF = false;
 			}
 		}
+		
+		return EventResult::kContinue;
 
+		// NOTE:
+		// Saving the old code for now in case I have to revert to the old equip system.
+
+		/*
 		// Skip processing when added from a companion player to themselves.
 		// We want these items to remain in the player's inventory because they must be equipped.
 		if (fromCoopPlayerIndex == toCoopPlayerIndex)
@@ -662,12 +666,10 @@ namespace ALYSLC
 						);
 					}
 
-					// Run on the main thread by running the removal/addition code
-					// through a synced task with the player's task runner thread.
-					// Could prevent threading issues from crashing the game here,
-					// since this event handler is not run by the main thread.
-					// Ugly, but fixes a RaceMenu crash 
-					// when transferring over a single torch. Needs more testing.
+					// UNSOLVED REASON FOR BUG:
+					// Causing Papyrus PlayerRef script properties to hold a non-P1 reference
+					// after removing the item to the inventory chest while inventory changes
+					// are swapped.
 					if (shouldSendToCompanionPlayer && boundObj)
 					{
 						const int32_t count = a_containerChangedEvent->itemCount;
@@ -1094,6 +1096,7 @@ namespace ALYSLC
 		}
 
 		return EventResult::kContinue;
+		*/
 	}
 
 	CoopCrosshairEventHandler* CoopCrosshairEventHandler::GetSingleton()
@@ -1412,22 +1415,12 @@ namespace ALYSLC
 						return;
 					}
 
-					auto ui = RE::UI::GetSingleton();
-					bool affectedByInventoryTransfer = false;
-					/*{
-						(ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)) &&
-						(
-							(glob.mim->managerMenuPID != -1 && p->coopActor == glob.player1Actor) ||
-							(glob.mim->managerMenuPID == p->playerID)
-						)
-					};*/
 					auto equipForm = RE::TESForm::LookupByID(formID);
 					bool shouldRefreshEquipState = 
 					(
 						(
-							equipForm && 
-							!affectedByInventoryTransfer && 
-							!p->coopActor->IsInRagdollState()
+							equipForm /*&& 
+							!p->coopActor->IsInRagdollState()*/
 						) && 
 						(
 							(!p->isPlayer1) || 
@@ -2185,7 +2178,13 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 
+		bool wasOnlyAlwaysOpen = glob.menusOnlyAlwaysOpen.load();
 		bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+		glob.menusOnlyAlwaysOpen = onlyAlwaysOpen;
+		if (wasOnlyAlwaysOpen != glob.menusOnlyAlwaysOpen && glob.menusOnlyAlwaysOpen)
+		{
+			glob.lastTempMenusClosedTP = SteadyClock::now();
+		}
 
 		SPDLOG_DEBUG
 		(

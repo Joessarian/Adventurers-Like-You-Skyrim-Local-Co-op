@@ -693,14 +693,22 @@ namespace ALYSLC
 
 		bool DebugRefreshPlayerManagers(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Can refresh player managers if not controlling menus.
-			return GlobalCoopData::IsNotControllingMenus(a_p->playerID);
+			// Can refresh player managers if not controlling menus and inventories are not swapped.
+			return 
+			(
+				GlobalCoopData::IsNotControllingMenus(a_p->playerID) &&
+				glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kInventory)
+			);
 		}
 
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p)
 		{
-			// Can reset player if no temporary menus are open.
-			return Util::MenusOnlyAlwaysOpen();
+			// Can reset player if no temporary menus are open and inventories are not swapped.
+			return 
+			(
+				Util::MenusOnlyAlwaysOpen() &&
+				glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kInventory)
+			);
 		}
 
 		bool Dismount(const std::shared_ptr<CoopPlayer>& a_p)
@@ -1463,7 +1471,7 @@ namespace ALYSLC
 			// (Un)equipping when attempting to cycle equipment used to lead to crashes,
 			// so if these issues resurface, I'll re-add the (un)equip restriction below.
 			// Cannot change equipment when a companion player's inventory is copied over to P1.
-			bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+			bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.any
 			(
 				CopyablePlayerDataTypes::kInventory
 			);
@@ -5044,7 +5052,11 @@ namespace ALYSLC
 			{
 				return lootedObjects;
 			}
-
+			
+			bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+			(
+				CopyablePlayerDataTypes::kInventory
+			);
 			for (auto& [boundObj, countInvEntryDataPair] : inventory)
 			{
 				if (!boundObj || 
@@ -5068,7 +5080,7 @@ namespace ALYSLC
 				);
 				// Show in TrueHUD recent loot widget by adding and removing the object from P1.
 				// Do this before item removal, which will change the entry data's count.
-				if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1)
+				if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1 && !inventoryCopiedToP1)
 				{
 					p1->AddObjectToContainer
 					(
@@ -5145,6 +5157,10 @@ namespace ALYSLC
 			auto inventory = asActor->GetInventory();
 			if (!inventory.empty())
 			{
+				bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+				(
+					CopyablePlayerDataTypes::kInventory
+				);
 				for (auto& [boundObj, countInvEntryDataPair] : inventory)
 				{
 					if (!boundObj || 
@@ -5168,7 +5184,7 @@ namespace ALYSLC
 					);
 					// Show in TrueHUD recent loot widget by adding and removing the object from P1.
 					// Do this before item removal, which will change the entry data's count.
-					if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1)
+					if (p1 && ALYSLC::TrueHUDCompat::g_installed && !toP1 && !inventoryCopiedToP1)
 					{
 						p1->AddObjectToContainer
 						(
@@ -5314,7 +5330,14 @@ namespace ALYSLC
 					// especially if they are quest items.
 					shouldLootWithP1 = isQuestItem || Util::IsPartyWideItem(baseObj);
 					// Show in TrueHUD recent loot widget if P1 is not looting the item themselves.
-					/*if (p1 && ALYSLC::TrueHUDCompat::g_installed && !shouldLootWithP1)
+					/*bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+					(
+						CopyablePlayerDataTypes::kInventory
+					);
+					if (p1 && 
+						ALYSLC::TrueHUDCompat::g_installed && 
+						!shouldLootWithP1 && 
+						!inventoryCopiedToP1)
 					{
 						p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 						p1->RemoveItem
@@ -7139,6 +7162,28 @@ namespace ALYSLC
 					);
 					// A crime to activate.
 					bool offLimits = activationRefrPtr->IsCrimeToActivate();
+					if (offLimits)
+					{
+						SPDLOG_DEBUG
+						(
+							"{} is off limits. "
+							"Actor owner: {} faction owner: {}, owner: {}, exOwnership: {}.",
+							activationRefrPtr->GetName(),
+							activationRefrPtr->GetActorOwner() ? 
+							Util::GetEditorID(activationRefrPtr->GetActorOwner()) :
+							"NONE",
+							activationRefrPtr->GetActorOwner() ? 
+							Util::GetEditorID(activationRefrPtr->GetFactionOwner()) :
+							"NONE",
+							activationRefrPtr->GetActorOwner() ? 
+							Util::GetEditorID(activationRefrPtr->GetOwner()) :
+							"NONE",
+							activationRefrPtr->extraList.GetOwner() ? 
+							Util::GetEditorID(activationRefrPtr->extraList.GetOwner()) :
+							"NONE"
+						);
+					}
+
 					// Object prevented from being activated (ex. door bars).
 					bool activationBlocked = false;
 					auto xFlags = activationRefrPtr->extraList.GetByType<RE::ExtraFlags>(); 
@@ -9287,10 +9332,7 @@ namespace ALYSLC
 							a_p, a_p->em->lastChosenHotkeyedForm, EquipIndex::kQuickSlotSpell
 						);
 					}
-					else if (a_p->em->lastChosenHotkeyedForm->Is
-							(
-								RE::FormType::AlchemyItem, RE::FormType::Ingredient
-							))
+					else if (Util::IsConsumable(a_p->em->lastChosenHotkeyedForm))
 					{
 						HelperFuncs::EquipHotkeyedForm
 						(
@@ -12935,7 +12977,13 @@ namespace ALYSLC
 								a_p->tm->activationRefrHandle
 							);
 							// Show in TrueHUD recent loot widget.
-							/*if (lootable && ALYSLC::TrueHUDCompat::g_installed)
+							/*bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+							(
+								CopyablePlayerDataTypes::kInventory
+							);
+							if (lootable &&
+								ALYSLC::TrueHUDCompat::g_installed && 
+								!inventoryCopiedToP1)
 							{
 								p1->AddObjectToContainer(baseObj, nullptr, count, nullptr);
 								p1->RemoveItem

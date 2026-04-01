@@ -1056,12 +1056,17 @@ namespace ALYSLC
 		);
 
 		// WIP: Needs more testing for long term side effects, and may need a rework if a better 
-		// solution is found that doesn't involve brute-force copying all inventory items to P1.
+		// solution is found that doesn't involve pointer swapping 
+		// (has corrupted script player ref properties once before) 
+		// or brute force copying items (causes lag spikes).
 		// Exchange the given player's inventory with P1's or restore P1's.
 		// Allows companion players to sell their own items, but obviously has limitations
-		// and can cause major issues if the game saves in this state.
-		// P1 keeps their equipped items, which cannot be sold by another player when bartering.
-		static void CopyOverInventories(RE::Actor* a_coopActor, const bool& a_shouldImport);
+		// and can cause major issues if the game saves in this state. Thus, saving is prevented.
+		// P1 can keep their gold amount or do a full inventory swap.
+		static void CopyOverInventories
+		(
+			RE::Actor* a_coopActor, const bool& a_shouldImport, const bool& a_keepP1Gold
+		);
 
 		// Exchanges/restores unlocked perks. Only copies the player's perks over to P1,
 		// and these perks are not added or removed 
@@ -2171,6 +2176,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastCoopCompanionSkillLevelsCheckTP;
 		// Time point at which all supported menus were last closed.
 		SteadyClock::time_point lastSupportedMenusClosedTP;
+		// Time point at which all temporary menus were last closed.
+		SteadyClock::time_point lastTempMenusClosedTP;
 		// Time point at which the level up XP threshold was last checked.
 		SteadyClock::time_point lastXPThresholdCheckTP;
 
@@ -2311,6 +2318,9 @@ namespace ALYSLC
 		float savedCraftingPoints;
 		float savedLearningPoints;
 		float savedMemoryPoints;
+		// No temp menu is open.
+		// kAlwaysOpen is set for every menu on the stack.
+		std::atomic_bool menusOnlyAlwaysOpen;
 		// At least one supported menu is open.
 		std::atomic_bool supportedMenuOpen;
 		// Menu player ID mutex when setting/resetting menu player IDs.

@@ -48,18 +48,6 @@ namespace ALYSLC
 		// Called per frame to run main task and update the manager's state.
 		inline void Update()
 		{
-			// Check if the manager should self-pause or self-resume execution,
-			// and sets the next execution state.
-			if (currentState == ManagerState::kRunning)
-			{
-				SelfPauseCheck();
-			}
-			else if (currentState == ManagerState::kPaused || 
-					 currentState == ManagerState::kAwaitingRefresh)
-			{
-				SelfResumeCheck();
-			}
-
 			// Checks if the next execution state has changed
 			// and update the current state after performing any pre-state change tasks.
 			CheckForStateChange();
@@ -114,6 +102,24 @@ namespace ALYSLC
 		// Monitor requests to change the current execution state and perform the state change.
 		inline void CheckForStateChange()
 		{
+			// Check if the manager should self-pause or self-resume execution,
+			// and sets the next execution state.
+			// Only need to self-determine the next execution state if it does not differ
+			// from the current state because if it does differ, the state was changed externally
+			// and we'll defer to handling the external requests first.
+			if (currentState == nextState)
+			{
+				if (currentState == ManagerState::kRunning)
+				{
+					SelfPauseCheck();
+				}
+				else if (currentState == ManagerState::kPaused || 
+						 currentState == ManagerState::kAwaitingRefresh)
+				{
+					SelfResumeCheck();
+				}
+			}
+
 			// Execution state was requested to change.
 			if (currentState != nextState)
 			{

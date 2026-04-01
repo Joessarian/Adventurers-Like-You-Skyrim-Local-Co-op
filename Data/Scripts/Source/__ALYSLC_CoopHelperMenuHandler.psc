@@ -118,7 +118,7 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot open helper menu.")
-		ALYSLC.LogError("[CHMH SCRIPT] Critical Error: P1's actor is invalid. Cannot open helper menu.")
+		ALYSLC.LogError("[CHMH SCRIPT] Critical Error: P1's actor is invalid. Cannot open helper menu. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
 		Return
 	EndIf
 
@@ -224,13 +224,16 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
                         If (IsP1)
                             ALYSLC.Log("[CHMH SCRIPT] Gifting items from P1 " + PlayerRef.GetDisplayName() + " to " + GifteePlayer.GetDisplayName())
                             ; Gifts given directly to the giftee player from P1.
+                            ALYSLC.SetGifteePlayerActor(GifteePlayer)
                             GifteePlayer.ShowGiftMenu(True, None, True, False)
+                            ALYSLC.SetGifteePlayerActor(None)
                         Else
                             ALYSLC.Log("[CHMH SCRIPT] Gifting items from " + PlayerInMenu.GetDisplayName() + " to " + GifteePlayer.GetDisplayName() + " via P1.")
                             ; Gifts given to P1 and then transfered to the selected giftee player.
                             ; Inform plugin of giftee player.
                             ALYSLC.SetGifteePlayerActor(GifteePlayer)
-                            PlayerInMenu.ShowGiftMenu(False, None, True, False)
+                            GifteePlayer.ShowGiftMenu(True, None, True, False)
+                            ;PlayerInMenu.ShowGiftMenu(False, None, True, False)
                             ; Clear giftee player once the menu closes.
                             ALYSLC.SetGifteePlayerActor(None)
                         EndIf
@@ -242,13 +245,18 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
                             ALYSLC.Log("[CHMH SCRIPT] Gifting items from P1 " + PlayerRef.GetDisplayName() + " to " + GifteePlayer.GetDisplayName())
                             ; Set player menu control.
                             ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
+                            ALYSLC.SetGifteePlayerActor(GifteePlayer)
                             GifteePlayer.ShowGiftMenu(True, None, True, False)
+                            ALYSLC.SetGifteePlayerActor(None)
                         EndIf
                     Else
                         ALYSLC.Log("[CHMH SCRIPT] Gifting items from " + PlayerInMenu.GetDisplayName() + " to P1 " + PlayerRef.GetDisplayName())
                         ; Set player menu control.
                         ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "GiftMenu")
-                        PlayerInMenu.ShowGiftMenu(False, None, True, False)
+                        ;PlayerInMenu.ShowGiftMenu(False, None, True, False)
+                        ALYSLC.SetGifteePlayerActor(PlayerRef as Actor)
+                        PlayerInMenu.ShowGiftMenu(True, None, True, False)
+                        ALYSLC.SetGifteePlayerActor(None)
                     EndIf
                 EndIf
             EndIf

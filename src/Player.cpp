@@ -421,6 +421,7 @@ namespace ALYSLC
 		if ((!isPlayer1) && (selfWasInvalid || !selfValid))
 		{
 			em->ReEquipHandForms();
+			//em->ReEquipAll(false);
 			selfWasInvalid = false;
 		}
 

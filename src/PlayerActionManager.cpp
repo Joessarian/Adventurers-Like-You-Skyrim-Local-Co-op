@@ -267,9 +267,9 @@ namespace ALYSLC
 				// (Ex. movement, camera rotation)
 				// Also block other players' menu-opening actions 
 				// if they are not in control of menus.
-				float secsSinceAllSupportedMenusClosed = Util::GetElapsedSeconds
+				float secsSinceAllTempMenusClosed = Util::GetElapsedSeconds
 				(
-					glob.lastSupportedMenusClosedTP
+					glob.lastTempMenusClosedTP
 				);
 				bool shouldBlockActionsInMenu = glob.supportedMenuOpen.load();
 				blockActionInUnpausedMenu = false;
@@ -496,22 +496,31 @@ namespace ALYSLC
 					}
 					else
 					{
-						// No supported menu open.
-						// At least one button is pressed after supported menus closed.
+						// No temp menu open.
+						// At least one button is pressed after temp  menus closed.
 						bool buttonsPressedWhileMenusClosed = 
 						(
 							(inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) != 0
 						);
 						// Block any actions with buttons pressed 
-						// while the last supported menu was still open
+						// while the last temp menu was still open
 						// so that these inputs do not carry over 
 						// and trigger their corresponding actions 
-						// now that all supported menus are closed.
+						// now that all temp menus are closed.
 						// Eg. 
 						// The 'Sprint' bind (if bound to 'B') triggering 
 						// after exiting a menu with the 'B' button.
 						// Unblocked once released and pressed again while no menus are open.
 						bool wasControllingMenus = glob.prevMenuPID == playerID; 
+						/*SPDLOG_DEBUG
+						(
+							"{} was controlling menus: {}, prev PID: {}. "
+							"Buttons pressed while menus closed: {}.", 
+							coopActor->GetName(),
+							wasControllingMenus, 
+							glob.prevMenuPID,
+							buttonsPressedWhileMenusClosed
+						);*/
 						if (wasControllingMenus && buttonsPressedWhileMenusClosed)
 						{
 							InputAction button = InputAction::kNone;
@@ -530,9 +539,9 @@ namespace ALYSLC
 								(
 									deviceID, button
 								);
-								// Button was first pressed while supported menus were still open.
+								// Button was first pressed while temp menus were still open.
 								if (buttonState.isPressed && 
-									buttonState.heldTimeSecs >= secsSinceAllSupportedMenusClosed)
+									buttonState.heldTimeSecs >= secsSinceAllTempMenusClosed)
 								{
 									blockActionInUnpausedMenu = true;
 								}

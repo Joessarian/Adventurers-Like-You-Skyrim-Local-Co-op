@@ -1725,161 +1725,6 @@ namespace ALYSLC
 			);
 		}
 
-		// Add rank extra data to the given extra data list to indicate the item 
-		// as equipped in the left or right hands (0xFF000000 for left, 0x00FF0000 for right,
-		// and 0xFFFF0000 for both hands).
-		// If no extra data list is given, Construct a new extra data list 
-		// and insert it into the given inventory entry data, if provided.
-		inline RE::ExtraDataList* AddWornRankExtraData
-		(
-			RE::InventoryEntryData* a_invEntryData,
-			RE::ExtraDataList* a_list,
-			bool a_leftHand
-		)
-		{
-			if (!a_list)
-			{
-				if (a_invEntryData)
-				{
-					auto extraListsCount = 
-					(
-						!a_invEntryData->extraLists ?
-						0 :
-						std::distance
-						(
-							a_invEntryData->extraLists->begin(), a_invEntryData->extraLists->end()
-						)
-					);
-					uint32_t rawCount = 0;
-					if (extraListsCount != 0)
-					{
-						for (auto list : *a_invEntryData->extraLists)
-						{
-							if (!list)
-							{
-								continue;
-							}
-
-							rawCount += list->GetCount();
-						}
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Inventory entry {:p} has count delta of {}, "
-						"raw count {} from {} extra data lists.",
-						fmt::ptr(a_invEntryData),
-						a_invEntryData->countDelta,
-						rawCount, 
-						extraListsCount
-					);
-
-					if (extraListsCount == 0)
-					{
-						a_list = Util::NativeFunctions::ConstructExtraDataList	
-						(
-							RE::malloc<RE::ExtraDataList>(sizeof(RE::ExtraDataList))
-						);
-						if (!a_list)
-						{
-							SPDLOG_ERROR("Failed to allocate extra data list.");
-							return nullptr;
-						}
-					
-						SPDLOG_INFO
-						(
-							"Malloc extra data list {:p} to inventory entry data {:p}. "
-							"No lists previously.",
-							fmt::ptr(a_list), fmt::ptr(a_invEntryData)
-						);
-						a_invEntryData->AddExtraList(a_list);
-						if (a_invEntryData->countDelta <= 0)
-						{
-							SPDLOG_DEBUG
-							(
-								"Count delta ({}) was <= 0. "
-								"Set to one after adding extra data list.",
-								a_invEntryData->countDelta
-							);
-							a_invEntryData->countDelta = 1;
-						}
-					}
-					else
-					{
-						a_list = a_invEntryData->extraLists->front();
-						SPDLOG_DEBUG
-						(
-							"Set extra data list to front list in absence of given list: {:p}",
-							fmt::ptr(a_list)
-						);
-					}
-				}
-				else
-				{
-					SPDLOG_DEBUG
-					(
-						"No provided extra data list or inventory entry data. "
-						"No addition possible."
-					);
-					return nullptr;
-				}
-			}
-			
-			// Crash can occur when calling GetByType() on an empty list.
-			const auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			SPDLOG_DEBUG("List {:p} has size {}.", fmt::ptr(a_list), listSize);
-			if (listSize > 0)
-			{
-				if (auto exRank = a_list->GetByType<RE::ExtraRank>(); exRank)
-				{
-					SPDLOG_DEBUG
-					(
-						"Rank ex data already present in list {:p}: 0x{:X}. "
-						"Set to 0x{:X}.",
-						fmt::ptr(a_list),
-						static_cast<uint32_t>(exRank->rank),
-						a_leftHand ? 
-						static_cast<uint32_t>(exRank->rank | 0xFF000000) :
-						static_cast<uint32_t>(exRank->rank | 0x00FF0000)
-					);
-					exRank->rank = 
-					(
-						a_leftHand ? 
-						exRank->rank | 0xFF000000 :
-						exRank->rank | 0x00FF0000
-					);
-
-					return a_list;
-				}
-			}
-
-			RE::ExtraRank* rank = new RE::ExtraRank(0);
-			if (rank)
-			{
-				a_list->Add(rank);
-				auto succ = a_list->GetByType<RE::ExtraRank>();
-				// Have to adjust the rank after adding, since it is cleared.
-				if (succ)
-				{
-					succ->rank = a_leftHand ? 0xFF000000 : 0x00FF0000;
-				}
-
-				SPDLOG_DEBUG
-				(
-					"Adding rank (0x{:X}) exData to list {:p}: {}. Data: orig: {:p}, add: {:p}.",
-					static_cast<uint32_t>(a_leftHand ? 0xFF000000 : 0x00FF0000),
-					fmt::ptr(a_list),
-					succ ?
-					"SUCC" :
-					"FAIL",
-					fmt::ptr(rank),
-					fmt::ptr(succ)
-				);
-			}
-
-			return a_list;
-		}
-
 		// Adjust character controller fall start height and time if starting to fall,
 		// or reset to zero if not falling.
 		inline void AdjustFallState
@@ -1922,15 +1767,17 @@ namespace ALYSLC
 			return list;
 		}
 
-		// Malloc, construct and return a new extra data list with ExOwnership data.
+		// Malloc, construct and return a new extra data list with ExShouldWear data.
 		// NOTE:
-		// Using this extra data because it persists across save games 
-		// and does not split a stack when added to an extra data list that is part of that stack.
+		// Using this extra data because it persists across save games,
+		// does not split a stack when added to an extra data list that is part of that stack,
+		// does not affect ownership, which normally messes with selling items when added,
+		// and does not appear to have any effect on equip state when transferred to another player.
 		// Needed an extra data type to add to every item in the inventory chest
 		// to make sure that there is an extra data list whenever an item is selected in a menu
 		// through the player's inventory chest.
 		// We can then check these lists for ExRank data and thereby check equip state.
-		inline RE::ExtraDataList* CreateExtraDataListWithOwnership()
+		inline RE::ExtraDataList* CreateExtraDataListWithSerializableData()
 		{
 			RE::ExtraDataList* list = CreateExtraDataList();
 			if (!list)
@@ -1938,9 +1785,9 @@ namespace ALYSLC
 				return nullptr;
 			}
 
-			auto data = static_cast<RE::ExtraOwnership*>
+			auto data = static_cast<RE::ExtraShouldWear*>
 			(
-				list->Add(new RE::ExtraOwnership())
+				list->Add(RE::BSExtraData::Create<RE::ExtraShouldWear>())
 			);
 			if (!data)
 			{
@@ -2419,7 +2266,7 @@ namespace ALYSLC
 					if (entry && entry->object) 
 					{
 						bool inserted = added.insert(entry->object).second;
-						/*SPDLOG_DEBUG
+						SPDLOG_DEBUG
 						(
 							"{}: INV CHANGES: Adding item {}. Entry: {:p}. Inserted already: {}. "
 							"Count delta: {}, lists: {}, lists count: {}.",
@@ -2432,7 +2279,7 @@ namespace ALYSLC
 							entry->extraLists ?
 							std::distance(entry->extraLists->begin(), entry->extraLists->end()) :
 							0
-						);*/
+						);
 						auto invEntryPtr = std::make_unique<RE::InventoryEntryData>(*entry);
 						[[maybe_unused]] auto it = results.emplace
 						(
@@ -2538,7 +2385,7 @@ namespace ALYSLC
 			return (iter != invCounts.end() ? max(0, iter->second) : 0);
 		}
 
-		// Get the inventory chest inventory entry data for the given bound object.
+		// Get the given refr's inventory entry data for the given bound object.
 		// If no valid object, return none.
 		inline RE::InventoryEntryData* GetInventoryEntryDataForObject
 		(
@@ -2671,76 +2518,6 @@ namespace ALYSLC
 			if (a_handle && a_handle.get())
 			{
 				return a_handle.get();
-			}
-
-			return nullptr;
-		}
-		
-		// Get the (left/right) worn rank extra data list from the given refr's inventory
-		// corresponding to the given item.
-		inline RE::ExtraDataList* GetWornRankExtraDataList
-		(
-			RE::TESObjectREFR* a_refr, 
-			RE::TESBoundObject* a_item, 
-			bool a_leftHand
-		)
-		{
-			if (!a_refr || !a_item)
-			{
-				return nullptr;
-			}
-
-			const auto invChanges = a_refr->GetInventoryChanges();
-			if (!invChanges || !invChanges->entryList)
-			{
-				return nullptr;
-			}
-
-			RE::InventoryEntryData* invEntryData = nullptr;
-			for (const auto entry : *invChanges->entryList)
-			{
-				if (!entry)
-				{
-					continue;
-				}
-
-				if (entry->object == a_item)
-				{
-					invEntryData = entry;
-					break;
-				}
-			}
-
-			if (!invEntryData)
-			{
-				SPDLOG_DEBUG("{} not found in {}'s inventory.",
-					a_item->GetName(), a_refr->GetName());
-				return nullptr;
-			}
-
-			if (!invEntryData->extraLists)
-			{
-				SPDLOG_DEBUG("No extra lists found for {} in {}'s inventory.",
-					a_item->GetName(), a_refr->GetName());
-				return nullptr;
-			}
-		
-			for (const auto exDataList : *invEntryData->extraLists)
-			{
-				if (!exDataList || std::distance(exDataList->begin(), exDataList->end()) == 0)
-				{
-					continue;
-				}
-				
-				auto exRank = exDataList->GetByType<RE::ExtraRank>();
-				if (exRank)
-				{
-					if (((a_leftHand) && ((exRank->rank & 0xFF000000) == 0xFF000000)) || 
-						((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0x00FF0000)))
-					{
-						return exDataList;
-					}
-				}
 			}
 
 			return nullptr;
@@ -3177,6 +2954,20 @@ namespace ALYSLC
 			);
 		}
 
+		// Return true if the given form is a consumable item.
+		inline bool IsConsumable(RE::TESForm* a_form)
+		{
+			return 
+			(
+				a_form && a_form->Is
+				(
+					RE::FormType::Ingredient,
+					RE::FormType::AlchemyItem,
+					RE::FormType::Scroll
+				)
+			);
+		}
+
 		// If the given actor in dialogue with the player?
 		inline bool IsDialogueTarget(RE::Actor* a_actor)
 		{
@@ -3418,6 +3209,53 @@ namespace ALYSLC
 					)
 				)
 			);
+		}
+
+		// Return true if the extra data list contains a quest object alias.
+		inline bool IsQuestObject(RE::ExtraDataList* a_exDataList)
+		{
+			if (!a_exDataList)
+			{
+				return false;
+			}
+
+			return a_exDataList->HasQuestObjectAlias();
+		}
+
+		// Return true if the given object in the given refr's inventory has a quest object alias.
+		inline bool IsQuestObject(RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object)
+		{
+			if (!a_refr || !a_object)
+			{
+				return false;
+			}
+
+			auto invChanges = a_refr->GetInventoryChanges();
+			if (!invChanges || !invChanges->entryList)
+			{
+				return false;
+			}
+
+			for (const auto invEntry : *invChanges->entryList)
+			{
+				if (!invEntry || 
+					invEntry->object != a_object || 
+					!invEntry->extraLists ||
+					invEntry->extraLists->empty())
+				{
+					continue;
+				}
+
+				for (auto exDataList : *invEntry->extraLists)
+				{
+					if (exDataList->HasQuestObjectAlias())
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
 		}
 
 		// Is the refr valid for targeting with the crosshair,
@@ -3849,6 +3687,45 @@ namespace ALYSLC
 			}
 		}
 		
+		// Remove extra data by type. 
+		// ExtraDataList::RemoveByType was causing crashes 
+		// (have to modify CLib itself to troubleshoot later)
+		// and ExtraDataList::Remove does not delete the removed pointer.
+		// Return true if at least one exData of the given type of removed.
+		inline bool RemoveExDataByType(RE::ExtraDataList* a_exDataList, RE::ExtraDataType a_type)
+		{
+			if (!a_exDataList)
+			{
+				return false;
+			}
+
+			bool removed = false;
+			auto exData = a_exDataList->GetByType(a_type);
+			while (exData)
+			{
+				bool succ = a_exDataList->Remove(a_type, exData);
+				removed |= succ;
+				if (succ)
+				{
+					SPDLOG_DEBUG("Type 0x{:X}. SUCC removing {:p} from list {:p}.",
+						a_type, fmt::ptr(exData), fmt::ptr(a_exDataList));
+					delete exData;
+					exData = nullptr;
+					SPDLOG_DEBUG("AFTER: {:p}", fmt::ptr(exData));
+				}
+				else
+				{
+					SPDLOG_DEBUG("Type 0x{:X}. FAIL removing {:p} from list {:p}.",
+						a_type, fmt::ptr(exData), fmt::ptr(a_exDataList));
+					break;
+				}
+					
+				exData = a_exDataList->GetByType(a_type);
+			}
+
+			return removed;
+		}
+
 		// Remove rank extra data from the given extra data list.
 		inline void RemoveWornRankExtraData(RE::ExtraDataList* a_list)
 		{
@@ -3889,85 +3766,6 @@ namespace ALYSLC
 				return;
 			}
 
-			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
-			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			SPDLOG_DEBUG
-			(
-				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
-				static_cast<uint32_t>(exRank->rank),
-				fmt::ptr(a_list),
-				succ ?
-				"SUCC" :
-				"FAIL",
-				listSize
-			);
-		}
-
-		// Remove left (0xFF000000) or right (0x00FF0000) rank extra data masks 
-		// from the given extra data list. If neither mask is present afterward, 
-		// remove the rank extra data entirely.
-		inline void RemoveWornRankExtraData(RE::ExtraDataList* a_list, bool a_leftHand)
-		{
-			// Must provide an extra data list.
-			if (!a_list)
-			{
-				return;
-			}
-			
-			// Crash when calling GetByType() on an empty list.
-			auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			if (listSize == 0)
-			{
-				return;
-			}
-
-			auto exRank = a_list->GetByType<RE::ExtraRank>();
-			if (!exRank)
-			{
-				SPDLOG_DEBUG
-				(
-					"Not removing rank exData from list {:p}. Does not exist.",
-					fmt::ptr(a_list)
-				);
-				return;
-			}
-			else if (((a_leftHand) && ((exRank->rank & 0xFF000000) == 0)) || 
-					 ((!a_leftHand) && ((exRank->rank & 0x00FF0000) == 0)))
-			{
-				SPDLOG_DEBUG
-				(
-					"Not removing different rank exData from list {:p}: "
-					"0x{:X} does not mask into 0x{:X}.",
-					fmt::ptr(a_list), 
-					static_cast<uint32_t>(exRank->rank),
-					a_leftHand ? 0xFF000000 : 0x00FF0000
-				);
-				return;
-			}
-			else if ((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
-			{
-				SPDLOG_DEBUG
-				(
-					"Removing hand mask rank from list {:p}: "
-					"0x{:X} -> 0x{:X}.",
-					fmt::ptr(a_list), 
-					static_cast<uint32_t>(exRank->rank),
-					static_cast<uint32_t>
-					(
-						a_leftHand ? 
-						exRank->rank & 0x00FFFFFF : 
-						exRank->rank & 0xFF00FFFF
-					)
-				);
-				exRank->rank = 
-				(
-					a_leftHand ? 
-					exRank->rank & 0x00FFFFFF : 
-					exRank->rank & 0xFF00FFFF
-				);
-				return;
-			}
-			
 			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
 			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
 			SPDLOG_DEBUG
@@ -4552,6 +4350,18 @@ namespace ALYSLC
 		// DO NOT run on a main thread or the game will lock up.
 		void AddSyncedTask(std::function<void()> a_func, bool a_isUITask = false);
 		
+		// Add rank extra data to the given extra data list to indicate the item 
+		// as equipped in the left or right hands (0xFF000000 for left, 0x00FF0000 for right,
+		// and 0xFFFF0000 for both hands).
+		// If no extra data list is given, Construct a new extra data list 
+		// and insert it into the given inventory entry data, if provided.
+		RE::ExtraDataList* AddWornRankExtraData
+		(
+			RE::InventoryEntryData* a_invEntryData,
+			RE::ExtraDataList* a_list,
+			bool a_equipsToLH
+		);
+
 		// First, make sure the source actor  and the target actor are in combat 
 		// with each other both ways (aggroed by each other).
 		// Then, deal the given damage to the given target actor.
@@ -4757,7 +4567,7 @@ namespace ALYSLC
 		// will return found ExtraWorn data even if the left hand is given as the hand to check.
 		RE::ExtraDataList* GetEquippedExtraData
 		(
-			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_leftHand = false
+			RE::TESObjectREFR* a_refr, RE::TESForm* a_form, bool a_equipsToLH = false
 		);
 
 		// Get the X, Y, and Z euler angles from the given rotation matrix.
@@ -4888,6 +4698,15 @@ namespace ALYSLC
 			int32_t& a_value
 		);
 		
+		// Get the (left/right) worn rank extra data list from the given refr's inventory
+		// corresponding to the given item.
+		RE::ExtraDataList* GetWornRankExtraDataList
+		(
+			RE::TESObjectREFR* a_refr, 
+			RE::TESBoundObject* a_object, 
+			bool a_equipsToLH
+		);
+
 		// Return true if the refr has the given form 
 		// with the given extra data list in their inventory.
 		bool HasExtraDataList
@@ -5120,6 +4939,14 @@ namespace ALYSLC
 
 		// Remove any players from the given actor's combat group targets list.
 		void RemovePlayerCombatTargets(RE::Actor* a_sourceActor);
+
+		// Remove left (0xFF000000) or right (0x00FF0000) rank extra data masks 
+		// from the given object's extra data list. If neither mask is present afterward, 
+		// remove the rank extra data entirely.
+		void RemoveWornRankExtraData
+		(
+			RE::TESBoundObject* a_object, RE::ExtraDataList* a_list, bool a_equipsToLH
+		);
 
 		// Reset object fade value(s) for all refrs in the given cell.
 		void ResetFadeOnAllObjectsInCell(RE::TESObjectCELL* a_cell);

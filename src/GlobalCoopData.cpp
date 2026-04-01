@@ -39,12 +39,14 @@ namespace ALYSLC
 		glob.player1DID = -1;
 		glob.quickLootControlPID = -1;
 		glob.quickLootReqPID = -1;
+		glob.menusOnlyAlwaysOpen.store(true);
 		glob.supportedMenuOpen.store(false);
 		// Handles.
 		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
 		// Time points.
 		glob.lastCoopCompanionSkillLevelsCheckTP =
 		glob.lastSupportedMenusClosedTP =
+		glob.lastTempMenusClosedTP =
 		glob.lastXPThresholdCheckTP = SteadyClock::now();
 		// Set global entities and lists.
 		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
@@ -3280,13 +3282,15 @@ namespace ALYSLC
 
 		auto& glob = GetSingleton();
 		auto ui = RE::UI::GetSingleton();
-		// Adding skillbooks to other players when this player loots one.
-		// Ignore if the setting is disabled or if the PID/skillbook are invalid.
+		// Ignore if there is no looted object, or not looted by a player, 
+		// or if the refr the object comes from is not given 
+		// (directly added to the container, instead of looted or picked up).
 		if (!ui ||
 			!glob.globalDataInit ||
 			!glob.allPlayersInit ||
 			!glob.coopSessionActive ||
 			!a_lootedObject ||
+			!a_fromRefr ||
 			a_lootingPID < 0 ||
 			a_lootingPID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
@@ -3299,15 +3303,34 @@ namespace ALYSLC
 			return;
 		}
 
-		bool barterMenuOpen = ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
-		bool fromCoopEntity = GlobalCoopData::IsCoopEntity(a_fromRefr);
-		// Ignore if sent from a co-op entity (player/inventory chest),
+		// Ignore if looking at a companion player's inventory, 
+		// if sent from a co-op entity (player/inventory chest),
 		// or if the Barter Menu is open.
-		if (fromCoopEntity || barterMenuOpen)
+		bool ignore = 
+		(
+			(
+				(glob.mim->IsRunning()) && 
+				(glob.mim->isShowingInventory || glob.mim->inventoryChestOpen)
+			) ||
+			GlobalCoopData::IsCoopEntity(a_fromRefr) ||
+			ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)
+		);
+		SPDLOG_DEBUG
+		(
+			"{} was looted by {} (from refr: {}). Was picked up: {}. Ignore: {} (inv showing: {}).",
+			a_lootedObject->GetName(), 
+			lootingP->coopActor->GetName(), 
+			a_fromRefr->GetName(),
+			a_fromRefr->GetBaseObject() == a_lootedObject,
+			ignore,
+			(glob.mim->IsRunning()) && 
+			(glob.mim->isShowingInventory || glob.mim->inventoryChestOpen)
+		);
+		if (ignore)
 		{
 			return;
 		}
-
+		
 		if (a_lootedObject->IsGold())
 		{
 			// Scale added gold with party size.
@@ -3386,6 +3409,10 @@ namespace ALYSLC
 			const auto& skill = tierAndSkill.second;
 			std::mt19937 generator{ };
 			generator.seed(SteadyClock::now().time_since_epoch().count());
+			bool inventoryCopiedToP1 = glob.copiedPlayerDataTypes.all
+			(
+				CopyablePlayerDataTypes::kInventory
+			);
 			for (const auto& p : glob.coopPlayers)
 			{
 				// Not the looting player.
@@ -3416,16 +3443,24 @@ namespace ALYSLC
 							newSkillbookFID
 						);
 						// IMPORTANT:
-						// Make sure it's sent by a co-op entity 
+						// For P1, make sure it's sent by a co-op entity 
 						// so we don't create a loop and end up back here again,
 						// since we do not add additional skillbooks 
 						// if they originate from a co-op entity.
+						// 
+						// If inventories are swapped, move to P1's inventory chest instead, 
+						// which holds their inventory before another player's inventory 
+						// was copied over to them, and will then ensure the book is present
+						// when the chest's contents are moved back to P1.
 						if (newSkillbook)
 						{
-							SPDLOG_DEBUG("Adding skillbook {} to {}.",
-								newSkillbook->GetName(), p->coopActor->GetName());
-							if (p->isPlayer1)
+							if (p->isPlayer1 && !inventoryCopiedToP1)
 							{
+								SPDLOG_DEBUG
+								(
+									"Adding skillbook {} to {}.",
+									newSkillbook->GetName(), p->coopActor->GetName()
+								);
 								p->coopActor->AddObjectToContainer
 								(
 									newSkillbook,
@@ -3433,9 +3468,15 @@ namespace ALYSLC
 									1, 
 									p->em->inventoryChest.get()
 								);
+								
 							}
 							else
 							{
+								SPDLOG_DEBUG
+								(
+									"Adding skillbook {} to {}'s inventory chest.",
+									newSkillbook->GetName(), p->coopActor->GetName()
+								);
 								p->em->inventoryChest->AddObjectToContainer
 								(
 									newSkillbook,
@@ -3447,7 +3488,10 @@ namespace ALYSLC
 
 							// Show in TrueHUD recent loot widget 
 							// by adding and removing the skillbook from P1.
-							if (!p->isPlayer1 && p1 && ALYSLC::TrueHUDCompat::g_installed)
+							if (!p->isPlayer1 && 
+								p1 && 
+								ALYSLC::TrueHUDCompat::g_installed && 
+								!inventoryCopiedToP1)
 							{
 								SPDLOG_DEBUG("SHOW {}.", newSkillbook->GetName());
 								p1->AddObjectToContainer
@@ -5320,8 +5364,10 @@ namespace ALYSLC
 		);
 		glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
 		GlobalCoopData::ResetMenuPlayerIDs();
+		glob.menusOnlyAlwaysOpen.store(true);
 		glob.supportedMenuOpen.store(false);
 		glob.lastSupportedMenusClosedTP = SteadyClock::now();
+		glob.lastTempMenusClosedTP = SteadyClock::now();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Restore ability to save if no data is copied over to P1.
 		if (p1 && *glob.copiedPlayerDataTypes == CopyablePlayerDataTypes::kNone)
@@ -5417,7 +5463,7 @@ namespace ALYSLC
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 			{
 				SPDLOG_DEBUG("Restore P1 Inventory.");
-				CopyOverInventories(a_menuControllingPlayer, false);
+				CopyOverInventories(a_menuControllingPlayer, false, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 			}
 
@@ -7862,12 +7908,12 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"Barter Menu: Should copy over inventory on import."
+					"Barter Menu: Should copy over inventory keeping gold on import."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Import Inventory.");
-					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+					SPDLOG_DEBUG("Import Inventory Keeping Gold.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
 			}
@@ -7875,12 +7921,12 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"Barter Menu: Should copy back inventory on export."
+					"Barter Menu: Should copy back inventory keeping gold on export."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Export Inventory.");
-					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+					SPDLOG_DEBUG("Export Inventory Keeping Gold.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
 			}
@@ -7892,30 +7938,57 @@ namespace ALYSLC
 			SyncSharedSkillAVs();
 			SyncSharedLegendaryLevelingCounts();
 			
-			bool isPickpocketing = false;
+			bool isPlayerInventory = false;
+			bool isInventoryChest = false;
 			auto containerMenuPtr = ui->GetMenu<RE::ContainerMenu>();
+			// Do not want to copy over inventory if the container refr pointer is not valid yet
+			// for some reason.
+			bool containerValid = false;
 			if (containerMenuPtr)
 			{
-				isPickpocketing = 
+				RE::TESObjectREFRPtr refrPtr{ };
+				RE::TESObjectREFR::LookupByHandle
+				(
+					containerMenuPtr->GetTargetRefHandle(), refrPtr
+				);
+				isPlayerInventory = 
 				(
 					containerMenuPtr->GetContainerMode() ==
-					RE::ContainerMenu::ContainerMode::kPickpocket
+					RE::ContainerMenu::ContainerMode::kNPCMode &&
+					refrPtr == p->em->inventoryChest
 				);
+				isInventoryChest = GlobalCoopData::IsCoopPlayerInventoryChest(refrPtr);
+
+				if (refrPtr)
+				{
+					containerValid = true;
+					SPDLOG_DEBUG
+					(
+						"{} (0x{:X})'s container. Mode: {}, {}'s inventory chest: {} (0x{:X}).", 
+						refrPtr->GetName(), 
+						refrPtr->formID,
+						containerMenuPtr->GetContainerMode(),
+						p->coopActor->GetName(),
+						p->em->inventoryChest->GetName(), 
+						p->em->inventoryChest->formID
+					);
+				}
 			}
 			
 			// Copy AVs, name, and perk list.
 			if (a_info->shouldImport) 
 			{
-				if (isPickpocketing)
+				if (!isPlayerInventory && !isInventoryChest && containerValid)
 				{
 					SPDLOG_DEBUG
 					(
-						"Container Menu: Pickpocketing. Should copy over inventory on import."
+						"Container Menu: Not a player's inventory. "
+						"Should copy over inventory keeping gold on import."
 					);
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						SPDLOG_DEBUG("Import Inventory.");
-						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+						SPDLOG_DEBUG("Import Inventory Keeping Gold.");
+						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 					}
 				}
@@ -7946,16 +8019,17 @@ namespace ALYSLC
 			}
 			else
 			{
-				if (isPickpocketing)
+				if ((!isPlayerInventory && !isInventoryChest && containerValid))
 				{
 					SPDLOG_DEBUG
 					(
-						"Container Menu: Pickpocketing. Should restore inventory on export."
+						"Container Menu: Not a player's inventory. "
+						"Should restore inventory keeping gold on export."
 					);
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						SPDLOG_DEBUG("Export Inventory.");
-						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+						SPDLOG_DEBUG("Export Inventory Keeping Gold.");
+						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 					}
 				}
@@ -7998,7 +8072,7 @@ namespace ALYSLC
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
 					SPDLOG_DEBUG("Import Inventory.");
-					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
 			}
@@ -8008,7 +8082,7 @@ namespace ALYSLC
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
 					SPDLOG_DEBUG("Export Inventory.");
-					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport);
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
 			}
@@ -8062,6 +8136,42 @@ namespace ALYSLC
 						CopyablePlayerDataTypes::kFavoritesMagic,
 						CopyablePlayerDataTypes::kFavoritesPhysical
 					);
+				}
+			}
+		}
+		else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
+		{
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle);
+			if (pIndex == -1)
+			{
+				SPDLOG_DEBUG("ERR: Giftee player not specified {}. {} is the gifter player.", 
+					a_info->shouldImport ? "on import" : "on export", requestingPlayer->GetName());
+			}
+
+			if (a_info->shouldImport)
+			{
+				SPDLOG_DEBUG
+				(
+					"Gift Menu: Should copy over inventory."
+				);
+				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+				{
+					SPDLOG_DEBUG("Import Inventory.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
+				}
+			}
+			else
+			{
+				SPDLOG_DEBUG
+				(
+					"Gift Menu: Should copy back inventory on export."
+				);
+				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+				{
+					SPDLOG_DEBUG("Export Inventory.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
+					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
 			}
 		}
@@ -9523,9 +9633,19 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::CopyOverInventories(RE::Actor* a_coopActor, const bool& a_shouldImport) 
+	void GlobalCoopData::CopyOverInventories
+	(
+		RE::Actor* a_coopActor, const bool& a_shouldImport, const bool& a_keepP1Gold
+	) 
 	{
-		// Exchange inventories temporarily between P1 and a companion player.
+		// WIP: Needs more testing for long term side effects, and may need a rework if a better 
+		// solution is found that doesn't involve pointer swapping 
+		// (has corrupted script player ref properties once before) 
+		// or brute force copying items (causes lag spikes).
+		// Exchange the given player's inventory with P1's or restore P1's.
+		// Allows companion players to sell their own items, but obviously has limitations
+		// and can cause major issues if the game saves in this state. Thus, saving is prevented.
+		// P1 can keep their gold amount or do a full inventory swap.
 
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -9543,8 +9663,6 @@ namespace ALYSLC
 			return;
 		}
 		
-		// Get gold count from P1's base container, which was not earned by the player
-		// and purely exists to make modifying gold amounts hell.
 		auto baseContainer = p1->GetContainer();
 		auto defObjMgr = RE::BGSDefaultObjectManager::GetSingleton();
 		auto goldForm = 
@@ -9554,7 +9672,12 @@ namespace ALYSLC
 			nullptr
 		);
 		auto goldObj = goldForm ? goldForm->As<RE::TESBoundObject>() : nullptr;
+		// Save base container gold amount for use in maintaining P1's gold amount, if requested.
 		int32_t p1ContainerGoldAmount = 0;
+
+		// Remove all non-gold base container objects or they will appear
+		// when a companion player opens the Gift Menu and will be moved to the inventory changes
+		// as a usable object once transferred to another player. No free lunches, sorry.
 		if (goldObj &&
 			baseContainer && 
 			baseContainer->containerObjects &&
@@ -9564,217 +9687,423 @@ namespace ALYSLC
 			while (index < baseContainer->numContainerObjects)
 			{
 				auto containerObj = baseContainer->containerObjects[index];
-				if (containerObj->obj == goldObj)
+				SPDLOG_DEBUG
+				(
+					"Has container obj {} with count {} at index {}.",
+					containerObj &&
+					containerObj->obj ?
+					containerObj->obj->GetName() : 
+					"NONE",
+					containerObj ? 
+					containerObj->count :
+					-1,
+					index
+				);
+				if (containerObj)
 				{
-					p1ContainerGoldAmount += containerObj->count;
+					if (containerObj->obj == goldObj)
+					{
+						p1ContainerGoldAmount += containerObj->count;
+					}
+					else
+					{
+						// containerObj->count = -1;
+						const auto count = containerObj->count;
+						const auto obj = containerObj->obj;
+						bool removed = baseContainer->RemoveObjectFromContainer(obj, count);
+						if (removed)
+						{
+							SPDLOG_DEBUG
+							(
+								"Remove {} of {} from base container. Index: {} / {} now.",
+								count, 
+								obj->GetName(),
+								index, 
+								baseContainer->numContainerObjects
+							);
+							continue;
+						}
+					}
 				}
 				
 				++index;
 			}
 		}
 
-		// IMPORTANT:
-		// Save the gold amount before importing and the amount remaining on exit.
-		// Will set P1's gold to this amount.
-		// Base container + inventory changes total.
-		const int32_t p1GoldCount = p1->GetGoldAmount();
-		// Only inventory changes total. 
-		const int32_t p1InventoryGoldAmount = p1GoldCount - p1ContainerGoldAmount;
-		SPDLOG_DEBUG
-		(
-			"{}: P1 has {} gold, {} from base container, {} from inv changes.",
-			a_shouldImport ? "IMPORT" : "EXPORT",
-			p1GoldCount, 
-			p1ContainerGoldAmount, 
-			p1InventoryGoldAmount
-		);
-		if (a_shouldImport)
+		// Get gold count from P1's base container, which was not earned by the player
+		// and purely exists to make modifying gold amounts hell.
+		if (a_keepP1Gold)
 		{
-			// First, give all accumulated party-wide shared items, such as gold, to P1.
-			GlobalCoopData::GivePartyWideItemsToP1();
 
-			// Init, if needed, is a private func, but retrieving the changes 
-			// will also init if needed, so get the inventory changes for each container we need.
-			auto p1InvChanges = p1->GetInventoryChanges();
-			auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
-			auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
-
-			// Use chest inventory as temporary storage for P1's inventory items. 
-			// Clear it out first.
-			if (p1ChestInvChanges)
-			{
-				p1ChestInvChanges->RemoveAllItems
-				(
-					p1StorageChestRefrPtr.get(), nullptr, false, false, false
-				);
-			}
-
-			// Get the container changes to use in swapping inventory changes via assignment.
-			auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
-			auto p1ChestExChanges = 
+			// IMPORTANT:
+			// Save the gold amount before importing and the amount remaining on exit.
+			// Will set P1's gold to this amount.
+			// Base container + inventory changes total.
+			const int32_t p1GoldCount = p1->GetGoldAmount();
+			// Only inventory changes total. 
+			const int32_t p1InventoryGoldAmount = p1GoldCount - p1ContainerGoldAmount;
+			SPDLOG_DEBUG
 			(
-				p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+				"{}: P1 has {} gold, {} from base container, {} from inv changes.",
+				a_shouldImport ? "IMPORT" : "EXPORT",
+				p1GoldCount, 
+				p1ContainerGoldAmount, 
+				p1InventoryGoldAmount
 			);
-			auto companionChestExChanges = 
-			(
-				p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
-			);
-			if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+			if (a_shouldImport)
 			{
-				SPDLOG_ERROR
-				(
-					"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
-					"chest ({}), {}'s chest ({}).",
-					!p1ExChanges,
-					!p1ChestExChanges,
-					p->coopActor->GetName(),
-					!companionChestExChanges
-				);
-				return;
-			}
-			
-			SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
-			p1ChestExChanges->changes = p1ExChanges->changes;
+				// First, give all accumulated party-wide shared items, such as gold, to P1.
+				GlobalCoopData::GivePartyWideItemsToP1();
 
-			SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
-			/*p1->extraList.Remove
-			(
-				RE::ExtraDataType::kContainerChanges, p1ChestExChanges
-			);
-			p1->GetInventoryChanges();
-			p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
-			p1ExChanges->changes = companionChestExChanges->changes;
+				// Init, if needed, is a private func, but retrieving the changes 
+				// will also init if needed, so get the inventory changes for each container we need.
+				auto p1InvChanges = p1->GetInventoryChanges();
+				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 
-			if (p1ExChanges->changes && p1ExChanges->changes->entryList)
-			{
-				// Import P1 gold.
-				bool setFromEntry = false;
-				for (auto invEntry : *p1ExChanges->changes->entryList)
+				// Use chest inventory as temporary storage for P1's inventory items. 
+				// Clear it out first.
+				if (p1ChestInvChanges)
 				{
-					if (invEntry && 
-						invEntry->object->IsGold() &&
-						goldObj && 
-						p1InventoryGoldAmount > 0)
+					p1ChestInvChanges->RemoveAllItems
+					(
+						p1StorageChestRefrPtr.get(), nullptr, false, false, false
+					);
+				}
+
+				// Get the container changes to use in swapping inventory changes via assignment.
+				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+				auto p1ChestExChanges = 
+				(
+					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				auto companionChestExChanges = 
+				(
+					p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+						"chest ({}), {}'s chest ({}).",
+						!p1ExChanges,
+						!p1ChestExChanges,
+						p->coopActor->GetName(),
+						!companionChestExChanges
+					);
+					return;
+				}
+			
+				SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
+				p1ChestExChanges->changes = p1ExChanges->changes;
+
+				SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+				/*p1->extraList.Remove
+				(
+					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+				);
+				p1->GetInventoryChanges();
+				p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
+				// Adds back base container objects?
+				p1ExChanges->changes = companionChestExChanges->changes;
+				if (p1ExChanges->changes && p1ExChanges->changes->entryList)
+				{
+					// Import P1 gold.
+					bool setFromEntry = false;
+					for (auto invEntry : *p1ExChanges->changes->entryList)
 					{
-						SPDLOG_DEBUG
-						(
-							"IMPORT: Set P1 inventory changes gold amount to {} "
-							"from {} total and {} from base container. Was {}.",
-							p1InventoryGoldAmount,
-							p1GoldCount,
-							p1ContainerGoldAmount,
-							invEntry->countDelta
-						);
-						invEntry->countDelta = p1InventoryGoldAmount;
-						setFromEntry = true;
-						break;
+						if (invEntry && 
+							invEntry->object->IsGold() &&
+							goldObj && 
+							p1InventoryGoldAmount > 0)
+						{
+							SPDLOG_DEBUG
+							(
+								"IMPORT: Set P1 inventory changes gold amount to {} "
+								"from {} total and {} from base container. Was {}.",
+								p1InventoryGoldAmount,
+								p1GoldCount,
+								p1ContainerGoldAmount,
+								invEntry->countDelta
+							);
+							invEntry->countDelta = p1InventoryGoldAmount;
+							setFromEntry = true;
+							break;
+						}
+					}
+
+					if (!setFromEntry && goldObj && p1InventoryGoldAmount > 0)
+					{
+						SPDLOG_DEBUG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
+							p1GoldCount);
+						p1->AddObjectToContainer(goldObj, nullptr, p1InventoryGoldAmount, nullptr);
 					}
 				}
-
-				if (!setFromEntry && goldObj && p1InventoryGoldAmount > 0)
-				{
-					SPDLOG_DEBUG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
-						p1GoldCount);
-					p1->AddObjectToContainer(goldObj, nullptr, p1InventoryGoldAmount, nullptr);
-				}
-			}
 			
-			// Set P1's chest as temp owner of P1's inventory changes.
-			if (p1ChestExChanges->changes)
-			{
-				p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
-			}
+				// Set P1's chest as temp owner of P1's inventory changes.
+				if (p1ChestExChanges->changes)
+				{
+					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+				}
 
-			// Set P1 as the owner of the newly imported inventory changes.
-			if (p1ExChanges->changes)
+				// Set P1 as the owner of the newly imported inventory changes.
+				if (p1ExChanges->changes)
+				{
+					p1ExChanges->changes ->owner = p1;
+				}
+
+				SPDLOG_DEBUG
+				(
+					"IMPORT: P1 inv changes: {}: Owner is now {}.", 
+					(bool)p1ExChanges && p1ExChanges->changes, 
+					p1ExChanges && p1ExChanges->changes && p1ExChanges->changes->owner ? 
+					p1ExChanges->changes->owner->GetName() :
+					"NONE"
+				);
+			}
+			else
 			{
-				p1ExChanges->changes ->owner = p1;
+				// Init, if needed, is a private func, but retrieving the changes 
+				// will also init if needed, so get the inventory changes for each container we need.
+				auto p1InvChanges = p1->GetInventoryChanges();
+				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
+			
+				// Get the container changes to use in swapping inventory changes via assignment.
+				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+				auto p1ChestExChanges = 
+				(
+					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				auto companionChestExChanges = 
+				(
+					p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+						"chest ({}), {}'s chest ({}).",
+						!p1ExChanges,
+						!p1ChestExChanges,
+						p->coopActor->GetName(),
+						!companionChestExChanges
+					);
+					return;
+				}
+			
+				// Remove all the gold from P1 first before moving items 
+				// back to companion player's inventory chest.
+				SPDLOG_DEBUG("EXPORT: Remove {} gold on exit. Gold before: {}", 
+					p1GoldCount, p1->GetGoldAmount());
+				p1->RemoveItem
+				(
+					goldObj, p1GoldCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+				);
+
+				SPDLOG_DEBUG
+				(
+					"EXPORT: Move all P1 items to co-op companion. Gold is now: {}.",
+					p1->GetGoldAmount()
+				);
+				companionChestExChanges->changes = p1ExChanges->changes;
+
+				SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
+				// Adds back base container gold amount?
+				p1ExChanges->changes = p1ChestExChanges->changes;
+
+				// Remove all gold again before adding the gold total on menu closing.
+				SPDLOG_DEBUG
+				(
+					"EXPORT: Remove {} gold after importing back from chest.", p1->GetGoldAmount()
+				);
+				p1->RemoveItem
+				(
+					goldObj, p1->GetGoldAmount(), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+				);
+
+				SPDLOG_DEBUG
+				(
+					"EXPORT: Add {} gold after clearing out all gold. Gold before: {}.", 
+					p1GoldCount - p1ContainerGoldAmount, p1->GetGoldAmount()
+				);
+				p1->AddObjectToContainer
+				(
+					goldObj, nullptr, p1GoldCount - p1ContainerGoldAmount, nullptr
+				);
+
+				SPDLOG_DEBUG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
+
+				// Clear, remove, and re-init P1 chest inventory changes 
+				// after we've moved everything back.
+				p1ChestExChanges->changes = nullptr;
+				p1StorageChestRefrPtr->extraList.Remove
+				(
+					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+				);
+				p1StorageChestRefrPtr->GetInventoryChanges(); 
+			
+				// Restore each refr as owner of their own inventory changes.
+				if (p1ExChanges->changes)
+				{
+					p1ExChanges ->changes                                 ->owner = p1;
+				}
+
+				if (companionChestExChanges->changes)
+				{
+					companionChestExChanges->changes->owner = p->em->inventoryChest.get();
+				}
+
+				if (p1ChestExChanges->changes)
+				{
+					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+				}
+				
+				SPDLOG_DEBUG
+				(
+					"EXPORT: P1 inv changes: {}: Owner is now {}.", 
+					(bool)p1ExChanges && p1ExChanges->changes, 
+					p1ExChanges && p1ExChanges->changes && p1ExChanges->changes->owner ? 
+					p1ExChanges->changes->owner->GetName() :
+					"NONE"
+				);
 			}
 		}
 		else
 		{
-			// Init, if needed, is a private func, but retrieving the changes 
-			// will also init if needed, so get the inventory changes for each container we need.
-			auto p1InvChanges = p1->GetInventoryChanges();
-			auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
-			auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
-			
-			// Get the container changes to use in swapping inventory changes via assignment.
-			auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
-			auto p1ChestExChanges = 
-			(
-				p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
-			);
-			auto companionChestExChanges = 
-			(
-				p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
-			);
-			if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+			if (a_shouldImport)
 			{
-				SPDLOG_ERROR
+				// First, give all accumulated party-wide shared items, such as gold, to P1.
+				GlobalCoopData::GivePartyWideItemsToP1();
+
+				// Init, if needed, is a private func, but retrieving the changes 
+				// will also init if needed, so get the inventory changes for each container we need.
+				auto p1InvChanges = p1->GetInventoryChanges();
+				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
+
+				// Use chest inventory as temporary storage for P1's inventory items. 
+				// Clear it out first.
+				if (p1ChestInvChanges)
+				{
+					p1ChestInvChanges->RemoveAllItems
+					(
+						p1StorageChestRefrPtr.get(), nullptr, false, false, false
+					);
+				}
+
+				// Get the container changes to use in swapping inventory changes via assignment.
+				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+				auto p1ChestExChanges = 
 				(
-					"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
-					"chest ({}), {}'s chest ({}).",
-					!p1ExChanges,
-					!p1ChestExChanges,
-					p->coopActor->GetName(),
-					!companionChestExChanges
+					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
 				);
-				return;
-			}
+				auto companionChestExChanges = 
+				(
+					p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+						"chest ({}), {}'s chest ({}).",
+						!p1ExChanges,
+						!p1ChestExChanges,
+						p->coopActor->GetName(),
+						!companionChestExChanges
+					);
+					return;
+				}
 			
-			// Remove all the gold from P1 first before moving items 
-			// back to companion player's inventory chest.
-			SPDLOG_DEBUG("EXPORT: Remove {} gold on exit.", p1GoldCount);
-			p1->RemoveItem(goldObj, p1GoldCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+				SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
+				p1ChestExChanges->changes = p1ExChanges->changes;
 
-			SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
-			companionChestExChanges->changes = p1ExChanges->changes;
+				SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+				/*p1->extraList.Remove
+				(
+					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+				);
+				p1->GetInventoryChanges();
+				p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();*/
+				p1ExChanges->changes = companionChestExChanges->changes;
 
-			SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
-			p1ExChanges->changes = p1ChestExChanges->changes;
+				// Set P1's chest as temp owner of P1's inventory changes.
+				if (p1ChestExChanges->changes)
+				{
+					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+				}
 
-			// Remove all gold again before adding the gold total on menu closing.
-			SPDLOG_DEBUG
-			(
-				"EXPORT: Remove {} gold after importing back from chest.", p1->GetGoldAmount()
-			);
-			p1->RemoveItem
-			(
-				goldObj, p1->GetGoldAmount(), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
-			);
-
-			SPDLOG_DEBUG
-			(
-				"EXPORT: Add {} gold after clearing out all gold.", p1GoldCount
-			);
-			p1->AddObjectToContainer(goldObj, nullptr, p1GoldCount, nullptr);
-
-			SPDLOG_DEBUG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
-
-			// Clear, remove, and re-init P1 chest inventory changes 
-			// after we've moved everything back.
-			p1ChestExChanges->changes = nullptr;
-			p1StorageChestRefrPtr->extraList.Remove
-			(
-				RE::ExtraDataType::kContainerChanges, p1ChestExChanges
-			);
-			p1StorageChestRefrPtr->GetInventoryChanges(); 
+				// Set P1 as the owner of the newly imported inventory changes.
+				if (p1ExChanges->changes)
+				{
+					p1ExChanges->changes ->owner = p1;
+				}
+			}
+			else
+			{
+				// Init, if needed, is a private func, but retrieving the changes 
+				// will also init if needed, so get the inventory changes for each container we need.
+				auto p1InvChanges = p1->GetInventoryChanges();
+				auto p1ChestInvChanges = p1StorageChestRefrPtr->GetInventoryChanges(); 
+				auto companionChestInvChanges = p->em->inventoryChest->GetInventoryChanges();
 			
-			// Restore each refr as owner of their own inventory changes.
-			if (p1ExChanges->changes)
-			{
-				p1ExChanges->changes ->owner = p1;
-			}
+				// Get the container changes to use in swapping inventory changes via assignment.
+				auto p1ExChanges = p1->extraList.GetByType<RE::ExtraContainerChanges>();
+				auto p1ChestExChanges = 
+				(
+					p1StorageChestRefrPtr->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				auto companionChestExChanges = 
+				(
+					p->em->inventoryChest->extraList.GetByType<RE::ExtraContainerChanges>()
+				);
+				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
+						"chest ({}), {}'s chest ({}).",
+						!p1ExChanges,
+						!p1ChestExChanges,
+						p->coopActor->GetName(),
+						!companionChestExChanges
+					);
+					return;
+				}
+			
+				SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
+				companionChestExChanges->changes = p1ExChanges->changes;
 
-			if (companionChestExChanges->changes)
-			{
-				companionChestExChanges->changes->owner = p->em->inventoryChest.get();
-			}
+				SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
+				p1ExChanges->changes = p1ChestExChanges->changes;
 
-			if (p1ChestExChanges->changes)
-			{
-				p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+				// Clear, remove, and re-init P1 chest inventory changes 
+				// after we've moved everything back.
+				p1ChestExChanges->changes = nullptr;
+				p1StorageChestRefrPtr->extraList.Remove
+				(
+					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
+				);
+				p1StorageChestRefrPtr->GetInventoryChanges(); 
+			
+				// Restore each refr as owner of their own inventory changes.
+				if (p1ExChanges->changes)
+				{
+					p1ExChanges->changes ->owner = p1;
+				}
+
+				if (companionChestExChanges->changes)
+				{
+					companionChestExChanges->changes->owner = p->em->inventoryChest.get();
+				}
+
+				if (p1ChestExChanges->changes)
+				{
+					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
+				}
 			}
 		}
 	}

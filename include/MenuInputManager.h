@@ -246,8 +246,10 @@ namespace ALYSLC
 		std::vector<EntryEquipState> magEntryEquipStates;
 		// Queued emulated P1 InputEvents to send once chained.
 		std::vector<std::unique_ptr<RE::InputEvent* const>> queuedInputEvents;
+		// Is the open container a companion player's inventory chest?
+		bool inventoryChestOpen;
 		// Is the Container Menu opened and showing the player's inventory or not?
-		bool isCoopInventory;
+		bool isShowingInventory;
 		// Refresh the current menu's entries when an item is added/removed.
 		bool shouldReloadMenuEntries;
 		// Device ID for the co-op companion player controlling menus.
@@ -323,6 +325,8 @@ namespace ALYSLC
 
 			return a_itemList->GetSelectedItem();
 		}
+
+		
 
 		// Update menu control map based on the menu-controlling player's input.
 		// Resolve a menu input event type to handle and then handle that event type.
@@ -466,6 +470,10 @@ namespace ALYSLC
 
 		// Set handled menu type based on the current menu name atop the stack.
 		bool UpdateMenuType();
+
+		// Update the flags indicating that the open container is the player's inventory chest
+		// or that the player is viewing their inventory while a menu is open.
+		void UpdateShowingInventoryFlags();
 
 		//
 		// Members

@@ -38,7 +38,7 @@ Function Init()
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot initialize co-op data.")
-		ALYSLC.LogError("[INIT SCRIPT] Critical Error: P1's actor is invalid. Cannot initialize co-op data.")
+		ALYSLC.LogError("[INIT SCRIPT] Critical Error: P1's actor is invalid. Cannot initialize co-op data. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
 		Return
 	EndIf
 

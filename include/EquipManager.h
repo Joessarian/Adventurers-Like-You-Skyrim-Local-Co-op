@@ -25,28 +25,27 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
-		// Remove form from desired forms list when it is unequipped.
-		inline void ClearDesiredEquippedFormOnUnequip
+		inline void ClearDesiredEquippedFormAtIndex
 		(
-			RE::TESForm* a_toUnequip, const uint32_t& a_listIndex
+			RE::TESForm* a_form, const std::underlying_type_t<EquipIndex>& a_listIndex
 		) 
 		{
 			// Must have a valid item to unequip and an index within the bounds
 			// of the desired forms/exData lists arrays.
-			if (!a_toUnequip || 
+			if (!a_form || 
 				a_listIndex == !EquipIndex::kNone ||
 				a_listIndex >= !EquipIndex::kTotal)
 			{
 				return;
 			}
 
-			SPDLOG_DEBUG("Unequip {}, index {}.", a_toUnequip->GetName(), a_listIndex);
+			SPDLOG_DEBUG("Remove {}, index {}.", a_form->GetName(), a_listIndex);
 			// If the requested form to unequip is not the same as 
 			// the one already in this slot, do not clear the slot.
 			bool diffFormAlreadyInSlot = 
 			(
 				desiredForms[a_listIndex] && 
-				desiredForms[a_listIndex] != a_toUnequip
+				desiredForms[a_listIndex] != a_form
 			);
 			if (!diffFormAlreadyInSlot)
 			{
@@ -518,7 +517,7 @@ namespace ALYSLC
 			RE::TESBoundObject* a_object,
 			RE::ExtraDataList* a_extraDataList,
 			uint32_t a_count,
-			bool a_leftHand,
+			bool a_equipsToLH,
 			bool a_keepInChest = true
 		);
 
@@ -533,12 +532,19 @@ namespace ALYSLC
 		// If no chest exData list is provided when trying to add exRank data on equip,
 		// attempt to find a matching chest exData list for the equipped exData list 
 		// in the same hand before adding worn exRank data.
-		void ChangeChestWornRankExData
+		void ChangeWornRankExData
 		(
-			RE::TESBoundObject* a_boundObj,
-			bool a_leftHand,
+			RE::TESBoundObject* a_object,
+			bool a_equipsToLH,
 			bool a_add,
 			RE::ExtraDataList* a_chestListToChange = nullptr
+		);
+		
+		// Remove form from desired forms list at all indices that contain it, 
+		// plus any given specific index to remove the item from.
+		void ClearDesiredEquippedForm
+		(
+			RE::TESForm* a_form, const RE::BGSEquipSlot* a_slot, const EquipIndex& a_equipIndex
 		);
 
 		// NOTE:
@@ -700,6 +706,8 @@ namespace ALYSLC
 			bool a_applyNow = false
 		);
 
+		// IMPORTANT:
+		// Given extra data list should always be from the player's inventory.
 		// Remove items, extra data lists, inventory entries, and clean up after unequipping.
 		// Can specify a specific equip index to clear out in the desired forms/exData arrays.
 		// 'kNone' to have the function compute it based on the item type or to not clear any slot.
@@ -803,6 +811,9 @@ namespace ALYSLC
 		
 		// Remove all items that were not equipped by the player
 		// from the player character's inventory.
+		// Done when an item is added to the player's inventory.
+		// Ignore the given most recently added item's extra data list, 
+		// since this list was added before equipping the item.
 		void RemoveUndesiredItems();
 
 		// Set cached copied magic form and form ID 
@@ -818,7 +829,7 @@ namespace ALYSLC
 		
 		// Populate cached lists of cyclable favorited items of the given type.
 		void SetCyclableFavForms(CyclableForms a_favFormType);
-		
+
 		// Assign new list of favorited emote idles.
 		void SetFavoritedEmoteIdles(std::vector<RE::BSFixedString> a_emoteIdlesList);
 		

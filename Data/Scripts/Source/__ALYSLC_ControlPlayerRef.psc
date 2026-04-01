@@ -65,7 +65,7 @@ Event OnCoopStart()
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot run P1 reference alias script.")
-		ALYSLC.LogError("[CP1R SCRIPT] Critical Error: P1's actor is invalid. Cannot run P1 reference alias script.")
+		ALYSLC.LogError("[CP1R SCRIPT] Critical Error: P1's actor is invalid. Cannot run P1 reference alias script. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
 		Return
 	EndIf
 

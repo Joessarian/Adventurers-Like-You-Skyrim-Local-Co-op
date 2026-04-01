@@ -300,7 +300,7 @@ namespace ALYSLC
 			static RE::ObjectRefHandle* RemoveItem
 			(
 				RE::Character* a_this,
-				RE::ObjectRefHandle& a_handleOut,
+				RE::ObjectRefHandle* a_handleOut, 
 				RE::TESBoundObject* a_item, 
 				std::int32_t a_count,
 				RE::ITEM_REMOVE_REASON a_reason, 
@@ -644,7 +644,7 @@ namespace ALYSLC
 			static RE::ObjectRefHandle* RemoveItem
 			(
 				RE::PlayerCharacter* a_this,
-				RE::ObjectRefHandle& a_handleOut,
+				RE::ObjectRefHandle* a_handleOut, 
 				RE::TESBoundObject* a_item, 
 				std::int32_t a_count,
 				RE::ITEM_REMOVE_REASON a_reason, 
@@ -1080,7 +1080,7 @@ namespace ALYSLC
 			static RE::ObjectRefHandle* RemoveItem
 			(
 				RE::TESObjectREFR* a_this,
-				RE::ObjectRefHandle& a_handleOut,
+				RE::ObjectRefHandle* a_handleOut, 
 				RE::TESBoundObject* a_item, 
 				std::int32_t a_count,
 				RE::ITEM_REMOVE_REASON a_reason, 
@@ -1344,6 +1344,25 @@ namespace ALYSLC
 			static RE::UI_MESSAGE_RESULTS ProcessMessage
 			(
 				RE::FavoritesMenu* a_this, RE::UIMessage& a_message
+			);
+			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
+		};
+
+		// [Gift Menu Hooks]
+		class GiftMenuHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_GiftMenu[0] };
+				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
+				SPDLOG_INFO("Installed ProcessMessage() hook.");
+			}
+
+		private:                                     
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::GiftMenu* a_this, RE::UIMessage& a_message
 			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
