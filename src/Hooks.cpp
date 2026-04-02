@@ -7877,22 +7877,10 @@ namespace ALYSLC
 				// If the drop request is present when running through this hook,
 				// the item was moved from the inventory chest while the menu-controlling 
 				// player's inventory is NOT copied to P1.
-				bool isDropReq = false;
-				if (a_extraList)
-				{
-					auto exFlags = a_extraList->GetByType<RE::ExtraFlags>();
-					if (exFlags)
-					{
-						isDropReq = exFlags->flags.all(RE::ExtraFlags::Flag::kPlayerHasTaken);
-					}
-
-					SPDLOG_DEBUG
-					(
-						"List is {:p}. Drop request flag set for list: {}.", 
-						fmt::ptr(a_extraList), isDropReq
-					);
-				}
-
+				bool isDropReq = 
+				(
+					glob.mim->dropReqPair.first == a_object && glob.mim->dropReqPair.second > 0
+				);
 				const auto& p = glob.coopPlayers[glob.menuPID];
 				bool shouldSendToCompanionPlayer = 
 				(
@@ -7949,39 +7937,60 @@ namespace ALYSLC
 						nullptr
 					);
 				}
-				//else if (isDropReq)
-				//{
-				//	SPDLOG_DEBUG
-				//	(
-				//		"Dropping item {} (x{}) from P1. From {}.",
-				//		a_object->GetName(),
-				//		a_count,
-				//		a_fromRefr ? a_fromRefr->GetName() : "NONE"
-				//	);
-				//	// Add and drop directly.
-				//	_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
-				//	auto dropPos = 
-				//	(
-				//		p->mm->playerTorsoPosition + 
-				//		Util::RotationToDirectionVect
-				//		(
-				//			0.0f, 
-				//			Util::ConvertAngle
-				//			(
-				//				p->coopActor->GetHeading(false)
-				//			)
-				//		) * 0.5f * p->coopActor->GetHeight()
-				//	);
-				//	a_this->RemoveItem
-				//	(
-				//		a_object,
-				//		a_count,
-				//		RE::ITEM_REMOVE_REASON::kDropping,
-				//		a_extraList,
-				//		nullptr,
-				//		std::addressof(dropPos)
-				//	);
-				//}
+				else if (isDropReq)
+				{
+					// Set to zero at the minimum.
+					glob.mim->dropReqPair.second -= min
+					(
+						glob.mim->dropReqPair.second, max(0, a_count)
+					);
+					if (glob.mim->dropReqPair.second == 0)
+					{
+						glob.mim->dropReqPair.first = nullptr;
+					}
+
+					SPDLOG_DEBUG
+					(
+						"Dropping {} (x{}, {:p}). Drop request is now {}, {}.",
+						a_object->GetName(),
+						a_count, 
+						fmt::ptr(a_extraList),
+						glob.mim->dropReqPair.first ?
+						glob.mim->dropReqPair.first->GetName() :
+						"NONE",
+						glob.mim->dropReqPair.second
+					);
+					// Add and drop directly.
+					auto dropPos = 
+					(
+						p->mm->playerTorsoPosition + 
+						Util::RotationToDirectionVect
+						(
+							0.0f, 
+							Util::ConvertAngle
+							(
+								p->coopActor->GetHeading(false)
+							)
+						) * 0.5f * p->coopActor->GetHeight()
+					);
+					_AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
+					a_this->DropObject
+					(
+						a_object,
+						a_extraList,
+						a_count,
+						std::addressof(dropPos)
+					);
+					/*a_this->RemoveItem
+					(
+						a_object,
+						a_count,
+						RE::ITEM_REMOVE_REASON::kDropping,
+						a_extraList,
+						nullptr,
+						std::addressof(dropPos)
+					);*/
+				}
 				else
 				{
 					SPDLOG_DEBUG
@@ -9079,45 +9088,33 @@ namespace ALYSLC
 					// which means the companion player wanted to drop the item 
 					// while their inventory is copied to P1.
 					// Clear the flag afterward either way.
-					bool isDropReq = false;
-					if (invEntry && 
-						invEntry->extraLists && 
-						!invEntry->extraLists->empty())
-					{
-						auto frontList = invEntry->extraLists->front();
-						auto exFlags = frontList->GetByType<RE::ExtraFlags>();
-						if (exFlags)
-						{
-							isDropReq = exFlags->flags.all(RE::ExtraFlags::Flag::kPlayerHasTaken);
-							frontList->Remove(RE::ExtraDataType::kFlags, exFlags);
-						}
-						
-						SPDLOG_DEBUG
-						(
-							"Front list is {:p}. Drop flag for list: {}.", 
-							fmt::ptr(frontList), isDropReq
-						);
-					}
-					else
-					{
-						SPDLOG_DEBUG
-						(
-							"No P1 inventory entry for {} ({}) or no extra data lists ({}).",
-							a_item->GetName(), 
-							!invEntry,
-							((invEntry) && (!invEntry->extraLists || invEntry->extraLists->empty()))
-						);
-					}
-
+					bool isDropReq = 
+					(
+						glob.mim->dropReqPair.first == a_item && glob.mim->dropReqPair.second > 0
+					);
 					if (isDropReq)
 					{
+						// Set to zero at the minimum.
+						glob.mim->dropReqPair.second -= min
+						(
+							glob.mim->dropReqPair.second, max(0, a_count)
+						);
+						if (glob.mim->dropReqPair.second == 0)
+						{
+							glob.mim->dropReqPair.first = nullptr;
+						}
+
 						SPDLOG_DEBUG
 						(
-							"{}: Dropping {} (x{}, {:p}).",
+							"{}: Dropping {} (x{}, {:p}). Drop request is now {}, {}.",
 							menuP->coopActor->GetName(), 
 							a_item->GetName(),
 							a_count, 
-							fmt::ptr(a_extraList)
+							fmt::ptr(a_extraList),
+							glob.mim->dropReqPair.first ?
+							glob.mim->dropReqPair.first->GetName() :
+							"NONE",
+							glob.mim->dropReqPair.second
 						);
 						auto dropPos = 
 						(
@@ -13007,58 +13004,31 @@ namespace ALYSLC
 				Util::ChangeFormFavoritesStatus(a_this, a_item, false);
 			}
 				
-			// Check if there's an exFlag we set before transferring the item,
+			// Check if there's an matching object in the drop request pair 
+			// that we set before moving the item,
 			// which means the player wanted to drop the item.
 			// If it's present, we drop the item after transferring to P1,
-			// otherwise, we just transfer the item. Clear the flag afterward either way.
-			auto chestInvEntry = Util::GetInventoryEntryDataForObject
+			// otherwise, we just transfer the item.
+			bool isDropReq = 
 			(
-				a_this, a_item, a_extraList
+				glob.mim->dropReqPair.first == a_item && glob.mim->dropReqPair.second > 0
 			);
-			bool isDropReq = false;
-			if (chestInvEntry && 
-				chestInvEntry->extraLists && 
-				!chestInvEntry->extraLists->empty())
-			{
-				auto frontList = chestInvEntry->extraLists->front();
-				auto exFlags = frontList->GetByType<RE::ExtraFlags>();
-				if (exFlags)
-				{
-					isDropReq = exFlags->flags.all(RE::ExtraFlags::Flag::kPlayerHasTaken);
-					frontList->Remove(RE::ExtraDataType::kFlags, exFlags);
-				}
-				
-				SPDLOG_DEBUG
-				(
-					"Front list is {:p}. Drop flag for list: {}.", 
-					fmt::ptr(frontList), isDropReq
-				);
-			}
-			else
-			{
-				SPDLOG_DEBUG
-				(
-					"No chest inventory entry for {} ({}) or no extra data lists ({}).",
-					a_item->GetName(), 
-					!chestInvEntry,
-					(
-						(chestInvEntry) && 
-						(!chestInvEntry->extraLists || chestInvEntry->extraLists->empty())
-					)
-				);
-			}
-
 			RE::ObjectRefHandle* refHandlePtr = nullptr;
 			// Remove to P1 and then drop.
 			if (isDropReq)
 			{
 				SPDLOG_DEBUG
 				(
-					"Drop {} of {} via P1. Move to P1 first: {}.", 
+					"Drop {} of {} via P1. Move to P1 first: {}. Drop request is: {}, {}", 
 					a_count,
 					a_item->GetName(), 
-					glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kInventory)
+					glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kInventory),
+					glob.mim->dropReqPair.first ?
+					glob.mim->dropReqPair.first->GetName() :
+					"NONE",
+					glob.mim->dropReqPair.second
 				);
+
 				// Make sure to not transfer to P1 if the inventory changes are shared.
 				if (glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kInventory))
 				{
@@ -13077,7 +13047,7 @@ namespace ALYSLC
 				}
 
 				// Now in P1's inventory, we can drop the item here.
-				auto dropPos = 
+				/*auto dropPos = 
 				(
 					p->mm->playerTorsoPosition + 
 					Util::RotationToDirectionVect
@@ -13098,7 +13068,7 @@ namespace ALYSLC
 					nullptr, 
 					std::addressof(dropPos), 
 					nullptr
-				);
+				);*/
 
 				a_handleOut = nullptr;
 			}

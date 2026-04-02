@@ -43,6 +43,7 @@ namespace ALYSLC
 		// Ints
 		managedCoopMenusCount = 0;
 		// Bools
+		dropBindPressed = false;
 		inventoryChestOpen = false;
 		isShowingInventory = false;
 		placeholderMagicChanged = false;
@@ -56,7 +57,8 @@ namespace ALYSLC
 		pmcFadeInterpData->SetInterpInterval(1.0f, true);
 		pmcFadeInterpData->SetInterpInterval(1.0f, false);
 
-		// Clear maps, sets, vectors.
+		// Clear pairs, maps, sets, vectors.
+		dropReqPair = { nullptr, 0 };
 		favMenuIndexToEntryMap.clear();
 		favEntryEquipStates.clear();
 		magEntryEquipStates.clear();
@@ -262,6 +264,7 @@ namespace ALYSLC
 		// Reset general menu data.
 		currentMenuInputEventType = MenuInputEventType::kReleasedNoEvent;
 		reqEquipIndex = EquipIndex::kRightHand;
+		dropBindPressed = false;
 		equipEventRefreshReq = false;
 		inventoryChestOpen = false;
 		isShowingInventory = false;
@@ -303,6 +306,7 @@ namespace ALYSLC
 				containerRefrPtr == glob.coopPlayers[pIndex]->em->inventoryChest	
 			);
 			isShowingInventory = inventoryChestOpen;
+			dropReqPair = { nullptr, 0 };
 			RefreshMenu();
 		}
 		else if (giftMenu)
@@ -2978,29 +2982,6 @@ namespace ALYSLC
 		}
 		*/
 		
-		bool quantityMenuOpen = false;
-		auto view = containerMenu->uiMovie;
-		if (view && !containerMenu->root.IsNull() && !containerMenu->root.IsUndefined())
-		{
-			RE::GFxValue alpha{ };
-			containerMenu->uiMovie->GetVariable
-			(
-				std::addressof(alpha), "_root.Menu_mc.itemCard.QuantitySlider_mc._alpha"
-			);
-			if (!alpha.IsNull() && !alpha.IsUndefined())
-			{
-				SPDLOG_DEBUG("Alpha is {}.", alpha.GetUInt());
-				quantityMenuOpen = alpha.GetUInt() > 0;
-			}
-		}
-		
-		// Haven't figured out a Scaleform event for item transfers through menus,
-		// so this will have to do.
-		// Drop if the bind is pressed, or if already requested a drop with the bind
-		// and now accepting the amount given by the quantity slider menu.
-		// Clear the drop flag if the quantity menu is closed or if cancelling the drop request
-		// while the quantity menu is open.
-		bool dropReq = a_userEvent == ue->xButton;
 		if (a_userEvent == ue->accept || a_userEvent == ue->xButton)
 		{
 			if (isShowingInventory)
@@ -3024,75 +3005,129 @@ namespace ALYSLC
 					currentMenuInputEventType,
 					fmt::ptr(selectedExDataList)
 				);
-				if (dropReq)
+
+				// Get total item count to check if the quantity menu will open 
+				// when we try to transfer the item.
+				RE::GFxValue entryCount{ };
+				selectedItem->obj.GetMember("count", std::addressof(entryCount));
+				SPDLOG_DEBUG("Menu entry count: {}, inv entry count: {}.",
+					entryCount.GetUInt(), selectedItem->data.GetCount());
+				uint32_t totalItemCount = 
+				(
+					!entryCount.IsNull() && !entryCount.IsUndefined() && entryCount.GetUInt() > 0 ?
+					entryCount.GetUInt() : 
+					selectedItem->data.GetCount()
+				);
+				// Haven't figured out a Scaleform event for item transfers through menus,
+				// so this will have to do.
+				bool quantityMenuOpen = false;
+				uint32_t chosenCount = 0;
+				auto view = containerMenu->uiMovie;
+				if (view && !containerMenu->root.IsNull() && !containerMenu->root.IsUndefined())
+				{
+					RE::GFxValue alpha{ };
+					containerMenu->uiMovie->GetVariable
+					(
+						std::addressof(alpha), "_root.Menu_mc.itemCard.QuantitySlider_mc._alpha"
+					);
+					if (!alpha.IsNull() && !alpha.IsUndefined())
+					{
+						SPDLOG_DEBUG("Alpha is {}.", alpha.GetUInt());
+						quantityMenuOpen = alpha.GetUInt() > 0;
+					}
+
+					RE::GFxValue value{ };
+					containerMenu->uiMovie->GetVariable
+					(
+						std::addressof(value), "_root.Menu_mc.itemCard.QuantitySlider_mc._value"
+					);
+					if (!value.IsNull() && !value.IsUndefined())
+					{
+						SPDLOG_DEBUG("Value is {}.", value.GetUInt());
+						chosenCount = value.GetUInt();
+					}
+
+					containerMenu->uiMovie->GetVariable
+					(
+						std::addressof(value), "_root.Menu_mc.itemCard.QuantitySlider_mc._maximum"
+					);
+					if (!value.IsNull() && !value.IsUndefined())
+					{
+						SPDLOG_DEBUG("Max is {}.", value.GetUInt());
+					}
+				}
+				
+				// Quantity menu only opens if there are at least 5 of an item:
+				// https://github.com/Mardoxx/skyrimui/blob/master/src/containermenu/ContainerMenu.as#L204
+				if (quantityMenuOpen)
+				{
+					SPDLOG_DEBUG("QUANTMEN: {}, {}.", boundObj->GetName(), chosenCount);
+				}
+				else
+				{
+					// Drops 1 at a time if there are 5 or under.
+					chosenCount = totalItemCount <= 5 ? 1 : totalItemCount;
+				}
+
+				// Clear the drop flag if the quantity menu is closed 
+				// or if cancelling the drop request
+				// while the quantity menu is open.
+				if (a_userEvent == ue->xButton)
+				{
+					SPDLOG_DEBUG("REQUESTED: SET DROP BIND FLAG.");
+					dropBindPressed = true;
+				}
+				
+				SPDLOG_DEBUG
+				(
+					"User event name: {}, count to drop: {}, "
+					"drop bind pressed: {}, quantmen open: {}.",
+					a_userEvent, chosenCount, dropBindPressed, quantityMenuOpen
+				);
+				
+				// JANK AND ANGUISH AHEAD:
+				// Have to send some info over to the RemoveItem/AddObjectToContainer hooks
+				// to indicate that the player wants to drop the items
+				// we are about to transfer by using the 'Accept' bind.
+				// Have to distinguish between a normal transfer and a drop request
+				// when both are triggered by the same bind.
+				// 
+				// Passing some data through the selected extra data list is not viable
+				// since:
+				// 1. There is no extra data list for unmodified items.
+				// 2. The item gets moved from the inventory chest to P1
+				// which can split the stack and result in multiple extra data lists passed 
+				// via the PlayerCharacter::AddObjectToContainer() calls,
+				// 3. Those lists can also vary based on how many items the player is dropping.
+				// 
+				// The only link we can establish, since we must transfer the item to P1 first
+				// for the drop to succeed, is saving the object and number to drop.
+				// 
+				// Drop if the bind is pressed, or if already requested a drop with the bind
+				// and now accepting the amount given by the quantity slider menu.
+				// We CAN clear the flag if moving or dropping individual items
+				// or the quantity menu has opened 
+				// and we are about to confirm transfer of the item(s).
+				if ((dropBindPressed) && ((totalItemCount <= 5) || (quantityMenuOpen)))
+				{
+					dropReqPair = { boundObj, chosenCount };
+					// Reset flag once drop request is fulfilled.
+					dropBindPressed = false;
+					SPDLOG_DEBUG
+					(
+						"REQUESTED. RESET DROP BIND FLAG, "
+						"count to drop: {}, quantmen open: {}, event: {}.",
+						chosenCount, quantityMenuOpen, a_userEvent
+					);
+				}
+
+				if (a_userEvent == ue->xButton)
 				{	
+					SPDLOG_DEBUG("Attempt drop.");
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 					shouldRefreshMenu = false;
 					shouldReloadMenuEntries = false;
-					// Can't use the menu entry because it was constructed 
-					// just to display the object and is not the same as the underlying chest entry,
-					// meaning the chest is not modified if the menu entry is modified.
-					auto chestInvEntry = Util::GetInventoryEntryDataForObject
-					(
-						p->em->inventoryChest.get(), boundObj, selectedExDataList
-					);
-					// I need to persist some data to signal the RemoveItem() hook
-					// that the player wants to drop the item and not just transfer it to P1,
-					// since we're using the 'Accept' bind to transfer the item first
-					// after allowing the player to select the quantity to drop.
-					// Indicate that the item should be dropped via the RemoveItem() hook
-					// by adding an extra data flag that'll get cleared before dropping.
 
-					bool succ = false;
-					if (chestInvEntry)
-					{
-						if (!chestInvEntry->extraLists || chestInvEntry->extraLists->empty())
-						{
-							SPDLOG_DEBUG
-							(
-								"{}: MALLOC new extra data list for item {} "
-								"before adding drop flag extra data.",
-								p->coopActor->GetName(), 
-								boundObj->GetName()
-							);
-							auto newList = Util::CreateExtraDataList();
-							if (newList)
-							{
-								// Set count to cover the unmodified item total
-								// so that when we drop the item later,
-								// the item won't be moved as two separate stacks:
-								// one with our new extra data list (count 1)
-								// and one with all the unmodified items (total count - 1).
-								newList->SetCount(chestInvEntry->countDelta);
-								chestInvEntry->AddExtraList(newList);
-							}
-						}
-
-						if (chestInvEntry->extraLists && 
-							!chestInvEntry->extraLists->empty())
-						{
-							// Only need the front list to have the flag set
-							// when notifying the RemoveItem hook to drop the item.
-							SPDLOG_DEBUG("Set drop flag for list {:p}.", 
-								fmt::ptr(chestInvEntry->extraLists->front()));
-							chestInvEntry->extraLists->front()->SetExtraFlags
-							(
-								RE::ExtraFlags::Flag::kPlayerHasTaken, true
-							);
-							succ = true;
-						}
-					}
-					
-					// Notify the player that the item will be transferred to P1's inventory instead
-					// if the drop flag cannot be set.
-					if (!succ)
-					{
-						RE::DebugMessageBox
-						(
-							"[ALYLSC]\nFailed to drop the selected item. Moved to player 1 instead."
-						);
-					}
-					
 					// Send an 'accept' input event to move the item to P1.
 					// Save the add object call params to match against later
 					// in the PlayerCharacter::AddObjectToContainer() hook 
@@ -3144,6 +3179,9 @@ namespace ALYSLC
 					(*buttonEvent2.get())->AsIDEvent()->pad24 = 0xCA11;
 					Util::SendInputEvent(buttonEvent);
 					Util::SendInputEvent(buttonEvent2);
+
+					// This may open a quantity menu, 
+					// so we cannot clear the drop bind pressed flag yet.
 				}
 				else
 				{
@@ -3159,6 +3197,12 @@ namespace ALYSLC
 				// Take or drop through P1.
 				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 			}
+		}
+		else if (a_userEvent == ue->cancel)
+		{
+			// Reset flag once drop request is cancelled.
+			SPDLOG_DEBUG("CANCELLED: RESET DROP BIND FLAG.");
+			dropBindPressed = false;
 		}
 		// Favorite the selected item.
 		else if (a_userEvent == ue->yButton)
@@ -7937,7 +7981,6 @@ namespace ALYSLC
 								SPDLOG_DEBUG
 								(
 									"{} is in control of {}'s QuickLoot menu.",
-									GlobalCoopData::LOOT_MENU, 
 									p->coopActor->GetName(), 
 									assocRefrPtr->GetName()
 								);

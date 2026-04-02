@@ -223,6 +223,8 @@ namespace ALYSLC
 		SteadyClock::time_point jumpStartTP;
 		// Time point indicating when the last activation check was performed.
 		SteadyClock::time_point lastActivationCheckTP;
+		// Time point indicating when the activate action last started.
+		SteadyClock::time_point lastActivationStartTP;
 		// Time point indicating when the player last started any attack.
 		SteadyClock::time_point lastAttackStartTP;
 		// Time point indicating when the last grabbed refr was auto-grabbed.

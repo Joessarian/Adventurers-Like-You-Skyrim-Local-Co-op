@@ -183,6 +183,15 @@ namespace ALYSLC
 		extCrosshairMessage = std::make_unique<CrosshairMessage>();
 		lastCrosshairMessage = std::make_unique<CrosshairMessage>();
 		// UI element fade data.
+		activationIndicatorOscillationData = std::make_unique<TwoWayInterpData>();
+		activationIndicatorOscillationData->SetInterpInterval
+		(
+			Settings::fSecsBetweenActivationChecks, true
+		);
+		activationIndicatorOscillationData->SetInterpInterval
+		(
+			Settings::fSecsBetweenActivationChecks, false
+		);
 		aimPitchIndicatorFadeInterpData = std::make_unique<TwoWayInterpData>();
 		aimPitchIndicatorFadeInterpData->SetInterpInterval(0.25f, true);
 		aimPitchIndicatorFadeInterpData->SetInterpInterval(0.5f, false);
@@ -315,6 +324,117 @@ namespace ALYSLC
 				);
 			}
 		}
+	}
+
+	void TargetingManager::DrawActivationTargetIndicator()
+	{
+		// Draw the lower portion of the player indicator 
+		// to mark the player's chosen activation target if it is not the crosshair target.
+
+		// Need to have a valid activation target that is not the crosshair refr
+		// and be performing an activation player action.
+		auto activationRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
+		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
+		if (!activationRefrPtr ||
+			activationRefrPtr == crosshairRefrPtr ||
+			!Util::IsValidRefrForTargeting(activationRefrPtr.get()) ||
+			!p->pam->IsPerformingOneOf
+			(
+				InputAction::kActivate, 
+				InputAction::kActivateAllOfType, 
+				InputAction::kActivateCancel
+			))
+		{
+			return;
+		}
+
+		// Offset each player's capping circle upward from the torso position
+		// to the head position, based on their player ID, 
+		// so the circles do not intersect with each other when the same aim correction target 
+		// is selected by multiple players.
+		const float& indicatorBaseThickness = 
+		(
+			Settings::vfPlayerIndicatorThickness[p->playerID]
+		);
+		const auto asActor = activationRefrPtr->As<RE::Actor>();
+		const auto basePos = 
+		(
+			asActor ? 
+			Util::GetHeadPosition(asActor) + 
+			RE::NiPoint3(0.0f, 0.0f, Util::GetHeadRadius(asActor) + 5.0f) :
+			Util::Get3DCenterPos(activationRefrPtr.get())
+		);
+		const float pixelHeight = Util::GetBoundPixelDist(activationRefrPtr.get(), true);
+		auto screenBasePos = Util::WorldToScreenPoint3(basePos);
+		auto screenTopPos = screenBasePos + RE::NiPoint3(0.0f, 0.0f, pixelHeight * 0.25f);
+		auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
+		const float indicatorLength = std::clamp
+		(
+			pixelHeight * 0.5f, 
+			DebugAPI::screenResY * 0.0075f, 
+			DebugAPI::screenResY * 0.02f
+		);
+		const float scalingFactor = indicatorLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH;
+		const float indicatorThickness = indicatorBaseThickness * scalingFactor;
+		const float indicatorGap = max(2.0f, indicatorLength);
+		if ((activationIndicatorOscillationData->interpToMax &&
+			activationIndicatorOscillationData->value != 1.0f) ||
+			(activationIndicatorOscillationData->interpToMin && 
+			activationIndicatorOscillationData->value != 0.0f))
+		{
+			activationIndicatorOscillationData->UpdateInterpolatedValue
+			(
+				activationIndicatorOscillationData->directionChangeFlag
+			);
+		}
+		else
+		{
+			activationIndicatorOscillationData->UpdateInterpolatedValue
+			(
+				!activationIndicatorOscillationData->directionChangeFlag
+			);
+		}
+
+		// Points are offset downward from origin (+Y Scaleform axis).
+		// Have to rebase from the bottom tip by subtracting the length for each segment,
+		// multiplying with the base scaling offset, and then factoring in the gap.
+		float gapDelta = activationIndicatorOscillationData->value * indicatorGap;
+		for (auto& offset : lowerPortionOffsets)
+		{
+			offset *= scalingFactor;
+			offset.y -= gapDelta;
+		}
+
+		const auto port = Util::GetPort();
+		const float trueLength = 
+		(
+			indicatorLength + 2.0f * indicatorThickness + gapDelta
+		);
+		const float trueWidth = 
+		(
+			0.5f * 
+			scalingFactor *
+			(
+				GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[4].x - 
+				GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[0].x
+			)
+		);
+		glm::vec2 posScreenCoords{ screenBasePos.x, screenBasePos.y };
+		DebugAPI::QueueShape2D
+		(
+			posScreenCoords,
+			lowerPortionOffsets,
+			Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+			false, 
+			indicatorThickness,
+			0.0f
+		);
+		DebugAPI::QueueShape2D
+		(
+			posScreenCoords,
+			lowerPortionOffsets, 
+			Settings::vuOverlayRGBAValues[p->playerID]
+		);
 	}
 
 	void TargetingManager::DrawAimCorrectionIndicator()
@@ -4876,6 +4996,11 @@ namespace ALYSLC
 		(
 			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
 		);
+		// Is this player trying to activate an object?
+		bool isActivating = p->pam->IsPerformingOneOf
+		(
+			InputAction::kActivate, InputAction::kActivateAllOfType, InputAction::kActivateCancel
+		);
 		// Send a new crosshair event to open the QuickLoot menu 
 		// if the player's crosshair refr is valid,
 		// any player can open the menu, and the refr is now in range + 
@@ -4883,7 +5008,7 @@ namespace ALYSLC
 		// or the player did not send the last opening request.
 		bool shouldSendNewSetCrosshairEvent = 
 		{
-			(crosshairRefrValidity && anyPlayerCanSet) &&
+			(!isActivating && crosshairRefrValidity && anyPlayerCanSet) &&
 			(
 				(crosshairRefrInRangeForQuickLoot) && 
 				(newCrosshairRefr || !wasInRange || !wasInControl)
@@ -4894,6 +5019,7 @@ namespace ALYSLC
 		// and the player just selected a new refr that is in range.
 		bool shouldValidateNewCrosshairEvent = 
 		{
+			!isActivating && 
 			crosshairRefrValidity && 
 			controllingMenus && 
 			newCrosshairRefr &&
@@ -4910,21 +5036,23 @@ namespace ALYSLC
 		{
 			(controllingMenus) && 
 			(
-				(!crosshairRefrPtr && prevCrosshairRefrPtr) || 
-				(wasInRange && !crosshairRefrInRangeForQuickLoot)
-			) || 
-			(
+				(
+					(!crosshairRefrPtr && prevCrosshairRefrPtr) || 
+					(wasInRange && !crosshairRefrInRangeForQuickLoot)
+				) || 
 				(
 					(
-						!glob.supportedMenuOpen &&
-						playerID == glob.quickLootControlPID &&
-						glob.reqQuickLootContainerHandle != RE::ObjectRefHandle()
+						(
+							!glob.supportedMenuOpen &&
+							playerID == glob.quickLootControlPID &&
+							glob.reqQuickLootContainerHandle != RE::ObjectRefHandle()
+						) &&
+						(!crosshairRefrPtr || !crosshairRefrInRangeForQuickLoot)
 					) &&
-					(!crosshairRefrPtr || !crosshairRefrInRangeForQuickLoot)
-				) &&
-				(
-					playerID == glob.quickLootReqPID ||
-					glob.quickLootReqPID == -1
+					(
+						playerID == glob.quickLootReqPID ||
+						glob.quickLootReqPID == -1
+					)
 				)
 			)
 		};
@@ -10246,6 +10374,7 @@ namespace ALYSLC
 
 		// Update and draw all UI elements.
 		DrawCrosshair();
+		DrawActivationTargetIndicator();
 		DrawAimCorrectionIndicator();
 		DrawAimPitchIndicator();
 		DrawPlayerIndicator();

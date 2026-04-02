@@ -50,6 +50,7 @@ namespace ALYSLC
 		expendSprintStaminaTP = SteadyClock::now();
 		jumpStartTP = SteadyClock::now();
 		lastActivationCheckTP = SteadyClock::now();
+		lastActivationStartTP = SteadyClock::now();
 		lastAutoGrabTP = SteadyClock::now();
 		lastCrosshairUpdateTP = SteadyClock::now();
 		lastCyclingTP = SteadyClock::now();
@@ -471,6 +472,7 @@ namespace ALYSLC
 			expendSprintStaminaTP = SteadyClock::now();
 			jumpStartTP = SteadyClock::now();
 			lastActivationCheckTP = SteadyClock::now();
+			lastActivationStartTP = SteadyClock::now();
 			lastAutoGrabTP = SteadyClock::now();
 			lastCrosshairUpdateTP = SteadyClock::now();
 			lastLHCastStartTP = SteadyClock::now();

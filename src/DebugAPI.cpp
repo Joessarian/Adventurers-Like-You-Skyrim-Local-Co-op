@@ -899,6 +899,12 @@ namespace ALYSLC
 		// by the desired angle.
 		// Modifies the input list.
 
+		// No rotation needed.
+		if (a_angle == 0.0f)
+		{
+			return;
+		}
+
 		// https://en.wikipedia.org/wiki/Rotation_matrix
 		// Counter-clockwise about origin.
 		// First column, second column.

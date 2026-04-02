@@ -233,6 +233,9 @@ namespace ALYSLC
 		// Most recent opened menu is atop the stack.
 		// Using a list to remove closing menus that may not be the most recently opened menu.
 		std::list<RE::BSFixedString> menuNamesStack;
+		// Pair of (object to drop, count) for use in determining 
+		// what and how many of an object to transfer to P1 and drop.
+		std::pair<RE::TESBoundObject*, uint32_t> dropReqPair;
 		// Set of co-op player-opened menu names' hashes.
 		std::set<size_t> menuNamesHashSet;
 		// Maps Favorites Menu item list indices (index of item in the backing item list)
@@ -560,6 +563,8 @@ namespace ALYSLC
 		// Time point at which the last equip state delayed refresh request was made.
 		SteadyClock::time_point lastEquipStateRefreshReqTP;
 
+		// Was the drop bind pressed while viewing the companion player's inventory?
+		bool dropBindPressed;
 		// Should refresh Favorites/Magic Menu equip state 
 		// and cached equip data following an equip event.
 		bool equipEventRefreshReq;

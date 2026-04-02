@@ -1711,6 +1711,10 @@ namespace ALYSLC
 
 		// Clear the cached actor/refr handle for the given target type.
 		void ClearTarget(const TargetActorType& a_targetType);
+		
+		// Draw an indicator on the player's chosen activation target 
+		// if it is not the crosshair target.
+		void DrawActivationTargetIndicator();
 
 		// Draw an indicator on the player's aim correction target.
 		void DrawAimCorrectionIndicator();
@@ -2030,6 +2034,7 @@ namespace ALYSLC
 		// Selected target refr's motion info.
 		std::unique_ptr<RefrTargetMotionState> targetMotionState;
 		// Interpolation data for fading drawn UI elements and for crosshair size adjustments.
+		std::unique_ptr<TwoWayInterpData> activationIndicatorOscillationData;
 		std::unique_ptr<TwoWayInterpData> aimPitchIndicatorFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairSizeRatioInterpData;

@@ -5550,16 +5550,20 @@ namespace ALYSLC
 					pam->downedPlayerTarget = nullptr;
 					a_p->isRevivingPlayer = false;
 				}
-			}
 
+				a_p->lastActivationStartTP = SteadyClock::now();
+			}
+			
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (!pam->downedPlayerTarget) 
 			{
-				const float& secsSinceActivationStarted = 
+				// If not cycling, seconds since the last object to activate was selected.
+				// Otherwise, seconds since cycling the next activation refr from nearby references.
+				const float& secsSinceActivationStarted = Util::GetElapsedSeconds
 				(
-					pam->paStatesList
-					[!InputAction::kActivate - !InputAction::kFirstAction].secsPerformed
+					a_p->lastActivationStartTP
 				);
+				float secsSinceActivationTargetUpdated = 0.0f;
 				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
 				// Ignore invalid refrs and normally hostile actors selected with the crosshair.
 				// Enemies are too angry to interact with players, from my experience.
@@ -5568,37 +5572,80 @@ namespace ALYSLC
 					(crosshairRefrPtr) && 
 					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
 				);
-				auto asActor = crosshairRefrValidity ? crosshairRefrPtr->As<RE::Actor>() : nullptr;
-				if (asActor)
-				{
-					crosshairRefrValidity &= 	
-					(
-						(asActor->IsDead()) ||
-						(asActor->IsAMount()) ||
-						(
-							p1 && 
-							!asActor->IsHostileToActor(p1) &&
-							!asActor->IsHostileToActor(a_p->coopActor.get())
-						) ||
-						(Util::IsGuard(asActor)) || 
-						(Util::HasNoBountyButInCrimeFaction(asActor)) ||
-						(Util::IsPartyFriendlyActor(asActor)) ||
-						(a_p->coopActor->IsSneaking())
-					);
-				}
-
-				// Choose a valid crosshair refr for activation 
-				// if the action press time is within the initial window before cycling.
-				// Otherwise, look for a nearby refr to activate.
-				a_p->tm->useProximityInteraction =
+				bool chooseNextActivationTargetBeforeCycling = 
 				(
-					secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling ||
-					!crosshairRefrValidity
+					(justStarted) ||
+					(!crosshairRefrValidity && a_p->mm->lsMoved) ||
+					(
+						crosshairRefrValidity && 
+						a_p->mm->lsMoved &&
+						secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling
+					)
 				);
-
-				if (justStarted)
+				// Update the activation check TP first before updating the number of seconds 
+				// since the activation target was updated and the proximity interaction flag.
+				if (chooseNextActivationTargetBeforeCycling)
 				{
 					a_p->lastActivationCheckTP = SteadyClock::now();
+				}
+
+				// If a crosshair refr is selected, choose it as the activation target
+				// until the activation cycling start interval elapses.
+				// 
+				// If a crosshair refr is not selected, 
+				// we'll select the closest refr in the player's facing direction initially.
+				// 
+				// Then while the LS is moved, 
+				// we'll continue to pick the closest refr in the player's movement direction.
+				// 
+				// Or if the LS is not moved,
+				// we'll cycle through refrs in the player's proximity 
+				// after the predefined cycling-switch inverval elapses 
+				// after the player stopped moving the LS.
+				if (crosshairRefrValidity)
+				{
+					if (secsSinceActivationStarted < Settings::fSecsBeforeActivationCycling)
+					{
+						secsSinceActivationTargetUpdated = secsSinceActivationStarted;
+					}
+					else
+					{
+						secsSinceActivationTargetUpdated = 
+						(
+							a_p->mm->lsMoved ?
+							0.0f : 
+							Util::GetElapsedSeconds
+							(
+								a_p->lastActivationCheckTP
+							)
+						);
+					}
+					
+					a_p->tm->useProximityInteraction =
+					(
+						secsSinceActivationStarted >= 
+						Settings::fSecsBeforeActivationCycling
+					);
+				}
+				else
+				{
+					secsSinceActivationTargetUpdated = 
+					(
+						a_p->mm->lsMoved ?
+						0.0f : 
+						Util::GetElapsedSeconds
+						(
+							a_p->lastActivationCheckTP
+						)
+					);
+					a_p->tm->useProximityInteraction = true;
+				}
+				
+				// Choose a valid crosshair refr for activation 
+				// if the action press time is within the initial window before cycling
+				// or if the LS is moved.
+				if (chooseNextActivationTargetBeforeCycling)
+				{
 					// Remove activation effect shader on previous activation refr, if any.
 					auto activationRefrPtr = Util::GetRefrPtrFromHandle
 					(
@@ -5614,6 +5661,7 @@ namespace ALYSLC
 					}
 
 					// Get new refr to activate.
+					// Will be the crosshair refr if the action just started.
 					auto refrToActivatePtr = 
 					(
 						Util::GetRefrPtrFromHandle(a_p->tm->UpdateNextObjectToActivate())
@@ -5634,6 +5682,7 @@ namespace ALYSLC
 					a_p->pam->startedActivationCycling = false;
 				}
 				
+				
 				// Cycle through nearby objects at regular intervals 
 				// while the activate bind is held.
 				// NOTE:
@@ -5641,20 +5690,15 @@ namespace ALYSLC
 				// We are just caching the cycled refr and highlighting it.
 				if (a_p->tm->useProximityInteraction)
 				{
-					// Seconds since cycling the next activation refr from nearby references.
-					float secsSinceLastActivationCyclingCheck = Util::GetElapsedSeconds
-					(
-						a_p->lastActivationCheckTP
-					);
 					bool shouldStartCycling =
 					(
 						!a_p->pam->startedActivationCycling && 
-						secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling
+						secsSinceActivationTargetUpdated >= Settings::fSecsBeforeActivationCycling
 					);
 					bool shouldCycleNewRefr = 
 					(
 						a_p->pam->startedActivationCycling &&
-						secsSinceLastActivationCyclingCheck >=
+						secsSinceActivationTargetUpdated >=
 						Settings::fSecsBetweenActivationChecks
 					);
 					if (shouldStartCycling || shouldCycleNewRefr)

@@ -98,7 +98,7 @@ namespace ALYSLC
 		// Since this manager pauses when the game pauses, the game must be unpaused here.
 		isControllingUnpausedMenu = 
 		(
-			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
+			!glob.menusOnlyAlwaysOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
 		);
 		// Make sure package stacks contain our co-op package form lists.
 		// Seems to clear when going through load doors at times.
@@ -271,7 +271,8 @@ namespace ALYSLC
 				(
 					glob.lastTempMenusClosedTP
 				);
-				bool shouldBlockActionsInMenu = glob.supportedMenuOpen.load();
+				bool shouldBlockActionsInMenu = !glob.menusOnlyAlwaysOpen.load();
+				//glob.supportedMenuOpen.load();
 				blockActionInUnpausedMenu = false;
 				if (auto ui = RE::UI::GetSingleton(); ui)
 				{
@@ -5758,6 +5759,7 @@ namespace ALYSLC
 
 		p->expendSprintStaminaTP		=
 		p->lastActivationCheckTP		=
+		p->lastActivationStartTP		=
 		p->lastAttackStartTP			=
 		p->lastBoundWeapon2HReqTP		=
 		p->lastBoundWeaponLHReqTP		=
