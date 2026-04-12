@@ -563,71 +563,74 @@ namespace ALYSLC
 			const RE::ActorValue& a_av, float a_deltaAmount, bool a_ignoreCostMult = false
 		)
 		{
-			if (auto avValueOwner = coopActor->As<RE::ActorValueOwner>(); avValueOwner)
+			auto avValueOwner = coopActor->As<RE::ActorValueOwner>(); 
+			if (!avValueOwner)
 			{
-				/*SPDLOG_DEBUG
+				return;
+			}
+
+			/*SPDLOG_DEBUG
+			(
+				"Modify {}'s {} by {}.",
+				coopActor->GetName(), 
+				Util::GetActorValueName(a_av), 
+				a_deltaAmount
+			);*/
+			// Save the old cost multiplier, set to 1.0 so that the CheckClampDamageModifier() 
+			// hook does not modify the delta amount,
+			// and then restore the cost multiplier afterward.
+			bool cancelOutCostMod = 
+			{
+				(a_ignoreCostMult && a_deltaAmount < 0.0f) && 
 				(
-					"Modify {}'s {} by {}.",
-					coopActor->GetName(), 
-					Util::GetActorValueName(a_av), 
-					a_deltaAmount
-				);*/
-				// Save the old cost multiplier, set to 1.0 so that the CheckClampDamageModifier() 
-				// hook does not modify the delta amount,
-				// and then restore the cost multiplier afterward.
-				bool cancelOutCostMod = 
+					a_av == RE::ActorValue::kHealth ||
+					a_av == RE::ActorValue::kMagicka ||
+					a_av == RE::ActorValue::kStamina
+				)
+			};
+			if (cancelOutCostMod)
+			{
+				float originalMult = 1.0f;
+				if (a_av == RE::ActorValue::kHealth)
 				{
-					(a_ignoreCostMult && a_deltaAmount < 0.0f) && 
-					(
-						a_av == RE::ActorValue::kHealth ||
-						a_av == RE::ActorValue::kMagicka ||
-						a_av == RE::ActorValue::kStamina
-					)
-				};
-				if (cancelOutCostMod)
-				{
-					float originalMult = 1.0f;
-					if (a_av == RE::ActorValue::kHealth)
-					{
-						originalMult = Settings::vfDamageReceivedMult[playerID];
-						Settings::vfDamageReceivedMult[playerID] = 1.0f;
-					}
-					else if (a_av == RE::ActorValue::kMagicka)
-					{
-						originalMult = Settings::vfMagickaCostMult[playerID];
-						Settings::vfMagickaCostMult[playerID] = 1.0f;
-					}
-					else if (a_av == RE::ActorValue::kStamina)
-					{
-						originalMult = Settings::vfStaminaCostMult[playerID];
-						Settings::vfStaminaCostMult[playerID] = 1.0f;
-					}
-
-					avValueOwner->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
-					);
-
-					if (a_av == RE::ActorValue::kHealth)
-					{
-						Settings::vfDamageReceivedMult[playerID] = originalMult;
-					}
-					else if (a_av == RE::ActorValue::kMagicka)
-					{
-						Settings::vfMagickaCostMult[playerID] = originalMult;
-					}
-					else if (a_av == RE::ActorValue::kStamina)
-					{
-						Settings::vfStaminaCostMult[playerID] = originalMult;
-					}
+					originalMult = Settings::vfDamageReceivedMult[playerID];
+					Settings::vfDamageReceivedMult[playerID] = 1.0f;
 				}
-				else
+				else if (a_av == RE::ActorValue::kMagicka)
 				{
-					avValueOwner->RestoreActorValue
-					(
-						RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
-					);
+					originalMult = Settings::vfMagickaCostMult[playerID];
+					Settings::vfMagickaCostMult[playerID] = 1.0f;
 				}
+				else if (a_av == RE::ActorValue::kStamina)
+				{
+					originalMult = Settings::vfStaminaCostMult[playerID];
+					Settings::vfStaminaCostMult[playerID] = 1.0f;
+				}
+
+				avValueOwner->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
+				);
+
+				if (a_av == RE::ActorValue::kHealth)
+				{
+					Settings::vfDamageReceivedMult[playerID] = originalMult;
+				}
+				else if (a_av == RE::ActorValue::kMagicka)
+				{
+					Settings::vfMagickaCostMult[playerID] = originalMult;
+				}
+				else if (a_av == RE::ActorValue::kStamina)
+				{
+					Settings::vfStaminaCostMult[playerID] = originalMult;
+				}
+			}
+			else
+			{
+				avValueOwner->RestoreActorValue
+				(
+					RE::ACTOR_VALUE_MODIFIER::kDamage, a_av, a_deltaAmount
+				);
 			}
 		}
 
@@ -799,6 +802,10 @@ namespace ALYSLC
 		// regardless of their current weapon state.
 		// Otherwise, only draw when fully sheathed and only sheathe when fully drawn.
 		void ReadyWeapon(const bool& a_shouldDraw, bool&& a_ignoreState = true);
+		
+		// Sync companion player level with P1 after making sure their stats
+		// do not scale with P1. We do not want the game to auto scale the player's stats.
+		void RemoveAVAutoScaling();
 
 		// Reset killmove data for this player and the killmove victim player, if any.
 		void ResetAllKillmoveData(const int32_t& a_targetPlayerIndex);

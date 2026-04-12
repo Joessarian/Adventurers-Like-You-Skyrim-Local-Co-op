@@ -395,7 +395,8 @@ namespace ALYSLC
 				sharedPerksTaken(0),
 				usedPerkPoints(0),
 				extraPerkPoints(0),
-				prevTotalUnlockedPerks(0)
+				prevTotalUnlockedPerks(0),
+				raceMenuPresetName(""sv)
 			{
 				equippedForms.clear();
 				equippedForms = std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr);
@@ -405,7 +406,7 @@ namespace ALYSLC
 				unlockedPerksSet.clear();
 				copiedMagic.fill(nullptr);
 				cyclableEmoteIdleEvents = GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS;
-				hmsBaseAVsOnMenuEntry.fill(0.0f);
+				p1HMSBaseAVsOnMenuEntry.fill(0.0f);
 				hmsBasePointsList.fill(100.0f);
 				hmsPointIncreasesList.fill(0.0f);
 				hotkeyedForms.fill(nullptr);
@@ -439,7 +440,8 @@ namespace ALYSLC
 				SkillList a_skillLevelIncreasesList,
 				SkillList a_skillXPList,
 				std::vector<RE::BGSPerk*> a_takenSharedPerksList,
-				std::vector<RE::BGSPerk*> a_unlockedPerksList
+				std::vector<RE::BGSPerk*> a_unlockedPerksList,
+				RE::BSFixedString a_raceMenuPresetName
 			) :
 				copiedMagic(a_copiedMagic),
 				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
@@ -460,9 +462,10 @@ namespace ALYSLC
 				skillBaseLevelsList(a_skillBaseLevelsList),
 				skillLevelIncreasesList(a_skillLevelIncreasesList),
 				skillXPList(a_skillXPList),
-				unlockedPerksList(a_unlockedPerksList)
+				unlockedPerksList(a_unlockedPerksList),
+				raceMenuPresetName(a_raceMenuPresetName)
 			{
-				hmsBaseAVsOnMenuEntry.fill(0.0f);
+				p1HMSBaseAVsOnMenuEntry.fill(0.0f);
 				skillLevelsOnMenuEntry.fill(15.0f);
 				skillLevelThresholdsOnMenuEntry.fill(0.0f);
 				takenSharedPerksSet = std::set<RE::BGSPerk*>
@@ -651,17 +654,20 @@ namespace ALYSLC
 			uint32_t level;
 			// Used levelup perk points.
 			uint32_t usedPerkPoints;
+			// RaceMenu preset file name for the preset applied to the player for the loaded save.
+			RE::BSFixedString raceMenuPresetName;
 
 			// [Helper data: NOT Serialized]:
 			// Previous total unlocked perks count.
 			uint32_t prevTotalUnlockedPerks;
 			// Shared perks personally unlocked by this player.
 			uint32_t sharedPerksTaken;
-			// Previous HMS base actor values when opening the Stats Menu.
+			// Cached P1 HMS base actor values when opening the Stats Menu.
 			// NOTE: 
 			// The difference in HMS between opening and closing the menu
-			// is used to calculate how many times the player leveled up.
-			std::array<float, 3> hmsBaseAVsOnMenuEntry;
+			// is used to calculate how many times the player leveled up
+			// and is added to their cumulative progression for each stat.
+			std::array<float, 3> p1HMSBaseAVsOnMenuEntry;
 			// P1 skill levels and skill level thresholds saved when a companion player 
 			// enters the Stats Menu and restored when the player exits the menu.
 			SkillList skillLevelsOnMenuEntry;
@@ -855,6 +861,9 @@ namespace ALYSLC
 
 		// Is a co-op player-controllable menu open?
 		static bool IsSupportedMenuOpen();
+
+		// Load/save a RaceMenu player character preset for the given player character.
+		static void LoadOrSaveRaceMenuPreset(RE::Actor* a_playerActor, bool&& a_shouldLoad);
 
 		// Modify the XP threshold for leveling up based on the imported setting.
 		// Restore original when not setting for co-op.
@@ -2388,7 +2397,8 @@ namespace ALYSLC
 		// Resets the given player's health/magicka/stamina actor values to their initial values,
 		// undoing all serialized progress to these AVs.
 		static void ResetToBaseHealthMagickaStamina(RE::Actor* a_playerActor);
-
+		
+		// UNUSED FOR NOW DUE TO HMS SCALING BUGS AFFECTING BOTH TYPES OF PLAYERS.
 		// Modify P1's level to trigger the game's actor value auto-scaling on other players.
 		// If the given player actor is nullptr,
 		// all players have their AVs auto-scaled without resetting any perk data.

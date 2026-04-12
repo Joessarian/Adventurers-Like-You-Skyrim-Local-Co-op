@@ -218,6 +218,7 @@ namespace ALYSLC
 			}
 
 			coopActor->Update3DModel();
+
 			// Fixes skin glow/tone mismatches.
 			// IMPORTANT:
 			// Resetting while on horseback causes horse warp glitch upon resumption.
@@ -3194,12 +3195,38 @@ namespace ALYSLC
 		// Inventory here means P1's on-player inventory 
 		// and the player inventory chest for companion players.
 
-		SPDLOG_DEBUG("{}", coopActor->GetName());
-
-		auto invChanges = 
+		SPDLOG_DEBUG
 		(
-			p->isPlayer1 ? coopActor->GetInventoryChanges() : inventoryChest->GetInventoryChanges()
+			"{}. Inv changes: {:p}.", 
+			coopActor->GetName(), 
+			fmt::ptr
+			(
+				p->isPlayer1 ? 
+				coopActor->GetInventoryChanges() : 
+				inventoryChest->GetInventoryChanges()
+			)
 		);
+
+		for (const auto& otherP : glob.coopPlayers)
+		{
+			if (otherP->isActive && otherP != p)
+			{
+				SPDLOG_DEBUG
+				(
+					"{}'s inventory changes is {:p}, chest is {:p}.",
+					otherP->coopActor->GetName(), 
+					fmt::ptr(otherP->coopActor->GetInventoryChanges()), 
+					fmt::ptr(otherP->em->inventoryChest->GetInventoryChanges())
+				);
+			}
+		}
+
+		if (p->isPlayer1)
+		{
+			return;
+		}
+
+		auto invChanges = inventoryChest->GetInventoryChanges();
 		if (!invChanges || !invChanges->entryList)
 		{
 			return;
@@ -3210,10 +3237,6 @@ namespace ALYSLC
 		// have at least one extra data list.
 		// Required to make sure we can check the equip status of items
 		// and match chest extra data lists to player inventory extra data lists.
-		// 
-		// For both types of players:
-		// Fix up counts in the player/chest's inventory afterward.
-		// Prevents certain crashes from occurring when transferring items around.
 		bool addSerializableExData = false;
 		const auto p1 = RE::PlayerCharacter::GetSingleton();
 		for (auto& entry : *invChanges->entryList) 
@@ -3224,10 +3247,7 @@ namespace ALYSLC
 				continue;
 			}
 				
-			addSerializableExData = 
-			(
-				!p->isPlayer1 && Util::IsEquipableInventoryObject(entry->object)
-			);
+			addSerializableExData = Util::IsEquipableInventoryObject(entry->object);
 			if (entry->extraLists)
 			{
 				for (auto exDataList : *entry->extraLists)
@@ -3238,28 +3258,25 @@ namespace ALYSLC
 					}
 
 					exListsCount += exDataList->GetCount();
-					if (!p->isPlayer1)
-					{
-						auto exOwnership = exDataList->GetByType<RE::ExtraOwnership>();
-						bool canRemoveOwnership = 
+					auto exOwnership = exDataList->GetByType<RE::ExtraOwnership>();
+					bool canRemoveOwnership = 
+					(
+						(exOwnership) &&
 						(
-							(exOwnership) &&
-							(
-								(!exOwnership->owner) || 
-								(!exOwnership->owner->As<RE::Actor>()) ||
-								(Util::IsPartyFriendlyActor(exOwnership->owner->As<RE::Actor>()))
-							)
+							(!exOwnership->owner) || 
+							(!exOwnership->owner->As<RE::Actor>()) ||
+							(Util::IsPartyFriendlyActor(exOwnership->owner->As<RE::Actor>()))
+						)
+					);
+					if (canRemoveOwnership)
+					{
+						SPDLOG_DEBUG
+						(
+							"Can remove ownership from {} ({}).",
+							entry->object->GetName(), 
+							exOwnership->owner ? exOwnership->owner->GetName() : "NONE"
 						);
-						if (canRemoveOwnership)
-						{
-							SPDLOG_DEBUG
-							(
-								"Can remove ownership from {} ({}).",
-								entry->object->GetName(), 
-								exOwnership->owner ? exOwnership->owner->GetName() : "NONE"
-							);
-							exDataList->Remove(RE::ExtraDataType::kOwnership, exOwnership);
-						}
+						exDataList->Remove(RE::ExtraDataType::kOwnership, exOwnership);
 					}
 
 					if (addSerializableExData)
@@ -3977,6 +3994,24 @@ namespace ALYSLC
 		bool isConsumable = Util::IsConsumable(a_object);
 		if (isConsumable)
 		{
+			// Equip right away once moved and no need to change worn rank exData for the chest list
+			// since the item is not equipped.
+			// Using a copy since a sporadic crash occurs if the original is moved over
+			// before the equip. Want to see if a copy prevents this from happening.
+			Util::EquipObject
+			(
+				coopActor.get(),
+				a_object,
+				Util::CopyExtraDataList(chestExDataList),
+				a_count,
+				a_slot,
+				a_queueEquip,
+				a_forceEquip,
+				a_playSounds,
+				a_applyNow
+			);
+			
+			// Remove the original from chest afterwards.
 			const auto invCounts = coopActor->GetInventoryCounts();
 			const auto iter = invCounts.find(a_object);
 			if (iter == invCounts.end() || iter->second <= 0)
@@ -3985,26 +4020,11 @@ namespace ALYSLC
 				(
 					a_object,
 					a_count,
-					RE::ITEM_REMOVE_REASON::kStoreInContainer,
+					RE::ITEM_REMOVE_REASON::kRemove,
 					chestExDataList, 
-					coopActor.get()
+					nullptr
 				);
 			}
-
-			// Equip right away once moved and no need to change worn rank exData for the chest list
-			// since the item is not equipped.
-			Util::EquipObject
-			(
-				coopActor.get(),
-				a_object,
-				chestExDataList,
-				a_count,
-				a_slot,
-				a_queueEquip,
-				a_forceEquip,
-				a_playSounds,
-				a_applyNow
-			);
 
 			return;
 		}
@@ -5594,131 +5614,131 @@ namespace ALYSLC
 					);
 				}
 			}
-		}
 
-		// Add companion player's favorites.
-		auto chestInv = inventoryChest->GetInventory();
-		for (const auto& [boundObj, countInvEntryPair] : chestInv)
-		{
-			if (!boundObj ||
-				!countInvEntryPair.second ||
-				!countInvEntryPair.second->extraLists)
+			// Add companion player's favorites.
+			auto chestInv = inventoryChest->GetInventory();
+			for (const auto& [boundObj, countInvEntryPair] : chestInv)
 			{
-				continue;
-			}	
-
-			for (auto exDataList : *countInvEntryPair.second->extraLists)
-			{
-				if (!exDataList)
+				if (!boundObj ||
+					!countInvEntryPair.second ||
+					!countInvEntryPair.second->extraLists)
 				{
 					continue;
-				}
+				}	
 
-				// Favorited if hotkey data exists.
-				auto exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
-				if (!exHotkey)
+				for (auto exDataList : *countInvEntryPair.second->extraLists)
 				{
-					continue;
-				}
-
-				SPDLOG_DEBUG
-				(
-					"{}: {} was favorited and has hotkey {} "
-					"on list {:p} from inventory chest.",
-					coopActor->GetName(), 
-					countInvEntryPair.second->object->GetName(), 
-					*exHotkey->hotkey,
-					fmt::ptr(exDataList)
-				);
-				p1->AddObjectToContainer
-				(
-					countInvEntryPair.second->object,
-					Util::CopyExtraDataList(exDataList),
-					1,
-					nullptr
-				);
-			}
-		}
-
-		auto p1Inv = p1->GetInventory();
-		for (const auto& [boundObj, countInvEntryPair] : p1Inv)
-		{
-			if (!boundObj || 
-				!countInvEntryPair.second || 
-				!countInvEntryPair.second->extraLists || 
-				countInvEntryPair.first <= 0)
-			{
-				continue;
-			}	
-
-			for (auto exDataList : *countInvEntryPair.second->extraLists)
-			{
-				if (!exDataList)
-				{
-					continue;
-				}
-
-				// Favorited if hotkey data exists.
-				auto exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
-				if (!exHotkey)
-				{
-					continue;
-				}
-							
-				for (auto type = RE::ExtraDataType::kNone; 
-					type <= RE::ExtraDataType::kUnkBF; 
-					type = static_cast<RE::ExtraDataType>(!type + 1))
-				{
-					if (auto data = exDataList->GetByType(type); data)
+					if (!exDataList)
 					{
-						SPDLOG_DEBUG
-						(
-							"IN P1: Favorited object {} has exData list {:p} "
-							"with data {:p} of type 0x{:X}.",
-							countInvEntryPair.second->object->GetName(),
-							fmt::ptr(exDataList),
-							fmt::ptr(data),
-							type
-						);
+						continue;
 					}
-				}
 
-				if (*exHotkey->hotkey != RE::ExtraHotkey::Hotkey::kUnbound)
-				{
-					// Remove any hotkeys that the companion player has not applied.
-					auto setIter = hotkeyedFormsToSlotsSetMap.find
+					// Favorited if hotkey data exists.
+					auto exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
+					if (!exHotkey)
+					{
+						continue;
+					}
+
+					SPDLOG_DEBUG
 					(
-						countInvEntryPair.second->object->formID
+						"{}: {} was favorited and has hotkey {} "
+						"on list {:p} from inventory chest.",
+						coopActor->GetName(), 
+						countInvEntryPair.second->object->GetName(), 
+						*exHotkey->hotkey,
+						fmt::ptr(exDataList)
 					);
-					if (setIter == hotkeyedFormsToSlotsSetMap.end() || 
-						!setIter->second.contains(!*exHotkey->hotkey))
-					{
-						SPDLOG_DEBUG
-						(
-							"IN P1: {} has hotkey {} which should be removed on list {:p}.",
-							countInvEntryPair.second->object->GetName(), 
-							*exHotkey->hotkey,
-							fmt::ptr(exDataList)
-						);
-						Util::ChangeFormHotkeyStatus
-						(
-							p1, countInvEntryPair.second->object, -1, exDataList
-						);
-					}
+					p1->AddObjectToContainer
+					(
+						countInvEntryPair.second->object,
+						Util::CopyExtraDataList(exDataList),
+						1,
+						nullptr
+					);
 				}
+			}
 
-				SPDLOG_DEBUG
-				(
-					"IN P1: {} was favorited and has hotkey {} "
-					"on list {:p}.",
-					countInvEntryPair.second->object->GetName(), 
-					*exHotkey->hotkey,
-					fmt::ptr(exDataList)
-				);
+			p1Inv = p1->GetInventory();
+			for (const auto& [boundObj, countInvEntryPair] : p1Inv)
+			{
+				if (!boundObj || 
+					!countInvEntryPair.second || 
+					!countInvEntryPair.second->extraLists || 
+					countInvEntryPair.first <= 0)
+				{
+					continue;
+				}	
+
+				for (auto exDataList : *countInvEntryPair.second->extraLists)
+				{
+					if (!exDataList)
+					{
+						continue;
+					}
+
+					// Favorited if hotkey data exists.
+					auto exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
+					if (!exHotkey)
+					{
+						continue;
+					}
+							
+					for (auto type = RE::ExtraDataType::kNone; 
+						type <= RE::ExtraDataType::kUnkBF; 
+						type = static_cast<RE::ExtraDataType>(!type + 1))
+					{
+						if (auto data = exDataList->GetByType(type); data)
+						{
+							SPDLOG_DEBUG
+							(
+								"IN P1: Favorited object {} has exData list {:p} "
+								"with data {:p} of type 0x{:X}.",
+								countInvEntryPair.second->object->GetName(),
+								fmt::ptr(exDataList),
+								fmt::ptr(data),
+								type
+							);
+						}
+					}
+
+					if (*exHotkey->hotkey != RE::ExtraHotkey::Hotkey::kUnbound)
+					{
+						// Remove any hotkeys that the companion player has not applied.
+						auto setIter = hotkeyedFormsToSlotsSetMap.find
+						(
+							countInvEntryPair.second->object->formID
+						);
+						if (setIter == hotkeyedFormsToSlotsSetMap.end() || 
+							!setIter->second.contains(!*exHotkey->hotkey))
+						{
+							SPDLOG_DEBUG
+							(
+								"IN P1: {} has hotkey {} which should be removed on list {:p}.",
+								countInvEntryPair.second->object->GetName(), 
+								*exHotkey->hotkey,
+								fmt::ptr(exDataList)
+							);
+							Util::ChangeFormHotkeyStatus
+							(
+								p1, countInvEntryPair.second->object, -1, exDataList
+							);
+						}
+					}
+
+					SPDLOG_DEBUG
+					(
+						"IN P1: {} was favorited and has hotkey {} "
+						"on list {:p}.",
+						countInvEntryPair.second->object->GetName(), 
+						*exHotkey->hotkey,
+						fmt::ptr(exDataList)
+					);
+				}
 			}
 		}
 
-		// Favorite all the companion player's favorited magical forms.
+		// Favorite all the companion player's favorited magical forms and update hotkeys.
 		for (auto i = 0; i < favorites.size(); ++i)
 		{
 			const auto form = favorites[i];
@@ -5733,11 +5753,14 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG
-			(
-				"{}: Add favorited magic {}.", coopActor->GetName(), form->GetName()
-			);
-			magicFavorites->SetFavorite(form);
+			if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: Add favorited magic {}.", coopActor->GetName(), form->GetName()
+				);
+				magicFavorites->SetFavorite(form);
+			}
 
 			// Hotkeyed by the companion player, so set the corresponding hotkey slot.
 			const auto iter = hotkeyedFormsToSlotsSetMap.find(form->formID);
@@ -6922,7 +6945,7 @@ namespace ALYSLC
 				}
 			}
 		}
-		
+
 		// Re-favorite all of P1's cached magical favorited forms and restore hotkeys.
 		const auto& p1Favorites = coopP1->em->favoritedForms;
 		for (auto form : p1Favorites)
@@ -6938,11 +6961,16 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG
-			(
-				"{}: Refavoriting {} for P1.", coopActor->GetName(), form->GetName()
-			);
-			magicFavorites->SetFavorite(form);
+			if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: Restoring favorited magic {} for P1.", 
+					coopActor->GetName(), form->GetName()
+				);
+				magicFavorites->SetFavorite(form);
+			}
+
 			const auto iter = coopP1->em->hotkeyedFormsToSlotsSetMap.find(form->formID);
 			if (iter != coopP1->em->hotkeyedFormsToSlotsSetMap.end())
 			{
@@ -9377,22 +9405,36 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Get list of current magical favorites.
-			if (!magicFavorites->spells.empty()) 
+			// Update the list of favorited magic forms only if Persistent Favorites 
+			// is not installed or if the Favorites Menu is not open.
+			// Before the Favorites Menu closes, Persistent Favorites re-adds P1's 
+			// favorited magic forms before this call,
+			// so we do not want to update the companion player's list of favorited magic forms.
+			// We DO need to update the hotkeys when the Favorites Menu closes, 
+			// since they could have changed while the menu was open.
+
+			auto ui = RE::UI::GetSingleton();
+			if (!ALYSLC::PersistentFavoritesCompat::g_installed ||
+				!ui ||
+				!ui->IsMenuOpen(RE::FavoritesMenu::MENU_NAME))
 			{
-				for (auto magForm : magicFavorites->spells) 
+				// Get list of current magical favorites.
+				if (!magicFavorites->spells.empty()) 
 				{
-					if (!magForm)
+					for (auto magForm : magicFavorites->spells) 
 					{
-						continue;
+						if (!magForm)
+						{
+							continue;
+						}
+
+						magFavoritesList.emplace_back(magForm);	
 					}
-
-					magFavoritesList.emplace_back(magForm);	
 				}
-			}
 
-			// Update list of magic favorites to serialize.
-			data->favoritedMagForms = magFavoritesList;
+				// Update list of magic favorites to serialize.
+				data->favoritedMagForms = magFavoritesList;
+			}
 
 			// Update our hotkey data based on the current magical favorites list.
 			for (int8_t i = 0; i < magicFavorites->hotkeys.size(); ++i)

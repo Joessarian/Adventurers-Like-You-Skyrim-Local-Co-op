@@ -4,6 +4,7 @@
 #include <Controller.h>
 #include <MenuInputManager.h>
 #include <Player.h>
+#include <fmt/chrono.h>
 
 namespace ALYSLC 
 {
@@ -1231,15 +1232,15 @@ namespace ALYSLC
 		{
 			// Save base HMS actor values on menu entry.
 			// Co-op player AVs are not imported to P1 yet.
-			data->hmsBaseAVsOnMenuEntry[0] = 
+			data->p1HMSBaseAVsOnMenuEntry[0] = 
 			(
 				p1->GetBaseActorValue(RE::ActorValue::kHealth)
 			);
-			data->hmsBaseAVsOnMenuEntry[1] = 
+			data->p1HMSBaseAVsOnMenuEntry[1] = 
 			(
 				p1->GetBaseActorValue(RE::ActorValue::kMagicka)
 			);
-			data->hmsBaseAVsOnMenuEntry[2] = 
+			data->p1HMSBaseAVsOnMenuEntry[2] = 
 			(
 				p1->GetBaseActorValue(RE::ActorValue::kStamina)
 			);
@@ -1261,15 +1262,15 @@ namespace ALYSLC
 			// Done before restoring P1's HMS values later.
 			data->hmsPointIncreasesList[0] += 
 			(
-				p1->GetBaseActorValue(RE::ActorValue::kHealth) - data->hmsBaseAVsOnMenuEntry[0]
+				p1->GetBaseActorValue(RE::ActorValue::kHealth) - data->p1HMSBaseAVsOnMenuEntry[0]
 			);
 			data->hmsPointIncreasesList[1] += 
 			(
-				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->hmsBaseAVsOnMenuEntry[1]
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->p1HMSBaseAVsOnMenuEntry[1]
 			);
 			data->hmsPointIncreasesList[2] += 
 			(
-				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->hmsBaseAVsOnMenuEntry[2]
+				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->p1HMSBaseAVsOnMenuEntry[2]
 			);
 
 			SPDLOG_DEBUG
@@ -1280,9 +1281,9 @@ namespace ALYSLC
 				data->hmsPointIncreasesList[0],
 				data->hmsPointIncreasesList[1],
 				data->hmsPointIncreasesList[2],
-				p1->GetBaseActorValue(RE::ActorValue::kHealth) - data->hmsBaseAVsOnMenuEntry[0],
-				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->hmsBaseAVsOnMenuEntry[1],
-				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->hmsBaseAVsOnMenuEntry[2]
+				p1->GetBaseActorValue(RE::ActorValue::kHealth) - data->p1HMSBaseAVsOnMenuEntry[0],
+				p1->GetBaseActorValue(RE::ActorValue::kMagicka) - data->p1HMSBaseAVsOnMenuEntry[1],
+				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->p1HMSBaseAVsOnMenuEntry[2]
 			);
 		}
 
@@ -1825,9 +1826,6 @@ namespace ALYSLC
 			ApplyP1SerializedUnlockedPerks();
 			// Adjust perk counts before potentially copying data to P1.
 			AdjustAllPlayerPerkCounts();
-			// Trigger auto scaling first to update base actor values 
-			// to their first-saved level equivalents.
-			TriggerAVAutoScaling(nullptr, true);
 			// Rescale from new base actor values before copying 
 			// and checking base actor value data.
 			RescaleActivePlayerAVs();
@@ -1909,9 +1907,6 @@ namespace ALYSLC
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
 			}
 
-			// Trigger auto scaling first to update base actor values 
-			// to their first-saved level equivalents.
-			TriggerAVAutoScaling(nullptr, true);
 			// Rescale HMS and skill AVs up 
 			// from the new base actor values for all active players.
 			RescaleActivePlayerAVs();
@@ -1993,9 +1988,6 @@ namespace ALYSLC
 		{
 			// Save HMS changes for P1.
 			AdjustBaseHMSData(p1, a_enteringMenu);
-			// Trigger auto-scaling first to update base actor values 
-			// to what they were at the player's first saved level in co-op.
-			TriggerAVAutoScaling(nullptr, true);
 			// Rescale HMS and skill AVs up 
 			// from the new base actor values for all active players.
 			RescaleActivePlayerAVs();
@@ -3597,7 +3589,6 @@ namespace ALYSLC
 				// Only rescale if P1 leveled up during a co-op session.
 				if (glob.coopSessionActive && p1Data->level < glob.playerLevelGlob->value)
 				{
-					TriggerAVAutoScaling(nullptr, true);
 					RescaleActivePlayerAVs();
 
 					// Send message box menu control request for P1 
@@ -4358,6 +4349,184 @@ namespace ALYSLC
 		return false;
 	}
 
+	void GlobalCoopData::LoadOrSaveRaceMenuPreset(RE::Actor* a_playerActor, bool&& a_shouldLoad)
+	{
+		// Load/save a RaceMenu player character preset for the given companion player character.
+
+		auto& glob = GetSingleton();
+		// Do not load or save a preset for P1.
+		if (!glob.globalDataInit || 
+			!a_playerActor || 
+			!ALYSLC::RaceMenuCompat::g_installed ||
+			a_playerActor->IsPlayerRef())
+		{
+			return;
+		}
+			
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
+		if (!p1 || !p1ActorBase)
+		{
+			return;
+		}
+
+		const auto scriptFactory = 
+		(
+			RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+		);
+		const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+		if (!script)
+		{
+			return;
+		}
+
+		auto saveMgr = RE::BGSSaveLoadManager::GetSingleton();
+		if (!saveMgr)
+		{
+			return;
+		}
+			
+		auto consoleLog = RE::ConsoleLog::GetSingleton();
+		if (!consoleLog)
+		{
+			return;
+		}
+		
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end() || !iter->second)
+		{
+			SPDLOG_ERROR("ERR: Could not get serialized data for {}.", a_playerActor->GetName());
+			return;
+		}
+
+		SPDLOG_INFO("Succeeded in obtaining singletons and creating script.");
+		// Clear out overlays before applying the preset,
+		// since previously applied overlays sometimes stack 
+		// and interfere with the preset-defined ones.
+		if (a_shouldLoad)
+		{
+			if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
+			{
+				InterfaceExchangeMessage msg{ };
+				auto type = InterfaceExchangeMessage::kMessage_ExchangeInterface;
+				msgIntfc->Dispatch
+				(
+					type, std::addressof(msg), sizeof(InterfaceExchangeMessage*), "SKEE"
+				);
+				if (msg.interfaceMap)
+				{
+					auto overlayInterface = static_cast<IOverlayInterface*>
+					(
+						msg.interfaceMap->QueryInterface("Overlay")
+					);
+					if (overlayInterface)
+					{
+						SPDLOG_INFO("Erase overlays.");
+						overlayInterface->EraseOverlays(a_playerActor);
+					}
+				}
+			}
+
+			const auto& presetName = iter->second->raceMenuPresetName;
+			if (presetName.empty() || presetName == "NONE")
+			{
+				SPDLOG_INFO
+				(
+					"No preset found for {} on save {}.",
+					a_playerActor->GetName(), saveMgr->lastFileName
+				);
+				// Notify the player that there is no preset to import.
+				RE::DebugNotification
+				(
+					fmt::format
+					(
+						"[ALYSLC] No RaceMenu preset for {} on this save file.",
+						a_playerActor->GetName()
+					).c_str()
+				);
+				RE::DebugNotification("[ALYSLC] Use the Debug Menu to import an existing one.");
+				RE::DebugNotification("[ALYSLC] Or create one through the Summoning Menu.");
+				return;
+			}
+
+			SPDLOG_INFO
+			(
+				"Load {}'s preset as {}. Last save name: {}, full: {}.", 
+				a_playerActor->GetName(), 
+				presetName,
+				saveMgr->lastFileName,
+				saveMgr->lastFileFullName
+			);
+			script->SetCommand
+			(
+				fmt::format
+				(
+					"skee preset-load {}", presetName
+				).c_str()
+			);
+			script->CompileAndRun(a_playerActor);
+			SPDLOG_INFO("LOAD RESULT: {}", consoleLog->lastMessage);
+
+			// Prevents skin tone mismatch between body and face.
+			script->SetCommand
+			(
+				fmt::format
+				(
+					"setnpcweight {}", static_cast<uint32_t>(p1->GetWeight())
+				).c_str()
+			);
+			script->CompileAndRun(p1);
+
+			script->SetCommand
+			(
+				fmt::format
+				(
+					"setnpcweight {}", 
+					static_cast<uint32_t>(a_playerActor->GetWeight())
+				).c_str()
+			);
+			script->CompileAndRun(a_playerActor);
+		}
+		else
+		{
+			std::string supportedCharsName = a_playerActor->GetName();
+			std::erase_if(supportedCharsName, [](const char& c) { return !std::isalnum(c); });
+			const auto newName = fmt::format
+			(
+				"{}_ALYSLC_{}_{:%Y_%m_%d_%H_%M_%S}", 
+				supportedCharsName,
+				Util::GetEditorID(a_playerActor),
+				std::chrono::round<std::chrono::seconds>(std::chrono::system_clock::now())
+			);
+			SPDLOG_INFO
+			(
+				"Save {}'s preset as {}. Last save name: {}, full: {}.", 
+				a_playerActor->GetName(),
+				newName,
+				saveMgr->lastFileName,
+				saveMgr->lastFileFullName
+			);
+			script->SetCommand
+			(
+				fmt::format
+				(
+					"skee preset-save {}", newName
+				).c_str()
+			);
+			// Must run on P1, since if on AE and run on a companion player character,
+			// the companion player's character appearance is saved as a preset instead.
+			// RaceMenu SE always seems to use P1 as the actor 
+			// from which to save the preset no matter what.
+			script->CompileAndRun(p1);
+			SPDLOG_INFO("SAVE RESULT: {}", consoleLog->lastMessage);
+			
+			SPDLOG_INFO("Serialize as {}, was {}.", newName, iter->second->raceMenuPresetName);
+			iter->second->raceMenuPresetName = newName;
+		}
+
+		delete script;
+	}
+
 	void GlobalCoopData::ModifyLevelUpXPThreshold(const bool& a_setForCoop)
 	{
 		// Should be called on co-op start/end and after leveling up.
@@ -4561,17 +4730,6 @@ namespace ALYSLC
 		if (!p1)
 		{
 			return;
-		}
-
-		// Auto scale without updating base AVs first.
-		bool succ = TriggerAVAutoScaling(nullptr, false);
-		if (!succ) 
-		{
-			SPDLOG_DEBUG
-			(
-				"PerformInitialAVAutoScaling: Auto-scaling failed. "
-				"Not updating serialized base AVs for any player."
-			);
 		}
 
 		for (const auto& p : glob.coopPlayers)
@@ -5106,23 +5264,19 @@ namespace ALYSLC
 			return;
 		}
 
-		// Auto scale first and save new base actor values.
-		if (TriggerAVAutoScaling(a_playerActor, true)) 
+		// Scale skill AVs next.
+		RescaleSkillAVs(a_playerActor);
+		// Lastly, scale up HMS with saved increases.
+		// NOTE for Enderal:
+		// Health, magicka, and stamina are only modified 
+		// by auto-scaling based on your chosen class.
+		if (ALYSLC::EnderalCompat::g_installed)
 		{
-			// Scale skill AVs next.
-			RescaleSkillAVs(a_playerActor);
-			// Lastly, scale up HMS with saved increases.
-			// NOTE for Enderal:
-			// Health, magicka, and stamina are only modified 
-			// by auto-scaling based on your chosen class.
-			if (ALYSLC::EnderalCompat::g_installed)
-			{
-				return;
-			}
-
-			const auto& data = iter->second;
-			RescaleHMS(a_playerActor, data->firstSavedLevel);
+			return;
 		}
+
+		const auto& data = iter->second;
+		RescaleHMS(a_playerActor, data->firstSavedLevel);
 	}
 	
 	void GlobalCoopData::RescaleHMS(RE::Actor* a_playerActor, const float& a_baseLevel)
@@ -5168,6 +5322,94 @@ namespace ALYSLC
 		Util::RestoreAVToMaxValue(a_playerActor, RE::ActorValue::kStamina);
 
 		const auto& data = iter->second;
+		// CHANGE TO DEBUG
+		SPDLOG_DEBUG
+		(
+			"[HMS Breakdown] "
+			"Current levels displayed on P1: H: {}, M: {}, S: {}. "
+			"P1 current base: H: {}, M: {}, S: {}. "
+			"P1 current permanent: H: {}, M: {}, S: {}. " 
+			"P1 base values recorded on entry: H: {}, M: {}, S: {}. "
+			"{}'s modifiers (temp, permanent, damage): "
+			"H: ({}, {}, {}), M: ({}, {}, {}), S: ({}, {}, {}). "
+			"{}'s HMS values: "
+			"Current levels: H: {}, M: {}, S: {}. "
+			"Current base: H: {}, M: {}, S: {}. "
+			"Current permanent: H: {}, M: {}, S: {}. "
+			"Serialized values: "
+			"Base: H: {}, M: {}, S: {}. "
+			"Increase: H: {}, M: {}, S: {}. "
+			"To apply: H: {}, M: {}, S: {}",
+			p1->GetActorValue(RE::ActorValue::kHealth),
+			p1->GetActorValue(RE::ActorValue::kMagicka),
+			p1->GetActorValue(RE::ActorValue::kStamina),
+			p1->GetBaseActorValue(RE::ActorValue::kHealth),
+			p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+			p1->GetBaseActorValue(RE::ActorValue::kStamina),
+			p1->GetPermanentActorValue(RE::ActorValue::kHealth),
+			p1->GetPermanentActorValue(RE::ActorValue::kMagicka),
+			p1->GetPermanentActorValue(RE::ActorValue::kStamina),
+			data->p1HMSBaseAVsOnMenuEntry[0],
+			data->p1HMSBaseAVsOnMenuEntry[1],
+			data->p1HMSBaseAVsOnMenuEntry[2],
+			a_playerActor->GetName(),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+			),
+			a_playerActor->GetActorValueModifier
+			(
+				RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+			),
+			a_playerActor->GetName(),
+			a_playerActor->GetActorValue(RE::ActorValue::kHealth),
+			a_playerActor->GetActorValue(RE::ActorValue::kMagicka),
+			a_playerActor->GetActorValue(RE::ActorValue::kStamina),
+			a_playerActor->GetBaseActorValue(RE::ActorValue::kHealth),
+			a_playerActor->GetBaseActorValue(RE::ActorValue::kMagicka),
+			a_playerActor->GetBaseActorValue(RE::ActorValue::kStamina),
+			a_playerActor->GetPermanentActorValue(RE::ActorValue::kHealth),
+			a_playerActor->GetPermanentActorValue(RE::ActorValue::kMagicka),
+			a_playerActor->GetPermanentActorValue(RE::ActorValue::kStamina),
+			data->hmsBasePointsList[0],
+			data->hmsBasePointsList[1],
+			data->hmsBasePointsList[2],
+			data->hmsPointIncreasesList[0],
+			data->hmsPointIncreasesList[1],
+			data->hmsPointIncreasesList[2],
+			data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0],
+			data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1],
+			data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
+		);
+
 		// Has recorded level up.
 		if (a_baseLevel != 0) 
 		{
@@ -6856,29 +7098,31 @@ namespace ALYSLC
 
 				// Sync all shared skill tree perks for companion players.
 				Util::TraverseAllPerks(p->coopActor.get(), addSharedSkillPerks);
+
+				// Commented out for now.
 				// Also add all non-selectable perks to companion players.
-				for (auto perk : p1->perks)
-				{
-					// Invalid perk, already has the perk, or is a selectable perk,
-					// so on to the next one.
-					if (!perk ||
-						p->coopActor->HasPerk(perk) ||
-						glob.SELECTABLE_PERKS.contains(perk)) 
-					{
-						continue;
-					}
-					
-					bool succ = perk->perkConditions.IsTrue
-					(
-						p->coopActor.get(), p->coopActor.get()
-					);
-					SPDLOG_DEBUG
-					(
-						"P1 {} has perk {} 0x{:X}). Adding to {}. Conditions hold: {}.",
-						p1->GetName(), perk->GetName(), perk->formID, p->coopActor->GetName(), succ
-					);
-					Util::ChangePerk(p->coopActor.get(), perk, true);
-				}
+				//for (auto perk : p1->perks)
+				//{
+				//	// Invalid perk, already has the perk, or is a selectable perk,
+				//	// so on to the next one.
+				//	if (!perk ||
+				//		p->coopActor->HasPerk(perk) ||
+				//		glob.SELECTABLE_PERKS.contains(perk)) 
+				//	{
+				//		continue;
+				//	}
+				//	
+				//	bool succ = perk->perkConditions.IsTrue
+				//	(
+				//		p->coopActor.get(), p->coopActor.get()
+				//	);
+				//	SPDLOG_DEBUG
+				//	(
+				//		"P1 {} has perk {} 0x{:X}). Adding to {}. Conditions hold: {}.",
+				//		p1->GetName(), perk->GetName(), perk->formID, p->coopActor->GetName(), succ
+				//	);
+				//	Util::ChangePerk(p->coopActor.get(), perk, true);
+				//}
 			}
 		}
 	}
@@ -7012,6 +7256,9 @@ namespace ALYSLC
 		);
 		glob.cam->RequestStateChange(ManagerState::kPaused);
 		GlobalCoopData::ResetMenuState();
+		
+		// Make sure time is not frozen when done.
+		Util::ToggleFreezeTime(false);
 	}
 
 	void GlobalCoopData::ToggleGodModeForAllPlayers(const bool& a_enable, bool a_enableWithFullHMS)
@@ -8112,6 +8359,17 @@ namespace ALYSLC
 						CopyablePlayerDataTypes::kFavoritesPhysical
 					);
 				}
+
+				/*SPDLOG_DEBUG
+				(
+					"Favorites Menu: Should copy over inventory on import."
+				);
+				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+				{
+					SPDLOG_DEBUG("Import Inventory.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
+				}*/
 			}
 			else
 			{
@@ -8137,6 +8395,17 @@ namespace ALYSLC
 						CopyablePlayerDataTypes::kFavoritesPhysical
 					);
 				}
+
+				/*SPDLOG_DEBUG
+				(
+					"Favorites Menu: Should copy back inventory on export."
+				);
+				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+				{
+					SPDLOG_DEBUG("Export Inventory.");
+					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
+					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
+				}*/
 			}
 		}
 		else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
@@ -8152,7 +8421,7 @@ namespace ALYSLC
 			{
 				SPDLOG_DEBUG
 				(
-					"Gift Menu: Should copy over inventory."
+					"Gift Menu: Should copy over inventory on import."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
@@ -9269,7 +9538,7 @@ namespace ALYSLC
 			{
 				tempHealthMods, tempMagickaMods, tempStaminaMods
 			};
-
+			
 			SPDLOG_DEBUG
 			(
 				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
@@ -9653,6 +9922,12 @@ namespace ALYSLC
 		{
 			return;
 		}
+
+		SPDLOG_DEBUG
+		(
+			"{}: Import: {}, keep P1 gold: {}.", 
+			a_coopActor->GetName(), a_shouldImport, a_keepP1Gold
+		);
 
 		int8_t pIndex = GetCoopPlayerIndex(a_coopActor->GetHandle());
 		const auto& p = glob.coopPlayers[pIndex];
@@ -12174,6 +12449,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::TriggerAVAutoScaling(RE::Actor* a_playerActor, bool&& a_updateBaseAVs) 
 	{
+		// UnUSED FOR NOW DUE TO HMS SCALING BUGS AFFECTING BOTH TYPES OF PLAYERS.
 		// Force the game to scale all players' AVs by spoofing a level up 
 		// and then de-leveling back to the original level.
 		// Can optionally update the serialized base AVs for the given player(s)

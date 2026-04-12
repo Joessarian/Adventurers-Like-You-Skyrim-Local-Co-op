@@ -514,33 +514,83 @@ namespace ALYSLC
 					{
 						auto weap = a_object->As<RE::TESObjectWEAP>();
 						auto equipSlotToUse = weap->equipSlot;
+						// Ugh. Sometimes the object has the same name and equip slot 
+						// but a different form ID and is a different pointer 
+						// when compared to the cached requested weapon.
+						// Ex. Cast the normal 'Bound Battleaxe' spell, 
+						// but the Mystic version's weapon is equipped.
+						// Also check if the names are the same to determine equivalence
+						// if this occurs.
 						bool reqToEquip = 
 						(
 							(
-								p->pam->boundWeapReqLH &&
-								equipSlotToUse == glob.leftHandEquipSlot &&
-								weap == p->em->lastReqBoundWeapLH
+								(
+									p->pam->boundWeapReqLH &&
+									equipSlotToUse == glob.leftHandEquipSlot
+								) &&
+								(
+									(a_object == p->em->lastReqBoundWeapLH) ||
+									(
+										p->em->lastReqBoundWeapLH &&
+										strncmp
+										(
+											a_object->GetName(),
+											p->em->lastReqBoundWeapLH->GetName(),
+											strlen(a_object->GetName())
+										) == 0
+									)
+								)
 							) ||
 							(
-								p->pam->boundWeapReqRH &&
-								equipSlotToUse == glob.rightHandEquipSlot &&
-								weap == p->em->lastReqBoundWeapRH
+								(
+									p->pam->boundWeapReqRH &&
+									equipSlotToUse == glob.rightHandEquipSlot
+								) &&
+								(
+									(a_object == p->em->lastReqBoundWeapRH) ||
+									(
+										p->em->lastReqBoundWeapRH &&
+										strncmp
+										(
+											a_object->GetName(),
+											p->em->lastReqBoundWeapRH->GetName(),
+											strlen(a_object->GetName())
+										) == 0
+									)
+								)
 							) ||
 							(
-								p->pam->boundWeapReq2H &&
-								equipSlotToUse == glob.bothHandsEquipSlot  &&
-								weap == p->em->lastReqBoundWeapRH
+								(
+									p->pam->boundWeapReq2H &&
+									equipSlotToUse == glob.bothHandsEquipSlot
+								) &&
+								(
+									(a_object == p->em->lastReqBoundWeapRH) ||
+									(
+										p->em->lastReqBoundWeapRH &&
+										strncmp
+										(
+											a_object->GetName(),
+											p->em->lastReqBoundWeapRH->GetName(),
+											strlen(a_object->GetName())
+										) == 0
+									)
+								)
 							)
 						);
 
+						// CHANGE TO DEBUG
 						SPDLOG_DEBUG
 						(
-							"{}: trying to equip bound weapon {} with equip slot 0x{:X}. "
+							"{}: trying to equip bound weapon {} (0x{:X}) with equip slot {}. "
 							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
-							"Already equipped: {}. Ammo: {}, {}.", 
+							"Already equipped: {}. Ammo: {}, {}. "
+							"Last requested bound weapons: {} (0x{:X}), {} (0x{:X}), "
+							"comps: {}, {}. Form names match: {}, {}.", 
 							a_actor->GetName(),
 							a_object->GetName(),
-							equipSlotToUse ? equipSlotToUse->formID : 0xDEAD,
+							a_object->formID,
+							equipSlotToUse ? Util::GetEditorID(equipSlotToUse) : "NONE",
 							reqToEquip ? "ALLOWING" : "IGNORING",
 							p->pam->boundWeapReq2H,
 							p->pam->boundWeapReqLH,
@@ -559,7 +609,35 @@ namespace ALYSLC
 							"NONE",
 							p->em->equippedForms[!EquipIndex::kAmmo] ? 
 							p->em->equippedForms[!EquipIndex::kAmmo]->GetName() :
-							"NONE"
+							"NONE",
+							p->em->lastReqBoundWeapLH ? 
+							p->em->lastReqBoundWeapLH->GetName() : 
+							"NONE",
+							p->em->lastReqBoundWeapLH ? 
+							p->em->lastReqBoundWeapLH->formID : 
+							0xDEAD,
+							p->em->lastReqBoundWeapRH ? 
+							p->em->lastReqBoundWeapRH->GetName() : 
+							"NONE",
+							p->em->lastReqBoundWeapRH ? 
+							p->em->lastReqBoundWeapRH->formID : 
+							0xDEAD,
+							a_object == p->em->lastReqBoundWeapLH,
+							a_object == p->em->lastReqBoundWeapRH,
+							p->em->lastReqBoundWeapLH &&
+							strncmp
+							(
+								a_object->GetName(),
+								p->em->lastReqBoundWeapLH->GetName(),
+								strlen(a_object->GetName())
+							) == 0,
+							p->em->lastReqBoundWeapRH &&
+							strncmp
+							(
+								a_object->GetName(),
+								p->em->lastReqBoundWeapRH->GetName(),
+								strlen(a_object->GetName())
+							) == 0
 						);
 
 						auto aem = RE::ActorEquipManager::GetSingleton();
@@ -1934,7 +2012,6 @@ namespace ALYSLC
 			}
 			
 			SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
-			
 			p->lastAnimEventTag = a_event->tag;
 
 			SPDLOG_DEBUG
@@ -2024,7 +2101,6 @@ namespace ALYSLC
 			RE::TESObjectREFR* a_fromRefr
 		)
 		{
-
 			if (!a_object || !glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
@@ -2164,6 +2240,11 @@ namespace ALYSLC
 				if (a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued)
 				{
 					return 0.0f;
+				}
+				else 
+				{
+					// Do not go below 0 health.
+					//a_delta = -a_this->GetActorValue(RE::ActorValue::kHealth);
 				}
 
 				// Ensure the actor does not die while paralyzed, 
@@ -2748,33 +2829,6 @@ namespace ALYSLC
 					{
 						// Use extra data to store the real killer, 
 						// since P1 takes the blame for any co-op companion kills.
-						// NOTE: 
-						// I am assuming this exData is not used on corpses, 
-						// and that the exDataType's pad is also unused for corpses.
-						// Seems to be the case from testing thusfar.
-
-						// Pad14 is set to the killer player's FID and set to 0 
-						// once the player has opened the QuickLoot menu for the corpse.
-						//if (!a_this->extraList.HasType<RE::ExtraForcedTarget>())
-						//{
-						//	// I guess Add() manages the lifetime 
-						//	// of the newly allocated extra data pointer?
-						//	// No explicit free call after calling Add() 
-						//	// in two other places within the CommonLibSSE source.
-						//	RE::ExtraForcedTarget* exData = new RE::ExtraForcedTarget();
-						//	if (exData)
-						//	{
-						//		exData->target = RE::ObjectRefHandle();
-						//		exData->pad14 = p->coopActor->formID;
-						//		a_this->extraList.Add(exData);
-						//	}
-						//}
-						//else
-						//{
-						//	auto exData = a_this->extraList.GetByType<RE::ExtraForcedTarget>();
-						//	exData->pad14 = p->coopActor->formID;
-						//}
-
 						// Use owner exData to keep track of killer.
 						a_this->extraList.SetOwner(p->coopActor.get());
 					}
@@ -3013,7 +3067,7 @@ namespace ALYSLC
 			bool a_playSound
 		)
 		{
-			if (!glob.globalDataInit || !glob.allPlayersInit || !a_object)
+			if (!a_object || !glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
 			}
@@ -3327,7 +3381,7 @@ namespace ALYSLC
 			const RE::NiPoint3* a_rotate
 		)
 		{
-			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive || !a_item)
+			if (!a_item || !glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _RemoveItem
 				(
@@ -4669,6 +4723,369 @@ namespace ALYSLC
 			return 0;
 		}
 
+		float CharacterHooks::GetActorValue(RE::ActorValueOwner* a_this, RE::ActorValue a_akValue)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _GetActorValue(a_this, a_akValue);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					const float value = _GetActorValue(a_this, a_akValue);
+					SPDLOG_DEBUG
+					(
+						"{}: {} is {}.", 
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						value
+					);
+
+					return value;
+				}
+			}
+
+			return _GetActorValue(a_this, a_akValue);
+		}
+
+		float CharacterHooks::GetBaseActorValue
+		(
+			RE::ActorValueOwner* a_this, RE::ActorValue a_akValue
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _GetBaseActorValue(a_this, a_akValue);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					const float value = _GetBaseActorValue(a_this, a_akValue);
+					SPDLOG_DEBUG
+					(
+						"{}: {} is {}.", 
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						value
+					);
+
+					return value;
+				}
+			}
+
+			return _GetBaseActorValue(a_this, a_akValue);
+		}
+
+		float CharacterHooks::GetPermanentActorValue
+		(
+			RE::ActorValueOwner* a_this, RE::ActorValue a_akValue
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _GetPermanentActorValue(a_this, a_akValue);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					const float value = _GetPermanentActorValue(a_this, a_akValue);
+					SPDLOG_DEBUG
+					(
+						"{}: {} is {}.", 
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						value
+					);
+
+					return value;
+				}
+			}
+
+			return _GetPermanentActorValue(a_this, a_akValue);
+		}
+
+		void CharacterHooks::ModActorValue
+		(
+			RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _ModActorValue(a_this, a_akValue, a_value);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: {} by {}.", 
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						a_value
+					);
+					break;
+				}
+			}
+
+			return _ModActorValue(a_this, a_akValue, a_value);
+		}
+
+		void CharacterHooks::RestoreActorValue
+		(
+			RE::ActorValueOwner* a_this,
+			RE::ACTOR_VALUE_MODIFIER a_modifier,
+			RE::ActorValue a_akValue,
+			float a_value
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _RestoreActorValue(a_this, a_modifier, a_akValue, a_value);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					// Check if HMS permanent actor value will drop.
+					// Prevent this from happening for now until the source of the bug is found.
+					if ((a_modifier == RE::ACTOR_VALUE_MODIFIER::kPermanent) &&
+						(a_akValue == RE::ActorValue::kHealth || 
+						a_akValue == RE::ActorValue::kMagicka ||
+						a_akValue == RE::ActorValue::kStamina))
+					{
+						float serializedBaseValue = 0.0f;
+						const auto iter = glob.serializablePlayerData.find(actorPtr->formID);
+						if (iter != glob.serializablePlayerData.end())
+						{
+							serializedBaseValue = 
+							(
+								iter->second->hmsBasePointsList
+								[
+									a_akValue == RE::ActorValue::kHealth ?
+									0 :
+									a_akValue == RE::ActorValue::kMagicka ? 
+									1 :
+									2
+								]
+							);
+						}
+
+						const float newPermMod = 
+						(
+							actorPtr->GetActorValueModifier(a_modifier, a_akValue) + a_value
+						);
+						const float currentPermValue = a_this->GetPermanentActorValue(a_akValue);
+						// CHANGE TO DEBUG
+						SPDLOG_DEBUG
+						(
+							"{}: Adjusting {}'s {} modifier by {} to {}. "
+							"New permanent value: {} ({} + {}), should be {} as serialized. "
+							"Restore by {} instead.", 
+							actorPtr->GetName(), 
+							newPermMod > 0.0f ? 
+							"ALLOW" :
+							"IGNORE",
+							Util::GetActorValueName(a_akValue),
+							a_modifier == RE::ACTOR_VALUE_MODIFIER::kDamage ? 
+							"DAMAGE" :
+							a_modifier == RE::ACTOR_VALUE_MODIFIER::kPermanent ? 
+							"PERMANENT" :
+							a_modifier == RE::ACTOR_VALUE_MODIFIER::kTemporary ? 
+							"TEMPORARY" :
+							"INVALID",
+							a_value,
+							newPermMod,
+							currentPermValue + a_value,
+							currentPermValue,
+							a_value,
+							serializedBaseValue,
+							serializedBaseValue - currentPermValue
+						);
+						if (currentPermValue + a_value <= 0.0f)
+						{
+							// Set to serialized value or ignore this call
+							// if there is no serialized value.
+							if (serializedBaseValue != 0.0f)
+							{
+								_RestoreActorValue
+								(
+									a_this,
+									a_modifier,
+									a_akValue, 
+									serializedBaseValue - currentPermValue
+								);
+								a_this->SetBaseActorValue(a_akValue, serializedBaseValue);
+								SPDLOG_ERROR
+								(
+									"ERR: {}: Permanent {} was almost set to <= 0 value. "
+									"Set to {}, modifier to {}, base to {}.",
+									actorPtr->GetName(),
+									Util::GetActorValueName(a_akValue),
+									a_this->GetPermanentActorValue(a_akValue),
+									actorPtr->GetActorValueModifier
+									(
+										RE::ACTOR_VALUE_MODIFIER::kPermanent, a_akValue
+									),
+									a_this->GetBaseActorValue(a_akValue)
+								);
+							}
+							else
+							{
+								SPDLOG_ERROR
+								(
+									"ERR: {}: Permanent {} was almost set to <= 0 value. "
+									"SKIP because no serialized value is present.",
+									actorPtr->GetName(),
+									Util::GetActorValueName(a_akValue)
+								);	
+							}
+
+							return;
+						}
+					}
+					
+					break;
+				}
+			}
+
+			return _RestoreActorValue(a_this, a_modifier, a_akValue, a_value);
+		}
+
+		void CharacterHooks::SetActorValue
+		(
+			RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _SetActorValue(a_this, a_akValue, a_value);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				if (actorPtr && a_this == actorPtr.get())
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: {} to {}.", 
+						actorPtr->GetName(), 
+						Util::GetActorValueName(a_akValue),
+						a_value
+					);
+					break;
+				}
+			}
+
+			return _SetActorValue(a_this, a_akValue, a_value);
+		}
+
+		void CharacterHooks::SetBaseActorValue
+		(
+			RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+		)
+		{
+			if (!glob.globalDataInit)
+			{
+				return _SetBaseActorValue(a_this, a_akValue, a_value);
+			}
+
+			for (const auto actorPtr : glob.coopEntityBlacklist)
+			{
+				// Not a player.
+				if (!actorPtr || a_this != actorPtr.get())
+				{
+					continue;
+				}
+				
+				bool isHMS = 
+				(
+					a_akValue == RE::ActorValue::kHealth || 
+					a_akValue == RE::ActorValue::kMagicka ||
+					a_akValue == RE::ActorValue::kStamina
+				);
+				const auto skillIter = GlobalCoopData::AV_TO_SKILL_MAP.find(a_akValue);
+				bool isSkill = skillIter != GlobalCoopData::AV_TO_SKILL_MAP.end();
+				// Skip if not an HMS or skill AV.
+				if (!isHMS && !isSkill)
+				{
+					break;
+				}
+				
+				// Do not change the value if there is no serialized data for the player.
+				const auto iter = glob.serializablePlayerData.find(actorPtr->formID);
+				if (iter == glob.serializablePlayerData.end())
+				{
+					break;
+				}
+
+				const auto& data = iter->second;
+				float serializedBaseValue = a_value;
+				if (isHMS)
+				{
+					const auto index =
+					(
+						a_akValue == RE::ActorValue::kHealth ? 
+						0 :
+						a_akValue == RE::ActorValue::kMagicka ? 
+						1 : 
+						2
+					);
+					serializedBaseValue = 
+					(
+						data->hmsBasePointsList[index] + data->hmsPointIncreasesList[index]
+					);
+					if (a_value != serializedBaseValue)
+					{
+						// CHANGE TO DEBUG
+						SPDLOG_DEBUG
+						(
+							"{}: Trying to set attribute {}'s base value to {}. Set to {} instead.",
+							actorPtr->GetName(), 
+							Util::GetActorValueName(a_akValue),
+							a_value, 
+							serializedBaseValue
+						);
+					}
+				}
+				// May be unnecessary to commented out for now.
+				//else
+				//{
+				//	const auto index = skillIter->second;
+				//	serializedBaseValue = 
+				//	(
+				//		data->skillBaseLevelsList[index] + data->skillLevelIncreasesList[index]
+				//	);
+				//	if (a_value != serializedBaseValue)
+				//	{
+				//		// CHANGE TO DEBUG
+				//		SPDLOG_DEBUG
+				//		(
+				//			"{}: Trying to set skill {}'s base value to {}. Set to {} instead.",
+				//			actorPtr->GetName(), 
+				//			Util::GetActorValueName(a_akValue),
+				//			a_value, 
+				//			serializedBaseValue
+				//		);
+				//	}
+				//}
+
+				// Break and set.
+				a_value = serializedBaseValue;
+				break;
+			}
+
+			return _SetBaseActorValue(a_this, a_akValue, a_value);
+		}
+
 // [INPUT EVENT HOOKS]:
 		void InputEventHooks::DispatchInputEvents
 		(
@@ -4706,11 +5123,11 @@ namespace ALYSLC
 
 					idEvent->pad24 = 0;
 				}
-
+				
 				++i;
 				event = event->next;
 			}
-
+			
 			// Sending the companion player's input events separately 
 			// only allows for processing of one input device's events at a time.
 			// For example, if P2 is moving the left stick while in their inventory
@@ -4738,7 +5155,7 @@ namespace ALYSLC
 				
 				glob.mim->queuedInputEvents.clear();
 			}
-			
+
 			return _DispatchInputEvents(a_this, a_inputEvents);
 		}
 
@@ -7510,8 +7927,8 @@ namespace ALYSLC
 					ui->IsMenuOpen(RE::StatsMenu::MENU_NAME)  || 
 					ui->IsMenuOpen(RE::TitleSequenceMenu::MENU_NAME)	
 				);
-				// P1 input that should be processed by MenuControls.
-				bool processableP1Event = 
+				// P1 Lockpicking input that should be processed by MenuControls.
+				bool allowedP1LockpickingEvent = 
 				(
 					(companionPlayerControllingMenus && allowP1RotateLock) ||
 					(!companionPlayerControllingMenus && !isBlockedP1RotateLockInput)
@@ -7587,7 +8004,11 @@ namespace ALYSLC
 				bool shouldProcess = 
 				(
 					(!wasBlocked && !ignoreInput) && 
-					((companionPlayerMenuInput) || (!fromCompanionPlayer && processableP1Event))
+					(
+						(companionPlayerMenuInput) || 
+						(fromCompanionPlayer && allowP2RotateLock) ||
+						(!fromCompanionPlayer && allowedP1LockpickingEvent)
+					)
 				);
 
 				// Propagate the event to P1's action handlers if it shouldn't be ignored 
@@ -7602,10 +8023,10 @@ namespace ALYSLC
 				(
 					"Menu, MIM PID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
-					"p1 manager threads active: {} => PROPAGATE: {}, HANDLE: {}, "
+					"p1 manager threads active: {} => PROPAGATE: {}, PROCESS: {}, "
 					"proxied P1 input: {}, companion player menu input: {}, "
 					"from companion player: {}, "
-					"ignored: {}, processable P1 input: {}, "
+					"ignored: {}, allowed P1 lockpicking input: {}, "
 					"dialogue menu open: {}, is blocked event: {}, "
 					"valid companion player input: {}, valid p1 input: {}, "
 					"two-player P1 lockpicking "
@@ -7625,7 +8046,7 @@ namespace ALYSLC
 					companionPlayerMenuInput,
 					fromCompanionPlayer,
 					ignoreInput,
-					processableP1Event,
+					allowedP1LockpickingEvent,
 					dialogueMenuOpen,
 					isBlockedP1Event,
 					validCoopCompanionInput,
@@ -8594,6 +9015,12 @@ namespace ALYSLC
 				}
 			}
 
+			auto ue = RE::UserEvents::GetSingleton();
+			if (!ue)
+			{
+				return _NotifyAnimationGraph(a_this, a_eventName);
+			}
+
 			if (glob.coopSessionActive)
 			{
 				if (Settings::bUseReviveSystem && hash == "BleedoutStart"_h && !glob.p1IsEssential)
@@ -8601,6 +9028,14 @@ namespace ALYSLC
 					// Skip bleedout animations when using the co-op revive system.
 					// Players will ragdoll and become unresponsive when reaching 0 health instead.
 					return _NotifyAnimationGraph(a_this, "bleedOutStop");
+				}
+				else if ((coopP1->pam->IsPerforming(InputAction::kSprint)) &&
+						(hash == "SprintStop"_h || hash == "sprintStop"_h))
+				{
+					// Prevent the game from stopping sprint
+					// while the player is performing the sprint action.
+					// Occurs after toggling AI driven on and running the Update() hook.
+					return false;
 				}
 				else if (((coopP1->isDowned && !coopP1->isRevived) || 
 						 (coopP1->coopActor->GetActorValue(RE::ActorValue::kHealth) <= 0.0f)) && 
@@ -9227,22 +9662,30 @@ namespace ALYSLC
 			// Sync player character singleton flag too for good measure.
 			// Who knows what code could access it, whether another mod or the game itself,
 			// so better to keep everything in sync.
-			a_this->actorState1.sprinting = 
-			a_this->playerFlags.isSprinting = 
-			coopP1->pam->IsPerforming(InputAction::kSprint);
-
-			bool wasSet = Util::SetPlayerAIDriven(false);
-			_Update(a_this, a_delta);
-			if (wasSet)
+			bool performingSprint = coopP1->pam->IsPerforming(InputAction::kSprint);
+			bool justStarted = coopP1->pam->JustStarted(InputAction::kSprint);
+			// Less stutter if allowing the animation to start without removing AI driven.
+			if (justStarted)
 			{
-				Util::SetPlayerAIDriven(true);
+				_Update(a_this, a_delta);
+			}
+			else
+			{
+				bool wasSet = Util::SetPlayerAIDriven(false);
+				a_this->actorState1.sprinting = 
+				a_this->playerFlags.isSprinting = performingSprint;
+
+				_Update(a_this, a_delta);
+			
+				if (wasSet)
+				{
+					Util::SetPlayerAIDriven(true);
+				}
+
+				a_this->actorState1.sprinting = 
+				a_this->playerFlags.isSprinting = performingSprint;
 			}
 			
-			/*a_this->actorState1 = oldActorState1;
-			a_this->actorState2 = oldActorState2;*/
-			a_this->actorState1.sprinting = 
-			a_this->playerFlags.isSprinting = 
-			coopP1->pam->IsPerforming(InputAction::kSprint);
 
 			//===================
 			// Node Orientations.
@@ -12449,8 +12892,8 @@ namespace ALYSLC
 			// Thus, the key here is to make sure the requested item has at least 1 extra data list
 			// by adding ownership extra data to any item that has none.
 			// Fix up the counts afterward to prevent instability.
-
-			if (!a_object || a_count == 0)
+						
+			if (!a_object || a_count == 0 || !glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
 			}
@@ -12730,7 +13173,7 @@ namespace ALYSLC
 			const RE::NiPoint3* a_rotate
 		)
 		{
-			if (!a_item || a_count == 0)
+			if (!a_item || a_count == 0 || !glob.globalDataInit || !glob.allPlayersInit)
 			{
 				return _RemoveItem
 				(
@@ -13198,9 +13641,6 @@ namespace ALYSLC
 			{
 				// Delete marker.
 				a_this->SetDelete(true);
-				// Set skybox mode to sometimes remove fog
-				// when zooming out beyond the traversable area.
-				Util::SetSkyboxModeForCell(a_this->parentCell);
 			}
 		}
 
@@ -15338,6 +15778,7 @@ namespace ALYSLC
 				closing &= hasCopiedData;
 				if (opening || closing)
 				{
+					auto result = _ProcessMessage(a_this, a_message);
 					const RE::BSFixedString menuName = a_this->MENU_NAME;
 					// Copy over player data.
 					GlobalCoopData::CopyOverCoopPlayerData
@@ -15383,7 +15824,6 @@ namespace ALYSLC
 
 					// Have to restore P1's favorited items here 
 					// if the game ignores this call to open the menu.
-					auto result = _ProcessMessage(a_this, a_message);
 					if (opening)
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
@@ -15575,7 +16015,8 @@ namespace ALYSLC
 					);
 				}
 
-				Util::Papyrus::UnequipAll(p1);
+				SPDLOG_DEBUG("About to unequip all.");
+				//Util::Papyrus::UnequipAll(p1);
 				if (ALYSLC::RaceMenuCompat::g_installed)
 				{
 					if (!p1->race2 || glob.coopSessionActive)
@@ -15656,6 +16097,7 @@ namespace ALYSLC
 						SPDLOG_DEBUG("No active effects list.");
 					}
 
+					/*
 					// TODO: Restore active effects.
 					// NEEDS TESTING AFTER EXTRADATALIST SUPPORT ADDED:
 					// Re-equip saved gear.
@@ -15832,6 +16274,7 @@ namespace ALYSLC
 							}
 						}
 					}
+					*/
 
 					// Clear equipped forms and extra data list lists.
 					glob.charGenEquippedForms.fill(nullptr);
@@ -15885,9 +16328,6 @@ namespace ALYSLC
 							}
 						}
 					}
-					
-					// Save P1's appearance to the cached co-op preset.
-					Util::LoadOrSaveRaceMenuPreset(p1, false);
 				}
 			}
 
@@ -16059,6 +16499,207 @@ namespace ALYSLC
 					}
 
 					const auto& data = iter->second;
+					// CHANGE TO DEBUG
+					SPDLOG_DEBUG
+					(
+						"[HMS Breakdown] "
+						"Event type {}, "
+						"Current levels displayed on P1: H: {}, M: {}, S: {}. "
+						"P1 current base: H: {}, M: {}, S: {}. "
+						"P1 current permanent: H: {}, M: {}, S: {}. " 
+						"P1 base values recorded on entry: H: {}, M: {}, S: {}. "
+						"{}'s modifiers (temp, permanent, damage): "
+						"H: ({}, {}, {}), M: ({}, {}, {}), S: ({}, {}, {}). "
+						"{}'s HMS values: "
+						"Current levels: H: {}, M: {}, S: {}. "
+						"Current base: H: {}, M: {}, S: {}. "
+						"Current permanent: H: {}, M: {}, S: {}. "
+						"Serialized values: "
+						"Base: H: {}, M: {}, S: {}. "
+						"Serialized increases: H: {}, M: {}, S: {}. "
+						"Current increases: H: {}, M: {}, S: {}. "
+						"To display on P1: H: ({} / {}), M: ({} / {}), S: ({} / {})",
+						*a_message.type,
+						p1->GetActorValue(RE::ActorValue::kHealth),
+						p1->GetActorValue(RE::ActorValue::kMagicka),
+						p1->GetActorValue(RE::ActorValue::kStamina),
+						p1->GetBaseActorValue(RE::ActorValue::kHealth),
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka),
+						p1->GetBaseActorValue(RE::ActorValue::kStamina),
+						p1->GetPermanentActorValue(RE::ActorValue::kHealth),
+						p1->GetPermanentActorValue(RE::ActorValue::kMagicka),
+						p1->GetPermanentActorValue(RE::ActorValue::kStamina),
+						data->p1HMSBaseAVsOnMenuEntry[0],
+						data->p1HMSBaseAVsOnMenuEntry[1],
+						data->p1HMSBaseAVsOnMenuEntry[2],
+						playerInMenusPtr->GetName(),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+						),
+						playerInMenusPtr->GetActorValueModifier
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+						),
+						playerInMenusPtr->GetName(),
+						playerInMenusPtr->GetActorValue(RE::ActorValue::kHealth),
+						playerInMenusPtr->GetActorValue(RE::ActorValue::kMagicka),
+						playerInMenusPtr->GetActorValue(RE::ActorValue::kStamina),
+						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kHealth),
+						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kMagicka),
+						playerInMenusPtr->GetBaseActorValue(RE::ActorValue::kStamina),
+						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kHealth),
+						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kMagicka),
+						playerInMenusPtr->GetPermanentActorValue(RE::ActorValue::kStamina),
+						data->hmsBasePointsList[0],
+						data->hmsBasePointsList[1],
+						data->hmsBasePointsList[2],
+						data->hmsPointIncreasesList[0],
+						data->hmsPointIncreasesList[1],
+						data->hmsPointIncreasesList[2],
+						p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+						data->p1HMSBaseAVsOnMenuEntry[0],
+						p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+						data->p1HMSBaseAVsOnMenuEntry[1],
+						p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+						data->p1HMSBaseAVsOnMenuEntry[2],
+						(
+							data->hmsBasePointsList[0] + 
+							data->hmsPointIncreasesList[0] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+								data->p1HMSBaseAVsOnMenuEntry[0]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+							) 	 + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kHealth
+							)
+						),
+						(
+							data->hmsBasePointsList[0] + 
+							data->hmsPointIncreasesList[0] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
+								data->p1HMSBaseAVsOnMenuEntry[0]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kHealth
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kHealth
+							) 	
+						),
+						(
+							data->hmsBasePointsList[1] + 
+							data->hmsPointIncreasesList[1] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+								data->p1HMSBaseAVsOnMenuEntry[1]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kMagicka
+							)
+						),
+						(
+							data->hmsBasePointsList[1] + 
+							data->hmsPointIncreasesList[1] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
+								data->p1HMSBaseAVsOnMenuEntry[1]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kMagicka
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kMagicka
+							) 	
+						),
+						(
+							data->hmsBasePointsList[2] + 
+							data->hmsPointIncreasesList[2] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+								data->p1HMSBaseAVsOnMenuEntry[2]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kDamage, RE::ActorValue::kStamina
+							)
+						),
+						(
+							data->hmsBasePointsList[2] + 
+							data->hmsPointIncreasesList[2] +
+							(
+								p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
+								data->p1HMSBaseAVsOnMenuEntry[2]
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kTemporary, RE::ActorValue::kStamina
+							) + 
+							playerInMenusPtr->GetActorValueModifier
+							(
+								RE::ACTOR_VALUE_MODIFIER::kPermanent, RE::ActorValue::kStamina
+							) 	
+						)
+					);
 					view->GetVariable
 					(
 						std::addressof(firstLastLabel), 
@@ -16105,7 +16746,7 @@ namespace ALYSLC
 						data->hmsPointIncreasesList[1] +
 						(
 							p1->GetBaseActorValue(RE::ActorValue::kMagicka) - 
-							data->hmsBaseAVsOnMenuEntry[1]
+							data->p1HMSBaseAVsOnMenuEntry[1]
 						) + 
 						tempAndPermMod
 					);
@@ -16152,7 +16793,7 @@ namespace ALYSLC
 						data->hmsPointIncreasesList[0] +
 						(
 							p1->GetBaseActorValue(RE::ActorValue::kHealth) - 
-							data->hmsBaseAVsOnMenuEntry[0]
+							data->p1HMSBaseAVsOnMenuEntry[0]
 						) + 
 						tempAndPermMod
 					);
@@ -16195,7 +16836,7 @@ namespace ALYSLC
 						data->hmsPointIncreasesList[2] +
 						(
 							p1->GetBaseActorValue(RE::ActorValue::kStamina) - 
-							data->hmsBaseAVsOnMenuEntry[2]
+							data->p1HMSBaseAVsOnMenuEntry[2]
 						) + 
 						tempAndPermMod
 					);

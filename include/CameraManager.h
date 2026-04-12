@@ -724,13 +724,25 @@ namespace ALYSLC
 		// Set camera interpolation factors.
 		inline void SetCamInterpFactors()
 		{
-			if (camState == CamState::kManualPositioning) 
+			// Improved responsiveness at lower framerates by scaling up the interp factor
+			// to approach the target camera orientation endpoint faster.
+			// Obviously will not make it framerate independent due to the non-linear interp we do
+			// to smooth out movement and rotation of the camera.
+			if (camState == CamState::kManualPositioning)
 			{
-				camInterpFactor = Settings::fCamManualPosInterpFactor;
+				camInterpFactor = 
+				(
+					Settings::fCamManualPosInterpFactor * 
+					std::clamp((60.0f * *g_deltaTimeRealTime), 1.0f, 2.0f)
+				);
 			}
 			else
 			{
-				camInterpFactor = Settings::fCamInterpFactor;
+				camInterpFactor = 
+				(
+					Settings::fCamInterpFactor * 
+					std::clamp((60.0f * *g_deltaTimeRealTime), 1.0f, 2.0f)
+				);
 			}
 		}
 
@@ -1034,6 +1046,8 @@ namespace ALYSLC
 		// Set to false once the players are past a distance equal to the minimum trailing
 		// distance from the door.
 		bool lockInteriorOrientationOnInit;
+		// Was time frozen when toggling on manual positioning?
+		bool manualPositioningTimeFrozen;
 		// Was the toggle bind pressed while the co-op camera was waiting to be toggled on?
 		bool toggleBindPressedWhileWaiting;
 		// Should wait to toggle the co-op camera on again.

@@ -14,7 +14,8 @@ const SKSE::LoadInterface* g_loadInterface = nullptr;
 
 void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 {
-	switch (msg->type) {
+	switch (msg->type) 
+	{
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
 		SPDLOG_INFO("Data loaded.");

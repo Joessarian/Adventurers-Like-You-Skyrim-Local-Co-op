@@ -504,7 +504,7 @@ namespace ALYSLC
 							return nullptr;
 						}
 					
-						SPDLOG_INFO
+						SPDLOG_DEBUG
 						(
 							"Malloc extra data list {:p} to inventory entry data {:p}. "
 							"No lists previously.",
@@ -2777,13 +2777,14 @@ namespace ALYSLC
 			return activationText;
 		}
 
-		float GetBoundMaxOrMinEdgePixelDist(RE::TESObjectREFR* a_refr, bool&& a_max)
+		float GetBoundMaxOrMinEdgeDist(RE::TESObjectREFR* a_refr, bool&& a_max, bool&& a_pixelDist)
 		{
-			// Get the maximum/minimum bound edge length in pixels for the given refr.
+			// Get the maximum/minimum bound edge length in pixels/world space units
+			// for the given refr.
 			// Retrieves the base edge length via the refr's bounds, 
 			// orients the bounds at the refr's center position in worldspace
 			// and so that the axis of interest is perpendicular to the camera's facing direction,
-			// and then calculates the pixel distance from one end of the edge to the other.
+			// and then calculates the distance from one end of the edge to the other.
 			// Then returns the max/min of the three distances.
 			
 			if (!a_refr)
@@ -2925,32 +2926,65 @@ namespace ALYSLC
 
 			// Edge along the X axis.
 			halfCoord = halfExtent.x;
-			edgeDist = std::clamp
-			(
-				WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+			if (a_pixelDist)
+			{
+				edgeDist = std::clamp
 				(
-					WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
-				),
-				1.0f, 
-				DebugAPI::screenResX
-			);
+					WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+					(
+						WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
+					),
+					1.0f, 
+					DebugAPI::screenResX
+				);
+			}
+			else
+			{
+				edgeDist = std::clamp
+				(
+					(boundCenter + camRight * halfCoord).GetDistance
+					(
+						boundCenter - camRight * halfCoord
+					),
+					1.0f, 
+					DebugAPI::screenResX
+				);
+			}
+
 			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
 			{
 				chosenDist = edgeDist;
 				axis = kX;
 			}
 			
+			
 			// Edge along the Y axis.
 			halfCoord = halfExtent.y;
-			edgeDist = std::clamp
-			(
-				WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+			if (a_pixelDist)
+			{
+				edgeDist = std::clamp
 				(
-					WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
-				),
-				1.0f, 
-				DebugAPI::screenResX
-			);
+					WorldToScreenPoint3(boundCenter + camRight * halfCoord, false).GetDistance
+					(
+						WorldToScreenPoint3(boundCenter - camRight * halfCoord, false)
+					),
+					1.0f, 
+					DebugAPI::screenResX
+				);
+			}
+			else
+			{
+				edgeDist = std::clamp
+				(
+					(boundCenter + camRight * halfCoord).GetDistance
+					(
+						boundCenter - camRight * halfCoord
+					),
+					1.0f, 
+					DebugAPI::screenResX
+				);
+			}
+			
 			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
 			{
 				chosenDist = edgeDist;
@@ -2959,15 +2993,31 @@ namespace ALYSLC
 			
 			// Edge along the Z axis.
 			halfCoord = halfExtent.z;
-			edgeDist = std::clamp
-			(
-				WorldToScreenPoint3(boundCenter + camUp * halfCoord, false).GetDistance
+			if (a_pixelDist)
+			{
+				edgeDist = std::clamp
 				(
-					WorldToScreenPoint3(boundCenter - camUp * halfCoord, false)
-				),
-				1.0f, 
-				DebugAPI::screenResY
-			);
+					WorldToScreenPoint3(boundCenter + camUp * halfCoord, false).GetDistance
+					(
+						WorldToScreenPoint3(boundCenter - camUp * halfCoord, false)
+					),
+					1.0f, 
+					DebugAPI::screenResY
+				);
+			}
+			else
+			{
+				edgeDist = std::clamp
+				(
+					(boundCenter + camUp * halfCoord).GetDistance
+					(
+						boundCenter - camUp * halfCoord
+					),
+					1.0f, 
+					DebugAPI::screenResY
+				);
+			}
+			
 			if ((a_max && edgeDist > chosenDist) || (!a_max && edgeDist < chosenDist))
 			{
 				chosenDist = edgeDist;
@@ -7914,6 +7964,28 @@ namespace ALYSLC
 				(*inputEvent.get())->AsButtonEvent()->pad24 = 0xC0DA;
 			}
 
+			// Send a dummy controller event to force Auto Input Switch to switch back 
+			// to controller before opening any menus.
+			if (a_inputDevice == RE::INPUT_DEVICE::kKeyboard)
+			{;
+				std::unique_ptr<RE::InputEvent* const> dummyControllerEvent = 
+				(
+					std::make_unique<RE::InputEvent* const>
+					(
+						RE::ButtonEvent::Create
+						(
+							RE::INPUT_DEVICE::kGamepad, 
+							"ALYSLC_DUMMY_EVENT", 
+							0xFF, 
+							a_pressedValue, 
+							a_heldTimeSecs
+						)
+					)
+				);
+				(*inputEvent)->next = *dummyControllerEvent;
+			}
+			
+
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (p1 && a_toggleAIDriven)
 			{
@@ -7974,7 +8046,15 @@ namespace ALYSLC
 					a_crosshairRefrToSet->GetHandle() :
 					RE::ObjectRefHandle()
 				);
-				glob.quickLootReqPID = a_requestingPID;
+				if (a_crosshairRefrToSet && glob.quickLootReqPID != a_requestingPID)
+				{
+					glob.quickLootReqPID = a_requestingPID;
+				}
+				else if (!a_crosshairRefrToSet)
+				{
+					glob.quickLootReqPID = -1;
+				}
+
 				crosshairEvent->crosshairRef = RE::NiPointer<RE::TESObjectREFR>
 				(
 					a_crosshairRefrToSet
@@ -7984,9 +8064,10 @@ namespace ALYSLC
 
 				SPDLOG_DEBUG
 				(
-					"Set to {}, PID: {}.",
+					"Set to {}, PID: {}. Request PID is now {}.",
 					a_crosshairRefrToSet ? a_crosshairRefrToSet->GetName() : "NONE",
-					a_requestingPID
+					a_requestingPID,
+					glob.quickLootReqPID
 				);
 			}
 		}

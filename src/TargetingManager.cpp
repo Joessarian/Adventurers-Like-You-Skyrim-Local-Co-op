@@ -443,14 +443,7 @@ namespace ALYSLC
 
 		// Unnecessary to draw if aim correction is disabled,
 		// or trajectories are already drawn to indicate the aim correction target.
-		if (!Settings::vbUseAimCorrection[playerID] || 
-			Settings::vbEnablePredictedProjectileTrajectoryCurves[playerID])
-		{
-			return;
-		}
-
-		// Also skip if performing anything other than a ranged attack.
-		if (!p->pam->isRangedAttack)
+		if (!Settings::vbUseAimCorrection[playerID])
 		{
 			return;
 		}
@@ -4311,7 +4304,7 @@ namespace ALYSLC
 				// or the object is not a crime to activate.
 				bool canLoot = 
 				(
-					(canSteal || !a_refr->IsCrimeToActivate()) &&
+					(canSteal || !Util::ActivationIsOffLimits(coopActor.get(), a_refr)) && 
 					(
 						(
 							(a_containersOnly && a_refr->HasContainer() && !a_refr->IsLocked()) &&
@@ -4395,7 +4388,8 @@ namespace ALYSLC
 				auto baseObj = a_refr->GetBaseObject();
 				// Lootable and either the player is choosing to steal the object 
 				// or the object is not a crime to activate.
-				if ((canSteal || !a_refr->IsCrimeToActivate()) && (Util::IsLootableRefr(a_refr)))
+				if ((canSteal || !Util::ActivationIsOffLimits(coopActor.get(), a_refr)) && 
+					(Util::IsLootableRefr(a_refr)))
 				{
 					bool sameType = false;
 					if (a_compType == RefrCompType::kSameBaseForm)
@@ -4955,7 +4949,8 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
+		auto ui = RE::UI::GetSingleton();
 		// Check for changes to the player's crosshair-selected refr.
 		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
 		auto prevCrosshairRefrPtr = Util::GetRefrPtrFromHandle(prevCrosshairRefrHandle);
@@ -4990,12 +4985,13 @@ namespace ALYSLC
 			secsSinceAllSupportedMenusClosed > 0.125f &&
 			glob.quickLootReqPID == -1
 		);
-
+		
 		// Is this player controlling menus?
 		bool controllingMenus = 
 		(
 			glob.supportedMenuOpen.load() && GlobalCoopData::IsControllingMenus(playerID)
 		);
+		bool quickLootMenuOpen = ui && ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
 		// Is this player trying to activate an object?
 		bool isActivating = p->pam->IsPerformingOneOf
 		(
@@ -5008,11 +5004,8 @@ namespace ALYSLC
 		// or the player did not send the last opening request.
 		bool shouldSendNewSetCrosshairEvent = 
 		{
-			(!isActivating && crosshairRefrValidity && anyPlayerCanSet) &&
-			(
-				(crosshairRefrInRangeForQuickLoot) && 
-				(newCrosshairRefr || !wasInRange || !wasInControl)
-			)
+			(!isActivating && crosshairRefrValidity && crosshairRefrInRangeForQuickLoot) &&
+			((anyPlayerCanSet) && (newCrosshairRefr || !wasInRange || !wasInControl))
 		};
 		// Validate the crosshair event if the crosshair refr is valid,
 		// the player is controlling menus,
@@ -5056,6 +5049,17 @@ namespace ALYSLC
 				)
 			)
 		};
+		/*SPDLOG_DEBUG
+		(
+			"{}: {}, PIDs: control: {}, req: {}, menu open: {}. New: {}, in range, was: {}, {}, "
+			"any player: {}, as in control: {}, controlling menus: {}, is activating: {}, "
+			"should send new: {}, should validate: {}, should clear: {}.",
+			coopActor->GetName(), crosshairRefrPtr ? crosshairRefrPtr->GetName() : "NONE",
+			glob.quickLootControlPID, glob.quickLootReqPID, quickLootMenuOpen,
+			newCrosshairRefr, crosshairRefrInRangeForQuickLoot, wasInRange, anyPlayerCanSet,
+			wasInControl, controllingMenus, isActivating, shouldSendNewSetCrosshairEvent,
+			shouldValidateNewCrosshairEvent, shouldSendClearCrosshairEvent
+		);*/
 		// Can potentially open the QuickLoot menu.
 		if (shouldSendNewSetCrosshairEvent || shouldValidateNewCrosshairEvent)
 		{
@@ -5070,11 +5074,11 @@ namespace ALYSLC
 				// Check inventory first.
 				hasLoot = false;
 				// REMOVE when crash during inventory access is fixed.
-				SPDLOG_DEBUG
+				/*SPDLOG_DEBUG
 				(
 					"{}: Check inventory of {} to see if it contains lootable objects.",
 					coopActor->GetName(), crosshairRefrPtr->GetName()
-				);
+				);*/
 				auto inventory = crosshairRefrPtr->GetInventory(Util::IsLootableObject);
 				for (const auto& [boundObj, invEntryData] : inventory)
 				{
@@ -5125,39 +5129,6 @@ namespace ALYSLC
 				// Is corpse.
 				if (auto corpse = crosshairRefrPtr->As<RE::Actor>(); corpse)
 				{
-					/*
-					// Saved killing player's FID in the 'ExtraForcedTarget' exData 
-					// when the HandleHealthDamage() hook fired before this actor died.
-					const auto targetExData = corpse->extraList.GetByType<RE::ExtraForcedTarget>();
-					bool killedByAPlayer = GlobalCoopData::IsCoopPlayer(corpse->myKiller);
-					// Small file compile index can differ, depending on the load order,
-					// but not the raw FID and ESL bits portion.
-					firstTimeLootingKilledActor = 
-					{
-						(killedByAPlayer && targetExData) && 
-						(targetExData->pad14 & 0xFF000FFF) == (coopActor->formID & 0xFF000FFF)
-					};
-					// Is looted if there is no exData or once the exData's pad is cleared
-					// or is not set to an FID within the ESL range 
-					// (ALYSLC.esp is an ESL-flagged ESP).
-					bool corpseLootedByKiller = 
-					(
-						(killedByAPlayer) && 
-						(
-							(!targetExData || targetExData->pad14 == 0) || 
-							(targetExData->pad14 & 0xFE000000) != 0xFE000000
-						)
-					);
-					// Can loot now if this player is looting the actor 
-					// they killed for the first time,
-					// or if the actor was not killed by a player
-					// or looted already by the killer player.
-					canOpenLootMenu &= 
-					(
-						firstTimeLootingKilledActor || !killedByAPlayer || corpseLootedByKiller
-					);
-					*/
-
 					// Saved killing player as the actor's owner
 					// when the HandleHealthDamage() hook fired before this actor died.
 					const auto owner = corpse->extraList.GetOwner();
@@ -5172,10 +5143,37 @@ namespace ALYSLC
 					// Can loot now if this player is looting the actor 
 					// they killed for the first time,
 					// or if the actor was not killed by a player.
+					/*SPDLOG_DEBUG
+					(
+						"First time: {}, killed by player: {}. Killer: {}",
+						firstTimeLootingKilledActor,
+						killedByAPlayer, 
+						ownerActor ? ownerActor->GetName() : "NONE"
+					);*/
 					canOpenLootMenu &= 
 					(
 						firstTimeLootingKilledActor || !killedByAPlayer
 					);
+
+					if (!canOpenLootMenu)
+					{
+						SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kTargetSelection,
+							fmt::format
+							(
+								"P{}: To the combat victor '{}' go the QuickLoot spoils!",
+								playerID + 1, ownerActor->GetName()
+							),
+							{
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kEquippedItem,
+								CrosshairMessageType::kStealthState,
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
 				}
 			}
 
@@ -5225,7 +5223,7 @@ namespace ALYSLC
 					Util::SendCrosshairEvent(crosshairRefrPtr.get(), playerID);
 
 					// After sending a crosshair event to open the LootMenu for a corpse,
-					// clear out the exData pad so other players can freely loot the corpse.
+					// clear out the ownership exData so other players can freely loot the corpse.
 					if (firstTimeLootingKilledActor)
 					{
 						auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
@@ -5234,12 +5232,6 @@ namespace ALYSLC
 						); 
 						if (selectedTargetActorPtr)
 						{
-							/*auto exForcedTarget = 
-							(
-								selectedTargetActor->extraList.GetByType<RE::ExtraForcedTarget>()	
-							);
-							exForcedTarget->pad14 = 0;*/
-							
 							const auto owner = selectedTargetActorPtr->extraList.GetOwner();
 							const auto ownerActor = owner ? owner->As<RE::Actor>() : nullptr;
 							bool killedByAPlayer = GlobalCoopData::IsCoopPlayer(ownerActor);
@@ -5250,6 +5242,11 @@ namespace ALYSLC
 							}
 						}
 					}
+				}
+				else
+				{
+					SPDLOG_DEBUG("{}: No LOS on {}.", coopActor->GetName(),
+						crosshairRefrPtr->GetName());
 				}
 			}
 			else if (shouldValidateNewCrosshairEvent)
@@ -5263,6 +5260,24 @@ namespace ALYSLC
 				);
 				Util::SendCrosshairEvent(nullptr);
 			}
+
+			/*SPDLOG_DEBUG
+			(
+				"{}: {}. Can open: {}, has loot: {}, in range: {}, locked: {}, "
+				"activation blocked: {}, in combat: {}. "
+				"Should send new: {}, should validate new: {}, first time: {}",
+				coopActor->GetName(),
+				crosshairRefrPtr->GetName(),
+				canOpenLootMenu,
+				hasLoot,
+				crosshairRefrInRangeForQuickLoot,
+				crosshairRefrPtr->IsLocked(),
+				crosshairRefrPtr->IsActivationBlocked(),
+				glob.isInCoopCombat,
+				shouldSendNewSetCrosshairEvent,
+				shouldValidateNewCrosshairEvent, 
+				firstTimeLootingKilledActor
+			);*/
 		}
 		else if (shouldSendClearCrosshairEvent)
 		{
@@ -8251,7 +8266,10 @@ namespace ALYSLC
 					 crosshairRefrPtr)
 			{
 				// Notify the player that they should sneak to activate.
-				bool isOffLimits = crosshairRefrPtr->IsCrimeToActivate();
+				bool isOffLimits = Util::ActivationIsOffLimits
+				(
+					coopActor.get(), crosshairRefrPtr.get()
+				); 
 				bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
 				// Get activation text for the crosshair refr.
 				bool hasActivationText = false;
@@ -9538,7 +9556,7 @@ namespace ALYSLC
 					// and the max crosshair size.
 					minPixelDimension = min
 					(
-						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
+						Util::GetBoundMaxOrMinEdgeDist(refrPtr.get(), false, true),
 						maxCrosshairSize
 					);
 				}
@@ -9548,7 +9566,7 @@ namespace ALYSLC
 					// by the minimum and maximum crosshair sizes.
 					minPixelDimension = std::clamp
 					(
-						Util::GetBoundMaxOrMinEdgePixelDist(refrPtr.get(), false),
+						Util::GetBoundMaxOrMinEdgeDist(refrPtr.get(), false, true),
 						minCrosshairSize,
 						maxCrosshairSize
 					);

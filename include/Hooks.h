@@ -223,7 +223,15 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_Character[0] };
+				REL::Relocation<uintptr_t> vtbl1{ RE::VTABLE_Character[1] };
+				REL::Relocation<uintptr_t> vtbl2{ RE::VTABLE_Character[2] };
 				REL::Relocation<uintptr_t> vtbl3{ RE::VTABLE_Character[3] };
+				REL::Relocation<uintptr_t> vtbl4{ RE::VTABLE_Character[4] };
+				REL::Relocation<uintptr_t> vtbl5{ RE::VTABLE_Character[5] };
+				REL::Relocation<uintptr_t> vtbl6{ RE::VTABLE_Character[6] };
+				REL::Relocation<uintptr_t> vtbl7{ RE::VTABLE_Character[7] };
+				REL::Relocation<uintptr_t> vtbl8{ RE::VTABLE_Character[8] };
+				REL::Relocation<uintptr_t> vtbl9{ RE::VTABLE_Character[9] };
 				
 				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
 				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
@@ -238,7 +246,7 @@ namespace ALYSLC
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
 				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
 				_PickUpObject = vtbl.write_vfunc(0xCC, PickUpObject);
-				SPDLOG_INFO("Installed _PickUpObject() hook.");
+				SPDLOG_INFO("Installed PickUpObject() hook.");
 				_PutCreatedPackage = vtbl.write_vfunc(0xDF, PutCreatedPackage);
 				SPDLOG_INFO("Installed PutCreatedPackage() hook.");
 				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
@@ -253,6 +261,22 @@ namespace ALYSLC
 				SPDLOG_INFO("Installed Update() hook.");
 				_UseAmmo = vtbl.write_vfunc(0xD2, UseAmmo);
 				SPDLOG_INFO("Installed UseAmmo() hook.");
+
+				// Actor values.
+				/*_GetActorValue = vtbl5.write_vfunc(0x01, GetActorValue);
+				SPDLOG_INFO("Installed GetActorValue hook.");
+				_GetBaseActorValue = vtbl5.write_vfunc(0x03, GetBaseActorValue);
+				SPDLOG_INFO("Installed GetBaseActorValue hook.");
+				_GetPermanentActorValue = vtbl5.write_vfunc(0x02, GetPermanentActorValue);
+				SPDLOG_INFO("Installed GetPermanentActorValue hook.");
+				_ModActorValue = vtbl5.write_vfunc(0x05, ModActorValue);
+				SPDLOG_INFO("Installed ModActorValue hook.");*/
+				_RestoreActorValue = vtbl5.write_vfunc(0x06, RestoreActorValue);
+				SPDLOG_INFO("Installed RestoreActorValue hook.");
+				/*_SetActorValue = vtbl5.write_vfunc(0x07, SetActorValue);
+				SPDLOG_INFO("Installed SetActorValue hook.");*/
+				_SetBaseActorValue = vtbl5.write_vfunc(0x04, SetBaseActorValue);
+				SPDLOG_INFO("Installed SetBaseActorValue hook.");
 			}
 
 		private:
@@ -314,6 +338,33 @@ namespace ALYSLC
 			static void SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene);
 			static void Update(RE::Character* a_this, float a_delta);
 			static std::uint32_t UseAmmo(RE::Character* a_this, std::uint32_t a_shotCount);
+			// Actor values
+			static float GetActorValue(RE::ActorValueOwner* a_this, RE::ActorValue a_akValue);
+			static float GetBaseActorValue(RE::ActorValueOwner* a_this, RE::ActorValue a_akValue);
+			static float GetPermanentActorValue
+			(
+				RE::ActorValueOwner* a_this, RE::ActorValue a_akValue
+			);
+			static void ModActorValue
+			(
+				RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+			);
+			static void RestoreActorValue
+			(
+				RE::ActorValueOwner* a_this,
+				RE::ACTOR_VALUE_MODIFIER a_modifier,
+				RE::ActorValue a_akValue, 
+				float a_value
+			);
+			static void SetActorValue
+			(
+				RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+			);
+			static void SetBaseActorValue
+			(
+				RE::ActorValueOwner* a_this, RE::ActorValue a_akValue, float a_value
+			);
+
 			
 			static inline REL::Relocation<decltype(AddObjectToContainer)> _AddObjectToContainer;
 			static inline REL::Relocation<decltype(CheckClampDamageModifier)> 
@@ -332,6 +383,14 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(SetCurrentScene)> _SetCurrentScene;
 			static inline REL::Relocation<decltype(Update)> _Update;
 			static inline REL::Relocation<decltype(UseAmmo)> _UseAmmo;
+			// Actor values
+			static inline REL::Relocation<decltype(GetActorValue)> _GetActorValue;
+			static inline REL::Relocation<decltype(GetBaseActorValue)> _GetBaseActorValue;
+			static inline REL::Relocation<decltype(GetPermanentActorValue)> _GetPermanentActorValue;
+			static inline REL::Relocation<decltype(ModActorValue)> _ModActorValue;
+			static inline REL::Relocation<decltype(RestoreActorValue)> _RestoreActorValue;
+			static inline REL::Relocation<decltype(SetActorValue)> _SetActorValue;
+			static inline REL::Relocation<decltype(SetBaseActorValue)> _SetBaseActorValue;
 		};
 
 		// [Input Event Hooks]

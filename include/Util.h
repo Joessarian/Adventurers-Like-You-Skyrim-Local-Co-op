@@ -1706,6 +1706,64 @@ namespace ALYSLC
 		// [Everything Else]:
 		//===================
 
+		// Return true if the given actor activating the given object refr would be considered 
+		// stealing or trigger an alarm.
+		inline bool ActivationIsOffLimits(RE::Actor* a_actor, RE::TESObjectREFR* a_refr)
+		{
+			if (!a_actor || !a_refr)
+			{
+				return false;
+			}
+
+			bool isUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, true, true);
+			bool isUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, true, false);
+			bool isDoNotUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, false, true);
+			bool isDoNotUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, false, false);
+			const auto actorOwner = a_refr->GetActorOwner();
+			const auto formOwner = a_refr->GetOwner();
+			const auto formFaction = formOwner ? formOwner->As<RE::TESFaction>() : nullptr;
+			const auto exDataOwner = a_refr->extraList.GetOwner();
+			const auto owningFaction = a_refr->GetFactionOwner();
+			auto baseObj = a_refr->GetBaseObject();
+			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
+			// but steal/trespass alarm may sound.
+			SPDLOG_DEBUG
+			(
+				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
+				"Actor owner: {}, form owner: {}, form faction: {}, "
+				"exData owner: {}, faction owner: {}. "
+				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}.",
+				a_actor->GetName(),
+				a_refr->GetName(),
+				(
+					(a_refr->IsLocked() || a_refr->IsDead()) || 
+					(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
+					(!a_actor->WouldBeStealing(a_refr))
+				) ?
+				"activatable" :
+				"off limits",
+				isUseFactionRequiredOwner,
+				isUseFactionNoRequiredOwner,
+				isDoNotUseFactionRequiredOwner,
+				isDoNotUseFactionNoRequiredOwner,
+				actorOwner ? Util::GetEditorID(actorOwner) : "NONE",
+				formOwner ? Util::GetEditorID(formOwner) : "NONE",
+				formFaction ? Util::GetEditorID(formFaction) : "NONE",
+				exDataOwner ? Util::GetEditorID(exDataOwner) : "NONE",
+				owningFaction ? Util::GetEditorID(owningFaction) : "NONE",
+				owningFaction ? owningFaction->IsPlayerEnemy() : false,
+				owningFaction ? owningFaction->TracksCrimes() : false,
+				a_actor->WouldBeStealing(a_refr)
+			);
+			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
+				(baseObj && baseObj->As<RE::TESObjectDOOR>()))
+			{
+				return false;
+			}
+
+			return a_actor->WouldBeStealing(a_refr);
+		}
+
 		// Return true if the actor is enabled, has loaded 3D, its handle is valid,
 		// has a valid current process and character controller, 
 		// and if its parent cell is attached.
@@ -1988,6 +2046,45 @@ namespace ALYSLC
 			}
 
 			return nullptr;
+		}
+
+		inline RE::BGSVoiceType* GetDefaultRacialVoiceType(RE::TESRace* a_race, bool a_isFemale)
+		{
+			// Get the default male/female voice type for the given race.
+
+			if (!a_race)
+			{
+				return 
+				(
+					a_isFemale ? 
+					RE::TESForm::LookupByID<RE::BGSVoiceType>(0x13AE7) : 
+					RE::TESForm::LookupByID<RE::BGSVoiceType>(0x13AE6)
+				);
+			}
+
+			auto voiceType = a_race->defaultVoiceTypes
+			[
+				a_isFemale ? 
+				RE::SEXES::kFemale : 
+				RE::SEXES::kMale
+			];
+			// Choose Nord male/female default voice if no voice type exists for the player's race.
+			if (!voiceType)
+			{
+				return 
+				(
+					a_isFemale ? 
+					RE::TESForm::LookupByID<RE::BGSVoiceType>(0x13AE7) : 
+					RE::TESForm::LookupByID<RE::BGSVoiceType>(0x13AE6)
+				);
+			}
+			
+			SPDLOG_DEBUG
+			(
+				"For race {}: {}.",
+				a_race->GetName(), voiceType ? GetEditorID(voiceType) : "NONE"
+			);
+			return voiceType;
 		}
 		
 		// Get a more descriptive name for the given form and extra data.
@@ -3315,6 +3412,7 @@ namespace ALYSLC
 		// Load a RaceMenu preset with default morphs and no headparts or tints.
 		inline void LoadDefaultBasePreset()
 		{
+			return;
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
 			if (!p1 || !p1ActorBase)
@@ -3368,186 +3466,6 @@ namespace ALYSLC
 			);
 			script->SetCommand("skee preset-load ALYSLC_Default");
 			script->CompileAndRun(p1);
-		}
-
-		// Load/save a RaceMenu player character preset for the given player character.
-		inline void LoadOrSaveRaceMenuPreset(RE::Actor* a_playerActor, bool&& a_shouldLoad)
-		{
-			SPDLOG_DEBUG
-			(
-				"{}: {}", a_playerActor ? a_playerActor->GetName() : "NONE", 
-				a_shouldLoad ? "LOAD" : "SAVE"
-			);
-			if (!a_playerActor || !ALYSLC::RaceMenuCompat::g_installed)
-			{
-				return;
-			}
-			
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			auto p1ActorBase = p1 ? p1->GetActorBase() : nullptr;
-			if (!p1 || !p1ActorBase)
-			{
-				return;
-			}
-
-			const auto scriptFactory = 
-			(
-				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
-			);
-			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
-			if (!script)
-			{
-				return;
-			}
-
-			auto saveMgr = RE::BGSSaveLoadManager::GetSingleton();
-			if (!saveMgr)
-			{
-				return;
-			}
-			
-			// Clear out overlays before applying the preset,
-			// since previously applied overlays sometimes stack 
-			// and interfere with the preset-defined ones.
-			if (a_shouldLoad)
-			{
-				if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
-				{
-					InterfaceExchangeMessage msg{ };
-					auto type = InterfaceExchangeMessage::kMessage_ExchangeInterface;
-					msgIntfc->Dispatch
-					(
-						type, std::addressof(msg), sizeof(InterfaceExchangeMessage*), "SKEE"
-					);
-					if (msg.interfaceMap)
-					{
-						auto overlayInterface = static_cast<IOverlayInterface*>
-						(
-							msg.interfaceMap->QueryInterface("Overlay")
-						);
-						if (overlayInterface)
-						{
-							SPDLOG_DEBUG("Erase overlays.");
-							overlayInterface->EraseOverlays(a_playerActor);
-						}
-					}
-				}
-				
-				if (a_playerActor->IsPlayerRef())
-				{
-					SPDLOG_DEBUG
-					(
-						"Load {}'s preset as ALYSLC_P1_Preset_{}.", 
-						a_playerActor->GetName(), 
-						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
-					);
-					script->SetCommand("skee preset-load ALYSLC_P1_Preset");
-					script->CompileAndRun(a_playerActor);
-
-					// Prevents skin tone mismatch between body and face for P1.
-					script->SetCommand
-					(
-						fmt::format
-						(
-							"setnpcweight {}", 
-							static_cast<uint32_t>(a_playerActor->GetWeight())
-						).c_str()
-					);
-					script->CompileAndRun(a_playerActor);
-				}
-				else
-				{
-					auto actorBase = a_playerActor->GetActorBase();
-					if (!actorBase)
-					{
-						return;
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Load {}'s preset as ALYSLC_{}_Preset_{}.", 
-						a_playerActor->GetName(), 
-						Util::GetEditorID(actorBase),
-						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
-					);
-					script->SetCommand
-					(
-						fmt::format
-						(
-							"skee preset-load ALYSLC_{}_Preset_{}", 
-							Util::GetEditorID(actorBase),
-							saveMgr->currentCharacterID
-						).c_str()
-					);
-					script->CompileAndRun(a_playerActor);
-
-					// Prevents skin tone mismatch between body and face.
-					script->SetCommand
-					(
-						fmt::format
-						(
-							"setnpcweight {}", static_cast<uint32_t>(p1->GetWeight())
-						).c_str()
-					);
-					script->CompileAndRun(p1);
-
-					script->SetCommand
-					(
-						fmt::format
-						(
-							"setnpcweight {}", 
-							static_cast<uint32_t>(a_playerActor->GetWeight())
-						).c_str()
-					);
-					script->CompileAndRun(a_playerActor);
-				}
-			}
-			else
-			{
-				if (a_playerActor->IsPlayerRef())
-				{
-					SPDLOG_DEBUG
-					(
-						"Save {}'s preset as ALYSLC_P1_Preset_{}.", 
-						a_playerActor->GetName(), 
-						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
-					);
-					script->SetCommand("skee preset-save ALYSLC_P1_Preset");
-					script->CompileAndRun(p1);
-				}
-				else
-				{
-					auto actorBase = a_playerActor->GetActorBase();
-					if (!actorBase)
-					{
-						return;
-					}
-
-					SPDLOG_DEBUG
-					(
-						"Save {}'s preset as ALYSLC_{}_Preset_{}.", 
-						a_playerActor->GetName(), 
-						Util::GetEditorID(actorBase),
-						saveMgr ? saveMgr->currentCharacterID : 0xDEAD
-					);
-					script->SetCommand
-					(
-						fmt::format
-						(
-							"skee preset-save ALYSLC_{}_Preset_{}", 
-							Util::GetEditorID(actorBase),
-							saveMgr->currentCharacterID
-						).c_str()
-					);
-					// Must run on P1, since if on AE and run on a companion player character,
-					// the companion player's character appearance is saved as a preset instead.
-					// RaceMenu SE always seems to use P1 as the actor 
-					// from which to save the preset no matter what.
-					script->CompileAndRun(p1);
-				}
-			}
-
-			delete script;
 		}
 
 		// Return true if a menu is open that stops or should stop the player from moving.
@@ -4215,55 +4133,6 @@ namespace ALYSLC
 			timer->SetGlobalTimeMultiplier(a_mult, true);
 		}
 
-		// NOTE: 
-		// Not sure if this sky mode change is necessary, 
-		// since some interior cells still have camera proximity-based fog afterward.
-		// May remove later.
-		// Attempt to remove fog from interior cells by setting the cell sky mode to 'SkyDomeOnly'.
-		inline void SetSkyboxModeForCell(const RE::TESObjectCELL* a_cell)
-		{
-			if (!a_cell)
-			{
-				return;
-			}
-
-			auto tes = RE::TES::GetSingleton(); 
-			if (!tes || !tes->sky || *tes->sky->mode == RE::Sky::Mode::kInterior)
-			{
-				SPDLOG_DEBUG
-				(
-					"{} ({}, 0x{:X}) has interior sky mode. Skipping.",
-					Util::GetEditorID(a_cell),
-					a_cell->IsExteriorCell() ? "EXT" : "INT",
-					a_cell->formID
-				);
-				return;
-			}
-
-			if (a_cell->IsExteriorCell()) 
-			{
-				SPDLOG_DEBUG
-				(
-					"Setting full sky mode for cell {} ({}, 0x{:X}).",
-					Util::GetEditorID(a_cell),
-					a_cell->IsExteriorCell() ? "EXT" : "INT",
-					a_cell->formID
-				);
-				tes->sky->mode = RE::Sky::Mode::kFull;
-			}
-			else
-			{
-				SPDLOG_DEBUG
-				(
-					"Setting skybox-only sky mode for cell {} ({}, 0x{:X}).",
-					Util::GetEditorID(a_cell),
-					a_cell->IsExteriorCell() ? "EXT" : "INT",
-					a_cell->formID
-				);
-				tes->sky->mode = RE::Sky::Mode::kSkyDomeOnly;
-			}
-		}
-
 		// Show a tutorial hint message with the given text, 
 		// or hide the current tutorial hint message.
 		inline void ShowTutorialHintMessage(const RE::BSFixedString& a_message, bool a_show)
@@ -4315,6 +4184,20 @@ namespace ALYSLC
 					hudBase.Invoke("ShowTutorialHintText", showTutArgs);
 				}
 			);
+		}
+		
+		// (Un)freeze time (via the Main singleton).
+		inline void ToggleFreezeTime(bool&& a_shouldFreeze)
+		{
+			auto main = RE::Main::GetSingleton();
+			if (!main)
+			{
+				SPDLOG_ERROR("ERR: Could not get Main singleton and cannot (un)freeze time.");
+				return;
+			}
+
+			SPDLOG_DEBUG("SUPER HOT. SUPER HOT. Freeze: {}.", a_shouldFreeze);
+			main->freezeTime = a_shouldFreeze;
 		}
 
 		// Set all the characters in the given string to lowercase.
@@ -4536,13 +4419,13 @@ namespace ALYSLC
 			bool& a_hasActivationText
 		);
 
-		// Get the maximum/minimum bound edge length in pixels for the given refr.
+		// Get the maximum/minimum bound edge length in pixels/world space units for the given refr.
 		// Retrieves the base edge length via the refr's bounds, 
 		// orients the bounds at the refr's center position in worldspace
 		// and so that the axis of interest is perpendicular to the camera's facing direction,
-		// and then calculates the pixel distance from one end of the edge to the other.
+		// and then calculates the distance from one end of the edge to the other.
 		// Then returns the max/min of the three distances.
-		float GetBoundMaxOrMinEdgePixelDist(RE::TESObjectREFR* a_refr, bool&& a_max);
+		float GetBoundMaxOrMinEdgeDist(RE::TESObjectREFR* a_refr, bool&& a_max, bool&& a_pixelDist);
 
 		// Get a rough approximation of the refr's 3D bounds pixel height (vert axis) 
 		// or width based on the current camera orientation.

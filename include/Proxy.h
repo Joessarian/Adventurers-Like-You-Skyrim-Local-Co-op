@@ -75,12 +75,22 @@ namespace ALYSLC
 		// Get a list of all playable companion players' characters.
 		std::vector<RE::Actor*> GetCompanionPlayerCharacters(RE::StaticFunctionTag*);
 		
+		// Get the given race's default male/female voice type.
+		RE::BGSVoiceType* GetDefaultRacialVoiceType
+		(
+			RE::StaticFunctionTag*, RE::TESRace* a_race, bool a_female
+		);
+		
+		// Get a list of all exported RaceMenu presets' names.
+		// Exported presets are located in the "\Data\SKSE\Plugins\CharGen\Exported' folder.
+		std::vector<RE::BSFixedString> GetExportedRaceMenuPresetFileNames(RE::StaticFunctionTag*);
+
 		// Get the given player's assigned list of cyclable emote idle event names.
 		std::vector<RE::BSFixedString> GetFavoritedEmoteIdles
 		(
 			RE::StaticFunctionTag*, int32_t a_playerID
 		);
-		
+
 		// Request control of the given menu for the given player.
 		void RequestMenuControl
 		(
@@ -121,7 +131,7 @@ namespace ALYSLC
 			RE::TESRace* a_race,
 			bool a_rescaleActorValues
 		);
-		
+
 		// Update the given player's list of cyclable emote idle event names to the given list.
 		void SetFavoritedEmoteIdles
 		(
@@ -203,6 +213,12 @@ namespace ALYSLC
 			void LoadPlayerCharacterPreset
 			(
 				RE::StaticFunctionTag*, RE::Actor* a_fromPresetCharacter
+			);
+
+			// Load the preset with the given name onto the given player character.
+			void LoadPlayerCharacterPresetWithName
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_toCharacter, RE::BSFixedString a_presetName
 			);
 			
 			// NOTE: Unused for now until I can figure out how to seamlessly 
@@ -309,6 +325,10 @@ namespace ALYSLC
 
 			// Signal the menu input manager to stop running, returning menu control to P1.
 			void StopMenuInputManager(RE::StaticFunctionTag*);
+
+			// Unfreeze time (via the Main singleton) 
+			// if everyone and everything is still stuck in place.
+			void UnfreezeTime(RE::StaticFunctionTag*);
 		}
 
 		// MCM functions.

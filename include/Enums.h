@@ -947,6 +947,8 @@ namespace ALYSLC
 												// gained outside of leveling up.
 
 		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
+		kPlayerRaceMenuPresetName = 'PRMP',		// Name of the RaceMenu preset applied 
+												// for this save.
 		kSerializationVersion = 0				// Version info.
 	};
 

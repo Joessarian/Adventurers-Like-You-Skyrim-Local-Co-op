@@ -1158,6 +1158,18 @@ namespace ALYSLC
 
 		if (glob.coopSessionActive)
 		{
+			/*SPDLOG_DEBUG
+			(
+				"{}, req: {}, singleton: {}", 
+				a_event->crosshairRef ? a_event->crosshairRef->GetName() : "NONE",
+				Util::HandleIsValid(glob.reqQuickLootContainerHandle) ?
+				glob.reqQuickLootContainerHandle.get()->GetName() :
+				"NONE",
+				RE::CrosshairPickData::GetSingleton() &&
+				Util::HandleIsValid(RE::CrosshairPickData::GetSingleton()->target) ?
+				RE::CrosshairPickData::GetSingleton()->target.get()->GetName() :
+				"NONE"
+			);*/
 			bool matchesRequestedRefr = 
 			(
 				(
@@ -1167,16 +1179,24 @@ namespace ALYSLC
 				(
 					!a_event->crosshairRef &&
 					glob.reqQuickLootContainerHandle == RE::ObjectRefHandle()
+				) ||
+				(
+					!glob.cam->IsRunning() &&
+					RE::CrosshairPickData::GetSingleton() &&
+					a_event->crosshairRef == RE::CrosshairPickData::GetSingleton()->target.get() &&
+					glob.reqQuickLootContainerHandle == RE::ObjectRefHandle()
 				)
 			);
 			if (matchesRequestedRefr)
 			{
+				// SPDLOG_DEBUG("YUH");
 				return EventResult::kContinue;
 			}
 			else
 			{
 				// Stop propagation to prevent QuickLoot's event handler 
 				// from processing this request and opening/closing the LootMenu.
+				// SPDLOG_DEBUG("NUH");
 				return EventResult::kStop;
 			}
 		}
@@ -2283,7 +2303,7 @@ namespace ALYSLC
 		//=======================================
 		// Special processing for specific menus:
 		//=======================================
-
+		
 		const auto ui = RE::UI::GetSingleton();
 		auto msgQ = RE::UIMessageQueue::GetSingleton();
 		if (ui && 
@@ -2314,6 +2334,14 @@ namespace ALYSLC
 					}
 				}
 			}
+		}
+		else if (!a_menuEvent->opening && a_menuEvent->menuName == GlobalCoopData::LOOT_MENU)
+		{
+			SPDLOG_DEBUG
+			(
+				"Request PID was {} and is now cleared (-1).", glob.quickLootReqPID
+			);
+			glob.quickLootReqPID = -1;
 		}
 		
 #ifdef ALYSLC_DEBUG_MODE

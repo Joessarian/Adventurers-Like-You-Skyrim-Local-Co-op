@@ -1538,5 +1538,175 @@ namespace ALYSLC
 
 		RE::IMenu::AdvanceMovie(a_interval, a_currentTime);
 		DebugAPI::Update();
+		HandleQuickLootMenu();
+	}
+
+	void DebugOverlayMenu::HandleQuickLootMenu()
+	{
+		// Need QuickLootIE installed, duh.
+		if (!ALYSLC::QuickLootCompat::g_installed || !ALYSLC::QuickLootCompat::g_isQuickLootIE)
+		{
+			return;
+		}
+
+		auto ui = RE::UI::GetSingleton();
+		if (!ui)
+		{
+			return;
+		}
+		
+		auto quickLootMenu = ui->GetMenu(GlobalCoopData::LOOT_MENU);
+		if (!quickLootMenu || !quickLootMenu->uiMovie)
+		{
+			return;
+		}
+		
+		RE::GFxValue menuRoot{ };
+		quickLootMenu->uiMovie->GetVariable(std::addressof(menuRoot), "lootMenu");
+		if (menuRoot.IsUndefined() || menuRoot.IsNull())
+		{
+			return;
+		}
+		
+		// If not cached yet, store the original scale and position.
+		if (ALYSLC::QuickLootCompat::g_originalScaleX == -1.0 ||
+			ALYSLC::QuickLootCompat::g_originalScaleY == -1.0 ||
+			ALYSLC::QuickLootCompat::g_originalX == -1.0 ||
+			ALYSLC::QuickLootCompat::g_originalY == -1.0)
+		{
+			RE::GFxValue xVal{ };
+			RE::GFxValue yVal{ };
+			RE::GFxValue xScaleVal{ };
+			RE::GFxValue yScaleVal{ };
+			menuRoot.GetMember("_xscale", std::addressof(xScaleVal));
+			menuRoot.GetMember("_yscale", std::addressof(yScaleVal));
+			menuRoot.GetMember("_x", std::addressof(xVal));
+			menuRoot.GetMember("_y", std::addressof(yVal));
+			ALYSLC::QuickLootCompat::g_originalScaleX = xScaleVal.GetNumber();
+			ALYSLC::QuickLootCompat::g_originalScaleY = yScaleVal.GetNumber();
+			ALYSLC::QuickLootCompat::g_originalX = xVal.GetNumber();
+			ALYSLC::QuickLootCompat::g_originalY = yVal.GetNumber();
+			SPDLOG_DEBUG
+			(
+				"Storing scale ({}, {}), pos ({}, {}) as original QuickLoot data.",
+				ALYSLC::QuickLootCompat::g_originalScaleX,
+				ALYSLC::QuickLootCompat::g_originalScaleY,
+				ALYSLC::QuickLootCompat::g_originalX,
+				ALYSLC::QuickLootCompat::g_originalY
+			);
+		}
+
+		// Full credits go to Shrimperator:
+		// https://gitlab.com/Shrimperator/skyrim-mod-betterthirdpersonselection/-/blob/main/src/UI/SelectionWidget.cpp#L728
+		// Reset scale and position when P1 is using the menu outside of co-op
+		// or when the co-op camera is disabled.
+		if ((!glob.coopSessionActive) || (!glob.cam->IsRunning() && glob.menuPID == 0))
+		{
+			/*SPDLOG_DEBUG
+			(
+				"Restoring original QuickLoot data scale ({}, {}), pos ({}, {}).",
+				ALYSLC::QuickLootCompat::g_originalScaleX,
+				ALYSLC::QuickLootCompat::g_originalScaleY,
+				ALYSLC::QuickLootCompat::g_originalX,
+				ALYSLC::QuickLootCompat::g_originalY
+			);*/
+			menuRoot.SetMember("_xscale", ALYSLC::QuickLootCompat::g_originalScaleX);
+			menuRoot.SetMember("_yscale", ALYSLC::QuickLootCompat::g_originalScaleY);
+			menuRoot.SetMember("_x", ALYSLC::QuickLootCompat::g_originalX);
+			menuRoot.SetMember("_y", ALYSLC::QuickLootCompat::g_originalY);
+		}
+		else if (glob.coopSessionActive && glob.menuPID > -1)
+		{
+			// Otherwise, if there is an active co-op session 
+			// with a player controlling the QuickLootMenu, adjust scale/position.
+			const auto& p = glob.coopPlayers[glob.menuPID];
+			
+			RE::GFxValue xVal{ };
+			RE::GFxValue yVal{ };
+			RE::GFxValue xScaleVal{ };
+			RE::GFxValue yScaleVal{ };
+			RE::GFxValue heightVal{ };
+			RE::GFxValue widthVal{ };
+			menuRoot.GetMember("_xscale", std::addressof(xScaleVal));
+			menuRoot.GetMember("_yscale", std::addressof(yScaleVal));
+			menuRoot.GetMember("_x", std::addressof(xVal));
+			menuRoot.GetMember("_y", std::addressof(yVal));
+			menuRoot.GetMember("_height", std::addressof(heightVal));
+			menuRoot.GetMember("_width", std::addressof(widthVal));
+
+			double x = xVal.GetNumber();
+			double y = yVal.GetNumber();
+			double xScale = xScaleVal.GetNumber();
+			double yScale = yScaleVal.GetNumber();
+			double height = heightVal.GetNumber();
+			double width = widthVal.GetNumber();
+
+			/*SPDLOG_DEBUG
+			(
+				"QuickLoot data: x: {}, y: {}, x, y scales: {}, {}, "
+				"height, width: {}, {}",
+				x, y, xScale, yScale, height, width
+			);*/
+
+			const auto crosshairRefrPtr = Util::GetRefrPtrFromHandle
+			(
+				p->tm->crosshairRefrHandle
+			);
+			const auto refrPixelHeight = Util::GetBoundPixelDist
+			(
+				crosshairRefrPtr.get(), true
+			);
+			const auto refrPos = Util::GetRefrPosition(crosshairRefrPtr.get());
+			auto targetScreenPos = Util::WorldToScreenPoint3(refrPos, false);
+			/*SPDLOG_DEBUG
+			(
+				"QuickLoot data: Refr pos: ({}, {}), "
+				"pixel height: {}",
+				targetScreenPos.x, targetScreenPos.y, refrPixelHeight
+			);*/
+
+			x = std::clamp
+			(
+				targetScreenPos.x - width * 0.5f,
+				0.0, 
+				(double)DebugAPI::screenResX - width
+			);
+			y = std::clamp
+			(
+				targetScreenPos.y - height,
+				0.0, 
+				(double)DebugAPI::screenResY - height
+			);
+			const float distFromCam = glob.cam->GetCurrentPosition().GetDistance(refrPos);
+			const double distFactor = std::clamp
+			(
+				1.0f - 
+				Util::InterpolateEaseOut
+				(
+					0.0f, 
+					1.0f,
+					std::clamp
+					(
+						distFromCam / Settings::fMaxRaycastAndZoomOutDistance, 0.0f, 1.0f
+					),
+					5.0f
+				),
+				0.25f,
+				1.0f
+			);
+			xScale = ALYSLC::QuickLootCompat::g_originalScaleX * distFactor;
+			yScale = ALYSLC::QuickLootCompat::g_originalScaleY * distFactor;
+			/*SPDLOG_DEBUG
+			(
+				"QuickLoot data: New screen pos: ({}, {}), "
+				"scales: ({}, {}) from dist factor of {} at dist {}.",
+				x, y, xScale, yScale, distFactor, distFromCam
+			);*/
+
+			menuRoot.SetMember("_x", x);
+			menuRoot.SetMember("_y", y);
+			menuRoot.SetMember("_xScale", xScale);
+			menuRoot.SetMember("_yScale", yScale);
+		}
 	}
 }

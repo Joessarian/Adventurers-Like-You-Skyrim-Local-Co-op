@@ -48,6 +48,10 @@ namespace ALYSLC
 		static void CheckForQuickLoot(const SKSE::LoadInterface* a_loadInterface);
 		static bool g_installed;
 		static bool g_isQuickLootIE;
+		static double g_originalScaleX;
+		static double g_originalScaleY;
+		static double g_originalX;
+		static double g_originalY;
 	};
 
 	struct RaceMenuCompat

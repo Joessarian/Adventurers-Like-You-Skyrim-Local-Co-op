@@ -349,6 +349,9 @@ namespace ALYSLC
 		// Perform per-update tasks here.
 		void AdvanceMovie(float a_interval, std::uint32_t a_currentTime) override;
 
+		// Handle positioning and scaling of QuickLootIE's menu.
+		void HandleQuickLootMenu();
+
 		// Sources requesting to hide menu.
 		static std::vector<std::string> hiddenSources;
 

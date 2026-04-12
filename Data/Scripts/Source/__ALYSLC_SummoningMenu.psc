@@ -217,6 +217,18 @@ Function HandleCharacterCustomization()
                 StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
                 If (NewGenderOption != CurrentGenderOption)
                     ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ".")
+                    Bool WasFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
+                    Bool IsNowFemale = NewGenderOption == 0 || NewGenderOption == 2
+                    If ((!WasFemale && IsNowFemale) || (WasFemale && !IsNowFemale))
+                        ; Set to default voice type for race.
+                        VoiceType DefaultVoiceType = ALYSLC.GetDefaultRacialVoiceType(NewRace, NewGenderOption == 0 || NewGenderOption == 2)
+                        If (DefaultVoiceType)
+                            ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + DefaultVoiceType.GetName())
+                            StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", DefaultVoiceType)
+                        EndIf
+                        
+                        ALYSLC.Log("[SUMMON SCRIPT] After exiting RaceSex Menu. New voice type: " + DefaultVoiceType + ". For gender option: " + NewGenderOption + ", race: " + CurrentRace)
+                    EndIf
                 EndIf
             EndIf
 
@@ -228,19 +240,23 @@ Function HandleCharacterCustomization()
             ALYSLC.ExportP1ActorBaseAppearanceData(SelectedCharacter)
             ALYSLC.Wait(0.5)
 
+            ;=====================================================================================
+            ; QUARANTINE
+            ; COULD CAUSE THE RACEMENU SLIDERS BUG ON RESTARTING THE GAME AND USING 'SHOWRACEMENU'
             ; Restore P1's appearance, height, weight, and name.
-            P1ActorBase.SetName(SavedP1Name)
-            PlayerRef.SetName(SavedP1Name)
-            Renamed = PlayerRef.SetDisplayName(SavedP1Name, True)
-            If (Renamed)
-                ALYSLC.Log("[SUMMON SCRIPT] Restored name: '" + SavedP1Name + "'.")
-            Else
-                ALYSLC.Log("[SUMMON SCRIPT] Could not restore P1's name.")
-            EndIf
+            ; P1ActorBase.SetName(SavedP1Name)
+            ; PlayerRef.SetName(SavedP1Name)
+            ; Renamed = PlayerRef.SetDisplayName(SavedP1Name, True)
+            ; If (Renamed)
+            ;     ALYSLC.Log("[SUMMON SCRIPT] Restored name: '" + SavedP1Name + "'.")
+            ; Else
+            ;     ALYSLC.Log("[SUMMON SCRIPT] Could not restore P1's name.")
+            ; EndIf
 
-            ALYSLC.Log("[SUMMON SCRIPT] P1 old/new height, weight: " + SavedP1Height + "/" + P1ActorBase.GetHeight() + ", " + SavedP1Weight + "/" + P1ActorBase.GetHeight())
-            P1ActorBase.SetHeight(SavedP1Height)
-            P1ActorBase.SetWeight(SavedP1Weight)
+            ; ALYSLC.Log("[SUMMON SCRIPT] P1 old/new height, weight: " + SavedP1Height + "/" + P1ActorBase.GetHeight() + ", " + SavedP1Weight + "/" + P1ActorBase.GetHeight())
+            ; P1ActorBase.SetHeight(SavedP1Height)
+            ; P1ActorBase.SetWeight(SavedP1Weight)
+            ;=====================================================================================
 
             ; Open up the RaceMenu for P1 and prompt them to restore their character's preset, which they have hopefully saved when making their character previously.
             String RaceName = "'" + SavedP1Race.GetName() + "'"
@@ -353,7 +369,7 @@ Function HandleCharacterCustomization()
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                                     EndIf
                                 EndIf
-                             EndIf
+                            EndIf
                             ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + SelectedString + ", index " + SelectedOptionIndex)
                         ElseIf (CurrentSelectableRaceType == -1)
                             ; Chose menu info entry.
@@ -373,6 +389,7 @@ Function HandleCharacterCustomization()
                         StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
                         If (NewGenderOption != CurrentGenderOption)
                             ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ". Refreshing dependent appearance presets list. Current race: " + CurrentRace.GetName())
+                            Bool WasFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
                             Bool IsNowFemale = NewGenderOption == 0 || NewGenderOption == 2
                             CoopNPCAppearancePresets = ALYSLC.GetAllAppearancePresets(CurrentRace, IsNowFemale)
                             ActorBase Preset = None 
@@ -386,6 +403,18 @@ Function HandleCharacterCustomization()
                             Else
                                 ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
+                            EndIf
+
+                            If ((!WasFemale && IsNowFemale) || (WasFemale && !IsNowFemale))
+                                ; Set to default voice type for race whenever gender changes.
+                                CurrentRace = (StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace())) as Race
+                                VoiceType DefaultVoiceType = ALYSLC.GetDefaultRacialVoiceType(CurrentRace, NewGenderOption == 0 || NewGenderOption == 2)
+                                If (DefaultVoiceType)
+                                    ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + DefaultVoiceType.GetName())
+                                    StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", DefaultVoiceType)
+                                EndIf
+                                
+                                ALYSLC.Log("[SUMMON SCRIPT] Gender change. New voice type: " + DefaultVoiceType + ". For gender option: " + NewGenderOption + ", race: " + CurrentRace)
                             EndIf
                         EndIf
                     EndIf
@@ -1003,6 +1032,7 @@ Int Function ShowGenderSelectionMenu()
 
 
     ALYSLC.Log("[SUMMON SCRIPT] Gender selection menu. Selected option " + SelectedOptionIndex)
+
     If (SelectedOptionIndex == -1)
         Return SelectedOptionIndex
     Else

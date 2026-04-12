@@ -2153,7 +2153,14 @@ namespace ALYSLC
 
 					SPDLOG_DEBUG
 					(
-						"{} was revived. Toggle god mode until fully up.", coopActor->GetName()
+						"{} was revived. Toggle god mode until fully up. "
+						"Health to restore: {}",
+						coopActor->GetName(),
+						max
+						(
+							0.0f, 
+							revivedHealth - coopActor->GetActorValue(RE::ActorValue::kHealth)
+						)
 					);
 					
 					// Invulnerable while getting up after revive.

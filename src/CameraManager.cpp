@@ -196,9 +196,9 @@ namespace ALYSLC
 			}
 			else if (isLockedOn)
 			{
+				UpdateCamHeight();
 				UpdateCamRotation();
 				UpdateCamZoom();
-				UpdateCamHeight();
 			}
 			else
 			{
@@ -560,19 +560,23 @@ namespace ALYSLC
 
 		const auto strings = RE::FixedStrings::GetSingleton();
 		bool allPlayersInFrontOfPoint = true;
-
 		auto getActorInFrontOfPoint = 
 		[&](RE::Actor* a_actor)
 		{
+			const auto expectedPosNextFrame = 
+			(
+				a_actor->data.location + 
+				Util::GetActorLinearVelocity(a_actor) * 
+				*g_deltaTimeRealTime
+			);
 			if (a_usePlayerPos)
 			{
-				return PointOnScreenAtCamOrientationWorldspaceMargin
+				return PointOnScreenAtCamOrientationScreenspaceMargin
 				(
-					a_actor->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, a_actor->GetHeight() * 0.75f), 
+					a_actor->data.location,
 					a_camPos,
 					a_rotation, 
-					a_actor->GetHeight() / 2.0f
+					0.05f
 				);
 			}
 			else
@@ -593,6 +597,7 @@ namespace ALYSLC
 				}
 
 				bool onePlayerNodeOnScreen = false;
+				const float maxEdgeDist = Util::GetBoundMaxOrMinEdgeDist(a_actor, true, false);
 				if (a_nodeNamesToCheck.size() > 0)
 				{
 					// Check provided list.
@@ -607,12 +612,12 @@ namespace ALYSLC
 						); 
 						if (nodePtr)
 						{
-							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationWorldspaceMargin
+							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationScreenspaceMargin
 							(
 								nodePtr->world.translate, 
 								a_camPos, 
 								a_rotation, 
-								a_actor->GetHeight() / 2.0f
+								0.05f
 							);
 
 							// No need to check other nodes if one is visible.
@@ -641,12 +646,12 @@ namespace ALYSLC
 						);
 						if (nodePtr)
 						{
-							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationWorldspaceMargin
+							onePlayerNodeOnScreen |= PointOnScreenAtCamOrientationScreenspaceMargin
 							(
 								nodePtr->world.translate, 
 								a_camPos, 
-								a_rotation, 
-								a_actor->GetHeight() / 2.0f
+								a_rotation,
+								0.05f
 							);
 
 							// No need to check other nodes if one is visible.
@@ -775,7 +780,7 @@ namespace ALYSLC
 		}
 
 		// Base origin point before processing.
-		if (ShouldConsiderLockOnTargetAsPlayer())
+		/*if (ShouldConsiderLockOnTargetAsPlayer())
 		{			
 			camOriginPoint += camLockOnTargetHandle.get()->data.location;
 			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers + 1));
@@ -787,7 +792,7 @@ namespace ALYSLC
 				) / static_cast<float>(glob.livingPlayers + 1)
 			);
 		}
-		else
+		else*/
 		{
 			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
 			camOriginPoint.z += avgPlayerHeight;
@@ -1060,7 +1065,23 @@ namespace ALYSLC
 				// Base target position is offset from the base focus position,
 				// and is not guaranteed to be a reachable spot.
 				camBaseTargetPos = camFocusPoint;
-				camBaseTargetPos.z -= r * cosf(theta);
+				// Pitch adjusts the target Z coordinate if camera collisions are on
+				// or if the lock on assistance level is set to zoom.
+				// Otherwise, the focus point solely determines the target Z coordinate
+				// to prevent the camera from phasing through the ground as much 
+				// since collisions are off.
+				bool pitchAdjustsZCoordinate = 
+				(
+					camCollisions ||
+					!isLockedOn ||
+					!Util::HandleIsValid(camLockOnTargetHandle) ||
+					Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom	
+				);
+				if (pitchAdjustsZCoordinate)
+				{
+					camBaseTargetPos.z -= r * cosf(theta);
+				}
+
 				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
 				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
 			}
@@ -2621,7 +2642,11 @@ namespace ALYSLC
 		movementYawInterpData->ResetData();
 
 		// Reset interp factors and ratio for blending pitch/yaw changes.
-		camInterpFactor = Settings::fCamInterpFactor;
+		camInterpFactor = 
+		(
+			Settings::fCamInterpFactor * 
+			std::clamp((60.0f * *g_deltaTimeRealTime), 0.5f, 2.0f)
+		);
 
 		prevRotInterpRatio = 0.0f;
 
@@ -2644,6 +2669,10 @@ namespace ALYSLC
 		isManuallyPositioned = false;
 		isLockedOn = false;
 		lockInteriorOrientationOnInit = false;
+
+		// Make sure time was not frozen. Unfreeze if so.
+		Util::ToggleFreezeTime(false);
+		manualPositioningTimeFrozen = false;
 
 		// Reset lock-on-related data.
 		lockOnTargetInSight = false;
@@ -3403,7 +3432,7 @@ namespace ALYSLC
 				avgPlayerHeight, 
 				(originPitchToTarget / (PI / 2.0f) + 1.0f) / 2.0f
 			);
-			camBaseHeightOffset = newZOffset;
+			camBaseHeightOffset = newZOffset;	
 		}
 
 		float prevHeight = camHeightOffset;
@@ -3494,6 +3523,18 @@ namespace ALYSLC
 		float rsX = 0.0f;
 		float rsY = 0.0f;
 		float rsMag = 0.0f;
+		if (controlCamPID > -1 && controlCamPID < ALYSLC_MAX_PLAYER_COUNT)
+		{
+			// Right stick displacement components and magnitude.
+			const auto& rsData = glob.cdh->GetAnalogStickState
+			(
+				glob.coopPlayers[controlCamPID]->deviceID, false
+			);
+			rsX = rsData.xComp;
+			rsY = rsData.yComp;
+			rsMag = rsData.normMag;
+		}
+
 		// Can still manually rotate the camera if there is no lock-on target
 		// or if the lock-on assistance is set to zoom only.
 		if (isAutoTrailing || 
@@ -3502,32 +3543,19 @@ namespace ALYSLC
 			Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom)
 		{
 			camMaxPitchAngMag = isAutoTrailing ? autoTrailPitchMax : PI / 2.0f;
-			if (camAdjMode == CamAdjustmentMode::kRotate && 
-				controlCamPID > -1 && 
-				controlCamPID < ALYSLC_MAX_PLAYER_COUNT)
+			if (camAdjMode == CamAdjustmentMode::kRotate && rsMag != 0.0f)
 			{
-				// Right stick displacement components and magnitude.
-				const auto& rsData = glob.cdh->GetAnalogStickState
-				(
-					glob.coopPlayers[controlCamPID]->deviceID, false
-				);
-				rsX = rsData.xComp;
-				rsY = rsData.yComp;
-				rsMag = rsData.normMag;
-				if (rsMag != 0.0f)
-				{
-					// Moving the RS left or right causes counterclockwise or
-					// clockwise rotation of the camera.
-					yawDelta = maxRotRads * rsX * rsMag;
-					camBaseTargetPosYaw += yawDelta;
-					// Moving the RS up or down causes the camera to pitch
-					// upward or downward.
-					// Upward results in a negative pitch change,
-					// downward results in a positive pitch change, 
-					// so we flip the sign.
-					pitchDelta = maxRotRads * rsY * rsMag;
-					camBaseTargetPosPitch -= pitchDelta;
-				}
+				// Moving the RS left or right causes counterclockwise or
+				// clockwise rotation of the camera.
+				yawDelta = maxRotRads * rsX * rsMag;
+				camBaseTargetPosYaw += yawDelta;
+				// Moving the RS up or down causes the camera to pitch
+				// upward or downward.
+				// Upward results in a negative pitch change,
+				// downward results in a positive pitch change, 
+				// so we flip the sign.
+				pitchDelta = maxRotRads * rsY * rsMag;
+				camBaseTargetPosPitch -= pitchDelta;
 			}
 		}
 
@@ -3958,6 +3986,20 @@ namespace ALYSLC
 				// No target. Bye.
 				return;
 			}
+			
+			// Set the camera orientation to the previous frame's orientation,
+			// since it may have been modified since the start of this iteration of the main task.
+			RE::NiPoint3 targetScreenPos = Util::WorldToScreenPoint3
+			(
+				camLockOnFocusPoint, false
+			);
+			// Rotate to reach this screen position and line up the target's position with it.
+			RE::NiPoint3 screenFocusPos = RE::NiPoint3
+			(
+				0.5f * DebugAPI::screenResX,
+				0.5f * DebugAPI::screenResY,
+				-1.0f
+			);
 
 			bool adjustingHeight = 
 			(
@@ -3965,12 +4007,36 @@ namespace ALYSLC
 				fabsf(rsX) > fabsf(rsY) &&
 				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kFull
 			);
-			float pitchToTarget = Util::NormalizeAngToPi
+			const float pitchToOrigin =
 			(
-				(Util::GetPitchBetweenPositions(camTargetPos, camLockOnFocusPoint)) * 
+				Util::GetPitchBetweenPositions(camTargetPos, camOriginPoint)
+			);
+			const float pitchToLockOnFocusPoint =
+			(
+				Util::GetPitchBetweenPositions(camTargetPos, camLockOnFocusPoint)
+			);
+			// Uhh. Approach the pitch to lock on focus point when the lock on target 
+			// is near the top or bottom of the screen to better ensure it remains on screen.
+			float targetPitch = Util::NormalizeAngToPi
+			(
+				(
+					std::lerp
+					(
+						pitchToOrigin,
+						pitchToLockOnFocusPoint,
+						std::clamp
+						(
+							targetScreenPos.y <= 0.5f * DebugAPI::screenResY ? 
+							1.0f - (targetScreenPos.y / (0.5f * DebugAPI::screenResY)) :
+							(targetScreenPos.y / (0.5f * DebugAPI::screenResY)) - 1.0f,
+							0.0f, 
+							1.0f
+						)
+					)
+				) * 
 				(adjustingHeight ? 1.0f : 0.5f)
 			);
-			float yawToTarget = Util::NormalizeAng0To2Pi
+			float targetYaw = Util::NormalizeAng0To2Pi
 			(
 				Util::GetYawBetweenPositions(camTargetPos, camLockOnFocusPoint)
 			);
@@ -3979,30 +4045,17 @@ namespace ALYSLC
 			// based on the camera's set max rotation speed.
 			pitchDelta = std::clamp
 			(
-				Util::NormalizeAngToPi(pitchToTarget - camPitch), 
+				Util::NormalizeAngToPi(targetPitch - camPitch), 
 				-maxRotRads, 
 				maxRotRads
 			);
 			yawDelta = std::clamp
 			(
-				Util::NormalizeAngToPi(yawToTarget - camYaw), 
+				Util::NormalizeAngToPi(targetYaw - camYaw), 
 				-maxRotRads, 
 				maxRotRads
 			);
 			
-			// Set the camera orientation to the previous frame's orientation,
-			// since it may have been modified since the start of this iteration of the main task.
-			RE::NiPoint3 targetScreenPos = Util::WorldToScreenPoint3
-			(
-				camLockOnFocusPoint, false
-			);
-			RE::NiPoint3 screenCenterPos = RE::NiPoint3
-			(
-				0.5f * DebugAPI::screenResX,
-				0.5f * DebugAPI::screenResY,
-				-1.0f
-			);
-
 			// Slow down pitch change when the target is close to the camera.
 			float pitchDepthMult = std::clamp
 			(
@@ -4047,7 +4100,7 @@ namespace ALYSLC
 					(
 						fabsf
 						(
-							targetScreenPos.y - screenCenterPos.y
+							targetScreenPos.y - screenFocusPos.y
 						) / (0.5f * DebugAPI::screenResY),
 						0.0f, 
 						1.0f
@@ -4072,7 +4125,7 @@ namespace ALYSLC
 						-max
 						(
 							0.0f,
-							(targetScreenPos.y - screenCenterPos.y)	 / (DebugAPI::screenResY)
+							(targetScreenPos.y - screenFocusPos.y) / (DebugAPI::screenResY)
 						),
 						-0.5f, 
 						0.0f
@@ -4090,37 +4143,17 @@ namespace ALYSLC
 				std::clamp
 				(
 					(
-						fabsf(targetScreenPos.x - screenCenterPos.x) / 
+						fabsf(targetScreenPos.x - screenFocusPos.x) / 
 						(0.5f * DebugAPI::screenResX)
 					),
 					0.0f, 
 					1.0f
 				),
-				7.0f
+				3.0f
 			);
 
 			yawDelta *= std::clamp(yawDepthMult * yawDeltaMult * vertScreenPosYawMult, 0.0f, 1.0f);
-			// Approach the pitch to target directly
-			// when a player is adjusting the cam height offset.
-			// Want to prevent excessive auto-zoom-out if the target is not on screen
-			// once the camera adjustment mode returns to default.
-			if (adjustingHeight)
-			{
-				pitchDelta *= min
-				(
-					1.0f,
-					Util::GetElapsedSeconds
-					(
-						glob.coopPlayers[controlCamPID]->pam->paStatesList
-						[!InputAction::kZoomCam - !InputAction::kFirstAction].startTP
-					)
-				);
-			}
-			else
-			{
-				pitchDelta *= std::clamp(pitchDepthMult * pitchDeltaMult, 0.0f, 1.0f);
-			}
-
+			pitchDelta *= std::clamp(pitchDepthMult * pitchDeltaMult, 0.0f, 1.0f);
 			// Apply the deltas for this frame.
 			camPitch = Util::NormalizeAngToPi(camPitch + pitchDelta);
 			camYaw = Util::NormalizeAng0To2Pi(camYaw + yawDelta);
@@ -4180,15 +4213,6 @@ namespace ALYSLC
 		{
 			return;
 		}
-		
-		// NOTE:
-		// Will uncomment if frequent stuttering on rotation starts occurring again.
-		// Auto-zooming in/out while rotating the camera can contribute to stuttering,
-		// so do not auto-zoom until rotation is complete.
-		/*if (camAdjMode == CamAdjustmentMode::kRotate)
-		{
-			return;
-		}*/
 		
 		float rsX = 0.0f;
 		float rsY = 0.0f;
@@ -4312,7 +4336,7 @@ namespace ALYSLC
 		}
 
 		// Raycast hits and on-screen checks seem inconsistent 
-		// when zoomed out beyond a variable distance.
+		// when zoomed out beyond a variable distance (likely the cell's clip distance).
 		// Zooming out beyond this distance will result in the game 
 		// considering all players offscreen (and no raycast hits),
 		// even though their positions are in front of the camera and visually in view.
@@ -4813,14 +4837,36 @@ namespace ALYSLC
 			}
 		);
 
-		// Some interior cells have fog and a max zoom out distance for the camera
-		// before checking if points are on screen fail (messes with auto-zoom).
-		// Switching to skybox only sometimes circumvents this issue 
-		// and allows for uncapped zooming out in interior cells.
-		// The alternative - disabling the sky altogether - 
-		// has some clearly undesirable side effects 
-		// like creating much harsher lighting throughout the cell.
-		Util::SetSkyboxModeForCell(currentCell);
+		// Some cells have fog that appears quickly when zooming out 
+		// and a max zoom out distance for the camera before checking if points are on screen fail 
+		// (messes with auto-zoom).
+		// Modify the clip distance and weaken fog when matching occlusion removal setting is on.
+		if ((Settings::bRemoveExteriorOcclusion && exteriorCell) || 
+			(Settings::bRemoveInteriorOcclusion && !exteriorCell))
+		{
+			const auto scriptFactory = 
+			(
+				RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+			);
+			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+			if (script)
+			{ 
+				script->SetCommand("setclipdist 1000000000");
+				script->CompileAndRun(nullptr);
+				// Complete fog removal.
+				//script->SetCommand("setfog 0 10000000000");
+				//script->CompileAndRun(nullptr);
+				// Tone down interior cell fog.
+				if (!exteriorCell)
+				{
+					script->SetCommand("setfog 0 15000");
+					script->CompileAndRun(nullptr);
+				}
+
+				delete script;
+			}
+		}
+
 		// Havok world may've changed, so enable ragdoll <-> actor collisions on cell change.
 		GlobalCoopData::EnableRagdollToActorCollisions();
 	}

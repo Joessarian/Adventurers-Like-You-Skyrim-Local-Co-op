@@ -5,30 +5,9 @@ UIListMenu Property DebugMenu Auto
 ; Device and player IDs for the player controlling menus.
 Int Property PlayerInMenuDID Auto
 Int Property PlayerInMenuPID Auto
+String[] Property PresetFileNames Auto
     
-Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenuPID)
-    ALYSLC.Log("[CDM SCRIPT] OnDebugMenuRequest() Event Received.")
-	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
-	Float SecsWaited = 0.0
-	While (!PlayerRef && SecsWaited < 2.0)
-		ALYSLC.Log("[CDM SCRIPT] P1 invalid; attempting to get P1 again.")
-		PlayerRef = Game.GetPlayer()
-		ALYSLC.Wait(0.1)
-		SecsWaited += 0.1
-	EndWhile
-	
-	If (PlayerRef != Game.GetPlayer())
-		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot open debug menu.")
-		ALYSLC.LogError("[CDM SCRIPT] Critical Error: P1's actor is invalid. Cannot open debug menu. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
-		Return
-	EndIf
-
-    ; Set player controlling menu's info.
-    PlayerInMenu = akActorControllingMenu
-    PlayerInMenuDID = aiMenuDID
-    PlayerInMenuPID = aiMenuPID
-    ALYSLC.Log("[CDM SCRIPT] DEBUG: Actor in menu: " + PlayerInMenu.GetDisplayName() + ", menu PID: " + PlayerInMenuPID + ", player 1: " + PlayerRef.GetDisplayName())
-
+Function PopulateDebugMenu()
     DebugMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
 
     ; 0: Options that affect the entire co-op party.
@@ -94,27 +73,59 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
     ; All removed perks have their perk points refunded.
     ; Allows this player to fully respec their character.
     DebugMenu.AddEntryItem("Respec Player (Skyrim Only)", 1, -1, False)
+    ; 15. Import RaceMenu preset to this player. Shows a list of all preset files in the Data\SKSE\Plugins\CharGen\Exported folder, 
+    ; and imports the selected preset via console command onto this player.
+    PresetFileNames = ALYSLC.GetExportedRaceMenuPresetFileNames()
+    DebugMenu.AddEntryItem("Import RaceMenu Preset (" + PresetFileNames.Length + " available)", 1, -1, True)
 
     ; [Misc]
-    ; 15. Assign controller ID manually for player 1.
+    ; 16. Assign controller ID manually for player 1.
     ; Useful for when one controller is controlling multiple players or menus for multiple players or no players at all.
     ; Happens when Skyrim does not assign the controller with XInput index 0 (first controller) to player 1.
     ; Have yet to figure out how to get the XInput controller index for player 1 directly.
     DebugMenu.AddEntryItem("Assign Player 1 Controller ID", 2, -1, False)
-    ; 16. Disable co-op cam, reset player 1 to default motion-driven state, reset controls, and remove any other
+    ; 17. Disable co-op cam, reset player 1 to default motion-driven state, reset controls, and remove any other
     ; temporary modifications made to player 1's state since the last co-op session started.
     DebugMenu.AddEntryItem("Reset Cam and Player 1", 2, -1, False)
-    ; 17. Restart co-op camera.
+    ; 18. Restart co-op camera.
     ; Useful for when camera begins to stutter or is stuck in place.
     DebugMenu.AddEntryItem("Restart Co-op Camera", 2, -1, False)
-    ; 18. Stop menu input manager.
+    ; 19. Stop menu input manager.
     ; Useful for when a companion player still has control of any open menus 
     ; or has data copied over to P1 when they should not.
     DebugMenu.AddEntryItem("Stop Menu Input Manager", 2, -1, False)
+    ; 20. Unfreeze time, just in case it remained frozen after toggling off camera manual positioning mode, stopping co-op, or loading a save.
+    DebugMenu.AddEntryItem("Unfreeze Time", 2, -1, False)
+EndFunction
 
+Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenuPID)
+    ALYSLC.Log("[CDM SCRIPT] OnDebugMenuRequest() Event Received.")
+	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
+	Float SecsWaited = 0.0
+	While (!PlayerRef && SecsWaited < 2.0)
+		ALYSLC.Log("[CDM SCRIPT] P1 invalid; attempting to get P1 again.")
+		PlayerRef = Game.GetPlayer()
+		ALYSLC.Wait(0.1)
+		SecsWaited += 0.1
+	EndWhile
+	
+	If (PlayerRef != Game.GetPlayer())
+		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot open debug menu.")
+		ALYSLC.LogError("[CDM SCRIPT] Critical Error: P1's actor is invalid. Cannot open debug menu. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+		Return
+	EndIf
+
+    ; Set player controlling menu's info.
+    PlayerInMenu = akActorControllingMenu
+    PlayerInMenuDID = aiMenuDID
+    PlayerInMenuPID = aiMenuPID
+    ALYSLC.Log("[CDM SCRIPT] DEBUG: Actor in menu: " + PlayerInMenu.GetDisplayName() + ", menu PID: " + PlayerInMenuPID + ", player 1: " + PlayerRef.GetDisplayName())
+
+    PopulateDebugMenu()
     ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, DebugMenu.ROOT_MENU)
     DebugMenu.OpenMenu()
     Int SelectedIndex = DebugMenu.GetResultInt()
+    ALYSLC.Log("[CDM SCRIPT] DEBUG: Selected index: " + SelectedIndex)
     ; Re-open until exit menu bind is pressed.
     While (SelectedIndex != -1)
         If (SelectedIndex == 3)
@@ -181,6 +192,31 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
                 EndWhile
             EndIf
         ElseIf (SelectedIndex == 15)
+            ALYSLC.Log("[CDM SCRIPT] DEBUG: import RaceMenu preset.")
+            ; Add RaceMenu preset names as entries below here.
+            If (PresetFileNames.Length > 0)
+                UIListMenu ListMenu = UIExtensions.GetMenu("UIListMenu") as UIListMenu
+                Int Iter = 0
+                While (Iter < PresetFileNames.Length)
+                    ListMenu.AddEntryItem(PresetFileNames[Iter], -1, -1, False)
+                    Iter += 1
+                EndWhile
+
+                ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, ListMenu.ROOT_MENU)
+                ListMenu.OpenMenu()
+                Int PresetIndex = ListMenu.GetResultInt()
+                If (PresetIndex > -1)
+                    String PresetName = PresetFileNames[PresetIndex]
+                    If (PresetIndex < PresetFileNames.Length)
+                        ALYSLC.Log("[CDM SCRIPT] DEBUG: importing RaceMenu preset: " + PresetName)
+                        ALYSLC.LoadPlayerCharacterPresetWithName(PlayerInMenu, PresetName)
+                    EndIf
+                EndIf
+
+                ; Re-populate the debug menu after the player has chosen an index from the preset list.
+                PopulateDebugMenu()
+            EndIf
+        ElseIf (SelectedIndex == 16)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: assign player 1 CID.")
             ALYSLC.RequestMenuControl(PlayerInMenuDID, PlayerInMenuPID, "MessageBoxMenu")
             ALYSLC.AssignPlayer1CID()
@@ -195,7 +231,7 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
             While (UI.IsMenuOpen("MessageBoxMenu"))
                 ALYSLC.Wait(0.1)
             EndWhile
-        ElseIf (SelectedIndex == 16)
+        ElseIf (SelectedIndex == 17)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: reset cam, player 1 controls, and state.")
             ALYSLC.ResetPlayer1AndCamera()
             ALYSLC.Wait(1.0)
@@ -208,12 +244,15 @@ Event OnDebugMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int aiMenu
             ALYSLC.Wait(1.0)
             Game.ForceThirdPerson()
             Game.SetCameraTarget(PlayerRef)
-        ElseIf (SelectedIndex == 17)
+        ElseIf (SelectedIndex == 18)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: restart co-op camera.")
             ALYSLC.RestartCoopCamera()
-        ElseIf (SelectedIndex == 18)
+        ElseIf (SelectedIndex == 19)
             ALYSLC.Log("[CDM SCRIPT] DEBUG: stop menu input manager.")
             ALYSLC.StopMenuInputManager()
+        ElseIf (SelectedIndex == 20)
+            ALYSLC.Log("[CDM SCRIPT] DEBUG: unfreeze time.")
+            ALYSLC.UnfreezeTime()
         EndIf
 
         ; Re-open.

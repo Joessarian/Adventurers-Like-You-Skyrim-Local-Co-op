@@ -115,6 +115,8 @@ namespace ALYSLC
 		// from previously pacified neutral factions.
 		Util::StopCombatOnPlayerAndAllies();
 
+		// Make sure time is not frozen.
+		Util::ToggleFreezeTime(false);
 		return firstTimeInit;
 	}
 
@@ -486,6 +488,25 @@ namespace ALYSLC
 			// Clear all menu opening requests.
 			glob.moarm->ClearAllRequests();
 		}
+
+		// Make sure time is not frozen.
+		Util::ToggleFreezeTime(false);
+	}
+
+	RE::BGSVoiceType* CoopLib::GetDefaultRacialVoiceType
+	(
+		RE::StaticFunctionTag*, RE::TESRace* a_race, bool a_female
+	)
+	{
+		// Change the given player actor's voice type to their race's default voice type
+		// for the actor's sex.
+		SPDLOG_DEBUG("GetDefaultRacialVoiceType.");
+		if (!a_race)
+		{
+			return nullptr;
+		}
+
+		return Util::GetDefaultRacialVoiceType(a_race, a_female);
 	}
 
 	void CoopLib::EnableCoopEntityCollision(RE::StaticFunctionTag*) 
@@ -931,6 +952,55 @@ namespace ALYSLC
 		}
 
 		return{ };
+	}
+
+	std::vector<RE::BSFixedString> CoopLib::GetExportedRaceMenuPresetFileNames
+	(
+		RE::StaticFunctionTag*
+	)
+	{
+		// Get a list of all exported RaceMenu presets' names.
+		// Exported presets are located in the "\Data\SKSE\Plugins\CharGen\Exported' folder.
+		
+		SPDLOG_DEBUG("Current path: {}", std::filesystem::current_path().string());
+		auto fileNamesList = std::vector<RE::BSFixedString>();
+		const std::filesystem::path filePath = 
+		(
+			std::filesystem::current_path() / "Data/SKSE/Plugins/CharGen/Exported"
+		);
+		if (filePath.empty())
+		{
+			SPDLOG_DEBUG("NOOP");
+		}
+
+		try
+		{
+			for (const auto& entry : std::filesystem::directory_iterator(filePath)) 
+			{
+				if (entry.exists() &&
+					entry.is_regular_file() &&
+					entry.path().extension() == ".jslot") 
+				{
+					// Get just the filename (e.g., "data.txt")
+					const auto fileName = entry.path().filename().string();
+					auto extensionPos = fileName.find(".");
+					RE::BSFixedString name = fileName.substr(0, extensionPos);
+					SPDLOG_INFO
+					(
+						"Found RaceMenu preset file '{}'", name
+					);
+					fileNamesList.emplace_back(name);
+				}
+			}
+		}
+		catch (const std::exception& a_exception)
+		{
+			SPDLOG_ERROR("ERR: {} when searching {} for RaceMenu presets.", 
+				a_exception.what(), filePath.string());
+		}
+
+		SPDLOG_DEBUG("{} preset files found", fileNamesList.size());
+		return fileNamesList;
 	}
 
 	std::vector<RE::BSFixedString> CoopLib::GetFavoritedEmoteIdles
@@ -1587,7 +1657,126 @@ namespace ALYSLC
 					return;
 				}
 
-				Util::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
+				GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), true);
+			}
+		);
+	}
+
+	void CoopLib::CharacterCustomization::LoadPlayerCharacterPresetWithName
+	(
+		RE::StaticFunctionTag*, 
+		RE::Actor* a_toCharacter,
+		RE::BSFixedString a_presetName
+	)
+	{
+		// Load the exported character preset for the given player character.
+		
+		SPDLOG_DEBUG("LoadPlayerCharacterPresetWithName: {} to {}.",
+			a_presetName, a_toCharacter ? a_toCharacter->GetName() : "NONE");
+		if (!a_toCharacter)
+		{
+			return;
+		}
+		
+		// Update skin color and player model.
+		RE::ActorHandle actorHandle = a_toCharacter->GetHandle();
+		auto taskInterface = SKSE::GetTaskInterface();
+		if (!taskInterface)
+		{
+			return;
+		}
+
+		taskInterface->AddTask
+		(
+			[actorHandle, a_toCharacter, a_presetName]()
+			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (!p1)
+				{
+					return;
+				}
+
+				auto actorPtr = Util::GetActorPtrFromHandle(actorHandle);
+				if (!actorPtr)
+				{
+					return;
+				}
+
+				auto actorBase = actorPtr->GetActorBase();
+				if (!actorBase)
+				{
+					return;
+				}
+
+				auto consoleLog = RE::ConsoleLog::GetSingleton();
+				if (!consoleLog)
+				{
+					return;
+				}
+
+				if (auto msgIntfc = SKSE::GetMessagingInterface(); msgIntfc)
+				{
+					InterfaceExchangeMessage msg{ };
+					auto type = InterfaceExchangeMessage::kMessage_ExchangeInterface;
+					msgIntfc->Dispatch
+					(
+						type, std::addressof(msg), sizeof(InterfaceExchangeMessage*), "SKEE"
+					);
+					if (msg.interfaceMap)
+					{
+						auto overlayInterface = static_cast<IOverlayInterface*>
+						(
+							msg.interfaceMap->QueryInterface("Overlay")
+						);
+						if (overlayInterface)
+						{
+							SPDLOG_INFO("Erase overlays.");
+							overlayInterface->EraseOverlays(actorPtr.get());
+						}
+					}
+				}
+
+				const auto scriptFactory = 
+				(
+					RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+				);
+				const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
+				if (!script)
+				{
+					return;
+				}
+
+				script->SetCommand
+				(
+					fmt::format
+					(
+						"skee preset-load {}", a_presetName
+					).c_str()
+				);
+				script->CompileAndRun(actorPtr.get());
+				RE::DebugNotification
+				(
+					fmt::format("[ALYSLC] Result: {}", consoleLog->lastMessage).c_str()
+				);
+				SPDLOG_INFO("LOAD RESULT: {}", consoleLog->lastMessage);
+				// Prevents skin tone mismatch between body and face.
+				script->SetCommand
+				(
+					fmt::format
+					(
+						"setnpcweight {}", static_cast<uint32_t>(p1->GetWeight())
+					).c_str()
+				);
+				script->CompileAndRun(p1);
+				script->SetCommand
+				(
+					fmt::format
+					(
+						"setnpcweight {}", 
+						static_cast<uint32_t>(actorPtr->GetWeight())
+					).c_str()
+				);
+				script->CompileAndRun(actorPtr.get());
 			}
 		);
 	}
@@ -1685,7 +1874,7 @@ namespace ALYSLC
 					return;
 				}
 
-				Util::LoadOrSaveRaceMenuPreset(actorPtr.get(), false);
+				GlobalCoopData::LoadOrSaveRaceMenuPreset(actorPtr.get(), false);
 			}
 		);
 	}
@@ -2077,6 +2266,15 @@ namespace ALYSLC
 		);
 		GlobalCoopData::StopMenuInputManager();
 	}
+
+	void CoopLib::Debug::UnfreezeTime(RE::StaticFunctionTag *)
+	{
+		// Unfreeze time (via the Main singleton) 
+		// if everyone and everything is still stuck in place.
+
+		SPDLOG_DEBUG("Andddd. GO!");
+		Util::ToggleFreezeTime(false);
+	}
 	
 	//=============================================================================================
 	//[MCM Settings Import]
@@ -2333,6 +2531,11 @@ namespace ALYSLC
 		(
 			"GetConnectedInputDeviceIDs"s, "ALYSLC"s, GetConnectedInputDeviceIDs
 		);
+		a_vm->RegisterFunction("GetDefaultRacialVoiceType"s, "ALYSLC"s, GetDefaultRacialVoiceType);
+		a_vm->RegisterFunction
+		(
+			"GetExportedRaceMenuPresetFileNames"s, "ALYSLC"s, GetExportedRaceMenuPresetFileNames
+		);
 		a_vm->RegisterFunction("GetFavoritedEmoteIdles"s, "ALYSLC"s, GetFavoritedEmoteIdles);
 		a_vm->RegisterFunction("InitializeCoopPlayers"s, "ALYSLC"s, InitializeCoopPlayers);
 		a_vm->RegisterFunction("InitializeGlobalData"s, "ALYSLC"s, InitializeGlobalData);
@@ -2387,6 +2590,12 @@ namespace ALYSLC
 			"LoadPlayerCharacterPreset",
 			"ALYSLC"s, 
 			CharacterCustomization::LoadPlayerCharacterPreset
+		);
+		a_vm->RegisterFunction
+		(
+			"LoadPlayerCharacterPresetWithName",
+			"ALYSLC"s, 
+			CharacterCustomization::LoadPlayerCharacterPresetWithName
 		);
 		a_vm->RegisterFunction
 		(
@@ -2448,6 +2657,7 @@ namespace ALYSLC
 			"StopAllCombatOnCoopPlayers"s, "ALYSLC"s, Debug::StopAllCombatOnCoopPlayers
 		);
 		a_vm->RegisterFunction("StopMenuInputManager"s, "ALYSLC"s, Debug::StopMenuInputManager);
+		a_vm->RegisterFunction("UnfreezeTime"s, "ALYSLC"s, Debug::UnfreezeTime);
 
 		// MCM settings.
 		a_vm->RegisterFunction("OnConfigClose"s, "__ALYSLC_ConfigMenu"s, Settings::OnConfigClose);

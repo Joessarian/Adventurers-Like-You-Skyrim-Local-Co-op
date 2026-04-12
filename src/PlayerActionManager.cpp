@@ -1183,6 +1183,9 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Sync companion player level with P1 after making sure their stats
+			// do not scale with P1. We do not want the game to auto scale the player's stats.
+			RemoveAVAutoScaling();
 			// Hacky, but the only solution for now.
 			// Update bound weapon state for companion players
 			// and unequip bound weapons once their lifetime expires.
@@ -3665,6 +3668,14 @@ namespace ALYSLC
 			{
 				continue;
 			}
+			const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+			// Update the serialized value.
+			if (iter != glob.serializablePlayerData.end())
+			{
+				const auto index = GlobalCoopData::AV_TO_SKILL_MAP.at(av);
+				iter->second->skillBaseLevelsList[index] = value;
+				iter->second->skillLevelIncreasesList[index] = 0.0f;
+			}
 
 			coopActor->SetBaseActorValue(av, value);
 		}
@@ -5642,6 +5653,64 @@ namespace ALYSLC
 				);
 				coopActor->DrawWeaponMagicHands(a_shouldDraw);
 			}
+		}
+	}
+	
+	void PlayerActionManager::RemoveAVAutoScaling()
+	{
+		// Sync companion player level with P1 after making sure their stats
+		// do not scale with P1. We do not want the game to auto scale the player's stats.
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		auto actorBase = coopActor->GetActorBase(); 
+		if (!p1 || !actorBase)
+		{
+			return;
+		}
+
+		if (actorBase->actorData.actorBaseFlags.any
+		(
+			RE::ACTOR_BASE_DATA::Flag::kAutoCalcStats,
+			RE::ACTOR_BASE_DATA::Flag::kPCLevelMult
+		))
+		{
+			SPDLOG_DEBUG
+			(
+				"{}: auto calc: {}, pc level mult: {}.",
+				coopActor->GetName(),
+				actorBase->actorData.actorBaseFlags.all
+				(
+					RE::ACTOR_BASE_DATA::Flag::kAutoCalcStats
+				),
+				actorBase->actorData.actorBaseFlags.all
+				(
+					RE::ACTOR_BASE_DATA::Flag::kPCLevelMult
+				)
+			);
+			actorBase->actorData.actorBaseFlags.reset
+			(
+				RE::ACTOR_BASE_DATA::Flag::kAutoCalcStats
+			);
+			actorBase->actorData.actorBaseFlags.reset
+			(
+				RE::ACTOR_BASE_DATA::Flag::kPCLevelMult
+			);
+			actorBase->AddChange
+			(
+				RE::TESNPC::ChangeFlags::kAttributes
+			);
+		}
+
+		// Level is set to a garbage value and displays as 1000 with GetLevel()
+		// after the above flags are removed if they were set.
+		// Thus, we have to make sure the player's level is set to P1's straight away
+		// to not fudge up level-related data, like available perk point calculations 
+		// when entering the Stats Menu, for example.
+		auto p1Level = glob.player1Actor->GetLevel();
+		if (actorBase->actorData.level != p1Level)
+		{
+			SPDLOG_DEBUG("{}: set level to {}.", coopActor->GetName(), p1Level);
+			actorBase->actorData.level = p1Level;
 		}
 	}
 
@@ -7709,6 +7778,7 @@ namespace ALYSLC
 				// Clear out hand slots.
 				// Maintain desired forms.
 				p->em->EquipFists(false);
+				p->em->ReEquipHandForms();
 			}
 		}
 		else if (boundWeapLH)
@@ -7729,6 +7799,7 @@ namespace ALYSLC
 				p->em->lastReqBoundWeapLH = nullptr;
 				// Clear out hand slot.
 				Util::UnequipObject(coopActor.get(), lhWeap);
+				p->em->ReEquipHandForm(false);
 			}
 		}
 		else if (boundWeapRH)
@@ -7749,6 +7820,7 @@ namespace ALYSLC
 				p->em->lastReqBoundWeapRH = nullptr;
 				// Clear out hand slot.
 				Util::UnequipObject(coopActor.get(), rhWeap);
+				p->em->ReEquipHandForm(true);
 			}
 		}
 

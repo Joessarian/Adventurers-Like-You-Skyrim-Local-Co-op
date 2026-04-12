@@ -167,7 +167,8 @@ namespace ALYSLC
 						type != !SerializableDataType::kPlayerSkillXPList &&
 						type != !SerializableDataType::kPlayerTakenSharedPerks &&
 						type != !SerializableDataType::kPlayerUnlockedPerksList &&
-						type != !SerializableDataType::kPlayerUsedPerkPoints)
+						type != !SerializableDataType::kPlayerUsedPerkPoints &&
+						type != !SerializableDataType::kPlayerRaceMenuPresetName)
 					{
 						SPDLOG_DEBUG
 						(
@@ -556,14 +557,19 @@ namespace ALYSLC
 						else if (type == !SerializableDataType::kPlayerEmoteIdleEvents)
 						{
 							// Eight cyclable emote idles' event names.
-							RE::BSFixedString eventName = ""sv;
+							RE::BSFixedString eventName = "NONE";
 							uint32_t size = 0;
 							for (uint8_t i = 0; i < data->cyclableEmoteIdleEvents.size(); ++i) 
 							{
 								// Length of serialized event name string.
+								// NOTE:
+								// Had issues deserializing the empty string 
+								// (reading memory beyond null terminator), 
+								// so read in as "NONE" instead.
 								RetrieveUInt32Data(a_intfc, size, type);
-								if (size == 0) 
+								if (size <= 1) 
 								{
+									data->cyclableEmoteIdleEvents[i] = "NONE";
 									continue;
 								}
 
@@ -637,6 +643,34 @@ namespace ALYSLC
 
 							// Set total.
 							data->prevTotalUnlockedPerks = numUnlockedPerks;
+						}
+						else if (type == !SerializableDataType::kPlayerRaceMenuPresetName)
+						{
+							// One '.jslot' preset file name.
+							RE::BSFixedString presetName = "NONE";
+							uint32_t size = 0;
+							// Length of serialized event name string (+1 from null terminator).
+							// NOTE:
+							// Had issues deserializing the empty string 
+							// (reading memory beyond null terminator), 
+							// so read in as "NONE" instead.
+							RetrieveUInt32Data(a_intfc, size, type);
+							if (size <= 1)
+							{
+								data->raceMenuPresetName = "NONE";
+							}
+							else
+							{
+								RetrieveStringData(a_intfc, presetName, type, size);
+								data->raceMenuPresetName = presetName;
+								SPDLOG_DEBUG
+								(
+									"Player with FID 0x{:X}'s "
+									"applied RaceMenu preset is {}. "
+									"String length: {}.", 
+									fid, presetName, size
+								);
+							}
 						}
 					}
 				}
@@ -1824,14 +1858,24 @@ namespace ALYSLC
 							// Serialize string length and then the string's buffer 
 							// for each saved emote idle event name.
 							// +1 for the null terminator at the end of the string.
+							// NOTE:
+							// Had issues deserializing the empty string 
+							// (reading memory beyond null terminator), 
+							// so save as "NONE" instead.
 							size = cyclableEmoteIdleEvents[i].length() * sizeof(char) + 1;
 							SerializePlayerUInt32Data
 							(
-								a_intfc, size, !SerializableDataType::kPlayerEmoteIdleEvents
+								a_intfc, 
+								cyclableEmoteIdleEvents[i].empty() ? 
+								strlen("NONE") :
+								size,
+								!SerializableDataType::kPlayerEmoteIdleEvents
 							);
 							SerializePlayerStringData
 							(
 								a_intfc, 
+								cyclableEmoteIdleEvents[i].empty() ? 
+								"NONE" :
 								cyclableEmoteIdleEvents[i], 
 								!SerializableDataType::kPlayerEmoteIdleEvents
 							);
@@ -1979,6 +2023,57 @@ namespace ALYSLC
 					(
 						"Could not open record of type {}.",
 						TypeToString(!SerializableDataType::kPlayerUnlockedPerksList)
+					);
+				}
+
+				// RACE MENU PRESET NAME
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerRaceMenuPresetName,
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerRaceMenuPresetName
+						);
+						// Serialize string length and then the string's buffer 
+						// for each saved emote idle event name.
+						// +1 for the null terminator at the end of the string.
+						// NOTE:
+						// Had issues deserializing the empty string 
+						// (reading memory beyond null terminator), so save as "NONE" instead.
+						uint32_t size = data->raceMenuPresetName.length() * sizeof(char) + 1;
+						SerializePlayerUInt32Data
+						(
+							a_intfc,
+							data->raceMenuPresetName.empty() ? strlen("NONE") + 1 : size, 
+							!SerializableDataType::kPlayerRaceMenuPresetName
+						);
+						SerializePlayerStringData
+						(
+							a_intfc, 
+							data->raceMenuPresetName.empty() ?
+							"NONE" :
+							data->raceMenuPresetName, 
+							!SerializableDataType::kPlayerRaceMenuPresetName
+						);
+						SPDLOG_DEBUG
+						(
+							"Player with FID 0x{:X} "
+							"has applied RaceMenu preset name {} (size {}).",
+							fid, data->raceMenuPresetName, size
+						);
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerRaceMenuPresetName)
 					);
 				}
 			}
@@ -2197,7 +2292,8 @@ namespace ALYSLC
 						skillIncList,
 						skillXPList, 
 						std::vector<RE::BGSPerk*>(),
-						std::vector<RE::BGSPerk*>()
+						std::vector<RE::BGSPerk*>(),
+						"NONE"
 					) 
 				}
 			);
@@ -2294,7 +2390,8 @@ namespace ALYSLC
 									skillIncList,
 									skillXPList,
 									std::vector<RE::BGSPerk*>(),
-									std::vector<RE::BGSPerk*>()
+									std::vector<RE::BGSPerk*>(),
+									"NONE"
 								) 
 							}
 						);

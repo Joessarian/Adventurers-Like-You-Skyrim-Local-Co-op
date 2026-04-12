@@ -13,6 +13,10 @@ namespace ALYSLC
 	bool PrecisionCompat::g_installed{ false };
 	bool QuickLootCompat::g_installed{ false };
 	bool QuickLootCompat::g_isQuickLootIE{ false };
+	double QuickLootCompat::g_originalScaleX{ -1.0 };
+	double QuickLootCompat::g_originalScaleY{ -1.0 };
+	double QuickLootCompat::g_originalX{ -1.0 };
+	double QuickLootCompat::g_originalY{ -1.0 };
 	bool RaceMenuCompat::g_installed{ false };
 	bool RequiemCompat::g_installed{ false };
 	bool SkyrimSoulsCompat::g_installed{ false };

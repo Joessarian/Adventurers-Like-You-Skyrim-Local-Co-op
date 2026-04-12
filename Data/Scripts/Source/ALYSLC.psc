@@ -18,6 +18,8 @@ String[] Function GetAllCyclableEmoteIdleEvents() Global Native
 Form[] Function GetAllSelectableRaces(Int a_selectableRaceTypeFilter) Global Native
 Form[] Function GetAllVoiceTypes(Bool a_female) Global Native
 Actor[] Function GetCompanionPlayerCharacters() Global Native
+VoiceType Function GetDefaultRacialVoiceType(Race a_race, Bool a_female) Global Native
+String[] Function GetExportedRaceMenuPresetFileNames() Global Native
 String[] Function GetFavoritedEmoteIdles(Int a_playerID) Global Native
 Function RequestMenuControl(Int a_deviceID, Int a_playerID, String a_menuName) Global Native
 Function RequestStateChange(Int a_playerID, Int a_newState) Global Native
@@ -45,6 +47,7 @@ Function CopyNPCAppearanceToPlayer(Int a_playerID, ActorBase a_baseToCopy, Bool 
 Function ExportP1ActorBaseAppearanceData(Actor a_actor) Global Native
 Bool Function IsRaceMenuInstalled() Global Native
 Function LoadPlayerCharacterPreset(Actor a_fromPresetCharacter) Global Native
+Function LoadPlayerCharacterPresetWithName(Actor a_toCharacter, String a_presetName) Global Native
 Function OnPreRaceMenu(Race a_newRace, Bool a_setFemale) Global Native
 Function SavePlayerCharacterPreset(Actor a_toPresetCharacter) Global Native
 Function SetDefaultRacialAppearance(Int a_playerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
@@ -67,6 +70,7 @@ Function RespecPlayer(Int a_playerID) Global Native
 Function RestartCoopCamera() Global Native
 Function StopAllCombatOnCoopPlayers(Bool a_clearBounties) Global Native
 Function StopMenuInputManager() Global Native
+Function UnfreezeTime() Global Native
 
 ;==============================================
 ;=================[Utility]====================

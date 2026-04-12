@@ -1596,6 +1596,13 @@ namespace ALYSLC
 		{
 			// Play bash idle to bash instantly.
 			
+			// Stop sneak animation if currently dash dodging so that the player 
+			// is not stuck sneaking after bashing.
+			if (a_p->mm->isDashDodging)
+			{
+				a_p->coopActor->NotifyAnimationGraph("SneakStop");
+			}
+
 			bool wasBlocking = a_p->coopActor->IsBlocking();
 			a_p->coopActor->NotifyAnimationGraph("attackStop");
 			a_p->coopActor->NotifyAnimationGraph("blockStart");
@@ -1624,6 +1631,13 @@ namespace ALYSLC
 		void BlockInstant(const std::shared_ptr<CoopPlayer>& a_p, bool&& a_shouldStart)
 		{
 			// Send block start/stop animation events to block instantly.
+
+			// Stop sneak animation if currently dash dodging so that the player 
+			// is not stuck sneaking after blocking.
+			if (a_p->mm->isDashDodging)
+			{
+				a_p->coopActor->NotifyAnimationGraph("SneakStop");
+			}
 
 			if (a_shouldStart) 
 			{
@@ -5518,6 +5532,8 @@ namespace ALYSLC
 				);
 			}
 
+			SPDLOG_DEBUG("{} wants to open a menu with the keyboard. Action {}. SUCC: {}.",
+				a_p->coopActor->GetName(), a_action, succ);
 			// If the request was successfully inserted, open the requested menu.
 			if (succ) 
 			{
@@ -7205,29 +7221,10 @@ namespace ALYSLC
 						Util::GetLockpicksCount(RE::PlayerCharacter::GetSingleton()) > 0
 					);
 					// A crime to activate.
-					bool offLimits = activationRefrPtr->IsCrimeToActivate();
-					if (offLimits)
-					{
-						SPDLOG_DEBUG
-						(
-							"{} is off limits. "
-							"Actor owner: {} faction owner: {}, owner: {}, exOwnership: {}.",
-							activationRefrPtr->GetName(),
-							activationRefrPtr->GetActorOwner() ? 
-							Util::GetEditorID(activationRefrPtr->GetActorOwner()) :
-							"NONE",
-							activationRefrPtr->GetActorOwner() ? 
-							Util::GetEditorID(activationRefrPtr->GetFactionOwner()) :
-							"NONE",
-							activationRefrPtr->GetActorOwner() ? 
-							Util::GetEditorID(activationRefrPtr->GetOwner()) :
-							"NONE",
-							activationRefrPtr->extraList.GetOwner() ? 
-							Util::GetEditorID(activationRefrPtr->extraList.GetOwner()) :
-							"NONE"
-						);
-					}
-
+					bool offLimits = Util::ActivationIsOffLimits
+					(
+						a_p->coopActor.get(), activationRefrPtr.get()
+					);
 					// Object prevented from being activated (ex. door bars).
 					bool activationBlocked = false;
 					auto xFlags = activationRefrPtr->extraList.GetByType<RE::ExtraFlags>(); 
@@ -7693,6 +7690,13 @@ namespace ALYSLC
 			if (performingKillmove)
 			{
 				return;
+			}
+
+			// Stop sneak animation if currently dash dodging so that the player 
+			// is not stuck sneaking after the bash.
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kBash) && a_p->mm->isDashDodging)
+			{
+				a_p->coopActor->NotifyAnimationGraph("SneakStop");
 			}
 
 			// Continue blocking if the player was blocking before the bash; stop otherwise.
@@ -9873,7 +9877,8 @@ namespace ALYSLC
 				// or the player must be sneaking to signal intent to steal.
 				// Finally, the refr must be a lootable loose refr,
 				// a corpse, or an unlocked container.
-				if (activationRefrPtr->IsCrimeToActivate() && !a_p->coopActor->IsSneaking())
+				if (Util::ActivationIsOffLimits(a_p->coopActor.get(), activationRefrPtr.get()) &&
+					!a_p->coopActor->IsSneaking())
 				{
 					a_p->tm->SetCrosshairMessageRequest
 					(
@@ -10130,7 +10135,10 @@ namespace ALYSLC
 				// Is lootable refr, but not a corpse or container.
 				bool hasContainer = activationRefrPtr->HasContainer();
 				bool isLootable = !hasContainer && Util::IsLootableRefr(activationRefrPtr.get());
-				bool isStealing = activationRefrPtr->IsCrimeToActivate();
+				bool isStealing = Util::ActivationIsOffLimits
+				(
+					a_p->coopActor.get(), activationRefrPtr.get()
+				);
 				if (isStealing && !a_p->coopActor->IsSneaking())
 				{
 					a_p->tm->SetCrosshairMessageRequest
@@ -10293,6 +10301,13 @@ namespace ALYSLC
 				return;
 			}
 
+			// Stop sneak animation if currently dash dodging so that the player 
+			// is not stuck sneaking after blocking.
+			if (a_p->mm->isDashDodging)
+			{
+				a_p->coopActor->NotifyAnimationGraph("SneakStop");
+			}
+
 			// Stop attacking first.
 			a_p->coopActor->NotifyAnimationGraph("attackStop");
 			// For Valhalla Combat projectile deflection compatibility.
@@ -10344,6 +10359,10 @@ namespace ALYSLC
 			// Switch to lock-on state if a new valid actor is targeted
 			// by this player's crosshair.
 			// Reset to auto-trail otherwise.
+
+			// Unfreeze time first, just in case.
+			glob.cam->manualPositioningTimeFrozen = false;
+			Util::ToggleFreezeTime(false);
 
 			// Give this player control of the camera.
 			auto& controllingPID = glob.cam->controlCamPID;
@@ -10572,7 +10591,11 @@ namespace ALYSLC
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Camera manual positioning mode", a_p->playerID + 1),
+					fmt::format
+					(
+						"P{}: Camera manual positioning mode. Press again to unfreeze.", 
+						a_p->playerID + 1
+					),
 					{ 
 						CrosshairMessageType::kNone, 
 						CrosshairMessageType::kStealthState, 
@@ -10581,22 +10604,51 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 				glob.cam->camState = CamState::kManualPositioning;
+				glob.cam->manualPositioningTimeFrozen = true;
+				Util::ToggleFreezeTime(true);
 			}
 			else
 			{
-				// Switch back to auto-trail otherwise.
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kCamera,
-					fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState,
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-				glob.cam->camState = CamState::kAutoTrail;
+				if (glob.cam->manualPositioningTimeFrozen)
+				{
+					// Freeze time on first press of this bind 
+					// after toggling manual positioning mode on.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format
+						(
+							"P{}: Resuming the flow of time.",
+							a_p->playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					glob.cam->manualPositioningTimeFrozen = false;
+					Util::ToggleFreezeTime(false);
+				}
+				else
+				{
+					// Switch back to auto-trail if time is already unfrozen.
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kCamera,
+						fmt::format("P{}: Camera auto-trail mode", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState,
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					glob.cam->camState = CamState::kAutoTrail;
+					glob.cam->manualPositioningTimeFrozen = false;
+					Util::ToggleFreezeTime(false);
+				}
 			}
 		}
 
@@ -11766,6 +11818,10 @@ namespace ALYSLC
 		void ResetCamOrientation(const std::shared_ptr<CoopPlayer>& a_p)
 		{
 			// Reset camera orientation by resetting radial distance and height offsets.
+			
+			// Unfreeze time, just in case.
+			glob.cam->manualPositioningTimeFrozen = false;
+			Util::ToggleFreezeTime(false);
 
 			// Give this player control of the camera.
 			auto& controllingPID = glob.cam->controlCamPID;
@@ -12715,7 +12771,10 @@ namespace ALYSLC
 					// Have P1 activate shared items or refrs that can trigger menus.
 					bool p1Activate = false;
 					// A crime to activate.
-					bool offLimits = activationRefrPtr->IsCrimeToActivate();
+					bool offLimits = Util::ActivationIsOffLimits
+					(
+						a_p->coopActor.get(), activationRefrPtr.get()
+					);
 					RE::Actor* asActor = activationRefrPtr->As<RE::Actor>();
 					// Trying to pickpocket an actor.
 					bool attemptingToPickpocket = 
