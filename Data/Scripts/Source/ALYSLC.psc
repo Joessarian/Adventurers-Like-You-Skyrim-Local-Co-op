@@ -32,6 +32,7 @@ Function SetIsSummoningFlag(Bool a_set) Global Native
 Function SetPartyInvincibility(Bool a_shouldSet) Global Native
 Function SignalWaitForUpdate(bool a_shouldDimiss) Global Native
 Function StartPlayerManagers() Global Native
+Function TeleportToP1OrAway(Actor a_playerActor, Bool a_toP1) Global Native
 Function TeleportToPlayerToActor(Int a_playerID, Actor a_teleportTarget) Global Native
 Function ToggleCoopCamera(Bool a_enable) Global Native
 Function ToggleSetupMenuControl(Int a_deviceID, int a_playerID, Bool a_shouldEnter) Global Native

@@ -778,9 +778,9 @@ namespace ALYSLC
 		// Check if the player is unarmed.
 		bool IsUnarmed() const;
 
-		// Re-equip all forms for this player, 
-		// optionally refreshing the cached equipped state beforehand.
-		void ReEquipAll(bool a_refreshBeforeEquipping);
+		// Re-equip all forms for this player, optionally refreshing the cached equipped state 
+		// or resetting the companion player's inventory beforehand.
+		void ReEquipAll(bool a_refreshBeforeEquipping, bool a_resetInventoryFirst = true);
 		
 		// Unequip and re-equip 1H form in the given slot (LH or RH).
 		void ReEquipHandForm(bool a_rhSlot);

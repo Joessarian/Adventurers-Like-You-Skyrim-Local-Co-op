@@ -299,6 +299,23 @@ namespace ALYSLC
 			);
 		}
 
+		// Clear out queued button events queue.
+		inline void ClearQueuedP1ButtonEventsQueue()
+		{
+			for (auto& ptr : queuedP1ButtonEvents)
+			{
+				// Clear out padding before freeing input event.
+				if (ptr && (*ptr.get())->AsIDEvent()) 
+				{		
+					(*ptr.get())->AsIDEvent()->pad24 = 0x0;
+				}
+
+				ptr.release();
+			}
+
+			queuedP1ButtonEvents.clear();
+		}
+
 		// Conditions failed after this action started.
 		inline const bool ConditionsFailed(const InputAction& a_action)
 		{

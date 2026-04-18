@@ -110,10 +110,10 @@ Event OnCoopHelperMenuRequest(Actor akActorControllingMenu, Int aiMenuDID, Int a
 	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
 	Float SecsWaited = 0.0
 	While (!PlayerRef && SecsWaited < 2.0)
-		ALYSLC.Log("[CHMH SCRIPT] P1 invalid; attempting to get P1 again.")
+		ALYSLC.LogError("[CHMH SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		ALYSLC.Wait(0.1)
-		SecsWaited += 0.1
+		ALYSLC.Wait(0.5)
+		SecsWaited += 0.5
 	EndWhile
 	
 	If (PlayerRef != Game.GetPlayer())

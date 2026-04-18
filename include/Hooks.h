@@ -85,10 +85,12 @@ namespace ALYSLC
 			static void InstallHooks()
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
-				/*_DeselectSpellImpl = vtbl.write_vfunc(0x12, DeselectSpellImpl);
-				SPDLOG_INFO("Installed DeselectSpellImpl() hook.");
+				/*_ClearMagicNode = vtbl.write_vfunc(0x11, ClearMagicNode);
+				SPDLOG_INFO("Installed ClearMagicNode() hook.");
+				_DeselectSpellImpl = vtbl.write_vfunc(0x12, DeselectSpellImpl);
+				SPDLOG_INFO("Installed DeselectSpellImpl() hook.");*/
 				_FinishCastImpl = vtbl.write_vfunc(0x07, FinishCastImpl);
-				SPDLOG_INFO("Installed FinishCastImpl() hook.");*/
+				SPDLOG_INFO("Installed FinishCastImpl() hook.");
 				_InterruptCastImpl = vtbl.write_vfunc(0x08, InterruptCastImpl);
 				SPDLOG_INFO("Installed InterruptCastImpl() hook.");
 				_RequestCastImpl = vtbl.write_vfunc(0x03, RequestCastImpl);
@@ -110,6 +112,7 @@ namespace ALYSLC
 			}
 
 		private:
+			static void ClearMagicNode(RE::ActorMagicCaster* a_this);
 			static void DeselectSpellImpl(RE::ActorMagicCaster* a_this);
 			static void FinishCastImpl(RE::ActorMagicCaster* a_this);
 			static void InterruptCastImpl(RE::ActorMagicCaster* a_this, bool a_depleteEnergy);
@@ -128,6 +131,7 @@ namespace ALYSLC
 			static void StartReadyImpl(RE::ActorMagicCaster* a_this);
 			static void Update(RE::ActorMagicCaster* a_this, float a_delta);
 			
+			static inline REL::Relocation<decltype(ClearMagicNode)> _ClearMagicNode;
 			static inline REL::Relocation<decltype(DeselectSpellImpl)> _DeselectSpellImpl;
 			static inline REL::Relocation<decltype(FinishCastImpl)> _FinishCastImpl;
 			static inline REL::Relocation<decltype(InterruptCastImpl)> _InterruptCastImpl;

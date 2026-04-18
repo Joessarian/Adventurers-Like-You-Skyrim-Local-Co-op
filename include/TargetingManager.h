@@ -2062,6 +2062,9 @@ namespace ALYSLC
 		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
+		// If the crosshair freely movable across the screen when moving the left stick?
+		// If not, crosshair target lock is active (snaps to targets when the RS is moved).
+		bool crosshairFreeAimActive;
 		// Was the selected crosshair refr chosen by raycast?
 		bool crosshairRefrFromRaycast;
 		// Is the crosshair refr in range to open the QuickLoot menu?

@@ -9,6 +9,7 @@ namespace ALYSLC
 	bool EldenSprintCompat::g_installed{ false };
 	bool EnderalCompat::g_installed{ false };
 	bool MCOCompat::g_installed{ false };
+	bool NFFCompat::g_installed{ false };
 	bool PersistentFavoritesCompat::g_installed{ false };
 	bool PrecisionCompat::g_installed{ false };
 	bool QuickLootCompat::g_installed{ false };
@@ -115,6 +116,24 @@ namespace ALYSLC
 		if (g_installed)
 		{
 			SPDLOG_INFO("MCO installed!");
+		}
+	}
+	
+	void NFFCompat::CheckForNFF(const SKSE::LoadInterface * a_loadInterface)
+	{
+		g_installed = 
+		(
+			a_loadInterface->GetPluginInfo("nwsFollowerFramework")
+		);
+		auto dataHandler = RE::TESDataHandler::GetSingleton();
+		if (!g_installed && dataHandler) 
+		{
+			g_installed = dataHandler->LookupModByName("nwsFollowerFramework.esp") != nullptr;
+		}
+
+		if (g_installed)
+		{
+			SPDLOG_INFO("Nether's Follower Framework installed!");
 		}
 	}
 

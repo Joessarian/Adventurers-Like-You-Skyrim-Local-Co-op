@@ -4883,6 +4883,7 @@ namespace ALYSLC
 			RE::TESForm* currentForm = equippedForms[!a_index];
 			// Should equip if there is no currently-equipped form in the slot.
 			bool shouldEquip = !currentForm;
+			RE::TESForm* currentCopiedSpell = nullptr;
 			if (!shouldEquip) 
 			{
 				bool currentSpellIsVoice =
@@ -4908,7 +4909,7 @@ namespace ALYSLC
 						PlaceholderMagicIndex::k2H :
 						static_cast<PlaceholderMagicIndex>(!a_index)
 					);
-					auto currentCopiedSpell = GetCopiedMagic(currentPlaceholderIndex);
+					currentCopiedSpell = GetCopiedMagic(currentPlaceholderIndex);
 					// If the placeholder spell will change 
 					// when the requested spell is copied over
 					// or if not already equipped, equip the spell.
@@ -4922,6 +4923,22 @@ namespace ALYSLC
 					);
 				}
 			}
+
+			// CHANGE TO DEBUG
+			SPDLOG_INFO
+			(
+				"{}: {} requested form {} (0x{:X}). Current form: {} (0x{:X}), "
+				"current copied spell: {} (0x{:X}). Placeholder magic changed: {}.",
+				coopActor->GetName(), 
+				shouldEquip ? "equip" : "unequip",
+				a_form ? a_form->GetName() : "NONE",
+				a_form ? a_form->formID : 0xDEAD,
+				currentForm ? currentForm->GetName() : "NONE",
+				currentForm ? currentForm->formID : 0xDEAD,
+				currentCopiedSpell ? currentCopiedSpell->GetName() : "NONE",
+				currentCopiedSpell ? currentCopiedSpell->formID : 0xDEAD,
+				a_placeholderMagicChanged
+			);
 
 			if (shouldEquip)
 			{
@@ -5516,14 +5533,6 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG
-			(
-				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
-				coopActor->GetName(),
-				magForm ? magForm->GetName() : "NONE",
-				removalIndex,
-				magicFavorites->spells.size()
-			);
 			// No extra data lists for magic forms.
 			p1FavoritesMap.insert
 			(
@@ -5536,6 +5545,14 @@ namespace ALYSLC
 				}
 			);
 			magicFavorites->RemoveFavorite(magForm);
+			SPDLOG_DEBUG
+			(
+				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
+				coopActor->GetName(),
+				magForm ? magForm->GetName() : "NONE",
+				removalIndex,
+				magicFavorites->spells.size()
+			);
 		}
 
 		// Clear when done.
@@ -5746,8 +5763,8 @@ namespace ALYSLC
 			{
 				continue;
 			}
-
-			// Skip physical forms.
+			
+			// Skip hotkey importation for physical forms which were already handled above.
 			if (!a_onlyMagicFavorites && form->IsNot(RE::FormType::Spell, RE::FormType::Shout))
 			{
 				continue;
@@ -5886,10 +5903,10 @@ namespace ALYSLC
 		);
 	}
 
-	void EquipManager::ReEquipAll(bool a_refreshBeforeEquipping)
+	void EquipManager::ReEquipAll(bool a_refreshBeforeEquipping, bool a_resetInventoryFirst)
 	{
-		// Re-equip all this player's desired forms.
-		// Can also refresh the cached equip state before re-equipping.
+		// Re-equip all forms for this player, optionally refreshing the cached equipped state 
+		// or resetting the companion player's inventory beforehand.
 
 		SPDLOG_DEBUG("{}.", coopActor->GetName());
 
@@ -5899,7 +5916,7 @@ namespace ALYSLC
 			RefreshEquipState(RefreshSlots::kAll);
 		}
 
-		if (!p->isPlayer1)
+		if (!p->isPlayer1 && a_resetInventoryFirst)
 		{
 			// Remove all items from the player's inventory first.
 			// Using this as a failsafe to remove any corrupted inventory items
@@ -6740,6 +6757,7 @@ namespace ALYSLC
 				continue;
 			}
 
+			magicFavorites->RemoveFavorite(magForm);
 			SPDLOG_DEBUG
 			(
 				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
@@ -6748,7 +6766,6 @@ namespace ALYSLC
 				removalIndex,
 				magicFavorites->spells.size()
 			);
-			magicFavorites->RemoveFavorite(magForm);
 		}
 
 		// Clear out the list as well to be safe.
@@ -6909,6 +6926,7 @@ namespace ALYSLC
 				}
 			}
 
+			// REMOVE when done debugging.
 			auto chestInv = inventoryChest->GetInventory();
 			for (const auto& [boundObj, countInvEntryPair] : chestInv)
 			{
@@ -6955,7 +6973,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			// Skip physical forms.
+			// Skip hotkey restoration for physical forms which were already handled above.
 			if (!a_onlyMagicFavorites && form->IsNot(RE::FormType::Spell, RE::FormType::Shout))
 			{
 				continue;
@@ -7012,7 +7030,8 @@ namespace ALYSLC
 		// For specific equip/unequip events, the form of interest is given, 
 		// as well as whether or not it is now equipped.
 
-		SPDLOG_DEBUG
+		// CHANGE TO DEBUG
+		SPDLOG_INFO
 		(
 			"{}: slots to refresh: {}, form: {}, is equipped: {}. "
 			"Manager states: P: {}, PAM: {}, EM: {}, MM: {}, TM: {}", 
@@ -9405,6 +9424,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			// TODO: Persistent Favorites compat for most recent version.
 			// Update the list of favorited magic forms only if Persistent Favorites 
 			// is not installed or if the Favorites Menu is not open.
 			// Before the Favorites Menu closes, Persistent Favorites re-adds P1's 
@@ -9412,7 +9432,7 @@ namespace ALYSLC
 			// so we do not want to update the companion player's list of favorited magic forms.
 			// We DO need to update the hotkeys when the Favorites Menu closes, 
 			// since they could have changed while the menu was open.
-
+			/*
 			auto ui = RE::UI::GetSingleton();
 			if (!ALYSLC::PersistentFavoritesCompat::g_installed ||
 				!ui ||
@@ -9435,6 +9455,24 @@ namespace ALYSLC
 				// Update list of magic favorites to serialize.
 				data->favoritedMagForms = magFavoritesList;
 			}
+			*/
+
+			// Get list of current magical favorites.
+			if (!magicFavorites->spells.empty()) 
+			{
+				for (auto magForm : magicFavorites->spells) 
+				{
+					if (!magForm)
+					{
+						continue;
+					}
+
+					magFavoritesList.emplace_back(magForm);	
+				}
+			}
+
+			// Update list of magic favorites to serialize.
+			data->favoritedMagForms = magFavoritesList;
 
 			// Update our hotkey data based on the current magical favorites list.
 			for (int8_t i = 0; i < magicFavorites->hotkeys.size(); ++i)

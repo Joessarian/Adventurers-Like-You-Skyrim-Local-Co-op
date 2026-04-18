@@ -35,6 +35,7 @@ namespace ALYSLC
 			);
 			// Set once per summoning.
 			canSMORF = false;
+			crosshairFreeAimActive = true;
 			RefreshData();
 		}
 		else
@@ -235,7 +236,6 @@ namespace ALYSLC
 		baseCanDrawOverlayElements = true;
 		canActivateRefr = false;
 		choseClosestResult = false;
-		crosshairRefrFromRaycast = false;
 		crosshairRefrInRangeForQuickLoot = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
@@ -527,16 +527,16 @@ namespace ALYSLC
 			return;
 		}
 
-		bool adjustingAimPitch = 
+		bool shouldShowIndicator = 
 		(
 			p->pam->IsPerforming(InputAction::kAdjustAimPitch) || 
 			p->pam->GetSecondsSinceLastStop(InputAction::kResetAim) < 0.25f
 		);
 		aimPitchIndicatorFadeInterpData->UpdateInterpolatedValue
 		(
-			baseCanDrawOverlayElements && adjustingAimPitch
+			baseCanDrawOverlayElements && shouldShowIndicator
 		);
-		if (!adjustingAimPitch && 
+		if (!shouldShowIndicator && 
 			!aimPitchIndicatorFadeInterpData->interpToMax && 
 			!aimPitchIndicatorFadeInterpData->interpToMin)
 		{
@@ -698,10 +698,14 @@ namespace ALYSLC
 			// while auto-recentering to elapse before fading out.
 			bool isCrosshairActive = 
 			{
-				Util::GetRefrPtrFromHandle(crosshairRefrHandle) || 
-				p->pam->IsPerforming(InputAction::kMoveCrosshair) || 
-				p->mm->reqFaceTarget || 
-				secsSinceActive <= 1.5f * Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+				(crosshairFreeAimActive) &&
+				(
+					p->pam->IsPerforming(InputAction::kMoveCrosshair) ||
+					Util::GetRefrPtrFromHandle(crosshairRefrHandle) || 
+					p->mm->reqFaceTarget || 
+					secsSinceActive <= 
+					1.5f * Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+				)
 			};
 			crosshairFadeInterpData->UpdateInterpolatedValue
 			(
@@ -3865,7 +3869,7 @@ namespace ALYSLC
 		// Check all high actors.
 		bool isClosest = false;
 		// Another actor is in combat with this player.
-		bool inCombat = false;
+		bool inCombatWithPlayer = false;
 		for (const auto& closeActorHandle : procLists->highActorHandles)
 		{
 			auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
@@ -3887,7 +3891,7 @@ namespace ALYSLC
 				(actorPtr == coopActor) ||
 				(actorPtr == p->GetCurrentMount()) ||
 				(
-					!GlobalCoopData::IsCoopPlayer(actorPtr.get()) && 
+					crosshairFreeAimActive && 
 					glob.coopEntityBlacklistFIDSet.contains(actorPtr->formID)
 				)
 			};
@@ -3932,9 +3936,9 @@ namespace ALYSLC
 			);
 
 			// At least one actor is angry at this player.
-			if (!inCombat && isActivelyHostileToAPlayerOrAlly)
+			if (!inCombatWithPlayer && isActivelyHostileToAPlayerOrAlly)
 			{
-				inCombat = true;
+				inCombatWithPlayer = true;
 			}
 
 			// Next, filter out targets based on spell target type, 
@@ -3943,6 +3947,7 @@ namespace ALYSLC
 			// or hostile actors when selecting allies and vice versa.
 			filteredOut = 
 			(
+				(crosshairFreeAimActive || glob.isInCoopCombat || !actorPtr->IsPlayerTeammate()) &&
 				(!shouldOnlyTargetCorpses) &&
 				(a_combatDependentSelection) && 
 				(
@@ -3956,10 +3961,29 @@ namespace ALYSLC
 					(!shouldOnlyTargetAllies && !isActivelyHostileToAPlayerOrAlly)
 				)
 			);
-
+			
 			if (filteredOut)
 			{
+				SPDLOG_DEBUG("{}: Filtered out {}.", coopActor->GetName(),actorPtr->GetName());
 				continue;
+			}
+			else
+			{
+				SPDLOG_DEBUG
+				(
+					"{}: {} considered. Crosshair active: {}, in combat with player: {}, "
+					"co-op combat active: {}, only corpses: {}, "
+					"only allies: {}, party friendly: {}, actively hostile: {}.", 
+					coopActor->GetName(),
+					actorPtr->GetName(),
+					crosshairFreeAimActive,
+					inCombatWithPlayer,
+					glob.isInCoopCombat,
+					shouldOnlyTargetCorpses,
+					shouldOnlyTargetAllies,
+					Util::IsPartyFriendlyActor(actorPtr.get()),
+					isActivelyHostileToAPlayerOrAlly
+				);
 			}
 
 			// Run close actor check to update the new closest actor within the FOV window.
@@ -4009,7 +4033,9 @@ namespace ALYSLC
 		// If not in combat and either not casting or casting a hostile spell, 
 		// do not pick a close actor target.
 		// Only want to choose friendly actors to heal with spells when out of combat.
-		if ((!inCombat) && (!sourceHasSpell || !shouldOnlyTargetAllies)) 
+		if ((crosshairFreeAimActive) &&
+			(!glob.isInCoopCombat) && 
+			(!sourceHasSpell || !shouldOnlyTargetAllies)) 
 		{
 			return RE::ActorHandle();
 		}
@@ -4018,8 +4044,28 @@ namespace ALYSLC
 		if (!p->isPlayer1) 
 		{
 			// No combat-dependent filter or if trying to heal P1.
-			if ((!shouldOnlyTargetCorpses) &&
-				(!a_combatDependentSelection || shouldOnlyTargetAllies))
+			bool canAddP1 = false;
+			if (crosshairFreeAimActive)
+			{
+				canAddP1 = 
+				(
+					(!shouldOnlyTargetCorpses) && 
+					(!a_combatDependentSelection || shouldOnlyTargetAllies)
+				);
+			}
+			else
+			{
+				canAddP1 = 
+				(
+					(!glob.isInCoopCombat) ||
+					(
+						(!shouldOnlyTargetCorpses) && 
+						(!a_combatDependentSelection || shouldOnlyTargetAllies)
+					)
+				);
+			}
+
+			if (canAddP1)
 			{
 				// Perform new closest actor in FOV check on P1.
 				auto actorTorsoPos = glob.coopPlayers[0]->mm->playerTorsoPosition;
@@ -8524,8 +8570,8 @@ namespace ALYSLC
 		// to perform or is performing a ranged attack.
 		// Clear the target otherwise.
 
-		// Player must have aim correction enabled.
-		if (!Settings::vbUseAimCorrection[playerID])
+		// Player must have aim correction enabled or not be moving the crosshair freely.
+		if (!Settings::vbUseAimCorrection[playerID] && crosshairFreeAimActive)
 		{
 			return;
 		}
@@ -9038,315 +9084,112 @@ namespace ALYSLC
 		// When the player wants to move their crosshair,
 		// update the crosshair's 2D and 3D crosshair positions, 
 		// and the selected crosshair refr and actor, if any.
-		const bool isMovingCrosshair = p->pam->IsPerforming(InputAction::kMoveCrosshair);
-		if (isMovingCrosshair)
+		const bool isMovingCrosshair = 
+		(
+			p->pam->IsPerforming(InputAction::kMoveCrosshair) 
+		);
+		if (crosshairFreeAimActive)
 		{
-			// Get RS data.
-			const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
-			const auto& rsX = rsData.xComp;
-			// Scaleform Y is inverted with respect to the analog stick's Y axis.
-			const auto& rsY = -rsData.yComp;
-			const auto& rsMag = rsData.normMag * rsData.normMag;
-			const float secsSinceCrosshairUpdated = Util::GetElapsedSeconds
-			(
-				p->lastCrosshairUpdateTP
-			);
-
-			// Max pixels per second that the crosshair can travel across 
-			// along the X and Y screen axes.
-			float crosshairMaxXSpeedPPS = 
-			(
-				Settings::vfCrosshairHorizontalSensitivity[playerID] * 
-				Settings::fCrosshairMaxTraversablePixelsPerSec
-			);
-			float crosshairMaxYSpeedPPS = 
-			(
-				Settings::vfCrosshairVerticalSensitivity[playerID] *
-				Settings::fCrosshairMaxTraversablePixelsPerSec
-			);
-			// Slow down the moving crosshair when an actor or refr is selected.
-			// Number of pixels to move across in the X and Y directions this update.
-			RE::NiPoint2 pixelDeltas
+			if (isMovingCrosshair)
 			{
-				rsX * 
-				rsMag * 
-				secsSinceCrosshairUpdated * 
-				crosshairMaxXSpeedPPS,
-				rsY * 
-				rsMag *
-				secsSinceCrosshairUpdated * 
-				crosshairMaxYSpeedPPS
-			};
-			pixelDeltas *= crosshairSpeedMult;
+				// Get RS data.
+				const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
+				const auto& rsX = rsData.xComp;
+				// Scaleform Y is inverted with respect to the analog stick's Y axis.
+				const auto& rsY = -rsData.yComp;
+				const auto& rsMag = rsData.normMag * rsData.normMag;
+				const float secsSinceCrosshairUpdated = Util::GetElapsedSeconds
+				(
+					p->lastCrosshairUpdateTP
+				);
 
-			// When moving over a refr, add the pixel deltas 
-			// relative to the initial 'entry' position 
-			// which was set when the crosshair first selected the refr. 
-			// This will allow the crosshair to 'stick' to moving targets
-			// while moving it across the target,
-			// since the change in pixels is made relative to the target's movement.
-			if (crosshairRefrPtr)
-			{
-				// Add to cumulative pixels deltas.
-				crosshairOnRefrPixelXYDeltas.x += pixelDeltas.x;
-				crosshairOnRefrPixelXYDeltas.y += pixelDeltas.y;
-				auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
-				// Set the hit position's local offset from the hit refr's base position.
-				// Base position is the torso position for actors 
-				// and the center position for all other refrs.
-				const auto refrBasePos = 
+				// Max pixels per second that the crosshair can travel across 
+				// along the X and Y screen axes.
+				float crosshairMaxXSpeedPPS = 
 				(
-					hitActor ? 
-					Util::GetTorsoPosition(hitActor) : 
-					Util::GetRefrPosition(crosshairRefrPtr.get())
+					Settings::vfCrosshairHorizontalSensitivity[playerID] * 
+					Settings::fCrosshairMaxTraversablePixelsPerSec
 				);
-				// Get updated world position by adding the stored initial movement hit pos offset 
-				// to the refr's reported base position.
-				auto newBaseCrosshairWorldPos = refrBasePos + crosshairInitialMovementHitPosOffset;
-				// Get corresponding screen position.
-				auto screenPos = Util::WorldToScreenPoint3(newBaseCrosshairWorldPos);
-				// Add deltas to this base screen position 
-				// to allow the crosshair to move relative to the selected refr.
-				crosshairScaleformPos.x = std::clamp
+				float crosshairMaxYSpeedPPS = 
 				(
-					screenPos.x + crosshairOnRefrPixelXYDeltas.x, 0.0f, rectWidth
+					Settings::vfCrosshairVerticalSensitivity[playerID] *
+					Settings::fCrosshairMaxTraversablePixelsPerSec
 				);
-				crosshairScaleformPos.y = std::clamp
-				(
-					screenPos.y + crosshairOnRefrPixelXYDeltas.y, 0.0f, rectHeight
-				);
-				crosshairScaleformPos.z = 0.0f;
-			}
-			else
-			{
-				// Update scaleform position directly with the pixel deltas.
-				crosshairScaleformPos.x = std::clamp
-				(
-					crosshairScaleformPos.x + pixelDeltas.x, 0.0f, rectWidth
-				);
-				crosshairScaleformPos.y = std::clamp
-				(
-					crosshairScaleformPos.y + pixelDeltas.y, 0.0f, rectHeight
-				);
-				crosshairScaleformPos.z = 0.0f;
-			}
-
-			// Clear selected actor and crosshair refr
-			// before checking for raycast/proximity refr hits below.
-			selectedTargetActorHandle = RE::ActorHandle();
-			crosshairRefrHandle = RE::ObjectRefHandle();
-
-			// Calculate near and far plane world positions for the current scaleform position.
-			glm::mat4 pvMat{ };
-			// Transpose first.
-			pvMat[0][0] = niCamPtr->worldToCam[0][0];
-			pvMat[1][0] = niCamPtr->worldToCam[0][1];
-			pvMat[2][0] = niCamPtr->worldToCam[0][2];
-			pvMat[3][0] = niCamPtr->worldToCam[0][3];
-			pvMat[0][1] = niCamPtr->worldToCam[1][0];
-			pvMat[1][1] = niCamPtr->worldToCam[1][1];
-			pvMat[2][1] = niCamPtr->worldToCam[1][2];
-			pvMat[3][1] = niCamPtr->worldToCam[1][3];
-			pvMat[0][2] = niCamPtr->worldToCam[2][0];
-			pvMat[1][2] = niCamPtr->worldToCam[2][1];
-			pvMat[2][2] = niCamPtr->worldToCam[2][2];
-			pvMat[3][2] = niCamPtr->worldToCam[2][3];
-			pvMat[0][3] = niCamPtr->worldToCam[3][0];
-			pvMat[1][3] = niCamPtr->worldToCam[3][1];
-			pvMat[2][3] = niCamPtr->worldToCam[3][2];
-			pvMat[3][3] = niCamPtr->worldToCam[3][3];
-			// Then invert.
-			auto invPVMat = glm::inverse(pvMat);
-			// Causes crosshair jitter if the Z component is set to +-1, 
-			// so they're set reasonably close to those values instead.
-			glm::vec4 clipSpacePosNear = glm::vec4
-			(
-				crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f, 
-				1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f), 
-				-0.999999f, 
-				1.0f
-			);
-			glm::vec4 clipSpacePosFar = glm::vec4
-			(
-				crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f, 
-				1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f), 
-				0.999999f, 
-				1.0f
-			);
-			// Derive world positions using the inverted projection view matrix
-			// and the clip space near/far vectors.
-			glm::vec4 worldPosNear = (invPVMat * clipSpacePosNear);
-			glm::vec4 worldPosFar = (invPVMat * clipSpacePosFar);
-			worldPosNear /= worldPosNear.w;
-			worldPosFar /= worldPosFar.w;
-
-			// Set initial crosshair world position to the far plane point.
-			crosshairWorldPos = ToNiPoint3(worldPosFar);
-			// Raycast for selectable refrs. Get all hits from near to far plane points.
-			auto results = Raycast::GetAllHavokCastHitResults(worldPosNear, worldPosFar);
-			// Pick a hit result with a potentially-selectable refr.
-			Raycast::RayResult centerResult = PickRaycastHitResult
-			(
-				results, glob.isInCoopCombat, true
-			);
-			// Clear valid flag since we'll be updating it below if the chosen hit was valid.
-			validCrosshairRefrHit = false;
-			// Only need to check the result if it has a hit.
-			if (centerResult.hit)
-			{
-				// Update crosshair world pos, regardless of whether or not 
-				// the raycast hits anything selectable.
-				crosshairWorldPos = ToNiPoint3(centerResult.hitPos);
-				if (Util::HandleIsValid(centerResult.hitRefrHandle))
+				// Slow down the moving crosshair when an actor or refr is selected.
+				// Number of pixels to move across in the X and Y directions this update.
+				RE::NiPoint2 pixelDeltas
 				{
-					// Must be valid for selection.
-					validCrosshairRefrHit = IsRefrValidForCrosshairSelection
+					rsX * 
+					rsMag * 
+					secsSinceCrosshairUpdated * 
+					crosshairMaxXSpeedPPS,
+					rsY * 
+					rsMag *
+					secsSinceCrosshairUpdated * 
+					crosshairMaxYSpeedPPS
+				};
+				pixelDeltas *= crosshairSpeedMult;
+
+				// When moving over a refr, add the pixel deltas 
+				// relative to the initial 'entry' position 
+				// which was set when the crosshair first selected the refr. 
+				// This will allow the crosshair to 'stick' to moving targets
+				// while moving it across the target,
+				// since the change in pixels is made relative to the target's movement.
+				if (crosshairRefrPtr)
+				{
+					// Add to cumulative pixels deltas.
+					crosshairOnRefrPixelXYDeltas.x += pixelDeltas.x;
+					crosshairOnRefrPixelXYDeltas.y += pixelDeltas.y;
+					auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
+					// Set the hit position's local offset from the hit refr's base position.
+					// Base position is the torso position for actors 
+					// and the center position for all other refrs.
+					const auto refrBasePos = 
 					(
-						centerResult.hitRefrHandle
-					); 
-					if (validCrosshairRefrHit)
-					{
-						// Set crosshair refr handle.
-						crosshairRefrHandle = centerResult.hitRefrHandle;
-						crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
-						auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
-						// Set selected actor handle if the hit refr is an actor.
-						if (hitActor)
-						{
-							selectedTargetActorHandle = hitActor->GetHandle();
-						}
-					
-						const auto refrBasePos = 
-						(
-							hitActor ? 
-							Util::GetTorsoPosition(hitActor) : 
-							Util::GetRefrPosition(crosshairRefrPtr.get())
-						);
-						// The local position offset to apply is the same as 
-						// the movement offset when the crosshair is moved.
-						crosshairLocalPosOffset = 
-						crosshairLastMovementHitPosOffset = crosshairWorldPos - refrBasePos;
-						// Pitch and yaw angle diffs from the base pos to the crosshair pos,
-						// based on the selected refr's pitch/facing angles.
-						crosshairLocalPosPitchDiff = Util::NormalizeAngToPi
-						(
-							Util::GetPitchBetweenPositions(refrBasePos, crosshairWorldPos) - 
-							crosshairRefrPtr->data.angle.x
-						);
-						crosshairLocalPosYawDiff = Util::NormalizeAng0To2Pi
-						(
-							Util::GetYawBetweenPositions(refrBasePos, crosshairWorldPos) - 
-							crosshairRefrPtr->data.angle.z
-						);
-						// If no refr was selected or a new one is selected, 
-						// set the initial movement pos offset to the local offset.
-						if (!prevCrosshairRefrPtr || crosshairRefrPtr != prevCrosshairRefrPtr)
-						{
-							crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
-							// Has just selected the refr, 
-							// so no crosshair movement across it yet.
-							crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
-						}
-					}
+						hitActor ? 
+						Util::GetTorsoPosition(hitActor) : 
+						Util::GetRefrPosition(crosshairRefrPtr.get())
+					);
+					// Get updated world position by adding the stored initial
+					// movement hit pos offset to the refr's reported base position.
+					auto newBaseCrosshairWorldPos = 
+					(
+						refrBasePos + crosshairInitialMovementHitPosOffset
+					);
+					// Get corresponding screen position.
+					auto screenPos = Util::WorldToScreenPoint3(newBaseCrosshairWorldPos);
+					// Add deltas to this base screen position 
+					// to allow the crosshair to move relative to the selected refr.
+					crosshairScaleformPos.x = std::clamp
+					(
+						screenPos.x + crosshairOnRefrPixelXYDeltas.x, 0.0f, rectWidth
+					);
+					crosshairScaleformPos.y = std::clamp
+					(
+						screenPos.y + crosshairOnRefrPixelXYDeltas.y, 0.0f, rectHeight
+					);
+					crosshairScaleformPos.z = 0.0f;
 				}
-			}
-
-			// Update the crosshair speedmult to use the next frame when moving the crosshair.
-			UpdateCrosshairSpeedmult(centerResult);
-		}
-		else if (crosshairRefrPtr)
-		{
-			// Refr selected when not moving the crosshair.
-			// While not moving the crosshair, 
-			// stick the crosshair to the target until it becomes invalid.
-
-			// Check if targeted refr is still selectable and valid.
-			validCrosshairRefrHit = 
-			(
-				IsRefrValidForCrosshairSelection(crosshairRefrHandle) && 
-				Util::IsSelectableRefr(crosshairRefrPtr.get())
-			);
-			if (validCrosshairRefrHit)
-			{
-				// Update the crosshair world position using
-				// the initial local hit position and the refr's new position.
-				auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
-				const auto refrBasePos = 
-				(
-					hitActor ? 
-					Util::GetTorsoPosition(hitActor) : 
-					Util::GetRefrPosition(crosshairRefrPtr.get())
-				);
-
-				// Update local positional offset so that the crosshair stays attached
-				// to the crosshair refr at the same position 
-				// (originally set while moving the crosshair)
-				// relative to the crosshair refr's facing angle.
-				// Maintain the same last-set distance from the refr base position.
-				crosshairLocalPosOffset =
-				(
-					Util::RotationToDirectionVect
+				else
+				{
+					// Update scaleform position directly with the pixel deltas.
+					crosshairScaleformPos.x = std::clamp
 					(
-						-Util::NormalizeAngToPi
-						(
-							crosshairRefrPtr->data.angle.x + crosshairLocalPosPitchDiff
-						),
-						Util::ConvertAngle
-						(
-							Util::NormalizeAng0To2Pi
-							(
-								crosshairRefrPtr->data.angle.z + crosshairLocalPosYawDiff
-							)
-						)
-					) * 
-					crosshairLastMovementHitPosOffset.Length()
-				);
-				// Set to local pos offset, so that if the crosshair begins moving
-				// over this refr again, it will be offset relative to the last set local position.
-				crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
-				// Zero out the pixel deltas until moving the crosshair again.
-				crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
-				// Offset the base position by the new offset 
-				// to get the next crosshair world position.
-				crosshairWorldPos = refrBasePos + crosshairLocalPosOffset;
-				// Update the crosshair's scaleform position based on its new world position.
-				auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
-				crosshairScaleformPos.x = screenPos.x;
-				crosshairScaleformPos.y = screenPos.y;
-			}
-			else
-			{
-				// No longer valid, time to reset data.
-				// Set previous refr handle.
-				prevCrosshairRefrHandle = crosshairRefrHandle;
-				// Clear out selected actor, refr, and initial hit local position.
-				// Then set pixel deltas to 0.
+						crosshairScaleformPos.x + pixelDeltas.x, 0.0f, rectWidth
+					);
+					crosshairScaleformPos.y = std::clamp
+					(
+						crosshairScaleformPos.y + pixelDeltas.y, 0.0f, rectHeight
+					);
+					crosshairScaleformPos.z = 0.0f;
+				}
+
+				// Clear selected actor and crosshair refr
+				// before checking for raycast/proximity refr hits below.
 				selectedTargetActorHandle = RE::ActorHandle();
 				crosshairRefrHandle = RE::ObjectRefHandle();
-				crosshairLocalPosOffset = 
-				crosshairLastMovementHitPosOffset = 
-				crosshairInitialMovementHitPosOffset = RE::NiPoint3();
-				crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
-			}
-		}
-		else
-		{
-			// No chosen refr, so we only have to potentially update the crosshair world position.
-			// Only update the target position if the player's crosshair 
-			// isn't fully faded or re-centered.
-			bool isActive = 
-			(
-				(
-					!Settings::vbRecenterInactiveCrosshair[playerID] &&
-					!Settings::vbFadeInactiveCrosshair[playerID]
-				) ||
-				(
-					Util::GetElapsedSeconds(p->crosshairLastActiveTP) < 
-					Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-				)
-			);
-			if (isActive)
-			{
+
 				// Calculate near and far plane world positions for the current scaleform position.
 				glm::mat4 pvMat{ };
 				// Transpose first.
@@ -9368,24 +9211,24 @@ namespace ALYSLC
 				pvMat[3][3] = niCamPtr->worldToCam[3][3];
 				// Then invert.
 				auto invPVMat = glm::inverse(pvMat);
-				// Causes crosshair jitter if the Z component is set to +-1,
+				// Causes crosshair jitter if the Z component is set to +-1, 
 				// so they're set reasonably close to those values instead.
 				glm::vec4 clipSpacePosNear = glm::vec4
 				(
-					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
-					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
-					-0.999999f,
+					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f, 
+					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f), 
+					-0.999999f, 
 					1.0f
 				);
 				glm::vec4 clipSpacePosFar = glm::vec4
 				(
-					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
-					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
-					0.999999f,
+					crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f, 
+					1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f), 
+					0.999999f, 
 					1.0f
 				);
-				// Derive world positions using the inverted projection view matrix 
-				// and the clip space vectors.
+				// Derive world positions using the inverted projection view matrix
+				// and the clip space near/far vectors.
 				glm::vec4 worldPosNear = (invPVMat * clipSpacePosNear);
 				glm::vec4 worldPosFar = (invPVMat * clipSpacePosFar);
 				worldPosNear /= worldPosNear.w;
@@ -9395,15 +9238,230 @@ namespace ALYSLC
 				crosshairWorldPos = ToNiPoint3(worldPosFar);
 				// Raycast for selectable refrs. Get all hits from near to far plane points.
 				auto results = Raycast::GetAllHavokCastHitResults(worldPosNear, worldPosFar);
-				// Get a valid result that does not have to contain a selectable refr.
+				// Pick a hit result with a potentially-selectable refr.
 				Raycast::RayResult centerResult = PickRaycastHitResult
 				(
-					results, glob.isInCoopCombat, false
+					results, glob.isInCoopCombat, true
 				);
-				// Set crosshair world position on hit.
+				// Clear valid flag since we'll be updating it below if the chosen hit was valid.
+				validCrosshairRefrHit = false;
+				// Only need to check the result if it has a hit.
 				if (centerResult.hit)
 				{
+					// Update crosshair world pos, regardless of whether or not 
+					// the raycast hits anything selectable.
 					crosshairWorldPos = ToNiPoint3(centerResult.hitPos);
+					if (Util::HandleIsValid(centerResult.hitRefrHandle))
+					{
+						// Must be valid for selection.
+						validCrosshairRefrHit = IsRefrValidForCrosshairSelection
+						(
+							centerResult.hitRefrHandle
+						); 
+						if (validCrosshairRefrHit)
+						{
+							// Set crosshair refr handle.
+							crosshairRefrHandle = centerResult.hitRefrHandle;
+							crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
+							auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
+							// Set selected actor handle if the hit refr is an actor.
+							if (hitActor)
+							{
+								selectedTargetActorHandle = hitActor->GetHandle();
+							}
+					
+							const auto refrBasePos = 
+							(
+								hitActor ? 
+								Util::GetTorsoPosition(hitActor) : 
+								Util::GetRefrPosition(crosshairRefrPtr.get())
+							);
+							// The local position offset to apply is the same as 
+							// the movement offset when the crosshair is moved.
+							crosshairLocalPosOffset = 
+							crosshairLastMovementHitPosOffset = crosshairWorldPos - refrBasePos;
+							// Pitch and yaw angle diffs from the base pos to the crosshair pos,
+							// based on the selected refr's pitch/facing angles.
+							crosshairLocalPosPitchDiff = Util::NormalizeAngToPi
+							(
+								Util::GetPitchBetweenPositions(refrBasePos, crosshairWorldPos) - 
+								crosshairRefrPtr->data.angle.x
+							);
+							crosshairLocalPosYawDiff = Util::NormalizeAng0To2Pi
+							(
+								Util::GetYawBetweenPositions(refrBasePos, crosshairWorldPos) - 
+								crosshairRefrPtr->data.angle.z
+							);
+							// If no refr was selected or a new one is selected, 
+							// set the initial movement pos offset to the local offset.
+							if (!prevCrosshairRefrPtr || crosshairRefrPtr != prevCrosshairRefrPtr)
+							{
+								crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
+								// Has just selected the refr, 
+								// so no crosshair movement across it yet.
+								crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+							}
+						}
+					}
+				}
+
+				// Update the crosshair speedmult to use the next frame when moving the crosshair.
+				UpdateCrosshairSpeedmult(centerResult);
+			}
+			else if (crosshairRefrPtr)
+			{
+				// Refr selected when not moving the crosshair.
+				// While not moving the crosshair, 
+				// stick the crosshair to the target until it becomes invalid.
+
+				// Check if targeted refr is still selectable and valid.
+				validCrosshairRefrHit = 
+				(
+					IsRefrValidForCrosshairSelection(crosshairRefrHandle) && 
+					Util::IsSelectableRefr(crosshairRefrPtr.get())
+				);
+				if (validCrosshairRefrHit)
+				{
+					// Update the crosshair world position using
+					// the initial local hit position and the refr's new position.
+					auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
+					const auto refrBasePos = 
+					(
+						hitActor ? 
+						Util::GetTorsoPosition(hitActor) : 
+						Util::GetRefrPosition(crosshairRefrPtr.get())
+					);
+
+					// Update local positional offset so that the crosshair stays attached
+					// to the crosshair refr at the same position 
+					// (originally set while moving the crosshair)
+					// relative to the crosshair refr's facing angle.
+					// Maintain the same last-set distance from the refr base position.
+					crosshairLocalPosOffset =
+					(
+						Util::RotationToDirectionVect
+						(
+							-Util::NormalizeAngToPi
+							(
+								crosshairRefrPtr->data.angle.x + crosshairLocalPosPitchDiff
+							),
+							Util::ConvertAngle
+							(
+								Util::NormalizeAng0To2Pi
+								(
+									crosshairRefrPtr->data.angle.z + crosshairLocalPosYawDiff
+								)
+							)
+						) * 
+						crosshairLastMovementHitPosOffset.Length()
+					);
+					// Set to local pos offset, so that if the crosshair begins moving
+					// over this refr again, it will be offset relative to 
+					// the last set local position.
+					crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
+					// Zero out the pixel deltas until moving the crosshair again.
+					crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+					// Offset the base position by the new offset 
+					// to get the next crosshair world position.
+					crosshairWorldPos = refrBasePos + crosshairLocalPosOffset;
+					// Update the crosshair's scaleform position based on its new world position.
+					auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
+					crosshairScaleformPos.x = screenPos.x;
+					crosshairScaleformPos.y = screenPos.y;
+				}
+				else
+				{
+					// No longer valid, time to reset data.
+					// Set previous refr handle.
+					prevCrosshairRefrHandle = crosshairRefrHandle;
+					// Clear out selected actor, refr, and initial hit local position.
+					// Then set pixel deltas to 0.
+					selectedTargetActorHandle = RE::ActorHandle();
+					crosshairRefrHandle = RE::ObjectRefHandle();
+					crosshairLocalPosOffset = 
+					crosshairLastMovementHitPosOffset = 
+					crosshairInitialMovementHitPosOffset = RE::NiPoint3();
+					crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+				}
+			}
+			else
+			{
+				// No chosen refr, so we only have to potentially update 
+				// the crosshair world position.
+				// Only update the target position if the player's crosshair 
+				// isn't fully faded or re-centered.
+				bool isActive = 
+				(
+					(
+						!Settings::vbRecenterInactiveCrosshair[playerID] &&
+						!Settings::vbFadeInactiveCrosshair[playerID]
+					) ||
+					(
+						Util::GetElapsedSeconds(p->crosshairLastActiveTP) < 
+						Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+					)
+				);
+				if (isActive)
+				{
+					// Calculate near and far plane world positions 
+					// for the current scaleform position.
+					glm::mat4 pvMat{ };
+					// Transpose first.
+					pvMat[0][0] = niCamPtr->worldToCam[0][0];
+					pvMat[1][0] = niCamPtr->worldToCam[0][1];
+					pvMat[2][0] = niCamPtr->worldToCam[0][2];
+					pvMat[3][0] = niCamPtr->worldToCam[0][3];
+					pvMat[0][1] = niCamPtr->worldToCam[1][0];
+					pvMat[1][1] = niCamPtr->worldToCam[1][1];
+					pvMat[2][1] = niCamPtr->worldToCam[1][2];
+					pvMat[3][1] = niCamPtr->worldToCam[1][3];
+					pvMat[0][2] = niCamPtr->worldToCam[2][0];
+					pvMat[1][2] = niCamPtr->worldToCam[2][1];
+					pvMat[2][2] = niCamPtr->worldToCam[2][2];
+					pvMat[3][2] = niCamPtr->worldToCam[2][3];
+					pvMat[0][3] = niCamPtr->worldToCam[3][0];
+					pvMat[1][3] = niCamPtr->worldToCam[3][1];
+					pvMat[2][3] = niCamPtr->worldToCam[3][2];
+					pvMat[3][3] = niCamPtr->worldToCam[3][3];
+					// Then invert.
+					auto invPVMat = glm::inverse(pvMat);
+					// Causes crosshair jitter if the Z component is set to +-1,
+					// so they're set reasonably close to those values instead.
+					glm::vec4 clipSpacePosNear = glm::vec4
+					(
+						crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
+						1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
+						-0.999999f,
+						1.0f
+					);
+					glm::vec4 clipSpacePosFar = glm::vec4
+					(
+						crosshairScaleformPos.x / (rectWidth * 0.5f) - 1.0f,
+						1.0f - crosshairScaleformPos.y / (rectHeight * 0.5f),
+						0.999999f,
+						1.0f
+					);
+					// Derive world positions using the inverted projection view matrix 
+					// and the clip space vectors.
+					glm::vec4 worldPosNear = (invPVMat * clipSpacePosNear);
+					glm::vec4 worldPosFar = (invPVMat * clipSpacePosFar);
+					worldPosNear /= worldPosNear.w;
+					worldPosFar /= worldPosFar.w;
+
+					// Set initial crosshair world position to the far plane point.
+					crosshairWorldPos = ToNiPoint3(worldPosFar);
+					// Raycast for selectable refrs. Get all hits from near to far plane points.
+					auto results = Raycast::GetAllHavokCastHitResults(worldPosNear, worldPosFar);
+					// Get a valid result that does not have to contain a selectable refr.
+					Raycast::RayResult centerResult = PickRaycastHitResult
+					(
+						results, glob.isInCoopCombat, false
+					);
+					// Set crosshair world position on hit.
+					if (centerResult.hit)
+					{
+						crosshairWorldPos = ToNiPoint3(centerResult.hitPos);
+					}
 				}
 			}
 		}
@@ -9446,10 +9504,17 @@ namespace ALYSLC
 		// The crosshair is considered active when on a target, when the player is facing a target, 
 		// when moving the crosshair, when selecting a new target, 
 		// or when first hitting the edge of the screen.
-		if ((crosshairRefrPtr) ||
-			(isMovingCrosshair || p->mm->reqFaceTarget) ||	
-			(crosshairRefrPtr != prevCrosshairRefrPtr) ||
-			(scaleformPosOnEdgeOfScreen && !prevScaleformPosOnEdgeOfScreen))
+		bool isActive = 
+		(
+			(crosshairFreeAimActive) &&
+			(
+				(crosshairRefrPtr) ||
+				(isMovingCrosshair || p->mm->reqFaceTarget) ||	
+				(crosshairRefrPtr != prevCrosshairRefrPtr) ||
+				(scaleformPosOnEdgeOfScreen && !prevScaleformPosOnEdgeOfScreen)
+			)
+		);
+		if (isActive)
 		{
 			p->crosshairLastActiveTP = SteadyClock::now();
 		}
@@ -9460,10 +9525,17 @@ namespace ALYSLC
 		if (Settings::vbRecenterInactiveCrosshair[playerID])
 		{
 			float secsSinceActive = Util::GetElapsedSeconds(p->crosshairLastActiveTP);
-			if (!crosshairRefrPtr &&
-				!isMovingCrosshair && 
-				!p->mm->reqFaceTarget &&
-				secsSinceActive > Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID])
+			bool shouldRecenter = 
+			(
+				(!crosshairFreeAimActive) ||	
+				(
+					!crosshairRefrPtr &&
+					!isMovingCrosshair && 
+					!p->mm->reqFaceTarget &&
+					secsSinceActive > Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+				)
+			);
+			if (shouldRecenter)
 			{
 				// Offset left or right about the center of the screen based on player index.
 				float targetPosX = 
@@ -11288,7 +11360,10 @@ namespace ALYSLC
 			);
 			bool noTargetAndMovingCrosshair = 
 			(
-				!targetRefrPtr && a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
+				!targetRefrPtr &&
+				a_p->tm->crosshairFreeAimActive &&
+				a_p->mm->reqFaceTarget &&
+				a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 			);
 			if (noTargetAndMovingCrosshair ||
 				tooLongToReach ||

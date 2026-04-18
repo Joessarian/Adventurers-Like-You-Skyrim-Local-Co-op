@@ -437,7 +437,8 @@ namespace ALYSLC
 		// Update cached equip state and Favorites Menu item entries based on 
 		// what items the player has equipped.
 		void RefreshFavoritesMenuEquipState();
-
+		
+		// UNUSED FOR NOW.
 		// Update cached equip state and Magic Menu item entries based on 
 		// what magic the player has equipped.
 		void RefreshMagicMenuEquipState();
@@ -454,7 +455,8 @@ namespace ALYSLC
 		// the device, event name to send, input id code, context, value, and held time.
 		// This data is used to create emulated P1 input events to send.
 		bool SetEmulatedInputEventInfo(const uint32_t& a_xMask, MenuBindInfo& a_bindInfoOut);
-
+		
+		// UNUSED FOR NOW.
 		// Set a list of all P1's known magic forms.
 		void SetMagicMenuFormsList();
 

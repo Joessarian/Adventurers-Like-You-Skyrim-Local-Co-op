@@ -30,11 +30,8 @@ Function SendCoopPlayerHome()
 
     ; Spawn portal and set shaders.
     AbsorbCompanionShader.Play(PlayerRef, 1.0)
-    ;UsePortalShader.Play(Self, 1.0)
     Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
     Self.MoveToMyEditorLocation()
-    ; Self.Resurrect()
-    ; Self.ResetHealthAndLimbs()
     ALYSLC.Log("[CCA SCRIPT] Sent " + Self.GetDisplayName() + " home.")
 EndFunction
 
@@ -58,8 +55,8 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Self.GetDisplayName() != NewName && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on name change to " + NewName + " for " + Self.GetName() + ".")
-            ALYSLC.Wait(0.1)
-            SecondsWaited += 0.1
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
@@ -80,8 +77,8 @@ Function SetCustomizationOptions()
         ; Have to wait for message box prompt to open.
         SecondsWaited = 0.0
         While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
-            ALYSLC.Wait(0.1)
-            SecondsWaited += 0.1
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
         EndWhile
 
         ; Once open, wait until closed.
@@ -93,8 +90,8 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Base.GetClass() != NewClass && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on class change to " + NewClass + " for " + Self.GetName() + ".")
-            ALYSLC.Wait(0.1)
-            SecondsWaited += 0.1
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
@@ -145,8 +142,8 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Base.GetVoiceType() != NewVoiceType && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on voice type change to " + NewVoiceType + " for " + Self.GetName() + ".")
-            ALYSLC.Wait(0.1)
-            SecondsWaited += 0.1
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
@@ -162,8 +159,8 @@ Function SetCustomizationOptions()
         SecondsWaited = 0.0
         While (Base.GetWeight() != NewWeight && SecondsWaited < TimeoutSeconds)
             ALYSLC.Log("[CCA SCRIPT] Waiting on weight change to " + NewWeight + " for " + Self.GetName() + ".")
-            ALYSLC.Wait(0.1)
-            SecondsWaited += 0.1
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
@@ -175,126 +172,3 @@ Function SetCustomizationOptions()
     ALYSLC.Log("[CCA SCRIPT] Set height.")
     Self.SetScale(StorageUtil.GetFloatValue(Self, "ALYSLC_HeightMultiplier", 1.0))
 EndFunction
-
-; Event sent to all co-op players when a co-op player is dismissed
-; or when player 1 dies.
-Event OnCoopEnd(Form akCompanion, Int aiPlayerID)
-    PlayerID = aiPlayerID
-    ALYSLC.Log("[CCA SCRIPT] OnCoopEnd for " + Self.GetDisplayName() + " player ID " + PlayerID)
-    ; Make sure the companion being dismissed is self.
-    If (akCompanion as ObjectReference == Self)
-        CompletedLoad = False
-        SendCoopPlayerHome()
-        ALYSLC.Log("[CCA SCRIPT] Co-op player " + Self.GetDisplayName() + " has returned to their home universe.")
-    EndIf
-EndEvent
-
-; Re-equip all objects equipped before the last dismissal.
-; Done post-summoning due to the game's tendency to equip default/optimal
-; gear after the co-op companion is disabled and enabled or resurrected.
-Event OnCoopStart(Form akCoopPlayer)
-    ALYSLC.Log("[CCA SCRIPT] OnCoopStart " + Self.GetDisplayName())
-    If (Self.GetFormID() == akCoopPlayer.GetFormID() && StorageUtil.GetIntValue(None, "ALYSLC_CoopStarted", -1) == 0)
-        ALYSLC.Log("[CCA SCRIPT] Before initializing")
-        StorageUtil.FormListAdd(None, "ALYSLC_CompanionScripts", Self)
-        CompletedLoad = False
-        ; Get co-op session specific data for the player.
-        DeviceID = StorageUtil.GetIntValue(Self, "ALYSLC_DeviceID",  -1)
-        PlayerID = StorageUtil.GetIntValue(Self, "ALYSLC_PlayerID",  -1)
-        If (DeviceID == -1)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s device ID is invalid or not found. Please inform the mod author of his stupidity.")
-        EndIf
-
-        If (PlayerID == -1)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: " + Self.GetDisplayName() + "'s player ID is invalid or not found. Please inform the mod author of his stupidity.")
-        EndIf
-
-        CoopPlayerKeyword = StorageUtil.GetFormValue(None, "ALYSLC_CoopPlayer" + PO3_SKSEFunctions.IntToString(PlayerID + 1, False) + "Keyword") as Keyword
-        FormID = PO3_SKSEFunctions.IntToString(Self.GetFormID(), True)
-
-        Float PreviousHP = Self.GetActorValue("Health")
-        ; Spawn in portal.
-        Self.PlaceAtMe(CoopSummonPortal.GetBaseObject())
-        Self.Enable(True)
-        
-        ; Reset equip state before performing the reset of the initialization.
-        Form LHObj = Self.GetEquippedObject(0)
-        Form RHObj = Self.GetEquippedObject(1)
-        Bool HasLHObjEquipped = LHObj
-        Bool HasRHObjEquipped = RHObj
-        If (HasLHObjEquipped)
-            If (LHObj as Spell)
-                Self.UnequipSpell(LHObj as Spell, 0)
-            Else
-                Self.UnequipItemEx(LHObj, 2, False)
-            EndIf
-            ALYSLC.Wait(0.1)
-        EndIf
-
-        If (HasRHObjEquipped)
-            If (RHObj as Spell)
-                Self.UnequipSpell(RHObj as Spell, 1)
-            Else
-                Self.UnequipItemEx(RHObj, 1, False)
-            EndIf
-            ALYSLC.Wait(0.1)
-        EndIf
-
-        Self.Disable()
-        While (Self.IsEnabled())
-            ALYSLC.Wait(0.1)
-        EndWhile
-        ALYSLC.Wait(0.1)
-
-        Self.Enable(True)
-        While (!Self.IsEnabled())
-            ALYSLC.Wait(0.1)
-        EndWhile
-        
-        ALYSLC.Wait(0.1)
-        If (HasLHObjEquipped)
-            If (LHObj as Spell)
-                Self.EquipSpell(LHObj as Spell, 0)
-            Else
-                Self.EquipItemEx(LHObj, 2, False, False)
-            EndIf
-            ALYSLC.Wait(0.1)
-        EndIf
-
-        If (HasRHObjEquipped)
-            If (RHObj as Spell)
-                Self.EquipSpell(RHObj as Spell, 1)
-            Else
-                Self.EquipItemEx(RHObj, 1, False, False)
-            EndIf
-        EndIf
-
-        Self.SetDontMove(False)
-        PO3_SKSEFunctions.AddKeywordToRef(Self, CoopPlayerKeyword)
-        ALYSLC.Log(Self.GetDisplayName() + "'s player keyword is: " + CoopPlayerKeyword)
-
-        Self.SetRelationshipRank(PlayerRef as Actor, 3)
-        (PlayerRef as Actor).SetRelationshipRank(Self, 3)
-        ; Clear target.
-        Self.ClearLookAt()
-        ; Stop combat.
-        Self.StopCombat()
-        ; Ensure that the player actor will not cower when threatened.
-        Self.SetActorValue("Aggression", 0.0)
-        Self.SetActorValue("Confidence", 4.0)
-        Self.SetHeadTracking(True)
-        ReEquipShader.Stop(Self)
-        Self.SetAlpha(1.0, True)
-
-        StorageUtil.SetFormValue(None, "ALYSLC_CCAScript" + FormID, Self)
-        ALYSLC.Log("[CCA SCRIPT] Done initializing")
-        ; Set customization options.
-        SetCustomizationOptions()
-        ;PO3_SKSEFunctions.StopAllShaders(Self)
-        ;Self.Resurrect()
-        CompletedLoad = True
-        ALYSLC.Log("[CCA SCRIPT] Completed load for " + Self.GetDisplayName())
-    Else
-      ALYSLC.LogError("[CCA SCRIPT] ERR: Co-op not started or not the target co-op player for this event.")
-    EndIf
-EndEvent

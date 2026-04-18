@@ -1,11 +1,10 @@
 ; Handles initialization of co-op entities and co-op state variables each time a save is loaded.
 Scriptname __ALYSLC_InitializeCoop extends Quest  
 Actor Property PlayerRef Auto
-EffectShader Property AbsorbCompanionShader Auto
+Actor[] Property CompanionPlayerCharactersList Auto
 GlobalVariable Property CanStartCoopGlobVar Auto
 GlobalVariable Property CoopIsSummoningPlayers Auto
 Keyword[] Property CoopPlayerKeywords Auto
-ObjectReference Property CoopSummonExitPortal Auto
 ReferenceAlias Property Player1ReferenceAlias Auto
 ; Maximum time to wait for players to move back to their editor location.
 Float Property MAX_WAIT_TIME_SECS = 2.0 AutoReadOnly
@@ -23,22 +22,19 @@ Function Init()
 	ALYSLC.Log("[INIT SCRIPT] Starting cleanup...")
 	If (!Player1ReferenceAlias)
 		Debug.MessageBox("[ALYSLC]\nP1 reference alias is invalid. Aborting. Please notify the mod author of his incompetence.")
-		ALYSLC.Log("[INIT SCRIPT] P1 ref alias is invalid. Cannot start co-op. Aborting.")
+		ALYSLC.LogError("[INIT SCRIPT] P1 ref alias is invalid. Cannot start co-op. Aborting.")
 		Return
 	EndIf
 
 	; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
-	Float SecsWaited = 0.0
-	While (!PlayerRef && SecsWaited < 2.0)
+	If (!PlayerRef)
 		ALYSLC.Log("[INIT SCRIPT] P1 invalid; attempting to get P1 again.")
 		PlayerRef = Game.GetPlayer()
-		ALYSLC.Wait(0.1)
-		SecsWaited += 0.1
-	EndWhile
+	EndIf
 	
 	If (PlayerRef != Game.GetPlayer())
 		Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot initialize co-op data.")
-		ALYSLC.LogError("[INIT SCRIPT] Critical Error: P1's actor is invalid. Cannot initialize co-op data. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+		ALYSLC.LogError("[INIT SCRIPT] Critical Error: P1's actor is invalid. Cannot initialize co-op data.")
 		Return
 	EndIf
 
@@ -51,10 +47,6 @@ Function Init()
 	PlayerRef.ModActorValue("CarryWeight" , 0.01)
 	PlayerRef.SetActorValue("WeaponSpeedMult", 0.0)
 	PlayerRef.SetActorValue("attackDamageMult", 1.0)
-	
-	; Also remove the essential flag, just in case it was set during co-op if the revive
-	; system is enabled.
-	;PlayerRef.GetActorBase().SetEssential(False)
 
 	; Ensure that the camera is reset to default.
 	; If cam target was somehow set to another actor when saving,
@@ -65,88 +57,34 @@ Function Init()
 	Game.SetPlayerAIDriven(False)
 	Game.SetCameraTarget(PlayerRef)
 	Game.EnablePlayerControls()
-	ALYSLC.Wait(0.5)
+	ALYSLC.Wait(0.25)
 
 	; Weird crashes sometimes occur if any loaded co-op entity does not have collision enabled 
 	; when the the game loads in.
 	ALYSLC.EnableCoopEntityCollision()
-	; Indicate that co-op session is over and 
-	; pause listener threads for refresh if needed.
+	; Indicate that co-op session is over and pause player managers for refresh if needed.
 	ALYSLC.SignalWaitForUpdate(True)
 
-	;!!! Could cause crashes later on. Remove if crashing on save load. !!!
-	Int KIter = 0
-	While (KIter < 4)
-		If (PlayerRef.HasKeyword(CoopPlayerKeywords[KIter]))
-			ALYSLC.Log("[INIT SCRIPT] " + PlayerRef.GetDisplayName() + ": Removing keyword " + CoopPlayerKeywords[KIter].GetString())
-			PO3_SKSEFunctions.RemoveKeywordFromRef(PlayerRef, CoopPlayerKeywords[KIter])
-		EndIf
-		KIter += 1
-	EndWhile
-
-	Game.SetCameraTarget(PlayerRef)
-	; Remove straggling co-op companions and their COSs and force resummoning when out of combat.
-	; Done to prevent save scumming during difficult combat encounters.
-	Actor[] CompanionPlayerCharactersList = ALYSLC.GetCompanionPlayerCharacters()
+	; Remove straggling co-op companions and force resummoning.
 	Float WaitTimeElapsed = 0.0
 	Int Iter = 0
 	ALYSLC.Log("[INIT SCRIPT] " + CompanionPlayerCharactersList.Length + " default companion player characters.")
 	While (Iter < CompanionPlayerCharactersList.Length)
 		If (CompanionPlayerCharactersList[Iter])
-			ObjectReference CompanionTemp = CompanionPlayerCharactersList[Iter] as ObjectReference
-			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + " (" + CompanionPlayerCharactersList[Iter].GetDisplayName() + ", " +PO3_SKSEFunctions.IntToString(CompanionTemp.GetFormID(), True) + "): at index " + Iter)
-			If (!CompanionTemp)
-				ALYSLC.LogError("[INIT SCRIPT] ERR: Companion at index " + Iter + " is invalid.")
-			EndIf
-
-			KIter = 0
-			While (KIter < 4)
-				If (CompanionTemp.HasKeyword(CoopPlayerKeywords[KIter]))
-					ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": Removing keyword " + CoopPlayerKeywords[KIter].GetString())
-					PO3_SKSEFunctions.RemoveKeywordFromRef(CompanionTemp, CoopPlayerKeywords[KIter])
-				EndIf
-				KIter += 1
-			EndWhile
-
-			While (!CoopSummonExitPortal)
-				ALYSLC.Wait(0.5)
-			EndWhile
-
+			Actor CompanionTemp = CompanionPlayerCharactersList[Iter] as Actor
+			ALYSLC.Log("[INIT SCRIPT] " + CompanionTemp.GetDisplayName() + ": at index " + Iter)
 			If (CompanionTemp.Is3DLoaded())
-				CompanionTemp.PlaceAtMe(CoopSummonExitPortal.GetBaseObject())
-				ALYSLC.Wait(0.25)
-				AbsorbCompanionShader.Play(PlayerRef, 1.0)
-				CompanionTemp.MoveToMyEditorLocation()
+				ALYSLC.TeleportToP1OrAway(CompanionTemp, False)
+				ALYSLC.Log("[INIT SCRIPT] Sent " + CompanionTemp.GetDisplayName() + " to editor location.")
 			EndIf
-
-			ALYSLC.Log("[INIT SCRIPT] About to move " + CompanionTemp.GetDisplayName() + " away.")
-			WaitTimeElapsed = 0.0
-			While (CompanionTemp.Is3DLoaded() && WaitTimeElapsed < MAX_WAIT_TIME_SECS)
-				ALYSLC.Log("[INIT SCRIPT] I AM A PATIENT BOY. I WAIT. I WAIT. I WAIT. I WAIT.")
-				CompanionTemp.MoveToMyEditorLocation()
-				ALYSLC.Wait(0.25)
-				WaitTimeElapsed += 0.25
-			EndWhile
-			ALYSLC.Log("[INIT SCRIPT] Sent " + CompanionTemp.GetDisplayName() + " to editor location.")
-		Else
-			ALYSLC.LogError("[INIT SCRIPT] ERR: No companion player character at index " + Iter + ": " + CompanionPlayerCharactersList[Iter].GetDisplayName())
 		EndIf
 
 		Iter += 1
 	EndWhile
-	
-	; Reset global formlists and values
-	StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
-	StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
-	
-	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer1Keyword", CoopPlayerKeywords[0])
-	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer2Keyword", CoopPlayerKeywords[1])
-	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer3Keyword", CoopPlayerKeywords[2])
-	StorageUtil.SetFormValue(None, "ALYSLC_CoopPlayer4Keyword", CoopPlayerKeywords[3])
 
-	StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", 0)
+	; Reset global formlists and values
+	StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
 	StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
-	StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
 
 	ALYSLC.Wait(0.25)
 	Debug.Notification("[ALYSLC] Cleanup complete! Feel free to summon co-op companions.")

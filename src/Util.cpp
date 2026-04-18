@@ -2269,6 +2269,52 @@ namespace ALYSLC
 			return thumbstickEvent;
 		}
 
+		void DespawnLingeringSummons()
+		{
+			// Despawn lingering summoned temp actors on load. The game fails to do this frequently
+			// and may be a result of moving the player away not long after the save loads.
+			// Particularly for companion players' summons, since their lifetime is ignored
+			// after loading a save where they were present. 
+			// And players can summon another actor in addition to the lingering summon, 
+			// allowing for multiple summons without perk progression.
+
+			auto procLists = RE::ProcessLists::GetSingleton();
+			if (!procLists)
+			{
+				return;
+			}
+
+			for (const auto handle : procLists->highActorHandles)
+			{
+				auto actorPtr = Util::GetActorPtrFromHandle(handle);
+				if (!actorPtr)
+				{
+					continue;
+				}
+
+				if (actorPtr->IsCommandedActor())
+				{
+					const auto commander = actorPtr->GetCommandingActor();
+					SPDLOG_DEBUG
+					(
+						"{} (0x{:X}) is a commanded actor. Summoner: {}. Is temp: {}.",
+						actorPtr->GetName(), actorPtr->formID, 
+						commander ? 
+						commander->GetName() :
+						"NONE",
+						(actorPtr->formID & 0xFF000000) == 0xFF000000
+					);
+					if (GlobalCoopData::IsCoopCharacter(commander) && 
+						(actorPtr->formID & 0xFF000000) == 0xFF000000)
+					{
+						actorPtr->KillImmediate();
+						actorPtr->Disable();
+						actorPtr->SetDelete(true);
+					}
+				}
+			}
+		}
+
 		void EnableCollisionForActor(RE::Actor* a_actor)
 		{
 			// Enable collisions for the given actor by setting their collision layer to 'Biped'.
@@ -8598,15 +8644,14 @@ namespace ALYSLC
 
 			// Reset AI driven if this func is called 
 			// when outside of co-op or if P1's managers are not active.
-			bool shouldResetAIDriven = 
-			{
-				!glob.coopSessionActive || 
-				!glob.coopPlayers[0]->IsRunning()
-			};
+			bool shouldResetAIDriven = !glob.coopSessionActive || !glob.coopPlayers[0]->IsRunning();
+			SPDLOG_DEBUG("Set: {}, should reset: {}. Current value: {}.",
+				a_shouldSet, shouldResetAIDriven, p1->movementController->controlsDriven);
 			if (shouldResetAIDriven)
 			{
+				bool wasAIDriven = !p1->movementController->controlsDriven;
 				p1->SetAIDriven(false);
-				return true;
+				return wasAIDriven;
 			}
 
 			// Reset/set if different from the current value.

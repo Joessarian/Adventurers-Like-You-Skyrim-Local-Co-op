@@ -127,7 +127,6 @@ namespace ALYSLC
 		{
 			if (openedMenuType == SupportedMenu::kMagic)
 			{
-				RefreshMagicMenuEquipState();
 				shouldRefreshMenu = true;
 			}
 			else if (openedMenuType == SupportedMenu::kFavorites)
@@ -2292,14 +2291,10 @@ namespace ALYSLC
 			{
 				if (spellFavoriteStatusChanged)
 				{
+					const auto& p = glob.coopPlayers[managerMenuPID];
 					// Have to set cyclable favorited spells
 					// after a spell is favorited/unfavorited.
-					RefreshCyclableSpells();
-					// Equip "carets" get cleared, 
-					// so we have to update the equip state when (un)favoriting.
-					RefreshMagicMenuEquipState();
-					shouldRefreshMenu = true;
-					spellFavoriteStatusChanged = false;
+					p->em->UpdateFavoritedFormsLists(false);
 				}
 			}
 
@@ -2332,6 +2327,7 @@ namespace ALYSLC
 		p->em->RefreshEquipState(RefreshSlots::kAll);
 		// Update menu equip state with the refreshed favorites data.
 		RefreshFavoritesMenuEquipState();
+		shouldReloadMenuEntries = false;
 		shouldRefreshMenu = true;
 	}
 
@@ -2362,10 +2358,11 @@ namespace ALYSLC
 			}
 		}
 
-		// Set selectable magic forms list first.
-		SetMagicMenuFormsList();
-		// Update magic menu equip state after.
-		RefreshMagicMenuEquipState();
+		// P1's favorited magic forms are still marked with a star 
+		// even though the MagicFavorites singleton does not include them 
+		// after we've imported the companion player's favorited magic. 
+		// Reload the entries to set the proper favorites star markers.
+		shouldReloadMenuEntries = true;
 		shouldRefreshMenu = true;
 	}
 	
@@ -4370,6 +4367,33 @@ namespace ALYSLC
 	{
 		// Handle MagicMenu input.
 		
+		auto magicFavorites = RE::MagicFavorites::GetSingleton();
+		if (magicFavorites)
+		{
+			SPDLOG_DEBUG("============================================");
+			for (const auto magForm : magicFavorites->spells)
+			{
+				if (!magForm)
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG("{}", magForm->GetName());
+			}
+		
+			uint32_t i = 0;
+			for (auto magForm : magicFavorites->hotkeys)
+			{ 
+				++i;
+				if (!magForm)
+				{
+					continue;
+				}
+
+				SPDLOG_DEBUG("#{}: {}", i, magForm->GetName());
+			}
+		}
+
 		currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 		auto ue = RE::UserEvents::GetSingleton();
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
@@ -4382,6 +4406,7 @@ namespace ALYSLC
 
 		if (a_userEvent == ue->accept)
 		{
+			shouldReloadMenuEntries = false;
 			shouldRefreshMenu = true;
 			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
@@ -4395,12 +4420,21 @@ namespace ALYSLC
 			{
 				// Remove any assigned hotkey when (un)favoriting 
 				// to prevent lingering hotkey assignments.
-				Util::ChangeFormHotkeyStatus
-				(
-					RE::PlayerCharacter::GetSingleton(), selectedForm, -1
-				);
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				bool wasFavorited = Util::IsFavorited(p1, selectedForm);
+				if (wasFavorited)
+				{
+					Util::ChangeFormHotkeyStatus
+					(
+						RE::PlayerCharacter::GetSingleton(), selectedForm, -1
+					);
+				}
+
+				//Util::ChangeFormFavoritesStatus(p1, selectedForm, !wasFavorited);
 				spellFavoriteStatusChanged = true;
+				//shouldReloadMenuEntries = true;
 				shouldRefreshMenu = true;
+				//currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 			}
 		}
 		else if (a_userEvent == ue->left || a_userEvent == ue->right)
@@ -4410,6 +4444,7 @@ namespace ALYSLC
 			// and imports P1's spell equip state. 
 			// Have to reimport the co-op companion player's equip state,
 			// but no need to refresh the cached equipped data, which has not changed.
+			shouldReloadMenuEntries = false;
 			shouldRefreshMenu = true;
 		}
 		else
@@ -4430,7 +4465,9 @@ namespace ALYSLC
 					{
 						return;
 					}
-
+					
+					shouldReloadMenuEntries = false;
+					shouldRefreshMenu = true;
 					currentMenuInputEventType = MenuInputEventType::kEquipReq;
 					fromContainerHandle = menuCoopActorHandle;
 					reqEquipIndex = EquipIndex::kRightHand;
@@ -4498,7 +4535,7 @@ namespace ALYSLC
 						// Voice slot for power/shout/any other magic.
 						reqEquipIndex = EquipIndex::kVoice;
 					}
-
+					
 					// Signal to update equip states for spells.
 					lastEquipStateRefreshReqTP = SteadyClock::now();
 				}
@@ -5083,6 +5120,7 @@ namespace ALYSLC
 
 	void MenuInputManager::RefreshMagicMenuEquipState()
 	{
+		// UNUSED FOR NOW.
 		// Refresh displayed and/or cached equip state while in the MagicMenu.
 
 		if (!magicMenu) 
@@ -5243,7 +5281,7 @@ namespace ALYSLC
 		// TBD: Figure out a more efficient way to update item lists.
 
 		auto taskInterface = SKSE::GetTaskInterface(); 
-		if ((isShowingInventory) && (containerMenu || barterMenu || giftMenu))
+		if ((magicMenu) || ((isShowingInventory) && (containerMenu || barterMenu || giftMenu)))
 		{
 			// Special case: Update equip states and can force-reload entry list
 			// if the entries count changes.
@@ -5495,6 +5533,7 @@ namespace ALYSLC
 
 	void MenuInputManager::SetMagicMenuFormsList()
 	{
+		// UNUSED FOR NOW.
 		// Set all selectable MagicMenu forms
 		// from the menu's item list.
 
@@ -5759,7 +5798,7 @@ namespace ALYSLC
 		// or the barter menu with the companion player's inventory imported onto P1.
 		bool canUpdateEntryEquipStates = 
 		(
-			(barterMenu || giftMenu) || 
+			(barterMenu || giftMenu || magicMenu) || 
 			(
 				(containerMenu) && 
 				(
@@ -5807,9 +5846,14 @@ namespace ALYSLC
 					ui->GetMenu<RE::GiftMenu>() :
 					nullptr	
 				);
-				if (!containerMenu && !barterMenu && !giftMenu)
+				auto magicMenu = 
+				(
+					glob.mim->openedMenuType == SupportedMenu::kMagic ? 
+					ui->GetMenu<RE::MagicMenu>() :
+					nullptr	
+				);
+				if (!containerMenu && !barterMenu && !giftMenu && !magicMenu)
 				{
-					SPDLOG_DEBUG("NOPE1");
 					return;
 				}
 
@@ -5821,11 +5865,12 @@ namespace ALYSLC
 					barterMenu->itemList :
 					giftMenu ?
 					giftMenu->itemList :
+					magicMenu ?
+					reinterpret_cast<RE::ItemList*>(magicMenu->unk30) :
 					nullptr
 				);
 				if (!menuEntryList)
 				{
-					SPDLOG_DEBUG("NOPE2");
 					return;
 				}
 
@@ -5837,11 +5882,12 @@ namespace ALYSLC
 					barterMenu->uiMovie :
 					giftMenu ?
 					giftMenu->uiMovie :
+					magicMenu ? 
+					magicMenu->uiMovie :
 					nullptr
 				);
 				if (!view)
 				{
-					SPDLOG_DEBUG("NOPE3");
 					return;
 				}
 
@@ -5869,240 +5915,388 @@ namespace ALYSLC
 					menuEntryList->Update();
 				}
 				
-				// Inventory on display in the menu.
-				// When the player chest's inventory is copied over to P1, 
-				// we use P1 as the inventory refr.
-				const auto menuInvRefr = 
-				(
-					glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) ? 
-					RE::PlayerCharacter::GetSingleton() :
-					p->em->inventoryChest.get()
-				);
-				const auto playerInventory = p->coopActor->GetInventory();
-				// Maps chest extra data lists to the equip state we should set for them.
-				std::unordered_map<RE::ExtraDataList*, EntryEquipState> 
-				exListToEquipStateMap{ };
-				// Since unmodified items have no extra data lists, 
-				// we cannot map entry equip state to their extra data lists 
-				// and will instead use the corresponding chest bound object.
-				std::unordered_map<RE::TESBoundObject*, EntryEquipState> 
-				unmodifiedObjToEquipStateMap{ };
-				for (const auto& [boundObj, countInvEntryPair] : playerInventory)
+				if (magicMenu)
 				{
-					if (!boundObj ||
-						countInvEntryPair.first <= 0 || 
-						!countInvEntryPair.second ||
-						!countInvEntryPair.second->extraLists)
+					auto& magicEntryList = menuEntryList->entryList;
+					RE::GFxValue numItemsGFx;
+					magicEntryList.GetMember("length", std::addressof(numItemsGFx));
+					double numItems = numItemsGFx.GetNumber();
+					for (auto i = 0; i < numItems; ++i)
 					{
-						continue;
+						RE::GFxValue entry;
+						magicEntryList.GetElement(i, std::addressof(entry));
+						RE::GFxValue newEquipState;
+						entry.GetMember("equipState", std::addressof(newEquipState));
+
+						// Get copied spells in place of equipped placeholder spells.
+						auto lhObj = p->coopActor->GetEquippedObject(true);
+						auto rhObj = p->coopActor->GetEquippedObject(false);
+						bool is2HSpell = 
+						(
+							lhObj && 
+							lhObj->As<RE::SpellItem>() && 
+							lhObj->As<RE::SpellItem>()->equipSlot == glob.bothHandsEquipSlot
+						);
+						// Set hand spells to copied spells if they are currently placeholder spells.
+						if (is2HSpell)
+						{
+							auto copied2HSpell = p->em->GetCopiedMagic(PlaceholderMagicIndex::k2H);
+							lhObj = 
+							(
+								lhObj == p->em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+								copied2HSpell : 
+								lhObj
+							);
+							rhObj = 
+							(
+								rhObj == p->em->placeholderMagic[!PlaceholderMagicIndex::k2H] ? 
+								copied2HSpell : 
+								rhObj
+							);
+						}
+						else
+						{
+							if (lhObj)
+							{
+								lhObj = 
+								(
+									lhObj == p->em->placeholderMagic[!PlaceholderMagicIndex::kLH] ?
+									p->em->GetCopiedMagic(PlaceholderMagicIndex::kLH) :
+									lhObj
+								);
+							}
+
+							if (rhObj)
+							{
+								rhObj = 
+								(
+									rhObj == p->em->placeholderMagic[!PlaceholderMagicIndex::kRH] ?
+									p->em->GetCopiedMagic(PlaceholderMagicIndex::kRH) : 
+									rhObj
+								);
+							}
+						}
+
+						auto voiceForm = p->em->equippedForms[!EquipIndex::kVoice];
+						// Set voice spell to copied spell if it is currently a placeholder spell.
+						if (voiceForm && voiceForm->Is(RE::FormType::Spell))
+						{
+							voiceForm = 
+							(
+								voiceForm == 
+								p->em->GetPlaceholderMagic(PlaceholderMagicIndex::kVoice) ?
+								p->em->GetCopiedMagic(PlaceholderMagicIndex::kVoice) : 
+								voiceForm
+							);
+						}
+
+						RE::TESForm* magForm = nullptr;
+						RE::GFxValue entryFormId{ };
+						entry.GetMember("formId", std::addressof(entryFormId));
+						uint32_t formID = 0;
+						if (entryFormId.GetNumber() != 0)
+						{
+							formID = static_cast<uint32_t>(entryFormId.GetNumber());
+						}
+						else
+						{
+							entry.GetMember("formID", std::addressof(entryFormId));
+							if (entryFormId.GetNumber() != 0)
+							{
+								formID = static_cast<uint32_t>(entryFormId.GetNumber());
+							}
+						}
+
+						if (formID != 0)
+						{
+							// Valid form found from the given FID, so insert it.
+							magForm = RE::TESForm::LookupByID(formID); 
+						}
+
+						if (!magForm)
+						{
+							auto magicItem = menuEntryList->items[i]; 
+							if (!magicItem)
+							{
+								continue;
+							}
+
+							// Second attempt. Should be unnecessary unless SKYUI is not installed.
+							// Match magic item name with known spells/shouts.
+							// Will fail when multiple known spells/shouts have the same name.
+							auto chosenMagicItemName = magicItem->data.GetName();
+							// Match spell name with one of P1's learned spells.
+							for (auto spellItem : glob.player1Actor->addedSpells)
+							{
+								if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
+								{
+									magForm = spellItem;
+									break;
+								}
+							}
+
+							auto p1ActorBase = glob.player1Actor->GetActorBase();
+							if (!p1ActorBase)
+							{
+								continue;
+							}
+
+							// Match with spells that P1 has by virtue of their actor base
+							if (auto spellList = p1ActorBase->actorEffects->spells; spellList)
+							{
+								uint32_t spellListSize = p1ActorBase->actorEffects->numSpells;
+								for (uint32_t i = 0; i < spellListSize; ++i)
+								{
+									auto spellItem = spellList[i];
+									if (strcmp(spellItem->GetName(), chosenMagicItemName) == 0)
+									{
+										magForm = spellItem;
+										break;
+									}
+								}
+							}
+
+							// Match with shouts that P1 has by virtue of their actor base.
+							if (auto shoutList = p1ActorBase->actorEffects->shouts; shoutList)
+							{
+								uint32_t shoutListSize = p1ActorBase->actorEffects->numShouts;
+								for (uint32_t i = 0; i < shoutListSize; ++i)
+								{
+									// Some unused shouts exist in P1's actor base shouts list.
+									// All have one character length names.
+									if (shoutList[i] && strlen(shoutList[i]->GetName()) > 1 && 
+										strcmp(shoutList[i]->GetName(), chosenMagicItemName) == 0)
+									{
+										magForm = shoutList[i];
+										break;
+									}
+								}
+							}
+						}
+						
+						if (!magForm)
+						{
+							SPDLOG_DEBUG("ERR: Could not find magic item at index {}.", i);
+							continue;
+						}
+
+						bool magEquippedLH = magForm == lhObj;
+						bool magEquippedRH = magForm == rhObj;
+						bool magEquippedBothH = 
+						(
+							(magEquippedLH && magEquippedRH) ||
+							(
+								magEquippedLH && 
+								lhObj && 
+								lhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
+							) ||
+							(
+								magEquippedRH &&
+								rhObj && 
+								rhObj->As<RE::BGSEquipType>()->equipSlot == glob.bothHandsEquipSlot
+							)
+						);
+						bool magEquippedVoice = magForm == voiceForm;
+
+						EntryEquipState equipState = EntryEquipState::kNone;
+						// Both hands.
+						if (magEquippedBothH)
+						{
+							SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
+							equipState = EntryEquipState::kBothHands;
+						}
+						// LH
+						else if (magEquippedLH)
+						{
+							SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
+							equipState = EntryEquipState::kLH;
+						}
+						// RH
+						else if (magEquippedRH)
+						{
+							SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
+							equipState = EntryEquipState::kRH;
+						}
+						// Voice
+						else if (magEquippedVoice)
+						{
+							SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
+							equipState = EntryEquipState::kDefault;
+						}
+						// No match or invalid
+						else
+						{
+							equipState = EntryEquipState::kNone;
+						}
+
+						// Set new equip state.
+						newEquipState.SetNumber(static_cast<double>(equipState));
+						// Apply updated entry and list.
+						entry.SetMember("equipState", newEquipState);
+						magicEntryList.SetElement(i, entry);
+						menuEntryList->view->SetVariable("entryList", magicEntryList);
 					}
 
-					// GAH! below.
-					const auto equipType = boundObj->As<RE::BGSEquipType>();
-					for (auto exDataList : *countInvEntryPair.second->extraLists)
+					// Update the magic entry list.
+					/*view->InvokeNoReturn
+					(
+						"_root.Menu_mc.inventoryLists.itemList.UpdateList", nullptr, 0
+					);
+					SPDLOG_DEBUG("Refreshed magic menu equip state.");*/
+				}
+				else
+				{
+					// Inventory on display in the menu.
+					// When the player chest's inventory is copied over to P1, 
+					// we use P1 as the inventory refr.
+					const auto menuInvRefr = 
+					(
+						glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) ? 
+						RE::PlayerCharacter::GetSingleton() :
+						p->em->inventoryChest.get()
+					);
+					const auto playerInventory = p->coopActor->GetInventory();
+					// Maps chest extra data lists to the equip state we should set for them.
+					std::unordered_map<RE::ExtraDataList*, EntryEquipState> 
+					exListToEquipStateMap{ };
+					// Since unmodified items have no extra data lists, 
+					// we cannot map entry equip state to their extra data lists 
+					// and will instead use the corresponding chest bound object.
+					std::unordered_map<RE::TESBoundObject*, EntryEquipState> 
+					unmodifiedObjToEquipStateMap{ };
+					for (const auto& [boundObj, countInvEntryPair] : playerInventory)
 					{
-						if (!exDataList)
+						if (!boundObj ||
+							countInvEntryPair.first <= 0 || 
+							!countInvEntryPair.second ||
+							!countInvEntryPair.second->extraLists)
 						{
 							continue;
 						}
 
-						auto worn = exDataList->HasType<RE::ExtraWorn>();
-						auto wornLeft = exDataList->HasType<RE::ExtraWornLeft>();
-						if (!worn && !wornLeft)
+						// GAH! below.
+						const auto equipType = boundObj->As<RE::BGSEquipType>();
+						for (auto exDataList : *countInvEntryPair.second->extraLists)
 						{
-							continue;
-						}
-
-						// Functionally equivalent to a nullptr exDataList (0 intrinsic types),
-						// indicating an unmodified item.
-						bool equivToUnmodifiedList = Util::AreIntrinsicallyEquivalentExDataLists
-						(
-							exDataList, nullptr
-						);
-						RE::ExtraDataList* matchingChestList = nullptr;
-						if (worn && wornLeft)
-						{
-							if (a_forPlayer1)
+							if (!exDataList)
 							{
-								SPDLOG_DEBUG
-								(
-									"{}: P1 list {:p} equipped in LH/RH.",
-									boundObj->GetName(),
-									equivToUnmodifiedList ? "unmodified" : "modified",
-									fmt::ptr(exDataList)
-								);
-								exListToEquipStateMap.insert
-								(
-									{ exDataList, EntryEquipState::kBothHands }
-								);
+								continue;
 							}
-							else
+
+							auto worn = exDataList->HasType<RE::ExtraWorn>();
+							auto wornLeft = exDataList->HasType<RE::ExtraWornLeft>();
+							if (!worn && !wornLeft)
 							{
-								// Prioritize matching with a list that has the corresponding 
-								// worn exRank data.
-								auto matchingChestList = Util::FindMatchingExtraDataList
-								(
-									menuInvRefr, boundObj, exDataList
-								);
-								if (!matchingChestList)
+								continue;
+							}
+
+							// Functionally equivalent to a nullptr exDataList (0 intrinsic types),
+							// indicating an unmodified item.
+							bool equivToUnmodifiedList = Util::AreIntrinsicallyEquivalentExDataLists
+							(
+								exDataList, nullptr
+							);
+							RE::ExtraDataList* matchingChestList = nullptr;
+							if (worn && wornLeft)
+							{
+								if (a_forPlayer1)
 								{
 									SPDLOG_DEBUG
 									(
-										"{}: No worn exRank matching chest list for {} "
-										"player list {:p} equipped in LH/RH. "
-										"Checking for a matching list without worn exRank data.",
+										"{}: P1 list {:p} equipped in LH/RH.",
 										boundObj->GetName(),
 										equivToUnmodifiedList ? "unmodified" : "modified",
 										fmt::ptr(exDataList)
 									);
-									matchingChestList = Util::FindMatchingExtraDataList
-									(
-										menuInvRefr, boundObj, exDataList
-									);
-								}
-
-								// Matching data, cache straight away.
-								if (matchingChestList)
-								{
-									SPDLOG_DEBUG
-									(
-										"{}: Matching chest list {:p} for {} player list {:p} "
-										"equipped in LH/RH.",
-										boundObj->GetName(),
-										fmt::ptr(matchingChestList),
-										equivToUnmodifiedList ? "unmodified" : "modified",
-										fmt::ptr(exDataList)
-									);
-									exListToEquipStateMap.insert
-									(
-										{ matchingChestList, EntryEquipState::kBothHands }
-									);
-								}
-								else
-								{
-									// Save the bound object if the same as an unmodified list.
-									if (equivToUnmodifiedList)
-									{
-										SPDLOG_DEBUG
-										(
-											"{}: No chest list for unmodified player list {:p} "
-											"equipped in LH/RH.",
-											boundObj->GetName(),
-											fmt::ptr(exDataList)
-										);
-										unmodifiedObjToEquipStateMap.insert
-										(
-											{ boundObj, EntryEquipState::kBothHands }
-										);
-									}
-									else
-									{
-										// Uh-oh, my cruddy matching game has failed.
-										// Will not show as equipped.
-										SPDLOG_DEBUG
-										(
-											"{}: MATCH FAILURE: "
-											"No chest list for modified player list {:p} "
-											"equipped in LH/RH.",
-											boundObj->GetName(),
-											fmt::ptr(exDataList)
-										);
-									}
-								}
-							}
-						}
-						else if (worn)
-						{
-							if (a_forPlayer1)
-							{
-								SPDLOG_DEBUG
-								(
-									"{}: P1 list {:p} equipped in RH/default slot.",
-									boundObj->GetName(),
-									equivToUnmodifiedList ? "unmodified" : "modified",
-									fmt::ptr(exDataList)
-								);
-								if (!equipType)
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								} 
-								else if (equipType->equipSlot == glob.bothHandsEquipSlot)
-								{
 									exListToEquipStateMap.insert
 									(
 										{ exDataList, EntryEquipState::kBothHands }
 									);
 								}
-								else if (equipType->equipSlot == glob.shieldEquipSlot)
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								}
-								else if (boundObj->As<RE::TESObjectARMO>() ||
-										 boundObj->As<RE::TESObjectARMA>())
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								}
 								else
 								{
-									auto iter = exListToEquipStateMap.find(exDataList);
-									// Already present in another hand, so change to both hands.
-									if (iter != exListToEquipStateMap.end() &&
-										iter->second == EntryEquipState::kLH)
-									{
-										iter->second = EntryEquipState::kBothHands;
-									}
-									else
-									{
-										exListToEquipStateMap.insert
-										(
-											{ exDataList, EntryEquipState::kRH }
-										);
-									}
-								}
-							}
-							else
-							{
-								// Prioritize matching with a list that has the corresponding 
-								// worn exRank data.
-								auto matchingChestList = Util::GetWornRankExtraDataList
-								(
-									menuInvRefr, boundObj, false
-								);
-								if (!matchingChestList)
-								{
-									SPDLOG_DEBUG
-									(
-										"{}: No worn exRank matching chest list for {} "
-										"player list {:p} equipped in RH/default slot. "
-										"Checking for a matching list without worn exRank data.",
-										boundObj->GetName(),
-										equivToUnmodifiedList ? "unmodified" : "modified",
-										fmt::ptr(exDataList)
-									);
-									matchingChestList = Util::FindMatchingExtraDataList
+									// Prioritize matching with a list that has the corresponding 
+									// worn exRank data.
+									auto matchingChestList = Util::FindMatchingExtraDataList
 									(
 										menuInvRefr, boundObj, exDataList
 									);
+									if (!matchingChestList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: No worn exRank matching chest list for {} "
+											"player list {:p} equipped in LH/RH. "
+											"Checking for a matching list "
+											"without worn exRank data.",
+											boundObj->GetName(),
+											equivToUnmodifiedList ? "unmodified" : "modified",
+											fmt::ptr(exDataList)
+										);
+										matchingChestList = Util::FindMatchingExtraDataList
+										(
+											menuInvRefr, boundObj, exDataList
+										);
+									}
+
+									// Matching data, cache straight away.
+									if (matchingChestList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: Matching chest list {:p} for {} player list {:p} "
+											"equipped in LH/RH.",
+											boundObj->GetName(),
+											fmt::ptr(matchingChestList),
+											equivToUnmodifiedList ? "unmodified" : "modified",
+											fmt::ptr(exDataList)
+										);
+										exListToEquipStateMap.insert
+										(
+											{ matchingChestList, EntryEquipState::kBothHands }
+										);
+									}
+									else
+									{
+										// Save the bound object if the same as an unmodified list.
+										if (equivToUnmodifiedList)
+										{
+											SPDLOG_DEBUG
+											(
+												"{}: No chest list for unmodified player list {:p} "
+												"equipped in LH/RH.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+											unmodifiedObjToEquipStateMap.insert
+											(
+												{ boundObj, EntryEquipState::kBothHands }
+											);
+										}
+										else
+										{
+											// Uh-oh, my cruddy matching game has failed.
+											// Will not show as equipped.
+											SPDLOG_DEBUG
+											(
+												"{}: MATCH FAILURE: "
+												"No chest list for modified player list {:p} "
+												"equipped in LH/RH.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+										}
+									}
 								}
-								
-								// Matching data, cache straight away.
-								if (matchingChestList)
+							}
+							else if (worn)
+							{
+								if (a_forPlayer1)
 								{
 									SPDLOG_DEBUG
 									(
-										"{}: Matching chest list {:p} for {} player list {:p} "
-										"equipped in RH/default slot.",
+										"{}: P1 list {:p} equipped in RH/default slot.",
 										boundObj->GetName(),
-										fmt::ptr(matchingChestList),
 										equivToUnmodifiedList ? "unmodified" : "modified",
 										fmt::ptr(exDataList)
 									);
@@ -6110,21 +6304,21 @@ namespace ALYSLC
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									} 
 									else if (equipType->equipSlot == glob.bothHandsEquipSlot)
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kBothHands }
+											{ exDataList, EntryEquipState::kBothHands }
 										);
 									}
 									else if (equipType->equipSlot == glob.shieldEquipSlot)
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									}
 									else if (boundObj->As<RE::TESObjectARMO>() ||
@@ -6132,12 +6326,12 @@ namespace ALYSLC
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									}
 									else
 									{
-										auto iter = exListToEquipStateMap.find(matchingChestList);
+										auto iter = exListToEquipStateMap.find(exDataList);
 										// Already present in another hand, so change to both hands.
 										if (iter != exListToEquipStateMap.end() &&
 											iter->second == EntryEquipState::kLH)
@@ -6148,178 +6342,188 @@ namespace ALYSLC
 										{
 											exListToEquipStateMap.insert
 											(
-												{ matchingChestList, EntryEquipState::kRH }
+												{ exDataList, EntryEquipState::kRH }
 											);
 										}
 									}
 								}
 								else
 								{
-									// Save the bound object if the same as an unmodified list.
-									if (equivToUnmodifiedList)
+									// Prioritize matching with a list that has the corresponding 
+									// worn exRank data.
+									auto matchingChestList = Util::GetWornRankExtraDataList
+									(
+										menuInvRefr, boundObj, false
+									);
+									if (!matchingChestList)
 									{
 										SPDLOG_DEBUG
 										(
-											"{}: No chest list for unmodified player list {:p} "
+											"{}: No worn exRank matching chest list for {} "
+											"player list {:p} equipped in RH/default slot. "
+											"Checking for a matching list "
+											"without worn exRank data.",
+											boundObj->GetName(),
+											equivToUnmodifiedList ? "unmodified" : "modified",
+											fmt::ptr(exDataList)
+										);
+										matchingChestList = Util::FindMatchingExtraDataList
+										(
+											menuInvRefr, boundObj, exDataList
+										);
+									}
+								
+									// Matching data, cache straight away.
+									if (matchingChestList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: Matching chest list {:p} for {} player list {:p} "
 											"equipped in RH/default slot.",
 											boundObj->GetName(),
+											fmt::ptr(matchingChestList),
+											equivToUnmodifiedList ? "unmodified" : "modified",
 											fmt::ptr(exDataList)
 										);
 										if (!equipType)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										} 
 										else if (equipType->equipSlot == glob.bothHandsEquipSlot)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kBothHands }
+												{ matchingChestList, EntryEquipState::kBothHands }
 											);
 										}
 										else if (equipType->equipSlot == glob.shieldEquipSlot)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										}
 										else if (boundObj->As<RE::TESObjectARMO>() ||
 												 boundObj->As<RE::TESObjectARMA>())
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										}
 										else
 										{
-											auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+											auto iter = exListToEquipStateMap.find
+											(
+												matchingChestList
+											);
 											// Already present in another hand, 
 											// so change to both hands.
-											if (iter != unmodifiedObjToEquipStateMap.end() &&
+											if (iter != exListToEquipStateMap.end() &&
 												iter->second == EntryEquipState::kLH)
 											{
 												iter->second = EntryEquipState::kBothHands;
 											}
 											else
 											{
-												unmodifiedObjToEquipStateMap.insert
+												exListToEquipStateMap.insert
 												(
-													{ boundObj, EntryEquipState::kRH }
+													{ matchingChestList, EntryEquipState::kRH }
 												);
 											}
 										}
 									}
 									else
 									{
-										// Uh-oh, my cruddy matching game has failed.
-										// Will not show as equipped.
-										SPDLOG_DEBUG
-										(
-											"{}: MATCH FAILURE: "
-											"No chest list for modified player list {:p} "
-											"equipped in RH/default slot.",
-											boundObj->GetName(),
-											fmt::ptr(exDataList)
-										);
-									}
-								}
-							}
-						}
-						else
-						{
-							if (a_forPlayer1)
-							{
-								SPDLOG_DEBUG
-								(
-									"{}: P1 list {:p} equipped in LH slot.",
-									boundObj->GetName(),
-									equivToUnmodifiedList ? "unmodified" : "modified",
-									fmt::ptr(exDataList)
-								);
-								if (!equipType)
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								} 
-								else if (equipType->equipSlot == glob.bothHandsEquipSlot)
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kBothHands }
-									);
-								}
-								else if (equipType->equipSlot == glob.shieldEquipSlot)
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								}
-								else if (boundObj->As<RE::TESObjectLIGH>())
-								{
-									exListToEquipStateMap.insert
-									(
-										{ exDataList, EntryEquipState::kDefault }
-									);
-								}
-								else
-								{
-									auto iter = exListToEquipStateMap.find(exDataList);
-									// Already present in another hand, so change to both hands.
-									if (iter != exListToEquipStateMap.end() &&
-										iter->second == EntryEquipState::kRH)
-									{
-										iter->second = EntryEquipState::kBothHands;
-									}
-									else
-									{
-										exListToEquipStateMap.insert
-										(
-											{ exDataList, EntryEquipState::kLH }
-										);
+										// Save the bound object if the same as an unmodified list.
+										if (equivToUnmodifiedList)
+										{
+											SPDLOG_DEBUG
+											(
+												"{}: No chest list for unmodified player list {:p} "
+												"equipped in RH/default slot.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+											if (!equipType)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											} 
+											else if (equipType->equipSlot == 
+													 glob.bothHandsEquipSlot)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kBothHands }
+												);
+											}
+											else if (equipType->equipSlot == glob.shieldEquipSlot)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											}
+											else if (boundObj->As<RE::TESObjectARMO>() ||
+													 boundObj->As<RE::TESObjectARMA>())
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											}
+											else
+											{
+												auto iter = unmodifiedObjToEquipStateMap.find
+												(
+													boundObj
+												);
+												// Already present in another hand, 
+												// so change to both hands.
+												if (iter != unmodifiedObjToEquipStateMap.end() &&
+													iter->second == EntryEquipState::kLH)
+												{
+													iter->second = EntryEquipState::kBothHands;
+												}
+												else
+												{
+													unmodifiedObjToEquipStateMap.insert
+													(
+														{ boundObj, EntryEquipState::kRH }
+													);
+												}
+											}
+										}
+										else
+										{
+											// Uh-oh, my cruddy matching game has failed.
+											// Will not show as equipped.
+											SPDLOG_DEBUG
+											(
+												"{}: MATCH FAILURE: "
+												"No chest list for modified player list {:p} "
+												"equipped in RH/default slot.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+										}
 									}
 								}
 							}
 							else
 							{
-								// Prioritize matching with a list that has the corresponding 
-								// worn exRank data.
-								auto matchingChestList = Util::GetWornRankExtraDataList
-								(
-									menuInvRefr, boundObj, true
-								);
-								if (!matchingChestList)
+								if (a_forPlayer1)
 								{
 									SPDLOG_DEBUG
 									(
-										"{}: No worn exRank matching chest list for {} "
-										"player list {:p} equipped in LH. "
-										"Checking for a matching list without worn exRank data.",
+										"{}: P1 list {:p} equipped in LH slot.",
 										boundObj->GetName(),
-										equivToUnmodifiedList ? "unmodified" : "modified",
-										fmt::ptr(exDataList)
-									);
-									matchingChestList = Util::FindMatchingExtraDataList
-									(
-										menuInvRefr, boundObj, exDataList
-									);
-								}
-								
-								// Matching data, cache straight away.
-								if (matchingChestList)
-								{
-									SPDLOG_DEBUG
-									(
-										"{}: Matching chest list {:p} for {} player list {:p} "
-										"equipped in LH.",
-										boundObj->GetName(),
-										fmt::ptr(matchingChestList),
 										equivToUnmodifiedList ? "unmodified" : "modified",
 										fmt::ptr(exDataList)
 									);
@@ -6327,33 +6531,33 @@ namespace ALYSLC
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									} 
 									else if (equipType->equipSlot == glob.bothHandsEquipSlot)
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kBothHands }
+											{ exDataList, EntryEquipState::kBothHands }
 										);
 									}
 									else if (equipType->equipSlot == glob.shieldEquipSlot)
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									}
 									else if (boundObj->As<RE::TESObjectLIGH>())
 									{
 										exListToEquipStateMap.insert
 										(
-											{ matchingChestList, EntryEquipState::kDefault }
+											{ exDataList, EntryEquipState::kDefault }
 										);
 									}
 									else
 									{
-										auto iter = exListToEquipStateMap.find(matchingChestList);
+										auto iter = exListToEquipStateMap.find(exDataList);
 										// Already present in another hand, so change to both hands.
 										if (iter != exListToEquipStateMap.end() &&
 											iter->second == EntryEquipState::kRH)
@@ -6364,201 +6568,298 @@ namespace ALYSLC
 										{
 											exListToEquipStateMap.insert
 											(
-												{ matchingChestList, EntryEquipState::kLH }
+												{ exDataList, EntryEquipState::kLH }
 											);
 										}
 									}
 								}
 								else
 								{
-									// Save the bound object if the same as an unmodified list.
-									if (equivToUnmodifiedList)
+									// Prioritize matching with a list that has the corresponding 
+									// worn exRank data.
+									auto matchingChestList = Util::GetWornRankExtraDataList
+									(
+										menuInvRefr, boundObj, true
+									);
+									if (!matchingChestList)
 									{
 										SPDLOG_DEBUG
 										(
-											"{}: No chest list for unmodified player list {:p} "
+											"{}: No worn exRank matching chest list for {} "
+											"player list {:p} equipped in LH. "
+											"Checking for a matching list "
+											"without worn exRank data.",
+											boundObj->GetName(),
+											equivToUnmodifiedList ? "unmodified" : "modified",
+											fmt::ptr(exDataList)
+										);
+										matchingChestList = Util::FindMatchingExtraDataList
+										(
+											menuInvRefr, boundObj, exDataList
+										);
+									}
+								
+									// Matching data, cache straight away.
+									if (matchingChestList)
+									{
+										SPDLOG_DEBUG
+										(
+											"{}: Matching chest list {:p} for {} player list {:p} "
 											"equipped in LH.",
 											boundObj->GetName(),
+											fmt::ptr(matchingChestList),
+											equivToUnmodifiedList ? "unmodified" : "modified",
 											fmt::ptr(exDataList)
 										);
 										if (!equipType)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										} 
 										else if (equipType->equipSlot == glob.bothHandsEquipSlot)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kBothHands }
+												{ matchingChestList, EntryEquipState::kBothHands }
 											);
 										}
 										else if (equipType->equipSlot == glob.shieldEquipSlot)
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										}
 										else if (boundObj->As<RE::TESObjectLIGH>())
 										{
-											unmodifiedObjToEquipStateMap.insert
+											exListToEquipStateMap.insert
 											(
-												{ boundObj, EntryEquipState::kDefault }
+												{ matchingChestList, EntryEquipState::kDefault }
 											);
 										}
 										else
 										{
-											auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+											auto iter = exListToEquipStateMap.find
+											(
+												matchingChestList
+											);
 											// Already present in another hand, 
 											// so change to both hands.
-											if (iter != unmodifiedObjToEquipStateMap.end() &&
+											if (iter != exListToEquipStateMap.end() &&
 												iter->second == EntryEquipState::kRH)
 											{
 												iter->second = EntryEquipState::kBothHands;
 											}
 											else
 											{
-												unmodifiedObjToEquipStateMap.insert
+												exListToEquipStateMap.insert
 												(
-													{ boundObj, EntryEquipState::kLH }
+													{ matchingChestList, EntryEquipState::kLH }
 												);
 											}
 										}
 									}
 									else
 									{
-										// Uh-oh, my cruddy matching game has failed.
-										// Will not show as equipped.
-										SPDLOG_DEBUG
-										(
-											"{}: MATCH FAILURE: "
-											"No chest list for modified player list {:p} "
-											"equipped in RH/default slot.",
-											boundObj->GetName(),
-											fmt::ptr(exDataList)
-										);
+										// Save the bound object if the same as an unmodified list.
+										if (equivToUnmodifiedList)
+										{
+											SPDLOG_DEBUG
+											(
+												"{}: No chest list for unmodified player list {:p} "
+												"equipped in LH.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+											if (!equipType)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											} 
+											else if (equipType->equipSlot == 
+													 glob.bothHandsEquipSlot)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kBothHands }
+												);
+											}
+											else if (equipType->equipSlot == glob.shieldEquipSlot)
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											}
+											else if (boundObj->As<RE::TESObjectLIGH>())
+											{
+												unmodifiedObjToEquipStateMap.insert
+												(
+													{ boundObj, EntryEquipState::kDefault }
+												);
+											}
+											else
+											{
+												auto iter = unmodifiedObjToEquipStateMap.find
+												(
+													boundObj
+												);
+												// Already present in another hand, 
+												// so change to both hands.
+												if (iter != unmodifiedObjToEquipStateMap.end() &&
+													iter->second == EntryEquipState::kRH)
+												{
+													iter->second = EntryEquipState::kBothHands;
+												}
+												else
+												{
+													unmodifiedObjToEquipStateMap.insert
+													(
+														{ boundObj, EntryEquipState::kLH }
+													);
+												}
+											}
+										}
+										else
+										{
+											// Uh-oh, my cruddy matching game has failed.
+											// Will not show as equipped.
+											SPDLOG_DEBUG
+											(
+												"{}: MATCH FAILURE: "
+												"No chest list for modified player list {:p} "
+												"equipped in RH/default slot.",
+												boundObj->GetName(),
+												fmt::ptr(exDataList)
+											);
+										}
 									}
 								}
 							}
 						}
 					}
-				}
 
-				for (auto i = 0; i < menuEntryList->items.size(); ++i)
-				{
-					const auto item = menuEntryList->items[i];
-					if (!item || !item->data.objDesc || !item->data.objDesc->object)
+					for (auto i = 0; i < menuEntryList->items.size(); ++i)
 					{
-						continue;
-					}
-					
-					const auto boundObj = item->data.objDesc->object;
-					// Not equipable (no caret to left of entry), skiiip.
-					if (!Util::IsEquipableInventoryObject(boundObj))
-					{
-						continue;
-					}
-	
-					// Continue early if we can't get the entry for some reason.
-					RE::GFxValue entry{ };
-					menuEntryList->entryList.GetElement(i, std::addressof(entry));
-					if (entry.IsNull() || entry.IsUndefined())
-					{
-						continue;
-					}
-
-					EntryEquipState equipState = EntryEquipState::kNone;
-					if (item->data.objDesc->extraLists && 
-						!item->data.objDesc->extraLists->empty())
-					{
-						for (auto exDataList : *item->data.objDesc->extraLists)
+						const auto item = menuEntryList->items[i];
+						if (!item || !item->data.objDesc || !item->data.objDesc->object)
 						{
-							if (!exDataList)
-							{
-								continue;
-							}
+							continue;
+						}
+					
+						const auto boundObj = item->data.objDesc->object;
+						// Not equipable (no caret to left of entry), skiiip.
+						if (!Util::IsEquipableInventoryObject(boundObj))
+						{
+							continue;
+						}
+	
+						// Continue early if we can't get the entry for some reason.
+						RE::GFxValue entry{ };
+						menuEntryList->entryList.GetElement(i, std::addressof(entry));
+						if (entry.IsNull() || entry.IsUndefined())
+						{
+							continue;
+						}
 
-							const auto iter = exListToEquipStateMap.find(exDataList);
-							if (iter != exListToEquipStateMap.end())
+						EntryEquipState equipState = EntryEquipState::kNone;
+						if (item->data.objDesc->extraLists && 
+							!item->data.objDesc->extraLists->empty())
+						{
+							for (auto exDataList : *item->data.objDesc->extraLists)
+							{
+								if (!exDataList)
+								{
+									continue;
+								}
+
+								const auto iter = exListToEquipStateMap.find(exDataList);
+								if (iter != exListToEquipStateMap.end())
+								{
+									equipState = iter->second;
+									SPDLOG_DEBUG
+									(
+										"{} (#{}): MODIFIED version {:p} equipped. "
+										"Equip state: {}.",
+										boundObj->GetName(), i, fmt::ptr(exDataList), !equipState
+									);
+								}
+							}
+						}
+						else
+						{
+							const auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
+							if (iter != unmodifiedObjToEquipStateMap.end())
 							{
 								equipState = iter->second;
 								SPDLOG_DEBUG
 								(
-									"{} (#{}): MODIFIED version {:p} equipped. Equip state: {}.",
-									boundObj->GetName(), i, fmt::ptr(exDataList), !equipState
+									"{} (#{}): UNMODIFIED version equipped. Equip state: {}.",
+									boundObj->GetName(), i, !equipState
 								);
 							}
 						}
-					}
-					else
-					{
-						const auto iter = unmodifiedObjToEquipStateMap.find(boundObj);
-						if (iter != unmodifiedObjToEquipStateMap.end())
-						{
-							equipState = iter->second;
-							SPDLOG_DEBUG("{} (#{}): UNMODIFIED version equipped. Equip state: {}.",
-								boundObj->GetName(), i, !equipState);
-						}
-					}
 					
-					if (equipState != EntryEquipState::kNone)
-					{
-						RE::GFxValue index{ };
-						entry.GetMember("itemIndex", std::addressof(index));
-						SPDLOG_DEBUG
-						(
-							"{} (#{}), (list index {}) in item list. "
-							"Set equip state to {}.",
-							boundObj->GetName(),
-							i,
-							index.GetUInt(),
-							!equipState
-						);
-					}
-								
-					entry.SetMember("equipState", equipState);
-					// Apply updated entry to the list.
-					menuEntryList->entryList.SetElement(i, entry);
-
-					// Diagnostics below, not for you, P1.
-					if (a_forPlayer1 || !p->em->IsEquipped(boundObj, nullptr, false, true))
-					{
-						continue;
-					}
-			
-					if (item->data.objDesc->extraLists)
-					{
-						for (auto exDataList : *item->data.objDesc->extraLists)
+						if (equipState != EntryEquipState::kNone)
 						{
-							if (!exDataList)
-							{
-								continue;
-							}
-					
+							RE::GFxValue index{ };
+							entry.GetMember("itemIndex", std::addressof(index));
 							SPDLOG_DEBUG
 							(
-								"{} has exData list {:p}.",
+								"{} (#{}), (list index {}) in item list. "
+								"Set equip state to {}.",
 								boundObj->GetName(),
-								fmt::ptr(exDataList)
+								i,
+								index.GetUInt(),
+								!equipState
 							);
-							for (auto type = RE::ExtraDataType::kNone; 
-								type <= RE::ExtraDataType::kUnkBF; 
-								type = static_cast<RE::ExtraDataType>(!type + 1))
+						}
+								
+						entry.SetMember("equipState", equipState);
+						// Apply updated entry to the list.
+						menuEntryList->entryList.SetElement(i, entry);
+
+						// Diagnostics below, not for you, P1.
+						if (a_forPlayer1 || !p->em->IsEquipped(boundObj, nullptr, false, true))
+						{
+							continue;
+						}
+			
+						if (item->data.objDesc->extraLists)
+						{
+							for (auto exDataList : *item->data.objDesc->extraLists)
 							{
-								if (auto data = exDataList->GetByType(type); data)
+								if (!exDataList)
 								{
-									SPDLOG_DEBUG
-									(
-										"{} has exData list {:p} "
-										"with data {:p} of type 0x{:X}.",
-										boundObj->GetName(),
-										fmt::ptr(exDataList),
-										fmt::ptr(data),
-										type
-									);
+									continue;
+								}
+					
+								SPDLOG_DEBUG
+								(
+									"{} has exData list {:p}.",
+									boundObj->GetName(),
+									fmt::ptr(exDataList)
+								);
+								for (auto type = RE::ExtraDataType::kNone; 
+									type <= RE::ExtraDataType::kUnkBF; 
+									type = static_cast<RE::ExtraDataType>(!type + 1))
+								{
+									if (auto data = exDataList->GetByType(type); data)
+									{
+										SPDLOG_DEBUG
+										(
+											"{} has exData list {:p} "
+											"with data {:p} of type 0x{:X}.",
+											boundObj->GetName(),
+											fmt::ptr(exDataList),
+											fmt::ptr(data),
+											type
+										);
+									}
 								}
 							}
 						}
@@ -7927,9 +8228,11 @@ namespace ALYSLC
 						{
 							// Crosshair pick data valid and request queued by crosshair movement.
 							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
-							if (!isRequestedMenu || 
-								!crosshairPickData || 
-								currentReq.fromAction != InputAction::kMoveCrosshair)
+							if ((!isRequestedMenu || !crosshairPickData) || 
+								(
+									currentReq.fromAction != InputAction::kMoveCrosshair || 
+									!p->tm->crosshairFreeAimActive
+								))
 							{
 								break;
 							}

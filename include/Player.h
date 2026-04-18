@@ -101,9 +101,6 @@ namespace ALYSLC
 		// Check if this player is active, and if so, initialize all player data.
 		void InitializeCoopPlayer();
 
-		// Register player for co-op script events.
-		void RegisterEvents();
-
 		// Request state change for sub-managers (EM, MM, PAM, TM).
 		void RequestSubManagerStateChange(ManagerState&& a_newState);
 
@@ -124,6 +121,8 @@ namespace ALYSLC
 		// Set up player for co-op by changing various actorbase data and form flags.
 		void SetCoopPlayerFlags();
 
+		// Set all customization options for the player.
+
 		// Import default racial headparts, update gender, animations, skin tone,
 		// and refresh the player actor's 3D model when done.
 		void SetDefaultRacialAppearance(bool a_setFemale, bool a_setOppositeGenderAnims);
@@ -139,9 +138,6 @@ namespace ALYSLC
 		
 		// Make sure all co-op companions have the same factions as P1.
 		void SyncPlayerFactions();
-
-		// Unregister player for co-op script events.
-		void UnregisterEvents();
 		
 		// Refresh all player data for this player, post-initialization.
 		void UpdateCoopPlayer
@@ -197,6 +193,7 @@ namespace ALYSLC
 
 		// Teleport to another player through an entry and exit portal.
 		void TeleportTask(RE::ActorHandle a_targetHandle);
+
 		
 		// For co-op companions, toggle levitation state while transformed into a Vampire Lord.
 		void ToggleVampireLordLevitationTask();
@@ -301,12 +298,6 @@ namespace ALYSLC
 
 		// Task interface for queueing tasks.
 		const SKSE::TaskInterface* taskInterface;
-		// Registration for player dismissal script event.
-		// Args: player character form, player ID.
-		SKSE::Impl::RegistrationSet<void, RE::TESForm*, int32_t> onCoopEndReg =
-			SKSE::Impl::RegistrationSet<std::enable_if_t<std::conjunction_v<
-			RE::BSScript::is_return_convertible<RE::TESForm*>,
-			RE::BSScript::is_return_convertible<int32_t>>>, RE::TESForm*, int32_t>("OnCoopEnd"sv);
 		// Sub-managers.
 		std::unique_ptr<EquipManager> em;
 		std::unique_ptr<MovementManager> mm;

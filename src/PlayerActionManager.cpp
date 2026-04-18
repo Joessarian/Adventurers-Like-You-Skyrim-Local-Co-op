@@ -1263,12 +1263,7 @@ namespace ALYSLC
 		}
 
 		// Clear out button events queue.
-		for (auto& ptr : queuedP1ButtonEvents)
-		{
-			ptr.release();
-		}
-
-		queuedP1ButtonEvents.clear();
+		ClearQueuedP1ButtonEventsQueue();
 
 		// If necessary, relinquish control of the camera before pausing.
 		if (glob.cam->IsRunning()) 
@@ -1344,12 +1339,7 @@ namespace ALYSLC
 		avcam->Clear();
 
 		// Clear out all queued P1 button events.
-		for (auto& ptr : queuedP1ButtonEvents)
-		{
-			ptr.release();
-		}
-
-		queuedP1ButtonEvents.clear();
+		ClearQueuedP1ButtonEventsQueue();
 	}
 
 	void PlayerActionManager::RefreshData()
@@ -1392,6 +1382,7 @@ namespace ALYSLC
 		}
 		else
 		{
+			// Packages and perks.
 			auto dataHandler = RE::TESDataHandler::GetSingleton();
 			if (dataHandler)
 			{
@@ -1452,6 +1443,49 @@ namespace ALYSLC
 						GlobalCoopData::PLUGIN_NAME
 					)
 				);
+
+				// Remove NFF friendly-fire-related perks.
+				// Done to prevent conflicts which can prevent companion players from hitting P1 
+				// and P1's followers even with ALYSLC's friendly fire setting enabled.
+				// ALYSLC's setting has precedence now for companion players only.
+				if (ALYSLC::NFFCompat::g_installed)
+				{
+					auto nffPerk = dataHandler->LookupForm<RE::BGSPerk>
+					(
+						0x4F9D6C, "nwsFollowerFramework.esp"
+					);
+					if (nffPerk)
+					{
+						if (p->coopActor->HasPerk(nffPerk))
+						{
+							SPDLOG_DEBUG
+							(
+								"{} has NFF friendly fire perk. "
+								"Remove to give ALYSLC's setting precedence only for this player.", 
+								p->coopActor->GetName()
+							);
+							Util::ChangePerk(p->coopActor.get(), nffPerk, false);
+						}
+					}
+
+					nffPerk = dataHandler->LookupForm<RE::BGSPerk>
+					(
+						0x2ECA12, "nwsFollowerFramework.esp"
+					);
+					if (nffPerk)
+					{
+						if (p->coopActor->HasPerk(nffPerk))
+						{
+							SPDLOG_DEBUG
+							(
+								"{} has NFF team damage perk. "
+								"Remove to give ALYSLC's setting precedence only for this player.", 
+								p->coopActor->GetName()
+							);
+							Util::ChangePerk(p->coopActor.get(), nffPerk, false);
+						}
+					}
+				}
 			}
 			else
 			{
@@ -1507,12 +1541,7 @@ namespace ALYSLC
 		// List of PA states for each PA.
 		paStatesList.fill({ });
 		// Clear out button events queue.
-		for (auto& ptr : queuedP1ButtonEvents)
-		{
-			ptr.release();
-		}
-
-		queuedP1ButtonEvents.clear();
+		ClearQueuedP1ButtonEventsQueue();
 
 		// Special action.
 		reqSpecialAction = SpecialActionType::kNone;
@@ -2823,18 +2852,7 @@ namespace ALYSLC
 			}
 		}
 
-		// Clear out padding before freeing input event.
-		for (auto& ptr : queuedP1ButtonEvents) 
-		{
-			if (ptr && (*ptr.get())->AsIDEvent()) 
-			{
-				(*ptr.get())->AsIDEvent()->pad24 = 0x0;
-			}
-
-			ptr.release();
-		}
-
-		queuedP1ButtonEvents.clear();
+		ClearQueuedP1ButtonEventsQueue();
 	}
 
 	void PlayerActionManager::CheckForCompanionPlayerLevelUps()
@@ -6203,7 +6221,7 @@ namespace ALYSLC
 		// Set the value and held time based on the given button press type and held time.
 		// Toggle AI driven if necessary.
 
-		auto& paInfo = glob.paInfoHolder;
+		const auto& paInfo = glob.paInfoHolder;
 		const auto iter = paInfo->ACTIONS_TO_P1_UE_STRINGS.find(!a_inputAction);
 		if (iter == paInfo->ACTIONS_TO_P1_UE_STRINGS.end())
 		{
@@ -8133,6 +8151,8 @@ namespace ALYSLC
 		// Also revert werewolf transformations once the max transformation time has elapsed.
 
 		bool wasTransformed = p->isTransformed;
+		bool isAnimDriven = coopActor->IsAnimationDriven();
+		bool isInNormalKnockState = coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal;
 		if (p->isTransformed)
 		{
 			// Revert werewolf/unplayable race form after 150 seconds.
@@ -8164,6 +8184,7 @@ namespace ALYSLC
 			// Transformed for more than the time limit.
 			bool shouldRevert = 
 			(
+				(!isAnimDriven && isInNormalKnockState) &&
 				(Util::GetElapsedSeconds(p->transformationTP) > p->secsMaxTransformationTime) && 
 				(
 					companionPlayerWerewolfFormReversion || 
@@ -8199,7 +8220,7 @@ namespace ALYSLC
 				coopActor->race ? coopActor->race->GetPlayable() : false
 			);
 		}
-		else if (p->isTransforming)
+		else if (p->isTransforming && !isAnimDriven && isInNormalKnockState)
 		{
 			// Just started transforming.
 			// Ensure Vampire Lord's privates aren't showing, among other things.
@@ -8359,9 +8380,10 @@ namespace ALYSLC
 				}
 
 				// Now transformed.
+				ReadyWeapon(true);
 				p->isTransforming = false;
 				p->isTransformed = true;
-				ReadyWeapon(true);
+				p->transformationTP = SteadyClock::now();
 			}
 			else if (Util::IsWerewolf(coopActor.get()))
 			{
@@ -8458,15 +8480,17 @@ namespace ALYSLC
 				// Now transformed.
 				p->isTransforming = false;
 				p->isTransformed = true;
+				p->transformationTP = SteadyClock::now();
 			}
 			else if (Util::IsRaceWithTransformation(coopActor->race))
 			{
 				// Now transformed into something else.
 				// Who knows what.
-				p->isTransforming = false;
-				p->isTransformed = true;
 				// Unsheathe when done.
 				ReadyWeapon(true);
+				p->isTransforming = false;
+				p->isTransformed = true;
+				p->transformationTP = SteadyClock::now();
 			}
 		}
 	}

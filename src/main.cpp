@@ -32,6 +32,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		);
 		ALYSLC::EldenSprintCompat::CheckForEldenSprint(g_loadInterface);
 		ALYSLC::MCOCompat::CheckForMCO(g_loadInterface);
+		ALYSLC::NFFCompat::CheckForNFF(g_loadInterface);
 		ALYSLC::PersistentFavoritesCompat::CheckForPersistentFavorites();
 		ALYSLC::PrecisionCompat::RequestPrecisionAPIs(g_loadInterface);
 		ALYSLC::QuickLootCompat::CheckForQuickLoot(g_loadInterface);
@@ -75,6 +76,8 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		SPDLOG_INFO("Post load game.");
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
+		// Despawn any lingering summons.
+		ALYSLC::Util::DespawnLingeringSummons();
 
 		// No longer loading a save.
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();

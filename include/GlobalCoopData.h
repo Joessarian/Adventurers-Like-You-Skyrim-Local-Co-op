@@ -291,6 +291,7 @@ namespace ALYSLC
 				hmsBaseAVs.fill(0.0f);
 				skillAVs.fill(0.0f);
 				skillAVMods.fill(SkillList());
+				effectToElapsedMap.clear();
 				unlockedPerks.clear();
 			}
 
@@ -304,6 +305,7 @@ namespace ALYSLC
 				std::array<float, 3> a_hmsBaseAVs,
 				SkillList a_skillAVs,
 				std::array<SkillList, 3> a_skillAVMods,
+				std::unordered_map<RE::MagicItem*, float> a_effectToElapsedMap,
 				std::vector<RE::BGSPerk*> a_unlockedPerks,
 				float a_carryWeight,
 				int32_t a_gold
@@ -316,6 +318,7 @@ namespace ALYSLC
 				hmsBaseAVs(a_hmsBaseAVs),
 				skillAVs(a_skillAVs),
 				skillAVMods(a_skillAVMods),
+				effectToElapsedMap(a_effectToElapsedMap),
 				unlockedPerks(a_unlockedPerks)
 			{ }
 
@@ -340,6 +343,8 @@ namespace ALYSLC
 			SkillList skillAVs;
 			// Damage AV mod, permanent AV mod, temp AV mod for all skill AVs.
 			std::array<SkillList, 3> skillAVMods;
+			// Maps the magic items that applied the active effects to their durations.
+			std::unordered_map<RE::MagicItem*, float> effectToElapsedMap{ };
 			// List of unlocked perks for this player.
 			std::vector<RE::BGSPerk*> unlockedPerks;
 		};
@@ -910,6 +915,9 @@ namespace ALYSLC
 		// Register for global script events to send data to the player ref alias script.
 		static void RegisterEvents();
 
+		// Remove all co-op player keywords from all companion player characters and P1.
+		static void RemoveCoopPlayerKeywords();
+
 		// Rescale all active player skill and HMS AVs.
 		// Reset to saved base AVs and then add increases.
 		// Done to override the game's auto-scaling of NPC AVs.
@@ -1043,6 +1051,11 @@ namespace ALYSLC
 
 		// Co-op player data copying on menu open/close events.
 		static void CopyPlayerData(const std::unique_ptr<CopyPlayerDataRequestInfo>& a_info);
+		
+		// UNUSED FOR NOW (occasional crash when moving over to the 'Active Effects' tab)
+		// Remove all of P1's active effects and apply the companion player's on import,
+		// or restore P1's saved active effects on export.
+		static void CopyOverActiveEffects(RE::Actor* a_coopActor, const bool& a_shouldImport);
 
 		// Base data such as player name and race name.
 		static void CopyOverActorBaseData
@@ -1124,6 +1137,10 @@ namespace ALYSLC
 
 		// Pause and then restart the co-op camera manager.
 		static void RestartCoopCameraTask();
+
+		// Teleport this companion player to P1 to start co-op or to their editor location 
+		// if they are being dismissed when co-op ends or before co-op starts.
+		static void TeleportToP1OrAwayTask(RE::ActorHandle a_playerActorHandle, bool a_toP1);
 		
 		// Try again? The entire party gets wiped.
 		static void YouDiedTask(RE::ActorHandle a_deadPlayerHandle = RE::ActorHandle());
@@ -2146,6 +2163,8 @@ namespace ALYSLC
 		RE::TESEffectShader* dragonSoulAbsorbShader;
 		RE::TESEffectShader* ghostFXShader;
 		// Globals.
+		// Can summon players and start co-op. Used by scripts.
+		RE::TESGlobal* canStartCoopGlob;
 		// [Enderal only]
 		// Crafting/Learning/Memory point globals.
 		RE::TESGlobal* craftingPointsGlob;
@@ -2263,10 +2282,10 @@ namespace ALYSLC
 		// Interpolation data for fading the crosshair text in/out.
 		std::unique_ptr<TwoWayInterpData> crosshairTextFadeInterpData;
 
-		// Saved data for P1 before entering the RaceMenu.
+		// Saved data for P1 before entering the RaceMenu/Magic Menu.
 		// Cached to restore once the menu closes.
-		// List of spells that applied active effects present before entering the menu.
-		RE::BSSimpleList<RE::MagicItem*> charGenActiveEffectsSpellsList; 
+		// List of applied active effects present before entering the menu.
+		std::unique_ptr<RE::BSSimpleList<RE::ActiveEffect*>> savedP1ActiveEffectsList; 
 		// P1's race before entering the menu.
 		RE::TESRace* charGenRace;
 		// The list of equipped forms and their extra data lists before entering the menu.

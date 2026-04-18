@@ -335,7 +335,7 @@ namespace ALYSLC
 			}
 
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData());
-			if (playerIndex == -1)
+			if ((playerIndex == -1) || (playerIndex == 0 && !glob.cam->IsRunning()))
 			{
 				return _AIProcess_SetRotationSpeedZ1(a_this, a_rotationSpeed);
 			}
@@ -353,7 +353,7 @@ namespace ALYSLC
 			}
 
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData()); 
-			if (playerIndex == -1)
+			if ((playerIndex == -1) || (playerIndex == 0 && !glob.cam->IsRunning()))
 			{
 				return _AIProcess_SetRotationSpeedZ2(a_this, a_rotationSpeed);
 			}
@@ -371,7 +371,7 @@ namespace ALYSLC
 			}
 
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->GetUserData()); 
-			if (playerIndex == -1)
+			if ((playerIndex == -1) || (playerIndex == 0 && !glob.cam->IsRunning()))
 			{
 				return _AIProcess_SetRotationSpeedZ3(a_this, a_rotationSpeed);
 			}
@@ -839,6 +839,107 @@ namespace ALYSLC
 		}
 
 // [ACTOR MAGIC CASTER HOOKS]:
+		void ActorMagicCasterHooks::ClearMagicNode(RE::ActorMagicCaster * a_this)
+		{
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				return _ClearMagicNode(a_this);
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			// Is a companion player.
+			const auto& p = glob.coopPlayers[pIndex];
+			if (pIndex > 0)
+			{
+				if (!p->IsRunning())
+				{
+					return _ClearMagicNode(a_this);
+				}
+
+				/*auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);*/
+			}
+			else if (pIndex == 0)
+			{
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
+			}
+
+			_ClearMagicNode(a_this);
+		}
+
 		void ActorMagicCasterHooks::DeselectSpellImpl(RE::ActorMagicCaster* a_this)
 		{
 			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
@@ -848,9 +949,9 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			const auto& p = glob.coopPlayers[pIndex];
+			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _DeselectSpellImpl(a_this);
@@ -895,6 +996,47 @@ namespace ALYSLC
 					*a_this->state
 				);*/
 			}
+			else if (pIndex == 0)
+			{
+				auto source = a_this->GetCastingSource();
+				SPDLOG_DEBUG
+				(
+					"{}, caster {} (performing: {}, just started: {}, type: {}), "
+					"spell {}, cost: {}. State: {}.",
+					a_this->actor->GetName(),
+					!a_this->castingSource,
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand && 
+						p->pam->IsPerforming(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand && 
+						p->pam->IsPerforming(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->JustStarted(InputAction::kCastLH)
+					) ||
+					(
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->JustStarted(InputAction::kCastRH)
+					),
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand &&
+						p->pam->IsPerforming(InputAction::kCastLH) &&
+						p->em->GetLHSpell() ?
+						!p->em->GetLHSpell()->GetCastingType() :
+						source == RE::MagicSystem::CastingSource::kRightHand &&
+						p->pam->IsPerforming(InputAction::kCastRH) && 
+						p->em->GetRHSpell() ?
+						!p->em->GetRHSpell()->GetCastingType() :
+						!RE::MagicSystem::CastingType::kConstantEffect
+					),
+					a_this->currentSpell ? a_this->currentSpell->GetName() : "NONE",
+					a_this->currentSpellCost,
+					*a_this->state
+				);
+			}
 
 			_DeselectSpellImpl(a_this);
 		}
@@ -908,9 +1050,9 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			const auto& p = glob.coopPlayers[pIndex];
+			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _FinishCastImpl(a_this);
@@ -971,9 +1113,9 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			const auto& p = glob.coopPlayers[pIndex];
+			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _InterruptCastImpl(a_this, a_depleteEnergy);
@@ -1180,7 +1322,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1244,7 +1386,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1310,7 +1452,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1374,7 +1516,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1434,7 +1576,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1476,7 +1618,7 @@ namespace ALYSLC
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			if (pIndex > 0)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
@@ -1537,11 +1679,12 @@ namespace ALYSLC
 			}
 
 			auto source = a_this->GetCastingSource();
+			auto state = a_this->state;
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
 			// Is a companion player.
-			if (pIndex != -1 && pIndex != 0)
+			const auto& p = glob.coopPlayers[pIndex];
+			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _Update(a_this, a_delta);
@@ -1682,6 +1825,71 @@ namespace ALYSLC
 					a_this->flags.reset(RE::ActorMagicCaster::Flags::kSkipCheckCast);
 				}
 			}
+			// Commented out until making sure the method is thread-safe.
+			// Insertion of the input event is currently only done 
+			// when the PAM main task runs on the main thread.
+			/*else if (pIndex == 0 && p->IsRunning())
+			{
+				auto source = a_this->GetCastingSource();
+				auto ui = RE::UI::GetSingleton();
+				bool isLH = source == RE::MagicSystem::CastingSource::kLeftHand;
+				bool isRH = source == RE::MagicSystem::CastingSource::kRightHand;
+				bool isStillCasting =
+				(
+					(
+						(isLH || isRH) &&
+						(
+							glob.menuPID > 0 &&
+							ui && 
+							!ui->GameIsPaused() && 
+							*a_this->state == RE::MagicCaster::State::kNone
+						)
+					) &&
+					(
+						(
+							isLH && p->pam->IsPerforming(InputAction::kCastLH)
+						) ||
+						(
+							isRH && p->pam->IsPerforming(InputAction::kCastRH)
+						) ||
+						(
+							(
+								p->pam->IsPerforming(InputAction::kSpecialAction)
+							) &&
+							(
+								p->pam->reqSpecialAction == SpecialActionType::kCastBothHands ||
+								p->pam->reqSpecialAction == SpecialActionType::kDualCast
+							)
+						)
+					)
+				);
+				if (isStillCasting)
+				{
+					SPDLOG_DEBUG("Restart cast for source {} on menu opening.", 
+						!a_this->castingSource);
+					p->pam->QueueP1ButtonEvent
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand ?
+						InputAction::kCastLH :
+						InputAction::kCastRH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kRelease,
+						0.0f, 
+						false
+					);
+					p->pam->QueueP1ButtonEvent
+					(
+						source == RE::MagicSystem::CastingSource::kLeftHand ?
+						InputAction::kCastLH :
+						InputAction::kCastRH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kInstantTrigger,
+						0.0f, 
+						false
+					);
+					return;
+				}
+			}*/
 
 			_Update(a_this, a_delta);
 		}
@@ -1872,6 +2080,7 @@ namespace ALYSLC
 			// Update camera shake state.
 			if (p->isPlayer1)
 			{
+				// SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
 				if (tagHash == "StartAnimatedCameraDelta"_h)
 				{
 					glob.isCameraShakeActive = true;
@@ -2229,6 +2438,12 @@ namespace ALYSLC
 				return _CheckClampDamageModifier(a_this, a_av, a_delta);
 			}
 			
+			if (a_av == RE::ActorValue::kHealth)
+			{
+				SPDLOG_DEBUG("{} is about to have their health modified by {}.",
+					a_this->GetName(), a_delta);
+			}
+
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
 			// Ignore attempts to kill this character if they are in the process of getting up.
 			// Dying while getting up locks the character in place once they fully stand up.
@@ -2572,6 +2787,9 @@ namespace ALYSLC
 			{
 				return _HandleHealthDamage(a_this, a_attacker, a_damage);;
 			}
+
+			SPDLOG_DEBUG("{} is about to take {} damage from {}.",
+				a_this->GetName(), a_damage, a_attacker ? a_attacker->GetName() : "NONE");
 
 			// Check for damage dealt by a player.
 			auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(a_attacker);
@@ -9310,7 +9528,7 @@ namespace ALYSLC
 					"Inventory copied over to P1: {}",
 					a_item->GetName(),
 					a_count,
-					a_moveToRef->GetName(),
+					a_moveToRef ? a_moveToRef->GetName() : "NONE",
 					glob.mim->IsRunning() && glob.menuPID > 0,
 					glob.copiedPlayerDataTypes.all
 					(
@@ -9648,42 +9866,69 @@ namespace ALYSLC
 			
 			// Run game's update first.
 			const auto& coopP1 = glob.coopPlayers[0];
-			// Remove and then restore AI driven after the player update
-			// so that we can clear out fog-of-war, 
-			// which is only removed if the player is controls driven.
-			// Side effect(s):
-			// Resets some P1 player state, so toggling interrupts sprinting, 
-			// possibly among other things that I've yet to discover and yet to care about.
-			auto oldActorState1 = a_this->actorState1;
-			auto oldActorState2 = a_this->actorState2;
-			// Sync player actorstate sprint flag with ALYSLC's sprint player action state.
-			// Otherwise, P1 will stop sprinting after the AI driven toggle.
-			// Ensures the game handles stamina expenditure.
-			// Sync player character singleton flag too for good measure.
-			// Who knows what code could access it, whether another mod or the game itself,
-			// so better to keep everything in sync.
-			bool performingSprint = coopP1->pam->IsPerforming(InputAction::kSprint);
-			bool justStarted = coopP1->pam->JustStarted(InputAction::kSprint);
-			// Less stutter if allowing the animation to start without removing AI driven.
-			if (justStarted)
+			if (coopP1->IsRunning())
 			{
-				_Update(a_this, a_delta);
+				// Remove and then restore AI driven after the player update
+				// so that we can clear out fog-of-war, 
+				// which is only removed if the player is controls driven.
+				// Side effect(s):
+				// Resets some P1 player state, so toggling interrupts sprinting, 
+				// possibly among other things that I've yet to discover and yet to care about.
+				bool performingSprint = coopP1->pam->IsPerforming(InputAction::kSprint);
+				bool justStarted = coopP1->pam->JustStarted(InputAction::kSprint);
+				// Less stutter if allowing the animation to start without removing AI driven.
+				if (justStarted)
+				{
+					_Update(a_this, a_delta);
+				}
+				else
+				{
+					if (performingSprint)
+					{
+						RE::BSAnimationGraphManagerPtr manager{ };
+						a_this->GetAnimationGraphManager(manager);
+						if (manager)
+						{
+							manager->variableCache.graphLock.Lock();
+							for (const auto& info : manager->variableCache.variableCache)
+							{
+								SPDLOG_DEBUG("Var name: {}.", info.variableName);
+							}
+
+							manager->variableCache.graphLock.Unlock();
+						}
+					}
+					
+					// Sync player actorstate sprint flag with ALYSLC's sprint player action state.
+					// Otherwise, P1 will stop sprinting after the AI driven toggle.
+					// Ensures the game handles stamina expenditure.
+					// Sync player character singleton flag too for good measure.
+					// Who knows what code could access it, whether another mod or the game itself,
+					// so better to keep everything in sync.
+					bool wasAIDriven = 
+					(
+						a_this->movementController && !a_this->movementController->controlsDriven
+					);
+					Util::SetPlayerAIDriven(false);
+					a_this->actorState1.sprinting = 
+					a_this->playerFlags.isSprinting = performingSprint;
+
+					_Update(a_this, a_delta);
+			
+					if (wasAIDriven)
+					{
+						Util::SetPlayerAIDriven(true);
+					}
+
+					// Set again if cleared.
+					a_this->actorState1.sprinting = 
+					a_this->playerFlags.isSprinting = performingSprint;
+				}
 			}
 			else
 			{
-				bool wasSet = Util::SetPlayerAIDriven(false);
-				a_this->actorState1.sprinting = 
-				a_this->playerFlags.isSprinting = performingSprint;
-
+				// Just perform the update if the manager is not running.
 				_Update(a_this, a_delta);
-			
-				if (wasSet)
-				{
-					Util::SetPlayerAIDriven(true);
-				}
-
-				a_this->actorState1.sprinting = 
-				a_this->playerFlags.isSprinting = performingSprint;
 			}
 			
 
@@ -10872,6 +11117,16 @@ namespace ALYSLC
 					continue;
 				}
 				
+				SPDLOG_DEBUG
+				(
+					"Start combat between {} and {}.",
+					actorStartCombatPair.first ? 
+					actorStartCombatPair.first->GetName() : 
+					"NONE",
+					actorStartCombatPair.second ? 
+					actorStartCombatPair.second->GetName() : 
+					"NONE"
+				);
 				Util::ApplyHit
 				(
 					actorStartCombatPair.first,
@@ -10880,7 +11135,9 @@ namespace ALYSLC
 					true
 				);			
 			}
-
+			
+			SPDLOG_DEBUG("{} hits to handle, was {}. {} NPCs to start combat with.",
+				newHits.size(), a_AllCdPointCollector->hits.size(), combatTargetStartPairs.size());
 			// Now, let the game handle the projectile collision.
 			if (a_this->As<RE::ArrowProjectile>())
 			{
@@ -12124,9 +12381,12 @@ namespace ALYSLC
 					projectile->livingTime - 0.5f * initialTimeToTargetSecs >= -epsilon ||
 					xy > Util::GetXYDistance(releasePos, managedProjInfo->trajectoryEndPos)
 				);
-				bool noTargetAndMovingCrosshair = false;
+				bool noTargetAndMovingCrosshair = //false;
 				(
-					!targetRefrValidity && a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
+					!targetRefrValidity &&
+					a_p->tm->crosshairFreeAimActive &&
+					a_p->mm->reqFaceTarget &&
+					a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 				);
 				// Set as homing if not already set 
 				// and one of the above conditions is true.
@@ -13942,8 +14202,7 @@ namespace ALYSLC
 			}
 
 			// Reset to base transformation time.
-			p->secsMaxTransformationTime = 150.0f;
-			p->transformationTP = SteadyClock::now();
+			p->secsMaxTransformationTime = 5.0f; //150.0f;
 
 			// Start the werewolf trandformation effect.
 			_Start(a_this);
@@ -15645,19 +15904,13 @@ namespace ALYSLC
 				ui &&
 				ui->IsMenuOpen(a_this->MENU_NAME) &&
 				strings &&
-				a_message.menu == strings->topMenu &&
+				a_message.menu == strings->topMenu && 
 				*a_message.type == RE::UI_MESSAGE_TYPE::kInventoryUpdate)
 			{
-				auto messageQueue = RE::UIMessageQueue::GetSingleton();
-				if (messageQueue)
-				{
-					messageQueue->AddMessage
-					(
-						a_this->MENU_NAME, RE::UI_MESSAGE_TYPE::kUpdate, nullptr
-					);
-				}
-
-				return _ProcessMessage(a_this, a_message);
+				// Re-apply equip state after the top menu is updated, which resets equip state.
+				auto result = _ProcessMessage(a_this, a_message);
+				glob.mim->UpdateMenuEntryEquipStates(false, false);
+				return result;
 			}
 
 			// Nothing to do here, since co-op is not active, serializable data is not available,
@@ -15679,6 +15932,8 @@ namespace ALYSLC
 			);
 			if (!opening && !closing)
 			{
+				return _ProcessMessage(a_this, a_message);
+				/*
 				// Not all updates made to menu elements through the MIM apply properly.
 				// Certain entry elements must be updated right before the message is propagated,
 				// so that any overriding changes made by the game 
@@ -15754,6 +16009,7 @@ namespace ALYSLC
 				}
 
 				return _ProcessMessage(a_this, a_message);
+				*/
 			}
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
@@ -15778,7 +16034,6 @@ namespace ALYSLC
 				closing &= hasCopiedData;
 				if (opening || closing)
 				{
-					auto result = _ProcessMessage(a_this, a_message);
 					const RE::BSFixedString menuName = a_this->MENU_NAME;
 					// Copy over player data.
 					GlobalCoopData::CopyOverCoopPlayerData
@@ -15786,6 +16041,7 @@ namespace ALYSLC
 						opening, menuName, p->coopActor->GetHandle(), nullptr
 					);
 
+					// NO LONGER THE CASE SINCE PERSISTENT FAVORITES UPDATE:
 					// Force PersistentFavorites (https://github.com/QY-MODS/PersistentFavorites)
 					// to sync its cached favorites list 
 					// after we import the companion player's favorites or restore P1's favorites.
@@ -15824,6 +16080,7 @@ namespace ALYSLC
 
 					// Have to restore P1's favorited items here 
 					// if the game ignores this call to open the menu.
+					auto result = _ProcessMessage(a_this, a_message);
 					if (opening)
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
@@ -15937,9 +16194,11 @@ namespace ALYSLC
 					);
 				}
 
+				/*
+				// TODO: Restore active effects and equipped gear.
 				// Save the active effects.
 				const auto currentActiveEffects = p1->GetActiveEffectList();
-				glob.charGenActiveEffectsSpellsList.clear();
+				glob.savedP1ActiveEffectsList->clear();
 				if (currentActiveEffects)
 				{
 					for (const auto activeEffect : *p1->GetActiveEffectList())
@@ -15957,11 +16216,8 @@ namespace ALYSLC
 							"NONE",
 							activeEffect->spell ? activeEffect->spell->GetName() : "NONE"
 						);
-
-						if (activeEffect->spell)
-						{
-							glob.charGenActiveEffectsSpellsList.emplace_front(activeEffect->spell);
-						}
+						
+						glob.savedP1ActiveEffectsList->emplace_front(activeEffect);
 					}
 				}
 
@@ -16016,7 +16272,9 @@ namespace ALYSLC
 				}
 
 				SPDLOG_DEBUG("About to unequip all.");
-				//Util::Papyrus::UnequipAll(p1);
+				Util::Papyrus::UnequipAll(p1);
+				*/
+
 				if (ALYSLC::RaceMenuCompat::g_installed)
 				{
 					if (!p1->race2 || glob.coopSessionActive)
@@ -16073,6 +16331,8 @@ namespace ALYSLC
 						);
 					}
 
+					/*
+					// TODO: Restore active effects and equipped gear.
 					auto currentEffectsList = p1->GetActiveEffectList();
 					if (currentEffectsList)
 					{
@@ -16098,7 +16358,6 @@ namespace ALYSLC
 					}
 
 					/*
-					// TODO: Restore active effects.
 					// NEEDS TESTING AFTER EXTRADATALIST SUPPORT ADDED:
 					// Re-equip saved gear.
 					RE::TESForm* form{ nullptr };
@@ -16274,11 +16533,11 @@ namespace ALYSLC
 							}
 						}
 					}
-					*/
 
 					// Clear equipped forms and extra data list lists.
 					glob.charGenEquippedForms.fill(nullptr);
 					glob.charGenEquippedExDataLists.fill(nullptr);
+					*/
 				}
 
 				// P1 is editing their appearance.

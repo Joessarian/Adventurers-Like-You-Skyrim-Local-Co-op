@@ -1067,6 +1067,25 @@ namespace ALYSLC
 				);
 			}
 			
+			// MoveTo_Impl func, but not protected in TESObjectREFR.cpp
+			inline void MoveTo
+			(
+				RE::TESObjectREFR* a_this,
+				const RE::ObjectRefHandle& a_targetHandle,
+				RE::TESObjectCELL* a_targetCell,
+				RE::TESWorldSpace* a_selfWorldSpace,
+				const RE::NiPoint3& a_position,
+				const RE::NiPoint3& a_rotation
+			)
+			{
+				using func_t = decltype(&MoveTo);
+				static REL::Relocation<func_t> func{ RELOCATION_ID(56227, 56626) };
+				return func
+				(
+					a_this, a_targetHandle, a_targetCell, a_selfWorldSpace, a_position, a_rotation
+				);
+			}
+
 			// Full credits to covey-j for their Actor Copy Lib: 
 			// https://github.com/covey-j/ActorCopyLib
 
@@ -4340,6 +4359,14 @@ namespace ALYSLC
 		(
 			const RE::BSFixedString& a_userEvent, float a_xValue, float a_yValue, bool a_isLS
 		);
+
+		// Despawn lingering summoned temp actors on load. The game fails to do this frequently
+		// and may be a result of moving the player away not long after the save loads.
+		// Particularly for companion players' summons, since their lifetime is ignored
+		// after loading a save where they were present. 
+		// And players can summon another actor in addition to the lingering summon, 
+		// allowing for multiple summons without perk progression.
+		void DespawnLingeringSummons();
 
 		// Enable collisions for the given actor.
 		void EnableCollisionForActor(RE::Actor* a_actor);

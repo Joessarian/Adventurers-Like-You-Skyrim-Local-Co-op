@@ -155,6 +155,9 @@ namespace ALYSLC
 		// Any active co-op session is flagged as ended.
 		void SignalWaitForUpdate(RE::StaticFunctionTag*, bool a_shouldDismiss);
 		
+		// Teleport the given player actor to P1 or their editor location.
+		void TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1);
+
 		// Teleport the player with the given PID to an actor.
 		void TeleportToPlayerToActor
 		(

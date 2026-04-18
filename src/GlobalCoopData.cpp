@@ -54,7 +54,6 @@ namespace ALYSLC
 		glob.player1RefAlias = a_player1RefAlias;
 		glob.castingGlobVars.clear();
 		glob.charGenRace = nullptr;
-		glob.charGenActiveEffectsSpellsList.clear();
 		glob.charGenEquippedForms.fill(nullptr);
 		glob.charGenSkillDataList.clear();
 		glob.coopEntityBlacklist.clear();
@@ -70,6 +69,7 @@ namespace ALYSLC
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
 		glob.reqInputEvents.clear();
+		glob.savedP1ActiveEffectsList = std::make_unique<RE::BSSimpleList<RE::ActiveEffect*>>();
 		// Crosshair text offsets.
 		glob.originalCrosshairTextOffsets = std::nullopt;
 
@@ -454,6 +454,10 @@ namespace ALYSLC
 			);
 
 			// Other global variables.
+			glob.canStartCoopGlob = 
+			(
+				dataHandler->LookupForm<RE::TESGlobal>(0x84A, PLUGIN_NAME)	
+			);
 			glob.summoningMenuOpenGlob = 
 			(
 				dataHandler->LookupForm<RE::TESGlobal>(0x81F, PLUGIN_NAME)
@@ -5184,6 +5188,70 @@ namespace ALYSLC
 		}
 	}
 
+	void GlobalCoopData::RemoveCoopPlayerKeywords()
+	{
+		// Remove all co-op player keywords from all companion player characters and P1.
+
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		for (const auto playerActor : glob.coopEntityBlacklist)
+		{
+			if (!playerActor)
+			{
+				continue;
+			}
+
+			auto baseObj = playerActor->GetObjectReference();
+			if (!baseObj)
+			{
+				continue;
+			}
+
+			auto keywordForm = baseObj->As<RE::BGSKeywordForm>();
+			if (!keywordForm)
+			{
+				continue;
+			}
+
+			for (const auto keyword : glob.coopPlayerKeywords)
+			{
+				if (!keyword)
+				{
+					continue;
+				}
+
+				bool hadKeyword = keywordForm->HasKeyword(keyword);
+				if (hadKeyword)
+				{
+					SPDLOG_DEBUG("{} had co-op keyword {}.", 
+						playerActor->GetName(), Util::GetEditorID(keyword));
+				}
+			}
+			
+			// Remove all co-op player keywords first, just in case there are lingering ones.
+			keywordForm->RemoveKeywords(glob.coopPlayerKeywords);
+
+			for (const auto keyword : glob.coopPlayerKeywords)
+			{
+				if (!keyword)
+				{
+					continue;
+				}
+
+				bool hasKeyword = keywordForm->HasKeyword(keyword);
+				if (hasKeyword)
+				{
+					SPDLOG_ERROR("ERR: {} still has co-op keyword {}.", 
+						playerActor->GetName(), Util::GetEditorID(keyword));
+				}
+			}
+		}
+	}
+
 	void GlobalCoopData::RescaleActivePlayerAVs()
 	{
 		// Rescale active player HMS and skill AVs to serialized values. 
@@ -5679,6 +5747,12 @@ namespace ALYSLC
 		const auto& p = glob.coopPlayers[pIndex];
 		if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 		{
+			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+			{
+				SPDLOG_DEBUG("Restore P1 active effects.");
+				CopyOverActiveEffects(a_menuControllingPlayer, false);
+			}
+
 			if (glob.copiedPlayerDataTypes.all
 				(
 					CopyablePlayerDataTypes::kFavoritesMagic,
@@ -7089,6 +7163,7 @@ namespace ALYSLC
 				}
 			};
 
+			auto dataHandler = RE::TESDataHandler::GetSingleton();
 			for (const auto& p : glob.coopPlayers)
 			{
 				if (!p->isActive || p->isPlayer1)
@@ -7230,7 +7305,6 @@ namespace ALYSLC
 					p->coopActor->GetName()
 				);
 				p->RequestStateChange(ManagerState::kAwaitingRefresh);
-				p->UnregisterEvents();
 			}
 		}
 
@@ -8339,28 +8413,28 @@ namespace ALYSLC
 			if (a_info->shouldImport)
 			{
 				// Import this player's favorited forms before the menu opens.
-				SPDLOG_DEBUG
-				(
-					"Favorites Menu: Should import {}'s favorites to P1.",
-					requestingPlayer.get()->GetName()
-				);
-				// Both magical AND physical forms.
-				if (!glob.copiedPlayerDataTypes.all
-					(
-						CopyablePlayerDataTypes::kFavoritesMagic,
-						CopyablePlayerDataTypes::kFavoritesPhysical
-					))
-				{
-					SPDLOG_DEBUG("Import Favorites to P1.");
-					p->em->ImportCoopFavorites(false);
-					glob.copiedPlayerDataTypes.set
-					(
-						CopyablePlayerDataTypes::kFavoritesMagic,
-						CopyablePlayerDataTypes::kFavoritesPhysical
-					);
-				}
+				//SPDLOG_DEBUG
+				//(
+				//	"Favorites Menu: Should import {}'s favorites to P1.",
+				//	requestingPlayer.get()->GetName()
+				//);
+				//// Both magical AND physical forms.
+				//if (!glob.copiedPlayerDataTypes.all
+				//	(
+				//		CopyablePlayerDataTypes::kFavoritesMagic,
+				//		CopyablePlayerDataTypes::kFavoritesPhysical
+				//	))
+				//{
+				//	SPDLOG_DEBUG("Import Favorites to P1.");
+				//	p->em->ImportCoopFavorites(false);
+				//	glob.copiedPlayerDataTypes.set
+				//	(
+				//		CopyablePlayerDataTypes::kFavoritesMagic,
+				//		CopyablePlayerDataTypes::kFavoritesPhysical
+				//	);
+				//}
 
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"Favorites Menu: Should copy over inventory on import."
 				);
@@ -8369,34 +8443,47 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Import Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
-				}*/
+				}
+
+				SPDLOG_DEBUG
+				(
+					"Favorites Menu: Should import {}'s magic favorites to P1.", 
+					requestingPlayer.get()->GetName()
+				);
+				// Only magic favorites.
+				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
+				{
+					SPDLOG_DEBUG("Import Magic Favorites to P1.");
+					p->em->ImportCoopFavorites(true);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavoritesMagic);
+				}
 			}
 			else
 			{
 				// Revert changes to P1's favorites if the favorites menu is closing.
-				SPDLOG_DEBUG
-				(
-					"Favorites Menu: "
-					"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", 
-					requestingPlayer.get()->GetName()
-				);
-				// Both magical AND physical forms.
-				if (glob.copiedPlayerDataTypes.all
-					(
-						CopyablePlayerDataTypes::kFavoritesMagic,
-						CopyablePlayerDataTypes::kFavoritesPhysical
-					))
-				{
-					SPDLOG_DEBUG("Restore P1 Favorites.");
-					p->em->RestoreP1Favorites(false);
-					glob.copiedPlayerDataTypes.reset
-					(
-						CopyablePlayerDataTypes::kFavoritesMagic,
-						CopyablePlayerDataTypes::kFavoritesPhysical
-					);
-				}
+				//SPDLOG_DEBUG
+				//(
+				//	"Favorites Menu: "
+				//	"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", 
+				//	requestingPlayer.get()->GetName()
+				//);
+				//// Both magical AND physical forms.
+				//if (glob.copiedPlayerDataTypes.all
+				//	(
+				//		CopyablePlayerDataTypes::kFavoritesMagic,
+				//		CopyablePlayerDataTypes::kFavoritesPhysical
+				//	))
+				//{
+				//	SPDLOG_DEBUG("Restore P1 Favorites.");
+				//	p->em->RestoreP1Favorites(false);
+				//	glob.copiedPlayerDataTypes.reset
+				//	(
+				//		CopyablePlayerDataTypes::kFavoritesMagic,
+				//		CopyablePlayerDataTypes::kFavoritesPhysical
+				//	);
+				//}
 
-				/*SPDLOG_DEBUG
+				SPDLOG_DEBUG
 				(
 					"Favorites Menu: Should copy back inventory on export."
 				);
@@ -8405,7 +8492,22 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Export Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
-				}*/
+				}
+
+				// Revert changes to P1's magic favorites if the favorites menu is closing.
+				SPDLOG_DEBUG
+				(
+					"Magic Menu: "
+					"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.",
+					requestingPlayer.get()->GetName()
+				);
+				// Only magic favorites.
+				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
+				{
+					SPDLOG_DEBUG("Restore P1 Magic Favorites.");
+					p->em->RestoreP1Favorites(true);
+					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavoritesMagic);
+				}
 			}
 		}
 		else if (menuNameHash == Hash(RE::GiftMenu::MENU_NAME))
@@ -8461,6 +8563,22 @@ namespace ALYSLC
 					p->em->ImportCoopFavorites(true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavoritesMagic);
 				}
+
+				// Active effects.
+				// Only copy if not transformed; 
+				// will crash when transformation-related active effects are copied over from P2
+				// since P1 may not be transformed.
+				// Same situation the other way around too.
+				const auto& coopP1 = glob.coopPlayers[0];
+				if (!coopP1->isTransformed &&
+					!p->isTransformed && 
+					!p->isTransforming &&
+					!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+				{
+					SPDLOG_DEBUG("Import Active Effects to P1.");
+					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kActiveEffects);
+				}
 			}
 			else
 			{
@@ -8477,6 +8595,14 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Restore P1 Favorites.");
 					p->em->RestoreP1Favorites(true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavoritesMagic);
+				}
+
+				// Active effects.
+				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+				{
+					SPDLOG_DEBUG("Restore P1 Active Effects.");
+					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
+					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kActiveEffects);
 				}
 			}
 		}
@@ -8578,6 +8704,293 @@ namespace ALYSLC
 				requestingPlayer->GetName()
 			);
 			RestoreP1CopyablePlayerData(requestingPlayer.get());
+		}
+	}
+
+	void GlobalCoopData::CopyOverActiveEffects(RE::Actor* a_coopActor, const bool& a_shouldImport)
+	{
+		// UNUSED FOR NOW (occasional crash when moving over to the 'Active Effects' tab)
+		// Remove all of P1's active effects and apply the companion player's on import,
+		// or restore P1's saved active effects on export.
+
+		auto& glob = GetSingleton();
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1 || !a_coopActor) 
+		{
+			return;
+		}
+
+		if (!p1->currentProcess || 
+			!p1->currentProcess->middleHigh || 
+			!a_coopActor->currentProcess || 
+			!a_coopActor->currentProcess->middleHigh)
+		{
+			return;
+		}
+
+		if (a_shouldImport)
+		{
+			glob.savedP1ActiveEffectsList->clear();
+			glob.savedP1ActiveEffectsList.reset();
+			glob.savedP1ActiveEffectsList = std::make_unique<RE::BSSimpleList<RE::ActiveEffect*>>();
+			if (p1->currentProcess->middleHigh->activeEffects)
+			{
+				for (const auto effect : *p1->currentProcess->middleHigh->activeEffects)
+				{
+					if (!effect)
+					{
+						continue;
+					}
+
+					glob.savedP1ActiveEffectsList->emplace_front(effect);
+					SPDLOG_DEBUG
+					(
+						"IMPORT: Saving P1 active effect {:p} for spell {}. "
+						"Duration: {}, elapsed time: {}. Archetype: {}.",
+						fmt::ptr(effect),
+						effect->spell ? effect->spell->GetName() : "NONE",
+						effect->duration,
+						effect->elapsedSeconds,
+						effect->GetBaseObject() ? 
+						effect->GetBaseObject()->GetArchetype() : 
+						RE::EffectSetting::Archetype::kNone
+					);
+				}
+			}
+
+			if (a_coopActor->currentProcess->middleHigh->activeEffects)
+			{
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{
+					SPDLOG_DEBUG
+					(
+						"IMPORT: {} active effects for {}, clear P1's.",
+						std::distance
+						(
+							a_coopActor->currentProcess->middleHigh->activeEffects->begin(),
+							a_coopActor->currentProcess->middleHigh->activeEffects->end()
+						),
+						a_coopActor->GetName()
+					);
+					p1->currentProcess->middleHigh->activeEffects->clear();
+				}
+
+				delete p1->currentProcess->middleHigh->activeEffects;
+				p1->currentProcess->middleHigh->activeEffects = nullptr;
+				p1->currentProcess->middleHigh->activeEffects = 
+				(
+					new RE::BSSimpleList<RE::ActiveEffect*>()
+				);
+
+				SPDLOG_DEBUG
+				(
+					"IMPORT: {} active effects for {}, MALLOC new active effects list for P1.",
+					std::distance
+					(
+						a_coopActor->currentProcess->middleHigh->activeEffects->begin(),
+						a_coopActor->currentProcess->middleHigh->activeEffects->end()
+					),
+					a_coopActor->GetName()
+				);
+
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{
+					for (const auto effect : 
+						 *a_coopActor->currentProcess->middleHigh->activeEffects)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"IMPORT: Importing {} active effect {:p} for spell {}. "
+							"Duration: {}. Elapsed time: {}. Archetype: {}.",
+							a_coopActor->GetName(),
+							fmt::ptr(effect), 
+							effect->spell ? effect->spell->GetName() : "NONE",
+							effect->duration,
+							effect->elapsedSeconds,
+							effect->GetBaseObject() ? 
+							effect->GetBaseObject()->GetArchetype() : 
+							RE::EffectSetting::Archetype::kNone
+						);
+						p1->currentProcess->middleHigh->activeEffects->emplace_front(effect);
+						if (effect->caster == a_coopActor->GetHandle())
+						{
+							effect->caster = p1->GetHandle();
+						}
+
+						if (effect->target == a_coopActor)
+						{
+							effect->target = p1;
+						}
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR("ERR: IMPORT: Could not get list of active effects for P1.");
+					glob.savedP1ActiveEffectsList->clear();
+					glob.savedP1ActiveEffectsList.reset();
+					return;
+				}
+			}
+			else
+			{
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{
+					SPDLOG_DEBUG("IMPORT: No active effects for {}, clear P1's.",
+						a_coopActor->GetName());
+					p1->currentProcess->middleHigh->activeEffects->clear();
+				}
+				else
+				{
+					SPDLOG_DEBUG("IMPORT: No active effects for {} or for P1. Nothing to do.",
+						a_coopActor->GetName());
+				}
+
+				delete p1->currentProcess->middleHigh->activeEffects;
+				p1->currentProcess->middleHigh->activeEffects = nullptr;
+			}
+		}
+		else
+		{
+			if (!glob.savedP1ActiveEffectsList)
+			{
+				SPDLOG_DEBUG
+				(
+					"EXPORT: No saved active effects list for P1. Constructing one now.",
+					p1->currentProcess->middleHigh->activeEffects ? 
+					std::distance
+					(
+						p1->currentProcess->middleHigh->activeEffects->begin(),
+						p1->currentProcess->middleHigh->activeEffects->end()
+					) : 
+					0,
+					std::distance
+					(
+						glob.savedP1ActiveEffectsList->begin(),
+						glob.savedP1ActiveEffectsList->end()
+					)
+				);
+				glob.savedP1ActiveEffectsList = 
+				(
+					std::make_unique<RE::BSSimpleList<RE::ActiveEffect*>>()
+				);
+			}
+
+			SPDLOG_DEBUG
+			(
+				"EXPORT: Removing {} active effects from P1 before restoring {} effects.",
+				p1->currentProcess->middleHigh->activeEffects ? 
+				std::distance
+				(
+					p1->currentProcess->middleHigh->activeEffects->begin(),
+					p1->currentProcess->middleHigh->activeEffects->end()
+				) : 
+				0,
+				std::distance
+				(
+					glob.savedP1ActiveEffectsList->begin(),
+					glob.savedP1ActiveEffectsList->end()
+				)
+			);
+
+			if (glob.savedP1ActiveEffectsList->empty())
+			{
+				SPDLOG_DEBUG
+				(
+					"EXPORT: No active effects to restore for P1. "
+					"Clearing and freeing current effects list."
+				);
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{					
+					p1->currentProcess->middleHigh->activeEffects->clear();
+				}
+
+				delete p1->currentProcess->middleHigh->activeEffects;
+				p1->currentProcess->middleHigh->activeEffects = nullptr;
+			}
+			else
+			{
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{
+					for (const auto effect : *p1->currentProcess->middleHigh->activeEffects)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						if (effect->caster == p1->GetHandle())
+						{
+							effect->caster = a_coopActor->GetHandle();
+						}
+
+						if (effect->target == p1)
+						{
+							effect->target = a_coopActor;
+						}
+					}
+
+					p1->currentProcess->middleHigh->activeEffects->clear();
+				}
+
+				delete p1->currentProcess->middleHigh->activeEffects;
+				p1->currentProcess->middleHigh->activeEffects = nullptr;
+				p1->currentProcess->middleHigh->activeEffects = 
+				(
+					new RE::BSSimpleList<RE::ActiveEffect*>()
+				);
+				
+				SPDLOG_DEBUG
+				(
+					"EXPORT: {} saved active effects for P1, "
+					"MALLOC new active effects list for P1.",
+					std::distance
+					(
+						a_coopActor->currentProcess->middleHigh->activeEffects->begin(),
+						a_coopActor->currentProcess->middleHigh->activeEffects->end()
+					),
+					a_coopActor->GetName()
+				);
+
+				if (p1->currentProcess->middleHigh->activeEffects)
+				{
+					for (const auto effect : *glob.savedP1ActiveEffectsList)
+					{
+						if (!effect)
+						{
+							continue;
+						}
+
+						SPDLOG_DEBUG
+						(
+							"EXPORT: Restoring P1 active effect {:p} for spell {}. "
+							"Duration: {}, elapsed time: {}. Archetype: {}.",
+							fmt::ptr(effect), 
+							effect->spell ? effect->spell->GetName() : "NONE",
+							effect->duration,
+							effect->elapsedSeconds,
+							effect->GetBaseObject() ? 
+							effect->GetBaseObject()->GetArchetype() : 
+							RE::EffectSetting::Archetype::kNone
+						);
+						p1->currentProcess->middleHigh->activeEffects->emplace_front(effect);
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR("ERR: EXPORT: Could not get list of active effects for P1.");
+					glob.savedP1ActiveEffectsList->clear();
+					glob.savedP1ActiveEffectsList.reset();
+					return;
+				}
+			}
+			
+			glob.savedP1ActiveEffectsList->clear();
+			glob.savedP1ActiveEffectsList.reset();
 		}
 	}
 
@@ -11514,6 +11927,123 @@ namespace ALYSLC
 
 		// Start the camera manager again.
 		glob.cam->ToggleCoopCamera(true);
+	}
+
+	void GlobalCoopData::TeleportToP1OrAwayTask(RE::ActorHandle a_playerActorHandle, bool a_toP1)
+	{
+		// Teleport this companion player to P1 to start co-op or to their editor location 
+		// if they are being dismissed when co-op ends or before co-op starts.
+		
+		auto& glob = GetSingleton();
+		if (!glob.globalDataInit)
+		{
+			return;
+		}
+
+		const auto& playerActor = Util::GetActorPtrFromHandle(a_playerActorHandle);
+		if (!playerActor)
+		{
+			return;
+		}
+
+		if (a_toP1)
+		{
+			SPDLOG_DEBUG("{} has been summoned from their home universe.", playerActor->GetName());
+		}
+		else
+		{
+			SPDLOG_DEBUG("{} is returning to their home universe. Their people need them.",
+				playerActor->GetName());
+		}
+	
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			SPDLOG_ERROR
+			(
+				"ERR: Player 1 is invalid. Cannot teleport {} to {}.",
+				playerActor->GetName(), a_toP1 ? "P1" : "their editor location"
+			);
+		}
+
+		// Don't move before teleporting.
+		Util::NativeFunctions::SetDontMove(playerActor.get(), true);
+		// Get portal form.
+		auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55); 
+		if (a_toP1)
+		{
+			// Move invisible player in front of P1 and place down the portal.
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActor, teleportalActivator]() 
+				{
+					playerActor->Disable();
+					playerActor->MoveTo(p1); 
+					playerActor->SetPosition
+					(
+						p1->data.location + 
+						100.0f * 
+						Util::RotationToDirectionVect
+						(
+							0.0f, Util::ConvertAngle(p1->GetHeading(false))
+						),
+						true
+					);
+					if (teleportalActivator)
+					{
+						playerActor->PlaceObjectAtMe(teleportalActivator, false);
+					}
+					
+				}
+			);
+			// Wait a bit to allow the effect to play.
+			std::this_thread::sleep_for(0.25s);
+			// Then enable the player and play the teleportation shader.
+			Util::AddSyncedTask
+			(
+				[&glob, p1, playerActor, teleportalActivator]() 
+				{
+					playerActor->Enable(false);
+					// Play the use-portal shader.
+					Util::StartEffectShader(playerActor.get(), glob.ghostFXShader, 1.0f);
+					SPDLOG_DEBUG("{} was moved to P1.", playerActor->GetName());
+				}
+			);
+		}
+		else
+		{
+			// Move to the character's default location where the inventory chest is.
+			// Place the exit portal at the target.
+			Util::AddSyncedTask
+			(
+				[&glob, a_toP1, teleportalActivator, p1, playerActor]() 
+				{
+					// Play the use-portal shader.
+					Util::StartEffectShader(playerActor.get(), glob.ghostFXShader, 1.0f);
+					// Pop open the portal.
+					if (teleportalActivator)
+					{
+						playerActor->PlaceObjectAtMe(teleportalActivator, false);
+					}
+				}
+			);
+			// Wait a bit to allow the effect to play.
+			std::this_thread::sleep_for(0.25s);
+			// Move away to the player's editor location.
+			Util::AddSyncedTask
+			(
+				[&glob, playerActor]() 
+				{
+					// Need a refr target, so move to P1's inventory chest,
+					// which is located at the player's editor location.
+					playerActor->MoveTo(glob.coopInventoryChests[0].get());
+					SPDLOG_DEBUG("{} was moved to their editor location.", playerActor->GetName()); 
+				}
+			);
+		}
+		
+		// Can move again.
+		Util::NativeFunctions::SetDontMove(playerActor.get(), false);
 	}
 
 	void GlobalCoopData::YouDiedTask(RE::ActorHandle a_deadPlayerHandle)

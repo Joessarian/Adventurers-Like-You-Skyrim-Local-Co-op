@@ -30,6 +30,12 @@ namespace ALYSLC
 		static bool g_installed;
 	};
 
+	struct NFFCompat
+	{
+		static void CheckForNFF(const SKSE::LoadInterface* a_loadInterface);
+		static bool g_installed;
+	};
+
 	struct PersistentFavoritesCompat
 	{
 		static void CheckForPersistentFavorites();

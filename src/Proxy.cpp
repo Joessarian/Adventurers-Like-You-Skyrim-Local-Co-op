@@ -76,6 +76,10 @@ namespace ALYSLC
 		// Reset supported menu open state because it won't reset
 		// properly if the previous co-op session ended while a supported menu was open.
 		GlobalCoopData::ResetMenuState();
+		// Make sure no players have co-op keywords from a previous session.
+		// Don't want an inactive player character to keep an active player's co-op player keyword;
+		// will mess with executing the ranged attack package and sneaking.
+		GlobalCoopData::RemoveCoopPlayerKeywords();
 		// Re-enable any controls for P1 that might have been disabled.
 		Util::ToggleAllControls(true);
 		// Clear any lingering queued input events.
@@ -416,32 +420,6 @@ namespace ALYSLC
 					}
 				}
 			);
-
-			glob.coopSessionActive = a_shouldStart;
-			for (const auto& p : glob.coopPlayers) 
-			{
-				if (!p || !p->isActive) 
-				{
-					continue;
-				}
-
-				if (a_shouldStart)
-				{
-					// Make sure the player is not paralyzed either (from being downed).
-					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
-					// Register the player for script events 
-					// and then signal all their managers to resume.
-					p->RegisterEvents();
-					p->RequestStateChange(ManagerState::kRunning);
-				}
-				else 
-				{
-					// Signal all player managers to pause and await data refresh
-					// before unregistering the player for script events.
-					p->RequestStateChange(ManagerState::kAwaitingRefresh);
-					p->UnregisterEvents();
-				}
-			}
 			
 			// Give all accumulated party-wide shared items to P1.
 			GlobalCoopData::GivePartyWideItemsToP1();
@@ -462,6 +440,28 @@ namespace ALYSLC
 			GlobalCoopData::SetCrosshairText(true);
 			// Load debug overlay menu to show crosshairs/other UI elements.
 			DebugOverlayMenu::Load();
+
+			glob.coopSessionActive = a_shouldStart;
+			for (const auto& p : glob.coopPlayers) 
+			{
+				if (!p || !p->isActive) 
+				{
+					continue;
+				}
+
+				if (a_shouldStart)
+				{
+					// Make sure the player is not paralyzed either (from being downed).
+					p->coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					// Signal all their managers to resume.
+					p->RequestStateChange(ManagerState::kRunning);
+				}
+				else 
+				{
+					// Signal all player managers to pause and await data refresh.
+					p->RequestStateChange(ManagerState::kAwaitingRefresh);
+				}
+			}
 
 			SPDLOG_DEBUG("Co-op session has now {}.", a_shouldStart ? "started" : "ended");
 		}
@@ -528,6 +528,7 @@ namespace ALYSLC
 				
 			SPDLOG_DEBUG("{}.", playerActor->GetName());
 			Util::EnableCollisionForActor(playerActor.get());
+			playerActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 		}
 	}
 
@@ -1369,6 +1370,33 @@ namespace ALYSLC
 		// Restore XP threshold.
 		GlobalCoopData::ModifyLevelUpXPThreshold(false);
 		glob.coopSessionActive = false;
+	}
+
+	void CoopLib::TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1)
+	{
+		SPDLOG_DEBUG
+		(
+			"Move {} {} P1.",
+			a_playerActor ? a_playerActor->GetName() : "NONE",
+			a_toP1 ? "to" : "from"
+		);
+
+		if (!glob.globalDataInit || !a_playerActor)
+		{
+			SPDLOG_ERROR
+			(
+				"ERR: Global co-op data not initialized or player invalid. "
+				"Cannot move {} to/from P1.",
+				a_playerActor ? a_playerActor->GetName() : "NONE"
+			);
+			return;
+		}
+
+		const auto handle = a_playerActor->GetHandle();
+		glob.taskRunner->AddTask
+		(
+			[handle, a_toP1](){ GlobalCoopData::TeleportToP1OrAwayTask(handle, a_toP1); }
+		);
 	}
 
 	void CoopLib::TeleportToPlayerToActor
@@ -2552,6 +2580,7 @@ namespace ALYSLC
 		a_vm->RegisterFunction("SetIsSummoningFlag"s, "ALYSLC"s, SetIsSummoningFlag);
 		a_vm->RegisterFunction("SetPartyInvincibility"s, "ALYSLC"s, SetPartyInvincibility);
 		a_vm->RegisterFunction("SignalWaitForUpdate"s, "ALYSLC"s, SignalWaitForUpdate);
+		a_vm->RegisterFunction("TeleportToP1OrAway"s, "ALYSLC"s, TeleportToP1OrAway);
 		a_vm->RegisterFunction("TeleportToPlayerToActor"s, "ALYSLC"s, TeleportToPlayerToActor);
 		a_vm->RegisterFunction("ToggleCoopCamera"s, "ALYSLC"s, ToggleCoopCamera);
 		a_vm->RegisterFunction("ToggleSetupMenuControl"s, "ALYSLC"s, ToggleSetupMenuControl);

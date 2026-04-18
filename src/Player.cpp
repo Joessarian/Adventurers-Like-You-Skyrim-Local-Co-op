@@ -549,6 +549,37 @@ namespace ALYSLC
 				}
 			}
 
+			// Make sure the companion player is and remains on amicable terms with P1.
+			if (!isPlayer1)
+			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				const auto scriptFactory = 
+				(
+					RE::IFormFactory::GetConcreteFormFactoryByType<RE::Script>()
+				);
+				const auto script = 
+				(
+					scriptFactory ? scriptFactory->Create() : nullptr
+				);
+				if (script)
+				{
+					script->SetCommand
+					(
+						fmt::format("setrelationshiprank {:X} 3", p1->formID)
+					);
+					script->CompileAndRun(coopActor.get());
+					script->SetCommand
+					(
+						fmt::format("setrelationshiprank {:X} 3", coopActor->formID)
+					);
+					script->CompileAndRun(p1);
+					delete script;
+				}
+
+				coopActor->SetActorValue(RE::ActorValue::kAggression, 0.0f);
+				coopActor->SetActorValue(RE::ActorValue::kConfidence, 4.0f);
+			}
+
 			if (em && mm && pam && tm && taskRunner) 
 			{
 				// Prepare managers for data refresh when signalled to resume.
@@ -679,7 +710,8 @@ namespace ALYSLC
 	{
 		// Dismiss co-op companion if dead, the co-op session ended, 
 		// or if the Summoning Menu is about to open.
-
+		
+		glob.canStartCoopGlob->value =  false;
 		// Stop managers first.
 		RequestStateChange(ManagerState::kAwaitingRefresh);
 		// Remove essential flag on dismissal.
@@ -698,12 +730,29 @@ namespace ALYSLC
 		hasBeenDismissed = true;
 
 		// Have player Papyrus script run its cleanup.
-		onCoopEndReg.SendEvent(coopActor.get(), playerID);
+
+		// Remove co-op player keywords.
+		pam->UpdateCoopPlayerKeyword(false);
+		mm->ClearKeepOffsetFromActor();
+
+		if (isPlayer1)
+		{
+			Util::ToggleAllControls(true);
+		}
+		else if (coopActor->Is3DLoaded())
+		{
+			taskRunner->AddTask
+			(
+				[this](){ GlobalCoopData::TeleportToP1OrAwayTask(coopActor->GetHandle(), false); }
+			);
+		}
+
 		SPDLOG_DEBUG
 		(
 			"Handled dismissal of {} (0x{:X}). Script is now completing cleanup.", 
 			coopActor->GetName(), coopActor->formID
 		);
+		glob.canStartCoopGlob->value =  true;
 	}
 
 	std::string CoopPlayer::GetHMSStatNotificationText()
@@ -811,36 +860,6 @@ namespace ALYSLC
 		);
 
 		return hmsText;
-	}
-
-	void CoopPlayer::RegisterEvents()
-	{
-		// Register the player for Papyrus script events.
-
-		if (!glob.player1RefAlias || !coopActor) 
-		{
-			return;
-		}
-
-		if (!isPlayer1)
-		{
-			if (!onCoopEndReg.Register(coopActor.get()))
-			{
-				SPDLOG_DEBUG
-				(
-					"RegisterEvents: Failed to register {} for dismissal event.", 
-					coopActor->GetName()
-				);
-			}
-		}
-
-		if (!onCoopEndReg.Register(glob.player1RefAlias))
-		{
-			SPDLOG_DEBUG
-			(
-				"RegisterEvents: Failed to register {} for dismissal event.", coopActor->GetName()
-			);
-		}
 	}
 
 	void CoopPlayer::RequestSubManagerStateChange(ManagerState&& a_newState)
@@ -1510,6 +1529,11 @@ namespace ALYSLC
 				return false;
 			}
 			
+			// The transformation reversion will remove at least half of the player's health,
+			// so ensure their health is full before transforming back to prevent the player
+			// from instantly dying/entering a downed state.
+			SPDLOG_DEBUG("{}: Restore health.", coopActor->GetName());
+			Util::RestoreAVToMaxValue(coopActor.get(), RE::ActorValue::kHealth);
 			if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 			{
 				for (auto effect : *effectList)
@@ -1563,24 +1587,24 @@ namespace ALYSLC
 			Util::SetActorRace(coopActor.get(), originalRace);
 			// Cleanup.
 			delete script;
-			
 			// Clear out pre-transformation race, since we've already reverted to it.
 			preTransformationRace = nullptr;
-			// Rescale health, magicka, and stamina to stored values.
-			float firstLevel = 1.0f;
-			auto iter = glob.serializablePlayerData.find(coopActor->formID); 
-			if (iter != glob.serializablePlayerData.end())
+			
+			if (!isPlayer1)
 			{
-				firstLevel = iter->second->firstSavedLevel;
+				// Rescale health, magicka, and stamina to stored values.
+				float firstLevel = 1.0f;
+				auto iter = glob.serializablePlayerData.find(coopActor->formID); 
+				if (iter != glob.serializablePlayerData.end())
+				{
+					firstLevel = iter->second->firstSavedLevel;
+				}
+
+				GlobalCoopData::RescaleHMS(coopActor.get(), firstLevel);
+				// Re-equip all gear without resetting inventory.
+				em->ReEquipAll(false, false);
 			}
 
-			GlobalCoopData::RescaleHMS(coopActor.get(), firstLevel);
-
-			// The transformation reversion will remove at least half of the player's health,
-			// so ensure their health is full before transforming back to prevent the player
-			// from instantly dying/entering a downed state.
-			SPDLOG_DEBUG("{}: Restore health.", coopActor->GetName());
-			Util::RestoreAVToMaxValue(coopActor.get(), RE::ActorValue::kHealth);
 			return true;
 		}
 	
@@ -1970,42 +1994,35 @@ namespace ALYSLC
 				}
 			);
 		}
+		
 
+		coopActor->VisitFactions
+		(
+			[this](RE::TESFaction* a_faction, int8_t a_rank) 
+			{
+				SPDLOG_DEBUG
+				(
+					"{} is in faction {} (0x{:X}): {}.",
+					coopActor->GetName(),
+					a_faction->GetName(),
+					a_faction->formID,
+					coopActor->IsInFaction(a_faction)
+				);
+
+				/*if ((a_faction->formID & 0x00FFFFFF) == 0x016EB3)
+				{
+					coopActor->RemoveFromFaction(a_faction);
+					SPDLOG_DEBUG("Removing from faction {}: {}.",
+						Util::GetEditorID(a_faction), !coopActor->IsInFaction(a_faction));
+				}*/
+
+				return false;
+			}
+		);
 		// IDK, but since we updated the player's factions, might as well refresh reactions too.
 		if (auto procLists = RE::ProcessLists::GetSingleton(); procLists)
 		{
 			procLists->ClearCachedFactionFightReactions();
-		}
-	}
-
-	void CoopPlayer::UnregisterEvents() 
-	{
-		// Unregister this player for Papyrus script events.
-
-		if (!glob.player1RefAlias || !coopActor)
-		{
-			return;
-		}
-
-		if (!isPlayer1)
-		{
-			if (!onCoopEndReg.Unregister(coopActor.get()))
-			{
-				SPDLOG_DEBUG
-				(
-					"UnregisterEvents: Could not unregister {} for dismissal event.",
-					coopActor->GetName()
-				);
-			}
-		}
-
-		if (!onCoopEndReg.Unregister(glob.player1RefAlias))
-		{
-			SPDLOG_DEBUG
-			(
-				"UnregisterEvents: Could not unregister {} for dismissal event.", 
-				coopActor->GetName()
-			);
 		}
 	}
 

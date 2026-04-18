@@ -106,25 +106,6 @@ Function AbortSummoningAttempt()
     ALYSLC.SetIsSummoningFlag(False)
 EndFunction
 
-; Send co-op start event to co-op NPC scripts.
-; NOTE: Not for P1.
-Function CompanionCoopStart()
-    Int Iter = 0
-    Int NumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
-	Form[] CompanionsList = StorageUtil.FormListToArray(None, "ALYSLC_CompanionsList")
-    While (Iter < NumCompanions)
-        Actor Companion = CompanionsList[Iter] as Actor
-        If (Companion)
-            ALYSLC.Log("[SUMMON SCRIPT] Sending co-op start event to player " + Companion.GetDisplayName() + ".")
-            (Companion as __ALYSLC_ControlCoopActor).OnCoopStart(Companion)
-        Else 
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Could not cast companion to actor.")
-        EndIf
-
-        Iter += 1
-    EndWhile
-EndFunction
-
 ; Sent to co-op actor scripts to handle dismissal of a companion player.
 Function EndCoopForPlayer(ObjectReference akCompanion)
     Int Handle = ModEvent.Create("ALYSLC_CoopEndEvent")
@@ -217,18 +198,6 @@ Function HandleCharacterCustomization()
                 StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
                 If (NewGenderOption != CurrentGenderOption)
                     ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ".")
-                    Bool WasFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
-                    Bool IsNowFemale = NewGenderOption == 0 || NewGenderOption == 2
-                    If ((!WasFemale && IsNowFemale) || (WasFemale && !IsNowFemale))
-                        ; Set to default voice type for race.
-                        VoiceType DefaultVoiceType = ALYSLC.GetDefaultRacialVoiceType(NewRace, NewGenderOption == 0 || NewGenderOption == 2)
-                        If (DefaultVoiceType)
-                            ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + DefaultVoiceType.GetName())
-                            StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", DefaultVoiceType)
-                        EndIf
-                        
-                        ALYSLC.Log("[SUMMON SCRIPT] After exiting RaceSex Menu. New voice type: " + DefaultVoiceType + ". For gender option: " + NewGenderOption + ", race: " + CurrentRace)
-                    EndIf
                 EndIf
             EndIf
 
@@ -240,23 +209,19 @@ Function HandleCharacterCustomization()
             ALYSLC.ExportP1ActorBaseAppearanceData(SelectedCharacter)
             ALYSLC.Wait(0.5)
 
-            ;=====================================================================================
-            ; QUARANTINE
-            ; COULD CAUSE THE RACEMENU SLIDERS BUG ON RESTARTING THE GAME AND USING 'SHOWRACEMENU'
             ; Restore P1's appearance, height, weight, and name.
-            ; P1ActorBase.SetName(SavedP1Name)
-            ; PlayerRef.SetName(SavedP1Name)
-            ; Renamed = PlayerRef.SetDisplayName(SavedP1Name, True)
-            ; If (Renamed)
-            ;     ALYSLC.Log("[SUMMON SCRIPT] Restored name: '" + SavedP1Name + "'.")
-            ; Else
-            ;     ALYSLC.Log("[SUMMON SCRIPT] Could not restore P1's name.")
-            ; EndIf
+            P1ActorBase.SetName(SavedP1Name)
+            PlayerRef.SetName(SavedP1Name)
+            Renamed = PlayerRef.SetDisplayName(SavedP1Name, True)
+            If (Renamed)
+                ALYSLC.Log("[SUMMON SCRIPT] Restored name: '" + SavedP1Name + "'.")
+            Else
+                ALYSLC.Log("[SUMMON SCRIPT] Could not restore P1's name.")
+            EndIf
 
-            ; ALYSLC.Log("[SUMMON SCRIPT] P1 old/new height, weight: " + SavedP1Height + "/" + P1ActorBase.GetHeight() + ", " + SavedP1Weight + "/" + P1ActorBase.GetHeight())
-            ; P1ActorBase.SetHeight(SavedP1Height)
-            ; P1ActorBase.SetWeight(SavedP1Weight)
-            ;=====================================================================================
+            ALYSLC.Log("[SUMMON SCRIPT] P1 old/new height, weight: " + SavedP1Height + "/" + P1ActorBase.GetHeight() + ", " + SavedP1Weight + "/" + P1ActorBase.GetHeight())
+            P1ActorBase.SetHeight(SavedP1Height)
+            P1ActorBase.SetWeight(SavedP1Weight)
 
             ; Open up the RaceMenu for P1 and prompt them to restore their character's preset, which they have hopefully saved when making their character previously.
             String RaceName = "'" + SavedP1Race.GetName() + "'"
@@ -369,7 +334,7 @@ Function HandleCharacterCustomization()
                                         StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
                                     EndIf
                                 EndIf
-                            EndIf
+                             EndIf
                             ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + SelectedString + ", index " + SelectedOptionIndex)
                         ElseIf (CurrentSelectableRaceType == -1)
                             ; Chose menu info entry.
@@ -389,7 +354,6 @@ Function HandleCharacterCustomization()
                         StorageUtil.SetIntValue(SelectedCharacter, "ALYSLC_GenderOption", NewGenderOption)
                         If (NewGenderOption != CurrentGenderOption)
                             ALYSLC.Log("[SUMMON SCRIPT] Gender changed from " + CurrentGenderOption + " to " + NewGenderOption + ". Refreshing dependent appearance presets list. Current race: " + CurrentRace.GetName())
-                            Bool WasFemale = CurrentGenderOption == 0 || CurrentGenderOption == 2
                             Bool IsNowFemale = NewGenderOption == 0 || NewGenderOption == 2
                             CoopNPCAppearancePresets = ALYSLC.GetAllAppearancePresets(CurrentRace, IsNowFemale)
                             ActorBase Preset = None 
@@ -403,18 +367,6 @@ Function HandleCharacterCustomization()
                             Else
                                 ALYSLC.Log("[SUMMON SCRIPT] Race change, but there are no presets. Clear current base.")
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_AppearancePreset", None)
-                            EndIf
-
-                            If ((!WasFemale && IsNowFemale) || (WasFemale && !IsNowFemale))
-                                ; Set to default voice type for race whenever gender changes.
-                                CurrentRace = (StorageUtil.GetFormValue(SelectedCharacter, "ALYSLC_Race", Base.GetRace())) as Race
-                                VoiceType DefaultVoiceType = ALYSLC.GetDefaultRacialVoiceType(CurrentRace, NewGenderOption == 0 || NewGenderOption == 2)
-                                If (DefaultVoiceType)
-                                    ALYSLC.Log("[SUMMON SCRIPT] New voice type: " + DefaultVoiceType.GetName())
-                                    StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_VoiceType", DefaultVoiceType)
-                                EndIf
-                                
-                                ALYSLC.Log("[SUMMON SCRIPT] Gender change. New voice type: " + DefaultVoiceType + ". For gender option: " + NewGenderOption + ", race: " + CurrentRace)
                             EndIf
                         EndIf
                     EndIf
@@ -495,11 +447,6 @@ String Function OpenUITextMenu()
     String ResultString = TextMenu.GetResultString()
 
     Return ResultString
-EndFunction
-
-; Signal player 1 reference alias script to start its initialization.
-Function Player1CoopStart()
-    (Player1RefrAlias as __ALYSLC_ControlPlayerRef).OnCoopStart()
 EndFunction
 
 ; Precondition: the selected character's actor base is valid.
@@ -665,28 +612,6 @@ Function PopulateAndShowListMenu(String PrefixTag, Int CustomizationOptionIndex,
     EndIf
 EndFunction
 
-; Register P1 and companion players for co-op start and end events.
-Function RegisterPlayersForCoopEvents()
-    ALYSLC.Log("[SUMMON SCRIPT] RegisterPlayersForCoopEvents")
-    Player1RefrAlias.RegisterForModEvent("ALYSLC_CoopStartEvent", "OnCoopStart")
-    Player1RefrAlias.RegisterForModEvent("ALYSLC_CoopEndEvent", "OnCoopEnd")
-    Int Iter = 0
-    Int NumCompanions = CoopCharactersFormList.ToArray().Length
-    Form[] CompanionsList = CoopCharactersFormList.ToArray()
-    While (Iter < NumCompanions)
-        __ALYSLC_ControlCoopActor Companion = CompanionsList[Iter] as __ALYSLC_ControlCoopActor
-        ALYSLC.Log("[SUMMON SCRIPT] RegisterPlayersForCoopEvents: companion " + (Iter + 1) + " is " + Companion)
-        If (Companion)
-            Companion.RegisterForModEvent("ALYSLC_CoopEndEvent", "OnCoopEnd")
-            Companion.RegisterForModEvent("ALYSLC_CoopStartEvent", "OnCoopStart")
-        Else 
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Could not cast companion player character " + (CompanionsList[Iter] as Actor).GetDisplayName() + " to co-op start script type. Cannot summon this player character.")
-        EndIf
-
-        Iter += 1
-    EndWhile
-EndFunction
-
 ; Set list of active player actors to send to plugin.
 Function SetActiveCoopPlayers()
     Int NumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
@@ -709,6 +634,164 @@ Function SetActiveCoopPlayers()
         CoopActors[CompanionIndex + 1] = CoopPlayerToSummon
         CompanionIndex += 1 
     EndWhile
+EndFunction
+
+; Set player character customization options for all companion players.
+Function SetAllCompanionPlayerCustomizationOptions()
+    Int Iter = 0
+    While (Iter < CoopActors.Length)
+        Actor PlayerActor = CoopActors[Iter]
+        If (PlayerActor != PlayerRef)
+            ALYSLC.Log("[SUMMON SCRIPT] Setting " + PlayerActor.GetDisplayName() + "'s customization options'.")
+            SetCompanionPlayerCustomizationOptions(PlayerActor)
+        EndIf
+
+        Iter += 1
+    EndWhile
+EndFunction
+
+; Refresh customization options on the companion player's character,
+; since these changes do not persist between save games.
+Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
+    If (akPlayerActor == PlayerRef)
+        Return
+    EndIf
+
+    ALYSLC.Log("[CCA SCRIPT] Set customization options for " + akPlayerActor.GetDisplayName())
+    Int DeviceID = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_DeviceID",  -1)
+    Int PlayerID = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_PlayerID",  -1)
+    ALYSLC.SetInitialCustomizationOptions(akPlayerActor)
+
+    ActorBase Base = akPlayerActor.GetActorBase()
+    Float SecondsWaited = 0.0
+    Float TimeoutSeconds = 2.0
+    ; Name
+    String NewName = StorageUtil.GetStringValue(akPlayerActor, "ALYSLC_Name", akPlayerActor.GetDisplayName())
+    If (NewName != akPlayerActor.GetName())
+        ALYSLC.Log("[CCA SCRIPT] Set name: " + NewName)
+        Base.SetName(NewName)
+        akPlayerActor.SetName(NewName)
+        akPlayerActor.SetDisplayName(NewName)
+
+        SecondsWaited = 0.0
+        While (akPlayerActor.GetDisplayName() != NewName && SecondsWaited < TimeoutSeconds)
+            ALYSLC.Log("[CCA SCRIPT] Waiting on name change to " + NewName + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
+        EndWhile
+
+        If (SecondsWaited >= TimeoutSeconds)
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+        EndIf
+    EndIf
+
+    ; Class
+    Class NewClass = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_Class", None) as Class
+    If (NewClass && NewClass != Base.GetClass())
+        ALYSLC.Log("[CCA SCRIPT] Set class to " + NewClass)
+        Base.SetClass(NewClass)
+        ALYSLC.SetCoopPlayerClass(akPlayerActor, NewClass, False)
+                
+        ; Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
+        ALYSLC.RequestMenuControl(DeviceID, PlayerID, "MessageBoxMenu")
+        Debug.MessageBox("[ALYSLC]\n" + akPlayerActor.GetDisplayName() + "'s base stats were modified on class change.\nAll of their perks were refunded, and all shared perks have also been refunded to all players."); Notify the player that their perks were refunded, and that all players have had their shared perks refunded.
+        ; Have to wait for message box prompt to open.
+        SecondsWaited = 0.0
+        While (!UI.IsMenuOpen("MessageBoxMenu") && SecondsWaited < 2.0)
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
+        EndWhile
+
+        ; Once open, wait until closed.
+        While (UI.IsMenuOpen("MessageBoxMenu"))
+            ALYSLC.Wait(0.1)
+        EndWhile
+
+        ; Wait for the class to change, or until the max wait time elapses.
+        SecondsWaited = 0.0
+        While (Base.GetClass() != NewClass && SecondsWaited < TimeoutSeconds)
+            ALYSLC.Log("[CCA SCRIPT] Waiting on class change to " + NewClass + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
+        EndWhile
+
+        If (SecondsWaited >= TimeoutSeconds)
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+        EndIf
+    EndIf
+
+    ; Race
+    Race NewRace = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_Race", None) as Race
+    Bool ShouldChangeRace = NewRace && NewRace != Base.GetRace()
+    If (ShouldChangeRace)
+        ALYSLC.Log("[CCA SCRIPT] Set race to " + NewRace + " from base race " + Base.GetRace() + ".")
+        ALYSLC.SetCoopPlayerRace(akPlayerActor, NewRace, False)
+    EndIf
+
+    ; Appearance preset and gender option
+    Int GenderOption = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_GenderOption", -1)
+    Bool SetUseOppositeGenderAnims = GenderOption >= 2
+    Bool SetFemale = (GenderOption == 0 || GenderOption == 2) || (GenderOption == -1 && Base.GetSex() == 1)
+    ActorBase Preset = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_AppearancePreset", None) as ActorBase
+    ALYSLC.Log("[CCA SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + Base.GetSex() + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
+    ALYSLC.Log("[CCA SCRIPT] Saved preset is " + Preset.GetName() + " (" + Preset + "), current base is " + Base.GetName() + " (" + Base + ").")
+    If (!Preset)
+        ; No preset to set, so set to the default racial preset, change gender, anims, and update face/body skin tone.
+        ALYSLC.Log("[CCA SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
+        ALYSLC.SetDefaultRacialAppearance(PlayerID, SetFemale, SetUseOppositeGenderAnims)
+    ElseIf ((Preset && Preset != Base) || ((Base.GetSex() == -1) || (Base.GetSex() == 0 && SetFemale) || (Base.GetSex() == 1 && !SetFemale)))
+        If (Preset && Preset != Base)
+            ALYSLC.Log("[CCA SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
+        Else
+            ALYSLC.Log("[CCA SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
+        EndIf
+
+        ALYSLC.CopyNPCAppearanceToPlayer(PlayerID, Preset, SetUseOppositeGenderAnims)
+    EndIf
+
+	; Apply custom appearance preset afterward, if any.
+    If (Preset == Base)
+		ALYSLC.LoadPlayerCharacterPreset(akPlayerActor)
+    EndIf
+
+    ; Voice Type
+    VoiceType CurrentVoiceType = Base.GetVoiceType()
+    VoiceType NewVoiceType = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_VoiceType", None) as VoiceType
+    If (NewVoiceType && NewVoiceType != CurrentVoiceType)
+        ALYSLC.Log("[CCA SCRIPT] Set voice type to " + NewVoiceType)
+        Base.SetVoiceType(NewVoiceType)
+        SecondsWaited = 0.0
+        While (Base.GetVoiceType() != NewVoiceType && SecondsWaited < TimeoutSeconds)
+            ALYSLC.Log("[CCA SCRIPT] Waiting on voice type change to " + NewVoiceType + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
+        EndWhile
+        
+        If (SecondsWaited >= TimeoutSeconds)
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+        EndIf
+    EndIf
+
+    ; Weight
+    Float NewWeight = StorageUtil.GetFloatValue(akPlayerActor, "ALYSLC_Weight", Base.GetWeight())
+    If (NewWeight != Base.GetWeight())
+        ALYSLC.Log("[CCA SCRIPT] Set weight.")
+        Base.SetWeight(NewWeight)
+        SecondsWaited = 0.0
+        While (Base.GetWeight() != NewWeight && SecondsWaited < TimeoutSeconds)
+            ALYSLC.Log("[CCA SCRIPT] Waiting on weight change to " + NewWeight + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Wait(0.5)
+            SecondsWaited += 0.5
+        EndWhile
+        
+        If (SecondsWaited >= TimeoutSeconds)
+            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+        EndIf
+    EndIf
+    
+    ; Height
+    ALYSLC.Log("[CCA SCRIPT] Set height.")
+    akPlayerActor.SetScale(StorageUtil.GetFloatValue(akPlayerActor, "ALYSLC_HeightMultiplier", 1.0))
 EndFunction
 
 ; Show a UIExtensions list menu with appearance customization options to choose.
@@ -889,7 +972,6 @@ Function ShowCoopSetupMenu()
     CurrentMenuPlayerID = CurrentCompanionsCount + 1
     If (!WasSelectingCharacter)
         ; Allow co-op player to choose by giving them control over the menu.
-        StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", CurrentCompanionsCount + 1)
         ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, True)
         WasSelectingCharacter = True
     EndIf
@@ -919,8 +1001,6 @@ Function ShowCoopSetupMenu()
             ALYSLC.ToggleSetupMenuControl(CurrentMenuDeviceID, CurrentMenuPlayerID, False)
             ; Let the next player select their character.
             WasSelectingCharacter = False
-        Else 
-            ALYSLC.Log("[SUMMON SCRIPT] No character selected. Going back to co-op setup menu.")
         EndIf
 
         ; Go back to the setup menu.
@@ -1032,7 +1112,6 @@ Int Function ShowGenderSelectionMenu()
 
 
     ALYSLC.Log("[SUMMON SCRIPT] Gender selection menu. Selected option " + SelectedOptionIndex)
-
     If (SelectedOptionIndex == -1)
         Return SelectedOptionIndex
     Else
@@ -1100,39 +1179,39 @@ VoiceType Function ShowVoiceTypeSelectionMenu()
     Return None
 EndFunction
 
-; Spawn in all the chosen co-op characters.
-Function SummonCoopPlayers()
+; Spawn in all the chosen companion characters.
+; Set customization options and prepare to start co-op!
+Function SummonAndSetupCompanionPlayers()
     ; Spawn in co-op companions after disabling them.
     ; The companion player initialization script will enable them when it runs before co-op starts.
-    Int CompanionIndex = 1
-    While (CompanionIndex < CoopActors.Length)
-        If (CoopActors[CompanionIndex] && CoopActors[CompanionIndex] as Actor)
-            ; Get co-op player NPC and add to actors list.
-            Actor CoopPlayerToSummon = CoopActors[CompanionIndex] as Actor
-            ; Ensure they're alive before teleporting over.
-            ; Or wait 2 seconds max if they refuse to resurrect.
-            Float SecsWaited = 0.0
-            While (CoopPlayerToSummon.IsDead() && SecsWaited < 2.0)
-                Float PreviousHP = CoopPlayerToSummon.GetActorValue("Health")
-                CoopPlayerToSummon.Resurrect()
-                ; Set to 1 HP.
-                CoopPlayerToSummon.DamageActorValue("Health", CoopPlayerToSummon.GetActorValue("Health") - 1.0)
-                ALYSLC.Log("[SUMMON SCRIPT] Resurrecting dead companion " + CoopPlayerToSummon + " before summoning. HP is now " + CoopPlayerToSummon.GetActorValue("Health"))
-                SecsWaited += 0.5
-                ALYSLC.Wait(0.5)
-            EndWhile
+    Int Index = 1
+    While (Index < CoopActors.Length)
+        If (CoopActors[Index] && CoopActors[Index] as Actor)
+            Actor CoopPlayerToSummon = CoopActors[Index] as Actor
+            ALYSLC.Log("[SUMMON SCRIPT] Summoning companion player " + CoopPlayerToSummon + ".")
+            ALYSLC.TeleportToP1OrAway(CoopPlayerToSummon, True)
+            ; Reset equip state and set up actor values and relationship ranks with P1.
+            ALYSLC.FixStutterAnimsAfterEquipBug(CoopPlayerToSummon)
 
-            ALYSLC.Log("[SUMMON SCRIPT] Summoning companion " + CoopPlayerToSummon + ".")
-            ; Set invisible before moving.
-            CoopPlayerToSummon.Disable()
-            While (!CoopPlayerToSummon.IsNearPlayer())
-                CoopPlayerToSummon.MoveTo(PlayerRef, 0.0, 100.0, 0.0, True)
-                ALYSLC.Log("[SUMMON SCRIPT] Moving companion " + CoopPlayerToSummon + " under the cover of darkness.")
-                ALYSLC.Wait(0.25)
-            EndWhile
+            ; Maybe unnecessary. Keeping commented out for now.
+            ; CoopPlayerToSummon.SetRelationshipRank(PlayerRef as Actor, 3)
+            ; (PlayerRef as Actor).SetRelationshipRank(CoopPlayerToSummon, 3)
+            ; Ensure that the player actor will not cower when threatened.
+            ; CoopPlayerToSummon.SetActorValue("Aggression", 0.0)
+            ; CoopPlayerToSummon.SetActorValue("Confidence", 4.0)
+
+            ; Clear target.
+            ; CoopPlayerToSummon.ClearLookAt()
+            ; Stop combat.
+            ; CoopPlayerToSummon.StopCombat()
+            ; CoopPlayerToSummon.SetHeadTracking(True)
+            ; CoopPlayerToSummon.SetAlpha(1.0, True)
+            ; CoopPlayerToSummon.SetDontMove(False)
+            SetCompanionPlayerCustomizationOptions(CoopPlayerToSummon)
+            ALYSLC.Log("[SUMMON SCRIPT] Done initializing " + CoopPlayerToSummon.GetDisplayName() + " for co-op.")
         EndIf
 
-        CompanionIndex += 1 
+        Index += 1 
     EndWhile
 EndFunction
 
@@ -1144,23 +1223,21 @@ State SummonState
         ALYSLC.SetIsSummoningFlag(True)
         ; PlayerRef not always valid.
         ; Attempt to refresh P1 property if invalid for some reason. No idea what causes this to occur at times.
-        Float SecsWaited = 0.0
-        While (!PlayerRef && SecsWaited < 2.0)
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: P1 invalid; attempting to get P1 again.")
+        If (!PlayerRef)
+            ALYSLC.Log("[SUMMON SCRIPT] P1 invalid; attempting to get P1 again.")
             PlayerRef = Game.GetPlayer()
-            ALYSLC.Wait(0.1)
-            SecsWaited += 0.1
-        EndWhile
-
+        EndIf
+        
         If (PlayerRef != Game.GetPlayer())
             Debug.MessageBox("[ALYSLC]\nCritical Error: P1's actor is invalid. Cannot summon players.")
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
+            ALYSLC.Log("[SUMMON SCRIPT] Critical Error: P1's actor is invalid. Cannot summon players. P1 actor set as " + PlayerRef + ", game player set as " + Game.GetPlayer())
             ALYSLC.SetIsSummoningFlag(False)
             ALYSLC.ChangeCoopSessionState(False)
             GotoState("")
             Return
         EndIf
 
+        Float SecsWaited = 0.0
         ; Ensure initialization is done.
         If (CanStartCoopGlobVar.GetValue() == 0.0)
             Debug.Notification("[ALYSLC] Please wait... Initialization in progress.")
@@ -1191,72 +1268,10 @@ State SummonState
 
         ; Clear out old data from previous sessions and stop any player managers.
         StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 0)
-        StorageUtil.FormListClear(None, "ALYSLC_CompanionScripts")
-        StorageUtil.SetIntValue(None, "ALYSLC_PlayerOpeningMenu", -1)
         ; End any active co-op session, pause all player managers, dismiss any companions.
         Int PrevNumCompanions = StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)
-        If (PrevNumCompanions > 0)
-            ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
-            ALYSLC.SignalWaitForUpdate(True)
-            ; Wait until done, or at most 5 seconds if any players are still not dismissed.
-            SecsWaited = 0.0
-            While ((SecsWaited < 5.0) && (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0) != 0 || CanStartCoopGlobVar.GetValue() != 1.00))
-                ALYSLC.Log("[SUMMON SCRIPT] Waiting for dismissal to complete. Num companions: " + StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0))
-                ALYSLC.Wait(0.1)
-                SecsWaited += 0.1
-            EndWhile
-
-            ; Flag co-op session as ended.
-            ALYSLC.ChangeCoopSessionState(False)
-            If (SecsWaited >= 5.0)
-                Debug.MessageBox("[ALYSLC]\nFailed to dismiss previously-summoned player characters.\nPlease try summoning again, and if the issue persists, shoot the mod author a sternly worded message about his incompetence.")
-                ALYSLC.LogError("[SUMMON SCRIPT] ERR: Passed the max wait time for dismissal. Aborting summoning.")
-                ALYSLC.SetIsSummoningFlag(False)
-                GotoState("")
-                Return
-            EndIf
-        EndIf
-        
-        ; Wait until all companions are unloaded from the cell 
-        ; before opening the character selection menu.
-        Form[] CompanionsList = StorageUtil.FormListToArray(None, "ALYSLC_CompanionsList")
-        Int Index = 0
-        Bool Player3DLoaded = False
-        Bool PlayerIsDead = False
-        While (Index < CompanionsList.Length)
-            ; Check that any previously summoned players do not have their 3D loaded
-            ; and are not dead. Otherwise, wait until all companions are unloaded and resurrected.
-            If (!CompanionsList[Index])
-                Index += 1
-            Else 
-                Actor PlayerActor = (CompanionsList[Index] as Actor)
-                Player3DLoaded = PlayerActor.Is3DLoaded()
-                PlayerIsDead = PlayerActor.IsDead()
-                If (Player3DLoaded || PlayerIsDead)
-                    ALYSLC.Log("[SUMMON SCRIPT] Waiting for " + PlayerActor.GetDisplayName() + " to be dismissed before summoning players. Is loaded: " + Player3DLoaded + ", is dead: " + PlayerIsDead + ".")
-                    ; Ensure player is alive.
-                    If (PlayerIsDead)
-                        Float PreviousHP = PlayerActor.GetActorValue("Health")
-                        PlayerActor.Resurrect()
-                        ; Set to 1 HP.
-                        PlayerActor.DamageActorValue("Health", PlayerActor.GetActorValue("Health") - 1.0)
-                    EndIf
-
-                    ; Call dismissal function.
-                    ; May already be running here, but acts as a layer of redundancy to ensure the player is dismissed.
-                    __ALYSLC_ControlCoopActor CoopActor = PlayerActor as __ALYSLC_ControlCoopActor
-                    If (CoopActor)
-                        ALYSLC.Log("[SUMMON SCRIPT] Sending " + CoopActor.GetDisplayName() + " home.")
-                        CoopActor.CompletedLoad = False
-                        CoopActor.SendCoopPlayerHome()
-                    EndIf
-
-                    ALYSLC.Wait(1.0)
-                Else
-                    Index += 1
-                EndIf
-            EndIf
-        EndWhile
+        ALYSLC.Log("[SUMMON SCRIPT] About to dismiss all previously summoned players: " + (PrevNumCompanions + 1) + " total.")
+        ALYSLC.SignalWaitForUpdate(True)
 
         ; Game settings to change for co-op.
         ; Set the minimum jump fall height for NPCs (default 450.0)
@@ -1279,10 +1294,9 @@ State SummonState
         ShouldExit = False
         ; First, get a list of active input devices; then show the character selection menu.
         DeviceIDs = ALYSLC.GetConnectedInputDeviceIDs()
-        StorageUtil.SetIntValue(None, "ALYSLC_CoopInputDevicesCount", DeviceIDs.Length - 1)
+	    StorageUtil.FormListClear(None, "ALYSLC_CompanionsList")
         StorageUtil.SetIntValue(None, "ALYSLC_NumCompanions", 0)
         CoopCompanionDevicesCount = DeviceIDs.Length - 1
-        RegisterPlayersForCoopEvents()
         ShowCoopSetupMenu()
         
         ; If the number of selected companions is zero, stop the summoning attempt.
@@ -1317,73 +1331,11 @@ State SummonState
             Return
         EndIf
 
-        ; Teleport co-op companions to P1.
-        SummonCoopPlayers()
+        ; Teleport co-op companions to P1 and initialize them for co-op.
+        SummonAndSetupCompanionPlayers()
         ALYSLC.Log("[SUMMON SCRIPT] Send summoning requests to active players.")
-        Player1CoopStart()
-        CompanionCoopStart()
-
-        Form[] CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
-        ; Ensure all co-op companion scripts have checked in by adding themselves to the script list (1 per player but this could change).
-        SecsWaited = 0.0
-        While (CoopActorScripts.Length < (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)) && SecsWaited < 5.0)
-            CoopActorScripts = StorageUtil.FormListToArray(None, "ALYSLC_CompanionScripts")
-            ALYSLC.Log("[SUMMON SCRIPT] Waiting for scripts to check in. " + CoopActorScripts.Length + " loaded out of " + (StorageUtil.GetIntValue(None, "ALYSLC_NumCompanions", 0)))
-            ALYSLC.Wait(0.1)
-            SecsWaited += 0.1
-        EndWhile
-
-        If (SecsWaited >= 5.0)
-            AbortSummoningAttempt()
-            Debug.MessageBox("[ALYSLC]\nScripts failed to check in before setting up co-op session. Please try re-summoning after a few seconds or reload the save.")
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Script(s) failed to check in after 5 seconds. Stopping summoning attempt.")
-            GotoState("")
-            Return
-        EndIf
-
         ; Prevent players from taking damage until summoning is complete.
         ALYSLC.SetPartyInvincibility(True)
-        
-        ; Loop until all scripts notify this script that they have finished initialization.
-        Bool CheckLoadStatus = True
-        Int Iter = 0
-        SecsWaited = 0.0
-        While (CheckLoadStatus && SecsWaited < 5.0)
-            Iter = 0
-            CheckLoadStatus = False
-            While (Iter < CoopActorScripts.Length && !CheckLoadStatus)
-                Form Script = CoopActorScripts[Iter]
-                If (Script as __ALYSLC_ControlCoopActor)
-                    If (!(Script as __ALYSLC_ControlCoopActor).CompletedLoad)
-                        ALYSLC.Log("[SUMMON SCRIPT] Waiting for CCA.")
-                        CheckLoadStatus = True
-                    EndIf
-                EndIf
-
-                Iter += 1
-            EndWhile
-
-            ; Check player 1 load script separately since it is attached
-            ; to a ReferenceAlias and cannot be added as a form to the scripts list.
-            If (!(Player1RefrAlias as __ALYSLC_ControlPlayerRef).CompletedLoad)
-                ALYSLC.Log("[SUMMON SCRIPT] Waiting for CP1R.")
-                CheckLoadStatus = True
-            EndIf
-
-            ALYSLC.Wait(0.1)
-            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
-            SecsWaited += 0.1
-            ALYSLC.Log("[SUMMON SCRIPT] Secs waited: " + SecsWaited)
-        EndWhile
-
-        If (SecsWaited >= 5.0)
-            AbortSummoningAttempt()
-            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Script(s) failed to finish setting up after 5 seconds. Stopping summoning attempt.")
-            Debug.MessageBox("[ALYSLC]\nScripts failed to setup the co-op session. Please try re-summoning after a few seconds.")
-            GotoState("")
-            Return
-        EndIf
-
         ; Signal that the co-op session has started.
         StorageUtil.SetIntValue(None, "ALYSLC_CoopStarted", 1)
         ALYSLC.ChangeCoopSessionState(True)

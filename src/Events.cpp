@@ -1531,13 +1531,13 @@ namespace ALYSLC
 			return EventResult::kContinue;
 		}
 
-		/*SPDLOG_DEBUG
+		SPDLOG_DEBUG
 		(
 			"{} was hit by {}. Flags: 0b{:B}.", 
 			hitRefr ? hitRefr->GetName() : "NONE",
 			aggressorRefr ? aggressorRefr->GetName() : "NONE",
 			*a_hitEvent->flags
-		);*/
+		);
 
 		// Essential flag sometimes gets toggled off 
 		// when the game is about to killmove the hit actor.

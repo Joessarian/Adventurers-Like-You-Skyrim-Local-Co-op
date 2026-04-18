@@ -7506,7 +7506,7 @@ namespace ALYSLC
 										{
 											activationMessage = fmt::format
 											(
-												"P{}: <font color=\"#FF0000\">Interact</font>"
+												"P{}: <font color=\"#FF0000\">Interact</font> "
 												"with {}",
 												a_p->playerID + 1,
 												activationRefrPtr->GetName()
@@ -7788,14 +7788,45 @@ namespace ALYSLC
 				(
 					a_p, RE::MagicSystem::CastingSource::kLeftHand
 				);
-				a_p->pam->QueueP1ButtonEvent
+				// NOTE:
+				// Temporary solution until I can figure out how to prevent P1's cast
+				// from being interrupted when a menu opens.
+				// Restart cast animation since P1 stops casting when menus open.
+				auto ui = RE::UI::GetSingleton();
+				bool notCastingAnymore = 
 				(
-					InputAction::kCastLH, 
-					RE::INPUT_DEVICE::kGamepad,
-					ButtonEventPressType::kPressAndHold, 
-					0.0f, 
-					false
+					(glob.menuPID > 0 && ui && !ui->GameIsPaused() && !a_p->pam->isInCastingAnimLH)
 				);
+				if (notCastingAnymore)
+				{
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastLH, 
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kRelease, 
+						0.0f, 
+						false
+					);
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastLH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kInstantTrigger,
+						0.0f, 
+						false
+					);
+				}
+				else
+				{
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastLH, 
+						RE::INPUT_DEVICE::kGamepad,
+						ButtonEventPressType::kPressAndHold, 
+						0.0f, 
+						false
+					);
+				}
 			}
 			else
 			{
@@ -7916,14 +7947,45 @@ namespace ALYSLC
 				(
 					a_p, RE::MagicSystem::CastingSource::kRightHand
 				);
-				a_p->pam->QueueP1ButtonEvent
+				// NOTE:
+				// Temporary solution until I can figure out how to prevent P1's cast
+				// from being interrupted when a menu opens.
+				// Restart cast animation since P1 stops casting when menus open.
+				auto ui = RE::UI::GetSingleton();
+				bool notCastingAnymore = 
 				(
-					InputAction::kCastRH,
-					RE::INPUT_DEVICE::kGamepad, 
-					ButtonEventPressType::kPressAndHold,
-					0.0f, 
-					false
+					(glob.menuPID > 0 && ui && !ui->GameIsPaused() && !a_p->pam->isInCastingAnimRH)
 				);
+				if (notCastingAnymore)
+				{
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastRH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kRelease,
+						0.0f, 
+						false
+					);
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastRH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kInstantTrigger,
+						0.0f, 
+						false
+					);
+				}
+				else
+				{
+					a_p->pam->QueueP1ButtonEvent
+					(
+						InputAction::kCastRH,
+						RE::INPUT_DEVICE::kGamepad, 
+						ButtonEventPressType::kPressAndHold,
+						0.0f, 
+						false
+					);
+				}
 			}
 			else
 			{
@@ -9614,22 +9676,70 @@ namespace ALYSLC
 					}
 					else
 					{
-						a_p->pam->SendButtonEvent
+						// NOTE:
+						// Temporary solution until I can figure out how to prevent P1's cast
+						// from being interrupted when a menu opens.
+						// Restart cast animation since P1 stops casting when menus open.
+						auto ui = RE::UI::GetSingleton();
+						bool notCastingAnymore = 
 						(
-							InputAction::kCastLH, 
-							RE::INPUT_DEVICE::kGamepad, 
-							ButtonEventPressType::kPressAndHold, 
-							holdTime,
-							false
+							(glob.menuPID > 0 && ui && !ui->GameIsPaused()) && 
+							(!a_p->pam->isInCastingAnimLH || !a_p->pam->isInCastingAnimRH)
 						);
-						a_p->pam->SendButtonEvent
-						(
-							InputAction::kCastRH,
-							RE::INPUT_DEVICE::kGamepad, 
-							ButtonEventPressType::kPressAndHold, 
-							holdTime, 
-							false
-						);
+						if (notCastingAnymore)
+						{
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastLH, 
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kRelease, 
+								holdTime,
+								false
+							);
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastLH, 
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kInstantTrigger, 
+								0.0f,
+								false
+							);
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastRH,
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kRelease, 
+								holdTime, 
+								false
+							);
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastRH,
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kInstantTrigger, 
+								0.0f, 
+								false
+							);
+						}
+						else
+						{
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastLH, 
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kPressAndHold, 
+								holdTime,
+								false
+							);
+							a_p->pam->SendButtonEvent
+							(
+								InputAction::kCastRH,
+								RE::INPUT_DEVICE::kGamepad, 
+								ButtonEventPressType::kPressAndHold, 
+								holdTime, 
+								false
+							);
+						}
 					}
 				}
 				else if (em->HasLHSpellEquipped() && em->HasRHSpellEquipped())
@@ -11259,6 +11369,13 @@ namespace ALYSLC
 
 		void FaceTarget(const std::shared_ptr<CoopPlayer>& a_p)
 		{
+			// Do not toggle when crosshair is not in free aim mode.
+			if (!a_p->tm->crosshairFreeAimActive)
+			{
+				a_p->mm->reqFaceTarget = false;
+				return;
+			}
+
 			// Toggle face target mode.
 			// If enabled, the player will continuously face the crosshair position.
 			// Otherwise, the player rotates to face their movement direction as usual.
@@ -11811,8 +11928,70 @@ namespace ALYSLC
 			// Signal the movement manager to reset this player's aim pitch and node rotations.
 			// Also reset the grabbed refr XY distance offset.
 
-			a_p->mm->reqResetAimAndBody = true;
-			a_p->tm->grabbedRefrDistanceOffset = 0.0f;
+			if (a_p->pam->PassesConsecTapsCheck(InputAction::kResetAim))
+			{
+				a_p->tm->crosshairFreeAimActive = !a_p->tm->crosshairFreeAimActive;	
+				if (a_p->tm->crosshairFreeAimActive)
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Crosshair <font color=\"#00FF00\">enabled</font>!",
+							a_p->playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else
+				{
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Crosshair <font color=\"#FF0000\">disabled</font>!",
+							a_p->playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+					a_p->tm->ClearTargetHandles();
+					a_p->mm->reqFaceTarget = false;
+					/*a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format
+						(
+							"P{}: Crosshair target lock on enabled.",
+							a_p->playerID + 1
+						),
+						{ 
+							CrosshairMessageType::kNone, 
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);*/
+				}
+
+				a_p->crosshairLastActiveTP = SteadyClock::now();
+			}
+			else
+			{
+				a_p->mm->reqResetAimAndBody = true;
+				a_p->tm->grabbedRefrDistanceOffset = 0.0f;
+			}
 		}
 
 		void ResetCamOrientation(const std::shared_ptr<CoopPlayer>& a_p)
@@ -12669,6 +12848,25 @@ namespace ALYSLC
 				{
 					a_p->pam->StopCombatWithFriendlyActors();
 					return;
+				}
+				else if ((asActor && asActor->IsEssential()) && 
+						 (asActor->IsInRagdollState() || asActor->IsBleedingOut()))
+				{
+					const float currentHealth = asActor->GetActorValue(RE::ActorValue::kHealth);
+					if (currentHealth <= 0.0f)
+					{
+						SPDLOG_DEBUG("{}: GET UP LAZY BONES (bones in question: {}).", 
+							a_p->coopActor->GetName(), asActor->GetName());
+						asActor->RestoreActorValue
+						(
+							RE::ACTOR_VALUE_MODIFIER::kDamage, 
+							RE::ActorValue::kHealth, 
+							-currentHealth + 1.0f
+						);
+						// No need to activate them since this may open 
+						// and close the dialogue menu as they rise to their feet.
+						return;
+					}
 				}
 				
 				// Check if another player is controlling menus.
