@@ -233,6 +233,13 @@ namespace ALYSLC
 			
 			// Save P1's name, race, and appearance as the given player's preset.
 			void SavePlayerCharacterPreset(RE::StaticFunctionTag*, RE::Actor* a_toPresetCharacter);
+			
+			// Save the given race (or P1's chargen race for P1)
+			// as the given player's chosen race in their serialized data.
+			void SavePlayerCharacterRace
+			(
+				RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
+			);
 
 			// Import default racial headparts, update gender, animations, skin tone,
 			// and refresh the player actor's 3D model when done.

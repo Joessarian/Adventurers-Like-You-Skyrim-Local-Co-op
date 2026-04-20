@@ -401,7 +401,8 @@ namespace ALYSLC
 				usedPerkPoints(0),
 				extraPerkPoints(0),
 				prevTotalUnlockedPerks(0),
-				raceMenuPresetName(""sv)
+				raceMenuPresetName(""sv),
+				chosenRace(nullptr)
 			{
 				equippedForms.clear();
 				equippedForms = std::vector<RE::TESForm*>(!EquipIndex::kTotal, nullptr);
@@ -446,7 +447,8 @@ namespace ALYSLC
 				SkillList a_skillXPList,
 				std::vector<RE::BGSPerk*> a_takenSharedPerksList,
 				std::vector<RE::BGSPerk*> a_unlockedPerksList,
-				RE::BSFixedString a_raceMenuPresetName
+				RE::BSFixedString a_raceMenuPresetName,
+				RE::TESRace* a_chosenRace
 			) :
 				copiedMagic(a_copiedMagic),
 				cyclableEmoteIdleEvents(a_cyclableEmoteIdleEvents),
@@ -468,7 +470,8 @@ namespace ALYSLC
 				skillLevelIncreasesList(a_skillLevelIncreasesList),
 				skillXPList(a_skillXPList),
 				unlockedPerksList(a_unlockedPerksList),
-				raceMenuPresetName(a_raceMenuPresetName)
+				raceMenuPresetName(a_raceMenuPresetName),
+				chosenRace(a_chosenRace)
 			{
 				p1HMSBaseAVsOnMenuEntry.fill(0.0f);
 				skillLevelsOnMenuEntry.fill(15.0f);
@@ -661,6 +664,9 @@ namespace ALYSLC
 			uint32_t usedPerkPoints;
 			// RaceMenu preset file name for the preset applied to the player for the loaded save.
 			RE::BSFixedString raceMenuPresetName;
+			// The race the player has assigned to their character.
+			// Same idea as P1's saved 'chargen' race.
+			RE::TESRace* chosenRace;
 
 			// [Helper data: NOT Serialized]:
 			// Previous total unlocked perks count.
@@ -2282,10 +2288,9 @@ namespace ALYSLC
 		// Interpolation data for fading the crosshair text in/out.
 		std::unique_ptr<TwoWayInterpData> crosshairTextFadeInterpData;
 
-		// Saved data for P1 before entering the RaceMenu/Magic Menu.
-		// Cached to restore once the menu closes.
-		// List of applied active effects present before entering the menu.
-		std::unique_ptr<RE::BSSimpleList<RE::ActiveEffect*>> savedP1ActiveEffectsList; 
+		// Temporarily holds P1's active effects while a supported menu is open.
+		// Used when importing another player's active effects onto P1.
+		RE::BSSimpleList<RE::ActiveEffect*>* savedP1ActiveEffectsListPtr;
 		// P1's race before entering the menu.
 		RE::TESRace* charGenRace;
 		// The list of equipped forms and their extra data lists before entering the menu.

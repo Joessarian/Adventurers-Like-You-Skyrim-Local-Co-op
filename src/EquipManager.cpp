@@ -3998,11 +3998,17 @@ namespace ALYSLC
 			// since the item is not equipped.
 			// Using a copy since a sporadic crash occurs if the original is moved over
 			// before the equip. Want to see if a copy prevents this from happening.
+			auto copiedList = Util::CopyExtraDataList(chestExDataList);
+			coopActor->AddObjectToContainer
+			(
+				a_object, copiedList, a_count, inventoryChest.get()
+			);
+			// New item gets consumed and removed on equip.
 			Util::EquipObject
 			(
 				coopActor.get(),
 				a_object,
-				Util::CopyExtraDataList(chestExDataList),
+				copiedList,
 				a_count,
 				a_slot,
 				a_queueEquip,

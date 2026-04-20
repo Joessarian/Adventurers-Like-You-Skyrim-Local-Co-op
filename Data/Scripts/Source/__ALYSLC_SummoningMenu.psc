@@ -183,6 +183,7 @@ Function HandleCharacterCustomization()
             If (NewRace)
                 ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + NewRace)
                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_Race", NewRace)
+                ALYSLC.SavePlayerCharacterRace(SelectedCharacter, NewRace)
                 If (NewRace != CurrentRace)
                     ; Show stats menu with new race-dependent base skill values.
                     ShowCharacterStatsMenu()
@@ -316,6 +317,7 @@ Function HandleCharacterCustomization()
                             If (NewRace)
                                 ALYSLC.Log("[SUMMON SCRIPT] Race chosen: " + NewRace)
                                 StorageUtil.SetFormValue(SelectedCharacter, "ALYSLC_Race", NewRace)
+                                ALYSLC.SavePlayerCharacterRace(SelectedCharacter, NewRace)
                                 ; Show stats menu with new race-dependent base skill values.
                                 ShowCharacterStatsMenu()
                                 If (NewRace != CurrentRace)
@@ -657,7 +659,7 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
         Return
     EndIf
 
-    ALYSLC.Log("[CCA SCRIPT] Set customization options for " + akPlayerActor.GetDisplayName())
+    ALYSLC.Log("[SUMMON SCRIPT] Set customization options for " + akPlayerActor.GetDisplayName())
     Int DeviceID = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_DeviceID",  -1)
     Int PlayerID = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_PlayerID",  -1)
     ALYSLC.SetInitialCustomizationOptions(akPlayerActor)
@@ -668,27 +670,27 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
     ; Name
     String NewName = StorageUtil.GetStringValue(akPlayerActor, "ALYSLC_Name", akPlayerActor.GetDisplayName())
     If (NewName != akPlayerActor.GetName())
-        ALYSLC.Log("[CCA SCRIPT] Set name: " + NewName)
+        ALYSLC.Log("[SUMMON SCRIPT] Set name: " + NewName)
         Base.SetName(NewName)
         akPlayerActor.SetName(NewName)
         akPlayerActor.SetDisplayName(NewName)
 
         SecondsWaited = 0.0
         While (akPlayerActor.GetDisplayName() != NewName && SecondsWaited < TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] Waiting on name change to " + NewName + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting on name change to " + NewName + " for " + akPlayerActor.GetName() + ".")
             ALYSLC.Wait(0.5)
             SecondsWaited += 0.5
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
     ; Class
     Class NewClass = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_Class", None) as Class
     If (NewClass && NewClass != Base.GetClass())
-        ALYSLC.Log("[CCA SCRIPT] Set class to " + NewClass)
+        ALYSLC.Log("[SUMMON SCRIPT] Set class to " + NewClass)
         Base.SetClass(NewClass)
         ALYSLC.SetCoopPlayerClass(akPlayerActor, NewClass, False)
                 
@@ -710,21 +712,22 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
         ; Wait for the class to change, or until the max wait time elapses.
         SecondsWaited = 0.0
         While (Base.GetClass() != NewClass && SecondsWaited < TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] Waiting on class change to " + NewClass + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting on class change to " + NewClass + " for " + akPlayerActor.GetName() + ".")
             ALYSLC.Wait(0.5)
             SecondsWaited += 0.5
         EndWhile
 
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
     ; Race
     Race NewRace = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_Race", None) as Race
+    ALYSLC.SavePlayerCharacterRace(akPlayerActor, NewRace)
     Bool ShouldChangeRace = NewRace && NewRace != Base.GetRace()
     If (ShouldChangeRace)
-        ALYSLC.Log("[CCA SCRIPT] Set race to " + NewRace + " from base race " + Base.GetRace() + ".")
+        ALYSLC.Log("[SUMMON SCRIPT] Set race to " + NewRace + " from base race " + Base.GetRace() + ".")
         ALYSLC.SetCoopPlayerRace(akPlayerActor, NewRace, False)
     EndIf
 
@@ -733,17 +736,17 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
     Bool SetUseOppositeGenderAnims = GenderOption >= 2
     Bool SetFemale = (GenderOption == 0 || GenderOption == 2) || (GenderOption == -1 && Base.GetSex() == 1)
     ActorBase Preset = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_AppearancePreset", None) as ActorBase
-    ALYSLC.Log("[CCA SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + Base.GetSex() + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
-    ALYSLC.Log("[CCA SCRIPT] Saved preset is " + Preset.GetName() + " (" + Preset + "), current base is " + Base.GetName() + " (" + Base + ").")
+    ALYSLC.Log("[SUMMON SCRIPT] Saved preset sex: " + Preset.GetSex() + ", current sex: " + Base.GetSex() + ", gender option to set: " + GenderOption + "(female: " + SetFemale + ").")
+    ALYSLC.Log("[SUMMON SCRIPT] Saved preset is " + Preset.GetName() + " (" + Preset + "), current base is " + Base.GetName() + " (" + Base + ").")
     If (!Preset)
         ; No preset to set, so set to the default racial preset, change gender, anims, and update face/body skin tone.
-        ALYSLC.Log("[CCA SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
+        ALYSLC.Log("[SUMMON SCRIPT] Set sex to female: " + SetFemale + " and update body to racial default, no valid preset. Gender option: " + GenderOption)
         ALYSLC.SetDefaultRacialAppearance(PlayerID, SetFemale, SetUseOppositeGenderAnims)
     ElseIf ((Preset && Preset != Base) || ((Base.GetSex() == -1) || (Base.GetSex() == 0 && SetFemale) || (Base.GetSex() == 1 && !SetFemale)))
         If (Preset && Preset != Base)
-            ALYSLC.Log("[CCA SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
+            ALYSLC.Log("[SUMMON SCRIPT] Set appearance preset to " + Preset.GetName() + ", use opposite gender animations: " + SetUseOppositeGenderAnims + ", gender option: " + GenderOption)
         Else
-            ALYSLC.Log("[CCA SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
+            ALYSLC.Log("[SUMMON SCRIPT] Gender mismatch. Current sex: " + Base.GetSex() + ". Set sex to female: " + SetFemale + ". Gender option: " + GenderOption)
         EndIf
 
         ALYSLC.CopyNPCAppearanceToPlayer(PlayerID, Preset, SetUseOppositeGenderAnims)
@@ -758,39 +761,39 @@ Function SetCompanionPlayerCustomizationOptions(Actor akPlayerActor)
     VoiceType CurrentVoiceType = Base.GetVoiceType()
     VoiceType NewVoiceType = StorageUtil.GetFormValue(akPlayerActor, "ALYSLC_VoiceType", None) as VoiceType
     If (NewVoiceType && NewVoiceType != CurrentVoiceType)
-        ALYSLC.Log("[CCA SCRIPT] Set voice type to " + NewVoiceType)
+        ALYSLC.Log("[SUMMON SCRIPT] Set voice type to " + NewVoiceType)
         Base.SetVoiceType(NewVoiceType)
         SecondsWaited = 0.0
         While (Base.GetVoiceType() != NewVoiceType && SecondsWaited < TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] Waiting on voice type change to " + NewVoiceType + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting on voice type change to " + NewVoiceType + " for " + akPlayerActor.GetName() + ".")
             ALYSLC.Wait(0.5)
             SecondsWaited += 0.5
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
 
     ; Weight
     Float NewWeight = StorageUtil.GetFloatValue(akPlayerActor, "ALYSLC_Weight", Base.GetWeight())
     If (NewWeight != Base.GetWeight())
-        ALYSLC.Log("[CCA SCRIPT] Set weight.")
+        ALYSLC.Log("[SUMMON SCRIPT] Set weight.")
         Base.SetWeight(NewWeight)
         SecondsWaited = 0.0
         While (Base.GetWeight() != NewWeight && SecondsWaited < TimeoutSeconds)
-            ALYSLC.Log("[CCA SCRIPT] Waiting on weight change to " + NewWeight + " for " + akPlayerActor.GetName() + ".")
+            ALYSLC.Log("[SUMMON SCRIPT] Waiting on weight change to " + NewWeight + " for " + akPlayerActor.GetName() + ".")
             ALYSLC.Wait(0.5)
             SecondsWaited += 0.5
         EndWhile
         
         If (SecondsWaited >= TimeoutSeconds)
-            ALYSLC.LogError("[CCA SCRIPT] ERR: Check for change timed out.")
+            ALYSLC.LogError("[SUMMON SCRIPT] ERR: Check for change timed out.")
         EndIf
     EndIf
     
     ; Height
-    ALYSLC.Log("[CCA SCRIPT] Set height.")
+    ALYSLC.Log("[SUMMON SCRIPT] Set height.")
     akPlayerActor.SetScale(StorageUtil.GetFloatValue(akPlayerActor, "ALYSLC_HeightMultiplier", 1.0))
 EndFunction
 
@@ -1179,11 +1182,13 @@ VoiceType Function ShowVoiceTypeSelectionMenu()
     Return None
 EndFunction
 
+; Save chosen race, set customization options, and prepare to start co-op!
 ; Spawn in all the chosen companion characters.
-; Set customization options and prepare to start co-op!
-Function SummonAndSetupCompanionPlayers()
+Function SetUpPlayersAndSummon()
     ; Spawn in co-op companions after disabling them.
     ; The companion player initialization script will enable them when it runs before co-op starts.
+    ; Save P1's chargen race even though we have no custommization options to set.
+    ALYSLC.SavePlayerCharacterRace((PlayerRef as Actor), None)
     Int Index = 1
     While (Index < CoopActors.Length)
         If (CoopActors[Index] && CoopActors[Index] as Actor)
@@ -1332,7 +1337,7 @@ State SummonState
         EndIf
 
         ; Teleport co-op companions to P1 and initialize them for co-op.
-        SummonAndSetupCompanionPlayers()
+        SetUpPlayersAndSummon()
         ALYSLC.Log("[SUMMON SCRIPT] Send summoning requests to active players.")
         ; Prevent players from taking damage until summoning is complete.
         ALYSLC.SetPartyInvincibility(True)

@@ -69,7 +69,7 @@ namespace ALYSLC
 		glob.placeholderSpells.clear();
 		glob.placeholderSpellsSet.clear();
 		glob.reqInputEvents.clear();
-		glob.savedP1ActiveEffectsList = std::make_unique<RE::BSSimpleList<RE::ActiveEffect*>>();
+		glob.savedP1ActiveEffectsListPtr = nullptr;
 		// Crosshair text offsets.
 		glob.originalCrosshairTextOffsets = std::nullopt;
 
@@ -5747,11 +5747,11 @@ namespace ALYSLC
 		const auto& p = glob.coopPlayers[pIndex];
 		if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 		{
-			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+			/*if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 			{
 				SPDLOG_DEBUG("Restore P1 active effects.");
 				CopyOverActiveEffects(a_menuControllingPlayer, false);
-			}
+			}*/
 
 			if (glob.copiedPlayerDataTypes.all
 				(
@@ -8389,23 +8389,42 @@ namespace ALYSLC
 			// the crafting menu's linked furniture type.
 			if (a_info->shouldImport)
 			{
-				SPDLOG_DEBUG("Crafting Menu: Should copy over inventory on import.");
+				SPDLOG_DEBUG("Crafting Menu: Should copy over inventory/active effects on import.");
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
 					SPDLOG_DEBUG("Import Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
+
+				/*const auto& coopP1 = glob.coopPlayers[0];
+				if (!coopP1->isTransformed &&
+					!p->isTransformed && 
+					!p->isTransforming &&
+					!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+				{
+					SPDLOG_DEBUG("Import Active Effects to P1.");
+					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
+					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kActiveEffects);
+				}*/
 			}
 			else
 			{
-				SPDLOG_DEBUG("Crafting Menu: Should copy back inventory on export.");
+				SPDLOG_DEBUG("Crafting Menu: Should copy back inventory/active effects on export.");
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
 					SPDLOG_DEBUG("Export Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
+
+				//// Active effects.
+				//if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+				//{
+				//	SPDLOG_DEBUG("Restore P1 Active Effects.");
+				//	CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
+				//	glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kActiveEffects);
+				//}
 			}
 		}
 		else if (menuNameHash == Hash(RE::FavoritesMenu::MENU_NAME))
@@ -8569,7 +8588,7 @@ namespace ALYSLC
 				// will crash when transformation-related active effects are copied over from P2
 				// since P1 may not be transformed.
 				// Same situation the other way around too.
-				const auto& coopP1 = glob.coopPlayers[0];
+				/*const auto& coopP1 = glob.coopPlayers[0];
 				if (!coopP1->isTransformed &&
 					!p->isTransformed && 
 					!p->isTransforming &&
@@ -8578,7 +8597,7 @@ namespace ALYSLC
 					SPDLOG_DEBUG("Import Active Effects to P1.");
 					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kActiveEffects);
-				}
+				}*/
 			}
 			else
 			{
@@ -8598,12 +8617,12 @@ namespace ALYSLC
 				}
 
 				// Active effects.
-				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
+				/*if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 				{
 					SPDLOG_DEBUG("Restore P1 Active Effects.");
 					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kActiveEffects);
-				}
+				}*/
 			}
 		}
 		else if (menuNameHash == Hash(RE::StatsMenu::MENU_NAME))
@@ -8709,7 +8728,11 @@ namespace ALYSLC
 
 	void GlobalCoopData::CopyOverActiveEffects(RE::Actor* a_coopActor, const bool& a_shouldImport)
 	{
-		// UNUSED FOR NOW (occasional crash when moving over to the 'Active Effects' tab)
+		// UNUSED FOR NOW:
+		// Since we are copying over P2's list for use on P1,
+		// obviously means that if P1 applies any new effects while in the menu, 
+		// they will show up on P2 and will be removed on exit. Not good.
+		// Occasional crashes in the Magic Menu, likely from temporary effects expiring.
 		// Remove all of P1's active effects and apply the companion player's on import,
 		// or restore P1's saved active effects on export.
 
@@ -8728,6 +8751,70 @@ namespace ALYSLC
 			return;
 		}
 
+		if (a_shouldImport)
+		{
+			if (p1->currentProcess->middleHigh->activeEffects)
+			{
+				for (const auto effect : *p1->currentProcess->middleHigh->activeEffects)
+				{
+					if (effect && effect->spell)
+					{
+						SPDLOG_DEBUG
+						(
+							"IMPORT: P1 has active effect from spell {}. "
+							"Caster: {}, source: {}, source node: {}.",
+							effect->spell->GetName(),
+							Util::HandleIsValid(effect->caster) ?
+							effect->caster.get()->GetName() : 
+							"NONE",
+							!effect->castingSource,
+							effect->sourceNode ? 
+							effect->sourceNode.get()->name :
+							"NONE"
+						);
+					}
+				}
+			}
+
+			glob.savedP1ActiveEffectsListPtr = 
+			(
+				p1->currentProcess->middleHigh->activeEffects
+			);
+			p1->currentProcess->middleHigh->activeEffects = 
+			(
+				a_coopActor->currentProcess->middleHigh->activeEffects
+			);
+		}
+		else
+		{
+			if (p1->currentProcess->middleHigh->activeEffects)
+			{
+				for (const auto effect : *p1->currentProcess->middleHigh->activeEffects)
+				{
+					if (effect && effect->spell)
+					{
+						SPDLOG_DEBUG
+						(
+							"EXPORT: P1 has active effect from spell {}. "
+							"Caster: {}, source: {}, source node: {}.",
+							effect->spell->GetName(),
+							Util::HandleIsValid(effect->caster) ?
+							effect->caster.get()->GetName() : 
+							"NONE",
+							!effect->castingSource,
+							effect->sourceNode ? 
+							effect->sourceNode->name :
+							"NONE"
+						);
+					}
+				}
+			}
+
+			p1->currentProcess->middleHigh->activeEffects = glob.savedP1ActiveEffectsListPtr;
+			glob.savedP1ActiveEffectsListPtr = nullptr;
+		}
+
+		/*
 		if (a_shouldImport)
 		{
 			glob.savedP1ActiveEffectsList->clear();
@@ -8816,7 +8903,6 @@ namespace ALYSLC
 							effect->GetBaseObject()->GetArchetype() : 
 							RE::EffectSetting::Archetype::kNone
 						);
-						p1->currentProcess->middleHigh->activeEffects->emplace_front(effect);
 						if (effect->caster == a_coopActor->GetHandle())
 						{
 							effect->caster = p1->GetHandle();
@@ -8826,6 +8912,8 @@ namespace ALYSLC
 						{
 							effect->target = p1;
 						}
+
+						p1->currentProcess->middleHigh->activeEffects->emplace_front(effect);
 					}
 				}
 				else
@@ -8992,6 +9080,7 @@ namespace ALYSLC
 			glob.savedP1ActiveEffectsList->clear();
 			glob.savedP1ActiveEffectsList.reset();
 		}
+		*/
 	}
 
 	void GlobalCoopData::CopyOverActorBaseData

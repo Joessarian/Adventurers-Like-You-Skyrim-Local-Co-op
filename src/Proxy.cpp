@@ -1906,6 +1906,57 @@ namespace ALYSLC
 			}
 		);
 	}
+
+	void CoopLib::CharacterCustomization::SavePlayerCharacterRace
+	(
+		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
+	)
+	{
+		SPDLOG_DEBUG("");
+		// Save the given race (or P1's chargen race for P1)
+		// as the given player's chosen race in their serialized data.
+		if ((!glob.globalDataInit || !a_playerActor) || (!a_race && !a_playerActor->IsPlayerRef()))
+		{
+			return;
+		}
+
+		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
+		if (iter == glob.serializablePlayerData.end())
+		{
+			SPDLOG_ERROR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
+				a_playerActor->GetName(), a_playerActor->formID);
+			return;
+		}
+		
+		if (a_playerActor->IsPlayerRef())
+		{
+			// Save as recorded chargen race for P1.
+			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
+			{
+				iter->second->chosenRace = p1->charGenRace;
+				SPDLOG_DEBUG
+				(
+					"Player actor: {}, chosen race: {} (0x{:X}, editor ID: {}).",
+					a_playerActor ? a_playerActor->GetName() : "NONE",
+					p1->charGenRace ? p1->charGenRace->GetName() : "NONE",
+					p1->charGenRace ? p1->charGenRace->formID : 0xDEAD,
+					Util::GetEditorID(p1->charGenRace)
+				);
+			}
+		}
+		else
+		{
+			iter->second->chosenRace = a_race;
+			SPDLOG_DEBUG
+			(
+				"Player actor: {}, chosen race: {} (0x{:X}, editor ID: {}).",
+				a_playerActor ? a_playerActor->GetName() : "NONE",
+				a_race ? a_race->GetName() : "NONE",
+				a_race ? a_race->formID : 0xDEAD,
+				Util::GetEditorID(a_race)
+			);
+		}
+	}
 	
 	void CoopLib::CharacterCustomization::SetDefaultRacialAppearance
 	(
@@ -2637,6 +2688,12 @@ namespace ALYSLC
 			"SavePlayerCharacterPreset",
 			"ALYSLC"s, 
 			CharacterCustomization::SavePlayerCharacterPreset
+		);
+		a_vm->RegisterFunction
+		(
+			"SavePlayerCharacterRace",
+			"ALYSLC"s,
+			CharacterCustomization::SavePlayerCharacterRace
 		);
 		a_vm->RegisterFunction
 		(

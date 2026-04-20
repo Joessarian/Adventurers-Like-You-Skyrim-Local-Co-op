@@ -8645,8 +8645,8 @@ namespace ALYSLC
 			// Reset AI driven if this func is called 
 			// when outside of co-op or if P1's managers are not active.
 			bool shouldResetAIDriven = !glob.coopSessionActive || !glob.coopPlayers[0]->IsRunning();
-			SPDLOG_DEBUG("Set: {}, should reset: {}. Current value: {}.",
-				a_shouldSet, shouldResetAIDriven, p1->movementController->controlsDriven);
+			/*SPDLOG_DEBUG("Set: {}, should reset: {}. Current value: {}.",
+				a_shouldSet, shouldResetAIDriven, p1->movementController->controlsDriven);*/
 			if (shouldResetAIDriven)
 			{
 				bool wasAIDriven = !p1->movementController->controlsDriven;

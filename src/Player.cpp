@@ -1231,9 +1231,7 @@ namespace ALYSLC
 		}
 		
 		const auto p1 = RE::PlayerCharacter::GetSingleton();
-		// Do not revert if the pre-transformation race is the same as the player's current race 
-		// or the player is going from a race without a transformation 
-		// to one with a transformation (ex. Nord to Werewolf).
+		// Default to the actor base's reported original race or P1's chargen race.
 		auto originalRace = 
 		(
 			preTransformationRace ? 
@@ -1242,6 +1240,23 @@ namespace ALYSLC
 			p1->charGenRace :
 			coopActor->GetActorBase()->originalRace
 		);
+		// Each time a companion player customizes their character,
+		// their race is saved to the serialized data,
+		// so elect for that saved race, if available, 
+		// as the reported original race can sometimes be overwritten by the transformation race,
+		// which would prevent players from transforming back into their original race.
+		const auto iter = glob.serializablePlayerData.find(coopActor->formID);
+		if (iter != glob.serializablePlayerData.end())
+		{
+			if (iter->second->chosenRace)
+			{
+				originalRace = iter->second->chosenRace;
+			}
+		}
+		
+		// Do not revert if the pre-transformation race is the same as the player's current race 
+		// or the player is going from a race without a transformation 
+		// to one with a transformation (ex. Nord to Werewolf).
 		bool currentRaceHasTransformation = Util::IsRaceWithTransformation(coopActor->race);
 		bool originalRaceHasTransformation = Util::IsRaceWithTransformation(originalRace);
 		bool skipTransformation = 
@@ -1251,12 +1266,16 @@ namespace ALYSLC
 		);
 		SPDLOG_DEBUG
 		(
-			"{}: Pre-transform race: {}, original: {}, current: {}, "
+			"{}: Pre-transform race: {}, original: {}, current: {}, chosen: {}, "
 			"is transformed: {}. Skip: {}.",
 			coopActor->GetName(),
 			preTransformationRace ? preTransformationRace->GetName() : "NONE",
 			originalRace ? originalRace->GetName() : "NONE",
 			coopActor->race ? coopActor->race->GetName() : "NONE",
+			iter != glob.serializablePlayerData.end() &&
+			iter->second->chosenRace ? 
+			iter->second->chosenRace->GetName() : 
+			"NONE",
 			isTransformed,
 			skipTransformation
 		);

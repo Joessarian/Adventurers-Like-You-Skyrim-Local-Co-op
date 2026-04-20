@@ -11928,6 +11928,8 @@ namespace ALYSLC
 			// Signal the movement manager to reset this player's aim pitch and node rotations.
 			// Also reset the grabbed refr XY distance offset.
 
+			// NOTE:
+			// Temporary until revamping default targeting mode.
 			if (a_p->pam->PassesConsecTapsCheck(InputAction::kResetAim))
 			{
 				a_p->tm->crosshairFreeAimActive = !a_p->tm->crosshairFreeAimActive;	

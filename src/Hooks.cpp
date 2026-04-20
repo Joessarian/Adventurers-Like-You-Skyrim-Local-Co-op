@@ -16587,6 +16587,27 @@ namespace ALYSLC
 							}
 						}
 					}
+
+					// Save race as P1's chosen race.
+					if (glob.globalDataInit)
+					{
+						const auto iter = glob.serializablePlayerData.find(p1->formID);
+						if (iter != glob.serializablePlayerData.end())
+						{
+							iter->second->chosenRace = p1->charGenRace;
+							SPDLOG_DEBUG
+							(
+								"Saving P1's chosen race as {} (0x{:X}, editor ID {}).",
+								iter->second->chosenRace ? 
+								iter->second->chosenRace->GetName() :
+								"NONE",
+								iter->second->chosenRace ? 
+								iter->second->chosenRace->formID :
+								0xDEAD,
+								Util::GetEditorID(iter->second->chosenRace)
+							);
+						}
+					}
 				}
 			}
 

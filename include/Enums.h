@@ -950,6 +950,7 @@ namespace ALYSLC
 		kPlayerEmoteIdleEvents = 'PEIE',		// List of playable idle emotes.
 		kPlayerRaceMenuPresetName = 'PRMP',		// Name of the RaceMenu preset applied 
 												// for this save.
+		kPlayerCharacterChosenRace = 'PCCR',	// The race the player assigned to their character.
 		kSerializationVersion = 0				// Version info.
 	};
 

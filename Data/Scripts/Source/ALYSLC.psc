@@ -51,6 +51,7 @@ Function LoadPlayerCharacterPreset(Actor a_fromPresetCharacter) Global Native
 Function LoadPlayerCharacterPresetWithName(Actor a_toCharacter, String a_presetName) Global Native
 Function OnPreRaceMenu(Race a_newRace, Bool a_setFemale) Global Native
 Function SavePlayerCharacterPreset(Actor a_toPresetCharacter) Global Native
+Function SavePlayerCharacterRace(Actor a_playerActor, Race a_race) Global Native
 Function SetDefaultRacialAppearance(Int a_playerID, Bool a_setFemale, Bool a_setUseOppositeGenderAnims) Global Native
 
 ;==============================================
@@ -163,6 +164,7 @@ Function SetInitialCustomizationOptions(Actor akPlayerActor) Global
     If (!CurrentRace)
         ALYSLC.Log("[ALYSLC SCRIPT] SetInitialCustomizationOptions: Setting default race to " + Base.GetRace())
         StorageUtil.SetFormValue(akPlayerActor, "ALYSLC_Race", Base.GetRace())
+        ALYSLC.SavePlayerCharacterRace(akPlayerActor, Base.GetRace())
     EndIf
 
     Int CurrentGenderOption = StorageUtil.GetIntValue(akPlayerActor, "ALYSLC_GenderOption", -1)

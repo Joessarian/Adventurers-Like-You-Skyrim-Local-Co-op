@@ -168,7 +168,8 @@ namespace ALYSLC
 						type != !SerializableDataType::kPlayerTakenSharedPerks &&
 						type != !SerializableDataType::kPlayerUnlockedPerksList &&
 						type != !SerializableDataType::kPlayerUsedPerkPoints &&
-						type != !SerializableDataType::kPlayerRaceMenuPresetName)
+						type != !SerializableDataType::kPlayerRaceMenuPresetName &&
+						type != !SerializableDataType::kPlayerCharacterChosenRace)
 					{
 						SPDLOG_DEBUG
 						(
@@ -671,6 +672,26 @@ namespace ALYSLC
 									fid, presetName, size
 								);
 							}
+						}
+						else if (type == !SerializableDataType::kPlayerCharacterChosenRace)
+						{
+							RE::TESForm* raceForm = nullptr;
+							RE::FormID raceFID = 0;
+							RetrieveUInt32Data(a_intfc, raceFID, type);
+							raceForm = GetFormFromRetrievedFID
+							(
+								a_intfc, raceFID, dataHandler
+							);
+							data->chosenRace = raceForm ? raceForm->As<RE::TESRace>() : nullptr;
+							SPDLOG_DEBUG
+							(
+								"Player with FID 0x{:X}'s "
+								"chosen race is {} (0x{:X}, editor ID {}). ",
+								fid, 
+								data->chosenRace ? data->chosenRace->GetName() : "NONE",
+								data->chosenRace ? data->chosenRace->formID : 0xDEAD,
+								Util::GetEditorID(data->chosenRace)
+							);
 						}
 					}
 				}
@@ -2076,6 +2097,47 @@ namespace ALYSLC
 						TypeToString(!SerializableDataType::kPlayerRaceMenuPresetName)
 					);
 				}
+
+				// CHARACTER CHOSEN RACE
+				if (a_intfc->OpenRecord
+				(
+					!SerializableDataType::kPlayerCharacterChosenRace,
+					!SerializableDataType::kSerializationVersion
+				))
+				{
+					for (auto& [fid, data] : glob.serializablePlayerData)
+					{
+						SerializePlayerUInt32Data
+						(
+							a_intfc, fid, !SerializableDataType::kPlayerCharacterChosenRace
+						);
+						SPDLOG_DEBUG
+						(
+							"Serialize CHOSEN RACE {} (0x{:X}, editor ID {}) "
+							"for player with FID 0x{:X}.",
+							data->chosenRace ? 
+							data->chosenRace->GetName() :
+							"NONE", 
+							data->chosenRace ? data->chosenRace->formID : 0, 
+							Util::GetEditorID(data->chosenRace),
+							fid
+						);
+						SerializePlayerUInt32Data
+						(
+							a_intfc, 
+							data->chosenRace ? data->chosenRace->formID : 0,
+							!SerializableDataType::kPlayerCharacterChosenRace
+						);
+					}
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"Could not open record of type {}.",
+						TypeToString(!SerializableDataType::kPlayerCharacterChosenRace)
+					);
+				}
 			}
 		}
 
@@ -2293,7 +2355,8 @@ namespace ALYSLC
 						skillXPList, 
 						std::vector<RE::BGSPerk*>(),
 						std::vector<RE::BGSPerk*>(),
-						"NONE"
+						"NONE",
+						p1->charGenRace
 					) 
 				}
 			);
@@ -2391,7 +2454,8 @@ namespace ALYSLC
 									skillXPList,
 									std::vector<RE::BGSPerk*>(),
 									std::vector<RE::BGSPerk*>(),
-									"NONE"
+									"NONE",
+									coopPlayers[i]->GetRace()
 								) 
 							}
 						);
