@@ -35,7 +35,8 @@ namespace ALYSLC
 			);
 			// Set once per summoning.
 			canSMORF = false;
-			crosshairFreeAimActive = true;
+			crosshairTargetingMode = CrosshairTargetingMode::kFreeAim;
+			lockOnToLivingNPCs = true;
 			RefreshData();
 		}
 		else
@@ -236,10 +237,12 @@ namespace ALYSLC
 		baseCanDrawOverlayElements = true;
 		canActivateRefr = false;
 		choseClosestResult = false;
+		choseLockOnTarget = false;
 		crosshairRefrInRangeForQuickLoot = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
 		isSMORFing = false;
+		reqResetCrosshairPosition = false;
 		useProximityInteraction = false;
 		validCrosshairRefrHit = false;
 		wantsToSMORF = false;
@@ -370,8 +373,8 @@ namespace ALYSLC
 		auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
 		const float indicatorLength = std::clamp
 		(
-			pixelHeight * 0.5f, 
-			DebugAPI::screenResY * 0.0075f, 
+			pixelHeight,
+			DebugAPI::screenResY * 0.01f, 
 			DebugAPI::screenResY * 0.02f
 		);
 		const float scalingFactor = indicatorLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH;
@@ -440,10 +443,11 @@ namespace ALYSLC
 	void TargetingManager::DrawAimCorrectionIndicator()
 	{
 		// Draw two concentric circles to mark the player's aim pitch indicator.
+		// Draw an 'X' if in face target mode while the crosshair is disabled.
 
-		// Unnecessary to draw if aim correction is disabled,
-		// or trajectories are already drawn to indicate the aim correction target.
-		if (!Settings::vbUseAimCorrection[playerID])
+		// Unnecessary to draw if aim correction is disabled and the crosshair is NOT disabled.
+		if (!Settings::vbUseAimCorrection[playerID] && 
+			crosshairTargetingMode != CrosshairTargetingMode::kDisabled)
 		{
 			return;
 		}
@@ -472,48 +476,160 @@ namespace ALYSLC
 		// Cap the radius and modify thickness based on distance from the camera.
 		const float radius = min
 		(
-			Settings::vfCrosshairGapRadius[playerID],
+			2.0f * Settings::vfCrosshairGapRadius[playerID],
 			0.5f * ((diff).Length() /  max(1, glob.activePlayers))
 		);
-		const float thickness = 
-		(
-			0.5f * 
-			max
-			(
-				Settings::vfPredictedProjectileTrajectoryCurveThickness[p->playerID],
-				0.125f * Settings::vfCrosshairGapRadius[p->playerID]
-			) / 
-			(
-				1.0f + 
-				powf
-				(
-					glob.cam->GetCurrentPosition().GetDistance
-					(
-						aimCorrectionTargetPtr->data.location
-					) / 1000.0f,
-					5.0f
-				)
-			)
-		);
+		const float thickness = 0.125f * radius;
 		const auto center = ToVec3(screenTorsoPos + offset);
-		DebugAPI::QueueCircle2D
-		(
-			center,
-			Settings::vuOverlayRGBAValues[p->playerID],
-			16,
-			radius,
-			thickness,
-			0.0f
-		);
-		DebugAPI::QueueCircle2D
-		(
-			center,
-			Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
-			16,
-			radius + thickness,
-			thickness,
-			0.0f
-		);
+		if (p->mm->inTwinStickMode)
+		{
+			// Inner.
+			/*DebugAPI::QueueArrow2D
+			(
+				center,
+				center + radius * glm::vec3(cosf(PI / 4.0f), sinf(PI / 4.0f), 0.0f),
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				thickness,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + radius * glm::vec3(cosf(-PI / 4.0f), sinf(-PI / 4.0f), 0.0f),
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				thickness,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + radius * glm::vec3(cosf(3.0f * PI / 4.0f), sinf(3.0f * PI / 4.0f), 0.0f),
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				thickness,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + radius * glm::vec3(cosf(-3.0f * PI / 4.0f), sinf(-3.0f * PI / 4.0f), 0.0f),
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				thickness,
+				thickness,
+				0.0f
+			);*/
+			
+			//
+			// Double twin arrows for twin sticks. Oh yeah.
+			//
+
+			// Outer.
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(PI / 4.0f), sinf(PI / 4.0f), 0.0f),
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				thickness * 2.0f,
+				thickness * 4.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(-PI / 4.0f), sinf(-PI / 4.0f), 0.0f),
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				thickness * 2.0f,
+				thickness * 4.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(3.0f * PI / 4.0f), sinf(3.0f * PI / 4.0f), 0.0f),
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				thickness * 2.0f,
+				thickness * 4.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(-3.0f * PI / 4.0f), sinf(-3.0f * PI / 4.0f), 0.0f),
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				thickness * 2.0f,
+				thickness * 4.0f,
+				0.0f
+			);
+
+			// Middle.
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(PI / 4.0f), sinf(PI / 4.0f), 0.0f),
+				Settings::vuOverlayRGBAValues[p->playerID],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(-PI / 4.0f), sinf(-PI / 4.0f), 0.0f),
+				Settings::vuOverlayRGBAValues[p->playerID],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(3.0f * PI / 4.0f), sinf(3.0f * PI / 4.0f), 0.0f),
+				Settings::vuOverlayRGBAValues[p->playerID],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				center,
+				center + 
+				1.5f * radius * glm::vec3(cosf(-3.0f * PI / 4.0f), sinf(-3.0f * PI / 4.0f), 0.0f),
+				Settings::vuOverlayRGBAValues[p->playerID],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+		}
+		else
+		{
+			DebugAPI::QueueCircle2D
+			(
+				center,
+				Settings::vuOverlayRGBAValues[p->playerID],
+				16,
+				radius,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueCircle2D
+			(
+				center,
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				16,
+				radius + thickness,
+				thickness,
+				0.0f
+			);
+		}
 	}
 
 	void TargetingManager::DrawAimPitchIndicator()
@@ -529,8 +645,12 @@ namespace ALYSLC
 
 		bool shouldShowIndicator = 
 		(
-			p->pam->IsPerforming(InputAction::kAdjustAimPitch) || 
-			p->pam->GetSecondsSinceLastStop(InputAction::kResetAim) < 0.25f
+			(p->pam->IsPerforming(InputAction::kAdjustAimPitch)) || 
+			(
+				p->pam->GetPlayerActionInputHoldTime(InputAction::kFaceTarget) > 
+				Settings::fSecsDefMinHoldTime &&
+				p->pam->GetSecondsSinceLastStop(InputAction::kFaceTarget) < 0.25f
+			)
 		);
 		aimPitchIndicatorFadeInterpData->UpdateInterpolatedValue
 		(
@@ -698,11 +818,12 @@ namespace ALYSLC
 			// while auto-recentering to elapse before fading out.
 			bool isCrosshairActive = 
 			{
-				(crosshairFreeAimActive) &&
+				(crosshairTargetingMode != CrosshairTargetingMode::kDisabled) &&
+				(!reqResetCrosshairPosition) &&
 				(
 					p->pam->IsPerforming(InputAction::kMoveCrosshair) ||
 					Util::GetRefrPtrFromHandle(crosshairRefrHandle) || 
-					p->mm->reqFaceTarget || 
+					p->mm->reqFaceTarget ||
 					secsSinceActive <= 
 					1.5f * Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
 				)
@@ -1722,11 +1843,15 @@ namespace ALYSLC
 		// Actor targeted (aim correction or otherwise), 
 		// should face crosshair position (never true while mounted), 
 		// or mounted and targeting an object.
+		bool canDirectTowardsCrosshairPos = 
+		(
+			p->mm->reqFaceTarget && crosshairTargetingMode == CrosshairTargetingMode::kFreeAim
+		);
 		bool adjustTowardsTarget = 
 		{
 			(targetActorPtr != coopActor) &&
 			(
-				(targetActorValidity || p->mm->reqFaceTarget) || 
+				(targetActorValidity || canDirectTowardsCrosshairPos) || 
 				(coopActor->IsOnMount() && crosshairRefrValidity)
 			)
 		};
@@ -3409,12 +3534,11 @@ namespace ALYSLC
 
 	RE::ActorHandle TargetingManager::GetClosestTargetableActorInFOV
 	(
-		const float& a_fovRads, 
-		RE::ObjectRefHandle a_sourceRefrHandle, 
-		const bool& a_useXYDistance, 
-		const float& a_range,
-		const bool& a_combatDependentSelection,
-		const bool& a_useScreenPositions
+		const float& a_fovRads,
+		const bool a_useXYDistance, 
+		const float a_range,
+		const bool a_combatDependentSelection,
+		const bool a_useScreenPositions
 	)
 	{
 		// Get the closest targetable actor to the source refr 
@@ -3437,177 +3561,6 @@ namespace ALYSLC
 			return RE::ActorHandle();
 		}
 
-		// Check if the close refr position is within range of the player/source refr position
-		// and if the angle the player must turn to face the target 
-		// is within the defined FOV window.
-		auto isNewClosestActorInScreenFOV =
-		[this]
-		(
-			const RE::NiPoint3& a_coopPlayerPos,
-			const RE::NiPoint3& a_closeRefrPos, 
-			const RE::NiPoint3& a_sourceRefrPos,
-			float& a_minWeight,
-			const float& a_targetingAngle, 
-			const float& a_fovRads,
-			const float& a_range
-		) 
-		{
-			// Within FOV.
-			const float angleToTarget = atan2f
-			(
-				a_closeRefrPos.y - a_coopPlayerPos.y, a_closeRefrPos.x - a_coopPlayerPos.x
-			);
-			const float turnToFaceActorAngMag = fabsf
-			(
-				Util::NormalizeAngToPi(angleToTarget - a_targetingAngle)
-			);
-			const bool inFOV = turnToFaceActorAngMag <= (a_fovRads / 2.0f);
-			// Don't need to check range if not in FOV.
-			if (!inFOV)
-			{
-				return false;
-			}
-
-			// Disregard range when set to -1.
-			bool useRange = a_range != -1.0f;
-			// Get distance between source and close refr positions.
-			float distanceFromSource = a_closeRefrPos.GetDistance(a_sourceRefrPos);
-			// Return false if this actor is not in range.
-			// No need to compare distance-angle weight.
-			if (useRange && distanceFromSource > a_range)
-			{
-				return false;
-			}
-
-			RE::NiPoint3 toRefrDir = a_closeRefrPos - a_coopPlayerPos;
-			toRefrDir.Unitize();
-			// Minimum selection factor [0, 2]. 
-			// Negate the dot product, meaning the more the player has to turn to face the object,
-			// the larger the factor.
-			// Then we add 1 to ensure all dot product results are > 0, 
-			// and mult by 0.5 to set the range to [0, 1]
-			// Lastly scale by the distance from the player to the object,
-			// meaning objects that are further away have a larger factor.
-			// Divide by the range to constrain the factor to [0, 1]
-			float minSelectionFactor = FLT_MAX;
-			const RE::NiPoint3 facingDir = RE::NiPoint3
-			(
-				cosf(a_targetingAngle), sinf(a_targetingAngle), 0.0f
-			);
-			if (useRange)
-			{
-				minSelectionFactor = 
-				(
-					(0.5f * (1.0f - facingDir.Dot(toRefrDir))) + 
-					(min(1.0f, a_coopPlayerPos.GetDistance(a_closeRefrPos) / a_range))
-				);
-			}
-			else
-			{
-				minSelectionFactor = 1.0f - facingDir.Dot(toRefrDir);
-			}
-
-			if (minSelectionFactor < a_minWeight)
-			{
-				// Change min weight, since this actor's is smaller.
-				a_minWeight = minSelectionFactor;
-				// Return true since this actor is closer (distance and angle-wise).
-				return true;
-			}
-
-			return false;
-		};
-
-		auto isNewClosestActorInWorldFOV =
-		[this]
-		(
-			const RE::NiPoint3& a_coopPlayerPos,
-			const RE::NiPoint3& a_closeRefrPos, 
-			const RE::NiPoint3& a_sourceRefrPos,
-			float& a_minWeight,
-			const float& a_targetingAngle, 
-			const float& a_fovRads,
-			const bool& a_useXYDistance,
-			const float& a_range
-		) 
-		{
-			// Within FOV.
-			const float angleToTarget = Util::GetYawBetweenPositions
-			(
-				a_coopPlayerPos, a_closeRefrPos
-			);
-			const float turnToFaceActorAngMag = fabsf
-			(
-				Util::NormalizeAngToPi(angleToTarget - a_targetingAngle)
-			);
-			const bool inFOV = turnToFaceActorAngMag <= (a_fovRads / 2.0f);
-			// Don't need to check range if not in FOV.
-			if (!inFOV)
-			{
-				return false;
-			}
-
-			// Disregard range when set to -1.
-			bool useRange = a_range != -1.0f;
-			// Get distance between source and close refr position.
-			float distanceFromSource = FLT_MAX;
-			if (a_useXYDistance)
-			{
-				distanceFromSource = Util::GetXYDistance(a_closeRefrPos, a_sourceRefrPos);
-			}
-			else
-			{
-				distanceFromSource = a_closeRefrPos.GetDistance(a_sourceRefrPos);
-			}
-
-			// Return false if this actor is not in range.
-			// No need to compare distance-angle weight.
-			if (useRange && distanceFromSource > a_range)
-			{
-				return false;
-			}
-
-			RE::NiPoint3 toRefrDirXY = a_closeRefrPos - a_coopPlayerPos;
-			toRefrDirXY.z = 0.0f;
-			toRefrDirXY.Unitize();
-
-			// Minimum selection factor [0, 2]. 
-			// Negate the dot product, meaning the more the player has to turn to face the object,
-			// the larger the factor.
-			// Then we add 1 to ensure all dot product results are > 0, 
-			// and mult by 0.5 to set the range to [0, 1]
-			// Lastly scale by the distance from the player to the object,
-			// meaning objects that are further away have a larger factor.
-			// Divide by the range to constrain the factor to [0, 1]
-			float minSelectionFactor = FLT_MAX;
-			const RE::NiPoint3 facingDirXY = Util::RotationToDirectionVect
-			(
-				0.0f, Util::ConvertAngle(a_targetingAngle)
-			);
-			if (useRange)
-			{
-				minSelectionFactor = 
-				(
-					(0.5f * (1.0f - facingDirXY.Dot(toRefrDirXY))) + 
-					(min(1.0f, a_coopPlayerPos.GetDistance(a_sourceRefrPos) / a_range))
-				);
-			}
-			else
-			{
-				minSelectionFactor = 1.0f - facingDirXY.Dot(toRefrDirXY);
-			}
-			
-			if (minSelectionFactor < a_minWeight)
-			{
-				// Change min weight, since this actor's is smaller.
-				a_minWeight = minSelectionFactor;
-				// Return true since this actor is closer (distance and angle-wise).
-				return true;
-			}
-
-			return false;
-		};
-		
 		// The closest valid actor within the given FOV window.
 		RE::Actor* closestActorInFOV = nullptr;
 		// Should only target allies if casting a non-hostile spell.
@@ -3624,12 +3577,16 @@ namespace ALYSLC
 		if (a_combatDependentSelection) 
 		{
 			// Ranged options in right and left hand + quick cast + shout.
-			if ((p->pam->AllInputsPressedForAction(InputAction::kCastRH) && 
-				 p->em->HasRHSpellEquipped()) ||
-				(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) && 
-				 p->em->HasRHStaffEquipped()) ||
-				(p->pam->AllInputsPressedForAction(InputAction::kAttackRH) &&
-				 p->em->Has2HRangedWeapEquipped()))
+			if (((p->pam->AllInputsPressedForAction(InputAction::kCastRH) || 
+				  p->pam->isInCastingAnimRH) && 
+				  p->em->HasRHSpellEquipped()) ||
+				((p->pam->AllInputsPressedForAction(InputAction::kAttackRH) ||
+				  p->pam->isInCastingAnimRH || 
+				  p->pam->isAttacking) && 
+				  p->em->HasRHStaffEquipped()) ||
+				((p->pam->AllInputsPressedForAction(InputAction::kAttackRH) || 
+				  p->pam->isAttacking) &&
+				  p->em->Has2HRangedWeapEquipped()))
 			{
 				auto asWeap = p->em->GetRHWeapon();
 				if (asWeap && asWeap->IsStaff() && asWeap->formEnchanting)
@@ -3643,10 +3600,12 @@ namespace ALYSLC
 				
 				attackSource = p->em->equippedForms[!EquipIndex::kRightHand];
 			}
-			else if ((p->pam->AllInputsPressedForAction(InputAction::kCastLH) && 
-					  p->em->HasLHSpellEquipped()) ||
-					 (p->pam->AllInputsPressedForAction(InputAction::kAttackLH) &&
-					  p->em->HasLHStaffEquipped()))
+			else if (((p->pam->AllInputsPressedForAction(InputAction::kCastLH) ||
+					   p->pam->isInCastingAnimLH) && 
+					   p->em->HasLHSpellEquipped()) ||
+					 ((p->pam->AllInputsPressedForAction(InputAction::kAttackLH) ||
+					   p->pam->isInCastingAnimLH || p->pam->isAttacking) &&
+					   p->em->HasLHStaffEquipped()))
 			{
 				auto asWeap = p->em->GetLHWeapon();
 				if (asWeap && asWeap->IsStaff() && asWeap->formEnchanting)
@@ -3675,7 +3634,9 @@ namespace ALYSLC
 
 				attackSource = p->em->equippedForms[!EquipIndex::kQuickSlotSpell];
 			}
-			else if (p->pam->AllInputsPressedForAction(InputAction::kShout) && p->em->voiceSpell) 
+			else if ((p->pam->AllInputsPressedForAction(InputAction::kShout) || 
+					  p->pam->isShouting) && 
+					 (p->em->voiceSpell)) 
 			{
 				if (p->em->voiceSpell)
 				{
@@ -3775,39 +3736,19 @@ namespace ALYSLC
 			);*/
 		}
 
-		// From the player's torso.
-		auto playerTorsoPos = p->mm->playerTorsoPosition;
-		if (a_useScreenPositions)
-		{
-			playerTorsoPos = Util::WorldToScreenPoint3(playerTorsoPos, false);
-			// Do not need screen pos depth.
-			playerTorsoPos.z = 0.0f;
-		}
-
-		// Position of the source to perform range checks from.
-		auto sourceRefrPos = playerTorsoPos;
-		auto sourceRefrPtr = Util::GetRefrPtrFromHandle(a_sourceRefrHandle); 
-		if (sourceRefrPtr)
-		{
-			sourceRefrPos = Util::Get3DCenterPos(sourceRefrPtr.get());
-			if (a_useScreenPositions)
-			{
-				sourceRefrPos = Util::WorldToScreenPoint3(sourceRefrPos, false);
-				sourceRefrPos.z = 0.0f;
-			}
-		}
-
 		// Angle around which the FOV window is centered.
 		float targetingAngle = 0.0f;
+		bool crosshairActive = crosshairTargetingMode != CrosshairTargetingMode::kDisabled;
 		if (a_useScreenPositions)
 		{
-			if (p->mm->lsMoved)
+			if ((crosshairActive && p->mm->lsMoved) || 
+				(!crosshairActive && p->mm->rsMoved))
 			{
 				// Flip LS Y comp sign to conform with Scaleform convention.
-				const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
+				const auto& stickData = glob.cdh->GetAnalogStickState(deviceID, crosshairActive);
 				targetingAngle = Util::NormalizeAng0To2Pi
 				(
-					atan2f(-lsData.yComp, lsData.xComp)
+					atan2f(-stickData.yComp, stickData.xComp)
 				);
 			}
 			else
@@ -3815,7 +3756,13 @@ namespace ALYSLC
 				RE::NiPoint3 aimOriginPos = p->mm->playerTorsoPosition;
 				RE::NiPoint3 aimDirection = Util::RotationToDirectionVect
 				(
-					0.0f, Util::ConvertAngle(p->mm->lastLSAngMovingFromCenter)
+					0.0f, 
+					Util::ConvertAngle
+					(
+						crosshairActive ? 
+						p->mm->lastLSAngMovingFromCenter :
+						p->mm->lastRSAngMovingFromCenter 
+					)
 				);
 				auto screenAimOriginPos = Util::WorldToScreenPoint3(aimOriginPos, false);
 				screenAimOriginPos.z = 0.0f;
@@ -3856,20 +3803,37 @@ namespace ALYSLC
 		}
 		else
 		{
-			targetingAngle = 
-			(
-				p->mm->lsMoved ? 
-				p->mm->movementOffsetParams[!MoveParams::kLSGameAng] :
-				p->mm->lastLSAngMovingFromCenter
-			);
+			if (crosshairTargetingMode == CrosshairTargetingMode::kDisabled)
+			{
+				targetingAngle = 
+				(
+					p->mm->rsMoved ? 
+					p->mm->movementOffsetParams[!MoveParams::kRSGameAng] :
+					p->mm->lastRSAngMovingFromCenter
+				);
+			}
+			else
+			{
+				targetingAngle = 
+				(
+					p->mm->lsMoved ? 
+					p->mm->movementOffsetParams[!MoveParams::kLSGameAng] :
+					p->mm->lastLSAngMovingFromCenter
+				);
+			}
 		}
 		
 		// Lowest distance-angle weight. Starts at max possible value.
 		float minAngDistWeight = FLT_MAX;
-		// Check all high actors.
-		bool isClosest = false;
+		// Computed for each valid refr (outparam).
+		float computedAngDistWeight = FLT_MAX;
+		// Does this actor have the smallest angle/distance weight?
+		bool hasMinAngDistWeight = false;
+		// Is the actor in range and within the targeting angle's FOV window?
+		bool inRangeAndFOV = false;
 		// Another actor is in combat with this player.
 		bool inCombatWithPlayer = false;
+		// Check all high actors.
 		for (const auto& closeActorHandle : procLists->highActorHandles)
 		{
 			auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
@@ -3891,8 +3855,7 @@ namespace ALYSLC
 				(actorPtr == coopActor) ||
 				(actorPtr == p->GetCurrentMount()) ||
 				(
-					crosshairFreeAimActive && 
-					glob.coopEntityBlacklistFIDSet.contains(actorPtr->formID)
+					crosshairActive && glob.coopEntityBlacklistFIDSet.contains(actorPtr->formID)
 				)
 			};
 			if (filteredOut)
@@ -3944,10 +3907,10 @@ namespace ALYSLC
 			// Next, filter out targets based on spell target type, 
 			// friendliness, and the player's current combat state.
 			// Filter out living actors when attempting to reanimate, 
-			// or hostile actors when selecting allies and vice versa.
+			// or hostile actors when selecting allies
+			// or friendly/neutral actors when the crosshair is active or when in combat.
 			filteredOut = 
 			(
-				(crosshairFreeAimActive || glob.isInCoopCombat || !actorPtr->IsPlayerTeammate()) &&
 				(!shouldOnlyTargetCorpses) &&
 				(a_combatDependentSelection) && 
 				(
@@ -3958,7 +3921,10 @@ namespace ALYSLC
 							isActivelyHostileToAPlayerOrAlly
 						)
 					) || 
-					(!shouldOnlyTargetAllies && !isActivelyHostileToAPlayerOrAlly)
+					(
+						(!shouldOnlyTargetAllies && !isActivelyHostileToAPlayerOrAlly) && 
+						(crosshairActive || glob.isInCoopCombat)
+					)
 				)
 			);
 			
@@ -3967,16 +3933,30 @@ namespace ALYSLC
 				SPDLOG_DEBUG("{}: Filtered out {}.", coopActor->GetName(),actorPtr->GetName());
 				continue;
 			}
-			else
+
+			// Run close actor check to update the new closest actor within the FOV window.
+			IsRefrInRangeAndInFOV
+			(
+				coopActor.get(),
+				actorPtr.get(), 
+				a_useScreenPositions,
+				a_useXYDistance,
+				targetingAngle,
+				a_fovRads,
+				a_range,
+				computedAngDistWeight,
+				inRangeAndFOV
+			);
+			if (inRangeAndFOV && computedAngDistWeight < minAngDistWeight) 
 			{
 				SPDLOG_DEBUG
 				(
-					"{}: {} considered. Crosshair active: {}, in combat with player: {}, "
+					"{}: {} is now closest. Crosshair mode: {}, in combat with player: {}, "
 					"co-op combat active: {}, only corpses: {}, "
 					"only allies: {}, party friendly: {}, actively hostile: {}.", 
 					coopActor->GetName(),
 					actorPtr->GetName(),
-					crosshairFreeAimActive,
+					crosshairTargetingMode,
 					inCombatWithPlayer,
 					glob.isInCoopCombat,
 					shouldOnlyTargetCorpses,
@@ -3984,48 +3964,7 @@ namespace ALYSLC
 					Util::IsPartyFriendlyActor(actorPtr.get()),
 					isActivelyHostileToAPlayerOrAlly
 				);
-			}
-
-			// Run close actor check to update the new closest actor within the FOV window.
-			auto actorTorsoPos = Util::GetTorsoPosition(actorPtr.get());
-			if (a_useScreenPositions)
-			{
-				actorTorsoPos = Util::WorldToScreenPoint3(actorTorsoPos, false);
-				actorTorsoPos.z = 0.0f;
-				isClosest = 
-				(
-					isNewClosestActorInScreenFOV
-					(
-						playerTorsoPos,
-						actorTorsoPos, 
-						sourceRefrPos,
-						minAngDistWeight,
-						targetingAngle,
-						a_fovRads,
-						a_range
-					)
-				);
-			}
-			else
-			{
-				isClosest = 
-				(
-					isNewClosestActorInWorldFOV
-					(
-						playerTorsoPos,
-						actorTorsoPos, 
-						sourceRefrPos,
-						minAngDistWeight,
-						targetingAngle,
-						a_fovRads,
-						a_useXYDistance,
-						a_range
-					)
-				);
-			}
-			
-			if (isClosest) 
-			{
+				minAngDistWeight = computedAngDistWeight;
 				closestActorInFOV = actorPtr.get();
 			}
 		}
@@ -4033,7 +3972,7 @@ namespace ALYSLC
 		// If not in combat and either not casting or casting a hostile spell, 
 		// do not pick a close actor target.
 		// Only want to choose friendly actors to heal with spells when out of combat.
-		if ((crosshairFreeAimActive) &&
+		if ((crosshairActive) &&
 			(!glob.isInCoopCombat) && 
 			(!sourceHasSpell || !shouldOnlyTargetAllies)) 
 		{
@@ -4044,69 +3983,35 @@ namespace ALYSLC
 		if (!p->isPlayer1) 
 		{
 			// No combat-dependent filter or if trying to heal P1.
-			bool canAddP1 = false;
-			if (crosshairFreeAimActive)
+			bool canAddP1 =
+			(
+				(!shouldOnlyTargetCorpses) && 
+				(!a_combatDependentSelection || shouldOnlyTargetAllies)
+			);
+			// Do not target P1 with hostile spells when in combat.
+			if (!crosshairActive)
 			{
-				canAddP1 = 
-				(
-					(!shouldOnlyTargetCorpses) && 
-					(!a_combatDependentSelection || shouldOnlyTargetAllies)
-				);
-			}
-			else
-			{
-				canAddP1 = 
-				(
-					(!glob.isInCoopCombat) ||
-					(
-						(!shouldOnlyTargetCorpses) && 
-						(!a_combatDependentSelection || shouldOnlyTargetAllies)
-					)
-				);
+				canAddP1 |= !glob.isInCoopCombat;
 			}
 
 			if (canAddP1)
 			{
 				// Perform new closest actor in FOV check on P1.
-				auto actorTorsoPos = glob.coopPlayers[0]->mm->playerTorsoPosition;
-				if (a_useScreenPositions)
+				IsRefrInRangeAndInFOV
+				(
+					coopActor.get(),
+					glob.player1Actor.get(),
+					a_useScreenPositions,
+					a_useXYDistance,
+					targetingAngle,
+					a_fovRads,
+					a_range,
+					computedAngDistWeight,
+					inRangeAndFOV
+				);
+				if (inRangeAndFOV && computedAngDistWeight < minAngDistWeight) 
 				{
-					actorTorsoPos = Util::WorldToScreenPoint3(actorTorsoPos, false);
-					actorTorsoPos.z = 0.0f;
-					isClosest = 
-					(
-						isNewClosestActorInScreenFOV
-						(
-							playerTorsoPos,
-							actorTorsoPos, 
-							sourceRefrPos,
-							minAngDistWeight,
-							targetingAngle,
-							a_fovRads,
-							a_range
-						)
-					);
-				}
-				else
-				{
-					isClosest = 
-					(
-						isNewClosestActorInWorldFOV
-						(
-							playerTorsoPos,
-							actorTorsoPos, 
-							sourceRefrPos,
-							minAngDistWeight,
-							targetingAngle,
-							a_fovRads,
-							a_useXYDistance,
-							a_range
-						)
-					);
-				}
-
-				if (isClosest) 
-				{
+					minAngDistWeight = computedAngDistWeight;
 					closestActorInFOV = glob.player1Actor.get();
 				}
 			}
@@ -4546,7 +4451,7 @@ namespace ALYSLC
 				// Use XY distance to ignore vertical displacements.
 				targetHandle = GetClosestTargetableActorInFOV
 				(
-					PI, RE::ObjectRefHandle(), true, maxReachActivationDist, true
+					PI, true, maxReachActivationDist, true
 				);
 			}
 		}
@@ -4568,7 +4473,7 @@ namespace ALYSLC
 				// Use XY distance to ignore vertical displacements.
 				targetHandle = GetClosestTargetableActorInFOV
 				(
-					PI, RE::ObjectRefHandle(), true, -1.0f, true
+					PI, true, -1.0f, true
 				);
 			}
 		}
@@ -4598,34 +4503,47 @@ namespace ALYSLC
 		{
 			return selectedTargetActorHandle;
 		}
-		else if (Settings::vbUseAimCorrection[playerID] &&
-				 !p->mm->reqFaceTarget && 
-				 Util::HandleIsValid(aimCorrectionTargetHandle))
+		else
 		{
-			return aimCorrectionTargetHandle;
-		}
-		else if (!p->mm->reqFaceTarget && !Settings::vbUseAimCorrection[playerID])
-		{
-			// NOTE:
-			// Will comment out if bugs occur.
-			// If not facing the crosshair, not using aim correction,
-			// and the player is running their ranged attack package, 
-			// choose the aim target linked refr, if available.
-			// Ignore the player if they are the linked refr, 
-			// since this is the fall-through case that simply 
-			// enables the ranged attack package to execute.
-			const auto refrPtr = Util::GetRefrPtrFromHandle(aimTargetLinkedRefrHandle); 
-			if (refrPtr && refrPtr->As<RE::Actor>() && refrPtr != coopActor)
+			bool hasAimCorrectionTarget = 
+			(
+				(
+					crosshairTargetingMode == CrosshairTargetingMode::kDisabled &&
+					Util::HandleIsValid(aimCorrectionTargetHandle)
+				) ||
+				(
+					Settings::vbUseAimCorrection[playerID] &&
+					Util::HandleIsValid(aimCorrectionTargetHandle) &&
+					!p->mm->reqFaceTarget
+				)
+			);
+			if (hasAimCorrectionTarget)
 			{
-				if (p->pam->GetCurrentPackage() ==
-					p->pam->GetCoopPackage(PackageIndex::kRangedAttack))
+				return aimCorrectionTargetHandle;
+			}
+			else if (!p->mm->reqFaceTarget && !Settings::vbUseAimCorrection[playerID])
+			{
+				// NOTE:
+				// Will comment out if bugs occur.
+				// If not facing the crosshair, not using aim correction,
+				// and the player is running their ranged attack package, 
+				// choose the aim target linked refr, if available.
+				// Ignore the player if they are the linked refr, 
+				// since this is the fall-through case that simply 
+				// enables the ranged attack package to execute.
+				const auto refrPtr = Util::GetRefrPtrFromHandle(aimTargetLinkedRefrHandle); 
+				if (refrPtr && refrPtr->As<RE::Actor>() && refrPtr != coopActor)
 				{
-					return refrPtr->As<RE::Actor>()->GetHandle();
-				}
-				else
-				{
-					// Clear out ranged target linked refr if not running the ranged package.
-					ClearTarget(TargetActorType::kLinkedRefr);
+					if (p->pam->GetCurrentPackage() ==
+						p->pam->GetCoopPackage(PackageIndex::kRangedAttack))
+					{
+						return refrPtr->As<RE::Actor>()->GetHandle();
+					}
+					else
+					{
+						// Clear out ranged target linked refr if not running the ranged package.
+						ClearTarget(TargetActorType::kLinkedRefr);
+					}
 				}
 			}
 		}
@@ -5526,7 +5444,12 @@ namespace ALYSLC
 			// 1. Perform raycast collision check, as the havok contact listener 
 			// fails to detect collisions sometimes. Increases the likelihood of a hit.
 			// 2. Adjust the trajectory of the released refr if using homing projectiles.
-			auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
+			auto targetRefrPtr = Util::GetRefrPtrFromHandle
+			(
+				crosshairTargetingMode == CrosshairTargetingMode::kDisabled ? 
+				aimCorrectionTargetHandle :
+				crosshairRefrHandle
+			);
 			// Flopped-on refrs to add as released to propagate the initial collision.
 			// Pairs of (refr handle, released angle factor).
 			std::vector<std::pair<RE::ObjectRefHandle, float>> flopRedirectedRefrs{ };
@@ -5601,9 +5524,9 @@ namespace ALYSLC
 						(
 							(releasedRefrInfo->trajType == ProjectileTrajType::kPrediction) ||
 							(
-								crosshairRefrPtr && 
-								crosshairRefrPtr.get() &&
-								releasedRefrInfo->hitRefrFIDs.contains(crosshairRefrPtr->formID)
+								targetRefrPtr && 
+								targetRefrPtr.get() &&
+								releasedRefrInfo->hitRefrFIDs.contains(targetRefrPtr->formID)
 							)
 						)
 					) ||
@@ -6032,12 +5955,14 @@ namespace ALYSLC
 
 					// Heh.
 					// Works the same way as slapping the object to redirect it.
+					const auto targetRefrHandle = hitRefrPtr->GetHandle();
 					bool shouldRedirectWithFlop = 
 					(
 						(
 							releasedRefrPtr == coopActor &&
 							hitRefrPtr != coopActor &&
-							hitRefrPtr->GetHandle() != crosshairRefrHandle
+							targetRefrHandle != crosshairRefrHandle &&
+							targetRefrHandle != aimCorrectionTargetHandle
 						) &&
 						(
 							hitActor || 
@@ -6469,6 +6394,264 @@ namespace ALYSLC
 			0.0f,
 			releasedActorPtr->data.location
 		);
+	}
+
+	void TargetingManager::InactivateCrosshair(bool a_stopFacingTarget)
+	{
+		// Clear the current crosshair target, request to reset the crosshair's position, 
+		// and reset the face target flag (if requested).
+
+		reqResetCrosshairPosition = true;
+		ClearCrosshairTargeData();
+		if (a_stopFacingTarget)
+		{				
+			p->mm->reqFaceTarget = false;
+		}
+	}
+
+	void TargetingManager::IsRefrInRangeAndInFOV
+	(
+		RE::TESObjectREFR* a_sourceRefr,
+		RE::TESObjectREFR* a_targetRefr,
+		const bool a_isScreenspaceAngle,
+		const bool a_useXYDistance,
+		const float a_targetingAngle, 
+		const float a_fovRads,
+		const float a_range,
+		float& a_angDistWeightOut,
+		bool& a_isInRangeAndFOVOut
+	)
+	{
+		// Using screenspace positions:
+		// Top left of screen is origin, right is +X, left is -X, down is +Y, up is -Y.
+		// 
+		// Return true if the given refr's position is weighted closer 
+		// than the given minimum weight factor.
+		// The weight factor is comprised of the normalized distance between the player/source pos 
+		// and the target refr pos, plus the normalized angle difference 
+		// between the targeting angle and the angle from the player to the refr.
+		
+		// Set outparams as not in range/FOV and not having a valid angle/distance weight.
+		// Can then return early if the refr is invalid or not in range/FOV.
+		a_isInRangeAndFOVOut = false;
+		a_angDistWeightOut = FLT_MAX;
+
+		if (!a_targetRefr)
+		{
+			return;
+		}
+
+		if (!a_sourceRefr)
+		{
+			a_sourceRefr = coopActor.get();
+		}
+
+		auto sourcePos = RE::NiPoint3();
+		if (a_sourceRefr == coopActor.get())
+		{
+			sourcePos = p->mm->playerTorsoPosition;
+		}
+		else if (auto asActor = a_sourceRefr->As<RE::Actor>(); asActor)
+		{
+			sourcePos = Util::GetTorsoPosition(asActor);
+		}
+		else
+		{
+			sourcePos = Util::GetRefrPosition(a_sourceRefr);
+		}
+
+		auto asActor = a_targetRefr->As<RE::Actor>();
+		auto targetPos = RE::NiPoint3();
+		if (auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_targetRefr); pIndex != -1)
+		{
+			targetPos = glob.coopPlayers[pIndex]->mm->playerTorsoPosition;
+		}
+		else if (auto asActor = a_targetRefr->As<RE::Actor>(); asActor)
+		{
+			targetPos = Util::GetTorsoPosition(asActor);
+		}
+		else
+		{
+			targetPos = Util::GetRefrPosition(a_targetRefr);
+		}
+
+		// Normalize to have the same range as the targeting angle.
+		float angleToTarget = 0.0f;
+		if (a_isScreenspaceAngle)
+		{
+			auto sourceScreenPos = Util::WorldToScreenPoint3(sourcePos, false);
+			sourceScreenPos.z = 0.0f;
+			auto targetScreenPos = Util::WorldToScreenPoint3(targetPos, false);
+			targetScreenPos.z = 0.0f;
+			angleToTarget = Util::NormalizeAng0To2Pi
+			(
+				atan2f
+				(
+					targetScreenPos.y - sourceScreenPos.y, 
+					targetScreenPos.x - sourceScreenPos.x
+				)
+			);
+			
+			// REMOVE when done debugging.
+			/*glm::vec2 sourceScreenVec = glm::vec2(sourceScreenPos.x, sourceScreenPos.y);
+			DebugAPI::ClampPointToScreen(sourceScreenVec);
+			glm::vec2 targetScreenVec = glm::vec2(targetScreenPos.x, targetScreenPos.y);
+			DebugAPI::ClampPointToScreen(targetScreenVec);
+			DebugAPI::QueuePoint2D
+			(
+				glm::vec2(playerPos.x, playerPos.y),
+				Settings::vuOverlayRGBAValues[playerID],
+				5.0f,
+				3.0f
+			);
+			DebugAPI::QueuePoint2D
+			(
+				targetScreenVec,
+				Settings::vuCrosshairOuterOutlineRGBAValues[playerID],
+				5.0f,
+				3.0f
+			);
+			DebugAPI::QueueArrow2D
+			(
+				sourceScreenVec,
+				targetScreenVec,
+				Settings::vuOverlayRGBAValues[playerID],
+				5.0f,
+				3.0f,
+				3.0f
+			);
+			glm::vec2 dir = glm::vec2
+			(
+				cosf(angleToTarget),
+				sinf(angleToTarget)
+			);
+			DebugAPI::QueueArrow2D
+			(
+				sourceScreenVec,
+				sourceScreenVec + dir * glm::distance(sourceScreenVec, targetScreenVec),
+				Settings::vuCrosshairInnerOutlineRGBAValues[playerID],
+				5.0f,
+				3.0f,
+				3.0f
+			);
+			dir = glm::vec2
+			(
+				cosf(a_targetingAngle),
+				sinf(a_targetingAngle)
+			);
+			DebugAPI::QueueArrow2D
+			(
+				sourceScreenVec,
+				sourceScreenVec + dir * 100.0f,
+				Settings::vuCrosshairOuterOutlineRGBAValues[playerID],
+				5.0f,
+				3.0f,
+				3.0f
+			);*/
+		}
+		else
+		{
+			angleToTarget = Util::NormalizeAng0To2Pi
+			(
+				Util::GetYawBetweenPositions(sourcePos, targetPos)
+			);
+		}
+		
+		// Angle diff between the analog stick's angle 
+		// and the angle between the source and the target.
+		const float turnToFaceRefrAngMag = fabsf
+		(
+			Util::NormalizeAngToPi(angleToTarget - a_targetingAngle)
+		);
+		// Within FOV.
+		const bool inFOV = turnToFaceRefrAngMag <= (a_fovRads / 2.0f);
+		// Don't need to check range if not in FOV.
+		if (!inFOV)
+		{
+			/*SPDLOG_DEBUG
+			(
+				"{}: {} is not in FOV: targeting angle: {}, angle to target: {}, "
+				"turn to target: {}, FOV: {}.",
+				coopActor->GetName(),
+				a_targetRefr->GetName(),
+				a_targetingAngle * TO_DEGREES, 
+				angleToTarget * TO_DEGREES,
+				turnToFaceRefrAngMag * TO_DEGREES,
+				a_fovRads * TO_DEGREES
+			);*/
+			return;
+		}
+
+		// Disregard range when set to -1.
+		bool useRange = a_range != -1.0f;
+		// Get distance between source and close refr position.
+		float distanceFromSource = FLT_MAX;
+		if (a_useXYDistance)
+		{
+			distanceFromSource = Util::GetXYDistance(targetPos, sourcePos);
+		}
+		else
+		{
+			distanceFromSource = targetPos.GetDistance(sourcePos);
+		}
+
+		// Return false if this actor is not in range.
+		// No need to compare distance-angle weight.
+		if (useRange && distanceFromSource > a_range)
+		{
+			/*SPDLOG_DEBUG
+			(
+				"{}: {} is too far away: range: {}, distance from source ({}): {}.",
+				coopActor->GetName(), 
+				a_targetRefr->GetName(),
+				a_range,
+				a_sourceRefr->GetName(),
+				distanceFromSource
+			);*/
+			return;
+		}
+		
+		// Is in range and in FOV window.
+		a_isInRangeAndFOVOut = true;
+		float selectionFactor = 0.0f;
+		if (a_range == -1.0f)
+		{
+			a_angDistWeightOut = 
+			(
+				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) /*+ 
+				(min(1.0f, distanceFromSource / GetMaxActivationDist()))*/
+			);
+		}
+		else
+		{
+			a_angDistWeightOut = 
+			(
+				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) + 
+				(min(1.0f, distanceFromSource / a_range))
+			);
+		}
+		
+		/*SPDLOG_DEBUG
+		(
+			"{}: {} -> {}: {}: targeting angle: {}, angle to target: {}, FOV: {}, "
+			"turn to target: {}, distance to target: {} (reach: {}), "
+			"selection factor computed: {} ({} + {}), computed angle/distance weight: {}. "
+			"Is in range and in FOV.",
+			coopActor->GetName(),
+			a_sourceRefr->GetName(),
+			a_targetRefr->GetName(),
+			a_isScreenspaceAngle ? "SCREENSPACE" : "WORLDSPACE",
+			a_targetingAngle * TO_DEGREES, 
+			angleToTarget * TO_DEGREES,
+			a_fovRads * TO_DEGREES,
+			turnToFaceRefrAngMag * TO_DEGREES,
+			distanceFromSource,
+			maxReachActivationDist,
+			selectionFactor,
+			turnToFaceRefrAngMag / (a_fovRads / 2.0f),
+			min(1.0f, distanceFromSource / maxReachActivationDist),
+			a_angDistWeightOut
+		);*/
 	}
 
 	bool TargetingManager::IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle)
@@ -7875,6 +8058,7 @@ namespace ALYSLC
 		p->lastAutoGrabTP						=
 		p->lastCrosshairUpdateTP				=
 		p->lastHiddenInStealthRadiusTP			=
+		p->lastLockOnTargetUpdateTP				=
 		p->lastStealthStateCheckTP				=
 		p->crosshairRefrVisibilityLostTP		= 
 		p->crosshairRefrVisibilityCheckTP		= SteadyClock::now();
@@ -7963,21 +8147,41 @@ namespace ALYSLC
 					const bool blacklisted =
 					{ 
 						(currentMount && a_refr == currentMount.get()) ||
-						(asActor && asActor->IsPlayerTeammate()) ||
 						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
 					};
+					const bool isFriendly = Util::IsPartyFriendlyActor(asActor);
+					const bool hostileToP1 = 
+					(
+						asActor && asActor->IsHostileToActor(glob.player1Actor.get())
+					);
+					const bool hostileToThisPlayer = 
+					(
+						asActor && asActor->IsHostileToActor(coopActor.get())
+					);
 					// Useless to activate hostile actors in combat.
 					const bool activateHostileActor = 
 					{ 
-						(asActor && !asActor->IsDead()) && 
+						(hostileToP1 || hostileToThisPlayer) &&
 						(
-							asActor->IsHostileToActor(glob.player1Actor.get()) || 
-							asActor->IsHostileToActor(coopActor.get())
+							asActor && 
+							!asActor->IsDead() && 
+							!isFriendly && 
+							!Util::IsGuard(asActor)
 						)
 					};
-
+					// Do not consider friendly actors that are not mad at a player or 
+					// do not need help getting up.
+					const bool friendlyActorNotActivatable = 
+					(
+						isFriendly &&
+						!asActor->IsBleedingOut() &&
+						!asActor->IsInRagdollState() &&
+						!hostileToP1 &&
+						!hostileToThisPlayer
+					);
 					if (blacklisted || 
 						activateHostileActor || 
+						friendlyActorNotActivatable ||
 						!Util::IsSelectableRefr(a_refr) || 
 						!Util::IsValidRefrForTargeting(a_refr))
 					{
@@ -8569,21 +8773,29 @@ namespace ALYSLC
 		// Update aim correction target if the player is attempting
 		// to perform or is performing a ranged attack.
 		// Clear the target otherwise.
+		// Can skip the analog stick commitment check, 
+		// which checks if the stick was just displaced to max 
+		// or if the stick is at max displacement and not moving towards its resting position.
 
-		// Player must have aim correction enabled or not be moving the crosshair freely.
-		if (!Settings::vbUseAimCorrection[playerID] && crosshairFreeAimActive)
+		// Player must have aim correction enabled or have the crosshair disabled.
+		bool crosshairActive = crosshairTargetingMode != CrosshairTargetingMode::kDisabled;
+		if (!Settings::vbUseAimCorrection[playerID] && crosshairActive)
 		{
+			if (Util::HandleIsValid(aimCorrectionTargetHandle))
+			{
+				ClearTarget(TargetActorType::kAimCorrection);
+			}
+
 			return;
 		}
-		
+
 		// First, if the current target is no longer selectable, clear it.
 		auto currentTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
 		bool isNoLongerTargetable = 
 		(
 			(currentTargetPtr) &&
 			(
-				!Util::IsValidRefrForTargeting(currentTargetPtr.get()) /*|| 
-				currentTargetPtr->IsDead()*/
+				!Util::IsValidRefrForTargeting(currentTargetPtr.get())
 			)
 		);
 		if (isNoLongerTargetable)
@@ -8595,30 +8807,57 @@ namespace ALYSLC
 		// Player is trying to/is performing/just finished an action that requires having a target.
 		bool actionJustStarted = false;
 		bool rangedAttackOrBlockRequest = p->pam->TurnToTargetForCombatAction(actionJustStarted);
-		const auto& lsState = glob.cdh->GetAnalogStickState(deviceID, true);
+		// Twin-stick mode: 
+		// left stick orientation determines movement direction, 
+		// right stick orientation determines rotation.
+		const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, crosshairActive);
 		auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle); 
-		// Can only check for a new target if the player is requesting a ranged attack, 
+		// Check for a new target whenever the crosshair is disabled. Serves as crosshair-lite.
+		// Otherwise, can only check for a new target if the player is requesting a ranged attack, 
 		// is not facing the crosshair position,
 		// and has not selected a target actor with their crosshair.
-		bool canValidateTarget = 
-		(
-			rangedAttackOrBlockRequest && 
-			!p->mm->reqFaceTarget && 
-			!selectedTargetActorPtr
-		);
+		bool canValidateTarget = false;
+		if (crosshairActive)
+		{
+			canValidateTarget = 
+			(
+				!p->mm->reqFaceTarget && rangedAttackOrBlockRequest && !selectedTargetActorPtr
+			);
+		}
+		else
+		{
+			canValidateTarget = 
+			(
+				p->pam->IsPerforming(InputAction::kMoveCrosshair)
+			);
+		}
+
 		if (canValidateTarget)
 		{
 			// Require left stick 'commitment', meaning the left stick is displaced to max
 			// and moving away from center or staying the same distance from center.
 			// Ignore partial displacement and recentering to prevent finicky target switching.
-			bool lsMovingAwayFromCenter = lsState.MovingAwayFromCenter();
-			bool lsMovingTowardsCenter = lsState.MovingTowardsCenter();
-			bool lsCommitment = 
-			(
-				(lsState.normMag >= 1.0f - 1E-3f) && 
-				(lsMovingAwayFromCenter || !lsMovingTowardsCenter)
-			);
-			bool canSelectNewTarget = actionJustStarted || lsCommitment;
+			bool stickMovingAwayFromCenter = stickState.MovingAwayFromCenter();
+			bool stickMovingTowardsCenter = stickState.MovingTowardsCenter();
+			bool stickCommitment = false;
+			if (crosshairActive || rangedAttackOrBlockRequest)
+			{
+				stickCommitment = 
+				(
+					(stickState.normMag >= 1.0f - 1E-3f) && 
+					(stickMovingAwayFromCenter || !stickMovingTowardsCenter)
+				);
+			}
+			else
+			{
+				stickCommitment = 
+				(
+					(stickState.normMag >= 1.0f - 1E-3f) &&
+					(stickState.prevNormMag < 1.0f - 1E-3f)
+				);
+			}
+			
+			bool canSelectNewTarget = (stickCommitment) || (actionJustStarted);
 			// Should check if the current target is in the FOV window
 			// when not attempting to select a new target 
 			// or after checking for a new target but retaining the current one.
@@ -8630,50 +8869,85 @@ namespace ALYSLC
 					GetClosestTargetableActorInFOV
 					(
 						Settings::vfAimCorrectionFOV[playerID],
-						RE::ObjectRefHandle(),
 						false,
-						-1.0f,
+						4096.f,
 						true,
 						Settings::vbScreenspaceBasedAimCorrectionCheck[playerID]
 					)
 				);
-
-				bool diffTarget = nextTargetPtr != currentTargetPtr;
-				if (diffTarget && !nextTargetPtr)
+				// Can set the newly computed target.
+				bool canSet = false;
+				if (actionJustStarted)
 				{
-					// Clear current target if there is no next target while moving away.
-					ClearTarget(TargetActorType::kAimCorrection);
-				}
-				else
-				{	
-					// Set valid, different target that is within LOS of the player.
-					bool canSet = 
+					bool currentIsFriendly = 
 					(
+						currentTargetPtr && Util::IsPartyFriendlyActor(currentTargetPtr.get())
+					);
+					bool nextIsFriendly = 
+					(
+						nextTargetPtr && Util::IsPartyFriendlyActor(nextTargetPtr.get())
+					);
+					bool diffDisposition = nextIsFriendly != currentIsFriendly;
+					// Set valid, different target that has the opposite disposition 
+					// of the current target and is within LOS of the player.
+					// Maintain the current target if the next target has the same disposition.
+					canSet = 
+					(
+						diffDisposition && 
 						nextTargetPtr &&
-						diffTarget && 
 						Util::IsValidRefrForTargeting(nextTargetPtr.get()) &&
 						Util::HasLOS
 						(
 							nextTargetPtr.get(), coopActor.get(), true, false, crosshairWorldPos
 						)
 					);
-					if (canSet)
+				}
+				else
+				{
+					bool diffTarget = nextTargetPtr != currentTargetPtr;
+					if (diffTarget && !nextTargetPtr)
 					{
-						aimCorrectionTargetHandle = nextTargetPtr->GetHandle();
-						// New target selected, so we don't need to perform 
-						// an additional FOV check.
+						// Clear current target if there is no next target while moving away.
+						ClearTarget(TargetActorType::kAimCorrection);
 						retainingCurrentTarget = false;
 					}
+					else
+					{	
+						// Set valid, different target that is within LOS of the player.
+						canSet = 
+						(
+							nextTargetPtr &&
+							diffTarget && 
+							Util::IsValidRefrForTargeting(nextTargetPtr.get()) &&
+							Util::HasLOS
+							(
+								nextTargetPtr.get(), coopActor.get(), true, false, crosshairWorldPos
+							)
+						);
+					}
+				}
+
+				if (canSet)
+				{
+					aimCorrectionTargetHandle = nextTargetPtr->GetHandle();
+					// New target selected, so we don't need to perform 
+					// an additional FOV check.
+					retainingCurrentTarget = false;
 				}
 			}
 			
 			// Potentially clear the current target if the player is committing 
 			// to fully moving away from it and the target is no longer in the FOV window.
-			if (retainingCurrentTarget && currentTargetPtr && lsCommitment)
+			if (retainingCurrentTarget && currentTargetPtr && stickCommitment)
 			{
 				auto playerTorsoPos = p->mm->playerTorsoPosition;
 				auto targetTorsoPos = Util::GetTorsoPosition(currentTargetPtr.get());
-				float targetingAngle = p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
+				float targetingAngle = 
+				(
+					crosshairActive ? 
+					p->mm->movementOffsetParams[!MoveParams::kLSGameAng] :
+					p->mm->movementOffsetParams[!MoveParams::kRSGameAng]
+				);
 				float angleToTarget = Util::GetYawBetweenPositions
 				(
 					playerTorsoPos, targetTorsoPos
@@ -8685,10 +8959,10 @@ namespace ALYSLC
 					playerTorsoPos.z = 0.0f;
 					targetTorsoPos = Util::WorldToScreenPoint3(targetTorsoPos);
 					targetTorsoPos.z = 0.0f;
-					// Flip LS Y comp sign to conform with Scaleform convention.
+					// Flip LS/RS Y comp sign to conform with Scaleform convention.
 					targetingAngle = Util::NormalizeAng0To2Pi
 					(
-						atan2f(-lsState.yComp, lsState.xComp)
+						atan2f(-stickState.yComp, stickState.xComp)
 					);
 
 					RE::NiPoint3 toTarget = targetTorsoPos - playerTorsoPos;
@@ -8716,7 +8990,7 @@ namespace ALYSLC
 				}
 			}
 		}
-		else if (!rangedAttackOrBlockRequest)
+		else if (crosshairActive && !rangedAttackOrBlockRequest)
 		{
 			// Clear the aim correction target when not attacking or trying to attack, blocking,
 			// or when a crosshair target actor is selected.
@@ -8739,9 +9013,22 @@ namespace ALYSLC
 					}
 				}
 			}
-			 
-			if ((currentTargetPtr) && 
-				((selectedTargetActorPtr) || (!combatActionBindsPressed && !p->pam->isAttacking)))
+
+			const bool canClear = 
+			(
+				(currentTargetPtr) && 
+				(
+					(selectedTargetActorPtr) || 
+					(
+						!combatActionBindsPressed &&
+						!p->pam->isAttacking && 
+						!p->pam->isBashing && 
+						!p->pam->isBlocking &&
+						!p->pam->isInCastingAnim
+					)
+				)
+			);
+			if (canClear)
 			{
 				ClearTarget(TargetActorType::kAimCorrection);
 			}
@@ -9084,14 +9371,16 @@ namespace ALYSLC
 		// When the player wants to move their crosshair,
 		// update the crosshair's 2D and 3D crosshair positions, 
 		// and the selected crosshair refr and actor, if any.
-		const bool isMovingCrosshair = 
+		const bool isAiming = 
 		(
 			p->pam->IsPerforming(InputAction::kMoveCrosshair) 
 		);
-		if (crosshairFreeAimActive)
+		if (crosshairTargetingMode != CrosshairTargetingMode::kDisabled)
 		{
-			if (isMovingCrosshair)
+			if (isAiming && crosshairTargetingMode == CrosshairTargetingMode::kFreeAim)
 			{
+				// Not snapping to a lock on target if moving the crosshair.
+				choseLockOnTarget = false;
 				// Get RS data.
 				const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 				const auto& rsX = rsData.xComp;
@@ -9322,52 +9611,102 @@ namespace ALYSLC
 				);
 				if (validCrosshairRefrHit)
 				{
-					// Update the crosshair world position using
-					// the initial local hit position and the refr's new position.
-					auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
-					const auto refrBasePos = 
-					(
-						hitActor ? 
-						Util::GetTorsoPosition(hitActor) : 
-						Util::GetRefrPosition(crosshairRefrPtr.get())
-					);
-
-					// Update local positional offset so that the crosshair stays attached
-					// to the crosshair refr at the same position 
-					// (originally set while moving the crosshair)
-					// relative to the crosshair refr's facing angle.
-					// Maintain the same last-set distance from the refr base position.
-					crosshairLocalPosOffset =
-					(
-						Util::RotationToDirectionVect
+					// Move to the center of the selected lock on target over half a second.
+					if (choseLockOnTarget)
+					{
+						// Update the crosshair world position using
+						// the initial local hit position and the refr's new position.
+						auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
+						const auto refrBasePos = 
 						(
-							-Util::NormalizeAngToPi
+							hitActor ? 
+							Util::GetTorsoPosition(hitActor) : 
+							Util::GetRefrPosition(crosshairRefrPtr.get())
+						);
+
+						crosshairWorldPos = refrBasePos;
+						crosshairLocalPosOffset = 
+						crosshairLastMovementHitPosOffset = 
+						crosshairInitialMovementHitPosOffset = RE::NiPoint3();
+						crosshairLocalPosPitchDiff =
+						crosshairLocalPosYawDiff = 0.0f;
+						crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+						auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
+						const float secsSinceTargetUpdate = Util::GetElapsedSeconds
+						(
+							p->lastLockOnTargetUpdateTP
+						);
+						if (secsSinceTargetUpdate <= Settings::fSecsToSnapCrosshairToLockOnTarget)
+						{
+							crosshairScaleformPos.x = Util::InterpolateSmootherStep
 							(
-								crosshairRefrPtr->data.angle.x + crosshairLocalPosPitchDiff
-							),
-							Util::ConvertAngle
+								crosshairScaleformPos.x,
+								screenPos.x,
+								secsSinceTargetUpdate / Settings::fSecsToSnapCrosshairToLockOnTarget
+							);
+							crosshairScaleformPos.y = Util::InterpolateSmootherStep
 							(
-								Util::NormalizeAng0To2Pi
+								crosshairScaleformPos.y,
+								screenPos.y,
+								secsSinceTargetUpdate / Settings::fSecsToSnapCrosshairToLockOnTarget
+							);
+						}
+						else
+						{
+							crosshairScaleformPos.x = screenPos.x;
+							crosshairScaleformPos.y = screenPos.y;
+						}
+					}
+					else
+					{
+						// Update the crosshair world position using
+						// the initial local hit position and the refr's new position.
+						auto hitActor = crosshairRefrPtr->As<RE::Actor>(); 
+						const auto refrBasePos = 
+						(
+							hitActor ? 
+							Util::GetTorsoPosition(hitActor) : 
+							Util::GetRefrPosition(crosshairRefrPtr.get())
+						);
+
+						// Update local positional offset so that the crosshair stays attached
+						// to the crosshair refr at the same position 
+						// (originally set while moving the crosshair)
+						// relative to the crosshair refr's facing angle.
+						// Maintain the same last-set distance from the refr base position.
+						crosshairLocalPosOffset =
+						(
+							Util::RotationToDirectionVect
+							(
+								-Util::NormalizeAngToPi
 								(
-									crosshairRefrPtr->data.angle.z + crosshairLocalPosYawDiff
+									crosshairRefrPtr->data.angle.x + crosshairLocalPosPitchDiff
+								),
+								Util::ConvertAngle
+								(
+									Util::NormalizeAng0To2Pi
+									(
+										crosshairRefrPtr->data.angle.z + crosshairLocalPosYawDiff
+									)
 								)
-							)
-						) * 
-						crosshairLastMovementHitPosOffset.Length()
-					);
-					// Set to local pos offset, so that if the crosshair begins moving
-					// over this refr again, it will be offset relative to 
-					// the last set local position.
-					crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
-					// Zero out the pixel deltas until moving the crosshair again.
-					crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
-					// Offset the base position by the new offset 
-					// to get the next crosshair world position.
-					crosshairWorldPos = refrBasePos + crosshairLocalPosOffset;
-					// Update the crosshair's scaleform position based on its new world position.
-					auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
-					crosshairScaleformPos.x = screenPos.x;
-					crosshairScaleformPos.y = screenPos.y;
+							) * 
+							crosshairLastMovementHitPosOffset.Length()
+						);
+						// Set to local pos offset, so that if the crosshair begins moving
+						// over this refr again, it will be offset relative to 
+						// the last set local position.
+						crosshairInitialMovementHitPosOffset = crosshairLocalPosOffset;
+						// Zero out the pixel deltas until moving the crosshair again.
+						crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
+						// Offset the base position by the new offset 
+						// to get the next crosshair world position.
+						crosshairWorldPos = refrBasePos + crosshairLocalPosOffset;
+						// Update the crosshair's scaleform position
+						// based on its new world position.
+						auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
+						crosshairScaleformPos.x = screenPos.x;
+						crosshairScaleformPos.y = screenPos.y;
+					}
 				}
 				else
 				{
@@ -9506,10 +9845,12 @@ namespace ALYSLC
 		// or when first hitting the edge of the screen.
 		bool isActive = 
 		(
-			(crosshairFreeAimActive) &&
+			(crosshairTargetingMode != CrosshairTargetingMode::kDisabled) &&
+			(!reqResetCrosshairPosition) &&
 			(
 				(crosshairRefrPtr) ||
-				(isMovingCrosshair || p->mm->reqFaceTarget) ||	
+				(isAiming) || 
+				(p->mm->reqFaceTarget) ||	
 				(crosshairRefrPtr != prevCrosshairRefrPtr) ||
 				(scaleformPosOnEdgeOfScreen && !prevScaleformPosOnEdgeOfScreen)
 			)
@@ -9517,6 +9858,15 @@ namespace ALYSLC
 		if (isActive)
 		{
 			p->crosshairLastActiveTP = SteadyClock::now();
+		}
+
+		// Will not reset if the player is moving the crosshair,
+		// has picked a lock on target, or has switched to face target mode.
+		if ((reqResetCrosshairPosition) && 
+			(crosshairTargetingMode != CrosshairTargetingMode::kDisabled) &&
+			(isAiming || choseLockOnTarget || p->mm->reqFaceTarget))
+		{
+			reqResetCrosshairPosition = false;
 		}
 
 		// Re-center the crosshair after an interval passes if there is no valid target,
@@ -9527,10 +9877,11 @@ namespace ALYSLC
 			float secsSinceActive = Util::GetElapsedSeconds(p->crosshairLastActiveTP);
 			bool shouldRecenter = 
 			(
-				(!crosshairFreeAimActive) ||	
+				(crosshairTargetingMode == CrosshairTargetingMode::kDisabled) ||
+				(reqResetCrosshairPosition) ||
 				(
 					!crosshairRefrPtr &&
-					!isMovingCrosshair && 
+					!isAiming && 
 					!p->mm->reqFaceTarget &&
 					secsSinceActive > Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
 				)
@@ -9550,18 +9901,45 @@ namespace ALYSLC
 				if (crosshairScaleformPos.x != targetPosX || crosshairScaleformPos.y != targetPosY)
 				{
 					// Re-centering completes after about 1.5 inactivity intervals elapse.
-					float tRatio = std::clamp
-					(
+					float tRatio = 0.0f;
+					if (reqResetCrosshairPosition)
+					{
+						// Start centering right away if a request was made.
+						// Centering speed must never be slower than the fade out speed.
+						tRatio = std::clamp
 						(
-							secsSinceActive / 
-							max
 							(
-								0.1f, Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
-							)
-						) - 1.0f,
-						0.0f, 
-						1.0f
-					);
+								secsSinceActive / 
+								max
+								(
+									0.1f, 
+									min
+									(
+										Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID],
+										crosshairFadeInterpData->secsInterpToMinInterval
+									)
+								)
+							),
+							0.0f, 
+							1.0f
+						);
+					}
+					else
+					{
+						tRatio = std::clamp
+						(
+							(
+								secsSinceActive / 
+								max
+								(
+									0.1f, Settings::vfSecsBeforeRemovingInactiveCrosshair[playerID]
+								)
+							) - 1.0f,
+							0.0f, 
+							1.0f
+						);
+					}
+
 					crosshairScaleformPos.x = Util::InterpolateSmootherStep
 					(
 						crosshairScaleformPos.x, targetPosX, tRatio
@@ -10229,6 +10607,437 @@ namespace ALYSLC
 		}
 	}
 	
+	void TargetingManager::UpdateLockOnTarget(bool a_useLeftStickAngle)
+	{
+		// Can choose a target to lock on to in the direction of the player's left or right stick.
+		// Set the crosshair refr target as the chosen target, if any, and flag the crosshair refr
+		// target as chosen via lock on.
+		// Can also clear the current crosshair target and flag the crosshair to fade/re-center.
+
+		// Clear crosshair refr pointer, flag as no longer locked on, stop facing the target,
+		// and prepare to remove/re-center/fade out the crosshair if not choosing a new target.
+
+		auto procLists = RE::ProcessLists::GetSingleton();
+		if (!procLists)
+		{
+			return;
+		}
+		
+		if (crosshairTargetingMode == CrosshairTargetingMode::kDisabled)
+		{
+			choseLockOnTarget = false;
+			return;
+		}
+
+		// Use screenspace positions when checking distance between player and target refr.
+		bool isFreeAimSelection = crosshairTargetingMode == CrosshairTargetingMode::kFreeAim;
+		const bool useScreenPositions = 
+		(
+			Settings::vbScreenspaceBasedAimCorrectionCheck[playerID]
+		);
+		// Angle around which the FOV window is centered.
+		// Can use either the LS or RS game angle.
+		float targetingAngle = 0.0f;
+		if (useScreenPositions)
+		{
+			if ((p->mm->lsMoved && a_useLeftStickAngle) || (p->mm->rsMoved && !a_useLeftStickAngle))
+			{
+				const auto& stickData = glob.cdh->GetAnalogStickState
+				(
+					deviceID, a_useLeftStickAngle
+				);
+				// Flip LS Y comp sign to conform with Scaleform convention.
+				targetingAngle = Util::NormalizeAng0To2Pi
+				(
+					atan2f(-stickData.yComp, stickData.xComp)
+				);
+			}
+			else
+			{
+				RE::NiPoint3 aimOriginPos = p->mm->playerTorsoPosition;
+				RE::NiPoint3 aimDirection = Util::RotationToDirectionVect
+				(
+					0.0f, Util::ConvertAngle(p->coopActor->data.angle.z)
+				);
+				auto screenAimOriginPos = Util::WorldToScreenPoint3(aimOriginPos, false);
+				screenAimOriginPos.z = 0.0f;
+				auto screenAimPos = Util::WorldToScreenPoint3
+				(
+					aimOriginPos + 
+					aimDirection * 100.0f,
+					false
+				);
+				screenAimPos.z = 0.0f;
+				auto screenAimDir = screenAimPos - screenAimOriginPos;
+				if (screenAimDir.Length() == 0.0f)
+				{
+					float camYaw = glob.cam->GetCurrentYaw();
+					float yawDiff = Util::NormalizeAngToPi
+					(
+						camYaw - Util::DirectionToGameAngYaw(aimDirection)
+					);
+					// Aim down on the screen if not facing the camera's direction;
+					// otherwise, aim up the screen.
+					// Sign flipped due to Scaleform convention
+					// (origin top left instead of bottom left).
+					if (fabsf(yawDiff) >= PI / 2.0f)
+					{
+						targetingAngle = PI / 2.0f;
+					}
+					else
+					{
+						targetingAngle = 3.0f * PI / 2.0f;
+					}
+				}
+				else
+				{
+					screenAimDir.Unitize();
+					targetingAngle = Util::NormalizeAng0To2Pi
+					(
+						atan2f(screenAimDir.y, screenAimDir.x)
+					);	
+				}
+			}
+		}
+		else
+		{
+			if (a_useLeftStickAngle)
+			{
+				targetingAngle = 
+				(
+					p->mm->lsMoved ? 
+					p->mm->movementOffsetParams[!MoveParams::kLSGameAng] :
+					p->coopActor->data.angle.z
+				);
+			}
+			else
+			{
+				targetingAngle = 
+				(
+					p->mm->rsMoved ? 
+					p->mm->movementOffsetParams[!MoveParams::kRSGameAng] :
+					p->coopActor->data.angle.z
+				);
+			}
+		}
+		
+		RE::TESObjectREFR* sourceRefr = 
+		(
+			isFreeAimSelection || !Util::HandleIsValid(crosshairRefrHandle) ? 
+			coopActor.get() : 
+			crosshairRefrHandle.get().get()
+		);
+		// To avoid checking LOS each time a new closer refr is found,
+		// especially if a bunch of far-away and likely out-of-sight refrs are checked first,
+		// we'll gather all the angle/distance factors for the refrs and then check LOS afterward, 
+		// from the closest to the farthest refrs. 
+		// That is, unless a player is the closest actor within the FOV window, then we're good,
+		// and no LOS checks are required.
+		std::multimap<float, RE::ObjectRefHandle> nearbyReferences{ };
+		// Lowest distance-angle weight.
+		// Starts at max possible value so that the first selectable refr is treated as closest
+		// and then all other refrs' weights are compared to that first value.
+		float angDistWeight = FLT_MAX;
+		// Does this actor have the smallest angle/distance weight?
+		bool hasMinAngDistWeight = false;
+		// Is the actor in range and within the targeting angle's FOV window?
+		bool inRangeAndFOV = false;
+		// Check all high actors when exclusively selecting NPCs.
+		if (isFreeAimSelection || lockOnToLivingNPCs)
+		{
+			// Another actor is in combat with this player.
+			bool inCombatWithPlayer = false;
+			// The closest valid actor within the given FOV window.
+			RE::Actor* closestActorInFOV = nullptr;
+			for (const auto& closeActorHandle : procLists->highActorHandles)
+			{
+				// Ignore non-actors, actors that cannot be targeted, and dead actors.
+				auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
+				if (!actorPtr || 
+					!Util::IsValidRefrForTargeting(actorPtr.get()) || 
+					actorPtr->IsDead())
+				{
+					continue;
+				}
+
+				// Skip the player themselves, the player's mount, 
+				// or the current crosshair target, 
+				// if locking on via button press in free aim targeting mode
+				// (otherwise, the target selected will change each frame).
+				if ((actorPtr == coopActor || actorPtr == p->GetCurrentMount()) ||
+					(
+						closeActorHandle == crosshairRefrHandle
+					))
+				{
+					continue;
+				}
+
+				IsRefrInRangeAndInFOV
+				(
+					sourceRefr,
+					actorPtr.get(),
+					useScreenPositions,
+					false,
+					targetingAngle,
+					PI,
+					4096.f,
+					angDistWeight,
+					inRangeAndFOV
+				);
+				if (inRangeAndFOV)
+				{
+					nearbyReferences.insert
+					(
+						std::pair<float, RE::ObjectRefHandle>
+						(
+							angDistWeight, actorPtr->GetHandle()
+						)
+					);
+				}
+			}
+		
+			// Also add P1 if the companion player is performing this check.
+			if ((!p->isPlayer1) && 
+				(
+					glob.player1Actor->GetHandle() != crosshairRefrHandle
+				)) 
+			{
+				// Perform new closest actor in FOV check on P1.
+				IsRefrInRangeAndInFOV
+				(
+					sourceRefr,
+					glob.player1Actor.get(),
+					useScreenPositions,
+					false,
+					targetingAngle,
+					PI,
+					4096.f,
+					angDistWeight,
+					inRangeAndFOV
+				);
+				// Must be in range and within FOV window to insert.
+				if (inRangeAndFOV)
+				{
+					nearbyReferences.insert
+					(
+						std::pair<float, RE::ObjectRefHandle>
+						(
+							angDistWeight, glob.player1Actor->GetHandle()
+						)
+					);
+				}
+			}
+			
+			// Check LOS for each cached refr from lowest angle/dist weight.
+			// Once one LOS check succeeds, choose that refr as the closest refr 
+			// within the FOV window.
+			for (const auto& [dist, handle] : nearbyReferences)
+			{
+				const auto refrPtr = Util::GetRefrPtrFromHandle(handle);
+				if (!refrPtr)
+				{
+					continue;
+				}
+
+				const auto asActor = refrPtr->As<RE::Actor>();
+				if (!asActor)
+				{
+					continue;
+				}
+
+				// No FOV checks necessary for players. Select and break.
+				if (GlobalCoopData::IsCoopPlayer(asActor))
+				{
+					SPDLOG_DEBUG
+					(
+						"{}: Selected a fellow adventurer, {}.", 
+						coopActor->GetName(), asActor->GetName()
+					);
+					closestActorInFOV = asActor;
+					break;
+				}
+
+				bool hasLOS = Util::HasLOS
+				(
+					asActor, coopActor.get(), true, false, crosshairWorldPos
+				);
+				SPDLOG_DEBUG
+				(
+					"{}: Considering {}. Has LOS: {}", 
+					coopActor->GetName(), asActor->GetName(),  hasLOS
+				);
+				if (hasLOS)
+				{
+					closestActorInFOV = asActor;
+					break;
+				}
+			}
+
+			const auto prevHandle = crosshairRefrHandle;
+			if (closestActorInFOV)
+			{
+				SPDLOG_DEBUG("{}: Has chosen NPC {} as lock on target.", 
+					coopActor->GetName(), closestActorInFOV->GetName());
+				crosshairRefrHandle =
+				selectedTargetActorHandle = closestActorInFOV->GetHandle();
+				choseLockOnTarget = true;
+			}
+			else
+			{
+				SPDLOG_DEBUG("{}: No chosen NPC lock on target.", coopActor->GetName());
+				choseLockOnTarget = false;
+			}
+
+			if (isFreeAimSelection || crosshairRefrHandle != prevHandle)
+			{
+				p->lastLockOnTargetUpdateTP = SteadyClock::now();
+			}
+		}
+		else
+		{
+			// Closest object refr within FOV window.
+			RE::TESObjectREFRPtr closestRefrInFOVPtr = nullptr;
+			const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+			const float maxCheckDist = GetMaxActivationDist();
+			// Clear out current target if it is not within activation distance anymore.
+			auto currentCrosshairTargetPtr = Util::GetRefrPtrFromHandle(crosshairRefrHandle);
+			bool tooFarAway = 
+			(
+				currentCrosshairTargetPtr &&
+				Util::GetRefrPosition(currentCrosshairTargetPtr.get()).GetDistance
+				(
+					playerTorsoPos
+				) > maxCheckDist
+			);
+			if (tooFarAway)
+			{
+				ClearCrosshairTargeData();
+			}
+
+			Util::ForEachReferenceInRange
+			(
+				playerTorsoPos, maxCheckDist, true,
+				[
+					this, 
+					sourceRefr,
+					&playerTorsoPos,
+					&closestRefrInFOVPtr,
+					&targetingAngle,
+					&angDistWeight,
+					&maxCheckDist,
+					&useScreenPositions,
+					&inRangeAndFOV,
+					&hasMinAngDistWeight,
+					&nearbyReferences
+				]
+				(RE::TESObjectREFR* a_refr) 
+				{
+					// On to the next one.
+					if (!a_refr || 
+						!Util::HandleIsValid(a_refr->GetHandle()) || 
+						!a_refr->IsHandleValid())
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					auto baseObj = a_refr->GetBaseObject();
+					// On to the next one x2.
+					if (!baseObj || 
+						!a_refr->Is3DLoaded() || 
+						!a_refr->GetCurrent3D() ||
+						a_refr->IsDeleted() || 
+						!Util::IsValidRefrForTargeting(a_refr) ||
+						!Util::IsSelectableRefr(a_refr) ||
+						a_refr->GetHandle() == crosshairRefrHandle) 
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					// On to the next one x3. No living actors.
+					if (a_refr->As<RE::Actor>() && !a_refr->As<RE::Actor>()->IsDead())
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					IsRefrInRangeAndInFOV
+					(
+						sourceRefr,
+						a_refr,
+						useScreenPositions,
+						false,
+						targetingAngle,
+						PI,
+						maxCheckDist,
+						angDistWeight,
+						inRangeAndFOV
+					);
+					// Must be in range and within FOV window to insert.
+					if (inRangeAndFOV)
+					{
+						nearbyReferences.insert
+						(
+							std::pair<float, RE::ObjectRefHandle>
+							(
+								angDistWeight, a_refr->GetHandle()
+							)
+						);
+					}
+					
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+			);
+			
+			// Check LOS for each cached refr from lowest angle/dist weight.
+			// Once one LOS check succeeds, choose that refr as the closest refr 
+			// within the FOV window.
+			for (const auto& [dist, handle] : nearbyReferences)
+			{
+				const auto refrPtr = Util::GetRefrPtrFromHandle(handle);
+				if (!refrPtr)
+				{
+					continue;
+				}
+
+				bool hasLOS = Util::HasLOS
+				(
+					refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos
+				);
+				SPDLOG_DEBUG
+				(
+					"{}: Considering {}. Has LOS: {}", 
+					coopActor->GetName(), refrPtr->GetName(),  hasLOS
+				);
+				if (hasLOS)
+				{
+					closestRefrInFOVPtr = refrPtr;
+					break;
+				}
+			}
+
+			const auto prevHandle = crosshairRefrHandle;
+			if (closestRefrInFOVPtr)
+			{
+				SPDLOG_DEBUG("{}: Has chosen REFR {} as lock on target.", 
+					coopActor->GetName(), closestRefrInFOVPtr->GetName());
+				crosshairRefrHandle = closestRefrInFOVPtr->GetHandle();
+				selectedTargetActorHandle = RE::ActorHandle();
+				choseLockOnTarget = true;
+			}
+			else
+			{
+				SPDLOG_DEBUG("{}: No chosen REFR lock on target.", coopActor->GetName());
+				choseLockOnTarget = false;
+				p->lastLockOnTargetUpdateTP = SteadyClock::now();
+			}
+
+			// New refr chosen, so set update TP.
+			if (crosshairRefrHandle != prevHandle)
+			{
+				p->lastLockOnTargetUpdateTP = SteadyClock::now();
+			}
+		}
+	}
+
 	RE::ObjectRefHandle TargetingManager::UpdateNextObjectToActivate()
 	{
 		// Cycle through nearby objects to get an interactable refr,
@@ -10614,19 +11423,34 @@ namespace ALYSLC
 		// Update grabbed refr orientation.
 		bool isRagdolled = a_p->coopActor->IsInRagdollState();
 		float facingAng = a_p->coopActor->GetHeading(false);
-		if (!a_p->mm->reqFaceTarget)
+		const auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle
+		(
+			a_p->tm->aimCorrectionTargetHandle
+		);
+		if ((!a_p->mm->reqFaceTarget) || (a_p->mm->inTwinStickMode && !aimCorrectionTargetPtr))
 		{
 			// The last recorded LS game angle.
 			facingAng = a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
 		}
 		else if (isRagdolled)
 		{
-			// For M.A.R.F-ing, attempt to place the other grabbed players
+			// For S.M.O.R.F/M.A.R.F-ing, attempt to place the other grabbed players
 			// between the player and the crosshair world position when facing it.
-			facingAng = Util::GetYawBetweenPositions
-			(
-				a_p->coopActor->data.location, a_p->tm->crosshairWorldPos
-			);
+			if (a_p->mm->inTwinStickMode)
+			{
+				facingAng = Util::GetYawBetweenPositions
+				(
+					a_p->coopActor->data.location, 
+					Util::GetTorsoPosition(aimCorrectionTargetPtr.get())
+				);
+			}
+			else
+			{
+				facingAng = Util::GetYawBetweenPositions
+				(
+					a_p->coopActor->data.location, a_p->tm->crosshairWorldPos
+				);
+			}
 		}
 		
 		// Suspend the grabbed objects in front of the player
@@ -11361,7 +12185,7 @@ namespace ALYSLC
 			bool noTargetAndMovingCrosshair = 
 			(
 				!targetRefrPtr &&
-				a_p->tm->crosshairFreeAimActive &&
+				a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim &&
 				a_p->mm->reqFaceTarget &&
 				a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 			);
@@ -11539,6 +12363,13 @@ namespace ALYSLC
 			return false;
 		}
 		
+		targetRefrHandle = a_p->tm->targetMotionState->targetRefrHandle;
+		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
+		bool targetRefrPtrValidity = 
+		(
+			targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
+		);
+		auto targetActor = targetRefrPtrValidity ? targetRefrPtr->As<RE::Actor>() : nullptr;
 		// If not trying to throw this refr, return early.
 		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
 		bool notTryingToThrow = 
@@ -11549,6 +12380,7 @@ namespace ALYSLC
 				objectPtr == a_p->coopActor ||
 				refrHandle == a_p->tm->crosshairRefrHandle
 			) ||
+			((a_p->mm->inTwinStickMode) && (!targetActor || targetRefrHandle == refrHandle)) ||
 			(
 				(objectPtr->As<RE::Actor>()) && 
 				(!objectPtr->IsDead()) &&
@@ -11565,13 +12397,6 @@ namespace ALYSLC
 
 		canReachTarget = true;
 		startedHomingIn = false;
-		targetRefrHandle = a_p->tm->targetMotionState->targetRefrHandle;
-		auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
-		bool targetRefrPtrValidity = 
-		(
-			targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
-		);
-		auto targetActor = targetRefrPtrValidity ? targetRefrPtr->As<RE::Actor>() : nullptr;
 		targetLocalPosOffset = 
 		(
 			Util::HandleIsValid(targetRefrHandle) ? 
@@ -11860,7 +12685,8 @@ namespace ALYSLC
 		}
 		
 		// Throw the refr if facing the crosshair position,
-		// if the thrown object is not the target refr,
+		// or targeting an actor in twin-stick mode,
+		// and if the thrown object is not the target refr,
 		// and if it is not the player themselves (flop), unless thrown while SMORFing.
 		// Only can throw living actors if the 'Can Grab Actors' setting is enabled,
 		// and only can throw players if 'Can Grab Other Players' setting is enabled.
@@ -11870,8 +12696,14 @@ namespace ALYSLC
 		(
 			(
 				(
-					a_p->mm->reqFaceTarget && 
-					refrHandle != a_p->tm->crosshairRefrHandle
+					(
+						!a_p->mm->inTwinStickMode &&
+						a_p->mm->reqFaceTarget && 
+						refrHandle != a_p->tm->crosshairRefrHandle
+					) ||
+					(
+						a_p->mm->inTwinStickMode && targetActor && targetRefrHandle != refrHandle
+					)
 				) &&
 				(
 					(objectPtr != a_p->coopActor) || 
@@ -13211,12 +14043,14 @@ namespace ALYSLC
 
 				// Heh.
 				// Works the same way as slapping the object to redirect it.
+				const auto collidedWithRefrHandle = collidedWithRefrPtr->GetHandle();
 				bool shouldRedirectWithFlop = 
 				(
 					(
 						releasedRefrPtr == a_p->coopActor &&
 						collidedWithRefrPtr != a_p->coopActor &&
-						collidedWithRefrPtr->GetHandle() != a_p->tm->crosshairRefrHandle
+						collidedWithRefrHandle != a_p->tm->crosshairRefrHandle &&
+						collidedWithRefrHandle != a_p->tm->aimCorrectionTargetHandle
 					) &&
 					(
 						hitActor || 
@@ -13896,19 +14730,7 @@ namespace ALYSLC
 			return trajectoryEndPos;
 		}
 
-		// Aim at the target actor if valid and not mounted,
-		// or if mounted and selected with the crosshair.
-		// Want to avoid shooting at an aim correction target 
-		// while mounted and targeting another object.
 		auto targetActorPtr = RE::ActorPtr(targetRefrPtr->As<RE::Actor>());
-		bool aimAtActor = 
-		{
-			(targetActorPtr) && 
-			(
-				!a_p->coopActor->IsOnMount() || 
-				targetActorPtr->GetHandle() == a_p->tm->selectedTargetActorHandle
-			)
-		};
 		// Set the initial predicted intercept/hit position to the initial aimed-at position.
 		RE::NiPoint3 predHitPos = trajectoryEndPos;
 		// Next predicted velocity for the target. Set to current velocity initially.
@@ -14512,14 +15334,44 @@ namespace ALYSLC
 			}
 		}
 
+		bool canAimAtCrosshairPos = 
+		(
+			a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim
+		);
 		// Firing an aim prediction or aim direction projectile 
 		// while aiming at an actor or facing the target refr.
 		bool predictInterceptPos = 
 		(
 			(a_trajType != ProjectileTrajType::kHoming) && 
 			(!a_setStraightTrajectory) &&
-			((targetActorPtr) || (a_p->mm->reqFaceTarget))
+			((targetActorPtr) || (a_p->mm->reqFaceTarget && canAimAtCrosshairPos))
 		);
+
+		// REMOVE when done debugging.
+		/*SPDLOG_DEBUG
+		(
+			"Aim correction: {}, selected: {}, linked ref: {}, crosshair refr: {}, "
+			"traj type: {}, set straight traj: {}, predict: {}, target actor: {}.",
+			Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) ?
+			a_p->tm->aimCorrectionTargetHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->selectedTargetActorHandle) ?
+			a_p->tm->selectedTargetActorHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->aimTargetLinkedRefrHandle) ?
+			a_p->tm->aimTargetLinkedRefrHandle.get()->GetName() :
+			"NONE",
+			Util::HandleIsValid(a_p->tm->crosshairRefrHandle) ?
+			a_p->tm->crosshairRefrHandle.get()->GetName() :
+			"NONE",
+			!trajType,
+			a_setStraightTrajectory,
+			predictInterceptPos,
+			Util::HandleIsValid(targetRefrHandle) ? 
+			targetRefrHandle.get()->GetName() : 
+			"NONE"
+		);*/
+
 		if (predictInterceptPos) 
 		{
 			// XY and Z offsets from the release position to the trajectory end position.
@@ -14670,28 +15522,14 @@ namespace ALYSLC
 			// Launch pitch/straight line pitch is sign-flipped
 			// relative to the game's pitch sign convention.
 			float straightLinePitch = -a_p->mm->aimPitch;
-			// Aim at target actor if valid and not mounted,
-			// or if mounted and selected with the crosshair.
-			// Want to avoid shooting at an aim correction target 
-			// while mounted and targeting another object.
-			auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
-			(
-				a_p->tm->selectedTargetActorHandle
-			);
-			bool aimAtActor = 
-			{
-				(targetActorPtr) && 
-				(!a_p->coopActor->IsOnMount() || targetActorPtr == selectedTargetActorPtr)
-			};
-			if (aimAtActor) 
+			if (targetActorPtr)
 			{
 				// If the target is an aim correction or linked target, target the torso.
-				trajectoryEndPos = 
-				(
-					!selectedTargetActorPtr ?
-					Util::GetTorsoPosition(targetActorPtr.get()) : 
-					trajectoryEndPos
-				);
+				if (targetRefrHandle == a_p->tm->aimCorrectionTargetHandle)
+				{
+					trajectoryEndPos = Util::GetTorsoPosition(targetActorPtr.get());
+				}
+
 				straightLinePitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);
 				// Set launch angles, always above the straight line pitch.
 				launchPitch = std::clamp
@@ -14804,11 +15642,20 @@ namespace ALYSLC
 		}
 		else if (a_setStraightTrajectory)
 		{
-			// Aim far away in the projectile's initial facing direction, 
-			// or directly at the current crosshair position without modifying the release speed.
+			// If there is a valid target actor or if the facing the crosshair world position,
+			// aim directly at the current crosshair position without modifying the release speed.
+			// If not, aim far away in the projectile's initial facing direction, 
 
 			// Set launch angles, end position, and time to target.
-			if (!a_p->mm->reqFaceTarget && !targetActorPtr) 
+			if ((targetActorPtr) || (a_p->mm->reqFaceTarget && canAimAtCrosshairPos))
+			{
+				launchPitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);
+				launchYaw = Util::ConvertAngle
+				(
+					Util::GetYawBetweenPositions(releasePos, trajectoryEndPos)
+				);
+			}
+			else
 			{
 				// Launch far away in aiming direction.
 				launchPitch = -a_p->mm->aimPitch;
@@ -14840,14 +15687,6 @@ namespace ALYSLC
 
 				trajectoryEndPos = releasePos + launchDir * farDist;
 			}
-			else
-			{
-				launchPitch = -Util::GetPitchBetweenPositions(releasePos, trajectoryEndPos);
-				launchYaw = Util::ConvertAngle
-				(
-					Util::GetYawBetweenPositions(releasePos, trajectoryEndPos)
-				);
-			}
 
 			initialTrajTimeToTarget = releasePos.GetDistance(trajectoryEndPos) / releaseSpeed;
 		}
@@ -14861,7 +15700,7 @@ namespace ALYSLC
 			(
 				-a_p->mm->aimPitch, -89.9f * PI / 180.0f, 89.9f * PI / 180.0f
 			);
-			launchYaw = Util::ConvertAngle(a_p->coopActor->GetAimHeading());
+			launchYaw = Util::ConvertAngle(a_initialYaw);
 
 			// Choose endpoint that is far from the release point.
 			// Default time of flight is arbitrary, but should be relatively large.

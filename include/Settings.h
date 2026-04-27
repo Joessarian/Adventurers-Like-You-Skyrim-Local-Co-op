@@ -170,6 +170,8 @@ namespace ALYSLC
 		// Rotate arms when holding the corresponding bind(s) 
 		// and moving the right stick while weapons are sheathed.
 		static inline bool bEnableArmsRotation = true;
+		// Pitch the spine nodes to match the player's aim pitch angle.
+		static inline bool bEnableSpinalRotation = true;
 		// Enable flopping (double tap special action bind when weapons are sheathed).
 		static inline bool bEnableFlopping = true;
 		// Enable object grabbing, moving, rotating, dropping, and throwing.
@@ -1061,6 +1063,8 @@ namespace ALYSLC
 		static inline const float fMinTurnAngToRefreshRefrs = 1.0f * PI / 180.0f;
 		// Max activation reach multiplier when mounted.
 		static inline const float fMountedActivationReachMult = 2.0f;
+		// Seconds before the crosshair fully snaps onto the chosen lock on target.
+		static inline const float fSecsToSnapCrosshairToLockOnTarget = 0.125f;
 		// If the distance from the player's attack source to the target position
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;

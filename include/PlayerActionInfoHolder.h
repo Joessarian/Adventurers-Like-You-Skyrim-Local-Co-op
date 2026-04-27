@@ -803,7 +803,7 @@ namespace ALYSLC
 			// MapMenu
 			PerfType::kOnRelease,
 			// MoveCrosshair
-			PerfType::kNoAction,
+			PerfType::kOnHold,
 			// Pause
 			PerfType::kOnRelease,
 			// PowerAttackDual

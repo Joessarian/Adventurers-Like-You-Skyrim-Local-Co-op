@@ -261,6 +261,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastLHCastChargeStartTP;
 		// Time point indicating when the last LH spell cast started (companion players only).
 		SteadyClock::time_point lastLHCastStartTP;
+		// Time point indicating when the player's lock on target was last updated (set or cleared).
+		SteadyClock::time_point lastLockOnTargetUpdateTP;
 		// Time point indicating when the player last attempted to start moving.
 		SteadyClock::time_point lastMovementStartReqTP;
 		// Time point indicating when the player last attempted to stop moving.

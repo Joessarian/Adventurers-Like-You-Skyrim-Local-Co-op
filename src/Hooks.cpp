@@ -847,8 +847,13 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			// Is a companion player.
+			if (pIndex == -1)
+			{
+				return _ClearMagicNode(a_this);
+			}
+
 			const auto& p = glob.coopPlayers[pIndex];
+			// Is a companion player.
 			if (pIndex > 0)
 			{
 				if (!p->IsRunning())
@@ -948,8 +953,13 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			// Is a companion player.
+			if (pIndex == -1)
+			{
+				return _DeselectSpellImpl(a_this);
+			}
+
 			const auto& p = glob.coopPlayers[pIndex];
+			// Is a companion player.
 			if (pIndex > 0)
 			{
 				if (!p->IsRunning())
@@ -1049,8 +1059,13 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			// Is a companion player.
+			if (pIndex == -1)
+			{
+				return _FinishCastImpl(a_this);
+			}
+
 			const auto& p = glob.coopPlayers[pIndex];
+			// Is a companion player.
 			if (pIndex > 0)
 			{
 				if (!p->IsRunning())
@@ -1112,8 +1127,13 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			// Is a companion player.
+			if (pIndex == -1)
+			{
+				return _InterruptCastImpl(a_this, a_depleteEnergy);
+			}
+
 			const auto& p = glob.coopPlayers[pIndex];
+			// Is a companion player.
 			if (pIndex > 0)
 			{
 				if (!p->IsRunning())
@@ -1198,7 +1218,12 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			if (pIndex != -1 && a_this->currentSpell)
+			if (pIndex == -1)
+			{
+				return _RequestCastImpl(a_this);
+			}
+
+			if (a_this->currentSpell)
 			{
 				// Apply player-specific magicka multiplier,
 				// check if the new cost is less than the player's current magicka level,
@@ -1321,10 +1346,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _SelectSpellImpl(a_this);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _SelectSpellImpl(a_this);
@@ -1385,10 +1415,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _SetCurrentSpellImpl(a_this, a_spell);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _SetCurrentSpellImpl(a_this, a_spell);
@@ -1451,10 +1486,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _SpellCast(a_this, a_doCast, a_arg2, a_spell);
@@ -1515,10 +1555,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _StartCastImpl(a_this);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _StartCastImpl(a_this);
@@ -1575,10 +1620,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _StartChargeImpl(a_this);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _StartChargeImpl(a_this);
@@ -1617,10 +1667,15 @@ namespace ALYSLC
 			}
 
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
+			if (pIndex == -1)
+			{
+				return _StartReadyImpl(a_this);
+			}
+
+			const auto& p = glob.coopPlayers[pIndex];
 			// Is a companion player.
 			if (pIndex > 0)
 			{
-				const auto& p = glob.coopPlayers[pIndex];
 				if (!p->IsRunning())
 				{
 					return _StartReadyImpl(a_this);
@@ -1681,8 +1736,13 @@ namespace ALYSLC
 			auto source = a_this->GetCastingSource();
 			auto state = a_this->state;
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->actor);
-			// Is a companion player.
+			if (pIndex == -1)
+			{
+				return _Update(a_this, a_delta);
+			}
+
 			const auto& p = glob.coopPlayers[pIndex];
+			// Is a companion player.
 			if (pIndex > 0)
 			{
 				if (!p->IsRunning())
@@ -1891,7 +1951,14 @@ namespace ALYSLC
 				}
 			}*/
 
+			// Make sure the magic caster's target matches the player's selected target.
+			// Otherwise, any first-frame damage spells, like beam projectiles, 
+			// will hit the target set when first starting the cast, 
+			// instead of the current target, which may be different.
+			const auto chosenTarget = p->tm->GetRangedTargetActor();
+			a_this->desiredTarget = chosenTarget;
 			_Update(a_this, a_delta);
+			a_this->desiredTarget = chosenTarget;
 		}
 
 // [ANIMATION GRAPH MANAGER HOOKS]:
@@ -2438,11 +2505,12 @@ namespace ALYSLC
 				return _CheckClampDamageModifier(a_this, a_av, a_delta);
 			}
 			
-			if (a_av == RE::ActorValue::kHealth)
+			// REMOVE when done debugging.
+			/*if (a_av == RE::ActorValue::kHealth)
 			{
 				SPDLOG_DEBUG("{} is about to have their health modified by {}.",
 					a_this->GetName(), a_delta);
-			}
+			}*/
 
 			auto playerIndex = GlobalCoopData::GetCoopPlayerIndex(a_this);
 			// Ignore attempts to kill this character if they are in the process of getting up.
@@ -2788,8 +2856,9 @@ namespace ALYSLC
 				return _HandleHealthDamage(a_this, a_attacker, a_damage);;
 			}
 
-			SPDLOG_DEBUG("{} is about to take {} damage from {}.",
-				a_this->GetName(), a_damage, a_attacker ? a_attacker->GetName() : "NONE");
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG("{} is about to take {} damage from {}.",
+				a_this->GetName(), a_damage, a_attacker ? a_attacker->GetName() : "NONE");*/
 
 			// Check for damage dealt by a player.
 			auto playerAttackerIndex = GlobalCoopData::GetCoopPlayerIndex(a_attacker);
@@ -3216,7 +3285,7 @@ namespace ALYSLC
 
 				return true;
 			}
-			
+
 			// Prevent the game from forcing the co-op companion player 
 			// into/out of sneaking against their wishes.
 			// Dash dodges trigger the sneak animation briefly, 
@@ -4073,8 +4142,8 @@ namespace ALYSLC
 							p->coopActor->currentProcess->middleHigh->unk210 ?
 							Util::GetEditorID(p->coopActor->currentProcess->middleHigh->unk210) :
 							"NONE",
-							p->coopActor->GetCurrentPackage() ?
-							Util::GetEditorID(p->coopActor->GetCurrentPackage()) :
+							runningPackage ?
+							Util::GetEditorID(runningPackage) :
 							"NONE",
 							p->coopActor->GetCurrentScene() ? 
 							Util::GetEditorID(p->coopActor->GetCurrentScene()) :
@@ -4847,9 +4916,10 @@ namespace ALYSLC
 				return _UseAmmo(a_this, a_shotCount);
 			}
 
-			auto inv = p->em->inventoryChest->GetInventory();
-			auto iter = inv.find(currentAmmo);
-			const auto oldCount = iter != inv.end() ? iter->second.first : 0;
+			const auto oldCount = Util::GetInventoryItemCount
+			(
+				p->em->inventoryChest.get(), currentAmmo
+			);
 			// Remove worn extra data from the list if we're removing the last unit of ammo.
 			// Will crash on removal otherwise.
 			if (oldCount == 1)
@@ -4867,10 +4937,11 @@ namespace ALYSLC
 				
 			SPDLOG_DEBUG
 			(
-				"{}: About to remove {} of {}.",
+				"{}: About to remove {} of {}. Has {} currently.",
 				p->coopActor->GetName(),
 				a_shotCount,
-				currentAmmo->GetName()
+				currentAmmo->GetName(),
+				oldCount
 			);
 			
 			// Have to re-favorite and re-hotkey once re-added. Ree.
@@ -4895,8 +4966,10 @@ namespace ALYSLC
 				nullptr
 			);
 
-			inv = p->em->inventoryChest->GetInventory();
-			iter = inv.find(currentAmmo);
+			auto newCount = Util::GetInventoryItemCount
+			(
+				p->em->inventoryChest.get(), currentAmmo
+			);
 			SPDLOG_DEBUG
 			(
 				"{}: Removing {} of {} from their inventory chest. {} -> {}",
@@ -4904,16 +4977,18 @@ namespace ALYSLC
 				a_shotCount,
 				currentAmmo->GetName(),
 				oldCount,
-				iter != inv.end() ? iter->second.first : 0
+				newCount
 			);
 			// Only use remaining ammo if there is none left in the inventory chest.
-			if (iter == inv.end() || iter->second.first <= 0)
+			if (newCount <= 0)
 			{
-				inv = p->coopActor->GetInventory();
-				iter = inv.find(currentAmmo);
-				if (iter != inv.end() && iter->second.first > 0)
+				auto playerAmmoCount = Util::GetInventoryItemCount
+				(
+					p->coopActor.get(), currentAmmo
+				);
+				if (playerAmmoCount > 0)
 				{
-					return _UseAmmo(a_this, iter->second.first);
+					return _UseAmmo(a_this, playerAmmoCount);
 				}
 				else
 				{
@@ -5660,6 +5735,29 @@ namespace ALYSLC
 			}
 			
 			const auto attackerPtr = Util::GetActorPtrFromHandle(a_hitData.aggressor); 
+			// If a companion player takes damage while mounted, they immediately dismount.
+			// Since I can't find the source of that dismount call and block it from running,
+			// and since the function(s) that force the player to dismount run 
+			// when this hook executes, we'll just apply the intended damage 
+			// and bail instead to prevent the dismount.
+			if (GlobalCoopData::IsCoopPlayer(a_victim) && a_victim->IsOnMount())
+			{
+				SPDLOG_DEBUG
+				(
+					"NOPE, NO MOUNT. Damage: {} by {} to {}. Gimme.",
+					a_hitData.totalDamage,
+					attackerPtr ? attackerPtr->GetName() : "NONE",
+					a_victim ? a_victim->GetName() : "NONE"
+				);
+				a_victim->DoDamage
+				(
+					a_hitData.totalDamage,
+					attackerPtr ? attackerPtr.get() : nullptr,
+					true				
+				);
+				return;
+			}
+
 			SPDLOG_DEBUG
 			(
 				"{} was hit by {}. Flags: 0b{:B}.", 
@@ -8376,6 +8474,12 @@ namespace ALYSLC
 				return _UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
 
+			// Ignore if neither node rotation adjustment option is on.
+			if (!Settings::bEnableArmsRotation && !Settings::bEnableSpinalRotation)
+			{
+				return _UpdateDownwardPass(a_this, a_data, a_arg2);
+			}
+
 			const auto& p = glob.coopPlayers[index];
 			// The co-op camera is not enabled, so do not restore P1's modified node rotations.
 			if (p->isPlayer1 && !glob.cam->IsRunning())
@@ -9883,21 +9987,21 @@ namespace ALYSLC
 				}
 				else
 				{
-					if (performingSprint)
+					/*if (performingSprint)
 					{
 						RE::BSAnimationGraphManagerPtr manager{ };
 						a_this->GetAnimationGraphManager(manager);
 						if (manager)
 						{
-							manager->variableCache.graphLock.Lock();
+							manager->variableCache.updateLock.Lock();
 							for (const auto& info : manager->variableCache.variableCache)
 							{
 								SPDLOG_DEBUG("Var name: {}.", info.variableName);
 							}
 
-							manager->variableCache.graphLock.Unlock();
+							manager->variableCache.updateLock.Unlock();
 						}
-					}
+					}*/
 					
 					// Sync player actorstate sprint flag with ALYSLC's sprint player action state.
 					// Otherwise, P1 will stop sprinting after the AI driven toggle.
@@ -10846,243 +10950,325 @@ namespace ALYSLC
 				]
 				(const auto& hit)
 				{
-					if (!hit.rootCollidableA || !hit.rootCollidableB)
+					auto refrA = 
+					(
+						hit.rootCollidableA ? 
+						RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableA) : 
+						nullptr
+					);
+					auto refrB = 
+					(
+						hit.rootCollidableB ? 
+						RE::TESHavokUtilities::FindCollidableRef(*hit.rootCollidableB) : 
+						nullptr
+					);
+					auto objA = 
+					(
+						hit.rootCollidableA ?
+						RE::TESHavokUtilities::FindCollidableObject(*hit.rootCollidableA) :
+						nullptr
+					);
+					auto objB = 
+					(
+						hit.rootCollidableB ? 
+						RE::TESHavokUtilities::FindCollidableObject(*hit.rootCollidableB) : 
+						nullptr
+					);
+
+					// REMOVE when done debugging.
+					/*SPDLOG_DEBUG
+					(
+						"Collision {} (0x{:X}, {}, {}) <-> {} (0x{:X}, {}, {})", 
+						refrA ? refrA->GetName() : "NONE", 
+						refrA ? refrA->formID : 0xDEAD,
+						refrA && refrA->GetBaseObject() ? 
+						Util::GetEditorID(refrA->GetBaseObject()) : 
+						"NONE",
+						objA ? objA->name : "NONE",
+						refrB ? refrB->GetName() : "NONE",
+						refrB ? refrB->formID : 0xDEAD,
+						refrB && refrB->GetBaseObject() ? 
+						Util::GetEditorID(refrB->GetBaseObject()) : 
+						"NONE",
+						objB ? objB->name : "NONE"
+					);	*/
+
+					// Skip if at least one collidable has no associated refr.
+					if (!refrA || !refrB)
 					{
 						return false;
 					}
 
-					auto refrA = RE::TESHavokUtilities::FindCollidableRef
-					(
-						*hit.rootCollidableA
-					);
-					auto refrB = RE::TESHavokUtilities::FindCollidableRef
-					(
-						*hit.rootCollidableB
-					);
-					if (refrA && refrB)
+					// Ignore self-collisions.
+					if (refrA == refrB)
 					{
-						// Ignore self-collisions.
-						if (refrA == refrB)
+						return false;
+					}
+
+					RE::Actor* hitActor = refrA->As<RE::Actor>();
+					if (!hitActor)
+					{
+						hitActor = refrB->As<RE::Actor>();
+					}
+
+					// Skip collisions not involving this projectile.
+					if (refrA != a_this && refrB != a_this)
+					{
+						return false;
+					}
+
+					// Check to see if one of the two refrs is a manipulated refr
+					// and get the PID of the manipulating player.
+					// Also start combat between NPCs and the aggressor player
+					// before the hit applies.
+					int32_t manipulatingPlayerPID = -1;
+					bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
+					const auto hitActorHandle = 
+					(
+						hitActor ? hitActor->GetHandle() : RE::ActorHandle()
+					);
+					for (const auto& p : glob.coopPlayers)
+					{
+						if (!p->isActive)
 						{
-							return false;
+							continue;
+						}
+							
+						// Check if this projectile is managed by this player 
+						// and hit another managed refr. Ignore the collision if so.
+						bool hitAnotherManagedRefr = 
+						(
+							(
+								p->tm->rmm->IsManaged(refrA->GetHandle(), true) &&
+								p->tm->rmm->IsManaged(refrB->GetHandle(), true)
+							) ||
+							(
+								p->tm->rmm->IsManaged(refrA->GetHandle(), false) &&
+								p->tm->rmm->IsManaged(refrB->GetHandle(), false)
+							)
+						);
+						if (hitAnotherManagedRefr)
+						{
+							/*SPDLOG_DEBUG
+							(
+								"IGNORED MANAGED COLLISION {} <-> {}", 
+								refrA->GetBaseObject() ? 
+								Util::GetEditorID(refrA->GetBaseObject()) : 
+								"NONE", 
+								refrB->GetBaseObject() ? 
+								Util::GetEditorID(refrB->GetBaseObject()) : 
+								"NONE"
+							);	*/
+							return true;
 						}
 
-						RE::Actor* hitActor = refrA->As<RE::Actor>();
-						if (!hitActor)
+						if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
+							p->tm->rmm->IsManaged(refrB->GetHandle(), false))
 						{
-							hitActor = refrB->As<RE::Actor>();
-							if (!hitActor || hitActor->IsDead())
-							{
-								// No hit actors, so continue since we're only looking for 
-								// projectile-to-actor hits.
-								return false;
-							}
+							manipulatingPlayerPID = p->playerID;
 						}
 
-						// Ignore collisions not involving this projectile.
-						if (refrA != a_this && refrB != a_this)
+						// See GlobalCoopData::PrecisionPreHitCallback() 
+						// for an explanation.
+						// Trigger combat between companion players and any NPCs they hit.
+						bool actorHitByPlayer =
+						(
+							hitActor && 
+							p->coopActor->GetHandle() == a_this->shooter
+						);
+						if (actorHitByPlayer)
 						{
-							return false;
-						}
-						
-						// Check to see if one of the two refrs is a manipulated refr
-						// and get the PID of the manipulating player.
-						// Also start combat between NPCs and the aggressor player
-						// before the hit applies.
-						int32_t manipulatingPlayerPID = -1;
-						bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
-						const auto hitActorHandle = hitActor->GetHandle();
-						for (const auto& p : glob.coopPlayers)
-						{
-							if (!p->isActive)
+							// Ignore if P1 is hitting a target 
+							// while their managers are not running (no co-op cam).
+							if (p->isPlayer1 && !p->IsRunning())
 							{
 								continue;
 							}
-							
-							if (p->tm->rmm->IsManaged(refrA->GetHandle(), false) ||
-								p->tm->rmm->IsManaged(refrB->GetHandle(), false))
-							{
-								manipulatingPlayerPID = p->playerID;
-							}
 
-							// See GlobalCoopData::PrecisionPreHitCallback() 
-							// for an explanation.
-							// Trigger combat between companion players and any NPCs they hit.
-							bool hitByPlayer =
+							bool isHostile = 
 							(
-								hitActor && 
-								p->coopActor->GetHandle() == a_this->shooter
-							);
-							if (hitByPlayer)
-							{
-								// Ignore if P1 is hitting a target 
-								// while their managers are not running (no co-op cam).
-								if (p->isPlayer1 && !p->IsRunning())
-								{
-									continue;
-								}
-
-								bool isHostile = 
+								(!hitActorIsPlayer) &&
 								(
-									(!hitActorIsPlayer) &&
+									(hitActor->IsHostileToActor(p->coopActor.get())) || 
 									(
-										(hitActor->IsHostileToActor(p->coopActor.get())) || 
+										Util::HandleIsValid(hitActor->currentCombatTarget) &&
+										Util::IsPartyFriendlyActor
 										(
-											Util::HandleIsValid(hitActor->currentCombatTarget) &&
-											Util::IsPartyFriendlyActor
-											(
-												hitActor->currentCombatTarget.get().get()
-											)
+											hitActor->currentCombatTarget.get().get()
 										)
 									)
-								);
-								bool isPartyFriendlyActor = Util::IsPartyFriendlyActor
-								(
-									hitActor
-								);
-								bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
-								bool isCrosshairTargeted = 
-								(
-									hitActorHandle == p->tm->selectedTargetActorHandle
-								);
-								bool isBeneficialProjectile =
-								(
-									a_this->spell && 
-									!Util::HasHostileEffect(a_this->spell)
-								);
-								// Only allow collisions through if targeting a hostile actor,
-								// directly targeting a neutral actor with the crosshair,
-								// or targeting an ally with a beneficial projectile
-								// or targeting an ally with the crosshair 
-								// while friendly fire is on.
-								bool collisionAllowed = 
-								(
-									(
-										!hitActor->IsGhost() && !hitActor->IsInvulnerable()
-									) &&
-									(
-										(isHostile) ||
-										(isNeutralActor && isCrosshairTargeted) ||
-										(
-											(isPartyFriendlyActor) && 
-											(
-												(isBeneficialProjectile) ||
-												(
-													isCrosshairTargeted &&
-													Settings::vbFriendlyFire[p->playerID]
-												)
-											)
-										)
-									)
-								);
-								if (collisionAllowed)
-								{
-									SPDLOG_DEBUG("ALLOWED");
-									// Do not start combat with other players
-									// and do not need to start combat for P1.
-									if (!hitActorIsPlayer && !p->isPlayer1)
-									{
-										Util::UpdateCombatTargets
-										(
-											p->coopActor.get(), hitActor, false
-										);
-										// Trigger combat if the target is not already hostile,
-										// or if the hit actor and player 
-										// are not combat targets for each other.
-										// 
-										// Finally, also only start combat 
-										// if this is the first time the actor is hit this frame.
-										bool shouldTriggerCombat = 
-										(
-											(
-												!hitActor->IsHostileToActor
-												(
-													p->coopActor.get()
-												) || 
-												!hitActor->IsCombatTarget
-												(
-													p->coopActor.get()
-												) ||
-												!p->coopActor->IsCombatTarget(hitActor)
-											) &&
-											(
-												combatTargetFIDs.empty() ||
-												!combatTargetFIDs.contains(hitActor->formID)
-											)
-										);
-										if (shouldTriggerCombat)
-										{
-											combatTargetStartPairs.emplace_back
-											(
-												std::pair<RE::Actor*, RE::Actor*>
-												(
-													p->coopActor.get(),
-													hitActor
-												)
-											);
-											combatTargetFIDs.insert(hitActor->formID);
-										}
-									}
-								}
-								else
-								{
-									SPDLOG_DEBUG("IGNORED");	
-									return true;
-								}
-							}
-						}
-
-						// At least one refr in the hit pair must be a released refr 
-						// for one of the active players.
-						if (manipulatingPlayerPID == -1)
-						{
-							return false;
-						}
-
-						const auto& p = glob.coopPlayers[manipulatingPlayerPID];
-						// Must be manipulated as a released refr.
-						const auto iter = 
-						(
-							p->tm->rmm->releasedRefrHandlesToInfoIndices.find(projHandle)
-						);
-						if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
-						{
-							return false;
-						}
-						auto index = iter->second;
-						if (index >= p->tm->rmm->releasedRefrInfoList.size())
-						{
-							return false;
-						}
-
-						const auto& releasedRefrInfo = p->tm->rmm->releasedRefrInfoList[index];
-						// Hit a new, valid actor that is not the released refr 
-						// or the player that released the refr.
-						bool shouldBonk = 
-						(
-							hitActor &&
-							hitActor->currentProcess && 
-							hitActor != p->coopActor.get() && 
-							!releasedRefrInfo->HasAlreadyHitRefr(hitActor)
-						);
-						if (shouldBonk)
-						{
-							// Save for later.
-							delayedActorCollisions.insert_or_assign
-							(
-								p->playerID,
-								std::pair<RE::ActorHandle, RE::NiPoint3>
-								(
-									hitActor->GetHandle(),
-									ToNiPoint3(hit.contact.position) * HAVOK_TO_GAME
 								)
 							);
+							bool isPartyFriendlyActor = Util::IsPartyFriendlyActor(hitActor);
+							bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
+							bool isDesiredTarget = 
+							(
+								(hitActor) &&
+								(
+									(hitActorHandle == p->tm->selectedTargetActorHandle) ||
+									(
+										p->tm->crosshairTargetingMode == 
+										CrosshairTargetingMode::kDisabled &&
+										hitActorHandle == p->tm->aimCorrectionTargetHandle
+									)
+								)
+							);
+							bool isBeneficialProjectile =
+							(
+								a_this->spell && 
+								!Util::HasHostileEffect(a_this->spell)
+							);
+							// Only allow collisions through if targeting a hostile actor,
+							// directly targeting a neutral actor with the crosshair,
+							// or targeting an ally with a beneficial projectile
+							// or targeting an ally with the crosshair 
+							// or while the crosshair is disabled
+							// while friendly fire is on.
+							bool collisionAllowed = 
+							(
+								(
+									!hitActor->IsGhost() && !hitActor->IsInvulnerable()
+								) &&
+								(
+									(isHostile) ||
+									(isNeutralActor && isDesiredTarget) ||
+									(
+										(isPartyFriendlyActor) && 
+										(
+											(isBeneficialProjectile) ||
+											(
+												isDesiredTarget &&
+												Settings::vbFriendlyFire[p->playerID]
+											)
+										)
+									)
+								)
+							);
+							if (collisionAllowed)
+							{
+								SPDLOG_DEBUG
+								(
+									"ALLOWED {} <-> {}", 
+									refrA->GetBaseObject() ? 
+									Util::GetEditorID(refrA->GetBaseObject()) : 
+									"NONE", 
+									refrB->GetBaseObject() ? 
+									Util::GetEditorID(refrB->GetBaseObject()) : 
+									"NONE"
+								);
+								// Do not start combat with other players
+								// and do not need to start combat for P1.
+								if (!hitActorIsPlayer && !p->isPlayer1)
+								{
+									Util::UpdateCombatTargets
+									(
+										p->coopActor.get(), hitActor, false
+									);
+									// Trigger combat if the target is not already hostile,
+									// or if the hit actor and player 
+									// are not combat targets for each other.
+									// 
+									// Finally, also only start combat 
+									// if this is the first time the actor is hit this frame.
+									bool shouldTriggerCombat = 
+									(
+										(
+											!hitActor->IsHostileToActor
+											(
+												p->coopActor.get()
+											) || 
+											!hitActor->IsCombatTarget
+											(
+												p->coopActor.get()
+											) ||
+											!p->coopActor->IsCombatTarget(hitActor)
+										) &&
+										(
+											combatTargetFIDs.empty() ||
+											!combatTargetFIDs.contains(hitActor->formID)
+										)
+									);
+									if (shouldTriggerCombat)
+									{
+										combatTargetStartPairs.emplace_back
+										(
+											std::pair<RE::Actor*, RE::Actor*>
+											(
+												p->coopActor.get(),
+												hitActor
+											)
+										);
+										combatTargetFIDs.insert(hitActor->formID);
+									}
+								}
+							}
+							else
+							{
+								SPDLOG_DEBUG
+								(
+									"IGNORED {} <-> {}", 
+									refrA->GetBaseObject() ? 
+									Util::GetEditorID(refrA->GetBaseObject()) : 
+									"NONE", 
+									refrB->GetBaseObject() ? 
+									Util::GetEditorID(refrB->GetBaseObject()) : 
+									"NONE"
+								);
+								return true;
+							}
 						}
-
-						// Add as a hit refr to prevent multi-hits.
-						releasedRefrInfo->AddHitRefr(refrB);
 					}
 
+					// At least one refr in the hit pair must be a released refr 
+					// for one of the active players.
+					if (manipulatingPlayerPID == -1)
+					{
+						return false;
+					}
+
+					const auto& p = glob.coopPlayers[manipulatingPlayerPID];
+					// Must be manipulated as a released refr.
+					const auto iter = 
+					(
+						p->tm->rmm->releasedRefrHandlesToInfoIndices.find(projHandle)
+					);
+					if (iter == p->tm->rmm->releasedRefrHandlesToInfoIndices.end())
+					{
+						return false;
+					}
+
+					auto index = iter->second;
+					if (index >= p->tm->rmm->releasedRefrInfoList.size())
+					{
+						return false;
+					}
+
+					const auto& releasedRefrInfo = p->tm->rmm->releasedRefrInfoList[index];
+					// Hit a new, valid actor that is not the released refr 
+					// or the player that released the refr.
+					bool shouldBonk = 
+					(
+						hitActor &&
+						hitActor->currentProcess && 
+						hitActor != p->coopActor.get() && 
+						!releasedRefrInfo->HasAlreadyHitRefr(hitActor)
+					);
+					if (shouldBonk)
+					{
+						// Save for later.
+						delayedActorCollisions.insert_or_assign
+						(
+							p->playerID,
+							std::pair<RE::ActorHandle, RE::NiPoint3>
+							(
+								hitActor->GetHandle(),
+								ToNiPoint3(hit.contact.position) * HAVOK_TO_GAME
+							)
+						);
+					}
+
+					// Add as a hit refr to prevent multi-hits.
+					releasedRefrInfo->AddHitRefr(refrB);
 					return false;
 				}
 			);
@@ -11133,7 +11319,7 @@ namespace ALYSLC
 					actorStartCombatPair.second,
 					0.0f,
 					true
-				);			
+				);		
 			}
 			
 			SPDLOG_DEBUG("{} hits to handle, was {}. {} NPCs to start combat with.",
@@ -11264,7 +11450,7 @@ namespace ALYSLC
 					)
 				);
 			}
-			
+
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
 			if (pIndex != -1)
 			{
@@ -11272,6 +11458,7 @@ namespace ALYSLC
 				// See GlobalCoopData::PrecisionPreHitCallback() 
 				// for an explanation.
 				// Trigger combat between companion players and any NPCs they hit.
+				const auto hitActorHandle = hitActor->GetHandle();
 				bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
 				bool isHostile = 
 				(
@@ -11284,14 +11471,19 @@ namespace ALYSLC
 						)
 					)
 				);
-				bool isPartyFriendlyActor = Util::IsPartyFriendlyActor
-				(
-					hitActor
-				);
+				bool isPartyFriendlyActor = Util::IsPartyFriendlyActor(hitActor);
 				bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
-				bool isCrosshairTargeted = 
+				bool isDesiredTarget = 
 				(
-					hitActor->GetHandle() == p->tm->selectedTargetActorHandle
+					(hitActor) &&
+					(
+						(hitActorHandle == p->tm->selectedTargetActorHandle) ||
+						(
+							p->tm->crosshairTargetingMode == 
+							CrosshairTargetingMode::kDisabled &&
+							hitActorHandle == p->tm->aimCorrectionTargetHandle
+						)
+					)
 				);
 				bool isBeneficialProjectile =
 				(
@@ -11305,13 +11497,13 @@ namespace ALYSLC
 				bool collisionAllowed = 
 				(
 					(isHostile) ||
-					(isNeutralActor && isCrosshairTargeted) ||
+					(isNeutralActor && isDesiredTarget) ||
 					(
 						(isPartyFriendlyActor) && 
 						(
 							(isBeneficialProjectile) ||
 							(
-								isCrosshairTargeted &&
+								isDesiredTarget &&
 								Settings::vbFriendlyFire[p->playerID]
 							)
 						)
@@ -11337,6 +11529,121 @@ namespace ALYSLC
 					a_handled
 				)
 			);
+		}
+
+		bool ProjectileHooks::RunTargetPick(RE::Projectile* a_this)
+		{
+			// If the player launched this projectile, 
+			// ensure the chosen target is the player's current ranged target actor.
+			// Allows beam and flame projectiles to hit more consistently.
+
+			// Not handled outside of co-op.
+			if (!glob.globalDataInit || !glob.allPlayersInit || !glob.coopSessionActive)
+			{
+				if (a_this->As<RE::BarrierProjectile>())
+				{
+					return _BarrierProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					return _BeamProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					return _FlameProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					return _GrenadeProjectile_RunTargetPick(a_this);
+				}
+				else
+				{
+					return _Projectile_RunTargetPick(a_this);
+				}
+			}
+
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_this->shooter);
+			if (pIndex != -1)
+			{
+				const auto& p = glob.coopPlayers[pIndex];
+				auto rangedTargetActorHandle = p->tm->GetRangedTargetActor();
+				const auto magicTargetBefore = 
+				(
+					a_this->GetMagicTarget() &&
+					a_this->GetMagicTarget()->GetTargetAsActor() ?
+					a_this->GetMagicTarget()->GetTargetAsActor() : 
+					nullptr
+				);
+				const auto desiredTargetBefore = a_this->desiredTarget;
+				a_this->desiredTarget = rangedTargetActorHandle;
+				bool result = false;
+				if (a_this->As<RE::BarrierProjectile>())
+				{
+					result = _BarrierProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::BeamProjectile>())
+				{
+					result = _BeamProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::FlameProjectile>())
+				{
+					result = _FlameProjectile_RunTargetPick(a_this);
+				}
+				else if (a_this->As<RE::GrenadeProjectile>())
+				{
+					result = _GrenadeProjectile_RunTargetPick(a_this);
+				}
+				else
+				{
+					result = _Projectile_RunTargetPick(a_this);
+				}
+					
+				/*SPDLOG_DEBUG
+				(
+					"{}: {} (0x{:X}, {}), before: {}, {}, after {}, {}, now {}. Result: {}",
+					p->coopActor->GetName(),
+					a_this->GetName(),
+					a_this->formID,
+					Util::GetEditorID(a_this),
+					magicTargetBefore ? magicTargetBefore->GetName() : "NONE/OBJ",
+					Util::HandleIsValid(desiredTargetBefore) ? 
+					desiredTargetBefore.get()->GetName() :
+					"NONE",
+					a_this->GetMagicTarget() &&
+					a_this->GetMagicTarget()->GetTargetAsActor() ? 
+					a_this->GetMagicTarget()->GetTargetAsActor()->GetName() : 
+					"NONE/OBJ",
+					Util::HandleIsValid(a_this->desiredTarget) ? 
+					a_this->desiredTarget.get()->GetName() :
+					"NONE",
+					Util::HandleIsValid(rangedTargetActorHandle) ? 
+					rangedTargetActorHandle.get()->GetName() : 
+					"NONE",
+					result
+				);*/
+				return result;
+			}
+
+			if (a_this->As<RE::BarrierProjectile>())
+			{
+				return _BarrierProjectile_RunTargetPick(a_this);
+			}
+			else if (a_this->As<RE::BeamProjectile>())
+			{
+				return _BeamProjectile_RunTargetPick(a_this);
+			}
+			else if (a_this->As<RE::FlameProjectile>())
+			{
+				return _FlameProjectile_RunTargetPick(a_this);
+			}
+			else if (a_this->As<RE::GrenadeProjectile>())
+			{
+				return _GrenadeProjectile_RunTargetPick(a_this);
+			}
+			else
+			{
+				return _Projectile_RunTargetPick(a_this);
+			}
 		}
 
 		bool ProjectileHooks::ShouldUseDesiredTarget(RE::Projectile* a_this)
@@ -11374,9 +11681,9 @@ namespace ALYSLC
 			if (pIndex != -1)
 			{
 				const auto& p = glob.coopPlayers[pIndex];
-				auto rangedTargetActor = p->tm->GetRangedTargetActor();
-				a_this->desiredTarget = rangedTargetActor;
-				return Util::HandleIsValid(rangedTargetActor);
+				auto rangedTargetActorHandle = p->tm->GetRangedTargetActor();
+				a_this->desiredTarget = rangedTargetActorHandle;
+				return Util::HandleIsValid(rangedTargetActorHandle);
 			}
 
 			if (a_this->As<RE::BarrierProjectile>())
@@ -11688,6 +11995,11 @@ namespace ALYSLC
 				(
 					crosshairRefrPtr && Util::IsValidRefrForTargeting(crosshairRefrPtr.get())
 				);
+				bool canDirectTowardsCrosshairPos = 
+				(
+					a_p->mm->reqFaceTarget && 
+					a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim
+				);
 				// Actor targeted (aim correction or otherwise), 
 				// should face crosshair position (never true while mounted), 
 				// or mounted and targeting an object.
@@ -11695,7 +12007,7 @@ namespace ALYSLC
 				{
 					(targetActorPtr != a_p->coopActor) &&
 					(
-						(targetActorValidity || a_p->mm->reqFaceTarget) || 
+						(targetActorValidity || canDirectTowardsCrosshairPos) || 
 						(a_p->coopActor->IsOnMount() && crosshairRefrValidity)
 					)
 				};
@@ -11980,7 +12292,36 @@ namespace ALYSLC
 						}
 					}
 
-					if (a_p->mm->reqFaceTarget)
+					const auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle
+					(
+						a_p->tm->aimCorrectionTargetHandle
+					);
+					if (a_p->mm->inTwinStickMode && aimCorrectionTargetPtr)
+					{
+						auto targetPos = Util::GetTorsoPosition(aimCorrectionTargetPtr.get());
+						// Set projectile data angles to face the target.
+						projectile->data.angle.x = Util::GetPitchBetweenPositions
+						(
+							projectile->data.location, targetPos
+						);
+						projectile->data.angle.z = Util::GetYawBetweenPositions
+						(
+							projectile->data.location, targetPos
+						);
+						// Set rotation matrix to maintain consistency 
+						// with the previously set refr data angles.
+						auto current3DPtr = Util::GetRefr3D(projectile); 
+						if (current3DPtr)
+						{
+							Util::SetRotationMatrixPY
+							(
+								current3DPtr->local.rotate, 
+								projectile->data.angle.x, 
+								projectile->data.angle.z
+							);
+						}
+					}
+					else if (!a_p->mm->inTwinStickMode && a_p->mm->reqFaceTarget)
 					{
 						// Set projectile data angles to face the target.
 						projectile->data.angle.x = Util::GetPitchBetweenPositions
@@ -12142,7 +12483,7 @@ namespace ALYSLC
 			{
 				return;
 			}
-
+			
 			// Guaranteed to be managed here.
 			auto& managedProjInfo = a_p->tm->mph->GetInfo(a_projectileHandle);
 			RE::NiPoint3 velToSet = a_resultingVelocityOut;
@@ -12381,10 +12722,10 @@ namespace ALYSLC
 					projectile->livingTime - 0.5f * initialTimeToTargetSecs >= -epsilon ||
 					xy > Util::GetXYDistance(releasePos, managedProjInfo->trajectoryEndPos)
 				);
-				bool noTargetAndMovingCrosshair = //false;
+				bool noTargetAndMovingCrosshair =
 				(
 					!targetRefrValidity &&
-					a_p->tm->crosshairFreeAimActive &&
+					a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim &&
 					a_p->mm->reqFaceTarget &&
 					a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 				);
@@ -12790,7 +13131,7 @@ namespace ALYSLC
 			}
 
 			// Smart ptr was invalid, so its managed projectile is as well.
-			if (!projectile)
+			if (!projectile || projectile->livingTime > 0.0f)
 			{
 				return;
 			}
@@ -12828,7 +13169,8 @@ namespace ALYSLC
 
 				projectile->desiredTarget = targetActorHandle;
 			}
-			else if (a_p->mm->reqFaceTarget)
+			else if (a_p->mm->reqFaceTarget && 
+					 a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled)
 			{
 				// Aim at the crosshair world position that the player is facing.
 				aimTargetPos = a_p->tm->crosshairWorldPos;
@@ -12860,7 +13202,8 @@ namespace ALYSLC
 					projectile->data.location +
 					Util::RotationToDirectionVect
 					(
-						-a_p->mm->aimPitch, Util::ConvertAngle(projectile->data.angle.z)
+						-a_p->mm->aimPitch, //Util::ConvertAngle(a_p->coopActor->data.angle.z)
+						Util::ConvertAngle(projectile->data.angle.z)
 					) * farDist
 				);
 			}

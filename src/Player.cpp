@@ -299,6 +299,19 @@ namespace ALYSLC
 						// Have to sheathe weapon before teleporting, 
 						// otherwise the equip state gets bugged.
 						pam->ReadyWeapon(false);
+						SPDLOG_DEBUG
+						(
+							"Now moving player {} to P1. Movement actor: {}", 
+							coopActor->GetName(),
+							mm->movementActorPtr ? 
+							mm->movementActorPtr->GetName() : 
+							"NONE"
+						);
+						if (mm->movementActorPtr != coopActor)
+						{
+							mm->movementActorPtr->MoveTo(p1);
+						}
+
 						coopActor->MoveTo(p1);
 					}
 				);
@@ -362,6 +375,19 @@ namespace ALYSLC
 								// Have to sheathe weapon before teleporting, 
 								// otherwise the equip state gets bugged.
 								pam->ReadyWeapon(false);
+								SPDLOG_DEBUG
+								(
+									"Now moving player {} to P1. Movement actor: {}", 
+									coopActor->GetName(),
+									mm->movementActorPtr ? 
+									mm->movementActorPtr->GetName() : 
+									"NONE"
+								);
+								if (mm->movementActorPtr != coopActor)
+								{
+									mm->movementActorPtr->MoveTo(p1);
+								}
+
 								coopActor->MoveTo(p1);
 								if (isDowned)
 								{
@@ -3266,6 +3292,7 @@ namespace ALYSLC
 				// this should fix it.
 				if (!coopActor->IsOnMount())
 				{
+					SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
 					coopActor->DoReset3D(true);
 				}
 
@@ -3693,14 +3720,143 @@ namespace ALYSLC
 			return;
 		}
 
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		if (!p1)
+		{
+			return;
+		}
+
 		auto targetActor = targetActorPtr.get();
+		bool targetActorIsOOB = false;
+		Util::AddSyncedTask
+		(
+			[this, targetActor, &targetActorIsOOB]() 
+			{
+				// Cast downward from the target actor's head height.
+				// If nothing is hit, the player is likely under the map and freefalling.
+				const float lowerBound = 
+				(
+					Util::GetVertCollPoints
+					(
+						Util::GetRefrPosition(targetActor) + 
+						RE::NiPoint3(0.0f, 0.0f, targetActor->GetHeight())
+					).second
+				);
+				targetActorIsOOB = 
+				(
+					lowerBound <= -131072.0f || isnan(lowerBound)
+				);
+			}
+		);
+
+		if (targetActorIsOOB)
+		{
+			Util::AddSyncedTask
+			(
+				[this, p1, targetActor]() 
+				{
+					auto tes = RE::TES::GetSingleton();
+					if (!tes)
+					{
+						SPDLOG_ERROR
+						(
+							"ERR: Players are out of bounds and could not get TES singleton. Boooo."
+						);
+						return;
+					}
+
+					if (p1->parentCell)
+					{
+						SPDLOG_DEBUG("Teleport to P1's parent cell {} (0x{:X}).",
+							Util::GetEditorID(p1->parentCell), p1->parentCell->formID);
+						p1->CenterOnCell(p1->parentCell);
+					}
+					else if (auto currentCell = tes->GetCell(targetActor->data.location); 
+							 currentCell)
+					{
+						SPDLOG_DEBUG("Teleport to P1's current cell {} (0x{:X}).",
+							Util::GetEditorID(currentCell), currentCell->formID);
+						p1->CenterOnCell(currentCell);
+					}
+					else if (tes->worldSpace && tes->worldSpace->persistentCell)
+					{
+						SPDLOG_DEBUG
+						(
+							"Teleport to the current worldspace's persistent cell {} (0x{:X}).",
+							Util::GetEditorID(tes->worldSpace->persistentCell), 
+							tes->worldSpace->persistentCell->formID
+						);
+						p1->CenterOnCell(tes->worldSpace->persistentCell);
+					}
+					else
+					{
+						SPDLOG_ERROR
+						(
+							"ERR: Players are out of bounds "
+							"and no valid teleport position was found. Boooo."
+						);
+					}
+				}
+			);
+
+			SPDLOG_DEBUG
+			(
+				"{}: {} is out of bounds. "
+				"Moving from ({}, {}, {}) to closest door position: ({}, {}, {}). "
+				"Parent cell: {} (0x{:X}).",
+				coopActor->GetName(),
+				targetActorPtr->GetName(),
+				coopActor->data.location.x,
+				coopActor->data.location.y,
+				coopActor->data.location.z,
+				p1->data.location.x,
+				p1->data.location.y,
+				p1->data.location.z,
+				Util::GetEditorID(p1->parentCell),
+				p1->parentCell ? p1->parentCell->formID : 0xDEAD
+			);
+		}
+
+		const auto exitPortalPos = 
+		(
+			targetActorIsOOB ? p1->data.location : targetActorPtr->data.location
+		);
+
 		// Don't move before teleporting.
 		Util::NativeFunctions::SetDontMove(coopActor.get(), true);
+		// Get up. Teleport will fail otherwise.
+		// Also, if the player is paralyzed when they are moved, 
+		// they go full Sanic mode and endlessly run on an invisbile treadmill 
+		// until ragdolled or reset.
+		if (!isDowned && coopActor->IsInRagdollState())
+		{
+			Util::AddSyncedTask
+			(
+				[this]() 
+				{
+					coopActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
+					coopActor->NotifyAnimationGraph("GetUpBegin");
+					coopActor->PotentiallyFixRagdollState();
+				}
+			);
+
+			// Wait until the player is getting up or at most 2 seconds.
+			/*float secsWaited = 0.0f;
+			SteadyClock::time_point waitTP = SteadyClock::now();
+			while (coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp && secsWaited < 2.0f)
+			{
+				SPDLOG_DEBUG("Waiting until getting up. Knock state: {}, waited {}s.", 
+					coopActor->GetKnockState(), secsWaited);
+				std::this_thread::sleep_for(0.5s);
+				secsWaited += 0.5f;
+			}*/
+		}
+
 		// Get portal form.
 		auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55); 
-		if (!teleportalActivator)
+		if (!teleportalActivator || !mm->movementActorPtr)
 		{
-			// No portal, no teleportation, it's that simple, 
+			// No portal or player/mount, no teleportation, it's that simple, 
 			// but ensure the player can move afterward.
 			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			return;
@@ -3730,13 +3886,16 @@ namespace ALYSLC
 		(
 			[this, teleportalActivator]() 
 			{
-				const auto entryPortalPtr = coopActor->PlaceObjectAtMe(teleportalActivator, false);
+				const auto entryPortalPtr = mm->movementActorPtr->PlaceObjectAtMe
+				(
+					teleportalActivator, false
+				);
 				if (!entryPortalPtr)
 				{
 					return;
 				}
 
-				coopActor->SetPosition(entryPortalPtr.get()->data.location, true);
+				mm->movementActorPtr->SetPosition(entryPortalPtr.get()->data.location, true);
 			}
 		);
 
@@ -3746,9 +3905,13 @@ namespace ALYSLC
 		RE::TESObjectREFRPtr exitPortalPtr{ };
 		Util::AddSyncedTask
 		(
-			[this, &exitPortalPtr, targetActor, teleportalActivator]() 
+			[this, &exitPortalPtr, &exitPortalPos, targetActor, teleportalActivator]() 
 			{
 				exitPortalPtr = targetActor->PlaceObjectAtMe(teleportalActivator, false);
+				if (exitPortalPtr)
+				{
+					exitPortalPtr->SetPosition(exitPortalPos);
+				}
 			}
 		);
 		std::this_thread::sleep_for(0.25s);
@@ -3760,7 +3923,7 @@ namespace ALYSLC
 			{
 				Util::AddSyncedTask
 				(
-					[this, &exitPortalPtr]() { coopActor->MoveTo(exitPortalPtr.get()); }
+					[this, &exitPortalPtr]() { mm->movementActorPtr->MoveTo(exitPortalPtr.get()); }
 				);
 			}
 			else
@@ -3769,7 +3932,7 @@ namespace ALYSLC
 				(
 					[this, &exitPortalPtr]() 
 					{
-						coopActor->SetPosition(exitPortalPtr->data.location, true);
+						mm->movementActorPtr->SetPosition(exitPortalPtr->data.location, true);
 					}
 				);
 			}
@@ -3779,7 +3942,13 @@ namespace ALYSLC
 			// Move directly to the target actor otherwise.
 			if (shouldMoveTo)
 			{
-				Util::AddSyncedTask([this, targetActor]() { coopActor->MoveTo(targetActor); });
+				Util::AddSyncedTask
+				(
+					[this, targetActor]() 
+					{
+						mm->movementActorPtr->MoveTo(targetActor); 
+					}
+				);
 			}
 			else
 			{
@@ -3787,7 +3956,20 @@ namespace ALYSLC
 				(
 					[this, targetActor]() 
 					{
-						coopActor->SetPosition(targetActor->data.location, true);
+						mm->movementActorPtr->SetPosition(targetActor->data.location, true);
+					}
+				);
+			}
+
+			// Then move to the place where the exit portal failed to spawn
+			// if the target actor is in free-fall.
+			if (targetActorIsOOB)
+			{
+				Util::AddSyncedTask
+				(
+					[this, targetActor, &exitPortalPos]() 
+					{
+						mm->movementActorPtr->SetPosition(exitPortalPos, true);
 					}
 				);
 			}

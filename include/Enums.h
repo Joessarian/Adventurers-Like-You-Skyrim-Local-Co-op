@@ -1001,6 +1001,16 @@ namespace ALYSLC
 	//[Targeting]
 	//===========
 
+	// Crosshair targeting mode.
+	enum class CrosshairTargetingMode : std::uint8_t
+	{
+		kDisabled,		// Crosshair is removed. Rely on aim correction for targeting.
+						// Only disabled when in 'Lock On' mode and pressing the corresponding bind.
+		kFreeAim,		// Move the crosshair freely with the right stick to select objects/NPCs.
+		kLockOn			// Move the right stick towards objects or NPCs to lock on the crosshair
+						// to their center position.
+	};
+
 	// Projectile trajectory type for each player.
 	enum class ProjectileTrajType : std::uint8_t
 	{

@@ -2915,8 +2915,17 @@ namespace ALYSLC
 							{
 								SPDLOG_DEBUG
 								(
-									"Now moving player {} to P1.", p->coopActor->GetName()
+									"Now moving player {} to P1. Movement actor: {}", 
+									p->coopActor->GetName(),
+									p->mm->movementActorPtr ? 
+									p->mm->movementActorPtr->GetName() : 
+									"NONE"
 								);
+								if (p->mm->movementActorPtr != p->coopActor)
+								{
+									p->mm->movementActorPtr->MoveTo(p1);
+								}
+
 								p->coopActor->MoveTo(p1); 
 							}
 						);

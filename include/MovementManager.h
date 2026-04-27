@@ -586,8 +586,9 @@ namespace ALYSLC
 		bool attemptDiscovery;
 		// Was DontMove() successfully called on this player?
 		bool dontMoveSet;
-		// Face the target directly at all times after toggled on by the 'FaceTarget' bind.
-		bool faceTarget;
+		// Face the crosshair world position directly at all times 
+		// after toggled on by the 'FaceTarget' bind.
+		bool faceCrosshairPos;
 		// Nearby map marker is undiscovered and in range to discover.
 		bool inRangeOfUndiscoveredMarker;
 		// Is this player close enough to the interaction entry position 
@@ -609,6 +610,8 @@ namespace ALYSLC
 		bool isGettingUp;
 		// Is the player attempting to mount?
 		bool isMounting;
+		// Is the player using the right stick to rotate and the left stick to move their character?
+		bool inTwinStickMode;
 		// Is the player in the air paragliding?
 		bool isParagliding;
 		// Have the player's char controller pitch and roll angles fully reset to 0?
@@ -632,8 +635,13 @@ namespace ALYSLC
 		bool p1ExtPackageRunning;
 		// Player had their ragdoll triggered.
 		bool playerRagdollTriggered;
-		// Player has requested, via player action,
-		// to directly face and aim at the targeted position when possible.
+		// Player has requested, via player action, to face the targeted position 
+		// or rotate their character with the right stick:
+		// 1. Crosshair free aim mode: 
+		// Directly rotate and aim at the crosshair world position when possible.
+		// 2. Crosshair lock on mode:
+		// Directly rotate the player and aim at the targeted object or NPC when possible.
+		// 3. Otherwise, the player rotates to face the direction of the right stick.
 		bool reqFaceTarget;
 		// Player has requested, via player action, to reset aim pitch and body node rotations.
 		bool reqResetAimAndBody;

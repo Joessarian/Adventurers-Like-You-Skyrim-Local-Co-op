@@ -380,14 +380,6 @@ namespace ALYSLC
 			const InputAction& a_action
 		);
 
-		// Modify the player's X angle before cssting a target location spell
-		// to maximize chance of successfully casting the spell.
-		void PrepForTargetLocationSpellCast
-		(
-			const std::shared_ptr<CoopPlayer>& a_p,
-			RE::SpellItem* a_spell
-		);
-
 		// Returns true if P1 is requesting to use the paraglider from Loki's awesome mod:
 		// https://www.nexusmods.com/skyrimspecialedition/mods/53256
 		bool RequestToUseParaglider(const std::shared_ptr<CoopPlayer>& a_p);
@@ -447,6 +439,7 @@ namespace ALYSLC
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
 		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
+		void MoveCrosshair(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		void SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);

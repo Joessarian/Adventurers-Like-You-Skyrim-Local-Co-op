@@ -224,6 +224,7 @@ namespace ALYSLC
 			// Resetting while on horseback causes horse warp glitch upon resumption.
 			if (!coopActor->IsOnMount())
 			{
+				SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
 				coopActor->DoReset3D(true);
 			}
 		}
@@ -6679,6 +6680,7 @@ namespace ALYSLC
 		// this should fix it.
 		if (!coopActor->IsOnMount())
 		{
+			SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
 			coopActor->DoReset3D(true);
 		}
 

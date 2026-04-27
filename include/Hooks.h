@@ -787,6 +787,11 @@ namespace ALYSLC
 					0x86, GetLinearVelocity
 				);
 				SPDLOG_INFO("Installed BarrierProjectile GetLinearVelocity() hook.");
+				_BarrierProjectile_RunTargetPick = barrierProjectileVtbl.write_vfunc
+				(
+					0xB7, RunTargetPick
+				);
+				SPDLOG_INFO("Installed BarrierProjectile RunTargetPick() hook.");
 				_BarrierProjectile_ShouldUseDesiredTarget = barrierProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
@@ -804,6 +809,8 @@ namespace ALYSLC
 					0x86, GetLinearVelocity
 				);
 				SPDLOG_INFO("Installed BeamProjectile GetLinearVelocity() hook.");
+				_BeamProjectile_RunTargetPick = beamProjectileVtbl.write_vfunc(0xB7, RunTargetPick);
+				SPDLOG_INFO("Installed BeamProjectile RunTargetPick() hook.");
 				_BeamProjectile_ShouldUseDesiredTarget = beamProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
@@ -832,6 +839,11 @@ namespace ALYSLC
 					0x86, GetLinearVelocity
 				);
 				SPDLOG_INFO("Installed FlameProjectile GetLinearVelocity() hook.");
+				_FlameProjectile_RunTargetPick = flameProjectileVtbl.write_vfunc
+				(
+					0xB7, RunTargetPick
+				);
+				SPDLOG_INFO("Installed FlameProjectile RunTargetPick() hook.");
 				_FlameProjectile_ShouldUseDesiredTarget = flameProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
@@ -846,6 +858,11 @@ namespace ALYSLC
 					0x86, GetLinearVelocity
 				);
 				SPDLOG_INFO("Installed GrenadeProjectile GetLinearVelocity() hook.");
+				_GrenadeProjectile_RunTargetPick = grenadeProjectileVtbl.write_vfunc
+				(
+					0xB7, RunTargetPick
+				);
+				SPDLOG_INFO("Installed GrenadeProjectile RunTargetPick() hook.");
 				_GrenadeProjectile_ShouldUseDesiredTarget = grenadeProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
@@ -885,6 +902,8 @@ namespace ALYSLC
 					0xBE, OnProjectileCollision
 				);
 				SPDLOG_INFO("Installed Projectile OnMissileCollision() hook.");
+				_Projectile_RunTargetPick = projectileVtbl.write_vfunc(0xB7, RunTargetPick);
+				SPDLOG_INFO("Installed Projectile RunTargetPick() hook.");
 				_Projectile_ShouldUseDesiredTarget = projectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
@@ -923,6 +942,7 @@ namespace ALYSLC
 				RE::MATERIAL_ID a_materialID,
 				bool* a_handled
 			);
+			static bool RunTargetPick(RE::Projectile* a_this);
 			static bool ShouldUseDesiredTarget(RE::Projectile* a_this); 
 			static void UpdateImpl(RE::Projectile* a_this, float a_delta);
 
@@ -936,6 +956,7 @@ namespace ALYSLC
 			// Barrier
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_BarrierProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(RunTargetPick)> _BarrierProjectile_RunTargetPick;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
 			_BarrierProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BarrierProjectile_UpdateImpl;
@@ -943,6 +964,7 @@ namespace ALYSLC
 			// Beam
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_BeamProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(RunTargetPick)> _BeamProjectile_RunTargetPick;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
 			_BeamProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _BeamProjectile_UpdateImpl;
@@ -957,6 +979,7 @@ namespace ALYSLC
 			// Flame
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_FlameProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(RunTargetPick)> _FlameProjectile_RunTargetPick;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
 			_FlameProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _FlameProjectile_UpdateImpl;
@@ -964,6 +987,7 @@ namespace ALYSLC
 			// Grenade
 			static inline REL::Relocation<decltype(GetLinearVelocity)> 
 			_GrenadeProjectile_GetLinearVelocity;
+			static inline REL::Relocation<decltype(RunTargetPick)> _GrenadeProjectile_RunTargetPick;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)>
 			_GrenadeProjectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _GrenadeProjectile_UpdateImpl;
@@ -981,6 +1005,7 @@ namespace ALYSLC
 			static inline REL::Relocation<decltype(OnProjectileCollision)> 
 			_Projectile_OnProjectileCollision;
 			static inline REL::Relocation<decltype(ProcessHit)> _Projectile_ProcessHit;
+			static inline REL::Relocation<decltype(RunTargetPick)> _Projectile_RunTargetPick;
 			static inline REL::Relocation<decltype(ShouldUseDesiredTarget)> 
 			_Projectile_ShouldUseDesiredTarget;
 			static inline REL::Relocation<decltype(UpdateImpl)> _Projectile_UpdateImpl;

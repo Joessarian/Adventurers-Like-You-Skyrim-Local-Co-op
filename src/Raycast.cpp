@@ -337,6 +337,44 @@ namespace Raycast
 			// Set hit position and distance cast before the hit.
 			res.hitPos = a_end;
 			res.rayLength = glm::length(res.hitPos - a_start);
+
+			// REMOVE when done debugging.
+			/*auto res2 = hkpCastRay
+			(
+				res.hitPos,
+				res.hitPos - res.rayNormal * a_traceHullSize * 2.0f,
+				std::vector<RE::TESObjectREFR*>(),
+				RE::COL_LAYER::kUnidentified
+			);
+			if (res2.hit && a_traceHullSize == 30.0f)
+			{
+				SPDLOG_DEBUG
+				(
+					"CAM CAST: Hit {} ({}, 0x{:X}, {}, base type 0x{:X}), "
+					"which has collision layer 0x{:X}. Hull size {}.",
+					res2.hitObjectPtr ? 
+					res2.hitObjectPtr->name : 
+					"NONE",
+					ALYSLC::Util::HandleIsValid(res2.hitRefrHandle) ?
+					res2.hitRefrHandle.get()->GetName() : 
+					"NONE",
+					ALYSLC::Util::HandleIsValid(res2.hitRefrHandle) ?
+					res2.hitRefrHandle.get()->formID : 
+					0xDEAD,
+					ALYSLC::Util::HandleIsValid(res2.hitRefrHandle) && 
+					res2.hitRefrHandle.get()->GetBaseObject() ? 
+					res2.hitRefrHandle.get()->GetBaseObject()->GetName() : 
+					"NONE",
+					ALYSLC::Util::HandleIsValid(res2.hitRefrHandle) && 
+					res2.hitRefrHandle.get()->GetBaseObject() ? 
+					*res2.hitRefrHandle.get()->GetBaseObject()->formType : 
+					RE::FormType::None,
+					res2.hitObjectPtr ?
+					ALYSLC::Util::GetCollisionLayer(res2.hitObjectPtr.get()) :
+					RE::COL_LAYER::kUnidentified,
+					a_traceHullSize
+				);
+			}*/
 		}
 
 		return res;

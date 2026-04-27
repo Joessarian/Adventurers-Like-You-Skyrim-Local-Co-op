@@ -278,6 +278,78 @@ namespace ALYSLC
 			}
 		}
 
+		bool ActivationIsOffLimits(RE::Actor * a_actor, RE::TESObjectREFR * a_refr)
+		{
+			// Return true if the given actor activating the given object refr would be considered 
+			// stealing or trigger an alarm.
+
+			if (!a_actor || !a_refr)
+			{
+				return false;
+			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return false;
+			}
+
+			bool isUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, true, true);
+			bool isUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, true, false);
+			bool isDoNotUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, false, true);
+			bool isDoNotUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, false, false);
+			const auto actorOwner = a_refr->GetActorOwner();
+			const auto formOwner = a_refr->GetOwner();
+			const auto formFaction = formOwner ? formOwner->As<RE::TESFaction>() : nullptr;
+			const auto exDataOwner = a_refr->extraList.GetOwner();
+			const auto owningFaction = a_refr->GetFactionOwner();
+			auto baseObj = a_refr->GetBaseObject();
+			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
+			// but steal/trespass alarm may sound.
+			SPDLOG_DEBUG
+			(
+				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
+				"Actor owner: {}, form owner: {}, form faction: {}, "
+				"exData owner: {}, faction owner: {}. "
+				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}, {}.",
+				a_actor->GetName(),
+				a_refr->GetName(),
+				(
+					(a_refr->IsLocked() || a_refr->IsDead()) || 
+					(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
+					(!a_actor->WouldBeStealing(a_refr))
+				) ?
+				"activatable" :
+				"off limits",
+				isUseFactionRequiredOwner,
+				isUseFactionNoRequiredOwner,
+				isDoNotUseFactionRequiredOwner,
+				isDoNotUseFactionNoRequiredOwner,
+				actorOwner ? Util::GetEditorID(actorOwner) : "NONE",
+				formOwner ? Util::GetEditorID(formOwner) : "NONE",
+				formFaction ? Util::GetEditorID(formFaction) : "NONE",
+				exDataOwner ? Util::GetEditorID(exDataOwner) : "NONE",
+				owningFaction ? Util::GetEditorID(owningFaction) : "NONE",
+				owningFaction ? owningFaction->IsPlayerEnemy() : false,
+				owningFaction ? owningFaction->TracksCrimes() : false,
+				a_actor->WouldBeStealing(a_refr),
+				p1->WouldBeStealing(a_refr)
+			);
+			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
+				(baseObj && baseObj->As<RE::TESObjectDOOR>()))
+			{
+				return false;
+			}
+
+			return 
+			(
+				a_actor->WouldBeStealing(a_refr) &&
+				p1->WouldBeStealing(a_refr) &&
+				!GlobalCoopData::IsCoopPlayer(actorOwner) &&
+				!GlobalCoopData::IsCoopPlayer(formOwner)
+			);
+		}
+
 		void AddAsCombatTarget
 		(
 			RE::Actor* a_sourceActor, RE::Actor* a_targetActor, bool a_triggerCombat
@@ -300,6 +372,13 @@ namespace ALYSLC
 			{
 				return;
 			}
+			
+			// REMOVE when done debugging.
+			/*SPDLOG_DEBUG
+			(
+				"{} -> {}, trigger combat: {}.",
+				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat
+			);*/
 
 			// Set the two actors' current combat targets to each other, 
 			// since companion player's projectile/melee hits are ignored sometimes 
@@ -336,13 +415,6 @@ namespace ALYSLC
 				return;
 			}
 			
-			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG
-			(
-				"{} -> {}, trigger combat: {}.",
-				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat
-			);*/
-
 			// IMPORTANT BUG NOTE:
 			// For companion players, combat-initiating hits 
 			// sometimes have their damage ignored, 
@@ -8139,6 +8211,23 @@ namespace ALYSLC
 				return;
 			}
 
+			// Companion players will instantly dismount once hit data is applied
+			// if they hit a target or are hit by something else.
+			// Just deal damage and skip sending the hit data in that case
+			// to workaround the forced dismount, since I haven't found the culprit function yet.
+			if ((GlobalCoopData::IsCoopPlayer(a_aggressor) && a_aggressor->IsOnMount()) ||
+				(GlobalCoopData::IsCoopPlayer(a_target) &&  a_target->IsOnMount()))
+			{
+				if (a_damage > 0.0f)
+				{
+					SPDLOG_DEBUG("NOPE, NO MOUNT. Have {} deal {} damage to {} instead.",
+						a_aggressor->GetName(), a_damage, a_target->GetName());
+					a_target->DoDamage(a_damage, a_aggressor, true);
+				}
+
+				return;
+			}
+
 			RE::HitData hitData{ };
 			NativeFunctions::HitData_Ctor(std::addressof(hitData));
 			hitData.Populate(a_aggressor, a_target, a_invEntryData);
@@ -9516,6 +9605,12 @@ namespace ALYSLC
 			{
 				return;
 			}
+			
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+			if (!p1)
+			{
+				return;
+			}
 
 			// Get the portal object.
 			auto teleportalActivator = RE::TESForm::LookupByID<RE::TESObjectACTI>(0x7CD55);
@@ -9524,6 +9619,86 @@ namespace ALYSLC
 			{
 				return;
 			}
+
+			// Cast downward from the target actor's head height.
+			// If nothing is hit, the player is likely under the map and freefalling.
+			const float lowerBound = 
+			(
+				Util::GetVertCollPoints
+				(
+					Util::GetRefrPosition(a_target) + 
+					RE::NiPoint3(0.0f, 0.0f, a_target->GetHeight())
+				).second
+			);
+			bool targetActorIsOOB = 
+			(
+				lowerBound <= -131072.0f || isnan(lowerBound)
+			);
+			if (targetActorIsOOB)
+			{
+				auto tes = RE::TES::GetSingleton();
+				if (!tes)
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Players are out of bounds and could not get TES singleton. Boooo."
+					);
+					return;
+				}
+
+				if (p1->parentCell)
+				{
+					SPDLOG_DEBUG("Teleport to P1's parent cell {} (0x{:X}).",
+						Util::GetEditorID(p1->parentCell), p1->parentCell->formID);
+					p1->CenterOnCell(p1->parentCell);
+				}
+				else if (auto currentCell = tes->GetCell(a_target->data.location); currentCell)
+				{
+					SPDLOG_DEBUG("Teleport to P1's current cell {} (0x{:X}).",
+						Util::GetEditorID(currentCell), currentCell->formID);
+					p1->CenterOnCell(currentCell);
+				}
+				else if (tes->worldSpace && tes->worldSpace->persistentCell)
+				{
+					SPDLOG_DEBUG
+					(
+						"Teleport to the current worldspace's persistent cell {} (0x{:X}).",
+						Util::GetEditorID(tes->worldSpace->persistentCell), 
+						tes->worldSpace->persistentCell->formID
+					);
+					p1->CenterOnCell(tes->worldSpace->persistentCell);
+				}
+				else
+				{
+					SPDLOG_ERROR
+					(
+						"ERR: Players are out of bounds "
+						"and no valid teleport position was found. Boooo."
+					);
+				}
+
+				SPDLOG_DEBUG
+				(
+					"{}: {} is out of bounds. "
+					"Moving from ({}, {}, {}) to closest door position: ({}, {}, {}). "
+					"Parent cell: {} (0x{:X}).",
+					a_teleportingActor->GetName(),
+					a_target->GetName(),
+					a_teleportingActor->data.location.x,
+					a_teleportingActor->data.location.y,
+					a_teleportingActor->data.location.z,
+					p1->data.location.x,
+					p1->data.location.y,
+					p1->data.location.z,
+					Util::GetEditorID(p1->parentCell),
+					p1->parentCell ? p1->parentCell->formID : 0xDEAD
+				);
+			}
+
+			const auto exitPortalPos = 
+			(
+				targetActorIsOOB ? p1->data.location : a_target->data.location
+			);
 
 			// Stop the actor from moving first.
 			NativeFunctions::SetDontMove(a_teleportingActor, true);
@@ -9548,7 +9723,14 @@ namespace ALYSLC
 			};
 			// Set down the entry portal at the teleporting actor's location
 			// and move the teleporting actor to it.
-			auto portalPtr = a_teleportingActor->PlaceObjectAtMe
+			RE::ActorPtr mountPtr = nullptr;
+			auto actorToMove = a_teleportingActor;
+			if (a_teleportingActor->GetMount(mountPtr) && mountPtr)
+			{
+				actorToMove = mountPtr.get();
+			}
+
+			auto portalPtr = actorToMove->PlaceObjectAtMe
 			(
 				teleportalActivator, false
 			);
@@ -9557,26 +9739,28 @@ namespace ALYSLC
 			{
 				if (shouldMoveTo)
 				{
-					a_teleportingActor->MoveTo(portalPtr.get());
+					actorToMove->MoveTo(portalPtr.get());
 				}
 				else
 				{
-					a_teleportingActor->SetPosition(portalPtr.get()->data.location, true);
+					actorToMove->SetPosition(portalPtr.get()->data.location, true);
 				}
 			}
 
-			// Set down the exit portal at the target's location
-			// and move the teleporting actor to it.
+			// Set down the exit portal at the target's location first.
 			portalPtr = a_target->PlaceObjectAtMe(teleportalActivator, false);
 			if (portalPtr)
 			{
+				// Move the portal to the teleport destination location
+				// before moving the teleporting actor to it.
+				portalPtr->SetPosition(exitPortalPos);
 				if (shouldMoveTo)
 				{
-					a_teleportingActor->MoveTo(portalPtr.get());
+					actorToMove->MoveTo(portalPtr.get());
 				}
 				else
 				{
-					a_teleportingActor->SetPosition(portalPtr.get()->data.location, true);
+					actorToMove->SetPosition(portalPtr.get()->data.location, true);
 				}
 			}
 			else
@@ -9584,11 +9768,18 @@ namespace ALYSLC
 				// If no portal materializes, move to the target actor's location instead.
 				if (shouldMoveTo)
 				{
-					a_teleportingActor->MoveTo(a_target);
+					actorToMove->MoveTo(a_target);
 				}
 				else
 				{
-					a_teleportingActor->SetPosition(a_target->data.location, true);
+					actorToMove->SetPosition(a_target->data.location, true);
+				}
+
+				// Then move to the place where the exit portal failed to spawn
+				// if the target actor is out of bounds.
+				if (targetActorIsOOB)
+				{
+					actorToMove->SetPosition(exitPortalPos, true);
 				}
 			}
 

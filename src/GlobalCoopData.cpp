@@ -4244,7 +4244,7 @@ namespace ALYSLC
 
 	bool GlobalCoopData::IsCoopPlayer(const RE::FormID& a_formID)
 	{
-		// Return true if the given FID is for a player.
+		// Return true if the given FID is for a player or a player's actor base.
 
 		auto& glob = GetSingleton();
 		return 
@@ -4254,7 +4254,80 @@ namespace ALYSLC
 				glob.coopPlayers.begin(), glob.coopPlayers.end(),
 				[a_formID](const auto& a_p) 
 				{
-					return a_p->isActive && a_p->coopActor && a_p->coopActor->formID == a_formID; 
+					return 
+					(
+						(a_p->isActive && a_p->coopActor) && 
+						(
+							(a_p->coopActor->formID == a_formID) ||
+							(
+								a_p->coopActor->GetActorBase() && 
+								a_p->coopActor->GetActorBase()->formID == a_formID
+							)
+						)
+					); 
+				}
+			)
+		);
+	}
+
+	bool GlobalCoopData::IsCoopPlayer(const RE::TESForm* a_form)
+	{
+		// Return true if the given form is a player or player actor base form.
+
+		if (!a_form)
+		{
+			return false;
+		}
+
+		auto& glob = GetSingleton();
+		return 
+		(
+			std::any_of
+			(
+				glob.coopPlayers.begin(), glob.coopPlayers.end(),
+				[a_form](const auto& a_p) 
+				{
+					return 
+					(
+						(a_p->isActive && a_p->coopActor) && 
+						(
+							(a_p->coopActor.get() == a_form) ||
+							(
+								a_p->coopActor->GetActorBase() && 
+								a_p->coopActor->GetActorBase() == a_form
+							)
+						)
+					); 
+				}
+			)
+		);
+	}
+
+	bool GlobalCoopData::IsCoopPlayer(const RE::TESNPC* a_actorBase)
+	{
+		// Return true if the given actor base is a player's actor base.
+
+		if (!a_actorBase)
+		{
+			return false;
+		}
+
+		auto& glob = GetSingleton();
+		return 
+		(
+			std::any_of
+			(
+				glob.coopPlayers.begin(), glob.coopPlayers.end(),
+				[a_actorBase](const auto& a_p) 
+				{
+					return 
+					(
+						(a_p->isActive && a_p->coopActor) && 
+						(
+							a_p->coopActor->GetActorBase() && 
+							a_p->coopActor->GetActorBase() == a_actorBase
+						)
+					); 
 				}
 			)
 		);
@@ -4857,6 +4930,16 @@ namespace ALYSLC
 			return PRECISION_API::PreHitCallbackReturn();
 		}
 		
+		/*if ((GlobalCoopData::IsCoopPlayer(a_data.attacker) && a_data.attacker->IsOnMount()) ||
+			(
+				GlobalCoopData::IsCoopPlayer(a_data.target) &&
+				a_data.target->As<RE::Actor>()->IsOnMount()
+			))
+		{
+			SPDLOG_DEBUG("NOPE, NO MOUNT.");
+			return PRECISION_API::PreHitCallbackReturn();
+		}*/
+
 		auto hitActor = a_data.target ? a_data.target->As<RE::Actor>() : nullptr;
 		auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_data.attacker); 
 		// Pass on hits where the attacking refr is not a player or the hit refr is not an actor.
@@ -4887,13 +4970,13 @@ namespace ALYSLC
 		);
 		bool isPartyFriendlyActor = Util::IsPartyFriendlyActor(hitActor);
 		bool isNeutralActor = !isHostile && !isPartyFriendlyActor;
-		bool isCrosshairTargeted = 
+		bool isDesiredTarget = 
 		(
-			hitActorHandle == p->tm->selectedTargetActorHandle
-		);
-		bool isAimCorrectionTarget = 
-		(
-			hitActorHandle == p->tm->aimCorrectionTargetHandle
+			(hitActorHandle == p->tm->selectedTargetActorHandle) ||
+			(
+				p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled && 
+				hitActorHandle == p->tm->aimCorrectionTargetHandle
+			)
 		);
 		// Only allow collisions through if targeting a hostile actor,
 		// directly targeting an neutral actor with the crosshair,
@@ -4905,12 +4988,11 @@ namespace ALYSLC
 				!hitActor->IsGhost() && !hitActor->IsInvulnerable()
 			) &&
 			(
-
 				(isHostile) ||
-				(isNeutralActor && isCrosshairTargeted) ||
+				(isNeutralActor && isDesiredTarget) ||
 				(
 					isPartyFriendlyActor && 
-					isCrosshairTargeted && 
+					isDesiredTarget && 
 					Settings::vbFriendlyFire[p->playerID]
 				)
 			)
@@ -4921,14 +5003,14 @@ namespace ALYSLC
 			(
 				"Collision between {} and {} ALLOWED. "
 				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
-				"crosshair targeted: {}, party friendly: {}, friendly fire: {}.",
+				"crosshair/aim correction targeted: {}, party friendly: {}, friendly fire: {}.",
 				p->coopActor->GetName(), 
 				hitActor->GetName(),
 				hitActor->IsGhost(),
 				hitActor->IsInvulnerable(),
 				isHostile,
 				isNeutralActor,
-				isCrosshairTargeted,
+				isDesiredTarget,
 				isPartyFriendlyActor,
 				(bool)Settings::vbFriendlyFire[p->playerID]
 			);
@@ -4972,14 +5054,14 @@ namespace ALYSLC
 			(
 				"Collision between {} and {} IGNORED. "
 				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
-				"crosshair targeted: {}, party friendly: {}, friendly fire: {}.",
+				"crosshair/aim correction targeted: {}, party friendly: {}, friendly fire: {}.",
 				p->coopActor->GetName(), 
 				hitActor->GetName(),
 				hitActor->IsGhost(),
 				hitActor->IsInvulnerable(),
 				isHostile,
 				isNeutralActor,
-				isCrosshairTargeted,
+				isDesiredTarget,
 				isPartyFriendlyActor,
 				(bool)Settings::vbFriendlyFire[p->playerID]
 			);
@@ -5107,38 +5189,47 @@ namespace ALYSLC
 					);
 				}
 
-				auto spineNodePtr = 
-				(
-					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine))
-				);
-				auto spineNode1Ptr = 
-				(
-					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine1))
-				);
-				auto spineNode2Ptr =
-				(
-					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine2))
-				);
-				auto neckNodePtr =
-				(
-					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcNeck))
-				);
-				auto headNodePtr =	
-				(
-					RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcHead))
-				);
-				// Continue early if any node is invalid.
-				if (!spineNodePtr			||
-					!spineNode1Ptr			||
-					!spineNode2Ptr			||
-					!neckNodePtr			||
-					!headNodePtr)
+				if (Settings::bEnableSpinalRotation)
 				{
-					continue;
-				}	
+					auto spineNodePtr = 
+					(
+						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcSpine))
+					);
+					auto spineNode1Ptr = 
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3DPtr->GetObjectByName(strings->npcSpine1)
+						)
+					);
+					auto spineNode2Ptr =
+					(
+						RE::NiPointer<RE::NiAVObject>
+						(
+							data3DPtr->GetObjectByName(strings->npcSpine2)
+						)
+					);
+					auto neckNodePtr =
+					(
+						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcNeck))
+					);
+					auto headNodePtr =	
+					(
+						RE::NiPointer<RE::NiAVObject>(data3DPtr->GetObjectByName(strings->npcHead))
+					);
+					// Continue early if any node is invalid.
+					if (!spineNodePtr			||
+						!spineNode1Ptr			||
+						!spineNode2Ptr			||
+						!neckNodePtr			||
+						!headNodePtr)
+					{
+						continue;
+					}	
 				
-				// Adjust torso nodes' rotations after updating blending state.
-				p->mm->nom->UpdateTorsoNodeRotationData(p);
+					// Adjust torso nodes' rotations after updating blending state.
+					p->mm->nom->UpdateTorsoNodeRotationData(p);
+				}
 			}
 		}
 	}

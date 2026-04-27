@@ -651,6 +651,23 @@ namespace ALYSLC
 			}
 		}
 
+		// Look down at the ground or at the targeted world position
+		// to choose the destination point before casting 
+		// to maximize chances of a successful location-based cast, for P1 especially,
+		// since the game will check the casting direction (determined by the player's X angle) 
+		// and will not perform the cast if the player is looking at 
+		// a non-traversable location, such as the sky.
+		// Pitch angle will reset in the movement manager on the next iteration.
+		inline void PrepForTargetLocationSpellCast(RE::SpellItem* a_spell)
+		{
+			if (!a_spell || a_spell->GetDelivery() != RE::MagicSystem::Delivery::kTargetLocation)
+			{
+				return;
+			}
+			
+			coopActor->data.angle.x = 4.0f * PI / 9.0f;
+		}
+
 		//
 		// Member funcs
 		//

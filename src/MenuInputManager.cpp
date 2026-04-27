@@ -8231,7 +8231,8 @@ namespace ALYSLC
 							if ((!isRequestedMenu || !crosshairPickData) || 
 								(
 									currentReq.fromAction != InputAction::kMoveCrosshair || 
-									!p->tm->crosshairFreeAimActive
+									p->tm->crosshairTargetingMode == 
+									CrosshairTargetingMode::kDisabled
 								))
 							{
 								break;

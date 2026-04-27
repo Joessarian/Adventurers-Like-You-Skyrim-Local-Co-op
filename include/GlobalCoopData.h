@@ -860,6 +860,8 @@ namespace ALYSLC
 		static bool IsCoopPlayer(const RE::TESObjectREFRPtr& a_refrPtr);
 		static bool IsCoopPlayer(const RE::ObjectRefHandle& a_refrHandle);
 		static bool IsCoopPlayer(const RE::FormID& a_formID);
+		static bool IsCoopPlayer(const RE::TESForm* a_form);
+		static bool IsCoopPlayer(const RE::TESNPC* a_actorBase);
 		static bool IsCoopPlayerInventoryChest(RE::TESObjectREFR* a_refr);
 		static bool IsCoopPlayerInventoryChest(const RE::TESObjectREFRPtr& a_refrPtr);
 		

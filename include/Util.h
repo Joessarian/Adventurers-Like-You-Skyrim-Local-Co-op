@@ -1724,65 +1724,7 @@ namespace ALYSLC
 		//===================
 		// [Everything Else]:
 		//===================
-
-		// Return true if the given actor activating the given object refr would be considered 
-		// stealing or trigger an alarm.
-		inline bool ActivationIsOffLimits(RE::Actor* a_actor, RE::TESObjectREFR* a_refr)
-		{
-			if (!a_actor || !a_refr)
-			{
-				return false;
-			}
-
-			bool isUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, true, true);
-			bool isUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, true, false);
-			bool isDoNotUseFactionRequiredOwner = a_refr->IsAnOwner(a_actor, false, true);
-			bool isDoNotUseFactionNoRequiredOwner = a_refr->IsAnOwner(a_actor, false, false);
-			const auto actorOwner = a_refr->GetActorOwner();
-			const auto formOwner = a_refr->GetOwner();
-			const auto formFaction = formOwner ? formOwner->As<RE::TESFaction>() : nullptr;
-			const auto exDataOwner = a_refr->extraList.GetOwner();
-			const auto owningFaction = a_refr->GetFactionOwner();
-			auto baseObj = a_refr->GetBaseObject();
-			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
-			// but steal/trespass alarm may sound.
-			SPDLOG_DEBUG
-			(
-				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
-				"Actor owner: {}, form owner: {}, form faction: {}, "
-				"exData owner: {}, faction owner: {}. "
-				"Owning faction is enemy: {}, tracks crimes: {}. Would be stealing: {}.",
-				a_actor->GetName(),
-				a_refr->GetName(),
-				(
-					(a_refr->IsLocked() || a_refr->IsDead()) || 
-					(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
-					(!a_actor->WouldBeStealing(a_refr))
-				) ?
-				"activatable" :
-				"off limits",
-				isUseFactionRequiredOwner,
-				isUseFactionNoRequiredOwner,
-				isDoNotUseFactionRequiredOwner,
-				isDoNotUseFactionNoRequiredOwner,
-				actorOwner ? Util::GetEditorID(actorOwner) : "NONE",
-				formOwner ? Util::GetEditorID(formOwner) : "NONE",
-				formFaction ? Util::GetEditorID(formFaction) : "NONE",
-				exDataOwner ? Util::GetEditorID(exDataOwner) : "NONE",
-				owningFaction ? Util::GetEditorID(owningFaction) : "NONE",
-				owningFaction ? owningFaction->IsPlayerEnemy() : false,
-				owningFaction ? owningFaction->TracksCrimes() : false,
-				a_actor->WouldBeStealing(a_refr)
-			);
-			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
-				(baseObj && baseObj->As<RE::TESObjectDOOR>()))
-			{
-				return false;
-			}
-
-			return a_actor->WouldBeStealing(a_refr);
-		}
-
+		
 		// Return true if the actor is enabled, has loaded 3D, its handle is valid,
 		// has a valid current process and character controller, 
 		// and if its parent cell is attached.
@@ -2499,6 +2441,33 @@ namespace ALYSLC
 			const auto invCounts = a_refr->GetInventoryCounts();
 			const auto iter = invCounts.find(a_object);
 			return (iter != invCounts.end() ? max(0, iter->second) : 0);
+		}
+
+		// Get the count for the given item from the given refr's inventory changes.
+		inline int32_t GetInventoryChangesItemCount
+		(
+			RE::TESObjectREFR* a_refr, RE::TESBoundObject* a_object
+		)
+		{
+			if (!a_refr || !a_object)
+			{
+				return 0;
+			}
+			
+			auto invChanges = a_refr->GetInventoryChanges();
+			RE::InventoryEntryData* ammoEntry = nullptr;
+			if (invChanges && invChanges->entryList)
+			{
+				for (auto entry : *invChanges->entryList)
+				{
+					if (entry && entry->object == a_object)
+					{
+						return entry->countDelta;
+					}
+				}
+			}
+
+			return 0;
 		}
 
 		// Get the given refr's inventory entry data for the given bound object.
@@ -4239,6 +4208,10 @@ namespace ALYSLC
 		//====================
 		//[Utility Functions]:
 		//====================
+
+		// Return true if the given actor activating the given object refr would be considered 
+		// stealing or trigger an alarm.
+		bool ActivationIsOffLimits(RE::Actor* a_actor, RE::TESObjectREFR* a_refr);
 
 		// Add the given target actor as a combat target for the source actor.
 		void AddAsCombatTarget

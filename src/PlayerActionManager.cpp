@@ -1931,12 +1931,21 @@ namespace ALYSLC
 		}
 
 		RE::NiPoint3 targetPos = coopActor->data.location;
-		auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(p->tm->crosshairRefrHandle); 
-		if (crosshairRefrPtr)
+		const bool crosshairActive = 
+		(
+			p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled
+		);
+		auto targetRefrPtr = Util::GetRefrPtrFromHandle
+		(
+			crosshairActive ? 
+			p->tm->crosshairRefrHandle :
+			p->tm->aimCorrectionTargetHandle
+		); 
+		if (targetRefrPtr)
 		{
-			targetPos = crosshairRefrPtr->data.location;
+			targetPos = targetRefrPtr->data.location;
 		}
-		else if (p->mm->reqFaceTarget)
+		else if (crosshairActive && p->mm->reqFaceTarget)
 		{
 			targetPos = p->tm->crosshairWorldPos;
 		}
@@ -2041,14 +2050,21 @@ namespace ALYSLC
 		// even trying all the debug reset options.
 		// So, until I find a solution, we'll cast subsequent beams
 		// only after the first one is faded and no longer active.
-
+		
+		// Aim downward at the ground below if casting a target location spell.
+		if (a_index == EquipIndex::kQuickSlotSpell || a_index == EquipIndex::kVoice)
+		{
+			PrepForTargetLocationSpellCast(spell);
+		}
+		
+		// Update aim correction and ranged attack package target before casting.
+		p->tm->UpdateAimCorrectionTarget();
+		p->tm->UpdateAimTargetLinkedRefr(a_index);
 		if (a_startCast)
 		{
 			// Quick slot or voice spell cast.
 			if (a_index == EquipIndex::kQuickSlotSpell || a_index == EquipIndex::kVoice)
 			{
-				// Set ranged attack package target.
-				p->tm->UpdateAimTargetLinkedRefr(a_index);
 				auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimTargetLinkedRefrHandle);
 				bool targetValidity = targetPtr && Util::IsValidRefrForTargeting(targetPtr.get());
 				// Will use instant caster.
@@ -2411,7 +2427,6 @@ namespace ALYSLC
 
 					// No magicka cost for P1.
 					otherCaster->currentSpellCost = 0.0f;
-					p->tm->UpdateAimTargetLinkedRefr(a_index);
 					auto targetPtr = Util::GetRefrPtrFromHandle(p->tm->aimTargetLinkedRefrHandle);
 					bool targetValidity = 
 					(
@@ -2436,8 +2451,6 @@ namespace ALYSLC
 				}
 				else
 				{
-					// Set target.
-					p->tm->UpdateAimTargetLinkedRefr(a_index);
 					auto targetPtr = Util::GetRefrPtrFromHandle
 					(
 						p->tm->aimTargetLinkedRefrHandle
@@ -6322,7 +6335,7 @@ namespace ALYSLC
 			{
 				targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 				(
-					PI, RE::ObjectRefHandle(), false, -1.0f, false
+					PI, false, -1.0f, false
 				);
 			}
 
@@ -6341,7 +6354,7 @@ namespace ALYSLC
 				{
 					targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 					(
-						PI, RE::ObjectRefHandle(), true, weapReach, false
+						PI, true, weapReach * 1.5f, false
 					);
 				}
 			}
@@ -7030,7 +7043,7 @@ namespace ALYSLC
 		{
 			const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
 			if ((isWeapMagDrawn) &&
-				(p->em->Has2HRangedWeapEquipped() || p->em->HasRHStaffEquipped()) &&
+				(p->em->Has2HRangedWeapEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
 					AllInputsPressedForAction(InputAction::kAttackRH)
@@ -7074,7 +7087,8 @@ namespace ALYSLC
 				(p->em->HasRHStaffEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackRH)
+					AllInputsPressedForAction(InputAction::kAttackRH) ||
+					isInCastingAnimRH
 				))
 			{
 				auto rhWeap = p->em->GetRHWeapon();
@@ -7092,7 +7106,8 @@ namespace ALYSLC
 				(p->em->HasLHStaffEquipped()) &&
 				(
 					GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackLH)
+					AllInputsPressedForAction(InputAction::kAttackLH) ||
+					isInCastingAnimLH
 				))
 			{
 				auto lhWeap = p->em->GetLHWeapon();

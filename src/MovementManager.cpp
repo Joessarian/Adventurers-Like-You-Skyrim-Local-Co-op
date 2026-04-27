@@ -271,10 +271,11 @@ namespace ALYSLC
 		aimPitchManuallyAdjusted = false;
 		attemptDiscovery = false;
 		dontMoveSet = true;
-		faceTarget = false;
+		faceCrosshairPos = false;
 		inRangeOfUndiscoveredMarker = false;
 		interactionInRange = false;
 		interactionPackageRunning = false;
+		inTwinStickMode = false;
 		isAirborneWhileJumping = false;
 		isAnimDriven = false;
 		isBackStepDodge = false;
@@ -567,7 +568,10 @@ namespace ALYSLC
 		{
 			framesSinceStartingDashDodge = framesSinceRequestingDashDodge = 0;
 			dashDodgeCompletionRatio = 0.0f;
-			if (reqFaceTarget)
+			// Turn to face the crosshair position before dodging
+			// to make sure the dodge direction is determined by to the angle difference
+			// between the player and the crosshair position.
+			if (reqFaceTarget && !inTwinStickMode)
 			{
 				coopActor->data.angle.z = Util::NormalizeAng0To2Pi
 				(
@@ -2031,7 +2035,7 @@ namespace ALYSLC
 			// While attacking, if targeting an actor while not facing them,
 			// look at the actor's torso; otherwise look at the crosshair world position.
 			auto rangedTargetActorPtr = Util::GetActorPtrFromHandle(p->tm->GetRangedTargetActor());
-			bool lookAtTorso = !reqFaceTarget && rangedTargetActorPtr;
+			bool lookAtTorso = (rangedTargetActorPtr) && (!reqFaceTarget || inTwinStickMode);
 			if (lookAtTorso)
 			{
 				auto torsoPos = Util::GetTorsoPosition(rangedTargetActorPtr.get());
@@ -2227,23 +2231,25 @@ namespace ALYSLC
 				targetLocation - coopActor->data.location
 			);
 			// Save old turn to/face target state to record changes.
-			bool oldFaceTarget = faceTarget;
+			bool oldFaceCrosshairPos = faceCrosshairPos;
 			bool oldTurnToTarget = turnToTarget;
 			// Stay facing the target position.
 			// Conditions:
 			// 1. FaceTarget toggled on.
 			// 2. Not reviving another player.
-			// 3. Not dodging.
-			// 4. Not mounted.
-			// 5. Not swimming.
-			// 6. Not sprinting and not sneak rolling.
-			// 7. No crosshair target or not trying to face grabbed/released target.
-			faceTarget = 
+			// 3. Not in twin-stick mode.
+			// 4. Not dodging.
+			// 5. Not mounted.
+			// 6. Not swimming.
+			// 7. Not sprinting and not sneak rolling.
+			// 8. No crosshair target or not trying to face grabbed/released target.
+			faceCrosshairPos = 
 			{
 				(
 					reqFaceTarget && 
 					p->coopActor->IsWeaponDrawn() &&
-					!p->isRevivingPlayer && 
+					!p->isRevivingPlayer &&
+					!inTwinStickMode &&
 					!isTKDodging && 
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
@@ -2271,12 +2277,12 @@ namespace ALYSLC
 			// 2. Not dodging.
 			// 3. Not mounted.
 			// 4. Not swimming.
-			// 5. Reviving another player or using weapons/magic 
-			// with a valid target while not sprinting.
+			// 5. Reviving another player, about to throw objects in twin-stick mode,
+			// or using weapons/magic with a valid target while not sprinting.
 			turnToTarget = 
 			{ 
 				(
-					!faceTarget && 
+					!faceCrosshairPos && 
 					!isTKDodging && 
 					!isTDMDodging && 
 					!isDashDodging && 
@@ -2286,10 +2292,19 @@ namespace ALYSLC
 				(
 					(p->isRevivingPlayer) || 
 					(
-						p->pam->TurnToTargetForCombatAction() &&
-						!p->pam->IsPerforming(InputAction::kSprint) &&
-						targetActorPtr &&
-						Util::IsValidRefrForTargeting(targetActorPtr.get())
+						(
+							(p->pam->TurnToTargetForCombatAction()) ||
+							(
+								inTwinStickMode && 
+								p->tm->rmm->isGrabbing &&
+								p->pam->IsPerforming(InputAction::kGrabObject)
+							)
+						) &&
+						(
+							!p->pam->IsPerforming(InputAction::kSprint) &&
+							targetActorPtr &&
+							Util::IsValidRefrForTargeting(targetActorPtr.get())
+						)
 					)
 				) 
 			};
@@ -2306,16 +2321,16 @@ namespace ALYSLC
 				(wasSwimming == isSwimming) &&
 				(
 					(
-						(turnToTarget || faceTarget) && 
-						(!oldTurnToTarget && !oldFaceTarget)
+						(turnToTarget || faceCrosshairPos) && 
+						(!oldTurnToTarget && !oldFaceCrosshairPos)
 					) ||
 					(
-						(!turnToTarget && !faceTarget) && 
-						(oldTurnToTarget || oldFaceTarget)
+						(!turnToTarget && !faceCrosshairPos) && 
+						(oldTurnToTarget || oldFaceCrosshairPos)
 					)
 				)
 			);
-			if (turnToTarget || faceTarget) 
+			if (turnToTarget || faceCrosshairPos) 
 			{
 				// Slow down rotation quickly if too close to the target
 				// since the angle to the target changes too rapidly 
@@ -2402,6 +2417,21 @@ namespace ALYSLC
 					playerTargetYaw = yawToTarget;
 				}
 			}
+			else if (inTwinStickMode &&
+					 !coopActor->IsOnMount() && 
+					 !p->pam->IsRotatingArms() && 
+					 !p->pam->IsPerforming(InputAction::kSprint) &&
+					 !p->tm->isSMORFing &&
+					 !p->tm->isMARFing)
+			{
+				// Turn to face the right stick's direction when only moving the RS.
+				// Otherwise, maintain the current rotation.
+				if (p->pam->IsPerforming(InputAction::kMoveCrosshair))
+				{
+					const auto& moveZAngle = movementOffsetParams[!MoveParams::kRSGameAng];
+					playerTargetYaw = moveZAngle;
+				}
+			}
 			else if (lsMoved)
 			{
 				// Turn to face the player movement direction.
@@ -2426,6 +2456,8 @@ namespace ALYSLC
 
 		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
 		const auto& lsMag = lsData.normMag;
+		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
+		const auto& rsMag = rsData.normMag;
 		// X axis is to the right of the player's facing direction.
 		// Y axis is in the player's facing direction.
 		float xPosOffset = 0.0f;
@@ -2521,7 +2553,10 @@ namespace ALYSLC
 			bool isUnequipping = false;
 			coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-			// Must rotate to face the player's movement direction
+			// Rotate when paragliding, since P1 is motion driven,
+			// and adjust rotation when mounted to have more consistency
+			// in mount rotation rates between P1 and companion players.
+			// Must also rotate to face the player's movement direction
 			// when equipping or unequipping, 
 			// since P1 is motion driven and may not 
 			// have 360 degree movement when not AI driven.
@@ -2530,9 +2565,10 @@ namespace ALYSLC
 			bool shouldRotateWhileMotionDriven = 
 			{
 				(isParagliding) || 
+				(coopActor->IsOnMount()) ||
 				(
 					(!ALYSLC::TrueDirectionalMovementCompat::g_installed) && 
-					(isEquipping || isUnequipping || coopActor->IsOnMount())
+					(isEquipping || isUnequipping)
 				)
 			};
 			if (shouldRotateWhileMotionDriven) 
@@ -2734,7 +2770,9 @@ namespace ALYSLC
 				(
 					movementActorPtr->GetHandle(), 
 					RE::NiPoint3(0.0f, -10.0f, 0.0f), 
-					RE::NiPoint3(), 0.0f, 0.0f
+					RE::NiPoint3(), 
+					0.0f, 
+					0.0f
 				);
 			}
 			else if (framesSinceRequestingDashDodge <= 1)
@@ -2805,7 +2843,7 @@ namespace ALYSLC
 			{
 				SetDontMove(true);
 			}
-			else if (faceTarget || turnToTarget) 
+			else if (faceCrosshairPos || turnToTarget) 
 			{
 				// Only Z rotation needed if stopped and turning to or facing a target.
 				// No need to keep an offset when the player is already facing the target.
@@ -2857,6 +2895,7 @@ namespace ALYSLC
 			else
 			{
 				// Clear previous offset first.
+				Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
 				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
 				// No slowdown or catch up radius.
 				// NOTE: 
@@ -3104,27 +3143,41 @@ namespace ALYSLC
 		bool turningToCrosshairTarget = isUsingWeapMag && crosshairRefrValidity;
 		bool usingAimCorrectionOrLinkedTarget = 
 		(
-			aimCorrectionTargetValidity && 
-			!turningToCrosshairTarget && 
-			Settings::vbUseAimCorrection[playerID] && 
-			!reqFaceTarget && 
-			isUsingWeapMag
+			(!reqFaceTarget || inTwinStickMode) &&
+			(
+				aimCorrectionTargetValidity && 
+				!turningToCrosshairTarget && 
+				Settings::vbUseAimCorrection[playerID] && 
+				isUsingWeapMag
+			) 
 		);
 		// Also haven't figured out how to properly account for 
 		// different default spinal rotations when transformed,
 		// so don't adjust aim pitch to face the target while transformed for now.
 		// Can still manually adjust the transformed player's spinal rotation though.
-		adjustAimPitchToFaceTarget = 
-		{ 
-			(!p->isTransformed) && 
-			(
-				(reqFaceTarget && p->coopActor->IsWeaponDrawn()) || 
-				turningToCrosshairTarget || 
-				usingAimCorrectionOrLinkedTarget ||
-				p->tm->isMARFing ||
-				p->tm->isSMORFing
-			) 
-		};
+		if (p->tm->isMARFing || p->tm->isSMORFing)
+		{
+			adjustAimPitchToFaceTarget = 
+			{ 
+				(!p->isTransformed && reqFaceTarget) && 
+				(
+					p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled ||
+					Util::HandleIsValid(p->tm->aimCorrectionTargetHandle)
+				)
+			};
+		}
+		else
+		{
+			adjustAimPitchToFaceTarget = 
+			{ 
+				(!p->isTransformed && p->coopActor->IsWeaponDrawn()) && 
+				(
+					(!inTwinStickMode && reqFaceTarget) || 
+					(turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget)
+				) 
+			};
+		}
+		
 		// Default to pitching towards the current crosshair position,
 		// but if an aim correction target is selected,
 		// or if not facing the crosshair position and an actor is selected with the crosshair,
@@ -3920,6 +3973,11 @@ namespace ALYSLC
 		
 		// Save torso position this frame to use elsewhere.
 		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
+		// Update twin-stick mode flag.
+		inTwinStickMode = 
+		(
+			reqFaceTarget && p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled
+		);
 
 		// Update current mount.
 		if (!coopActor->IsOnMount() && Util::HandleIsValid(p->currentMountHandle))
@@ -4069,7 +4127,7 @@ namespace ALYSLC
 			// when turning to face a target.
 			bool stopWhenTurningToTarget = 
 			(
-				(movementYawTargetChanged) && (turnToTarget || faceTarget)
+				(movementYawTargetChanged) && (turnToTarget || faceCrosshairPos)
 			);
 			// Do not completely stop the player when they're performing a killmove.
 			// Otherwise, well, they won't perform the killmvoe.
@@ -4450,7 +4508,7 @@ namespace ALYSLC
 		data->defaultRotation = a_nodePtr->local.rotate;
 		// Set new local rotations before the UpdateDownwardPass() call,
 		// so that it can use our modified local rotations to set the nodes' new world rotations.
-		if (isTorsoNode || Settings::bEnableArmsRotation)
+		if (Settings::bEnableSpinalRotation || Settings::bEnableArmsRotation)
 		{
 			a_nodePtr->local.rotate = data->currentRotation;
 		}
@@ -8600,38 +8658,67 @@ namespace ALYSLC
 						// Yaw offset endpoints.
 						float prevYawOffset = torsoData->rotationInput[0];
 						float yawOffset = 0.0f;
-						// Must be targeting something with the crosshair.
-						auto crosshairRefrPtr = Util::GetRefrPtrFromHandle
+						// Must be targeting something with the crosshair
+						// or have an aim correction target if the crosshair is disabled.
+						const bool crosshairActive = 
 						(
-							a_p->tm->crosshairRefrHandle
+							a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled
 						);
-						if (crosshairRefrPtr && 
-							Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
+						const auto targetActorHandle = a_p->tm->GetRangedTargetActor();
+						const auto targetActorPtr = Util::GetActorPtrFromHandle
+						(
+							targetActorHandle
+						);
+						bool targetActorValidity = 
+						(
+							targetActorPtr && Util::IsValidRefrForTargeting(targetActorPtr.get())
+						);
+						auto targetPos = RE::NiPoint3();
+						if ((crosshairActive) && 
+							(
+								!targetActorValidity || 
+								Util::HandleIsValid(a_p->tm->crosshairRefrHandle)
+							))
+						{
+							// Use the crosshair world position if the crosshair is active
+							// and there is no targeted actor or the crosshair refr handle
+							// is valid.
+							targetPos = a_p->tm->crosshairWorldPos;
+						}
+						else if (targetActorValidity)
+						{
+							// Aim at the target's torso if available.
+							targetPos = Util::GetTorsoPosition(targetActorPtr.get());
+						}
+
+						// If a target position was set, modify the yaw offset.
+						if (targetPos.Length() != 0.0f)
 						{
 							// Yaw offset is determined relative to the default facing angle
 							// and position.
-							auto playerAimYaw = Util::DirectionToGameAngYaw
+							const float playerAimYaw = Util::DirectionToGameAngYaw
 							(
 								a_p->mm->playerDefaultAttackSourceDir
 							);
-							float playerToTargetYaw = Util::GetYawBetweenPositions
+							const float playerToTargetYaw = Util::GetYawBetweenPositions
 							(
-								a_p->mm->playerDefaultAttackSourcePos, a_p->tm->crosshairWorldPos
+								a_p->mm->playerDefaultAttackSourcePos, targetPos
 							);
 							yawOffset = Util::NormalizeAngToPi(playerAimYaw - playerToTargetYaw);
-							// Prevent interpolation along the 'longer' path 
-							// between the two yaw endpoints by shifting the target endpoint 
-							// to an equivalent angle that is closer to the starting endpoint.
-							if (fabsf(yawOffset - prevYawOffset) > PI) 
+						}
+							
+						// Prevent interpolation along the 'longer' path 
+						// between the two yaw endpoints by shifting the target endpoint 
+						// to an equivalent angle that is closer to the starting endpoint.
+						if (fabsf(yawOffset - prevYawOffset) > PI) 
+						{
+							if (yawOffset <= 0.0f) 
 							{
-								if (yawOffset <= 0.0f) 
-								{
-									yawOffset += 2.0f * PI;
-								}
-								else
-								{
-									yawOffset -= 2.0f * PI;
-								}
+								yawOffset += 2.0f * PI;
+							}
+							else
+							{
+								yawOffset -= 2.0f * PI;
 							}
 						}
 

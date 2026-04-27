@@ -212,6 +212,7 @@ namespace ALYSLC
 				tempMag -= deadZone;
 				// Normalized displacement magnitude based on the maxiumum mag.
 				newNormMag = data.maxMag > 0.0f ? min(1.0f, tempMag / data.maxMag) : 0.0f;
+				//newNormMag *= newNormMag;
 			}
 		}
 
