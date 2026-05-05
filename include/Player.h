@@ -48,6 +48,7 @@ namespace ALYSLC
 		void RefreshData() override;
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
+		void Update() override;
 
 		// Get player's current mount. Can be none.
 		inline RE::ActorPtr GetCurrentMount()
@@ -139,6 +140,10 @@ namespace ALYSLC
 		// Make sure all co-op companions have the same factions as P1.
 		void SyncPlayerFactions();
 		
+		// For this player's linked controller device,
+		// update angle/displacement parameters for both analog sticks.
+		void UpdateAnalogStickData();
+
 		// Refresh all player data for this player, post-initialization.
 		void UpdateCoopPlayer
 		(
@@ -222,6 +227,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastActivationCheckTP;
 		// Time point indicating when the activate action last started.
 		SteadyClock::time_point lastActivationStartTP;
+		// Time point indicating when the aim correction target was last set to a valid target.
+		SteadyClock::time_point lastAimCorrectionTargetSetTP;
 		// Time point indicating when the player last started any attack.
 		SteadyClock::time_point lastAttackStartTP;
 		// Time point indicating when the last grabbed refr was auto-grabbed.
@@ -261,8 +268,10 @@ namespace ALYSLC
 		SteadyClock::time_point lastLHCastChargeStartTP;
 		// Time point indicating when the last LH spell cast started (companion players only).
 		SteadyClock::time_point lastLHCastStartTP;
-		// Time point indicating when the player's lock on target was last updated (set or cleared).
-		SteadyClock::time_point lastLockOnTargetUpdateTP;
+		// Time points indicating when the player's activation/aim lock on target 
+		// was last updated (set or cleared).
+		SteadyClock::time_point lastLockOnActivationTargetUpdateTP;
+		SteadyClock::time_point lastLockOnAimTargetUpdateTP;
 		// Time point indicating when the player last attempted to start moving.
 		SteadyClock::time_point lastMovementStartReqTP;
 		// Time point indicating when the player last attempted to stop moving.
@@ -321,6 +330,22 @@ namespace ALYSLC
 		RE::BGSKeyword* aimTargetKeyword;
 		// Saved player race prior to transforming.
 		RE::TESRace* preTransformationRace;
+		
+		// Analog stick float parameters based on orientation and displacement:
+		// Left stick xOffset, 
+		// Left stick yOffset, 
+		// Right stick xOffset, 
+		// Right stick yOffset, 
+		// Left stick in-game Z angle (left stick absolute game angle + cam angle), 
+		// Right stick in-game Z angle (right stick absolute game angle + cam angle),
+		// Change in left stick absolute game angle since the last iteration, 
+		// Change in right stick absolute game angle since the last iteration, 
+		// Absolute left stick Z game angle (not factoring in cam angle).
+		// Absolute right stick Z game angle (not factoring in cam angle).
+		// Previous frame's absolute left stick Z game angle (not factoring in cam angle).
+		// Previous frame's absolute right stick Z game angle (not factoring in cam angle).
+		std::array<float, (size_t)!AnalogStickParams::kTotal> analogStickParams;
+
 		// Has this player been dismissed (DismissPlayer() called) 
 		// during the current co-op session?
 		// Set to true BEFORE the current co-op session ends 
@@ -360,6 +385,10 @@ namespace ALYSLC
 		bool isTransformed;
 		// Is this player transforming post-spell cast (not the transformation race yet)?
 		bool isTransforming;
+		// Player is moving the left stick.
+		bool lsMoved;
+		// Player is moving the right stick.
+		bool rsMoved;
 		// Is the player actor valid this frame or was it invalid previously?
 		bool selfValid;
 		bool selfWasInvalid;

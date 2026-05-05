@@ -99,7 +99,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(openedMenuMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Lock acquired and data updated (0x{:X}). "
 						"Setting new menu opened flag to false.", 
@@ -109,7 +109,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Could not acquire lock after updating data (0x{:X}). "
 						"Better luck next time.", 
@@ -139,7 +139,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(equipEventMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Lock acquired and data updated (0x{:X}). "
 						"Resetting refresh equip state flag from {}, to false.",
@@ -154,7 +154,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Could not acquire lock after updating data (0x{:X}). "
 						"Better luck next time.",
@@ -177,7 +177,7 @@ namespace ALYSLC
 
 	void MenuInputManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("PrePauseTask.");
+		DBG("PrePauseTask.");
 
 		// Update favorited physical forms if the player was in their inventory.
 		// Since the player may have (un)favorited new forms while in their inventory, 
@@ -250,7 +250,7 @@ namespace ALYSLC
 
 		if (managerMenuDID < 0) 
 		{
-			SPDLOG_DEBUG("Got invalid device ID ({}).", managerMenuDID);
+			DBG("Got invalid device ID ({}).", managerMenuDID);
 			return;
 		}
 
@@ -369,7 +369,7 @@ namespace ALYSLC
 			// Leave error message before returning.
 			if (err != ERROR_SUCCESS && managerMenuDID != -1)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Could not get XINPUT state for device ID {}. Pausing menu input manager.", 
 					managerMenuDID
@@ -421,7 +421,7 @@ namespace ALYSLC
 		
 		isShowingInventory = false;
 		// Restore P1's data first.
-		SPDLOG_DEBUG("Switching tabs over to P1's inventory.");
+		DBG("Switching tabs over to P1's inventory.");
 		GlobalCoopData::CopyOverCoopPlayerData
 		(
 			false, RE::ContainerMenu::MENU_NAME, menuCoopActorHandle
@@ -489,7 +489,7 @@ namespace ALYSLC
 		managerMenuPID = pIndex;
 		managerMenuDID = glob.coopPlayers[managerMenuPID]->deviceID;
 		// Import companion player's data first.
-		SPDLOG_DEBUG("Switching tabs back to {}'s inventory.", 
+		DBG("Switching tabs back to {}'s inventory.", 
 			glob.coopPlayers[managerMenuPID]->coopActor->GetName());
 		GlobalCoopData::CopyOverCoopPlayerData
 		(
@@ -805,22 +805,22 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("++++++++++++++++++++++++++++++++++BOOK++++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("---------------------------------Gamepad----------------------------------");
+		DBG("==========================================================================");
+		DBG("++++++++++++++++++++++++++++++++++BOOK++++++++++++++++++++++++++++++++++++");
+		DBG("---------------------------------Gamepad----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Keyboard---------------------------------");
+		DBG("---------------------------------Keyboard---------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Mouse------------------------------------");
+		DBG("---------------------------------Mouse------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kConsole];
@@ -829,22 +829,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("++++++++++++++++++++++++++++++++CONSOLE+++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("++++++++++++++++++++++++++++++++CONSOLE+++++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kCursor];
@@ -853,22 +853,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++++CURSOR+++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("---------------------------------Gamepad----------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++++CURSOR+++++++++++++++++++++++++++++++++++");
+		DBG("---------------------------------Gamepad----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Keyboard---------------------------------");
+		DBG("---------------------------------Keyboard---------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Mouse------------------------------------");
+		DBG("---------------------------------Mouse------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kDebugOverlay];
@@ -877,22 +877,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++DEBUGOVERLAY+++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("---------------------------------Gamepad----------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++DEBUGOVERLAY+++++++++++++++++++++++++++++++");
+		DBG("---------------------------------Gamepad----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kFavorites];
@@ -901,22 +901,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++FAVORITES++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++FAVORITES++++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kGameplay];
@@ -925,22 +925,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++GAMEPLAY+++++++++++++++++++++++_+++++++++++");
-		SPDLOG_DEBUG("-------------------------------Gamepad------------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++GAMEPLAY+++++++++++++++++++++++_+++++++++++");
+		DBG("-------------------------------Gamepad------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Keyboard-----------------------------------");
+		DBG("-------------------------------Keyboard-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Mouse--------------------------------------");
+		DBG("-------------------------------Mouse--------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kInventory];
@@ -949,22 +949,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++INVENTORY++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++INVENTORY++++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kItemMenu];
@@ -973,22 +973,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++ITEMMENU+++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("-------------------------------Gamepad------------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++ITEMMENU+++++++++++++++++++++++++++++++++++");
+		DBG("-------------------------------Gamepad------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Keyboard-----------------------------------");
+		DBG("-------------------------------Keyboard-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Mouse--------------------------------------");
+		DBG("-------------------------------Mouse--------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kJournal];
@@ -997,22 +997,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("++++++++++++++++++++++++++++++++JOURNAL+++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("++++++++++++++++++++++++++++++++JOURNAL+++++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Mouse------------------------------------");
+		DBG("---------------------------------Mouse------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kLockpicking];
@@ -1021,22 +1021,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("++++++++++++++++++++++++++++++LOCKPICKING+++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("++++++++++++++++++++++++++++++LOCKPICKING+++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Keyboard----------------------------------");
+		DBG("---------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("---------------------------------Mouse------------------------------------");
+		DBG("---------------------------------Mouse------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kMap];
@@ -1045,22 +1045,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("++++++++++++++++++++++++++++++++++MAP+++++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("---------------------------------Gamepad----------------------------------");
+		DBG("==========================================================================");
+		DBG("++++++++++++++++++++++++++++++++++MAP+++++++++++++++++++++++++++++++++++++");
+		DBG("---------------------------------Gamepad----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode];
@@ -1069,22 +1069,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++MENUMODE+++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("-------------------------------Gamepad------------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++MENUMODE+++++++++++++++++++++++++++++++++++");
+		DBG("-------------------------------Gamepad------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Keyboard-----------------------------------");
+		DBG("-------------------------------Keyboard-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("-------------------------------Mouse--------------------------------------");
+		DBG("-------------------------------Mouse--------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 		
 		inputContext = inputContextLists[RE::UserEvents::INPUT_CONTEXT_ID::kStats];
@@ -1093,22 +1093,22 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("==========================================================================");
-		SPDLOG_DEBUG("+++++++++++++++++++++++++++++++++STATS++++++++++++++++++++++++++++++++++++");
-		SPDLOG_DEBUG("--------------------------------Gamepad-----------------------------------");
+		DBG("==========================================================================");
+		DBG("+++++++++++++++++++++++++++++++++STATS++++++++++++++++++++++++++++++++++++");
+		DBG("--------------------------------Gamepad-----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kGamepad])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Keyboard----------------------------------");
+		DBG("--------------------------------Keyboard----------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kKeyboard])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
-		SPDLOG_DEBUG("--------------------------------Mouse-------------------------------------");
+		DBG("--------------------------------Mouse-------------------------------------");
 		for (auto& binds : inputContext->deviceMappings[RE::INPUT_DEVICE::kMouse])
 		{
-			SPDLOG_DEBUG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
+			DBG("EventID: {} -> DXSCAN: 0x{:X}", binds.eventID, binds.inputKey);
 		}
 	}
 
@@ -1140,7 +1140,7 @@ namespace ALYSLC
 		const float interpValue = pmcFadeInterpData->UpdateInterpolatedValue(tempMenuOpenForCoop);
 
 		// REMOVE when done debugging.
-		/*SPDLOG_DEBUG
+		/*DBG
 		(
 			"Attempting to open setup menu: {}. Temp menu open: {}. "
 			"Interped value: {}. Interp to min/max: {}, {}. Time since direction change: {}. "
@@ -1366,7 +1366,7 @@ namespace ALYSLC
 					return;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} at index {} is mapped to {}. Entries to indices map size: {} (empty: {}).", 
 					index < favoritesMenu->favorites.size() && 
@@ -1474,7 +1474,7 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG("{} {}.", equipped ? "Equipped" : "Unequipped", entryStr);
+				DBG("{} {}.", equipped ? "Equipped" : "Unequipped", entryStr);
 
 				// Set entry text and then insert back into the list.
 				entryText.SetString(entryStr);
@@ -1936,7 +1936,7 @@ namespace ALYSLC
 					bool isP1Hotkeyed = Util::IsHotkeyed(p1, form, extraDataList);
 					if (!isP1Hotkeyed)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"ERR: {}: Failed to apply hotkey {} to P1's inventory entry, "
 							"list {:p} for {}.",
@@ -1949,7 +1949,7 @@ namespace ALYSLC
 						isP1Hotkeyed = Util::IsHotkeyed(p1, form, extraDataList);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Hotkeying {} (list {:p}) into slot {}, is now hotkeyed by P1: {}.",
 						p->coopActor->GetName(),
@@ -1977,7 +1977,7 @@ namespace ALYSLC
 							chestExtraDataList
 						);
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} (list {:p}) is now hotkeyed in inventory chest: {}.", 
 							form->GetName(), 
@@ -2080,7 +2080,7 @@ namespace ALYSLC
 					const auto iter = favMenuIndexToEntryMap.find(index);
 					if (iter == favMenuIndexToEntryMap.end())
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}'s favorited form {} "
 							"does not have an entry number corresponding to an index of {}.",
@@ -2124,7 +2124,7 @@ namespace ALYSLC
 
 					if (!p->isPlayer1) 
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: {} will be hotkeyed in slot {} on release.",
 							p->coopActor->GetName(), form->GetName(), hotkeySlotToChange
@@ -2250,7 +2250,7 @@ namespace ALYSLC
 				);
 				if (canEquip)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Equip Request Event: from container: {}, "
 						"form: {}, equip index: {}, placeholder spell changed: {}.",
@@ -2312,7 +2312,7 @@ namespace ALYSLC
 
 	void MenuInputManager::InitFavoritesEntries()
 	{
-		SPDLOG_DEBUG("InitFavoritesEntries.");
+		DBG("InitFavoritesEntries.");
 
 		// Update equip states in the Favorites Menu 
 		// for forms equipped by the co-op companion player.
@@ -2371,7 +2371,7 @@ namespace ALYSLC
 		// Set quick slot tags for any equipped quick slot items/spells 
 		// and update index-to-entry map.
 
-		SPDLOG_DEBUG("InitP1QSFormEntries");
+		DBG("InitP1QSFormEntries");
 		auto ui = RE::UI::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		auto taskInterface = SKSE::GetTaskInterface();
@@ -2546,7 +2546,7 @@ namespace ALYSLC
 										std::addressof(entry), 
 										1
 									);
-									SPDLOG_DEBUG
+									DBG
 									(
 										"Set {} entry as {}.",
 										isConsumable ? "QSI" : "QSS",
@@ -2582,7 +2582,7 @@ namespace ALYSLC
 		RE::ActorPtr menuCoopActorPtr = Util::GetActorPtrFromHandle(menuCoopActorHandle);
 		if (!menuCoopActorPtr || !a_skillbook)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"FAIL: No player in menu: {}, no skillbook: {}.",
 				!menuCoopActorPtr, !a_skillbook
@@ -2595,7 +2595,7 @@ namespace ALYSLC
 		auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
 		if (!containerRefrPtr) 
 		{
-			SPDLOG_DEBUG("FAIL: No container refr.");
+			DBG("FAIL: No container refr.");
 			return false;
 		}
 
@@ -2691,7 +2691,7 @@ namespace ALYSLC
 			// No index for the linked skill.
 			if (skillAVIndex == -1)
 			{
-				SPDLOG_DEBUG("FAIL: No skill AV for {}.", a_skillbook->GetName());
+				DBG("FAIL: No skill AV for {}.", a_skillbook->GetName());
 				return false;
 			}
 
@@ -2701,7 +2701,7 @@ namespace ALYSLC
 			const auto iter = glob.serializablePlayerData.find(menuCoopActorPtr->formID);
 			if (iter == glob.serializablePlayerData.end())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"FAIL: Could not get serializable data for {} (0x{:X}).",
 					menuCoopActorPtr->GetName(),
@@ -2759,7 +2759,7 @@ namespace ALYSLC
 			// and aren't handled here.
 			if (a_skillbook->formID == 0xCE135 && a_skillbook->formID == 0x12E1FC)
 			{
-				SPDLOG_DEBUG("FAIL: Is +2 learning or +1 memory point book.");
+				DBG("FAIL: Is +2 learning or +1 memory point book.");
 				return false;
 			}
 
@@ -2804,7 +2804,7 @@ namespace ALYSLC
 				}
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"FAIL: No points available: {}, not correct tier: {}, not valid to level: {}.",
 				!pointsAvailable,
@@ -2994,7 +2994,7 @@ namespace ALYSLC
 				// Set extra data to use for dropping the object.
 				selectedForm = boundObj;
 				selectedExDataList = Util::GetEntryFrontExtraDataList(selectedItem->data.objDesc);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Transfer/drop: {}/{}. Input event type: {}. ExData list: {:p}.",
 					a_userEvent == ue->accept, 
@@ -3007,7 +3007,7 @@ namespace ALYSLC
 				// when we try to transfer the item.
 				RE::GFxValue entryCount{ };
 				selectedItem->obj.GetMember("count", std::addressof(entryCount));
-				SPDLOG_DEBUG("Menu entry count: {}, inv entry count: {}.",
+				DBG("Menu entry count: {}, inv entry count: {}.",
 					entryCount.GetUInt(), selectedItem->data.GetCount());
 				uint32_t totalItemCount = 
 				(
@@ -3029,7 +3029,7 @@ namespace ALYSLC
 					);
 					if (!alpha.IsNull() && !alpha.IsUndefined())
 					{
-						SPDLOG_DEBUG("Alpha is {}.", alpha.GetUInt());
+						DBG("Alpha is {}.", alpha.GetUInt());
 						quantityMenuOpen = alpha.GetUInt() > 0;
 					}
 
@@ -3040,7 +3040,7 @@ namespace ALYSLC
 					);
 					if (!value.IsNull() && !value.IsUndefined())
 					{
-						SPDLOG_DEBUG("Value is {}.", value.GetUInt());
+						DBG("Value is {}.", value.GetUInt());
 						chosenCount = value.GetUInt();
 					}
 
@@ -3050,7 +3050,7 @@ namespace ALYSLC
 					);
 					if (!value.IsNull() && !value.IsUndefined())
 					{
-						SPDLOG_DEBUG("Max is {}.", value.GetUInt());
+						DBG("Max is {}.", value.GetUInt());
 					}
 				}
 				
@@ -3058,7 +3058,7 @@ namespace ALYSLC
 				// https://github.com/Mardoxx/skyrimui/blob/master/src/containermenu/ContainerMenu.as#L204
 				if (quantityMenuOpen)
 				{
-					SPDLOG_DEBUG("QUANTMEN: {}, {}.", boundObj->GetName(), chosenCount);
+					DBG("QUANTMEN: {}, {}.", boundObj->GetName(), chosenCount);
 				}
 				else
 				{
@@ -3071,11 +3071,11 @@ namespace ALYSLC
 				// while the quantity menu is open.
 				if (a_userEvent == ue->xButton)
 				{
-					SPDLOG_DEBUG("REQUESTED: SET DROP BIND FLAG.");
+					DBG("REQUESTED: SET DROP BIND FLAG.");
 					dropBindPressed = true;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"User event name: {}, count to drop: {}, "
 					"drop bind pressed: {}, quantmen open: {}.",
@@ -3110,7 +3110,7 @@ namespace ALYSLC
 					dropReqPair = { boundObj, chosenCount };
 					// Reset flag once drop request is fulfilled.
 					dropBindPressed = false;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"REQUESTED. RESET DROP BIND FLAG, "
 						"count to drop: {}, quantmen open: {}, event: {}.",
@@ -3120,7 +3120,7 @@ namespace ALYSLC
 
 				if (a_userEvent == ue->xButton)
 				{	
-					SPDLOG_DEBUG("Attempt drop.");
+					DBG("Attempt drop.");
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 					shouldRefreshMenu = false;
 					shouldReloadMenuEntries = false;
@@ -3198,7 +3198,7 @@ namespace ALYSLC
 		else if (a_userEvent == ue->cancel)
 		{
 			// Reset flag once drop request is cancelled.
-			SPDLOG_DEBUG("CANCELLED: RESET DROP BIND FLAG.");
+			DBG("CANCELLED: RESET DROP BIND FLAG.");
 			dropBindPressed = false;
 		}
 		// Favorite the selected item.
@@ -3345,7 +3345,7 @@ namespace ALYSLC
 					// You get NOTHING! You LOSE! Good DAY, sir.
 					// No reason to try to equip it onto the companion player.
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-					SPDLOG_DEBUG("Nah: {}", obj->GetName());
+					DBG("Nah: {}", obj->GetName());
 				}
 				else if (ALYSLC::EnderalCompat::g_installed && 
 						 obj->As<RE::AlchemyItem>() && 
@@ -3357,7 +3357,7 @@ namespace ALYSLC
 					if (!succ)
 					{
 						// Notify the player to open their inventory and try again.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Failed to use Enderal skillbook '{}'.",
 							item->GetName()
@@ -3392,7 +3392,7 @@ namespace ALYSLC
 							// since the above function does not do it automatically.
 							if (canTransfer)
 							{
-								SPDLOG_DEBUG("{}'s gold value: {}.", 
+								DBG("{}'s gold value: {}.", 
 									obj->GetName(), 
 									obj->GetGoldValue());
 								p1->UseSkill
@@ -3421,7 +3421,7 @@ namespace ALYSLC
 							selectedItem->data.objDesc
 						);
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Selected form {}, selected inv entry: {:p}, selected exData: {:p}.",
 							selectedForm ? selectedForm->GetName() : "NONE",
@@ -3451,7 +3451,7 @@ namespace ALYSLC
 								{
 									if (auto data = list->GetByType(type); data)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"Selected form {} has exData list {:p} ({}) "
 											"with data {:p} of type 0x{:X}.",
@@ -3464,7 +3464,7 @@ namespace ALYSLC
 										if (type == RE::ExtraDataType::kOwnership)
 										{
 											auto exOwner = static_cast<RE::ExtraOwnership*>(data);
-											SPDLOG_DEBUG
+											DBG
 											(
 												"Owner: {} (0x{:X}).",
 												exOwner && exOwner->owner ? 
@@ -3481,7 +3481,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG("{} has no extra data lists.", selectedForm->GetName());
+							DBG("{} has no extra data lists.", selectedForm->GetName());
 						}
 						
 						// Only need to reload menu entries 
@@ -3511,7 +3511,7 @@ namespace ALYSLC
 									)
 								)
 							);
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Should reload player inventory lists: {}", 
 								shouldReloadMenuEntries
@@ -3552,7 +3552,7 @@ namespace ALYSLC
 										continue;
 									}
 									
-									SPDLOG_DEBUG
+									DBG
 									(
 										"Picking up {} from {}'s dropped inventory "
 										"and transferring from P1 to {}.",
@@ -3579,7 +3579,7 @@ namespace ALYSLC
 									// Delaying the transfer may cause the equip call to execute
 									// before the item is transfered and the equip will fail.
 									const auto& menuP = glob.coopPlayers[managerMenuPID]; 
-									SPDLOG_DEBUG
+									DBG
 									(
 										"Moving {} {} from {} to {}'s inventory.",
 										count, 
@@ -4177,7 +4177,7 @@ namespace ALYSLC
 							uint32_t p1Count = 0;
 							if (iter != invCounts.end())
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"P1 has {} of {}.", iter->second, selectedForm->GetName()
 								);
@@ -4191,20 +4191,20 @@ namespace ALYSLC
 							);
 							if (iter != invCounts.end())
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Chest has {} of {}.", iter->second, selectedForm->GetName()
 								);
 								if (iter->second == 1 && p1Count > 0)
 								{
-									SPDLOG_DEBUG("TIME TO REMOVE {} MUHAHAHHAHAHHAHAHAH", 
+									DBG("TIME TO REMOVE {} MUHAHAHHAHAHHAHAHAH", 
 										selectedForm->GetName());
 								}
 							}
 						}
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Selected form {} (type 0x{:X}) is equipable: {}. "
 						"Placeholder magic changed: {}.",
@@ -4342,7 +4342,7 @@ namespace ALYSLC
 			// Exit menu and relinquish control when cancel bind is pressed.
 			if (auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); crosshairPickData)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} is closing LootMenu.",
 					Util::HandleIsValid(menuCoopActorHandle) ?
@@ -4370,7 +4370,7 @@ namespace ALYSLC
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (magicFavorites)
 		{
-			SPDLOG_DEBUG("============================================");
+			DBG("============================================");
 			for (const auto magForm : magicFavorites->spells)
 			{
 				if (!magForm)
@@ -4378,7 +4378,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG("{}", magForm->GetName());
+				DBG("{}", magForm->GetName());
 			}
 		
 			uint32_t i = 0;
@@ -4390,7 +4390,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG("#{}: {}", i, magForm->GetName());
+				DBG("#{}: {}", i, magForm->GetName());
 			}
 		}
 
@@ -4611,26 +4611,26 @@ namespace ALYSLC
 		if (menuNamesStack.size() > 0)
 		{
 			menuName = menuNamesStack.front();
-			SPDLOG_DEBUG("New menu on top of the stack: {}", menuName);
+			DBG("New menu on top of the stack: {}", menuName);
 		}
 		else
 		{
 			menuName = "";
-			SPDLOG_DEBUG("Menu stack is now empty.");
+			DBG("Menu stack is now empty.");
 		}
 
 		newHash = Hash(menuName);
 		// Only update menu type if a new menu is atop the stack.
 		if (newHash != oldHash) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Getting lock. (0x{:X})", 
 				std::hash<std::jthread::id>()(std::this_thread::get_id())
 			);
 			{
 				std::unique_lock<std::mutex> lock(openedMenuMutex);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -4783,7 +4783,7 @@ namespace ALYSLC
 								RE::BGSEquipSlot::Flag::kUseAllParents
 							))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in both hands.", favForm->GetName()
 							);
@@ -4792,7 +4792,7 @@ namespace ALYSLC
 						// One-handed.
 						else
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in left hand.", favForm->GetName()
 							);
@@ -4838,7 +4838,7 @@ namespace ALYSLC
 								RE::BGSEquipSlot::Flag::kUseAllParents
 							))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in both hands.", favForm->GetName()
 							);
@@ -4847,7 +4847,7 @@ namespace ALYSLC
 						// One-handed.
 						else
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in right hand.", favForm->GetName()
 							);
@@ -4943,7 +4943,7 @@ namespace ALYSLC
 						// Both hands spell.
 						if (favEquippedBothH)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in both hands.", favForm->GetName()
 							);
@@ -4952,7 +4952,7 @@ namespace ALYSLC
 						// LH spell only
 						else if (favEquippedLH)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in left hand.", favForm->GetName()
 							);
@@ -4961,7 +4961,7 @@ namespace ALYSLC
 						// RH spell only
 						else if (favEquippedRH)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in right hand.", favForm->GetName()
 							);
@@ -4977,7 +4977,7 @@ namespace ALYSLC
 						auto voiceForm = em->equippedForms[!EquipIndex::kVoice]; 
 						if (favForm == voiceForm)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} equipped in voice slot.", favForm->GetName()
 							);
@@ -4989,7 +4989,7 @@ namespace ALYSLC
 					auto quickSlotSpell = em->quickSlotSpell; 
 					if (quickSlotSpell && quickSlotSpell == favForm)
 					{
-						SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
+						DBG("{} equipped in quick slot.", favForm->GetName());
 						em->equippedQSSpellIndex = i;
 						spellStillEquipped = true;
 					}
@@ -5003,7 +5003,7 @@ namespace ALYSLC
 						auto shoutVariation = asShout->variations[em->highestShoutVarIndex];
 						if (shoutVariation.spell && shoutVariation.spell == em->voiceSpell)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} with highest var index {} equipped in voice slot",
 								asShout->GetName(), em->highestShoutVarIndex
@@ -5036,7 +5036,7 @@ namespace ALYSLC
 					);
 					if (equipped)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} (0x{:X}) armor equipped.", favForm->GetName(), favForm->formID
 						);
@@ -5068,7 +5068,7 @@ namespace ALYSLC
 						);
 						if (equipped)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} (0x{:X}) ammo equipped.",
 								currentAmmo->GetName(), currentAmmo->formID
@@ -5084,7 +5084,7 @@ namespace ALYSLC
 					auto quickSlotItem = em->quickSlotItem;
 					if (quickSlotItem && quickSlotItem == favForm)
 					{
-						SPDLOG_DEBUG("{} equipped in quick slot.", favForm->GetName());
+						DBG("{} equipped in quick slot.", favForm->GetName());
 						em->equippedQSItemIndex = i;
 						itemStillEquipped = true;
 					}
@@ -5240,25 +5240,25 @@ namespace ALYSLC
 				// Both hands.
 				if (magEquippedBothH)
 				{
-					SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
+					DBG("{} equipped in both hands.",  magForm->GetName());
 					magEntryEquipStates[i] = EntryEquipState::kBothHands;
 				}
 				// LH
 				else if (magEquippedLH)
 				{
-					SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
+					DBG("{} equipped in left hand.",magForm->GetName());
 					magEntryEquipStates[i] = EntryEquipState::kLH;
 				}
 				// RH
 				else if (magEquippedRH)
 				{
-					SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
+					DBG("{} equipped in right hand.", magForm->GetName());
 					magEntryEquipStates[i] = EntryEquipState::kRH;
 				}
 				// Voice
 				else if (magEquippedVoice)
 				{
-					SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
+					DBG("{} equipped in voice slot.",magForm->GetName());
 					magEntryEquipStates[i] = EntryEquipState::kDefault;
 				}
 				// No match or invalid
@@ -5422,7 +5422,7 @@ namespace ALYSLC
 			(
 				min(!RE::UserEvents::INPUT_CONTEXT_ID::kNone, !(*currentMenu->inputContext))
 			);
-			//SPDLOG_DEBUG("Current menu {} has context {}.", menuName, context);
+			//DBG("Current menu {} has context {}.", menuName, context);
 			if (context == RE::UserEvents::INPUT_CONTEXT_ID::kTotal)
 			{
 				context = RE::UserEvents::INPUT_CONTEXT_ID::kNone;
@@ -5499,7 +5499,7 @@ namespace ALYSLC
 			(
 				a_bindInfoOut.idCode, RE::INPUT_DEVICE::kGamepad, context
 			);
-			/*SPDLOG_DEBUG("Gameplay context has event name {} from id code 0x{:X}.",
+			/*DBG("Gameplay context has event name {} from id code 0x{:X}.",
 				a_bindInfoOut.eventName, a_bindInfoOut.idCode);*/
 			validEventNameFound = Hash(a_bindInfoOut.eventName) != Hash(""sv);
 		}
@@ -5507,7 +5507,7 @@ namespace ALYSLC
 		// Should not happen, but bail here if there is still no valid event name.
 		if (!validEventNameFound) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not get event name for XInput button mask 0x{:X} "
 				"(id code: 0x{:X}) and current menu '{}'.", 
@@ -5517,7 +5517,7 @@ namespace ALYSLC
 		}
 
 		// Set valid context here.
-		/*SPDLOG_DEBUG
+		/*DBG
 		(
 			"Chose context {}, event name {} for xMask 0x{:X}. "
 			"Value, held time: {}, {}. Current event type: {}.",
@@ -5736,7 +5736,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("ERR: No control map. Cannot set input mappings.");
+			DBG("ERR: No control map. Cannot set input mappings.");
 		}
 	}
 
@@ -5755,7 +5755,7 @@ namespace ALYSLC
 			ZeroMemory(&buttonState, sizeof(buttonState));
 			if (XInputGetState(a_reqDeviceID, &buttonState) != ERROR_SUCCESS)
 			{
-				SPDLOG_DEBUG("Got invalid menu device ID ({}). Exiting.", a_reqDeviceID);
+				DBG("Got invalid menu device ID ({}). Exiting.", a_reqDeviceID);
 				return;
 			}
 
@@ -5773,7 +5773,7 @@ namespace ALYSLC
 			managerMenuPID = -1;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Performed state change request. MIM is now set to {}. PID/DID: {}, {}.", 
 			shouldEnter ? "running" : "paused",
@@ -5894,7 +5894,7 @@ namespace ALYSLC
 				const auto& p = a_forPlayer1 ? glob.coopPlayers[0] : glob.coopPlayers[glob.menuPID];
 				if (menuEntryList->entryList.IsArray())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Entry list size: {}. Item list size: {}. "
 						"Reload entries: {}, for P1 : {}.",
@@ -5911,7 +5911,7 @@ namespace ALYSLC
 				
 				if (!a_forPlayer1 && a_reloadEntries)
 				{
-					SPDLOG_DEBUG("Reloading list entries.");
+					DBG("Reloading list entries.");
 					menuEntryList->Update();
 				}
 				
@@ -6076,7 +6076,7 @@ namespace ALYSLC
 						
 						if (!magForm)
 						{
-							SPDLOG_DEBUG("ERR: Could not find magic item at index {}.", i);
+							DBG("ERR: Could not find magic item at index {}.", i);
 							continue;
 						}
 
@@ -6102,25 +6102,25 @@ namespace ALYSLC
 						// Both hands.
 						if (magEquippedBothH)
 						{
-							SPDLOG_DEBUG("{} equipped in both hands.",  magForm->GetName());
+							DBG("{} equipped in both hands.",  magForm->GetName());
 							equipState = EntryEquipState::kBothHands;
 						}
 						// LH
 						else if (magEquippedLH)
 						{
-							SPDLOG_DEBUG("{} equipped in left hand.",magForm->GetName());
+							DBG("{} equipped in left hand.",magForm->GetName());
 							equipState = EntryEquipState::kLH;
 						}
 						// RH
 						else if (magEquippedRH)
 						{
-							SPDLOG_DEBUG("{} equipped in right hand.", magForm->GetName());
+							DBG("{} equipped in right hand.", magForm->GetName());
 							equipState = EntryEquipState::kRH;
 						}
 						// Voice
 						else if (magEquippedVoice)
 						{
-							SPDLOG_DEBUG("{} equipped in voice slot.",magForm->GetName());
+							DBG("{} equipped in voice slot.",magForm->GetName());
 							equipState = EntryEquipState::kDefault;
 						}
 						// No match or invalid
@@ -6142,7 +6142,7 @@ namespace ALYSLC
 					(
 						"_root.Menu_mc.inventoryLists.itemList.UpdateList", nullptr, 0
 					);
-					SPDLOG_DEBUG("Refreshed magic menu equip state.");*/
+					DBG("Refreshed magic menu equip state.");*/
 				}
 				else
 				{
@@ -6201,7 +6201,7 @@ namespace ALYSLC
 							{
 								if (a_forPlayer1)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: P1 list {:p} equipped in LH/RH.",
 										boundObj->GetName(),
@@ -6223,7 +6223,7 @@ namespace ALYSLC
 									);
 									if (!matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: No worn exRank matching chest list for {} "
 											"player list {:p} equipped in LH/RH. "
@@ -6242,7 +6242,7 @@ namespace ALYSLC
 									// Matching data, cache straight away.
 									if (matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: Matching chest list {:p} for {} player list {:p} "
 											"equipped in LH/RH.",
@@ -6261,7 +6261,7 @@ namespace ALYSLC
 										// Save the bound object if the same as an unmodified list.
 										if (equivToUnmodifiedList)
 										{
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: No chest list for unmodified player list {:p} "
 												"equipped in LH/RH.",
@@ -6277,7 +6277,7 @@ namespace ALYSLC
 										{
 											// Uh-oh, my cruddy matching game has failed.
 											// Will not show as equipped.
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: MATCH FAILURE: "
 												"No chest list for modified player list {:p} "
@@ -6293,7 +6293,7 @@ namespace ALYSLC
 							{
 								if (a_forPlayer1)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: P1 list {:p} equipped in RH/default slot.",
 										boundObj->GetName(),
@@ -6357,7 +6357,7 @@ namespace ALYSLC
 									);
 									if (!matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: No worn exRank matching chest list for {} "
 											"player list {:p} equipped in RH/default slot. "
@@ -6376,7 +6376,7 @@ namespace ALYSLC
 									// Matching data, cache straight away.
 									if (matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: Matching chest list {:p} for {} player list {:p} "
 											"equipped in RH/default slot.",
@@ -6441,7 +6441,7 @@ namespace ALYSLC
 										// Save the bound object if the same as an unmodified list.
 										if (equivToUnmodifiedList)
 										{
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: No chest list for unmodified player list {:p} "
 												"equipped in RH/default slot.",
@@ -6504,7 +6504,7 @@ namespace ALYSLC
 										{
 											// Uh-oh, my cruddy matching game has failed.
 											// Will not show as equipped.
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: MATCH FAILURE: "
 												"No chest list for modified player list {:p} "
@@ -6520,7 +6520,7 @@ namespace ALYSLC
 							{
 								if (a_forPlayer1)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: P1 list {:p} equipped in LH slot.",
 										boundObj->GetName(),
@@ -6583,7 +6583,7 @@ namespace ALYSLC
 									);
 									if (!matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: No worn exRank matching chest list for {} "
 											"player list {:p} equipped in LH. "
@@ -6602,7 +6602,7 @@ namespace ALYSLC
 									// Matching data, cache straight away.
 									if (matchingChestList)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: Matching chest list {:p} for {} player list {:p} "
 											"equipped in LH.",
@@ -6666,7 +6666,7 @@ namespace ALYSLC
 										// Save the bound object if the same as an unmodified list.
 										if (equivToUnmodifiedList)
 										{
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: No chest list for unmodified player list {:p} "
 												"equipped in LH.",
@@ -6728,7 +6728,7 @@ namespace ALYSLC
 										{
 											// Uh-oh, my cruddy matching game has failed.
 											// Will not show as equipped.
-											SPDLOG_DEBUG
+											DBG
 											(
 												"{}: MATCH FAILURE: "
 												"No chest list for modified player list {:p} "
@@ -6781,7 +6781,7 @@ namespace ALYSLC
 								if (iter != exListToEquipStateMap.end())
 								{
 									equipState = iter->second;
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{} (#{}): MODIFIED version {:p} equipped. "
 										"Equip state: {}.",
@@ -6796,7 +6796,7 @@ namespace ALYSLC
 							if (iter != unmodifiedObjToEquipStateMap.end())
 							{
 								equipState = iter->second;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} (#{}): UNMODIFIED version equipped. Equip state: {}.",
 									boundObj->GetName(), i, !equipState
@@ -6808,7 +6808,7 @@ namespace ALYSLC
 						{
 							RE::GFxValue index{ };
 							entry.GetMember("itemIndex", std::addressof(index));
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} (#{}), (list index {}) in item list. "
 								"Set equip state to {}.",
@@ -6838,7 +6838,7 @@ namespace ALYSLC
 									continue;
 								}
 					
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} has exData list {:p}.",
 									boundObj->GetName(),
@@ -6850,7 +6850,7 @@ namespace ALYSLC
 								{
 									if (auto data = exDataList->GetByType(type); data)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{} has exData list {:p} "
 											"with data {:p} of type 0x{:X}.",
@@ -6996,7 +6996,7 @@ namespace ALYSLC
 		// Also get and save a pointer to the menu.
 		// Return true if the new opened menu type differs from the previous one.
 
-		SPDLOG_DEBUG("Menu name: {}", menuName);
+		DBG("Menu name: {}", menuName);
 		auto oldMenuType = openedMenuType;
 		auto menuNameHash = Hash(menuName);
 
@@ -7128,7 +7128,7 @@ namespace ALYSLC
 			RE::TESObjectREFR::LookupByHandle(containerMenu->GetTargetRefHandle(), refrPtr);
 			if (!refrPtr)
 			{
-				SPDLOG_DEBUG("No refr associated with open container. Flags were set: {}, {}.",
+				DBG("No refr associated with open container. Flags were set: {}, {}.",
 					inventoryChestOpen, isShowingInventory);
 				return;
 			}
@@ -7168,7 +7168,7 @@ namespace ALYSLC
 		);
 		if (isShowingInventory != wasShowingInventory)
 		{
-			SPDLOG_DEBUG("Shwoing inventory flag changed to {}.", isShowingInventory);
+			DBG("Shwoing inventory flag changed to {}.", isShowingInventory);
 			shouldRefreshMenu = true;
 			shouldReloadMenuEntries = isShowingInventory;
 		}
@@ -7263,7 +7263,7 @@ namespace ALYSLC
 					reqQueue.pop_back();
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Adding menu opening action request for PID {}: input action: {}, "
 					"menu name: {}, associated form: {}",
@@ -7282,7 +7282,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Failed to obtain lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -7303,7 +7303,7 @@ namespace ALYSLC
 		// Optionally, modify the menu requests queue for this player to re-order 
 		// or clear out requests during the resolution process.
 
-		SPDLOG_DEBUG("Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
+		DBG("Menu: {}, modify requests queue: {}.", a_menuName, a_modifyReqQueue);
 
 		// Default to none.
 		int32_t resolvedPID = -1;
@@ -7422,7 +7422,7 @@ namespace ALYSLC
 					}
 
 					float secsSinceReq = Util::GetElapsedSeconds(currentReq.timestamp);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Got request for {}. Menu: {}, from action: {}, assoc refr: {} (0x{:X}), "
 						"ext req: {}. Seconds since request inserted: {}. "
@@ -7472,7 +7472,7 @@ namespace ALYSLC
 						{
 							secsSinceChosenReq = secsSinceReq;
 							resolvedPID = p->playerID;
-							SPDLOG_DEBUG
+							DBG
 							(
 								"External request: "
 								"{} is in control of {}. Should maintain control: {}.",
@@ -7584,7 +7584,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"BarterMenu: {} is in control of bartering with {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
@@ -7632,7 +7632,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"BookMenu: {} is in control of reading {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
@@ -7680,7 +7680,7 @@ namespace ALYSLC
 								))
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ContainerMenu: {} is in control of their inventory.", 
 									p->coopActor->GetName()
@@ -7722,7 +7722,7 @@ namespace ALYSLC
 								if (isSameRefr)
 								{
 									setAsChosen = true;
-									SPDLOG_DEBUG
+									DBG
 									(
 										"ContainerMenu: {} is in control of {}'s container menu.",
 										p->coopActor->GetName(), assocRefrPtr->GetName()
@@ -7782,7 +7782,7 @@ namespace ALYSLC
 								RE::TESFurniture::WorkBenchData::BenchType::kNone)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"CraftingMenu: "
 									"{} is in control of crafting menu by activating {} "
@@ -7852,7 +7852,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"DialogueMenu: {} is in control of dialogue with {}.",
 									p->coopActor->GetName(), 
@@ -7877,7 +7877,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kFavorites)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"FavoritesMenu: {} is in control of menu.",
 									p->coopActor->GetName()
@@ -7893,7 +7893,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kTradeWithPlayer)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"GiftMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
@@ -7910,7 +7910,7 @@ namespace ALYSLC
 							if (isRequestedMenu || currentReq.fromAction == InputAction::kPause)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"JournalMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
@@ -7931,7 +7931,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"InventoryMenu: {} is in control of menu.",
 									p->coopActor->GetName()
@@ -7951,7 +7951,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"LevelUpMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
@@ -8004,7 +8004,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"LockpickingMenu: {} is in control of unlocking {}.",
 									p->coopActor->GetName(), assocRefrPtr->GetName()
@@ -8023,7 +8023,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kMagicMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"MagicMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
@@ -8037,7 +8037,7 @@ namespace ALYSLC
 							if (isRequestedMenu || currentReq.fromAction == InputAction::kMapMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"MapMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
@@ -8055,7 +8055,7 @@ namespace ALYSLC
 							if (isRequestedMenu || currentReq.fromAction == InputAction::kWaitMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"WaitMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
@@ -8084,7 +8084,7 @@ namespace ALYSLC
 									))
 								{
 									setAsChosen = true;
-									SPDLOG_DEBUG
+									DBG
 									(
 										"WaitMenu: "
 										"{} is in control of menu by activating {} "
@@ -8109,7 +8109,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"StatsMenu: {} is in control of menu.", p->coopActor->GetName()
 								);
@@ -8156,7 +8156,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"TrainingMenu: {} is receiving training from {}.",
 									p->coopActor->GetName(), 
@@ -8176,7 +8176,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kTweenMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"TweenMenu: {} is in control of menu.", 
 									p->coopActor->GetName()
@@ -8212,7 +8212,7 @@ namespace ALYSLC
 							if (isDirectRequest)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} (UIExtensions): {} is in control of menu.", 
 									GlobalCoopData::CUSTOM_MENU, p->coopActor->GetName()
@@ -8230,9 +8230,7 @@ namespace ALYSLC
 							auto crosshairPickData = RE::CrosshairPickData::GetSingleton(); 
 							if ((!isRequestedMenu || !crosshairPickData) || 
 								(
-									currentReq.fromAction != InputAction::kMoveCrosshair || 
-									p->tm->crosshairTargetingMode == 
-									CrosshairTargetingMode::kDisabled
+									currentReq.fromAction != InputAction::kMoveCrosshair
 								))
 							{
 								break;
@@ -8282,7 +8280,7 @@ namespace ALYSLC
 							if (isSameRefr)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} is in control of {}'s QuickLoot menu.",
 									p->coopActor->GetName(), 
@@ -8306,7 +8304,7 @@ namespace ALYSLC
 								currentReq.fromAction == InputAction::kStatsMenu)
 							{
 								setAsChosen = true;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: {} is in control of menu.", 
 									GlobalCoopData::ENHANCED_HERO_MENU, p->coopActor->GetName()
@@ -8317,7 +8315,7 @@ namespace ALYSLC
 						}
 						default:
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"FALLTHROUGH for {}.", a_menuName
 							);
@@ -8359,7 +8357,7 @@ namespace ALYSLC
 					);
 					if (checkForNewestReq)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Check for newest req for {}.", a_menuName, p->coopActor->GetName()
 						);
@@ -8381,7 +8379,7 @@ namespace ALYSLC
 							secsSinceChosenReq = secsSinceReq;
 							resolvedPID = p->playerID;
 							chosenReqType = directlyRequested ? kNewestDirect : kNewestIndirect;
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {} is in control of menu by {}.",
 								a_menuName,
@@ -8406,7 +8404,7 @@ namespace ALYSLC
 					// Remove since this request was handled, fulfilled or not.
 					if (a_modifyReqQueue) 
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Removed handled request (menu: {}, action: {}, refr: {}) for {}.",
 							a_menuName,
@@ -8424,7 +8422,7 @@ namespace ALYSLC
 					reqQueue.pop_back();
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Active request queue size is now {} for {} after processing.", 
 					menuOpeningActionRequests[pid].size(),
@@ -8433,7 +8431,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("Resolved PID from requests: {}", resolvedPID);
+		DBG("Resolved PID from requests: {}", resolvedPID);
 		// If there are no valid requests to open/close the current supported menu,
 		// give control to the last player who controlled open menus.
 		// Or if P1's managers are not active, such as when the co-op camera is disabled,
@@ -8456,7 +8454,7 @@ namespace ALYSLC
 			);
 			if (givePreviousPlayerControl) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"No valid requests to open supported menu {}, set to last menu PID: {}. "
 					"Supported menus open: {}, data copied over: 0x{:X}.", 
@@ -8469,7 +8467,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"No valid requests to open supported menu {} "
 					"and P1's managers are inactive or the Console Menu is opening/closing, "
@@ -8484,7 +8482,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("Final resolved PID: {}, for menu {}.", resolvedPID, a_menuName);
+		DBG("Final resolved PID: {}, for menu {}.", resolvedPID, a_menuName);
 
 		return resolvedPID;
 	}

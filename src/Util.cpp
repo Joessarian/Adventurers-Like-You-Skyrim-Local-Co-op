@@ -306,7 +306,7 @@ namespace ALYSLC
 			auto baseObj = a_refr->GetBaseObject();
 			// Can always attempt to lockpick a locked item, search a corpse, or open a door,
 			// but steal/trespass alarm may sound.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} is {}. IsAnOwner (tt, tf, ft, ff): {}, {}, {}, {}. "
 				"Actor owner: {}, form owner: {}, form faction: {}, "
@@ -374,7 +374,7 @@ namespace ALYSLC
 			}
 			
 			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"{} -> {}, trigger combat: {}.",
 				a_sourceActor->GetName(), a_targetActor->GetName(), a_triggerCombat
@@ -554,7 +554,7 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Inventory entry {:p} has count delta of {}, "
 						"raw count {} from {} extra data lists.",
@@ -572,11 +572,11 @@ namespace ALYSLC
 						);
 						if (!a_list)
 						{
-							SPDLOG_ERROR("Failed to allocate extra data list.");
+							ERR("Failed to allocate extra data list.");
 							return nullptr;
 						}
 					
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Malloc extra data list {:p} to inventory entry data {:p}. "
 							"No lists previously.",
@@ -585,7 +585,7 @@ namespace ALYSLC
 						a_invEntryData->AddExtraList(a_list);
 						if (a_invEntryData->countDelta <= 0)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Count delta ({}) was <= 0. "
 								"Set to one after adding extra data list.",
@@ -597,7 +597,7 @@ namespace ALYSLC
 					else
 					{
 						a_list = a_invEntryData->extraLists->front();
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Set extra data list to front list in absence of given list: {:p}",
 							fmt::ptr(a_list)
@@ -606,7 +606,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"ERR: No provided extra data list or inventory entry data. "
 						"No addition possible."
@@ -638,12 +638,12 @@ namespace ALYSLC
 
 			// Crash can occur when calling GetByType() on an empty list.
 			const auto listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			SPDLOG_DEBUG("List {:p} has size {}.", fmt::ptr(a_list), listSize);
+			DBG("List {:p} has size {}.", fmt::ptr(a_list), listSize);
 			if (listSize > 0)
 			{
 				if (auto exRank = a_list->GetByType<RE::ExtraRank>(); exRank)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Rank ex data already present in list {:p}: 0x{:X}. "
 						"Set to 0x{:X}.",
@@ -675,7 +675,7 @@ namespace ALYSLC
 					succ->rank = addLHMask ? 0xFF000000 : 0x00FF0000;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Adding rank (0x{:X}) exData to list {:p}: {}. Data: orig: {:p}, add: {:p}.",
 					static_cast<uint32_t>(addLHMask ? 0xFF000000 : 0x00FF0000),
@@ -717,7 +717,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"{} -> {}, damage: {}, trigger combat: {}, send event: {}, flags: 0x{:X}.",
 				a_sourceActor->GetName(),
@@ -882,21 +882,21 @@ namespace ALYSLC
 					//const auto data = a_list1->GetByType(type);
 					//if (!data || data->IsNotEqual(std::addressof(baseData2)))
 					//{
-					//	//SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+					//	//DBG("No match on type 0x{:X}.", type);
 					//	isEqual = false;
 					//	break;
 					//}
 
 					if (baseData2.IsNotEqual(std::addressof(baseData)))
 					{
-						SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+						DBG("No match on type 0x{:X}.", type);
 						isEqual = false;
 						break;
 					}
 				}
 			}
 			
-			SPDLOG_DEBUG("Lists {:p} and {:p} are equal.", fmt::ptr(a_list1), fmt::ptr(a_list2));
+			DBG("Lists {:p} and {:p} are equal.", fmt::ptr(a_list1), fmt::ptr(a_list2));
 			return isEqual;
 		}
 
@@ -964,14 +964,18 @@ namespace ALYSLC
 			}
 
 			// Pacify mounts, guards (surrender), actors with no bounty on the player,
-			// fleeing actors, or friendly actors.
+			// fleeing actors, friendly actors, or invulnerable/ghost actors.
+			// Fighting an invicible opponent with no option to pacify them is... a problem.
+			// Perhaps warranted, but at least try to make amends.
 			return
 			(
 				IsGuard(a_aggroedActor) || 
 				HasNoBountyButInCrimeFaction(a_aggroedActor) ||
 				IsFleeing(a_aggroedActor) ||
+				IsPartyFriendlyActor(a_aggroedActor) ||
 				a_aggroedActor->IsAMount() ||
-				IsPartyFriendlyActor(a_aggroedActor)
+				a_aggroedActor->IsInvulnerable() ||
+				a_aggroedActor->IsGhost()
 			);
 		}
 
@@ -985,7 +989,7 @@ namespace ALYSLC
 				return;
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} {} as essential. Adjust bleedout: {}.",
 				a_shouldSet ? "SET" : "UNSET",
@@ -1186,7 +1190,7 @@ namespace ALYSLC
 				// Request to clear and the requested form was found, so clear out the hotkey.
 				if (a_hotkeySlotToSet == -1 && magicFavorites->hotkeys[i] == a_form)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Removed MAG {} from hotkey slot {}.",
 						a_refr->GetName(), a_form->GetName(), i + 1
@@ -1199,7 +1203,7 @@ namespace ALYSLC
 					// so set this slot to the form.
 					if (formIsMagical)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Added MAG {} to hotkey slot {}.",
 							a_refr->GetName(), a_form->GetName(), i + 1
@@ -1210,7 +1214,7 @@ namespace ALYSLC
 					{
 						// Request to set but the requested form is not magical, so clear the slot.
 						// Still have to look for the form among the actor's physical favorites.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Removed MAG {} from hotkey slot {}, "
 							"since we want to set PHYS {} as the new hotkeyed form.",
@@ -1262,7 +1266,7 @@ namespace ALYSLC
 					if (a_hotkeySlotToSet == -1 && boundObj == a_form && hotkeySlot != -1) 
 					{
 						exHotkeyData->hotkey = RE::ExtraHotkey::Hotkey::kUnbound;
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Removed PHYS {} from hotkey slot {}.",
 							a_refr->GetName(), a_form->GetName(), hotkeySlot + 1
@@ -1288,7 +1292,7 @@ namespace ALYSLC
 							{
 								if (formIsMagical) 
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set MAG {} as the new hotkeyed form.",
@@ -1300,7 +1304,7 @@ namespace ALYSLC
 								}
 								else
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: Removed PHYS {} from hotkey slot {}, "
 										"since we want to set PHYS {} as the new hotkeyed form.",
@@ -1319,7 +1323,7 @@ namespace ALYSLC
 						{
 							// This requested form is not hotkeyed in the same slot as requested,
 							// so we can directly set its hotkey slot to the requested one.
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: Added PHYS {} to hotkey slot {}.",
 								a_refr->GetName(), a_form->GetName(), a_hotkeySlotToSet + 1
@@ -1559,7 +1563,7 @@ namespace ALYSLC
 			// Nothing to copy if non-existent or empty.
 			if (!a_toCopy || std::distance(a_toCopy->begin(), a_toCopy->end()) == 0)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Nothing to copy: {:p}, size: {}.", 
 					fmt::ptr(a_toCopy),
@@ -1574,13 +1578,13 @@ namespace ALYSLC
 			);
 			if (!list)
 			{
-				SPDLOG_DEBUG("ERR: Failed to allocate extra data list.");
+				DBG("ERR: Failed to allocate extra data list.");
 				return nullptr;
 			}
 
 			for (auto iter = a_toCopy->begin(); iter != a_toCopy->end(); ++iter)
 			{
-				SPDLOG_DEBUG("Attempting to add type 0x{:X}.", (*iter).GetType());
+				DBG("Attempting to add type 0x{:X}.", (*iter).GetType());
 				// SKEEEP A BAUNCH of ones that likely won't appear on equipable items.
 				switch((*iter).GetType())
 				{
@@ -2295,13 +2299,13 @@ namespace ALYSLC
 				}
 				default:
 				{
-					SPDLOG_DEBUG("Nothing for type 0x{:X}.", (*iter).GetType());
+					DBG("Nothing for type 0x{:X}.", (*iter).GetType());
 					break;
 				}
 				}
 			}
 
-			SPDLOG_DEBUG("After additions: {:p}.", fmt::ptr(list));
+			DBG("After additions: {:p}.", fmt::ptr(list));
 			return list;
 		}
 
@@ -2367,7 +2371,7 @@ namespace ALYSLC
 				if (actorPtr->IsCommandedActor())
 				{
 					const auto commander = actorPtr->GetCommandingActor();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} (0x{:X}) is a commanded actor. Summoner: {}. Is temp: {}.",
 						actorPtr->GetName(), actorPtr->formID, 
@@ -2508,7 +2512,7 @@ namespace ALYSLC
 					const auto type = data.GetType();
 					if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
 					{
-						//SPDLOG_DEBUG("Given item intrinsic type 0x{:X}.", type);
+						//DBG("Given item intrinsic type 0x{:X}.", type);
 						compSize++;
 					}
 				}
@@ -2542,7 +2546,7 @@ namespace ALYSLC
 						const auto type = otherData.GetType();
 						if (GlobalCoopData::ITEM_INTRINSIC_EXTRA_DATA_TYPES.contains(type))
 						{
-							//SPDLOG_DEBUG("Comp item intrinsic type 0x{:X}.", type);
+							//DBG("Comp item intrinsic type 0x{:X}.", type);
 							otherSize++;
 						}
 					}
@@ -2553,7 +2557,7 @@ namespace ALYSLC
 						// so only check for exData equality otherwise.
 						if (compSize != 0)
 						{
-							//SPDLOG_DEBUG("Same size: {}.", otherSize);
+							//DBG("Same size: {}.", otherSize);
 							for (const auto& otherData : *exDataList)
 							{
 								const auto type = otherData.GetType();
@@ -2562,11 +2566,11 @@ namespace ALYSLC
 									continue;
 								}
 							
-								//SPDLOG_DEBUG("Intrinsic type 0x{:X}.", type);
+								//DBG("Intrinsic type 0x{:X}.", type);
 								const auto data = a_exDataList->GetByType(type);
 								if (!data || data->IsNotEqual(std::addressof(otherData)))
 								{
-									//SPDLOG_DEBUG("No match on type 0x{:X}.", type);
+									//DBG("No match on type 0x{:X}.", type);
 									isEqual = false;
 									break;
 								}
@@ -2583,7 +2587,7 @@ namespace ALYSLC
 					// since it may exist further down the chain.
 					if (isEqual && !matchingList)
 					{
-						/*SPDLOG_DEBUG
+						/*DBG
 						(
 							"{}: SUCCEEDED in matching {} list for {:p}: {:p}", 
 							a_refr->GetName(),
@@ -2600,7 +2604,7 @@ namespace ALYSLC
 				break;
 			}
 			
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"{}: FAILED to match {} list for {:p}", 
 				a_refr->GetName(),
@@ -3615,7 +3619,7 @@ namespace ALYSLC
 						if ((!checkWornLH && list->HasType(RE::ExtraDataType::kWorn)) ||
 							(checkWornLH && list->HasType(RE::ExtraDataType::kWornLeft)))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Inventory item {} ({:p}) is equipped. "
 								"Check for ExtraWornLeft: {}. "
@@ -4097,7 +4101,7 @@ namespace ALYSLC
 			// since the given list is functionally equivalent to an unmodified item.
 			if (!a_exDataList) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"No extra data list given. Return as count of {} of {} in {}.", 
 					numberOwned,
@@ -4133,7 +4137,7 @@ namespace ALYSLC
 			// so use the inventory entry count delta for the count.
 			if (compSize == 0)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {} ({:p}) has no defining extra data types. "
 					"Using inventory entry data count delta of {}.",
@@ -4154,7 +4158,7 @@ namespace ALYSLC
 			
 			if (!iter->second.second || !iter->second.second->extraLists)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"List {:p} has {} intrinsic data types "
 					"and there is no inventory entry/extra lists for {} in {}'s inventory, "
@@ -4212,7 +4216,7 @@ namespace ALYSLC
 				{
 					const auto count = list->GetCount();
 					numberOwned += count > 0 ? count : 0;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} of {} in {}. Inv entry count delta: {}.", 
 						numberOwned,
@@ -4850,14 +4854,14 @@ namespace ALYSLC
 
 			if (!invEntryData)
 			{
-				SPDLOG_DEBUG("{} not found in {}'s inventory.",
+				DBG("{} not found in {}'s inventory.",
 					a_object->GetName(), a_refr->GetName());
 				return nullptr;
 			}
 
 			if (!invEntryData->extraLists)
 			{
-				SPDLOG_DEBUG("No extra lists found for {} in {}'s inventory.",
+				DBG("No extra lists found for {} in {}'s inventory.",
 					a_object->GetName(), a_refr->GetName());
 				return nullptr;
 			}
@@ -5046,7 +5050,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("P1 LOS check.");
+						DBG("P1 LOS check.");
 					}
 
 					hasLOS = p1->HasLineOfSight(a_targetRefr, inFrustum);
@@ -5058,7 +5062,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("From camera node pos.");
+						DBG("From camera node pos.");
 					}
 					
 					// Raycast from the camera node's position.
@@ -5076,7 +5080,7 @@ namespace ALYSLC
 						// Then check from the observer's eye position.
 						if (a_showDebugInfo)
 						{
-							SPDLOG_DEBUG("From observer focus pos.");
+							DBG("From observer focus pos.");
 						}
 
 						if (observer3DPtr)
@@ -5105,7 +5109,7 @@ namespace ALYSLC
 
 				if (a_showDebugInfo)
 				{
-					SPDLOG_DEBUG("From camera collision pos.");
+					DBG("From camera collision pos.");
 				}
 				
 				// First from the camera's node position.
@@ -5158,7 +5162,7 @@ namespace ALYSLC
 				{
 					if (a_showDebugInfo)
 					{
-						SPDLOG_DEBUG("From observer focus pos.");
+						DBG("From observer focus pos.");
 					}
 
 					hasLOS = HasRaycastLOSFromPos
@@ -5190,7 +5194,7 @@ namespace ALYSLC
 
 			if (a_showDebugInfo)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} has LOS on {}: {}.", a_observer->GetName(), a_targetRefr->GetName(), hasLOS
 				);
@@ -5249,7 +5253,7 @@ namespace ALYSLC
 				if (a_showDebugInfo)
 				{
 					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5317,7 +5321,7 @@ namespace ALYSLC
 				if (a_showDebugInfo)
 				{
 					auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to refr pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5391,7 +5395,7 @@ namespace ALYSLC
 					if (a_showDebugInfo)
 					{
 						auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 							"Raycast to refr center pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5490,7 +5494,7 @@ namespace ALYSLC
 								if (a_showDebugInfo)
 								{
 									auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
-									SPDLOG_DEBUG
+									DBG
 									(
 										"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 										"Raycast to {} node: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5725,7 +5729,7 @@ namespace ALYSLC
 				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast along upper observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5815,7 +5819,7 @@ namespace ALYSLC
 				auto hitRefrPtr = GetRefrPtrFromHandle(result.hitRefrHandle);
 				if (a_showDebugDraws)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast along lower observer axis: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -5955,7 +5959,7 @@ namespace ALYSLC
 				);
 				if (a_showDebugInfo)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 						"Raycast to crosshair pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -6034,7 +6038,7 @@ namespace ALYSLC
 			);
 			if (a_showDebugInfo)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to data location pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -6109,7 +6113,7 @@ namespace ALYSLC
 			);
 			if (a_showDebugInfo)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to world translate pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -6184,7 +6188,7 @@ namespace ALYSLC
 			);
 			if (a_showDebugInfo)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"A player HasLOS of {} (0x{:X}, type {:X}): [{}]. "
 					"Raycast to 3D center pos: [{}] ({}, 0x{:X}, type: {:X}).",
@@ -6235,7 +6239,7 @@ namespace ALYSLC
 		{
 			// Import actor base appearance data from one actor to the other.
 			
-			SPDLOG_DEBUG("ImportActorBaseAppearanceData");
+			DBG("ImportActorBaseAppearanceData");
 			if (!a_fromActor ||
 				!a_toActor ||
 				!a_fromActor->race ||
@@ -6383,6 +6387,56 @@ namespace ALYSLC
 			NativeFunctions::NiMatrixToNiQuaternion(qA, a_matA);
 			NativeFunctions::NiMatrixToNiQuaternion(qB, a_matB);
 			return QuaternionToRotationMatrix(QuaternionSlerp(qA, qB, a_ratio));
+		}
+
+		bool IsActivelyHostileToPlayerOrAlly(RE::Actor* a_actor)
+		{
+			// Return true if the given actor is hostile to a player
+			// and is targeting a player or player-friendly actor
+			// or is in combat and fully detects any active player.
+
+			if (!a_actor)
+			{
+				return false;
+			}
+
+			// Oh, he mad.
+			bool isMadQuiteMad = false;
+			for (const auto& p : glob.coopPlayers)
+			{
+				if (!p->isActive)
+				{
+					continue;
+				}
+
+				isMadQuiteMad = 
+				(
+					(a_actor->IsHostileToActor(p->coopActor.get())) &&
+					(
+						(a_actor->IsCombatTarget(p->coopActor.get())) ||
+						(
+							(Util::HandleIsValid(a_actor->currentCombatTarget)) &&
+							(
+								Util::IsPartyFriendlyActor
+								(
+									a_actor->currentCombatTarget.get().get()
+								)
+							)
+						) ||
+						(
+							a_actor->IsInCombat() && 
+							Util::GetDetectionPercent(p->coopActor.get(), a_actor) == 100.0f
+						)
+					)	
+				);
+				if (isMadQuiteMad)
+				{
+					break;
+				}
+			}
+
+			//DBG("{} is mad at a player: {}.", a_actor->GetName(), isMadQuiteMad);
+			return isMadQuiteMad;
 		}
 
 		bool IsFavorited(RE::TESObjectREFR* a_refr, RE::TESForm* a_form)
@@ -6545,6 +6599,37 @@ namespace ALYSLC
 			return false;
 		}
 
+		bool IsHittableActor(RE::Actor* a_sourceActor, RE::Actor* a_targetActor)
+		{
+			// Can the given target actor be damaged or have a hit applied to trigger combat
+			// with the given source actor.
+
+			if (!a_sourceActor || !a_targetActor)
+			{
+				return false;
+			}
+
+			bool targetActorIsPlayer = GlobalCoopData::IsCoopPlayer(a_targetActor);
+			bool isHostile = 
+			(
+				(!targetActorIsPlayer) &&
+				(
+					(a_targetActor->IsHostileToActor(a_sourceActor)) || 
+					(
+						Util::HandleIsValid(a_targetActor->currentCombatTarget) &&
+						Util::IsPartyFriendlyActor
+						(
+							a_targetActor->currentCombatTarget.get().get()
+						)
+					)
+				)
+			);
+			// Criteria for hittable actors:
+			// Not a ghost or invulnerable and either a player 
+			// or not essential/protected or is hostile to the player.
+			return ((isHostile) || (!a_targetActor->IsGhost() && !a_targetActor->IsInvulnerable()));
+		}
+
 		bool IsInFrontOfCam(const RE::NiPoint3& a_point)
 		{
 			// Check if the point is in front of the current camera position.
@@ -6649,7 +6734,7 @@ namespace ALYSLC
 					!a_race->GetPlayable()
 				)
 			);
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"{} has transformation: {}, form editor ID: {}, "
 				"is werewolf: {}, is vampire lord: {}, has NPC keyword: {}, is playable: {}.",
@@ -7073,7 +7158,7 @@ namespace ALYSLC
 									((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
 								))
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Skipping {}'s worn item {} ({:p}).",
 									a_fromRefr->GetName(), a_object->GetName(), fmt::ptr(exDataList)
@@ -7086,7 +7171,7 @@ namespace ALYSLC
 							if (exDataList->HasType<RE::ExtraWorn>() ||
 								exDataList->HasType<RE::ExtraWornLeft>())
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Skipping {}'s worn item {} ({:p}).",
 									a_fromRefr->GetName(), a_object->GetName(), fmt::ptr(exDataList)
@@ -7100,7 +7185,7 @@ namespace ALYSLC
 					// Only move if not flagged to skip.
 					if (!skipMove)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Moving special x{} {} from {} to {}.", 
 							count,
@@ -7148,7 +7233,7 @@ namespace ALYSLC
 				int32_t unmodifiedToMove = a_totalCount - exDataCountHandled;
 				if (unmodifiedToMove > 0)
 				{
-					SPDLOG_DEBUG("Handled {}, need to move {} more.",
+					DBG("Handled {}, need to move {} more.",
 						exDataCountHandled, unmodifiedToMove);
 					if (fromCompanionPlayerInvChest)
 					{
@@ -7187,7 +7272,7 @@ namespace ALYSLC
 			}
 			else if (a_totalCount != 0)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Moving x{} {} from {} to {}.", 
 					a_totalCount,
@@ -7835,7 +7920,7 @@ namespace ALYSLC
 			auto exRank = a_list->GetByType<RE::ExtraRank>();
 			if (!exRank)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Not removing rank exData from list {:p}. Does not exist.",
 					fmt::ptr(a_list)
@@ -7845,7 +7930,7 @@ namespace ALYSLC
 			else if (((checkForLHMask) && ((exRank->rank & 0xFF000000) == 0)) || 
 					 ((!checkForLHMask) && ((exRank->rank & 0x00FF0000) == 0)))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Not removing different rank exData from list {:p}: "
 					"0x{:X} does not mask into 0x{:X}.",
@@ -7857,7 +7942,7 @@ namespace ALYSLC
 			}
 			else if ((exRank->rank & 0xFFFF0000) == 0xFFFF0000)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Removing hand mask rank from list {:p}: "
 					"0x{:X} -> 0x{:X}.",
@@ -7881,7 +7966,7 @@ namespace ALYSLC
 			
 			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
 			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
 				static_cast<uint32_t>(exRank->rank),
@@ -8180,7 +8265,7 @@ namespace ALYSLC
 				eventSource->SendEvent(crosshairEvent);
 				RE::free(crosshairEvent);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Set to {}, PID: {}. Request PID is now {}.",
 					a_crosshairRefrToSet ? a_crosshairRefrToSet->GetName() : "NONE",
@@ -8220,7 +8305,7 @@ namespace ALYSLC
 			{
 				if (a_damage > 0.0f)
 				{
-					SPDLOG_DEBUG("NOPE, NO MOUNT. Have {} deal {} damage to {} instead.",
+					DBG("NOPE, NO MOUNT. Have {} deal {} damage to {} instead.",
 						a_aggressor->GetName(), a_damage, a_target->GetName());
 					a_target->DoDamage(a_damage, a_aggressor, true);
 				}
@@ -8734,7 +8819,7 @@ namespace ALYSLC
 			// Reset AI driven if this func is called 
 			// when outside of co-op or if P1's managers are not active.
 			bool shouldResetAIDriven = !glob.coopSessionActive || !glob.coopPlayers[0]->IsRunning();
-			/*SPDLOG_DEBUG("Set: {}, should reset: {}. Current value: {}.",
+			/*DBG("Set: {}, should reset: {}. Current value: {}.",
 				a_shouldSet, shouldResetAIDriven, p1->movementController->controlsDriven);*/
 			if (shouldResetAIDriven)
 			{
@@ -8938,7 +9023,7 @@ namespace ALYSLC
 			// in TrueHUD's recent loot widget.
 			// Done by adding the item and removing it immediately.
 
-			SPDLOG_DEBUG("{}: Total count: {}.",
+			DBG("{}: Total count: {}.",
 				a_object ? a_object->GetName() : "NONE", a_totalCount);
 
 			if (!a_object || a_totalCount <= 0)
@@ -8963,7 +9048,7 @@ namespace ALYSLC
 					}
 									
 					auto count = exDataList->GetCount();
-					SPDLOG_DEBUG("{}: ExtraDataList Count: {}.", 
+					DBG("{}: ExtraDataList Count: {}.", 
 						a_object ? a_object->GetName() : "NONE", a_totalCount);
 					if (count <= 0)
 					{
@@ -9639,7 +9724,7 @@ namespace ALYSLC
 				auto tes = RE::TES::GetSingleton();
 				if (!tes)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Players are out of bounds and could not get TES singleton. Boooo."
 					);
@@ -9648,19 +9733,19 @@ namespace ALYSLC
 
 				if (p1->parentCell)
 				{
-					SPDLOG_DEBUG("Teleport to P1's parent cell {} (0x{:X}).",
+					DBG("Teleport to P1's parent cell {} (0x{:X}).",
 						Util::GetEditorID(p1->parentCell), p1->parentCell->formID);
 					p1->CenterOnCell(p1->parentCell);
 				}
 				else if (auto currentCell = tes->GetCell(a_target->data.location); currentCell)
 				{
-					SPDLOG_DEBUG("Teleport to P1's current cell {} (0x{:X}).",
+					DBG("Teleport to P1's current cell {} (0x{:X}).",
 						Util::GetEditorID(currentCell), currentCell->formID);
 					p1->CenterOnCell(currentCell);
 				}
 				else if (tes->worldSpace && tes->worldSpace->persistentCell)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Teleport to the current worldspace's persistent cell {} (0x{:X}).",
 						Util::GetEditorID(tes->worldSpace->persistentCell), 
@@ -9670,14 +9755,14 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Players are out of bounds "
 						"and no valid teleport position was found. Boooo."
 					);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {} is out of bounds. "
 					"Moving from ({}, {}, {}) to closest door position: ({}, {}, {}). "
@@ -10016,7 +10101,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Lock obtained. (0x{:X})",
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -10063,7 +10148,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Failed to obtain lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())

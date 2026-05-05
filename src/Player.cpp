@@ -73,6 +73,8 @@ namespace ALYSLC
 		shoutStartTP = SteadyClock::now();
 		crosshairRefrVisibilityLostTP = SteadyClock::now();
 		transformationTP = SteadyClock::now();
+		// Lists, sets, maps.
+		analogStickParams.fill(0.0f);
 		// Strings.
 		lastAnimEventTag = ""sv;
 		// Floats
@@ -104,7 +106,8 @@ namespace ALYSLC
 
 	void CoopPlayer::MainTask()
 	{
-		// Nothing for now.
+		// Update analog stick data while the player is active.
+		UpdateAnalogStickData();
 		return;
 	}
 
@@ -159,7 +162,7 @@ namespace ALYSLC
 		ZeroMemory(&tempState, sizeof(XINPUT_STATE));
 		if (XInputGetState(deviceID, &tempState) != ERROR_SUCCESS)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: controller input error for DID {}. "
 				"About to pause all managers and end the co-op session.",
@@ -203,7 +206,7 @@ namespace ALYSLC
 		selfValid = Util::ActorIsValid(coopActor.get());
 		if (!selfValid)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Disabled: {}, 3d NOT loaded: {}, handle NOT valid: {}, "
 				"NO loaded data: {}, NO current proc: {}, NO char controller: {}, "
@@ -243,7 +246,7 @@ namespace ALYSLC
 			!ui->IsSavingAllowed() ||
 			fullscreenMenuOpen) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: P1 wait for cam: {}, "
 				"should teleport to P1: {}, game is paused: {}, "
@@ -299,7 +302,7 @@ namespace ALYSLC
 						// Have to sheathe weapon before teleporting, 
 						// otherwise the equip state gets bugged.
 						pam->ReadyWeapon(false);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Now moving player {} to P1. Movement actor: {}", 
 							coopActor->GetName(),
@@ -343,7 +346,7 @@ namespace ALYSLC
 					if (coopActor->IsHandleValid() && 
 						Util::HandleIsValid(coopActor->GetHandle())) 
 					{
-						SPDLOG_DEBUG("Moving player {} to P1.", coopActor->GetName());
+						DBG("Moving player {} to P1.", coopActor->GetName());
 						// Temporary solution until I figure out what triggers 
 						// the 'character controller and 3D desync warp glitch',
 						// which occurs ~0.5 seconds after unpausing
@@ -375,7 +378,7 @@ namespace ALYSLC
 								// Have to sheathe weapon before teleporting, 
 								// otherwise the equip state gets bugged.
 								pam->ReadyWeapon(false);
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Now moving player {} to P1. Movement actor: {}", 
 									coopActor->GetName(),
@@ -452,8 +455,33 @@ namespace ALYSLC
 			selfWasInvalid = false;
 		}
 
-		SPDLOG_DEBUG("{}: Resuming all co-op player manager threads.", coopActor->GetName());
+		DBG("{}: Resuming all co-op player manager threads.", coopActor->GetName());
 		return ManagerState::kRunning;
+	}
+
+	void CoopPlayer::Update()
+	{
+		// Update this manager and then update all submanagers.
+		Manager::Update();
+		
+		// NOTE: 
+		// Update funcs must be run in this order.
+		em->Update();
+		pam->Update();
+		mm->Update();
+		tm->Update();
+
+		// Perform update when downed.
+		if (isDowned)
+		{
+			UpdateWhenDowned();
+		}
+
+		// Make sure all players are set as essential if using the revive system.
+		// Game will sometimes reset the essential flag after it is set,
+		// so check each iteration.
+		// Can still update even when the player submanagers are paused.
+		SetEssentialForReviveSystem();
 	}
 
 	void CoopPlayer::InitializeCoopPlayer() 
@@ -464,7 +492,7 @@ namespace ALYSLC
 		// Device ID, player actor, and package form start index 
 		// are already set through the constructor or UpdateCoopPlayer function at this point.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Init player with device/player IDs: {}, {}. {}: FID: 0x{:X}.", 
 			deviceID,
@@ -518,6 +546,8 @@ namespace ALYSLC
 			shoutStartTP = SteadyClock::now();
 			crosshairRefrVisibilityLostTP = SteadyClock::now();
 			transformationTP = SteadyClock::now();
+			// Lists, sets, maps.
+			analogStickParams.fill(0.0f);
 			// Strings.
 			lastAnimEventTag = ""sv;
 			// Floats.
@@ -628,6 +658,153 @@ namespace ALYSLC
 		}
 	}
 
+	void CoopPlayer::UpdateAnalogStickData()
+	{
+		// Update player movement parameters derived from controller analog stick movement
+		// in both in-game coordinates and absolute coordinates.
+
+		if (!glob.globalDataInit || 
+			!glob.allPlayersInit ||
+			!isActive ||
+			deviceID >= ALYSLC_MAX_CONTROLLER_COUNT)
+		{
+			return;
+		}
+
+		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
+		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
+		// Analog stick components and normalized displacement magnitudes.
+		const float& lsX = lsData.xComp;
+		const float& lsY = lsData.yComp;
+		const float& rsX = rsData.xComp;
+		const float& rsY = rsData.yComp;
+		const float& lsMag = lsData.normMag;
+		const float& rsMag = rsData.normMag;
+		// Orientation angle of controller thumbsticks. 
+		// NOT relative to the camera.
+		float lsGameAng = 0.0f;
+		float rsGameAng = 0.0f;
+		// Components of thumbstick displacement vectors.
+		float lxComp = 0.0f;
+		float lyComp = 0.0f;
+		float rxComp = 0.0f;
+		float ryComp = 0.0f;
+
+		// Get camera yaw angle.
+		auto playerCam = RE::PlayerCamera::GetSingleton();
+		float camYaw = glob.cam->GetCurrentYaw();
+		// Game yaw angle relative to the camera for the LS.
+		float lsCamRelAng = 0.0f;
+		// Game yaw angle relative to the camera for the RS.
+		float rsCamRelAng = 0.0f;
+		// Obtain Cartesian angle for left stick orientation.
+		if (lsX == 0.0f && lsY == 0.0f) 
+		{
+			// Previous, no change, since the LS is centered.
+			lsGameAng = analogStickParams[!AnalogStickParams::kLSGameAng];
+		}
+		else
+		{
+			lsGameAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(atan2f(lsY, lsX)));
+		}
+
+		if (rsX == 0.0f && rsY == 0.0f) 
+		{
+			// Previous, no change, since the RS is centered.
+			rsGameAng = analogStickParams[!AnalogStickParams::kRSGameAng];
+		}
+		else
+		{
+			rsGameAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(atan2f(rsY, rsX)));
+		}
+
+		// Yaw angles for both analog sticks in the world's coordinate space 
+		// (relative to the camera).
+		lsCamRelAng = Util::NormalizeAng0To2Pi(camYaw + lsGameAng);
+		rsCamRelAng = Util::NormalizeAng0To2Pi(camYaw + rsGameAng);
+
+		// Get the absolute change in LS angle since the last check.
+		const float deltaLSGameAngMag = Util::NormalizeAngToPi
+		(
+			fabsf(lsGameAng - analogStickParams[!AnalogStickParams::kLSGameAng])
+		);
+		const float deltaRSGameAngMag = Util::NormalizeAngToPi
+		(
+			fabsf(rsGameAng - analogStickParams[!AnalogStickParams::kRSGameAng])
+		);
+
+		// Get X, Y components for both analog sticks, with respect to the camera's yaw.
+		if (rsMag != 0.0f)
+		{
+			rsCamRelAng = Util::ConvertAngle(rsCamRelAng);
+			rxComp = cosf(rsCamRelAng);
+			ryComp = sinf(rsCamRelAng);
+			rsCamRelAng = Util::ConvertAngle(rsCamRelAng);
+		}
+		else
+		{
+			// Unchanged.
+			rsCamRelAng = analogStickParams[!AnalogStickParams::kRSCamRelAng];
+			rxComp = 0.0f;
+			ryComp = 0.0f;
+		}
+
+		if (lsMag != 0.0f)
+		{
+			lsCamRelAng = Util::ConvertAngle(lsCamRelAng);
+			lxComp = cosf(lsCamRelAng);
+			lyComp = sinf(lsCamRelAng);
+			lsCamRelAng = Util::ConvertAngle(lsCamRelAng);
+		}
+		else
+		{
+			// Unchanged.
+			lsCamRelAng = analogStickParams[!AnalogStickParams::kLSCamRelAng];
+			lxComp = 0.0f;
+			lyComp = 0.0f;
+		}
+		
+		// Update moved flags next.
+		bool prevLSMoved = lsMoved;
+		// LS/RS stopped when centered for two frames (norm mag is 0 this frame and last frame).
+		bool prevMoved = lsData.prevNormMag != 0.0f;
+		lsMoved = prevMoved || lxComp != 0.0f || lyComp != 0.0f;
+		prevMoved = rsData.prevNormMag != 0.0f;
+		rsMoved = prevMoved || rxComp != 0.0f || ryComp != 0.0f;
+		if (prevLSMoved && !lsMoved) 
+		{
+			lastMovementStopReqTP = SteadyClock::now();
+		}
+		else if (!prevLSMoved && lsMoved)
+		{
+			lastMovementStartReqTP = SteadyClock::now();
+		}
+
+		// All angles are in game coordinates before adding to params list.
+		analogStickParams[!AnalogStickParams::kLSXComp] = lxComp;
+		analogStickParams[!AnalogStickParams::kLSYComp] = lyComp;
+		analogStickParams[!AnalogStickParams::kRSXComp] = rxComp;
+		analogStickParams[!AnalogStickParams::kRSYComp] = ryComp;
+		analogStickParams[!AnalogStickParams::kLSCamRelAng] = lsCamRelAng;
+		analogStickParams[!AnalogStickParams::kRSCamRelAng] = rsCamRelAng;
+		analogStickParams[!AnalogStickParams::kDeltaLSGameAngMag] = deltaLSGameAngMag;
+		analogStickParams[!AnalogStickParams::kDeltaRSGameAngMag] = deltaRSGameAngMag;
+		analogStickParams[!AnalogStickParams::kLSGameAng] = lsGameAng;
+		analogStickParams[!AnalogStickParams::kRSGameAng] = rsGameAng;
+		analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter] = 
+		(
+			lsData.MovingAwayFromCenter() ? 
+			lsCamRelAng : 
+			analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter]
+		);
+		analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter] = 
+		(
+			rsData.MovingAwayFromCenter() ? 
+			rsCamRelAng : 
+			analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter]
+		);
+	}
+
 	void CoopPlayer::UpdateCoopPlayer
 	(
 		int32_t a_deviceID, int32_t a_playerID, RE::Actor* a_coopActor
@@ -636,7 +813,7 @@ namespace ALYSLC
 		// Update an already-constructed co-op player by setting the given data 
 		// and refreshing all other members.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Updating co-op player: {}, DID: {}, PID: {}.", 
 			a_coopActor ? a_coopActor->GetName() : "NONE", 
@@ -646,7 +823,7 @@ namespace ALYSLC
 
 		if (a_deviceID < 0 || a_playerID < 0 || a_playerID >= ALYSLC_MAX_PLAYER_COUNT)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"{}: invalid DID or PID: {}, {}.",
 				coopActor ? coopActor->GetName() : "NONE", a_deviceID, a_playerID
@@ -685,7 +862,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Copying {}'s appearance to {}, "
 			"set opposite gender animations: {}, "
@@ -699,7 +876,7 @@ namespace ALYSLC
 		);
 
 		auto actorBase = coopActor->GetActorBase();
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Base is female: {}, current is female: {}, "
 			"current uses opposite gender anims: {}, "
@@ -726,7 +903,7 @@ namespace ALYSLC
 		Util::RemoveAllHeadParts(coopActor.get());
 		// Add new headparts from NPC to the player.
 		Util::ImportHeadPartsFromBase(a_baseToCopy, actorBase);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Imported {}'s appearance to {}", a_baseToCopy->GetName(), coopActor->GetName()
 		);
@@ -773,7 +950,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Handled dismissal of {} (0x{:X}). Script is now completing cleanup.", 
 			coopActor->GetName(), coopActor->formID
@@ -966,7 +1143,7 @@ namespace ALYSLC
 				}
 				
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"BEFORE {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 					"elapsed time: {}, duration: {}.",
@@ -1007,7 +1184,7 @@ namespace ALYSLC
 				}
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"AFTER1 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 					"elapsed time: {}, duration: {}.",
@@ -1031,7 +1208,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("No active effects list after resurrection.");
+			DBG("No active effects list after resurrection.");
 		}
 		
 		//coopActor->CastPermanentMagic(true, true, true, true);
@@ -1049,7 +1226,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
 				);
@@ -1084,7 +1261,7 @@ namespace ALYSLC
 				}
 				
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"AFTER2 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 					"elapsed time: {}, duration: {}.",
@@ -1201,7 +1378,7 @@ namespace ALYSLC
 							);
 						}
 							
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: HMS before, after: ({}, {}, {}), ({}, {}, {}).",
 							coopActor->GetName(),
@@ -1290,7 +1467,7 @@ namespace ALYSLC
 			(!originalRace || originalRace == coopActor->race) ||
 			(!currentRaceHasTransformation)
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Pre-transform race: {}, original: {}, current: {}, chosen: {}, "
 			"is transformed: {}. Skip: {}.",
@@ -1577,7 +1754,7 @@ namespace ALYSLC
 			// The transformation reversion will remove at least half of the player's health,
 			// so ensure their health is full before transforming back to prevent the player
 			// from instantly dying/entering a downed state.
-			SPDLOG_DEBUG("{}: Restore health.", coopActor->GetName());
+			DBG("{}: Restore health.", coopActor->GetName());
 			Util::RestoreAVToMaxValue(coopActor.get(), RE::ActorValue::kHealth);
 			if (auto effectList = coopActor->GetActiveEffectList(); effectList)
 			{
@@ -1677,7 +1854,7 @@ namespace ALYSLC
 		// ragdoll and paralyze the player to keep them from getting up while downed,
 		// and set initial revive data.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}. Is ragdolled: {} (knock state {}), "
 			"is in killmove: {}, is dead: {}, is essential: {}, health: {}.",
@@ -1761,13 +1938,13 @@ namespace ALYSLC
 			{
 				if (!isPlayer1 || Settings::bCanRevivePlayer1)
 				{
-					SPDLOG_DEBUG("{} is now set as essential.", coopActor->GetName());
+					DBG("{} is now set as essential.", coopActor->GetName());
 					// Not P1 or can revive P1, so set as essential.
 					Util::ChangeEssentialStatus(coopActor.get(), true, !glob.p1IsEssential);
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot revive P1. P1 essential designation: {}.", glob.p1IsEssential
 					);
@@ -1782,7 +1959,7 @@ namespace ALYSLC
 			{
 				if (isPlayer1)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot revive players. P1 essential designation: {}.", glob.p1IsEssential
 					);
@@ -1794,7 +1971,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot revive players {} unset as essential.", coopActor->GetName()
 					);
@@ -1839,7 +2016,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: set female: {}, set opposite gender animations: {}, current race: {}",
 			coopActor->GetName(), a_setFemale, a_setOppositeGenderAnims, coopActor->race->GetName()
@@ -2005,7 +2182,7 @@ namespace ALYSLC
 			}
 
 			coopActor->AddToFaction(coopFaction, 0);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} added to co-op faction {} (0x{:X}): {}.",
 				coopActor->GetName(),
@@ -2026,7 +2203,7 @@ namespace ALYSLC
 						coopActor->AddToFaction(a_faction, a_rank);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} now is in faction {} (0x{:X}): {}.",
 						coopActor->GetName(),
@@ -2045,7 +2222,7 @@ namespace ALYSLC
 		(
 			[this](RE::TESFaction* a_faction, int8_t a_rank) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} is in faction {} (0x{:X}): {}.",
 					coopActor->GetName(),
@@ -2057,7 +2234,7 @@ namespace ALYSLC
 				/*if ((a_faction->formID & 0x00FFFFFF) == 0x016EB3)
 				{
 					coopActor->RemoveFromFaction(a_faction);
-					SPDLOG_DEBUG("Removing from faction {}: {}.",
+					DBG("Removing from faction {}: {}.",
 						Util::GetEditorID(a_faction), !coopActor->IsInFaction(a_faction));
 				}*/
 
@@ -2085,7 +2262,7 @@ namespace ALYSLC
 		if (glob.loadingASave)
 		{
 			// All data will be re-initialized once the save loads, so nothing to clean up here.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Stopped downed countdown for {}. Game is loading a save file. Skipping cleanup.",
 				coopActor->GetName()
@@ -2165,7 +2342,7 @@ namespace ALYSLC
 					);
 					tm->UpdateCrosshairMessage();
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} was NOT revived. About to teardown co-op session.", 
 						coopActor->GetName()
@@ -2213,7 +2390,7 @@ namespace ALYSLC
 					);
 					tm->UpdateCrosshairMessage();
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} was revived. Toggle god mode until fully up. "
 						"Health to restore: {}",
@@ -2303,7 +2480,7 @@ namespace ALYSLC
 						// Restart managers.
 						RequestStateChange(ManagerState::kRunning);
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} was revived and is no longer downed. Success!", 
 							coopActor->GetName()
@@ -2315,7 +2492,7 @@ namespace ALYSLC
 			{
 				// If reaching this point, the player was not revived one way or another, 
 				// so make sure the co-op session ends.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} was not revived: {}. "
 					"Revive interval not over: {}, co-op session ended: {}, "
@@ -2421,7 +2598,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		// Set PIDs, as the MIM would normally.
 		if (a_fullControl)
@@ -2634,7 +2811,7 @@ namespace ALYSLC
 				coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} waited {}s before attempting mount. Draw state: {}, (un)equipping: {}, {}",
 				coopActor->GetName(), 
@@ -2702,7 +2879,7 @@ namespace ALYSLC
 			bool isUnequipping = false;
 			coopActor->GetGraphVariableBool("IsEquipping", isEquipping);
 			coopActor->GetGraphVariableBool("IsUnequipping", isUnequipping);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} failed mount. Draw state: {}, (un)equipping: {}, {}.",
 				coopActor->GetName(), 
@@ -2856,7 +3033,7 @@ namespace ALYSLC
 			)
 		};
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Vals before: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
 			hmsModsBefore[0][0],
@@ -2949,7 +3126,7 @@ namespace ALYSLC
 						}
 
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"BEFORE {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 							"elapsed time: {}, duration: {}.",
@@ -3003,7 +3180,7 @@ namespace ALYSLC
 						}
 
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"AFTER1 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 							"elapsed time: {}, duration: {}.",
@@ -3027,7 +3204,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("No active effects list after resurrection.");
+					DBG("No active effects list after resurrection.");
 				}
 				*/
 				
@@ -3047,7 +3224,7 @@ namespace ALYSLC
 							continue;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Casting spell {} (0x{:X}).", spell->GetName(), spell->formID
 						);
@@ -3105,7 +3282,7 @@ namespace ALYSLC
 					)
 				};
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Vals after: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. HMS: {}, {}, {}",
 					hmsModsAfter[0][0],
@@ -3265,7 +3442,7 @@ namespace ALYSLC
 						}
 				
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"AFTER2 {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 							"elapsed time: {}, duration: {}.",
@@ -3292,7 +3469,7 @@ namespace ALYSLC
 				// this should fix it.
 				if (!coopActor->IsOnMount())
 				{
-					SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
+					DBG("{}: Reset3D.", coopActor->GetName());
 					coopActor->DoReset3D(true);
 				}
 
@@ -3428,7 +3605,7 @@ namespace ALYSLC
 				const float healthAfter = coopActor->GetActorValue(RE::ActorValue::kHealth);
 				if (healthAfter != healthBefore)
 				{
-					SPDLOG_DEBUG("Mod health: {}", healthBefore - healthAfter);
+					DBG("Mod health: {}", healthBefore - healthAfter);
 					// Always a positive delta, so no need to undo damage received mult.
 					pam->ModifyAV
 					(
@@ -3441,7 +3618,7 @@ namespace ALYSLC
 				const float magickaAfter = coopActor->GetActorValue(RE::ActorValue::kMagicka);
 				if (magickaAfter != magickaBefore)
 				{
-					SPDLOG_DEBUG("Mod magicka: {}", healthBefore - healthAfter);
+					DBG("Mod magicka: {}", healthBefore - healthAfter);
 					pam->ModifyAV
 					(
 						RE::ActorValue::kMagicka,
@@ -3453,7 +3630,7 @@ namespace ALYSLC
 				const float staminaAfter = coopActor->GetActorValue(RE::ActorValue::kStamina);
 				if (staminaAfter != staminaBefore)
 				{
-					SPDLOG_DEBUG("Mod stamina: {}", healthBefore - healthAfter);
+					DBG("Mod stamina: {}", healthBefore - healthAfter);
 					pam->ModifyAV
 					(
 						RE::ActorValue::kStamina,
@@ -3462,7 +3639,7 @@ namespace ALYSLC
 					);
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Diffs: H: {}, {}, {}, M: {}, {}, {}, S: {}, {}, {}. Values after: {}, {}, {}",
 					hmsModsBefore[0][0] - hmsModsAfter[0][0],
@@ -3490,7 +3667,7 @@ namespace ALYSLC
 						}
 						
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"AFTER {:p}: {} has active effect with base {} (0x{:X}), spell {}, "
 							"elapsed time: {}, duration: {}.",
@@ -3758,7 +3935,7 @@ namespace ALYSLC
 					auto tes = RE::TES::GetSingleton();
 					if (!tes)
 					{
-						SPDLOG_ERROR
+						ERR
 						(
 							"ERR: Players are out of bounds and could not get TES singleton. Boooo."
 						);
@@ -3767,20 +3944,20 @@ namespace ALYSLC
 
 					if (p1->parentCell)
 					{
-						SPDLOG_DEBUG("Teleport to P1's parent cell {} (0x{:X}).",
+						DBG("Teleport to P1's parent cell {} (0x{:X}).",
 							Util::GetEditorID(p1->parentCell), p1->parentCell->formID);
 						p1->CenterOnCell(p1->parentCell);
 					}
 					else if (auto currentCell = tes->GetCell(targetActor->data.location); 
 							 currentCell)
 					{
-						SPDLOG_DEBUG("Teleport to P1's current cell {} (0x{:X}).",
+						DBG("Teleport to P1's current cell {} (0x{:X}).",
 							Util::GetEditorID(currentCell), currentCell->formID);
 						p1->CenterOnCell(currentCell);
 					}
 					else if (tes->worldSpace && tes->worldSpace->persistentCell)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Teleport to the current worldspace's persistent cell {} (0x{:X}).",
 							Util::GetEditorID(tes->worldSpace->persistentCell), 
@@ -3790,7 +3967,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_ERROR
+						ERR
 						(
 							"ERR: Players are out of bounds "
 							"and no valid teleport position was found. Boooo."
@@ -3799,7 +3976,7 @@ namespace ALYSLC
 				}
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} is out of bounds. "
 				"Moving from ({}, {}, {}) to closest door position: ({}, {}, {}). "
@@ -3845,7 +4022,7 @@ namespace ALYSLC
 			SteadyClock::time_point waitTP = SteadyClock::now();
 			while (coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp && secsWaited < 2.0f)
 			{
-				SPDLOG_DEBUG("Waiting until getting up. Knock state: {}, waited {}s.", 
+				DBG("Waiting until getting up. Knock state: {}, waited {}s.", 
 					coopActor->GetKnockState(), secsWaited);
 				std::this_thread::sleep_for(0.5s);
 				secsWaited += 0.5f;

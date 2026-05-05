@@ -39,7 +39,7 @@ namespace ALYSLC
 				return;
 			}
 
-			SPDLOG_DEBUG("Remove {}, index {}.", a_form->GetName(), a_listIndex);
+			DBG("Remove {}, index {}.", a_form->GetName(), a_listIndex);
 			// If the requested form to unequip is not the same as 
 			// the one already in this slot, do not clear the slot.
 			bool diffFormAlreadyInSlot = 
@@ -450,7 +450,7 @@ namespace ALYSLC
 
 				if (!a_exDatalist && entry->object == a_object)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"No specified extra data list for {}, which exists in the chest.", 
 						a_object->GetName()
@@ -467,7 +467,7 @@ namespace ALYSLC
 				{
 					if (list == a_exDatalist)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}. {:p} matches {:p}.", 
 							a_object->GetName(),

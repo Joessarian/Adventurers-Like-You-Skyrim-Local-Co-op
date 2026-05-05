@@ -23,7 +23,7 @@ namespace ALYSLC
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(35551, 36544) };
 				_Update = trampoline.write_call<5>(hook.address() + OFFSET(0x11F, 0x160), Update);
-				SPDLOG_INFO("Installed Update() hook");
+				INF("Installed Update() hook");
 			}
 
 		private:
@@ -49,14 +49,14 @@ namespace ALYSLC
 					OFFSET(0xE5, 0x170), 
 					EquipObject
 				);
-				SPDLOG_INFO("Installed EquipObject() hook.");
+				INF("Installed EquipObject() hook.");
 				_UnequipObject = trampoline.write_call<5>
 				(
 					hook2.address() + 
 					OFFSET(0x138, 0x1B9), 
 					UnequipObject
 				);
-				SPDLOG_INFO("Installed UnequipObject() hook.");
+				INF("Installed UnequipObject() hook.");
 			}
 
 		private:
@@ -86,29 +86,29 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActorMagicCaster[0] };
 				/*_ClearMagicNode = vtbl.write_vfunc(0x11, ClearMagicNode);
-				SPDLOG_INFO("Installed ClearMagicNode() hook.");
+				INF("Installed ClearMagicNode() hook.");
 				_DeselectSpellImpl = vtbl.write_vfunc(0x12, DeselectSpellImpl);
-				SPDLOG_INFO("Installed DeselectSpellImpl() hook.");*/
+				INF("Installed DeselectSpellImpl() hook.");*/
 				_FinishCastImpl = vtbl.write_vfunc(0x07, FinishCastImpl);
-				SPDLOG_INFO("Installed FinishCastImpl() hook.");
+				INF("Installed FinishCastImpl() hook.");
 				_InterruptCastImpl = vtbl.write_vfunc(0x08, InterruptCastImpl);
-				SPDLOG_INFO("Installed InterruptCastImpl() hook.");
+				INF("Installed InterruptCastImpl() hook.");
 				_RequestCastImpl = vtbl.write_vfunc(0x03, RequestCastImpl);
-				SPDLOG_INFO("Installed RequestCastImpl() hook.");
+				INF("Installed RequestCastImpl() hook.");
 				/*_SelectSpellImpl = vtbl.write_vfunc(0x11, SelectSpellImpl);
-				SPDLOG_INFO("Installed SelectSpellImpl() hook.");
+				INF("Installed SelectSpellImpl() hook.");
 				_SetCurrentSpellImpl = vtbl.write_vfunc(0x10, SetCurrentSpellImpl);
-				SPDLOG_INFO("Installed SetCurrentSpellImpl() hook.");
+				INF("Installed SetCurrentSpellImpl() hook.");
 				_SpellCast = vtbl.write_vfunc(0x09, SpellCast);
-				SPDLOG_INFO("Installed SpellCast() hook.");
+				INF("Installed SpellCast() hook.");
 				_StartCastImpl = vtbl.write_vfunc(0x06, StartCastImpl);
-				SPDLOG_INFO("Installed StartCastImpl() hook.");*/
+				INF("Installed StartCastImpl() hook.");*/
 				_StartChargeImpl = vtbl.write_vfunc(0x04, StartChargeImpl);
-				SPDLOG_INFO("Installed StartChargeImpl() hook.");
+				INF("Installed StartChargeImpl() hook.");
 				/*_StartReadyImpl = vtbl.write_vfunc(0x05, StartReadyImpl);
-				SPDLOG_INFO("Installed StartReadyImpl() hook.");*/
+				INF("Installed StartReadyImpl() hook.");*/
 				_Update = vtbl.write_vfunc(0x1D, Update);
-				SPDLOG_INFO("Installed Update() hook.");
+				INF("Installed Update() hook.");
 			}
 
 		private:
@@ -191,7 +191,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BSAnimationGraphManager[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
-				SPDLOG_INFO("Installed ProcessEvent() hook.");
+				INF("Installed ProcessEvent() hook.");
 			}
 
 		private:
@@ -212,7 +212,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BSMultiBound[0] };
 				_QWithinPoint = vtbl.write_vfunc(0x25, QWithinPoint);
-				SPDLOG_INFO("Installed QWithinPoint() hook.");
+				INF("Installed QWithinPoint() hook.");
 			}
 
 		private:
@@ -238,49 +238,49 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl9{ RE::VTABLE_Character[9] };
 				
 				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
-				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
+				INF("Installed AddObjectToContainer() hook.");
 				_CheckClampDamageModifier = vtbl.write_vfunc(0x127, CheckClampDamageModifier);
-				SPDLOG_INFO("Installed CheckClampDamageModifier() hook.");
+				INF("Installed CheckClampDamageModifier() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
-				SPDLOG_INFO("Installed DrawWeaponMagicHands() hook.");
+				INF("Installed DrawWeaponMagicHands() hook.");
 				_HandleHealthDamage = vtbl.write_vfunc(0x104, HandleHealthDamage);
-				SPDLOG_INFO("Installed HandleHealthDamage() hook.");
+				INF("Installed HandleHealthDamage() hook.");
 				_ModifyAnimationUpdateData = vtbl.write_vfunc(0x79, ModifyAnimationUpdateData);
-				SPDLOG_INFO("Installed ModifyAnimationUpdateData() hook.");
+				INF("Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
-				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
+				INF("Installed NotifyAnimationGraph() hook.");
 				_PickUpObject = vtbl.write_vfunc(0xCC, PickUpObject);
-				SPDLOG_INFO("Installed PickUpObject() hook.");
+				INF("Installed PickUpObject() hook.");
 				_PutCreatedPackage = vtbl.write_vfunc(0xDF, PutCreatedPackage);
-				SPDLOG_INFO("Installed PutCreatedPackage() hook.");
+				INF("Installed PutCreatedPackage() hook.");
 				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
-				SPDLOG_DEBUG("Installed RemoveItem() hook.");
+				DBG("Installed RemoveItem() hook.");
 				_RemoveWeapon = vtbl.write_vfunc(0x82, RemoveWeapon);
-				SPDLOG_INFO("Installed RemoveWeapon() hook.");
+				INF("Installed RemoveWeapon() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
-				SPDLOG_INFO("Installed ResetInventory() hook.");
+				INF("Installed ResetInventory() hook.");
 				_SetCurrentScene = vtbl.write_vfunc(0x4B, SetCurrentScene);
-				SPDLOG_INFO("Installed SetCurrentScene() hook.");
+				INF("Installed SetCurrentScene() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
-				SPDLOG_INFO("Installed Update() hook.");
+				INF("Installed Update() hook.");
 				_UseAmmo = vtbl.write_vfunc(0xD2, UseAmmo);
-				SPDLOG_INFO("Installed UseAmmo() hook.");
+				INF("Installed UseAmmo() hook.");
 
 				// Actor values.
 				/*_GetActorValue = vtbl5.write_vfunc(0x01, GetActorValue);
-				SPDLOG_INFO("Installed GetActorValue hook.");
+				INF("Installed GetActorValue hook.");
 				_GetBaseActorValue = vtbl5.write_vfunc(0x03, GetBaseActorValue);
-				SPDLOG_INFO("Installed GetBaseActorValue hook.");
+				INF("Installed GetBaseActorValue hook.");
 				_GetPermanentActorValue = vtbl5.write_vfunc(0x02, GetPermanentActorValue);
-				SPDLOG_INFO("Installed GetPermanentActorValue hook.");
+				INF("Installed GetPermanentActorValue hook.");
 				_ModActorValue = vtbl5.write_vfunc(0x05, ModActorValue);
-				SPDLOG_INFO("Installed ModActorValue hook.");*/
+				INF("Installed ModActorValue hook.");*/
 				_RestoreActorValue = vtbl5.write_vfunc(0x06, RestoreActorValue);
-				SPDLOG_INFO("Installed RestoreActorValue hook.");
+				INF("Installed RestoreActorValue hook.");
 				/*_SetActorValue = vtbl5.write_vfunc(0x07, SetActorValue);
-				SPDLOG_INFO("Installed SetActorValue hook.");*/
+				INF("Installed SetActorValue hook.");*/
 				_SetBaseActorValue = vtbl5.write_vfunc(0x04, SetBaseActorValue);
-				SPDLOG_INFO("Installed SetBaseActorValue hook.");
+				INF("Installed SetBaseActorValue hook.");
 			}
 
 		private:
@@ -414,7 +414,7 @@ namespace ALYSLC
 					OFFSET(0x7B, 0x7B), 
 					DispatchInputEvents
 				);
-				SPDLOG_INFO("Installed DispatchInputEvents() hook.");
+				INF("Installed DispatchInputEvents() hook.");
 			}
 
 		private:
@@ -438,7 +438,7 @@ namespace ALYSLC
 				};
 
 				_Run = vtbl.write_vfunc(0x1, Run);
-				SPDLOG_INFO("Installed Run() hook.");
+				INF("Installed Run() hook.");
 			}
 
 		private:
@@ -466,7 +466,7 @@ namespace ALYSLC
 					OFFSET(0x6F, 0x6F), 
 					ProcessStagger
 				);
-				SPDLOG_INFO("Installed ProcessStagger() hook.");
+				INF("Installed ProcessStagger() hook.");
 			}
 
 		private:
@@ -494,7 +494,7 @@ namespace ALYSLC
 					OFFSET(0x3C0, 0x4A8), 
 					ProcessHit
 				);
-				SPDLOG_INFO("Installed ProcessHit() hook.");
+				INF("Installed ProcessHit() hook.");
 			}
 
 		private:
@@ -510,7 +510,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MenuControls[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
-				SPDLOG_INFO("Installed ProcessEvent() hook.");
+				INF("Installed ProcessEvent() hook.");
 				debugMenuBindPressed = 
 				pauseAndWaitWerePressed = 
 				summoningMenuBindPressed = false;
@@ -609,7 +609,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_NiNode[0] };
 				_UpdateDownwardPass = vtbl.write_vfunc(0x2C, UpdateDownwardPass);
-				SPDLOG_INFO("Installed UpdateDownwardPass() hook.");
+				INF("Installed UpdateDownwardPass() hook.");
 			}
 
 		private:
@@ -628,7 +628,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_PlayerCameraTransitionState[0] };
 				_Begin = vtbl.write_vfunc(0x01, Begin);
-				SPDLOG_INFO("Installed Begin() hook.");
+				INF("Installed Begin() hook.");
 			}
 
 		private:
@@ -645,29 +645,29 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_PlayerCharacter[0] };
 				REL::Relocation<uintptr_t> vtbl3{ RE::VTABLE_PlayerCharacter[3] };
 				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
-				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
+				INF("Installed AddObjectToContainer() hook.");
 				_DrawWeaponMagicHands = vtbl.write_vfunc(0xA6, DrawWeaponMagicHands);
-				SPDLOG_INFO("Installed DrawWeaponMagicHands() hook.");
+				INF("Installed DrawWeaponMagicHands() hook.");
 				_CheckClampDamageModifier = vtbl.write_vfunc(0x127, CheckClampDamageModifier);
-				SPDLOG_INFO("Installed CheckClampDamageModifier() hook.");
+				INF("Installed CheckClampDamageModifier() hook.");
 				_HandleHealthDamage = vtbl.write_vfunc(0x104, HandleHealthDamage);
-				SPDLOG_INFO("Installed HandleHealthDamage() hook.");
+				INF("Installed HandleHealthDamage() hook.");
 				_ModifyAnimationUpdateData = vtbl.write_vfunc(0x79, ModifyAnimationUpdateData);
-				SPDLOG_INFO("Installed ModifyAnimationUpdateData() hook.");
+				INF("Installed ModifyAnimationUpdateData() hook.");
 				_NotifyAnimationGraph = vtbl3.write_vfunc(0x01, NotifyAnimationGraph);
-				SPDLOG_INFO("Installed NotifyAnimationGraph() hook.");
+				INF("Installed NotifyAnimationGraph() hook.");
 				_PickUpObject = vtbl.write_vfunc(0xCC, PickUpObject);
-				SPDLOG_INFO("Installed PickupObject() hook.");
+				INF("Installed PickupObject() hook.");
 				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
-				SPDLOG_INFO("Installed RemoveItem() hook.");
+				INF("Installed RemoveItem() hook.");
 				_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
-				SPDLOG_INFO("Installed ResetInventory() hook.");
+				INF("Installed ResetInventory() hook.");
 				_Update = vtbl.write_vfunc(0xAD, Update);
-				SPDLOG_INFO("Installed Update() hook.");
+				INF("Installed Update() hook.");
 				_UseAmmo = vtbl.write_vfunc(0xD2, UseAmmo);
-				SPDLOG_INFO("Installed UseAmmo() hook.");	
+				INF("Installed UseAmmo() hook.");	
 				_UseSkill = vtbl.write_vfunc(0xF7, UseSkill);
-				SPDLOG_INFO("Installed UseSkill() hook.");
+				INF("Installed UseSkill() hook.");
 			}
 
 		private:
@@ -772,145 +772,145 @@ namespace ALYSLC
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed ArrowProjectile GetLinearVelocity() hook.");
+				INF("Installed ArrowProjectile GetLinearVelocity() hook.");
 				_ArrowProjectile_OnArrowCollision = arrowProjectileVtbl.write_vfunc
 				(
 					0xBE, OnProjectileCollision
 				);
-				SPDLOG_INFO("Installed ArrowProjectile OnArrowCollision() hook.");
+				INF("Installed ArrowProjectile OnArrowCollision() hook.");
 				_ArrowProjectile_UpdateImpl = arrowProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("Installed ArrowProjectile UpdateImpl() hook.");
+				INF("Installed ArrowProjectile UpdateImpl() hook.");
 
 				// Barrier.
 				_BarrierProjectile_GetLinearVelocity = barrierProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed BarrierProjectile GetLinearVelocity() hook.");
+				INF("Installed BarrierProjectile GetLinearVelocity() hook.");
 				_BarrierProjectile_RunTargetPick = barrierProjectileVtbl.write_vfunc
 				(
 					0xB7, RunTargetPick
 				);
-				SPDLOG_INFO("Installed BarrierProjectile RunTargetPick() hook.");
+				INF("Installed BarrierProjectile RunTargetPick() hook.");
 				_BarrierProjectile_ShouldUseDesiredTarget = barrierProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
 				);
-				SPDLOG_INFO("Installed BarrierProjectile ShouldUseDesiredTarget() hook.");
+				INF("Installed BarrierProjectile ShouldUseDesiredTarget() hook.");
 				_BarrierProjectile_UpdateImpl = barrierProjectileVtbl.write_vfunc
 				(
 					0xAB, UpdateImpl
 				);
-				SPDLOG_INFO("Installed BarrierProjectile UpdateImpl() hook.");
+				INF("Installed BarrierProjectile UpdateImpl() hook.");
 
 				// Beam.
 				_BeamProjectile_GetLinearVelocity = beamProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed BeamProjectile GetLinearVelocity() hook.");
+				INF("Installed BeamProjectile GetLinearVelocity() hook.");
 				_BeamProjectile_RunTargetPick = beamProjectileVtbl.write_vfunc(0xB7, RunTargetPick);
-				SPDLOG_INFO("Installed BeamProjectile RunTargetPick() hook.");
+				INF("Installed BeamProjectile RunTargetPick() hook.");
 				_BeamProjectile_ShouldUseDesiredTarget = beamProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
 				);
-				SPDLOG_INFO("Installed BeamProjectile ShouldUseDesiredTarget() hook.");
+				INF("Installed BeamProjectile ShouldUseDesiredTarget() hook.");
 				_BeamProjectile_UpdateImpl = beamProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("Installed BeamProjectile UpdateImpl() hook.");
+				INF("Installed BeamProjectile UpdateImpl() hook.");
 
 				// Cone.
 				_ConeProjectile_GetLinearVelocity = coneProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed ConeProjectile GetLinearVelocity() hook.");
+				INF("Installed ConeProjectile GetLinearVelocity() hook.");
 				_ConeProjectile_OnConeCollision = coneProjectileVtbl.write_vfunc
 				(
 					0xBE, OnProjectileCollision
 				);
-				SPDLOG_INFO("Installed ConeProjectile OnConeCollision() hook.");
+				INF("Installed ConeProjectile OnConeCollision() hook.");
 				_ConeProjectile_UpdateImpl = coneProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("Installed ConeProjectile UpdateImpl() hook.");
+				INF("Installed ConeProjectile UpdateImpl() hook.");
 
 				// Flame.
 				_FlameProjectile_GetLinearVelocity = flameProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed FlameProjectile GetLinearVelocity() hook.");
+				INF("Installed FlameProjectile GetLinearVelocity() hook.");
 				_FlameProjectile_RunTargetPick = flameProjectileVtbl.write_vfunc
 				(
 					0xB7, RunTargetPick
 				);
-				SPDLOG_INFO("Installed FlameProjectile RunTargetPick() hook.");
+				INF("Installed FlameProjectile RunTargetPick() hook.");
 				_FlameProjectile_ShouldUseDesiredTarget = flameProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
 				);
-				SPDLOG_INFO("Installed FlameProjectile ShouldUseDesiredTarget() hook.");
+				INF("Installed FlameProjectile ShouldUseDesiredTarget() hook.");
 				_FlameProjectile_UpdateImpl = flameProjectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("Installed FlameProjectile UpdateImpl() hook.");
+				INF("Installed FlameProjectile UpdateImpl() hook.");
 
 				// Grenade.
 				_GrenadeProjectile_GetLinearVelocity = grenadeProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed GrenadeProjectile GetLinearVelocity() hook.");
+				INF("Installed GrenadeProjectile GetLinearVelocity() hook.");
 				_GrenadeProjectile_RunTargetPick = grenadeProjectileVtbl.write_vfunc
 				(
 					0xB7, RunTargetPick
 				);
-				SPDLOG_INFO("Installed GrenadeProjectile RunTargetPick() hook.");
+				INF("Installed GrenadeProjectile RunTargetPick() hook.");
 				_GrenadeProjectile_ShouldUseDesiredTarget = grenadeProjectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
 				);
-				SPDLOG_INFO("Installed GrenadeProjectile ShouldUseDesiredTarget() hook.");
+				INF("Installed GrenadeProjectile ShouldUseDesiredTarget() hook.");
 				_GrenadeProjectile_UpdateImpl = grenadeProjectileVtbl.write_vfunc
 				(
 					0xAB, UpdateImpl
 				);
-				SPDLOG_INFO("Installed GrenadeProjectile UpdateImpl() hook.");
+				INF("Installed GrenadeProjectile UpdateImpl() hook.");
 
 				// Missile.
 				_MissileProjectile_GetLinearVelocity = missileProjectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed MissileProjectile GetLinearVelocity() hook.");
+				INF("Installed MissileProjectile GetLinearVelocity() hook.");
 				_MissileProjectile_OnMissileCollision = missileProjectileVtbl.write_vfunc
 				(
 					0xBE, OnProjectileCollision
 				);
-				SPDLOG_INFO("Installed MissileProjectile OnMissileCollision() hook.");
+				INF("Installed MissileProjectile OnMissileCollision() hook.");
 				_MissileProjectile_UpdateImpl = missileProjectileVtbl.write_vfunc
 				(
 					0xAB, UpdateImpl
 				);
-				SPDLOG_INFO("Installed MissileProjectile UpdateImpl() hook.");
+				INF("Installed MissileProjectile UpdateImpl() hook.");
 
 				// Generic.
 				_Projectile_GetLinearVelocity = projectileVtbl.write_vfunc
 				(
 					0x86, GetLinearVelocity
 				);
-				SPDLOG_INFO("Installed Projectile GetLinearVelocity() hook.");
+				INF("Installed Projectile GetLinearVelocity() hook.");
 				_Projectile_OnProjectileCollision = projectileVtbl.write_vfunc
 				(
 					0xBE, OnProjectileCollision
 				);
-				SPDLOG_INFO("Installed Projectile OnMissileCollision() hook.");
+				INF("Installed Projectile OnMissileCollision() hook.");
 				_Projectile_RunTargetPick = projectileVtbl.write_vfunc(0xB7, RunTargetPick);
-				SPDLOG_INFO("Installed Projectile RunTargetPick() hook.");
+				INF("Installed Projectile RunTargetPick() hook.");
 				_Projectile_ShouldUseDesiredTarget = projectileVtbl.write_vfunc
 				(
 					0xC1, ShouldUseDesiredTarget
 				);
-				SPDLOG_INFO("Installed Projectile ShouldUseDesiredTarget() hook.");
+				INF("Installed Projectile ShouldUseDesiredTarget() hook.");
 				_Projectile_UpdateImpl = projectileVtbl.write_vfunc(0xAB, UpdateImpl);
-				SPDLOG_INFO("Installed Projectile UpdateImpl() hook.");
+				INF("Installed Projectile UpdateImpl() hook.");
 				
 				auto& trampoline = SKSE::GetTrampoline();
 				REL::Relocation<uintptr_t> hook{ RELOCATION_ID(43013, 44204) };
@@ -918,7 +918,7 @@ namespace ALYSLC
 				(
 					hook.address() + OFFSET(0x251, 0x21F), ProcessHit
 				);
-				SPDLOG_INFO("Installed Projectile ProcessHit() hook");
+				INF("Installed Projectile ProcessHit() hook");
 			}
 
 		private:
@@ -1086,7 +1086,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_SpellItem[0] };
 				_AdjustCost = vtbl.write_vfunc(0x63, AdjustCost);
-				SPDLOG_INFO("Installed AdjustCost() hook.");
+				INF("Installed AdjustCost() hook.");
 			}
 
 		private:
@@ -1107,7 +1107,7 @@ namespace ALYSLC
 				REL::Relocation<std::uintptr_t> hook1{ RELOCATION_ID(49852, 50784) };  
 				auto& trampoline = SKSE::GetTrampoline();
 				_Update = trampoline.write_call<5>(hook1.address() + OFFSET(0x1A6, 0x1A6), Update);
-				SPDLOG_INFO("Installed Update() hook.");
+				INF("Installed Update() hook.");
 			}
 
 		private:
@@ -1123,7 +1123,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_TESObjectBOOK[0] };
 				_Activate = vtbl.write_vfunc(0x37, Activate);
-				SPDLOG_INFO("Installed Activate() hook.");
+				INF("Installed Activate() hook.");
 			}
 
 		private:
@@ -1147,13 +1147,13 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_TESObjectREFR[0] };
 				_AddObjectToContainer = vtbl.write_vfunc(0x5A, AddObjectToContainer);
-				SPDLOG_INFO("Installed AddObjectToContainer() hook.");
+				INF("Installed AddObjectToContainer() hook.");
 				_RemoveItem = vtbl.write_vfunc(0x56, RemoveItem);
-				SPDLOG_INFO("Installed RemoveItem() hook.");
+				INF("Installed RemoveItem() hook.");
 				/*_ResetInventory = vtbl.write_vfunc(0x8A, ResetInventory);
-				SPDLOG_INFO("Installed ResetInventory() hook.");*/
+				INF("Installed ResetInventory() hook.");*/
 				_SetParentCell = vtbl.write_vfunc(0x98, SetParentCell);
-				SPDLOG_INFO("Installed SetParentCell() hook.");
+				INF("Installed SetParentCell() hook.");
 			}
 
 		private:
@@ -1197,37 +1197,37 @@ namespace ALYSLC
 				// HCS: Horse Camera State
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ThirdPersonState[0] };
 				_GetRotationTPCS = vtbl.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("Installed ThirdPersonState::GetRotation() hook.");
+				INF("Installed ThirdPersonState::GetRotation() hook.");
 				_HandleLookInputTPCS = vtbl.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("Installed ThirdPersonState::HandleLookInput() hook.");
+				INF("Installed ThirdPersonState::HandleLookInput() hook.");
 				_SetFreeRotationModeTPCS = vtbl.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("Installed ThirdPersonState::SetFreeRotationMode() hook.");
+				INF("Installed ThirdPersonState::SetFreeRotationMode() hook.");
 				_UpdateRotationTPCS = vtbl.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("Installed ThirdPersonState::UpdateRotation() hook.");
+				INF("Installed ThirdPersonState::UpdateRotation() hook.");
 
 				REL::Relocation<uintptr_t> vtbl1{ RE::VTABLE_BleedoutCameraState[0] };
 				_BeginBCS = vtbl1.write_vfunc(0x01, Begin);
-				SPDLOG_INFO("Installed BleedOutCameraState::Begin() hook.");
+				INF("Installed BleedOutCameraState::Begin() hook.");
 				_GetRotationBCS = vtbl1.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("Installed BleedOutCameraState::GetRotation() hook.");
+				INF("Installed BleedOutCameraState::GetRotation() hook.");
 				_HandleLookInputBCS = vtbl1.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("Installed BleedOutCameraState::HandleLookInput() hook.");
+				INF("Installed BleedOutCameraState::HandleLookInput() hook.");
 				_SetFreeRotationModeBCS = vtbl1.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("Installed BleedOutCameraState::SetFreeRotationMode() hook.");
+				INF("Installed BleedOutCameraState::SetFreeRotationMode() hook.");
 				_UpdateRotationBCS = vtbl1.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("Installed BleedOutCameraState::UpdateRotation() hook.");
+				INF("Installed BleedOutCameraState::UpdateRotation() hook.");
 
 				REL::Relocation<uintptr_t> vtbl2{ RE::VTABLE_HorseCameraState[0] };
 				_BeginHCS = vtbl2.write_vfunc(0x01, Begin);
-				SPDLOG_INFO("Installed HorseCameraState::Begin() hook.");
+				INF("Installed HorseCameraState::Begin() hook.");
 				_GetRotationHCS = vtbl2.write_vfunc(0x04, GetRotation);
-				SPDLOG_INFO("Installed HorseCameraState::GetRotation() hook.");
+				INF("Installed HorseCameraState::GetRotation() hook.");
 				_HandleLookInputHCS = vtbl2.write_vfunc(0x0F, HandleLookInput);
-				SPDLOG_INFO("Installed HorseCameraState::HandleLookInput() hook.");
+				INF("Installed HorseCameraState::HandleLookInput() hook.");
 				_SetFreeRotationModeHCS = vtbl2.write_vfunc(0x0D, SetFreeRotationMode);
-				SPDLOG_INFO("Installed HorseCameraState::SetFreeRotationMode() hook.");
+				INF("Installed HorseCameraState::SetFreeRotationMode() hook.");
 				_UpdateRotationHCS = vtbl2.write_vfunc(0x0E, UpdateRotation);
-				SPDLOG_INFO("Installed HorseCameraState::UpdateRotation() hook.");
+				INF("Installed HorseCameraState::UpdateRotation() hook.");
 			}
 
 		private:
@@ -1263,7 +1263,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ValueModifierEffect[0] };
 				_Start = vtbl.write_vfunc(0x14, Start);
-				SPDLOG_INFO("Installed Start() hook.");
+				INF("Installed Start() hook.");
 			}
 
 		private:
@@ -1279,9 +1279,9 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_VampireLordEffect[0] };
 				_Start = vtbl.write_vfunc(0x14, Start);
-				SPDLOG_INFO("Installed Start() hook.");
+				INF("Installed Start() hook.");
 				_Finish = vtbl.write_vfunc(0x15, Finish);
-				SPDLOG_INFO("Installed Finish() hook.");
+				INF("Installed Finish() hook.");
 			}
 
 		private:
@@ -1299,9 +1299,9 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_WerewolfEffect[0] };
 				_Start = vtbl.write_vfunc(0x14, Start);
-				SPDLOG_INFO("Installed Start() hook.");
+				INF("Installed Start() hook.");
 				_Finish = vtbl.write_vfunc(0x15, Finish);
-				SPDLOG_INFO("Installed Finish() hook.");
+				INF("Installed Finish() hook.");
 			}
 
 		private:
@@ -1323,7 +1323,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BarterMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1342,7 +1342,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_BookMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1361,9 +1361,9 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ContainerMenu[0] };
 				_AdvanceMovie = vtbl.write_vfunc(0x05, AdvanceMovie);
-				SPDLOG_INFO("Installed AdvanceMovie() hook.");
+				INF("Installed AdvanceMovie() hook.");
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1387,7 +1387,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_CraftingMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1406,7 +1406,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_DialogueMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1425,7 +1425,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_FavoritesMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:                                     
@@ -1444,7 +1444,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_GiftMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:                                     
@@ -1463,7 +1463,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_InventoryMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1482,7 +1482,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_LoadingMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1501,7 +1501,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MagicMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1520,7 +1520,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_RaceSexMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1539,7 +1539,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_StatsMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1558,7 +1558,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_TrainingMenu[0] };
 				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
-				SPDLOG_INFO("Installed ProcessMessage() hook.");
+				INF("Installed ProcessMessage() hook.");
 			}
 
 		private:
@@ -1581,7 +1581,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ActivateHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1600,7 +1600,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_AttackBlockHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1619,7 +1619,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_JumpHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 		private:
 			static bool CanProcess(RE::JumpHandler* a_this, RE::InputEvent* a_event);
@@ -1634,7 +1634,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_LookHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1650,7 +1650,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MovementHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1666,7 +1666,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ReadyWeaponHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1682,7 +1682,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_ShoutHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1698,7 +1698,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_SneakHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1714,7 +1714,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_SprintHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:
@@ -1730,7 +1730,7 @@ namespace ALYSLC
 			{
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_TogglePOVHandler[0] };
 				_CanProcess = vtbl.write_vfunc(0x01, CanProcess);
-				SPDLOG_INFO("Installed CanProcess() hook.");
+				INF("Installed CanProcess() hook.");
 			}
 
 		private:

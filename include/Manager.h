@@ -29,7 +29,7 @@ namespace ALYSLC
 			}
 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} RequestStateChange: Current State: {}, next state: {}. "
 					"Getting lock. (0x{:X})", 
@@ -38,7 +38,7 @@ namespace ALYSLC
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
 				);
 				std::unique_lock<std::mutex> lock(setStateMutex);
-				SPDLOG_DEBUG("{} RequestStateChange: Set state lock acquired. (0x{:X})", 
+				DBG("{} RequestStateChange: Set state lock acquired. (0x{:X})", 
 					type, 
 					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				nextState = a_newState;
@@ -46,7 +46,7 @@ namespace ALYSLC
 		}
 
 		// Called per frame to run main task and update the manager's state.
-		inline void Update()
+		inline virtual void Update()
 		{
 			// Checks if the next execution state has changed
 			// and update the current state after performing any pre-state change tasks.
@@ -126,7 +126,7 @@ namespace ALYSLC
 				if (nextState == ManagerState::kPaused || 
 					nextState == ManagerState::kAwaitingRefresh)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} CheckForStateChange: Waiting to resume. "
 						"State goes from {} -> {}.", 
@@ -140,7 +140,7 @@ namespace ALYSLC
 				}
 				else if (nextState == ManagerState::kRunning)
 				{
-					SPDLOG_DEBUG("{} CheckForStateChange: Resuming. State goes from {} -> {}.", 
+					DBG("{} CheckForStateChange: Resuming. State goes from {} -> {}.", 
 						type, currentState, nextState);
 
 					// Refresh data if currently waiting to refresh data or uninitialized.
@@ -170,7 +170,7 @@ namespace ALYSLC
 					if (lock)
 					{
 						nextState = reqState;
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} SelfPauseCheck: Succeeded in acquiring set state lock to pause. "
 							"(0x{:X})",
@@ -179,7 +179,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} SelfPauseCheck: Failed to acquire set state lock to pause. "
 							"(0x{:X})", 
@@ -203,7 +203,7 @@ namespace ALYSLC
 					if (lock)
 					{
 						nextState = reqState;
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} SelfResumeCheck: Succeeded in acquiring set state lock to resume. "
 							"(0x{:X})", 
@@ -212,7 +212,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} SelfResumeCheck: Failed to acquire set state lock to resume. "
 							"(0x{:X})",
@@ -287,10 +287,10 @@ namespace ALYSLC
 		inline void ClearTasks()
 		{
 			{
-				SPDLOG_DEBUG("Getting lock. (0x{:X})", 
+				DBG("Getting lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				std::unique_lock<std::mutex> lock(queueMutex);
-				SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
+				DBG("Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				while (!queue.empty())
 				{
@@ -305,7 +305,7 @@ namespace ALYSLC
 			while (!a_stoken.stop_requested())
 			{
 				{
-					SPDLOG_DEBUG("Getting lock. (0x{:X})", 
+					DBG("Getting lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex);
 					queueCV.wait
@@ -313,14 +313,14 @@ namespace ALYSLC
 						lock,
 						[&]() 
 						{
-							SPDLOG_DEBUG("Waiting for a task.");
+							DBG("Waiting for a task.");
 							return (queue.size() > 0 || a_stoken.stop_requested());
 						}
 					);
 
 					while (queue.size() > 0)
 					{
-						SPDLOG_DEBUG("Got a task.");
+						DBG("Got a task.");
 						queue.front()();
 						queue.pop();
 					}
@@ -328,7 +328,7 @@ namespace ALYSLC
 			}
 
 			// Clear out all remaining tasks when done.
-			SPDLOG_DEBUG("Requested to stop runner thread.");
+			DBG("Requested to stop runner thread.");
 			ClearTasks();
 		}
 	};

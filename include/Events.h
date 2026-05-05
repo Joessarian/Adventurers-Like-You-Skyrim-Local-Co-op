@@ -250,6 +250,30 @@ namespace ALYSLC
 		CoopEquipEventHandler& operator=(CoopEquipEventHandler&& a_ceeh) = delete;
 	};
 
+	class CoopFormDeleteEventHandler : public RE::BSTEventSink<RE::TESFormDeleteEvent>
+	{
+	public:
+		using EventResult = RE::BSEventNotifyControl;
+	
+		static CoopFormDeleteEventHandler* GetSingleton();
+		
+		static void Register();
+		
+		EventResult ProcessEvent
+		(
+			const RE::TESFormDeleteEvent* a_formDeleteEvent, 
+			RE::BSTEventSource<RE::TESFormDeleteEvent>*
+		) override;
+	
+	private:
+		CoopFormDeleteEventHandler() = default;
+		CoopFormDeleteEventHandler(const CoopFormDeleteEventHandler& a_cfdeh) = delete;
+		CoopFormDeleteEventHandler(CoopFormDeleteEventHandler&& a_cfdeh) = delete;
+		~CoopFormDeleteEventHandler() = default;
+		CoopFormDeleteEventHandler& operator=(const CoopFormDeleteEventHandler& a_cfdeh) = delete;
+		CoopFormDeleteEventHandler& operator=(CoopFormDeleteEventHandler&& a_cfdeh) = delete;
+	};
+
 	class CoopLoadGameEventHandler : public RE::BSTEventSink<RE::TESLoadGameEvent>
 	{
 	public:

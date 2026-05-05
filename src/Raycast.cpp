@@ -348,7 +348,7 @@ namespace Raycast
 			);
 			if (res2.hit && a_traceHullSize == 30.0f)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"CAM CAST: Hit {} ({}, 0x{:X}, {}, base type 0x{:X}), "
 					"which has collision layer 0x{:X}. Hull size {}.",

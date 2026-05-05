@@ -57,7 +57,7 @@ namespace ALYSLC
 		// P1's DID is always first.
 		// Either a controller or keyboard + mouse.
 		inputDeviceIDs.push_back(glob.player1DID);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"P1 is using {}. DID: {}.", 
 			glob.player1DID == -1 ? 
@@ -79,7 +79,7 @@ namespace ALYSLC
 				auto errorNum = XInputGetState(controllerIndex, &inputState);
 				if (errorNum == ERROR_SUCCESS)
 				{
-					SPDLOG_INFO
+					INF
 					(
 						"Co-op player controller {} has been registered.", controllerIndex
 					);
@@ -87,7 +87,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"No controller connected at index {}. Result #{}.", 
 						controllerIndex, errorNum
@@ -106,7 +106,7 @@ namespace ALYSLC
 			// if no controllers are plugged in.
 			if (numInputDevices == 1 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
 			{
-				SPDLOG_DEBUG("Only the keyboard and mouse is connected. Cannot start co-op.");
+				DBG("Only the keyboard and mouse is connected. Cannot start co-op.");
 			}
 
 			// For now, return an empty list since at least two input devices must be connected.
@@ -115,13 +115,13 @@ namespace ALYSLC
 		else if (numInputDevices == 2 && inputDeviceIDs[0] >= ALYSLC_MAX_CONTROLLER_COUNT)
 		{
 			// Hybrid mode active when only 1 controller is plugged in.
-			SPDLOG_DEBUG("Hybrid mode active. Device IDs are {} and {}.",
+			DBG("Hybrid mode active. Device IDs are {} and {}.",
 				inputDeviceIDs[0], inputDeviceIDs[1]);
 			glob.hybridModeActive = true;
 		}
 		else
 		{
-			SPDLOG_DEBUG("Hybrid mode inactive. {} input devices. First CID: {}", 
+			DBG("Hybrid mode inactive. {} input devices. First CID: {}", 
 				inputDeviceIDs.size(), inputDeviceIDs[0]);
 			glob.hybridModeActive = false;
 		}
@@ -152,7 +152,7 @@ namespace ALYSLC
 				glob.coopSessionActive &&
 				glob.coopPlayers[a_controllerID]->isActive)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Could not get input state for active controller {}", a_controllerID
 				);
@@ -291,7 +291,7 @@ namespace ALYSLC
 				glob.coopSessionActive && 
 				glob.coopPlayers[a_controllerID]->isActive)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Could not get input state for active controller {}", a_controllerID
 				);
@@ -318,7 +318,9 @@ namespace ALYSLC
 		// DXScancode for the button to check.
 		uint32_t dxsc = FIRST_CTRLR_DXSC;
 		bool buttonPressed = false;
+		bool isAnalogStick = false;
 		bool isButton = true;
+		bool isTrigger = false;
 		bool ltPressed = false; 
 		bool rtPressed = false;
 		bool lsMoved = false;
@@ -333,24 +335,29 @@ namespace ALYSLC
 		);
 		// Increase frame window at higher framerates
 		// to ensure that the player has enough time to double tap inputs.
-		uint32_t consecTapFrames = max
+		uint32_t analogConsecTapFrames = max
 		(
 			static_cast<uint32_t>
 			(
 				(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
-				static_cast<float>(Settings::fConsecTapsFrameCountWindow)
+				static_cast<float>(Settings::fAnalogConsecTapsFrameCountWindow)
+			), 
+			1
+		);
+		uint32_t buttonConsecTapFrames = max
+		(
+			static_cast<uint32_t>
+			(
+				(1.0f / (60.0f * *g_deltaTimeRealTime)) * 
+				static_cast<float>(Settings::fButtonConsecTapsFrameCountWindow)
 			), 
 			1
 		);
 		for (uint32_t i = !InputAction::kFirst; i < !InputAction::kInputTotal; ++i, ++dxsc) 
 		{
-			isButton = 
-			(
-				i != !InputAction::kLS && 
-				i != !InputAction::kRS && 
-				dxsc != DXSC_LT && 
-				dxsc != DXSC_RT
-			);
+			isAnalogStick = i == !InputAction::kLS || i == !InputAction::kRS;
+			isTrigger = dxsc == DXSC_LT || dxsc == DXSC_RT;
+			isButton = !isAnalogStick && !isTrigger;
 			buttonPressed = 
 			(
 				isButton && 
@@ -384,14 +391,29 @@ namespace ALYSLC
 					float secsSinceLastRelease = Util::GetElapsedSeconds(lastReleaseTP);
 					// Increment consecutive taps if tapped again 
 					// within the frame count limit for consecutive taps.
-					state.consecPresses = 
-					(
-						secsSinceLastRelease <= 
-						consecTapFrames * 
-						*g_deltaTimeRealTime ? 
-						state.consecPresses + 1 : 
-						1
-					);
+					if (buttonPressed)
+					{
+						state.consecPresses = 
+						(
+							secsSinceLastRelease <= 
+							buttonConsecTapFrames * 
+							*g_deltaTimeRealTime ? 
+							state.consecPresses + 1 : 
+							1
+						);
+					}
+					else
+					{
+						state.consecPresses = 
+						(
+							secsSinceLastRelease <= 
+							analogConsecTapFrames * 
+							*g_deltaTimeRealTime ? 
+							state.consecPresses + 1 : 
+							1
+						);
+					}
+					
 					// Update input mask and first press time point.
 					currentMask |= 1 << i;
 					firstPressTP = SteadyClock::now();
@@ -448,7 +470,18 @@ namespace ALYSLC
 				{
 					const auto& firstPressTP = firstPressTPs[i];
 					float secsSinceLastPress = Util::GetElapsedSeconds(firstPressTP);
-					if (secsSinceLastPress > consecTapFrames * *g_deltaTimeRealTime)
+					bool canResetConsecPresses = 
+					(
+						(
+							(isButton || isTrigger) && 
+							(secsSinceLastPress > buttonConsecTapFrames * *g_deltaTimeRealTime) 
+						) ||
+						( 
+							isAnalogStick && 
+							secsSinceLastPress > analogConsecTapFrames * *g_deltaTimeRealTime 
+						)
+					);
+					if (canResetConsecPresses)
 					{
 						state.consecPresses = 0;
 					}
@@ -487,7 +520,7 @@ namespace ALYSLC
 		// will cause P1 to control multiple players if P1 was using the keyboard previously.
 		if (glob.coopSessionActive && activeControllerCount != oldControllerCount)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Controller count changed: {} -> {}. "
 				"Tear down co-op session and prompt for P1 DID again.",

@@ -722,8 +722,8 @@ namespace ALYSLC
 			PerfType::kOnRelease,
 			// ActivateCancel
 			PerfType::kOnRelease,
-			// AdjustAimPitch
-			PerfType::kOnPressAndRelease,
+			// AdjustAimPitch (TEMPORARY, CHANGE BACK TO 'OnPressAndRelease' WHEN NEW BINDS ADDED)
+			PerfType::kOnHold,
 			// AttackLH
 			PerfType::kOnHold,
 			// AttackRH
@@ -803,7 +803,7 @@ namespace ALYSLC
 			// MapMenu
 			PerfType::kOnRelease,
 			// MoveCrosshair
-			PerfType::kOnHold,
+			PerfType::kNoAction,
 			// Pause
 			PerfType::kOnRelease,
 			// PowerAttackDual
@@ -1135,7 +1135,7 @@ namespace ALYSLC
 			// RotateCam
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			),
 			// RotateLeftForearm
 			TriggerFlags
@@ -1227,7 +1227,7 @@ namespace ALYSLC
 			// ZoomCam
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			)
 		};
 

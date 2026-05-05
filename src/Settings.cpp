@@ -20,7 +20,7 @@ namespace ALYSLC
 		{
 			if (err = ini.LoadFile(defaultFilePathEnderal.c_str()); err != SI_OK) 
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"ERR ({}): ImportAllSettings: "
 					"Could not load default Enderal settings file '{}'. "
@@ -31,7 +31,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_INFO
+				INF
 				(
 					"Successfully opened default Enderal settings configuration file '{}'.",
 					defaultFilePathEnderal.string()
@@ -42,7 +42,7 @@ namespace ALYSLC
 		{
 			if (err = ini.LoadFile(defaultFilePathSSE.c_str()); err != SI_OK)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"ERR ({}): ImportAllSettings: "
 					"Could not load default Skyrim SE settings file '{}'. "
@@ -53,7 +53,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_INFO
+				INF
 				(
 					"Successfully opened default Skyrim settings configuration file '{}'.", 
 					defaultFilePathSSE.string()
@@ -80,7 +80,7 @@ namespace ALYSLC
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathEnderal.c_str()); err != SI_OK)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"({}): Could not load Enderal player settings config file '{}'. "
 					"If you've made changes to the default settings, "
@@ -91,7 +91,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_INFO
+				INF
 				(
 					"Successfully opened user-modified Enderal settings configuration file '{}'.",
 					userSettingsFilePathEnderal.string()
@@ -102,7 +102,7 @@ namespace ALYSLC
 		{
 			if (err = ini2.LoadFile(userSettingsFilePathSSE.c_str()); err != SI_OK)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"({}): Could not load Skyrim SE player settings config file '{}'. "
 					"If you've made changes to the default settings, "
@@ -113,7 +113,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_INFO
+				INF
 				(
 					"Successfully opened user-modified Skyrim settings configuration file '{}'.",
 					userSettingsFilePathSSE.string()
@@ -174,7 +174,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("Done importing all settings.");
+		DBG("Done importing all settings.");
 	}
 
 	bool Settings::ImportBinds(CSimpleIniA& a_ini)
@@ -295,7 +295,7 @@ namespace ALYSLC
 				{
 					param.perfType = PerfType::kDisabled;
 					actionsWithBindErrors.insert(action);
-					SPDLOG_ERROR
+					ERR
 					(
 						"P{}: [BIND INVALID]: "
 						"{} has both the 'Minimum Hold Time' and 'On Consecutive Tap' flags set. "
@@ -406,7 +406,7 @@ namespace ALYSLC
 					if (compActionSlot == 1 && slotModified && !composingActionEnabled)
 					{
 						param.perfType = PerfType::kDisabled;
-						SPDLOG_DEBUG
+						DBG
 						(
 							"P{}: {}'s first composing action was disabled. "
 							"Disabling the bind. "
@@ -470,7 +470,7 @@ namespace ALYSLC
 							}
 							else if (assignedInputActionIndex > !InputAction::kLastAction)
 							{
-								SPDLOG_ERROR
+								ERR
 								(
 									"P{}: [BIND INVALID]: "
 									"{} -> composing action #{} is enabled "
@@ -486,7 +486,7 @@ namespace ALYSLC
 								actionsWithBindErrors.insert(action);
 							}
 
-							SPDLOG_DEBUG
+							DBG
 							(
 								"P{}: Bind for action {}: slot: {}, enabled: {}, "
 								"already assigned: {}, assigned input action: {}.", 
@@ -572,7 +572,7 @@ namespace ALYSLC
 							}
 							else if (assignedInputActionIndex > !InputAction::kLastAction)
 							{
-								SPDLOG_ERROR
+								ERR
 								(
 									"P{}: [BIND INVALID]: "
 									"{} -> composing action #{} is enabled "
@@ -637,7 +637,7 @@ namespace ALYSLC
 				// Notify the player of their invalid binds.
 				if (actionsWithBindErrors.contains(action))
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"P{}: [BIND INVALID]: Action {}'s bind will be disabled. "
 						"Please ensure the composing actions for this bind "
@@ -683,7 +683,7 @@ namespace ALYSLC
 				// Recursion depth exceeded, so disable the bind.
 				if (recursionDepth >= uMaxComposingInputsCheckRecursionDepth)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"P{}: [BIND INVALID] action {}'s bind may be circular "
 						"(max of {} assigned inputs exceeded). "
@@ -699,7 +699,7 @@ namespace ALYSLC
 				// Lastly, set input mask and copy over composing player actions count.
 				param.inputMask = paInfo->GetInputMask(param.composingInputs);
 				param.composingPlayerActionsCount = numComposingPlayerActions;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"P{}: Bind for action {} has {} composing inputs and {} composing actions.", 
 					pIndex + 1,
@@ -715,7 +715,7 @@ namespace ALYSLC
 			actionsWithBindErrors.clear();
 		}
 
-		SPDLOG_DEBUG("All binds valid: {}.", allBindsValid);
+		DBG("All binds valid: {}.", allBindsValid);
 		return allBindsValid;
 	}
 
@@ -1165,6 +1165,13 @@ namespace ALYSLC
 		(
 			a_ini, "NewSystems", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 300.0f
 		);
+		ReadBoolSetting
+		(
+			a_ini,
+			"NewSystems", 
+			"bEnableSpinalRotation", 
+			bEnableSpinalRotation
+		);
 		ReadUInt32Setting
 		(
 			a_ini,
@@ -1257,7 +1264,7 @@ namespace ALYSLC
 			10.0f
 		);
 
-		SPDLOG_DEBUG("Done importing.");
+		DBG("Done importing.");
 	}
 
 	void Settings::ImportPlayerSpecificSettings(CSimpleIniA& a_ini)
@@ -1530,6 +1537,15 @@ namespace ALYSLC
 				720.0f, 
 				true
 			);
+			ReadUInt32Setting
+			(
+				a_ini, 
+				sectionName.data(),
+				"uDefaultAimMode", 
+				(uint32_t&)vuDefaultAimMode[pIndex], 
+				0, 
+				!AimMode::kTotal - 1
+			);
 			// Skip 'kAimDirection', hence the '- 2'.
 			ReadUInt32Setting
 			(
@@ -1753,7 +1769,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG("Done importing.");
+		DBG("Done importing.");
 	}
 
 	bool Settings::ReadBoolSetting
@@ -1771,7 +1787,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1799,13 +1815,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+				DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 				return false;
 			}
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Settings list for ({}:{}) is not large enough for requested index ({}).", 
 				a_settingKey, a_section, a_index
@@ -1847,7 +1863,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1874,7 +1890,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1900,7 +1916,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"({}:{}) has value '{}' "
 					"but could not be converted to hex color format 'RRGGBB'.",
@@ -1912,7 +1928,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1935,7 +1951,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}
@@ -1962,7 +1978,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
+			DBG("Could not find Section::Key '{}::{}'.", a_section, a_settingKey);
 			return false;
 		}
 	}

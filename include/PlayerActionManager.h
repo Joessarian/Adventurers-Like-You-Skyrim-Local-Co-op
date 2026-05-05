@@ -55,7 +55,7 @@ namespace ALYSLC
 				);
 				if (perfAnimQueueLock)
 				{
-					SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
+					DBG("Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					while (!perfAnimEventsQueue.empty())
 					{
@@ -64,7 +64,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("Failed to obtain lock. (0x{:X})", 
+					DBG("Failed to obtain lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				}
 			}
@@ -586,7 +586,7 @@ namespace ALYSLC
 				return;
 			}
 
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"Modify {}'s {} by {}.",
 				coopActor->GetName(), 
@@ -922,8 +922,19 @@ namespace ALYSLC
 		
 		// Return true if the player should turn to face a target 
 		// if attacking, bashing, blocking, casting, or shouting.
-		// Also return whether or not a combat action has just started in the outparam.
-		bool TurnToTargetForCombatAction(bool& a_combatActionJustStarted);
+		// Return whether or not a combat action has just started,
+		// and if the attack is a ranged attack in the outparam.
+		// Return whether a combat action bind is pressed in the outparam.
+		// A combat action is sometimes still considered as occurring 
+		// even if the bind is no longer pressed,
+		// ex. spellcasting animation for a fire-and-forget spell continues 
+		// after the bind is released.
+		bool TurnToTargetForCombatAction
+		(
+			bool& a_combatActionBindPressedOut,
+			bool& a_combatActionJustStartedOut, 
+			bool& a_performingRangedActionOut
+		);
 
 		// Update current HMS actor values, HMS regen multipliers, 
 		// stamina/shout cooldowns, and the player's carryweight actor value.
@@ -1076,6 +1087,11 @@ namespace ALYSLC
 		// Action state
 		// 
 		
+		// TEMPORARY. Remove when new targeting binds added.
+		// If 'Adjust Aim Pitch's composing actions were pressed in reverse order,
+		// change crosshair targeting mode, reset aim pitch, or clear aim targets,
+		// depending on the direction of the right stick.
+		bool adjustAimPitchAlternateMode;
 		// Is attacking/casting.
 		bool isAttacking;
 		// Is performing a bash attack.

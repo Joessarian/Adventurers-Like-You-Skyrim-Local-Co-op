@@ -353,9 +353,6 @@ namespace ALYSLC
 			const std::shared_ptr<CoopPlayer>& a_p, 
 			const InputAction& a_action
 		);
-
-		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
-		void PerformActivationCycling(const std::shared_ptr<CoopPlayer>& a_p);
 		
 		// Play or stop the currently cycled emote idle.
 		void PlayEmoteIdle(const std::shared_ptr<CoopPlayer>& a_p);
@@ -413,15 +410,12 @@ namespace ALYSLC
 
 		// Draw and use an equipped weapon while holding an attack bind.
 		void UseWeaponOnHold(const std::shared_ptr<CoopPlayer>& a_p, const InputAction& a_action);
-
-		// Set activation refr as interactable or not, 
-		// and set the player's crosshair text to reflect the result.
-		void ValidateActivationRefr(const std::shared_ptr<CoopPlayer>& a_p);
 	};
 
 	namespace ProgressFuncs
 	{
 		void Activate(const std::shared_ptr<CoopPlayer>& a_p);
+		void AdjustAimPitch(const std::shared_ptr<CoopPlayer>& a_p);
 		void AttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void AttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void Bash(const std::shared_ptr<CoopPlayer>& a_p);
@@ -439,7 +433,6 @@ namespace ALYSLC
 		void CycleWeaponRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void GrabObject(const std::shared_ptr<CoopPlayer>& a_p);
 		void HotkeyEquip(const std::shared_ptr<CoopPlayer>& a_p);
-		void MoveCrosshair(const std::shared_ptr<CoopPlayer>& a_p);
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p);
 		void Shout(const std::shared_ptr<CoopPlayer>& a_p);
 		void SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);

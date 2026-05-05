@@ -63,7 +63,7 @@ namespace ALYSLC
 			ValueModifierEffectHooks::InstallHooks();
 			VampireLordEffectHooks::InstallHooks();
 			WerewolfEffectHooks::InstallHooks();
-			SPDLOG_INFO("Installed all hooks");
+			INF("Installed all hooks");
 		}
 
 //=============
@@ -82,7 +82,7 @@ namespace ALYSLC
 			// Run the game's update next.
 			_Update(a_this, a_a2);
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
-			SPDLOG_DEBUG("Game update took {}ms.", funcMS);
+			DBG("Game update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 			SteadyClock::time_point tpStart = SteadyClock::now();
 
@@ -106,7 +106,7 @@ namespace ALYSLC
 
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("Enderal progression update took {}ms.", funcMS);
+			DBG("Enderal progression update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Update all connected controllers' button and analog states, in or out of co-op,
@@ -114,20 +114,20 @@ namespace ALYSLC
 			glob.cdh->UpdatePlayerControllerStates();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("Controller state update took {}ms.", funcMS);
+			DBG("Controller state update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Cam/menu input managers run their update funcs next.
 			glob.cam->Update();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("Camera update took {}ms.", funcMS);
+			DBG("Camera update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			glob.mim->Update();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("MIM update took {}ms.", funcMS);
+			DBG("MIM update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			// Draw the menu control overlay if a player is controlling menus 
@@ -135,7 +135,7 @@ namespace ALYSLC
 			glob.mim->DrawPlayerMenuControlOverlay();
 			funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 			modUpdateMS2 += funcMS;
-			SPDLOG_DEBUG("PMC update took {}ms.", funcMS);
+			DBG("PMC update took {}ms.", funcMS);
 			tp = SteadyClock::now();
 
 			if (glob.allPlayersInit)
@@ -144,7 +144,7 @@ namespace ALYSLC
 				GlobalCoopData::UpdatePlayerCoopCombatState();
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("Combat state update took {}ms.", funcMS);
+				DBG("Combat state update took {}ms.", funcMS);
 				tp = SteadyClock::now();
 
 				for (const auto& p : glob.coopPlayers)
@@ -156,35 +156,35 @@ namespace ALYSLC
 						p->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s P Update took {}ms.", 
+						DBG("{}'s P Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->em->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s EM Update took {}ms.",
+						DBG("{}'s EM Update took {}ms.",
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->pam->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s PAM Update took {}ms.",
+						DBG("{}'s PAM Update took {}ms.",
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->mm->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s M Update took {}ms.", 
+						DBG("{}'s M Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
 						p->tm->Update();
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s TM Update took {}ms.", 
+						DBG("{}'s TM Update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 
@@ -195,7 +195,7 @@ namespace ALYSLC
 
 						funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 						modUpdateMS2 += funcMS;
-						SPDLOG_DEBUG("{}'s downed update took {}ms.", 
+						DBG("{}'s downed update took {}ms.", 
 							p->coopActor->GetName(), funcMS);
 						tp = SteadyClock::now();
 					}
@@ -210,7 +210,7 @@ namespace ALYSLC
 				GlobalCoopData::HandlePlayerArmCollisions();
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("Player arm collisions took {}ms.", funcMS);
+				DBG("Player arm collisions took {}ms.", funcMS);
 				tp = SteadyClock::now();
 
 				// Clear if a fullscreen menu is open.
@@ -225,11 +225,11 @@ namespace ALYSLC
 				);
 				funcMS = Util::GetElapsedSeconds(tp, true) * 1000.0f;
 				modUpdateMS2 += funcMS;
-				SPDLOG_DEBUG("Crosshair text update took {}ms.", funcMS);
+				DBG("Crosshair text update took {}ms.", funcMS);
 			}
 
 			modUpdateMS = Util::GetElapsedSeconds(tpStart, true) * 1000.0f;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Game global time delta: {}ms, ALYSLC update time delta: {}ms, {}ms.", 
 				*g_deltaTimeRealTime * 1000.0f,
@@ -278,23 +278,7 @@ namespace ALYSLC
 				{
 					if (p->isActive)
 					{
-						// NOTE: 
-						// Update funcs must be run in this order.
 						p->Update();
-						p->em->Update();
-						p->pam->Update();
-						p->mm->Update();
-						p->tm->Update();
-						if (p->isDowned)
-						{
-							p->UpdateWhenDowned();
-						}
-
-						// Make sure all players are set as essential if using the revive system.
-						// Game will sometimes reset the essential flag after it is set,
-						// so check each iteration.
-						// Can still update even when the player submanagers are paused.
-						p->SetEssentialForReviveSystem();
 					}
 				}
 			}
@@ -402,7 +386,7 @@ namespace ALYSLC
 				return _EquipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(),
@@ -425,7 +409,7 @@ namespace ALYSLC
 					// is copied over to them.
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Cannot equip {} when another player's inventory is copied over to P1.",
 							a_object->GetName()
@@ -442,7 +426,7 @@ namespace ALYSLC
 			}
 				
 			bool inInventory = p->coopActor->GetInventory().contains(a_object);
-			SPDLOG_DEBUG("In inventory: {}.", inInventory);
+			DBG("In inventory: {}.", inInventory);
 
 			RE::BGSEquipSlot* equipSlotToRestore = nullptr;
 			if (auto reqEquipSlot = a_objectEquipParams.equipSlot; reqEquipSlot)
@@ -580,7 +564,7 @@ namespace ALYSLC
 						);
 
 						// CHANGE TO DEBUG
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: trying to equip bound weapon {} (0x{:X}) with equip slot {}. "
 							"{}. Reqs: {}, {}, {}. Equipped objects: {}, {}, "
@@ -707,7 +691,7 @@ namespace ALYSLC
 				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
 				a_actor->GetName(), 
@@ -728,7 +712,7 @@ namespace ALYSLC
 				// is copied over to them.
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot unequip {} when another player's inventory is copied over to P1.",
 						a_object->GetName()
@@ -748,7 +732,7 @@ namespace ALYSLC
 			);
 			if (isBound && p->coopActor->IsWeaponDrawn())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: trying to unequip bound weapon {}. Equip slot: {}.", 
 					a_actor->GetName(),
@@ -769,7 +753,7 @@ namespace ALYSLC
 					if ((remainingLifetime > 0.0f) && 
 						(a_object == p->em->lastReqBoundWeapRH || a_object->IsAmmo()))
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: trying to unequip bound 2H weapon/ammo {}. "
 							"Time left: {}. Ignoring.", 
@@ -791,7 +775,7 @@ namespace ALYSLC
 						a_object == p->em->lastReqBoundWeapLH &&
 						a_objectEquipParams.equipSlot == glob.leftHandEquipSlot)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: trying to unequip bound LH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -812,7 +796,7 @@ namespace ALYSLC
 						a_object == p->em->lastReqBoundWeapRH &&
 						a_objectEquipParams.equipSlot == glob.rightHandEquipSlot)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: trying to unequip bound RH weapon {}. Time left: {}. Ignoring.", 
 							a_actor->GetName(),
@@ -826,10 +810,10 @@ namespace ALYSLC
 			else if (a_object != glob.fists && a_object != glob.dummy1H)
 			{
 				bool inInventory = p->coopActor->GetInventory().contains(a_object);
-				SPDLOG_DEBUG("In inventory: {}.", inInventory);
+				DBG("In inventory: {}.", inInventory);
 				if (!inInventory)
 				{
-					SPDLOG_DEBUG("Skip unequipping {} because it is not in {}'s inventory.", 
+					DBG("Skip unequipping {} because it is not in {}'s inventory.", 
 						a_object->GetName(), p->coopActor->GetName());
 					return;
 				}
@@ -862,7 +846,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -903,7 +887,7 @@ namespace ALYSLC
 			else if (pIndex == 0)
 			{
 				auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -968,7 +952,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1009,7 +993,7 @@ namespace ALYSLC
 			else if (pIndex == 0)
 			{
 				auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1074,7 +1058,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1165,7 +1149,7 @@ namespace ALYSLC
 					_InterruptCastImpl(a_this, a_depleteEnergy);
 				}
 
-				/*SPDLOG_DEBUG
+				/*DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}, cost charged: {}. State: {}, deplete energy: {}.",
@@ -1239,7 +1223,7 @@ namespace ALYSLC
 				}
 
 				auto source = a_this->GetCastingSource();
-				/*SPDLOG_DEBUG
+				/*DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1295,7 +1279,7 @@ namespace ALYSLC
 					);
 					if (notRequested)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: {} cast of {} not requested.",
 							p->coopActor->GetName(),
@@ -1361,7 +1345,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1430,7 +1414,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1501,7 +1485,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}. "
@@ -1570,7 +1554,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1634,7 +1618,7 @@ namespace ALYSLC
 					return _StartChargeImpl(a_this);
 				}
 
-				/*SPDLOG_DEBUG
+				/*DBG
 				(
 					"{}, caster {}, spell {}, cost {}. State: {}.",
 					a_this->actor->GetName(),
@@ -1682,7 +1666,7 @@ namespace ALYSLC
 				}
 
 				/*auto source = a_this->GetCastingSource();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}, caster {} (performing: {}, just started: {}, type: {}), "
 					"spell {}, cost: {}. State: {}.",
@@ -1925,7 +1909,7 @@ namespace ALYSLC
 				);
 				if (isStillCasting)
 				{
-					SPDLOG_DEBUG("Restart cast for source {} on menu opening.", 
+					DBG("Restart cast for source {} on menu opening.", 
 						!a_this->castingSource);
 					p->pam->QueueP1ButtonEvent
 					(
@@ -2147,7 +2131,7 @@ namespace ALYSLC
 			// Update camera shake state.
 			if (p->isPlayer1)
 			{
-				// SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
+				// DBG("{}: {}", p->coopActor->GetName(), a_event->tag);
 				if (tagHash == "StartAnimatedCameraDelta"_h)
 				{
 					glob.isCameraShakeActive = true;
@@ -2280,17 +2264,17 @@ namespace ALYSLC
 			{
 				p->mm->SetDontMove(true);
 				p->coopActor->NotifyAnimationGraph("moveStop");
-				if (p->mm->lsMoved)
+				if (p->lsMoved)
 				{
 					p->mm->SetDontMove(false);
 					p->coopActor->NotifyAnimationGraph("moveStart");
 				}
 			}
 			
-			SPDLOG_DEBUG("{}: {}", p->coopActor->GetName(), a_event->tag);
+			DBG("{}: {}", p->coopActor->GetName(), a_event->tag);
 			p->lastAnimEventTag = a_event->tag;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Getting Lock. (0x{:X})",
 				p->coopActor->GetName(),
@@ -2298,7 +2282,7 @@ namespace ALYSLC
 			);
 			{
 				std::unique_lock<std::mutex> perfAnimQueueLock(p->pam->avcam->perfAnimQueueMutex);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Lock obtained. (0x{:X})", 
 					p->coopActor->GetName(), 
@@ -2393,7 +2377,7 @@ namespace ALYSLC
 			// Change as sent/received from none.
 			if (a_fromRefr == a_this)
 			{
-				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+				DBG("{}: Move {} to/from none, not self.", 
 					a_this->GetName(), a_object->GetName());
 				a_fromRefr = nullptr;
 			}
@@ -2458,7 +2442,7 @@ namespace ALYSLC
 			// Skip transfer unless it is a party wide/quest item.
 			if (shouldSendToP1)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"NOT adding party-wide/quest item/Enderal skillbook {} (x{}) to {}. "
 					"Giving to P1.",
@@ -2476,7 +2460,7 @@ namespace ALYSLC
 
 			if (a_fromRefr != p->em->inventoryChest.get())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Add {} of {} to inventory chest instead. From {}.",
 					p->coopActor->GetName(),
@@ -2508,7 +2492,7 @@ namespace ALYSLC
 			// REMOVE when done debugging.
 			/*if (a_av == RE::ActorValue::kHealth)
 			{
-				SPDLOG_DEBUG("{} is about to have their health modified by {}.",
+				DBG("{} is about to have their health modified by {}.",
 					a_this->GetName(), a_delta);
 			}*/
 
@@ -2633,7 +2617,7 @@ namespace ALYSLC
 						{
 							float realDelta = currentMaxHealth - currentHealth;
 							// REMOVE when done debugging.
-							/*SPDLOG_DEBUG
+							/*DBG
 							(
 								"Delta health: {}, real delta: {}, diff: {}. "
 								"In combat: {}, in co-op combat: {}, "
@@ -2857,7 +2841,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG("{} is about to take {} damage from {}.",
+			/*DBG("{} is about to take {} damage from {}.",
 				a_this->GetName(), a_damage, a_attacker ? a_attacker->GetName() : "NONE");*/
 
 			// Check for damage dealt by a player.
@@ -3365,7 +3349,7 @@ namespace ALYSLC
 				return _PickUpObject(a_this, a_object, a_count, a_arg3, a_playSound);
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}. List: {:p}, Arg3: {}",
 				a_this->GetName(),
@@ -3382,7 +3366,7 @@ namespace ALYSLC
 			}
 			
 			const auto& p = glob.coopPlayers[playerIndex];
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Add {} of {} to inventory chest instead via P1.",
 				p->coopActor->GetName(),
@@ -3393,7 +3377,7 @@ namespace ALYSLC
 			auto owner = a_object->extraList.GetByType<RE::ExtraOwnership>(); 
 			RE::TESForm* oldOwner = a_object->extraList.GetOwner();
 			a_object->extraList.SetOwner(p->coopActor.get());
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Adding ownerhip exData to list {:p}: {}. ExCount: {}.",
 				fmt::ptr(std::addressof(a_object->extraList)),
@@ -3410,7 +3394,7 @@ namespace ALYSLC
 			// Not in P1's inventory after pickup.
 			if (iter == inventory.end() || !iter->second.second)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ERR: {}: Failed to find {} of {} in P1's inventory after pickup.",
 					p->coopActor->GetName(),
@@ -3440,7 +3424,7 @@ namespace ALYSLC
 			);
 			if (!shouldAddToChest)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Item {} is a quest/party-wide/added Enderal skillbook object. "
 					"Keeping in P1's inventory.", 
@@ -3453,7 +3437,7 @@ namespace ALYSLC
 			// No extra lists, so the item was not added on pickup.
 			if (!iter->second.second->extraLists || iter->second.second->extraLists->empty())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ERR: {}: No extra data lists for {} in P1's inventory after pickup.",
 					p->coopActor->GetName(),
@@ -3465,7 +3449,7 @@ namespace ALYSLC
 			uint32_t i = 0;
 			for (auto extraDataList : *iter->second.second->extraLists)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Item {} (list #{}) is extra list {:p}.",
 					a_object->GetName(),
@@ -3484,7 +3468,7 @@ namespace ALYSLC
 				{
 					if (auto data = a_object->extraList.GetByType(type); data)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Item {} in {}'s inventory has exData list {:p} "
 							"with data {:p} of type 0x{:X}.",
@@ -3557,7 +3541,7 @@ namespace ALYSLC
 				const auto& p = glob.coopPlayers[pIndex];
 				if (!a_package)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: RUNNING NONE (temp: {}, created: {}).",
 						a_this->GetName(), 
@@ -3621,7 +3605,7 @@ namespace ALYSLC
 				if (!allow)
 				{
 					auto currentCoopPackage = p->pam->GetCurrentPackage();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: IGNORE {} (0x{:X}, temp: {}, created: {}, procedure type: {}. "
 						"Run {} (0x{:X}, type {}) instead.",
@@ -3640,7 +3624,7 @@ namespace ALYSLC
 					return;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: RUNNING {} (0x{:X}, temp: {}, created: {}, procedure type: {}.",
 					a_this->GetName(), 
@@ -3691,13 +3675,13 @@ namespace ALYSLC
 				// Change as sent/received from none.
 				if (a_moveToRef == a_this)
 				{
-					SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+					DBG("{}: Move {} to/from none, not self.", 
 						a_this->GetName(), a_item->GetName());
 					a_moveToRef = nullptr;
 				}
 
 				const auto& p = glob.coopPlayers[pIndex];
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} is removing {} of {} from their inventory. "
 					"Reason: {}. To refr: {}. Drop loc: ({}, {}, {}).",
@@ -3726,7 +3710,7 @@ namespace ALYSLC
 				);
 				if (preventRemoval)
 				{
-					SPDLOG_DEBUG("ERR: Should not be moving item from {} to {}.",
+					DBG("ERR: Should not be moving item from {} to {}.",
 						p->coopActor->GetName(), a_moveToRef ? a_moveToRef->GetName() : "NONE");
 					return nullptr;
 				}
@@ -3769,7 +3753,7 @@ namespace ALYSLC
 					// since dropping directly from the chest fails.
 					if (a_reason == RE::ITEM_REMOVE_REASON::kDropping)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Moving {} (x{}, list {:p}) from {}'s inventory chest to P1 "
 							"and dropping at ({}, {}, {})",
@@ -3799,7 +3783,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Removing {} (x{}, list {:p}) from {}'s inventory chest.",
 							a_item->GetName(),
@@ -3819,7 +3803,7 @@ namespace ALYSLC
 					}
 
 					// Remove the item from the player's inventory too.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Removing {} (x{}, list {:p}) from {}'s inventory.",
 						a_item->GetName(),
@@ -3889,7 +3873,7 @@ namespace ALYSLC
 			}
 
 			const auto& bipedObj = biped->objects[a_equipIndex];
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} at equip index {}.",
 				p->coopActor->GetName(), 
@@ -3986,7 +3970,7 @@ namespace ALYSLC
 						)
 					);
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Active 1H/2H requests: {}, {}, equipped 1H bound weaps: {}, "
 						"Removal request is for {} ({}, index: {}). {}.",
@@ -4009,7 +3993,7 @@ namespace ALYSLC
 						p->pam->secsBoundWeapon2HDuration - 
 						p->pam->secsSinceBoundWeap2HReq > 0.0f)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Ignore removal of bound ammo {}.",
 							p->coopActor->GetName(), 
@@ -4020,7 +4004,7 @@ namespace ALYSLC
 				}
 			}	
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} at equip index {}. {}.",
 				p->coopActor->GetName(), 
@@ -4054,13 +4038,13 @@ namespace ALYSLC
 			{
 				if (pIndex != -1)
 				{
-					SPDLOG_DEBUG("ALLOW: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
+					DBG("ALLOW: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
 				}
 
 				return _ResetInventory(a_this, a_leveledOnly);
 			}
 
-			SPDLOG_DEBUG("SKIP: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
+			DBG("SKIP: {}, leveled only: {}", a_this->GetName(), a_leveledOnly);
 		}
 
 		void CharacterHooks::SetCurrentScene(RE::Character* a_this, RE::BGSScene* a_scene)
@@ -4135,7 +4119,7 @@ namespace ALYSLC
 						((runningPackage->formID >> 24) != 0xFF) && 
 						((runningPackage->formID >> 12) != (p->coopActor->formID >> 12)))
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Stop current package: idle: {}, running: {}, scene: {}.", 
 							p->coopActor->GetName(),
@@ -4259,7 +4243,7 @@ namespace ALYSLC
 					// if the player's speedmult is modified.
 					// Otherwise, the movement speed changes each frame will accumulate, 
 					// reaching infinity and preventing the player from moving.
-					float speedMultToSet = p->mm->movementOffsetParams[!MoveParams::kSpeedMult];
+					float speedMultToSet = p->mm->speedMult;
 					if (speedMultToSet < 0.0f || isnan(speedMultToSet) || isinf(speedMultToSet))
 					{
 						speedMultToSet = p->mm->baseSpeedMult;
@@ -4587,17 +4571,17 @@ namespace ALYSLC
 							auto linVelYaw = 
 							(
 								linVelXY.Length() == 0.0f ? 
-								p->mm->movementOffsetParams[!MoveParams::kLSGameAng] : 
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng] : 
 								Util::DirectionToGameAngYaw(linVelXY)
 							);
 							// Yaw difference between the XY velocity direction 
 							// and the direction in which the player wishes to head.
 							float movementToHeadingAngDiff = 
 							(
-								p->mm->lsMoved ? 
+								p->lsMoved ? 
 								Util::NormalizeAngToPi
 								(
-									p->mm->movementOffsetParams[!MoveParams::kLSGameAng] - 
+									p->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
 									linVelYaw
 								) : 
 								0.0f
@@ -4935,7 +4919,7 @@ namespace ALYSLC
 				);
 			}
 				
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: About to remove {} of {}. Has {} currently.",
 				p->coopActor->GetName(),
@@ -4970,7 +4954,7 @@ namespace ALYSLC
 			(
 				p->em->inventoryChest.get(), currentAmmo
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Removing {} of {} from their inventory chest. {} -> {}",
 				p->coopActor->GetName(),
@@ -5028,7 +5012,7 @@ namespace ALYSLC
 				if (actorPtr && a_this == actorPtr.get())
 				{
 					const float value = _GetActorValue(a_this, a_akValue);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} is {}.", 
 						actorPtr->GetName(), 
@@ -5058,7 +5042,7 @@ namespace ALYSLC
 				if (actorPtr && a_this == actorPtr.get())
 				{
 					const float value = _GetBaseActorValue(a_this, a_akValue);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} is {}.", 
 						actorPtr->GetName(), 
@@ -5088,7 +5072,7 @@ namespace ALYSLC
 				if (actorPtr && a_this == actorPtr.get())
 				{
 					const float value = _GetPermanentActorValue(a_this, a_akValue);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} is {}.", 
 						actorPtr->GetName(), 
@@ -5117,7 +5101,7 @@ namespace ALYSLC
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} by {}.", 
 						actorPtr->GetName(), 
@@ -5178,7 +5162,7 @@ namespace ALYSLC
 						);
 						const float currentPermValue = a_this->GetPermanentActorValue(a_akValue);
 						// CHANGE TO DEBUG
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Adjusting {}'s {} modifier by {} to {}. "
 							"New permanent value: {} ({} + {}), should be {} as serialized. "
@@ -5217,7 +5201,7 @@ namespace ALYSLC
 									serializedBaseValue - currentPermValue
 								);
 								a_this->SetBaseActorValue(a_akValue, serializedBaseValue);
-								SPDLOG_ERROR
+								ERR
 								(
 									"ERR: {}: Permanent {} was almost set to <= 0 value. "
 									"Set to {}, modifier to {}, base to {}.",
@@ -5233,7 +5217,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								SPDLOG_ERROR
+								ERR
 								(
 									"ERR: {}: Permanent {} was almost set to <= 0 value. "
 									"SKIP because no serialized value is present.",
@@ -5267,7 +5251,7 @@ namespace ALYSLC
 			{
 				if (actorPtr && a_this == actorPtr.get())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} to {}.", 
 						actorPtr->GetName(), 
@@ -5339,7 +5323,7 @@ namespace ALYSLC
 					if (a_value != serializedBaseValue)
 					{
 						// CHANGE TO DEBUG
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Trying to set attribute {}'s base value to {}. Set to {} instead.",
 							actorPtr->GetName(), 
@@ -5360,7 +5344,7 @@ namespace ALYSLC
 				//	if (a_value != serializedBaseValue)
 				//	{
 				//		// CHANGE TO DEBUG
-				//		SPDLOG_DEBUG
+				//		DBG
 				//		(
 				//			"{}: Trying to set skill {}'s base value to {}. Set to {} instead.",
 				//			actorPtr->GetName(), 
@@ -5410,7 +5394,7 @@ namespace ALYSLC
 				{
 					if (idEvent->pad24 != 0)
 					{
-						SPDLOG_DEBUG("Event {} does not have a pad of 0: 0x{:X}.",
+						DBG("Event {} does not have a pad of 0: 0x{:X}.",
 							idEvent->userEvent, idEvent->pad24);
 					}
 
@@ -5432,7 +5416,7 @@ namespace ALYSLC
 			{
 				if (!glob.mim->queuedInputEvents.empty())
 				{
-					/*SPDLOG_DEBUG("{} queued input events to tack onto list of {} events.",
+					/*DBG("{} queued input events to tack onto list of {} events.",
 						glob.mim->queuedInputEvents.size(), i);*/
 					const auto& lastQueuedEvent = 
 					(
@@ -5517,7 +5501,7 @@ namespace ALYSLC
 		};
 
 		Util::TraverseAllPerks(p1, lookForUnlockedPerks);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} perks unlocked in {}'s skill tree. Skill level is {}.", 
 			unlockedPerks.size(),
@@ -5556,7 +5540,7 @@ namespace ALYSLC
 			// and the second callback, so we skip refunding perk points 
 			// when the first callback fires.
 			auto sharedSkill = iter2->second;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Player with FID 0x{:X} has already leveled {} {} times. "
 				"P1 has Legendary leveling count {}.", 
@@ -5579,7 +5563,7 @@ namespace ALYSLC
 				// Already saved as taken by the menu-controlling player.
 				if (takenSharedPerksSet.contains(perk))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}'s perk {} (0x{:X} was saved as taken by {}. "
 						"Add to refund count.",
@@ -5614,7 +5598,7 @@ namespace ALYSLC
 
 					if (!savedAsUnlocked)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}'s perk {} (0x{:X} was just taken by {} while in the Stats Menu. "
 							"Add to refund count.",
@@ -5630,7 +5614,7 @@ namespace ALYSLC
 				}
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Perk count for {} (msg: {}, unks: 0x{:X}, 0x{:X}, 0x{:X}), went from {} to {}. "
 				"Shared perk points to refund: {}. Perk count is now {}.", 
@@ -5649,7 +5633,7 @@ namespace ALYSLC
 		else if (isShared)
 		{
 			p1->perkCount = 0;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"No shared perks unlocked for skill {} (msg: {}). Set perk count to 0.", 
 				Util::GetActorValueName(a_this->skill), 
@@ -5662,7 +5646,7 @@ namespace ALYSLC
 			// Use our own calculated unlocked perks count instead if this happens.
 			if (perkCountBefore > p1->perkCount)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"CALLBACK: {} ({}). Perk count decreased from {} to {}, "
 					"setting to {} instead.",
@@ -5685,7 +5669,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Nothing to adjust for skill {} (msg: {}). Retain perk count of {}.", 
 					Util::GetActorValueName(a_this->skill), 
@@ -5714,7 +5698,7 @@ namespace ALYSLC
 				// Remove stagger if reviving or playing an animation.
 				if (p->isRevivingPlayer || p->coopActor->IsAnimationDriven())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Removing stagger from magic hit while {} is reviving another player.",
 						p->coopActor->GetName()
@@ -5742,7 +5726,7 @@ namespace ALYSLC
 			// and bail instead to prevent the dismount.
 			if (GlobalCoopData::IsCoopPlayer(a_victim) && a_victim->IsOnMount())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"NOPE, NO MOUNT. Damage: {} by {} to {}. Gimme.",
 					a_hitData.totalDamage,
@@ -5758,7 +5742,7 @@ namespace ALYSLC
 				return;
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} was hit by {}. Flags: 0b{:B}.", 
 				a_victim ? a_victim->GetName() : "NONE",
@@ -5819,7 +5803,7 @@ namespace ALYSLC
 				// Remove stagger if reviving or playing an animation.
 				if (p->isRevivingPlayer || p->coopActor->IsAnimationDriven())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Removing stagger from melee hit while {} is reviving another player.",
 						p->coopActor->GetName()
@@ -5902,7 +5886,7 @@ namespace ALYSLC
 					RE::HitData::Flag::kDisableWeapon, RE::HitData::Flag::kDisarm
 				))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} was disarmed by {}. Unequip hand forms.", 
 						p->coopActor->GetName(), attackerPtr->GetName()
@@ -6012,7 +5996,7 @@ namespace ALYSLC
 			event = *a_inputEvents;
 			while (event)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Event #{}: {} ({:p}, 0x{:X}, type: {}, device: {}, pad: 0x{:X}).",
 					numEvents + 1,
@@ -6078,7 +6062,7 @@ namespace ALYSLC
 			if (shouldReset)
 			{
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Buttons released. Reset flags to false. "
 					"Summoning menu triggered: {}, debug menu triggered: {}. "
@@ -6132,7 +6116,7 @@ namespace ALYSLC
 			auto buttonEvent = a_event->AsButtonEvent();
 			if (buttonEvent)
 			{
-				// SPDLOG_DEBUG("Block button event {}.", buttonEvent->userEvent);
+				// DBG("Block button event {}.", buttonEvent->userEvent);
 				buttonEvent->idCode = 0xFF;
 				buttonEvent->heldDownSecs = 0.0f;
 				buttonEvent->value = 0.0f;
@@ -6140,7 +6124,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				/*SPDLOG_DEBUG
+				/*DBG
 				(
 					"Block input event of type {}: {}.", 
 					*a_event->eventType, a_event->QUserEvent()
@@ -6290,12 +6274,12 @@ namespace ALYSLC
 				if (((buttonEvent->IsHeld()) || 
 					(buttonEvent->IsDown() && buttonEvent->value == 1.0f)))
 				{
-					SPDLOG_DEBUG("EMU: event {}, down/held. Blocking.", buttonEvent->userEvent);
+					DBG("EMU: event {}, down/held. Blocking.", buttonEvent->userEvent);
 					return true;
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"EMU: event {}, {}. Allow.",
 						buttonEvent->userEvent, 
@@ -6406,7 +6390,7 @@ namespace ALYSLC
 
 				if (isHybridModeControllerInput)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"HYBRID: event {}, val: {}, held time: {}. Blocking.", 
 						buttonEvent->userEvent,
@@ -6418,7 +6402,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"CO-OP P1 Controller: managers active, "
 						"skip processing button event {} (allow through). "
@@ -6443,7 +6427,7 @@ namespace ALYSLC
 				waitBindHeldTime != -1.0f && 
 				buttonEvent->IsUp())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Pause/wait binds held for {}s, {}s and {} released.", 
 					pauseBindHeldTime, 
@@ -6483,7 +6467,7 @@ namespace ALYSLC
 					(isSummoningMenuBind && !summoningMenuBindPressed)
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Hybrid controller input: {}, gamepad event: {}, P1 managers active: {}, "
 					"co-op session active: {}, debug/summoning menu bind: {}, {}, pressed: {}, {}.",
@@ -6502,7 +6486,7 @@ namespace ALYSLC
 					!isGamepadEvent && 
 					isSummoningMenuBind)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot trigger Summoning Menu with keyboard outside of co-op."
 					);
@@ -6566,7 +6550,7 @@ namespace ALYSLC
 					(pauseIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end()) &&
 					(waitIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Checking for P1 DID: debug menu: {}, summoning menu: {}. "
 					"Reported gamepad user index: {}.",
@@ -6668,7 +6652,7 @@ namespace ALYSLC
 								);
 							}
 								
-							SPDLOG_DEBUG
+							DBG
 							(
 								"DID {}'s diff total: {}. Current min diff total: {}. "
 								"Last recorded input state held times: {}, {}. "
@@ -6690,7 +6674,7 @@ namespace ALYSLC
 							{
 								smallestHeldTimeDiffTotal = heldTimeDiffTotal;
 								newDID = i;
-								SPDLOG_DEBUG
+								DBG
 								(
 									"P1 DID set to {}. Min diff total is now: {}.",
 									newDID,
@@ -6709,12 +6693,12 @@ namespace ALYSLC
 							
 					if (newDID != -1)
 					{
-						SPDLOG_DEBUG("P1 DID set to {}.", newDID);
+						DBG("P1 DID set to {}.", newDID);
 						glob.player1DID = newDID;
 					}
 					else
 					{
-						SPDLOG_DEBUG("Did not assign P1 DID. Currently {}.", 
+						DBG("Did not assign P1 DID. Currently {}.", 
 							glob.player1DID);
 					}
 				}
@@ -6732,7 +6716,7 @@ namespace ALYSLC
 					if ((glob.player1Actor && onlyAlwaysOpen) && 
 						(!p1ManagersActive || !isGamepadEvent))
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Debug menu binds pressed but not triggered. "
 							"Opening menu now."
@@ -6795,7 +6779,7 @@ namespace ALYSLC
 						if ((!preventedFromSummoning && onlyAlwaysOpen) && 
 							(!p1ManagersActive || !isGamepadEvent))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Summoning menu binds pressed but not triggered. "
 								"Opening menu now."
@@ -6836,7 +6820,7 @@ namespace ALYSLC
 			{
 				if (buttonEvent->IsDown())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} pressed/held on its own. Blocking.", buttonEvent->userEvent
 					);	
@@ -6877,7 +6861,7 @@ namespace ALYSLC
 						)
 					)	
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Is NOT hybrid mode controller input: {}, "
 					"summoning/debug menu bind NOT pressed: {}, {}, "
@@ -6902,7 +6886,7 @@ namespace ALYSLC
 				);
 				if (allowThrough)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} bind released on its own. Event name: {}. Allow through.",
 						pauseBindEvent ? "Pause" : "Wait",
@@ -6944,7 +6928,7 @@ namespace ALYSLC
 				{
 					// A co-op menu was triggered, 
 					// so ignore the button event on release.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} bind released on its own. Event name: {}. Ignoring.",
 						pauseBindEvent ? "Pause" : "Wait", 
@@ -7040,7 +7024,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			SPDLOG_DEBUG("Perform dialogue control switch or request.");
+			DBG("Perform dialogue control switch or request.");
 			// Perform dialgoue control switch on button/key release.
 			StartFuncs::ChangeDialoguePlayer(glob.coopPlayers[0]);
 			return true;
@@ -7300,7 +7284,7 @@ namespace ALYSLC
 				return false;
 			}
 
-			SPDLOG_DEBUG("Teleport to another player.");
+			DBG("Teleport to another player.");
 			// Perform teleportation on button/key release.
 			StartFuncs::TeleportToPlayer(glob.coopPlayers[0]);
 			return true;
@@ -7446,7 +7430,7 @@ namespace ALYSLC
 					auto pIndex = GlobalCoopData::GetCoopPlayerIndex(pickData->targetActor);
 					if (pIndex != -1 || coopP1->isRevivingPlayer)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Activate event: {}, {}s. Pick target: {}.",
 							buttonEvent->value,
@@ -7631,7 +7615,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				// SPDLOG_DEBUG("Not blocking {}.", idEvent->userEvent);
+				// DBG("Not blocking {}.", idEvent->userEvent);
 				// Has a bypass flag indicating that the event was sent by another player.
 				// Co-op companion players: 0xCA11
 				bool fromCompanionPlayer = 
@@ -7764,7 +7748,7 @@ namespace ALYSLC
 						)
 					);
 					// REMOVE when done debugging.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Event {} (id code 0x{:X}, device: {}). "
 						"Ignore P1 input: {}, ignore P2 input: {}. "
@@ -7802,7 +7786,7 @@ namespace ALYSLC
 							}
 						
 							// REMOVE when done debugging.
-							/*SPDLOG_DEBUG
+							/*DBG
 							(
 								"Prev event is now {}, current is {}.",
 								prevInputEvent ? prevInputEvent->QUserEvent() : "NONE",
@@ -7953,7 +7937,7 @@ namespace ALYSLC
 							{
 								// Clears crosshair refr data.
 								Util::SendCrosshairEvent(nullptr);
-								SPDLOG_DEBUG("{} is closing LootMenu.", p1->GetName());
+								DBG("{} is closing LootMenu.", p1->GetName());
 							}
 						}
 
@@ -8335,7 +8319,7 @@ namespace ALYSLC
 				);
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Menu, MIM PID: {}, {}, "
 					"EVENT: {} (0x{:X}, type {}), blocked: {}, co-op player in menus: {}, "
@@ -8435,7 +8419,7 @@ namespace ALYSLC
 			// when preventing analog stick inputs from propagating unmodified.
 			if (*a_event->eventType > RE::INPUT_EVENT_TYPE::kKinect)
 			{
-				/*SPDLOG_DEBUG
+				/*DBG
 				(
 					"Restore input event type {} from {} for {}.",
 					!(*a_event->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1,
@@ -8555,7 +8539,7 @@ namespace ALYSLC
 		)
 		{
 			// For logging purposes only right now.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}, from {}. List: {:p}.",
 				a_this->GetName(),
@@ -8584,7 +8568,7 @@ namespace ALYSLC
 			// Change as sent/received from none.
 			if (a_fromRefr == a_this)
 			{
-				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+				DBG("{}: Move {} to/from none, not self.", 
 					a_this->GetName(), a_object->GetName());
 				a_fromRefr = nullptr;
 			}
@@ -8594,7 +8578,7 @@ namespace ALYSLC
 				glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) &&
 				a_fromRefr == glob.coopPlayers[glob.menuPID]->em->inventoryChest.get())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ALERT: {} to P1 from {}'s inventory chest. Can corrupt P1 pointers. "
 					"Added from no one instead.",
@@ -8649,7 +8633,7 @@ namespace ALYSLC
 				);
 				if (shouldSendToCompanionPlayer)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding item {} (x{}) to {} instead of P1.",
 						a_object->GetName(),
@@ -8666,7 +8650,7 @@ namespace ALYSLC
 				}
 				else if (shouldMoveToP1InvChest)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding item {} (x{}) to P1's inventory chest instead of P1.",
 						a_object->GetName(),
@@ -8692,7 +8676,7 @@ namespace ALYSLC
 						glob.mim->dropReqPair.first = nullptr;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Dropping {} (x{}, {:p}). Drop request is now {}, {}.",
 						a_object->GetName(),
@@ -8736,7 +8720,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding item {} (x{}) to P1 as usual.",
 						a_object->GetName(),
@@ -8933,13 +8917,11 @@ namespace ALYSLC
 					(
 						a_this->GetActorValue(RE::ActorValue::kSpeedMult)
 					);
-					if (currentSpeedMult != 
-						coopP1->mm->movementOffsetParams[!MoveParams::kSpeedMult])
+					if (currentSpeedMult != coopP1->mm->speedMult)
 					{
 						return 
 						(
-							coopP1->mm->movementOffsetParams[!MoveParams::kSpeedMult] - 
-							currentSpeedMult
+							coopP1->mm->speedMult - currentSpeedMult
 						);
 					}
 				}
@@ -9313,7 +9295,7 @@ namespace ALYSLC
 			auto hash = Hash(a_eventName);
 			if (glob.partyWiped || coopP1->isDowned)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Party wiped: {}. P1 state: {}. Co-op session active: {}, living players: {}, "
 					"is dead: {}, is paralyzed: {}, is downed: {}, P1 anim: {}.", 
@@ -9452,7 +9434,7 @@ namespace ALYSLC
 			bool a_playSound
 		)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}. List: {:p}. Arg3: {}.",
 				a_this->GetName(),
@@ -9510,7 +9492,7 @@ namespace ALYSLC
 			const RE::NiPoint3* a_rotate
 		)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}, to {}. List: {:p}.",
 				a_this->GetName(),
@@ -9602,7 +9584,7 @@ namespace ALYSLC
 				// P1's inventory should have been restored.
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Cannot move {} of {} from P1 to {} "
 						"because another player's inventory is still copied over to P1. "
@@ -9625,7 +9607,7 @@ namespace ALYSLC
 			// pointers are equivalent with menus open.
 			if (shouldNotRemove)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ALERT: NOT moving item {} (x{}) to {}. "
 					"Companion player controlling menus: {}. "
@@ -9694,14 +9676,14 @@ namespace ALYSLC
 						auto exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
 						if (exHotkey)
 						{
-							SPDLOG_DEBUG("{} is favorited. Remove hotkey data", a_item->GetName());
+							DBG("{} is favorited. Remove hotkey data", a_item->GetName());
 							exDataList->Remove(RE::ExtraDataType::kHotkey, exHotkey);
 						}
 
 						auto exRank = exDataList->GetByType<RE::ExtraRank>();
 						if (exRank)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} has rank mask 0x{:X}.",
 								a_item->GetName(), 
@@ -9716,7 +9698,7 @@ namespace ALYSLC
 								);
 								if (matchingPlayerList)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{} is in both hands: LH 0x{:X}.",
 										a_item->GetName(), static_cast<uint32_t>(exRank->rank)
@@ -9730,7 +9712,7 @@ namespace ALYSLC
 								);
 								if (matchingPlayerList)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{} is in both hands. RH 0x{:X}.",
 										a_item->GetName(), 
@@ -9747,7 +9729,7 @@ namespace ALYSLC
 								);
 								if (matchingPlayerList)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{} is in RH/Default slot: 0x{:X}.",
 										a_item->GetName(), 
@@ -9778,7 +9760,7 @@ namespace ALYSLC
 								);
 								if (matchingPlayerList)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{} is in LH: 0x{:X}.",
 										a_item->GetName(), 
@@ -9802,7 +9784,7 @@ namespace ALYSLC
 					[
 						GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle)
 					];
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} is gifting {} of {} to {}. Move to ref is {} before modification.",
 						gifterP->coopActor->GetName(),
@@ -9819,7 +9801,7 @@ namespace ALYSLC
 					// before the Gift Menu opened.
 					if (gifteeP->isPlayer1)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Moving item {} to P1's inventory chest, "
 							"the contents of which will be restored as P1's inventory "
@@ -9835,7 +9817,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1 transferring item {} ({:p}, x{}) to {}.",
 						a_item->GetName(), fmt::ptr(a_extraList), a_count, a_moveToRef->GetName()
@@ -9861,7 +9843,7 @@ namespace ALYSLC
 							glob.mim->dropReqPair.first = nullptr;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Dropping {} (x{}, {:p}). Drop request is now {}, {}.",
 							menuP->coopActor->GetName(), 
@@ -9905,7 +9887,7 @@ namespace ALYSLC
 			{
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Not moving {} of {} from P1 to themselves "
 						"while another player's inventory is copied over.",
@@ -9915,7 +9897,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Not moving {} of {} from P1 to themselves. Removing from inventory.",
 						a_count, a_item ? a_item->GetName() : "NONE"
@@ -9946,7 +9928,7 @@ namespace ALYSLC
 				return _ResetInventory(a_this, a_leveledOnly);	
 			}
 
-			SPDLOG_DEBUG("Resetting P1 ({})'s inventory. RaceMenu open: {}.", 
+			DBG("Resetting P1 ({})'s inventory. RaceMenu open: {}.", 
 				a_this->GetName(),
 				ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME));
 			if (!ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME))
@@ -9996,7 +9978,7 @@ namespace ALYSLC
 							manager->variableCache.updateLock.Lock();
 							for (const auto& info : manager->variableCache.variableCache)
 							{
-								SPDLOG_DEBUG("Var name: {}.", info.variableName);
+								DBG("Var name: {}.", info.variableName);
 							}
 
 							manager->variableCache.updateLock.Unlock();
@@ -10104,7 +10086,7 @@ namespace ALYSLC
 				// if the player's speedmult is modified.
 				// Otherwise, the movement speed changes each frame will accumulate, 
 				// reaching infinity and preventing the player from moving.
-				float speedMultToSet = coopP1->mm->movementOffsetParams[!MoveParams::kSpeedMult];
+				float speedMultToSet = coopP1->mm->speedMult;
 				if (speedMultToSet < 0.0f || isnan(speedMultToSet) || isinf(speedMultToSet))
 				{
 					speedMultToSet = coopP1->mm->baseSpeedMult;
@@ -10459,17 +10441,17 @@ namespace ALYSLC
 							auto linVelYaw = 
 							(
 								linVelXY.Length() == 0.0f ? 
-								coopP1->mm->movementOffsetParams[!MoveParams::kLSGameAng] : 
+								coopP1->analogStickParams[!AnalogStickParams::kLSCamRelAng] : 
 								Util::DirectionToGameAngYaw(linVelXY)
 							);
 							// Yaw difference between the XY velocity direction 
 							// and the direction in which the player wishes to head.
 							movementToHeadingAngDiff = 
 							(
-								coopP1->mm->lsMoved ? 
+								coopP1->lsMoved ? 
 								Util::NormalizeAngToPi
 								(
-									coopP1->mm->movementOffsetParams[!MoveParams::kLSGameAng] - 
+									coopP1->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
 									linVelYaw
 								) : 
 								0.0f
@@ -10641,7 +10623,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -10711,7 +10693,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Failed to obtain lock (0x{:X}). Will not use skill.", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -10976,7 +10958,7 @@ namespace ALYSLC
 					);
 
 					// REMOVE when done debugging.
-					/*SPDLOG_DEBUG
+					/*DBG
 					(
 						"Collision {} (0x{:X}, {}, {}) <-> {} (0x{:X}, {}, {})", 
 						refrA ? refrA->GetName() : "NONE", 
@@ -11049,7 +11031,7 @@ namespace ALYSLC
 						);
 						if (hitAnotherManagedRefr)
 						{
-							/*SPDLOG_DEBUG
+							/*DBG
 							(
 								"IGNORED MANAGED COLLISION {} <-> {}", 
 								refrA->GetBaseObject() ? 
@@ -11107,8 +11089,7 @@ namespace ALYSLC
 								(
 									(hitActorHandle == p->tm->selectedTargetActorHandle) ||
 									(
-										p->tm->crosshairTargetingMode == 
-										CrosshairTargetingMode::kDisabled &&
+										p->tm->aimMode == AimMode::kTwinStick &&
 										hitActorHandle == p->tm->aimCorrectionTargetHandle
 									)
 								)
@@ -11128,7 +11109,7 @@ namespace ALYSLC
 							(
 								(
 									!hitActor->IsGhost() && !hitActor->IsInvulnerable()
-								) &&
+								) ||
 								(
 									(isHostile) ||
 									(isNeutralActor && isDesiredTarget) ||
@@ -11146,7 +11127,7 @@ namespace ALYSLC
 							);
 							if (collisionAllowed)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ALLOWED {} <-> {}", 
 									refrA->GetBaseObject() ? 
@@ -11204,7 +11185,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"IGNORED {} <-> {}", 
 									refrA->GetBaseObject() ? 
@@ -11303,7 +11284,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Start combat between {} and {}.",
 					actorStartCombatPair.first ? 
@@ -11322,7 +11303,7 @@ namespace ALYSLC
 				);		
 			}
 			
-			SPDLOG_DEBUG("{} hits to handle, was {}. {} NPCs to start combat with.",
+			DBG("{} hits to handle, was {}. {} NPCs to start combat with.",
 				newHits.size(), a_AllCdPointCollector->hits.size(), combatTargetStartPairs.size());
 			// Now, let the game handle the projectile collision.
 			if (a_this->As<RE::ArrowProjectile>())
@@ -11479,8 +11460,7 @@ namespace ALYSLC
 					(
 						(hitActorHandle == p->tm->selectedTargetActorHandle) ||
 						(
-							p->tm->crosshairTargetingMode == 
-							CrosshairTargetingMode::kDisabled &&
+							p->tm->aimMode == AimMode::kTwinStick &&
 							hitActorHandle == p->tm->aimCorrectionTargetHandle
 						)
 					)
@@ -11511,7 +11491,7 @@ namespace ALYSLC
 				);
 				if (!collisionAllowed)
 				{
-					SPDLOG_DEBUG("Collision ignored.");
+					DBG("Collision ignored.");
 					return false;
 				}
 			}
@@ -11598,7 +11578,7 @@ namespace ALYSLC
 					result = _Projectile_RunTargetPick(a_this);
 				}
 					
-				/*SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {} (0x{:X}, {}), before: {}, {}, after {}, {}, now {}. Result: {}",
 					p->coopActor->GetName(),
@@ -11620,8 +11600,9 @@ namespace ALYSLC
 					rangedTargetActorHandle.get()->GetName() : 
 					"NONE",
 					result
-				);*/
-				return result;
+				);
+				a_this->desiredTarget = rangedTargetActorHandle;
+				return true; //result;
 			}
 
 			if (a_this->As<RE::BarrierProjectile>())
@@ -11997,8 +11978,7 @@ namespace ALYSLC
 				);
 				bool canDirectTowardsCrosshairPos = 
 				(
-					a_p->mm->reqFaceTarget && 
-					a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim
+					a_p->mm->reqFaceTarget && a_p->tm->aimMode == AimMode::kFreeAim
 				);
 				// Actor targeted (aim correction or otherwise), 
 				// should face crosshair position (never true while mounted), 
@@ -12291,12 +12271,12 @@ namespace ALYSLC
 							}
 						}
 					}
-
+					
 					const auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle
 					(
 						a_p->tm->aimCorrectionTargetHandle
 					);
-					if (a_p->mm->inTwinStickMode && aimCorrectionTargetPtr)
+					if (a_p->tm->aimMode == AimMode::kTwinStick && aimCorrectionTargetPtr)
 					{
 						auto targetPos = Util::GetTorsoPosition(aimCorrectionTargetPtr.get());
 						// Set projectile data angles to face the target.
@@ -12321,7 +12301,7 @@ namespace ALYSLC
 							);
 						}
 					}
-					else if (!a_p->mm->inTwinStickMode && a_p->mm->reqFaceTarget)
+					else if (a_p->tm->aimMode != AimMode::kTwinStick && a_p->mm->reqFaceTarget)
 					{
 						// Set projectile data angles to face the target.
 						projectile->data.angle.x = Util::GetPitchBetweenPositions
@@ -12725,7 +12705,7 @@ namespace ALYSLC
 				bool noTargetAndMovingCrosshair =
 				(
 					!targetRefrValidity &&
-					a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim &&
+					a_p->tm->aimMode == AimMode::kFreeAim &&
 					a_p->mm->reqFaceTarget &&
 					a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 				);
@@ -13169,8 +13149,7 @@ namespace ALYSLC
 
 				projectile->desiredTarget = targetActorHandle;
 			}
-			else if (a_p->mm->reqFaceTarget && 
-					 a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled)
+			else if (a_p->mm->reqFaceTarget && a_p->tm->aimMode != AimMode::kTwinStick)
 			{
 				// Aim at the crosshair world position that the player is facing.
 				aimTargetPos = a_p->tm->crosshairWorldPos;
@@ -13508,7 +13487,7 @@ namespace ALYSLC
 				return _AddObjectToContainer(a_this, a_object, a_extraList, a_count, a_fromRefr);
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}, from {}. List: {:p}.",
 				a_this->GetName(),
@@ -13523,7 +13502,7 @@ namespace ALYSLC
 			// Change as sent/received from none.
 			if (a_fromRefr == a_this)
 			{
-				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+				DBG("{}: Move {} to/from none, not self.", 
 					a_this->GetName(), a_object->GetName());
 				a_fromRefr = nullptr;
 			}
@@ -13542,7 +13521,7 @@ namespace ALYSLC
 						);
 						if (data)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Added serializable exData to {} ({:p}).",
 								a_object->GetName(), 
@@ -13551,7 +13530,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG("ERR: Failed to add serializable exData to {} ({:p}):",
+							DBG("ERR: Failed to add serializable exData to {} ({:p}):",
 								a_object->GetName(), fmt::ptr(a_extraList));
 						}
 					}
@@ -13561,7 +13540,7 @@ namespace ALYSLC
 					a_extraList = Util::CreateExtraDataListWithSerializableData();
 					if (a_extraList)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Created extra data list before adding {} of {}. "
 							"Should set count: {}.",
@@ -13574,7 +13553,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG("ERR: Failed to create extra data list before adding {} of {}.",
+						DBG("ERR: Failed to create extra data list before adding {} of {}.",
 							a_count, a_object->GetName());
 					}
 				}
@@ -13589,7 +13568,7 @@ namespace ALYSLC
 					return;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ALERT: {} to {}'s inventory chest. Can corrupt P1 script properties. "
 					"Move to P1 instead.",
@@ -13609,7 +13588,7 @@ namespace ALYSLC
 			{
                 auto count = a_extraList->GetCount();
                 countLeft -= count;
-				SPDLOG_DEBUG("{}: Adding {} of {} from list {:p} exCount.",
+				DBG("{}: Adding {} of {} from list {:p} exCount.",
 					p->coopActor->GetName(), count, a_object->GetName(), fmt::ptr(a_extraList));
                 _AddObjectToContainer(a_this, a_object, a_extraList, count, a_fromRefr);
             }
@@ -13621,7 +13600,7 @@ namespace ALYSLC
 				exDataList = Util::CreateExtraDataListWithSerializableData();
 				if (exDataList)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Adding {} of serializable lists for {} to make up the difference.",
 						p->coopActor->GetName(), countLeft, a_object->GetName()
@@ -13629,7 +13608,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("ERR: Failed to create extra data list before adding {} of {}.",
+					DBG("ERR: Failed to create extra data list before adding {} of {}.",
 						a_count, a_object->GetName());
 				}
 			}
@@ -13659,7 +13638,7 @@ namespace ALYSLC
 				// such as after adding an extra list to this item later via crafting.
 				if (entry && entry->extraLists && entry->extraLists->empty())
 				{
-					SPDLOG_ERROR("{}. TAHTS GON BE BUG: {}.",
+					ERR("{}. TAHTS GON BE BUG: {}.",
 						entry->object->GetName(), entry->countDelta);
 					delete entry->extraLists;
 					entry->extraLists = nullptr;
@@ -13672,7 +13651,7 @@ namespace ALYSLC
 				}
 				
 				// Should be >= 1.
-				SPDLOG_DEBUG("{}: {}'s entry count after potential addition: {}.", 
+				DBG("{}: {}'s entry count after potential addition: {}.", 
 					p->coopActor->GetName(), a_object->GetName(), entry->countDelta);
 				if (entry->extraLists)
 				{
@@ -13697,7 +13676,7 @@ namespace ALYSLC
 						);
 						if (canRemoveOwnership)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Can remove ownership from {} ({}).",
 								entry->object->GetName(), 
@@ -13717,7 +13696,7 @@ namespace ALYSLC
 				int32_t countsDelta = entry->countDelta - exListsCount;
 				if (countsDelta < 0)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"{}: Item {}'s entry countDelta is less than "
 						"the accumulated extra data list item count (diff of {}). "
@@ -13737,13 +13716,13 @@ namespace ALYSLC
 					if (entry->extraLists && !entry->extraLists->empty())
 					{
 						const auto addedList = entry->extraLists->front();
-						SPDLOG_DEBUG
+						DBG
 						(
 							"To account for {} unmodified items: "
 							"added serializable exData list to {}: {:p}.",
 							countsDelta, entry->object->GetName(), fmt::ptr(addedList)
 						);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Set new exData list for {} {:p}'s count to {}.",
 							entry->object->GetName(), 
@@ -13754,7 +13733,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG("ERR: Failed to add serializable exData list to {}:",
+						DBG("ERR: Failed to add serializable exData list to {}:",
 							entry->object->GetName());
 					}
 				}
@@ -13809,7 +13788,7 @@ namespace ALYSLC
 				);
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} of {}, to {}. List: {:p}.",
 				a_this->GetName(),
@@ -13824,7 +13803,7 @@ namespace ALYSLC
 			// Change as sent/received from none.
 			if (a_moveToRef == a_this)
 			{
-				SPDLOG_DEBUG("{}: Move {} to/from none, not self.", 
+				DBG("{}: Move {} to/from none, not self.", 
 					a_this->GetName(), a_item->GetName());
 				a_moveToRef = nullptr;
 			}
@@ -13839,7 +13818,7 @@ namespace ALYSLC
 					return nullptr;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ALERT: {} from {}'s inventory chest. Can corrupt P1 script properties. "
 					"Remove from P1 to {} instead.",
@@ -13906,7 +13885,7 @@ namespace ALYSLC
 			}
 
 			// Transferring/dropping the item after moving to P1.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"P1 receiving/dropping item {} ({:p}, x{})",
 				a_item->GetName(), fmt::ptr(a_extraList), a_count
@@ -13947,7 +13926,7 @@ namespace ALYSLC
 						index = EquipIndex::kNone;
 					}
 						
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Equipped list for removed item {:p} found ({:p}) on the player. "
 						"Matching with equipped bound object "
@@ -13987,7 +13966,7 @@ namespace ALYSLC
 					);
 					if (index != EquipIndex::kTotal)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Matching list for removed item {:p} not found on the player. "
 							"Matching with equipped bound object "
@@ -14008,7 +13987,7 @@ namespace ALYSLC
 				(
 					p->coopActor.get(), a_item, true
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Equipped list for removed item {:p} found ({:p}) on the player. "
 					"Matching with equipped bound object {} in the left hand.", 
@@ -14063,7 +14042,7 @@ namespace ALYSLC
 			// Remove to P1 and then drop.
 			if (isDropReq)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Drop {} of {} via P1. Move to P1 first: {}. Drop request is: {}, {}", 
 					a_count,
@@ -14139,7 +14118,7 @@ namespace ALYSLC
 			{
 				if (entry && entry->extraLists && entry->extraLists->empty())
 				{
-					SPDLOG_ERROR("{}. TAHTS GON BE BUG: {}.",
+					ERR("{}. TAHTS GON BE BUG: {}.",
 						entry->object->GetName(), entry->countDelta);
 					delete entry->extraLists;
 					entry->extraLists = nullptr;
@@ -14151,7 +14130,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG("{}: {}'s entry count after potential removal: {}.", 
+				DBG("{}: {}'s entry count after potential removal: {}.", 
 					p->coopActor->GetName(), a_item->GetName(), entry->countDelta);
 				if (entry->extraLists)
 				{
@@ -14170,7 +14149,7 @@ namespace ALYSLC
 				entry->countDelta = max(entry->countDelta, exListsCount);
 				if (countsDelta < 0)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"{}: Item {}'s entry countDelta is less than "
 						"the accumulated extra data list item count (diff of {}). "
@@ -14198,7 +14177,7 @@ namespace ALYSLC
 				return _ResetInventory(a_this, a_leveledOnly);	
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Not resetting {} (0x{:X})'s inventory.", a_this->GetName(), a_this->formID
 			);
@@ -14441,7 +14420,7 @@ namespace ALYSLC
 			}
 
 			const auto& p = glob.coopPlayers[pIndex];
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} is about to transform into a vampire lord ({}, 0x{:X}). "
 				"Is transformed: {}, transforming: {}.",
@@ -14489,7 +14468,7 @@ namespace ALYSLC
 			}
 
 			const auto& p = glob.coopPlayers[pIndex];
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} is about to transform back from vampire lord ({}, 0x{:X}). "
 				"Is transformed: {}, transforming: {}.",
@@ -14640,7 +14619,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -14670,7 +14649,7 @@ namespace ALYSLC
 				// if the game ignores this call to open the menu.
 				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
@@ -14694,7 +14673,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -14764,7 +14743,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -14844,7 +14823,7 @@ namespace ALYSLC
 			);
 			if (base.IsNull() || base.IsUndefined())
 			{
-				SPDLOG_DEBUG("BUH");
+				DBG("BUH");
 				return;
 			}
 			
@@ -15033,7 +15012,7 @@ namespace ALYSLC
 							}
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: {} has damage {}, damage delta {} from total base damage {}.",
 							playerInMenusPtr->GetName(),
@@ -15086,7 +15065,7 @@ namespace ALYSLC
 			RE::ContainerMenu* a_this, RE::UIMessage& a_message
 		)
 		{
-			SPDLOG_DEBUG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
+			DBG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
 			auto strings = RE::InterfaceStrings::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
 
@@ -15145,7 +15124,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -15175,7 +15154,7 @@ namespace ALYSLC
 				// if the game ignores this call to open the menu.
 				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
@@ -15199,7 +15178,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -15266,7 +15245,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -15305,7 +15284,7 @@ namespace ALYSLC
 				// if the game ignores this call to open the menu.
 				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
@@ -15359,7 +15338,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -15464,7 +15443,7 @@ namespace ALYSLC
 					return _ProcessMessage(a_this, a_message);
 				}
 				
-				SPDLOG_DEBUG("Update Favorites Menu for P{}.", glob.menuPID + 1);
+				DBG("Update Favorites Menu for P{}.", glob.menuPID + 1);
 				// Update quickslot tags for P1,
 				// since the game wipes the tag after hotkeying an item.
 				// Run update first before updating entry text.
@@ -15563,7 +15542,7 @@ namespace ALYSLC
 							(
 								"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
 							);
-							SPDLOG_DEBUG("Refreshed quick slot tags for P1.");
+							DBG("Refreshed quick slot tags for P1.");
 						}
 					);
 				}
@@ -15649,7 +15628,7 @@ namespace ALYSLC
 
 								entry.GetMember("index", std::addressof(entryIndex));
 								int32_t index = static_cast<int32_t>(entryIndex.GetNumber());
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} {} / {} ({}).", i, index, numEntries, favoritesList.size()
 								);
@@ -15725,7 +15704,7 @@ namespace ALYSLC
 											)
 										);
 
-										SPDLOG_DEBUG
+										DBG
 										(
 											"Setting {}'s count to {}.",
 											favoritedItem->GetName(), count
@@ -15756,7 +15735,7 @@ namespace ALYSLC
 									);
 									if (matching)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"Index {} ({}) equals one of {}, {}", 
 											index,
@@ -15814,7 +15793,7 @@ namespace ALYSLC
 								"_root.MenuHolder.Menu_mc.itemList.UpdateList", nullptr, 0
 							);
 
-							SPDLOG_DEBUG("Refreshed favorites entries for P{}.", glob.menuPID + 1);
+							DBG("Refreshed favorites entries for P{}.", glob.menuPID + 1);
 						}
 					);
 				}
@@ -15831,7 +15810,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -15931,7 +15910,7 @@ namespace ALYSLC
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Restoring P1's favorites, "
 								"since the message to open the FavoritesMenu was not handled. "
@@ -15963,7 +15942,7 @@ namespace ALYSLC
 			RE::GiftMenu* a_this, RE::UIMessage& a_message
 		)
 		{
-			SPDLOG_DEBUG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
+			DBG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
 			
 			auto strings = RE::InterfaceStrings::GetSingleton();
 			auto ui = RE::UI::GetSingleton();
@@ -16017,7 +15996,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -16047,7 +16026,7 @@ namespace ALYSLC
 				// if the game ignores this call to open the menu.
 				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
@@ -16071,7 +16050,7 @@ namespace ALYSLC
 					a_this->MENU_NAME, false
 				);
 				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
 					"Opening: {}, closing: {}, has copied data: {}.",
@@ -16160,7 +16139,7 @@ namespace ALYSLC
 
 					if (succ)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Opening {}'s inventory instead of P1's.", 
 							reqP->coopActor->GetName()
@@ -16213,7 +16192,7 @@ namespace ALYSLC
 			// Restore P1's data if data was copied over before this LoadingMenu opened.
 			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Loading menu opened with data copied (types: 0x{:X}) over to P1. "
 					"Restoring P1 data. Co-op session active: {}. RESULT: {}.",
@@ -16233,7 +16212,7 @@ namespace ALYSLC
 			RE::MagicMenu* a_this, RE::UIMessage& a_message
 		)
 		{
-			SPDLOG_DEBUG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
+			DBG("Menu: {}, type: {}.", a_message.menu, *a_message.type);
 			
 			// Reapply cached equip state since favoriting a spell/shout
 			// and some other inputs can wipe the state and apply P1's equip state instead.
@@ -16346,7 +16325,7 @@ namespace ALYSLC
 							(
 								"_root.Menu_mc.inventoryLists.itemList.UpdateList", nullptr, 0
 							);
-							SPDLOG_DEBUG("Refreshed magic menu equip state.");
+							DBG("Refreshed magic menu equip state.");
 						}
 					);
 				}
@@ -16363,7 +16342,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -16428,7 +16407,7 @@ namespace ALYSLC
 					{
 						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Restoring P1's magic favorites, "
 								"since the message to open the MagicMenu was not handled. "
@@ -16495,7 +16474,7 @@ namespace ALYSLC
 
 			if (opening && glob.globalDataInit)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"RaceMenu opening. "
 					"Menu PIDs: {}, {}, {}. P1 races: 1: {}, 2: {}, charGen: {}. "
@@ -16527,7 +16506,7 @@ namespace ALYSLC
 							p1->skills->data->skills[i].levelThreshold
 						)
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Saving {}'s level as {}, threshold as {}, XP as {}.",
 						Util::GetActorValueName(currentAV),
@@ -16551,7 +16530,7 @@ namespace ALYSLC
 							continue;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"On entry: has active effect {}. Spell: {}.",
 							activeEffect->effect && activeEffect->effect->baseEffect ?
@@ -16614,7 +16593,7 @@ namespace ALYSLC
 					);
 				}
 
-				SPDLOG_DEBUG("About to unequip all.");
+				DBG("About to unequip all.");
 				Util::Papyrus::UnequipAll(p1);
 				*/
 
@@ -16643,7 +16622,7 @@ namespace ALYSLC
 				// so save their appearance preset.
 				if (glob.globalDataInit)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"RaceMenu closing. "
 						"Menu PIDs: {}, {}, {}. P1 races: 1: {}, 2: {}, charGen: {}. "
@@ -16664,7 +16643,7 @@ namespace ALYSLC
 						currentAV = glob.SKILL_TO_AV_MAP.at(static_cast<Skill>(i));
 						p1->SetBaseActorValue(currentAV, glob.charGenSkillDataList[i].level);
 						p1->skills->data->skills[i] = glob.charGenSkillDataList[i];
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Restoring {}'s level to {}, threshold to {}, XP to {}.",
 							Util::GetActorValueName(currentAV),
@@ -16686,7 +16665,7 @@ namespace ALYSLC
 								continue;
 							}
 
-							SPDLOG_DEBUG
+							DBG
 							(
 								"On exit: has active effect {}.",
 								activeEffect->effect && activeEffect->effect->baseEffect ?
@@ -16697,7 +16676,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG("No active effects list.");
+						DBG("No active effects list.");
 					}
 
 					/*
@@ -16740,7 +16719,7 @@ namespace ALYSLC
 								}
 							}
 								
-							SPDLOG_DEBUG("Re-equip {} ({:p}).",
+							DBG("Re-equip {} ({:p}).",
 								form->GetName(), fmt::ptr(exDataList));
 							// Equip the cached item based on type.
 							auto boundObj = form->As<RE::TESBoundObject>();
@@ -16917,7 +16896,7 @@ namespace ALYSLC
 							);
 							if (vampiricRace)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Restoring vampiric race {}.", vampiricRace->GetFormEditorID()
 								);
@@ -16938,7 +16917,7 @@ namespace ALYSLC
 						if (iter != glob.serializablePlayerData.end())
 						{
 							iter->second->chosenRace = p1->charGenRace;
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Saving P1's chosen race as {} (0x{:X}, editor ID {}).",
 								iter->second->chosenRace ? 
@@ -17084,7 +17063,7 @@ namespace ALYSLC
 						a_this->MENU_NAME, false
 					);
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Current menu PID: {}, resolved menu PID: {}. "
 						"Opening: {}, closing: {}, has copied data: {}.",
@@ -17123,7 +17102,7 @@ namespace ALYSLC
 
 					const auto& data = iter->second;
 					// CHANGE TO DEBUG
-					SPDLOG_DEBUG
+					DBG
 					(
 						"[HMS Breakdown] "
 						"Event type {}, "
@@ -17570,7 +17549,7 @@ namespace ALYSLC
 			);
 			bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Current menu PID: {}, resolved menu PID: {}. "
 				"Opening: {}, closing: {}, has copied data: {}.",
@@ -17615,7 +17594,7 @@ namespace ALYSLC
 				// Have to restore P1's AVs here if the game ignores this call to open the menu.
 				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Restoring AVs for {} and P1, "
 						"since the message to open the menu was ignored. RESULT: {}.", 

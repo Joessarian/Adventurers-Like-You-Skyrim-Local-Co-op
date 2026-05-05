@@ -151,11 +151,11 @@ namespace ALYSLC
 		// Signal to refresh equip state.
 		inline void SignalRefreshMenuEquipState()
 		{
-			SPDLOG_DEBUG("Getting lock. (0x{:X})", 
+			DBG("Getting lock. (0x{:X})", 
 				std::hash<std::jthread::id>()(std::this_thread::get_id()));
 			{
 				std::unique_lock<std::mutex> lock(equipEventMutex);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Setting refresh equip state flag to true."
 				);
@@ -166,7 +166,7 @@ namespace ALYSLC
 		// Reset menu control overlay data.
 		inline void ResetPlayerMenuControlOverlay() 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Currently {}. Value: {}, at change: {}.", 
 				pmcFadeInterpData->interpToMin ? 

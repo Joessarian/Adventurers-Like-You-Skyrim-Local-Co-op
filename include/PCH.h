@@ -15,6 +15,11 @@
 	#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_INFO
 #endif
 
+// Type less, happy more.
+#define DBG SPDLOG_DEBUG
+#define INF SPDLOG_INFO
+#define ERR SPDLOG_ERROR
+
 // For profiling only. Keep commented out otherwise.
 //#define ALYSLC_PROFILING
 

@@ -22,7 +22,7 @@ namespace ALYSLC
 			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
@@ -52,7 +52,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Cannot construct Equip Manager for device ID {}, player ID {}.", 
 				a_p ? a_p->deviceID : -1,
@@ -88,7 +88,7 @@ namespace ALYSLC
 		// Favorited itens may have changed.
 		if (invChanges && invChanges->changed)
 		{
-			SPDLOG_DEBUG("Inventory changed.");
+			DBG("Inventory changed.");
 			UpdateFavoritedFormsLists(true);
 			invChanges->changed = false;
 		}
@@ -102,7 +102,7 @@ namespace ALYSLC
 
 	void EquipManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("P{}", playerID + 1);
+		DBG("P{}", playerID + 1);
 
 		if (!p->isPlayer1)
 		{
@@ -133,7 +133,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Removing x{} {} from {}.", 
 							entry.first,
@@ -224,7 +224,7 @@ namespace ALYSLC
 			// Resetting while on horseback causes horse warp glitch upon resumption.
 			if (!coopActor->IsOnMount())
 			{
-				SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
+				DBG("{}: Reset3D.", coopActor->GetName());
 				coopActor->DoReset3D(true);
 			}
 		}
@@ -310,7 +310,7 @@ namespace ALYSLC
 		// Pull in our serialized favorited forms lists for items and magic.
 		UpdateFavoritedFormsLists(true);
 
-		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
+		DBG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState EquipManager::ShouldSelfPause()
@@ -373,7 +373,7 @@ namespace ALYSLC
 						{
 							if (effect && effect->baseEffect)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Shout variation spell {} {} "
 									"has archetype: {}",
@@ -392,7 +392,7 @@ namespace ALYSLC
 			}
 
 			copiedShoutToEquip->SetAltered(true);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Copied shout data to placeholder shout {}.", 
 				copiedShoutToEquip->GetName()
@@ -432,7 +432,7 @@ namespace ALYSLC
 			return nullptr;
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: {} of count {}, extra count {}, list {:p}. {}.", 
 			coopActor->GetName(), 
@@ -451,7 +451,7 @@ namespace ALYSLC
 		if (playerInvExDataList)
 		{
 			auto exRank = playerInvExDataList->GetByType<RE::ExtraRank>();
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} ({:p}) is already equipped: 0x{:X}.",
 				coopActor->GetName(),
@@ -475,7 +475,7 @@ namespace ALYSLC
 		if (playerInvExDataList)
 		{
 			auto exRank = playerInvExDataList->GetByType<RE::ExtraRank>();
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} ({:p}) was already equipped previously: 0x{:X}.",
 				coopActor->GetName(),
@@ -490,14 +490,14 @@ namespace ALYSLC
 		// Using the original extra data list when equipping leads to frequent crashing
 		// and I haven't figured out the reason for it yet.
 		auto list = Util::CopyExtraDataList(a_extraDataList);
-		SPDLOG_DEBUG("{}: Equip {} from sent list {:p} -> {:p}.", 
+		DBG("{}: Equip {} from sent list {:p} -> {:p}.", 
 			coopActor->GetName(), a_object->GetName(), fmt::ptr(a_extraDataList), fmt::ptr(list));
 		// Remove copied worn rank mask since we'll set it later instead
 		// after atttempting to equip the item.
 		auto exRank = list ? list->GetByType<RE::ExtraRank>() : nullptr;
 		if (exRank)
 		{
-			SPDLOG_DEBUG("{}: Clearing worn rank mask for new list {:p}. Was 0x{:X}.", 
+			DBG("{}: Clearing worn rank mask for new list {:p}. Was 0x{:X}.", 
 				coopActor->GetName(), fmt::ptr(list), static_cast<uint32_t>(exRank->rank));
 			exRank->rank &= 0x0000FFFF;
 		}
@@ -529,7 +529,7 @@ namespace ALYSLC
 			// Do not want to add additional entries for the same bound object
 			// to the player's inventory or this will cause an assert failure 
 			// and crash the game when CLib's GetInventory() is called.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Adding list {:p} to EXISTING entry {:p} for {}.",
 				fmt::ptr(list),
@@ -560,7 +560,7 @@ namespace ALYSLC
 						playerInvExDataList = nullptr;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding list {:p} to NEW ADDED entry {:p} for {}. Result: {:p}",
 						fmt::ptr(list),
@@ -581,7 +581,7 @@ namespace ALYSLC
 				RE::InventoryEntryData* entry = new RE::InventoryEntryData(a_object, a_count);
 				if (!entry)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"ERR: Failed to allocate NEW ENTRY for {}.",
 						a_object->GetName()
@@ -593,7 +593,7 @@ namespace ALYSLC
 				{
 					entry->AddExtraList(list);
 					playerInvExDataList = entry->extraLists ? entry->extraLists->front() : nullptr;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding list {:p} to NEW MALLOC'D entry {:p} for {}. Result: {:p}",
 						fmt::ptr(list),
@@ -604,7 +604,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Adding NEW MALLOC'D entry {:p} for {}.",
 						fmt::ptr(entry),
@@ -626,7 +626,7 @@ namespace ALYSLC
 			int32_t totalCount = list ? max(listCount, a_count) : a_count;
 			if (a_count <= listCount)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Add {} of list {:p} modified {}.", 
 					coopActor->GetName(), 
@@ -638,7 +638,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Add {} of list {:p} modified and {} of unmodified {}.", 
 					coopActor->GetName(), 
@@ -659,7 +659,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Add {} of unmodified {}.", 
 				coopActor->GetName(), a_count, a_object->GetName()
@@ -681,7 +681,7 @@ namespace ALYSLC
 					if (!iter->second.second->extraLists ||
 						iter->second.second->extraLists->empty())
 					{
-						SPDLOG_ERROR
+						ERR
 						(
 							"{}: {} has no/empty extra lists.", 
 							coopActor->GetName(), a_object->GetName()
@@ -691,11 +691,11 @@ namespace ALYSLC
 					else
 					{
 						playerInvExDataList = iter->second.second->extraLists->front();
-						//SPDLOG_DEBUG("List is now {:p}", fmt::ptr(playerInvExDataList));
+						//DBG("List is now {:p}", fmt::ptr(playerInvExDataList));
 						uint32_t j = 0;
 						for (const auto exDataList : *iter->second.second->extraLists)
 						{
-							SPDLOG_DEBUG("Extra data list #{} for {} is {:p}", 
+							DBG("Extra data list #{} for {} is {:p}", 
 								j, a_object->GetName(), fmt::ptr(exDataList));
 							++j;
 						}
@@ -703,7 +703,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Will fail equip. {} has no inventory entry.", a_object->GetName()
 					);
@@ -711,7 +711,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"ERR: Will fail equip. {} not in {}'s inventory.", 
 					a_object->GetName(), coopActor->GetName()
@@ -719,7 +719,7 @@ namespace ALYSLC
 			}
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"FINAL: {:p} in {}.", fmt::ptr(playerInvExDataList), a_equipsToLH ? "LH" : "RH"
 		);
@@ -772,7 +772,7 @@ namespace ALYSLC
 			equippedForms[!EquipIndex::kAmmo]->As<RE::TESAmmo>() : 
 			nullptr
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Current ammo: {}, equipped ammo: {}, desired ammo: {}",
 			coopActor->GetName(), 
@@ -811,7 +811,7 @@ namespace ALYSLC
 				coopActor->GetCurrentAmmo() != ammoAndCount.first)
 			{
 				desiredAmmo = ammoAndCount.first;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Equip highest {} ammo {}. Count: {}.",
 					coopActor->GetName(),
@@ -844,7 +844,7 @@ namespace ALYSLC
 							{
 								if (entry->extraLists->empty())
 								{
-									SPDLOG_ERROR("{}. TAHTS GON BE BUG: {}.",
+									ERR("{}. TAHTS GON BE BUG: {}.",
 										entry->object->GetName(), entry->countDelta);
 									delete entry->extraLists;
 									entry->extraLists = nullptr;
@@ -884,7 +884,7 @@ namespace ALYSLC
 		// attempt to find a matching chest exData list for the equipped exData list 
 		// in the same hand before adding worn exRank data.
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}, LH: {}, add: {}, list to change: {:p}.",
 			a_object ? a_object->GetName() : "NONE", 
@@ -965,7 +965,7 @@ namespace ALYSLC
 				// No equipped list on the player means the equip failed 
 				// and we don't have to add any worn exRank data to the chest 
 				// or player extra data lists for the given object.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ERR: {}: No player-equipped extra data list found for {} in the {} slot.", 
 					coopActor->GetName(), a_object->GetName(), a_equipsToLH ? "LH" : "RH/Default"
@@ -982,7 +982,7 @@ namespace ALYSLC
 				);
 				if (!a_chestListToChange)
 				{
-					SPDLOG_DEBUG("{}: No chest extra data list found for equipped {}.", 
+					DBG("{}: No chest extra data list found for equipped {}.", 
 						coopActor->GetName(), a_object->GetName());
 					return;
 				}
@@ -1036,7 +1036,7 @@ namespace ALYSLC
 		// Add if attempted to equip.
 		if (a_add)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Equipped {}'s chest list {:p} as {:p}. Is equipped to LH: {}.",
 				coopActor->GetName(), 
@@ -1061,14 +1061,14 @@ namespace ALYSLC
 
 		if (!chestInvEntryData)
 		{
-			SPDLOG_DEBUG("{}: {} not found in inventory chest.",
+			DBG("{}: {} not found in inventory chest.",
 				coopActor->GetName(), a_object->GetName());
 			return;
 		}
 
 		if (!chestInvEntryData->extraLists)
 		{
-			SPDLOG_DEBUG("{}: No extra lists found for {} in inventory chest.",
+			DBG("{}: No extra lists found for {} in inventory chest.",
 				coopActor->GetName(), a_object->GetName());
 			return;
 		}
@@ -1091,14 +1091,14 @@ namespace ALYSLC
 
 		if (!playerInvEntryData)
 		{
-			SPDLOG_DEBUG("{}: {} not found in player inventory.",
+			DBG("{}: {} not found in player inventory.",
 				coopActor->GetName(), a_object->GetName());
 			return;
 		}
 
 		if (!playerInvEntryData->extraLists)
 		{
-			SPDLOG_DEBUG("{}: No extra lists found for {} in player inventory.",
+			DBG("{}: No extra lists found for {} in player inventory.",
 				coopActor->GetName(), a_object->GetName());
 			return;
 		}
@@ -1278,7 +1278,7 @@ namespace ALYSLC
 		// Make sure the cached placeholder magic form is set to the newly copied spell.
 		placeholderMagic[!a_index] = copiedSpellToEquip;
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: spell: {} -> {}, index: {}.",
 			coopActor->GetName(), 
@@ -1427,7 +1427,7 @@ namespace ALYSLC
 			nullptr
 		);
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: current cycled ammo: {} from index {} (current: {}). Total: {}.",
 			coopActor->GetName(),
@@ -1461,7 +1461,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: current idle: {}, index: {}.",
 			coopActor->GetName(),
@@ -1698,7 +1698,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: right hand: {}, spell category {} and currently cycled spell {} from index {}.",
 			coopActor->GetName(),
@@ -1751,7 +1751,7 @@ namespace ALYSLC
 			lhSpellCategory = newCategory;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: right hand: {}, spell category is now: {}.",
 			coopActor->GetName(),
@@ -1804,7 +1804,7 @@ namespace ALYSLC
 
 		currentCycledVoiceMagic = cyclableVoiceMagicList[nextVoiceMagicIndex];
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: currently cycled voice magic: {} from index {}.",
 			coopActor->GetName(),
@@ -1857,7 +1857,7 @@ namespace ALYSLC
 			lhWeaponCategory = newCategory;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: right hand: {}, weapon category is now: {}.",
 			coopActor->GetName(),
@@ -2169,7 +2169,7 @@ namespace ALYSLC
 			currentCycledLHWeaponsList[!lhWeaponCategory] = nextForm;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: right hand: {}, category is now {}, cycled weapon {} from index {}.",
 			coopActor->GetName(),
@@ -2193,7 +2193,7 @@ namespace ALYSLC
 	{
 		// Equip the given ammo.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: equip {}.", 
 			coopActor->GetName(),
@@ -2257,7 +2257,7 @@ namespace ALYSLC
 		// Matching ex data list is generated if the item isn't already present
 		// in the player's inventory and then used on equip.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: equip {} (0x{:X}).",
 			coopActor->GetName(),
@@ -2287,7 +2287,7 @@ namespace ALYSLC
 					a_toEquip->As<RE::TESObjectARMO>()->equipSlot :
 					a_slot
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {} slot mask 0b{:B}.",
 					coopActor->GetName(),
@@ -2371,7 +2371,7 @@ namespace ALYSLC
 		// NOTE: 
 		// Does not clear the desired hand slot form in the same slot.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		auto aem = RE::ActorEquipManager::GetSingleton();
 		if (!aem)
@@ -2439,7 +2439,7 @@ namespace ALYSLC
 		// Clear out both hand slots by equipping the 'fists' item.
 		// Can choose to also clear out desired forms/exData list slots.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 		auto aem = RE::ActorEquipManager::GetSingleton();
 		if (!aem)
 		{
@@ -2502,7 +2502,7 @@ namespace ALYSLC
 		// Matching ex data list is generated if the item isn't already present
 		// in the player's inventory and then used on equip.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: equip {}, list {:p}.", 
 			coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE",
@@ -2562,7 +2562,7 @@ namespace ALYSLC
 				a_toEquip->As<RE::BGSEquipType>() && 
 				a_toEquip->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
 				"Unequip first: {}.",
@@ -2590,7 +2590,7 @@ namespace ALYSLC
 						glob.leftHandEquipSlot :
 						glob.rightHandEquipSlot
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Re-equip {} in the other hand with the {} equip slot.",
 						oppositeHandForm->GetName(), 
@@ -2658,7 +2658,7 @@ namespace ALYSLC
 	{
 		// Equip the given shout.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: equip {}.", coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
@@ -2705,7 +2705,7 @@ namespace ALYSLC
 	{
 		// Equip the given spell.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: equip {}.", coopActor->GetName(), a_toEquip ? a_toEquip->GetName() : "NONE"
 		);
@@ -2859,7 +2859,7 @@ namespace ALYSLC
 		// Unused for now, but keeping for reference or if needed again in the future.
 		// Get all equipable hand-slot or voice-slot spells known by P1 and this player.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: in hand slot: {}.", coopActor->GetName(), a_inHandSlot
 		);
@@ -3001,7 +3001,7 @@ namespace ALYSLC
 	{
 		// Resolve equip slot for the given form with the requested equip index.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: form: {}, index: {}.", 
 			coopActor->GetName(),
@@ -3196,7 +3196,7 @@ namespace ALYSLC
 		// Inventory here means P1's on-player inventory 
 		// and the player inventory chest for companion players.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}. Inv changes: {:p}.", 
 			coopActor->GetName(), 
@@ -3212,7 +3212,7 @@ namespace ALYSLC
 		{
 			if (otherP->isActive && otherP != p)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}'s inventory changes is {:p}, chest is {:p}.",
 					otherP->coopActor->GetName(), 
@@ -3271,7 +3271,7 @@ namespace ALYSLC
 					);
 					if (canRemoveOwnership)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Can remove ownership from {} ({}).",
 							entry->object->GetName(), 
@@ -3290,7 +3290,7 @@ namespace ALYSLC
 							);
 							if (data)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"MALLOC: Added ownership exData to {} ({:p}).",
 									entry->object->GetName(), 
@@ -3299,7 +3299,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ERR: MALLOC: Failed to add ownership exData to {} ({:p}):",
 									entry->object->GetName(), fmt::ptr(exDataList)
@@ -3318,11 +3318,11 @@ namespace ALYSLC
 				if (entry->extraLists && !entry->extraLists->empty())
 				{
 					const auto addedList = entry->extraLists->front();
-					SPDLOG_DEBUG("Added serializable exData list to {}: {:p}.",
+					DBG("Added serializable exData list to {}: {:p}.",
 						entry->object->GetName(), fmt::ptr(addedList));
 					if (entry->countDelta > 0)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Set new exData list for {} {:p}'s count to {}.",
 							entry->object->GetName(), 
@@ -3336,7 +3336,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("ERR: Failed to add serializable exData list to {}:",
+					DBG("ERR: Failed to add serializable exData list to {}:",
 						entry->object->GetName());
 				}
 			}
@@ -3350,7 +3350,7 @@ namespace ALYSLC
 			int32_t countsDelta = entry->countDelta - exListsCount;
 			if (countsDelta < 0)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"{}: Item {}'s entry countDelta is less than "
 					"the accumulated extra data list item count (diff of {}). "
@@ -3370,13 +3370,13 @@ namespace ALYSLC
 				if (entry->extraLists && !entry->extraLists->empty())
 				{
 					const auto addedList = entry->extraLists->front();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"To account for {} unmodified items: "
 						"added serializable exData list to {}: {:p}.",
 						countsDelta, entry->object->GetName(), fmt::ptr(addedList)
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Set new exData list for {} {:p}'s count to {}.",
 						entry->object->GetName(), 
@@ -3387,7 +3387,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("ERR: Failed to add serializable exData list to {}:",
+					DBG("ERR: Failed to add serializable exData list to {}:",
 						entry->object->GetName());
 				}
 			}
@@ -3458,7 +3458,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {}: Checking for {}: HAS: {:p}.", 
 					coopActor->GetName(), 
@@ -3478,7 +3478,7 @@ namespace ALYSLC
 				bool wornRH = false;
 				if (p->isPlayer1)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {}: {:p} has worn L/R: {}, {}", 
 						coopActor->GetName(), 
@@ -3491,7 +3491,7 @@ namespace ALYSLC
 					wornRH = extraDataList->GetByType<RE::ExtraWorn>();
 					if ((a_checkWornLeft && wornLH) || (!a_checkWornLeft && wornRH))
 					{
-						SPDLOG_DEBUG("{}: {}: EQUIPPED: {:p}.", 
+						DBG("{}: {}: EQUIPPED: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
 						equippedFavList = extraDataList;
 						continue;
@@ -3499,7 +3499,7 @@ namespace ALYSLC
 				}
 				else if (const auto exRank = extraDataList->GetByType<RE::ExtraRank>(); exRank)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {}: {:p} has worn L/R: {}, {} (rank: 0x{:X})", 
 						coopActor->GetName(), 
@@ -3513,7 +3513,7 @@ namespace ALYSLC
 					wornRH = ((exRank->rank & 0x00FF0000) == 0x00FF0000);
 					if ((a_checkWornLeft && wornLH) || (!a_checkWornLeft && wornRH))
 					{
-						SPDLOG_DEBUG("{}: {}: EQUIPPED: {:p}.", 
+						DBG("{}: {}: EQUIPPED: {:p}.", 
 							coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
 						equippedFavList = extraDataList;
 						continue;
@@ -3523,7 +3523,7 @@ namespace ALYSLC
 				// Return this unequipped list since it is the first one after the equipped list.
 				if (equippedFavList)
 				{
-					SPDLOG_DEBUG("{}: {}: NEXT TO EQUIP: {:p}.", 
+					DBG("{}: {}: NEXT TO EQUIP: {:p}.", 
 						coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
 					a_shouldUnequip = false;
 					return extraDataList;
@@ -3535,7 +3535,7 @@ namespace ALYSLC
 				if ((!firstUnequippedFavList) && 
 					((!wornLH && !wornRH) || (extraDataList->GetCount() > 1)))
 				{
-					SPDLOG_DEBUG("{}: {}: FIRST UNEQUIPPED: {:p}.", 
+					DBG("{}: {}: FIRST UNEQUIPPED: {:p}.", 
 						coopActor->GetName(), boundObj->GetName(), fmt::ptr(extraDataList));
 					firstUnequippedFavList = extraDataList;
 				}
@@ -3547,7 +3547,7 @@ namespace ALYSLC
 				equippedFavList && 
 				iter == invEntry->extraLists->end())
 			{
-				SPDLOG_DEBUG("{}: {}: LAST EQUIPPED: {:p}. EQUIP NOTHING NEXT.", 
+				DBG("{}: {}: LAST EQUIPPED: {:p}. EQUIP NOTHING NEXT.", 
 					coopActor->GetName(), boundObj->GetName(), fmt::ptr(equippedFavList));
 				a_shouldUnequip = true;
 				return equippedFavList;
@@ -3556,7 +3556,7 @@ namespace ALYSLC
 			// Return the first unequipped list in the list of extra data.
 			if (firstUnequippedFavList)
 			{
-				SPDLOG_DEBUG("{}: {}: FIRST UNEQUIPPED TO EQUIP: {:p}.", 
+				DBG("{}: {}: FIRST UNEQUIPPED TO EQUIP: {:p}.", 
 					coopActor->GetName(), boundObj->GetName(), fmt::ptr(firstUnequippedFavList));
 				a_shouldUnequip = false;
 				return firstUnequippedFavList;
@@ -3565,7 +3565,7 @@ namespace ALYSLC
 			break;
 		}
 		
-		SPDLOG_DEBUG("{}: {}, NOTHING to equip.", coopActor->GetName(), a_form->GetName());
+		DBG("{}: {}, NOTHING to equip.", coopActor->GetName(), a_form->GetName());
 		a_shouldUnequip = false;
 		return nullptr;
 	}
@@ -3593,7 +3593,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: {}, index: {}, exData {:p}, count: {}, slot: {}.",
 			coopActor->GetName(),
@@ -3747,11 +3747,11 @@ namespace ALYSLC
 			);
 			if (!a_exDataList || !chestExDataList)
 			{
-				SPDLOG_DEBUG("Given extra data list is nullptr: {}, chest list is nullptr: {}.",
+				DBG("Given extra data list is nullptr: {}, chest list is nullptr: {}.",
 					!a_exDataList, !chestExDataList);	
 				if (!chestExDataList)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: {}: Could not get matching inventory chest list for {} (given {:p}), "
 						"equipped to index {}, with equip slot {}, and count {}. "
@@ -3780,7 +3780,7 @@ namespace ALYSLC
 				a_object->As<RE::TESObjectARMO>()->equipSlot :
 				a_slot
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} slot mask 0b{:B}.",
 				coopActor->GetName(),
@@ -3820,7 +3820,7 @@ namespace ALYSLC
 						);
 						if (currentArmorForm)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Comp {} (0x{:X}, type {}) to {} (0x{:X}, type: {}).",
 								Util::GetEditorID(currentArmorForm),
@@ -3912,7 +3912,7 @@ namespace ALYSLC
 						a_object->As<RE::BGSEquipType>() && 
 						a_object->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
 						"Unequip first: {}.",
@@ -3938,7 +3938,7 @@ namespace ALYSLC
 								glob.leftHandEquipSlot :
 								glob.rightHandEquipSlot
 							);
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Re-equip {} in the other hand with the {} equip slot.",
 								oppositeHandForm->GetName(), 
@@ -4043,7 +4043,7 @@ namespace ALYSLC
 			);
 			if (alreadyPresent)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: exData list for {}'s list {:p} already in inventory. "
 					"Equip right away.",
@@ -4058,7 +4058,7 @@ namespace ALYSLC
 			// which are definitely not requested by the player.
 			if (!chestExDataList)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: No matching chest exData list for {}'s list {:p} "
 					"(found {:p}).",
@@ -4070,7 +4070,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Got chest exData list {:p} for {}'s list {:p}. ",
 					coopActor->GetName(), 
@@ -4185,7 +4185,7 @@ namespace ALYSLC
 						(equipSlot == glob.leftHandEquipSlot &&
 						bipedIndex == RE::BIPED_OBJECT::kShield))
 					{
-						SPDLOG_DEBUG("Remove {}'s biped object at index {}.",
+						DBG("Remove {}'s biped object at index {}.",
 							a_object->GetName(), bipedIndex);
 						coopActor->RemoveWeapon
 						(
@@ -4209,14 +4209,14 @@ namespace ALYSLC
 
 		// REMOVE when done debugging.
 		bool inInventory = coopActor->GetInventory().contains(a_object);
-		SPDLOG_DEBUG("In inventory: {}.", inInventory);
+		DBG("In inventory: {}.", inInventory);
 		bool isEquipped = p->em->IsEquipped
 		(
 			a_object, 
 			a_exDataList, 
 			equipSlot == glob.leftHandEquipSlot
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: {} with list {:p} {} and is now {}.", 
 			coopActor->GetName(), 
@@ -4236,7 +4236,7 @@ namespace ALYSLC
 		auto newEntryList = new std::remove_pointer_t<decltype(invChanges->entryList)>();
 		if (!newEntryList)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"ERR: {}: Failed to allocate new inventory entry list.", coopActor->GetName()
 			);
@@ -4253,7 +4253,7 @@ namespace ALYSLC
 			(
 				invChanges->entryList->begin(), invChanges->entryList->end()
 			);
-			SPDLOG_DEBUG("Old entry lists has size {}.", oldLength);
+			DBG("Old entry lists has size {}.", oldLength);
 			for (auto iter = invChanges->entryList->begin();
 				iter != invChanges->entryList->end();
 				++iter)
@@ -4287,7 +4287,7 @@ namespace ALYSLC
 						entry->extraLists->begin(), entry->extraLists->end()
 					);
 					const auto oldDelta = entry->countDelta;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Old extra lists has size {} and entry count delta is {}.",
 						oldLength, oldDelta
@@ -4297,7 +4297,7 @@ namespace ALYSLC
 						if (list != a_exDataList)
 						{
 							auto count = list->GetCount();
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Not removing list {:p} when searching for {:p}. Count: {}",
 								fmt::ptr(list),
@@ -4308,7 +4308,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Still has {} of {} with list {:p}.",
 								list->GetCount(),
@@ -4320,7 +4320,7 @@ namespace ALYSLC
 
 					if (newExDataLists->empty())
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"New lists empty: {}, count delta: {}.",
 							newExDataLists->empty(), entry->countDelta
@@ -4333,7 +4333,7 @@ namespace ALYSLC
 								newExDataLists->begin(), newExDataLists->end()
 							); newLength != oldLength || entry->countDelta != oldDelta)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"New lists has size {} and count delta is {}. "
 							"Removed matching lists.",
@@ -4352,7 +4352,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"New lists same as old ones. No replacement required."
 						);
@@ -4364,7 +4364,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Dec matched entry count delta to {}. Remove entry: {}.",
 						entry->countDelta - 1, entry->countDelta - 1 <= 0
@@ -4382,7 +4382,7 @@ namespace ALYSLC
 					// so RE::free our allocated extra data lists.
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}'s count delta is now {}. From entry {:p}.",
 					a_object->GetName(),
@@ -4392,7 +4392,7 @@ namespace ALYSLC
 
 				if (!swappedInNewLists)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"CHECKED ENTRY: Free allocated extra data lists {:p} for {}.",
 						fmt::ptr(newExDataLists), a_object->GetName()
@@ -4402,7 +4402,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"CHECKED ENTRY: Swapped in new extra data lists {:p} for {}.",
 							fmt::ptr(newExDataLists), a_object->GetName()
@@ -4411,7 +4411,7 @@ namespace ALYSLC
 
 				if (shouldKeepEntry)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"CHECKED ENTRY: Keep old entry {:p} for {}.",
 						fmt::ptr(entry), a_object->GetName()
@@ -4420,7 +4420,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"CHECKED ENTRY: Remove old entry {:p} for {}.",
 						fmt::ptr(entry), a_object->GetName()
@@ -4432,7 +4432,7 @@ namespace ALYSLC
 
 		if (changedEntryList)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"FINISH: Removing inventory entry for {}. "
 				"New entry list has size {}. In inventory: {}, changed entry list: {}.",
@@ -4448,7 +4448,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"FINISH: New entries same as old ones. No removal required."
 			);
@@ -4473,7 +4473,7 @@ namespace ALYSLC
 		// NOTE:
 		// Never called on P1.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: form: {}, index: {}, should equip: {}.", 
 			coopActor->GetName(),
@@ -4798,7 +4798,7 @@ namespace ALYSLC
 		// NOTE 2: 
 		// Spells to equip should not be placeholder spells.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: container: {}, form: {}, index: {}, "
 			"placeholder spell changed: {}.", 
@@ -4874,7 +4874,7 @@ namespace ALYSLC
 			// Do nothing for now.
 
 			RE::DebugNotification("Scrolls usage not yet implemented for players 2-4.");
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Attempting to equip a scroll: {}.", coopActor->GetName(), a_form->GetName()
 			);
@@ -4932,7 +4932,7 @@ namespace ALYSLC
 			}
 
 			// CHANGE TO DEBUG
-			SPDLOG_INFO
+			INF
 			(
 				"{}: {} requested form {} (0x{:X}). Current form: {} (0x{:X}), "
 				"current copied spell: {} (0x{:X}). Placeholder magic changed: {}.",
@@ -5478,7 +5478,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}. Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites
 		);
@@ -5501,7 +5501,7 @@ namespace ALYSLC
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"ImportCoopFavorites: {}: Could not get magic favorites singleton.", 
 				coopActor->GetName()
@@ -5552,7 +5552,7 @@ namespace ALYSLC
 				}
 			);
 			magicFavorites->RemoveFavorite(magForm);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
 				coopActor->GetName(),
@@ -5592,7 +5592,7 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1: BEFORE: {} was favorited and has hotkey {} "
 						"on list {:p} from inventory.",
@@ -5627,7 +5627,7 @@ namespace ALYSLC
 						p1->GetInventoryChanges(), countInvEntryPair.second.get(), exDataList
 					);
 					exHotkey = exDataList->GetByType<RE::ExtraHotkey>();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1: AFTER: {} is favorited ({}) and has hotkey {} "
 						"on list {:p} from inventory.",
@@ -5664,7 +5664,7 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} was favorited and has hotkey {} "
 						"on list {:p} from inventory chest.",
@@ -5714,7 +5714,7 @@ namespace ALYSLC
 					{
 						if (auto data = exDataList->GetByType(type); data)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"IN P1: Favorited object {} has exData list {:p} "
 								"with data {:p} of type 0x{:X}.",
@@ -5736,7 +5736,7 @@ namespace ALYSLC
 						if (setIter == hotkeyedFormsToSlotsSetMap.end() || 
 							!setIter->second.contains(!*exHotkey->hotkey))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"IN P1: {} has hotkey {} which should be removed on list {:p}.",
 								countInvEntryPair.second->object->GetName(), 
@@ -5750,7 +5750,7 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"IN P1: {} was favorited and has hotkey {} "
 						"on list {:p}.",
@@ -5779,7 +5779,7 @@ namespace ALYSLC
 
 			if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Add favorited magic {}.", coopActor->GetName(), form->GetName()
 				);
@@ -5793,7 +5793,7 @@ namespace ALYSLC
 				// Should not happen, but remove the hotkey if it is not in the set.
 				if (iter->second.empty())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Removing hotkey for {}.",
 						coopActor->GetName(), 
@@ -5805,7 +5805,7 @@ namespace ALYSLC
 				{
 					for (const auto& hotkeyIndex : iter->second)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Adding hotkey {} for {}.",
 							coopActor->GetName(), 
@@ -5915,7 +5915,7 @@ namespace ALYSLC
 		// Re-equip all forms for this player, optionally refreshing the cached equipped state 
 		// or resetting the companion player's inventory beforehand.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		// Refresh all equipped forms before re-equipping.
 		if (a_refreshBeforeEquipping)
@@ -5938,7 +5938,7 @@ namespace ALYSLC
 		for (auto i = 0; i < desiredForms.size(); ++i)
 		{
 			item = desiredForms[i];
-			SPDLOG_DEBUG("{}: {} at index {}.", 
+			DBG("{}: {} at index {}.", 
 				coopActor->GetName(), item ? item->GetName() : "NONE", i);
 			// Do not include items without a loaded name,
 			// such as the "SkinNaked" armor. 
@@ -5967,7 +5967,7 @@ namespace ALYSLC
 			}
 			else if (currentIndex == EquipIndex::kQuickSlotItem)
 			{
-				SPDLOG_DEBUG("{}: Quickslot item: {}.", coopActor->GetName(), item->GetName());
+				DBG("{}: Quickslot item: {}.", coopActor->GetName(), item->GetName());
 				quickSlotItem = equippedForms[i] = item;
 				continue;
 			}
@@ -5979,7 +5979,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Quickslot spell: {}.", coopActor->GetName(), item->GetName()
 				);
@@ -6004,7 +6004,7 @@ namespace ALYSLC
 						false
 					)
 				);
-				SPDLOG_DEBUG("{}: Ammo: {} ({:p}).", 
+				DBG("{}: Ammo: {} ({:p}).", 
 					coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
 				EquipAmmo(item, exDataList);
 
@@ -6025,7 +6025,7 @@ namespace ALYSLC
 						item->As<RE::TESObjectARMO>()->equipSlot == glob.leftHandEquipSlot
 					)
 				);
-				SPDLOG_DEBUG("{}: Armor: {} ({:p}).", 
+				DBG("{}: Armor: {} ({:p}).", 
 					coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
 				EquipArmor(item, exDataList);
 
@@ -6033,7 +6033,7 @@ namespace ALYSLC
 			}
 			case RE::FormType::Shout:
 			{
-				SPDLOG_DEBUG("{}: Shout: {}.", coopActor->GetName(), item->GetName());
+				DBG("{}: Shout: {}.", coopActor->GetName(), item->GetName());
 				EquipShout(item);
 				break;
 			}
@@ -6064,7 +6064,7 @@ namespace ALYSLC
 						);
 					}
 					
-					SPDLOG_DEBUG("{}: Hand spell: {}.", coopActor->GetName(), item->GetName());
+					DBG("{}: Hand spell: {}.", coopActor->GetName(), item->GetName());
 					// Directly equip, if P1.
 					if (p->isPlayer1)
 					{
@@ -6145,7 +6145,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("{}: Voice spell: {}.", coopActor->GetName(), item->GetName());
+					DBG("{}: Voice spell: {}.", coopActor->GetName(), item->GetName());
 					auto spell = item->As<RE::SpellItem>();
 					auto equipSlot = glob.voiceEquipSlot;
 					EquipSpell
@@ -6199,7 +6199,7 @@ namespace ALYSLC
 							i == !EquipIndex::kLeftHand && equipSlot != glob.bothHandsEquipSlot
 						)
 					);
-					SPDLOG_DEBUG("{}: Weapon: {} ({:p}).", 
+					DBG("{}: Weapon: {} ({:p}).", 
 						coopActor->GetName(), item->GetName(), fmt::ptr(exDataList));
 					EquipForm
 					(
@@ -6243,7 +6243,7 @@ namespace ALYSLC
 										inventoryChest.get(), ammoAndCount.first, false
 									)
 								);
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: Auto-equip ammo: {} ({:p}).", 
 									coopActor->GetName(),
@@ -6263,7 +6263,7 @@ namespace ALYSLC
 			}
 			default:
 			{
-				SPDLOG_DEBUG("{}: Not equipping {}.", coopActor->GetName(), item->GetName());
+				DBG("{}: Not equipping {}.", coopActor->GetName(), item->GetName());
 				break;
 			}
 			}
@@ -6274,7 +6274,7 @@ namespace ALYSLC
 	{
 		// Re-equip desired forms in this player's hands.
 
-		SPDLOG_DEBUG("{}: {}.", coopActor->GetName(), a_rhSlot ? "RH" : "LH");
+		DBG("{}: {}.", coopActor->GetName(), a_rhSlot ? "RH" : "LH");
 
 		// Interrupts Vampire Lord levitation, 
 		// and Werewolves have no equipped items, so return here.
@@ -6399,7 +6399,7 @@ namespace ALYSLC
 	{
 		// Re-equip desired forms in this player's hands.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		// Interrupts Vampire Lord levitation, 
 		// and Werewolves have no equipped items, so return here.
@@ -6481,7 +6481,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}. Forms to re-equip: {}, {} ({:p}, {:p})", 
 			coopActor->GetName(),
@@ -6558,7 +6558,7 @@ namespace ALYSLC
 				equipSlot = GetEquipSlotForForm(rhForm, EquipIndex::kRightHand);
 				if (p->isPlayer1)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"RH: {}, {:p}, slot {}. Has worn/worn left data: {}, {}",
 						rhForm ? rhForm->GetName() : "NONE", 
@@ -6649,7 +6649,7 @@ namespace ALYSLC
 				equipSlot = GetEquipSlotForForm(lhForm, EquipIndex::kLeftHand);
 				if (p->isPlayer1)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"LH: {}, {:p}, slot {}. Has worn/worn left data: {}, {}",
 						lhForm ? lhForm->GetName() : "NONE", 
@@ -6680,7 +6680,7 @@ namespace ALYSLC
 		// this should fix it.
 		if (!coopActor->IsOnMount())
 		{
-			SPDLOG_DEBUG("{}: Reset3D.", coopActor->GetName());
+			DBG("{}: Reset3D.", coopActor->GetName());
 			coopActor->DoReset3D(true);
 		}
 
@@ -6691,7 +6691,7 @@ namespace ALYSLC
 	{
 		// Re-equip the player's desired voice magic form.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 		UnequipFormAtIndex(EquipIndex::kVoice);
 
 		auto toEquip = desiredForms[!EquipIndex::kVoice]; 
@@ -6721,7 +6721,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Only magic favorites: {}.", coopActor->GetName(), a_onlyMagicFavorites
 		);
@@ -6766,7 +6766,7 @@ namespace ALYSLC
 			}
 
 			magicFavorites->RemoveFavorite(magForm);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Remove P1 favorited magic {} at index {}. List size: {}.", 
 				coopActor->GetName(),
@@ -6794,7 +6794,7 @@ namespace ALYSLC
 			{
 				if (form)
 				{
-					SPDLOG_DEBUG("SET: {}.", form->GetName());
+					DBG("SET: {}.", form->GetName());
 				}
 			}
 
@@ -6811,7 +6811,7 @@ namespace ALYSLC
 				// since we removed all P1's favorites on import.
 				if (countInvEntryPair.second->extraLists)
 				{
-					SPDLOG_DEBUG("ITEM: {}.", countInvEntryPair.second->object->GetName());
+					DBG("ITEM: {}.", countInvEntryPair.second->object->GetName());
 					for (auto exDataList : *countInvEntryPair.second->extraLists)
 					{
 						if (!exDataList)
@@ -6848,7 +6848,7 @@ namespace ALYSLC
 						// still removes the hotkey extra data. Gahd.
 						if (notFavoritedByP1)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Removing favorited item {} with list {:p} "
 								"and hotkey {} from P1.",
@@ -6868,7 +6868,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"NOT removing favorited item {} with list {:p} "
 								"and hotkey {} from P1 to the inventory chest.",
@@ -6899,7 +6899,7 @@ namespace ALYSLC
 						continue;
 					}
 						
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1's inventory had item {} exDataList {:p} "
 						"with favorites status to restore.",
@@ -6918,7 +6918,7 @@ namespace ALYSLC
 
 					if (hotkey != !RE::ExtraHotkey::Hotkey::kUnbound)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"P1's inventory had item {} exDataList {:p} "
 							"with hotkey {} to restore.",
@@ -6959,7 +6959,7 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {} is favorited and has hotkey {} "
 						"on list {:p} from inventory chest.",
@@ -6989,7 +6989,7 @@ namespace ALYSLC
 
 			if (form->Is(RE::FormType::Spell, RE::FormType::Shout))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Restoring favorited magic {} for P1.", 
 					coopActor->GetName(), form->GetName()
@@ -7003,7 +7003,7 @@ namespace ALYSLC
 				// Should not happen, but remove the hotkey if it is not in the set.
 				if (iter->second.empty())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Removing hotkey for {}.",
 						coopActor->GetName(), 
@@ -7015,7 +7015,7 @@ namespace ALYSLC
 				{
 					for (const auto& hotkeyIndex : iter->second)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Reapplying P1 hotkey {} for {}.",
 							coopActor->GetName(),
@@ -7039,7 +7039,7 @@ namespace ALYSLC
 		// as well as whether or not it is now equipped.
 
 		// CHANGE TO DEBUG
-		SPDLOG_INFO
+		INF
 		(
 			"{}: slots to refresh: {}, form: {}, is equipped: {}. "
 			"Manager states: P: {}, PAM: {}, EM: {}, MM: {}, TM: {}", 
@@ -7063,7 +7063,7 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> lock(equipStateMutex, std::try_to_lock);
 			if (lock)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Lock obtained. (0x{:X})", 
 					coopActor->GetName(), 
@@ -7081,14 +7081,14 @@ namespace ALYSLC
 					auto rhObj = coopActor->GetEquippedObject(false);
 					auto ammo = coopActor->GetCurrentAmmo();
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: LH: {}, RH: {}",
 						coopActor->GetName(),
 						(lhObj) ? lhObj->GetName() : "NONE",
 						(rhObj) ? rhObj->GetName() : "NONE"
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Current ammo: {}.", 
 						coopActor->GetName(), ammo ? ammo->GetName() : "NONE"
@@ -7118,7 +7118,7 @@ namespace ALYSLC
 					// Notify the player and provide workaround steps.
 					if (onlyLHHas2HWeap || onlyRHHas2HWeap)
 					{
-						SPDLOG_ERROR
+						ERR
 						(
 							"{}: 2H stuttering equip state bug "
 							"is likely since the 2H weapon {} is only in the {}. " 
@@ -7227,7 +7227,7 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Voice magic: {} (formType: 0x{:X}), Ammo: {}",
 						coopActor->GetName(),
@@ -7250,7 +7250,7 @@ namespace ALYSLC
 					desiredForms[!EquipIndex::kQuickSlotItem] = quickSlotItem;
 					desiredForms[!EquipIndex::kQuickSlotSpell] = quickSlotSpell;
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Quick slot spell, item: {}, {}",
 						coopActor->GetName(),
@@ -7322,7 +7322,7 @@ namespace ALYSLC
 						}
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: New armor ratings for light/heavy armor are: {}, {}",
 						coopActor->GetName(), armorRatings.first, armorRatings.second
@@ -7395,7 +7395,7 @@ namespace ALYSLC
 						const auto form = equippedForms[i];
 						if (mismatch = form != desiredForms[i]; mismatch)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: MISMATCH at index {}: equipped {} (0x{:X}) "
 								"vs. should have equipped {} (0x{:X}).",
@@ -7424,7 +7424,7 @@ namespace ALYSLC
 				const auto iter = glob.serializablePlayerData.find(coopActor->formID);
 				if (iter == glob.serializablePlayerData.end())
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"Could not get serializable player data for {} (0x{:X}). Returning.",
 						coopActor ? coopActor->GetName() : "NONE",
@@ -7447,7 +7447,7 @@ namespace ALYSLC
 					desiredForms.end(), 
 					serializableEquippedForms.begin()
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Copying desired forms list to serializable equipped forms list. "
 					"New desired forms list size: {}",
@@ -7462,7 +7462,7 @@ namespace ALYSLC
 					if (item)
 					{
 						equippedFormFIDs.insert(item->formID);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} has a(n) {} (0x{:X}) in EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
@@ -7474,7 +7474,7 @@ namespace ALYSLC
 				{
 					if (item)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} has a(n) {} (0x{:X}) in DESIRED EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
@@ -7486,7 +7486,7 @@ namespace ALYSLC
 				{
 					if (item)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} has a(n) {} (0x{:X}) in SERIALIZABLE EQUIPPED forms list.", 
 							coopActor->GetName(), item->GetName(), item->formID
@@ -7497,7 +7497,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Failed to obtain lock. (0x{:X})", 
 					coopActor->GetName(), 
@@ -7534,7 +7534,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			// SPDLOG_DEBUG("{} (0x{:X}) at index {}.", boundObj->GetName(), boundObj->formID, i);
+			// DBG("{} (0x{:X}) at index {}.", boundObj->GetName(), boundObj->formID, i);
 			desiredFIDs.insert(form->formID);
 		}
 
@@ -7574,7 +7574,7 @@ namespace ALYSLC
 
 				if (hasDesiredForms && !desiredFIDs.contains(boundObj->formID))
 				{
-					SPDLOG_DEBUG("Not a desired form: REMOVING {} ({}) from {}'s inventory.",
+					DBG("Not a desired form: REMOVING {} ({}) from {}'s inventory.",
 						boundObj->GetName(), invEntry->countDelta, coopActor->GetName());
 					coopActor->RemoveItem
 					(
@@ -7591,7 +7591,7 @@ namespace ALYSLC
 				{
 					if (invEntry->extraLists->empty())
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Item {}'s extra lists list is empty.", boundObj->GetName()
 						);
@@ -7606,7 +7606,7 @@ namespace ALYSLC
 						// Will remove this if it is ill-advised and causes issues elsewhere, 
 						// such as after adding an extra list to this item later via crafting.
 						
-						SPDLOG_ERROR("{}. TAHTS GON BE BUG: {}.",
+						ERR("{}. TAHTS GON BE BUG: {}.",
 							invEntry->object->GetName(), invEntry->countDelta);
 						delete invEntry->extraLists;
 						invEntry->extraLists = nullptr;
@@ -7626,7 +7626,7 @@ namespace ALYSLC
 						// Equipped and should remain so, as long as the chest also has the item.
 						if ((isWorn || isWornLeft) && (chestInventory.contains(boundObj)))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} ({:p}) is worn {}. Rank mask: 0x{:X}.",
 								boundObj->GetName(), 
@@ -7648,7 +7648,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} ({:p}) is NOT worn: {}, not in chest: {}. Rank mask: 0x{:X}.",
 								boundObj->GetName(), 
@@ -7698,7 +7698,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"REMOVE: In inventory AND not designated as worn OR not present "
 					"in the inventory chest: {}. "
@@ -7730,7 +7730,7 @@ namespace ALYSLC
 				);
 				if (!wornRankLH && !wornRankRH)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"REMOVE: In inventory AND not designated as worn (present: {}) "
 						"in the inventory chest. "
@@ -7756,7 +7756,7 @@ namespace ALYSLC
 					auto isWorn = extraDataList->HasType<RE::ExtraWorn>();
 					auto isWornLeft = extraDataList->HasType<RE::ExtraWornLeft>();
 					
-					SPDLOG_DEBUG
+					DBG
 					(
 						"RE-EQUIP: In inventory and {} BUT designated as worn {} "
 						"in the inventory chest. "
@@ -7828,7 +7828,7 @@ namespace ALYSLC
 							continue;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Found re-equipped item {} (0x{:X}) at index {} "
 							"in desired forms list.",
@@ -7839,7 +7839,7 @@ namespace ALYSLC
 
 					if (!found)
 					{
-						SPDLOG_ERROR
+						ERR
 						(
 							"ERR: {} not found in desired forms list "
 							"after re-equipping.",
@@ -7877,7 +7877,7 @@ namespace ALYSLC
 				if (Util::HasWornRankMask(extraDataList, true, true))
 				{
 					auto exRank = extraDataList->GetByType<RE::ExtraRank>();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Remove all worn rank data for {} on chest list {:p}. "
 						"Rank: 0x{:X}.",
@@ -7899,7 +7899,7 @@ namespace ALYSLC
 	{
 		// Save the spell form (and its FID) copied to the placeholder spell at the given index.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Form: {}, index: {}.", 
 			coopActor->GetName(),
@@ -7920,7 +7920,7 @@ namespace ALYSLC
 	{
 		// Set the player's list of cyclable emote idles to the given list.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		favoritedEmoteIdles = GlobalCoopData::DEFAULT_CYCLABLE_EMOTE_IDLE_EVENTS;
 		for (auto i = 0; i < a_emoteIdlesList.size() && i < favoritedEmoteIdles.size(); ++i) 
@@ -7949,7 +7949,7 @@ namespace ALYSLC
 		// Update initial equip state after refreshing data and before the equip manager starts.
 		// Set and equip all the serialized desired forms.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		auto& savedEquippedForms = 
 		(
@@ -7959,7 +7959,7 @@ namespace ALYSLC
 			savedEquippedForms.size() == 0 || 
 			savedEquippedForms.size() != desiredForms.size())
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"SetInitialEquipState: "
 				"{}: saved equipped forms list is {} ({}).",
@@ -8123,7 +8123,7 @@ namespace ALYSLC
 		// Set cyclable lists of favorited forms 
 		// (ammo, hand spells, voice powers/shouts, and weapons) of the given type.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		// Clear out before updating.
 		cyclableFormsMap.insert_or_assign(a_favFormType, std::vector<RE::TESForm*>());
@@ -8298,7 +8298,7 @@ namespace ALYSLC
 			voiceSpell = voiceForm->As<RE::SpellItem>();
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: voice form: {}, voice spell: {}, highest shout var index: {}.", 
 			coopActor->GetName(),
@@ -8392,7 +8392,7 @@ namespace ALYSLC
 			a_weapon->weaponData.animationType.set(newType);
 			a_weapon->SetAltered(true);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Switched {}'s weapon animations from type {} to {}",
 				coopActor->GetName(), a_weapon->GetName(), currentType, newType
@@ -8415,7 +8415,7 @@ namespace ALYSLC
 		// Unequip all equipped gear after re-assigning saved equipped forms 
 		// to the desired forms list.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		// Re-assign saved serialized forms.
 		desiredForms.fill(nullptr);
@@ -8493,7 +8493,7 @@ namespace ALYSLC
 	{
 		// Unequip the given ammo.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
@@ -8555,7 +8555,7 @@ namespace ALYSLC
 	{
 		// Unequip the given armor.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: unequip {} (0x{:X}).", 
 			coopActor->GetName(), 
@@ -8629,7 +8629,7 @@ namespace ALYSLC
 	{
 		// Unequip the given form.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
@@ -8699,7 +8699,7 @@ namespace ALYSLC
 	{
 		// Unequip whatever form is at the given equip index.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: index: {}.", coopActor->GetName(), a_equipIndex
 		);
@@ -8820,7 +8820,7 @@ namespace ALYSLC
 				}
 			}
 				
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} from equip slot {}.", 
 				coopActor->GetName(), 
@@ -8835,7 +8835,7 @@ namespace ALYSLC
 	{
 		// Unequip form(s) in the given hand equip slot.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: slot: 0x{:X}.", coopActor->GetName(), a_slot ? a_slot->formID : 0xDEAD
 		);
@@ -8858,7 +8858,7 @@ namespace ALYSLC
 			if (lhExtraDataList &&
 				equippedForms[!EquipIndex::kLeftHand] != coopActor->GetEquippedObject(true))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: ERR: LH list {:p} will have its worn exData removed "
 					"because the cached and current LH forms ({} and {}) do not match.", 
@@ -8891,7 +8891,7 @@ namespace ALYSLC
 			if (rhExtraDataList &&
 				equippedForms[!EquipIndex::kRightHand] != coopActor->GetEquippedObject(false))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: ERR: RH list {:p} will have its worn exData removed "
 					"because the cached and current LH forms ({} and {}) do not match.", 
@@ -9046,7 +9046,7 @@ namespace ALYSLC
 	{
 		// Unequip any equipped shield.
 
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		auto shield = GetShield(); 
 		auto aem = RE::ActorEquipManager::GetSingleton();
@@ -9084,7 +9084,7 @@ namespace ALYSLC
 	{
 		// Unequip the given shout.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: unequip {}.", coopActor->GetName(), a_toUnequip ? a_toUnequip->GetName() : "NONE"
 		);
@@ -9107,7 +9107,7 @@ namespace ALYSLC
 	{
 		// Unequip the given spell from the given equip index.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: unequip {}, index: {}.",
 			coopActor->GetName(),
@@ -9176,7 +9176,7 @@ namespace ALYSLC
 		// Can choose to simply assign the cached serialized magic favorites list,
 		// instead of constructing an up-to-date list from the magic favorites singleton.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}. Use cached magic favorites: {}.", coopActor->GetName(), a_useCachedMagicFavorites
 		);
@@ -9221,7 +9221,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG("{}: {} is favorited on list {:p}.", 
+				DBG("{}: {} is favorited on list {:p}.", 
 					coopActor->GetName(), boundObj->GetName(), fmt::ptr(exDataList));
 
 				favoritedFormIDs.insert(boundObj->formID);
@@ -9273,7 +9273,7 @@ namespace ALYSLC
 									// Keeping this print for now.
 									if (a_hotkeyIndex == slot)
 									{
-										SPDLOG_DEBUG
+										DBG
 										(
 											"{}: FORM {} was already hotkeyed in slot {}. "
 											"Not saving {} as hotkeyed "
@@ -9294,7 +9294,7 @@ namespace ALYSLC
 							// remove the map entry as well.
 							if (iter->second.empty())
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: FORM {} is no longer hotkeyed in any slot. "
 									"Removing from map.",
@@ -9327,7 +9327,7 @@ namespace ALYSLC
 							);
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PHYS FORM {} is hotkeyed in slot {}.",
 							coopActor->GetName(),
@@ -9337,7 +9337,7 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}. ITEM {} is favorited.", coopActor->GetName(), boundObj->GetName()
 				);
@@ -9348,7 +9348,7 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(coopActor->formID);
 		if (iter == glob.serializablePlayerData.end())
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"UpdateFavoritedFormsLists: {}: "
 				"No serialized data found. Cannot update or modify cached magic favorites.", 
@@ -9361,7 +9361,7 @@ namespace ALYSLC
 		auto magicFavorites = RE::MagicFavorites::GetSingleton();
 		if (!magicFavorites)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"UpdateFavoritedFormsLists: {}: Could not get magic favorites singleton.", 
 				coopActor->GetName()
@@ -9398,7 +9398,7 @@ namespace ALYSLC
 					oldHotkeyedForm != hotkeyedForm && 
 					hotkeyedFormsToSlotsSetMap.contains(oldHotkeyedForm->formID))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: SAVED OLD HOTKEYED FORM {} will remain in slot {}, instead of {}.",
 						coopActor->GetName(),
@@ -9423,7 +9423,7 @@ namespace ALYSLC
 					);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: SAVED MAGIC FORM {} is hotkeyed in slot {}.", 
 					coopActor->GetName(), hotkeyedForm->GetName(), i + 1
@@ -9511,7 +9511,7 @@ namespace ALYSLC
 								// Keeping this print for now.
 								if (a_hotkeyIndex == i)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: FORM {} was already hotkeyed in slot {}. "
 										"Not saving {} as hotkeyed "
@@ -9532,7 +9532,7 @@ namespace ALYSLC
 						// remove the map entry as well.
 						if (iter->second.empty())
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: FORM {} is no longer hotkeyed in any slot. "
 								"Removing from map.",
@@ -9565,7 +9565,7 @@ namespace ALYSLC
 						);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: MAGIC FORM {} is hotkeyed in slot {}.",
 						coopActor->GetName(), magForm->GetName(), i + 1
@@ -9605,7 +9605,7 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}. SPELL {} is favorited.", coopActor->GetName(), magForm->GetName()
 			);

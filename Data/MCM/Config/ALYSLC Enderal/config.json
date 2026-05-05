@@ -1504,6 +1504,16 @@
           "type": "header"
         },
         {
+          "id": "bEnableSpinalRotation:NewSystems",
+          "text": "$ALYSLC_NewSystems_SpinalRotation",
+          "type": "toggle",
+          "help": "$ALYSLC_NewSystems_SpinalRotation_HelpText",
+          "valueOptions": 
+          {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "uAmmoAutoEquipMode:NewSystems",
           "text": "$ALYSLC_NewSystems_AmmoAutoEquipMode",
           "type": "stepper",
@@ -2191,6 +2201,20 @@
             "max": 720.0,
             "step": 45.0,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uDefaultAimMode:Player1",
+          "text": "$ALYSLC_PlayerOptions_DefaultAimMode",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {
@@ -2929,6 +2953,20 @@
           }
         },
         {
+          "id": "uDefaultAimMode:Player2",
+          "text": "$ALYSLC_PlayerOptions_DefaultAimMode",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
           "id": "uProjectileTrajectoryType:Player2",
           "text": "$ALYSLC_PlayerOptions_ProjectileTrajectoryType",
           "type": "stepper",
@@ -3664,6 +3702,20 @@
           }
         },
         {
+          "id": "uDefaultAimMode:Player3",
+          "text": "$ALYSLC_PlayerOptions_DefaultAimMode",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
+            ],
+            "sourceType": "ModSettingInt"
+          }
+        },
+        {
           "id": "uProjectileTrajectoryType:Player3",
           "text": "$ALYSLC_PlayerOptions_ProjectileTrajectoryType",
           "type": "stepper",
@@ -4396,6 +4448,20 @@
             "max": 720.0,
             "step": 45.0,
             "formatString": "{2}"
+          }
+        },
+        {
+          "id": "uDefaultAimMode:Player4",
+          "text": "$ALYSLC_PlayerOptions_DefaultAimMode",
+          "type": "stepper",
+          "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
+          "valueOptions": {
+            "options": [
+              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
+            ],
+            "sourceType": "ModSettingInt"
           }
         },
         {

@@ -221,7 +221,7 @@ namespace ALYSLC
 
 	void CameraManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("PrePauseTask");
+		DBG("PrePauseTask");
 
 		// Reset no fade flags for all players.
 		SetPlayerFadePrevention(false);
@@ -247,7 +247,7 @@ namespace ALYSLC
 
 	void CameraManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("PreStartTask");
+		DBG("PreStartTask");
 
 		// Prevent the game from fading all players while the camera is active.
 		SetPlayerFadePrevention(true);
@@ -263,7 +263,7 @@ namespace ALYSLC
 
 	void CameraManager::RefreshData()
 	{
-		SPDLOG_DEBUG("RefreshData");
+		DBG("RefreshData");
 
 		// Update parent cell.
 		UpdateParentCell();
@@ -679,7 +679,12 @@ namespace ALYSLC
 			}
 
 			// Break once one player is not on screen at this point.
-			allPlayersInFrontOfPoint = getActorInFrontOfPoint(p->coopActor.get());
+			allPlayersInFrontOfPoint = getActorInFrontOfPoint
+			(
+				p->mm->movementActorPtr && p->coopActor->IsOnMount() ? 
+				p->mm->movementActorPtr.get() :
+				p->coopActor.get()
+			);
 			if (!allPlayersInFrontOfPoint)
 			{
 				break;
@@ -903,7 +908,7 @@ namespace ALYSLC
 				camMinAnchorPointZCoord = bounds.second;
 			}
 
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"Hit to base: {}, to coll pos: {}, bounds: ({}, {}), "
 				"collision origin point z: {}, original Z = {}.",
@@ -2345,7 +2350,11 @@ namespace ALYSLC
 			{
 				autoRotateAngle = Util::NormalizeAngToPi
 				(
-					Util::NormalizeAng0To2Pi(movementActor->data.angle.z) - camYaw
+					Util::NormalizeAng0To2Pi
+					(
+						p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					) - camYaw
+					/*Util::NormalizeAng0To2Pi(movementActor->data.angle.z) - camYaw*/
 				);
 				float sign = autoRotateAngle < 0.0f ? -1.0f : 1.0f;
 				autoRotateAngle = 
@@ -2692,18 +2701,18 @@ namespace ALYSLC
 					); 
 					if (!tpState)
 					{
-						SPDLOG_ERROR("Could not get third person state.");
+						ERR("Could not get third person state.");
 					}
 				}
 				else
 				{
-					SPDLOG_ERROR("Could not get camera state.");
+					ERR("Could not get camera state.");
 				}
 			}
 		}
 		else
 		{
-			SPDLOG_ERROR("Could not get player cam.");
+			ERR("Could not get player cam.");
 		}
 
 		// Set rotation-related data.
@@ -2727,7 +2736,7 @@ namespace ALYSLC
 		}
 		
 		avgPlayerHeight /= glob.livingPlayers;
-		SPDLOG_DEBUG("Average player height: {}.", avgPlayerHeight);
+		DBG("Average player height: {}.", avgPlayerHeight);
 		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
 		camOriginPoint.z += avgPlayerHeight;
 
@@ -3201,7 +3210,7 @@ namespace ALYSLC
 				);
 				if (togglePOVLock)
 				{
-					SPDLOG_DEBUG("Lock obtained. (0x{:X})", 
+					DBG("Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					isTogglingPOV = true;
 				}
@@ -3209,7 +3218,7 @@ namespace ALYSLC
 				{
 					// Could not obtain lock to toggle POV, 
 					// so return here without enqueueing any tasks.
-					SPDLOG_DEBUG("Failed to obtain lock: (0x{:X})",
+					DBG("Failed to obtain lock: (0x{:X})",
 						std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					return;
 				}
@@ -3242,7 +3251,7 @@ namespace ALYSLC
 						std::this_thread::sleep_for(1s);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Getting lock from global task runner. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -4604,7 +4613,7 @@ namespace ALYSLC
 				{
 					// Set to current midpoint if on screen.
 					camTargetRadialDistance = radialDistanceRangeMid + camRadialDistanceOffset;
-					/*SPDLOG_DEBUG
+					/*DBG
 					(
 						"ON SCREEN: {} from ({}, {}, {}) and offset {}.",
 						camTargetRadialDistance, 
@@ -4619,7 +4628,7 @@ namespace ALYSLC
 					// Choose last radial distance at which all players were on screen, 
 					// if modified.
 					camTargetRadialDistance = lastOnScreenRadialDist + camRadialDistanceOffset;
-					/*SPDLOG_DEBUG
+					/*DBG
 					(
 						"OFF SCREEN BELOW MAX: "
 						"{} from ({}, {}, {}), las on screen {} and offset {}.",
@@ -4637,7 +4646,7 @@ namespace ALYSLC
 					// (happens at times).
 					// Set to previous value to avoid zooming out all of a sudden.
 					camTargetRadialDistance = prevRadialDistance;
-					/*SPDLOG_DEBUG
+					/*DBG
 					(
 						"OFF SCREEN ABOVE MAX: {} from ({}, {}, {}) and prev {}.",
 						camTargetRadialDistance, 

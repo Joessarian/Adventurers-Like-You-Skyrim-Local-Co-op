@@ -514,7 +514,7 @@ namespace ALYSLC
 			}
 
 			// REMOVE when done debugging.
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"{} ({}, 0x{:X}): {}: {}, index {}. "
 				"Secs since fade change: {} / {}, interp interval prop: {}, "

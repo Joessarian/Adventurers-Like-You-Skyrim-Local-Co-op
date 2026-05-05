@@ -490,7 +490,7 @@ namespace ALYSLC
 		kTotal
 	};
 
-	// Movement params' index values.
+	// Analog stick params' index values.
 	// NOTES:
 	// - Components range: [-1.0f, 1.0]
 	// - Delta LS game angle (Z rotation) gives the difference
@@ -499,28 +499,39 @@ namespace ALYSLC
 	// in the classical Cartesian coordinate system converted to
 	// the game's angular coordinate system.
 	// - Game angles (Z rotation) are the sticks' angles in Cartesian converted
-	// to the game's coordinate system and then offset with the
-	// camera's yaw (Z rotation).
-	enum class MoveParams : std::uint16_t
+	// to the game's coordinate system and then offset with the camera's yaw (Z rotation).
+	enum class AnalogStickParams : std::uint16_t
 	{
-		kLSXComp,				// X (left/right) component of LS motion [-1.0f, 1.0f] 
-								// relative to the camera's yaw (cam yaw points along the +Y axis).
-		kLSYComp,				// Y (up/down) component of LS motion [-1.0f, 1.0f]	
-								// relative to the camera's yaw (cam yaw points along the +Y axis).	
-		kRSXComp,				// X (left/right) component of RS motion [-1.0f, 1.0f] 
-								// relative to the camera's yaw (cam yaw points along the +Y axis).
-		kRSYComp,				// Y (up/down) component of RS motion [-1.0f, 1.0f]	
-								// relative to the camera's yaw (cam yaw points along the +Y axis).
-		kSpeedMult,				// Player actor value speedmult to set.
-		kLSGameAng,				// LS angle relative to the camera's yaw 
-								// (0 along Y axis, increasing clockwise).
-		kRSGameAng,				// RS angle relative to the camera's yaw 
-								// (0 along Y axis, increasing clockwise).
-		kDeltaLSAbsoluteAng,	// Change in LS game angle from the last frame to the current one.
-		kLSAbsoluteAng,			// LS angle in the game's coordinate system 
-								// (0 along +Y axis, increasing clockwise).
-		kRSAbsoluteAng,			// RS angle in the game's coordinate system 
-								// (0 along +Y axis, increasing clockwise).
+		kLSXComp,					// X (left/right) component of LS motion [-1.0f, 1.0f] 
+									// relative to the camera's yaw 
+									// (cam yaw points along the +Y axis).
+		kLSYComp,					// Y (up/down) component of LS motion [-1.0f, 1.0f]	
+									// relative to the camera's yaw 
+									// (cam yaw points along the +Y axis).	
+		kRSXComp,					// X (left/right) component of RS motion [-1.0f, 1.0f] 
+									// relative to the camera's yaw 
+									// (cam yaw points along the +Y axis).
+		kRSYComp,					// Y (up/down) component of RS motion [-1.0f, 1.0f]	
+									// relative to the camera's yaw 
+									// (cam yaw points along the +Y axis).
+		kLSCamRelAng,				// LS angle relative to the camera's yaw 
+									// (0 along Y axis, increasing clockwise).
+		kRSCamRelAng,				// RS angle relative to the camera's yaw 
+									// (0 along Y axis, increasing clockwise).
+		kDeltaLSGameAngMag,			// Absolute value of the change in LS absolute angle 
+									// from the last frame to the current one.
+		kDeltaRSGameAngMag,			// Absolute value of the change in RS absolute angle 
+									// from the last frame to the current one.
+		kLSGameAng,					// LS angle in the game's coordinate system 
+									// (0 along +Y axis, increasing clockwise).
+		kRSGameAng,					// RS angle in the game's coordinate system 
+									// (0 along +Y axis, increasing clockwise).
+		kLSCamRelAngMovingFromCenter,	// Last recorded LS angle in the game's coordinate system 
+									// when displacing the stick away from its centered position
+									// (0 along +Y axis, increasing clockwise).
+		kRSCamRelAngMovingFromCenter,	// RS angle in the game's coordinate system 
+									// when displacing the stick away from its centered position
+									// (0 along +Y axis, increasing clockwise).
 
 		kTotal
 	};
@@ -1001,14 +1012,18 @@ namespace ALYSLC
 	//[Targeting]
 	//===========
 
-	// Crosshair targeting mode.
-	enum class CrosshairTargetingMode : std::uint8_t
+	// Aim mode for aiming at objects and NPCs.
+	enum class AimMode : std::uint8_t
 	{
-		kDisabled,		// Crosshair is removed. Rely on aim correction for targeting.
-						// Only disabled when in 'Lock On' mode and pressing the corresponding bind.
 		kFreeAim,		// Move the crosshair freely with the right stick to select objects/NPCs.
-		kLockOn			// Move the right stick towards objects or NPCs to lock on the crosshair
-						// to their center position.
+		kLockOn,		// Move the right stick towards NPCs to lock on the crosshair
+						// to their center position. Cycle when the stick is held in a direction.
+		kTwinStick,		// Crosshair is removed. Use the right stick to rotate the player
+						// and the left stick to move the player. 
+						// Rely on aim correction and two additional binds 
+						// to select aim and activation targets.
+
+		kTotal
 	};
 
 	// Projectile trajectory type for each player.

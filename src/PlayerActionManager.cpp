@@ -27,7 +27,7 @@ namespace ALYSLC
 			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
@@ -40,7 +40,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Cannot construct Player Action Manager for device ID {}, player ID {}.", 
 				a_p ? a_p->deviceID : -1,
@@ -118,7 +118,7 @@ namespace ALYSLC
 			if (!glob.coopPackageFormlists[2 * playerID] || 
 				!glob.coopPackageFormlists[2 * playerID + 1]) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Default/combat override co-op package formlist for {} is invalid: {}, {}.", 
 					coopActor->GetName(),
@@ -513,7 +513,7 @@ namespace ALYSLC
 						// after exiting a menu with the 'B' button.
 						// Unblocked once released and pressed again while no menus are open.
 						bool wasControllingMenus = glob.prevMenuPID == playerID; 
-						/*SPDLOG_DEBUG
+						/*DBG
 						(
 							"{} was controlling menus: {}, prev PID: {}. "
 							"Buttons pressed while menus closed: {}.", 
@@ -733,7 +733,7 @@ namespace ALYSLC
 						if (otherPerfStage == PerfStage::kStarted)
 						{
 							// Interrupted if started already.
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 2: candidate PA {} ({}): "
 								"conflicting STARTED action {} ({}) is now interrupted.",
@@ -751,7 +751,7 @@ namespace ALYSLC
 						{
 							// Block conflicting candidate action 
 							// that has not started and is not blocked yet.
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 2: "
 								"candidate PA {}'s ({}) "
@@ -850,7 +850,7 @@ namespace ALYSLC
 						};
 						if (cleanUpAfterInterrupt)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 3: "
 								"performing cleanup on interrupted occurring action {}"
@@ -861,7 +861,7 @@ namespace ALYSLC
 							paFuncs->CallPAFunc(p, a_action, PAFuncType::kCleanupFunc);
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PASS 3: "
 							"Interrupted action {} should be removed (perf stage {}), "
@@ -962,7 +962,7 @@ namespace ALYSLC
 					
 					if (justStarted)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PASS 4: {} just started with action perf type {}.",
 							coopActor->GetName(), action, perfType
@@ -1001,7 +1001,7 @@ namespace ALYSLC
 						// Some/all inputs released.
 						if (perfType == PerfType::kOnRelease || perfType == PerfType::kOnConsecTap)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 4: {}, perf type {}, "
 								"is about to be performed ON RELEASE. Perf stage: {}",
@@ -1014,7 +1014,7 @@ namespace ALYSLC
 						else if (perfType == PerfType::kOnHold || 
 								 perfType == PerfType::kOnPressAndRelease)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 4: {}, perf type {}, "
 								"is about to clean up ON RELEASE. Perf stage: {}",
@@ -1033,7 +1033,7 @@ namespace ALYSLC
 					if (paState.paParams.triggerFlags.all(TriggerFlag::kBlockOnConditionFailure) && 
 						perfStage != PerfStage::kBlocked) 
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PASS 4: {} failed conditions. Set to blocked. Perf stage: {}",
 							coopActor->GetName(), action, perfStage
@@ -1047,7 +1047,7 @@ namespace ALYSLC
 								TriggerFlag::kBlockOnConditionFailure
 							 ) && perfStage != PerfStage::kFailedConditions)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PASS 4: {} failed conditions. Set to interrupted. Perf stage: {}",
 							coopActor->GetName(), action, perfStage
@@ -1060,7 +1060,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: PASS 4: {} is already interrupted with perf stage {}.",
 						coopActor->GetName(), action, perfStage
@@ -1116,7 +1116,7 @@ namespace ALYSLC
 						};
 						if (cleanUpAfterInterrupt)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: PASS 5: "
 								"performing cleanup on interrupted occurring action {} "
@@ -1127,7 +1127,7 @@ namespace ALYSLC
 							paFuncs->CallPAFunc(p, a_action, PAFuncType::kCleanupFunc);
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: PASS 5: {} should be removed (perf stage {}), "
 							"removing from occurring PAs list.",
@@ -1215,7 +1215,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("P{}", playerID + 1);
+		DBG("P{}", playerID + 1);
 
 		// Remove player keyword first.
 		UpdateCoopPlayerKeyword(false);
@@ -1279,7 +1279,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("P{}", playerID + 1);
+		DBG("P{}", playerID + 1);
 
 		// Add player keyword first.
 		UpdateCoopPlayerKeyword(true);
@@ -1358,7 +1358,7 @@ namespace ALYSLC
 			player1RefAlias->fillData.uniqueActor.uniqueActor->aiPackages.packages.clear();
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} (0x{:X}), raw FID to lookup: 0x{:X}.",
 			coopActor->GetName(),
@@ -1386,7 +1386,7 @@ namespace ALYSLC
 			auto dataHandler = RE::TESDataHandler::GetSingleton();
 			if (dataHandler)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} (0x{:X}), contains: {}, {}, lookup: {}, {}, raw FID to lookup: 0x{:X}.",
 					coopActor->GetName(),
@@ -1458,7 +1458,7 @@ namespace ALYSLC
 					{
 						if (p->coopActor->HasPerk(nffPerk))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} has NFF friendly fire perk. "
 								"Remove to give ALYSLC's setting precedence only for this player.", 
@@ -1476,7 +1476,7 @@ namespace ALYSLC
 					{
 						if (p->coopActor->HasPerk(nffPerk))
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{} has NFF team damage perk. "
 								"Remove to give ALYSLC's setting precedence only for this player.", 
@@ -1507,7 +1507,7 @@ namespace ALYSLC
 			}
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: PID: {}, DID: {}, Assigned package formlists: {} (0x{:X}) and {} (0x{:X}).",
 			coopActor->GetName(),
@@ -1566,7 +1566,7 @@ namespace ALYSLC
 				glob.castingGlobVars[!CastingGlobIndex::kTotal * playerID + i]
 			);
 			castingGlobVars[i]->value = 0.0f;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: PID: {}, DID: {}, Assigned casting glob {} (0x{:X}).",
 				coopActor->GetName(),
@@ -1614,6 +1614,7 @@ namespace ALYSLC
 		// Currently used for sneak attacks.
 		reqDamageMult = 1.0f;
 		// Bools.
+		adjustAimPitchAlternateMode = false;
 		attackDamageMultSet = false;
 		autoEndDialogue = false;
 		blockAllInputActions = false;
@@ -1714,7 +1715,7 @@ namespace ALYSLC
 		// Reset time points.
 		ResetTPs();
 
-		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
+		DBG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState PlayerActionManager::ShouldSelfPause()
@@ -1933,7 +1934,7 @@ namespace ALYSLC
 		RE::NiPoint3 targetPos = coopActor->data.location;
 		const bool crosshairActive = 
 		(
-			p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled
+			p->tm->aimMode != AimMode::kTwinStick
 		);
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle
 		(
@@ -2956,7 +2957,7 @@ namespace ALYSLC
 			const float avLvl = coopActor->GetBaseActorValue(currentAV);
 			if (avLvl < 0.0f)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"ERR: {} is leveled below 0 ({}). Setting back to original base value {}.",
 					Util::GetActorValueName(currentAV),
@@ -2977,7 +2978,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG("{}: {} should be leveled up. XP: {}, threshold: {}. Level: {}.",
+			DBG("{}: {} should be leveled up. XP: {}, threshold: {}. Level: {}.",
 				coopActor->GetName(),
 				Util::GetActorValueName(currentAV),
 				skillXP,
@@ -3226,7 +3227,7 @@ namespace ALYSLC
 
 		/*
 		// REMOVE when done debugging.
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: LH/RH spells: {} (FNF: {}), {} (FNF: {}). "
 			"Casting glob vars: LH: {}, RH: {}, 2H: {}. "
@@ -3266,14 +3267,14 @@ namespace ALYSLC
 
 		if (shouldResetAllCastingData)
 		{
-			SPDLOG_DEBUG("{}: RESET ALL.", coopActor->GetName());
+			DBG("{}: RESET ALL.", coopActor->GetName());
 			StopCastingHandSpells();
 			return;
 		}
 
 		if (shouldResetLHCastData)
 		{
-			SPDLOG_DEBUG("{}: RESET LH.", coopActor->GetName());
+			DBG("{}: RESET LH.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			lhCasting->value = 0.0f;
@@ -3282,7 +3283,7 @@ namespace ALYSLC
 
 		if (shouldResetRHCastData)
 		{
-			SPDLOG_DEBUG("{}: RESET RH.", coopActor->GetName());
+			DBG("{}: RESET RH.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			rhCasting->value = 0.0f;
@@ -3291,7 +3292,7 @@ namespace ALYSLC
 
 		if (shouldReset2HCastData)
 		{
-			SPDLOG_DEBUG("{}: RESET 2H.", coopActor->GetName());
+			DBG("{}: RESET 2H.", coopActor->GetName());
 			casting2H->value = 0.0f;
 			dualCasting->value = 0.0f;
 			lhCasting->value = 0.0f;
@@ -3302,7 +3303,7 @@ namespace ALYSLC
 
 		if (shouldResetVoiceCastData)
 		{
-			SPDLOG_DEBUG("{}: RESET VOICE.", coopActor->GetName());
+			DBG("{}: RESET VOICE.", coopActor->GetName());
 			shouting->value = 0.0f;
 			voiceCasting->value = 0.0f;
 			if (voiceCaster)
@@ -3316,7 +3317,7 @@ namespace ALYSLC
 		{
 			if (casting2H->value == 0.0f && lhCasting->value == 0.0f && rhCasting->value == 0.0f) 
 			{
-				SPDLOG_DEBUG("{}: RESET HAND CASTERS.", coopActor->GetName());
+				DBG("{}: RESET HAND CASTERS.", coopActor->GetName());
 				// Reset to default package as well if both hands are no longer casting.
 				ResetPackageCastingState();
 				// Clear out linked refr target used by the casting package.
@@ -3324,7 +3325,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("{}: RESET AND EVALUATE.", coopActor->GetName());
+				DBG("{}: RESET AND EVALUATE.", coopActor->GetName());
 				// Evaluate if any caster is active or casting global is still set.
 				SetAndEveluatePackage(GetCoopPackage(PackageIndex::kRangedAttack));
 			}
@@ -3344,7 +3345,7 @@ namespace ALYSLC
 		);
 		if (shouldInterruptCaster)
 		{
-			SPDLOG_DEBUG("{}: CLEAR LH MAG NODE AND CASTER.", coopActor->GetName());
+			DBG("{}: CLEAR LH MAG NODE AND CASTER.", coopActor->GetName());
 			lhCaster->InterruptCast(false);
 			lhCaster->NotifyAnimationGraph("CastStop");
 		}
@@ -3361,7 +3362,7 @@ namespace ALYSLC
 		);
 		if (shouldInterruptCaster)
 		{
-			SPDLOG_DEBUG("{}: CLEAR RH MAG NODE AND CASTER.", coopActor->GetName());
+			DBG("{}: CLEAR RH MAG NODE AND CASTER.", coopActor->GetName());
 			rhCaster->InterruptCast(false);
 			rhCaster->NotifyAnimationGraph("CastStop");
 		}
@@ -4134,8 +4135,7 @@ namespace ALYSLC
 		{
 			return 0.0f;
 		}
-
-
+		
 		auto& paState = paStatesList[!a_action - !InputAction::kFirstAction];
 		const auto& composingInputs = paState.paParams.composingInputs;
 		if (composingInputs.empty()) 
@@ -4619,7 +4619,7 @@ namespace ALYSLC
 				targetActorPtr->IsInKillMove() && 
 				!zeroHealth) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} -> {}. Now performing a killmove after {}s.",
 					coopActor->GetName(), 
@@ -4631,7 +4631,7 @@ namespace ALYSLC
 			else if (secsSinceKillmoveRequest > 2.0f)
 			{
 				// Kllmove already done or never executed and the max wait time was reached.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} -> {}. "
 					"Reset: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}, {}.",
@@ -4698,7 +4698,7 @@ namespace ALYSLC
 			// Killmove target is dead or done with the paired animation.
 			if (!victimStillInKillmove) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} -> {}. "
 					"Victim End: secs since req: {}, is dead, is downed: {}, {}, in killmove: {}.",
@@ -4755,7 +4755,7 @@ namespace ALYSLC
 			// This player is finished attacking and done with the killmove paired animation.
 			if (!aggressorStillInKillmove) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} -> {}. "
 					"Aggressor End: secs since req: {}, is dead, is downed: {}, {}, "
@@ -4842,7 +4842,7 @@ namespace ALYSLC
 					);
 					if (perfAnimQueueLock)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Lock obtained. (0x{:X})", 
 							coopActor->GetName(), 
@@ -5480,7 +5480,7 @@ namespace ALYSLC
 		// regardless of their current weapon state.
 		// Otherwise, only draw when fully sheathed and only sheathe when fully drawn.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: drawn: {}, state: {}, ignore state: {}, req: {}",
 			coopActor->GetName(),
@@ -5705,7 +5705,7 @@ namespace ALYSLC
 			RE::ACTOR_BASE_DATA::Flag::kPCLevelMult
 		))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: auto calc: {}, pc level mult: {}.",
 				coopActor->GetName(),
@@ -5740,7 +5740,7 @@ namespace ALYSLC
 		auto p1Level = glob.player1Actor->GetLevel();
 		if (actorBase->actorData.level != p1Level)
 		{
-			SPDLOG_DEBUG("{}: set level to {}.", coopActor->GetName(), p1Level);
+			DBG("{}: set level to {}.", coopActor->GetName(), p1Level);
 			actorBase->actorData.level = p1Level;
 		}
 	}
@@ -5917,7 +5917,7 @@ namespace ALYSLC
 		// Ratio of the downed player's health after being fully revived
 		// to the health this player must give up to fully revive them.
 		float healthTransferRatio = downedPlayerTarget->fullReviveHealth / fullHealthCost;
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Revived health: {}, health cost: {}, "
 			"full health cost: {}, health transfer ratio: {}.",
@@ -6049,7 +6049,7 @@ namespace ALYSLC
 			a_playerTargetIndex != -1 &&
 			glob.coopPlayers[a_playerTargetIndex]->isDowned)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Revive bind just pressed. Target: {}.",
 				glob.coopPlayers[a_playerTargetIndex]->coopActor->GetName()
@@ -6076,7 +6076,7 @@ namespace ALYSLC
 		bool enoughHealth = ALYSLC::HelperFuncs::EnoughOfAVToPerformPA(p, InputAction::kActivate);
 		if (downedPlayerTarget->isRevived || !enoughHealth)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} is revived: {}, P1 out of health: {}.",
 				downedPlayerTarget->coopActor->GetName(),
@@ -6211,7 +6211,7 @@ namespace ALYSLC
 		// is greater than or equal to their health after a full revive.
 		if (downedPlayerTarget->revivedHealth >= downedPlayerTarget->fullReviveHealth)
 		{
-			SPDLOG_DEBUG("{} is now revived.", downedPlayerTarget->coopActor->GetName());
+			DBG("{} is now revived.", downedPlayerTarget->coopActor->GetName());
 			// Signal the other player that they are now revived,
 			// and reset revived health data.
 			downedPlayerTarget->isRevived = true;
@@ -6335,7 +6335,7 @@ namespace ALYSLC
 			{
 				targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 				(
-					PI, false, -1.0f, false
+					coopActor.get(), true, false, false, false, false, PI, -1.0f
 				);
 			}
 
@@ -6354,7 +6354,7 @@ namespace ALYSLC
 				{
 					targetActorHandle = p->tm->GetClosestTargetableActorInFOV
 					(
-						PI, true, weapReach * 1.5f, false
+						coopActor.get(), true, true, false, false, false, PI, weapReach * 1.5f
 					);
 				}
 			}
@@ -6540,7 +6540,7 @@ namespace ALYSLC
 	{
 		// Stop the player from casting hand spells instantly.
 		
-		SPDLOG_DEBUG("{}.", coopActor->GetName());
+		DBG("{}.", coopActor->GetName());
 
 		if (p->isPlayer1)
 		{
@@ -6635,6 +6635,7 @@ namespace ALYSLC
 		// that have a crime faction with non-zero crime gold, 
 		// even though we've ended combat with actors of a different faction.
 		// Save such actors and restart combat with them afterward.
+		// A bounty is a bounty, no cheesing.
 		std::vector<RE::ActorHandle> actorsToRestartCombatWith{ };
 		for (const auto& handle : procLists->highActorHandles)
 		{
@@ -6655,7 +6656,12 @@ namespace ALYSLC
 			}
 
 			bool isHostile = false;
-			for (const auto& p : glob.coopPlayers)
+			// The simple IsHostileToActor() call returns true for passive wildlife,
+			// who we don't want to consider as hostile targets that need pacifying.
+			// Instead, we'll check current combat targets to see if any of them are a player
+			// or party-friendly entity.
+
+			/*for (const auto& p : glob.coopPlayers)
 			{
 				if (!p->isActive)
 				{
@@ -6667,7 +6673,7 @@ namespace ALYSLC
 					isHostile = true;
 					break;
 				}
-			}
+			}*/
 			
 			// Also check if this actor's combat target is a friendly actor
 			// if they are not directly hostile to a player.
@@ -6713,12 +6719,38 @@ namespace ALYSLC
 			// that an actor is hostile by default, 
 			// since performing crimes near them does not trigger a bounty.
 			bool hasNoBountyButInCrimeFaction = Util::HasNoBountyButInCrimeFaction(actor);
+			// Restart combat with actors that have a bounty on P1 and are in a crime faction.
 			bool hasBountyAndCrimeFaction = Util::HasBountyOnPlayer(actor);
+			// Also pacify invincible or fleeing entities or mounts.
+			bool isInvulnerable = actor->IsInvulnerable();
+			bool isGhost = actor->IsGhost();
 			bool isFleeing = Util::IsFleeing(actor);
 			bool isMount = actor->IsAMount();
-			if (hasNoBountyButInCrimeFaction || isFriendly || isFleeing || isMount)
+			DBG
+			(
+				"{} is hostile: {}. Has crime faction: {}, bounty {} on P1. Is friendly: {}, "
+				"is fleeing: {}, is mount: {}.",
+				actor->GetName(), 
+				isHostile,
+				actor->GetCrimeFaction() ? 
+				Util::GetEditorID(actor->GetCrimeFaction()) :
+				"NONE",
+				actor->GetCrimeFaction() ? 
+				actor->GetCrimeFaction()->GetCrimeGold() :
+				0,
+				isFriendly,
+				isFleeing,
+				isMount
+			);
+
+			if (hasNoBountyButInCrimeFaction || 
+				isFriendly ||
+				isFleeing ||
+				isMount || 
+				isInvulnerable ||
+				isGhost)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Stop combat between {} and {}. "
 					"Has no bounty and crime faction: {}, is friendly: {}, "
@@ -6735,7 +6767,6 @@ namespace ALYSLC
 				actor->NotifyAnimationGraph("attackStop");
 				actor->StopCombat();
 				actor->StopAlarmOnActor();
-
 				// Restore health/magicka/stamina to full -- 
 				// no cheesing by exiting combat and re-attacking a now-pacified target for free.
 				if (!actor->IsInCombat())
@@ -6768,6 +6799,10 @@ namespace ALYSLC
 			}
 			else if (hasBountyAndCrimeFaction)
 			{
+				DBG
+				(
+					"Restart combat between {} and {}.", coopActor->GetName(), actor->GetName()
+				);
 				// Ensure actors with a bounty on the player are still hostile afterward.
 				actorsToRestartCombatWith.emplace_back(handle);
 			}
@@ -7000,12 +7035,27 @@ namespace ALYSLC
 		return turnToFaceForCombatAction;
 	}
 
-	bool PlayerActionManager::TurnToTargetForCombatAction(bool& a_combatActionJustStarted)
+	bool PlayerActionManager::TurnToTargetForCombatAction
+	(
+		bool& a_combatActionBindPressedOut,
+		bool& a_combatActionJustStartedOut,
+		bool& a_performingRangedActionOut
+	)
 	{
 		// Return true if the player should turn to face a target 
 		// if attacking, bashing, blocking, casting, or shouting.
-		// Return whether or not a combat action has just started in the outparam.
+		// Return whether or not a combat action has just started,
+		// and if the attack is a ranged attack in the outparam.
+		// Return whether a combat action bind is pressed in the outparam.
+		// A combat action is sometimes still considered as occurring 
+		// even if the bind is no longer pressed,
+		// ex. spellcasting animation for a fire-and-forget spell continues 
+		// after the bind is released.
 		
+		a_combatActionJustStartedOut = 
+		a_performingRangedActionOut = 
+		a_combatActionBindPressedOut = false;
+
 		// Do not turn if cycling any item/spell/category.
 		bool isCycling = 
 		(
@@ -7038,163 +7088,234 @@ namespace ALYSLC
 			return false;
 		}
 
+		// Set as having all inputs pressed or just released for all combat-related actions.
+		a_combatActionBindPressedOut = 
+		(
+			(
+				AllInputsPressedForAction(InputAction::kAttackRH) ||
+				AllInputsPressedForAction(InputAction::kCastRH) ||
+				AllInputsPressedForAction(InputAction::kPowerAttackRH) ||
+				AllInputsPressedForAction(InputAction::kAttackLH) ||
+				AllInputsPressedForAction(InputAction::kCastLH) ||
+				AllInputsPressedForAction(InputAction::kPowerAttackLH) ||
+				AllInputsPressedForAction(InputAction::kPowerAttackDual) ||
+				AllInputsPressedForAction(InputAction::kBash) ||
+				AllInputsPressedForAction(InputAction::kBlock) ||
+				AllInputsPressedForAction(InputAction::kQuickSlotCast) ||
+				AllInputsPressedForAction(InputAction::kShout) ||
+				GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kPowerAttackRH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kPowerAttackLH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kPowerAttackDual, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kBash, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kBlock, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kQuickSlotCast, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+				GetPlayerActionInputJustReleased(InputAction::kAttackLH, false)
+			) ||
+			(
+				(
+					reqSpecialAction == SpecialActionType::kBash ||
+					reqSpecialAction == SpecialActionType::kBlock ||
+					reqSpecialAction == SpecialActionType::kCastBothHands ||
+					reqSpecialAction == SpecialActionType::kDualCast ||
+					reqSpecialAction == SpecialActionType::kQuickCast
+				) &&
+				(
+					AllInputsPressedForAction(InputAction::kSpecialAction) ||
+					GetPlayerActionInputJustReleased(InputAction::kSpecialAction, false)
+				)
+			)
+		);
+		// Set as melee attack just started. Then, check if a ranged attack started afterward.
+		a_combatActionJustStartedOut = 
+		(
+			(
+				(JustStarted(InputAction::kBlock)) ||
+				(
+					reqSpecialAction == SpecialActionType::kBlock &&
+					JustStarted(InputAction::kSpecialAction)
+				) || 
+				(JustStarted(InputAction::kBash)) ||
+				(
+					reqSpecialAction == SpecialActionType::kBash &&
+					JustStarted(InputAction::kSpecialAction)
+				) ||
+				(JustStarted(InputAction::kAttackLH) && p->em->HasLHMeleeWeapEquipped()) ||
+				(
+					(JustStarted(InputAction::kAttackRH)) && 
+					(p->em->HasRHMeleeWeapEquipped() || p->em->Has2HMeleeWeapEquipped())
+				) ||
+				(JustStarted(InputAction::kPowerAttackRH)) ||
+				(JustStarted(InputAction::kPowerAttackLH)) ||
+				(JustStarted(InputAction::kPowerAttackDual))
+			)
+		);
 		bool turnToFaceForCombatAction = isAttacking || isBlocking || isBashing;
-		if (!turnToFaceForCombatAction)
+		const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
+		if ((isWeapMagDrawn) &&
+			(p->em->Has2HRangedWeapEquipped()) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+				AllInputsPressedForAction(InputAction::kAttackRH)
+			))
 		{
-			const bool isWeapMagDrawn = coopActor->IsWeaponDrawn();
-			if ((isWeapMagDrawn) &&
-				(p->em->Has2HRangedWeapEquipped()) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackRH)
-				))
-			{
-				turnToFaceForCombatAction = true;
-				a_combatActionJustStarted = JustStarted(InputAction::kAttackRH);
-			}
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kAttackRH);
+			turnToFaceForCombatAction = true;
+		}
 
-			if ((isWeapMagDrawn) &&
-				(p->em->HasRHSpellEquipped()) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
-					AllInputsPressedForAction(InputAction::kCastRH) ||
-					isInCastingAnimRH
-				))
-			{
-				turnToFaceForCombatAction |= 
-				(
-					p->em->GetRHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
-				);
-				a_combatActionJustStarted = JustStarted(InputAction::kCastRH);
-			}
+		if ((isWeapMagDrawn) &&
+			(p->em->HasRHSpellEquipped()) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kCastRH, false) ||
+				AllInputsPressedForAction(InputAction::kCastRH) ||
+				isInCastingAnimRH
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kCastRH);
+			turnToFaceForCombatAction |= 
+			(
+				p->em->GetRHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+			);
+		}
 			
-			if ((isWeapMagDrawn) &&
-				(p->em->HasLHSpellEquipped()) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
-					AllInputsPressedForAction(InputAction::kCastLH) ||
-					isInCastingAnimLH
-				))
-			{
-				turnToFaceForCombatAction |= 
-				(
-					p->em->GetLHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
-				);
-				a_combatActionJustStarted = JustStarted(InputAction::kCastLH);
-			}
+		if ((isWeapMagDrawn) &&
+			(p->em->HasLHSpellEquipped()) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kCastLH, false) ||
+				AllInputsPressedForAction(InputAction::kCastLH) ||
+				isInCastingAnimLH
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kCastLH);
+			turnToFaceForCombatAction |= 
+			(
+				p->em->GetLHSpell()->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+			);
+		}
 			
-			if ((isWeapMagDrawn) &&
-				(p->em->HasRHStaffEquipped()) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackRH) ||
-					isInCastingAnimRH
-				))
-			{
-				auto rhWeap = p->em->GetRHWeapon();
-				turnToFaceForCombatAction |= 
-				(
-					rhWeap &&
-					rhWeap->formEnchanting &&
-					rhWeap->formEnchanting->GetDelivery() != 
-					RE::MagicSystem::Delivery::kSelf
-				);
-				a_combatActionJustStarted = JustStarted(InputAction::kAttackRH);
-			}
+		if ((isWeapMagDrawn) &&
+			(p->em->HasRHStaffEquipped()) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kAttackRH, false) ||
+				AllInputsPressedForAction(InputAction::kAttackRH) ||
+				isInCastingAnimRH
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kAttackRH);
+			auto rhWeap = p->em->GetRHWeapon();
+			turnToFaceForCombatAction |= 
+			(
+				rhWeap &&
+				rhWeap->formEnchanting &&
+				rhWeap->formEnchanting->GetDelivery() != 
+				RE::MagicSystem::Delivery::kSelf
+			);
+		}
 
-			if ((isWeapMagDrawn) &&
-				(p->em->HasLHStaffEquipped()) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
-					AllInputsPressedForAction(InputAction::kAttackLH) ||
-					isInCastingAnimLH
-				))
-			{
-				auto lhWeap = p->em->GetLHWeapon();
-				turnToFaceForCombatAction |= 
-				(
-					lhWeap &&
-					lhWeap->formEnchanting &&
-					lhWeap->formEnchanting->GetDelivery() != 
-					RE::MagicSystem::Delivery::kSelf
-				);
-				a_combatActionJustStarted = JustStarted(InputAction::kAttackLH);
-			}
+		if ((isWeapMagDrawn) &&
+			(p->em->HasLHStaffEquipped()) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kAttackLH, false) ||
+				AllInputsPressedForAction(InputAction::kAttackLH) ||
+				isInCastingAnimLH
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kAttackLH);
+			auto lhWeap = p->em->GetLHWeapon();
+			turnToFaceForCombatAction |= 
+			(
+				lhWeap &&
+				lhWeap->formEnchanting &&
+				lhWeap->formEnchanting->GetDelivery() != 
+				RE::MagicSystem::Delivery::kSelf
+			);
+		}
 			
-			if ((p->em->quickSlotSpell) &&
+		if ((p->em->quickSlotSpell) &&
+			(
+				GetPlayerActionInputJustReleased
+				(
+					InputAction::kQuickSlotCast, false
+				) ||
+				AllInputsPressedForAction(InputAction::kQuickSlotCast)
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kQuickSlotCast);
+			turnToFaceForCombatAction |= 
+			(
+				p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+			);
+		}
+			
+		if ((p->em->voiceSpell) &&
+			(
+				GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
+				AllInputsPressedForAction(InputAction::kShout)
+			))
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kShout);
+			turnToFaceForCombatAction |= 
+			(
+				p->em->voiceSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+			);
+		}
+			
+		bool specialActionSpellcast = 
+		(
+			(!IsPerforming(InputAction::kQuickSlotCast)) &&
+			(!IsPerforming(InputAction::kCastLH)) &&
+			(!IsPerforming(InputAction::kCastRH)) &&
+			(
+				reqSpecialAction == SpecialActionType::kCastBothHands || 
+				reqSpecialAction == SpecialActionType::kDualCast || 
+				reqSpecialAction == SpecialActionType::kQuickCast
+			) &&
+			(
 				(
 					GetPlayerActionInputJustReleased
 					(
-						InputAction::kQuickSlotCast, false
+						InputAction::kSpecialAction, false
 					) ||
-					AllInputsPressedForAction(InputAction::kQuickSlotCast)
-				))
+					AllInputsPressedForAction(InputAction::kSpecialAction)
+				) ||
+				(
+					(reqSpecialAction != SpecialActionType::kQuickCast) &&
+					((isInCastingAnimLH && isInCastingAnimRH) || isInCastingAnimDual)
+				)
+			)
+		);
+		if (specialActionSpellcast)
+		{
+			a_performingRangedActionOut = true;
+			a_combatActionJustStartedOut |= JustStarted(InputAction::kSpecialAction);
+			if (reqSpecialAction == SpecialActionType::kQuickCast)
 			{
 				turnToFaceForCombatAction |= 
 				(
 					p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
 				);
-				a_combatActionJustStarted = JustStarted(InputAction::kQuickSlotCast);
 			}
-			
-			if ((p->em->voiceSpell) &&
-				(
-					GetPlayerActionInputJustReleased(InputAction::kShout, false) ||
-					AllInputsPressedForAction(InputAction::kShout)
-				))
+			else if (isWeapMagDrawn)
 			{
+				auto lhSpell = p->em->GetLHSpell();
+				auto rhSpell = p->em->GetRHSpell();
 				turnToFaceForCombatAction |= 
 				(
-					p->em->voiceSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
+					(lhSpell && lhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) ||
+					(rhSpell && rhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
 				);
-				a_combatActionJustStarted = JustStarted(InputAction::kShout);
-			}
-			
-			bool specialActionSpellcast = 
-			(
-				(!IsPerforming(InputAction::kQuickSlotCast)) &&
-				(!IsPerforming(InputAction::kCastLH)) &&
-				(!IsPerforming(InputAction::kCastRH)) &&
-				(
-					reqSpecialAction == SpecialActionType::kCastBothHands || 
-					reqSpecialAction == SpecialActionType::kDualCast || 
-					reqSpecialAction == SpecialActionType::kQuickCast
-				) &&
-				(
-					(
-						GetPlayerActionInputJustReleased
-						(
-							InputAction::kSpecialAction, false
-						) ||
-						AllInputsPressedForAction(InputAction::kSpecialAction)
-					) ||
-					(
-						(reqSpecialAction != SpecialActionType::kQuickCast) &&
-						((isInCastingAnimLH && isInCastingAnimRH) || isInCastingAnimDual)
-					)
-				)
-			);
-			if (specialActionSpellcast)
-			{
-				if (reqSpecialAction == SpecialActionType::kQuickCast)
-				{
-					turnToFaceForCombatAction |= 
-					(
-						p->em->quickSlotSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf
-					);
-				}
-				else if (isWeapMagDrawn)
-				{
-					auto lhSpell = p->em->GetLHSpell();
-					auto rhSpell = p->em->GetRHSpell();
-					turnToFaceForCombatAction |= 
-					(
-						(lhSpell && lhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf) ||
-						(rhSpell && rhSpell->GetDelivery() != RE::MagicSystem::Delivery::kSelf)
-					);
-				}
-
-				a_combatActionJustStarted = JustStarted(InputAction::kSpecialAction);
 			}
 		}
 
@@ -7406,7 +7527,7 @@ namespace ALYSLC
 					// to apply our additional carryweight increment from leveling Stamina.
 					if (!glob.extraPocketsMagSpell || !glob.extraPocketsPerk)
 					{
-						SPDLOG_DEBUG("Could not get extra pockets mag eff or spell.");
+						DBG("Could not get extra pockets mag eff or spell.");
 					}
 					else
 					{
@@ -7476,7 +7597,7 @@ namespace ALYSLC
 							);
 							if (instantCaster)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{} cast with mag {}.", coopActor->GetName(), magOverride
 								);
@@ -7785,7 +7906,7 @@ namespace ALYSLC
 			{
 				// Time's up.
 				// Unequip two hand weapon.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Successful request. Unequipping 2H bound weapon.", 
 					coopActor->GetName()
@@ -7821,7 +7942,7 @@ namespace ALYSLC
 			{
 				// Time's up.
 				// Unequip left hand weapon.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Successful request. Unequipping LH bound weapon.",
 					coopActor->GetName()
@@ -7842,7 +7963,7 @@ namespace ALYSLC
 			{
 				// Time's up.
 				// Unequip right hand weapon.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Successful request. Unequipping RH bound weapon.",
 					coopActor->GetName()
@@ -7862,7 +7983,7 @@ namespace ALYSLC
 		float secsSinceReq = Util::GetElapsedSeconds(p->lastBoundWeapon2HReqTP);
 		if (!boundWeap2H && boundWeapReq2H && secsSinceReq > 5.0f) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Failed request. Unequipping 2H bound weapon.", coopActor->GetName()
 			);
@@ -7880,7 +8001,7 @@ namespace ALYSLC
 		secsSinceReq = Util::GetElapsedSeconds(p->lastBoundWeaponRHReqTP);
 		if (!boundWeapRH && boundWeapReqRH && secsSinceReq > 5.0f)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Failed request. Unequipping RH bound weapon.", coopActor->GetName()
 			);
@@ -7892,7 +8013,7 @@ namespace ALYSLC
 		secsSinceReq = Util::GetElapsedSeconds(p->lastBoundWeaponLHReqTP);
 		if (!boundWeapLH && boundWeapReqLH && secsSinceReq > 5.0f)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Failed request. Unequipping LH bound weapon.", coopActor->GetName()
 			);
@@ -7909,7 +8030,7 @@ namespace ALYSLC
 		// and enables magic casting via the ranged attack package.
 		// Can set or remove all player keywords.
 
-		SPDLOG_DEBUG("UpdateCoopPlayerKeyword");
+		DBG("UpdateCoopPlayerKeyword");
 		if (!glob.globalDataInit || !coopActor)
 		{
 			return;
@@ -7929,7 +8050,7 @@ namespace ALYSLC
 
 		// Remove all co-op player keywords first, just in case there are lingering ones.
 		keywordForm->RemoveKeywords(glob.coopPlayerKeywords);
-		SPDLOG_DEBUG("{}: Removed all player keywords.", coopActor->GetName());
+		DBG("{}: Removed all player keywords.", coopActor->GetName());
 
 		// Only set if requested.
 		if (a_set)
@@ -7937,7 +8058,7 @@ namespace ALYSLC
 			auto keywordToSet = GetCoopPlayerKeyword();
 			if (keywordToSet)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Added keyword {}.", coopActor->GetName(), Util::GetEditorID(keywordToSet)
 				);
@@ -7994,7 +8115,7 @@ namespace ALYSLC
 		if ((!wasAttacking) && (isAttacking || isBashing || isInCastingAnim)) 
 		{
 			// Set attack start TP if a new attack just started.
-			SPDLOG_DEBUG("{} started attack.", coopActor->GetName());
+			DBG("{} started attack.", coopActor->GetName());
 			p->lastAttackStartTP = SteadyClock::now();
 		}
 
@@ -8121,7 +8242,7 @@ namespace ALYSLC
 					);
 					if (shouldBlockConflictingActions)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} is blocked by conflicting action {}.",
 							static_cast<InputAction>(i + !InputAction::kFirstAction),
@@ -8219,7 +8340,7 @@ namespace ALYSLC
 				!revertedForm && coopActor->race && Util::IsRaceWithTransformation(coopActor->race)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} is transformed: {}, reverted form: {}, race: {}, "
 				"with trans: {}, form editor: {}, is werewolf: {}, is vampire lord: {}, "
@@ -8358,7 +8479,7 @@ namespace ALYSLC
 									delete script;
 								}
 
-								SPDLOG_DEBUG("Gird me loins, please.");
+								DBG("Gird me loins, please.");
 								aem->EquipObject
 								(
 									coopActor.get(), 

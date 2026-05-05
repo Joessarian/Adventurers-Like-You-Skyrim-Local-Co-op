@@ -720,6 +720,25 @@ namespace ALYSLC
 		{
 			PI, PI, PI, PI 
 		};
+		// Aim mode assigned when starting co-op after summoning.
+		// 1. kFreeAim: Right stick moves the crosshair. 
+		// 'Pick Target' selects a nearby living NPC target in the player's facing direction
+		// on press.
+		// 2. kLockOn: Right stick snaps the crosshair to living NPC targets 
+		// in the direction the stick is moved.
+		// 'Pick Target' selects an interactable object/NPC in activation range.
+		// 3. kTwinStick: Right stick selects a living NPC target when the player attacks.
+		// If facing the target, rotate the player with the right stick.
+		// Move the right stick + press 'Pick Target' to keep the current target selected
+		// or cycle through targets in the direction of movement 
+		// until the right stick is moved again from rest.
+		static inline std::vector<uint32_t> vuDefaultAimMode = 
+		{
+			!ALYSLC::AimMode::kFreeAim, 
+			!ALYSLC::AimMode::kFreeAim, 
+			!ALYSLC::AimMode::kFreeAim, 
+			!ALYSLC::AimMode::kFreeAim
+		}; 
 		// Projectile trajectory adjustment types:
 		// kAimDirection: No projectile trajectory adjustment. 
 		// Projectile is fired in the player's aiming direction.
@@ -954,8 +973,10 @@ namespace ALYSLC
 		//-------------
 		// Max number of base frames between tapping (pressing + releasing) an input 
 		// that can be considered a consecutive press.
+		// ~0.25 seconds at 60 fps.
+		static inline const float fAnalogConsecTapsFrameCountWindow = 15;
 		// ~0.2 seconds at 60 fps.
-		static inline const float fConsecTapsFrameCountWindow = 13;
+		static inline const float fButtonConsecTapsFrameCountWindow = 13;
 		// Max number of controllers supported.
 		static inline const std::uint8_t fMaxNumControllers = 4;
 
@@ -1054,6 +1075,9 @@ namespace ALYSLC
 		//------------
 		//[Targeting]:
 		//------------
+		// Max distance in game units from the player at which to search for 
+		// a non-hostile aim correction target.
+		static inline const float fMaxNonHostileAimCorrectionTargetDistance = 2048.0f;
 		// Max time to continue adjusting the path of managed projectiles.
 		static inline const float fMaxProjAirborneSecsToTarget = 60.0f;
 		// Max time to continue drawing the trajectory of managed projectiles.
@@ -1064,7 +1088,11 @@ namespace ALYSLC
 		// Max activation reach multiplier when mounted.
 		static inline const float fMountedActivationReachMult = 2.0f;
 		// Seconds before the crosshair fully snaps onto the chosen lock on target.
-		static inline const float fSecsToSnapCrosshairToLockOnTarget = 0.125f;
+		static inline const float fSecsToSnapCrosshairToLockOnTarget = 0.1f;
+		// Seconds before selecting a new aim correction target.
+		static inline const float fSecsBetweenSelectingAimCorrectionTargets = 0.3f;
+		// Seconds before selecting a new lock on target if searching relative to the current one.
+		static inline const float fSecsBetweenSelectingLockOnTargets = 0.2f;
 		// If the distance from the player's attack source to the target position
 		// is less than or equal to this value, begin slowing the player's rotation.
 		static inline const float fTargetAttackSourceDistToSlowRotation = 200.0f;

@@ -21,7 +21,7 @@ namespace ALYSLC
 			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
 				p && p->coopActor ? p->coopActor->GetName() : "NONE",
@@ -34,7 +34,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Cannot construct Movement Manager for device ID {}, player ID {}.", 
 				a_p ? a_p->deviceID : -1,
@@ -46,7 +46,6 @@ namespace ALYSLC
 	void MovementManager::MainTask()
 	{
 		// Update movement state and then set rotation and speed.
-		UpdateMovementParameters();
 		UpdateMovementState();
 		UpdateAttackSourceOrientationData(false);
 		UpdateAimPitch();
@@ -56,7 +55,7 @@ namespace ALYSLC
 
 	void MovementManager::PrePauseTask()
 	{
-		SPDLOG_DEBUG("P{}", playerID + 1);
+		DBG("P{}", playerID + 1);
 
 		// Set P1 as motion driven when the manager is not active
 		// to restore normal movement.
@@ -115,7 +114,7 @@ namespace ALYSLC
 			); 
 			if (shouldForceGetUp)
 			{
-				SPDLOG_DEBUG("{}: Get up lazy bones.", 
+				DBG("{}: Get up lazy bones.", 
 					coopActor->GetName(), coopActor->IsInRagdollState());
 				coopActor->NotifyAnimationGraph("GetUpBegin");
 				coopActor->PotentiallyFixRagdollState();
@@ -125,7 +124,7 @@ namespace ALYSLC
 
 	void MovementManager::PreStartTask()
 	{
-		SPDLOG_DEBUG("P{}", playerID + 1);
+		DBG("P{}", playerID + 1);
 
 		ResetTPs();
 		// Set P1 as AI driven to allow for movement manipulation with this manager.
@@ -207,7 +206,7 @@ namespace ALYSLC
 			); 
 			if (shouldForceGetUp)
 			{
-				SPDLOG_DEBUG("{}: Get up lazy bones.", 
+				DBG("{}: Get up lazy bones.", 
 					coopActor->GetName(), coopActor->IsInRagdollState());
 				coopActor->NotifyAnimationGraph("GetUpBegin");
 				coopActor->PotentiallyFixRagdollState();
@@ -221,7 +220,7 @@ namespace ALYSLC
 			coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kQueued ||
 			coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kGetUp)
 		{
-			SPDLOG_DEBUG("{}: Fix stuck in queued/getup knock state. Ragdolled: {}.", 
+			DBG("{}: Fix stuck in queued/getup knock state. Ragdolled: {}.", 
 				coopActor->GetName(), coopActor->IsInRagdollState());
 			StartFuncs::DebugResetPlayer(p);
 		}
@@ -261,8 +260,6 @@ namespace ALYSLC
 		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
 		// Externally set flags.
 		reqFaceTarget = reqResetAimAndBody = reqStartJump = false;
-		// Movement parameters list.
-		movementOffsetParams = std::vector<float>(!MoveParams::kTotal, 0.0f);
 		// Node orientation manager.
 		nom = std::make_unique<NodeOrientationManager>();
 		// Booleans.
@@ -275,7 +272,6 @@ namespace ALYSLC
 		inRangeOfUndiscoveredMarker = false;
 		interactionInRange = false;
 		interactionPackageRunning = false;
-		inTwinStickMode = false;
 		isAirborneWhileJumping = false;
 		isAnimDriven = false;
 		isBackStepDodge = false;
@@ -289,12 +285,10 @@ namespace ALYSLC
 		isSubmerged = false;
 		isSwimming = false;
 		isSynced = false;
-		lsMoved = false;
 		p1ExtPackageRunning = false;
 		playerRagdollTriggered = false;
 		menuStopsMovement = false;
 		movementYawTargetChanged = false;
-		rsMoved = false;
 		sentJumpFallEvent = false;
 		shouldCurtailMomentum = true;
 		shouldParaglide = false;
@@ -308,13 +302,13 @@ namespace ALYSLC
 		aimPitch = PI / 18.0f;
 		baseHeightMult = max(0.001f, static_cast<float>(coopActor->refScale) / 100.0f);
 		baseSpeedMult = Settings::fBaseSpeed * (1.0f / baseHeightMult);
+		speedMult = baseSpeedMult;
 		dashDodgeCompletionRatio = 0.0f;
 		dashDodgeEquippedWeight = 0.0f;
 		dashDodgeInitialSpeed = 0.0f;
 		dashDodgeLSDisplacement = 0.0f;
 		dashDodgeTorsoPitchOffset = 0.0f;
 		dashDodgeTorsoRollOffset = 0.0f;
-		lastLSAngMovingFromCenter = lastRSAngMovingFromCenter = 0.0f;
 		oldLSAngle = 0.0f;
 		playerPitch = 0.0f;
 		playerYaw = coopActor->GetHeading(false);
@@ -329,7 +323,7 @@ namespace ALYSLC
 		ResetTPs();
 		// Update encumbrance factor.
 		UpdateEncumbranceFactor();
-		SPDLOG_DEBUG("{}.", coopActor ? coopActor->GetName() : "NONE");
+		DBG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
 	const ManagerState MovementManager::ShouldSelfPause()
@@ -571,7 +565,7 @@ namespace ALYSLC
 			// Turn to face the crosshair position before dodging
 			// to make sure the dodge direction is determined by to the angle difference
 			// between the player and the crosshair position.
-			if (reqFaceTarget && !inTwinStickMode)
+			if (reqFaceTarget && p->tm->aimMode != AimMode::kTwinStick)
 			{
 				coopActor->data.angle.z = Util::NormalizeAng0To2Pi
 				(
@@ -604,7 +598,7 @@ namespace ALYSLC
 			);
 			if (succ)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Getting lock. (0x{:X})", 
 					coopActor->GetName(),
@@ -615,7 +609,7 @@ namespace ALYSLC
 					(
 						p->pam->avcam->perfAnimQueueMutex
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Lock obtained. (0x{:X})", 
 						coopActor->GetName(), 
@@ -643,7 +637,7 @@ namespace ALYSLC
 			isDashDodging = succ;
 			isRequestingDashDodge = !succ;
 			// Back step if not moving the LS.
-			isBackStepDodge = isDashDodging && !lsMoved;
+			isBackStepDodge = isDashDodging && !p->lsMoved;
 		}
 		
 		if (isDashDodging)
@@ -723,7 +717,7 @@ namespace ALYSLC
 				if (!isParagliding) 
 				{
 					// Stop moving once the dodge stops.
-					if (!lsMoved)
+					if (!p->lsMoved)
 					{
 						SetDontMove(true);
 					}
@@ -734,7 +728,7 @@ namespace ALYSLC
 						p->pam->wantsToSneak = false;
 						bool succ = coopActor->NotifyAnimationGraph("SneakStop");
 						// REMOVE when done debugging.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}, started attack: {}, expired: {}, transformed: {}, succ: {}",
 							coopActor->GetName(), 
@@ -787,7 +781,7 @@ namespace ALYSLC
 				// is the XY speed.
 				if (framesSinceStartingDashDodge == 0)
 				{
-					if (isBackStepDodge || !lsMoved)
+					if (isBackStepDodge || !p->lsMoved)
 					{
 						// Dodge backward.
 						dashDodgeDir = Util::RotationToDirectionVect
@@ -805,7 +799,10 @@ namespace ALYSLC
 						dashDodgeDir = Util::RotationToDirectionVect
 						(
 							0.0f,
-							Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng])
+							Util::ConvertAngle
+							(
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							)
 						);
 					}
 
@@ -1213,14 +1210,26 @@ namespace ALYSLC
 						GAME_TO_HAVOK *
 						Settings::fJumpAdditionalLaunchSpeed *
 						lsData.normMag *
-						cosf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
+						cosf
+						(
+							Util::ConvertAngle
+							(
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							)
+						)
 					),
 					velBeforeJumpVect.quad.m128_f32[1] + 
 					(
 						GAME_TO_HAVOK *
 						Settings::fJumpAdditionalLaunchSpeed *
 						lsData.normMag *
-						sinf(Util::ConvertAngle(movementOffsetParams[!MoveParams::kLSGameAng]))
+						sinf
+						(
+							Util::ConvertAngle
+							(
+								p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+							)
+						)
 					),
 					havokInitialJumpZVelocity + 
 					(
@@ -1998,7 +2007,8 @@ namespace ALYSLC
 				Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			}
 
-			if ((!coopActor->IsInKillMove()) && ((shouldStartMoving) || (dontMoveSet && lsMoved)))
+			if ((!coopActor->IsInKillMove()) && 
+				((shouldStartMoving) || (dontMoveSet && p->lsMoved)))
 			{
 				// If not in a killmove and signalled to start moving 
 				// or stopped moving but the LS is moved,
@@ -2035,7 +2045,10 @@ namespace ALYSLC
 			// While attacking, if targeting an actor while not facing them,
 			// look at the actor's torso; otherwise look at the crosshair world position.
 			auto rangedTargetActorPtr = Util::GetActorPtrFromHandle(p->tm->GetRangedTargetActor());
-			bool lookAtTorso = (rangedTargetActorPtr) && (!reqFaceTarget || inTwinStickMode);
+			bool lookAtTorso = 
+			(
+				(rangedTargetActorPtr) && (!reqFaceTarget || p->tm->aimMode == AimMode::kTwinStick)
+			);
 			if (lookAtTorso)
 			{
 				auto torsoPos = Util::GetTorsoPosition(rangedTargetActorPtr.get());
@@ -2049,9 +2062,13 @@ namespace ALYSLC
 					currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 				}
 			}
-			else
+			else if (p->tm->aimMode != AimMode::kTwinStick)
 			{
 				currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
+			}
+			else if (Util::PointIsOnScreen(p->mm->aimPitchPos))
+			{
+				currentProc->SetHeadtrackTarget(coopActor.get(), p->mm->aimPitchPos);
 			}
 		}
 		else
@@ -2249,7 +2266,7 @@ namespace ALYSLC
 					reqFaceTarget && 
 					p->coopActor->IsWeaponDrawn() &&
 					!p->isRevivingPlayer &&
-					!inTwinStickMode &&
+					p->tm->aimMode != AimMode::kTwinStick &&
 					!isTKDodging && 
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
@@ -2295,9 +2312,14 @@ namespace ALYSLC
 						(
 							(p->pam->TurnToTargetForCombatAction()) ||
 							(
-								inTwinStickMode && 
-								p->tm->rmm->isGrabbing &&
-								p->pam->IsPerforming(InputAction::kGrabObject)
+								(p->tm->aimMode == AimMode::kTwinStick) && 
+								(
+									(targetActorPtr && reqFaceTarget) ||
+									(
+										p->tm->rmm->isGrabbing &&
+										p->pam->IsPerforming(InputAction::kGrabObject)
+									)
+								)
 							)
 						) &&
 						(
@@ -2417,7 +2439,8 @@ namespace ALYSLC
 					playerTargetYaw = yawToTarget;
 				}
 			}
-			else if (inTwinStickMode &&
+			else if (p->tm->aimMode == AimMode::kTwinStick &&
+					 reqFaceTarget &&
 					 !coopActor->IsOnMount() && 
 					 !p->pam->IsRotatingArms() && 
 					 !p->pam->IsPerforming(InputAction::kSprint) &&
@@ -2428,14 +2451,14 @@ namespace ALYSLC
 				// Otherwise, maintain the current rotation.
 				if (p->pam->IsPerforming(InputAction::kMoveCrosshair))
 				{
-					const auto& moveZAngle = movementOffsetParams[!MoveParams::kRSGameAng];
+					const auto& moveZAngle = p->analogStickParams[!AnalogStickParams::kRSCamRelAng];
 					playerTargetYaw = moveZAngle;
 				}
 			}
-			else if (lsMoved)
+			else if (p->lsMoved)
 			{
 				// Turn to face the player movement direction.
-				const auto& moveZAngle = movementOffsetParams[!MoveParams::kLSGameAng];
+				const auto& moveZAngle = p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
 				playerTargetYaw = moveZAngle;
 			}
 
@@ -2653,7 +2676,7 @@ namespace ALYSLC
 
 					// Package completed once and the player is trying to move, 
 					// so switch back to the default package to stop interacting.
-					if (lsMoved && packageDone)
+					if (p->lsMoved && packageDone)
 					{
 						p->pam->SetAndEveluatePackage();
 						// Play exit animation.
@@ -2665,14 +2688,14 @@ namespace ALYSLC
 			{
 				float newYaw = movementActorPtr->data.angle.z;
 				// Can adjust the player's path to the interaction entry position by moving the LS.
-				if (lsMoved)
+				if (p->lsMoved)
 				{
 					rawYawOffset = std::lerp
 					(
 						0.0f,
 						Util::NormalizeAngToPi
 						(
-							movementOffsetParams[!MoveParams::kLSGameAng] - newYaw
+							p->analogStickParams[!AnalogStickParams::kLSCamRelAng] - newYaw
 						),
 						playerRotInterpFactor * 
 						max(1.0f, 60.0f * *g_deltaTimeRealTime) *
@@ -2739,7 +2762,7 @@ namespace ALYSLC
 
 			// Exit furniture for P1 if moving the left stick 
 			// while the furniture camera state is active.
-			if (p->isPlayer1 && lsMoved)
+			if (p->isPlayer1 && p->lsMoved)
 			{
 				auto playerCam = RE::PlayerCamera::GetSingleton();
 				if (playerCam && 
@@ -2782,7 +2805,7 @@ namespace ALYSLC
 				(
 					Util::NormalizeAngToPi
 					(
-						movementOffsetParams[!MoveParams::kLSGameAng] -
+						p->analogStickParams[!AnalogStickParams::kLSCamRelAng] -
 						movementActorPtr->data.angle.z
 					)
 				);
@@ -2944,7 +2967,7 @@ namespace ALYSLC
 				(
 					Util::NormalizeAngToPi
 					(
-						movementOffsetParams[!MoveParams::kLSGameAng] - 
+						p->analogStickParams[!AnalogStickParams::kLSCamRelAng] - 
 						movementActorPtr->data.angle.z
 					)
 				);
@@ -3008,8 +3031,8 @@ namespace ALYSLC
 			!isDashDodging && 
 			!isTKDodging && 
 			!isTDMDodging &&
-			!rsMoved &&
-			!lsMoved && 
+			!p->lsMoved && 
+			!p->rsMoved &&
 			movementSpeed == 0.0f
 		};
 		if (cell->IsExteriorCell() && !attemptDiscovery)
@@ -3059,7 +3082,7 @@ namespace ALYSLC
 				if (inRangeOfUndiscoveredMarker)
 				{
 					// No need to continue searching if in range of one undiscovered marker.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1 is in range ({} < {}) of map marker {} ({}, flags: 0b{:B}).",
 						markerRefrPtr->data.location.GetDistance(origin),
@@ -3143,7 +3166,7 @@ namespace ALYSLC
 		bool turningToCrosshairTarget = isUsingWeapMag && crosshairRefrValidity;
 		bool usingAimCorrectionOrLinkedTarget = 
 		(
-			(!reqFaceTarget || inTwinStickMode) &&
+			(!reqFaceTarget || p->tm->aimMode == AimMode::kTwinStick) &&
 			(
 				aimCorrectionTargetValidity && 
 				!turningToCrosshairTarget && 
@@ -3157,14 +3180,7 @@ namespace ALYSLC
 		// Can still manually adjust the transformed player's spinal rotation though.
 		if (p->tm->isMARFing || p->tm->isSMORFing)
 		{
-			adjustAimPitchToFaceTarget = 
-			{ 
-				(!p->isTransformed && reqFaceTarget) && 
-				(
-					p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled ||
-					Util::HandleIsValid(p->tm->aimCorrectionTargetHandle)
-				)
-			};
+			adjustAimPitchToFaceTarget = !p->isTransformed && reqFaceTarget;
 		}
 		else
 		{
@@ -3172,8 +3188,7 @@ namespace ALYSLC
 			{ 
 				(!p->isTransformed && p->coopActor->IsWeaponDrawn()) && 
 				(
-					(!inTwinStickMode && reqFaceTarget) || 
-					(turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget)
+					reqFaceTarget || turningToCrosshairTarget || usingAimCorrectionOrLinkedTarget
 				) 
 			};
 		}
@@ -3237,6 +3252,7 @@ namespace ALYSLC
 		bool shouldAdjustAimPitch = 
 		(
 			p->pam->IsPerforming(InputAction::kAdjustAimPitch) &&
+			!p->pam->adjustAimPitchAlternateMode && 
 			fabsf(rsY) > fabsf(rsX)
 		);
 		if (shouldAdjustAimPitch) 
@@ -3753,37 +3769,11 @@ namespace ALYSLC
 		);
 	}
 
-	void MovementManager::UpdateMovementParameters()
+	void MovementManager::UpdateSpeedMult()
 	{
-		// Update player movement parameters derived from controller analog stick movement
-		// in both in-game coordinates and absolute coordinates.
-
+		// Update the player's speedmult actor value multiplier.
+		
 		const auto& lsData = glob.cdh->GetAnalogStickState(deviceID, true);
-		const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
-		// Analog stick components and normalized displacement magnitudes.
-		const float& lsX = lsData.xComp;
-		const float& lsY = lsData.yComp;
-		const float& rsX = rsData.xComp;
-		const float& rsY = rsData.yComp;
-		const float& lsMag = lsData.normMag;
-		const float& rsMag = rsData.normMag;
-		// Orientation angle of controller thumbsticks. 
-		// NOT relative to the camera.
-		float lsAbsAng = 0.0f;
-		float rsAbsAng = 0.0f;
-		// Components of thumbstick displacement vectors.
-		float lxComp = 0.0f;
-		float lyComp = 0.0f;
-		float rxComp = 0.0f;
-		float ryComp = 0.0f;
-
-		// Get camera yaw angle.
-		auto playerCam = RE::PlayerCamera::GetSingleton();
-		float camYaw = glob.cam->GetCurrentYaw();
-		// Game yaw angle for the LS.
-		float lsAng = 0.0f;
-		// Game yaw angle for the RS.
-		float rsAng = 0.0f;
 		// Get movement speed multiplier based on what action is being performed.
 		float attackMovMult = 1.0f;
 		if (p->pam->isInCastingAnim)
@@ -3799,69 +3789,8 @@ namespace ALYSLC
 			attackMovMult *= Settings::fMeleeAttackMovMult;
 		}
 
-		// Obtain Cartesian angle for left stick orientation.
-		if (lsX == 0.0f && lsY == 0.0f) 
-		{
-			// Previous, no change, since the LS is centered.
-			lsAbsAng = movementOffsetParams[!MoveParams::kLSAbsoluteAng];
-		}
-		else
-		{
-			lsAbsAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(atan2f(lsY, lsX)));
-		}
-
-		if (rsX == 0.0f && rsY == 0.0f) 
-		{
-			// Previous, no change, since the RS is centered.
-			rsAbsAng = movementOffsetParams[!MoveParams::kRSAbsoluteAng];
-		}
-		else
-		{
-			rsAbsAng = Util::ConvertAngle(Util::NormalizeAng0To2Pi(atan2f(rsY, rsX)));
-		}
-
-		// Yaw angles for both analog sticks in the world's coordinate space 
-		// (relative to the camera).
-		lsAng = Util::NormalizeAng0To2Pi(camYaw + lsAbsAng);
-		rsAng = Util::NormalizeAng0To2Pi(camYaw + rsAbsAng);
-
-		// Get the absolute change in LS angle since the last check.
-		float deltaLSAngle = Util::NormalizeAngToPi(fabsf(oldLSAngle - lsAbsAng));
-		oldLSAngle = lsAbsAng;
-
-		// Get X, Y components for both analog sticks, with respect to the camera's yaw.
-		if (rsMag != 0.0f)
-		{
-			rsAng = Util::ConvertAngle(rsAng);
-			rxComp = cosf(rsAng);
-			ryComp = sinf(rsAng);
-			rsAng = Util::ConvertAngle(rsAng);
-		}
-		else
-		{
-			// Unchanged.
-			rsAng = movementOffsetParams[!MoveParams::kRSGameAng];
-			rxComp = 0.0f;
-			ryComp = 0.0f;
-		}
-
-		if (lsMag != 0.0f)
-		{
-			lsAng = Util::ConvertAngle(lsAng);
-			lxComp = cosf(lsAng);
-			lyComp = sinf(lsAng);
-			lsAng = Util::ConvertAngle(lsAng);
-		}
-		else
-		{
-			// Unchanged.
-			lsAng = movementOffsetParams[!MoveParams::kLSGameAng];
-			lxComp = 0.0f;
-			lyComp = 0.0f;
-		}
-
 		// Speedmult to set this frame.
-		float speedMult = baseSpeedMult;
+		speedMult = baseSpeedMult;
 		if (p->pam->isSprinting) 
 		{
 			// Co-op companion mounts accelerate more slowly for some reason. 
@@ -3876,7 +3805,7 @@ namespace ALYSLC
 		else
 		{
 			// Modify the base speed mult by the attack movement modifier and the LS magnitude.
-			speedMult = attackMovMult * baseSpeedMult * lsMag;
+			speedMult = attackMovMult * baseSpeedMult * lsData.normMag;
 		}
 
 		// Over-encumbered.
@@ -3889,28 +3818,6 @@ namespace ALYSLC
 			// Just an estimate, similar enough to P1's speed when encumbered.
 			speedMult *= 0.45f;
 		}
-
-		// Set analog stick angles (relative to camera) at max displacement.
-		lastLSAngMovingFromCenter = 
-		(
-			lsData.MovingAwayFromCenter() ? lsAng : lastLSAngMovingFromCenter
-		);
-		lastRSAngMovingFromCenter = 
-		(
-			rsData.MovingAwayFromCenter() ? rsAng : lastRSAngMovingFromCenter
-		);
-
-		// All angles are in game coordinates before adding to params list.
-		movementOffsetParams[!MoveParams::kLSXComp] = lxComp;
-		movementOffsetParams[!MoveParams::kLSYComp] = lyComp;
-		movementOffsetParams[!MoveParams::kRSXComp] = rxComp;
-		movementOffsetParams[!MoveParams::kRSYComp] = ryComp;
-		movementOffsetParams[!MoveParams::kSpeedMult] = speedMult;
-		movementOffsetParams[!MoveParams::kLSGameAng] = lsAng;
-		movementOffsetParams[!MoveParams::kRSGameAng] = rsAng;
-		movementOffsetParams[!MoveParams::kDeltaLSAbsoluteAng] = deltaLSAngle;
-		movementOffsetParams[!MoveParams::kLSAbsoluteAng] = lsAbsAng;
-		movementOffsetParams[!MoveParams::kRSAbsoluteAng] = lsAbsAng;
 	}
 
 	void MovementManager::UpdateMovementState()
@@ -3933,52 +3840,12 @@ namespace ALYSLC
 		// which re-enables location discovery.
 		// SetShouldPerformLocationDiscovery();
 
+		// Update the player's speedmult first.
+		UpdateSpeedMult();
 		// Update analog stick state and menu movement flag.
 		menuStopsMovement = Util::OpenMenuStopsMovement();
-		bool prevLSMoved = lsMoved;
-		// LS/RS stopped when centered for two frames (norm mag is 0 this frame and last frame).
-		bool prevMoved = 
-		(
-			glob.cdh->GetAnalogStickState(deviceID, true).prevNormMag != 0.0f
-		);
-		lsMoved = 
-		(
-			(prevMoved) ||
-			(
-				movementOffsetParams[!MoveParams::kLSXComp] != 0.0f || 
-				movementOffsetParams[!MoveParams::kLSYComp] != 0.0f
-			)
-		);
-		prevMoved = 
-		(
-			glob.cdh->GetAnalogStickState(deviceID, false).prevNormMag != 0.0f
-		);
-		rsMoved =
-		(
-			(prevMoved) ||
-			(
-				movementOffsetParams[!MoveParams::kRSXComp] != 0.0f || 
-				movementOffsetParams[!MoveParams::kRSYComp] != 0.0f
-			)
-		);
-
-		if (prevLSMoved && !lsMoved) 
-		{
-			p->lastMovementStopReqTP = SteadyClock::now();
-		}
-		else if (!prevLSMoved && lsMoved)
-		{
-			p->lastMovementStartReqTP = SteadyClock::now();
-		}
-		
 		// Save torso position this frame to use elsewhere.
 		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
-		// Update twin-stick mode flag.
-		inTwinStickMode = 
-		(
-			reqFaceTarget && p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled
-		);
-
 		// Update current mount.
 		if (!coopActor->IsOnMount() && Util::HandleIsValid(p->currentMountHandle))
 		{
@@ -4117,7 +3984,7 @@ namespace ALYSLC
 			// while attacking/bashing/blocking/casting.
 			bool turnToFaceTargetWhileStopped = 
 			{
-				(!lsMoved && movementSpeed != 0.0f) &&
+				(!p->lsMoved && movementSpeed != 0.0f) &&
 				(
 					p->pam->isAttacking || p->pam->isBlocking ||
 					p->pam->isBashing || p->pam->isInCastingAnim
@@ -4347,7 +4214,7 @@ namespace ALYSLC
 
 			if (isAIDriven && shouldRemoveAIDriven)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} is anim driven: {}, mounted: {}, "
 					"ragdolled: {}, synced: {}, paragliding: {}. "
@@ -4367,12 +4234,12 @@ namespace ALYSLC
 				bool changed = Util::SetPlayerAIDriven(false);
 				if (changed)
 				{
-					SPDLOG_DEBUG("{} AI driven state changed to false.", coopActor->GetName());
+					DBG("{} AI driven state changed to false.", coopActor->GetName());
 				}
 			}
 			else if (!isAIDriven && !shouldRemoveAIDriven)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} is anim driven: {}, mounted: {}, "
 					"ragdolled: {}, synced: {}, paragliding: {}. "
@@ -4392,7 +4259,7 @@ namespace ALYSLC
 				bool changed = Util::SetPlayerAIDriven(true);
 				if (changed)
 				{
-					SPDLOG_DEBUG("{} AI driven state changed to true.", coopActor->GetName());
+					DBG("{} AI driven state changed to true.", coopActor->GetName());
 				}
 			}
 		}
@@ -4451,7 +4318,7 @@ namespace ALYSLC
 				!isTDMDodging
 			) && 
 			(
-				!lsMoved || 
+				!p->lsMoved || 
 				menuStopsMovement || 
 				p->isRevivingPlayer || 
 				attemptDiscovery
@@ -4464,7 +4331,7 @@ namespace ALYSLC
 		// and not reviving another player.
 		shouldStartMoving = 
 		{
-			lsMoved && 
+			p->lsMoved && 
 			!isMoving && 
 			!isDashDodging && 
 			!isRequestingDashDodge && 
@@ -4508,7 +4375,8 @@ namespace ALYSLC
 		data->defaultRotation = a_nodePtr->local.rotate;
 		// Set new local rotations before the UpdateDownwardPass() call,
 		// so that it can use our modified local rotations to set the nodes' new world rotations.
-		if (Settings::bEnableSpinalRotation || Settings::bEnableArmsRotation)
+		if ((Settings::bEnableSpinalRotation && isTorsoNode) || 
+			((Settings::bEnableArmsRotation) && (isLeftArmNode || isRightArmNode)))
 		{
 			a_nodePtr->local.rotate = data->currentRotation;
 		}
@@ -5723,13 +5591,27 @@ namespace ALYSLC
 						}
 					}
 				}
-
-				// Criteria for damageable actors:
+				
+				bool hitActorIsPlayer = GlobalCoopData::IsCoopPlayer(hitActor);
+				bool isHostile = 
+				(
+					(!hitActorIsPlayer) &&
+					(
+						(hitActor->IsHostileToActor(a_p->coopActor.get())) || 
+						(
+							Util::HandleIsValid(hitActor->currentCombatTarget) &&
+							Util::IsPartyFriendlyActor
+							(
+								hitActor->currentCombatTarget.get().get()
+							)
+						)
+					)
+				);
 				// Not a ghost or invulnerable and either a player 
 				// or not essential/protected or hostile to the player.
 				bool hittable = 
 				{
-					(!hitActor->IsGhost() && !hitActor->IsInvulnerable())
+					(isHostile) || (!hitActor->IsGhost() && !hitActor->IsInvulnerable())
 				};
 				bool isReleasedActor = a_p->tm->rmm->IsManaged(handle, false);
 				// Can this hit actor ragdoll once the slap hits?
@@ -6011,7 +5893,7 @@ namespace ALYSLC
 						}
 
 						// REMOVE when done debugging.
-						/*SPDLOG_DEBUG
+						/*DBG
 						(
 							"{}: Hit actor {}. Previously hit: {}. "
 							"Total hits from this raycast: {}. "
@@ -6137,7 +6019,7 @@ namespace ALYSLC
 					1.0f
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} hit {} (0x{:X}, {}, {}) with {} node, "
 					"Hit pos point vel: {}. Hit force: {} "
@@ -6265,7 +6147,7 @@ namespace ALYSLC
 								1.0f
 							);
 				
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {} has mass of {}, "
 								"inv mass of {}, hit velocity: {}, force applied: {} over 1s. "
@@ -7002,7 +6884,7 @@ namespace ALYSLC
 				1.0f
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_forearmNodePtr->name
 			);
@@ -7017,7 +6899,7 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_forearmNodePtr->name
 			);
@@ -7090,7 +6972,7 @@ namespace ALYSLC
 				1.75f
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_handNodePtr->name
 			);
@@ -7105,7 +6987,7 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_handNodePtr->name
 			);
@@ -8331,7 +8213,7 @@ namespace ALYSLC
 				1.0f
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: ADD collision for {}.", a_p->coopActor->GetName(), a_shoulderNodePtr->name
 			);
@@ -8346,7 +8228,7 @@ namespace ALYSLC
 				PrecisionAnnotationReqType::kRemove
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: REMOVE collision for {}.", a_p->coopActor->GetName(), a_shoulderNodePtr->name
 			);
@@ -8660,10 +8542,7 @@ namespace ALYSLC
 						float yawOffset = 0.0f;
 						// Must be targeting something with the crosshair
 						// or have an aim correction target if the crosshair is disabled.
-						const bool crosshairActive = 
-						(
-							a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled
-						);
+						const bool crosshairActive = a_p->tm->aimMode != AimMode::kTwinStick;
 						const auto targetActorHandle = a_p->tm->GetRangedTargetActor();
 						const auto targetActorPtr = Util::GetActorPtrFromHandle
 						(

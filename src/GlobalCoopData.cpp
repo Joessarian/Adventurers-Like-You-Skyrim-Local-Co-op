@@ -119,7 +119,7 @@ namespace ALYSLC
 
 			for (auto i = 0; i < glob.coopEntityBlacklist.size(); ++i)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Entity  #{}: {}.",
 					i, 
@@ -881,7 +881,7 @@ namespace ALYSLC
 
 		// Done initializing.
 		glob.globalDataInit = true;
-		SPDLOG_INFO("Global data initialized!");
+		INF("Global data initialized!");
 	}
 
 	//=============================================================================================
@@ -953,7 +953,7 @@ namespace ALYSLC
 			(avSkillInfo->useMult * a_baseXP + avSkillInfo->offsetMult)
 		);
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Getting lock. (0x{:X})",
 			p->coopActor->GetName(),
@@ -961,7 +961,7 @@ namespace ALYSLC
 		);
 		{
 			std::unique_lock<std::mutex> skillXPLock(glob.skillXPMutexes[a_playerID]);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Lock obtained. (0x{:X}). "
 				"Adding {} XP to {}.", 
@@ -980,7 +980,7 @@ namespace ALYSLC
 	{
 		// Adjust serialized used, available, extra, and shared perk counts for all players.
 
-		SPDLOG_DEBUG("AdjustAllPlayerPerkCounts");
+		DBG("AdjustAllPlayerPerkCounts");
 
 		auto& glob = GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
@@ -1001,7 +1001,7 @@ namespace ALYSLC
 			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 		);
 		float remainingXP = p1->skills->data->xp;
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
 			currentLevel,
@@ -1020,7 +1020,7 @@ namespace ALYSLC
 			(
 				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Next level: {}, remaining XP: {}, new threshold: {}.",
 				expectedLevelAfterLevelUp,
@@ -1058,7 +1058,7 @@ namespace ALYSLC
 			if (isP1)
 			{
 				playerActor = p1;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"P1: CurrentXP: {}, "
 					"current level: {}, post-levelups: {}, "
@@ -1079,7 +1079,7 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Perk glob list gives total unlocked perks count of {}.", totalUnlockedPerks
 				);
@@ -1121,7 +1121,7 @@ namespace ALYSLC
 				if (extraPerkPoints >= 0)
 				{
 					data->extraPerkPoints = extraPerkPoints;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has {} extra perks from external sources.",
 						playerActor->GetName(), extraPerkPoints
@@ -1129,7 +1129,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has {} extra perks from external sources. Resetting to 0.",
 						playerActor->GetName(), extraPerkPoints
@@ -1149,7 +1149,7 @@ namespace ALYSLC
 							data->extraPerkPoints - perkCountDec
 						)
 					);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has {} extra perks after total perk count decrease "
 						"of {} from {} to {}.",
@@ -1176,7 +1176,7 @@ namespace ALYSLC
 				data->availablePerkPoints = max(0, maxPerkPointsFromLevel - data->usedPerkPoints);
 
 				// REMOVE when done debugging.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} has cached unlocked perk counts {}/{}/{} , "
 					"{} unlocked shared perks out of {} total unlocked, "
@@ -1200,7 +1200,7 @@ namespace ALYSLC
 
 				for (const auto perk : unlockedPerksList)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has cached unlocked perk {} 0x{:X}.", 
 						playerActor->GetName(), perk->GetName(), perk->formID
@@ -1209,7 +1209,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("Could not get player form for FID 0x{:X}", fid & 0x00000FFF);
+				DBG("Could not get player form for FID 0x{:X}", fid & 0x00000FFF);
 			}
 
 			// Update previous unlocked perks count.
@@ -1249,7 +1249,7 @@ namespace ALYSLC
 				p1->GetBaseActorValue(RE::ActorValue::kStamina)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"For {}, base HMS values (P1's) saved as {}, {}, {} ON ENTRY. "
 				"First saved level: {}.",
@@ -1277,7 +1277,7 @@ namespace ALYSLC
 				p1->GetBaseActorValue(RE::ActorValue::kStamina) - data->p1HMSBaseAVsOnMenuEntry[2]
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s HMS AVs have increased by {}, {}, {} "
 				"since initial leveling. {}, {}, {} since entering the Stats Menu.",
@@ -1294,7 +1294,7 @@ namespace ALYSLC
 		// Update serialized player level if it does not match the current one.
 		if (const uint16_t currentLevel = a_playerActor->GetLevel(); currentLevel != data->level)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Levels do not match for {}: saved ({}) != current ({}). Updating now.",
 				a_playerActor->GetName(), data->level, currentLevel
@@ -1332,7 +1332,7 @@ namespace ALYSLC
 
 		if (!fid) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"AdjustInitialPlayer1PerkPoints: Could not get serialized player FID for {}.", 
 				a_playerActor->GetName()
@@ -1353,7 +1353,7 @@ namespace ALYSLC
 			fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 		);
 		float remainingXP = p1->skills->data->xp;
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Current level: {}, remaining XP: {}, threshold: {}. Base and mult: {}, {}.",
 			currentLevel,
@@ -1373,7 +1373,7 @@ namespace ALYSLC
 			(
 				fXPLevelUpBase + (fXPLevelUpMult * expectedLevelAfterLevelUp)
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Next level: {}, remaining XP: {}, new threshold: {}.",
 				expectedLevelAfterLevelUp,
@@ -1404,7 +1404,7 @@ namespace ALYSLC
 		uint16_t availableHMSLevelUps = 0; 
 		if (iAVDhmsLevelUp == 0)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"No increase to health/magicka/stamina when leveling up an attribute. "
 				"No adjustment to perk points count."
@@ -1427,7 +1427,7 @@ namespace ALYSLC
 			);
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}'s level up count from HMS increases so far: "
 			"{} (({} + {} + {}) / {}), level ups still available: {}. "
@@ -1459,7 +1459,7 @@ namespace ALYSLC
 			// count total, so we must anticipate and factor out these extra perks
 			// when figuring out how many perk points to set.
 			p1->perkCount = data->availablePerkPoints - expectedLevelUps;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"No available HMS level ups, but there are {} perk points available for use. "
 				"{} is expected to level up from {} to {}, "
@@ -1473,7 +1473,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} is attempting to access the level up menu, and has {} available perk points, "
 				"with {} available HMS level ups and {} expected level ups. "
@@ -1490,7 +1490,7 @@ namespace ALYSLC
 			p1->perkCount = data->availablePerkPoints - availableHMSLevelUps - expectedLevelUps;
 			if (!dipP1Level) 
 			{
-				SPDLOG_DEBUG("No level dip needed.");
+				DBG("No level dip needed.");
 				return false;
 			}
 
@@ -1505,7 +1505,7 @@ namespace ALYSLC
 			const auto script = scriptFactory ? scriptFactory->Create() : nullptr;
 			if (!script)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"AdjustInitialPlayer1PerkPoints: No console command script to run."
 				);
@@ -1558,7 +1558,7 @@ namespace ALYSLC
 			// Cleanup.
 			delete script;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"After dip: current XP, threshold: {}, {}, "
 				"current level: {}, xpInc: {} from prev {}.",
@@ -1625,7 +1625,7 @@ namespace ALYSLC
 				{
 					p1SerializedData->skillLegendaryList[i] = 
 					p1->skills->data->legendaryLevels[i];
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Store P1's {} Legendary leveling count as {}.",
 						a_shouldImport ? "IMPORT" : "EXPORT",
@@ -1644,7 +1644,7 @@ namespace ALYSLC
 					if (p1->skills->data->legendaryLevels[i] != 
 						coopPlayerSerializedData->skillLegendaryList[i])
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Set P1's {} Legendary leveling count to {}.",
 							a_shouldImport ? "IMPORT" : "EXPORT",
@@ -1668,7 +1668,7 @@ namespace ALYSLC
 					// Set XP for the skill to 0 if it was made Legendary.
 					if (skillMadeLegendary)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Companion player's Legendary leveling count for {} "
 							"was changed from {} to {}. Clear XP (was {}).",
@@ -1696,7 +1696,7 @@ namespace ALYSLC
 							p1->skills->data->legendaryLevels[i] != 
 							p1SerializedData->skillLegendaryList[i])
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: Set P1's {} Legendary leveling count to {}.",
 								a_shouldImport ? "IMPORT" : "EXPORT",
@@ -1751,7 +1751,7 @@ namespace ALYSLC
 							continue;
 						}
 					
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} was made Legendary. Reset {}'s level from {} to {}.",
 							Util::GetActorValueName(av), 
@@ -1770,7 +1770,7 @@ namespace ALYSLC
 							continue;
 						}
 					
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} was made Legendary. "
 							"Reset player with FID 0x{:X}'s level from {} to {}. "
@@ -1808,7 +1808,7 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
 		if (iter == glob.serializablePlayerData.end())
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"ERR: Could not retrieve serialized player data for {}.", a_playerActor->GetName()
 			);
@@ -1816,7 +1816,7 @@ namespace ALYSLC
 		}
 
 		auto& data = iter->second;
-		SPDLOG_DEBUG("{} menu.", a_enteringMenu ? "Entering" : "Exiting");
+		DBG("{} menu.", a_enteringMenu ? "Entering" : "Exiting");
 		if (a_enteringMenu)
 		{
 			// Sync changes to shared perks before adjusting perk counts.
@@ -1844,7 +1844,7 @@ namespace ALYSLC
 			// only after we've rescaled.
 			if (rescaleSkillAVsOnP1LevelDip)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"About to rescale all companions' AVs "
 					"after dipping P1's level to spawn level up menus."
@@ -1855,14 +1855,14 @@ namespace ALYSLC
 			// Copy perk tree and then skill AVs.
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 			{
-				SPDLOG_DEBUG("Import perk tree.");
+				DBG("Import perk tree.");
 				CopyOverPerkTrees(a_playerActor, a_enteringMenu);
 				glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkTree);
 			}
 
 			if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
-				SPDLOG_DEBUG("Import AVs.");
+				DBG("Import AVs.");
 				CopyOverAVs
 				(
 					a_playerActor, 
@@ -1883,7 +1883,7 @@ namespace ALYSLC
 			// Restore skill AVs and then perk tree.
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
-				SPDLOG_DEBUG("Restore AVs.");
+				DBG("Restore AVs.");
 				CopyOverAVs
 				(
 					a_playerActor,
@@ -1896,7 +1896,7 @@ namespace ALYSLC
 			
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 			{
-				SPDLOG_DEBUG("Restore perk tree.");
+				DBG("Restore perk tree.");
 				// Save the previous unlocked perks set to diff.
 				auto oldUnlockedPerksSet = data->GetUnlockedPerksSet();
 				// NOTE:
@@ -1946,7 +1946,7 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(p1->formID);
 		if (iter == glob.serializablePlayerData.end())
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"ERR: Could not retrieve serialized player data for {}.", p1->GetName()
 			);
@@ -1954,7 +1954,7 @@ namespace ALYSLC
 		}
 
 		auto& data = iter->second;
-		SPDLOG_DEBUG("{} menu.",a_enteringMenu ? "Entering" : "Exiting");
+		DBG("{} menu.",a_enteringMenu ? "Entering" : "Exiting");
 		if (a_enteringMenu)
 		{
 			// Sync changes to shared perks before adjusting perk counts.
@@ -1980,7 +1980,7 @@ namespace ALYSLC
 			bool rescaleSkillAVsOnP1LevelDip = AdjustInitialPlayer1PerkPoints(p1);
 			if (rescaleSkillAVsOnP1LevelDip)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"About to rescale all companions' AVs after dipping P1's level "
 					"to spawn level up menus."
@@ -2023,7 +2023,7 @@ namespace ALYSLC
 			}
 
 			const auto& unlockedPerksSet = data->GetUnlockedPerksSet();
-			SPDLOG_DEBUG
+			DBG
 			(
 				"P1 has unlocked {} perks "
 				"and has {} remaining perk points for {} total perk points available "
@@ -2087,7 +2087,7 @@ namespace ALYSLC
 			if (!alreadyAdded)
 			{
 				Util::Player1AddPerk(perkToAdd, -1);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Re-adding {} to p1's perks list. New perk count: {}",
 					perkToAdd->GetName(), p1->perks.size()
@@ -3175,7 +3175,7 @@ namespace ALYSLC
 				bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
 				if (nativeHasPerk || singletonListHasPerk)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Shared perk {} (0x{:X}): {}, {}",
 						perk->GetName(), perk->formID, nativeHasPerk, singletonListHasPerk
@@ -3190,7 +3190,7 @@ namespace ALYSLC
 		// Each player will have the same shared perks, 
 		// so simply check P1 for shared perks.
 		Util::TraverseAllPerks(p1, getSharedPerksCount);
-		SPDLOG_DEBUG("Total: {}", perksSet.size());
+		DBG("Total: {}", perksSet.size());
 		return perksSet.size();
 	}
 
@@ -3239,7 +3239,7 @@ namespace ALYSLC
 				}
 
 				// Transfer to P1.
-				SPDLOG_DEBUG("Moving {} of {} from {}'s inventory chest to P1.",
+				DBG("Moving {} of {} from {}'s inventory chest to P1.",
 					entry.first, boundObj->GetName(), p->coopActor->GetName());
 				p->em->inventoryChest->RemoveItem
 				(
@@ -3311,7 +3311,7 @@ namespace ALYSLC
 			GlobalCoopData::IsCoopEntity(a_fromRefr) ||
 			ui->IsMenuOpen(RE::BarterMenu::MENU_NAME)
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} was looted by {} (from refr: {}). Was picked up: {}. Ignore: {} (inv showing: {}).",
 			a_lootedObject->GetName(), 
@@ -3452,7 +3452,7 @@ namespace ALYSLC
 						{
 							if (p->isPlayer1 && !inventoryCopiedToP1)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Adding skillbook {} to {}.",
 									newSkillbook->GetName(), p->coopActor->GetName()
@@ -3468,7 +3468,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"Adding skillbook {} to {}'s inventory chest.",
 									newSkillbook->GetName(), p->coopActor->GetName()
@@ -3489,7 +3489,7 @@ namespace ALYSLC
 								ALYSLC::TrueHUDCompat::g_installed && 
 								!inventoryCopiedToP1)
 							{
-								SPDLOG_DEBUG("SHOW {}.", newSkillbook->GetName());
+								DBG("SHOW {}.", newSkillbook->GetName());
 								p1->AddObjectToContainer
 								(
 									newSkillbook->As<RE::AlchemyItem>(),
@@ -3780,7 +3780,7 @@ namespace ALYSLC
 	{
 		// Import all serialized perks that the player has unlocked.
 
-		SPDLOG_DEBUG("{}", a_coopActor->GetName());
+		DBG("{}", a_coopActor->GetName());
 
 		if (!a_coopActor)
 		{
@@ -3849,7 +3849,7 @@ namespace ALYSLC
 
 		auto& data = iter->second;
 		const auto& unlockedPerksList = data->GetUnlockedPerksList();
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} has {} unlocked perks serialized for this save file.", 
 			a_coopActor->GetName(), unlockedPerksList.size()
@@ -3937,7 +3937,7 @@ namespace ALYSLC
 		// Add back all unlocked perks.
 		for (const auto perk : unlockedPerksList)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Adding back {}'s has saved unlocked perk {} (0x{:X}). "
 				"Has perk already: {}",
@@ -3981,7 +3981,7 @@ namespace ALYSLC
 					bool singletonListHasPerk = Util::Player1PerkListHasPerk(perk);
 					if (nativeFuncHasPerk || singletonListHasPerk)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"AFTER IMPORT: {} has perk #{} {} (0x{:X}): {}, {}.",
 							p1->GetName(), perkIndex, perk->GetName(), perk->formID,
@@ -3993,7 +3993,7 @@ namespace ALYSLC
 				{
 					if (a_actor->HasPerk(perk))
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"AFTER IMPORT: {} has perk #{} {} (0x{:X})",
 							a_actor->GetName(), perkIndex, perk->GetName(), perk->formID
@@ -4472,11 +4472,11 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
 		if (iter == glob.serializablePlayerData.end() || !iter->second)
 		{
-			SPDLOG_ERROR("ERR: Could not get serialized data for {}.", a_playerActor->GetName());
+			ERR("ERR: Could not get serialized data for {}.", a_playerActor->GetName());
 			return;
 		}
 
-		SPDLOG_INFO("Succeeded in obtaining singletons and creating script.");
+		INF("Succeeded in obtaining singletons and creating script.");
 		// Clear out overlays before applying the preset,
 		// since previously applied overlays sometimes stack 
 		// and interfere with the preset-defined ones.
@@ -4498,7 +4498,7 @@ namespace ALYSLC
 					);
 					if (overlayInterface)
 					{
-						SPDLOG_INFO("Erase overlays.");
+						INF("Erase overlays.");
 						overlayInterface->EraseOverlays(a_playerActor);
 					}
 				}
@@ -4507,7 +4507,7 @@ namespace ALYSLC
 			const auto& presetName = iter->second->raceMenuPresetName;
 			if (presetName.empty() || presetName == "NONE")
 			{
-				SPDLOG_INFO
+				INF
 				(
 					"No preset found for {} on save {}.",
 					a_playerActor->GetName(), saveMgr->lastFileName
@@ -4526,7 +4526,7 @@ namespace ALYSLC
 				return;
 			}
 
-			SPDLOG_INFO
+			INF
 			(
 				"Load {}'s preset as {}. Last save name: {}, full: {}.", 
 				a_playerActor->GetName(), 
@@ -4542,7 +4542,7 @@ namespace ALYSLC
 				).c_str()
 			);
 			script->CompileAndRun(a_playerActor);
-			SPDLOG_INFO("LOAD RESULT: {}", consoleLog->lastMessage);
+			INF("LOAD RESULT: {}", consoleLog->lastMessage);
 
 			// Prevents skin tone mismatch between body and face.
 			script->SetCommand
@@ -4575,7 +4575,7 @@ namespace ALYSLC
 				Util::GetEditorID(a_playerActor),
 				std::chrono::round<std::chrono::seconds>(std::chrono::system_clock::now())
 			);
-			SPDLOG_INFO
+			INF
 			(
 				"Save {}'s preset as {}. Last save name: {}, full: {}.", 
 				a_playerActor->GetName(),
@@ -4595,9 +4595,9 @@ namespace ALYSLC
 			// RaceMenu SE always seems to use P1 as the actor 
 			// from which to save the preset no matter what.
 			script->CompileAndRun(p1);
-			SPDLOG_INFO("SAVE RESULT: {}", consoleLog->lastMessage);
+			INF("SAVE RESULT: {}", consoleLog->lastMessage);
 			
-			SPDLOG_INFO("Serialize as {}, was {}.", newName, iter->second->raceMenuPresetName);
+			INF("Serialize as {}, was {}.", newName, iter->second->raceMenuPresetName);
 			iter->second->raceMenuPresetName = newName;
 		}
 
@@ -4656,7 +4656,7 @@ namespace ALYSLC
 		// Set the new mult.
 		if (newMult != currentMult)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Level {}, set for co-op: {}. P1's XP levelup mult is now {}, was {}.",
 				p1->GetLevel(), a_setForCoop, newMult, currentMult
@@ -4681,7 +4681,7 @@ namespace ALYSLC
 		// Set new threshold.
 		if (newThreshold != currentThreshold)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Level {}, set for co-op: {}. P1's level threshold is now {}, was {}, XP: {}.",
 				p1->GetLevel(), a_setForCoop, newThreshold, currentThreshold, p1Skills->data->xp
@@ -4714,7 +4714,7 @@ namespace ALYSLC
 		if (currentXPMult != newXPMult)
 		{
 			bool succ = Util::SetGameSettingFloat("fXPPerSkillRank", newXPMult);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Update fXPPerSkillRank: {} -> {}: {}. Set for co-op: {}.", 
 				currentXPMult, newXPMult, succ ? "SUCCESS" : "FAILURE", a_setForCoop
@@ -4830,7 +4830,7 @@ namespace ALYSLC
 			}
 
 			data->firstSavedLevel = p1->GetLevel();
-			SPDLOG_DEBUG
+			DBG
 			(
 				"First co-op level-up for {}. First saved level set to {}. Auto-scale AVs.",
 				data->firstSavedLevel, p->coopActor->GetName()
@@ -4877,7 +4877,7 @@ namespace ALYSLC
 #ifdef ALYSLC_DEBUG_MODE
 				// REMOVE after debugging.
 				auto currentAV = iter->second;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}'s {} skill levels are now: ({} + {}) (base: {}, rescaled: {}).",
 					p->coopActor->GetName(),
@@ -4936,7 +4936,7 @@ namespace ALYSLC
 				a_data.target->As<RE::Actor>()->IsOnMount()
 			))
 		{
-			SPDLOG_DEBUG("NOPE, NO MOUNT.");
+			DBG("NOPE, NO MOUNT.");
 			return PRECISION_API::PreHitCallbackReturn();
 		}*/
 
@@ -4974,7 +4974,7 @@ namespace ALYSLC
 		(
 			(hitActorHandle == p->tm->selectedTargetActorHandle) ||
 			(
-				p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled && 
+				p->tm->aimMode == AimMode::kTwinStick && 
 				hitActorHandle == p->tm->aimCorrectionTargetHandle
 			)
 		);
@@ -4986,7 +4986,7 @@ namespace ALYSLC
 		(
 			(
 				!hitActor->IsGhost() && !hitActor->IsInvulnerable()
-			) &&
+			) ||
 			(
 				(isHostile) ||
 				(isNeutralActor && isDesiredTarget) ||
@@ -4999,7 +4999,7 @@ namespace ALYSLC
 		);
 		if (collisionAllowed)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Collision between {} and {} ALLOWED. "
 				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
@@ -5037,7 +5037,7 @@ namespace ALYSLC
 				);
 				if (shouldTriggerCombat)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Trigger combat between {} and {}.",
 						p->coopActor->GetName(), hitActor->GetName()
@@ -5050,7 +5050,7 @@ namespace ALYSLC
 		else
 		{
 			// No collision and no damage.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Collision between {} and {} IGNORED. "
 				"Ghost: {}, invulnerable: {}, hostile: {}, neutral: {}, "
@@ -5241,7 +5241,7 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		if (!glob.onCoopHelperMenuRequest.Register(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not register player ref alias ({}) for OnCoopHelperMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -5249,12 +5249,12 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Registered OnCoopHelperMenuRequest() event");
+			DBG("Registered OnCoopHelperMenuRequest() event");
 		}
 
 		if (!glob.onDebugMenuRequest.Register(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not register player ref alias ({}) for OnDebugMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -5262,12 +5262,12 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Registered OnDebugMenuRequest() event");
+			DBG("Registered OnDebugMenuRequest() event");
 		}
 
 		if (!glob.onSummoningMenuRequest.Register(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not register player ref alias ({}) for OnSummoningMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -5275,7 +5275,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Registered OnSummoningMenuRequest() event");
+			DBG("Registered OnSummoningMenuRequest() event");
 		}
 	}
 
@@ -5318,7 +5318,7 @@ namespace ALYSLC
 				bool hadKeyword = keywordForm->HasKeyword(keyword);
 				if (hadKeyword)
 				{
-					SPDLOG_DEBUG("{} had co-op keyword {}.", 
+					DBG("{} had co-op keyword {}.", 
 						playerActor->GetName(), Util::GetEditorID(keyword));
 				}
 			}
@@ -5336,7 +5336,7 @@ namespace ALYSLC
 				bool hasKeyword = keywordForm->HasKeyword(keyword);
 				if (hasKeyword)
 				{
-					SPDLOG_ERROR("ERR: {} still has co-op keyword {}.", 
+					ERR("ERR: {} still has co-op keyword {}.", 
 						playerActor->GetName(), Util::GetEditorID(keyword));
 				}
 			}
@@ -5365,7 +5365,7 @@ namespace ALYSLC
 			const auto iter = glob.serializablePlayerData.find(p->coopActor->formID);
 			if (iter == glob.serializablePlayerData.end()) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Could not index serialized data with {}'s form ID (0x{:X}).",
 					p->coopActor->GetName(), p->coopActor->formID
@@ -5378,7 +5378,7 @@ namespace ALYSLC
 			// and companion player HMS values are only affected by the player's class as of now.
 			if (!p->isPlayer1)
 			{
-				SPDLOG_DEBUG("About to rescale HMS for {}.", p->coopActor->GetName());
+				DBG("About to rescale HMS for {}.", p->coopActor->GetName());
 				// Skill AVs first.
 				RescaleSkillAVs(p->coopActor.get());
 				if (!ALYSLC::EnderalCompat::g_installed)
@@ -5389,7 +5389,7 @@ namespace ALYSLC
 			}
 			else if (!ALYSLC::EnderalCompat::g_installed)
 			{
-				SPDLOG_DEBUG("About to rescale HMS for P1.");
+				DBG("About to rescale HMS for P1.");
 				RescaleHMS(p->coopActor.get());
 			}
 		}
@@ -5415,7 +5415,7 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
 		if (iter == glob.serializablePlayerData.end()) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not index serialized data with {}'s form ID (0x{:X}).",
 				a_playerActor->GetName(), a_playerActor->formID
@@ -5456,7 +5456,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: base level: {}.", a_playerActor->GetName(), a_baseLevel
 		);
@@ -5482,7 +5482,7 @@ namespace ALYSLC
 
 		const auto& data = iter->second;
 		// CHANGE TO DEBUG
-		SPDLOG_DEBUG
+		DBG
 		(
 			"[HMS Breakdown] "
 			"Current levels displayed on P1: H: {}, M: {}, S: {}. "
@@ -5577,7 +5577,7 @@ namespace ALYSLC
 				RE::ActorValue::kHealth, 
 				data->hmsBasePointsList[0] + data->hmsPointIncreasesList[0]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
 				a_playerActor->GetName(),
@@ -5592,7 +5592,7 @@ namespace ALYSLC
 				RE::ActorValue::kMagicka, 
 				data->hmsBasePointsList[1] + data->hmsPointIncreasesList[1]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
 				a_playerActor->GetName(),
@@ -5607,7 +5607,7 @@ namespace ALYSLC
 				RE::ActorValue::kStamina, 
 				data->hmsBasePointsList[2] + data->hmsPointIncreasesList[2]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
 				a_playerActor->GetName(),
@@ -5636,7 +5636,7 @@ namespace ALYSLC
 				a_playerActor->race->data.startingStamina +
 				a_playerActor->GetActorBase()->actorData.staminaOffset
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{} has not leveled up in co-op yet. "
 				"Scaling HMS AVs down to their base values: {}, {}, {}.",
@@ -5650,7 +5650,7 @@ namespace ALYSLC
 			(
 				RE::ActorValue::kHealth, data->hmsBasePointsList[0]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s health AV at base level {} is {}. Health inc: {}, setting health to {}",
 				a_playerActor->GetName(),
@@ -5664,7 +5664,7 @@ namespace ALYSLC
 			(
 				RE::ActorValue::kMagicka, data->hmsBasePointsList[1]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s magicka AV at base level {} is {}. Magicka inc: {}, setting magicka to {}",
 				a_playerActor->GetName(),
@@ -5678,7 +5678,7 @@ namespace ALYSLC
 			(
 				RE::ActorValue::kStamina, data->hmsBasePointsList[2]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s stamina AV at base level {} is {}. Stamina inc: {}, setting stamina to {}",
 				a_playerActor->GetName(),
@@ -5716,7 +5716,7 @@ namespace ALYSLC
 		// Previous menu PID is NEVER -1 after it is first set.
 		int32_t newPrevPID = newPID != -1 ? newPID : glob.prevMenuPID;
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Reset menu PID from {} to {}, last menu PID from {} to {}.",
 			glob.menuPID, 
@@ -5729,7 +5729,7 @@ namespace ALYSLC
 			std::unique_lock<std::mutex> lock(glob.menuPIDMutex, std::try_to_lock);
 			if (lock)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Lock obtained. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -5739,7 +5739,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Failed to obtain lock. (0x{:X})", 
 					std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -5755,7 +5755,7 @@ namespace ALYSLC
 		// set supported menus as closed.
 		
 		auto& glob = GetSingleton();
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Old DID/PID: {}, {}.", 
 			glob.menuPID > -1 && glob.menuPID < ALYSLC_MAX_PLAYER_COUNT ?
@@ -5814,7 +5814,7 @@ namespace ALYSLC
 		{
 			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"Could not retrieve companion player with data copied over to P1. "
 					"Copied player data PID is {}. Retrieved player index is {}. "
@@ -5828,7 +5828,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Remove {}'s (PID {}) data (0x{:X}) and restore P1's.",
 			a_menuControllingPlayer->GetName(),
@@ -5840,7 +5840,7 @@ namespace ALYSLC
 		{
 			/*if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 			{
-				SPDLOG_DEBUG("Restore P1 active effects.");
+				DBG("Restore P1 active effects.");
 				CopyOverActiveEffects(a_menuControllingPlayer, false);
 			}*/
 
@@ -5850,7 +5850,7 @@ namespace ALYSLC
 					CopyablePlayerDataTypes::kFavoritesPhysical
 				))
 			{
-				SPDLOG_DEBUG("Restore P1 Favorites.");
+				DBG("Restore P1 Favorites.");
 				p->em->RestoreP1Favorites(false);
 				glob.copiedPlayerDataTypes.reset
 				(
@@ -5862,49 +5862,49 @@ namespace ALYSLC
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic) &&
 				glob.copiedPlayerDataTypes.none(CopyablePlayerDataTypes::kFavoritesPhysical))
 			{
-				SPDLOG_DEBUG("Restore P1 Magic Favorites.");
+				DBG("Restore P1 Magic Favorites.");
 				p->em->RestoreP1Favorites(true);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavoritesMagic);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 			{
-				SPDLOG_DEBUG("Restore P1 Inventory.");
+				DBG("Restore P1 Inventory.");
 				CopyOverInventories(a_menuControllingPlayer, false, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 			{
-				SPDLOG_DEBUG("Restore P1 Name.");
+				DBG("Restore P1 Name.");
 				CopyOverActorBaseData(a_menuControllingPlayer, false, true, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kName);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 			{
-				SPDLOG_DEBUG("Restore P1 Perk List.");
+				DBG("Restore P1 Perk List.");
 				CopyOverPerkLists(a_menuControllingPlayer, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkList);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkTree))
 			{
-				SPDLOG_DEBUG("Restore P1 Perk Tree.");
+				DBG("Restore P1 Perk Tree.");
 				CopyOverPerkTrees(a_menuControllingPlayer, false);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkTree);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kRaceName))
 			{
-				SPDLOG_DEBUG("Restore P1 Race Name.");
+				DBG("Restore P1 Race Name.");
 				CopyOverActorBaseData(a_menuControllingPlayer, false, false, true);
 				glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kRaceName);
 			}
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 			{
-				SPDLOG_DEBUG("Restore P1 Skill AVs.");
+				DBG("Restore P1 Skill AVs.");
 				CopyOverAVs
 				(
 					a_menuControllingPlayer,
@@ -5917,7 +5917,7 @@ namespace ALYSLC
 
 			if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 			{
-				SPDLOG_DEBUG("Restore P1 AVs.");
+				DBG("Restore P1 AVs.");
 				CopyOverAVs
 				(
 					a_menuControllingPlayer,
@@ -5949,7 +5949,7 @@ namespace ALYSLC
 			glob.defXPLevelUpBase = valueOpt.value();
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Default XP game settings: base: {}, mult: {}.",
 			glob.defXPLevelUpBase, glob.defXPLevelUpMult
@@ -6015,12 +6015,12 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("{}", p1->GetName());
+		DBG("{}", p1->GetName());
 		auto& glob = GetSingleton();
 		const auto iter = glob.serializablePlayerData.find(p1->formID);
 		if (iter == glob.serializablePlayerData.end()) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Could not get serializable data for player with form ID 0x{:X}.",
 				p1->GetName(), p1->formID
@@ -6074,7 +6074,7 @@ namespace ALYSLC
 					{
 						if (shouldInsert)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
 								a_onImport ? "IMPORT" : "EXPORT",
@@ -6087,7 +6087,7 @@ namespace ALYSLC
 							data->InsertUnlockedPerk(perk);
 							if (nativeFuncHasPerk != singletonListHasPerk)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: {} has perk check inconsistency. Adding {} (0x{:X}).",
 									a_onImport ? "IMPORT" : "EXPORT",
@@ -6108,7 +6108,7 @@ namespace ALYSLC
 
 						if (nativeFuncHasPerk != singletonListHasPerk)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {} has perk check inconsistency. {} {} (0x{:X}).",
 								a_onImport ? "IMPORT" : "EXPORT",
@@ -6134,7 +6134,7 @@ namespace ALYSLC
 					// Now we'll synchronize it with the actor perk list.
 					if (singletonListHasPerk)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"NO CO-OP: {} has perk {} (0x{:X}) (native func: {}, glob list: {})",
 							a_playerActor->GetName(), 
@@ -6167,7 +6167,7 @@ namespace ALYSLC
 			}
 		};
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"BEFORE: {} has {} unlocked perks, {} unlocked shared perks.",
 			p1->GetName(),
@@ -6178,7 +6178,7 @@ namespace ALYSLC
 		data->ClearUnlockedPerks();
 		// Update unlocked perks list and set.
 		Util::TraverseAllPerks(p1, savePlayerPerksVisitor);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"AFTER: {} has {} unlocked perks, {} unlocked shared perks.",
 			p1->GetName(),
@@ -6203,13 +6203,13 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("{}", a_coopActor->GetName());
+		DBG("{}", a_coopActor->GetName());
 		auto& glob = GetSingleton();
 		// Ensure active player's FID is used to index into serializable data map.
 		const auto iter = glob.serializablePlayerData.find(a_coopActor->formID);
 		if (iter == glob.serializablePlayerData.end()) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Could not get serializable data for player with form ID 0x{:X}.",
 				a_coopActor->GetName(), a_coopActor->formID
@@ -6238,7 +6238,7 @@ namespace ALYSLC
 				bool nativeFuncHasPerk = a_actor->HasPerk(perk);
 				if (nativeFuncHasPerk)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has perk {} (0x{:X}), is shared: {}", 
 						a_actor->GetName(), perk->GetName(), perk->formID, shared
@@ -6250,7 +6250,7 @@ namespace ALYSLC
 			}
 		};
 		
-		SPDLOG_DEBUG
+		DBG
 		(
 			"BEFORE: {} has {} unlocked perks, {} unlocked shared perks.",
 			a_coopActor->GetName(),
@@ -6261,7 +6261,7 @@ namespace ALYSLC
 		data->ClearUnlockedPerks();
 		// Update unlocked perks list and set.
 		Util::TraverseAllPerks(a_coopActor, savePlayerPerksVisitor);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"AFTER: {} has {} unlocked perks, {} unlocked shared perks.",
 			a_coopActor->GetName(),
@@ -6619,7 +6619,7 @@ namespace ALYSLC
 					bool succ = rolloverText.GetDisplayInfo(std::addressof(info));
 					if (succ)
 					{
-						SPDLOG_DEBUG("Set original offsets to {}, {}.", info.GetX(), info.GetY());
+						DBG("Set original offsets to {}, {}.", info.GetX(), info.GetY());
 						glob.originalCrosshairTextOffsets = std::pair<float, float>
 						(
 							static_cast<float>(info.GetX()), static_cast<float>(info.GetY())
@@ -6803,12 +6803,12 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		if (a_playerID == -1) 
 		{
-			SPDLOG_DEBUG("Reset menu player IDs.");
+			DBG("Reset menu player IDs.");
 			ResetMenuPlayerIDs();
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Set current/last menu PIDs from {}/{} to {}.",
 				glob.menuPID, glob.prevMenuPID, a_playerID
@@ -6817,7 +6817,7 @@ namespace ALYSLC
 				std::unique_lock<std::mutex> lock(glob.menuPIDMutex, std::try_to_lock);
 				if (lock)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Lock obtained. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -6826,7 +6826,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Failed to obtain lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -7099,7 +7099,7 @@ namespace ALYSLC
 			}
 
 			// Set the new Legendary levelings count for each serialized data set.
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Shared skill {} has a max Legendary levelings count of {}.",
 				Util::GetActorValueName(sharedAV), maxLevelings
@@ -7112,7 +7112,7 @@ namespace ALYSLC
 				}
 
 				data->skillLegendaryList[!sharedSkill] = maxLevelings;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Set player with FID 0x{:X}'s Legendary leveling count for {} to {}.",
 					fid, Util::GetActorValueName(sharedAV), maxLevelings
@@ -7151,7 +7151,7 @@ namespace ALYSLC
 						continue;
 					}
 					
-					SPDLOG_DEBUG
+					DBG
 					(
 						"P1 {} has perk {}. Adding to {}.",
 						p1->GetName(), perk->GetName(), p->coopActor->GetName()
@@ -7202,7 +7202,7 @@ namespace ALYSLC
 							bool hadSharedPerk = !data->InsertUnlockedPerk(perk);
 							// Add the perk.
 							bool succ = Util::ChangePerk(a_actor, perk, true);
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Adding shared perk {} (0x{:X}) to {}: {}. "
 								"Had unlocked shared perk in list: {}. "
@@ -7239,7 +7239,7 @@ namespace ALYSLC
 						bool succ = Util::ChangePerk(a_actor, perkToRemove, false);
 						if (hadSharedPerk)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Removing shared perk {} (0x{:X}) from {}: {}.",
 								perkToRemove->GetName(), 
@@ -7282,7 +7282,7 @@ namespace ALYSLC
 				//	(
 				//		p->coopActor.get(), p->coopActor.get()
 				//	);
-				//	SPDLOG_DEBUG
+				//	DBG
 				//	(
 				//		"P1 {} has perk {} 0x{:X}). Adding to {}. Conditions hold: {}.",
 				//		p1->GetName(), perk->GetName(), perk->formID, p->coopActor->GetName(), succ
@@ -7343,7 +7343,7 @@ namespace ALYSLC
 
 				if (p->isDowned && !p->coopActor->IsDead())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Co-op session over. RIP downed companion {}.", p->coopActor->GetName()
 					);
@@ -7352,7 +7352,7 @@ namespace ALYSLC
 					p->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Co-op session over. Dismissing companion {}.", p->coopActor->GetName()
 				);
@@ -7364,7 +7364,7 @@ namespace ALYSLC
 			{
 				if (coopP1->isDowned && !coopP1->coopActor->IsDead())
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Co-op session over. RIP downed P1 {}.",
 						coopP1->coopActor->GetName()
@@ -7374,7 +7374,7 @@ namespace ALYSLC
 					coopP1->coopActor->SetLifeState(RE::ACTOR_LIFE_STATE::kDead);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Co-op session over. Dismissing P1 {}.", coopP1->coopActor->GetName()
 				);
@@ -7390,7 +7390,7 @@ namespace ALYSLC
 					continue;
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Co-op session over. Signalling managers to await refresh for {}.", 
 					p->coopActor->GetName()
@@ -7402,7 +7402,7 @@ namespace ALYSLC
 		// Ensure any copied data is reverted for P1.
 		if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone) 
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Co-op session ended with data copied "
 				"(types: 0b{:B}) over to P1. Restoring P1's data.",
@@ -7414,7 +7414,7 @@ namespace ALYSLC
 			);
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Co-op session over. "
 			"Pausing camera and menu input managers and awaiting the start of a new co-op session."
@@ -7466,7 +7466,7 @@ namespace ALYSLC
 			p->isInGodMode = p->coopActor->IsInvulnerable() && !p->coopActor->IsGhost();
 			if ((a_enable && !p->isInGodMode) || (!a_enable && p->isInGodMode))
 			{
-				SPDLOG_DEBUG("Should {} god mode for P1.", a_enable ? "set" : "unset");
+				DBG("Should {} god mode for P1.", a_enable ? "set" : "unset");
 				// Set to full health/magicka/stamina as well.
 				if (a_enable && !p->isInGodMode && a_enableWithFullHMS)
 				{
@@ -7594,7 +7594,7 @@ namespace ALYSLC
 					Util::RestoreAVToMaxValue(p->coopActor.get(), RE::ActorValue::kStamina);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Set is ghost/invuln/nobleed to TRUE for {}", p->coopActor->GetName()
 				);
@@ -7608,7 +7608,7 @@ namespace ALYSLC
 			}
 			else if (!a_enable && p->isInGodMode)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Set is ghost/invuln/nobleed to FALSE for {}", p->coopActor->GetName()
 				);
@@ -7630,7 +7630,7 @@ namespace ALYSLC
 		auto& glob = GetSingleton();
 		if (!glob.onCoopHelperMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not unregister player ref alias ({}) for OnCoopHelperMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -7638,12 +7638,12 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Unregistered OnCoopHelperMenuRequest() event");
+			DBG("Unregistered OnCoopHelperMenuRequest() event");
 		}
 
 		if (!glob.onDebugMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not unregister player ref alias ({}) for OnDebugMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -7651,12 +7651,12 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Unregistered OnDebugMenuRequest() event");
+			DBG("Unregistered OnDebugMenuRequest() event");
 		}
 
 		if (!glob.onSummoningMenuRequest.Unregister(glob.player1RefAlias))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Could not unregister player ref alias ({}) for OnSummoningMenuRequest() event",
 				glob.player1RefAlias->aliasName.c_str()
@@ -7664,7 +7664,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG("Unregistered OnSummoningMenuRequest() event");
+			DBG("Unregistered OnSummoningMenuRequest() event");
 		}
 	}
 
@@ -7734,7 +7734,7 @@ namespace ALYSLC
 				!succ8 || 
 				!succ9)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"UpdateAllCompanionPlayerSerializationIDs: "
 					"Failed to update serialized FID key for "
@@ -7856,7 +7856,7 @@ namespace ALYSLC
 		{
 			if (perk && !a_prevUnlockedPerks.contains(perk))
 			{
-				SPDLOG_DEBUG("Perk {} (0x{:X}) was added.", perk->GetName(), perk->formID);
+				DBG("Perk {} (0x{:X}) was added.", perk->GetName(), perk->formID);
 				glob.perksAdded.emplace_back(perk);
 			}
 		}
@@ -7865,7 +7865,7 @@ namespace ALYSLC
 		{
 			if (perk && !a_currentUnlockedPerks.contains(perk))
 			{
-				SPDLOG_DEBUG("Perk {} (0x{:X}) was removed.", perk->GetName(), perk->formID);
+				DBG("Perk {} (0x{:X}) was removed.", perk->GetName(), perk->formID);
 				glob.perksRemoved.emplace_back(perk);
 			}
 		}
@@ -7960,7 +7960,7 @@ namespace ALYSLC
 				// Ensure player 1's character ID is always 0.
 				if (data->GetPlayerCharacterID() != 0)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Changed P1 {} (0x{:X})'s character ID to 0.",
 						a_playerActor->GetName(), a_playerActor->formID
@@ -7973,7 +7973,7 @@ namespace ALYSLC
 			else
 			{
 				// Major problem: P1 does not have any serialized data.
-				SPDLOG_ERROR
+				ERR
 				(
 					"Could not get serialized data for P1 {} (0x{:X}).",
 					a_playerActor->GetName(), a_playerActor->formID
@@ -7986,7 +7986,7 @@ namespace ALYSLC
 		// ID # = NPC with '__CoopCharacter#' as its actor base editor ID.
 		// Kinda gross.
 		uint32_t characterID = Util::GetEditorID(actorBase).back() - '0';
-		SPDLOG_DEBUG("Character ID for {} is {}. Serialized data size: {}.",
+		DBG("Character ID for {} is {}. Serialized data size: {}.",
 			a_playerActor->GetName(), characterID, glob.serializablePlayerData.size());
 
 		// Serializable data:
@@ -8011,7 +8011,7 @@ namespace ALYSLC
 			(
 				(fidKey != a_playerActor->formID) && !diffRawFID
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"FID key: 0x{:X}, {}'s FID: 0x{:X}, character IDs: saved: {}, current: {}. "
 				"Different raw ID: {}, new load index: {}",
@@ -8031,7 +8031,7 @@ namespace ALYSLC
 			{
 				if (newModLoadIndex || fidKey == a_playerActor->formID)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Companion player {}'s character ID was invalid ({}). "
 						"New mod load index: {}, same FID key: {}, updated to {}.",
@@ -8048,7 +8048,7 @@ namespace ALYSLC
 					// The saved character ID is invalid and the raw form ID of this actor
 					// does not match the key's, so we have no way of linking the actor 
 					// to this serialized dataset, so we'll continue.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Cannot link companion player {} (0x{:X}, {}) "
 						"to the serialized data set (0x{:X}, {}).",
@@ -8073,7 +8073,7 @@ namespace ALYSLC
 				continue;
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s FID went from 0x{:X} to 0x{:X}, "
 				"inserting new FID key into serializable data now. "
@@ -8094,7 +8094,7 @@ namespace ALYSLC
 		const bool updateSuccessful = iter != glob.serializablePlayerData.end();
 		if (updateSuccessful)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Successfully linked {} to their serialized data. "
 				"FID key: 0x{:X}, character ID: {}.",
@@ -8105,7 +8105,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Failed to update serialized FID key for {}. FID 0x{:X} not found.",
 				a_playerActor->GetName(), a_playerActor->formID
@@ -8152,7 +8152,7 @@ namespace ALYSLC
 			bool succ = data->InsertTakenSharedPerk(perk);
 			if (succ)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Shared perk {} (0x{:X}) was added to taken set.", 
 					perk->GetName(), perk->formID
@@ -8178,7 +8178,7 @@ namespace ALYSLC
 				bool succ = data2->RemoveTakenSharedPerk(perk);
 				if (succ)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Shared perk {} (0x{:X}) was removed "
 						"from player with FID 0x{:X}'s taken set.", 
@@ -8194,7 +8194,7 @@ namespace ALYSLC
 				data2->GetTakenSharedPerksSet().size()
 			);
 		
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Player with FID 0x{:X} has {} unlocked perks, "
 				"{} unlocked shared perks, {} taken personally.",
@@ -8239,7 +8239,7 @@ namespace ALYSLC
 			glob.copiedDataPlayerPID = playerIndex;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Request to copy player data for {} (PID: {}, cached: {}) on {} of {}.",
 			requestingPlayer->GetName(),
@@ -8257,13 +8257,13 @@ namespace ALYSLC
 		{
 			if (a_info->shouldImport)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Enderal Hero Menu: Should copy over AVs and name."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 				{
-					SPDLOG_DEBUG("Import Name.");
+					DBG("Import Name.");
 					CopyOverActorBaseData
 					(
 						requestingPlayer.get(), a_info->shouldImport, true, false
@@ -8273,7 +8273,7 @@ namespace ALYSLC
 
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 				{
-					SPDLOG_DEBUG("Import AVs.");
+					DBG("Import AVs.");
 					CopyOverAVs
 					(
 						requestingPlayer.get(), 
@@ -8286,13 +8286,13 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Enderal Hero Menu: Should restore AVs and name."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kName))
 				{
-					SPDLOG_DEBUG("Export Name.");
+					DBG("Export Name.");
 					CopyOverActorBaseData
 					(
 						requestingPlayer.get(), a_info->shouldImport, true, false
@@ -8302,7 +8302,7 @@ namespace ALYSLC
 
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkillsAndHMS))
 				{
-					SPDLOG_DEBUG("Export AVs.");
+					DBG("Export AVs.");
 					CopyOverAVs
 					(
 						requestingPlayer.get(), 
@@ -8318,26 +8318,26 @@ namespace ALYSLC
 		{
 			if (a_info->shouldImport)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Barter Menu: Should copy over inventory keeping gold on import."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Import Inventory Keeping Gold.");
+					DBG("Import Inventory Keeping Gold.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Barter Menu: Should copy back inventory keeping gold on export."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Export Inventory Keeping Gold.");
+					DBG("Export Inventory Keeping Gold.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
@@ -8374,7 +8374,7 @@ namespace ALYSLC
 				if (refrPtr)
 				{
 					containerValid = true;
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} (0x{:X})'s container. Mode: {}, {}'s inventory chest: {} (0x{:X}).", 
 						refrPtr->GetName(), 
@@ -8392,33 +8392,33 @@ namespace ALYSLC
 			{
 				if (!isPlayerInventory && !isInventoryChest && containerValid)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Container Menu: Not a player's inventory. "
 						"Should copy over inventory keeping gold on import."
 					);
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						SPDLOG_DEBUG("Import Inventory Keeping Gold.");
+						DBG("Import Inventory Keeping Gold.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 					}
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Container Menu: Should copy over AVs and perk list."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 				{
-					SPDLOG_DEBUG("Import Perk list.");
+					DBG("Import Perk list.");
 					CopyOverPerkLists(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kPerkList);
 				}
 
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 				{
-					SPDLOG_DEBUG("Import Skill AVs.");
+					DBG("Import Skill AVs.");
 					CopyOverAVs
 					(
 						requestingPlayer.get(), 
@@ -8433,33 +8433,33 @@ namespace ALYSLC
 			{
 				if ((!isPlayerInventory && !isInventoryChest && containerValid))
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Container Menu: Not a player's inventory. "
 						"Should restore inventory keeping gold on export."
 					);
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 					{
-						SPDLOG_DEBUG("Export Inventory Keeping Gold.");
+						DBG("Export Inventory Keeping Gold.");
 						CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 						glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 					}
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Container Menu: Should restore AVs and perk list."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kPerkList))
 				{
-					SPDLOG_DEBUG("Export Perk List.");
+					DBG("Export Perk List.");
 					CopyOverPerkLists(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kPerkList);
 				}
 
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 				{
-					SPDLOG_DEBUG("Export Skill AVs.");
+					DBG("Export Skill AVs.");
 					CopyOverAVs
 					(
 						requestingPlayer.get(), 
@@ -8480,10 +8480,10 @@ namespace ALYSLC
 			// the crafting menu's linked furniture type.
 			if (a_info->shouldImport)
 			{
-				SPDLOG_DEBUG("Crafting Menu: Should copy over inventory/active effects on import.");
+				DBG("Crafting Menu: Should copy over inventory/active effects on import.");
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Import Inventory.");
+					DBG("Import Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
@@ -8494,17 +8494,17 @@ namespace ALYSLC
 					!p->isTransforming &&
 					!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 				{
-					SPDLOG_DEBUG("Import Active Effects to P1.");
+					DBG("Import Active Effects to P1.");
 					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kActiveEffects);
 				}*/
 			}
 			else
 			{
-				SPDLOG_DEBUG("Crafting Menu: Should copy back inventory/active effects on export.");
+				DBG("Crafting Menu: Should copy back inventory/active effects on export.");
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Export Inventory.");
+					DBG("Export Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
@@ -8512,7 +8512,7 @@ namespace ALYSLC
 				//// Active effects.
 				//if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 				//{
-				//	SPDLOG_DEBUG("Restore P1 Active Effects.");
+				//	DBG("Restore P1 Active Effects.");
 				//	CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 				//	glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kActiveEffects);
 				//}
@@ -8523,7 +8523,7 @@ namespace ALYSLC
 			if (a_info->shouldImport)
 			{
 				// Import this player's favorited forms before the menu opens.
-				//SPDLOG_DEBUG
+				//DBG
 				//(
 				//	"Favorites Menu: Should import {}'s favorites to P1.",
 				//	requestingPlayer.get()->GetName()
@@ -8535,7 +8535,7 @@ namespace ALYSLC
 				//		CopyablePlayerDataTypes::kFavoritesPhysical
 				//	))
 				//{
-				//	SPDLOG_DEBUG("Import Favorites to P1.");
+				//	DBG("Import Favorites to P1.");
 				//	p->em->ImportCoopFavorites(false);
 				//	glob.copiedPlayerDataTypes.set
 				//	(
@@ -8544,18 +8544,18 @@ namespace ALYSLC
 				//	);
 				//}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Favorites Menu: Should copy over inventory on import."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Import Inventory.");
+					DBG("Import Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Favorites Menu: Should import {}'s magic favorites to P1.", 
 					requestingPlayer.get()->GetName()
@@ -8563,7 +8563,7 @@ namespace ALYSLC
 				// Only magic favorites.
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
 				{
-					SPDLOG_DEBUG("Import Magic Favorites to P1.");
+					DBG("Import Magic Favorites to P1.");
 					p->em->ImportCoopFavorites(true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavoritesMagic);
 				}
@@ -8571,7 +8571,7 @@ namespace ALYSLC
 			else
 			{
 				// Revert changes to P1's favorites if the favorites menu is closing.
-				//SPDLOG_DEBUG
+				//DBG
 				//(
 				//	"Favorites Menu: "
 				//	"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.", 
@@ -8584,7 +8584,7 @@ namespace ALYSLC
 				//		CopyablePlayerDataTypes::kFavoritesPhysical
 				//	))
 				//{
-				//	SPDLOG_DEBUG("Restore P1 Favorites.");
+				//	DBG("Restore P1 Favorites.");
 				//	p->em->RestoreP1Favorites(false);
 				//	glob.copiedPlayerDataTypes.reset
 				//	(
@@ -8593,19 +8593,19 @@ namespace ALYSLC
 				//	);
 				//}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Favorites Menu: Should copy back inventory on export."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Export Inventory.");
+					DBG("Export Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
 
 				// Revert changes to P1's magic favorites if the favorites menu is closing.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Magic Menu: "
 					"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.",
@@ -8614,7 +8614,7 @@ namespace ALYSLC
 				// Only magic favorites.
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
 				{
-					SPDLOG_DEBUG("Restore P1 Magic Favorites.");
+					DBG("Restore P1 Magic Favorites.");
 					p->em->RestoreP1Favorites(true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavoritesMagic);
 				}
@@ -8625,32 +8625,32 @@ namespace ALYSLC
 			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle);
 			if (pIndex == -1)
 			{
-				SPDLOG_DEBUG("ERR: Giftee player not specified {}. {} is the gifter player.", 
+				DBG("ERR: Giftee player not specified {}. {} is the gifter player.", 
 					a_info->shouldImport ? "on import" : "on export", requestingPlayer->GetName());
 			}
 
 			if (a_info->shouldImport)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Gift Menu: Should copy over inventory on import."
 				);
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Import Inventory.");
+					DBG("Import Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kInventory);
 				}
 			}
 			else
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Gift Menu: Should copy back inventory on export."
 				);
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
 				{
-					SPDLOG_DEBUG("Export Inventory.");
+					DBG("Export Inventory.");
 					CopyOverInventories(requestingPlayer.get(), a_info->shouldImport, true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kInventory);
 				}
@@ -8661,7 +8661,7 @@ namespace ALYSLC
 			if (a_info->shouldImport)
 			{
 				// Import this player's favorited magic before the menu opens.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Magic Menu: Should import {}'s favorites to P1.", 
 					requestingPlayer.get()->GetName()
@@ -8669,7 +8669,7 @@ namespace ALYSLC
 				// Only magic favorites.
 				if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
 				{
-					SPDLOG_DEBUG("Import Favorites to P1.");
+					DBG("Import Favorites to P1.");
 					p->em->ImportCoopFavorites(true);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kFavoritesMagic);
 				}
@@ -8685,7 +8685,7 @@ namespace ALYSLC
 					!p->isTransforming &&
 					!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 				{
-					SPDLOG_DEBUG("Import Active Effects to P1.");
+					DBG("Import Active Effects to P1.");
 					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.set(CopyablePlayerDataTypes::kActiveEffects);
 				}*/
@@ -8693,7 +8693,7 @@ namespace ALYSLC
 			else
 			{
 				// Revert changes to P1's magic favorites if the magic menu is closing.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Magic Menu: "
 					"Should remove {}'s favorites from P1 and re-favorite P1's cached favorites.",
@@ -8702,7 +8702,7 @@ namespace ALYSLC
 				// Only magic favorites.
 				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kFavoritesMagic))
 				{
-					SPDLOG_DEBUG("Restore P1 Favorites.");
+					DBG("Restore P1 Favorites.");
 					p->em->RestoreP1Favorites(true);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kFavoritesMagic);
 				}
@@ -8710,7 +8710,7 @@ namespace ALYSLC
 				// Active effects.
 				/*if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kActiveEffects))
 				{
-					SPDLOG_DEBUG("Restore P1 Active Effects.");
+					DBG("Restore P1 Active Effects.");
 					CopyOverActiveEffects(requestingPlayer.get(), a_info->shouldImport);
 					glob.copiedPlayerDataTypes.reset(CopyablePlayerDataTypes::kActiveEffects);
 				}*/
@@ -8723,7 +8723,7 @@ namespace ALYSLC
 			// Don't adjust perk data if Enderal is installed.
 			if (!ALYSLC::EnderalCompat::g_installed)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Adjust perk data for {} before entering the Stats Menu.", 
 					requestingPlayer->GetName()
@@ -8753,10 +8753,10 @@ namespace ALYSLC
 				// Copy over AVs.
 				if (a_info->shouldImport)
 				{
-					SPDLOG_DEBUG("Trainer: Should copy over Skill AVs on import.");
+					DBG("Trainer: Should copy over Skill AVs on import.");
 					if (!glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 					{
-						SPDLOG_DEBUG("Import Skill AVs.");
+						DBG("Import Skill AVs.");
 						CopyOverAVs
 						(
 							requestingPlayer.get(), 
@@ -8769,10 +8769,10 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG("Trainer: Should copy back Skill AVs on export.");
+					DBG("Trainer: Should copy back Skill AVs on export.");
 					if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kSkills))
 					{
-						SPDLOG_DEBUG("Export Skill AVs.");
+						DBG("Export Skill AVs.");
 						CopyOverAVs
 						(
 							requestingPlayer.get(), 
@@ -8796,7 +8796,7 @@ namespace ALYSLC
 				return a_menuName != a_info->menuName && ui->IsMenuOpen(a_menuName);
 			}
 		) == COPY_PLAYER_DATA_MENU_NAMES.end();
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Should import: {}, supported menus closed: {}.",
 			a_info->shouldImport, supportedMenusClosed
@@ -8805,7 +8805,7 @@ namespace ALYSLC
 		// Ensure all P1's data is restored based off the previously-imported data types.
 		if ((!a_info->shouldImport) && (supportedMenusClosed || !glob.coopSessionActive))
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"All supported menus closed. "
 				"Uncleared data types on export: 0x{:X}. "
@@ -8850,7 +8850,7 @@ namespace ALYSLC
 				{
 					if (effect && effect->spell)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"IMPORT: P1 has active effect from spell {}. "
 							"Caster: {}, source: {}, source node: {}.",
@@ -8884,7 +8884,7 @@ namespace ALYSLC
 				{
 					if (effect && effect->spell)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"EXPORT: P1 has active effect from spell {}. "
 							"Caster: {}, source: {}, source node: {}.",
@@ -8921,7 +8921,7 @@ namespace ALYSLC
 					}
 
 					glob.savedP1ActiveEffectsList->emplace_front(effect);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"IMPORT: Saving P1 active effect {:p} for spell {}. "
 						"Duration: {}, elapsed time: {}. Archetype: {}.",
@@ -8940,7 +8940,7 @@ namespace ALYSLC
 			{
 				if (p1->currentProcess->middleHigh->activeEffects)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"IMPORT: {} active effects for {}, clear P1's.",
 						std::distance
@@ -8960,7 +8960,7 @@ namespace ALYSLC
 					new RE::BSSimpleList<RE::ActiveEffect*>()
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"IMPORT: {} active effects for {}, MALLOC new active effects list for P1.",
 					std::distance
@@ -8981,7 +8981,7 @@ namespace ALYSLC
 							continue;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"IMPORT: Importing {} active effect {:p} for spell {}. "
 							"Duration: {}. Elapsed time: {}. Archetype: {}.",
@@ -9009,7 +9009,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_ERROR("ERR: IMPORT: Could not get list of active effects for P1.");
+					ERR("ERR: IMPORT: Could not get list of active effects for P1.");
 					glob.savedP1ActiveEffectsList->clear();
 					glob.savedP1ActiveEffectsList.reset();
 					return;
@@ -9019,13 +9019,13 @@ namespace ALYSLC
 			{
 				if (p1->currentProcess->middleHigh->activeEffects)
 				{
-					SPDLOG_DEBUG("IMPORT: No active effects for {}, clear P1's.",
+					DBG("IMPORT: No active effects for {}, clear P1's.",
 						a_coopActor->GetName());
 					p1->currentProcess->middleHigh->activeEffects->clear();
 				}
 				else
 				{
-					SPDLOG_DEBUG("IMPORT: No active effects for {} or for P1. Nothing to do.",
+					DBG("IMPORT: No active effects for {} or for P1. Nothing to do.",
 						a_coopActor->GetName());
 				}
 
@@ -9037,7 +9037,7 @@ namespace ALYSLC
 		{
 			if (!glob.savedP1ActiveEffectsList)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: No saved active effects list for P1. Constructing one now.",
 					p1->currentProcess->middleHigh->activeEffects ? 
@@ -9059,7 +9059,7 @@ namespace ALYSLC
 				);
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT: Removing {} active effects from P1 before restoring {} effects.",
 				p1->currentProcess->middleHigh->activeEffects ? 
@@ -9078,7 +9078,7 @@ namespace ALYSLC
 
 			if (glob.savedP1ActiveEffectsList->empty())
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: No active effects to restore for P1. "
 					"Clearing and freeing current effects list."
@@ -9123,7 +9123,7 @@ namespace ALYSLC
 					new RE::BSSimpleList<RE::ActiveEffect*>()
 				);
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: {} saved active effects for P1, "
 					"MALLOC new active effects list for P1.",
@@ -9144,7 +9144,7 @@ namespace ALYSLC
 							continue;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"EXPORT: Restoring P1 active effect {:p} for spell {}. "
 							"Duration: {}, elapsed time: {}. Archetype: {}.",
@@ -9161,7 +9161,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_ERROR("ERR: EXPORT: Could not get list of active effects for P1.");
+					ERR("ERR: EXPORT: Could not get list of active effects for P1.");
 					glob.savedP1ActiveEffectsList->clear();
 					glob.savedP1ActiveEffectsList.reset();
 					return;
@@ -9203,13 +9203,13 @@ namespace ALYSLC
 				if (p1Name == ""sv)
 				{
 					p1Name = p1->GetName();
-					SPDLOG_DEBUG("P1 has no display name. Set to refr name '{}'", p1Name);
+					DBG("P1 has no display name. Set to refr name '{}'", p1Name);
 				}
 
 				if (coopCompanionName == ""sv)
 				{
 					coopCompanionName = a_coopActor->GetName();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Companion layer has no display name. Set to refr name '{}'", 
 						coopCompanionName
@@ -9221,10 +9221,10 @@ namespace ALYSLC
 				if (p1Name == ""sv)
 				{
 					p1Name = fullName ? fullName->fullName : "";
-					SPDLOG_DEBUG("P1 has no refr name. Set to base fullname '{}'", p1Name);
+					DBG("P1 has no refr name. Set to base fullname '{}'", p1Name);
 				}
 				
-				SPDLOG_DEBUG("Swapping '{}' with '{}'.", p1Name, coopCompanionName);
+				DBG("Swapping '{}' with '{}'.", p1Name, coopCompanionName);
 				glob.p1ExchangeableData->name = p1Name;
 				glob.coopCompanionExchangeableData->name = coopCompanionName;
 				if (fullName)
@@ -9247,7 +9247,7 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT: Name ({}, {}, {}), race name ({}, {}, {})",
 				a_name,
@@ -9260,7 +9260,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT: Name ({}, {}, {}), race name ({}, {}, {})",
 				a_name,
@@ -9364,7 +9364,7 @@ namespace ALYSLC
 					p1->GetActorValueModifier(RE::ACTOR_VALUE_MODIFIER::kTemporary, currentAV)
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Setting P1's {} base AV to {}, was {}. "
 					"Setting temp modifiers to ({}, {}, {}), "
@@ -9543,7 +9543,7 @@ namespace ALYSLC
 				)
 			};
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kHealth),
@@ -9562,7 +9562,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kMagicka),
@@ -9581,7 +9581,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: P1: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kStamina),
@@ -9600,7 +9600,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				a_coopActor->GetName(),
@@ -9620,7 +9620,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				a_coopActor->GetName(),
@@ -9640,7 +9640,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT BEFORE: {}: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				a_coopActor->GetName(),
@@ -9665,7 +9665,7 @@ namespace ALYSLC
 				tempHealthMods, tempMagickaMods, tempStaminaMods
 			};
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Setting P1's Health base/normal AV to {}, {}.",
 				glob.coopCompanionExchangeableData->hmsBaseAVs[0], 
@@ -9691,7 +9691,7 @@ namespace ALYSLC
 				RE::ActorValue::kStamina, -glob.p1ExchangeableData->hmsAVMods[2][0], true
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"0. P1's health damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -9745,7 +9745,7 @@ namespace ALYSLC
 				-glob.p1ExchangeableData->hmsAVMods[2][2]
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"1. P1's temp/perm health mods: {}, {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -9767,7 +9767,7 @@ namespace ALYSLC
 			(
 				RE::ActorValue::kHealth, glob.coopCompanionExchangeableData->hmsBaseAVs[0]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"2. New base health: {}. Health level: {}.", 
 				p1->GetBaseActorValue(RE::ActorValue::kHealth),
@@ -9796,7 +9796,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.coopCompanionExchangeableData->hmsAVMods[0][1]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"3. P1 temp mod: {}", 
 					p1->GetActorValueModifier
@@ -9810,7 +9810,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.coopCompanionExchangeableData->hmsAVMods[0][2]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"4. P1 perm mod: {}", 
 					p1->GetActorValueModifier
@@ -9827,7 +9827,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.coopCompanionExchangeableData->hmsAVMods[0][2]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"3. P1 perm mod: {}", 
 					p1->GetActorValueModifier
@@ -9841,7 +9841,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.coopCompanionExchangeableData->hmsAVMods[0][1]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"4. P1 temp mod: {}", 
 					p1->GetActorValueModifier
@@ -9894,7 +9894,7 @@ namespace ALYSLC
 				RE::ActorValue::kStamina, glob.coopCompanionExchangeableData->hmsAVMods[2][0], true
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"5. P1 damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -9904,7 +9904,7 @@ namespace ALYSLC
 				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kHealth),
@@ -9923,7 +9923,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kMagicka),
@@ -9942,7 +9942,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"IMPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kStamina),
@@ -9986,7 +9986,7 @@ namespace ALYSLC
 							auto& data = iter->second;
 							if (SHARED_SKILL_AVS_SET.contains(currentAV))
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}'s {} skill base went from {} to {}.",
 									a_coopActor->GetName(), 
@@ -10000,7 +10000,7 @@ namespace ALYSLC
 							}
 							else
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}'s {} skill inc went from {} to {}.",
 									a_coopActor->GetName(), 
@@ -10026,7 +10026,7 @@ namespace ALYSLC
 					}
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Resetting P1's {} AV to {}, was {}. "
 					"Setting temp modifiers back to ({}, {}, {}), "
@@ -10132,7 +10132,7 @@ namespace ALYSLC
 				tempHealthMods, tempMagickaMods, tempStaminaMods
 			};
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kHealth),
@@ -10151,7 +10151,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kMagicka),
@@ -10170,7 +10170,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT BEFORE: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kStamina),
@@ -10189,7 +10189,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Setting P1's Health base/normal AV to {}, {}.",
 				glob.p1ExchangeableData->hmsBaseAVs[0], 
@@ -10221,7 +10221,7 @@ namespace ALYSLC
 				true
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"0. P1's health damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -10274,7 +10274,7 @@ namespace ALYSLC
 				-glob.coopCompanionExchangeableData->hmsAVMods[2][2]
 			);
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"1. P1's temp/perm health mods: {}, {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -10296,7 +10296,7 @@ namespace ALYSLC
 			(
 				RE::ActorValue::kHealth, glob.p1ExchangeableData->hmsBaseAVs[0]
 			);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"2. New base health: {}. Health level: {}.", 
 				p1->GetBaseActorValue(RE::ActorValue::kHealth),
@@ -10325,7 +10325,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.p1ExchangeableData->hmsAVMods[0][1]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"3. P1 temp mod: {}", 
 					p1->GetActorValueModifier
@@ -10339,7 +10339,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.p1ExchangeableData->hmsAVMods[0][2]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"4. P1 perm mod: {}", 
 					p1->GetActorValueModifier
@@ -10356,7 +10356,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.p1ExchangeableData->hmsAVMods[0][2]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"3. P1 perm mod: {}", 
 					p1->GetActorValueModifier
@@ -10370,7 +10370,7 @@ namespace ALYSLC
 					RE::ActorValue::kHealth, 
 					glob.p1ExchangeableData->hmsAVMods[0][1]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"4. P1 temp mod: {}", 
 					p1->GetActorValueModifier
@@ -10423,7 +10423,7 @@ namespace ALYSLC
 				RE::ActorValue::kStamina, glob.p1ExchangeableData->hmsAVMods[2][0], true
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"5. P1 damage mod: {}. Health level: {}.", 
 				p1->GetActorValueModifier
@@ -10433,7 +10433,7 @@ namespace ALYSLC
 				p1->GetActorValue(RE::ActorValue::kHealth)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}. "
 				"Heal rates: {}, {}.",
@@ -10455,7 +10455,7 @@ namespace ALYSLC
 				p1->GetActorValue(RE::ActorValue::kHealRateMult)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kMagicka),
@@ -10474,7 +10474,7 @@ namespace ALYSLC
 				)
 			);
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"EXPORT AFTER: Current: {}, base: {}, mods: d: {}, t: {}, p: {}.",
 				p1->GetActorValue(RE::ActorValue::kStamina),
@@ -10516,7 +10516,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: Import: {}, keep P1 gold: {}.", 
 			a_coopActor->GetName(), a_shouldImport, a_keepP1Gold
@@ -10555,7 +10555,7 @@ namespace ALYSLC
 			while (index < baseContainer->numContainerObjects)
 			{
 				auto containerObj = baseContainer->containerObjects[index];
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Has container obj {} with count {} at index {}.",
 					containerObj &&
@@ -10581,7 +10581,7 @@ namespace ALYSLC
 						bool removed = baseContainer->RemoveObjectFromContainer(obj, count);
 						if (removed)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Remove {} of {} from base container. Index: {} / {} now.",
 								count, 
@@ -10610,7 +10610,7 @@ namespace ALYSLC
 			const int32_t p1GoldCount = p1->GetGoldAmount();
 			// Only inventory changes total. 
 			const int32_t p1InventoryGoldAmount = p1GoldCount - p1ContainerGoldAmount;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: P1 has {} gold, {} from base container, {} from inv changes.",
 				a_shouldImport ? "IMPORT" : "EXPORT",
@@ -10651,7 +10651,7 @@ namespace ALYSLC
 				);
 				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
 						"chest ({}), {}'s chest ({}).",
@@ -10663,10 +10663,10 @@ namespace ALYSLC
 					return;
 				}
 			
-				SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
+				DBG("IMPORT: Move all P1 items to storage chest.");
 				p1ChestExChanges->changes = p1ExChanges->changes;
 
-				SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+				DBG("IMPORT: Move all co-op companion items to P1.");
 				/*p1->extraList.Remove
 				(
 					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
@@ -10686,7 +10686,7 @@ namespace ALYSLC
 							goldObj && 
 							p1InventoryGoldAmount > 0)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"IMPORT: Set P1 inventory changes gold amount to {} "
 								"from {} total and {} from base container. Was {}.",
@@ -10703,7 +10703,7 @@ namespace ALYSLC
 
 					if (!setFromEntry && goldObj && p1InventoryGoldAmount > 0)
 					{
-						SPDLOG_DEBUG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
+						DBG("IMPORT: Add {} gold to P1 directly (not in inventory).", 
 							p1GoldCount);
 						p1->AddObjectToContainer(goldObj, nullptr, p1InventoryGoldAmount, nullptr);
 					}
@@ -10721,7 +10721,7 @@ namespace ALYSLC
 					p1ExChanges->changes ->owner = p1;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"IMPORT: P1 inv changes: {}: Owner is now {}.", 
 					(bool)p1ExChanges && p1ExChanges->changes, 
@@ -10750,7 +10750,7 @@ namespace ALYSLC
 				);
 				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
 						"chest ({}), {}'s chest ({}).",
@@ -10764,26 +10764,26 @@ namespace ALYSLC
 			
 				// Remove all the gold from P1 first before moving items 
 				// back to companion player's inventory chest.
-				SPDLOG_DEBUG("EXPORT: Remove {} gold on exit. Gold before: {}", 
+				DBG("EXPORT: Remove {} gold on exit. Gold before: {}", 
 					p1GoldCount, p1->GetGoldAmount());
 				p1->RemoveItem
 				(
 					goldObj, p1GoldCount, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: Move all P1 items to co-op companion. Gold is now: {}.",
 					p1->GetGoldAmount()
 				);
 				companionChestExChanges->changes = p1ExChanges->changes;
 
-				SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
+				DBG("EXPORT: Move all P1 items from storage chest to P1.");
 				// Adds back base container gold amount?
 				p1ExChanges->changes = p1ChestExChanges->changes;
 
 				// Remove all gold again before adding the gold total on menu closing.
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: Remove {} gold after importing back from chest.", p1->GetGoldAmount()
 				);
@@ -10792,7 +10792,7 @@ namespace ALYSLC
 					goldObj, p1->GetGoldAmount(), RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: Add {} gold after clearing out all gold. Gold before: {}.", 
 					p1GoldCount - p1ContainerGoldAmount, p1->GetGoldAmount()
@@ -10802,7 +10802,7 @@ namespace ALYSLC
 					goldObj, nullptr, p1GoldCount - p1ContainerGoldAmount, nullptr
 				);
 
-				SPDLOG_DEBUG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
+				DBG("EXPORT: P1 now has {} gold.", p1->GetGoldAmount());
 
 				// Clear, remove, and re-init P1 chest inventory changes 
 				// after we've moved everything back.
@@ -10829,7 +10829,7 @@ namespace ALYSLC
 					p1ChestExChanges->changes ->owner = p1StorageChestRefrPtr.get();
 				}
 				
-				SPDLOG_DEBUG
+				DBG
 				(
 					"EXPORT: P1 inv changes: {}: Owner is now {}.", 
 					(bool)p1ExChanges && p1ExChanges->changes, 
@@ -10874,7 +10874,7 @@ namespace ALYSLC
 				);
 				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
 						"chest ({}), {}'s chest ({}).",
@@ -10886,10 +10886,10 @@ namespace ALYSLC
 					return;
 				}
 			
-				SPDLOG_DEBUG("IMPORT: Move all P1 items to storage chest.");
+				DBG("IMPORT: Move all P1 items to storage chest.");
 				p1ChestExChanges->changes = p1ExChanges->changes;
 
-				SPDLOG_DEBUG("IMPORT: Move all co-op companion items to P1.");
+				DBG("IMPORT: Move all co-op companion items to P1.");
 				/*p1->extraList.Remove
 				(
 					RE::ExtraDataType::kContainerChanges, p1ChestExChanges
@@ -10930,7 +10930,7 @@ namespace ALYSLC
 				);
 				if (!p1ExChanges || !p1ChestExChanges || !companionChestExChanges)
 				{
-					SPDLOG_ERROR
+					ERR
 					(
 						"ERR: Could not get ExtraContainerChanges data for P1 ({}), "
 						"chest ({}), {}'s chest ({}).",
@@ -10942,10 +10942,10 @@ namespace ALYSLC
 					return;
 				}
 			
-				SPDLOG_DEBUG("EXPORT: Move all P1 items to co-op companion.");
+				DBG("EXPORT: Move all P1 items to co-op companion.");
 				companionChestExChanges->changes = p1ExChanges->changes;
 
-				SPDLOG_DEBUG("EXPORT: Move all P1 items from storage chest to P1.");
+				DBG("EXPORT: Move all P1 items from storage chest to P1.");
 				p1ExChanges->changes = p1ChestExChanges->changes;
 
 				// Clear, remove, and re-init P1 chest inventory changes 
@@ -11090,14 +11090,14 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Import: AdjustSkillXP: Getting lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
 					{
 						std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Import: AdjustSkillXP: Lock obtained. (0x{:X})",
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -11153,7 +11153,7 @@ namespace ALYSLC
 							}
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Import: AdjustSkillXP: "
 							"Saved skill {}'s XP ({}) for P1. "
@@ -11187,14 +11187,14 @@ namespace ALYSLC
 						continue;
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Export: Getting lock. (0x{:X})", 
 						std::hash<std::jthread::id>()(std::this_thread::get_id())
 					);
 					{
 						std::unique_lock<std::mutex> lock(glob.p1SkillXPMutex);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Export: Lock obtained. (0x{:X})", 
 							std::hash<std::jthread::id>()(std::this_thread::get_id())
@@ -11206,7 +11206,7 @@ namespace ALYSLC
 						if (coopPlayerSerializedData->skillXPList[i] != 
 							p1->skills->data->skills[i].xp)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Export: XP for {} changed from {} to {}.",
 								Util::GetActorValueName
@@ -11231,7 +11231,7 @@ namespace ALYSLC
 						(
 							p1SerializedData->skillLevelThresholdsOnMenuEntry[i]
 						);
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Export: AdjustSkillXP: "
 							"P1's skill {}'s XP ({}), level ({}), "
@@ -11290,7 +11290,7 @@ namespace ALYSLC
 							// I think I'm going insane, but sometimes the has-perk booleans 
 							// are not equal in the comparison above 
 							// but both print as 'true' below (???).
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {}: SetUnlockedPerks: "
 								"Perk check inconsistency ({} != {}). Adding {} (0x{:X}). "
@@ -11330,7 +11330,7 @@ namespace ALYSLC
 						bool succ = p1SerializedData->RemoveUnlockedPerk(perk);
 						if (succ)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: {}: SetUnlockedPerks: "
 								"Remove shared perk {} (0x{:X}) "
@@ -11363,7 +11363,7 @@ namespace ALYSLC
 						// I think I'm going insane, but sometimes the has-perk booleans 
 						// are not equal in the comparison above 
 						// but both print as 'true' below (???).
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: {}: SetUnlockedPerks: "
 							"Perk check inconsistency ({} != {}). {} {} (0x{:X}).",
@@ -11394,7 +11394,7 @@ namespace ALYSLC
 				);
 				if (shouldInsert) 
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: {}: SetUnlockedPerks: "
 						"Has perk #{} {} (0x{:X}).",
@@ -11551,7 +11551,7 @@ namespace ALYSLC
 			{
 				if (p1->HasPerk(perk) || Util::Player1PerkListHasPerk(perk)) 
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: CHECK: {} has perk #{} {} (0x{:X}) "
 						"(assigned: {}, in singleton list: {})",
@@ -11583,7 +11583,7 @@ namespace ALYSLC
 			Util::TraverseAllPerks(a_coopActor, setUnlockedPerks);
 			// Add companion player's perks to P1 and remove all other perks from P1.
 			Util::TraverseAllPerks(a_coopActor, addCompanionPlayerPerksOnImport);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Import: {} has {} unlocked perks, {} has {} unlocked perks.",
 				p1->GetName(),
@@ -11610,7 +11610,7 @@ namespace ALYSLC
 			Util::TraverseAllPerks(a_coopActor, setUnlockedPerks);
 			// Add back all P1's original perks cached when entering.
 			Util::TraverseAllPerks(a_coopActor, updatePlayerPerksOnExport);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Export: {} has {} unlocked perks, {} has {} unlocked perks.",
 				p1->GetName(),
@@ -11631,7 +11631,7 @@ namespace ALYSLC
 	{
 		// Construct a data copy request with the given info and then perform the request.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}: menu name: {}, requesting player: {}, associated form: {}",
 			a_shouldImport ? "Import" : "Export", 
@@ -11920,7 +11920,7 @@ namespace ALYSLC
 
 		auto& glob = GetSingleton();
 		const auto& p = glob.coopPlayers[a_playerID];
-		SPDLOG_DEBUG("{}.", p->coopActor->GetName());
+		DBG("{}.", p->coopActor->GetName());
 
 		auto ui = RE::UI::GetSingleton();
 		if (!ui)
@@ -12128,18 +12128,18 @@ namespace ALYSLC
 
 		if (a_toP1)
 		{
-			SPDLOG_DEBUG("{} has been summoned from their home universe.", playerActor->GetName());
+			DBG("{} has been summoned from their home universe.", playerActor->GetName());
 		}
 		else
 		{
-			SPDLOG_DEBUG("{} is returning to their home universe. Their people need them.",
+			DBG("{} is returning to their home universe. Their people need them.",
 				playerActor->GetName());
 		}
 	
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!p1)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"ERR: Player 1 is invalid. Cannot teleport {} to {}.",
 				playerActor->GetName(), a_toP1 ? "P1" : "their editor location"
@@ -12186,7 +12186,7 @@ namespace ALYSLC
 					playerActor->Enable(false);
 					// Play the use-portal shader.
 					Util::StartEffectShader(playerActor.get(), glob.ghostFXShader, 1.0f);
-					SPDLOG_DEBUG("{} was moved to P1.", playerActor->GetName());
+					DBG("{} was moved to P1.", playerActor->GetName());
 				}
 			);
 		}
@@ -12217,7 +12217,7 @@ namespace ALYSLC
 					// Need a refr target, so move to P1's inventory chest,
 					// which is located at the player's editor location.
 					playerActor->MoveTo(glob.coopInventoryChests[0].get());
-					SPDLOG_DEBUG("{} was moved to their editor location.", playerActor->GetName()); 
+					DBG("{} was moved to their editor location.", playerActor->GetName()); 
 				}
 			);
 		}
@@ -12268,7 +12268,7 @@ namespace ALYSLC
 
 		if (shouldSkip)
 		{
-			SPDLOG_DEBUG("Ignoring cleanup request.");
+			DBG("Ignoring cleanup request.");
 			return;
 		}
 
@@ -12349,7 +12349,7 @@ namespace ALYSLC
 
 				if (!questMessageDisplayed)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"No quest update message to display. Paulie, get the message box."
 					);
@@ -12373,7 +12373,7 @@ namespace ALYSLC
 			{
 				// No more living players now, sorry.
 				glob.livingPlayers = 0;
-				SPDLOG_DEBUG("All players downed or dead. Ending co-op session.");
+				DBG("All players downed or dead. Ending co-op session.");
 
 				for (const auto& p : glob.coopPlayers)
 				{
@@ -12484,7 +12484,7 @@ namespace ALYSLC
 					}
 
 					// And through all that... P1 is usually still not dead. Sometimes.
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: is dead: {}, health: {}. Essential flag: {}, {}. "
 						"P1 designated as essential: {}.",
@@ -12577,7 +12577,7 @@ namespace ALYSLC
 												);
 											}
 											
-											SPDLOG_DEBUG("Dead attempt.");
+											DBG("Dead attempt.");
 										}
 									);
 								}
@@ -12599,7 +12599,7 @@ namespace ALYSLC
 							);
 							if (secsWaited >= maxSecsToWait && !glob.p1IsEssential) 
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ReloadTask: Loading most recent save game after {} seconds.", 
 									secsWaited
@@ -12609,7 +12609,7 @@ namespace ALYSLC
 
 							if (succ)
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ReloadTask: SUCCEEDED after {} seconds. "
 									"Now waiting for the game to load the last save. "
@@ -12664,7 +12664,7 @@ namespace ALYSLC
 									);
 								}
 
-								SPDLOG_DEBUG
+								DBG
 								(
 									"ReloadTask: FAILED after {} seconds. "
 									"Now waiting for the game to reset. "
@@ -12707,7 +12707,7 @@ namespace ALYSLC
 								);
 								if (secsWaited >= maxSecsToWait) 
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"ReloadTask: "
 										"Loading most recent save game after {} seconds.", 
@@ -12718,7 +12718,7 @@ namespace ALYSLC
 
 								if (succ)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"ReloadTask: SUCCEEDED after another {} seconds. "
 										"Now waiting for the game to load the last save. "
@@ -12739,7 +12739,7 @@ namespace ALYSLC
 								else
 								{
 									RE::Main::GetSingleton()->resetGame = true;
-									SPDLOG_DEBUG
+									DBG
 									(
 										"ReloadTask: FAILED AGAIN after {} seconds. "
 										"Now waiting for the game to reset. "
@@ -12799,7 +12799,7 @@ namespace ALYSLC
 									[p1]()
 									{
 										p1->NotifyAnimationGraph("GetUpBegin");
-										SPDLOG_DEBUG("Dead attempt.");
+										DBG("Dead attempt.");
 									}
 								);
 								std::this_thread::sleep_for
@@ -12811,7 +12811,7 @@ namespace ALYSLC
 								);
 							}
 
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Waiting for P1 to die. "
 								"Co-op session active: {}, "
@@ -12854,7 +12854,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("{}.", a_playerActor->GetName());
+		DBG("{}.", a_playerActor->GetName());
 
 		const auto& data = iter->second;
 		Skill currentSkill = Skill::kTotal;
@@ -12869,7 +12869,7 @@ namespace ALYSLC
 			}
 
 			currentAV = iter->second;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Base: {}, current: {}, modifiers (d, p, t): {}, {}, {}.",
 				a_playerActor->GetBaseActorValue(currentAV),
@@ -12898,7 +12898,7 @@ namespace ALYSLC
 					data->skillBaseLevelsList[i] = value;
 					data->skillLevelIncreasesList[i] = 0.0f;
 					a_playerActor->SetBaseActorValue(currentAV, value);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Set {}'s SHARED skill AV {} to {}.",
 						a_playerActor->GetName(), 
@@ -12915,7 +12915,7 @@ namespace ALYSLC
 				(
 					currentAV, data->skillBaseLevelsList[i] + data->skillLevelIncreasesList[i]
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}'s INDEP skill AV {} at base level {} is {} + {}. Set to {} ({}).",
 					a_playerActor->GetName(),
@@ -12955,7 +12955,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("{}", a_playerActor->GetName());
+		DBG("{}", a_playerActor->GetName());
 
 		auto& data = iter->second;
 		// Players start with 3 perk points at level 1 if using Requiem.
@@ -13014,7 +13014,7 @@ namespace ALYSLC
 						bool succ = Util::Player1RemovePerk(perkToRemove);
 						if (succ) 
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Removed {} perk {} (0x{:X}) from p1's perks list.",
 								shared ? "shared" : "unique",
@@ -13030,7 +13030,7 @@ namespace ALYSLC
 						bool succ = Util::ChangePerk(a_actor, perkToRemove, false);
 						if (succ) 
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Removing {} perk {} (0x{:X}) from {}'s perks list.",
 								shared ? "shared" : "unique",
@@ -13077,7 +13077,7 @@ namespace ALYSLC
 				std::vector<RE::BGSPerk*> newUnlockedPerks{ };
 				if (fid == a_playerActor->formID)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has {} unlocked perks before perk removal. Will now have 0.", 
 						playerActor->GetName(), data->GetUnlockedPerksList().size()
@@ -13089,7 +13089,7 @@ namespace ALYSLC
 				else
 				{
 					const auto& unlockedPerks = data->GetUnlockedPerksList();
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{} has {} unlocked perks before shared perk removal.", 
 						playerActor->GetName(), unlockedPerks.size()
@@ -13119,7 +13119,7 @@ namespace ALYSLC
 				data->SetUnlockedPerks(newUnlockedPerks);
 				// No player will have any shared perks.
 				data->ClearTakenSharedPerks();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} now has {} unlocked perks after perk removal.", 
 					playerActor->GetName(), data->GetUnlockedPerksList().size()
@@ -13127,7 +13127,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Adjust all players' perk counts after shared perk removal."
 		);
@@ -13151,7 +13151,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("{}", a_playerActor->GetName());
+		DBG("{}", a_playerActor->GetName());
 		const auto& data = iter->second;
 		data->hmsPointIncreasesList.fill(0.0f);
 		RescaleHMS(a_playerActor, data->firstSavedLevel);
@@ -13180,7 +13180,7 @@ namespace ALYSLC
 			return false;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{}{}. Update base AVs: {}.", 
 			a_playerActor ? "Player Changed Class/Race: " : "All Active Players",
@@ -13212,7 +13212,7 @@ namespace ALYSLC
 			float savedHealth = p1->GetActorValue(RE::ActorValue::kHealth);
 			float savedXP = p1->skills->data->xp;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Before inc/dec: current XP, threshold: {}, {}, "
 				"current level: {}, target level: {}.",
@@ -13244,7 +13244,7 @@ namespace ALYSLC
 			// Cleanup.
 			delete script;
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"After inc/dec: current XP, threshold: {}, {}, current level: {}.",
 				p1->skills->data->xp, p1->skills->data->levelThreshold, p1Level
@@ -13255,7 +13255,7 @@ namespace ALYSLC
 			if (Settings::bStackCoopPlayerSkillAVAutoScaling || 
 				ALYSLC::EnderalCompat::g_installed) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Update base AVs for all players. Enderal: {}, STACKED scaling: {}.",
 					ALYSLC::EnderalCompat::g_installed, 
@@ -13331,7 +13331,7 @@ namespace ALYSLC
 				{
 					data->firstSavedLevel = savedP1Level > 1 ? savedP1Level - 1 : savedP1Level;
 						
-					SPDLOG_DEBUG
+					DBG
 					(
 						"First saved level for {} is 0. Set to {} now.", 
 						a_playerActor->GetName(), data->firstSavedLevel
@@ -13344,7 +13344,7 @@ namespace ALYSLC
 				{
 					// P1's level is >= 2.
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Dip to update base skill AVs for {}. "
 						"Assign to dipped-level base AVs list. "
@@ -13363,7 +13363,7 @@ namespace ALYSLC
 					// KNOWN MAJOR ISSUE: See above.
 					if (auto newLevel = p1->GetLevel(); newLevel != data->firstSavedLevel)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Dip level ({}) not reached before setting new base skill AVs for {}. "
 							"Current level is {}. Not setting base skill actor values this time.",
@@ -13373,7 +13373,7 @@ namespace ALYSLC
 					else
 					{
 						// Update base skill AVs.
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Dip level ({}) reached. "
 							"Setting new base skill actor values for {}.",
@@ -13383,7 +13383,7 @@ namespace ALYSLC
 						data->skillBaseLevelsList = Util::GetActorSkillLevels(a_playerActor);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Update base skill AVs for {}. "
 						"After dip: current XP, threshold: {}, {}, "
@@ -13414,7 +13414,7 @@ namespace ALYSLC
 						);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Update base skill AVs for {}. "
 						"After dip: current XP, threshold: {}, {}, current player levels: {}, {}.",
@@ -13434,7 +13434,7 @@ namespace ALYSLC
 						savedP1Level < UINT16_MAX ? savedP1Level + 1 : savedP1Level - 1
 					);
 						
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Assign to current skill AVs after returning to saved P1 level: {}, "
 						"first saved level: {}, target level: {}.",
@@ -13449,7 +13449,7 @@ namespace ALYSLC
 					script->SetCommand("SetLevel " + std::to_string(targetLevel));
 					script->CompileAndRun(p1);
 						
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Update base skill AVs for {}. "
 						"Before inc/dec: current XP, threshold: {}, {}, "
@@ -13479,7 +13479,7 @@ namespace ALYSLC
 						);
 					}
 
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Update base skill AVs for {}. "
 						"After inc/dec: current XP, threshold: {}, {}, current level: {}.",
@@ -13492,7 +13492,7 @@ namespace ALYSLC
 					// KNOWN MAJOR ISSUE: See above.
 					if (auto newLevel = p1->GetLevel(); newLevel != savedP1Level)
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Original P1 level ({}) not reached before setting "
 							"new base skill actor values for {}. Current level is {}. "
@@ -13502,7 +13502,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"Original level ({}) reached. Setting base skill actor values for {}.",
 							savedP1Level, a_playerActor->GetName()
@@ -13517,7 +13517,7 @@ namespace ALYSLC
 				else
 				{
 					// Should never happen. But alert me if it does. Thanks.
-					SPDLOG_ERROR
+					ERR
 					(
 						"P1's level ({}) is below the target dip level ({}) for {}. "
 						"Do not change base skill AVs.",
@@ -13535,7 +13535,7 @@ namespace ALYSLC
 				bool succ = autoScaleAndSetBaseAVs(a_playerActor);
 				if (!succ)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Could not modify P1's level with console command. No rescaling possible."
 					);
@@ -13663,7 +13663,7 @@ namespace ALYSLC
 					)
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Getting lock. (0x{:X})", 
 					p->coopActor->GetName(), 
@@ -13671,7 +13671,7 @@ namespace ALYSLC
 				);
 				{
 					std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Obtained lock. (0x{:X})", 
 						p->coopActor->GetName(), 
@@ -13724,7 +13724,7 @@ namespace ALYSLC
 					collidingRefr->formID, 0x0
 				);
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: Getting lock. (0x{:X})", 
 					p->coopActor->GetName(), 
@@ -13732,7 +13732,7 @@ namespace ALYSLC
 				);
 				{
 					std::unique_lock<std::mutex> lock(p->tm->rmm->contactEventsQueueMutex);
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Obtained lock. (0x{:X})", 
 						p->coopActor->GetName(), 

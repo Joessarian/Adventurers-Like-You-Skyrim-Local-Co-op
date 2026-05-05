@@ -170,6 +170,8 @@ namespace ALYSLC
 
 		_progFuncs[!InputAction::kActivate - paOffset] = 
 		ProgressFuncs::Activate;
+		_progFuncs[!InputAction::kAdjustAimPitch - paOffset] = 
+		ProgressFuncs::AdjustAimPitch;
 		_progFuncs[!InputAction::kAttackLH - paOffset] =
 		ProgressFuncs::AttackLH;
 		_progFuncs[!InputAction::kAttackRH - paOffset] = 
@@ -204,8 +206,6 @@ namespace ALYSLC
 		ProgressFuncs::GrabObject;
 		_progFuncs[!InputAction::kHotkeyEquip - paOffset] = 
 		ProgressFuncs::HotkeyEquip;
-		_progFuncs[!InputAction::kMoveCrosshair - paOffset] = 
-		ProgressFuncs::MoveCrosshair;
 		_progFuncs[!InputAction::kQuickSlotCast - paOffset] = 
 		ProgressFuncs::QuickSlotCast;
 		_progFuncs[!InputAction::kShout - paOffset] =
@@ -1075,8 +1075,18 @@ namespace ALYSLC
 				// Check for single tap/hold actions if no double tap action request was set.
 				// Toggle grabbed refr collision if the setting is enabled 
 				// and the player has selected a grabbed refr.
+				bool useCrosshairRefr = 
+				(
+					a_p->tm->aimMode == AimMode::kFreeAim
+				);
 				if (a_p->tm->rmm->isGrabbing && 
-					a_p->tm->rmm->IsManaged(a_p->tm->crosshairRefrHandle, true) && 
+					a_p->tm->rmm->IsManaged
+					(
+						useCrosshairRefr ? 
+						a_p->tm->crosshairRefrHandle :
+						a_p->tm->lockOnActivationRefrHandle,
+						true
+					) && 
 					Settings::bToggleGrabbedRefrCollisions)
 				{
 					pam->reqSpecialAction = SpecialActionType::kToggleGrabbedRefrCollisions;
@@ -1203,7 +1213,7 @@ namespace ALYSLC
 				// Must be moving while sneaking and have the silent roll perk.
 				canPerform =  
 				(
-					a_p->mm->lsMoved &&
+					a_p->lsMoved &&
 					a_p->coopActor->HasPerk(glob.sneakRollPerk)
 				);
 			}
@@ -1212,7 +1222,7 @@ namespace ALYSLC
 				// Moving and blocking with a shield equipped + have the shield charge perk.
 				canPerform =
 				(
-					a_p->mm->lsMoved &&
+					a_p->lsMoved &&
 					a_p->em->HasShieldEquipped() &&
 					a_p->coopActor->HasPerk(glob.shieldChargePerk)
 				);
@@ -1225,7 +1235,7 @@ namespace ALYSLC
 				// and not ragdolled or in ragdoll flight.
 				canPerform =  
 				(
-					((a_p->mm->isParagliding) || (a_p->mm->lsMoved && !a_p->pam->isJumping)) &&
+					((a_p->mm->isParagliding) || (a_p->lsMoved && !a_p->pam->isJumping)) &&
 					/*(
 						!a_p->pam->isAttacking && 
 						!a_p->pam->isBashing && 
@@ -1996,7 +2006,7 @@ namespace ALYSLC
 			// Get targeted actor.
 			auto targetActorPtr = Util::GetActorPtrFromHandle
 			(	
-				a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ?
+				a_p->tm->aimMode == AimMode::kTwinStick ?
 				a_p->tm->aimCorrectionTargetHandle : 
 				a_p->tm->selectedTargetActorHandle
 			);
@@ -2575,7 +2585,7 @@ namespace ALYSLC
 			// either directly or by way of the provided bound weapon spell.
 			// Set bound weapon timer and request data.
 
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: Equip {} to slot 0x{:X}.", 
 				a_p->coopActor->GetName(),
@@ -2680,7 +2690,7 @@ namespace ALYSLC
 								// or when the player re-equips their hand forms.
 								for (const auto& equipIndex : lhEquipIndices)
 								{
-									SPDLOG_DEBUG("Add LH form {} back at index {} as desired.",
+									DBG("Add LH form {} back at index {} as desired.",
 										lhForm ? lhForm->GetName() : "NONE", equipIndex);
 									a_p->em->desiredForms[!equipIndex] = lhForm;
 									a_p->em->desiredExtraDataLists[!equipIndex] = lhExtraDataList;
@@ -2688,7 +2698,7 @@ namespace ALYSLC
 								
 								for (const auto& equipIndex : rhEquipIndices)
 								{
-									SPDLOG_DEBUG("Add RH form {} back at index {} as desired.",
+									DBG("Add RH form {} back at index {} as desired.",
 										rhForm ? rhForm->GetName() : "NONE", equipIndex);
 									a_p->em->desiredForms[!equipIndex] = rhForm;
 									a_p->em->desiredExtraDataLists[!equipIndex] = rhExtraDataList;
@@ -2730,7 +2740,7 @@ namespace ALYSLC
 								// Also potentially a threading issue.
 								if (a_slot == glob.bothHandsEquipSlot) 
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: 2H bound weap req.", a_p->coopActor->GetName()
 									);
@@ -2743,7 +2753,7 @@ namespace ALYSLC
 								}
 								else if (a_slot == glob.leftHandEquipSlot)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: LH bound weap req.", a_p->coopActor->GetName()
 									);
@@ -2753,7 +2763,7 @@ namespace ALYSLC
 								}
 								else
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"{}: RH bound weap req.", a_p->coopActor->GetName()
 									);
@@ -2762,7 +2772,7 @@ namespace ALYSLC
 									a_p->lastBoundWeaponRHReqTP = SteadyClock::now();
 								}
 
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: Bound weap reqs: {}, {}, {}.",
 									a_p->coopActor->GetName(),
@@ -3052,7 +3062,7 @@ namespace ALYSLC
 			);
 			if (refreshFavorites) 
 			{
-				SPDLOG_DEBUG("{} not favorited. Refresh.", a_hotkeyedForm->GetName());
+				DBG("{} not favorited. Refresh.", a_hotkeyedForm->GetName());
 				a_p->tm->SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kEquippedItem,
@@ -3137,7 +3147,7 @@ namespace ALYSLC
 			);
 			if (refreshFavorites)
 			{
-				SPDLOG_DEBUG("{} has no favorited exData list. Refresh.",
+				DBG("{} has no favorited exData list. Refresh.",
 					a_hotkeyedForm->GetName());
 				a_p->tm->SetCrosshairMessageRequest
 				(
@@ -3165,7 +3175,7 @@ namespace ALYSLC
 			auto aem = RE::ActorEquipManager::GetSingleton();
 			// More descriptive for tempered/unique items.
 			RE::BSFixedString name = Util::GetDescriptiveName(a_hotkeyedForm, extraDataList);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}'s exDataList {:p} has extra name ({}) {}.",
 				a_hotkeyedForm ? a_hotkeyedForm->GetName() : "NONE",
@@ -4131,7 +4141,7 @@ namespace ALYSLC
 			// Need valid hand casters.
 			if ((a_lhCast && !lhCaster) || (a_rhCast && !rhCaster))
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: {} finished. LH caster invalid: {}, RH caster invalid: {}.", 
 					a_p->coopActor->GetName(),
@@ -4183,7 +4193,7 @@ namespace ALYSLC
 				// Could not get caster, so cannot start/finish casting.
 				if (!casterUsed)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: Neither LH nor RH caster has started casting 2H spell {}.",
 						a_p->coopActor->GetName(),
@@ -4202,7 +4212,7 @@ namespace ALYSLC
 				{
 					chargedTime = Util::GetElapsedSeconds(a_p->lastRHCastChargeStartTP);
 				}
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: 2H cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 					a_p->coopActor->GetName(),
@@ -4242,7 +4252,7 @@ namespace ALYSLC
 			{
 				if (lhSpell && lhCaster && a_lhCast)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: LH cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 						a_p->coopActor->GetName(),
@@ -4280,7 +4290,7 @@ namespace ALYSLC
 
 				if (rhSpell && rhCaster && a_rhCast)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"{}: RH cast of {}. Time since charge start: {}. Spell charge time: {}.", 
 						a_p->coopActor->GetName(),
@@ -5539,7 +5549,7 @@ namespace ALYSLC
 				);
 			}
 
-			SPDLOG_DEBUG("{} wants to open a menu with the keyboard. Action {}. SUCC: {}.",
+			DBG("{} wants to open a menu with the keyboard. Action {}. SUCC: {}.",
 				a_p->coopActor->GetName(), a_action, succ);
 			// If the request was successfully inserted, open the requested menu.
 			if (succ) 
@@ -5552,341 +5562,6 @@ namespace ALYSLC
 					0.0f,
 					true
 				);
-			}
-		}
-
-		void PerformActivationCycling(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Check for downed players to revive before cycling through nearby refrs, 
-			// highlighting one at a time if they are within activation distance.
-
-			const auto& pam = a_p->pam;
-			const bool justStarted = HelperFuncs::ActionJustStarted(a_p, InputAction::kActivate);
-			if (justStarted)
-			{
-				// Clear previous proximity refr and downed player target on action start.
-				// Will check for a new proximity refr and nearby downed players to revive below.
-				a_p->tm->ClearProximityRefr();
-				if (pam->downedPlayerTarget) 
-				{
-					pam->downedPlayerTarget->isBeingRevived = false;
-					pam->downedPlayerTarget = nullptr;
-					a_p->isRevivingPlayer = false;
-				}
-
-				a_p->lastActivationStartTP = SteadyClock::now();
-			}
-			
-			auto p1 = RE::PlayerCharacter::GetSingleton();
-			if (!pam->downedPlayerTarget) 
-			{
-				// If not cycling, seconds since the last object to activate was selected.
-				// Otherwise, seconds since cycling the next activation refr from nearby references.
-				const float& secsSinceActivationStarted = Util::GetElapsedSeconds
-				(
-					a_p->lastActivationStartTP
-				);
-				float secsSinceActivationTargetUpdated = 0.0f;
-				auto crosshairRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->crosshairRefrHandle);
-				// Ignore invalid refrs and normally hostile actors selected with the crosshair.
-				// Enemies are too angry to interact with players, from my experience.
-				bool crosshairRefrValidity = 	
-				(
-					(crosshairRefrPtr) && 
-					(Util::IsValidRefrForTargeting(crosshairRefrPtr.get()))
-				);
-				bool chooseNextActivationTargetBeforeCycling = 
-				(
-					(justStarted) ||
-					(!crosshairRefrValidity && a_p->mm->lsMoved) ||
-					(
-						crosshairRefrValidity && 
-						a_p->mm->lsMoved &&
-						secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling
-					)
-				);
-				// Update the activation check TP first before updating the number of seconds 
-				// since the activation target was updated and the proximity interaction flag.
-				if (chooseNextActivationTargetBeforeCycling)
-				{
-					a_p->lastActivationCheckTP = SteadyClock::now();
-				}
-
-				// If a crosshair refr is selected, choose it as the activation target
-				// until the activation cycling start interval elapses.
-				// 
-				// If a crosshair refr is not selected, 
-				// we'll select the closest refr in the player's facing direction initially.
-				// 
-				// Then while the LS is moved, 
-				// we'll continue to pick the closest refr in the player's movement direction.
-				// 
-				// Or if the LS is not moved,
-				// we'll cycle through refrs in the player's proximity 
-				// after the predefined cycling-switch inverval elapses 
-				// after the player stopped moving the LS.
-				if (crosshairRefrValidity)
-				{
-					if (secsSinceActivationStarted < Settings::fSecsBeforeActivationCycling)
-					{
-						secsSinceActivationTargetUpdated = secsSinceActivationStarted;
-					}
-					else
-					{
-						secsSinceActivationTargetUpdated = 
-						(
-							a_p->mm->lsMoved ?
-							0.0f : 
-							Util::GetElapsedSeconds
-							(
-								a_p->lastActivationCheckTP
-							)
-						);
-					}
-					
-					a_p->tm->useProximityInteraction =
-					(
-						secsSinceActivationStarted >= 
-						Settings::fSecsBeforeActivationCycling
-					);
-				}
-				else
-				{
-					secsSinceActivationTargetUpdated = 
-					(
-						a_p->mm->lsMoved ?
-						0.0f : 
-						Util::GetElapsedSeconds
-						(
-							a_p->lastActivationCheckTP
-						)
-					);
-					a_p->tm->useProximityInteraction = true;
-				}
-				
-				// Choose a valid crosshair refr for activation 
-				// if the action press time is within the initial window before cycling
-				// or if the LS is moved.
-				if (chooseNextActivationTargetBeforeCycling)
-				{
-					// Remove activation effect shader on previous activation refr, if any.
-					auto activationRefrPtr = Util::GetRefrPtrFromHandle
-					(
-						a_p->tm->activationRefrHandle
-					); 
-					if (activationRefrPtr &&
-						Util::IsValidRefrForTargeting(activationRefrPtr.get()))
-					{
-						Util::StopEffectShader
-						(
-							activationRefrPtr.get(), glob.activateHighlightShader
-						);
-					}
-
-					// Get new refr to activate.
-					// Will be the crosshair refr if the action just started.
-					auto refrToActivatePtr = 
-					(
-						Util::GetRefrPtrFromHandle(a_p->tm->UpdateNextObjectToActivate())
-					);
-					if (refrToActivatePtr && 
-						Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-					{
-						// Play highlight shader on crosshair refr.
-						Util::StartEffectShader
-						(
-							refrToActivatePtr.get(),
-							glob.activateHighlightShader,
-							max(0.1f, Settings::fSecsBeforeActivationCycling)
-						);
-					}
-
-					// Not activation cycling yet.
-					a_p->pam->startedActivationCycling = false;
-				}
-				
-				
-				// Cycle through nearby objects at regular intervals 
-				// while the activate bind is held.
-				// NOTE:
-				// No activation is performed here.
-				// We are just caching the cycled refr and highlighting it.
-				if (a_p->tm->useProximityInteraction)
-				{
-					bool shouldStartCycling =
-					(
-						!a_p->pam->startedActivationCycling && 
-						secsSinceActivationTargetUpdated >= Settings::fSecsBeforeActivationCycling
-					);
-					bool shouldCycleNewRefr = 
-					(
-						a_p->pam->startedActivationCycling &&
-						secsSinceActivationTargetUpdated >=
-						Settings::fSecsBetweenActivationChecks
-					);
-					if (shouldStartCycling || shouldCycleNewRefr)
-					{
-						a_p->lastActivationCheckTP = SteadyClock::now();
-						// Remove activation effect shader on previous activation refr, if any.
-						auto refrToActivatePtr = Util::GetRefrPtrFromHandle
-						(
-							a_p->tm->activationRefrHandle
-						); 
-						if (refrToActivatePtr &&
-							Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-						{
-							Util::StopEffectShader
-							(
-								refrToActivatePtr.get(), glob.activateHighlightShader
-							);
-						}
-
-						// Flag as started activation cycling.
-						if (shouldStartCycling)
-						{
-							a_p->pam->startedActivationCycling = true;
-						}
-
-						// Get new refr to activate.
-						refrToActivatePtr = 
-						(
-							Util::GetRefrPtrFromHandle(a_p->tm->UpdateNextObjectToActivate())
-						);
-						if (refrToActivatePtr && 
-							Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-						{
-							// Play highlight shader on cycled activation refr.
-							Util::StartEffectShader
-							(
-								refrToActivatePtr.get(),
-								glob.activateHighlightShader,
-								max(0.1f, Settings::fSecsBetweenActivationChecks)
-							);
-						}
-					}
-				}
-
-				// Check if the crosshair-targeted/cycled refr is a downed player now.
-				// Only a valid action if the revive system is enabled.
-				// Also cannot initiate revive if ragdolling or staggered, so exit here.
-				if (!Settings::bUseReviveSystem || 
-					a_p->coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal)
-				{
-					return;
-				}
-
-				auto targetRefrPtr = Util::GetRefrPtrFromHandle(a_p->tm->activationRefrHandle);
-				auto targetRefrValidity = 
-				(
-					targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
-				);
-				// No valid target or too far away to activate.
-				// NOTE: 
-				// Range check only done here on the initial check.
-				if (!targetRefrValidity || 
-					!a_p->tm->RefrIsInActivationRange(a_p->tm->activationRefrHandle))
-				{
-					return;
-				}
-
-				// Find downed, unrevived player.
-				auto downedPlayerIter = std::find_if
-				(
-					glob.coopPlayers.begin(), glob.coopPlayers.end(),
-					[&targetRefrPtr](const auto& a_p2) 
-					{
-						return 
-						(
-							a_p2->isActive && 
-							a_p2->coopActor == targetRefrPtr && 
-							a_p2->isDowned && 
-							!a_p2->isRevived
-						);
-					}
-				);
-				
-				// No found player, nothing else to do.
-				if (downedPlayerIter == glob.coopPlayers.end())
-				{
-					return;
-				}
-
-				// Is another player.
-				// Check if the player has enough health to revive a downed player.
-				// If not, clear out revive data and return.
-				if (!HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kActivate))
-				{
-					pam->downedPlayerTarget = (*downedPlayerIter);
-					pam->downedPlayerTarget->isBeingRevived = false;
-					a_p->isRevivingPlayer = false;
-					a_p->lastReviveCheckTP = SteadyClock::now();
-					return;
-				}
-
-				// Player can revive the downed player target.
-				// Start reviving now.
-				pam->downedPlayerTarget = (*downedPlayerIter);
-				pam->downedPlayerTarget->isBeingRevived = true;
-				a_p->isRevivingPlayer = true;
-				a_p->lastReviveCheckTP = SteadyClock::now();
-
-				// Only will reach here if there is a revivable player target.
-				// Play revive animation if grounded.
-				if (!a_p->coopActor->IsOnMount() &&
-					!a_p->coopActor->IsSwimming() && 
-					!a_p->coopActor->IsFlying())
-				{
-					a_p->coopActor->NotifyAnimationGraph("IdleForceDefaultState");
-					a_p->coopActor->NotifyAnimationGraph("IdleKneeling");
-				}
-
-				// Play shaders and hit effects.
-				const auto& downedPlayerTarget = (*downedPlayerIter);
-				Util::StartEffectShader(a_p->coopActor.get(), glob.dragonHolesShader, -1.0f);
-				Util::StartEffectShader
-				(
-					downedPlayerTarget->coopActor.get(), glob.dragonSoulAbsorbShader, -1.0f
-				);
-				Util::StartHitArt
-				(
-					downedPlayerTarget->coopActor.get(), 
-					glob.reviveDragonSoulEffect, 
-					downedPlayerTarget->coopActor.get(),
-					-1.0f, 
-					false,
-					true
-				);
-				Util::StartHitArt
-				(
-					downedPlayerTarget->coopActor.get(), 
-					glob.reviveHealingEffect,
-					downedPlayerTarget->coopActor.get(),
-					-1.0f,
-					false,
-					false
-				);
-			}
-			else if (!pam->downedPlayerTarget->isRevived) 
-			{
-				// Continue reviving the cached downed player if they are not fully revived.
-				// Rotate to face downed player's torso.
-				float yawToTarget = Util::GetYawBetweenPositions
-				(
-					a_p->coopActor->data.location,
-					Util::GetTorsoPosition(pam->downedPlayerTarget->coopActor.get())
-				);
-				float angDiff = Util::NormalizeAngToPi
-				(
-					yawToTarget - a_p->coopActor->data.angle.z
-				);
-				a_p->coopActor->SetHeading
-				(
-					Util::NormalizeAng0To2Pi(a_p->coopActor->data.angle.z + angDiff)
-				);
-
-				// Will set the is revived flag to true 
-				// once the downed player is fully revived.
-				pam->RevivePlayer();
 			}
 		}
 
@@ -6097,7 +5772,7 @@ namespace ALYSLC
 			{
 				if (Util::IsWerewolf(a_p->coopActor.get()))
 				{
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						Util::PlayIdle("AttackStartDualSprinting", a_p->coopActor.get());
 					}
@@ -6127,7 +5802,7 @@ namespace ALYSLC
 			{
 				if (!a_p->isPlayer1 && Util::IsWerewolf(a_p->coopActor.get())) 
 				{
-					if (a_p->mm->lsMoved) 
+					if (a_p->lsMoved) 
 					{
 						Util::PlayIdle("WerewolfLeftRunningPowerAttack", a_p->coopActor.get());
 					}
@@ -6162,7 +5837,7 @@ namespace ALYSLC
 			{
 				if (!a_p->isPlayer1 && Util::IsWerewolf(a_p->coopActor.get()))
 				{
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						Util::PlayIdle("WerewolfRightRunningPowerAttack", a_p->coopActor.get());
 					}
@@ -6533,7 +6208,7 @@ namespace ALYSLC
 				);
 				if (restartCast)
 				{
-					//SPDLOG_DEBUG("{}: Restart cast.", a_p->coopActor->GetName());
+					//DBG("{}: Restart cast.", a_p->coopActor->GetName());
 					if (a_lhCast && *lhCaster->state == RE::MagicCaster::State::kUnk01)
 					{
 						lhCaster->RequestCastImpl();
@@ -6583,7 +6258,7 @@ namespace ALYSLC
 				// when changing package globals or the package spellcast target mid-cast.
 				if ((!pam->isInCastingAnim) || (notHandCastingYet))
 				{
-					//SPDLOG_DEBUG("{}: Restart package.", a_p->coopActor->GetName());
+					//DBG("{}: Restart package.", a_p->coopActor->GetName());
 					a_p->tm->ClearTarget(TargetActorType::kLinkedRefr);
 					pam->SetAndEveluatePackage();
 				}
@@ -6707,7 +6382,7 @@ namespace ALYSLC
 				// Also evaluate package if the aim target linked reference changed mid-execution.
 				if (!casterNotPreppedYet || valueChanged)
 				{
-					/*SPDLOG_DEBUG
+					/*DBG
 					(
 						"{}: glob var not set yet: {}, "
 						"not hand casting yet: {}, "
@@ -7076,541 +6751,6 @@ namespace ALYSLC
 				}
 			}
 		}
-
-		void ValidateActivationRefr(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Check if the selected activation target refr is valid for activation,
-			// and update the player's crosshair text to reflect that determination.
-			
-			// Set revive message if there is a downed player target.
-			if (a_p->pam->downedPlayerTarget)
-			{
-				if (HelperFuncs::EnoughOfAVToPerformPA(a_p, InputAction::kActivate))
-				{
-					// Set revive player message.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kReviveAlert,
-						fmt::format
-						(
-							"P{}: <font color=\"#1E88E5\">Reviving {}</font>", 
-							a_p->playerID + 1, 
-							a_p->pam->downedPlayerTarget->coopActor->GetName()
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kActivationInfo, 
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else
-				{
-					// Not enough health.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kReviveAlert,
-						fmt::format
-						(
-							"P{}: <font color=\"#FF0000\">"
-							"Not enough health to revive another player!</font>", 
-							a_p->playerID + 1
-						),
-						{
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kActivationInfo,
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-			}
-			else
-			{
-				// Clear activation flag. Only set to true if valid below.
-				a_p->tm->canActivateRefr = false;
-				const auto activationRefrPtr = Util::GetRefrPtrFromHandle
-				(
-					a_p->tm->activationRefrHandle
-				);
-				// Set activation message if activation refr is valid.
-				if (activationRefrPtr && Util::IsValidRefrForTargeting(activationRefrPtr.get()))
-				{
-					// Get base object; return early if invalid.
-					auto baseObj = activationRefrPtr->GetObjectReference(); 
-					if (!baseObj)
-					{
-						return;
-					}
-
-					// Influences what objects this player can activate 
-					// (nothing that will open a menu if another player is controlling menus).
-					bool anotherPlayerControllingMenus = 
-					(
-						!GlobalCoopData::CanControlMenus(a_p->playerID)
-					);
-					// Activation will teleport P1.
-					bool tryingToUseTeleportRefr = 
-					(
-						activationRefrPtr->extraList.HasType<RE::ExtraTeleport>()
-					);
-					// Ensure that players cannot activate any refr that will teleport the party, 
-					// and consequently auto-save, while a player is downed.
-					bool otherPlayerDowned = std::any_of
-					(
-						glob.coopPlayers.begin(), glob.coopPlayers.end(), 
-						[](const auto& a_p) 
-						{
-							if (a_p->isActive && a_p->isDowned)
-							{
-								return true;
-							}
-
-							return false;
-						}
-					);
-					// Other activation criteria.
-					bool menusOnlyAlwaysOpen = true;
-					if (auto ui = RE::UI::GetSingleton(); ui)
-					{
-						menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
-					}
-
-					bool isLocked = activationRefrPtr->IsLocked();
-					// Is locked and P1 has the key.
-					bool canUnlockWithKey = false;
-					if (isLocked)
-					{
-						auto lockData = activationRefrPtr->extraList.GetByType<RE::ExtraLock>(); 
-						if (lockData && lockData->lock)
-						{
-							// Check if P1 has the key.
-							auto inventoryCounts = glob.player1Actor->GetInventoryCounts();
-							auto key = lockData->lock->key;
-							if (inventoryCounts.contains(key))
-							{
-								canUnlockWithKey = true;
-							}
-						}
-					}
-
-					// P1 has at least 1 lockpick.
-					bool hasLockpicks = 
-					(
-						Util::GetLockpicksCount(RE::PlayerCharacter::GetSingleton()) > 0
-					);
-					// A crime to activate.
-					bool offLimits = Util::ActivationIsOffLimits
-					(
-						a_p->coopActor.get(), activationRefrPtr.get()
-					);
-					// Object prevented from being activated (ex. door bars).
-					bool activationBlocked = false;
-					auto xFlags = activationRefrPtr->extraList.GetByType<RE::ExtraFlags>(); 
-					if (xFlags)
-					{
-						activationBlocked = 
-						(
-							xFlags &&
-							xFlags->flags.all(RE::ExtraFlags::Flag::kBlockPlayerActivate) && 
-							!activationRefrPtr->extraList.GetByType<RE::ExtraAshPileRef>()
-						);
-					}
-
-					// In activation range.
-					bool isInRange = a_p->tm->RefrIsInActivationRange
-					(
-						a_p->tm->activationRefrHandle
-					);
-					// Is a lootable refr.
-					bool isLootable = Util::IsLootableRefr(activationRefrPtr.get());
-					// Player is sneaking.
-					bool isSneaking = a_p->coopActor->IsSneaking();
-					// Something to do with usability.
-					bool isPlayable = activationRefrPtr->GetPlayable();
-					// Player has LOS on the refr.
-					// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
-					// since our raycasts do not hit such refrs right now.
-					bool passesLOSCheck =
-					(
-						activationRefrPtr &&
-						Util::HasLOS
-						(
-							activationRefrPtr.get(), 
-							a_p->coopActor.get(), 
-							a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle &&
-							!a_p->tm->crosshairRefrFromRaycast, 
-							a_p->tm->crosshairRefrHandle == a_p->tm->activationRefrHandle, 
-							a_p->tm->crosshairWorldPos
-						)
-					);
-					
-					// Crosshair message to display.
-					RE::BSFixedString activationMessage = ""sv;
-					RE::BSFixedString activationString = ""sv;
-					bool hasActivationText = false;
-					if (!isSneaking && offLimits)
-					{
-						// Must sneak to interact with off-limits refrs.
-						activationString = Util::GetActivationText
-						(
-							a_p->coopActor.get(), 
-							baseObj, 
-							activationRefrPtr.get(),
-							hasActivationText
-						);
-						if (hasActivationText)
-						{
-							// Special Case:
-							// Will pick up notes and books if they are activated 
-							// while not selected by the crosshair,
-							// or if another player is controlling menus.
-							bool isBook = baseObj->IsBook();
-							bool isNote = baseObj->IsNote();
-							bool wouldPickupBookNote = 
-							(
-								(isBook || isNote) &&
-								(
-									a_p->tm->activationRefrHandle !=
-									a_p->tm->crosshairRefrHandle ||
-									anotherPlayerControllingMenus
-								)
-							);
-							if (wouldPickupBookNote)
-							{
-								activationMessage = fmt::format
-								(
-									"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
-									a_p->playerID + 1,
-									activationRefrPtr->GetName()
-								);
-							}
-							else
-							{
-								activationMessage = fmt::format
-								(
-									"P{}: Sneak to {}", a_p->playerID + 1, activationString
-								);
-							}
-						}
-						else
-						{
-							activationMessage = fmt::format
-							(
-								"P{}: Sneak to "
-								"<font color=\"#FF0000\">interact</font> with {}",
-								a_p->playerID + 1, 
-								activationRefrPtr->GetName()
-							);
-						}
-					}
-					else if (!isPlayable || activationBlocked)
-					{
-						// Blocked from activating.
-						activationMessage = fmt::format
-						(
-							"P{}: {} cannot be activated", 
-							a_p->playerID + 1,
-							activationRefrPtr->GetName()
-						);
-					}
-					else if (isLocked && !hasLockpicks && !canUnlockWithKey)
-					{
-						// No lockpicks or key.
-						activationMessage = fmt::format
-						(
-							"P{}: Out of lockpicks", a_p->playerID + 1
-						);
-					}
-					else if (otherPlayerDowned && tryingToUseTeleportRefr)
-					{
-						// Can't leave the current cell with a player downed.
-						activationMessage = fmt::format
-						(
-							"P{}: Cannot leave downed teammates behind", a_p->playerID + 1
-						);
-					}
-					else if (!menusOnlyAlwaysOpen && anotherPlayerControllingMenus && !isLootable)
-					{
-						// Another player is controlling menus and the target refr is not lootable.
-						activationMessage = fmt::format
-						(
-							"P{}: Another player is controlling menus", a_p->playerID + 1
-						);
-					}
-					else if (!passesLOSCheck)
-					{
-						// Player has no LOS.
-						activationMessage = fmt::format
-						(
-							"P{}: {} is not accessible from this position",
-							a_p->playerID + 1, activationRefrPtr->GetName()
-						);
-					}
-					else
-					{
-						// Is another player.
-						if (GlobalCoopData::IsCoopPlayer(activationRefrPtr.get()))
-						{
-							activationMessage = fmt::format
-							(
-								"P{}: Player {}",
-								a_p->playerID + 1,
-								activationRefrPtr->GetDisplayFullName()
-							);
-						}
-						else
-						{
-							if (isInRange)
-							{
-								auto p1 = RE::PlayerCharacter::GetSingleton();
-								auto asActor = activationRefrPtr->As<RE::Actor>();
-								// Selected a hostile actor with the crosshair
-								// or as the aim correction target when the crosshair is disabled.
-								bool targetedHostileActor = 
-								(
-									(
-										(asActor) && 
-										(
-											a_p->tm->crosshairTargetingMode ==
-											CrosshairTargetingMode::kDisabled ||
-											asActor->GetHandle() == a_p->tm->crosshairRefrHandle
-										)
-									) &&
-									(
-										asActor->IsHostileToActor(a_p->coopActor.get()) ||
-										asActor->IsHostileToActor(p1)
-									)
-								);
-								// Living guard with a bounty out on the player.
-								bool showSurrenderMessage = 
-								(
-									targetedHostileActor &&
-									!asActor->IsDead() &&
-									Util::IsGuard(asActor) &&
-									Util::HasBountyOnPlayer(asActor) &&
-									!a_p->coopActor->IsSneaking()
-								);
-								// Living, normally passive actor with no bounty on the player,
-								// or fleeing the player.
-								bool showStopCombatMessage = 
-								(
-									(
-										!showSurrenderMessage &&
-										targetedHostileActor &&
-										!asActor->IsDead() &&
-										!a_p->coopActor->IsSneaking()
-									) &&
-									(
-										Util::HasNoBountyButInCrimeFaction(asActor) || 
-										Util::IsFleeing(asActor) ||
-										asActor->IsAMount() ||
-										Util::IsPartyFriendlyActor(asActor)
-									)
-								);
-								if (showSurrenderMessage)
-								{
-									activationMessage = fmt::format
-									(
-										"P{}: Surrender to {}",
-										a_p->playerID + 1,
-										activationRefrPtr->GetName()
-									);
-								}
-								else if (showStopCombatMessage)
-								{
-									activationMessage = fmt::format
-									(
-										"P{}: Stop combat with {}",
-										a_p->playerID + 1,
-										activationRefrPtr->GetName()
-									);
-								}
-								else
-								{
-									// Player can activate this refr.
-									// Set activation text to the refr's name 
-									// if no text is available.
-									activationString = Util::GetActivationText
-									(
-										a_p->coopActor.get(),
-										baseObj,
-										activationRefrPtr.get(),
-										hasActivationText
-									);
-									if (hasActivationText)
-									{
-										// Special Case:
-										// Pick up notes and books if they are activated 
-										// while not selected by the crosshair,
-										// or if another player is controlling menus.
-										bool isBook = baseObj->IsBook();
-										bool isNote = baseObj->IsNote();
-										bool shouldPickupBookNote = 
-										(
-											(isBook || isNote) &&
-											(
-												a_p->tm->activationRefrHandle !=
-												a_p->tm->crosshairRefrHandle ||
-												anotherPlayerControllingMenus
-											)
-										);
-										if (shouldPickupBookNote)
-										{
-											if (offLimits)
-											{
-												activationMessage = fmt::format
-												(
-													"P{}: <font color=\"#FF0000\">Steal</font> {}", 
-													a_p->playerID + 1,
-													activationRefrPtr->GetName()
-												);
-											}
-											else
-											{
-												activationMessage = fmt::format
-												(
-													"P{}: Take {}", 
-													a_p->playerID + 1,
-													activationRefrPtr->GetName()
-												);
-											}
-										}
-										else
-										{
-											activationMessage = fmt::format
-											(
-												"P{}: {}", a_p->playerID + 1, activationString
-											);
-										}
-									}
-									else
-									{
-										if (offLimits)
-										{
-											activationMessage = fmt::format
-											(
-												"P{}: <font color=\"#FF0000\">Interact</font> "
-												"with {}",
-												a_p->playerID + 1,
-												activationRefrPtr->GetName()
-											);
-										}
-										else
-										{
-											activationMessage = fmt::format
-											(
-												"P{}: Interact with {}",
-												a_p->playerID + 1,
-												activationRefrPtr->GetName()
-											);
-										}
-									}
-
-									int32_t value = -1;
-									float weight = 0.0f;
-									auto asActor = activationRefrPtr->As<RE::Actor>();
-									if ((asActor && asActor->IsDead()) || 
-										(!asActor && activationRefrPtr->GetContainer()))
-									{
-										// Get total weight and value in the container.
-										Util::GetWeightAndValueInRefr
-										(
-											activationRefrPtr.get(), weight, value
-										);
-									}
-									else if (baseObj)
-									{
-										// Get weight and value for this individual refr.
-										value = baseObj->GetGoldValue();
-										weight = activationRefrPtr->GetWeight();
-									}
-
-									if (value >= 0)
-									{
-										float inventoryWeight = 
-										(
-											a_p->isPlayer1 ? 
-											a_p->coopActor->GetWeightInContainer() :
-											a_p->em->inventoryChest->GetWeightInContainer()
-										);
-										const auto invChanges = 
-										(
-											a_p->isPlayer1 ? 
-											a_p->coopActor->GetInventoryChanges() :
-											a_p->em->inventoryChest->GetInventoryChanges()
-										);
-										if (invChanges)
-										{
-											inventoryWeight = invChanges->totalWeight;
-										}
-
-										const float carryweight = 
-										(
-											a_p->coopActor->GetTotalCarryWeight()
-										);
-										float remainingCarryweight = carryweight - inventoryWeight;
-										std::string weightValue = fmt::format
-										(
-											", <font color=\"#{:X}\">Value: </font>"
-											"<font face=\"$EverywhereBoldFont\">{}</font>, "
-											"<font color=\"#{:X}\">Weight: </font>"
-											"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
-											"<font color=\"#{:X}\">Space: </font>"
-											"<font face=\"$EverywhereBoldFont\">"
-											"<font color=\"#{:X}\">{:.0f}</font>"
-											"</font>",
-											0xBBA53D,
-											value,
-											0x999999,
-											weight,
-											0x804a00,
-											remainingCarryweight - weight <= 0.0f ? 
-											0xFF0000 : 
-											0xFFFFFF,
-											remainingCarryweight,
-											carryweight
-										);
-										activationMessage = fmt::format
-										(
-											"{}", std::string(activationMessage) + weightValue
-										);
-									}
-								}
-
-								a_p->tm->canActivateRefr = true;
-							}
-							else
-							{
-								// Not in range.
-								activationMessage = fmt::format
-								(
-									"P{}: {} is too far away",
-									a_p->playerID + 1,
-									activationRefrPtr->GetName()
-								);
-							}
-						}
-					}
-
-					// Set crosshair message.
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kActivationInfo,
-						activationMessage,
-						{ 
-							CrosshairMessageType::kNone, 
-							CrosshairMessageType::kStealthState,
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-			}
-		}
 	};
 
 	namespace ProgressFuncs
@@ -7625,8 +6765,245 @@ namespace ALYSLC
 				return;
 			}
 
-			HelperFuncs::PerformActivationCycling(a_p);
-			HelperFuncs::ValidateActivationRefr(a_p);
+			a_p->tm->PerformActivationCycling();
+			a_p->tm->ValidateActivationRefr(true);
+		}
+
+		void AdjustAimPitch(const std::shared_ptr<CoopPlayer>& a_p)
+		{
+			// IMPORTANT:
+			// Temporary. Will be assigned separate bind eventually.
+
+			if (HelperFuncs::ActionJustStarted(a_p, InputAction::kAdjustAimPitch))
+			{
+				const auto& compInputs = 
+				(
+					a_p->pam->paParamsList
+					[!InputAction::kAdjustAimPitch - !InputAction::kFirstAction].composingInputs
+				);
+				bool lastHeldFirst = 
+				(
+					compInputs.size() > 1 &&
+					glob.cdh->GetInputState(a_p->deviceID, compInputs[0]).heldTimeSecs < 
+					glob.cdh->GetInputState(a_p->deviceID, compInputs[1]).heldTimeSecs	
+				);
+				// Signal that the temporary 'alternative' functionality is requested.
+				a_p->pam->adjustAimPitchAlternateMode = lastHeldFirst;
+			}
+
+			const auto& rsState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
+			if (a_p->pam->adjustAimPitchAlternateMode && rsState.MovedFromCenter())
+			{
+				if (rsState.xComp > 0.0f && fabsf(rsState.xComp) > fabsf(rsState.yComp))
+				{
+					// Right.
+					if (a_p->tm->aimMode == AimMode::kFreeAim)
+					{
+						a_p->tm->aimMode = AimMode::kLockOn;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#00FFFF\">Lock On</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else if (a_p->tm->aimMode == AimMode::kLockOn)
+					{
+						a_p->tm->aimMode = AimMode::kTwinStick;
+						a_p->tm->InactivateCrosshair(false);
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#FF0000\">Twin-stick</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else
+					{
+						a_p->tm->aimMode = AimMode::kFreeAim;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#00FF00\">Free Aim</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+				}
+				else if (rsState.xComp < 0.0f && fabsf(rsState.xComp) > fabsf(rsState.yComp))
+				{
+					// Left.
+					if (a_p->tm->aimMode == AimMode::kFreeAim)
+					{
+						a_p->tm->aimMode = AimMode::kTwinStick;
+						a_p->tm->InactivateCrosshair(false);
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#FF0000\">Twin-stick</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else if (a_p->tm->aimMode == AimMode::kLockOn)
+					{
+						a_p->tm->aimMode = AimMode::kFreeAim;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#00FF00\">Free Aim</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else
+					{
+						a_p->tm->aimMode = AimMode::kLockOn;
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Aim mode: <font color=\"#00FFFF\">Lock On</font>",
+								a_p->playerID + 1
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+				}
+				else if (rsState.yComp > 0.0f && fabsf(rsState.yComp) > fabsf(rsState.xComp))
+				{
+					// Up.
+
+					// Reset aim pitch.
+					// Signal the movement manager to reset this player's aim pitch
+					// and node rotations.
+					// Also reset the grabbed refr XY distance offset.
+					a_p->mm->reqResetAimAndBody = true;
+					a_p->tm->grabbedRefrDistanceOffset = 0.0f;
+					a_p->tm->SetCrosshairMessageRequest
+					(
+						CrosshairMessageType::kGeneralNotification,
+						fmt::format("P{}: Reset aim pitch angle", a_p->playerID + 1),
+						{ 
+							CrosshairMessageType::kNone,
+							CrosshairMessageType::kStealthState, 
+							CrosshairMessageType::kTargetSelection 
+						},
+						Settings::fSecsBetweenDiffCrosshairMsgs
+					);
+				}
+				else if (rsState.yComp < 0.0f && fabsf(rsState.yComp) > fabsf(rsState.xComp))
+				{
+					// Down.
+
+					// Inactivate crosshair, clear targets.
+					if (a_p->tm->aimMode == AimMode::kFreeAim)
+					{
+						// Signal to re-center/fade crosshair, clearing crosshair targets.
+						a_p->tm->InactivateCrosshair(true);
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format("P{}: Crosshair now inactive", a_p->playerID + 1),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else if (a_p->tm->aimMode == AimMode::kLockOn)
+					{
+						// Signal to re-center/fade crosshair then clear lock on activation target.
+						a_p->tm->InactivateCrosshair(false);
+						a_p->tm->ClearActivationTargetData();
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format("P{}: Cleared lock on target", a_p->playerID + 1),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+					else
+					{
+						// Clear out aim correction target and lock on activation target, if any.
+						a_p->tm->ClearTarget(TargetActorType::kAimCorrection);
+						a_p->tm->ClearActivationTargetData();
+						a_p->tm->SetCrosshairMessageRequest
+						(
+							CrosshairMessageType::kGeneralNotification,
+							fmt::format
+							(
+								"P{}: Cleared aim correction target",
+								a_p->playerID + 1,
+								0.005f + 
+								Settings::fSecsDefMinHoldTime - 
+								a_p->pam->GetPlayerActionInputHoldTime(InputAction::kResetAim)
+							),
+							{ 
+								CrosshairMessageType::kNone,
+								CrosshairMessageType::kStealthState, 
+								CrosshairMessageType::kTargetSelection 
+							},
+							Settings::fSecsBetweenDiffCrosshairMsgs
+						);
+					}
+				}
+			}
 		}
 
 		void AttackLH(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9214,7 +8591,7 @@ namespace ALYSLC
 						}
 						else
 						{
-							SPDLOG_DEBUG("So, no ward?"); 
+							DBG("So, no ward?"); 
 						}
 
 						// Is now grabbing the refr.
@@ -9433,34 +8810,6 @@ namespace ALYSLC
 					}
 				}
 			}*/
-		}
-
-		void MoveCrosshair(const std::shared_ptr<CoopPlayer>& a_p)
-		{
-			// Select a lock on target in the direction of the player's right stick
-			// if the lock on crosshair targeting mode is active.
-			// Otherwise, nothing to do.
-			if (a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kLockOn)
-			{
-				return;
-			}
-				
-			// Must move the right stick to max displacement to select,
-			// which should occur only once per flicking of the stick.
-			// Reason being, small fluctuations in displacement 
-			// or choosing a new target every frame while the stick is moved 
-			// will result in imprecise selection due to the target potentially changing frequently 
-			// or impact performance from many LOS checks each frame.
-			const auto& stickState = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
-			bool fullyFlicked = 
-			(
-				(stickState.normMag >= 1.0f - 1E-3f) &&
-				(stickState.normMag > stickState.prevNormMag)
-			);
-			if (fullyFlicked)
-			{
-				a_p->tm->UpdateLockOnTarget(false);
-			}
 		}
 
 		void QuickSlotCast(const std::shared_ptr<CoopPlayer>& a_p)
@@ -9978,10 +9327,23 @@ namespace ALYSLC
 				);
 				return;
 			}
-
-			bool hasCrosshairRefr = a_p->tm->activationRefrHandle == a_p->tm->crosshairRefrHandle;
+			bool useCrosshairRefr = 
+			(
+				a_p->tm->aimMode == AimMode::kFreeAim
+			);
+			bool hasSelectedRefr = 
+			(
+				(
+					useCrosshairRefr &&
+					a_p->tm->activationRefrHandle == a_p->tm->crosshairRefrHandle
+				) ||
+				(
+					!useCrosshairRefr &&
+					a_p->tm->activationRefrHandle == a_p->tm->lockOnActivationRefrHandle
+				)
+			);
 			uint32_t lootedObjects = 0;
-			if (hasCrosshairRefr)
+			if (hasSelectedRefr)
 			{
 				auto asActor = activationRefrPtr->As<RE::Actor>();
 				// Next, the targeted refr must not be off limits, 
@@ -10451,7 +9813,7 @@ namespace ALYSLC
 			a_p->coopActor->NotifyAnimationGraph("blockStart");
 			bool canShieldChargeAfter = 
 			{
-				a_p->mm->lsMoved &&
+				a_p->lsMoved &&
 				a_p->em->HasShieldEquipped() &&
 				a_p->coopActor->HasPerk(glob.shieldChargePerk) &&
 				a_p->pam->IsPerforming(InputAction::kSprint)
@@ -10494,7 +9856,7 @@ namespace ALYSLC
 			// since actors are not selectable if they are not hit by the crosshair's raycasts.
 			const auto& targetActorHandle = 
 			(
-				a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ?
+				a_p->tm->aimMode == AimMode::kTwinStick ?
 				a_p->tm->aimCorrectionTargetHandle :
 				a_p->tm->selectedTargetActorHandle
 			);
@@ -10788,7 +10150,7 @@ namespace ALYSLC
 					{
 						if (glob.moarm->reqTransferMenuControlPlayerPID != -1)
 						{
-							SPDLOG_DEBUG
+							DBG
 							(
 								"{}: Dialogue req PID lock obtained. (0x{:X})",
 								a_p->coopActor->GetName(),
@@ -10934,7 +10296,7 @@ namespace ALYSLC
 							return;
 						}
 
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: Req PID NOT set and lock obtained (0x{:X}). Set to {}.",
 							a_p->coopActor->GetName(), 
@@ -11303,7 +10665,7 @@ namespace ALYSLC
 				);
 				auto targetRefrPtr = Util::GetRefrPtrFromHandle
 				(
-					a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ? 
+					a_p->tm->aimMode == AimMode::kTwinStick ? 
 					a_p->tm->aimCorrectionTargetHandle :
 					a_p->tm->crosshairRefrHandle
 				);
@@ -11312,22 +10674,34 @@ namespace ALYSLC
 				(
 					(a_p->mm->reqFaceTarget) && 
 					(
-						(a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled) || 
-						(targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get()))
+						(a_p->tm->aimMode != AimMode::kTwinStick) || 
+						(
+							Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) && 
+							Util::IsValidRefrForTargeting
+							(
+								a_p->tm->aimCorrectionTargetHandle.get().get()
+							)
+						)
 					)
 				);
-				const float& lsGameAngle = a_p->mm->movementOffsetParams[!MoveParams::kLSGameAng];
+				const float& lsGameAngle = a_p->analogStickParams[!AnalogStickParams::kLSCamRelAng];
 				// Facing to moving angle difference.
 				float facingToMovingAngDiff = 0.0f;
-				float angToTarget = Util::GetYawBetweenPositions
-				(
-					a_p->coopActor->data.location, a_p->tm->crosshairWorldPos
-				);
 				if (hasTarget)
 				{
+					const auto targetPos = 
+					(
+						a_p->tm->aimMode == AimMode::kTwinStick	?
+						Util::GetTorsoPosition(a_p->tm->aimCorrectionTargetHandle.get().get()) : 
+						a_p->tm->crosshairWorldPos
+					);
+					float angToTarget = Util::GetYawBetweenPositions
+					(
+						a_p->coopActor->data.location, targetPos
+					);
 					// Face the target first.
 					a_p->coopActor->data.angle.z = Util::NormalizeAng0To2Pi(angToTarget);
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						facingToMovingAngDiff = lsGameAngle - angToTarget;
 					}
@@ -11340,7 +10714,7 @@ namespace ALYSLC
 				else
 				{
 					// Roll forwards when moving, backwards otherwise.
-					facingToMovingAngDiff = a_p->mm->lsMoved ? 0.0f : PI;
+					facingToMovingAngDiff = a_p->lsMoved ? 0.0f : PI;
 				}
 
 				// Not working at the moment. Will investigate later.
@@ -11410,13 +10784,12 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			else if (a_p->tm->crosshairTargetingMode != CrosshairTargetingMode::kDisabled)
+			else
 			{
 				// Toggle face target mode.
 				// If enabled, the player will continuously face the crosshair position.
 				// Otherwise, the player rotates to face their movement direction as usual.
 				a_p->mm->reqFaceTarget = !a_p->mm->reqFaceTarget;
-				a_p->mm->inTwinStickMode = false;
 				if (!Settings::vbAnimatedCrosshair[a_p->playerID]) 
 				{
 					return;
@@ -11430,32 +10803,6 @@ namespace ALYSLC
 				a_p->tm->crosshairRotationData->ShiftEndpoints
 				(
 					a_p->mm->reqFaceTarget ? PI / 4.0f : 0.0f
-				);
-			}
-			else
-			{
-				// Crosshair disabled, so will switch between 'Twin-stick' 
-				// and left stick rotation + movement modes.
-				// Notify the player since there is no visual indicator
-				// to signify this mode switch without an active crosshair.
-				a_p->mm->reqFaceTarget = !a_p->mm->reqFaceTarget;
-				a_p->mm->inTwinStickMode = a_p->mm->reqFaceTarget;
-				a_p->tm->SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kGeneralNotification,
-					fmt::format
-					(
-						"P{}: Twin-stick mode: <font color=\"#{}\">{}</font>", 
-						a_p->playerID + 1,
-						a_p->mm->reqFaceTarget ? "00FF00" : "FF0000",
-						a_p->mm->reqFaceTarget ? "ON" : "OFF"
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
 		}
@@ -11645,7 +10992,7 @@ namespace ALYSLC
 				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
 				if (Hash(skeleName) == "bear"_h)
 				{
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
 					}
@@ -11696,7 +11043,7 @@ namespace ALYSLC
 				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
 				if (Hash(skeleName) == "bear"_h)
 				{
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
 					}
@@ -11747,7 +11094,7 @@ namespace ALYSLC
 				Util::GetSkeletonModelNameForRace(a_p->coopActor->race, skeleName);
 				if (Hash(skeleName) == "bear"_h)
 				{
-					if (a_p->mm->lsMoved)
+					if (a_p->lsMoved)
 					{
 						a_p->coopActor->NotifyAnimationGraph("attackStart_ForwardPowerShort");
 					}
@@ -11997,6 +11344,7 @@ namespace ALYSLC
 
 			// Hold longer than the min hold time and release 
 			// to switch from one crosshair targeting mode to another.
+
 			bool heldLongerThanMinHoldTime = 
 			(
 				a_p->pam->GetPlayerActionInputHoldTime(InputAction::kResetAim) > 
@@ -12004,37 +11352,21 @@ namespace ALYSLC
 			);
 			if (heldLongerThanMinHoldTime)
 			{
-				if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim)
+				// Hold and release clears the targets for the main source of targeting,
+				// meaning the crosshair refr handle when it is active, 
+				// and the aim correction target when it is inactive.
+				// Bye bye!
+				// Will not clear the lock on activation target 
+				// which automatically clears when the player moves away from the target.
+				if (a_p->tm->aimMode == AimMode::kFreeAim ||
+					a_p->tm->aimMode == AimMode::kLockOn)
 				{
-					a_p->tm->crosshairTargetingMode = CrosshairTargetingMode::kLockOn;
+					// Signal to re-center/fade crosshair, clearing crosshair targets.
+					a_p->tm->InactivateCrosshair(true);
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kGeneralNotification,
-						fmt::format
-						(
-							"P{}: Crosshair mode: <font color=\"#00FF00\">Lock On</font>",
-							a_p->playerID + 1
-						),
-						{ 
-							CrosshairMessageType::kNone,
-							CrosshairMessageType::kStealthState, 
-							CrosshairMessageType::kTargetSelection 
-						},
-						Settings::fSecsBetweenDiffCrosshairMsgs
-					);
-				}
-				else if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kLockOn)
-				{
-					a_p->tm->crosshairTargetingMode = CrosshairTargetingMode::kDisabled;
-					a_p->tm->InactivateCrosshair(false);
-					a_p->tm->SetCrosshairMessageRequest
-					(
-						CrosshairMessageType::kGeneralNotification,
-						fmt::format
-						(
-							"P{}: Crosshair mode: <font color=\"#FF0000\">Disabled</font>",
-							a_p->playerID + 1
-						),
+						fmt::format("P{}: Crosshair now inactive", a_p->playerID + 1),
 						{ 
 							CrosshairMessageType::kNone,
 							CrosshairMessageType::kStealthState, 
@@ -12045,14 +11377,19 @@ namespace ALYSLC
 				}
 				else
 				{
-					a_p->tm->crosshairTargetingMode = CrosshairTargetingMode::kFreeAim;
+					// Clear out aim correction target.
+					a_p->tm->ClearTarget(TargetActorType::kAimCorrection);
+					a_p->tm->choseAimLockOnTarget = false;
 					a_p->tm->SetCrosshairMessageRequest
 					(
 						CrosshairMessageType::kGeneralNotification,
 						fmt::format
 						(
-							"P{}: Crosshair mode: <font color=\"#00FF00\">Free Aim</font>",
-							a_p->playerID + 1
+							"P{}: Cleared aim correction target",
+							a_p->playerID + 1,
+							0.005f + 
+							Settings::fSecsDefMinHoldTime - 
+							a_p->pam->GetPlayerActionInputHoldTime(InputAction::kResetAim)
 						),
 						{ 
 							CrosshairMessageType::kNone,
@@ -12065,128 +11402,49 @@ namespace ALYSLC
 			}
 			else
 			{
-				bool doubleTapped = a_p->pam->PassesConsecTapsCheck(InputAction::kResetAim);
-				if (doubleTapped)
+				// [Single tap]:
+				// 1. Free aim mode: Selects an NPC aim lock on target
+				// in the player's left stick/facing direction, starting from the player.
+				// 2. Lock on mode: Selects an activation lock on target
+				// in the player's left stick/facing direction, starting from the player.
+				// 3. Twin stick mode: 
+				// a. If 
+				// b. Selects an activation lock on target
+				// in the player's left stick/facing direction, 
+				// starting from the last selected activation target.
+				if (a_p->tm->aimMode == AimMode::kFreeAim)
 				{
-					// Double tapping makes the crosshair inactive by re-centering or fading it
-					// if the crosshair is not disabled.
-					// Otherwise, a helpful (hopefully) message displays to inform the player
-					// how much longer they need to hold this bind to re-enable the crosshair.
-					if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim)
-					{
-						// Clear lock on target and signal to re-center/fade crosshair first.
-						a_p->tm->InactivateCrosshair(true);
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: Crosshair now inactive", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
-					else if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kLockOn)
-					{
-						// Flip even on double tap to ensure that, upon switching back to lock on
-						// mode, the same lock on type will be present as before double tapping.
-						a_p->tm->lockOnToLivingNPCs = !a_p->tm->lockOnToLivingNPCs;
-						// Clear lock on target and signal to re-center/fade crosshair first.
-						a_p->tm->InactivateCrosshair(false);
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format("P{}: Cleared lock on target", a_p->playerID + 1),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
-					else
-					{
-						// Round up to nearest hundredth of a second.
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format
-							(
-								"P{}: Hold {:.2f} seconds longer to enable crosshair",
-								a_p->playerID + 1,
-								0.005f + 
-								Settings::fSecsDefMinHoldTime - 
-								a_p->pam->GetPlayerActionInputHoldTime(InputAction::kResetAim)
-							),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
+					a_p->tm->SetLockOnAimTarget(true, false, false);
 				}
-				else
-				{	// [Single tap]:
-					// 1. Free aim mode: Selects a lock on target.
-					// 2. Lock on mode: Toggles the type of refr to lock on to.
-					// 3. Disabled mode: Displays a helpful (hopefully) message to inform the player
-					// how much longer they need to hold this bind to re-enable the crosshair.
-					if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kFreeAim)
+				else if (a_p->tm->aimMode == AimMode::kLockOn)
+				{
+					a_p->tm->SetLockOnActivationTarget(true, false, false);
+				}
+				else if (a_p->rsMoved &&
+						 a_p->pam->IsNotPerformingAnyOf
+						 (
+							 InputAction::kRotateCam,
+							 InputAction::kZoomCam
+						 ))
+				{
+					// Keep the current aim correction target, but flag as selected by lock on
+					// if no lock on target was previously chosen.
+					if (Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle) &&
+						!a_p->tm->choseAimLockOnTarget)
 					{
-						// Evaluate for a new lock on target 
-						// in the direction of the player's left stick.
-						a_p->tm->UpdateLockOnTarget(true);
+						a_p->lastLockOnAimTargetUpdateTP = SteadyClock::now();
+						a_p->tm->choseAimLockOnTarget = true;
+						return;
 					}
-					else if (a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kLockOn)
-					{
-						// Switch between targeting only objects and only NPCs when in lock on mode.
-						a_p->tm->lockOnToLivingNPCs = !a_p->tm->lockOnToLivingNPCs;
-						a_p->tm->InactivateCrosshair(false);
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format
-							(
-								"P{}: Lock on type: {}",
-								a_p->playerID + 1, 
-								a_p->tm->lockOnToLivingNPCs ? "Living NPCs" : "Objects/Dead NPCs"
-							),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
-					else
-					{
-						// Clear out aim correction target.
-						a_p->tm->ClearTarget(TargetActorType::kAimCorrection);
-						a_p->tm->SetCrosshairMessageRequest
-						(
-							CrosshairMessageType::kGeneralNotification,
-							fmt::format
-							(
-								"P{}: Cleared aim correction target",
-								a_p->playerID + 1,
-								0.005f + 
-								Settings::fSecsDefMinHoldTime - 
-								a_p->pam->GetPlayerActionInputHoldTime(InputAction::kResetAim)
-							),
-							{ 
-								CrosshairMessageType::kNone,
-								CrosshairMessageType::kStealthState, 
-								CrosshairMessageType::kTargetSelection 
-							},
-							Settings::fSecsBetweenDiffCrosshairMsgs
-						);
-					}
+
+					a_p->tm->SetLockOnAimTarget
+					(
+						false, Util::HandleIsValid(a_p->tm->aimCorrectionTargetHandle), false
+					);
+				}
+				else 
+				{
+					a_p->tm->SetLockOnActivationTarget(true, false, false);
 				}
 			}
 		}
@@ -12919,8 +12177,16 @@ namespace ALYSLC
 					(
 						(asActor) && 
 						(
-							a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ||
-							asActor->GetHandle() == a_p->tm->crosshairRefrHandle
+							(
+								a_p->tm->aimMode == 
+								AimMode::kFreeAim &&
+								asActor->GetHandle() == a_p->tm->crosshairRefrHandle
+							) ||
+							(
+								a_p->tm->aimMode != 
+								AimMode::kFreeAim &&
+								asActor->GetHandle() == a_p->tm->lockOnActivationRefrHandle
+							)
 						)
 					) &&
 					(
@@ -12944,12 +12210,7 @@ namespace ALYSLC
 						!asActor->IsDead() &&
 						!a_p->coopActor->IsSneaking()
 					) &&
-					(
-						Util::HasNoBountyButInCrimeFaction(asActor) || 
-						Util::IsFleeing(asActor) ||
-						asActor->IsAMount() ||
-						Util::IsPartyFriendlyActor(asActor)
-					)
+					(!Util::IsGuard(asActor) && Util::CanStopCombatWithActor(asActor))
 				);
 				if (startArrestDialogue)
 				{
@@ -13055,7 +12316,7 @@ namespace ALYSLC
 					const float currentHealth = asActor->GetActorValue(RE::ActorValue::kHealth);
 					if (currentHealth <= 0.0f)
 					{
-						SPDLOG_DEBUG("{}: GET UP LAZY BONES (bones in question: {}).", 
+						DBG("{}: GET UP LAZY BONES (bones in question: {}).", 
 							a_p->coopActor->GetName(), asActor->GetName());
 						asActor->RestoreActorValue
 						(
@@ -13103,8 +12364,11 @@ namespace ALYSLC
 					(
 						(menusOnlyAlwaysOpen) &&
 						(
-							a_p->tm->activationRefrHandle != a_p->tm->crosshairRefrHandle ||
-							anotherPlayerControllingMenus
+							(anotherPlayerControllingMenus) ||
+							(
+								a_p->tm->activationRefrHandle != a_p->tm->crosshairRefrHandle &&
+								a_p->tm->activationRefrHandle != a_p->tm->lockOnActivationRefrHandle
+							)
 						) &&
 						(!isQuestItem || a_p->isPlayer1) && 
 						(isBook || isNote)
@@ -13280,7 +12544,7 @@ namespace ALYSLC
 					else
 					{
 						// WOOO
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{} is activating {} ({}, form type 0x{:X}, "
 							"base form type: 0x{:X}, count: {}). "
@@ -13506,6 +12770,7 @@ namespace ALYSLC
 								count,
 								false
 							);
+							a_p->tm->ClearActivationTargetData();
 						}
 					}
 				}
@@ -14721,9 +13986,9 @@ namespace ALYSLC
 
 			const auto& targetRefrHandle = 
 			(
-				a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ? 
-				a_p->tm->aimCorrectionTargetHandle :
-				a_p->tm->crosshairRefrHandle
+				a_p->tm->aimMode == AimMode::kFreeAim ? 
+				a_p->tm->crosshairRefrHandle :
+				a_p->tm->lockOnActivationRefrHandle
 			);
 			auto targetRefrPtr = Util::GetRefrPtrFromHandle(targetRefrHandle);
 			bool targetRefrValidity = 
@@ -14847,22 +14112,22 @@ namespace ALYSLC
 									RE::hkpMotion::MotionType::kInvalid
 								)
 							);
-							SPDLOG_DEBUG("{} has motion type {}.",
+							DBG("{} has motion type {}.",
 								targetRefrPtr->GetName(), *hkpRigidBodyPtr->motion.type);
 						}
 						else
 						{
-							SPDLOG_DEBUG("{} has no rigid body.", targetRefrPtr->GetName());
+							DBG("{} has no rigid body.", targetRefrPtr->GetName());
 						}
 					}
 					else
 					{
-						SPDLOG_DEBUG("{} has no valid 3D.", targetRefrPtr->GetName());
+						DBG("{} has no valid 3D.", targetRefrPtr->GetName());
 					}
 				}
 				else
 				{
-					SPDLOG_DEBUG("{} is dead: {}. Knock state: {}. Is ragdolled: {}.", 
+					DBG("{} is dead: {}. Knock state: {}. Is ragdolled: {}.", 
 						targetRefrPtr->GetName(),
 						targetRefrPtr->IsDead(),
 						targetActor ? targetActor->GetKnockState() : RE::KNOCK_STATE_ENUM::kNormal,
@@ -14939,11 +14204,7 @@ namespace ALYSLC
 					(
 						"P{}: {} {} {}",
 						a_p->playerID + 1, 
-						(a_p->mm->reqFaceTarget) && 
-						(
-							!a_p->mm->inTwinStickMode || 
-							Util::HandleIsValid(targetRefrHandle)
-						) ?
+						a_p->mm->reqFaceTarget ?
 						"Throwing" :
 						"Dropping",
 						objectsToRelease,
@@ -14962,7 +14223,7 @@ namespace ALYSLC
 					 !a_p->tm->rmm->isAutoGrabbing && 
 					 targetRefrValidity)
 			{
-				SPDLOG_DEBUG("CANNOT GRAB {}.", targetRefrPtr->GetName());
+				DBG("CANNOT GRAB {}.", targetRefrPtr->GetName());
 				// Notify the player that this refr is not grabbable/throwable.
 				a_p->tm->SetCrosshairMessageRequest
 				(
@@ -15203,7 +14464,7 @@ namespace ALYSLC
 				{
 					auto targetActorPtr = Util::GetActorPtrFromHandle
 					(
-						a_p->tm->crosshairTargetingMode == CrosshairTargetingMode::kDisabled ?
+						a_p->tm->aimMode == AimMode::kTwinStick ?
 						a_p->tm->aimCorrectionTargetHandle : 
 						a_p->tm->selectedTargetActorHandle 
 					);
@@ -15560,7 +14821,7 @@ namespace ALYSLC
 					max(Settings::fSecsDefMinHoldTime, Settings::fSecsCyclingInterval) &&
 					!a_p->coopActor->IsInRagdollState() && 
 					a_p->coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
-					!a_p->mm->lsMoved
+					!a_p->lsMoved
 				);
 				if (canPlayEmoteIdle)
 				{

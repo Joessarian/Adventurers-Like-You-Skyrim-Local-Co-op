@@ -523,14 +523,14 @@ namespace ALYSLC
 
 		// Update the player's encumbrance factor (inventory weight / current carryweight).
 		void UpdateEncumbranceFactor();
-
-		// Update movement parameters based on device input.
-		void UpdateMovementParameters();
 		
 		// Check if the player should stop/start moving, 
 		// set appropriate AI/animation driven flags for P1,
 		// update mounted/jump/swim/dodging states, or fix ragdoll state.
 		void UpdateMovementState();
+
+		// Update the player's speedmult actor value multiplier.
+		void UpdateSpeedMult();
 
 		//
 		// Members
@@ -563,18 +563,6 @@ namespace ALYSLC
 		RE::NiPoint3 playerTorsoPosition;
 		// Manages saved orientation data for this player's nodes.
 		std::unique_ptr<NodeOrientationManager> nom;
-		// Ten floats: 
-		// Left stick xOffset, 
-		// Left stick yOffset, 
-		// Right stick xOffset, 
-		// Right stick yOffset, 
-		// SpeedMult to set, 
-		// Left stick in-game Z angle (left stick absolute game angle + cam angle), 
-		// Right stick in-game Z angle (right stick absolute game angle + cam angle),
-		// Change in left stick absolute game angle since the last iteration, 
-		// Absolute left stick Z game angle (not factoring in cam angle).
-		// Absolute right stick Z game angle (not factoring in cam angle).
-		std::vector<float> movementOffsetParams;
 
 		// Should the player's aim pitch be auto-adjusted so that they face the target?
 		bool adjustAimPitchToFaceTarget;
@@ -610,8 +598,6 @@ namespace ALYSLC
 		bool isGettingUp;
 		// Is the player attempting to mount?
 		bool isMounting;
-		// Is the player using the right stick to rotate and the left stick to move their character?
-		bool inTwinStickMode;
 		// Is the player in the air paragliding?
 		bool isParagliding;
 		// Have the player's char controller pitch and roll angles fully reset to 0?
@@ -625,8 +611,6 @@ namespace ALYSLC
 		bool isSwimming;
 		// Is the player in a synced animation?
 		bool isSynced;
-		// Player is moving the left stick.
-		bool lsMoved;
 		// Is an unpaused menu opened that stops movement?
 		bool menuStopsMovement;
 		// Movement yaw target changed from LS yaw to yaw-to-target or vice versa.
@@ -647,8 +631,6 @@ namespace ALYSLC
 		bool reqResetAimAndBody;
 		// Player has requested, via player action, to start jumping.
 		bool reqStartJump;
-		// Player is moving the right stick.
-		bool rsMoved;
 		// Has the JumpFall animation event been sent?
 		bool sentJumpFallEvent;
 		// Continue forcing the player to remain stationary 
@@ -678,7 +660,8 @@ namespace ALYSLC
 		float aimPitch;
 		// Height factor relative to base height.
 		float baseHeightMult;
-		// Base speed multiplier.
+		// Base speed multiplier before contextual 
+		// and analog stick displacement-dependent modification.
 		float baseSpeedMult;
 		// How close the player is to completing their last requested dash dodge.
 		// [0.0, 1.0]
@@ -696,10 +679,6 @@ namespace ALYSLC
 		// Indicates how encumbered the player is:
 		// >= 1.0f = overencumbered.
 		float encumbranceFactor;
-		// Last left stick angle recorded when moving from center.
-		float lastLSAngMovingFromCenter;
-		// Last right stick angle recorded when moving from center.
-		float lastRSAngMovingFromCenter;
 		// Pseudo-paraglide interp factor. [0.0, 1.0]
 		float magicParaglideVelInterpFactor;
 		// Starting and ending upward vertical speed while pseudo-paragliding.
@@ -711,6 +690,8 @@ namespace ALYSLC
 		float playerPitch;
 		// Yaw to set for this player.
 		float playerYaw;
+		// Speedmult to set for the player in their (Player)CharacterHooks::Update() hook.
+		float speedMult;
 
 		// Initial jump vertical velocity when springing up after gather (havok units).
 		// Takes into account player scale to prevent tall players from

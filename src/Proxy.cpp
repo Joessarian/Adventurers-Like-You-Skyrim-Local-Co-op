@@ -24,7 +24,7 @@ namespace ALYSLC
 		// Initialize or re-assign global co-op data.
 		// Called each time a save is loaded.
 
-		SPDLOG_DEBUG("InitializeGlobalData.");
+		DBG("InitializeGlobalData.");
 		// First time initialization.
 		bool firstTimeInit = !glob.globalDataInit;
 		auto p1 = RE::PlayerCharacter::GetSingleton(); 
@@ -111,7 +111,7 @@ namespace ALYSLC
 		if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 		{
 			// Open the ALYSLC overlay if it isn't open already.
-			SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
+			DBG("ALYSLC overlay not open. Opening.");
 			DebugOverlayMenu::Load();
 		}
 
@@ -129,7 +129,7 @@ namespace ALYSLC
 		// Setup input device data for all connected devices and return a list of device IDs
 		// for all active devices. P1's DID is always first.
 
-		SPDLOG_DEBUG("GetConnectedInputDeviceIDs");
+		DBG("GetConnectedInputDeviceIDs");
 		if (glob.globalDataInit) 
 		{
 			return glob.cdh->SetupConnectedInputDevices();
@@ -158,7 +158,7 @@ namespace ALYSLC
 		// Initializes/updates all co-op players with the given data.
 		// Returns true if a co-op session was initialized successfully.
 
-		SPDLOG_DEBUG("InitializeCoop");
+		DBG("InitializeCoop");
 		// No global co-op data assigned, so we can't start co-op.
 		if (!glob.globalDataInit) 
 		{
@@ -172,7 +172,7 @@ namespace ALYSLC
 			if (p1)
 			{
 				glob.p1IsEssential = p1->IsEssential();
-				SPDLOG_DEBUG
+				DBG
 				(
 					"P1 is essential before initializing all players: {}.", p1->IsEssential()
 				);
@@ -199,12 +199,12 @@ namespace ALYSLC
 			return false;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Device IDs vector length: {}, number of companion players: {}.", 
 			a_deviceIDs.size(), a_numCompanions
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Device IDs: {}, {}, {}, {}",
 			a_deviceIDs.size() > 0 ? a_deviceIDs[0] : -1, 
@@ -212,7 +212,7 @@ namespace ALYSLC
 			a_deviceIDs.size() > 2 ? a_deviceIDs[2] : -1, 
 			a_deviceIDs.size() > 3 ? a_deviceIDs[3] : -1
 		);
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Co-op actors: {}, {}, {}, {}",
 			(a_coopActors[0]) ? a_coopActors[0]->GetName() : "None",
@@ -243,7 +243,7 @@ namespace ALYSLC
 						"Please wait a little before resummoning, but if the issue persists, "
 						"send the mod author a complaint about the absolute state of the mod."
 					);
-					SPDLOG_ERROR
+					ERR
 					(
 						"[P{}] should be active at device ID list index {}. Aborting setup.",
 						playerID + 1, 
@@ -252,7 +252,7 @@ namespace ALYSLC
 					return false;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"[P{}] active at device ID list index {}: {}. Device ID: {}.",
 					playerID + 1, 
@@ -293,7 +293,7 @@ namespace ALYSLC
 				// depending on if all players were already initialized.
 				if (glob.allPlayersInit)
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Updating coop player '{}'.",
 						a_coopActors[playerID] ?
@@ -312,7 +312,7 @@ namespace ALYSLC
 				}
 				else
 				{
-					SPDLOG_DEBUG
+					DBG
 					(
 						"Constructing new coop player '{}'.", 
 						a_coopActors[playerID] ?
@@ -335,7 +335,7 @@ namespace ALYSLC
 			}
 			else
 			{
-				SPDLOG_DEBUG("[P{}] inactive", playerID + 1);
+				DBG("[P{}] inactive", playerID + 1);
 				// Construct inactive player to clear out all previous data.
 				glob.coopPlayers[playerID] = std::make_shared<CoopPlayer>(-1, -1, nullptr);
 			}
@@ -359,7 +359,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("Players this session: {}", glob.activePlayers);
+		DBG("Players this session: {}", glob.activePlayers);
 		// First initialization.
 		if (!glob.allPlayersInit)
 		{
@@ -394,7 +394,7 @@ namespace ALYSLC
 		// Start or stop a co-op session by starting/pausing all active players' managers 
 		// and synchronizing actor values, perks, and items.
 
-		SPDLOG_DEBUG("{} session.",a_shouldStart ? "Starting" : "Ending");
+		DBG("{} session.",a_shouldStart ? "Starting" : "Ending");
 		if (glob.globalDataInit && glob.allPlayersInit) 
 		{
 			// Enable P1's controls and saving just to be safe.
@@ -463,11 +463,11 @@ namespace ALYSLC
 				}
 			}
 
-			SPDLOG_DEBUG("Co-op session has now {}.", a_shouldStart ? "started" : "ended");
+			DBG("Co-op session has now {}.", a_shouldStart ? "started" : "ended");
 		}
 		else
 		{ 
-			SPDLOG_ERROR
+			ERR
 			(
 				"Cannot start or stop co-op session. "
 				"Global data not initialized: {}, all players not initialized: {}", 
@@ -500,7 +500,7 @@ namespace ALYSLC
 	{
 		// Change the given player actor's voice type to their race's default voice type
 		// for the actor's sex.
-		SPDLOG_DEBUG("GetDefaultRacialVoiceType.");
+		DBG("GetDefaultRacialVoiceType.");
 		if (!a_race)
 		{
 			return nullptr;
@@ -513,7 +513,7 @@ namespace ALYSLC
 	{
 		// Toggle collision on or off for all loaded active players.
 
-		SPDLOG_DEBUG("EnableCoopEntityCollision.");
+		DBG("EnableCoopEntityCollision.");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -526,7 +526,7 @@ namespace ALYSLC
 				continue;
 			}
 				
-			SPDLOG_DEBUG("{}.", playerActor->GetName());
+			DBG("{}.", playerActor->GetName());
 			Util::EnableCollisionForActor(playerActor.get());
 			playerActor->boolBits.reset(RE::Actor::BOOL_BITS::kParalyzed);
 		}
@@ -578,7 +578,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} playable NPC forms with race {} (0x{:X}) and {} sex.", 
 			npcList.size(),
@@ -629,7 +629,7 @@ namespace ALYSLC
 			classList.emplace_back(classForm);
 		}
 
-		SPDLOG_DEBUG("{} playable class forms.", classList.size());
+		DBG("{} playable class forms.", classList.size());
 		// Sort by name (A-Z).
 		std::sort
 		(
@@ -659,7 +659,7 @@ namespace ALYSLC
 	{
 		// Get all assignable cyclable emote idle event names.
 
-		SPDLOG_DEBUG("GetAllCyclableEmoteIdleEvents.");
+		DBG("GetAllCyclableEmoteIdleEvents.");
 		return ALYSLC::Settings::sEmoteIdlesList;
 	}
 
@@ -795,7 +795,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG("{} playable race forms.", raceList.size());
+		DBG("{} playable race forms.", raceList.size());
 		// Sort by name (A-Z).
 		std::sort
 		(
@@ -850,7 +850,7 @@ namespace ALYSLC
 			}
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"{} usable {} voice type forms.", voiceTypeList.size(), a_female ? "female" : "male"
 		);
@@ -881,7 +881,7 @@ namespace ALYSLC
 		// Sent to script because the actor/objectrefr pointers got invalidated 
 		// when stored in a FormList/Array property sometimes. I don't even know anymore.
 
-		SPDLOG_DEBUG("");
+		DBG("");
 		auto dataHandler = RE::TESDataHandler::GetSingleton(); 
 		if (glob.globalDataInit && !glob.coopEntityBlacklist.empty())
 		{
@@ -949,7 +949,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR("ERR: Could not get data handler to look up player characters.");
+			ERR("ERR: Could not get data handler to look up player characters.");
 		}
 
 		return{ };
@@ -963,7 +963,7 @@ namespace ALYSLC
 		// Get a list of all exported RaceMenu presets' names.
 		// Exported presets are located in the "\Data\SKSE\Plugins\CharGen\Exported' folder.
 		
-		SPDLOG_DEBUG("Current path: {}", std::filesystem::current_path().string());
+		DBG("Current path: {}", std::filesystem::current_path().string());
 		auto fileNamesList = std::vector<RE::BSFixedString>();
 		const std::filesystem::path filePath = 
 		(
@@ -971,7 +971,7 @@ namespace ALYSLC
 		);
 		if (filePath.empty())
 		{
-			SPDLOG_DEBUG("NOOP");
+			DBG("NOOP");
 		}
 
 		try
@@ -986,7 +986,7 @@ namespace ALYSLC
 					const auto fileName = entry.path().filename().string();
 					auto extensionPos = fileName.find(".");
 					RE::BSFixedString name = fileName.substr(0, extensionPos);
-					SPDLOG_INFO
+					INF
 					(
 						"Found RaceMenu preset file '{}'", name
 					);
@@ -996,11 +996,11 @@ namespace ALYSLC
 		}
 		catch (const std::exception& a_exception)
 		{
-			SPDLOG_ERROR("ERR: {} when searching {} for RaceMenu presets.", 
+			ERR("ERR: {} when searching {} for RaceMenu presets.", 
 				a_exception.what(), filePath.string());
 		}
 
-		SPDLOG_DEBUG("{} preset files found", fileNamesList.size());
+		DBG("{} preset files found", fileNamesList.size());
 		return fileNamesList;
 	}
 
@@ -1011,7 +1011,7 @@ namespace ALYSLC
 	{
 		// Get list of cyclable emote idle event names assigned by the given player.
 
-		SPDLOG_DEBUG("PID {}.", a_playerID);
+		DBG("PID {}.", a_playerID);
 		std::vector<RE::BSFixedString> favoritedEmoteIdles{ };
 		if (glob.allPlayersInit && 
 			a_playerID > -1 &&
@@ -1072,7 +1072,7 @@ namespace ALYSLC
 					RE::ObjectRefHandle(),
 					true
 				);
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Req PID {}: menu PID: {}, "
 					"last menu PID: {}, menu name: {}, MIM running: {}, MIM player ID: {}. "
@@ -1100,7 +1100,7 @@ namespace ALYSLC
 			// Reset directly if PID is -1.
 			GlobalCoopData::ResetMenuPlayerIDs();
 			glob.mim->ToggleCoopPlayerMenuMode(-1, -1);
-			SPDLOG_DEBUG
+			DBG
 			(
 				"After resetting menu PIDs: menu PID: {}, "
 				"last menu PID: {}, menu name: {}, MIM running: {}, MIM player ID: {}.",
@@ -1120,7 +1120,7 @@ namespace ALYSLC
 	{
 		// Signal all of the given player's managers to change state to the given state.
 
-		SPDLOG_DEBUG("PID {}'s managers -> state {}.", a_playerID, a_newState);
+		DBG("PID {}'s managers -> state {}.", a_playerID, a_newState);
 		if (!glob.allPlayersInit ||
 			a_playerID <= -1 ||
 			a_playerID >= ALYSLC_MAX_PLAYER_COUNT || 
@@ -1143,7 +1143,7 @@ namespace ALYSLC
 		// Rescale the given player's actor values when their base skill AVs change.
 		// Usually occurs on class or race change.
 
-		SPDLOG_DEBUG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
+		DBG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
 		if (!a_playerActor)
 		{
 			return;
@@ -1164,7 +1164,7 @@ namespace ALYSLC
 		// and optionally update base skill actor values.
 		// The player and co-op session do not have to be active.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Player {} -> class {}.", 
 			a_playerActor ? a_playerActor->GetName() : "NONE", 
@@ -1209,7 +1209,7 @@ namespace ALYSLC
 		// and optionally update base skill actor values.
 		// The player and co-op session do not have to be active.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Player {} -> race {}.", 
 			a_playerActor ? a_playerActor->GetName() : "NONE", 
@@ -1237,7 +1237,7 @@ namespace ALYSLC
 	{
 		// Update the given player's list of cyclable emote idle event names to the given list.
 
-		SPDLOG_DEBUG("PID {}.", a_playerID);
+		DBG("PID {}.", a_playerID);
 		if (!glob.coopSessionActive ||
 			a_playerID <= -1 ||
 			a_playerID >= ALYSLC_MAX_PLAYER_COUNT ||
@@ -1254,7 +1254,7 @@ namespace ALYSLC
 		// When opening the Gift Menu, set the given player actor as the recipient.
 		// Setting to None/nullptr clears the giftee player.
 
-		SPDLOG_DEBUG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
+		DBG("{}.", a_playerActor ? a_playerActor->GetName() : "NONE");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -1277,7 +1277,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG("Set 'is summoning' to {}.", a_set);
+		DBG("Set 'is summoning' to {}.", a_set);
 		glob.isSummoningPlayers = a_set;
 	}
 
@@ -1286,7 +1286,7 @@ namespace ALYSLC
 		// Enable/disable invincibility for all active players.
 		// Play an FX shader while invulnerable.
 
-		SPDLOG_DEBUG("Toggle {} for all players.", a_shouldSet ? "on" : "off");
+		DBG("Toggle {} for all players.", a_shouldSet ? "on" : "off");
 		if (!glob.allPlayersInit) 
 		{
 			return;
@@ -1326,7 +1326,7 @@ namespace ALYSLC
 		// Either dismiss all active players or just request their managers to wait for refresh.
 		// Any active co-op session is also flagged as ended.
 
-		SPDLOG_DEBUG("Should dismiss all active players: {}.", a_shouldDismiss);
+		DBG("Should dismiss all active players: {}.", a_shouldDismiss);
 		if (!glob.globalDataInit || !glob.allPlayersInit)
 		{
 			return;
@@ -1374,7 +1374,7 @@ namespace ALYSLC
 
 	void CoopLib::TeleportToP1OrAway(RE::StaticFunctionTag*, RE::Actor* a_playerActor, bool a_toP1)
 	{
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Move {} {} P1.",
 			a_playerActor ? a_playerActor->GetName() : "NONE",
@@ -1383,7 +1383,7 @@ namespace ALYSLC
 
 		if (!glob.globalDataInit || !a_playerActor)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"ERR: Global co-op data not initialized or player invalid. "
 				"Cannot move {} to/from P1.",
@@ -1406,7 +1406,7 @@ namespace ALYSLC
 	{
 		// Teleport the player with the given PID to the given actor.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"PID {} -> {}.",
 			a_playerID,
@@ -1445,7 +1445,7 @@ namespace ALYSLC
 	{
 		// Toggle the co-op camera on or off.
 
-		SPDLOG_DEBUG("{}.", a_enable ? "ON" : "OFF");
+		DBG("{}.", a_enable ? "ON" : "OFF");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -1462,7 +1462,7 @@ namespace ALYSLC
 		// Toggle menu control on or off for the given player 
 		// when entering/exiting the Co-op Setup/Summoning Menu.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"DID: {}, PID: {}, should enter: {}.", a_deviceID, a_playerID, a_shouldEnter
 		);
@@ -1480,7 +1480,7 @@ namespace ALYSLC
 				if (ui && !ui->IsMenuOpen(DebugOverlayMenu::MENU_NAME))
 				{
 					// Open the ALYSLC overlay if it isn't open already.
-					SPDLOG_DEBUG("ALYSLC overlay not open. Opening.");
+					DBG("ALYSLC overlay not open. Opening.");
 					DebugOverlayMenu::Load();
 				}
 
@@ -1499,7 +1499,7 @@ namespace ALYSLC
 		}
 		else
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Global co-op data not initialized: {}, "
 				"MIM invalid: {}, DID invalid: {}, PID invalid: {}.",
@@ -1516,7 +1516,7 @@ namespace ALYSLC
 		// Update all serialized player FID keys.
 		// Used to access each player's serialized data.
 
-		SPDLOG_DEBUG("UpdateAllCompanionPlayerSerializationIDs.");
+		DBG("UpdateAllCompanionPlayerSerializationIDs.");
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -1530,7 +1530,7 @@ namespace ALYSLC
 		// Script request to log a debug message to this mod's log file:
 		// 'ALYSLC.log'.
 
-		SPDLOG_DEBUG("{}", a_message.c_str());
+		DBG("{}", a_message.c_str());
 	}
 
 	void CoopLib::LogError(RE::StaticFunctionTag*, RE::BSFixedString a_message)
@@ -1538,7 +1538,7 @@ namespace ALYSLC
 		// Script request to log an error message to this mod's log file:
 		// 'ALYSLC.log'.
 
-		SPDLOG_ERROR("{}", a_message.c_str());
+		ERR("{}", a_message.c_str());
 	}
 
 	//=============================================================================================
@@ -1555,7 +1555,7 @@ namespace ALYSLC
 	{
 		// Copy base NPC's appearance to the player. Set opposite gender animations if necessary.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"PID: {}, NPC base: {}, set opposite gender animations: {}.",
 			a_playerID,
@@ -1589,7 +1589,7 @@ namespace ALYSLC
 		// TODO: Save P1's appearance on import 
 		// and automatically copy the saved appearance back to P1 on export.
 
-		SPDLOG_DEBUG("ExportP1ActorBaseAppearanceData");
+		DBG("ExportP1ActorBaseAppearanceData");
 		if (!glob.globalDataInit || !a_presetCharacter)
 		{
 			return;
@@ -1624,7 +1624,7 @@ namespace ALYSLC
 					return;
 				}
 						
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Exporting {}'s appearance to {}.",
 					p1->GetName(), Util::GetEditorID(actorBase)
@@ -1643,7 +1643,7 @@ namespace ALYSLC
 	{
 		// Return true if RaceMenu by expired6978 is installed.
 		
-		SPDLOG_DEBUG("IsRaceMenuInstalled");
+		DBG("IsRaceMenuInstalled");
 		return ALYSLC::RaceMenuCompat::g_installed;
 	}
 
@@ -1655,7 +1655,7 @@ namespace ALYSLC
 	{
 		// Load the exported character preset for the given player character.
 		
-		SPDLOG_DEBUG("LoadPlayerCharacterPreset");
+		DBG("LoadPlayerCharacterPreset");
 		if (!a_fromPresetCharacter)
 		{
 			return;
@@ -1699,7 +1699,7 @@ namespace ALYSLC
 	{
 		// Load the exported character preset for the given player character.
 		
-		SPDLOG_DEBUG("LoadPlayerCharacterPresetWithName: {} to {}.",
+		DBG("LoadPlayerCharacterPresetWithName: {} to {}.",
 			a_presetName, a_toCharacter ? a_toCharacter->GetName() : "NONE");
 		if (!a_toCharacter)
 		{
@@ -1758,7 +1758,7 @@ namespace ALYSLC
 						);
 						if (overlayInterface)
 						{
-							SPDLOG_INFO("Erase overlays.");
+							INF("Erase overlays.");
 							overlayInterface->EraseOverlays(actorPtr.get());
 						}
 					}
@@ -1786,7 +1786,7 @@ namespace ALYSLC
 				(
 					fmt::format("[ALYSLC] Result: {}", consoleLog->lastMessage).c_str()
 				);
-				SPDLOG_INFO("LOAD RESULT: {}", consoleLog->lastMessage);
+				INF("LOAD RESULT: {}", consoleLog->lastMessage);
 				// Prevents skin tone mismatch between body and face.
 				script->SetCommand
 				(
@@ -1821,7 +1821,7 @@ namespace ALYSLC
 		// and automatically re-import P1's character preset 
 		// after another player customizes their character.
 		
-		SPDLOG_DEBUG("OnPreRaceMenu");
+		DBG("OnPreRaceMenu");
 		if (!a_newRace)
 		{
 			return;
@@ -1848,7 +1848,7 @@ namespace ALYSLC
 					return;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{}: set female: {}, current race: {}",
 					p1->GetName(), a_setFemale, p1->race->GetName()
@@ -1873,7 +1873,7 @@ namespace ALYSLC
 	{
 		// Save P1's name, race, and appearance as the given player character's preset.
 		
-		SPDLOG_DEBUG("SavePlayerCharacterPreset");
+		DBG("SavePlayerCharacterPreset");
 		if (!glob.globalDataInit || !a_toPresetCharacter)
 		{
 			return;
@@ -1912,7 +1912,7 @@ namespace ALYSLC
 		RE::StaticFunctionTag*, RE::Actor* a_playerActor, RE::TESRace* a_race
 	)
 	{
-		SPDLOG_DEBUG("");
+		DBG("");
 		// Save the given race (or P1's chargen race for P1)
 		// as the given player's chosen race in their serialized data.
 		if ((!glob.globalDataInit || !a_playerActor) || (!a_race && !a_playerActor->IsPlayerRef()))
@@ -1923,7 +1923,7 @@ namespace ALYSLC
 		const auto iter = glob.serializablePlayerData.find(a_playerActor->formID);
 		if (iter == glob.serializablePlayerData.end())
 		{
-			SPDLOG_ERROR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
+			ERR("ERR: Could not find {}'s serializable data. FID: 0x{:X}.",
 				a_playerActor->GetName(), a_playerActor->formID);
 			return;
 		}
@@ -1934,7 +1934,7 @@ namespace ALYSLC
 			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1)
 			{
 				iter->second->chosenRace = p1->charGenRace;
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Player actor: {}, chosen race: {} (0x{:X}, editor ID: {}).",
 					a_playerActor ? a_playerActor->GetName() : "NONE",
@@ -1947,7 +1947,7 @@ namespace ALYSLC
 		else
 		{
 			iter->second->chosenRace = a_race;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Player actor: {}, chosen race: {} (0x{:X}, editor ID: {}).",
 				a_playerActor ? a_playerActor->GetName() : "NONE",
@@ -1972,7 +1972,7 @@ namespace ALYSLC
 		// NOTE:
 		// Any race swap must be fully completed first to update properly.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"PID: {}, set female: {}, set opposite gender anims: {}.",
 			a_playerID, a_setFemale, a_setOppositeGenderAnims
@@ -1999,7 +1999,7 @@ namespace ALYSLC
 		// Open a prompt which asks P1 to press a certain button on their controller
 		// to assign their controller as P1's.
 
-		SPDLOG_DEBUG("AssignPlayer1CID.");
+		DBG("AssignPlayer1CID.");
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -2012,7 +2012,7 @@ namespace ALYSLC
 	{
 		// Disable god mode for all players.
 
-		SPDLOG_DEBUG("DisableGodModeForAllCoopPlayers.");
+		DBG("DisableGodModeForAllCoopPlayers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -2025,7 +2025,7 @@ namespace ALYSLC
 	{
 		// Disable god mode for a specific player.
 
-		SPDLOG_DEBUG("PID: {}.", a_playerID);
+		DBG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit || 
 			!glob.coopSessionActive || 
 			a_playerID <= -1 || 
@@ -2041,7 +2041,7 @@ namespace ALYSLC
 	{
 		// Enable god mode for all active players.
 
-		SPDLOG_DEBUG("EnableGodModeForAllCoopPlayers.");
+		DBG("EnableGodModeForAllCoopPlayers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -2054,7 +2054,7 @@ namespace ALYSLC
 	{
 		// Enable god mode for a specific player.
 
-		SPDLOG_DEBUG("PID: {}.", a_playerID);
+		DBG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
 			a_playerID <= -1 ||
@@ -2070,7 +2070,7 @@ namespace ALYSLC
 	{
 		// Move all other players to the given player.
 
-		SPDLOG_DEBUG("{}", a_playerActor ? a_playerActor->GetName() : "P1");
+		DBG("{}", a_playerActor ? a_playerActor->GetName() : "P1");
 		if (!glob.globalDataInit || !glob.coopSessionActive) 
 		{
 			return;
@@ -2115,7 +2115,7 @@ namespace ALYSLC
 	{
 		// Re-equip the player's desired hand forms (weapons/magic/armor).
 
-		SPDLOG_DEBUG("PID: {}.", a_playerID);
+		DBG("PID: {}.", a_playerID);
 		if (!glob.allPlayersInit || 
 			!glob.coopSessionActive || 
 			a_playerID <= -1 || 
@@ -2135,7 +2135,7 @@ namespace ALYSLC
 	{
 		// Refresh data for all active players' managers.
 
-		SPDLOG_DEBUG("RefreshAllPlayerManagers.");
+		DBG("RefreshAllPlayerManagers.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -2156,7 +2156,7 @@ namespace ALYSLC
 	{
 		// Refresh data for all of the given player's managers.
 
-		SPDLOG_DEBUG("PID: {}.", a_playerID);
+		DBG("PID: {}.", a_playerID);
 		if (!glob.globalDataInit ||
 			!glob.coopSessionActive ||
 			a_playerID <= -1 ||
@@ -2185,7 +2185,7 @@ namespace ALYSLC
 		// disable, re-enable, re-equip hand forms, reset I-frames flag, and re-enable movement.
 		// Can optionally request to unequip all or re-attach havok.
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"PID: {}, unequip all: {}, re-attach havok: {}.",
 			a_playerID, a_unequipAll, a_reattachHavok
@@ -2218,7 +2218,7 @@ namespace ALYSLC
 		// Stop P1's managers, disable the co-op camera, stop the menu input manager,
 		// and re-enable movement for P1.
 
-		SPDLOG_DEBUG("ResetPlayer1AndCamera.");
+		DBG("ResetPlayer1AndCamera.");
 		if (!glob.globalDataInit) 
 		{
 			return;
@@ -2247,7 +2247,7 @@ namespace ALYSLC
 		// Resurrect P1, re-attach havok, remove paralysis and fix ragdoll, sheathe weapons/magic,
 		// revert any active transformation, re-equip hand forms, and reset I-frames flag.
 
-		SPDLOG_DEBUG("ResetPlayer1State.");
+		DBG("ResetPlayer1State.");
 		if (!glob.globalDataInit || !glob.allPlayersInit) 
 		{
 			return;
@@ -2286,7 +2286,7 @@ namespace ALYSLC
 			return;
 		}
 		
-		SPDLOG_DEBUG("{}.", p->coopActor->GetName());
+		DBG("{}.", p->coopActor->GetName());
 		glob.taskRunner->AddTask
 		(
 			[a_playerID]() 
@@ -2300,7 +2300,7 @@ namespace ALYSLC
 	{
 		// Toggle the co-op camera off and then on again.
 
-		SPDLOG_DEBUG("RestartCoopCamera.");
+		DBG("RestartCoopCamera.");
 		if (!glob.globalDataInit || !glob.coopSessionActive)
 		{
 			return;
@@ -2314,7 +2314,7 @@ namespace ALYSLC
 		// Stop combat on all active players,
 		// optionally clearing all bounties to get off scot-free.
 		
-		SPDLOG_DEBUG("Clear bounties too: {}", a_clearBounties);
+		DBG("Clear bounties too: {}", a_clearBounties);
 		if (!glob.globalDataInit)
 		{
 			return;
@@ -2338,7 +2338,7 @@ namespace ALYSLC
 			return;
 		}
 
-		SPDLOG_DEBUG
+		DBG
 		(
 			"Current menu-related PIDs: menu: {}, last menu: {}, manager: {}.",
 			glob.menuPID, glob.prevMenuPID, glob.mim->managerMenuPID
@@ -2351,7 +2351,7 @@ namespace ALYSLC
 		// Unfreeze time (via the Main singleton) 
 		// if everyone and everything is still stuck in place.
 
-		SPDLOG_DEBUG("Andddd. GO!");
+		DBG("Andddd. GO!");
 		Util::ToggleFreezeTime(false);
 	}
 	

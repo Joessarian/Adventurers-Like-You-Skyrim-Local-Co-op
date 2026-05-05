@@ -38,7 +38,7 @@ namespace ALYSLC
 		);
 		if (g_installed)
 		{
-			SPDLOG_INFO("AlternateConversationCamera installed!");
+			INF("AlternateConversationCamera installed!");
 		}
 	}
 
@@ -61,7 +61,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("Elden Sprint installed!");
+			INF("Elden Sprint installed!");
 		}
 	}
 
@@ -71,13 +71,13 @@ namespace ALYSLC
 		if (g_installed)
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC Enderal.esp"sv;
-			SPDLOG_INFO("Enderal SSE installed! Plugin name to use: '{}'.",
+			INF("Enderal SSE installed! Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		else
 		{
 			ALYSLC::GlobalCoopData::PLUGIN_NAME = "ALYSLC.esp"sv;
-			SPDLOG_INFO("Enderal SSE is not installed. Plugin name to use: '{}'.",
+			INF("Enderal SSE is not installed. Plugin name to use: '{}'.",
 				ALYSLC::GlobalCoopData::PLUGIN_NAME);
 		}
 		
@@ -115,7 +115,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("MCO installed!");
+			INF("MCO installed!");
 		}
 	}
 	
@@ -133,7 +133,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("Nether's Follower Framework installed!");
+			INF("Nether's Follower Framework installed!");
 		}
 	}
 
@@ -145,7 +145,7 @@ namespace ALYSLC
 		);
 		if (g_installed)
 		{
-			SPDLOG_INFO("PersistentFavorites installed!");
+			INF("PersistentFavorites installed!");
 		}
 	}
 
@@ -156,7 +156,7 @@ namespace ALYSLC
 		if (pluginInfo)
 		{
 			g_installed = true;
-			SPDLOG_INFO("Prerequisite mod {} is installed!", 
+			INF("Prerequisite mod {} is installed!", 
 				PRECISION_API::PrecisionPluginName);
 
 			g_precisionAPI4 = reinterpret_cast<PRECISION_API::IVPrecision4*>
@@ -165,7 +165,7 @@ namespace ALYSLC
 			);
 			if (g_precisionAPI4)
 			{
-				SPDLOG_INFO("Received access to Precision API V4.");
+				INF("Received access to Precision API V4.");
 
 				// Register havok callback after obtaining the API.
 				g_precisionAPI4->AddPrePhysicsStepCallback
@@ -176,7 +176,7 @@ namespace ALYSLC
 						GlobalCoopData::PrecisionPrePhysicsStepCallback(a_world); 
 					}
 				);
-				SPDLOG_INFO("Registered Precision pre-physics step callback.");
+				INF("Registered Precision pre-physics step callback.");
 
 				g_precisionAPI4->AddPreHitCallback
 				(
@@ -186,20 +186,20 @@ namespace ALYSLC
 						return GlobalCoopData::PrecisionPreHitCallback(a_data);
 					}
 				);
-				SPDLOG_INFO("Registered Precision pre-hit callback.");
+				INF("Registered Precision pre-hit callback.");
 			}
 			else
 			{
-				SPDLOG_ERROR("Could not get access to Precision API V4.");
+				ERR("Could not get access to Precision API V4.");
 				return;
 			}
 
-			SPDLOG_INFO("Gained access to all required Precision APIs.");
+			INF("Gained access to all required Precision APIs.");
 		}
 		else
 		{
 			g_installed = false;
-			SPDLOG_ERROR
+			ERR
 			(
 				"Could not find prerequisite mod 'Precision'. Please ensure it is installed."
 			);
@@ -230,7 +230,7 @@ namespace ALYSLC
 
 		if (g_installed) 
 		{
-			SPDLOG_INFO("{} installed!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
+			INF("{} installed!", g_isQuickLootIE ? "QuickLootIE" : "QuickLootRE/EE");
 		}
 	}
 
@@ -253,7 +253,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("RaceMenu installed!");
+			INF("RaceMenu installed!");
 		}
 	}
 
@@ -268,7 +268,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("Requiem - The Roleplaying Overhaul installed!");
+			INF("Requiem - The Roleplaying Overhaul installed!");
 		}
 	}
 
@@ -280,7 +280,7 @@ namespace ALYSLC
 		};
 		if (g_installed)
 		{
-			SPDLOG_INFO("SkyrimSoulsRE installed!");
+			INF("SkyrimSoulsRE installed!");
 		}
 	}
 
@@ -292,7 +292,7 @@ namespace ALYSLC
 		g_installed = static_cast<bool>(GetModuleHandleA("Paraglider.dll"));
 		if (g_installed)
 		{
-			SPDLOG_INFO("Skyrim's Paraglider installed!");
+			INF("Skyrim's Paraglider installed!");
 		}
 	}
 
@@ -305,7 +305,7 @@ namespace ALYSLC
 		};
 		if (g_installed)
 		{
-			SPDLOG_INFO("TKDodge installed!");
+			INF("TKDodge installed!");
 		}
 	}
 
@@ -331,7 +331,7 @@ namespace ALYSLC
 
 		if (g_installed)
 		{
-			SPDLOG_INFO("True Directional Movement installed!");
+			INF("True Directional Movement installed!");
 		}
 	}
 
@@ -342,7 +342,7 @@ namespace ALYSLC
 		if (pluginInfo) 
 		{
 			g_installed = true;
-			SPDLOG_INFO("{} is installed!", TRUEHUD_API::TrueHUDPluginName);
+			INF("{} is installed!", TRUEHUD_API::TrueHUDPluginName);
 
 			g_trueHUDAPI3 = reinterpret_cast<TRUEHUD_API::IVTrueHUD3*>
 			(
@@ -350,15 +350,15 @@ namespace ALYSLC
 			);
 			if (g_trueHUDAPI3)
 			{
-				SPDLOG_INFO("Received access to TrueHUD API V3.");
+				INF("Received access to TrueHUD API V3.");
 			}
 			else
 			{
-				SPDLOG_ERROR("Could not get access to TrueHUD API V3.");
+				ERR("Could not get access to TrueHUD API V3.");
 				return;
 			}
 
-			SPDLOG_INFO("Gained access to all required TrueHUD APIs.");
+			INF("Gained access to all required TrueHUD APIs.");
 		}
 	}
 };

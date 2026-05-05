@@ -1780,7 +1780,7 @@ namespace ALYSLC
 			);
 			if (!list)
 			{
-				SPDLOG_ERROR("ERR: MALLOC: Failed to allocate extra data list.");
+				ERR("ERR: MALLOC: Failed to allocate extra data list.");
 			}
 
 			return list;
@@ -1810,7 +1810,7 @@ namespace ALYSLC
 			);
 			if (!data)
 			{
-				SPDLOG_DEBUG("ERR: Failed to add exOwnership data to list.");
+				DBG("ERR: Failed to add exOwnership data to list.");
 			}
 			
 			return list;
@@ -2040,7 +2040,7 @@ namespace ALYSLC
 				);
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"For race {}: {}.",
 				a_race->GetName(), voiceType ? GetEditorID(voiceType) : "NONE"
@@ -2324,7 +2324,7 @@ namespace ALYSLC
 					if (entry && entry->object) 
 					{
 						bool inserted = added.insert(entry->object).second;
-						SPDLOG_DEBUG
+						DBG
 						(
 							"{}: INV CHANGES: Adding item {}. Entry: {:p}. Inserted already: {}. "
 							"Count delta: {}, lists: {}, lists count: {}.",
@@ -2350,7 +2350,7 @@ namespace ALYSLC
 						);
 						if (!it.second)
 						{
-							SPDLOG_ERROR
+							ERR
 							(
 								"Could not insert {} (entry {:p}, x{}, {} lists) "
 								"into map from inv changes.",
@@ -2394,7 +2394,7 @@ namespace ALYSLC
 							auto it = results.find(obj);
 							if (it == results.end()) 
 							{
-								SPDLOG_DEBUG
+								DBG
 								(
 									"{}: CONT: Adding item {}. Count delta: {}",
 									a_refr->GetName(), obj->GetName(), a_entry.count
@@ -2410,7 +2410,7 @@ namespace ALYSLC
 								);
 								if (!insIt.second)
 								{
-									SPDLOG_ERROR("Could not insert {} into map from container.",
+									ERR("Could not insert {} into map from container.",
 										obj->GetName());
 								}
 							} 
@@ -2509,7 +2509,7 @@ namespace ALYSLC
 							{
 								if (exDataList == a_exDataList)
 								{
-									SPDLOG_DEBUG
+									DBG
 									(
 										"Found matching exData list {:p} for item. "
 										"Return inventory entry {:p}.",
@@ -2524,7 +2524,7 @@ namespace ALYSLC
 					}
 					else
 					{
-						SPDLOG_DEBUG
+						DBG
 						(
 							"No specified exData list for item {}. Return inventory entry {:p}.",
 							a_object->GetName(), fmt::ptr(entry)
@@ -2534,7 +2534,7 @@ namespace ALYSLC
 				}
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"No inventory entry found for item {} ({:p}) in {}'s inventory.",
 				a_object->GetName(), fmt::ptr(a_exDataList), a_inventoryRefr->GetName()
@@ -2852,7 +2852,7 @@ namespace ALYSLC
 					if (baseToCopy && baseToCopy->headParts)
 					{
 						importFromPreset = true;
-						SPDLOG_DEBUG("{} headparts.", baseToCopy->numHeadParts);
+						DBG("{} headparts.", baseToCopy->numHeadParts);
 						RE::BGSHeadPart** newHeadParts = RE::malloc<RE::BGSHeadPart*>
 						(
 							baseToCopy->numHeadParts * sizeof(RE::BGSHeadPart*)
@@ -2866,7 +2866,7 @@ namespace ALYSLC
 							}
 
 							newHeadParts[i] = headPart;
-							SPDLOG_DEBUG
+							DBG
 							(
 								"Adding race face preset 0's head part #{}: "
 								"{} (0x{:X}), type: {}.", 
@@ -2910,7 +2910,7 @@ namespace ALYSLC
 				{
 					const auto headParts = faceRelatedData->headParts;
 					const auto numHeadParts = (*headParts).size();
-					SPDLOG_DEBUG("{} headparts.", (*headParts).size());
+					DBG("{} headparts.", (*headParts).size());
 					RE::BGSHeadPart** newHeadParts = RE::malloc<RE::BGSHeadPart*>
 					(
 						numHeadParts * sizeof(RE::BGSHeadPart*)
@@ -2925,7 +2925,7 @@ namespace ALYSLC
 						}
 				
 						newHeadParts[i] = headPart;
-						SPDLOG_DEBUG("Adding head part #{}: {} (0x{:X}), type: {}.", 
+						DBG("Adding head part #{}: {} (0x{:X}), type: {}.", 
 							i, headPart->GetName(), headPart->formID, *headPart->type);
 					}
 
@@ -2960,7 +2960,7 @@ namespace ALYSLC
 			if (a_fromBase->headParts)
 			{
 				uint32_t numHeadPartsImported = 0;
-				SPDLOG_DEBUG("{} headparts.", a_fromBase->numHeadParts);
+				DBG("{} headparts.", a_fromBase->numHeadParts);
 				for (auto i = 0; i < a_fromBase->numHeadParts; ++i)
 				{
 					auto headPart = a_fromBase->headParts[i];
@@ -2970,7 +2970,7 @@ namespace ALYSLC
 					}
 				
 					newHeadParts[i] = headPart;
-					SPDLOG_DEBUG("Adding head part #{}: {} (0x{:X}), type: {}.", 
+					DBG("Adding head part #{}: {} (0x{:X}), type: {}.", 
 						i, headPart->GetName(), headPart->formID, *headPart->type);
 				}
 
@@ -3012,14 +3012,14 @@ namespace ALYSLC
 			// Face data.
 			for (auto i = 0; i < RE::TESNPC::FaceData::Morphs::kTotal; ++i)
 			{
-				SPDLOG_DEBUG("Set morph {}: {}.", i, a_fromBase->faceData->morphs[i]);
+				DBG("Set morph {}: {}.", i, a_fromBase->faceData->morphs[i]);
 				const auto morph = a_fromBase->faceData->morphs[i];
 				a_toBase->faceData->morphs[i] = morph;
 			}
 
 			for (auto i = 0; i < RE::TESNPC::FaceData::Parts::kTotal; ++i)
 			{
-				SPDLOG_DEBUG("Set part {}: {}.", i, a_fromBase->faceData->parts[i]);
+				DBG("Set part {}: {}.", i, a_fromBase->faceData->parts[i]);
 				const auto part = a_fromBase->faceData->parts[i];
 				a_toBase->faceData->parts[i] = part;
 			}
@@ -3424,7 +3424,7 @@ namespace ALYSLC
 					);
 					if (overlayInterface)
 					{
-						SPDLOG_DEBUG("Erase overlays.");
+						DBG("Erase overlays.");
 						overlayInterface->EraseOverlays(p1);
 					}
 				}
@@ -3447,7 +3447,7 @@ namespace ALYSLC
 			{
 				return;
 			}
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Load default preset ALYSLC_Default onto {}.", 
 				p1->GetName()
@@ -3525,7 +3525,7 @@ namespace ALYSLC
 		// Print the name and FID of all headparts from the given actorbase.
 		inline void PrintHeadParts(RE::TESNPC* a_actorBase)
 		{
-			SPDLOG_DEBUG
+			DBG
 			(
 				"======================================================="
 			);
@@ -3542,7 +3542,7 @@ namespace ALYSLC
 					continue;
 				}
 
-				SPDLOG_DEBUG
+				DBG
 				(
 					"{} ({}) has head part #{}: {} (0x{:X}), type: {}.", 
 					a_actorBase->GetName(),
@@ -3613,15 +3613,15 @@ namespace ALYSLC
 				removed |= succ;
 				if (succ)
 				{
-					SPDLOG_DEBUG("Type 0x{:X}. SUCC removing {:p} from list {:p}.",
+					DBG("Type 0x{:X}. SUCC removing {:p} from list {:p}.",
 						a_type, fmt::ptr(exData), fmt::ptr(a_exDataList));
 					delete exData;
 					exData = nullptr;
-					SPDLOG_DEBUG("AFTER: {:p}", fmt::ptr(exData));
+					DBG("AFTER: {:p}", fmt::ptr(exData));
 				}
 				else
 				{
-					SPDLOG_DEBUG("Type 0x{:X}. FAIL removing {:p} from list {:p}.",
+					DBG("Type 0x{:X}. FAIL removing {:p} from list {:p}.",
 						a_type, fmt::ptr(exData), fmt::ptr(a_exDataList));
 					break;
 				}
@@ -3651,7 +3651,7 @@ namespace ALYSLC
 			auto exRank = a_list->GetByType<RE::ExtraRank>();
 			if (!exRank)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Not removing rank exData from list {:p}. Does not exist.",
 					fmt::ptr(a_list)
@@ -3661,7 +3661,7 @@ namespace ALYSLC
 			
 			if ((exRank->rank & 0x0000FFFF) != 0)
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Not removing rank exData from list {:p}. "
 					"Setting to original lower 2 bytes: 0x{:X}.",
@@ -3674,7 +3674,7 @@ namespace ALYSLC
 
 			bool succ = a_list->Remove(RE::ExtraDataType::kRank, exRank);
 			listSize = a_list ? std::distance(a_list->begin(), a_list->end()) : 0;
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Removing rank exData (0x{:X}) from list {:p}: {}. New size: {}.",
 				static_cast<uint32_t>(exRank->rank),
@@ -3827,7 +3827,7 @@ namespace ALYSLC
 			RE::Actor* a_actor, bool a_setFemale, bool a_setOppositeGenderAnims = false
 		)
 		{
-			SPDLOG_DEBUG("SetActorGender");
+			DBG("SetActorGender");
 			if (!a_actor)
 			{
 				return;
@@ -3875,7 +3875,7 @@ namespace ALYSLC
 			bool a_setOppositeGenderAnims = false
 		)
 		{
-			SPDLOG_DEBUG("SetActorRaceAndGender");
+			DBG("SetActorRaceAndGender");
 			if (!a_actor || !a_race || !a_actor->race)
 			{
 				return;
@@ -3945,7 +3945,7 @@ namespace ALYSLC
 				return;
 			}
 			
-			SPDLOG_DEBUG
+			DBG
 			(
 				"{}: {} -> {}.",
 				a_actor->GetName(), 
@@ -4180,11 +4180,11 @@ namespace ALYSLC
 			auto main = RE::Main::GetSingleton();
 			if (!main)
 			{
-				SPDLOG_ERROR("ERR: Could not get Main singleton and cannot (un)freeze time.");
+				ERR("ERR: Could not get Main singleton and cannot (un)freeze time.");
 				return;
 			}
 
-			SPDLOG_DEBUG("SUPER HOT. SUPER HOT. Freeze: {}.", a_shouldFreeze);
+			DBG("SUPER HOT. SUPER HOT. Freeze: {}.", a_shouldFreeze);
 			main->freezeTime = a_shouldFreeze;
 		}
 
@@ -4689,6 +4689,11 @@ namespace ALYSLC
 			const RE::NiMatrix3& a_matA, const RE::NiMatrix3& a_matB, const float& a_ratio
 		);
 
+		// Return true if the given actor is hostile to a player
+		// and is targeting a player or player-friendly actor
+		// or is in combat and fully detects any active player.
+		bool IsActivelyHostileToPlayerOrAlly(RE::Actor* a_actor);
+
 		// Is the given form favorited by the given actor?
 		bool IsFavorited(RE::TESObjectREFR* a_refr, RE::TESForm* a_form);
 
@@ -4699,6 +4704,10 @@ namespace ALYSLC
 			RE::TESForm* a_form,
 			RE::ExtraDataList* a_extraDataList
 		);
+
+		// Can the given target actor be damaged or have a hit applied to trigger combat
+		// with the given source actor.
+		bool IsHittableActor(RE::Actor* a_sourceActor, RE::Actor* a_targetActor);
 
 		// Is the given point in front of the camera's collision position?
 		bool IsInFrontOfCam(const RE::NiPoint3& a_point);

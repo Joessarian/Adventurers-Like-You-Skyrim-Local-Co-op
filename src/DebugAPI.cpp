@@ -306,7 +306,7 @@ namespace ALYSLC
 		if (!hud || !hud->uiMovie)
 		{
 			DebugOverlayMenu::Load();
-			SPDLOG_DEBUG("Could not get HUD.");
+			DBG("Could not get HUD.");
 			return;
 		}
 
@@ -315,7 +315,7 @@ namespace ALYSLC
 		
 		if (drawRequests.size() > MAX_DRAW_REQUESTS)
 		{
-			SPDLOG_DEBUG("Max draw requests per frame reached. Clearing all now.");
+			DBG("Max draw requests per frame reached. Clearing all now.");
 			drawRequests.clear();
 		}
 		else
@@ -1133,7 +1133,7 @@ namespace ALYSLC
 		auto scaleformManager = RE::BSScaleformManager::GetSingleton();
 		if (!scaleformManager)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Failed to initialize DebugOverlayMenu. ScaleformManager not found."
 			);
@@ -1172,7 +1172,7 @@ namespace ALYSLC
 	{
 		// Register the debug overlay menu with the UI and then load it.
 
-		SPDLOG_INFO("Registering DebugOverlayMenu.");
+		INF("Registering DebugOverlayMenu.");
 		auto ui = RE::UI::GetSingleton(); 
 		if (!ui)
 		{
@@ -1181,7 +1181,7 @@ namespace ALYSLC
 
 		ui->Register(MENU_NAME, Creator);
 		DebugOverlayMenu::Load();
-		SPDLOG_INFO("Successfully registered DebugOverlayMenu.");
+		INF("Successfully registered DebugOverlayMenu.");
 	}
 
 	void DebugOverlayMenu::Load()
@@ -1586,7 +1586,7 @@ namespace ALYSLC
 			ALYSLC::QuickLootCompat::g_originalScaleY = yScaleVal.GetNumber();
 			ALYSLC::QuickLootCompat::g_originalX = xVal.GetNumber();
 			ALYSLC::QuickLootCompat::g_originalY = yVal.GetNumber();
-			SPDLOG_DEBUG
+			DBG
 			(
 				"Storing scale ({}, {}), pos ({}, {}) as original QuickLoot data.",
 				ALYSLC::QuickLootCompat::g_originalScaleX,
@@ -1602,7 +1602,7 @@ namespace ALYSLC
 		// or when the co-op camera is disabled.
 		if ((!glob.coopSessionActive) || (!glob.cam->IsRunning() && glob.menuPID == 0))
 		{
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"Restoring original QuickLoot data scale ({}, {}), pos ({}, {}).",
 				ALYSLC::QuickLootCompat::g_originalScaleX,
@@ -1641,24 +1641,30 @@ namespace ALYSLC
 			double height = heightVal.GetNumber();
 			double width = widthVal.GetNumber();
 
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"QuickLoot data: x: {}, y: {}, x, y scales: {}, {}, "
 				"height, width: {}, {}",
 				x, y, xScale, yScale, height, width
 			);*/
+			const auto& selectedRefrHandle = 
+			(
+				p->tm->aimMode == AimMode::kFreeAim ? 
+				p->tm->crosshairRefrHandle : 
+				p->tm->lockOnActivationRefrHandle
+			);
+			if (!Util::HandleIsValid(selectedRefrHandle) || 
+				!Util::IsValidRefrForTargeting(selectedRefrHandle.get().get()))
+			{
+				p->tm->crosshairRefrHandle.reset();
+				return;
+			}
 
-			const auto crosshairRefrPtr = Util::GetRefrPtrFromHandle
-			(
-				p->tm->crosshairRefrHandle
-			);
-			const auto refrPixelHeight = Util::GetBoundPixelDist
-			(
-				crosshairRefrPtr.get(), true
-			);
-			const auto refrPos = Util::GetRefrPosition(crosshairRefrPtr.get());
+			const auto selectedRefrPtr = Util::GetRefrPtrFromHandle(selectedRefrHandle);
+			const auto refrPixelHeight = Util::GetBoundPixelDist(selectedRefrPtr.get(), true);
+			const auto refrPos = Util::GetRefrPosition(selectedRefrPtr.get());
 			auto targetScreenPos = Util::WorldToScreenPoint3(refrPos, false);
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"QuickLoot data: Refr pos: ({}, {}), "
 				"pixel height: {}",
@@ -1691,12 +1697,12 @@ namespace ALYSLC
 					),
 					5.0f
 				),
-				0.25f,
+				0.5f,
 				1.0f
 			);
 			xScale = ALYSLC::QuickLootCompat::g_originalScaleX * distFactor;
 			yScale = ALYSLC::QuickLootCompat::g_originalScaleY * distFactor;
-			/*SPDLOG_DEBUG
+			/*DBG
 			(
 				"QuickLoot data: New screen pos: ({}, {}), "
 				"scales: ({}, {}) from dist factor of {} at dist {}.",

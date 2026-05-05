@@ -18,7 +18,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	{
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
-		SPDLOG_INFO("Data loaded.");
+		INF("Data loaded.");
 		// Install all hooks.
 		ALYSLC::Hooks::Install();
 		// Add event sinks for all necessary events.
@@ -50,7 +50,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kNewGame:
 	{
-		SPDLOG_INFO("New game.");
+		INF("New game.");
 		// Set default serialization data through the Load() function.
 		SKSE::SerializationInterface* intfc = 
 		(
@@ -58,7 +58,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		); 
 		if (intfc)
 		{
-			SPDLOG_INFO("New game. Setting default serialization data on load.");
+			INF("New game. Setting default serialization data on load.");
 			ALYSLC::Serialization::Load(intfc);
 		}
 
@@ -68,12 +68,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostLoad:
 	{
-		SPDLOG_INFO("Post load.");
+		INF("Post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPostLoadGame:
 	{
-		SPDLOG_INFO("Post load game.");
+		INF("Post load game.");
 		// Attempt to load the debug overlay.
 		ALYSLC::DebugOverlayMenu::Load();
 		// Despawn any lingering summons.
@@ -86,12 +86,12 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kPostPostLoad:
 	{
-		SPDLOG_INFO("Post-post load.");
+		INF("Post-post load.");
 		break;
 	}
 	case SKSE::MessagingInterface::kPreLoadGame:
 	{
-		SPDLOG_INFO("Pre load game.");
+		INF("Pre load game.");
 		// Register for P1 positioning events.
 		ALYSLC::CoopPositionPlayerEventHandler::Register();
 		// Stop any active co-op session and indicate that the game is loading.
@@ -101,7 +101,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	}
 	case SKSE::MessagingInterface::kSaveGame:
 	{
-		SPDLOG_INFO("Save game.");
+		INF("Save game.");
 		auto& glob = ALYSLC::GlobalCoopData::GetSingleton();
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		// Ensure P1 is not essential before the game saves, since this state will carry over
@@ -111,7 +111,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// to re-apply their changes to P1's essential status.
 		if (glob.coopSessionActive && !glob.p1IsEssential && p1 && p1->IsEssential())
 		{
-			SPDLOG_INFO("Clear essential flag for P1 before the game saves.");
+			INF("Clear essential flag for P1 before the game saves.");
 			ALYSLC::Util::ChangeEssentialStatus(p1, false);
 		}
 
@@ -154,7 +154,7 @@ void InitializeLog()
 	// Changed to not include the directory.
 	spdlog::set_pattern("| %^%l%$ | %c | %s (%#) | [%!] | >> %v"s);
 
-	SPDLOG_INFO("Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
+	INF("Initialized logger for {} v{}", Version::PROJECT, Version::NAME);
 }
 
 extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
@@ -173,25 +173,25 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	auto messaging = SKSE::GetMessagingInterface(); 
 	if (!messaging->RegisterListener("SKSE", SKSEMessageHandler))
 	{
-		SPDLOG_ERROR("Could not register messaging interface listener.");
+		ERR("Could not register messaging interface listener.");
 		return false;
 	}
 
 	auto papyrus = SKSE::GetPapyrusInterface(); 
 	if (!papyrus || !papyrus->Register(ALYSLC::CoopLib::RegisterFuncs))
 	{
-		SPDLOG_ERROR("Could not get Papyrus interface or register Papyrus functions.");
+		ERR("Could not get Papyrus interface or register Papyrus functions.");
 		return false;
 	}
 
 	if (auto serialization = SKSE::GetSerializationInterface(); !serialization) 
 	{
-		SPDLOG_ERROR("Could not get serialization interface.");
+		ERR("Could not get serialization interface.");
 		return false;
 	}
 	else
 	{
-		SPDLOG_INFO("Setting serialization callbacks.");
+		INF("Setting serialization callbacks.");
 		// Set serialization ID and callbacks.
 		serialization->SetUniqueID(Hash("ALYSLC"));
 		serialization->SetLoadCallback(ALYSLC::Serialization::Load);
@@ -199,7 +199,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 		serialization->SetSaveCallback(ALYSLC::Serialization::Save);
 	}
 	
-	SPDLOG_INFO("Adventurers Like You: Skyrim Local Co-op Mod loaded!");
+	INF("Adventurers Like You: Skyrim Local Co-op Mod loaded!");
 	return true;
 }
 
@@ -227,7 +227,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
 
 	if (a_skse->IsEditor())
 	{
-		SPDLOG_ERROR("Loaded in editor, marking as incompatible."sv);
+		ERR("Loaded in editor, marking as incompatible."sv);
 		return false;
 	}
 
@@ -240,7 +240,7 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query
 #endif
 	)
 	{
-		SPDLOG_ERROR(FMT_STRING("Unsupported runtime version {}."sv), ver.string());
+		ERR(FMT_STRING("Unsupported runtime version {}."sv), ver.string());
 		return false;
 	}
 
@@ -254,7 +254,7 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
 )
 {
 	auto api = ALYSLC_API::ALYSLCInterface::GetSingleton();
-	SPDLOG_INFO
+	INF
 	(
 		"RequestPluginAPI called, InterfaceVersion {}.", 
 		static_cast<uint8_t>(a_interfaceVersion)
@@ -264,10 +264,10 @@ extern "C" DLLEXPORT void* SKSEAPI RequestPluginAPI
 	{
 	case ALYSLC_API::InterfaceVersion::V1:
 	case ALYSLC_API::InterfaceVersion::V2:
-		SPDLOG_INFO("RequestPluginAPI returned the API singleton.");
+		INF("RequestPluginAPI returned the API singleton.");
 		return static_cast<void*>(api);
 	}
 
-	SPDLOG_INFO("RequestPluginAPI requested the wrong interface version.");
+	INF("RequestPluginAPI requested the wrong interface version.");
 	return nullptr;
 }

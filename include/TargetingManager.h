@@ -1550,11 +1550,25 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
-		// Clear crosshair target-related handles and flags.
-		inline void ClearCrosshairTargeData()
+		// Clear out currently-targeted activation/proximity refrs.
+		inline void ClearActivationTargetData() 
 		{
+			choseActivationLockOnTarget = false;
+			activationRefrHandle = 
+			lockOnActivationRefrHandle = 
+			proximityRefrHandle = RE::ObjectRefHandle();
+		}
+
+		// Clear NPC aim target-related handles and flags.
+		inline void ClearAimTargetData()
+		{
+			if (aimMode == AimMode::kTwinStick)
+			{
+				aimCorrectionTargetHandle = RE::ActorHandle();
+			}
+
+			choseAimLockOnTarget = false;
 			validCrosshairRefrHit = false;
-			choseLockOnTarget = false;
 			crosshairRefrHandle = RE::ObjectRefHandle();
 			selectedTargetActorHandle = RE::ActorHandle();
 		}
@@ -1574,7 +1588,9 @@ namespace ALYSLC
 			aimTargetLinkedRefrHandle = 
 			crosshairPickRefrHandle = 
 			crosshairRefrHandle = 
+			lockOnActivationRefrHandle =
 			prevCrosshairRefrHandle =
+			prevQuickLootRefrHandle = 
 			proximityRefrHandle = RE::ObjectRefHandle();
 		}
 
@@ -1780,26 +1796,52 @@ namespace ALYSLC
 		// Iterate through nearby refrs and get the closest selectable refr to the crosshair ray 
 		// (ray starting from the crosshair's screen position in the direction of the camera).
 		RE::ObjectRefHandle GetClosestSelectableRefrToCrosshairRay();
-
-		// Get the closest targetable actor to the player refr
-		// using the given FOV in radians centered at their aiming angle 
-		// (LS or heading angle in world or screen space),
-		// and the given maximum range to consider targets 
-		// (screen pixel distance or world XY or XYZ distance).
-		// If range is given as '-1', ignore the range check.
-		// If combat-dependent selection is requested, only consider hostile actors, 
-		// unless attempting to heal a target.
+		
+		// WALL OF TEXT. WALL OF TEXT. OOGA BOOGA. WALL OF TEXT.
+		// Get the closest targetable actor from the source actor
+		// using the given FOV in radians centered at their LS/RS aiming angle 
+		// (LS/RS angle or facing angle (if LS/RS is not moved) in world or screen space),
+		// and the given maximum range (worldspace distance( to consider targets.
+		// 
+		// If using the left stick angle for targeting, the FOV window is centered
+		// at the left stick's worldspace/screenspace angle. 
+		// Otherwise, the window is centered at the right stick's worldspace/screenspace angle.
+		// 
 		// If screen position checks are requested,
 		// all world positions are converted to screen positions before performing FOV checks,
-		// the FOV window is centered about the player's center in screen space, 
+		// the FOV window is centered about the source actor's center in screen space, 
 		// and the given range should be given worldspace distance units.
+		// 
+		// If using XY distance, the Z components for positions are ignored
+		// when comparing distances.
+		// 
+		// If combat-dependent selection is requested, only consider hostile actors, 
+		// unless attempting to heal a target.
+		// 
+		// If prioritizing angular accuracy, 
+		// ensure the difference between the LS/RS angle and the angle
+		// to each target considered is factored into calculations. 
+		// Will then prioritze aiming directly towards the target instead of just ensuring 
+		// the target is within the FOV window and retrieving the closest target within that window.
+		// 
+		// The FOV window is given in radians and is centered at the LS/RS targeting angle.
+		// If the absolute angle difference between the targeting angle
+		// and the angle from the source to the target is larger than half of this angular window, 
+		// the target is not considered.
+		// 
+		// If range is given as '-1', ignore the range check.
+		// Otherwise, if the target is further away from the source than this range, 
+		// the target is not considered.
 		RE::ActorHandle GetClosestTargetableActorInFOV
 		(
+			RE::Actor* a_sourceActor,
+			const bool a_useLeftStickAngle,
+			const bool a_useXYDistance,
+			const bool a_combatDependentSelection,
+			const bool a_angularAccuracyOverDistance,
+			const bool a_preferScreenspaceSelection,
 			const float& a_fovRads,
-			const bool a_useXYDistance = false, 
-			const float a_range = -1.0f, 
-			const bool a_combatDependentSelection = true,
-			const bool a_useScreenPositions = false
+			const float a_range
 		);
 		
 		// Get detection-level-modified gradient RGB value.
@@ -1811,6 +1853,27 @@ namespace ALYSLC
 		// Get actor level-difference-modified RGB value
 		// which represents the difference in level between the player and the given actor.
 		uint32_t GetLevelDifferenceRGB(const RE::ActorHandle& a_actorHandle);
+
+		// Choose a target to lock on to in the direction of the player's left or right stick.
+		// Can choose either an living NPC, if requesting an aim target, 
+		// or all selectable objects or NPCs for activation instead.
+		// Can also select a new target relative to the current target, 
+		// instead of the player's character themselves. 
+		// This will cycle through targets in the direction of the analog stick,
+		// instead of selecting a target radially from the player.
+		// Can select when holding down a button or displacing the analog stick
+		// at a regular interval. 
+		// Otherwise, will look for a new target right away without a cooldown.
+		// Return the computed target's handle.
+		RE::ObjectRefHandle GetLockOnTarget
+		(
+			RE::ObjectRefHandle a_currentTargetHandle,
+			bool a_asAimTarget,
+			bool a_useLeftStickAngle,
+			bool a_fromCurrentTarget,
+			bool a_selectOnHold
+		);
+
 
 		// Get a list of reachable, lootable refrs' handles in range of the player.
 		// Can return a list of loose refrs' handles 
@@ -1889,6 +1952,9 @@ namespace ALYSLC
 		// - Player has LOS or has not lost LOS for too long.
 		bool IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle);
 
+		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
+		void PerformActivationCycling();
+
 		// EXPERIMENTAL. Unused for now since there is a huge performance hit.
 		// Check if a selectable refr is highlighted by the crosshair
 		// and pick it as the crosshair refr.
@@ -1920,6 +1986,26 @@ namespace ALYSLC
 
 		// Cycle through nearby targetable refrs and choose one for activation.
 		void SelectProximityRefr();
+
+		// Find and set a lock on activation target (object/NPC), if any.
+		// Use the left/right stick's angle as the targeting angle.
+		// Originate the check from the player's position or from the current target's position.
+		// Select the target if a bind is held or on press. 
+		// Selecting on hold will select at an interval, instead of right away.
+		void SetLockOnActivationTarget
+		(
+			bool a_useLeftStickAngle, bool a_fromCurrentTarget, bool a_selectOnHold
+		);
+
+		// Find and set a lock on aim target (NPC), if any.
+		// Use the left/right stick's angle as the targeting angle.
+		// Originate the check from the player's position or from the current target's position.
+		// Select the target if a bind is held or on press. 
+		// Selecting on hold will select at an interval, instead of right away.
+		void SetLockOnAimTarget
+		(
+			bool a_useLeftStickAngle, bool a_fromCurrentTarget, bool a_selectOnHold
+		);
 
 		// Update the player's crosshair text entry periodically for the given message type.
 		// Used to maintain up-to-date info on the selected crosshair target
@@ -1960,10 +2046,9 @@ namespace ALYSLC
 		// when moving the crosshair across the object.
 		void UpdateCrosshairSpeedmult(const Raycast::RayResult& a_chosenResult);
 		
-		// Can choose a target to lock on to in the direction of the player's left or right stick.
-		// Set the crosshair refr target as the chosen target, if any, and flag the crosshair refr
-		// target as chosen via lock on.
-		void UpdateLockOnTarget(bool a_useLeftStickAngle);
+		// Set the lock on crosshair target, if aiming while in 'Lock On' mode, 
+		// and update the lock on activation target, which should be cleared when out of range.
+		void UpdateLockOnTargets();
 
 		// If cycling nearby objects, cycle one time and choose the resulting refr's handle.
 		// Otherwise, choose the selected crosshair refr's handle.
@@ -1985,6 +2070,11 @@ namespace ALYSLC
 		// Then, also draw all targeting UI elements 
 		// (crosshair, aim pitch indicator, and player indicator).
 		void UpdateTargetingOverlay();
+
+		// Set activation refr as interactable or not, 
+		// and set the player's crosshair text to reflect the result.
+		// Can skip or check LOS.
+		void ValidateActivationRefr(bool a_checkLOS);
 		
 		//
 		// Members
@@ -2032,8 +2122,12 @@ namespace ALYSLC
 		RE::ObjectRefHandle crosshairPickRefrHandle;
 		// Reference targeted by the player's crosshair.
 		RE::ObjectRefHandle crosshairRefrHandle;
+		// Last interactable reference targeted using lock on.
+		RE::ObjectRefHandle lockOnActivationRefrHandle;
 		// Reference targeted by the player's crosshair from the previous frame.
 		RE::ObjectRefHandle prevCrosshairRefrHandle;
+		// Previously recorded refr when handling opening of the QuickLoot menu.
+		RE::ObjectRefHandle prevQuickLootRefrHandle;
 		// Closest interactable refr in the player's FOV.
 		RE::ObjectRefHandle proximityRefrHandle;
 		// Cached ordered map of nearby refrs that can be interacted with by the player.
@@ -2051,6 +2145,8 @@ namespace ALYSLC
 		std::unique_ptr<RefrTargetMotionState> targetMotionState;
 		// Interpolation data for fading drawn UI elements and for crosshair size adjustments.
 		std::unique_ptr<TwoWayInterpData> activationIndicatorOscillationData;
+		std::unique_ptr<TwoWayInterpData> aimCorrectionIndicatorOscillationData;
+		std::unique_ptr<TwoWayInterpData> aimCorrectionIndicatorRotationData;
 		std::unique_ptr<TwoWayInterpData> aimPitchIndicatorFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairFadeInterpData;
 		std::unique_ptr<TwoWayInterpData> crosshairSizeRatioInterpData;
@@ -2078,12 +2174,12 @@ namespace ALYSLC
 		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
-		// Is the currently selected crosshair target chosen via lock on?
-		bool choseLockOnTarget;
+		// Is the currently selected activation refr target chosen via lock on?
+		bool choseActivationLockOnTarget;
+		// Is the currently selected NPC aim target chosen via lock on?
+		bool choseAimLockOnTarget;
 		// Was the selected crosshair refr chosen by raycast?
 		bool crosshairRefrFromRaycast;
-		// Is the crosshair refr in range to open the QuickLoot menu?
-		bool crosshairRefrInRangeForQuickLoot;
 		// Is the crosshair target refr in sight of the player?
 		bool crosshairRefrInSight;
 		// M.A.R.F: Mutual Assured Ragdoll Flight.
@@ -2092,12 +2188,10 @@ namespace ALYSLC
 		bool isMARFing;
 		// No comment. It's neat, though.
 		bool isSMORFing;
-		// Is the player trying to select corpses/objects or live NPCs with the right stick
-		// while the crosshair is in 'Lock On' mode.
-		// True for live NPCs, false for corpses/objects, defaults to live NPCs on initialization.
-		bool lockOnToLivingNPCs;
 		// Requesting to reset the crosshair to its default position.
 		bool reqResetCrosshairPosition;
+		// Is the crosshair/lock on activation refr in range to open the QuickLoot menu?
+		bool selectedRefrInRangeForQuickLoot;
 		// Is the player trying to interact with cycled, nearby refrs?
 		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?
@@ -2141,21 +2235,23 @@ namespace ALYSLC
 		int32_t playerID;
 		// Detection percent RGB value (RRGGBB in hex)
 		uint32_t detectionPctRGB;
-		// Targeting mode currently in use (free aim, lock on, or disabled).
-		CrosshairTargetingMode crosshairTargetingMode;
+		// Aim mode currently in use (free aim, lock on, or twin stick).
+		AimMode aimMode;
 
 	private:
 		// Helper funcs.
 		
-		// The weight factor is comprised of the normalized distance between the source refr's pos 
-		// and the target refr pos, plus the normalized angle difference 
-		// between the targeting angle and the angle from the source refr to the target refr.
+		// NOTE:
+		// Massive EW. It is what it is.
 		// 
-		// Weight is the current minimum weight factor. 
-		// Set to new minimum if the computed value is smaller than the passed in value.
+		// The angle/distance factor is comprised of the normalized distance 
+		// between the source refr's pos and the target refr pos divided by the range,
+		// plus, if requested, the normalized angle difference between the targeting angle
+		// and the angle from the source refr to the target refr divided by the FOV window angle.
 		// 
-		// If a screenspace targeting angle is provided, the player and target positions
-		// will be converted to screenspace.
+		// If the angle factor should be included, add it on top of the distance factor.
+		// Will prioritize the angular accuracy over distance when selecting a target
+		// within the FOV window.
 		// 
 		// Targeting angle is the left or right analog stick's in-game yaw angle 
 		// (normalized [0, 2 * PI]).
@@ -2165,25 +2261,34 @@ namespace ALYSLC
 		// 
 		// Use XY distance (world pos only) means to compare XY plane distances instead.
 		// 
+		// If the target is not flagged as hostile, the selection range is decreased
+		// to prevent selection of a rabbit hiding in a bush 3 holds over.
+		//
+		// Use screenspace angles and positions if preferred for the in-range and FOV calculations.
+		// 
+		// For the screenspace targeting angle provided, the player and target positions
+		// will be converted to screenspace.
+		// 
 		// Range is the maximum worldspace distance from which to consider close refrs.
 		// If the close refr is outside this range, it is not considered.
 		// Set to -1 to skip range check.
 	
-		// NOTE:
-		// Massive EW. It is what it is.
-		// Set the angle/distance weight outparam to the computed value.
+		// Set the angle/distance factor outparam to the computed value.
 		// Set in range/in FOV outparam to true if the target refr 
 		// is within range of the source refr and within the given FOV window.
 		void IsRefrInRangeAndInFOV
 		(
 			RE::TESObjectREFR* a_sourceRefr,
 			RE::TESObjectREFR* a_targetRefr,
-			const bool a_isScreenspaceAngle,
+			const bool a_includeAngleWeight,
 			const bool a_useXYDistance,
-			const float a_targetingAngle, 
+			const bool a_targetIsHostile,
+			const bool a_preferScreenspaceSelection,
+			const float a_screenTargetingAngle, 
+			const float a_worldTargetingAngle,
 			const float a_fovRads,
-			const float a_range,
-			float& a_angDistWeightOut,
+			float a_range,
+			float& a_factorOut,
 			bool& a_isInRangeAndFOVOut
 		);
 	};

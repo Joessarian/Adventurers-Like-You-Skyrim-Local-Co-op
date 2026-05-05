@@ -41,7 +41,7 @@ namespace ALYSLC
 			// If max recursion depth is reached, the bind is invalid and will be disabled.
 			if (recursionDepth >= Settings::uMaxComposingInputsCheckRecursionDepth) 
 			{
-				SPDLOG_ERROR
+				ERR
 				(
 					"Default {} bind is invalid. Possibly a circular bind. Disabling.", 
 					static_cast<InputAction>(i)
@@ -65,7 +65,7 @@ namespace ALYSLC
 
 		// Set to defaults initially and then import custom binds later with the other settings.
 		playerPAParamsLists.fill(defPAParamsList);
-		SPDLOG_DEBUG("Finished initializing.");
+		DBG("Finished initializing.");
 	}
 
 	const uint32_t PlayerActionInfoHolder::GetInputMask
@@ -83,7 +83,7 @@ namespace ALYSLC
 			if (!a_composingInputs[i] >= !InputAction::kInputTotal || 
 				a_composingInputs[i] == InputAction::kInvalid) 
 			{
-				SPDLOG_DEBUG
+				DBG
 				(
 					"Composing input action {} is a player action "
 					"and was not broken down. Mask set to 0.", 
@@ -135,7 +135,7 @@ namespace ALYSLC
 		// Recursion depth exceeded.
 		if (a_recursionDepthOut >= Settings::uMaxComposingInputsCheckRecursionDepth)
 		{
-			SPDLOG_ERROR
+			ERR
 			(
 				"Invalid bind for {}: "
 				"max recursion depth reached when attempting to break down player action bind "
