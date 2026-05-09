@@ -181,7 +181,7 @@ namespace ALYSLC
 					deviceID
 				).data()
 			);
-			GlobalCoopData::TearDownCoopSession(true);
+			GlobalCoopData::TearDownCoopSession(true, true);
 
 			// Must re-assign P1 device ID upon re-summoning.
 			glob.player1DID = -1;
@@ -952,10 +952,10 @@ namespace ALYSLC
 
 		DBG
 		(
-			"Handled dismissal of {} (0x{:X}). Script is now completing cleanup.", 
+			"Handled dismissal of {} (0x{:X}).", 
 			coopActor->GetName(), coopActor->formID
 		);
-		glob.canStartCoopGlob->value =  true;
+		glob.canStartCoopGlob->value = true;
 	}
 
 	std::string CoopPlayer::GetHMSStatNotificationText()
@@ -1116,6 +1116,10 @@ namespace ALYSLC
 
 		// Get off mount/stop interacting with furniture.
 		coopActor->StopInteractingQuick(true);
+		if (coopActor->currentProcess && coopActor->currentProcess->middleHigh)
+		{
+			coopActor->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
+		}
 
 		bool wasTransformed = isTransforming || isTransformed;
 		// Sheathe current weapons first.
@@ -2513,8 +2517,9 @@ namespace ALYSLC
 				revivedHealth = secsDowned = 0.0f;
 				// Party was wiped. RIP.
 				glob.partyWiped = true;
-				// End co-op session.
-				GlobalCoopData::TearDownCoopSession(true);
+				// End co-op session, but keep the co-op camera active
+				// to transition over to the death camera state.
+				GlobalCoopData::TearDownCoopSession(true, false);
 			}
 		}
 		else
@@ -3686,6 +3691,14 @@ namespace ALYSLC
 							effect->duration
 						);
 					}
+				}
+
+				// Lastly, make sure the player is visible, just in case their 3D's hidden flag
+				// was set previously and not cleared.
+				auto player3DPtr = Util::GetRefr3D(coopActor.get()); 
+				if (player3DPtr && player3DPtr->flags.all(RE::NiAVObject::Flag::kHidden))
+				{
+					player3DPtr->flags.reset(RE::NiAVObject::Flag::kHidden);
 				}
 			}
 		);

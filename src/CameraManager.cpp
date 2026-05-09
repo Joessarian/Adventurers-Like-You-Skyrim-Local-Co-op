@@ -16,15 +16,18 @@ namespace ALYSLC
 	CameraManager::CameraManager() :
 		Manager(ManagerType::kCAM)
 	{
-		camLockOnTargetHandle = RE::ActorHandle();
+		camLockOnTargetHandle =
+		camDialogueTargetHandle = RE::ObjectRefHandle();
 		lockOnActorReq = std::nullopt;
 		camBaseTargetPos =  
+		camRefrFocusPoint = 
 		camCollisionTargetPos = 
 		camFocusPoint = 
 		camLockOnFocusPoint = 
 		camOriginPoint = 
 		camOriginPointDirection = 
 		camTargetPos = RE::NiPoint3();
+		dialogueCamXYOffset = RE::NiPoint2();
 		camMaxAnchorPointZCoord = camMinAnchorPointZCoord = 0.0f;
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 		playerCam = RE::PlayerCamera::GetSingleton();
@@ -73,16 +76,20 @@ namespace ALYSLC
 		);
 
 		// State bools.
+		adjustedAfterReachingDialoguePos = false;
 		autoRotateSuspended = false;
 		delayedZoomInUnderExteriorRoof = false;
 		delayedZoomOutUnderExteriorRoof = false;
 		exteriorCell = false;
+		inDeathCamState = false;
+		inDialogueCamState = false;
 		isAutoTrailing = true;
 		isManuallyPositioned = false;
 		isLockedOn = false;
 		isTogglingPOV = false;
 		lockInteriorOrientationOnInit = false;
 		lockOnTargetInSight = false;
+		movingToDialogueStartPos = false;
 		toggleBindPressedWhileWaiting = false;
 		waitForToggle = false;
 		// Positional offset floats.
@@ -99,6 +106,8 @@ namespace ALYSLC
 		camMaxPitchAngMag = 89.0f * PI / 180.0f;
 		movementPitchRunningTotal = movementYawToCamRunningTotal = 0.0f;
 		numMovementPitchReadings = numMovementYawToCamReadings = 0;
+		// Other floats.
+		camFOV = 75.0f;
 		// Player IDs.
 		controlCamPID = -1;
 		focalPlayerPID = -1;
@@ -158,9 +167,74 @@ namespace ALYSLC
 			ToThirdPersonState(playerCam->currentState->id == RE::CameraState::kFirstPerson);
 		}
 
+		// Check if the camera should transition to the death/dialogue camera states,
+		// which are event-driven and not user-selectable.
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		bool switchToDeathState = 
+		{
+			(camState != CamState::kDeath) &&
+			(
+				p1 &&
+				playerCam &&
+				glob.globalDataInit && 
+				glob.allPlayersInit &&
+				glob.partyWiped	
+			) &&
+			(
+				(glob.p1IsEssential && p1->IsBleedingOut()) || 
+				(!glob.p1IsEssential && p1->IsDead())
+			)
+		};
+		if (switchToDeathState)
+		{
+			camState = CamState::kDeath;
+		}
+
+		auto ui = RE::UI::GetSingleton();
+		auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+		// Must have the dialogue menu open with a player in control and a recorded speaker.
+		bool switchToDialogueState = 
+		{
+			(
+				camState != CamState::kDialogue &&
+				glob.coopSessionActive && 
+				glob.menuPID >= 0 &&
+				menuTopicManager &&
+				ui &&
+				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)
+			) && 
+			(
+				Util::HandleIsValid(menuTopicManager->speaker) ||
+				Util::HandleIsValid(menuTopicManager->lastSpeaker)
+			)
+		};
+		// Switch back to auto-trail if currently in the dialogue state
+		// and no player is controlling menus, the dialogue menu has closed, 
+		// or the speaker is no longer valid.
+		bool switchBackToAutoTrail = 
+		(
+			(camState == CamState::kDialogue) &&
+			(
+				(glob.menuPID < 0) ||
+				(ui && !ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME)) ||
+				(!Util::HandleIsValid(camDialogueTargetHandle))
+			)
+		);
+		if (switchToDialogueState)
+		{
+			camState = CamState::kDialogue;
+		}
+		else if (switchBackToAutoTrail)
+		{
+			camState = CamState::kAutoTrail;
+		}
+
+		// Update state flags.
 		isAutoTrailing = camState == CamState::kAutoTrail;
 		isLockedOn = camState == CamState::kLockOn;
 		isManuallyPositioned = camState == CamState::kManualPositioning;
+		inDeathCamState = camState == CamState::kDeath;
+		inDialogueCamState = camState == CamState::kDialogue;
 		// Update collisions flag.
 		camCollisions = 
 		(
@@ -172,41 +246,51 @@ namespace ALYSLC
 			)
 		);
 
-		// On state change, reset TPs.
+		// On state change, reset TPs, transition to new state.
 		if (camState != prevCamState)
 		{
 			ResetTPs();
+			PerformStateTransition();
 		}
 
-		if (!isTogglingPOV)
+		if (isAutoTrailing || isLockedOn || isManuallyPositioned || inDialogueCamState)
 		{
-			SetCamInterpFactors();
-			UpdateParentCell();
-			CalcNextOriginPoint();
-			CalcNextFocusPoint();
-			CalcNextTargetPosition();
-			CheckLockOnTarget();
-			UpdatePlayerFadeAmounts();
+			if (!isTogglingPOV)
+			{
+				SetCamInterpFactors();
+				UpdateParentCell();
+				CheckLockOnTarget();
+				UpdateDialogueStateData();
+				CalcNextOriginPoint();
+				CalcNextFocusPoint();
+				CalcNextTargetPosition();
+				UpdatePlayerFadeAmounts();
+				UpdateFOV();
 
-			if (isAutoTrailing)
-			{
-				UpdateCamHeight();
-				UpdateCamZoom();
-				UpdateCamRotation();
-			}
-			else if (isLockedOn)
-			{
-				UpdateCamHeight();
-				UpdateCamRotation();
-				UpdateCamZoom();
-			}
-			else
-			{
-				UpdateCamHeight();
-				UpdateCamRotation();
-			}
+				if (isAutoTrailing)
+				{
+					UpdateCamHeight();
+					UpdateCamZoom();
+					UpdateCamRotation();
+				}
+				else if (isLockedOn || inDialogueCamState)
+				{
+					UpdateCamHeight();
+					UpdateCamRotation();
+					UpdateCamZoom();
+				}
+				else
+				{
+					UpdateCamHeight();
+					UpdateCamRotation();
+				}
 
-			FadeObstructions();
+				FadeObstructions();
+			}
+		}
+		else if (inDeathCamState)
+		{
+			UpdateDeathCameraOrientation();
 		}
 		
 		// Set the camera's orientation and override its local rotation.
@@ -290,28 +374,32 @@ namespace ALYSLC
 		}
 
 		// Check if all players are valid, and if one isn't, pause.
-		for (const auto& p : glob.coopPlayers)
+		if (!glob.partyWiped)
 		{
-			if (!p->isActive)
+			for (const auto& p : glob.coopPlayers)
 			{
-				continue;
-			}
+				if (!p->isActive)
+				{
+					continue;
+				}
 			
-			bool isInvalid = 
-			{
-				(p->coopActor->parentCell && !p->coopActor->parentCell->IsAttached()) ||
-				p->coopActor->IsDisabled() ||
-				!p->coopActor->Is3DLoaded() ||
-				!p->coopActor->loadedData ||
-				!p->coopActor->currentProcess ||
-				!p->coopActor->GetCharController()
-			};
+				bool isInvalid = 
+				{
+					(p->coopActor->parentCell && !p->coopActor->parentCell->IsAttached()) ||
+					p->coopActor->IsDisabled() ||
+					!p->coopActor->Is3DLoaded() ||
+					!p->coopActor->loadedData ||
+					!p->coopActor->currentProcess ||
+					!p->coopActor->GetCharController()
+				};
 
-			if (isInvalid)
-			{
-				return ManagerState::kPaused;
+				if (isInvalid)
+				{
+					return ManagerState::kPaused;
+				}
 			}
 		}
+		
 
 		// Pause when the map menu is open to prevent glitches upon closure 
 		// and to also enable fast travel while in the map menu.
@@ -325,10 +413,10 @@ namespace ALYSLC
 		auto ui = RE::UI::GetSingleton(); 
 		if ((ui) && 
 			(
-				(
+				/*(
 					ALYSLC::AlternateConversationCameraCompat::g_installed &&
 					ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) 
-				) ||
+				) ||*/
 				ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 				ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
 				ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
@@ -346,8 +434,7 @@ namespace ALYSLC
 
 		// Since P1 will stop mining unless the camera is allowed to change states,
 		// keep the camera manager paused until no longer mining.
-		if (playerCam->currentState->id == RE::CameraState::kFurniture &&
-			glob.player1Actor->GetOccupiedFurniture())
+		/*if (glob.player1Actor->GetOccupiedFurniture())
 		{
 			auto furnitureRefrPtr = Util::GetRefrPtrFromHandle
 			(
@@ -367,7 +454,7 @@ namespace ALYSLC
 			{
 				return ManagerState::kPaused;
 			}
-		}
+		}*/
 
 		return currentState;
 	}
@@ -430,10 +517,10 @@ namespace ALYSLC
 			auto ui = RE::UI::GetSingleton(); 
 			if ((ui) && 
 				(
-					(
+					/*(
 						ALYSLC::AlternateConversationCameraCompat::g_installed &&
 						ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) 
-					) ||
+					) ||*/
 					ui->IsMenuOpen(RE::FaderMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
 					ui->IsMenuOpen(RE::MapMenu::MENU_NAME) ||
@@ -443,10 +530,10 @@ namespace ALYSLC
 				return currentState;
 			}
 
+			/*
 			// Have to pause here because the player will stop mining while the camera is enabled, 
 			// even if the camera's current state is set to furniture.
-			if (playerCam->currentState->id == RE::CameraState::kFurniture && 
-				glob.player1Actor->GetOccupiedFurniture())
+			if (glob.player1Actor->GetOccupiedFurniture())
 			{
 				auto furnitureRefr = Util::GetRefrPtrFromHandle
 				(
@@ -459,6 +546,17 @@ namespace ALYSLC
 					furnitureRefr->GetBaseObject()->As<RE::TESFurniture>() :
 					nullptr
 				);
+
+				// Special interaction keywords.
+				// Thanks to Dakraid:
+				// https://github.com/Dakraid/ImmersiveFirstPersonView/blob/master/ImmersiveFirstPersonView/States/SpecialFurniture.cs#L7
+				//"FurnitureWoodChoppingBlock"
+				//"FurnitureResourceObjectSawmill"
+				//"isCartTravelPlayer"
+				//"isPickaxeTable"
+				//"isPickaxeWall"
+				//"isPickaxeFloor"
+
 				if ((furniture) && 
 					(furniture->HasKeywordString("isPickaxeFloor") || 
 					 furniture->HasKeywordString("isPickaxeTable") || 
@@ -467,6 +565,7 @@ namespace ALYSLC
 					return ManagerState::kPaused;
 				}
 			}
+			*/
 
 			// Next, when waiting to toggle the camera back on, 
 			// ensure that all menus that pause the game are closed
@@ -560,20 +659,34 @@ namespace ALYSLC
 
 		const auto strings = RE::FixedStrings::GetSingleton();
 		bool allPlayersInFrontOfPoint = true;
-		auto getActorInFrontOfPoint = 
-		[&](RE::Actor* a_actor)
+		auto getRefrInFrontOfPoint = 
+		[&](RE::TESObjectREFR* a_refr)
 		{
+			if (!a_refr)
+			{
+				return false;
+			}
+
+			const auto asActor = a_refr->As<RE::Actor>();
+			auto velocity = RE::NiPoint3();
+			if (asActor)
+			{
+				velocity = Util::GetActorLinearVelocity(asActor);
+			}
+			else
+			{
+				a_refr->GetLinearVelocity(velocity);
+			}
+
 			const auto expectedPosNextFrame = 
 			(
-				a_actor->data.location + 
-				Util::GetActorLinearVelocity(a_actor) * 
-				*g_deltaTimeRealTime
+				a_refr->data.location + velocity * *g_deltaTimeRealTime
 			);
 			if (a_usePlayerPos)
 			{
 				return PointOnScreenAtCamOrientationScreenspaceMargin
 				(
-					a_actor->data.location,
+					a_refr->data.location,
 					a_camPos,
 					a_rotation, 
 					0.05f
@@ -584,7 +697,7 @@ namespace ALYSLC
 
 				// Invalid 3D for one player means not all players 
 				// are in front of the camera. Return early.
-				auto loadedData = a_actor->loadedData;
+				auto loadedData = a_refr->loadedData;
 				if (!loadedData)
 				{
 					return false;
@@ -597,7 +710,7 @@ namespace ALYSLC
 				}
 
 				bool onePlayerNodeOnScreen = false;
-				const float maxEdgeDist = Util::GetBoundMaxOrMinEdgeDist(a_actor, true, false);
+				const float maxEdgeDist = Util::GetBoundMaxOrMinEdgeDist(a_refr, true, false);
 				if (a_nodeNamesToCheck.size() > 0)
 				{
 					// Check provided list.
@@ -679,7 +792,7 @@ namespace ALYSLC
 			}
 
 			// Break once one player is not on screen at this point.
-			allPlayersInFrontOfPoint = getActorInFrontOfPoint
+			allPlayersInFrontOfPoint = getRefrInFrontOfPoint
 			(
 				p->mm->movementActorPtr && p->coopActor->IsOnMount() ? 
 				p->mm->movementActorPtr.get() :
@@ -691,9 +804,16 @@ namespace ALYSLC
 			}
 		}
 
-		if (allPlayersInFrontOfPoint && ShouldConsiderLockOnTargetAsPlayer())
+		if (allPlayersInFrontOfPoint && ShouldConsiderCamTargetAsPlayer())
 		{
-			allPlayersInFrontOfPoint = getActorInFrontOfPoint(camLockOnTargetHandle.get().get());
+			const auto targetPtr = Util::GetRefrPtrFromHandle
+			(
+				inDialogueCamState ? camDialogueTargetHandle : camLockOnTargetHandle
+			);
+			if (targetPtr)
+			{
+				allPlayersInFrontOfPoint = getRefrInFrontOfPoint(targetPtr.get());
+			}
 		}
 
 		return allPlayersInFrontOfPoint;
@@ -785,23 +905,8 @@ namespace ALYSLC
 		}
 
 		// Base origin point before processing.
-		/*if (ShouldConsiderLockOnTargetAsPlayer())
-		{			
-			camOriginPoint += camLockOnTargetHandle.get()->data.location;
-			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers + 1));
-			camOriginPoint.z += 
-			(
-				(
-					(avgPlayerHeight * static_cast<float>(glob.livingPlayers)) +
-					camLockOnTargetHandle.get()->GetHeight()
-				) / static_cast<float>(glob.livingPlayers + 1)
-			);
-		}
-		else*/
-		{
-			camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
-			camOriginPoint.z += avgPlayerHeight;
-		}
+		camOriginPoint *= (1.0f / static_cast<float>(glob.livingPlayers));
+		camOriginPoint.z += avgPlayerHeight;
 		
 		if (camCollisions)
 		{
@@ -903,7 +1008,7 @@ namespace ALYSLC
 			else
 			{
 				// Bound the player focus point above and below.
-				bounds = Util::GetVertCollPoints(camPlayerFocusPoint, 0.0f);
+				bounds = Util::GetVertCollPoints(camRefrFocusPoint, 0.0f);
 				camMaxAnchorPointZCoord = bounds.first;
 				camMinAnchorPointZCoord = bounds.second;
 			}
@@ -921,7 +1026,6 @@ namespace ALYSLC
 			);*/
 			camOriginPoint = camCollisionOriginPoint;
 		}
-
 
 		if (Settings::bOriginPointSmoothing)
 		{
@@ -1065,56 +1169,268 @@ namespace ALYSLC
 			float r = camTargetRadialDistance;
 			float phi = Util::ConvertAngle(camTargetPosYaw);
 			float theta = PI / 2.0f + camTargetPosPitch;
-			if (focalPlayerPID == -1) 
+			
+			// 15 frames to rotate quickly and face the target.
+			const bool positionQuicklyToFaceSpeaker = 
+			(
+				inDialogueCamState && 
+				Settings::bDialogueCamEnabled && 
+				Settings::bDialogueCamSwitchSpeakers &&
+				!movingToDialogueStartPos && 
+				Util::GetElapsedSeconds(dialogueSpeakerChangedTP) <= 
+				15.0f * *g_deltaTimeRealTime
+			);
+			if (inDialogueCamState && 
+				Settings::bDialogueCamEnabled &&
+				Util::HandleIsValid(camDialogueTargetHandle) &&
+				glob.menuPID >= 0)
 			{
-				// Base target position is offset from the base focus position,
-				// and is not guaranteed to be a reachable spot.
-				camBaseTargetPos = camFocusPoint;
-				// Pitch adjusts the target Z coordinate if camera collisions are on
-				// or if the lock on assistance level is set to zoom.
-				// Otherwise, the focus point solely determines the target Z coordinate
-				// to prevent the camera from phasing through the ground as much 
-				// since collisions are off.
-				bool pitchAdjustsZCoordinate = 
+				// Position is based off the listener's head position 
+				// and focuses on the speaker's torso.
+				const auto subtitleManager = RE::SubtitleManager::GetSingleton();
+				const auto& dialogueP = glob.coopPlayers[glob.menuPID];
+				const auto dialogueTargetPtr = camDialogueTargetHandle.get();
+				const auto asActor = dialogueTargetPtr->As<RE::Actor>();
+				const bool targetIsSpeaking = 
 				(
-					camCollisions ||
-					!isLockedOn ||
-					!Util::HandleIsValid(camLockOnTargetHandle) ||
-					Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom	
+					!Util::HandleIsValid(camDialogueSpeakerHandle) ||
+					camDialogueSpeakerHandle == camDialogueTargetHandle
 				);
-				if (pitchAdjustsZCoordinate)
+				auto speakerPos = RE::NiPoint3();
+				auto listenerToSpeakerDir = RE::NiPoint3();
+				// Always focus on the dialogue target NPC if not switching positions
+				// to track the speaker.
+				if (targetIsSpeaking || !Settings::bDialogueCamSwitchSpeakers)
 				{
-					camBaseTargetPos.z -= r * cosf(theta);
+					speakerPos = 
+					(
+						dialogueTargetPtr->As<RE::Actor>() ? 
+						Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+						Util::GetRefrPosition(dialogueTargetPtr.get())
+					);
+					listenerToSpeakerDir = Util::RotationToDirectionVect
+					(
+						0.0f, Util::ConvertAngle
+						(
+							Util::GetYawBetweenPositions
+							(
+								dialogueP->coopActor->data.location, speakerPos
+							)
+						)
+					);
+				}
+				else
+				{
+					speakerPos = Util::GetTorsoPosition(dialogueP->coopActor.get());
+					listenerToSpeakerDir = Util::RotationToDirectionVect
+					(
+						0.0f, Util::ConvertAngle
+						(
+							Util::GetYawBetweenPositions
+							(
+								dialogueTargetPtr->data.location, speakerPos
+							)
+						)
+					);
 				}
 
-				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
-				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
-			}
-			else
-			{
-				// Base target position is the focal player's focus point,
-				// which is almmost guaranteed to be valid,
-				// since it is offset from the player's position.
-				const auto& focalP = glob.coopPlayers[focalPlayerPID];
-				camPlayerFocusPoint = 
+				float xyDistToTarget = Util::GetXYDistance(camTargetPos, speakerPos);
+				// Default radius at which to start slowing rotation.
+				float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+				// Slow down when within a multiple of the player actor's bounds.
+				auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
+				if (player3DPtr) 
+				{
+					radius = player3DPtr->worldBound.radius * 4.0f;
+				}
+
+				auto playerHeadingDir = Util::RotationToDirectionVect
 				(
-					focalP->coopActor->data.location +
-					RE::NiPoint3
+					0.0f, Util::ConvertAngle
 					(
-						0.0f,
-						0.0f,
-						focalP->coopActor->IsSneaking() ?
-						0.5f * focalP->coopActor->GetHeight() :
-						focalP->coopActor->GetHeight()
-					)	
+						dialogueP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+					)
 				);
-				camBaseTargetPos = camPlayerFocusPoint + RE::NiPoint3(0.0f, 0.0f, camHeightOffset);
+				auto targetMovementOffsetXY =
+				(
+					playerHeadingDir - 
+					(playerHeadingDir.Dot(listenerToSpeakerDir) * listenerToSpeakerDir)
+				);
+				targetMovementOffsetXY *= 
+				(
+					adjustedAfterReachingDialoguePos ? 
+					Settings::fDialogueCamZoomedInMaxHorizontalOffset * 1.5f : 
+					Settings::fDialogueCamZoomedInMaxHorizontalOffset
+				);
+				dialogueCamXYOffset.x = Util::InterpolateSmootherStep
+				(
+					dialogueCamXYOffset.x, 
+					targetMovementOffsetXY.x,
+					camInterpFactor
+				);
+				dialogueCamXYOffset.y = Util::InterpolateSmootherStep
+				(
+					dialogueCamXYOffset.y, 
+					targetMovementOffsetXY.y,
+					camInterpFactor
+				);
+
+				if (targetIsSpeaking || !Settings::bDialogueCamSwitchSpeakers)
+				{
+					camRefrFocusPoint =
+					(
+						dialogueP->coopActor->data.location +
+						RE::NiPoint3
+						(
+							dialogueCamXYOffset.x,
+							dialogueCamXYOffset.y,
+							dialogueP->coopActor->IsSneaking() ?
+							0.5f * dialogueP->coopActor->GetHeight() :
+							dialogueP->coopActor->GetHeight()
+						)	
+					);
+				}
+				else
+				{
+					camRefrFocusPoint =
+					(
+						dialogueTargetPtr->data.location +
+						RE::NiPoint3
+						(
+							dialogueCamXYOffset.x,
+							dialogueCamXYOffset.y,
+							asActor && asActor->IsSneaking() ?
+							0.5f * asActor->GetHeight() :
+							asActor ? 
+							asActor->GetHeight() :
+							dialogueTargetPtr->GetHeight()
+						)	
+					);
+				}
+
+				auto prevBaseTargetPos = camBaseTargetPos;
+				camBaseTargetPos = 
+				(
+					camRefrFocusPoint + 
+					(
+						adjustedAfterReachingDialoguePos ?
+						RE::NiPoint3(0.0f, 0.0f, camHeightOffset) :
+						RE::NiPoint3(0.0f, 0.0f, Settings::fDialogueCamZoomedInVerticalOffset)
+					)
+				);
+				
+				float phi = Util::ConvertAngle
+				(
+					Util::GetYawBetweenPositions(camBaseTargetPos, speakerPos)
+				);
+				float theta = 
+				(
+					PI / 2.0f + Util::GetPitchBetweenPositions(camBaseTargetPos, speakerPos)
+				);
 				camBaseTargetPos.z -= r * cosf(theta);
 				camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
 				camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+				
+				// Smooth out movement to the next base target position.
+				float tRatio = camInterpFactor;
+				if (positionQuicklyToFaceSpeaker)
+				{
+					// Jump right to the base target position if not using transitional smoothing.
+					tRatio = Settings::bDialogueCamFocusSwitchSmoothing ? 0.05f : 1.0f;
+				}
+				else
+				{
+					// Since positional data is noisy when based off the player's movement angle,
+					// interpolate between the previous and next base target positions
+					// when not switching speakers.
+					tRatio = 
+					(
+						Util::InterpolateEaseOut
+						(
+							0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 9.0f
+						) *
+						(
+							movingToDialogueStartPos ? 
+							min
+							(
+								1.0f,
+								Util::GetElapsedSeconds(dialogueCameraTP) / 
+								secsCamDialogueStartTransition
+							) :
+							camInterpFactor
+						)
+					);
+				}
+				
+				camBaseTargetPos.x = Util::InterpolateSmootherStep
+				(
+					prevBaseTargetPos.x, camBaseTargetPos.x, tRatio
+				);
+				camBaseTargetPos.y = Util::InterpolateSmootherStep
+				(
+					prevBaseTargetPos.y, camBaseTargetPos.y, tRatio
+				);
+				camBaseTargetPos.z = Util::InterpolateSmootherStep
+				(
+					prevBaseTargetPos.z, camBaseTargetPos.z, tRatio
+				);
+			}
+			else
+			{
+				if (focalPlayerPID == -1) 
+				{
+					// Base target position is offset from the base focus position,
+					// and is not guaranteed to be a reachable spot.
+					camBaseTargetPos = camFocusPoint;
+					// Pitch adjusts the target Z coordinate if camera collisions are on
+					// or if the lock on assistance level is set to zoom.
+					// Otherwise, the focus point solely determines the target Z coordinate
+					// to prevent the camera from phasing through the ground as much 
+					// since collisions are off.
+					bool pitchAdjustsZCoordinate = 
+					(
+						camCollisions ||
+						!isLockedOn ||
+						!Util::HandleIsValid(camLockOnTargetHandle) ||
+						Settings::uLockOnAssistance == !CamLockOnAssistanceLevel::kZoom	
+					);
+					if (pitchAdjustsZCoordinate)
+					{
+						camBaseTargetPos.z -= r * cosf(theta);
+					}
+
+					camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
+					camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+				}
+				else
+				{
+					// Base target position is the focal player's focus point,
+					// which is almmost guaranteed to be valid,
+					// since it is offset from the player's position.
+					const auto& focalP = glob.coopPlayers[focalPlayerPID];
+					camRefrFocusPoint = 
+					(
+						focalP->coopActor->data.location +
+						RE::NiPoint3
+						(
+							0.0f,
+							0.0f,
+							focalP->coopActor->IsSneaking() ?
+							0.5f * focalP->coopActor->GetHeight() :
+							focalP->coopActor->GetHeight()
+						)	
+					);
+					camBaseTargetPos = 
+					(
+						camRefrFocusPoint + RE::NiPoint3(0.0f, 0.0f, camHeightOffset)
+					);
+					camBaseTargetPos.z -= r * cosf(theta);
+					camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
+					camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+				}
 			}
 
-			if (camCollisions)
+			if (camCollisions && !movingToDialogueStartPos)
 			{
 				// [(Questionable?) Methods to the Madness Below]:
 				// 
@@ -1331,12 +1647,14 @@ namespace ALYSLC
 						}
 					}
 
-					// Also check from lock-on target's focus point.
-					if (ShouldConsiderLockOnTargetAsPlayer())
+					// Also check from refr target's focus point.
+					if (ShouldConsiderCamTargetAsPlayer())
 					{
 						castStartPos = ToVec4
 						(
-							Util::GetActorFocusPoint(camLockOnTargetHandle.get().get())
+							inDialogueCamState ? 
+							Util::GetRefrPosition(camDialogueTargetHandle.get().get()) : 
+							Util::GetActorFocusPoint(camLockOnTargetHandle.get()->As<RE::Actor>())
 						);
 						result = Raycast::CastRay
 						(
@@ -1425,7 +1743,7 @@ namespace ALYSLC
 				// since the interpolated position is between the two positions. 
 				// Only jumping instantly to the target position will prevent this from occurring,
 				// but obviously, this is more jarring.
-				if (Settings::bTargetPosSmoothing)
+				if (Settings::bTargetPosSmoothing && !positionQuicklyToFaceSpeaker)
 				{
 					camCollisionTargetPos = 
 					{
@@ -1455,7 +1773,7 @@ namespace ALYSLC
 			else
 			{
 				isColliding = false;
-				if (Settings::bTargetPosSmoothing)
+				if (Settings::bTargetPosSmoothing && !positionQuicklyToFaceSpeaker)
 				{
 					camTargetPos.x = Util::InterpolateSmootherStep
 					(
@@ -1590,7 +1908,7 @@ namespace ALYSLC
 		if (lockOnActorReq.has_value())
 		{
 			camLockOnTargetHandle = lockOnActorReq.value();
-			auto actorPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+			auto actorPtr = Util::GetActorPtrFromHandle(lockOnActorReq.value());
 			if (!actorPtr)
 			{
 				ClearLockOnData();
@@ -1609,71 +1927,110 @@ namespace ALYSLC
 			lockOnActorReq = std::nullopt;
 		}
 
-		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
-		bool validLockOnTarget = static_cast<bool>(camLockOnTargetPtr);
-		if (isLockedOn)
+		auto camTargetPtr = Util::GetRefrPtrFromHandle
+		(
+			inDialogueCamState ? 
+			camDialogueTargetHandle :
+			camLockOnTargetHandle
+		);
+		const auto asActor = camTargetPtr ? camTargetPtr->As<RE::Actor>() : nullptr;
+		bool validLockOnTarget = static_cast<bool>(camTargetPtr);
+		if (isLockedOn || inDialogueCamState)
 		{
 			// Check if target is still valid (in LOS, 3D loaded, handle valid, etc.)
 			RE::NiPoint3 oldCamLockOnFocusPoint = camLockOnFocusPoint;
+			const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(camTargetPtr);
 			// Check if the lock-on target is a player, and if so, 
 			// the target is only valid if not downed.
-			const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(camLockOnTargetPtr);
-			validLockOnTarget &= pIndex == -1 || !glob.coopPlayers[pIndex]->isDowned;
+			// Lock on targets must be actors.
+			if (isLockedOn)
+			{
+				validLockOnTarget &= 
+				(
+					(asActor) && (pIndex == -1 || !glob.coopPlayers[pIndex]->isDowned)
+				);
+			}
+			
 			if (validLockOnTarget)
 			{
-				secsSinceLockOnTargetLOSChecked = Util::GetElapsedSeconds(lockOnLOSCheckTP);
-				if (secsSinceLockOnTargetLOSChecked > Settings::fSecsBetweenTargetVisibilityChecks)
+				if (isLockedOn)
 				{
-					lockOnLOSCheckTP = SteadyClock::now();
-					bool hadLOS = lockOnTargetInSight;
-					bool inFrustum = false;
-					auto p1 = RE::PlayerCharacter::GetSingleton();
-					// Use P1's LOS check.
-					lockOnTargetInSight = 
+					secsSinceLockOnTargetLOSChecked = Util::GetElapsedSeconds(lockOnLOSCheckTP);
+					if (secsSinceLockOnTargetLOSChecked > 
+						Settings::fSecsBetweenTargetVisibilityChecks)
+					{
+						lockOnLOSCheckTP = SteadyClock::now();
+						bool hadLOS = lockOnTargetInSight;
+						bool inFrustum = false;
+						auto p1 = RE::PlayerCharacter::GetSingleton();
+						// Use P1's LOS check.
+						lockOnTargetInSight = 
+						(
+							p1 && 
+							p1->HasLineOfSight(camTargetPtr.get(), inFrustum)
+						);
+						bool lostLOS = camTargetPtr && hadLOS && !lockOnTargetInSight;
+						bool noLOS = camTargetPtr && !lockOnTargetInSight;
+						bool regainedLOS = camTargetPtr && !hadLOS && lockOnTargetInSight;
+						if (lostLOS)
+						{
+							lockOnLOSLostTP = SteadyClock::now();
+						}
+						else if (regainedLOS)
+						{
+							secsSinceLockOnTargetLOSLost = 0.0f;
+						}
+						else if (noLOS)
+						{
+							secsSinceLockOnTargetLOSLost = Util::GetElapsedSeconds(lockOnLOSLostTP);
+						}
+					}
+
+					// Clear out after not having LOS for a certain amount of time.
+					// Do not invalidate if in dialogue with the target NPC.
+					bool invalidateAfterNoLOS = 
 					(
-						p1 && 
-						p1->HasLineOfSight(camLockOnTargetPtr.get(), inFrustum)
+						secsSinceLockOnTargetLOSLost > Settings::fSecsWithoutLOSToInvalidateTarget
 					);
-					bool lostLOS = camLockOnTargetPtr && hadLOS && !lockOnTargetInSight;
-					bool noLOS = camLockOnTargetPtr && !lockOnTargetInSight;
-					bool regainedLOS = camLockOnTargetPtr && !hadLOS && lockOnTargetInSight;
-					if (lostLOS)
+					if (invalidateAfterNoLOS || 
+						!camTargetPtr->Is3DLoaded() || 
+						!camTargetPtr->IsHandleValid() || 
+						!camTargetPtr->GetParentCell() || 
+						!camTargetPtr->GetParentCell()->IsAttached())
 					{
-						lockOnLOSLostTP = SteadyClock::now();
-					}
-					else if (regainedLOS)
-					{
-						secsSinceLockOnTargetLOSLost = 0.0f;
-					}
-					else if (noLOS)
-					{
-						secsSinceLockOnTargetLOSLost = Util::GetElapsedSeconds(lockOnLOSLostTP);
-					}
-				}
+						// Reset LOS lost interval since the target is not valid.
+						if (invalidateAfterNoLOS)
+						{
+							secsSinceLockOnTargetLOSLost = 0.0f;
+						}
 
-				// Clear out after not having LOS for a certain amount of time.
-				bool invalidateAfterNoLOS = 
-				(
-					secsSinceLockOnTargetLOSLost > Settings::fSecsWithoutLOSToInvalidateTarget
-				);
-				if (invalidateAfterNoLOS || 
-					!camLockOnTargetPtr->Is3DLoaded() || 
-					!camLockOnTargetPtr->IsHandleValid() || 
-					!camLockOnTargetPtr->GetParentCell() || 
-					!camLockOnTargetPtr->GetParentCell()->IsAttached())
-				{
-					// Reset LOS lost interval since the target is not valid.
-					if (invalidateAfterNoLOS)
-					{
-						secsSinceLockOnTargetLOSLost = 0.0f;
+						validLockOnTarget = false;
 					}
-
-					validLockOnTarget = false;
+					else
+					{
+						// Crosshair refr is valid, so we can update lock-on pos.
+						camLockOnFocusPoint = Util::GetHeadPosition(asActor);
+					}
 				}
 				else
 				{
-					// Crosshair refr is valid, so we can update lock-on pos.
-					camLockOnFocusPoint = Util::GetHeadPosition(camLockOnTargetPtr.get());
+					if (!camTargetPtr->Is3DLoaded() || 
+						!camTargetPtr->IsHandleValid() || 
+						!camTargetPtr->GetParentCell() || 
+						!camTargetPtr->GetParentCell()->IsAttached())
+					{
+						validLockOnTarget = false;
+					}
+					else
+					{
+						// Crosshair refr is valid, so we can update lock-on pos.
+						camLockOnFocusPoint = 
+						(
+							asActor ? 
+							Util::GetHeadPosition(asActor) : 
+							Util::GetRefrPosition(camTargetPtr.get())
+						);
+					}
 				}
 			}
 
@@ -1683,11 +2040,11 @@ namespace ALYSLC
 				auto fixedStrings = RE::FixedStrings::GetSingleton();
 				auto niCamPtr = Util::GetNiCamera();
 				RE::NiPoint3 lockOnIndicatorCenter{ };
-				RE::NiPoint3 topOfTheHeadPos = Util::GetHeadPosition(camLockOnTargetPtr.get());
-				if (fixedStrings && niCamPtr && niCamPtr.get())
+				if (asActor && fixedStrings && niCamPtr && niCamPtr.get())
 				{
+					RE::NiPoint3 topOfTheHeadPos = Util::GetHeadPosition(asActor);
 					// Based on the head body part's radius.
-					auto headRadius = Util::GetHeadRadius(camLockOnTargetPtr.get());
+					auto headRadius = Util::GetHeadRadius(asActor);
 					topOfTheHeadPos.z += headRadius;
 					lockOnIndicatorCenter = Util::WorldToScreenPoint3(topOfTheHeadPos);
 				}
@@ -1696,8 +2053,8 @@ namespace ALYSLC
 					// Fallback.
 					lockOnIndicatorCenter = Util::WorldToScreenPoint3
 					(
-						topOfTheHeadPos + 
-						RE::NiPoint3(0.0f, 0.0f, 0.1f * camLockOnTargetPtr->GetHeight())
+						Util::GetRefrPosition(camTargetPtr.get()) + 
+						RE::NiPoint3(0.0f, 0.0f, 0.1f * camTargetPtr->GetHeight())
 					);
 				}
 
@@ -1731,15 +2088,44 @@ namespace ALYSLC
 	{
 		// Draw the lock-on marker on the camera's lock-on target.
 
-		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
-		if (!camLockOnTargetPtr) 
+		auto camTargetPtr = Util::GetRefrPtrFromHandle
+		(
+			isLockedOn ? 
+			camLockOnTargetHandle :
+			camDialogueTargetHandle
+		);
+		if (!camTargetPtr) 
+		{
+			return;
+		}
+
+		// Do not draw if zoomed in while in dialogue or if not requesting to draw the indicator
+		// while zoomed out.
+		bool skipDrawingInDialogue = false;
+		if (inDialogueCamState)
+		{
+			if (Settings::bDialogueCamEnabled)
+			{
+				skipDrawingInDialogue = 
+				(
+					!adjustedAfterReachingDialoguePos || 
+					!Settings::bDialogueCamZoomedOutSpeakerIndicator
+				);
+			}
+			else
+			{
+				skipDrawingInDialogue = !Settings::bDialogueCamZoomedOutSpeakerIndicator;
+			}
+		}
+
+		if (skipDrawingInDialogue)
 		{
 			return;
 		}
 
 		float indicatorBaseLength = Settings::fCamLockOnIndicatorLength;
 		const float& indicatorBaseThickness = Settings::fCamLockOnIndicatorThickness;
-		float targetPixelHeight = Util::GetBoundPixelDist(camLockOnTargetPtr.get(), true);
+		float targetPixelHeight = Util::GetBoundPixelDist(camTargetPtr.get(), true);
 		targetPixelHeight = targetPixelHeight == 0.0f ? indicatorBaseLength : targetPixelHeight;
 		// Scale with target's pixel height and bound above and below.
 		indicatorBaseLength = std::clamp
@@ -2518,6 +2904,105 @@ namespace ALYSLC
 		return true;
 	}
 
+	void CameraManager::PerformStateTransition()
+	{
+		// Transition the camera from one state to another when the previous state differs
+		// from the current one.
+
+		DBG("State {} -> {}.", prevCamState, camState);
+
+		// Nothing to do if the previous state is the same as the current one.
+		if (camState == prevCamState)
+		{
+			return;
+		}
+
+		// Nothing to do when switching from one user-toggleable state to another.
+		// Any setup is performed prior to the state change in the state toggle 
+		// player action function.
+		bool switchBetweenUserToggleableStates = 
+		(
+			(
+				prevCamState == CamState::kAutoTrail ||
+				prevCamState == CamState::kLockOn ||
+				prevCamState == CamState::kManualPositioning 
+			) &&
+			(
+				camState == CamState::kAutoTrail ||
+				camState == CamState::kLockOn ||
+				camState == CamState::kManualPositioning 
+			) 
+		);
+		if (switchBetweenUserToggleableStates)
+		{
+			return;
+		}
+		
+
+		// Clear out old dialogue target.
+		if (prevCamState == CamState::kDialogue)
+		{
+			DBG("Clear out dialogue target handle.");
+			camDialogueTargetHandle = RE::ObjectRefHandle();
+		}
+
+		// Set up death or dialogue state.
+		if (camState == CamState::kDeath || camState == CamState::kDialogue)
+		{
+			// Unfreeze time, if needed.
+			Util::ToggleFreezeTime(false);
+			// Clear lock on target.
+			camLockOnTargetHandle = RE::ActorHandle();
+			lockOnActorReq = std::nullopt;
+
+			if (camState == CamState::kDeath)
+			{
+				// Set P1 as controls driven.
+				Util::SetPlayerAIDriven(false);
+				// Force third person on transition.
+				if (playerCam && playerCam->currentState->id == RE::CameraState::kBleedout)
+				{
+					playerCam->lock.Lock();
+					playerCam->ForceThirdPerson();
+					playerCam->UpdateThirdPerson(true);
+					playerCam->lock.Unlock();
+				}
+
+				// Set start TP.
+				deathCameraTP = SteadyClock::now();
+				DBG("Set up death state.");
+			}
+			else
+			{
+				auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
+				if (menuTopicManager)
+				{
+					camDialogueTargetHandle = menuTopicManager->speaker;
+					if (!Util::HandleIsValid(camDialogueTargetHandle))
+					{
+						camDialogueTargetHandle = menuTopicManager->lastSpeaker;
+
+					}
+
+					adjustedAfterReachingDialoguePos = false;
+				}
+
+				// Validate the new dialogue target.
+				CheckLockOnTarget();
+				// Set start and speaker change TP.
+				dialogueCameraTP = 
+				dialogueSpeakerChangedTP = SteadyClock::now();
+				DBG
+				(
+					"Set up dialogue state. Target is {}.",
+					Util::HandleIsValid(camDialogueTargetHandle) ? 
+					camDialogueTargetHandle.get()->GetName() : 
+					"NONE"
+				);
+			}
+		}
+	}
+
 	bool CameraManager::PointOnScreenAtCamOrientationScreenspaceMargin
 	(
 		const RE::NiPoint3& a_point, 
@@ -2672,12 +3157,16 @@ namespace ALYSLC
 				Settings::bCamInteriorCollisions && !exteriorCell	
 			)
 		);
+		adjustedAfterReachingDialoguePos = false;
 		delayedZoomInUnderExteriorRoof = delayedZoomOutUnderExteriorRoof = false;
+		inDeathCamState = false;
+		inDialogueCamState = false;
 		isAutoTrailing = true;
 		isColliding = false;
 		isManuallyPositioned = false;
 		isLockedOn = false;
 		lockInteriorOrientationOnInit = false;
+		movingToDialogueStartPos = false;
 
 		// Make sure time was not frozen. Unfreeze if so.
 		Util::ToggleFreezeTime(false);
@@ -2686,6 +3175,7 @@ namespace ALYSLC
 		// Reset lock-on-related data.
 		lockOnTargetInSight = false;
 		camLockOnTargetHandle = RE::ActorHandle();
+		camDialogueTargetHandle = RE::ObjectRefHandle();
 		lockOnActorReq = std::nullopt;
 
 		playerCam = RE::PlayerCamera::GetSingleton();
@@ -2750,6 +3240,7 @@ namespace ALYSLC
 
 		// Set target positions equal to the node/P1 looking at position.
 		auto p1LookingAt = glob.player1Actor->GetLookingAtLocation();
+		camRefrFocusPoint = 
 		camBaseTargetPos =
 		camTargetPos =
 		camCollisionTargetPos =
@@ -2758,6 +3249,7 @@ namespace ALYSLC
 			playerCam->cameraRoot->world.translate : 
 			p1LookingAt
 		);
+		dialogueCamXYOffset = RE::NiPoint2();
 		
 		// Set radial distance equal to the node's distance from the origin point.
 		camRadialDistanceOffset = camSavedRadialDistanceOffset = 0.0f;
@@ -2784,6 +3276,8 @@ namespace ALYSLC
 			camCurrentYawToFocus =
 			camBaseTargetPosYaw = 
 			camTargetPosYaw = Util::DirectionToGameAngYaw(camForward);
+
+			camFOV = playerCam->worldFOV;
 		}
 		else
 		{
@@ -2796,6 +3290,9 @@ namespace ALYSLC
 			camCurrentYawToFocus =
 			camBaseTargetPosYaw = 
 			camTargetPosYaw = glob.player1Actor->GetHeading(false);
+
+			// Set default camera FOV.
+			camFOV = 75.0f;
 		}
 
 		std::optional<RE::TESObjectREFR*> closestTeleportDoor = std::nullopt;
@@ -3014,12 +3511,7 @@ namespace ALYSLC
 			Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
 		}
 
-		playerCam->worldFOV = 
-		(
-			exteriorCell ? 
-			Settings::fCamExteriorFOV :
-			Settings::fCamInteriorFOV
-		);
+		playerCam->worldFOV = camFOV;
 		RE::NiUpdateData updateData{ };
 		playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
 	}
@@ -3068,12 +3560,7 @@ namespace ALYSLC
 			Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
 		}
 
-		playerCam->worldFOV = 
-		(
-			exteriorCell ? 
-			Settings::fCamExteriorFOV :
-			Settings::fCamInteriorFOV
-		);
+		playerCam->worldFOV = camFOV;
 		RE::NiUpdateData updateData{ };
 		playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
 	}
@@ -3107,12 +3594,7 @@ namespace ALYSLC
 			Util::NativeFunctions::UpdateWorldToScaleform(niCamPtr.get());
 		}
 
-		playerCam->worldFOV = 
-		(
-			exteriorCell ? 
-			Settings::fCamExteriorFOV :
-			Settings::fCamInteriorFOV
-		);
+		playerCam->worldFOV = camFOV;
 		RE::NiUpdateData updateData{ };
 		playerCam->cameraRoot->UpdateDownwardPass(updateData, 0);
 	}
@@ -3378,6 +3860,41 @@ namespace ALYSLC
 		movementAngleMultInterpData->UpdateInterpolatedValue(true);
 	}
 
+	void CameraManager::UpdateFOV()
+	{
+		// Update the FOV to set for the camera.
+		// Dependent on the type of the current player parent cell and whether or not 
+		// the camera is in the dialogue state.
+		// First, set FOV.
+		float targetFOV = camFOV;
+		if (exteriorCell) 
+		{
+			targetFOV = Settings::fCamExteriorFOV;
+		}
+		else
+		{
+			targetFOV = Settings::fCamInteriorFOV;
+		}
+		
+		float tRatio = camInterpFactor;
+		// Zoomed-in FOV to set when moving to the starting position or maintaining focus
+		// on the dialogue target while the special dialogue camera is enabled.
+		if ((inDialogueCamState && Settings::bDialogueCamEnabled) && 
+			(movingToDialogueStartPos || !adjustedAfterReachingDialoguePos))
+		{
+			targetFOV *= Settings::fDialogueCamFOVRatio;
+			tRatio = min
+			(
+				1.0f, Util::GetElapsedSeconds(dialogueCameraTP) / secsCamDialogueStartTransition
+			);
+		}
+
+		if (camFOV != targetFOV)
+		{
+			camFOV = Util::InterpolateSmootherStep(camFOV, targetFOV, tRatio);
+		}
+	}
+
 	void CameraManager::UpdateCamHeight()
 	{
 		// Update the camera focus point's Z offset, or 'height' above the origin point.
@@ -3387,12 +3904,20 @@ namespace ALYSLC
 		{
 			return;
 		}
+		
+		if (movingToDialogueStartPos)
+		{
+			// Reset and do not change when moving the camera on rails to the initial position
+			// when in dialogue.
+			camBaseHeightOffset = 0.0f;
+			return;
+		}
 
-		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
 		// Can adjust height if:
 		// 1. There is no focal player -AND-
 		// 2. Not locked on or if there is no target or if zoom controls are enabled -AND-
 		// 3. A player is controlling the camera and trying to adjust the height.
+		auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 		bool canAdjustHeight = 
 		{
 			(
@@ -3450,7 +3975,7 @@ namespace ALYSLC
 		(
 			focalPlayerPID == -1 ? 
 			camOriginPoint.z + newHeight :
-			camPlayerFocusPoint.z + newHeight
+			camRefrFocusPoint.z + newHeight
 		);
 		float boundsDiff = fabsf(camMaxAnchorPointZCoord - camMinAnchorPointZCoord);
 		bool isBound = false;
@@ -3523,7 +4048,114 @@ namespace ALYSLC
 	{
 		// Update the base and current camera pitch and yaw to set.
 		
-		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+		// IF the special dialogue camera is enabled, point the camera from the behind the listener 
+		// to the dialogue target or current speaker.
+		if (inDialogueCamState && Settings::bDialogueCamEnabled)
+		{
+			const auto& dialogueP = glob.coopPlayers[glob.menuPID];
+			const auto dialogueTargetPtr = camDialogueTargetHandle.get();
+			const auto asActor = dialogueTargetPtr->As<RE::Actor>();
+			const bool targetIsSpeaking = 
+			(
+				!Util::HandleIsValid(camDialogueSpeakerHandle) ||
+				camDialogueSpeakerHandle == camDialogueTargetHandle
+			);
+			auto speakerPos = RE::NiPoint3();
+			if (targetIsSpeaking || !Settings::bDialogueCamSwitchSpeakers)
+			{
+				speakerPos = 
+				(
+					dialogueTargetPtr->As<RE::Actor>() ? 
+					Util::GetTorsoPosition(dialogueTargetPtr->As<RE::Actor>()) : 
+					Util::GetRefrPosition(dialogueTargetPtr.get())
+				);
+			}
+			else
+			{
+				speakerPos = Util::GetTorsoPosition(dialogueP->coopActor.get());
+			}
+
+			float xyDistToTarget = Util::GetXYDistance(camTargetPos, speakerPos);
+			// Default radius at which to start slowing rotation.
+			float radius = Settings::fTargetAttackSourceDistToSlowRotation;
+			// Slow down when within a multiple of the player actor's bounds.
+			auto player3DPtr = Util::GetRefr3D(dialogueP->coopActor.get()); 
+			if (player3DPtr) 
+			{
+				radius = player3DPtr->worldBound.radius * 4.0f;
+			}
+
+			const float startingTargetPitch = Util::GetPitchBetweenPositions
+			(
+				camTargetPos, speakerPos
+			);
+			const float startingTargetYaw = Util::GetYawBetweenPositions
+			(
+				camTargetPos, speakerPos
+			);
+			float pitchDelta = Util::NormalizeAngToPi(startingTargetPitch - camPitch);
+			float yawDelta = Util::NormalizeAngToPi(startingTargetYaw - camYaw);
+			float tRatio = camInterpFactor;
+			float rotMult = 1.0f;
+			// 15 frames to rotate quickly and face the target.
+			const bool turnQuicklyToFaceSpeaker = 
+			(
+				Settings::bDialogueCamSwitchSpeakers && 
+				!movingToDialogueStartPos && 
+				Util::GetElapsedSeconds(dialogueSpeakerChangedTP) <= 15.0f * *g_deltaTimeRealTime
+			);
+			if (turnQuicklyToFaceSpeaker)
+			{
+				rotMult = 1.0f;
+				tRatio = Settings::bDialogueCamFocusSwitchSmoothing ? 0.05f : 1.0f;
+			}
+			else
+			{
+				rotMult = Util::InterpolateEaseOut
+				(
+					0.0f, 1.0f, min(1.0f, xyDistToTarget / max(0.01f, radius)), 9.0f
+				);
+				tRatio = 
+				(
+					movingToDialogueStartPos ? 
+					min
+					(
+						1.0f,
+						Util::GetElapsedSeconds(dialogueCameraTP) / secsCamDialogueStartTransition
+					) :
+					camInterpFactor
+				);
+			}
+			
+			pitchDelta = Util::InterpolateSmootherStep(0.0f, rotMult * pitchDelta, tRatio);
+			yawDelta = Util::InterpolateSmootherStep(0.0f, rotMult * yawDelta, tRatio);
+
+			// Apply the deltas for this frame.
+			camPitch = Util::NormalizeAngToPi(camPitch + pitchDelta);
+			camYaw = Util::NormalizeAng0To2Pi(camYaw + yawDelta);
+			
+			// Set equal to cam yaw angle to set.
+			camTargetPosPitch = camBaseTargetPosPitch = camPitch;
+			camTargetPosYaw = camBaseTargetPosYaw = camYaw;
+
+			// Set all to P1's pitch/yaw if invalid.
+			if (isnan(camTargetPosYaw) || isinf(camTargetPosYaw))
+			{
+				camYaw = 
+				camTargetPosYaw = 
+				camBaseTargetPosYaw = glob.player1Actor->data.angle.z;
+			}
+
+			if (isnan(camTargetPosPitch) || isinf(camTargetPosPitch))
+			{
+				camPitch = 
+				camTargetPosPitch = 
+				camBaseTargetPosPitch = glob.player1Actor->data.angle.x;
+			}
+			
+			return;
+		}
+
 		// Cap rotation speed.
 		float maxRotRads = camMaxAngRotRate * *g_deltaTimeRealTime;
 		// Changes in pitch/yaw to apply.
@@ -3546,6 +4178,7 @@ namespace ALYSLC
 
 		// Can still manually rotate the camera if there is no lock-on target
 		// or if the lock-on assistance is set to zoom only.
+		auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 		if (isAutoTrailing || 
 			isManuallyPositioned || 
 			!camLockOnTargetPtr || 
@@ -3578,7 +4211,7 @@ namespace ALYSLC
 			(Settings::bAutoRotateCamPitch || Settings::bAutoRotateCamYaw) &&
 			(camAdjMode != CamAdjustmentMode::kRotate || rsMag == 0.0f) &&
 			(
-				(!isManuallyPositioned) && 
+				(!isManuallyPositioned) &&
 				(
 					isAutoTrailing || 
 					!camLockOnTargetPtr ||
@@ -3832,11 +4465,11 @@ namespace ALYSLC
 			{
 				camCurrentPitchToFocus = Util::NormalizeAngToPi
 				(
-					Util::GetPitchBetweenPositions(camTargetPos, camPlayerFocusPoint)
+					Util::GetPitchBetweenPositions(camTargetPos, camRefrFocusPoint)
 				);
 				camCurrentYawToFocus = Util::NormalizeAng0To2Pi
 				(
-					Util::GetYawBetweenPositions(camTargetPos, camPlayerFocusPoint)
+					Util::GetYawBetweenPositions(camTargetPos, camRefrFocusPoint)
 				);
 			}
 
@@ -3977,8 +4610,8 @@ namespace ALYSLC
 				else
 				{
 					// Rotate to directly face the focal player.
-					camPitch = Util::GetPitchBetweenPositions(camTargetPos, camPlayerFocusPoint);
-					camYaw = Util::GetYawBetweenPositions(camTargetPos, camPlayerFocusPoint);
+					camPitch = Util::GetPitchBetweenPositions(camTargetPos, camRefrFocusPoint);
+					camYaw = Util::GetYawBetweenPositions(camTargetPos, camRefrFocusPoint);
 				}
 			}
 		}
@@ -3989,7 +4622,7 @@ namespace ALYSLC
 			// NOTE: 
 			// Temporarily using the base target position as the rotation target 
 			// to lessen camera jumping relative to a rapidly changing collision focus point.
-			auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+			auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 			if (!camLockOnTargetPtr)
 			{
 				// No target. Bye.
@@ -4207,6 +4840,17 @@ namespace ALYSLC
 		// to keep all players in view and auto- zooming in
 		// when under an exterior roof, as necessary.
 
+		// Zoom in instantly when transitioning to dialogue start position.
+		// Maintain the zoom radial distance until adjusted.
+		if ((inDialogueCamState && Settings::bDialogueCamEnabled) && 
+			(movingToDialogueStartPos || !adjustedAfterReachingDialoguePos))
+		{
+			camRadialDistanceOffset = 0.0f;
+			camMinTrailingDistance =
+			camTargetRadialDistance = Settings::fDialogueCamZoomedInRadialDistance;
+			return;
+		}
+
 		// Set the minimum trailing distance first.
 		if (focalPlayerPID == -1)
 		{
@@ -4232,7 +4876,7 @@ namespace ALYSLC
 		// and increases (zoom out) when moving the RS down.
 		// Behaves the same for all camera modes.
 		// Only adjust base radial distance if requested.
-		auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+		auto camLockOnTargetPtr = Util::GetRefrPtrFromHandle(camLockOnTargetHandle);
 		// Can adjust zoom if:
 		// 1. Not locked on or if there is no target or if zoom controls are enabled -AND-
 		// 2. A player is controlling the camera and trying to adjust the zoom.
@@ -4354,7 +4998,12 @@ namespace ALYSLC
 		float radialDistanceRangeMax = Settings::fMaxRaycastAndZoomOutDistance;
 		float radialDistanceRangeMid = Settings::fMaxRaycastAndZoomOutDistance / 2.0f;
 		float lastOnScreenRadialDist = Settings::fMaxRaycastAndZoomOutDistance;
-		auto focusPoint = focalPlayerPID == -1 ? camFocusPoint : camPlayerFocusPoint;
+		// Focus point is the party's focus point or the focal player/dialogue target's focus point.
+		bool usePartyFocusPoint = 
+		(
+			(focalPlayerPID == -1) && (!inDialogueCamState || !Settings::bDialogueCamEnabled)
+		);
+		auto focusPoint = usePartyFocusPoint ? camFocusPoint :  camRefrFocusPoint;
 		auto dirFromFocus = camBaseTargetPos - focusPoint;
 		dirFromFocus.Unitize();
 		// Position from which to test for visibility of all players.
@@ -4423,7 +5072,7 @@ namespace ALYSLC
 		);
 		if (outside)
 		{
-			if (focalPlayerPID == -1) 
+			if (usePartyFocusPoint)
 			{
 				bool allPlayersUnderExteriorRoof = true;
 				bool onePlayerUnderExteriorRoof = false;
@@ -4516,7 +5165,8 @@ namespace ALYSLC
 			}
 			else
 			{
-				// No changes to apply when there is a focal player.
+				// No changes to apply when there is a focal player
+				// or when the special dialogue camera is enabled.
 				camSavedRadialDistanceOffset = camRadialDistanceOffset;
 				delayedZoomOutUnderExteriorRoof = false;
 				delayedZoomInUnderExteriorRoof = false;
@@ -4572,7 +5222,6 @@ namespace ALYSLC
 				// Reset counter.
 				i = 0;
 				// Will iterate at most 22 times with the default min zoom delta.
-				bool lockOnTargetOnScreen = false;
 				while (!minZoomRangeReached)
 				{
 					currentCheckOnScreen = AllPlayersOnScreenAtCamOrientation
@@ -4684,11 +5333,10 @@ namespace ALYSLC
 		
 		auto p1 = RE::PlayerCharacter::GetSingleton();
 		if (!glob.globalDataInit || 
-			glob.cam->IsRunning() || 
 			!glob.player1Actor ||
 			!playerCam || 
 			playerCam->IsInFirstPerson() || 
-			playerCam->IsInBleedoutMode() || 
+			//playerCam->IsInBleedoutMode() || 
 			!playerCam->cameraRoot ||
 			!p1)
 		{
@@ -4736,7 +5384,7 @@ namespace ALYSLC
 				);
 			}
 		}
-
+		
 		RE::NiPoint3 targetPos = 
 		{
 			endPos.x,
@@ -4750,7 +5398,7 @@ namespace ALYSLC
 			Util::InterpolateEaseOut(currentPos.y, targetPos.y, tRatio, 3.0f),
 			Util::InterpolateEaseOut(currentPos.z, targetPos.z, tRatio, 3.0f)
 		};
-		
+
 		bool wouldCollide = false;
 		if (collisionsEnabled)
 		{
@@ -4791,7 +5439,61 @@ namespace ALYSLC
 				0.0f, PI / 720.0f, tRatio
 			)
 		);
-		SetCamOrientation(true);
+	}
+
+	void CameraManager::UpdateDialogueStateData()
+	{
+		// Update move-to-starting-position flag, speaker handle, and speaker changed TP.
+
+		if (camState != CamState::kDialogue)
+		{
+			adjustedAfterReachingDialoguePos = 
+			movingToDialogueStartPos = false;
+			return;
+		}
+
+		// Update dialogue start transition and camera post-start adjustment flag.
+		movingToDialogueStartPos =
+		(
+			camState == CamState::kDialogue &&
+			Util::HandleIsValid(camDialogueTargetHandle) && 
+			glob.menuPID > -1 &&
+			Util::GetElapsedSeconds(dialogueCameraTP) < secsCamDialogueStartTransition
+		);
+		if (movingToDialogueStartPos)
+		{
+			adjustedAfterReachingDialoguePos = false;
+		}
+		else if (camAdjMode != CamAdjustmentMode::kNone)
+		{
+			adjustedAfterReachingDialoguePos = true;
+		}
+
+		if (camState == CamState::kDialogue && glob.menuPID > -1)
+		{
+			const auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+			if (menuTopicManager && Util::HandleIsValid(menuTopicManager->speaker))
+			{
+				auto prevSpeakerHandle = camDialogueSpeakerHandle;
+				if (menuTopicManager->currentTopicInfo)
+				{
+					camDialogueSpeakerHandle = camDialogueTargetHandle;
+				}
+				else
+				{
+					camDialogueSpeakerHandle = 
+					(
+						glob.coopPlayers[glob.menuPID]->coopActor->GetHandle()
+					);
+				}
+
+				if (Util::HandleIsValid(camDialogueSpeakerHandle) && 
+					camDialogueSpeakerHandle != prevSpeakerHandle)
+				{
+					dialogueSpeakerChangedTP = SteadyClock::now();
+				}
+			}
+		}
 	}
 
 	void CameraManager::UpdateParentCell()

@@ -7312,10 +7312,10 @@ namespace ALYSLC
 		}
 	}
 
-	void GlobalCoopData::TearDownCoopSession(bool a_shouldDismiss)
+	void GlobalCoopData::TearDownCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam)
 	{
 		// End the current co-op session by signalling all managers to await refresh, 
-		// and optionally dismiss all companion players.
+		// and optionally dismiss all companion players or pause the co-op cam.
 
 		auto& glob = GetSingleton();
 		// No global data or players, so bail.
@@ -7413,13 +7413,20 @@ namespace ALYSLC
 				false, "CO-OP SESSION ENDED", glob.player1Actor->GetHandle(), nullptr
 			);
 		}
-
+		
 		DBG
 		(
-			"Co-op session over. "
-			"Pausing camera and menu input managers and awaiting the start of a new co-op session."
+			"Co-op session over. Pausing {} managers "
+			"and awaiting the start of a new co-op session.",
+			a_shouldPauseCoopCam ?
+			"camera and menu input" :
+			"menu input"
 		);
-		glob.cam->RequestStateChange(ManagerState::kPaused);
+		if (a_shouldPauseCoopCam)
+		{
+			glob.cam->RequestStateChange(ManagerState::kAwaitingRefresh);
+		}
+
 		GlobalCoopData::ResetMenuState();
 		
 		// Make sure time is not frozen when done.
@@ -12248,7 +12255,7 @@ namespace ALYSLC
 			glob.coopSessionActive = false;
 			// Party wiped, start death cam.
 			glob.partyWiped = true;
-			glob.cam->deathCameraTP = SteadyClock::now();
+			glob.cam->camState = CamState::kDeath;
 		}
 
 		bool shouldSkip = false;
@@ -12506,7 +12513,7 @@ namespace ALYSLC
 				// in the party now.
 				ModifyXPPerSkillLevelMult(false);
 				// Teardown the session afterward.
-				TearDownCoopSession(true);
+				TearDownCoopSession(true, false);
 
 				// If all else STILL fails, and it usually does, as a final failsafe, 
 				// reload the most recent save after a short period of time.
@@ -12519,22 +12526,22 @@ namespace ALYSLC
 						[]() 
 						{
 							auto& glob = GlobalCoopData::GetSingleton();
+							auto main = RE::Main::GetSingleton();
 							auto ui = RE::UI::GetSingleton();
 							auto p1 = RE::PlayerCharacter::GetSingleton();
-							auto saveLoadManager = RE::BGSSaveLoadManager::GetSingleton(); 
 							// If players are still alive or any singletons are invalid, 
 							// return early.
-							if (glob.livingPlayers > 0 || !ui || !p1 || !saveLoadManager)
+							if (glob.livingPlayers > 0 || !ui || !p1)
 							{
 								return;
 							}
 					
-							const float maxSecsToWait = 10.0f;
+							float maxSecsToWait = 10.0f;
 							float secsWaited = 0.0f;
 							float secsSinceKillTask = 1.0f;
 							SteadyClock::time_point loadWaitTP = SteadyClock::now();
 							SteadyClock::time_point killTaskWaitTP = SteadyClock::now();
-							// Wait at most 5 seconds without a loading screen opening
+							// Wait at most 10 seconds without a loading screen opening
 							// before loading the most recent save.
 							// Does not matter if P1 is flagged as dead or not.
 							while ((secsWaited < maxSecsToWait) && 
@@ -12553,10 +12560,7 @@ namespace ALYSLC
 											// Set health to 1 and then to 0 to trigger death.
 											if (glob.p1IsEssential)
 											{
-												p1->SetLifeState
-												(
-													RE::ACTOR_LIFE_STATE::kBleedout
-												);
+												p1->SetLifeState(RE::ACTOR_LIFE_STATE::kBleedout);
 											}
 											else
 											{
@@ -12583,20 +12587,13 @@ namespace ALYSLC
 								}
 						
 								secsWaited = Util::GetElapsedSeconds(loadWaitTP);
-								secsSinceKillTask = Util::GetElapsedSeconds
-								(
-									killTaskWaitTP
-								);
+								secsSinceKillTask = Util::GetElapsedSeconds(killTaskWaitTP);
 							}
 							
+							// Was the load most recent save request fulfilled?
+							bool loadReqSucceeded = false;
 							// Force a reload if P1 is still not dead (not essential)
 							// and the Loading Menu has not opened.
-							bool succ = 
-							(
-								glob.loadingASave ||
-								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
-								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
-							);
 							if (secsWaited >= maxSecsToWait && !glob.p1IsEssential) 
 							{
 								DBG
@@ -12604,9 +12601,27 @@ namespace ALYSLC
 									"ReloadTask: Loading most recent save game after {} seconds.", 
 									secsWaited
 								);
-								succ = !saveLoadManager->LoadMostRecentSaveGame();
+								Util::AddSyncedTask
+								(
+									[&loadReqSucceeded]()
+									{
+										auto slMgr = RE::BGSSaveLoadManager::GetSingleton(); 
+										if (slMgr)
+										{
+											loadReqSucceeded = slMgr->LoadMostRecentSaveGame();
+										}
+									}
+								);
 							}
-
+							
+							// Succeeded in loading a save.
+							bool succ = 
+							(
+								loadReqSucceeded ||
+								glob.loadingASave ||
+								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
+							);
 							if (succ)
 							{
 								DBG
@@ -12614,24 +12629,36 @@ namespace ALYSLC
 									"ReloadTask: SUCCEEDED after {} seconds. "
 									"Now waiting for the game to load the last save. "
 									"Co-op session active: {}, p1 dead: {}, "
-									"loading a save: {}, loading/fader menu open: {}, {}. "
+									"load request succeeded: {}, loading a save: {}, "
+									"loading/fader menu open: {}, {}. "
 									"Full reset: {}, reset game: {}, reload content: {}.",
 									secsWaited,
 									glob.coopSessionActive,
 									p1->IsDead(),
+									loadReqSucceeded,
 									glob.loadingASave, 
 									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
-									RE::Main::GetSingleton()->fullReset, 
-									RE::Main::GetSingleton()->resetGame,
-									RE::Main::GetSingleton()->reloadContent
+									main ? main->fullReset : false, 
+									main ? main->resetGame : false,
+									main ? main->reloadContent : false
 								);
 							}
 							else
 							{
 								if (!glob.p1IsEssential)
 								{
-									RE::Main::GetSingleton()->resetGame = true;
+									Util::AddSyncedTask
+									(
+										[]()
+										{
+											auto main = RE::Main::GetSingleton();
+											if (main)
+											{
+												main->resetGame = true;
+											}
+										}
+									);
 								}
 								else
 								{
@@ -12667,27 +12694,37 @@ namespace ALYSLC
 								DBG
 								(
 									"ReloadTask: FAILED after {} seconds. "
-									"Now waiting for the game to reset. "
+									"Entering second wait period and starting second attempt "
+									"at reloading most recent save. "
 									"Co-op session active: {}, p1 dead: {}, "
-									"loading a save: {}, loading/fader menu open: {}, {}. "
+									"load request succeeded: {}, loading a save: {}, "
+									"loading/fader menu open: {}, {}. "
 									"Full reset: {}, reset game: {}, reload content: {}.",
 									secsWaited,
 									glob.coopSessionActive,
 									p1->IsDead(),
+									loadReqSucceeded,
 									glob.loadingASave, 
 									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
-									RE::Main::GetSingleton()->fullReset, 
-									RE::Main::GetSingleton()->resetGame,
-									RE::Main::GetSingleton()->reloadContent
+									main ? main->fullReset : false, 
+									main ? main->resetGame : false,
+									main ? main->reloadContent : false
 								);
 							}
-
+							 
+							succ = 
+							(
+								glob.loadingASave ||
+								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
+							);
 							if (!succ)
 							{
 								// Wait at most another 10 seconds before forcing a reload,
 								// in case any installed death-alternative mods 
 								// fail to respawn the player and exit bleedout.
+								maxSecsToWait = 10.0f;
 								secsWaited = 0.0f;
 								loadWaitTP = SteadyClock::now();
 								while ((secsWaited < maxSecsToWait) && 
@@ -12699,12 +12736,6 @@ namespace ALYSLC
 									secsWaited = Util::GetElapsedSeconds(loadWaitTP);
 								}
 
-								succ = 
-								(
-									glob.loadingASave || 
-									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
-									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
-								);
 								if (secsWaited >= maxSecsToWait) 
 								{
 									DBG
@@ -12713,9 +12744,26 @@ namespace ALYSLC
 										"Loading most recent save game after {} seconds.", 
 										secsWaited
 									);
-									succ = !saveLoadManager->LoadMostRecentSaveGame();
+									Util::AddSyncedTask
+									(
+										[&loadReqSucceeded]()
+										{
+											auto slMgr = RE::BGSSaveLoadManager::GetSingleton(); 
+											if (slMgr)
+											{
+												loadReqSucceeded = slMgr->LoadMostRecentSaveGame();
+											}
+										}
+									);
 								}
-
+								 
+								succ = 
+								(
+									loadReqSucceeded ||
+									glob.loadingASave ||
+									ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME) ||
+									ui->IsMenuOpen(RE::FaderMenu::MENU_NAME)
+								);
 								if (succ)
 								{
 									DBG
@@ -12723,38 +12771,52 @@ namespace ALYSLC
 										"ReloadTask: SUCCEEDED after another {} seconds. "
 										"Now waiting for the game to load the last save. "
 										"Co-op session active: {}, p1 dead: {}, "
-										"loading a save: {}, loading/fader menu open: {}, {}. "
+										"load request succeeded: {}, loading a save: {}, "
+										"loading/fader menu open: {}, {}. "
 										"Full reset: {}, reset game: {}, reload content: {}.",
 										secsWaited,
 										glob.coopSessionActive,
 										p1->IsDead(),
+										loadReqSucceeded,
 										glob.loadingASave, 
 										ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 										ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
-										RE::Main::GetSingleton()->fullReset, 
-										RE::Main::GetSingleton()->resetGame,
-										RE::Main::GetSingleton()->reloadContent
+										main ? main->fullReset : false, 
+										main ? main->resetGame : false,
+										main ? main->reloadContent : false
 									);
 								}
 								else
 								{
-									RE::Main::GetSingleton()->resetGame = true;
+									Util::AddSyncedTask
+									(
+										[]()
+										{
+											auto main = RE::Main::GetSingleton();
+											if (main)
+											{
+												main->resetGame = true;
+											}
+										}
+									);
 									DBG
 									(
 										"ReloadTask: FAILED AGAIN after {} seconds. "
 										"Now waiting for the game to reset. "
 										"Co-op session active: {}, p1 dead: {}, "
-										"loading a save: {}, loading/fader menu open: {}, {}. "
+										"load request succeeded: {}, loading a save: {}, "
+										"loading/fader menu open: {}, {}. "
 										"Full reset: {}, reset game: {}, reload content: {}.",
 										secsWaited,
 										glob.coopSessionActive,
 										p1->IsDead(),
+										loadReqSucceeded,
 										glob.loadingASave, 
 										ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 										ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
-										RE::Main::GetSingleton()->fullReset, 
-										RE::Main::GetSingleton()->resetGame,
-										RE::Main::GetSingleton()->reloadContent
+										main ? main->fullReset : false, 
+										main ? main->resetGame : false,
+										main ? main->reloadContent : false
 									);
 								}
 							}
@@ -12780,6 +12842,7 @@ namespace ALYSLC
 						[]() 
 						{
 							auto& glob = GlobalCoopData::GetSingleton();
+							auto main = RE::Main::GetSingleton();
 							auto ui = RE::UI::GetSingleton();
 							auto p1 = RE::PlayerCharacter::GetSingleton();
 							if (!ui || !p1 || glob.livingPlayers > 0)
@@ -12821,9 +12884,9 @@ namespace ALYSLC
 								glob.loadingASave,
 								ui->IsMenuOpen(RE::LoadingMenu::MENU_NAME),
 								ui->IsMenuOpen(RE::FaderMenu::MENU_NAME),
-								RE::Main::GetSingleton()->fullReset, 
-								RE::Main::GetSingleton()->resetGame,
-								RE::Main::GetSingleton()->reloadContent
+								main ? main->fullReset : false, 
+								main ? main->resetGame : false,
+								main ? main->reloadContent : false
 							);
 							
 							// Reset wiped flag, because the game is loading the last save.

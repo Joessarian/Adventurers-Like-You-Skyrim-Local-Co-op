@@ -2287,7 +2287,7 @@ namespace ALYSLC
 		DBG("Load game event. Co-op session active: {}.", glob.coopSessionActive);
 		if (glob.coopSessionActive && a_loadGameEvent)
 		{
-			GlobalCoopData::TearDownCoopSession(false);
+			GlobalCoopData::TearDownCoopSession(false, true);
 		}
 
 		return EventResult::kContinue;

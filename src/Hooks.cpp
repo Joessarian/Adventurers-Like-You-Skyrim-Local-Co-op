@@ -50,6 +50,7 @@ namespace ALYSLC
 			RaceSexMenuHooks::InstallHooks();
 			ReadyWeaponHandlerHooks::InstallHooks();
 			ShoutHandlerHooks::InstallHooks();
+			SleepWaitMenuHooks::InstallHooks();
 			SneakHandlerHooks::InstallHooks();
 			SpellItemHooks::InstallHooks();
 			SprintHandlerHooks::InstallHooks();
@@ -13292,6 +13293,7 @@ namespace ALYSLC
 			// Switch to third person when dead, which will keep the HUD and its messages visible.
 			auto p1 = RE::PlayerCharacter::GetSingleton(); 
 			auto playerCam = RE::PlayerCamera::GetSingleton();
+			/*
 			bool switchToDeathCam = 
 			{
 				(
@@ -13333,6 +13335,7 @@ namespace ALYSLC
 
 				return;
 			}
+			*/
 
 			if (glob.globalDataInit &&
 				glob.coopSessionActive && 
@@ -13368,7 +13371,6 @@ namespace ALYSLC
 
 			if (!glob.globalDataInit || 
 				!glob.allPlayersInit || 
-				!glob.coopSessionActive || 
 				!glob.cam->IsRunning() || 
 				!p1)
 			{
@@ -13377,8 +13379,10 @@ namespace ALYSLC
 			
 			// Camera local position/rotation is modified when ragdolled 
 			// (bleedout camera position), inactive, staggered, sitting/sleeping, 
-			// sprinting or when camera shake is applied (AnimatedCameraDelta), 
-			// and we want to discard these position/rotation changes, so return without updating.			
+			// sprinting,when camera shake is applied (AnimatedCameraDelta), 
+			// or when the death camera state is active,
+			// and we want to discard these position/rotation changes, 
+			// so return without updating.			
 			bool orbitStateActive = a_this->currentState->id == RE::CameraState::kAutoVanity;
 			bool bleedoutStateActive = a_this->currentState->id == RE::CameraState::kBleedout;
 			bool furnitureStateActive = a_this->currentState->id == RE::CameraState::kFurniture;
@@ -13391,7 +13395,8 @@ namespace ALYSLC
 				p1->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal ||
 				p1->GetSitSleepState() != RE::SIT_SLEEP_STATE::kNormal ||
 				glob.coopPlayers[0]->pam->isSprinting ||
-				glob.isCameraShakeActive
+				glob.isCameraShakeActive || 
+				glob.cam->inDeathCamState
 			};
 			if (localRotationModified) 
 			{
@@ -15236,6 +15241,24 @@ namespace ALYSLC
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
+			else if (closing)
+			{
+				// IMPORTANT:
+				// If not clearing out the furniture handle, no player will be able to open 
+				// most menus (Tween, Stats, Inventory, Map, etc.).
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (p1->currentProcess && 
+					p1->currentProcess->middleHigh &&
+					Util::HandleIsValid(p1->currentProcess->middleHigh->occupiedFurniture))
+				{
+					DBG
+					(
+						"Clear P1's occupied furniture handle ({}) when done crafting.",
+						p1->currentProcess->middleHigh->occupiedFurniture.get()->GetName()
+					);
+					p1->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
+				}
+			}
 
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu player IDs when this menu opens/closes.
@@ -15252,6 +15275,15 @@ namespace ALYSLC
 				glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
 			);
 
+			// For companion players, reset to default package and stop interacting.
+			const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+			if (closing && glob.lastResolvedMenuPID > 0)
+			{
+				p->mm->interactionPackageRunning = false;
+				p->pam->SetAndEveluatePackage();
+				p->coopActor->StopInteractingQuick(false);
+			}
+			
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
@@ -15261,7 +15293,6 @@ namespace ALYSLC
 				return _ProcessMessage(a_this, a_message);
 			}
 
-			const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
 			const RE::BSFixedString menuName = a_this->MENU_NAME;
 			RE::TESForm* assocForm = nullptr;
 			// Set furniture (crafting station) as the associated form.
@@ -16930,6 +16961,53 @@ namespace ALYSLC
 							);
 						}
 					}
+				}
+			}
+
+			return _ProcessMessage(a_this, a_message);
+		}
+
+		RE::UI_MESSAGE_RESULTS SleepWaitMenuHooks::ProcessMessage
+		(
+			RE::SleepWaitMenu* a_this, RE::UIMessage& a_message
+		)
+		{
+			// Nothing to do here, since the message is ignored, global data is not initialized, 
+			// serializable data is not available, or this menu is not the target of the message. 
+			if (!glob.globalDataInit || 
+				glob.serializablePlayerData.empty() || 
+				a_message.menu != a_this->MENU_NAME)
+			{
+				return _ProcessMessage(a_this, a_message);
+			}
+			
+			// Only need to handle closing message if another player opened this menu.
+			bool closing = *a_message.type == RE::UI_MESSAGE_TYPE::kHide;
+			if (closing)
+			{
+				// Reset to default package and stop interacting.
+				if (glob.menuPID > 0)
+				{
+					const auto& p = glob.coopPlayers[glob.menuPID];
+					p->mm->interactionPackageRunning = false;
+					p->pam->SetAndEveluatePackage();
+					p->coopActor->StopInteractingQuick(false);
+				}
+				
+				// IMPORTANT:
+				// If not clearing out the furniture handle, no player will be able to open 
+				// most menus (Tween, Stats, Inventory, Map, etc.).
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (p1->currentProcess && 
+					p1->currentProcess->middleHigh &&
+					Util::HandleIsValid(p1->currentProcess->middleHigh->occupiedFurniture))
+				{
+					DBG
+					(
+						"Clear P1's occupied furniture handle ({}) when done waiting.",
+						p1->currentProcess->middleHigh->occupiedFurniture.get()->GetName()
+					);
+					p1->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
 				}
 			}
 

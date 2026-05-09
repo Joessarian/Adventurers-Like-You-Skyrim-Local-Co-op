@@ -29,6 +29,20 @@ namespace ALYSLC
 		// Separate options for exterior and interior cells.
 		static inline bool bCamExteriorCollisions = true;
 		static inline bool bCamInteriorCollisions = true;
+		// Enable custom dialogue camera state. 
+		// Zooms in behind the player/NPC to focus on the current speaker in dialogue.
+		// Zooms out to keep all players in view, collisions permitting, 
+		// and continues to track the speaker.
+		static inline bool bDialogueCamEnabled = true;
+		// Swap position to behind the current speaker when in dialogue.
+		static inline bool bDialogueCamSwitchSpeakers = true;
+		// Smooth out the positional and rotational transition from one speaker to another.
+		// Camera 'swings' over to the new position.
+		static inline bool bDialogueCamFocusSwitchSmoothing = false;
+		// Show lock on indicator on NPC speaker's head when in dialogue and not fully zoomed in.
+		// Will also show when the personal dialogue camera is disabled, 
+		// since the camera is always zoomed out then.
+		static inline bool bDialogueCamZoomedOutSpeakerIndicator = true;
 		// Also fade larger statics, like houses and walls.
 		static inline bool bFadeLargerObstructions = false;
 		// Fade objects that are blocking the visibility of players.
@@ -62,6 +76,17 @@ namespace ALYSLC
 		// Camera FOV to set for exterior and interior cells.
 		static inline float fCamExteriorFOV = 75.0f;
 		static inline float fCamInteriorFOV = 75.0f;
+		// Fraction of normal camera FOV to use when zoomed in while in dialogue.
+		static inline float fDialogueCamFOVRatio = 0.5f;
+		// Max horizontal offset is farthest left/right relative to the listener's head position
+		// that the camera will position itself.
+		static inline float fDialogueCamZoomedInMaxHorizontalOffset = 50.0f;
+		// Vertical offset is up/down relative to the listener's head position.
+		static inline float fDialogueCamZoomedInVerticalOffset = 0.0f;
+		// Radial offset is radially away from the listener. 
+		// Acts as the zoom distance when the camera has not been adjusted.
+		// Set to 0 for a pseudo-first person perspective when the NPC is speaking.
+		static inline float fDialogueCamZoomedInRadialDistance = 200.0f;
 		// Criteria that determines when the camera can auto-rotate (if enabled).
 		// 0: OutsideOfCombat,	
 		// Only rotate when outside of combat.
@@ -1114,7 +1139,7 @@ namespace ALYSLC
 		// Seconds between crosshair target visibility checks.
 		static inline const float fSecsBetweenTargetVisibilityChecks = 1.0f;
 		// Seconds without LOS on a crosshair target after which to clear the target.
-		static inline const float fSecsWithoutLOSToInvalidateTarget = 7.0f;
+		static inline const float fSecsWithoutLOSToInvalidateTarget = 15.0f;
 		// Framecount to fully blend in/out arm and torso node rotations
 		// to the default or custom values.
 		static inline const uint32_t uBlendPlayerNodeRotationsFrameCount = 12;

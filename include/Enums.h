@@ -115,11 +115,16 @@ namespace ALYSLC
 	// Camera state types.
 	enum class CamState : std::uint8_t
 	{
+		// Player-switchable states:
 		kAutoTrail,			// Camera automatically follows the party.
 		kLockOn,			// Camera automatically tracks a target.
-		kManualPositioning	// Camera is positioned and rotated 
+		kManualPositioning,	// Camera is positioned and rotated 
 							// with the 'Zoom' and 'Rotation' adjustment modes, 
 							// and is static otherwise.
+		// Automatically determined states:
+		kDeath,				// Switched to on party wipe. Spirals upward while angled down on P1.
+		kDialogue			// Switched to when dialogue starts while in co-op, 
+							// if the MCM setting is activated.
 	};
 
 	//============

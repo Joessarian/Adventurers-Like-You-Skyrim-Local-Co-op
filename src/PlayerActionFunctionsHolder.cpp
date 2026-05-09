@@ -4939,31 +4939,6 @@ namespace ALYSLC
 			); 
 			if (asFurniture)
 			{
-				// If there is no marker and or a workbench type,
-				// there is no interaction animation to trigger,
-				// so we don't need to run the interaction package
-				// and can skip to just activating the object.
-				// Do not want to play interaction animation for workbenches
-				// since P1 is the only player that must play the animation
-				// before the Crafting Menu opens.
-				// Would be useless to lock companion players in that animation, 
-				// except maybe for immersion.
-				bool doNotPlayInteractionAnimation = 
-				(
-					asFurniture->furnFlags ==
-					(
-						RE::TESFurniture::ActiveMarker::kNone
-					) ||
-					asFurniture->workBenchData.benchType !=
-					(
-						RE::TESFurniture::WorkBenchData::BenchType::kNone
-					)	
-				);
-				if (doNotPlayInteractionAnimation)
-				{
-					return false;
-				}
-
 				auto refr3DPtr = Util::GetRefr3D(a_interactionRefr);
 				if (refr3DPtr)
 				{
@@ -5048,7 +5023,15 @@ namespace ALYSLC
 					a_p->mm->interactionPackageEntryPos, a_p->coopActor->data.location
 				)
 			);
-
+			
+			DBG
+			(
+				"{}: Should run interaction package with target {}.",
+				a_p->coopActor->GetName(), 
+				Util::HandleIsValid(a_p->tm->aimTargetLinkedRefrHandle) ? 
+				a_p->tm->aimTargetLinkedRefrHandle.get()->GetName() :
+				"NONE"
+			);
 			// Successfully initiated the interaction.
 			return true;
 		}
@@ -9837,6 +9820,25 @@ namespace ALYSLC
 			glob.cam->manualPositioningTimeFrozen = false;
 			Util::ToggleFreezeTime(false);
 
+			// Do not switch camera states if in the automatically-applied
+			// death and dialogue states.
+			if (glob.cam->inDeathCamState || glob.cam->inDialogueCamState)
+			{
+				// Inform the player.
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Cannot switch to lock-on mode", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
+
 			// Give this player control of the camera.
 			auto& controllingPID = glob.cam->controlCamPID;
 			if (controllingPID != a_p->playerID && 
@@ -9882,7 +9884,7 @@ namespace ALYSLC
 			auto currentLockOnTargetPtr = 
 			(
 				Util::HandleIsValid(glob.cam->camLockOnTargetHandle) ? 
-				Util::GetActorPtrFromHandle(glob.cam->camLockOnTargetHandle) :
+				Util::GetRefrPtrFromHandle(glob.cam->camLockOnTargetHandle) :
 				nullptr
 			);
 			// Can target another player (not downed) to set as the focal player.
@@ -10043,6 +10045,25 @@ namespace ALYSLC
 		{
 			// Toggle camera state between auto-trail and manual positioning if the player can
 			// obtain control of the camera.
+
+			// Do not switch camera states if in the automatically-applied
+			// death and dialogue states.
+			if (glob.cam->inDeathCamState || glob.cam->inDialogueCamState)
+			{
+				// Inform the player.
+				a_p->tm->SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kCamera,
+					fmt::format("P{}: Cannot switch to manual positioning mode", a_p->playerID + 1),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+				return;
+			}
 
 			auto& controllingPID = glob.cam->controlCamPID;
 			if (controllingPID != a_p->playerID &&
@@ -10234,6 +10255,12 @@ namespace ALYSLC
 							// that they are now in control of dialogue.
 							if (glob.cam->IsRunning() || !reqP->isPlayer1)
 							{
+								// Reset to zoomed-in camera position when switching speakers.
+								if (glob.cam->IsRunning())
+								{
+									glob.cam->adjustedAfterReachingDialoguePos = false;
+								}
+
 								reqP->tm->SetCrosshairMessageRequest
 								(
 									CrosshairMessageType::kGeneralNotification,
@@ -10564,32 +10591,7 @@ namespace ALYSLC
 			// NOTE: 
 			// Jumping/dodging also unlinks the player from occupied furniture.
 
-			if (a_p->isPlayer1)
-			{
-				// Activate to dismount for P1.
-				a_p->pam->SendButtonEvent
-				(
-					InputAction::kActivate,
-					RE::INPUT_DEVICE::kGamepad, 
-					ButtonEventPressType::kInstantTrigger,
-					0.0f
-				);
-				a_p->pam->SendButtonEvent
-				(
-					InputAction::kActivate,
-					RE::INPUT_DEVICE::kGamepad,
-					ButtonEventPressType::kPressAndHold,
-					1.0f
-				);
-				a_p->pam->SendButtonEvent
-				(
-					InputAction::kActivate, 
-					RE::INPUT_DEVICE::kGamepad, 
-					ButtonEventPressType::kRelease, 
-					1.0f
-				);
-			}
-			else
+			if (!a_p->isPlayer1)
 			{
 				// Reset to default package first.
 				a_p->pam->SetAndEveluatePackage();
@@ -10619,38 +10621,14 @@ namespace ALYSLC
 				);
 				if (occupyingFurniture)
 				{
-					if (a_p->isPlayer1)
-					{
-						// Activate to exit furniture for P1.
-						a_p->pam->SendButtonEvent
-						(
-							InputAction::kActivate,
-							RE::INPUT_DEVICE::kGamepad, 
-							ButtonEventPressType::kInstantTrigger,
-							0.0f
-						);
-						a_p->pam->SendButtonEvent
-						(
-							InputAction::kActivate,
-							RE::INPUT_DEVICE::kGamepad,
-							ButtonEventPressType::kPressAndHold,
-							1.0f
-						);
-						a_p->pam->SendButtonEvent
-						(
-							InputAction::kActivate, 
-							RE::INPUT_DEVICE::kGamepad, 
-							ButtonEventPressType::kRelease, 
-							1.0f
-						);
-					}
-					else
+					if (!a_p->isPlayer1)
 					{
 						// Reset to default package to exit furniture for companion players.
 						a_p->pam->SetAndEveluatePackage();
-						// Get off mount/stop interacting with furniture instantly.
-						a_p->coopActor->StopInteractingQuick(true);
 					}
+
+					// Get off mount/stop interacting with furniture instantly.
+					a_p->coopActor->StopInteractingQuick(true);
 				}
 
 				// Signal movement manager to dash dodge.
@@ -12634,65 +12612,11 @@ namespace ALYSLC
 								p1->actorState1.sneaking = 0;
 							}
 
-							// Prevent Crafting/Smithing or other only-P1-triggerable menus 
-							// from opening if P1 is too far away.
-							bool p1TooFarAway = 
-							(
-								p1->data.location.GetDistance(a_p->coopActor->data.location) >
-								a_p->tm->GetMaxActivationDist()
-							);
-							bool p1WeaponDrawn = p1->IsWeaponDrawn();
-							if ((requiresP1ToOpenMenu) && (p1TooFarAway || p1WeaponDrawn))
-							{
-								if (p1TooFarAway)
-								{
-									a_p->tm->SetCrosshairMessageRequest
-									(
-										CrosshairMessageType::kGeneralNotification,
-										fmt::format
-										(
-											"P{}: P1 is too far away to interact with {}.",
-											a_p->playerID + 1,
-											activationRefrPtr->GetName()
-										),
-										{ 
-											CrosshairMessageType::kNone, 
-											CrosshairMessageType::kStealthState, 
-											CrosshairMessageType::kTargetSelection 
-										},
-										Settings::fSecsBetweenDiffCrosshairMsgs
-									);
-								}
-								else
-								{
-									a_p->tm->SetCrosshairMessageRequest
-									(
-										CrosshairMessageType::kGeneralNotification,
-										fmt::format
-										(
-											"P{}: P1 must sheathe their weapons "
-											"to interact with {}.",
-											a_p->playerID + 1,
-											activationRefrPtr->GetName()
-										),
-										{ 
-											CrosshairMessageType::kNone, 
-											CrosshairMessageType::kStealthState, 
-											CrosshairMessageType::kTargetSelection 
-										},
-										Settings::fSecsBetweenDiffCrosshairMsgs
-									);
-								}
-
-								// Reset to default package and stop any interaction idles.
-								if (inInteractionPackage && !a_p->coopActor->IsOnMount())
-								{
-									a_p->pam->SetAndEveluatePackage();
-									// Quickly exit any interaction.
-									a_p->coopActor->StopInteractingQuick(true);
-								}
-							}
-							else
+							// No need to activate directly with P1 if the activation refr
+							// requires P1 to open a menu. 
+							// This menu opening will instead occur after the companion player 
+							// runs their interaction package.
+							if (!requiresP1ToOpenMenu)
 							{
 								// Set P1 as motion driven before activating.
 								Util::SetPlayerAIDriven(false);

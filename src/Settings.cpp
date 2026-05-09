@@ -729,6 +729,19 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bAutoAdjustCamZoom", bAutoAdjustCamZoom);
 		ReadBoolSetting(a_ini, "Camera", "bCamExteriorCollisions", bCamExteriorCollisions);
 		ReadBoolSetting(a_ini, "Camera", "bCamInteriorCollisions", bCamInteriorCollisions);
+		ReadBoolSetting(a_ini, "Camera", "bDialogueCamSwitchSpeakers", bDialogueCamSwitchSpeakers);
+		ReadBoolSetting(a_ini, "Camera", "bDialogueCamEnabled", bDialogueCamEnabled);
+		ReadBoolSetting
+		(
+			a_ini, "Camera", "bDialogueCamFocusSwitchSmoothing", bDialogueCamFocusSwitchSmoothing
+		);
+		ReadBoolSetting
+		(
+			a_ini, 
+			"Camera", 
+			"bDialogueCamZoomedOutSpeakerIndicator",
+			bDialogueCamZoomedOutSpeakerIndicator
+		);
 		ReadBoolSetting(a_ini, "Camera", "bFadeLargerObstructions", bFadeLargerObstructions);
 		ReadBoolSetting(a_ini, "Camera", "bFadeObstructions", bFadeObstructions);
 		ReadBoolSetting(a_ini, "Camera", "bFocalPlayerMode", bFocalPlayerMode);
@@ -737,8 +750,8 @@ namespace ALYSLC
 		ReadBoolSetting(a_ini, "Camera", "bRemoveExteriorOcclusion", bRemoveExteriorOcclusion);
 		ReadBoolSetting(a_ini, "Camera", "bRemoveInteriorOcclusion", bRemoveInteriorOcclusion);
 		ReadBoolSetting(a_ini, "Camera", "bTargetPosSmoothing", bTargetPosSmoothing);
-		ReadFloatSetting(a_ini, "Camera", "fCamExteriorFOV", fCamExteriorFOV, 0.0f, 180.0f);
-		ReadFloatSetting(a_ini, "Camera", "fCamInteriorFOV", fCamInteriorFOV, 0.0f, 180.0f);
+		ReadFloatSetting(a_ini, "Camera", "fCamExteriorFOV", fCamExteriorFOV, 0.1f, 180.0f);
+		ReadFloatSetting(a_ini, "Camera", "fCamInteriorFOV", fCamInteriorFOV, 0.1f, 180.0f);
 		ReadFloatSetting
 		(
 			a_ini,
@@ -756,6 +769,42 @@ namespace ALYSLC
 			fAutoRotateCamYawRateMult,
 			0.0f,
 			5.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Camera", 
+			"fDialogueCamFOVRatio", 
+			fDialogueCamFOVRatio,
+			0.01f,
+			1.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Camera", 
+			"fDialogueCamZoomedInMaxHorizontalOffset", 
+			fDialogueCamZoomedInMaxHorizontalOffset,
+			-500.0f,
+			500.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Camera", 
+			"fDialogueCamZoomedInVerticalOffset", 
+			fDialogueCamZoomedInVerticalOffset,
+			-500.0f,
+			500.0f
+		);
+		ReadFloatSetting
+		(
+			a_ini, 
+			"Camera", 
+			"fDialogueCamZoomedInRadialDistance", 
+			fDialogueCamZoomedInRadialDistance,
+			0.0f,
+			1000.0f
 		);
 		ReadUInt32Setting
 		(

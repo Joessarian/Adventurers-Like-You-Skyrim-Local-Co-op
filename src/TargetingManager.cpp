@@ -1278,6 +1278,16 @@ namespace ALYSLC
 			return;
 		}
 		
+		// Do not draw when special dialogue camera state is active and zoomed in.
+		if (glob.menuPID == playerID &&
+			glob.cam->IsRunning() &&
+			glob.cam->inDialogueCamState && 
+			Settings::bDialogueCamEnabled &&
+			!glob.cam->adjustedAfterReachingDialoguePos)
+		{
+			return;
+		}
+
 		// Draw the player indicator only if an actor info bar is not drawn for this player.
 		bool hasTrueHUDInfoBar = false;
 		// TODO:
@@ -5514,9 +5524,52 @@ namespace ALYSLC
 
 				// Knockout!
 				Util::PushActorAway(hitActorPtr.get(), a_contactPos, -1.0f);
+
+				// Cheeky message.
+				auto ui = RE::UI::GetSingleton();
+				if (ui && glob.menuPID > -1 && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
+				{
+					bool showCheekyMessage = 
+					(
+						hitActorPtr == glob.coopPlayers[glob.menuPID]->coopActor
+					);
+					if (!showCheekyMessage)
+					{
+						auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+						showCheekyMessage = 
+						(
+							(menuTopicManager) && 
+							(
+								a_hitActorHandle == menuTopicManager->speaker ||
+								a_hitActorHandle == menuTopicManager->lastSpeaker
+							)
+						);
+					}
+							
+					if (showCheekyMessage)
+					{
+						RE::BSFixedString messageText =
+						(
+							fmt::format("{} disapproves", coopActor->GetName()).c_str()
+						);
+						std::mt19937 generator{ };
+						generator.seed(SteadyClock::now().time_since_epoch().count());
+						float rand = generator() / (float)((std::mt19937::max)());
+						if (rand <= 0.5f)
+						{
+							auto index = static_cast<size_t>
+							(
+								GlobalCoopData::CHEEKY_DISAPPROVAL_MESSAGE_OPTIONS.size() * 
+								(generator() / (float)((std::mt19937::max)()))
+							);
+							messageText = GlobalCoopData::CHEEKY_DISAPPROVAL_MESSAGE_OPTIONS[index];
+						}
+
+						RE::DebugNotification(messageText.c_str(), "UISneakAttack");
+					}
+				}
 			}
 		}
-
 
 		if (canSMORF && wantsToSMORF && asActor == coopActor.get())
 		{

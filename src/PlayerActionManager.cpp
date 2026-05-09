@@ -4540,20 +4540,29 @@ namespace ALYSLC
 		{
 			// Not close enough to the speaker NPC and dialogue still active.
 			autoEndDialogue = true;
-			auto ue = RE::UserEvents::GetSingleton(); 
-			auto controlMap = RE::ControlMap::GetSingleton();
-			if (ue && controlMap)
+			//auto ue = RE::UserEvents::GetSingleton(); 
+			//auto controlMap = RE::ControlMap::GetSingleton();
+			//if (ue && controlMap)
+			//{
+			//	// Close the dialogue with the 'Cancel' bind.
+			//	auto cancelBind = controlMap->GetMappedKey
+			//	(
+			//		ue->cancel,
+			//		RE::INPUT_DEVICE::kKeyboard,
+			//		RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
+			//	);
+			//	Util::SendButtonEvent
+			//	(
+			//		RE::INPUT_DEVICE::kKeyboard, ue->cancel, cancelBind, 1.0f, 0.0f, false
+			//	);
+			//}
+			
+			auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+			if (msgQ)
 			{
-				// Close the dialogue with the 'Cancel' bind.
-				auto cancelBind = controlMap->GetMappedKey
+				msgQ->AddMessage
 				(
-					ue->cancel,
-					RE::INPUT_DEVICE::kKeyboard,
-					RE::UserEvents::INPUT_CONTEXT_ID::kMenuMode
-				);
-				Util::SendButtonEvent
-				(
-					RE::INPUT_DEVICE::kKeyboard, ue->cancel, cancelBind, 1.0f, 0.0f, false
+					RE::DialogueMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr
 				);
 			}
 		}

@@ -776,18 +776,28 @@ namespace ALYSLC
 			}
 		}
 
-		// Return true if the current lock on target should be considered as a player
+		// Return true if the current lock on/dialogue target should be considered as a player
 		// for camera origin point, target position, and auto-zoom calculations.
-		// Since rotation assistance does not auto-zoom to keep the lock on target in frame, 
+		// Since rotation assistance does not auto-zoom to keep the target in frame, 
 		// we do not have to treat the target as a player.
-		inline bool ShouldConsiderLockOnTargetAsPlayer()
+		inline bool ShouldConsiderCamTargetAsPlayer()
 		{
-			auto camLockOnTargetPtr = Util::GetActorPtrFromHandle(camLockOnTargetHandle);
+			auto camTargetPtr = Util::GetRefrPtrFromHandle
+			(
+				inDialogueCamState ? 
+				camDialogueTargetHandle :
+				camLockOnTargetHandle
+			);
 			return 
 			(
-				isLockedOn && 
-				camLockOnTargetPtr && 
-				Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation
+				(camTargetPtr) && 
+				(
+					(inDialogueCamState) || 
+					(	
+						isLockedOn && 
+						Settings::uLockOnAssistance != !CamLockOnAssistanceLevel::kRotation
+					)
+				)
 			);
 		}
 
@@ -797,6 +807,8 @@ namespace ALYSLC
 			autoRotateJustResumedTP = SteadyClock::now();
 			autoRotateJustSuspendedTP = SteadyClock::now();
 			deathCameraTP = SteadyClock::now();
+			dialogueCameraTP = SteadyClock::now();
+			dialogueSpeakerChangedTP = SteadyClock::now();
 			lockOnLOSCheckTP = SteadyClock::now();
 			lockOnLOSLostTP = SteadyClock::now();
 			noPlayersUnderExteriorRoofTP = SteadyClock::now();
@@ -839,7 +851,8 @@ namespace ALYSLC
 			const uint32_t& a_additionalRingsOfCasts
 		);
 
-		// Handle lock on requests, check for target validity, and enable/disable cam lock on.
+		// Handle lock on requests, check for lock on or dialogue target validity, 
+		// and enable/disable cam lock on.
 		void CheckLockOnTarget();
 		
 		// Draw a lock on indicator above the current lock on target.
@@ -855,6 +868,10 @@ namespace ALYSLC
 		// (hit one or all actor nodes) from the given point.
 		bool NoPlayersVisibleAtPoint(const RE::NiPoint3& a_point, bool&& a_checkAllNodes = true);
 		
+		// Transition the camera from one state to another when the previous state differs
+		// from the current one.
+		void PerformStateTransition();
+
 		// Checks if the given point is within the camera's frustum 
 		// at the given camera orientation (no raycasts for visiblity).
 		// Can specify a pixel margin ratio (fraction of screen width/height [0, 1])
@@ -923,6 +940,9 @@ namespace ALYSLC
 		// Update the auto rotation angles' (pitch/yaw) multiplier.
 		void UpdateAutoRotateAngleMult();
 		
+		// Update the FOV to set for the camera.
+		void UpdateFOV();
+
 		// Update camera pitch and yaw data.
 		void UpdateCamRotation();
 		
@@ -935,6 +955,9 @@ namespace ALYSLC
 		// Set the death camera position and rotation.
 		void UpdateDeathCameraOrientation();
 
+		// Update dialogue state-related data.
+		void UpdateDialogueStateData();
+
 		// Update data related to the current cell (P1's parent cell).
 		void UpdateParentCell();
 		
@@ -945,11 +968,13 @@ namespace ALYSLC
 		//
 		// Members
 		//
-
-		// Currently set camera lock on target's handle.
-		RE::ActorHandle camLockOnTargetHandle;
+		
+		// XY offset from the listener in dialogue at which to base the target position.
+		RE::NiPoint2 dialogueCamXYOffset;
 		// Base position (before collision calculations).
 		RE::NiPoint3 camBaseTargetPos;
+		// Current focal player or dialogue target's focus point.
+		RE::NiPoint3 camRefrFocusPoint;
 		// Position at which the cam collides with geometry (if there are obstructions).
 		// Equal to the base position when there are no obstructions.
 		RE::NiPoint3 camCollisionTargetPos;
@@ -961,10 +986,14 @@ namespace ALYSLC
 		RE::NiPoint3 camOriginPoint;
 		// Current origin point movement direction.
 		RE::NiPoint3 camOriginPointDirection;
-		// Current focal player's focus point.
-		RE::NiPoint3 camPlayerFocusPoint;
 		// Current world position of the camera to set.
 		RE::NiPoint3 camTargetPos;
+		// Currently set camera dialogue speaker's handle.
+		RE::ObjectRefHandle camDialogueSpeakerHandle;
+		// Currently set camera dialogue target's handle.
+		RE::ObjectRefHandle camDialogueTargetHandle;
+		// Currently set camera lock on target's handle.
+		RE::ObjectRefHandle camLockOnTargetHandle;
 		// Player camera.
 		RE::PlayerCamera* playerCam;
 		// Current cell.
@@ -986,6 +1015,10 @@ namespace ALYSLC
 		SteadyClock::time_point autoRotateJustSuspendedTP;
 		// Last time the co-op death camera state was toggled on.
 		SteadyClock::time_point deathCameraTP;
+		// Last time the co-op dialogue camera state was toggled on.
+		SteadyClock::time_point dialogueCameraTP;
+		// Last time at which the speaker changed while in dialogue.
+		SteadyClock::time_point dialogueSpeakerChangedTP;
 		// Last time an LOS check for the cam lock on target was made.
 		SteadyClock::time_point lockOnLOSCheckTP;
 		// Last time at which LOS was lost on the cam lock on target.
@@ -1015,6 +1048,9 @@ namespace ALYSLC
 		std::unique_ptr<TwoWayInterpData> movementAngleMultInterpData;
 		// List of all map marker refrs in the current cell.
 		std::vector<RE::TESObjectREFRPtr> cellMapMarkers;
+		// Has the camera been player-adjusted once it reached its starting position 
+		// while in the dialgoue state?
+		bool adjustedAfterReachingDialoguePos;
 		// Is auto-rotation suspended (both pitch and yaw values are approaching 0)?
 		bool autoRotateSuspended;
 		// Should camera collisions be enabled in the current cell?
@@ -1026,6 +1062,10 @@ namespace ALYSLC
 		bool delayedZoomOutUnderExteriorRoof;
 		// Current cell is an exterior cell.
 		bool exteriorCell;
+		// Is the camera in the death camera state?
+		bool inDeathCamState;
+		// Is the camera in the dialogue camera state?
+		bool inDialogueCamState;
 		// Is the camera automatically trailing the party?
 		bool isAutoTrailing;
 		// Is the camera colliding with a surface or passing through geometry
@@ -1048,6 +1088,8 @@ namespace ALYSLC
 		bool lockInteriorOrientationOnInit;
 		// Was time frozen when toggling on manual positioning?
 		bool manualPositioningTimeFrozen;
+		// Is the camera moving to the dialogue starting target position?
+		bool movingToDialogueStartPos;
 		// Was the toggle bind pressed while the co-op camera was waiting to be toggled on?
 		bool toggleBindPressedWhileWaiting;
 		// Should wait to toggle the co-op camera on again.
@@ -1067,6 +1109,8 @@ namespace ALYSLC
 		// Hull size for target point when checking for collisions.
 		// Should always be smaller than anchor point hull size.
 		const float camTargetPosHullSize = 30.0f; //10.0f;
+		// Time to reach the starting target position when in the dialogue state.
+		const float secsCamDialogueStartTransition = 2.0f;
 		// Average height of all active players.
 		float avgPlayerHeight;
 		// Base focus point Z displacement from the origin point.
@@ -1079,6 +1123,8 @@ namespace ALYSLC
 		float camCurrentPitchToFocus;
 		// Current yaw from the camera node to the focus point.
 		float camCurrentYawToFocus;
+		// Camera FOV to set.
+		float camFOV;
 		// Focus point Z displacement from the origin point,
 		// after collisions with world geometry are taken into account.
 		float camHeightOffset;

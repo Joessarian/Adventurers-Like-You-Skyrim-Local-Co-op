@@ -818,7 +818,7 @@ namespace ALYSLC
 			if (glob.globalDataInit && glob.allPlayersInit) 
 			{
 				DBG("Stopping active co-op session.");
-				GlobalCoopData::TearDownCoopSession(true);
+				GlobalCoopData::TearDownCoopSession(true, true);
 			}
 		}
 

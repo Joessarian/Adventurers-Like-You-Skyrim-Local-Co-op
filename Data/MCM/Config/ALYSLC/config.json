@@ -110,15 +110,119 @@
           }
         },
         {
-          "text": "$ALYSLC_Camera_FadingObstructions_Header",
+          "text": "$ALYSLC_Camera_DialogueCamera_Header",
           "type": "header"
+        },
+        {
+          "id": "bDialogueCamEnabled:Camera",
+          "text": "$ALYSLC_Camera_PersonalConversations",
+          "type": "toggle",
+          "help": "$ALYSLC_Camera_PersonalConversations_HelpText",
+          "groupControl": 3,
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bDialogueCamSwitchSpeakers:Camera",
+          "text": "$ALYSLC_Camera_SwitchSpeakers",
+          "type": "toggle",
+          "help": "$ALYSLC_Camera_SwitchSpeakers_HelpText",
+          "groupControl" : 4,
+          "groupCondition": 3,
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bDialogueCamFocusSwitchSmoothing:Camera",
+          "text": "$ALYSLC_Camera_FocusSwitchSmoothing",
+          "type": "toggle",
+          "help": "$ALYSLC_Camera_FocusSwitchSmoothing_HelpText",
+          "groupCondition": {"AND": [3, 4]},
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "bDialogueCamZoomedOutSpeakerIndicator:Camera",
+          "text": "$ALYSLC_Camera_ZoomedOutIndicator",
+          "type": "toggle",
+          "help": "$ALYSLC_Camera_ZoomedOutIndicator_HelpText",
+          "valueOptions": {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
+          "id": "fDialogueCamFOVRatio:Camera",
+          "text": "$ALYSLC_Camera_FOVRatio",
+          "type": "slider",
+          "help": "$ALYSLC_Camera_FOVRatio_HelpText",
+          "groupCondition": 3,
+          "valueOptions": {
+            "sourceType" : "ModSettingFloat",
+            "min": 0.01,
+            "max": 1.0,
+            "step": 0.01,
+            "formatString": "{2}"
+          }
+        },
+        {
+          "id": "fDialogueCamZoomedInMaxHorizontalOffset:Camera",
+          "text": "$ALYSLC_Camera_ZoomedInMaxHorizontalOffset",
+          "type": "slider",
+          "help": "$ALYSLC_Camera_ZoomedInMaxHorizontalOffset_HelpText",
+          "groupCondition": 3,
+          "valueOptions": {
+            "sourceType" : "ModSettingFloat",
+            "min": -500.0,
+            "max": 500.0,
+            "step": 0.1,
+            "formatString": "{2}"
+          }
+        },
+        {
+          "id": "fDialogueCamZoomedInVerticalOffset:Camera",
+          "text": "$ALYSLC_Camera_ZoomedInVerticalOffset",
+          "type": "slider",
+          "help": "$ALYSLC_Camera_ZoomedInVerticalOffset_HelpText",
+          "groupCondition": 3,
+          "valueOptions": {
+            "sourceType" : "ModSettingFloat",
+            "min": -500.0,
+            "max": 500.0,
+            "step": 0.1,
+            "formatString": "{2}"
+          }
+        },
+        {
+          "id": "fDialogueCamZoomedInRadialDistance:Camera",
+          "text": "$ALYSLC_Camera_ZoomedInRadialDistance",
+          "type": "slider",
+          "help": "$ALYSLC_Camera_ZoomedInRadialDistance_HelpText",
+          "groupCondition": 3,
+          "valueOptions": {
+            "sourceType" : "ModSettingFloat",
+            "min": 0.0,
+            "max": 1000.0,
+            "step": 0.1,
+            "formatString": "{2}"
+          }
+        },
+        {
+          "type": "header"
+        },
+        {
+          "text": "$ALYSLC_Camera_FadingObstructions_Header",
+          "type": "header",
+          "position": 1
         },
         {
           "id": "bFadeObstructions:Camera",
           "text": "$ALYSLC_Camera_FadeObstructions",
           "type": "toggle",
           "help": "$ALYSLC_Camera_FadeObstructions_HelpText",
-          "groupControl": 3,
+          "groupControl": 5,
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -128,7 +232,7 @@
           "text": "$ALYSLC_Camera_FadeLargerObstructions",
           "type": "toggle",
           "help": "$ALYSLC_Camera_FadeLargerObstructions_HelpText",
-          "groupCondition": 3,
+          "groupCondition": 5,
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
@@ -138,18 +242,14 @@
           "text": "$ALYSLC_Camera_ProximityFade",
           "type": "toggle",
           "help": "$ALYSLC_Camera_ProximityFade_HelpText",
-          "groupCondition": 3,
+          "groupCondition": 5,
           "valueOptions": {
             "sourceType": "ModSettingBool"
           }
         },
         {
-          "type": "header"
-        },
-        {
           "text": "$ALYSLC_Camera_FOV_Header",
-          "type": "header",
-          "position": 1
+          "type": "header"
         },
         {
           "id": "fCamExteriorFOV:Camera",
@@ -158,7 +258,7 @@
           "help": "$ALYSLC_Camera_Exterior_FOV_HelpText",
           "valueOptions": {
             "sourceType" : "ModSettingFloat",
-            "min": 0.0,
+            "min": 0.1,
             "max": 180.0,
             "step": 0.1,
             "formatString": "{2}"
@@ -171,7 +271,7 @@
           "help": "$ALYSLC_Camera_Interior_FOV_HelpText",
           "valueOptions": {
             "sourceType" : "ModSettingFloat",
-            "min": 0.0,
+            "min": 0.1,
             "max": 180.0,
             "step": 0.1,
             "formatString": "{2}"

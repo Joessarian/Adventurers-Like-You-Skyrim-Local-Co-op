@@ -2632,6 +2632,8 @@ namespace ALYSLC
 			// to kick in and start the activation animation.
 			if (xyDistToInteractionPos < autoMoveRadius)
 			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				auto ui = RE::UI::GetSingleton();
 				interactionInRange = true;
 				// Animation driven movement during interaction package, so remove offset directly.
 				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
@@ -2645,6 +2647,29 @@ namespace ALYSLC
 				// after setting the interaction package target and position earlier.
 				auto interactionFurniture = coopActor->GetOccupiedFurniture(); 
 				bool occupyingFurniture = Util::HandleIsValid(interactionFurniture);
+				auto baseObj = 
+				(
+					occupyingFurniture ?
+					interactionFurniture.get()->GetBaseObject() :
+					nullptr
+				);
+				bool isWorkBenchFurniture = 
+				(
+					baseObj &&
+					baseObj->Is(RE::FormType::Furniture) && 
+					baseObj->As<RE::TESFurniture>()->workBenchData.benchType.get() != 
+					RE::TESFurniture::WorkBenchData::BenchType::kNone
+				);
+				bool isBed = 
+				(
+					baseObj &&
+					baseObj->Is(RE::FormType::Furniture) && 
+					baseObj->As<RE::TESFurniture>()->furnFlags.all
+					(
+						RE::TESFurniture::ActiveMarker::kCanSleep
+					)
+				);
+
 				if (!occupyingFurniture && !packageDone) 
 				{
 					p->pam->SetAndEveluatePackage
@@ -2658,10 +2683,14 @@ namespace ALYSLC
 					// so the activation occurs in sync with the animation.
 					if (packageDone && !occupyingFurniture && linkedRefrPtr)
 					{
-						auto baseObj = linkedRefrPtr->GetObjectReference();
 						if ((baseObj) &&
 							(baseObj->As<RE::TESFurniture>() || baseObj->As<RE::BGSIdleMarker>()))
 						{
+							DBG
+							(
+								"{}: Activate furniture {}.", 
+								coopActor->GetName(), baseObj->GetName()
+							);
 							Util::ActivateRefr
 							(
 								linkedRefrPtr.get(), 
@@ -2673,6 +2702,64 @@ namespace ALYSLC
 							);
 						}
 					}
+					else if (ui && p1 && packageDone && occupyingFurniture)
+					{
+						bool linkedMenuNotOpen = 
+						(
+							(
+								isWorkBenchFurniture &&
+								!ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
+							) || 
+							(
+								isBed &&
+								!ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME)
+							)
+						);
+						if (linkedMenuNotOpen)
+						{
+							DBG
+							(
+								"{}: Furniture occupied. "
+								"Setting P1's occupied furniture handle to {}.",
+								coopActor->GetName(),
+								baseObj->GetName()
+							);
+							// Set P1 as motion driven before activating.
+							Util::SetPlayerAIDriven(false);
+							// Set the furniture as occupied by P1 after sending a request
+							// to give this player control if any crafting/wait menu that opens.
+							glob.moarm->InsertRequest
+							(
+								playerID, 
+								InputAction::kActivate, 
+								SteadyClock::now(),
+								"", 
+								interactionFurniture
+							);
+							// Setting P1's occupied furniture before opening the crafting menu
+							// will allow the game to pull the appropriate data from the refr
+							// before displaying the corresponding crafting sub-menu.
+							// IMPORTANT:
+							// Must clear the handle when the menu closes or players
+							// will be locked out of opening most menus.
+							p1->currentProcess->middleHigh->occupiedFurniture = 
+							interactionFurniture;
+							auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+							if (msgQ)
+							{
+								msgQ->AddMessage
+								(
+									isWorkBenchFurniture ? 
+									RE::CraftingMenu::MENU_NAME : 
+									RE::SleepWaitMenu::MENU_NAME,
+									RE::UI_MESSAGE_TYPE::kShow, 
+									nullptr
+								);
+							}
+
+							Util::SetPlayerAIDriven(true);
+						}
+					}
 
 					// Package completed once and the player is trying to move, 
 					// so switch back to the default package to stop interacting.
@@ -2681,6 +2768,32 @@ namespace ALYSLC
 						p->pam->SetAndEveluatePackage();
 						// Play exit animation.
 						coopActor->StopInteractingQuick(false);
+						// Clear out P1's current furniture handle if was set to this player's
+						// interaction target before opening a menu.
+						bool shouldClearP1FurnitureHandle = 
+						(
+							(isWorkBenchFurniture || isBed) && 
+							(
+								p1 && 
+								p1->currentProcess &&
+								p1->currentProcess->middleHigh &&
+								Util::HandleIsValid(interactionFurniture) && 
+								p1->currentProcess->middleHigh->occupiedFurniture == 
+								interactionFurniture
+							)	
+						);
+						if (shouldClearP1FurnitureHandle)
+						{
+							DBG
+							(
+								"{}: Clear P1's occupied furniture handle ({}) "
+								"when done interacting.",
+								coopActor->GetName(),
+								interactionFurniture.get()->GetName()
+							);
+							p1->currentProcess->middleHigh->occupiedFurniture = 
+							RE::ObjectRefHandle();
+						}
 					}
 				}
 			}
@@ -2889,6 +3002,14 @@ namespace ALYSLC
 				)
 			);
 			midHighProc->rotationSpeed.z = 0.0f;
+
+			if (p->isPlayer1 && ALYSLC::AlternateConversationCameraCompat::g_installed)
+			{
+				movementActorPtr->SetHeading
+				(
+					p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+				);
+			}
 		}
 		else
 		{
@@ -4178,6 +4299,35 @@ namespace ALYSLC
 				) 
 			};
 
+			// Must have weapons sheathed and switch to controls driven to mine ore.
+			// NOTE:
+			// P2 cannot mine ore since mining is performed via the Papyrus MineOreScript
+			// and implements this functionality for P1 only.
+			bool isMining = false;
+			if (coopActor->GetOccupiedFurniture())
+			{
+				auto furniturePtr = Util::GetRefrPtrFromHandle(coopActor->GetOccupiedFurniture());
+				auto furniture = 
+				(
+					furniturePtr && furniturePtr->GetBaseObject() && 
+					furniturePtr->GetBaseObject()->Is(RE::FormType::Furniture) ? 
+					furniturePtr->GetBaseObject()->As<RE::TESFurniture>() : 
+					nullptr 
+				);
+				isMining =  
+				(
+					(furniture) && 
+					(furniture->HasKeywordString("isPickaxeFloor") ||
+					 furniture->HasKeywordString("isPickaxeTable") || 
+					 furniture->HasKeywordString("isPickaxeWall"))
+				);
+				if (isMining && coopActor->IsWeaponDrawn())
+				{
+					// Must sheathe before mining; otherwise, the swining animation will not start.
+					p->pam->ReadyWeapon(false);
+				}
+			}
+
 			// Credits to ersh1 for finding out the movement handler's motion driven flag:
 			// https://github.com/ersh1/TrueDirectionalMovement/blob/master/src/DirectionalMovementHandler.cpp
 			bool isAIDriven = 
@@ -4205,6 +4355,7 @@ namespace ALYSLC
 				(
 					p->pam->sendingP1MotionDrivenEvents ||
 					isMounted ||
+					isMining ||
 					isRagdolled ||
 					reqOrIsParagliding ||
 					menuStopsMovement ||
@@ -5687,6 +5838,53 @@ namespace ALYSLC
 							if (insertedAsReleasedRefr && magickaCost > 0.0f)
 							{
 								a_p->pam->ModifyAV(RE::ActorValue::kMagicka, -magickaCost);
+							}
+						}
+
+						// Cheeky message.
+						auto ui = RE::UI::GetSingleton();
+						if (ui && glob.menuPID > -1 && ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME))
+						{
+							bool showCheekyMessage = 
+							(
+								hitActor == glob.coopPlayers[glob.menuPID]->coopActor.get()
+							);
+							if (!showCheekyMessage)
+							{
+								auto menuTopicManager = RE::MenuTopicManager::GetSingleton();
+								showCheekyMessage = 
+								(
+									(menuTopicManager) && 
+									(
+										result.hitRefrHandle == menuTopicManager->speaker ||
+										result.hitRefrHandle == menuTopicManager->lastSpeaker
+									)
+								);
+							}
+							
+							if (showCheekyMessage)
+							{
+								RE::BSFixedString messageText =
+								(
+									fmt::format("{} disapproves", a_p->coopActor->GetName()).c_str()
+								);
+								std::mt19937 generator{ };
+								generator.seed(SteadyClock::now().time_since_epoch().count());
+								float rand = generator() / (float)((std::mt19937::max)());
+								if (rand <= 0.05f)
+								{
+									auto index = static_cast<size_t>
+									(
+										GlobalCoopData::CHEEKY_DISAPPROVAL_MESSAGE_OPTIONS.size() * 
+										(generator() / (float)((std::mt19937::max)()))
+									);
+									messageText = 
+									(
+										GlobalCoopData::CHEEKY_DISAPPROVAL_MESSAGE_OPTIONS[index]
+									);
+								}
+
+								RE::DebugNotification(messageText.c_str(), "UISneakAttack");
 							}
 						}
 					}

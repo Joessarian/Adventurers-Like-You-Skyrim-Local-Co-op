@@ -1530,6 +1530,25 @@ namespace ALYSLC
 			);
 			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
 		};
+		
+		// [Stats Menu Hooks]
+		class SleepWaitMenuHooks
+		{
+		public:
+			static void InstallHooks()
+			{
+				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_SleepWaitMenu[0] };
+				_ProcessMessage = vtbl.write_vfunc(0x04, ProcessMessage);
+				INF("Installed ProcessMessage() hook.");
+			}
+
+		private:
+			static RE::UI_MESSAGE_RESULTS ProcessMessage
+			(
+				RE::SleepWaitMenu* a_this, RE::UIMessage& a_message
+			);
+			static inline REL::Relocation<decltype(ProcessMessage)> _ProcessMessage;
+		};
 
 		// [Stats Menu Hooks]
 		class StatsMenuHooks

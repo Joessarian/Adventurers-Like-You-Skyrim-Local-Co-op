@@ -1006,8 +1006,8 @@ namespace ALYSLC
 		// skill AVs from the group of shared skills.
 		static void SyncSharedSkillAVs();
 
-		// End co-op session, optionally dismissing all co-op companions.
-		static void TearDownCoopSession(bool a_shouldDismiss);
+		// End co-op session, optionally dismissing all co-op companions or disabling the co-op cam.
+		static void TearDownCoopSession(bool a_shouldDismiss, bool a_shouldPauseCoopCam);
 
 		// DEBUG OPTION: Toggle god mode for all players.
 		// Can also choose to restore full health, magicka, and stamina when toggled on.
@@ -1344,6 +1344,22 @@ namespace ALYSLC
 			{ RE::ActorValue::kIllusion, "Psionics" },
 			{ RE::ActorValue::kRestoration, "Light magic" },
 			{ RE::ActorValue::kEnchanting, "Enchantment" }
+		};
+
+		// Cheeky message to display when a player disagrees with another player's dialogue choices
+		// or a talking NPC's choice of words.
+		static inline const std::vector<RE::BSFixedString> CHEEKY_DISAPPROVAL_MESSAGE_OPTIONS = 
+		{
+			"Booooo! Get off the stage!",
+			"Nap time.",
+			"Good point, but... WHOA, look out, a banana peel!",
+			"Can't take you seriously from down there.",
+			"What?",
+			"Hmmm do dee do dee doo... you were saying something?",
+			"Could have sworn someone was talking over here. Oh well.",
+			"Think fast! Ohhh, too slow.",
+			"Speech 0.",
+			"Check out this move: dialogue skiiiip."
 		};
 
 		// Message to show when the co-op party is wiped.

@@ -541,7 +541,7 @@ namespace ALYSLC
 					"disconnected"
 				).data()
 			);
-			GlobalCoopData::TearDownCoopSession(true);
+			GlobalCoopData::TearDownCoopSession(true, true);
 			// Must re-assign P1 device ID upon re-summoning.
 			glob.player1DID = -1;
 			return;
