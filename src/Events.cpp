@@ -2704,12 +2704,12 @@ namespace ALYSLC
 							nullptr
 						);
 					}
-					else if (a_menuEvent->menuName == RE::CraftingMenu::MENU_NAME)
-					{
-						// Stop co-op companion from interacting 
-						// with crafting station once the menu opens.
-						p->pam->SetAndEveluatePackage();
-					}
+					//else if (a_menuEvent->menuName == RE::CraftingMenu::MENU_NAME)
+					//{
+					//	// Stop co-op companion from interacting 
+					//	// with crafting station once the menu opens.
+					//	p->pam->SetAndEveluatePackage();
+					//}
 
 					if (a_menuEvent->opening)
 					{

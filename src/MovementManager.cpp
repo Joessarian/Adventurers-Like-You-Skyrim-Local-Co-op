@@ -2704,15 +2704,29 @@ namespace ALYSLC
 					}
 					else if (ui && p1 && packageDone && occupyingFurniture)
 					{
+						// IMPORTANT:
+						// Make sure P1 is not using any furniture before setting the workbench
+						// as their occupied furniture.
+						// Otherwise, will lock out usage of whatever furniture P1 was using 
+						// once the Crafting Menu closes.
 						bool linkedMenuNotOpen = 
 						(
 							(
-								isWorkBenchFurniture &&
-								!ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
-							) || 
+								!Util::HandleIsValid
+								(
+									p1->currentProcess->middleHigh->occupiedFurniture
+								)
+
+							) &&
 							(
-								isBed &&
-								!ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME)
+								(
+									isWorkBenchFurniture &&
+									!ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME)
+								) || 
+								(
+									isBed &&
+									!ui->IsMenuOpen(RE::SleepWaitMenu::MENU_NAME)
+								)
 							)
 						);
 						if (linkedMenuNotOpen)
@@ -2791,8 +2805,7 @@ namespace ALYSLC
 								coopActor->GetName(),
 								interactionFurniture.get()->GetName()
 							);
-							p1->currentProcess->middleHigh->occupiedFurniture = 
-							RE::ObjectRefHandle();
+							p1->StopInteractingQuick(true);
 						}
 					}
 				}

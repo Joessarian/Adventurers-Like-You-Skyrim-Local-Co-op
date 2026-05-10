@@ -15241,25 +15241,6 @@ namespace ALYSLC
 			{
 				return _ProcessMessage(a_this, a_message);
 			}
-			else if (closing)
-			{
-				// IMPORTANT:
-				// If not clearing out the furniture handle, no player will be able to open 
-				// most menus (Tween, Stats, Inventory, Map, etc.).
-				auto p1 = RE::PlayerCharacter::GetSingleton();
-				if (p1->currentProcess && 
-					p1->currentProcess->middleHigh &&
-					Util::HandleIsValid(p1->currentProcess->middleHigh->occupiedFurniture))
-				{
-					DBG
-					(
-						"Clear P1's occupied furniture handle ({}) when done crafting.",
-						p1->currentProcess->middleHigh->occupiedFurniture.get()->GetName()
-					);
-					p1->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
-				}
-			}
-
 			// Do not modify the requests queue, since the menu input manager still needs this info
 			// when setting the request and menu player IDs when this menu opens/closes.
 			glob.lastResolvedMenuPID = glob.moarm->ResolveMenuPlayerID
@@ -15277,13 +15258,35 @@ namespace ALYSLC
 
 			// For companion players, reset to default package and stop interacting.
 			const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-			if (closing && glob.lastResolvedMenuPID > 0)
+			if (closing)
 			{
-				p->mm->interactionPackageRunning = false;
-				p->pam->SetAndEveluatePackage();
-				p->coopActor->StopInteractingQuick(false);
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (glob.lastResolvedMenuPID > 0)
+				{
+					p->mm->interactionPackageRunning = false;
+					p->pam->SetAndEveluatePackage();
+					p->coopActor->StopInteractingQuick(true);
+					// IMPORTANT:
+					// If not clearing out the furniture data set when opening the menu, 
+					// no player will be able to open most menus
+					// (Tween, Stats, Inventory, Map, etc.).
+					// Cannot just clear the currently occupied furniture handle,
+					// as this will lead to locking players out of using the furniture.
+					if (p1)
+					{
+						DBG
+						(
+							"Clear P1's occupied furniture handle ({}) "
+							"when done interacting.",
+							Util::HandleIsValid(p1->GetOccupiedFurniture()) ?
+							p1->GetOccupiedFurniture().get()->GetName() : 
+							"NONE"
+						);
+						p1->StopInteractingQuick(true);
+					}
+				}
 			}
-			
+
 			// Ignore subsequent hide messages once P1's data is restored.
 			closing &= hasCopiedData;
 			// Skip if control is/was not requested by co-op companion player,
@@ -16985,29 +16988,32 @@ namespace ALYSLC
 			bool closing = *a_message.type == RE::UI_MESSAGE_TYPE::kHide;
 			if (closing)
 			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
 				// Reset to default package and stop interacting.
 				if (glob.menuPID > 0)
 				{
 					const auto& p = glob.coopPlayers[glob.menuPID];
 					p->mm->interactionPackageRunning = false;
 					p->pam->SetAndEveluatePackage();
-					p->coopActor->StopInteractingQuick(false);
-				}
-				
-				// IMPORTANT:
-				// If not clearing out the furniture handle, no player will be able to open 
-				// most menus (Tween, Stats, Inventory, Map, etc.).
-				auto p1 = RE::PlayerCharacter::GetSingleton();
-				if (p1->currentProcess && 
-					p1->currentProcess->middleHigh &&
-					Util::HandleIsValid(p1->currentProcess->middleHigh->occupiedFurniture))
-				{
-					DBG
-					(
-						"Clear P1's occupied furniture handle ({}) when done waiting.",
-						p1->currentProcess->middleHigh->occupiedFurniture.get()->GetName()
-					);
-					p1->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
+					p->coopActor->StopInteractingQuick(true);
+					// IMPORTANT:
+					// If not clearing out the furniture data set when opening the menu, 
+					// no player will be able to open most menus
+					// (Tween, Stats, Inventory, Map, etc.).
+					// Cannot just clear the currently occupied furniture handle,
+					// as this will lead to locking players out of using the furniture.
+					if (p1)
+					{
+						DBG
+						(
+							"Clear P1's occupied furniture handle ({}) "
+							"when done interacting.",
+							Util::HandleIsValid(p1->GetOccupiedFurniture()) ?
+							p1->GetOccupiedFurniture().get()->GetName() : 
+							"NONE"
+						);
+						p1->StopInteractingQuick(true);
+					}
 				}
 			}
 

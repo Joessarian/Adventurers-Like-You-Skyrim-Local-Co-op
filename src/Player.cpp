@@ -1116,10 +1116,6 @@ namespace ALYSLC
 
 		// Get off mount/stop interacting with furniture.
 		coopActor->StopInteractingQuick(true);
-		if (coopActor->currentProcess && coopActor->currentProcess->middleHigh)
-		{
-			coopActor->currentProcess->middleHigh->occupiedFurniture = RE::ObjectRefHandle();
-		}
 
 		bool wasTransformed = isTransforming || isTransformed;
 		// Sheathe current weapons first.
