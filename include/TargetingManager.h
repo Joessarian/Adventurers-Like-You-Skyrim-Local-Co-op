@@ -1550,15 +1550,6 @@ namespace ALYSLC
 		const ManagerState ShouldSelfPause() override;
 		const ManagerState ShouldSelfResume() override;
 
-		// Clear out currently-targeted activation/proximity refrs.
-		inline void ClearActivationTargetData() 
-		{
-			choseActivationLockOnTarget = false;
-			activationRefrHandle = 
-			lockOnActivationRefrHandle = 
-			proximityRefrHandle = RE::ObjectRefHandle();
-		}
-
 		// Clear NPC aim target-related handles and flags.
 		inline void ClearAimTargetData()
 		{
@@ -1733,6 +1724,10 @@ namespace ALYSLC
 		//
 		// Member funcs
 		//
+		
+		// Clear out currently-targeted activation/proximity refrs.
+		// If the activation refr is valid, can stop any playing activation shader as well.
+		void ClearActivationTargetData(bool a_stopEffectShader);
 
 		// Clear the cached actor/refr handle for the given target type.
 		void ClearTarget(const TargetActorType& a_targetType);
@@ -1985,16 +1980,22 @@ namespace ALYSLC
 		void ResetTPs();
 
 		// Cycle through nearby targetable refrs and choose one for activation.
-		void SelectProximityRefr();
+		// If for quick selection and activation, filter out certain actors.
+		void SelectProximityRefr(bool a_quickSelection);
 
 		// Find and set a lock on activation target (object/NPC), if any.
 		// Use the left/right stick's angle as the targeting angle.
 		// Originate the check from the player's position or from the current target's position.
 		// Select the target if a bind is held or on press. 
 		// Selecting on hold will select at an interval, instead of right away.
+		// Can also narrow the selection of considered objects if selecting quickly and temporarily 
+		// on release of the 'Activate' bind to prevent accidental or unnecessary activation.
 		void SetLockOnActivationTarget
 		(
-			bool a_useLeftStickAngle, bool a_fromCurrentTarget, bool a_selectOnHold
+			bool a_useLeftStickAngle, 
+			bool a_fromCurrentTarget,
+			bool a_selectOnHold, 
+			bool a_quickSelection
 		);
 
 		// Find and set a lock on aim target (NPC), if any.
@@ -2011,6 +2012,11 @@ namespace ALYSLC
 		// Used to maintain up-to-date info on the selected crosshair target
 		// or stealth state while the player is sneaking.
 		void SetPeriodicCrosshairMessage(const CrosshairMessageType& a_type);
+
+		// TEMPORARY:
+		// Only to test out binds ideas before actually adding in a customizable 
+		// switch aim mode bind.
+		void SwitchAimMode();
 
 		// NOTE: 
 		// Only when aim correction is enabled for this player.
@@ -2192,6 +2198,8 @@ namespace ALYSLC
 		bool reqResetCrosshairPosition;
 		// Is the crosshair/lock on activation refr in range to open the QuickLoot menu?
 		bool selectedRefrInRangeForQuickLoot;
+		// Has the player started cycling through nearby objects for activation?
+		bool startedActivationCycling;
 		// Is the player trying to interact with cycled, nearby refrs?
 		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?

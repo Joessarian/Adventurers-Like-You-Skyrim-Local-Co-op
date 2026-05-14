@@ -2571,6 +2571,49 @@ namespace ALYSLC
 			return -1;
 		}
 		
+		// Return the mod file that the given form is from.
+		inline const RE::TESFile* GetModFromFormID(RE::TESForm* a_form)
+		{
+			if (!a_form)
+			{
+				return nullptr;
+			}
+
+			auto dataHandler = RE::TESDataHandler::GetSingleton();
+			if (!dataHandler)
+			{
+				return nullptr;
+			}
+				
+			// If not found in Skyrim.esm, look through all mod files for the form.
+			for (auto file : dataHandler->files)
+			{
+				if (!file)
+				{
+					continue;
+				}
+
+				// Note to self:
+				// Raw FID for light plugins does NOT include the small file compile index.
+				const auto formID = a_form->formID;
+				auto modFile = 
+				(
+					file->IsLight() ? 
+					dataHandler->LookupLoadedLightModByIndex((formID >> 12) & 0xFFF) :
+					dataHandler->LookupLoadedModByIndex((formID >> 24) & 0xFF)
+				);
+				if (modFile)
+				{
+					DBG
+					(
+						"Found mod file with name: {} for form {} (0x{:X}).", 
+						file->fileName, a_form->GetName(), a_form->formID
+					);
+					return modFile;
+				}
+			}
+		}
+
 		// Get viewport dimensions.
 		inline RE::GRect<float> GetPort()
 		{
@@ -3358,6 +3401,7 @@ namespace ALYSLC
 				a_refr->IsHandleValid() && 
 				a_refr->loadedData &&
 				a_refr->Is3DLoaded() && 
+				a_refr->GetCurrent3D() &&
 				!a_refr->IsMarkedForDeletion() && 
 				!a_refr->IsDisabled() && 
 				!a_refr->IsDeleted()

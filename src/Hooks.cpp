@@ -692,6 +692,8 @@ namespace ALYSLC
 				return _UnequipObject(a_this, a_actor, a_object, a_objectEquipParams);
 			}
 			
+			// Ignore if P1, transform(ing/ed), or skipping equip processing.
+			const auto& p = glob.coopPlayers[playerIndex];
 			DBG
 			(
 				"{}: {} (0x{:X}, type: 0x{:X}, exList: {:p}). Force equip: {}, Unks: {}, {}.", 
@@ -705,8 +707,17 @@ namespace ALYSLC
 				a_objectEquipParams.unk24
 			);
 
-			// Ignore if P1, transform(ing/ed), or skipping equip processing.
-			const auto& p = glob.coopPlayers[playerIndex];
+			// Do not unequip torches if occupying furniture.
+			if (Util::HandleIsValid(p->coopActor->GetOccupiedFurniture()) &&
+				a_object->As<RE::TESObjectLIGH>() && 
+				a_object->As<RE::TESObjectLIGH>()->data.flags.all
+				(
+					RE::TES_LIGHT_FLAGS::kCanCarry
+				))
+			{
+				return;
+			}
+
 			if (p->isPlayer1 || p->isTransforming || p->isTransformed || p->em->skipEquipProcessing)
 			{
 				// Do not unequip anything from P1 if another player's inventory 
@@ -5379,10 +5390,14 @@ namespace ALYSLC
 			// No input events this frame, so reset all menu controls-related data.
 			if (!(*a_inputEvents))
 			{
-				MenuControlsHooks::summoningMenuBindPressed = 
+				MenuControlsHooks::coopCamToggleBindPressed = 
+				MenuControlsHooks::debugMenuBindPressed =
 				MenuControlsHooks::pauseAndWaitWerePressed =
-				MenuControlsHooks::debugMenuBindPressed = false;
+				MenuControlsHooks::sneakAndTogglePOVWerePressed = 
+				MenuControlsHooks::summoningMenuBindPressed = false;
 				MenuControlsHooks::pauseBindHeldTime =
+				MenuControlsHooks::sneakBindHeldTime = 
+				MenuControlsHooks::togglePOVBindHeldTime =
 				MenuControlsHooks::waitBindHeldTime = -1.0f;
 			}
 			
@@ -5980,9 +5995,12 @@ namespace ALYSLC
 			(
 				(allReleased) && 
 				(
-					summoningMenuBindPressed ||
+					coopCamToggleBindPressed ||
 					debugMenuBindPressed ||
+					summoningMenuBindPressed ||
 					pauseBindHeldTime != -1.0f ||
+					sneakBindHeldTime != -1.0f ||
+					togglePOVBindHeldTime != -1.0f ||
 					waitBindHeldTime != -1.0f
 				)
 			);
@@ -6078,10 +6096,14 @@ namespace ALYSLC
 					((*a_inputEvents)->AsButtonEvent()->IsPressed()) :
 					false
 				);
-				summoningMenuBindPressed = 
+				coopCamToggleBindPressed = 
+				debugMenuBindPressed =
 				pauseAndWaitWerePressed =
-				debugMenuBindPressed = false;
+				sneakAndTogglePOVWerePressed = 
+				summoningMenuBindPressed = false;
 				pauseBindHeldTime =
+				sneakBindHeldTime =
+				togglePOVBindHeldTime =
 				waitBindHeldTime = -1.0f;
 			}
 
@@ -6190,16 +6212,13 @@ namespace ALYSLC
 			
 			//===============================
 			// [Pause/Wait Bind Event Check]:
-			// ==============================
+			//===============================
 
 			bool isGamepadEvent = device == RE::INPUT_DEVICES::kGamepad;
 			// For controllers:
 			// Debug: always Pause + Wait when not in co-op.
 			// Summon: always Wait + Pause when not in co-op.
 			uint32_t pauseMask = 0xFF;
-			(
-				isGamepadEvent ? GAMEPAD_MASK_START : RE::BSKeyboardDevice::Keys::kEscape
-			);
 			uint32_t waitMask = 0xFF;
 			if (ue && controlMap)
 			{
@@ -6621,7 +6640,6 @@ namespace ALYSLC
 							float heldTimeDiffTotal = FLT_MAX;
 							if (shouldTriggerDebugMenu)
 							{
-								// If not held at all
 								heldTimeDiffTotal = 
 								(
 									fabsf
@@ -6954,6 +6972,655 @@ namespace ALYSLC
 			return blockEvent;
 		}
 		
+		bool MenuControlsHooks::CheckForP1CoopCamToggle
+		(
+			RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
+		)
+		{
+			// Check if P1 is trying to toggle the co-op camera/singleplayer mode on or off.
+			// If the correct bind is pressed, toggle the co-op camera back on 
+			// if it is off while in co-op, and toggle singleplayer mode on/off if not in co-op.
+			// Store whether or not an additional input event was chained to trigger a menu
+			// in the outparam.
+			// Return true if the even should be blocked.
+
+			// Must have a valid event; do not invalidate otherwise.
+			if (!a_inputEvent || !glob.allPlayersInit)
+			{
+				return false;
+			}
+
+			auto ui = RE::UI::GetSingleton();
+			auto buttonEvent = a_inputEvent->AsButtonEvent();
+			const auto& device = a_inputEvent->GetDevice();
+			const bool onlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+			// Ignore any events that are not button events,
+			// or button events not from the gamepad/keyboard
+			// or sent as emulated input by a co-op player.
+			if ((!buttonEvent) || 
+				(
+					device != RE::INPUT_DEVICES::kGamepad && 
+					device != RE::INPUT_DEVICES::kKeyboard
+				))
+			{
+				return false;
+			}
+
+			auto ue = RE::UserEvents::GetSingleton();
+			auto controlMap = RE::ControlMap::GetSingleton();
+			if (!ue || !controlMap)
+			{
+				return false;
+			}
+			
+			//====================================
+			// [Sneak/POVSwitch Bind Event Check]:
+			//====================================
+
+			bool isGamepadEvent = device == RE::INPUT_DEVICES::kGamepad;
+			uint32_t togglePOVMask = 0xFF;
+			uint32_t sneakMask = 0xFF;
+			if (ue && controlMap)
+			{
+				sneakMask = controlMap->GetMappedKey
+				(
+					ue->sneak, device
+				);
+				togglePOVMask = controlMap->GetMappedKey
+				(
+					ue->togglePOV, device
+				);
+			}
+
+			// Ensure both masks are valid, despite failing to get mapped ID code.
+			// Both masks are sometimes the same here, 
+			// so ensure they aren't by falling back to the default masks.
+			if (sneakMask == 0xFF || sneakMask == togglePOVMask) 
+			{
+				sneakMask = 
+				(
+					isGamepadEvent ? 
+					GAMEPAD_MASK_LEFT_THUMB : 
+					RE::BSKeyboardDevice::Keys::kLeftControl
+				);
+			}
+
+			if (togglePOVMask == 0xFF || togglePOVMask == sneakMask) 
+			{
+				togglePOVMask = 
+				(
+					isGamepadEvent ? GAMEPAD_MASK_RIGHT_THUMB : RE::BSKeyboardDevice::Keys::kF	
+				);
+			}
+			
+			bool sneakBindEvent = buttonEvent->idCode == sneakMask;
+			bool togglePOVBindEvent = buttonEvent->idCode == togglePOVMask;
+			// Only handling pause or wait bind events.
+			if (!sneakBindEvent && !togglePOVBindEvent)
+			{
+				return false;
+			}
+			
+			//=========================
+			// [Emulated Input Checks]:
+			// ========================
+			
+			// Skip potentially triggering ALYSLC menus here if sent by a companion player.
+			// Only delay the original bind function until release.
+			bool emulatedKeyInput = 
+			(
+				((buttonEvent->pad24 & 0xFFFF) == 0xCA11) || 
+				((buttonEvent->pad24 & 0xFFFF) == 0xC0DA)
+			);
+			if (emulatedKeyInput)
+			{
+				// No need to only allow through on release if other menus are open,
+				// since some modded hotkeys require holding down the Sneak/TogglePOV buttons 
+				// to trigger events in the open menus.
+				if (!onlyAlwaysOpen)
+				{
+					return false;
+				}
+
+				// ButtonEventPressType::kInstantTrigger events are sent with value of 2.0
+				// to differentiate them with regular 'IsDown' events, which have value 1.0.
+				if (((buttonEvent->IsHeld()) || 
+					(buttonEvent->IsDown() && buttonEvent->value == 1.0f)))
+				{
+					DBG("EMU: event {}, down/held. Blocking.", buttonEvent->userEvent);
+					return true;
+				}
+				else
+				{
+					DBG
+					(
+						"EMU: event {}, {}. Allow.",
+						buttonEvent->userEvent, 
+						buttonEvent->value == 0.0f ? 
+						"up" : 
+						buttonEvent->value <= 1.0f ?
+						"down" : 
+						"instant trigger"
+					);
+
+					// Up/Instant trigger.
+					if (buttonEvent->value == 0.0f || buttonEvent->value == 2.0f)
+					{
+						// Change to pressed (down) event.
+						buttonEvent->heldDownSecs = 0.0f;
+						buttonEvent->value = 1.0f;
+
+						float releaseTime = 
+						(
+							sneakBindHeldTime ? sneakBindHeldTime : togglePOVBindHeldTime
+						);
+						if (releaseTime <= 0.0f)
+						{
+							releaseTime = 1.0f;
+						}
+
+						// NOTE:
+						// Necessary to also pair with a button-released event,
+						// otherwise the event may not trigger the desired effect here 
+						// or later when pressing and releasing the bind again.
+						RE::InputEvent* buttonEvent2 = 
+						(
+							RE::ButtonEvent::Create
+							(
+								*buttonEvent->device, 
+								buttonEvent->userEvent, 
+								buttonEvent->idCode, 
+								0.0f, 
+								releaseTime
+							)
+						);
+						
+						// Insert after the current event.
+						buttonEvent2->next = buttonEvent->next;
+						buttonEvent->next = buttonEvent2;
+						a_newEventChainedOut = true;
+					}
+
+					return false;
+				}
+			}
+			
+			//====================================
+			// [Update Held Time And Press State]:
+			//====================================
+			
+			// Update held time and state first.
+			if (sneakBindEvent)
+			{
+				sneakBindHeldTime = buttonEvent->heldDownSecs;
+			}
+			else if (togglePOVBindEvent)
+			{
+				togglePOVBindHeldTime = buttonEvent->heldDownSecs;
+			}
+
+			if (sneakBindHeldTime != -1.0f && togglePOVBindHeldTime != -1.0f)
+			{
+				sneakAndTogglePOVWerePressed = true;
+			}
+			
+			//=========================
+			// [Co-op P1 Input Checks]:
+			//=========================
+			
+			// Do not trigger menus if P1's managers are active and this is a gamepad event.
+			// Allow through without blocking since we've updated held time and state flags above.
+			bool p1ManagersActive =
+			(
+				(glob.coopSessionActive && glob.cam->IsRunning()) &&
+				(glob.coopPlayers[0]->IsRunning() || !ui  || ui->GameIsPaused())
+			);
+			if (p1ManagersActive)
+			{
+				if (buttonEvent->IsUp())
+				{
+					coopCamToggleBindPressed = 
+					(
+						sneakBindHeldTime != -1.0f &&
+						togglePOVBindHeldTime != -1.0f &&
+						sneakBindHeldTime >= togglePOVBindHeldTime
+					);
+
+					// Reset hold times on release.
+					if (sneakBindEvent)
+					{
+						sneakBindHeldTime = -1.0f;
+					}
+
+					if (togglePOVBindEvent)
+					{
+						togglePOVBindHeldTime = -1.0f;
+					}
+				}
+
+				DBG
+				(
+					"CO-OP P1 Controller: managers active, "
+					"skip processing button event {} (allow through). "
+					"Is emulated input: {}.",
+					a_inputEvent->QUserEvent(),
+					emulatedKeyInput
+				);
+				// Allow through without performing further checks.
+				return false;
+			}
+
+			// Will not trigger any menus or perform its original function
+			// if sent by P2 in hybrid mode (P1's controller).
+			// Allow the held time and state flags to update to ensure a smooth transition of state
+			// if the co-op session ends while the Sneak/TogglePOV binds are still pressed.
+			// But block the event regardless of press state.
+			bool isHybridModeControllerInput = 
+			(
+				glob.hybridModeActive &&
+				glob.coopSessionActive &&
+				isGamepadEvent &&
+				!emulatedKeyInput
+			);
+			if (isHybridModeControllerInput)
+			{
+				if (buttonEvent->IsUp())
+				{
+					// Reset hold times on release.
+					if (sneakBindEvent)
+					{
+						sneakBindHeldTime = -1.0f;
+					}
+
+					if (togglePOVBindEvent)
+					{
+						togglePOVBindHeldTime = -1.0f;
+					}
+				}
+
+				DBG
+				(
+					"HYBRID: event {}, val: {}, held time: {}. Blocking.", 
+					buttonEvent->userEvent,
+					buttonEvent->value,
+					buttonEvent->heldDownSecs
+				);
+				// Block. Block. Block.
+				return true;
+			}
+			
+			//==================================================
+			// [Co-op Camera/Singleplayer Mode Toggle Handling]:
+			//==================================================
+			
+			// Should this input be blocked and not processed by the MenuControls ProcessMessage()
+			// hook? Check if button release should toggle the co-op camera or singleplayer mode.
+			bool blockEvent = false;
+			bool sendButtonReleaseEvent = false;
+			// Both held and one just released.
+			if (sneakBindHeldTime != -1.0f && 
+				togglePOVBindHeldTime != -1.0f && 
+				buttonEvent->IsUp())
+			{
+				DBG
+				(
+					"Sneak/TogglePOV binds held for {}s, {}s and {} released.", 
+					sneakBindHeldTime, 
+					togglePOVBindHeldTime,
+					sneakBindEvent ? "Sneak" : "TogglePOV"
+				);
+				
+				// Button events seem to be chained in a manner 
+				// that does not depend on when their buttons were pressed.
+				// The 'Sneak' bind must be held longer than the 'TogglePOV' button
+				// to toggle the co-op camera on while in co-op,
+				// or toggle singleplayer mode on or off when not in co-op.
+				coopCamToggleBindPressed = 
+				(
+					sneakBindHeldTime >= togglePOVBindHeldTime
+				);
+				// BEFORE sending events to open any menus.
+				// Temp solution (not failproof), 
+				// since I can't find a direct way of getting the XInput
+				// controller index for the controller Skyrim recognizes as P1's.
+				// NOTE: 
+				// The BSPCGamepadDeviceDelegate's 'userIndex' member seems to 
+				// always equal 0, even if the XInput-reported controller index 
+				// for P1 is not 0, so we can't use that member to set P1's DID.
+				// 
+				// Check to see which controller is requesting to open either co-op menu
+				// and assign its ID as P1's DID.
+				// Heuristic checks the two buttons' event-reported held times 
+				// against the XInput controller state held times.
+				// Will sometimes fail if two players press the same binds 
+				// at nearly the exact same time (within a couple frames),
+				// as the wrong player's DID may be assigned as P1's DID.
+				// Fix by manually assigning the P1 DID through the Debug Menu.
+				auto devMgr = RE::BSInputDeviceManager::GetSingleton();
+				auto gamepad = devMgr ? devMgr->GetGamepad() : nullptr;
+				const auto sneakIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find(sneakMask);
+				const auto togglePOVIter = glob.cdh->GAMEMASK_TO_INPUT_ACTION.find(togglePOVMask);
+				// If at least one of the bind masks are not accounted for, 
+				// do not check for the DID below.
+				// Right now, P1's DID is set to a CID unless in hybrid mode (1 controller).
+				bool checkForP1DID = 
+				(
+					(glob.cdh && glob.player1DID == -1 && coopCamToggleBindPressed) && 
+					(sneakIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end()) &&
+					(togglePOVIter != glob.cdh->GAMEMASK_TO_INPUT_ACTION.end())
+				);
+				DBG
+				(
+					"Checking for P1 DID: Reported gamepad user index: {}.",
+					gamepad ? gamepad->userIndex : -1337
+				);
+				if (checkForP1DID)
+				{
+					int32_t newDID = -1;
+					if (glob.cdh->activeControllerCount > 1)
+					{
+						// Choose the controller with the smallest held time difference.
+						float smallestHeldTimeDiffTotal = FLT_MAX;
+						for (uint32_t i = 0; i < ALYSLC_MAX_CONTROLLER_COUNT; ++i)
+						{
+							XINPUT_STATE inputState{ };
+							ZeroMemory(&inputState, sizeof(XINPUT_STATE));
+							bool succ = 
+							(
+								XInputGetState(i, std::addressof(inputState)) == 
+								ERROR_SUCCESS
+							);
+							if (!succ)
+							{
+								continue;
+							}
+
+							const auto& inputState1 = glob.cdh->GetInputState(i, sneakIter->second);
+							const auto& inputState2 = glob.cdh->GetInputState
+							(
+								i, togglePOVIter->second
+							);
+							const auto& firstPressTP1 = 
+							(
+								glob.cdh->firstPressTPsList[i][!sneakIter->second]
+							);
+							const auto& firstPressTP2 = 
+							(
+								glob.cdh->firstPressTPsList[i][!togglePOVIter->second]
+							);
+
+							float heldTimeDiffTotal = 
+							(
+								fabsf
+								(
+									sneakBindHeldTime -
+									Util::GetElapsedSeconds(firstPressTP1)
+								) + 
+								fabsf
+								(
+									togglePOVBindHeldTime -
+									Util::GetElapsedSeconds(firstPressTP2)
+								)
+							);
+								
+							DBG
+							(
+								"DID {}'s diff total: {}. Current min diff total: {}. "
+								"Last recorded input state held times: {}, {}. "
+								"Time since last press: {}, {}. "
+								"Pressed/just released: {}, {} / {}, {}.",
+								i,
+								heldTimeDiffTotal,
+								smallestHeldTimeDiffTotal,
+								inputState1.heldTimeSecs,
+								inputState2.heldTimeSecs,
+								Util::GetElapsedSeconds(firstPressTP1),
+								Util::GetElapsedSeconds(firstPressTP2),
+								inputState1.isPressed,
+								inputState2.isPressed,
+								inputState1.justReleased,
+								inputState2.justReleased
+							);
+							if (heldTimeDiffTotal < smallestHeldTimeDiffTotal)
+							{
+								smallestHeldTimeDiffTotal = heldTimeDiffTotal;
+								newDID = i;
+								DBG
+								(
+									"P1 DID set to {}. Min diff total is now: {}.",
+									newDID,
+									smallestHeldTimeDiffTotal
+								);
+							}
+						}
+					}
+					else
+					{
+						// First keyboard + mouse index if there's 
+						// 0 or only 1 controller plugged in.
+						newDID = ALYSLC_MAX_CONTROLLER_COUNT;
+					}
+							
+					if (newDID != -1)
+					{
+						DBG("P1 DID set to {}.", newDID);
+						glob.player1DID = newDID;
+					}
+					else
+					{
+						DBG("Did not assign P1 DID. Currently {}.", glob.player1DID);
+					}
+				}
+
+				bool canToggle = coopCamToggleBindPressed;
+				if (canToggle)
+				{
+					// Check if the co-op camera should be enabled, if in co-op,
+					// or if singleplayer mode should be toggled on/off when not in co-op.
+					auto dataHandler = RE::TESDataHandler::GetSingleton();
+					canToggle = 
+					(
+						(glob.cam->waitForToggle || !glob.coopSessionActive) &&
+						(!ui->GameIsPaused() && ui->IsSavingAllowed() && onlyAlwaysOpen) &&
+						((!dataHandler) || (!dataHandler->autoSaving && !dataHandler->saveLoadGame))
+					);
+					// Can only toggle on if the camera manager isn't running 
+					// and the input is not from P2 when in hybrid mode.
+					if (glob.coopSessionActive)
+					{
+						canToggle &= !glob.cam->IsRunning() && !isHybridModeControllerInput;
+					}
+					
+					DBG
+					(
+						"Hybrid controller input: {}, gamepad event: {}, "
+						"P1 managers active: {}, "
+						"co-op session active: {}, cam toggle bind pressed: {}, "
+						"composing binds were pressed: {}. "
+						"Toggle on co-op camera: {}, toggle singleplayer mode to {}: {}",
+						isHybridModeControllerInput,
+						isGamepadEvent,
+						p1ManagersActive,
+						glob.coopSessionActive,
+						coopCamToggleBindPressed, 
+						sneakAndTogglePOVWerePressed,
+						glob.coopSessionActive,
+						!glob.singleplayerModeActive,
+						!glob.coopSessionActive
+					);
+					if (canToggle)
+					{
+						// Enable the co-op camera when a co-op session is active,
+						// or if singleplayer mode is currently off.
+						if (glob.coopSessionActive || !glob.singleplayerModeActive)
+						{
+							if (!glob.coopSessionActive)
+							{
+								glob.singleplayerModeActive = !glob.singleplayerModeActive;
+							}
+							else
+							{
+								// Move back up to the if branch later when implementing.
+								glob.cam->SetWaitForToggle(false);
+								glob.cam->RequestStateChange(ManagerState::kRunning);
+							}
+
+
+						}
+
+						// Reset hold time of released bind.
+						if (sneakBindEvent)
+						{
+							sneakBindHeldTime = -1.0f;
+						}
+						else
+						{
+							togglePOVBindHeldTime = -1.0f;
+						}
+					}
+					else
+					{
+						// Notify the player that they can't toggle cam/singleplayer mode right now.
+						RE::DebugNotification
+						(
+							fmt::format
+							(
+								"[ALYSLC] Cannot {} right now.", 
+								glob.coopSessionActive ? 
+								"enabled co-op cam" : 
+								"toggle singleplayer mode"
+							).c_str()
+						);
+					}
+
+					// After processing, ignore the button event entirely, 
+					// since we do not want either the sneak or toggle POV bind to trigger 
+					// once both are pressed at the same time in the correct order
+					// to toggle the camera/singleplayer mode.
+					blockEvent = true;
+				}
+				else
+				{
+					DBG
+					(
+						"Not pressed in the proper order to enable the co-op camera, "
+						"so release the bind as usual."
+					);
+					// Will chain a button press event and not block this button release event.
+					sendButtonReleaseEvent = true;
+				}
+			}
+			else if (buttonEvent->IsDown() || buttonEvent->IsHeld())
+			{
+				if (buttonEvent->IsDown())
+				{
+					DBG
+					(
+						"{} pressed/held on its own. Blocking.", buttonEvent->userEvent
+					);	
+				}
+
+				blockEvent = true;
+			}
+			else if (buttonEvent->IsUp())
+			{
+				sendButtonReleaseEvent = !isHybridModeControllerInput && !coopCamToggleBindPressed;
+				DBG
+				(
+					"Is NOT hybrid mode controller input: {}, "
+					"co-op cam togglel bind NOT pressed: {}, "
+					"sneak and toggle POV NOT pressed: {}, "
+					"emulated input: {}, "
+					"menus always open: {}, menu PID: {}, "
+					"cam active: {}, wait for toggle: {}, hybrid mode active: {}, "
+					"override key pressed: {}.",
+					!isHybridModeControllerInput,
+					!coopCamToggleBindPressed,
+					!sneakAndTogglePOVWerePressed,
+					emulatedKeyInput,
+					onlyAlwaysOpen,
+					glob.menuPID,
+					glob.cam->IsRunning(),
+					glob.cam->waitForToggle,
+					glob.hybridModeActive,
+					Util::IsKeyPressed(GlobalCoopData::P1_OVERRIDE_KEY)
+				);
+
+				// Reset hold times on release.
+				if (sneakBindEvent)
+				{
+					sneakBindHeldTime = -1.0f;
+				}
+
+				if (togglePOVBindEvent)
+				{
+					togglePOVBindHeldTime = -1.0f;
+				}
+			}
+
+			if (sendButtonReleaseEvent)
+			{
+				DBG
+				(
+					"{} bind released on its own. Event name: {}. "
+					"Allow through. Hybrid mode: {}, co-op cam toggle bind pressed: {}",
+					sneakBindEvent ? "Sneak" : "TogglePOV",
+					buttonEvent->userEvent,
+					glob.hybridModeActive,
+					coopCamToggleBindPressed
+				);
+
+				// Change to pressed (down) event.
+				buttonEvent->heldDownSecs = 0.0f;
+				buttonEvent->value = 1.0f;
+
+				float releaseTime = sneakBindEvent ? sneakBindHeldTime : togglePOVBindHeldTime;
+				if (releaseTime <= 0.0f)
+				{
+					releaseTime = 1.0f;
+				}
+
+				// NOTE:
+				// Necessary to also pair with a button-released event,
+				// otherwise the event may not trigger the desired effect here 
+				// or later when pressing and releasing the bind again.
+				RE::InputEvent* buttonEvent2 = 
+				(
+					RE::ButtonEvent::Create
+					(
+						*buttonEvent->device, 
+						buttonEvent->userEvent, 
+						buttonEvent->idCode, 
+						0.0f, 
+						releaseTime
+					)
+				);
+						
+				// Insert after the current event.
+				buttonEvent2->next = buttonEvent->next;
+				buttonEvent->next = buttonEvent2;
+				a_newEventChainedOut = true;
+			}
+			else
+			{
+				// Co-op camera was toggled or in hybrid mode, 
+				// so ignore the button event on release.
+				DBG
+				(
+					"{} bind released on its own. Event name: {}. Ignoring. "
+					"Allow through. Hybrid mode: {}, co-op cam toggle bind pressed: {}",
+					sneakBindEvent ? "Sneak" : "TogglePOV", 
+					buttonEvent->userEvent,
+					glob.hybridModeActive,
+					coopCamToggleBindPressed
+				);
+						
+				blockEvent = true;
+			}
+
+			return blockEvent;
+		}
+
 		bool MenuControlsHooks::CheckForP1DialogueControlInput(RE::InputEvent* a_inputEvent)
 		{
 			// Check if P1 is requesting control of dialogue
@@ -7588,7 +8255,8 @@ namespace ALYSLC
 					CheckForP1KeyboardTeleportReq(inputEvent) ||
 					CheckForP1ReviveReq(inputEvent) ||
 					CheckForP1QuickSaveReq(inputEvent) ||
-					CheckForMenuTriggeringInput(inputEvent, newEventChained)
+					CheckForMenuTriggeringInput(inputEvent, newEventChained) || 
+					CheckForP1CoopCamToggle(inputEvent, newEventChained)
 				);
 				if (shouldBlock)
 				{
@@ -9557,21 +10225,35 @@ namespace ALYSLC
 			}
 			else
 			{
+				// Do not remove if moving to self or not discarding the item while another player
+				// has their inventory copied over to P1, or if the item being moved 
+				// is a party-wide or quest item. Can still discard items (move to ref is none)
+				// such as gold.
+
+				// If the move to ref's inventory changes match P1's while another player
+				// has their inventory copied over to P1, it is the same as the other player
+				// moving the item to themselves, so do not remove the item.
+				auto p1InvChanges = a_this->GetInventoryChanges();
+				auto moveToRefInvChanges = 
+				(
+					a_moveToRef ? 
+					a_moveToRef->GetInventoryChanges() :
+					nullptr
+				);
 				shouldNotRemove = 
 				(
 					(a_moveToRef != a_this) && 
 					(
+						(moveToRefInvChanges == p1InvChanges) ||
 						(
-							glob.copiedPlayerDataTypes.all
-							(
-								CopyablePlayerDataTypes::kInventory
-							)
+							glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) &&
+							a_moveToRef
 						) ||
 						(
-							glob.copiedPlayerDataTypes.none
+							/*glob.copiedPlayerDataTypes.none
 							(
 								CopyablePlayerDataTypes::kInventory
-							) &&
+							) &&*/
 							(GlobalCoopData::IsCoopEntity(a_moveToRef)) && 
 							(
 								(Util::IsPartyWideItem(a_item)) ||
@@ -9580,10 +10262,39 @@ namespace ALYSLC
 						)
 					)
 				);
-
+				
+				DBG
+				(
+					"Trying to move {} of {} from P1 to {}. Inventory copied over to P1: {}. "
+					"Matching inventory changes: {} (exists: {}), moving to non-co-op entity: {}, "
+					"moving party-wide or quest item: {}, "
+					"Previous player in control of menus was {}.",
+					a_count,
+					a_item->GetName(),
+					a_moveToRef ? a_moveToRef->GetName() : "NONE",
+					glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory),
+					moveToRefInvChanges == p1InvChanges,
+					(bool)p1InvChanges,
+					glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) &&
+					a_moveToRef && 
+					!GlobalCoopData::IsCoopEntity(a_moveToRef),
+					(GlobalCoopData::IsCoopEntity(a_moveToRef)) && 
+					(
+						(Util::IsPartyWideItem(a_item)) ||
+						(a_extraList && a_extraList->HasQuestObjectAlias())
+					),
+					glob.prevMenuPID >= 0 ?
+					glob.coopPlayers[glob.prevMenuPID]->coopActor->GetName() : 
+					"NONE"
+				);
 				// This should not happen, as with no companion players in menus,
 				// P1's inventory should have been restored.
-				if (glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory))
+				if ((moveToRefInvChanges == p1InvChanges) ||
+					(
+						glob.copiedPlayerDataTypes.all(CopyablePlayerDataTypes::kInventory) &&
+						a_moveToRef && 
+						!GlobalCoopData::IsCoopEntity(a_moveToRef)
+					))
 				{
 					ERR
 					(
@@ -9970,22 +10681,6 @@ namespace ALYSLC
 				}
 				else
 				{
-					/*if (performingSprint)
-					{
-						RE::BSAnimationGraphManagerPtr manager{ };
-						a_this->GetAnimationGraphManager(manager);
-						if (manager)
-						{
-							manager->variableCache.updateLock.Lock();
-							for (const auto& info : manager->variableCache.variableCache)
-							{
-								DBG("Var name: {}.", info.variableName);
-							}
-
-							manager->variableCache.updateLock.Unlock();
-						}
-					}*/
-					
 					// Sync player actorstate sprint flag with ALYSLC's sprint player action state.
 					// Otherwise, P1 will stop sprinting after the AI driven toggle.
 					// Ensures the game handles stamina expenditure.
@@ -12045,7 +12740,15 @@ namespace ALYSLC
 			isManaged = a_p->tm->mph->IsManaged(a_projectileHandle);
 			if (isManaged)
 			{
-				const auto& projTrajType = a_p->tm->mph->GetInfo(a_projectileHandle)->trajType; 
+				const auto& projTrajType = a_p->tm->mph->GetInfo(a_projectileHandle)->trajType;
+				DBG
+				(
+					"{}: Traj type {} for {} (0x{:X}).",
+					a_p->coopActor->GetName(), 
+					!projTrajType, 
+					Util::GetEditorID(projectile->GetBaseObject()),
+					projectile->formID
+				); 
 				if (projTrajType == ProjectileTrajType::kHoming)
 				{
 					// Start homing in on the target once the trajectory apex is reached.
@@ -14623,7 +15326,6 @@ namespace ALYSLC
 				(
 					a_this->MENU_NAME, false
 				);
-				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
@@ -14633,40 +15335,56 @@ namespace ALYSLC
 					glob.mim->managerMenuPID,
 					opening, 
 					closing,
-					hasCopiedData
+					*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone
 				);
 
-				// Skip if control is/was not requested by a companion player when opening.
-				if (glob.lastResolvedMenuPID <= 0)
+				// Is companion player.
+				if (glob.lastResolvedMenuPID > 0)
 				{
-					return result;
-				}
+					const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+					const RE::BSFixedString menuName = a_this->MENU_NAME;
 
-				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-				const RE::BSFixedString menuName = a_this->MENU_NAME;
-
-				// Copy over player data after opening the menu.
-				GlobalCoopData::CopyOverCoopPlayerData
-				(
-					opening, menuName, p->coopActor->GetHandle(), nullptr
-				);
-				// Have to restore P1's inventory here 
-				// if the game ignores this call to open the menu.
-				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
-				{
-					DBG
-					(
-						"Restoring P1's inventory, "
-						"since the message to open the menu was ignored. RESULT: {}.",
-						result
-					);
+					// Copy over player data after opening the menu.
 					GlobalCoopData::CopyOverCoopPlayerData
 					(
-						false, menuName, p->coopActor->GetHandle(), nullptr
+						opening, menuName, p->coopActor->GetHandle(), nullptr
 					);
-				}
+					// Have to restore P1's inventory here 
+					// if the game ignores this call to open the menu.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						DBG
+						(
+							"Restoring P1's inventory, "
+							"since the message to open the menu was ignored. RESULT: {}.",
+							result
+						);
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						// Such lingering failed requests would set this player
+						// as controlling the menu for a valid subsequent request 
+						// from another player and fail to open the menu for the other player.
+						glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
+					}
 
-				return result;
+					return result;
+				}
+				else
+				{
+					// Skip if control is/was not requested by a companion player when opening.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+					}
+
+					return result;
+				}
 			}
 			else
 			{
@@ -15128,7 +15846,6 @@ namespace ALYSLC
 				(
 					a_this->MENU_NAME, false
 				);
-				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
@@ -15138,40 +15855,53 @@ namespace ALYSLC
 					glob.mim->managerMenuPID,
 					opening, 
 					closing,
-					hasCopiedData
+					*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone
 				);
 
-				// Skip if control is/was not requested by a companion player when opening.
-				if (glob.lastResolvedMenuPID <= 0)
+				// Is companion player.
+				if (glob.lastResolvedMenuPID > 0)
 				{
-					return result;
-				}
+					const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+					const RE::BSFixedString menuName = a_this->MENU_NAME;
 
-				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-				const RE::BSFixedString menuName = a_this->MENU_NAME;
-
-				// Copy over player data after opening the menu.
-				GlobalCoopData::CopyOverCoopPlayerData
-				(
-					opening, menuName, p->coopActor->GetHandle(), nullptr
-				);
-				// Have to restore P1's inventory here 
-				// if the game ignores this call to open the menu.
-				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
-				{
-					DBG
-					(
-						"Restoring P1's inventory, "
-						"since the message to open the menu was ignored. RESULT: {}.",
-						result
-					);
+					// Copy over player data after opening the menu.
 					GlobalCoopData::CopyOverCoopPlayerData
 					(
-						false, menuName, p->coopActor->GetHandle(), nullptr
+						opening, menuName, p->coopActor->GetHandle(), nullptr
 					);
-				}
+					// Have to restore P1's inventory here 
+					// if the game ignores this call to open the menu.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						DBG
+						(
+							"Restoring P1's inventory, "
+							"since the message to open the menu was ignored. RESULT: {}.",
+							result
+						);
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
+					}
 
-				return result;
+					return result;
+				}
+				else
+				{
+					// Skip if control is/was not requested by a companion player when opening.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+					}
+
+					return result;
+				}
 			}
 			else
 			{
@@ -15263,7 +15993,7 @@ namespace ALYSLC
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				if (glob.lastResolvedMenuPID > 0)
 				{
-					p->mm->interactionPackageRunning = false;
+					//p->mm->interactionPackageRunning = false;
 					p->pam->SetAndEveluatePackage();
 					p->coopActor->StopInteractingQuick(true);
 					// IMPORTANT:
@@ -15286,52 +16016,70 @@ namespace ALYSLC
 					}
 				}
 			}
-
-			// Ignore subsequent hide messages once P1's data is restored.
-			closing &= hasCopiedData;
-			// Skip if control is/was not requested by co-op companion player,
-			// or if not opening or closing.
-			if ((glob.lastResolvedMenuPID <= 0) || (!opening && !closing))
+			
+			// Is companion player.
+			if (glob.lastResolvedMenuPID > 0)
 			{
-				return _ProcessMessage(a_this, a_message);
-			}
-
-			const RE::BSFixedString menuName = a_this->MENU_NAME;
-			RE::TESForm* assocForm = nullptr;
-			// Set furniture (crafting station) as the associated form.
-			if (a_this->subMenu)
-			{
-				assocForm = a_this->subMenu->furniture;
-			}
-
-			// Copy over player data.
-			GlobalCoopData::CopyOverCoopPlayerData
-			(
-				opening, menuName, p->coopActor->GetHandle(), assocForm
-			);
-
-			// Calculate the result of this message, and if it isn't handled, restore P1's data.
-			auto result = _ProcessMessage(a_this, a_message);
-			if (opening)
-			{
-				// Have to restore P1's inventory here 
-				// if the game ignores this call to open the menu.
-				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+				// No need to handle subsequent hide messages once P1's data is restored.
+				closing &= hasCopiedData;
+				// Skip if not opening or closing.
+				if (!opening && !closing)
 				{
+					return _ProcessMessage(a_this, a_message);
+				}
+
+				const RE::BSFixedString menuName = a_this->MENU_NAME;
+				RE::TESForm* assocForm = nullptr;
+				// Set furniture (crafting station) as the associated form.
+				if (a_this->subMenu)
+				{
+					assocForm = a_this->subMenu->furniture;
+				}
+
+				// Copy over player data.
+				GlobalCoopData::CopyOverCoopPlayerData
+				(
+					opening, menuName, p->coopActor->GetHandle(), assocForm
+				);
+
+				// Calculate the result of this message, and if it isn't handled, restore P1's data.
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// Have to restore P1's inventory here 
+					// if the game ignores this call to open the menu.
 					DBG
 					(
 						"Restoring P1's inventory, "
 						"since the message to open the menu was ignored. RESULT: {}.",
 						result
 					);
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(p->playerID);
 					GlobalCoopData::CopyOverCoopPlayerData
 					(
 						false, menuName, p->coopActor->GetHandle(), assocForm
 					);
 				}
+
+				return result;
+			}
+			else
+			{
+				// Skip if control is/was not requested by co-op companion player.
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+				}
+				
+				return result;
 			}
 
-			return result;
+			return _ProcessMessage(a_this, a_message);
 		}
 
 		RE::UI_MESSAGE_RESULTS DialogueMenuHooks::ProcessMessage
@@ -15851,8 +16599,8 @@ namespace ALYSLC
 				glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
 			);
 
-			// Control is/was requested by co-op companion player.
-			if (glob.lastResolvedMenuPID != -1 && glob.lastResolvedMenuPID != 0)
+			// Is companion player.
+			if (glob.lastResolvedMenuPID > 0)
 			{
 				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
 				const auto& coopP1 = glob.coopPlayers[0];
@@ -15876,7 +16624,16 @@ namespace ALYSLC
 					}
 
 					a_this->isVampire = true;
-					return _ProcessMessage(a_this, a_message);
+
+					auto result = _ProcessMessage(a_this, a_message);
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(p->playerID);
+					}
+				
+					return result;
 				}
 				else if (Util::IsVampireLord(coopP1->coopActor.get()))
 				{
@@ -15940,22 +16697,22 @@ namespace ALYSLC
 					// Have to restore P1's favorited items here 
 					// if the game ignores this call to open the menu.
 					auto result = _ProcessMessage(a_this, a_message);
-					if (opening)
+					if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
 					{
-						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
-						{
-							DBG
-							(
-								"Restoring P1's favorites, "
-								"since the message to open the FavoritesMenu was not handled. "
-								"RESULT: {}.", 
-								result
-							);
-							GlobalCoopData::CopyOverCoopPlayerData
-							(
-								false, menuName, p->coopActor->GetHandle(), nullptr
-							);
-						}
+						DBG
+						(
+							"Restoring P1's favorites, "
+							"since the message to open the FavoritesMenu was not handled. "
+							"RESULT: {}.", 
+							result
+						);
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(p->playerID);
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
 					}
 					
 					return result;
@@ -15966,6 +16723,15 @@ namespace ALYSLC
 				// Set favorited forms data for P1, including magical favorites.
 				const auto& coopP1 = glob.coopPlayers[0];
 				coopP1->em->UpdateFavoritedFormsLists(false);
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(coopP1->playerID);
+				}
+
+				return result;
 			}
 
 			return _ProcessMessage(a_this, a_message);
@@ -16029,7 +16795,6 @@ namespace ALYSLC
 				(
 					a_this->MENU_NAME, false
 				);
-				bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
 				DBG
 				(
 					"Current menu PID: {}, resolved menu PID: {}, manager PID: {}. "
@@ -16039,40 +16804,53 @@ namespace ALYSLC
 					glob.mim->managerMenuPID,
 					opening, 
 					closing,
-					hasCopiedData
+					*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone
 				);
 
-				// Skip if control is/was not requested by a companion player when opening.
-				if (glob.lastResolvedMenuPID <= 0)
+				// Is companion player.
+				if (glob.lastResolvedMenuPID > 0)
 				{
-					return result;
-				}
+					const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+					const RE::BSFixedString menuName = a_this->MENU_NAME;
 
-				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-				const RE::BSFixedString menuName = a_this->MENU_NAME;
-
-				// Copy over player data after opening the menu.
-				GlobalCoopData::CopyOverCoopPlayerData
-				(
-					opening, menuName, p->coopActor->GetHandle(), nullptr
-				);
-				// Have to restore P1's inventory here 
-				// if the game ignores this call to open the menu.
-				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
-				{
-					DBG
-					(
-						"Restoring P1's inventory, "
-						"since the message to open the menu was ignored. RESULT: {}.",
-						result
-					);
+					// Copy over player data after opening the menu.
 					GlobalCoopData::CopyOverCoopPlayerData
 					(
-						false, menuName, p->coopActor->GetHandle(), nullptr
+						opening, menuName, p->coopActor->GetHandle(), nullptr
 					);
-				}
+					// Have to restore P1's inventory here 
+					// if the game ignores this call to open the menu.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						DBG
+						(
+							"Restoring P1's inventory, "
+							"since the message to open the menu was ignored. RESULT: {}.",
+							result
+						);
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(p->playerID);
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
+					}
 
-				return result;
+					return result;
+				}
+				else
+				{
+					// Skip if control is/was not requested by a companion player when opening.
+					if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+					{
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+					}
+
+					return result;
+				}
 			}
 			else
 			{
@@ -16383,8 +17161,8 @@ namespace ALYSLC
 				glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
 			);
 
-			// Control is/was requested by co-op companion player.
-			if (glob.lastResolvedMenuPID != -1 && glob.lastResolvedMenuPID != 0)
+			// Is companion player.
+			if (glob.lastResolvedMenuPID > 0)
 			{
 				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
 				closing &= hasCopiedData;
@@ -16437,22 +17215,22 @@ namespace ALYSLC
 					// Have to restore P1's favorited items here 
 					// if the game ignores this call to open the menu.
 					auto result = _ProcessMessage(a_this, a_message);
-					if (opening)
+					if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
 					{
-						if (result != RE::UI_MESSAGE_RESULTS::kHandled)
-						{
-							DBG
-							(
-								"Restoring P1's magic favorites, "
-								"since the message to open the MagicMenu was not handled. "
-								"RESULT: {}.",
-								result
-							);
-							GlobalCoopData::CopyOverCoopPlayerData
-							(
-								false, menuName, p->coopActor->GetHandle(), nullptr
-							);
-						}
+						DBG
+						(
+							"Restoring P1's magic favorites, "
+							"since the message to open the MagicMenu was not handled. "
+							"RESULT: {}.",
+							result
+						);
+						// We don't want failed requests to linger 
+						// since we didn't modify the queue when resolving the menu PID above.
+						glob.moarm->ClearRequests(p->playerID);
+						GlobalCoopData::CopyOverCoopPlayerData
+						(
+							false, menuName, p->coopActor->GetHandle(), nullptr
+						);
 					}
 
 					return result;
@@ -16463,6 +17241,15 @@ namespace ALYSLC
 				// Set favorited forms data for P1, including magical favorites.
 				const auto& coopP1 = glob.coopPlayers[0];
 				coopP1->em->UpdateFavoritedFormsLists(false);
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(coopP1->playerID);
+				}
+
+				return result;
 			}
 
 			return _ProcessMessage(a_this, a_message);
@@ -16993,7 +17780,7 @@ namespace ALYSLC
 				if (glob.menuPID > 0)
 				{
 					const auto& p = glob.coopPlayers[glob.menuPID];
-					p->mm->interactionPackageRunning = false;
+					//p->mm->interactionPackageRunning = false;
 					p->pam->SetAndEveluatePackage();
 					p->coopActor->StopInteractingQuick(true);
 					// IMPORTANT:
@@ -17640,58 +18427,76 @@ namespace ALYSLC
 				glob.menuPID, glob.lastResolvedMenuPID, opening, closing, hasCopiedData
 			);
 
-			// Ignore subsequent hide messages once P1's data is restored.
-			closing &= hasCopiedData;
-			// Skip if control is/was not requested by co-op companion player,
-			// or if not opening or closing.
-			if ((glob.lastResolvedMenuPID <= 0) || (!opening && !closing))
+			// Is companion player.
+			if (glob.lastResolvedMenuPID > 0)
 			{
-				return _ProcessMessage(a_this, a_message);
-			}
-
-			const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
-			const RE::BSFixedString menuName = a_this->MENU_NAME;
-			RE::TESForm* assocForm = nullptr;
-			// Set speaker as associated form.
-			auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
-			if ((menuTopicManager) && 
-				(menuTopicManager->speaker.get() || menuTopicManager->lastSpeaker.get()))
-			{
-				auto speaker = 
-				(
-					menuTopicManager->speaker.get() ? 
-					menuTopicManager->speaker.get() : 
-					menuTopicManager->lastSpeaker.get()
-				);
-				assocForm = speaker.get();
-			}
-
-			// Copy over player data.
-			GlobalCoopData::CopyOverCoopPlayerData
-			(
-				opening, menuName, p->coopActor->GetHandle(), assocForm
-			);
-
-			auto result = _ProcessMessage(a_this, a_message);
-			if (opening)
-			{
-				// Have to restore P1's AVs here if the game ignores this call to open the menu.
-				if (result != RE::UI_MESSAGE_RESULTS::kHandled)
+				// Ignore subsequent hide messages once P1's data is restored.
+				closing &= hasCopiedData;
+				// Skip if not opening or closing.
+				if (!opening && !closing)
 				{
+					return _ProcessMessage(a_this, a_message);
+				}
+
+				const auto& p = glob.coopPlayers[glob.lastResolvedMenuPID];
+				const RE::BSFixedString menuName = a_this->MENU_NAME;
+				RE::TESForm* assocForm = nullptr;
+				// Set speaker as associated form.
+				auto menuTopicManager = RE::MenuTopicManager::GetSingleton(); 
+				if ((menuTopicManager) && 
+					(menuTopicManager->speaker.get() || menuTopicManager->lastSpeaker.get()))
+				{
+					auto speaker = 
+					(
+						menuTopicManager->speaker.get() ? 
+						menuTopicManager->speaker.get() : 
+						menuTopicManager->lastSpeaker.get()
+					);
+					assocForm = speaker.get();
+				}
+
+				// Copy over player data.
+				GlobalCoopData::CopyOverCoopPlayerData
+				(
+					opening, menuName, p->coopActor->GetHandle(), assocForm
+				);
+
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// Have to restore P1's AVs here if the game ignores this call to open the menu.
 					DBG
 					(
 						"Restoring AVs for {} and P1, "
 						"since the message to open the menu was ignored. RESULT: {}.", 
 						p->coopActor->GetName(), result
 					);
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(p->playerID);
 					GlobalCoopData::CopyOverCoopPlayerData
 					(
 						false, menuName, p->coopActor->GetHandle(), assocForm
 					);
 				}
+
+				return result;
+			}
+			else
+			{
+				// Skip if control is/was not requested by co-op companion player
+				auto result = _ProcessMessage(a_this, a_message);
+				if (opening && result != RE::UI_MESSAGE_RESULTS::kHandled)
+				{
+					// We don't want failed requests to linger 
+					// since we didn't modify the queue when resolving the menu PID above.
+					glob.moarm->ClearRequests(glob.lastResolvedMenuPID);
+				}
+
+				return result;
 			}
 
-			return result;
+			return _ProcessMessage(a_this, a_message);
 		}
 
 //====================

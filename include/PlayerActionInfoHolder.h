@@ -639,6 +639,10 @@ namespace ALYSLC
 				{ 
 					InputAction::kRThumb 
 				},
+				// NEW CONTROL SCHEME
+				/*{ 
+					InputAction::kLThumb 
+				},*/
 				// Shout
 				{ 
 					InputAction::kRShoulder,
@@ -1178,6 +1182,11 @@ namespace ALYSLC
 			(
 				TriggerFlag::kDefault
 			),
+			// NEW CONTROL SCHEME
+			/*TriggerFlags
+			(
+				TriggerFlag::kMinHoldTime
+			),*/
 			// Shout
 			TriggerFlags
 			(

@@ -511,22 +511,35 @@ namespace ALYSLC
 				REL::Relocation<uintptr_t> vtbl{ RE::VTABLE_MenuControls[0] };
 				_ProcessEvent = vtbl.write_vfunc(0x01, ProcessEvent);
 				INF("Installed ProcessEvent() hook.");
+				coopCamToggleBindPressed = 
 				debugMenuBindPressed = 
 				pauseAndWaitWerePressed = 
+				sneakAndTogglePOVWerePressed = 
 				summoningMenuBindPressed = false;
 				pauseBindHeldTime =
+				sneakBindHeldTime = 
+				togglePOVBindHeldTime =
 				waitBindHeldTime = -1.0f;
 			}
 			
+			// Was the bind for toggling singleplayer mode/co-op camera pressed?
+			// Set as 'Sneak' + 'POV Switch' on controller or keyboard.
+			static inline bool coopCamToggleBindPressed = false;
 			// Was the bind for the co-op debug menu pressed and released?
+			// Set as 'Pause' + 'Wait' on either controller or keyboard.
 			static inline bool debugMenuBindPressed = false;
-			// Were both the Pause and Wait binds pressed and held at the same time.
+			// Were both the Pause and Wait binds pressed and held at the same time?
 			static inline bool pauseAndWaitWerePressed;
+			// Were both the Sneak and POV Toggle binds pressed and held at the same time?
+			static inline bool sneakAndTogglePOVWerePressed;
 			// Was the bind for the co-op summoning menu pressed and released?
+			// Set as 'Wait' + 'Pause' on either controller or keyboard.
 			static inline bool summoningMenuBindPressed = false;
-			// Hold times for the 'Pause' and 'Wait' binds.
+			// Hold times for the 'Pause', 'POV Switch', 'Sneak', and 'Wait' binds.
 			// -1 if not held.
 			static inline float pauseBindHeldTime = -1.0f;
+			static inline float sneakBindHeldTime = -1.0f;
+			static inline float togglePOVBindHeldTime = -1.0f;
 			static inline float waitBindHeldTime = -1.0f;
 
 		private:
@@ -546,6 +559,16 @@ namespace ALYSLC
 			// in the outparam.
 			// Return true if the event should be blocked.
 			static bool CheckForMenuTriggeringInput
+			(
+				RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
+			);
+			// Check if P1 is trying to toggle the co-op camera/singleplayer mode on or off.
+			// If the correct bind is pressed, toggle the co-op camera back on 
+			// if it is off while in co-op, and toggle singleplayer mode on/off if not in co-op.
+			// Store whether or not an additional input event was chained to trigger a menu
+			// in the outparam.
+			// Return true if the even should be blocked.
+			static bool CheckForP1CoopCamToggle
 			(
 				RE::InputEvent* a_inputEvent, bool& a_newEventChainedOut
 			);

@@ -1654,7 +1654,6 @@ namespace ALYSLC
 		requestedToParaglide = false;
 		sendingP1MotionDrivenEvents = false;
 		spellcastingCancelled = false;
-		startedActivationCycling = false;
 		weapMagReadied = false;
 		// Ints.
 		lastAnimEventID = 0;
@@ -7519,10 +7518,10 @@ namespace ALYSLC
 
 					// Carryweight increase per level.
 					float carryWeightIncPerLevel = 5.0f;
-					valueOpt = Util::GetGameSettingFloat("fLevelUpCarryWeightMod");
-					if (valueOpt.has_value())
+					auto valueOpt2 = Util::GetGameSettingFloat("fLevelUpCarryWeightMod");
+					if (valueOpt2.has_value())
 					{
-						carryWeightIncPerLevel = valueOpt.value();
+						carryWeightIncPerLevel = valueOpt2.value();
 					}
 
 					// Check how many times stamina was leveled 

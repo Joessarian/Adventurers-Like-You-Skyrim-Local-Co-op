@@ -268,6 +268,7 @@ namespace ALYSLC
 		aimPitchManuallyAdjusted = false;
 		attemptDiscovery = false;
 		dontMoveSet = true;
+		drawnBeforeInteraction = false;
 		faceCrosshairPos = false;
 		inRangeOfUndiscoveredMarker = false;
 		interactionInRange = false;
@@ -2314,7 +2315,11 @@ namespace ALYSLC
 							(
 								(p->tm->aimMode == AimMode::kTwinStick) && 
 								(
-									(targetActorPtr && reqFaceTarget) ||
+									(
+										targetActorPtr && 
+										reqFaceTarget &&
+										p->tm->choseAimLockOnTarget
+									) ||
 									(
 										p->tm->rmm->isGrabbing &&
 										p->pam->IsPerforming(InputAction::kGrabObject)
@@ -2548,6 +2553,47 @@ namespace ALYSLC
 				)
 			)
 		};
+
+		// REMOVE when done debugging.
+		/*if (!p->isPlayer1)
+		{
+			DBG
+			(
+				"{}: Motion driven: {}, animation driven: {}, synced: {}, furniture: {}, idle: {}. "
+				"should start/stop moving: {}, {}, LS moved: {}, "
+				"interaction package running: {}, package done: {}, low proc flags: 0b{:B}, "
+				"current package: {} (0x{:X}), movement blocked: {}.",
+				coopActor->GetName(),
+				p1MotionDriven, 
+				coopActor->IsAnimationDriven(),
+				isSynced,
+				Util::HandleIsValid(coopActor->GetOccupiedFurniture()) ? 
+				coopActor->GetOccupiedFurniture().get()->GetName() : 
+				"NONE",
+				coopActor->currentProcess &&
+				coopActor->currentProcess->middleHigh && 
+				coopActor->currentProcess->middleHigh->furnitureIdle ?
+				Util::GetEditorID(coopActor->currentProcess->middleHigh->furnitureIdle) :
+				"NONE",
+				shouldStartMoving,
+				shouldStopMoving,
+				p->lsMoved,
+				interactionPackageRunning,
+				coopActor->currentProcess->lowProcessFlags.all
+				(
+					RE::AIProcess::LowProcessFlags::kPackageDoneOnce
+				),
+				*coopActor->currentProcess->lowProcessFlags,
+				coopActor->GetCurrentPackage() ? 
+				coopActor->GetCurrentPackage()->GetName() :
+				"NONE",
+				coopActor->GetCurrentPackage() ? 
+				coopActor->GetCurrentPackage()->formID : 
+				0xDEAD,
+				coopActor->boolFlags.all(RE::Actor::BOOL_FLAGS::kMovementBlocked)
+			);
+		}*/
+
 		// Clear movement offset and do not adjust P1's movement at all
 		// when a package is running or a scene is playing.
 		if (p1ExtPackageRunning)
@@ -2606,8 +2652,11 @@ namespace ALYSLC
 		}
 		else if (interactionPackageRunning && coopActor->currentProcess)
 		{
+			auto p1 = RE::PlayerCharacter::GetSingleton();
+
 			// Ensure the player can move first.
 			SetDontMove(false);
+
 			float xyDistToInteractionPos = Util::GetXYDistance
 			(
 				coopActor->data.location, interactionPackageEntryPos
@@ -2628,49 +2677,54 @@ namespace ALYSLC
 				}
 			}
 			
+			// Furniture and package data.
+			auto interactionFurniture = coopActor->GetOccupiedFurniture(); 
+			bool occupyingFurniture = Util::HandleIsValid(interactionFurniture);
+			auto furnitureIdle = 
+			(
+				coopActor->currentProcess->middleHigh ?
+				coopActor->currentProcess->middleHigh->furnitureIdle :
+				nullptr
+			);
+			bool packageDone = coopActor->currentProcess->lowProcessFlags.all
+			(
+				RE::AIProcess::LowProcessFlags::kPackageDoneOnce
+			);
+			// Execute interaction package again 
+			// if the player does not have any occupied furniture 
+			// after setting the interaction package target and position earlier.
+			auto baseObj = 
+			(
+				occupyingFurniture ?
+				interactionFurniture.get()->GetBaseObject() :
+				nullptr
+			);
+			bool isWorkBenchFurniture = 
+			(
+				baseObj &&
+				baseObj->Is(RE::FormType::Furniture) && 
+				baseObj->As<RE::TESFurniture>()->workBenchData.benchType.get() != 
+				RE::TESFurniture::WorkBenchData::BenchType::kNone
+			);
+			bool isBed = 
+			(
+				baseObj &&
+				baseObj->Is(RE::FormType::Furniture) && 
+				baseObj->As<RE::TESFurniture>()->furnFlags.all
+				(
+					RE::TESFurniture::ActiveMarker::kCanSleep
+				)
+			);
+
 			// Stop when close enough for the package 
 			// to kick in and start the activation animation.
 			if (xyDistToInteractionPos < autoMoveRadius)
 			{
-				auto p1 = RE::PlayerCharacter::GetSingleton();
 				auto ui = RE::UI::GetSingleton();
 				interactionInRange = true;
 				// Animation driven movement during interaction package, so remove offset directly.
 				Util::NativeFunctions::ClearKeepOffsetFromActor(movementActorPtr.get());
-				bool packageDone = coopActor->currentProcess->lowProcessFlags.all
-				(
-					RE::AIProcess::LowProcessFlags::kPackageDoneOnce
-				);
-
-				// Execute interaction package again 
-				// if the player does not have any occupied furniture 
-				// after setting the interaction package target and position earlier.
-				auto interactionFurniture = coopActor->GetOccupiedFurniture(); 
-				bool occupyingFurniture = Util::HandleIsValid(interactionFurniture);
-				auto baseObj = 
-				(
-					occupyingFurniture ?
-					interactionFurniture.get()->GetBaseObject() :
-					nullptr
-				);
-				bool isWorkBenchFurniture = 
-				(
-					baseObj &&
-					baseObj->Is(RE::FormType::Furniture) && 
-					baseObj->As<RE::TESFurniture>()->workBenchData.benchType.get() != 
-					RE::TESFurniture::WorkBenchData::BenchType::kNone
-				);
-				bool isBed = 
-				(
-					baseObj &&
-					baseObj->Is(RE::FormType::Furniture) && 
-					baseObj->As<RE::TESFurniture>()->furnFlags.all
-					(
-						RE::TESFurniture::ActiveMarker::kCanSleep
-					)
-				);
-
-				if (!occupyingFurniture && !packageDone) 
+				if (!occupyingFurniture && !packageDone && !interactionPackageRunning) 
 				{
 					p->pam->SetAndEveluatePackage
 					(
@@ -2774,40 +2828,6 @@ namespace ALYSLC
 							Util::SetPlayerAIDriven(true);
 						}
 					}
-
-					// Package completed once and the player is trying to move, 
-					// so switch back to the default package to stop interacting.
-					if (p->lsMoved && packageDone)
-					{
-						p->pam->SetAndEveluatePackage();
-						// Play exit animation.
-						coopActor->StopInteractingQuick(false);
-						// Clear out P1's current furniture handle if was set to this player's
-						// interaction target before opening a menu.
-						bool shouldClearP1FurnitureHandle = 
-						(
-							(isWorkBenchFurniture || isBed) && 
-							(
-								p1 && 
-								p1->currentProcess &&
-								p1->currentProcess->middleHigh &&
-								Util::HandleIsValid(interactionFurniture) && 
-								p1->currentProcess->middleHigh->occupiedFurniture == 
-								interactionFurniture
-							)	
-						);
-						if (shouldClearP1FurnitureHandle)
-						{
-							DBG
-							(
-								"{}: Clear P1's occupied furniture handle ({}) "
-								"when done interacting.",
-								coopActor->GetName(),
-								interactionFurniture.get()->GetName()
-							);
-							p1->StopInteractingQuick(true);
-						}
-					}
 				}
 			}
 			else if (!interactionInRange)
@@ -2869,6 +2889,57 @@ namespace ALYSLC
 					0.0f
 				);
 			}
+
+			// Package completed once and the player is trying to move, 
+			// so switch back to the default package to stop interacting.
+			bool canStopInteracting = 
+			(
+				(p->lsMoved) && 
+				(
+					(packageDone) || 
+					(interactionPackageRunning && !occupyingFurniture && !furnitureIdle)
+				)	
+			);
+			if (canStopInteracting)
+			{
+				DBG
+				(
+					"{}: Stop interacting with furniture ({}), package done: {}.",
+					coopActor->GetName(),
+					Util::HandleIsValid(interactionFurniture) ? 
+					interactionFurniture.get()->GetName() : 
+					"NONE",
+					packageDone
+				);
+				p->pam->SetAndEveluatePackage();
+				// Play exit animation.
+				coopActor->StopInteractingQuick(false);
+				// Clear out P1's current furniture handle if was set to this player's
+				// interaction target before opening a menu.
+				bool shouldClearP1FurnitureHandle = 
+				(
+					(isWorkBenchFurniture || isBed) && 
+					(
+						p1 && 
+						p1->currentProcess &&
+						p1->currentProcess->middleHigh &&
+						Util::HandleIsValid(interactionFurniture) && 
+						p1->currentProcess->middleHigh->occupiedFurniture == 
+						interactionFurniture
+					)	
+				);
+				if (shouldClearP1FurnitureHandle)
+				{
+					DBG
+					(
+						"{}: Clear P1's occupied furniture handle ({}) "
+						"when done interacting.",
+						coopActor->GetName(),
+						interactionFurniture.get()->GetName()
+					);
+					p1->StopInteractingQuick(true);
+				}
+			}
 		}
 		else if (isSynced || isMounting || coopActor->IsInKillMove())
 		{
@@ -2885,20 +2956,6 @@ namespace ALYSLC
 			// and is not directed by this manager.
 			SetDontMove(false);
 			ClearKeepOffsetFromActor();
-
-			// Exit furniture for P1 if moving the left stick 
-			// while the furniture camera state is active.
-			if (p->isPlayer1 && p->lsMoved)
-			{
-				auto playerCam = RE::PlayerCamera::GetSingleton();
-				if (playerCam && 
-					playerCam->currentState &&
-					playerCam->currentState->id != RE::CameraState::kFurniture)
-				{
-					// Play exit animation.
-					coopActor->StopInteractingQuick(false);
-				}
-			}
 		}
 		else if (menuStopsMovement || 
 				 coopActor->IsInRagdollState() ||
@@ -3007,6 +3064,7 @@ namespace ALYSLC
 			}
 
 			// Manually rotate to avoid slow motion shifting when the Z rotation offset is small.
+			midHighProc->rotationSpeed.z = 0.0f;
 			movementActorPtr->SetHeading
 			(
 				Util::NormalizeAng0To2Pi
@@ -3014,15 +3072,14 @@ namespace ALYSLC
 					movementActorPtr->data.angle.z + rawYawOffset
 				)
 			);
-			midHighProc->rotationSpeed.z = 0.0f;
 
-			if (p->isPlayer1 && ALYSLC::AlternateConversationCameraCompat::g_installed)
+			/*if (p->isPlayer1 && ALYSLC::AlternateConversationCameraCompat::g_installed)
 			{
 				movementActorPtr->SetHeading
 				(
 					p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
 				);
-			}
+			}*/
 		}
 		else
 		{
@@ -4317,7 +4374,13 @@ namespace ALYSLC
 			// P2 cannot mine ore since mining is performed via the Papyrus MineOreScript
 			// and implements this functionality for P1 only.
 			bool isMining = false;
-			if (coopActor->GetOccupiedFurniture())
+			bool inFurnitureIdle =
+			(
+				coopActor->currentProcess &&
+				coopActor->currentProcess->middleHigh &&
+				coopActor->currentProcess->middleHigh->furnitureIdle
+			); 
+			if (Util::HandleIsValid(coopActor->GetOccupiedFurniture()))
 			{
 				auto furniturePtr = Util::GetRefrPtrFromHandle(coopActor->GetOccupiedFurniture());
 				auto furniture = 
@@ -4367,6 +4430,8 @@ namespace ALYSLC
 				(!p1ExtPackageRunning) && 
 				(
 					p->pam->sendingP1MotionDrivenEvents ||
+					isAnimDriven ||
+					inFurnitureIdle ||
 					isMounted ||
 					isMining ||
 					isRagdolled ||
@@ -4380,13 +4445,14 @@ namespace ALYSLC
 			{
 				DBG
 				(
-					"{} is anim driven: {}, mounted: {}, "
+					"{} is anim driven: {}, in furniture idle: {}, mounted: {}, "
 					"ragdolled: {}, synced: {}, paragliding: {}. "
 					"Sending motion driven events: {}, "
 					"menu stops movement: {}, attempt discovery: {}. "
 					"REMOVE AI driven.",
 					glob.player1Actor->GetName(), 
 					isAnimDriven, 
+					inFurnitureIdle,
 					isMounted, 
 					isRagdolled, 
 					isSynced, 
@@ -4458,15 +4524,41 @@ namespace ALYSLC
 		{
 			interactionInRange = false;
 		}
-		interactionPackageRunning = 
-		(
-			coopActor->currentProcess && p->pam->GetCurrentPackage() == interactionPackage
-		);
 
-		if (coopActor->IsInRagdollState() && interactionPackageRunning)
+		// Handle re-drawing weapons once an interaction animation ends.
+		if (p->isPlayer1)
 		{
-			interactionPackageRunning = false;
-			p->pam->SetAndEveluatePackage(p->pam->GetDefaultPackage());
+			if (drawnBeforeInteraction &&
+				!coopActor->GetOccupiedFurniture() && 
+				!coopActor->IsWeaponDrawn())
+			{
+				p->em->ReEquipHandForms();
+				p->pam->ReadyWeapon(true);
+				drawnBeforeInteraction = false;
+			}
+		}
+		else
+		{
+			interactionPackageRunning = 
+			(
+				coopActor->currentProcess && p->pam->GetCurrentPackage() == interactionPackage
+			);
+
+			if (coopActor->IsInRagdollState() && interactionPackageRunning)
+			{
+				interactionPackageRunning = false;
+				p->pam->SetAndEveluatePackage(p->pam->GetDefaultPackage());
+			}
+
+			if (drawnBeforeInteraction &&
+				wasInteractionPackageRunning && 
+				!interactionPackageRunning)
+			{
+				DBG("{}: Ready weapons after interaction.", coopActor->GetName());
+				p->em->ReEquipHandForms();
+				p->pam->ReadyWeapon(true);
+				drawnBeforeInteraction = false;
+			}
 		}
 
 		// Stop moving if currently moving and not dodging, 

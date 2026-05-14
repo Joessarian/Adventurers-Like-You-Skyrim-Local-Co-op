@@ -2353,6 +2353,9 @@ namespace ALYSLC
 		// Also acts as a failsafe measure to ensure the 'dead' player stays 'dead' 
 		// and doesn't get up as if the revive mechanic were some kind of cheap joke (it is).
 		bool partyWiped = false;
+		// P1 can use ALYSLC's binds, camera, and movement system while in singleplayer.
+		// Essentially P1 behaves as they do in co-op without summoning any other players.
+		bool singleplayerModeActive = false;
 		// Default crosshair activation pick range.
 		// Saved once when first loading a save 
 		// and then restored after a player releases the 'Activate' bind

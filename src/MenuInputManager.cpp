@@ -3966,7 +3966,15 @@ namespace ALYSLC
 		{
 			// Hotkey the selected form, if any.
 			// No emulated input to send.
-			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+			if (glob.cdh->GetAnalogStickState(managerMenuDID, false).normMag > 0.0f)
+			{
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+			}
+			else
+			{
+				// Otherwise, send the input as usual to assign to a group.
+				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+			}
 		}
 		else 
 		{

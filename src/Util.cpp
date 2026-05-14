@@ -336,7 +336,8 @@ namespace ALYSLC
 				p1->WouldBeStealing(a_refr)
 			);
 			if ((a_refr->IsLocked() || a_refr->IsDead()) || 
-				(baseObj && baseObj->As<RE::TESObjectDOOR>()))
+				(baseObj && baseObj->As<RE::TESObjectDOOR>()) ||
+				(baseObj && baseObj->As<RE::TESFurniture>()))
 			{
 				return false;
 			}

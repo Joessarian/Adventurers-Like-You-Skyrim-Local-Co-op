@@ -90,7 +90,6 @@ namespace ALYSLC
 		lockInteriorOrientationOnInit = false;
 		lockOnTargetInSight = false;
 		movingToDialogueStartPos = false;
-		toggleBindPressedWhileWaiting = false;
 		waitForToggle = false;
 		// Positional offset floats.
 		avgPlayerHeight = 100.0f;
@@ -319,8 +318,6 @@ namespace ALYSLC
 		Util::SetPlayerAIDriven(false);
 		// Reset third person camera orientation.
 		Util::ResetTPCamOrientation();
-		// Reset toggle press flag every time before pausing.
-		toggleBindPressedWhileWaiting = false;
 
 		// Reset fade on handled objects.
 		ResetFadeAndClearObstructions();
@@ -343,6 +340,24 @@ namespace ALYSLC
 		UpdatePlayerFadeAmounts(true);
 		// Reset fade and clear obstruction data.
 		ResetFadeAndClearObstructions();
+
+		// Make sure P1's managers are running once enabled.
+		bool shouldEnableP1Managers = 
+		(
+			(glob.globalDataInit && glob.player1DID != -1) &&
+			(
+				(!glob.coopSessionActive && glob.singleplayerModeActive) ||
+				(glob.allPlayersInit && glob.coopSessionActive && glob.player1DID != -1)
+			)
+		);
+		if (shouldEnableP1Managers)
+		{
+			const auto& coopP1 = glob.coopPlayers[glob.player1DID];
+			if (!coopP1->isDowned)
+			{
+				coopP1->RequestStateChange(ManagerState::kRunning);
+			}
+		}
 	}
 
 	void CameraManager::RefreshData()
@@ -467,8 +482,13 @@ namespace ALYSLC
 			return currentState;
 		}
 
+		if (waitForToggle || !glob.coopSessionActive)
+		{
+			return currentState;
+		}
+
 		bool allPlayersValid = false;
-		if (glob.coopSessionActive && glob.livingPlayers > 1)
+		if (glob.livingPlayers > 1)
 		{
 			// Maintain paused state when changing POV.
 			if (isTogglingPOV)
@@ -570,6 +590,7 @@ namespace ALYSLC
 			// Next, when waiting to toggle the camera back on, 
 			// ensure that all menus that pause the game are closed
 			// and that the cam toggle bind was released.
+			/*
 			if (allPlayersValid && waitForToggle)
 			{
 				auto ui = RE::UI::GetSingleton();
@@ -640,6 +661,7 @@ namespace ALYSLC
 					return currentState;
 				}
 			}
+			*/
 		}
 
 		return allPlayersValid ? ManagerState::kRunning : currentState;
@@ -3642,7 +3664,7 @@ namespace ALYSLC
 		// Signal the camera manager to wait for toggle.
 		// Co-op camera is only re-enabled by P1 and if at least two controllers are connected.
 
-		waitForToggle = a_set && !glob.hybridModeActive;
+		waitForToggle = (a_set) && (!glob.hybridModeActive || !glob.coopSessionActive);
 	}
 
 	void CameraManager::ToggleCoopCamera(bool a_enable)

@@ -45,7 +45,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		// Import all settings after setting the plugin name to use
 		// in ALYSLC::EnderalCompat::CheckForEnderalSSE().
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();
-		ALYSLC::Settings::ImportAllSettings();
+		//ALYSLC::Settings::ImportAllSettings();
 		break;
 	}
 	case SKSE::MessagingInterface::kNewGame:

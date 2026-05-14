@@ -41,6 +41,7 @@ namespace ALYSLC
 		glob.quickLootControlPID = -1;
 		glob.quickLootReqPID = -1;
 		glob.menusOnlyAlwaysOpen.store(true);
+		glob.singleplayerModeActive = false;
 		glob.supportedMenuOpen.store(false);
 		// Handles.
 		glob.reqQuickLootContainerHandle = RE::ObjectRefHandle();
@@ -5816,7 +5817,7 @@ namespace ALYSLC
 			{
 				ERR
 				(
-					"Could not retrieve companion player with data copied over to P1. "
+					"MAJOR ERR: Could not retrieve companion player with data copied over to P1. "
 					"Copied player data PID is {}. Retrieved player index is {}. "
 					"Copied data types which could not be restored are 0x{:X}.",
 					glob.copiedDataPlayerPID,
@@ -8240,6 +8241,44 @@ namespace ALYSLC
 		}
 
 		auto& glob = GetSingleton();
+
+		// Make sure a different player's data is not being imported onto P1
+		// while another player already has their data copied to P1.
+		// Must export their data back from P1 before attempting to import
+		// this requesting player's data.
+		// If the export fails, do not fulfill the import request.
+		bool hasCopiedData = *glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone;
+		if (a_info->shouldImport && hasCopiedData && playerIndex != glob.copiedDataPlayerPID)
+		{
+			DBG
+			(
+				"Another player ({}) has data copied over to P1. "
+				"Cannot copy {}'s data to P1 at the same time. "
+				"Export {}'s data back to them first.",
+				glob.copiedDataPlayerPID > -1 ? 
+				glob.coopPlayers[glob.copiedDataPlayerPID]->coopActor->GetName() :
+				"NONE",
+				requestingPlayer->GetName(),
+				glob.copiedDataPlayerPID > -1 ? 
+				glob.coopPlayers[glob.copiedDataPlayerPID]->coopActor->GetName() :
+				"NONE"
+			);
+			glob.RestoreP1CopyablePlayerData();
+			if (*glob.copiedPlayerDataTypes != CopyablePlayerDataTypes::kNone)
+			{
+				ERR
+				(
+					"ERR: Another player ({}) had data copied over to P1. "
+					"Failed to export data back to them from P1. Will not import {}'s data to P1.",
+					glob.copiedDataPlayerPID > -1 ? 
+					glob.coopPlayers[glob.copiedDataPlayerPID]->coopActor->GetName() :
+					"NONE",
+					requestingPlayer->GetName()
+				);
+				return;
+			}
+		}
+
 		// Set PID for the player who is having their data imported onto P1.
 		if (a_info->shouldImport)
 		{
@@ -10609,7 +10648,6 @@ namespace ALYSLC
 		// and purely exists to make modifying gold amounts hell.
 		if (a_keepP1Gold)
 		{
-
 			// IMPORTANT:
 			// Save the gold amount before importing and the amount remaining on exit.
 			// Will set P1's gold to this amount.
@@ -10716,6 +10754,8 @@ namespace ALYSLC
 					}
 				}
 			
+				DBG("IMPORT: P1 now has {} gold.", p1->GetGoldAmount());
+
 				// Set P1's chest as temp owner of P1's inventory changes.
 				if (p1ChestExChanges->changes)
 				{
@@ -10823,7 +10863,7 @@ namespace ALYSLC
 				// Restore each refr as owner of their own inventory changes.
 				if (p1ExChanges->changes)
 				{
-					p1ExChanges ->changes                                 ->owner = p1;
+					p1ExChanges->changes->owner = p1;
 				}
 
 				if (companionChestExChanges->changes)

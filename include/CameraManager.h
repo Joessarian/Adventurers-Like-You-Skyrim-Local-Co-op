@@ -1090,8 +1090,6 @@ namespace ALYSLC
 		bool manualPositioningTimeFrozen;
 		// Is the camera moving to the dialogue starting target position?
 		bool movingToDialogueStartPos;
-		// Was the toggle bind pressed while the co-op camera was waiting to be toggled on?
-		bool toggleBindPressedWhileWaiting;
 		// Should wait to toggle the co-op camera on again.
 		bool waitForToggle;
 		// Max pitch angular magnitude when in the auto-trail camera state.

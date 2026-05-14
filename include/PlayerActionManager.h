@@ -922,9 +922,9 @@ namespace ALYSLC
 		
 		// Return true if the player should turn to face a target 
 		// if attacking, bashing, blocking, casting, or shouting.
+		// Return whether a combat action bind is pressed in the outparam.
 		// Return whether or not a combat action has just started,
 		// and if the attack is a ranged attack in the outparam.
-		// Return whether a combat action bind is pressed in the outparam.
 		// A combat action is sometimes still considered as occurring 
 		// even if the bind is no longer pressed,
 		// ex. spellcasting animation for a fire-and-forget spell continues 
@@ -1174,8 +1174,6 @@ namespace ALYSLC
 		bool sendingP1MotionDrivenEvents;
 		// Was hand spellcasting cancelled via the sheathing weapons/magic?
 		bool spellcastingCancelled;
-		// Has the player started cycling through nearby objects for activation?
-		bool startedActivationCycling;
 		// Does the player want to drawn their weapons/magic?
 		// This information is kept here and used to 
 		// prevent the game from sheathing/drawing weapons/magic on its own.

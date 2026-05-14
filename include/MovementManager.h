@@ -574,6 +574,8 @@ namespace ALYSLC
 		bool attemptDiscovery;
 		// Was DontMove() successfully called on this player?
 		bool dontMoveSet;
+		// Were the player's weapons/magic drawn before interacting with furniture/objects?
+		bool drawnBeforeInteraction;
 		// Face the crosshair world position directly at all times 
 		// after toggled on by the 'FaceTarget' bind.
 		bool faceCrosshairPos;

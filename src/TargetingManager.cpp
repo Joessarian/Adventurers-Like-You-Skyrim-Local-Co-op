@@ -51,6 +51,8 @@ namespace ALYSLC
 
 	void TargetingManager::MainTask()
 	{
+		// UNCOMMENT FOR NEW CONTROL SCHEME.
+		// SwitchAimMode();
 		// Update crosshair position and selection first, 
 		// and draw the crosshair, player indicator, and aim pitch indicator
 		// if no fullscreen menu is open or not controlling menus.
@@ -263,6 +265,7 @@ namespace ALYSLC
 		isSMORFing = false;
 		reqResetCrosshairPosition = false;
 		selectedRefrInRangeForQuickLoot = false;
+		startedActivationCycling = false;
 		useProximityInteraction = false;
 		validCrosshairRefrHit = false;
 		wantsToSMORF = false;
@@ -290,6 +293,9 @@ namespace ALYSLC
 		// Reset all target handles, related data, and time points.
 		ResetTargeting();
 		ResetTPs();
+
+		// TEMPORARY. REMOVE after testing out new 'Move Crosshair' bind with LockOn aim mode.
+		aimMode = static_cast<AimMode>(Settings::vuDefaultAimMode[p->playerID]);
 		DBG("{}.", coopActor ? coopActor->GetName() : "NONE");
 	}
 
@@ -303,6 +309,45 @@ namespace ALYSLC
 	{
 		// Resumption triggered externally.
 		return currentState;
+	}
+
+	void TargetingManager::ClearActivationTargetData(bool a_stopEffectShader)
+	{
+		// Clear out currently-targeted activation/proximity refrs.
+		// If the activation refr is valid, stop any playing activation shader as well.
+		auto activationRefrPtr = Util::GetRefrPtrFromHandle
+		(
+			activationRefrHandle
+		); 
+		if (a_stopEffectShader && 
+			activationRefrPtr &&
+			Util::IsValidRefrForTargeting(activationRefrPtr.get()))
+		{
+			Util::StopEffectShader
+			(
+				activationRefrPtr.get(), glob.activateHighlightShader
+			);
+		}
+		
+		DBG
+		(
+			"{}: {}, {}, {}. Chose: {}", 
+			coopActor->GetName(), 
+			Util::HandleIsValid(activationRefrHandle) ?
+			activationRefrHandle.get()->GetName() : 
+			"NONE",
+			Util::HandleIsValid(lockOnActivationRefrHandle) ?
+			lockOnActivationRefrHandle.get()->GetName() : 
+			"NONE",
+			Util::HandleIsValid(proximityRefrHandle) ?
+			proximityRefrHandle.get()->GetName() : 
+			"NONE",
+			choseActivationLockOnTarget
+		);
+		choseActivationLockOnTarget = false;
+		activationRefrHandle = 
+		lockOnActivationRefrHandle = 
+		proximityRefrHandle = RE::ObjectRefHandle();
 	}
 
 	void TargetingManager::ClearTarget(const TargetActorType& a_targetType)
@@ -5676,6 +5721,8 @@ namespace ALYSLC
 			crosshairRefrHandle : 
 			lockOnActivationRefrHandle
 		);
+		// UNCOMMENT FOR NEW CONTROL SCHEME
+		//const auto& selectedRefrHandle = lockOnActivationRefrHandle;
 		auto selectedRefrPtr = Util::GetRefrPtrFromHandle(selectedRefrHandle);
 		auto prevSelectedRefrPtr = Util::GetRefrPtrFromHandle(prevQuickLootRefrHandle);
 		bool selectedRefrValidity = 
@@ -6017,13 +6064,15 @@ namespace ALYSLC
 			Util::SendCrosshairEvent(nullptr);
 		}
 
-		// Update for the next frame.s
+		// Update for the next frame.
 		prevQuickLootRefrHandle = 
 		(
 			aimMode == AimMode::kFreeAim ? 
 			crosshairRefrHandle : 
 			lockOnActivationRefrHandle
 		);
+		// UNCOMMENT FOR NEW CONTROL SCHEME
+		//prevQuickLootRefrHandle = lockOnActivationRefrHandle;
 	}
 
 	void TargetingManager::HandleReferenceManipulation()
@@ -7709,6 +7758,7 @@ namespace ALYSLC
 		{
 			// Clear any proximity refr handle from previous activation attempts.
 			ClearProximityRefr();
+
 			if (pam->downedPlayerTarget) 
 			{
 				pam->downedPlayerTarget->isBeingRevived = false;
@@ -7742,6 +7792,13 @@ namespace ALYSLC
 				Util::GetRefrPtrFromHandle(lockOnActivationRefrHandle) : 
 				nullptr
 			);
+			// UNCOMMENT FOR NEW CONTROL SCHEME
+			/*auto extActivationTargetPtr = 
+			(
+				choseActivationLockOnTarget ? 
+				Util::GetRefrPtrFromHandle(lockOnActivationRefrHandle) : 
+				nullptr
+			);*/
 			bool extTargetValidity = 	
 			(
 				(extActivationTargetPtr) && 
@@ -7855,9 +7912,30 @@ namespace ALYSLC
 				}
 
 				// Not activation cycling yet.
-				p->pam->startedActivationCycling = false;
+				startedActivationCycling = false;
 			}
-				
+			
+			// REMOVE when done debugging.
+			/*DBG
+			(
+				"{}: Current activation: {}, crosshair: {}, use prox: {}, "
+				"choose target: {}, ext target: {}, lock on: {}.",
+				coopActor->GetName(),
+				Util::HandleIsValid(activationRefrHandle) ? 
+				activationRefrHandle.get()->GetName() : 
+				"NONE",
+				Util::HandleIsValid(crosshairRefrHandle) ? 
+				crosshairRefrHandle.get()->GetName() : 
+				"NONE",
+				useProximityInteraction,
+				chooseTargetBeforeCycling,
+				extActivationTargetPtr ? 
+				extActivationTargetPtr->GetName() : 
+				"NONE",
+				Util::HandleIsValid(lockOnActivationRefrHandle) ? 
+				lockOnActivationRefrHandle.get()->GetName() : 
+				"NONE"
+			);*/
 				
 			// Cycle through nearby objects at regular intervals 
 			// while the activate bind is held.
@@ -7868,12 +7946,12 @@ namespace ALYSLC
 			{
 				bool shouldStartCycling =
 				(
-					!p->pam->startedActivationCycling && 
+					!startedActivationCycling && 
 					secsSinceActivationTargetUpdated >= Settings::fSecsBeforeActivationCycling
 				);
 				bool shouldCycleNewRefr = 
 				(
-					p->pam->startedActivationCycling &&
+					startedActivationCycling &&
 					secsSinceActivationTargetUpdated >=
 					Settings::fSecsBetweenActivationChecks
 				);
@@ -7897,7 +7975,7 @@ namespace ALYSLC
 					// Flag as started activation cycling.
 					if (shouldStartCycling)
 					{
-						p->pam->startedActivationCycling = true;
+						startedActivationCycling = true;
 					}
 
 					// Get new refr to activate.
@@ -9316,11 +9394,16 @@ namespace ALYSLC
 		p->crosshairRefrVisibilityCheckTP		= SteadyClock::now();
 	}
 
-	void TargetingManager::SelectProximityRefr()
+	void TargetingManager::SelectProximityRefr(bool a_quickSelection)
 	{
 		// Choose a valid nearby refr to use for activation.
-		
+		// Stricter conditions for what objects/NPCs are selectable 
+		// when for quick selection/activation.
+		// Done to prevent accidental or unnecessary activation.
+
 		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+
+		// COMMENT OUT FOR NEW CONTROL SCHEME
 		// Check if downed player is in activation range, and if so, prioritize selecting them.
 		for (const auto& p : glob.coopPlayers) 
 		{
@@ -9372,14 +9455,19 @@ namespace ALYSLC
 					&playerTorsoPos, 
 					&facingDirXY, 
 					&maxCheckDist,
-					&secsSinceActivationStarted
+					&secsSinceActivationStarted,
+					&a_quickSelection
 				]
 				(RE::TESObjectREFR* a_refr) 
 				{
 					// On to the next one.
-					if (!a_refr || 
+					// Either the refr does not exist, is the player themselves, is their mount,
+					// or is the furniture they are interacting with already.
+					if ((!a_refr ||
 						!Util::HandleIsValid(a_refr->GetHandle()) || 
-						!a_refr->IsHandleValid())
+						a_refr == coopActor.get()) ||
+						(currentMount && a_refr == currentMount.get()) ||
+						(coopActor->GetOccupiedFurniture() == a_refr->GetHandle()))
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
@@ -9387,61 +9475,95 @@ namespace ALYSLC
 					const auto handle = a_refr->GetHandle();
 					auto baseObj = a_refr->GetBaseObject();
 					// On to the next one x2.
-					if (!baseObj || 
-						!a_refr->Is3DLoaded() || 
-						!a_refr->GetCurrent3D() ||
-						a_refr->IsDeleted()) 
+					if (!baseObj) 
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
 
-					auto asActor = a_refr->As<RE::Actor>();
-					// Filter out blacklisted actors and refrs.
-					const bool blacklisted =
-					{ 
-						(currentMount && a_refr == currentMount.get()) ||
-						(glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
-					};
-					const bool isFriendly = Util::IsPartyFriendlyActor(asActor);
-					const bool hostileToP1 = 
+					const auto modFile = baseObj->GetFile();
+					// REMOVE when done debugging.
+					/*const auto modFile2 = baseObj->GetFile(0);
+					DBG
 					(
-						asActor && asActor->IsHostileToActor(glob.player1Actor.get())
-					);
-					const bool hostileToThisPlayer = 
+						"{}: Activation candidate {} ({}, 0x{:X}) from mod {} ({}).", 
+						coopActor->GetName(),
+						a_refr ? a_refr->GetName() : "NONE",
+						Util::GetEditorID(baseObj),
+						baseObj->formID,
+						modFile ? modFile->fileName : "NONE",
+						modFile2 ? modFile2->fileName : "NONE"
+					);*/
+					// EW. Don't know how else to tell if a mod-placed activator is from EVG.
+					// Ignore, since these activators should not be activated by P2 through P1,
+					// and activation can cause weird alignment issues anyways.
+					bool isEVGActivator = 
 					(
-						asActor && asActor->IsHostileToActor(coopActor.get())
-					);
-					// Useless to activate hostile actors in combat.
-					const bool activateHostileActor = 
-					{ 
-						(hostileToP1 || hostileToThisPlayer) &&
+						baseObj->Is
 						(
-							asActor && 
-							!asActor->IsDead() && 
-							!isFriendly && 
-							!Util::IsGuard(asActor) &&
-							!asActor->IsAMount()
-						)
-					};
-					// Do not consider friendly actors that are not mad at a player or 
-					// do not need help getting up, and are not selected as a target.
-					const bool friendlyActorNotActivatable = 
-					(
-						isFriendly &&
-						!asActor->IsBleedingOut() &&
-						!asActor->IsInRagdollState() &&
-						!hostileToP1 &&
-						!hostileToThisPlayer &&
-						handle != aimCorrectionTargetHandle &&
-						handle != crosshairRefrHandle
+							RE::FormType::Activator, RE::FormType::TalkingActivator
+						) && 
+						std::string(modFile->fileName).find("EVG") != std::string::npos
 					);
-					if (blacklisted || 
-						activateHostileActor || 
-						friendlyActorNotActivatable ||
-						!Util::IsSelectableRefr(a_refr) || 
-						!Util::IsValidRefrForTargeting(a_refr))
+					// Skip EVG activators and non-selectable/targetable refrs.
+					if (isEVGActivator ||
+						!Util::IsValidRefrForTargeting(a_refr) ||
+						!Util::IsSelectableRefr(a_refr))
 					{
 						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					if (a_quickSelection)
+					{
+						// If not choosing a lock on activation target,
+						// skip the currently selected target when activation cycling.
+						if (startedActivationCycling && a_refr->GetHandle() == activationRefrHandle)
+						{
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+
+						// Also skip other players, or activating hostile actors 
+						// that are not pacifiable or interactable while hostile 
+						// (not a guard, mount, or normally hostile).
+						auto asActor = a_refr->As<RE::Actor>();
+						const bool isFriendly = Util::IsPartyFriendlyActor(asActor);
+						const bool hostileToP1 = 
+						(
+							asActor && asActor->IsHostileToActor(glob.player1Actor.get())
+						);
+						const bool hostileToThisPlayer = 
+						(
+							asActor && asActor->IsHostileToActor(coopActor.get())
+						);
+						// Useless to activate hostile actors in combat.
+						const bool activateHostileActor = 
+						{ 
+							(hostileToP1 || hostileToThisPlayer) &&
+							(
+								asActor && 
+								!asActor->IsDead() && 
+								!Util::CanStopCombatWithActor(asActor)
+							)
+						};
+
+						// Do not consider friendly actors that are not mad at a player or 
+						// do not need help getting up, and are not selected as a target.
+						// COMMENT OUT FOR NEW CONTROL SCHEME
+						const bool friendlyActorNotActivatable = 
+						(
+							isFriendly &&
+							!asActor->IsBleedingOut() &&
+							!asActor->IsInRagdollState() &&
+							!hostileToP1 &&
+							!hostileToThisPlayer &&
+							handle != aimCorrectionTargetHandle &&
+							handle != crosshairRefrHandle
+						);
+						if (friendlyActorNotActivatable ||
+							activateHostileActor || 
+							glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
+						{
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
 					}
 
 					auto refr3DPtr = Util::GetRefr3D(a_refr); 
@@ -9452,9 +9574,9 @@ namespace ALYSLC
 					// that is behind the player or the camera.
 					bool allPositionsBehindPlayer = true;
 					bool onePositionBehindCamera = 
-					(
+					/*(
 						!Util::PointIsOnScreen(Util::Get3DCenterPos(a_refr))
-					);
+					);*/
 					(
 						refr3DPtr && 
 						niCamPtr &&
@@ -9691,12 +9813,6 @@ namespace ALYSLC
 
 		// Clear old proximity refr handle before setting a new one.
 		proximityRefrHandle = RE::ObjectRefHandle();
-		// Nothing to do if there are no neaby refrs after checking.
-		if (nearbyReferences.empty())
-		{
-			return;
-		}
-
 		// Get next selectable refr in view of the camera and remove it from the map.
 		while (!nearbyReferences.empty())
 		{
@@ -9729,11 +9845,17 @@ namespace ALYSLC
 				break;
 			}
 		}
+
+		// Update activation cycling orientation.
+		SetLastActivationCyclingOrientation();
 	}
 
 	void TargetingManager::SetLockOnActivationTarget
 	(
-		bool a_useLeftStickAngle, bool a_fromCurrentTarget, bool a_selectOnHold
+		bool a_useLeftStickAngle, 
+		bool a_fromCurrentTarget, 
+		bool a_selectOnHold, 
+		bool a_quickSelection
 	)
 	{
 		// Find and set a lock on activation target (object/NPC), if any.
@@ -9741,20 +9863,29 @@ namespace ALYSLC
 		// Originate the check from the player's position or from the current target's position.
 		// Select the target if a bind is held or on press. 
 		// Selecting on hold will select at an interval, instead of right away.
+		// Can also narrow the selection of considered objects if selecting temporarily 
+		// on release of the 'Activate' bind to prevent accidental or unnecessary activation.
 		
 		// Evaluate for a new activation lock on target 
 		// in the direction of the player's analog stick.
 		auto prevHandle = lockOnActivationRefrHandle;
-		auto newHandle = GetLockOnTarget
-		(
-			prevHandle, false, a_useLeftStickAngle, a_fromCurrentTarget, a_selectOnHold
-		);
+		SelectProximityRefr(a_quickSelection);
+		auto newHandle = proximityRefrHandle;
 
 		choseActivationLockOnTarget = Util::HandleIsValid(newHandle);
 		if (choseActivationLockOnTarget)
 		{
 			// Set all three activation-related handles to maintain consistency
 			// when changing aim modes.
+			if (Util::HandleIsValid(lockOnActivationRefrHandle) &&
+				Util::IsValidRefrForTargeting(lockOnActivationRefrHandle.get().get()))
+			{
+				Util::StopEffectShader
+				(
+					lockOnActivationRefrHandle.get().get(), glob.activateHighlightShader
+				);
+			}
+				
 			activationRefrHandle = 
 			proximityRefrHandle = 
 			lockOnActivationRefrHandle = newHandle;
@@ -9773,22 +9904,13 @@ namespace ALYSLC
 					glob.activateHighlightShader,
 					max(0.1f, Settings::fSecsBeforeActivationCycling)
 				);
+
 				// Already checked LOS before selection, so no need to do so again.
 				ValidateActivationRefr(false);
 			}
 		}
 		else
 		{
-			// Stop shader before clearing the current target if it is still valid.
-			if (Util::HandleIsValid(lockOnActivationRefrHandle) &&
-				Util::IsValidRefrForTargeting(lockOnActivationRefrHandle.get().get()))
-			{
-				Util::StopEffectShader
-				(
-					lockOnActivationRefrHandle.get().get(), glob.activateHighlightShader
-				);
-			}
-
 			DBG
 			(
 				"{}: No chosen REFR lock on target. Time since update: {}s. "
@@ -9799,7 +9921,8 @@ namespace ALYSLC
 				lockOnActivationRefrHandle.get()->GetName() :
 				"NONE"
 			);
-			ClearActivationTargetData();
+			// Stop shader before clearing the current target if it is still valid.
+			ClearActivationTargetData(true);
 		}
 
 		if (newHandle != prevHandle)
@@ -9834,7 +9957,7 @@ namespace ALYSLC
 		// Update chose lock on target flag.
 		choseAimLockOnTarget = Util::HandleIsValid(newHandle);
 		if (choseAimLockOnTarget)
-			{
+		{
 			// Set crosshair refr handle and selected target actor handle to the target's handle
 			// if the crosshair is active; otherwise, set the aim correction handle.
 			if (crosshairActive)
@@ -9860,7 +9983,18 @@ namespace ALYSLC
 					aimCorrectionTargetHandle = RE::ActorHandle();
 				}
 			}
-			
+
+			// Switch to different-colored activation shader later.
+			if (newHandle != prevHandle) 
+			{
+				Util::StartEffectShader
+				(
+					newHandle.get().get(),
+					glob.activateHighlightShader,
+					max(0.1f, Settings::fSecsBetweenActivationChecks)
+				);
+			}
+
 			DBG
 			(
 				"{}: Has chosen NPC {} as lock on target.", 
@@ -10196,6 +10330,96 @@ namespace ALYSLC
 		);
 	}
 
+	void TargetingManager::SwitchAimMode()
+	{
+		if (glob.cdh->GetInputState(deviceID, InputAction::kRThumb).justReleased &&
+			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0)
+		{
+			if (aimMode == AimMode::kFreeAim)
+			{
+				aimMode = AimMode::kLockOn;
+				SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format
+					(
+						"P{}: Aim mode: <font color=\"#00FFFF\">Lock On</font>",
+						playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			else if (aimMode == AimMode::kLockOn)
+			{
+				aimMode = AimMode::kTwinStick;
+				InactivateCrosshair(false);
+				SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format
+					(
+						"P{}: Aim mode: <font color=\"#FF0000\">Twin-stick</font>",
+						playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			else
+			{
+				aimMode = AimMode::kFreeAim;
+				SetCrosshairMessageRequest
+				(
+					CrosshairMessageType::kGeneralNotification,
+					fmt::format
+					(
+						"P{}: Aim mode: <font color=\"#00FF00\">Free Aim</font>",
+						playerID + 1
+					),
+					{ 
+						CrosshairMessageType::kNone,
+						CrosshairMessageType::kStealthState, 
+						CrosshairMessageType::kTargetSelection 
+					},
+					Settings::fSecsBetweenDiffCrosshairMsgs
+				);
+			}
+			
+			// UNCOMMENT FOR NEW CONTROL SCHEME.
+			/*
+			// Set face target mode.
+			// If enabled, the player will continuously face the crosshair position.
+			// Otherwise, the player rotates to face their movement direction as usual.
+			p->mm->reqFaceTarget = 
+			(
+				aimMode != AimMode::kTwinStick && Util::HandleIsValid(crosshairRefrHandle)
+			);
+			if (!Settings::vbAnimatedCrosshair[playerID]) 
+			{
+				return;
+			}
+
+			// Smoothly rotate the crosshair into the 'X' configuration to notify the player 
+			// that they are facing the crosshair position now,
+			// or using the right stick to rotate the player if not in crosshair free aim mode.
+			crosshairRotationData->SetTimeSinceUpdate(0.0f);
+			crosshairRotationData->ShiftEndpoints
+			(
+				p->mm->reqFaceTarget ? PI / 4.0f : 0.0f
+			);
+			*/
+		}
+	}
+
 	void TargetingManager::UpdateAimCorrectionTarget()
 	{
 		// Update aim correction target if the player is attempting
@@ -10333,8 +10557,8 @@ namespace ALYSLC
 			// Serves as crosshair-lite.
 			canValidateTarget = 
 			(
-				(!choseAimLockOnTarget && p->pam->IsPerforming(InputAction::kMoveCrosshair)) &&
-				(attackOrBlockRequest || canSelectThrowTarget)
+				(!choseAimLockOnTarget && p->pam->IsPerforming(InputAction::kMoveCrosshair)) /*&&
+				(attackOrBlockRequest || canSelectThrowTarget)*/
 			);
 		}
 
@@ -10362,11 +10586,12 @@ namespace ALYSLC
 			(
 				(Util::GetElapsedSeconds(p->lastAimCorrectionTargetSetTP) > selectionInterval) &&
 				(
-					(
+					((stickCommitment) || (combatActionJustStarted && !currentTargetPtr))
+					/*(
 						(combatActionBindPressed) && 
 						((stickCommitment) || (combatActionJustStarted && !currentTargetPtr)) 
 					) ||
-					(canSelectThrowTarget && stickCommitment)
+					(canSelectThrowTarget && stickCommitment)*/
 				)
 			);
 			// Should check if the current target is in the FOV window
@@ -10386,7 +10611,7 @@ namespace ALYSLC
 						true,
 						Settings::vbScreenspaceBasedAimCorrectionCheck[playerID],
 						Settings::vfAimCorrectionFOV[playerID],
-						performingRangedAction || canSelectThrowTarget ? 
+						!combatActionBindPressed || performingRangedAction || canSelectThrowTarget ? 
 						Settings::fMaxRaycastAndZoomOutDistance :
 						GetMaxActivationDist()
 					)
@@ -12202,18 +12427,26 @@ namespace ALYSLC
 			Util::GetTorsoPosition(refrPtr->As<RE::Actor>()) :
 			Util::GetRefrPosition(refrPtr.get())
 		);
+
+		// UNCOMMENT FOR NEW CONTROL SCHEME
+		// Clear if the refr is too far away from the player,
+		// or if the refr is now grabbed by the player.
+		/*if (refrPos.GetDistance(p->mm->playerTorsoPosition) > GetMaxActivationDist() || 
+			rmm->IsManaged(lockOnActivationRefrHandle, true))*/
+
 		// Clear if now in 'Free Aim' mode, if the refr is too far away from the player,
 		// or if the refr is now grabbed by the player.
 		if (aimMode == AimMode::kFreeAim ||
 			refrPos.GetDistance(p->mm->playerTorsoPosition) > GetMaxActivationDist() || 
 			rmm->IsManaged(lockOnActivationRefrHandle, true))
+
 		{
 			DBG
 			(
 				"{}: {} is now no longer selected as the lock on activation target.",
 				coopActor->GetName(), refrPtr->GetName()
 			);
-			ClearActivationTargetData();
+			ClearActivationTargetData(true);
 		}
 	}
 	
@@ -12227,10 +12460,8 @@ namespace ALYSLC
 		if (useProximityInteraction)
 		{
 			// Cycle through nearby objects for a valid, interactable one.
-			SelectProximityRefr();
+			SelectProximityRefr(true);
 			activationRefrHandle = proximityRefrHandle;
-			// Update last activation orientation after setting the proximity refr.
-			SetLastActivationCyclingOrientation();
 		}
 		else if (choseActivationLockOnTarget)
 		{
@@ -16887,13 +17118,20 @@ namespace ALYSLC
 
 		// Set initial base projectile data first.
 		SetInitialBaseProjectileData(a_p, a_projectileHandle, a_initialVelocityOut.Length());
+		// Targeting angle at which the projectile would be released.
+		float targetingAngle = 
+		(
+			a_p->pam->isAttacking ? 
+			Util::DirectionToGameAngYaw(a_p->mm->playerDefaultAttackSourceDir) :
+			a_p->coopActor->data.angle.z	
+		);
 		// Set trajectory data common to both the predicted and at-launch trajectories.
 		SetTrajectory
 		(
 			a_p, 
 			projectile->data.location,
 			a_trajType, 
-			projectile->data.angle.z, 
+			targetingAngle, 
 			projectile->As<RE::BeamProjectile>() || projectile->As<RE::FlameProjectile>()
 		);
 
