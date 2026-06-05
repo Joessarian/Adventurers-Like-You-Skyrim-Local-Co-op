@@ -744,6 +744,7 @@ namespace ALYSLC
 				collidedRefrFIDPairs = a_other.collidedRefrFIDPairs;
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
+				initialGrabCheckPerformed = a_other.initialGrabCheckPerformed;
 				isAutoGrabbing = a_other.isAutoGrabbing;
 				isGrabbing = a_other.isGrabbing;
 				lastGrabbedAProjectile = a_other.lastGrabbedAProjectile;
@@ -812,6 +813,7 @@ namespace ALYSLC
 				(
 					a_other.releasedRefrHandlesToInfoIndices
 				);
+				initialGrabCheckPerformed = std::move(a_other.initialGrabCheckPerformed);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
 				isGrabbing = std::move(a_other.isGrabbing);
 				lastGrabbedAProjectile = std::move(a_other.lastGrabbedAProjectile);
@@ -829,6 +831,7 @@ namespace ALYSLC
 				collidedRefrFIDPairs = a_other.collidedRefrFIDPairs;
 				grabbedRefrHandlesToInfoIndices = a_other.grabbedRefrHandlesToInfoIndices;
 				releasedRefrHandlesToInfoIndices = a_other.releasedRefrHandlesToInfoIndices;
+				initialGrabCheckPerformed = a_other.initialGrabCheckPerformed;
 				isAutoGrabbing = a_other.isAutoGrabbing;
 				isGrabbing = a_other.isGrabbing;
 				lastGrabbedAProjectile = a_other.lastGrabbedAProjectile;
@@ -899,6 +902,7 @@ namespace ALYSLC
 				(
 					a_other.releasedRefrHandlesToInfoIndices
 				);
+				initialGrabCheckPerformed = std::move(a_other.initialGrabCheckPerformed);
 				isAutoGrabbing = std::move(a_other.isAutoGrabbing);
 				isGrabbing = std::move(a_other.isGrabbing);
 				lastGrabbedAProjectile = std::move(a_other.lastGrabbedAProjectile);
@@ -1106,6 +1110,10 @@ namespace ALYSLC
 
 			// List of released refr info for each managed refr.
 			std::vector<std::unique_ptr<ReleasedReferenceInfo>> releasedRefrInfoList;
+			
+			// Has the first grab item check been performed while holding down the 'Grab Object'
+			// bind?
+			bool initialGrabCheckPerformed;
 
 			// Is the manager handling auto-grabbed clutter?
 			bool isAutoGrabbing;
@@ -1558,14 +1566,12 @@ namespace ALYSLC
 				aimCorrectionTargetHandle = RE::ActorHandle();
 			}
 
-			choseAimLockOnTarget = false;
+			choseLockOnAimTarget = false;
+			choseProximityActivationTarget = false;
 			validCrosshairRefrHit = false;
 			crosshairRefrHandle = RE::ObjectRefHandle();
 			selectedTargetActorHandle = RE::ActorHandle();
 		}
-
-		// Clear out currently-targeted proximity refr for activation.
-		inline void ClearProximityRefr() { proximityRefrHandle.reset(); }
 
 		// Clear out all targeted actor/refr handles.
 		inline void ClearTargetHandles() 
@@ -1579,10 +1585,8 @@ namespace ALYSLC
 			aimTargetLinkedRefrHandle = 
 			crosshairPickRefrHandle = 
 			crosshairRefrHandle = 
-			lockOnActivationRefrHandle =
 			prevCrosshairRefrHandle =
-			prevQuickLootRefrHandle = 
-			proximityRefrHandle = RE::ObjectRefHandle();
+			prevQuickLootRefrHandle = RE::ObjectRefHandle();
 		}
 
 		// Get the farthest distance an object can be located from the player 
@@ -1725,12 +1729,21 @@ namespace ALYSLC
 		// Member funcs
 		//
 		
+		// Return true if a player can activate the given refr.
+		bool CanActivateRefr(RE::TESObjectREFR* a_refr, bool a_checkLOS);
+
 		// Clear out currently-targeted activation/proximity refrs.
-		// If the activation refr is valid, can stop any playing activation shader as well.
-		void ClearActivationTargetData(bool a_stopEffectShader);
+		// If the activation refr is valid, will stop any playing activation shader as well.
+		void ClearActivationTargetData();
 
 		// Clear the cached actor/refr handle for the given target type.
 		void ClearTarget(const TargetActorType& a_targetType);
+
+		// Change the color of the given shader to match 
+		// their main UI Overlay color.
+		// If indicating a failed activation, either do not colorize the shader or colorize 
+		// to fully black.
+		void ColorizeActivationShader(RE::TESEffectShader* a_shader, bool a_canActivateRefr);
 		
 		// Draw an indicator on the player's chosen activation target 
 		// if it is not the crosshair target.
@@ -1869,7 +1882,6 @@ namespace ALYSLC
 			bool a_selectOnHold
 		);
 
-
 		// Get a list of reachable, lootable refrs' handles in range of the player.
 		// Can return a list of loose refrs' handles 
 		// or a list of lootable containers' handles.
@@ -1905,6 +1917,10 @@ namespace ALYSLC
 		// while not selecting an actor with the crosshair,
 		// or the ranged package's aim target linked refr if it is not the player.
 		RE::ActorHandle GetRangedTargetActor();
+
+		// Cycle through nearby refrs and choose one for activation, returning its handle.
+		// If for quick selection and activation, filter out certain actors.
+		RE::ObjectRefHandle GetSelectableProximityRefrHandle(bool a_quickSelection);
 
 		// Sounds like a lot of- hoopla! Sounds like a lot of- hoopla! 
 		// Sounds like a lot of- hoopla! Hoooooplaaaa! *Bonk*
@@ -1947,9 +1963,6 @@ namespace ALYSLC
 		// - Player has LOS or has not lost LOS for too long.
 		bool IsRefrValidForCrosshairSelection(RE::ObjectRefHandle a_refrHandle);
 
-		// Cycle through and highlight nearby interactable refrs while holding the 'Activate' bind.
-		void PerformActivationCycling();
-
 		// EXPERIMENTAL. Unused for now since there is a huge performance hit.
 		// Check if a selectable refr is highlighted by the crosshair
 		// and pick it as the crosshair refr.
@@ -1978,26 +1991,7 @@ namespace ALYSLC
 
 		// Reset all time points to the current time.
 		void ResetTPs();
-
-		// Cycle through nearby targetable refrs and choose one for activation.
-		// If for quick selection and activation, filter out certain actors.
-		void SelectProximityRefr(bool a_quickSelection);
-
-		// Find and set a lock on activation target (object/NPC), if any.
-		// Use the left/right stick's angle as the targeting angle.
-		// Originate the check from the player's position or from the current target's position.
-		// Select the target if a bind is held or on press. 
-		// Selecting on hold will select at an interval, instead of right away.
-		// Can also narrow the selection of considered objects if selecting quickly and temporarily 
-		// on release of the 'Activate' bind to prevent accidental or unnecessary activation.
-		void SetLockOnActivationTarget
-		(
-			bool a_useLeftStickAngle, 
-			bool a_fromCurrentTarget,
-			bool a_selectOnHold, 
-			bool a_quickSelection
-		);
-
+		
 		// Find and set a lock on aim target (NPC), if any.
 		// Use the left/right stick's angle as the targeting angle.
 		// Originate the check from the player's position or from the current target's position.
@@ -2017,7 +2011,15 @@ namespace ALYSLC
 		// Only to test out binds ideas before actually adding in a customizable 
 		// switch aim mode bind.
 		void SwitchAimMode();
-
+		
+		// Set the activation target refr handle directly to the crosshair/aim correction handle,
+		// or check for a selectable refr nearby.
+		// Play/stop any activation shaders if set/cleared, and update the quick activation flag
+		// and activation target changed TP.
+		void UpdateActivationTarget
+		(
+			bool a_setToAimTargetHandle, bool a_quickSelection, bool a_playActivationShader
+		);
 		// NOTE: 
 		// Only when aim correction is enabled for this player.
 		// Either select a new aim correction target, clear the current invalid one,
@@ -2056,11 +2058,6 @@ namespace ALYSLC
 		// and update the lock on activation target, which should be cleared when out of range.
 		void UpdateLockOnTargets();
 
-		// If cycling nearby objects, cycle one time and choose the resulting refr's handle.
-		// Otherwise, choose the selected crosshair refr's handle.
-		// Set the activation refr handle to the chosen handle and return it.
-		RE::ObjectRefHandle UpdateNextObjectToActivate();
-
 		// Award Sneak XP for companion players as necessary after updating their detection state.
 		void UpdateSneakState();
 
@@ -2093,6 +2090,8 @@ namespace ALYSLC
 		// Scaleform coordinates (x, y, z), [0, max view dimension] 
 		// for the player crosshair's center.
 		glm::vec3 crosshairScaleformPos;
+		// Origin position of the player's indicator on screen.
+		glm::vec2 playerIndicatorScaleformPos;
 
 		// The co-op player's character.
 		RE::ActorPtr coopActor;
@@ -2128,14 +2127,11 @@ namespace ALYSLC
 		RE::ObjectRefHandle crosshairPickRefrHandle;
 		// Reference targeted by the player's crosshair.
 		RE::ObjectRefHandle crosshairRefrHandle;
-		// Last interactable reference targeted using lock on.
-		RE::ObjectRefHandle lockOnActivationRefrHandle;
 		// Reference targeted by the player's crosshair from the previous frame.
 		RE::ObjectRefHandle prevCrosshairRefrHandle;
 		// Previously recorded refr when handling opening of the QuickLoot menu.
+		// ALWAYS the lock on activation target's handle.
 		RE::ObjectRefHandle prevQuickLootRefrHandle;
-		// Closest interactable refr in the player's FOV.
-		RE::ObjectRefHandle proximityRefrHandle;
 		// Cached ordered map of nearby refrs that can be interacted with by the player.
 		// Sorted in ascending order based on a normalized factor derived
 		// from the refr's distance to the player 
@@ -2180,10 +2176,13 @@ namespace ALYSLC
 		bool canSMORF;
 		// Is the crosshair refr raycast result the closest one to the camera?
 		bool choseClosestResult;
-		// Is the currently selected activation refr target chosen via lock on?
-		bool choseActivationLockOnTarget;
+		// Is the currently selected object for activation chosen via proximity snap?
+		bool choseProximityActivationTarget;
 		// Is the currently selected NPC aim target chosen via lock on?
-		bool choseAimLockOnTarget;
+		bool choseLockOnAimTarget;
+		// Is the currently selected activation refr target chosen by simply tapping 
+		// the 'Activate' bind and NOT selected via the crosshair or lock on?
+		bool choseQuickActivationTarget;
 		// Was the selected crosshair refr chosen by raycast?
 		bool crosshairRefrFromRaycast;
 		// Is the crosshair target refr in sight of the player?
@@ -2194,14 +2193,18 @@ namespace ALYSLC
 		bool isMARFing;
 		// No comment. It's neat, though.
 		bool isSMORFing;
+		// Should lock on to chosen aim correction target in 'Twin-stick' mode.
+		bool lockOnToAimCorrectionTarget;
+		// True if the item should be used instead of looted/stolen.
+		bool performSecondaryActivationAction;
 		// Requesting to reset the crosshair to its default position.
 		bool reqResetCrosshairPosition;
 		// Is the crosshair/lock on activation refr in range to open the QuickLoot menu?
 		bool selectedRefrInRangeForQuickLoot;
+		// Restart the next lock on aim target selection chain from the player as the origin.
+		bool shouldFindLockOnTargetFromPlayer;
 		// Has the player started cycling through nearby objects for activation?
 		bool startedActivationCycling;
-		// Is the player trying to interact with cycled, nearby refrs?
-		bool useProximityInteraction;
 		// Is a valid object being targeted by the crosshair's raycast?
 		bool validCrosshairRefrHit;
 		// Nope. No description.
@@ -2227,6 +2230,8 @@ namespace ALYSLC
 		float grabbedRefrDistanceOffset;
 		// Last angle at which the player was facing when the activate bind was pressed.
 		float lastActivationFacingAngle;
+		// Height of the player indicator in pixels.
+		float playerIndicatorHeight;
 		// Maximum distance an object can be from the player's center
 		// to be considered for activation.
 		float maxReachActivationDist;

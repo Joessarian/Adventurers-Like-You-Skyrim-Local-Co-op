@@ -335,7 +335,6 @@ namespace ALYSLC
 		// do not trigger any input events until they are released and pressed again.
 		XINPUT_STATE buttonState{ };
 		ZeroMemory(&buttonState, sizeof(buttonState));
-		// First, check for input presses as given by the menu control map above
 		if (XInputGetState(glob.coopPlayers[managerMenuPID]->deviceID, &buttonState) == 
 			ERROR_SUCCESS)
 		{
@@ -346,8 +345,13 @@ namespace ALYSLC
 					continue;
 				}
 
-				// Set to emulated input initially to prevent previous event type from triggering.
-				menuControlMap[iter->first].eventType = MenuInputEventType::kEmulateInput;
+				DBG("0x{:X} was held when starting the MIM.", iter->first);
+				// Set as pressed without emulating input event to prevent previous event type 
+				// from triggering.
+				auto& bindInfo = menuControlMap[iter->first];
+				bindInfo.value = 1.0f;
+				bindInfo.firstPressTP = SteadyClock::now();
+				bindInfo.eventType = MenuInputEventType::kPressedNoEvent;
 			}
 		}
 	}
@@ -2456,6 +2460,8 @@ namespace ALYSLC
 		// shortly after the menu opens.
 		glob.taskRunner->AddTask
 		(
+			"GLOB Runner",
+			__FUNCTION__,
 			[this]()
 			{
 				// Tested in the framerate range (15-100+).
@@ -2979,11 +2985,18 @@ namespace ALYSLC
 		}
 		*/
 		
+		// Ignore 'Accept' input events when the quantity menu is open.
+		bool quantityMenuOpen = false;
 		if (a_userEvent == ue->accept || a_userEvent == ue->xButton)
 		{
 			if (isShowingInventory)
 			{
-				auto boundObj = selectedItem ? selectedItem->data.objDesc->object : nullptr;
+				auto boundObj = 
+				(
+					selectedItem && selectedItem->data.objDesc ? 
+					selectedItem->data.objDesc->object : 
+					nullptr
+				);
 				if (!boundObj)
 				{
 					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
@@ -3017,7 +3030,6 @@ namespace ALYSLC
 				);
 				// Haven't figured out a Scaleform event for item transfers through menus,
 				// so this will have to do.
-				bool quantityMenuOpen = false;
 				uint32_t chosenCount = 0;
 				auto view = containerMenu->uiMovie;
 				if (view && !containerMenu->root.IsNull() && !containerMenu->root.IsUndefined())
@@ -3054,7 +3066,9 @@ namespace ALYSLC
 					}
 				}
 				
-				// Quantity menu only opens if there are at least 5 of an item:
+				// Get weight.
+				double weight = selectedItem->data.objDesc->GetWeight();
+				// Quantity menu only opens if there are at least 5 of an item and weight is not 0:
 				// https://github.com/Mardoxx/skyrimui/blob/master/src/containermenu/ContainerMenu.as#L204
 				if (quantityMenuOpen)
 				{
@@ -3064,6 +3078,16 @@ namespace ALYSLC
 				{
 					// Drops 1 at a time if there are 5 or under.
 					chosenCount = totalItemCount <= 5 ? 1 : totalItemCount;
+				}
+				
+				RE::GFxValue infoWeight{ };
+				if (selectedItem->obj.HasMember("infoWeight"))
+				{
+					selectedItem->obj.GetMember("infoWeight", std::addressof(infoWeight));
+					if (!infoWeight.IsNull() && !infoWeight.IsUndefined())
+					{
+						weight = infoWeight.GetNumber();
+					}
 				}
 
 				// Clear the drop flag if the quantity menu is closed 
@@ -3078,8 +3102,12 @@ namespace ALYSLC
 				DBG
 				(
 					"User event name: {}, count to drop: {}, "
-					"drop bind pressed: {}, quantmen open: {}.",
-					a_userEvent, chosenCount, dropBindPressed, quantityMenuOpen
+					"drop bind pressed: {}, quantmen open: {}. Weight: {}",
+					a_userEvent, 
+					chosenCount,
+					dropBindPressed, 
+					quantityMenuOpen,
+					weight
 				);
 				
 				// JANK AND ANGUISH AHEAD:
@@ -3105,7 +3133,7 @@ namespace ALYSLC
 				// We CAN clear the flag if moving or dropping individual items
 				// or the quantity menu has opened 
 				// and we are about to confirm transfer of the item(s).
-				if ((dropBindPressed) && ((totalItemCount <= 5) || (quantityMenuOpen)))
+				if ((dropBindPressed) && (quantityMenuOpen || totalItemCount <= 5 || weight == 0.0))
 				{
 					dropReqPair = { boundObj, chosenCount };
 					// Reset flag once drop request is fulfilled.
@@ -3180,13 +3208,27 @@ namespace ALYSLC
 					// This may open a quantity menu, 
 					// so we cannot clear the drop bind pressed flag yet.
 				}
-				else
+				else if (quantityMenuOpen)
 				{
 					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 					// Refreshing the menu blocks the emulated input event from being processed.
 					// Huh.
 					shouldRefreshMenu = true;
 					shouldReloadMenuEntries = false;
+				}
+				else
+				{
+					if (inventoryChestOpen)
+					{
+						// Do not emulate the 'Accept' input because we do not want to
+						// transfer items to P1.
+						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+					}
+					else
+					{
+						// Transfer through P1 with the player's inventory imported over.
+						currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+					}
 				}
 			}
 			else
@@ -3314,329 +3356,375 @@ namespace ALYSLC
 			shouldRefreshMenu = true;
 			shouldReloadMenuEntries = true;
 		}
-		else
+		else if (a_userEvent == ue->back || a_userEvent == ue->wait)
 		{
-			bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
-			bool isRightEquip = a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip;
-			if (isLeftEquip || isRightEquip)
+			if (inventoryChestOpen)
 			{
-				// No event to send by default. 
-				// Do not want to equip selected items onto P1 through trigger presses.
+				// Switching to the Magic Menu.
 				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-				auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
-				if (!obj)
+
+				const auto& reqP = glob.coopPlayers[glob.menuPID];
+				// Companion player requesting to open their inventory.
+				bool succ = glob.moarm->InsertRequest
+				(
+					reqP->playerID,
+					InputAction::kMagicMenu, 
+					SteadyClock::now(), 
+					RE::MagicMenu::MENU_NAME
+				);
+				if (succ)
 				{
-					return;
-				}
-				
-				const auto& p = glob.coopPlayers[managerMenuPID];
-				const auto p1 = RE::PlayerCharacter::GetSingleton(); 
-				bool isEquipable = Util::IsEquipableInventoryObject(obj);
-				bool isConsumable = Util::IsConsumable(obj);
-				auto asBook = obj->As<RE::TESObjectBOOK>(); 
-				if (asBook && p1)
-				{
-					// If this is a skillbook, co-op companions will level up 
-					// the accompanying skill in the activation hook after P1 uses the book.
-					currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-				}
-				else if (!isEquipable && !isConsumable)
-				{
-					// You get NOTHING! You LOSE! Good DAY, sir.
-					// No reason to try to equip it onto the companion player.
-					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-					DBG("Nah: {}", obj->GetName());
-				}
-				else if (ALYSLC::EnderalCompat::g_installed && 
-						 obj->As<RE::AlchemyItem>() && 
-						 obj->As<RE::AlchemyItem>()->HasKeywordString("Lehrbuch"))
-				{
-					auto item = obj->As<RE::AlchemyItem>();
-					// Level up with Enderal skillbook.
-					bool succ = PerformEnderalSkillLevelUp(item);
-					if (!succ)
+					DBG
+					(
+						"Opening the Magic Menu for {}.", 
+						reqP->coopActor->GetName()
+					);
+					if (auto msgQ = RE::UIMessageQueue::GetSingleton(); msgQ)
 					{
-						// Notify the player to open their inventory and try again.
-						DBG
+						msgQ->AddMessage
 						(
-							"Failed to use Enderal skillbook '{}'.",
-							item->GetName()
+							RE::ContainerMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, nullptr
+						);
+						msgQ->AddMessage
+						(
+							RE::MagicMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kShow, nullptr
 						);
 					}
-				
-					// No event and we do not want P1 to use the book.
-					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 				}
-				else
-				{
-					const auto mode = containerMenu->GetContainerMode();
-					// Only transfer if the player is not pickpocketing the item,
-					// or if the pickpocket attempt was successful.
-					// Can't simply emulate a trigger press for P1 
-					// because even though this will attempt the pickpocket for us,
-					// it will equip the item on P1, instead of the companion player, 
-					// if successful.
-					bool canTransfer = true;
-					if (mode == RE::ContainerMenu::ContainerMode::kPickpocket)
-					{
-						auto refrPtr = menuContainerHandle.get();
-						if (refrPtr)
-						{
-							canTransfer = p1->AttemptPickpocket
-							(
-								menuContainerHandle.get().get(), selectedItem->data.objDesc, 1
-							);
+			}
+			else
+			{
+				// Switch to container/P1's inventory.
+				// Will import/export this player's inventory.
+				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+				DBG("Switching tabs.");
+			}
+		}
 
-							// Pickpocketing was a success! 
-							// Add skill XP for P1,
-							// since the above function does not do it automatically.
-							if (canTransfer)
-							{
-								DBG("{}'s gold value: {}.", 
-									obj->GetName(), 
-									obj->GetGoldValue());
-								p1->UseSkill
-								(
-									RE::ActorValue::kPickpocket, 
-									obj->GetGoldValue(),
-									obj
-								);
-							}
+		bool isLeftEquip = a_userEvent == ue->leftAttack || a_userEvent == ue->leftEquip;
+		bool isRightEquip = 
+		(
+			(a_userEvent == ue->rightAttack || a_userEvent == ue->rightEquip) ||
+			(!quantityMenuOpen && a_userEvent == ue->accept && inventoryChestOpen)
+		);
+		if (isLeftEquip || isRightEquip)
+		{
+			// No event to send by default. 
+			// Do not want to equip selected items onto P1 through trigger presses.
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+			auto obj = selectedItem ? selectedItem->data.objDesc->object : nullptr; 
+			if (!obj)
+			{
+				return;
+			}
+				
+			const auto& p = glob.coopPlayers[managerMenuPID];
+			const auto p1 = RE::PlayerCharacter::GetSingleton(); 
+			bool isEquipable = Util::IsEquipableInventoryObject(obj);
+			bool isConsumable = Util::IsConsumable(obj);
+			auto asBook = obj->As<RE::TESObjectBOOK>(); 
+			if (!isPickpocketing && asBook && p1)
+			{
+				// If this is a skillbook, co-op companions will level up 
+				// the accompanying skill in the activation hook after P1 uses the book.
+				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
+			}
+			else if (!isPickpocketing && !isEquipable && !isConsumable)
+			{
+				// You get NOTHING! You LOSE! Good DAY, sir.
+				// No reason to try to equip it onto the companion player.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+				DBG("Nah: {}", obj->GetName());
+			}
+			else if (!isPickpocketing &&
+					 ALYSLC::EnderalCompat::g_installed && 
+					 obj->As<RE::AlchemyItem>() && 
+					 obj->As<RE::AlchemyItem>()->HasKeywordString("Lehrbuch"))
+			{
+				auto item = obj->As<RE::AlchemyItem>();
+				// Level up with Enderal skillbook.
+				bool succ = PerformEnderalSkillLevelUp(item);
+				if (!succ)
+				{
+					// Notify the player to open their inventory and try again.
+					DBG
+					(
+						"Failed to use Enderal skillbook '{}'.",
+						item->GetName()
+					);
+				}
+				
+				// No event and we do not want P1 to use the book.
+				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+			}
+			else
+			{
+				// Only transfer if the player is not pickpocketing the item,
+				// or if the pickpocket attempt was successful.
+				// Can't simply emulate a trigger press for P1 
+				// because even though this will attempt the pickpocket for us,
+				// it will equip the item on P1, instead of the companion player, 
+				// if successful.
+				bool canTransfer = true;
+				if (isPickpocketing)
+				{
+					auto refrPtr = menuContainerHandle.get();
+					if (refrPtr)
+					{
+						canTransfer = p1->AttemptPickpocket
+						(
+							menuContainerHandle.get().get(), selectedItem->data.objDesc, 1
+						);
+
+						// Pickpocketing was a success! 
+						// Add skill XP for P1,
+						// since the above function does not do it automatically.
+						if (canTransfer)
+						{
+							DBG("{}'s gold value: {}.", 
+								obj->GetName(), 
+								obj->GetGoldValue());
+							p1->UseSkill
+							(
+								RE::ActorValue::kPickpocket, 
+								obj->GetGoldValue(),
+								obj
+							);
 						}
 					}
+				}
 
-					if (canTransfer)
+				if (canTransfer)
+				{
+					// Setup equip request.
+					currentMenuInputEventType = MenuInputEventType::kEquipReq;
+					fromContainerHandle = menuContainerHandle;
+					reqEquipIndex = 
+					(
+						isLeftEquip ? EquipIndex::kLeftHand : EquipIndex::kRightHand
+					);
+					selectedForm = obj;
+					placeholderMagicChanged = false;
+					selectedExDataList = Util::GetEntryFrontExtraDataList
+					(
+						selectedItem->data.objDesc
+					);
+
+					DBG
+					(
+						"Selected form {}, selected inv entry: {:p}, selected exData: {:p}.",
+						selectedForm ? selectedForm->GetName() : "NONE",
+						fmt::ptr(selectedItem->data.objDesc),
+						fmt::ptr(selectedExDataList)
+					);
+					RE::ExtraDataList* selectedList{ nullptr };
+					if (selectedItem->data.objDesc->extraLists &&
+						!selectedItem->data.objDesc->extraLists->empty())
 					{
-						// Setup equip request.
-						currentMenuInputEventType = MenuInputEventType::kEquipReq;
-						fromContainerHandle = menuContainerHandle;
-						reqEquipIndex = 
+						auto listSize = std::distance
 						(
-							isLeftEquip ? EquipIndex::kLeftHand : EquipIndex::kRightHand
+							selectedItem->data.objDesc->extraLists->begin(), 
+							selectedItem->data.objDesc->extraLists->end()
 						);
-						selectedForm = obj;
-						placeholderMagicChanged = false;
-						selectedExDataList = Util::GetEntryFrontExtraDataList
-						(
-							selectedItem->data.objDesc
-						);
-
-						DBG
-						(
-							"Selected form {}, selected inv entry: {:p}, selected exData: {:p}.",
-							selectedForm ? selectedForm->GetName() : "NONE",
-							fmt::ptr(selectedItem->data.objDesc),
-							fmt::ptr(selectedExDataList)
-						);
-						RE::ExtraDataList* selectedList{ nullptr };
-						if (selectedItem->data.objDesc->extraLists &&
-							!selectedItem->data.objDesc->extraLists->empty())
+						for (const auto list : *selectedItem->data.objDesc->extraLists)
 						{
-							auto listSize = std::distance
-							(
-								selectedItem->data.objDesc->extraLists->begin(), 
-								selectedItem->data.objDesc->extraLists->end()
-							);
-							for (const auto list : *selectedItem->data.objDesc->extraLists)
+							if (!list)
 							{
-								if (!list)
-								{
-									continue;
-								}
+								continue;
+							}
 								
-								selectedList = list;
-								for (auto type = RE::ExtraDataType::kNone; 
-									 type <= RE::ExtraDataType::kUnkBF; 
-									 type = static_cast<RE::ExtraDataType>(!type + 1))
+							selectedList = list;
+							for (auto type = RE::ExtraDataType::kNone; 
+									type <= RE::ExtraDataType::kUnkBF; 
+									type = static_cast<RE::ExtraDataType>(!type + 1))
+							{
+								if (auto data = list->GetByType(type); data)
 								{
-									if (auto data = list->GetByType(type); data)
+									DBG
+									(
+										"Selected form {} has exData list {:p} ({}) "
+										"with data {:p} of type 0x{:X}.",
+										selectedForm->GetName(),
+										fmt::ptr(list),
+										listSize,
+										fmt::ptr(data),
+										type
+									);
+									if (type == RE::ExtraDataType::kOwnership)
 									{
+										auto exOwner = static_cast<RE::ExtraOwnership*>(data);
 										DBG
 										(
-											"Selected form {} has exData list {:p} ({}) "
-											"with data {:p} of type 0x{:X}.",
-											selectedForm->GetName(),
-											fmt::ptr(list),
-											listSize,
-											fmt::ptr(data),
-											type
+											"Owner: {} (0x{:X}).",
+											exOwner && exOwner->owner ? 
+											exOwner->owner->GetName() :
+											"NONE",
+											exOwner && exOwner->owner ? 
+											exOwner->owner->formID :
+											0xDEAD
 										);
-										if (type == RE::ExtraDataType::kOwnership)
-										{
-											auto exOwner = static_cast<RE::ExtraOwnership*>(data);
-											DBG
-											(
-												"Owner: {} (0x{:X}).",
-												exOwner && exOwner->owner ? 
-												exOwner->owner->GetName() :
-												"NONE",
-												exOwner && exOwner->owner ? 
-												exOwner->owner->formID :
-												0xDEAD
-											);
-										}
 									}
-								}
-							}
-						}
-						else
-						{
-							DBG("{} has no extra data lists.", selectedForm->GetName());
-						}
-						
-						// Only need to reload menu entries 
-						// if not equipping from the player's inventory and the item 
-						// is not a weapon, armor piece, or ammo.
-						// Refresh the menu either way.
-						shouldRefreshMenu = true;
-						if (isShowingInventory || 
-							!glob.coopPlayers[managerMenuPID]->em->IsEquipped
-							(
-								selectedForm, nullptr
-							))
-						{
-							// Refresh equip state later once the item is (un)equipped.
-							lastEquipStateRefreshReqTP = SteadyClock::now();
-							// Entry list size will change when equipping from an external container
-							// or when using a consumable, so make sure the list is updated.
-							shouldReloadMenuEntries = 
-							(
-								(!isShowingInventory) ||
-								(
-									selectedForm->IsNot
-									(
-										RE::FormType::Weapon, 
-										RE::FormType::Armor,
-										RE::FormType::Ammo
-									)
-								)
-							);
-							DBG
-							(
-								"Should reload player inventory lists: {}", 
-								shouldReloadMenuEntries
-							);
-						}
-						else
-						{
-							// Refresh right away after item removal otherwise.
-							shouldReloadMenuEntries = true;
-						}
-
-						// If container reference is the player,
-						// or the item is not valid, do not remove it from its container.
-						if (!obj)
-						{
-							return;
-						}
-
-						auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
-						if (!containerRefrPtr) 
-						{
-							return;
-						}
-
-						auto droppedInventory = containerRefrPtr->GetDroppedInventory();
-						const auto iter = droppedInventory.find(obj);
-						// Loot dropped inventory items from the overworld,
-						// since they cannot be removed from the container directly.
-						if (iter != droppedInventory.end())
-						{
-							const auto& countHandlePair = iter->second;
-							if (countHandlePair.first > 0)
-							{
-								for (const auto& handle : countHandlePair.second)
-								{
-									if (!Util::HandleIsValid(handle))
-									{
-										continue;
-									}
-									
-									DBG
-									(
-										"Picking up {} from {}'s dropped inventory "
-										"and transferring from P1 to {}.",
-										obj ? obj->GetName() : "NONE", 
-										containerRefrPtr->GetName(), 
-										glob.coopPlayers[managerMenuPID]->coopActor->GetName()
-									);
-									p1->PickUpObject(handle.get().get(), 1);
-								}
-							}
-						}
-						else if (!isShowingInventory)
-						{
-							auto counts = containerRefrPtr->GetInventoryCounts();
-							const auto iter2 = counts.find(obj);
-							if (iter2 != counts.end())
-							{
-								auto count = iter2->second;
-								if (count > 0)
-								{
-									// NOTE: 
-									// Move ALL directly to the menu-controlling companion player's
-									// inventory chest to be equipped immediately. 
-									// Delaying the transfer may cause the equip call to execute
-									// before the item is transfered and the equip will fail.
-									const auto& menuP = glob.coopPlayers[managerMenuPID]; 
-									DBG
-									(
-										"Moving {} {} from {} to {}'s inventory.",
-										count, 
-										obj ? obj->GetName() : "NONE", 
-										containerRefrPtr->GetName(), 
-										menuP->coopActor->GetName()
-									);
-									// Move to inventory chest to add ownership exData
-									// which will then move it straight to P1 
-									// from the AddObjectToContainer hook.
-									containerRefrPtr->RemoveItem
-									(	
-										obj,
-										count, 
-										RE::ITEM_REMOVE_REASON::kStoreInContainer,
-										nullptr,
-										menuP->em->inventoryChest.get()
-									);
-									// Extra data list changes after moving to P1/chest,
-									// so grab the new front list to use for the equip.
-									selectedExDataList = Util::GetEntryFrontExtraDataList
-									(
-										Util::GetInventoryEntryDataForObject
-										(
-											menuP->em->inventoryChest.get(),
-											obj,
-											nullptr
-										)
-									);
 								}
 							}
 						}
 					}
 					else
 					{
-						// Exit the menu if caught pickpocketing.
-						// No event to handle.
-						currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-						auto msgQ = RE::UIMessageQueue::GetSingleton(); 
-						if (msgQ)
-						{
-							msgQ->AddMessage
+						DBG("{} has no extra data lists.", selectedForm->GetName());
+					}
+						
+					// Only need to reload menu entries 
+					// if not equipping from the player's inventory and the item 
+					// is not a weapon, armor piece, or ammo.
+					// Refresh the menu either way.
+					shouldRefreshMenu = true;
+					if (isShowingInventory || 
+						!glob.coopPlayers[managerMenuPID]->em->IsEquipped
+						(
+							selectedForm, nullptr
+						))
+					{
+						// Refresh equip state later once the item is (un)equipped.
+						lastEquipStateRefreshReqTP = SteadyClock::now();
+						// Entry list size will change when equipping from an external container
+						// or when using a consumable, so make sure the list is updated.
+						shouldReloadMenuEntries = 
+						(
+							(!isShowingInventory) ||
 							(
-								RE::ContainerMenu::MENU_NAME,
-								RE::UI_MESSAGE_TYPE::kForceHide, 
-								nullptr
-							);
-							return;
+								selectedForm->IsNot
+								(
+									RE::FormType::Weapon, 
+									RE::FormType::Armor,
+									RE::FormType::Ammo
+								)
+							)
+						);
+						DBG
+						(
+							"Should reload player inventory lists: {}", 
+							shouldReloadMenuEntries
+						);
+					}
+					else
+					{
+						// Refresh right away after item removal otherwise.
+						shouldReloadMenuEntries = true;
+					}
+
+					// If container reference is the player,
+					// or the item is not valid, do not remove it from its container.
+					if (!obj)
+					{
+						return;
+					}
+
+					auto containerRefrPtr = Util::GetRefrPtrFromHandle(menuContainerHandle); 
+					if (!containerRefrPtr) 
+					{
+						return;
+					}
+
+					auto droppedInventory = containerRefrPtr->GetDroppedInventory();
+					const auto iter = droppedInventory.find(obj);
+					// Loot dropped inventory items from the overworld,
+					// since they cannot be removed from the container directly.
+					if (iter != droppedInventory.end())
+					{
+						const auto& countHandlePair = iter->second;
+						if (countHandlePair.first > 0)
+						{
+							for (const auto& handle : countHandlePair.second)
+							{
+								if (!Util::HandleIsValid(handle))
+								{
+									continue;
+								}
+									
+								DBG
+								(
+									"Picking up {} from {}'s dropped inventory "
+									"and transferring from P1 to {}.",
+									obj ? obj->GetName() : "NONE", 
+									containerRefrPtr->GetName(), 
+									glob.coopPlayers[managerMenuPID]->coopActor->GetName()
+								);
+								p1->PickUpObject(handle.get().get(), 1);
+							}
+						}
+					}
+					else if (!isShowingInventory)
+					{
+						auto counts = containerRefrPtr->GetInventoryCounts();
+						const auto iter2 = counts.find(obj);
+						if (iter2 != counts.end())
+						{
+							auto count = iter2->second;
+							if (count > 0)
+							{
+								// NOTE: 
+								// Move ALL directly to the menu-controlling companion player's
+								// inventory chest to be equipped immediately. 
+								// Delaying the transfer may cause the equip call to execute
+								// before the item is transfered and the equip will fail.
+								const auto& menuP = glob.coopPlayers[managerMenuPID]; 
+								DBG
+								(
+									"Moving {} {} from {} to {}'s inventory.",
+									count, 
+									obj ? obj->GetName() : "NONE", 
+									containerRefrPtr->GetName(), 
+									menuP->coopActor->GetName()
+								);
+								// Move to inventory chest to add ownership exData
+								// which will then move it straight to P1 
+								// from the AddObjectToContainer hook.
+								containerRefrPtr->RemoveItem
+								(	
+									obj,
+									count, 
+									RE::ITEM_REMOVE_REASON::kStoreInContainer,
+									nullptr,
+									menuP->em->inventoryChest.get()
+								);
+								// Extra data list changes after moving to P1/chest,
+								// so grab the new front list to use for the equip.
+								selectedExDataList = Util::GetEntryFrontExtraDataList
+								(
+									Util::GetInventoryEntryDataForObject
+									(
+										menuP->em->inventoryChest.get(),
+										obj,
+										nullptr
+									)
+								);
+							}
 						}
 					}
 				}
+				else
+				{
+					// Exit the menu if caught pickpocketing.
+					// No event to handle.
+					currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+					auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+					if (msgQ)
+					{
+						msgQ->AddMessage
+						(
+							RE::ContainerMenu::MENU_NAME,
+							RE::UI_MESSAGE_TYPE::kForceHide, 
+							nullptr
+						);
+						return;
+					}
+				}
 			}
-			else
-			{
-				// Emulate all other inputs.
-				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-			}
+		}
+		else
+		{
+			// Emulate all other inputs.
+			currentMenuInputEventType = MenuInputEventType::kEmulateInput;
 		}
 	}
 
@@ -3966,15 +4054,7 @@ namespace ALYSLC
 		{
 			// Hotkey the selected form, if any.
 			// No emulated input to send.
-			if (glob.cdh->GetAnalogStickState(managerMenuDID, false).normMag > 0.0f)
-			{
-				currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
-			}
-			else
-			{
-				// Otherwise, send the input as usual to assign to a group.
-				currentMenuInputEventType = MenuInputEventType::kEmulateInput;
-			}
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
 		}
 		else 
 		{
@@ -4454,6 +4534,45 @@ namespace ALYSLC
 			// but no need to refresh the cached equipped data, which has not changed.
 			shouldReloadMenuEntries = false;
 			shouldRefreshMenu = true;
+		}
+		else if (a_userEvent == ue->back || a_userEvent == ue->wait)
+		{
+			// Do not switch to P1's inventory. Open this player's inventory instead.
+			currentMenuInputEventType = MenuInputEventType::kPressedNoEvent;
+
+			const auto& reqP = glob.coopPlayers[glob.menuPID];
+			// Companion player requesting to open their inventory.
+			auto intfcStr = RE::InterfaceStrings::GetSingleton();
+			auto msgQ = RE::UIMessageQueue::GetSingleton(); 
+			if (msgQ && intfcStr)
+			{
+				// Construct a custom message from the player who wants to open their inventory.
+				// This message will be processed by the ContainerMenu::ProcessMessage() hook
+				// and will open the menu there.
+				RE::HUDData* data = static_cast<RE::HUDData*>
+				(
+					msgQ->CreateUIMessageData(intfcStr->hudData)
+				);
+				if (data)
+				{
+					DBG
+					(
+						"Opening {}'s inventory instead of P1's.", 
+						reqP->coopActor->GetName()
+					);
+					data->crosshairRef = reqP->coopActor->GetHandle();
+					data->show = false;
+					data->quest = nullptr;
+					data->text = "Open ALYSLC Inventory";
+					data->type.set(RE::HUD_MESSAGE_TYPE::kNone);
+					data->wordOfPower = nullptr;
+				}
+
+				msgQ->AddMessage
+				(
+					RE::MagicMenu::MENU_NAME, RE::UI_MESSAGE_TYPE::kHide, data
+				);
+			}
 		}
 		else
 		{

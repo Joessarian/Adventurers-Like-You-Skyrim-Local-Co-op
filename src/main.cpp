@@ -19,6 +19,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 	case SKSE::MessagingInterface::kDataLoaded:
 	{
 		INF("Data loaded.");
+
 		// Install all hooks.
 		ALYSLC::Hooks::Install();
 		// Add event sinks for all necessary events.
@@ -42,6 +43,7 @@ void SKSEMessageHandler(SKSE::MessagingInterface::Message* msg)
 		ALYSLC::TKDodgeCompat::CheckForTKDodge();
 		ALYSLC::TrueDirectionalMovementCompat::CheckForTrueDirectionalMovement(g_loadInterface);
 		ALYSLC::TrueHUDCompat::RequestTrueHUDAPIs(g_loadInterface);
+		ALYSLC::UseOrTakeCompat::CheckForUseOrTake();
 		// Import all settings after setting the plugin name to use
 		// in ALYSLC::EnderalCompat::CheckForEnderalSSE().
 		ALYSLC::EnderalCompat::CheckForEnderalSSE();

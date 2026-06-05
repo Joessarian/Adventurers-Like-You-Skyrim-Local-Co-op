@@ -217,6 +217,7 @@ See the mod's source for more detailed credits.
 - `powerOf3`
    - For their [CommonLibSSE fork](https://github.com/powerof3/CommonLibSSE), which is used as a base for this mod’s plugin.
    - For their open-sourced plugins which served as an invaluable resource for learning to create plugins and for a number of hooks.
+   - For [Use Or Take](https://www.nexusmods.com/skyrimspecialedition/mods/70868) which was referenced to provide compatibility with ALYSLC, and is also a requirement to have the same P1 activation functionality for P2-P4.
    - [Check out powerOf3's Skyrim mods](https://next.nexusmods.com/profile/powerofthree/mods?gameId=1704)
 - `Ershin`
    - For their revolutionary mods [True Directional Movement](https://www.nexusmods.com/skyrimspecialedition/mods/51614), [TrueHUD](https://www.nexusmods.com/skyrimspecialedition/mods/62775), and [Precision](https://www.nexusmods.com/skyrimspecialedition/mods/72347), which I referenced heavily to understand how to structure my plugin and for a number of hooks.
@@ -270,6 +271,9 @@ See the mod's source for more detailed credits.
 - `TrashQuixote` 
   - For the function IDs for constructing and applying hit data, which are from their mod [TrashUtility](https://github.com/TrashQuixote/TrashUtility).
   - [Check out TrashQuixote's Skyrim Mods](https://next.nexusmods.com/profile/LowbeeBob?gameId=1704)
+- `Corsafire1`
+  - For the havok game settings tweak to mitigate incidental physics damage from objects: [No Silly Physics Damage - Carts Pots Bones etc](https://www.nexusmods.com/skyrimspecialedition/mods/36132).
+  - [Check out Corsafire1's Skyrim Mods](https://www.nexusmods.com/profile/Corsafire1/mods?gameId=1704)
 - `PJM Homebrew Fonts`
   - For the [font](https://www.fontspace.com/balgruf-font-f59539) (SIL Open Font License (OFL)) used in the banner image. 
 - `SanneARBY`

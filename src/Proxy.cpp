@@ -1395,6 +1395,8 @@ namespace ALYSLC
 		const auto handle = a_playerActor->GetHandle();
 		glob.taskRunner->AddTask
 		(
+			"GLOB Runner",
+			__FUNCTION__,
 			[handle, a_toP1](){ GlobalCoopData::TeleportToP1OrAwayTask(handle, a_toP1); }
 		);
 	}
@@ -1429,6 +1431,8 @@ namespace ALYSLC
 		RE::ActorPtr teleportTargetPtr{ a_teleportTarget };
 		p->taskRunner->AddTask
 		(
+			p->coopActor->GetName(),
+			__FUNCTION__,
 			[&p, teleportTargetPtr]() 
 			{ 
 				if (!teleportTargetPtr)
@@ -2005,7 +2009,12 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.taskRunner->AddTask([]() { GlobalCoopData::PromptForPlayer1CIDTask(); });
+		glob.taskRunner->AddTask
+		(
+			"GLOB Runner",
+			__FUNCTION__,
+			[]() { GlobalCoopData::PromptForPlayer1CIDTask(); }
+		);
 	}
 
 	void CoopLib::Debug::DisableGodModeForAllCoopPlayers(RE::StaticFunctionTag*)
@@ -2148,7 +2157,12 @@ namespace ALYSLC
 				continue;
 			}
 
-			p->taskRunner->AddTask([&p]() { p->RefreshPlayerManagersTask(); });
+			p->taskRunner->AddTask
+			(
+				p->coopActor->GetName(),
+				__FUNCTION__,
+				[&p]() { p->RefreshPlayerManagersTask(); }
+			);
 		}
 	}
 
@@ -2171,7 +2185,12 @@ namespace ALYSLC
 			return;
 		}
 
-		p->taskRunner->AddTask([&p]() { p->RefreshPlayerManagersTask(); });
+		p->taskRunner->AddTask
+		(
+			p->coopActor->GetName(),
+			__FUNCTION__,
+			[&p]() { p->RefreshPlayerManagersTask(); }
+		);
 	}
 
 	void CoopLib::Debug::ResetCoopCompanion
@@ -2206,6 +2225,8 @@ namespace ALYSLC
 
 		p->taskRunner->AddTask
 		(
+			p->coopActor->GetName(),
+			__FUNCTION__,
 			[&p, a_unequipAll, a_reattachHavok]() 
 			{ 
 				p->ResetCompanionPlayerStateTask(a_unequipAll, a_reattachHavok); 
@@ -2227,7 +2248,12 @@ namespace ALYSLC
 		if (glob.coopSessionActive) 
 		{
 			// Stop P1 managers, cam manager, and menu input manager.
-			glob.taskRunner->AddTask([]() { GlobalCoopData::ResetPlayer1AndCameraTask(); });
+			glob.taskRunner->AddTask
+			(
+				"GLOB Runner",
+				__FUNCTION__,
+				[]() { GlobalCoopData::ResetPlayer1AndCameraTask(); }
+			);
 		}
 
 		// Ensure P1 is not animation driven or synced as a result of co-op.
@@ -2289,6 +2315,8 @@ namespace ALYSLC
 		DBG("{}.", p->coopActor->GetName());
 		glob.taskRunner->AddTask
 		(
+			"GLOB Runner",
+			__FUNCTION__,
 			[a_playerID]() 
 			{
 				GlobalCoopData::RespecPlayerTask(a_playerID);
@@ -2306,7 +2334,12 @@ namespace ALYSLC
 			return;
 		}
 
-		glob.taskRunner->AddTask([]() { GlobalCoopData::RestartCoopCameraTask(); });
+		glob.taskRunner->AddTask
+		(
+			"GLOB Runner",
+			__FUNCTION__,
+			[]() { GlobalCoopData::RestartCoopCameraTask(); }
+		);
 	}
 
 	void CoopLib::Debug::StopAllCombatOnCoopPlayers(RE::StaticFunctionTag*, bool a_clearBounties) 

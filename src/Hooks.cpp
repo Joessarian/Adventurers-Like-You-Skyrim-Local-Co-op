@@ -2992,7 +2992,12 @@ namespace ALYSLC
 						if (!playerStillStanding)
 						{
 							// All players downed, end co-op session.
-							glob.taskRunner->AddTask([](){ GlobalCoopData::YouDiedTask(); });
+							glob.taskRunner->AddTask
+							(
+								"GLOB Runner",
+								__FUNCTION__,
+								[](){ GlobalCoopData::YouDiedTask(); }
+							);
 						} 
 						else if (a_this->GetActorValue(RE::ActorValue::kHealth) < 0.0f)
 						{
@@ -3007,6 +3012,8 @@ namespace ALYSLC
 						auto handle = p->coopActor->GetHandle();
 						glob.taskRunner->AddTask
 						(
+							"GLOB Runner",
+							__FUNCTION__,
 							[handle](){ GlobalCoopData::YouDiedTask(handle); }
 						);
 					}
@@ -4849,30 +4856,6 @@ namespace ALYSLC
 									RE::NiUpdateData updateData{ };
 									speaker3DPtr->UpdateDownwardPass(updateData, 0);
 								}
-							}
-						}
-					}
-							
-					// [TEMP WORKAROUND 2]:
-					// Disable Precision on this actor when ragdolled 
-					// to avoid a ragdoll reset position glitch on knock explosion
-					// where the hit actor is teleported to their last ragdoll position 
-					// instead of staying at their current position.
-					// Precision is re-enabled on the actor after they get up.
-					if (Settings::bApplyTemporaryRagdollWarpWorkaround)
-					{
-						if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
-						{
-							const auto handle = a_this->GetHandle();
-							if (a_this->IsInRagdollState() && api->IsActorActive(handle))
-							{
-								api->ToggleDisableActor(handle, true);
-							}
-							else if (!a_this->IsInRagdollState() && 
-									 a_this->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal && 
-									 !api->IsActorActive(handle))
-							{
-								api->ToggleDisableActor(handle, false);
 							}
 						}
 					}
@@ -7055,7 +7038,7 @@ namespace ALYSLC
 			
 			bool sneakBindEvent = buttonEvent->idCode == sneakMask;
 			bool togglePOVBindEvent = buttonEvent->idCode == togglePOVMask;
-			// Only handling pause or wait bind events.
+			// Only handling sneak or toggle POV bind events.
 			if (!sneakBindEvent && !togglePOVBindEvent)
 			{
 				return false;
@@ -7275,10 +7258,7 @@ namespace ALYSLC
 				// The 'Sneak' bind must be held longer than the 'TogglePOV' button
 				// to toggle the co-op camera on while in co-op,
 				// or toggle singleplayer mode on or off when not in co-op.
-				coopCamToggleBindPressed = 
-				(
-					sneakBindHeldTime >= togglePOVBindHeldTime
-				);
+				coopCamToggleBindPressed = sneakBindHeldTime >= togglePOVBindHeldTime;
 				// BEFORE sending events to open any menus.
 				// Temp solution (not failproof), 
 				// since I can't find a direct way of getting the XInput
@@ -7424,11 +7404,10 @@ namespace ALYSLC
 						(!ui->GameIsPaused() && ui->IsSavingAllowed() && onlyAlwaysOpen) &&
 						((!dataHandler) || (!dataHandler->autoSaving && !dataHandler->saveLoadGame))
 					);
-					// Can only toggle on if the camera manager isn't running 
-					// and the input is not from P2 when in hybrid mode.
+					// Can only toggle on if the camera manager isn't running.
 					if (glob.coopSessionActive)
 					{
-						canToggle &= !glob.cam->IsRunning() && !isHybridModeControllerInput;
+						canToggle &= !glob.cam->IsRunning();
 					}
 					
 					DBG
@@ -7464,8 +7443,6 @@ namespace ALYSLC
 								glob.cam->SetWaitForToggle(false);
 								glob.cam->RequestStateChange(ManagerState::kRunning);
 							}
-
-
 						}
 
 						// Reset hold time of released bind.
@@ -7487,8 +7464,8 @@ namespace ALYSLC
 							(
 								"[ALYSLC] Cannot {} right now.", 
 								glob.coopSessionActive ? 
-								"enabled co-op cam" : 
-								"toggle singleplayer mode"
+								"enable co-op camera" : 
+								"enable singleplayer camera"
 							).c_str()
 						);
 					}
@@ -7497,7 +7474,7 @@ namespace ALYSLC
 					// since we do not want either the sneak or toggle POV bind to trigger 
 					// once both are pressed at the same time in the correct order
 					// to toggle the camera/singleplayer mode.
-					blockEvent = true;
+					blockEvent = sneakBindEvent || glob.cam->IsRunning();
 				}
 				else
 				{
@@ -7507,7 +7484,10 @@ namespace ALYSLC
 						"so release the bind as usual."
 					);
 					// Will chain a button press event and not block this button release event.
-					sendButtonReleaseEvent = true;
+					// No need to send an additional button event to trigger Toggle POV
+					// while the co-op camera is off because we let the original event through
+					// and don't want to trigger the bind twice with another event.
+					sendButtonReleaseEvent = sneakBindEvent || glob.cam->IsRunning();
 				}
 			}
 			else if (buttonEvent->IsDown() || buttonEvent->IsHeld())
@@ -7520,11 +7500,21 @@ namespace ALYSLC
 					);	
 				}
 
-				blockEvent = true;
+				// Block Sneak while held and also Toggle POV when the co-op camera is on.
+				blockEvent = sneakBindEvent || glob.cam->IsRunning();
 			}
 			else if (buttonEvent->IsUp())
 			{
-				sendButtonReleaseEvent = !isHybridModeControllerInput && !coopCamToggleBindPressed;
+				// Only need to send a new button release event if the input is from P1's controller
+				// while not in hybrid mode and the co-op camera was not toggled on,
+				// and if handling the Sneak bind, or if the camera is running.
+				// Since we do not block the Toggle POV bind while the co-op camera is off,
+				// we don't need to send an extra button event to trigger the bind on release.
+				sendButtonReleaseEvent = 
+				(
+					(!coopCamToggleBindPressed) && 
+					(sneakBindEvent || glob.cam->IsRunning())
+				);
 				DBG
 				(
 					"Is NOT hybrid mode controller input: {}, "
@@ -7601,23 +7591,34 @@ namespace ALYSLC
 				buttonEvent->next = buttonEvent2;
 				a_newEventChainedOut = true;
 			}
-			else
+			else if (buttonEvent->IsUp())
 			{
 				// Co-op camera was toggled or in hybrid mode, 
 				// so ignore the button event on release.
 				DBG
 				(
 					"{} bind released on its own. Event name: {}. Ignoring. "
-					"Allow through. Hybrid mode: {}, co-op cam toggle bind pressed: {}",
+					"Hybrid mode: {}, co-op cam toggle bind pressed: {}",
 					sneakBindEvent ? "Sneak" : "TogglePOV", 
 					buttonEvent->userEvent,
 					glob.hybridModeActive,
 					coopCamToggleBindPressed
 				);
-						
-				blockEvent = true;
+				if (!blockEvent)
+				{
+					// Only need to block the sneak event until release,
+					// and the toggle POV bind until release if the co-op camera is running.
+					// Allow through when the co-op camera is not running to ensure
+					// we can adjust the camera's zoom.	
+					blockEvent = 
+					(
+						sneakBindEvent || glob.cam->IsRunning() || coopCamToggleBindPressed
+					);
+				}
+				
 			}
 
+			DBG("BLOCKT: {}: {}.", a_inputEvent->QUserEvent(), blockEvent);
 			return blockEvent;
 		}
 
@@ -7777,6 +7778,7 @@ namespace ALYSLC
 			{
 				(buttonEvent->value == 0.0f && buttonEvent->heldDownSecs > 0.0f) &&
 				(
+					(buttonEvent->idCode != 0xFF) &&
 					(
 						buttonEvent->idCode == 
 						controlMap->GetMappedKey(ue->pause, RE::INPUT_DEVICE::kGamepad)
@@ -7789,6 +7791,8 @@ namespace ALYSLC
 			};
 			if (releasedPauseBind)
 			{
+				DBG("Event: {}, id code: {}, equip P1 QS form.", 
+					buttonEvent->QUserEvent(), buttonEvent->idCode);
 				glob.mim->EquipP1QSForm();
 			}
 
@@ -8031,18 +8035,6 @@ namespace ALYSLC
 
 				// Block while the bind is held.
 				return true;
-
-				/*idEvent->userEvent = "ALYSLC_BLOCKED";
-				buttonEvent->idCode = 0xFF;
-				buttonEvent->heldDownSecs = 0.0f;
-				buttonEvent->value = 0.0f;
-				if (*inputEvent->eventType > RE::INPUT_EVENT_TYPE::kKinect)
-				{
-					inputEvent->eventType = static_cast<RE::INPUT_EVENT_TYPE>
-					(
-						!(*inputEvent->eventType) - !RE::INPUT_EVENT_TYPE::kKinect + 1
-					);
-				}*/
 			}
 
 			return false;
@@ -8905,7 +8897,7 @@ namespace ALYSLC
 				//=============================================================================
 				// Final Determinations for Propagation:
 				//=============================================================================
- 
+
 				// [FOR CO-OP COMPANIONS]
 				// 1. P2 is trying to rotate the lock for P1 (two player lockpicking enabled).
 				// 2. Input event sent by a non-P1 player. -AND-
@@ -9152,7 +9144,8 @@ namespace ALYSLC
 			{
 				return _UpdateDownwardPass(a_this, a_data, a_arg2);
 			}
-
+			
+			auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
 			// First chain of downward pass recursive calls 
 			// always has no flags set for the given node.
 			if (a_data.flags == RE::NiUpdateData::Flag::kNone)
@@ -9170,7 +9163,6 @@ namespace ALYSLC
 
 			// Save local rotation and then apply our custom rotation
 			// before executing the downward pass to visually apply our changes.
-			auto nodePtr = RE::NiPointer<RE::NiNode>(a_this);
 			p->mm->nom->defaultNodeLocalTransformsMap.insert_or_assign
 			(
 				nodePtr, a_this->local
@@ -9833,7 +9825,12 @@ namespace ALYSLC
 					if (!playerStillStanding)
 					{
 						// All players downed, end co-op session.
-						glob.taskRunner->AddTask([](){ GlobalCoopData::YouDiedTask(); });
+						glob.taskRunner->AddTask
+						(
+							"GLOB Runner",
+							__FUNCTION__,
+							[](){ GlobalCoopData::YouDiedTask(); }
+						);
 					}
 					else if (a_this->GetActorValue(RE::ActorValue::kHealth) < 0.0f)
 					{
@@ -9848,6 +9845,8 @@ namespace ALYSLC
 					auto handle = a_this->GetHandle();
 					glob.taskRunner->AddTask
 					(
+						"GLOB Runner",
+						__FUNCTION__,
 						[handle](){ GlobalCoopData::YouDiedTask(handle); }
 					);
 				}
@@ -10186,6 +10185,60 @@ namespace ALYSLC
 					a_rotate
 				);
 			}
+			
+			auto ui = RE::UI::GetSingleton();
+			// Trying to move an item to another player while the Gift Menu is open.
+			bool giftingItem = 
+			(
+				ui &&
+				ui->IsMenuOpen(RE::GiftMenu::MENU_NAME) &&
+				GlobalCoopData::IsCoopPlayer(glob.mim->gifteePlayerHandle) &&
+				glob.mim->IsRunning() && 
+				glob.mim->managerMenuPID != -1 &&
+				GlobalCoopData::IsCoopPlayer(a_moveToRef)
+			);
+			// IMPORTANT:
+			// Another player's inventory is copied over to P1,
+			// so we must not move any items to P1 directly, 
+			// as doing so just adds the item back to the same container.
+			if (giftingItem)
+			{
+				const auto& gifterP = glob.coopPlayers[glob.mim->managerMenuPID];
+				const auto& gifteeP = glob.coopPlayers
+				[
+					GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle)
+				];
+				DBG
+				(
+					"{} is gifting {} of {} to {}. Move to ref is {} before modification.",
+					gifterP->coopActor->GetName(),
+					a_count,
+					a_item->GetName(),
+					gifteeP->coopActor->GetName(),
+					a_moveToRef ? a_moveToRef->GetName() : "NONE"
+				);
+
+				// If the giftee player is player 1, 
+				// this means that we should move the item to P1's inventory chest, 
+				// which should contain P1's cached inventory 
+				// before the companion player's inventory was copied over 
+				// before the Gift Menu opened.
+				if (gifteeP->isPlayer1)
+				{
+					DBG
+					(
+						"Moving item {} to P1's inventory chest, "
+						"the contents of which will be restored as P1's inventory "
+						"when the Gift Menu closes.",
+						a_item->GetName()
+					);
+					a_moveToRef = gifteeP->em->inventoryChest.get();
+				}
+				else
+				{
+					a_moveToRef = gifteeP->coopActor.get();
+				}
+			}
 
 			// Do not move quest or party-wide items to other players or their inventory chests.
 			// Also do not move any items to the companion player or their inventory chest
@@ -10197,7 +10250,7 @@ namespace ALYSLC
 				const auto& p = glob.coopPlayers[glob.menuPID];
 				shouldNotRemove = 
 				(
-					(a_moveToRef != a_this) && 
+					(a_moveToRef != a_this && !giftingItem) && 
 					(
 						(
 							glob.copiedPlayerDataTypes.all
@@ -10242,7 +10295,7 @@ namespace ALYSLC
 				);
 				shouldNotRemove = 
 				(
-					(a_moveToRef != a_this) && 
+					(a_moveToRef != a_this && !giftingItem) && 
 					(
 						(moveToRefInvChanges == p1InvChanges) ||
 						(
@@ -10323,7 +10376,7 @@ namespace ALYSLC
 				(
 					"ALERT: NOT moving item {} (x{}) to {}. "
 					"Companion player controlling menus: {}. "
-					"Inventory copied over to P1: {}",
+					"Inventory copied over to P1: {}. Gifting item: {}.",
 					a_item->GetName(),
 					a_count,
 					a_moveToRef ? a_moveToRef->GetName() : "NONE",
@@ -10331,22 +10384,12 @@ namespace ALYSLC
 					glob.copiedPlayerDataTypes.all
 					(
 						CopyablePlayerDataTypes::kInventory
-					)
+					),
+					giftingItem
 				);
 				return nullptr;
 			}
 			
-			auto ui = RE::UI::GetSingleton();
-			// Trying to move an item to another player while the Gift Menu is open.
-			bool giftingItem = 
-			(
-				ui &&
-				ui->IsMenuOpen(RE::GiftMenu::MENU_NAME) &&
-				GlobalCoopData::IsCoopPlayer(glob.mim->gifteePlayerHandle) &&
-				glob.mim->IsRunning() && 
-				glob.mim->managerMenuPID != -1 &&
-				GlobalCoopData::IsCoopPlayer(a_moveToRef)
-			);
 			// Trying to move an item to a non-co-op entity from P1's inventory,
 			// which is really the companion player's inventory copied over to P1.
 			bool canTransferToNonCoopEntityOrDrop = 
@@ -10485,49 +10528,7 @@ namespace ALYSLC
 					}
 				}
 
-				// IMPORTANT:
-				// Another player's inventory is copied over to P1,
-				// so we must not move any items to P1 directly, 
-				// as doing so just adds the item back to the same container.
-				if (giftingItem)
-				{
-					const auto& gifterP = glob.coopPlayers[glob.mim->managerMenuPID];
-					const auto& gifteeP = glob.coopPlayers
-					[
-						GlobalCoopData::GetCoopPlayerIndex(glob.mim->gifteePlayerHandle)
-					];
-					DBG
-					(
-						"{} is gifting {} of {} to {}. Move to ref is {} before modification.",
-						gifterP->coopActor->GetName(),
-						a_count,
-						a_item->GetName(),
-						gifteeP->coopActor->GetName(),
-						a_moveToRef ? a_moveToRef->GetName() : "NONE"
-					);
-
-					// If the giftee player is player 1, 
-					// this means that we should move the item to P1's inventory chest, 
-					// which should contain P1's cached inventory 
-					// before the companion player's inventory was copied over 
-					// before the Gift Menu opened.
-					if (gifteeP->isPlayer1)
-					{
-						DBG
-						(
-							"Moving item {} to P1's inventory chest, "
-							"the contents of which will be restored as P1's inventory "
-							"when the Gift Menu closes.",
-							a_item->GetName()
-						);
-						a_moveToRef = gifteeP->em->inventoryChest.get();
-					}
-					else
-					{
-						a_moveToRef = gifteeP->coopActor.get();
-					}
-				}
-				else
+				if (canTransferToNonCoopEntityOrDrop)
 				{
 					DBG
 					(
@@ -11470,8 +11471,8 @@ namespace ALYSLC
 
 			bool justReleased = a_this->livingTime == 0.0f;
 			int32_t firingPlayerIndex = -1;
-			bool firedAtPlayer = false;
-			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayer);
+			int32_t firedAtPlayerIndex = -1;
+			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayerIndex);
 
 			int32_t grabbedByPlayerPID = -1;
 			int32_t releasedByPlayerPID = -1;
@@ -12496,12 +12497,26 @@ namespace ALYSLC
 
 			bool justReleased = a_this->livingTime == 0.0f;
 			int32_t firingPlayerIndex = -1;
-			bool firedAtPlayer = false;
-			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayer);
+			int32_t firedAtPlayerIndex = -1;
+			GetFiredAtOrByPlayer(projectileHandle, firingPlayerIndex, firedAtPlayerIndex);
 			// Temporarily highlight arrows/bolts shot by players or fired at players.
-			if ((justReleased) && (firingPlayerIndex != -1 || firedAtPlayer))
+			if ((justReleased) && (firingPlayerIndex != -1 || firedAtPlayerIndex != -1))
 			{
-				a_this->ApplyEffectShader(glob.activateHighlightShader, 5.0f);
+				auto shader = glob.activateDefaultShader;
+				if (firedAtPlayerIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[firedAtPlayerIndex];
+					shader = glob.activateHighlightShaders[firedAtPlayerIndex];
+					p->tm->ColorizeActivationShader(shader, true);
+				}
+				else if (firingPlayerIndex != -1)
+				{
+					const auto& p = glob.coopPlayers[firingPlayerIndex];
+					shader = glob.activateHighlightShaders[firingPlayerIndex];
+					p->tm->ColorizeActivationShader(shader, true);
+				}
+
+				a_this->ApplyEffectShader(shader, 5.0f);
 			}
 
 			RE::Projectile* projectile = nullptr;
@@ -12674,7 +12689,7 @@ namespace ALYSLC
 				);
 				bool canDirectTowardsCrosshairPos = 
 				(
-					a_p->mm->reqFaceTarget && a_p->tm->aimMode == AimMode::kFreeAim
+					a_p->mm->reqFaceTarget && a_p->tm->aimMode == AimMode::kCrosshair
 				);
 				// Actor targeted (aim correction or otherwise), 
 				// should face crosshair position (never true while mounted), 
@@ -12741,14 +12756,14 @@ namespace ALYSLC
 			if (isManaged)
 			{
 				const auto& projTrajType = a_p->tm->mph->GetInfo(a_projectileHandle)->trajType;
-				DBG
+				/*DBG
 				(
 					"{}: Traj type {} for {} (0x{:X}).",
 					a_p->coopActor->GetName(), 
 					!projTrajType, 
 					Util::GetEditorID(projectile->GetBaseObject()),
 					projectile->formID
-				); 
+				); */
 				if (projTrajType == ProjectileTrajType::kHoming)
 				{
 					// Start homing in on the target once the trajectory apex is reached.
@@ -12777,18 +12792,15 @@ namespace ALYSLC
 		(
 			const RE::ObjectRefHandle& a_projectileHandle, 
 			int32_t& a_firingPlayerPIDOut,
-			bool& a_firedAtPlayerOut
+			int32_t& a_firedAtPlayerPIDOut
 		)
 		{
-			// Store player index (PID) of the player 
-			// that released this projectile in one outparam.
-			// -1 if not released by a player.
-			// Also store whether or not the projectile 
-			// was fired at a player in the other outparam.
+			// Store the firing player's PID in one outparam (-1 if not by a player), 
+			// and the targeted player's PID in the other outparam (-1 if not at a player).
 
 			// Default to not fired by a player or at a player.
 			a_firingPlayerPIDOut = -1;
-			a_firedAtPlayerOut = false;
+			a_firedAtPlayerPIDOut = -1;
 
 			RE::Projectile* projectile = nullptr;
 			auto projectilePtr = Util::GetRefrPtrFromHandle(a_projectileHandle);
@@ -12827,25 +12839,34 @@ namespace ALYSLC
 
 				// Fired at a player if the projectile's desired target
 				// or the firing actor's combat target is a player.
-				bool firedAtPlayer = 
+				a_firedAtPlayerPIDOut = GlobalCoopData::GetCoopPlayerIndex
 				(
-					(GlobalCoopData::IsCoopPlayer(projectile->desiredTarget)) ||
-					(
-						firingActorPtr && 
-						Util::HandleIsValid(firingActorPtr->currentCombatTarget) &&
-						GlobalCoopData::IsCoopPlayer(firingActorPtr->currentCombatTarget)
-					)
+					projectile->desiredTarget
 				);
-				if (firedAtPlayer) 
+				if (a_firedAtPlayerPIDOut == -1 && 
+					firingActorPtr && 
+					Util::HandleIsValid(firingActorPtr->currentCombatTarget))
 				{
-					a_firedAtPlayerOut = true;
+					a_firedAtPlayerPIDOut = GlobalCoopData::GetCoopPlayerIndex
+					(
+						firingActorPtr->currentCombatTarget
+					);
 				}
 
 				// If both outparams were set, we can break early.
-				if (a_firingPlayerPIDOut != -1 && a_firedAtPlayerOut)
+				if (a_firingPlayerPIDOut != -1 && a_firedAtPlayerPIDOut != -1)
 				{
 					break;
 				}
+			}
+
+			// Check if a player is targeting another player and the target PID was not set before.
+			if (a_firedAtPlayerPIDOut == -1 && a_firingPlayerPIDOut != -1)
+			{
+				a_firedAtPlayerPIDOut = GlobalCoopData::GetCoopPlayerIndex
+				(
+					glob.coopPlayers[a_firingPlayerPIDOut]->tm->GetRangedTargetActor()
+				);
 			}
 		}
 
@@ -13005,7 +13026,7 @@ namespace ALYSLC
 							);
 						}
 					}
-					else if (a_p->tm->aimMode != AimMode::kTwinStick && a_p->mm->reqFaceTarget)
+					else if (a_p->tm->aimMode == AimMode::kCrosshair && a_p->mm->reqFaceTarget)
 					{
 						// Set projectile data angles to face the target.
 						projectile->data.angle.x = Util::GetPitchBetweenPositions
@@ -13409,7 +13430,7 @@ namespace ALYSLC
 				bool noTargetAndMovingCrosshair =
 				(
 					!targetRefrValidity &&
-					a_p->tm->aimMode == AimMode::kFreeAim &&
+					a_p->tm->aimMode == AimMode::kCrosshair &&
 					a_p->mm->reqFaceTarget &&
 					a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 				);
@@ -13815,7 +13836,7 @@ namespace ALYSLC
 			}
 
 			// Smart ptr was invalid, so its managed projectile is as well.
-			if (!projectile || projectile->livingTime > 0.0f)
+			if (!projectile)
 			{
 				return;
 			}
@@ -13853,7 +13874,7 @@ namespace ALYSLC
 
 				projectile->desiredTarget = targetActorHandle;
 			}
-			else if (a_p->mm->reqFaceTarget && a_p->tm->aimMode != AimMode::kTwinStick)
+			else if (a_p->mm->reqFaceTarget && a_p->tm->aimMode == AimMode::kCrosshair)
 			{
 				// Aim at the crosshair world position that the player is facing.
 				aimTargetPos = a_p->tm->crosshairWorldPos;
@@ -14069,6 +14090,7 @@ namespace ALYSLC
 					bleedoutState->posOffsetActual = tpState->posOffsetActual;
 					bleedoutState->posOffsetExpected = tpState->posOffsetExpected;
 				}
+
 				return;
 			}
 
@@ -15807,7 +15829,7 @@ namespace ALYSLC
 				glob.mim->UpdateMenuEntryEquipStates(false, false);
 				return result;
 			}
-			
+
 			// Nothing to do here, co-op is not active, serializable data is not available, 
 			// or this menu is not the target of the message. 	
 			if (!glob.globalDataInit ||
@@ -16956,6 +16978,14 @@ namespace ALYSLC
 							"Opening {}'s inventory instead of P1's.", 
 							reqP->coopActor->GetName()
 						);
+						reqP->em->inventoryChest->SetDisplayName
+						(
+							fmt::format
+							(
+								"{}'s Inventory", reqP->coopActor->GetName()
+							).c_str(),
+							true
+						);
 						reqP->em->inventoryChest->OpenContainer
 						(
 							!RE::ContainerMenu::ContainerMode::kNPCMode
@@ -17055,6 +17085,98 @@ namespace ALYSLC
 				a_message.menu != a_this->MENU_NAME)
 			{
 				return _ProcessMessage(a_this, a_message);
+			}
+			
+			// Message sent from a companion player requesting to open their inventory 
+			// from the Magic Menu.
+			if (*a_message.type == RE::UI_MESSAGE_TYPE::kHide)
+			{
+				auto result = _ProcessMessage(a_this, a_message);
+				// Close the Magic Menu and open the companion player's inventory
+				// if the message text matches the one sent in the MIM.
+				auto hudData = static_cast<RE::HUDData*>(a_message.data);
+				if (hudData && hudData->text == "Open ALYSLC Inventory")
+				{
+					const auto& reqP = glob.coopPlayers[glob.menuPID];
+					// Reset P1's damage multiplier so that the co-op player's inventory 
+					// correctly reports the their damage, instead of P1's, for weapons.
+					glob.player1Actor->SetActorValue(RE::ActorValue::kAttackDamageMult, 1.0f);
+
+					// Companion player requesting to open their inventory.
+					bool succ = glob.moarm->InsertRequest
+					(
+						reqP->playerID,
+						InputAction::kInventory, 
+						SteadyClock::now(), 
+						RE::ContainerMenu::MENU_NAME,
+						reqP->coopActor->GetHandle()
+					);
+
+					if (succ)
+					{
+						DBG
+						(
+							"Opening {}'s inventory from the Magic Menu.", 
+							reqP->coopActor->GetName()
+						);
+						// Can't request to open the container inventory menu right away
+						// because the Magic Menu hasn't closed yet, 
+						// despite already processing the hide message, 
+						// and the player's inventory will fail to open.
+						// Time to wait for Godot.
+						const auto menuPID = glob.menuPID;
+						glob.taskRunner->AddTask
+						(
+							"GLOB Runner",
+							__FUNCTION__,
+							[menuPID]()
+							{
+								auto taskInterface = SKSE::GetTaskInterface();
+								if (!taskInterface)
+								{
+									return;
+								}
+
+								auto ui = RE::UI::GetSingleton();
+								if (!ui)
+								{
+									return;
+								}
+
+								SteadyClock::time_point waitTP = SteadyClock::now();
+								// Wait at most 3 seconds, or one frame, whichever is longer.
+								float secsMaxWait = max(*g_deltaTimeRealTime, 3.0f);
+								while (ui->IsMenuOpen(RE::MagicMenu::MENU_NAME) && 
+									   Util::GetElapsedSeconds(waitTP) <= secsMaxWait)
+								{
+									std::this_thread::sleep_for(0.1s);
+								}
+								
+								taskInterface->AddTask
+								(
+									[menuPID]()
+									{
+										const auto& reqP = glob.coopPlayers[menuPID];
+										reqP->em->inventoryChest->SetDisplayName
+										(
+											fmt::format
+											(
+												"{}'s Inventory", reqP->coopActor->GetName()
+											).c_str(),
+											true
+										);
+										reqP->em->inventoryChest->OpenContainer
+										(
+											!RE::ContainerMenu::ContainerMode::kNPCMode
+										);
+									}
+								);
+							}
+						);
+					}
+				}
+
+				return result;
 			}
 
 			// Only need to handle open/close messages.
@@ -19254,13 +19376,43 @@ namespace ALYSLC
 
 			// Ignore while the co-op camera is active to prevent POV changes.
 			auto ue = RE::UserEvents::GetSingleton(); 
-			if (ue && 
+			if (ue &&
 				glob.globalDataInit && 
 				glob.coopSessionActive &&
-				glob.cam->IsRunning() && 
 				a_event->GetDevice() == RE::INPUT_DEVICE::kGamepad)
 			{
-				return false;
+				// Do not toggle POV if the sneak and toggle POV binds were pressed previously,
+				// indicating the co-op camera may have been toggled on or off.
+				// Will oddly switch to the LS for rotation, preventing movement, and lock rotation
+				// to the horizontal plane otherwise.
+				if (glob.cam->IsRunning() || MenuControlsHooks::sneakAndTogglePOVWerePressed)
+				{
+					/*DBG
+					(
+						"{}: NAH, Pressed {}, {}, held times: {}, {}.", 
+						idEvent ? idEvent->userEvent : "NONE", 
+						MenuControlsHooks::coopCamToggleBindPressed,
+						MenuControlsHooks::sneakAndTogglePOVWerePressed,
+						MenuControlsHooks::sneakBindHeldTime,
+						MenuControlsHooks::togglePOVBindHeldTime
+					);*/
+					return false;
+				}
+				else
+				{
+					auto result = _CanProcess(a_this, a_event);
+					/*DBG
+					(
+						"{}: YAH: {}, Pressed {}, {}, held times: {}, {}.", 
+						idEvent ? idEvent->userEvent : "NONE", 
+						result,
+						MenuControlsHooks::coopCamToggleBindPressed,
+						MenuControlsHooks::sneakAndTogglePOVWerePressed,
+						MenuControlsHooks::sneakBindHeldTime,
+						MenuControlsHooks::togglePOVBindHeldTime
+					);*/
+					return result;
+				}
 			}
 
 			return _CanProcess(a_this, a_event);

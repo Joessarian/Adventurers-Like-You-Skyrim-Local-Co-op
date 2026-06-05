@@ -33,9 +33,13 @@ namespace ALYSLC
 				p ? p->deviceID : -1,
 				p.use_count()
 			);
-			// Set once per summoning.
-			canSMORF = false;
-			aimMode = static_cast<AimMode>(Settings::vuDefaultAimMode[p->playerID]);
+			// Init once.
+			if (!glob.allPlayersInit)
+			{
+				canSMORF = false;
+				aimMode = static_cast<AimMode>(Settings::vuDefaultAimMode[p->playerID]);
+			}
+			
 			RefreshData();
 		}
 		else
@@ -51,8 +55,8 @@ namespace ALYSLC
 
 	void TargetingManager::MainTask()
 	{
-		// UNCOMMENT FOR NEW CONTROL SCHEME.
-		// SwitchAimMode();
+		// TEMPORARY until new binds are added.
+		SwitchAimMode();
 		// Update crosshair position and selection first, 
 		// and draw the crosshair, player indicator, and aim pitch indicator
 		// if no fullscreen menu is open or not controlling menus.
@@ -250,6 +254,8 @@ namespace ALYSLC
 
 		// Crosshair scaleform position.
 		ResetCrosshairPosition();
+		// Player indicator position.
+		playerIndicatorScaleformPos = glm::vec2(0.0f, 0.0f);
 
 		// Nearby refrs.
 		nearbyObjectsOfSameType.clear();
@@ -258,15 +264,17 @@ namespace ALYSLC
 		baseCanDrawOverlayElements = true;
 		canActivateRefr = false;
 		choseClosestResult = false;
-		choseActivationLockOnTarget = false;
-		choseAimLockOnTarget = false;
+		choseProximityActivationTarget = false;
+		choseLockOnAimTarget = false;
+		choseQuickActivationTarget = false;
 		crosshairRefrInSight = false;
 		isMARFing = false;
 		isSMORFing = false;
+		lockOnToAimCorrectionTarget = false;
 		reqResetCrosshairPosition = false;
 		selectedRefrInRangeForQuickLoot = false;
+		shouldFindLockOnTargetFromPlayer = false;
 		startedActivationCycling = false;
-		useProximityInteraction = false;
 		validCrosshairRefrHit = false;
 		wantsToSMORF = false;
 		// Floats.
@@ -277,6 +285,7 @@ namespace ALYSLC
 		detectionPct = 100.0f;
 		grabbedRefrDistanceOffset = 0.0f;
 		lastActivationFacingAngle = coopActor->GetHeading(false);
+		playerIndicatorHeight = 0.0f;
 		// Reach set to twice the actor's height initially.
 		maxReachActivationDist = coopActor->GetHeight() * 2.0f;
 		// Reset durations.
@@ -295,8 +304,8 @@ namespace ALYSLC
 		ResetTPs();
 
 		// TEMPORARY. REMOVE after testing out new 'Move Crosshair' bind with LockOn aim mode.
-		aimMode = static_cast<AimMode>(Settings::vuDefaultAimMode[p->playerID]);
-		DBG("{}.", coopActor ? coopActor->GetName() : "NONE");
+		aimMode = static_cast<AimMode>(Settings::vuDefaultAimMode[playerID]);
+		DBG("{}: Aim mode {}.", coopActor ? coopActor->GetName() : "NONE", !aimMode);
 	}
 
 	const ManagerState TargetingManager::ShouldSelfPause()
@@ -311,43 +320,210 @@ namespace ALYSLC
 		return currentState;
 	}
 
-	void TargetingManager::ClearActivationTargetData(bool a_stopEffectShader)
+	bool TargetingManager::CanActivateRefr(RE::TESObjectREFR* a_refr, bool a_checkLOS)
+	{
+		// Check if the given activation target refr is valid for activation,
+		// and return true if so.
+			
+		if (!a_refr)
+		{
+			return false;
+		}
+
+		auto targetIndex = GlobalCoopData::GetCoopPlayerIndex(a_refr);
+		// Set revive message if there is a downed player target.
+		if (targetIndex != -1)
+		{
+			if (p->pam->downedPlayerTarget == glob.coopPlayers[targetIndex])
+			{
+				return HelperFuncs::EnoughOfAVToPerformPA(p, InputAction::kActivate);
+			}
+			else
+			{
+				return true;
+			}
+		}
+		else
+		{
+			// Set activation message if refr is valid.
+			if (Util::IsValidRefrForTargeting(a_refr))
+			{
+				// Get base object; return early if invalid.
+				auto baseObj = a_refr->GetObjectReference(); 
+				if (!baseObj)
+				{
+					return false;
+				}
+
+				// Influences what objects this player can activate 
+				// (nothing that will open a menu if another player is controlling menus).
+				bool anotherPlayerControllingMenus = !GlobalCoopData::CanControlMenus(playerID);
+				// Activation will teleport P1.
+				bool tryingToUseTeleportRefr = 
+				(
+					a_refr->extraList.HasType<RE::ExtraTeleport>()
+				);
+				// Ensure that players cannot activate any refr that will teleport the party, 
+				// and consequently auto-save, while a player is downed.
+				bool otherPlayerDowned = std::any_of
+				(
+					glob.coopPlayers.begin(), glob.coopPlayers.end(), 
+					[](const auto& a_p) 
+					{
+						if (a_p->isActive && a_p->isDowned)
+						{
+							return true;
+						}
+
+						return false;
+					}
+				);
+				// Other activation criteria.
+				bool menusOnlyAlwaysOpen = true;
+				if (auto ui = RE::UI::GetSingleton(); ui)
+				{
+					menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
+				}
+
+				bool isLocked = a_refr->IsLocked();
+				// Is locked and P1 has the key.
+				bool canUnlockWithKey = false;
+				if (isLocked)
+				{
+					auto lockData = a_refr->extraList.GetByType<RE::ExtraLock>(); 
+					if (lockData && lockData->lock)
+					{
+						// Check if P1 has the key.
+						auto inventoryCounts = glob.player1Actor->GetInventoryCounts();
+						auto key = lockData->lock->key;
+						if (inventoryCounts.contains(key))
+						{
+							canUnlockWithKey = true;
+						}
+					}
+				}
+
+				// P1 has at least 1 lockpick.
+				bool hasLockpicks = 
+				(
+					Util::GetLockpicksCount(RE::PlayerCharacter::GetSingleton()) > 0
+				);
+				// A crime to activate.
+				bool offLimits = Util::ActivationIsOffLimits(p->coopActor.get(), a_refr);
+				// Object prevented from being activated (ex. door bars).
+				bool activationBlocked = false;
+				auto xFlags = a_refr->extraList.GetByType<RE::ExtraFlags>(); 
+				if (xFlags)
+				{
+					activationBlocked = 
+					(
+						xFlags &&
+						xFlags->flags.all(RE::ExtraFlags::Flag::kBlockPlayerActivate) && 
+						!a_refr->extraList.GetByType<RE::ExtraAshPileRef>()
+					);
+				}
+
+				const auto handle = a_refr->GetHandle();
+				// In activation range.
+				bool isInRange = p->tm->RefrIsInActivationRange(handle);
+				// Is a lootable refr.
+				bool isLootable = Util::IsLootableRefr(a_refr);
+				// Player is sneaking.
+				bool isSneaking = p->coopActor->IsSneaking();
+				// Something to do with usability.
+				bool isPlayable = a_refr->GetPlayable();
+				// Player has LOS on the refr.
+				// Use the game's P1 LOS check for crosshair refrs not selected via raycast,
+				// since our raycasts do not hit such refrs right now.
+				bool passesLOSCheck =
+				(
+					(!a_checkLOS) ||
+					(
+						Util::HasLOS
+						(
+							a_refr, 
+							p->coopActor.get(), 
+							false, 
+							p->tm->crosshairRefrHandle == handle, 
+							p->tm->crosshairWorldPos
+						)
+					)
+				);
+					\
+				if (!isSneaking && offLimits)
+				{
+					return false;
+				}
+				else if (!isPlayable || activationBlocked)
+				{
+					return false;
+				}
+				else if (isLocked && !hasLockpicks && !canUnlockWithKey)
+				{
+					return false;
+				}
+				else if (otherPlayerDowned && tryingToUseTeleportRefr)
+				{
+					return false;
+				}
+				else if (!menusOnlyAlwaysOpen && anotherPlayerControllingMenus && !isLootable)
+				{
+					return false;
+				}
+				else if (!passesLOSCheck)
+				{
+					return false;
+				}
+				else
+				{
+					return !offLimits;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	void TargetingManager::ClearActivationTargetData()
 	{
 		// Clear out currently-targeted activation/proximity refrs.
-		// If the activation refr is valid, stop any playing activation shader as well.
+		// If the activation refr is valid, will stop any playing activation shader as well.
 		auto activationRefrPtr = Util::GetRefrPtrFromHandle
 		(
 			activationRefrHandle
 		); 
-		if (a_stopEffectShader && 
-			activationRefrPtr &&
-			Util::IsValidRefrForTargeting(activationRefrPtr.get()))
+		if (activationRefrPtr)
 		{
 			Util::StopEffectShader
 			(
-				activationRefrPtr.get(), glob.activateHighlightShader
+				activationRefrPtr.get(), glob.activateHighlightShaders[playerID]
+			);
+			Util::StopEffectShader
+			(
+				activationRefrPtr.get(), glob.activateDefaultShader
+			);
+			Util::StopEffectShader
+			(
+				activationRefrPtr.get(), glob.activateFailureShader
+			);
+			Util::StopEffectShader
+			(
+				activationRefrPtr.get(), glob.activateUseShader
 			);
 		}
 		
 		DBG
 		(
-			"{}: {}, {}, {}. Chose: {}", 
+			"{}: {}. Chose quick target: {}", 
 			coopActor->GetName(), 
 			Util::HandleIsValid(activationRefrHandle) ?
 			activationRefrHandle.get()->GetName() : 
 			"NONE",
-			Util::HandleIsValid(lockOnActivationRefrHandle) ?
-			lockOnActivationRefrHandle.get()->GetName() : 
-			"NONE",
-			Util::HandleIsValid(proximityRefrHandle) ?
-			proximityRefrHandle.get()->GetName() : 
-			"NONE",
-			choseActivationLockOnTarget
+			choseQuickActivationTarget
 		);
-		choseActivationLockOnTarget = false;
-		activationRefrHandle = 
-		lockOnActivationRefrHandle = 
-		proximityRefrHandle = RE::ObjectRefHandle();
+		choseProximityActivationTarget = false;
+		choseQuickActivationTarget = false;
+		activationRefrHandle = RE::ObjectRefHandle();
 	}
 
 	void TargetingManager::ClearTarget(const TargetActorType& a_targetType)
@@ -367,6 +543,7 @@ namespace ALYSLC
 				if (a_targetType == TargetActorType::kAimCorrection)
 				{
 					aimCorrectionTargetHandle.reset();
+					lockOnToAimCorrectionTarget = false;
 				}
 				else if (a_targetType == TargetActorType::kLinkedRefr)
 				{
@@ -394,6 +571,154 @@ namespace ALYSLC
 		}
 	}
 
+	void TargetingManager::ColorizeActivationShader
+	(
+		RE::TESEffectShader* a_shader, bool a_canActivateRefr
+	)
+	{
+		// Change the color of this player's activation shaders to match 
+		// their main UI Overlay color.
+		// If indicating a failed activation, colorize grey.
+		// If indicating use instead of take, colorize white edged with the player's overlay color.
+
+		if (!a_shader)
+		{
+			return;
+		}
+
+		// Default to grey.
+		uint8_t red = 0x10;
+		uint8_t green = 0x10;
+		uint8_t blue = 0x10;
+		uint8_t alpha = 0xFF;
+
+		if (a_shader == glob.activateUseShader)
+		{
+			if (a_canActivateRefr)
+			{
+				red = 
+				(
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] &
+						0xFF000000
+					) >> 24
+				);
+				green = 
+				(
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 
+						0x00FF0000
+					) >> 16
+				);
+				blue = 
+				(
+					(
+						Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 
+						0x0000FF00
+					) >> 8
+				);
+			}
+		
+			// Main fill portion of the shader is the color of the player's outer crosshair outline.
+			a_shader->data.colorKey1.alpha = alpha;
+			a_shader->data.colorKey1.red = red;
+			a_shader->data.colorKey1.green = green;
+			a_shader->data.colorKey1.blue = blue;
+			a_shader->data.colorKey2.alpha = alpha;
+			a_shader->data.colorKey2.red = red;
+			a_shader->data.colorKey2.green = green;
+			a_shader->data.colorKey2.blue = blue;
+			a_shader->data.colorKey3.alpha = alpha;
+			a_shader->data.colorKey3.red = red;
+			a_shader->data.colorKey3.green = green;
+			a_shader->data.colorKey3.blue = blue;
+			a_shader->data.fillTextureEffectColorKey1.alpha = alpha;
+			a_shader->data.fillTextureEffectColorKey1.red = red;
+			a_shader->data.fillTextureEffectColorKey1.green = green;
+			a_shader->data.fillTextureEffectColorKey1.blue = blue;
+			a_shader->data.fillTextureEffectColorKey2.alpha = alpha;
+			a_shader->data.fillTextureEffectColorKey2.red = red;
+			a_shader->data.fillTextureEffectColorKey2.green = green;
+			a_shader->data.fillTextureEffectColorKey2.blue = blue;
+			a_shader->data.fillTextureEffectColorKey3.alpha = alpha;
+			a_shader->data.fillTextureEffectColorKey3.red = red;
+			a_shader->data.fillTextureEffectColorKey3.green = green;
+			a_shader->data.fillTextureEffectColorKey3.blue = blue;
+
+			if (a_canActivateRefr)
+			{
+				red = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] & 
+						0xFF000000
+					) >> 24
+				);
+				green = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] & 
+						0x00FF0000
+					) >> 16
+				);
+				blue = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] &
+						0x0000FF00
+					) >> 8
+				);
+			}
+				
+			// Edge is the player's main overlay color.
+			a_shader->data.edgeEffectColor.alpha = alpha;
+			a_shader->data.edgeEffectColor.red = red;
+			a_shader->data.edgeEffectColor.green = green;
+			a_shader->data.edgeEffectColor.blue = blue;
+			a_shader->data.edgeColor.alpha = alpha;
+			a_shader->data.edgeColor.red = red;
+			a_shader->data.edgeColor.green = green;
+			a_shader->data.edgeColor.blue = blue;
+		}
+		else
+		{
+			if (a_canActivateRefr)
+			{
+				red = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] & 
+						0xFF000000
+					) >> 24
+				);
+				green = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] & 
+						0x00FF0000
+					) >> 16
+				);
+				blue = 
+				(
+					(
+						Settings::vuOverlayRGBAValues[playerID] &
+						0x0000FF00
+					) >> 8
+				);
+			}
+		
+			// Edge color here fills the entire shader, so we use the player's overlay color.		
+			a_shader->data.edgeEffectColor.alpha = alpha;
+			a_shader->data.edgeEffectColor.red = red;
+			a_shader->data.edgeEffectColor.green = green;
+			a_shader->data.edgeEffectColor.blue = blue;
+			a_shader->data.edgeColor.alpha = alpha;
+			a_shader->data.edgeColor.red = red;
+			a_shader->data.edgeColor.green = green;
+			a_shader->data.edgeColor.blue = blue;
+		}
+	}
+
 	void TargetingManager::DrawActivationTargetIndicator()
 	{
 		// Draw the lower portion of the player indicator 
@@ -409,16 +734,251 @@ namespace ALYSLC
 			InputAction::kActivateAllOfType, 
 			InputAction::kActivateCancel
 		);
-		bool hasLockOnActivationTarget = 
-		(
-			choseActivationLockOnTarget && Util::HandleIsValid(lockOnActivationRefrHandle)
-		);
+		bool hasLockOnActivationTarget = Util::HandleIsValid(activationRefrHandle);
 		bool shouldNotDraw = 
 		(
 			(!activationRefrPtr || !Util::IsValidRefrForTargeting(activationRefrPtr.get())) ||
 			(!hasLockOnActivationTarget && !isActivating)
 		);
 		if (shouldNotDraw)
+		{
+			return;
+		}
+
+		if (Settings::bRingIndicatorForActivation)
+		{
+			const auto refr3DPtr = activationRefrPtr->GetCurrent3D();
+			auto centerScreenPos = Util::WorldToScreenPoint3
+			(
+				activationRefrPtr->As<RE::Actor>() ? 
+				Util::GetTorsoPosition(activationRefrPtr->As<RE::Actor>()) : 
+				Util::Get3DCenterPos(activationRefrPtr.get())
+			);
+			auto topScreenPos = Util::WorldToScreenPoint3
+			(
+				activationRefrPtr->As<RE::Actor>() ? 
+				Util::GetHeadPosition(activationRefrPtr->As<RE::Actor>()) : 
+				Util::Get3DCenterPos(activationRefrPtr.get()) + 
+				RE::NiPoint3(0.0f, 0.0f, activationRefrPtr->GetHeight())
+			);
+			float radius = min
+			(
+				Settings::vfCrosshairLength[playerID],
+				0.5f * Util::GetBoundMaxOrMinEdgeDist
+				(
+					activationRefrPtr.get(), true, true
+				)	
+			);
+
+			const float thickness = 0.125f * radius;
+			const auto center = ToVec3(centerScreenPos);
+			float gapDelta = 0.0f;
+			// Animate for better visibility.
+			if ((activationIndicatorOscillationData->interpToMax &&
+				activationIndicatorOscillationData->value != 1.0f) ||
+				(activationIndicatorOscillationData->interpToMin && 
+				activationIndicatorOscillationData->value != 0.0f))
+			{
+				activationIndicatorOscillationData->UpdateInterpolatedValue
+				(
+					activationIndicatorOscillationData->directionChangeFlag
+				);
+			}
+			else
+			{
+				activationIndicatorOscillationData->UpdateInterpolatedValue
+				(
+					!activationIndicatorOscillationData->directionChangeFlag
+				);
+			}
+
+			gapDelta = (activationIndicatorOscillationData->value * radius);
+			// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
+			uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
+			DebugAPI::QueueCircle2D
+			(
+				center,
+				Settings::vuCrosshairOuterOutlineRGBAValues[p->playerID],
+				numSegments,
+				2.0f * thickness + gapDelta,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueCircle2D
+			(
+				center,
+				Settings::vuOverlayRGBAValues[p->playerID],
+				numSegments,
+				thickness + gapDelta,
+				thickness,
+				0.0f
+			);
+			DebugAPI::QueueCircle2D
+			(
+				center,
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				numSegments,
+				gapDelta,
+				thickness,
+				0.0f
+			);
+		}
+		else
+		{
+			// Also do not draw the activation indicator if the player indicator is visible.
+			// Too cluttered with both visible at once.
+			const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(activationRefrHandle);
+			bool playerIndicatorVisible = 
+			(
+				pIndex != -1 && 
+				glob.coopPlayers[pIndex]->tm->playerIndicatorFadeInterpData->value > 0.0f
+			);
+			/*if (playerIndicatorVisible)
+			{
+				return;
+			}*/
+
+			// Offset each player's capping circle upward from the torso position
+			// to the head position, based on their player ID, 
+			// so the circles do not intersect with each other when the same aim correction target 
+			// is selected by multiple players.
+			const float& indicatorBaseThickness = 
+			(
+				Settings::vfPlayerIndicatorThickness[p->playerID]
+			);
+			const float pixelHeight = Util::GetBoundPixelDist(activationRefrPtr.get(), true);
+			auto screenBasePos = RE::NiPoint3();
+			if (playerIndicatorVisible)
+			{
+				glm::vec2 scaleformPos = 
+				{
+					glob.coopPlayers[pIndex]->tm->playerIndicatorScaleformPos.x, 
+					glob.coopPlayers[pIndex]->tm->playerIndicatorScaleformPos.y - 
+					glob.coopPlayers[pIndex]->tm->playerIndicatorHeight - 
+					5.0f
+				};
+				DebugAPI::ClampPointToScreen(scaleformPos);
+				screenBasePos = RE::NiPoint3(scaleformPos.x, scaleformPos.y, 0.0f);
+			}
+			else
+			{
+				const auto asActor = activationRefrPtr->As<RE::Actor>();
+				const auto basePos = 
+				(
+					asActor ? 
+					Util::GetHeadPosition(asActor) + 
+					RE::NiPoint3(0.0f, 0.0f, Util::GetHeadRadius(asActor) + 5.0f) :
+					Util::Get3DCenterPos(activationRefrPtr.get())
+				);
+				screenBasePos = Util::WorldToScreenPoint3(basePos);
+			}
+
+			auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
+			const float indicatorLength = std::clamp
+			(
+				pixelHeight,
+				DebugAPI::screenResY * 0.01f, 
+				DebugAPI::screenResY * 0.02f
+			);
+			const float scalingFactor = 
+			(
+				indicatorLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH
+			);
+			const float indicatorThickness = indicatorBaseThickness * scalingFactor;
+			const float indicatorGap = max(2.0f, indicatorLength);
+			if ((activationIndicatorOscillationData->interpToMax &&
+				activationIndicatorOscillationData->value != 1.0f) ||
+				(activationIndicatorOscillationData->interpToMin && 
+				activationIndicatorOscillationData->value != 0.0f))
+			{
+				activationIndicatorOscillationData->UpdateInterpolatedValue
+				(
+					activationIndicatorOscillationData->directionChangeFlag
+				);
+			}
+			else
+			{
+				activationIndicatorOscillationData->UpdateInterpolatedValue
+				(
+					!activationIndicatorOscillationData->directionChangeFlag
+				);
+			}
+
+			// Points are offset downward from origin (+Y Scaleform axis).
+			// Have to rebase from the bottom tip by subtracting the length for each segment,
+			// multiplying with the base scaling offset, and then factoring in the gap.
+			float gapDelta = activationIndicatorOscillationData->value * indicatorGap;
+			for (auto& offset : lowerPortionOffsets)
+			{
+				offset *= scalingFactor;
+				offset.y -= gapDelta;
+			}
+
+			const auto port = Util::GetPort();
+			const float trueLength = 
+			(
+				indicatorLength + 2.0f * indicatorThickness + gapDelta
+			);
+			const float trueWidth = 
+			(
+				0.5f * 
+				scalingFactor *
+				(
+					GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[4].x - 
+					GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[0].x
+				)
+			);
+			glm::vec2 posScreenCoords{ screenBasePos.x, screenBasePos.y };
+			DebugAPI::QueueShape2D
+			(
+				posScreenCoords,
+				lowerPortionOffsets,
+				Settings::vuCrosshairInnerOutlineRGBAValues[p->playerID],
+				false, 
+				indicatorThickness,
+				0.0f
+			);
+			DebugAPI::QueueShape2D
+			(
+				posScreenCoords,
+				lowerPortionOffsets, 
+				Settings::vuOverlayRGBAValues[p->playerID]
+			);
+		}
+	}
+
+	void TargetingManager::DrawAimCorrectionIndicator()
+	{
+		// Draw two concentric circles to mark the player's aim pitch indicator.
+		// Draw 'X' prongs if in face target mode while the crosshair is disabled.
+		
+		//
+		// Double twin arrows for twin sticks. Oh yeah.
+		//
+		
+		// Unnecessary to draw if aim correction is disabled and the crosshair is enabled.
+		if (!Settings::vbUseAimCorrection[playerID] && aimMode == AimMode::kCrosshair)
+		{
+			return;
+		}
+
+		// Need to have an aim correction target.
+		auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
+		if (!aimCorrectionTargetPtr)
+		{
+			return;
+		}
+
+		/*
+		// Also do not draw the activation indicator if the player indicator is visible.
+		// Too cluttered with both visible at once.
+		const auto pIndex = GlobalCoopData::GetCoopPlayerIndex(activationRefrHandle);
+		bool playerIndicatorVisible = 
+		(
+			pIndex != -1 && 
+			glob.coopPlayers[pIndex]->tm->playerIndicatorFadeInterpData->value > 0.0f
+		);
+		if (playerIndicatorVisible)
 		{
 			return;
 		}
@@ -431,15 +991,12 @@ namespace ALYSLC
 		(
 			Settings::vfPlayerIndicatorThickness[p->playerID]
 		);
-		const auto asActor = activationRefrPtr->As<RE::Actor>();
 		const auto basePos = 
 		(
-			asActor ? 
-			Util::GetHeadPosition(asActor) + 
-			RE::NiPoint3(0.0f, 0.0f, Util::GetHeadRadius(asActor) + 5.0f) :
-			Util::Get3DCenterPos(activationRefrPtr.get())
+			Util::GetHeadPosition(aimCorrectionTargetPtr.get()) + 
+			RE::NiPoint3(0.0f, 0.0f, Util::GetHeadRadius(aimCorrectionTargetPtr.get()) + 5.0f)
 		);
-		const float pixelHeight = Util::GetBoundPixelDist(activationRefrPtr.get(), true);
+		const float pixelHeight = Util::GetBoundPixelDist(aimCorrectionTargetPtr.get(), true);
 		auto screenBasePos = Util::WorldToScreenPoint3(basePos);
 		auto screenTopPos = screenBasePos + RE::NiPoint3(0.0f, 0.0f, pixelHeight * 0.25f);
 		auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
@@ -452,28 +1009,28 @@ namespace ALYSLC
 		const float scalingFactor = indicatorLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH;
 		const float indicatorThickness = indicatorBaseThickness * scalingFactor;
 		const float indicatorGap = max(2.0f, indicatorLength);
-		if ((activationIndicatorOscillationData->interpToMax &&
-			activationIndicatorOscillationData->value != 1.0f) ||
-			(activationIndicatorOscillationData->interpToMin && 
-			activationIndicatorOscillationData->value != 0.0f))
+		if ((aimCorrectionIndicatorOscillationData->interpToMax &&
+			aimCorrectionIndicatorOscillationData->value != 1.0f) ||
+			(aimCorrectionIndicatorOscillationData->interpToMin && 
+			aimCorrectionIndicatorOscillationData->value != 0.0f))
 		{
-			activationIndicatorOscillationData->UpdateInterpolatedValue
+			aimCorrectionIndicatorOscillationData->UpdateInterpolatedValue
 			(
-				activationIndicatorOscillationData->directionChangeFlag
+				aimCorrectionIndicatorOscillationData->directionChangeFlag
 			);
 		}
 		else
 		{
-			activationIndicatorOscillationData->UpdateInterpolatedValue
+			aimCorrectionIndicatorOscillationData->UpdateInterpolatedValue
 			(
-				!activationIndicatorOscillationData->directionChangeFlag
+				!aimCorrectionIndicatorOscillationData->directionChangeFlag
 			);
 		}
 
 		// Points are offset downward from origin (+Y Scaleform axis).
 		// Have to rebase from the bottom tip by subtracting the length for each segment,
 		// multiplying with the base scaling offset, and then factoring in the gap.
-		float gapDelta = activationIndicatorOscillationData->value * indicatorGap;
+		float gapDelta = aimCorrectionIndicatorOscillationData->value * indicatorGap;
 		for (auto& offset : lowerPortionOffsets)
 		{
 			offset *= scalingFactor;
@@ -510,30 +1067,9 @@ namespace ALYSLC
 			lowerPortionOffsets, 
 			Settings::vuOverlayRGBAValues[p->playerID]
 		);
-	}
+		*/
 
-	void TargetingManager::DrawAimCorrectionIndicator()
-	{
-		// Draw two concentric circles to mark the player's aim pitch indicator.
-		// Draw 'X' prongs if in face target mode while the crosshair is disabled.
-		
-		//
-		// Double twin arrows for twin sticks. Oh yeah.
-		//
-		
-		// Unnecessary to draw if aim correction is disabled and the crosshair is enabled.
-		if (!Settings::vbUseAimCorrection[playerID] && aimMode != AimMode::kTwinStick)
-		{
-			return;
-		}
-
-		// Need to have an aim correction target.
-		auto aimCorrectionTargetPtr = Util::GetActorPtrFromHandle(aimCorrectionTargetHandle);
-		if (!aimCorrectionTargetPtr)
-		{
-			return;
-		}
-
+		bool shouldFaceTarget = p->mm->reqFaceTarget || Settings::bRingIndicatorForActivation;
 		auto screenTorsoPos = Util::WorldToScreenPoint3
 		(
 			Util::GetTorsoPosition(aimCorrectionTargetPtr.get())
@@ -553,13 +1089,13 @@ namespace ALYSLC
 		const float thickness = 0.125f * radius;
 		const auto center = ToVec3(screenTorsoPos);
 		float gapDelta = 0.0f;
-		float rotationRatio = p->mm->reqFaceTarget ? 1.0f : 0.0f;
+		float rotationRatio = shouldFaceTarget ? 1.0f : 0.0f;
 		// Four prongs ('+' when not facing the target, 'X' otherwise).
 		float rotAng1{ PI / 2.0f };
 		float rotAng2{ 0.0f };
 		float rotAng3{ -PI / 2.0f };
 		float rotAng4{ PI };
-		if (p->mm->reqFaceTarget)
+		if (shouldFaceTarget)
 		{
 			rotAng1 = { 3.0f * PI / 4.0f };
 			rotAng2 = { PI / 4.0f };
@@ -587,12 +1123,7 @@ namespace ALYSLC
 		}
 
 		gapDelta = (aimCorrectionIndicatorOscillationData->value * radius);
-
-			
-		aimCorrectionIndicatorRotationData->UpdateInterpolatedValue
-		(
-			p->mm->reqFaceTarget
-		);
+		aimCorrectionIndicatorRotationData->UpdateInterpolatedValue(shouldFaceTarget);
 
 		rotationRatio = aimCorrectionIndicatorRotationData->value;
 		rotAng1 = 
@@ -966,11 +1497,10 @@ namespace ALYSLC
 			// while auto-recentering to elapse before fading out.
 			bool isCrosshairActive = 
 			{
-				(aimMode != AimMode::kTwinStick) &&
+				(aimMode == AimMode::kCrosshair) &&
 				(!reqResetCrosshairPosition) &&
 				(
 					(
-						aimMode == AimMode::kFreeAim &&
 						p->pam->IsPerforming(InputAction::kMoveCrosshair)
 					) ||
 					(
@@ -994,17 +1524,47 @@ namespace ALYSLC
 		}
 		else
 		{
-			// Draw a retro-style crosshair with four lines for prongs.
-			// First, outer outline if the crosshair raycast check selected a valid object.
-			if (validCrosshairRefrHit)
+			bool selectedCamLockOnTarget = 
+			(
+				Util::HandleIsValid(glob.cam->camLockOnTargetHandle) &&
+				crosshairRefrHandle == glob.cam->camLockOnTargetHandle
+			);
+			if (selectedCamLockOnTarget)
 			{
-				DrawCrosshairOutline(2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]);
+				// Draw a retro-style crosshair with four lines for prongs.
+				// First, outer outline if the crosshair raycast check selected a valid object.
+				DrawCrosshairOutline
+				(
+					2.0f, Settings::vuOverlayRGBAValues[playerID]
+				);
+				// Second, inner outline.
+				DrawCrosshairOutline
+				(
+					1.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
+				);
+				// Draw prong lines last.
+				DrawCrosshairLines();
 			}
+			else
+			{
+				// Draw a retro-style crosshair with four lines for prongs.
+				// First, outer outline if the crosshair raycast check selected a valid object.
+				if (validCrosshairRefrHit)
+				{
+					DrawCrosshairOutline
+					(
+						2.0f, Settings::vuCrosshairOuterOutlineRGBAValues[playerID]
+					);
+				}
 
-			// Second, inner outline.
-			DrawCrosshairOutline(1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]);
-			// Draw prong lines last.
-			DrawCrosshairLines();
+				// Second, inner outline.
+				DrawCrosshairOutline
+				(
+					1.0f, Settings::vuCrosshairInnerOutlineRGBAValues[playerID]
+				);
+				// Draw prong lines last.
+				DrawCrosshairLines();
+			}
 		}
 	}
 
@@ -1024,6 +1584,11 @@ namespace ALYSLC
 			gapDelta = crosshairOscillationData->current;
 		}
 		
+		bool selectedCamLockOnTarget = 
+		(
+			Util::HandleIsValid(glob.cam->camLockOnTargetHandle) &&
+			crosshairRefrHandle == glob.cam->camLockOnTargetHandle
+		);
 		// Scale the lengt and base gap but not the gap delta to allow for 
 		// unmodified contraction/expansion.
 		const float crosshairLength = 
@@ -1101,6 +1666,8 @@ namespace ALYSLC
 		(
 			crosshairUp.first, 
 			crosshairUp.second, 
+			selectedCamLockOnTarget ? 
+			0x000000FF + alpha :
 			(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 			crosshairThickness
 		);
@@ -1109,6 +1676,8 @@ namespace ALYSLC
 		(
 			crosshairDown.first,
 			crosshairDown.second, 
+			selectedCamLockOnTarget ? 
+			0x000000FF + alpha :
 			(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 			crosshairThickness
 		);
@@ -1117,6 +1686,8 @@ namespace ALYSLC
 		(
 			crosshairLeft.first,
 			crosshairLeft.second, 
+			selectedCamLockOnTarget ? 
+			0x000000FF + alpha :
 			(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 			crosshairThickness
 		);
@@ -1125,6 +1696,8 @@ namespace ALYSLC
 		(
 			crosshairRight.first,
 			crosshairRight.second, 
+			selectedCamLockOnTarget ? 
+			0x000000FF + alpha :
 			(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 			crosshairThickness
 		);
@@ -1135,6 +1708,8 @@ namespace ALYSLC
 			DebugAPI::QueueCircle2D
 			(
 				crosshairScaleformPos, 
+				selectedCamLockOnTarget ? 
+				0xFFFFFF00 + alpha :
 				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 				64, 
 				2.0f * crosshairThickness + crosshairGap + crosshairLength, 
@@ -1143,6 +1718,8 @@ namespace ALYSLC
 			DebugAPI::QueueCircle2D
 			(
 				crosshairScaleformPos, 
+				selectedCamLockOnTarget ? 
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha :
 				0xFFFFFF00 + alpha, 
 				64,
 				4.0f * crosshairThickness + crosshairGap + crosshairLength,
@@ -1464,51 +2041,54 @@ namespace ALYSLC
 			);
 			if (shouldDraw) 
 			{
-				bool falseRef = false;
-				const auto& camPos = 
-				(
-					glob.cam->IsRunning() ? 
-					glob.cam->camTargetPos : 
-					playerCam->cameraRoot->world.translate
-				);
-				const auto& playerTorsoPos = p->mm->playerTorsoPosition;
-				// Condition for raycasting to check for LOS from cam to player:
-				// 1. Low visibility mode is set,
-				// 2. Not downed.
-				// 3. The player's height is more than 1/10 of the screen's height.
-				// 4. The player's torso is on screen.
-				// Otherwise, no raycast is needed and the indicator will be drawn.
-				bool shouldRaycastForLOS = 
-				{ 
-					visibilityType == !PlayerIndicatorVisibilityType::kLowVisibility && 
-					!p->isDowned &&						 
-					Util::GetBoundPixelDist(coopActor.get(), true) >= 
-					DebugAPI::screenResY / 10.0f &&
-					Util::PointIsOnScreen(playerTorsoPos) 
-				};
-				// If checking raycast LOS, and the player is not visible, draw the indicator.
-				bool hasLOS = true;
-				if (shouldRaycastForLOS)
+				if (shouldDraw)
 				{
-					// From cam to player torso.
-					// If there is LOS, the cast will either hit nothing or the player.
-					auto result = Raycast::hkpCastRay
+					bool falseRef = false;
+					const auto& camPos = 
 					(
-						{ camPos.x, camPos.y, camPos.z, 0.0f }, 
-						{ playerTorsoPos.x, playerTorsoPos.y, playerTorsoPos.z, 0.0f }, 
-						std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
-						RE::COL_LAYER::kLOS
+						glob.cam->IsRunning() ? 
+						glob.cam->camTargetPos : 
+						playerCam->cameraRoot->world.translate
 					);
-					auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
-					// No hit or if the player is hit means that there is LOS on the player.
-					hasLOS = 
-					(
-						(!result.hitObjectPtr) || 
-						(hitRefrPtr && hitRefrPtr.get() == coopActor.get())
-					);
-				}
+					const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+					// Condition for raycasting to check for LOS from cam to player:
+					// 1. Low visibility mode is set,
+					// 2. Not downed.
+					// 3. The player's height is more than 1/10 of the screen's height.
+					// 4. The player's torso is on screen.
+					// Otherwise, no raycast is needed and the indicator will be drawn.
+					bool shouldRaycastForLOS = 
+					{ 
+						visibilityType == !PlayerIndicatorVisibilityType::kLowVisibility && 
+						!p->isDowned &&						 
+						Util::GetBoundPixelDist(coopActor.get(), true) >= 
+						DebugAPI::screenResY / 10.0f &&
+						Util::PointIsOnScreen(playerTorsoPos) 
+					};
+					// If checking raycast LOS, and the player is not visible, draw the indicator.
+					bool hasLOS = true;
+					if (shouldRaycastForLOS)
+					{
+						// From cam to player torso.
+						// If there is LOS, the cast will either hit nothing or the player.
+						auto result = Raycast::hkpCastRay
+						(
+							{ camPos.x, camPos.y, camPos.z, 0.0f }, 
+							{ playerTorsoPos.x, playerTorsoPos.y, playerTorsoPos.z, 0.0f }, 
+							std::vector<RE::NiAVObject*>({ playerCam->cameraRoot.get() }), 
+							RE::COL_LAYER::kLOS
+						);
+						auto hitRefrPtr = Util::GetRefrPtrFromHandle(result.hitRefrHandle);
+						// No hit or if the player is hit means that there is LOS on the player.
+						hasLOS = 
+						(
+							(!result.hitObjectPtr) || 
+							(hitRefrPtr && hitRefrPtr.get() == coopActor.get())
+						);
+					}
 
-				shouldDraw = !shouldRaycastForLOS || !hasLOS;
+					shouldDraw = !shouldRaycastForLOS || !hasLOS;
+				}
 			}
 
 			// Update fade value before fading in/out.
@@ -1525,7 +2105,7 @@ namespace ALYSLC
 				topOfTheHeadPos.z += headRadius + 15.0f;
 				posScreenCoords = Util::WorldToScreenPoint3(topOfTheHeadPos);
 				// Origin and lower/upper shape offsets from this origin.
-				glm::vec2 origin
+				playerIndicatorScaleformPos = 
 				{
 					std::clamp
 					(
@@ -1543,8 +2123,12 @@ namespace ALYSLC
 
 				auto upperPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS;
 				auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
+				playerIndicatorHeight = fabsf
+				(
+					scalingFactor * GlobalCoopData::PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS[0].y
+				);
 
-				// Scale offsets one again.
+				// Scale offsets again.
 				for (auto& offset : upperPortionOffsets)
 				{
 					offset *= scalingFactor;
@@ -1567,7 +2151,7 @@ namespace ALYSLC
 				// Lower portion.
 				DebugAPI::QueueShape2D
 				(
-					origin, 
+					playerIndicatorScaleformPos, 
 					lowerPortionOffsets, 
 					(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 					false, 
@@ -1580,7 +2164,7 @@ namespace ALYSLC
 				);
 				DebugAPI::QueueShape2D
 				(
-					origin, 
+					playerIndicatorScaleformPos, 
 					lowerPortionOffsets, 
 					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 				);
@@ -1596,7 +2180,7 @@ namespace ALYSLC
 				);
 				DebugAPI::QueueShape2D
 				(
-					origin,
+					playerIndicatorScaleformPos,
 					upperPortionOffsets,
 					(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
 					false,
@@ -1609,7 +2193,7 @@ namespace ALYSLC
 				);
 				DebugAPI::QueueShape2D
 				(
-					origin,
+					playerIndicatorScaleformPos,
 					upperPortionOffsets, 
 					(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha
 				);
@@ -1781,8 +2365,15 @@ namespace ALYSLC
 		// relative to the default prong length.
 		// Match the player's chosen crosshair length.
 		float scalingFactor = crosshairLength / GlobalCoopData::CROSSHAIR_PRONG_DEF_LENGTH;
+		const float defaultLength = 
+		(
+			GlobalCoopData::CROSSHAIR_PRONG_PIXEL_OFFSETS[3].x -
+			GlobalCoopData::CROSSHAIR_PRONG_PIXEL_OFFSETS[0].x
+		);
 		for (auto& coord : baseProngOffsets)
 		{
+			// Invert along long axis for a spicier look.
+			coord.x = defaultLength - coord.x;
 			coord *= scalingFactor;
 		}
 
@@ -1833,7 +2424,7 @@ namespace ALYSLC
 				(
 					origin,
 					prongRotatedOffsets, 
-					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+					(Settings::vuCrosshairOuterOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 					false, 
 					2.0f * crosshairThickness
 				);
@@ -1882,7 +2473,7 @@ namespace ALYSLC
 			(
 				origin, 
 				prongRotatedOffsets, 
-				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuCrosshairInnerOutlineRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 				false, 
 				crosshairThickness
 			);
@@ -1946,7 +2537,7 @@ namespace ALYSLC
 			DebugAPI::QueueCircle2D
 			(
 				crosshairScaleformPos, 
-				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha, 
+				(Settings::vuOverlayRGBAValues[playerID] & 0xFFFFFF00) + alpha,
 				64, 
 				crosshairSizeRatioInterpData->value * 
 				(
@@ -1960,7 +2551,7 @@ namespace ALYSLC
 			DebugAPI::QueueCircle2D
 			(
 				crosshairScaleformPos, 
-				0xFFFFFF00 + alpha, 
+				0xFFFFFF00 + alpha,
 				64, 
 				crosshairSizeRatioInterpData->value * 
 				(
@@ -2008,7 +2599,7 @@ namespace ALYSLC
 		// or mounted and targeting an object.
 		bool canDirectTowardsCrosshairPos = 
 		(
-			p->mm->reqFaceTarget && aimMode == AimMode::kFreeAim
+			p->mm->reqFaceTarget && aimMode == AimMode::kCrosshair
 		);
 		bool adjustTowardsTarget = 
 		{
@@ -3933,7 +4524,7 @@ namespace ALYSLC
 		float screenTargetingAngle = 0.0f;
 		// Want to find actors in front of the player in their facing direction
 		// if they are currently facing a target or the crosshair world position.
-		bool usePlayerFacingAngle = aimMode != AimMode::kTwinStick && p->mm->reqFaceTarget;
+		bool usePlayerFacingAngle = aimMode == AimMode::kCrosshair && p->mm->reqFaceTarget;
 		if ((a_useLeftStickAngle && p->lsMoved) || (!a_useLeftStickAngle && p->rsMoved))
 		{
 			if (usePlayerFacingAngle)
@@ -4186,7 +4777,8 @@ namespace ALYSLC
 		// Only want to choose friendly actors to heal with spells when out of combat.
 		if ((a_useLeftStickAngle) &&
 			(!glob.isInCoopCombat) && 
-			(!sourceHasSpell || !shouldOnlyTargetAllies)) 
+			(!sourceHasSpell || !shouldOnlyTargetAllies) &&
+			(aimMode == AimMode::kCrosshair || !p->mm->reqFaceTarget)) 
 		{
 			return RE::ActorHandle();
 		}
@@ -4491,6 +5083,547 @@ namespace ALYSLC
 		}
 
 		return levelRGB;
+	}
+
+	RE::ObjectRefHandle TargetingManager::GetLockOnTarget
+	(
+		RE::ObjectRefHandle a_currentTargetHandle,
+		bool a_asAimTarget, 
+		bool a_useLeftStickAngle, 
+		bool a_fromCurrentTarget,
+		bool a_selectOnHold
+	)
+	{
+		// Choose a target to lock on to in the direction of the player's left or right stick.
+		// Can choose either an living NPC, if requesting an aim target, 
+		// or all selectable objects or NPCs for activation instead.
+		// Can also select a new target relative to the current target, 
+		// instead of the player's character themselves. 
+		// This will cycle through targets in the direction of the analog stick,
+		// instead of selecting a target radially from the player.
+		// Can select when holding down a button or displacing the analog stick
+		// at a regular interval. 
+		// Otherwise, will look for a new target right away without a cooldown.
+		// Return the computed target's handle.
+
+		auto procLists = RE::ProcessLists::GetSingleton();
+		if (!procLists)
+		{
+			return RE::ObjectRefHandle();
+		}
+		
+		bool canSelect = 
+		(
+			!a_fromCurrentTarget ||
+			!a_selectOnHold ||
+			Util::GetElapsedSeconds(p->lastLockOnAimTargetChangeTP) > 
+			Settings::fSecsBetweenSelectingLockOnTargets
+		);
+		// Closest object refr within FOV window.
+		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+		const float maxCheckDist = GetMaxActivationDist();
+		if (!a_asAimTarget && !canSelect)
+		{
+			// Check for a new target if the current target
+			// is not within activation distance anymore.
+			auto currentTargetPtr = Util::GetRefrPtrFromHandle(a_currentTargetHandle);
+			bool tooFarAway = 
+			(
+				currentTargetPtr &&
+				Util::GetRefrPosition(currentTargetPtr.get()).GetDistance(playerTorsoPos) > 
+				maxCheckDist
+			);
+			canSelect |= tooFarAway;
+		}
+		
+		// Choose a new target if:
+		// 1. For activation only: The current target is not within activation range.
+		// 2. Selecting from the player as the source position.
+		// 3. Selecting when an input is pressed and not held.
+		// 4. The selection cooldown interval has elapsed
+		// if starting from the currently selected target.
+		if (!canSelect)
+		{
+			return a_currentTargetHandle;
+		}
+
+		// Angles around which the FOV window is centered.
+		// Can use either the LS or RS game angle.
+		float screenTargetingAngle = 0.0f;
+		float worldTargetingAngle = 0.0f;
+		if ((p->lsMoved && a_useLeftStickAngle) || (p->rsMoved && !a_useLeftStickAngle))
+		{
+			const auto& stickData = glob.cdh->GetAnalogStickState
+			(
+				deviceID, a_useLeftStickAngle
+			);
+			// Flip LS Y comp sign to conform with Scaleform convention.
+			screenTargetingAngle = Util::NormalizeAng0To2Pi
+			(
+				atan2f(-stickData.yComp, stickData.xComp)
+			);
+		}
+		else
+		{
+			RE::NiPoint3 aimOriginPos = p->mm->playerTorsoPosition;
+			RE::NiPoint3 aimDirection = Util::RotationToDirectionVect
+			(
+				0.0f, 
+				Util::ConvertAngle
+				(
+					a_useLeftStickAngle ? 
+					p->analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter] :
+					p->analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter]
+				)
+			);
+			auto screenAimOriginPos = Util::WorldToScreenPoint3(aimOriginPos, false);
+			screenAimOriginPos.z = 0.0f;
+			auto screenAimPos = Util::WorldToScreenPoint3
+			(
+				aimOriginPos + 
+				aimDirection * 100.0f,
+				false
+			);
+			screenAimPos.z = 0.0f;
+			auto screenAimDir = screenAimPos - screenAimOriginPos;
+			if (screenAimDir.Length() == 0.0f)
+			{
+				float camYaw = glob.cam->GetCurrentYaw();
+				float yawDiff = Util::NormalizeAngToPi
+				(
+					camYaw - Util::DirectionToGameAngYaw(aimDirection)
+				);
+				// Aim down on the screen if not facing the camera's direction;
+				// otherwise, aim up the screen.
+				// Sign flipped due to Scaleform convention
+				// (origin top left instead of bottom left).
+				if (fabsf(yawDiff) >= PI / 2.0f)
+				{
+					screenTargetingAngle = PI / 2.0f;
+				}
+				else
+				{
+					screenTargetingAngle = 3.0f * PI / 2.0f;
+				}
+			}
+			else
+			{
+				screenAimDir.Unitize();
+				screenTargetingAngle = Util::NormalizeAng0To2Pi
+				(
+					atan2f(screenAimDir.y, screenAimDir.x)
+				);	
+			}
+		}
+
+		if (a_useLeftStickAngle)
+		{
+			worldTargetingAngle = 
+			(
+				p->lsMoved ? 
+				p->analogStickParams[!AnalogStickParams::kLSCamRelAng] :
+				coopActor->data.angle.z
+			);
+		}
+		else
+		{
+			worldTargetingAngle = 
+			(
+				p->rsMoved ? 
+				p->analogStickParams[!AnalogStickParams::kRSCamRelAng] :
+				coopActor->data.angle.z
+			);
+		}
+		
+		// If the current target is not valid, clear it for comparisons below.
+		if (!Util::HandleIsValid(a_currentTargetHandle) || 
+			!Util::IsValidRefrForTargeting(a_currentTargetHandle.get().get()))
+		{
+			a_currentTargetHandle = RE::ObjectRefHandle();
+		}
+
+		// Either from the player's character or from the currently selected target.
+		// Start selection from the player if the current target is offscreen,
+		// since players can still select a target 1 level deep and won't have difficulty
+		// fishing out the crosshair when if it is multiple jumps away from returning to
+		// an onscreen position.
+
+		if (a_selectOnHold)
+		{
+			shouldFindLockOnTargetFromPlayer = 
+			(
+				!a_fromCurrentTarget || !Util::HandleIsValid(a_currentTargetHandle)
+			);
+		}
+		else if (!a_fromCurrentTarget || !Util::HandleIsValid(a_currentTargetHandle))
+		{
+			shouldFindLockOnTargetFromPlayer = true;
+		}
+		
+		RE::TESObjectREFR* sourceRefr =
+		(
+			shouldFindLockOnTargetFromPlayer ?
+			coopActor.get() :
+			a_currentTargetHandle.get().get()
+		);
+		DBG
+		(
+			"{}: Should start from player: {}, source: {}. On hold: {}.", 
+			coopActor->GetName(), 
+			shouldFindLockOnTargetFromPlayer,
+			sourceRefr->GetName(),
+			a_selectOnHold
+		);
+		/*RE::TESObjectREFR* sourceRefr =
+		(
+			a_fromCurrentTarget && 
+			!a_useLeftStickAngle &&
+			Util::HandleIsValid(a_currentTargetHandle) &&
+			Util::PointIsOnScreen(Util::GetRefrPosition(a_currentTargetHandle.get().get())) ?
+			a_currentTargetHandle.get().get() : 
+			coopActor.get()
+		);*/
+
+		auto p1 = RE::PlayerCharacter::GetSingleton();
+		// To avoid checking LOS each time a new closer refr is found while looping through,
+		// especially if a bunch of far-away and likely out-of-sight refrs are checked first,
+		// we'll gather all the angle/distance factors for the refrs and then check LOS afterward, 
+		// from the closest to the farthest refrs. 
+		// That is, unless a player is the closest actor within the FOV window, then we're good,
+		// and no LOS checks are required.
+		std::multimap<float, RE::ObjectRefHandle> factorMap{ };
+		float angDistFactor = FLT_MAX;
+		// Is the actor in range and within the targeting angle's FOV window?
+		bool inRangeAndFOV = false;
+		if (a_asAimTarget)
+		{
+			// Needs polishing; not terrible, but not as accurate as I'd like it to be. 
+			// Hope I can figure out how to de-clunk that junk.
+			for (const auto& closeActorHandle : procLists->highActorHandles)
+			{
+				// Ignore non-actors, actors that cannot be targeted, and dead actors.
+				auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
+				if (!actorPtr || 
+					!Util::IsValidRefrForTargeting(actorPtr.get()) || 
+					actorPtr->IsDead())
+				{
+					continue;
+				}
+
+				// Skip the player themselves, the player's mount, 
+				// or the current crosshair target, 
+				// if locking on via button press in free aim targeting mode
+				// (otherwise, the target selected will change each frame).
+				if ((actorPtr == coopActor || actorPtr == p->GetCurrentMount()) ||
+					(
+						closeActorHandle == a_currentTargetHandle
+					))
+				{
+					continue;
+				}
+
+				// Cap the range if the target is not actively hostile 
+				// so we don't select a carefree rabbit 3 holds over hiding behind a tree.
+				bool isActivelyHostile = Util::IsActivelyHostileToPlayerOrAlly
+				(
+					actorPtr.get()
+				);
+				// NOTE:
+				// For all 'IsRefrInRangeAndInFOV' calls in this function:
+				// 1. Add in the angle difference between targeting angle and angle to target
+				// only if holding to select and not selecting from the current target,
+				// meaning we continuously trying to select a closer target from the player
+				// as the origin and can prioritize angular accuracy 
+				// over moving quickly through different targets.
+				// 2. Prefer screenspace positions and angles (if they are on screen only)
+				// when moving from the current  target to the next in a chain. 
+				// Easier to quickly move through targets without accounting for depth
+				// when the camera is pitched flat.
+				IsRefrInRangeAndInFOV
+				(
+					sourceRefr,
+					actorPtr.get(),
+					a_selectOnHold && !a_fromCurrentTarget,
+					false,
+					isActivelyHostile,
+					a_fromCurrentTarget,
+					screenTargetingAngle,
+					worldTargetingAngle,
+					Settings::vfAimCorrectionFOV[playerID],
+					Settings::fMaxRaycastAndZoomOutDistance,
+					angDistFactor,
+					inRangeAndFOV
+				);
+				if (inRangeAndFOV)
+				{
+					// Do not prioritize grabbed NPCs.
+					if (rmm->IsManaged(closeActorHandle, true))
+					{
+						angDistFactor = FLT_MAX;
+					}
+
+					factorMap.insert
+					(
+						{ angDistFactor, closeActorHandle }
+					);
+				}
+			}
+		
+			// Also add P1 if the companion player is performing this check.
+			if (p1 && !p->isPlayer1)
+			{	
+				const auto p1Handle = p1->GetHandle();	
+				if (p1Handle != a_currentTargetHandle)
+				{
+					// Perform new closest actor in FOV check on P1.
+					IsRefrInRangeAndInFOV
+					(
+						sourceRefr,
+						p1,
+						a_selectOnHold && !a_fromCurrentTarget,
+						false,
+						false,
+						a_fromCurrentTarget,
+						screenTargetingAngle,
+						worldTargetingAngle,
+						Settings::vfAimCorrectionFOV[playerID],
+						Settings::fMaxRaycastAndZoomOutDistance,
+						angDistFactor,
+						inRangeAndFOV
+					);
+					// Must be in range and within FOV window to insert.
+					if (inRangeAndFOV)
+					{
+						if (rmm->IsManaged(p1Handle, true))
+						{
+							angDistFactor = FLT_MAX;
+						}
+
+						factorMap.insert({ angDistFactor, p1Handle });
+					}
+				}
+			}
+		}
+		else
+		{
+			Util::ForEachReferenceInRange
+			(
+				playerTorsoPos, maxCheckDist, true,
+				[
+					this, 
+					sourceRefr,
+					&a_currentTargetHandle,
+					&a_fromCurrentTarget,
+					&a_selectOnHold,
+					&playerTorsoPos,
+					&screenTargetingAngle,
+					&worldTargetingAngle,
+					&maxCheckDist,
+					&inRangeAndFOV,
+					&angDistFactor,
+					&factorMap
+				]
+				(RE::TESObjectREFR* a_refr) 
+				{
+					// On to the next one.
+					if (!a_refr || 
+						!Util::HandleIsValid(a_refr->GetHandle()) || 
+						!a_refr->IsHandleValid())
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+					
+					const auto handle = a_refr->GetHandle();
+					auto baseObj = a_refr->GetBaseObject();
+					// On to the next one x2.
+					if (!baseObj || 
+						!a_refr->Is3DLoaded() || 
+						!a_refr->GetCurrent3D() ||
+						a_refr->IsDeleted() || 
+						!Util::IsValidRefrForTargeting(a_refr) ||
+						!Util::IsSelectableRefr(a_refr) ||
+						handle.get() == p->GetCurrentMount() ||
+						handle == a_currentTargetHandle ||
+						handle == coopActor->GetHandle()) 
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					IsRefrInRangeAndInFOV
+					(
+						sourceRefr,
+						a_refr,
+						a_selectOnHold && !a_fromCurrentTarget,
+						false,
+						false,
+						false,
+						screenTargetingAngle,
+						worldTargetingAngle,
+						Settings::vfAimCorrectionFOV[playerID],
+						maxCheckDist,
+						angDistFactor,
+						inRangeAndFOV
+					);
+
+					// Must be in range and within FOV window to insert.
+					if (inRangeAndFOV)
+					{
+						// Do not prioritize grabbed objects/NPCs.
+						if (rmm->IsManaged(handle, true))
+						{
+							angDistFactor = FLT_MAX;
+						}
+
+						factorMap.insert({ angDistFactor, handle });
+					}
+					
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+			);
+
+			// Also add P1 if the companion player is performing this check.
+			if (p1 && !p->isPlayer1)
+			{	
+				const auto p1Handle = p1->GetHandle();	
+				if (p1Handle != a_currentTargetHandle)
+				{
+					// Perform new closest actor in FOV check on P1.
+					IsRefrInRangeAndInFOV
+					(
+						sourceRefr,
+						p1,
+						a_selectOnHold && !a_fromCurrentTarget,
+						false,
+						false,
+						false,
+						screenTargetingAngle,
+						worldTargetingAngle,
+						Settings::vfAimCorrectionFOV[playerID],
+						maxCheckDist,
+						angDistFactor,
+						inRangeAndFOV
+					);
+					// Must be in range and within FOV window to insert.
+					if (inRangeAndFOV)
+					{
+						// Do not prioritize grabbed objects/NPCs.
+						if (rmm->IsManaged(p1Handle, true))
+						{
+							angDistFactor = FLT_MAX;
+						}
+
+						factorMap.insert({ angDistFactor, p1Handle });
+					}
+				}
+			}
+		}
+
+		// If there are no other refrs to consider, 
+		// return the current target to maintain it if it is still targetable.
+		/*if (factorMap.empty() && 
+			Util::HandleIsValid(a_currentTargetHandle) &&
+			Util::IsValidRefrForTargeting(a_currentTargetHandle.get().get()) &&
+			!rmm->IsManaged(a_currentTargetHandle, true))
+		{
+			return a_currentTargetHandle;
+		}*/
+
+		// FOV check(s) before settling on closest in-FOV refr.
+		// Want to restart the selection chain if LOS checks fail and targeting with the left stick,
+		// but maintain the current selection if LOS checks fail when using the right stick.
+		RE::ObjectRefHandle closestRefrHandle = RE::ObjectRefHandle();
+		bool choseLastOption = false;
+		for (auto iter = factorMap.begin(); iter != factorMap.end(); ++iter)
+		{
+			const auto& [factor, refrHandle] = *iter;
+			const auto refrPtr = Util::GetRefrPtrFromHandle(refrHandle);
+			if (!refrPtr)
+			{
+				continue;
+			}
+
+			// Skip non-actors if choosing an aim target.
+			if (a_asAimTarget)
+			{
+				const auto asActor = refrPtr->As<RE::Actor>();
+				if (!asActor)
+				{
+					continue;
+				}
+
+				// No FOV checks necessary for players. Select and break.
+				if (GlobalCoopData::IsCoopPlayer(asActor))
+				{
+					DBG
+					(
+						"{}: Selected a fellow adventurer, {}, factor: {}", 
+						coopActor->GetName(), asActor->GetName(), factor
+					);
+					closestRefrHandle = refrHandle;
+					break;
+				}
+			}
+
+			bool hasLOS = Util::HasLOS
+			(
+				refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos
+			);
+			DBG
+			(
+				"{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}", 
+				coopActor->GetName(), refrPtr->GetName(), refrPtr->formID, hasLOS, factor
+			);
+			if (hasLOS)
+			{
+				closestRefrHandle = refrHandle;
+				choseLastOption = ++iter == factorMap.end();
+				break;
+			}
+		}
+		
+		// If failing to select a new target or if the chosen target 
+		// is the last selectable target in the chain, 
+		// restart the selection chain from the player next time.
+		// Only when not selected via holding a bind, as while holding a bind,
+		// its easy to jump back to selecting a target.
+		if (!a_selectOnHold)
+		{
+			shouldFindLockOnTargetFromPlayer = 
+			(
+				!a_fromCurrentTarget || 
+				!Util::HandleIsValid(closestRefrHandle) ||
+				choseLastOption
+			);
+		}
+		
+		DBG
+		(
+			"{}: Should start from player: {}, closest refr: {}, choices: {}, chose last: {}", 
+			coopActor->GetName(), 
+			shouldFindLockOnTargetFromPlayer,
+			Util::HandleIsValid(closestRefrHandle) ? 
+			closestRefrHandle.get()->GetName() : 
+			"NONE",
+			factorMap.size(),
+			choseLastOption
+		);
+		// If there is no new target and the previous target is valid, return it.
+		// Will restart selection from the player on the next selection attempt.
+		if (!Util::HandleIsValid(closestRefrHandle) && 
+			Util::HandleIsValid(a_currentTargetHandle) &&
+			Util::IsValidRefrForTargeting(a_currentTargetHandle.get().get()) &&
+			!rmm->IsManaged(a_currentTargetHandle, true))
+		{
+			DBG
+			(
+				"{}: Chose current: {}", 
+				coopActor->GetName(), 
+				a_currentTargetHandle.get()->GetName()
+			);
+			return a_currentTargetHandle;
+		}
+		
+		return closestRefrHandle;
 	}
 
 	std::vector<RE::ObjectRefHandle> TargetingManager::GetLootableRefrsInRange
@@ -4841,472 +5974,458 @@ namespace ALYSLC
 		return RE::ActorHandle();
 	}
 
-	RE::ObjectRefHandle TargetingManager::GetLockOnTarget
-	(
-		RE::ObjectRefHandle a_currentTargetHandle,
-		bool a_asAimTarget, 
-		bool a_useLeftStickAngle, 
-		bool a_fromCurrentTarget,
-		bool a_selectOnHold
-	)
+	RE::ObjectRefHandle TargetingManager::GetSelectableProximityRefrHandle(bool a_quickSelection)
 	{
-		// Choose a target to lock on to in the direction of the player's left or right stick.
-		// Can choose either an living NPC, if requesting an aim target, 
-		// or all selectable objects or NPCs for activation instead.
-		// Can also select a new target relative to the current target, 
-		// instead of the player's character themselves. 
-		// This will cycle through targets in the direction of the analog stick,
-		// instead of selecting a target radially from the player.
-		// Can select when holding down a button or displacing the analog stick
-		// at a regular interval. 
-		// Otherwise, will look for a new target right away without a cooldown.
-		// Return the computed target's handle.
+		// Choose a valid nearby refr to use for activation.
+		// Stricter conditions for what objects/NPCs are selectable 
+		// when for quick selection/activation.
+		// Done to prevent accidental or unnecessary activation.
 
-		auto procLists = RE::ProcessLists::GetSingleton();
-		if (!procLists)
-		{
-			return RE::ObjectRefHandle();
-		}
-
-		// Angles around which the FOV window is centered.
-		// Can use either the LS or RS game angle.
-		float screenTargetingAngle = 0.0f;
-		float worldTargetingAngle = 0.0f;
-		if ((p->lsMoved && a_useLeftStickAngle) || (p->rsMoved && !a_useLeftStickAngle))
-		{
-			const auto& stickData = glob.cdh->GetAnalogStickState
-			(
-				deviceID, a_useLeftStickAngle
-			);
-			// Flip LS Y comp sign to conform with Scaleform convention.
-			screenTargetingAngle = Util::NormalizeAng0To2Pi
-			(
-				atan2f(-stickData.yComp, stickData.xComp)
-			);
-		}
-		else
-		{
-			RE::NiPoint3 aimOriginPos = p->mm->playerTorsoPosition;
-			RE::NiPoint3 aimDirection = Util::RotationToDirectionVect
-			(
-				0.0f, 
-				Util::ConvertAngle
-				(
-					a_useLeftStickAngle ? 
-					p->analogStickParams[!AnalogStickParams::kLSCamRelAngMovingFromCenter] :
-					p->analogStickParams[!AnalogStickParams::kRSCamRelAngMovingFromCenter]
-				)
-			);
-			auto screenAimOriginPos = Util::WorldToScreenPoint3(aimOriginPos, false);
-			screenAimOriginPos.z = 0.0f;
-			auto screenAimPos = Util::WorldToScreenPoint3
-			(
-				aimOriginPos + 
-				aimDirection * 100.0f,
-				false
-			);
-			screenAimPos.z = 0.0f;
-			auto screenAimDir = screenAimPos - screenAimOriginPos;
-			if (screenAimDir.Length() == 0.0f)
-			{
-				float camYaw = glob.cam->GetCurrentYaw();
-				float yawDiff = Util::NormalizeAngToPi
-				(
-					camYaw - Util::DirectionToGameAngYaw(aimDirection)
-				);
-				// Aim down on the screen if not facing the camera's direction;
-				// otherwise, aim up the screen.
-				// Sign flipped due to Scaleform convention
-				// (origin top left instead of bottom left).
-				if (fabsf(yawDiff) >= PI / 2.0f)
-				{
-					screenTargetingAngle = PI / 2.0f;
-				}
-				else
-				{
-					screenTargetingAngle = 3.0f * PI / 2.0f;
-				}
-			}
-			else
-			{
-				screenAimDir.Unitize();
-				screenTargetingAngle = Util::NormalizeAng0To2Pi
-				(
-					atan2f(screenAimDir.y, screenAimDir.x)
-				);	
-			}
-		}
-
-		if (a_useLeftStickAngle)
-		{
-			worldTargetingAngle = 
-			(
-				p->lsMoved ? 
-				p->analogStickParams[!AnalogStickParams::kLSCamRelAng] :
-				coopActor->data.angle.z
-			);
-		}
-		else
-		{
-			worldTargetingAngle = 
-			(
-				p->rsMoved ? 
-				p->analogStickParams[!AnalogStickParams::kRSCamRelAng] :
-				coopActor->data.angle.z
-			);
-		}
-		
-		// If the current target is not valid, clear it for comparisons below.
-		if (!Util::HandleIsValid(a_currentTargetHandle) || 
-			!Util::IsValidRefrForTargeting(a_currentTargetHandle.get().get()))
-		{
-			a_currentTargetHandle = RE::ObjectRefHandle();
-		}
-
-		// Either from the player's character or from the currently selected target.
-		// Start selection from the player if the current target is offscreen,
-		// since players can still select a target 1 level deep and won't have difficulty
-		// fishing out the crosshair when if it is multiple jumps away from returning to
-		// an onscreen position.
-		RE::TESObjectREFR* sourceRefr =
+		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
+		// Handle to return.
+		RE::ObjectRefHandle selectedRefrHandle = RE::ObjectRefHandle();
+		// Clear out crosshair pick handle, which will be updated below if valid.
+		crosshairPickRefrHandle = RE::ObjectRefHandle();
+		const auto currentMount = p->GetCurrentMount();
+		// Re-populate nearby references if needed.
+		bool orientationChanged = 
 		(
-			a_fromCurrentTarget && 
-			!a_useLeftStickAngle &&
-			Util::HandleIsValid(a_currentTargetHandle) &&
-			Util::PointIsOnScreen(Util::GetRefrPosition(a_currentTargetHandle.get().get())) ?
-			a_currentTargetHandle.get().get() : 
-			coopActor.get()
-		);
-
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		// To avoid checking LOS each time a new closer refr is found while looping through,
-		// especially if a bunch of far-away and likely out-of-sight refrs are checked first,
-		// we'll gather all the angle/distance factors for the refrs and then check LOS afterward, 
-		// from the closest to the farthest refrs. 
-		// That is, unless a player is the closest actor within the FOV window, then we're good,
-		// and no LOS checks are required.
-		std::multimap<float, RE::ObjectRefHandle> factorMap{ };
-		float angDistFactor = FLT_MAX;
-		// Is the actor in range and within the targeting angle's FOV window?
-		bool inRangeAndFOV = false;
-		if (a_asAimTarget)
-		{
-			// Choose a new target if:
-			// 1. Selecting from the player as the source position.
-			// 2. Selecting when an input is pressed and not held.
-			// 3. The selection cooldown interval has elapsed
-			// if starting from the currently selected target.
-			if (!a_fromCurrentTarget ||
-				!a_selectOnHold ||
-				Util::GetElapsedSeconds(p->lastLockOnAimTargetUpdateTP) > 
-				Settings::fSecsBetweenSelectingLockOnTargets)
-			{
-				// Needs polishing; not terrible, but not as accurate as I'd like it to be. 
-				// Hope I can figure out how to de-clunk that junk.
-				for (const auto& closeActorHandle : procLists->highActorHandles)
-				{
-					// Ignore non-actors, actors that cannot be targeted, and dead actors.
-					auto actorPtr = Util::GetActorPtrFromHandle(closeActorHandle); 
-					if (!actorPtr || 
-						!Util::IsValidRefrForTargeting(actorPtr.get()) || 
-						actorPtr->IsDead())
-					{
-						continue;
-					}
-
-					// Skip the player themselves, the player's mount, 
-					// or the current crosshair target, 
-					// if locking on via button press in free aim targeting mode
-					// (otherwise, the target selected will change each frame).
-					if ((actorPtr == coopActor || actorPtr == p->GetCurrentMount()) ||
-						(
-							closeActorHandle == a_currentTargetHandle
-						))
-					{
-						continue;
-					}
-
-					// Cap the range if the target is not actively hostile 
-					// so we don't select a carefree rabbit 3 holds over hiding behind a tree.
-					bool isActivelyHostile = Util::IsActivelyHostileToPlayerOrAlly
-					(
-						actorPtr.get()
-					);
-					// NOTE:
-					// For all 'IsRefrInRangeAndInFOV' calls in this function:
-					// 1. Add in the angle difference between targeting angle and angle to target
-					// only if holding to select and not selecting from the current target,
-					// meaning we continuously trying to select a closer target from the player
-					// as the origin and can prioritize angular accuracy 
-					// over moving quickly through different targets.
-					// 2. Prefer screenspace positions and angles (if they are on screen only)
-					// when moving from the current  target to the next in a chain. 
-					// Easier to quickly move through targets without accounting for depth
-					// when the camera is pitched flat.
-					IsRefrInRangeAndInFOV
-					(
-						sourceRefr,
-						actorPtr.get(),
-						a_selectOnHold && !a_fromCurrentTarget,
-						false,
-						isActivelyHostile,
-						a_fromCurrentTarget,
-						screenTargetingAngle,
-						worldTargetingAngle,
-						Settings::vfAimCorrectionFOV[playerID],
-						Settings::fMaxRaycastAndZoomOutDistance,
-						angDistFactor,
-						inRangeAndFOV
-					);
-					if (inRangeAndFOV)
-					{
-						// Do not prioritize grabbed NPCs.
-						if (rmm->IsManaged(closeActorHandle, true))
-						{
-							angDistFactor = FLT_MAX;
-						}
-
-						factorMap.insert
-						(
-							{ angDistFactor, closeActorHandle }
-						);
-					}
-				}
-		
-				// Also add P1 if the companion player is performing this check.
-				if (p1 && !p->isPlayer1)
-				{	
-					const auto p1Handle = p1->GetHandle();	
-					if (p1Handle != a_currentTargetHandle)
-					{
-						// Perform new closest actor in FOV check on P1.
-						IsRefrInRangeAndInFOV
-						(
-							sourceRefr,
-							p1,
-							a_selectOnHold && !a_fromCurrentTarget,
-							false,
-							false,
-							a_fromCurrentTarget,
-							screenTargetingAngle,
-							worldTargetingAngle,
-							Settings::vfAimCorrectionFOV[playerID],
-							Settings::fMaxRaycastAndZoomOutDistance,
-							angDistFactor,
-							inRangeAndFOV
-						);
-						// Must be in range and within FOV window to insert.
-						if (inRangeAndFOV)
-						{
-							if (rmm->IsManaged(p1Handle, true))
-							{
-								angDistFactor = FLT_MAX;
-							}
-
-							factorMap.insert({ angDistFactor, p1Handle });
-						}
-					}
-				}
-			}
-		}
-		else
-		{
-			// Closest object refr within FOV window.
-			const auto& playerTorsoPos = p->mm->playerTorsoPosition;
-			const float maxCheckDist = GetMaxActivationDist();
-			// Check for a new target if the current target
-			// is not within activation distance anymore.
-			auto currentTargetPtr = Util::GetRefrPtrFromHandle(a_currentTargetHandle);
-			bool tooFarAway = 
+			p->lsMoved || 
+			fabsf
 			(
-				currentTargetPtr &&
-				Util::GetRefrPosition(currentTargetPtr.get()).GetDistance(playerTorsoPos) > 
-				maxCheckDist
+				Util::NormalizeAngToPi(coopActor->GetHeading(false) - lastActivationFacingAngle)
+			) > 
+			Settings::fMinTurnAngToRefreshRefrs	
+		);
+		if (nearbyReferences.empty() || orientationChanged)
+		{
+			// Clear out any cached objects.
+			nearbyReferences.clear();
+			// Player heading angle in Cartesian convention.
+			const float convHeadingAng = Util::ConvertAngle(coopActor->GetHeading(false));
+			// Player's facing direction in the XY plane (yaw direction).
+			RE::NiPoint3 facingDirXY = Util::RotationToDirectionVect(0.0f, convHeadingAng);
+			facingDirXY.Unitize();
+			// Max activation reach distance.
+			const float maxCheckDist = GetMaxActivationDist();
+			// Used to check if activation cycling has started.
+			const float& secsSinceActivationStarted = 
+			(
+				p->pam->paStatesList
+				[!InputAction::kActivate - !InputAction::kFirstAction].secsPerformed
 			);
-			// Choose a new target if:
-			// 1. The current target is not within activation range.
-			// 2. Selecting from the player as the source position.
-			// 3. Selecting when an input is pressed and not held.
-			// 4. The selection cooldown interval has elapsed
-			// if starting from the currently selected target.
-			if (tooFarAway || 
-				!a_fromCurrentTarget ||
-				!a_selectOnHold ||
-				Util::GetElapsedSeconds(p->lastLockOnActivationTargetUpdateTP) > 
-				Settings::fSecsBetweenSelectingLockOnTargets)
-			{
-				Util::ForEachReferenceInRange
-				(
-					playerTorsoPos, maxCheckDist, true,
-					[
-						this, 
-						sourceRefr,
-						&a_currentTargetHandle,
-						&a_fromCurrentTarget,
-						&a_selectOnHold,
-						&playerTorsoPos,
-						&screenTargetingAngle,
-						&worldTargetingAngle,
-						&maxCheckDist,
-						&inRangeAndFOV,
-						&angDistFactor,
-						&factorMap
-					]
-					(RE::TESObjectREFR* a_refr) 
+			// Get each reference within range and record the magnitude of
+			// its angular distance from the player's facing angle.
+			Util::ForEachReferenceInRange
+			(
+				playerTorsoPos, maxCheckDist, true,
+				[
+					this, 
+					&currentMount, 
+					&playerTorsoPos, 
+					&facingDirXY, 
+					&maxCheckDist,
+					&secsSinceActivationStarted,
+					&a_quickSelection
+				]
+				(RE::TESObjectREFR* a_refr) 
+				{
+					// On to the next one.
+					// Either the refr does not exist, is the player themselves, is their mount,
+					// or is the furniture they are interacting with already.
+					if ((!a_refr ||
+						!Util::HandleIsValid(a_refr->GetHandle()) || 
+						a_refr == coopActor.get()) ||
+						(currentMount && a_refr == currentMount.get()) ||
+						(coopActor->GetOccupiedFurniture() == a_refr->GetHandle()))
 					{
-						// On to the next one.
-						if (!a_refr || 
-							!Util::HandleIsValid(a_refr->GetHandle()) || 
-							!a_refr->IsHandleValid())
-						{
-							return RE::BSContainer::ForEachResult::kContinue;
-						}
-					
-						const auto handle = a_refr->GetHandle();
-						auto baseObj = a_refr->GetBaseObject();
-						// On to the next one x2.
-						if (!baseObj || 
-							!a_refr->Is3DLoaded() || 
-							!a_refr->GetCurrent3D() ||
-							a_refr->IsDeleted() || 
-							!Util::IsValidRefrForTargeting(a_refr) ||
-							!Util::IsSelectableRefr(a_refr) ||
-							handle.get() == p->GetCurrentMount() ||
-							handle == a_currentTargetHandle ||
-							handle == coopActor->GetHandle()) 
-						{
-							return RE::BSContainer::ForEachResult::kContinue;
-						}
-
-						IsRefrInRangeAndInFOV
-						(
-							sourceRefr,
-							a_refr,
-							a_selectOnHold && !a_fromCurrentTarget,
-							false,
-							false,
-							false,
-							screenTargetingAngle,
-							worldTargetingAngle,
-							Settings::vfAimCorrectionFOV[playerID],
-							maxCheckDist,
-							angDistFactor,
-							inRangeAndFOV
-						);
-
-						// Must be in range and within FOV window to insert.
-						if (inRangeAndFOV)
-						{
-							// Do not prioritize grabbed objects/NPCs.
-							if (rmm->IsManaged(handle, true))
-							{
-								angDistFactor = FLT_MAX;
-							}
-
-							factorMap.insert({ angDistFactor, handle });
-						}
-					
 						return RE::BSContainer::ForEachResult::kContinue;
 					}
-				);
 
-				// Also add P1 if the companion player is performing this check.
-				if (p1 && !p->isPlayer1)
-				{	
-					const auto p1Handle = p1->GetHandle();	
-					if (p1Handle != a_currentTargetHandle)
+					const auto handle = a_refr->GetHandle();
+					auto baseObj = a_refr->GetBaseObject();
+					// On to the next one x2.
+					if (!baseObj) 
 					{
-						// Perform new closest actor in FOV check on P1.
-						IsRefrInRangeAndInFOV
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					const auto modFile = baseObj->GetFile();
+					// REMOVE when done debugging.
+					const auto modFile2 = baseObj->GetFile(0);
+					DBG
+					(
+						"{}: Activation candidate {} ({}, 0x{:X}) from mod {} ({}).", 
+						coopActor->GetName(),
+						a_refr ? a_refr->GetName() : "NONE",
+						Util::GetEditorID(baseObj),
+						baseObj->formID,
+						modFile ? modFile->fileName : "NONE",
+						modFile2 ? modFile2->fileName : "NONE"
+					);
+					// EW. Don't know how else to tell if a mod-placed activator is from EVGAT.
+					// Ignore, since these activators should not be activated by P2 through P1,
+					// and activation can cause weird alignment issues anyways.
+					bool isEVGATActivator = 
+					(
+						baseObj &&
+						baseObj->Is
 						(
-							sourceRefr,
-							p1,
-							a_selectOnHold && !a_fromCurrentTarget,
-							false,
-							false,
-							false,
-							screenTargetingAngle,
-							worldTargetingAngle,
-							Settings::vfAimCorrectionFOV[playerID],
-							maxCheckDist,
-							angDistFactor,
-							inRangeAndFOV
-						);
-						// Must be in range and within FOV window to insert.
-						if (inRangeAndFOV)
+							RE::FormType::Activator, RE::FormType::TalkingActivator
+						) && 
+						modFile && 
+						std::string(modFile->fileName).find("EVG") != std::string::npos
+					);
+					// Skip EVG activators and non-selectable/targetable refrs.
+					if (isEVGATActivator ||
+						!Util::IsValidRefrForTargeting(a_refr) ||
+						!Util::IsSelectableRefr(a_refr))
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+
+					if (a_quickSelection)
+					{
+						// If not choosing a lock on activation target,
+						// skip the currently selected target when activation cycling.
+						if (startedActivationCycling && handle == activationRefrHandle)
 						{
-							// Do not prioritize grabbed objects/NPCs.
-							if (rmm->IsManaged(p1Handle, true))
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+
+						// Also skip other players, or activating hostile actors 
+						// that are not pacifiable or interactable while hostile 
+						// (not a guard, mount, or normally hostile).
+						auto asActor = a_refr->As<RE::Actor>();
+						const bool isFriendly = Util::IsPartyFriendlyActor(asActor);
+						const bool hostileToP1 = 
+						(
+							asActor && asActor->IsHostileToActor(glob.player1Actor.get())
+						);
+						const bool hostileToThisPlayer = 
+						(
+							asActor && asActor->IsHostileToActor(coopActor.get())
+						);
+						// Useless to activate hostile actors in combat.
+						const bool activateHostileActor = 
+						{ 
+							(hostileToP1 || hostileToThisPlayer) &&
+							(
+								asActor && 
+								!asActor->IsDead() && 
+								!Util::CanStopCombatWithActor(asActor)
+							)
+						};
+
+						// Do not consider friendly actors that are not mad at a player or 
+						// do not need help getting up, and are not selected as a target.
+						const bool friendlyActorNotActivatable = 
+						(
+							isFriendly &&
+							!asActor->IsBleedingOut() &&
+							!asActor->IsInRagdollState() &&
+							!hostileToP1 &&
+							!hostileToThisPlayer &&
+							handle != aimCorrectionTargetHandle &&
+							handle != crosshairRefrHandle
+						);
+						if (friendlyActorNotActivatable ||
+							activateHostileActor || 
+							glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
+						{
+							return RE::BSContainer::ForEachResult::kContinue;
+						}
+					}
+
+					auto refr3DPtr = Util::GetRefr3D(a_refr); 
+					const auto niCamPtr = Util::GetNiCamera();
+					// Skip refrs that are not within a 180 degree FOV cone 
+					// in the player's facing direction and not on screen.
+					// Do not want to select a door or furniture, for example,
+					// that is behind the player or the camera.
+					bool allPositionsBehindPlayer = true;
+					bool onePositionBehindCamera = 
+					/*(
+						!Util::PointIsOnScreen(Util::Get3DCenterPos(a_refr))
+					);*/
+					(
+						refr3DPtr && 
+						niCamPtr &&
+						!RE::NiCamera::BoundInFrustum
+						(
+							refr3DPtr->worldBound, niCamPtr.get()
+						)
+					);
+					float facingToRefrDot = 0.0f;
+
+					// Check three points on the refr for the best measurement 
+					// of where the refr is located relative to the player.
+					// Start with the reported refr location.
+					RE::NiPoint3 refrLoc1 = a_refr->data.location;
+					//onePositionBehindCamera |= !Util::PointIsOnScreen(refrLoc1);
+					RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
+					toRefrDirXY.z = 0.0f;
+					toRefrDirXY.Unitize();
+
+					// Minimum selection factor [0, 2]. 
+					// Get the minimum factor among the (potentially) three refr positions.
+					// Negate the dot product, meaning the more the player has to turn 
+					// to face the object, the larger the factor.
+					// Then we add 1 to ensure all dot product results are > 0, 
+					// and mult by 0.5 to set the range to [0, 1]
+					// Lastly scale by the distance from the player to the object,
+					// meaning objects that are further away have a larger factor.
+					// Divide by max reach distance to set range to [0, 1]
+					facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+					if (facingToRefrDot >= 0.0f)
+					{
+						allPositionsBehindPlayer = false;
+					}
+
+					float minSelectionFactor = 
+					(
+						(0.5f * (1.0f - facingToRefrDot)) +
+						(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
+					);
+
+					// Next two positions only exist if the refr's 3D is available.
+					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
+					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
+					if (refr3DPtr)
+					{
+						refrLoc2 = refr3DPtr->world.translate;
+						refrLoc3 = refr3DPtr->worldBound.center;
+					}
+
+					// Refr 3D world position.
+					if (refrLoc2.has_value())
+					{
+						toRefrDirXY = refrLoc2.value() - playerTorsoPos;
+						toRefrDirXY.z = 0.0f;
+						toRefrDirXY.Unitize();
+						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						{
+							allPositionsBehindPlayer = false;
+						}
+
+						float selectionFactor = 
+						(
+							(0.5f * (1.0f - facingToRefrDot)) +
+							(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
+						);
+						if (selectionFactor < minSelectionFactor) 
+						{
+							minSelectionFactor = selectionFactor;
+						}
+					}
+
+					// Refr 3D bound center position.
+					if (refrLoc3.has_value())
+					{
+						toRefrDirXY = refrLoc3.value() - playerTorsoPos;
+						toRefrDirXY.z = 0.0f;
+						toRefrDirXY.Unitize();
+						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+						{
+							allPositionsBehindPlayer = false;
+						}
+
+						float selectionFactor = 
+						(
+							(0.5f * (1.0f - facingToRefrDot)) + 
+							(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
+						);
+						if (selectionFactor < minSelectionFactor)
+						{
+							minSelectionFactor = selectionFactor;
+						}
+					}
+					
+					// Player is not turned towards the object if its refr data, 3D,
+					// and 3D center positions are behind the player.
+					if (allPositionsBehindPlayer || onePositionBehindCamera)
+					{
+						return RE::BSContainer::ForEachResult::kContinue;
+					}
+					
+					// Increase factor to push grabbed refrs to the back of the references map.
+					// Do not want to prioritize selecting grabbed refrs instead of other refrs 
+					// in front of the player.
+					if (rmm->IsManaged(handle, true))
+					{
+						minSelectionFactor *= 2.0f;
+					}
+
+					nearbyReferences.insert
+					(
+						std::pair<float, RE::ObjectRefHandle>
+						(
+							minSelectionFactor, a_refr->GetHandle()
+						)
+					);
+
+					return RE::BSContainer::ForEachResult::kContinue;
+				}
+			);
+				
+			// Add the game's crosshair pick refr if any.
+			if (auto pickData = RE::CrosshairPickData::GetSingleton(); pickData)
+			{
+				auto pickRefrPtr = Util::GetRefrPtrFromHandle(pickData->target); 
+				// Must be valid for targeting.
+				if (pickRefrPtr && Util::IsValidRefrForTargeting(pickRefrPtr.get()))
+				{
+					// Must be in range of this player still.
+					float distToRefr = playerTorsoPos.GetDistance
+					(
+						Util::Get3DCenterPos(pickRefrPtr.get())
+					);
+					if (distToRefr < maxCheckDist)
+					{
+						const bool blacklisted =
+						(
+							(currentMount && pickRefrPtr == currentMount) ||
+							(
+								pickRefrPtr->As<RE::Actor>() && 
+								pickRefrPtr->As<RE::Actor>()->IsPlayerTeammate()
+							) ||
+							(glob.coopEntityBlacklistFIDSet.contains(pickRefrPtr->formID))
+						);
+						if (!blacklisted) 
+						{
+							// Skip if not within a 180 degree FOV cone 
+							// in the player's facing direction.
+							// Do not want to select a door or furniture, for example,
+							// that is behind the player.
+							bool allPositionsBehindPlayer = true;
+							float facingToRefrDot = 0.0f;
+							// Same three tests as for the nearby refrs above.
+							RE::NiPoint3 refrLoc1 = pickRefrPtr->data.location;
+							RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
+							toRefrDirXY.z = 0.0f;
+							toRefrDirXY.Unitize();
+							facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+							if (facingToRefrDot >= 0.0f)
 							{
-								angDistFactor = FLT_MAX;
+								allPositionsBehindPlayer = false;
 							}
 
-							factorMap.insert({ angDistFactor, p1Handle });
+							float minSelectionFactor = 
+							(
+								(0.5f * (1.0f - facingToRefrDot)) +
+								(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
+							);
+							std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
+							std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
+							auto refr3DPtr = Util::GetRefr3D(pickRefrPtr.get()); 
+							if (refr3DPtr)
+							{
+								refrLoc2 = refr3DPtr->world.translate;
+								refrLoc3 = refr3DPtr->worldBound.center;
+							}
+
+							if (refrLoc2.has_value())
+							{
+								toRefrDirXY = refrLoc2.value() - playerTorsoPos;
+								toRefrDirXY.z = 0.0f;
+								toRefrDirXY.Unitize();
+								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								{
+									allPositionsBehindPlayer = false;
+								}
+
+								float selectionFactor = 
+								(
+									(0.5f * (1.0f - facingToRefrDot)) +
+									(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
+								);
+								if (selectionFactor < minSelectionFactor) 
+								{
+									minSelectionFactor = selectionFactor;
+								}
+							}
+
+							if (refrLoc3.has_value())
+							{
+								toRefrDirXY = refrLoc3.value() - playerTorsoPos;
+								toRefrDirXY.z = 0.0f;
+								toRefrDirXY.Unitize();
+								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
+								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
+								{
+									allPositionsBehindPlayer = false;
+								}
+
+								float selectionFactor = 
+								(
+									(0.5f * (1.0f - facingToRefrDot)) + 
+									(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
+								);
+								if (selectionFactor < minSelectionFactor)
+								{
+									minSelectionFactor = selectionFactor;
+								}
+							}
+
+							// Player is not turned towards the object if its refr data, 3D,
+							// and 3D center positions are behind the player.
+							if (!allPositionsBehindPlayer)
+							{
+								// Save pick data refr handle.
+								crosshairPickRefrHandle = pickData->target;
+								nearbyReferences.insert
+								(
+									std::pair<float, RE::ObjectRefHandle>
+									(
+										minSelectionFactor, crosshairPickRefrHandle
+									)
+								);
+							}
 						}
 					}
 				}
 			}
 		}
 
-		// If there are no other refrs to consider, 
-		// return the current target to maintain it if it is still targetable.
-		if (factorMap.empty() && 
-			Util::HandleIsValid(a_currentTargetHandle) &&
-			Util::IsValidRefrForTargeting(a_currentTargetHandle.get().get()) &&
-			!rmm->IsManaged(a_currentTargetHandle, true))
+		// Get next selectable refr in view of the camera and remove it from the map.
+		while (!nearbyReferences.empty())
 		{
-			return a_currentTargetHandle;
-		}
-		
-		// FOV check(s) before settling on closest in-FOV refr.
-		RE::ObjectRefHandle closestRefrHandle = RE::ObjectRefHandle();
-		for (const auto& [factor, refrHandle] : factorMap)
-		{
-			const auto refrPtr = Util::GetRefrPtrFromHandle(refrHandle);
-			if (!refrPtr)
+			auto nextRefrNodeHandle = nearbyReferences.extract(nearbyReferences.begin());
+			if (nextRefrNodeHandle.empty())
+			{
+				continue;
+			}
+			
+			// Do not select invalid refrs or refrs not in view of the camera or any player.
+			// NOTE: 
+			// These refrs, aside from the crosshair pick refr, 
+			// are not directly selected with a player's crosshair,
+			// so LOS still has to be checked.
+			const auto& nextRefrHandle = nextRefrNodeHandle.mapped();
+			auto nextRefrPtr = Util::GetRefrPtrFromHandle(nextRefrHandle); 
+			if (!nextRefrPtr) 
 			{
 				continue;
 			}
 
-			// Skip non-actors if choosing an aim target.
-			if (a_asAimTarget)
+			// Finally set the proximity refr if the player has LOS on the refr.
+			if (nextRefrHandle == crosshairPickRefrHandle || 
+				Util::HasLOS
+				(
+					nextRefrPtr.get(), coopActor.get(), false, false, crosshairWorldPos
+				))
 			{
-				const auto asActor = refrPtr->As<RE::Actor>();
-				if (!asActor)
-				{
-					continue;
-				}
-
-				// No FOV checks necessary for players. Select and break.
-				if (GlobalCoopData::IsCoopPlayer(asActor))
-				{
-					DBG
-					(
-						"{}: Selected a fellow adventurer, {}, factor: {}", 
-						coopActor->GetName(), asActor->GetName(), factor
-					);
-					closestRefrHandle = refrHandle;
-					break;
-				}
-			}
-
-			bool hasLOS = Util::HasLOS
-			(
-				refrPtr.get(), coopActor.get(), true, false, crosshairWorldPos
-			);
-			DBG
-			(
-				"{}: Considering {} (0x{:X}). Has LOS: {}, factor: {}", 
-				coopActor->GetName(), refrPtr->GetName(), refrPtr->formID, hasLOS, factor
-			);
-			if (hasLOS)
-			{
-				closestRefrHandle = refrHandle;
+				selectedRefrHandle = nextRefrHandle;
 				break;
 			}
 		}
-		
-		return closestRefrHandle;
+
+		// Update activation cycling orientation.
+		SetLastActivationCyclingOrientation();
+		return selectedRefrHandle;
 	}
 
 	void TargetingManager::HandleBonk
@@ -5714,15 +6833,8 @@ namespace ALYSLC
 		}
 		
 		auto ui = RE::UI::GetSingleton();
-		// Check for changes to the player's crosshair or lock on-selected refr.
-		const auto& selectedRefrHandle = 
-		(
-			aimMode == AimMode::kFreeAim ? 
-			crosshairRefrHandle : 
-			lockOnActivationRefrHandle
-		);
-		// UNCOMMENT FOR NEW CONTROL SCHEME
-		//const auto& selectedRefrHandle = lockOnActivationRefrHandle;
+		// Check for changes to the player's lock on-selected refr.
+		const auto& selectedRefrHandle = activationRefrHandle;
 		auto selectedRefrPtr = Util::GetRefrPtrFromHandle(selectedRefrHandle);
 		auto prevSelectedRefrPtr = Util::GetRefrPtrFromHandle(prevQuickLootRefrHandle);
 		bool selectedRefrValidity = 
@@ -5748,7 +6860,7 @@ namespace ALYSLC
 		bool newSelectedRefr = prevSelectedRefrPtr != selectedRefrPtr;
 		/*DBG("{}: Previous and current targets ({}): {}, {}",
 			coopActor->GetName(), 
-			AimMode::kFreeAim,
+			!aimMode,
 			prevSelectedRefrPtr ? prevSelectedRefrPtr->GetName() : "NONE",
 			selectedRefrPtr ? selectedRefrPtr->GetName() : "NONE");*/
 		// Check if this player was last in control of the LootMenu.
@@ -6032,23 +7144,23 @@ namespace ALYSLC
 				Util::SendCrosshairEvent(nullptr);
 			}
 
-			//DBG
-			//(
-			//	"{}: {}. Can open: {}, has loot: {}, in range: {}, locked: {}, "
-			//	"activation blocked: {}, in combat: {}. "
-			//	"Should send new: {}, should validate new: {}, first time: {}",
-			//	coopActor->GetName(),
-			//	selectedRefrPtr->GetName(),
-			//	canOpenLootMenu,
-			//	hasLoot,
-			//	selectedRefrInRangeForQuickLoot,
-			//	selectedRefrPtr->IsLocked(),
-			//	selectedRefrPtr->IsActivationBlocked(),
-			//	glob.isInCoopCombat,
-			//	shouldSendNewSetCrosshairEvent,
-			//	shouldValidateNewCrosshairEvent, 
-			//	firstTimeLootingKilledActor
-			//);
+			/*DBG
+			(
+				"{}: {}. Can open: {}, has loot: {}, in range: {}, locked: {}, "
+				"activation blocked: {}, in combat: {}. "
+				"Should send new: {}, should validate new: {}, first time: {}",
+				coopActor->GetName(),
+				selectedRefrPtr->GetName(),
+				canOpenLootMenu,
+				hasLoot,
+				selectedRefrInRangeForQuickLoot,
+				selectedRefrPtr->IsLocked(),
+				selectedRefrPtr->IsActivationBlocked(),
+				glob.isInCoopCombat,
+				shouldSendNewSetCrosshairEvent,
+				shouldValidateNewCrosshairEvent, 
+				firstTimeLootingKilledActor
+			);*/
 		}
 		else if (shouldSendClearCrosshairEvent)
 		{
@@ -6065,14 +7177,7 @@ namespace ALYSLC
 		}
 
 		// Update for the next frame.
-		prevQuickLootRefrHandle = 
-		(
-			aimMode == AimMode::kFreeAim ? 
-			crosshairRefrHandle : 
-			lockOnActivationRefrHandle
-		);
-		// UNCOMMENT FOR NEW CONTROL SCHEME
-		//prevQuickLootRefrHandle = lockOnActivationRefrHandle;
+		prevQuickLootRefrHandle = activationRefrHandle;
 	}
 
 	void TargetingManager::HandleReferenceManipulation()
@@ -7361,7 +8466,7 @@ namespace ALYSLC
 		// Don't need to check range if not in FOV.
 		if (!inFOV)
 		{
-			/*DBG
+			DBG
 			(
 				"{}: {} is not in FOV: targeting angle: {}, angle to target: {}, "
 				"turn to target: {}, FOV: {}. {}",
@@ -7374,7 +8479,7 @@ namespace ALYSLC
 				!isSourceOnScreen || !isTargetOnScreen || !a_preferScreenspaceSelection ?
 				"WORLDSPACE" :
 				"SCREENSPACE"
-			);*/
+			);
 			return;
 		}
 		
@@ -7403,15 +8508,15 @@ namespace ALYSLC
 		// No need to compare distance-angle weight.
 		if (useRange && distanceFromPlayer > considerationRange)
 		{
-			/*DBG
+			DBG
 			(
 				"{}: {} is too far away: range: {}, distance from player (source: {}): {}.",
 				coopActor->GetName(), 
 				a_targetRefr->GetName(),
-				a_range,
+				considerationRange,
 				a_sourceRefr->GetName(),
 				distanceFromPlayer
-			);*/
+			);
 			return;
 		}
 		
@@ -7436,45 +8541,6 @@ namespace ALYSLC
 		
 		// Is in range and in FOV window.
 		a_isInRangeAndFOVOut = true;
-		/*if (a_range == -1.0f)
-		{
-			a_angDistWeightOut = 
-			(
-				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) + 
-				(min(1.0f, distanceFromSource / GetMaxActivationDist()))
-			);
-		}
-		else
-		{
-			a_angDistWeightOut = 
-			(
-				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) +
-				(min(1.0f, distanceFromSource / a_range))
-			);
-		}*/
-		
-		//if (a_range == -1.0f)
-		/*if (a_sourceRefr == coopActor.get())
-		{
-			a_angDistWeightOut = 
-			(
-				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) + 
-				(min(1.0f, distanceFromSource / coopActor->GetHeight()))
-			);
-		}
-		else
-		{
-			a_angDistWeightOut = min(1.0f, distanceFromSource / a_range);
-		}*/
-		/*else
-		{
-			a_angDistWeightOut = 
-			(
-				(turnToFaceRefrAngMag / (a_fovRads / 2.0f)) + 
-				(min(1.0f, distanceFromSource / a_range))
-			);
-		}*/
-		
 		DBG
 		(
 			"{}: {} -> {}: {}: targeting angle: {}, angle to target: {}, FOV: {}, "
@@ -7744,380 +8810,6 @@ namespace ALYSLC
 		{
 			// Crosshair refr is valid.
 			return true;
-		}
-	}
-
-	void TargetingManager::PerformActivationCycling()
-	{
-		// Check for downed players to revive before cycling through nearby refrs, 
-		// highlighting one at a time if they are within activation distance.
-
-		const auto& pam = p->pam;
-		const bool justStarted = pam->JustStarted(InputAction::kActivate);
-		if (justStarted)
-		{
-			// Clear any proximity refr handle from previous activation attempts.
-			ClearProximityRefr();
-
-			if (pam->downedPlayerTarget) 
-			{
-				pam->downedPlayerTarget->isBeingRevived = false;
-				pam->downedPlayerTarget = nullptr;
-				p->isRevivingPlayer = false;
-			}
-
-			p->lastActivationStartTP = SteadyClock::now();
-		}
-			
-		auto p1 = RE::PlayerCharacter::GetSingleton();
-		if (!pam->downedPlayerTarget) 
-		{
-			// If not cycling, seconds since the last object to activate was selected.
-			// Otherwise, seconds since cycling the next activation refr from nearby references.
-			const float& secsSinceActivationStarted = Util::GetElapsedSeconds
-			(
-				p->lastActivationStartTP
-			);
-			float secsSinceActivationTargetUpdated = 0.0f;
-			// 'External' activation target, meaning not selected with this bind.
-			// If in free aim mode, we can only select refrs with the crosshair.
-			// Otherwise, we can lock on to refrs via the lock on bind,
-			// so if there is a refr already chosen by the lock on bind, pick it.
-			// Otherwise x2, we have no external target.
-			auto extActivationTargetPtr = 
-			(
-				aimMode == AimMode::kFreeAim ?
-				Util::GetRefrPtrFromHandle(crosshairRefrHandle) : 
-				choseActivationLockOnTarget ? 
-				Util::GetRefrPtrFromHandle(lockOnActivationRefrHandle) : 
-				nullptr
-			);
-			// UNCOMMENT FOR NEW CONTROL SCHEME
-			/*auto extActivationTargetPtr = 
-			(
-				choseActivationLockOnTarget ? 
-				Util::GetRefrPtrFromHandle(lockOnActivationRefrHandle) : 
-				nullptr
-			);*/
-			bool extTargetValidity = 	
-			(
-				(extActivationTargetPtr) && 
-				(Util::IsValidRefrForTargeting(extActivationTargetPtr.get()))
-			);
-			bool chooseTargetBeforeCycling = 
-			(
-				(justStarted) ||
-				(!extTargetValidity && p->lsMoved) ||
-				(
-					extTargetValidity && 
-					p->lsMoved &&
-					secsSinceActivationStarted >= Settings::fSecsBeforeActivationCycling
-				)
-			);
-			// Update the activation check TP first before updating the number of seconds 
-			// since the activation target was updated and the proximity interaction flag.
-			if (chooseTargetBeforeCycling)
-			{
-				p->lastActivationCheckTP = SteadyClock::now();
-			}
-
-			// If an external activation refris selected, 
-			// choose it as the activation target 
-			// until the activation cycling start interval elapses.
-			// 
-			// If an external activation refr is not selected, 
-			// we'll select the closest refr in the player's facing direction initially.
-			// 
-			// Then while the LS is moved, 
-			// we'll continue to pick the closest refr in the player's movement direction.
-			// 
-			// Or if the LS is not moved,
-			// we'll cycle through refrs in the player's proximity 
-			// after the predefined cycling-switch inverval elapses 
-			// after the player stopped moving the LS.
-			if (extTargetValidity)
-			{
-				if (secsSinceActivationStarted < Settings::fSecsBeforeActivationCycling)
-				{
-					secsSinceActivationTargetUpdated = secsSinceActivationStarted;
-				}
-				else
-				{
-					secsSinceActivationTargetUpdated = 
-					(
-						p->lsMoved ?
-						0.0f : 
-						Util::GetElapsedSeconds
-						(
-							p->lastActivationCheckTP
-						)
-					);
-				}
-					
-				useProximityInteraction =
-				(
-					secsSinceActivationStarted >= 
-					Settings::fSecsBeforeActivationCycling
-				);
-			}
-			else
-			{
-				secsSinceActivationTargetUpdated = 
-				(
-					p->lsMoved ?
-					0.0f : 
-					Util::GetElapsedSeconds
-					(
-						p->lastActivationCheckTP
-					)
-				);
-				useProximityInteraction = true;
-			}
-				
-			// Choose a new refr for activation 
-			// if the action press time is within the initial window before cycling
-			// or if the LS is moved.
-			if (chooseTargetBeforeCycling)
-			{
-				// Remove activation effect shader on previous activation refr, if any.
-				auto activationRefrPtr = Util::GetRefrPtrFromHandle
-				(
-					activationRefrHandle
-				); 
-				if (activationRefrPtr &&
-					Util::IsValidRefrForTargeting(activationRefrPtr.get()))
-				{
-					Util::StopEffectShader
-					(
-						activationRefrPtr.get(), glob.activateHighlightShader
-					);
-				}
-
-				// Get new refr to activate.
-				// Will be the crosshair refr if the action just started.
-				auto refrToActivatePtr = 
-				(
-					Util::GetRefrPtrFromHandle(UpdateNextObjectToActivate())
-				);
-				if (refrToActivatePtr && 
-					Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-				{
-					// Play highlight shader on crosshair refr.
-					Util::StartEffectShader
-					(
-						refrToActivatePtr.get(),
-						glob.activateHighlightShader,
-						max(0.1f, Settings::fSecsBeforeActivationCycling)
-					);
-				}
-
-				// Not activation cycling yet.
-				startedActivationCycling = false;
-			}
-			
-			// REMOVE when done debugging.
-			/*DBG
-			(
-				"{}: Current activation: {}, crosshair: {}, use prox: {}, "
-				"choose target: {}, ext target: {}, lock on: {}.",
-				coopActor->GetName(),
-				Util::HandleIsValid(activationRefrHandle) ? 
-				activationRefrHandle.get()->GetName() : 
-				"NONE",
-				Util::HandleIsValid(crosshairRefrHandle) ? 
-				crosshairRefrHandle.get()->GetName() : 
-				"NONE",
-				useProximityInteraction,
-				chooseTargetBeforeCycling,
-				extActivationTargetPtr ? 
-				extActivationTargetPtr->GetName() : 
-				"NONE",
-				Util::HandleIsValid(lockOnActivationRefrHandle) ? 
-				lockOnActivationRefrHandle.get()->GetName() : 
-				"NONE"
-			);*/
-				
-			// Cycle through nearby objects at regular intervals 
-			// while the activate bind is held.
-			// NOTE:
-			// No activation is performed here.
-			// We are just caching the cycled refr and highlighting it.
-			if (useProximityInteraction)
-			{
-				bool shouldStartCycling =
-				(
-					!startedActivationCycling && 
-					secsSinceActivationTargetUpdated >= Settings::fSecsBeforeActivationCycling
-				);
-				bool shouldCycleNewRefr = 
-				(
-					startedActivationCycling &&
-					secsSinceActivationTargetUpdated >=
-					Settings::fSecsBetweenActivationChecks
-				);
-				if (shouldStartCycling || shouldCycleNewRefr)
-				{
-					p->lastActivationCheckTP = SteadyClock::now();
-					// Remove activation effect shader on previous activation refr, if any.
-					auto refrToActivatePtr = Util::GetRefrPtrFromHandle
-					(
-						activationRefrHandle
-					); 
-					if (refrToActivatePtr &&
-						Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-					{
-						Util::StopEffectShader
-						(
-							refrToActivatePtr.get(), glob.activateHighlightShader
-						);
-					}
-
-					// Flag as started activation cycling.
-					if (shouldStartCycling)
-					{
-						startedActivationCycling = true;
-					}
-
-					// Get new refr to activate.
-					refrToActivatePtr = 
-					(
-						Util::GetRefrPtrFromHandle(UpdateNextObjectToActivate())
-					);
-					if (refrToActivatePtr && 
-						Util::IsValidRefrForTargeting(refrToActivatePtr.get()))
-					{
-						// Play highlight shader on cycled activation refr.
-						Util::StartEffectShader
-						(
-							refrToActivatePtr.get(),
-							glob.activateHighlightShader,
-							max(0.1f, Settings::fSecsBetweenActivationChecks)
-						);
-					}
-				}
-			}
-
-			// Check if the crosshair-targeted/cycled refr is a downed player now.
-			// Only a valid action if the revive system is enabled.
-			// Also cannot initiate revive if ragdolling or staggered, so exit here.
-			if (!Settings::bUseReviveSystem || 
-				coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kNormal)
-			{
-				return;
-			}
-
-			auto targetRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
-			auto targetRefrValidity = 
-			(
-				targetRefrPtr && Util::IsValidRefrForTargeting(targetRefrPtr.get())
-			);
-			// No valid target or too far away to activate.
-			// NOTE: 
-			// Range check only done here on the initial check.
-			if (!targetRefrValidity || 
-				!RefrIsInActivationRange(activationRefrHandle))
-			{
-				return;
-			}
-
-			// Find downed, unrevived player.
-			auto downedPlayerIter = std::find_if
-			(
-				glob.coopPlayers.begin(), glob.coopPlayers.end(),
-				[&targetRefrPtr](const auto& a_p2) 
-				{
-					return 
-					(
-						a_p2->isActive && 
-						a_p2->coopActor == targetRefrPtr && 
-						a_p2->isDowned && 
-						!a_p2->isRevived
-					);
-				}
-			);
-				
-			// No found player, nothing else to do.
-			if (downedPlayerIter == glob.coopPlayers.end())
-			{
-				return;
-			}
-
-			// Is another player.
-			// Check if the player has enough health to revive a downed player.
-			// If not, clear out revive data and return.
-			if (!HelperFuncs::EnoughOfAVToPerformPA(p, InputAction::kActivate))
-			{
-				pam->downedPlayerTarget = (*downedPlayerIter);
-				pam->downedPlayerTarget->isBeingRevived = false;
-				p->isRevivingPlayer = false;
-				p->lastReviveCheckTP = SteadyClock::now();
-				return;
-			}
-
-			// Player can revive the downed player target.
-			// Start reviving now.
-			pam->downedPlayerTarget = (*downedPlayerIter);
-			pam->downedPlayerTarget->isBeingRevived = true;
-			p->isRevivingPlayer = true;
-			p->lastReviveCheckTP = SteadyClock::now();
-
-			// Only will reach here if there is a revivable player target.
-			// Play revive animation if grounded.
-			if (!coopActor->IsOnMount() &&
-				!coopActor->IsSwimming() && 
-				!coopActor->IsFlying())
-			{
-				coopActor->NotifyAnimationGraph("IdleForceDefaultState");
-				coopActor->NotifyAnimationGraph("IdleKneeling");
-			}
-
-			// Play shaders and hit effects.
-			const auto& downedPlayerTarget = (*downedPlayerIter);
-			Util::StartEffectShader(coopActor.get(), glob.dragonHolesShader, -1.0f);
-			Util::StartEffectShader
-			(
-				downedPlayerTarget->coopActor.get(), glob.dragonSoulAbsorbShader, -1.0f
-			);
-			Util::StartHitArt
-			(
-				downedPlayerTarget->coopActor.get(), 
-				glob.reviveDragonSoulEffect, 
-				downedPlayerTarget->coopActor.get(),
-				-1.0f, 
-				false,
-				true
-			);
-			Util::StartHitArt
-			(
-				downedPlayerTarget->coopActor.get(), 
-				glob.reviveHealingEffect,
-				downedPlayerTarget->coopActor.get(),
-				-1.0f,
-				false,
-				false
-			);
-		}
-		else if (!pam->downedPlayerTarget->isRevived) 
-		{
-			// Continue reviving the cached downed player if they are not fully revived.
-			// Rotate to face downed player's torso.
-			float yawToTarget = Util::GetYawBetweenPositions
-			(
-				coopActor->data.location,
-				Util::GetTorsoPosition(pam->downedPlayerTarget->coopActor.get())
-			);
-			float angDiff = Util::NormalizeAngToPi
-			(
-				yawToTarget - coopActor->data.angle.z
-			);
-			coopActor->SetHeading
-			(
-				Util::NormalizeAng0To2Pi(coopActor->data.angle.z + angDiff)
-			);
-
-			// Will set the is revived flag to true 
-			// once the downed player is fully revived.
-			pam->RevivePlayer();
 		}
 	}
 
@@ -8651,6 +9343,8 @@ namespace ALYSLC
 
 		// The current hit result's hit object is an activator.
 		bool isActivator = false;
+		// The current hit result's hit object is an EVGAT activator (should ignore).
+		bool isEVGATActivator = false;
 		// The current hit results's hit object is a hostile actor.
 		bool isHostile = false;
 		// The current hit result's hit object has no associated refr.
@@ -8761,6 +9455,7 @@ namespace ALYSLC
 			isAnObstruction = 
 			inFrontOfCam =
 			isActivator = 
+			isEVGATActivator = 
 			isHostile = 
 			isObjNoRefr = 
 			isOtherPlayer = 
@@ -8924,22 +9619,29 @@ namespace ALYSLC
 
 					continue;
 				}
+				
+				auto baseObj = hitRefrPtr->GetObjectReference();
+				if (!baseObj && result.hitObjectPtr->userData)
+				{
+					baseObj = result.hitObjectPtr->userData->GetObjectReference();
+				}
 
 				isActivator = 
 				{
-					(
-						hitRefrPtr->GetObjectReference() && 
-						hitRefrPtr->GetObjectReference()->Is(RE::FormType::Activator)
-					) ||
-					(
-						result.hitObjectPtr->userData && 
-						result.hitObjectPtr->userData->GetObjectReference() && 
-						result.hitObjectPtr->userData->GetObjectReference()->Is
-						(
-							RE::FormType::Activator
-						)
-					)
+					baseObj && baseObj->Is(RE::FormType::Activator, RE::FormType::TalkingActivator)
 				};
+				// Skip EVGAT activators since they should not be targeted for activation.
+				isEVGATActivator = 
+				(
+					isActivator && 
+					baseObj->GetFile() &&
+					std::string(baseObj->GetFile()->fileName).find("EVG") != std::string::npos
+				);
+				if (isEVGATActivator)
+				{
+					continue;
+				}
+
 				// Save previous activator hit state to check if this is the first activator hit.
 				bool activatorWasHit = activatorHit;
 				// An activator was hit in this group of hit results.
@@ -9383,552 +10085,16 @@ namespace ALYSLC
 		// Reset all player timepoints handled by this manager to the current time.
 
 		p->crosshairLastActiveTP				=
+		p->lastActivationTargetChangeTP			=
 		p->lastAimCorrectionTargetSetTP			=
 		p->lastAutoGrabTP						=
+		p->lastCrosshairTargetChangeTP			=
 		p->lastCrosshairUpdateTP				=
 		p->lastHiddenInStealthRadiusTP			=
-		p->lastLockOnActivationTargetUpdateTP	=
-		p->lastLockOnAimTargetUpdateTP			=
+		p->lastLockOnAimTargetChangeTP			=
 		p->lastStealthStateCheckTP				=
 		p->crosshairRefrVisibilityLostTP		= 
 		p->crosshairRefrVisibilityCheckTP		= SteadyClock::now();
-	}
-
-	void TargetingManager::SelectProximityRefr(bool a_quickSelection)
-	{
-		// Choose a valid nearby refr to use for activation.
-		// Stricter conditions for what objects/NPCs are selectable 
-		// when for quick selection/activation.
-		// Done to prevent accidental or unnecessary activation.
-
-		const auto& playerTorsoPos = p->mm->playerTorsoPosition;
-
-		// COMMENT OUT FOR NEW CONTROL SCHEME
-		// Check if downed player is in activation range, and if so, prioritize selecting them.
-		for (const auto& p : glob.coopPlayers) 
-		{
-			if (p->isActive && p->isDowned && RefrIsInActivationRange(p->coopActor->GetHandle())) 
-			{
-				proximityRefrHandle = p->coopActor->GetHandle();
-				return;
-			} 
-		}
-
-		// Clear out crosshair pick handle, which will be updated below if valid.
-		crosshairPickRefrHandle = RE::ObjectRefHandle();
-		const auto currentMount = p->GetCurrentMount();
-		// Re-populate nearby references if needed.
-		bool orientationChanged = 
-		(
-			p->lsMoved || 
-			fabsf
-			(
-				Util::NormalizeAngToPi(coopActor->GetHeading(false) - lastActivationFacingAngle)
-			) > 
-			Settings::fMinTurnAngToRefreshRefrs	
-		);
-		if (nearbyReferences.empty() || orientationChanged)
-		{
-			// Clear out any cached objects.
-			nearbyReferences.clear();
-			// Player heading angle in Cartesian convention.
-			const float convHeadingAng = Util::ConvertAngle(coopActor->GetHeading(false));
-			// Player's facing direction in the XY plane (yaw direction).
-			RE::NiPoint3 facingDirXY = Util::RotationToDirectionVect(0.0f, convHeadingAng);
-			facingDirXY.Unitize();
-			// Max activation reach distance.
-			const float maxCheckDist = GetMaxActivationDist();
-			// Used to check if activation cycling has started.
-			const float& secsSinceActivationStarted = 
-			(
-				p->pam->paStatesList
-				[!InputAction::kActivate - !InputAction::kFirstAction].secsPerformed
-			);
-			// Get each reference within range and record the magnitude of
-			// its angular distance from the player's facing angle.
-			Util::ForEachReferenceInRange
-			(
-				playerTorsoPos, maxCheckDist, true,
-				[
-					this, 
-					&currentMount, 
-					&playerTorsoPos, 
-					&facingDirXY, 
-					&maxCheckDist,
-					&secsSinceActivationStarted,
-					&a_quickSelection
-				]
-				(RE::TESObjectREFR* a_refr) 
-				{
-					// On to the next one.
-					// Either the refr does not exist, is the player themselves, is their mount,
-					// or is the furniture they are interacting with already.
-					if ((!a_refr ||
-						!Util::HandleIsValid(a_refr->GetHandle()) || 
-						a_refr == coopActor.get()) ||
-						(currentMount && a_refr == currentMount.get()) ||
-						(coopActor->GetOccupiedFurniture() == a_refr->GetHandle()))
-					{
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-
-					const auto handle = a_refr->GetHandle();
-					auto baseObj = a_refr->GetBaseObject();
-					// On to the next one x2.
-					if (!baseObj) 
-					{
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-
-					const auto modFile = baseObj->GetFile();
-					// REMOVE when done debugging.
-					/*const auto modFile2 = baseObj->GetFile(0);
-					DBG
-					(
-						"{}: Activation candidate {} ({}, 0x{:X}) from mod {} ({}).", 
-						coopActor->GetName(),
-						a_refr ? a_refr->GetName() : "NONE",
-						Util::GetEditorID(baseObj),
-						baseObj->formID,
-						modFile ? modFile->fileName : "NONE",
-						modFile2 ? modFile2->fileName : "NONE"
-					);*/
-					// EW. Don't know how else to tell if a mod-placed activator is from EVG.
-					// Ignore, since these activators should not be activated by P2 through P1,
-					// and activation can cause weird alignment issues anyways.
-					bool isEVGActivator = 
-					(
-						baseObj->Is
-						(
-							RE::FormType::Activator, RE::FormType::TalkingActivator
-						) && 
-						std::string(modFile->fileName).find("EVG") != std::string::npos
-					);
-					// Skip EVG activators and non-selectable/targetable refrs.
-					if (isEVGActivator ||
-						!Util::IsValidRefrForTargeting(a_refr) ||
-						!Util::IsSelectableRefr(a_refr))
-					{
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-
-					if (a_quickSelection)
-					{
-						// If not choosing a lock on activation target,
-						// skip the currently selected target when activation cycling.
-						if (startedActivationCycling && a_refr->GetHandle() == activationRefrHandle)
-						{
-							return RE::BSContainer::ForEachResult::kContinue;
-						}
-
-						// Also skip other players, or activating hostile actors 
-						// that are not pacifiable or interactable while hostile 
-						// (not a guard, mount, or normally hostile).
-						auto asActor = a_refr->As<RE::Actor>();
-						const bool isFriendly = Util::IsPartyFriendlyActor(asActor);
-						const bool hostileToP1 = 
-						(
-							asActor && asActor->IsHostileToActor(glob.player1Actor.get())
-						);
-						const bool hostileToThisPlayer = 
-						(
-							asActor && asActor->IsHostileToActor(coopActor.get())
-						);
-						// Useless to activate hostile actors in combat.
-						const bool activateHostileActor = 
-						{ 
-							(hostileToP1 || hostileToThisPlayer) &&
-							(
-								asActor && 
-								!asActor->IsDead() && 
-								!Util::CanStopCombatWithActor(asActor)
-							)
-						};
-
-						// Do not consider friendly actors that are not mad at a player or 
-						// do not need help getting up, and are not selected as a target.
-						// COMMENT OUT FOR NEW CONTROL SCHEME
-						const bool friendlyActorNotActivatable = 
-						(
-							isFriendly &&
-							!asActor->IsBleedingOut() &&
-							!asActor->IsInRagdollState() &&
-							!hostileToP1 &&
-							!hostileToThisPlayer &&
-							handle != aimCorrectionTargetHandle &&
-							handle != crosshairRefrHandle
-						);
-						if (friendlyActorNotActivatable ||
-							activateHostileActor || 
-							glob.coopEntityBlacklistFIDSet.contains(a_refr->formID))
-						{
-							return RE::BSContainer::ForEachResult::kContinue;
-						}
-					}
-
-					auto refr3DPtr = Util::GetRefr3D(a_refr); 
-					const auto niCamPtr = Util::GetNiCamera();
-					// Skip refrs that are not within a 180 degree FOV cone 
-					// in the player's facing direction and not on screen.
-					// Do not want to select a door or furniture, for example,
-					// that is behind the player or the camera.
-					bool allPositionsBehindPlayer = true;
-					bool onePositionBehindCamera = 
-					/*(
-						!Util::PointIsOnScreen(Util::Get3DCenterPos(a_refr))
-					);*/
-					(
-						refr3DPtr && 
-						niCamPtr &&
-						!RE::NiCamera::BoundInFrustum
-						(
-							refr3DPtr->worldBound, niCamPtr.get()
-						)
-					);
-					float facingToRefrDot = 0.0f;
-
-					// Check three points on the refr for the best measurement 
-					// of where the refr is located relative to the player.
-					// Start with the reported refr location.
-					RE::NiPoint3 refrLoc1 = a_refr->data.location;
-					//onePositionBehindCamera |= !Util::PointIsOnScreen(refrLoc1);
-					RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
-					toRefrDirXY.z = 0.0f;
-					toRefrDirXY.Unitize();
-
-					// Minimum selection factor [0, 2]. 
-					// Get the minimum factor among the (potentially) three refr positions.
-					// Negate the dot product, meaning the more the player has to turn 
-					// to face the object, the larger the factor.
-					// Then we add 1 to ensure all dot product results are > 0, 
-					// and mult by 0.5 to set the range to [0, 1]
-					// Lastly scale by the distance from the player to the object,
-					// meaning objects that are further away have a larger factor.
-					// Divide by max reach distance to set range to [0, 1]
-					facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-					if (facingToRefrDot >= 0.0f)
-					{
-						allPositionsBehindPlayer = false;
-					}
-
-					float minSelectionFactor = 
-					(
-						(0.5f * (1.0f - facingToRefrDot)) +
-						(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
-					);
-
-					// Next two positions only exist if the refr's 3D is available.
-					std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
-					std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
-					if (refr3DPtr)
-					{
-						refrLoc2 = refr3DPtr->world.translate;
-						refrLoc3 = refr3DPtr->worldBound.center;
-					}
-
-					// Refr 3D world position.
-					if (refrLoc2.has_value())
-					{
-						toRefrDirXY = refrLoc2.value() - playerTorsoPos;
-						toRefrDirXY.z = 0.0f;
-						toRefrDirXY.Unitize();
-						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
-						{
-							allPositionsBehindPlayer = false;
-						}
-
-						float selectionFactor = 
-						(
-							(0.5f * (1.0f - facingToRefrDot)) +
-							(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
-						);
-						if (selectionFactor < minSelectionFactor) 
-						{
-							minSelectionFactor = selectionFactor;
-						}
-					}
-
-					// Refr 3D bound center position.
-					if (refrLoc3.has_value())
-					{
-						toRefrDirXY = refrLoc3.value() - playerTorsoPos;
-						toRefrDirXY.z = 0.0f;
-						toRefrDirXY.Unitize();
-						facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-						if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
-						{
-							allPositionsBehindPlayer = false;
-						}
-
-						float selectionFactor = 
-						(
-							(0.5f * (1.0f - facingToRefrDot)) + 
-							(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
-						);
-						if (selectionFactor < minSelectionFactor)
-						{
-							minSelectionFactor = selectionFactor;
-						}
-					}
-					
-					// Player is not turned towards the object if its refr data, 3D,
-					// and 3D center positions are behind the player.
-					if (allPositionsBehindPlayer || onePositionBehindCamera)
-					{
-						return RE::BSContainer::ForEachResult::kContinue;
-					}
-					
-					nearbyReferences.insert
-					(
-						std::pair<float, RE::ObjectRefHandle>
-						(
-							minSelectionFactor, a_refr->GetHandle()
-						)
-					);
-
-					return RE::BSContainer::ForEachResult::kContinue;
-				}
-			);
-				
-			// Add the game's crosshair pick refr if any.
-			if (auto pickData = RE::CrosshairPickData::GetSingleton(); pickData)
-			{
-				auto pickRefrPtr = Util::GetRefrPtrFromHandle(pickData->target); 
-				// Must be valid for targeting.
-				if (pickRefrPtr && Util::IsValidRefrForTargeting(pickRefrPtr.get()))
-				{
-					// Must be in range of this player still.
-					float distToRefr = playerTorsoPos.GetDistance
-					(
-						Util::Get3DCenterPos(pickRefrPtr.get())
-					);
-					if (distToRefr < maxCheckDist)
-					{
-						const bool blacklisted =
-						(
-							(currentMount && pickRefrPtr == currentMount) ||
-							(
-								pickRefrPtr->As<RE::Actor>() && 
-								pickRefrPtr->As<RE::Actor>()->IsPlayerTeammate()
-							) ||
-							(glob.coopEntityBlacklistFIDSet.contains(pickRefrPtr->formID))
-						);
-						if (!blacklisted) 
-						{
-							// Skip if not within a 180 degree FOV cone 
-							// in the player's facing direction.
-							// Do not want to select a door or furniture, for example,
-							// that is behind the player.
-							bool allPositionsBehindPlayer = true;
-							float facingToRefrDot = 0.0f;
-							// Same three tests as for the nearby refrs above.
-							RE::NiPoint3 refrLoc1 = pickRefrPtr->data.location;
-							RE::NiPoint3 toRefrDirXY = refrLoc1 - playerTorsoPos;
-							toRefrDirXY.z = 0.0f;
-							toRefrDirXY.Unitize();
-							facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-							if (facingToRefrDot >= 0.0f)
-							{
-								allPositionsBehindPlayer = false;
-							}
-
-							float minSelectionFactor = 
-							(
-								(0.5f * (1.0f - facingToRefrDot)) +
-								(playerTorsoPos.GetDistance(refrLoc1) / maxCheckDist)
-							);
-							std::optional<RE::NiPoint3> refrLoc2 = std::nullopt;
-							std::optional<RE::NiPoint3> refrLoc3 = std::nullopt;
-							auto refr3DPtr = Util::GetRefr3D(pickRefrPtr.get()); 
-							if (refr3DPtr)
-							{
-								refrLoc2 = refr3DPtr->world.translate;
-								refrLoc3 = refr3DPtr->worldBound.center;
-							}
-
-							if (refrLoc2.has_value())
-							{
-								toRefrDirXY = refrLoc2.value() - playerTorsoPos;
-								toRefrDirXY.z = 0.0f;
-								toRefrDirXY.Unitize();
-								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
-								{
-									allPositionsBehindPlayer = false;
-								}
-
-								float selectionFactor = 
-								(
-									(0.5f * (1.0f - facingToRefrDot)) +
-									(playerTorsoPos.GetDistance(refrLoc2.value()) / maxCheckDist)
-								);
-								if (selectionFactor < minSelectionFactor) 
-								{
-									minSelectionFactor = selectionFactor;
-								}
-							}
-
-							if (refrLoc3.has_value())
-							{
-								toRefrDirXY = refrLoc3.value() - playerTorsoPos;
-								toRefrDirXY.z = 0.0f;
-								toRefrDirXY.Unitize();
-								facingToRefrDot = facingDirXY.Dot(toRefrDirXY);
-								if (allPositionsBehindPlayer && facingToRefrDot >= 0.0f)
-								{
-									allPositionsBehindPlayer = false;
-								}
-
-								float selectionFactor = 
-								(
-									(0.5f * (1.0f - facingToRefrDot)) + 
-									(playerTorsoPos.GetDistance(refrLoc3.value()) / maxCheckDist)
-								);
-								if (selectionFactor < minSelectionFactor)
-								{
-									minSelectionFactor = selectionFactor;
-								}
-							}
-
-							// Player is not turned towards the object if its refr data, 3D,
-							// and 3D center positions are behind the player.
-							if (!allPositionsBehindPlayer)
-							{
-								// Save pick data refr handle.
-								crosshairPickRefrHandle = pickData->target;
-								nearbyReferences.insert
-								(
-									std::pair<float, RE::ObjectRefHandle>
-									(
-										minSelectionFactor, crosshairPickRefrHandle
-									)
-								);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// Clear old proximity refr handle before setting a new one.
-		proximityRefrHandle = RE::ObjectRefHandle();
-		// Get next selectable refr in view of the camera and remove it from the map.
-		while (!nearbyReferences.empty())
-		{
-			auto nextRefrNodeHandle = nearbyReferences.extract(nearbyReferences.begin());
-			if (nextRefrNodeHandle.empty())
-			{
-				continue;
-			}
-			
-			// Do not select invalid refrs or refrs not in view of the camera or any player.
-			// NOTE: 
-			// These refrs, aside from the crosshair pick refr, 
-			// are not directly selected with a player's crosshair,
-			// so LOS still has to be checked.
-			const auto& nextRefrHandle = nextRefrNodeHandle.mapped();
-			auto nextRefrPtr = Util::GetRefrPtrFromHandle(nextRefrHandle); 
-			if (!nextRefrPtr) 
-			{
-				continue;
-			}
-
-			// Finally set the proximity refr if the player has LOS on the refr.
-			if (nextRefrHandle == crosshairPickRefrHandle || 
-				Util::HasLOS
-				(
-					nextRefrPtr.get(), coopActor.get(), false, false, crosshairWorldPos
-				))
-			{
-				proximityRefrHandle = nextRefrHandle;
-				break;
-			}
-		}
-
-		// Update activation cycling orientation.
-		SetLastActivationCyclingOrientation();
-	}
-
-	void TargetingManager::SetLockOnActivationTarget
-	(
-		bool a_useLeftStickAngle, 
-		bool a_fromCurrentTarget, 
-		bool a_selectOnHold, 
-		bool a_quickSelection
-	)
-	{
-		// Find and set a lock on activation target (object/NPC), if any.
-		// Use the left/right stick's angle as the targeting angle.
-		// Originate the check from the player's position or from the current target's position.
-		// Select the target if a bind is held or on press. 
-		// Selecting on hold will select at an interval, instead of right away.
-		// Can also narrow the selection of considered objects if selecting temporarily 
-		// on release of the 'Activate' bind to prevent accidental or unnecessary activation.
-		
-		// Evaluate for a new activation lock on target 
-		// in the direction of the player's analog stick.
-		auto prevHandle = lockOnActivationRefrHandle;
-		SelectProximityRefr(a_quickSelection);
-		auto newHandle = proximityRefrHandle;
-
-		choseActivationLockOnTarget = Util::HandleIsValid(newHandle);
-		if (choseActivationLockOnTarget)
-		{
-			// Set all three activation-related handles to maintain consistency
-			// when changing aim modes.
-			if (Util::HandleIsValid(lockOnActivationRefrHandle) &&
-				Util::IsValidRefrForTargeting(lockOnActivationRefrHandle.get().get()))
-			{
-				Util::StopEffectShader
-				(
-					lockOnActivationRefrHandle.get().get(), glob.activateHighlightShader
-				);
-			}
-				
-			activationRefrHandle = 
-			proximityRefrHandle = 
-			lockOnActivationRefrHandle = newHandle;
-			DBG
-			(
-				"{}: Has chosen REFR {} as lock on target. Time since update: {}.", 
-				coopActor->GetName(), 
-				newHandle.get()->GetName(),
-				Util::GetElapsedSeconds(p->lastLockOnActivationTargetUpdateTP)
-			);
-			if (newHandle != prevHandle)
-			{
-				Util::StartEffectShader
-				(
-					newHandle.get().get(),
-					glob.activateHighlightShader,
-					max(0.1f, Settings::fSecsBeforeActivationCycling)
-				);
-
-				// Already checked LOS before selection, so no need to do so again.
-				ValidateActivationRefr(false);
-			}
-		}
-		else
-		{
-			DBG
-			(
-				"{}: No chosen REFR lock on target. Time since update: {}s. "
-				"Previous handle: {}", 
-				coopActor->GetName(), 
-				Util::GetElapsedSeconds(p->lastLockOnActivationTargetUpdateTP),
-				lockOnActivationRefrHandle.get() ?
-				lockOnActivationRefrHandle.get()->GetName() :
-				"NONE"
-			);
-			// Stop shader before clearing the current target if it is still valid.
-			ClearActivationTargetData(true);
-		}
-
-		if (newHandle != prevHandle)
-		{
-			p->lastLockOnActivationTargetUpdateTP = SteadyClock::now();
-		}
 	}
 
 	void TargetingManager::SetLockOnAimTarget
@@ -9944,7 +10110,7 @@ namespace ALYSLC
 
 
 		// Evaluate for a new target in the direction of the player's analog stick.
-		bool crosshairActive = aimMode != AimMode::kTwinStick;
+		bool crosshairActive = aimMode == AimMode::kCrosshair;
 		const auto prevHandle = 
 		(
 			crosshairActive ? crosshairRefrHandle : aimCorrectionTargetHandle
@@ -9955,8 +10121,8 @@ namespace ALYSLC
 		);
 
 		// Update chose lock on target flag.
-		choseAimLockOnTarget = Util::HandleIsValid(newHandle);
-		if (choseAimLockOnTarget)
+		choseLockOnAimTarget = Util::HandleIsValid(newHandle);
+		if (choseLockOnAimTarget)
 		{
 			// Set crosshair refr handle and selected target actor handle to the target's handle
 			// if the crosshair is active; otherwise, set the aim correction handle.
@@ -9987,10 +10153,33 @@ namespace ALYSLC
 			// Switch to different-colored activation shader later.
 			if (newHandle != prevHandle) 
 			{
+				// Update activation target handle.
+				// Remove all previous activation shaders.
+				if (Util::HandleIsValid(prevHandle))
+				{
+					Util::StopEffectShader
+					(
+						prevHandle.get().get(), glob.activateHighlightShaders[playerID]
+					);
+					Util::StopEffectShader
+					(
+						prevHandle.get().get(), glob.activateDefaultShader
+					);
+					Util::StopEffectShader
+					(
+						prevHandle.get().get(), glob.activateFailureShader
+					);
+					Util::StopEffectShader
+					(
+						prevHandle.get().get(), glob.activateUseShader
+					);
+				}
+
+				ColorizeActivationShader(glob.activateHighlightShaders[playerID], true);
 				Util::StartEffectShader
 				(
 					newHandle.get().get(),
-					glob.activateHighlightShader,
+					glob.activateHighlightShaders[playerID],
 					max(0.1f, Settings::fSecsBetweenActivationChecks)
 				);
 			}
@@ -10007,10 +10196,10 @@ namespace ALYSLC
 			ClearAimTargetData();
 			DBG
 			(
-				"{}: No chosen NPC lock on target. Time since update: {}s. "
+				"{}: No chosen NPC lock on target. Time since change: {}s. "
 				"Previous handle: {}", 
 				coopActor->GetName(), 
-				Util::GetElapsedSeconds(p->lastLockOnAimTargetUpdateTP),
+				Util::GetElapsedSeconds(p->lastLockOnAimTargetChangeTP),
 				prevHandle.get() ?
 				prevHandle.get()->GetName() :
 				"NONE"
@@ -10019,7 +10208,7 @@ namespace ALYSLC
 
 		if (newHandle != prevHandle)
 		{
-			p->lastLockOnAimTargetUpdateTP = SteadyClock::now();
+			p->lastLockOnAimTargetChangeTP = SteadyClock::now();
 		}
 	}
 
@@ -10070,186 +10259,193 @@ namespace ALYSLC
 				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
 				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
 			}
-			else if (auto selectedRefrPtr = Util::GetRefrPtrFromHandle
-					(
-						aimMode == AimMode::kTwinStick ? 
-						lockOnActivationRefrHandle : 
-						crosshairRefrHandle
-					); selectedRefrPtr)
+			else
 			{
-				// Notify the player that they should sneak to activate.
-				bool isOffLimits = Util::ActivationIsOffLimits
+				auto selectedRefrPtr = 
 				(
-					coopActor.get(), selectedRefrPtr.get()
-				); 
-				bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
-				// Get activation text for the crosshair refr.
-				bool hasActivationText = false;
-				auto baseObj = selectedRefrPtr->GetObjectReference();
-				text = Util::GetActivationText
-				(
-					coopActor.get(),
-					baseObj, 
-					selectedRefrPtr.get(),
-					hasActivationText
+					Util::HandleIsValid(activationRefrHandle) ? 
+					Util::GetRefrPtrFromHandle(activationRefrHandle) : 
+					Util::HandleIsValid(crosshairRefrHandle) ? 
+					Util::GetRefrPtrFromHandle(crosshairRefrHandle) : 
+					RE::TESObjectREFRPtr()
 				);
-				if (hasActivationText && baseObj)
+				if (selectedRefrPtr)
 				{
-					bool isBook = baseObj->IsBook();
-					bool isNote = baseObj->IsNote();
-					bool wouldPickupBookNote = 
+					// Notify the player that they should sneak to activate.
+					bool isOffLimits = Util::ActivationIsOffLimits
 					(
-						(isBook || isNote) &&
-						(
-							!GlobalCoopData::CanControlMenus(playerID)
-						)
+						coopActor.get(), selectedRefrPtr.get()
+					); 
+					bool shouldSneakToActivate = isOffLimits && !coopActor->IsSneaking();
+					// Get activation text for the crosshair refr.
+					bool hasActivationText = false;
+					auto baseObj = selectedRefrPtr->GetObjectReference();
+					text = Util::GetActivationText
+					(
+						coopActor.get(),
+						baseObj, 
+						selectedRefrPtr.get(),
+						hasActivationText
 					);
-					if (shouldSneakToActivate)
+					if (hasActivationText && baseObj)
 					{
-						if (wouldPickupBookNote)
-						{
-							text = fmt::format
+						bool isBook = baseObj->IsBook();
+						bool isNote = baseObj->IsNote();
+						bool wouldPickupBookNote = 
+						(
+							(isBook || isNote) &&
 							(
-								"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
-								playerID + 1, selectedRefrPtr->GetName()
-							);
-						}
-						else
+								!GlobalCoopData::CanControlMenus(playerID)
+							)
+						);
+						if (shouldSneakToActivate)
 						{
-							text = fmt::format
-							(
-								"P{}: Sneak to {}", p->playerID + 1, text
-							);
-						}
-					}
-					else
-					{
-						if (wouldPickupBookNote)
-						{
-							if (isOffLimits)
+							if (wouldPickupBookNote)
 							{
 								text = fmt::format
 								(
-									"P{}: <font color=\"#FF0000\">Steal</font> {}", 
-									playerID + 1,
-									selectedRefrPtr->GetName()
+									"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
+									playerID + 1, selectedRefrPtr->GetName()
 								);
 							}
 							else
 							{
 								text = fmt::format
 								(
-									"P{}: Take {}", playerID + 1, selectedRefrPtr->GetName()
+									"P{}: Sneak to {}", p->playerID + 1, text
 								);
 							}
 						}
 						else
 						{
-							text = fmt::format
-							(
-								"P{}: {}", p->playerID + 1, text
-							);
+							if (wouldPickupBookNote)
+							{
+								if (isOffLimits)
+								{
+									text = fmt::format
+									(
+										"P{}: <font color=\"#FF0000\">Steal</font> {}", 
+										playerID + 1,
+										selectedRefrPtr->GetName()
+									);
+								}
+								else
+								{
+									text = fmt::format
+									(
+										"P{}: Take {}", playerID + 1, selectedRefrPtr->GetName()
+									);
+								}
+							}
+							else
+							{
+								text = fmt::format
+								(
+									"P{}: {}", p->playerID + 1, text
+								);
+							}
 						}
-					}
-				}
-				else
-				{
-					if (shouldSneakToActivate)
-					{
-						text = fmt::format
-						(
-							"P{}: Sneak to "
-							"<font color=\"#FF0000\">interact</font> with {}",
-							p->playerID + 1, text
-						);
 					}
 					else
 					{
-						if (isOffLimits)
+						if (shouldSneakToActivate)
 						{
 							text = fmt::format
 							(
-								"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
+								"P{}: Sneak to "
+								"<font color=\"#FF0000\">interact</font> with {}",
 								p->playerID + 1, text
 							);
 						}
 						else
 						{
-							text = fmt::format
-							(
-								"P{}: Interact with {}", p->playerID + 1, text
-							);
+							if (isOffLimits)
+							{
+								text = fmt::format
+								(
+									"P{}: <font color=\"#FF0000\">Interact</font> with {}", 
+									p->playerID + 1, text
+								);
+							}
+							else
+							{
+								text = fmt::format
+								(
+									"P{}: Interact with {}", p->playerID + 1, text
+								);
+							}
 						}
 					}
-				}
 
-				int32_t value = -1;
-				float weight = 0.0f;
-				auto asActor = selectedRefrPtr->As<RE::Actor>();
-				if ((asActor && asActor->IsDead()) || 
-					(!asActor && selectedRefrPtr->GetContainer()))
-				{
-					// Get total weight and value in the container.
-					Util::GetWeightAndValueInRefr(selectedRefrPtr.get(), weight, value);
-				}
-				else if (baseObj)
-				{
-					// Get weight and value for this individual refr.
-					value = baseObj->GetGoldValue();
-					weight = selectedRefrPtr->GetWeight();
-				}
-
-				if (value >= 0)
-				{
-					float inventoryWeight = 
-					(
-						p->isPlayer1 ? 
-						coopActor->GetWeightInContainer() :
-						p->em->inventoryChest->GetWeightInContainer()
-					);
-					const auto invChanges = 
-					(
-						p->isPlayer1 ? 
-						coopActor->GetInventoryChanges() :
-						p->em->inventoryChest->GetInventoryChanges()
-					);
-					if (invChanges)
+					int32_t value = -1;
+					float weight = 0.0f;
+					auto asActor = selectedRefrPtr->As<RE::Actor>();
+					if ((asActor && asActor->IsDead()) || 
+						(!asActor && selectedRefrPtr->GetContainer()))
 					{
-						inventoryWeight = invChanges->totalWeight;
+						// Get total weight and value in the container.
+						Util::GetWeightAndValueInRefr(selectedRefrPtr.get(), weight, value);
+					}
+					else if (baseObj)
+					{
+						// Get weight and value for this individual refr.
+						value = baseObj->GetGoldValue();
+						weight = selectedRefrPtr->GetWeight();
 					}
 
-					const float carryweight = coopActor->GetTotalCarryWeight();
-					float remainingCarryweight = carryweight - inventoryWeight;
-					std::string weightValue = fmt::format
-					(
-						", <font color=\"#{:X}\">Value: </font>"
-						"<font face=\"$EverywhereBoldFont\">{}</font>, "
-						"<font color=\"#{:X}\">Weight: </font>"
-						"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
-						"<font color=\"#{:X}\">Space: </font>"
-						"<font face=\"$EverywhereBoldFont\">"
-						"<font color=\"#{:X}\">{:.0f}</font>"
-						"</font>",
-						0xBBA53D,
-						value,
-						0x999999,
-						weight,
-						0x804a00,
-						remainingCarryweight - weight <= 0.0f ? 
-						0xFF0000 : 
-						0xFFFFFF,
-						remainingCarryweight,
-						carryweight
-					);
-					text = fmt::format
-					(
-						"{}", std::string(text) + weightValue
-					);
-				}
+					if (value >= 0)
+					{
+						float inventoryWeight = 
+						(
+							p->isPlayer1 ? 
+							coopActor->GetWeightInContainer() :
+							p->em->inventoryChest->GetWeightInContainer()
+						);
+						const auto invChanges = 
+						(
+							p->isPlayer1 ? 
+							coopActor->GetInventoryChanges() :
+							p->em->inventoryChest->GetInventoryChanges()
+						);
+						if (invChanges)
+						{
+							inventoryWeight = invChanges->totalWeight;
+						}
 
-				type = a_type;
-				// Refresh set TP to keep the crosshair text from fading when moving the crosshair.
-				updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
+						const float carryweight = coopActor->GetTotalCarryWeight();
+						float remainingCarryweight = carryweight - inventoryWeight;
+						std::string weightValue = fmt::format
+						(
+							", <font color=\"#{:X}\">Value: </font>"
+							"<font face=\"$EverywhereBoldFont\">{}</font>, "
+							"<font color=\"#{:X}\">Weight: </font>"
+							"<font face=\"$EverywhereBoldFont\">{:.0f}</font>, "
+							"<font color=\"#{:X}\">Space: </font>"
+							"<font face=\"$EverywhereBoldFont\">"
+							"<font color=\"#{:X}\">{:.0f}</font>"
+							"</font>",
+							0xBBA53D,
+							value,
+							0x999999,
+							weight,
+							0x804a00,
+							remainingCarryweight - weight <= 0.0f ? 
+							0xFF0000 : 
+							0xFFFFFF,
+							remainingCarryweight,
+							carryweight
+						);
+						text = fmt::format
+						(
+							"{}", std::string(text) + weightValue
+						);
+					}
+
+					type = a_type;
+					// Refresh set TP to keep the crosshair text from fading 
+					// when moving the crosshair.
+					updateSetTP = p->pam->IsPerforming(InputAction::kMoveCrosshair);
+				}
 			}
 		}
 		else if (a_type == CrosshairMessageType::kStealthState)
@@ -10332,29 +10528,19 @@ namespace ALYSLC
 
 	void TargetingManager::SwitchAimMode()
 	{
-		if (glob.cdh->GetInputState(deviceID, InputAction::kRThumb).justReleased &&
-			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0)
+		const auto& rThumbState = glob.cdh->GetInputState(deviceID, InputAction::kRThumb);
+		bool allButtonsReleased = 
+		(
+			(p->pam->inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) == 0
+		);
+		if (!allButtonsReleased || !rThumbState.justReleased)
 		{
-			if (aimMode == AimMode::kFreeAim)
-			{
-				aimMode = AimMode::kLockOn;
-				SetCrosshairMessageRequest
-				(
-					CrosshairMessageType::kGeneralNotification,
-					fmt::format
-					(
-						"P{}: Aim mode: <font color=\"#00FFFF\">Lock On</font>",
-						playerID + 1
-					),
-					{ 
-						CrosshairMessageType::kNone,
-						CrosshairMessageType::kStealthState, 
-						CrosshairMessageType::kTargetSelection 
-					},
-					Settings::fSecsBetweenDiffCrosshairMsgs
-				);
-			}
-			else if (aimMode == AimMode::kLockOn)
+			return;
+		}
+
+		if (rThumbState.heldTimeSecs >= Settings::fSecsDefMinHoldTime * 3.0f)
+		{
+			if (aimMode == AimMode::kCrosshair)
 			{
 				aimMode = AimMode::kTwinStick;
 				InactivateCrosshair(false);
@@ -10376,13 +10562,15 @@ namespace ALYSLC
 			}
 			else
 			{
-				aimMode = AimMode::kFreeAim;
+				aimMode = AimMode::kCrosshair;
+				p->mm->reqFaceTarget = Settings::vbFaceCrosshairPositionByDefault[playerID];
+				ClearTarget(TargetActorType::kAimCorrection);
 				SetCrosshairMessageRequest
 				(
 					CrosshairMessageType::kGeneralNotification,
 					fmt::format
 					(
-						"P{}: Aim mode: <font color=\"#00FF00\">Free Aim</font>",
+						"P{}: Aim mode: <font color=\"#00FF00\">Crosshair</font>",
 						playerID + 1
 					),
 					{ 
@@ -10393,22 +10581,20 @@ namespace ALYSLC
 					Settings::fSecsBetweenDiffCrosshairMsgs
 				);
 			}
-			
-			// UNCOMMENT FOR NEW CONTROL SCHEME.
-			/*
-			// Set face target mode.
+		}
+		else
+		{
+			// Toggle face target mode.
 			// If enabled, the player will continuously face the crosshair position.
 			// Otherwise, the player rotates to face their movement direction as usual.
-			p->mm->reqFaceTarget = 
-			(
-				aimMode != AimMode::kTwinStick && Util::HandleIsValid(crosshairRefrHandle)
-			);
+			p->mm->reqFaceTarget = !p->mm->reqFaceTarget;
 			if (!Settings::vbAnimatedCrosshair[playerID]) 
 			{
 				return;
 			}
 
-			// Smoothly rotate the crosshair into the 'X' configuration to notify the player 
+			// Signal targeting manager to smoothly rotate the crosshair 
+			// into the 'X' configuration  to notify the player 
 			// that they are facing the crosshair position now,
 			// or using the right stick to rotate the player if not in crosshair free aim mode.
 			crosshairRotationData->SetTimeSinceUpdate(0.0f);
@@ -10416,7 +10602,122 @@ namespace ALYSLC
 			(
 				p->mm->reqFaceTarget ? PI / 4.0f : 0.0f
 			);
-			*/
+		}
+	}
+	
+	void TargetingManager::UpdateActivationTarget
+	(
+		bool a_setToAimTargetHandle, bool a_quickSelection, bool a_playActivationShader
+	)
+	{
+		// Set the activation target refr handle directly to the crosshair/aim correction handle,
+		// or check for a selectable refr nearby.
+		// Play/stop any activation shaders if set/cleared, and update the quick activation flag
+		// and activation target changed TP.
+
+		auto prevHandle = activationRefrHandle;
+		auto newHandle = RE::ObjectRefHandle();
+		if (a_setToAimTargetHandle)
+		{
+			newHandle = 
+			(
+				aimMode == AimMode::kCrosshair ? crosshairRefrHandle : aimCorrectionTargetHandle
+			);
+		}
+		else
+		{
+			newHandle = GetSelectableProximityRefrHandle(a_quickSelection);
+		}
+
+		// Update set via quick activation flag.
+		bool newHandleIsValid = Util::HandleIsValid(newHandle);
+		choseQuickActivationTarget = a_quickSelection && newHandleIsValid;
+		choseProximityActivationTarget = !a_setToAimTargetHandle && newHandleIsValid;
+		if (newHandleIsValid)
+		{
+			// Update activation target handle.
+			// Remove all previous activation shaders.
+			if (Util::HandleIsValid(prevHandle))
+			{
+				Util::StopEffectShader
+				(
+					prevHandle.get().get(), glob.activateHighlightShaders[playerID]
+				);
+				Util::StopEffectShader
+				(
+					prevHandle.get().get(), glob.activateDefaultShader
+				);
+				Util::StopEffectShader
+				(
+					prevHandle.get().get(), glob.activateFailureShader
+				);
+				Util::StopEffectShader
+				(
+					prevHandle.get().get(), glob.activateUseShader
+				);
+			}
+				
+			activationRefrHandle = newHandle;
+			// Already checked LOS before selection, so no need to do so again.
+			ValidateActivationRefr(false);
+
+			DBG
+			(
+				"{}: Has chosen REFR {} as their activation target. "
+				"Time since change: {}. Can activate: {}. Was: {}", 
+				coopActor->GetName(), 
+				newHandle.get()->GetName(),
+				Util::GetElapsedSeconds(p->lastActivationTargetChangeTP),
+				canActivateRefr,
+				Util::HandleIsValid(prevHandle) ? 
+				prevHandle.get()->GetName() : 
+				"NONE"
+			);
+				
+			if (newHandle != prevHandle)
+			{
+				// Will not play shader for now if the player cannot activate.
+				if (a_playActivationShader)
+				{
+					auto shader = 
+					(
+						canActivateRefr ? 
+						glob.activateHighlightShaders[playerID] : 
+						glob.activateFailureShader
+					);
+					ColorizeActivationShader
+					(
+						shader, 
+						canActivateRefr || GlobalCoopData::IsCoopPlayer(activationRefrHandle)
+					);
+					Util::StartEffectShader
+					(
+						newHandle.get().get(),
+						shader,
+						max(0.1f, Settings::fSecsBeforeActivationCycling)
+					);
+				}
+			}
+		}
+		else
+		{
+			DBG
+			(
+				"{}: No chosen REFR activation target. Time since change: {}s. "
+				"Previous handle: {}", 
+				coopActor->GetName(), 
+				Util::GetElapsedSeconds(p->lastActivationTargetChangeTP),
+				activationRefrHandle.get() ?
+				activationRefrHandle.get()->GetName() :
+				"NONE"
+			);
+			// Stop shader before clearing the current target if it is still valid.
+			ClearActivationTargetData();
+		}
+
+		if (newHandle != prevHandle)
+		{
+			p->lastActivationTargetChangeTP = SteadyClock::now();
 		}
 	}
 
@@ -10431,7 +10732,7 @@ namespace ALYSLC
 
 		// If the player has aim correction disabled and is not using the right stick 
 		// to select a target (the crosshair is enabled), so we can clear out the existing target.
-		if (!Settings::vbUseAimCorrection[playerID] && aimMode != AimMode::kTwinStick)
+		if (!Settings::vbUseAimCorrection[playerID] && aimMode == AimMode::kCrosshair)
 		{
 			if (Util::HandleIsValid(aimCorrectionTargetHandle))
 			{
@@ -10502,66 +10803,57 @@ namespace ALYSLC
 		// since this list does not get cleared until HandleReferenceManipulation() runs
 		// and we thus retain the chosen aim correction target to serve 
 		// as the target for all the release objects.
-		bool canSelectThrowTarget = 
+		const bool twinStickPickTarget = 
+		(
+			aimMode == AimMode::kTwinStick &&
+			p->pam->AllInputsPressedForAction(InputAction::kResetAim) &&
+			p->pam->AllInputsPressedForAction(InputAction::kRotateCam)
+		);
+		if (twinStickPickTarget)
+		{
+			lockOnToAimCorrectionTarget = true;
+			// Set as facing the target when picking an aim target in twin stick mode.
+			p->mm->reqFaceTarget = true;
+		}
+		
+		bool twinStickThrowSelection = 
 		(
 			aimMode == AimMode::kTwinStick && !rmm->grabbedRefrInfoList.empty()
 		);
-		bool leftStickSelection = aimMode != AimMode::kTwinStick;
-		const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, leftStickSelection);
-
-		const auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
+		// Guarantee the player has a selected aim correction target if face target is on.
+		bool twinStickFaceTargetSelection = 
 		(
-			selectedTargetActorHandle
+			aimMode == AimMode::kTwinStick && p->mm->reqFaceTarget && !currentTargetPtr	
 		);
-		// Validate the current target or check for a new target 
-		// if the player is requesting a ranged attack, 
-		// is not facing the crosshair position,
-		// and has not selected a target actor with their crosshair.
-		bool canValidateTarget = false;
-		if (leftStickSelection)
-		{
-			canValidateTarget = 
+		const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, !twinStickPickTarget);
+		const auto selectedTargetActorPtr = Util::GetActorPtrFromHandle(selectedTargetActorHandle);
+		// Can select an aim correction target with the LS when attacking.
+		bool lsSelectTempTarget = 
+		(
+			(Settings::vbUseAimCorrection[playerID]) && 
+			(!p->mm->reqFaceTarget && attackOrBlockRequest && !selectedTargetActorPtr)
+		);
+		bool canValidateTarget =
+		(
+			twinStickFaceTargetSelection || twinStickPickTarget || lsSelectTempTarget
+		);
+
+		// Clear when not selecting a new target, choosing a ranged target actor in Crosshair mode,
+		// or when not attacking/throwing in combat, unless facing a target in Twin-stick mode.
+		// Yeah. Simple.
+		bool canClear = 
+		(
+			(!canValidateTarget) &&
 			(
-				!p->mm->reqFaceTarget &&
-				attackOrBlockRequest && 
-				!selectedTargetActorPtr
-			);
-		}
-		else
-		{
-			// Right stick just moved from rest.
-			bool rightStickSelectionJustStarted = p->pam->JustStarted(InputAction::kMoveCrosshair);
-			// Should clear face target flag if starting to move the right stick again
-			// after the current aim correction target was chosen via the 'Face Target' bind.
-			if (rightStickSelectionJustStarted)
-			{
-				DBG
+				(aimMode == AimMode::kCrosshair && selectedTargetActorPtr && currentTargetPtr) ||
 				(
-					"{}: Set as no longer facing the target: {}. "
-					"Should clear current aim correction target {}: {}", 
-					coopActor->GetName(),
-					p->mm->reqFaceTarget,
-					currentTargetPtr ? currentTargetPtr->GetName() : "NONE",
-					!attackOrBlockRequest
-				);
-				choseAimLockOnTarget = false;
-				if (currentTargetPtr && !attackOrBlockRequest)
-				{
-					ClearTarget(TargetActorType::kAimCorrection);
-					return;
-				}
-			}
-
-			// Check for a new target whenever moving the right stick or performing a ranged attack
-			// while the crosshair is disabled and the player is not facing a selected target. 
-			// Serves as crosshair-lite.
-			canValidateTarget = 
-			(
-				(!choseAimLockOnTarget && p->pam->IsPerforming(InputAction::kMoveCrosshair)) /*&&
-				(attackOrBlockRequest || canSelectThrowTarget)*/
-			);
-		}
-
+					(aimMode == AimMode::kCrosshair || !p->mm->reqFaceTarget) &&
+					(
+						!attackOrBlockRequest && !twinStickThrowSelection
+					)
+				)
+			)
+		);
 		if (canValidateTarget)
 		{
 			// Require left stick 'commitment', meaning the left stick is displaced to max
@@ -10584,14 +10876,14 @@ namespace ALYSLC
 			);
 			bool canSelectNewTarget = 
 			(
-				(Util::GetElapsedSeconds(p->lastAimCorrectionTargetSetTP) > selectionInterval) &&
+				(twinStickFaceTargetSelection) || 
 				(
-					((stickCommitment) || (combatActionJustStarted && !currentTargetPtr))
-					/*(
-						(combatActionBindPressed) && 
-						((stickCommitment) || (combatActionJustStarted && !currentTargetPtr)) 
-					) ||
-					(canSelectThrowTarget && stickCommitment)*/
+					(
+						Util::GetElapsedSeconds(p->lastAimCorrectionTargetSetTP) > selectionInterval
+					) &&
+					(
+						((stickCommitment) || (combatActionJustStarted && !currentTargetPtr))
+					)
 				)
 			);
 			// Should check if the current target is in the FOV window
@@ -10600,36 +10892,45 @@ namespace ALYSLC
 			// bool retainingCurrentTarget = true;
 			if (canSelectNewTarget)
 			{
-				auto nextTargetPtr = Util::GetActorPtrFromHandle
+				auto refrPtr = Util::GetRefrPtrFromHandle
 				(
 					GetClosestTargetableActorInFOV
 					(
 						coopActor.get(),
-						leftStickSelection,
+						!twinStickPickTarget,
 						false,
-						true,
+						!twinStickPickTarget && !twinStickFaceTargetSelection,
 						true,
 						Settings::vbScreenspaceBasedAimCorrectionCheck[playerID],
+						twinStickFaceTargetSelection ? 
+						2.0f * PI :
 						Settings::vfAimCorrectionFOV[playerID],
-						!combatActionBindPressed || performingRangedAction || canSelectThrowTarget ? 
+						!combatActionBindPressed || 
+						performingRangedAction ||
+						twinStickThrowSelection ||
+						twinStickFaceTargetSelection ? 
 						Settings::fMaxRaycastAndZoomOutDistance :
 						GetMaxActivationDist()
 					)
 				);
+
+				auto nextTarget = refrPtr ? refrPtr.get()->As<RE::Actor>() : nullptr;
 				DBG
 				(
-					"{}: Left stick selection: {}, combat action just started: {}, "
+					"{}: Twin-stick RS selection: {}, combat action just started: {}, "
 					"attack or block request: {}, is ranged: {}, "
-					"move crosshair time performed: {}, stick commitment: {}, "
-					"elapsed time since set: {}. Selection interval: {}. "
+					"move crosshair time performed: {}, lock on bind pressed: {}, "
+					"stick commitment: {}, elapsed time since set: {}. Selection interval: {}. "
 					"Can select: {}. RS norm mags: {}, {} (diff: {}). Speeds: {}, {}. "
-					"Current target: {} (0x{:X}), next target: {} (0x{:X}).",
+					"Current target: {} (0x{:X}), next target: {} (0x{:X}). Lock on to target: {}",
 					coopActor->GetName(), 
-					leftStickSelection,
+					twinStickPickTarget,
 					combatActionJustStarted,
 					attackOrBlockRequest,
 					performingRangedAction,
 					p->pam->GetPlayerActionInputHoldTime(InputAction::kMoveCrosshair),
+					p->pam->AllInputsPressedForAction(InputAction::kResetAim) &&
+					p->pam->AllInputsPressedForAction(InputAction::kRotateCam),
 					stickCommitment, 
 					Util::GetElapsedSeconds(p->lastAimCorrectionTargetSetTP),
 					selectionInterval,
@@ -10641,44 +10942,89 @@ namespace ALYSLC
 					stickState.stickAngularSpeed * TO_DEGREES,
 					currentTargetPtr ? currentTargetPtr->GetName() : "NONE",
 					currentTargetPtr ? currentTargetPtr->formID : 0xDEAD,
-					nextTargetPtr ? nextTargetPtr->GetName() : "NONE",
-					nextTargetPtr ? nextTargetPtr->formID : 0xDEAD
+					nextTarget ? nextTarget->GetName() : "NONE",
+					nextTarget ? nextTarget->formID : 0xDEAD,
+					lockOnToAimCorrectionTarget
 				);
 
-				// Can set the newly computed target.
-				//bool canSet = false;
-				//if (combatActionJustStarted)
-				//{
-				//	// Set right away if starting a combat action.
-				//	canSet = true;
-				//}
-				//else
-				//{
-				//	bool diffTarget = nextTargetPtr != currentTargetPtr;
-				//	if (diffTarget && !nextTargetPtr)
-				//	{
-				//		// Clear current target if there is no next target while moving away.
-				//		ClearTarget(TargetActorType::kAimCorrection);
-				//		retainingCurrentTarget = false;
-				//	}
-				//	else
-				//	{	
-				//		// Set valid, different target that is within LOS of the player.
-				//		canSet = 
-				//		(
-				//			nextTargetPtr &&
-				//			diffTarget && 
-				//			Util::IsValidRefrForTargeting(nextTargetPtr.get())
-				//		);
-				//	}
-				//}
-
-				if (nextTargetPtr && Util::IsValidRefrForTargeting(nextTargetPtr.get()))
+				if (nextTarget && Util::IsValidRefrForTargeting(nextTarget))
 				{
-					aimCorrectionTargetHandle = nextTargetPtr->GetHandle();
-					// New target selected, so we don't need to perform 
-					// an additional FOV check.
-					// retainingCurrentTarget = false;
+					aimCorrectionTargetHandle = nextTarget->GetHandle();
+					// Set activation target to locked-on aim correction target since the target
+					// will linger and allow for activation.
+					if (currentTargetPtr != refrPtr)
+					{
+						if (RefrIsInActivationRange(aimCorrectionTargetHandle))
+						{
+							UpdateActivationTarget(true, false, lockOnToAimCorrectionTarget);
+							DBG
+							(
+								"{}: Aim correction target {} is selected "
+								"as the activation target.",
+								coopActor->GetName(), aimCorrectionTargetHandle.get()->GetName()
+							);
+						}
+						else
+						{
+							// Remove previous activation target if it was selected 
+							// as the aim correction target.
+							if (Util::HandleIsValid(activationRefrHandle) && 
+								currentTargetPtr && 
+								currentTargetPtr == activationRefrHandle.get())
+							{
+								ClearActivationTargetData();
+							}
+
+							// Stop the activation shader on the previous aim correction target.
+							if (currentTargetPtr)
+							{
+								Util::StopEffectShader
+								(
+									currentTargetPtr.get(), glob.activateHighlightShaders[playerID]
+								);
+							}
+
+							if (lockOnToAimCorrectionTarget)
+							{
+								// Remove all previous activation shaders.
+								const auto prevHandle = currentTargetPtr->GetHandle();
+								if (Util::HandleIsValid(prevHandle))
+								{
+									Util::StopEffectShader
+									(
+										prevHandle.get().get(),
+										glob.activateHighlightShaders[playerID]
+									);
+									Util::StopEffectShader
+									(
+										prevHandle.get().get(), glob.activateDefaultShader
+									);
+									Util::StopEffectShader
+									(
+										prevHandle.get().get(), glob.activateFailureShader
+									);
+									Util::StopEffectShader
+									(
+										prevHandle.get().get(), glob.activateUseShader
+									);
+								}
+
+								// Play a highlight shader when locking on to a target 
+								// outside of activation range.
+								ColorizeActivationShader
+								(
+									glob.activateHighlightShaders[playerID], true
+								);
+								Util::StartEffectShader
+								(
+									aimCorrectionTargetHandle.get().get(),
+									glob.activateHighlightShaders[playerID],
+									max(0.1f, Settings::fSecsBeforeActivationCycling)
+								);
+							}
+						}
+					}
+
 					p->lastAimCorrectionTargetSetTP = SteadyClock::now();
 				}
 				else if (currentTargetPtr && !Util::IsValidRefrForTargeting(currentTargetPtr.get()))
@@ -10686,66 +11032,36 @@ namespace ALYSLC
 					ClearTarget(TargetActorType::kAimCorrection);
 				}
 			}
-			
-			/*
-			// Potentially clear the current target if the player is committing 
-			// to fully moving away from it and the target is no longer in the FOV window.
-			if (retainingCurrentTarget && currentTargetPtr && stickCommitment)
-			{
-				float targetingAngle = 
-				(
-					leftStickSelection ? 
-					p->analogStickParams[!AnalogStickParams::kLSCamRelAng] :
-					p->analogStickParams[!AnalogStickParams::kRSCamRelAng]
-				);
-				float angleToTarget = Util::GetYawBetweenPositions
-				(
-					playerTorsoPos, targetTorsoPos
-				);
-				if (Settings::vbScreenspaceBasedAimCorrectionCheck[playerID])
-				{
-					playerTorsoPos = Util::WorldToScreenPoint3(playerTorsoPos);
-					// Do not need screen pos depth.
-					playerTorsoPos.z = 0.0f;
-					targetTorsoPos = Util::WorldToScreenPoint3(targetTorsoPos);
-					targetTorsoPos.z = 0.0f;
-					// Flip LS/RS Y comp sign to conform with Scaleform convention.
-					targetingAngle = Util::NormalizeAng0To2Pi
-					(
-						atan2f(-stickState.yComp, stickState.xComp)
-					);
-
-					RE::NiPoint3 toTarget = targetTorsoPos - playerTorsoPos;
-					toTarget.Unitize();
-					// Angle from the player's torso to the target actor's torso.
-					angleToTarget = atan2f(toTarget.y, toTarget.x);
-				}
-
-				// Angle difference's magnitude to compare with the FOV window.
-				const float turnToFaceActorAngMag = fabsf
-				(
-					Util::NormalizeAngToPi(angleToTarget - targetingAngle)
-				);
-				// Within FOV.
-				const bool currentTargetInSelectionFOV = 
-				(
-					turnToFaceActorAngMag <= (Settings::vfAimCorrectionFOV[playerID] / 2.0f)
-				);
-					
-				// Current close actor is invalid for use as an aim correction target,
-				// so clear it.
-				if (!currentTargetInSelectionFOV)
-				{
-					DBG("CLUR3");
-					ClearTarget(TargetActorType::kAimCorrection);
-				}
-			}
-			*/
 		}
-		else if ((selectedTargetActorPtr && currentTargetPtr) ||
-				((!attackOrBlockRequest && !canSelectThrowTarget) && 
-				 (leftStickSelection || !choseAimLockOnTarget)))
+		else if (canClear)
 		{
+			/*DBG
+			(
+				"{}: Right stick selection: {}, combat action just started: {}, "
+				"attack or block request: {}, is ranged: {}, select throw target: {}, "
+				"lock on to target: {}, Selected actor target: {} (0x{:X}), "
+				"current target: {} (0x{:X}).",
+				coopActor->GetName(), 
+				rightStickSelection,
+				combatActionJustStarted,
+				attackOrBlockRequest,
+				performingRangedAction,
+				canSelectThrowTarget,
+				lockOnToAimCorrectionTarget,
+				selectedTargetActorPtr ? 
+				selectedTargetActorPtr->GetName() :
+				"NONE",
+				selectedTargetActorPtr ? 
+				selectedTargetActorPtr->formID :
+				0xDEAD,
+				currentTargetPtr ? 
+				currentTargetPtr->GetName() :
+				"NONE",
+				currentTargetPtr ? 
+				currentTargetPtr->formID :
+				0xDEAD
+			);*/
+
 			// Clear the aim correction target when not attacking or trying to attack, blocking,
 			// or when a crosshair target actor is selected.
 			const auto& combatGroup = glob.paInfoHolder->DEF_ACTION_GROUPS_TO_INDICES.at
@@ -10784,6 +11100,13 @@ namespace ALYSLC
 			);
 			if (canClear)
 			{
+				// Stop the activation shader on the current aim correction target
+				// before clearing it.
+				Util::StopEffectShader
+				(
+					currentTargetPtr.get(), glob.activateHighlightShaders[playerID]
+				);
+
 				ClearTarget(TargetActorType::kAimCorrection);
 			}
 		}
@@ -11046,12 +11369,7 @@ namespace ALYSLC
 			// Display selection text if not sneaking 
 			// or if selecting a non-actor or corpse refr.
 			// Display stealth state text otherwise.
-			auto selectedRefrPtr = Util::GetRefrPtrFromHandle
-			(
-				aimMode == AimMode::kTwinStick ? 
-				lockOnActivationRefrHandle :
-				crosshairRefrHandle
-			);
+			auto selectedRefrPtr = Util::GetRefrPtrFromHandle(activationRefrHandle);
 			auto selectedTargetActorPtr = Util::GetActorPtrFromHandle
 			(
 				aimMode == AimMode::kTwinStick ? 
@@ -11079,7 +11397,7 @@ namespace ALYSLC
 				(
 					(!coopActor->IsSneaking()) || 
 					(
-						(selectedRefrPtr && validCrosshairRefrHit) && 
+						(selectedRefrPtr) && 
 						(!selectedTargetActorPtr || selectedTargetActorPtr->IsDead())
 					)	
 				);
@@ -11152,17 +11470,24 @@ namespace ALYSLC
 		// When the player wants to move their crosshair,
 		// update the crosshair's 2D and 3D crosshair positions, 
 		// and the selected crosshair refr and actor, if any.
+		// TEMPORARY until 'Face Aim Target' is implemented.
+
 		const bool isAiming = 
 		(
-			aimMode == AimMode::kFreeAim && p->pam->IsPerforming(InputAction::kMoveCrosshair)
+			aimMode == AimMode::kCrosshair && 
+			p->pam->IsPerforming(InputAction::kMoveCrosshair) &&
+			!p->pam->AllInputsPressedForAtLeastOneAction
+			(
+				InputAction::kResetAim
+			)
 		);
 		// Crosshair is inactive when in 'Twin Stick' mode.
-		if (aimMode != AimMode::kTwinStick)
+		if (aimMode == AimMode::kCrosshair)
 		{
 			if (isAiming)
 			{
 				// Not snapping to a lock on target if moving the crosshair.
-				choseAimLockOnTarget = false;
+				choseLockOnAimTarget = false;
 				// Get RS data.
 				const auto& rsData = glob.cdh->GetAnalogStickState(deviceID, false);
 				const auto& rsX = rsData.xComp;
@@ -11394,7 +11719,7 @@ namespace ALYSLC
 				if (validCrosshairRefrHit)
 				{
 					// Move to the center of the selected lock on target over half a second.
-					if (choseAimLockOnTarget)
+					if (choseLockOnAimTarget)
 					{
 						// Update the crosshair world position using
 						// the initial local hit position and the refr's new position.
@@ -11414,23 +11739,23 @@ namespace ALYSLC
 						crosshairLocalPosYawDiff = 0.0f;
 						crosshairOnRefrPixelXYDeltas = { 0.0f, 0.0f };
 						auto screenPos = Util::WorldToScreenPoint3(crosshairWorldPos);
-						const float secsSinceTargetUpdate = Util::GetElapsedSeconds
+						const float secsSinceTargetChange = Util::GetElapsedSeconds
 						(
-							p->lastLockOnAimTargetUpdateTP
+							p->lastLockOnAimTargetChangeTP
 						);
-						if (secsSinceTargetUpdate <= Settings::fSecsToSnapCrosshairToLockOnTarget)
+						if (secsSinceTargetChange <= Settings::fSecsToSnapCrosshairToLockOnTarget)
 						{
 							crosshairScaleformPos.x = Util::InterpolateSmootherStep
 							(
 								crosshairScaleformPos.x,
 								screenPos.x,
-								secsSinceTargetUpdate / Settings::fSecsToSnapCrosshairToLockOnTarget
+								secsSinceTargetChange / Settings::fSecsToSnapCrosshairToLockOnTarget
 							);
 							crosshairScaleformPos.y = Util::InterpolateSmootherStep
 							(
 								crosshairScaleformPos.y,
 								screenPos.y,
-								secsSinceTargetUpdate / Settings::fSecsToSnapCrosshairToLockOnTarget
+								secsSinceTargetChange / Settings::fSecsToSnapCrosshairToLockOnTarget
 							);
 						}
 						else
@@ -11505,10 +11830,11 @@ namespace ALYSLC
 			}
 			else
 			{
-				// No chosen refr, so we only have to potentially update 
+				// No chosen refr, so no valid refr hit and we only have to potentially update 
 				// the crosshair world position.
 				// Only update the target position if the player's crosshair 
 				// isn't fully faded or re-centered.
+				validCrosshairRefrHit = false;
 				bool isActive = 
 				(
 					(
@@ -11625,7 +11951,7 @@ namespace ALYSLC
 		// or when first hitting the edge of the screen.
 		bool isActive = 
 		(
-			(aimMode != AimMode::kTwinStick) &&
+			(aimMode == AimMode::kCrosshair) &&
 			(!reqResetCrosshairPosition) &&
 			(
 				(crosshairRefrPtr) ||
@@ -11641,10 +11967,10 @@ namespace ALYSLC
 		}
 
 		// Will not reset if the player is moving the crosshair,
-		// has picked a lock on target, or has switched to face target mode.
+		// or has picked a lock on target.
 		if ((reqResetCrosshairPosition) && 
 			(aimMode != AimMode::kTwinStick) &&
-			(isAiming || choseAimLockOnTarget || p->mm->reqFaceTarget))
+			(isAiming || choseLockOnAimTarget))
 		{
 			reqResetCrosshairPosition = false;
 		}
@@ -11838,6 +12164,87 @@ namespace ALYSLC
 			crosshairSizeRatioInterpData->value = 1.0f;
 		}
 		
+		// Update selection TP if the crosshair refr handle changed.
+		if (isAiming && crosshairRefrHandle != prevCrosshairRefrHandle)
+		{
+			DBG
+			(
+				"{}: {} -> {}, chose lock on activation/aim target: {}, {}, is aiming: {}. "
+				"Activation target: {}",
+				coopActor->GetName(),
+				Util::HandleIsValid(prevCrosshairRefrHandle) ?
+				prevCrosshairRefrHandle.get()->GetName() :
+				"NONE",
+				Util::HandleIsValid(crosshairRefrHandle) ?
+				crosshairRefrHandle.get()->GetName() :
+				"NONE",
+				choseProximityActivationTarget,
+				choseLockOnAimTarget,
+				isAiming,
+				Util::HandleIsValid(activationRefrHandle) ? 
+				activationRefrHandle.get()->GetName() : 
+				"NONE"
+			);
+			
+			// Remove previous activation target if it was selected 
+			// as the crosshair target.
+			if (Util::HandleIsValid(activationRefrHandle) && 
+				prevCrosshairRefrHandle == activationRefrHandle)
+			{
+				ClearActivationTargetData();
+			}
+			
+			// If in range and selectable, set the activation target handle 
+			// to the crosshair refr handle.
+			if (Util::HandleIsValid(crosshairRefrHandle) && 
+				Util::IsSelectableRefr(crosshairRefrHandle.get().get()))
+			{
+				if (RefrIsInActivationRange(crosshairRefrHandle))
+				{
+					UpdateActivationTarget(true, false, true);
+					DBG
+					(
+						"{}: Crosshair refr {} is now selected as the activation target.",
+						coopActor->GetName(), crosshairRefrHandle.get()->GetName()
+					);
+				}
+				else
+				{
+					DBG
+					(
+						"{}: Crosshair refr {} is now selected.",
+						coopActor->GetName(), crosshairRefrHandle.get()->GetName()
+					);
+
+					// Play the activation shader anyways.
+					bool canActivate = CanActivateRefr(crosshairRefrHandle.get().get(), false);
+					auto shader = 
+					(
+						canActivate ? 
+						glob.activateHighlightShaders[playerID] : 
+						glob.activateFailureShader
+					);
+					ColorizeActivationShader(shader, canActivate);
+					Util::StartEffectShader
+					(
+						crosshairRefrHandle.get().get(),
+						shader,
+						max(0.1f, Settings::fSecsBetweenActivationChecks)
+					);	
+				}
+			}
+			
+			if (Util::HandleIsValid(prevCrosshairRefrHandle))
+			{
+				Util::StopEffectShader
+				(
+					prevCrosshairRefrHandle.get().get(), glob.activateHighlightShaders[playerID]
+				);
+			}
+
+			p->lastCrosshairTargetChangeTP = SteadyClock::now();
+		}
+
 		// Update the previous crosshair refr to current for the next frame.
 		prevCrosshairRefrHandle = crosshairRefrHandle;
 		// Set last update time point.
@@ -12397,84 +12804,107 @@ namespace ALYSLC
 		// Also clear the current activation target  
 		// when it is no longer within activation range of the player.
 			
+		// TEMPORARY
 		// Select a new target when aiming while in the 'LockOn' crosshair targeting mode.
-		if (p->pam->IsPerforming(InputAction::kMoveCrosshair) && aimMode == AimMode::kLockOn)
+		if (aimMode == AimMode::kCrosshair)
 		{
-			// Update as long as the right stick is not moving towards its centered position.
-			const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, false);
-			// Small bit of re-centering wiggle room due to analog stick precision issues.
-			bool shouldUpdate = 
+			// Ignore the left stick.
+			const auto inputMask = 
 			(
-				stickState.normMag - stickState.prevNormMag > -1E-2f
+				p->pam->inputBitMask & 
+				(((1 << !InputAction::kInputTotal) - 1) & (~(1 << !InputAction::kLS)))
 			);
-			if (shouldUpdate)
+			auto actionInputMask = 
+			(
+				p->pam->paParamsList
+				[!InputAction::kRotateCam - !InputAction::kFirstAction].inputMask |
+				p->pam->paParamsList
+				[!InputAction::kResetAim - !InputAction::kFirstAction].inputMask
+			);
+			auto canSelect = (inputMask & actionInputMask) == actionInputMask;
+			if (canSelect)
 			{
-				SetLockOnAimTarget(false, true, true);
+				for (const auto& action : p->pam->occurringPAs)
+				{
+					auto occurringActionParams = 
+					(
+						p->pam->paStatesList[!action - !InputAction::kFirstAction].paParams
+					);
+					if ((occurringActionParams.inputMask & actionInputMask) == actionInputMask)
+					{
+						canSelect = false;
+						break;
+					}
+				}
+			}
+			
+			if (canSelect)
+			{
+				// Update as long as the right stick is not moving towards its centered position.
+				const auto& stickState = glob.cdh->GetAnalogStickState(deviceID, false);
+				// Small bit of re-centering wiggle room due to analog stick precision issues.
+				bool shouldUpdate = 
+				(
+					stickState.normMag - stickState.prevNormMag > -1E-2f
+				);
+				if (shouldUpdate)
+				{
+					SetLockOnAimTarget(false, true, true);
+				}
 			}
 		}
 		
-		// Check on the lock on activation target.
+		// Check on the activation target.
 		// Nothing to clear if it is not set.
-		const auto refrPtr = Util::GetRefrPtrFromHandle(lockOnActivationRefrHandle);
-		if (!refrPtr)
+		if (Util::HandleIsValid(activationRefrHandle))
 		{
-			return;
-		}
-
-		const auto refrPos = 
-		(
-			refrPtr->As<RE::Actor>() ?
-			Util::GetTorsoPosition(refrPtr->As<RE::Actor>()) :
-			Util::GetRefrPosition(refrPtr.get())
-		);
-
-		// UNCOMMENT FOR NEW CONTROL SCHEME
-		// Clear if the refr is too far away from the player,
-		// or if the refr is now grabbed by the player.
-		/*if (refrPos.GetDistance(p->mm->playerTorsoPosition) > GetMaxActivationDist() || 
-			rmm->IsManaged(lockOnActivationRefrHandle, true))*/
-
-		// Clear if now in 'Free Aim' mode, if the refr is too far away from the player,
-		// or if the refr is now grabbed by the player.
-		if (aimMode == AimMode::kFreeAim ||
-			refrPos.GetDistance(p->mm->playerTorsoPosition) > GetMaxActivationDist() || 
-			rmm->IsManaged(lockOnActivationRefrHandle, true))
-
-		{
-			DBG
-			(
-				"{}: {} is now no longer selected as the lock on activation target.",
-				coopActor->GetName(), refrPtr->GetName()
-			);
-			ClearActivationTargetData(true);
-		}
-	}
-	
-	RE::ObjectRefHandle TargetingManager::UpdateNextObjectToActivate()
-	{
-		// Cycle through nearby objects to get an interactable refr,
-		// or choose the player's current lock on refr,
-		// or finally fall back to the crosshair refr.
-		// Set the result as the next object to activate when the bind is released.
-
-		if (useProximityInteraction)
-		{
-			// Cycle through nearby objects for a valid, interactable one.
-			SelectProximityRefr(true);
-			activationRefrHandle = proximityRefrHandle;
-		}
-		else if (choseActivationLockOnTarget)
-		{
-			activationRefrHandle = lockOnActivationRefrHandle;
+			// Clear if now in 'Free Aim' mode, if the refr is too far away from the player.
+			if (!RefrIsInActivationRange(activationRefrHandle))
+			{
+				DBG
+				(
+					"{}: Activation refr {} is no longer selected as the activation target.",
+					coopActor->GetName(), activationRefrHandle.get()->GetName()
+				);
+				ClearActivationTargetData();
+			}
 		}
 		else
 		{
-			activationRefrHandle = crosshairRefrHandle;
+			if (aimMode == AimMode::kCrosshair)
+			{
+				// If in range and selectable, set the activation target handle 
+				// to the crosshair refr handle.
+				if (Util::HandleIsValid(crosshairRefrHandle) && 
+					Util::IsSelectableRefr(crosshairRefrHandle.get().get()) &&
+					RefrIsInActivationRange(crosshairRefrHandle))
+				{
+					UpdateActivationTarget(true, false, false);
+					DBG
+					(
+						"{}: Crosshair refr {} is in range and chosen as the activation target.",
+						coopActor->GetName(), crosshairRefrHandle.get()->GetName()
+					);
+				}
+
+				p->lastCrosshairTargetChangeTP = SteadyClock::now();
+			}
+			else
+			{
+				if (Util::HandleIsValid(aimCorrectionTargetHandle) &&
+					RefrIsInActivationRange(aimCorrectionTargetHandle))
+				{
+					UpdateActivationTarget(true, false, false);
+					DBG
+					(
+						"{}: Aim correction target {} is now selected as the activation target.",
+						coopActor->GetName(), aimCorrectionTargetHandle.get()->GetName()
+					);
+				}
+			}
 		}
-
-		return activationRefrHandle;
 	}
-
+	
 	void TargetingManager::UpdateSneakState()
 	{
 		// Check periodically and update the player's detection state
@@ -12790,6 +13220,20 @@ namespace ALYSLC
 					menusOnlyAlwaysOpen = Util::MenusOnlyAlwaysOpen();
 				}
 
+				bool isFurniture = baseObj->As<RE::TESFurniture>();
+				bool isContainer = baseObj->As<RE::TESObjectCONT>();
+				bool isCorpse = activationRefrPtr->As<RE::Actor>() && activationRefrPtr->IsDead();
+				bool isDoor = baseObj->As<RE::TESObjectDOOR>();
+				bool mustHoldToActivate = 
+				(
+					(choseQuickActivationTarget) &&
+					(isContainer || isCorpse || isDoor || isFurniture) &&
+					(
+						p->pam->IsPerforming(InputAction::kActivate) && 
+						p->pam->GetPlayerActionInputHoldTime(InputAction::kActivate) < 
+						Settings::fSecsBetweenActivationChecks
+					)
+				);
 				bool isLocked = activationRefrPtr->IsLocked();
 				// Is locked and P1 has the key.
 				bool canUnlockWithKey = false;
@@ -12863,62 +13307,7 @@ namespace ALYSLC
 				RE::BSFixedString activationMessage = ""sv;
 				RE::BSFixedString activationString = ""sv;
 				bool hasActivationText = false;
-				if (!isSneaking && offLimits)
-				{
-					// Must sneak to interact with off-limits refrs.
-					activationString = Util::GetActivationText
-					(
-						coopActor.get(), 
-						baseObj, 
-						activationRefrPtr.get(),
-						hasActivationText
-					);
-					if (hasActivationText)
-					{
-						// Special Case:
-						// Will pick up notes and books if they are activated 
-						// while not selected by the crosshair,
-						// or if another player is controlling menus.
-						bool isBook = baseObj->IsBook();
-						bool isNote = baseObj->IsNote();
-						bool wouldPickupBookNote = 
-						(
-							(isBook || isNote) &&
-							(
-								activationRefrHandle !=
-								crosshairRefrHandle ||
-								anotherPlayerControllingMenus
-							)
-						);
-						if (wouldPickupBookNote)
-						{
-							activationMessage = fmt::format
-							(
-								"P{}: Sneak to <font color=\"#FF0000\">Steal</font> {}", 
-								playerID + 1,
-								activationRefrPtr->GetName()
-							);
-						}
-						else
-						{
-							activationMessage = fmt::format
-							(
-								"P{}: Sneak to {}", playerID + 1, activationString
-							);
-						}
-					}
-					else
-					{
-						activationMessage = fmt::format
-						(
-							"P{}: Sneak to "
-							"<font color=\"#FF0000\">interact</font> with {}",
-							playerID + 1, 
-							activationRefrPtr->GetName()
-						);
-					}
-				}
-				else if (!isPlayable || activationBlocked)
+				if (!isPlayable || activationBlocked)
 				{
 					// Blocked from activating.
 					activationMessage = fmt::format
@@ -12956,6 +13345,36 @@ namespace ALYSLC
 						playerID + 1, activationRefrPtr->GetName()
 					);
 				}
+				else if (mustHoldToActivate)
+				{
+					// Do not activate objects that can trigger a menu 
+					// or force a player into an animation (containers, doors, furniture) 
+					// until the activation bind is held for longer than 
+					// the activation cycling interval.
+
+					activationString = Util::GetActivationText
+					(
+						coopActor.get(),
+						baseObj,
+						activationRefrPtr.get(),
+						hasActivationText
+					);
+					if (hasActivationText)
+					{
+						activationMessage = fmt::format
+						(
+							"P{}: Hold to {}", playerID + 1, activationString
+						);
+					}
+					else
+					{
+						activationMessage = fmt::format
+						(
+							"P{}: Hold to Interact with {}",
+							playerID + 1, activationRefrPtr->GetName()
+						);
+					}
+				}
 				else
 				{
 					// Is another player.
@@ -12968,6 +13387,7 @@ namespace ALYSLC
 					}
 					else
 					{
+						bool mustSneak = !isSneaking && offLimits;
 						if (isInRange)
 						{
 							auto p1 = RE::PlayerCharacter::GetSingleton();
@@ -13027,6 +13447,7 @@ namespace ALYSLC
 							}
 							else
 							{
+								auto boundObj = activationRefrPtr->GetBaseObject();
 								// Player can activate this refr.
 								// Set activation text to the refr's name 
 								// if no text is available.
@@ -13039,51 +13460,266 @@ namespace ALYSLC
 								);
 								if (hasActivationText)
 								{
-									// Special Case:
-									// Pick up notes and books if they are activated 
-									// while not selected by the crosshair,
-									// or if another player is controlling menus.
-									bool isBook = baseObj->IsBook();
-									bool isNote = baseObj->IsNote();
-									bool shouldPickupBookNote = 
-									(
-										(isBook || isNote) &&
-										(
-											activationRefrHandle !=
-											crosshairRefrHandle ||
-											anotherPlayerControllingMenus
-										)
-									);
-									if (shouldPickupBookNote)
+									// Show regular message if performing primary activation action,
+									// or custom message for secondary activation action.
+									// Full credits to po3 (must have 'Use Or Take' installed):
+									// https://github.com/powerof3/UseOrTake
+
+									RE::BSFixedString activationLabel = "Use"sv;
+									bool hasSecondaryActivation = true;
+									if (performSecondaryActivationAction && 
+										ALYSLC::UseOrTakeCompat::g_installed)
 									{
-										if (offLimits)
+										CSimpleIniA ini{ };
+										ini.SetUnicode();
+
+										// Import defaults.
+										SI_Error err = SI_OK;
+										const std::filesystem::path configPath = 
+										(
+											"Data/SKSE/Plugins/po3_UseOrTake.ini"
+										);
+										err = ini.LoadFile(configPath.c_str()); 
+										if (err == SI_OK && boundObj)
+										{
+											switch (*boundObj->formType)
+											{
+											case RE::FormType::Book:
+											case RE::FormType::Note:
+											{
+												activationLabel = "Read"sv;
+												break;
+											}
+											case RE::FormType::Armor:
+											{
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Armors", 
+													"Alternate action label", 
+													activationLabel
+												);
+
+												break;
+											}
+											case RE::FormType::Weapon:
+											{
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Weapons", 
+													"Alternate action label", 
+													activationLabel
+												);
+
+												break;
+											}
+											case RE::FormType::AlchemyItem:
+											{
+												// Credits to po3:
+												// https://github.com/powerof3/UseOrTake/blob/master/src/Action.cpp#L81
+												auto alchemyItem = 
+												(
+													baseObj->As<RE::AlchemyItem>()
+												);
+												if (alchemyItem->IsFood()) 
+												{
+													const auto useSound = 
+													(
+														alchemyItem->data.consumptionSound
+													); 
+													if (useSound && 
+														useSound->GetFormID() == 0xB6435) 
+													{  
+														Settings::ReadStringSetting
+														(
+															ini,
+															"Potions", 
+															"Alternate action label", 
+															activationLabel
+														);
+													}
+													else
+													{
+														Settings::ReadStringSetting
+														(
+															ini,
+															"Potions", 
+															"Alternate action label (Food)", 
+															activationLabel
+														);
+													}
+												}
+												else if (alchemyItem->IsPoison()) 
+												{
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Potions", 
+														"Alternate action label (Poison)", 
+														activationLabel
+													);
+												}
+
+												break;
+											}
+											case RE::FormType::Ingredient:
+											{
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Ingredients", 
+													"Alternate action label", 
+													activationLabel
+												);
+
+												break;
+											}
+											case RE::FormType::Scroll:
+											{
+												// TODO:
+												// Equip scroll support.
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Scrolls", 
+													"Alternate action label", 
+													activationLabel
+												);
+
+												// Use the scroll right away for now.
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Scrolls", 
+													"Alternate secondary action label", 
+													activationLabel
+												);
+
+												break;
+											}
+											case RE::FormType::Light:
+											{
+												auto light = baseObj->As<RE::TESObjectLIGH>();
+												if (light->CanBeCarried())
+												{
+													Settings::ReadStringSetting
+													(
+														ini,
+														"Torches", 
+														"Alternate action label", 
+														activationLabel
+													);
+												}
+
+												break;
+											}
+											case RE::FormType::Ammo:
+											{
+												Settings::ReadStringSetting
+												(
+													ini,
+													"Ammo", 
+													"Alternate action label", 
+													activationLabel
+												);
+
+												break;
+											}
+											default:
+											{
+												hasSecondaryActivation = false;
+												break;
+											}
+											}
+										}
+									}
+									else
+									{
+										hasSecondaryActivation = false;
+									}
+
+									if (hasSecondaryActivation)
+									{
+										if (mustSneak)
 										{
 											activationMessage = fmt::format
 											(
-												"P{}: <font color=\"#FF0000\">Steal</font> {}", 
-												playerID + 1, activationRefrPtr->GetName()
+												"P{}: Sneak to "
+												"<font color=\"#FF0000\">{}</font> {}", 
+												playerID + 1, 
+												activationLabel,
+												activationRefrPtr->GetName()
 											);
 										}
 										else
 										{
 											activationMessage = fmt::format
 											(
-												"P{}: Take {}", 
-												playerID + 1, activationRefrPtr->GetName()
+												"P{}: {} {}", 
+												playerID + 1, 
+												activationLabel,
+												activationRefrPtr->GetName()
 											);
 										}
 									}
 									else
 									{
-										activationMessage = fmt::format
-										(
-											"P{}: {}", playerID + 1, activationString
-										);
+										// Take readable objects as primary activation method.
+										if (boundObj->Is(RE::FormType::Book, RE::FormType::Note))
+										{
+											if (mustSneak)
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: Sneak to "
+													"<font color=\"#FF0000\">take</font> {}", 
+													playerID + 1,
+													activationRefrPtr->GetName()
+												);
+											}
+											else
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: Take {}", 
+													playerID + 1,
+													activationRefrPtr->GetName()
+												);
+											}
+										}
+										else
+										{
+											if (mustSneak)
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: Sneak to {}", 
+													playerID + 1, activationString
+												);
+											}
+											else
+											{
+												activationMessage = fmt::format
+												(
+													"P{}: {}", playerID + 1, activationString
+												);
+											}
+										}
 									}
 								}
 								else
 								{
-									if (offLimits)
+									if (mustSneak)
+									{
+										activationMessage = fmt::format
+										(
+											"P{}: Sneak to <font color=\"#FF0000\">interact</font> "
+											"with {}",
+											playerID + 1, activationRefrPtr->GetName()
+										);
+									}
+									else if (offLimits)
 									{
 										activationMessage = fmt::format
 										(
@@ -13170,7 +13806,7 @@ namespace ALYSLC
 								}
 							}
 
-							canActivateRefr = true;
+							canActivateRefr = !mustSneak;
 						}
 						else
 						{
@@ -13384,7 +14020,6 @@ namespace ALYSLC
 		// by displacing the RS right (farther) and left (closer).
 		const auto& rsData = glob.cdh->GetAnalogStickState(a_p->deviceID, false);
 		if (a_p->pam->IsPerforming(InputAction::kAdjustAimPitch) && 
-			!a_p->pam->adjustAimPitchAlternateMode && 
 			fabsf(rsData.xComp) > fabsf(rsData.yComp))
 		{
 			a_p->tm->grabbedRefrDistanceOffset = std::clamp
@@ -14108,7 +14743,7 @@ namespace ALYSLC
 			bool noTargetAndMovingCrosshair = 
 			(
 				!targetRefrPtr &&
-				a_p->tm->aimMode == AimMode::kFreeAim &&
+				a_p->tm->aimMode == AimMode::kCrosshair &&
 				a_p->mm->reqFaceTarget &&
 				a_p->pam->IsPerforming(InputAction::kMoveCrosshair)
 			);
@@ -14301,8 +14936,7 @@ namespace ALYSLC
 				!a_p->pam->IsPerforming(InputAction::kGrabObject) ||
 				!a_p->mm->reqFaceTarget || 
 				objectPtr == a_p->coopActor ||
-				refrHandle == a_p->tm->crosshairRefrHandle ||
-				refrHandle == a_p->tm->lockOnActivationRefrHandle
+				refrHandle == a_p->tm->crosshairRefrHandle
 			) ||
 			(
 				(a_p->tm->aimMode == AimMode::kTwinStick) && 
@@ -14621,17 +15255,16 @@ namespace ALYSLC
 		bool objectIsPlayer = GlobalCoopData::IsCoopPlayer(objectPtr.get());
 		bool shouldThrow = 
 		(
+			(a_p->mm->reqFaceTarget) && 
 			(
 				(
 					(
-						a_p->tm->aimMode != AimMode::kTwinStick &&
-						a_p->mm->reqFaceTarget && 
+						a_p->tm->aimMode == AimMode::kCrosshair &&
 						refrHandle != a_p->tm->crosshairRefrHandle
 					) ||
 					(
 						a_p->tm->aimMode == AimMode::kTwinStick &&
-						targetActor && 
-						targetRefrHandle != refrHandle
+						targetActor && targetRefrHandle != refrHandle
 					)
 				) &&
 				(
@@ -15168,7 +15801,7 @@ namespace ALYSLC
 		ClearGrabbedRefrs();
 		ClearReleasedRefrs();
 		// No longer grabbing.
-		isAutoGrabbing = isGrabbing = false;
+		initialGrabCheckPerformed = isAutoGrabbing = isGrabbing = false;
 		reqSpecialHitDamageAmount = 0.0f;
 	}
 
@@ -17270,7 +17903,7 @@ namespace ALYSLC
 			}
 		}
 
-		bool canAimAtCrosshairPos = a_p->tm->aimMode == AimMode::kFreeAim;
+		bool canAimAtCrosshairPos = a_p->tm->aimMode == AimMode::kCrosshair;
 		// Firing an aim prediction or aim direction projectile 
 		// while aiming at an actor or facing the target refr.
 		bool predictInterceptPos = 
@@ -17281,7 +17914,7 @@ namespace ALYSLC
 		);
 
 		// REMOVE when done debugging.
-		/*DBG
+		DBG
 		(
 			"Aim correction: {}, selected: {}, linked ref: {}, crosshair refr: {}, "
 			"traj type: {}, set straight traj: {}, predict: {}, target actor: {}.",
@@ -17303,7 +17936,7 @@ namespace ALYSLC
 			Util::HandleIsValid(targetRefrHandle) ? 
 			targetRefrHandle.get()->GetName() : 
 			"NONE"
-		);*/
+		);
 
 		if (predictInterceptPos) 
 		{

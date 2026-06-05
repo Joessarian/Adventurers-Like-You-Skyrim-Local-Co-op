@@ -21,6 +21,18 @@ namespace ALYSLC
 			a_p->playerID < ALYSLC_MAX_PLAYER_COUNT)
 		{
 			p = a_p;
+			// Init once.
+			if (!glob.allPlayersInit)
+			{
+				// Initially face the target if in the 'Crosshair' aim mode 
+				// and electing to do so by default.
+				reqFaceTarget = 
+				(
+					Settings::vuDefaultAimMode[p->playerID] == !AimMode::kCrosshair &&
+					Settings::vbFaceCrosshairPositionByDefault[p->playerID]
+				);
+			}
+
 			DBG
 			(
 				"Constructor for {} (0x{:X}), PID, DID: {}, {}, shared ptr count: {}.",
@@ -70,13 +82,6 @@ namespace ALYSLC
 			Util::NativeFunctions::ClearKeepOffsetFromActor(mountPtr.get());
 			Util::NativeFunctions::SetDontMove(mountPtr.get(), true);
 			Util::NativeFunctions::SetDontMove(mountPtr.get(), false);
-		}
-
-		if (coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
-		{			
-			Util::NativeFunctions::ClearKeepOffsetFromActor(coopActor.get());
-			Util::NativeFunctions::SetDontMove(coopActor.get(), true);
-			Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 		}
 
 		// Reset pitch angle, speedmult.
@@ -177,7 +182,8 @@ namespace ALYSLC
 		Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 
 		// If Precision is installed, make sure Precision is enabled on this actor.
-		if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
+		auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; 
+		if (api && !api->IsActorActive(coopActor->GetHandle()))
 		{
 			api->ToggleDisableActor(coopActor->GetHandle(), false);
 		}
@@ -259,7 +265,7 @@ namespace ALYSLC
 		playerTorsoAxisOfRotation = RE::NiPoint3(0.0f, 0.0f, 0.0f);
 		playerTorsoPosition = Util::GetTorsoPosition(coopActor.get());
 		// Externally set flags.
-		reqFaceTarget = reqResetAimAndBody = reqStartJump = false;
+		reqResetAimAndBody = reqStartJump = false;
 		// Node orientation manager.
 		nom = std::make_unique<NodeOrientationManager>();
 		// Booleans.
@@ -566,7 +572,7 @@ namespace ALYSLC
 			// Turn to face the crosshair position before dodging
 			// to make sure the dodge direction is determined by to the angle difference
 			// between the player and the crosshair position.
-			if (reqFaceTarget && p->tm->aimMode != AimMode::kTwinStick)
+			if (reqFaceTarget && p->tm->aimMode == AimMode::kCrosshair)
 			{
 				coopActor->data.angle.z = Util::NormalizeAng0To2Pi
 				(
@@ -2063,7 +2069,7 @@ namespace ALYSLC
 					currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 				}
 			}
-			else if (p->tm->aimMode != AimMode::kTwinStick)
+			else if (p->tm->aimMode == AimMode::kCrosshair)
 			{
 				currentProc->SetHeadtrackTarget(coopActor.get(), p->tm->crosshairWorldPos);
 			}
@@ -2265,14 +2271,17 @@ namespace ALYSLC
 			{
 				(
 					reqFaceTarget && 
-					p->coopActor->IsWeaponDrawn() &&
 					!p->isRevivingPlayer &&
-					p->tm->aimMode != AimMode::kTwinStick &&
+					p->tm->aimMode == AimMode::kCrosshair &&
 					!isTKDodging && 
 					!isTDMDodging && 
 					!coopActor->IsOnMount() && 
 					!isSubmerged && 
 					!p->pam->isSprinting
+				) && 
+				(
+					(p->coopActor->IsWeaponDrawn()) || 
+					(glob.cam->IsRunning() && glob.cam->focalPlayerPID == playerID)
 				) && 
 				(
 					!coopActor->IsSneaking() || 
@@ -2313,18 +2322,9 @@ namespace ALYSLC
 						(
 							(p->pam->TurnToTargetForCombatAction()) ||
 							(
-								(p->tm->aimMode == AimMode::kTwinStick) && 
-								(
-									(
-										targetActorPtr && 
-										reqFaceTarget &&
-										p->tm->choseAimLockOnTarget
-									) ||
-									(
-										p->tm->rmm->isGrabbing &&
-										p->pam->IsPerforming(InputAction::kGrabObject)
-									)
-								)
+								p->tm->aimMode == AimMode::kTwinStick && 
+								reqFaceTarget &&
+								coopActor->IsWeaponDrawn()
 							)
 						) &&
 						(
@@ -2444,22 +2444,21 @@ namespace ALYSLC
 					playerTargetYaw = yawToTarget;
 				}
 			}
-			else if (p->tm->aimMode == AimMode::kTwinStick &&
-					 reqFaceTarget &&
-					 !coopActor->IsOnMount() && 
-					 !p->pam->IsRotatingArms() && 
-					 !p->pam->IsPerforming(InputAction::kSprint) &&
-					 !p->tm->isSMORFing &&
-					 !p->tm->isMARFing)
-			{
-				// Turn to face the right stick's direction when only moving the RS.
-				// Otherwise, maintain the current rotation.
-				if (p->pam->IsPerforming(InputAction::kMoveCrosshair))
-				{
-					const auto& moveZAngle = p->analogStickParams[!AnalogStickParams::kRSCamRelAng];
-					playerTargetYaw = moveZAngle;
-				}
-			}
+			//else if (p->tm->aimMode == AimMode::kTwinStick &&
+			//		 !reqFaceTarget &&
+			//		 !coopActor->IsOnMount() && 
+			//		 !p->pam->IsRotatingArms() && 
+			//		 !p->pam->IsPerforming(InputAction::kSprint) &&
+			//		 p->pam->AllInputsPressedForAction(InputAction::kResetAim) &&
+			//		 p->pam->AllInputsPressedForAction(InputAction::kRotateCam) &&
+			//		 !p->tm->isSMORFing &&
+			//		 !p->tm->isMARFing)
+			//{
+			//	// Turn to face the right stick's direction when not facing a target
+			//	// and holding the 'Snap To Target' bind.
+			//	const auto& moveZAngle = p->analogStickParams[!AnalogStickParams::kRSCamRelAng];
+			//	playerTargetYaw = moveZAngle;
+			//}
 			else if (p->lsMoved)
 			{
 				// Turn to face the player movement direction.
@@ -2555,12 +2554,13 @@ namespace ALYSLC
 		};
 
 		// REMOVE when done debugging.
-		/*if (!p->isPlayer1)
+		/*if (p->isPlayer1)
 		{
 			DBG
 			(
 				"{}: Motion driven: {}, animation driven: {}, synced: {}, furniture: {}, idle: {}. "
-				"should start/stop moving: {}, {}, LS moved: {}, "
+				"should start/stop moving: {}, {}, should curtail: {}, is reviving: {}, "
+				"don't move set: {}, LS moved: {}, "
 				"interaction package running: {}, package done: {}, low proc flags: 0b{:B}, "
 				"current package: {} (0x{:X}), movement blocked: {}.",
 				coopActor->GetName(),
@@ -2577,6 +2577,9 @@ namespace ALYSLC
 				"NONE",
 				shouldStartMoving,
 				shouldStopMoving,
+				shouldCurtailMomentum,
+				p->isRevivingPlayer,
+				dontMoveSet,
 				p->lsMoved,
 				interactionPackageRunning,
 				coopActor->currentProcess->lowProcessFlags.all
@@ -2752,6 +2755,7 @@ namespace ALYSLC
 								0,
 								baseObj,
 								1,
+								false,
 								false
 							);
 						}
@@ -3073,13 +3077,29 @@ namespace ALYSLC
 				)
 			);
 
-			/*if (p->isPlayer1 && ALYSLC::AlternateConversationCameraCompat::g_installed)
+			// P1 will rotate automatically towards/away from the dialogue NPC 
+			// when Alternate Conversation Camera is active.
+			// Set rotation to the last LS angle to prevent this.
+			auto ui = RE::UI::GetSingleton();
+			if (p->isPlayer1 &&
+				ALYSLC::AlternateConversationCameraCompat::g_installed &&
+				ui &&
+				ui->IsMenuOpen(RE::DialogueMenu::MENU_NAME) &&
+				glob.menuPID == 0 && 
+				!p->lsMoved)
 			{
+				/*DBG
+				(
+					"P1 angle: {}, yaw offset: {}, LS angle: {}.",
+					TO_DEGREES * movementActorPtr->data.angle.z,
+					TO_DEGREES * rawYawOffset,
+					TO_DEGREES * p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+				);*/
 				movementActorPtr->SetHeading
 				(
 					p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
 				);
-			}*/
+			}
 		}
 		else
 		{
@@ -3443,7 +3463,6 @@ namespace ALYSLC
 		bool shouldAdjustAimPitch = 
 		(
 			p->pam->IsPerforming(InputAction::kAdjustAimPitch) &&
-			!p->pam->adjustAimPitchAlternateMode && 
 			fabsf(rsY) > fabsf(rsX)
 		);
 		if (shouldAdjustAimPitch) 
@@ -4024,7 +4043,7 @@ namespace ALYSLC
 		{
 			return;
 		}
-
+		
 		// NOTE:
 		// Unused for now unless the new method for enabling discovery proves to be broken.
 		// Check if P1 should have their AI driven flag cleared, 
@@ -4128,14 +4147,6 @@ namespace ALYSLC
 		bool isRagdolled = coopActor->IsInRagdollState();
 		if (isRagdolled && !playerRagdollTriggered)
 		{
-			if (Settings::bApplyTemporaryRagdollWarpWorkaround)
-			{
-				if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
-				{
-					api->ToggleDisableActor(coopActor->GetHandle(), true);
-				}
-			}
-			
 			coopActor->PotentiallyFixRagdollState();
 			playerRagdollTriggered = true;
 		}
@@ -4143,15 +4154,6 @@ namespace ALYSLC
 				 playerRagdollTriggered && 
 				 coopActor->GetKnockState() == RE::KNOCK_STATE_ENUM::kNormal)
 		{
-			
-			if (Settings::bApplyTemporaryRagdollWarpWorkaround)
-			{
-				if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
-				{
-					api->ToggleDisableActor(coopActor->GetHandle(), false);
-				}
-			}
-
 			coopActor->PotentiallyFixRagdollState();
 			playerRagdollTriggered = false;
 		}
@@ -4429,8 +4431,8 @@ namespace ALYSLC
 			{
 				(!p1ExtPackageRunning) && 
 				(
+					(!p->isRevivingPlayer && isAnimDriven) ||
 					p->pam->sendingP1MotionDrivenEvents ||
-					isAnimDriven ||
 					inFurnitureIdle ||
 					isMounted ||
 					isMining ||
@@ -4452,6 +4454,7 @@ namespace ALYSLC
 					"REMOVE AI driven.",
 					glob.player1Actor->GetName(), 
 					isAnimDriven, 
+					p->isRevivingPlayer,
 					inFurnitureIdle,
 					isMounted, 
 					isRagdolled, 
@@ -4626,7 +4629,7 @@ namespace ALYSLC
 			return;
 		}
 
-		const auto& data = iter->second;
+		auto& data = iter->second;
 		// Set default rotation.
 		data->defaultRotation = a_nodePtr->local.rotate;
 		// Set new local rotations before the UpdateDownwardPass() call,
@@ -8845,7 +8848,7 @@ namespace ALYSLC
 						float yawOffset = 0.0f;
 						// Must be targeting something with the crosshair
 						// or have an aim correction target if the crosshair is disabled.
-						const bool crosshairActive = a_p->tm->aimMode != AimMode::kTwinStick;
+						const bool crosshairActive = a_p->tm->aimMode == AimMode::kCrosshair;
 						const auto targetActorHandle = a_p->tm->GetRangedTargetActor();
 						const auto targetActorPtr = Util::GetActorPtrFromHandle
 						(

@@ -1020,13 +1020,15 @@ namespace ALYSLC
 	// Aim mode for aiming at objects and NPCs.
 	enum class AimMode : std::uint8_t
 	{
-		kFreeAim,		// Move the crosshair freely with the right stick to select objects/NPCs.
-		kLockOn,		// Move the right stick towards NPCs to lock on the crosshair
-						// to their center position. Cycle when the stick is held in a direction.
-		kTwinStick,		// Crosshair is removed. Use the right stick to rotate the player
+		kCrosshair,		// Move the right stick towards NPCs to lock on the crosshair
+						// to their center position. 
+						// Jump from target to target when the stick is held in a direction.
+						// 'Face Target' + 'RS Movement' moves the crosshair freely 
+						// with the right stick to select objects/NPCs.
+		kTwinStick,		// Crosshair is removed. Use the right stick to select an NPC temporarily
 						// and the left stick to move the player. 
-						// Rely on aim correction and two additional binds 
-						// to select aim and activation targets.
+						// 'Face Target' + 'RS Movement' selects an NPC and maintains the selection
+						// until the player moves the right stick on its own from rest again.
 
 		kTotal
 	};
@@ -1083,6 +1085,15 @@ namespace ALYSLC
 		kTargetSelection,		// Info about a selected actor or object.
 
 		kTotal
+	};
+
+	// TODO: Style of crosshair to draw.
+	enum class CrosshairStyle : std::uint8_t
+	{
+		kRetro,
+		kSkyrimStyle,
+		kSkyrimStyleInverted,
+		kAimCorrection
 	};
 
 	// Credits to Ryan-rsm-McKenzie and his quick loot repo for

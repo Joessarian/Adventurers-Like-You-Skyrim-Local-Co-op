@@ -707,6 +707,13 @@ namespace ALYSLC
 		{
 			true, true, true, true 
 		};
+		// Should the player face the crosshair position by default when starting in
+		// or switching to the 'Crosshair' aim mode? 
+		// Player will only face the crosshair position when weapons are drawn.
+		static inline std::vector<bool> vbFaceCrosshairPositionByDefault = 
+		{
+			false, false, false, false
+		};
 		// Is friendly fire enabled towards actors friendly to the party ?
 		// (followers, other players, summons, etc.)
 		static inline std::vector<bool> vbFriendlyFire = 
@@ -746,23 +753,12 @@ namespace ALYSLC
 			PI, PI, PI, PI 
 		};
 		// Aim mode assigned when starting co-op after summoning.
-		// 1. kFreeAim: Right stick moves the crosshair. 
-		// 'Pick Target' selects a nearby living NPC target in the player's facing direction
-		// on press.
-		// 2. kLockOn: Right stick snaps the crosshair to living NPC targets 
-		// in the direction the stick is moved.
-		// 'Pick Target' selects an interactable object/NPC in activation range.
-		// 3. kTwinStick: Right stick selects a living NPC target when the player attacks.
-		// If facing the target, rotate the player with the right stick.
-		// Move the right stick + press 'Pick Target' to keep the current target selected
-		// or cycle through targets in the direction of movement 
-		// until the right stick is moved again from rest.
 		static inline std::vector<uint32_t> vuDefaultAimMode = 
 		{
-			!ALYSLC::AimMode::kFreeAim, 
-			!ALYSLC::AimMode::kFreeAim, 
-			!ALYSLC::AimMode::kFreeAim, 
-			!ALYSLC::AimMode::kFreeAim
+			!ALYSLC::AimMode::kCrosshair, 
+			!ALYSLC::AimMode::kCrosshair, 
+			!ALYSLC::AimMode::kCrosshair, 
+			!ALYSLC::AimMode::kCrosshair
 		}; 
 		// Projectile trajectory adjustment types:
 		// kAimDirection: No projectile trajectory adjustment. 
@@ -1100,9 +1096,12 @@ namespace ALYSLC
 		//------------
 		//[Targeting]:
 		//------------
+		// Use the aim correction 'ring' indicator for targeting interactible objects as well.
+		// No more pointy arrows.
+		static inline const bool bRingIndicatorForActivation = false;
 		// Max distance in game units from the player at which to search for 
 		// a non-hostile aim correction target.
-		static inline const float fMaxNonHostileAimCorrectionTargetDistance = 2048.0f;
+		static inline const float fMaxNonHostileAimCorrectionTargetDistance = 14481.0f;
 		// Max time to continue adjusting the path of managed projectiles.
 		static inline const float fMaxProjAirborneSecsToTarget = 60.0f;
 		// Max time to continue drawing the trajectory of managed projectiles.

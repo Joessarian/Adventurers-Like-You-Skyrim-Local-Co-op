@@ -1290,6 +1290,10 @@ State SummonState
         Game.SetGameSettingFloat("fEvaluatePackageTimer", 1.000000)
         ; Default 3.000000 (ms?)
         Game.SetGameSettingFloat("fEvaluateProcedureTimer", 1.000000)
+        ; Default 10.000000
+        ; Full credits go to Corsafire1 for 'No Silly Physics Damage':
+        ; https://www.nexusmods.com/skyrimspecialedition/mods/36132
+        Game.SetGameSettingFloat("fPhysicsDamage1Mass", 1000000)
         
         ; Update serialized companion player FIDs/character IDs before showing the summoning menu.
         ALYSLC.UpdateAllCompanionPlayerSerializationIDs()

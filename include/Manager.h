@@ -232,30 +232,51 @@ namespace ALYSLC
 		// All member functions are run on detached threads
 		// to avoid deadlocking one of the game's main threads when waiting on a condition.
 		TaskRunner() :
+			name("DEF"sv),
 			queue(),
 			runnerThread([this](std::stop_token a_stoken) { RunTasks(a_stoken); })
 		{ 
 			runnerThread.detach();
+			DBG("{}: TASK RUNNER CTOR", name);
+		}
+
+		TaskRunner(const RE::BSFixedString& a_name) :
+			name(a_name),
+			queue(),
+			runnerThread([this](std::stop_token a_stoken) { RunTasks(a_stoken); })
+		{ 
+			runnerThread.detach();
+			DBG("{}: TASK RUNNER CTOR", name);
 		}
 
 		~TaskRunner() 
 		{
+			DBG("{}: TASK RUNNER DTOR", name);
 			runnerThread.request_stop();
 		}
 
 		// Add a custom task to the queue.
-		inline void AddTask(std::function<void()> a_task) 
+		inline void AddTask
+		(
+			RE::BSFixedString a_sourceName, 
+			RE::BSFixedString a_funcName, 
+			std::function<void()> a_task
+		) 
 		{
-			std::jthread tempEnqueuerThread([this, a_task]() 
+			std::jthread tempEnqueuerThread([this, a_sourceName, a_funcName, a_task]() 
 			{
 				// Continue trying to enqueue task for, at most, 5 seconds.
 				SteadyClock::time_point startTP = SteadyClock::now();
 				while (Util::GetElapsedSeconds(startTP, true) < 5.0f)
 				{
+					DBG("{}: Getting lock. (0x{:X})", 
+						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex, std::try_to_lock);
 					if (lock)
-					{	queue.emplace(a_task);
-						queueCV.notify_all();
+					{	
+						DBG("{}: Adding task from {}: {}.", name, a_sourceName, a_funcName);
+						queue.emplace(a_task);
+						queueCV.notify_one();
 						break;
 					}
 					else
@@ -274,12 +295,12 @@ namespace ALYSLC
 
 		// Condition variable waited upon by the task runner thread.
 		std::condition_variable queueCV;
-		// Worker thread running tasks.
-		std::jthread runnerThread;
 		// Mutex for enqueueing new tasks.
 		std::mutex queueMutex;
 		// The task queue.
 		std::queue<std::function<void()>> queue;
+		// Worker thread running tasks.
+		std::jthread runnerThread;
 
 	private:
 		// Clear out all enqueued tasks.
@@ -287,11 +308,11 @@ namespace ALYSLC
 		inline void ClearTasks()
 		{
 			{
-				DBG("Getting lock. (0x{:X})", 
-					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				DBG("{}: Getting lock. (0x{:X})", 
+					name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				std::unique_lock<std::mutex> lock(queueMutex);
-				DBG("Lock obtained. (0x{:X})", 
-					std::hash<std::jthread::id>()(std::this_thread::get_id()));
+				DBG("{}: Lock obtained. (0x{:X})", 
+					name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 				while (!queue.empty())
 				{
 					queue.pop();
@@ -305,22 +326,24 @@ namespace ALYSLC
 			while (!a_stoken.stop_requested())
 			{
 				{
-					DBG("Getting lock. (0x{:X})", 
-						std::hash<std::jthread::id>()(std::this_thread::get_id()));
+					DBG("{}: Getting lock. (0x{:X})", 
+						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					std::unique_lock<std::mutex> lock(queueMutex);
+					DBG("{}: Lock obtained. (0x{:X})", 
+						name, std::hash<std::jthread::id>()(std::this_thread::get_id()));
 					queueCV.wait
 					(
 						lock,
 						[&]() 
 						{
-							DBG("Waiting for a task.");
+							DBG("{}: Waiting for a task.", name);
 							return (queue.size() > 0 || a_stoken.stop_requested());
 						}
 					);
 
 					while (queue.size() > 0)
 					{
-						DBG("Got a task.");
+						DBG("{}: Got a task.", name);
 						queue.front()();
 						queue.pop();
 					}
@@ -328,8 +351,11 @@ namespace ALYSLC
 			}
 
 			// Clear out all remaining tasks when done.
-			DBG("Requested to stop runner thread.");
+			DBG("{}: Requested to stop runner thread.", name);
 			ClearTasks();
 		}
+
+		// For debugging.
+		RE::BSFixedString name;
 	};
 };

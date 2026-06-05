@@ -32,8 +32,6 @@ namespace ALYSLC
 		CoopDisarmEventHandler::Register();
 		// Register equip event handler.
 		CoopEquipEventHandler::Register();
-		// Register form delete event handler.
-		CoopFormDeleteEventHandler::Register();
 		// Register hit event handler.
 		CoopHitEventHandler::Register();
 		// Register load game event handler.
@@ -44,6 +42,8 @@ namespace ALYSLC
 		CoopPositionPlayerEventHandler::Register();
 
 		// For debugging only as of now:
+		// Register form delete event handler.
+		//CoopFormDeleteEventHandler::Register();
 		// Register actor kill event handler.
 		//CoopActorKillEventHandler::Register();
 		// Register combat event handler.
@@ -534,571 +534,6 @@ namespace ALYSLC
 		}
 		
 		return EventResult::kContinue;
-
-		// NOTE:
-		// Saving the old code for now in case I have to revert to the old equip system.
-
-		/*
-		// Skip processing when added from a companion player to themselves.
-		// We want these items to remain in the player's inventory because they must be equipped.
-		if (fromCoopPlayerIndex == toCoopPlayerIndex)
-		{
-			return EventResult::kContinue;
-		}
-
-		// Added to P1 or added to co-op player.
-		// Prioritize companion player loot through menus 
-		// before performing Enderal-specific item transfers.
-		const auto ui = RE::UI::GetSingleton(); 
-		// A companion player controlling menus
-		// and an item was transferred to a player from a non-coop entity.
-		if (ui && glob.mim->managerMenuPID != -1 && !fromCoopEntity && toCoopPlayer)
-		{
-			bool fromCraftingMenu = ui->IsMenuOpen(RE::CraftingMenu::MENU_NAME);
-			bool fromContainerMenu = ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME);
-			bool fromLootMenu = ui->IsMenuOpen(GlobalCoopData::LOOT_MENU);
-			// Should move the item from the container to the player.
-			bool transferFromContainer = false;
-			if (fromCraftingMenu || fromContainerMenu || fromLootMenu)
-			{
-				if (fromContainerMenu)
-				{
-					auto mode = ui->GetMenu<RE::ContainerMenu>()->GetContainerMode();
-					// Must be looting, pickpocketing, or stealing.
-					transferFromContainer = 
-					{ 
-						mode == RE::ContainerMenu::ContainerMode::kLoot || 
-						mode == RE::ContainerMenu::ContainerMode::kPickpocket ||
-						mode == RE::ContainerMenu::ContainerMode::kSteal 
-					};
-				}
-				else
-				{
-					// Always transfer from Crafting or Loot menus.
-					transferFromContainer = true;
-				}
-			}
-
-			// Move from P1 to the companion player 
-			// if crafting, looting, stealing, or pickpocketing,
-			// or move party-wide items to P1 if a companion player received the item.
-			if (transferFromContainer)
-			{
-				auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
-				auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-				// Allow movement of items from chest to player inventory.
-				if (fromChestIndex == toCoopPlayerIndex)
-				{
-					const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
-					DBG
-					(
-						"Transferring {} from {}'s inventory chest to their inventory.",
-						baseObj ? baseObj->GetName() : "NONE",
-						p->coopActor->GetName()
-					);
-					return EventResult::kContinue;
-				}
-				else if (toP1)
-				{
-					// Add to companion player controlling menus if not a party-wide item.
-					const auto& p = glob.coopPlayers[glob.mim->managerMenuPID];
-					RE::TESBoundObject* boundObj = 
-					(
-						baseObj ? 
-						baseObj->As<RE::TESBoundObject>() :
-						refr ? 
-						refr->GetBaseObject() :
-						nullptr
-					);
-					// Not a party-wide item, so it is transferrable.
-					bool shouldSendToCompanionPlayer = !Util::IsPartyWideItem
-					(
-						baseObj ? 
-						baseObj :
-						refr.get()
-					);
-					// Check if a quest item that is not a party wide item,
-					// and if so, keep the item in P1's inventory.
-					if (shouldSendToCompanionPlayer && boundObj)
-					{
-						// If the refr is available, check the its extra data first.
-						if (refr)
-						{
-							shouldSendToCompanionPlayer = 
-							(
-								!refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) &&
-								!refr->extraList.HasType(RE::ExtraDataType::kFromAlias)	
-							);
-						}
-
-						// Check the inventory entry data next.
-						if (shouldSendToCompanionPlayer)
-						{							
-							auto inventory = p1->GetInventory();
-							const auto iter = inventory.find(boundObj); 
-							if (iter != inventory.end())
-							{
-								const auto& invEntryData = iter->second.second;
-								if (invEntryData && invEntryData->IsQuestObject())
-								{
-									shouldSendToCompanionPlayer = false;
-								}
-							}
-						}
-
-						if (!shouldSendToCompanionPlayer)
-						{
-							DBG
-							(
-								"NOT transfering quest item {} (x{}) to {}.",
-								boundObj->GetName(),
-								a_containerChangedEvent->itemCount,
-								p->coopActor->GetName()
-							);
-						}
-					}
-					else
-					{
-						DBG
-						(
-							"NOT transfering party-wide item {} (x{}) to {}.",
-							boundObj ? boundObj->GetName() : "INVALID",
-							a_containerChangedEvent->itemCount,
-							p->coopActor->GetName()
-						);
-					}
-
-					// UNSOLVED REASON FOR BUG:
-					// Causing Papyrus PlayerRef script properties to hold a non-P1 reference
-					// after removing the item to the inventory chest while inventory changes
-					// are swapped.
-					if (shouldSendToCompanionPlayer && boundObj)
-					{
-						const int32_t count = a_containerChangedEvent->itemCount;
-						p->taskRunner->AddTask
-						(
-							[p, p1, boundObj, count]()
-							{
-								Util::AddSyncedTask
-								(
-									[p, p1, boundObj, count]()
-									{
-										DBG
-										(
-											"Removing item {} (x{}) and giving to {}.", 
-											boundObj->GetName(), 
-											count,
-											p->coopActor->GetName()
-										);
-										p1->RemoveItem
-										(
-											boundObj, 
-											count,
-											RE::ITEM_REMOVE_REASON::kRemove, 
-											nullptr, 
-											p->em->inventoryChest.get()
-										);
-									}
-								);
-							}
-						);
-					}
-
-					return EventResult::kContinue;
-				}
-				else if (toCoopPlayer && toCoopPlayerIndex != -1)
-				{							
-					// Give any looted quest items or keys/regular books/notes to P1, 
-					// since these items can be tough to find 
-					// after being (un)intentionally looted by companion players.
-					const auto& p = glob.coopPlayers[toCoopPlayerIndex];
-					RE::TESBoundObject* boundObj = 
-					(
-						baseObj ? 
-						baseObj->As<RE::TESBoundObject>() :
-						refr ? 
-						refr->GetBaseObject() :
-						nullptr
-					);
-					bool shouldSendToP1 = Util::IsPartyWideItem(baseObj);
-					if (!shouldSendToP1 && boundObj)
-					{
-						if (refr)
-						{
-							shouldSendToP1 = 
-							(
-								refr->extraList.HasType(RE::ExtraDataType::kAliasInstanceArray) ||
-								refr->extraList.HasType(RE::ExtraDataType::kFromAlias)
-							);
-						}
-
-						if (!shouldSendToP1)
-						{
-							auto inventory = p->coopActor->GetInventory();
-							const auto iter = inventory.find(boundObj); 
-							if (iter != inventory.end())
-							{
-								const auto& invEntryData = iter->second.second;
-								if (invEntryData && invEntryData->IsQuestObject())
-								{
-									shouldSendToP1 = true;
-								}
-							}
-						}
-
-						if (!shouldSendToP1)
-						{
-							DBG
-							(
-								"NOT moving item {} (x{}) from {} to P1.",
-								boundObj->GetName(),
-								a_containerChangedEvent->itemCount,
-								p->coopActor->GetName()
-							);
-						}
-					}
-						
-					// Skip transfer unless it is a party wide/quest item.
-					if (shouldSendToP1 && boundObj)
-					{
-						const int32_t count = a_containerChangedEvent->itemCount;
-						p->taskRunner->AddTask
-						(
-							[p, p1, toChestIndex, boundObj, count]()
-							{
-								Util::AddSyncedTask
-								(
-									[p, p1, toChestIndex, boundObj, count]()
-									{
-										DBG
-										(
-											"Moving item {} (x{}) from {} to P1.",
-											boundObj->GetName(),
-											count,
-											p->coopActor->GetName()
-										);
-										if (toChestIndex != -1)
-										{
-											p->em->inventoryChest->RemoveItem
-											(
-												boundObj, 
-												count, 
-												RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-												nullptr, 
-												p1
-											);
-										}
-										else
-										{
-											p->coopActor->RemoveItem
-											(
-												boundObj, 
-												count, 
-												RE::ITEM_REMOVE_REASON::kStoreInTeammate, 
-												nullptr, 
-												p1
-											);
-										}
-										
-									}
-								);
-							}
-						);
-					}
-
-					return EventResult::kContinue;
-				}
-			}
-		}
-
-		bool fromCoopCompanionPlayer = fromCoopPlayerIndex != -1 && !fromP1;
-		// A co-op companion player is attempting to gift items 
-		// to another co-op companion player by way of the GiftMenu through P1. 
-		// Transfer any items added to P1 to the giftee companion player instead.
-		bool giftMenuOpen = ui && ui->IsMenuOpen(RE::GiftMenu::MENU_NAME);
-		if (giftMenuOpen && 
-			fromCoopCompanionPlayer && 
-			toP1 && 
-			glob.mim->IsRunning() && 
-			glob.mim->managerMenuPID != -1 && 
-			Util::HandleIsValid(glob.mim->gifteePlayerHandle)) 
-		{
-			const auto& gifterP = glob.coopPlayers[fromCoopPlayerIndex];
-			auto gifteePtr = Util::GetActorPtrFromHandle(glob.mim->gifteePlayerHandle);
-			if (!gifteePtr) 
-			{
-				return EventResult::kContinue;
-			}
-
-			auto baseObj = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
-			auto refr = Util::GetRefrPtrFromHandle(a_containerChangedEvent->reference);
-			RE::TESBoundObject* boundObj = nullptr;
-			if (refr)
-			{
-				boundObj = refr->GetBaseObject();
-			}
-
-			if (baseObj && !boundObj)
-			{
-				boundObj = baseObj->As<RE::TESBoundObject>();
-			}
-
-			if (boundObj) 
-			{
-				const int32_t count = a_containerChangedEvent->itemCount;
-				const auto& gifteeP = glob.coopPlayers
-				[
-					GlobalCoopData::GetCoopPlayerIndex(gifteePtr)
-				];
-				gifterP->taskRunner->AddTask
-				(
-					[gifterP, gifteeP, p1, boundObj, count]()
-					{
-						Util::AddSyncedTask
-						(
-							[gifterP, gifteeP, p1, boundObj, count]()
-							{
-								DBG
-								(
-									"Removing {} (x{}) from P1 to {} (from gifting player {}).",
-									boundObj->GetName(), 
-									count,
-									gifteeP->coopActor->GetName(),
-									gifterP->coopActor->GetName()
-								);
-								p1->RemoveItem
-								(
-									boundObj, 
-									count,
-									RE::ITEM_REMOVE_REASON::kRemove, 
-									nullptr, 
-									gifteeP->em->inventoryChest.get()
-								);
-							}
-						);
-					}
-				);
-			}
-
-			return EventResult::kContinue;
-		}
-
-		bool barterMenuOpen = ui && ui->IsMenuOpen(RE::BarterMenu::MENU_NAME);
-		// Enderal-specific gold scaling and skillbook loot.
-		// To a player but not from another player, and not from a transaction (Barter Menu open).
-		if (ALYSLC::EnderalCompat::g_installed && 
-			!fromCoopEntity && 
-			toCoopPlayer && 
-			!barterMenuOpen)
-		{
-			auto form = RE::TESForm::LookupByID(a_containerChangedEvent->baseObj);
-			if (form && form->IsGold())
-			{
-				// Scale added gold with party size.
-				// NOTE: 
-				// Gold always goes to P1, 
-				// as P1's gold acts as a shared pool for all players.
-				if (Settings::fAdditionalGoldPerPlayerMult > 0.0f)
-				{
-					int32_t additionalGold = 
-					(
-						a_containerChangedEvent->itemCount * 
-						(glob.activePlayers - 1) * 
-						Settings::fAdditionalGoldPerPlayerMult
-					);
-					const auto& toP = glob.coopPlayers[toCoopPlayerIndex];
-					const auto gold = form->As<RE::TESObjectMISC>();
-					toP->taskRunner->AddTask
-					(
-						[p1, gold, additionalGold]()
-						{
-							Util::AddSyncedTask
-							(
-								[p1, gold, additionalGold]()
-								{
-									p1->AddObjectToContainer
-									(
-										gold, 
-										nullptr, 
-										additionalGold, 
-										nullptr
-									);
-								}
-							);
-						}
-					);
-
-					bool inMenu = !Util::MenusOnlyAlwaysOpen();
-					// If not in a menu and activating all gold in activation range, 
-					// each individual gold piece added triggers a container changed event, 
-					// so the total amount looted is unknown until all events fire
-					// and we cannot print a single notification with that total here.
-					if (inMenu) 
-					{
-						RE::DebugNotification
-						(
-							fmt::format
-							(
-								"Received an additional {} gold from party size scaling.", 
-								additionalGold
-							).c_str()
-						);
-					}
-					else
-					{
-						RE::DebugNotification
-						(
-							fmt::format
-							(
-								"Received additional gold from party size scaling (x{}).", 
-								glob.activePlayers * Settings::fAdditionalGoldPerPlayerMult
-							).c_str()
-						);
-					}
-
-					return EventResult::kContinue;
-				}
-			}
-			else 
-			{
-				if (!Settings::bEveryoneGetsALootedEnderalSkillbook)
-				{
-					return EventResult::kContinue;
-				}
-
-				bool isEnderalSkillbook = 
-				(
-					GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.contains
-					(
-						a_containerChangedEvent->baseObj
-					)
-				);
-				if (!isEnderalSkillbook)
-				{
-					return EventResult::kContinue;
-				}
-
-				// Give each active player, 
-				// aside from the player receiving the current skillbook, 
-				// a random skillbook of the same tier.
-				const auto& tierAndSkill = 
-				(
-					GlobalCoopData::ENDERAL_SKILLBOOK_FIDS_TO_TIER_SKILL_MAP.at
-					(
-						a_containerChangedEvent->baseObj
-					)
-				);
-				const auto& tier = tierAndSkill.first;
-				const auto& skill = tierAndSkill.second;
-				std::mt19937 generator{ };
-				generator.seed(SteadyClock::now().time_since_epoch().count());
-				
-				const auto& toP = glob.coopPlayers[toCoopPlayerIndex];
-				for (const auto& p : glob.coopPlayers)
-				{
-					// Not the looting player.
-					if (p->isActive && toCoopPlayerIndex != p->playerID)
-					{
-						// To each player, add the same number as the number looted.
-						uint32_t numAdded = 0;
-						while (numAdded < a_containerChangedEvent->itemCount)
-						{
-							// Random skillbook index.
-							const auto totalSkillBooksCount = 
-							(
-								GlobalCoopData::ENDERAL_SKILL_TO_SKILLBOOK_INDEX_MAP.size()
-							);
-							float rand = 
-							(
-								static_cast<uint8_t>
-								(
-									totalSkillBooksCount * 
-									(generator() / (float)((std::mt19937::max)()))
-								)
-							);
-							const auto newSkillbookFID = 
-							(
-								GlobalCoopData::ENDERAL_TIERED_SKILLBOOKS_MAP.at(tier)[rand]
-							);
-							auto newSkillbook = RE::TESForm::LookupByID<RE::AlchemyItem>
-							(
-								newSkillbookFID
-							);
-							if (newSkillbook)
-							{
-								p->taskRunner->AddTask
-								(
-									[p, p1, newSkillbook]()
-									{
-										Util::AddSyncedTask
-										(
-											[p, p1, newSkillbook]()
-											{
-												p->em->inventoryChest->AddObjectToContainer
-												(
-													newSkillbook,
-													nullptr, 
-													1, 
-													nullptr
-												);
-											}
-										);
-									}
-								);
-								// Show in TrueHUD recent loot widget 
-								// by adding and removing the skillbook from P1.
-								if (ALYSLC::TrueHUDCompat::g_installed && 
-									toP->coopActor.get() == p1)
-								{
-									toP->taskRunner->AddTask
-									(
-										[p1, newSkillbook]()
-										{
-											Util::AddSyncedTask
-											(
-												[p1, newSkillbook]()
-												{
-													p1->AddObjectToContainer
-													(
-														newSkillbook->As<RE::AlchemyItem>(),
-														nullptr, 
-														1, 
-														nullptr
-													);
-													p1->RemoveItem
-													(
-														newSkillbook->As<RE::AlchemyItem>(),
-														1, 
-														RE::ITEM_REMOVE_REASON::kRemove, 
-														nullptr, 
-														nullptr
-													);
-												}
-											);
-										}
-									);
-								}
-
-								RE::DebugNotification
-								(
-									fmt::format
-									(
-										"{} received 1 {}.", 
-										p->coopActor->GetName(), 
-										newSkillbook->GetName()
-									).c_str()
-								);
-							}
-
-							++numAdded;
-						}
-					}
-				}
-			}
-		}
-
-		return EventResult::kContinue;
-		*/
 	}
 
 	CoopCrosshairEventHandler* CoopCrosshairEventHandler::GetSingleton()
@@ -1431,13 +866,6 @@ namespace ALYSLC
 				p->tm->crosshairRefrHandle.reset();
 			}
 
-			if (p->tm->lockOnActivationRefrHandle.get() &&
-				p->tm->lockOnActivationRefrHandle.get()->formID == a_formDeleteEvent->formID)
-			{
-				DBG("{}: Clear lock on activation refr handle.", p->coopActor->GetName());
-				p->tm->lockOnActivationRefrHandle.reset();
-			}
-
 			if (p->tm->prevCrosshairRefrHandle.get() &&
 				p->tm->prevCrosshairRefrHandle.get()->formID == a_formDeleteEvent->formID)
 			{
@@ -1451,13 +879,6 @@ namespace ALYSLC
 				DBG("{}: Clear previous lock on activation handle.", 
 					p->coopActor->GetName());
 				p->tm->prevLockOnActivationRefrHandle.reset();
-			}
-
-			if (p->tm->proximityRefrHandle.get() &&
-				p->tm->proximityRefrHandle.get()->formID == a_formDeleteEvent->formID)
-			{
-				DBG("{}: Clear proximity refr handle.", p->coopActor->GetName());
-				p->tm->proximityRefrHandle.reset();
 			}
 		}
 		*/
@@ -2480,11 +1901,12 @@ namespace ALYSLC
 					DBG
 					(
 						"Menu {} is open. Pauses game: {}, always open: {}. "
-						"Flags: 0b{:B}.", 
+						"Flags: 0b{:B}. Input context: {}.", 
 						menu.first,
 						menu.second.menu->PausesGame(),
 						menu.second.menu->AlwaysOpen(),
-						*menu.second.menu->menuFlags
+						*menu.second.menu->menuFlags,
+						*menu.second.menu->inputContext
 					);
 				}
 			}
@@ -2504,7 +1926,7 @@ namespace ALYSLC
 						(
 							"Index {}: Menu {} is open. "
 							"Pauses game: {}, always open: {}. Flags: 0b{:B}. "
-							"Mouse/controller counts: {}, {}. Input context: 0b{:B}.",
+							"Mouse/controller counts: {}, {}. Input context: {}.",
 							iter - ui->menuStack.begin(),
 							name,
 							menu->PausesGame(),
@@ -2596,6 +2018,9 @@ namespace ALYSLC
 			{
 				glob.lastSupportedMenusClosedTP = SteadyClock::now();
 			}
+
+			SPDLOG_DEBUG("Supported menus open: {}, before: {}.", 
+				glob.supportedMenuOpen.load(), wasSupportedMenuOpen);
 
 			//========================================================
 			// Check for co-op companion player menu control requests.
@@ -2728,7 +2153,12 @@ namespace ALYSLC
 				else if (a_menuEvent->menuName == RE::LockpickingMenu::MENU_NAME)
 				{
 					// Start lockpicking task to give the companion player LockpickingMenu control.
-					p->taskRunner->AddTask([&p]() { p->LockpickingTask(true); });
+					p->taskRunner->AddTask
+					(
+						p->coopActor->GetName(),
+						__FUNCTION__,
+						[&p]() { p->LockpickingTask(true); }
+					);
 				}
 			}
 			else if (Settings::bTwoPlayerLockpicking && 
@@ -2748,6 +2178,8 @@ namespace ALYSLC
 						// partial Lockpicking Menu control.
 						otherP->taskRunner->AddTask
 						(
+							otherP->coopActor->GetName(),
+							__FUNCTION__,
 							[&otherP]() { otherP->LockpickingTask(false); }
 						);
 					}

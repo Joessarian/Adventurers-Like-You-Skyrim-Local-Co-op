@@ -278,6 +278,276 @@ namespace ALYSLC
 			}
 		}
 
+		void ActivateRefr
+		(
+			RE::TESObjectREFR* a_interactionTarget, 
+			RE::TESObjectREFR* a_activator, 
+			uint8_t a_arg2,
+			RE::TESBoundObject* a_object,
+			int32_t a_count,
+			bool a_defaultProcessingOnly,
+			bool a_useSecondaryActivation
+		)
+		{
+			// Activator or interaction refr are invalid.
+			if (!a_activator || 
+				!a_interactionTarget || 
+				!a_interactionTarget->loadedData || 
+				a_interactionTarget->IsDisabled() || 
+				a_interactionTarget->IsDeleted() ||
+				!a_interactionTarget->IsHandleValid()) 
+			{
+				return;
+			}
+
+			// Must be a player.
+			auto pIndex = GlobalCoopData::GetCoopPlayerIndex(a_activator);
+			if (pIndex == -1)
+			{
+				return;
+			}
+			
+			const auto& p = glob.coopPlayers[pIndex];
+
+			// Special case: Books and notes.
+			// P1 must activate the book to read it as a secondary option.
+			// Otherwise, the player will pick up the book/note.
+			if (a_object->Is(RE::FormType::Book, RE::FormType::Note))
+			{
+				auto p1 = RE::PlayerCharacter::GetSingleton();
+				if (a_useSecondaryActivation)
+				{
+					DBG("{}: Read {} (0x{:X}).",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					auto book = a_object->As<RE::TESObjectBOOK>();
+					if (book->TeachesSpell())
+					{
+						// Pick up to add to inventory before reading.
+						// Then remove after reading because the book within P1's inventory
+						// is not used.
+						p1->PickUpObject(a_interactionTarget, a_count, false, true);
+						bool succ = book->Read(p1);
+						if (succ)
+						{
+							p1->RemoveItem
+							(
+								book, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+							);
+						}
+					}
+					else
+					{
+						// Activate with P1 to read.
+						Util::NativeFunctions::ActivateRefr
+						(
+							a_interactionTarget, 
+							p1,
+							a_arg2, 
+							a_object,
+							a_count, 
+							a_defaultProcessingOnly
+						);
+					}				}
+				else
+				{
+					DBG("{}: Pick up {} (0x{:X}).",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					// Pick up otherwise.
+					p->coopActor->PickUpObject(a_interactionTarget, a_count, false, true);
+				}
+
+				return;
+			}
+			
+			DBG
+			(
+				"{}: Activate {} (0x{:X}). Secondary: {}.",
+				p->coopActor->GetName(),
+				a_object->GetName(),
+				a_object->formID,
+				p->tm->performSecondaryActivationAction
+			);
+
+			// Activate to add to inventory/inventory chest.
+			Util::NativeFunctions::ActivateRefr
+			(
+				a_interactionTarget, 
+				a_activator,
+				a_arg2, 
+				a_object,
+				a_count, 
+				a_defaultProcessingOnly
+			);
+
+			// Perform secondary activation if requested and the activating refr is a player.
+			if (a_useSecondaryActivation && ALYSLC::UseOrTakeCompat::g_installed)
+			{
+				switch (*a_object->formType)
+				{
+				case RE::FormType::Armor:
+				{
+					DBG("{}: Equip armor {} (0x{:X}).",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					// Equip the armor.
+					p->em->EquipArmor(a_object);
+					break;
+				}
+				case RE::FormType::Weapon:
+				{
+					DBG("{}: Equip weapon {} (0x{:X}) to right hand.",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					// Equip the weapon to the right hand.
+					p->em->EquipForm(a_object, EquipIndex::kRightHand);
+					break;
+				}
+				case RE::FormType::AlchemyItem:
+				{
+					// Credits to po3:
+					// https://github.com/powerof3/UseOrTake/blob/master/src/Action.cpp#L81
+					auto alchemyItem = a_object->As<RE::AlchemyItem>();
+					if (alchemyItem->IsFood()) 
+					{
+						const auto useSound = 
+						(
+							alchemyItem->data.consumptionSound
+						); 
+						if (useSound && 
+							useSound->GetFormID() == 0xB6435) 
+						{  
+							DBG("{}: Drink {} (0x{:X}).",
+								p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+							p->em->EquipForm(a_object, EquipIndex::kNone);
+						}
+						else
+						{
+							DBG("{}: Eat {} (0x{:X}).",
+								p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+							p->em->EquipForm(a_object, EquipIndex::kNone);
+						}
+					}
+					else if (alchemyItem->IsPoison()) 
+					{
+						// Right hand, then left hand, then right hand if both objects are poisoned.
+						RE::InventoryEntryData* objectEntryToPoison = nullptr;
+						auto entry = p->coopActor->GetEquippedEntryData(false);
+						bool appliedToRH = false;
+						if (entry && entry->object)
+						{
+							// Default to RH here since even if the item is already poisoned,
+							// we'll apply the poison later.
+							objectEntryToPoison = entry;
+							if (!entry->IsPoisoned())
+							{
+								appliedToRH = true;
+							}
+						}
+
+						// Fall back to LH object if poison was not applied to the right hand object.
+						if (!appliedToRH)
+						{
+							entry = p->coopActor->GetEquippedEntryData(true);
+							if (entry && entry->object)
+							{
+								if (!entry->IsPoisoned())
+								{
+									objectEntryToPoison = entry;
+								}
+							}
+						}
+
+						if (objectEntryToPoison && objectEntryToPoison->object)
+						{
+							DBG
+							(
+								"{}: Apply poison {} (0x{:X}) to {}.",
+								p->coopActor->GetName(),
+								a_object->GetName(),
+								a_object->formID,
+								objectEntryToPoison->GetDisplayName()
+							);
+							objectEntryToPoison->PoisonObject(alchemyItem, 1);
+							if (p->isPlayer1)
+							{
+								p->coopActor->RemoveItem
+								(
+									alchemyItem, 
+									1, 
+									RE::ITEM_REMOVE_REASON::kRemove,
+									nullptr, 
+									nullptr
+								);
+							}
+							else
+							{
+								p->em->inventoryChest->RemoveItem
+								(
+									alchemyItem,
+									1, 
+									RE::ITEM_REMOVE_REASON::kRemove, 
+									nullptr, 
+									nullptr
+								);
+							}
+						}
+					}
+					else
+					{
+						DBG
+						(
+							"{}: Use alchemy item {} (0x{:X}).",
+							p->coopActor->GetName(),
+							a_object->GetName(),
+							a_object->formID
+						);
+						p->em->EquipForm(a_object, EquipIndex::kNone);
+					}
+
+					break;
+				}
+				case RE::FormType::Ingredient:
+				{
+					// Consume the ingredient.
+					DBG("{}: Eat ingredient {} (0x{:X}).",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					p->em->EquipForm(a_object, EquipIndex::kNone);
+					break;
+				}
+				case RE::FormType::Scroll:
+				{
+					// TODO:
+					// Equip scroll support.
+
+					// Use the scroll right away for now.
+					auto scroll = a_object->As<RE::ScrollItem>();
+					p->pam->CastScrollSpell(scroll);
+
+					break;
+				}
+				case RE::FormType::Light:
+				{
+					auto light = a_object->As<RE::TESObjectLIGH>();
+					if (light->CanBeCarried())
+					{
+						// Equip the torch.
+						DBG("{}: Equip torch {} (0x{:X}).",
+							p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+						p->em->EquipForm(a_object, EquipIndex::kLeftHand);
+					}
+
+					break;
+				}
+				case RE::FormType::Ammo:
+				{
+					// Equip the ammo.
+					DBG("{}: Equip ammo {} (0x{:X}).",
+						p->coopActor->GetName(), a_object->GetName(), a_object->formID);
+					p->em->EquipAmmo(a_object);
+					break;
+				}
+				}
+			}
+		}
+
 		bool ActivationIsOffLimits(RE::Actor * a_actor, RE::TESObjectREFR * a_refr)
 		{
 			// Return true if the given actor activating the given object refr would be considered 
@@ -7057,7 +7327,7 @@ namespace ALYSLC
 			// Return true if a currently-open menu
 			// introduces a non-gameplay/TFC context onto the menu context stack
 			// or if the QuickLoot menu is open.
-
+			
 			if (ALYSLC::QuickLootCompat::g_installed)
 			{
 				auto ui = RE::UI::GetSingleton(); 
@@ -7539,23 +7809,6 @@ namespace ALYSLC
 				return;
 			}
 
-			// [Temp workaround]:
-			// Having Precision's ragdoll system enabled 
-			// while triggering a knock explosion here 
-			// seems to result in more occurrences of a ragdoll reset position glitch 
-			// on knock explosion where the hit actor is teleported to their last ragdoll position 
-			// instead of staying at their current position.
-			// Is a major issue if the last ragdoll position 
-			// was far away or in another cell entirely.
-			// Precision is re-enabled after the knock explosion.
-			if (Settings::bApplyTemporaryRagdollWarpWorkaround)
-			{
-				if (auto api = ALYSLC::PrecisionCompat::g_precisionAPI4; api)
-				{
-					api->ToggleDisableActor(a_actorToPush->GetHandle(), true);
-				}
-			}
-			
 			// Sometimes, if an actor is in an idle animation when an impulse is applied,
 			// they will teleport a short distance to some cached position as well.
 			// Stop idling before ragdolling too.
@@ -8170,8 +8423,12 @@ namespace ALYSLC
 
 			// Send a dummy controller event to force Auto Input Switch to switch back 
 			// to controller before opening any menus.
+			// WTF:
+			// If the input event value is set to 1,
+			// causes Precision to disable when entering and exiting menus. 
+			// Also bugs out P1's node orientations. Only for gamepad events.
 			if (a_inputDevice == RE::INPUT_DEVICE::kKeyboard)
-			{;
+			{
 				std::unique_ptr<RE::InputEvent* const> dummyControllerEvent = 
 				(
 					std::make_unique<RE::InputEvent* const>
@@ -8179,17 +8436,16 @@ namespace ALYSLC
 						RE::ButtonEvent::Create
 						(
 							RE::INPUT_DEVICE::kGamepad, 
-							"ALYSLC_DUMMY_EVENT", 
+							"ALYSLC_BLOCKED", 
 							0xFF, 
-							a_pressedValue, 
-							a_heldTimeSecs
+							0.0f, 
+							0.0f
 						)
 					)
 				);
 				(*inputEvent)->next = *dummyControllerEvent;
 			}
 			
-
 			auto p1 = RE::PlayerCharacter::GetSingleton();
 			if (p1 && a_toggleAIDriven)
 			{
@@ -9292,13 +9548,8 @@ namespace ALYSLC
 		{
 			// Start playing the effect shader on the refr for the provided number of seconds,
 			// or continue playing it indefinitely if the requested play time is -1.
-
-			if (!a_refr || 
-				!a_refr->loadedData || 
-				a_refr->IsDisabled() || 
-				a_refr->IsDeleted() || 
-				!a_refr->IsHandleValid() || 
-				!a_shader)
+			
+			if (!a_shader || !IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}
@@ -9359,12 +9610,7 @@ namespace ALYSLC
 			// for the provided number of seconds,
 			// or continue playing it indefinitely if the requested play time is -1.
 			
-			if (!a_refr || 
-				!a_refr->loadedData || 
-				a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || 
-				!a_refr->IsHandleValid() || 
-				!a_artObj)
+			if (!a_artObj || !IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}
@@ -9415,11 +9661,7 @@ namespace ALYSLC
 			// Adapted from their papyrus extender code found here:
 			// https://github.com/powerof3/PapyrusExtenderSSE/blob/master/src/Papyrus/Util/Graphics.cpp#L42
 
-			if (!a_refr ||
-				!a_refr->loadedData ||
-				a_refr->IsDisabled() || 
-				a_refr->IsDeleted() || 
-				!a_refr->IsHandleValid())
+			if (!IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}
@@ -9455,11 +9697,7 @@ namespace ALYSLC
 		{
 			// Stop all hit art objects playing on the refr.
 
-			if (!a_refr ||
-				!a_refr->loadedData || 
-				a_refr->IsDisabled() ||
-				a_refr->IsDeleted() ||
-				!a_refr->IsHandleValid())
+			if (!IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}
@@ -9578,12 +9816,7 @@ namespace ALYSLC
 			// Stop the effect shader on the refr, optionally setting its lifetime 
 			// to the provided delayed stop time to have it stop at a later point.
 
-			if (!a_refr ||
-				!a_refr->loadedData || 
-				a_refr->IsDisabled() ||
-				a_refr->IsDeleted() || 
-				!a_refr->IsHandleValid() || 
-				!a_shader)
+			if (!a_shader || !IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}
@@ -9634,12 +9867,7 @@ namespace ALYSLC
 			// Stop the hit art from playing on the refr, optionally setting its lifetime
 			// to the provided delayed stop time to have it stop at a later point.
 
-			if (!a_refr || 
-				!a_refr->loadedData ||
-				a_refr->IsDisabled() ||
-				a_refr->IsDeleted() ||
-				!a_refr->IsHandleValid() || 
-				!a_artObj)
+			if (!a_artObj || !IsValidRefrForTargeting(a_refr))
 			{
 				return;
 			}

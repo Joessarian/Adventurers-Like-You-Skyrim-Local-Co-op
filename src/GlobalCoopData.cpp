@@ -53,6 +53,7 @@ namespace ALYSLC
 		// Set global entities and lists.
 		glob.player1Actor = RE::ActorPtr(RE::PlayerCharacter::GetSingleton());
 		glob.player1RefAlias = a_player1RefAlias;
+		glob.activateHighlightShaders.fill(nullptr);
 		glob.castingGlobVars.clear();
 		glob.charGenRace = nullptr;
 		glob.charGenEquippedForms.fill(nullptr);
@@ -660,9 +661,33 @@ namespace ALYSLC
 			);
 
 			// Shaders.
-			glob.activateHighlightShader = 
+			glob.activateHighlightShaders[0] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B0, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[1] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B1, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[2] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B2, PLUGIN_NAME)
+			);
+			glob.activateHighlightShaders[3] = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B3, PLUGIN_NAME)
+			);
+			glob.activateDefaultShader = 
 			(
 				dataHandler->LookupForm<RE::TESEffectShader>(0x84B, PLUGIN_NAME)
+			);
+			glob.activateFailureShader = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B4, PLUGIN_NAME)
+			);
+			glob.activateUseShader = 
+			(
+				dataHandler->LookupForm<RE::TESEffectShader>(0x8B5, PLUGIN_NAME)
 			);
 			glob.dragonHolesShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x4CEC8);
 			glob.dragonSoulAbsorbShader = RE::TESForm::LookupByID<RE::TESEffectShader>(0x280C0);
@@ -864,7 +889,7 @@ namespace ALYSLC
 		glob.lastP1MeleeUseSkillCallArgs = std::make_unique<LastP1MeleeUseSkillCallArgs>();
 		glob.paFuncsHolder = std::make_unique<PlayerActionFunctionsHolder>();
 		glob.paInfoHolder = std::make_unique<PlayerActionInfoHolder>();
-		glob.taskRunner	= std::make_unique<TaskRunner>();
+		glob.taskRunner	= std::make_unique<TaskRunner>("[GLOB]");
 		// Interp data.
 		glob.crosshairTextFadeInterpData = std::make_unique<TwoWayInterpData>();
 		glob.crosshairTextFadeInterpData->SetInterpInterval(1.0f, true);
@@ -5170,7 +5195,7 @@ namespace ALYSLC
 					// Continue early if any node is invalid.
 					if (!leftShoulderNodePtr			||
 						!rightShoulderNodePtr			||
-						!leftForearmNodePtr			||
+						!leftForearmNodePtr				||
 						!leftHandNodePtr				||
 						!rightForearmNodePtr			||
 						!rightHandNodePtr)

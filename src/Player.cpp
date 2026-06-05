@@ -651,7 +651,10 @@ namespace ALYSLC
 				mm = std::make_unique<MovementManager>();
 				pam = std::make_unique<PlayerActionManager>();
 				tm = std::make_unique<TargetingManager>();
-				taskRunner = std::make_unique<TaskRunner>();
+				taskRunner = std::make_unique<TaskRunner>
+				(
+					fmt::format("[P{}]", playerID + 1).c_str()
+				);
 				// Set as unitialized.
 				RequestStateChange(ManagerState::kUninitialized);
 			}
@@ -946,6 +949,8 @@ namespace ALYSLC
 		{
 			taskRunner->AddTask
 			(
+				coopActor->GetName(),
+				__FUNCTION__,
 				[this](){ GlobalCoopData::TeleportToP1OrAwayTask(coopActor->GetHandle(), false); }
 			);
 		}
@@ -1088,32 +1093,6 @@ namespace ALYSLC
 		auto equipSlot = glob.eitherHandEquipSlot;
 		auto lhEquipType = lhForm ? lhForm->As<RE::BGSEquipType>() : nullptr;
 		auto rhEquipType = rhForm ? rhForm->As<RE::BGSEquipType>() : nullptr;
-		if (coopActor->IsOnMount())
-		{
-			// Activate to dismount for P1.
-			pam->SendButtonEvent
-			(
-				InputAction::kActivate,
-				RE::INPUT_DEVICE::kGamepad, 
-				ButtonEventPressType::kInstantTrigger,
-				0.0f
-			);
-			pam->SendButtonEvent
-			(
-				InputAction::kActivate,
-				RE::INPUT_DEVICE::kGamepad,
-				ButtonEventPressType::kPressAndHold,
-				1.0f
-			);
-			pam->SendButtonEvent
-			(
-				InputAction::kActivate, 
-				RE::INPUT_DEVICE::kGamepad, 
-				ButtonEventPressType::kRelease, 
-				1.0f
-			);
-		}
-
 		// Get off mount/stop interacting with furniture.
 		coopActor->StopInteractingQuick(true);
 
@@ -1326,12 +1305,16 @@ namespace ALYSLC
 		// before restoring the correct HMS values once again.
 		taskRunner->AddTask
 		(
+			coopActor->GetName(),
+			__FUNCTION__,
 			[this, healthBefore, magickaBefore, staminaBefore]()
 			{
+				SteadyClock::time_point waitStartTP = SteadyClock::now();
 				float secsWaited = 0.0f;
 				while (!IsRunning() && secsWaited < 2.0f)
 				{
 					std::this_thread::sleep_for(0.1s);
+					secsWaited = Util::GetElapsedSeconds(waitStartTP);
 				}
 					
 				std::this_thread::sleep_for(1.0s);
@@ -2352,6 +2335,8 @@ namespace ALYSLC
 					auto handle = coopActor->GetHandle();
 					glob.taskRunner->AddTask
 					(
+						"GLOB Runner",
+						__FUNCTION__,
 						[handle](){ GlobalCoopData::YouDiedTask(handle); }
 					);
 
@@ -2852,7 +2837,7 @@ namespace ALYSLC
 					coopActor->Update3DPosition(true);
 					Util::ActivateRefr
 					(
-						targetedMountPtr.get(), coopActor.get(), 0, nullptr, 1, false
+						targetedMountPtr.get(), coopActor.get(), 0, nullptr, 1, false, false
 					);
 					if (!isPlayer1) 
 					{
@@ -2931,12 +2916,12 @@ namespace ALYSLC
 		// 1 second failsafe.
 		while (secsWaited < 1.0f && currentState != ManagerState::kAwaitingRefresh)
 		{
-			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			// Wait one frame at a time.
 			std::this_thread::sleep_for
 			(
 				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
 			);
+			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 		}
 
 		// Change back to running.
@@ -2947,12 +2932,12 @@ namespace ALYSLC
 		// 3 second failsafe.
 		while (secsWaited < 3.0f && currentState != ManagerState::kRunning)
 		{
-			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			// Wait one frame at a time.
 			std::this_thread::sleep_for
 			(
 				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
 			);
+			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 		}
 
 		// Notify the player afterward, since refreshing the targeting manager
@@ -4028,13 +4013,13 @@ namespace ALYSLC
 
 			// Wait until the player is getting up or at most 2 seconds.
 			/*float secsWaited = 0.0f;
-			SteadyClock::time_point waitTP = SteadyClock::now();
+			SteadyClock::time_point waitStartTP = SteadyClock::now();
 			while (coopActor->GetKnockState() != RE::KNOCK_STATE_ENUM::kGetUp && secsWaited < 2.0f)
 			{
 				DBG("Waiting until getting up. Knock state: {}, waited {}s.", 
 					coopActor->GetKnockState(), secsWaited);
 				std::this_thread::sleep_for(0.5s);
-				secsWaited += 0.5f;
+				secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			}*/
 		}
 
@@ -4223,12 +4208,12 @@ namespace ALYSLC
 		// Bail after 2 seconds if no state change occurs.
 		while ((secsWaited < 2.0f) && (isLevitating == wasLevitating))
 		{
-			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			// One frame at a time.
 			std::this_thread::sleep_for
 			(
 				std::chrono::milliseconds(static_cast<long long>(*g_deltaTimeRealTime * 1000.0f))
 			);
+			secsWaited = Util::GetElapsedSeconds(waitStartTP);
 			coopActor->GetGraphVariableBool("IsLevitating", isLevitating);
 		}
 

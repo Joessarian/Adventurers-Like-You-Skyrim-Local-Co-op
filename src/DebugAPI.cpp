@@ -1647,12 +1647,7 @@ namespace ALYSLC
 				"height, width: {}, {}",
 				x, y, xScale, yScale, height, width
 			);*/
-			const auto& selectedRefrHandle = 
-			(
-				p->tm->aimMode == AimMode::kFreeAim ? 
-				p->tm->crosshairRefrHandle : 
-				p->tm->lockOnActivationRefrHandle
-			);
+			const auto& selectedRefrHandle = p->tm->activationRefrHandle;
 			if (!Util::HandleIsValid(selectedRefrHandle) || 
 				!Util::IsValidRefrForTargeting(selectedRefrHandle.get().get()))
 			{

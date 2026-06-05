@@ -103,4 +103,10 @@ namespace ALYSLC
 		static bool g_installed;
 		static TRUEHUD_API::IVTrueHUD3* g_trueHUDAPI3;
 	};
+
+	struct UseOrTakeCompat
+	{
+		static void CheckForUseOrTake();
+		static bool g_installed;
+	};
 };

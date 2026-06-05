@@ -183,7 +183,6 @@ namespace ALYSLC
 				{
 					!InputAction::kDismount,
 					!InputAction::kDodge,
-					!InputAction::kFaceTarget,
 					!InputAction::kJump,
 					!InputAction::kRotateLeftForearm,
 					!InputAction::kRotateLeftHand,
@@ -201,6 +200,7 @@ namespace ALYSLC
 				{ 
 					!InputAction::kAdjustAimPitch,
 					!InputAction::kChangeDialoguePlayer,
+					!InputAction::kFaceTarget,
 					!InputAction::kGrabObject, 
 					!InputAction::kGrabRotateYZ, 
 					!InputAction::kMoveCrosshair, 
@@ -273,7 +273,7 @@ namespace ALYSLC
 			{ !InputAction::kDisableCoopCam, ActionGroup::kCamera },
 			{ !InputAction::kDismount, ActionGroup::kMovement },
 			{ !InputAction::kDodge, ActionGroup::kMovement },
-			{ !InputAction::kFaceTarget, ActionGroup::kMovement },
+			{ !InputAction::kFaceTarget, ActionGroup::kTargeting },
 			{ !InputAction::kFavorites, ActionGroup::kMenu },
 			{ !InputAction::kGrabObject, ActionGroup::kTargeting },
 			{ !InputAction::kGrabRotateYZ, ActionGroup::kTargeting },
@@ -362,8 +362,8 @@ namespace ALYSLC
 				},
 				// AdjustAimPitch
 				{ 
-					InputAction::kLShoulder, 
-					InputAction::kRShoulder, 
+					InputAction::kLShoulder,
+					InputAction::kRThumb,
 					InputAction::kRS 
 				},
 				// AttackLH
@@ -385,12 +385,12 @@ namespace ALYSLC
 				},
 				// CamLockOn
 				{ 
-					InputAction::kLShoulder, 
+					InputAction::kRShoulder, 
 					InputAction::kRThumb 
 				},
 				// CamManualPos
 				{ 
-					InputAction::kRShoulder, 
+					InputAction::kLShoulder, 
 					InputAction::kRThumb
 				},
 				// CastLH
@@ -418,7 +418,7 @@ namespace ALYSLC
 				// CoopMiniGamesMenu
 				{ 
 					InputAction::kRShoulder,
-					InputAction::kDPadL
+					InputAction::kDPadD
 				},
 				// CoopSummoningMenu
 				{ 
@@ -497,8 +497,8 @@ namespace ALYSLC
 				},
 				// DisableCoopCam
 				{ 
-					InputAction::kLThumb, 
-					InputAction::kRThumb 
+					InputAction::kLThumb,
+					InputAction::kRThumb
 				},
 				// Dismount
 				{ 
@@ -523,13 +523,14 @@ namespace ALYSLC
 				},
 				// GrabRotateYZ
 				{ 
-					InputAction::kFaceTarget,
+					InputAction::kRShoulder,
 					InputAction::kRThumb, 
 					InputAction::kRS 
 				},
 				// HotkeyEquip
 				{ 
-					InputAction::kRThumb,
+					InputAction::kRShoulder,
+					InputAction::kLShoulder,
 					InputAction::kRS
 				},
 				// Inventory
@@ -550,6 +551,7 @@ namespace ALYSLC
 				},
 				// MoveCrosshair
 				{ 
+					InputAction::kLShoulder,
 					InputAction::kRS 
 				},
 				// Pause
@@ -576,7 +578,7 @@ namespace ALYSLC
 				{
 					InputAction::kLShoulder,
 					InputAction::kRShoulder, 
-					InputAction::kSpecialAction 
+					InputAction::kA 
 				},
 				// QuickSlotItem
 				{ 
@@ -595,8 +597,7 @@ namespace ALYSLC
 					InputAction::kRThumb,
 				},
 				// RotateCam
-				{ 
-					InputAction::kRShoulder, 
+				{
 					InputAction::kRS 
 				},
 				// RotateLeftForearm
@@ -637,12 +638,8 @@ namespace ALYSLC
 				},
 				// Sheathe
 				{ 
-					InputAction::kRThumb 
+					InputAction::kLThumb
 				},
-				// NEW CONTROL SCHEME
-				/*{ 
-					InputAction::kLThumb 
-				},*/
 				// Shout
 				{ 
 					InputAction::kRShoulder,
@@ -671,22 +668,20 @@ namespace ALYSLC
 				},
 				// TradeWithPlayer
 				{
-					InputAction::kRShoulder,
-					InputAction::kDPadD 
+					InputAction::kDPadR 
 				},
 				// TweenMenu
-				{ 
-					InputAction::kRShoulder, 
+				{
 					InputAction::kStart 
 				},
 				// WaitMenu
 				{ 
-					InputAction::kLShoulder,
 					InputAction::kBack
 				},
 				// ZoomCam
-				{ 
+				{
 					InputAction::kLShoulder,
+					InputAction::kRShoulder,
 					InputAction::kRS 
 				} 
 			}
@@ -839,7 +834,7 @@ namespace ALYSLC
 			// RotateRightShoulder
 			PerfType::kNoAction,
 			// Sheathe
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// Shout
 			PerfType::kOnHold,
 			// Sneak
@@ -853,11 +848,11 @@ namespace ALYSLC
 			// TeleportToPlayer
 			PerfType::kOnRelease,
 			// TradeWithPlayer
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// TweenMenu
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// WaitMenu
-			PerfType::kOnRelease,
+			PerfType::kOnPress,
 			// ZoomCam
 			PerfType::kOnPressAndRelease
 		};
@@ -883,7 +878,7 @@ namespace ALYSLC
 			// AdjustAimPitch
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			),
 			// AttackLH
 			TriggerFlags
@@ -1033,7 +1028,6 @@ namespace ALYSLC
 			// DisableCoopCam
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering, 
 				TriggerFlag::kLoneAction
 			),
 			// Dismount
@@ -1064,12 +1058,12 @@ namespace ALYSLC
 			// GrabRotateYZ
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			),
 			// HotkeyEquip
 			TriggerFlags
 			(
-				TriggerFlag::kDoNotUseCompActionsOrdering
+				TriggerFlag::kDefault
 			),
 			// Inventory
 			TriggerFlags
@@ -1119,7 +1113,7 @@ namespace ALYSLC
 			// QuickSlotCast
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// QuickSlotItem
 			TriggerFlags
@@ -1139,7 +1133,7 @@ namespace ALYSLC
 			// RotateCam
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kDoNotUseCompActionsOrdering
 			),
 			// RotateLeftForearm
 			TriggerFlags
@@ -1180,13 +1174,9 @@ namespace ALYSLC
 			// Sheathe
 			TriggerFlags
 			(
-				TriggerFlag::kDefault
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
-			// NEW CONTROL SCHEME
-			/*TriggerFlags
-			(
-				TriggerFlag::kMinHoldTime
-			),*/
 			// Shout
 			TriggerFlags
 			(
@@ -1221,17 +1211,23 @@ namespace ALYSLC
 			// TradeWithPlayer
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// TweenMenu
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// WaitMenu
 			TriggerFlags
 			(
-				TriggerFlag::kLoneAction
+				TriggerFlag::kLoneAction,
+				TriggerFlag::kMinHoldTime,
+				TriggerFlag::kIgnoreConflictingActions
 			),
 			// ZoomCam
 			TriggerFlags

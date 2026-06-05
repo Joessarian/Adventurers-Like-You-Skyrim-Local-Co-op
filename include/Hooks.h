@@ -1044,12 +1044,12 @@ namespace ALYSLC
 				const bool& a_justReleased
 			);
 			// Store the firing player's PID in one outparam (-1 if not by a player), 
-			// and true in the other outparam if the projectile was fired at a player.
+			// and the targeted player's PID in the other outparam (-1 if not at a player).
 			static void GetFiredAtOrByPlayer
 			(
 				const RE::ObjectRefHandle& a_projectileHandle, 
 				int32_t& a_firingPlayerPIDOut,
-				bool& a_firedAtPlayerOut
+				int32_t& a_firedAtPlayerPIDOut
 			);
 			// Store the player PID for the player grabbing/releasing the given projectile 
 			// in the outparams (-1 if not by a player).

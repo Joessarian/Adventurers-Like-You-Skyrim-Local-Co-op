@@ -1460,42 +1460,6 @@ namespace ALYSLC
 		//[Inline Utility Functions]:
 		//===========================
 
-		// Have the given activator refr activate the given interaction target refr.
-		// Can specify the refr's corresponding bound object,
-		// the number to activate, and if only default processing should be used.
-		inline void ActivateRefr
-		(
-			RE::TESObjectREFR* a_interactionTarget,
-			RE::TESObjectREFR* a_activator,
-			uint8_t a_arg2, 
-			RE::TESBoundObject* a_object,
-			int32_t a_count,
-			bool a_defaultProcessingOnly
-		) 
-		{
-			// Activator or interaction refr are invalid.
-			if (!a_activator || 
-				!a_interactionTarget || 
-				!a_interactionTarget->loadedData || 
-				a_interactionTarget->IsDisabled() || 
-				a_interactionTarget->IsDeleted() ||
-				!a_interactionTarget->IsHandleValid()) 
-			{
-				return;
-			}
-
-			// Interaction target calls activate on itself.
-			Util::NativeFunctions::ActivateRefr
-			(
-				a_interactionTarget, 
-				a_activator,
-				a_arg2, 
-				a_object,
-				a_count, 
-				a_defaultProcessingOnly
-			);
-		}
-
 		inline void SetActorBaseDataFlag
 		(
 			RE::TESActorBase* a_actorBase,
@@ -1830,18 +1794,16 @@ namespace ALYSLC
 			}
 
 			const auto refr3DPtr = RE::NiPointer<RE::NiAVObject>(a_refr->GetCurrent3D());
-			if (refr3DPtr)
+			if (refr3DPtr && refr3DPtr->worldBound.center.Length() != 0.0f)
 			{
 				return refr3DPtr->worldBound.center;
 			}
-			else
-			{
-				return 
-				(
-					a_refr->data.location + 
-					RE::NiPoint3(0.0f, 0.0f, a_refr->GetHeight() / 2.0f)
-				);
-			}
+
+			return 
+			(
+				a_refr->data.location + 
+				RE::NiPoint3(0.0f, 0.0f, a_refr->GetHeight() / 2.0f)
+			);
 		}
 		
 		// Check for and get any node with the given name for the given refr.
@@ -3317,7 +3279,7 @@ namespace ALYSLC
 		}
 
 		// Party-wide items (usable by any player through P1, or trigger quests).
-		// Includes: gold, lockpicks, keys, non-skill/spell teaching books, and notes.
+		// Includes: gold, lockpicks, keys, unread non-skill/spell teaching books, and notes.
 		inline bool IsPartyWideItem(RE::TESForm* a_form)
 		{
 			return 
@@ -3333,7 +3295,8 @@ namespace ALYSLC
 					(
 						a_form->IsBook() && 
 						a_form->As<RE::TESObjectBOOK>()->data.GetSanitizedType() == 
-						RE::OBJ_BOOK::Flag::kNone
+						RE::OBJ_BOOK::Flag::kNone && 
+						!a_form->As<RE::TESObjectBOOK>()->IsRead()
 					)
 				)
 			);
@@ -4252,6 +4215,21 @@ namespace ALYSLC
 		//====================
 		//[Utility Functions]:
 		//====================
+
+		// Have the given activator refr activate the given interaction target refr.
+		// Can specify the refr's corresponding bound object,
+		// the number to activate, and if only default processing should be used.
+		// Can also perform secondary activation action if 'Use Or Take' is installed.
+		void ActivateRefr
+		(
+			RE::TESObjectREFR* a_interactionTarget,
+			RE::TESObjectREFR* a_activator,
+			uint8_t a_arg2, 
+			RE::TESBoundObject* a_object,
+			int32_t a_count,
+			bool a_defaultProcessingOnly,
+			bool a_useSecondaryActivation
+		);
 
 		// Return true if the given actor activating the given object refr would be considered 
 		// stealing or trigger an alarm.

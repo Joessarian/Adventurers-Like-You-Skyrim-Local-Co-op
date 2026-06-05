@@ -50,12 +50,14 @@ namespace ALYSLC
 		// Starts with no adjustment mode active and in the autotrail state.
 		prevCamState = camState = CamState::kAutoTrail;
 		camAdjMode = CamAdjustmentMode::kNone;
-		lockOnIndicatorOscillationInterpData = std::make_unique<InterpolationData<float>>
+		lockOnIndicatorOscillationInterpData = std::make_unique<TwoWayInterpData>();
+		lockOnIndicatorOscillationInterpData->SetInterpInterval
 		(
-			0.0f,
-			0.0f, 
-			0.0f, 
-			Settings::fSecsCamLockOnIndicatorOscillationUpdate
+			Settings::fSecsCamLockOnIndicatorOscillationUpdate, true
+		);
+		lockOnIndicatorOscillationInterpData->SetInterpInterval
+		(
+			Settings::fSecsCamLockOnIndicatorOscillationUpdate, false
 		);
 		movementAngleMultInterpData = std::make_unique<TwoWayInterpData>();
 		movementAngleMultInterpData->SetInterpInterval(2.0f, true);
@@ -347,13 +349,13 @@ namespace ALYSLC
 			(glob.globalDataInit && glob.player1DID != -1) &&
 			(
 				(!glob.coopSessionActive && glob.singleplayerModeActive) ||
-				(glob.allPlayersInit && glob.coopSessionActive && glob.player1DID != -1)
+				(glob.allPlayersInit && glob.coopSessionActive)
 			)
 		);
 		if (shouldEnableP1Managers)
 		{
 			const auto& coopP1 = glob.coopPlayers[glob.player1DID];
-			if (!coopP1->isDowned)
+			if (coopP1 && !coopP1->isDowned)
 			{
 				coopP1->RequestStateChange(ManagerState::kRunning);
 			}
@@ -1449,6 +1451,43 @@ namespace ALYSLC
 					camBaseTargetPos.z -= r * cosf(theta);
 					camBaseTargetPos.x -= r * cosf(phi) * sinf(theta);
 					camBaseTargetPos.y -= r * sinf(phi) * sinf(theta);
+
+					const auto camDir = Util::RotationToDirectionVect
+					(
+						0.0f, Util::ConvertAngle(camYaw)
+					);
+					auto playerHeadingDir = Util::RotationToDirectionVect
+					(
+						0.0f, Util::ConvertAngle
+						(
+							focalP->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+						)
+					);
+					auto targetMovementOffsetXY =
+					(
+						playerHeadingDir - 
+						(playerHeadingDir.Dot(camDir) * camDir)
+					);
+					targetMovementOffsetXY *= 
+					(
+						Settings::fDialogueCamZoomedInMaxHorizontalOffset +
+						focalP->coopActor->DoGetMovementSpeed() / 10.0f
+					);
+
+					focalPlayerCamXYOffset.x = Util::InterpolateSmootherStep
+					(
+						focalPlayerCamXYOffset.x, 
+						targetMovementOffsetXY.x,
+						camInterpFactor
+					);
+					focalPlayerCamXYOffset.y = Util::InterpolateSmootherStep
+					(
+						focalPlayerCamXYOffset.y, 
+						targetMovementOffsetXY.y,
+						camInterpFactor
+					);
+					camBaseTargetPos.x += focalPlayerCamXYOffset.x;
+					camBaseTargetPos.y += focalPlayerCamXYOffset.y;
 				}
 			}
 
@@ -2015,6 +2054,7 @@ namespace ALYSLC
 						secsSinceLockOnTargetLOSLost > Settings::fSecsWithoutLOSToInvalidateTarget
 					);
 					if (invalidateAfterNoLOS || 
+						camTargetPtr->IsDead() ||
 						!camTargetPtr->Is3DLoaded() || 
 						!camTargetPtr->IsHandleValid() || 
 						!camTargetPtr->GetParentCell() || 
@@ -2061,24 +2101,19 @@ namespace ALYSLC
 				// Draw lock-on indicator above the target's head.
 				auto fixedStrings = RE::FixedStrings::GetSingleton();
 				auto niCamPtr = Util::GetNiCamera();
-				RE::NiPoint3 lockOnIndicatorCenter{ };
-				if (asActor && fixedStrings && niCamPtr && niCamPtr.get())
+				RE::NiPoint3 lockOnIndicatorCenter
 				{
-					RE::NiPoint3 topOfTheHeadPos = Util::GetHeadPosition(asActor);
-					// Based on the head body part's radius.
-					auto headRadius = Util::GetHeadRadius(asActor);
-					topOfTheHeadPos.z += headRadius;
-					lockOnIndicatorCenter = Util::WorldToScreenPoint3(topOfTheHeadPos);
-				}
-				else
-				{
-					// Fallback.
-					lockOnIndicatorCenter = Util::WorldToScreenPoint3
+					asActor ? 
+					Util::WorldToScreenPoint3
+					(
+						Util::GetTorsoPosition(asActor)
+					) :
+					Util::WorldToScreenPoint3
 					(
 						Util::GetRefrPosition(camTargetPtr.get()) + 
-						RE::NiPoint3(0.0f, 0.0f, 0.1f * camTargetPtr->GetHeight())
-					);
-				}
+						RE::NiPoint3(0.0f, 0.0f, camTargetPtr->GetHeight())
+					) 
+				};
 
 				DrawLockOnIndicator(lockOnIndicatorCenter.x, lockOnIndicatorCenter.y);
 
@@ -2155,222 +2190,218 @@ namespace ALYSLC
 			indicatorBaseLength,
 			min
 			(
-				max
-				(
-					4.0f * indicatorBaseThickness, 
-					indicatorBaseLength / 2.0f
-				), targetPixelHeight / 4.0f
+				indicatorBaseLength / 2.0f,
+				targetPixelHeight / 4.0f
 			),
 			max
 			(
-				max
-				(
-					4.0f * indicatorBaseThickness, 
-					indicatorBaseLength / 2.0f
-				), targetPixelHeight / 4.0f
+				indicatorBaseLength / 2.0f,
+				targetPixelHeight / 4.0f
 			)
 		);
-		auto upperPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_UPPER_PIXEL_OFFSETS;
-		auto lowerPortionOffsets = GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS;
-		float baseScalingFactor = 
+
+		// Cap the radius and modify thickness based on distance from the camera.
+		float radius = std::clamp
 		(
-			indicatorBaseLength / GlobalCoopData::PLAYER_INDICATOR_DEF_LENGTH
+			indicatorBaseLength,
+			1.0f * indicatorBaseThickness, 
+			2.0f * indicatorBaseThickness
 		);
-		const float indicatorLength = indicatorBaseLength * baseScalingFactor;
-		const float indicatorThickness = indicatorBaseThickness * baseScalingFactor;
-		const float indicatorGap = max(2.0f, indicatorLength);
-
-		// Oscillation interp data: dynamically inc/dec gap size.
-		float endPointGapDelta = lockOnIndicatorOscillationInterpData->next;
-		if (lockOnIndicatorOscillationInterpData->current == endPointGapDelta)
+		const float thickness = 0.2f * radius;
+		const auto center = glm::vec3(a_centerX, a_centerY, 0.0f);
+		float gapDelta = 0.0f;
+		// Animate for better visibility.
+		if ((lockOnIndicatorOscillationInterpData->interpToMax &&
+			lockOnIndicatorOscillationInterpData->value != 1.0f) ||
+			(lockOnIndicatorOscillationInterpData->interpToMin && 
+			lockOnIndicatorOscillationInterpData->value != 0.0f))
 		{
-			// Switch gap delta endpoint when reached.
-			endPointGapDelta = endPointGapDelta == 0.0f ? indicatorGap : 0.0f;
-		}
-
-		// Start a new interp cycle when the endpoint changes.
-		if (lockOnIndicatorOscillationInterpData->next != endPointGapDelta)
-		{
-			lockOnIndicatorOscillationInterpData->SetTimeSinceUpdate(0.0f);
-			lockOnIndicatorOscillationInterpData->ShiftEndpoints(endPointGapDelta);
-		}
-
-		lockOnIndicatorOscillationInterpData->next = endPointGapDelta;
-		// Continue interpolating until reaching the endpoint.
-		if (lockOnIndicatorOscillationInterpData->current != endPointGapDelta)
-		{
-			lockOnIndicatorOscillationInterpData->InterpolateSmootherStep
+			lockOnIndicatorOscillationInterpData->UpdateInterpolatedValue
 			(
-				min
-				(
-					lockOnIndicatorOscillationInterpData->secsSinceUpdate / 
-					lockOnIndicatorOscillationInterpData->secsUpdateInterval, 
-					1.0f
-				)
+				lockOnIndicatorOscillationInterpData->directionChangeFlag
 			);
-			lockOnIndicatorOscillationInterpData->IncrementTimeSinceUpdate(*g_deltaTimeRealTime);
-			// Endpoint now reached, so we're done.
-			if (lockOnIndicatorOscillationInterpData->current == endPointGapDelta)
-			{
-				lockOnIndicatorOscillationInterpData->SetUpdateDurationAsComplete();
-				lockOnIndicatorOscillationInterpData->SetData
-				(
-					endPointGapDelta, endPointGapDelta, endPointGapDelta
-				);
-			}
 		}
-
-		// Points are offset downward from origin (+Y Scaleform axis).
-		// Have to rebase from the bottom tip by subtracting the length for each segment,
-		// multiplying with the base scaling offset, and then factoring in the gap.
-		float gapDelta = lockOnIndicatorOscillationInterpData->current;
-		for (auto& offset : upperPortionOffsets)
+		else
 		{
-			offset *= baseScalingFactor;
-			offset.y -= gapDelta + indicatorGap;
-		}
-
-		for (auto& offset : lowerPortionOffsets)
-		{
-			offset *= baseScalingFactor;
-			offset.y -= gapDelta + indicatorGap;
-		}
-
-		const auto port = Util::GetPort();
-		const float trueLength = 
-		(
-			indicatorLength + 2.0f * indicatorThickness + gapDelta + indicatorGap
-		);
-		const float trueWidth = 
-		(
-			0.5f * 
-			baseScalingFactor *
+			lockOnIndicatorOscillationInterpData->UpdateInterpolatedValue
 			(
-				GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[4].x - 
-				GlobalCoopData::PLAYER_INDICATOR_LOWER_PIXEL_OFFSETS[0].x
-			)
-		);
-		bool onScreen = 
-		(
-			a_centerX - trueLength * cosf(PI / 4.0f) > port.left &&
-			a_centerX + trueLength * cosf(PI / 4.0f) < port.right &&
-			a_centerY - trueLength > port.top &&
-			a_centerY < port.bottom
-		);
-
-		glm::vec2 posScreenCoords{ a_centerX, a_centerY };
-		DebugAPI::ClampPointToScreen(posScreenCoords);
-		float startingRotation = -PI / 4.0f;
-		if (!onScreen)
-		{
-			// Rotate all prongs to point in the direction of the off-screen the lock-on target.
-			// Add/subtract an additional offset to fit the indicator to the edges of the screen 
-			// more snugly.
-			float indicatorRotRads = 0.0f;
-			if (posScreenCoords.x == port.right && posScreenCoords.y == port.top)
-			{
-				// Top right corner.
-				indicatorRotRads = 3.0f * PI / 4.0f;
-				posScreenCoords.x -= trueWidth;
-				posScreenCoords.y += trueWidth;
-			}
-			else if (posScreenCoords.x == port.left && posScreenCoords.y == port.top)
-			{
-				// Top left corner.
-				indicatorRotRads = -3.0f * PI / 4.0f;
-				posScreenCoords.x += trueWidth;
-				posScreenCoords.y += trueWidth;
-			}
-			else if (posScreenCoords.x == port.left && posScreenCoords.y == port.bottom)
-			{
-				// Bottom left corner.
-				indicatorRotRads = -PI / 4.0f;
-				posScreenCoords.x += trueWidth;
-				posScreenCoords.y -= trueWidth;
-			}
-			else if (posScreenCoords.x == port.right && posScreenCoords.y == port.bottom)
-			{
-				// Bottom right corner.
-				indicatorRotRads = PI / 4.0f;
-				posScreenCoords.x -= trueWidth;
-				posScreenCoords.y -= trueWidth;
-			}
-			else if (posScreenCoords.y == port.top)
-			{
-				// Top edge of the screen.
-				indicatorRotRads = PI;
-				posScreenCoords.y -= indicatorGap;
-			}
-			else if (posScreenCoords.x == port.left)
-			{
-				// Left edge of the screen.
-				indicatorRotRads = -PI / 2.0f;
-				posScreenCoords.x -= indicatorGap;
-			}
-			else if (posScreenCoords.y == port.bottom)
-			{
-				// Bottom edge of the screen.
-				indicatorRotRads = 0.0f;
-				posScreenCoords.y += indicatorGap;
-			}
-			else if (posScreenCoords.x == port.right)
-			{
-				// Right edge of the screen.
-				indicatorRotRads = PI / 2.0f;
-				posScreenCoords.x += indicatorGap;
-			}
-
-			// Add the additional angle to rotate when off screen.
-			startingRotation += indicatorRotRads;
+				!lockOnIndicatorOscillationInterpData->directionChangeFlag
+			);
 		}
-		
-		// Three prongs, with two rotated += 45 degrees about the origin.
-		DebugAPI::RotateOffsetPoints2D(lowerPortionOffsets, startingRotation);
-		DebugAPI::RotateOffsetPoints2D(upperPortionOffsets, startingRotation);
-		DebugAPI::QueueShape2D
+
+		gapDelta = (lockOnIndicatorOscillationInterpData->value * radius);
+		auto asActor = camTargetPtr->As<RE::Actor>();
+		auto movementDir = RE::NiPoint3();
+		if (asActor)
+		{
+			movementDir = Util::GetActorLinearVelocity(asActor);
+		}
+		else
+		{
+			camTargetPtr->GetLinearVelocity(movementDir);
+		}
+
+		auto screenLateralMovementOffset = 
 		(
-			posScreenCoords,
-			lowerPortionOffsets,
-			0x000000FF, 
-			false, 
-			indicatorThickness,
-			0.0f
+			DebugAPI::WorldToScreenPoint(ToVec3(camTargetPtr->data.location + movementDir)) - 
+			DebugAPI::WorldToScreenPoint(ToVec3(camTargetPtr->data.location))
+		).x;
+		lockOnIndicatorRotOffset += 
+		(
+			(
+				(2.0f * PI * *g_deltaTimeRealTime) * 
+				std::clamp(5.0f * screenLateralMovementOffset / DebugAPI::screenResX, -1.0f, 1.0f)
+			) / 
+			lockOnIndicatorOscillationInterpData->secsInterpToMaxInterval
 		);
-		DebugAPI::QueueShape2D(posScreenCoords, lowerPortionOffsets, 0xFFFFFFFF);
-		DebugAPI::QueueShape2D
-		(
-			posScreenCoords,
-			upperPortionOffsets,
+		float rotAng1 = Util::NormalizeAng0To2Pi(3.0f * PI / 4.0f + lockOnIndicatorRotOffset);
+		float rotAng2 = Util::NormalizeAng0To2Pi(PI / 4.0f + lockOnIndicatorRotOffset);
+		float rotAng3 = Util::NormalizeAng0To2Pi(-PI / 4.0f + lockOnIndicatorRotOffset);
+		float rotAng4 = Util::NormalizeAng0To2Pi(5.0f * PI / 4.0f + lockOnIndicatorRotOffset);
+		// Arrows 1 and 2, circles 1 and 2.
+		std::vector<uint32_t> elementColors = 
+		{
 			0x000000FF,
-			false,
-			indicatorThickness,
-			0.0f
-		);
-		DebugAPI::QueueShape2D(posScreenCoords, upperPortionOffsets, 0xFFFFFFFF);
-		for (uint8_t i = 0; i < 2; ++i)
+			0xFFFFFFFF,
+			0x000000FF,
+			0xFFFFFFFF
+		};
+		// Retract arrows when not facing target.
+		radius *= lockOnIndicatorOscillationInterpData->value;
+		if (radius != 0.0f)
 		{
-			DebugAPI::RotateOffsetPoints2D(lowerPortionOffsets, PI / 4.0f);
-			DebugAPI::RotateOffsetPoints2D(upperPortionOffsets, PI / 4.0f);
-			DebugAPI::QueueShape2D
+			auto newCenter = center + gapDelta * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
+			// Outer.
+			DebugAPI::QueueArrow2D
 			(
-				posScreenCoords,
-				lowerPortionOffsets, 
-				0x000000FF,
-				false,
-				indicatorThickness, 
-				0.0f       
-			);
-			DebugAPI::QueueShape2D(posScreenCoords, lowerPortionOffsets, 0xFFFFFFFF);
-			DebugAPI::QueueShape2D
-			(
-				posScreenCoords,
-				upperPortionOffsets, 
-				0x000000FF, 
-				false,
-				indicatorThickness,
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
+				elementColors[2],
+				thickness * 1.5f,
+				thickness * 2.0f,
 				0.0f
 			);
-			DebugAPI::QueueShape2D(posScreenCoords, upperPortionOffsets, 0xFFFFFFFF);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
+				elementColors[2],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
+				elementColors[2],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
+				elementColors[2],
+				thickness * 1.5f,
+				thickness * 2.0f,
+				0.0f
+			);
+
+			// Inner.
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 
+				0.75f * radius * glm::vec3(cosf(rotAng1), sinf(rotAng1), 0.0f),
+				elementColors[3],
+				thickness,
+				thickness,
+				0.0f
+			);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng2), sinf(rotAng2), 0.0f),
+				elementColors[3],
+				thickness,
+				thickness,
+				0.0f
+			);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng3), sinf(rotAng3), 0.0f),
+				elementColors[3],
+				thickness,
+				thickness,
+				0.0f
+			);
+			newCenter = center + gapDelta * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f);
+			DebugAPI::QueueArrow2D
+			(
+				newCenter,
+				newCenter + 0.75f * radius * glm::vec3(cosf(rotAng4), sinf(rotAng4), 0.0f),
+				elementColors[3],
+				thickness,
+				thickness,
+				0.0f
+			);
+		}
+
+		// Fewer segments to draw when the gap is small (no readily apparent loss in quality).
+		uint32_t numSegments = std::clamp(static_cast<int>(gapDelta * 3), 8, 48);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			elementColors[0],
+			numSegments,
+			thickness + gapDelta,
+			thickness,
+			0.0f
+		);
+		DebugAPI::QueueCircle2D
+		(
+			center,
+			elementColors[1],
+			numSegments,
+			gapDelta,
+			thickness,
+			0.0f
+		);
+
+		// Outline with two circles if near the edge of the screen for better visibility.
+		const float buffer = DebugAPI::screenResY / 25.0f;
+		if (center.x < buffer || 
+			center.x > DebugAPI::screenResX - buffer ||
+			center.y < buffer || 
+			center.y > DebugAPI::screenResY - buffer)
+		{
+			DebugAPI::QueueCircle2D
+			(
+				center, 
+				elementColors[0], 
+				numSegments,
+				2.0f * thickness + gapDelta + radius,
+				2.0f * thickness,
+				0.0f
+			);
+			DebugAPI::QueueCircle2D
+			(
+				center, 
+				elementColors[1], 
+				numSegments,
+				gapDelta + radius,
+				2.0f * thickness,
+				0.0f
+			);
 		}
 	}
 
@@ -2756,14 +2787,24 @@ namespace ALYSLC
 			}
 			else
 			{
-				autoRotateAngle = Util::NormalizeAngToPi
-				(
-					Util::NormalizeAng0To2Pi
+				if (p->playerID == focalPlayerPID)
+				{
+					autoRotateAngle = Util::NormalizeAngToPi
 					(
-						p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
-					) - camYaw
-					/*Util::NormalizeAng0To2Pi(movementActor->data.angle.z) - camYaw*/
-				);
+						Util::NormalizeAng0To2Pi(movementActor->data.angle.z) - camYaw
+					);
+				}
+				else
+				{
+					autoRotateAngle = Util::NormalizeAngToPi
+					(
+						Util::NormalizeAng0To2Pi
+						(
+							p->analogStickParams[!AnalogStickParams::kLSCamRelAng]
+						) - camYaw
+					);
+				}
+
 				float sign = autoRotateAngle < 0.0f ? -1.0f : 1.0f;
 				autoRotateAngle = 
 				(
@@ -3152,7 +3193,7 @@ namespace ALYSLC
 		camAdjMode = CamAdjustmentMode::kNone;
 
 		// Reset interp data.
-		lockOnIndicatorOscillationInterpData->ResetData();
+		lockOnIndicatorOscillationInterpData->Reset();
 		movementAngleMultInterpData->Reset(false, true);
 		movementPitchInterpData->ResetData();
 		movementYawInterpData->ResetData();
@@ -3271,16 +3312,18 @@ namespace ALYSLC
 			playerCam->cameraRoot->world.translate : 
 			p1LookingAt
 		);
-		dialogueCamXYOffset = RE::NiPoint2();
+		dialogueCamXYOffset =
+		focalPlayerCamXYOffset = RE::NiPoint2();
 		
 		// Set radial distance equal to the node's distance from the origin point.
 		camRadialDistanceOffset = camSavedRadialDistanceOffset = 0.0f;
 		camMinTrailingDistance = 100.0f;
 		camTargetRadialDistance = 
 		camTrueRadialDistance = camBaseTargetPos.GetDistance(camFocusPoint);
-		// Reset base height and zoom offsets.
+		// Reset base height, zoom, and other offsets.
 		camMaxZoomOutDist = Settings::fMaxRaycastAndZoomOutDistance;
 		camBaseHeightOffset = camHeightOffset = 0.0f;
+		lockOnIndicatorRotOffset = 0.0f;
 		
 		// Set initial rotation to the current node rotation/P1 rotation.
 		if (playerCam && playerCam->cameraRoot) 
@@ -3730,6 +3773,8 @@ namespace ALYSLC
 
 			glob.taskRunner->AddTask
 			(
+				"[CAM]",
+				__FUNCTION__,
 				[this]() 
 				{
 					auto controlMap = RE::ControlMap::GetSingleton(); 

@@ -164,11 +164,14 @@ namespace ALYSLC
 
 				p->taskRunner->AddTask
 				(
+					p->coopActor->GetName(),
+					__FUNCTION__,
 					[&p]()
 					{ 
 						p->SetCoopPlayerFlags();
-						p->RefreshPlayerManagersTask(); 
-						GlobalCoopData::RestartCoopCameraTask();
+						p->RefreshPlayerManagersTask();
+						// Might cause a freeze.
+						// GlobalCoopData::RestartCoopCameraTask();
 					}
 				);
 			}
@@ -244,6 +247,17 @@ namespace ALYSLC
 				// [Bind Flags]:
 				//==============
 				
+				// NOTE: 
+				// Only some flags are set via the .ini. 
+				// The rest are retained from the default, hardcoded trigger flags.
+				// Retained: 
+				// kDefault
+				// kBlockOnConditionFailure,
+				// kDoNotBlockConflictingActions,
+				// kIgnoreConditionFailure,
+				// kLoneAction, 
+				// kNoCleanupAfterInterrup
+
 				// Get defaults as a backup if the player has not made changes to these settings.
 				anyInputOrder = param.triggerFlags.all
 				(
@@ -349,8 +363,8 @@ namespace ALYSLC
 						// Switch perform type to 'OnPress' so that the action triggers 
 						// right after the bind is held for longer than the hold threshold,
 						// instead of on release of the bind or after tapping twice.
-						if (defPerfType == PerfType::kOnConsecTap || 
-							defPerfType == PerfType::kOnRelease) 
+						if (defPerfType == PerfType::kOnConsecTap /*|| 
+							defPerfType == PerfType::kOnRelease*/) 
 						{
 							param.perfType = PerfType::kOnPress;
 						}
@@ -1212,7 +1226,7 @@ namespace ALYSLC
 		);
 		ReadFloatSetting
 		(
-			a_ini, "NewSystems", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 300.0f
+			a_ini, "NewSystems", "fSecsUntilDownedDeath", fSecsUntilDownedDeath, 1.0f, 600.0f
 		);
 		ReadBoolSetting
 		(
@@ -1548,6 +1562,14 @@ namespace ALYSLC
 				sectionName.data(),
 				"bCrosshairMagnetismForObjRefs",
 				vbCrosshairMagnetismForObjRefs, 
+				pIndex
+			);
+			ReadBoolSettingToIndex
+			(
+				a_ini,
+				sectionName.data(), 
+				"bFaceCrosshairPositionByDefault", 
+				vbFaceCrosshairPositionByDefault,
 				pIndex
 			);
 			ReadBoolSettingToIndex

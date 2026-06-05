@@ -1707,7 +1707,7 @@
           "valueOptions": {
             "sourceType" : "ModSettingFloat",
             "min": 1.0,
-            "max": 300.0,
+            "max": 600.0,
             "step": 1.0,
             "formatString": "{2}"
           }
@@ -2245,6 +2245,16 @@
           }
         },
         {
+          "id": "bFaceCrosshairPositionByDefault:Player1",
+          "text": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault",
+          "type": "toggle",
+          "help": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault_HelpText",
+          "valueOptions": 
+          {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "bFriendlyFire:Player1",
           "text": "$ALYSLC_PlayerOptions_FriendlyFire",
           "type": "toggle",
@@ -2310,8 +2320,7 @@
           "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
           "valueOptions": {
             "options": [
-              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
-              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_Crosshair",
               "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
             ],
             "sourceType": "ModSettingInt"
@@ -2994,6 +3003,16 @@
           }
         },
         {
+          "id": "bFaceCrosshairPositionByDefault:Player2",
+          "text": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault",
+          "type": "toggle",
+          "help": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault_HelpText",
+          "valueOptions": 
+          {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "bFriendlyFire:Player2",
           "text": "$ALYSLC_PlayerOptions_FriendlyFire",
           "type": "toggle",
@@ -3059,8 +3078,7 @@
           "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
           "valueOptions": {
             "options": [
-              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
-              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_Crosshair",
               "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
             ],
             "sourceType": "ModSettingInt"
@@ -3743,6 +3761,16 @@
           }
         },
         {
+          "id": "bFaceCrosshairPositionByDefault:Player3",
+          "text": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault",
+          "type": "toggle",
+          "help": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault_HelpText",
+          "valueOptions": 
+          {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "bFriendlyFire:Player3",
           "text": "$ALYSLC_PlayerOptions_FriendlyFire",
           "type": "toggle",
@@ -3808,8 +3836,7 @@
           "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
           "valueOptions": {
             "options": [
-              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
-              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_Crosshair",
               "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
             ],
             "sourceType": "ModSettingInt"
@@ -4492,6 +4519,16 @@
           }
         },
         {
+          "id": "bFaceCrosshairPositionByDefault:Player4",
+          "text": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault",
+          "type": "toggle",
+          "help": "$ALYSLC_PlayerOptions_FaceCrosshairPosByDefault_HelpText",
+          "valueOptions": 
+          {
+            "sourceType": "ModSettingBool"
+          }
+        },
+        {
           "id": "bFriendlyFire:Player4",
           "text": "$ALYSLC_PlayerOptions_FriendlyFire",
           "type": "toggle",
@@ -4557,8 +4594,7 @@
           "help": "$ALYSLC_PlayerOptions_DefaultAimMode_HelpText",
           "valueOptions": {
             "options": [
-              "$ALYSLC_PlayerOptions_DefaultAimMode_FreeAim",
-              "$ALYSLC_PlayerOptions_DefaultAimMode_LockOn",
+              "$ALYSLC_PlayerOptions_DefaultAimMode_Crosshair",
               "$ALYSLC_PlayerOptions_DefaultAimMode_TwinStick"
             ],
             "sourceType": "ModSettingInt"

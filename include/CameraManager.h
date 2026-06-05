@@ -631,6 +631,7 @@ namespace ALYSLC
 			camLockOnTargetHandle.reset();
 			camLockOnFocusPoint = camFocusPoint;
 			lockOnTargetInSight = false;
+			lockOnIndicatorRotOffset = 0.0f;
 		}
 
 		// Get current camera pitch.
@@ -971,6 +972,8 @@ namespace ALYSLC
 		
 		// XY offset from the listener in dialogue at which to base the target position.
 		RE::NiPoint2 dialogueCamXYOffset;
+		// XY offset from the focal player at which to base the target position.
+		RE::NiPoint2 focalPlayerCamXYOffset;
 		// Base position (before collision calculations).
 		RE::NiPoint3 camBaseTargetPos;
 		// Current focal player or dialogue target's focus point.
@@ -1037,13 +1040,13 @@ namespace ALYSLC
 		// Maps handled faded objects to their fade data.
 		std::unordered_map<RE::NiPointer<RE::NiAVObject>, std::unique_ptr<ObjectFadeData>> 
 		obstructionFadeDataMap;
-		// Linear interpolation data set for oscillating the lock on indicator.
-		std::unique_ptr<InterpolationData<float>> lockOnIndicatorOscillationInterpData;
 		// Linear interpolation data set for the party's aggregate movement pitch.
 		std::unique_ptr<InterpolationData<float>> movementPitchInterpData;
 		// Linear interpolation data set 
 		// for the party's aggregate movement yaw relative to the camera.
 		std::unique_ptr<InterpolationData<float>> movementYawInterpData;
+		// Linear interpolation data set for oscillating the lock on indicator.
+		std::unique_ptr<TwoWayInterpData> lockOnIndicatorOscillationInterpData;
 		// Interpolated multiplier for auto-rotation angles.
 		std::unique_ptr<TwoWayInterpData> movementAngleMultInterpData;
 		// List of all map marker refrs in the current cell.
@@ -1161,6 +1164,8 @@ namespace ALYSLC
 		float camTrueRadialDistance;
 		// Camera's current yaw to set.
 		float camYaw;
+		// Angular offset to rotate the lock on indicator by from its base rotation.
+		float lockOnIndicatorRotOffset;
 		// Movement pitch angle total for all players since the last update.
 		float movementPitchRunningTotal;
 		// Movement yaw angle total for all players since the last update.

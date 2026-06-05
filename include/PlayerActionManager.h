@@ -695,6 +695,10 @@ namespace ALYSLC
 		// so we have to do it directly here through the player's magic caster(s).
 		void CastRuneProjectile(RE::SpellItem* a_spell);
 
+		// Cast the spell inscribed on a scroll using the player's instant caster. 
+		// Remove the scroll afterward.
+		void CastScrollSpell(RE::ScrollItem* a_scroll);
+
 		// Start/stop casting a spell equipped at the given equip index, 
 		// using the associated magic caster at that index.
 		// Can also wait until the casting animation fires before casting 
@@ -1087,11 +1091,6 @@ namespace ALYSLC
 		// Action state
 		// 
 		
-		// TEMPORARY. Remove when new targeting binds added.
-		// If 'Adjust Aim Pitch's composing actions were pressed in reverse order,
-		// change crosshair targeting mode, reset aim pitch, or clear aim targets,
-		// depending on the direction of the right stick.
-		bool adjustAimPitchAlternateMode;
 		// Is attacking/casting.
 		bool isAttacking;
 		// Is performing a bash attack.

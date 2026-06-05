@@ -26,6 +26,7 @@ namespace ALYSLC
 	bool TKDodgeCompat::g_installed{ false };
 	bool TrueDirectionalMovementCompat::g_installed{ false };
 	bool TrueHUDCompat::g_installed{ false };
+	bool UseOrTakeCompat::g_installed{ false };
 	
 	void AlternateConversationCameraCompat::CheckForAlternateConversationCamera
 	(
@@ -359,6 +360,18 @@ namespace ALYSLC
 			}
 
 			INF("Gained access to all required TrueHUD APIs.");
+		}
+	}
+
+	void UseOrTakeCompat::CheckForUseOrTake()
+	{
+		g_installed = 
+		{
+			static_cast<bool>(GetModuleHandleA("po3_UseOrTake.dll"))
+		};
+		if (g_installed)
+		{
+			INF("Use Or Take installed!");
 		}
 	}
 };

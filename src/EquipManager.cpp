@@ -32,22 +32,26 @@ namespace ALYSLC
 				p.use_count()
 			);
 			// Init once.
-			lastCycledSpellCategory = 
-			lhSpellCategory = 
-			rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
-			lastCycledWeaponCategory =
-			lhWeaponCategory = 
-			rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
-			currentCycledLHSpellsList.fill(nullptr);
-			currentCycledRHSpellsList.fill(nullptr);
-			currentCycledLHWeaponsList.fill(nullptr);
-			currentCycledRHWeaponsList.fill(nullptr);
-			favoritedEmoteIdles.fill(""sv);
-			currentCycledAmmo = currentCycledVoiceMagic = nullptr;
-			currentCycledIdleIndexPair = { "IdleStop"sv, -1 };
-			lastChosenHotkeyedForm = nullptr;
-			lastCycledIdleIndexPair = currentCycledIdleIndexPair;
-			lastCycledForm = nullptr;
+			if (!glob.allPlayersInit)
+			{
+				lastCycledSpellCategory = 
+				lhSpellCategory = 
+				rhSpellCategory = FavMagicCyclingCategory::kAllFavorites;
+				lastCycledWeaponCategory =
+				lhWeaponCategory = 
+				rhWeaponCategory = FavWeaponCyclingCategory::kAllFavorites;
+				currentCycledLHSpellsList.fill(nullptr);
+				currentCycledRHSpellsList.fill(nullptr);
+				currentCycledLHWeaponsList.fill(nullptr);
+				currentCycledRHWeaponsList.fill(nullptr);
+				favoritedEmoteIdles.fill(""sv);
+				currentCycledAmmo = currentCycledVoiceMagic = nullptr;
+				currentCycledIdleIndexPair = { "IdleStop"sv, -1 };
+				lastChosenHotkeyedForm = nullptr;
+				lastCycledIdleIndexPair = currentCycledIdleIndexPair;
+				lastCycledForm = nullptr;
+			}
+			
 			RefreshData();
 		}
 		else
@@ -2532,22 +2536,11 @@ namespace ALYSLC
 			return;
 		}
 
+		// Must unequip the opposite hand's object if this equip request is to equip
+		// the very same object. Otherwise, the object will duplicate and equip to both hands.
 		if (p->isPlayer1)
 		{
-			auto oppositeEquipIndex = 
-			(
-				a_equipIndex == EquipIndex::kLeftHand ? 
-				EquipIndex::kRightHand :
-				EquipIndex::kLeftHand
-			);
-			auto oppositeHandForm = coopActor->GetEquippedObject
-			(
-				oppositeEquipIndex == EquipIndex::kLeftHand
-			);
-			auto oppositeHandExData = Util::GetEquippedExtraData
-			(
-				coopActor.get(), oppositeHandForm, oppositeEquipIndex == EquipIndex::kLeftHand
-			);
+			bool alreadyEquippedInOtherHand = false;
 			auto numberOwned = 
 			(
 				Util::GetIntrinsicallyEqualCount
@@ -2555,32 +2548,81 @@ namespace ALYSLC
 					coopActor.get(), boundObj, a_exData
 				)
 			);
-			bool alreadyEquippedInOtherHand = 
+			RE::TESForm* oppositeHandForm = nullptr;
+			RE::ExtraDataList* oppositeHandExData = nullptr;
+			auto oppositeEquipIndex = EquipIndex::kNone;
+			const auto equipSlot = 
 			(
-				oppositeHandForm == a_toEquip && 
-				oppositeHandExData == a_exData &&
 				a_toEquip->As<RE::BGSEquipType>() && 
-				a_toEquip->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
+				a_toEquip->As<RE::BGSEquipType>()->equipSlot ? 
+				a_toEquip->As<RE::BGSEquipType>()->equipSlot :
+				nullptr
 			);
-			DBG
-			(
-				"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
-				"Unequip first: {}.",
-				coopActor->GetName(), 
-				a_toEquip->GetName(), 
-				numberOwned, 
-				oppositeHandForm ? oppositeHandForm->GetName() : "NONE", 
-				oppositeHandForm == a_toEquip, 
-				oppositeHandExData == a_exData,
-				fmt::ptr(oppositeHandExData),
-				fmt::ptr(a_exData),
-				alreadyEquippedInOtherHand
-			);
+			if (equipSlot && a_equipIndex != EquipIndex::kNone)
+			{
+				oppositeEquipIndex = 
+				(
+					a_equipIndex == EquipIndex::kLeftHand ? 
+					EquipIndex::kRightHand :
+					EquipIndex::kLeftHand
+				);
+				oppositeHandForm = coopActor->GetEquippedObject
+				(
+					oppositeEquipIndex == EquipIndex::kLeftHand
+				);
+				oppositeHandExData = Util::GetEquippedExtraData
+				(
+					coopActor.get(), oppositeHandForm, oppositeEquipIndex == EquipIndex::kLeftHand
+				);
+				// Number owned is sometimes less than 1 even though the player 
+				// is equipping the item from their inventory. Not good.
+				alreadyEquippedInOtherHand = 
+				(
+					(oppositeHandForm) &&
+					(
+						(
+							oppositeHandForm == a_toEquip && 
+							a_toEquip->As<RE::BGSEquipType>() && 
+							a_toEquip->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
+						) ||
+						(
+							oppositeHandExData == a_exData || 
+							Util::AreIntrinsicallyEquivalentExDataLists
+							(
+								oppositeHandExData, a_exData
+							)
+						)
+					)
+				);
+				DBG
+				(
+					"{}: {} has count {}. Other hand: {}, matches: {}, {} ({:p} <=> {:p}). "
+					"Unequip first: {}. Equip slot: {}.",
+					coopActor->GetName(), 
+					a_toEquip->GetName(), 
+					numberOwned, 
+					oppositeHandForm ? oppositeHandForm->GetName() : "NONE", 
+					oppositeHandForm == a_toEquip, 
+					(
+						oppositeHandExData == a_exData || 
+						Util::AreIntrinsicallyEquivalentExDataLists(oppositeHandExData, a_exData)
+					),
+					fmt::ptr(oppositeHandExData),
+					fmt::ptr(a_exData),
+					alreadyEquippedInOtherHand,
+					a_toEquip->As<RE::BGSEquipType>() && 
+					a_toEquip->As<RE::BGSEquipType>()->equipSlot ? 
+					Util::GetEditorID(a_toEquip->As<RE::BGSEquipType>()->equipSlot) : 
+					"NONE"
+				);
+			}
+
 			// Before equipping in the other hand,
 			// unequip and remove + add back if P1 only owns one of the form.
 			if (alreadyEquippedInOtherHand)
 			{
-				UnequipHandForms(glob.bothHandsEquipSlot);
+				// UnequipHandForms(glob.bothHandsEquipSlot);
+				EquipFists(false);
 				// Re-equip other hand item if the player has more than one of the item.
 				if (numberOwned > 1)
 				{
@@ -2596,14 +2638,22 @@ namespace ALYSLC
 						oppositeHandForm->GetName(), 
 						Util::GetEditorID(oppositeSlot)
 					);
-					EquipForm
+					Util::EquipObject
+					(
+						coopActor.get(), 
+						oppositeHandForm->As<RE::TESBoundObject>(), 
+						oppositeHandExData, 
+						a_count, 
+						oppositeSlot
+					);
+					/*EquipForm
 					(
 						oppositeHandForm, 
 						oppositeEquipIndex,
 						a_exData,
 						a_count, 
 						oppositeSlot
-					);
+					);*/
 				}
 			}
 			else
@@ -3886,16 +3936,17 @@ namespace ALYSLC
 					(
 						oppositeEquipIndex == EquipIndex::kLeftHand
 					);
-					auto oppositeHandExData = Util::FindMatchingExtraDataList
+					auto oppositeHandExData = Util::GetEquippedExtraData
+					(
+						coopActor.get(),
+						oppositeHandForm, 
+						oppositeEquipIndex == EquipIndex::kLeftHand
+					);
+					auto oppositeHandChestExData = Util::FindMatchingExtraDataList
 					(
 						inventoryChest.get(),
 						oppositeHandForm ? oppositeHandForm->As<RE::TESBoundObject>() : nullptr,
-						Util::GetEquippedExtraData
-						(
-							coopActor.get(),
-							oppositeHandForm, 
-							oppositeEquipIndex == EquipIndex::kLeftHand
-						)
+						oppositeHandExData
 					);
 					auto numberOwned = 
 					(
@@ -3904,13 +3955,28 @@ namespace ALYSLC
 							inventoryChest.get(), a_object, chestExDataList
 						)
 					);
+					// Number owned is sometimes less than 1 even though the player 
+					// is equipping the item from their inventory. Not good.
 					bool alreadyEquippedInOtherHand = 
 					(
-						numberOwned == 1 &&
-						oppositeHandForm == a_object && 
-						oppositeHandExData == chestExDataList &&
-						a_object->As<RE::BGSEquipType>() && 
-						a_object->As<RE::BGSEquipType>()->equipSlot != glob.bothHandsEquipSlot
+						(oppositeHandForm) &&
+						(
+							(
+								oppositeHandForm &&
+								oppositeHandForm == a_object && 
+								a_object->As<RE::BGSEquipType>() && 
+								a_object->As<RE::BGSEquipType>()->equipSlot != 
+								glob.bothHandsEquipSlot
+							) ||
+							(
+								oppositeHandChestExData &&
+								oppositeHandChestExData == chestExDataList || 
+								Util::AreIntrinsicallyEquivalentExDataLists
+								(
+									oppositeHandExData, chestExDataList
+								)
+							)
+						)
 					);
 					DBG
 					(
@@ -3921,15 +3987,25 @@ namespace ALYSLC
 						numberOwned, 
 						oppositeHandForm ? oppositeHandForm->GetName() : "NONE", 
 						oppositeHandForm == a_object, 
-						oppositeHandExData == chestExDataList,
-						fmt::ptr(oppositeHandExData),
+						(
+							oppositeHandChestExData == chestExDataList || 
+							Util::AreIntrinsicallyEquivalentExDataLists
+							(
+								oppositeHandExData, chestExDataList
+							)
+						),
+						fmt::ptr(oppositeHandChestExData),
 						fmt::ptr(chestExDataList),
 						alreadyEquippedInOtherHand
 					);
 					if (alreadyEquippedInOtherHand)
 					{
 						// Unequip both before re-equipping in this hand.
-						UnequipHandForms(glob.bothHandsEquipSlot);
+						// UnequipHandForms(glob.bothHandsEquipSlot);
+						
+						// Clear out both slots and do not remove desired items
+						// before re-equipping in this hand.
+						EquipFists(false);
 						if (numberOwned > 1)
 						{
 							const auto oppositeSlot = 
@@ -3944,14 +4020,22 @@ namespace ALYSLC
 								oppositeHandForm->GetName(), 
 								Util::GetEditorID(oppositeSlot)
 							);
-							EquipForm
+							Util::EquipObject
 							(
-								oppositeHandForm, 
-								oppositeEquipIndex,
-								oppositeHandExData,
+								coopActor.get(), 
+								oppositeHandForm->As<RE::TESBoundObject>(), 
+								oppositeHandExData, 
 								a_count, 
 								oppositeSlot
 							);
+							/*EquipForm
+							(
+								oppositeHandForm, 
+								oppositeEquipIndex,
+								oppositeHandChestExData,
+								a_count, 
+								oppositeSlot
+							);*/
 						}
 					}
 					else
@@ -4871,13 +4955,18 @@ namespace ALYSLC
 			// TODO:
 			// Scrolls equip their corresponding spells to the player,
 			// but the player's ranged attack package fails to cast the spell.
-			// Do nothing for now.
+			// Cast the scroll spell straight away for now.
 
-			RE::DebugNotification("Scrolls usage not yet implemented for players 2-4.");
+			RE::DebugNotification
+			(
+				"[ALYSLC] Equipping scrolls not yet implemented. Casting scroll spell instead."
+			);
 			DBG
 			(
 				"{}: Attempting to equip a scroll: {}.", coopActor->GetName(), a_form->GetName()
 			);
+			
+			p->pam->CastScrollSpell(a_form->As<RE::ScrollItem>());
 
 			break;
 		}
@@ -8704,10 +8793,22 @@ namespace ALYSLC
 			"{}: index: {}.", coopActor->GetName(), a_equipIndex
 		);
 		
-		auto currentForm = coopActor->GetEquippedObject
-		(
-			a_equipIndex == EquipIndex::kLeftHand
-		); 
+		// No item is equipped at such an index. What are you thinking, melad?
+		if (a_equipIndex == EquipIndex::kNone)
+		{
+			return;
+		}
+
+		RE::TESForm* currentForm = nullptr;
+		if (a_equipIndex == EquipIndex::kLeftHand ||
+			a_equipIndex == EquipIndex::kRightHand) 
+		{
+			currentForm = coopActor->GetEquippedObject
+			(
+				a_equipIndex == EquipIndex::kLeftHand
+			); 
+		}
+
 		if (!currentForm)
 		{
 			currentForm = equippedForms[!a_equipIndex];

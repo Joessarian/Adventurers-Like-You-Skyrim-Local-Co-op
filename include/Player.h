@@ -227,6 +227,9 @@ namespace ALYSLC
 		SteadyClock::time_point lastActivationCheckTP;
 		// Time point indicating when the activate action last started.
 		SteadyClock::time_point lastActivationStartTP;
+		// Time points indicating when the player's activation target 
+		// was last set to a new target or cleared.
+		SteadyClock::time_point lastActivationTargetChangeTP;
 		// Time point indicating when the aim correction target was last set to a valid target.
 		SteadyClock::time_point lastAimCorrectionTargetSetTP;
 		// Time point indicating when the player last started any attack.
@@ -238,6 +241,8 @@ namespace ALYSLC
 		SteadyClock::time_point lastBoundWeapon2HReqTP;
 		SteadyClock::time_point lastBoundWeaponLHReqTP;
 		SteadyClock::time_point lastBoundWeaponRHReqTP;
+		// Time point indicating when a new valid crosshair target was last selected or cleared.
+		SteadyClock::time_point lastCrosshairTargetChangeTP;
 		// Time point indicating when the player's crosshair was last updated.
 		SteadyClock::time_point lastCrosshairUpdateTP;
 		// Time point indicating when favorited items/emote idles were last cycled to equip/play.
@@ -268,10 +273,9 @@ namespace ALYSLC
 		SteadyClock::time_point lastLHCastChargeStartTP;
 		// Time point indicating when the last LH spell cast started (companion players only).
 		SteadyClock::time_point lastLHCastStartTP;
-		// Time points indicating when the player's activation/aim lock on target 
-		// was last updated (set or cleared).
-		SteadyClock::time_point lastLockOnActivationTargetUpdateTP;
-		SteadyClock::time_point lastLockOnAimTargetUpdateTP;
+		// Time points indicating when the player's aim lock on target 
+		// was last set to a new target or cleared.
+		SteadyClock::time_point lastLockOnAimTargetChangeTP;
 		// Time point indicating when the player last attempted to start moving.
 		SteadyClock::time_point lastMovementStartReqTP;
 		// Time point indicating when the player last attempted to stop moving.

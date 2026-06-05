@@ -495,10 +495,12 @@ namespace ALYSLC
 							}
 						}
 					}
-					else
+					else if (action != InputAction::kMoveCrosshair)
 					{
-						// No temp menu open.
-						// At least one button is pressed after temp  menus closed.
+						// No temp menu open. Allow crosshair movement to continue,
+						// otherwise the crosshair would stop moving 
+						// once a menu opened by the crosshair, ex. Loot Menu, closes.
+						// At least one button is pressed after temp menus closed.
 						bool buttonsPressedWhileMenusClosed = 
 						(
 							(inputBitMask & ((1 << !InputAction::kButtonTotal) - 1)) != 0
@@ -779,6 +781,15 @@ namespace ALYSLC
 				const auto& paState = paStatesList[!action - !InputAction::kFirstAction];
 				if (paState.perfStage != PerfStage::kInputsPressed)
 				{
+					/*DBG
+					(
+						"{}: PASS 2: candidate PA {} ({}) "
+						"does not have inputs pressed perf stage: {}.",
+						coopActor->GetName(),
+						candidatePA, 
+						paState.priority,
+						paState.perfStage
+					);*/
 					continue;
 				}
 
@@ -787,7 +798,15 @@ namespace ALYSLC
 				{
 					AddAVCostActionRequest(action);
 				}
-
+				
+				/*DBG
+				(
+					"{}: PASS 2: candidate PA {} ({}) added to occurring list, perf stage: {}.",
+					coopActor->GetName(),
+					candidatePA, 
+					paState.priority,
+					paState.perfStage
+				);*/
 				// Add to occurring list.
 				occurringPAs.push_front(action);
 			}
@@ -1295,7 +1314,10 @@ namespace ALYSLC
 			// in Skyrim Party Sheet/Party Combat Parameter's UI.
 			if (auto p1 = RE::PlayerCharacter::GetSingleton(); p1) 
 			{
-				Util::ActivateRefr(coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false);
+				Util::ActivateRefr
+				(
+					coopActor.get(), p1, 0, coopActor->GetBaseObject(), 1, false, false
+				);
 			}
 
 			// Reset packages to default, since players may have changed their
@@ -1456,15 +1478,15 @@ namespace ALYSLC
 					);
 					if (nffPerk)
 					{
-						if (p->coopActor->HasPerk(nffPerk))
+						if (coopActor->HasPerk(nffPerk))
 						{
 							DBG
 							(
 								"{} has NFF friendly fire perk. "
 								"Remove to give ALYSLC's setting precedence only for this player.", 
-								p->coopActor->GetName()
+								coopActor->GetName()
 							);
-							Util::ChangePerk(p->coopActor.get(), nffPerk, false);
+							Util::ChangePerk(coopActor.get(), nffPerk, false);
 						}
 					}
 
@@ -1474,15 +1496,15 @@ namespace ALYSLC
 					);
 					if (nffPerk)
 					{
-						if (p->coopActor->HasPerk(nffPerk))
+						if (coopActor->HasPerk(nffPerk))
 						{
 							DBG
 							(
 								"{} has NFF team damage perk. "
 								"Remove to give ALYSLC's setting precedence only for this player.", 
-								p->coopActor->GetName()
+								coopActor->GetName()
 							);
-							Util::ChangePerk(p->coopActor.get(), nffPerk, false);
+							Util::ChangePerk(coopActor.get(), nffPerk, false);
 						}
 					}
 				}
@@ -1614,7 +1636,6 @@ namespace ALYSLC
 		// Currently used for sneak attacks.
 		reqDamageMult = 1.0f;
 		// Bools.
-		adjustAimPitchAlternateMode = false;
 		attackDamageMultSet = false;
 		autoEndDialogue = false;
 		blockAllInputActions = false;
@@ -1883,7 +1904,7 @@ namespace ALYSLC
 
 	void PlayerActionManager::BlockCurrentInputActions(bool a_startBlockInterval)
 	{
-		// For each player action, if all inputs are pressed  for the action,
+		// For each player action, if all inputs are pressed for the action,
 		// set the action to blocked.
 		// Have to release and re-press to trigger the blocked actions.
 		// Can also block all actions over an interval, if requested.
@@ -1933,7 +1954,7 @@ namespace ALYSLC
 		RE::NiPoint3 targetPos = coopActor->data.location;
 		const bool crosshairActive = 
 		(
-			p->tm->aimMode != AimMode::kTwinStick
+			p->tm->aimMode == AimMode::kCrosshair
 		);
 		auto targetRefrPtr = Util::GetRefrPtrFromHandle
 		(
@@ -2007,6 +2028,82 @@ namespace ALYSLC
 					proj3DPtr->world.rotate, pitch, yaw
 				);
 			}
+		}
+	}
+
+	void PlayerActionManager::CastScrollSpell(RE::ScrollItem* a_scroll)
+	{
+		// Cast the spell inscribed on a scroll using the player's instant caster. 
+		// Remove the scroll afterward.
+		// Cast at self, the closest hostile actor if the scroll spell has a hostile effect, 
+		// or the closest ally if the spell is non-hostile.
+
+		if (!a_scroll)
+		{
+			return;
+		}
+		
+		// Cast at self, closest enemy if the spell is hostile, or the closest ally
+		// if the spell is not hostile.
+		auto targetRefr = coopActor.get();
+		if (a_scroll->GetDelivery() == RE::MagicSystem::Delivery::kSelf)
+		{
+			DBG("{}: Cast scroll {} (0x{:X}) on self.",
+				coopActor->GetName(), Util::GetEditorID(a_scroll), a_scroll->formID);
+		}
+		else
+		{
+			auto targetHandle = p->tm->GetClosestTargetableActorInFOV
+			(
+				coopActor.get(),
+				true, 
+				false, 
+				true, 
+				true,
+				false,
+				2.0f * PI,
+				Settings::fMaxRaycastAndZoomOutDistance
+			);
+			if (Util::HandleIsValid(targetHandle))
+			{
+				targetRefr = targetHandle.get().get();
+			}
+
+			DBG
+			(
+				"{}: Cast scroll {} (0x{:X}) at {}.",
+				coopActor->GetName(),
+				Util::GetEditorID(a_scroll),
+				a_scroll->formID,
+				Util::HandleIsValid(targetHandle) ? 
+				targetHandle.get()->GetName() :
+				"NONE"
+			);
+		}
+
+		auto instantCaster = coopActor->GetMagicCaster
+		(
+			RE::MagicSystem::CastingSource::kInstant
+		);
+		if (instantCaster)
+		{
+			instantCaster->CastSpellImmediate
+			(
+				a_scroll, false, targetRefr, 1.0f, false, 0.0f, coopActor.get()
+			);
+		}
+
+		// Remove the scroll when done.
+		if (p->isPlayer1)
+		{
+			coopActor->RemoveItem(a_scroll, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+		}
+		else
+		{
+			p->em->inventoryChest->RemoveItem
+			(
+				a_scroll, 1, RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr
+			);
 		}
 	}
 
@@ -3955,7 +4052,7 @@ namespace ALYSLC
 					2.0f + 0.02f * coopActor->GetEquippedWeight(), maxStaminaCooldownSecs
 				);
 				// Stop the player from sprinting right after running out of stamina.
-				p->coopActor->NotifyAnimationGraph("sprintStop");
+				coopActor->NotifyAnimationGraph("sprintStop");
 			}
 			else
 			{
@@ -5399,11 +5496,20 @@ namespace ALYSLC
 		}
 
 		// Only check hold time if necessary and the other checks passed.
+		auto actionGroup = glob.paInfoHolder->DEF_ACTION_INDICES_TO_GROUPS.at(!a_action);
+		float holdTimeThreshold = Settings::fSecsDefMinHoldTime;
+		// For action groups with less time-intensive actions, the actions trigger after
+		// a longer hold time to allow the player to press other inputs for conflicting binds.
+		if (actionGroup == ActionGroup::kDebug || actionGroup == ActionGroup::kMenu)
+		{
+			holdTimeThreshold *= 2.5f;
+		}
+
 		if (passedPressCheck && params.triggerFlags.all(TriggerFlag::kMinHoldTime))
 		{
 			passedPressCheck &= 
 			(
-				GetPlayerActionInputHoldTime(a_action) > Settings::fSecsDefMinHoldTime
+				GetPlayerActionInputHoldTime(a_action) > holdTimeThreshold
 			);
 		}
 
@@ -5997,7 +6103,7 @@ namespace ALYSLC
 					}
 				}
 
-				Util::NativeFunctions::SetDontMove(p->coopActor.get(), false);
+				Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			}
 			
 			// Stop all revive effects.
@@ -6040,7 +6146,7 @@ namespace ALYSLC
 			
 			if (p->mm->dontMoveSet)
 			{
-				Util::NativeFunctions::SetDontMove(p->coopActor.get(), false);
+				Util::NativeFunctions::SetDontMove(coopActor.get(), false);
 			}
 		};
 		
@@ -6064,7 +6170,7 @@ namespace ALYSLC
 			);
 			// Stop P1 from moving.
 			p->mm->dontMoveSet = true;
-			Util::NativeFunctions::SetDontMove(p->coopActor.get(), true);
+			Util::NativeFunctions::SetDontMove(coopActor.get(), true);
 			downedPlayerTarget = glob.coopPlayers[a_playerTargetIndex];
 			downedPlayerTarget->isBeingRevived = true;
 			p->isRevivingPlayer = true;
@@ -8368,7 +8474,7 @@ namespace ALYSLC
 		{
 			// Just started transforming.
 			// Ensure Vampire Lord's privates aren't showing, among other things.
-			if (Util::IsVampireLord(p->coopActor.get()))
+			if (Util::IsVampireLord(coopActor.get()))
 			{
 				if (!p->isPlayer1) 
 				{
@@ -8515,6 +8621,8 @@ namespace ALYSLC
 					{
 						p->taskRunner->AddTask
 						(
+							coopActor->GetName(),
+							__FUNCTION__,
 							[this]()
 							{
 								p->ToggleVampireLordLevitationTask();

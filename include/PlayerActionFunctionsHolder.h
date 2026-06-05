@@ -149,12 +149,16 @@ namespace ALYSLC
 		bool DebugResetPlayer(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dismount(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Dodge(const std::shared_ptr<CoopPlayer>& a_p);
+		// TEMPORARY
+		bool FaceTarget(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Favorites(const std::shared_ptr<CoopPlayer>& a_p);
 		bool GrabRotateYZ(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Jump(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackDual(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		bool PowerAttackRH(const std::shared_ptr<CoopPlayer>& a_p);
+		// TEMPORARY.
+		bool ResetAim(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sheathe(const std::shared_ptr<CoopPlayer>& a_p);
 		bool Sneak(const std::shared_ptr<CoopPlayer>& a_p);
 		bool SpecialAction(const std::shared_ptr<CoopPlayer>& a_p);
@@ -168,6 +172,11 @@ namespace ALYSLC
 		// Camera is adjustable if the player is not power attacking or trying to power attack,
 		// not moving their arms, and moving the right stick.
 		bool CanAdjustCamera(const std::shared_ptr<CoopPlayer>& a_p);
+
+		// REMOVE once official binds are added.
+		// Camera is adjustable if the player is not power attacking or trying to power attack,
+		// not moving their arms, and moving the right stick.
+		bool CanAdjustCameraTEMP(const std::shared_ptr<CoopPlayer>& a_p);
 
 		// Can power attack if not already power attacking, 
 		// on the ground, not sprinting, has the right weapon(s) equipped,
@@ -228,6 +237,12 @@ namespace ALYSLC
 		// NOTE: 
 		// Currently not functional.
 		bool CanDualCast(const std::shared_ptr<CoopPlayer>& a_p);
+
+		// Can the player grab the given refr.
+		bool CanGrabRefr
+		(
+			const std::shared_ptr<CoopPlayer>& a_p, RE::TESObjectREFR* a_refr, bool a_includeNPCs
+		);
 
 		// Cache AV cost for special action and return true if the special action can be performed.
 		const bool CanPerformSpecialAction
@@ -415,7 +430,6 @@ namespace ALYSLC
 	namespace ProgressFuncs
 	{
 		void Activate(const std::shared_ptr<CoopPlayer>& a_p);
-		void AdjustAimPitch(const std::shared_ptr<CoopPlayer>& a_p);
 		void AttackLH(const std::shared_ptr<CoopPlayer>& a_p);
 		void AttackRH(const std::shared_ptr<CoopPlayer>& a_p);
 		void Bash(const std::shared_ptr<CoopPlayer>& a_p);

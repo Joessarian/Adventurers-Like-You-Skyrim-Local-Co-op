@@ -709,11 +709,12 @@ namespace ALYSLC
 		// Clean up global and player task runner threads by signalling them to stop.
 		~GlobalCoopData() 
 		{
+			DBG("GLOB DTOR");
 			// Request that detached threads stop.
 			taskRunner->runnerThread.request_stop();
 			for (const auto& p : coopPlayers) 
 			{
-				if (p->isActive) 
+				if (p && p->taskRunner) 
 				{
 					p->taskRunner->runnerThread.request_stop();
 				}
@@ -2182,7 +2183,10 @@ namespace ALYSLC
 		// Paraglider bound object. Only set if Skyrim's Paraglider is installed.
 		RE::TESObjectMISC* paraglider;
 		// Shaders.
-		RE::TESEffectShader* activateHighlightShader;
+		std::array<RE::TESEffectShader*, (size_t)ALYSLC_MAX_PLAYER_COUNT> activateHighlightShaders;
+		RE::TESEffectShader* activateDefaultShader;
+		RE::TESEffectShader* activateFailureShader;
+		RE::TESEffectShader* activateUseShader;
 		RE::TESEffectShader* dragonHolesShader;
 		RE::TESEffectShader* dragonSoulAbsorbShader;
 		RE::TESEffectShader* ghostFXShader;
