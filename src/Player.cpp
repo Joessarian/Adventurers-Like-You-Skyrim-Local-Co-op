@@ -2835,9 +2835,18 @@ namespace ALYSLC
 					coopActor->SetGraphVariableBool("bIsSynced", true);
 					coopActor->SetPosition(leftOfMountPt, true);
 					coopActor->Update3DPosition(true);
+					DBG("{}: Mount target: {}.", 
+						coopActor->GetName(),
+						targetedMountPtr ? targetedMountPtr->GetName() : "NONE");
 					Util::ActivateRefr
 					(
-						targetedMountPtr.get(), coopActor.get(), 0, nullptr, 1, false, false
+						targetedMountPtr.get(), 
+						coopActor.get(), 
+						0, 
+						targetedMountPtr->GetBaseObject(),
+						1, 
+						false, 
+						false
 					);
 					if (!isPlayer1) 
 					{

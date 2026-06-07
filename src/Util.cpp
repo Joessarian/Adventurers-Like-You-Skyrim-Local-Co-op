@@ -290,6 +290,7 @@ namespace ALYSLC
 		)
 		{
 			// Activator or interaction refr are invalid.
+			// Base object does not have to be given to activate.
 			if (!a_activator || 
 				!a_interactionTarget || 
 				!a_interactionTarget->loadedData || 
@@ -312,7 +313,7 @@ namespace ALYSLC
 			// Special case: Books and notes.
 			// P1 must activate the book to read it as a secondary option.
 			// Otherwise, the player will pick up the book/note.
-			if (a_object->Is(RE::FormType::Book, RE::FormType::Note))
+			if (a_object && a_object->Is(RE::FormType::Book, RE::FormType::Note))
 			{
 				auto p1 = RE::PlayerCharacter::GetSingleton();
 				if (a_useSecondaryActivation)
@@ -363,8 +364,8 @@ namespace ALYSLC
 			(
 				"{}: Activate {} (0x{:X}). Secondary: {}.",
 				p->coopActor->GetName(),
-				a_object->GetName(),
-				a_object->formID,
+				a_object ? a_object->GetName() : "NONE",
+				a_object ? a_object->formID : 0xDEAD,
 				p->tm->performSecondaryActivationAction
 			);
 
@@ -380,7 +381,7 @@ namespace ALYSLC
 			);
 
 			// Perform secondary activation if requested and the activating refr is a player.
-			if (a_useSecondaryActivation && ALYSLC::UseOrTakeCompat::g_installed)
+			if (a_useSecondaryActivation && a_object && ALYSLC::UseOrTakeCompat::g_installed)
 			{
 				switch (*a_object->formType)
 				{

@@ -833,11 +833,6 @@ namespace ALYSLC
 				pIndex != -1 && 
 				glob.coopPlayers[pIndex]->tm->playerIndicatorFadeInterpData->value > 0.0f
 			);
-			/*if (playerIndicatorVisible)
-			{
-				return;
-			}*/
-
 			// Offset each player's capping circle upward from the torso position
 			// to the head position, based on their player ID, 
 			// so the circles do not intersect with each other when the same aim correction target 
@@ -1906,6 +1901,14 @@ namespace ALYSLC
 			glob.cam->inDialogueCamState && 
 			Settings::bDialogueCamEnabled &&
 			!glob.cam->adjustedAfterReachingDialoguePos)
+		{
+			return;
+		}
+
+		// Skip drawing the indicator for players that are not receiving the focus of the camera.
+		if (glob.cam->IsRunning() && 
+			glob.cam->focalPlayerPID != -1 && 
+			playerID != glob.cam->focalPlayerPID)
 		{
 			return;
 		}
